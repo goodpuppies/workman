@@ -1,0 +1,82 @@
+-- AoC-style frontend fixture: recursive ADTs plus polymorphic helpers.
+
+type List<T> = Nil | Cons<T, List<T>>;
+type Option<T> = None | Some<T>;
+type CountState = | CountState<Option<Number>, Number>;
+
+let rec map = (f, xs) => {
+  match(xs) {
+    Nil => { Nil },
+    Cons(x, rest) => { Cons(f(x), map(f, rest)) },
+  }
+};
+
+let rec filter = (pred, xs) => {
+  match(xs) {
+    Nil => { Nil },
+    Cons(x, rest) => {
+      if (pred(x)) {
+        Cons(x, filter(pred, rest))
+      } else {
+        filter(pred, rest)
+      }
+    },
+  }
+};
+
+let rec fold = (f, acc, xs) => {
+  match(xs) {
+    Nil => { acc },
+    Cons(x, rest) => { fold(f, f(acc, x), rest) },
+  }
+};
+
+let rec windowSums = (xs) => {
+  match(xs) {
+    Cons(a, Cons(b, Cons(c, rest))) => {
+      Cons(a + b + c, windowSums(Cons(b, Cons(c, rest))))
+    },
+    _ => { Nil },
+  }
+};
+
+let countIncreases = (depths) => {
+  let step = (state, next) => {
+    match(state) {
+      CountState(None, total) => { CountState(Some(next), total) },
+      CountState(Some(prev), total) => {
+        if (next > prev) {
+          CountState(Some(next), total + 1)
+        } else {
+          CountState(Some(next), total)
+        }
+      },
+    }
+  };
+  let final = fold(step, CountState(None, 0), depths);
+  match(final) {
+    CountState(_, total) => { total },
+  }
+};
+
+let countWindowIncreases = (depths) => {
+  countIncreases(windowSums(depths))
+};
+
+let sampleDepths =
+  Cons(199,
+  Cons(200,
+  Cons(208,
+  Cons(210,
+  Cons(200,
+  Cons(207,
+  Cons(240,
+  Cons(269,
+  Cons(260,
+  Cons(263, Nil))))))))));
+
+let adjustedDepths = map((x) => { x + 1 }, sampleDepths);
+let largeDepths = filter((x) => { x > 200 }, adjustedDepths);
+let sampleIncreaseCount = countIncreases(sampleDepths);
+let sampleWindowIncreaseCount = countWindowIncreases(sampleDepths);
+let largeDepthSum = fold((acc, x) => { acc + x }, 0, largeDepths);

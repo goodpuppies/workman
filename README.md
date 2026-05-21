@@ -10,7 +10,7 @@ experimenting with a complete language:
 - recursive and mutually recursive `let rec ... and ...`
 - nominal algebraic data types
 - file imports as implicit SML-style structures
-- constructor and tuple pattern matching
+- constructor, tuple, and eventually list/record pattern matching
 - expression blocks, lambdas, `if`, primitive operators, and `void`
 - temporary JavaScript output for smoke tests
 
@@ -26,8 +26,9 @@ This project uses:
 - `research/workmangr/docs/reference` for Workman spelling and goals: `let`, `type`, constructor
   syntax, `match(...) { ... }`, blocks, and explicit semicolon top-level declarations.
 
-Skipped on purpose for now: infection, flow, traits, raw/FFI, backend profiles, records, mutability,
-and non-JS compilation.
+Skipped on purpose for now: infection, flow, traits, raw/FFI, backend profiles, mutability, and
+non-JS compilation. Basic lists and nominal records are part of the frontend roadmap; advanced
+record ergonomics are staged later.
 
 ## SML Reduction Rule
 
@@ -50,6 +51,9 @@ long identifiers such as `Math.add`.
 The current priority is the frontend: parsing, file-as-structure imports, long identifiers, nominal
 datatype inference, and SML-guided static semantics. JavaScript emission exists only as a smoke-test
 harness until the frontend is rigorous.
+
+See [`frontend-subset.md`](./frontend-subset.md) for the exact Goal 1 frontend subset and the
+Workman/SML correspondence used by the tests.
 
 ## Try It
 

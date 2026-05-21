@@ -814,7 +814,7 @@ let result = match(opt) {
 print(match(flag) { true => { "yes" }, false => { "no" } });
 
 -- if is also an expression
-print(if(flag) { "yes" } else { "no" } });
+print(if(flag) { "yes" } else { "no" } );
 ```
 
 ### 9. No Early Return

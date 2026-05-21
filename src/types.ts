@@ -7,7 +7,8 @@ export type Ty =
   | { tag: "tuple"; items: Ty[] }
   | { tag: "named"; id: number; name: string; args: Ty[] };
 
-export type Scheme = { vars: number[]; type: Ty };
+export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
+export type Scheme = { vars: number[]; type: Ty; constraints?: Constraint[] };
 export type Env = Map<string, Scheme>;
 export type TypeEnv = Map<string, TypeInfo>;
 export type TypeInfo = { id: number; name: string; arity: number; alias?: Ty; aliasParams?: number[] };
@@ -88,6 +89,17 @@ export function unify(a: Ty, b: Ty): void {
   throw new Error(`type mismatch ${show(a)} vs ${show(b)}`);
 }
 
+export function eq(left: Ty, right: Ty): Constraint {
+  return { kind: "Eq", left, right };
+}
+
+export function solveConstraints(constraints: Constraint[]): void {
+  for (const c of constraints) {
+    if (c.kind === "Eq") unify(c.left, c.right);
+  }
+  constraints.length = 0;
+}
+
 export function ftv(t: Ty, out = new Set<number>()): Set<number> {
   t = prune(t);
   if (t.tag === "var") out.add(t.id);
@@ -111,7 +123,7 @@ export function ftvEnv(env: Env): Set<number> {
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
   const vars = [...ftv(type)].filter((id) => !envVars.has(id));
-  return { vars, type };
+  return { vars, type, constraints: [] };
 }
 
 export function instantiate(scheme: Scheme): Ty {

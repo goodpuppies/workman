@@ -1,4 +1,4 @@
-import type { Binding, Decl, Expr, ImportClause, Module, Param, Pattern } from "./ast.ts";
+import type { Binding, Decl, Expr, ImportClause, Module, Param } from "./ast.ts";
 import {
   baseEnv,
   baseTypeEnv,
@@ -21,9 +21,16 @@ import {
   TypeEnv,
   typeFromAst,
   TypeVarScope,
-  unify,
   VoidTy,
 } from "./types.ts";
+import { checkExhaustive, isVectorExhaustive, mentionsLocalType } from "./infer/exhaustiveness.ts";
+import {
+  inferBindingPattern,
+  inferPattern,
+  patternBinders,
+  showPattern,
+} from "./infer/patterns.ts";
+import { callArg, constrain } from "./infer/shared.ts";
 
 export type InferResult = {
   env: Env;
@@ -35,7 +42,17 @@ export type InferResult = {
   warnings: string[];
 };
 
+export type TypeSnapshot = { type: string; vars: number };
+export type InferStep = { declIndex: number; env: Map<string, TypeSnapshot> };
+
 export function inferModule(module: Module, imports = new Map<string, InferResult>()): InferResult {
+  return inferModuleWithSteps(module, imports).result;
+}
+
+export function inferModuleWithSteps(
+  module: Module,
+  imports = new Map<string, InferResult>(),
+): { result: InferResult; steps: InferStep[] } {
   const env = baseEnv();
   const exports: Env = new Map();
   const typeEnv = baseTypeEnv();
@@ -43,7 +60,8 @@ export function inferModule(module: Module, imports = new Map<string, InferResul
   const adts = new Map<number, TypeDeclInfo>();
   const types = new Map<Expr, Ty>();
   const warnings: string[] = [];
-  for (const decl of module.decls) {
+  const steps: InferStep[] = [];
+  for (const [declIndex, decl] of module.decls.entries()) {
     if (decl.kind === "ImportDecl") {
       const imported = imports.get(decl.path);
       if (!imported) throw new Error(`unknown import ${decl.path}`);
@@ -52,8 +70,9 @@ export function inferModule(module: Module, imports = new Map<string, InferResul
       continue;
     }
     inferDecl(decl, env, exports, typeEnv, typeExports, adts, types, warnings);
+    steps.push({ declIndex, env: snapshotEnv(env) });
   }
-  return { env, exports, typeEnv, typeExports, types, adts, warnings };
+  return { result: { env, exports, typeEnv, typeExports, types, adts, warnings }, steps };
 }
 
 function isDecl(value: Decl | Expr): value is Decl {
@@ -86,29 +105,6 @@ function addImport(env: Env, typeEnv: TypeEnv, clause: ImportClause, imported: I
   }
 }
 
-function showPattern(pattern: Pattern): string {
-  switch (pattern.kind) {
-    case "PWildcard":
-      return "_";
-    case "PVar":
-      return pattern.name;
-    case "PInt":
-      return String(pattern.value);
-    case "PString":
-      return JSON.stringify(pattern.value);
-    case "PBool":
-      return pattern.value ? "true" : "false";
-    case "PVoid":
-      return "void";
-    case "PPinned":
-      return pattern.name;
-    case "PTuple":
-      return `(${pattern.items.map(showPattern).join(", ")})`;
-    case "PCtor":
-      return pattern.args.length ? `${pattern.name}(${pattern.args.map(showPattern).join(", ")})` : pattern.name;
-  }
-}
-
 function addQualifiedImport(env: Env, alias: string, imported: Env) {
   for (const [name, scheme] of imported) {
     const local = `${alias}.${name}`;
@@ -127,19 +123,6 @@ function addQualifiedTypes(typeEnv: TypeEnv, alias: string, imported: TypeEnv) {
 
 function addAdts(adts: Map<number, TypeDeclInfo>, imported: Map<number, TypeDeclInfo>) {
   for (const [id, info] of imported) adts.set(id, info);
-}
-
-function callArg(items: Ty[]): Ty {
-  if (items.length === 0) return VoidTy;
-  if (items.length === 1) return items[0];
-  return tuple(items);
-}
-
-function expandCallArg(arg: Ty): Ty[] {
-  const resolved = prune(arg);
-  if (resolved.tag === "prim" && resolved.name === "Void") return [];
-  if (resolved.tag === "tuple") return resolved.items;
-  return [resolved];
 }
 
 function inferDecl(
@@ -188,7 +171,9 @@ function inferDecl(
     const inferred = decl.bindings.map((b) => inferBinding(b, base, typeEnv, adts, types));
     inferred.forEach((result, i) => {
       if (result.refutable) {
-        warnings.push(`refutable let pattern may fail at runtime: ${showPattern(decl.bindings[i].pattern)}`);
+        warnings.push(
+          `refutable let pattern may fail at runtime: ${showPattern(decl.bindings[i].pattern)}`,
+        );
       }
       for (const [name, type] of result.bound) {
         const scheme = generalize(base, type);
@@ -207,8 +192,8 @@ function inferDecl(
     env.set((b.pattern as { name: string }).name, { vars: [], type: placeholders[i] })
   );
   decl.bindings.forEach((b, i) => {
-    unify(placeholders[i], inferExpr(b.value, env, typeEnv, adts, types));
-    if (b.annotation) unify(placeholders[i], typeFromAst(b.annotation, typeEnv));
+    constrain(placeholders[i], inferExpr(b.value, env, typeEnv, adts, types));
+    if (b.annotation) constrain(placeholders[i], typeFromAst(b.annotation, typeEnv));
   });
   decl.bindings.forEach((b, i) => {
     const scheme = generalize(base, placeholders[i]);
@@ -234,7 +219,7 @@ function inferBinding(
   types: Map<Expr, Ty>,
 ): { bound: Map<string, Ty>; refutable: boolean } {
   const t = inferExpr(b.value, env, typeEnv, adts, types);
-  if (b.annotation) unify(t, typeFromAst(b.annotation, typeEnv));
+  if (b.annotation) constrain(t, typeFromAst(b.annotation, typeEnv));
   const bound = new Map<string, Ty>();
   inferBindingPattern(b.pattern, t, env, bound);
   const refutable = !isVectorExhaustive([[b.pattern]], [t], typeEnv, adts);
@@ -286,7 +271,7 @@ function inferExpr(
     case "Call": {
       const result = fresh();
       const arg = callArg(expr.args.map((a) => inferExpr(a, env, typeEnv, adts, types, warnings)));
-      unify(
+      constrain(
         inferExpr(expr.callee, env, typeEnv, adts, types, warnings),
         fn([arg], result),
       );
@@ -294,9 +279,9 @@ function inferExpr(
       break;
     }
     case "If":
-      unify(inferExpr(expr.cond, env, typeEnv, adts, types, warnings), BoolTy);
+      constrain(inferExpr(expr.cond, env, typeEnv, adts, types, warnings), BoolTy);
       t = inferExpr(expr.thenExpr, env, typeEnv, adts, types, warnings);
-      unify(t, inferExpr(expr.elseExpr, env, typeEnv, adts, types, warnings));
+      constrain(t, inferExpr(expr.elseExpr, env, typeEnv, adts, types, warnings));
       break;
     case "Match": {
       const valueType = inferExpr(expr.value, env, typeEnv, adts, types, warnings);
@@ -304,7 +289,7 @@ function inferExpr(
       for (const arm of expr.arms) {
         const local = new Map(env);
         inferPattern(arm.pattern, valueType, local, adts);
-        unify(t, inferExpr(arm.body, local, typeEnv, adts, types, warnings));
+        constrain(t, inferExpr(arm.body, local, typeEnv, adts, types, warnings));
       }
       checkExhaustive(expr.arms.map((arm) => arm.pattern), valueType, typeEnv, adts);
       break;
@@ -326,7 +311,7 @@ function inferExpr(
       const result = fresh();
       const op: Scheme | undefined = env.get(expr.op);
       if (!op) throw new Error(`unknown operator ${expr.op}`);
-      unify(
+      constrain(
         instantiate(op),
         fn(
           [tuple([
@@ -341,249 +326,16 @@ function inferExpr(
     }
     case "Unary":
       if (expr.op === "-") {
-        unify(inferExpr(expr.value, env, typeEnv, adts, types, warnings), NumberTy);
+        constrain(inferExpr(expr.value, env, typeEnv, adts, types, warnings), NumberTy);
         t = NumberTy;
       } else {
-        unify(inferExpr(expr.value, env, typeEnv, adts, types, warnings), BoolTy);
+        constrain(inferExpr(expr.value, env, typeEnv, adts, types, warnings), BoolTy);
         t = BoolTy;
       }
       break;
   }
   types.set(expr, t);
   return t;
-}
-
-function checkExhaustive(
-  patterns: Pattern[],
-  valueType: Ty,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-) {
-  if (isVectorExhaustive(patterns.map((pattern) => [pattern]), [valueType], typeEnv, adts)) return;
-  const scrutinee = prune(valueType);
-  if (scrutinee.tag === "named") {
-    const info = adts.get(scrutinee.id);
-    if (!info) throw new Error("non-exhaustive match: unknown sum type");
-    const covered = new Set(
-      patterns
-        .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor")
-        .map((p) => baseName(p.name)),
-    );
-    const missing = info.ctors.map((c) => c.name).filter((name) => !covered.has(name));
-    if (missing.length) throw new Error(`non-exhaustive match: missing ${missing.join(", ")}`);
-  }
-  throw new Error("non-exhaustive match");
-}
-
-function baseName(name: string): string {
-  return name.split(".").at(-1)!;
-}
-
-function isIrrefutable(pattern: Pattern): boolean {
-  if (pattern.kind === "PWildcard" || pattern.kind === "PVar") return true;
-  if (pattern.kind === "PTuple") return pattern.items.every(isIrrefutable);
-  return false;
-}
-
-function isVectorExhaustive(
-  rows: Pattern[][],
-  types: Ty[],
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-): boolean {
-  if (types.length === 0) return rows.length > 0;
-  const [headType, ...tailTypes] = types;
-  const head = prune(headType);
-  if (rows.some((row) => isIrrefutable(row[0]))) {
-    const tails = rows.filter((row) => isIrrefutable(row[0])).map((row) => row.slice(1));
-    return isVectorExhaustive(tails, tailTypes, typeEnv, adts);
-  }
-
-  if (head.tag === "prim" && head.name === "Bool") {
-    const trueRows = rows.filter((row) => row[0].kind === "PBool" && row[0].value).map((row) => row.slice(1));
-    const falseRows = rows.filter((row) => row[0].kind === "PBool" && !row[0].value).map((row) => row.slice(1));
-    return isVectorExhaustive(trueRows, tailTypes, typeEnv, adts) &&
-      isVectorExhaustive(falseRows, tailTypes, typeEnv, adts);
-  }
-
-  if (head.tag === "prim" && head.name === "Void") {
-    const voidRows = rows.filter((row) => row[0].kind === "PVoid").map((row) => row.slice(1));
-    return isVectorExhaustive(voidRows, tailTypes, typeEnv, adts);
-  }
-
-  if (head.tag === "tuple") {
-    const tupleRows = rows
-      .filter((row): row is [Extract<Pattern, { kind: "PTuple" }>, ...Pattern[]] => row[0].kind === "PTuple")
-      .filter((row) => row[0].items.length === head.items.length)
-      .map((row) => [...row[0].items, ...row.slice(1)]);
-    if (tupleRows.length === 0) return false;
-    return isVectorExhaustive(tupleRows, [...head.items, ...tailTypes], typeEnv, adts);
-  }
-
-  if (head.tag === "named") {
-    const info = adts.get(head.id);
-    if (!info) return false;
-    for (const ctor of info.ctors) {
-      const ctorRows = rows
-        .filter((row): row is [Extract<Pattern, { kind: "PCtor" }>, ...Pattern[]] => row[0].kind === "PCtor")
-        .filter((row) => baseName(row[0].name) === ctor.name)
-        .map((row) => [...row[0].args, ...row.slice(1)]);
-      if (ctorRows.length === 0) return false;
-      const ctorTypes = constructorArgTypes(info, ctor, head, typeEnv);
-      if (!isVectorExhaustive(ctorRows, [...ctorTypes, ...tailTypes], typeEnv, adts)) return false;
-    }
-    return true;
-  }
-
-  return false;
-}
-
-function constructorArgTypes(
-  info: TypeDeclInfo,
-  ctor: TypeDeclInfo["ctors"][number],
-  target: Extract<Ty, { tag: "named" }>,
-  typeEnv: TypeEnv,
-): Ty[] {
-  const vars = new Map(info.params.map((name, i) => [name, target.args[i]] as const));
-  return ctor.args.map((arg) => typeFromAst(arg, typeEnv, vars));
-}
-
-function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
-  t = prune(t);
-  if (t.tag === "fn") {
-    return t.params.some((p) => mentionsLocalType(p, allowed)) ||
-      mentionsLocalType(t.result, allowed);
-  }
-  if (t.tag === "tuple") return t.items.some((x) => mentionsLocalType(x, allowed));
-  if (t.tag === "named") {
-    return !allowed.has(t.id) || t.args.some((x) => mentionsLocalType(x, allowed));
-  }
-  return false;
-}
-
-function inferPattern(
-  p: Pattern,
-  expected: Ty,
-  env: Env,
-  adts: Map<number, TypeDeclInfo>,
-  binders = new Set<string>(),
-): Ty {
-  switch (p.kind) {
-    case "PWildcard":
-      return expected;
-    case "PVar":
-      if (binders.has(p.name)) throw new Error(`duplicate pattern binder ${p.name}`);
-      binders.add(p.name);
-      env.set(p.name, { vars: [], type: expected });
-      return expected;
-    case "PPinned": {
-      const scheme = env.get(p.name);
-      if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
-      unify(expected, instantiate(scheme));
-      return expected;
-    }
-    case "PInt":
-      unify(expected, NumberTy);
-      return expected;
-    case "PString":
-      unify(expected, StringTy);
-      return expected;
-    case "PBool":
-      unify(expected, BoolTy);
-      return expected;
-    case "PVoid":
-      unify(expected, VoidTy);
-      return expected;
-    case "PTuple": {
-      const items = p.items.map(() => fresh());
-      unify(expected, tuple(items));
-      p.items.forEach((x, i) => inferPattern(x, items[i], env, adts, binders));
-      return expected;
-    }
-    case "PCtor": {
-      const scheme = env.get(p.name);
-      if (!scheme) throw new Error(`unknown constructor ${p.name}`);
-      const ctor = instantiate(scheme);
-      if (ctor.tag === "fn") {
-        const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
-        if (args.length !== p.args.length) {
-          throw new Error(`${p.name} expects ${args.length} patterns`);
-        }
-        unify(expected, ctor.result);
-        p.args.forEach((x, i) => inferPattern(x, args[i], env, adts, binders));
-      } else {
-        if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
-        unify(expected, ctor);
-      }
-      return expected;
-    }
-  }
-}
-
-function inferBindingPattern(
-  pattern: Pattern,
-  expected: Ty,
-  env: Env,
-  out: Map<string, Ty>,
-  binders = new Set<string>(),
-) {
-  switch (pattern.kind) {
-    case "PVar":
-      if (binders.has(pattern.name)) throw new Error(`duplicate pattern binder ${pattern.name}`);
-      binders.add(pattern.name);
-      out.set(pattern.name, expected);
-      return;
-    case "PWildcard":
-      return;
-    case "PInt":
-      unify(expected, NumberTy);
-      return;
-    case "PString":
-      unify(expected, StringTy);
-      return;
-    case "PBool":
-      unify(expected, BoolTy);
-      return;
-    case "PVoid":
-      unify(expected, VoidTy);
-      return;
-    case "PTuple": {
-      const items = pattern.items.map(() => fresh());
-      unify(expected, tuple(items));
-      pattern.items.forEach((item, i) => inferBindingPattern(item, items[i], env, out, binders));
-      return;
-    }
-    case "PCtor": {
-      const scheme = env.get(pattern.name);
-      if (!scheme) throw new Error(`unknown constructor ${pattern.name}`);
-      const ctor = instantiate(scheme);
-      if (ctor.tag === "fn") {
-        const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
-        if (args.length !== pattern.args.length) {
-          throw new Error(`${pattern.name} expects ${args.length} patterns`);
-        }
-        unify(expected, ctor.result);
-        pattern.args.forEach((item, i) => inferBindingPattern(item, args[i], env, out, binders));
-      } else {
-        if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
-        unify(expected, ctor);
-      }
-      return;
-    }
-    default:
-      throw new Error("unsupported let pattern");
-  }
-}
-
-function patternBinders(pattern: Pattern): string[] {
-  switch (pattern.kind) {
-    case "PVar":
-      return [pattern.name];
-    case "PTuple":
-      return pattern.items.flatMap(patternBinders);
-    default:
-      return [];
-  }
 }
 
 function inferParam(
@@ -600,4 +352,13 @@ function inferParam(
 
 export function describeEnv(env: Env): string {
   return [...env.entries()].map(([name, scheme]) => `${name}: ${show(scheme.type)}`).join("\n");
+}
+
+function snapshotEnv(env: Env): Map<string, TypeSnapshot> {
+  return new Map(
+    [...env.entries()].map(([name, scheme]) => [
+      name,
+      { type: show(scheme.type), vars: scheme.vars.length },
+    ]),
+  );
 }

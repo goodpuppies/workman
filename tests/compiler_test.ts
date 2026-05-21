@@ -2,19 +2,7 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { pathToFileURL } from "node:url";
 import { checkFile, checkSource, compile, compileFile } from "../src/compiler.ts";
 import { parse } from "../src/parser.ts";
-import { show } from "../src/types.ts";
-
-function expectInferredType(
-  env: Map<string, { vars: number[]; type: unknown }>,
-  name: string,
-  expectedType: string,
-  expectedQuantifiers?: number,
-) {
-  const scheme = env.get(name);
-  if (!scheme) throw new Error(`missing inferred binding ${name}`);
-  assertEquals(show(scheme.type as never), expectedType);
-  if (expectedQuantifiers !== undefined) assertEquals(scheme.vars.length, expectedQuantifiers);
-}
+import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("parses type and let declarations", async () => {
   const ast = await parse("type Option<T> = None | Some<T>; let x = Some(1);");
@@ -49,9 +37,9 @@ Deno.test("reports inferred principal type shapes for core bindings", async () =
     let fst = (x, y) => { x };
     let pair = (x, y) => { (x, y) };
   `);
-  expectInferredType(result.env, "id", "('a) => 'a", 1);
-  expectInferredType(result.env, "fst", "(('a, 'b)) => 'a", 2);
-  expectInferredType(result.env, "pair", "(('a, 'b)) => ('a, 'b)", 2);
+  expectBinding(result.env, "id", { type: "('a) => 'a", vars: 1 });
+  expectBinding(result.env, "fst", { type: "(('a, 'b)) => 'a", vars: 2 });
+  expectBinding(result.env, "pair", { type: "(('a, 'b)) => ('a, 'b)", vars: 2 });
 });
 
 Deno.test("inferred match function type reflects constructor payload constraints", async () => {
@@ -62,7 +50,7 @@ Deno.test("inferred match function type reflects constructor payload constraints
       None => { 0 },
     };
   `);
-  expectInferredType(result.env, "get", "(Option<Number>) => Number", 0);
+  expectBinding(result.env, "get", { type: "(Option<Number>) => Number", vars: 0 });
 });
 
 Deno.test("single-item alias declarations are transparent in inferred types", async () => {
@@ -70,7 +58,7 @@ Deno.test("single-item alias declarations are transparent in inferred types", as
     type MyNumber = Number;
     let inc = (x: MyNumber) => { x + 1 };
   `);
-  expectInferredType(result.env, "inc", "(Number) => Number", 0);
+  expectBinding(result.env, "inc", { type: "(Number) => Number", vars: 0 });
 });
 
 Deno.test("compiles file imports as implicit structures", async () => {
@@ -349,6 +337,12 @@ Deno.test("rejects duplicate tuple let binders in the same declaration", async (
     Error,
     "duplicate binding x",
   );
+  await assertRejects(
+    () =>
+      checkSource("type Option<T> = None | Some<T>; let Some(x) = Some(1) and Some(x) = Some(2);"),
+    Error,
+    "duplicate binding x",
+  );
 });
 
 Deno.test("rejects duplicate names in a single let-and binding group", async () => {
@@ -473,147 +467,6 @@ Deno.test("typed lambda parameters reject incompatible calls", async () => {
   );
 });
 
-Deno.test("supports annotations on tuple lambda parameters", async () => {
-  await checkSource(`
-    let first = ((x, _): (Number, String)) => { x };
-    let value = first((1, "a"));
-  `);
-});
-
-Deno.test("treats multi-argument calls as one tuple argument", async () => {
-  await checkSource(`
-    let first = (x, _) => { x };
-    let a = first(1, 2);
-    let b = first((3, 4));
-  `);
-});
-
-Deno.test("empty call syntax passes a unit/void argument", async () => {
-  await checkSource(`
-    let one = () => { 1 };
-    let a = one();
-    let b = one(void);
-  `);
-  await assertRejects(
-    () => checkSource("let one = () => { 1 }; let bad = one(1);"),
-    Error,
-    "type mismatch",
-  );
-});
-
-Deno.test("reuses repeated type variables within an annotation", async () => {
-  await checkSource(`
-    let first_same = (x: t, y: t) => { x };
-    let a = first_same(1, 2);
-    let b = first_same("a", "b");
-  `);
-  await assertRejects(
-    () =>
-      checkSource(`
-        let first_same = (x: t, y: t) => { x };
-        let bad = first_same(1, "s");
-      `),
-    Error,
-    "type mismatch",
-  );
-});
-
-Deno.test("constructor fields bind while bare tuple identifiers pin", async () => {
-  await checkSource(`
-    type Option<T> = None | Some<T>;
-    let x = 1;
-    let from_ctor = match(opt) => {
-      Some(x) => { x },
-      None => { 0 },
-    };
-    let tuple_pin = match(pair) => {
-      (x, Var(y)) => { y },
-      _ => { 0 },
-    };
-  `);
-});
-
-Deno.test("bare match identifiers must already be in scope", async () => {
-  await assertRejects(
-    () => checkSource("let bad = match(x) => { y => { 1 }, _ => { 0 } };"),
-    Error,
-    "unknown pinned pattern y",
-  );
-});
-
-Deno.test("explicit binder patterns are exhaustive", async () => {
-  await checkSource(`
-    let id_match = match(value) => {
-      Var(x) => { x },
-    };
-    let first_pair = match(pair) => {
-      (Var(x), Var(_y)) => { x },
-    };
-  `);
-});
-
-Deno.test("requires exhaustive matches for closed sums", async () => {
-  await assertRejects(
-    () =>
-      checkSource("type Option<T> = None | Some<T>; let bad = match(opt) => { None => { 0 } };"),
-    Error,
-    "missing Some",
-  );
-});
-
-Deno.test("rejects partial constructor argument coverage in closed sums", async () => {
-  await assertRejects(
-    () =>
-      checkSource(
-        "type Option<T> = None | Some<T>; let opt = Some(true); let bad = match(opt) => { Some(true) => { 1 }, None => { 0 } };",
-      ),
-    Error,
-    "non-exhaustive match",
-  );
-});
-
-Deno.test("accepts exhaustive boolean matches without wildcard", async () => {
-  await checkSource("let flag = true; let ok = match(flag) => { true => { 1 }, false => { 0 } };");
-});
-
-Deno.test("still rejects non-exhaustive non-sum matches", async () => {
-  await assertRejects(
-    () => checkSource("let n = 0; let bad = match(n) => { 0 => { 1 } };"),
-    Error,
-    "non-exhaustive match",
-  );
-});
-
-Deno.test("supports constructor and literal let patterns", async () => {
-  await checkSource(`
-    type Option<T> = None | Some<T>;
-    let Some(flag) = Some(true);
-    let true = flag;
-    let tagged = Some(1);
-    let Some(1) = tagged;
-  `);
-});
-
-Deno.test("warns when let pattern may fail at runtime", async () => {
-  const result = await checkSource("type Option<T> = None | Some<T>; let Some(x) = None;");
-  assertEquals(result.warnings.length, 1);
-  assertStringIncludes(result.warnings[0], "refutable let pattern may fail at runtime");
-  assertStringIncludes(result.warnings[0], "Some(x)");
-});
-
-Deno.test("does not warn for irrefutable let patterns", async () => {
-  const result = await checkSource("let (x, y) = (1, 2);");
-  assertEquals(result.warnings.length, 0);
-});
-
-Deno.test("literal let patterns reject mismatches", async () => {
-  await assertRejects(
-    () => checkSource("let true = 2;"),
-    Error,
-    "type mismatch",
-  );
-});
-
 Deno.test("compiled refutable let pattern failures raise Bind", async () => {
   const source = "type Option<T> = None | Some<T>; let Some(x) = None;";
   const js = await compile(source);
@@ -624,8 +477,4 @@ Deno.test("compiled lambda parameter mismatch raises Match", async () => {
   const source = "let first = (x, _) => { x };";
   const js = await compile(source);
   assertStringIncludes(js, '__wm_fail("Match", "pattern match failure in function")');
-});
-
-Deno.test("supports curried call chaining as unary application", async () => {
-  await checkSource("let call = (x) => { (y) => { x + y } }; let result = call(1)(2);");
 });

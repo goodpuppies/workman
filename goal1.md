@@ -3,9 +3,13 @@
 Build a complete frontend for `wm-mini`: parsing, module/file loading, static semantics, and
 frontend diagnostics for a deliberately small language.
 
-`wm-mini` is **not** a full Workman implementation. It is a subset of SML 97 with Workman syntax:
-Workman source forms and file imports backed by SML-style Core and Modules semantics wherever the
-subset overlaps.
+`wm-mini` is **not yet** a full Workman implementation. It starts as a small subset of SML 97 with
+Workman syntax: Workman source forms and file imports backed by SML-style Core and Modules semantics
+wherever the subset overlaps.
+
+The longer-term language goal is broader than this first tiny core: `wm-mini` should eventually
+support the practical Workman syntax guide surface, while remaining simpler than both full Workman
+and full SML. Goal 1 should grow that surface only when the frontend semantics can stay rigorous.
 
 JavaScript output is not the priority for this goal. The backend may remain a smoke-test harness
 while the frontend becomes rigorous.
@@ -19,10 +23,12 @@ document explicitly marks it out of scope.
 Core frontend target:
 
 - lexical structure and reserved words appropriate for the Workman surface
-- expressions: literals, variables, functions, application, tuples, blocks, `if/else`, and `match`
+- expressions: literals, variables, functions, application, tuples, lists, records, blocks,
+  `if/else`, and `match`
 - declarations: value bindings, recursive value bindings, datatype bindings, sequential
   declarations, and local block declarations
-- patterns: wildcard, literals, tuples, constructors, pinned names, and explicit `Var(name)` binders
+- patterns: wildcard, literals, tuples, list patterns, record patterns, constructors, pinned names,
+  and explicit `Var(name)` binders
 - Hindley-Milner inference with principal types for the supported subset
 - correct generalization/instantiation boundaries
 - recursive binding inference for Workman `let rec` as a general recursion marker (not limited to
@@ -30,6 +36,8 @@ Core frontend target:
 - duplicate binder and duplicate declaration checks matching SML-style syntactic restrictions
 - nominal datatype identity using fresh type names, not string equality
 - long value identifiers and long type constructors
+- basic list literals and patterns backed by a regular algebraic list model
+- basic nominal records: declarations, construction, field access, and record patterns
 
 Module/frontend target:
 
@@ -50,6 +58,8 @@ The source syntax should be Workman syntax:
 - functions use `let f = (x) => { ... };`
 - recursive functions use `let rec f = (x) => { ... };` or `let rec f = match(x) => { ... };`
 - algebraic datatypes use `type Option<T> = None | Some<T>;`
+- list literals use `[a, b, c]`
+- nominal records use `record Point = { x: Number, y: Number };`
 - matches use `match(value) { ... }` or first-class `match(x) => { ... }`
 - files are modules; no inline `module Math { ... }`
 
@@ -74,6 +84,9 @@ Strong overlap:
 - Workman `type T<A> = C<A> | D;` maps to SML `datatype`.
 - Workman constructor calls and constructor patterns map to SML value constructors.
 - Workman tuples map to SML tuple records/products.
+- Workman lists map to an algebraic list type for Goal 1.
+- Workman nominal records are included as a practical Workman core feature. They are not SML's
+  flexible record system.
 - Workman `match` maps to SML `case`/`fn` match rules.
 - Workman type variables and HM inference map to SML type schemes/generalization.
 - Workman qualified names from imports map to SML long identifiers through structure environments.
@@ -94,6 +107,7 @@ Non-overlap for Goal 1:
   scope.
 - SML equality-type discipline (`''a`) is out of scope; polymorphic `==`/`!=` are accepted in Goal
   1.
+- SML flexible record inference is out of scope; Workman records are nominal in Goal 1.
 - Workman infection types, flow, traits, raw mode, and other advanced Workman-only features are out
   of scope.
 
@@ -106,10 +120,14 @@ Goal 1 does not include:
 - mutation
 - exceptions
 - FFI/raw mode
+- advanced record ergonomics such as spread and punning, until basic nominal record semantics are
+  stable
+- custom operators, fixity declarations, and pipe syntax
+- holes and panic expressions
 - optimizer work
 - production JS backend/runtime
 - self-hosting
-- full Workman compatibility
+- full Workman compatibility in this goal
 
 ## Verification
 
@@ -121,6 +139,8 @@ Required test categories:
 - parser acceptance tests for valid Workman syntax in the supported subset
 - parser rejection tests for unsupported SML/Workman syntax
 - type inference tests for polymorphic `let`, recursive functions, tuples, functions, and datatypes
+- list literal, list pattern, and inferred list helper tests
+- nominal record declaration, construction, field access, and record pattern tests
 - datatype nominality tests proving same-spelled datatypes from different files are distinct
 - long identifier tests for imported values, constructors, and type constructors
 - module graph tests for transitive imports and cycle rejection

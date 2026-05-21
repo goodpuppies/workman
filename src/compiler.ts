@@ -1,19 +1,35 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Module } from "./ast.ts";
 import { emitBundle, emitModule } from "./emit.ts";
-import { inferModule, type InferResult } from "./infer.ts";
-import { parse } from "./parser.ts";
+import { inferModule, inferModuleWithSteps, type InferResult, type InferStep } from "./infer.ts";
+import { parse, type Surface } from "./parser.ts";
 
-export type CompileOptions = { check?: boolean };
+export type CompileOptions = { check?: boolean; surface?: Surface };
 
 export async function compile(source: string, options: CompileOptions = {}): Promise<string> {
-  const ast = await parse(source);
+  const ast = await parse(source, options.surface);
   if (options.check ?? true) checkModuleWithoutImports(ast);
   return emitModule(ast);
 }
 
-export async function checkSource(source: string): Promise<InferResult> {
-  return checkModuleWithoutImports(await parse(source));
+export type CheckSourceOptions = { surface?: Surface };
+
+export async function checkSource(
+  source: string,
+  options: CheckSourceOptions = {},
+): Promise<InferResult> {
+  return checkModuleWithoutImports(await parse(source, options.surface));
+}
+
+export async function checkSourceSteps(
+  source: string,
+  options: CheckSourceOptions = {},
+): Promise<InferStep[]> {
+  const module = await parse(source, options.surface);
+  if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
+    throw new Error("source strings with imports require checkFile");
+  }
+  return inferModuleWithSteps(module).steps;
 }
 
 export async function compileFile(input: string, options: CompileOptions = {}): Promise<string> {

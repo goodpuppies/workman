@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "check": "deno check src/main.ts tests/compiler_test.ts",
+    "check": "deno check src/main.ts tests/*.ts",
     "test": "deno test --allow-read --allow-write tests",
     "compile": "deno run --allow-read --allow-write src/main.ts"
   },
