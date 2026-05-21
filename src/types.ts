@@ -11,7 +11,16 @@ export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
 export type Scheme = { vars: number[]; type: Ty; constraints?: Constraint[] };
 export type Env = Map<string, Scheme>;
 export type TypeEnv = Map<string, TypeInfo>;
-export type TypeInfo = { id: number; name: string; arity: number; alias?: Ty; aliasParams?: number[] };
+export type RecordFieldInfo = { name: string; type: Ty };
+export type TypeInfo = {
+  id: number;
+  name: string;
+  arity: number;
+  alias?: Ty;
+  aliasParams?: number[];
+  recordFields?: RecordFieldInfo[];
+  recordParams?: number[];
+};
 export type TypeDeclInfo = { type: TypeInfo; name: string; params: string[]; ctors: CtorDecl[] };
 export type TypeVarScope = Map<string, Ty>;
 
@@ -140,6 +149,37 @@ export function instantiate(scheme: Scheme): Ty {
   return go(scheme.type);
 }
 
+function substituteVars(template: Ty, subst: Map<number, Ty>): Ty {
+  const freshen = new Map<number, Ty>();
+  const go = (t: Ty): Ty => {
+    t = prune(t);
+    if (t.tag === "var") {
+      const bound = subst.get(t.id);
+      if (bound) return bound;
+      const existing = freshen.get(t.id);
+      if (existing) return existing;
+      const created = fresh(t.name);
+      freshen.set(t.id, created);
+      return created;
+    }
+    if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
+    if (t.tag === "tuple") return tuple(t.items.map(go));
+    if (t.tag === "named") return { ...t, args: t.args.map(go) };
+    return t;
+  };
+  return go(template);
+}
+
+export function instantiateRecordFields(info: TypeInfo, args: Ty[]): RecordFieldInfo[] {
+  if (!info.recordFields) throw new Error(`${info.name} is not a record type`);
+  const subst = new Map<number, Ty>();
+  (info.recordParams ?? []).forEach((id, i) => subst.set(id, args[i]));
+  return info.recordFields.map((field) => ({
+    name: field.name,
+    type: substituteVars(field.type, subst),
+  }));
+}
+
 export function typeFromAst(
   expr: TypeExpr,
   typeEnv: TypeEnv,
@@ -148,24 +188,7 @@ export function typeFromAst(
   const instantiateAlias = (template: Ty, params: number[], args: Ty[]): Ty => {
     const subst = new Map<number, Ty>();
     params.forEach((id, i) => subst.set(id, args[i]));
-    const freshen = new Map<number, Ty>();
-    const go = (t: Ty): Ty => {
-      t = prune(t);
-      if (t.tag === "var") {
-        const bound = subst.get(t.id);
-        if (bound) return bound;
-        const existing = freshen.get(t.id);
-        if (existing) return existing;
-        const created = fresh(t.name);
-        freshen.set(t.id, created);
-        return created;
-      }
-      if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
-      if (t.tag === "tuple") return tuple(t.items.map(go));
-      if (t.tag === "named") return { ...t, args: t.args.map(go) };
-      return t;
-    };
-    return go(template);
+    return substituteVars(template, subst);
   };
 
   if (expr.kind === "TVar") {
@@ -177,7 +200,10 @@ export function typeFromAst(
   }
   if (expr.kind === "TTuple") return tuple(expr.items.map((x) => typeFromAst(x, typeEnv, vars)));
   if (expr.kind === "TFn") {
-    return fn([callArg(expr.params.map((x) => typeFromAst(x, typeEnv, vars)))], typeFromAst(expr.result, typeEnv, vars));
+    return fn(
+      [callArg(expr.params.map((x) => typeFromAst(x, typeEnv, vars)))],
+      typeFromAst(expr.result, typeEnv, vars),
+    );
   }
   if (expr.args.length === 0 && vars.has(expr.name)) return vars.get(expr.name)!;
   const info = typeEnv.get(expr.name);

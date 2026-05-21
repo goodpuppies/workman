@@ -6,17 +6,17 @@ type CountState = | CountState<Option<Number>, Number>;
 
 let rec map = (f, xs) => {
   match(xs) {
-    Nil => { Nil },
-    Cons(x, rest) => { Cons(f(x), map(f, rest)) },
+    [] => { [] },
+    [x, ..rest] => { [f(x), ..map(f, rest)] },
   }
 };
 
 let rec filter = (pred, xs) => {
   match(xs) {
-    Nil => { Nil },
-    Cons(x, rest) => {
+    [] => { [] },
+    [x, ..rest] => {
       if (pred(x)) {
-        Cons(x, filter(pred, rest))
+        [x, ..filter(pred, rest)]
       } else {
         filter(pred, rest)
       }
@@ -26,17 +26,17 @@ let rec filter = (pred, xs) => {
 
 let rec fold = (f, acc, xs) => {
   match(xs) {
-    Nil => { acc },
-    Cons(x, rest) => { fold(f, f(acc, x), rest) },
+    [] => { acc },
+    [x, ..rest] => { fold(f, f(acc, x), rest) },
   }
 };
 
 let rec windowSums = (xs) => {
   match(xs) {
-    Cons(a, Cons(b, Cons(c, rest))) => {
-      Cons(a + b + c, windowSums(Cons(b, Cons(c, rest))))
+    [a, b, c, ..rest] => {
+      [a + b + c, ..windowSums([b, c, ..rest])]
     },
-    _ => { Nil },
+    _ => { [] },
   }
 };
 
@@ -63,17 +63,7 @@ let countWindowIncreases = (depths) => {
   countIncreases(windowSums(depths))
 };
 
-let sampleDepths =
-  Cons(199,
-  Cons(200,
-  Cons(208,
-  Cons(210,
-  Cons(200,
-  Cons(207,
-  Cons(240,
-  Cons(269,
-  Cons(260,
-  Cons(263, Nil))))))))));
+let sampleDepths = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
 
 let adjustedDepths = map((x) => { x + 1 }, sampleDepths);
 let largeDepths = filter((x) => { x > 200 }, adjustedDepths);

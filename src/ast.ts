@@ -4,6 +4,13 @@ export type Decl =
   | { kind: "ImportDecl"; path: string; clause: ImportClause }
   | { kind: "LetDecl"; exported: boolean; recursive: boolean; bindings: Binding[] }
   | {
+    kind: "RecordDecl";
+    exported: boolean;
+    name: string;
+    params: string[];
+    fields: RecordFieldDecl[];
+  }
+  | {
     kind: "TypeDecl";
     exported: boolean;
     name: string;
@@ -19,6 +26,7 @@ export type ImportClause =
 export type ImportSpec = { name: string; alias?: string };
 export type Binding = { pattern: Pattern; annotation?: TypeExpr; value: Expr };
 export type CtorDecl = { name: string; args: TypeExpr[] };
+export type RecordFieldDecl = { name: string; type: TypeExpr };
 export type Param = { pattern: Pattern; annotation?: TypeExpr };
 
 export type Expr =
@@ -29,6 +37,7 @@ export type Expr =
   | { kind: "Void" }
   | { kind: "Var"; name: string }
   | { kind: "Tuple"; items: Expr[] }
+  | { kind: "Record"; fields: RecordExprField[] }
   | { kind: "Lambda"; params: Param[]; body: Expr }
   | { kind: "Call"; callee: Expr; args: Expr[] }
   | { kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }
@@ -37,6 +46,7 @@ export type Expr =
   | { kind: "Binary"; op: string; left: Expr; right: Expr }
   | { kind: "Unary"; op: string; value: Expr };
 
+export type RecordExprField = { name: string; value: Expr };
 export type MatchArm = { pattern: Pattern; body: Expr };
 
 export type Pattern =
@@ -48,8 +58,10 @@ export type Pattern =
   | { kind: "PVoid" }
   | { kind: "PPinned"; name: string }
   | { kind: "PTuple"; items: Pattern[] }
+  | { kind: "PRecord"; fields: RecordPatternField[] }
   | { kind: "PCtor"; name: string; args: Pattern[] };
 
+export type RecordPatternField = { name: string; pattern: Pattern };
 export type TypeExpr =
   | { kind: "TName"; name: string; args: TypeExpr[] }
   | { kind: "TVar"; name: string }

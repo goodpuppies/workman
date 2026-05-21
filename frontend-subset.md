@@ -37,7 +37,7 @@ Supported top-level declarations:
 - `let a = expr and b = expr;`
 - `type T<A> = C<A> | D;`
 - `type Alias<A> = Other<A>;`
-- staged next: `record R = { field: Type };`
+- `record R<A> = { field: A };`
 
 Supported expressions:
 
@@ -46,8 +46,8 @@ Supported expressions:
 - lambdas: `(x) => { body }`, `(x, y) => { body }`, `=> { body }`
 - calls: `f(x)`, `f(x, y)`, `f(x)(y)`
 - tuples
-- staged next: list literals such as `[]` and `[a, b, c]`
-- staged next: nominal record construction and field access
+- list literals such as `[]`, `[a, b, c]`, and `[head, ..tail]`
+- nominal record construction and field access
 - blocks with local declarations
 - `if (cond) { then } else { else }`
 - `match(value) { pattern => { body }, ... }`
@@ -59,8 +59,8 @@ Supported patterns:
 - wildcard `_`
 - literals
 - tuples
-- staged next: list patterns such as `[]`, `[x, y]`, and `[head, ..tail]`
-- staged next: nominal record patterns
+- list patterns such as `[]`, `[x, y]`, and `[head, ..tail]`
+- nominal record patterns
 - constructors and long constructors
 - pinned names in match patterns
 - explicit binders with `Var(name)` in match patterns
@@ -117,7 +117,7 @@ The current Goal 1 subset intentionally omits:
 - equality types
 - numeric overloading
 - SML flexible record inference
-- advanced record ergonomics such as spread and punning
+- advanced record ergonomics such as spread and flexible record updates
 - custom operators, fixity declarations, and pipe syntax
 - holes and panic expressions
 - exceptions

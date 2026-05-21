@@ -31,6 +31,7 @@ export function emitBundle(units: { name: string; module: Module }[], entry: Mod
 
 function emitDecl(decl: Decl): string[] {
   if (decl.kind === "ImportDecl") return [];
+  if (decl.kind === "RecordDecl") return [];
   if (decl.kind === "TypeDecl") {
     if (decl.alias) return [];
     return decl.ctors.map((c) =>
@@ -94,6 +95,8 @@ function emitExpr(expr: Expr): string {
       return id(expr.name);
     case "Tuple":
       return `__wm_tuple(${expr.items.map(emitExpr).join(", ")})`;
+    case "Record":
+      return `{ ${expr.fields.map((f) => `${id(f.name)}: ${emitExpr(f.value)}`).join(", ")} }`;
     case "Lambda":
       return emitLambda(expr.params, expr.body);
     case "Call":
@@ -120,7 +123,8 @@ function emitBlockItem(item: Decl | Expr): string {
 }
 
 function isDecl(value: Decl | Expr): value is Decl {
-  return value.kind === "ImportDecl" || value.kind === "LetDecl" || value.kind === "TypeDecl";
+  return value.kind === "ImportDecl" || value.kind === "LetDecl" ||
+    value.kind === "TypeDecl" || value.kind === "RecordDecl";
 }
 
 function emitLambda(params: Param[], body: Expr): string {
@@ -132,7 +136,9 @@ function emitLambda(params: Param[], body: Expr): string {
     : { kind: "PTuple" as const, items: params.map((p) => p.pattern) };
   const checks = emitPatternAssert(pattern, param, "Match", "pattern match failure in function");
   const guards = emitPatternBind(pattern, param);
-  return `(${param}) => {\n${checks.join("\n")}\n${guards.join("\n")}\nreturn ${emitExpr(body)};\n}`;
+  return `(${param}) => {\n${checks.join("\n")}\n${guards.join("\n")}\nreturn ${
+    emitExpr(body)
+  };\n}`;
 }
 
 function emitCallArg(args: Expr[]): string {
@@ -162,7 +168,11 @@ function emitPatternAssert(
 ): string[] {
   const checks = patternChecks(pattern, value);
   if (checks.length === 0) return [];
-  return [`if (!(${checks.join(" && ")})) __wm_fail(${JSON.stringify(errorName)}, ${JSON.stringify(message)});`];
+  return [
+    `if (!(${checks.join(" && ")})) __wm_fail(${JSON.stringify(errorName)}, ${
+      JSON.stringify(message)
+    });`,
+  ];
 }
 
 function patternChecks(p: Pattern, value: string): string[] {
@@ -186,6 +196,12 @@ function patternChecks(p: Pattern, value: string): string[] {
         `${value}.length === ${p.items.length}`,
         ...p.items.flatMap((x, i) => patternChecks(x, `${value}[${i}]`)),
       ];
+    case "PRecord":
+      return [
+        `${value} !== null`,
+        `typeof ${value} === "object"`,
+        ...p.fields.flatMap((x) => patternChecks(x.pattern, `${value}.${id(x.name)}`)),
+      ];
     case "PCtor":
       return [
         `${value}?.tag === ${JSON.stringify(tagName(p.name))}`,
@@ -201,6 +217,8 @@ function emitPatternBind(p: Pattern, value: string): string[] {
       return [`const ${id(p.name)} = ${value};`];
     case "PTuple":
       return p.items.flatMap((x, i) => emitPatternBind(x, `${value}[${i}]`));
+    case "PRecord":
+      return p.fields.flatMap((x) => emitPatternBind(x.pattern, `${value}.${id(x.name)}`));
     case "PCtor":
       return p.args.flatMap((x, i) => emitPatternBind(x, `${value}.args[${i}]`));
     default:
@@ -214,6 +232,8 @@ function patternBinders(pattern: Pattern): string[] {
       return [pattern.name];
     case "PTuple":
       return pattern.items.flatMap(patternBinders);
+    case "PRecord":
+      return pattern.fields.flatMap((field) => patternBinders(field.pattern));
     case "PCtor":
       return pattern.args.flatMap(patternBinders);
     default:

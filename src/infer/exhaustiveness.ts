@@ -1,5 +1,12 @@
 import type { Pattern } from "../ast.ts";
-import { prune, type Ty, type TypeDeclInfo, type TypeEnv, typeFromAst } from "../types.ts";
+import {
+  instantiateRecordFields,
+  prune,
+  type Ty,
+  type TypeDeclInfo,
+  type TypeEnv,
+  typeFromAst,
+} from "../types.ts";
 
 export function checkExhaustive(
   patterns: Pattern[],
@@ -65,6 +72,28 @@ export function isVectorExhaustive(
   }
 
   if (head.tag === "named") {
+    const record = [...typeEnv.values()].find((info) => info.id === head.id && info.recordFields);
+    if (record?.recordFields) {
+      const fields = instantiateRecordFields(record, head.args);
+      const recordRows = rows
+        .filter((row): row is [Extract<Pattern, { kind: "PRecord" }>, ...Pattern[]] =>
+          row[0].kind === "PRecord"
+        )
+        .map((row) => [
+          ...fields.map((field) =>
+            row[0].fields.find((item) => item.name === field.name)?.pattern ??
+              { kind: "PWildcard" as const }
+          ),
+          ...row.slice(1),
+        ]);
+      if (recordRows.length === 0) return false;
+      return isVectorExhaustive(
+        recordRows,
+        [...fields.map((field) => field.type), ...tailTypes],
+        typeEnv,
+        adts,
+      );
+    }
     const info = adts.get(head.id);
     if (!info) return false;
     for (const ctor of info.ctors) {
@@ -104,6 +133,9 @@ function baseName(name: string): string {
 function isIrrefutable(pattern: Pattern): boolean {
   if (pattern.kind === "PWildcard" || pattern.kind === "PVar") return true;
   if (pattern.kind === "PTuple") return pattern.items.every(isIrrefutable);
+  if (pattern.kind === "PRecord") {
+    return pattern.fields.every((field) => isIrrefutable(field.pattern));
+  }
   return false;
 }
 

@@ -6,11 +6,35 @@
     }
     return { name: expr.name, args: expr.args };
   }
+  function nilExpr() {
+    return { kind: "Var", name: "Nil" };
+  }
+  function consExpr(head, tail) {
+    return { kind: "Call", callee: { kind: "Var", name: "Cons" }, args: [head, tail] };
+  }
+  function listExpr(items, tail) {
+    return items.reduceRight((acc, item) => consExpr(item, acc), tail ?? nilExpr());
+  }
+  function nilPattern() {
+    return { kind: "PCtor", name: "Nil", args: [] };
+  }
+  function consPattern(head, tail) {
+    return { kind: "PCtor", name: "Cons", args: [head, tail] };
+  }
+  function listPattern(items, tail) {
+    return items.reduceRight((acc, item) => consPattern(item, acc), tail ?? nilPattern());
+  }
+  function recordField(name, value) {
+    return { name, value };
+  }
+  function recordPatternField(name, pattern) {
+    return { name, pattern };
+  }
 }
 
 Start = _ decls:(_ d:TopDecl { return d; })* _ EOF { return mod(decls); }
 
-TopDecl = ImportDecl / TypeDecl / LetDecl
+TopDecl = ImportDecl / RecordDecl / TypeDecl / LetDecl
 
 ImportDecl
   = "from" __ path:String __ "import" __ clause:ImportClause _ ";"
@@ -37,6 +61,8 @@ LetPattern
   / b:Bool { return { kind: "PBool", value: b.value }; }
   / i:Int { return { kind: "PInt", value: i.value }; }
   / s:String { return { kind: "PString", value: s.value }; }
+  / RecordLetPattern
+  / ListLetPattern
   / "(" _ first:LetPattern _ "," _ rest:LetPatternList? _ ")" { return { kind: "PTuple", items: [first, ...(rest ?? [])] }; }
   / "Var" _ "(" _ name:Identifier _ ")" { return { kind: "PVar", name }; }
   / c:LongConstructor _ "(" _ args:LetCtorPatternList? _ ")" { return { kind: "PCtor", name: c, args: args ?? [] }; }
@@ -48,6 +74,13 @@ LetCtorPattern
   = name:Identifier { return { kind: "PVar", name }; }
   / p:LetPattern { return p; }
 LetCtorPatternList = first:LetCtorPattern rest:(_ "," _ p:LetCtorPattern { return p; })* _ ","? { return [first, ...rest]; }
+
+RecordDecl
+  = exported:ExportModifier? "record" __ name:Constructor params:TypeParams? _ "=" _ "{" _ fields:RecordFieldDeclList? _ "}" _ ";"
+    { return { kind: "RecordDecl", exported: !!exported, name, params: params ?? [], fields: fields ?? [] }; }
+
+RecordFieldDeclList = first:RecordFieldDecl rest:(_ "," _ f:RecordFieldDecl { return f; })* _ ","? { return [first, ...rest]; }
+RecordFieldDecl = name:Identifier _ ":" _ type:TypeExpr { return { name, type }; }
 
 TypeDecl
   = exported:ExportModifier? "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody _ ";"
@@ -127,7 +160,21 @@ Postfix = head:Primary tail:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })
   { return tail.reduce((callee, args) => ({ kind: "Call", callee, args }), head); }
 
 Primary
-  = Float / Int / String / Bool / Void / TupleOrGroup / Block / v:LongName { return { kind: "Var", name: v }; }
+  = Float / Int / String / Bool / Void / RecordExpr / ListExpr / TupleOrGroup / Block / v:LongName { return { kind: "Var", name: v }; }
+
+RecordExpr
+  = "." _ "{" _ fields:RecordExprFieldList? _ "}"
+    { return { kind: "Record", fields: fields ?? [] }; }
+RecordExprFieldList = first:RecordExprField rest:(_ "," _ f:RecordExprField { return f; })* _ ","? { return [first, ...rest]; }
+RecordExprField
+  = name:Identifier _ "=" _ value:Expr { return recordField(name, value); }
+  / name:Identifier { return recordField(name, { kind: "Var", name }); }
+
+ListExpr
+  = "[" _ "]" { return nilExpr(); }
+  / "[" _ ".." _ tail:Expr _ "]" { return tail; }
+  / "[" _ first:Expr rest:(_ "," _ e:Expr { return e; })* tail:(_ "," _ ".." _ t:Expr { return t; })? _ ","? _ "]"
+    { return listExpr([first, ...rest], tail ?? undefined); }
 
 TupleOrGroup
   = "(" _ first:Expr _ "," _ rest:ArgList? _ ")" { return { kind: "Tuple", items: [first, ...(rest ?? [])] }; }
@@ -149,6 +196,8 @@ Pattern
   / b:Bool { return { kind: "PBool", value: b.value }; }
   / i:Int { return { kind: "PInt", value: i.value }; }
   / s:String { return { kind: "PString", value: s.value }; }
+  / RecordPattern
+  / ListPattern
   / "(" _ first:Pattern _ "," _ rest:PatternList? _ ")" { return { kind: "PTuple", items: [first, ...(rest ?? [])] }; }
   / "Var" _ "(" _ name:Identifier _ ")" { return { kind: "PVar", name }; }
   / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return { kind: "PCtor", name: c, args: args ?? [] }; }
@@ -158,6 +207,8 @@ Pattern
 ParamList = "(" _ ps:ParamListItems? _ ")" { return ps ?? []; }
 Param = pattern:ParamPattern ann:TypeAnn? { return { pattern, annotation: ann }; }
 ParamPattern = "_" { return { kind: "PWildcard" }; }
+  / RecordParamPattern
+  / ListParamPattern
   / "(" _ first:ParamPattern _ "," _ rest:ParamPatternList? _ ")" { return { kind: "PTuple", items: [first, ...(rest ?? [])] }; }
   / v:Identifier { return { kind: "PVar", name: v }; }
 ParamListItems = first:Param rest:(_ "," _ p:Param { return p; })* _ ","? { return [first, ...rest]; }
@@ -165,12 +216,58 @@ ParamPatternList = first:ParamPattern rest:(_ "," _ p:ParamPattern { return p; }
 PatternList = first:Pattern rest:(_ "," _ p:Pattern { return p; })* _ ","? { return [first, ...rest]; }
 CtorPattern
   = "Var" _ "(" _ name:Identifier _ ")" { return { kind: "PVar", name }; }
+  / RecordPattern
+  / ListPattern
   / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return { kind: "PCtor", name: c, args: args ?? [] }; }
   / c:LongConstructor { return { kind: "PCtor", name: c, args: [] }; }
   / v:Identifier { return { kind: "PVar", name: v }; }
   / p:Pattern { return p; }
 CtorPatternList = first:CtorPattern rest:(_ "," _ p:CtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 ArgList = first:Expr rest:(_ "," _ e:Expr { return e; })* _ ","? { return [first, ...rest]; }
+ListPattern
+  = "[" _ "]" { return nilPattern(); }
+  / "[" _ ".." _ tail:ListPatternItem _ "]" { return tail; }
+  / "[" _ first:ListPatternItem rest:(_ "," _ p:ListPatternItem { return p; })* tail:(_ "," _ ".." _ t:ListPatternItem { return t; })? _ ","? _ "]"
+    { return listPattern([first, ...rest], tail ?? undefined); }
+ListPatternItem
+  = "Var" _ "(" _ name:Identifier _ ")" { return { kind: "PVar", name }; }
+  / RecordPattern
+  / ListPattern
+  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return { kind: "PCtor", name: c, args: args ?? [] }; }
+  / c:LongConstructor { return { kind: "PCtor", name: c, args: [] }; }
+  / v:Identifier { return { kind: "PVar", name: v }; }
+  / p:Pattern { return p; }
+ListLetPattern
+  = "[" _ "]" { return nilPattern(); }
+  / "[" _ ".." _ tail:LetPattern _ "]" { return tail; }
+  / "[" _ first:LetPattern rest:(_ "," _ p:LetPattern { return p; })* tail:(_ "," _ ".." _ t:LetPattern { return t; })? _ ","? _ "]"
+    { return listPattern([first, ...rest], tail ?? undefined); }
+ListParamPattern
+  = "[" _ "]" { return nilPattern(); }
+  / "[" _ ".." _ tail:ParamPattern _ "]" { return tail; }
+  / "[" _ first:ParamPattern rest:(_ "," _ p:ParamPattern { return p; })* tail:(_ "," _ ".." _ t:ParamPattern { return t; })? _ ","? _ "]"
+    { return listPattern([first, ...rest], tail ?? undefined); }
+RecordPattern
+  = "." _ "{" _ fields:RecordPatternFieldList? _ "}"
+    { return { kind: "PRecord", fields: fields ?? [] }; }
+RecordPatternFieldList = first:RecordPatternField rest:(_ "," _ f:RecordPatternField { return f; })* _ ","? { return [first, ...rest]; }
+RecordPatternField
+  = name:Identifier _ "=" _ pattern:Pattern { return recordPatternField(name, pattern); }
+  / name:Identifier { return recordPatternField(name, { kind: "PVar", name }); }
+RecordLetPattern
+  = "." _ "{" _ fields:RecordLetPatternFieldList? _ "}"
+    { return { kind: "PRecord", fields: fields ?? [] }; }
+RecordLetPatternFieldList = first:RecordLetPatternField rest:(_ "," _ f:RecordLetPatternField { return f; })* _ ","? { return [first, ...rest]; }
+RecordLetPatternField
+  = name:Identifier _ "=" _ pattern:LetPattern { return recordPatternField(name, pattern); }
+  / name:Identifier { return recordPatternField(name, { kind: "PVar", name }); }
+RecordParamPattern
+  = "." _ "{" _ fields:RecordParamPatternFieldList? _ "}"
+    { return { kind: "PRecord", fields: fields ?? [] }; }
+RecordParamPatternFieldList = first:RecordParamPatternField rest:(_ "," _ f:RecordParamPatternField { return f; })* _ ","? { return [first, ...rest]; }
+RecordParamPatternField
+  = name:Identifier _ "=" _ pattern:ParamPattern { return recordPatternField(name, pattern); }
+  / name:Identifier { return recordPatternField(name, { kind: "PVar", name }); }
 
 TypeAnn = ":" _ t:TypeExpr { return t; }
 TypeExpr = FnType
@@ -196,7 +293,7 @@ Name = Constructor / Identifier
 LongName = first:Name rest:("." n:Name { return n; })* { return [first, ...rest].join("."); }
 LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* { return [first, ...rest].join("."); }
 IdentPart = [a-zA-Z0-9_]
-Keyword = ("from" / "import" / "as" / "export" / "let" / "rec" / "and" / "type" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
+Keyword = ("from" / "import" / "as" / "export" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
 __ = (Whitespace / Comment)+
 _ = (Whitespace / Comment)*
 Whitespace = [ \t\r\n]

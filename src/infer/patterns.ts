@@ -4,11 +4,16 @@ import {
   type Env,
   fresh,
   instantiate,
+  instantiateRecordFields,
+  named,
   NumberTy,
+  prune,
   StringTy,
   tuple,
   type Ty,
   type TypeDeclInfo,
+  type TypeEnv,
+  type TypeInfo,
   VoidTy,
 } from "../types.ts";
 import { constrain, expandCallArg } from "./shared.ts";
@@ -31,6 +36,10 @@ export function showPattern(pattern: Pattern): string {
       return pattern.name;
     case "PTuple":
       return `(${pattern.items.map(showPattern).join(", ")})`;
+    case "PRecord":
+      return `.{ ${
+        pattern.fields.map((f) => `${f.name} = ${showPattern(f.pattern)}`).join(", ")
+      } }`;
     case "PCtor":
       return pattern.args.length
         ? `${pattern.name}(${pattern.args.map(showPattern).join(", ")})`
@@ -42,6 +51,7 @@ export function inferPattern(
   p: Pattern,
   expected: Ty,
   env: Env,
+  typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   binders = new Set<string>(),
 ): Ty {
@@ -74,7 +84,18 @@ export function inferPattern(
     case "PTuple": {
       const items = p.items.map(() => fresh());
       constrain(expected, tuple(items));
-      p.items.forEach((x, i) => inferPattern(x, items[i], env, adts, binders));
+      p.items.forEach((x, i) => inferPattern(x, items[i], env, typeEnv, adts, binders));
+      return expected;
+    }
+    case "PRecord": {
+      const record = recordPatternTarget(expected, p.fields.map((field) => field.name), typeEnv);
+      constrain(expected, record.type);
+      const fields = instantiateRecordFields(record.info, record.type.args);
+      for (const field of p.fields) {
+        const expectedField = fields.find((item) => item.name === field.name);
+        if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
+        inferPattern(field.pattern, expectedField.type, env, typeEnv, adts, binders);
+      }
       return expected;
     }
     case "PCtor": {
@@ -87,7 +108,7 @@ export function inferPattern(
           throw new Error(`${p.name} expects ${args.length} patterns`);
         }
         constrain(expected, ctor.result);
-        p.args.forEach((x, i) => inferPattern(x, args[i], env, adts, binders));
+        p.args.forEach((x, i) => inferPattern(x, args[i], env, typeEnv, adts, binders));
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
         constrain(expected, ctor);
@@ -101,6 +122,7 @@ export function inferBindingPattern(
   pattern: Pattern,
   expected: Ty,
   env: Env,
+  typeEnv: TypeEnv,
   out: Map<string, Ty>,
   binders = new Set<string>(),
 ) {
@@ -127,7 +149,24 @@ export function inferBindingPattern(
     case "PTuple": {
       const items = pattern.items.map(() => fresh());
       constrain(expected, tuple(items));
-      pattern.items.forEach((item, i) => inferBindingPattern(item, items[i], env, out, binders));
+      pattern.items.forEach((item, i) =>
+        inferBindingPattern(item, items[i], env, typeEnv, out, binders)
+      );
+      return;
+    }
+    case "PRecord": {
+      const record = recordPatternTarget(
+        expected,
+        pattern.fields.map((field) => field.name),
+        typeEnv,
+      );
+      constrain(expected, record.type);
+      const fields = instantiateRecordFields(record.info, record.type.args);
+      for (const field of pattern.fields) {
+        const expectedField = fields.find((item) => item.name === field.name);
+        if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
+        inferBindingPattern(field.pattern, expectedField.type, env, typeEnv, out, binders);
+      }
       return;
     }
     case "PCtor": {
@@ -140,7 +179,9 @@ export function inferBindingPattern(
           throw new Error(`${pattern.name} expects ${args.length} patterns`);
         }
         constrain(expected, ctor.result);
-        pattern.args.forEach((item, i) => inferBindingPattern(item, args[i], env, out, binders));
+        pattern.args.forEach((item, i) =>
+          inferBindingPattern(item, args[i], env, typeEnv, out, binders)
+        );
       } else {
         if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
         constrain(expected, ctor);
@@ -158,9 +199,44 @@ export function patternBinders(pattern: Pattern): string[] {
       return [pattern.name];
     case "PTuple":
       return pattern.items.flatMap(patternBinders);
+    case "PRecord":
+      return pattern.fields.flatMap((field) => patternBinders(field.pattern));
     case "PCtor":
       return pattern.args.flatMap(patternBinders);
     default:
       return [];
   }
+}
+
+function recordPatternTarget(
+  expected: Ty,
+  names: string[],
+  typeEnv: TypeEnv,
+): { info: TypeInfo; type: Extract<Ty, { tag: "named" }> } {
+  const target = prune(expected);
+  if (target.tag === "named") {
+    const info = [...typeEnv.values()].find((candidate) => candidate.id === target.id);
+    if (!info?.recordFields) throw new Error(`${target.name} is not a record type`);
+    return { info, type: target };
+  }
+  if (target.tag === "var") {
+    const candidates = findRecordTypes(typeEnv, names);
+    if (candidates.length === 0) throw new Error("no matching record type");
+    if (candidates.length > 1) throw new Error("ambiguous record pattern");
+    const info = candidates[0];
+    const record = named(info, Array.from({ length: info.arity }, () => fresh())) as Extract<
+      Ty,
+      { tag: "named" }
+    >;
+    return { info, type: record };
+  }
+  throw new Error("record pattern requires a record type");
+}
+
+function findRecordTypes(typeEnv: TypeEnv, names: string[]): TypeInfo[] {
+  return [...typeEnv.values()].filter((info) => {
+    if (!info.recordFields) return false;
+    const fields = info.recordFields.map((field) => field.name);
+    return names.every((name) => fields.includes(name));
+  });
 }
