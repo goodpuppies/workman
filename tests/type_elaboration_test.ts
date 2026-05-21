@@ -119,3 +119,27 @@ Deno.test("wmsml arrow type annotations are right associative", async () => {
   expectStepBinding(steps, 0, "keep", { type: "(Number) => (Number) => Number", vars: 0 });
   expectStepBinding(steps, 1, "result", { type: "Number", vars: 0 });
 });
+
+Deno.test("Workman annotation type variables are scoped across one let-and group", async () => {
+  await assertRejects(
+    () => checkSourceSteps('let x: t = 1 and y: t = "s";'),
+    Error,
+    "type mismatch",
+  );
+
+  const steps = await checkSourceSteps("let x: t = 1 and y: t = 2;");
+  expectStepBinding(steps, 0, "x", { type: "Number", vars: 0 });
+  expectStepBinding(steps, 0, "y", { type: "Number", vars: 0 });
+});
+
+Deno.test("wmsml annotation type variables are scoped across one val-and group", async () => {
+  await assertRejects(
+    () => checkSourceSteps(`val x: 'a = 1 and y: 'a = "s"`, { surface: "wmsml" }),
+    Error,
+    "type mismatch",
+  );
+
+  const steps = await checkSourceSteps("val x: 'a = 1 and y: 'a = 2", { surface: "wmsml" });
+  expectStepBinding(steps, 0, "x", { type: "Number", vars: 0 });
+  expectStepBinding(steps, 0, "y", { type: "Number", vars: 0 });
+});

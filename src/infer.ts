@@ -226,12 +226,18 @@ function inferDecl(
       return;
     }
     rejectDuplicates(decl.ctors.map((c) => c.name), "constructor");
-    adts.set(info.id, { ...decl, type: info });
     const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
     const result = named(info, decl.params.map((p) => vars.get(p)!));
+    const paramTypeIds = decl.params.map((p) => {
+      const v = prune(vars.get(p)!);
+      if (v.tag !== "var") throw new Error("invalid datatype type parameter");
+      return v.id;
+    });
     if (decl.exported) exportableTypeIds.add(info.id);
+    const ctorTypes: Ty[][] = [];
     for (const c of decl.ctors) {
       const args = c.args.map((x) => typeFromAst(x, typeEnv, vars, { allowFreeVars: false }));
+      ctorTypes.push(args);
       if (decl.exported) {
         args.forEach((arg) =>
           assertExportableType(arg, exportableTypeIds, `exported type ${decl.name}`)
@@ -242,13 +248,15 @@ function inferDecl(
       env.set(c.name, scheme);
       if (decl.exported) exports.set(c.name, scheme);
     }
+    adts.set(info.id, { ...decl, type: info, paramTypeIds, ctorTypes });
     return;
   }
   rejectDuplicates(decl.bindings.flatMap((b) => patternBinders(b.pattern)), "binding");
+  const annotationVars: TypeVarScope = new Map();
   if (!decl.recursive) {
     const base = new Map(env);
     const inferred = decl.bindings.map((b) =>
-      inferBinding(b, base, typeEnv, adts, types, warnings)
+      inferBinding(b, base, typeEnv, adts, types, warnings, annotationVars)
     );
     inferred.forEach((result, i) => {
       if (result.refutable) {
@@ -283,7 +291,9 @@ function inferDecl(
   );
   decl.bindings.forEach((b, i) => {
     constrain(placeholders[i], inferExpr(b.value, env, typeEnv, adts, types, warnings));
-    if (b.annotation) constrain(placeholders[i], typeFromAst(b.annotation, typeEnv));
+    if (b.annotation) {
+      constrain(placeholders[i], typeFromAst(b.annotation, typeEnv, annotationVars));
+    }
   });
   decl.bindings.forEach((b, i) => {
     const scheme = generalize(base, placeholders[i]);
@@ -311,8 +321,9 @@ function inferBinding(
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
   warnings: string[],
+  annotationVars: TypeVarScope,
 ): { bound: Map<string, Ty>; refutable: boolean } {
-  const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv) : undefined;
+  const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv, annotationVars) : undefined;
   const t = annotated && b.value.kind === "Record"
     ? inferRecordExpr(
       b.value,

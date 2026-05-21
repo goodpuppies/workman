@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
+import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("constructor fields bind while bare tuple identifiers pin", async () => {
   await checkSource(`
@@ -90,5 +91,30 @@ Deno.test("literal let patterns reject mismatches", async () => {
     () => checkSource("let true = 2;"),
     Error,
     "type mismatch",
+  );
+});
+
+Deno.test("constructor names in let patterns keep constructor status and report refutability", async () => {
+  const result = await checkSource(`
+    type Option<T> = None | Some<T>;
+    let None = Some(1);
+  `);
+
+  expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
+  assertStringIncludes(result.warnings.join("\n"), "refutable let pattern may fail at runtime");
+});
+
+Deno.test("constructor payload binders reject duplicates across nested patterns", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        type Pair<T> = | Pair<T, T>;
+        let bad = match(value) => {
+          Pair(Var(x), (Var(y), Var(x))) => { y },
+          _ => { 0 },
+        };
+      `),
+    Error,
+    "duplicate pattern binder x",
   );
 });

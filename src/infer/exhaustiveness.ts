@@ -2,6 +2,7 @@ import type { Pattern } from "../ast.ts";
 import {
   instantiateRecordFields,
   prune,
+  substituteTypeVars,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
@@ -147,6 +148,16 @@ function constructorArgTypes(
   target: Extract<Ty, { tag: "named" }>,
   typeEnv: TypeEnv,
 ): Ty[] {
-  const vars = new Map(info.params.map((name, i) => [name, target.args[i]] as const));
-  return ctor.args.map((arg) => typeFromAst(arg, typeEnv, vars));
+  const index = info.ctors.indexOf(ctor);
+  const elaborated = info.ctorTypes?.[index];
+  if (!elaborated) {
+    const vars = new Map(info.params.map((name, i) => [name, target.args[i]] as const));
+    return ctor.args.map((arg) => typeFromAst(arg, typeEnv, vars));
+  }
+  const subst = new Map<number, Ty>();
+  for (const [i, arg] of target.args.entries()) {
+    const param = info.paramTypeIds?.[i];
+    if (param !== undefined) subst.set(param, arg);
+  }
+  return elaborated.map((arg) => substituteTypeVars(arg, subst));
 }

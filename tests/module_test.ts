@@ -170,6 +170,33 @@ Deno.test("named imports keep aliases transparent inside datatype constructor pa
   expectBinding(main.env, "sum", { type: "Number", vars: 0 });
 });
 
+Deno.test("namespace imports keep aliases transparent for datatype exhaustiveness", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    `${dir}/lib.wm`,
+    `
+      export type Pair<T> = (T, T);
+      export type Box<T> = | Box<Pair<T>>;
+      export let make = (x, y) => { Box((x, y)) };
+    `,
+  );
+  await Deno.writeTextFile(
+    `${dir}/main.wm`,
+    `
+      from "./lib.wm" import * as Lib;
+      let value: Lib.Box<Number> = Lib.make(1, 2);
+      let sum = match(value) {
+        Lib.Box(left, right) => { left + right },
+      };
+    `,
+  );
+
+  const results = await checkFile(`${dir}/main.wm`);
+  const main = results.get(await Deno.realPath(`${dir}/main.wm`));
+  if (!main) throw new Error("missing main result");
+  expectBinding(main.env, "sum", { type: "Number", vars: 0 });
+});
+
 Deno.test("namespace imports keep same-spelled type aliases distinct when their results are nominal", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(

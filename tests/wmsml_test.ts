@@ -138,3 +138,86 @@ Deno.test("wmsml duplicate binders are rejected by the shared frontend", async (
     "duplicate pattern binder x",
   );
 });
+
+Deno.test("wmsml constructor status is retained across later pattern elaboration", async () => {
+  assertEquals(
+    await inferred(
+      `
+        datatype token = Name of string | Number of int
+        val describe = fn token =>
+          case token of
+            Name text => text
+          | Number value => "number"
+      `,
+      "describe",
+      "wmsml",
+    ),
+    { type: "(token) => String", vars: 0 },
+  );
+});
+
+Deno.test("wmsml duplicate binders inside constructor payload patterns are rejected", async () => {
+  await assertRejects(
+    () =>
+      checkSource(
+        `
+          datatype pair = Pair of int * int
+          val bad = fn pair =>
+            case pair of
+              Pair (x, x) => x
+        `,
+        { surface: "wmsml" },
+      ),
+    Error,
+    "duplicate pattern binder x",
+  );
+});
+
+Deno.test("wmsml value variables are not accepted as constructor patterns", async () => {
+  await assertRejects(
+    () =>
+      checkSource(
+        `
+          val Some = fn x => x
+          val bad = fn value =>
+            case value of
+              Some x => x
+        `,
+        { surface: "wmsml" },
+      ),
+    Error,
+    "unknown constructor pattern Some",
+  );
+});
+
+Deno.test("wmsml val rec can overwrite constructor identifier status", async () => {
+  assertEquals(
+    await inferred(
+      `
+        datatype t = C
+        val rec C = fn x => x
+        val value = C 1
+        val choose = fn input =>
+          case input of
+            C => 1
+      `,
+      "value",
+      "wmsml",
+    ),
+    { type: "Number", vars: 0 },
+  );
+  assertEquals(
+    await inferred(
+      `
+        datatype t = C
+        val rec C = fn x => x
+        val choose = fn input =>
+          case input of
+            C => 1
+      `,
+      "choose",
+      "wmsml",
+    ),
+    { type: "('a) => Number", vars: 1 },
+  );
+});

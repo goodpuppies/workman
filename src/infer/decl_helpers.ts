@@ -43,10 +43,7 @@ export function hasUnguardedRecursiveRef(
       return hasUnguardedRecursiveRef(expr.value, names, guarded) ||
         expr.arms.some((arm) => hasUnguardedRecursiveRef(arm.body, names, guarded));
     case "Block":
-      return expr.items.some((item) =>
-        isExpr(item) && hasUnguardedRecursiveRef(item, names, guarded)
-      ) ||
-        hasUnguardedRecursiveRef(expr.result, names, guarded);
+      return hasUnguardedRecursiveBlockRef(expr, names, guarded);
     case "Binary":
       return hasUnguardedRecursiveRef(expr.left, names, guarded) ||
         hasUnguardedRecursiveRef(expr.right, names, guarded);
@@ -69,6 +66,51 @@ export function warnRedundantMatchArms(
     if (isVectorExhaustive(previous, [valueType], typeEnv, adts)) {
       warnings.push(`redundant match arm: ${showPattern(patterns[i])}`);
     }
+  }
+}
+
+function hasUnguardedRecursiveBlockRef(
+  expr: Extract<Expr, { kind: "Block" }>,
+  names: Set<string>,
+  guarded: boolean,
+): boolean {
+  let active = new Set(names);
+  for (const item of expr.items) {
+    if (isExpr(item)) {
+      if (hasUnguardedRecursiveRef(item, active, guarded)) return true;
+      continue;
+    }
+    if (item.kind === "LetDecl") {
+      for (const binding of item.bindings) {
+        if (hasUnguardedRecursiveRef(binding.value, active, guarded)) return true;
+      }
+      active = withoutBoundPatternNames(
+        active,
+        item.bindings.flatMap((binding) => patternBindingNames(binding.pattern)),
+      );
+    }
+  }
+  return hasUnguardedRecursiveRef(expr.result, active, guarded);
+}
+
+function withoutBoundPatternNames(names: Set<string>, bound: string[]): Set<string> {
+  const next = new Set(names);
+  bound.forEach((name) => next.delete(name));
+  return next;
+}
+
+function patternBindingNames(pattern: Pattern): string[] {
+  switch (pattern.kind) {
+    case "PVar":
+      return [pattern.name];
+    case "PTuple":
+      return pattern.items.flatMap(patternBindingNames);
+    case "PRecord":
+      return pattern.fields.flatMap((field) => patternBindingNames(field.pattern));
+    case "PCtor":
+      return pattern.args.flatMap(patternBindingNames);
+    default:
+      return [];
   }
 }
 

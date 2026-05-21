@@ -21,7 +21,14 @@ export type TypeInfo = {
   recordFields?: RecordFieldInfo[];
   recordParams?: number[];
 };
-export type TypeDeclInfo = { type: TypeInfo; name: string; params: string[]; ctors: CtorDecl[] };
+export type TypeDeclInfo = {
+  type: TypeInfo;
+  name: string;
+  params: string[];
+  paramTypeIds?: number[];
+  ctors: CtorDecl[];
+  ctorTypes?: Ty[][];
+};
 export type TypeVarScope = Map<string, Ty>;
 
 let nextVar = 0;
@@ -149,7 +156,7 @@ export function instantiate(scheme: Scheme): Ty {
   return go(scheme.type);
 }
 
-function substituteVars(template: Ty, subst: Map<number, Ty>): Ty {
+export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
   const freshen = new Map<number, Ty>();
   const go = (t: Ty): Ty => {
     t = prune(t);
@@ -176,7 +183,7 @@ export function instantiateRecordFields(info: TypeInfo, args: Ty[]): RecordField
   (info.recordParams ?? []).forEach((id, i) => subst.set(id, args[i]));
   return info.recordFields.map((field) => ({
     name: field.name,
-    type: substituteVars(field.type, subst),
+    type: substituteTypeVars(field.type, subst),
   }));
 }
 
@@ -190,7 +197,7 @@ export function typeFromAst(
   const instantiateAlias = (template: Ty, params: number[], args: Ty[]): Ty => {
     const subst = new Map<number, Ty>();
     params.forEach((id, i) => subst.set(id, args[i]));
-    return substituteVars(template, subst);
+    return substituteTypeVars(template, subst);
   };
 
   if (expr.kind === "TVar") {

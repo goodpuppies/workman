@@ -22,6 +22,29 @@ Deno.test("rejects unguarded recursive value bindings", async () => {
   );
 });
 
+Deno.test("rejects unguarded recursive value uses in block-local declarations", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        let rec x = {
+          let y = x;
+          1
+        };
+      `),
+    Error,
+    "recursive references must be guarded by a function",
+  );
+});
+
+Deno.test("recursive use scanner respects local block shadowing after initializer checks", async () => {
+  await checkSource(`
+    let rec x = {
+      let x = 1;
+      x
+    };
+  `);
+});
+
 Deno.test("allows recursive records when recursive use is function-guarded", async () => {
   await checkSource(`
     record Runner = { run: (Number) => Number };
