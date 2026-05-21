@@ -1,0 +1,18 @@
+type Option<T> = None | Some<T>;
+
+let rec factorial = (n) => {
+  if (n == 0) { 1 } else { factorial(n - 1) * n }
+};
+
+let describe = (value) => {
+  match(value) {
+    None => { "empty" },
+    Some(x) => { "some" },
+  }
+};
+
+let main = () => {
+  print(factorial(5));
+  print(describe(Some(42)));
+  void
+};

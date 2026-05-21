@@ -1,0 +1,7 @@
+from "./math.wm" import * as Math;
+
+let main = () => {
+  print(Math.add(20, 22));
+  print(Math.describe(Math.Just(1)));
+  void
+};
