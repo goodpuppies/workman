@@ -42,13 +42,15 @@ export function inferModule(module: Module, imports = new Map<string, InferResul
   const adts = new Map<number, TypeDeclInfo>();
   const types = new Map<Expr, Ty>();
   for (const decl of module.decls) {
-    if (decl.kind !== "ImportDecl") continue;
-    const imported = imports.get(decl.path);
-    if (!imported) throw new Error(`unknown import ${decl.path}`);
-    addImport(env, typeEnv, decl.clause, imported);
-    addAdts(adts, imported.adts);
+    if (decl.kind === "ImportDecl") {
+      const imported = imports.get(decl.path);
+      if (!imported) throw new Error(`unknown import ${decl.path}`);
+      addImport(env, typeEnv, decl.clause, imported);
+      addAdts(adts, imported.adts);
+      continue;
+    }
+    inferDecl(decl, env, exports, typeEnv, typeExports, adts, types);
   }
-  for (const decl of module.decls) inferDecl(decl, env, exports, typeEnv, typeExports, adts, types);
   return { env, exports, typeEnv, typeExports, types, adts };
 }
 
@@ -113,6 +115,7 @@ function inferDecl(
 ) {
   if (decl.kind === "ImportDecl") return;
   if (decl.kind === "TypeDecl") {
+    if (typeEnv.has(decl.name)) throw new Error(`duplicate type declaration ${decl.name}`);
     rejectDuplicates(decl.params, "type parameter");
     rejectDuplicates(decl.ctors.map((c) => c.name), "constructor");
     const info = freshTypeInfo(decl.name, decl.params.length);
@@ -132,8 +135,14 @@ function inferDecl(
   }
   rejectDuplicates(decl.bindings.flatMap((b) => patternBinders(b.pattern)), "binding");
   if (!decl.recursive) {
-    for (const b of decl.bindings) {
-      inferBinding(b, decl.exported, env, exports, typeEnv, adts, types);
+    const base = new Map(env);
+    const inferred = decl.bindings.map((b) => inferBinding(b, base, typeEnv, adts, types));
+    for (const bound of inferred) {
+      for (const [name, type] of bound) {
+        const scheme = generalize(base, type);
+        env.set(name, scheme);
+        if (decl.exported) exports.set(name, scheme);
+      }
     }
     return;
   }
@@ -168,22 +177,16 @@ function rejectDuplicates(names: string[], kind: string) {
 
 function inferBinding(
   b: Binding,
-  exported: boolean,
   env: Env,
-  exports: Env,
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
-) {
+): Map<string, Ty> {
   const t = inferExpr(b.value, env, typeEnv, adts, types);
   if (b.annotation) unify(t, typeFromAst(b.annotation, typeEnv));
   const bound = new Map<string, Ty>();
-  inferBindingPattern(b.pattern, t, bound);
-  for (const [name, type] of bound) {
-    const scheme = generalize(env, type);
-    env.set(name, scheme);
-    if (exported) exports.set(name, scheme);
-  }
+  inferBindingPattern(b.pattern, t, env, bound);
+  return bound;
 }
 
 function inferExpr(
@@ -249,7 +252,7 @@ function inferExpr(
         inferPattern(arm.pattern, valueType, local, adts);
         unify(t, inferExpr(arm.body, local, typeEnv, adts, types));
       }
-      checkExhaustive(expr.arms.map((arm) => arm.pattern), valueType, adts);
+      checkExhaustive(expr.arms.map((arm) => arm.pattern), valueType, typeEnv, adts);
       break;
     }
     case "Block": {
@@ -296,21 +299,26 @@ function inferExpr(
   return t;
 }
 
-function checkExhaustive(patterns: Pattern[], valueType: Ty, adts: Map<number, TypeDeclInfo>) {
-  if (patterns.some(isIrrefutable)) return;
+function checkExhaustive(
+  patterns: Pattern[],
+  valueType: Ty,
+  typeEnv: TypeEnv,
+  adts: Map<number, TypeDeclInfo>,
+) {
+  if (isVectorExhaustive(patterns.map((pattern) => [pattern]), [valueType], typeEnv, adts)) return;
   const scrutinee = prune(valueType);
-  if (scrutinee.tag !== "named") {
-    throw new Error("non-exhaustive match: non-sum matches require _");
+  if (scrutinee.tag === "named") {
+    const info = adts.get(scrutinee.id);
+    if (!info) throw new Error("non-exhaustive match: unknown sum type");
+    const covered = new Set(
+      patterns
+        .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor")
+        .map((p) => baseName(p.name)),
+    );
+    const missing = info.ctors.map((c) => c.name).filter((name) => !covered.has(name));
+    if (missing.length) throw new Error(`non-exhaustive match: missing ${missing.join(", ")}`);
   }
-  const info = adts.get(scrutinee.id);
-  if (!info) throw new Error("non-exhaustive match: unknown sum type");
-  const covered = new Set(
-    patterns
-      .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor")
-      .map((p) => baseName(p.name)),
-  );
-  const missing = info.ctors.map((c) => c.name).filter((name) => !covered.has(name));
-  if (missing.length) throw new Error(`non-exhaustive match: missing ${missing.join(", ")}`);
+  throw new Error("non-exhaustive match");
 }
 
 function baseName(name: string): string {
@@ -321,6 +329,69 @@ function isIrrefutable(pattern: Pattern): boolean {
   if (pattern.kind === "PWildcard" || pattern.kind === "PVar") return true;
   if (pattern.kind === "PTuple") return pattern.items.every(isIrrefutable);
   return false;
+}
+
+function isVectorExhaustive(
+  rows: Pattern[][],
+  types: Ty[],
+  typeEnv: TypeEnv,
+  adts: Map<number, TypeDeclInfo>,
+): boolean {
+  if (types.length === 0) return rows.length > 0;
+  const [headType, ...tailTypes] = types;
+  const head = prune(headType);
+  if (rows.some((row) => isIrrefutable(row[0]))) {
+    const tails = rows.filter((row) => isIrrefutable(row[0])).map((row) => row.slice(1));
+    return isVectorExhaustive(tails, tailTypes, typeEnv, adts);
+  }
+
+  if (head.tag === "prim" && head.name === "Bool") {
+    const trueRows = rows.filter((row) => row[0].kind === "PBool" && row[0].value).map((row) => row.slice(1));
+    const falseRows = rows.filter((row) => row[0].kind === "PBool" && !row[0].value).map((row) => row.slice(1));
+    return isVectorExhaustive(trueRows, tailTypes, typeEnv, adts) &&
+      isVectorExhaustive(falseRows, tailTypes, typeEnv, adts);
+  }
+
+  if (head.tag === "prim" && head.name === "Void") {
+    const voidRows = rows.filter((row) => row[0].kind === "PVoid").map((row) => row.slice(1));
+    return isVectorExhaustive(voidRows, tailTypes, typeEnv, adts);
+  }
+
+  if (head.tag === "tuple") {
+    const tupleRows = rows
+      .filter((row): row is [Extract<Pattern, { kind: "PTuple" }>, ...Pattern[]] => row[0].kind === "PTuple")
+      .filter((row) => row[0].items.length === head.items.length)
+      .map((row) => [...row[0].items, ...row.slice(1)]);
+    if (tupleRows.length === 0) return false;
+    return isVectorExhaustive(tupleRows, [...head.items, ...tailTypes], typeEnv, adts);
+  }
+
+  if (head.tag === "named") {
+    const info = adts.get(head.id);
+    if (!info) return false;
+    for (const ctor of info.ctors) {
+      const ctorRows = rows
+        .filter((row): row is [Extract<Pattern, { kind: "PCtor" }>, ...Pattern[]] => row[0].kind === "PCtor")
+        .filter((row) => baseName(row[0].name) === ctor.name)
+        .map((row) => [...row[0].args, ...row.slice(1)]);
+      if (ctorRows.length === 0) return false;
+      const ctorTypes = constructorArgTypes(info, ctor, head, typeEnv);
+      if (!isVectorExhaustive(ctorRows, [...ctorTypes, ...tailTypes], typeEnv, adts)) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function constructorArgTypes(
+  info: TypeDeclInfo,
+  ctor: TypeDeclInfo["ctors"][number],
+  target: Extract<Ty, { tag: "named" }>,
+  typeEnv: TypeEnv,
+): Ty[] {
+  const vars = new Map(info.params.map((name, i) => [name, target.args[i]] as const));
+  return ctor.args.map((arg) => typeFromAst(arg, typeEnv, vars));
 }
 
 function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
@@ -397,6 +468,7 @@ function inferPattern(
 function inferBindingPattern(
   pattern: Pattern,
   expected: Ty,
+  env: Env,
   out: Map<string, Ty>,
   binders = new Set<string>(),
 ) {
@@ -408,10 +480,38 @@ function inferBindingPattern(
       return;
     case "PWildcard":
       return;
+    case "PInt":
+      unify(expected, NumberTy);
+      return;
+    case "PString":
+      unify(expected, StringTy);
+      return;
+    case "PBool":
+      unify(expected, BoolTy);
+      return;
+    case "PVoid":
+      unify(expected, VoidTy);
+      return;
     case "PTuple": {
       const items = pattern.items.map(() => fresh());
       unify(expected, tuple(items));
-      pattern.items.forEach((item, i) => inferBindingPattern(item, items[i], out, binders));
+      pattern.items.forEach((item, i) => inferBindingPattern(item, items[i], env, out, binders));
+      return;
+    }
+    case "PCtor": {
+      const scheme = env.get(pattern.name);
+      if (!scheme) throw new Error(`unknown constructor ${pattern.name}`);
+      const ctor = instantiate(scheme);
+      if (ctor.tag === "fn") {
+        if (ctor.params.length !== pattern.args.length) {
+          throw new Error(`${pattern.name} expects ${ctor.params.length} patterns`);
+        }
+        unify(expected, ctor.result);
+        pattern.args.forEach((item, i) => inferBindingPattern(item, ctor.params[i], env, out, binders));
+      } else {
+        if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
+        unify(expected, ctor);
+      }
       return;
     }
     default:

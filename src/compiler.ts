@@ -33,6 +33,16 @@ export async function checkFile(input: string): Promise<Map<string, InferResult>
   return (await analyzeFile(input)).results;
 }
 
+function normalizeInputPath(input: string): string {
+  if (Deno.build.os !== "windows") return input;
+  const raw = /^\/[A-Za-z]:\//.test(input) ? input.slice(1) : input;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function checkModuleWithoutImports(module: Module): InferResult {
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
     throw new Error("source strings with imports require checkFile");
@@ -46,7 +56,7 @@ async function analyzeFile(input: string): Promise<{
   names: Map<string, string>;
   results: Map<string, InferResult>;
 }> {
-  const entryPath = await Deno.realPath(input);
+  const entryPath = await Deno.realPath(normalizeInputPath(input));
   const graph = new Map<string, Module>();
   const names = new Map<string, string>();
   await loadModule(entryPath, graph, names, new Set());

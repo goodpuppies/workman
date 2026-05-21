@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import { pathToFileURL } from "node:url";
 import { checkFile, checkSource, compile, compileFile } from "../src/compiler.ts";
 import { parse } from "../src/parser.ts";
 
@@ -44,6 +45,30 @@ Deno.test("source-only frontend rejects imports with clear API boundary", async 
   );
 });
 
+Deno.test("imports are declaration-ordered and not hoisted", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(`${dir}/lib.wm`, "export let value = 1;");
+  await Deno.writeTextFile(
+    `${dir}/main.wm`,
+    `
+      let x = Lib.value;
+      from "./lib.wm" import * as Lib;
+    `,
+  );
+  await assertRejects(() => checkFile(`${dir}/main.wm`), Error, "unknown name Lib.value");
+});
+
+Deno.test("checkFile accepts URL pathname entry paths", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(`${dir}/lib.wm`, "export let value = 1;");
+  await Deno.writeTextFile(
+    `${dir}/main.wm`,
+    'from "./lib.wm" import * as Lib; let x = Lib.value;',
+  );
+  const pathname = pathToFileURL(`${dir}/main.wm`).pathname;
+  await checkFile(pathname);
+});
+
 Deno.test("supports long type constructors from imported files", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
@@ -53,6 +78,26 @@ Deno.test("supports long type constructors from imported files", async () => {
   await Deno.writeTextFile(
     `${dir}/main.wm`,
     'from "./box.wm" import * as Boxed; let x: Boxed.Box<Number> = Boxed.make(1);',
+  );
+  await checkFile(`${dir}/main.wm`);
+});
+
+Deno.test("supports long constructor identifiers in match patterns", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    `${dir}/option.wm`,
+    "export type Option<T> = None | Some<T>; export let wrap = (x) => { Some(x) };",
+  );
+  await Deno.writeTextFile(
+    `${dir}/main.wm`,
+    `
+      from "./option.wm" import * as Opt;
+      let value = Opt.wrap(1);
+      let get = match(value) => {
+        Opt.Some(x) => { x },
+        Opt.None => { 0 },
+      };
+    `,
   );
   await checkFile(`${dir}/main.wm`);
 });
@@ -266,6 +311,22 @@ Deno.test("rejects duplicate tuple let binders in the same declaration", async (
   );
 });
 
+Deno.test("rejects duplicate names in a single let-and binding group", async () => {
+  await assertRejects(
+    () => checkSource("let x = 1 and x = 2;"),
+    Error,
+    "duplicate binding x",
+  );
+});
+
+Deno.test("non-rec let-and bindings are simultaneous, not sequential", async () => {
+  await assertRejects(
+    () => checkSource("let x = 1 and y = x;"),
+    Error,
+    "unknown name x",
+  );
+});
+
 Deno.test("rejects recursive destructuring let bindings", async () => {
   await assertRejects(
     () => checkSource("let rec (a, b) = (1, 2);"),
@@ -284,6 +345,14 @@ Deno.test("rejects duplicate type parameters and constructors", async () => {
     () => checkSource("type Bad = A | A;"),
     Error,
     "duplicate constructor A",
+  );
+});
+
+Deno.test("rejects duplicate type declarations in the same scope", async () => {
+  await assertRejects(
+    () => checkSource("type Box = Box; type Box = Box;"),
+    Error,
+    "duplicate type declaration Box",
   );
 });
 
@@ -420,10 +489,43 @@ Deno.test("requires exhaustive matches for closed sums", async () => {
   );
 });
 
-Deno.test("requires wildcard for non-sum matches", async () => {
+Deno.test("rejects partial constructor argument coverage in closed sums", async () => {
   await assertRejects(
-    () => checkSource("let bad = match(n) => { 0 => { 1 } };"),
+    () =>
+      checkSource(
+        "type Option<T> = None | Some<T>; let opt = Some(true); let bad = match(opt) => { Some(true) => { 1 }, None => { 0 } };",
+      ),
     Error,
-    "non-sum matches require _",
+    "non-exhaustive match",
+  );
+});
+
+Deno.test("accepts exhaustive boolean matches without wildcard", async () => {
+  await checkSource("let flag = true; let ok = match(flag) => { true => { 1 }, false => { 0 } };");
+});
+
+Deno.test("still rejects non-exhaustive non-sum matches", async () => {
+  await assertRejects(
+    () => checkSource("let n = 0; let bad = match(n) => { 0 => { 1 } };"),
+    Error,
+    "non-exhaustive match",
+  );
+});
+
+Deno.test("supports constructor and literal let patterns", async () => {
+  await checkSource(`
+    type Option<T> = None | Some<T>;
+    let Some(flag) = Some(true);
+    let true = flag;
+    let tagged = Some(1);
+    let Some(1) = tagged;
+  `);
+});
+
+Deno.test("literal let patterns reject mismatches", async () => {
+  await assertRejects(
+    () => checkSource("let true = 2;"),
+    Error,
+    "type mismatch",
   );
 });

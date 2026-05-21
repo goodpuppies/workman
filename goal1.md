@@ -25,7 +25,8 @@ Core frontend target:
 - patterns: wildcard, literals, tuples, constructors, pinned names, and explicit `Var(name)` binders
 - Hindley-Milner inference with principal types for the supported subset
 - correct generalization/instantiation boundaries
-- recursive binding inference compatible with the intended Workman reduction of SML `fun`
+- recursive binding inference for Workman `let rec` as a general recursion marker (not limited to
+  function-only forms)
 - duplicate binder and duplicate declaration checks matching SML-style syntactic restrictions
 - nominal datatype identity using fresh type names, not string equality
 - long value identifiers and long type constructors
@@ -41,8 +42,8 @@ Module/frontend target:
 
 ## Workman Surface
 
-Use `research/workmangr/docs/reference` and `research/workmangr/docs/workmansyntaxguide.md` as the syntax
-guide.
+Use `research/workmangr/docs/reference` and `research/workmangr/docs/workmansyntaxguide.md` as the
+syntax guide.
 
 The source syntax should be Workman syntax:
 
@@ -91,6 +92,8 @@ Non-overlap for Goal 1:
 
 - SML exceptions, refs, signatures, functors, sharing constraints, and the full Basis are out of
   scope.
+- SML equality-type discipline (`''a`) is out of scope; polymorphic `==`/`!=` are accepted in Goal
+  1.
 - Workman infection types, flow, traits, raw mode, and other advanced Workman-only features are out
   of scope.
 

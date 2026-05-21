@@ -26,8 +26,22 @@ LetBinding
     { return { pattern, annotation: ann, value }; }
 
 LetPattern
+  = "_" { return { kind: "PWildcard" }; }
+  / "void" { return { kind: "PVoid" }; }
+  / b:Bool { return { kind: "PBool", value: b.value }; }
+  / i:Int { return { kind: "PInt", value: i.value }; }
+  / s:String { return { kind: "PString", value: s.value }; }
+  / "(" _ first:LetPattern _ "," _ rest:LetPatternList? _ ")" { return { kind: "PTuple", items: [first, ...(rest ?? [])] }; }
+  / "Var" _ "(" _ name:Identifier _ ")" { return { kind: "PVar", name }; }
+  / c:LongConstructor _ "(" _ args:LetCtorPatternList? _ ")" { return { kind: "PCtor", name: c, args: args ?? [] }; }
+  / c:LongConstructor { return { kind: "PCtor", name: c, args: [] }; }
+  / name:Identifier { return { kind: "PVar", name }; }
+
+LetPatternList = first:LetPattern rest:(_ "," _ p:LetPattern { return p; })* _ ","? { return [first, ...rest]; }
+LetCtorPattern
   = name:Identifier { return { kind: "PVar", name }; }
-  / "(" _ first:ParamPattern _ "," _ rest:ParamPatternList? _ ")" { return { kind: "PTuple", items: [first, ...(rest ?? [])] }; }
+  / p:LetPattern { return p; }
+LetCtorPatternList = first:LetCtorPattern rest:(_ "," _ p:LetCtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 
 TypeDecl
   = exported:ExportModifier? "type" __ name:Constructor params:TypeParams? _ "=" _ ctors:CtorDeclList _ ";"
