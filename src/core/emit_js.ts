@@ -4,7 +4,7 @@ import type { BindingId } from "./ids.ts";
 import { basisCtorJsName, basisTypes } from "../basis.ts";
 import type { JsImportSpec, TypeExpr } from "../ast.ts";
 
-const reserved = new Set(["const", "let", "function", "return", "if", "else", "class", "void"]);
+const reserved = new Set(["const", "let", "function", "return", "if", "else", "class", "void", "globalThis"]);
 
 export function emitCoreProgram(program: CoreProgram): string {
   const entry = program.modules.get(program.entry)!;
@@ -248,6 +248,9 @@ function emitDecl(decl: CoreDecl): string[] {
 let bindingTemp = 0;
 
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
+  if (spec.type?.kind !== "TFn") {
+    return memberRef;
+  }
   return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${
     JSON.stringify(jsParamConverters(spec.type))
   }, ${JSON.stringify(jsResultConverter(spec.type, !!spec.fallible))}, ${

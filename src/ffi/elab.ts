@@ -73,7 +73,7 @@ function collectFfiDecl(
         member.name,
         decl.target,
         memberVariants(member),
-        true,
+        !decl.clause.unsafe,
         decl.node,
       );
     }
@@ -93,7 +93,7 @@ function collectFfiDecl(
       spec.name,
       decl.target,
       memberVariants(member),
-      reflected,
+      reflected && !decl.clause.unsafe,
       spec.node,
     );
   }

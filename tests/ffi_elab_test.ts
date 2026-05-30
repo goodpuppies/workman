@@ -116,3 +116,20 @@ Deno.test("HM inference rejects unelaborated reflected JS imports", async () => 
     "unelaborated JS namespace import Math",
   );
 });
+
+Deno.test("FFI elaboration skips Result wrapping for unsafe imports", async () => {
+  const module = await parse(`
+    from js.global("Reflect") import unsafe { get, construct };
+    from js.global("Math") import unsafe * as R;
+    let main = () => {
+      get({}, "foo");
+      R.sqrt(9)
+    };
+  `);
+
+  const ffi = prepareFfiElaboration(module);
+
+  assertEquals(ffi.bindings.get("get")?.variants[0].fallible, false);
+  assertEquals(ffi.bindings.get("construct")?.variants[0].fallible, false);
+  assertEquals(ffi.bindings.get("R.sqrt")?.variants[0].fallible, false);
+});

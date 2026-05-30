@@ -73,9 +73,13 @@ JsTarget
     { return at({ kind: "JsModule", specifier: specifier.value }, location()); }
 
 JsImportClause
-  = "*" __ "as" __ alias:Name { return at({ kind: "Namespace", alias }, location()); }
+  = unsafe:("unsafe" __)? clause:JsImportClauseBody
+    { return at({ ...clause, unsafe: !!unsafe }, location()); }
+
+JsImportClauseBody
+  = "*" __ "as" __ alias:Name { return { kind: "Namespace", alias }; }
   / "{" _ specs:JsImportSpecList? _ "}" alias:(__ "as" __ a:Name { return a; })?
-    { return at({ kind: "Named", specs: specs ?? [], alias }, location()); }
+    { return { kind: "Named", specs: specs ?? [], alias }; }
 
 JsImportSpecList = first:JsImportSpec rest:(_ "," _ s:JsImportSpec { return s; })* _ ","? { return [first, ...rest]; }
 JsImportSpec

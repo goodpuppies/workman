@@ -35,8 +35,8 @@ export type JsTarget =
   | Located<{ kind: "JsModule"; specifier: string }>
   | Located<{ kind: "JsReceiver"; path: string[] }>;
 export type JsImportClause =
-  | Located<{ kind: "Namespace"; alias: string }>
-  | Located<{ kind: "Named"; specs: JsImportSpec[]; alias?: string }>;
+  | Located<{ kind: "Namespace"; alias: string; unsafe?: boolean }>
+  | Located<{ kind: "Named"; specs: JsImportSpec[]; alias?: string; unsafe?: boolean }>;
 export type JsImportSpec = Located<{
   name: string;
   alias?: string;

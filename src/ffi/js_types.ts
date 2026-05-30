@@ -383,6 +383,12 @@ function typeExprFromTsType(
   if (type.flags & ts.TypeFlags.NumberLiteral) return name("Number");
   if (type.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) return name("Void");
   if (position === "result" && isObjectLike(type)) return name("Js.Object");
+  if (type.flags & ts.TypeFlags.TypeParameter) {
+    const constraint = checker.getBaseConstraintOfType(type);
+    if (constraint) {
+      return typeExprFromTsType(checker, constraint, position) ?? name("Js.Value");
+    }
+  }
   return name("Js.Value");
 }
 
