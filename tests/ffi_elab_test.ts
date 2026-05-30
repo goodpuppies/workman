@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "@std/assert";
-import { prepareFfiElaboration } from "../src/ffi_elab.ts";
+import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { inferModule } from "../src/infer.ts";
 import { parse } from "../src/parser.ts";
 

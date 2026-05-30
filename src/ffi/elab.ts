@@ -1,4 +1,4 @@
-import type { Decl, Expr, JsImportSpec, JsTarget, Module, TypeExpr } from "./ast.ts";
+import type { Decl, Expr, JsImportSpec, JsTarget, Module, TypeExpr } from "../ast.ts";
 import { jsGlobalMember, jsGlobalMembers, jsModuleMember, jsModuleMembers } from "./js_types.ts";
 
 export type FfiElaboration = {

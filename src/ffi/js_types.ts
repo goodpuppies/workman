@@ -1,5 +1,5 @@
 import ts from "typescript";
-import type { TypeExpr } from "./ast.ts";
+import type { TypeExpr } from "../ast.ts";
 
 export type JsMemberType = {
   name: string;

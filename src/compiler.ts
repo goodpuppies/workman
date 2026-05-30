@@ -6,7 +6,7 @@ import {
 } from "./core/artifact.ts";
 import { emitCoreProgram } from "./core/emit_js.ts";
 import { coreFromSurface } from "./core/from_surface.ts";
-import { prepareFfiElaboration } from "./ffi_elab.ts";
+import { prepareFfiElaboration } from "./ffi/elab.ts";
 import { inferModule, inferModuleWithSteps, type InferResult, type InferStep } from "./infer.ts";
 import { loadModuleGraph, type ModuleGraph, type ModuleGraphOptions } from "./module_graph.ts";
 import { parse, type Surface } from "./parser.ts";
