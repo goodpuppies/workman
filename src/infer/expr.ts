@@ -208,6 +208,7 @@ function inferCall(
   provenance: TypeProvenance,
 ): Ty {
   const result = fresh();
+  const isPrintCall = expr.callee.kind === "Var" && expr.callee.name === "print";
   const callee = inferExpr(
     expr.callee,
     env,
@@ -248,6 +249,7 @@ function inferCall(
         callDepth,
       },
     );
+    if (isPrintCall) assertPrintable(arg);
     constrainAt(result, calleeFn.result, expr);
   } else {
     const callDepth = maxCallDepth([...callCalleeRelated(expr.callee, callee), ...calleeProvenance]) + 1;
@@ -270,6 +272,25 @@ function inferCall(
     );
   }
   return result;
+}
+
+function assertPrintable(type: Ty) {
+  if (containsNamedType(type, "Js.Error")) {
+    throw new Error(`print requires an already-handled value, got ${quoteType(type)}`);
+  }
+}
+
+function containsNamedType(type: Ty, name: string): boolean {
+  const target = prune(type);
+  if (target.tag === "named") {
+    return target.name === name || target.args.some((arg) => containsNamedType(arg, name));
+  }
+  if (target.tag === "fn") {
+    return target.params.some((param) => containsNamedType(param, name)) ||
+      containsNamedType(target.result, name);
+  }
+  if (target.tag === "tuple") return target.items.some((item) => containsNamedType(item, name));
+  return false;
 }
 
 function callArity(type: TyNode): number {
