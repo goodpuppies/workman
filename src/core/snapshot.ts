@@ -76,6 +76,8 @@ function showExpr(expr: CoreExpr): string {
       return `.{${
         expr.fields.map((field) => `${field.name} = ${showExpr(field.value)}`).join(", ")
       }}`;
+    case "CoreRecordAccess":
+      return `${showExpr(expr.record)}.${expr.field}`;
     case "CoreJsonObject":
       return `JSON{${
         expr.fields.map((field) => `${JSON.stringify(field.key)}: ${showExpr(field.value)}`).join(

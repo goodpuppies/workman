@@ -106,7 +106,7 @@ function coreExprFromSurface(expr: Expr): CoreExpr {
     case "Void":
       return { kind: "CoreVoid", node: expr.node };
     case "Var":
-      return { kind: "CoreVar", name: expr.name, node: expr.node };
+      return desugarDottedVar(expr.name, expr.node);
     case "Tuple":
       return { kind: "CoreTuple", items: expr.items.map(coreExprFromSurface), node: expr.node };
     case "Record":
@@ -319,4 +319,17 @@ function desugarPipe(pipe: Located<{ kind: "Pipe"; left: Expr; right: Expr }>): 
       node: pipe.node,
     };
   }
+}
+
+function desugarDottedVar(name: string, node: Expr["node"]): CoreExpr {
+  const parts = name.split(".");
+  if (parts.length === 1) {
+    return { kind: "CoreVar", name, node };
+  }
+  // Desugar r.bottomRight.x into (((r).bottomRight).x)
+  let result: CoreExpr = { kind: "CoreVar", name: parts[0], node };
+  for (let i = 1; i < parts.length; i++) {
+    result = { kind: "CoreRecordAccess", record: result, field: parts[i], node };
+  }
+  return result;
 }

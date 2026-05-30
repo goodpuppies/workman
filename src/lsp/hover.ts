@@ -150,6 +150,8 @@ function collectExpr(expr: Expr): Target[] {
       return [...own, ...collectExpr(expr.left), ...collectExpr(expr.right)];
     case "Unary":
       return [...own, ...collectExpr(expr.value)];
+    case "Pipe":
+      return [...own, ...collectExpr(expr.left), ...collectExpr(expr.right)];
     case "Int":
     case "Float":
     case "String":

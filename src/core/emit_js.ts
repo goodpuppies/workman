@@ -327,6 +327,8 @@ function emitExpr(expr: CoreExpr): string {
       return `{ ${
         expr.fields.map((field) => `${id(field.name)}: ${emitExpr(field.value)}`).join(", ")
       } }`;
+    case "CoreRecordAccess":
+      return `${emitExpr(expr.record)}.${id(expr.field)}`;
     case "CoreJsonObject":
       return `{ ${
         expr.fields.map((field) => `${JSON.stringify(field.key)}: ${emitExpr(field.value)}`).join(

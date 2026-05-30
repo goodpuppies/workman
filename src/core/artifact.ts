@@ -181,6 +181,9 @@ function resolveExprValues(expr: CoreExpr, env: ValueEnv, ids: CoreIdAllocator) 
     case "CoreRecord":
       expr.fields.forEach((field) => resolveExprValues(field.value, env, ids));
       return;
+    case "CoreRecordAccess":
+      resolveExprValues(expr.record, env, ids);
+      return;
     case "CoreJsonObject":
       expr.fields.forEach((field) => resolveExprValues(field.value, env, ids));
       return;
@@ -313,7 +316,7 @@ function visibleConstructors(
 }
 
 function basisConstructors(): [string, CtorId][] {
-  return ["None", "Some", "Ok", "Err"].flatMap((name) => {
+  return ["None", "Some", "Ok", "Err", "Nil", "Cons"].flatMap((name) => {
     const id = basisCtorId(name);
     return id === undefined ? [] : [[name, id as CtorId]];
   });
