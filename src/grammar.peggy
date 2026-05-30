@@ -83,7 +83,7 @@ JsImportClauseBody
 
 JsImportSpecList = first:JsImportSpec rest:(_ "," _ s:JsImportSpec { return s; })* _ ","? { return [first, ...rest]; }
 JsImportSpec
-  = name:Identifier alias:(_ "as" _ a:Name { return a; })? type:(_ ":" _ t:TypeExpr { return t; })?
+  = name:Name alias:(_ "as" _ a:Name { return a; })? type:(_ ":" _ t:TypeExpr { return t; })?
     { return at({ name, alias, type }, location()); }
 
 LetDecl
@@ -189,7 +189,7 @@ Equality = left:Compare rest:(_ op:("==" / "!=") _ right:Compare { return { op, 
   { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
 Compare = left:Add rest:(_ op:("<=" / ">=" / "<" / ">") _ right:Add { return { op, right }; })*
   { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
-Add = left:Mul rest:(_ op:("+" / "-") _ right:Mul { return { op, right }; })*
+Add = left:Mul rest:(_ op:("++" / "+" / "-") _ right:Mul { return { op, right }; })*
   { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
 Mul = left:Unary rest:(_ op:("*" / "/" / "%") _ right:Unary { return { op, right }; })*
   { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }

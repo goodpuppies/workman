@@ -9,15 +9,16 @@ from js.global("Reflect") import {
 };
 from js.global("globalThis") import { globalThis: Js.Value };
 from js.global("console") import { log };
+from js.global("Date") import { Date as dateString: () => String };
 
 let handler = (req) => {
   let method = get(req, "method");
-  let urlObj = (
-    get(globalThis, "URL"),
+  let urlObj = (get(globalThis, "URL"),
     JSON[get(req, "url")]
   ) :> construct;
   let path = get(urlObj, "pathname");
   let response = get(globalThis, "Response");
+  let now = dateString(void);
 
   if (method == "GET") {
     match(path) {
@@ -28,7 +29,7 @@ let handler = (req) => {
         construct(response, JSON["{\"status\":\"ok\"}", JSON{status: 200}])
       },
       "/time" => {
-        construct(response, JSON["{\"time\":\"now\"}", JSON{status: 200}])
+        construct(response, JSON["{\"time\":\"" ++ now ++ "\"}", JSON{status: 200}])
       },
       _ => {
         construct(response, JSON["Not Found", JSON{status: 404}])

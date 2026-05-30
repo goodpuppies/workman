@@ -282,6 +282,7 @@ export function baseEnv(typeEnv: TypeEnv = baseTypeEnv()): Env {
   const env: Env = new Map();
   const binaryNum = fn([tuple([NumberTy, NumberTy])], NumberTy);
   for (const op of ["+", "-", "*", "/", "%"]) env.set(op, { vars: [], type: binaryNum });
+  env.set("++", { vars: [], type: fn([tuple([StringTy, StringTy])], StringTy) });
   for (const op of ["<", "<=", ">", ">="]) {
     env.set(op, { vars: [], type: fn([tuple([NumberTy, NumberTy])], BoolTy) });
   }

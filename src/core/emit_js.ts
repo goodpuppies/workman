@@ -112,6 +112,7 @@ export function emitCoreProgram(program: CoreProgram): string {
     "const print = (value) => console.log(__wm_show(value));",
     "const __wm_fail = (name, message) => { const e = new Error(message); e.name = name; throw e; };",
     ...emitBasisConstructors(),
+    "const __wm_op_concat = ([a, b]) => a + b;",
     "const __wm_op_add = ([a, b]) => a + b;",
     "const __wm_op_sub = (x) => __wm_is_tuple(x) ? x[0] - x[1] : -x;",
     "const __wm_op_mul = ([a, b]) => a * b;",
@@ -408,6 +409,9 @@ function jsTargetRef(target: Extract<CoreDecl, { kind: "CoreJsImport" }>["target
 
 function jsMemberRef(target: JsTargetRef, member: string): string {
   if (target.kind === "global") {
+    if (member === JSON.stringify(target.path)) {
+      return `__wm_js_member(${JSON.stringify(target.path)})`;
+    }
     return `__wm_js_member(${JSON.stringify(target.path)} + "." + ${member})`;
   }
   if (target.kind === "module") return `__wm_js_member_obj(${target.name}, ${member})`;
@@ -541,6 +545,8 @@ function id(name: string): string {
 
 function primitiveName(name: string): string | undefined {
   switch (name) {
+    case "++":
+      return "__wm_op_concat";
     case "+":
       return "__wm_op_add";
     case "-":
