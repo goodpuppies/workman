@@ -298,21 +298,25 @@ export function baseEnv(typeEnv: TypeEnv = baseTypeEnv()): Env {
   return env;
 }
 
+let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
+
 export function baseTypeEnv(): TypeEnv {
-  const env = new Map(
-    ["Number", "Bool", "String", "Void", "Js.Value", "Js.Object", "Js.Error"].map((name) => [
-      name,
-      { ...freshTypeInfo(name, 0), basis: true },
-    ]),
-  );
-  for (const type of basisTypes) {
-    env.set(type.name, {
-      ...freshTypeInfo(type.name, type.params.length),
-      basis: true,
-      basisConstructors: type.ctors.map((ctor) => ctor.name),
-    });
+  if (!basisTypeEnvCache) {
+    basisTypeEnvCache = new Map(
+      ["Number", "Bool", "String", "Void", "Js.Value", "Js.Object", "Js.Error"].map((name) => [
+        name,
+        { ...freshTypeInfo(name, 0), basis: true },
+      ]),
+    );
+    for (const type of basisTypes) {
+      basisTypeEnvCache.set(type.name, {
+        ...freshTypeInfo(type.name, type.params.length),
+        basis: true,
+        basisConstructors: type.ctors.map((ctor) => ctor.name),
+      });
+    }
   }
-  return env;
+  return new Map(basisTypeEnvCache);
 }
 
 export function baseAdts(typeEnv: TypeEnv): Map<number, TypeDeclInfo> {

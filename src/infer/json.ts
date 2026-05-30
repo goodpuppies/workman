@@ -1,6 +1,7 @@
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import { named, prune, quoteType, type Ty, type TypeEnv } from "../types.ts";
+import { constrain } from "./shared.ts";
 
 export function jsonValueTy(typeEnv: TypeEnv): Ty {
   const info = typeEnv.get("Js.Value");
@@ -12,6 +13,10 @@ export function assertJsonCompatible(type: Ty, typeEnv: TypeEnv, expr: Expr) {
   const t = prune(type);
   if (t.tag === "prim" && ["Number", "String", "Bool", "Void"].includes(t.name)) return;
   if (isJsValueTy(t, typeEnv)) return;
+  if (t.tag === "var") {
+    constrain(t, jsonValueTy(typeEnv));
+    return;
+  }
   throw diagnosticError(new Error(`type mismatch ${quoteType(t)} vs "Js.Value"`), expr.node);
 }
 
