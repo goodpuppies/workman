@@ -31,6 +31,15 @@ export const basisTypes: BasisTypeDecl[] = [
       { name: "Err", id: -4, args: [param("E")] },
     ],
   },
+  //export type List<T> = Nil | Cons<T, List<T>>;
+  {
+    name: "List",
+    params: ["T"],
+    ctors: [
+      { name: "Nil", id: -5, args: [] },
+      { name: "Cons", id: -6, args: [param("T"), { kind: "TName", name: "List", args: [param("T")] }] },
+    ],
+  },
 ];
 
 export function basisCtorId(name: string): number | undefined {
