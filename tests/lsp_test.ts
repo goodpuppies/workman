@@ -228,6 +228,18 @@ let rec sumList = (list) => {
     line: 12,
     character: 2,
   });
+  assertEquals(diagnostics?.[0].range.end, {
+    line: 12,
+    character: 11,
+  });
+  assertEquals(
+    diagnostics?.[0].relatedInformation?.find((item) => item.message.startsWith("callee foldLeft"))
+      ?.location.range.start,
+    {
+      line: 16,
+      character: 2,
+    },
+  );
 });
 
 Deno.test("lsp validation explains call argument expected and callee types", async () => {
