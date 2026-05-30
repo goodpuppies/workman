@@ -9,28 +9,43 @@ import {
   typeFromAst,
 } from "../types.ts";
 
+export interface MissingCase {
+  path: string[];
+  missing: string;
+}
+
 export function checkExhaustive(
   patterns: Pattern[],
   valueType: Ty,
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
 ): string | undefined {
-  if (isVectorExhaustive(patterns.map((pattern) => [pattern]), [valueType], typeEnv, adts)) {
-    return undefined;
-  }
+  const missing = findMissingCases(patterns.map((pattern) => [pattern]), [valueType], typeEnv, adts, []);
+  if (missing.length === 0) return undefined;
+
   const scrutinee = prune(valueType);
   if (scrutinee.tag === "named") {
     const info = adts.get(scrutinee.id);
-    if (!info) return "non-exhaustive match";
-    const covered = new Set(
-      patterns
-        .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor")
-        .map((p) => baseName(p.name)),
-    );
-    const missing = info.ctors.map((c) => c.name).filter((name) => !covered.has(name));
-    if (missing.length) return `non-exhaustive match: missing ${missing.join(", ")}`;
+    if (info) {
+      const covered = new Set(
+        patterns
+          .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor")
+          .map((p) => baseName(p.name)),
+      );
+      const missingCtors = info.ctors.map((c) => c.name).filter((name) => !covered.has(name));
+      if (missingCtors.length) return `non-exhaustive match: missing ${missingCtors.join(", ")}`;
+    }
   }
-  return "non-exhaustive match";
+
+  // Report first missing case with path
+  const first = missing[0];
+  if (first.path.length > 0) {
+    // Path shows nested constructor context, missing shows what's not covered
+    // e.g., path=["Cons"], missing="Nil" => "in Cons, missing: Nil" (single-element list)
+    const context = first.path.join(" → ");
+    return `non-exhaustive match: in ${context}, missing: ${first.missing}`;
+  }
+  return `non-exhaustive match: missing ${first.missing}`;
 }
 
 export function isVectorExhaustive(
@@ -39,12 +54,24 @@ export function isVectorExhaustive(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
 ): boolean {
-  if (types.length === 0) return rows.length > 0;
+  return findMissingCases(rows, types, typeEnv, adts, []).length === 0;
+}
+
+function findMissingCases(
+  rows: Pattern[][],
+  types: Ty[],
+  typeEnv: TypeEnv,
+  adts: Map<number, TypeDeclInfo>,
+  path: string[],
+): MissingCase[] {
+  if (types.length === 0) return rows.length > 0 ? [] : [{ path: [...path], missing: "_" }];
+
   const [headType, ...tailTypes] = types;
   const head = prune(headType);
+
   if (rows.some((row) => isIrrefutable(row[0]))) {
     const tails = rows.filter((row) => isIrrefutable(row[0])).map((row) => row.slice(1));
-    return isVectorExhaustive(tails, tailTypes, typeEnv, adts);
+    return findMissingCases(tails, tailTypes, typeEnv, adts, path);
   }
 
   if (head.tag === "prim" && head.name === "Bool") {
@@ -54,13 +81,28 @@ export function isVectorExhaustive(
     const falseRows = rows.filter((row) => row[0].kind === "PBool" && !row[0].value).map((row) =>
       row.slice(1)
     );
-    return isVectorExhaustive(trueRows, tailTypes, typeEnv, adts) &&
-      isVectorExhaustive(falseRows, tailTypes, typeEnv, adts);
+    const missing: MissingCase[] = [];
+    if (!isVectorExhaustive(trueRows, tailTypes, typeEnv, adts)) {
+      // If no more types to check, the missing case is the literal itself
+      if (tailTypes.length === 0) {
+        missing.push({ path: [...path], missing: "true" });
+      } else {
+        missing.push(...findMissingCases(trueRows, tailTypes, typeEnv, adts, path));
+      }
+    }
+    if (!isVectorExhaustive(falseRows, tailTypes, typeEnv, adts)) {
+      if (tailTypes.length === 0) {
+        missing.push({ path: [...path], missing: "false" });
+      } else {
+        missing.push(...findMissingCases(falseRows, tailTypes, typeEnv, adts, path));
+      }
+    }
+    return missing;
   }
 
   if (head.tag === "prim" && head.name === "Void") {
     const voidRows = rows.filter((row) => row[0].kind === "PVoid").map((row) => row.slice(1));
-    return isVectorExhaustive(voidRows, tailTypes, typeEnv, adts);
+    return findMissingCases(voidRows, tailTypes, typeEnv, adts, path);
   }
 
   if (head.tag === "tuple") {
@@ -70,8 +112,10 @@ export function isVectorExhaustive(
       )
       .filter((row) => row[0].items.length === head.items.length)
       .map((row) => [...row[0].items, ...row.slice(1)]);
-    if (tupleRows.length === 0) return false;
-    return isVectorExhaustive(tupleRows, [...head.items, ...tailTypes], typeEnv, adts);
+    if (tupleRows.length === 0) {
+      return [{ path: [...path], missing: `(${head.items.map(() => "_").join(", ")})` }];
+    }
+    return findMissingCases(tupleRows, [...head.items, ...tailTypes], typeEnv, adts, path);
   }
 
   if (head.tag === "named") {
@@ -89,16 +133,22 @@ export function isVectorExhaustive(
           ),
           ...row.slice(1),
         ]);
-      if (recordRows.length === 0) return false;
-      return isVectorExhaustive(
+      if (recordRows.length === 0) {
+        return [{ path: [...path], missing: `.{ ${fields.map((f) => `${f.name} = _`).join(", ")} }` }];
+      }
+      return findMissingCases(
         recordRows,
         [...fields.map((field) => field.type), ...tailTypes],
         typeEnv,
         adts,
+        path,
       );
     }
+
     const info = adts.get(head.id);
-    if (!info) return false;
+    if (!info) return [{ path: [...path], missing: "_" }];
+
+    const missing: MissingCase[] = [];
     for (const ctor of info.ctors) {
       const ctorRows = rows
         .filter((row): row is [Extract<Pattern, { kind: "PCtor" }>, ...Pattern[]] =>
@@ -106,14 +156,26 @@ export function isVectorExhaustive(
         )
         .filter((row) => baseName(row[0].name) === ctor.name)
         .map((row) => [...row[0].args, ...row.slice(1)]);
-      if (ctorRows.length === 0) return false;
-      const ctorTypes = constructorArgTypes(info, ctor, head, typeEnv);
-      if (!isVectorExhaustive(ctorRows, [...ctorTypes, ...tailTypes], typeEnv, adts)) return false;
+
+      if (ctorRows.length === 0) {
+        // Entire constructor is missing
+        const ctorPattern = ctor.args.length > 0
+          ? `${ctor.name}(${ctor.args.map(() => "_").join(", ")})`
+          : ctor.name;
+        missing.push({ path: [...path], missing: ctorPattern });
+      } else {
+        const ctorTypes = constructorArgTypes(info, ctor, head, typeEnv);
+        const ctorMissing = findMissingCases(ctorRows, [...ctorTypes, ...tailTypes], typeEnv, adts, [
+          ...path,
+          ctor.name,
+        ]);
+        missing.push(...ctorMissing);
+      }
     }
-    return true;
+    return missing;
   }
 
-  return false;
+  return [{ path: [...path], missing: "_" }];
 }
 
 export function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
