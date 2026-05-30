@@ -4,8 +4,10 @@
     "jsr:@std/assert@^1.0.17": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:@types/node@*": "25.9.1",
+    "npm:peggy@*": "5.1.0",
     "npm:peggy@^5.0.6": "5.1.0",
     "npm:typescript@*": "6.0.3",
+    "npm:typescript@5.6.2": "5.6.2",
     "npm:typescript@^6.0.3": "6.0.3"
   },
   "jsr": {
@@ -50,6 +52,10 @@
     },
     "source-map-generator@2.0.6": {
       "integrity": "sha512-IlassDs1Ve8nV6uyQZXF9kdkJpVKnMte2JZQXu13M0A5zwc+vu6+LNHfmxsHBMDtoZE21RHiKI0/xvpecZRCNg=="
+    },
+    "typescript@5.6.2": {
+      "integrity": "sha512-NW8ByodCSNCwZeghjN3o+JX5OFH0Ojg6sadjEKY4huZ52TqbJTJnDo5+Tw98lSy63NZvi4n+ez5m2u5d4PkZyw==",
+      "bin": true
     },
     "typescript@6.0.3": {
       "integrity": "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==",

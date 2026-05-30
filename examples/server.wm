@@ -18,7 +18,7 @@ let handler = (req) => {
   ) :> construct;
   let path = get(urlObj, "pathname");
   let response = get(globalThis, "Response");
-  let now = dateString(void);
+  let now = dateString();
 
   if (method == "GET") {
     match(path) {
