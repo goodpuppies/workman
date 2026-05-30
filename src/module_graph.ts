@@ -75,7 +75,7 @@ async function visitModule(path: string, ctx: LoadContext) {
   ctx.visiting.add(path);
 
   const source = await readModuleSource(path, ctx.options);
-  const module = await parse(source, ctx.options.surface);
+  const module = await parse(source, ctx.options.surface, path);
   const imports: ModuleImportEdge[] = [];
   for (const decl of module.decls) {
     if (decl.kind !== "ImportDecl") continue;

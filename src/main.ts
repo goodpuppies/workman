@@ -1,11 +1,23 @@
-import { checkFile, compileFile } from "./compiler.ts";
+import { checkFile, compileFile, ModuleAnalysisError } from "./compiler.ts";
+import { formatError } from "./diagnostics.ts";
+import { ParseError } from "./parser.ts";
 import { runFile } from "./run.ts";
 
 const commands = new Set(["check", "compile", "run", "help"]);
 
 if (import.meta.main) {
   const code = await main(Deno.args).catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    if (error instanceof ParseError) {
+      console.error(formatError(error.message, error.filePath, error.source, error.span));
+    } else if (error instanceof ModuleAnalysisError) {
+      if (error.originalError instanceof ParseError) {
+        console.error(formatError(error.originalError.message, error.originalError.filePath || error.path, error.originalError.source, error.originalError.span));
+      } else {
+        console.error(formatError(error.message, error.path, error.source, undefined));
+      }
+    } else {
+      console.error(error instanceof Error ? error.message : String(error));
+    }
     return 1;
   });
   Deno.exit(code);

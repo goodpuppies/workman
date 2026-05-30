@@ -17,8 +17,8 @@ export type VirtualCompileOptions = CompileOptions & {
   virtualFs: VirtualFileSystem;
 };
 
-export async function compile(source: string, options: CompileOptions = {}): Promise<string> {
-  const ast = prepareFfiElaboration(await parse(source, options.surface)).module;
+export async function compile(source: string, options: CompileOptions = {}, filePath?: string): Promise<string> {
+  const ast = prepareFfiElaboration(await parse(source, options.surface, filePath)).module;
   const result = checkModuleWithoutImports(ast);
   return emitCoreProgram(coreProgramFromModule(ast, result));
 }
@@ -48,25 +48,28 @@ export class ModuleAnalysisError extends Error {
 export async function checkSource(
   source: string,
   options: CheckSourceOptions = {},
+  filePath?: string,
 ): Promise<InferResult> {
   return checkModuleWithoutImports(
-    prepareFfiElaboration(await parse(source, options.surface)).module,
+    prepareFfiElaboration(await parse(source, options.surface, filePath)).module,
   );
 }
 
 export async function coreSource(
   source: string,
   options: CheckSourceOptions = {},
+  filePath?: string,
 ): Promise<CoreSourceResult> {
-  const module = prepareFfiElaboration(await parse(source, options.surface)).module;
+  const module = prepareFfiElaboration(await parse(source, options.surface, filePath)).module;
   return { module: coreFromSurface(module), result: checkModuleWithoutImports(module) };
 }
 
 export async function checkSourceSteps(
   source: string,
   options: CheckSourceOptions = {},
+  filePath?: string,
 ): Promise<InferStep[]> {
-  const module = prepareFfiElaboration(await parse(source, options.surface)).module;
+  const module = prepareFfiElaboration(await parse(source, options.surface, filePath)).module;
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
     throw new Error("source strings with imports require checkFile");
   }

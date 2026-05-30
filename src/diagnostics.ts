@@ -1,4 +1,5 @@
 import type { AstNode, SourceSpan } from "./source.ts";
+import { lineStarts, sliceSource } from "./source.ts";
 
 export type FrontendDiagnostic = {
   severity: "error" | "warning";
@@ -27,6 +28,35 @@ export class FrontendDiagnosticError extends Error {
     this.name = "FrontendDiagnosticError";
     this.diagnostic = diagnostic;
   }
+}
+
+export function formatError(
+  message: string,
+  filePath: string | undefined,
+  source: string | undefined,
+  span: SourceSpan | undefined,
+): string {
+  const location = span && source
+    ? `${filePath || "<input>"}:${span.line}:${span.col}`
+    : filePath || "<input>";
+  
+  let output = `error[${location}]: ${message}\n`;
+  
+  if (source && span) {
+    const starts = lineStarts(source);
+    const lineIndex = Math.max(0, Math.min(span.line - 1, starts.length - 1));
+    const lineStart = starts[lineIndex];
+    const lineEnd = source.indexOf("\n", lineStart);
+    const line = lineEnd === -1 ? source.slice(lineStart) : source.slice(lineStart, lineEnd);
+    
+    output += `  ${line}\n`;
+    
+    const spaces = " ".repeat(span.col);
+    const carets = "^".repeat(Math.max(1, span.end - span.start));
+    output += `  ${spaces}${carets}\n`;
+  }
+  
+  return output;
 }
 
 export function diagnosticError(
