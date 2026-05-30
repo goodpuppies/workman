@@ -18,7 +18,7 @@ export function addJsImport(env: Env, typeEnv: TypeEnv, decl: JsImportDecl) {
       throw new Error(`unknown JS import ${jsTargetLabel(decl.target)}.${spec.name}`);
     }
     const type = typeFromAst(spec.type, typeEnv, new Map(), { allowFreeVars: true });
-    const scheme = { ...generalize(env, type), status: "value" as const };
+    const scheme = { ...generalize(env, type), status: "value" as const, jsImport: true };
     env.set(local, scheme);
   }
 }

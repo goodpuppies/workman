@@ -18,6 +18,7 @@ export type Scheme = {
   status?: IdentifierStatus;
   basis?: boolean;
   provenance?: TypeProvenanceNote[];
+  jsImport?: boolean;
 };
 export type TypeProvenanceNote = {
   message: string;

@@ -280,6 +280,25 @@ Deno.test("reflected JS calls report unresolved overload selection", async () =>
   );
 });
 
+Deno.test("rejects Workman ADT values passed to JS FFI calls", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("console") import * as console;
+        from js.module("node:crypto") import { createHash };
+        let hash = match(createHash("sha256")) {
+          Ok(h) => { h },
+          Err(_) => { Panic("err") }
+        };
+        let main = () => {
+          console.log("SHA256:", hash.digest("hex"));
+        };
+      `),
+    Error,
+    'cannot pass "Result<String, Js.Error>" to JS FFI call',
+  );
+});
+
 Deno.test("supports JSON literals as explicit JS values", async () => {
   const result = await checkSource(`
     from js.module("node:child_process") import {

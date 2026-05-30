@@ -250,6 +250,9 @@ function inferCall(
       },
     );
     if (isPrintCall) assertPrintable(arg);
+    if (expr.callee.kind === "Var" && env.get(expr.callee.name)?.jsImport) {
+      assertJsCompatible(arg);
+    }
     constrainAt(result, calleeFn.result, expr);
   } else {
     const callDepth = maxCallDepth([...callCalleeRelated(expr.callee, callee), ...calleeProvenance]) + 1;
@@ -277,6 +280,29 @@ function inferCall(
 function assertPrintable(type: Ty) {
   if (containsNamedType(type, "Js.Error")) {
     throw new Error(`print requires an already-handled value, got ${quoteType(type)}`);
+  }
+}
+
+function assertJsCompatible(type: Ty) {
+  const t = prune(type);
+  switch (t.tag) {
+    case "prim":
+    case "var":
+      return;
+    case "fn":
+      t.params.forEach(assertJsCompatible);
+      assertJsCompatible(t.result);
+      return;
+    case "tuple":
+      t.items.forEach(assertJsCompatible);
+      return;
+    case "named":
+      if (t.name === "Js.Value" || t.name === "Js.Object" || t.name === "Js.Error") return;
+      if (t.name === "Option" && t.args.length === 1) {
+        assertJsCompatible(t.args[0]);
+        return;
+      }
+      throw new Error(`cannot pass ${quoteType(t)} to JS FFI call`);
   }
 }
 
