@@ -65,6 +65,22 @@ Deno.test("compiled manual root JS imports target global member names", async ()
   assertStringIncludes(js, '__wm_js_member("isFinite")');
 });
 
+Deno.test("supports multiline string literals", async () => {
+  const source = "let text = `first\nsecond\\nthird \\` quoted`;";
+  const result = await checkSource(source);
+  const js = await compile(source);
+
+  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  assertStringIncludes(js, JSON.stringify("first\nsecond\nthird ` quoted"));
+});
+
+Deno.test("quoted string literals reject raw newlines", async () => {
+  await assertRejects(
+    () => parse('let text = "first\nsecond";'),
+    Error,
+  );
+});
+
 Deno.test("reports inferred principal type shapes for core bindings", async () => {
   const result = await checkSource(`
     let id = (x) => { x };

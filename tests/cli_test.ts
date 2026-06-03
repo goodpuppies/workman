@@ -2,6 +2,23 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
 
+Deno.test("cli prints help with no arguments", async () => {
+  const result = await runCli([]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertStringIncludes(result.stdout, "wm-mini - Workman subset compiler and runner");
+  assertStringIncludes(result.stdout, "wm run examples/factorial.wm");
+});
+
+Deno.test("cli prints help with --help", async () => {
+  const result = await runCli(["--help"]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertStringIncludes(result.stdout, "commands:");
+});
+
 Deno.test("cli run compiles and executes a wm file", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

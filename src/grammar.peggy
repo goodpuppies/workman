@@ -342,8 +342,22 @@ TypeParam = name:(Identifier / Constructor) { return name; }
 
 Float = n:$("-"? [0-9]+ "." [0-9]+) !IdentPart { return at({ kind: "Float", value: Number(n) }, location()); }
 Int = n:$("-"? [0-9]+) !IdentPart { return at({ kind: "Int", value: Number(n) }, location()); }
-String = "\"" chars:Char* "\"" { return at({ kind: "String", value: chars.join("") }, location()); }
-Char = "\\n" { return "\n"; } / "\\t" { return "\t"; } / "\\\"" { return "\""; } / "\\\\" { return "\\"; } / !("\"" / "\\") c:. { return c; }
+String = MultilineString / QuotedString
+QuotedString = "\"" chars:QuotedChar* "\"" { return at({ kind: "String", value: chars.join("") }, location()); }
+MultilineString = "`" chars:MultilineChar* "`" { return at({ kind: "String", value: chars.join("") }, location()); }
+QuotedChar
+  = "\\n" { return "\n"; }
+  / "\\t" { return "\t"; }
+  / "\\\"" { return "\""; }
+  / "\\\\" { return "\\"; }
+  / !("\"" / "\\" / LineTerminator) c:. { return c; }
+MultilineChar
+  = "\\n" { return "\n"; }
+  / "\\t" { return "\t"; }
+  / "\\`" { return "`"; }
+  / "\\\\" { return "\\"; }
+  / !("`" / "\\") c:. { return c; }
+LineTerminator = "\r\n" / "\n" / "\r"
 Bool = v:("true" / "false") !IdentPart { return at({ kind: "Bool", value: v === "true" }, location()); }
 Void = "void" !IdentPart { return at({ kind: "Void" }, location()); }
 Identifier = !Keyword name:$([a-z_] IdentPart*) { return name; }

@@ -3,6 +3,9 @@
 A practical guide to Workman's syntax. Workman is a functional language that blends TypeScript-style
 familiarity with ML-style type inference and pattern matching.
 
+If you already know Standard ML, see [SML Parallels](./smlparallels.md) for a concept-by-concept
+translation guide.
+
 ---
 
 ## Table of Contents
@@ -18,6 +21,7 @@ familiarity with ML-style type inference and pattern matching.
 - [Lists](#lists)
 - [Modules and Imports](#modules-and-imports)
 - [Quirks and Gotchas](#quirks-and-gotchas)
+- [Current `wm-mini` Unsupported Notes](#current-wm-mini-unsupported-notes)
 
 ---
 
@@ -79,6 +83,24 @@ let nothing = () => { void };
 let x = 42;
 let name = "Workman";
 let pair = (1, "hello");
+```
+
+### Strings
+
+Double-quoted strings are single-line:
+
+```workman
+let short = "hello\nworld";
+```
+
+Backtick strings can span multiple lines. They do not interpolate expressions:
+
+```workman
+let page = `first line
+second line
+third line`;
+
+let withTick = `use \` to include a backtick`;
 ```
 
 ### Tuple Destructuring
@@ -297,6 +319,9 @@ let p = .{ x, y };
 
 ### Record Spread
 
+**Not supported yet in current `wm-mini`.** Current record construction supports explicit fields and
+field punning, but not `..source` update syntax.
+
 Copy and update records:
 
 ```workman
@@ -364,6 +389,9 @@ let getFirst = match(nested) => {
 ```
 
 ### Literal Patterns
+
+Number, string, boolean, and `void` patterns are supported. Character literals like `'a'` are shown
+as intended syntax below, but they are **not supported yet** in current `wm-mini`.
 
 ```workman
 let isZero = match(n) => {
@@ -481,7 +509,7 @@ let correct = (n) => {
   }
 };
 
--- ✅ BETTER: Use match for multiple conditions
+-- Planned syntax: match guards are not supported yet.
 let better = match(n) => {
   n when n < 0 => { "negative" },
   0 => { "zero" },
@@ -742,7 +770,12 @@ The following are intentionally not part of current `wm-mini` frontend scope:
 - custom fixity declarations and advanced operator definitions
 - panic/typed-hole runtime semantics
 
+Some sections below describe intended Workman syntax or older/full Workman design ideas. When a
+feature is not implemented in current `wm-mini`, it is marked with a **Not supported yet** note.
+
 #### Opaque Types
+
+**Not supported yet in current `wm-mini`.**
 
 Declare types without exposing their implementation:
 
@@ -758,6 +791,9 @@ export type Usize;
 ```
 
 #### Function Type Annotations
+
+**Partially supported.** Parameter annotations are supported. Full binding-level function
+annotations and return annotations in the examples below are not supported yet.
 
 Annotate function bindings with their full signature:
 
@@ -785,6 +821,9 @@ type Container<T> = Empty | Full<T>;
 ```
 
 #### Type Holes (`?`)
+
+**Not supported yet in current `wm-mini`.** Use `Panic("todo")` as the current escape hatch when an
+expression must typecheck in any context.
 
 Use `?` as a placeholder for values you haven't implemented yet. Based on
 [Hazel's typed holes](https://hazel.org/), this lets you write incomplete programs that still
@@ -860,6 +899,9 @@ let right = "Hello" ++ " " ++ "World";
 
 ### 11. Type Assertions Use `as`
 
+**Not supported yet in current `wm-mini`.** Prefer annotations on `let` bindings or lambda
+parameters for now.
+
 Use `as` to assert an expression has a specific type:
 
 ```workman
@@ -900,32 +942,67 @@ let getValue = (opt) => {
 
 ---
 
+## Current `wm-mini` Unsupported Notes
+
+The guide includes some intended Workman syntax, but current `wm-mini` is deliberately smaller.
+These features are not supported yet or are only partially supported:
+
+- **Full SML modules/functors/signatures:** files are the current module boundary.
+- **Opaque type declarations:** `export type Handle;` is planned/design syntax, not current syntax.
+- **Typed holes:** `?` is not implemented. Use `Panic("todo")` for temporary unreachable values.
+- **Binding-level function annotations:** annotate parameters or simple `let` bindings for now;
+  `let f: (...) => T = ...` is not generally implemented.
+- **Return type annotations on lambdas:** `let f = (x): T => { ... }` is not implemented.
+- **Record spread/update:** `.{ ..source, field = value }` is listed as intended syntax, but current
+  record construction is `.{ field = value }` or `.{ field }`.
+- **Match guards:** `pattern when cond => ...` is listed as intended syntax, but guards are not
+  implemented.
+- **Character literals:** use strings for now; `'a'` is not implemented.
+- **Early return:** there is no `return`; blocks return their final expression.
+- **Loops:** use recursion and lists for now.
+- **Mutation/refs:** no mutable variables or SML refs yet.
+- **Exceptions:** use `Result`, `Option`, and `Panic`; general exception handling is not implemented.
+- **Async/await syntax:** JS promises are used through FFI methods like `.then(...)`.
+- **String interpolation:** backtick strings are multiline only; they do not interpolate.
+- **Custom operators/fixity:** fixed built-in operators only.
+- **Automatic JS record/object conversion:** use `JSON{}` and `JSON[]` for current JS object/array
+  literals.
+- **Full JS FFI ergonomics:** some APIs still need manual wrappers or `Js.Object` annotations.
+
+See [JavaScript FFI](./jsffi.md) for the current JS interop surface.
+
+---
+
 ## Quick Reference
 
-| Feature          | Syntax                                |
-| ---------------- | ------------------------------------- |
-| Comment          | `-- text` or `// text`                |
-| Let binding      | `let x = value;`                      |
-| Function         | `let f = (a, b) => { body };`         |
-| Recursive        | `let rec f = ...;`                    |
-| Mutual recursion | `let rec f = ... and g = ...;`        |
-| Type union       | `type T = A \| B<Int>;`               |
-| Record type      | `record R = { field: Type };`         |
-| Record value     | `.{ field = value }` or `.{ field }`  |
-| Record spread    | `.{ ..source, field = value }`        |
-| Match            | `match(x) { pattern => { body } }`    |
-| Match guard      | `Var(x) when cond => { body }`        |
-| Bind variable    | `Var(x)` (literals pinned by default) |
-| If/else          | `if (cond) { a } else { b };`         |
-| List literal     | `[1, 2, 3]`                           |
-| List spread      | `[head, ..tail]`                      |
-| Import           | `from "path" import { item };`        |
-| Namespace import | `from "path" import * as Name;`       |
-| Export           | `export let x = ...;`                 |
-| Pipe             | `value :> fn`                         |
-| String concat    | `"a" ++ "b"`                          |
-| Type assertion   | `expr as Type`                        |
-| Panic            | `Panic("message")`                    |
-| Tuple destruct   | `let (a, b) = pair;`                  |
-| Tuple param      | `let f = (a, b) => { ... };`          |
-| Void return      | `let f = () => { expr; };`            |
+| Feature              | Syntax                                |
+| -------------------- | ------------------------------------- |
+| Comment              | `-- text` or `// text`                |
+| Let binding          | `let x = value;`                      |
+| Function             | `let f = (a, b) => { body };`         |
+| Recursive            | `let rec f = ...;`                    |
+| Mutual recursion     | `let rec f = ... and g = ...;`        |
+| Type union           | `type T = A \| B<Int>;`               |
+| Record type          | `record R = { field: Type };`         |
+| Record value         | `.{ field = value }` or `.{ field }`  |
+| Record spread        | `.{ ..source, field = value }`        |
+| Record spread status | Planned, not supported yet            |
+| Match                | `match(x) { pattern => { body } }`    |
+| Match guard          | `Var(x) when cond => { body }`        |
+| Match guard status   | Planned, not supported yet            |
+| Bind variable        | `Var(x)` (literals pinned by default) |
+| If/else              | `if (cond) { a } else { b };`         |
+| List literal         | `[1, 2, 3]`                           |
+| List spread          | `[head, ..tail]`                      |
+| Import               | `from "path" import { item };`        |
+| Namespace import     | `from "path" import * as Name;`       |
+| Export               | `export let x = ...;`                 |
+| Pipe                 | `value :> fn`                         |
+| String concat        | `"a" ++ "b"`                          |
+| Multiline string     | `` `line one\nline two` ``            |
+| Type assertion       | `expr as Type`                        |
+| Type assertion status | Planned, not supported yet           |
+| Panic                | `Panic("message")`                    |
+| Tuple destruct       | `let (a, b) = pair;`                  |
+| Tuple param          | `let f = (a, b) => { ... };`          |
+| Void return          | `let f = () => { expr; };`            |

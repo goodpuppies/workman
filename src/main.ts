@@ -11,7 +11,14 @@ if (import.meta.main) {
       console.error(formatError(error.message, error.filePath, error.source, error.span));
     } else if (error instanceof ModuleAnalysisError) {
       if (error.originalError instanceof ParseError) {
-        console.error(formatError(error.originalError.message, error.originalError.filePath || error.path, error.originalError.source, error.originalError.span));
+        console.error(
+          formatError(
+            error.originalError.message,
+            error.originalError.filePath || error.path,
+            error.originalError.source,
+            error.originalError.span,
+          ),
+        );
       } else {
         console.error(formatError(error.message, error.path, error.source, undefined));
       }
@@ -25,6 +32,10 @@ if (import.meta.main) {
 
 export async function main(args: string[]): Promise<number> {
   const [head, ...rest] = args;
+  if (!head || head === "--help" || head === "-h") {
+    usage();
+    return 0;
+  }
   const command = commands.has(head ?? "") ? head : "compile";
   const commandArgs = command === head ? rest : args;
 
@@ -70,17 +81,32 @@ async function runCommand(args: string[]): Promise<number> {
 
 function missingInput(command: string): number {
   console.error(`usage: wm ${command} <input.wm>`);
+  console.error(`try: wm --help`);
   return 2;
 }
 
 function usage() {
-  console.error(`usage: wm <command> [args]
+  console.log(`wm-mini - Workman subset compiler and runner
+
+usage:
+  wm <command> [args]
+  wm <file.wm> [out.js]
 
 commands:
-  check <input.wm>              typecheck a module graph
-  compile <input.wm> [out.js]   emit JavaScript
-  run <input.wm> [-- args...]   compile and execute with Deno
+  check <file.wm>               typecheck a module graph
+  compile <file.wm> [out.js]    emit JavaScript
+  run <file.wm> [-- args...]    compile and execute with Deno
+  help                          show this help
 
 compat:
-  wm <input.wm> [out.js]        same as wm compile <input.wm> [out.js]`);
+  wm <file.wm> [out.js]         same as wm compile <file.wm> [out.js]
+
+examples:
+  wm check examples/factorial.wm
+  wm run examples/factorial.wm
+  wm compile examples/factorial.wm out.mjs
+  wm run app.wm -- arg1 arg2
+
+notes:
+  JS FFI uses Deno under the hood. Runtime permissions come from the wm launcher.`);
 }
