@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { DocumentStore } from "../src/lsp/documents.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
@@ -114,7 +115,7 @@ Deno.test("lsp server clears diagnostics after didChange", async () => {
   assertEquals(
     mainPublishes.length,
     2,
-    JSON.stringify(publishes.map((message) => message.params), null, 2),
+    JSON.stringify(mainPublishes.map((message) => message.params), null, 2),
   );
   const first = mainPublishes[0].params as { diagnostics: { code: string }[] };
   const second = mainPublishes[1].params as { diagnostics: { code: string }[] };
@@ -144,9 +145,9 @@ Deno.test("lsp server revalidates open files after imported file changes", async
       },
     },
     async () => {
-      await delay(300);
+      await delay(700);
       await Deno.writeTextFile(lib, 'export let value = "ok";');
-      await delay(100);
+      await delay(200);
     },
     {
       jsonrpc: "2.0",
@@ -350,7 +351,7 @@ Deno.test("lsp server returns null for hover misses", async () => {
 async function runLsp(steps: (RpcMessage | (() => Promise<void>))[]): Promise<RpcMessage[]> {
   const child = new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-read", "--allow-env", "--allow-run", "src/lsp/server.ts"],
-    cwd: new URL("../", import.meta.url).pathname,
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",

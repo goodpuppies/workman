@@ -165,7 +165,7 @@ Deno.test("cli run grants generated JS permissions for reflected child process i
     `
       from js.module("node:child_process") import { spawn };
       let main = () => {
-        let proc = spawn("sh", JSON["-c", "exit 0"]);
+        let proc = spawn(${JSON.stringify(Deno.execPath())}, JSON["--version"]);
         match(proc) {
           Ok(p) => {
             p.on("close", (code) => {
@@ -222,7 +222,7 @@ Deno.test("cli run maps reflected JS throws to Result Err", async () => {
     `
       from js.global("Deno") import * as Deno;
       let main = () => {
-        print(match(Deno.readTextFileSync("${dir}/missing.txt")) {
+        print(match(Deno.readTextFileSync(${JSON.stringify(`${dir}/missing.txt`)})) {
           Ok(_) => { "ok" },
           Err(_) => { "err" },
         })

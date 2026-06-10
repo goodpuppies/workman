@@ -1,4 +1,5 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { posix } from "node:path";
 import type { ImportClause, Module } from "./ast.ts";
 import { diagnosticError } from "./diagnostics.ts";
 import { parse, type Surface } from "./parser.ts";
@@ -121,11 +122,7 @@ async function visitModule(path: string, ctx: LoadContext) {
 }
 
 async function readModuleSource(path: string, options: ModuleGraphOptions): Promise<string> {
-  const normalized = normalizeInputPath(path);
-  return options.sourceOverrides?.get(path) ??
-    options.sourceOverrides?.get(normalized) ??
-    options.virtualFs?.get(path) ??
-    options.virtualFs?.get(normalized) ??
+  return getVirtualSource(path, options) ??
     await Deno.readTextFile(path);
 }
 
@@ -145,32 +142,63 @@ function normalizeInputPath(input: string): string {
 
 async function resolveEntryPath(input: string, options: ModuleGraphOptions): Promise<string> {
   const normalized = normalizeInputPath(input);
+  const virtualPath = findVirtualPath(input, options);
+  if (virtualPath) return virtualPath;
   try {
     return await Deno.realPath(normalized);
   } catch (error) {
-    if (options.sourceOverrides?.has(normalized) || options.virtualFs?.has(normalized)) {
-      return normalized;
-    }
     throw error;
   }
 }
 
 function resolveImport(fromPath: string, specifier: string): string {
+  if (isPosixVirtualPath(fromPath)) {
+    return posix.normalize(posix.join(posix.dirname(fromPath), specifier));
+  }
   return fileURLToPath(new URL(specifier, pathToFileURL(fromPath)));
 }
 
 async function resolveImportPath(fromPath: string, specifier: string, options: ModuleGraphOptions): Promise<string> {
   const resolved = resolveImport(fromPath, specifier);
   const normalized = normalizeInputPath(resolved);
+  const virtualPath = findVirtualPath(resolved, options);
+  if (virtualPath) return virtualPath;
   try {
     return await Deno.realPath(resolved);
   } catch {
-    // Check if it exists in virtual FS or sourceOverrides
-    if (options.sourceOverrides?.has(normalized) || options.virtualFs?.has(normalized)) {
-      return normalized;
-    }
     throw new Error(`cannot resolve import ${specifier}`);
   }
+}
+
+function getVirtualSource(path: string, options: ModuleGraphOptions): string | undefined {
+  for (const candidate of pathCandidates(path)) {
+    const override = options.sourceOverrides?.get(candidate);
+    if (override !== undefined) return override;
+    const virtual = options.virtualFs?.get(candidate);
+    if (virtual !== undefined) return virtual;
+  }
+}
+
+function findVirtualPath(path: string, options: ModuleGraphOptions): string | undefined {
+  for (const candidate of pathCandidates(path)) {
+    if (options.sourceOverrides?.has(candidate) || options.virtualFs?.has(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+function pathCandidates(input: string): string[] {
+  const candidates = [input, normalizeInputPath(input)];
+  if (Deno.build.os === "windows") {
+    const withoutDrive = input.match(/^\/[A-Za-z]:(\/.*)$/)?.[1] ??
+      input.match(/^[A-Za-z]:(\/.*)$/)?.[1];
+    if (withoutDrive) candidates.push(withoutDrive);
+  }
+  return [...new Set(candidates)];
+}
+
+function isPosixVirtualPath(path: string): boolean {
+  return path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path);
 }
 
 function fallbackModuleName(path: string): string {

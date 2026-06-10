@@ -1,4 +1,5 @@
 import ts from "typescript";
+import { fileURLToPath } from "node:url";
 
 const compilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -9,7 +10,7 @@ const compilerOptions: ts.CompilerOptions = {
   skipLibCheck: true,
 };
 
-const nodeTypesPath = new URL(import.meta.resolve("npm:@types/node/index.d.ts")).pathname;
+const nodeTypesPath = fileURLToPath(import.meta.resolve("npm:@types/node/index.d.ts"));
 const denoTypesFile = "/__wm_deno_types.d.ts";
 let denoTypesCache: string | undefined;
 
