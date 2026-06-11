@@ -13,6 +13,19 @@ Deno.test("supports typed JS namespace imports", async () => {
   expectBinding(result.env, "main", { type: "(Void) => Void", vars: 0 });
 });
 
+Deno.test("rejects generic handwritten JS FFI signatures", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global import unsafe {
+          id: (T) => T
+        };
+      `),
+    Error,
+    "FFI signatures must be explicit",
+  );
+});
+
 Deno.test("supports inferred JS named and namespace imports", async () => {
   const result = await checkSource(`
     from js.global("Math") import { max as jsmax, floor };

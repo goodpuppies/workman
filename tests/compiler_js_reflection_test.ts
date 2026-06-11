@@ -23,7 +23,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
         };
       `),
     Error,
-    "unresolved JS FFI result as a String",
+    'type mismatch "String" vs "Result<?ffi',
   );
 });
 
@@ -183,7 +183,7 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
       `
         from js.global import type { Request };
         export let dispatch = () => {
-          (req, info) => {
+          (req) => {
             let method = match(req.method) {
               Ok(value) => { value },
               Err(_) => { "" },
@@ -198,7 +198,7 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
       `
         from js.global import type { Request };
         from js.global("Deno") import unsafe {
-          serve: ((Request, Js.Object) => Bool) => Js.Object
+          serve: ((Request) => Bool) => Js.Object
         };
         from "./http.wm" import { dispatch };
         let server = serve(dispatch());
@@ -210,8 +210,8 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
   const http = results.get("/test/http.wm");
   if (!http) throw new Error("missing http result");
   expectBinding(http.env, "dispatch", {
-    type: "(Void) => ((Request, 'a)) => Bool",
-    vars: 1,
+    type: "(Void) => (Request) => Bool",
+    vars: 0,
   });
 });
 
@@ -281,6 +281,79 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
     type: "(Void) => (Response) => Result<Response, Js.Error>",
     vars: 0,
   });
+});
+
+Deno.test("reflected FFI method placeholders solve before parent receiver calls", async () => {
+  const result = await checkSource(`
+    from js.global import type { Request };
+    from js.global("Promise") import unsafe {
+      resolve: (String) => Js.Promise<Js.Value>
+    } as Promise;
+
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+
+    let handle = (req) => {
+      let textPromise = req :> .text() :> try;
+      textPromise :> .then((text) => {
+        Promise.resolve(text :> .slice(0, 1) :> try)
+      }) :> try
+    };
+
+    let use = (handler: (Request) => Js.Promise<Js.Value>, req: Request) => {
+      handler(req)
+    };
+
+    let checked = use(handle, Panic("req"));
+  `);
+
+  expectBinding(result.env, "handle", {
+    type: "(Request) => Js.Promise<Js.Value>",
+    vars: 0,
+  });
+  expectBinding(result.env, "use", {
+    type: "(((Request) => Js.Promise<Js.Value>, Request)) => Js.Promise<Js.Value>",
+    vars: 0,
+  });
+  expectBinding(result.env, "checked", { type: "Js.Promise<Js.Value>", vars: 0 });
+});
+
+Deno.test("FFI-involved handlers stay monomorphic across downstream callback constraints", async () => {
+  const result = await checkSource(`
+    from js.global import type { Request };
+    from js.global("Deno") import unsafe {
+      serve: (Js.Value, (Request, Js.Value) => Js.Promise<Js.Value>) => Js.Value
+    };
+    from js.global("Promise") import unsafe {
+      resolve: (String) => Js.Promise<Js.Value>
+    } as Promise;
+
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+
+    let handler = (req, info) => {
+      let textPromise = req :> .text() :> try;
+      textPromise :> .then((text) => {
+        Promise.resolve(text)
+      }) :> try
+    };
+
+    let server = serve(JSON{}, handler);
+  `);
+
+  expectBinding(result.env, "handler", {
+    type: "((Request, Js.Value)) => Js.Promise<Js.Value>",
+    vars: 0,
+  });
+  expectBinding(result.env, "server", { type: "Js.Value", vars: 0 });
 });
 
 Deno.test("delayed foreign methods provide callback parameter refs", async () => {
@@ -353,7 +426,7 @@ Deno.test("reflected constructors return imported nominal foreign types", async 
 Deno.test("unannotated helper receivers keep delayed FFI obligations", async () => {
   const source = `
     from js.global import unsafe { TextEncoder };
-    from js.global import type { TextEncoder };
+    from js.global import type { TextEncoder, Uint8Array };
 
     let try = (result) => {
       match(result) {

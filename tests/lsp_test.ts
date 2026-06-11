@@ -360,9 +360,54 @@ let hexByte = (byte, index, array) => {
   assertEquals(hover?.contents.value, "```wm\nbyte: 'a\n```");
 });
 
+Deno.test("lsp hover agrees for FFI-constrained handler definition and use", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+from js.global import type { Request };
+from js.global("Deno") import unsafe {
+  serve: (Js.Value, (Request, Js.Value) => Js.Promise<Js.Value>) => Js.Value
+};
+from js.global("Promise") import unsafe { resolve as promiseResolve };
+
+let try = (result) => {
+  match(result) {
+    Ok(value) => { value },
+    Err(_) => { Panic("ffi") },
+  }
+};
+
+let handler = (req, info) => {
+  let textPromise = req :> .text() :> try;
+  textPromise :> .then((text) => {
+    promiseResolve(text)
+  }) :> try
+};
+
+let server = serve(JSON{}, handler);
+`;
+  await Deno.writeTextFile(main, source);
+
+  const uri = pathToFileUri(main);
+  const expected = "```wm\nhandler: ((Request, Js.Value)) => Js.Promise<Js.Value>\n```";
+  const definition = await hoverAt(uri, positionOf(source, "handler ="), new Map());
+  const use = await hoverAt(uri, positionOf(source, "handler);"), new Map());
+
+  assertEquals(definition?.contents.value, expected);
+  assertEquals(use?.contents.value, expected);
+});
+
 async function diagnosticsForPath(results: ValidationResult[], path: string) {
   const realPath = await Deno.realPath(path);
   return results.find((result) => fileUriToPath(result.uri) === realPath)?.diagnostics;
+}
+
+function positionOf(source: string, text: string) {
+  const offset = source.indexOf(text);
+  if (offset < 0) throw new Error(`missing test text ${text}`);
+  const prefix = source.slice(0, offset);
+  const lines = prefix.split("\n");
+  return { line: lines.length - 1, character: lines.at(-1)!.length };
 }
 
 function charRange(source: string, text: string) {

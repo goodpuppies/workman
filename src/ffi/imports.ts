@@ -75,6 +75,7 @@ export function collectFfiDecl(
       continue;
     }
     const reflected = !spec.type;
+    if (spec.type) rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
     const member = spec.type
       ? { name: spec.name, type: spec.type }
       : jsTargetMember(decl.target, spec.name);
@@ -95,6 +96,60 @@ export function collectFfiDecl(
       spec.node,
     );
   }
+}
+
+function rejectUnimportedManualForeignTypes(
+  type: TypeExpr,
+  importedTypeRefs: Map<string, JsTypeRef>,
+  node: JsImportSpec["node"],
+) {
+  const name = firstUnimportedManualForeignType(type, importedTypeRefs);
+  if (!name) return;
+  throw diagnosticError(
+    new Error(`JS FFI import uses type ${name}; FFI signatures must be explicit`),
+    node,
+  );
+}
+
+function firstUnimportedManualForeignType(
+  type: TypeExpr,
+  importedTypeRefs: Map<string, JsTypeRef>,
+): string | undefined {
+  switch (type.kind) {
+    case "TName":
+      if (
+        type.args.length === 0 &&
+        isForeignTypeDeclName(type.name) &&
+        !isManualFfiBuiltinType(type.name) &&
+        !importedTypeRefs.has(type.name)
+      ) {
+        return type.name;
+      }
+      return firstUnimportedManualForeignTypeIn(type.args, importedTypeRefs);
+    case "TTuple":
+      return firstUnimportedManualForeignTypeIn(type.items, importedTypeRefs);
+    case "TFn":
+      return firstUnimportedManualForeignTypeIn([...type.params, type.result], importedTypeRefs);
+    case "TVar":
+      return type.name;
+  }
+}
+
+function firstUnimportedManualForeignTypeIn(
+  types: TypeExpr[],
+  importedTypeRefs: Map<string, JsTypeRef>,
+): string | undefined {
+  for (const type of types) {
+    const name = firstUnimportedManualForeignType(type, importedTypeRefs);
+    if (name) return name;
+  }
+  return undefined;
+}
+
+function isManualFfiBuiltinType(name: string): boolean {
+  return name === "Number" || name === "String" || name === "Bool" || name === "Void" ||
+    name === "Js.Value" || name === "Js.Object" || name === "Js.Error" ||
+    name === "Js.Promise" || name === "Js.Array" || name === "Option" || name === "Result";
 }
 
 function specializeForeignResultVariants(

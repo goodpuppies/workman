@@ -25,7 +25,7 @@ Deno.test("rejects Workman ADT values passed to JS FFI calls", async () => {
         };
       `),
     Error,
-    'cannot pass "Result<String,',
+    'type mismatch expected "Js.Value", got "Result<String,',
   );
 });
 
@@ -60,7 +60,7 @@ Deno.test("JSON literal variables can settle to primitive types", async () => {
     let value = response("ok", 200);
   `);
 
-  expectBinding(result.env, "response", { type: "((String, 'a)) => Response", vars: 1 });
+  expectBinding(result.env, "response", { type: "((String, Number)) => Response", vars: 0 });
   expectBinding(result.env, "value", { type: "Response", vars: 0 });
 });
 
@@ -98,7 +98,7 @@ Deno.test("unresolved FFI receiver callbacks require an explicit JS value check"
     };
   `),
     Error,
-    "cannot resolve JS FFI method toString for receiver type 'a",
+    "top-level free type variable in hexByte",
   );
 });
 

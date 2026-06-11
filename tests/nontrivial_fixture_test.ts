@@ -1,5 +1,6 @@
-import { checkSource } from "../src/compiler.ts";
+import { checkFile, checkSource } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
+import { fileURLToPath } from "node:url";
 
 Deno.test("typechecks AoC-style depth analysis fixture", async () => {
   const source = await Deno.readTextFile(
@@ -101,4 +102,8 @@ Deno.test("typechecks wmsml overlap for polymorphic list helpers", async () => {
     type: "(list<Number>) => list<Number>",
     vars: 0,
   });
+});
+
+Deno.test("typechecks webhook JS FFI stress fixture", async () => {
+  await checkFile(fileURLToPath(new URL("../examples/webhook.wm", import.meta.url)));
 });
