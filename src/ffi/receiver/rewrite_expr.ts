@@ -286,6 +286,8 @@ export function rewriteExprCalls(
           }
           return objectReceiver;
         }
+        const unresolved = unresolvedDottedCall(expr);
+        if (unresolved) return unresolved;
       }
       const args = expr.args.map((arg) =>
         rewriteExprCalls(
@@ -510,6 +512,27 @@ export function rewriteExprCalls(
     default:
       return expr;
   }
+}
+
+function unresolvedDottedCall(expr: Extract<Expr, { kind: "Call" }>): Expr | undefined {
+  if (expr.callee.kind !== "Var") return undefined;
+  const parts = unresolvedDottedParts(expr.callee.name);
+  if (!parts || activeRecordFields.has(parts.path[0])) return undefined;
+  return {
+    kind: "FfiCall",
+    receiver: { kind: "Var", name: parts.base },
+    path: parts.path,
+    args: expr.args.map((arg) => arg),
+    node: expr.node,
+  };
+}
+
+function unresolvedDottedParts(name: string): { base: string; path: string[] } | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const base = parts[0];
+  if (!/^[a-z_]/.test(base)) return undefined;
+  return { base, path: parts.slice(1) };
 }
 
 function rewriteArgsWithVariant(

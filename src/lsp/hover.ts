@@ -11,7 +11,7 @@ import type {
 } from "../ast.ts";
 import { analyzeFile } from "../compiler.ts";
 import { prepareFfiElaboration } from "../ffi/elab.ts";
-import { inferModulePartial } from "../infer.ts";
+import { inferModulePartial, type InferResult } from "../infer.ts";
 import { loadModuleGraph } from "../module_graph.ts";
 import { type AstNode, lineColToOffset, lineStarts } from "../source.ts";
 import { instantiate, type Scheme, show } from "../types.ts";
@@ -34,9 +34,14 @@ export async function hoverAt(
   if (!node || !result) return null;
 
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(node.source));
-  const target = findSmallestAt(node.module, offset);
-  if (!target) return null;
+  for (const target of targetsAt(node.module, offset)) {
+    const hover = hoverForTarget(target, result);
+    if (hover) return hover;
+  }
+  return null;
+}
 
+function hoverForTarget(target: Target, result: InferResult): LspHover | null {
   if (target.kind === "expr") {
     const type = result.types.get(target.value);
     if (type) return hoverCode(`${labelExpr(target.value)}: ${show(type)}`);
@@ -108,8 +113,8 @@ type Target =
   | { kind: "expr"; value: Expr; node: AstNode }
   | { kind: "pattern"; value: Pattern; node: AstNode };
 
-function findSmallestAt(module: Module, offset: number): Target | undefined {
-  return collectModule(module).filter((target) => contains(target.node, offset)).sort(bySize)[0];
+function targetsAt(module: Module, offset: number): Target[] {
+  return collectModule(module).filter((target) => contains(target.node, offset)).sort(bySize);
 }
 
 function contains(node: AstNode, offset: number): boolean {

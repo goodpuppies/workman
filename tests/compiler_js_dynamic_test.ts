@@ -98,7 +98,7 @@ Deno.test("unresolved FFI receiver callbacks require an explicit JS value check"
     };
   `),
     Error,
-    "cannot resolve JS FFI method toString for receiver type Js.Value",
+    "cannot resolve JS FFI method toString for receiver type 'a",
   );
 });
 

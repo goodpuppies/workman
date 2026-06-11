@@ -8,10 +8,10 @@ import {
 import {
   BoolTy,
   type Env,
-  type FfiObligation,
   fn,
   fresh,
-  instantiateWithObligations,
+  freshFfi,
+  instantiate,
   named,
   NumberTy,
   prune,
@@ -40,7 +40,6 @@ export function inferExpr(
   warnings: string[] = [],
   diagnostics: FrontendDiagnostic[] = [],
   provenance: TypeProvenance = new Map(),
-  ffiObligations: FfiObligation[] = [],
 ): Ty {
   try {
     return inferExprInner(
@@ -52,7 +51,6 @@ export function inferExpr(
       warnings,
       diagnostics,
       provenance,
-      ffiObligations,
     );
   } catch (error) {
     throw diagnosticError(error, expr.node);
@@ -68,7 +66,6 @@ function inferExprInner(
   warnings: string[] = [],
   diagnostics: FrontendDiagnostic[] = [],
   provenance: TypeProvenance = new Map(),
-  ffiObligations: FfiObligation[] = [],
 ): Ty {
   let t: Ty;
   switch (expr.kind) {
@@ -91,15 +88,13 @@ function inferExprInner(
         t = inferDottedVar(expr.name, env, typeEnv);
         break;
       }
-      const instantiated = instantiateWithObligations(scheme);
-      t = instantiated.type;
-      ffiObligations.push(...instantiated.ffiObligations);
+      t = instantiate(scheme);
       break;
     }
     case "Tuple":
       t = tuple(
         expr.items.map((x) =>
-          inferExpr(x, env, typeEnv, adts, types, warnings, diagnostics, provenance, ffiObligations)
+          inferExpr(x, env, typeEnv, adts, types, warnings, diagnostics, provenance)
         ),
       );
       break;
@@ -117,7 +112,6 @@ function inferExprInner(
             warnings,
             diagnostics,
             provenance,
-            ffiObligations,
           ),
       );
       break;
@@ -132,7 +126,6 @@ function inferExprInner(
           warnings,
           diagnostics,
           provenance,
-          ffiObligations,
         );
         assertJsonCompatible(valueType, typeEnv, field.value);
       }
@@ -149,7 +142,6 @@ function inferExprInner(
           warnings,
           diagnostics,
           provenance,
-          ffiObligations,
         );
         assertJsonCompatible(itemType, typeEnv, item);
       }
@@ -165,17 +157,15 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
+      const value =
+        jsArrayFfiGetValue(typeEnv, receiver, expr.path) ??
+        jsPrimitiveFfiGetValue(receiver, expr.path) ??
+        freshFfi("get", receiver, expr.path, [], expr.node);
       t = ffiGetResultTy(
         typeEnv,
-        jsArrayFfiGetValue(typeEnv, receiver, expr.path) ??
-          jsPrimitiveFfiGetValue(receiver, expr.path) ??
-          jsonValueTy(typeEnv),
+        value,
       );
-      if (isJsValueResult(t, typeEnv) && isUnresolvedTypeVar(receiver)) {
-        constrain(receiver, jsonValueTy(typeEnv));
-      }
       break;
     }
     case "FfiCall": {
@@ -188,21 +178,19 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       const args = expr.args.map((arg) =>
-        inferExpr(arg, env, typeEnv, adts, types, warnings, diagnostics, provenance, ffiObligations)
+        inferExpr(arg, env, typeEnv, adts, types, warnings, diagnostics, provenance)
       );
+      const value =
+        jsArrayFfiCallValue(typeEnv, receiver, expr.path, args) ??
+        jsPromiseFfiCallValue(typeEnv, receiver, expr.path, args) ??
+        jsPrimitiveFfiCallValue(receiver, expr.path, args) ??
+        freshFfi("call", receiver, expr.path, args, expr.node);
       t = ffiGetResultTy(
         typeEnv,
-        jsArrayFfiCallValue(typeEnv, receiver, expr.path, args) ??
-          jsPromiseFfiCallValue(typeEnv, receiver, expr.path, args) ??
-          jsPrimitiveFfiCallValue(receiver, expr.path, args) ??
-          jsonValueTy(typeEnv),
+        value,
       );
-      if (isJsValueResult(t, typeEnv) && isUnresolvedTypeVar(receiver)) {
-        constrain(receiver, jsonValueTy(typeEnv));
-      }
       break;
     }
     case "Lambda": {
@@ -223,7 +211,6 @@ function inferExprInner(
           warnings,
           diagnostics,
           provenance,
-          ffiObligations,
         ),
       );
       break;
@@ -238,7 +225,6 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       break;
     case "If":
@@ -252,7 +238,6 @@ function inferExprInner(
           warnings,
           diagnostics,
           provenance,
-          ffiObligations,
         ),
         BoolTy,
       );
@@ -265,7 +250,6 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       constrain(
         t,
@@ -278,7 +262,6 @@ function inferExprInner(
           warnings,
           diagnostics,
           provenance,
-          ffiObligations,
         ),
       );
       break;
@@ -292,7 +275,6 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       break;
     case "Panic":
@@ -306,7 +288,6 @@ function inferExprInner(
           warnings,
           diagnostics,
           provenance,
-          ffiObligations,
         ),
         StringTy,
       );
@@ -322,7 +303,6 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       break;
     case "Binary":
@@ -335,7 +315,6 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       break;
     case "Unary":
@@ -350,7 +329,6 @@ function inferExprInner(
             warnings,
             diagnostics,
             provenance,
-            ffiObligations,
           ),
           NumberTy,
         );
@@ -366,7 +344,6 @@ function inferExprInner(
             warnings,
             diagnostics,
             provenance,
-            ffiObligations,
           ),
           BoolTy,
         );
@@ -383,7 +360,6 @@ function inferExprInner(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       );
       break;
   }
@@ -512,19 +488,6 @@ function isJsValueTy(typeEnv: TypeEnv, type: Ty): boolean {
   return target.tag === "named" && target.id === typeEnv.get("Js.Value")?.id;
 }
 
-function isJsValueResult(type: Ty, typeEnv: TypeEnv): boolean {
-  const target = prune(type);
-  const result = typeEnv.get("Result");
-  if (!result || target.tag !== "named" || target.id !== result.id || target.args.length !== 2) {
-    return false;
-  }
-  return isJsValueTy(typeEnv, target.args[0]);
-}
-
-function isUnresolvedTypeVar(type: Ty): boolean {
-  return prune(type).tag === "var";
-}
-
 function isJsObjectLikeTy(typeEnv: TypeEnv, type: Ty): boolean {
   const target = prune(type);
   if (target.tag !== "named") return false;
@@ -533,3 +496,4 @@ function isJsObjectLikeTy(typeEnv: TypeEnv, type: Ty): boolean {
     target.id === typeEnv.get("Js.Promise")?.id ||
     Boolean(target.foreign || typeEnv.get(target.name)?.foreign);
 }
+

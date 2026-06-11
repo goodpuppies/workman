@@ -2,7 +2,6 @@ import type { Expr } from "../ast.ts";
 import type { FrontendDiagnostic, FrontendRelatedDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
-  type FfiObligation,
   fn,
   fresh,
   instantiateRecordFields,
@@ -29,7 +28,6 @@ export function inferCall(
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ): Ty {
   const result = fresh();
   const isPrintCall = expr.callee.kind === "Var" && expr.callee.name === "print";
@@ -42,14 +40,13 @@ export function inferCall(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   const calleeProvenance = expr.callee.kind === "Var"
     ? (env.get(expr.callee.name)?.provenance ?? [])
     : [];
   const arg = callArg(
     expr.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, warnings, diagnostics, provenance, ffiObligations)
+      inferExpr(a, env, typeEnv, adts, types, warnings, diagnostics, provenance)
     ),
   );
   const calleeFn = prune(callee);
@@ -294,3 +291,5 @@ export function callCalleeRelated(callee: Expr, type: Ty): FrontendRelatedDiagno
     span: callee.node.span,
   }];
 }
+
+

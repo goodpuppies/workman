@@ -1,5 +1,6 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
+import { prune, typeFromAst, unify } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
 import {
@@ -28,6 +29,7 @@ type ResolveExpr = (
 ) => Expr;
 
 export function materializeReceiverProperty(
+  original: Extract<Expr, { kind: "FfiGet" }>,
   receiver: Expr,
   path: string[],
   receiverType: TypeExpr,
@@ -35,6 +37,7 @@ export function materializeReceiverProperty(
   surfaceName: string,
   bindings: Map<string, FfiBinding>,
   foreignTypeRefs: Map<string, JsTypeRef>,
+  result: InferResult,
   selected: Set<string>,
 ): Expr {
   const variants = memberVariants(member).map((variant) => ({
@@ -56,6 +59,7 @@ export function materializeReceiverProperty(
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [receiver]);
   if (!variant) return { kind: "FfiGet", receiver, path };
+  solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
   return {
     kind: "Call",
@@ -65,6 +69,7 @@ export function materializeReceiverProperty(
 }
 
 export function materializeReceiverCall(
+  original: Extract<Expr, { kind: "FfiCall" }>,
   receiver: Expr,
   path: string[],
   args: Expr[],
@@ -102,6 +107,7 @@ export function materializeReceiverCall(
   })];
   const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], allArgs, argTypes);
   if (!variant) return { kind: "FfiCall", receiver, path, args };
+  solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
   return {
     kind: "Call",
@@ -123,6 +129,35 @@ export function materializeReceiverCall(
       ),
     ],
   };
+}
+
+function solveReflectedFfiValue(
+  original: Extract<Expr, { kind: "FfiGet" | "FfiCall" }>,
+  variant: FfiVariant,
+  result: InferResult,
+): void {
+  const value = resultValueType(inferredType(result, original));
+  if (!value || prune(value).tag !== "ffi") return;
+  const reflected = unwrapResultTypeExpr(callResultTypeExpr(variant.type));
+  if (!reflected) return;
+  unify(value, typeFromAst(reflected, result.typeEnv, new Map(), { allowFreeVars: false }));
+}
+
+function resultValueType(type: ReturnType<typeof inferredType>) {
+  const target = type ? prune(type) : undefined;
+  return target?.tag === "named" && target.name === "Result" && target.args.length === 2
+    ? target.args[0]
+    : undefined;
+}
+
+function callResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
+  return type?.kind === "TFn" ? type.result : type;
+}
+
+function unwrapResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
+  return type?.kind === "TName" && type.name === "Result" && type.args.length === 2
+    ? type.args[0]
+    : type;
 }
 
 function rememberVariantForeignTypeRefs(

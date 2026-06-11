@@ -169,10 +169,7 @@ Deno.test("cli run grants generated JS permissions for reflected child process i
         match(proc) {
           Ok(p) => {
             p.on("close", (code) => {
-              print(match(code) {
-                Some(n) => { n },
-                None => { -1 },
-              });
+              print(code);
             });
             void
           },
@@ -247,7 +244,7 @@ Deno.test("cli run constructs reflected JS globals and reads properties", async 
       let main = () => {
         print(match(URL.new("https://example.com/a")) {
           Ok(url) => {
-            match(url.pathname) {
+            match(url :> .pathname) {
               Ok(path) => { path },
               Err(_) => { "property failed" },
             }

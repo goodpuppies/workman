@@ -66,7 +66,7 @@ let hexFromBuffer = (buffer) => {
   arrayFrom(bytes) :> .map(hexByte) :> try :> .join("") :> try
 };
 
-let encodeText = (encoder: TextEncoder, text) => {
+let encodeText = (encoder, text) => {
   encoder :> .encode(text) :> try
 };
 
@@ -102,7 +102,7 @@ let sendDiscordMessage = (content) => {
   }) :> try
 };
 
-let handleMockDiscord = (req: Request) => {
+let handleMockDiscord = (req) => {
   let bodyPromise = req :> .json() :> try;
   bodyPromise :> .then((body) => {
     let payload: MockDiscordPayload = body :> Json.assert :> try;
@@ -140,7 +140,7 @@ let handlePushPayload = (req, payload) => {
   }
 };
 
-let handleRequest = (req: Request, info) => {
+let handleRequest = (req, info) => {
   let method = req :> .method :> try;
   let urlText = req :> .url :> try;
   let url = URL.new(urlText);
@@ -152,7 +152,7 @@ let handleRequest = (req: Request, info) => {
     if (method != "POST") {
       promiseResolve(response("Method Not Allowed", 405))
     } else {
-      let textPromise = req :> .text() :> try;
+      let textPromise = req :> .text():> try;
       textPromise :> .then((bodyText) => {
         let signature = req :> .headers.get("x-hub-signature-256") :> try;
         match(signature) {

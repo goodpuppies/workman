@@ -4,6 +4,16 @@ import { basisTypes } from "./basis.ts";
 
 export type Ty =
   | { tag: "var"; id: number; name?: string; instance?: Ty }
+  | {
+    tag: "ffi";
+    id: number;
+    kind: "get" | "call";
+    receiver: Ty;
+    path: string[];
+    args: Ty[];
+    node?: Expr["node"];
+    instance?: Ty;
+  }
   | { tag: "prim"; name: string }
   | { tag: "fn"; params: Ty[]; result: Ty }
   | { tag: "tuple"; items: Ty[] }
@@ -22,19 +32,10 @@ export type Scheme = {
   vars: number[];
   type: Ty;
   constraints?: Constraint[];
-  ffiObligations?: FfiObligation[];
   status?: IdentifierStatus;
   basis?: boolean;
   provenance?: TypeProvenanceNote[];
   jsImport?: boolean;
-};
-export type FfiObligation = {
-  source: Expr;
-  receiverExpr: Expr;
-  path: string[];
-  receiver: Ty;
-  value: Ty;
-  result: Ty;
 };
 export type TypeProvenanceNote = {
   message: string;
@@ -68,10 +69,26 @@ export type TypeDeclInfo = {
 export type TypeVarScope = Map<string, Ty>;
 
 let nextVar = 0;
+let nextFfi = 0;
 let nextType = 0;
 
 export const prim = (name: string): Ty => ({ tag: "prim", name });
 export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
+export const freshFfi = (
+  kind: "get" | "call",
+  receiver: Ty,
+  path: string[],
+  args: Ty[] = [],
+  node?: Expr["node"],
+): Ty => ({
+  tag: "ffi",
+  id: nextFfi++,
+  kind,
+  receiver,
+  path,
+  args,
+  node,
+});
 export const fn = (params: Ty[], result: Ty): Ty => ({ tag: "fn", params, result });
 export const tuple = (items: Ty[]): Ty => ({ tag: "tuple", items });
 export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
@@ -104,12 +121,20 @@ export function prune(t: Ty): Ty {
     t.instance = prune(t.instance);
     return t.instance;
   }
+  if (t.tag === "ffi" && t.instance) {
+    t.instance = prune(t.instance);
+    return t.instance;
+  }
   return t;
 }
 
 export function occurs(id: number, t: Ty): boolean {
   t = prune(t);
   if (t.tag === "var") return t.id === id;
+  if (t.tag === "ffi") {
+    return occurs(id, t.receiver) || t.args.some((arg) => occurs(id, arg)) ||
+      (t.instance ? occurs(id, t.instance) : false);
+  }
   if (t.tag === "fn") return t.params.some((p) => occurs(id, p)) || occurs(id, t.result);
   if (t.tag === "tuple") return t.items.some((x) => occurs(id, x));
   if (t.tag === "named") return t.args.some((x) => occurs(id, x));
@@ -129,6 +154,14 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind): void {
     return;
   }
   if (b.tag === "var") return unify(b, a, onBind);
+  if (a.tag === "ffi") {
+    a.instance = b;
+    return;
+  }
+  if (b.tag === "ffi") {
+    b.instance = a;
+    return;
+  }
   if (a.tag !== b.tag) throw new Error(typeMismatchMessage(a, b));
   if (a.tag === "prim" && b.tag === "prim" && a.name === b.name) return;
   if (a.tag === "fn" && b.tag === "fn" && a.params.length === b.params.length) {
@@ -168,6 +201,10 @@ export function solveConstraints(constraints: Constraint[], onBind?: UnifyBind):
 export function ftv(t: Ty, out = new Set<number>()): Set<number> {
   t = prune(t);
   if (t.tag === "var") out.add(t.id);
+  else if (t.tag === "ffi") {
+    ftv(t.receiver, out);
+    t.args.forEach((arg) => ftv(arg, out));
+  }
   else if (t.tag === "fn") {
     t.params.forEach((p) => ftv(p, out));
     ftv(t.result, out);
@@ -192,31 +229,20 @@ export function generalize(env: Env, type: Ty): Scheme {
 }
 
 export function instantiate(scheme: Scheme): Ty {
-  return instantiateWithObligations(scheme).type;
-}
-
-export function instantiateWithObligations(
-  scheme: Scheme,
-): { type: Ty; ffiObligations: FfiObligation[] } {
   const map = new Map<number, Ty>();
   for (const id of scheme.vars) map.set(id, fresh());
   const go = (t: Ty): Ty => {
     t = prune(t);
     if (t.tag === "var") return map.get(t.id) ?? t;
+    if (t.tag === "ffi") {
+      return t;
+    }
     if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
     if (t.tag === "tuple") return tuple(t.items.map(go));
     if (t.tag === "named") return { ...t, args: t.args.map(go) };
     return t;
   };
-  return {
-    type: go(scheme.type),
-    ffiObligations: (scheme.ffiObligations ?? []).map((obligation) => ({
-      ...obligation,
-      receiver: go(obligation.receiver),
-      value: go(obligation.value),
-      result: go(obligation.result),
-    })),
-  };
+  return go(scheme.type);
 }
 
 export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
@@ -231,6 +257,14 @@ export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
       const created = fresh(t.name);
       freshen.set(t.id, created);
       return created;
+    }
+    if (t.tag === "ffi") {
+      return {
+        ...t,
+        receiver: go(t.receiver),
+        args: t.args.map(go),
+        instance: t.instance ? go(t.instance) : undefined,
+      };
     }
     if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
     if (t.tag === "tuple") return tuple(t.items.map(go));
@@ -304,6 +338,7 @@ export function show(t: Ty): string {
   const go = (x: Ty): string => {
     x = prune(x);
     if (x.tag === "var") return x.name ?? nameOf(x.id);
+    if (x.tag === "ffi") return `?ffi#${x.id}:${x.path.join(".")}`;
     if (x.tag === "prim") return x.name;
     if (x.tag === "tuple") return `(${x.items.map(go).join(", ")})`;
     if (x.tag === "fn") return `(${x.params.map(go).join(", ")}) => ${go(x.result)}`;

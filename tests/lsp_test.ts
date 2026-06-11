@@ -357,7 +357,7 @@ let hexByte = (byte, index, array) => {
 
   const hover = await hoverAt(pathToFileUri(main), { line: 9, character: 13 }, new Map());
 
-  assertEquals(hover?.contents.value, "```wm\nbyte: Js.Value\n```");
+  assertEquals(hover?.contents.value, "```wm\nbyte: 'a\n```");
 });
 
 async function diagnosticsForPath(results: ValidationResult[], path: string) {

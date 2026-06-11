@@ -2,7 +2,6 @@ import type { Expr, Param } from "../ast.ts";
 import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
-  type FfiObligation,
   fn,
   fresh,
   instantiate,
@@ -36,7 +35,6 @@ export function inferMatch(
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ): Ty {
   const valueType = inferExpr(
     expr.value,
@@ -47,7 +45,6 @@ export function inferMatch(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   const result = fresh();
   for (const arm of expr.arms) {
@@ -62,7 +59,6 @@ export function inferMatch(
       warnings,
       diagnostics,
       provenance,
-      ffiObligations,
     );
     constrainAt(result, armType, arm.body, undefined, [], provenance, {
       message: "match arm result",
@@ -89,7 +85,6 @@ export function inferBlock(
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ): Ty {
   const local = new Map(env);
   const localTypes = new Map(typeEnv);
@@ -108,7 +103,6 @@ export function inferBlock(
         diagnostics,
         new Set([...localTypes.values()].map((info) => info.id)),
         provenance,
-        ffiObligations,
       )
       : inferExpr(
         s,
@@ -119,7 +113,6 @@ export function inferBlock(
         warnings,
         diagnostics,
         provenance,
-        ffiObligations,
       )
   );
   const result = inferExpr(
@@ -131,7 +124,6 @@ export function inferBlock(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   if (mentionsLocalType(result, outerTypeIds)) throw new Error("local type escapes scope");
   return result;
@@ -146,7 +138,6 @@ export function inferBinary(
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ): Ty {
   const result = fresh();
   const op: Scheme | undefined = env.get(expr.op);
@@ -160,7 +151,6 @@ export function inferBinary(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   const right = inferExpr(
     expr.right,
@@ -171,7 +161,6 @@ export function inferBinary(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
@@ -258,7 +247,6 @@ export function inferPipe(
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ): Ty {
   const leftType = inferExpr(
     expr.left,
@@ -269,7 +257,6 @@ export function inferPipe(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   const right = expr.right;
 
@@ -283,10 +270,9 @@ export function inferPipe(
       warnings,
       diagnostics,
       provenance,
-      ffiObligations,
     );
     const argTypes = right.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, warnings, diagnostics, provenance, ffiObligations)
+      inferExpr(a, env, typeEnv, adts, types, warnings, diagnostics, provenance)
     );
     const allArgs = [leftType, ...argTypes];
     return constrainPipe(expr, calleeType, callArg(allArgs), provenance);
@@ -301,7 +287,6 @@ export function inferPipe(
     warnings,
     diagnostics,
     provenance,
-    ffiObligations,
   );
   return constrainPipe(expr, calleeType, leftType, provenance);
 }
@@ -333,3 +318,5 @@ function constrainPipe(
   );
   return result;
 }
+
+

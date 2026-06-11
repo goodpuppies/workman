@@ -1,9 +1,7 @@
-import type { Binding, Expr } from "../ast.ts";
+import type { Binding, Decl, Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import {
   type Env,
-  type FfiObligation,
-  ftv,
   generalize,
   prune,
   quoteType,
@@ -33,135 +31,76 @@ import {
 import { inferRecordExpr } from "./records.ts";
 
 export function generalizeBinding(env: Env, type: Ty, value: Expr): Scheme {
+  if (containsUnresolvedFfi(type) || containsFfiBoundary(value, env)) {
+    return { vars: [], type, constraints: [], status: "value" };
+  }
   return isNonExpansive(value, env)
     ? { ...generalize(env, type), status: "value" }
     : { vars: [], type, constraints: [], status: "value" };
 }
 
-export function withFfiObligations(
-  scheme: Scheme,
-  value: Expr,
-  types: Map<Expr, Ty>,
-  inferredObligations: FfiObligation[] = [],
-): Scheme {
-  const obligations = [...collectFfiObligations(value, types), ...inferredObligations].filter((
-    obligation,
-  ) => obligationMentionsSchemeVar(obligation, scheme));
-  return obligations.length ? { ...scheme, ffiObligations: obligations } : scheme;
-}
-
-function obligationMentionsSchemeVar(obligation: FfiObligation, scheme: Scheme): boolean {
-  const vars = new Set(scheme.vars);
-  return [...ftv(obligation.receiver), ...ftv(obligation.value), ...ftv(obligation.result)].some((
-    id,
-  ) => vars.has(id));
-}
-
-function collectFfiObligations(expr: Expr, types: Map<Expr, Ty>): FfiObligation[] {
-  const obligations: FfiObligation[] = [];
-  visitFfiObligations(expr, types, obligations);
-  return obligations;
-}
-
-function visitFfiObligations(expr: Expr, types: Map<Expr, Ty>, obligations: FfiObligation[]) {
-  if (expr.kind === "FfiGet") {
-    const receiver = types.get(expr.receiver);
-    const result = types.get(expr);
-    const value = result && ffiGetValueType(result);
-    if (receiver && result && value) {
-      obligations.push({
-        source: expr,
-        receiverExpr: expr.receiver,
-        path: expr.path,
-        receiver,
-        value,
-        result,
-      });
-    }
-    visitFfiObligations(expr.receiver, types, obligations);
-    return;
+function containsUnresolvedFfi(type: Ty): boolean {
+  const target = prune(type);
+  if (target.tag === "ffi") return true;
+  if (target.tag === "fn") {
+    return target.params.some(containsUnresolvedFfi) || containsUnresolvedFfi(target.result);
   }
-  if (expr.kind === "FfiCall") {
-    const receiver = types.get(expr.receiver);
-    const result = types.get(expr);
-    const value = result && ffiGetValueType(result);
-    if (receiver && result && value) {
-      obligations.push({
-        source: expr,
-        receiverExpr: expr.receiver,
-        path: expr.path,
-        receiver,
-        value,
-        result,
-      });
-    }
-    visitFfiObligations(expr.receiver, types, obligations);
-    expr.args.forEach((arg) => visitFfiObligations(arg, types, obligations));
-    return;
-  }
+  if (target.tag === "tuple") return target.items.some(containsUnresolvedFfi);
+  if (target.tag === "named") return target.args.some(containsUnresolvedFfi);
+  return false;
+}
+
+function containsFfiBoundary(expr: Expr, env: Env): boolean {
   switch (expr.kind) {
+    case "FfiGet":
+      return true;
+    case "FfiCall":
+      return true;
     case "Tuple":
-      expr.items.forEach((item) => visitFfiObligations(item, types, obligations));
-      return;
+    case "JsonArray":
+      return expr.items.some((item) => containsFfiBoundary(item, env));
     case "Record":
     case "JsonObject":
-      expr.fields.forEach((field) => visitFfiObligations(field.value, types, obligations));
-      return;
-    case "JsonArray":
-      expr.items.forEach((item) => visitFfiObligations(item, types, obligations));
-      return;
+      return expr.fields.some((field) => containsFfiBoundary(field.value, env));
     case "Lambda":
-      visitFfiObligations(expr.body, types, obligations);
-      return;
+      return containsFfiBoundary(expr.body, env);
     case "Call":
-      visitFfiObligations(expr.callee, types, obligations);
-      expr.args.forEach((arg) => visitFfiObligations(arg, types, obligations));
-      return;
+      return (expr.callee.kind === "Var" && env.get(expr.callee.name)?.jsImport === true) ||
+        containsFfiBoundary(expr.callee, env) ||
+        expr.args.some((arg) => containsFfiBoundary(arg, env));
     case "If":
-      visitFfiObligations(expr.cond, types, obligations);
-      visitFfiObligations(expr.thenExpr, types, obligations);
-      visitFfiObligations(expr.elseExpr, types, obligations);
-      return;
+      return containsFfiBoundary(expr.cond, env) || containsFfiBoundary(expr.thenExpr, env) ||
+        containsFfiBoundary(expr.elseExpr, env);
     case "Match":
-      visitFfiObligations(expr.value, types, obligations);
-      expr.arms.forEach((arm) => visitFfiObligations(arm.body, types, obligations));
-      return;
+      return containsFfiBoundary(expr.value, env) ||
+        expr.arms.some((arm) => containsFfiBoundary(arm.body, env));
     case "Panic":
-      visitFfiObligations(expr.message, types, obligations);
-      return;
+      return containsFfiBoundary(expr.message, env);
     case "Block":
-      for (const item of expr.items) {
-        if (item.kind === "LetDecl") {
-          item.bindings.forEach((binding) =>
-            visitFfiObligations(binding.value, types, obligations)
-          );
-        } else if (
-          item.kind !== "ImportDecl" && item.kind !== "JsImportDecl" &&
-          item.kind !== "ForeignTypeDecl" && item.kind !== "RecordDecl" && item.kind !== "TypeDecl"
-        ) {
-          visitFfiObligations(item, types, obligations);
-        }
-      }
-      visitFfiObligations(expr.result, types, obligations);
-      return;
+      return expr.items.some((item) =>
+        item.kind === "LetDecl"
+          ? item.bindings.some((binding) => containsFfiBoundary(binding.value, env))
+          : !isTypeOnlyDecl(item) && containsFfiBoundary(item, env)
+      ) || containsFfiBoundary(expr.result, env);
     case "Binary":
-      visitFfiObligations(expr.left, types, obligations);
-      visitFfiObligations(expr.right, types, obligations);
-      return;
+      return containsFfiBoundary(expr.left, env) || containsFfiBoundary(expr.right, env);
     case "Unary":
-      visitFfiObligations(expr.value, types, obligations);
-      return;
+      return containsFfiBoundary(expr.value, env);
     case "Pipe":
-      visitFfiObligations(expr.left, types, obligations);
-      visitFfiObligations(expr.right, types, obligations);
-      return;
+      return containsFfiBoundary(expr.left, env) || containsFfiBoundary(expr.right, env);
+    case "Int":
+    case "Float":
+    case "String":
+    case "Bool":
+    case "Void":
+    case "Var":
+      return false;
   }
 }
 
-function ffiGetValueType(result: Ty): Ty | undefined {
-  const resolved = prune(result);
-  if (resolved.tag === "named" && resolved.name === "Result") return resolved.args[0];
-  return undefined;
+function isTypeOnlyDecl(item: Decl | Expr): item is Decl {
+  return item.kind === "ImportDecl" || item.kind === "JsImportDecl" ||
+    item.kind === "ForeignTypeDecl" || item.kind === "RecordDecl" || item.kind === "TypeDecl";
 }
 
 function isNonExpansive(expr: Expr, env: Env): boolean {
@@ -213,11 +152,9 @@ export function inferBinding(
   diagnostics: import("../diagnostics.ts").FrontendDiagnostic[],
   annotationVars: TypeVarScope,
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
-): { bound: Map<string, Ty>; refutable: boolean; ffiObligations: FfiObligation[] } {
+): { bound: Map<string, Ty>; refutable: boolean } {
   try {
     const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv, annotationVars) : undefined;
-    const bindingFfiObligations: FfiObligation[] = [];
     const t = annotated && b.value.kind === "Record"
       ? inferRecordExpr(
         b.value,
@@ -232,7 +169,6 @@ export function inferBinding(
             warnings,
             diagnostics,
             provenance,
-            bindingFfiObligations,
           ),
         annotated,
       )
@@ -245,9 +181,7 @@ export function inferBinding(
         warnings,
         diagnostics,
         provenance,
-        bindingFfiObligations,
       );
-    ffiObligations.push(...bindingFfiObligations);
     if (annotated && dynamicFfiWithoutJsonAssert(b.value, env)) {
       throw new Error(
         "type annotations cannot cast dynamic JS/JSON values; use Json.assert for an explicit dynamic shape assertion",
@@ -257,7 +191,7 @@ export function inferBinding(
     const bound = new Map<string, Ty>();
     inferBindingPattern(b.pattern, t, env, typeEnv, bound);
     const refutable = !isVectorExhaustive([[b.pattern]], [t], typeEnv, adts);
-    return { bound, refutable, ffiObligations: bindingFfiObligations };
+    return { bound, refutable };
   } catch (error) {
     throw diagnosticError(error, b.node);
   }

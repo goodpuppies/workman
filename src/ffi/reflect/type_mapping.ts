@@ -8,7 +8,7 @@ import type {
   JsMemberType,
   JsTypeRef,
 } from "./types.ts";
-import { fn, name, option, varType } from "../type_expr.ts";
+import { fn, name, option } from "../type_expr.ts";
 
 const maxReflectedRestArity = 8;
 
@@ -115,7 +115,7 @@ export function typeExprFromTsType(
     if (constraint && !isAnyOrUnknown(constraint)) {
       return typeExprFromTsType(checker, constraint, position) ?? name("Js.Value");
     }
-    return varType(type.symbol?.getName() ?? "a");
+    return name("Js.Value");
   }
   if (type.flags & ts.TypeFlags.StringLiteral) return name("String");
   if (type.flags & ts.TypeFlags.NumberLiteral) return name("Number");
@@ -160,7 +160,7 @@ function awaitedTypeArgument(
     }
   }
   const match = /^Awaited<([A-Za-z_][A-Za-z0-9_]*)>$/.exec(text);
-  if (match) return varType(match[1]);
+  if (match) return name("Js.Value");
   if (!/^Awaited<.+>$/.test(text)) return undefined;
   const ref = type as ts.TypeReference;
   const arg = ref.typeArguments?.[0] ?? checker.getTypeArguments(ref)[0];
@@ -320,7 +320,7 @@ function paramTypeExpr(
   index: number,
   callbackRefs?: JsTypeRef[],
 ): TypeExpr {
-  if (isAnyOrUnknown(type)) return varType(`a${index}`);
+  if (isAnyOrUnknown(type)) return name("Js.Value");
   const signature = type.getCallSignatures()[0];
   if (signature && signatureHasRest(signature)) {
     return fn(
@@ -347,13 +347,13 @@ function callbackFunctionTypeFromSignature(
 }
 
 function callbackParamTypeExpr(checker: ts.TypeChecker, type: ts.Type, index: number): TypeExpr {
-  if (isAnyOrUnknown(type)) return varType(`a${index}`);
+  if (isAnyOrUnknown(type)) return name("Js.Value");
   if (isObjectLike(type)) return name("Js.Object");
   return typeExprFromTsType(checker, type, "param") ?? name("Js.Value");
 }
 
-function restSlotType(type: TypeExpr, index: number): TypeExpr {
-  return type.kind === "TVar" ? varType(`a${index}`) : type;
+function restSlotType(type: TypeExpr, _index: number): TypeExpr {
+  return type.kind === "TVar" ? name("Js.Value") : type;
 }
 
 function stripOptionForOptional(type: TypeExpr, optional: boolean): TypeExpr {
@@ -450,7 +450,7 @@ function typeExprFromArrayElement(
 ): TypeExpr {
   if (!type) return name("Js.Value");
   if (type.flags & ts.TypeFlags.TypeParameter) {
-    return varType(type.symbol?.getName() ?? "item");
+    return name("Js.Value");
   }
   return typeExprFromTsType(checker, type, "param") ?? name("Js.Value");
 }

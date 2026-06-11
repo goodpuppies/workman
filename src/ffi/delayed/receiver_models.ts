@@ -197,6 +197,8 @@ export function tyToTypeExpr(type: Ty): TypeExpr {
       return name(target.name);
     case "var":
       return tvar(target.name ?? `t${target.id}`);
+    case "ffi":
+      return name("Js.Value");
     case "named":
       return nameArgs(target.name, target.args.map(tyToTypeExpr));
     case "tuple":

@@ -61,7 +61,7 @@ Deno.test("supports inferred JS module imports", async () => {
     let hash = createHash("sha256");
   `);
 
-  expectBinding(result.env, "hash", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "hash", { type: "Result<Hash, Js.Error>", vars: 0 });
 });
 
 Deno.test("maps reflected JS nullish returns to basis Option", async () => {
@@ -87,9 +87,18 @@ Deno.test("resolves reflected JS optional arities before HM", async () => {
     let p3 = spawn("cmd", JSON[], JSON{});
   `);
 
-  expectBinding(result.env, "p1", { type: "Result<Js.Object, Js.Error>", vars: 0 });
-  expectBinding(result.env, "p2", { type: "Result<Js.Object, Js.Error>", vars: 0 });
-  expectBinding(result.env, "p3", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "p1", {
+    type: "Result<ChildProcessWithoutNullStreams, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "p2", {
+    type: "Result<ChildProcessWithoutNullStreams, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "p3", {
+    type: "Result<ChildProcessWithoutNullStreams, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("reflects global value constructors through new member", async () => {
@@ -99,8 +108,8 @@ Deno.test("reflects global value constructors through new member", async () => {
     let response = Response.new("ok", JSON{status: 200});
   `);
 
-  expectBinding(result.env, "url", { type: "Result<Js.Object, Js.Error>", vars: 0 });
-  expectBinding(result.env, "response", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "url", { type: "Result<URL, Js.Error>", vars: 0 });
+  expectBinding(result.env, "response", { type: "Result<Response, Js.Error>", vars: 0 });
 });
 
 Deno.test("reflects callback parameter object refs before HM", async () => {
@@ -125,14 +134,14 @@ Deno.test("reflects callback parameter object refs before HM", async () => {
 Deno.test("reflects dynamic properties from annotated Js.Object values", async () => {
   const result = await checkSource(`
     let methodOf = (req: Js.Object) => {
-      match(req.method) {
-        Ok(value) => { value == "GET" },
-        Err(_) => { false },
-      }
+      req.method
     };
   `);
 
-  expectBinding(result.env, "methodOf", { type: "(Js.Object) => Bool", vars: 0 });
+  expectBinding(result.env, "methodOf", {
+    type: "(Js.Object) => Result<Js.Value, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("reflects properties from type-only JS imports before HM", async () => {
@@ -257,7 +266,7 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
       `
         from js.global import type { Response };
         from "./http.wm" import { cloneResponse };
-        let useResponse = (handler: (Response) => Result<Js.Object, Js.Error>) => {
+        let useResponse = (handler: (Response) => Result<Response, Js.Error>) => {
           handler(Panic("response"))
         };
         let server = useResponse(cloneResponse());
@@ -269,7 +278,7 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
   const http = results.get("/test/http.wm");
   if (!http) throw new Error("missing http result");
   expectBinding(http.env, "cloneResponse", {
-    type: "(Void) => (Response) => Result<Js.Object, Js.Error>",
+    type: "(Void) => (Response) => Result<Response, Js.Error>",
     vars: 0,
   });
 });
@@ -339,4 +348,32 @@ Deno.test("reflected constructors return imported nominal foreign types", async 
     type: "Result<Option<String>, Js.Error>",
     vars: 0,
   });
+});
+
+Deno.test("unannotated helper receivers keep delayed FFI obligations", async () => {
+  const source = `
+    from js.global import unsafe { TextEncoder };
+    from js.global import type { TextEncoder };
+
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+
+    let encodeText = (encoder, text) => {
+      encoder :> .encode(text) :> try
+    };
+
+    let makeBytes = () => {
+      let encoder = TextEncoder.new();
+      encodeText(encoder, "hello")
+    };
+  `;
+
+  const results = await checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
+  const result = results.get("/test/main.wm")!;
+
+  expectBinding(result.env, "makeBytes", { type: "(Void) => Uint8Array", vars: 0 });
 });

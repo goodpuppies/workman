@@ -10,8 +10,8 @@ import {
   baseEnv,
   baseTypeEnv,
   type Env,
-  type FfiObligation,
   ftv,
+  prune,
   type Scheme,
   show,
   type Ty,
@@ -32,7 +32,6 @@ export type InferResult = {
   adts: Map<number, TypeDeclInfo>;
   warnings: string[];
   diagnostics: FrontendDiagnostic[];
-  ffiObligations: FfiObligation[];
 };
 
 export { describeEnv, type TypeSnapshot } from "./infer/snapshots.ts";
@@ -70,7 +69,6 @@ function inferModuleCore(
   const types = new Map<Expr, Ty>();
   const warnings: string[] = [];
   const diagnostics: FrontendDiagnostic[] = [];
-  const ffiObligations: FfiObligation[] = [];
   const steps: InferStep[] = [];
   const provenance: TypeProvenance = new Map();
 
@@ -104,7 +102,6 @@ function inferModuleCore(
         diagnostics,
         exportableTypeIds,
         provenance,
-        ffiObligations,
       );
     } catch (error) {
       const diagnostic = diagnosticError(error, decl.node);
@@ -117,6 +114,7 @@ function inferModuleCore(
 
   try {
     assertNoTopLevelFreeTypeVars(env);
+    assertNoTopLevelUnresolvedFfi(env);
   } catch (error) {
     const diagnostic = diagnosticError(error, module.node);
     if (!recover) throw diagnostic;
@@ -140,10 +138,30 @@ function inferModuleCore(
       adts,
       warnings,
       diagnostics,
-      ffiObligations,
     },
     steps,
   };
+}
+
+function assertNoTopLevelUnresolvedFfi(env: Env) {
+  const leaking = [...env.entries()]
+    .filter(([, scheme]) => containsUnresolvedFfi(scheme.type))
+    .map(([name, scheme]) => `${name}: ${showSchemeType(scheme)}`);
+  if (leaking.length === 0) return;
+  throw new Error(
+    `unresolved JS FFI type in ${leaking.join(", ")}; unresolved JS FFI access is not a generic value`,
+  );
+}
+
+function containsUnresolvedFfi(type: Ty): boolean {
+  const target = prune(type);
+  if (target.tag === "ffi") return true;
+  if (target.tag === "fn") {
+    return target.params.some(containsUnresolvedFfi) || containsUnresolvedFfi(target.result);
+  }
+  if (target.tag === "tuple") return target.items.some(containsUnresolvedFfi);
+  if (target.tag === "named") return target.args.some(containsUnresolvedFfi);
+  return false;
 }
 
 function assertNoTopLevelFreeTypeVars(env: Env) {

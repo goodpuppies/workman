@@ -41,6 +41,7 @@ export function addVariants(
 ) {
   const binding = bindings.get(surfaceName) ?? { surfaceName, variants: [] };
   for (const variant of dedupeVariantSpecs(variants)) {
+    rejectFfiTypeVariables(variant.type, surfaceName);
     const index = binding.variants.length;
     binding.variants.push({
       internalName: ffiInternalName(surfaceName, memberName, index),
@@ -54,6 +55,35 @@ export function addVariants(
     });
   }
   bindings.set(surfaceName, binding);
+}
+
+function rejectFfiTypeVariables(type: TypeExpr, surfaceName: string): void {
+  const variable = firstTypeVariable(type);
+  if (!variable) return;
+  throw new Error(
+    `JS FFI import ${surfaceName} uses generic type '${variable}; FFI signatures must be explicit`,
+  );
+}
+
+function firstTypeVariable(type: TypeExpr): string | undefined {
+  switch (type.kind) {
+    case "TName":
+      return firstTypeVariableIn(type.args);
+    case "TTuple":
+      return firstTypeVariableIn(type.items);
+    case "TFn":
+      return firstTypeVariableIn([...type.params, type.result]);
+    case "TVar":
+      return type.name;
+  }
+}
+
+function firstTypeVariableIn(types: TypeExpr[]): string | undefined {
+  for (const type of types) {
+    const variable = firstTypeVariable(type);
+    if (variable) return variable;
+  }
+  return undefined;
 }
 
 export function generatedReceiverJsImports(

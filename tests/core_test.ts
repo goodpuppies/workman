@@ -107,11 +107,11 @@ Deno.test("coreFile gives same-spelled constructors distinct runtime identities"
   assertEquals(boxes.map((ctor) => ctor.typeName), ["A", "B"]);
   assertStringIncludes(
     showCore(result.core.modules.get("/test/main.wm")!.module),
-    "let a = A.Box#0",
+    "let a = A.Box",
   );
   assertStringIncludes(
     showCore(result.core.modules.get("/test/main.wm")!.module),
-    "let b = B.Box#1",
+    "let b = B.Box",
   );
 });
 

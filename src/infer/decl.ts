@@ -3,7 +3,6 @@ import { basisCtorNamesForType } from "../basis.ts";
 import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
-  type FfiObligation,
   fn,
   fresh,
   freshTypeInfo,
@@ -21,7 +20,6 @@ import {
   constrainBinding,
   generalizeBinding,
   inferBinding,
-  withFfiObligations,
   withSchemeProvenance,
 } from "./decl_binding.ts";
 import { inferExpr } from "./expr.ts";
@@ -43,7 +41,6 @@ export function inferDecl(
   diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ) {
   if (decl.kind === "ImportDecl") return;
   if (decl.kind === "JsImportDecl") {
@@ -73,7 +70,6 @@ export function inferDecl(
     diagnostics,
     exportableTypeIds,
     provenance,
-    ffiObligations,
   );
 }
 
@@ -228,7 +224,6 @@ function inferLetDecl(
   diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ) {
   rejectDuplicates(decl.bindings.flatMap((b) => patternBinders(b.pattern)), "binding");
   const annotationVars: TypeVarScope = new Map();
@@ -245,7 +240,6 @@ function inferLetDecl(
       exportableTypeIds,
       annotationVars,
       provenance,
-      ffiObligations,
     );
     return;
   }
@@ -261,7 +255,6 @@ function inferLetDecl(
     exportableTypeIds,
     annotationVars,
     provenance,
-    ffiObligations,
   );
 }
 
@@ -277,7 +270,6 @@ function inferNonRecursiveLet(
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ) {
   const base = new Map(env);
   const inferred = decl.bindings.map((b) =>
@@ -291,7 +283,6 @@ function inferNonRecursiveLet(
       diagnostics,
       annotationVars,
       provenance,
-      ffiObligations,
     )
   );
   inferred.forEach((result, i) => {
@@ -306,12 +297,7 @@ function inferNonRecursiveLet(
     }
     for (const [name, type] of result.bound) {
       const scheme = withSchemeProvenance(
-        withFfiObligations(
-          generalizeBinding(base, type, decl.bindings[i].value),
-          decl.bindings[i].value,
-          types,
-          result.ffiObligations,
-        ),
+        generalizeBinding(base, type, decl.bindings[i].value),
         type,
         provenance,
       );
@@ -336,7 +322,6 @@ function inferRecursiveLet(
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
   provenance: TypeProvenance,
-  ffiObligations: FfiObligation[],
 ) {
   const base = new Map(env);
   for (const b of decl.bindings) {
@@ -356,7 +341,6 @@ function inferRecursiveLet(
       status: "value",
     })
   );
-  const bindingObligations = decl.bindings.map((): FfiObligation[] => []);
   decl.bindings.forEach((b, i) => {
     const name = (b.pattern as { name: string }).name;
     constrainBinding(
@@ -371,7 +355,6 @@ function inferRecursiveLet(
         warnings,
         diagnostics,
         provenance,
-        bindingObligations[i],
       ),
       b.value,
       b.pattern.node,
@@ -381,16 +364,10 @@ function inferRecursiveLet(
     if (b.annotation) {
       constrainAt(placeholders[i], typeFromAst(b.annotation, typeEnv, annotationVars), b.value);
     }
-    ffiObligations.push(...bindingObligations[i]);
   });
   decl.bindings.forEach((b, i) => {
     const scheme = withSchemeProvenance(
-      withFfiObligations(
-        { ...generalize(base, placeholders[i]), status: "value" as const },
-        b.value,
-        types,
-        bindingObligations[i],
-      ),
+      { ...generalize(base, placeholders[i]), status: "value" as const },
       placeholders[i],
       provenance,
     );

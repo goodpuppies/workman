@@ -4,11 +4,11 @@ import type { InferResult } from "../../infer.ts";
 import { prune, show } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
 import {
-  generatedForeignDeclsForOverrides,
   generatedForeignDeclsForRefs,
   generatedImportInsertionIndex,
 } from "./bindings.ts";
 import { materializeReceiverCall, materializeReceiverProperty } from "./materialize.ts";
+import { setActiveRecordFields } from "../receiver/rewrite_expr.ts";
 import {
   expressionRefForReceiver,
   foreignReceiver,
@@ -48,6 +48,19 @@ export function resolveDelayedFfiElaboration(
   result: InferResult,
   options: ResolveOptions = {},
 ): FfiElaboration {
+  const previousRecordFields = setActiveRecordFields(recordFieldNames(ffi.module.decls));
+  try {
+    return resolveDelayedFfiElaborationInner(ffi, result, options);
+  } finally {
+    setActiveRecordFields(previousRecordFields);
+  }
+}
+
+function resolveDelayedFfiElaborationInner(
+  ffi: FfiElaboration,
+  result: InferResult,
+  options: ResolveOptions,
+): FfiElaboration {
   const selected = new Set<string>();
   const valueRefs = new Map<string, JsTypeRef>();
   const decls: Decl[] = [];
@@ -60,10 +73,8 @@ export function resolveDelayedFfiElaboration(
     decls,
   };
   rejectAnnotatedDynamicCallbacks(module.decls, ffi.bindings);
-  const foreignDecls = [
-    ...generatedForeignDeclsForRefs(module.decls, ffi.foreignTypeRefs),
-    ...generatedForeignDeclsForOverrides(module.decls, options.receiverTypes),
-  ];
+  const foreignDeclsFromRefs = generatedForeignDeclsForRefs(module.decls, ffi.foreignTypeRefs);
+  const foreignDecls = foreignDeclsFromRefs;
   const imports = generatedReceiverJsImports(ffi.bindings, selected);
   const prefixLength = generatedImportInsertionIndex(module.decls);
   return {
@@ -81,6 +92,15 @@ export function resolveDelayedFfiElaboration(
       : module,
     selected: new Set([...ffi.selected, ...selected]),
   };
+}
+
+function recordFieldNames(decls: Decl[]): Set<string> {
+  const fields = new Set<string>();
+  for (const decl of decls) {
+    if (decl.kind !== "RecordDecl") continue;
+    for (const field of decl.fields) fields.add(field.name);
+  }
+  return fields;
 }
 
 export function contextualizeDelayedCallbacks(
@@ -605,7 +625,7 @@ function resolveDelayedFfiGet(
   options: ResolveOptions,
   valueRefs: Map<string, JsTypeRef>,
 ): Expr {
-  const receiverType = options.receiverTypes?.get(expr) ?? inferredType(result, expr.receiver);
+  const receiverType = inferredType(result, expr.receiver);
   const receiver = resolveDelayedExpr(expr.receiver, ffi, result, selected, options, valueRefs);
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
@@ -613,6 +633,7 @@ function resolveDelayedFfiGet(
     const member = jsRefMember(foreign.ref, expr.path);
     if (member) {
       return materializeReceiverProperty(
+        expr,
         receiver,
         expr.path,
         foreign.type,
@@ -620,6 +641,7 @@ function resolveDelayedFfiGet(
         `__receiver.${foreign.ref.key}.${expr.path.join(".")}`,
         ffi.bindings,
         ffi.foreignTypeRefs,
+        result,
         selected,
       );
     }
@@ -633,6 +655,7 @@ function resolveDelayedFfiGet(
   const arrayMember = arrayRef ? jsRefMember(arrayRef, expr.path) : undefined;
   if (array && arrayMember) {
     return materializeReceiverProperty(
+      expr,
       receiver,
       expr.path,
       array.type,
@@ -640,6 +663,7 @@ function resolveDelayedFfiGet(
       `__dynamic_array.${typeExprKey(array.type)}.${expr.path.join(".")}`,
       ffi.bindings,
       ffi.foreignTypeRefs,
+      result,
       selected,
     );
   }
@@ -648,6 +672,7 @@ function resolveDelayedFfiGet(
     const member = jsRefMember(expressionRef, expr.path);
     if (member) {
       return materializeReceiverProperty(
+        expr,
         receiver,
         expr.path,
         receiverTypeForRef(expressionRef),
@@ -655,6 +680,7 @@ function resolveDelayedFfiGet(
         `__receiver.${expressionRef.key}.${expr.path.join(".")}`,
         ffi.bindings,
         ffi.foreignTypeRefs,
+        result,
         selected,
       );
     }
@@ -670,6 +696,7 @@ function resolveDelayedFfiGet(
     );
   }
   return materializeReceiverProperty(
+    expr,
     receiver,
     expr.path,
     name("Js.Object"),
@@ -677,6 +704,7 @@ function resolveDelayedFfiGet(
     `__dynamic.${expr.path.join(".")}`,
     ffi.bindings,
     ffi.foreignTypeRefs,
+    result,
     selected,
   );
 }
@@ -689,7 +717,7 @@ function resolveDelayedFfiCall(
   options: ResolveOptions,
   valueRefs: Map<string, JsTypeRef>,
 ): Expr {
-  const receiverType = options.receiverTypes?.get(expr) ?? inferredType(result, expr.receiver);
+  const receiverType = inferredType(result, expr.receiver);
   const receiver = resolveDelayedExpr(expr.receiver, ffi, result, selected, options, valueRefs);
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
@@ -698,6 +726,7 @@ function resolveDelayedFfiCall(
     const member = callMember ?? jsRefMember(foreign.ref, expr.path);
     if (member) {
       return materializeReceiverCall(
+        expr,
         receiver,
         expr.path,
         expr.args,
@@ -726,6 +755,7 @@ function resolveDelayedFfiCall(
     : undefined;
   if (array && arrayMember) {
     return materializeReceiverCall(
+      expr,
       receiver,
       expr.path,
       expr.args,
@@ -754,6 +784,7 @@ function resolveDelayedFfiCall(
     : undefined;
   if (promise && promiseMember) {
     return materializeReceiverCall(
+      expr,
       receiver,
       expr.path,
       expr.args,
@@ -779,6 +810,7 @@ function resolveDelayedFfiCall(
       : undefined;
     if (promiseRef && promiseRefMember) {
       return materializeReceiverCall(
+        expr,
         receiver,
         expr.path,
         expr.args,
@@ -797,6 +829,7 @@ function resolveDelayedFfiCall(
     const member = callMember ?? jsRefMember(expressionRef, expr.path);
     if (member) {
       return materializeReceiverCall(
+        expr,
         receiver,
         expr.path,
         expr.args,
@@ -825,6 +858,7 @@ function resolveDelayedFfiCall(
     );
   }
   return materializeReceiverCall(
+    expr,
     receiver,
     expr.path,
     expr.args,

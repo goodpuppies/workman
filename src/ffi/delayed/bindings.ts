@@ -1,8 +1,6 @@
 import type { Decl } from "../../ast.ts";
-import { prune } from "../../types.ts";
 import { isForeignTypeDeclName } from "../imports.ts";
 import type { JsTypeRef } from "../reflect/types.ts";
-import type { ResolveOptions } from "./types.ts";
 
 export function generatedImportInsertionIndex(decls: Decl[]): number {
   let lastTypeDecl = -1;
@@ -15,32 +13,6 @@ export function generatedImportInsertionIndex(decls: Decl[]): number {
   if (lastTypeDecl !== -1) return lastTypeDecl + 1;
   const firstLet = decls.findIndex((decl) => decl.kind === "LetDecl");
   return firstLet === -1 ? decls.length : firstLet;
-}
-
-export function generatedForeignDeclsForOverrides(
-  decls: Decl[],
-  receiverTypes: ResolveOptions["receiverTypes"],
-): Decl[] {
-  if (!receiverTypes) return [];
-  const existing = new Set(
-    decls
-      .filter((decl) => decl.kind === "ForeignTypeDecl")
-      .map((decl) => `${decl.name}:${decl.foreignKey ?? ""}`),
-  );
-  const generated: Decl[] = [];
-  for (const type of receiverTypes.values()) {
-    const target = prune(type);
-    if (target.tag !== "named" || !target.foreign) continue;
-    const key = `${target.name}:${target.foreignKey ?? ""}`;
-    if (existing.has(key)) continue;
-    existing.add(key);
-    generated.push({
-      kind: "ForeignTypeDecl",
-      name: target.name,
-      foreignKey: target.foreignKey,
-    });
-  }
-  return generated;
 }
 
 export function generatedForeignDeclsForRefs(
