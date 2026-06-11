@@ -2,8 +2,9 @@ import { checkFile, compileFile, ModuleAnalysisError } from "./compiler.ts";
 import { formatDiagnosticError, formatError, FrontendDiagnosticError } from "./diagnostics.ts";
 import { ParseError } from "./parser.ts";
 import { runFile } from "./run.ts";
+import { typeDebugFile } from "./type_debug.ts";
 
-const commands = new Set(["check", "compile", "run", "help"]);
+const commands = new Set(["check", "compile", "run", "type-debug", "help"]);
 
 if (import.meta.main) {
   const code = await main(Deno.args).catch((error) => {
@@ -50,6 +51,8 @@ export async function main(args: string[]): Promise<number> {
       return await compileCommand(commandArgs);
     case "run":
       return await runCommand(commandArgs);
+    case "type-debug":
+      return await typeDebugCommand(commandArgs);
     case "help":
     default:
       usage();
@@ -83,6 +86,13 @@ async function runCommand(args: string[]): Promise<number> {
   return (await runFile(input, { args: programArgs })).code;
 }
 
+async function typeDebugCommand(args: string[]): Promise<number> {
+  const [input] = args;
+  if (!input) return missingInput("type-debug");
+  console.log(await typeDebugFile(input));
+  return 0;
+}
+
 function missingInput(command: string): number {
   console.error(`usage: wm ${command} <input.wm>`);
   console.error(`try: wm --help`);
@@ -100,6 +110,7 @@ commands:
   check <file.wm>               typecheck a module graph
   compile <file.wm> [out.js]    emit JavaScript
   run <file.wm> [-- args...]    compile and execute with Deno
+  type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help
 
 compat:

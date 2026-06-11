@@ -141,6 +141,7 @@ export function paramBinder(param: Param): string | undefined {
 
 export function callArgHint(expr: Expr): JsCallArgHint {
   if (expr.kind === "String") return { kind: "string", value: expr.value };
+  if (expr.kind === "Int" || expr.kind === "Float") return { kind: "number", value: expr.value };
   if (expr.kind === "Lambda") return { kind: "function", arity: expr.params.length };
   return { kind: "unknown" };
 }
@@ -149,6 +150,7 @@ export function callHintKey(args: Expr[]): string {
   return args.map((arg) => {
     const hint = callArgHint(arg);
     if (hint.kind === "string") return JSON.stringify(hint.value);
+    if (hint.kind === "number") return String(hint.value);
     if (hint.kind === "function") return `fn/${hint.arity}`;
     return "?";
   }).join(",");

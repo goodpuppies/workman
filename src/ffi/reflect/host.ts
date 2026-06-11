@@ -13,6 +13,8 @@ const compilerOptions: ts.CompilerOptions = {
 const nodeTypesPath = fileURLToPath(import.meta.resolve("npm:@types/node/index.d.ts"));
 const denoTypesFile = "/__wm_deno_types.d.ts";
 let denoTypesCache: string | undefined;
+const sourceFileCache = new Map<string, ts.SourceFile>();
+let previousProgram: ts.Program | undefined;
 
 export type JsReflectionSource = { key: string; source: string };
 
@@ -49,19 +51,27 @@ export function reflectSource<T>(
     : new Map<string, string>();
   const host = ts.createCompilerHost(compilerOptions);
   const originalGetSourceFile = host.getSourceFile;
-  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) =>
-    name === fileName
-      ? ts.createSourceFile(name, source, languageVersion, true)
-      : extraFiles.has(name)
-      ? ts.createSourceFile(name, extraFiles.get(name)!, languageVersion, true)
-      : originalGetSourceFile.call(
-        host,
-        name,
-        languageVersion,
-        onError,
-        shouldCreateNewSourceFile,
-      );
-  const program = ts.createProgram([fileName], compilerOptions, host);
+  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => {
+    if (name === fileName) return cachedSourceFile(name, source, languageVersion);
+    const extraSource = extraFiles.get(name);
+    if (extraSource !== undefined) return cachedSourceFile(name, extraSource, languageVersion);
+    const cacheKey = sourceFileCacheKey(name, languageVersion);
+    if (!shouldCreateNewSourceFile) {
+      const cached = sourceFileCache.get(cacheKey);
+      if (cached) return cached;
+    }
+    const loaded = originalGetSourceFile.call(
+      host,
+      name,
+      languageVersion,
+      onError,
+      shouldCreateNewSourceFile,
+    );
+    if (loaded && !shouldCreateNewSourceFile) sourceFileCache.set(cacheKey, loaded);
+    return loaded;
+  };
+  const program = ts.createProgram([fileName], compilerOptions, host, previousProgram);
+  previousProgram = program;
   const sourceFile = program.getSourceFile(fileName);
   if (!sourceFile) throw new Error(`cannot reflect JS target ${label}`);
   return read(program.getTypeChecker(), sourceFile);
@@ -80,6 +90,29 @@ function denoTypesSource(): string {
   }
   denoTypesCache = new TextDecoder().decode(output.stdout);
   return denoTypesCache;
+}
+
+function cachedSourceFile(
+  name: string,
+  source: string,
+  languageVersion: ts.ScriptTarget | ts.CreateSourceFileOptions,
+): ts.SourceFile {
+  const cacheKey = `${sourceFileCacheKey(name, languageVersion)}:${source}`;
+  const cached = sourceFileCache.get(cacheKey);
+  if (cached) return cached;
+  const created = ts.createSourceFile(name, source, languageVersion, true);
+  sourceFileCache.set(cacheKey, created);
+  return created;
+}
+
+function sourceFileCacheKey(
+  name: string,
+  languageVersion: ts.ScriptTarget | ts.CreateSourceFileOptions,
+): string {
+  const version = typeof languageVersion === "number"
+    ? languageVersion
+    : languageVersion.languageVersion;
+  return `${name}:${version}`;
 }
 
 export function findVariable(

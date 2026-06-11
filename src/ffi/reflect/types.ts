@@ -312,6 +312,8 @@ function jsRefCallTarget(
     .map((arg) =>
       arg.kind === "string"
         ? JSON.stringify(arg.value)
+        : arg.kind === "number"
+        ? String(arg.value)
         : arg.kind === "function"
         ? `fn/${arg.arity}:${
           arg.paramTypes?.map(typeExprKey).join(",") ?? "?"
@@ -327,6 +329,8 @@ function jsRefCallTarget(
   const argExprs = args.map((arg, index) =>
     arg.kind === "string"
       ? JSON.stringify(arg.value)
+      : arg.kind === "number"
+      ? String(arg.value)
       : arg.kind === "function"
       ? functionArgExpr(index, arg)
       : `__wm_arg_${index}`
@@ -338,6 +342,7 @@ function jsRefCallTarget(
   const argDecls = args
     .flatMap((arg, index) => {
       if (arg.kind === "unknown") return [`declare const __wm_arg_${index}: any;`];
+      if (arg.kind === "number") return [];
       if (arg.kind === "function") {
         return [
           `declare const __wm_cb_return_${index}: ${
@@ -399,6 +404,7 @@ function functionTypeFromCall(
       return syntheticCallbackTypeFromArg(checker, arg, args[index]);
     }
     if (args[index]?.kind === "string") return name("String");
+    if (args[index]?.kind === "number") return name("Number");
     if (args[index]?.kind === "ref") {
       return args[index].type ?? typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??
           name("Js.Value");

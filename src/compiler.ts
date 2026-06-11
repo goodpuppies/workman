@@ -25,6 +25,7 @@ import {
   type VirtualFileSystem,
 } from "./module_graph.ts";
 import { parse, type Surface } from "./parser.ts";
+import { FrontendDiagnosticError } from "./diagnostics.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 
@@ -132,7 +133,7 @@ export async function analyzeFile(
       imports.set(edge.specifier, firstResults.get(edge.path)!);
     }
     try {
-      firstResults.set(path, inferModulePartial(node.module, imports));
+      firstResults.set(path, assertNoPartialDiagnostics(inferModulePartial(node.module, imports)));
     } catch (error) {
       throw new ModuleAnalysisError(path, node.source, error);
     }
@@ -155,7 +156,7 @@ export async function analyzeFile(
       imports.set(edge.specifier, contextualResults.get(edge.path)!);
     }
     try {
-      contextualResults.set(path, inferModulePartial(node.module, imports));
+      contextualResults.set(path, assertNoPartialDiagnostics(inferModulePartial(node.module, imports)));
     } catch (error) {
       throw new ModuleAnalysisError(path, node.source, error);
     }
@@ -192,11 +193,24 @@ export async function analyzeFile(
   return { graph, results };
 }
 
+function assertNoPartialDiagnostics(result: InferResult): InferResult {
+  const diagnostic = result.diagnostics.find((item) =>
+    item.severity === "error" && !isDelayedFfiPartialDiagnostic(item.message)
+  );
+  if (diagnostic) throw new FrontendDiagnosticError(diagnostic);
+  return result;
+}
+
+function isDelayedFfiPartialDiagnostic(message: string): boolean {
+  return message.startsWith("top-level free type variable in ") ||
+    message.startsWith("unresolved JS FFI type in ");
+}
+
 function checkPreparedModuleWithoutImports(
   module: Module,
 ): { module: Module; result: InferResult } {
   const prepared = prepareFfiElaboration(module);
-  const first = inferModulePartial(prepared.module);
+  const first = assertNoPartialDiagnostics(inferModulePartial(prepared.module));
   const contextual = contextualizeDelayedCallbacks(prepared, first);
   const contextualResult = checkModuleWithoutImports(contextual.module);
   const resolved = resolveDelayedFfiElaboration(contextual, contextualResult);

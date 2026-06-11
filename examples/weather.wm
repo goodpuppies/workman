@@ -1,0 +1,296 @@
+from js.global import unsafe {
+  Date,
+  Number as jsNumber: (String) => Number,
+  String as jsString,
+  encodeURIComponent,
+  fetch,
+};
+from js.global("console") import unsafe { log };
+from js.global("Date") import unsafe { now as dateNow };
+from js.global("Deno") import unsafe {
+  args: Js.Array<String>,
+  readTextFile,
+  writeTextFile,
+};
+from js.global("JSON") import unsafe {
+  parse: (String) => Js.Object,
+  stringify: (Js.Value) => String,
+} as JSON;
+from js.global("Math") import unsafe { max as mathMax };
+from js.global("Promise") import unsafe {
+  all as promiseAll: (Js.Array<Js.Promise<String>>) => Js.Promise<Js.Array<String>>,
+  resolve as promiseResolve: (String) => Js.Promise<String>,
+};
+
+let cacheFile = ".weather-cache.json";
+let cacheTtlMs = 10 * 60 * 1000;
+
+record WttrResponse = {
+  current_condition: Js.Array<Js.Object>,
+  weather: Js.Array<Js.Object>,
+  nearest_area: Js.Array<Js.Object>,
+};
+
+record CacheEntry = {
+  fetchedAt: Number,
+  data: Js.Object,
+};
+
+let try = (result) => {
+  match(result) {
+    Ok(value) => { value },
+    Err(_) => { Panic("JS FFI call failed") },
+  }
+};
+
+let emptyStringArray = () => {
+  let xs: Js.Array<String> = JSON[] :> Json.assert :> try;
+  xs
+};
+
+let defaultCities = () => {
+  let xs: Js.Array<String> = JSON["Oulu"] :> Json.assert :> try;
+  xs
+};
+
+let firstObject = (items) => {
+  -- Missing feature: typed Js.Array<T>.at/index access.
+  -- This should become: items :> .at(0) :> try
+  None
+};
+
+let firstValue = (items, fallback) => {
+  match(firstObject(items)) {
+    Some(item) => {
+      let text: String = item :> .value :> try :> Json.assert :> try;
+      text
+    },
+    None => { fallback },
+  }
+};
+
+let cacheEntry = (cache, key) => {
+  -- Missing feature: dynamic JS object lookup by string key.
+  None
+};
+
+let cacheSet = (cache, key, value) => {
+  -- Missing feature: dynamic JS object assignment by string key.
+  false
+};
+
+let fetchJson = (url) => {
+  let requestUrl = url ++ "";
+  let responsePromise = fetch(requestUrl);
+  responsePromise :> .then((res) => {
+    let ok = res :> .ok :> try;
+    if (!ok) {
+      let status = res :> .status :> try;
+      Panic("HTTP " ++ jsString(status) ++ " fetching " ++ requestUrl)
+    } else {
+      res :> .json() :> try :> .then((body) => {
+        let data: Js.Object = body :> Json.assert :> try;
+        data
+      }) :> try
+    }
+  }) :> try
+};
+
+let getWeather = (city) => {
+  let encoded = encodeURIComponent(city);
+  let url = "https://wttr.in/" ++ encoded ++ "?format=j1";
+  fetchJson(url)
+};
+
+let loadCache = () => {
+  let textPromise = readTextFile(cacheFile);
+  textPromise :> .then((text) => {
+    JSON.parse(text)
+  }) :> try :> .catch((err) => {
+    JSON{}
+  }) :> try
+};
+
+let saveCache = (cache) => {
+  writeTextFile(cacheFile, JSON.stringify(cache))
+};
+
+let toNumber = (text) => {
+  jsNumber(text)
+};
+
+let numberText = (n) => {
+  n :> .toString() :> try
+};
+
+let paddedLeft = (text, width) => {
+  let value = text ++ "";
+  value :> .padStart(width, " ") :> try
+};
+
+let paddedRight = (text, width) => {
+  let value = text ++ "";
+  value :> .padEnd(width, " ") :> try
+};
+
+let tempForCurrent = (cur, fahrenheit) => {
+  if (fahrenheit) {
+    let text: String = cur :> .temp_F :> try :> Json.assert :> try;
+    toNumber(text)
+  } else {
+    let text: String = cur :> .temp_C :> try :> Json.assert :> try;
+    toNumber(text)
+  }
+};
+
+let feelsForCurrent = (cur, fahrenheit) => {
+  if (fahrenheit) {
+    let text: String = cur :> .FeelsLikeF :> try :> Json.assert :> try;
+    toNumber(text)
+  } else {
+    let text: String = cur :> .FeelsLikeC :> try :> Json.assert :> try;
+    toNumber(text)
+  }
+};
+
+let highForDay = (day, fahrenheit) => {
+  if (fahrenheit) {
+    let text: String = day :> .maxtempF :> try :> Json.assert :> try;
+    toNumber(text)
+  } else {
+    let text: String = day :> .maxtempC :> try :> Json.assert :> try;
+    toNumber(text)
+  }
+};
+
+let lowForDay = (day, fahrenheit) => {
+  if (fahrenheit) {
+    let text: String = day :> .mintempF :> try :> Json.assert :> try;
+    toNumber(text)
+  } else {
+    let text: String = day :> .mintempC :> try :> Json.assert :> try;
+    toNumber(text)
+  }
+};
+
+let formatLocation = (area) => {
+  let areaName: Js.Array<Js.Object> = area :> .areaName :> try :> Json.assert :> try;
+  let region: Js.Array<Js.Object> = area :> .region :> try :> Json.assert :> try;
+  let country: Js.Array<Js.Object> = area :> .country :> try :> Json.assert :> try;
+  let parts = JSON[
+    firstValue(areaName, "Unknown"),
+    firstValue(region, ""),
+    firstValue(country, ""),
+  ];
+  parts :> .join(", ") :> try
+};
+
+let rainChance = (day) => {
+  let hourly: Js.Array<Js.Object> = day :> .hourly :> try :> Json.assert :> try;
+  hourly :> .reduce((best, slot, index, array) => {
+    let chance: String = slot :> .chanceofrain :> try :> Json.assert :> try;
+    mathMax(best, toNumber(chance))
+  }, 0) :> try
+};
+
+let formatDay = (day, fahrenheit, unit) => {
+  let dateText: String = day :> .date :> try :> Json.assert :> try;
+  let date = Date.new(dateText ++ "T00:00:00");
+  let label = date :> .toLocaleDateString("en-US", JSON{
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }) :> try;
+  let hi = highForDay(day, fahrenheit);
+  let lo = lowForDay(day, fahrenheit);
+  let rain = rainChance(day);
+  "  " ++ paddedRight(label, 13) ++ " " ++ paddedLeft(numberText(hi), 3) ++ unit ++ " / " ++
+    paddedLeft(numberText(lo), 3) ++ unit ++ "  rain " ++ paddedLeft(numberText(rain), 3) ++ "%"
+};
+
+let renderReport = (data, fahrenheit, unit) => {
+  let location = match(firstObject(data.nearest_area)) {
+    Some(value) => { formatLocation(value) },
+    None => { "Unknown" },
+  };
+  let cur = match(firstObject(data.current_condition)) {
+    Some(value) => { value },
+    None => { Panic("missing current condition") },
+  };
+  let temp = tempForCurrent(cur, fahrenheit);
+  let feels = feelsForCurrent(cur, fahrenheit);
+  let weatherDesc: Js.Array<Js.Object> = cur :> .weatherDesc :> try :> Json.assert :> try;
+  let desc = firstValue(weatherDesc, "Unknown");
+  let windText: String = cur :> .windspeedKmph :> try :> Json.assert :> try;
+  let wind = toNumber(windText) :> .toFixed(0) :> try;
+  let header = "\n" ++ location ++ "\nNow: " ++ numberText(temp) ++ unit ++ " (feels like " ++
+    numberText(feels) ++ unit ++ "), " ++ desc ++ ", wind " ++ wind ++ " km/h";
+  let rows = data.weather :> .map((day, index, array) => {
+    formatDay(day, fahrenheit, unit)
+  }) :> try;
+  let rowText = rows :> .join("\n") :> try;
+  header ++ "\n" ++ rowText
+};
+
+let argsArray = () => {
+  args
+};
+
+let citiesFromArgs = (rawArgs) => {
+  let count = rawArgs :> .length :> try;
+  if (count == 0) {
+    defaultCities()
+  } else {
+    rawArgs
+  }
+};
+
+let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
+  let key = city :> .toLowerCase() :> try;
+  match(cacheEntry(cache, key)) {
+    Some(entry) => {
+      if (!refresh && now - entry.fetchedAt < cacheTtlMs) {
+        let data: WttrResponse = entry.data :> Json.assert :> try;
+        promiseResolve(renderReport(data, fahrenheit, unit) ++ "\n  (cached)")
+      } else {
+        getWeather(city) :> .then((rawData) => {
+          let data: WttrResponse = rawData :> Json.assert :> try;
+          cacheSet(cache, key, JSON{ fetchedAt: now, data: rawData });
+          renderReport(data, fahrenheit, unit)
+        }) :> try :> .catch((err) => {
+          "\nFailed to get weather for \"" ++ city ++ "\": " ++ jsString(err)
+        }) :> try
+      }
+    },
+    None => {
+      getWeather(city) :> .then((rawData) => {
+        let data: WttrResponse = rawData :> Json.assert :> try;
+        cacheSet(cache, key, JSON{ fetchedAt: now, data: rawData });
+        renderReport(data, fahrenheit, unit)
+      }) :> try :> .catch((err) => {
+        "\nFailed to get weather for \"" ++ city ++ "\": " ++ jsString(err)
+      }) :> try
+    },
+  }
+};
+
+let main = () => {
+  let rawArgs = argsArray();
+  let cities = citiesFromArgs(rawArgs);
+  let fahrenheit = false;
+  let refresh = false;
+  let unit = if (fahrenheit) { "F" } else { "C" };
+  let now = dateNow();
+
+  loadCache() :> .then((cache) => {
+    let reports = cities :> .map((city, index, array) => {
+      cityReport(cache, now, refresh, fahrenheit, unit, city)
+    }) :> try;
+    promiseAll(reports) :> .then((resolvedReports) => {
+      resolvedReports :> .map((report, index, array) => {
+        log(report)
+      }) :> try;
+      saveCache(cache)
+    }) :> try
+  }) :> try
+};
