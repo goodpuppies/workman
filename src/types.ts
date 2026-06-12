@@ -580,6 +580,116 @@ function addOptionValues(env: Env, typeEnv: TypeEnv) {
   }
 }
 
+function addTaskValues(env: Env, typeEnv: TypeEnv) {
+  const result = typeEnv.get("Result");
+  const jsPromise = typeEnv.get("Js.Promise");
+  const jsArray = typeEnv.get("Js.Array");
+  if (!result || !jsPromise) return;
+  const task = (value: Ty, error: Ty) => named(jsPromise, [named(result, [value, error])]);
+  const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
+    env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });
+  };
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.fromResult", [a, e], fn([named(result, [a, e])], task(a, e)));
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Task.fromResultPromise",
+      [a],
+      fn([named(result, [named(jsPromise, [a]), named(typeEnv.get("Js.Error")!)])], task(a, StringTy)),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.succeed", [a, e], fn([a], task(a, e)));
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.fail", [a, e], fn([e], task(a, e)));
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.map", [a, b, e], fn([tuple([task(a, e), fn([a], b)])], task(b, e)));
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.andThen", [a, b, e], fn([tuple([task(a, e), fn([a], task(b, e))])], task(b, e)));
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    const f = fresh("f") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.mapErr", [a, e, f], fn([tuple([task(a, e), fn([e], f)])], task(a, f)));
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.recover", [a, e], fn([tuple([task(a, e), fn([e], a)])], task(a, e)));
+  }
+  if (jsArray) {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn("Task.all", [a, e], fn([named(jsArray, [task(a, e)])], task(named(jsArray, [a]), e)));
+    const input = fresh("input") as Extract<Ty, { tag: "var" }>;
+    const output = fresh("output") as Extract<Ty, { tag: "var" }>;
+    const err = fresh("err") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Task.traverse",
+      [input, output, err],
+      fn(
+        [tuple([
+          named(jsArray, [input]),
+          fn([input], task(output, err)),
+        ])],
+        task(named(jsArray, [output]), err),
+      ),
+    );
+  }
+}
+
+function addHttpValues(env: Env, typeEnv: TypeEnv) {
+  const result = typeEnv.get("Result");
+  const jsPromise = typeEnv.get("Js.Promise");
+  const httpResponse = typeEnv.get("Http.Response");
+  const jsValue = typeEnv.get("Js.Value");
+  if (!result || !jsPromise || !httpResponse || !jsValue) return;
+  const task = (value: Ty) => named(jsPromise, [named(result, [value, StringTy])]);
+  const response = named(httpResponse);
+  env.set("Http.get", {
+    vars: [],
+    type: fn([StringTy], task(response)),
+    status: "value",
+    basis: true,
+  });
+  env.set("Http.json", {
+    vars: [],
+    type: fn([response], task(named(jsValue))),
+    status: "value",
+    basis: true,
+  });
+  env.set("Http.ok", {
+    vars: [],
+    type: fn([response], BoolTy),
+    status: "value",
+    basis: true,
+  });
+  env.set("Http.status", {
+    vars: [],
+    type: fn([response], StringTy),
+    status: "value",
+    basis: true,
+  });
+}
+
 let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
 
 export function baseTypeEnv(): TypeEnv {
@@ -609,6 +719,20 @@ export function baseTypeEnv(): TypeEnv {
         basisConstructors: type.ctors.map((ctor) => ctor.name),
       });
     }
+    const taskValue = fresh("value") as Extract<Ty, { tag: "var" }>;
+    const taskError = fresh("error") as Extract<Ty, { tag: "var" }>;
+    basisTypeEnvCache.set("Task", {
+      ...freshTypeInfo("Task", 2),
+      basis: true,
+      alias: named(basisTypeEnvCache.get("Js.Promise")!, [
+        named(basisTypeEnvCache.get("Result")!, [taskValue, taskError]),
+      ]),
+      aliasParams: [taskValue.id, taskError.id],
+    });
+    basisTypeEnvCache.set("Http.Response", {
+      ...freshTypeInfo("Http.Response", 0),
+      basis: true,
+    });
   }
   return new Map(basisTypeEnvCache);
 }
@@ -662,6 +786,8 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   });
   addResultValues(env, typeEnv);
   addOptionValues(env, typeEnv);
+  addTaskValues(env, typeEnv);
+  addHttpValues(env, typeEnv);
   const option = typeEnv.get("Option");
   const jsDict = typeEnv.get("Js.Dict");
   if (option && jsDict) {

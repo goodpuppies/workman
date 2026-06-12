@@ -161,6 +161,62 @@ export function emitRuntimePrelude(): string[] {
   andThen: ([option, fn]) => option.ctor === ${basisCtorId("Some")} ? fn(option.args[0]) : option,
   withDefault: ([option, fallback]) => option.ctor === ${basisCtorId("Some")} ? option.args[0] : fallback,
 };`,
+    `const __wm_error_message = (error) => {
+  if (error && typeof error === "object" && "message" in error) return String(error.message);
+  return String(error);
+};`,
+    `const Task = {
+  fromResult: (result) => Promise.resolve(result),
+  fromResultPromise: (result) => {
+    if (result.ctor !== ${basisCtorId("Ok")}) {
+      return Promise.resolve(__wm_basis_Err(__wm_error_message(result.args[0])));
+    }
+    return Promise.resolve(result.args[0]).then(
+      (value) => __wm_basis_Ok(value),
+      (error) => __wm_basis_Err(__wm_error_message(error)),
+    );
+  },
+  succeed: (value) => Promise.resolve(__wm_basis_Ok(value)),
+  fail: (error) => Promise.resolve(__wm_basis_Err(error)),
+  map: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === ${basisCtorId("Ok")} ? __wm_basis_Ok(fn(result.args[0])) : result
+  ),
+  andThen: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result
+  ),
+  mapErr: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === ${basisCtorId("Err")} ? __wm_basis_Err(fn(result.args[0])) : result
+  ),
+  recover: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === ${basisCtorId("Err")} ? __wm_basis_Ok(fn(result.args[0])) : result
+  ),
+  all: (tasks) => Promise.all(tasks).then((results) => {
+    const values = [];
+    for (const result of results) {
+      if (result.ctor !== ${basisCtorId("Ok")}) return result;
+      values.push(result.args[0]);
+    }
+    return __wm_basis_Ok(values);
+  }),
+  traverse: ([items, fn]) => Promise.all(items.map((item) => fn(item))).then((results) => {
+    const values = [];
+    for (const result of results) {
+      if (result.ctor !== ${basisCtorId("Ok")}) return result;
+      values.push(result.args[0]);
+    }
+    return __wm_basis_Ok(values);
+  }),
+};`,
+    `const Http = {
+  get: (url) => Promise.resolve()
+    .then(() => fetch(url))
+    .then((response) => __wm_basis_Ok(response), (error) => __wm_basis_Err(__wm_error_message(error))),
+  json: (response) => Promise.resolve()
+    .then(() => response.json())
+    .then((body) => __wm_basis_Ok(body), (error) => __wm_basis_Err(__wm_error_message(error))),
+  ok: (response) => Boolean(response.ok),
+  status: (response) => String(response.status),
+};`,
     "const __wm_op_concat = ([a, b]) => a + b;",
     "const __wm_op_add = ([a, b]) => a + b;",
     "const __wm_op_sub = (x) => __wm_is_tuple(x) ? x[0] - x[1] : -x;",

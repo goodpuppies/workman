@@ -22,6 +22,13 @@ Deno.test("Result and Option combinators infer generically", async () => {
         if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
       })
     });
+    let task = Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
+      :> Task.andThen((n) => { Task.succeed(n + 1) });
+    let taskItems = JSON[1, 2] :> Json.assert :> Result.mapErr((_) => { "json" })
+      :> Task.fromResult
+      :> Task.andThen((items) => {
+        items :> Task.traverse((n) => { Task.succeed(n * 2) })
+      });
   `);
   expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "chained", { type: "Result<Number, String>", vars: 0 });
@@ -29,6 +36,11 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
   expectBinding(result.env, "traversed", { type: "Result<Js.Array<Number>, Js.Error>", vars: 0 });
+  expectBinding(result.env, "task", { type: "Js.Promise<Result<Number, String>>", vars: 0 });
+  expectBinding(result.env, "taskItems", {
+    type: "Js.Promise<Result<Js.Array<Number>, String>>",
+    vars: 0,
+  });
 });
 
 Deno.test("Result and Option combinators evaluate correctly", async () => {
@@ -53,7 +65,12 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
           items :> Result.traverse((n) => {
             if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
           })
-        }) :> Result.mapErr((err) => { "bad" }))
+        }) :> Result.mapErr((err) => { "bad" }));
+        Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
+          :> Task.andThen((n) => {
+            print(n + 1);
+            Task.succeed(void)
+          })
       };
     `,
   );
@@ -62,7 +79,7 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "Ok(42)\nErr(bad: negative)\n0\n4\n9\nOk([2, 4, 6])\n");
+  assertEquals(result.stdout, "Ok(42)\nErr(bad: negative)\n0\n4\n9\nOk([2, 4, 6])\n3\n");
 });
 
 async function runCli(args: string[]) {

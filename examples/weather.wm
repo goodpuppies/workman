@@ -1,8 +1,8 @@
 -- weather.wm — a weather CLI using wttr.in's JSON API (free, no API key).
 --
 -- No `unsafe` imports: every JS boundary call returns Result<_, Js.Error> and is
--- handled with Result/Option combinators. Inside promise callbacks, Err values are
--- eliminated with match + Panic so they reject the promise and surface in `.catch`.
+-- handled with Result/Option/Task combinators. HTTP and file IO stay in Task so
+-- async failures and validation failures flow through the same pipeline.
 --
 -- Usage:
 --   wm run examples/weather.wm -- oulu
@@ -14,9 +14,7 @@
 from js.global import {
   Date,
   Number as toNumber: (String) => Number,
-  String as jsString,
   encodeURIComponent,
-  fetch,
 };
 from js.global("Date") import { now as dateNow };
 from js.global("Deno") import {
@@ -29,10 +27,6 @@ from js.global("JSON") import {
   stringify: (Js.Value) => String,
 } as JSON;
 from js.global("Math") import { max as mathMax };
-from js.global("Promise") import {
-  all as promiseAll: (Js.Array<Js.Promise<String>>) => Js.Promise<Js.Array<String>>,
-  resolve as promiseResolve: (String) => Js.Promise<String>,
-};
 
 let cacheFile = ".weather-cache.json";
 let cacheTtlMs = 10 * 60 * 1000;
@@ -99,64 +93,81 @@ let pad3 = (n) => {
 };
 
 -- Fetch, validate the response, and assert the wire shape once at the boundary.
--- Failures inside the promise callbacks reject the promise with context.
 let getWeather = (city) => {
-  encodeURIComponent(city) :> Result.andThen((encoded) => {
-    let url = "https://wttr.in/" ++ encoded ++ "?format=j1";
-    fetch(url) :> Result.andThen((responsePromise) => {
-      responsePromise :> .then((res) => {
-        if (res :> .ok :> Result.withDefault(false)) {
-          match(res :> .json()) {
-            Ok(bodyPromise) => { bodyPromise },
-            Err(_) => { Panic("Response.json() failed for " ++ url) },
-          }
+  let buildUrl = (rawCity) => {
+    rawCity
+      :> encodeURIComponent
+      :> Result.map((encoded) => {
+        "https://wttr.in/" ++ encoded ++ "?format=j1"
+      })
+      :> Result.mapErr((_) => { "could not encode city" })
+      :> Task.fromResult
+  };
+  let fetchAndCheck = (url) => {
+    url
+      :> Http.get
+      :> Task.andThen((res) => {
+        if (res :> Http.ok) {
+          res :> Task.succeed
         } else {
-          let status = res :> .status
-            :> Result.andThen((code) => { code :> .toString() })
-            :> Result.withDefault("unknown");
-          Panic("HTTP " ++ status ++ " fetching " ++ url)
+          ("HTTP " ++ (res :> Http.status) ++ " fetching " ++ url) :> Task.fail
         }
       })
-    }) :> Result.andThen((bodyPromise) => {
-      bodyPromise :> .then((body) => {
+  };
+  let parseWeather = (res) => {
+    res
+      :> Http.json
+      :> Task.andThen((body) => {
         let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
-        match(data) {
-          Ok(value) => { value },
-          Err(_) => { Panic("unexpected wttr.in response shape from " ++ url) },
-        }
+        data
+          :> Result.mapErr((_) => { "unexpected wttr.in response shape" })
+          :> Task.fromResult
       })
-    })
-  })
+  };
+  city
+    :> buildUrl
+    :> Task.andThen(fetchAndCheck)
+    :> Task.andThen(parseWeather)
 };
 
 let loadCache = () => {
-  readTextFile(cacheFile) :> Result.andThen((textPromise) => {
-    textPromise :> .then((text) => {
-      let parsed: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
-        :> Result.andThen((raw) => { raw :> Json.assert });
-      parsed :> Result.withDefault(Dict.empty())
-    })
-  }) :> Result.andThen((cachePromise) => {
-    cachePromise :> .catch((err) => { Dict.empty() })
-  })
+  let parseCache = (text) => {
+    let parsed: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
+      :> Result.andThen((raw) => { raw :> Json.assert });
+    parsed
+      :> Result.mapErr((_) => { "could not parse cache" })
+      :> Task.fromResult
+  };
+  readTextFile(cacheFile)
+    :> Task.fromResultPromise
+    :> Task.andThen(parseCache)
+    :> Task.recover((_) => { Dict.empty() })
 };
 
 let saveCache = (cache) => {
-  JSON.stringify(cache) :> Result.andThen((text) => {
-    writeTextFile(cacheFile, text)
-  })
+  JSON.stringify(cache)
+    :> Result.mapErr((_) => { "could not encode cache" })
+    :> Task.fromResult
+    :> Task.andThen((text) => {
+      writeTextFile(cacheFile, text) :> Task.fromResultPromise
+    })
 };
 
 let formatDay = (day, fahrenheit, unit) => {
-  let label = Date.new(day.date ++ "T00:00:00") :> Result.andThen((date) => {
-    date :> .toLocaleDateString("en-US", JSON{
-      weekday: "short",
-      month: "short",
-      day: "numeric",
+  let label = Date.new(day.date ++ "T00:00:00")
+    :> Result.andThen((date) => {
+      date :> .toLocaleDateString("en-US", JSON{
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      })
     })
-  }) :> Result.andThen((text) => { text :> .padEnd(13, " ") });
-  let hi = toNumber(if (fahrenheit) { day.maxtempF } else { day.maxtempC }) :> Result.andThen(pad3);
-  let lo = toNumber(if (fahrenheit) { day.mintempF } else { day.mintempC }) :> Result.andThen(pad3);
+    :> Result.andThen((text) => { text :> .padEnd(13, " ") });
+  let tempText = (raw) => {
+    raw :> toNumber :> Result.andThen(pad3)
+  };
+  let hi = (if (fahrenheit) { day.maxtempF } else { day.maxtempC }) :> tempText;
+  let lo = (if (fahrenheit) { day.mintempF } else { day.mintempC }) :> tempText;
   let rain = day.hourly :> .reduce((best, slot, index, array) => {
     let chance = toNumber(slot.chanceofrain) :> Result.withDefault(0);
     mathMax(best, chance) :> Result.withDefault(best)
@@ -168,32 +179,40 @@ let formatDay = (day, fahrenheit, unit) => {
 };
 
 let renderReport = (data, fahrenheit, unit) => {
+  let locationFor = (area) => {
+    let parts: Result<Js.Array<String>, Js.Error> = JSON[
+      firstValue(area.areaName, "Unknown"),
+      firstValue(area.region, ""),
+      firstValue(area.country, ""),
+    ] :> Json.assert;
+    parts :> Result.andThen((items) => {
+      items :> .filter((part, index, array) => {
+        (part :> .length :> Result.withDefault(0)) > 0
+      })
+    }) :> Result.andThen((kept) => { kept :> .join(", ") })
+      :> Result.withDefault("Unknown")
+  };
   let location = match(data.nearest_area :> .at(0)) {
     Ok(Some(area)) => {
-      let parts: Result<Js.Array<String>, Js.Error> = JSON[
-        firstValue(area.areaName, "Unknown"),
-        firstValue(area.region, ""),
-        firstValue(area.country, ""),
-      ] :> Json.assert;
-      parts :> Result.andThen((items) => {
-        items :> .filter((part, index, array) => {
-          (part :> .length :> Result.withDefault(0)) > 0
-        })
-      }) :> Result.andThen((kept) => { kept :> .join(", ") })
-        :> Result.withDefault("Unknown")
+      locationFor(area)
     },
     _ => { "Unknown" },
   };
   match(data.current_condition :> .at(0)) {
     Ok(Some(cur)) => {
-      let temp = toNumber(if (fahrenheit) { cur.temp_F } else { cur.temp_C })
-        :> Result.andThen((n) => { n :> .toString() });
-      let feels = toNumber(if (fahrenheit) { cur.FeelsLikeF } else { cur.FeelsLikeC })
-        :> Result.andThen((n) => { n :> .toString() });
-      let wind = toNumber(cur.windspeedKmph) :> Result.andThen((n) => { n :> .toFixed(0) });
-      let rows = data.weather :> Result.traverse((day) => {
-        formatDay(day, fahrenheit, unit)
-      }) :> Result.andThen((lines) => { lines :> .join("\n") });
+      let numberText = (raw) => {
+        raw :> toNumber :> Result.andThen((n) => { n :> .toString() })
+      };
+      let temp = (if (fahrenheit) { cur.temp_F } else { cur.temp_C }) :> numberText;
+      let feels = (if (fahrenheit) { cur.FeelsLikeF } else { cur.FeelsLikeC }) :> numberText;
+      let wind = cur.windspeedKmph
+        :> toNumber
+        :> Result.andThen((n) => { n :> .toFixed(0) });
+      let rows = data.weather
+        :> Result.traverse((day) => {
+          formatDay(day, fahrenheit, unit)
+        })
+        :> Result.andThen((lines) => { lines :> .join("\n") });
       Result.map4(temp, feels, wind, rows, (tempText, feelsText, windText, rowText) => {
         "\n" ++ location ++ "\nNow: " ++ tempText ++ unit ++ " (feels like " ++ feelsText ++
           unit ++ "), " ++ firstValue(cur.weatherDesc, "Unknown") ++ ", wind " ++ windText ++
@@ -208,26 +227,25 @@ let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
   let key = city :> .toLowerCase() :> Result.withDefault(city);
   let failure = (err) => {
     "\nFailed to get weather for \"" ++ city ++ "\": " ++
-      (jsString(err) :> Result.withDefault("unknown error"))
+      err
+  };
+  let renderTask = (data) => {
+    renderReport(data, fahrenheit, unit)
+      :> Result.mapErr((_) => { "could not render report for " ++ city })
+      :> Task.fromResult
   };
   let fetchReport = () => {
-    getWeather(city) :> Result.andThen((dataPromise) => {
-      dataPromise :> .then((data) => {
-        Dict.set(cache, key, .{ fetchedAt = now, data = data });
-        match(renderReport(data, fahrenheit, unit)) {
-          Ok(report) => { report },
-          Err(_) => { Panic("could not render report for " ++ city) },
-        }
-      })
-    }) :> Result.andThen((reportPromise) => {
-      reportPromise :> .catch(failure)
+    getWeather(city) :> Task.andThen((data) => {
+      Dict.set(cache, key, .{ fetchedAt = now, data = data });
+      renderTask(data)
     })
+      :> Task.recover(failure)
   };
   match(Dict.get(cache, key)) {
     Some(entry) => {
       if (!refresh && now - entry.fetchedAt < cacheTtlMs) {
-        renderReport(entry.data, fahrenheit, unit) :> Result.andThen((report) => {
-          promiseResolve(report ++ "\n  (cached)")
+        renderTask(entry.data) :> Task.map((report) => {
+          report ++ "\n  (cached)"
         })
       } else {
         fetchReport()
@@ -238,9 +256,12 @@ let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
 };
 
 let main = () => {
+  let isFlag = (text) => {
+    text :> .startsWith("--") :> Result.withDefault(false)
+  };
   let flags = args :> Result.andThen((xs) => {
     xs :> .filter((a, index, array) => {
-      a :> .startsWith("--") :> Result.withDefault(false)
+      isFlag(a)
     })
   });
   let fahrenheit = flags
@@ -252,7 +273,7 @@ let main = () => {
   let unit = if (fahrenheit) { "°F" } else { "°C" };
   let cities = args :> Result.andThen((xs) => {
     xs :> .filter((a, index, array) => {
-      !(a :> .startsWith("--") :> Result.withDefault(true))
+      !isFlag(a)
     })
   }) :> Result.andThen((xs) => {
     xs :> .length :> Result.andThen((count) => {
@@ -261,30 +282,26 @@ let main = () => {
   });
   let now = dateNow() :> Result.withDefault(0);
 
-  let pipeline = Result.map2(cities, loadCache(), (cityList, cachePromise) => {
-    cachePromise :> .then((cache) => {
-      let pending = cityList :> Result.traverse((city) => {
-        cityReport(cache, now, refresh, fahrenheit, unit, city)
-      }) :> Result.andThen(promiseAll);
-      let done = pending :> Result.andThen((reportsPromise) => {
-        reportsPromise :> .then((resolvedReports) => {
+  let pipeline = cities
+    :> Result.mapErr((_) => { "CLI args unavailable" })
+    :> Task.fromResult
+    :> Task.andThen((cityList) => {
+      loadCache() :> Task.andThen((cache) => {
+        let reports = cityList
+          :> Task.traverse((city) => {
+            cityReport(cache, now, refresh, fahrenheit, unit, city)
+          });
+        let printReports = (resolvedReports) => {
           resolvedReports :> .map((report, index, array) => {
             print(report)
           });
-          match(saveCache(cache)) {
-            Ok(savedPromise) => { savedPromise },
-            Err(_) => { Panic("could not save the weather cache") },
-          }
-        })
-      });
-      match(done) {
-        Ok(donePromise) => { donePromise },
-        Err(_) => { Panic("weather pipeline failed") },
-      }
-    })
-  });
-  match(pipeline) {
-    Ok(_) => { void },
-    Err(_) => { print("weather: could not start (CLI args or cache unavailable)") },
-  }
+          saveCache(cache)
+        };
+        reports :> Task.andThen(printReports)
+      })
+    });
+  pipeline :> Task.recover((err) => {
+    print("weather: " ++ err);
+    void
+  })
 };
