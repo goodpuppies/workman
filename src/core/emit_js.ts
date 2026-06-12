@@ -146,6 +146,12 @@ let bindingTemp = 0;
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
   if (spec.type?.kind !== "TFn") {
     if (spec.fallible) {
+      const mode = jsFallibleMode(spec.type);
+      if (mode === "task") {
+        return `__wm_js_task_from_thunk(() => ${memberRef}, ${
+          JSON.stringify(jsValueConverter(spec.type))
+        })`;
+      }
       return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(error); } })()`;
     }
     return memberRef;
@@ -153,7 +159,7 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
   return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${
     JSON.stringify(jsParamConverters(spec.type))
   }, ${JSON.stringify(jsResultConverter(spec.type, !!spec.fallible))}, ${
-    JSON.stringify(!!spec.fallible)
+    JSON.stringify(spec.fallible ? jsFallibleMode(spec.type) : false)
   })`;
 }
 
@@ -169,8 +175,13 @@ function jsParamConverters(type: TypeExpr | undefined): JsConverter[] {
 
 function jsResultConverter(type: TypeExpr | undefined, fallible: boolean): JsConverter {
   if (type?.kind !== "TFn") return "id";
-  const resultType = fallible ? resultOkType(type.result) : type.result;
+  const resultType = fallible ? fallibleOkType(type.result) : type.result;
   return resultType ? jsConverter(resultType) : "id";
+}
+
+function jsValueConverter(type: TypeExpr | undefined): JsConverter {
+  const valueType = type ? fallibleOkType(type) : undefined;
+  return valueType ? jsConverter(valueType) : "id";
 }
 
 function jsConverter(type: TypeExpr): JsConverter {
@@ -185,10 +196,22 @@ function jsConverter(type: TypeExpr): JsConverter {
   return "id";
 }
 
-function resultOkType(type: TypeExpr): TypeExpr | undefined {
-  return type.kind === "TName" && type.name === "Result" && type.args.length === 2
-    ? type.args[0]
-    : undefined;
+function jsFallibleMode(type: TypeExpr | undefined): "result" | "task" {
+  const resultType = type?.kind === "TFn" ? type.result : type;
+  return resultType?.kind === "TName" && resultType.name === "Task" && resultType.args.length === 2
+    ? "task"
+    : "result";
+}
+
+function fallibleOkType(type: TypeExpr): TypeExpr | undefined {
+  if (
+    type.kind === "TName" &&
+    (type.name === "Result" || type.name === "Task") &&
+    type.args.length === 2
+  ) {
+    return type.args[0];
+  }
+  return undefined;
 }
 
 function emitExpr(expr: CoreExpr): string {

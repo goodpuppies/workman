@@ -38,7 +38,7 @@ function tsNamedType(type: Extract<TypeExpr, { kind: "TName" }>): string {
   if (type.name === "Js.Array" && type.args.length === 1) {
     return `Array<${tsTypeFromTypeExpr(type.args[0])}>`;
   }
-  if (type.name === "Js.Promise" && type.args.length === 1) {
+  if (type.name === "Task" && type.args.length === 2) {
     return `Promise<${tsTypeFromTypeExpr(type.args[0])}>`;
   }
   return type.args.length

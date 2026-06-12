@@ -3,10 +3,7 @@ import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
-import {
-  generatedForeignDeclsForRefs,
-  generatedImportInsertionIndex,
-} from "./bindings.ts";
+import { generatedForeignDeclsForRefs, generatedImportInsertionIndex } from "./bindings.ts";
 import {
   materializeReceiverCall,
   materializeReceiverProperty,
@@ -43,11 +40,11 @@ import {
   name,
 } from "../shared.ts";
 import {
+  type JsCallArgHint,
   jsRefCallMember,
   jsRefMember,
   jsRefTypeExpr,
   jsTypeExprValueRef,
-  type JsCallArgHint,
   type JsTypeRef,
 } from "../reflect/types.ts";
 import { typeExprKey as reflectTypeExprKey } from "../reflect/ts_type_expr.ts";
@@ -234,7 +231,9 @@ function callbackParamTypesForFfiCall(
   arities: Map<string, number>,
   localTypes: Map<string, TypeExpr> = new Map(),
 ): { argIndex: number; params: TypeExpr[] }[] {
-  const localReceiverType = expr.receiver.kind === "Var" ? localTypes.get(expr.receiver.name) : undefined;
+  const localReceiverType = expr.receiver.kind === "Var"
+    ? localTypes.get(expr.receiver.name)
+    : undefined;
   const receiverType = localReceiverType ? undefined : inferredType(result, expr.receiver);
   const array = localReceiverType
     ? jsArrayReceiverTypeExpr(localReceiverType)
@@ -245,10 +244,16 @@ function callbackParamTypesForFfiCall(
   // Eager inference already contextualizes callback params for these typed members when the
   // receiver type was inferred; reflected annotations would only fight those constraints with
   // broader overloads. Receivers known only through selected FFI bindings still need annotations.
-  if (!localReceiverType && array && expr.path.length === 1 && eagerTypedArrayMembers.has(expr.path[0])) {
+  if (
+    !localReceiverType && array && expr.path.length === 1 &&
+    eagerTypedArrayMembers.has(expr.path[0])
+  ) {
     return [];
   }
-  if (!localReceiverType && promise && expr.path.length === 1 && eagerTypedPromiseMembers.has(expr.path[0])) {
+  if (
+    !localReceiverType && promise && expr.path.length === 1 &&
+    eagerTypedPromiseMembers.has(expr.path[0])
+  ) {
     return [];
   }
   const ref = array
@@ -349,12 +354,22 @@ function contextualizeExpr(
         ...expr,
         receiver: contextualizeExpr(expr.receiver, result, arities, localTypes, bindings),
         args: expr.args.map((arg, index) =>
-          contextualizeCallbackArg(arg, callbackParams.get(index), result, arities, localTypes, bindings)
+          contextualizeCallbackArg(
+            arg,
+            callbackParams.get(index),
+            result,
+            arities,
+            localTypes,
+            bindings,
+          )
         ),
       };
     }
     case "FfiGet":
-      return { ...expr, receiver: contextualizeExpr(expr.receiver, result, arities, localTypes, bindings) };
+      return {
+        ...expr,
+        receiver: contextualizeExpr(expr.receiver, result, arities, localTypes, bindings),
+      };
     case "Call":
       return {
         ...expr,
@@ -364,7 +379,9 @@ function contextualizeExpr(
     case "Tuple":
       return {
         ...expr,
-        items: expr.items.map((item) => contextualizeExpr(item, result, arities, localTypes, bindings)),
+        items: expr.items.map((item) =>
+          contextualizeExpr(item, result, arities, localTypes, bindings)
+        ),
       };
     case "Record":
       return {
@@ -385,10 +402,15 @@ function contextualizeExpr(
     case "JsonArray":
       return {
         ...expr,
-        items: expr.items.map((item) => contextualizeExpr(item, result, arities, localTypes, bindings)),
+        items: expr.items.map((item) =>
+          contextualizeExpr(item, result, arities, localTypes, bindings)
+        ),
       };
     case "Lambda":
-      return { ...expr, body: contextualizeExpr(expr.body, result, arities, new Map(localTypes), bindings) };
+      return {
+        ...expr,
+        body: contextualizeExpr(expr.body, result, arities, new Map(localTypes), bindings),
+      };
     case "If":
       return {
         ...expr,
@@ -406,7 +428,10 @@ function contextualizeExpr(
         })),
       };
     case "Panic":
-      return { ...expr, message: contextualizeExpr(expr.message, result, arities, localTypes, bindings) };
+      return {
+        ...expr,
+        message: contextualizeExpr(expr.message, result, arities, localTypes, bindings),
+      };
     case "Block": {
       const blockTypes = new Map(localTypes);
       const items = expr.items.map((item) => {
@@ -428,7 +453,10 @@ function contextualizeExpr(
         right: contextualizeExpr(expr.right, result, arities, localTypes, bindings),
       };
     case "Unary":
-      return { ...expr, value: contextualizeExpr(expr.value, result, arities, localTypes, bindings) };
+      return {
+        ...expr,
+        value: contextualizeExpr(expr.value, result, arities, localTypes, bindings),
+      };
     case "Pipe":
       return {
         ...expr,
@@ -498,16 +526,23 @@ function callResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
 }
 
 function unwrapResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
-  return type?.kind === "TName" && type.name === "Result" && type.args.length === 2
-    ? type.args[0]
-    : type;
+  if (
+    type?.kind === "TName" &&
+    (type.name === "Result" || type.name === "Task") &&
+    type.args.length === 2
+  ) {
+    return type.args[0];
+  }
+  return type;
 }
 
 function tyToOptionalTypeExpr(type: ReturnType<typeof inferredType>): TypeExpr | undefined {
   return type ? tyToTypeExpr(type) : undefined;
 }
 
-function jsArrayReceiverTypeExpr(type: TypeExpr | undefined): { element: TypeExpr; type: TypeExpr } | undefined {
+function jsArrayReceiverTypeExpr(
+  type: TypeExpr | undefined,
+): { element: TypeExpr; type: TypeExpr } | undefined {
   if (type?.kind !== "TName" || type.name !== "Js.Array" || type.args.length !== 1) {
     return undefined;
   }
@@ -681,7 +716,9 @@ function resolveDelayedFfiGet(
     );
   }
   const array = jsArrayReceiver(receiverType);
-  const arrayRef = array ? jsTypeExprValueRef(`array:${reflectTypeExprKey(array.type)}`, array.type) : undefined;
+  const arrayRef = array
+    ? jsTypeExprValueRef(`array:${reflectTypeExprKey(array.type)}`, array.type)
+    : undefined;
   const arrayMember = arrayRef ? jsRefMember(arrayRef, expr.path) : undefined;
   if (array && arrayMember) {
     return materializeReceiverProperty(
@@ -715,9 +752,13 @@ function resolveDelayedFfiGet(
       );
     }
   }
-  if (receiverType && isJsObjectTy(receiverType) && expr.path.length === 1 && expr.path[0] === "at") {
+  if (
+    receiverType && isJsObjectTy(receiverType) && expr.path.length === 1 && expr.path[0] === "at"
+  ) {
     throw diagnosticError(
-      new Error("cannot use typed array method at on opaque Js.Object; assert a Js.Array<T> shape first"),
+      new Error(
+        "cannot use typed array method at on opaque Js.Object; assert a Js.Array<T> shape first",
+      ),
       expr.node,
     );
   }
@@ -787,11 +828,17 @@ function resolveDelayedFfiCall(
     );
   }
   const array = jsArrayReceiver(receiverType);
-  const arrayRef = array ? jsTypeExprValueRef(`array:${reflectTypeExprKey(array.type)}`, array.type) : undefined;
+  const arrayRef = array
+    ? jsTypeExprValueRef(`array:${reflectTypeExprKey(array.type)}`, array.type)
+    : undefined;
   const arrayMember = array
     ? jsTypedArrayMember(array, expr, result) ??
       (arrayRef
-        ? jsRefCallMember(arrayRef, expr.path, expr.args.map((arg) => callArgHintForReflection(arg, result)))
+        ? jsRefCallMember(
+          arrayRef,
+          expr.path,
+          expr.args.map((arg) => callArgHintForReflection(arg, result)),
+        )
         : undefined)
     : undefined;
   if (array && arrayMember) {
@@ -811,9 +858,13 @@ function resolveDelayedFfiCall(
       resolveDelayedExpr,
     );
   }
-  if (receiverType && isJsObjectTy(receiverType) && expr.path.length === 1 && expr.path[0] === "at") {
+  if (
+    receiverType && isJsObjectTy(receiverType) && expr.path.length === 1 && expr.path[0] === "at"
+  ) {
     throw diagnosticError(
-      new Error("cannot use typed array method at on opaque Js.Object; assert a Js.Array<T> shape first"),
+      new Error(
+        "cannot use typed array method at on opaque Js.Object; assert a Js.Array<T> shape first",
+      ),
       expr.node,
     );
   }
@@ -943,7 +994,10 @@ function resolveDelayedFfiCall(
   );
 }
 
-function receiverTypeThroughObligations(type: Ty | undefined, seen = new Set<number>()): Ty | undefined {
+function receiverTypeThroughObligations(
+  type: Ty | undefined,
+  seen = new Set<number>(),
+): Ty | undefined {
   if (!type) return undefined;
   const target = prune(type);
   if (target.tag === "named" && target.name === "Result" && target.args.length === 2) {

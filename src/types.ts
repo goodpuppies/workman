@@ -127,15 +127,6 @@ export function prune(t: Ty): Ty {
     t.instance = prune(t.instance);
     return t.instance;
   }
-  // JS thenables flatten: .then/await can never observe Js.Promise<Js.Promise<X>>, which can
-  // still be constructed when a callback's placeholder result later solves to a promise.
-  if (t.tag === "named" && t.name === "Js.Promise" && t.args.length === 1) {
-    let element = prune(t.args[0]);
-    while (element.tag === "named" && element.name === "Js.Promise" && element.args.length === 1) {
-      t.args[0] = element.args[0];
-      element = prune(t.args[0]);
-    }
-  }
   return t;
 }
 
@@ -582,10 +573,10 @@ function addOptionValues(env: Env, typeEnv: TypeEnv) {
 
 function addTaskValues(env: Env, typeEnv: TypeEnv) {
   const result = typeEnv.get("Result");
-  const jsPromise = typeEnv.get("Js.Promise");
+  const taskInfo = typeEnv.get("Task");
   const jsArray = typeEnv.get("Js.Array");
-  if (!result || !jsPromise) return;
-  const task = (value: Ty, error: Ty) => named(jsPromise, [named(result, [value, error])]);
+  if (!result || !taskInfo) return;
+  const task = (value: Ty, error: Ty) => named(taskInfo, [value, error]);
   const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
     env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });
   };
@@ -593,14 +584,6 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.fromResult", [a, e], fn([named(result, [a, e])], task(a, e)));
-  }
-  {
-    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
-    basisFn(
-      "Task.fromResultPromise",
-      [a],
-      fn([named(result, [named(jsPromise, [a]), named(typeEnv.get("Js.Error")!)])], task(a, StringTy)),
-    );
   }
   {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
@@ -656,40 +639,6 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
   }
 }
 
-function addHttpValues(env: Env, typeEnv: TypeEnv) {
-  const result = typeEnv.get("Result");
-  const jsPromise = typeEnv.get("Js.Promise");
-  const httpResponse = typeEnv.get("Http.Response");
-  const jsValue = typeEnv.get("Js.Value");
-  if (!result || !jsPromise || !httpResponse || !jsValue) return;
-  const task = (value: Ty) => named(jsPromise, [named(result, [value, StringTy])]);
-  const response = named(httpResponse);
-  env.set("Http.get", {
-    vars: [],
-    type: fn([StringTy], task(response)),
-    status: "value",
-    basis: true,
-  });
-  env.set("Http.json", {
-    vars: [],
-    type: fn([response], task(named(jsValue))),
-    status: "value",
-    basis: true,
-  });
-  env.set("Http.ok", {
-    vars: [],
-    type: fn([response], BoolTy),
-    status: "value",
-    basis: true,
-  });
-  env.set("Http.status", {
-    vars: [],
-    type: fn([response], StringTy),
-    status: "value",
-    basis: true,
-  });
-}
-
 let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
 
 export function baseTypeEnv(): TypeEnv {
@@ -708,10 +657,6 @@ export function baseTypeEnv(): TypeEnv {
       ...freshTypeInfo("Js.Dict", 1),
       basis: true,
     });
-    basisTypeEnvCache.set("Js.Promise", {
-      ...freshTypeInfo("Js.Promise", 1),
-      basis: true,
-    });
     for (const type of basisTypes) {
       basisTypeEnvCache.set(type.name, {
         ...freshTypeInfo(type.name, type.params.length),
@@ -719,18 +664,8 @@ export function baseTypeEnv(): TypeEnv {
         basisConstructors: type.ctors.map((ctor) => ctor.name),
       });
     }
-    const taskValue = fresh("value") as Extract<Ty, { tag: "var" }>;
-    const taskError = fresh("error") as Extract<Ty, { tag: "var" }>;
     basisTypeEnvCache.set("Task", {
       ...freshTypeInfo("Task", 2),
-      basis: true,
-      alias: named(basisTypeEnvCache.get("Js.Promise")!, [
-        named(basisTypeEnvCache.get("Result")!, [taskValue, taskError]),
-      ]),
-      aliasParams: [taskValue.id, taskError.id],
-    });
-    basisTypeEnvCache.set("Http.Response", {
-      ...freshTypeInfo("Http.Response", 0),
       basis: true,
     });
   }
@@ -787,7 +722,6 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   addResultValues(env, typeEnv);
   addOptionValues(env, typeEnv);
   addTaskValues(env, typeEnv);
-  addHttpValues(env, typeEnv);
   const option = typeEnv.get("Option");
   const jsDict = typeEnv.get("Js.Dict");
   if (option && jsDict) {

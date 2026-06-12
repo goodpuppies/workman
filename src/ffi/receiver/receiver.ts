@@ -73,6 +73,7 @@ export function reflectedReceiverCallCandidate(
       })),
     })),
     true,
+    undefined,
   );
   const allArgs = [{ kind: "Var" as const, name: baseName }, ...args];
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], allArgs);
@@ -117,6 +118,7 @@ export function reflectedReceiverProperty(
       })),
     })),
     true,
+    undefined,
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [{
     kind: "Var",
@@ -169,6 +171,7 @@ export function objectReceiverProperty(
     { kind: "JsReceiver", path },
     [{ type: fn([name("Js.Object")], name("Js.Value")) }],
     true,
+    undefined,
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [{
     kind: "Var",
@@ -245,6 +248,7 @@ export function objectReceiverCall(
         ),
       }],
       true,
+      undefined,
     );
     const allArgs = [{ kind: "Var" as const, name: baseName }, ...args];
     const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], allArgs);
@@ -288,6 +292,7 @@ export function reflectedFunctionCallCandidate(
     original?.target ?? { kind: "JsReceiver", path: [] },
     memberVariants(member),
     original?.fallible ?? true,
+    undefined,
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], args);
   if (!variant) return undefined;
@@ -412,7 +417,12 @@ function callResultType(type: TypeExpr): TypeExpr | undefined {
 }
 
 function unwrapResult(type: TypeExpr | undefined): TypeExpr | undefined {
-  return type?.kind === "TName" && type.name === "Result" && type.args.length === 2
-    ? type.args[0]
-    : type;
+  if (
+    type?.kind === "TName" &&
+    (type.name === "Result" || type.name === "Task") &&
+    type.args.length === 2
+  ) {
+    return type.args[0];
+  }
+  return type;
 }

@@ -56,7 +56,10 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_apply = (fn, arg, converters, resultConverter, fallible) => {
   const raw = converters.length === 0 ? [] : converters.length === 1 ? [arg] : (__wm_is_tuple(arg) ? Array.from(arg) : [arg]);
   const args = raw.map((value, index) => __wm_js_to_js(value, converters[index] ?? "id"));
-  if (fallible) {
+  if (fallible === "task") {
+    return __wm_js_task_from_thunk(() => fn(...args), resultConverter);
+  }
+  if (fallible === "result") {
     try {
       return __wm_basis_Ok(__wm_js_to_workman(fn(...args), resultConverter));
     } catch (error) {
@@ -64,6 +67,16 @@ export function emitRuntimePrelude(): string[] {
     }
   }
   return __wm_js_to_workman(fn(...args), resultConverter);
+};`,
+    `const __wm_js_task_from_thunk = (thunk, resultConverter) => {
+  try {
+    return Promise.resolve(thunk()).then(
+      (value) => __wm_basis_Ok(__wm_js_to_workman(value, resultConverter)),
+      (error) => __wm_basis_Err(error),
+    );
+  } catch (error) {
+    return Promise.resolve(__wm_basis_Err(error));
+  }
 };`,
     `const __wm_eq = (a, b) => {
   if (a === b) return true;
@@ -167,15 +180,6 @@ export function emitRuntimePrelude(): string[] {
 };`,
     `const Task = {
   fromResult: (result) => Promise.resolve(result),
-  fromResultPromise: (result) => {
-    if (result.ctor !== ${basisCtorId("Ok")}) {
-      return Promise.resolve(__wm_basis_Err(__wm_error_message(result.args[0])));
-    }
-    return Promise.resolve(result.args[0]).then(
-      (value) => __wm_basis_Ok(value),
-      (error) => __wm_basis_Err(__wm_error_message(error)),
-    );
-  },
   succeed: (value) => Promise.resolve(__wm_basis_Ok(value)),
   fail: (error) => Promise.resolve(__wm_basis_Err(error)),
   map: ([task, fn]) => Promise.resolve(task).then((result) =>
@@ -206,16 +210,6 @@ export function emitRuntimePrelude(): string[] {
     }
     return __wm_basis_Ok(values);
   }),
-};`,
-    `const Http = {
-  get: (url) => Promise.resolve()
-    .then(() => fetch(url))
-    .then((response) => __wm_basis_Ok(response), (error) => __wm_basis_Err(__wm_error_message(error))),
-  json: (response) => Promise.resolve()
-    .then(() => response.json())
-    .then((body) => __wm_basis_Ok(body), (error) => __wm_basis_Err(__wm_error_message(error))),
-  ok: (response) => Boolean(response.ok),
-  status: (response) => String(response.status),
 };`,
     "const __wm_op_concat = ([a, b]) => a + b;",
     "const __wm_op_add = ([a, b]) => a + b;",

@@ -12,8 +12,6 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
-  typeFromAst,
-  type TypeVarScope,
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
 import { inferDecl } from "./decl.ts";
@@ -187,7 +185,9 @@ function rejectEscapedUnresolvedFfi(expr: Expr, type: Ty, typeEnv: TypeEnv) {
   const kind = expr.kind === "FfiGet" ? "property" : "method";
   throw diagnosticError(
     new Error(
-      `cannot infer JS FFI ${kind} ${expr.path.join(".")} for unconstrained receiver; unresolved JS FFI access is not a generic value`,
+      `cannot infer JS FFI ${kind} ${
+        expr.path.join(".")
+      } for unconstrained receiver; unresolved JS FFI access is not a generic value`,
     ),
     expr.node,
   );
@@ -231,10 +231,9 @@ export function inferParam(
   env: Env,
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
-  vars: TypeVarScope,
   binders: Set<string>,
 ): Ty {
-  const expected = param.annotation ? typeFromAst(param.annotation, typeEnv, vars) : fresh();
+  const expected = fresh();
   return inferPattern(param.pattern, expected, env, typeEnv, adts, binders);
 }
 
@@ -318,5 +317,3 @@ function constrainPipe(
   );
   return result;
 }
-
-

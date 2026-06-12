@@ -3,10 +3,7 @@ import type { InferResult } from "../../infer.ts";
 import { prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
-import {
-  inferredType,
-  tyToTypeExpr,
-} from "./receiver_models.ts";
+import { inferredType, tyToTypeExpr } from "./receiver_models.ts";
 import {
   addVariants,
   type FfiBinding,
@@ -56,6 +53,7 @@ export function materializeReceiverProperty(
     { kind: "JsReceiver", path },
     variants,
     true,
+    undefined,
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [receiver]);
   if (!variant) return { kind: "FfiGet", receiver, path };
@@ -99,12 +97,16 @@ export function materializeReceiverCall(
     { kind: "JsReceiver", path },
     variants,
     true,
+    undefined,
   );
   const allArgs = [receiver, ...args];
-  const argTypes = [receiverType, ...args.map((arg) => {
-    const type = inferredType(result, arg);
-    return type ? tyToTypeExpr(type) : undefined;
-  })];
+  const argTypes = [
+    receiverType,
+    ...args.map((arg) => {
+      const type = inferredType(result, arg);
+      return type ? tyToTypeExpr(type) : undefined;
+    }),
+  ];
   const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], allArgs, argTypes);
   if (!variant) return { kind: "FfiCall", receiver, path, args };
   solveReflectedFfiValue(original, variant, result);
@@ -136,10 +138,13 @@ export function solveReflectedFfiValue(
   variant: FfiVariant,
   result: InferResult,
 ): void {
-  const value = resultValueType(inferredType(result, original));
-  const placeholder = value ? prune(value) : undefined;
+  const inferred = inferredType(result, original);
+  const value = resultValueType(inferred);
+  if (!value) return;
+  const placeholder = prune(value.type);
   if (!placeholder || placeholder.tag !== "ffi") return;
-  const reflected = unwrapResultTypeExpr(callResultTypeExpr(variant.type));
+  const variantResult = callResultTypeExpr(variant.type);
+  const reflected = value.wrapped ? unwrapResultTypeExpr(variantResult) : variantResult;
   if (!reflected) return;
   const reflectedType = reflectedTypeOrConstraint(reflected, placeholder, result);
   if (!reflectedType) return;
@@ -158,11 +163,15 @@ function reflectedTypeOrConstraint(
   }
 }
 
-function resultValueType(type: ReturnType<typeof inferredType>) {
+function resultValueType(
+  type: ReturnType<typeof inferredType>,
+): { type: ReturnType<typeof prune>; wrapped: boolean } | undefined {
   const target = type ? prune(type) : undefined;
-  return target?.tag === "named" && target.name === "Result" && target.args.length === 2
-    ? target.args[0]
-    : undefined;
+  if (target?.tag === "ffi") return { type: target, wrapped: false };
+  if (target?.tag === "named" && target.name === "Result" && target.args.length === 2) {
+    return { type: prune(target.args[0]), wrapped: true };
+  }
+  return undefined;
 }
 
 function callResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
@@ -170,13 +179,22 @@ function callResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
 }
 
 function unwrapResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
-  return type?.kind === "TName" && type.name === "Result" && type.args.length === 2
-    ? type.args[0]
-    : type;
+  if (
+    type?.kind === "TName" &&
+    (type.name === "Result" || type.name === "Task") &&
+    type.args.length === 2
+  ) {
+    return type.args[0];
+  }
+  return type;
 }
 
 function rememberVariantForeignTypeRefs(
-  variants: { type: TypeExpr; resultRef?: JsTypeRef; callbackParamRefs?: { params: JsTypeRef[] }[] }[],
+  variants: {
+    type: TypeExpr;
+    resultRef?: JsTypeRef;
+    callbackParamRefs?: { params: JsTypeRef[] }[];
+  }[],
   foreignTypeRefs: Map<string, JsTypeRef>,
 ) {
   for (const variant of variants) {

@@ -68,7 +68,7 @@ Deno.test("supports inferred callable root JS globals", async () => {
   `);
 
   expectBinding(result.env, "response", {
-    type: "Result<Js.Promise<Response>, Js.Error>",
+    type: "Js.Promise<Result<Response, Js.Error>>",
     vars: 0,
   });
   assertStringIncludes(js, '__wm_js_member("fetch")');
@@ -89,7 +89,7 @@ Deno.test("maps reflected TS promises to Js.Promise", async () => {
   `);
 
   expectBinding(result.env, "file", {
-    type: "Result<Js.Promise<String>, Js.Error>",
+    type: "Js.Promise<Result<String, Js.Error>>",
     vars: 0,
   });
 });
@@ -125,21 +125,14 @@ Deno.test("uses nominal promise results with reflected constructors", async () =
 Deno.test("typed JS promise receiver results infer through then", async () => {
   const result = await checkSource(`
     from js.global("Deno") import { readTextFile };
-    let try = (result) => {
-      match(result) {
-        Ok(value) => { value },
-        Err(_) => { Panic("ffi") },
-      }
-    };
     let readBang = () => {
-      let file = readTextFile("README.md") :> try;
-      file :> .then((text) => {
+      readTextFile("README.md") :> Task.map((text) => {
         text ++ "!"
-      }) :> try
+      })
     };
   `);
 
-  expectBinding(result.env, "readBang", { type: "(Void) => Js.Promise<String>", vars: 0 });
+  expectBinding(result.env, "readBang", { type: "(Void) => Js.Promise<Result<String, Js.Error>>", vars: 0 });
 });
 
 Deno.test("maps function-valued JS union parameters as JS values", async () => {

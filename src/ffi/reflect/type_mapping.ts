@@ -122,7 +122,7 @@ export function typeExprFromTsType(
   if (type.flags & ts.TypeFlags.BooleanLiteral) return name("Bool");
   if (type.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) return name("Void");
   const promised = promiseElementType(checker, type, position);
-  if (promised) return { kind: "TName", name: "Js.Promise", args: [promised] };
+  if (promised) return { kind: "TName", name: "Task", args: [promised, name("Js.Error")] };
   if (position === "param" && isNumericTypedArray(checker, type)) {
     return { kind: "TName", name: "Js.Array", args: [name("Number")] };
   }

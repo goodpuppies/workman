@@ -332,12 +332,21 @@ export function fn(params: TypeExpr[], result: TypeExpr): TypeExpr {
 }
 
 function fallibleType(type: TypeExpr): TypeExpr {
-  if (type.kind !== "TFn") return isResultType(type) ? type : result(type);
-  return isResultType(type.result) ? type : { ...type, result: result(type.result) };
+  if (type.kind !== "TFn") return fallibleValueType(type);
+  return { ...type, result: fallibleValueType(type.result) };
 }
 
 function isResultType(type: TypeExpr): boolean {
   return type.kind === "TName" && type.name === "Result" && type.args.length === 2;
+}
+
+function isTaskType(type: TypeExpr): boolean {
+  return type.kind === "TName" && type.name === "Task" && type.args.length === 2;
+}
+
+function fallibleValueType(type: TypeExpr): TypeExpr {
+  if (isResultType(type) || isTaskType(type)) return type;
+  return result(type);
 }
 
 function result(ok: TypeExpr): TypeExpr {
