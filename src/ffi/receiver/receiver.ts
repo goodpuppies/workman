@@ -221,6 +221,14 @@ export function objectReceiverCall(
   }
   if (access?.kind === "dynamic") {
     const path = parts.slice(1);
+    if (path.length === 1 && path[0] === "at") {
+      return {
+        kind: "FfiCall",
+        receiver: { kind: "Var", name: baseName },
+        path,
+        args,
+      };
+    }
     const surfaceName = `__dynamic.${path.join(".")}(${callHintKey(args)})`;
     addVariants(
       bindings,

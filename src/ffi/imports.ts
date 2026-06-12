@@ -92,7 +92,7 @@ export function collectFfiDecl(
       spec.name,
       decl.target,
       memberVariants(member),
-      reflected && !decl.clause.unsafe,
+      !decl.clause.unsafe,
       spec.node,
     );
   }

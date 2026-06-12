@@ -10,6 +10,10 @@ import type {
   RecordPatternField,
 } from "../ast.ts";
 import { analyzeFile } from "../compiler.ts";
+import {
+  contextualizeDelayedCallbacks,
+  resolveDelayedFfiElaboration,
+} from "../ffi/delayed/delayed.ts";
 import { prepareFfiElaboration } from "../ffi/elab.ts";
 import { inferModulePartial, type InferResult } from "../infer.ts";
 import { loadModuleGraph } from "../module_graph.ts";
@@ -81,18 +85,46 @@ async function analyzePartialForHover(
 ): Promise<Awaited<ReturnType<typeof analyzeFile>> | null> {
   try {
     const graph = await loadModuleGraph(entryPath, { sourceOverrides });
+    const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
     for (const node of graph.nodes.values()) {
-      node.module = prepareFfiElaboration(node.module).module;
+      const prepared = prepareFfiElaboration(node.module);
+      ffi.set(node.path, prepared);
+      node.module = prepared.module;
     }
-    const results = new Map();
-    for (const path of graph.order) {
-      const node = graph.nodes.get(path)!;
-      const imports = new Map();
-      for (const edge of node.imports) {
-        const imported = results.get(edge.path);
-        if (imported) imports.set(edge.specifier, imported);
+    const inferAll = () => {
+      const out = new Map<string, InferResult>();
+      for (const path of graph.order) {
+        const node = graph.nodes.get(path)!;
+        const imports = new Map<string, InferResult>();
+        for (const edge of node.imports) {
+          const imported = out.get(edge.path);
+          if (imported) imports.set(edge.specifier, imported);
+        }
+        out.set(path, inferModulePartial(node.module, imports));
       }
-      results.set(path, inferModulePartial(node.module, imports));
+      return out;
+    };
+    let results = inferAll();
+    // Best effort: run the later FFI phases for their placeholder-solving side effects so
+    // hover shows resolved member types, but keep the pre-rewrite modules and the latest
+    // successful inference results when a phase fails.
+    try {
+      for (const path of graph.order) {
+        const contextual = contextualizeDelayedCallbacks(ffi.get(path)!, results.get(path)!);
+        ffi.set(path, contextual);
+        graph.nodes.get(path)!.module = contextual.module;
+      }
+      results = inferAll();
+      const foreignTypeRefs = new Map(
+        [...ffi.values()].flatMap((item) =>
+          [...item.foreignTypeRefs.values()].map((ref) => [ref.key, ref] as const)
+        ),
+      );
+      for (const path of graph.order) {
+        resolveDelayedFfiElaboration(ffi.get(path)!, results.get(path)!, { foreignTypeRefs });
+      }
+    } catch {
+      // Keep the latest successful results; solved placeholders still show through.
     }
     return { graph, results };
   } catch {

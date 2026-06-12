@@ -145,6 +145,9 @@ let bindingTemp = 0;
 
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
   if (spec.type?.kind !== "TFn") {
+    if (spec.fallible) {
+      return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(error); } })()`;
+    }
     return memberRef;
   }
   return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${

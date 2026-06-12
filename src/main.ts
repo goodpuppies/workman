@@ -1,5 +1,11 @@
 import { checkFile, compileFile, ModuleAnalysisError } from "./compiler.ts";
-import { formatDiagnosticError, formatError, FrontendDiagnosticError } from "./diagnostics.ts";
+import {
+  formatDiagnostic,
+  formatDiagnosticError,
+  formatError,
+  FrontendDiagnosticBundleError,
+  FrontendDiagnosticError,
+} from "./diagnostics.ts";
 import { ParseError } from "./parser.ts";
 import { runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
@@ -22,11 +28,21 @@ if (import.meta.main) {
         );
       } else if (error.originalError instanceof FrontendDiagnosticError) {
         console.error(formatDiagnosticError(error.originalError, error.path, error.source));
+        for (const diagnostic of error.diagnostics) {
+          console.error(formatDiagnostic(diagnostic, error.path, error.source));
+        }
+      } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
+        console.error(formatBundleError(error.originalError, error.path, error.source));
       } else {
         console.error(formatError(error.message, error.path, error.source, undefined));
+        for (const diagnostic of error.diagnostics) {
+          console.error(formatDiagnostic(diagnostic, error.path, error.source));
+        }
       }
     } else if (error instanceof FrontendDiagnosticError) {
       console.error(formatDiagnosticError(error, undefined, undefined));
+    } else if (error instanceof FrontendDiagnosticBundleError) {
+      console.error(formatBundleError(error, undefined, undefined));
     } else {
       console.error(error instanceof Error ? error.message : String(error));
     }
@@ -91,6 +107,18 @@ async function typeDebugCommand(args: string[]): Promise<number> {
   if (!input) return missingInput("type-debug");
   console.log(await typeDebugFile(input));
   return 0;
+}
+
+function formatBundleError(
+  error: FrontendDiagnosticBundleError,
+  filePath: string | undefined,
+  source: string | undefined,
+): string {
+  const primary = error.primary instanceof FrontendDiagnosticError
+    ? formatDiagnosticError(error.primary, filePath, source)
+    : formatError(error.message, filePath, source, undefined);
+  const additional = error.diagnostics.map((diagnostic) => formatDiagnostic(diagnostic, filePath, source));
+  return [primary, ...additional].join("");
 }
 
 function missingInput(command: string): number {

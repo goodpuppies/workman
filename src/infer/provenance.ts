@@ -1,6 +1,6 @@
 import type { Expr, Param } from "../ast.ts";
 import { diagnosticError, type FrontendRelatedDiagnostic } from "../diagnostics.ts";
-import { show, type Ty, type UnifyBind } from "../types.ts";
+import { JsBoundaryError, show, type Ty, type UnifyBind } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
 import { constrain } from "./shared.ts";
 
@@ -24,7 +24,7 @@ export function constrainAt(
   } catch (error) {
     const primary = selectPrimaryCallsite(related, reason);
     throw diagnosticError(
-      message ? new Error(message()) : error,
+      message && !(error instanceof JsBoundaryError) ? new Error(message()) : error,
       primary?.node ?? expr?.node,
       undefined,
       primary

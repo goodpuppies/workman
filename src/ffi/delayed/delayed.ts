@@ -1,26 +1,35 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
-import { prune, show } from "../../types.ts";
+import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
 import {
   generatedForeignDeclsForRefs,
   generatedImportInsertionIndex,
 } from "./bindings.ts";
-import { materializeReceiverCall, materializeReceiverProperty } from "./materialize.ts";
-import { setActiveRecordFields } from "../receiver/rewrite_expr.ts";
+import {
+  materializeReceiverCall,
+  materializeReceiverProperty,
+  solveReflectedFfiValue,
+} from "./materialize.ts";
+import { setActiveFfiSolve, setActiveRecordFields } from "../receiver/rewrite_expr.ts";
 import {
   expressionRefForReceiver,
+  ffiCallPromiseElement,
   foreignReceiver,
   foreignTypeRefLookup,
   inferredType,
   isJsObjectTy,
+  jsArrayMember,
   jsArrayReceiver,
+  jsPromiseMember,
   jsPromiseReceiver,
   jsPromiseReceiverTypeExpr,
+  promiseCallbackResultType,
   receiverTypeForRef,
   typeExprKey,
   tyToTypeExpr,
+  withCallbackParamRefs,
 } from "./receiver_models.ts";
 import type { ResolveOptions } from "./types.ts";
 import {
@@ -49,10 +58,17 @@ export function resolveDelayedFfiElaboration(
   options: ResolveOptions = {},
 ): FfiElaboration {
   const previousRecordFields = setActiveRecordFields(recordFieldNames(ffi.module.decls));
+  const previousFfiSolve = setActiveFfiSolve((original, internalName) => {
+    const variant = [...ffi.bindings.values()]
+      .flatMap((binding) => binding.variants)
+      .find((item) => item.internalName === internalName);
+    if (variant) solveReflectedFfiValue(original, variant, result);
+  });
   try {
     return resolveDelayedFfiElaborationInner(ffi, result, options);
   } finally {
     setActiveRecordFields(previousRecordFields);
+    setActiveFfiSolve(previousFfiSolve);
   }
 }
 
@@ -226,6 +242,15 @@ function callbackParamTypesForFfiCall(
   const promise = localReceiverType
     ? jsPromiseReceiverTypeExpr(localReceiverType)
     : jsPromiseReceiver(receiverType);
+  // Eager inference already contextualizes callback params for these typed members when the
+  // receiver type was inferred; reflected annotations would only fight those constraints with
+  // broader overloads. Receivers known only through selected FFI bindings still need annotations.
+  if (!localReceiverType && array && expr.path.length === 1 && eagerTypedArrayMembers.has(expr.path[0])) {
+    return [];
+  }
+  if (!localReceiverType && promise && expr.path.length === 1 && eagerTypedPromiseMembers.has(expr.path[0])) {
+    return [];
+  }
   const ref = array
     ? jsTypeExprValueRef(`array:${reflectTypeExprKey(array.type)}`, array.type)
     : promise
@@ -242,6 +267,9 @@ function callbackParamTypesForFfiCall(
     params: callback.params.map((ref) => ref.type).filter((type): type is TypeExpr => !!type),
   }));
 }
+
+const eagerTypedArrayMembers = new Set(["at", "join", "map", "reduce", "filter", "includes"]);
+const eagerTypedPromiseMembers = new Set(["then", "catch"]);
 
 function callArgHintFromNamedArity(
   expr: Expr,
@@ -625,8 +653,10 @@ function resolveDelayedFfiGet(
   options: ResolveOptions,
   valueRefs: Map<string, JsTypeRef>,
 ): Expr {
-  const receiverType = inferredType(result, expr.receiver);
+  // Resolve the receiver first: materializing a nested receiver call can solve its FFI
+  // placeholder in place, which may reveal a concrete receiver type for this access.
   const receiver = resolveDelayedExpr(expr.receiver, ffi, result, selected, options, valueRefs);
+  const receiverType = receiverTypeThroughObligations(inferredType(result, expr.receiver));
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
   if (foreign) {
@@ -685,6 +715,12 @@ function resolveDelayedFfiGet(
       );
     }
   }
+  if (receiverType && isJsObjectTy(receiverType) && expr.path.length === 1 && expr.path[0] === "at") {
+    throw diagnosticError(
+      new Error("cannot use typed array method at on opaque Js.Object; assert a Js.Array<T> shape first"),
+      expr.node,
+    );
+  }
   if (!receiverType || !isJsObjectTy(receiverType)) {
     throw diagnosticError(
       new Error(
@@ -717,8 +753,10 @@ function resolveDelayedFfiCall(
   options: ResolveOptions,
   valueRefs: Map<string, JsTypeRef>,
 ): Expr {
-  const receiverType = inferredType(result, expr.receiver);
+  // Resolve the receiver first: materializing a nested receiver call can solve its FFI
+  // placeholder in place, which may reveal a concrete receiver type for this access.
   const receiver = resolveDelayedExpr(expr.receiver, ffi, result, selected, options, valueRefs);
+  const receiverType = receiverTypeThroughObligations(inferredType(result, expr.receiver));
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
   if (foreign) {
@@ -750,8 +788,11 @@ function resolveDelayedFfiCall(
   }
   const array = jsArrayReceiver(receiverType);
   const arrayRef = array ? jsTypeExprValueRef(`array:${reflectTypeExprKey(array.type)}`, array.type) : undefined;
-  const arrayMember = arrayRef
-    ? jsRefCallMember(arrayRef, expr.path, expr.args.map((arg) => callArgHintForReflection(arg, result)))
+  const arrayMember = array
+    ? jsTypedArrayMember(array, expr, result) ??
+      (arrayRef
+        ? jsRefCallMember(arrayRef, expr.path, expr.args.map((arg) => callArgHintForReflection(arg, result)))
+        : undefined)
     : undefined;
   if (array && arrayMember) {
     return materializeReceiverCall(
@@ -770,17 +811,42 @@ function resolveDelayedFfiCall(
       resolveDelayedExpr,
     );
   }
+  if (receiverType && isJsObjectTy(receiverType) && expr.path.length === 1 && expr.path[0] === "at") {
+    throw diagnosticError(
+      new Error("cannot use typed array method at on opaque Js.Object; assert a Js.Array<T> shape first"),
+      expr.node,
+    );
+  }
   const expressionRef = expressionRefForReceiver(expr.receiver, receiver, ffi, valueRefs);
-  const promise = jsPromiseReceiver(receiverType);
+  // A reflected receiver ref carries richer member info (callback param refs) than the
+  // synthetic promise ref, so prefer it even when the receiver type is already known.
+  const expressionPromiseRef = expressionRef
+    ? jsPromiseReceiverTypeExpr(jsRefTypeExpr(expressionRef))
+    : undefined;
+  const promise = expressionPromiseRef ? undefined : jsPromiseReceiver(receiverType);
   const promiseSyntheticRef = promise
     ? jsTypeExprValueRef(`promise:${reflectTypeExprKey(promise.type)}`, promise.type)
     : undefined;
-  const promiseMember = promiseSyntheticRef
+  const promiseReflectedMember = promiseSyntheticRef
     ? jsRefCallMember(
       promiseSyntheticRef,
       expr.path,
       expr.args.map((arg) => callArgHintForReflection(arg, result)),
     )
+    : undefined;
+  // Prefer the local promise model: it keeps Workman-side element types (records, Js.Dict)
+  // that cannot round-trip through TS reflection. Callback param refs still come from the
+  // reflected member so callback bodies rewrite against reflected receivers.
+  const promiseMember = promise
+    ? withCallbackParamRefs(
+      jsPromiseMember(
+        promise,
+        expr.path,
+        promiseCallbackResultType(expr.args[0], result),
+        ffiCallPromiseElement(inferredType(result, expr)),
+      ),
+      promiseReflectedMember,
+    ) ?? promiseReflectedMember
     : undefined;
   if (promise && promiseMember) {
     return materializeReceiverCall(
@@ -875,6 +941,43 @@ function resolveDelayedFfiCall(
     valueRefs,
     resolveDelayedExpr,
   );
+}
+
+function receiverTypeThroughObligations(type: Ty | undefined, seen = new Set<number>()): Ty | undefined {
+  if (!type) return undefined;
+  const target = prune(type);
+  if (target.tag === "named" && target.name === "Result" && target.args.length === 2) {
+    return receiverTypeThroughObligations(target.args[0], seen);
+  }
+  if (target.tag !== "ffi") return target;
+  if (seen.has(target.id)) return undefined;
+  seen.add(target.id);
+  if (target.instance) return receiverTypeThroughObligations(target.instance, seen);
+  for (const constraint of target.constraints ?? []) {
+    const constrained = receiverTypeThroughObligations(constraint, seen);
+    if (constrained) return constrained;
+  }
+  return undefined;
+}
+
+function jsTypedArrayMember(
+  array: NonNullable<ReturnType<typeof jsArrayReceiver>>,
+  expr: Extract<Expr, { kind: "FfiCall" }>,
+  result: InferResult,
+) {
+  if (expr.path.length !== 1) return undefined;
+  if (expr.path[0] === "at") return jsArrayMember(array, expr.path);
+  if (expr.path[0] !== "reduce" || expr.args.length !== 2) return undefined;
+  const initial = inferredType(result, expr.args[1]);
+  if (!initial) return undefined;
+  const accumulator = tyToTypeExpr(initial);
+  return {
+    name: "reduce",
+    type: fn([
+      fn([accumulator, array.element, name("Number"), array.type], accumulator),
+      accumulator,
+    ], accumulator),
+  };
 }
 
 function callArgHintForReflection(expr: Expr, result: InferResult): JsCallArgHint {

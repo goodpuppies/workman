@@ -9,8 +9,8 @@ import {
   baseAdts,
   baseEnv,
   baseTypeEnv,
+  containsUnsolvedJsBoundary,
   type Env,
-  ftv,
   prune,
   type Scheme,
   show,
@@ -113,8 +113,8 @@ function inferModuleCore(
   }
 
   try {
-    assertNoTopLevelFreeTypeVars(env);
     assertNoTopLevelUnresolvedFfi(env);
+    assertNoTopLevelUnsolvedJsBoundary(env);
   } catch (error) {
     const diagnostic = diagnosticError(error, module.node);
     if (!recover) throw diagnostic;
@@ -144,12 +144,32 @@ function inferModuleCore(
 }
 
 function assertNoTopLevelUnresolvedFfi(env: Env) {
-  const leaking = [...env.entries()]
-    .filter(([, scheme]) => containsUnresolvedFfi(scheme.type))
-    .map(([name, scheme]) => `${name}: ${showSchemeType(scheme)}`);
+  const leaking = [...env.entries()].filter(([, scheme]) => containsUnresolvedFfi(scheme.type));
   if (leaking.length === 0) return;
-  throw new Error(
-    `unresolved JS FFI type in ${leaking.join(", ")}; unresolved JS FFI access is not a generic value`,
+  const [name, scheme] = leaking[0];
+  const remaining = leaking.length > 1 ? `; ${leaking.length - 1} more binding(s) also have unresolved JS FFI obligations` : "";
+  throw diagnosticError(
+    new Error(
+      `unresolved JS FFI obligation in ${name}: ${showSchemeType(scheme)}; this JS member access must be resolved by FFI reflection before it can escape a top-level binding${remaining}`,
+    ),
+    scheme.node,
+  );
+}
+
+function assertNoTopLevelUnsolvedJsBoundary(env: Env) {
+  const leaking = [...env.entries()].filter(([, scheme]) =>
+    !scheme.basis && containsUnsolvedJsBoundary(scheme.type)
+  );
+  if (leaking.length === 0) return;
+  const [name, scheme] = leaking[0];
+  const remaining = leaking.length > 1
+    ? `; ${leaking.length - 1} more binding(s) also have unsolved JS boundary types`
+    : "";
+  throw diagnosticError(
+    new Error(
+      `unsolved JS boundary type in ${name}: ${showSchemeType(scheme)}; a broad Js.Value JS parameter leaves this type undetermined and no call site determines it; annotate it with the concrete JS shape${remaining}`,
+    ),
+    scheme.node,
   );
 }
 
@@ -162,18 +182,6 @@ function containsUnresolvedFfi(type: Ty): boolean {
   if (target.tag === "tuple") return target.items.some(containsUnresolvedFfi);
   if (target.tag === "named") return target.args.some(containsUnresolvedFfi);
   return false;
-}
-
-function assertNoTopLevelFreeTypeVars(env: Env) {
-  const leaking = [...env.entries()]
-    .filter(([, scheme]) => [...ftv(scheme.type)].some((id) => !scheme.vars.includes(id)))
-    .map(([name, scheme]) => `${name}: ${showSchemeType(scheme)}`);
-  if (leaking.length === 0) return;
-  throw new Error(
-    `top-level free type variable in ${
-      leaking.join(", ")
-    }; add an annotation or use it at a concrete type`,
-  );
 }
 
 function showSchemeType(scheme: Scheme): string {

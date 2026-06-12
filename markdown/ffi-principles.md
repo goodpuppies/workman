@@ -1,0 +1,5 @@
+1. hard 80/20 rule, 80% of stuff should be dumb cases and handled automatically 20% should be rust/zig style annoying explicitness
+2. 80/20 applies to implementation too, if something is complex advanced a "really nice feature" so to say, its probably in that 20% category and should be handled by the programmer and not via a compiler state machine or whatever
+3. keep it safe and honest, almost to same degree is as elm and rust. this also means you cant just be passing opaque stuff around because then why even have types?
+4. absolutely no reimplementing typescript, no fixed point looping etc. thats what the typescript reflection part is for. same with if only way to figure something out is some super advanced special system, it should just fail and require the user to be more explicit
+5. the ffi system exists for making the language immidiately useful, it should not be exciting or theoretically satisfying, nor solve every problem because after all im working on this language because i wish typescript had less features, not more

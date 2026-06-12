@@ -349,7 +349,7 @@ let try = (result) => {
 };
 
 let hexByte = (byte, index, array) => {
-  let text = byte :> .toString(16) :> try;
+  let text = byte :> .unknownJs(16) :> try;
   text :> .padStart(2, "0") :> try
 };
 `;

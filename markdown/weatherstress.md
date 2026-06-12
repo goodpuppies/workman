@@ -24,7 +24,24 @@ The TypeScript example exercises:
 
 ## Current Port Shape
 
-Work in progress. Update this section once `examples/weather.wm` settles.
+`examples/weather.wm` was rewritten from scratch at behavioral parity with `examples/weather.ts`:
+real `fetch` with `res.ok`/`res.status` handling, a single `WttrResponse` assertion at the fetch
+boundary, a TTL file cache stored as `Js.Dict<CacheEntry>`, `--f`/`--refresh` flag parsing via
+`filter`/`includes`/`startsWith`, location formatting with empty-part filtering, per-day rain
+chance via `reduce` + `Math.max`, per-city error recovery, and `Promise.all` orchestration.
+
+The rewrite dropped the workaround-era one-line helpers (`toNumber`/`numberText`/`paddedLeft`/
+`paddedRight`/`tempForCurrent`/`highForDay`/…): unit selection is inline `if` expressions feeding
+the typed `Number` import, flag partitioning is inline `filter` calls in `main`, and `getWeather`
+asserts the wire shape once so `cityReport` receives `Js.Promise<WttrResponse>` directly. The
+remaining helpers (`try`, `firstValue`, `pad3`, `getWeather`, `loadCache`, `saveCache`,
+`formatDay`, `renderReport`, `cityReport`) each carry real structure.
+
+Remaining explicitness (consistent with the 80/20 principle):
+
+- hardcoded import types for `Promise.resolve`/`Promise.all`, `JSON.parse`/`JSON.stringify`,
+  `Number`, and `Deno.args` (generic/overloaded or non-callable reflection targets);
+- `Json.assert` shape targets (`WttrResponse`, `Js.Dict<CacheEntry>`, `Js.Array<String>`).
 
 ## Stress Points
 
@@ -391,7 +408,7 @@ inputs to `Js.Value` parameters where JavaScript can represent them directly.
 After JSON narrowing, the checker reached CLI flag parsing and reported:
 
 ```txt
-top-level free type variable in flagsFromArgs: (Js.Array<String>) => ?ffi#13:filter
+unresolved JS FFI obligation in flagsFromArgs: (Js.Array<String>) => ?ffi#13:filter
 ```
 
 Why it matters:
@@ -435,7 +452,7 @@ The reflection hint layer now carries numeric literals as number arguments. That
 After removing `filter`, the checker reported:
 
 ```txt
-unresolved JS FFI type in fetchJson: (String) => Js.Promise<?ffi#2:json>
+unresolved JS FFI obligation in fetchJson: (String) => Js.Promise<?ffi#2:json>
 ```
 
 Why it matters:
@@ -567,3 +584,374 @@ What should remove it:
 
 Primitive Workman values should be accepted at `Js.Value` FFI parameters where the JS boundary can
 represent them directly, without changing the Workman-side variable type to `Js.Value`.
+
+### Unresolved FFI Placeholders Must Not Become Ordinary Type Variables
+
+While debugging typed array access, this expression exposed a severe type-system issue:
+
+```wm
+items :> .at(0) :> try
+```
+
+The partial type state showed:
+
+```txt
+items :> .at(0): Result<?ffi#...:at, Js.Error>
+items :> .at(0) :> try: Option<'a>
+```
+
+Why it matters:
+
+`try` expects a `Result<'a, 'b>` and a later `match` expected an `Option<_>`. The generic unifier was
+allowed to set the unresolved FFI placeholder to `Option<'a>`. That made an unresolved JS member look
+like a normal HM generic result. This is unsafe: a delayed FFI placeholder is an obligation to
+resolve a JS member, not a unification variable that arbitrary Workman constraints may instantiate.
+
+Current compiler change:
+
+- ordinary `unify(?ffi, T)` no longer installs `T` as the placeholder instance;
+- ordinary constraints are recorded as obligations on the placeholder;
+- delayed reflection/materialization is the only path that can solve the placeholder;
+- when materialization solves it, recorded hard obligations are checked against the reflected type;
+- broad `Js.Object` JS-boundary compatibility is not recorded as a hard FFI result obligation.
+
+This keeps the existing bounded phase model: partial inference, callback contextualization, a second
+partial inference, one delayed FFI resolution pass, then final inference. There is no fixed-point
+reflection loop.
+
+Diagnostic lesson:
+
+When delayed resolution fails on an unconstrained receiver, regular checking should prefer the
+earlier top-level FFI leak diagnostic if one exists. Otherwise a lower-level message such as
+`cannot resolve JS FFI method toString for receiver type 'a` can hide the more important fact that a
+top-level binding escaped as something like:
+
+```txt
+hexByte: (('a, 'b, 'c)) => ?ffi#...:padStart
+```
+
+`type-debug` should still show the lower-level resolver failure and nearby expression types, because
+that is useful while debugging the delayed pass.
+
+### `Response.json()` Return Type Does Not Feed Promise Reflection Yet
+
+After fixing the placeholder leak and adding typed `Js.Array<T>.at(Number) => Option<T>`, the weather
+port now stops here:
+
+```wm
+res :> .json() :> try :> .then((body) => {
+  let data: Js.Object = body :> Json.assert :> try;
+  data
+})
+```
+
+Current debug output:
+
+```txt
+cannot resolve JS FFI method then for receiver type ?ffi#...:json
+```
+
+Why it matters:
+
+`res` is known as `Response`, but `Response.json()` is still an unresolved FFI placeholder at the
+point where `.then(...)` is resolved. The delayed pass can solve some parent receiver calls when the
+receiver has a reflected or already-known promise type, but this nested shape needs better propagation
+from the reflected `json()` result into the following receiver call.
+
+Current workaround:
+
+`fetchJson` is currently stubbed with `promiseResolve("{}")`, so the weather port can continue
+checking later code paths. This keeps the missing feature visible without adding a `Reflect`
+workaround or broad type annotation in the weather port.
+
+### Concrete Wttr Shapes Need JS-Style Record Field Names
+
+The original weather port used broad fields such as:
+
+```wm
+nearest_area: Js.Array<Js.Object>
+```
+
+That made `firstObject(data.nearest_area)` produce only `Js.Object`, so `formatLocation(value)` had
+to recover shape through dynamic property reads. That goes against the desired style: shape should be
+asserted at the JSON boundary, then ordinary record access should carry it through the program.
+
+Parser update made during this experiment:
+
+Record and JSON object field syntax now accepts JavaScript-style property names such as
+`FeelsLikeC`, `maxtempF`, and `windspeedKmph`. Shorthand record fields still use ordinary lowercase
+identifiers, so uppercase JS property names must be written explicitly where they bind values.
+
+Weather port update:
+
+The wttr response now has concrete records for `WttrValue`, `NearestArea`, `CurrentCondition`,
+`HourlyForecast`, `WeatherDay`, and `WttrResponse`. Array element access is done directly at typed
+array call sites rather than through a pretend-polymorphic `firstObject` helper.
+
+Related principle:
+
+Opaque `Js.Object` should not expose typed array operations. `object :> .at(0)` is now rejected with
+an error asking the developer to assert a `Js.Array<T>` shape first.
+
+### Typed Array Methods Must Constrain Fresh Receivers
+
+The weather helper:
+
+```wm
+let firstValue = (items, fallback) => {
+  match(items :> .at(0) :> try) {
+    Some(item) => { item.value },
+    None => { fallback },
+  }
+};
+```
+
+initially showed this in the LSP:
+
+```txt
+items: Js.Array<WttrValue>
+.at(0): ?ffi#...:at
+try: (Result<?ffi#...:at, Js.Error>) => ?ffi#...:at
+```
+
+and without `try`:
+
+```txt
+items: 'a
+.at(0): Result<?ffi#...:at, Js.Error>
+```
+
+Why it matters:
+
+Inside an unannotated helper, `items` is unknown when `.at(0)` is first inferred. The array member
+path only handled receivers already known to be `Js.Array<T>`, so it fell back to delayed FFI and
+lost the intended element type. Built-in JS array methods should be able to constrain a fresh
+receiver to `Js.Array<T>`, the same way numeric operators constrain fresh values to `Number`.
+
+Current compiler change:
+
+Known typed array methods (`at`, `join`, `map`, `reduce`) now constrain a fresh receiver to
+`Js.Array<element>` during inference. `at(Number)` returns `Option<element>`, so `firstValue` now
+infers as:
+
+```txt
+((Js.Array<WttrValue>, String)) => String
+```
+
+The eager dynamic-object receiver rewrite also leaves `.at` as a typed FFI call instead of lowering
+it to broad `Js.Object -> Js.Value`, so `Js.Object.at(0)` can be rejected unless the value is first
+asserted as a `Js.Array<T>`.
+
+### Typed Array Callback Bodies Still Need Context Before Inference
+
+After `.at` was fixed, the port hit two callback-context issues:
+
+```wm
+resolvedReports :> .map((report, index, array) => {
+  log(report)
+}) :> try
+```
+
+and:
+
+```wm
+day.hourly :> .reduce((best, slot, index, array) => {
+  mathMax(best, toNumber(slot.chanceofrain))
+}, 0) :> try
+```
+
+Why it matters:
+
+The lambda body is inferred before the array method has supplied contextual parameter types.
+`log(report)` pushes `report` toward `Js.Value`, then the later `map` context tries to make it
+`String`. In the `reduce` case, `slot.chanceofrain` is read before `slot` is known to be
+`HourlyForecast`, so the field access goes through the dynamic JS path instead of record access.
+
+Current workaround in `weather.wm`:
+
+- use Workman `print(report)` instead of JS `log(report)`;
+- return a dummy `0` from `rainChance`.
+
+What should remove it:
+
+Array callback parameters need contextual typing before the callback body is inferred, at least for
+the built-in typed JS array methods. This should be local to known typed array helpers, not an
+unbounded reflection/fixed-point loop.
+
+### Primitive JS Methods Should Also Constrain Fresh Receivers
+
+The weather port had helpers like:
+
+```wm
+let numberText = (n) => {
+  n :> .toString() :> try
+};
+
+let paddedRight = (text, width) => {
+  text :> .padEnd(width, " ") :> try
+};
+```
+
+Before the primitive receiver update, these escaped as unresolved FFI obligations:
+
+```txt
+numberText: (Number) => ?ffi#...:toString
+paddedRight: ((String, Number)) => ?ffi#...:padEnd
+```
+
+Why it matters:
+
+These are ordinary JavaScript primitive methods we want to treat as known Workman-side affordances,
+not as reflection problems. If the receiver is fresh, the method name can constrain it locally:
+`toString` and `toFixed` imply `Number`; `slice`, `padStart`, and `padEnd` imply `String`.
+
+Current compiler change:
+
+Known primitive methods now constrain fresh receivers during inference. This mirrors the typed array
+method behavior and avoids delayed FFI obligations for common string/number formatting helpers.
+
+### Record-Field Receivers Must Not Be Flattened Into Dynamic Paths
+
+The port hit this error after `fetchJson` was stubbed:
+
+```txt
+type mismatch "Js.Value" vs "Option<NearestArea>"
+```
+
+The debug output showed unresolved paths like:
+
+```txt
+data.nearest_area :> .at(0) :> try: ?ffi#...:nearest_area.at
+```
+
+Why it matters:
+
+`data.nearest_area` is a record-field projection with type `Js.Array<NearestArea>`. The receiver
+rewrite was flattening `data.nearest_area :> .at(0)` into a dynamic receiver call on `data` with path
+`nearest_area.at`. That bypassed record inference and made the result look like broad `Js.Value`,
+which then conflicted with the expected `Option<NearestArea>`.
+
+Current compiler change:
+
+When a FFI call receiver is a dotted variable whose first path segment is a known record field, the
+receiver rewrite now leaves it alone. Ordinary record-field inference can then type the receiver, and
+the typed array method rule handles `.at`, `.map`, and `.join` normally.
+
+## Resolution Round: Removing the Port Stubs
+
+This round removed every `-- Missing feature` stub from `examples/weather.wm`. The fixes, in
+compiler terms:
+
+### Typed `Js.Array<T>.filter` / `.includes` and `String.startsWith`
+
+`filter`, `includes` joined the typed array member model (`src/infer/expr.ts`), and
+`startsWith`/`endsWith` joined the primitive string members. Both constrain fresh receivers, so
+`flagsOf`/`citiesOf` infer as `(Js.Array<String>) => Js.Array<String>` without annotations. CLI
+flag parsing and location-part filtering now match the TypeScript source.
+
+### Eager Callback Parameter Context for Known Typed Methods
+
+`FfiCall` inference now derives callback parameter types from the receiver before inferring a
+lambda argument body: `map`/`filter`/`reduce` on `Js.Array<T>` supply
+`(element, Number, Js.Array<element>)` (plus the accumulator for `reduce`, taken from the
+already-inferred initial argument), and `then`/`catch` on `Js.Promise<T>` supply the element. This
+fixed the `day.hourly :> .reduce(...)` case where `slot.chanceofrain` was read before `slot` was
+known to be `HourlyForecast`. The reflected-annotation contextualization pass now skips these
+members when the receiver type was inferred, so broad TS overloads no longer fight the eager
+constraints.
+
+### Chained Receiver Calls Through Solved Placeholders
+
+The delayed pass resolves a receiver expression before reading its type, and reflected member
+rewrites inside callback arguments now solve the original expression's FFI placeholder (the same
+way materialization does). Together with nested-promise flattening in `prune`
+(`Js.Promise<Js.Promise<X>>` is unobservable in JS), this made the natural `fetchJson` shape work
+unannotated:
+
+```wm
+fetch(requestUrl) :> .then((res) => {
+  let ok = res :> .ok :> try;
+  if (!ok) {
+    let status = res :> .status :> try;
+    Panic("HTTP " ++ (status :> .toString() :> try) ++ " fetching " ++ requestUrl)
+  } else {
+    res :> .json() :> try
+  }
+}) :> try :> .then((body) => {
+  let data: Js.Object = body :> Json.assert :> try;
+  data
+}) :> try
+```
+
+`fetchJson` infers as `(String) => Js.Promise<Js.Object>`.
+
+### Local Promise Member Model Preserves Workman Element Types
+
+The synthetic promise reflection path round-tripped element types through TypeScript, which cannot
+represent Workman records or `Js.Dict`, so `.then`/`.catch` results collapsed to `Js.Value`. The
+delayed pass now prefers the local `jsPromiseMember` model for those members (keeping reflected
+callback param refs), so `loadCache` keeps `Js.Promise<Js.Dict<CacheEntry>>` through its
+`.then`/`.catch` chain.
+
+### `Js.Dict<T>` for Object-as-Dictionary
+
+The TypeScript `Record<string, CacheEntry>` cache is modeled as the new basis type `Js.Dict<T>`
+with two basis functions:
+
+```txt
+Dict.get: ((Js.Dict<'v>, String)) => Option<'v>
+Dict.set: ((Js.Dict<'v>, String, 'v)) => Void
+```
+
+Missing keys (and inherited prototype properties) read as `None`. `Js.Dict` is accepted at
+`Js.Value` JS-import parameters and inside JSON contexts, so `JSON.stringify(cache)` works. The
+cache is asserted once at the boundary (`Js.Dict<CacheEntry>` with `CacheEntry.data: WttrResponse`)
+and ordinary record access carries shape from there.
+
+### Hover Keeps Resolved Types After a Failing Phase
+
+LSP hover's fallback previously ran only the first partial inference, so any failure showed raw
+`?ffi#…` placeholders. It now runs contextualization, the second partial inference, and delayed
+resolution best-effort (for their placeholder-solving side effects) while keeping pre-rewrite
+modules for position targeting. Receiver variables rebuilt by the eager rewrite also keep their
+source nodes, so hovering `byte` in `byte :> .unknownJs(16)` answers `byte: 'a` instead of falling
+back to the enclosing pipe expression.
+
+### Broad `Js.Value` Parameters Must Not Collapse Caller Types
+
+The first parity port annotated `saveCache`:
+
+```wm
+let saveCache = (cache: Js.Dict<CacheEntry>) => {
+  writeTextFile(cacheFile, JSON.stringify(cache))
+};
+```
+
+Without the annotation, the checker bound `cache` to opaque `Js.Value` at the `JSON.stringify`
+call inside the helper, then reported the call site as
+`type mismatch expected "Js.Value", got "Js.Dict<CacheEntry>"` — the error itself named the type
+the compiler should have used. The annotation changing the outcome meant the constraint solver
+was collapsing too eagerly: `Js.Value` is an opaque foreign unknown, not a type Workman values
+should unify with.
+
+Current compiler change:
+
+When a Workman value flows into a broad `Js.Value` JS-import parameter and its type is still an
+unbound variable, the variable is left monomorphic and pending instead of being bound to
+`Js.Value`. Ordinary HM constraints from the program's call sites instantiate it with one
+concrete shape, which is checked for JS representability when it happens (so
+`save(Ok("x"))` still fails with `cannot pass "Result<String, 'a>" to JS FFI call`). The
+`stringify` use inside `saveCache` is then typed `(Js.Dict<CacheEntry>) => String` at that call
+site, and `saveCache` infers as `(Js.Dict<CacheEntry>) => Js.Promise<Void>` with no annotation;
+adding the annotation is a no-op, as it should be.
+
+Variance matters: this only applies where the Workman side supplies the value. Parameters of a
+Workman callback passed *to* JS (for example `serve`'s handler `info` argument) are values the
+JS side supplies, so they remain genuinely opaque `Js.Value`.
+
+If no call site ever determines the type, the checker refuses to guess:
+
+```txt
+unsolved JS boundary type in save: ('a) => String; a broad Js.Value JS parameter leaves this
+type undetermined and no call site determines it; annotate it with the concrete JS shape
+```

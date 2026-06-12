@@ -30,6 +30,18 @@ export class FrontendDiagnosticError extends Error {
   }
 }
 
+export class FrontendDiagnosticBundleError extends Error {
+  primary: unknown;
+  diagnostics: FrontendDiagnostic[];
+
+  constructor(primary: unknown, diagnostics: FrontendDiagnostic[]) {
+    super(errorMessage(primary));
+    this.name = "FrontendDiagnosticBundleError";
+    this.primary = primary;
+    this.diagnostics = diagnostics;
+  }
+}
+
 export function formatError(
   message: string,
   filePath: string | undefined,
@@ -64,7 +76,15 @@ export function formatDiagnosticError(
   filePath: string | undefined,
   source: string | undefined,
 ): string {
-  return formatError(error.diagnostic.message, filePath, source, error.diagnostic.span);
+  return formatDiagnostic(error.diagnostic, filePath, source);
+}
+
+export function formatDiagnostic(
+  diagnostic: FrontendDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): string {
+  return formatError(diagnostic.message, filePath, source, diagnostic.span);
 }
 
 export function diagnosticError(

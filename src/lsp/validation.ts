@@ -4,6 +4,7 @@ import {
   classifyDiagnostic,
   errorMessage,
   type FrontendDiagnostic,
+  FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
 } from "../diagnostics.ts";
 import type { InferResult } from "../infer.ts";
@@ -54,7 +55,10 @@ export async function validateUri(
       const diagnosticUri = pathToFileUri(error.path);
       const result = {
         uri: diagnosticUri,
-        diagnostics: [errorDiagnostic(error.originalError, error.source, diagnosticUri)],
+        diagnostics: [
+          ...errorDiagnostics(error.originalError, error.source, diagnosticUri),
+          ...error.diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, error.source, diagnosticUri)),
+        ],
       };
       return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
     }
@@ -71,7 +75,7 @@ export async function validateUri(
     return [{
       uri: pathToFileUri(canonical),
       diagnostics: [
-        errorDiagnostic(
+        ...errorDiagnostics(
           error,
           await sourceForPath(canonical, sourceOverrides),
           pathToFileUri(canonical),
@@ -86,17 +90,27 @@ function diagnosticsFor(result: InferResult | undefined, source = "", uri = ""):
 }
 
 function errorDiagnostic(error: unknown, source = "", uri = ""): LspDiagnostic {
+  return errorDiagnostics(error, source, uri)[0];
+}
+
+function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[] {
+  if (error instanceof FrontendDiagnosticBundleError) {
+    return [
+      ...errorDiagnostics(error.primary, source, uri),
+      ...error.diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, source, uri)),
+    ];
+  }
   if (error instanceof FrontendDiagnosticError) {
-    return lspDiagnostic(error.diagnostic, source, uri);
+    return [lspDiagnostic(error.diagnostic, source, uri)];
   }
   const message = errorMessage(error);
-  return {
+  return [{
     range: peggyLocationRange(errorLocation(error)),
     severity: 1,
     code: classifyDiagnostic(message),
     source: "wm-mini",
     message,
-  };
+  }];
 }
 
 function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): LspDiagnostic {

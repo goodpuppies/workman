@@ -25,6 +25,7 @@ function admitsEquality(
   seen = new Set<string>(),
 ): boolean {
   const resolved = prune(type);
+  if (resolved.tag === "ffi") return true;
   if (resolved.tag === "prim") return ["Number", "Bool", "String", "Void"].includes(resolved.name);
   if (resolved.tag === "tuple") {
     return resolved.items.every((item) => admitsEquality(item, typeEnv, adts, seen));

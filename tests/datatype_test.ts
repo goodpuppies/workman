@@ -104,17 +104,14 @@ Deno.test("value restriction uses current identifier status for constructor appl
   );
 });
 
-Deno.test("value restriction rejects unresolved top-level expansive type variables", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
+Deno.test("value restriction leaves top-level expansive type variables monomorphic", async () => {
+  const result = await checkSource(`
         type Option<T> = None | Some<T>;
         let make = () => { None };
         let value = make();
-      `),
-    Error,
-    "top-level free type variable in value",
-  );
+      `);
+
+  expectBinding(result.env, "value", { type: "Option<'a>", vars: 0 });
 });
 
 Deno.test("value restriction allows later declarations to constrain expansive monotypes", async () => {

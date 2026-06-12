@@ -1,4 +1,4 @@
-import { basisCtorJsName, basisTypes } from "../basis.ts";
+import { basisCtorId, basisCtorJsName, basisTypes } from "../basis.ts";
 
 export function emitRuntimePrelude(): string[] {
   return [
@@ -115,6 +115,51 @@ export function emitRuntimePrelude(): string[] {
   assert: (value) => value == null
     ? __wm_basis_Err(new Error("Json.assert failed"))
     : __wm_basis_Ok(value),
+};`,
+    `const Dict = {
+  empty: () => ({}),
+  get: ([dict, key]) => __wm_js_option_wrap(Object.hasOwn(dict, key) ? dict[key] : undefined),
+  set: ([dict, key, value]) => { dict[key] = value; },
+};`,
+    `const __wm_result_mapN = (args) => {
+  const fn = args[args.length - 1];
+  const values = [];
+  for (const result of args.slice(0, -1)) {
+    if (result.ctor !== ${basisCtorId("Ok")}) return result;
+    values.push(result.args[0]);
+  }
+  return __wm_basis_Ok(fn(__wm_tuple(...values)));
+};`,
+    `const Result = {
+  map: ([result, fn]) => result.ctor === ${basisCtorId("Ok")} ? __wm_basis_Ok(fn(result.args[0])) : result,
+  map2: __wm_result_mapN,
+  map3: __wm_result_mapN,
+  map4: __wm_result_mapN,
+  andThen: ([result, fn]) => result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result,
+  mapErr: ([result, fn]) => result.ctor === ${basisCtorId("Err")} ? __wm_basis_Err(fn(result.args[0])) : result,
+  withDefault: ([result, fallback]) => result.ctor === ${basisCtorId("Ok")} ? result.args[0] : fallback,
+  all: (results) => {
+    const values = [];
+    for (const result of results) {
+      if (result.ctor !== ${basisCtorId("Ok")}) return result;
+      values.push(result.args[0]);
+    }
+    return __wm_basis_Ok(values);
+  },
+  traverse: ([items, fn]) => {
+    const values = [];
+    for (const item of items) {
+      const result = fn(item);
+      if (result.ctor !== ${basisCtorId("Ok")}) return result;
+      values.push(result.args[0]);
+    }
+    return __wm_basis_Ok(values);
+  },
+};`,
+    `const Option = {
+  map: ([option, fn]) => option.ctor === ${basisCtorId("Some")} ? __wm_basis_Some(fn(option.args[0])) : option,
+  andThen: ([option, fn]) => option.ctor === ${basisCtorId("Some")} ? fn(option.args[0]) : option,
+  withDefault: ([option, fallback]) => option.ctor === ${basisCtorId("Some")} ? option.args[0] : fallback,
 };`,
     "const __wm_op_concat = ([a, b]) => a + b;",
     "const __wm_op_add = ([a, b]) => a + b;",

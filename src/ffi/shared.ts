@@ -332,8 +332,12 @@ export function fn(params: TypeExpr[], result: TypeExpr): TypeExpr {
 }
 
 function fallibleType(type: TypeExpr): TypeExpr {
-  if (type.kind !== "TFn") return result(type);
-  return { ...type, result: result(type.result) };
+  if (type.kind !== "TFn") return isResultType(type) ? type : result(type);
+  return isResultType(type.result) ? type : { ...type, result: result(type.result) };
+}
+
+function isResultType(type: TypeExpr): boolean {
+  return type.kind === "TName" && type.name === "Result" && type.args.length === 2;
 }
 
 function result(ok: TypeExpr): TypeExpr {

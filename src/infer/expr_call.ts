@@ -1,7 +1,9 @@
 import type { Expr } from "../ast.ts";
 import type { FrontendDiagnostic, FrontendRelatedDiagnostic } from "../diagnostics.ts";
 import {
+  addJsConstraint,
   type Env,
+  JsBoundaryError,
   fn,
   fresh,
   instantiateRecordFields,
@@ -56,7 +58,17 @@ export function inferCall(
     const callDepth = maxCallDepth([...calleeRelated, ...calleeProvenance]) + 1;
     const isJsImport = expr.callee.kind === "Var" && env.get(expr.callee.name)?.jsImport;
     const expectedArg = calleeFn.params[0];
-    const actualArg = isJsImport ? jsImportActualArg(calleeFn.params[0], arg, typeEnv) : arg;
+    let jsBoundaryVar = false;
+    const actualArg = isJsImport
+      ? jsImportActualArg(calleeFn.params[0], arg, typeEnv, () => {
+        jsBoundaryVar = true;
+      })
+      : arg;
+    if (jsBoundaryVar) {
+      // The broad Js.Value signature is instantiated per call site: record the callee at this
+      // call with the caller's own argument type so tooling shows the specialized signature.
+      types.set(expr.callee, fn([arg], calleeFn.result));
+    }
     constrainAt(
       expectedArg,
       actualArg,
@@ -108,7 +120,13 @@ export function ffiGetResultTy(typeEnv: TypeEnv, value: Ty): Ty {
   return named(result, [value, named(jsError)]);
 }
 
-function jsImportActualArg(expected: Ty, actual: Ty, typeEnv: TypeEnv): Ty {
+function jsImportActualArg(
+  expected: Ty,
+  actual: Ty,
+  typeEnv: TypeEnv,
+  onJsBoundaryVar?: () => void,
+  intoJs = true,
+): Ty {
   const expectedType = prune(expected);
   const actualType = prune(actual);
   if (isJsArrayType(expectedType, typeEnv) && isJsArrayType(actualType, typeEnv)) {
@@ -142,18 +160,34 @@ function jsImportActualArg(expected: Ty, actual: Ty, typeEnv: TypeEnv): Ty {
     if (!jsValue) throw new Error("unknown type Js.Value");
     return named(jsValue);
   }
+  if (intoJs && isJsValueType(expectedType, typeEnv) && actualType.tag === "var") {
+    // Js.Value is an opaque foreign unknown, not a type the program's values should unify
+    // with. A Workman value flowing into a Js.Value parameter keeps its variable monomorphic
+    // and pending: ordinary call-site constraints must instantiate it with one concrete
+    // JS-representable shape, checked when that happens. Positions where JS supplies the
+    // value (callback parameters) are genuinely opaque and unify with Js.Value as usual.
+    addJsConstraint(actualType, (bound) => {
+      try {
+        assertJsCompatible(bound, typeEnv);
+      } catch (error) {
+        throw new JsBoundaryError(error instanceof Error ? error.message : String(error));
+      }
+    });
+    onJsBoundaryVar?.();
+    return expectedType;
+  }
   if (expectedType.tag === "fn" && actualType.tag === "fn") {
     return fn(
       actualType.params.map((param, i) =>
-        jsImportActualArg(expectedType.params[i] ?? param, param, typeEnv)
+        jsImportActualArg(expectedType.params[i] ?? param, param, typeEnv, onJsBoundaryVar, !intoJs)
       ),
-      jsImportActualArg(expectedType.result, actualType.result, typeEnv),
+      jsImportActualArg(expectedType.result, actualType.result, typeEnv, onJsBoundaryVar, intoJs),
     );
   }
   if (expectedType.tag === "tuple" && actualType.tag === "tuple") {
     return tuple(
       actualType.items.map((item, i) =>
-        jsImportActualArg(expectedType.items[i] ?? item, item, typeEnv)
+        jsImportActualArg(expectedType.items[i] ?? item, item, typeEnv, onJsBoundaryVar, intoJs)
       ),
     );
   }
@@ -163,7 +197,7 @@ function jsImportActualArg(expected: Ty, actual: Ty, typeEnv: TypeEnv): Ty {
     return {
       ...actualType,
       args: actualType.args.map((item, i) =>
-        jsImportActualArg(expectedType.args[i] ?? item, item, typeEnv)
+        jsImportActualArg(expectedType.args[i] ?? item, item, typeEnv, onJsBoundaryVar, intoJs)
       ),
     };
   }
@@ -177,7 +211,7 @@ function isForeignObjectType(type: Ty, typeEnv: TypeEnv): boolean {
 
 function isJsObjectLikeType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return isJsObjectType(t, typeEnv) || isJsArrayType(t, typeEnv) ||
+  return isJsObjectType(t, typeEnv) || isJsArrayType(t, typeEnv) || isJsDictType(t, typeEnv) ||
     isJsPromiseType(t, typeEnv) || isForeignObjectType(t, typeEnv) || isRecordType(t, typeEnv);
 }
 
@@ -194,6 +228,11 @@ function isJsValueType(type: Ty, typeEnv: TypeEnv): boolean {
 function isJsArrayType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
   return t.tag === "named" && t.id === typeEnv.get("Js.Array")?.id;
+}
+
+function isJsDictType(type: Ty, typeEnv: TypeEnv): boolean {
+  const t = prune(type);
+  return t.tag === "named" && t.id === typeEnv.get("Js.Dict")?.id;
 }
 
 function isJsPromiseType(type: Ty, typeEnv: TypeEnv): boolean {
@@ -234,6 +273,10 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
     case "named":
       if (t.name === "Js.Value" || t.name === "Js.Object" || t.name === "Js.Error") return;
       if (t.name === "Js.Array" && t.args.length === 1) {
+        assertJsCompatible(t.args[0], typeEnv);
+        return;
+      }
+      if (t.name === "Js.Dict" && t.args.length === 1) {
         assertJsCompatible(t.args[0], typeEnv);
         return;
       }

@@ -123,8 +123,10 @@ function hasFatalPartialDiagnostics(result: InferResult): boolean {
 }
 
 function isDelayedFfiPartialDiagnostic(message: string): boolean {
-  return message.startsWith("top-level free type variable in ") ||
-    message.startsWith("unresolved JS FFI type in ");
+  return message.startsWith("cannot solve unresolved JS FFI type ") ||
+    message.startsWith("unresolved JS FFI obligation in ") ||
+    message.startsWith("unresolved JS FFI type in ") ||
+    message.startsWith("unsolved JS boundary type in ");
 }
 
 function importsFor(

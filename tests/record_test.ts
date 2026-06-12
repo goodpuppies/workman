@@ -39,6 +39,21 @@ Deno.test("record patterns bind fields through nominal record types", async () =
   expectBinding(result.env, "sum", { type: "Number", vars: 0 });
 });
 
+Deno.test("records support JavaScript-style mixed-case field names", async () => {
+  const result = await checkSource(`
+    record Current = { FeelsLikeC: String, windspeedKmph: String };
+    let current: Current = .{ FeelsLikeC = "4", windspeedKmph = "12" };
+    let feels = current.FeelsLikeC;
+    let .{ windspeedKmph = wind } = current;
+    let payload = JSON{ FeelsLikeC: feels };
+  `);
+
+  expectBinding(result.env, "current", { type: "Current", vars: 0 });
+  expectBinding(result.env, "feels", { type: "String", vars: 0 });
+  expectBinding(result.env, "wind", { type: "String", vars: 0 });
+  expectBinding(result.env, "payload", { type: "Js.Value", vars: 0 });
+});
+
 Deno.test("record elaboration snapshots expose record values after declaration order", async () => {
   const steps = await checkSourceSteps(`
     record Point = { x: Number, y: Number };

@@ -29,6 +29,21 @@ export function setActiveRecordFields(fields: Set<string>): Set<string> {
   return previous;
 }
 
+// Set by the delayed FFI pass so reflected member rewrites can solve the FFI placeholder
+// recorded for the original expression, the same way materialization does.
+type FfiSolveHook = (original: Expr, internalName: string) => void;
+let activeFfiSolve: FfiSolveHook | undefined;
+
+export function setActiveFfiSolve(hook: FfiSolveHook | undefined): FfiSolveHook | undefined {
+  const previous = activeFfiSolve;
+  activeFfiSolve = hook;
+  return previous;
+}
+
+function solveRewrittenFfi(original: Expr, callee: Expr) {
+  if (callee.kind === "Var") activeFfiSolve?.(original, callee.name);
+}
+
 export function rewriteExprCalls(
   expr: Expr,
   bindings: Map<string, FfiBinding>,
@@ -46,7 +61,10 @@ export function rewriteExprCalls(
           selected,
           refs,
         );
-        if (reflected) return reflected;
+        if (reflected) {
+          if (reflected.kind === "Call") solveRewrittenFfi(expr, reflected.callee);
+          return reflected;
+        }
         const objectProperty = objectReceiverProperty(
           `${expr.receiver.name}.${expr.path.join(".")}`,
           bindings,
@@ -87,6 +105,7 @@ export function rewriteExprCalls(
           jsRefCallMember,
         );
         if (reflected) {
+          solveRewrittenFfi(expr, reflected.callee);
           return {
             ...expr,
             kind: "Call",
@@ -102,16 +121,19 @@ export function rewriteExprCalls(
             ),
           };
         }
-        const objectReceiver = objectReceiverCall(
-          `${expr.receiver.name}.${expr.path.join(".")}`,
-          expr.args,
-          bindings,
-          selected,
-          objectAccess,
-          jsRefCallMember,
-        );
+        const objectReceiver = isDottedRecordFieldReceiver(expr.receiver.name)
+          ? undefined
+          : objectReceiverCall(
+            `${expr.receiver.name}.${expr.path.join(".")}`,
+            expr.args,
+            bindings,
+            selected,
+            objectAccess,
+            jsRefCallMember,
+          );
         if (objectReceiver) {
           if ("variant" in objectReceiver) {
+            solveRewrittenFfi(expr, objectReceiver.callee);
             return {
               ...expr,
               kind: "Call",
@@ -128,9 +150,11 @@ export function rewriteExprCalls(
             };
           }
           if (objectReceiver.kind !== "FfiCall") return objectReceiver;
+          const sameReceiver = objectReceiver.receiver.kind === "Var" &&
+            objectReceiver.receiver.name === expr.receiver.name;
           return {
             ...objectReceiver,
-            receiver: expr.receiver,
+            receiver: sameReceiver ? expr.receiver : objectReceiver.receiver,
             node: objectReceiver.node ?? expr.node,
             args: objectReceiver.args.map((arg) =>
               rewriteExprCalls(
@@ -525,6 +549,11 @@ function unresolvedDottedCall(expr: Extract<Expr, { kind: "Call" }>): Expr | und
     args: expr.args.map((arg) => arg),
     node: expr.node,
   };
+}
+
+function isDottedRecordFieldReceiver(name: string): boolean {
+  const parts = unresolvedDottedParts(name);
+  return Boolean(parts && activeRecordFields.has(parts.path[0]));
 }
 
 function unresolvedDottedParts(name: string): { base: string; path: string[] } | undefined {

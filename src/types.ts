@@ -3,7 +3,7 @@ import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
 import { basisTypes } from "./basis.ts";
 
 export type Ty =
-  | { tag: "var"; id: number; name?: string; instance?: Ty }
+  | { tag: "var"; id: number; name?: string; instance?: Ty; jsConstraint?: (t: Ty) => void }
   | {
     tag: "ffi";
     id: number;
@@ -13,6 +13,7 @@ export type Ty =
     args: Ty[];
     node?: Expr["node"];
     instance?: Ty;
+    constraints?: Ty[];
   }
   | { tag: "prim"; name: string }
   | { tag: "fn"; params: Ty[]; result: Ty }
@@ -36,6 +37,7 @@ export type Scheme = {
   basis?: boolean;
   provenance?: TypeProvenanceNote[];
   jsImport?: boolean;
+  node?: AstNode;
 };
 export type TypeProvenanceNote = {
   message: string;
@@ -125,6 +127,15 @@ export function prune(t: Ty): Ty {
     t.instance = prune(t.instance);
     return t.instance;
   }
+  // JS thenables flatten: .then/await can never observe Js.Promise<Js.Promise<X>>, which can
+  // still be constructed when a callback's placeholder result later solves to a promise.
+  if (t.tag === "named" && t.name === "Js.Promise" && t.args.length === 1) {
+    let element = prune(t.args[0]);
+    while (element.tag === "named" && element.name === "Js.Promise" && element.args.length === 1) {
+      t.args[0] = element.args[0];
+      element = prune(t.args[0]);
+    }
+  }
   return t;
 }
 
@@ -132,8 +143,11 @@ export function occurs(id: number, t: Ty): boolean {
   t = prune(t);
   if (t.tag === "var") return t.id === id;
   if (t.tag === "ffi") {
-    return occurs(id, t.receiver) || t.args.some((arg) => occurs(id, arg)) ||
-      (t.instance ? occurs(id, t.instance) : false);
+    // The receiver and arguments of an unresolved member access are call-site provenance,
+    // not part of the eventual member result type, so a variable may legitimately be both
+    // the receiver of a placeholder and unified with its result (e.g. Result.withDefault
+    // over a string method whose default is the receiver itself).
+    return t.instance ? occurs(id, t.instance) : false;
   }
   if (t.tag === "fn") return t.params.some((p) => occurs(id, p)) || occurs(id, t.result);
   if (t.tag === "tuple") return t.items.some((x) => occurs(id, x));
@@ -150,16 +164,20 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind): void {
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
     a.instance = b;
+    if (a.jsConstraint) {
+      if (b.tag === "var") addJsConstraint(b, a.jsConstraint);
+      else a.jsConstraint(b);
+    }
     onBind?.(a, b);
     return;
   }
   if (b.tag === "var") return unify(b, a, onBind);
   if (a.tag === "ffi") {
-    a.instance = b;
+    rememberFfiConstraint(a, b);
     return;
   }
   if (b.tag === "ffi") {
-    b.instance = a;
+    rememberFfiConstraint(b, a);
     return;
   }
   if (a.tag !== b.tag) throw new Error(typeMismatchMessage(a, b));
@@ -177,6 +195,45 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind): void {
     return;
   }
   throw new Error(typeMismatchMessage(a, b));
+}
+
+// A JS boundary violation carries its own explanation; diagnostic wrappers should not
+// replace it with a generic type-mismatch message.
+export class JsBoundaryError extends Error {}
+
+export function addJsConstraint(target: Ty, check: (t: Ty) => void): void {
+  const t = prune(target);
+  if (t.tag !== "var") {
+    check(t);
+    return;
+  }
+  const previous = t.jsConstraint;
+  t.jsConstraint = previous
+    ? (bound) => {
+      previous(bound);
+      check(bound);
+    }
+    : check;
+}
+
+export function solveFfi(ffi: Ty, target: Ty): void {
+  const placeholder = prune(ffi);
+  if (placeholder.tag !== "ffi") throw new Error(`expected unresolved JS FFI type, got ${show(placeholder)}`);
+  for (const constraint of placeholder.constraints ?? []) {
+    unify(target, constraint);
+  }
+  placeholder.instance = target;
+}
+
+function rememberFfiConstraint(ffi: Extract<Ty, { tag: "ffi" }>, target: Ty): void {
+  if (isJsObjectTy(target)) return;
+  ffi.constraints ??= [];
+  ffi.constraints.push(target);
+}
+
+function isJsObjectTy(type: Ty): boolean {
+  const target = prune(type);
+  return target.tag === "named" && target.name === "Js.Object";
 }
 
 export function typeMismatchMessage(left: Ty, right: Ty): string {
@@ -224,8 +281,32 @@ export function ftvEnv(env: Env): Set<number> {
 
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
-  const vars = [...ftv(type)].filter((id) => !envVars.has(id));
+  // Variables constrained by a broad Js.Value JS boundary stay monomorphic: the program's
+  // ordinary call sites must determine one concrete JS shape for them.
+  const boundary = jsConstrainedVarIds(type);
+  const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
   return { vars, type, constraints: [] };
+}
+
+function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
+  const t = prune(type);
+  if (t.tag === "var") {
+    if (t.jsConstraint) acc.add(t.id);
+    return acc;
+  }
+  if (t.tag === "fn") {
+    for (const param of t.params) jsConstrainedVarIds(param, acc);
+    jsConstrainedVarIds(t.result, acc);
+  } else if (t.tag === "tuple") {
+    for (const item of t.items) jsConstrainedVarIds(item, acc);
+  } else if (t.tag === "named") {
+    for (const arg of t.args) jsConstrainedVarIds(arg, acc);
+  }
+  return acc;
+}
+
+export function containsUnsolvedJsBoundary(type: Ty): boolean {
+  return jsConstrainedVarIds(type).size > 0;
 }
 
 export function instantiate(scheme: Scheme): Ty {
@@ -233,7 +314,12 @@ export function instantiate(scheme: Scheme): Ty {
   for (const id of scheme.vars) map.set(id, fresh());
   const go = (t: Ty): Ty => {
     t = prune(t);
-    if (t.tag === "var") return map.get(t.id) ?? t;
+    if (t.tag === "var") {
+      const mapped = map.get(t.id);
+      if (!mapped) return t;
+      if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
+      return mapped;
+    }
     if (t.tag === "ffi") {
       return t;
     }
@@ -368,6 +454,132 @@ export function baseEnv(typeEnv: TypeEnv = baseTypeEnv()): Env {
   return env;
 }
 
+function addResultValues(env: Env, typeEnv: TypeEnv) {
+  const result = typeEnv.get("Result");
+  if (!result) return;
+  const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
+    env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });
+  };
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Result.map",
+      [a, b, e],
+      fn([tuple([named(result, [a, e]), fn([a], b)])], named(result, [b, e])),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Result.andThen",
+      [a, b, e],
+      fn([tuple([named(result, [a, e]), fn([a], named(result, [b, e]))])], named(result, [b, e])),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    const f = fresh("f") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Result.mapErr",
+      [a, e, f],
+      fn([tuple([named(result, [a, e]), fn([e], f)])], named(result, [a, f])),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Result.withDefault",
+      [a, e],
+      fn([tuple([named(result, [a, e]), a])], a),
+    );
+  }
+  for (const arity of [2, 3, 4]) {
+    const inputs = Array.from(
+      { length: arity },
+      (_, i) => fresh(String.fromCharCode(97 + i)) as Extract<Ty, { tag: "var" }>,
+    );
+    const out = fresh("out") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      `Result.map${arity}`,
+      [...inputs, out, e],
+      fn(
+        [tuple([
+          ...inputs.map((input) => named(result, [input, e])),
+          fn([tuple(inputs)], out),
+        ])],
+        named(result, [out, e]),
+      ),
+    );
+  }
+  {
+    const jsArray = typeEnv.get("Js.Array");
+    if (jsArray) {
+      const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+      const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+      basisFn(
+        "Result.all",
+        [a, e],
+        fn([named(jsArray, [named(result, [a, e])])], named(result, [named(jsArray, [a]), e])),
+      );
+      const input = fresh("input") as Extract<Ty, { tag: "var" }>;
+      const output = fresh("output") as Extract<Ty, { tag: "var" }>;
+      const err = fresh("err") as Extract<Ty, { tag: "var" }>;
+      basisFn(
+        "Result.traverse",
+        [input, output, err],
+        fn(
+          [tuple([
+            named(jsArray, [input]),
+            fn([input], named(result, [output, err])),
+          ])],
+          named(result, [named(jsArray, [output]), err]),
+        ),
+      );
+    }
+  }
+}
+
+function addOptionValues(env: Env, typeEnv: TypeEnv) {
+  const option = typeEnv.get("Option");
+  if (!option) return;
+  const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
+    env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });
+  };
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Option.map",
+      [a, b],
+      fn([tuple([named(option, [a]), fn([a], b)])], named(option, [b])),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Option.andThen",
+      [a, b],
+      fn([tuple([named(option, [a]), fn([a], named(option, [b]))])], named(option, [b])),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Option.withDefault",
+      [a],
+      fn([tuple([named(option, [a]), a])], a),
+    );
+  }
+}
+
 let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
 
 export function baseTypeEnv(): TypeEnv {
@@ -380,6 +592,10 @@ export function baseTypeEnv(): TypeEnv {
     );
     basisTypeEnvCache.set("Js.Array", {
       ...freshTypeInfo("Js.Array", 1),
+      basis: true,
+    });
+    basisTypeEnvCache.set("Js.Dict", {
+      ...freshTypeInfo("Js.Dict", 1),
       basis: true,
     });
     basisTypeEnvCache.set("Js.Promise", {
@@ -444,4 +660,31 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
     status: "value",
     basis: true,
   });
+  addResultValues(env, typeEnv);
+  addOptionValues(env, typeEnv);
+  const option = typeEnv.get("Option");
+  const jsDict = typeEnv.get("Js.Dict");
+  if (option && jsDict) {
+    const emptyValue = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Dict.empty", {
+      vars: [emptyValue.id],
+      type: fn([VoidTy], named(jsDict, [emptyValue])),
+      status: "value",
+      basis: true,
+    });
+    const getValue = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Dict.get", {
+      vars: [getValue.id],
+      type: fn([tuple([named(jsDict, [getValue]), StringTy])], named(option, [getValue])),
+      status: "value",
+      basis: true,
+    });
+    const setValue = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Dict.set", {
+      vars: [setValue.id],
+      type: fn([tuple([named(jsDict, [setValue]), StringTy, setValue])], VoidTy),
+      status: "value",
+      basis: true,
+    });
+  }
 }

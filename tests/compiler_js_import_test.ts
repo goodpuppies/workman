@@ -4,13 +4,29 @@ import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("supports typed JS namespace imports", async () => {
   const result = await checkSource(`
-    from js.global("console") import { log: (String, Number) => Void } as console;
+    from js.global("console") import unsafe { log: (String, Number) => Void } as console;
     let main = () => {
       console.log("answer", 42)
     };
   `);
 
   expectBinding(result.env, "main", { type: "(Void) => Void", vars: 0 });
+});
+
+Deno.test("manual non-unsafe imports are fallible", async () => {
+  const result = await checkSource(`
+    from js.global("JSON") import {
+      parse: (String) => Js.Object,
+      stringify: (Js.Value) => Result<String, Js.Error>,
+    } as JSON;
+    from js.global("Deno") import { args: Js.Array<String> };
+    let parsed = JSON.parse("{}");
+    let text = JSON.stringify(JSON{ ok: true });
+  `);
+
+  expectBinding(result.env, "parsed", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "text", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "args", { type: "Result<Js.Array<String>, Js.Error>", vars: 0 });
 });
 
 Deno.test("rejects generic handwritten JS FFI signatures", async () => {

@@ -1,5 +1,6 @@
-import { assertRejects, assertStringIncludes } from "@std/assert";
+import { assert, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
+import { FrontendDiagnosticBundleError } from "../src/diagnostics.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("reflected JS calls report unresolved overload selection", async () => {
@@ -31,7 +32,7 @@ Deno.test("rejects Workman ADT values passed to JS FFI calls", async () => {
 
 Deno.test("supports JSON literals as explicit JS values", async () => {
   const result = await checkSource(`
-    from js.module("node:child_process") import {
+    from js.module("node:child_process") import unsafe {
       spawn: (String, Js.Value, Js.Value) => Js.Value
     };
     let proc = spawn(
@@ -83,9 +84,8 @@ Deno.test("dynamic JS receiver callbacks adapt Workman lambdas", async () => {
 });
 
 Deno.test("unresolved FFI receiver callbacks require an explicit JS value check", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
+  try {
+    await checkSource(`
     let try = (result) => {
       match(result) {
         Ok(value) => { value },
@@ -93,13 +93,21 @@ Deno.test("unresolved FFI receiver callbacks require an explicit JS value check"
       }
     };
     let hexByte = (byte, index, array) => {
-      let text = byte :> .toString(16) :> try;
+      let text = byte :> .unknownJs(16) :> try;
       text :> .padStart(2, "0") :> try
     };
-  `),
-    Error,
-    "top-level free type variable in hexByte",
-  );
+  `);
+    throw new Error("expected checkSource to reject");
+  } catch (error) {
+    assert(error instanceof FrontendDiagnosticBundleError);
+    assertStringIncludes(String(error.message), "cannot resolve JS FFI method unknownJs");
+    assert(
+      error.diagnostics.some((diagnostic) =>
+        diagnostic.message.includes("unresolved JS FFI obligation in hexByte")
+      ),
+      "expected a separate unresolved FFI obligation diagnostic",
+    );
+  }
 });
 
 Deno.test("dynamic JS callback parameter annotations are rejected", async () => {
@@ -204,6 +212,226 @@ Deno.test("dynamic JS array receiver annotations require an explicit assertion",
     Error,
     "type annotations cannot cast dynamic JS/JSON values",
   );
+});
+
+Deno.test("opaque Js.Object does not expose typed array at", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        let try = (result) => {
+          match(result) {
+            Ok(value) => { value },
+            Err(_) => { Panic("ffi") },
+          }
+        };
+        let object: Js.Object = JSON{} :> Json.assert :> try;
+        let first = object :> .at(0) :> try;
+      `),
+    Error,
+    "cannot use typed array method at on opaque Js.Object",
+  );
+});
+
+Deno.test("typed JS array at constrains unannotated helper receivers", async () => {
+  const result = await checkSource(`
+    record WttrValue = { value: String };
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let firstValue = (items, fallback) => {
+      match(items :> .at(0) :> try) {
+        Some(item) => { item.value },
+        None => { fallback },
+      }
+    };
+  `);
+  expectBinding(result.env, "firstValue", {
+    type: "((Js.Array<WttrValue>, String)) => String",
+    vars: 0,
+  });
+});
+
+Deno.test("typed JS array at works through record field receivers", async () => {
+  const result = await checkSource(`
+    record Item = { label: String };
+    record Payload = { items: Js.Array<Item> };
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let firstLabel = (payload) => {
+      match(payload.items :> .at(0) :> try) {
+        Some(item) => { item.label },
+        None => { "" },
+      }
+    };
+  `);
+  expectBinding(result.env, "firstLabel", { type: "(Payload) => String", vars: 0 });
+});
+
+Deno.test("primitive JS methods constrain unannotated helper receivers", async () => {
+  const result = await checkSource(`
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let numberText = (n) => {
+      n :> .toString() :> try
+    };
+    let paddedRight = (text, width) => {
+      text :> .padEnd(width, " ") :> try
+    };
+  `);
+  expectBinding(result.env, "numberText", { type: "(Number) => String", vars: 0 });
+  expectBinding(result.env, "paddedRight", { type: "((String, Number)) => String", vars: 0 });
+});
+
+Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
+  const result = await checkSource(`
+    from js.global("JSON") import unsafe {
+      parse: (String) => Js.Object,
+      stringify: (Js.Value) => String,
+    } as JSON;
+    record Entry = { city: String };
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let save = (value) => {
+      JSON.stringify(value)
+    };
+    let saveAnnotated = (value: Js.Dict<Entry>) => {
+      JSON.stringify(value)
+    };
+    let cache: Js.Dict<Entry> = JSON.parse("{}") :> Json.assert :> try;
+    let text = save(cache);
+    let annotatedText = saveAnnotated(cache);
+  `);
+  expectBinding(result.env, "save", { type: "(Js.Dict<Entry>) => String", vars: 0 });
+  expectBinding(result.env, "saveAnnotated", { type: "(Js.Dict<Entry>) => String", vars: 0 });
+  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  expectBinding(result.env, "annotatedText", { type: "String", vars: 0 });
+});
+
+Deno.test("Workman ADT values are still rejected through JS boundary helpers", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("JSON") import unsafe {
+          stringify: (Js.Value) => String,
+        } as JSON;
+        let save = (value) => {
+          JSON.stringify(value)
+        };
+        let bad = save(Ok("x"));
+      `),
+    Error,
+    "cannot pass",
+  );
+});
+
+Deno.test("undetermined JS boundary parameters are reported, not defaulted", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("JSON") import unsafe {
+          stringify: (Js.Value) => String,
+        } as JSON;
+        let save = (value) => {
+          JSON.stringify(value)
+        };
+      `),
+    Error,
+    "unsolved JS boundary type in save",
+  );
+});
+
+Deno.test("Js.Dict supports typed string-key access through Dict.get and Dict.set", async () => {
+  const result = await checkSource(`
+    from js.global("JSON") import unsafe {
+      parse: (String) => Js.Object,
+      stringify: (Js.Value) => String,
+    } as JSON;
+    record CacheEntry = { fetchedAt: Number, city: String };
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let cache: Js.Dict<CacheEntry> = JSON.parse("{}") :> Json.assert :> try;
+    let entry = Dict.get(cache, "oulu");
+    let stored = Dict.set(cache, "oulu", .{ fetchedAt = 1, city = "Oulu" });
+    let text = JSON.stringify(cache);
+  `);
+  expectBinding(result.env, "entry", { type: "Option<CacheEntry>", vars: 0 });
+  expectBinding(result.env, "stored", { type: "Void", vars: 0 });
+  expectBinding(result.env, "text", { type: "String", vars: 0 });
+});
+
+Deno.test("Response.json() result feeds a following then", async () => {
+  const result = await checkSource(`
+    from js.global import unsafe { fetch };
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let fetchJson = (url) => {
+      let requestUrl = url ++ "";
+      fetch(requestUrl) :> .then((res) => {
+        let ok = res :> .ok :> try;
+        if (!ok) {
+          let status = res :> .status :> try;
+          Panic("HTTP " ++ (status :> .toString() :> try) ++ " fetching " ++ requestUrl)
+        } else {
+          res :> .json() :> try
+        }
+      }) :> try :> .then((body) => {
+        let data: Js.Object = body :> Json.assert :> try;
+        data
+      }) :> try
+    };
+  `);
+  expectBinding(result.env, "fetchJson", {
+    type: "(String) => Js.Promise<Js.Object>",
+    vars: 0,
+  });
+});
+
+Deno.test("typed JS array filter and includes infer with string callbacks", async () => {
+  const result = await checkSource(`
+    from js.global("Deno") import unsafe {
+      args: Js.Array<String>,
+    };
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+    let flags = (rawArgs) => {
+      rawArgs :> .filter((a, index, array) => {
+        a :> .startsWith("--") :> try
+      }) :> try
+    };
+    let fahrenheit = flags(args) :> .includes("--f") :> try;
+  `);
+  expectBinding(result.env, "flags", {
+    type: "(Js.Array<String>) => Js.Array<String>",
+    vars: 0,
+  });
+  expectBinding(result.env, "fahrenheit", { type: "Bool", vars: 0 });
 });
 
 Deno.test("typed JS array receiver results infer through map and join", async () => {

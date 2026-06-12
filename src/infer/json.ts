@@ -23,6 +23,8 @@ function isJsValueTy(type: Ty, typeEnv: TypeEnv): boolean {
 
 function isJsObjectLikeTy(type: Ty, typeEnv: TypeEnv): boolean {
   const jsObject = typeEnv.get("Js.Object");
+  const jsDict = typeEnv.get("Js.Dict");
   return type.tag === "named" &&
-    (type.id === jsObject?.id || Boolean(type.foreign || typeEnv.get(type.name)?.foreign));
+    (type.id === jsObject?.id || type.id === jsDict?.id ||
+      Boolean(type.foreign || typeEnv.get(type.name)?.foreign));
 }

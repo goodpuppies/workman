@@ -3,6 +3,7 @@ import type { InferResult } from "../../infer.ts";
 import { prune, type Ty } from "../../types.ts";
 import type { FfiElaboration } from "../shared.ts";
 import { fn, memberVariants, name, nameArgs, tvar } from "../shared.ts";
+import { option } from "../type_expr.ts";
 import {
   type JsMemberType,
   jsPrimitiveValueRef,
@@ -45,6 +46,12 @@ export function jsArrayMember(
         { type: fn([], name("String")) },
         { type: fn([name("String")], name("String")) },
       ],
+    };
+  }
+  if (member === "at") {
+    return {
+      name: member,
+      type: fn([name("Number")], option(array.element)),
     };
   }
   if (member === "map") {
@@ -112,12 +119,27 @@ export function jsPromiseMember(
     };
   }
   if (member === "catch") {
+    const handlerResult = callbackResultType ? tyToTypeExpr(callbackResultType) : undefined;
+    const handled = handlerResult && !containsTypeVariable(handlerResult) ? handlerResult : promise.element;
     return {
       name: member,
-      type: fn([fn([name("Js.Value")], tvar("handled"))], promise.type),
+      type: fn([fn([name("Js.Value")], handled)], promise.type),
     };
   }
   return undefined;
+}
+
+function containsTypeVariable(type: TypeExpr): boolean {
+  switch (type.kind) {
+    case "TVar":
+      return true;
+    case "TName":
+      return type.args.some(containsTypeVariable);
+    case "TTuple":
+      return type.items.some(containsTypeVariable);
+    case "TFn":
+      return type.params.some(containsTypeVariable) || containsTypeVariable(type.result);
+  }
 }
 
 function promiseCallbackType(

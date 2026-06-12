@@ -25,7 +25,12 @@ import {
   type VirtualFileSystem,
 } from "./module_graph.ts";
 import { parse, type Surface } from "./parser.ts";
-import { FrontendDiagnosticError } from "./diagnostics.ts";
+import {
+  type FrontendDiagnostic,
+  FrontendDiagnosticBundleError,
+  FrontendDiagnosticError,
+} from "./diagnostics.ts";
+import { prune, show, type Scheme, type Ty } from "./types.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 
@@ -56,13 +61,20 @@ export class ModuleAnalysisError extends Error {
   path: string;
   source: string;
   originalError: unknown;
+  diagnostics: FrontendDiagnostic[];
 
-  constructor(path: string, source: string, originalError: unknown) {
+  constructor(
+    path: string,
+    source: string,
+    originalError: unknown,
+    diagnostics: FrontendDiagnostic[] = [],
+  ) {
     super(originalError instanceof Error ? originalError.message : String(originalError));
     this.name = "ModuleAnalysisError";
     this.path = path;
     this.source = source;
     this.originalError = originalError;
+    this.diagnostics = diagnostics;
   }
 }
 
@@ -170,12 +182,18 @@ export async function analyzeFile(
     const node = graph.nodes.get(path)!;
     try {
       const prepared = ffi.get(path)!;
-      const resolved = resolveDelayedFfiElaboration(prepared, contextualResults.get(path)!, {
+      const contextualResult = contextualResults.get(path)!;
+      const resolved = resolveDelayedFfiElaboration(prepared, contextualResult, {
         foreignTypeRefs,
       });
       node.module = resolved.module;
     } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
+      throw new ModuleAnalysisError(
+        path,
+        node.source,
+        error,
+        delayedFfiDiagnostics(contextualResults.get(path)),
+      );
     }
   }
   for (const path of graph.order) {
@@ -202,26 +220,71 @@ function assertNoPartialDiagnostics(result: InferResult): InferResult {
 }
 
 function isDelayedFfiPartialDiagnostic(message: string): boolean {
-  return message.startsWith("top-level free type variable in ") ||
-    message.startsWith("unresolved JS FFI type in ");
+  return message.startsWith("cannot solve unresolved JS FFI type ") ||
+    message.startsWith("unresolved JS FFI obligation in ") ||
+    message.startsWith("unresolved JS FFI type in ") ||
+    message.startsWith("unsolved JS boundary type in ");
 }
 
 function checkPreparedModuleWithoutImports(
   module: Module,
 ): { module: Module; result: InferResult } {
+  assertNoSourceImports(module);
   const prepared = prepareFfiElaboration(module);
   const first = assertNoPartialDiagnostics(inferModulePartial(prepared.module));
   const contextual = contextualizeDelayedCallbacks(prepared, first);
-  const contextualResult = checkModuleWithoutImports(contextual.module);
-  const resolved = resolveDelayedFfiElaboration(contextual, contextualResult);
+  const contextualResult = assertNoPartialDiagnostics(inferModulePartial(contextual.module));
+  const foreignTypeRefs = new Map(
+    [...contextual.foreignTypeRefs.values()].map((ref) => [ref.key, ref]),
+  );
+  let resolved: ReturnType<typeof resolveDelayedFfiElaboration>;
+  try {
+    resolved = resolveDelayedFfiElaboration(contextual, contextualResult, {
+      foreignTypeRefs,
+    });
+  } catch (error) {
+    throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
+  }
   return { module: resolved.module, result: checkModuleWithoutImports(resolved.module) };
 }
 
+function delayedFfiDiagnostics(result: InferResult | undefined): FrontendDiagnostic[] {
+  if (!result) return [];
+  const leaking = [...result.env.entries()].filter(([, scheme]) => containsUnresolvedFfi(scheme.type));
+  if (leaking.length === 0) return [];
+  return leaking.map(([name, scheme]) => ({
+    severity: "error",
+    code: "ffi.unresolved",
+    message: unresolvedFfiMessage(name, scheme),
+    node: scheme.node,
+    span: scheme.node?.span,
+  }));
+}
+
+function unresolvedFfiMessage(name: string, scheme: Scheme): string {
+  return `unresolved JS FFI obligation in ${name}: ${show(scheme.type)}; this JS member access must be resolved by FFI reflection before it can escape a top-level binding`;
+}
+
+function containsUnresolvedFfi(type: Ty): boolean {
+  const target = prune(type);
+  if (target.tag === "ffi") return true;
+  if (target.tag === "fn") {
+    return target.params.some(containsUnresolvedFfi) || containsUnresolvedFfi(target.result);
+  }
+  if (target.tag === "tuple") return target.items.some(containsUnresolvedFfi);
+  if (target.tag === "named") return target.args.some(containsUnresolvedFfi);
+  return false;
+}
+
 function checkModuleWithoutImports(module: Module): InferResult {
+  assertNoSourceImports(module);
+  return inferModule(module);
+}
+
+function assertNoSourceImports(module: Module): void {
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
     throw new Error("source strings with imports require checkFile");
   }
-  return inferModule(module);
 }
 
 export async function compileVirtual(

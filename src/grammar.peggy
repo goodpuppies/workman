@@ -121,7 +121,7 @@ RecordDecl
     { return at({ kind: "RecordDecl", exported: !!exported, name, params: params ?? [], fields: fields ?? [] }, location()); }
 
 RecordFieldDeclList = first:RecordFieldDecl rest:(_ "," _ f:RecordFieldDecl { return f; })* _ ","? { return [first, ...rest]; }
-RecordFieldDecl = name:Identifier _ ":" _ type:TypeExpr { return at({ name, type }, location()); }
+RecordFieldDecl = name:FieldName _ ":" _ type:TypeExpr { return at({ name, type }, location()); }
 
 TypeDecl
   = exported:ExportModifier? "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody _ ";"
@@ -228,7 +228,7 @@ JsonExpr
 
 JsonObjectFieldList = first:JsonObjectField rest:(_ "," _ f:JsonObjectField { return f; })* _ ","? { return [first, ...rest]; }
 JsonObjectField
-  = key:Identifier _ ":" _ value:Expr { return jsonField(key, value, location()); }
+  = key:FieldName _ ":" _ value:Expr { return jsonField(key, value, location()); }
   / key:String _ ":" _ value:Expr { return jsonField(key.value, value, location()); }
 
 RecordExpr
@@ -236,7 +236,7 @@ RecordExpr
     { return at({ kind: "Record", fields: fields ?? [] }, location()); }
 RecordExprFieldList = first:RecordExprField rest:(_ "," _ f:RecordExprField { return f; })* _ ","? { return [first, ...rest]; }
 RecordExprField
-  = name:Identifier _ "=" _ value:Expr { return recordField(name, value, location()); }
+  = name:FieldName _ "=" _ value:Expr { return recordField(name, value, location()); }
   / name:Identifier { return recordField(name, at({ kind: "Var", name }, location()), location()); }
 
 ListExpr
@@ -322,21 +322,21 @@ RecordPattern
     { return at({ kind: "PRecord", fields: fields ?? [] }, location()); }
 RecordPatternFieldList = first:RecordPatternField rest:(_ "," _ f:RecordPatternField { return f; })* _ ","? { return [first, ...rest]; }
 RecordPatternField
-  = name:Identifier _ "=" _ pattern:Pattern { return recordPatternField(name, pattern, location()); }
+  = name:FieldName _ "=" _ pattern:Pattern { return recordPatternField(name, pattern, location()); }
   / name:Identifier { return recordPatternField(name, at({ kind: "PVar", name }, location()), location()); }
 RecordLetPattern
   = "." _ "{" _ fields:RecordLetPatternFieldList? _ "}"
     { return at({ kind: "PRecord", fields: fields ?? [] }, location()); }
 RecordLetPatternFieldList = first:RecordLetPatternField rest:(_ "," _ f:RecordLetPatternField { return f; })* _ ","? { return [first, ...rest]; }
 RecordLetPatternField
-  = name:Identifier _ "=" _ pattern:LetPattern { return recordPatternField(name, pattern, location()); }
+  = name:FieldName _ "=" _ pattern:LetPattern { return recordPatternField(name, pattern, location()); }
   / name:Identifier { return recordPatternField(name, at({ kind: "PVar", name }, location()), location()); }
 RecordParamPattern
   = "." _ "{" _ fields:RecordParamPatternFieldList? _ "}"
     { return at({ kind: "PRecord", fields: fields ?? [] }, location()); }
 RecordParamPatternFieldList = first:RecordParamPatternField rest:(_ "," _ f:RecordParamPatternField { return f; })* _ ","? { return [first, ...rest]; }
 RecordParamPatternField
-  = name:Identifier _ "=" _ pattern:ParamPattern { return recordPatternField(name, pattern, location()); }
+  = name:FieldName _ "=" _ pattern:ParamPattern { return recordPatternField(name, pattern, location()); }
   / name:Identifier { return recordPatternField(name, at({ kind: "PVar", name }, location()), location()); }
 
 TypeAnn = ":" _ t:TypeExpr { return t; }
@@ -375,6 +375,7 @@ Identifier = !Keyword name:$([a-z_] IdentPart*) { return name; }
 Constructor = !Keyword name:$([A-Z] IdentPart*) { return name; }
 Name = Constructor / Identifier
 MemberName = name:$([a-zA-Z_] IdentPart*) { return name; }
+FieldName = !Keyword name:MemberName { return name; }
 LongName = first:Name rest:("." n:MemberName { return n; })* { return [first, ...rest].join("."); }
 LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* { return [first, ...rest].join("."); }
 IdentPart = [a-zA-Z0-9_]

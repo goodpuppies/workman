@@ -1,6 +1,6 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
-import { prune, typeFromAst, unify } from "../../types.ts";
+import { prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
 import {
@@ -131,16 +131,31 @@ export function materializeReceiverCall(
   };
 }
 
-function solveReflectedFfiValue(
-  original: Extract<Expr, { kind: "FfiGet" | "FfiCall" }>,
+export function solveReflectedFfiValue(
+  original: Expr,
   variant: FfiVariant,
   result: InferResult,
 ): void {
   const value = resultValueType(inferredType(result, original));
-  if (!value || prune(value).tag !== "ffi") return;
+  const placeholder = value ? prune(value) : undefined;
+  if (!placeholder || placeholder.tag !== "ffi") return;
   const reflected = unwrapResultTypeExpr(callResultTypeExpr(variant.type));
   if (!reflected) return;
-  unify(value, typeFromAst(reflected, result.typeEnv, new Map(), { allowFreeVars: false }));
+  const reflectedType = reflectedTypeOrConstraint(reflected, placeholder, result);
+  if (!reflectedType) return;
+  solveFfi(placeholder, reflectedType);
+}
+
+function reflectedTypeOrConstraint(
+  reflected: TypeExpr,
+  placeholder: Extract<ReturnType<typeof prune>, { tag: "ffi" }>,
+  result: InferResult,
+) {
+  try {
+    return typeFromAst(reflected, result.typeEnv, new Map(), { allowFreeVars: false });
+  } catch {
+    return placeholder.constraints?.find((constraint) => prune(constraint).tag !== "ffi");
+  }
 }
 
 function resultValueType(type: ReturnType<typeof inferredType>) {

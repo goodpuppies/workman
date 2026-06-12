@@ -301,6 +301,7 @@ function inferNonRecursiveLet(
         type,
         provenance,
       );
+      scheme.node = decl.bindings[i].node;
       env.set(name, scheme);
       if (decl.exported) {
         assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
@@ -371,6 +372,7 @@ function inferRecursiveLet(
       placeholders[i],
       provenance,
     );
+    scheme.node = b.node;
     const name = (b.pattern as { name: string }).name;
     env.set(name, scheme);
     if (decl.exported) {
