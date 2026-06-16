@@ -15,8 +15,9 @@ experimenting with a complete language:
 - typed JavaScript namespace imports for small FFI bindings
 - temporary JavaScript output for smoke tests
 
-Each source file should stay under 500 lines. When the language grows, split files before they
-become archives.
+Each implementation source file should stay under 500 lines. Markdown docs and research/stress
+notes may exceed that when the document benefits from staying whole. When the language grows, split
+source files before they become archives.
 
 ## Reference Bias
 

@@ -52,6 +52,8 @@ export function rewriteExprCalls(
   objectAccess: Map<string, ObjectAccess>,
   importedTypeRefs: Map<string, JsTypeRef>,
 ): Expr {
+  const rewrite = (child: Expr) =>
+    rewriteExprCalls(child, bindings, selected, refs, objectAccess, importedTypeRefs);
   switch (expr.kind) {
     case "FfiGet": {
       if (expr.receiver.kind === "Var") {
@@ -84,14 +86,7 @@ export function rewriteExprCalls(
       }
       return {
         ...expr,
-        receiver: rewriteExprCalls(
-          expr.receiver,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        receiver: rewrite(expr.receiver),
       };
     }
     case "FfiCall": {
@@ -157,37 +152,16 @@ export function rewriteExprCalls(
             receiver: sameReceiver ? expr.receiver : objectReceiver.receiver,
             node: objectReceiver.node ?? expr.node,
             args: objectReceiver.args.map((arg) =>
-              rewriteExprCalls(
-                arg,
-                bindings,
-                selected,
-                refs,
-                objectAccess,
-                importedTypeRefs,
-              )
+              rewrite(arg)
             ),
           };
         }
       }
       return {
         ...expr,
-        receiver: rewriteExprCalls(
-          expr.receiver,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        receiver: rewrite(expr.receiver),
         args: expr.args.map((arg) =>
-          rewriteExprCalls(
-            arg,
-            bindings,
-            selected,
-            refs,
-            objectAccess,
-            importedTypeRefs,
-          )
+          rewrite(arg)
         ),
       };
     }
@@ -297,14 +271,7 @@ export function rewriteExprCalls(
               ...objectReceiver,
               node: objectReceiver.node ?? expr.node,
               args: objectReceiver.args.map((arg) =>
-                rewriteExprCalls(
-                  arg,
-                  bindings,
-                  selected,
-                  refs,
-                  objectAccess,
-                  importedTypeRefs,
-                )
+                rewrite(arg)
               ),
             };
           }
@@ -314,37 +281,16 @@ export function rewriteExprCalls(
         if (unresolved) return unresolved;
       }
       const args = expr.args.map((arg) =>
-        rewriteExprCalls(
-          arg,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        )
+        rewrite(arg)
       );
-      const callee = rewriteExprCalls(
-        expr.callee,
-        bindings,
-        selected,
-        refs,
-        objectAccess,
-        importedTypeRefs,
-      );
+      const callee = rewrite(expr.callee);
       return { ...expr, callee, args };
     }
     case "Tuple":
       return {
         ...expr,
         items: expr.items.map((item) =>
-          rewriteExprCalls(
-            item,
-            bindings,
-            selected,
-            refs,
-            objectAccess,
-            importedTypeRefs,
-          )
+          rewrite(item)
         ),
       };
     case "Record":
@@ -352,14 +298,7 @@ export function rewriteExprCalls(
         ...expr,
         fields: expr.fields.map((field) => ({
           ...field,
-          value: rewriteExprCalls(
-            field.value,
-            bindings,
-            selected,
-            refs,
-            objectAccess,
-            importedTypeRefs,
-          ),
+          value: rewrite(field.value),
         })),
       };
     case "JsonObject":
@@ -367,28 +306,14 @@ export function rewriteExprCalls(
         ...expr,
         fields: expr.fields.map((field) => ({
           ...field,
-          value: rewriteExprCalls(
-            field.value,
-            bindings,
-            selected,
-            refs,
-            objectAccess,
-            importedTypeRefs,
-          ),
+          value: rewrite(field.value),
         })),
       };
     case "JsonArray":
       return {
         ...expr,
         items: expr.items.map((item) =>
-          rewriteExprCalls(
-            item,
-            bindings,
-            selected,
-            refs,
-            objectAccess,
-            importedTypeRefs,
-          )
+          rewrite(item)
         ),
       };
     case "Lambda": {
@@ -410,40 +335,12 @@ export function rewriteExprCalls(
     case "If":
       return {
         ...expr,
-        cond: rewriteExprCalls(
-          expr.cond,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
-        thenExpr: rewriteExprCalls(
-          expr.thenExpr,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
-        elseExpr: rewriteExprCalls(
-          expr.elseExpr,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        cond: rewrite(expr.cond),
+        thenExpr: rewrite(expr.thenExpr),
+        elseExpr: rewrite(expr.elseExpr),
       };
     case "Match": {
-      const value = rewriteExprCalls(
-        expr.value,
-        bindings,
-        selected,
-        refs,
-        objectAccess,
-        importedTypeRefs,
-      );
+      const value = rewrite(expr.value);
       return {
         ...expr,
         value,
@@ -461,14 +358,7 @@ export function rewriteExprCalls(
     case "Panic":
       return {
         ...expr,
-        message: rewriteExprCalls(
-          expr.message,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        message: rewrite(expr.message),
       };
     case "Block":
       return rewriteBlock(
@@ -484,54 +374,19 @@ export function rewriteExprCalls(
     case "Binary":
       return {
         ...expr,
-        left: rewriteExprCalls(
-          expr.left,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
-        right: rewriteExprCalls(
-          expr.right,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        left: rewrite(expr.left),
+        right: rewrite(expr.right),
       };
     case "Unary":
       return {
         ...expr,
-        value: rewriteExprCalls(
-          expr.value,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        value: rewrite(expr.value),
       };
     case "Pipe":
       return {
         ...expr,
-        left: rewriteExprCalls(
-          expr.left,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
-        right: rewriteExprCalls(
-          expr.right,
-          bindings,
-          selected,
-          refs,
-          objectAccess,
-          importedTypeRefs,
-        ),
+        left: rewrite(expr.left),
+        right: rewrite(expr.right),
       };
     default:
       return expr;
