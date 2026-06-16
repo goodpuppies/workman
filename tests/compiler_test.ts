@@ -8,6 +8,20 @@ Deno.test("parses type and let declarations", async () => {
   assertEquals(ast.decls.length, 2);
 });
 
+Deno.test("parses semicolons at phrase layers", async () => {
+  const ast = await parse(`
+    from "./std/option.wm" import * as Option;
+    from js.global("Math") import { floor };
+    record Point = { x: Number, y: Number };
+    type Flag = On | Off;
+    let f = () => { print("a"); 42 };
+    let g = () => { print("a"); };
+    let h = () => (print("a"); 42);
+    let i = () => (print("a"););
+  `);
+  assertEquals(ast.decls.length, 8);
+});
+
 Deno.test("rejects unsupported SML and advanced Workman syntax", async () => {
   await assertRejects(() => parse("fun id x = x;"));
   await assertRejects(() => parse("structure Math = struct end;"));
@@ -215,6 +229,13 @@ Deno.test("statement-only blocks infer Void", async () => {
       print("side effect");
     };
     let result: Void = do_it();
+  `);
+});
+
+Deno.test("parenthesized expression sequences infer their final result", async () => {
+  await checkSource(`
+    let seqnum: () => Number = () => (1; 2);
+    let sequnit: () => Void = () => (1;);
   `);
 });
 

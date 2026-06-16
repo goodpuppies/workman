@@ -55,12 +55,14 @@
   }
 }
 
-Start = &{ nextNodeId = 0; return true; } _ decls:(_ d:TopDecl { return d; })* _ EOF { return mod(decls, location()); }
+Start = &{ nextNodeId = 0; return true; } _ decls:(_ d:TopPhrase { return d; })* _ EOF { return mod(decls, location()); }
+
+TopPhrase = d:TopDecl _ ";" { return d; }
 
 TopDecl = JsImportDecl / ImportDecl / RecordDecl / TypeDecl / LetDecl
 
 ImportDecl
-  = "from" __ path:String __ "import" __ clause:ImportClause _ ";"
+  = "from" __ path:String __ "import" __ clause:ImportClause
     { return at({ kind: "ImportDecl", path: path.value, pathNode: path.node, clause }, location()); }
 
 ImportClause
@@ -72,7 +74,7 @@ ImportSpecList = first:ImportSpec rest:(_ "," _ s:ImportSpec { return s; })* _ "
 ImportSpec = name:Name alias:(_ "as" _ a:Identifier { return a; })? { return at({ name, alias }, location()); }
 
 JsImportDecl
-  = "from" __ target:JsTarget __ "import" __ typeOnly:("type" __)? clause:JsImportClause _ ";"
+  = "from" __ target:JsTarget __ "import" __ typeOnly:("type" __)? clause:JsImportClause
     { return at({ kind: "JsImportDecl", target, clause, typeOnly: !!typeOnly }, location()); }
 
 JsTarget
@@ -98,7 +100,7 @@ JsImportSpec
     { return at({ name, alias, type }, location()); }
 
 LetDecl
-  = exported:ExportModifier? "let" __ rec:("rec" __)? first:LetBinding rest:(_ "and" __ b:LetBinding { return b; })* _ ";"
+  = exported:ExportModifier? "let" __ rec:("rec" __)? first:LetBinding rest:(_ "and" __ b:LetBinding { return b; })*
     { return at({ kind: "LetDecl", exported: !!exported, recursive: !!rec, bindings: [first, ...rest] }, location()); }
 
 LetBinding
@@ -126,14 +128,14 @@ LetCtorPattern
 LetCtorPatternList = first:LetCtorPattern rest:(_ "," _ p:LetCtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 
 RecordDecl
-  = exported:ExportModifier? "record" __ name:Constructor params:TypeParams? _ "=" _ "{" _ fields:RecordFieldDeclList? _ "}" _ ";"
+  = exported:ExportModifier? "record" __ name:Constructor params:TypeParams? _ "=" _ "{" _ fields:RecordFieldDeclList? _ "}"
     { return at({ kind: "RecordDecl", exported: !!exported, name, params: params ?? [], fields: fields ?? [] }, location()); }
 
 RecordFieldDeclList = first:RecordFieldDecl rest:(_ "," _ f:RecordFieldDecl { return f; })* _ ","? { return [first, ...rest]; }
 RecordFieldDecl = name:FieldName _ ":" _ type:TypeExpr { return at({ name, type }, location()); }
 
 TypeDecl
-  = exported:ExportModifier? "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody _ ";"
+  = exported:ExportModifier? "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody
     {
       return at({
         kind: "TypeDecl",
@@ -188,8 +190,10 @@ MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { 
 MatchArm = pattern:Pattern _ "=>" _ body:Block { return at({ pattern, body }, location()); }
 
 Lambda
-  = params:ParamList _ "=>" _ body:Block { return at({ kind: "Lambda", params, body }, location()); }
-  / "=>" _ body:Block { return at({ kind: "Lambda", params: [], body }, location()); }
+  = params:ParamList _ "=>" _ body:LambdaBody { return at({ kind: "Lambda", params, body }, location()); }
+  / "=>" _ body:LambdaBody { return at({ kind: "Lambda", params: [], body }, location()); }
+
+LambdaBody = Block / ParenSeq
 
 Binary = Or
 Or = left:And rest:(_ op:("||") _ right:And { return { op, right }; })*
@@ -225,7 +229,7 @@ Postfix = head:Primary tail:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })
   { return tail.reduce((callee, args) => at({ kind: "Call", callee, args }, location()), head); }
 
 Primary
-  = Float / Int / String / Bool / Void / PanicExpr / JsonExpr / RecordExpr / ListExpr / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
+  = Float / Int / String / Bool / Void / PanicExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
 
 PanicExpr
   = "Panic" !IdentPart _ "(" _ message:Expr _ ")"
@@ -260,16 +264,28 @@ TupleOrGroup
   = "(" _ first:Expr _ "," _ rest:ArgList? _ ")" { return at({ kind: "Tuple", items: [first, ...(rest ?? [])] }, location()); }
   / "(" _ e:Expr _ ")" { return e; }
 
+ParenSeq = "(" _ seq:ParenSeqBody _ ")" { return at({ kind: "Block", items: seq.items, result: seq.result }, location()); }
+
 Block
-  = "{" _ items:BlockItem* result:Expr? _ "}" {
-      return at({ kind: "Block", items, result: result ?? at({ kind: "Void" }, location()) }, location());
+  = "{" _ seq:BlockSeqBody _ "}" {
+      return at({ kind: "Block", items: seq.items, result: seq.result }, location());
     }
 
-BlockItem
-  = d:RecordDecl _ { return d; }
-  / d:TypeDecl _ { return d; }
-  / d:LetDecl _ { return d; }
-  / &(Expr _ ";") e:Expr _ ";" _ { return e; }
+BlockSeqBody = items:BlockSeqItem* result:Expr? {
+  return { items, result: result ?? at({ kind: "Void" }, location()) };
+}
+
+BlockSeqItem
+  = d:BlockDecl _ ";" _ { return d; }
+  / e:Expr _ ";" _ { return e; }
+
+BlockDecl = RecordDecl / TypeDecl / LetDecl
+
+ParenSeqBody = items:ParenSeqItem+ result:Expr? {
+  return { items, result: result ?? at({ kind: "Void" }, location()) };
+}
+
+ParenSeqItem = e:Expr _ ";" _ { return e; }
 
 Pattern
   = "_" { return at({ kind: "PWildcard" }, location()); }
