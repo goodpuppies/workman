@@ -45,30 +45,6 @@
     "declarations": {
       "patterns": [
         {
-          "begin": "\\b(export)\\s+(type)\\s+([A-Z][A-Za-z0-9_]*)\\b",
-          "beginCaptures": {
-            "1": { "name": "keyword.control.export.wm-mini" },
-            "2": { "name": "storage.type.type.wm-mini" },
-            "3": { "name": "entity.name.type.alias.wm-mini" }
-          },
-          "end": "$",
-          "name": "meta.type.declaration.wm-mini",
-          "patterns": [
-            { "include": "#typeparameters" },
-            {
-              "match": "(\\=)(\\s*\\|)",
-              "captures": {
-                "1": { "name": "keyword.operator.assignment.wm-mini" },
-                "2": { "name": "keyword.operator.type.constructor.wm-mini" }
-              }
-            },
-            { "include": "#type-operators" },
-            { "include": "#types" },
-            { "include": "#operators" },
-            { "include": "#comments" }
-          ]
-        },
-        {
           "begin": "\\b(type)\\s+([A-Z][A-Za-z0-9_]*)\\b",
           "beginCaptures": {
             "1": { "name": "storage.type.type.wm-mini" },
@@ -85,23 +61,6 @@
                 "2": { "name": "keyword.operator.type.constructor.wm-mini" }
               }
             },
-            { "include": "#type-operators" },
-            { "include": "#types" },
-            { "include": "#operators" },
-            { "include": "#comments" }
-          ]
-        },
-        {
-          "begin": "\\b(export)\\s+(record)\\s+([A-Z][A-Za-z0-9_]*)\\b",
-          "beginCaptures": {
-            "1": { "name": "keyword.control.export.wm-mini" },
-            "2": { "name": "storage.type.type.wm-mini" },
-            "3": { "name": "entity.name.type.wm-mini" }
-          },
-          "end": "$",
-          "name": "meta.type.declaration.wm-mini",
-          "patterns": [
-            { "include": "#typeparameters" },
             { "include": "#type-operators" },
             { "include": "#types" },
             { "include": "#operators" },
@@ -129,15 +88,6 @@
     "bindings": {
       "patterns": [
         {
-          "match": "\\b(export)\\s+(let)\\s+(?:(rec)\\s+)?([a-z_][A-Za-z0-9_]*)\\b",
-          "captures": {
-            "1": { "name": "keyword.control.export.wm-mini" },
-            "2": { "name": "storage.type.wm-mini" },
-            "3": { "name": "storage.modifier.wm-mini" },
-            "4": { "name": "entity.name.function.wm-mini" }
-          }
-        },
-        {
           "match": "\\b(let)\\s+(?:(rec)\\s+)?([a-z_][A-Za-z0-9_]*)\\b",
           "captures": {
             "1": { "name": "storage.type.wm-mini" },
@@ -160,10 +110,6 @@
         {
           "name": "storage.modifier.wm-mini",
           "match": "\\b(rec|and)\\b"
-        },
-        {
-          "name": "keyword.control.export.wm-mini",
-          "match": "\\bexport\\b"
         },
         {
           "name": "keyword.control.import.wm-mini",

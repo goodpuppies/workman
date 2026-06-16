@@ -55,7 +55,7 @@ export function inferDecl(
     return;
   }
   if (decl.kind === "ForeignTypeDecl") {
-    addForeignType(decl, typeEnv, exportableTypeIds);
+    addForeignType(decl, typeEnv, typeExports, exportableTypeIds);
     return;
   }
   if (decl.kind === "RecordDecl") {
@@ -84,6 +84,7 @@ export function inferDecl(
 function addForeignType(
   decl: Extract<Decl, { kind: "ForeignTypeDecl" }>,
   typeEnv: TypeEnv,
+  typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
 ) {
   const existing = typeEnv.get(decl.name);
@@ -92,6 +93,7 @@ function addForeignType(
   const key = decl.foreignKey ?? `name:${decl.name}`;
   const info = foreignTypeInfo(canonicalForeignTypeName(decl.name, key), key);
   typeEnv.set(decl.name, info);
+  typeExports.set(decl.name, info);
   exportableTypeIds.add(info.id);
 }
 

@@ -1,9 +1,9 @@
 from "./math.wm" import *;
 
-export type Tree = EmptyT | Node<Number, Tree, Tree>;
-export type NumOption = NNone | NSome<Number>;
+type Tree = EmptyT | Node<Number, Tree, Tree>;
+type NumOption = NNone | NSome<Number>;
 
-export let rec findTree = (num, tree) => {
+let rec findTree = (num, tree) => {
   (_, EmptyT) => {NNone},
   (_, Node(val,t1,t2)) => {
     match(compareN(num,val)) {
@@ -14,7 +14,7 @@ export let rec findTree = (num, tree) => {
   }
 };
 
-export let rec insert = match(int, tree) => {
+let rec insert = match(int, tree) => {
   (_, EmptyT) => {Node(int, EmptyT, EmptyT)},
   (_, Node(val, t1,t2)) => {
     if (int < val) {

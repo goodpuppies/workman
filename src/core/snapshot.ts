@@ -24,7 +24,7 @@ function showDecl(decl: CoreDecl): string {
       }
       return `import js.receiver(${decl.target.path.join(".")})`;
     case "CoreLet": {
-      const head = `${decl.exported ? "export " : ""}let${decl.recursive ? " rec" : ""}`;
+      const head = `let${decl.recursive ? " rec" : ""}`;
       return `${head} ${
         decl.bindings.map((binding) =>
           `${showPattern(binding.pattern)} = ${showExpr(binding.value)}`
@@ -32,7 +32,7 @@ function showDecl(decl: CoreDecl): string {
       }`;
     }
     case "CoreType":
-      return `${decl.exported ? "export " : ""}type ${decl.name}${
+      return `type ${decl.name}${
         decl.params.length ? `<${decl.params.join(", ")}>` : ""
       } = ${
         decl.alias
@@ -42,7 +42,7 @@ function showDecl(decl: CoreDecl): string {
           ).join(" | ")
       }`;
     case "CoreRecord":
-      return `${decl.exported ? "export " : ""}record ${decl.name}`;
+      return `record ${decl.name}`;
   }
 }
 

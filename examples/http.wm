@@ -3,17 +3,17 @@
 from js.global import unsafe { URL, Response };
 from js.global import type { Request };
 
-export record Route = {
+record Route = {
   method: String,
   path: String,
   handler: (Request) => Js.Object
 };
 
-export let get = (path, handler) => {
+let get = (path, handler) => {
   .{ method = "GET", path, handler }
 };
 
-export let response = (body, init) => {
+let response = (body, init) => {
   Response.new(body, init)
 };
 
@@ -30,7 +30,7 @@ let rec findHandler = (routes, method, path) => {
   }
 };
 
-export let dispatch = (routes) => {
+let dispatch = (routes) => {
   (req, info) => {
     let method = match(req.method) {
       Ok(value) => { value },

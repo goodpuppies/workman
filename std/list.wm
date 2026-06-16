@@ -1,15 +1,15 @@
-export let rec map = match(items, f) => {
+let rec map = match(items, f) => {
   ([], _) => { [] },
   ([head, ..rest], f) => { [f(head), ..map(rest, f)] }
 };
 
-export let rec foldRight = match(items, initial, f) => {
+let rec foldRight = match(items, initial, f) => {
   ([], initial, _) => { initial },
   ([head, ..rest], initial, f) => {
     f(head, foldRight(rest, initial, f))
   }
 };
 
-export let collectWith = (empty, combine, items) => {
+let collectWith = (empty, combine, items) => {
   foldRight(items, empty, combine)
 };

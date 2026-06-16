@@ -1,18 +1,18 @@
-export type Int_list = Empty | ICons<Number, Int_list>;
-export type List<T> = Nil | Cons<T, List<T>>;
+type Int_list = Empty | ICons<Number, Int_list>;
+type List<T> = Nil | Cons<T, List<T>>;
 
-export type Ordering = Less | Equal | Greater;
+type Ordering = Less | Equal | Greater;
 
-export let rec myDiv = (n, d) => {
+let rec myDiv = (n, d) => {
   if (n < d) {0}
   else {1 + myDiv(n - d, d)}
 };
 
-export let myMod = (n, d) => {
+let myMod = (n, d) => {
   n - (d * (myDiv(n,d)))
 };
 
-export let divBy2 = (i) => {
+let divBy2 = (i) => {
   myMod(i,2) == 0
 };
 
@@ -25,11 +25,11 @@ let rec foldLeft = (fn, acc, list) => {
   }
 };
 
-export let rec sumList = (list) => {
+let rec sumList = (list) => {
   foldLeft((a,b)=> {a+b}, 0, list)
 };
 
-export let rec isEvenLenght = match(list) => {
+let rec isEvenLenght = match(list) => {
   [] => {true},
   [head] => {false},
   [head, cons, ..tail] => { 
@@ -37,7 +37,7 @@ export let rec isEvenLenght = match(list) => {
   }
 };
 
-export let compareN = (a,b) => {
+let compareN = (a,b) => {
   if (a>=b) {
     if (a==b){Equal}
     else {Greater}

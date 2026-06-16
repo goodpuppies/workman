@@ -70,9 +70,9 @@ Deno.test("cli run uses Core constructor identity through imports", async () => 
   await Deno.writeTextFile(
     `${dir}/a.wm`,
     `
-      export type A = | Box;
-      export let make = () => { Box };
-      export let describe = match(value) => {
+      type A = | Box;
+      let make = () => { Box };
+      let describe = match(value) => {
         Box => { "a" },
       };
     `,
@@ -80,9 +80,9 @@ Deno.test("cli run uses Core constructor identity through imports", async () => 
   await Deno.writeTextFile(
     `${dir}/b.wm`,
     `
-      export type B = | Box;
-      export let make = () => { Box };
-      export let describe = match(value) => {
+      type B = | Box;
+      let make = () => { Box };
+      let describe = match(value) => {
         Box => { "b" },
       };
     `,
@@ -210,7 +210,7 @@ Deno.test("cli run supports star import without alias", async () => {
   const main = `${dir}/main.wm`;
   await Deno.writeTextFile(
     lib,
-    "export type Int_list = Empty | Cons<Number, Int_list>; export let rec sumList = (list) => { let rec inner = (list, acc) => { match(list) { Empty => {acc}, Cons(i, rest) => {inner(rest, acc+i)} } }; inner(list, 0) };",
+    "type Int_list = Empty | Cons<Number, Int_list>; let rec sumList = (list) => { let rec inner = (list, acc) => { match(list) { Empty => {acc}, Cons(i, rest) => {inner(rest, acc+i)} } }; inner(list, 0) };",
   );
   await Deno.writeTextFile(
     main,

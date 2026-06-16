@@ -51,7 +51,7 @@ Status legend:
 | Named imports with aliases                           | Done   | Named import tests for values, constructors, and types.                                                |
 | Imported values and constructors as long identifiers | Done   | Tests use `Boxed.make`, `Math.Just`, named `Some`/`None`.                                              |
 | Imported type constructors as long names             | Done   | Tests use `Boxed.Box<Number>` and nominal cross-file types.                                            |
-| Explicit exports                                     | Done   | Export visibility tests; private names reject through named and namespace imports.                     |
+| Default exports                                      | Done   | Import tests cover plain values, constructors, and types through named and namespace imports.          |
 | Import cycles rejected                               | Done   | Deterministic cycle test.                                                                              |
 | Transitive imports                                   | Done   | `base -> mid -> main` test.                                                                            |
 | Duplicate import collisions                          | Done   | Tests cover duplicate named import, duplicate namespace alias, and cross-declaration named collisions. |

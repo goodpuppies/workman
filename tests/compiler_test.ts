@@ -26,6 +26,7 @@ Deno.test("rejects unsupported SML and advanced Workman syntax", async () => {
   await assertRejects(() => parse("fun id x = x;"));
   await assertRejects(() => parse("structure Math = struct end;"));
   await assertRejects(() => parse("infectious effect type IO<T> = Pure<T>;"));
+  await assertRejects(() => parse("export let value = 1;"));
 });
 
 Deno.test("compiles factorial and ADT match", async () => {

@@ -35,6 +35,7 @@ for design accounting and future formalization.
 - [Current Subset Ledger](./current-differences.md)
 - [Syntactic Differences](./syntax-differences.md)
 - [Semantic Differences](./semantic-differences.md)
+- [Visibility And Open Imports](./visibility-and-open-imports.md)
 
 ## Working Method
 

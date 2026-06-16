@@ -1,8 +1,8 @@
-export type Maybe<T> = Nothing | Just<T>;
+type Maybe<T> = Nothing | Just<T>;
 
-export let add = (a, b) => { a + b };
+let add = (a, b) => { a + b };
 
-export let describe = (value) => {
+let describe = (value) => {
   match(value) {
     Nothing => { "nothing" },
     Just(_) => { "just" },

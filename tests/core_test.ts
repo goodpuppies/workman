@@ -70,7 +70,7 @@ Deno.test("coreSource rejects imports at the source-string boundary", async () =
 
 Deno.test("coreFile returns module-ordered Core artifacts", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/lib.wm", "export type Option<T> = None | Some<T>; export let wrap = (x) => { Some(x) };"],
+    ["/test/lib.wm", "type Option<T> = None | Some<T>; let wrap = (x) => { Some(x) };"],
     ["/test/main.wm", 'from "./lib.wm" import * as Lib; let value = Lib.wrap(1);'],
   ]);
 
@@ -94,8 +94,8 @@ Deno.test("coreFile returns module-ordered Core artifacts", async () => {
 
 Deno.test("coreFile gives same-spelled constructors distinct runtime identities", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/a.wm", "export type A = | Box;"],
-    ["/test/b.wm", "export type B = | Box;"],
+    ["/test/a.wm", "type A = | Box;"],
+    ["/test/b.wm", "type B = | Box;"],
     ["/test/main.wm", 'from "./a.wm" import * as A; from "./b.wm" import * as B; let a = A.Box; let b = B.Box;'],
   ]);
 
@@ -117,7 +117,7 @@ Deno.test("coreFile gives same-spelled constructors distinct runtime identities"
 
 Deno.test("coreFile resolves named imported constructor references", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/lib.wm", "export type Option<T> = None | Some<T>;"],
+    ["/test/lib.wm", "type Option<T> = None | Some<T>;"],
     ["/test/main.wm", "from \"./lib.wm\" import { Some, None }; let value = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };"],
   ]);
 

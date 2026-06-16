@@ -93,8 +93,8 @@ Deno.test("record annotations disambiguate same-shaped nominal records", async (
 
 Deno.test("imported records remain nominal across file boundaries", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/a.wm", "export record Point = { x: Number, y: Number }; export let make = () => { .{ x = 1, y = 2 } };"],
-    ["/test/b.wm", "export record Point = { x: Number, y: Number }; export let make = () => { .{ x = 1, y = 2 } };"],
+    ["/test/a.wm", "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };"],
+    ["/test/b.wm", "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };"],
     ["/test/main.wm", "from \"./a.wm\" import * as A; from \"./b.wm\" import * as B; let good: A.Point = A.make(); let bad: A.Point = B.make();"],
   ]);
 
@@ -103,7 +103,7 @@ Deno.test("imported records remain nominal across file boundaries", async () => 
 
 Deno.test("imported record annotations guide record literals", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/point.wm", "export record Point = { x: Number, y: Number };"],
+    ["/test/point.wm", "record Point = { x: Number, y: Number };"],
     ["/test/main.wm", "from \"./point.wm\" import * as Geometry; let p: Geometry.Point = .{ x = 1, y = 2 }; let x = p.x;"],
   ]);
 
@@ -112,7 +112,7 @@ Deno.test("imported record annotations guide record literals", async () => {
 
 Deno.test("named imports expose exported record types", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/point.wm", "export record Point = { x: Number, y: Number };"],
+    ["/test/point.wm", "record Point = { x: Number, y: Number };"],
     ["/test/main.wm", "from \"./point.wm\" import { Point }; let p: Point = .{ x = 1, y = 2 }; let x = p.x;"],
   ]);
 

@@ -62,12 +62,12 @@ Deno.test("lsp validation uses unsaved imported modules", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;
   const main = `${dir}/main.wm`;
-  await Deno.writeTextFile(lib, "export let value = 1;");
+  await Deno.writeTextFile(lib, "let value = 1;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x: String = Lib.value;');
   const mainUri = pathToFileUri(main);
   const docs = new DocumentStore();
 
-  docs.open(pathToFileUri(lib), 'export let value = "ok";', 1);
+  docs.open(pathToFileUri(lib), 'let value = "ok";', 1);
   const results = await validateUri(mainUri, docs.sourceOverrides());
   assertEquals(await diagnosticsForPath(results, main), []);
 });
@@ -76,14 +76,14 @@ Deno.test("lsp validation reports imported module errors on the imported file", 
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;
   const main = `${dir}/main.wm`;
-  await Deno.writeTextFile(lib, "export let value = 1 + true;");
+  await Deno.writeTextFile(lib, "let value = 1 + true;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
 
   const results = await validateUri(pathToFileUri(main), new Map());
   assertEquals(await diagnosticsForPath(results, main), []);
   const libDiagnostics = await diagnosticsForPath(results, lib);
   assertEquals(libDiagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
-  assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 19 });
+  assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });
 });
 
 Deno.test("lsp validation localizes recursive binding return mismatches", async () => {
@@ -324,7 +324,7 @@ Deno.test("lsp validation reports unknown named imports on the import specifier"
   const lib = `${dir}/lib.wm`;
   const main = `${dir}/main.wm`;
   const source = 'from "./lib.wm" import { missing }; let x = 1;';
-  await Deno.writeTextFile(lib, "export let present = 1;");
+  await Deno.writeTextFile(lib, "let present = 1;");
   await Deno.writeTextFile(main, source);
 
   const diagnostics = await diagnosticsForPath(
@@ -340,7 +340,7 @@ Deno.test("lsp validation reports duplicate named imports on the duplicate speci
   const lib = `${dir}/lib.wm`;
   const main = `${dir}/main.wm`;
   const source = 'from "./lib.wm" import { present, present as present }; let x = present;';
-  await Deno.writeTextFile(lib, "export let present = 1;");
+  await Deno.writeTextFile(lib, "let present = 1;");
   await Deno.writeTextFile(main, source);
 
   const diagnostics = await diagnosticsForPath(

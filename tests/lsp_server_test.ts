@@ -45,7 +45,7 @@ Deno.test("lsp server publishes closed imported file diagnostics", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;
   const main = `${dir}/main.wm`;
-  await Deno.writeTextFile(lib, "export let value = 1 + true;");
+  await Deno.writeTextFile(lib, "let value = 1 + true;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
   const uri = pathToFileUri(main);
   const libUri = pathToFileUri(lib);
@@ -127,7 +127,7 @@ Deno.test("lsp server revalidates open files after imported file changes", async
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;
   const main = `${dir}/main.wm`;
-  await Deno.writeTextFile(lib, "export let value = 1;");
+  await Deno.writeTextFile(lib, "let value = 1;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x: String = Lib.value;');
   const uri = pathToFileUri(main);
   const messages = await runLsp([
@@ -146,7 +146,7 @@ Deno.test("lsp server revalidates open files after imported file changes", async
     },
     async () => {
       await delay(700);
-      await Deno.writeTextFile(lib, 'export let value = "ok";');
+      await Deno.writeTextFile(lib, 'let value = "ok";');
       await delay(200);
     },
     {
@@ -182,7 +182,7 @@ Deno.test("lsp server revalidates unopened dependents after dependency edits", a
   const dir = await Deno.makeTempDir();
   const http = `${dir}/http.wm`;
   const server = `${dir}/server.wm`;
-  await Deno.writeTextFile(http, "export let dispatch = (req, info) => { req + info };");
+  await Deno.writeTextFile(http, "let dispatch = (req, info) => { req + info };");
   await Deno.writeTextFile(
     server,
     'from "./http.wm" import * as Http; let handler = Http.dispatch(1, 2);',
@@ -217,7 +217,7 @@ Deno.test("lsp server revalidates unopened dependents after dependency edits", a
       method: "textDocument/didChange",
       params: {
         textDocument: { uri: httpUri, version: 2 },
-        contentChanges: [{ text: "export let dispatch = (req) => { req + 1 };" }],
+        contentChanges: [{ text: "let dispatch = (req) => { req + 1 };" }],
       },
     },
     async () => {

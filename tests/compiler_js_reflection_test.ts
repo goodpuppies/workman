@@ -219,7 +219,7 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
       "/test/http.wm",
       `
         from js.global import type { Request };
-        export let dispatch = () => {
+        let dispatch = () => {
           (req) => {
             let method = match(req.method) {
               Ok(value) => { value },
@@ -256,11 +256,11 @@ Deno.test("foreign JS type identity is keyed by reflected source, not local name
   const shared = new Map<string, string>([
     [
       "/test/a.wm",
-      `from js.global import type { Request as Thing }; export let id = (x: Thing) => { x };`,
+      `from js.global import type { Request as Thing }; let id = (x: Thing) => { x };`,
     ],
     [
       "/test/b.wm",
-      `from js.global import type { Request as Thing }; export let use = (x: Thing) => { x };`,
+      `from js.global import type { Request as Thing }; let use = (x: Thing) => { x };`,
     ],
     [
       "/test/main.wm",
@@ -272,11 +272,11 @@ Deno.test("foreign JS type identity is keyed by reflected source, not local name
   const distinct = new Map<string, string>([
     [
       "/test/a.wm",
-      `from js.global import type { Request as Thing }; export let id = (x: Thing) => { x };`,
+      `from js.global import type { Request as Thing }; let id = (x: Thing) => { x };`,
     ],
     [
       "/test/b.wm",
-      `from js.global import type { Response as Thing }; export let use = (x: Thing) => { x };`,
+      `from js.global import type { Response as Thing }; let use = (x: Thing) => { x };`,
     ],
     [
       "/test/main.wm",
@@ -291,7 +291,7 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
     [
       "/test/http.wm",
       `
-        export let cloneResponse = () => {
+        let cloneResponse = () => {
           (res) => {
             res.clone()
           }
@@ -391,7 +391,7 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
     [
       "/test/events.wm",
       `
-        export let listen = () => {
+        let listen = () => {
           (target) => {
             target.addEventListener("click", (evt) => {
               let isTrusted = evt.isTrusted;

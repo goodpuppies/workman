@@ -70,7 +70,7 @@ needed for a basic but honest beta.
 - [x] Add `language-configuration.json` for comments, brackets, auto-closing pairs, word pattern,
       and basic folding markers.
 - [x] Add a small TextMate grammar for current wm-mini syntax:
-  - [x] `let`, `rec`, `type`, `record`, `import`, `export`, `match`, `if`, `else`.
+  - [x] `let`, `rec`, `type`, `record`, `import`, `match`, `if`, `else`.
   - [x] Constructors and type names.
   - [x] Lowercase bindings and fields.
   - [x] Literals, strings, comments, arrows, and operators.

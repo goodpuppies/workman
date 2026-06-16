@@ -1,25 +1,25 @@
-export let map = match(option, f) => {
+let map = match(option, f) => {
   (Some(value), f) => { Some(f(value)) },
   (None, _) => { None }
 };
 
-export let andThen = match(option, f) => {
+let andThen = match(option, f) => {
   (Some(value), f) => { f(value) },
   (None, _) => { None }
 };
 
-export let withDefault = match(option, fallback) => {
+let withDefault = match(option, fallback) => {
   (Some(value), _) => { value },
   (None, fallback) => { fallback }
 };
 
-export let map2 = match(a, b, f) => {
+let map2 = match(a, b, f) => {
   (Some(left), Some(right), f) => { Some(f(left, right)) },
   (None, _, _) => { None },
   (_, None, _) => { None }
 };
 
-export let rec traverse = match(items, f) => {
+let rec traverse = match(items, f) => {
   ([], _) => { Some([]) },
   ([item, ..rest], f) => {
     match(f(item)) {
@@ -34,6 +34,6 @@ export let rec traverse = match(items, f) => {
   }
 };
 
-export let collectList = (items) => {
+let collectList = (items) => {
   traverse(items, (item) => { item })
 };

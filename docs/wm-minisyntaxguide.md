@@ -649,7 +649,7 @@ from "./math.wm" import { add as plus };
 from "./math.wm" import * as Math;
 -- Use as: Math.add, Math.sub, etc.
 
--- Open import (bring exported names into local scope)
+-- Open import (bring module names into local scope)
 from "./math.wm" import *;
 
 -- JS imports can infer types from TypeScript declarations
@@ -663,14 +663,14 @@ from js.global("console") import { log: (String, Number) => Void } as console;
 from "./option.wm" import { Option, Some, None };
 ```
 
-### Exporting
+### Module Visibility
+
+Top-level values, types, records, and datatype constructors are visible to imports by default.
 
 ```workman
--- Export a value
-export let myFunction = (x) => { x * 2 };
+let myFunction = (x) => { x * 2 };
 
--- Export a type
-export type MyType = A | B<Number>;
+type MyType = A | B<Number>;
 
 -- Re-export declarations are planned/design syntax, not current `wm-mini`.
 ```
@@ -780,13 +780,13 @@ Declare types without exposing their implementation:
 
 ```workman
 -- Opaque type declaration (no constructors)
-export type GpaHandle;
-export type Allocator;
+type GpaHandle;
+type Allocator;
 
 -- Zig primitive types are opaque
-export type U8;
-export type I32;
-export type Usize;
+type U8;
+type I32;
+type Usize;
 ```
 
 #### Function Type Annotations
@@ -952,7 +952,7 @@ The guide includes some intended Workman syntax, but current `wm-mini` is delibe
 These features are not supported yet or are only partially supported:
 
 - **Full SML modules/functors/signatures:** files are the current module boundary.
-- **Opaque type declarations:** `export type Handle;` is planned/design syntax, not current syntax.
+- **Opaque type declarations:** `type Handle;` is planned/design syntax, not current syntax.
 - **Typed holes:** `?` is not implemented. Use `Panic("todo")` for temporary unreachable values.
 - **Binding-level function annotations:** annotate parameters or simple `let` bindings for now;
   `let f: (...) => T = ...` is not generally implemented.
@@ -1000,7 +1000,7 @@ See [JavaScript FFI](./jsffi.md) for the current JS interop surface.
 | List spread          | `[head, ..tail]`                      |
 | Import               | `from "path" import { item };`        |
 | Namespace import     | `from "path" import * as Name;`       |
-| Export               | `export let x = ...;`                 |
+| Module value         | `let x = ...;`                        |
 | Pipe                 | `value :> fn`                         |
 | String concat        | `"a" ++ "b"`                          |
 | Multiline string     | `` `line one\nline two` ``            |

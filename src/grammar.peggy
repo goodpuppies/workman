@@ -100,8 +100,8 @@ JsImportSpec
     { return at({ name, alias, type }, location()); }
 
 LetDecl
-  = exported:ExportModifier? "let" __ rec:("rec" __)? first:LetBinding rest:(_ "and" __ b:LetBinding { return b; })*
-    { return at({ kind: "LetDecl", exported: !!exported, recursive: !!rec, bindings: [first, ...rest] }, location()); }
+  = "let" __ rec:("rec" __)? first:LetBinding rest:(_ "and" __ b:LetBinding { return b; })*
+    { return at({ kind: "LetDecl", exported: true, recursive: !!rec, bindings: [first, ...rest] }, location()); }
 
 LetBinding
   = pattern:LetPattern _ ann:TypeAnn? _ "=" _ value:Expr
@@ -128,18 +128,18 @@ LetCtorPattern
 LetCtorPatternList = first:LetCtorPattern rest:(_ "," _ p:LetCtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 
 RecordDecl
-  = exported:ExportModifier? "record" __ name:Constructor params:TypeParams? _ "=" _ "{" _ fields:RecordFieldDeclList? _ "}"
-    { return at({ kind: "RecordDecl", exported: !!exported, name, params: params ?? [], fields: fields ?? [] }, location()); }
+  = "record" __ name:Constructor params:TypeParams? _ "=" _ "{" _ fields:RecordFieldDeclList? _ "}"
+    { return at({ kind: "RecordDecl", exported: true, name, params: params ?? [], fields: fields ?? [] }, location()); }
 
 RecordFieldDeclList = first:RecordFieldDecl rest:(_ "," _ f:RecordFieldDecl { return f; })* _ ","? { return [first, ...rest]; }
 RecordFieldDecl = name:FieldName _ ":" _ type:TypeExpr { return at({ name, type }, location()); }
 
 TypeDecl
-  = exported:ExportModifier? "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody
+  = "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody
     {
       return at({
         kind: "TypeDecl",
-        exported: !!exported,
+        exported: true,
         name,
         params: params ?? [],
         ctors: body.ctors,
@@ -161,8 +161,6 @@ TypeDeclBody
         hasLeadingPipe: !!hasLeadingPipe,
       };
     }
-
-ExportModifier = "export" __
 
 Expr = IfExpr / MatchFn / MatchExpr / Lambda / Binary
 
@@ -406,7 +404,7 @@ FieldName = !Keyword name:MemberName { return name; }
 LongName = first:Name rest:("." n:MemberName { return n; })* { return [first, ...rest].join("."); }
 LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* { return [first, ...rest].join("."); }
 IdentPart = [a-zA-Z0-9_]
-Keyword = ("from" / "import" / "as" / "export" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
+Keyword = ("from" / "import" / "as" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
 __ = (Whitespace / Comment)+
 _ = (Whitespace / Comment)*
 Whitespace = [ \t\r\n]

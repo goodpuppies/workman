@@ -10,13 +10,13 @@ Example:
 -- http.wm
 from js.global import type { Request };
 
-export record Route = {
+record Route = {
   method: String,
   path: String,
   handler: (Request) => Js.Object
 };
 
-export let dispatch = (routes) => {
+let dispatch = (routes) => {
   (req, info) => {
     let method = match(req.method) {
       Ok(value) => { value },
@@ -301,7 +301,7 @@ For:
 
 ```wm
 -- http.wm
-export let dispatch = (routes) => { ... };
+let dispatch = (routes) => { ... };
 
 -- server.wm
 serve(dispatch(routes));
@@ -340,7 +340,7 @@ For example:
 
 ```wm
 -- http.wm
-export let dispatch = (routes) => {
+let dispatch = (routes) => {
   (req, info) => {
     req.method
   }

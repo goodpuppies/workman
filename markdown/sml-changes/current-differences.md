@@ -119,6 +119,9 @@ evidence that the core itself has stopped being ML-shaped.
 These are features already present or documented that deserve explicit design
 decisions before formalization:
 
+- File declarations now export by default, matching the SML-shaped model where
+  structures expose their resulting environment and hiding is a separate
+  boundary feature.
 - Mixed declaration/expression block items. This is convenient, but weakens the
   clean SML `declarations then expression` model.
 - Pinned bare match identifiers. This is useful for value-pattern style
