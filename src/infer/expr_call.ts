@@ -11,6 +11,7 @@ import {
   prune,
   quoteType,
   show,
+  typeMismatchMessage,
   tuple,
   type Ty,
   type TypeDeclInfo,
@@ -80,7 +81,7 @@ export function inferCall(
       expectedArg,
       actualArg,
       argExpr,
-      () => `type mismatch expected ${quoteType(calleeFn.params[0])}, got ${quoteType(arg)}`,
+      () => typeMismatchMessage(calleeFn.params[0], arg),
       [...calleeRelated, ...calleeProvenance],
       provenance,
       {
@@ -103,7 +104,7 @@ export function inferCall(
       callee,
       fn([arg], result),
       expr,
-      () => `type mismatch expected ${quoteType(fn([arg], result))}, got ${quoteType(callee)}`,
+      () => typeMismatchMessage(fn([arg], result), callee),
       [...callCalleeRelated(expr.callee, callee), ...calleeProvenance],
       provenance,
       {

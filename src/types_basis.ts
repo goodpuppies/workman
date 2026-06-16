@@ -13,8 +13,8 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
-  type TypeInfo,
   typeFromAst,
+  type TypeInfo,
   VoidTy,
 } from "./types.ts";
 
@@ -252,21 +252,27 @@ export function baseTypeEnv(): TypeEnv {
     basisTypeEnvCache.set("Js.Array", {
       ...freshTypeInfo("Js.Array", 1),
       basis: true,
+      argLabels: ["element"],
     });
     basisTypeEnvCache.set("Js.Dict", {
       ...freshTypeInfo("Js.Dict", 1),
       basis: true,
+      argLabels: ["value"],
     });
     for (const type of basisTypes) {
       basisTypeEnvCache.set(type.name, {
         ...freshTypeInfo(type.name, type.params.length),
         basis: true,
         basisConstructors: type.ctors.map((ctor) => ctor.name),
+        argLabels: type.params.map((param) =>
+          param === "e" || param === "err" ? "error" : param === "a" ? "value" : param
+        ),
       });
     }
     basisTypeEnvCache.set("Task", {
       ...freshTypeInfo("Task", 2),
       basis: true,
+      argLabels: ["value", "error"],
     });
   }
   return new Map(basisTypeEnvCache);

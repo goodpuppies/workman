@@ -25,7 +25,7 @@ Deno.test("rejects Workman ADT values passed to JS FFI calls", async () => {
         };
       `),
     Error,
-    'type mismatch expected "Js.Value", got "Result<String,',
+    "expected: Js.Value",
   );
 });
 

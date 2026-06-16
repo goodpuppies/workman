@@ -1,5 +1,8 @@
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
+import { type DiffPath, TypeMismatchError, typeMismatchMessage } from "./type_diff.ts";
+
+export { typeMismatchMessage } from "./type_diff.ts";
 
 export type Ty =
   | { tag: "var"; id: number; name?: string; instance?: Ty; jsConstraint?: (t: Ty) => void }
@@ -22,6 +25,7 @@ export type Ty =
     id: number;
     name: string;
     args: Ty[];
+    argLabels?: string[];
     foreign?: boolean;
     foreignKey?: string;
   };
@@ -59,6 +63,7 @@ export type TypeInfo = {
   aliasParams?: number[];
   recordFields?: RecordFieldInfo[];
   recordParams?: number[];
+  argLabels?: string[];
 };
 export type TypeDeclInfo = {
   type: TypeInfo;
@@ -98,6 +103,7 @@ export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
   id: info.id,
   name: info.name,
   args,
+  argLabels: info.argLabels,
   foreign: info.foreign,
   foreignKey: info.foreignKey,
 });
@@ -146,9 +152,16 @@ export function occurs(id: number, t: Ty): boolean {
   return false;
 }
 
-export type UnifyBind = (variable: Extract<Ty, { tag: "var" }>, target: Ty) => void;
+export type UnifyBind = (
+  variable: Extract<Ty, { tag: "var" }>,
+  target: Ty,
+  path: DiffPath,
+  targetSide: "left" | "right",
+) => void;
 
-export function unify(a: Ty, b: Ty, onBind?: UnifyBind): void {
+export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): void {
+  const originalA = a;
+  const originalB = b;
   a = prune(a);
   b = prune(b);
   if (a === b) return;
@@ -159,10 +172,18 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind): void {
       if (b.tag === "var") addJsConstraint(b, a.jsConstraint);
       else a.jsConstraint(b);
     }
-    onBind?.(a, b);
+    onBind?.(a, b, path, "right");
     return;
   }
-  if (b.tag === "var") return unify(b, a, onBind);
+  if (b.tag === "var") {
+    if (occurs(b.id, a)) throw new Error(`recursive type ${show(b)} ~ ${show(a)}`);
+    b.instance = a;
+    if (b.jsConstraint) {
+      b.jsConstraint(a);
+    }
+    onBind?.(b, a, path, "left");
+    return;
+  }
   if (a.tag === "ffi") {
     rememberFfiConstraint(a, b);
     return;
@@ -171,21 +192,54 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind): void {
     rememberFfiConstraint(b, a);
     return;
   }
-  if (a.tag !== b.tag) throw new Error(typeMismatchMessage(a, b));
+  if (a.tag !== b.tag) throw typeMismatchError(a, b, path, originalA, originalB);
   if (a.tag === "prim" && b.tag === "prim" && a.name === b.name) return;
   if (a.tag === "fn" && b.tag === "fn" && a.params.length === b.params.length) {
-    a.params.forEach((p, i) => unify(p, b.params[i], onBind));
-    return unify(a.result, b.result, onBind);
+    a.params.forEach((p, i) =>
+      unify(p, b.params[i], onBind, [
+        ...path,
+        { kind: "fn-param", index: i },
+      ])
+    );
+    return unify(a.result, b.result, onBind, [...path, { kind: "fn-result" }]);
   }
   if (a.tag === "tuple" && b.tag === "tuple" && a.items.length === b.items.length) {
-    a.items.forEach((x, i) => unify(x, b.items[i], onBind));
+    a.items.forEach((x, i) =>
+      unify(x, b.items[i], onBind, [...path, { kind: "tuple-item", index: i }])
+    );
     return;
   }
   if (a.tag === "named" && b.tag === "named" && a.id === b.id && a.args.length === b.args.length) {
-    a.args.forEach((x, i) => unify(x, b.args[i], onBind));
+    a.args.forEach((x, i) =>
+      unify(x, b.args[i], onBind, [
+        ...path,
+        {
+          kind: "named-arg",
+          index: i,
+          label: a.argLabels?.[i] ?? b.argLabels?.[i],
+          typeName: a.name,
+        },
+      ])
+    );
     return;
   }
-  throw new Error(typeMismatchMessage(a, b));
+  throw typeMismatchError(a, b, path, originalA, originalB);
+}
+
+function typeMismatchError(
+  left: Ty,
+  right: Ty,
+  path: DiffPath,
+  originalLeft: Ty,
+  originalRight: Ty,
+): TypeMismatchError {
+  if (originalLeft.tag === "var" && originalLeft.instance) {
+    return new TypeMismatchError(left, right, path, originalLeft.id, "right");
+  }
+  if (originalRight.tag === "var" && originalRight.instance) {
+    return new TypeMismatchError(left, right, path, originalRight.id, "left");
+  }
+  return new TypeMismatchError(left, right, path);
 }
 
 // A JS boundary violation carries its own explanation; diagnostic wrappers should not
@@ -237,10 +291,6 @@ function isBroadJsBoundaryConstraint(type: Ty): boolean {
 function isBroadJsBoundaryType(type: Ty): boolean {
   const target = prune(type);
   return target.tag === "named" && (target.name === "Js.Object" || target.name === "Js.Value");
-}
-
-export function typeMismatchMessage(left: Ty, right: Ty): string {
-  return `type mismatch ${quoteType(left)} vs ${quoteType(right)}`;
 }
 
 export function quoteType(type: Ty): string {

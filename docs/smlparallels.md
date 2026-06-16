@@ -78,18 +78,10 @@ let id = (x) => {
 };
 ```
 
-Zero-argument Workman functions take `Void`:
+Zero-argument Workman functions use `()` at the surface and take `Void` in the core:
 
 ```wm
 let main = () => {
-  print("hello")
-};
-```
-
-The shorthand is also accepted:
-
-```wm
-let main = => {
   print("hello")
 };
 ```
@@ -476,8 +468,8 @@ from js.module("node:crypto") import { createHash };
 from js.global import type { Request };
 ```
 
-Safe reflected JS calls return `Result<T, Js.Error>`. `unsafe` imports are available for direct JS
-calls.
+Safe reflected JS calls return `Result<T, Js.Error>` or `Task<T, Js.Error>` for Promise-returning
+APIs. `unsafe` imports are available for direct JS calls.
 
 See [JavaScript FFI](./jsffi.md) for details.
 

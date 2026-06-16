@@ -12,6 +12,7 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
+  typeMismatchMessage,
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
 import { inferDecl } from "./decl.ts";
@@ -19,7 +20,15 @@ import { assertEqualityType } from "./equality.ts";
 import { checkExhaustive, mentionsLocalType } from "./exhaustiveness.ts";
 import { warnRedundantMatchArms } from "./decl_helpers.ts";
 import { inferPattern } from "./patterns.ts";
-import { constrainAt, rememberProvenance, type TypeProvenance } from "./provenance.ts";
+import {
+  constrainAt,
+  fnSource,
+  rememberProvenance,
+  sourceForExpr,
+  sourceForTypedExpr,
+  tupleSource,
+  type TypeProvenance,
+} from "./provenance.ts";
 import { callArg, constrain } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
@@ -290,7 +299,15 @@ export function inferPipe(
     );
     const allArgs = [leftType, ...argTypes];
     const argType = callArg(allArgs);
-    const result = constrainPipe(expr, calleeType, argType, provenance);
+    const result = constrainPipe(
+      expr,
+      calleeType,
+      argType,
+      provenance,
+      right.callee,
+      [expr.left, ...right.args],
+      [leftType, ...argTypes],
+    );
     recordExprFact(facts, right.callee, {
       subject: "expr",
       instantiated: fn([argType], result),
@@ -309,7 +326,15 @@ export function inferPipe(
     diagnostics,
     provenance,
   );
-  const result = constrainPipe(expr, calleeType, leftType, provenance);
+  const result = constrainPipe(
+    expr,
+    calleeType,
+    leftType,
+    provenance,
+    right,
+    [expr.left],
+    [leftType],
+  );
   recordExprFact(facts, right, {
     subject: "expr",
     instantiated: fn([leftType], result),
@@ -322,18 +347,21 @@ function constrainPipe(
   calleeType: Ty,
   argType: Ty,
   provenance: TypeProvenance,
+  callee: Expr,
+  argExprs: Expr[],
+  argTypes: Ty[],
 ): Ty {
   const result = fresh();
+  const expected = fn([argType], result);
   constrainAt(
     calleeType,
-    fn([argType], result),
+    expected,
     expr,
-    () =>
-      `type mismatch expected ${quoteType(fn([argType], result))}, got ${quoteType(calleeType)}`,
+    () => typeMismatchMessage(expected, calleeType),
     [],
     provenance,
     {
-      message: "pipe argument",
+      message: callee.kind === "Var" ? `${callee.name} pipe` : "pipe",
       node: expr.node,
       span: expr.node?.span,
       primary: true,
@@ -341,6 +369,45 @@ function constrainPipe(
       actualCallTupleShape: callArity(argType),
       callDepth: 0,
     },
+    {
+      sources: {
+        left: sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
+        right: fnSource(
+          [callArgSource(argExprs, argTypes, provenance)],
+          sourceForExpr(expr, "pipe result"),
+        ),
+      },
+      context: (path) => pipeContext(callee, path),
+    },
   );
   return result;
+}
+
+function callArgSource(args: Expr[], types: Ty[], provenance: TypeProvenance) {
+  if (args.length === 1) return sourceForTypedExpr(args[0], types[0], provenance, "piped value");
+  return tupleSource(
+    args.map((arg, index) =>
+      sourceForTypedExpr(
+        arg,
+        types[index],
+        provenance,
+        index === 0 ? "piped value" : `argument ${index}`,
+      )
+    ),
+  );
+}
+
+function pipeContext(callee: Expr, path: import("../type_diff.ts").DiffPath): string | undefined {
+  const name = callee.kind === "Var" ? callee.name : "pipe";
+  const param = path[0];
+  if (!param || param.kind !== "fn-param" || param.index !== 0) return name;
+  const tupleItem = path[1];
+  const afterTuple = tupleItem?.kind === "tuple-item" ? path.slice(2) : path.slice(1);
+  const source = tupleItem?.kind === "tuple-item" && tupleItem.index > 0
+    ? `argument ${tupleItem.index}`
+    : "piped value";
+  if (afterTuple.some((segment) => segment.kind === "fn-result")) {
+    return `${name} callback result`;
+  }
+  return `${name} ${source}`;
 }

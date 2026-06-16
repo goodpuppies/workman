@@ -1,3 +1,4 @@
+import { assertStringIncludes } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 
 Deno.test("basic pipe to function", async () => {
@@ -60,4 +61,28 @@ Deno.test("pipe member chains continue through HM-typed primitive results", asyn
       text :> .padStart(2, "0")
     };
   `);
+});
+
+Deno.test("pipe task error mismatch points at both origin slots", async () => {
+  let error: Error | undefined;
+  try {
+    await checkSource(`
+      let scanAll: () => Task<Void, Js.Error> = () => {
+        void :> Task.succeed
+      };
+      let left: Result<Number, String> = Err("cli");
+      let bad = left
+        :> Task.fromResult
+        :> Task.andThen((n) => {
+          scanAll()
+        });
+    `);
+  } catch (caught) {
+    error = caught as Error;
+  }
+  if (!error) throw new Error("expected checkSource to reject");
+  assertStringIncludes(error.message, "type mismatch in Task.andThen callback result");
+  assertStringIncludes(error.message, "expected Task error: Js.Error");
+  assertStringIncludes(error.message, "got      Task error: String");
+  assertStringIncludes(error.message, "from callback result");
 });

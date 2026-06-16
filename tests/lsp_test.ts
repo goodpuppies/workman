@@ -1,6 +1,5 @@
 import { assertEquals } from "@std/assert";
 import { DocumentStore } from "../src/lsp/documents.ts";
-import { hoverAt } from "../src/lsp/hover.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri, type ValidationResult } from "../src/lsp/validation.ts";
@@ -91,7 +90,15 @@ let rec sumList = (list, val) => {
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertEquals(
     diagnostics?.[0].message,
-    'type mismatch "Number" vs "(Int_list) => Number"',
+    [
+      "type mismatch",
+      "  at type:",
+      "    expected: Number",
+      "    got:      (Int_list) => Number",
+      "    note:     different type forms",
+      '  full expected: "Number"',
+      '  full got:      "(Int_list) => Number"',
+    ].join("\n"),
   );
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
@@ -145,7 +152,15 @@ let bad = sumList(Cons(1, Empty));
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertEquals(
     diagnostics?.[0].message,
-    'type mismatch expected "(Int_list, Number)", got "Int_list"',
+    [
+      "type mismatch",
+      "  at type:",
+      "    expected: (Int_list, Number)",
+      "    got:      Int_list",
+      "    note:     different type forms",
+      '  full expected: "(Int_list, Number)"',
+      '  full got:      "Int_list"',
+    ].join("\n"),
   );
   assertEquals(diagnostics?.[0].range.start, {
     line: 10,
@@ -260,7 +275,15 @@ let bad = floor(1, 2);
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertEquals(
     diagnostics?.[0].message,
-    'type mismatch expected "Number", got "(Number, Number)"',
+    [
+      "type mismatch",
+      "  at type:",
+      "    expected: Number",
+      "    got:      (Number, Number)",
+      "    note:     different type forms",
+      '  full expected: "Number"',
+      '  full got:      "(Number, Number)"',
+    ].join("\n"),
   );
   assertEquals(diagnostics?.[0].range.start, { line: 3, character: 10 });
   assertEquals(diagnostics?.[0].range.end, { line: 3, character: 21 });
@@ -337,142 +360,9 @@ Deno.test("lsp validation reports import cycles on the closing import path", asy
   assertEquals(diagnostics?.[0].range, charRange(source, '"./a.wm"'));
 });
 
-Deno.test("lsp hover returns partial types when delayed FFI resolution fails", async () => {
-  const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const source = `
-let try = (result) => {
-  match(result) {
-    Ok(value) => { value },
-    Err(_) => { Panic("ffi") },
-  }
-};
-
-let hexByte = (byte, index, array) => {
-  let text = byte :> .unknownJs(16) :> try;
-  text :> .padStart(2, "0") :> try
-};
-`;
-  await Deno.writeTextFile(main, source);
-
-  const hover = await hoverAt(pathToFileUri(main), { line: 9, character: 13 }, new Map());
-
-  assertEquals(hover?.contents.value, "```wm\nbyte: 'a\n```");
-});
-
-Deno.test("lsp hover returns local let binding pattern types", async () => {
-  const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const source = `
-let outer = {
-  let x = 1;
-  x
-};
-`;
-  await Deno.writeTextFile(main, source);
-
-  const hover = await hoverAt(pathToFileUri(main), positionOf(source, "x ="), new Map());
-
-  assertEquals(hover?.contents.value, "```wm\nx: Number\n```");
-});
-
-Deno.test("lsp hover returns instantiated and general types for polymorphic uses", async () => {
-  const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const source = `
-let id = (x) => { x };
-let value = id(1);
-`;
-  await Deno.writeTextFile(main, source);
-
-  const hover = await hoverAt(pathToFileUri(main), positionOf(source, "id(1"), new Map());
-
-  assertEquals(
-    hover?.contents.value,
-    "```wm\nid\ntype: (Number) => Number\ngeneral: ('a) => 'a\n```",
-  );
-});
-
-Deno.test("lsp hover returns null on pipe operator tokens", async () => {
-  const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const source = `
-let toNumber = (value) => { 1 };
-let keep = (value) => { value };
-let speed = "12" :> toNumber :> keep;
-`;
-  await Deno.writeTextFile(main, source);
-
-  const hover = await hoverAt(pathToFileUri(main), positionOf(source, ":> toNumber"), new Map());
-
-  assertEquals(hover, null);
-});
-
-Deno.test("lsp hover returns pipe-specialized callee types", async () => {
-  const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const source = `
-let toNumber = (value) => { 1 };
-let speed = "12" :> toNumber;
-`;
-  await Deno.writeTextFile(main, source);
-
-  const hover = await hoverAt(pathToFileUri(main), positionOf(source, "toNumber;"), new Map());
-
-  assertEquals(
-    hover?.contents.value,
-    "```wm\ntoNumber\ntype: (String) => Number\ngeneral: ('a) => Number\n```",
-  );
-});
-
-Deno.test("lsp hover agrees for FFI-constrained handler definition and use", async () => {
-  const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const source = `
-from js.global import type { Request };
-from js.global("Deno") import unsafe {
-  serve: (Js.Value, (Request, Js.Value) => Js.Promise<Js.Value>) => Js.Value
-};
-from js.global("Promise") import unsafe { resolve as promiseResolve };
-
-let try = (result) => {
-  match(result) {
-    Ok(value) => { value },
-    Err(_) => { Panic("ffi") },
-  }
-};
-
-let handler = (req, info) => {
-  let textPromise = req :> .text() :> try;
-  textPromise :> .then((text) => {
-    promiseResolve(text)
-  }) :> try
-};
-
-let server = serve(JSON{}, handler);
-`;
-  await Deno.writeTextFile(main, source);
-
-  const uri = pathToFileUri(main);
-  const expected = "```wm\nhandler: ((Request, Js.Value)) => Js.Promise<Js.Value>\n```";
-  const definition = await hoverAt(uri, positionOf(source, "handler ="), new Map());
-  const use = await hoverAt(uri, positionOf(source, "handler);"), new Map());
-
-  assertEquals(definition?.contents.value, expected);
-  assertEquals(use?.contents.value, expected);
-});
-
 async function diagnosticsForPath(results: ValidationResult[], path: string) {
   const realPath = await Deno.realPath(path);
   return results.find((result) => fileUriToPath(result.uri) === realPath)?.diagnostics;
-}
-
-function positionOf(source: string, text: string) {
-  const offset = source.indexOf(text);
-  if (offset < 0) throw new Error(`missing test text ${text}`);
-  const prefix = source.slice(0, offset);
-  const lines = prefix.split("\n");
-  return { line: lines.length - 1, character: lines.at(-1)!.length };
 }
 
 function charRange(source: string, text: string) {

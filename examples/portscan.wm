@@ -1,0 +1,150 @@
+-- portscan.wm — TCP port scanner
+--
+-- Attempts a TCP connection to each port; open ports respond, closed/refused
+-- ports error immediately, and filtered ports will hang until the OS times out.
+--
+-- Usage:
+--   deno task wm run examples/portscan.wm -- 127.0.0.1
+--   deno task wm run examples/portscan.wm -- scanme.nmap.org 1 100
+--   deno task wm run examples/portscan.wm -- 192.168.1.1 20 25
+
+from js.global("Deno") import {
+  args: Js.Array<String>,
+  connect,
+};
+from js.global import {
+  Number as toNumber: (String) => Number,
+};
+
+type ScanResult = Open<Number> | Closed<Number>;
+
+let knownService = match(port) => {
+  21    => { "FTP" },
+  22    => { "SSH" },
+  23    => { "Telnet" },
+  25    => { "SMTP" },
+  53    => { "DNS" },
+  80    => { "HTTP" },
+  110   => { "POP3" },
+  143   => { "IMAP" },
+  443   => { "HTTPS" },
+  465   => { "SMTPS" },
+  587   => { "SMTP/submission" },
+  993   => { "IMAPS" },
+  995   => { "POP3S" },
+  3306  => { "MySQL" },
+  3389  => { "RDP" },
+  5432  => { "PostgreSQL" },
+  6379  => { "Redis" },
+  8080  => { "HTTP-alt" },
+  8443  => { "HTTPS-alt" },
+  27017 => { "MongoDB" },
+  _     => { "" },
+};
+
+-- Try to open a TCP connection; recover any error as Closed so the scan never fails.
+let scanPort = (host, port) => {
+  connect(JSON{ hostname: host, port: port })
+    :> Task.andThen((conn) => {
+      conn :> .close();
+      Open(port) :> Task.succeed
+    })
+    :> Task.recover((_) => { Closed(port) })
+};
+
+-- Build an inclusive integer range as a Workman list.
+let rec makeRange = (start, last) => {
+  if (start > last) {
+    []
+  } else {
+    [start, ..makeRange(start + 1, last)]
+  }
+};
+
+-- Scan all ports sequentially, collecting results in order.
+let rec scanAll = (host, ports) => {
+  match(ports) {
+    [] => { Task.succeed([]) },
+    [port, ..rest] => {
+      scanPort(host, port) :> Task.andThen((result) => {
+        scanAll(host, rest) :> Task.andThen((results) => {
+          [result, ..results] :> Task.succeed
+        })
+      })
+    }
+  }
+};
+
+let formatPort = (host, port) => {
+  let service = knownService(port);
+  let portStr = port :> .toString() :> Result.withDefault("?");
+  let tag = if (service == "") { "" } else { "  [" ++ service ++ "]" };
+  "  " ++ host ++ ":" ++ portStr ++ "\topen" ++ tag
+};
+
+let rec printOpen = (host, results) => {
+  match(results) {
+    [] => { void },
+    [head, ..rest] => {
+      match(head) {
+        Open(port) => { print(formatPort(host, port)) },
+        Closed(_)  => { void }
+      };
+      printOpen(host, rest)
+    }
+  }
+};
+
+let rec countOpen = (results) => {
+  match(results) {
+    [] => { 0 },
+    [head, ..rest] => {
+      let n = match(head) {
+        Open(_)   => { 1 },
+        Closed(_) => { 0 }
+      };
+      n + countOpen(rest)
+    }
+  }
+};
+
+let main = () => {
+  let getArg = (xs, idx, default_) => {
+    xs :> .at(idx)
+      :> Result.withDefault(None)
+      :> Option.withDefault(default_)
+  };
+  let getNumArg = (xs, idx, default_) => {
+    match(xs :> .at(idx) :> Result.withDefault(None)) {
+      Some(str) => { toNumber(str) :> Result.withDefault(default_) },
+      None => { default_ }
+    }
+  };
+
+  let pipeline = args
+    :> Result.mapErr((_) => { Panic("string to js err not implemented") })
+    :> Task.fromResult
+    :> Task.andThen((xs) => {
+      let host      = getArg(xs, 0, "127.0.0.1");
+      let startPort = getNumArg(xs, 1, 1);
+      let endPort   = getNumArg(xs, 2, 4);
+      let ports     = makeRange(startPort, endPort);
+      let startStr  = startPort :> .toString() :> Result.withDefault("?");
+      let endStr    = endPort   :> .toString() :> Result.withDefault("?");
+      print("Scanning " ++ host ++ " ports " ++ startStr ++ "-" ++ endStr ++ " ...");
+      scanAll(host, ports) :> Task.andThen((results) => {
+        printOpen(host, results);
+        let openCount = countOpen(results);
+        let total     = endPort - startPort + 1;
+        let totalStr  = total     :> .toString() :> Result.withDefault("?");
+        let openStr   = openCount :> .toString() :> Result.withDefault("?");
+        print("Done. " ++ openStr ++ " open port(s) out of " ++ totalStr ++ " scanned.");
+        void :> Task.succeed
+      })
+    });
+  pipeline :> Task.recover((err) => {
+    Panic("js err to string unimplemented")
+    --print("portscan: " ++ err);
+    --void
+  })
+};

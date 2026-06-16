@@ -7,6 +7,7 @@ import {
   quoteType,
   type Scheme,
   show,
+  typeMismatchMessage,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
@@ -305,7 +306,7 @@ export function constrainBinding(
           expectedFn.params[i],
           param,
           value.params[i],
-          () => `type mismatch ${quoteType(expectedFn.params[i])} vs ${quoteType(param)}`,
+          () => typeMismatchMessage(expectedFn.params[i], param),
         )
       );
       const evidence = recursiveResultEvidence(name, value, expectedFn.result, types);
@@ -371,7 +372,7 @@ export function constrainBinding(
         expectedFn.result,
         actualFn.result,
         evidence[0]?.expr ?? bodyResult,
-        () => `type mismatch ${quoteType(expectedFn.result)} vs ${quoteType(actualFn.result)}`,
+        () => typeMismatchMessage(expectedFn.result, actualFn.result),
         related,
       );
       return;

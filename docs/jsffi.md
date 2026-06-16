@@ -101,28 +101,30 @@ from js.global("console") import unsafe {
 When reflection cannot infer a useful type, write the JS type manually:
 
 ```wm
-from js.global import unsafe {
-  fetch: (String, Js.Value) => Js.Object,
-  setTimeout: ((Void) => Void, Number) => Js.Value,
+from js.global import {
+  fetch: (String) => Js.Promise<Js.Object>,
+  encodeURIComponent: (String) => String,
 };
 ```
 
 This is the escape hatch for APIs where TypeScript reflection is currently too broad, too overloaded,
 or not visible from the active runtime declarations.
 
-Manual types are trusted declarations. Today they are direct JS calls rather than reflected safe
-calls, so use them for APIs whose shape you are willing to assert yourself.
+Manual types are trusted declarations about the JS shape. Safe manual imports still return
+`Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
+explicitly want a direct JS call.
 
 ## Deno APIs
 
 Deno globals live under `Deno`:
 
 ```wm
-from js.global("Deno") import unsafe { readTextFileSync };
+from js.global("Deno") import { readTextFile };
 
 let main = () => {
-  let text = readTextFileSync("examples/data.txt");
-  print(text)
+  readTextFile("examples/data.txt")
+    :> Task.map((text) => { print(text) })
+    :> Task.recover((_) => { print("could not read file") })
 };
 ```
 
@@ -248,8 +250,8 @@ metadata for JavaScript arrays while remaining an opaque JS value:
 record Commit = { id: String, message: String };
 record PushPayload = { commits: Js.Array<Commit> };
 
-let payload: PushPayload = JSON.parse(bodyText) :> Json.assert :> try;
-let commits = payload.commits;
+let payload: Result<PushPayload, Js.Error> = JSON.parse(bodyText)
+  :> Result.andThen((raw) => { raw :> Json.assert });
 ```
 
 Annotations on dynamic receiver results, such as a mapped `Js.Array<String>`, are intentionally not
@@ -326,22 +328,22 @@ a tuple-shaped Workman argument at the core boundary:
 
 ```wm
 let hexByte = (byte: Number, index, array) => {
-  byte.toString(Some(16))
+  byte :> .toString(16)
 };
 ```
 
 ## Optional Arguments
 
-Some reflected optional JS parameters currently appear as `Option<T>`.
+Supplied optional JS parameters can usually be passed directly.
 
 Example:
 
 ```wm
-let text = byte.toString(Some(16));
+let fixed = value :> .toFixed(0);
 ```
 
-This is accurate but not always ergonomic. Future FFI elaboration should accept plain supplied
-arguments for optional JS parameters in more cases.
+If reflection exposes an optional value as `Option<T>` in a specific API, use `Some(value)` or
+`None` for that API. Prefer the plain supplied form when it typechecks.
 
 ## Common Patterns
 
@@ -374,11 +376,13 @@ let content = match(body.content) {
 ## Current Limitations
 
 - Some root globals still need manual types.
-- Promise-heavy code often needs `Js.Object` annotations.
-- Optional arguments may require `Some(value)`.
+- Some Promise-heavy APIs still benefit from explicit record or `Js.Object` annotations at the JS
+  boundary.
+- Optional arguments may still require `Some(value)` for APIs where reflection exposes an
+  `Option<T>` parameter.
 - `JSON{}` and `JSON[]` are currently the clearest way to pass object/array-shaped JS data.
 - `Js.Array<T>` currently supports only a small reflected dynamic receiver surface, such as
-  `.map`, `.join`, and `.length`.
+  `.map`, `.filter`, `.reduce`, `.join`, `.includes`, `.at`, and `.length`.
 - Workman records and tuples are not yet automatically adapted to JS object/tuple-like shapes.
 - Unsafe imports do not make every derived receiver call unsafe.
 - Dynamic JS property access is useful, but less precise than reflected foreign types.

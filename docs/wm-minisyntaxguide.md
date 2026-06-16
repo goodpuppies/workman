@@ -142,9 +142,9 @@ let greet = (name: String) => {
   print(name)
 };
 
--- For zero arg coffeescript style can be used
-let main = => {
-  print("hello world");
+-- Zero-argument functions use ()
+let main = () => {
+  print("hello world")
 };
 ```
 
@@ -251,7 +251,7 @@ OCaml-style leading pipe is also supported (useful for multiline):
 
 ```workman
 type Expr =
-  | Literal<Int>
+  | Literal<Number>
   | Add<Expr, Expr>
   | Mul<Expr, Expr>
   | Neg<Expr>;
@@ -259,7 +259,7 @@ type Expr =
 type Token =
   | LParen
   | RParen
-  | Number<Int>
+  | Number<Number>
   | Ident<String>;
 ```
 
@@ -276,8 +276,8 @@ let list = Link(1, Link(2, Empty));
 ### Record Types
 
 ```workman
-record Point = { x: Int, y: Int };
-record Person = { name: String, age: Int };
+record Point = { x: Number, y: Number };
+record Person = { name: String, age: Number };
 
 -- Records with type parameters
 record Pair<A, B> = { first: A, second: B };
@@ -293,7 +293,7 @@ Records are **nominal** (not structural). You must declare a record type before 
 
 ```workman
 -- First, declare the record type
-record Point = { x: Int, y: Int };
+record Point = { x: Number, y: Number };
 
 -- Then create instances (note the leading dot)
 let p = .{ x = 10, y = 20 };
@@ -322,7 +322,7 @@ let p = .{ x, y };
 **Not supported yet in current `wm-mini`.** Current record construction supports explicit fields and
 field punning, but not `..source` update syntax.
 
-Copy and update records:
+Planned copy/update syntax:
 
 ```workman
 let p1 = .{ x = 10, y = 20 };
@@ -399,11 +399,12 @@ let isZero = match(n) => {
   _ => { false }
 };
 
-let checkChar = match(c) => {
-  'a' => { "it's an a" },
-  'b' => { "it's a b" },
-  _ => { "something else" }
-};
+-- Planned only:
+-- let checkChar = match(c) => {
+--   'a' => { "it's an a" },
+--   'b' => { "it's a b" },
+--   _ => { "something else" }
+-- };
 ```
 
 ### First-Class Match
@@ -510,11 +511,11 @@ let correct = (n) => {
 };
 
 -- Planned syntax: match guards are not supported yet.
-let better = match(n) => {
-  n when n < 0 => { "negative" },
-  0 => { "zero" },
-  _ => { "positive" }
-};
+-- let better = match(n) => {
+--   Var(x) when x < 0 => { "negative" },
+--   0 => { "zero" },
+--   _ => { "positive" }
+-- };
 ```
 
 ---
@@ -548,6 +549,9 @@ let negated = !flag;
 ```
 
 ### Custom Operators
+
+**Not supported yet in current `wm-mini`.** Fixed built-in operators are available; custom fixity is
+planned/design syntax.
 
 ```workman
 -- Define a function
@@ -635,21 +639,18 @@ let firstTwo = match(xs) => {
 -- Import from a file js style
 from "./file.wm" import { func };
 
--- Import std stuff directly with std/
-from "std/list" import { listMap };
-
 -- Import specific items
-from "std/list" import { listMap, listFilter };
+from "./math.wm" import { add, sub };
 
 -- Import with alias
-from "std/core/bool" import { boolAnd as andFn };
+from "./math.wm" import { add as plus };
 
 -- Namespace import (import entire module)
-from "std/list" import * as List;
--- Use as: List.map, List.filter, etc.
+from "./math.wm" import * as Math;
+-- Use as: Math.add, Math.sub, etc.
 
 -- Open import (bring exported names into local scope)
-from "std/list" import *;
+from "./math.wm" import *;
 
 -- JS imports can infer types from TypeScript declarations
 from js.global("Math") import { max as jsmax, floor };
@@ -669,10 +670,9 @@ from "./option.wm" import { Option, Some, None };
 export let myFunction = (x) => { x * 2 };
 
 -- Export a type
-export type MyType = A | B<Int>;
+export type MyType = A | B<Number>;
 
--- Re-export from another module
-export from "std/option/core" type Option(..);
+-- Re-export declarations are planned/design syntax, not current `wm-mini`.
 ```
 
 ---
@@ -707,7 +707,7 @@ match(n) { 0 => { 1 }, _ => { n } };
 
 ```workman
 -- Type declaration uses colon
-record Point = { x: Int, y: Int };
+record Point = { x: Number, y: Number };
 
 -- Construction uses zig style
 let p1 = .{ x = 10, y = 20 };
@@ -747,18 +747,17 @@ can help with readability and error messages:
 
 ```workman
 -- Types are inferred
-let double = (x) => { x * 2 };  -- Inferred: Int -> Int
+let double = (x) => { x * 2 };  -- Inferred: Number -> Number
 let identity = (x) => { x };    -- Inferred: forall a. a -> a
 
 -- Annotations help with complex cases or documentation
-let process = (items: List<Int>) => { ... };
+let process = (items: List<Number>) => { ... };
 
--- Annotate return type
-let getZero = (): Int => { 0 };
-let makePoint = (x: Int, y: Int): Point => { .{ x, y } };
+-- Annotate lambda parameters
+let makePoint = (x: Number, y: Number) => { .{ x, y } };
 
 -- Annotate record parameters for clarity
-let movePoint = (p: Point) => { .{ ..p, x = p.x + 1 } };
+let pointX = (p: Point) => { p.x };
 ```
 
 ### 8. Out of Scope (for now)
@@ -809,7 +808,7 @@ let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) => Slice<t, s> = ?;
 
 #### Lowercase vs Uppercase in Types
 
-- **Uppercase** (`T`, `Int`, `Option`) — Concrete types or type constructors
+- **Uppercase** (`T`, `Number`, `Option`) — Concrete types or type constructors
 - **lowercase** (`t`, `s`, `a`) — Type variables (generics)
 
 ```workman
@@ -835,12 +834,12 @@ let zig_gpa_init: (Void) => GpaHandle = ?;
 let zig_free: (Ptr<t, s>) => () = ?;
 
 -- Useful during development
-let todoFunction: (Int) => String = ?;
+let todoFunction: (Number) => String = ?;
 
 -- The typechecker infers what type the hole must be
-let calculate = (x: Int): Int => {
+let calculate = (x: Number): Number => {
   let intermediate = x * 2;
-  ?  -- Hole must be Int (inferred from return type)
+  ?  -- Hole must be Number (inferred from return type)
 };
 ```
 
@@ -905,11 +904,11 @@ parameters for now.
 Use `as` to ask the typechecker to verify that an expression already has a specific type:
 
 ```workman
-let x = someValue as Int;
+let x = someValue as Number;
 let result = compute() as Option<String>;
 
 -- Useful for disambiguating polymorphic expressions
-let empty = [] as List<Int>;
+let empty = [] as List<Number>;
 ```
 
 `as` is not a runtime cast. It must not allow unsafe conversions such as `number as String`, and it
@@ -987,7 +986,7 @@ See [JavaScript FFI](./jsffi.md) for the current JS interop surface.
 | Function             | `let f = (a, b) => { body };`         |
 | Recursive            | `let rec f = ...;`                    |
 | Mutual recursion     | `let rec f = ... and g = ...;`        |
-| Type union           | `type T = A \| B<Int>;`               |
+| Type union           | `type T = A \| B<Number>;`            |
 | Record type          | `record R = { field: Type };`         |
 | Record value         | `.{ field = value }` or `.{ field }`  |
 | Record spread        | `.{ ..source, field = value }`        |
