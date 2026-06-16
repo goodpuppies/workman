@@ -6,8 +6,6 @@ import { validateUri } from "./validation.ts";
 
 const documents = new DocumentStore();
 const projectIndex = new ProjectIndex();
-const publishedDiagnostics = new Map<string, string>();
-let editValidationTimer: ReturnType<typeof setTimeout> | undefined;
 let isShutdown = false;
 let writeChain: Promise<void> = Promise.resolve();
 
@@ -69,7 +67,7 @@ async function handleMessage(message: RpcMessage) {
     const text = params.contentChanges.at(-1)?.text;
     if (text === undefined) return;
     documents.change(params.textDocument.uri, text, params.textDocument.version);
-    await debounceAffectedValidation(params.textDocument.uri);
+    await publishAffectedValidation(params.textDocument.uri);
     return;
   }
   if (message.method === "textDocument/didSave") {
@@ -98,7 +96,6 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didClose") {
     const params = message.params as DidCloseParams;
     documents.close(params.textDocument.uri);
-    publishedDiagnostics.delete(params.textDocument.uri);
     await notify("textDocument/publishDiagnostics", {
       uri: params.textDocument.uri,
       diagnostics: [],
@@ -119,15 +116,6 @@ async function publishValidation(uri: string) {
     results.map((result) => publishDiagnostics(result.uri, result.diagnostics)),
   );
   log("validate done", uri, `${Date.now() - started}ms`, `results=${results.length}`);
-}
-
-async function debounceAffectedValidation(uri: string): Promise<void> {
-  if (editValidationTimer !== undefined) clearTimeout(editValidationTimer);
-  await new Promise<void>((resolve) => {
-    editValidationTimer = setTimeout(() => resolve(), 75);
-  });
-  editValidationTimer = undefined;
-  await publishAffectedValidation(uri);
 }
 
 async function publishAffectedValidation(uri: string) {
@@ -151,9 +139,6 @@ async function publishWatchedFileValidation(uris: string[]) {
 }
 
 async function publishDiagnostics(uri: string, diagnostics: unknown[]) {
-  const fingerprint = JSON.stringify(diagnostics);
-  if (publishedDiagnostics.get(uri) === fingerprint) return;
-  publishedDiagnostics.set(uri, fingerprint);
   log("publish diagnostics", uri, `count=${diagnostics.length}`);
   await notify("textDocument/publishDiagnostics", { uri, diagnostics });
 }

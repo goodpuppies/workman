@@ -40,6 +40,24 @@ Deno.test("lsp validation returns diagnostics for unsaved files and clears them"
   assertEquals(await diagnosticsForPath(fixed, main), []);
 });
 
+Deno.test("lsp validation locates unsaved parse errors", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(main, "let x = 1;");
+  const uri = pathToFileUri(main);
+  const docs = new DocumentStore();
+
+  docs.open(uri, "let x = )", 1);
+  const results = await validateUri(uri, docs.sourceOverrides());
+  const diagnostics = await diagnosticsForPath(results, main);
+
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["parse.syntax-error"]);
+  assertEquals(diagnostics?.[0].range, {
+    start: { line: 0, character: 8 },
+    end: { line: 0, character: 9 },
+  });
+});
+
 Deno.test("lsp validation uses unsaved imported modules", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;

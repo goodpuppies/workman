@@ -57,7 +57,9 @@ export async function validateUri(
         uri: diagnosticUri,
         diagnostics: [
           ...errorDiagnostics(error.originalError, error.source, diagnosticUri),
-          ...error.diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, error.source, diagnosticUri)),
+          ...error.diagnostics.map((diagnostic) =>
+            lspDiagnostic(diagnostic, error.source, diagnosticUri)
+          ),
         ],
       };
       return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
@@ -104,8 +106,9 @@ function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[
     return [lspDiagnostic(error.diagnostic, source, uri)];
   }
   const message = errorMessage(error);
+  const span = errorSpan(error);
   return [{
-    range: peggyLocationRange(errorLocation(error)),
+    range: span && source ? spanRange(source, span) : peggyLocationRange(errorLocation(error)),
     severity: 1,
     code: classifyDiagnostic(message),
     source: "wm-mini",
@@ -143,9 +146,29 @@ function errorLocation(error: unknown): PeggyLocation | undefined {
   return location as PeggyLocation;
 }
 
+function errorSpan(error: unknown): SourceSpanLike | undefined {
+  if (!error || typeof error !== "object" || !("span" in error)) return undefined;
+  const span = (error as { span?: unknown }).span;
+  if (!span || typeof span !== "object") return undefined;
+  const candidate = span as Partial<SourceSpanLike>;
+  if (
+    typeof candidate.line !== "number" ||
+    typeof candidate.col !== "number" ||
+    typeof candidate.start !== "number" ||
+    typeof candidate.end !== "number"
+  ) {
+    return undefined;
+  }
+  return candidate as SourceSpanLike;
+}
+
 function isValidRange(range: LspRange): boolean {
   const positions = [range.start, range.end];
-  if (positions.some((position) => !Number.isInteger(position.line) || !Number.isInteger(position.character))) {
+  if (
+    positions.some((position) =>
+      !Number.isInteger(position.line) || !Number.isInteger(position.character)
+    )
+  ) {
     return false;
   }
   if (positions.some((position) => position.line < 0 || position.character < 0)) {
@@ -184,3 +207,4 @@ async function sourceForPath(path: string, sourceOverrides: Map<string, string>)
 }
 
 type PeggyLocation = Parameters<typeof peggyLocationRange>[0];
+type SourceSpanLike = Parameters<typeof spanRange>[1];

@@ -219,9 +219,11 @@ let renderReport = (data, fahrenheit, unit) => {
         :> toNumber
         :> Result.andThen((n) => { n :> .toFixed(0) });
       let rows = data.weather
+        :> Js.Array.toList
         :> Result.traverse((day) => {
           formatDay(day, fahrenheit, unit)
         })
+        :> Result.map(Js.Array.fromList)
         :> Result.andThen((lines) => { lines :> .join("\n") });
       Result.map4(temp, feels, wind, rows, (tempText, feelsText, windText, rowText) => {
         "\n" ++ location ++ "\nNow: " ++ tempText ++ unit ++ " (feels like " ++ feelsText ++
@@ -298,9 +300,11 @@ let main = () => {
     :> Task.andThen((cityList) => {
       loadCache() :> Task.andThen((cache) => {
         let reports = cityList
+          :> Js.Array.toList
           :> Task.traverse((city) => {
             cityReport(cache, now, refresh, fahrenheit, unit, city)
-          });
+          })
+          :> Task.map(Js.Array.fromList);
         let printReports = (resolvedReports) => {
           resolvedReports :> .map((report, index, array) => {
             print(report)

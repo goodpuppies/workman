@@ -17,17 +17,25 @@ Deno.test("Result and Option combinators infer generically", async () => {
       if (n > 3) { Some(n) } else { None }
     });
     let plain = opt :> Option.withDefault(0);
-    let traversed = JSON[1, 2, 3] :> Json.assert :> Result.andThen((items) => {
-      items :> Result.traverse((n) => {
+    let traversed = [1, 2, 3] :> Result.traverse((n) => {
+      if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
+    });
+    let traversedArray = JSON[1, 2, 3] :> Json.assert :> Result.andThen((items) => {
+      items :> Js.Array.toList :> Result.traverse((n) => {
         if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
-      })
+      }) :> Result.map(Js.Array.fromList)
     });
     let task = Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
       :> Task.andThen((n) => { Task.succeed(n + 1) });
-    let taskItems = JSON[1, 2] :> Json.assert :> Result.mapErr((_) => { "json" })
+    let taskItems = [1, 2]
+      :> Task.traverse((n) => {
+        Task.succeed(n * 2)
+      });
+    let taskArrayItems = JSON[1, 2] :> Json.assert :> Result.mapErr((_) => { "json" })
       :> Task.fromResult
       :> Task.andThen((items) => {
-        items :> Task.traverse((n) => { Task.succeed(n * 2) })
+        items :> Js.Array.toList :> Task.traverse((n) => { Task.succeed(n * 2) })
+          :> Task.map(Js.Array.fromList)
       });
   `);
   expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
@@ -35,9 +43,17 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "fallback", { type: "Number", vars: 0 });
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
-  expectBinding(result.env, "traversed", { type: "Result<Js.Array<Number>, Js.Error>", vars: 0 });
+  expectBinding(result.env, "traversed", { type: "Result<List<Number>, 'a>", vars: 0 });
+  expectBinding(result.env, "traversedArray", {
+    type: "Result<Js.Array<Number>, Js.Error>",
+    vars: 0,
+  });
   expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
   expectBinding(result.env, "taskItems", {
+    type: "Task<List<Number>, 'a>",
+    vars: 0,
+  });
+  expectBinding(result.env, "taskArrayItems", {
     type: "Task<Js.Array<Number>, String>",
     vars: 0,
   });
@@ -61,10 +77,13 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
           if (n > 3) { Some(n) } else { None }
         }) :> Option.withDefault(0));
         print(None :> Option.withDefault(9));
+        print([1, 2, 3] :> Result.traverse((n) => {
+          if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
+        }) :> Result.map(Js.Array.fromList));
         print(JSON[1, 2, 3] :> Json.assert :> Result.andThen((items) => {
-          items :> Result.traverse((n) => {
+          items :> Js.Array.toList :> Result.traverse((n) => {
             if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
-          })
+          }) :> Result.map(Js.Array.fromList)
         }) :> Result.mapErr((err) => { "bad" }));
         Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
           :> Task.andThen((n) => {
@@ -79,7 +98,10 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "Ok(42)\nErr(bad: negative)\n0\n4\n9\nOk([2, 4, 6])\n3\n");
+  assertEquals(
+    result.stdout,
+    "Ok(42)\nErr(bad: negative)\n0\n4\n9\nOk([2, 4, 6])\nOk([2, 4, 6])\n3\n",
+  );
 });
 
 async function runCli(args: string[]) {

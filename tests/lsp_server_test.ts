@@ -239,7 +239,7 @@ Deno.test("lsp server revalidates unopened dependents after dependency edits", a
   assertEquals(last?.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
 });
 
-Deno.test("lsp server skips unchanged diagnostic publishes", async () => {
+Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   const uri = pathToFileUri(main);
@@ -264,7 +264,7 @@ Deno.test("lsp server skips unchanged diagnostic publishes", async () => {
   const publishes = messages.filter((message) =>
     message.method === "textDocument/publishDiagnostics"
   );
-  assertEquals(publishes.length, 1);
+  assertEquals(publishes.length, 2);
 });
 
 Deno.test("lsp server returns hover types", async () => {

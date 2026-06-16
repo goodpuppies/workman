@@ -53,7 +53,7 @@ let scanPort = (host, port) => {
   connect(JSON{ hostname: host, port: port })
     :> Task.andThen((conn) => {
       conn :> .close();
-      Ok(Open(port)) :> Task.fromResult
+      Open(port) :> Task.succeed
     })
     :> Task.recover((_) => { Closed(port) })
 };
@@ -68,17 +68,10 @@ let rec makeRange = (start, last) => {
 };
 
 -- Scan all ports sequentially, collecting results in order.
-let rec scanAll = (host, ports) => {
-  match(ports) {
-    [] => { Ok([]) :> Task.fromResult },
-    [port, ..rest] => {
-      scanPort(host, port) :> Task.andThen((result) => {
-        scanAll(host, rest) :> Task.andThen((results) => {
-          Ok([result, ..results]) :> Task.fromResult
-        })
-      })
-    }
-  }
+let scanAll = (host, ports) => {
+  ports :> Task.traverse((port) => {
+    scanPort(host, port)
+  })
 };
 
 -- Safely formats and prints all open ports, threading Result failures along the way
@@ -102,7 +95,7 @@ let rec printOpen = (host, results) => {
   }
 };
 
-let rec countOpen = (results: List<ScanResult>) => {
+let rec countOpen = (results) => {
   match(results) {
     [] => { 0 },
     [head, ..rest] => {
@@ -156,13 +149,13 @@ let main = () => {
     :> Task.andThen((cfg) => {
       
       -- Phase 1: Print Scanning Banner
-      let bannerResult = (
+      let bannerResult = Result.map2(
         cfg.startPort :> .toString(),
         cfg.endPort :> .toString(),
         (startStr, endStr) => {
           "Scanning " ++ cfg.host ++ " ports " ++ startStr ++ "-" ++ endStr ++ " ..."
         }
-      ) :> Result.map2;
+      );
 
       bannerResult :> Task.fromResult :> Task.andThen((banner) => {
         print(banner);
@@ -186,7 +179,7 @@ let main = () => {
           summaryResult :> Task.fromResult
         }) :> Task.andThen((summary) => {
           print(summary);
-          Ok(void) :> Task.fromResult
+          Task.succeed(void)
         })
       })
     });

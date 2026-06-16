@@ -134,6 +134,29 @@ export function emitRuntimePrelude(): string[] {
   get: ([dict, key]) => __wm_js_option_wrap(Object.hasOwn(dict, key) ? dict[key] : undefined),
   set: ([dict, key, value]) => { dict[key] = value; },
 };`,
+    `const __wm_array_to_list = (items) => {
+  let list = __wm_basis_Nil;
+  for (let index = items.length - 1; index >= 0; index--) {
+    list = __wm_basis_Cons(__wm_tuple(items[index], list));
+  }
+  return list;
+};`,
+    `const __wm_list_to_array = (list) => {
+  const items = [];
+  let cursor = list;
+  while (cursor?.ctor === ${basisCtorId("Cons")}) {
+    const [head, tail] = cursor.args[0];
+    items.push(head);
+    cursor = tail;
+  }
+  return items;
+};`,
+    `const Js = {
+  Array: {
+    toList: __wm_array_to_list,
+    fromList: __wm_list_to_array,
+  },
+};`,
     `const __wm_result_mapN = (args) => {
   const fn = args[args.length - 1];
   const values = [];
@@ -144,13 +167,19 @@ export function emitRuntimePrelude(): string[] {
   return __wm_basis_Ok(fn(__wm_tuple(...values)));
 };`,
     `const Result = {
-  map: ([result, fn]) => result.ctor === ${basisCtorId("Ok")} ? __wm_basis_Ok(fn(result.args[0])) : result,
+  map: ([result, fn]) => result.ctor === ${
+      basisCtorId("Ok")
+    } ? __wm_basis_Ok(fn(result.args[0])) : result,
   map2: __wm_result_mapN,
   map3: __wm_result_mapN,
   map4: __wm_result_mapN,
   andThen: ([result, fn]) => result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result,
-  mapErr: ([result, fn]) => result.ctor === ${basisCtorId("Err")} ? __wm_basis_Err(fn(result.args[0])) : result,
-  withDefault: ([result, fallback]) => result.ctor === ${basisCtorId("Ok")} ? result.args[0] : fallback,
+  mapErr: ([result, fn]) => result.ctor === ${
+      basisCtorId("Err")
+    } ? __wm_basis_Err(fn(result.args[0])) : result,
+  withDefault: ([result, fallback]) => result.ctor === ${
+      basisCtorId("Ok")
+    } ? result.args[0] : fallback,
   all: (results) => {
     const values = [];
     for (const result of results) {
@@ -161,18 +190,25 @@ export function emitRuntimePrelude(): string[] {
   },
   traverse: ([items, fn]) => {
     const values = [];
-    for (const item of items) {
+    let cursor = items;
+    while (cursor?.ctor === ${basisCtorId("Cons")}) {
+      const [item, rest] = cursor.args[0];
       const result = fn(item);
       if (result.ctor !== ${basisCtorId("Ok")}) return result;
       values.push(result.args[0]);
+      cursor = rest;
     }
-    return __wm_basis_Ok(values);
+    return __wm_basis_Ok(__wm_array_to_list(values));
   },
 };`,
     `const Option = {
-  map: ([option, fn]) => option.ctor === ${basisCtorId("Some")} ? __wm_basis_Some(fn(option.args[0])) : option,
+  map: ([option, fn]) => option.ctor === ${
+      basisCtorId("Some")
+    } ? __wm_basis_Some(fn(option.args[0])) : option,
   andThen: ([option, fn]) => option.ctor === ${basisCtorId("Some")} ? fn(option.args[0]) : option,
-  withDefault: ([option, fallback]) => option.ctor === ${basisCtorId("Some")} ? option.args[0] : fallback,
+  withDefault: ([option, fallback]) => option.ctor === ${
+      basisCtorId("Some")
+    } ? option.args[0] : fallback,
 };`,
     `const __wm_error_message = (error) => {
   if (error && typeof error === "object" && "message" in error) return String(error.message);
@@ -202,14 +238,21 @@ export function emitRuntimePrelude(): string[] {
     }
     return __wm_basis_Ok(values);
   }),
-  traverse: ([items, fn]) => Promise.all(items.map((item) => fn(item))).then((results) => {
+  traverse: ([items, fn]) => {
     const values = [];
-    for (const result of results) {
-      if (result.ctor !== ${basisCtorId("Ok")}) return result;
-      values.push(result.args[0]);
+    const loop = (cursor) => {
+      if (cursor?.ctor !== ${
+      basisCtorId("Cons")
+    }) return Promise.resolve(__wm_basis_Ok(__wm_array_to_list(values)));
+      const [item, rest] = cursor.args[0];
+      return Promise.resolve(fn(item)).then((result) => {
+        if (result.ctor !== ${basisCtorId("Ok")}) return result;
+        values.push(result.args[0]);
+        return loop(rest);
+      });
     }
-    return __wm_basis_Ok(values);
-  }),
+    return loop(items);
+  },
 };`,
     "const __wm_op_concat = ([a, b]) => a + b;",
     "const __wm_op_add = ([a, b]) => a + b;",

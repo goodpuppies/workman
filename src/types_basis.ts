@@ -111,6 +111,7 @@ function addResultValues(env: Env, typeEnv: TypeEnv) {
   }
   {
     const jsArray = typeEnv.get("Js.Array");
+    const listInfo = typeEnv.get("List");
     if (jsArray) {
       const a = fresh("a") as Extract<Ty, { tag: "var" }>;
       const e = fresh("e") as Extract<Ty, { tag: "var" }>;
@@ -119,6 +120,8 @@ function addResultValues(env: Env, typeEnv: TypeEnv) {
         [a, e],
         fn([named(jsArray, [named(result, [a, e])])], named(result, [named(jsArray, [a]), e])),
       );
+    }
+    if (listInfo) {
       const input = fresh("input") as Extract<Ty, { tag: "var" }>;
       const output = fresh("output") as Extract<Ty, { tag: "var" }>;
       const err = fresh("err") as Extract<Ty, { tag: "var" }>;
@@ -127,10 +130,10 @@ function addResultValues(env: Env, typeEnv: TypeEnv) {
         [input, output, err],
         fn(
           [tuple([
-            named(jsArray, [input]),
+            named(listInfo, [input]),
             fn([input], named(result, [output, err])),
           ])],
-          named(result, [named(jsArray, [output]), err]),
+          named(result, [named(listInfo, [output]), err]),
         ),
       );
     }
@@ -222,6 +225,9 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.all", [a, e], fn([named(jsArray, [task(a, e)])], task(named(jsArray, [a]), e)));
+  }
+  const listInfo = typeEnv.get("List");
+  if (listInfo) {
     const input = fresh("input") as Extract<Ty, { tag: "var" }>;
     const output = fresh("output") as Extract<Ty, { tag: "var" }>;
     const err = fresh("err") as Extract<Ty, { tag: "var" }>;
@@ -230,10 +236,10 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
       [input, output, err],
       fn(
         [tuple([
-          named(jsArray, [input]),
+          named(listInfo, [input]),
           fn([input], task(output, err)),
         ])],
-        task(named(jsArray, [output]), err),
+        task(named(listInfo, [output]), err),
       ),
     );
   }
@@ -328,6 +334,7 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   addResultValues(env, typeEnv);
   addOptionValues(env, typeEnv);
   addTaskValues(env, typeEnv);
+  addJsArrayValues(env, typeEnv);
   const option = typeEnv.get("Option");
   const jsDict = typeEnv.get("Js.Dict");
   if (option && jsDict) {
@@ -353,4 +360,17 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
       basis: true,
     });
   }
+}
+
+function addJsArrayValues(env: Env, typeEnv: TypeEnv) {
+  const jsArray = typeEnv.get("Js.Array");
+  const listInfo = typeEnv.get("List");
+  if (!jsArray || !listInfo) return;
+  const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
+    env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });
+  };
+  const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+  basisFn("Js.Array.toList", [a], fn([named(jsArray, [a])], named(listInfo, [a])));
+  const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+  basisFn("Js.Array.fromList", [b], fn([named(listInfo, [b])], named(jsArray, [b])));
 }
