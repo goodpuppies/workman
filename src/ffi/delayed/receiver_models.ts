@@ -120,7 +120,9 @@ export function jsPromiseMember(
   }
   if (member === "catch") {
     const handlerResult = callbackResultType ? tyToTypeExpr(callbackResultType) : undefined;
-    const handled = handlerResult && !containsTypeVariable(handlerResult) ? handlerResult : promise.element;
+    const handled = handlerResult && !containsTypeVariable(handlerResult)
+      ? handlerResult
+      : promise.element;
     return {
       name: member,
       type: fn([fn([name("Js.Value")], handled)], promise.type),
@@ -231,6 +233,35 @@ export function tyToTypeExpr(type: Ty): TypeExpr {
         params: target.params.map(tyToTypeExpr),
         result: tyToTypeExpr(target.result),
       };
+  }
+}
+
+export function knownTyToTypeExpr(type: Ty): TypeExpr | undefined {
+  const target = prune(type);
+  switch (target.tag) {
+    case "ffi":
+      return undefined;
+    case "prim":
+      return name(target.name);
+    case "var":
+      return tvar(target.name ?? `t${target.id}`);
+    case "named": {
+      const args = target.args.map(knownTyToTypeExpr);
+      return args.every((arg): arg is TypeExpr => !!arg) ? nameArgs(target.name, args) : undefined;
+    }
+    case "tuple": {
+      const items = target.items.map(knownTyToTypeExpr);
+      return items.every((item): item is TypeExpr => !!item)
+        ? { kind: "TTuple", items }
+        : undefined;
+    }
+    case "fn": {
+      const params = target.params.map(knownTyToTypeExpr);
+      const result = knownTyToTypeExpr(target.result);
+      return params.every((param): param is TypeExpr => !!param) && result
+        ? { kind: "TFn", params, result }
+        : undefined;
+    }
   }
 }
 

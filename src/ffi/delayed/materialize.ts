@@ -3,7 +3,7 @@ import type { InferResult } from "../../infer.ts";
 import { prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
-import { inferredType, tyToTypeExpr } from "./receiver_models.ts";
+import { inferredType, knownTyToTypeExpr } from "./receiver_models.ts";
 import {
   addVariants,
   type FfiBinding,
@@ -104,7 +104,7 @@ export function materializeReceiverCall(
     receiverType,
     ...args.map((arg) => {
       const type = inferredType(result, arg);
-      return type ? tyToTypeExpr(type) : undefined;
+      return type ? knownTyToTypeExpr(type) : undefined;
     }),
   ];
   const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], allArgs, argTypes);
@@ -146,20 +146,19 @@ export function solveReflectedFfiValue(
   const variantResult = callResultTypeExpr(variant.type);
   const reflected = value.wrapped ? unwrapResultTypeExpr(variantResult) : variantResult;
   if (!reflected) return;
-  const reflectedType = reflectedTypeOrConstraint(reflected, placeholder, result);
-  if (!reflectedType) return;
-  solveFfi(placeholder, reflectedType);
+  const materializedType = materializeReflectedType(reflected, result);
+  if (!materializedType) return;
+  solveFfi(placeholder, materializedType);
 }
 
-function reflectedTypeOrConstraint(
+function materializeReflectedType(
   reflected: TypeExpr,
-  placeholder: Extract<ReturnType<typeof prune>, { tag: "ffi" }>,
   result: InferResult,
 ) {
   try {
     return typeFromAst(reflected, result.typeEnv, new Map(), { allowFreeVars: false });
   } catch {
-    return placeholder.constraints?.find((constraint) => prune(constraint).tag !== "ffi");
+    return undefined;
   }
 }
 

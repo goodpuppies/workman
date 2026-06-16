@@ -15,6 +15,7 @@ from js.global import {
   Date,
   Number as toNumber: (String) => Number,
   encodeURIComponent,
+  fetch,
 };
 from js.global("Date") import { now as dateNow };
 from js.global("Deno") import {
@@ -104,19 +105,29 @@ let getWeather = (city) => {
       :> Task.fromResult
   };
   let fetchAndCheck = (url) => {
-    url
-      :> Http.get
+    fetch(url)
+      :> Task.mapErr((_) => { "could not fetch " ++ url })
       :> Task.andThen((res) => {
-        if (res :> Http.ok) {
-          res :> Task.succeed
-        } else {
-          ("HTTP " ++ (res :> Http.status) ++ " fetching " ++ url) :> Task.fail
+        match(res :> .ok) {
+          Ok(true) => {
+            res :> Task.succeed
+          },
+          Ok(false) => {
+            let statusText = res :> .status :> Result.andThen((status) => {
+              status :> .toString()
+            }) :> Result.withDefault("?");
+            ("HTTP " ++ statusText ++ " fetching " ++ url) :> Task.fail
+          },
+          Err(_) => {
+            "could not inspect HTTP response" :> Task.fail
+          },
         }
       })
   };
   let parseWeather = (res) => {
     res
-      :> Http.json
+      :> .json()
+      :> Task.mapErr((_) => { "could not read weather response" })
       :> Task.andThen((body) => {
         let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
         data
@@ -134,13 +145,11 @@ let loadCache = () => {
   let parseCache = (text) => {
     let parsed: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
       :> Result.andThen((raw) => { raw :> Json.assert });
-    parsed
-      :> Result.mapErr((_) => { "could not parse cache" })
-      :> Task.fromResult
+    parsed :> Task.fromResult
   };
   readTextFile(cacheFile)
-    :> Task.fromResultPromise
     :> Task.andThen(parseCache)
+    :> Task.mapErr((_) => { "could not parse cache" })
     :> Task.recover((_) => { Dict.empty() })
 };
 
@@ -149,7 +158,8 @@ let saveCache = (cache) => {
     :> Result.mapErr((_) => { "could not encode cache" })
     :> Task.fromResult
     :> Task.andThen((text) => {
-      writeTextFile(cacheFile, text) :> Task.fromResultPromise
+      writeTextFile(cacheFile, text)
+        :> Task.mapErr((_) => { "could not write cache" })
     })
 };
 

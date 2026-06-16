@@ -22,6 +22,7 @@ import {
   jsPromiseMember,
   jsPromiseReceiver,
   jsPromiseReceiverTypeExpr,
+  knownTyToTypeExpr,
   promiseCallbackResultType,
   receiverTypeForRef,
   typeExprKey,
@@ -537,7 +538,7 @@ function unwrapResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined 
 }
 
 function tyToOptionalTypeExpr(type: ReturnType<typeof inferredType>): TypeExpr | undefined {
-  return type ? tyToTypeExpr(type) : undefined;
+  return type ? knownTyToTypeExpr(type) : undefined;
 }
 
 function jsArrayReceiverTypeExpr(
@@ -1024,7 +1025,8 @@ function jsTypedArrayMember(
   if (expr.path[0] !== "reduce" || expr.args.length !== 2) return undefined;
   const initial = inferredType(result, expr.args[1]);
   if (!initial) return undefined;
-  const accumulator = tyToTypeExpr(initial);
+  const accumulator = knownTyToTypeExpr(initial);
+  if (!accumulator) return undefined;
   return {
     name: "reduce",
     type: fn([
@@ -1043,7 +1045,7 @@ function callArgHintForReflection(expr: Expr, result: InferResult): JsCallArgHin
         kind: "function",
         arity: jsFunctionArity(target),
         paramTypes: jsFunctionParamTypes(target),
-        resultType: tyToTypeExpr(target.result),
+        resultType: knownTyToTypeExpr(target.result),
       };
     }
   }
@@ -1067,17 +1069,21 @@ function jsFunctionArity(type: Extract<ReturnType<typeof prune>, { tag: "fn" }>)
 }
 
 function jsFunctionParamTypes(type: Extract<ReturnType<typeof prune>, { tag: "fn" }>): TypeExpr[] {
-  if (type.params.length !== 1) return type.params.map(tyToTypeExpr);
+  if (type.params.length !== 1) {
+    return type.params.map(knownTyToTypeExpr).filter((param): param is TypeExpr => !!param);
+  }
   const param = prune(type.params[0]);
-  return param.tag === "tuple" ? param.items.map(tyToTypeExpr) : type.params.map(tyToTypeExpr);
+  return param.tag === "tuple"
+    ? param.items.map(knownTyToTypeExpr).filter((item): item is TypeExpr => !!item)
+    : type.params.map(knownTyToTypeExpr).filter((item): item is TypeExpr => !!item);
 }
 
 function callbackReturnType(expr: Expr, result: InferResult): TypeExpr | undefined {
   if (expr.kind === "Lambda") {
     const bodyType = inferredType(result, expr.body);
-    return bodyType ? tyToTypeExpr(bodyType) : undefined;
+    return bodyType ? knownTyToTypeExpr(bodyType) : undefined;
   }
   const type = inferredType(result, expr);
   const target = type ? prune(type) : undefined;
-  return target?.tag === "fn" ? tyToTypeExpr(target.result) : undefined;
+  return target?.tag === "fn" ? knownTyToTypeExpr(target.result) : undefined;
 }
