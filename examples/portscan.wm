@@ -18,6 +18,12 @@ from js.global import {
 
 type ScanResult = Open<Number> | Closed<Number>;
 
+record ScanConfig = {
+  host: String,
+  startPort: Number,
+  endPort: Number,
+};
+
 let knownService = match(port) => {
   21    => { "FTP" },
   22    => { "SSH" },
@@ -47,7 +53,7 @@ let scanPort = (host, port) => {
   connect(JSON{ hostname: host, port: port })
     :> Task.andThen((conn) => {
       conn :> .close();
-      Open(port) :> Task.succeed
+      Ok(Open(port)) :> Task.fromResult
     })
     :> Task.recover((_) => { Closed(port) })
 };
@@ -64,38 +70,39 @@ let rec makeRange = (start, last) => {
 -- Scan all ports sequentially, collecting results in order.
 let rec scanAll = (host, ports) => {
   match(ports) {
-    [] => { Task.succeed([]) },
+    [] => { Ok([]) :> Task.fromResult },
     [port, ..rest] => {
       scanPort(host, port) :> Task.andThen((result) => {
         scanAll(host, rest) :> Task.andThen((results) => {
-          [result, ..results] :> Task.succeed
+          Ok([result, ..results]) :> Task.fromResult
         })
       })
     }
   }
 };
 
-let formatPort = (host, port) => {
-  let service = knownService(port);
-  let portStr = port :> .toString() :> Result.withDefault("?");
-  let tag = if (service == "") { "" } else { "  [" ++ service ++ "]" };
-  "  " ++ host ++ ":" ++ portStr ++ "\topen" ++ tag
-};
-
+-- Safely formats and prints all open ports, threading Result failures along the way
 let rec printOpen = (host, results) => {
   match(results) {
-    [] => { void },
+    [] => { Ok(void) },
     [head, ..rest] => {
-      match(head) {
-        Open(port) => { print(formatPort(host, port)) },
-        Closed(_)  => { void }
+      let stepResult = match(head) {
+        Open(port) => {
+          port :> .toString() :> Result.map((portStr) => {
+            let service = knownService(port);
+            let tag = if (service == "") { "" } else { "  [" ++ service ++ "]" };
+            print("  " ++ host ++ ":" ++ portStr ++ "\topen" ++ tag)
+          })
+        },
+        Closed(_) => { Ok(void) }
       };
-      printOpen(host, rest)
+
+      stepResult :> Result.andThen((_) => { printOpen(host, rest) })
     }
   }
 };
 
-let rec countOpen = (results) => {
+let rec countOpen = (results: List<ScanResult>) => {
   match(results) {
     [] => { 0 },
     [head, ..rest] => {
@@ -109,42 +116,84 @@ let rec countOpen = (results) => {
 };
 
 let main = () => {
+  
+  -- Result-threaded argument getters (no .withDefault)
   let getArg = (xs, idx, default_) => {
-    xs :> .at(idx)
-      :> Result.withDefault(None)
-      :> Option.withDefault(default_)
+    xs :> .at(idx) :> Result.map((opt) => {
+      match(opt) {
+        Some(val) => { val },
+        None => { default_ }
+      }
+    })
   };
+
   let getNumArg = (xs, idx, default_) => {
-    match(xs :> .at(idx) :> Result.withDefault(None)) {
-      Some(str) => { toNumber(str) :> Result.withDefault(default_) },
-      None => { default_ }
-    }
+    xs :> .at(idx) :> Result.andThen((opt) => {
+      match(opt) {
+        -- FFI calls inherently return Result, so we flatten this execution with .andThen
+        Some(str) => { toNumber(str) },
+        None => { Ok(default_) }
+      }
+    })
+  };
+
+  let parseConfig = (xs) => {
+    getArg(xs, 0, "127.0.0.1") :> Result.andThen((host) => {
+      Result.map2(
+        getNumArg(xs, 1, 1),
+        getNumArg(xs, 2, 1024),
+        (startPort, endPort) => {
+          .{ host = host, startPort = startPort, endPort = endPort }
+        }
+      )
+    })
   };
 
   let pipeline = args
     :> Result.mapErr((_) => { Panic("string to js err not implemented") })
+    :> Result.andThen(parseConfig)
     :> Task.fromResult
-    :> Task.andThen((xs) => {
-      let host      = getArg(xs, 0, "127.0.0.1");
-      let startPort = getNumArg(xs, 1, 1);
-      let endPort   = getNumArg(xs, 2, 4);
-      let ports     = makeRange(startPort, endPort);
-      let startStr  = startPort :> .toString() :> Result.withDefault("?");
-      let endStr    = endPort   :> .toString() :> Result.withDefault("?");
-      print("Scanning " ++ host ++ " ports " ++ startStr ++ "-" ++ endStr ++ " ...");
-      scanAll(host, ports) :> Task.andThen((results) => {
-        printOpen(host, results);
-        let openCount = countOpen(results);
-        let total     = endPort - startPort + 1;
-        let totalStr  = total     :> .toString() :> Result.withDefault("?");
-        let openStr   = openCount :> .toString() :> Result.withDefault("?");
-        print("Done. " ++ openStr ++ " open port(s) out of " ++ totalStr ++ " scanned.");
-        void :> Task.succeed
+    :> Task.andThen((cfg) => {
+      
+      -- Phase 1: Print Scanning Banner
+      let bannerResult = Result.map2(
+        cfg.startPort :> .toString(),
+        cfg.endPort :> .toString(),
+        (startStr, endStr) => {
+          "Scanning " ++ cfg.host ++ " ports " ++ startStr ++ "-" ++ endStr ++ " ..."
+        }
+      );
+
+      bannerResult :> Task.fromResult :> Task.andThen((banner) => {
+        print(banner);
+        
+        -- Phase 2: Do the Scan
+        scanAll(cfg.host, makeRange(cfg.startPort, cfg.endPort))
+      })
+      :> Task.andThen((results) => {
+        
+        -- Phase 3: Print the results and calculate summary
+        printOpen(cfg.host, results) :> Task.fromResult :> Task.andThen((_) => {
+          
+          let total = cfg.endPort - cfg.startPort + 1;
+          let summaryResult = Result.map2(
+            total :> .toString(),
+            countOpen(results) :> .toString(),
+            (totalStr, openStr) => {
+              "Done. " ++ openStr ++ " open port(s) out of " ++ totalStr ++ " scanned."
+            }
+          );
+          
+          summaryResult :> Task.fromResult
+        })
+        :> Task.andThen((summary) => {
+          print(summary);
+          Ok(void) :> Task.fromResult
+        })
       })
     });
-  pipeline :> Task.recover((err) => {
+
+  pipeline :> Task.recover((_) => {
     Panic("js err to string unimplemented")
-    --print("portscan: " ++ err);
-    --void
   })
 };
