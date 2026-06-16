@@ -39,6 +39,22 @@ The `let` spelling is a surface choice. Workman still has declaration-ordered
 bindings and HM generalization. Recursive bindings use `let rec`, matching the
 SML idea of explicit recursive value declarations.
 
+Mutually recursive groups use `and`:
+
+```wm
+let rec even = match(n) => {
+  0 => { true },
+  _ => { odd(n - 1) },
+}
+and odd = match(n) => {
+  0 => { false },
+  _ => { even(n - 1) },
+};
+```
+
+Unlike SML, Workman does not currently have a separate `fun` declaration syntax
+or SML-style multi-clause function declarations.
+
 ## Program Semicolons
 
 SML programs are semicolon-delimited top-level declarations. Workman keeps
@@ -93,6 +109,14 @@ Both calls pass one tuple-shaped argument. Curried application is still explicit
 let add = (x) => { (y) => { x + y } };
 let result = add(1)(2);
 ```
+
+Zero-argument Workman lambdas use `()` at the surface:
+
+```wm
+let main = () => { print("hello"); };
+```
+
+The corresponding core argument is the unit-like `Void` value.
 
 ## Datatype And Type Syntax
 
@@ -181,6 +205,10 @@ let unwrap = match(opt) => {
 
 That is syntax for a function whose body is a match.
 
+Workman requires braces around match arm bodies and `if` branches. `else` is
+mandatory because `if` is an expression. There is no `else if` surface form;
+nest another `if` or use `match`.
+
 ## Sequence Syntax
 
 SML sequence expressions are parenthesized:
@@ -201,6 +229,28 @@ expression's type, and earlier expression results are discarded.
 
 Trailing expression semicolon as `Void` sugar is a behavioral extension and is
 covered in [Semantic Differences](./semantic-differences.md).
+
+## List Syntax
+
+SML lists:
+
+```sml
+[]
+[1, 2, 3]
+x :: xs
+```
+
+Workman keeps the algebraic-list idea but uses bracket spread for cons-like
+construction and patterns:
+
+```wm
+[]
+[1, 2, 3]
+[x, ..xs]
+```
+
+The surface list syntax is not SML syntax. In the current compiler it lowers to
+the ordinary list constructors in the Workman basis.
 
 ## Record Surface Syntax
 
@@ -248,6 +298,10 @@ Math.add(1, 2)
 The syntax is familiar and structure-like. Missing SML module semantics are
 covered in [Semantic Differences](./semantic-differences.md).
 
+`from "./file.wm" import *;` is especially worth documenting carefully: it
+opens the exported environment of a file-like structure, but it is not the full
+SML `open` declaration inside the SML module language.
+
 ## Unit Spelling
 
 SML unit:
@@ -270,3 +324,43 @@ Void
 
 This is primarily spelling. Workman `Void` is the unit-like type in the current
 core.
+
+## Operators And Fixity
+
+SML has fixity declarations and symbolic identifiers. Current Workman has a
+fixed built-in operator table:
+
+```wm
+!x
+-x
+a * b
+a / b
+a % b
+a + b
+a - b
+a ++ b
+a < b
+a <= b
+a > b
+a >= b
+a == b
+a != b
+a && b
+a || b
+a :> f
+```
+
+This is syntax plus a missing SML feature. Workman does not currently implement
+`infix`, `infixr`, `nonfix`, or user-defined symbolic operators.
+
+## Comments And Literals
+
+SML block comments are `(* ... *)`. Current Workman uses line comments:
+
+```wm
+-- Workman line comment
+// C-style line comment
+```
+
+String literals are double-quoted, and Workman also supports backtick multiline
+strings. Character literals are not part of current `wm-mini`.

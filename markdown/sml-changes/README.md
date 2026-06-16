@@ -32,5 +32,22 @@ for design accounting and future formalization.
 
 ## Notes
 
+- [Current Subset Ledger](./current-differences.md)
 - [Syntactic Differences](./syntax-differences.md)
 - [Semantic Differences](./semantic-differences.md)
+
+## Working Method
+
+When documenting a feature, classify it before deciding whether it belongs in
+the future formal core:
+
+- `kept`: same SML idea and close enough behavior.
+- `re-spelled`: same SML idea, different Workman surface.
+- `changed`: intentionally different behavior or type discipline.
+- `omitted`: absent from current `wm-mini`.
+- `extension`: Workman-specific feature outside SML.
+- `reconsider`: implemented or documented, but not yet justified as part of
+  the SML-shaped subset.
+
+This classification is useful because `wm-mini` is not trying to grow into all
+of SML. It is trying to keep the small SML-shaped core precise.

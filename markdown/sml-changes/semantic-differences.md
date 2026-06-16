@@ -148,6 +148,19 @@ Current Workman import syntax is covered in
 that current `wm-mini` does not implement the SML module language. It has no
 signatures, functors, sharing constraints, or `open` declarations.
 
+Workman namespace imports provide qualified access that looks structure-like:
+
+```wm
+from "./math.wm" import * as Math;
+Math.add(1, 2)
+```
+
+This is structure-like file elaboration: each checked file has an internal
+environment and an exported environment that namespace imports qualify. It is
+not the full SML module language. There is no signature matching, transparent
+or opaque ascription, functor application, sharing, or generative module
+semantics behind it.
+
 ## Effects And Exceptions
 
 Current Workman does not implement general SML exceptions, `raise`, or
@@ -161,6 +174,10 @@ Workman uses:
 
 This is a semantic departure from SML's exception mechanism.
 
+`Panic("message")` is also not SML `raise`. It behaves as an unrecoverable
+escape hatch and is typed as usable in any result context. A formal definition
+should give it an explicit bottom-like typing rule and a separate dynamic rule.
+
 ## Equality
 
 SML has a formal equality-type discipline.
@@ -171,6 +188,30 @@ equality-type mechanism.
 
 Formalization work should decide whether Workman eventually adopts an explicit
 equality discipline or keeps equality as a smaller built-in relation.
+
+This interacts with pinned match identifiers: a pinned pattern must compare the
+scrutinee with an existing value. If pinning stays in the language, the equality
+relation needed by patterns must be specified together with `==`.
+
+## Primitive Operators
+
+SML has both fixed initial fixities and user-controlled fixity directives.
+Current Workman has a fixed built-in operator set and no custom fixity
+declarations.
+
+This is partly syntactic, but it is also semantic because the operator table
+defines the primitive operations exposed by the core:
+
+- arithmetic over `Number`,
+- string concatenation through `++`,
+- comparison and equality,
+- boolean operators,
+- unary negation and boolean negation,
+- pipe application.
+
+The boolean operators should be specified as short-circuiting expression forms
+if that is the intended behavior. If they are ordinary primitive functions,
+their evaluation rule should say so explicitly.
 
 ## Value Restriction
 
@@ -208,6 +249,14 @@ example, Workman currently spells unit as `Void`/`void`, uses `Number` rather
 than an SML numeric tower, does not expose `ref` as an SML primitive, and adds
 `Task` plus JS-specific types.
 
+Lists are SML-shaped algebraic data in the Workman basis, but the surface
+constructors and spellings are Workman-specific. The current syntax guide uses
+`[]` and `[head, ..tail]`; the implementation lowers these into the list
+constructors supplied by the basis.
+
+Current Workman does not expose SML `char`, `word`, arrays, vectors, or the
+full numeric overloading story.
+
 ## JavaScript FFI
 
 JavaScript FFI is outside SML:
@@ -228,12 +277,31 @@ The FFI adds semantic boundaries that SML does not have:
 This should remain documented separately from the SML-shaped core, even though
 the core typechecker must account for it.
 
+## Surface Features That Need Desugaring Rules
+
+Several current features can stay small if the formal definition treats them as
+surface forms with precise translations:
+
+- first-class `match(x) => { ... }` functions,
+- list literals and list spread patterns,
+- forward pipe `:>`,
+- member-call pipe forms such as `value :> .map(fn)`,
+- `if` as a boolean match or equivalent conditional expression,
+- trailing semicolon as inserted `void`.
+
+Each translation should state which identifiers it introduces, whether it
+preserves source-level evaluation order, and whether it affects generalization.
+
 ## Open Formalization Items
 
 - Decide whether mixed declaration/expression block items are a permanent
   language feature.
 - Specify the exact Workman value restriction.
 - Specify equality.
+- Specify short-circuiting and primitive operator evaluation.
+- Specify `Panic` as bottom-like typing plus unrecoverable dynamic behavior.
+- Specify list syntax lowering and the exact basis constructors it targets.
+- Specify pipe and member-pipe desugaring.
 - Specify local nominal type escape rules for `record` and `type`.
 - Decide whether nominal records should stay independent from SML record rows
   forever or whether a structural record subset is ever desirable.
