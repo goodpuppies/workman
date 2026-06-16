@@ -19,6 +19,7 @@ import { inferModulePartial, type InferResult } from "../infer.ts";
 import { expandCallArg } from "../infer/shared.ts";
 import { loadModuleGraph } from "../module_graph.ts";
 import { type AstNode, lineColToOffset, lineStarts } from "../source.ts";
+import { standardInferOptions } from "../standard_library.ts";
 import {
   instantiate,
   instantiateRecordFields,
@@ -103,6 +104,7 @@ async function analyzePartialForHover(
 ): Promise<Awaited<ReturnType<typeof analyzeFile>> | null> {
   try {
     const graph = await loadModuleGraph(entryPath, { sourceOverrides });
+    const inferOptions = await standardInferOptions();
     const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
     for (const node of graph.nodes.values()) {
       const prepared = prepareFfiElaboration(node.module);
@@ -119,7 +121,7 @@ async function analyzePartialForHover(
           const imported = out.get(edge.path);
           if (imported) imports.set(edge.specifier, imported);
         }
-        out.set(path, inferModulePartial(node.module, imports));
+        out.set(path, inferModulePartial(node.module, imports, inferOptions));
       }
       return out;
     };

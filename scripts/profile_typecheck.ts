@@ -5,6 +5,7 @@ import {
 import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { inferModule, inferModulePartial, type InferResult } from "../src/infer.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
+import { standardInferOptions } from "../src/standard_library.ts";
 import { show } from "../src/types.ts";
 
 type Options = {
@@ -45,6 +46,7 @@ async function profileTypecheck(
   const totalStart = performance.now();
 
   const graph = await timed(phases, "load module graph", () => loadModuleGraph(input));
+  const inferOptions = await timed(phases, "load standard library", () => standardInferOptions());
 
   const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
   await timed(phases, "prepare FFI elaboration", () => {
@@ -61,7 +63,7 @@ async function profileTypecheck(
       const node = graph.nodes.get(path)!;
       firstResults.set(
         path,
-        inferModulePartial(node.module, importsFor(node.imports, firstResults)),
+        inferModulePartial(node.module, importsFor(node.imports, firstResults), inferOptions),
       );
     }
   });
@@ -80,7 +82,7 @@ async function profileTypecheck(
       const node = graph.nodes.get(path)!;
       contextualResults.set(
         path,
-        inferModulePartial(node.module, importsFor(node.imports, contextualResults)),
+        inferModulePartial(node.module, importsFor(node.imports, contextualResults), inferOptions),
       );
     }
   });
@@ -104,7 +106,7 @@ async function profileTypecheck(
   await timed(phases, "final inference", () => {
     for (const path of graph.order) {
       const node = graph.nodes.get(path)!;
-      results.set(path, inferModule(node.module, importsFor(node.imports, results)));
+      results.set(path, inferModule(node.module, importsFor(node.imports, results), inferOptions));
     }
   });
 

@@ -1,5 +1,7 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
+import { inferModule } from "../src/infer.ts";
+import { parse } from "../src/parser.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
@@ -37,6 +39,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
         items :> Js.Array.toList :> Task.traverse((n) => { Task.succeed(n * 2) })
           :> Task.map(Js.Array.fromList)
       });
+    let allResults = Js.Array.fromList([Ok(1), Ok(2)]) :> Result.all;
   `);
   expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "chained", { type: "Result<Number, String>", vars: 0 });
@@ -57,6 +60,21 @@ Deno.test("Result and Option combinators infer generically", async () => {
     type: "Task<Js.Array<Number>, String>",
     vars: 0,
   });
+  expectBinding(result.env, "allResults", {
+    type: "Result<Js.Array<Number>, 'a>",
+    vars: 0,
+  });
+  assertEquals(result.env.get("Option.map")?.imported, true);
+  assertEquals(result.env.get("Option.map")?.basis ?? false, false);
+  assertEquals(result.env.get("Result.map")?.imported, true);
+  assertEquals(result.env.get("Result.map")?.basis ?? false, false);
+  assertEquals(result.env.get("Result.all")?.imported, true);
+  assertEquals(result.env.get("Result.all")?.basis ?? false, false);
+});
+
+Deno.test("low-level inference starts from minimal basis without std combinators", async () => {
+  const module = await parse("let value = Option.map;");
+  assertThrows(() => inferModule(module), Error, "unknown name Option.map");
 });
 
 Deno.test("Result and Option combinators evaluate correctly", async () => {

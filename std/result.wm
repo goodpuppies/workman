@@ -1,0 +1,59 @@
+export let map = match(result, f) => {
+  (Ok(value), f) => { Ok(f(value)) },
+  (Err(error), _) => { Err(error) }
+};
+
+export let andThen = match(result, f) => {
+  (Ok(value), f) => { f(value) },
+  (Err(error), _) => { Err(error) }
+};
+
+export let mapErr = match(result, f) => {
+  (Ok(value), _) => { Ok(value) },
+  (Err(error), f) => { Err(f(error)) }
+};
+
+export let withDefault = match(result, fallback) => {
+  (Ok(value), _) => { value },
+  (Err(_), fallback) => { fallback }
+};
+
+export let map2 = match(a, b, f) => {
+  (Ok(left), Ok(right), f) => { Ok(f(left, right)) },
+  (Err(error), _, _) => { Err(error) },
+  (_, Err(error), _) => { Err(error) }
+};
+
+export let map3 = match(a, b, c, f) => {
+  (Ok(av), Ok(bv), Ok(cv), f) => { Ok(f(av, bv, cv)) },
+  (Err(error), _, _, _) => { Err(error) },
+  (_, Err(error), _, _) => { Err(error) },
+  (_, _, Err(error), _) => { Err(error) }
+};
+
+export let map4 = match(a, b, c, d, f) => {
+  (Ok(av), Ok(bv), Ok(cv), Ok(dv), f) => { Ok(f(av, bv, cv, dv)) },
+  (Err(error), _, _, _, _) => { Err(error) },
+  (_, Err(error), _, _, _) => { Err(error) },
+  (_, _, Err(error), _, _) => { Err(error) },
+  (_, _, _, Err(error), _) => { Err(error) }
+};
+
+export let rec traverse = match(items, f) => {
+  (Nil, _) => { Ok(Nil) },
+  (Cons(item, rest), f) => {
+    match(f(item)) {
+      Err(error) => { Err(error) },
+      Ok(value) => {
+        match(traverse(rest, f)) {
+          Err(error) => { Err(error) },
+          Ok(values) => { Ok(Cons(value, values)) }
+        }
+      }
+    }
+  }
+};
+
+export let all = (items) => {
+  items :> Js.Array.toList :> traverse((item) => { item }) :> map(Js.Array.fromList)
+};

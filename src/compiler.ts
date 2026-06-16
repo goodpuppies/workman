@@ -30,7 +30,8 @@ import {
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
 } from "./diagnostics.ts";
-import { prune, show, type Scheme, type Ty } from "./types.ts";
+import { prune, type Scheme, show, type Ty } from "./types.ts";
+import { standardInferOptions } from "./standard_library.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 
@@ -43,7 +44,7 @@ export async function compile(
   options: CompileOptions = {},
   filePath?: string,
 ): Promise<string> {
-  const { module: ast, result } = checkPreparedModuleWithoutImports(
+  const { module: ast, result } = await checkPreparedModuleWithoutImports(
     await parse(source, options.surface, filePath),
   );
   return emitCoreProgram(coreProgramFromModule(ast, result));
@@ -83,7 +84,8 @@ export async function checkSource(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<InferResult> {
-  return checkPreparedModuleWithoutImports(await parse(source, options.surface, filePath)).result;
+  return (await checkPreparedModuleWithoutImports(await parse(source, options.surface, filePath)))
+    .result;
 }
 
 export async function coreSource(
@@ -91,7 +93,7 @@ export async function coreSource(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<CoreSourceResult> {
-  const { module, result } = checkPreparedModuleWithoutImports(
+  const { module, result } = await checkPreparedModuleWithoutImports(
     await parse(source, options.surface, filePath),
   );
   return { module: coreFromSurface(module), result };
@@ -106,7 +108,7 @@ export async function checkSourceSteps(
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
     throw new Error("source strings with imports require checkFile");
   }
-  return inferModuleWithSteps(module).steps;
+  return inferModuleWithSteps(module, new Map(), await standardInferOptions()).steps;
 }
 
 export async function compileFile(input: string, options: CompileOptions = {}): Promise<string> {
@@ -145,7 +147,12 @@ export async function analyzeFile(
       imports.set(edge.specifier, firstResults.get(edge.path)!);
     }
     try {
-      firstResults.set(path, assertNoPartialDiagnostics(inferModulePartial(node.module, imports)));
+      firstResults.set(
+        path,
+        assertNoPartialDiagnostics(
+          inferModulePartial(node.module, imports, await standardInferOptions()),
+        ),
+      );
     } catch (error) {
       throw new ModuleAnalysisError(path, node.source, error);
     }
@@ -168,7 +175,12 @@ export async function analyzeFile(
       imports.set(edge.specifier, contextualResults.get(edge.path)!);
     }
     try {
-      contextualResults.set(path, assertNoPartialDiagnostics(inferModulePartial(node.module, imports)));
+      contextualResults.set(
+        path,
+        assertNoPartialDiagnostics(
+          inferModulePartial(node.module, imports, await standardInferOptions()),
+        ),
+      );
     } catch (error) {
       throw new ModuleAnalysisError(path, node.source, error);
     }
@@ -203,7 +215,7 @@ export async function analyzeFile(
       imports.set(edge.specifier, results.get(edge.path)!);
     }
     try {
-      results.set(path, inferModule(node.module, imports));
+      results.set(path, inferModule(node.module, imports, await standardInferOptions()));
     } catch (error) {
       throw new ModuleAnalysisError(path, node.source, error);
     }
@@ -227,14 +239,19 @@ function isDelayedFfiPartialDiagnostic(message: string): boolean {
     message.includes("?ffi#");
 }
 
-function checkPreparedModuleWithoutImports(
+async function checkPreparedModuleWithoutImports(
   module: Module,
-): { module: Module; result: InferResult } {
+): Promise<{ module: Module; result: InferResult }> {
   assertNoSourceImports(module);
   const prepared = prepareFfiElaboration(module);
-  const first = assertNoPartialDiagnostics(inferModulePartial(prepared.module));
+  const inferOptions = await standardInferOptions();
+  const first = assertNoPartialDiagnostics(
+    inferModulePartial(prepared.module, new Map(), inferOptions),
+  );
   const contextual = contextualizeDelayedCallbacks(prepared, first);
-  const contextualResult = assertNoPartialDiagnostics(inferModulePartial(contextual.module));
+  const contextualResult = assertNoPartialDiagnostics(
+    inferModulePartial(contextual.module, new Map(), inferOptions),
+  );
   const foreignTypeRefs = new Map(
     [...contextual.foreignTypeRefs.values()].map((ref) => [ref.key, ref]),
   );
@@ -246,12 +263,14 @@ function checkPreparedModuleWithoutImports(
   } catch (error) {
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
   }
-  return { module: resolved.module, result: checkModuleWithoutImports(resolved.module) };
+  return { module: resolved.module, result: await inferModuleWithoutImports(resolved.module) };
 }
 
 function delayedFfiDiagnostics(result: InferResult | undefined): FrontendDiagnostic[] {
   if (!result) return [];
-  const leaking = [...result.env.entries()].filter(([, scheme]) => containsUnresolvedFfi(scheme.type));
+  const leaking = [...result.env.entries()].filter(([, scheme]) =>
+    containsUnresolvedFfi(scheme.type)
+  );
   if (leaking.length === 0) return [];
   return leaking.map(([name, scheme]) => ({
     severity: "error",
@@ -263,7 +282,9 @@ function delayedFfiDiagnostics(result: InferResult | undefined): FrontendDiagnos
 }
 
 function unresolvedFfiMessage(name: string, scheme: Scheme): string {
-  return `unresolved JS FFI obligation in ${name}: ${show(scheme.type)}; this JS member access must be resolved by FFI reflection before it can escape a top-level binding`;
+  return `unresolved JS FFI obligation in ${name}: ${
+    show(scheme.type)
+  }; this JS member access must be resolved by FFI reflection before it can escape a top-level binding`;
 }
 
 function containsUnresolvedFfi(type: Ty): boolean {
@@ -277,9 +298,9 @@ function containsUnresolvedFfi(type: Ty): boolean {
   return false;
 }
 
-function checkModuleWithoutImports(module: Module): InferResult {
+async function inferModuleWithoutImports(module: Module): Promise<InferResult> {
   assertNoSourceImports(module);
-  return inferModule(module);
+  return inferModule(module, new Map(), await standardInferOptions());
 }
 
 function assertNoSourceImports(module: Module): void {

@@ -1,0 +1,14 @@
+export let map = match(option, f) => {
+  (Some(value), f) => { Some(f(value)) },
+  (None, _) => { None }
+};
+
+export let andThen = match(option, f) => {
+  (Some(value), f) => { f(value) },
+  (None, _) => { None }
+};
+
+export let withDefault = match(option, fallback) => {
+  (Some(value), _) => { value },
+  (None, fallback) => { fallback }
+};

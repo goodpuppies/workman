@@ -9,6 +9,7 @@ import type { InferResult } from "./infer.ts";
 import { inferModule, inferModulePartial } from "./infer.ts";
 import { loadModuleGraph, type ModuleGraph, type ModuleNode } from "./module_graph.ts";
 import { sliceSource, type SourceSpan } from "./source.ts";
+import { standardInferOptions } from "./standard_library.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import type { FfiFact, TypeFact } from "./infer/type_facts.ts";
 import { collectExprs, collectPatterns } from "./type_debug_collect.ts";
@@ -26,6 +27,7 @@ export async function typeDebugFile(input: string): Promise<string> {
   try {
     const graph = await loadModuleGraph(input);
     state.graph = graph;
+    const inferOptions = await standardInferOptions();
 
     const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
     for (const node of graph.nodes.values()) {
@@ -40,7 +42,7 @@ export async function typeDebugFile(input: string): Promise<string> {
       state.path = path;
       state.node = graph.nodes.get(path);
       const imports = importsFor(path, graph, firstResults);
-      const result = inferModulePartial(state.node!.module, imports);
+      const result = inferModulePartial(state.node!.module, imports, inferOptions);
       firstResults.set(path, result);
       state.result = result;
       if (hasFatalPartialDiagnostics(result)) return formatRecoveredDiagnostics(state);
@@ -62,7 +64,7 @@ export async function typeDebugFile(input: string): Promise<string> {
       state.path = path;
       state.node = graph.nodes.get(path);
       const imports = importsFor(path, graph, contextualResults);
-      const result = inferModulePartial(state.node!.module, imports);
+      const result = inferModulePartial(state.node!.module, imports, inferOptions);
       contextualResults.set(path, result);
       state.result = result;
       if (hasFatalPartialDiagnostics(result)) return formatRecoveredDiagnostics(state);
@@ -91,7 +93,7 @@ export async function typeDebugFile(input: string): Promise<string> {
       state.path = path;
       state.node = graph.nodes.get(path);
       const imports = importsFor(path, graph, finalResults);
-      const result = inferModule(state.node!.module, imports);
+      const result = inferModule(state.node!.module, imports, inferOptions);
       finalResults.set(path, result);
       state.result = result;
     }

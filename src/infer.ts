@@ -39,28 +39,44 @@ export type InferResult = {
 export { describeEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 export type InferStep = { declIndex: number; env: Map<string, TypeSnapshot> };
 
-export function inferModule(module: Module, imports = new Map<string, InferResult>()): InferResult {
-  return inferModuleWithSteps(module, imports).result;
+export type InferModuleOptions = {
+  initialImports?: InitialImport[];
+};
+
+export type InitialImport = {
+  alias: string;
+  result: InferResult;
+};
+
+export function inferModule(
+  module: Module,
+  imports = new Map<string, InferResult>(),
+  options: InferModuleOptions = {},
+): InferResult {
+  return inferModuleWithSteps(module, imports, options).result;
 }
 
 export function inferModulePartial(
   module: Module,
   imports = new Map<string, InferResult>(),
+  options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleCore(module, imports, true).result;
+  return inferModuleCore(module, imports, true, options).result;
 }
 
 export function inferModuleWithSteps(
   module: Module,
   imports = new Map<string, InferResult>(),
+  options: InferModuleOptions = {},
 ): { result: InferResult; steps: InferStep[] } {
-  return inferModuleCore(module, imports, false);
+  return inferModuleCore(module, imports, false, options);
 }
 
 function inferModuleCore(
   module: Module,
   imports: Map<string, InferResult>,
   recover: boolean,
+  options: InferModuleOptions,
 ): { result: InferResult; steps: InferStep[] } {
   const typeEnv = baseTypeEnv();
   const env = baseEnv(typeEnv);
@@ -74,6 +90,15 @@ function inferModuleCore(
   const diagnostics: FrontendDiagnostic[] = [];
   const steps: InferStep[] = [];
   const provenance: TypeProvenance = new Map();
+
+  for (const initialImport of options.initialImports ?? []) {
+    addImport(env, typeEnv, {
+      kind: "Namespace",
+      alias: initialImport.alias,
+    }, initialImport.result);
+    addAdts(adts, initialImport.result.exportedStructure.adts);
+    addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.types);
+  }
 
   for (const [declIndex, decl] of module.decls.entries()) {
     if (decl.kind === "ImportDecl") {
