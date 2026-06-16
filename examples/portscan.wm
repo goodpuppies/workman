@@ -169,8 +169,7 @@ let main = () => {
         
         -- Phase 2: Do the Scan
         scanAll(cfg.host, makeRange(cfg.startPort, cfg.endPort))
-      })
-      :> Task.andThen((results) => {
+      }) :> Task.andThen((results) => {
         
         -- Phase 3: Print the results and calculate summary
         printOpen(cfg.host, results) :> Task.fromResult :> Task.andThen((_) => {
@@ -185,8 +184,7 @@ let main = () => {
           );
           
           summaryResult :> Task.fromResult
-        })
-        :> Task.andThen((summary) => {
+        }) :> Task.andThen((summary) => {
           print(summary);
           Ok(void) :> Task.fromResult
         })
