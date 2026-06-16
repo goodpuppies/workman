@@ -139,14 +139,15 @@ match(opt) {
 
 This difference is one of the largest semantic surprises for SML readers.
 
-## Missing SML Module Semantics
+## File Imports Versus SML Modules
 
 SML has structures, signatures, functors, sharing constraints, and `open`.
 
 Current Workman import syntax is covered in
 [Syntactic Differences](./syntax-differences.md). The semantic difference is
-that current `wm-mini` does not implement the SML module language. It has no
-signatures, functors, sharing constraints, or `open` declarations.
+that current `wm-mini` has file-level structure-like imports, not the full SML
+module language. It has no signatures, functors, sharing constraints, or SML
+`open` declarations.
 
 Workman namespace imports provide qualified access that looks structure-like:
 
@@ -155,11 +156,65 @@ from "./math.wm" import * as Math;
 Math.add(1, 2)
 ```
 
-This is structure-like file elaboration: each checked file has an internal
-environment and an exported environment that namespace imports qualify. It is
-not the full SML module language. There is no signature matching, transparent
-or opaque ascription, functor application, sharing, or generative module
-semantics behind it.
+Workman open imports provide unqualified access:
+
+```wm
+from "./math.wm" import *;
+add(1, 2)
+```
+
+This is structure-like file elaboration: each checked file has an internal file
+environment and a visible file environment used by imports. Current declarations
+are visible by default.
+
+There is no current `export` marker. This is closer to SML structures than the
+old JavaScript-shaped spelling: a file's top-level declarations contribute to
+its visible structure-like environment unless a future hiding mechanism says
+otherwise.
+
+The similarity to SML `open` is narrow:
+
+- Both bring names from a structure-like environment into unqualified scope.
+- SML `open Math` opens an already-bound structure identifier.
+- Workman `from "./math.wm" import *;` loads a file path and opens that file's
+  visible top-level environment.
+- SML `open` participates in the SML module language, including structures and
+  signature-constrained environments.
+- Workman open imports do not involve signatures, transparent or opaque
+  ascription, functor application, sharing, or generative module semantics.
+- Workman currently rejects duplicate imported names eagerly; SML's module
+  rules are specified in terms of environment enrichment and declaration
+  elaboration rather than this file-import collision rule.
+
+Workman imports also have these current semantic rules:
+
+- Imports are declaration-ordered and not hoisted. This matches the Definition's
+  sequential declaration shape: `statcor.tex` elaborates `dec_1` before `dec_2`
+  using `C \oplus E_1`, and `statmod.tex` does the analogous thing for
+  structure-level declarations and top-level declarations.
+- Named imports can import a value and a type with the same spelling, because
+  Workman keeps separate value and type namespaces.
+- `import *;` and named imports reject collisions with existing user bindings
+  at the import point.
+- A later local declaration may shadow an imported binding.
+- Reusing a namespace alias for another namespace import is rejected if it would
+  create duplicate qualified names.
+- Import cycles are rejected.
+- Same-spelled datatypes from different files remain nominally distinct.
+
+The declaration-order rule is SML-like. The Workman-specific part is that the
+declaration being ordered is a path-based file import, and that import collision
+and cycle handling are part of Workman's file-import elaboration rather than
+SML's `open` rule.
+
+Definition anchors for this section:
+
+- `prog.tex` defines programs as top-level declarations followed by semicolons.
+- `synmod.tex` defines top-level declarations as structure-level, signature,
+  or functor declarations.
+- `syncor.tex` includes `open` as a declaration form.
+- `statmod.tex` defines environment enrichment and signature matching, which
+  are not part of Workman file import elaboration.
 
 ## Effects And Exceptions
 
@@ -296,6 +351,8 @@ preserves source-level evaluation order, and whether it affects generalization.
 
 - Decide whether mixed declaration/expression block items are a permanent
   language feature.
+- Specify file import elaboration, including ordering, collision behavior,
+  cycles, named imports, namespace imports, and open imports.
 - Specify the exact Workman value restriction.
 - Specify equality.
 - Specify short-circuiting and primitive operator evaluation.

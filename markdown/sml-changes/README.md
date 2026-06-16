@@ -35,7 +35,6 @@ for design accounting and future formalization.
 - [Current Subset Ledger](./current-differences.md)
 - [Syntactic Differences](./syntax-differences.md)
 - [Semantic Differences](./semantic-differences.md)
-- [Visibility And Open Imports](./visibility-and-open-imports.md)
 
 ## Working Method
 
@@ -52,3 +51,15 @@ the future formal core:
 
 This classification is useful because `wm-mini` is not trying to grow into all
 of SML. It is trying to keep the small SML-shaped core precise.
+
+## Evidence Rule
+
+Every claimed difference should be grounded in both sides:
+
+- the SML side should cite a relevant file from
+  `research/The-Definition-of-Standard-ML-Revised`, and
+- the Workman side should cite current grammar, implementation behavior, tests,
+  or user-facing docs.
+
+If a point is only a possible future direction, mark it as design work rather
+than as a current difference.

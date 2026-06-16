@@ -281,11 +281,19 @@ That semantic difference is covered in [Semantic Differences](./semantic-differe
 ## Module Import Syntax
 
 SML modules use structures, signatures, functors, and related declarations.
+The Definition anchors for this comparison are:
+
+- `synmod.tex`: structure expressions, structure-level declarations,
+  signature expressions, functor declarations, and top-level declarations.
+- `syncor.tex`: the `open` declaration appears among core declarations.
+- `prog.tex`: programs are sequences of top-level declarations followed by
+  semicolons.
 
 Current Workman uses file/module import syntax:
 
 ```wm
 from "./math.wm" import * as Math;
+from "./math.wm" import *;
 from "./math.wm" import { add };
 ```
 
@@ -298,9 +306,48 @@ Math.add(1, 2)
 The syntax is familiar and structure-like. Missing SML module semantics are
 covered in [Semantic Differences](./semantic-differences.md).
 
-`from "./file.wm" import *;` is especially worth documenting carefully: it
-opens the exported environment of a file-like structure, but it is not the full
-SML `open` declaration inside the SML module language.
+`from "./file.wm" import *;` is Workman's open-import form. It brings the
+visible top-level names of that file into the current file unqualified.
+
+It is intentionally close to the common use of SML `open`, but it is not the
+same syntax and it is not part of the full SML module language:
+
+```sml
+open Math
+```
+
+```wm
+from "./math.wm" import *;
+```
+
+The Workman form names a file path and import mode in one declaration. The SML
+form opens an already-bound structure identifier.
+
+Workman imports are ordinary top-level declarations in source order. They are
+not hoisted; this is consistent with SML's sequential declaration elaboration
+rather than a difference from it:
+
+```wm
+let x = Math.add(1, 2);          -- Math is not in scope yet
+from "./math.wm" import * as Math;
+```
+
+The import must appear before uses that depend on it.
+
+Top-level Workman declarations are visible to file imports by default:
+
+```wm
+-- math.wm
+let add = (x, y) => { x + y };
+type Maybe<T> = None | Some<T>;
+
+-- main.wm
+from "./math.wm" import * as Math;
+let result = Math.add(1, 2);
+```
+
+There is currently no `export` keyword in `wm-mini`. A future `private` feature
+would be the Workman way to hide declarations from file imports.
 
 ## Unit Spelling
 

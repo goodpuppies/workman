@@ -69,15 +69,23 @@ These are not just spelling:
 - The basis is Workman-specific and JS-oriented rather than the SML initial
   basis or full Basis Library.
 - Files and imports are the current module boundary. They expose structure-like
-  exported environments, but not SML signatures, functors, ascription, sharing,
+  visible environments, but not SML signatures, functors, ascription, sharing,
   or generative module semantics.
+- Top-level declarations are visible to imports by default. There is no current
+  `export` marker.
+- File imports are path-based declarations. Their source-order elaboration is
+  SML-like; their path resolution and cycle rejection are Workman-specific.
+- Import collision behavior is Workman-specific: duplicate imported names are
+  rejected at the import point, while later local declarations may shadow an
+  imported binding.
 
 ## Omitted SML Features
 
 Current `wm-mini` deliberately omits large parts of SML:
 
 - SML module language: `structure`, `signature`, `functor`, signature matching,
-  opaque ascription, sharing constraints, `where type`, `include`, and `open`.
+  opaque ascription, sharing constraints, `where type`, `include`, and SML
+  `open`.
 - General exceptions: `exception`, `raise`, and `handle`.
 - Mutable references and assignment: `ref`, `!`, and `:=`.
 - Arrays and vectors as SML Basis types.
@@ -119,9 +127,11 @@ evidence that the core itself has stopped being ML-shaped.
 These are features already present or documented that deserve explicit design
 decisions before formalization:
 
-- File declarations now export by default, matching the SML-shaped model where
-  structures expose their resulting environment and hiding is a separate
-  boundary feature.
+- File declarations are visible to imports by default, matching the SML-shaped
+  model where structures expose their resulting environment and hiding is a
+  separate boundary feature.
+- `private` is not implemented yet. Until it exists, the file boundary has no
+  source-level hiding mechanism.
 - Mixed declaration/expression block items. This is convenient, but weakens the
   clean SML `declarations then expression` model.
 - Pinned bare match identifiers. This is useful for value-pattern style
@@ -136,9 +146,10 @@ decisions before formalization:
   SML's `int`/`real` split or overloading story.
 - Fixed built-in operator table. If custom fixity stays omitted, the current
   table becomes part of the language definition.
-- File imports with `import *`. This resembles `open` enough to confuse
-  readers, but it opens a file's exported environment rather than participating
-  in the full SML module language.
+- File imports with `import *`. This is Workman's open-import form. It is close
+  to SML `open` only in the narrow sense of bringing names into unqualified
+  scope; it opens a file's visible top-level environment rather than an
+  already-bound SML structure.
 - Pipe/member-call syntax. It is ergonomic, but it creates a Workman-specific
   application form that should be desugared precisely.
 - `Panic` as a bottom-like expression. It is useful as the replacement for
