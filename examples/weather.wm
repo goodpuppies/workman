@@ -301,9 +301,10 @@ let main = () => {
       loadCache() :> Task.andThen((cache) => {
         let reports = cityList
           :> Js.Array.toList
-          :> Task.traverse((city) => {
+          :> List.map((city) => {
             cityReport(cache, now, refresh, fahrenheit, unit, city)
           })
+          :> Task.collectList
           :> Task.map(Js.Array.fromList);
         let printReports = (resolvedReports) => {
           resolvedReports :> .map((report, index, array) => {

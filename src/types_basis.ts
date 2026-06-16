@@ -78,6 +78,17 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
   {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
     const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const c = fresh("c") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Task.map2",
+      [a, b, c, e],
+      fn([tuple([task(a, e), task(b, e), fn([tuple([a, b])], c)])], task(c, e)),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.andThen", [a, b, e], fn([tuple([task(a, e), fn([a], task(b, e))])], task(b, e)));
   }
@@ -99,6 +110,15 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
   }
   const listInfo = typeEnv.get("List");
   if (listInfo) {
+    {
+      const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+      const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+      basisFn(
+        "Task.collectList",
+        [a, e],
+        fn([named(listInfo, [task(a, e)])], task(named(listInfo, [a]), e)),
+      );
+    }
     const input = fresh("input") as Extract<Ty, { tag: "var" }>;
     const output = fresh("output") as Extract<Ty, { tag: "var" }>;
     const err = fresh("err") as Extract<Ty, { tag: "var" }>;

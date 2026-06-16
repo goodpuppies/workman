@@ -157,6 +157,33 @@ export function emitRuntimePrelude(): string[] {
     fromList: __wm_list_to_array,
   },
 };`,
+    `const List = {
+  map: ([items, fn]) => {
+    const mapped = [];
+    let cursor = items;
+    while (cursor?.ctor === ${basisCtorId("Cons")}) {
+      const [item, rest] = cursor.args[0];
+      mapped.push(fn(item));
+      cursor = rest;
+    }
+    return __wm_array_to_list(mapped);
+  },
+  foldRight: ([items, initial, fn]) => {
+    const values = [];
+    let cursor = items;
+    while (cursor?.ctor === ${basisCtorId("Cons")}) {
+      const [item, rest] = cursor.args[0];
+      values.push(item);
+      cursor = rest;
+    }
+    let acc = initial;
+    for (let index = values.length - 1; index >= 0; index--) {
+      acc = fn(__wm_tuple(values[index], acc));
+    }
+    return acc;
+  },
+  collectWith: ([empty, combine, items]) => List.foldRight(__wm_tuple(items, empty, combine)),
+};`,
     `const __wm_result_mapN = (args) => {
   const fn = args[args.length - 1];
   const values = [];
@@ -188,6 +215,17 @@ export function emitRuntimePrelude(): string[] {
     }
     return __wm_basis_Ok(values);
   },
+  collectList: (results) => {
+    const values = [];
+    let cursor = results;
+    while (cursor?.ctor === ${basisCtorId("Cons")}) {
+      const [result, rest] = cursor.args[0];
+      if (result.ctor !== ${basisCtorId("Ok")}) return result;
+      values.push(result.args[0]);
+      cursor = rest;
+    }
+    return __wm_basis_Ok(__wm_array_to_list(values));
+  },
   traverse: ([items, fn]) => {
     const values = [];
     let cursor = items;
@@ -209,6 +247,21 @@ export function emitRuntimePrelude(): string[] {
   withDefault: ([option, fallback]) => option.ctor === ${
       basisCtorId("Some")
     } ? option.args[0] : fallback,
+  map2: ([left, right, fn]) => left.ctor === ${basisCtorId("Some")} && right.ctor === ${
+      basisCtorId("Some")
+    } ? __wm_basis_Some(fn(__wm_tuple(left.args[0], right.args[0]))) : __wm_basis_None,
+  collectList: (options) => {
+    const values = [];
+    let cursor = options;
+    while (cursor?.ctor === ${basisCtorId("Cons")}) {
+      const [option, rest] = cursor.args[0];
+      if (option.ctor !== ${basisCtorId("Some")}) return __wm_basis_None;
+      values.push(option.args[0]);
+      cursor = rest;
+    }
+    return __wm_basis_Some(__wm_array_to_list(values));
+  },
+  traverse: ([items, fn]) => Option.collectList(List.map(__wm_tuple(items, fn))),
 };`,
     `const __wm_error_message = (error) => {
   if (error && typeof error === "object" && "message" in error) return String(error.message);
@@ -221,6 +274,16 @@ export function emitRuntimePrelude(): string[] {
   map: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === ${basisCtorId("Ok")} ? __wm_basis_Ok(fn(result.args[0])) : result
   ),
+  map2: ([leftTask, rightTask, fn]) => Promise.all([
+    Promise.resolve(leftTask),
+    Promise.resolve(rightTask),
+  ]).then((results) => {
+    const left = results[0];
+    const right = results[1];
+    if (left.ctor !== ${basisCtorId("Ok")}) return left;
+    if (right.ctor !== ${basisCtorId("Ok")}) return right;
+    return __wm_basis_Ok(fn(__wm_tuple(left.args[0], right.args[0])));
+  }),
   andThen: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result
   ),
@@ -237,6 +300,14 @@ export function emitRuntimePrelude(): string[] {
       values.push(result.args[0]);
     }
     return __wm_basis_Ok(values);
+  }),
+  collectList: (tasks) => Promise.all(__wm_list_to_array(tasks)).then((results) => {
+    const values = [];
+    for (const result of results) {
+      if (result.ctor !== ${basisCtorId("Ok")}) return result;
+      values.push(result.args[0]);
+    }
+    return __wm_basis_Ok(__wm_array_to_list(values));
   }),
   traverse: ([items, fn]) => {
     const values = [];

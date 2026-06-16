@@ -19,9 +19,12 @@ Deno.test("Result and Option combinators infer generically", async () => {
       if (n > 3) { Some(n) } else { None }
     });
     let plain = opt :> Option.withDefault(0);
+    let listMapped = [1, 2, 3] :> List.map((n) => { n + 1 });
     let traversed = [1, 2, 3] :> Result.traverse((n) => {
       if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
     });
+    let collectedResults = [Ok(1), Ok(2), Ok(3)] :> Result.collectList;
+    let collectedOptions = [Some(1), Some(2), Some(3)] :> Option.collectList;
     let traversedArray = JSON[1, 2, 3] :> Json.assert :> Result.andThen((items) => {
       items :> Js.Array.toList :> Result.traverse((n) => {
         if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
@@ -29,6 +32,8 @@ Deno.test("Result and Option combinators infer generically", async () => {
     });
     let task = Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
       :> Task.andThen((n) => { Task.succeed(n + 1) });
+    let pairedTask = Task.map2(Task.succeed(1), Task.succeed(2), (a, b) => { a + b });
+    let collectedTasks = [Task.succeed(1), Task.succeed(2), Task.succeed(3)] :> Task.collectList;
     let taskItems = [1, 2]
       :> Task.traverse((n) => {
         Task.succeed(n * 2)
@@ -46,12 +51,17 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "fallback", { type: "Number", vars: 0 });
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
+  expectBinding(result.env, "listMapped", { type: "List<Number>", vars: 0 });
   expectBinding(result.env, "traversed", { type: "Result<List<Number>, 'a>", vars: 0 });
+  expectBinding(result.env, "collectedResults", { type: "Result<List<Number>, 'a>", vars: 0 });
+  expectBinding(result.env, "collectedOptions", { type: "Option<List<Number>>", vars: 0 });
   expectBinding(result.env, "traversedArray", {
     type: "Result<Js.Array<Number>, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
+  expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "collectedTasks", { type: "Task<List<Number>, 'a>", vars: 0 });
   expectBinding(result.env, "taskItems", {
     type: "Task<List<Number>, 'a>",
     vars: 0,
@@ -66,6 +76,8 @@ Deno.test("Result and Option combinators infer generically", async () => {
   });
   assertEquals(result.env.get("Option.map")?.imported, true);
   assertEquals(result.env.get("Option.map")?.basis ?? false, false);
+  assertEquals(result.env.get("List.map")?.imported, true);
+  assertEquals(result.env.get("List.map")?.basis ?? false, false);
   assertEquals(result.env.get("Result.map")?.imported, true);
   assertEquals(result.env.get("Result.map")?.basis ?? false, false);
   assertEquals(result.env.get("Result.all")?.imported, true);
@@ -95,6 +107,9 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
           if (n > 3) { Some(n) } else { None }
         }) :> Option.withDefault(0));
         print(None :> Option.withDefault(9));
+        print([1, 2, 3] :> List.map((n) => { n + 1 }));
+        print([Ok(1), Ok(2), Ok(3)] :> Result.collectList);
+        print([Some(1), Some(2), Some(3)] :> Option.collectList);
         print([1, 2, 3] :> Result.traverse((n) => {
           if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
         }) :> Result.map(Js.Array.fromList));
@@ -106,7 +121,12 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
         Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
           :> Task.andThen((n) => {
             print(n + 1);
-            Task.succeed(void)
+            [Task.succeed(1), Task.succeed(2), Task.succeed(3)]
+              :> Task.collectList
+              :> Task.map((items) => {
+                print(items);
+                void
+              })
           })
       };
     `,
@@ -118,8 +138,134 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
   assertEquals(result.code, 0);
   assertEquals(
     result.stdout,
-    "Ok(42)\nErr(bad: negative)\n0\n4\n9\nOk([2, 4, 6])\nOk([2, 4, 6])\n3\n",
+    "Ok(42)\nErr(bad: negative)\n0\n4\n9\nCons(2, Cons(3, Cons(4, Nil)))\nOk(Cons(1, Cons(2, Cons(3, Nil))))\nSome(Cons(1, Cons(2, Cons(3, Nil))))\nOk([2, 4, 6])\nOk([2, 4, 6])\n3\nCons(1, Cons(2, Cons(3, Nil)))\n",
   );
+});
+
+Deno.test("Task.collectList supports list-pattern destructuring in map callback", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let fetchUser = () => {
+        Task.succeed("user")
+      };
+
+      let fetchPosts = () => {
+        Task.succeed("posts")
+      };
+
+      let render = (user, posts) => {
+        user ++ "/" ++ posts
+      };
+
+      let main = () => {
+        let pageTask = [
+          fetchUser(),
+          fetchPosts(),
+        ] :> Task.collectList
+          :> Task.map(([user, posts]) => {
+            render(user, posts)
+          });
+
+        pageTask :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "user/posts\n");
+});
+
+Deno.test("Task.collectList can map a named list-pattern function", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let fetchProfile = () => {
+        Task.succeed("profile")
+      };
+
+      let fetchSettings = () => {
+        Task.succeed("settings")
+      };
+
+      let render = (profile, settings) => {
+        profile ++ "/" ++ settings
+      };
+
+      let renderPage = ([profile, settings]) => {
+        render(profile, settings)
+      };
+
+      let loadPage = () => {
+        let [profileTask, settingsTask] = [
+          fetchProfile(),
+          fetchSettings(),
+        ];
+
+        [profileTask, settingsTask]
+          :> Task.collectList
+          :> Task.map(renderPage)
+      };
+
+      let main = () => {
+        loadPage() :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "profile/settings\n");
+});
+
+Deno.test("Task.map2 supports fixed task composition through pipe rules", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let fetchProfile = () => {
+        Task.succeed("profile")
+      };
+
+      let fetchSettings = () => {
+        Task.succeed("settings")
+      };
+
+      let render = (profile, settings) => {
+        profile ++ "/" ++ settings
+      };
+
+      let renderPage = () => {
+        let [profileTask, settingsTask] = [
+          fetchProfile(),
+          fetchSettings(),
+        ];
+
+        profileTask
+          :> Task.map2(settingsTask, render)
+      };
+
+      let main = () => {
+        renderPage() :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "profile/settings\n");
 });
 
 async function runCli(args: string[]) {

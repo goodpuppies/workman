@@ -67,11 +67,11 @@ let rec makeRange = (start, last) => {
   }
 };
 
--- Scan all ports sequentially, collecting results in order.
+-- Start one task per port, then collect the already-started handles in order.
 let scanAll = (host, ports) => {
-  ports :> Task.traverse((port) => {
+  ports :> List.map((port) => {
     scanPort(host, port)
-  })
+  }) :> Task.collectList
 };
 
 -- Safely formats and prints all open ports, threading Result failures along the way

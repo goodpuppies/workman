@@ -73,6 +73,9 @@ let value = match(rounded) {
 
 This is intentionally explicit: JS can throw, so Workman does not pretend the call is pure or total.
 
+Promise-returning JavaScript APIs become `Task<_, Js.Error>`. See [Async and Task](./async.md) for
+the current Task model, including parallel collection with `Task.collectList`.
+
 ## Unsafe Imports
 
 Use `unsafe` when you want direct JS behavior without `Result` wrapping:
@@ -107,8 +110,8 @@ from js.global import {
 };
 ```
 
-This is the escape hatch for APIs where TypeScript reflection is currently too broad, too overloaded,
-or not visible from the active runtime declarations.
+This is the escape hatch for APIs where TypeScript reflection is currently too broad, too
+overloaded, or not visible from the active runtime declarations.
 
 Manual types are trusted declarations about the JS shape. Safe manual imports still return
 `Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
@@ -242,9 +245,9 @@ Use `JSON[]` for JS array literals:
 let args = JSON["-s", "https://example.com"];
 ```
 
-These are the current practical way to pass plain JS object/array data into JS APIs.
-When a dynamic boundary has been asserted to an expected shape, `Js.Array<T>` can carry element
-metadata for JavaScript arrays while remaining an opaque JS value:
+These are the current practical way to pass plain JS object/array data into JS APIs. When a dynamic
+boundary has been asserted to an expected shape, `Js.Array<T>` can carry element metadata for
+JavaScript arrays while remaining an opaque JS value:
 
 ```wm
 record Commit = { id: String, message: String };
@@ -381,8 +384,8 @@ let content = match(body.content) {
 - Optional arguments may still require `Some(value)` for APIs where reflection exposes an
   `Option<T>` parameter.
 - `JSON{}` and `JSON[]` are currently the clearest way to pass object/array-shaped JS data.
-- `Js.Array<T>` currently supports only a small reflected dynamic receiver surface, such as
-  `.map`, `.filter`, `.reduce`, `.join`, `.includes`, `.at`, and `.length`.
+- `Js.Array<T>` currently supports only a small reflected dynamic receiver surface, such as `.map`,
+  `.filter`, `.reduce`, `.join`, `.includes`, `.at`, and `.length`.
 - Workman records and tuples are not yet automatically adapted to JS object/tuple-like shapes.
 - Unsafe imports do not make every derived receiver call unsafe.
 - Dynamic JS property access is useful, but less precise than reflected foreign types.

@@ -12,3 +12,28 @@ export let withDefault = match(option, fallback) => {
   (Some(value), _) => { value },
   (None, fallback) => { fallback }
 };
+
+export let map2 = match(a, b, f) => {
+  (Some(left), Some(right), f) => { Some(f(left, right)) },
+  (None, _, _) => { None },
+  (_, None, _) => { None }
+};
+
+export let rec traverse = match(items, f) => {
+  ([], _) => { Some([]) },
+  ([item, ..rest], f) => {
+    match(f(item)) {
+      None => { None },
+      Some(value) => {
+        match(traverse(rest, f)) {
+          None => { None },
+          Some(values) => { Some([value, ..values]) }
+        }
+      }
+    }
+  }
+};
+
+export let collectList = (items) => {
+  traverse(items, (item) => { item })
+};

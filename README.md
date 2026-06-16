@@ -15,9 +15,9 @@ experimenting with a complete language:
 - typed JavaScript namespace imports for small FFI bindings
 - temporary JavaScript output for smoke tests
 
-Each implementation source file should stay under 500 lines. Markdown docs and research/stress
-notes may exceed that when the document benefits from staying whole. When the language grows, split
-source files before they become archives.
+Each implementation source file should stay under 500 lines. Markdown docs and research/stress notes
+may exceed that when the document benefits from staying whole. When the language grows, split source
+files before they become archives.
 
 ## Reference Bias
 
@@ -46,6 +46,8 @@ Workman keeps one obvious form when SML has both a core form and sugar:
   `from js.global("Math") import { max as jsmax, floor };`.
 - JavaScript modules use the same import clauses with `js.module`, such as
   `from js.module("node:crypto") import { createHash };`.
+- Promise-returning JavaScript APIs become eager `Task` handles; see
+  [`docs/async.md`](./docs/async.md) for the current async model.
 - Manual JS type annotations are still available when reflection is too broad:
   `from js.global("console") import { log: (String, Number) => Void } as console;`.
 - Inline structures, functors, signatures, `fun`, and other SML conveniences are not syntax goals

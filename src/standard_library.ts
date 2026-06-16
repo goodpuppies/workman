@@ -15,6 +15,11 @@ type StandardModule = {
 
 const standardModules: StandardModule[] = [
   {
+    alias: "List",
+    path: "std/list.wm",
+    url: new URL("../std/list.wm", import.meta.url),
+  },
+  {
     alias: "Option",
     path: "std/option.wm",
     url: new URL("../std/option.wm", import.meta.url),

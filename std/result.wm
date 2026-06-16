@@ -57,3 +57,7 @@ export let rec traverse = match(items, f) => {
 export let all = (items) => {
   items :> Js.Array.toList :> traverse((item) => { item }) :> map(Js.Array.fromList)
 };
+
+export let collectList = (items) => {
+  traverse(items, (item) => { item })
+};
