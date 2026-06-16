@@ -209,22 +209,34 @@ export function addJsConstraint(target: Ty, check: (t: Ty) => void): void {
 
 export function solveFfi(ffi: Ty, target: Ty): void {
   const placeholder = prune(ffi);
-  if (placeholder.tag !== "ffi") throw new Error(`expected unresolved JS FFI type, got ${show(placeholder)}`);
+  if (placeholder.tag !== "ffi") {
+    throw new Error(`expected unresolved JS FFI type, got ${show(placeholder)}`);
+  }
   for (const constraint of placeholder.constraints ?? []) {
+    if (isBroadJsBoundaryConstraint(constraint)) continue;
     unify(target, constraint);
   }
   placeholder.instance = target;
 }
 
 function rememberFfiConstraint(ffi: Extract<Ty, { tag: "ffi" }>, target: Ty): void {
-  if (isJsObjectTy(target)) return;
+  if (isBroadJsBoundaryConstraint(target)) return;
   ffi.constraints ??= [];
   ffi.constraints.push(target);
 }
 
-function isJsObjectTy(type: Ty): boolean {
+function isBroadJsBoundaryConstraint(type: Ty): boolean {
   const target = prune(type);
-  return target.tag === "named" && target.name === "Js.Object";
+  if (isBroadJsBoundaryType(target)) return true;
+  if (target.tag !== "named" || target.name !== "Result" || target.args.length !== 2) {
+    return false;
+  }
+  return isBroadJsBoundaryType(target.args[0]);
+}
+
+function isBroadJsBoundaryType(type: Ty): boolean {
+  const target = prune(type);
+  return target.tag === "named" && (target.name === "Js.Object" || target.name === "Js.Value");
 }
 
 export function typeMismatchMessage(left: Ty, right: Ty): string {
@@ -252,8 +264,7 @@ export function ftv(t: Ty, out = new Set<number>()): Set<number> {
   else if (t.tag === "ffi") {
     ftv(t.receiver, out);
     t.args.forEach((arg) => ftv(arg, out));
-  }
-  else if (t.tag === "fn") {
+  } else if (t.tag === "fn") {
     t.params.forEach((p) => ftv(p, out));
     ftv(t.result, out);
   } else if (t.tag === "tuple") t.items.forEach((x) => ftv(x, out));

@@ -107,7 +107,6 @@ export function rewriteExprCalls(
         if (reflected) {
           solveRewrittenFfi(expr, reflected.callee);
           return {
-            ...expr,
             kind: "Call",
             callee: reflected.callee,
             args: rewriteArgsWithVariant(
@@ -119,6 +118,7 @@ export function rewriteExprCalls(
               objectAccess,
               importedTypeRefs,
             ),
+            node: expr.node,
           };
         }
         const objectReceiver = isDottedRecordFieldReceiver(expr.receiver.name)
@@ -135,7 +135,6 @@ export function rewriteExprCalls(
           if ("variant" in objectReceiver) {
             solveRewrittenFfi(expr, objectReceiver.callee);
             return {
-              ...expr,
               kind: "Call",
               callee: objectReceiver.callee,
               args: rewriteArgsWithVariant(
@@ -147,6 +146,7 @@ export function rewriteExprCalls(
                 objectAccess,
                 importedTypeRefs,
               ),
+              node: expr.node,
             };
           }
           if (objectReceiver.kind !== "FfiCall") return objectReceiver;

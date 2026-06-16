@@ -36,9 +36,9 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
   expectBinding(result.env, "traversed", { type: "Result<Js.Array<Number>, Js.Error>", vars: 0 });
-  expectBinding(result.env, "task", { type: "Js.Promise<Result<Number, String>>", vars: 0 });
+  expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
   expectBinding(result.env, "taskItems", {
-    type: "Js.Promise<Result<Js.Array<Number>, String>>",
+    type: "Task<Js.Array<Number>, String>",
     vars: 0,
   });
 });

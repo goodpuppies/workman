@@ -9,7 +9,6 @@ from js.global import unsafe {
   Uint8Array,
 };
 from js.global("Array") import unsafe { from as arrayFrom };
-from js.global("Promise") import unsafe { resolve as promiseResolve };
 from js.global import type { AbortController, Request, TextEncoder, Uint8Array, URL };
 from js.global("crypto.subtle") import unsafe {
   importKey,
@@ -82,13 +81,13 @@ let verifyGithubSignature = (signature, bodyText) => {
     JSON["sign", "verify"],
   );
 
-  keyPromise :> .then((key) => {
+  keyPromise :> Task.andThen((key) => {
     let signaturePromise = subtle.sign("HMAC", key, bodyBytes);
-    signaturePromise :> .then((expectedBuffer) => {
+    signaturePromise :> Task.map((expectedBuffer) => {
       let expectedHex = hexFromBuffer(expectedBuffer);
       signature == "sha256=" ++ expectedHex
-    }) :> try
-  }) :> try
+    })
+  })
 };
 
 let sendDiscordMessage = (content) => {
@@ -97,20 +96,21 @@ let sendDiscordMessage = (content) => {
     headers: JSON{ "Content-Type": "application/json" },
     body: JSON.stringify(JSON{ content: content }),
   });
-  sent :> .catch((err) => {
+  sent :> Task.map((_) => {
+    void
+  }) :> Task.recover((err) => {
     error("Discord error:", err);
-  }) :> try
+    void
+  })
 };
 
 let handleMockDiscord = (req) => {
-  let bodyPromise = req :> .json() :> try;
-  bodyPromise :> .then((body) => {
+  req :> .json() :> Task.map((body) => {
     let payload: MockDiscordPayload = body :> Json.assert :> try;
     let content = payload.content;
     log("\n[Discord Mock] Received message:\n", content, "\n");
-    void
-  }) :> try;
-  promiseResolve(response("OK", 200))
+    response("OK", 200)
+  })
 };
 
 let formatCommit = (commit, index, array) => {
@@ -150,18 +150,17 @@ let handleRequest = (req, info) => {
     handleMockDiscord(req)
   } else {
     if (method != "POST") {
-      promiseResolve(response("Method Not Allowed", 405))
+      Task.succeed(response("Method Not Allowed", 405))
     } else {
-      let textPromise = req :> .text():> try;
-      textPromise :> .then((bodyText) => {
+      let textTask = req :> .text();
+      textTask :> Task.andThen((bodyText) => {
         let signature = req :> .headers.get("x-hub-signature-256") :> try;
         match(signature) {
           Some(sig) => {
-            let authorizedPromise = verifyGithubSignature(sig, bodyText);
-            authorizedPromise :> .then((authorized) => {
+            verifyGithubSignature(sig, bodyText) :> Task.map((authorized) => {
               if (!authorized) {
                 error("[Server] Unauthorized request!");
-                promiseResolve(response("Unauthorized", 401))
+                response("Unauthorized", 401)
               } else {
                 let payload: PushPayload = JSON.parse(bodyText) :> Json.assert :> try;
                 let eventName = req :> .headers.get("x-github-event") :> try;
@@ -173,16 +172,16 @@ let handleRequest = (req, info) => {
                     void
                   },
                 };
-                promiseResolve(okResponse(JSON.stringify(JSON{ received: true })))
+                okResponse(JSON.stringify(JSON{ received: true }))
               }
-            }) :> try
+            })
           },
           None => {
             error("[Server] Unauthorized request!");
-            promiseResolve(response("Unauthorized", 401))
+            Task.succeed(response("Unauthorized", 401))
           },
         }
-      }) :> try
+      })
     }
   }
 };
@@ -211,9 +210,9 @@ let runSimulation = () => {
     JSON["sign"],
   );
 
-  keyPromise :> .then((key) => {
+  keyPromise :> Task.andThen((key) => {
     let signaturePromise = subtle.sign("HMAC", key, encodeText(encoder, payloadText));
-    try(signaturePromise :> .then((sigBuffer) => {
+    signaturePromise :> Task.andThen((sigBuffer) => {
       let sigHex = hexFromBuffer(sigBuffer);
       log("Simulating incoming GitHub Webhook...");
       let requestPromise = fetch("http://localhost:8080", JSON{
@@ -225,16 +224,15 @@ let runSimulation = () => {
         },
         body: payloadText,
       });
-      requestPromise :> .then((res) => {
+      requestPromise :> Task.map((res) => {
         log("[Simulation] Server responded with:", res);
         setTimeout(() => {
           log("Shutting down server...");
           ac.abort();
         }, 100);
-      }) :> try;
-      void
-    }));
-    void
+        void
+      })
+    })
   })
 };
 

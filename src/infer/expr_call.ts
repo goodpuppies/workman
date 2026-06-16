@@ -3,10 +3,10 @@ import type { FrontendDiagnostic, FrontendRelatedDiagnostic } from "../diagnosti
 import {
   addJsConstraint,
   type Env,
-  JsBoundaryError,
   fn,
   fresh,
   instantiateRecordFields,
+  JsBoundaryError,
   named,
   prune,
   quoteType,
@@ -212,7 +212,8 @@ function isForeignObjectType(type: Ty, typeEnv: TypeEnv): boolean {
 function isJsObjectLikeType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
   return isJsObjectType(t, typeEnv) || isJsArrayType(t, typeEnv) || isJsDictType(t, typeEnv) ||
-    isJsPromiseType(t, typeEnv) || isForeignObjectType(t, typeEnv) || isRecordType(t, typeEnv);
+    isJsPromiseType(t, typeEnv) || isTaskType(t, typeEnv) || isForeignObjectType(t, typeEnv) ||
+    isRecordType(t, typeEnv);
 }
 
 function isJsObjectType(type: Ty, typeEnv: TypeEnv): boolean {
@@ -238,6 +239,11 @@ function isJsDictType(type: Ty, typeEnv: TypeEnv): boolean {
 function isJsPromiseType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
   return t.tag === "named" && t.id === typeEnv.get("Js.Promise")?.id;
+}
+
+function isTaskType(type: Ty, typeEnv: TypeEnv): boolean {
+  const t = prune(type);
+  return t.tag === "named" && t.id === typeEnv.get("Task")?.id;
 }
 
 function isRecordType(type: Ty, typeEnv: TypeEnv): boolean {
@@ -282,6 +288,11 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
       }
       if (t.name === "Js.Promise" && t.args.length === 1) {
         assertJsCompatible(t.args[0], typeEnv);
+        return;
+      }
+      if (t.name === "Task" && t.args.length === 2) {
+        assertJsCompatible(t.args[0], typeEnv);
+        assertJsCompatible(t.args[1], typeEnv);
         return;
       }
       const record = typeEnv.get(t.name);
@@ -334,5 +345,3 @@ export function callCalleeRelated(callee: Expr, type: Ty): FrontendRelatedDiagno
     span: callee.node.span,
   }];
 }
-
-

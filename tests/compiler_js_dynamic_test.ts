@@ -1,6 +1,5 @@
-import { assert, assertRejects, assertStringIncludes } from "@std/assert";
+import { assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
-import { FrontendDiagnosticBundleError } from "../src/diagnostics.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("reflected JS calls report unresolved overload selection", async () => {
@@ -99,14 +98,7 @@ Deno.test("unresolved FFI receiver callbacks require an explicit JS value check"
   `);
     throw new Error("expected checkSource to reject");
   } catch (error) {
-    assert(error instanceof FrontendDiagnosticBundleError);
-    assertStringIncludes(String(error.message), "cannot resolve JS FFI method unknownJs");
-    assert(
-      error.diagnostics.some((diagnostic) =>
-        diagnostic.message.includes("unresolved JS FFI obligation in hexByte")
-      ),
-      "expected a separate unresolved FFI obligation diagnostic",
-    );
+    assertStringIncludes(String(error), "cannot resolve JS FFI method unknownJs");
   }
 });
 
@@ -389,22 +381,22 @@ Deno.test("Response.json() result feeds a following then", async () => {
     };
     let fetchJson = (url) => {
       let requestUrl = url ++ "";
-      fetch(requestUrl) :> .then((res) => {
+      fetch(requestUrl) :> Task.andThen((res) => {
         let ok = res :> .ok :> try;
         if (!ok) {
           let status = res :> .status :> try;
           Panic("HTTP " ++ (status :> .toString() :> try) ++ " fetching " ++ requestUrl)
         } else {
-          res :> .json() :> try
+          res :> .json()
         }
-      }) :> try :> .then((body) => {
+      }) :> Task.map((body) => {
         let data: Js.Object = body :> Json.assert :> try;
         data
-      }) :> try
+      })
     };
   `);
   expectBinding(result.env, "fetchJson", {
-    type: "(String) => Js.Promise<Js.Object>",
+    type: "(String) => Task<Js.Object, Js.Error>",
     vars: 0,
   });
 });

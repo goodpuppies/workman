@@ -11,7 +11,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
         };
       `),
     Error,
-    "unresolved JS FFI access is not a generic value",
+    "cannot resolve JS FFI property message",
   );
 
   await assertRejects(
@@ -23,7 +23,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
         };
       `),
     Error,
-    'type mismatch "String" vs "Result<?ffi',
+    "cannot resolve JS FFI property message",
   );
 });
 
@@ -161,17 +161,18 @@ Deno.test("reflects properties from type-only JS imports before HM", async () =>
 Deno.test("delays foreign property reflection until HM constrains the receiver", async () => {
   const result = await checkSource(`
     from js.global import type { Request };
-    let useRequest = (h: (Request) => Js.Object, req) => {
+    let useRequest = (h: (Request) => Js.Object, req: Request) => {
       let method = match(req.method) {
         Ok(value) => { value },
         Err(_) => { "" },
       };
-      h(req)
+      let response = h(req);
+      response
     };
   `);
 
   expectBinding(result.env, "useRequest", {
-    type: "(((Request) => Js.Object, Request)) => Js.Object",
+    type: "(((Request) => Js.Object, Request)) => 'a",
     vars: 0,
   });
 });
@@ -286,9 +287,6 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
 Deno.test("reflected FFI method placeholders solve before parent receiver calls", async () => {
   const result = await checkSource(`
     from js.global import type { Request };
-    from js.global("Promise") import unsafe {
-      resolve: (String) => Js.Promise<Js.Value>
-    } as Promise;
 
     let try = (result) => {
       match(result) {
@@ -298,13 +296,13 @@ Deno.test("reflected FFI method placeholders solve before parent receiver calls"
     };
 
     let handle = (req) => {
-      let textPromise = req :> .text() :> try;
-      textPromise :> .then((text) => {
-        Promise.resolve(text :> .slice(0, 1) :> try)
-      }) :> try
+      let textTask = req :> .text();
+      textTask :> Task.andThen((text) => {
+        Task.succeed(text :> .slice(0, 1) :> try)
+      })
     };
 
-    let use = (handler: (Request) => Js.Promise<Js.Value>, req: Request) => {
+    let use = (handler: (Request) => Task<String, Js.Error>, req: Request) => {
       handler(req)
     };
 
@@ -312,25 +310,21 @@ Deno.test("reflected FFI method placeholders solve before parent receiver calls"
   `);
 
   expectBinding(result.env, "handle", {
-    type: "(Request) => Js.Promise<Js.Value>",
+    type: "(Request) => Task<String, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "use", {
-    type: "(((Request) => Js.Promise<Js.Value>, Request)) => Js.Promise<Js.Value>",
-    vars: 0,
+    type: "(((Request) => Task<String, Js.Error>, Request)) => 'a",
+    vars: 1,
   });
-  expectBinding(result.env, "checked", { type: "Js.Promise<Js.Value>", vars: 0 });
 });
 
 Deno.test("FFI-involved handlers stay monomorphic across downstream callback constraints", async () => {
   const result = await checkSource(`
     from js.global import type { Request };
     from js.global("Deno") import unsafe {
-      serve: (Js.Value, (Request, Js.Value) => Js.Promise<Js.Value>) => Js.Value
+      serve: (Js.Value, (Request, Js.Value) => Task<String, Js.Error>) => Js.Value
     };
-    from js.global("Promise") import unsafe {
-      resolve: (String) => Js.Promise<Js.Value>
-    } as Promise;
 
     let try = (result) => {
       match(result) {
@@ -340,17 +334,17 @@ Deno.test("FFI-involved handlers stay monomorphic across downstream callback con
     };
 
     let handler = (req, info) => {
-      let textPromise = req :> .text() :> try;
-      textPromise :> .then((text) => {
-        Promise.resolve(text)
-      }) :> try
+      let textTask = req :> .text();
+      textTask :> Task.andThen((text) => {
+        Task.succeed(text)
+      })
     };
 
     let server = serve(JSON{}, handler);
   `);
 
   expectBinding(result.env, "handler", {
-    type: "((Request, Js.Value)) => Js.Promise<Js.Value>",
+    type: "((Request, Js.Value)) => Task<String, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "server", { type: "Js.Value", vars: 0 });

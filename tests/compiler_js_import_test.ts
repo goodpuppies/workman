@@ -68,28 +68,28 @@ Deno.test("supports inferred callable root JS globals", async () => {
   `);
 
   expectBinding(result.env, "response", {
-    type: "Js.Promise<Result<Response, Js.Error>>",
+    type: "Task<Response, Js.Error>",
     vars: 0,
   });
   assertStringIncludes(js, '__wm_js_member("fetch")');
 });
 
-Deno.test("supports Js.Promise as a basis type", async () => {
+Deno.test("supports Task as a basis type", async () => {
   const result = await checkSource(`
-    let promise: Js.Promise<String> = Panic("promise");
+    let task: Task<String, Js.Error> = Panic("task");
   `);
 
-  expectBinding(result.env, "promise", { type: "Js.Promise<String>", vars: 0 });
+  expectBinding(result.env, "task", { type: "Task<String, Js.Error>", vars: 0 });
 });
 
-Deno.test("maps reflected TS promises to Js.Promise", async () => {
+Deno.test("maps reflected TS promises to Task", async () => {
   const result = await checkSource(`
     from js.global("Deno") import { readTextFile };
     let file = readTextFile("README.md");
   `);
 
   expectBinding(result.env, "file", {
-    type: "Js.Promise<Result<String, Js.Error>>",
+    type: "Task<String, Js.Error>",
     vars: 0,
   });
 });
@@ -100,7 +100,7 @@ Deno.test("preserves reflected nominal promise results", async () => {
     let signature = sign("HMAC", Panic("key"), Panic("bytes"));
   `);
 
-  expectBinding(result.env, "signature", { type: "Js.Promise<ArrayBuffer>", vars: 0 });
+  expectBinding(result.env, "signature", { type: "Task<ArrayBuffer, Js.Error>", vars: 0 });
 });
 
 Deno.test("uses nominal promise results with reflected constructors", async () => {
@@ -114,12 +114,12 @@ Deno.test("uses nominal promise results with reflected constructors", async () =
         Err(_) => { Panic("ffi") },
       }
     };
-    let bytes = sign("HMAC", Panic("key"), Panic("bytes")) :> .then((buffer) => {
+    let bytes = sign("HMAC", Panic("key"), Panic("bytes")) :> Task.map((buffer) => {
       Uint8Array.new(buffer)
-    }) :> try;
+    });
   `);
 
-  expectBinding(result.env, "bytes", { type: "Js.Promise<Uint8Array>", vars: 0 });
+  expectBinding(result.env, "bytes", { type: "Task<Uint8Array, Js.Error>", vars: 0 });
 });
 
 Deno.test("typed JS promise receiver results infer through then", async () => {
@@ -132,7 +132,7 @@ Deno.test("typed JS promise receiver results infer through then", async () => {
     };
   `);
 
-  expectBinding(result.env, "readBang", { type: "(Void) => Js.Promise<Result<String, Js.Error>>", vars: 0 });
+  expectBinding(result.env, "readBang", { type: "(Void) => Task<String, Js.Error>", vars: 0 });
 });
 
 Deno.test("maps function-valued JS union parameters as JS values", async () => {
@@ -156,10 +156,10 @@ Deno.test("maps object-bearing JS union parameters as JS values", async () => {
     );
   `);
 
-  expectBinding(result.env, "key", { type: "Js.Promise<CryptoKey>", vars: 0 });
+  expectBinding(result.env, "key", { type: "Task<CryptoKey, Js.Error>", vars: 0 });
 });
 
-Deno.test("typed promise receivers work through explicit foreign receiver types", async () => {
+Deno.test("typed task receivers work through explicit foreign receiver types", async () => {
   const result = await checkSource(`
     from js.global import type { Request };
     let try = (result) => {
@@ -168,11 +168,14 @@ Deno.test("typed promise receivers work through explicit foreign receiver types"
         Err(_) => { Panic("ffi") },
       }
     };
-    let useText = (req: Request) => {
-      let textPromise = req :> .text() :> try;
-      textPromise :> .then((bodyText) => { bodyText }) :> try
+    let useText = (req) => {
+      let textTask = req :> .text();
+      textTask :> Task.map((bodyText) => { bodyText })
     };
+    let checked = ((handler: (Request) => Task<String, Js.Error>, req: Request) => {
+      handler(req)
+    })(useText, Panic("req"));
   `);
 
-  expectBinding(result.env, "useText", { type: "(Request) => Js.Promise<String>", vars: 0 });
+  expectBinding(result.env, "useText", { type: "(Request) => Task<String, Js.Error>", vars: 0 });
 });
