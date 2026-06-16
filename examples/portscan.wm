@@ -156,13 +156,13 @@ let main = () => {
     :> Task.andThen((cfg) => {
       
       -- Phase 1: Print Scanning Banner
-      let bannerResult = Result.map2(
+      let bannerResult = (
         cfg.startPort :> .toString(),
         cfg.endPort :> .toString(),
         (startStr, endStr) => {
           "Scanning " ++ cfg.host ++ " ports " ++ startStr ++ "-" ++ endStr ++ " ..."
         }
-      );
+      ) :> Result.map2;
 
       bannerResult :> Task.fromResult :> Task.andThen((banner) => {
         print(banner);
