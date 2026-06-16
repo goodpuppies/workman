@@ -20,6 +20,7 @@ import type { Ty as TyNode } from "../types.ts";
 import { constrainAt, type TypeProvenance } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
+import { recordExprFact, type TypeFacts } from "./type_facts.ts";
 
 export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
@@ -27,6 +28,7 @@ export function inferCall(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
@@ -39,6 +41,7 @@ export function inferCall(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
@@ -48,7 +51,7 @@ export function inferCall(
     : [];
   const arg = callArg(
     expr.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, warnings, diagnostics, provenance)
+      inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
     ),
   );
   const calleeFn = prune(callee);
@@ -68,6 +71,10 @@ export function inferCall(
       // The broad Js.Value signature is instantiated per call site: record the callee at this
       // call with the caller's own argument type so tooling shows the specialized signature.
       types.set(expr.callee, fn([arg], calleeFn.result));
+      recordExprFact(facts, expr.callee, {
+        subject: "expr",
+        instantiated: fn([arg], calleeFn.result),
+      });
     }
     constrainAt(
       expectedArg,

@@ -321,7 +321,10 @@ Deno.test("lsp server returns constructor hover types", async () => {
   const hover = messages.find((message) => message.id === 2)?.result as {
     contents: { value: string };
   };
-  assertEquals(hover.contents.value, "```wm\nSome: (Number) => Option<Number>\n```");
+  assertEquals(
+    hover.contents.value,
+    "```wm\nSome\ntype: (Number) => Option<Number>\ngeneral: (T) => Option<T>\n```",
+  );
 });
 
 Deno.test("lsp server returns null for hover misses", async () => {

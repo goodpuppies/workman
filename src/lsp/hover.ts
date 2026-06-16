@@ -27,6 +27,7 @@ import {
   show,
   type Ty,
 } from "../types.ts";
+import type { TypeFact } from "../infer/type_facts.ts";
 import { fileUriToPath } from "./uri.ts";
 
 export type LspHover = {
@@ -55,6 +56,8 @@ export async function hoverAt(
 
 function hoverForTarget(target: Target, result: InferResult): LspHover | null {
   if (target.kind === "expr") {
+    const fact = result.facts.expressions.get(target.value);
+    if (fact) return factHover(labelExpr(target.value), fact);
     const type = result.types.get(target.value);
     if (type) return hoverCode(`${labelExpr(target.value)}: ${show(type)}`);
     if (target.value.kind === "Var") {
@@ -63,6 +66,8 @@ function hoverForTarget(target: Target, result: InferResult): LspHover | null {
   }
 
   if (target.kind === "pattern" && target.value.kind === "PVar") {
+    const fact = result.facts.patterns.get(target.value);
+    if (fact) return factHover(target.value.name, fact);
     const expected = target.expectedExpr ? result.types.get(target.expectedExpr) : undefined;
     const localType = expected && target.expectedPattern
       ? patternBinderType(target.expectedPattern, target.value, expected, result)
@@ -148,6 +153,17 @@ async function analyzePartialForHover(
 
 function schemeHover(name: string, scheme: Scheme | undefined): LspHover | null {
   return scheme ? hoverCode(`${name}: ${show(instantiate(scheme))}`) : null;
+}
+
+function factHover(name: string, fact: TypeFact): LspHover | null {
+  const instantiated = fact.instantiated;
+  const general = fact.general?.type;
+  if (!instantiated && !general) return null;
+  if (!instantiated) return hoverCode(`${name}: ${show(general!)}`);
+  if (!general || show(instantiated) === show(general)) {
+    return hoverCode(`${name}: ${show(instantiated)}`);
+  }
+  return hoverCode(`${name}\ntype: ${show(instantiated)}\ngeneral: ${show(general)}`);
 }
 
 function hoverCode(value: string): LspHover {

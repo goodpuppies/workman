@@ -1,5 +1,12 @@
-import { assertRejects } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { checkSource, checkVirtual } from "../src/compiler.ts";
+import {
+  contextualizeDelayedCallbacks,
+  resolveDelayedFfiElaboration,
+} from "../src/ffi/delayed/delayed.ts";
+import { prepareFfiElaboration } from "../src/ffi/elab.ts";
+import { inferModulePartial } from "../src/infer.ts";
+import { parse } from "../src/parser.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("unresolved JS FFI property results cannot escape as generic values", async () => {
@@ -156,6 +163,35 @@ Deno.test("reflects properties from type-only JS imports before HM", async () =>
   `);
 
   expectBinding(result.env, "methodOf", { type: "(Request) => Bool", vars: 0 });
+});
+
+Deno.test("delayed reflection marks FFI facts as resolved", async () => {
+  const module = await parse(`
+    from js.global import type { Request };
+    let methodOf = (req) => {
+      let typed: Request = req;
+      let method = req.method;
+      method
+    };
+  `);
+  const prepared = prepareFfiElaboration(module);
+  const first = inferModulePartial(prepared.module);
+  const contextual = contextualizeDelayedCallbacks(prepared, first);
+  const contextualResult = inferModulePartial(contextual.module);
+  const foreignTypeRefs = new Map(
+    [...contextual.foreignTypeRefs.values()].map((ref) => [ref.key, ref] as const),
+  );
+
+  resolveDelayedFfiElaboration(contextual, contextualResult, { foreignTypeRefs });
+
+  assertEquals(
+    [...contextualResult.facts.ffi.values()].map((fact) => ({
+      path: fact.path.join("."),
+      status: fact.status,
+      origin: fact.origin?.source,
+    })),
+    [{ path: "method", status: "resolved", origin: "reflected-ffi" }],
+  );
 });
 
 Deno.test("delays foreign property reflection until HM constrains the receiver", async () => {

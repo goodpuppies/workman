@@ -17,6 +17,7 @@ import {
   VoidTy,
 } from "../types.ts";
 import { constrain, expandCallArg } from "./shared.ts";
+import { originForScheme, recordPatternFact, type TypeFacts } from "./type_facts.ts";
 
 export function showPattern(pattern: Pattern): string {
   switch (pattern.kind) {
@@ -54,6 +55,7 @@ export function inferPattern(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   binders = new Set<string>(),
+  facts?: TypeFacts,
 ): Ty {
   switch (p.kind) {
     case "PWildcard":
@@ -62,11 +64,27 @@ export function inferPattern(
       if (binders.has(p.name)) throw new Error(`duplicate pattern binder ${p.name}`);
       binders.add(p.name);
       env.set(p.name, { vars: [], type: expected, status: "value" });
+      if (facts) {
+        recordPatternFact(facts, p, {
+          subject: "pattern",
+          instantiated: expected,
+          origin: { name: p.name, source: "local" },
+        });
+      }
       return expected;
     case "PPinned": {
       const scheme = env.get(p.name);
       if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
-      constrain(expected, instantiate(scheme));
+      const pinned = instantiate(scheme);
+      constrain(expected, pinned);
+      if (facts) {
+        recordPatternFact(facts, p, {
+          subject: "pattern",
+          instantiated: pinned,
+          general: scheme,
+          origin: originForScheme(p.name, scheme),
+        });
+      }
       return expected;
     }
     case "PInt":
@@ -84,7 +102,7 @@ export function inferPattern(
     case "PTuple": {
       const items = p.items.map(() => fresh());
       constrain(expected, tuple(items));
-      p.items.forEach((x, i) => inferPattern(x, items[i], env, typeEnv, adts, binders));
+      p.items.forEach((x, i) => inferPattern(x, items[i], env, typeEnv, adts, binders, facts));
       return expected;
     }
     case "PRecord": {
@@ -95,7 +113,7 @@ export function inferPattern(
       for (const field of p.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
         if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
-        inferPattern(field.pattern, expectedField.type, env, typeEnv, adts, binders);
+        inferPattern(field.pattern, expectedField.type, env, typeEnv, adts, binders, facts);
       }
       return expected;
     }
@@ -104,13 +122,21 @@ export function inferPattern(
       if (!scheme) throw new Error(`unknown constructor ${p.name}`);
       if (scheme.status !== "constructor") throw new Error(`${p.name} is not a constructor`);
       const ctor = instantiate(scheme);
+      if (facts) {
+        recordPatternFact(facts, p, {
+          subject: "constructor",
+          instantiated: ctor,
+          general: scheme,
+          origin: originForScheme(p.name, scheme),
+        });
+      }
       if (ctor.tag === "fn") {
         const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
         if (args.length !== p.args.length) {
           throw new Error(`${p.name} expects ${args.length} patterns`);
         }
         constrain(expected, ctor.result);
-        p.args.forEach((x, i) => inferPattern(x, args[i], env, typeEnv, adts, binders));
+        p.args.forEach((x, i) => inferPattern(x, args[i], env, typeEnv, adts, binders, facts));
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
         constrain(expected, ctor);
@@ -127,12 +153,20 @@ export function inferBindingPattern(
   typeEnv: TypeEnv,
   out: Map<string, Ty>,
   binders = new Set<string>(),
+  facts?: TypeFacts,
 ) {
   switch (pattern.kind) {
     case "PVar":
       if (binders.has(pattern.name)) throw new Error(`duplicate pattern binder ${pattern.name}`);
       binders.add(pattern.name);
       out.set(pattern.name, expected);
+      if (facts) {
+        recordPatternFact(facts, pattern, {
+          subject: "pattern",
+          instantiated: expected,
+          origin: { name: pattern.name, source: "local" },
+        });
+      }
       return;
     case "PWildcard":
       return;
@@ -152,7 +186,7 @@ export function inferBindingPattern(
       const items = pattern.items.map(() => fresh());
       constrain(expected, tuple(items));
       pattern.items.forEach((item, i) =>
-        inferBindingPattern(item, items[i], env, typeEnv, out, binders)
+        inferBindingPattern(item, items[i], env, typeEnv, out, binders, facts)
       );
       return;
     }
@@ -168,7 +202,7 @@ export function inferBindingPattern(
       for (const field of pattern.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
         if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
-        inferBindingPattern(field.pattern, expectedField.type, env, typeEnv, out, binders);
+        inferBindingPattern(field.pattern, expectedField.type, env, typeEnv, out, binders, facts);
       }
       return;
     }
@@ -179,6 +213,14 @@ export function inferBindingPattern(
         throw new Error(`${pattern.name} is not a constructor`);
       }
       const ctor = instantiate(scheme);
+      if (facts) {
+        recordPatternFact(facts, pattern, {
+          subject: "constructor",
+          instantiated: ctor,
+          general: scheme,
+          origin: originForScheme(pattern.name, scheme),
+        });
+      }
       if (ctor.tag === "fn") {
         const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
         if (args.length !== pattern.args.length) {
@@ -186,7 +228,7 @@ export function inferBindingPattern(
         }
         constrain(expected, ctor.result);
         pattern.args.forEach((item, i) =>
-          inferBindingPattern(item, args[i], env, typeEnv, out, binders)
+          inferBindingPattern(item, args[i], env, typeEnv, out, binders, facts)
         );
       } else {
         if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);

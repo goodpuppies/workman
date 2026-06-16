@@ -1,7 +1,7 @@
 import type { ImportClause } from "../ast.ts";
 import { basisCtorNamesForType } from "../basis.ts";
 import { diagnosticError } from "../diagnostics.ts";
-import type { Env, TypeDeclInfo, TypeEnv } from "../types.ts";
+import type { Env, Scheme, TypeDeclInfo, TypeEnv } from "../types.ts";
 import type { InferResult } from "../infer.ts";
 
 export function addImport(
@@ -39,7 +39,7 @@ export function addImport(
         throw diagnosticError(new Error(`duplicate value import ${local}`), spec.node);
       }
       values.add(local);
-      env.set(local, value);
+      env.set(local, importedScheme(value));
     }
     if (type) {
       if (types.has(local) || isUserType(typeEnv, local)) {
@@ -62,7 +62,7 @@ function addQualifiedImport(env: Env, alias: string, imported: Env, clause: Impo
     if (isUserValue(env, local)) {
       throw diagnosticError(new Error(`duplicate value import ${local}`), clause.node);
     }
-    env.set(local, scheme);
+    env.set(local, importedScheme(scheme));
   }
 }
 
@@ -98,7 +98,7 @@ function addAllImports(
       throw diagnosticError(new Error(`duplicate type import ${name}`), clause.node);
     }
   }
-  for (const [name, scheme] of values) env.set(name, scheme);
+  for (const [name, scheme] of values) env.set(name, importedScheme(scheme));
   for (const [name, info] of types) {
     if (typeEnv.get(name)?.basis) removeBasisConstructors(env, name);
     typeEnv.set(name, info);
@@ -108,6 +108,10 @@ function addAllImports(
 function isUserValue(env: Env, name: string): boolean {
   const existing = env.get(name);
   return !!existing && !existing.basis;
+}
+
+function importedScheme(scheme: Scheme): Scheme {
+  return scheme.imported ? scheme : { ...scheme, imported: true };
 }
 
 function isUserType(typeEnv: TypeEnv, name: string): boolean {

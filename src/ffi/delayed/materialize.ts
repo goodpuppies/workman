@@ -1,5 +1,6 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
+import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
 import { prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
@@ -149,6 +150,12 @@ export function solveReflectedFfiValue(
   const materializedType = materializeReflectedType(reflected, result);
   if (!materializedType) return;
   solveFfi(placeholder, materializedType);
+  resolveFfiFact(result.facts, placeholder.id, materializedType);
+  recordExprFact(result.facts, original, {
+    subject: "ffi-reflected",
+    instantiated: inferred,
+    origin: { source: "reflected-ffi", name: variant.internalName },
+  });
 }
 
 function materializeReflectedType(

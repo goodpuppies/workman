@@ -1,4 +1,4 @@
-import type { Decl, Expr, Module } from "./ast.ts";
+import type { Decl, Expr, Module, Pattern } from "./ast.ts";
 import { errorMessage, formatError, FrontendDiagnosticError } from "./diagnostics.ts";
 import {
   contextualizeDelayedCallbacks,
@@ -9,7 +9,8 @@ import type { InferResult } from "./infer.ts";
 import { inferModule, inferModulePartial } from "./infer.ts";
 import { loadModuleGraph, type ModuleGraph, type ModuleNode } from "./module_graph.ts";
 import { sliceSource, type SourceSpan } from "./source.ts";
-import { prune, show, type Scheme, type Ty } from "./types.ts";
+import { prune, type Scheme, show, type Ty } from "./types.ts";
+import type { FfiFact, TypeFact } from "./infer/type_facts.ts";
 
 type DebugState = {
   graph?: ModuleGraph;
@@ -113,6 +114,10 @@ function formatRecoveredDiagnostics(state: DebugState): string {
     "error: recoverable diagnostics were produced before later type phases",
     state.result ? formatDiagnostics(state.result) : undefined,
     state.result ? formatEnv(state.result, 100) : undefined,
+    state.result && state.node
+      ? formatNearbyTypeFacts(state.node.module, state.node.source, state.result, undefined)
+      : undefined,
+    state.result ? formatFfiFacts(state.result) : undefined,
   ].filter((item): item is string => !!item && item.length > 0).join("\n\n");
 }
 
@@ -157,8 +162,12 @@ function formatDebugFailure(error: unknown, state: DebugState): string {
     state.result ? formatDiagnostics(state.result) : undefined,
     state.result ? formatEnv(state.result, 100) : undefined,
     state.result && state.node
+      ? formatNearbyTypeFacts(state.node.module, state.node.source, state.result, span)
+      : undefined,
+    state.result && state.node
       ? formatNearbyExprTypes(state.node.module, state.node.source, state.result, span)
       : undefined,
+    state.result ? formatFfiFacts(state.result) : undefined,
     state.result ? formatUnresolvedFfi(state.result, state.node?.source) : undefined,
   ];
   return sections.filter((item): item is string => !!item && item.length > 0).join("\n\n");
@@ -191,6 +200,108 @@ function formatScheme(scheme: Scheme): string {
   return `${show(scheme.type)}${vars}`;
 }
 
+function formatNearbyTypeFacts(
+  module: Module,
+  source: string,
+  result: InferResult,
+  span: SourceSpan | undefined,
+): string | undefined {
+  const exprFacts = collectExprs(module)
+    .flatMap((expr) => {
+      const fact = result.facts.expressions.get(expr);
+      return fact
+        ? [{
+          node: expr,
+          kind: expr.kind as string,
+          fact,
+          distance: spanDistance(expr.node?.span, span),
+        }]
+        : [];
+    })
+    .sort((a, b) =>
+      a.distance - b.distance || (a.node.node?.span.start ?? 0) - (b.node.node?.span.start ?? 0)
+    )
+    .slice(0, 30);
+  const patternFacts = collectPatterns(module)
+    .flatMap((pattern) => {
+      const fact = result.facts.patterns.get(pattern);
+      return fact
+        ? [{
+          node: pattern,
+          kind: pattern.kind as string,
+          fact,
+          distance: spanDistance(pattern.node?.span, span),
+        }]
+        : [];
+    })
+    .sort((a, b) =>
+      a.distance - b.distance || (a.node.node?.span.start ?? 0) - (b.node.node?.span.start ?? 0)
+    )
+    .slice(0, 30);
+  const all = [...exprFacts, ...patternFacts]
+    .sort((a, b) =>
+      a.distance - b.distance || (a.node.node?.span.start ?? 0) - (b.node.node?.span.start ?? 0)
+    )
+    .slice(0, 30);
+  if (all.length === 0) return undefined;
+  return [
+    "nearby type facts:",
+    ...all.flatMap(({ node, kind, fact }) => formatNodeFact(node, kind, fact, source)),
+  ].join("\n");
+}
+
+function formatNodeFact(
+  node: Expr | Pattern,
+  kind: string,
+  fact: TypeFact,
+  source: string,
+): string[] {
+  const span = node.node?.span;
+  const loc = span ? `${span.line}:${span.col}` : "?:?";
+  const text = span ? compact(sliceSource(source, span)) : kind;
+  const lines = [`  ${loc} ${kind} ${JSON.stringify(text)}:`];
+  if (fact.instantiated) lines.push(`    type: ${show(fact.instantiated)}`);
+  if (fact.general) lines.push(`    general: ${show(fact.general.type)}`);
+  if (fact.origin) {
+    lines.push(
+      `    origin: ${fact.origin.source}${fact.origin.name ? ` ${fact.origin.name}` : ""}`,
+    );
+  }
+  return lines;
+}
+
+function formatFfiFacts(result: InferResult): string | undefined {
+  const facts = [...result.facts.ffi.values()].slice(0, 40);
+  if (facts.length === 0) return undefined;
+  return [
+    "ffi facts:",
+    ...facts.flatMap((fact) => [
+      `  ${formatFfiFactHeader(fact)}`,
+      `    kind: ${fact.kind}`,
+      `    status: ${fact.status}`,
+      `    receiver: ${show(fact.receiver)}`,
+      ...(fact.args.length ? [`    args: ${fact.args.map(show).join(", ")}`] : []),
+      ...(fact.instantiated ? [`    type: ${show(fact.instantiated)}`] : []),
+      ...formatFfiConstraints(fact),
+    ]),
+  ].join("\n");
+}
+
+function formatFfiFactHeader(fact: FfiFact): string {
+  const span = fact.expr?.node?.span ?? fact.placeholder?.node?.span;
+  const loc = span ? `${span.line}:${span.col} ` : "";
+  return `${loc}?ffi#${fact.id}:${fact.path.join(".")}`;
+}
+
+function formatFfiConstraints(fact: FfiFact): string[] {
+  const constraints = fact.placeholder?.constraints ?? [];
+  if (constraints.length === 0) return [];
+  return [
+    "    constraints:",
+    ...constraints.map((constraint) => `      ${show(constraint)}`),
+  ];
+}
+
 function formatNearbyExprTypes(
   module: Module,
   source: string,
@@ -199,9 +310,15 @@ function formatNearbyExprTypes(
 ): string | undefined {
   const exprs = collectExprs(module);
   const typed = exprs
-    .map((expr) => ({ expr, type: result.types.get(expr), distance: spanDistance(expr.node?.span, span) }))
+    .map((expr) => ({
+      expr,
+      type: result.types.get(expr),
+      distance: spanDistance(expr.node?.span, span),
+    }))
     .filter((item): item is { expr: Expr; type: Ty; distance: number } => !!item.type)
-    .sort((a, b) => a.distance - b.distance || (a.expr.node?.span.start ?? 0) - (b.expr.node?.span.start ?? 0))
+    .sort((a, b) =>
+      a.distance - b.distance || (a.expr.node?.span.start ?? 0) - (b.expr.node?.span.start ?? 0)
+    )
     .slice(0, 30);
   if (typed.length === 0) return undefined;
   return [
@@ -319,6 +436,108 @@ function collectExprs(module: Module): Expr[] {
       case "Bool":
       case "Void":
       case "Var":
+        break;
+    }
+  };
+  module.decls.forEach(visitDecl);
+  return out;
+}
+
+function collectPatterns(module: Module): Pattern[] {
+  const out: Pattern[] = [];
+  const visitDecl = (decl: Decl) => {
+    if (decl.kind !== "LetDecl") return;
+    for (const binding of decl.bindings) {
+      visitPattern(binding.pattern);
+      visitExpr(binding.value);
+    }
+  };
+  const visitExpr = (expr: Expr) => {
+    switch (expr.kind) {
+      case "Lambda":
+        expr.params.forEach((param) => visitPattern(param.pattern));
+        visitExpr(expr.body);
+        break;
+      case "Match":
+        visitExpr(expr.value);
+        expr.arms.forEach((arm) => {
+          visitPattern(arm.pattern);
+          visitExpr(arm.body);
+        });
+        break;
+      case "Tuple":
+      case "JsonArray":
+        expr.items.forEach(visitExpr);
+        break;
+      case "Record":
+      case "JsonObject":
+        expr.fields.forEach((field) => visitExpr(field.value));
+        break;
+      case "FfiGet":
+        visitExpr(expr.receiver);
+        break;
+      case "FfiCall":
+        visitExpr(expr.receiver);
+        expr.args.forEach(visitExpr);
+        break;
+      case "Call":
+        visitExpr(expr.callee);
+        expr.args.forEach(visitExpr);
+        break;
+      case "If":
+        visitExpr(expr.cond);
+        visitExpr(expr.thenExpr);
+        visitExpr(expr.elseExpr);
+        break;
+      case "Panic":
+        visitExpr(expr.message);
+        break;
+      case "Block":
+        for (const item of expr.items) {
+          if (isDecl(item)) visitDecl(item);
+          else visitExpr(item);
+        }
+        visitExpr(expr.result);
+        break;
+      case "Binary":
+        visitExpr(expr.left);
+        visitExpr(expr.right);
+        break;
+      case "Unary":
+        visitExpr(expr.value);
+        break;
+      case "Pipe":
+        visitExpr(expr.left);
+        visitExpr(expr.right);
+        break;
+      case "Int":
+      case "Float":
+      case "String":
+      case "Bool":
+      case "Void":
+      case "Var":
+        break;
+    }
+  };
+  const visitPattern = (pattern: Pattern) => {
+    out.push(pattern);
+    switch (pattern.kind) {
+      case "PTuple":
+        pattern.items.forEach(visitPattern);
+        break;
+      case "PRecord":
+        pattern.fields.forEach((field) => visitPattern(field.pattern));
+        break;
+      case "PCtor":
+        pattern.args.forEach(visitPattern);
+        break;
+      case "PWildcard":
+      case "PVar":
+      case "PInt":
+      case "PString":
+      case "PBool":
+      case "PVoid":
+      case "PPinned":
         break;
     }
   };

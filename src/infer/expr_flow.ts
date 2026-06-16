@@ -23,6 +23,7 @@ import { constrainAt, rememberProvenance, type TypeProvenance } from "./provenan
 import { callArg, constrain } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
+import { recordExprFact, type TypeFacts } from "./type_facts.ts";
 
 export function inferMatch(
   expr: Extract<Expr, { kind: "Match" }>,
@@ -30,6 +31,7 @@ export function inferMatch(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
@@ -40,6 +42,7 @@ export function inferMatch(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
@@ -47,13 +50,14 @@ export function inferMatch(
   const result = fresh();
   for (const arm of expr.arms) {
     const local = new Map(env);
-    inferPattern(arm.pattern, valueType, local, typeEnv, adts);
+    inferPattern(arm.pattern, valueType, local, typeEnv, adts, new Set(), facts);
     const armType = inferExpr(
       arm.body,
       local,
       typeEnv,
       adts,
       types,
+      facts,
       warnings,
       diagnostics,
       provenance,
@@ -80,6 +84,7 @@ export function inferBlock(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
@@ -97,6 +102,7 @@ export function inferBlock(
         new Map(),
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         new Set([...localTypes.values()].map((info) => info.id)),
@@ -108,6 +114,7 @@ export function inferBlock(
         localTypes,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -119,6 +126,7 @@ export function inferBlock(
     localTypes,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
@@ -133,6 +141,7 @@ export function inferBinary(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
@@ -146,6 +155,7 @@ export function inferBinary(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
@@ -156,6 +166,7 @@ export function inferBinary(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
@@ -232,9 +243,10 @@ export function inferParam(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   binders: Set<string>,
+  facts: TypeFacts,
 ): Ty {
   const expected = fresh();
-  return inferPattern(param.pattern, expected, env, typeEnv, adts, binders);
+  return inferPattern(param.pattern, expected, env, typeEnv, adts, binders, facts);
 }
 
 export function inferPipe(
@@ -243,6 +255,7 @@ export function inferPipe(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
@@ -253,6 +266,7 @@ export function inferPipe(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
@@ -266,15 +280,22 @@ export function inferPipe(
       typeEnv,
       adts,
       types,
+      facts,
       warnings,
       diagnostics,
       provenance,
     );
     const argTypes = right.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, warnings, diagnostics, provenance)
+      inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
     );
     const allArgs = [leftType, ...argTypes];
-    return constrainPipe(expr, calleeType, callArg(allArgs), provenance);
+    const argType = callArg(allArgs);
+    const result = constrainPipe(expr, calleeType, argType, provenance);
+    recordExprFact(facts, right.callee, {
+      subject: "expr",
+      instantiated: fn([argType], result),
+    });
+    return result;
   }
 
   const calleeType = inferExpr(
@@ -283,11 +304,17 @@ export function inferPipe(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,
   );
-  return constrainPipe(expr, calleeType, leftType, provenance);
+  const result = constrainPipe(expr, calleeType, leftType, provenance);
+  recordExprFact(facts, right, {
+    subject: "expr",
+    instantiated: fn([leftType], result),
+  });
+  return result;
 }
 
 function constrainPipe(

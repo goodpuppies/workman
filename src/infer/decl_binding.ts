@@ -29,6 +29,7 @@ import {
   type TypeProvenance,
 } from "./provenance.ts";
 import { inferRecordExpr } from "./records.ts";
+import { type TypeFacts } from "./type_facts.ts";
 
 export function generalizeBinding(env: Env, type: Ty, value: Expr): Scheme {
   if (containsUnresolvedFfi(type) || containsFfiBoundary(value, env)) {
@@ -148,6 +149,7 @@ export function inferBinding(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: import("../diagnostics.ts").FrontendDiagnostic[],
   annotationVars: TypeVarScope,
@@ -166,6 +168,7 @@ export function inferBinding(
             typeEnv,
             adts,
             types,
+            facts,
             warnings,
             diagnostics,
             provenance,
@@ -178,6 +181,7 @@ export function inferBinding(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -189,7 +193,7 @@ export function inferBinding(
     }
     if (annotated) constrainAt(t, annotated, resultExpr(b.value));
     const bound = new Map<string, Ty>();
-    inferBindingPattern(b.pattern, t, env, typeEnv, bound);
+    inferBindingPattern(b.pattern, t, env, typeEnv, bound, undefined, facts);
     const refutable = !isVectorExhaustive([[b.pattern]], [t], typeEnv, adts);
     return { bound, refutable };
   } catch (error) {

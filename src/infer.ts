@@ -4,6 +4,7 @@ import { inferDecl } from "./infer/decl.ts";
 import { addAdts, addImport } from "./infer/imports.ts";
 import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
 import { snapshotEnv, type TypeSnapshot } from "./infer/snapshots.ts";
+import { createTypeFacts, type TypeFacts } from "./infer/type_facts.ts";
 import type { TypeProvenance } from "./infer/provenance.ts";
 import {
   baseAdts,
@@ -29,6 +30,7 @@ export type InferResult = {
   typeEnv: TypeEnv;
   typeExports: TypeEnv;
   types: Map<Expr, Ty>;
+  facts: TypeFacts;
   adts: Map<number, TypeDeclInfo>;
   warnings: string[];
   diagnostics: FrontendDiagnostic[];
@@ -67,6 +69,7 @@ function inferModuleCore(
   const adts = baseAdts(typeEnv);
   const exportableTypeIds = new Set([...typeEnv.values()].map((info) => info.id));
   const types = new Map<Expr, Ty>();
+  const facts = createTypeFacts();
   const warnings: string[] = [];
   const diagnostics: FrontendDiagnostic[] = [];
   const steps: InferStep[] = [];
@@ -98,6 +101,7 @@ function inferModuleCore(
         typeExports,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         exportableTypeIds,
@@ -135,6 +139,7 @@ function inferModuleCore(
       typeEnv,
       typeExports,
       types,
+      facts,
       adts,
       warnings,
       diagnostics,
@@ -147,10 +152,14 @@ function assertNoTopLevelUnresolvedFfi(env: Env) {
   const leaking = [...env.entries()].filter(([, scheme]) => containsUnresolvedFfi(scheme.type));
   if (leaking.length === 0) return;
   const [name, scheme] = leaking[0];
-  const remaining = leaking.length > 1 ? `; ${leaking.length - 1} more binding(s) also have unresolved JS FFI obligations` : "";
+  const remaining = leaking.length > 1
+    ? `; ${leaking.length - 1} more binding(s) also have unresolved JS FFI obligations`
+    : "";
   throw diagnosticError(
     new Error(
-      `unresolved JS FFI obligation in ${name}: ${showSchemeType(scheme)}; this JS member access must be resolved by FFI reflection before it can escape a top-level binding${remaining}`,
+      `unresolved JS FFI obligation in ${name}: ${
+        showSchemeType(scheme)
+      }; this JS member access must be resolved by FFI reflection before it can escape a top-level binding${remaining}`,
     ),
     scheme.node,
   );
@@ -167,7 +176,9 @@ function assertNoTopLevelUnsolvedJsBoundary(env: Env) {
     : "";
   throw diagnosticError(
     new Error(
-      `unsolved JS boundary type in ${name}: ${showSchemeType(scheme)}; a broad Js.Value JS parameter leaves this type undetermined and no call site determines it; annotate it with the concrete JS shape${remaining}`,
+      `unsolved JS boundary type in ${name}: ${
+        showSchemeType(scheme)
+      }; a broad Js.Value JS parameter leaves this type undetermined and no call site determines it; annotate it with the concrete JS shape${remaining}`,
     ),
     scheme.node,
   );

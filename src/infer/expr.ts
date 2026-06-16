@@ -33,6 +33,7 @@ import { inferDottedVar, inferRecordExpr } from "./records.ts";
 import { callArg, constrain } from "./shared.ts";
 import { ffiGetResultTy, inferCall } from "./expr_call.ts";
 import { inferBinary, inferBlock, inferMatch, inferParam, inferPipe } from "./expr_flow.ts";
+import { originForScheme, recordExprFact, recordFfiFact, type TypeFacts } from "./type_facts.ts";
 
 export function inferExpr(
   expr: Expr,
@@ -40,6 +41,7 @@ export function inferExpr(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[] = [],
   diagnostics: FrontendDiagnostic[] = [],
   provenance: TypeProvenance = new Map(),
@@ -51,6 +53,7 @@ export function inferExpr(
       typeEnv,
       adts,
       types,
+      facts,
       warnings,
       diagnostics,
       provenance,
@@ -66,6 +69,7 @@ function inferExprInner(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[] = [],
   diagnostics: FrontendDiagnostic[] = [],
   provenance: TypeProvenance = new Map(),
@@ -92,12 +96,18 @@ function inferExprInner(
         break;
       }
       t = instantiate(scheme);
+      recordExprFact(facts, expr, {
+        subject: scheme.status === "constructor" ? "constructor" : "expr",
+        instantiated: t,
+        general: scheme,
+        origin: originForScheme(expr.name, scheme),
+      });
       break;
     }
     case "Tuple":
       t = tuple(
         expr.items.map((x) =>
-          inferExpr(x, env, typeEnv, adts, types, warnings, diagnostics, provenance)
+          inferExpr(x, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
         ),
       );
       break;
@@ -112,6 +122,7 @@ function inferExprInner(
             typeEnv,
             adts,
             types,
+            facts,
             warnings,
             diagnostics,
             provenance,
@@ -126,6 +137,7 @@ function inferExprInner(
           typeEnv,
           adts,
           types,
+          facts,
           warnings,
           diagnostics,
           provenance,
@@ -142,6 +154,7 @@ function inferExprInner(
           typeEnv,
           adts,
           types,
+          facts,
           warnings,
           diagnostics,
           provenance,
@@ -157,6 +170,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -166,6 +180,31 @@ function inferExprInner(
       t = value
         ? ffiGetResultTy(typeEnv, value)
         : freshFfi("get", receiver, expr.path, [], expr.node);
+      if (value) {
+        recordExprFact(facts, expr, {
+          subject: "synthetic",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+      } else if (t.tag === "ffi") {
+        recordExprFact(facts, expr, {
+          subject: "ffi-obligation",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+        recordFfiFact(facts, {
+          id: t.id,
+          kind: t.kind,
+          path: t.path,
+          receiver: t.receiver,
+          args: t.args,
+          expr,
+          placeholder: t,
+          status: "unresolved",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+      }
       break;
     }
     case "FfiCall": {
@@ -175,6 +214,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -182,7 +222,17 @@ function inferExprInner(
       const args: Ty[] = new Array(expr.args.length);
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind === "Lambda") continue;
-        args[index] = inferExpr(arg, env, typeEnv, adts, types, warnings, diagnostics, provenance);
+        args[index] = inferExpr(
+          arg,
+          env,
+          typeEnv,
+          adts,
+          types,
+          facts,
+          warnings,
+          diagnostics,
+          provenance,
+        );
       }
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind !== "Lambda") continue;
@@ -193,6 +243,7 @@ function inferExprInner(
           typeEnv,
           adts,
           types,
+          facts,
           warnings,
           diagnostics,
           provenance,
@@ -205,6 +256,31 @@ function inferExprInner(
       t = value
         ? ffiGetResultTy(typeEnv, value)
         : freshFfi("call", receiver, expr.path, args, expr.node);
+      if (value) {
+        recordExprFact(facts, expr, {
+          subject: "synthetic",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+      } else if (t.tag === "ffi") {
+        recordExprFact(facts, expr, {
+          subject: "ffi-obligation",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+        recordFfiFact(facts, {
+          id: t.id,
+          kind: t.kind,
+          path: t.path,
+          receiver: t.receiver,
+          args: t.args,
+          expr,
+          placeholder: t,
+          status: "unresolved",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+      }
       break;
     }
     case "Lambda":
@@ -214,6 +290,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -226,6 +303,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -239,6 +317,7 @@ function inferExprInner(
           typeEnv,
           adts,
           types,
+          facts,
           warnings,
           diagnostics,
           provenance,
@@ -251,6 +330,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -263,6 +343,7 @@ function inferExprInner(
           typeEnv,
           adts,
           types,
+          facts,
           warnings,
           diagnostics,
           provenance,
@@ -276,6 +357,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -289,6 +371,7 @@ function inferExprInner(
           typeEnv,
           adts,
           types,
+          facts,
           warnings,
           diagnostics,
           provenance,
@@ -304,6 +387,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -316,6 +400,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -330,6 +415,7 @@ function inferExprInner(
             typeEnv,
             adts,
             types,
+            facts,
             warnings,
             diagnostics,
             provenance,
@@ -345,6 +431,7 @@ function inferExprInner(
             typeEnv,
             adts,
             types,
+            facts,
             warnings,
             diagnostics,
             provenance,
@@ -361,6 +448,7 @@ function inferExprInner(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -377,6 +465,7 @@ function inferLambdaTy(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   provenance: TypeProvenance,
@@ -388,7 +477,7 @@ function inferLambdaTy(
   const annotations = expr.params.map((param) =>
     param.annotation ? typeFromAst(param.annotation, typeEnv, annotationVars) : undefined
   );
-  const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders));
+  const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders, facts));
   paramHints?.forEach((hint, index) => {
     if (index < params.length) constrain(params[index], hint);
   });
@@ -398,6 +487,7 @@ function inferLambdaTy(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     provenance,

@@ -28,6 +28,12 @@ import { assertExportableRecord, assertExportableType } from "./module_exports.t
 import { patternBinders, showPattern } from "./patterns.ts";
 import { constrainAt, provenanceFor, type TypeProvenance } from "./provenance.ts";
 import { callArg } from "./shared.ts";
+import {
+  originForScheme,
+  recordBindingFact,
+  recordPatternFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function inferDecl(
   decl: Decl,
@@ -37,6 +43,7 @@ export function inferDecl(
   typeExports: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
@@ -66,6 +73,7 @@ export function inferDecl(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     exportableTypeIds,
@@ -220,6 +228,7 @@ function inferLetDecl(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
@@ -235,6 +244,7 @@ function inferLetDecl(
       typeEnv,
       adts,
       types,
+      facts,
       warnings,
       diagnostics,
       exportableTypeIds,
@@ -250,6 +260,7 @@ function inferLetDecl(
     typeEnv,
     adts,
     types,
+    facts,
     warnings,
     diagnostics,
     exportableTypeIds,
@@ -265,6 +276,7 @@ function inferNonRecursiveLet(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
@@ -279,6 +291,7 @@ function inferNonRecursiveLet(
       typeEnv,
       adts,
       types,
+      facts,
       warnings,
       diagnostics,
       annotationVars,
@@ -303,6 +316,18 @@ function inferNonRecursiveLet(
       );
       scheme.node = decl.bindings[i].node;
       env.set(name, scheme);
+      recordBindingFact(facts, name, {
+        subject: "binding",
+        instantiated: scheme.type,
+        general: scheme,
+        origin: originForScheme(name, scheme),
+      });
+      recordPatternFact(facts, decl.bindings[i].pattern, {
+        subject: "pattern",
+        instantiated: type,
+        general: scheme,
+        origin: originForScheme(name, scheme),
+      });
       if (decl.exported) {
         assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
         exports.set(name, scheme);
@@ -318,6 +343,7 @@ function inferRecursiveLet(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   types: Map<Expr, Ty>,
+  facts: TypeFacts,
   warnings: string[],
   diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
@@ -353,6 +379,7 @@ function inferRecursiveLet(
         typeEnv,
         adts,
         types,
+        facts,
         warnings,
         diagnostics,
         provenance,
@@ -375,6 +402,18 @@ function inferRecursiveLet(
     scheme.node = b.node;
     const name = (b.pattern as { name: string }).name;
     env.set(name, scheme);
+    recordBindingFact(facts, name, {
+      subject: "binding",
+      instantiated: scheme.type,
+      general: scheme,
+      origin: originForScheme(name, scheme),
+    });
+    recordPatternFact(facts, b.pattern, {
+      subject: "pattern",
+      instantiated: placeholders[i],
+      general: scheme,
+      origin: originForScheme(name, scheme),
+    });
     if (decl.exported) {
       assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
       exports.set(name, scheme);

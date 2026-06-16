@@ -376,6 +376,23 @@ let outer = {
   assertEquals(hover?.contents.value, "```wm\nx: Number\n```");
 });
 
+Deno.test("lsp hover returns instantiated and general types for polymorphic uses", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let id = (x) => { x };
+let value = id(1);
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(pathToFileUri(main), positionOf(source, "id(1"), new Map());
+
+  assertEquals(
+    hover?.contents.value,
+    "```wm\nid\ntype: (Number) => Number\ngeneral: ('a) => 'a\n```",
+  );
+});
+
 Deno.test("lsp hover returns null on pipe operator tokens", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
@@ -389,6 +406,23 @@ let speed = "12" :> toNumber :> keep;
   const hover = await hoverAt(pathToFileUri(main), positionOf(source, ":> toNumber"), new Map());
 
   assertEquals(hover, null);
+});
+
+Deno.test("lsp hover returns pipe-specialized callee types", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let toNumber = (value) => { 1 };
+let speed = "12" :> toNumber;
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(pathToFileUri(main), positionOf(source, "toNumber;"), new Map());
+
+  assertEquals(
+    hover?.contents.value,
+    "```wm\ntoNumber\ntype: (String) => Number\ngeneral: ('a) => Number\n```",
+  );
 });
 
 Deno.test("lsp hover agrees for FFI-constrained handler definition and use", async () => {
