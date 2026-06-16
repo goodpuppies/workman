@@ -10,6 +10,15 @@
   }
   function node(loc) { return { id: nextNodeId++, span: span(loc) }; }
   function at(value, loc) { return { ...value, node: node(loc) }; }
+  function atSpan(value, span) { return { ...value, node: { id: nextNodeId++, span } }; }
+  function spanFromStartToLoc(startNode, loc) {
+    return {
+      line: startNode.span.line,
+      col: startNode.span.col,
+      start: startNode.span.start,
+      end: loc.end.offset,
+    };
+  }
   function mod(decls, loc) { return at({ kind: "Module", decls }, loc); }
   function asCtor(expr) {
     if (expr.kind !== "TName" || expr.name.includes(".")) {
@@ -197,15 +206,17 @@ Mul = left:Unary rest:(_ op:("*" / "/" / "%") _ right:Unary { return { op, right
   { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
 
 Unary = op:("!" / "-") _ value:Unary { return at({ kind: "Unary", op, value }, location()); } / Pipe
-Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return right; })*
+Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right, loc: location() }; })*
   {
-    return rest.reduce((left, right) => {
+    return rest.reduce((left, segment) => {
+      const right = segment.right;
+      const exprSpan = spanFromStartToLoc(left.node, segment.loc);
       if (right.kind === "PipeMember") {
         return right.args === undefined
-          ? at({ kind: "FfiGet", receiver: left, path: right.path }, location())
-          : at({ kind: "FfiCall", receiver: left, path: right.path, args: right.args }, location());
+          ? atSpan({ kind: "FfiGet", receiver: left, path: right.path }, exprSpan)
+          : atSpan({ kind: "FfiCall", receiver: left, path: right.path, args: right.args }, exprSpan);
       }
-      return at({ kind: "Pipe", left, right }, location());
+      return atSpan({ kind: "Pipe", left, right }, exprSpan);
     }, left);
   }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?

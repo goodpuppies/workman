@@ -16,9 +16,17 @@ import {
 } from "../ffi/delayed/delayed.ts";
 import { prepareFfiElaboration } from "../ffi/elab.ts";
 import { inferModulePartial, type InferResult } from "../infer.ts";
+import { expandCallArg } from "../infer/shared.ts";
 import { loadModuleGraph } from "../module_graph.ts";
 import { type AstNode, lineColToOffset, lineStarts } from "../source.ts";
-import { instantiate, type Scheme, show } from "../types.ts";
+import {
+  instantiate,
+  instantiateRecordFields,
+  prune,
+  type Scheme,
+  show,
+  type Ty,
+} from "../types.ts";
 import { fileUriToPath } from "./uri.ts";
 
 export type LspHover = {
@@ -38,7 +46,7 @@ export async function hoverAt(
   if (!node || !result) return null;
 
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(node.source));
-  for (const target of targetsAt(node.module, offset)) {
+  for (const target of targetsAt(node.module, node.source, offset)) {
     const hover = hoverForTarget(target, result);
     if (hover) return hover;
   }
@@ -55,6 +63,11 @@ function hoverForTarget(target: Target, result: InferResult): LspHover | null {
   }
 
   if (target.kind === "pattern" && target.value.kind === "PVar") {
+    const expected = target.expectedExpr ? result.types.get(target.expectedExpr) : undefined;
+    const localType = expected && target.expectedPattern
+      ? patternBinderType(target.expectedPattern, target.value, expected, result)
+      : undefined;
+    if (localType) return hoverCode(`${target.value.name}: ${show(localType)}`);
     return schemeHover(target.value.name, result.env.get(target.value.name));
   }
 
@@ -90,6 +103,7 @@ async function analyzePartialForHover(
       const prepared = prepareFfiElaboration(node.module);
       ffi.set(node.path, prepared);
       node.module = prepared.module;
+      ensurePartialHoverForeignTypes(node.module, node.source);
     }
     const inferAll = () => {
       const out = new Map<string, InferResult>();
@@ -143,10 +157,19 @@ function hoverCode(value: string): LspHover {
 type Target =
   | { kind: "decl"; value: Decl; node: AstNode }
   | { kind: "expr"; value: Expr; node: AstNode }
-  | { kind: "pattern"; value: Pattern; node: AstNode };
+  | {
+    kind: "pattern";
+    value: Pattern;
+    node: AstNode;
+    expectedExpr?: Expr;
+    expectedPattern?: Pattern;
+  };
 
-function targetsAt(module: Module, offset: number): Target[] {
-  return collectModule(module).filter((target) => contains(target.node, offset)).sort(bySize);
+function targetsAt(module: Module, source: string, offset: number): Target[] {
+  return collectModule(module)
+    .filter((target) => contains(target.node, offset))
+    .filter((target) => !isPipeOperatorTarget(target, source, offset))
+    .sort(bySize);
 }
 
 function contains(node: AstNode, offset: number): boolean {
@@ -180,7 +203,10 @@ function collectDecl(decl: Decl): Target[] {
 }
 
 function collectBinding(binding: Binding): Target[] {
-  return [...collectPattern(binding.pattern), ...collectExpr(binding.value)];
+  return [
+    ...collectPattern(binding.pattern, binding.value, binding.pattern),
+    ...collectExpr(binding.value),
+  ];
 }
 
 function collectExpr(expr: Expr): Target[] {
@@ -251,15 +277,30 @@ function collectArm(arm: MatchArm): Target[] {
   return [...collectPattern(arm.pattern), ...collectExpr(arm.body)];
 }
 
-function collectPattern(pattern: Pattern): Target[] {
-  const own = target("pattern", pattern);
+function collectPattern(
+  pattern: Pattern,
+  expectedExpr?: Expr,
+  expectedPattern?: Pattern,
+): Target[] {
+  const own = target("pattern", pattern, expectedExpr, expectedPattern);
   switch (pattern.kind) {
     case "PTuple":
-      return [...own, ...pattern.items.flatMap(collectPattern)];
+      return [
+        ...own,
+        ...pattern.items.flatMap((item) => collectPattern(item, expectedExpr, expectedPattern)),
+      ];
     case "PRecord":
-      return [...own, ...pattern.fields.flatMap(collectRecordPatternField)];
+      return [
+        ...own,
+        ...pattern.fields.flatMap((field) =>
+          collectRecordPatternField(field, expectedExpr, expectedPattern)
+        ),
+      ];
     case "PCtor":
-      return [...own, ...pattern.args.flatMap(collectPattern)];
+      return [
+        ...own,
+        ...pattern.args.flatMap((arg) => collectPattern(arg, expectedExpr, expectedPattern)),
+      ];
     case "PWildcard":
     case "PVar":
     case "PInt":
@@ -271,15 +312,33 @@ function collectPattern(pattern: Pattern): Target[] {
   }
 }
 
-function collectRecordPatternField(field: RecordPatternField): Target[] {
-  return collectPattern(field.pattern);
+function collectRecordPatternField(
+  field: RecordPatternField,
+  expectedExpr?: Expr,
+  expectedPattern?: Pattern,
+): Target[] {
+  return collectPattern(field.pattern, expectedExpr, expectedPattern);
 }
 
 function target(kind: "decl", value: Decl): Target[];
 function target(kind: "expr", value: Expr): Target[];
-function target(kind: "pattern", value: Pattern): Target[];
-function target(kind: Target["kind"], value: Decl | Expr | Pattern): Target[] {
-  return value.node ? [{ kind, value, node: value.node } as Target] : [];
+function target(
+  kind: "pattern",
+  value: Pattern,
+  expectedExpr?: Expr,
+  expectedPattern?: Pattern,
+): Target[];
+function target(
+  kind: Target["kind"],
+  value: Decl | Expr | Pattern,
+  expectedExpr?: Expr,
+  expectedPattern?: Pattern,
+): Target[] {
+  if (!value.node) return [];
+  if (kind === "pattern") {
+    return [{ kind, value, node: value.node, expectedExpr, expectedPattern } as Target];
+  }
+  return [{ kind, value, node: value.node } as Target];
 }
 
 function isDecl(item: Decl | Expr): item is Decl {
@@ -290,4 +349,91 @@ function isDecl(item: Decl | Expr): item is Decl {
 
 function labelExpr(expr: Expr): string {
   return expr.kind === "Var" ? expr.name : expr.kind;
+}
+
+function ensurePartialHoverForeignTypes(module: Module, source: string) {
+  if (!source.includes("Js.Promise")) return;
+  if (
+    module.decls.some((decl) =>
+      (decl.kind === "ForeignTypeDecl" || decl.kind === "TypeDecl") && decl.name === "Js.Promise"
+    )
+  ) {
+    return;
+  }
+  module.decls.unshift({
+    kind: "TypeDecl",
+    exported: false,
+    name: "Js.Promise",
+    params: ["T"],
+    ctors: [],
+  });
+}
+
+function patternBinderType(
+  pattern: Pattern,
+  target: Extract<Pattern, { kind: "PVar" }>,
+  expected: Ty,
+  result: InferResult,
+): Ty | undefined {
+  if (pattern === target) return expected;
+  switch (pattern.kind) {
+    case "PTuple": {
+      const tupleType = prune(expected);
+      if (tupleType.tag !== "tuple") return undefined;
+      for (const [index, item] of pattern.items.entries()) {
+        const found = patternBinderType(item, target, tupleType.items[index], result);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    case "PRecord": {
+      const recordType = prune(expected);
+      if (recordType.tag !== "named") return undefined;
+      const info = [...result.typeEnv.values()].find((candidate) => candidate.id === recordType.id);
+      if (!info?.recordFields) return undefined;
+      const fields = instantiateRecordFields(info, recordType.args);
+      for (const field of pattern.fields) {
+        const fieldType = fields.find((item) => item.name === field.name)?.type;
+        if (!fieldType) continue;
+        const found = patternBinderType(field.pattern, target, fieldType, result);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    case "PCtor": {
+      const scheme = result.env.get(pattern.name);
+      if (!scheme || scheme.status !== "constructor") return undefined;
+      const ctor = prune(instantiate(scheme));
+      const args = ctor.tag === "fn"
+        ? (ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params)
+        : [];
+      for (const [index, arg] of pattern.args.entries()) {
+        const found = patternBinderType(arg, target, args[index], result);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function isPipeOperatorTarget(target: Target, source: string, offset: number): boolean {
+  if (target.kind !== "expr") return false;
+  if (
+    target.value.kind !== "Pipe" && target.value.kind !== "FfiGet" &&
+    target.value.kind !== "FfiCall"
+  ) {
+    return false;
+  }
+  return pipeOperatorAt(source, target.node, offset);
+}
+
+function pipeOperatorAt(source: string, node: AstNode, offset: number): boolean {
+  let index = source.indexOf(":>", node.span.start);
+  while (index >= 0 && index < node.span.end) {
+    if (index <= offset && offset <= index + 2) return true;
+    index = source.indexOf(":>", index + 2);
+  }
+  return false;
 }

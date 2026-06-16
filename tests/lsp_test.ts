@@ -360,6 +360,37 @@ let hexByte = (byte, index, array) => {
   assertEquals(hover?.contents.value, "```wm\nbyte: 'a\n```");
 });
 
+Deno.test("lsp hover returns local let binding pattern types", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let outer = {
+  let x = 1;
+  x
+};
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(pathToFileUri(main), positionOf(source, "x ="), new Map());
+
+  assertEquals(hover?.contents.value, "```wm\nx: Number\n```");
+});
+
+Deno.test("lsp hover returns null on pipe operator tokens", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let toNumber = (value) => { 1 };
+let keep = (value) => { value };
+let speed = "12" :> toNumber :> keep;
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(pathToFileUri(main), positionOf(source, ":> toNumber"), new Map());
+
+  assertEquals(hover, null);
+});
+
 Deno.test("lsp hover agrees for FFI-constrained handler definition and use", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
