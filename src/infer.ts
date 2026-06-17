@@ -216,6 +216,9 @@ function containsUnresolvedFfi(type: Ty): boolean {
     return target.params.some(containsUnresolvedFfi) || containsUnresolvedFfi(target.result);
   }
   if (target.tag === "tuple") return target.items.some(containsUnresolvedFfi);
+  if (target.tag === "struct") {
+    return target.fields.some((field) => containsUnresolvedFfi(field.type));
+  }
   if (target.tag === "named") return target.args.some(containsUnresolvedFfi);
   return false;
 }

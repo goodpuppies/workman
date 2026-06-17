@@ -1,5 +1,5 @@
 import type { Expr } from "../ast.ts";
-import type { FrontendDiagnostic, FrontendRelatedDiagnostic } from "../diagnostics.ts";
+import type { FrontendDiagnostic } from "../diagnostics.ts";
 import {
   addJsConstraint,
   type Env,
@@ -15,10 +15,9 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
-  typeMismatchMessage,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
-import { constrainAt, type TypeProvenance } from "./provenance.ts";
+import { constrainAt, type EvidenceOrigin, type TypeProvenance } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { recordExprFact, type TypeFacts } from "./type_facts.ts";
@@ -81,7 +80,7 @@ export function inferCall(
       expectedArg,
       actualArg,
       argExpr,
-      () => typeMismatchMessage(calleeFn.params[0], arg),
+      undefined,
       [...calleeRelated, ...calleeProvenance],
       provenance,
       {
@@ -121,7 +120,7 @@ export function inferCall(
       callee,
       fn([arg], result),
       expr,
-      () => typeMismatchMessage(fn([arg], result), callee),
+      undefined,
       [...callCalleeRelated(expr.callee, callee), ...calleeProvenance],
       provenance,
       {
@@ -310,6 +309,9 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
     case "tuple":
       t.items.forEach((item) => assertJsCompatible(item, typeEnv));
       return;
+    case "struct":
+      t.fields.forEach((field) => assertJsCompatible(field.type, typeEnv));
+      return;
     case "named":
       if (t.name === "Js.Value" || t.name === "Js.Object" || t.name === "Js.Error") return;
       if (t.name === "Js.Array" && t.args.length === 1) {
@@ -355,6 +357,9 @@ function containsNamedType(type: Ty, name: string): boolean {
       containsNamedType(target.result, name);
   }
   if (target.tag === "tuple") return target.items.some((item) => containsNamedType(item, name));
+  if (target.tag === "struct") {
+    return target.fields.some((field) => containsNamedType(field.type, name));
+  }
   return false;
 }
 
@@ -365,11 +370,11 @@ export function callArity(type: TyNode): number {
   return 1;
 }
 
-export function maxCallDepth(related: FrontendRelatedDiagnostic[]): number {
-  return related.reduce((max, item) => Math.max(max, item.callDepth ?? 0), 0);
+export function maxCallDepth(origins: EvidenceOrigin[]): number {
+  return origins.reduce((max, item) => Math.max(max, item.callDepth ?? 0), 0);
 }
 
-export function callCalleeRelated(callee: Expr, type: Ty): FrontendRelatedDiagnostic[] {
+export function callCalleeRelated(callee: Expr, type: Ty): EvidenceOrigin[] {
   if (!callee.node) return [];
   return [{
     message: callee.kind === "Var"

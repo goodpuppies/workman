@@ -109,13 +109,10 @@ let rec sumList = (list, val) => {
   assertEquals(
     diagnostics?.[0].message,
     [
-      "type mismatch",
-      "  at type:",
-      "    expected: Number",
-      "    got:      (Int_list) => Number",
-      "    note:     different type forms",
-      '  full expected: "Number"',
-      '  full got:      "(Int_list) => Number"',
+      "type mismatch: InferRecursive.ResultAgreement: recursive binding result matches inferred body",
+      "  conflict: type",
+      "  expected: Number",
+      "  actual:   (Int_list) => Number",
     ].join("\n"),
   );
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
@@ -171,13 +168,10 @@ let bad = sumList(Cons(1, Empty));
   assertEquals(
     diagnostics?.[0].message,
     [
-      "type mismatch",
-      "  at type:",
-      "    expected: (Int_list, Number)",
-      "    got:      Int_list",
-      "    note:     different type forms",
-      '  full expected: "(Int_list, Number)"',
-      '  full got:      "Int_list"',
+      "type mismatch: InferCall.Argument: argument matches parameter",
+      "  conflict: type",
+      "  expected: (Int_list, Number)",
+      "  actual:   Int_list",
     ].join("\n"),
   );
   assertEquals(diagnostics?.[0].range.start, {
@@ -294,13 +288,10 @@ let bad = floor(1, 2);
   assertEquals(
     diagnostics?.[0].message,
     [
-      "type mismatch",
-      "  at type:",
-      "    expected: Number",
-      "    got:      (Number, Number)",
-      "    note:     different type forms",
-      '  full expected: "Number"',
-      '  full got:      "(Number, Number)"',
+      "type mismatch: InferCall.Argument: argument matches parameter",
+      "  conflict: type",
+      "  expected: Number",
+      "  actual:   (Number, Number)",
     ].join("\n"),
   );
   assertEquals(diagnostics?.[0].range.start, { line: 3, character: 10 });

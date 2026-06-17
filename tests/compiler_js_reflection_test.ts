@@ -208,7 +208,7 @@ Deno.test("delays foreign property reflection until HM constrains the receiver",
   `);
 
   expectBinding(result.env, "useRequest", {
-    type: "(((Request) => Js.Object, Request)) => 'a",
+    type: "(((Request) => Js.Object, Request)) => Js.Object",
     vars: 0,
   });
 });
@@ -350,8 +350,8 @@ Deno.test("reflected FFI method placeholders solve before parent receiver calls"
     vars: 0,
   });
   expectBinding(result.env, "use", {
-    type: "(((Request) => Task<String, Js.Error>, Request)) => 'a",
-    vars: 1,
+    type: "(((Request) => Task<String, Js.Error>, Request)) => Task<String, Js.Error>",
+    vars: 0,
   });
 });
 

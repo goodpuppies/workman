@@ -242,14 +242,16 @@ export function rewriteExprCalls(
             ),
           };
         }
-        const objectReceiver = objectReceiverCall(
-          expr.callee.name,
-          expr.args,
-          bindings,
-          selected,
-          objectAccess,
-          jsRefCallMember,
-        );
+        const objectReceiver = isDottedRecordFieldReceiver(expr.callee.name)
+          ? undefined
+          : objectReceiverCall(
+            expr.callee.name,
+            expr.args,
+            bindings,
+            selected,
+            objectAccess,
+            jsRefCallMember,
+          );
         if (objectReceiver) {
           if ("variant" in objectReceiver) {
             return {
@@ -393,6 +395,11 @@ export function rewriteExprCalls(
   }
 }
 
+function isDottedRecordFieldReceiver(name: string): boolean {
+  const parts = unresolvedDottedParts(name);
+  return Boolean(parts && activeRecordFields.has(parts.path[0]));
+}
+
 function unresolvedDottedCall(expr: Extract<Expr, { kind: "Call" }>): Expr | undefined {
   if (expr.callee.kind !== "Var") return undefined;
   const parts = unresolvedDottedParts(expr.callee.name);
@@ -404,11 +411,6 @@ function unresolvedDottedCall(expr: Extract<Expr, { kind: "Call" }>): Expr | und
     args: expr.args.map((arg) => arg),
     node: expr.node,
   };
-}
-
-function isDottedRecordFieldReceiver(name: string): boolean {
-  const parts = unresolvedDottedParts(name);
-  return Boolean(parts && activeRecordFields.has(parts.path[0]));
 }
 
 function unresolvedDottedParts(name: string): { base: string; path: string[] } | undefined {

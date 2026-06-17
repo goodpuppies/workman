@@ -49,3 +49,17 @@ Deno.test("reuses repeated type variables within an annotation", async () => {
 Deno.test("supports curried call chaining as unary application", async () => {
   await checkSource("let call = (x) => { (y) => { x + y } }; let result = call(1)(2);");
 });
+
+Deno.test("supports whitespace application for curried calls", async () => {
+  await checkSource(`
+    let call = (x) => { (y) => { x + y } };
+    let result = call 1 2;
+  `);
+});
+
+Deno.test("supports whitespace lambda arguments for curried calls", async () => {
+  await checkSource(`
+    let use = (x) => { (f) => { f(x) } };
+    let result = use 41 (n) => { n + 1 };
+  `);
+});

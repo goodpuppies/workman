@@ -17,9 +17,8 @@ import {
 } from "../types.ts";
 import { assertJsonCompatible, jsonValueTy } from "./json.ts";
 
-import { constrainAt, type TypeProvenance } from "./provenance.ts";
+import { constrainAt, sourceForTypedExpr, type TypeProvenance } from "./provenance.ts";
 import { inferDottedVar, inferRecordExpr } from "./records.ts";
-import { constrain } from "./shared.ts";
 import { ffiGetResultTy, inferCall } from "./expr_call.ts";
 import { inferLambdaTy } from "./expr_lambda.ts";
 import {
@@ -398,19 +397,42 @@ function inferExprInner(
       );
       break;
     case "Panic":
-      constrain(
-        inferExpr(
-          expr.message,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        ),
+      const panicMessage = inferExpr(
+        expr.message,
+        env,
+        typeEnv,
+        adts,
+        types,
+        facts,
+        warnings,
+        diagnostics,
+        provenance,
+      );
+      constrainAt(
         StringTy,
+        panicMessage,
+        expr.message,
+        undefined,
+        [],
+        provenance,
+        {
+          message: "panic message",
+          node: expr.message.node,
+          span: expr.message.node?.span,
+          primary: true,
+        },
+        {
+          premise: {
+            rule: "InferPanic.MessageString",
+            role: "panic message is String",
+            subject: "panic message",
+            leftRole: "required type",
+            rightRole: "message",
+          },
+          sources: {
+            right: sourceForTypedExpr(expr.message, panicMessage, provenance, "panic message"),
+          },
+        },
       );
       t = fresh();
       break;
@@ -442,35 +464,81 @@ function inferExprInner(
       break;
     case "Unary":
       if (expr.op === "-") {
-        constrain(
-          inferExpr(
-            expr.value,
-            env,
-            typeEnv,
-            adts,
-            types,
-            facts,
-            warnings,
-            diagnostics,
-            provenance,
-          ),
+        const value = inferExpr(
+          expr.value,
+          env,
+          typeEnv,
+          adts,
+          types,
+          facts,
+          warnings,
+          diagnostics,
+          provenance,
+        );
+        constrainAt(
           NumberTy,
+          value,
+          expr.value,
+          undefined,
+          [],
+          provenance,
+          {
+            message: "unary - operand",
+            node: expr.value.node,
+            span: expr.value.node?.span,
+            primary: true,
+          },
+          {
+            premise: {
+              rule: "InferUnary.NumericOperand",
+              role: "unary - operand is Number",
+              subject: "unary - operand",
+              leftRole: "required type",
+              rightRole: "operand",
+            },
+            sources: {
+              right: sourceForTypedExpr(expr.value, value, provenance, "unary - operand"),
+            },
+          },
         );
         t = NumberTy;
       } else {
-        constrain(
-          inferExpr(
-            expr.value,
-            env,
-            typeEnv,
-            adts,
-            types,
-            facts,
-            warnings,
-            diagnostics,
-            provenance,
-          ),
+        const value = inferExpr(
+          expr.value,
+          env,
+          typeEnv,
+          adts,
+          types,
+          facts,
+          warnings,
+          diagnostics,
+          provenance,
+        );
+        constrainAt(
           BoolTy,
+          value,
+          expr.value,
+          undefined,
+          [],
+          provenance,
+          {
+            message: "unary ! operand",
+            node: expr.value.node,
+            span: expr.value.node?.span,
+            primary: true,
+          },
+          {
+            premise: {
+              rule: "InferUnary.BooleanOperand",
+              role: "unary ! operand is Bool",
+              subject: "unary ! operand",
+              leftRole: "required type",
+              rightRole: "operand",
+            },
+            sources: {
+              right: sourceForTypedExpr(expr.value, value, provenance, "unary ! operand"),
+            },
+          },
         );
         t = BoolTy;
       }

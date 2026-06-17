@@ -81,8 +81,12 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
     error = caught as Error;
   }
   if (!error) throw new Error("expected checkSource to reject");
-  assertStringIncludes(error.message, "type mismatch in Task.andThen callback result");
-  assertStringIncludes(error.message, "expected Task error: Js.Error");
-  assertStringIncludes(error.message, "got      Task error: String");
-  assertStringIncludes(error.message, "from callback result");
+  assertStringIncludes(
+    error.message,
+    "InferPipe.StepInput: pipe output matches next function input",
+  );
+  assertStringIncludes(error.message, "context: Task.andThen callback result");
+  assertStringIncludes(error.message, "expected: Task error: Js.Error");
+  assertStringIncludes(error.message, "actual:   Task error: String");
+  assertStringIncludes(error.message, "source: callback result");
 });

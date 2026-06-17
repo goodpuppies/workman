@@ -223,6 +223,8 @@ export function tyToTypeExpr(type: Ty): TypeExpr {
       return tvar(target.name ?? `t${target.id}`);
     case "ffi":
       return name("Js.Value");
+    case "struct":
+      return name("Js.Value");
     case "named":
       return nameArgs(target.name, target.args.map(tyToTypeExpr));
     case "tuple":
@@ -240,6 +242,7 @@ export function knownTyToTypeExpr(type: Ty): TypeExpr | undefined {
   const target = prune(type);
   switch (target.tag) {
     case "ffi":
+    case "struct":
       return undefined;
     case "prim":
       return name(target.name);

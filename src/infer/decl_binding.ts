@@ -11,7 +11,6 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   typeFromAst,
-  typeMismatchMessage,
   type TypeVarScope,
 } from "../types.ts";
 import { resultExpr } from "./ast_utils.ts";
@@ -48,6 +47,9 @@ function containsUnresolvedFfi(type: Ty): boolean {
     return target.params.some(containsUnresolvedFfi) || containsUnresolvedFfi(target.result);
   }
   if (target.tag === "tuple") return target.items.some(containsUnresolvedFfi);
+  if (target.tag === "struct") {
+    return target.fields.some((field) => containsUnresolvedFfi(field.type));
+  }
   if (target.tag === "named") return target.args.some(containsUnresolvedFfi);
   return false;
 }
@@ -320,7 +322,7 @@ export function constrainBinding(
           expectedFn.params[i],
           param,
           value.params[i],
-          () => typeMismatchMessage(expectedFn.params[i], param),
+          undefined,
           [],
           provenance,
           {
@@ -396,13 +398,13 @@ export function constrainBinding(
           : []),
         ...expressionTypeEvidence(value, expectedFn.result, types),
         ...prioritizedResultProvenance,
-        ...evidence.slice(1).map((item) => item.related),
+        ...evidence.slice(1).map((item) => item.origin),
       ];
       constrainAt(
         expectedFn.result,
         actualFn.result,
         evidence[0]?.expr ?? bodyResult,
-        () => typeMismatchMessage(expectedFn.result, actualFn.result),
+        undefined,
         related,
         undefined,
         undefined,

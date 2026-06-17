@@ -12,7 +12,6 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
-  typeMismatchMessage,
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
 import { inferDecl } from "./decl.ts";
@@ -23,13 +22,12 @@ import { inferPattern } from "./patterns.ts";
 import {
   constrainAt,
   fnSource,
-  rememberProvenance,
   sourceForExpr,
   sourceForTypedExpr,
   tupleSource,
   type TypeProvenance,
 } from "./provenance.ts";
-import { callArg, constrain } from "./shared.ts";
+import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
 import { recordExprFact, type TypeFacts } from "./type_facts.ts";
@@ -203,17 +201,59 @@ export function inferBinary(
     rejectUnresolvedFfiResultOperand(expr.left, left, typeEnv);
     rejectUnresolvedFfiResultOperand(expr.right, right, typeEnv);
   }
-  constrain(
-    instantiate(op),
-    fn([tuple([left, right])], result),
-    rememberProvenance(provenance, {
-      message: `operator ${expr.op}: ${quoteType(instantiate(op))}`,
+  const operatorType = instantiate(op);
+  const actual = fn([tuple([left, right])], result);
+  constrainAt(
+    operatorType,
+    actual,
+    expr,
+    undefined,
+    [],
+    provenance,
+    {
+      message: `operator ${expr.op}: ${quoteType(operatorType)}`,
       node: expr.node,
       span: expr.node?.span,
-    }),
+      primary: true,
+    },
+    {
+      premise: {
+        rule: "InferBinary.OperatorOperands",
+        role: "operator operands match operator type",
+        subject: `operator ${expr.op}`,
+        leftRole: "operator",
+        rightRole: "operands",
+      },
+      sources: {
+        left: { origin: { message: `operator ${expr.op}: ${quoteType(operatorType)}` } },
+        right: fnSource(
+          [
+            tupleSource([
+              sourceForTypedExpr(expr.left, left, provenance, "left operand"),
+              sourceForTypedExpr(expr.right, right, provenance, "right operand"),
+            ]),
+          ],
+          sourceForExpr(expr, "operator result"),
+        ),
+      },
+      context: (path) => binaryContext(expr.op, path),
+    },
   );
   if (expr.op === "==" || expr.op === "!=") assertEqualityType(left, typeEnv, adts);
   return result;
+}
+
+function binaryContext(
+  operator: string,
+  path: import("../type_diff.ts").DiffPath,
+): string | undefined {
+  const param = path[0];
+  if (!param || param.kind !== "fn-param" || param.index !== 0) return `operator ${operator}`;
+  const item = path[1];
+  if (!item || item.kind !== "tuple-item") return `operator ${operator}`;
+  return item.index === 0
+    ? `operator ${operator} left operand`
+    : `operator ${operator} right operand`;
 }
 
 function rejectEscapedUnresolvedFfi(expr: Expr, type: Ty, typeEnv: TypeEnv) {
@@ -374,7 +414,7 @@ function constrainPipe(
     calleeType,
     expected,
     expr,
-    () => typeMismatchMessage(expected, calleeType),
+    undefined,
     [],
     provenance,
     {

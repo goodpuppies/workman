@@ -1,9 +1,5 @@
 import type { Expr, Param } from "../ast.ts";
-import {
-  diagnosticError,
-  type FrontendDiagnostic,
-  type FrontendRelatedDiagnostic,
-} from "../diagnostics.ts";
+import { diagnosticError, type FrontendDiagnostic } from "../diagnostics.ts";
 import {
   BoolTy,
   type Env,
@@ -13,7 +9,6 @@ import {
   prune,
   quoteType,
   StringTy,
-  substituteTypeVars,
   tuple,
   type Ty,
   type TypeDeclInfo,
@@ -77,9 +72,8 @@ export function inferLambdaTy(
         param.node,
       );
     }
-    const checked = substituteTypeVars(params[index], new Map());
     constrainAt(
-      checked,
+      params[index],
       annotated,
       param,
       () => `type mismatch ${quoteType(annotated)}, got ${quoteType(params[index])}`,
@@ -258,6 +252,15 @@ function replaceParamOccurrences(type: Ty, replacements: Map<number, Ty>): Ty {
   }
   if (resolved.tag === "tuple") {
     return tuple(resolved.items.map((item) => replaceParamOccurrences(item, replacements)));
+  }
+  if (resolved.tag === "struct") {
+    return {
+      ...resolved,
+      fields: resolved.fields.map((field) => ({
+        ...field,
+        type: replaceParamOccurrences(field.type, replacements),
+      })),
+    };
   }
   if (resolved.tag === "named") {
     return {

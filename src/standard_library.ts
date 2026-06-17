@@ -29,6 +29,11 @@ const standardModules: StandardModule[] = [
     path: "std/result.wm",
     url: new URL("../std/result.wm", import.meta.url),
   },
+  {
+    alias: "Monad",
+    path: "std/monad.wm",
+    url: new URL("../std/monad.wm", import.meta.url),
+  },
 ];
 
 let standardLibraryPromise: Promise<InitialImport[]> | undefined;

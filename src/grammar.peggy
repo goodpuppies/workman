@@ -223,8 +223,11 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right
   }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
-Postfix = head:Primary tail:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })*
+Postfix = head:Primary tail:(SpaceCall / ExplicitCall)*
   { return tail.reduce((callee, args) => at({ kind: "Call", callee, args }, location()), head); }
+ExplicitCall = _ "(" _ args:ArgList? _ ")" { return args ?? []; }
+SpaceCall = __ arg:SpaceArg { return [arg]; }
+SpaceArg = Lambda / Primary
 
 Primary
   = Float / Int / String / Bool / Void / PanicExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }

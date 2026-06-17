@@ -33,12 +33,10 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   assertEquals(
     renderDiagnosticSummary(diagnostic),
     [
-      "type mismatch",
-      "  at type:",
-      "    expected: Number",
-      "    got:      String",
-      '  full expected: "Number"',
-      '  full got:      "String"',
+      "type mismatch: InferCall.Argument: argument matches parameter",
+      "  conflict: type",
+      "  expected: Number",
+      "  actual:   String",
     ].join("\n"),
   );
 });
@@ -69,6 +67,44 @@ Deno.test("if branch mismatch records an if branch premise", async () => {
   assertEquals(error.diagnostic.failure.frame.rule, "InferIf.BranchesSameType");
   assertEquals(error.diagnostic.failure.premise.role, "if branches have the same type");
   assertEquals(constraintRoles(error.diagnostic), ["then branch", "else branch"]);
+});
+
+Deno.test("binary operand mismatch records an operator premise", async () => {
+  const error = await assertRejects(
+    () => checkSource('let bad = 1 + "x";'),
+    FrontendDiagnosticError,
+  );
+
+  assertEquals(error.diagnostic.failure.frame.rule, "InferBinary.OperatorOperands");
+  assertEquals(error.diagnostic.failure.premise.role, "operator operands match operator type");
+  assertEquals(constraintRoles(error.diagnostic), ["operator", "operands"]);
+  assertEquals(
+    ['operator +: "((Number, Number)) => Number"', "left operand", "right operand"]
+      .every((subject) => claimSubjects(error.diagnostic).includes(subject)),
+    true,
+  );
+});
+
+Deno.test("panic message mismatch records a panic premise", async () => {
+  const error = await assertRejects(
+    () => checkSource("let bad = Panic(1);"),
+    FrontendDiagnosticError,
+  );
+
+  assertEquals(error.diagnostic.failure.frame.rule, "InferPanic.MessageString");
+  assertEquals(error.diagnostic.failure.premise.role, "panic message is String");
+  assertEquals(constraintRoles(error.diagnostic), ["required type", "message"]);
+});
+
+Deno.test("unary operand mismatch records a unary premise", async () => {
+  const error = await assertRejects(
+    () => checkSource('let bad = -"x";'),
+    FrontendDiagnosticError,
+  );
+
+  assertEquals(error.diagnostic.failure.frame.rule, "InferUnary.NumericOperand");
+  assertEquals(error.diagnostic.failure.premise.role, "unary - operand is Number");
+  assertEquals(constraintRoles(error.diagnostic), ["required type", "operand"]);
 });
 
 function constraintRoles(diagnostic: FrontendDiagnostic): string[] {

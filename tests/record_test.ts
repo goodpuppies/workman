@@ -175,15 +175,49 @@ Deno.test("record literals reject missing and extra fields against the nominal t
   );
 });
 
-Deno.test("record field projection is rejected when the field does not determine a unique record", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
-        record Point = { x: Number };
-        record Offset = { x: Number };
-        let getX = (value) => { value.x };
-      `),
-    Error,
-    "ambiguous record field x",
-  );
+Deno.test("record field projection can infer a structural field requirement", async () => {
+  const result = await checkSource(`
+    record Point = { x: Number };
+    record Offset = { x: Number };
+    let getX = (value) => { value.x };
+    let point: Point = .{ x = 1 };
+    let offset: Offset = .{ x = 2 };
+    let px = getX(point);
+    let ox = getX(offset);
+  `);
+
+  expectBinding(result.env, "getX", { type: "({ x: 'a }) => 'a", vars: 1 });
+  expectBinding(result.env, "px", { type: "Number", vars: 0 });
+  expectBinding(result.env, "ox", { type: "Number", vars: 0 });
+});
+
+Deno.test("record function fields compose with whitespace curried calls", async () => {
+  const result = await checkSource(`
+    record Task = { fn: (() => Number) => Number };
+    let lift = (x) => {
+      (f) => {
+        x.fn(f)
+      }
+    };
+    let task: Task = .{ fn = (f) => { f() } };
+    let value = lift task () => { 42 };
+  `);
+
+  expectBinding(result.env, "value", { type: "Number", vars: 0 });
+});
+
+Deno.test("record function fields support generic structural lift", async () => {
+  const result = await checkSource(`
+    record TaskLike = { fn: (() => Number) => Number };
+    let lift = (x) => {
+      (f) => {
+        x.fn(f)
+      }
+    };
+    let task: TaskLike = .{ fn = (f) => { f() } };
+    let value = lift task () => { 42 };
+  `);
+
+  expectBinding(result.env, "lift", { type: "({ fn: ('a) => 'b }) => ('a) => 'b", vars: 2 });
+  expectBinding(result.env, "value", { type: "Number", vars: 0 });
 });

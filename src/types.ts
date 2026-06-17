@@ -1,8 +1,6 @@
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
-import { type DiffPath, TypeMismatchError, typeMismatchMessage } from "./type_diff.ts";
-
-export { typeMismatchMessage } from "./type_diff.ts";
+import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
 
 export type Ty =
   | { tag: "var"; id: number; name?: string; instance?: Ty; jsConstraint?: (t: Ty) => void }
@@ -20,6 +18,7 @@ export type Ty =
   | { tag: "prim"; name: string }
   | { tag: "fn"; params: Ty[]; result: Ty }
   | { tag: "tuple"; items: Ty[] }
+  | { tag: "struct"; fields: RecordFieldInfo[] }
   | {
     tag: "named";
     id: number;
@@ -28,6 +27,8 @@ export type Ty =
     argLabels?: string[];
     foreign?: boolean;
     foreignKey?: string;
+    recordFields?: RecordFieldInfo[];
+    recordParams?: number[];
   };
 
 export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
@@ -98,6 +99,7 @@ export const freshFfi = (
 });
 export const fn = (params: Ty[], result: Ty): Ty => ({ tag: "fn", params, result });
 export const tuple = (items: Ty[]): Ty => ({ tag: "tuple", items });
+export const structural = (fields: RecordFieldInfo[]): Ty => ({ tag: "struct", fields });
 export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
   tag: "named",
   id: info.id,
@@ -106,6 +108,8 @@ export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
   argLabels: info.argLabels,
   foreign: info.foreign,
   foreignKey: info.foreignKey,
+  recordFields: info.recordFields,
+  recordParams: info.recordParams,
 });
 export const freshTypeInfo = (name: string, arity: number): TypeInfo => ({
   id: nextType++,
@@ -148,6 +152,7 @@ export function occurs(id: number, t: Ty): boolean {
   }
   if (t.tag === "fn") return t.params.some((p) => occurs(id, p)) || occurs(id, t.result);
   if (t.tag === "tuple") return t.items.some((x) => occurs(id, x));
+  if (t.tag === "struct") return t.fields.some((field) => occurs(id, field.type));
   if (t.tag === "named") return t.args.some((x) => occurs(id, x));
   return false;
 }
@@ -192,6 +197,14 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     rememberFfiConstraint(b, a);
     return;
   }
+  if (a.tag === "named" && b.tag === "struct") {
+    unifyNamedWithStructural(a, b, onBind, path);
+    return;
+  }
+  if (a.tag === "struct" && b.tag === "named") {
+    unifyNamedWithStructural(b, a, onBind, path);
+    return;
+  }
   if (a.tag !== b.tag) throw typeMismatchError(a, b, path, originalA, originalB);
   if (a.tag === "prim" && b.tag === "prim" && a.name === b.name) return;
   if (a.tag === "fn" && b.tag === "fn" && a.params.length === b.params.length) {
@@ -209,6 +222,10 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     );
     return;
   }
+  if (a.tag === "struct" && b.tag === "struct") {
+    unifyStructuralRecords(a, b, onBind, path);
+    return;
+  }
   if (a.tag === "named" && b.tag === "named" && a.id === b.id && a.args.length === b.args.length) {
     a.args.forEach((x, i) =>
       unify(x, b.args[i], onBind, [
@@ -224,6 +241,43 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     return;
   }
   throw typeMismatchError(a, b, path, originalA, originalB);
+}
+
+function unifyStructuralRecords(
+  left: Extract<Ty, { tag: "struct" }>,
+  right: Extract<Ty, { tag: "struct" }>,
+  onBind: UnifyBind | undefined,
+  path: DiffPath,
+): void {
+  for (const field of right.fields) {
+    const existing = left.fields.find((item) => item.name === field.name);
+    if (!existing) {
+      left.fields.push(field);
+      continue;
+    }
+    unify(existing.type, field.type, onBind, [
+      ...path,
+      { kind: "record-field", name: field.name },
+    ]);
+  }
+}
+
+function unifyNamedWithStructural(
+  namedType: Extract<Ty, { tag: "named" }>,
+  structuralType: Extract<Ty, { tag: "struct" }>,
+  onBind: UnifyBind | undefined,
+  path: DiffPath,
+): void {
+  const fields = namedRecordFields(namedType);
+  if (!fields) throw typeMismatchError(namedType, structuralType, path, namedType, structuralType);
+  for (const required of structuralType.fields) {
+    const found = fields.find((field) => field.name === required.name);
+    if (!found) throw typeMismatchError(namedType, structuralType, path, namedType, structuralType);
+    unify(found.type, required.type, onBind, [
+      ...path,
+      { kind: "record-field", name: required.name },
+    ]);
+  }
 }
 
 function typeMismatchError(
@@ -318,6 +372,7 @@ export function ftv(t: Ty, out = new Set<number>()): Set<number> {
     t.params.forEach((p) => ftv(p, out));
     ftv(t.result, out);
   } else if (t.tag === "tuple") t.items.forEach((x) => ftv(x, out));
+  else if (t.tag === "struct") t.fields.forEach((field) => ftv(field.type, out));
   else if (t.tag === "named") t.args.forEach((x) => ftv(x, out));
   return out;
 }
@@ -351,6 +406,8 @@ function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
     jsConstrainedVarIds(t.result, acc);
   } else if (t.tag === "tuple") {
     for (const item of t.items) jsConstrainedVarIds(item, acc);
+  } else if (t.tag === "struct") {
+    for (const field of t.fields) jsConstrainedVarIds(field.type, acc);
   } else if (t.tag === "named") {
     for (const arg of t.args) jsConstrainedVarIds(arg, acc);
   }
@@ -377,6 +434,9 @@ export function instantiate(scheme: Scheme): Ty {
     }
     if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
     if (t.tag === "tuple") return tuple(t.items.map(go));
+    if (t.tag === "struct") {
+      return structural(t.fields.map((field) => ({ ...field, type: go(field.type) })));
+    }
     if (t.tag === "named") return { ...t, args: t.args.map(go) };
     return t;
   };
@@ -406,6 +466,9 @@ export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
     }
     if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
     if (t.tag === "tuple") return tuple(t.items.map(go));
+    if (t.tag === "struct") {
+      return structural(t.fields.map((field) => ({ ...field, type: go(field.type) })));
+    }
     if (t.tag === "named") return { ...t, args: t.args.map(go) };
     return t;
   };
@@ -417,6 +480,16 @@ export function instantiateRecordFields(info: TypeInfo, args: Ty[]): RecordField
   const subst = new Map<number, Ty>();
   (info.recordParams ?? []).forEach((id, i) => subst.set(id, args[i]));
   return info.recordFields.map((field) => ({
+    name: field.name,
+    type: substituteTypeVars(field.type, subst),
+  }));
+}
+
+function namedRecordFields(type: Extract<Ty, { tag: "named" }>): RecordFieldInfo[] | undefined {
+  if (!type.recordFields) return undefined;
+  const subst = new Map<number, Ty>();
+  (type.recordParams ?? []).forEach((id, i) => subst.set(id, type.args[i]));
+  return type.recordFields.map((field) => ({
     name: field.name,
     type: substituteTypeVars(field.type, subst),
   }));
@@ -480,6 +553,9 @@ export function show(t: Ty): string {
     if (x.tag === "prim") return x.name;
     if (x.tag === "tuple") return `(${x.items.map(go).join(", ")})`;
     if (x.tag === "fn") return `(${x.params.map(go).join(", ")}) => ${go(x.result)}`;
+    if (x.tag === "struct") {
+      return `{ ${x.fields.map((field) => `${field.name}: ${go(field.type)}`).join(", ")} }`;
+    }
     return x.args.length ? `${x.name}<${x.args.map(go).join(", ")}>` : x.name;
   };
   return go(t);

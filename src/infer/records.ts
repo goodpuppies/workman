@@ -7,6 +7,7 @@ import {
   named,
   prune,
   show,
+  structural,
   type Ty,
   type TypeEnv,
   type TypeInfo,
@@ -66,12 +67,35 @@ function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
     return found.type;
   }
   if (target.tag === "var") {
-    const info = recordCandidate(typeEnv, [field], "contains", `ambiguous record field ${field}`);
-    const record = freshRecord(info);
-    constrain(target, record);
-    return instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
+    const nominal = uniqueNonFunctionFieldRecord(typeEnv, field);
+    if (nominal) {
+      constrain(target, nominal.record);
+      return nominal.type;
+    }
+    const result = fresh();
+    constrain(target, structural([{ name: field, type: result }]));
+    return result;
+  }
+  if (target.tag === "struct") {
+    const found = target.fields.find((item) => item.name === field);
+    if (found) return found.type;
+    const result = fresh();
+    target.fields.push({ name: field, type: result });
+    return result;
   }
   throw new Error(`type ${show(base)} has no field ${field}`);
+}
+
+function uniqueNonFunctionFieldRecord(
+  typeEnv: TypeEnv,
+  field: string,
+): { record: NamedTy; type: Ty } | undefined {
+  const candidates = findRecordTypes(typeEnv, [field], "contains");
+  if (candidates.length !== 1) return undefined;
+  const info = candidates[0];
+  const record = freshRecord(info);
+  const type = instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
+  return prune(type).tag === "fn" ? undefined : { record, type };
 }
 
 function expectedRecord(expected: Ty | undefined, typeEnv: TypeEnv): NamedTy | undefined {

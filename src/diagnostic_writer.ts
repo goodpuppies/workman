@@ -54,7 +54,6 @@ export type Violation =
   | {
     kind: "unsatisfied";
     message: string;
-    related: string[];
   };
 
 export type Failure = {
@@ -76,6 +75,7 @@ export type TypeSnapshotShape =
   | { kind: "primitive"; name: string }
   | { kind: "function"; params: TypeSnapshotId[]; result: TypeSnapshotId }
   | { kind: "tuple"; items: TypeSnapshotId[] }
+  | { kind: "struct"; fields: { name: string; type: TypeSnapshotId }[] }
   | { kind: "named"; typeId: number; name: string; args: TypeSnapshotId[] };
 
 export type SupportEntry =
@@ -245,6 +245,14 @@ function snapshotShape(type: Ty, writer: DiagnosticWriter): TypeSnapshotShape {
       };
     case "tuple":
       return { kind: "tuple", items: resolved.items.map((item) => writer.snapshotType(item)) };
+    case "struct":
+      return {
+        kind: "struct",
+        fields: resolved.fields.map((field) => ({
+          name: field.name,
+          type: writer.snapshotType(field.type),
+        })),
+      };
     case "named":
       return {
         kind: "named",
@@ -271,6 +279,8 @@ function renderShape(shape: TypeSnapshotShape, snapshots: TypeSnapshot[]): strin
       return `(${shape.params.map(render).join(", ")}) => ${render(shape.result)}`;
     case "tuple":
       return `(${shape.items.map(render).join(", ")})`;
+    case "struct":
+      return `{ ${shape.fields.map((field) => `${field.name}: ${render(field.type)}`).join(", ")} }`;
     case "named":
       return shape.args.length ? `${shape.name}<${shape.args.map(render).join(", ")}>` : shape.name;
   }

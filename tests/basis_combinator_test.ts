@@ -84,6 +84,17 @@ Deno.test("Result and Option combinators infer generically", async () => {
   assertEquals(result.env.get("Result.all")?.basis ?? false, false);
 });
 
+Deno.test("Monad.lift works over structural fn records", async () => {
+  const result = await checkSource(`
+    record TaskLike = { fn: (() => Number) => Number };
+    let task: TaskLike = .{ fn = (f) => { f() } };
+    let value = Monad.lift task () => { 42 };
+  `);
+
+  expectBinding(result.env, "value", { type: "Number", vars: 0 });
+  assertEquals(result.env.get("Monad.lift")?.imported, true);
+});
+
 Deno.test("low-level inference starts from minimal basis without std combinators", async () => {
   const module = await parse("let value = Option.map;");
   assertThrows(() => inferModule(module), Error, "unknown name Option.map");

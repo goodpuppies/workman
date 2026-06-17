@@ -1,15 +1,11 @@
 import type { Expr, Param } from "../ast.ts";
-import {
-  anchorFromRelated,
-  diagnosticError,
-  FrontendDiagnosticError,
-  type FrontendRelatedDiagnostic,
-} from "../diagnostics.ts";
+import { diagnosticError, FrontendDiagnosticError } from "../diagnostics.ts";
 import {
   type ClaimId,
   createDiagnosticWriter,
   type Failure,
   premiseContext,
+  sourceAnchor,
   type TypeSnapshotId,
 } from "../diagnostic_writer.ts";
 import type { AstNode, SourceSpan } from "../source.ts";
@@ -21,7 +17,7 @@ import { constrain } from "./shared.ts";
 export type TypeProvenance = Map<number, TypeProvenanceEntry>;
 
 export type TypeProvenanceEntry = {
-  related: FrontendRelatedDiagnostic[];
+  origins: EvidenceOrigin[];
   commitment?: TypeCommitment;
 };
 
@@ -34,6 +30,13 @@ export type ConstraintOrigin = {
   message: string;
   node?: AstNode;
   span?: SourceSpan;
+};
+
+export type EvidenceOrigin = ConstraintOrigin & {
+  primary?: boolean;
+  expectedCallTupleShape?: number;
+  actualCallTupleShape?: number;
+  callDepth?: number;
 };
 
 export type TypeSource = {
@@ -63,13 +66,13 @@ export function constrainAt(
   right: Ty,
   expr: Expr | Param | undefined,
   message?: () => string,
-  related: FrontendRelatedDiagnostic[] = [],
+  origins: EvidenceOrigin[] = [],
   provenance?: TypeProvenance,
-  reason?: FrontendRelatedDiagnostic,
+  reason?: EvidenceOrigin,
   options: ConstrainAtOptions = {},
 ) {
   const writer = createDiagnosticWriter();
-  const primary = selectPrimaryCallsite(related, reason);
+  const primary = selectPrimaryCallsite(origins, reason);
   const ruleSubject = primary?.message ?? reason?.message ?? "type constraint";
   const constraintId = writer.nextId("c");
   const leftAtIntroduction = writer.snapshotType(left);
@@ -121,13 +124,13 @@ export function constrainAt(
   for (const claim of [...leftClaims, ...rightClaims]) {
     if (claim) writer.addEdge({ from: claim, to: constraintId, role: "operand" });
   }
-  for (const item of dedupeRelated([...related, ...(reason ? [reason] : [])])) {
+  for (const item of dedupeOrigins([...origins, ...(reason ? [reason] : [])])) {
     const claimId = writer.nextId("cl");
     writer.add({
       kind: "claim",
       id: claimId,
       claim: { kind: "fact", subject: ruleSubject, text: item.message },
-      origin: anchorFromRelated(item),
+      origin: anchorFromOrigin(item),
     });
     writer.addEdge({ from: claimId, to: constraintId, role: "supports" });
   }
@@ -153,9 +156,6 @@ export function constrainAt(
       },
     );
   } catch (error) {
-    const enhanced = provenance && error instanceof TypeMismatchError
-      ? typeCommitmentMismatchMessage(error, provenance, reason, options)
-      : undefined;
     if (error instanceof TypeMismatchError) {
       const collisionId = writer.nextId("x");
       const commitment = error.boundVariableId === undefined
@@ -202,7 +202,7 @@ export function constrainAt(
         id: writer.nextId("d"),
         code: "type.mismatch",
         severity: "error",
-        primary: anchorFromRelated(primary, expr?.node),
+        primary: anchorFromEvidence(primary, expr?.node),
         failure,
         support: writer.buildSupport([collisionId]),
         repairs: [],
@@ -210,16 +210,9 @@ export function constrainAt(
       });
     }
     throw diagnosticError(
-      enhanced
-        ? new Error(enhanced)
-        : message && !(error instanceof JsBoundaryError)
-        ? new Error(message())
-        : error,
+      message && !(error instanceof JsBoundaryError) ? new Error(message()) : error,
       primary?.node ?? expr?.node,
       undefined,
-      primary
-        ? dedupeRelated([...related, ...(reason && reason !== primary ? [reason] : [])])
-        : related,
     );
   }
 }
@@ -271,10 +264,10 @@ function claimsForSource(
 }
 
 function selectPrimaryCallsite(
-  related: FrontendRelatedDiagnostic[],
-  reason?: FrontendRelatedDiagnostic,
-): FrontendRelatedDiagnostic | undefined {
-  const all = dedupeRelated([...related, ...(reason ? [reason] : [])]);
+  origins: EvidenceOrigin[],
+  reason?: EvidenceOrigin,
+): EvidenceOrigin | undefined {
+  const all = dedupeOrigins([...origins, ...(reason ? [reason] : [])]);
   const calls = all.filter((item) =>
     item.expectedCallTupleShape !== undefined && item.actualCallTupleShape !== undefined
   );
@@ -288,20 +281,20 @@ function selectPrimaryCallsite(
     const boundary = byDepth.find((item) => item.actualCallTupleShape !== targetShape);
     if (boundary) return boundary;
   }
-  const inheritedPrimary = related.find((item) => item.primary);
+  const inheritedPrimary = origins.find((item) => item.primary);
   return inheritedPrimary ?? (reason?.primary ? reason : undefined);
 }
 
 export function rememberProvenance(
   provenance: TypeProvenance,
-  reason: FrontendRelatedDiagnostic,
+  reason: EvidenceOrigin,
   sources?: { left?: TypeSource; right?: TypeSource },
 ): UnifyBind {
   return (variable, target, path, targetSide) => {
-    const current = provenance.get(variable.id) ?? { related: [] };
-    const origin = sourceAt(sources?.[targetSide], path) ?? relatedAsOrigin(reason);
+    const current = provenance.get(variable.id) ?? { origins: [] };
+    const origin = sourceAt(sources?.[targetSide], path) ?? originAsConstraint(reason);
     provenance.set(variable.id, {
-      related: dedupeRelated([...current.related, reason]),
+      origins: dedupeOrigins([...current.origins, reason]),
       commitment: { type: target, origin },
     });
   };
@@ -311,7 +304,7 @@ export function provenanceFor(
   expr: Expr,
   types: Map<Expr, Ty>,
   provenance: TypeProvenance,
-): FrontendRelatedDiagnostic[] {
+): EvidenceOrigin[] {
   const type = types.get(expr);
   return type ? provenanceForType(type, provenance) : [];
 }
@@ -319,13 +312,13 @@ export function provenanceFor(
 export function provenanceForType(
   type: Ty,
   provenance: TypeProvenance,
-): FrontendRelatedDiagnostic[] {
-  return dedupeRelated(collectProvenance(type, provenance));
+): EvidenceOrigin[] {
+  return dedupeOrigins(collectProvenance(type, provenance));
 }
 
-export function dedupeRelated(
-  items: FrontendRelatedDiagnostic[],
-): FrontendRelatedDiagnostic[] {
+export function dedupeOrigins(
+  items: EvidenceOrigin[],
+): EvidenceOrigin[] {
   const seen = new Set<string>();
   return items.filter((item) => {
     const span = item.span;
@@ -341,9 +334,9 @@ export function recursiveResultEvidence(
   expr: Expr,
   resultType: Ty,
   types: Map<Expr, Ty>,
-): { expr: Expr; related: FrontendRelatedDiagnostic }[] {
+): { expr: Expr; origin: EvidenceOrigin }[] {
   const target = show(resultType);
-  const evidence: { expr: Expr; related: FrontendRelatedDiagnostic }[] = [];
+  const evidence: { expr: Expr; origin: EvidenceOrigin }[] = [];
   const visit = (node: Expr) => {
     if (
       node.kind === "Call" && node.callee.kind === "Var" && node.callee.name === name &&
@@ -351,7 +344,7 @@ export function recursiveResultEvidence(
     ) {
       evidence.push({
         expr: node,
-        related: {
+        origin: {
           message: `occurrence: ${target}`,
           node: node.node,
           span: node.node?.span,
@@ -368,9 +361,9 @@ export function expressionTypeEvidence(
   expr: Expr,
   type: Ty,
   types: Map<Expr, Ty>,
-): FrontendRelatedDiagnostic[] {
+): EvidenceOrigin[] {
   const target = show(type);
-  const evidence: FrontendRelatedDiagnostic[] = [];
+  const evidence: EvidenceOrigin[] = [];
   const visit = (node: Expr) => {
     if (node.kind === "Binary" && types.has(node) && show(types.get(node)!) === target) {
       evidence.push({
@@ -382,34 +375,39 @@ export function expressionTypeEvidence(
     visitChildren(node, visit);
   };
   visit(expr);
-  return dedupeRelated(evidence);
+  return dedupeOrigins(evidence);
 }
 
 function collectProvenance(
   type: Ty,
   provenance: TypeProvenance,
   seen = new Set<number>(),
-): FrontendRelatedDiagnostic[] {
+): EvidenceOrigin[] {
   if (type.tag === "var") {
     if (seen.has(type.id)) return [];
     seen.add(type.id);
-    const local = provenance.get(type.id)?.related ?? [];
-    return dedupeRelated([
+    const local = provenance.get(type.id)?.origins ?? [];
+    return dedupeOrigins([
       ...local,
       ...(type.instance ? collectProvenance(type.instance, provenance, seen) : []),
     ]);
   }
   if (type.tag === "fn") {
-    return dedupeRelated([
+    return dedupeOrigins([
       ...type.params.flatMap((param) => collectProvenance(param, provenance, seen)),
       ...collectProvenance(type.result, provenance, seen),
     ]);
   }
   if (type.tag === "tuple") {
-    return dedupeRelated(type.items.flatMap((item) => collectProvenance(item, provenance, seen)));
+    return dedupeOrigins(type.items.flatMap((item) => collectProvenance(item, provenance, seen)));
+  }
+  if (type.tag === "struct") {
+    return dedupeOrigins(
+      type.fields.flatMap((field) => collectProvenance(field.type, provenance, seen)),
+    );
   }
   if (type.tag === "named") {
-    return dedupeRelated(type.args.flatMap((arg) => collectProvenance(arg, provenance, seen)));
+    return dedupeOrigins(type.args.flatMap((arg) => collectProvenance(arg, provenance, seen)));
   }
   return [];
 }
@@ -456,34 +454,6 @@ export function tupleSource(items: TypeSource[]): TypeSource {
   return { tupleItems: items };
 }
 
-function typeCommitmentMismatchMessage(
-  error: TypeMismatchError,
-  provenance: TypeProvenance,
-  reason: FrontendRelatedDiagnostic | undefined,
-  options: ConstrainAtOptions,
-): string | undefined {
-  if (error.boundVariableId === undefined || !error.attemptedSide) return undefined;
-  const commitment = provenance.get(error.boundVariableId)?.commitment;
-  if (!commitment) return undefined;
-  const attempted = error.attemptedSide === "left" ? error.left : error.right;
-  const attemptedOrigin = sourceAt(options.sources?.[error.attemptedSide], error.path) ??
-    (reason ? relatedAsOrigin(reason) : undefined);
-  const existingOrigin = commitment.origin;
-  const slot = slotName(error.path);
-  const context = options.context?.(error.path);
-  const expectedLabel = slot ? `${slot}: ${show(attempted)}` : show(attempted);
-  const gotLabel = slot ? `${slot}: ${show(commitment.type)}` : show(commitment.type);
-  return [
-    context ? `type mismatch in ${context}` : "type mismatch",
-    "",
-    `expected ${expectedLabel}`,
-    formatOrigin(attemptedOrigin),
-    "",
-    `got      ${gotLabel}`,
-    formatOrigin(existingOrigin),
-  ].filter((line): line is string => line !== undefined).join("\n");
-}
-
 function sourceAt(source: TypeSource | undefined, path: DiffPath): ConstraintOrigin | undefined {
   let current = source;
   let last = current?.origin;
@@ -503,6 +473,8 @@ function childSource(source: TypeSource, segment: DiffPathSegment): TypeSource |
       return source.fnResult ?? childTypeSource(source, segment);
     case "tuple-item":
       return source.tupleItems?.[segment.index] ?? childTypeSource(source, segment);
+    case "record-field":
+      return childTypeSource(source, segment);
     case "named-arg":
       return source.namedArgs?.[segment.index] ?? childTypeSource(source, segment);
   }
@@ -528,6 +500,10 @@ function childType(type: Ty, segment: DiffPathSegment): Ty | undefined {
       return resolved.tag === "fn" ? resolved.result : undefined;
     case "tuple-item":
       return resolved.tag === "tuple" ? resolved.items[segment.index] : undefined;
+    case "record-field":
+      return resolved.tag === "struct"
+        ? resolved.fields.find((field) => field.name === segment.name)?.type
+        : undefined;
     case "named-arg":
       return resolved.tag === "named" ? resolved.args[segment.index] : undefined;
   }
@@ -550,27 +526,18 @@ function commitmentOriginForType(
   return undefined;
 }
 
-function slotName(path: DiffPath): string | undefined {
-  const named = [...path].reverse().find((segment) => segment.kind === "named-arg");
-  if (!named || named.kind !== "named-arg") return undefined;
-  return named.label
-    ? `${named.typeName} ${named.label}`
-    : `${named.typeName} argument ${named.index + 1}`;
-}
-
-function formatOrigin(origin: ConstraintOrigin | undefined): string | undefined {
-  if (!origin) return undefined;
-  const span = origin.span;
-  const location = span ? ` at line ${span.line}:${span.col}` : "";
-  return `  from ${origin.message}${location}`;
-}
-
-function relatedAsOrigin(related: FrontendRelatedDiagnostic): ConstraintOrigin {
+function originAsConstraint(origin: EvidenceOrigin): ConstraintOrigin {
   return {
-    message: related.message,
-    node: related.node,
-    span: related.span,
+    message: origin.message,
+    node: origin.node,
+    span: origin.span,
   };
+}
+
+function anchorFromEvidence(evidence: EvidenceOrigin | undefined, fallback?: AstNode) {
+  return evidence?.span
+    ? { kind: "source" as const, span: evidence.span }
+    : sourceAnchor(evidence?.node ?? fallback);
 }
 
 function anchorFromOrigin(origin: ConstraintOrigin) {

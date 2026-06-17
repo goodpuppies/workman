@@ -10,19 +10,9 @@ import {
 } from "./diagnostic_writer.ts";
 import type { AstNode, SourceSpan } from "./source.ts";
 import { lineStarts } from "./source.ts";
-import { formatPathSegment } from "./type_diff.ts";
+import { formatPathSegment, TypeMismatchError } from "./type_diff.ts";
 
 export type FrontendDiagnostic = AuditableDiagnostic;
-
-export type FrontendRelatedDiagnostic = {
-  message: string;
-  node?: AstNode;
-  span?: SourceSpan;
-  primary?: boolean;
-  expectedCallTupleShape?: number;
-  actualCallTupleShape?: number;
-  callDepth?: number;
-};
 
 export class FrontendDiagnosticError extends Error {
   diagnostic: FrontendDiagnostic;
@@ -50,11 +40,15 @@ export function diagnosticError(
   error: unknown,
   node: AstNode | undefined,
   code = classifyDiagnostic(errorMessage(error)),
-  related: FrontendRelatedDiagnostic[] = [],
 ): FrontendDiagnosticError {
   if (error instanceof FrontendDiagnosticError) return error;
+  if (error instanceof TypeMismatchError) {
+    return new FrontendDiagnosticError(
+      typeMismatchDiagnostic(error.left, error.right, error.path, node, code),
+    );
+  }
   return new FrontendDiagnosticError(
-    genericDiagnostic("error", code, errorMessage(error), node, related),
+    genericDiagnostic("error", code, errorMessage(error), node),
   );
 }
 
@@ -71,7 +65,6 @@ export function genericDiagnostic(
   code: string,
   message: string,
   node?: AstNode,
-  related: FrontendRelatedDiagnostic[] = [],
 ): FrontendDiagnostic {
   const writer = createDiagnosticWriter();
   const context = premiseContext(code, "diagnostic", message, node, {
@@ -91,7 +84,6 @@ export function genericDiagnostic(
     violation: {
       kind: "unsatisfied",
       message,
-      related: related.map((item) => item.message),
     },
   };
   return {
@@ -101,6 +93,67 @@ export function genericDiagnostic(
     primary: context.origin,
     failure,
     support: writer.buildSupport([claimId]),
+    repairs: [],
+    dependsOn: [],
+  };
+}
+
+export function typeMismatchDiagnostic(
+  left: import("./types.ts").Ty,
+  right: import("./types.ts").Ty,
+  path: import("./type_diff.ts").DiffPath,
+  node: AstNode | undefined,
+  code = "type.mismatch",
+): FrontendDiagnostic {
+  const writer = createDiagnosticWriter();
+  const leftSnapshot = writer.snapshotType(left);
+  const rightSnapshot = writer.snapshotType(right);
+  const context = premiseContext(code, "types are equal", "type constraint", node, {
+    frame: writer.nextId("f"),
+    premise: writer.nextId("p"),
+  }, [
+    { term: "left", role: "expected", snapshot: leftSnapshot },
+    { term: "right", role: "actual", snapshot: rightSnapshot },
+  ]);
+  const constraintId = writer.nextId("c");
+  writer.add({
+    kind: "constraint",
+    id: constraintId,
+    frame: context.frame.id,
+    premise: context.premise.id,
+    left: leftSnapshot,
+    right: rightSnapshot,
+    roles: context.roles,
+    origin: context.origin,
+  });
+  const collisionId = writer.nextId("x");
+  writer.add({
+    kind: "collision",
+    id: collisionId,
+    constraint: constraintId,
+    left: leftSnapshot,
+    right: rightSnapshot,
+    path,
+  });
+  writer.addEdge({ from: constraintId, to: collisionId, role: "failed" });
+  return {
+    id: writer.nextId("d"),
+    code,
+    severity: "error",
+    primary: context.origin,
+    failure: {
+      frame: context.frame,
+      premise: {
+        ...context.premise,
+        predicate: { kind: "equal", left: leftSnapshot, right: rightSnapshot, domain: "type" },
+      },
+      violation: {
+        kind: "contradicted",
+        observed: { left: leftSnapshot, right: rightSnapshot },
+        conflictPath: path,
+      },
+    },
+    support: writer.buildSupport([collisionId]),
     repairs: [],
     dependsOn: [],
   };
@@ -189,20 +242,14 @@ export function renderDiagnosticSummary(diagnostic: FrontendDiagnostic): string 
     const slot = slotName(violation.conflictPath);
     const expected = slot ? `${slot}: ${left}` : left;
     const got = slot ? `${slot}: ${right}` : right;
-    const reason = mismatchReason(
-      typeSnapshotShapeKind(diagnostic, violation.observed.left),
-      typeSnapshotShapeKind(diagnostic, violation.observed.right),
-    );
     return [
-      violation.context ? `type mismatch in ${violation.context}` : "type mismatch",
-      `  at ${path}:`,
-      slot ? `    expected ${expected}` : `    expected: ${expected}`,
-      violation.origins?.expected ? `      from ${violation.origins.expected}` : undefined,
-      slot ? `    got      ${got}` : `    got:      ${got}`,
-      violation.origins?.got ? `      from ${violation.origins.got}` : undefined,
-      reason ? `    note:     ${reason}` : undefined,
-      `  full expected: "${left}"`,
-      `  full got:      "${right}"`,
+      `type mismatch: ${diagnostic.failure.frame.rule}: ${diagnostic.failure.premise.role}`,
+      violation.context ? `  context: ${violation.context}` : undefined,
+      `  conflict: ${path}`,
+      `  expected: ${expected}`,
+      violation.origins?.expected ? `    source: ${violation.origins.expected}` : undefined,
+      `  actual:   ${got}`,
+      violation.origins?.got ? `    source: ${violation.origins.got}` : undefined,
     ].filter((line): line is string => !!line).join("\n");
   }
   return diagnostic.code;
@@ -215,15 +262,6 @@ export function diagnosticNotes(diagnostic: FrontendDiagnostic): {
   return diagnostic.support.entries
     .filter((entry) => entry.kind === "claim")
     .map((entry) => ({ message: renderClaim(entry.claim, diagnostic), anchor: entry.origin }));
-}
-
-export function anchorFromRelated(
-  related: FrontendRelatedDiagnostic | undefined,
-  fallback?: AstNode,
-): SourceAnchor {
-  return related?.span
-    ? { kind: "source", span: related.span }
-    : sourceAnchor(related?.node ?? fallback);
 }
 
 function renderPremise(diagnostic: FrontendDiagnostic): string {
@@ -290,15 +328,6 @@ function renderSupportEntry(entry: SupportEntry, diagnostic: FrontendDiagnostic)
 
 function typeSnapshotRendered(diagnostic: FrontendDiagnostic, id: string): string {
   return diagnostic.support.types.find((snapshot) => snapshot.id === id)?.rendered ?? id;
-}
-
-function typeSnapshotShapeKind(diagnostic: FrontendDiagnostic, id: string): string | undefined {
-  return diagnostic.support.types.find((snapshot) => snapshot.id === id)?.shape.kind;
-}
-
-function mismatchReason(left: string | undefined, right: string | undefined): string | undefined {
-  if (!left || !right || left === right) return undefined;
-  return "different type forms";
 }
 
 function slotName(path: import("./type_diff.ts").DiffPath): string | undefined {
