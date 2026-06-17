@@ -1,0 +1,5 @@
+let lift = (x) => { 
+    (f) => {
+        x.fn(f) -- means (#fn x)(f)
+    }
+};

@@ -1,9 +1,5 @@
 import type { Expr } from "../ast.ts";
-import {
-  diagnosticError,
-  type FrontendDiagnostic,
-  warningDiagnostic,
-} from "../diagnostics.ts";
+import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   BoolTy,
   type Env,
@@ -21,7 +17,7 @@ import {
 } from "../types.ts";
 import { assertJsonCompatible, jsonValueTy } from "./json.ts";
 
-import { type TypeProvenance } from "./provenance.ts";
+import { constrainAt, type TypeProvenance } from "./provenance.ts";
 import { inferDottedVar, inferRecordExpr } from "./records.ts";
 import { constrain } from "./shared.ts";
 import { ffiGetResultTy, inferCall } from "./expr_call.ts";
@@ -312,7 +308,7 @@ function inferExprInner(
       );
       break;
     case "If":
-      constrain(
+      constrainAt(
         inferExpr(
           expr.cond,
           env,
@@ -325,6 +321,24 @@ function inferExprInner(
           provenance,
         ),
         BoolTy,
+        expr.cond,
+        undefined,
+        [],
+        provenance,
+        {
+          message: "if condition",
+          node: expr.cond.node,
+          span: expr.cond.node?.span,
+        },
+        {
+          premise: {
+            rule: "InferIf.ConditionBool",
+            role: "if condition is Bool",
+            subject: "if condition",
+            leftRole: "condition",
+            rightRole: "Bool",
+          },
+        },
       );
       t = inferExpr(
         expr.thenExpr,
@@ -337,7 +351,7 @@ function inferExprInner(
         diagnostics,
         provenance,
       );
-      constrain(
+      constrainAt(
         t,
         inferExpr(
           expr.elseExpr,
@@ -350,6 +364,24 @@ function inferExprInner(
           diagnostics,
           provenance,
         ),
+        expr.elseExpr,
+        undefined,
+        [],
+        provenance,
+        {
+          message: "if branch result",
+          node: expr.elseExpr.node,
+          span: expr.elseExpr.node?.span,
+        },
+        {
+          premise: {
+            rule: "InferIf.BranchesSameType",
+            role: "if branches have the same type",
+            subject: "if expression",
+            leftRole: "then branch",
+            rightRole: "else branch",
+          },
+        },
       );
       break;
     case "Match":

@@ -29,6 +29,8 @@ import {
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
+  genericDiagnostic,
+  renderDiagnosticSummary,
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import { standardInferOptions } from "./standard_library.ts";
@@ -225,7 +227,7 @@ export async function analyzeFile(
 
 function assertNoPartialDiagnostics(result: InferResult): InferResult {
   const diagnostic = result.diagnostics.find((item) =>
-    item.severity === "error" && !isDelayedFfiPartialDiagnostic(item.message)
+    item.severity === "error" && !isDelayedFfiPartialDiagnostic(renderDiagnosticSummary(item))
   );
   if (diagnostic) throw new FrontendDiagnosticError(diagnostic);
   return result;
@@ -273,11 +275,12 @@ function delayedFfiDiagnostics(result: InferResult | undefined): FrontendDiagnos
   );
   if (leaking.length === 0) return [];
   return leaking.map(([name, scheme]) => ({
-    severity: "error",
-    code: "ffi.unresolved",
-    message: unresolvedFfiMessage(name, scheme),
-    node: scheme.node,
-    span: scheme.node?.span,
+    ...genericDiagnostic(
+      "error",
+      "ffi.unresolved",
+      unresolvedFfiMessage(name, scheme),
+      scheme.node,
+    ),
   }));
 }
 

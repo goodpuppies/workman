@@ -71,11 +71,28 @@ export function inferMatch(
       diagnostics,
       provenance,
     );
-    constrainAt(result, armType, arm.body, undefined, [], provenance, {
-      message: "match arm result",
-      node: arm.body.node,
-      span: arm.body.node?.span,
-    });
+    constrainAt(
+      result,
+      armType,
+      arm.body,
+      undefined,
+      [],
+      provenance,
+      {
+        message: "match arm result",
+        node: arm.body.node,
+        span: arm.body.node?.span,
+      },
+      {
+        premise: {
+          rule: "InferMatch.ArmsSameType",
+          role: "match arm result agrees with previous arms",
+          subject: "match arm result",
+          leftRole: "match result",
+          rightRole: "arm result",
+        },
+      },
+    );
   }
   const armPatterns = expr.arms.map((arm) => arm.pattern);
   warnRedundantMatchArms(armPatterns, valueType, typeEnv, adts, warnings, diagnostics);
@@ -370,6 +387,13 @@ function constrainPipe(
       callDepth: 0,
     },
     {
+      premise: {
+        rule: "InferPipe.StepInput",
+        role: "pipe output matches next function input",
+        subject: callee.kind === "Var" ? callee.name : "pipe",
+        leftRole: "callee",
+        rightRole: "pipe function",
+      },
       sources: {
         left: sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
         right: fnSource(

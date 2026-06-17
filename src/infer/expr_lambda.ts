@@ -1,5 +1,9 @@
 import type { Expr, Param } from "../ast.ts";
-import { diagnosticError, type FrontendDiagnostic, type FrontendRelatedDiagnostic } from "../diagnostics.ts";
+import {
+  diagnosticError,
+  type FrontendDiagnostic,
+  type FrontendRelatedDiagnostic,
+} from "../diagnostics.ts";
 import {
   BoolTy,
   type Env,
@@ -79,6 +83,22 @@ export function inferLambdaTy(
       annotated,
       param,
       () => `type mismatch ${quoteType(annotated)}, got ${quoteType(params[index])}`,
+      [],
+      provenance,
+      {
+        message: "parameter annotation",
+        node: param.node,
+        span: param.node?.span,
+      },
+      {
+        premise: {
+          rule: "InferAnnotation.ParameterMatchesAnnotation",
+          role: "parameter matches annotation",
+          subject: "parameter annotation",
+          leftRole: "parameter",
+          rightRole: "annotation",
+        },
+      },
     );
     signatureParams[index] = annotated;
   });

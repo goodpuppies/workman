@@ -2,10 +2,12 @@ import { normalize, resolve } from "node:path";
 import { analyzeFile, ModuleAnalysisError } from "../compiler.ts";
 import {
   classifyDiagnostic,
+  diagnosticNotes,
   errorMessage,
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
+  renderDiagnosticSummary,
 } from "../diagnostics.ts";
 import type { InferResult } from "../infer.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
@@ -117,25 +119,29 @@ function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[
 }
 
 function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): LspDiagnostic {
-  const relatedInformation = diagnostic.related
-    ?.map((related) => ({
+  const range = diagnostic.primary.kind === "source" && source
+    ? spanRange(source, diagnostic.primary.span)
+    : startRange;
+  const relatedInformation = diagnosticNotes(diagnostic)
+    .map((note) => ({
       location: {
         uri,
-        range: related.span && source ? spanRange(source, related.span) : startRange,
+        range: note.anchor.kind === "source" && source
+          ? spanRange(source, note.anchor.span)
+          : startRange,
       },
-      message: related.message,
+      message: note.message,
     }))
     .filter((related) =>
       related.location.uri.startsWith("file://") && isValidRange(related.location.range)
     );
-
   return {
-    range: diagnostic.span && source ? spanRange(source, diagnostic.span) : startRange,
+    range,
     severity: diagnostic.severity === "error" ? 1 : 2,
     code: diagnostic.code,
     source: "wm-mini",
-    message: diagnostic.message,
-    relatedInformation: relatedInformation?.length ? relatedInformation : undefined,
+    message: renderDiagnosticSummary(diagnostic),
+    relatedInformation: relatedInformation.length ? relatedInformation : undefined,
   };
 }
 

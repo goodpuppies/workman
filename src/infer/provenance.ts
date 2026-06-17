@@ -1,5 +1,17 @@
 import type { Expr, Param } from "../ast.ts";
-import { diagnosticError, type FrontendRelatedDiagnostic } from "../diagnostics.ts";
+import {
+  anchorFromRelated,
+  diagnosticError,
+  FrontendDiagnosticError,
+  type FrontendRelatedDiagnostic,
+} from "../diagnostics.ts";
+import {
+  type ClaimId,
+  createDiagnosticWriter,
+  type Failure,
+  premiseContext,
+  type TypeSnapshotId,
+} from "../diagnostic_writer.ts";
 import type { AstNode, SourceSpan } from "../source.ts";
 import { type DiffPath, type DiffPathSegment, TypeMismatchError } from "../type_diff.ts";
 import { JsBoundaryError, prune, show, type Ty, type UnifyBind } from "../types.ts";
@@ -37,6 +49,13 @@ export type TypeSource = {
 export type ConstrainAtOptions = {
   sources?: { left?: TypeSource; right?: TypeSource };
   context?: (path: DiffPath) => string | undefined;
+  premise?: {
+    rule: string;
+    role: string;
+    subject?: string;
+    leftRole?: string;
+    rightRole?: string;
+  };
 };
 
 export function constrainAt(
@@ -49,17 +68,147 @@ export function constrainAt(
   reason?: FrontendRelatedDiagnostic,
   options: ConstrainAtOptions = {},
 ) {
+  const writer = createDiagnosticWriter();
+  const primary = selectPrimaryCallsite(related, reason);
+  const ruleSubject = primary?.message ?? reason?.message ?? "type constraint";
+  const constraintId = writer.nextId("c");
+  const leftAtIntroduction = writer.snapshotType(left);
+  const rightAtIntroduction = writer.snapshotType(right);
+  const premise = options.premise;
+  const leftClaims = claimsForSource(
+    writer,
+    options.sources?.left,
+    premise?.leftRole ?? "left",
+    leftAtIntroduction,
+  );
+  const rightClaims = claimsForSource(
+    writer,
+    options.sources?.right,
+    premise?.rightRole ?? "right",
+    rightAtIntroduction,
+  );
+  const context = premiseContext(
+    premise?.rule ?? "Infer.Constraint.Equal",
+    premise?.role ?? ruleSubject,
+    premise?.subject ?? ruleSubject,
+    primary?.node ?? reason?.node ?? expr?.node,
+    { frame: writer.nextId("f"), premise: writer.nextId("p") },
+    [
+      {
+        term: "left",
+        role: premise?.leftRole ?? "left",
+        snapshot: leftAtIntroduction,
+        claim: leftClaims[0],
+      },
+      {
+        term: "right",
+        role: premise?.rightRole ?? "right",
+        snapshot: rightAtIntroduction,
+        claim: rightClaims[0],
+      },
+    ],
+  );
+  writer.add({
+    kind: "constraint",
+    id: constraintId,
+    frame: context.frame.id,
+    premise: context.premise.id,
+    left: leftAtIntroduction,
+    right: rightAtIntroduction,
+    roles: context.roles,
+    origin: context.origin,
+  });
+  for (const claim of [...leftClaims, ...rightClaims]) {
+    if (claim) writer.addEdge({ from: claim, to: constraintId, role: "operand" });
+  }
+  for (const item of dedupeRelated([...related, ...(reason ? [reason] : [])])) {
+    const claimId = writer.nextId("cl");
+    writer.add({
+      kind: "claim",
+      id: claimId,
+      claim: { kind: "fact", subject: ruleSubject, text: item.message },
+      origin: anchorFromRelated(item),
+    });
+    writer.addEdge({ from: claimId, to: constraintId, role: "supports" });
+  }
+  const provenanceBind = provenance && reason
+    ? rememberProvenance(provenance, reason, options.sources)
+    : undefined;
   try {
     constrain(
       left,
       right,
-      provenance && reason ? rememberProvenance(provenance, reason, options.sources) : undefined,
+      (variable, target, path, targetSide) => {
+        const substitutionId = writer.nextId("s");
+        writer.add({
+          kind: "substitution",
+          id: substitutionId,
+          variable: writer.snapshotType(variable),
+          target: writer.snapshotType(target),
+          constraint: constraintId,
+          path,
+        });
+        writer.addEdge({ from: constraintId, to: substitutionId, role: "produced" });
+        provenanceBind?.(variable, target, path, targetSide);
+      },
     );
   } catch (error) {
-    const primary = selectPrimaryCallsite(related, reason);
     const enhanced = provenance && error instanceof TypeMismatchError
       ? typeCommitmentMismatchMessage(error, provenance, reason, options)
       : undefined;
+    if (error instanceof TypeMismatchError) {
+      const collisionId = writer.nextId("x");
+      const commitment = error.boundVariableId === undefined
+        ? undefined
+        : provenance?.get(error.boundVariableId)?.commitment;
+      const attempted = error.attemptedSide === "left" ? error.left : error.right;
+      const attemptedOrigin = error.attemptedSide
+        ? sourceAt(options.sources?.[error.attemptedSide], error.path)
+        : undefined;
+      const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
+      const observedRight = writer.snapshotType(commitment?.type ?? error.right);
+      writer.add({
+        kind: "collision",
+        id: collisionId,
+        constraint: constraintId,
+        left: observedLeft,
+        right: observedRight,
+        path: error.path,
+      });
+      writer.addEdge({ from: constraintId, to: collisionId, role: "failed" });
+      const failure: Failure = {
+        frame: context.frame,
+        premise: {
+          ...context.premise,
+          predicate: {
+            kind: "equal",
+            left: leftAtIntroduction,
+            right: rightAtIntroduction,
+            domain: "type",
+          },
+        },
+        violation: {
+          kind: "contradicted",
+          observed: { left: observedLeft, right: observedRight },
+          conflictPath: error.path,
+          context: options.context?.(error.path),
+          origins: {
+            expected: attemptedOrigin?.message,
+            got: commitment?.origin?.message,
+          },
+        },
+      };
+      throw new FrontendDiagnosticError({
+        id: writer.nextId("d"),
+        code: "type.mismatch",
+        severity: "error",
+        primary: anchorFromRelated(primary, expr?.node),
+        failure,
+        support: writer.buildSupport([collisionId]),
+        repairs: [],
+        dependsOn: [],
+      });
+    }
     throw diagnosticError(
       enhanced
         ? new Error(enhanced)
@@ -73,6 +222,52 @@ export function constrainAt(
         : related,
     );
   }
+}
+
+function claimsForSource(
+  writer: ReturnType<typeof createDiagnosticWriter>,
+  source: TypeSource | undefined,
+  fallbackSubject: string,
+  fallbackType: TypeSnapshotId,
+): ClaimId[] {
+  if (!source) return [];
+  const claims: ClaimId[] = [];
+  const origin = source?.origin;
+  if (origin) {
+    const claimId = writer.nextId("cl");
+    writer.add({
+      kind: "claim",
+      id: claimId,
+      claim: {
+        kind: "has-type",
+        subject: origin.message || fallbackSubject,
+        type: source.type ? writer.snapshotType(source.type) : fallbackType,
+      },
+      origin: anchorFromOrigin(origin),
+    });
+    claims.push(claimId);
+  }
+  source.fnParams?.forEach((param, index) => {
+    claims.push(
+      ...claimsForSource(writer, param, `${fallbackSubject} parameter ${index + 1}`, fallbackType),
+    );
+  });
+  if (source.fnResult) {
+    claims.push(
+      ...claimsForSource(writer, source.fnResult, `${fallbackSubject} result`, fallbackType),
+    );
+  }
+  source.tupleItems?.forEach((item, index) => {
+    claims.push(
+      ...claimsForSource(writer, item, `${fallbackSubject} item ${index + 1}`, fallbackType),
+    );
+  });
+  source.namedArgs?.forEach((arg, index) => {
+    claims.push(
+      ...claimsForSource(writer, arg, `${fallbackSubject} argument ${index + 1}`, fallbackType),
+    );
+  });
+  return claims;
 }
 
 function selectPrimaryCallsite(
@@ -376,6 +571,14 @@ function relatedAsOrigin(related: FrontendRelatedDiagnostic): ConstraintOrigin {
     node: related.node,
     span: related.span,
   };
+}
+
+function anchorFromOrigin(origin: ConstraintOrigin) {
+  return origin.span
+    ? { kind: "source" as const, span: origin.span }
+    : origin.node?.span
+    ? { kind: "source" as const, span: origin.node.span }
+    : { kind: "generated" as const, label: origin.message };
 }
 
 function visitChildren(node: Expr, visit: (node: Expr) => void) {

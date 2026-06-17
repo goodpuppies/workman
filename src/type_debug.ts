@@ -1,5 +1,10 @@
 import type { Decl, Expr, Module, Pattern } from "./ast.ts";
-import { errorMessage, formatError, FrontendDiagnosticError } from "./diagnostics.ts";
+import {
+  errorMessage,
+  formatError,
+  FrontendDiagnosticError,
+  renderDiagnosticSummary,
+} from "./diagnostics.ts";
 import {
   contextualizeDelayedCallbacks,
   resolveDelayedFfiElaboration,
@@ -126,7 +131,7 @@ function formatRecoveredDiagnostics(state: DebugState): string {
 
 function hasFatalPartialDiagnostics(result: InferResult): boolean {
   return result.diagnostics.some((item) =>
-    item.severity === "error" && !isDelayedFfiPartialDiagnostic(item.message)
+    item.severity === "error" && !isDelayedFfiPartialDiagnostic(renderDiagnosticSummary(item))
   );
 }
 
@@ -153,7 +158,7 @@ function importsFor(
 
 function formatDebugFailure(error: unknown, state: DebugState): string {
   const diagnostic = error instanceof FrontendDiagnosticError ? error.diagnostic : undefined;
-  const span = diagnostic?.span;
+  const span = diagnostic?.primary.kind === "source" ? diagnostic.primary.span : undefined;
   const source = state.node?.source;
   const path = state.path ?? state.node?.path;
   const sections = [
@@ -181,8 +186,10 @@ function formatDiagnostics(result: InferResult): string | undefined {
   return [
     "diagnostics:",
     ...result.diagnostics.map((item) =>
-      `  ${item.severity} ${item.code}: ${item.message}` +
-      (item.span ? ` @ ${item.span.line}:${item.span.col}` : "")
+      `  ${item.severity} ${item.code}: ${renderDiagnosticSummary(item)}` +
+      (item.primary.kind === "source"
+        ? ` @ ${item.primary.span.line}:${item.primary.span.col}`
+        : "")
     ),
   ].join("\n");
 }

@@ -11,11 +11,11 @@ import {
   prune,
   quoteType,
   show,
-  typeMismatchMessage,
   tuple,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
+  typeMismatchMessage,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
 import { constrainAt, type TypeProvenance } from "./provenance.ts";
@@ -93,10 +93,27 @@ export function inferCall(
         actualCallTupleShape: callArity(arg),
         callDepth,
       },
+      {
+        premise: {
+          rule: "InferCall.Argument",
+          role: "argument matches parameter",
+          subject: "call argument",
+          leftRole: "parameter",
+          rightRole: "argument",
+        },
+      },
     );
     if (isPrintCall) assertPrintable(arg);
     if (isJsImport) assertJsCompatible(arg, typeEnv);
-    constrainAt(result, calleeFn.result, expr);
+    constrainAt(result, calleeFn.result, expr, undefined, [], undefined, undefined, {
+      premise: {
+        rule: "InferCall.Result",
+        role: "call result matches callee result",
+        subject: "call result",
+        leftRole: "call result",
+        rightRole: "callee result",
+      },
+    });
   } else {
     const callDepth =
       maxCallDepth([...callCalleeRelated(expr.callee, callee), ...calleeProvenance]) + 1;
@@ -115,6 +132,15 @@ export function inferCall(
         expectedCallTupleShape: 1,
         actualCallTupleShape: 1,
         callDepth,
+      },
+      {
+        premise: {
+          rule: "InferCall.CalleeCallable",
+          role: "callee is callable",
+          subject: "call callee",
+          leftRole: "callee",
+          rightRole: "function type",
+        },
       },
     );
   }

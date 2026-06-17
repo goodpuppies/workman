@@ -7,11 +7,11 @@ import {
   quoteType,
   type Scheme,
   show,
-  typeMismatchMessage,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
   typeFromAst,
+  typeMismatchMessage,
   type TypeVarScope,
 } from "../types.ts";
 import { resultExpr } from "./ast_utils.ts";
@@ -192,7 +192,21 @@ export function inferBinding(
         "type annotations cannot cast dynamic JS/JSON values; use Json.assert for an explicit dynamic shape assertion",
       );
     }
-    if (annotated) constrainAt(t, annotated, resultExpr(b.value));
+    if (annotated) {
+      constrainAt(t, annotated, resultExpr(b.value), undefined, [], provenance, {
+        message: "let annotation",
+        node: b.node,
+        span: b.node?.span,
+      }, {
+        premise: {
+          rule: "InferAnnotation.ExpressionMatchesAnnotation",
+          role: "binding expression matches annotation",
+          subject: "let annotation",
+          leftRole: "expression",
+          rightRole: "annotation",
+        },
+      });
+    }
     const bound = new Map<string, Ty>();
     inferBindingPattern(b.pattern, t, env, typeEnv, bound, undefined, facts);
     const refutable = !isVectorExhaustive([[b.pattern]], [t], typeEnv, adts);
@@ -307,6 +321,22 @@ export function constrainBinding(
           param,
           value.params[i],
           () => typeMismatchMessage(expectedFn.params[i], param),
+          [],
+          provenance,
+          {
+            message: "recursive parameter",
+            node: value.params[i].node,
+            span: value.params[i].node?.span,
+          },
+          {
+            premise: {
+              rule: "InferRecursive.ParameterAgreement",
+              role: "recursive parameter matches inferred parameter",
+              subject: name,
+              leftRole: "recursive binding parameter",
+              rightRole: "function parameter",
+            },
+          },
         )
       );
       const evidence = recursiveResultEvidence(name, value, expectedFn.result, types);
@@ -374,11 +404,34 @@ export function constrainBinding(
         evidence[0]?.expr ?? bodyResult,
         () => typeMismatchMessage(expectedFn.result, actualFn.result),
         related,
+        undefined,
+        undefined,
+        {
+          premise: {
+            rule: "InferRecursive.ResultAgreement",
+            role: "recursive binding result matches inferred body",
+            subject: name,
+            leftRole: "recursive result",
+            rightRole: "body result",
+          },
+        },
       );
       return;
     }
   }
-  constrainAt(expected, actual, resultExpr(value));
+  constrainAt(expected, actual, resultExpr(value), undefined, [], provenance, {
+    message: "binding value",
+    node: value.node,
+    span: value.node?.span,
+  }, {
+    premise: {
+      rule: "InferBinding.PatternExpressionAgreement",
+      role: "binding pattern matches expression",
+      subject: name,
+      leftRole: "pattern",
+      rightRole: "expression",
+    },
+  });
 }
 
 function recursiveListElementVsListHint(expected: Ty, actual: Ty, expr: Expr) {

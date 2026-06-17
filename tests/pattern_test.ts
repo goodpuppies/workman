@@ -65,7 +65,12 @@ Deno.test("warns for basic redundant match arms", async () => {
   assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
     "pattern.redundant-arm",
   ]);
-  assertEquals(result.diagnostics[0].span?.start, 36);
+  assertEquals(
+    result.diagnostics[0].primary.kind === "source"
+      ? result.diagnostics[0].primary.span.start
+      : undefined,
+    36,
+  );
 });
 
 Deno.test("supports constructor and literal let patterns", async () => {

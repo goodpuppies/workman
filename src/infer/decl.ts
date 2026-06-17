@@ -392,7 +392,28 @@ function inferRecursiveLet(
       provenance,
     );
     if (b.annotation) {
-      constrainAt(placeholders[i], typeFromAst(b.annotation, typeEnv, annotationVars), b.value);
+      constrainAt(
+        placeholders[i],
+        typeFromAst(b.annotation, typeEnv, annotationVars),
+        b.value,
+        undefined,
+        [],
+        provenance,
+        {
+          message: "recursive annotation",
+          node: b.node,
+          span: b.node?.span,
+        },
+        {
+          premise: {
+            rule: "InferAnnotation.ExpressionMatchesAnnotation",
+            role: "recursive binding matches annotation",
+            subject: name,
+            leftRole: "binding",
+            rightRole: "annotation",
+          },
+        },
+      );
     }
   });
   decl.bindings.forEach((b, i) => {

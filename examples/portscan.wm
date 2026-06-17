@@ -184,7 +184,7 @@ let main = () => {
       })
     });
 
-  pipeline :> Task.recover((_) => {
+  pipeline :> Task.recover((e) => {
     Panic("js err to string unimplemented")
   })
 };
