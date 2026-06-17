@@ -1,10 +1,7 @@
 from js.global import { encodeURIComponent, fetch };
 from js.global("Deno") import { args: Js.Array<String> };
 
-
 let lift = Monad.lift;
-
-
 
 record Repo = {
   name: String, 
