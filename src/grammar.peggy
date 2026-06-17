@@ -1,5 +1,6 @@
 {
   let nextNodeId = 0;
+  let nextLiftId = 0;
   function span(loc) {
     return {
       line: loc.start.line,
@@ -53,9 +54,45 @@
   function jsonField(key, value, loc) {
     return at({ key, value }, loc);
   }
+  function varExpr(name, loc) {
+    return at({ kind: "Var", name }, loc);
+  }
+  function callExpr(callee, args, loc) {
+    return at({ kind: "Call", callee, args }, loc);
+  }
+  function tupleExpr(items, loc) {
+    return at({ kind: "Tuple", items }, loc);
+  }
+  function liftedParam(name, loc) {
+    return at({ pattern: at({ kind: "PVar", name }, loc) }, loc);
+  }
+  function liftedLambda(name, body, loc) {
+    return at({ kind: "Lambda", params: [liftedParam(name, loc)], body }, loc);
+  }
+  function taskTupleLift(tasks, loc) {
+    if (tasks.length === 0) {
+      throw new Error("lifted Task tuple requires at least one task argument");
+    }
+    if (tasks.length === 1) return tasks[0];
+    const names = tasks.map(() => `__wm_lift_${nextLiftId++}`);
+    function build(index, values) {
+      const name = names[index];
+      const value = varExpr(name, loc);
+      const nextValues = [...values, value];
+      const body = index === tasks.length - 1
+        ? tupleExpr(nextValues, loc)
+        : build(index + 1, nextValues);
+      return callExpr(
+        varExpr(index === tasks.length - 1 ? "Task.map" : "Task.andThen", loc),
+        [tasks[index], liftedLambda(name, body, loc)],
+        loc,
+      );
+    }
+    return build(0, []);
+  }
 }
 
-Start = &{ nextNodeId = 0; return true; } _ decls:(_ d:TopPhrase { return d; })* _ EOF { return mod(decls, location()); }
+Start = &{ nextNodeId = 0; nextLiftId = 0; return true; } _ decls:(_ d:TopPhrase { return d; })* _ EOF { return mod(decls, location()); }
 
 TopPhrase = d:TopDecl _ ";" { return d; }
 
@@ -224,13 +261,15 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
 Postfix = head:Primary tail:(SpaceCall / ExplicitCall)*
-  { return tail.reduce((callee, args) => at({ kind: "Call", callee, args }, location()), head); }
-ExplicitCall = _ "(" _ args:ArgList? _ ")" { return args ?? []; }
-SpaceCall = __ arg:SpaceArg { return [arg]; }
+  { return tail.reduce((callee, item) => at({ kind: "Call", callee, args: item.args }, location()), head); }
+ExplicitCall = _ "(" _ args:ArgList? _ ")" { return { kind: "Call", args: args ?? [] }; }
+SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / String / Bool / Void / PanicExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
+  = Float / Int / String / Bool / Void / PanicExpr / LiftTupleExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
+
+LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
 
 PanicExpr
   = "Panic" !IdentPart _ "(" _ message:Expr _ ")"

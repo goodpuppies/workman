@@ -230,6 +230,13 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   if (!result || !jsError) return;
   const input = fresh("input") as Extract<Ty, { tag: "var" }>;
   const output = fresh("output") as Extract<Ty, { tag: "var" }>;
+  const textValue = fresh("value") as Extract<Ty, { tag: "var" }>;
+  env.set("Result.textOf", {
+    vars: [textValue.id],
+    type: fn([textValue], StringTy),
+    status: "value",
+    basis: true,
+  });
   env.set("Json.assert", {
     vars: [input.id, output.id],
     type: fn([input], named(result, [output, named(jsError)])),

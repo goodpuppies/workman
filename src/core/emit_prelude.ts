@@ -122,6 +122,13 @@ export function emitRuntimePrelude(): string[] {
   return shown;
 };`,
     "const print = (value) => console.log(__wm_show(value));",
+    `const __wm_text_of = (value) => {
+  try {
+    return value.toString();
+  } catch (_error) {
+    return "?";
+  }
+};`,
     "const __wm_fail = (name, message) => { const e = new Error(message); e.name = name; throw e; };",
     ...emitBasisConstructors(),
     `const Json = {
@@ -207,6 +214,7 @@ export function emitRuntimePrelude(): string[] {
   mapErr: ([result, fn]) => result.ctor === ${
       basisCtorId("Err")
     } ? __wm_basis_Err(fn(result.args[0])) : result,
+  textOf: __wm_text_of,
   withDefault: ([result, fallback]) => result.ctor === ${
       basisCtorId("Ok")
     } ? result.args[0] : fallback,

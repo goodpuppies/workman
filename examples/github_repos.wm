@@ -1,0 +1,91 @@
+from js.global import { encodeURIComponent, fetch };
+from js.global("Deno") import { args: Js.Array<String> };
+
+
+let lift = Monad.lift;
+
+
+
+record Repo = {
+  name: String, 
+  full_name: String, 
+  stargazers_count: Number, 
+  forks_count: Number,
+  open_issues_count: Number, 
+  html_url: String,
+};
+
+let defaultUser = "denoland";
+let perPage = 5;
+let sort = "updated";
+let user = {
+  args :> Result.andThen((xs) => { xs :> .at(0) })
+    :> Result.map((x) => { x :> Option.withDefault(defaultUser) })
+    :> Result.withDefault(defaultUser)
+};
+let api = {
+  let encoded = user :> encodeURIComponent :> Result.withDefault(user);
+  "https://api.github.com/users/" ++ encoded ++ "/repos?sort=" ++ sort ++
+    "&per_page=" ++ Result.textOf(perPage)
+};
+
+let fetchJson = lift Task (url) => {
+  let checkStatus = lift Task (response) => {
+    if (response :> .ok :> Result.withDefault(false)) {
+      response :> Task.succeed
+    } else {
+      let status = response :> .status :> Result.andThen((n) => {
+        n :> .toString()
+      }) :> Result.withDefault("?");
+      ("GitHub returned " ++ status) :> Task.fail
+    }
+  };
+  let readJson = lift Task (response) => {
+    response :> .json() :> Task.mapErr((_) => { "could not read JSON" })
+  };
+  let assertJson = lift Task (body) => {
+    body
+      :> Json.assert
+      :> Result.mapErr((_) => { "unexpected JSON shape" })
+      :> Task.fromResult
+  };
+  fetch(url)
+    :> Task.mapErr((_) => { "could not fetch " ++ url })
+    :> checkStatus
+    :> readJson
+    :> assertJson
+};
+
+let describe = (repo) => {
+  let stars = repo.stargazers_count;
+  let forks = repo.forks_count;
+  let issues = repo.open_issues_count;
+  let lines: Result<Js.Array<String>, Js.Error> = JSON[
+    repo.full_name,
+    "  stars " ++ Result.textOf(stars) ++ ", forks " ++ Result.textOf(forks) ++ ", open issues " ++ Result.textOf(issues),
+    "  " ++ repo.html_url,
+  ] :> Json.assert;
+
+  lines :> Result.andThen((items) => { items :> .join("\n") })
+    :> Result.withDefault("")
+};
+
+let render = (user, repos) => {
+  let totalStars = repos :> .reduce((sum, repo, index, array) => { sum + repo.stargazers_count }, 0) :> Result.withDefault(0);
+  let heading = "Recent " ++ user ++ " repos (" ++ Result.textOf(repos :> .length :> Result.withDefault(0)) ++", " ++ Result.textOf(totalStars) ++ " stars shown)";
+  let body = repos :> .map((repo, index, array) => { describe(repo) })
+    :> Result.andThen((items) => { items :> .join("\n\n") })
+    :> Result.withDefault("");
+  heading ++ "\n" ++ "=" :> .repeat(heading :> .length :> Result.withDefault(0)) :> Result.withDefault("") ++ "\n\n" ++ body
+};
+
+let main = () => {
+  let repos: Task<Js.Array<Repo>, String> = fetchJson(Task.succeed(api));
+  repos
+    :> Task.map((repos) => { render(user, repos) })
+    :> Task.map(print)
+    :> Task.recover((err) => {
+      print("github example failed: " ++ err);
+      void
+    })
+};

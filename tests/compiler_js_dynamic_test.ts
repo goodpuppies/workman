@@ -280,9 +280,13 @@ Deno.test("primitive JS methods constrain unannotated helper receivers", async (
     let paddedRight = (text, width) => {
       text :> .padEnd(width, " ") :> try
     };
+    let repeated = (text, count) => {
+      text :> .repeat(count) :> try
+    };
   `);
   expectBinding(result.env, "numberText", { type: "(Number) => String", vars: 0 });
   expectBinding(result.env, "paddedRight", { type: "((String, Number)) => String", vars: 0 });
+  expectBinding(result.env, "repeated", { type: "((String, Number)) => String", vars: 0 });
 });
 
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {

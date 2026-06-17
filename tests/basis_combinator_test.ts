@@ -302,6 +302,61 @@ Deno.test("Task.map2 supports fixed task composition through pipe rules", async 
   assertEquals(result.stdout, "profile/settings\n");
 });
 
+Deno.test("lifted Task tuple syntax sequences task values into one tuple task", async () => {
+  const result = await checkSource(`
+    let render = Monad.lift Task (text, title) => {
+      Task.succeed(text ++ "/" ++ title)
+    };
+    let text = Task.succeed("README.md");
+    let title = Task.succeed("# wm-mini");
+    let tupled = |text, title|;
+    let page = render(tupled);
+  `);
+
+  expectBinding(result.env, "render", {
+    type: "(Task<(String, String), 'a>) => Task<String, 'a>",
+    vars: 0,
+  });
+  expectBinding(result.env, "tupled", { type: "Task<(String, String), 'a>", vars: 0 });
+  expectBinding(result.env, "page", { type: "Task<String, 'a>", vars: 0 });
+});
+
+Deno.test("lifted Task tuple syntax evaluates through Task.andThen and Task.map", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let readFile = Monad.lift Task (path) => {
+        Task.succeed("text:" ++ path)
+      };
+
+      let titlePrefix = Monad.lift Task (text) => {
+        Task.succeed("title:" ++ text)
+      };
+
+      let render = Monad.lift Task (text, title) => {
+        Task.succeed(text ++ "/" ++ title)
+      };
+
+      let main = () => {
+        let path = Task.succeed("README.md");
+        let text = readFile(path);
+        let title = titlePrefix(text);
+
+        render(|text, title|)
+          :> Task.map(print)
+      };
+    `,
+  );
+
+  const output = await runCli(["run", input]);
+
+  assertEquals(output.stderr, "");
+  assertEquals(output.code, 0);
+  assertEquals(output.stdout, "text:README.md/title:text:README.md\n");
+});
+
 Deno.test("Task.fn evaluates lifted fect-style composition", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

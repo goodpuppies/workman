@@ -156,6 +156,11 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
     constrain(args[1], StringTy);
     return StringTy;
   }
+  if (primitive === "String" && member === "repeat") {
+    if (args.length !== 1) return undefined;
+    constrain(args[0], NumberTy);
+    return StringTy;
+  }
   if (primitive === "String" && (member === "startsWith" || member === "endsWith")) {
     if (args.length !== 1) return undefined;
     constrain(args[0], StringTy);
@@ -176,7 +181,7 @@ function inferPrimitiveReceiverFromMember(receiver: Ty, member: string): string 
     return "Number";
   }
   if (
-    member === "slice" || member === "padStart" || member === "padEnd" ||
+    member === "slice" || member === "padStart" || member === "padEnd" || member === "repeat" ||
     member === "startsWith" || member === "endsWith" || member === "toLowerCase"
   ) {
     constrain(receiver, StringTy);

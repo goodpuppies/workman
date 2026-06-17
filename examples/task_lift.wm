@@ -43,6 +43,14 @@ let titlePrefix = lift Task (text) => {
 let label = lift Task (title) => {
   ("lifted: " ++ title) :> Task.succeed
 };
+
+let summarize = lift Task (text, title) => {
+  let source = text
+    :> .slice(0, 9)
+    :> Result.withDefault("unknown");
+
+  ("lifted sugar: " ++ title ++ " from " ++ source) :> Task.succeed
+};
 --#endregion
 
 let elmStyle = (path) => {
@@ -72,17 +80,28 @@ let liftedStyle = (path) => {
   labeled
 };
 
-let main = () => {
-  [
-    elmStyle("README.md"),
-    liftedStyle("README.md"),
-  ]
-    :> Task.collectList
-    :> Task.map((lines) => {
-      lines
-        :> Js.Array.fromList
-        :> .join("\n")
-        :> Result.withDefault("could not render comparison")
-        :> print
-    })
+let liftedSugarStyle = (path) => {
+  -- `|...|` turns multiple Task handles into one Task containing a tuple,
+  -- which lines up with `lift Task (text, title) => ...`.
+  let path = Task.succeed(path);
+  let text = readFile(path);
+  let title = titlePrefix(text);
+
+  summarize(|text, title|)
 };
+
+--let main = () => {
+--  [
+--    elmStyle("README.md"),
+--    liftedStyle("README.md"),
+--    liftedSugarStyle("README.md"),
+--  ]
+--    :> Task.collectList
+--    :> Task.map((lines) => {
+--      lines
+--        :> Js.Array.fromList
+--        :> .join("\n")
+--        :> Result.withDefault("could not render comparison")
+--        :> print
+--    })
+--};
