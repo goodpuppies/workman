@@ -51,7 +51,7 @@ Diagnostic D1
       id: RF1
       rule: WM.RecursiveBinding.Result
       subject: binding sumList
-      span: source span for the whole recursive binding
+      anchor: source anchor for the whole recursive binding
       path:
         ElaborateDeclaration
         -> ElaborateRecursiveBinding
@@ -76,12 +76,6 @@ Diagnostic D1
 
   support:
     entries:
-      F1 failure:
-        recursive binding result check failed
-
-      PE1 premise:
-        recursive-body-result-must-match-placeholder-result
-
       C1 claim:
         binding placeholder sumList has type (Int_list, Number) => Number
         origin: let rec sumList = ...
@@ -107,15 +101,12 @@ Diagnostic D1
         frame RF1
 
     edges:
-      F1 -> PE1: failure contains failed premise
       C1 -> K1: provides recursive placeholder
       C2 -> C1: occurrence uses recursive placeholder
       C3 -> K1: provides body result
       C4 -> C2: helps derive recursive occurrence result
-      PE1 -> K1: premise created failed constraint
 
     roots:
-      PE1: failed-premise
       K1: failed-constraint
       C2: primary-observed
       C3: body-result
@@ -248,7 +239,7 @@ That rendering is only a projection. The object stores:
 rule frame
 failed premise
 violation counterexample
-support graph
+evidence log
 ```
 
 That is enough to reconstruct the compiler state at the failure without making the top-level

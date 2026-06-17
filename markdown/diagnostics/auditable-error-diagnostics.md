@@ -140,7 +140,8 @@ Diagnostic =
 ```
 
 This replaces the earlier idea of diagnostics as a bundle of optional compiler-state fields. The
-model has one required `failure`, and the state snapshot is a support graph made from typed entries:
+model has one required `failure`, and the state snapshot is a simple support/evidence log made from
+typed entries:
 claims, constraints, scopes, substitutions, searches, rule frames, and recovery entries.
 
 The important discipline is:
@@ -148,7 +149,7 @@ The important discipline is:
 - the top-level diagnostic type should not know compiler subsystems
 - each diagnostic should name the exact rule frame and failed premise
 - support entries should explain how the observed data points were derived
-- renderers should project the support graph instead of inventing hidden reasoning
+- renderers should project the support evidence instead of inventing hidden reasoning
 
 ## Expected/Got Is Presentation, Not Data
 
@@ -272,7 +273,7 @@ compiler path:
 ```
 
 This tells the programmer what logic branch the compiler was in. It should be derived from
-`RuleFrame.parent` links, not from thrown JavaScript stack frames.
+`RuleFrame.path` or parent rule-frame links, not from thrown JavaScript stack frames.
 
 ## Rendering Modes
 
@@ -709,30 +710,65 @@ unsuccessful attempt to construct the ordinary SML-style elaboration derivation.
 
 ## Error System Rewrite Plan
 
-This should be a rewrite of the error system around structured diagnostic artifacts. The existing
-message-shaped diagnostics can inform what information users currently receive, but preserving old
-message compatibility is not a goal and should not constrain the internal model, renderer, or
-migration order.
+This should be a full rewrite of the error system around structured diagnostic artifacts. A gradual
+compatibility layer would keep two diagnostic models alive for too long and force every rewritten
+site to satisfy both shapes. That is likely more code, not less.
 
-### Phase 1: Allocate Diagnostic Evidence Ids
+The existing message-shaped diagnostics should be used as reference material only:
 
-Add the allocator and writer for the diagnostic evidence graph before adding individual diagnostics.
-Every rule frame, premise, claim, constraint, substitution, search, recovery step, and repair should
-have a stable id when it is created.
+- what cases currently exist
+- what tests should still be covered
+- what useful related spans or hints should not be lost
+
+They should not constrain the internal model, renderer, or implementation order. The goal is one
+diagnostic pipeline:
+
+```txt
+compiler rule/premise
+  -> evidence entries and type snapshots
+  -> structured Diagnostic
+  -> CLI/LSP renderers
+```
+
+During the rewrite, rewritten checks should produce only the new object. Non-rewritten checks can
+remain temporarily in the old system until their turn, but there should be no adapter that makes the
+new model imitate old message-shaped diagnostics.
+
+### Phase 1: Add The Diagnostic Writer
+
+Add a small allocator and writer for diagnostic evidence before adding individual diagnostics. Every
+rule frame, premise, claim, constraint, substitution, search, recovery step, and repair should have a
+stable id when it is created.
+
+Keep this deliberately KISS:
+
+```ts
+type DiagnosticWriter = {
+  nextId(): EvidenceId;
+  snapshotType(ty: Ty): TypeSnapshotId;
+  add(entry: SupportEntry): void;
+  addEdge(edge: SupportEdge): void;
+};
+```
+
+The writer may store entries chronologically. Chronology is useful for replaying the compiler's
+local reasoning. The anti-goal is a raw trace of every function call; the acceptable goal is an
+ordered list of semantic evidence with ids and anchors.
 
 This phase also makes type evidence immutable. Do not keep historical evidence as references to
 mutable `Ty` nodes. Capture immutable type snapshots at constraint introduction, type-variable
 commitment, and collision time.
 
-### Phase 2: Name Rules At Constraint Sites
+### Phase 2: Pass Premise Context To Constraint Sites
 
-Add rule metadata to `constrainAt` at call sites that produce structured diagnostics.
+Add premise metadata to `constrainAt` at call sites that produce structured diagnostics.
 
 ```ts
-type RuleContext = {
-  rule: RuleId;
-  requirement: string;
-  origin: ConstraintOrigin;
+type PremiseContext = {
+  frame: RuleFrame;
+  premise: Premise;
+  roles: ConstraintRole[];
+  origin: SourceAnchor;
 };
 ```
 
@@ -746,54 +782,51 @@ Start at central choke points:
 - type annotations
 - binary operator application
 
-The point is to get rule identity into the data path.
+The point is to get rule identity, premise identity, operand roles, and origin into the data path as
+one concept. Avoid separate `RuleContext`, `ConstraintOrigin.message`, and ad hoc role fields.
 
-### Phase 3: Replace Message Origins With Structured Origins
+### Phase 3: Replace Message Origins With Anchored Claims
 
-Current `ConstraintOrigin.message` is useful but too presentation-shaped.
-
-Move toward:
+Current string origins are useful but too presentation-shaped. Replace them with claims and anchors:
 
 ```ts
-type ConstraintOrigin = {
-  kind:
-    | "literal"
-    | "variable"
-    | "callee"
-    | "argument"
-    | "piped-value"
-    | "branch"
-    | "match-arm"
-    | "annotation"
-    | "basis-signature"
-    | "ffi";
-  label: string;
-  anchor: SourceAnchor;
+type ClaimEntry = {
+  kind: "claim";
+  id: ClaimId;
+  proposition: Proposition;
+  origin: SourceAnchor;
+};
+
+type ConstraintRole = {
+  term: TermId;
+  role: string;
+  snapshot: TypeSnapshotId;
 };
 ```
 
-Rendering can print `from <label> at line:col`, but the stored data should be semantic.
+Rendering can print `from <label> at line:col`, but the stored data should be semantic evidence:
+literal facts, variable facts, callee facts, argument facts, branch facts, annotation facts, basis
+facts, and FFI facts.
 
-### Phase 4: Add Support Entries
+### Phase 4: Add Constraint And Substitution Evidence
 
-Extend the current type-fact/provenance code so facts, constraints, substitutions, searches, and
-rule frames can be emitted as support entries. Constraint entries should be created with the
-`ConstraintId` allocated before the unifier runs, so commitments and collisions can point back to the
-same constraint.
+Extend the current type-fact/provenance code so constraints and substitutions can be emitted as
+support entries. Constraint entries should be created with the `ConstraintId` allocated before the
+unifier runs, so commitments and collisions can point back to the same constraint.
 
 ```ts
 type SupportEntry =
-  | FailureEntry
-  | PremiseEntry
   | ClaimEntry
   | ConstraintEntry
+  | ScopeEntry
   | SubstitutionEntry
   | SearchEntry
+  | RecoveryEntry
   | RuleEntry;
 ```
 
-Existing maps can remain. The id lets constraints and rule frames refer to evidence without
-embedding large trees.
+Existing maps can remain while the rewrite is in progress. The id lets constraints and rule frames
+refer to evidence without embedding large trees.
 
 ### Phase 5: Add Constraint Evidence
 
@@ -811,7 +844,7 @@ collision evidence:
 - attempted side
 - constraint id
 
-The diagnostic layer then asks the evidence graph what that means.
+The diagnostic layer then asks the support evidence what that means.
 
 ### Phase 6: Rule Trace
 
@@ -834,7 +867,7 @@ type InferContext = {
 ```
 
 This should be done only when it reduces friction. The current codebase is small enough that adding a
-few rule options to `constrainAt` first is cheaper.
+few premise contexts to `constrainAt` first is cheaper.
 
 ### Phase 7: Render Auditable Diagnostics
 
@@ -861,7 +894,7 @@ Add a CLI or debug flag later for full trace mode.
 The best first useful target is not a complete Hazel-style solver. It is the model in
 `markdown/diagnostics/diagnostic-object-model.md`, populated first at type mismatch sites.
 
-The first diagnostics can have small support graphs:
+The first diagnostics can have small evidence logs:
 
 ```txt
 failure:
@@ -870,9 +903,9 @@ failure:
   violation: contradicted, unsatisfied, cardinality-failed, cycle-found, or another model variant
 
 support:
-  entries: claims and constraints near the failure
-  edges: how claims fed the failed premise
-  roots: failed premise, failed constraint, and observed operands
+  entries: chronological claims and constraints near the failure
+  roots: failed constraint and observed operands
+  edges: only the causal links needed to justify the rendering
 ```
 
 This fits the current implementation because `constrainAt` already knows local role names and source
@@ -880,12 +913,14 @@ expressions at the best choke points. But the stored shape should be the general
 start, so later diagnostics can add lookup, arity, coverage, scope, occurrence, and graph evidence
 without another redesign.
 
-The first concrete implementation slices should be:
+The first concrete implementation slice should be narrow in language coverage but complete in
+pipeline shape:
 
-- Add rule metadata and requirement labels to central `constrainAt` call sites.
-- Convert recursive binding result mismatches into a failed premise plus support graph.
-- Replace message-shaped diagnostics at the migrated sites with structured diagnostics.
-- Render editor and CLI output from the structured object.
+- Add `PremiseContext` to central `constrainAt` call sites.
+- Capture immutable type snapshots at constraint introduction, commitment, and collision.
+- Convert recursive binding result mismatches into a failed premise plus evidence log.
+- Route the selected checks through the new diagnostic writer and renderer end to end.
+- Leave old diagnostics in place only for checks not yet rewritten.
 
 ## Example: If Branch Mismatch
 

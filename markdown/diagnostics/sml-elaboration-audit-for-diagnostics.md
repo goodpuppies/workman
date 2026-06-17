@@ -461,6 +461,8 @@ Rewrite rule:
 - stop deriving codes from message strings
 - make support evidence and repairs explicit data, not hidden formatter logic
 - do not preserve old message compatibility as a goal of the rewrite
+- do not build an adapter that forces structured diagnostics to imitate old diagnostics
+- prefer a full diagnostic pipeline rewrite over a long mixed-model migration
 
 ### Inference Context Shape
 
@@ -484,13 +486,13 @@ Refactor needed before diagnostics:
 
 ```txt
 Recommended before broad implementation.
-Not required for the first narrow prototype.
+Not required before the first end-to-end rewrite slice.
 ```
 
 Suggested path:
 
 1. Add diagnostic/evidence id allocation and immutable type snapshots.
-2. Add rule metadata by extending `constrainAt` options.
+2. Add premise metadata by extending `constrainAt` options.
 3. Once that works, introduce an `InferContext` object.
 4. Move maps and diagnostic/evidence allocation into the context.
 5. Keep env/typeEnv explicit only where local scope copies are semantically important.
@@ -529,23 +531,25 @@ stable references to mutable `Ty` nodes.
 
 Minimum:
 
+- rule frame id
+- premise id
 - constraint id
-- rule id
 - source anchor
 - left/right roles
 - immutable left/right type snapshots
 - `UnifyBind` commitment record with immutable committed type snapshot
 - collision record with immutable operand snapshots
 
-### 2. Add Rule Context To Constraint Sites
+### 2. Add Premise Context To Constraint Sites
 
 Extend `constrainAt` options with:
 
 ```ts
-type RuleContext = {
-  rule: RuleId;
-  requirement: string;
+type PremiseContext = {
+  frame: RuleFrame;
+  premise: Premise;
   roles: ConstraintRole[];
+  origin: SourceAnchor;
 };
 ```
 
@@ -558,13 +562,15 @@ Start with:
 - `InferMatch.ArmsSameType`
 - `InferAnnotation.ExpressionMatchesAnnotation`
 
-This makes rule identity and requirement identity part of the data path.
+This makes rule identity, requirement identity, operand roles, and origin part of the same data path.
+Do not split this across separate `RuleContext`, string origin, and role parameters.
 
 ### 3. Make Declaration Failure Transactional Before Rich Recovery
 
-This is required before richer recovery or multi-error continuation, but it is not required before
-the first single-error structured diagnostic slice. Before richer recovery, make declaration-level
-mutation explicit:
+This is required before richer recovery, multi-error continuation, recovery entries, or meaningful
+`dependsOn` cascades. It is not required before the first end-to-end structured diagnostic slice if
+that slice still stops at the first failed declaration. Before richer recovery, make
+declaration-level mutation explicit:
 
 ```txt
 begin declaration
@@ -581,7 +587,7 @@ This protects the SML rule that failed elaboration has no static effect.
 
 ## Refactors Not Needed First
 
-These are not prerequisites for the first auditable diagnostics slice:
+These are not prerequisites for the first end-to-end rewrite slice:
 
 - full Hazel marked AST
 - gradual unknown types
@@ -591,8 +597,8 @@ These are not prerequisites for the first auditable diagnostics slice:
 - broad `InferContext` migration
 - complete diagnostic code taxonomy
 
-They may become useful later, but doing them first would slow down the feature without improving
-the core evidence model.
+They may become useful later, but doing them first would slow down the rewrite without improving the
+core evidence model.
 
 ## Recommended First Slice
 
@@ -619,7 +625,9 @@ The diagnostic object can answer:
   which violation happened
 ```
 
-The user-facing output should be rendered from the new diagnostic object for these migrated rules.
+The user-facing output should be rendered from the new diagnostic object for these rewritten rules.
+Old diagnostics may remain only for checks not yet rewritten; do not maintain a compatibility layer
+inside the new model.
 
 ## Final Assessment
 
@@ -629,7 +637,7 @@ The compiler does not need a language-semantics rewrite first; it does need an e
 The necessary preparation is:
 
 - allocate diagnostic evidence ids and immutable type snapshots first
-- add rule metadata to constraints
+- add premise context to constraints
 - record evidence at the moment constraints and unification commitments happen
 - make declaration failure boundaries explicit before richer recovery
 
