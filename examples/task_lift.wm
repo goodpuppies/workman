@@ -1,0 +1,88 @@
+-- Compare ordinary Elm-style Task threading with lifted Task functions.
+--
+-- The async edge here is real JavaScript: Deno.readTextFile returns a Promise,
+-- which wm-mini reflects as Task<String, Js.Error>.
+
+from js.global("Deno") import { readTextFile };
+
+let lift = Monad.lift; -- alias from std
+--looks like
+--let lift = (x) => { 
+--    (f) => {
+--        x.fn(f) -- means (#fn x)(f)
+--    }
+--};
+
+--#region manual
+let readFileManual = (path) => {
+  readTextFile(path)
+    :> Task.mapErr((_) => { "could not read " ++ path })
+};
+
+let titlePrefixManual = (text) => {
+  text
+    :> .slice(0, 9)
+    :> Result.mapErr((_) => { "could not slice title" })
+    :> Task.fromResult
+};
+--#endregion
+
+--#region "colored"
+let readFile = lift Task (path) => {
+  readTextFile(path)
+    :> Task.mapErr((_) => { "could not read " ++ path })
+};
+
+let titlePrefix = lift Task (text) => {
+  text
+    :> .slice(0, 9)
+    :> Result.mapErr((_) => { "could not slice title" })
+    :> Task.fromResult
+};
+
+let label = lift Task (title) => {
+  ("lifted: " ++ title) :> Task.succeed
+};
+--#endregion
+
+let elmStyle = (path) => {
+  path
+    :> Task.succeed
+    :> Task.andThen((resolvedPath) => {
+      readFileManual(resolvedPath)
+        :> Task.andThen((text) => {
+          titlePrefixManual(text)
+            :> Task.andThen((title) => {
+              ("elm-style: " ++ title) :> Task.succeed
+            })
+        })
+    })
+};
+
+let liftedStyle = (path) => {
+  -- These lets name Task handles, not awaited values. The lifted functions
+  -- make each step consume the previous Task directly, so the shape is closer
+  -- to do-notation, Rust ?, or let% style code than nested Task.andThen.
+  -- despite this theres no magic going on, just simple vanilla sml currying
+  let path =  Task.succeed(path);
+  let text = readFile(path);
+  let title = titlePrefix(text);
+  let labeled = label(title);
+
+  labeled
+};
+
+let main = () => {
+  [
+    elmStyle("README.md"),
+    liftedStyle("README.md"),
+  ]
+    :> Task.collectList
+    :> Task.map((lines) => {
+      lines
+        :> Js.Array.fromList
+        :> .join("\n")
+        :> Result.withDefault("could not render comparison")
+        :> print
+    })
+};

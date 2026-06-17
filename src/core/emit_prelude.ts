@@ -157,6 +157,9 @@ export function emitRuntimePrelude(): string[] {
     fromList: __wm_list_to_array,
   },
 };`,
+    `const Monad = {
+  lift: (x) => (f) => x.fn(f),
+};`,
     `const List = {
   map: ([items, fn]) => {
     const mapped = [];
@@ -268,6 +271,7 @@ export function emitRuntimePrelude(): string[] {
   return String(error);
 };`,
     `const Task = {
+  fn: (fn) => (task) => Task.andThen(__wm_tuple(task, fn)),
   fromResult: (result) => Promise.resolve(result),
   succeed: (value) => Promise.resolve(__wm_basis_Ok(value)),
   fail: (error) => Promise.resolve(__wm_basis_Err(error)),

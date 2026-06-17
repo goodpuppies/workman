@@ -1,4 +1,4 @@
-import type { Expr, Module } from "./ast.ts";
+import type { Expr, ImportClause, Module } from "./ast.ts";
 import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
 import { inferDecl } from "./infer/decl.ts";
 import { addAdts, addImport } from "./infer/imports.ts";
@@ -44,7 +44,7 @@ export type InferModuleOptions = {
 };
 
 export type InitialImport = {
-  alias: string;
+  clause: ImportClause;
   result: InferResult;
 };
 
@@ -92,10 +92,7 @@ function inferModuleCore(
   const provenance: TypeProvenance = new Map();
 
   for (const initialImport of options.initialImports ?? []) {
-    addImport(env, typeEnv, {
-      kind: "Namespace",
-      alias: initialImport.alias,
-    }, initialImport.result);
+    addImport(env, typeEnv, initialImport.clause, initialImport.result);
     addAdts(adts, initialImport.result.exportedStructure.adts);
     addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.types);
   }

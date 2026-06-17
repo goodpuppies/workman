@@ -95,6 +95,29 @@ Deno.test("Monad.lift works over structural fn records", async () => {
   assertEquals(result.env.get("Monad.lift")?.imported, true);
 });
 
+Deno.test("Monad.lift composes over Task.fn", async () => {
+  const result = await checkSource(`
+    record User = { login: String, name: String };
+    let fetchUser = Monad.lift Task (login) => {
+      .{ login = login, name = login ++ " Lovelace" } :> Task.succeed
+    };
+    let getDisplayName = Monad.lift Task (user) => {
+      user.name :> Task.succeed
+    };
+    let greeting = "Ada" :> Task.succeed :> fetchUser :> getDisplayName;
+  `);
+
+  expectBinding(result.env, "fetchUser", {
+    type: "(Task<String, 'a>) => Task<User, 'a>",
+    vars: 0,
+  });
+  expectBinding(result.env, "getDisplayName", {
+    type: "(Task<User, 'a>) => Task<String, 'a>",
+    vars: 0,
+  });
+  expectBinding(result.env, "greeting", { type: "Task<String, 'a>", vars: 0 });
+});
+
 Deno.test("low-level inference starts from minimal basis without std combinators", async () => {
   const module = await parse("let value = Option.map;");
   assertThrows(() => inferModule(module), Error, "unknown name Option.map");
@@ -277,6 +300,75 @@ Deno.test("Task.map2 supports fixed task composition through pipe rules", async 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "profile/settings\n");
+});
+
+Deno.test("Task.fn evaluates lifted fect-style composition", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      record User = { login: String, name: String };
+
+      let fetchUser = Monad.lift Task (login) => {
+        .{ login = login, name = login ++ " Lovelace" } :> Task.succeed
+      };
+
+      let getDisplayName = Monad.lift Task (user) => {
+        user.name :> Task.succeed
+      };
+
+      let main = () => {
+        "Ada"
+          :> Task.succeed
+          :> fetchUser
+          :> getDisplayName
+          :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "Ada Lovelace\n");
+});
+
+Deno.test("Task.fn composes real async JS tasks", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.global("Deno") import { readTextFile };
+
+      let readFile = Monad.lift Task (path) => {
+        readTextFile(path) :> Task.mapErr((_) => { "could not read " ++ path })
+      };
+
+      let titlePrefix = Monad.lift Task (text) => {
+        text
+          :> .slice(0, 9)
+          :> Result.mapErr((_) => { "could not slice title" })
+          :> Task.fromResult
+      };
+
+      let main = () => {
+        "README.md"
+          :> Task.succeed
+          :> readFile
+          :> titlePrefix
+          :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "# wm-mini\n");
 });
 
 async function runCli(args: string[]) {

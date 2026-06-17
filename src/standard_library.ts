@@ -1,4 +1,5 @@
 import { prepareFfiElaboration } from "./ffi/elab.ts";
+import type { ImportClause } from "./ast.ts";
 import {
   inferModule,
   type InferModuleOptions,
@@ -8,31 +9,36 @@ import {
 import { parse } from "./parser.ts";
 
 type StandardModule = {
-  alias: string;
   path: string;
   url: URL;
+  clauses: ImportClause[];
 };
 
 const standardModules: StandardModule[] = [
   {
-    alias: "List",
     path: "std/list.wm",
     url: new URL("../std/list.wm", import.meta.url),
+    clauses: [{ kind: "Namespace", alias: "List" }],
   },
   {
-    alias: "Option",
     path: "std/option.wm",
     url: new URL("../std/option.wm", import.meta.url),
+    clauses: [{ kind: "Namespace", alias: "Option" }],
   },
   {
-    alias: "Result",
     path: "std/result.wm",
     url: new URL("../std/result.wm", import.meta.url),
+    clauses: [{ kind: "Namespace", alias: "Result" }],
   },
   {
-    alias: "Monad",
+    path: "std/task.wm",
+    url: new URL("../std/task.wm", import.meta.url),
+    clauses: [{ kind: "Namespace", alias: "Task" }],
+  },
+  {
     path: "std/monad.wm",
     url: new URL("../std/monad.wm", import.meta.url),
+    clauses: [{ kind: "Namespace", alias: "Monad" }],
   },
 ];
 
@@ -52,10 +58,8 @@ export async function standardInferOptions(): Promise<InferModuleOptions> {
 async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
   const out: InitialImport[] = [];
   for (const module of standardModules) {
-    out.push({
-      alias: module.alias,
-      result: await inferStandardModule(module),
-    });
+    const result = await inferStandardModule(module);
+    for (const clause of module.clauses) out.push({ clause, result });
   }
   return out;
 }

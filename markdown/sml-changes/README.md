@@ -1,14 +1,15 @@
-# Workman Changes From Standard ML
+# wm-mini Changes From Standard ML
 
 This folder tracks the semantic and surface-language places where current
 `wm-mini` intentionally differs from Standard ML.
 
-`wm-mini` should be read as an SML-shaped language, not as a full Standard ML
-implementation. The goal of these notes is to separate four things:
+`wm-mini` should be read as a small language whose core is compared against
+Standard ML, not as a full Standard ML implementation. The goal of these notes
+is to separate four things:
 
-- SML behavior that Workman keeps.
-- SML behavior that Workman only spells differently.
-- SML behavior that Workman changes deliberately.
+- SML behavior that current `wm-mini` keeps.
+- SML behavior that current `wm-mini` only spells differently.
+- SML behavior that current `wm-mini` changes deliberately.
 - SML behavior that `wm-mini` omits for now because the implementation is small.
 
 The local Standard ML reference is:
@@ -41,16 +42,18 @@ for design accounting and future formalization.
 When documenting a feature, classify it before deciding whether it belongs in
 the future formal core:
 
-- `kept`: same SML idea and close enough behavior.
-- `re-spelled`: same SML idea, different Workman surface.
+- `kept`: checked against the relevant SML rule and current `wm-mini`
+  implementation, with behavior close enough to treat as the same core rule.
+- `re-spelled`: checked as the same overlapping rule, but with different
+  `wm-mini` surface syntax.
 - `changed`: intentionally different behavior or type discipline.
 - `omitted`: absent from current `wm-mini`.
-- `extension`: Workman-specific feature outside SML.
+- `extension`: `wm-mini`-specific feature outside SML.
 - `reconsider`: implemented or documented, but not yet justified as part of
-  the SML-shaped subset.
+  the compared-against-SML subset.
 
 This classification is useful because `wm-mini` is not trying to grow into all
-of SML. It is trying to keep the small SML-shaped core precise.
+of SML. It is trying to keep the small compared-against-SML core precise.
 
 ## Evidence Rule
 
@@ -58,8 +61,13 @@ Every claimed difference should be grounded in both sides:
 
 - the SML side should cite a relevant file from
   `research/The-Definition-of-Standard-ML-Revised`, and
-- the Workman side should cite current grammar, implementation behavior, tests,
-  or user-facing docs.
+- the `wm-mini` side should cite current grammar, implementation behavior, or
+  tests from this repository.
+
+User-facing docs such as `docs/wm-minisyntaxguide.md` are useful orientation,
+but they are not proof of current behavior. The `research/workman` and
+`research/workmangr` trees are related history and design context, not
+authoritative evidence for current `wm-mini`.
 
 If a point is only a possible future direction, mark it as design work rather
 than as a current difference.

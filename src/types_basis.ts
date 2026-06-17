@@ -9,6 +9,7 @@ import {
   named,
   NumberTy,
   StringTy,
+  structural,
   tuple,
   type Ty,
   type TypeDeclInfo,
@@ -54,6 +55,19 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
   const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
     env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });
   };
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    env.set("Task", {
+      vars: [a.id, b.id, e.id],
+      type: structural([
+        { name: "fn", type: fn([fn([a], task(b, e))], fn([task(a, e)], task(b, e))) },
+      ]),
+      status: "value",
+      basis: true,
+    });
+  }
   {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;

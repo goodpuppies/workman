@@ -1,0 +1,5 @@
+let fn = (f) => {
+  (task) => {
+    task :> Task.andThen(f)
+  }
+};
