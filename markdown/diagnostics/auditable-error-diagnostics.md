@@ -69,7 +69,7 @@ The current facts are mostly observational:
 - this variable use came from this general scheme
 - this FFI placeholder is unresolved or resolved
 
-That is necessary, but not sufficient for auditable failures. The next step is causal facts:
+That is necessary, but not sufficient for auditable failures. The rewrite needs causal facts:
 
 - this fact was derived by this rule
 - this fact depends on these parent facts
@@ -122,8 +122,8 @@ This is an important low-cost hook. The compiler already discovers the useful mo
 - the commitment happens at a structural path
 - the commitment has a left/right constraint side
 
-The auditable model should grow from this kind of hook rather than replacing HM inference with a
-large solver rewrite.
+The auditable model should use this kind of hook rather than replacing HM inference with a large
+solver rewrite.
 
 ## Diagnostic Model
 
@@ -385,22 +385,22 @@ away the relevant semantic evidence.
 
 ## Fit With Existing Notes
 
-This note sits above two existing plans.
+This note supersedes lower-level implementation notes.
 
-`markdown/type-mismatch-origin-diagnostics.md` is the first concrete slice. It improves mismatch
-origins using type-variable commitments and source-aware constraint origins. That should still be the
-near-term implementation path.
+`markdown/type-mismatch-origin-diagnostics.md` is useful background for mismatch origins,
+type-variable commitments, and source-aware constraint origins.
 
-`markdown/frontend-diagnostics-design.md` describes a broader frontend migration toward structured
-diagnostics, recovery nodes, and `ErrorTy`. That remains important because auditable diagnostics work
-best when the frontend returns a result object instead of stopping at the first thrown exception.
+`markdown/frontend-diagnostics-design.md` describes the broader structured frontend target:
+diagnostic objects, recovery nodes, and `ErrorTy`. That remains important because auditable
+diagnostics work best when the frontend returns a result object instead of stopping at the first
+thrown exception.
 
-The relationship is:
+Use the lower-level notes this way:
 
-1. Improve current mismatch origins with the existing `constrainAt` and `UnifyBind` hooks.
-2. Move diagnostics from message-shaped exceptions toward structured diagnostic objects.
+1. Use `constrainAt` and `UnifyBind` as evidence capture points.
+2. Replace message-shaped exceptions with structured diagnostic objects.
 3. Add rule ids and requirement ids at central inference choke points.
-4. Grow current type facts/provenance into a compact evidence graph.
+4. Replace current type facts/provenance diagnostics with a compact evidence graph.
 5. Add render modes over the same diagnostic data.
 
 ## Theory: SML And Hazel
@@ -710,11 +710,9 @@ unsuccessful attempt to construct the ordinary SML-style elaboration derivation.
 
 ## Error System Rewrite Plan
 
-This should be a full rewrite of the error system around structured diagnostic artifacts. A gradual
-compatibility layer would keep two diagnostic models alive for too long and force every rewritten
-site to satisfy both shapes. That is likely more code, not less.
+This should be a clean rewrite of the error system around structured diagnostic artifacts.
 
-The existing message-shaped diagnostics should be used as reference material only:
+The existing message-shaped diagnostics are reference material only:
 
 - what cases currently exist
 - what tests should still be covered
@@ -730,11 +728,7 @@ compiler rule/premise
   -> CLI/LSP renderers
 ```
 
-During the rewrite, rewritten checks should produce only the new object. Non-rewritten checks can
-remain temporarily in the old system until their turn, but there should be no adapter that makes the
-new model imitate old message-shaped diagnostics.
-
-### Phase 1: Add The Diagnostic Writer
+### Step 1: Add The Diagnostic Writer
 
 Add a small allocator and writer for diagnostic evidence before adding individual diagnostics. Every
 rule frame, premise, claim, constraint, substitution, search, recovery step, and repair should have a
@@ -755,11 +749,11 @@ The writer may store entries chronologically. Chronology is useful for replaying
 local reasoning. The anti-goal is a raw trace of every function call; the acceptable goal is an
 ordered list of semantic evidence with ids and anchors.
 
-This phase also makes type evidence immutable. Do not keep historical evidence as references to
+This step also makes type evidence immutable. Do not keep historical evidence as references to
 mutable `Ty` nodes. Capture immutable type snapshots at constraint introduction, type-variable
 commitment, and collision time.
 
-### Phase 2: Pass Premise Context To Constraint Sites
+### Step 2: Pass Premise Context To Constraint Sites
 
 Add premise metadata to `constrainAt` at call sites that produce structured diagnostics.
 
@@ -785,7 +779,7 @@ Start at central choke points:
 The point is to get rule identity, premise identity, operand roles, and origin into the data path as
 one concept. Avoid separate `RuleContext`, `ConstraintOrigin.message`, and ad hoc role fields.
 
-### Phase 3: Replace Message Origins With Anchored Claims
+### Step 3: Replace Message Origins With Anchored Claims
 
 Current string origins are useful but too presentation-shaped. Replace them with claims and anchors:
 
@@ -808,7 +802,7 @@ Rendering can print `from <label> at line:col`, but the stored data should be se
 literal facts, variable facts, callee facts, argument facts, branch facts, annotation facts, basis
 facts, and FFI facts.
 
-### Phase 4: Add Constraint And Substitution Evidence
+### Step 4: Add Constraint And Substitution Evidence
 
 Extend the current type-fact/provenance code so constraints and substitutions can be emitted as
 support entries. Constraint entries should be created with the `ConstraintId` allocated before the
@@ -825,10 +819,9 @@ type SupportEntry =
   | RuleEntry;
 ```
 
-Existing maps can remain while the rewrite is in progress. The id lets constraints and rule frames
-refer to evidence without embedding large trees.
+The id lets constraints and rule frames refer to evidence without embedding large trees.
 
-### Phase 5: Add Constraint Evidence
+### Step 5: Add Constraint Evidence
 
 When `constrainAt` calls the unifier, attach the already allocated `ConstraintId` to any resulting
 commitments or failure.
@@ -846,7 +839,7 @@ collision evidence:
 
 The diagnostic layer then asks the support evidence what that means.
 
-### Phase 6: Rule Trace
+### Step 6: Rule Trace
 
 Thread a lightweight `RuleFrameId` through inference, either explicitly or through an inference
 context object.
@@ -866,10 +859,10 @@ type InferContext = {
 };
 ```
 
-This should be done only when it reduces friction. The current codebase is small enough that adding a
-few premise contexts to `constrainAt` first is cheaper.
+This should be done only when it reduces friction. The current codebase is small enough that premise
+contexts can prove the shape before introducing a full inference context.
 
-### Phase 7: Render Auditable Diagnostics
+### Step 7: Render Auditable Diagnostics
 
 Keep the default concise, but make it structured:
 
@@ -887,14 +880,14 @@ observed:
     from render
 ```
 
-Add a CLI or debug flag later for full trace mode.
+Full trace mode can be added as a renderer over the same diagnostic object.
 
 ## Near-Term Target
 
-The best first useful target is not a complete Hazel-style solver. It is the model in
-`markdown/diagnostics/diagnostic-object-model.md`, populated first at type mismatch sites.
+The initial rewrite target is not a complete Hazel-style solver. It is the model in
+`markdown/diagnostics/diagnostic-object-model.md`, applied to type mismatch sites.
 
-The first diagnostics can have small evidence logs:
+The initial diagnostics can have small evidence logs:
 
 ```txt
 failure:
@@ -913,14 +906,13 @@ expressions at the best choke points. But the stored shape should be the general
 start, so later diagnostics can add lookup, arity, coverage, scope, occurrence, and graph evidence
 without another redesign.
 
-The first concrete implementation slice should be narrow in language coverage but complete in
+The first concrete implementation target should be narrow in language coverage but complete in
 pipeline shape:
 
 - Add `PremiseContext` to central `constrainAt` call sites.
 - Capture immutable type snapshots at constraint introduction, commitment, and collision.
 - Convert recursive binding result mismatches into a failed premise plus evidence log.
 - Route the selected checks through the new diagnostic writer and renderer end to end.
-- Leave old diagnostics in place only for checks not yet rewritten.
 
 ## Example: If Branch Mismatch
 
@@ -1001,7 +993,7 @@ The legal repairs are not commands. They are the ways the failed requirement cou
 
 ## Decision
 
-`wm-mini` should move toward auditable diagnostics:
+`wm-mini` should replace message-shaped diagnostics with auditable diagnostics:
 
 - diagnostics as failed rule instances
 - facts and constraints as retained semantic evidence

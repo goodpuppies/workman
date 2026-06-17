@@ -460,9 +460,7 @@ Rewrite rule:
 - render all user-facing text from the structured diagnostic object
 - stop deriving codes from message strings
 - make support evidence and repairs explicit data, not hidden formatter logic
-- do not preserve old message compatibility as a goal of the rewrite
-- do not build an adapter that forces structured diagnostics to imitate old diagnostics
-- prefer a full diagnostic pipeline rewrite over a long mixed-model migration
+- replace the message-shaped diagnostic path with one structured diagnostic pipeline
 
 ### Inference Context Shape
 
@@ -486,7 +484,7 @@ Refactor needed before diagnostics:
 
 ```txt
 Recommended before broad implementation.
-Not required before the first end-to-end rewrite slice.
+Not required before the diagnostic object model is proven end to end.
 ```
 
 Suggested path:
@@ -514,7 +512,7 @@ separate project.
 Refactor needed before diagnostics:
 
 ```txt
-No for first auditable type mismatch work.
+No for the auditable type mismatch rewrite.
 Yes for future total/recovering frontend work.
 ```
 
@@ -568,9 +566,9 @@ Do not split this across separate `RuleContext`, string origin, and role paramet
 ### 3. Make Declaration Failure Transactional Before Rich Recovery
 
 This is required before richer recovery, multi-error continuation, recovery entries, or meaningful
-`dependsOn` cascades. It is not required before the first end-to-end structured diagnostic slice if
-that slice still stops at the first failed declaration. Before richer recovery, make
-declaration-level mutation explicit:
+`dependsOn` cascades. If the first completed diagnostic path still stops at the first failed
+declaration, declaration transactions can follow immediately after that path is proven. Before
+richer recovery, make declaration-level mutation explicit:
 
 ```txt
 begin declaration
@@ -585,22 +583,22 @@ on failure
 
 This protects the SML rule that failed elaboration has no static effect.
 
-## Refactors Not Needed First
+## Refactors Not Needed Up Front
 
-These are not prerequisites for the first end-to-end rewrite slice:
+These are not prerequisites for the diagnostic rewrite:
 
 - full Hazel marked AST
 - gradual unknown types
 - whole-program constraint graph solver
 - replacement of mutable HM unification
 - parser recovery
-- broad `InferContext` migration
+- broad `InferContext` redesign
 - complete diagnostic code taxonomy
 
 They may become useful later, but doing them first would slow down the rewrite without improving the
 core evidence model.
 
-## Recommended First Slice
+## Recommended Initial Coverage
 
 Implement auditable diagnostics for one symmetric and one directional rule:
 
@@ -625,9 +623,7 @@ The diagnostic object can answer:
   which violation happened
 ```
 
-The user-facing output should be rendered from the new diagnostic object for these rewritten rules.
-Old diagnostics may remain only for checks not yet rewritten; do not maintain a compatibility layer
-inside the new model.
+The user-facing output for this target should be rendered from the structured diagnostic object.
 
 ## Final Assessment
 

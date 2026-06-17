@@ -281,7 +281,7 @@ type PremiseContext = {
 created because a premise of a rule requires it, so the context should name the rule frame, the
 premise, the operand roles, and the source or generated origin in one place.
 
-The first implementation may construct `RuleFrame` and `Premise` inline at the call site. Later,
+The initial implementation may construct `RuleFrame` and `Premise` inline at the call site. Later,
 helpers can reduce boilerplate, but they should still allocate the same canonical ids.
 
 ## Type Snapshots
@@ -357,7 +357,7 @@ constraint in the support graph, created by the premise. Do not repeat it inside
 - `cardinality-failed`: a count or arity requirement failed
 - `cycle-found`: a forbidden containment or dependency cycle was witnessed
 
-These five are enough to prove the architecture for the first implementation:
+These five are enough to prove the architecture for the initial implementation:
 
 - type mismatch, branch mismatch, annotation mismatch
 - unbound names and missing fields
@@ -691,7 +691,7 @@ The Definition treats match irredundancy and exhaustiveness as further restricti
 warn on violation but still compile the match.
 
 That is the same diagnostic object with `severity: "warning"`, but it uses the future coverage
-violation variants listed above. The first implementation does not need these coverage variants; the
+violation variants listed above. The initial implementation does not need these coverage variants; the
 example shows where match checking should land when coverage evidence moves onto the structured
 model.
 
