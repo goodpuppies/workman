@@ -21,7 +21,7 @@ let user = {
     :> Result.withDefault(defaultUser)
 };
 let api = {
-  let encoded = user :> encodeURIComponent :> Result.withDefault(user);
+  let encoded = user :> encodeURIComponent :> Result.withDefault("default");
   "https://api.github.com/users/" ++ encoded ++ "/repos?sort=" ++ sort ++
     "&per_page=" ++ Result.textOf(perPage)
 };
