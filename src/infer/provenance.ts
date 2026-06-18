@@ -53,6 +53,7 @@ export type TypeSource = {
 
 export type ConstrainAtOptions = {
   sources?: { left?: TypeSource; right?: TypeSource };
+  primarySource?: "left" | "right";
   context?: (path: DiffPath) => string | undefined;
   premise?: {
     rule: string;
@@ -167,10 +168,15 @@ export function constrainAt(
       const attemptedOrigin = error.attemptedSide
         ? sourceAt(options.sources?.[error.attemptedSide], error.path)
         : undefined;
+      const primaryOrigin = options.primarySource
+        ? sourceAt(options.sources?.[options.primarySource], error.path)
+        : undefined;
       const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
       const observedRight = writer.snapshotType(commitment?.type ?? error.right);
-      const expectedClaim = addObservedOriginClaim(writer, attemptedOrigin, observedLeft);
-      const actualClaim = addObservedOriginClaim(writer, commitment?.origin, observedRight);
+      const expectedOrigin = attemptedOrigin ?? sourceAt(options.sources?.left, error.path);
+      const actualOrigin = commitment?.origin ?? sourceAt(options.sources?.right, error.path);
+      const expectedClaim = addObservedOriginClaim(writer, expectedOrigin, observedLeft);
+      const actualClaim = addObservedOriginClaim(writer, actualOrigin, observedRight);
       writer.add({
         kind: "collision",
         id: collisionId,
@@ -199,8 +205,8 @@ export function constrainAt(
           conflictPath: error.path,
           context: options.context?.(error.path),
           origins: {
-            expected: attemptedOrigin?.message,
-            got: commitment?.origin?.message,
+            expected: expectedOrigin?.message,
+            got: actualOrigin?.message,
           },
         },
       };
@@ -208,7 +214,7 @@ export function constrainAt(
         id: writer.nextId("d"),
         code: "type.mismatch",
         severity: "error",
-        primary: anchorFromEvidence(primary, expr?.node),
+        primary: primaryOrigin ? anchorFromOrigin(primaryOrigin) : anchorFromEvidence(primary, expr?.node),
         failure,
         support: writer.buildSupport([collisionId]),
         repairs: [],

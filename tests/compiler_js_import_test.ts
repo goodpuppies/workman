@@ -132,6 +132,24 @@ Deno.test("reflects nested local JS module namespace receiver calls", async () =
   await checkFile(input);
 });
 
+Deno.test("reflects JS namespace functions as values", async () => {
+  const result = await checkSource(`
+    from js.global("Math") import * as Math;
+    let liftR = Monad.lift Result;
+    let sin = liftR Math.sin;
+    let wave = Ok(1) :> sin;
+  `);
+
+  expectBinding(result.env, "sin", {
+    type: "(Result<Number, Js.Error>) => Result<Number, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "wave", {
+    type: "Result<Number, Js.Error>",
+    vars: 0,
+  });
+});
+
 Deno.test("orders generated receiver imports after local record types", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

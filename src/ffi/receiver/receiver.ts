@@ -133,6 +133,68 @@ export function reflectedReceiverProperty(
   };
 }
 
+export function reflectedReceiverFunctionValue(
+  name: string,
+  bindings: Map<string, FfiBinding>,
+  selected: Set<string>,
+  refs: Map<string, JsTypeRef>,
+  receiverType?: TypeExpr,
+): Expr | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const baseName = parts[0];
+  const ref = refs.get(baseName);
+  if (!ref) return undefined;
+  if (isJsPromiseRef(ref)) return undefined;
+  const path = parts.slice(1);
+  const member = jsRefMember(ref, path);
+  if (!member) return undefined;
+  const variants = memberVariants(member);
+  if (variants.length !== 1 || variants[0].type.kind !== "TFn") return undefined;
+  const params = variants[0].type.params.map((_, index) => `__wm_js_arg_${index}`);
+  const surfaceName = `__receiver.${ref.key}.${path.join(".")}`;
+  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref));
+  addVariants(
+    bindings,
+    surfaceName,
+    path.at(-1)!,
+    { kind: "JsReceiver", path },
+    [{
+      type: prependReceiver(variants[0].type, reflectedReceiverType),
+      resultRef: variants[0].resultRef,
+      callbackParamRefs: variants[0].callbackParamRefs?.map((item) => ({
+        argIndex: item.argIndex + 1,
+        params: item.params,
+      })),
+    }],
+    true,
+    undefined,
+  );
+  const variant = selectVariant(
+    bindings.get(surfaceName)?.variants ?? [],
+    [
+      { kind: "Var", name: baseName },
+      ...params.map((param) => ({ kind: "Var" as const, name: param })),
+    ],
+  );
+  if (!variant) return undefined;
+  selected.add(variant.internalName);
+  return {
+    kind: "Lambda",
+    params: params.map((param) => ({
+      pattern: { kind: "PVar", name: param },
+    })),
+    body: {
+      kind: "Call",
+      callee: { kind: "Var", name: variant.internalName },
+      args: [
+        { kind: "Var", name: baseName },
+        ...params.map((param) => ({ kind: "Var" as const, name: param })),
+      ],
+    },
+  };
+}
+
 export function objectReceiverProperty(
   exprName: string,
   bindings: Map<string, FfiBinding>,

@@ -7,6 +7,7 @@ import {
   objectReceiverProperty,
   reflectedFunctionCallCandidate,
   reflectedReceiverCallCandidate,
+  reflectedReceiverFunctionValue,
   reflectedReceiverProperty,
   rememberObjectParams,
   rememberUnannotatedParams,
@@ -166,8 +167,9 @@ export function rewriteExprCalls(
       };
     }
     case "Var": {
+      const functionValue = reflectedReceiverFunctionValue(expr.name, bindings, selected, refs);
       const property = reflectedReceiverProperty(expr.name, bindings, selected, refs);
-      return property ??
+      return functionValue ?? property ??
         objectReceiverProperty(expr.name, bindings, selected, objectAccess, activeRecordFields) ??
         expr;
     }

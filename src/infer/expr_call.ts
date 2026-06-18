@@ -17,7 +17,13 @@ import {
   type TypeEnv,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
-import { constrainAt, type EvidenceOrigin, type TypeProvenance } from "./provenance.ts";
+import {
+  constrainAt,
+  sourceForTypedExpr,
+  tupleSource,
+  type EvidenceOrigin,
+  type TypeProvenance,
+} from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { recordExprFact, type TypeFacts } from "./type_facts.ts";
@@ -49,11 +55,10 @@ export function inferCall(
   const calleeProvenance = expr.callee.kind === "Var"
     ? (env.get(expr.callee.name)?.provenance ?? [])
     : [];
-  const arg = callArg(
-    expr.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
-    ),
+  const argTypes = expr.args.map((a) =>
+    inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
   );
+  const arg = callArg(argTypes);
   const calleeFn = prune(callee);
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
     const argExpr = expr.args.length === 1 ? expr.args[0] : expr;
@@ -93,6 +98,10 @@ export function inferCall(
         callDepth,
       },
       {
+        primarySource: "right",
+        sources: {
+          right: callArgSource(expr.args, argTypes, provenance),
+        },
         premise: {
           rule: "InferCall.Argument",
           role: "argument matches parameter",
@@ -144,6 +153,19 @@ export function inferCall(
     );
   }
   return result;
+}
+
+function callArgSource(
+  args: Expr[],
+  types: Ty[],
+  provenance: TypeProvenance,
+) {
+  if (args.length === 1) return sourceForTypedExpr(args[0], types[0], provenance, "argument");
+  return tupleSource(
+    args.map((arg, index) =>
+      sourceForTypedExpr(arg, types[index], provenance, `argument ${index + 1}`)
+    ),
+  );
 }
 
 export function ffiGetResultTy(typeEnv: TypeEnv, value: Ty): Ty {

@@ -1,0 +1,7 @@
+{
+  "name": "@mommysgoodpuppy/raylib_ts_bindings_deno",
+  "exports": "./mod.ts",
+  "imports": {
+    "@denosaurs/byte-type": "https://raw.githubusercontent.com/mommysgoodpuppy/byte_type_C/main/mod.ts"
+  }
+}

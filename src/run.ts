@@ -20,11 +20,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
-        "--allow-read",
-        "--allow-write",
-        "--allow-run",
-        "--allow-env",
-        "--allow-net",
+        "-A",
         output,
         ...(options.args ?? []),
       ],

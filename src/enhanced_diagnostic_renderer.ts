@@ -39,6 +39,12 @@ const enhancedDiagnosticProfiles: EnhancedDiagnosticProfile[] = [
     rules: ["InferRecursive.ResultAgreement"],
     render: renderRecursiveResultAgreement,
   },
+  {
+    id: "match-arm-result-agreement",
+    codes: ["type.mismatch"],
+    rules: ["InferMatch.ArmsSameType"],
+    render: renderMatchArmResultAgreement,
+  },
 ];
 
 export function formatEnhancedDiagnostic(
@@ -189,6 +195,72 @@ function renderRecursiveResultAgreement(
   return `${lines.join("\n")}\n`;
 }
 
+function renderMatchArmResultAgreement(
+  diagnostic: AuditableDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+  options: Required<EnhancedDiagnosticRenderOptions>,
+): string {
+  if (options.mode === "trace") return renderTraceDiagnostic(diagnostic, filePath, source);
+  if (options.mode === "explain") return renderExplainDiagnostic(diagnostic, filePath, source);
+
+  const violation = diagnostic.failure.violation;
+  const constraint = findConstraintForFrame(diagnostic);
+  if (violation.kind !== "contradicted" || !constraint) {
+    return renderExplainDiagnostic(diagnostic, filePath, source);
+  }
+
+  const previousArmType = typeSnapshotRendered(diagnostic, constraint.left);
+  const currentArmType = typeSnapshotRendered(diagnostic, constraint.right);
+  const previousArmConflict = typeAtPath(diagnostic, constraint.left, violation.conflictPath) ??
+    typeSnapshotRendered(diagnostic, violation.observed.right);
+  const currentArmConflict = typeAtPath(diagnostic, constraint.right, violation.conflictPath) ??
+    typeSnapshotRendered(diagnostic, violation.observed.left);
+  const currentArmClaim = findFactClaim(diagnostic, (text) => text === "match arm result");
+  const previousArmClaim = findClaim(
+    diagnostic,
+    violation.origins?.got ?? violation.origins?.expected ?? "",
+  );
+  const currentOrigin = currentArmClaim?.origin ?? constraint.origin ?? diagnostic.primary;
+  const previousSnippet = source && previousArmClaim?.origin.kind === "source"
+    ? renderContextExcerpt(source, previousArmClaim.origin.span)
+    : undefined;
+  const currentSnippet = source && currentOrigin.kind === "source"
+    ? renderContextExcerpt(source, currentOrigin.span)
+    : undefined;
+  const slot = renderTypeSlot(violation.conflictPath);
+
+  const lines = [
+    renderHeader(diagnostic, filePath),
+    "",
+    "These match arms return different types.",
+    "Match arms are checked left-to-right: this arm is being compared with the result type established by earlier arms.",
+    "",
+    "Earlier arm result:",
+    "",
+    indent(renderTypeBlock(previousArmType), 4),
+    "",
+    ...(previousSnippet
+      ? ["Source of the mismatching part from an earlier arm:", "", previousSnippet, ""]
+      : []),
+    "This arm result:",
+    "",
+    indent(renderTypeBlock(currentArmType), 4),
+    "",
+    ...(currentSnippet ? [currentSnippet, ""] : []),
+    "Different part:",
+    "",
+    indent(
+      `${slot}\nprevious arm(s): ${previousArmConflict}\nthis arm:       ${currentArmConflict}`,
+      4,
+    ),
+    "",
+    `The current arm returns \`${currentArmType}\`; the earlier arm result is \`${previousArmType}\`.`,
+    "Make both arms return the same type, or convert one arm before returning it.",
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
 function renderExplainDiagnostic(
   diagnostic: AuditableDiagnostic,
   filePath: string | undefined,
@@ -299,8 +371,37 @@ function firstParameterType(
   return first ? typeSnapshotRendered(diagnostic, first) : undefined;
 }
 
+function findConstraintForFrame(
+  diagnostic: AuditableDiagnostic,
+): Extract<SupportEntry, { kind: "constraint" }> | undefined {
+  return diagnostic.support.entries.find((entry): entry is Extract<SupportEntry, {
+    kind: "constraint";
+  }> =>
+    entry.kind === "constraint" &&
+    entry.frame === diagnostic.failure.frame.id &&
+    entry.premise === diagnostic.failure.premise.id
+  ) ??
+    diagnostic.support.entries.find((entry): entry is Extract<SupportEntry, {
+      kind: "constraint";
+    }> => entry.kind === "constraint");
+}
+
 function renderConflictPath(path: import("./type_diff.ts").DiffPath): string {
   return path.length ? path.map(formatPathSegment).join(" -> ") : "type";
+}
+
+function renderTypeSlot(path: import("./type_diff.ts").DiffPath): string {
+  const named = [...path].reverse().find((segment) => segment.kind === "named-arg");
+  if (named?.kind === "named-arg") {
+    return `${named.typeName}<${typeArgumentSlots(named.index, named.label).join(", ")}>`;
+  }
+  return renderConflictPath(path);
+}
+
+function typeArgumentSlots(index: number, label: string | undefined): string[] {
+  const slots = Array.from({ length: index + 1 }, () => "_");
+  slots[index] = label ?? `arg${index + 1}`;
+  return slots;
 }
 
 function renderContextExcerpt(source: string, span: SourceSpan): string {
@@ -498,6 +599,43 @@ function typeSnapshotRendered(diagnostic: AuditableDiagnostic, id: TypeSnapshotI
   return displayTypeVariables(
     diagnostic.support.types.find((snapshot) => snapshot.id === id)?.rendered ?? id,
   );
+}
+
+function typeAtPath(
+  diagnostic: AuditableDiagnostic,
+  id: TypeSnapshotId,
+  path: import("./type_diff.ts").DiffPath,
+): string | undefined {
+  let current = diagnostic.support.types.find((snapshot) => snapshot.id === id);
+  for (const segment of path) {
+    if (!current) return undefined;
+    let nextId: TypeSnapshotId | undefined;
+    switch (segment.kind) {
+      case "fn-param":
+        nextId = current.shape.kind === "function"
+          ? current.shape.params[segment.index]
+          : undefined;
+        break;
+      case "fn-result":
+        nextId = current.shape.kind === "function" ? current.shape.result : undefined;
+        break;
+      case "tuple-item":
+        nextId = current.shape.kind === "tuple" ? current.shape.items[segment.index] : undefined;
+        break;
+      case "record-field":
+        nextId = current.shape.kind === "struct"
+          ? current.shape.fields.find((field) => field.name === segment.name)?.type
+          : undefined;
+        break;
+      case "named-arg":
+        nextId = current.shape.kind === "named" ? current.shape.args[segment.index] : undefined;
+        break;
+    }
+    current = nextId
+      ? diagnostic.support.types.find((snapshot) => snapshot.id === nextId)
+      : undefined;
+  }
+  return current ? typeSnapshotRendered(diagnostic, current.id) : undefined;
 }
 
 function indent(text: string, spaces: number): string {

@@ -156,6 +156,19 @@ Deno.test("Result carrier coercion infers over primitive operators", async () =>
   expectBinding(result.env, "liftedCall", { type: "Result<Number, 'a>", vars: 0 });
 });
 
+Deno.test("explicit carrier tuple lift infers over Result", async () => {
+  const result = await checkSource(`
+    let pair = Result|Ok(1), Ok("a")|;
+    let triple = Result|Ok(1), Ok("a"), Ok(true)|;
+  `);
+
+  expectBinding(result.env, "pair", { type: "Result<(Number, String), 'a>", vars: 0 });
+  expectBinding(result.env, "triple", {
+    type: "Result<(Number, String, Bool), 'a>",
+    vars: 0,
+  });
+});
+
 Deno.test("low-level inference starts from minimal basis without std combinators", async () => {
   const module = await parse("let value = Option.map;");
   assertThrows(() => inferModule(module), Error, "unknown name Option.map");
@@ -246,6 +259,26 @@ Deno.test("Result carrier coercion evaluates through primitive operators", async
     result.stdout,
     "Ok(5)\nOk(12)\nOk(4)\nOk(-4)\nOk(true)\nOk(4)\nErr(left)\nErr(right)\n",
   );
+});
+
+Deno.test("explicit carrier tuple lift evaluates through Result", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => {
+        print(Result|Ok(1), Ok("a"), Ok(true)|);
+        print(Result|Ok(1), Err("bad"), Ok(true)|)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "Ok(1, a, true)\nErr(bad)\n");
 });
 
 Deno.test("Task.collectList supports list-pattern destructuring in map callback", async () => {

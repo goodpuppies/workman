@@ -67,6 +67,54 @@ let main = () => {
   assertEquals(primary.span.end, expectedStart + "sin(time * 2)".length);
 });
 
+Deno.test("carrier tuple mismatch points at offending item", async () => {
+  const source = `let bad = Result|1, Ok("a")|;`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") {
+    throw new Error("expected source primary diagnostic");
+  }
+  const expectedStart = source.indexOf("1");
+  assertEquals(primary.span.start, expectedStart);
+  assertEquals(primary.span.end, expectedStart + "1".length);
+});
+
+Deno.test("carrier tuple mismatch points at later offending item", async () => {
+  const source = `let bad = Result|Ok("a"), 32, Ok(true)|;`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") {
+    throw new Error("expected source primary diagnostic");
+  }
+  const expectedStart = source.indexOf("32");
+  assertEquals(primary.span.start, expectedStart);
+  assertEquals(primary.span.end, expectedStart + "32".length);
+});
+
+Deno.test("multi-argument call mismatch points at offending argument", async () => {
+  const source = `let draw = (x: Number, y: Number) => { x }; let bad = draw(1, Ok(2));`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") {
+    throw new Error("expected source primary diagnostic");
+  }
+  const expectedStart = source.indexOf("Ok(2)");
+  assertEquals(primary.span.start, expectedStart);
+  assertEquals(primary.span.end, expectedStart + "Ok(2)".length);
+});
+
 Deno.test("basic diagnostic summary displays generic variables TypeScript style", async () => {
   const source = `
 type List<T> = Nil | Cons<T, List<T>>;
@@ -187,6 +235,34 @@ let rec filterList = (fn, list) => {
   assertStringIncludes(rendered, "match(list) => {");
   assertStringIncludes(rendered, "This looks like an accidental match-function expression.");
   assertStringIncludes(rendered, "Use `match(list) { ... }`");
+});
+
+Deno.test("match arm mismatch explains previous and current arm result types", async () => {
+  const source = `type AppError = | RenderError<String>;
+let renderErr = (e) => { RenderError(e) };
+let bad = match(true) {
+  true => { Result|Err("js")| },
+  false => { Err(renderErr("app")) }
+};`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "test.wm", source);
+  assertStringIncludes(rendered, "-- TYPE CHECKER");
+  assertStringIncludes(rendered, "These match arms return different types.");
+  assertStringIncludes(rendered, "Earlier arm result:");
+  assertStringIncludes(rendered, "    Result<T, String>");
+  assertStringIncludes(rendered, '4|   true => { Result|Err("js")| },');
+  assertStringIncludes(rendered, "This arm result:");
+  assertStringIncludes(rendered, "    Result<T, AppError>");
+  assertStringIncludes(rendered, '5|   false => { Err(renderErr("app")) }');
+  assertStringIncludes(rendered, "Different part:");
+  assertStringIncludes(rendered, "Result<_, E>");
+  assertStringIncludes(rendered, "previous arm(s): String");
+  assertStringIncludes(rendered, "this arm:       AppError");
+  assertEquals(rendered.includes("expected: AppError"), false);
 });
 
 Deno.test("if branch mismatch records an if branch premise", async () => {

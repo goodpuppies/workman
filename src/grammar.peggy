@@ -74,6 +74,9 @@
   function callExpr(callee, args, loc) {
     return at({ kind: "Call", callee, args }, loc);
   }
+  function callExprAtSpan(callee, args, span) {
+    return { kind: "Call", callee, args, node: { id: nextNodeId++, span } };
+  }
   function tupleExpr(items, loc) {
     return at({ kind: "Tuple", items }, loc);
   }
@@ -100,6 +103,26 @@
         varExpr(index === tasks.length - 1 ? "Task.map" : "Task.andThen", loc),
         [tasks[index], liftedLambda(name, body, loc)],
         loc,
+      );
+    }
+    return build(0, []);
+  }
+  function carrierTupleLift(carrier, items, loc) {
+    if (items.length === 0) {
+      throw new Error("lifted carrier tuple requires at least one argument");
+    }
+    if (items.length === 1) return items[0];
+    const names = items.map(() => `__wm_lift_${nextLiftId++}`);
+    function build(index, values) {
+      const name = names[index];
+      const value = varExpr(name, loc);
+      const nextValues = [...values, value];
+      const isLast = index === items.length - 1;
+      const body = isLast ? tupleExpr(nextValues, loc) : build(index + 1, nextValues);
+      return callExprAtSpan(
+        varExpr(`${carrier}.${isLast ? "map" : "andThen"}`, loc),
+        [items[index], liftedLambda(name, body, loc)],
+        items[index].node?.span ?? span(loc),
       );
     }
     return build(0, []);
@@ -281,8 +304,9 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / String / Bool / Void / PanicExpr / LiftTupleExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
+  = Float / Int / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
 
+CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
 
 PanicExpr
