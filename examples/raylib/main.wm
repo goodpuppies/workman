@@ -1,30 +1,15 @@
 from js.module("./raylib_ts_bindings_deno/raylib_bindings.ts") import * as Raylib;
-from js.global("Math") import {sin as msin, floor as mfloor, };
+from js.global("Math") import {sin, floor};
+let lift = Monad.lift;
 
 type AppError =
   | RaylibError<Js.Error>
   | RenderError<Js.Error>;
 
-let liftR = (f) => {
-  Monad.lift Result f
-};
-
-let raylibErr = (e) => { RaylibError(e) };
-let renderErr = (e) => { RenderError(e) };
-
-let sin = liftR msin;
-let floor = liftR mfloor;
+record Color = {r:Number, g:Number, b:Number, a:Number};
 
 let raylibpath = "./examples/raylib/raylib.dll";
 let title = "raylib ffi bindings demo";
-
-record Color = {r:Number, g:Number, b:Number, a:Number};
-
-let uw = match(res) => {
-  Ok(i) => {i},
-  Err(_) => {Panic("unahndled")}
-};
-
 let textColor  = .{ r= 40, g= 44,  b= 52,  a= 255 };
 let baseAccent = .{ r= 0,  g= 121, b= 241, a= 255 };
 let message = "Hello from raylib via Deno FFI";
@@ -32,17 +17,17 @@ let hint = "Close the window or press ESC to exit";
 
 let data = () => {
   let time = Raylib.GetTime();
-  let pulse = (0.55 + sin(time * 2) * 0.25);
-  let accent = liftR Raylib.H.Fade(Result|Ok(baseAccent), pulse|);
+  let pulse = (0.55 + lift Result sin(time * 2) * 0.25);
+  let accent = lift Result Raylib.H.Fade(Result|Ok(baseAccent), pulse|);
   let messageWidth = Raylib.H.MeasureText(message, 32);
   let hintWidth = Raylib.H.MeasureText(hint, 20);
   let screenWidth = Raylib.GetScreenWidth();
-  let centerX = floor((screenWidth - messageWidth) / 2);
-  let hintX = floor((screenWidth - hintWidth) / 2);
-  let circleX = floor(480 + sin(time) * 180);
+  let centerX = lift Result floor((screenWidth - messageWidth) / 2);
+  let hintX = lift Result floor((screenWidth - hintWidth) / 2);
+  let circleX = lift Result floor(480 + lift Result sin(time) * 180);
 
   Result|centerX, accent, hintX, circleX|
-      :> Result.mapErr(renderErr)
+      :> Result.mapErr(RenderError)
 };
 
 let drawFrame = () => {
@@ -56,14 +41,14 @@ let drawFrame = () => {
         Raylib.H.DrawCircle(circleX, 320, 42, accent),
         Raylib.DrawFPS(16, 16),
         Raylib.EndDrawing(),
-      | :> Result.mapErr(renderErr)
+      | :> Result.mapErr(RenderError)
     },
     Err(e) => { Err(e) }
   }
 };
 
 let rec loop = () => {
-  match(Raylib.WindowShouldClose() :> Result.mapErr(renderErr)) {
+  match(Raylib.WindowShouldClose() :> Result.mapErr(RenderError)) {
     Ok(true) => { 
       Ok(void) // exit loop to cleanoup
     },
@@ -82,7 +67,7 @@ let setup = () => {
     Raylib.loadRaylib(raylibpath),
     Raylib.H.InitWindow(960, 540, title),
     Raylib.SetTargetFPS(60)
-  | :> Result.mapErr(raylibErr)
+  | :> Result.mapErr(RaylibError)
 };
 
 
@@ -94,7 +79,7 @@ let main = () => {
       let cleanup = Result|
         Raylib.CloseWindow(),
         Raylib.unloadRaylib()
-      | :> Result.mapErr(raylibErr);
+      | :> Result.mapErr(RaylibError);
 
       match(Result|result, cleanup|) {
         Ok(_) => {},
