@@ -5,14 +5,18 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#imports" },
     { "include": "#declarations" },
     { "include": "#bindings" },
+    { "include": "#json" },
     { "include": "#keywords" },
+    { "include": "#builtins" },
     { "include": "#functions" },
     { "include": "#fields" },
     { "include": "#types" },
     { "include": "#constants" },
-    { "include": "#operators" }
+    { "include": "#operators" },
+    { "include": "#punctuation" }
   ],
   "repository": {
     "comments": {
@@ -28,17 +32,71 @@
       ]
     },
     "strings": {
-      "name": "string.quoted.double.wm-mini",
-      "begin": "\"",
-      "end": "\"",
       "patterns": [
         {
-          "name": "constant.character.escape.wm-mini",
-          "match": "\\\\(?:[nt\"\\\\])"
+          "name": "string.quoted.double.wm-mini",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.wm-mini",
+              "match": "\\\\(?:[nt\"\\\\])"
+            },
+            {
+              "name": "invalid.illegal.escape.wm-mini",
+              "match": "\\\\."
+            }
+          ]
         },
         {
-          "name": "invalid.illegal.escape.wm-mini",
-          "match": "\\\\."
+          "name": "string.quoted.other.backtick.wm-mini",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "name": "constant.character.escape.wm-mini",
+              "match": "\\\\(?:[nt`\\\\])"
+            },
+            {
+              "name": "invalid.illegal.escape.wm-mini",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "imports": {
+      "patterns": [
+        {
+          "begin": "\\b(from)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.import.from.wm-mini" }
+          },
+          "end": "(?=;)|$",
+          "name": "meta.import.wm-mini",
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#strings" },
+            {
+              "name": "keyword.control.import.wm-mini",
+              "match": "\\b(import|as)\\b"
+            },
+            {
+              "name": "storage.modifier.import.wm-mini",
+              "match": "\\b(type|unsafe)\\b"
+            },
+            {
+              "name": "support.module.js-target.wm-mini",
+              "match": "\\bjs\\.(?:global|module)\\b"
+            },
+            {
+              "name": "variable.other.import.member.wm-mini",
+              "match": "\\b[a-zA-Z_][A-Za-z0-9_]*\\b"
+            },
+            { "include": "#types" },
+            { "include": "#operators" },
+            { "include": "#punctuation" }
+          ]
         }
       ]
     },
@@ -50,21 +108,20 @@
             "1": { "name": "storage.type.type.wm-mini" },
             "2": { "name": "entity.name.type.alias.wm-mini" }
           },
-          "end": "$",
+          "end": "(?=;)|$",
           "name": "meta.type.declaration.wm-mini",
           "patterns": [
             { "include": "#typeparameters" },
             {
-              "match": "(\\=)(\\s*\\|)",
+              "match": "(=)|(\\|)",
               "captures": {
                 "1": { "name": "keyword.operator.assignment.wm-mini" },
                 "2": { "name": "keyword.operator.type.constructor.wm-mini" }
               }
             },
-            { "include": "#type-operators" },
             { "include": "#types" },
-            { "include": "#operators" },
-            { "include": "#comments" }
+            { "include": "#comments" },
+            { "include": "#punctuation" }
           ]
         },
         {
@@ -73,14 +130,14 @@
             "1": { "name": "storage.type.type.wm-mini" },
             "2": { "name": "entity.name.type.wm-mini" }
           },
-          "end": "$",
-          "name": "meta.type.declaration.wm-mini",
+          "end": "(?=;)|$",
+          "name": "meta.record.declaration.wm-mini",
           "patterns": [
             { "include": "#typeparameters" },
-            { "include": "#type-operators" },
             { "include": "#types" },
+            { "include": "#comments" },
             { "include": "#operators" },
-            { "include": "#comments" }
+            { "include": "#punctuation" }
           ]
         }
       ]
@@ -88,12 +145,26 @@
     "bindings": {
       "patterns": [
         {
-          "match": "\\b(let)\\s+(?:(rec)\\s+)?([a-z_][A-Za-z0-9_]*)\\b",
+          "match": "\\b(let)\\s+(?:(rec)\\s+)?(?:([a-z_][A-Za-z0-9_]*)|([A-Z][A-Za-z0-9_]*)|(_))\\b",
           "captures": {
             "1": { "name": "storage.type.wm-mini" },
-            "2": { "name": "storage.modifier.wm-mini" },
-            "3": { "name": "entity.name.function.wm-mini" }
+            "2": { "name": "storage.modifier.recursive.wm-mini" },
+            "3": { "name": "entity.name.function.wm-mini" },
+            "4": { "name": "entity.name.type.constructor.wm-mini" },
+            "5": { "name": "variable.language.wildcard.wm-mini" }
           }
+        },
+        {
+          "name": "storage.modifier.binding.wm-mini",
+          "match": "\\band\\b"
+        }
+      ]
+    },
+    "json": {
+      "patterns": [
+        {
+          "name": "support.type.json.wm-mini",
+          "match": "\\bJSON\\b(?=\\s*[\\{\\[])"
         }
       ]
     },
@@ -109,15 +180,27 @@
         },
         {
           "name": "storage.modifier.wm-mini",
-          "match": "\\b(rec|and)\\b"
+          "match": "\\b(rec|and|unsafe)\\b"
         },
         {
           "name": "keyword.control.import.wm-mini",
-          "match": "\\b(from|import)\\b"
+          "match": "\\b(from|import|as)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.panic.wm-mini",
+          "match": "\\bPanic\\b(?=\\s*\\()"
         },
         {
-          "name": "keyword.operator.type.annotation.wm-mini",
-          "match": "\\bas\\b"
+          "name": "support.function.pattern-var.wm-mini",
+          "match": "\\bVar\\b(?=\\s*\\()"
+        },
+        {
+          "name": "support.type.json.wm-mini",
+          "match": "\\bJSON\\b"
         }
       ]
     },
@@ -126,6 +209,10 @@
         {
           "name": "entity.name.function.wm-mini",
           "match": "\\b[a-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.constructor.wm-mini",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b(?=\\s*\\()"
         }
       ]
     },
@@ -133,15 +220,19 @@
       "patterns": [
         {
           "name": "variable.object.property.wm-mini",
-          "match": "(?<=\\.)\\b[a-z_][A-Za-z0-9_]*\\b"
+          "match": "(?<=\\.)\\b[a-zA-Z_][A-Za-z0-9_]*\\b"
         }
       ]
     },
     "types": {
       "patterns": [
         {
-          "name": "support.type.wm-mini",
-          "match": "\\b(Int|String|Bool|Void)\\b"
+          "name": "support.type.primitive.wm-mini",
+          "match": "\\b(Int|String|Bool|Void|Float)\\b"
+        },
+        {
+          "name": "support.type.js.wm-mini",
+          "match": "\\bJs\\.[A-Z][A-Za-z0-9_]*\\b"
         },
         {
           "name": "entity.name.type.wm-mini",
@@ -161,11 +252,15 @@
         },
         {
           "name": "constant.numeric.float.wm-mini",
-          "match": "\\b[0-9]+\\.[0-9]+\\b"
+          "match": "(?<![A-Za-z0-9_])-?\\b[0-9]+\\.[0-9]+\\b(?![A-Za-z0-9_])"
         },
         {
           "name": "constant.numeric.integer.wm-mini",
-          "match": "\\b[0-9]+\\b"
+          "match": "(?<![A-Za-z0-9_])-?\\b[0-9]+\\b(?![A-Za-z0-9_])"
+        },
+        {
+          "name": "variable.language.wildcard.wm-mini",
+          "match": "\\b_\\b"
         }
       ]
     },
@@ -193,7 +288,7 @@
         },
         {
           "name": "keyword.operator.assignment.wm-mini",
-          "match": "\\+=|-=|\\*=|/=|%=|="
+          "match": "="
         },
         {
           "name": "keyword.operator.arithmetic.wm-mini",
@@ -206,6 +301,30 @@
         {
           "name": "keyword.operator.misc.wm-mini",
           "match": "!|:|\\|"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.statement.wm-mini",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.comma.wm-mini",
+          "match": ","
+        },
+        {
+          "name": "punctuation.definition.block.wm-mini",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.definition.group.wm-mini",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.definition.list.wm-mini",
+          "match": "[\\[\\]]"
         }
       ]
     },
@@ -223,16 +342,9 @@
           "name": "meta.type.parameters.wm-mini",
           "patterns": [
             { "include": "#types" },
-            { "include": "#comments" }
+            { "include": "#comments" },
+            { "include": "#punctuation" }
           ]
-        }
-      ]
-    },
-    "type-operators": {
-      "patterns": [
-        {
-          "name": "keyword.operator.type.wm-mini",
-          "match": "\\|"
         }
       ]
     }
