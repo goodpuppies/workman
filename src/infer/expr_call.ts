@@ -81,6 +81,14 @@ export function inferCall(
         instantiated: fn([arg], calleeFn.result),
       });
     }
+    const argumentSources = expr.args.length > 1
+      ? {
+        primarySource: "right" as const,
+        sources: {
+          right: callArgSource(expr.args, argTypes, provenance),
+        },
+      }
+      : {};
     constrainAt(
       expectedArg,
       actualArg,
@@ -98,10 +106,7 @@ export function inferCall(
         callDepth,
       },
       {
-        primarySource: "right",
-        sources: {
-          right: callArgSource(expr.args, argTypes, provenance),
-        },
+        ...argumentSources,
         premise: {
           rule: "InferCall.Argument",
           role: "argument matches parameter",

@@ -173,8 +173,11 @@ export function constrainAt(
         : undefined;
       const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
       const observedRight = writer.snapshotType(commitment?.type ?? error.right);
-      const expectedOrigin = attemptedOrigin ?? sourceAt(options.sources?.left, error.path);
-      const actualOrigin = commitment?.origin ?? sourceAt(options.sources?.right, error.path);
+      const useSourcePathOrigins = options.primarySource !== undefined;
+      const expectedOrigin = attemptedOrigin ??
+        (useSourcePathOrigins ? sourceAt(options.sources?.left, error.path) : undefined);
+      const actualOrigin = commitment?.origin ??
+        (useSourcePathOrigins ? sourceAt(options.sources?.right, error.path) : undefined);
       const expectedClaim = addObservedOriginClaim(writer, expectedOrigin, observedLeft);
       const actualClaim = addObservedOriginClaim(writer, actualOrigin, observedRight);
       writer.add({
