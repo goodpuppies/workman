@@ -424,10 +424,11 @@ Initial representation rules should stay narrow:
 
 - `Number`, `String`, `Bool`, and `Void` map directly to JS primitives.
 - Functions cross the boundary only when explicitly typed.
-- Opaque `Js.Value`, `Js.Object`, and `Js.Error` types are not inspected by ordinary pattern
-  matching or equality by default.
-- Reflected throws are caught and returned as `Err(error)`. Reflected nullish returns are wrapped
-  inside the success channel as `Ok(None)` or `Ok(Some(value))`.
+- Opaque `Js.Value` and `Js.Object` types are not inspected by ordinary pattern matching or equality
+  by default.
+- Reflected throws are caught, normalized to the small `Js.Error` basis ADT, and returned as
+  `Err(error)`. Reflected nullish returns are wrapped inside the success channel as `Ok(None)` or
+  `Ok(Some(value))`.
 - Any unsafe or untyped boundary must be syntactically explicit.
 
 ## Compiler Invariants

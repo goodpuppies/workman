@@ -193,6 +193,8 @@ export function formatDiagnostic(
     ? formatExcerpt(source, anchor.span)
     : undefined;
   if (excerpt) lines.push(excerpt);
+  lines.push("raw diagnostic:");
+  lines.push(...formatRawDiagnostic(diagnostic).map((line) => `  ${line}`));
   return `${lines.join("\n")}\n`;
 }
 
@@ -253,6 +255,15 @@ export function renderDiagnosticSummary(diagnostic: FrontendDiagnostic): string 
     ].filter((line): line is string => !!line).join("\n");
   }
   return diagnostic.code;
+}
+
+export function renderDiagnosticSummaryWithRaw(diagnostic: FrontendDiagnostic): string {
+  return [
+    renderDiagnosticSummary(diagnostic),
+    "",
+    "raw diagnostic:",
+    ...formatRawDiagnostic(diagnostic).map((line) => `  ${line}`),
+  ].join("\n");
 }
 
 export function diagnosticNotes(diagnostic: FrontendDiagnostic): {
@@ -324,6 +335,10 @@ function renderSupportEntry(entry: SupportEntry, diagnostic: FrontendDiagnostic)
     case "note":
       return [`${entry.id} note: ${entry.message}`];
   }
+}
+
+function formatRawDiagnostic(diagnostic: FrontendDiagnostic): string[] {
+  return JSON.stringify(diagnostic, null, 2).split("\n");
 }
 
 function typeSnapshotRendered(diagnostic: FrontendDiagnostic, id: string): string {

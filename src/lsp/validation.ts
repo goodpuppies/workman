@@ -8,6 +8,7 @@ import {
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
   renderDiagnosticSummary,
+  renderDiagnosticSummaryWithRaw,
 } from "../diagnostics.ts";
 import type { InferResult } from "../infer.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
@@ -140,7 +141,7 @@ function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): L
     severity: diagnostic.severity === "error" ? 1 : 2,
     code: diagnostic.code,
     source: "wm-mini",
-    message: renderDiagnosticSummary(diagnostic),
+    message: renderDiagnosticSummaryWithRaw(diagnostic),
     relatedInformation: relatedInformation.length ? relatedInformation : undefined,
   };
 }

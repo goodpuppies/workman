@@ -27,12 +27,11 @@ export function checkExhaustive(
   if (scrutinee.tag === "named") {
     const info = adts.get(scrutinee.id);
     if (info) {
-      const covered = new Set(
-        patterns
-          .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor")
-          .map((p) => baseName(p.name)),
+      const coveredPatterns = patterns
+        .filter((p): p is Extract<Pattern, { kind: "PCtor" }> => p.kind === "PCtor");
+      const missingCtors = info.ctors.map((c) => c.name).filter((name) =>
+        !coveredPatterns.some((pattern) => constructorPatternMatches(pattern.name, name))
       );
-      const missingCtors = info.ctors.map((c) => c.name).filter((name) => !covered.has(name));
       if (missingCtors.length) return `non-exhaustive match: missing ${missingCtors.join(", ")}`;
     }
   }
@@ -154,7 +153,7 @@ function findMissingCases(
         .filter((row): row is [Extract<Pattern, { kind: "PCtor" }>, ...Pattern[]] =>
           row[0].kind === "PCtor"
         )
-        .filter((row) => baseName(row[0].name) === ctor.name)
+        .filter((row) => constructorPatternMatches(row[0].name, ctor.name))
         .map((row) => [...row[0].args, ...row.slice(1)]);
 
       if (ctorRows.length === 0) {
@@ -193,6 +192,10 @@ export function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
 
 function baseName(name: string): string {
   return name.split(".").at(-1)!;
+}
+
+function constructorPatternMatches(patternName: string, ctorName: string): boolean {
+  return patternName === ctorName || baseName(patternName) === ctorName;
 }
 
 function isIrrefutable(pattern: Pattern): boolean {

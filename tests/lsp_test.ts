@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { DocumentStore } from "../src/lsp/documents.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
@@ -106,15 +106,14 @@ let rec sumList = (list, val) => {
     main,
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
-  assertEquals(
-    diagnostics?.[0].message,
-    [
-      "type mismatch: InferRecursive.ResultAgreement: recursive binding result matches inferred body",
-      "  conflict: type",
-      "  expected: Number",
-      "  actual:   (Int_list) => Number",
-    ].join("\n"),
-  );
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "type mismatch: InferRecursive.ResultAgreement: recursive binding result matches inferred body",
+    "  conflict: type",
+    "  expected: Number",
+    "  actual:   (Int_list) => Number",
+    "raw diagnostic:",
+    '"rule": "InferRecursive.ResultAgreement"',
+  ]);
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
   assertEquals(
@@ -165,15 +164,14 @@ let bad = sumList(Cons(1, Empty));
     main,
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
-  assertEquals(
-    diagnostics?.[0].message,
-    [
-      "type mismatch: InferCall.Argument: argument matches parameter",
-      "  conflict: type",
-      "  expected: (Int_list, Number)",
-      "  actual:   Int_list",
-    ].join("\n"),
-  );
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "type mismatch: InferCall.Argument: argument matches parameter",
+    "  conflict: type",
+    "  expected: (Int_list, Number)",
+    "  actual:   Int_list",
+    "raw diagnostic:",
+    '"rule": "InferCall.Argument"',
+  ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 10,
     character: 2,
@@ -285,15 +283,14 @@ let bad = floor(1, 2);
     main,
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
-  assertEquals(
-    diagnostics?.[0].message,
-    [
-      "type mismatch: InferCall.Argument: argument matches parameter",
-      "  conflict: type",
-      "  expected: Number",
-      "  actual:   (Number, Number)",
-    ].join("\n"),
-  );
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "type mismatch: InferCall.Argument: argument matches parameter",
+    "  conflict: type",
+    "  expected: Number",
+    "  actual:   (Number, Number)",
+    "raw diagnostic:",
+    '"rule": "InferCall.Argument"',
+  ]);
   assertEquals(diagnostics?.[0].range.start, { line: 3, character: 10 });
   assertEquals(diagnostics?.[0].range.end, { line: 3, character: 21 });
   assertEquals(
@@ -372,6 +369,15 @@ Deno.test("lsp validation reports import cycles on the closing import path", asy
 async function diagnosticsForPath(results: ValidationResult[], path: string) {
   const realPath = await Deno.realPath(path);
   return results.find((result) => fileUriToPath(result.uri) === realPath)?.diagnostics;
+}
+
+function assertDiagnosticMessageIncludes(
+  message: string | undefined,
+  expected: string[],
+) {
+  for (const item of expected) {
+    assertStringIncludes(message ?? "", item);
+  }
 }
 
 function charRange(source: string, text: string) {

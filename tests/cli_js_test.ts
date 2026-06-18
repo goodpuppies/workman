@@ -234,6 +234,36 @@ Deno.test("cli run maps reflected JS throws to Result Err", async () => {
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run normalizes JS throws into matchable Js.Error values", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.global import { eval as jsEval: (String) => Js.Value };
+      let main = () => {
+        print(match(jsEval("throw 'boom'")) {
+          Ok(_) => { "ok" },
+          Err(Js.Error("boom")) => { "string" },
+          Err(Js.Error(_)) => { "error" },
+          Err(Js.Unknown) => { "unknown" },
+        });
+        print(match(jsEval("throw null")) {
+          Ok(_) => { "ok" },
+          Err(Js.Error(_)) => { "error" },
+          Err(Js.Unknown) => { "unknown" },
+        })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "string\nunknown\n");
+  assertEquals(result.stderr, "");
+});
+
 Deno.test("cli run constructs reflected JS globals and reads properties", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

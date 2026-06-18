@@ -132,13 +132,14 @@ from js.global("console") import unsafe { error, log };
 
 Why it is needed:
 
-Safe FFI wraps throw-capable JS calls in `Result<_, Js.Error>`. That is semantically good, but the
-current result ergonomics are too noisy for a JS-heavy port.
+Safe FFI wraps throw-capable JS calls in `Result<_, Js.Error>`. The explicit `Result` path is the
+right shape; the remaining problem was that raw JavaScript throws needed a Workman-side error shape.
 
 What should remove it:
 
-Better basis helpers for `Result` and promise-heavy FFI code. Unsafe imports can remain as an escape
-hatch, but the normal path should be tolerable without making the whole example unsafe.
+Normalize caught JS throws into a small matchable `Js.Error` basis value. Unsafe imports can remain
+as an escape hatch, but the normal path should preserve a useful failure category without forcing
+every handler to discard it.
 
 ### Local Panic Unwrap Helper
 
@@ -155,13 +156,15 @@ let try = (result) => {
 
 Why it is needed:
 
-Dynamic property reads and receiver calls are correctly fallible, but repeatedly spelling `match`
-around every JS boundary blocks forward motion in the stress port.
+Dynamic property reads and receiver calls are correctly fallible. The local helper discards the
+normalized `Js.Error`, which makes the stress port easy to move but loses the useful failure
+payload.
 
 What should remove it:
 
-Basis functions such as `Result.unwrapOrPanic`, `Result.map`, `Result.andThen`, and pipe-friendly
-helpers. This should stay explicit; the compiler should not silently unwrap JS failures.
+Ordinary matching on `Js.Error(message)` and `Js.Unknown`, plus domain-specific `Result.mapErr` /
+`Task.mapErr` use where the caller wants a local error type. The compiler should not silently unwrap
+or stringify JS failures.
 
 ### `Request` Annotation on `handleRequest`
 
@@ -500,14 +503,14 @@ let text = match(byte.toString(16)) {
 };
 ```
 
-This is correct but noisy. We need better ergonomics for common `Result` plumbing before real JS FFI
-code feels smooth.
+This is correct control flow. The weak part is the `Err(_)` branch: user code routes or replaces
+the failure without looking at the normalized `Js.Error`.
 
 Possible directions:
 
-- basis helpers like `Result.map`, `Result.andThen`, `Result.withDefault`,
-- pipe-friendly result helpers,
-- or a scoped unsafe mode for deliberately unwrapped dynamic property chains.
+- match `Js.Error(message)` when the message is enough,
+- match `Js.Unknown` for arbitrary thrown values that do not normalize cleanly,
+- add more constructors later only if they carry meaning beyond the same `String` payload.
 
 Continued-port finding: a tiny local `try` helper makes the file much easier to advance, but it
 also makes failure semantics coarse:
@@ -520,13 +523,11 @@ That is acceptable for a stress fixture. It suggests the basis eventually needs 
 as:
 
 ```txt
-Result.unwrapOrPanic
-Js.try
-Js.unsafeTry
+Js.Error(message)
+Js.Unknown
 ```
 
-Those names should make the loss of explicit error handling visible. The compiler should not make
-this implicit.
+The compiler should not make `Js.Error` implicitly behave like `String`.
 
 ### 6. Primitive JS Methods on HM Strings
 
@@ -736,16 +737,17 @@ For later testing, this chain should become a dedicated regression fixture.
 
 ### 11. Safe vs Unsafe FFI
 
-The webhook example uses many `unsafe` imports because otherwise every JS call returns `Result`.
+The webhook example uses many `unsafe` imports, but `Result` itself is no longer the design problem.
 
-That is useful for prototyping, but it shows the eventual ergonomics problem clearly:
+That is useful for prototyping, but it shows the remaining `Js.Error` problem clearly:
 
 - Safe FFI is semantically better.
-- Raw `Result` handling everywhere is too noisy for real JS-heavy code.
-- Unsafe FFI makes the code pleasant but erases the explicit throw boundary.
+- `Result<_, Js.Error>` preserves the throw boundary.
+- `Js.Error` should give handlers a small normal Workman value to inspect.
+- Unsafe FFI erases the explicit throw boundary.
 
-The path forward is probably not “make everything unsafe.” It is better `Result` ergonomics and
-maybe scoped unsafe escape hatches.
+The path forward is probably not “make everything unsafe.” It is a small normalized `Js.Error` ADT,
+with unsafe imports reserved for code that deliberately opts out of the boundary.
 
 Continued-port finding: even when imports are marked `unsafe`, receiver calls on reflected objects
 may still be generated as safe/fallible calls if the receiver access goes through dynamic or
@@ -758,8 +760,8 @@ Open design question:
 Should unsafe-ness propagate through receiver calls derived from an unsafe imported value?
 ```
 
-For quick JS ports, propagation would reduce noise. For rigorous safe interop, explicit `Result`
-handling is better.
+For quick JS ports, propagation would hide more failures. For rigorous safe interop, explicit
+`Result` handling with matchable `Js.Error` values is better.
 
 ### 12. Optional Parameter Mapping
 
@@ -1001,8 +1003,8 @@ type mismatch "Result<Js.Object, Js.Error>" vs "Js.Object"
 ```
 
 The compiler is correctly saying the `.then(...)` path is fallible while the fallback response path
-is not. The unresolved design question is how much safe-FFI result handling users should have to
-write in promise-heavy code.
+is not. The unresolved design question is how promise-heavy code should preserve, inspect, or map
+`Js.Error` values when a branch crosses the FFI boundary.
 
 After adding the local `try` helper, that branch-shape issue was worked around for the stress port.
 The current active blocker is now:

@@ -65,6 +65,22 @@ Deno.test("cli check reports ok for valid modules", async () => {
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli check prints warnings before ok", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    "type Option<T> = None | Some<T>; let opt = None; let bad = match(opt) { None => { 0 } };",
+  );
+
+  const result = await runCli(["check", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "ok\n");
+  assertStringIncludes(result.stderr, "warning[pattern.non-exhaustive");
+  assertStringIncludes(result.stderr, "missing Some");
+});
+
 Deno.test("cli run uses Core constructor identity through imports", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(

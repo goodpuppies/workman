@@ -10,7 +10,7 @@ import {
   type Ty,
   type TypeEnv,
 } from "../types.ts";
-import { constrain } from "./shared.ts";
+import { constrainAt } from "./provenance.ts";
 
 export function ffiCallbackParamHints(
   typeEnv: TypeEnv,
@@ -67,31 +67,43 @@ export function jsArrayFfiCallValue(
   if (member === "join") return StringTy;
   if (member === "at") {
     if (args.length !== 1) return undefined;
-    constrain(args[0], NumberTy);
+    constrainMember(args[0], NumberTy, "JsArray.at index", "argument matches array index type");
     return optionTy(typeEnv, element);
   }
   if (member === "includes") {
     if (args.length !== 1) return undefined;
-    constrain(args[0], element);
+    constrainMember(args[0], element, "JsArray.includes value", "argument matches array element");
     return BoolTy;
   }
   if (member === "filter") {
     if (args.length !== 1) return undefined;
-    constrain(args[0], fn([tuple([element, NumberTy, jsArrayTy(typeEnv, element)])], BoolTy));
+    constrainMember(
+      args[0],
+      fn([tuple([element, NumberTy, jsArrayTy(typeEnv, element)])], BoolTy),
+      "JsArray.filter callback",
+      "callback matches filter signature",
+    );
     return jsArrayTy(typeEnv, element);
   }
   if (member === "reduce") {
     if (args.length !== 2) return undefined;
     const accumulator = args[1];
-    constrain(
+    constrainMember(
       args[0],
       fn([tuple([accumulator, element, NumberTy, jsArrayTy(typeEnv, element)])], accumulator),
+      "JsArray.reduce callback",
+      "callback matches reduce signature",
     );
     return accumulator;
   }
   if (member !== "map" || args.length !== 1) return undefined;
   const mapped = fresh("mapped");
-  constrain(args[0], fn([tuple([element, NumberTy, jsArrayTy(typeEnv, element)])], mapped));
+  constrainMember(
+    args[0],
+    fn([tuple([element, NumberTy, jsArrayTy(typeEnv, element)])], mapped),
+    "JsArray.map callback",
+    "callback matches map signature",
+  );
   return jsArrayTy(typeEnv, mapped);
 }
 
@@ -109,7 +121,12 @@ function inferArrayElementFromMember(
   const target = prune(receiver);
   if (target.tag !== "var") return undefined;
   const element = fresh("element");
-  constrain(receiver, jsArrayTy(typeEnv, element));
+  constrainMember(
+    receiver,
+    jsArrayTy(typeEnv, element),
+    `JsArray.${member} receiver`,
+    "receiver matches array member",
+  );
   return element;
 }
 
@@ -136,34 +153,50 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
   if (!primitive) return undefined;
   if (primitive === "Number" && member === "toString") {
     if (args.length > 1) return undefined;
-    if (args[0]) constrain(args[0], NumberTy);
+    if (args[0]) {
+      constrainMember(args[0], NumberTy, "Number.toString radix", "argument matches numeric radix");
+    }
     return StringTy;
   }
   if (primitive === "Number" && member === "toFixed") {
     if (args.length > 1) return undefined;
-    if (args[0]) constrain(args[0], NumberTy);
+    if (args[0]) {
+      constrainMember(
+        args[0],
+        NumberTy,
+        "Number.toFixed digits",
+        "argument matches numeric digits",
+      );
+    }
     return StringTy;
   }
   if (primitive === "String" && member === "slice") {
     if (args.length < 1 || args.length > 2) return undefined;
-    constrain(args[0], NumberTy);
-    if (args[1]) constrain(args[1], NumberTy);
+    constrainMember(args[0], NumberTy, "String.slice start", "argument matches numeric start");
+    if (args[1]) {
+      constrainMember(args[1], NumberTy, "String.slice end", "argument matches numeric end");
+    }
     return StringTy;
   }
   if (primitive === "String" && (member === "padStart" || member === "padEnd")) {
     if (args.length !== 2) return undefined;
-    constrain(args[0], NumberTy);
-    constrain(args[1], StringTy);
+    constrainMember(
+      args[0],
+      NumberTy,
+      `String.${member} length`,
+      "argument matches numeric length",
+    );
+    constrainMember(args[1], StringTy, `String.${member} fill`, "argument matches string fill");
     return StringTy;
   }
   if (primitive === "String" && member === "repeat") {
     if (args.length !== 1) return undefined;
-    constrain(args[0], NumberTy);
+    constrainMember(args[0], NumberTy, "String.repeat count", "argument matches numeric count");
     return StringTy;
   }
   if (primitive === "String" && (member === "startsWith" || member === "endsWith")) {
     if (args.length !== 1) return undefined;
-    constrain(args[0], StringTy);
+    constrainMember(args[0], StringTy, `String.${member} search`, "argument matches string search");
     return BoolTy;
   }
   if (primitive === "String" && member === "toLowerCase") {
@@ -177,14 +210,24 @@ function inferPrimitiveReceiverFromMember(receiver: Ty, member: string): string 
   const target = prune(receiver);
   if (target.tag !== "var") return undefined;
   if (member === "toString" || member === "toFixed") {
-    constrain(receiver, NumberTy);
+    constrainMember(
+      receiver,
+      NumberTy,
+      `Number.${member} receiver`,
+      "receiver matches number member",
+    );
     return "Number";
   }
   if (
     member === "slice" || member === "padStart" || member === "padEnd" || member === "repeat" ||
     member === "startsWith" || member === "endsWith" || member === "toLowerCase"
   ) {
-    constrain(receiver, StringTy);
+    constrainMember(
+      receiver,
+      StringTy,
+      `String.${member} receiver`,
+      "receiver matches string member",
+    );
     return "String";
   }
   return undefined;
@@ -214,13 +257,32 @@ export function jsPromiseFfiCallValue(
   if (member === "then") {
     const mapped = fresh("mapped");
     const expected = fn([element], mapped);
-    constrain(jsPromiseCallbackActual(typeEnv, expected, args[0]), expected);
+    constrainMember(
+      jsPromiseCallbackActual(typeEnv, expected, args[0]),
+      expected,
+      "JsPromise.then callback",
+      "callback matches promise continuation",
+    );
     return jsPromiseTy(typeEnv, jsPromiseElement(typeEnv, mapped) ?? mapped);
   }
   if (member === "catch") {
     return jsPromiseTy(typeEnv, element);
   }
   return undefined;
+}
+
+function constrainMember(left: Ty, right: Ty, subject: string, role: string) {
+  constrainAt(left, right, undefined, undefined, [], undefined, {
+    message: subject,
+  }, {
+    premise: {
+      rule: "InferJsMember.Constraint",
+      role,
+      subject,
+      leftRole: "actual",
+      rightRole: "expected",
+    },
+  });
 }
 
 function jsPromiseElement(typeEnv: TypeEnv, receiver: Ty): Ty | undefined {

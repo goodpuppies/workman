@@ -155,7 +155,7 @@ let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
 export function baseTypeEnv(): TypeEnv {
   if (!basisTypeEnvCache) {
     basisTypeEnvCache = new Map(
-      ["Number", "Bool", "String", "Void", "Js.Value", "Js.Object", "Js.Error"].map((name) => [
+      ["Number", "Bool", "String", "Void", "Js.Value", "Js.Object"].map((name) => [
         name,
         { ...freshTypeInfo(name, 0), basis: true },
       ]),

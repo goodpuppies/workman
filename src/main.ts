@@ -1,4 +1,4 @@
-import { checkFile, compileFile, ModuleAnalysisError } from "./compiler.ts";
+import { analyzeFile, compileFile, ModuleAnalysisError } from "./compiler.ts";
 import {
   formatDiagnostic,
   formatDiagnosticError,
@@ -79,7 +79,14 @@ export async function main(args: string[]): Promise<number> {
 async function checkCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("check");
-  await checkFile(input);
+  const analysis = await analyzeFile(input);
+  for (const path of analysis.graph.order) {
+    const result = analysis.results.get(path);
+    const source = analysis.graph.nodes.get(path)?.source ?? "";
+    for (const diagnostic of result?.diagnostics ?? []) {
+      console.error(formatDiagnostic(diagnostic, path, source));
+    }
+  }
   console.log("ok");
   return 0;
 }

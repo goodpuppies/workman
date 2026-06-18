@@ -40,6 +40,14 @@ export const basisTypes: BasisTypeDecl[] = [
       { name: "Cons", id: -6, args: [param("T"), { kind: "TName", name: "List", args: [param("T")] }] },
     ],
   },
+  {
+    name: "Js.Error",
+    params: [],
+    ctors: [
+      { name: "Js.Error", id: -7, args: [{ kind: "TName", name: "String", args: [] }] },
+      { name: "Js.Unknown", id: -8, args: [] },
+    ],
+  },
 ];
 
 export function basisCtorId(name: string): number | undefined {
@@ -53,7 +61,7 @@ export function basisCtorId(name: string): number | undefined {
 export function basisCtorJsName(id: number): string | undefined {
   for (const type of basisTypes) {
     const ctor = type.ctors.find((item) => item.id === id);
-    if (ctor) return `__wm_basis_${ctor.name}`;
+    if (ctor) return `__wm_basis_${ctor.name.replaceAll(".", "_")}`;
   }
   return undefined;
 }

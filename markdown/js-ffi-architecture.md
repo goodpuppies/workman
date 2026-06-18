@@ -108,6 +108,37 @@ Refactor direction:
   the user performs an explicit assertion/check;
 - for JSON, prefer one whole-shape assertion over gradual property digging.
 
+## JS Error Values
+
+`Js.Error` is the error channel for safe FFI calls. It is not the raw JavaScript thrown value. The
+generated JS boundary catches arbitrary throws and normalizes them into a small Workman basis ADT
+before constructing `Err`.
+
+Initial shape:
+
+```txt
+Js.Error(String)
+Js.Unknown
+```
+
+`Js.Error(message)` covers ordinary `Error` instances, thrown strings, and object-like thrown values
+with a readable `message` property. `Js.Unknown` covers everything else, such as `throw null`,
+`throw 3`, and message getters that themselves fail.
+
+Workman code can match this value normally:
+
+```wm
+match(result) {
+  Ok(value) => { value },
+  Err(Js.Error(message)) => { Panic(message) },
+  Err(Js.Unknown) => { Panic("unknown JS error") },
+}
+```
+
+Do not make `Js.Error` implicitly coerce to `String`. That would make `Err(error)` look more useful
+while hiding the boundary where arbitrary JavaScript throws are being collapsed into text. Domain
+errors should still be produced explicitly with `Result.mapErr` or `Task.mapErr`.
+
 ## TypeScript Mapping Policy
 
 `reflect/type_mapping.ts` should stay pragmatic:

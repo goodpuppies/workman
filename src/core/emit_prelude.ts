@@ -63,7 +63,7 @@ export function emitRuntimePrelude(): string[] {
     try {
       return __wm_basis_Ok(__wm_js_to_workman(fn(...args), resultConverter));
     } catch (error) {
-      return __wm_basis_Err(error);
+      return __wm_basis_Err(__wm_js_error(error));
     }
   }
   return __wm_js_to_workman(fn(...args), resultConverter);
@@ -72,10 +72,10 @@ export function emitRuntimePrelude(): string[] {
   try {
     return Promise.resolve(thunk()).then(
       (value) => __wm_basis_Ok(__wm_js_to_workman(value, resultConverter)),
-      (error) => __wm_basis_Err(error),
+      (error) => __wm_basis_Err(__wm_js_error(error)),
     );
   } catch (error) {
-    return Promise.resolve(__wm_basis_Err(error));
+    return Promise.resolve(__wm_basis_Err(__wm_js_error(error)));
   }
 };`,
     `const __wm_eq = (a, b) => {
@@ -131,9 +131,21 @@ export function emitRuntimePrelude(): string[] {
 };`,
     "const __wm_fail = (name, message) => { const e = new Error(message); e.name = name; throw e; };",
     ...emitBasisConstructors(),
+    `const __wm_js_error = (error) => {
+  try {
+    if (error instanceof Error) return __wm_basis_Js_Error(String(error.message));
+    if (typeof error === "string") return __wm_basis_Js_Error(error);
+    if (error && typeof error === "object" && "message" in error) {
+      return __wm_basis_Js_Error(String(error.message));
+    }
+  } catch (_error) {
+    return __wm_basis_Js_Unknown;
+  }
+  return __wm_basis_Js_Unknown;
+};`,
     `const Json = {
   assert: (value) => value == null
-    ? __wm_basis_Err(new Error("Json.assert failed"))
+    ? __wm_basis_Err(__wm_js_error(new Error("Json.assert failed")))
     : __wm_basis_Ok(value),
 };`,
     `const Dict = {

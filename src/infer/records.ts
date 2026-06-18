@@ -12,7 +12,7 @@ import {
   type TypeEnv,
   type TypeInfo,
 } from "../types.ts";
-import { constrain } from "./shared.ts";
+import { constrainAt } from "./provenance.ts";
 
 type InferValue = (expr: Expr) => Ty;
 type NamedTy = Extract<Ty, { tag: "named" }>;
@@ -50,7 +50,16 @@ export function inferRecordExpr(
       throw new Error(`${result.name} has no field ${field.name}`);
     }
     const expectedField = fieldTypes.find((item) => item.name === field.name)!;
-    constrain(inferValue(field.value), expectedField.type);
+    constrainRecord(
+      inferValue(field.value),
+      expectedField.type,
+      field.value,
+      "InferRecord.FieldValue",
+      "record field matches declared field type",
+      `${result.name}.${field.name}`,
+      "field value",
+      "declared field",
+    );
   }
   if (fieldTypes.length !== expr.fields.length) {
     throw new Error(`missing record field for ${result.name}`);
@@ -69,11 +78,29 @@ function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
   if (target.tag === "var") {
     const nominal = uniqueNonFunctionFieldRecord(typeEnv, field);
     if (nominal) {
-      constrain(target, nominal.record);
+      constrainRecord(
+        target,
+        nominal.record,
+        undefined,
+        "InferRecord.ProjectNominal",
+        "receiver matches record containing projected field",
+        field,
+        "receiver",
+        "record",
+      );
       return nominal.type;
     }
     const result = fresh();
-    constrain(target, structural([{ name: field, type: result }]));
+    constrainRecord(
+      target,
+      structural([{ name: field, type: result }]),
+      undefined,
+      "InferRecord.ProjectStructural",
+      "receiver has projected structural field",
+      field,
+      "receiver",
+      "structural field",
+    );
     return result;
   }
   if (target.tag === "struct") {
@@ -84,6 +111,31 @@ function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
     return result;
   }
   throw new Error(`type ${show(base)} has no field ${field}`);
+}
+
+function constrainRecord(
+  left: Ty,
+  right: Ty,
+  expr: Expr | undefined,
+  rule: string,
+  role: string,
+  subject: string,
+  leftRole: string,
+  rightRole: string,
+) {
+  constrainAt(left, right, expr, undefined, [], undefined, {
+    message: subject,
+    node: expr?.node,
+    span: expr?.node?.span,
+  }, {
+    premise: {
+      rule,
+      role,
+      subject,
+      leftRole,
+      rightRole,
+    },
+  });
 }
 
 function uniqueNonFunctionFieldRecord(

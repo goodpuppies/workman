@@ -6,6 +6,7 @@ import { validateUri } from "./validation.ts";
 
 const documents = new DocumentStore();
 const projectIndex = new ProjectIndex();
+const lastPublishedUrisByEntry = new Map<string, Set<string>>();
 let isShutdown = false;
 let writeChain: Promise<void> = Promise.resolve();
 
@@ -110,11 +111,17 @@ async function handleMessage(message: RpcMessage) {
 
 async function publishValidation(uri: string) {
   const started = Date.now();
+  const validationKey = projectIndex.fallbackUri(uri);
   log("validate start", uri);
   const results = await validateUri(uri, documents.sourceOverrides());
+  const currentUris = new Set(results.map((result) => result.uri));
   await Promise.all(
     results.map((result) => publishDiagnostics(result.uri, result.diagnostics)),
   );
+  for (const staleUri of lastPublishedUrisByEntry.get(validationKey) ?? []) {
+    if (!currentUris.has(staleUri)) await publishDiagnostics(staleUri, []);
+  }
+  lastPublishedUrisByEntry.set(validationKey, currentUris);
   log("validate done", uri, `${Date.now() - started}ms`, `results=${results.length}`);
 }
 
@@ -139,8 +146,14 @@ async function publishWatchedFileValidation(uris: string[]) {
 }
 
 async function publishDiagnostics(uri: string, diagnostics: unknown[]) {
-  log("publish diagnostics", uri, `count=${diagnostics.length}`);
-  await notify("textDocument/publishDiagnostics", { uri, diagnostics });
+  const version = documents.version(uri);
+  log(
+    "publish diagnostics",
+    uri,
+    `count=${diagnostics.length}`,
+    version === undefined ? "version=-" : `version=${version}`,
+  );
+  await notify("textDocument/publishDiagnostics", { uri, diagnostics, version });
 }
 
 async function respond(id: RpcMessage["id"], result: unknown) {

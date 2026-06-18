@@ -152,7 +152,7 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
           JSON.stringify(jsValueConverter(spec.type))
         })`;
       }
-      return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(error); } })()`;
+      return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(__wm_js_error(error)); } })()`;
     }
     return memberRef;
   }

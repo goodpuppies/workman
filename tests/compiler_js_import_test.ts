@@ -1,4 +1,4 @@
-import { assertRejects, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
 
@@ -27,6 +27,20 @@ Deno.test("manual non-unsafe imports are fallible", async () => {
   expectBinding(result.env, "parsed", { type: "Result<Js.Object, Js.Error>", vars: 0 });
   expectBinding(result.env, "text", { type: "Result<String, Js.Error>", vars: 0 });
   expectBinding(result.env, "args", { type: "Result<Js.Array<String>, Js.Error>", vars: 0 });
+});
+
+Deno.test("Js.Error is a matchable basis datatype", async () => {
+  const result = await checkSource(`
+    let describe = (error: Js.Error) => {
+      match(error) {
+        Js.Error(message) => { message },
+        Js.Unknown => { "unknown" },
+      }
+    };
+  `);
+
+  expectBinding(result.env, "describe", { type: "(Js.Error) => String", vars: 0 });
+  assertEquals(result.warnings, []);
 });
 
 Deno.test("rejects generic handwritten JS FFI signatures", async () => {

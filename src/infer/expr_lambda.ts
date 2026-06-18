@@ -21,7 +21,7 @@ import { inferParam } from "./expr_flow.ts";
 import { ffiCallbackParamHints } from "./expr_js_members.ts";
 import { inferPattern, patternBinders } from "./patterns.ts";
 import { constrainAt, type TypeProvenance } from "./provenance.ts";
-import { callArg, constrain } from "./shared.ts";
+import { callArg } from "./shared.ts";
 import { type TypeFacts } from "./type_facts.ts";
 
 export function inferLambdaTy(
@@ -44,7 +44,21 @@ export function inferLambdaTy(
   );
   const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders, facts));
   paramHints?.forEach((hint, index) => {
-    if (index < params.length) constrain(params[index], hint);
+    if (index < params.length) {
+      constrainAt(params[index], hint, expr.params[index], undefined, [], provenance, {
+        message: "parameter hint",
+        node: expr.params[index].node,
+        span: expr.params[index].node?.span,
+      }, {
+        premise: {
+          rule: "InferLambda.ParameterHint",
+          role: "parameter matches contextual hint",
+          subject: "lambda parameter",
+          leftRole: "parameter",
+          rightRole: "hint",
+        },
+      });
+    }
   });
   const body = inferExpr(
     expr.body,

@@ -28,6 +28,21 @@ export class DocumentStore {
     return this.#documents.get(uri);
   }
 
+  version(uri: string): number | undefined {
+    const direct = this.#documents.get(uri)?.version;
+    if (direct !== undefined) return direct;
+    const path = normalize(resolve(fileUriToPath(uri)));
+    for (const doc of this.#documents.values()) {
+      if (normalize(resolve(doc.path)) === path) return doc.version;
+      try {
+        if (Deno.realPathSync(doc.path) === path) return doc.version;
+      } catch {
+        // Unsaved editor buffers may not exist on disk yet.
+      }
+    }
+    return undefined;
+  }
+
   uris(): string[] {
     return [...this.#documents.keys()];
   }

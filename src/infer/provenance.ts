@@ -1,4 +1,4 @@
-import type { Expr, Param } from "../ast.ts";
+import type { Expr, Param, Pattern } from "../ast.ts";
 import { diagnosticError, FrontendDiagnosticError } from "../diagnostics.ts";
 import {
   type ClaimId,
@@ -64,7 +64,7 @@ export type ConstrainAtOptions = {
 export function constrainAt(
   left: Ty,
   right: Ty,
-  expr: Expr | Param | undefined,
+  expr: Expr | Param | Pattern | undefined,
   message?: () => string,
   origins: EvidenceOrigin[] = [],
   provenance?: TypeProvenance,

@@ -2,7 +2,7 @@ import type { InferResult } from "../infer.ts";
 import type { ModuleGraph, ModuleImportEdge } from "../module_graph.ts";
 import type { Module, TypeExpr } from "../ast.ts";
 import type { ImportClause } from "../ast.ts";
-import { basisCtorId } from "../basis.ts";
+import { basisCtorId, basisTypes } from "../basis.ts";
 import type { CoreDecl, CoreExpr, CoreModule, CorePattern } from "./ast.ts";
 import { coreFromSurface } from "./from_surface.ts";
 import { type BindingId, CoreIdAllocator, type CtorId } from "./ids.ts";
@@ -316,7 +316,7 @@ function visibleConstructors(
 }
 
 function basisConstructors(): [string, CtorId][] {
-  return ["None", "Some", "Ok", "Err", "Nil", "Cons"].flatMap((name) => {
+  return basisTypes.flatMap((type) => type.ctors.map((ctor) => ctor.name)).flatMap((name) => {
     const id = basisCtorId(name);
     return id === undefined ? [] : [[name, id as CtorId]];
   });

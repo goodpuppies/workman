@@ -16,7 +16,8 @@ import {
   type TypeInfo,
   VoidTy,
 } from "../types.ts";
-import { constrain, expandCallArg } from "./shared.ts";
+import { constrainAt } from "./provenance.ts";
+import { expandCallArg } from "./shared.ts";
 import { originForScheme, recordPatternFact, type TypeFacts } from "./type_facts.ts";
 
 export function showPattern(pattern: Pattern): string {
@@ -76,7 +77,7 @@ export function inferPattern(
       const scheme = env.get(p.name);
       if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
       const pinned = instantiate(scheme);
-      constrain(expected, pinned);
+      constrainPattern(expected, pinned, p, "InferPattern.Pinned", "pinned pattern matches value");
       if (facts) {
         recordPatternFact(facts, p, {
           subject: "pattern",
@@ -88,27 +89,45 @@ export function inferPattern(
       return expected;
     }
     case "PInt":
-      constrain(expected, NumberTy);
+      constrainPattern(expected, NumberTy, p, "InferPattern.Int", "integer pattern matches Number");
       return expected;
     case "PString":
-      constrain(expected, StringTy);
+      constrainPattern(
+        expected,
+        StringTy,
+        p,
+        "InferPattern.String",
+        "string pattern matches String",
+      );
       return expected;
     case "PBool":
-      constrain(expected, BoolTy);
+      constrainPattern(expected, BoolTy, p, "InferPattern.Bool", "boolean pattern matches Bool");
       return expected;
     case "PVoid":
-      constrain(expected, VoidTy);
+      constrainPattern(expected, VoidTy, p, "InferPattern.Void", "void pattern matches Void");
       return expected;
     case "PTuple": {
       const items = p.items.map(() => fresh());
-      constrain(expected, tuple(items));
+      constrainPattern(
+        expected,
+        tuple(items),
+        p,
+        "InferPattern.Tuple",
+        "tuple pattern matches tuple",
+      );
       p.items.forEach((x, i) => inferPattern(x, items[i], env, typeEnv, adts, binders, facts));
       return expected;
     }
     case "PRecord": {
       rejectDuplicateFields(p.fields.map((field) => field.name));
       const record = recordPatternTarget(expected, p.fields.map((field) => field.name), typeEnv);
-      constrain(expected, record.type);
+      constrainPattern(
+        expected,
+        record.type,
+        p,
+        "InferPattern.Record",
+        "record pattern matches record type",
+      );
       const fields = instantiateRecordFields(record.info, record.type.args);
       for (const field of p.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
@@ -135,11 +154,23 @@ export function inferPattern(
         if (args.length !== p.args.length) {
           throw new Error(`${p.name} expects ${args.length} patterns`);
         }
-        constrain(expected, ctor.result);
+        constrainPattern(
+          expected,
+          ctor.result,
+          p,
+          "InferPattern.ConstructorResult",
+          "constructor pattern result matches scrutinee",
+        );
         p.args.forEach((x, i) => inferPattern(x, args[i], env, typeEnv, adts, binders, facts));
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
-        constrain(expected, ctor);
+        constrainPattern(
+          expected,
+          ctor,
+          p,
+          "InferPattern.NullaryConstructor",
+          "nullary constructor pattern matches scrutinee",
+        );
       }
       return expected;
     }
@@ -171,20 +202,50 @@ export function inferBindingPattern(
     case "PWildcard":
       return;
     case "PInt":
-      constrain(expected, NumberTy);
+      constrainPattern(
+        expected,
+        NumberTy,
+        pattern,
+        "InferBindingPattern.Int",
+        "integer let pattern matches Number",
+      );
       return;
     case "PString":
-      constrain(expected, StringTy);
+      constrainPattern(
+        expected,
+        StringTy,
+        pattern,
+        "InferBindingPattern.String",
+        "string let pattern matches String",
+      );
       return;
     case "PBool":
-      constrain(expected, BoolTy);
+      constrainPattern(
+        expected,
+        BoolTy,
+        pattern,
+        "InferBindingPattern.Bool",
+        "boolean let pattern matches Bool",
+      );
       return;
     case "PVoid":
-      constrain(expected, VoidTy);
+      constrainPattern(
+        expected,
+        VoidTy,
+        pattern,
+        "InferBindingPattern.Void",
+        "void let pattern matches Void",
+      );
       return;
     case "PTuple": {
       const items = pattern.items.map(() => fresh());
-      constrain(expected, tuple(items));
+      constrainPattern(
+        expected,
+        tuple(items),
+        pattern,
+        "InferBindingPattern.Tuple",
+        "tuple let pattern matches tuple",
+      );
       pattern.items.forEach((item, i) =>
         inferBindingPattern(item, items[i], env, typeEnv, out, binders, facts)
       );
@@ -197,7 +258,13 @@ export function inferBindingPattern(
         pattern.fields.map((field) => field.name),
         typeEnv,
       );
-      constrain(expected, record.type);
+      constrainPattern(
+        expected,
+        record.type,
+        pattern,
+        "InferBindingPattern.Record",
+        "record let pattern matches record type",
+      );
       const fields = instantiateRecordFields(record.info, record.type.args);
       for (const field of pattern.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
@@ -226,19 +293,53 @@ export function inferBindingPattern(
         if (args.length !== pattern.args.length) {
           throw new Error(`${pattern.name} expects ${args.length} patterns`);
         }
-        constrain(expected, ctor.result);
+        constrainPattern(
+          expected,
+          ctor.result,
+          pattern,
+          "InferBindingPattern.ConstructorResult",
+          "constructor let pattern result matches value",
+        );
         pattern.args.forEach((item, i) =>
           inferBindingPattern(item, args[i], env, typeEnv, out, binders, facts)
         );
       } else {
         if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
-        constrain(expected, ctor);
+        constrainPattern(
+          expected,
+          ctor,
+          pattern,
+          "InferBindingPattern.NullaryConstructor",
+          "nullary constructor let pattern matches value",
+        );
       }
       return;
     }
     default:
       throw new Error("unsupported let pattern");
   }
+}
+
+function constrainPattern(
+  left: Ty,
+  right: Ty,
+  pattern: Pattern,
+  rule: string,
+  role: string,
+) {
+  constrainAt(left, right, pattern, undefined, [], undefined, {
+    message: showPattern(pattern),
+    node: pattern.node,
+    span: pattern.node?.span,
+  }, {
+    premise: {
+      rule,
+      role,
+      subject: showPattern(pattern),
+      leftRole: "expected",
+      rightRole: "pattern",
+    },
+  });
 }
 
 export function patternBinders(pattern: Pattern): string[] {
