@@ -6,6 +6,7 @@ import {
   fresh,
   freshFfi,
   instantiate,
+  named,
   NumberTy,
   prune,
   StringTy,
@@ -475,9 +476,10 @@ function inferExprInner(
           diagnostics,
           provenance,
         );
+        const carrier = resultParts(value, typeEnv);
         constrainAt(
           NumberTy,
-          value,
+          carrier?.value ?? value,
           expr.value,
           undefined,
           [],
@@ -497,11 +499,16 @@ function inferExprInner(
               rightRole: "operand",
             },
             sources: {
-              right: sourceForTypedExpr(expr.value, value, provenance, "unary - operand"),
+              right: sourceForTypedExpr(
+                expr.value,
+                carrier?.value ?? value,
+                provenance,
+                "unary - operand",
+              ),
             },
           },
         );
-        t = NumberTy;
+        t = carrier ? wrapResult(NumberTy, carrier.error, typeEnv) : NumberTy;
       } else {
         const value = inferExpr(
           expr.value,
@@ -514,9 +521,10 @@ function inferExprInner(
           diagnostics,
           provenance,
         );
+        const carrier = resultParts(value, typeEnv);
         constrainAt(
           BoolTy,
-          value,
+          carrier?.value ?? value,
           expr.value,
           undefined,
           [],
@@ -536,11 +544,16 @@ function inferExprInner(
               rightRole: "operand",
             },
             sources: {
-              right: sourceForTypedExpr(expr.value, value, provenance, "unary ! operand"),
+              right: sourceForTypedExpr(
+                expr.value,
+                carrier?.value ?? value,
+                provenance,
+                "unary ! operand",
+              ),
             },
           },
         );
-        t = BoolTy;
+        t = carrier ? wrapResult(BoolTy, carrier.error, typeEnv) : BoolTy;
       }
       break;
     case "Pipe":
@@ -559,4 +572,16 @@ function inferExprInner(
   }
   types.set(expr, t);
   return t;
+}
+
+function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {
+  const resolved = prune(type);
+  const result = typeEnv.get("Result");
+  if (!result || resolved.tag !== "named" || resolved.id !== result.id) return undefined;
+  return { value: resolved.args[0], error: resolved.args[1] };
+}
+
+function wrapResult(value: Ty, error: Ty, typeEnv: TypeEnv): Ty {
+  const result = typeEnv.get("Result");
+  return result ? named(result, [value, error]) : value;
 }

@@ -3,6 +3,7 @@ import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artif
 import type { BindingId } from "./ids.ts";
 import { basisCtorJsName } from "../basis.ts";
 import type { JsImportSpec, TypeExpr } from "../ast.ts";
+import { runtimeJsModuleSpecifier } from "../js_module_specifier.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
 
 const reserved = new Set([
@@ -75,11 +76,7 @@ function emitDecl(decl: CoreDecl): string[] {
     if (decl.clause.kind === "Namespace") {
       return [
         ...prefix,
-        `const ${
-          id(decl.clause.alias)
-        } = new Proxy({}, { get: (_target, key) => (__arg) => __wm_js_call(${
-          jsMemberRef(target, "String(key)")
-        }, __arg) });`,
+        `const ${id(decl.clause.alias)} = ${jsNamespaceRef(target)};`,
       ];
     }
     const alias = decl.clause.alias;
@@ -311,7 +308,9 @@ function jsTargetRef(target: Extract<CoreDecl, { kind: "CoreJsImport" }>["target
     return {
       kind: "module",
       name,
-      setup: `const ${name} = await import(${JSON.stringify(target.specifier)});`,
+      setup: `const ${name} = await import(${
+        JSON.stringify(runtimeJsModuleSpecifier(target.specifier))
+      });`,
     };
   }
   if (target.kind === "JsReceiver") return { kind: "receiver", path: target.path };
@@ -330,6 +329,16 @@ function jsMemberRef(target: JsTargetRef, member: string): string {
   if (target.kind === "module") return `__wm_js_member_obj(${target.name}, ${member})`;
   if (target.kind === "constructor") return `__wm_js_construct(${JSON.stringify(target.path)})`;
   return `__wm_js_receiver_member(${JSON.stringify(target.path)})`;
+}
+
+function jsNamespaceRef(target: JsTargetRef): string {
+  if (target.kind === "module") return target.name;
+  if (target.kind === "global") {
+    return target.path.length === 0
+      ? "globalThis"
+      : `__wm_js_global(${JSON.stringify(target.path)})`;
+  }
+  return "{}";
 }
 
 function emitPatternAssert(

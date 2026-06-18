@@ -51,7 +51,7 @@ export function coreProgramFromAnalysis(
     const node = graph.nodes.get(path)!;
     const analysis = results.get(path);
     if (!analysis) throw new Error(`missing analysis result for ${path}`);
-    const module = coreFromSurface(node.module);
+    const module = coreFromSurface(node.module, analysis);
     const moduleConstructors = attachConstructorIds(module, analysis, path, ids);
     constructors.push(...moduleConstructors);
     modules.set(path, {
@@ -80,7 +80,7 @@ export function coreProgramFromModule(
   source = "<source>",
 ): CoreProgram {
   const ids = new CoreIdAllocator();
-  const module = coreFromSurface(surfaceModule);
+  const module = coreFromSurface(surfaceModule, analysis);
   const constructors = attachConstructorIds(module, analysis, source, ids);
   resolveConstructorRefs(
     module,

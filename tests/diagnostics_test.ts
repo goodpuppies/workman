@@ -42,6 +42,31 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   );
 });
 
+Deno.test("call mismatch prefers use-site argument over callee definition", async () => {
+  const source = `
+from js.global("Math") import { sin as msin };
+let liftR = Monad.lift Result;
+let sin = liftR msin;
+let uw = match(res) => { Ok(i) => { i }, Err(_) => { Panic("bad") } };
+let main = () => {
+  let time = Ok(1.5) :> uw;
+  let pulse = 0.55 + sin(time * 2):>uw * 0.25;
+};
+`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const primary = error.diagnostic.primary;
+  if (primary.kind !== "source") {
+    throw new Error("expected source primary diagnostic");
+  }
+  const expectedStart = source.indexOf("sin(time * 2)");
+  assertEquals(primary.span.start, expectedStart);
+  assertEquals(primary.span.end, expectedStart + "sin(time * 2)".length);
+});
+
 Deno.test("basic diagnostic summary displays generic variables TypeScript style", async () => {
   const source = `
 type List<T> = Nil | Cons<T, List<T>>;

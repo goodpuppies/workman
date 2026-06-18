@@ -5,7 +5,12 @@ import { collectFfiDecl, generatedJsImports, generatedTypeAliases } from "./impo
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver/receiver.ts";
 import { rewriteDeclCalls } from "./receiver/rewrite_decl.ts";
 import { rewriteExprCalls, setActiveRecordFields } from "./receiver/rewrite_expr.ts";
-import { type FfiBinding, type FfiElaboration, generatedReceiverJsImports } from "./shared.ts";
+import {
+  type FfiBinding,
+  type FfiElaboration,
+  generatedImportInsertionIndex,
+  generatedReceiverJsImports,
+} from "./shared.ts";
 
 export function prepareFfiElaboration(module: Module): FfiElaboration {
   const previousRecordFields = setActiveRecordFields(recordFieldNames(module));
@@ -52,12 +57,18 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
     rewrittenDecls.push(rewritten);
   }
   collectReflectedForeignTypeRefs(bindings, importedTypeRefs, localTypes);
-  const decls = [
+  const receiverImports = generatedReceiverJsImports(bindings, selected);
+  const baseDecls = [
     ...generatedTypeAliases(importedTypeRefs),
-    ...generatedReceiverJsImports(bindings, selected),
     ...rewrittenDecls.flatMap((decl) =>
       decl.kind === "JsImportDecl" ? generatedJsImports(decl, bindings, selected) : [decl]
     ),
+  ];
+  const insertionIndex = generatedImportInsertionIndex(baseDecls);
+  const decls = [
+    ...baseDecls.slice(0, insertionIndex),
+    ...receiverImports,
+    ...baseDecls.slice(insertionIndex),
   ];
   return {
     module: { ...module, decls },

@@ -8,6 +8,12 @@ let andThen = match(result, f) => {
   (Err(error), _) => { Err(error) }
 };
 
+let fn = (f) => {
+  (result) => {
+    result :> andThen(f)
+  }
+};
+
 let mapErr = match(result, f) => {
   (Ok(value), _) => { Ok(value) },
   (Err(error), f) => { Err(f(error)) }

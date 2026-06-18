@@ -6,6 +6,8 @@ import {
   jsGlobalMembers,
   jsGlobalMemberTypeRef,
   jsGlobalMemberValueRef,
+  jsGlobalNamespaceRef,
+  jsGlobalRootNamespaceRef,
   jsGlobalTypeRef,
   jsGlobalValueMember,
   jsGlobalValueRef,
@@ -13,6 +15,7 @@ import {
   jsModuleMember,
   jsModuleMembers,
   jsModuleMemberValueRef,
+  jsModuleNamespaceRef,
   jsModuleTypeRef,
   type JsTypeRef,
 } from "./reflect/types.ts";
@@ -29,6 +32,8 @@ export function collectFfiDecl(
     return;
   }
   if (decl.clause.kind === "Namespace") {
+    const namespaceRef = jsTargetNamespaceRef(decl.target);
+    if (namespaceRef) importedRefs.set(decl.clause.alias, namespaceRef);
     for (const member of jsTargetMembers(decl.target)) {
       addVariants(
         bindings,
@@ -216,8 +221,8 @@ export function generatedJsImports(
             node: variant.node,
           }))
       );
-    if (specs.length === 0) return [];
-    return [{
+    if (specs.length === 0) return [decl];
+    return [decl, {
       ...decl,
       clause: {
         kind: "Named",
@@ -292,6 +297,13 @@ function jsTargetMembers(target: JsTarget) {
 function jsTargetMemberValueRef(target: JsTarget, name: string): JsTypeRef | undefined {
   if (target.kind === "JsGlobal") return jsGlobalMemberValueRef(target.path, name);
   if (target.kind === "JsModule") return jsModuleMemberValueRef(target.specifier, name);
+  return undefined;
+}
+
+function jsTargetNamespaceRef(target: JsTarget): JsTypeRef | undefined {
+  if (target.kind === "JsGlobalRoot") return jsGlobalRootNamespaceRef();
+  if (target.kind === "JsGlobal") return jsGlobalNamespaceRef(target.path);
+  if (target.kind === "JsModule") return jsModuleNamespaceRef(target.specifier);
   return undefined;
 }
 

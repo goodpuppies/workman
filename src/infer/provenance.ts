@@ -320,7 +320,7 @@ function selectPrimaryCallsite(
     if (boundary) return boundary;
   }
   const inheritedPrimary = origins.find((item) => item.primary);
-  return inheritedPrimary ?? (reason?.primary ? reason : undefined);
+  return reason?.primary ? reason : inheritedPrimary;
 }
 
 export function rememberProvenance(

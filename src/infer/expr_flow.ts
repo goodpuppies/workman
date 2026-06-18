@@ -5,6 +5,7 @@ import {
   fn,
   fresh,
   instantiate,
+  named,
   prune,
   quoteType,
   type Scheme,
@@ -202,7 +203,11 @@ export function inferBinary(
     rejectUnresolvedFfiResultOperand(expr.right, right, typeEnv);
   }
   const operatorType = instantiate(op);
-  const actual = fn([tuple([left, right])], result);
+  const leftCarrier = resultParts(left, typeEnv);
+  const rightCarrier = resultParts(right, typeEnv);
+  const leftOperand = leftCarrier?.value ?? left;
+  const rightOperand = rightCarrier?.value ?? right;
+  const actual = fn([tuple([leftOperand, rightOperand])], result);
   constrainAt(
     operatorType,
     actual,
@@ -239,8 +244,36 @@ export function inferBinary(
       context: (path) => binaryContext(expr.op, path),
     },
   );
-  if (expr.op === "==" || expr.op === "!=") assertEqualityType(left, typeEnv, adts);
-  return result;
+  if (expr.op === "==" || expr.op === "!=") assertEqualityType(leftOperand, typeEnv, adts);
+  if (!leftCarrier && !rightCarrier) return result;
+  if (leftCarrier && rightCarrier) {
+    constrainAt(
+      leftCarrier.error,
+      rightCarrier.error,
+      expr,
+      undefined,
+      [],
+      provenance,
+      {
+        message: "Result operator error carrier",
+        node: expr.node,
+        span: expr.node?.span,
+      },
+      {
+        premise: {
+          rule: "InferBinary.ResultCarrierError",
+          role: "Result operator operands use the same error type",
+          subject: `operator ${expr.op}`,
+          leftRole: "left error",
+          rightRole: "right error",
+        },
+      },
+    );
+  }
+  const carrier = leftCarrier ?? rightCarrier;
+  const resultInfo = typeEnv.get("Result");
+  if (!carrier || !resultInfo) return result;
+  return named(resultInfo, [result, carrier.error]);
 }
 
 function binaryContext(
@@ -282,14 +315,18 @@ function rejectUnresolvedFfiResultOperand(expr: Expr, type: Ty, typeEnv: TypeEnv
 }
 
 function isResultType(type: Ty, typeEnv: TypeEnv): boolean {
-  return !!resultValueType(type, typeEnv);
+  return !!resultParts(type, typeEnv);
 }
 
 function resultValueType(type: Ty, typeEnv: TypeEnv): Ty | undefined {
+  return resultParts(type, typeEnv)?.value;
+}
+
+function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {
   const resolved = prune(type);
   const result = typeEnv.get("Result");
   if (!result || resolved.tag !== "named" || resolved.id !== result.id) return undefined;
-  return resolved.args[0];
+  return { value: resolved.args[0], error: resolved.args[1] };
 }
 
 function containsTypeVar(type: Ty): boolean {

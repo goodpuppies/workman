@@ -42,7 +42,8 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
     target.key,
     target.source,
     (checker, sourceFile) => {
-      const target = findVariable(sourceFile, "__wm_target")?.initializer;
+      const target = findVariable(sourceFile, "__wm_target")?.initializer ??
+        findDeclaredValue(sourceFile, "__wm_target");
       if (!target) return [];
       const members: JsMemberType[] = [];
       for (const symbol of checker.getTypeAtLocation(target).getProperties()) {
@@ -69,7 +70,8 @@ export function jsModuleMembers(specifier: string): JsMemberType[] {
     target.key,
     target.source,
     (checker, sourceFile) => {
-      const target = findVariable(sourceFile, "__wm_target")?.initializer;
+      const target = findVariable(sourceFile, "__wm_target")?.initializer ??
+        findDeclaredValue(sourceFile, "__wm_target");
       if (!target) return [];
       const members: JsMemberType[] = [];
       for (const symbol of checker.getTypeAtLocation(target).getProperties()) {
@@ -93,6 +95,35 @@ export function jsGlobalValueRef(name: string): JsTypeRef {
     key: `global-value:${name}`,
     source: `const __wm_ref_${sanitize(name)} = ${name};`,
     expr: `__wm_ref_${sanitize(name)}`,
+  };
+}
+
+export function jsGlobalRootNamespaceRef(): JsTypeRef {
+  return {
+    key: "global:namespace",
+    source: "const __wm_target = globalThis;",
+    expr: "__wm_target",
+    type: name("Js.Object"),
+  };
+}
+
+export function jsGlobalNamespaceRef(path: string): JsTypeRef {
+  const target = jsGlobalSource(path);
+  return {
+    key: `${target.key}:namespace`,
+    source: target.source,
+    expr: "__wm_target",
+    type: name("Js.Object"),
+  };
+}
+
+export function jsModuleNamespaceRef(specifier: string): JsTypeRef {
+  const target = jsModuleSource(specifier);
+  return {
+    key: `${target.key}:namespace`,
+    source: target.source,
+    expr: "__wm_target",
+    type: name("Js.Object"),
   };
 }
 
@@ -316,9 +347,9 @@ function jsRefCallTarget(
         : arg.kind === "number"
         ? String(arg.value)
         : arg.kind === "function"
-        ? `fn/${arg.arity}:${
-          arg.paramTypes?.map(typeExprKey).join(",") ?? "?"
-        }:${arg.resultType ? typeExprKey(arg.resultType) : "?"}`
+        ? `fn/${arg.arity}:${arg.paramTypes?.map(typeExprKey).join(",") ?? "?"}:${
+          arg.resultType ? typeExprKey(arg.resultType) : "?"
+        }`
         : arg.kind === "ref"
         ? `ref/${arg.ref.key}`
         : "?"

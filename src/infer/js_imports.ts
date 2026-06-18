@@ -7,7 +7,10 @@ type JsImportDecl = Extract<Decl, { kind: "JsImportDecl" }>;
 
 export function addJsImport(env: Env, typeEnv: TypeEnv, decl: JsImportDecl) {
   if (decl.clause.kind === "Namespace") {
-    throw new Error(`unelaborated JS namespace import ${jsTargetLabel(decl.target)}`);
+    if (env.has(decl.clause.alias)) throw new Error(`duplicate value import ${decl.clause.alias}`);
+    const type = typeFromAst({ kind: "TName", name: "Js.Object", args: [] }, typeEnv);
+    env.set(decl.clause.alias, { ...generalize(env, type), status: "value" });
+    return;
   }
   rejectDuplicates(decl.clause.specs.map((spec) => spec.alias ?? spec.name), "JS import");
   for (const spec of decl.clause.specs) {

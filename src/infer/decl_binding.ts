@@ -321,14 +321,14 @@ export function constrainBinding(
         constrainAt(
           expectedFn.params[i],
           param,
-          value.params[i],
+          value.params[i] ?? value,
           undefined,
           [],
           provenance,
           {
             message: "recursive parameter",
-            node: value.params[i].node,
-            span: value.params[i].node?.span,
+            node: value.params[i]?.node ?? value.node,
+            span: value.params[i]?.node?.span ?? value.node?.span,
           },
           {
             premise: {

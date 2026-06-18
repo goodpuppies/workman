@@ -25,6 +25,7 @@ import {
   type VirtualFileSystem,
 } from "./module_graph.ts";
 import { parse, type Surface } from "./parser.ts";
+import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import {
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
@@ -47,7 +48,7 @@ export async function compile(
   filePath?: string,
 ): Promise<string> {
   const { module: ast, result } = await checkPreparedModuleWithoutImports(
-    await parse(source, options.surface, filePath),
+    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
   );
   return emitCoreProgram(coreProgramFromModule(ast, result));
 }
@@ -86,8 +87,9 @@ export async function checkSource(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<InferResult> {
-  return (await checkPreparedModuleWithoutImports(await parse(source, options.surface, filePath)))
-    .result;
+  return (await checkPreparedModuleWithoutImports(
+    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+  )).result;
 }
 
 export async function coreSource(
@@ -96,9 +98,9 @@ export async function coreSource(
   filePath?: string,
 ): Promise<CoreSourceResult> {
   const { module, result } = await checkPreparedModuleWithoutImports(
-    await parse(source, options.surface, filePath),
+    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
   );
-  return { module: coreFromSurface(module), result };
+  return { module: coreFromSurface(module, result), result };
 }
 
 export async function checkSourceSteps(
@@ -106,7 +108,9 @@ export async function checkSourceSteps(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<InferStep[]> {
-  const module = prepareFfiElaboration(await parse(source, options.surface, filePath)).module;
+  const module = prepareFfiElaboration(
+    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+  ).module;
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
     throw new Error("source strings with imports require checkFile");
   }
@@ -136,6 +140,7 @@ export async function analyzeFile(
   const graph = await loadModuleGraph(input, options);
   const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
   for (const node of graph.nodes.values()) {
+    node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
     const prepared = prepareFfiElaboration(node.module);
     ffi.set(node.path, prepared);
     node.module = prepared.module;

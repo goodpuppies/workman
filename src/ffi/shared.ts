@@ -113,6 +113,19 @@ export function generatedReceiverJsImports(
   }));
 }
 
+export function generatedImportInsertionIndex(decls: Decl[]): number {
+  let lastTypeDecl = -1;
+  for (let index = 0; index < decls.length; index++) {
+    const kind = decls[index].kind;
+    if (kind === "ForeignTypeDecl" || kind === "RecordDecl" || kind === "TypeDecl") {
+      lastTypeDecl = index;
+    }
+  }
+  if (lastTypeDecl !== -1) return lastTypeDecl + 1;
+  const firstLet = decls.findIndex((decl) => decl.kind === "LetDecl");
+  return firstLet === -1 ? decls.length : firstLet;
+}
+
 export function memberVariants(
   member: JsMemberType,
 ): { type: TypeExpr; resultRef?: JsTypeRef; callbackParamRefs?: JsCallbackParamRefs[] }[] {
@@ -239,11 +252,18 @@ function typeDistance(expected: TypeExpr, actual: TypeExpr): number | undefined 
       if (expected.args.length !== actual.args.length) return undefined;
       return sumTypeDistance(expected.args, actual.args);
     case "TTuple":
-      if (actual.kind !== "TTuple" || expected.items.length !== actual.items.length) return undefined;
+      if (actual.kind !== "TTuple" || expected.items.length !== actual.items.length) {
+        return undefined;
+      }
       return sumTypeDistance(expected.items, actual.items);
     case "TFn":
-      if (actual.kind !== "TFn" || expected.params.length !== actual.params.length) return undefined;
-      return sumTypeDistance([...expected.params, expected.result], [...actual.params, actual.result]);
+      if (actual.kind !== "TFn" || expected.params.length !== actual.params.length) {
+        return undefined;
+      }
+      return sumTypeDistance([...expected.params, expected.result], [
+        ...actual.params,
+        actual.result,
+      ]);
     case "TVar":
       return 3;
   }

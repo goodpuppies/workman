@@ -205,8 +205,9 @@ let main = () => {
 
 ## Local JavaScript Files
 
-Local JS modules use the same `js.module(...)` form. The specifier is passed to the generated Deno
-program, so it should be a module Deno can import:
+Local JS modules use the same `js.module(...)` form. Relative specifiers are resolved from the `.wm`
+source file, and generated code imports them by absolute `file://` URL so `wm run` can execute from
+its temporary output directory:
 
 ```wm
 from js.module("./helpers.js") import { shout };
@@ -226,6 +227,18 @@ from js.module("./helpers.js") import {
   shout: (String) => String
 };
 ```
+
+For generated TypeScript modules with many exports, namespace imports expose reflected top-level
+functions and nested object methods:
+
+```wm
+from js.module("./raylib_bindings.ts") import * as Raylib;
+let _ = Raylib.loadRaylib("./raylib.dll");
+let _ = Raylib.H.InitWindow(960, 540, "demo");
+```
+
+Default imports such as JavaScript's `import raylib from "./raylib_bindings.ts"` do not have a
+dedicated Workman import form yet.
 
 ## JS Objects and Arrays
 

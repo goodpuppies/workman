@@ -29,7 +29,8 @@ Deno.test("FFI elaboration rewrites namespace and object calls to concrete impor
   const ffi = prepareFfiElaboration(module);
   const imports = ffi.module.decls.filter((decl) => decl.kind === "JsImportDecl");
 
-  assertEquals(imports.every((decl) => decl.clause.kind === "Named"), true);
+  assertEquals(imports.some((decl) => decl.clause.kind === "Namespace"), true);
+  assertEquals(imports.some((decl) => decl.clause.kind === "Named"), true);
   assertEquals(
     ffi.bindings.get("console.log")?.variants[0].internalName,
     "__ffi_console_log_log_0",
@@ -61,7 +62,7 @@ Deno.test("HM inference rejects unelaborated reflected JS imports", async () => 
   assertThrows(
     () => inferModule(module),
     Error,
-    "unelaborated JS namespace import Math",
+    "Js.Object is not a record type",
   );
 });
 

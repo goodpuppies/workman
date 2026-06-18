@@ -118,6 +118,44 @@ Deno.test("Monad.lift composes over Task.fn", async () => {
   expectBinding(result.env, "greeting", { type: "Task<String, 'a>", vars: 0 });
 });
 
+Deno.test("Monad.lift composes over Result.fn", async () => {
+  const result = await checkSource(`
+    let liftR = Monad.lift Result;
+    let keepNumber = liftR (n) => {
+      Ok(n)
+    };
+    let value = Ok(1) :> keepNumber;
+  `);
+
+  expectBinding(result.env, "keepNumber", {
+    type: "(Result<Number, 'a>) => Result<Number, 'a>",
+    vars: 0,
+  });
+  expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 0 });
+});
+
+Deno.test("Result carrier coercion infers over primitive operators", async () => {
+  const result = await checkSource(`
+    let liftR = Monad.lift Result;
+    let keepNumber = liftR (n) => {
+      Ok(n)
+    };
+    let sum = Ok(2) + 3;
+    let product = 3 * Ok(4);
+    let quotient = Ok(8) / Ok(2);
+    let negated = -Ok(4);
+    let inverted = !Ok(false);
+    let liftedCall = keepNumber((Ok(9) - 1) / 2);
+  `);
+
+  expectBinding(result.env, "sum", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "product", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "quotient", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "negated", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "inverted", { type: "Result<Bool, 'a>", vars: 0 });
+  expectBinding(result.env, "liftedCall", { type: "Result<Number, 'a>", vars: 0 });
+});
+
 Deno.test("low-level inference starts from minimal basis without std combinators", async () => {
   const module = await parse("let value = Option.map;");
   assertThrows(() => inferModule(module), Error, "unknown name Option.map");
@@ -173,6 +211,40 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
   assertEquals(
     result.stdout,
     "Ok(42)\nErr(bad: negative)\n0\n4\n9\nCons(2, Cons(3, Cons(4, Nil)))\nOk(Cons(1, Cons(2, Cons(3, Nil))))\nSome(Cons(1, Cons(2, Cons(3, Nil))))\nOk([2, 4, 6])\nOk([2, 4, 6])\n3\nCons(1, Cons(2, Cons(3, Nil)))\n",
+  );
+});
+
+Deno.test("Result carrier coercion evaluates through primitive operators", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let liftR = Monad.lift Result;
+      let keepNumber = liftR (n) => {
+        Ok(n)
+      };
+
+      let main = () => {
+        print(Ok(2) + 3);
+        print(3 * Ok(4));
+        print(Ok(8) / Ok(2));
+        print(-Ok(4));
+        print(!Ok(false));
+        print(keepNumber((Ok(9) - 1) / 2));
+        print(Err("left") + Ok(3));
+        print(Ok(2) + Err("right"))
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(
+    result.stdout,
+    "Ok(5)\nOk(12)\nOk(4)\nOk(-4)\nOk(true)\nOk(4)\nErr(left)\nErr(right)\n",
   );
 });
 

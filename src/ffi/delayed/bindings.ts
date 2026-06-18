@@ -1,19 +1,7 @@
 import type { Decl } from "../../ast.ts";
 import { isForeignTypeDeclName } from "../imports.ts";
 import type { JsTypeRef } from "../reflect/types.ts";
-
-export function generatedImportInsertionIndex(decls: Decl[]): number {
-  let lastTypeDecl = -1;
-  for (let index = 0; index < decls.length; index++) {
-    const kind = decls[index].kind;
-    if (kind === "ForeignTypeDecl" || kind === "RecordDecl" || kind === "TypeDecl") {
-      lastTypeDecl = index;
-    }
-  }
-  if (lastTypeDecl !== -1) return lastTypeDecl + 1;
-  const firstLet = decls.findIndex((decl) => decl.kind === "LetDecl");
-  return firstLet === -1 ? decls.length : firstLet;
-}
+export { generatedImportInsertionIndex } from "../shared.ts";
 
 export function generatedForeignDeclsForRefs(
   decls: Decl[],

@@ -9,6 +9,18 @@ Deno.test("allows rec marker without recursive value use", async () => {
   await checkSource("let rec value = 1;");
 });
 
+Deno.test("checks recursive nullary functions without parameter source crashes", async () => {
+  await checkSource(`
+    let rec loop = () => {
+      if (false) {
+        loop()
+      } else {
+        void
+      }
+    };
+  `);
+});
+
 Deno.test("rejects unguarded recursive value bindings", async () => {
   await assertRejects(
     () => checkSource("let rec x = x;"),

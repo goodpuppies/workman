@@ -228,6 +228,25 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   const result = typeEnv.get("Result");
   const jsError = typeEnv.get("Js.Error");
   if (!result || !jsError) return;
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const b = fresh("b") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    env.set("Result", {
+      vars: [a.id, b.id, e.id],
+      type: structural([
+        {
+          name: "fn",
+          type: fn(
+            [fn([a], named(result, [b, e]))],
+            fn([named(result, [a, e])], named(result, [b, e])),
+          ),
+        },
+      ]),
+      status: "value",
+      basis: true,
+    });
+  }
   const input = fresh("input") as Extract<Ty, { tag: "var" }>;
   const output = fresh("output") as Extract<Ty, { tag: "var" }>;
   const textValue = fresh("value") as Extract<Ty, { tag: "var" }>;

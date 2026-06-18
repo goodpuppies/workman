@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
+import { checkFile, checkSource, checkVirtual, compile, compileFile } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("supports typed JS namespace imports", async () => {
@@ -69,6 +69,91 @@ Deno.test("supports inferred JS named and namespace imports", async () => {
   expectBinding(result.env, "bigger", { type: "Result<Number, Js.Error>", vars: 0 });
   expectBinding(result.env, "rounded", { type: "Result<Number, Js.Error>", vars: 0 });
   expectBinding(result.env, "rooted", { type: "Result<Number, Js.Error>", vars: 0 });
+});
+
+Deno.test("resolves local JS module imports relative to source file", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/helper.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `export function shout(text: string): string { return text.toUpperCase(); }\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./helper.ts") import { shout };
+      let loud = shout("hello");
+    `,
+  );
+
+  await checkFile(input);
+  const js = await compileFile(input);
+
+  assertStringIncludes(js, `await import("file:///`);
+  assertStringIncludes(js, `/helper.ts")`);
+});
+
+Deno.test("reflects local JS module namespace imports", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/helper.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `export function shout(text: string): string { return text.toUpperCase(); }\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./helper.ts") import * as Helper;
+      let loud = Helper.shout("hello");
+    `,
+  );
+
+  await checkFile(input);
+});
+
+Deno.test("reflects nested local JS module namespace receiver calls", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/helper.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `export const H = { shout(text: string): string { return text.toUpperCase(); } };\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./helper.ts") import * as Helper;
+      let loud = Helper.H.shout("hello");
+    `,
+  );
+
+  await checkFile(input);
+});
+
+Deno.test("orders generated receiver imports after local record types", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/helper.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `
+      export type Color = { r: number };
+      export const H = { make(): Color { return { r: 1 }; } };
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./helper.ts") import * as Helper;
+      let title = "colors";
+      record Color = { r: Number };
+      let made = Helper.H.make();
+    `,
+  );
+
+  await checkFile(input);
 });
 
 Deno.test("supports inferred callable root JS globals", async () => {

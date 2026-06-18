@@ -216,6 +216,7 @@ export function emitRuntimePrelude(): string[] {
   return __wm_basis_Ok(fn(__wm_tuple(...values)));
 };`,
     `const Result = {
+  fn: (fn) => (result) => Result.andThen(__wm_tuple(result, fn)),
   map: ([result, fn]) => result.ctor === ${
       basisCtorId("Ok")
     } ? __wm_basis_Ok(fn(result.args[0])) : result,
