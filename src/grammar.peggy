@@ -12,6 +12,20 @@
   function node(loc) { return { id: nextNodeId++, span: span(loc) }; }
   function at(value, loc) { return { ...value, node: node(loc) }; }
   function atSpan(value, span) { return { ...value, node: { id: nextNodeId++, span } }; }
+  function isDecl(value) {
+    return value.kind === "ImportDecl" || value.kind === "LetDecl" ||
+      value.kind === "JsImportDecl" || value.kind === "TypeDecl" || value.kind === "RecordDecl" ||
+      value.kind === "ForeignTypeDecl";
+  }
+  function implicitVoid(entries, loc) {
+    const last = entries.at(-1);
+    const implicitStatement = last && !isDecl(last.item) ? last.item : undefined;
+    return at({
+      kind: "Void",
+      implicitStatement,
+      implicitTerminatorSpan: implicitStatement ? last.terminatorSpan : undefined,
+    }, loc);
+  }
   function spanFromStartToLoc(startNode, loc) {
     return {
       line: startNode.span.line,
@@ -311,21 +325,23 @@ Block
       return at({ kind: "Block", items: seq.items, result: seq.result }, location());
     }
 
-BlockSeqBody = items:BlockSeqItem* result:Expr? {
-  return { items, result: result ?? at({ kind: "Void" }, location()) };
+BlockSeqBody = entries:BlockSeqItem* result:Expr? {
+  return { items: entries.map((entry) => entry.item), result: result ?? implicitVoid(entries, location()) };
 }
 
 BlockSeqItem
-  = d:BlockDecl _ ";" _ { return d; }
-  / e:Expr _ ";" _ { return e; }
+  = d:BlockDecl _ SemiToken _ { return { item: d }; }
+  / e:Expr _ semi:SemiToken _ { return { item: e, terminatorSpan: semi }; }
 
 BlockDecl = RecordDecl / TypeDecl / LetDecl
 
-ParenSeqBody = items:ParenSeqItem+ result:Expr? {
-  return { items, result: result ?? at({ kind: "Void" }, location()) };
+ParenSeqBody = entries:ParenSeqItem+ result:Expr? {
+  return { items: entries.map((entry) => entry.item), result: result ?? implicitVoid(entries, location()) };
 }
 
-ParenSeqItem = e:Expr _ ";" _ { return e; }
+ParenSeqItem = e:Expr _ semi:SemiToken _ { return { item: e, terminatorSpan: semi }; }
+
+SemiToken = ";" { return span(location()); }
 
 Pattern
   = "_" { return at({ kind: "PWildcard" }, location()); }

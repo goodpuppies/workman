@@ -10,6 +10,8 @@ import {
 } from "./diagnostic_writer.ts";
 import type { AstNode, SourceSpan } from "./source.ts";
 import { lineStarts } from "./source.ts";
+import { formatEnhancedDiagnostic } from "./enhanced_diagnostic_renderer.ts";
+import { displayTypeVariables } from "./diagnostic_type_display.ts";
 import { formatPathSegment, TypeMismatchError } from "./type_diff.ts";
 
 export type FrontendDiagnostic = AuditableDiagnostic;
@@ -172,19 +174,23 @@ export function formatDiagnostic(
   filePath: string | undefined,
   source: string | undefined,
 ): string {
+  const enhanced = formatEnhancedDiagnostic(diagnostic, filePath, source);
+  if (enhanced) return enhanced;
+
   const anchor = diagnostic.primary;
   const location = anchor.kind === "source" && source
     ? `${filePath || "<input>"}:${anchor.span.line}:${anchor.span.col}`
     : filePath || "<input>";
   const lines = [
     `${diagnostic.severity}[${diagnostic.code} ${location}]: ${
-      renderDiagnosticSummary(diagnostic)
+      renderDiagnosticHeadline(diagnostic)
     }`,
+    ...renderCollision(diagnostic, filePath, source),
+    ...renderTypeTrace(diagnostic, filePath, source),
     `rule: ${diagnostic.failure.frame.rule}`,
     `premise: ${renderPremise(diagnostic)}`,
-    `violation: ${renderViolation(diagnostic)}`,
   ];
-  const support = renderSupport(diagnostic);
+  const support = renderSupport(diagnostic, filePath, source);
   if (support.length > 0) {
     lines.push("support:");
     lines.push(...support.map((line) => `  ${line}`));
@@ -193,8 +199,6 @@ export function formatDiagnostic(
     ? formatExcerpt(source, anchor.span)
     : undefined;
   if (excerpt) lines.push(excerpt);
-  lines.push("raw diagnostic:");
-  lines.push(...formatRawDiagnostic(diagnostic).map((line) => `  ${line}`));
   return `${lines.join("\n")}\n`;
 }
 
@@ -241,29 +245,23 @@ export function renderDiagnosticSummary(diagnostic: FrontendDiagnostic): string 
     const path = violation.conflictPath.length
       ? violation.conflictPath.map(formatPathSegment).join(" -> ")
       : "type";
-    const slot = slotName(violation.conflictPath);
-    const expected = slot ? `${slot}: ${left}` : left;
-    const got = slot ? `${slot}: ${right}` : right;
     return [
       `type mismatch: ${diagnostic.failure.frame.rule}: ${diagnostic.failure.premise.role}`,
       violation.context ? `  context: ${violation.context}` : undefined,
       `  conflict: ${path}`,
-      `  expected: ${expected}`,
+      `  expected: ${left}`,
       violation.origins?.expected ? `    source: ${violation.origins.expected}` : undefined,
-      `  actual:   ${got}`,
+      `  actual:   ${right}`,
       violation.origins?.got ? `    source: ${violation.origins.got}` : undefined,
     ].filter((line): line is string => !!line).join("\n");
   }
   return diagnostic.code;
 }
 
-export function renderDiagnosticSummaryWithRaw(diagnostic: FrontendDiagnostic): string {
-  return [
-    renderDiagnosticSummary(diagnostic),
-    "",
-    "raw diagnostic:",
-    ...formatRawDiagnostic(diagnostic).map((line) => `  ${line}`),
-  ].join("\n");
+function renderDiagnosticHeadline(diagnostic: FrontendDiagnostic): string {
+  const violation = diagnostic.failure.violation;
+  if (violation.kind === "unsatisfied") return violation.message;
+  return "type mismatch";
 }
 
 export function diagnosticNotes(diagnostic: FrontendDiagnostic): {
@@ -283,12 +281,68 @@ function renderPremise(diagnostic: FrontendDiagnostic): string {
   return diagnostic.failure.premise.role;
 }
 
-function renderViolation(diagnostic: FrontendDiagnostic): string {
+function renderCollision(
+  diagnostic: FrontendDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): string[] {
   const violation = diagnostic.failure.violation;
-  if (violation.kind === "unsatisfied") return violation.message;
-  return `${typeSnapshotRendered(diagnostic, violation.observed.left)} != ${
-    typeSnapshotRendered(diagnostic, violation.observed.right)
-  }`;
+  if (violation.kind === "unsatisfied") return [`violation: ${violation.message}`];
+
+  const left = typeSnapshotRendered(diagnostic, violation.observed.left);
+  const right = typeSnapshotRendered(diagnostic, violation.observed.right);
+  const slot = collisionSlot(violation.conflictPath);
+  const parameter = collisionParameter(violation.conflictPath);
+
+  return [
+    "collision:",
+    violation.context ? `  context: ${violation.context}` : undefined,
+    slot ? `  slot: ${slot}` : undefined,
+    parameter ? `  ${parameter} is:` : undefined,
+    `    expected: ${left}`,
+    ...renderNamedSourceReference(
+      diagnostic,
+      violation.origins?.expected,
+      filePath,
+      source,
+      "      ",
+    ),
+    `    actual:   ${right}`,
+    ...renderNamedSourceReference(diagnostic, violation.origins?.got, filePath, source, "      "),
+  ].filter((line): line is string => !!line);
+}
+
+function renderTypeTrace(
+  diagnostic: FrontendDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): string[] {
+  const violation = diagnostic.failure.violation;
+  if (violation.kind === "unsatisfied") return [];
+  const slot = collisionSlot(violation.conflictPath);
+  const steps = [
+    ...traceStep(diagnostic, violation.origins?.expected, filePath, source),
+    ...traceStep(diagnostic, violation.origins?.got, filePath, source),
+    ...(slot ? [`  ${slot}`] : []),
+  ];
+  return steps.length ? ["typetrace:", ...steps] : [];
+}
+
+function traceStep(
+  diagnostic: FrontendDiagnostic,
+  label: string | undefined,
+  filePath: string | undefined,
+  source: string | undefined,
+): string[] {
+  if (!label) return [];
+  const entry = diagnostic.support.entries.find((item) =>
+    item.kind === "claim" && item.claim.subject === label
+  );
+  if (!entry || entry.kind !== "claim") return [`  ${label}`];
+  return [
+    `  ${label}`,
+    ...renderSupportOrigin(entry.origin, filePath, source).map((line) => `    ${line.trim()}`),
+  ];
 }
 
 function renderClaim(claim: Claim, diagnostic: FrontendDiagnostic): string {
@@ -296,18 +350,40 @@ function renderClaim(claim: Claim, diagnostic: FrontendDiagnostic): string {
     case "has-type":
       return `${claim.subject}: ${typeSnapshotRendered(diagnostic, claim.type)}`;
     case "fact":
-      return claim.text;
+      return displayTypeVariables(claim.text);
   }
 }
 
-function renderSupport(diagnostic: FrontendDiagnostic): string[] {
-  return diagnostic.support.entries.flatMap((entry) => renderSupportEntry(entry, diagnostic));
+function renderSupport(
+  diagnostic: FrontendDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): string[] {
+  return supportEntriesInRenderOrder(diagnostic).flatMap((entry) =>
+    renderSupportEntry(entry, diagnostic, filePath, source)
+  );
 }
 
-function renderSupportEntry(entry: SupportEntry, diagnostic: FrontendDiagnostic): string[] {
+function supportEntriesInRenderOrder(diagnostic: FrontendDiagnostic): SupportEntry[] {
+  const roots = new Set(diagnostic.support.roots);
+  return [
+    ...diagnostic.support.entries.filter((entry) => roots.has(entry.id)),
+    ...diagnostic.support.entries.filter((entry) => !roots.has(entry.id)),
+  ];
+}
+
+function renderSupportEntry(
+  entry: SupportEntry,
+  diagnostic: FrontendDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): string[] {
   switch (entry.kind) {
     case "claim":
-      return [`${entry.id} claim: ${renderClaim(entry.claim, diagnostic)}`];
+      return [
+        `${entry.id} claim: ${renderClaim(entry.claim, diagnostic)}`,
+        ...renderSupportOrigin(entry.origin, filePath, source),
+      ];
     case "constraint": {
       const roles = entry.roles.map((role) =>
         role.claim
@@ -318,6 +394,7 @@ function renderSupportEntry(entry: SupportEntry, diagnostic: FrontendDiagnostic)
         `${entry.id} constraint: ${typeSnapshotRendered(diagnostic, entry.left)} == ${
           typeSnapshotRendered(diagnostic, entry.right)
         }${roles ? ` (${roles})` : ""}`,
+        ...renderSupportOrigin(entry.origin, filePath, source),
       ];
     }
     case "substitution":
@@ -333,24 +410,75 @@ function renderSupportEntry(entry: SupportEntry, diagnostic: FrontendDiagnostic)
         }`,
       ];
     case "note":
-      return [`${entry.id} note: ${entry.message}`];
+      return [
+        `${entry.id} note: ${entry.message}`,
+        ...renderSupportOrigin(entry.origin, filePath, source),
+      ];
   }
 }
 
-function formatRawDiagnostic(diagnostic: FrontendDiagnostic): string[] {
-  return JSON.stringify(diagnostic, null, 2).split("\n");
-}
-
 function typeSnapshotRendered(diagnostic: FrontendDiagnostic, id: string): string {
-  return diagnostic.support.types.find((snapshot) => snapshot.id === id)?.rendered ?? id;
+  return displayTypeVariables(
+    diagnostic.support.types.find((snapshot) => snapshot.id === id)?.rendered ?? id,
+  );
 }
 
-function slotName(path: import("./type_diff.ts").DiffPath): string | undefined {
+function collisionSlot(path: import("./type_diff.ts").DiffPath): string | undefined {
   const named = [...path].reverse().find((segment) => segment.kind === "named-arg");
-  if (!named || named.kind !== "named-arg") return undefined;
-  return named.label
-    ? `${named.typeName} ${named.label}`
-    : `${named.typeName} argument ${named.index + 1}`;
+  if (named?.kind === "named-arg") {
+    return `${named.typeName}<${typeArgumentSlots(named.index, named.label).join(", ")}>`;
+  }
+  return path.length ? path.map(formatPathSegment).join(" -> ") : undefined;
+}
+
+function collisionParameter(path: import("./type_diff.ts").DiffPath): string | undefined {
+  const named = [...path].reverse().find((segment) => segment.kind === "named-arg");
+  if (named?.kind !== "named-arg") return undefined;
+  return named.label ?? `argument ${named.index + 1}`;
+}
+
+function typeArgumentSlots(index: number, label: string | undefined): string[] {
+  const slots = Array.from({ length: index + 1 }, () => "_");
+  slots[index] = label ?? `arg${index + 1}`;
+  return slots;
+}
+
+function renderSupportOrigin(
+  anchor: SourceAnchor,
+  filePath: string | undefined,
+  source: string | undefined,
+): string[] {
+  if (anchor.kind === "generated") return [`  from generated: ${anchor.label}`];
+  const location = `${filePath || "<input>"}:${anchor.span.line}:${anchor.span.col}`;
+  const excerpt = source ? formatSourceLine(source, anchor.span) : undefined;
+  return excerpt ? [`  from ${location}`, `  ${excerpt}`] : [`  from ${location}`];
+}
+
+function renderNamedSourceReference(
+  diagnostic: FrontendDiagnostic,
+  label: string | undefined,
+  filePath: string | undefined,
+  source: string | undefined,
+  indent: string,
+): string[] {
+  if (!label) return [];
+  const entry = diagnostic.support.entries.find((item) =>
+    item.kind === "claim" && item.claim.subject === label
+  );
+  if (!entry || entry.kind !== "claim") return [`${indent}source: ${label}`];
+  return [
+    `${indent}source: ${label}`,
+    ...renderSupportOrigin(entry.origin, filePath, source).map((line) => `${indent}${line.trim()}`),
+  ];
+}
+
+function formatSourceLine(source: string, span: SourceSpan): string {
+  const starts = lineStarts(source);
+  const lineIndex = Math.max(0, Math.min(span.line - 1, starts.length - 1));
+  const lineStart = starts[lineIndex];
+  const lineEnd = source.indexOf("\n", lineStart);
+  const line = lineEnd === -1 ? source.slice(lineStart) : source.slice(lineStart, lineEnd);
+  return line.trim();
 }
 
 function formatExcerpt(source: string, span: SourceSpan): string {

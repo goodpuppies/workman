@@ -1,6 +1,7 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import {
+  formatDiagnostic,
   type FrontendDiagnostic,
   FrontendDiagnosticError,
   renderDiagnosticSummary,
@@ -41,6 +42,33 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   );
 });
 
+Deno.test("basic diagnostic summary displays generic variables TypeScript style", async () => {
+  const source = `
+type List<T> = Nil | Cons<T, List<T>>;
+
+let rec filterList = (fn, list) => {
+  match(list) => {
+    [] => {[]},
+    [head, ..tail] => {
+      if (fn(head)) {
+        [head, ..filterList(fn, tail)]
+      } else {
+        filterList(fn, tail)
+      }
+    }
+  }
+};
+`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const summary = renderDiagnosticSummary(error.diagnostic);
+  assertStringIncludes(summary, "List<T>");
+  assertEquals(summary.includes("'"), false);
+});
+
 Deno.test("pipe mismatch records a pipe step premise", async () => {
   const error = await assertRejects(
     () => checkSource('let render = (n: Number) => { n }; let bad = "x" :> render;'),
@@ -56,6 +84,84 @@ Deno.test("pipe mismatch records a pipe step premise", async () => {
     "pipe result",
     "render pipe",
   ]);
+});
+
+Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
+  const source = 'let render = (n: Number) => { n };\nlet bad = "x" :> render;';
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "Main.wm", source);
+  assertStringIncludes(rendered, "-- TYPE CHECKER");
+  assertStringIncludes(rendered, "Main.wm");
+  assertStringIncludes(rendered, "This expression produces:");
+  assertStringIncludes(rendered, "    String");
+  assertStringIncludes(rendered, '2| let bad = "x" :> render;');
+  assertStringIncludes(rendered, "But this pipeline step needs:");
+  assertStringIncludes(rendered, "    Number");
+  assertStringIncludes(rendered, "`render` takes a `Number` as its first argument.");
+});
+
+Deno.test("pipe mismatch points at trailing semicolon Void source", async () => {
+  const source = `
+let parseConfig: (Number) => Result<String, Js.Error> = (n) => { Ok("ok") };
+let input: Result<Number, Js.Error> = Err(Js.Unknown);
+let bad = input
+  :> Result.mapErr((e) => {
+    e;
+  })
+  :> Result.andThen(parseConfig);
+`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "test.wm", source);
+  assertStringIncludes(rendered, "This expression produces:");
+  assertStringIncludes(rendered, "    Void");
+  assertStringIncludes(rendered, "6|     e;");
+  assertStringIncludes(
+    rendered,
+    "this trailing `;` makes the block result Void",
+  );
+  assertStringIncludes(rendered, "But this pipeline step needs:");
+  assertStringIncludes(rendered, "    Js.Error");
+});
+
+Deno.test("recursive result mismatch explains accidental match function", async () => {
+  const source = `
+type List<T> = Nil | Cons<T, List<T>>;
+
+let rec filterList = (fn, list) => {
+  match(list) => {
+    [] => {[]},
+    [head, ..tail] => {
+      if (fn(head)) {
+        [head, ..filterList(fn, tail)]
+      } else {
+        filterList(fn, tail)
+      }
+    }
+  }
+};
+`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "math.wm", source);
+  assertStringIncludes(rendered, "`filterList` is recursive");
+  assertStringIncludes(rendered, "Recursive calls produce:");
+  assertStringIncludes(rendered, "List<T>");
+  assertEquals(rendered.includes("'"), false);
+  assertStringIncludes(rendered, "But the body produces:");
+  assertStringIncludes(rendered, "match(list) => {");
+  assertStringIncludes(rendered, "This looks like an accidental match-function expression.");
+  assertStringIncludes(rendered, "Use `match(list) { ... }`");
 });
 
 Deno.test("if branch mismatch records an if branch premise", async () => {

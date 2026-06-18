@@ -107,12 +107,12 @@ let rec sumList = (list, val) => {
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "type mismatch: InferRecursive.ResultAgreement: recursive binding result matches inferred body",
-    "  conflict: type",
+    "error[type.mismatch",
+    "collision:",
     "  expected: Number",
     "  actual:   (Int_list) => Number",
-    "raw diagnostic:",
-    '"rule": "InferRecursive.ResultAgreement"',
+    "rule: InferRecursive.ResultAgreement",
+    "support:",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
@@ -165,12 +165,12 @@ let bad = sumList(Cons(1, Empty));
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "type mismatch: InferCall.Argument: argument matches parameter",
-    "  conflict: type",
+    "error[type.mismatch",
+    "collision:",
     "  expected: (Int_list, Number)",
     "  actual:   Int_list",
-    "raw diagnostic:",
-    '"rule": "InferCall.Argument"',
+    "rule: InferCall.Argument",
+    "support:",
   ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 10,
@@ -284,12 +284,12 @@ let bad = floor(1, 2);
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "type mismatch: InferCall.Argument: argument matches parameter",
-    "  conflict: type",
+    "error[type.mismatch",
+    "collision:",
     "  expected: Number",
     "  actual:   (Number, Number)",
-    "raw diagnostic:",
-    '"rule": "InferCall.Argument"',
+    "rule: InferCall.Argument",
+    "support:",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 3, character: 10 });
   assertEquals(diagnostics?.[0].range.end, { line: 3, character: 21 });

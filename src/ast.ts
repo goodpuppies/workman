@@ -1,4 +1,4 @@
-import type { AstNode } from "./source.ts";
+import type { AstNode, SourceSpan } from "./source.ts";
 
 export type Located<T> = T & { node?: AstNode };
 
@@ -56,7 +56,7 @@ export type Expr =
   | Located<{ kind: "Float"; value: number }>
   | Located<{ kind: "String"; value: string }>
   | Located<{ kind: "Bool"; value: boolean }>
-  | Located<{ kind: "Void" }>
+  | Located<{ kind: "Void"; implicitStatement?: Expr; implicitTerminatorSpan?: SourceSpan }>
   | Located<{ kind: "Var"; name: string }>
   | Located<{ kind: "Tuple"; items: Expr[] }>
   | Located<{ kind: "Record"; fields: RecordExprField[] }>

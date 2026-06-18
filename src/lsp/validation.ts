@@ -4,11 +4,11 @@ import {
   classifyDiagnostic,
   diagnosticNotes,
   errorMessage,
+  formatDiagnostic,
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
   renderDiagnosticSummary,
-  renderDiagnosticSummaryWithRaw,
 } from "../diagnostics.ts";
 import type { InferResult } from "../infer.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
@@ -141,7 +141,7 @@ function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): L
     severity: diagnostic.severity === "error" ? 1 : 2,
     code: diagnostic.code,
     source: "wm-mini",
-    message: renderDiagnosticSummaryWithRaw(diagnostic),
+    message: formatDiagnostic(diagnostic, uri ? fileUriToPath(uri) : undefined, source).trimEnd(),
     relatedInformation: relatedInformation.length ? relatedInformation : undefined,
   };
 }

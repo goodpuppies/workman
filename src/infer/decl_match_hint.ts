@@ -17,12 +17,17 @@ export function findAccidentalMatchFnInFunction(
     case "Tuple":
       return expr.items.map(findAccidentalMatchFnInFunction).find((hit) => hit !== undefined);
     case "Record":
-      return expr.fields.map((field) => findAccidentalMatchFnInFunction(field.value)).find((hit) => hit !== undefined);
+      return expr.fields.map((field) => findAccidentalMatchFnInFunction(field.value)).find((hit) =>
+        hit !== undefined
+      );
     case "JsonObject":
-      return expr.fields.map((field) => findAccidentalMatchFnInFunction(field.value)).find((hit) => hit !== undefined);
+      return expr.fields.map((field) => findAccidentalMatchFnInFunction(field.value)).find((hit) =>
+        hit !== undefined
+      );
     case "JsonArray":
       return expr.items.map(findAccidentalMatchFnInFunction).find((hit) => hit !== undefined);
     case "Lambda":
+      if (isMatchFnLambda(expr)) return expr;
       return findAccidentalMatchFnInFunction(expr.body);
     case "Call": {
       const callee = findAccidentalMatchFnInFunction(expr.callee);
@@ -36,12 +41,15 @@ export function findAccidentalMatchFnInFunction(
     case "Match": {
       const valueHit = findAccidentalMatchFnInFunction(expr.value);
       if (valueHit) return valueHit;
-      return expr.arms.map((arm) => findAccidentalMatchFnInFunction(arm.body)).find((hit) => hit !== undefined);
+      return expr.arms.map((arm) => findAccidentalMatchFnInFunction(arm.body)).find((hit) =>
+        hit !== undefined
+      );
     }
     case "Panic":
       return findAccidentalMatchFnInFunction(expr.message);
     case "Binary":
-      return findAccidentalMatchFnInFunction(expr.left) ?? findAccidentalMatchFnInFunction(expr.right);
+      return findAccidentalMatchFnInFunction(expr.left) ??
+        findAccidentalMatchFnInFunction(expr.right);
     case "Unary":
       return findAccidentalMatchFnInFunction(expr.value);
     case "Int":
@@ -64,7 +72,9 @@ export function hasTrailingStatementLikeResult(expr: Expr): boolean {
 
 function isMatchFnLambda(expr: Extract<Expr, { kind: "Lambda" }>): boolean {
   if (expr.body.kind !== "Match") return false;
-  const names = expr.params.map((param) => param.pattern.kind === "PVar" ? param.pattern.name : undefined);
+  const names = expr.params.map((param) =>
+    param.pattern.kind === "PVar" ? param.pattern.name : undefined
+  );
   if (names.some((name) => name === undefined)) return false;
   const paramNames = names as string[];
   if (paramNames.length === 1) {
@@ -73,5 +83,7 @@ function isMatchFnLambda(expr: Extract<Expr, { kind: "Lambda" }>): boolean {
   if (expr.body.value.kind !== "Tuple" || expr.body.value.items.length !== paramNames.length) {
     return false;
   }
-  return expr.body.value.items.every((item, index) => item.kind === "Var" && item.name === paramNames[index]);
+  return expr.body.value.items.every((item, index) =>
+    item.kind === "Var" && item.name === paramNames[index]
+  );
 }

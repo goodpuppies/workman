@@ -143,7 +143,14 @@ let main = () => {
   };
 
   let pipeline = args
-    :> Result.mapErr((_) => { Panic("string to js err not implemented") })
+    :> Result.mapErr((e) => {
+      let estr = match(e) {
+        Js.Error(e) => {e},
+        Js.Unknown => {"unknown"}
+      };
+      print("err"++estr);
+      e
+    })
     :> Result.andThen(parseConfig)
     :> Task.fromResult
     :> Task.andThen((cfg) => {
@@ -185,6 +192,11 @@ let main = () => {
     });
 
   pipeline :> Task.recover((e) => {
-    Panic("js err to string unimplemented")
+    
+    let estr = match(e) {
+      Js.Error(e) => {e},
+      Js.Unknown => {"unknown"}
+    };
+    print("err"++estr)
   })
 };

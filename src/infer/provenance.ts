@@ -30,6 +30,7 @@ export type ConstraintOrigin = {
   message: string;
   node?: AstNode;
   span?: SourceSpan;
+  note?: string;
 };
 
 export type EvidenceOrigin = ConstraintOrigin & {
@@ -41,6 +42,7 @@ export type EvidenceOrigin = ConstraintOrigin & {
 
 export type TypeSource = {
   origin?: ConstraintOrigin;
+  notes?: ConstraintOrigin[];
   type?: Ty;
   provenance?: TypeProvenance;
   fnParams?: TypeSource[];
@@ -167,6 +169,8 @@ export function constrainAt(
         : undefined;
       const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
       const observedRight = writer.snapshotType(commitment?.type ?? error.right);
+      const expectedClaim = addObservedOriginClaim(writer, attemptedOrigin, observedLeft);
+      const actualClaim = addObservedOriginClaim(writer, commitment?.origin, observedRight);
       writer.add({
         kind: "collision",
         id: collisionId,
@@ -175,6 +179,8 @@ export function constrainAt(
         right: observedRight,
         path: error.path,
       });
+      if (expectedClaim) writer.addEdge({ from: expectedClaim, to: collisionId, role: "observed" });
+      if (actualClaim) writer.addEdge({ from: actualClaim, to: collisionId, role: "observed" });
       writer.addEdge({ from: constraintId, to: collisionId, role: "failed" });
       const failure: Failure = {
         frame: context.frame,
@@ -240,6 +246,14 @@ function claimsForSource(
     });
     claims.push(claimId);
   }
+  for (const note of source.notes ?? []) {
+    writer.add({
+      kind: "note",
+      id: writer.nextId("n"),
+      message: note.message,
+      origin: anchorFromOrigin(note),
+    });
+  }
   source.fnParams?.forEach((param, index) => {
     claims.push(
       ...claimsForSource(writer, param, `${fallbackSubject} parameter ${index + 1}`, fallbackType),
@@ -261,6 +275,30 @@ function claimsForSource(
     );
   });
   return claims;
+}
+
+function addObservedOriginClaim(
+  writer: ReturnType<typeof createDiagnosticWriter>,
+  origin: ConstraintOrigin | undefined,
+  type: TypeSnapshotId,
+): ClaimId | undefined {
+  if (!origin) return undefined;
+  const claimId = writer.nextId("cl");
+  writer.add({
+    kind: "claim",
+    id: claimId,
+    claim: { kind: "has-type", subject: origin.message, type },
+    origin: anchorFromOrigin(origin),
+  });
+  if (origin.note) {
+    writer.add({
+      kind: "note",
+      id: writer.nextId("n"),
+      message: origin.note,
+      origin: anchorFromOrigin(origin),
+    });
+  }
+  return claimId;
 }
 
 function selectPrimaryCallsite(
@@ -413,15 +451,26 @@ function collectProvenance(
 }
 
 export function sourceForExpr(expr: Expr, message = "expression"): TypeSource {
+  const implicitStatement = expr.kind === "Void" ? expr.implicitStatement : undefined;
+  const implicitTerminatorSpan = expr.kind === "Void" ? expr.implicitTerminatorSpan : undefined;
   const origin = {
     message,
-    node: expr.node,
-    span: expr.node?.span,
+    node: implicitStatement?.node ?? expr.node,
+    span: implicitTerminatorSpan ?? implicitStatement?.node?.span ?? expr.node?.span,
   };
+  const notes = implicitStatement
+    ? [{
+      message: "this trailing `;` makes the block result Void",
+      node: implicitStatement.node,
+      span: implicitTerminatorSpan ?? implicitStatement.node?.span,
+    }]
+    : undefined;
+  if (expr.kind === "Void") return { origin, notes };
   if (expr.kind !== "Lambda") return { origin };
   const body = resultExpr(expr.body);
   return {
     origin,
+    notes,
     fnParams: expr.params.map((param) => ({
       origin: {
         message: "lambda parameter",
@@ -457,12 +506,16 @@ export function tupleSource(items: TypeSource[]): TypeSource {
 function sourceAt(source: TypeSource | undefined, path: DiffPath): ConstraintOrigin | undefined {
   let current = source;
   let last = current?.origin;
+  let lastNote = current?.notes?.[0]?.message;
   for (const segment of path) {
     if (!current) break;
     last = current.origin ?? last;
+    lastNote = current.notes?.[0]?.message ?? lastNote;
     current = childSource(current, segment);
   }
-  return current?.origin ?? last;
+  const origin = current?.origin ?? last;
+  const note = current?.notes?.[0]?.message ?? lastNote;
+  return origin && note ? { ...origin, note } : origin;
 }
 
 function childSource(source: TypeSource, segment: DiffPathSegment): TypeSource | undefined {
