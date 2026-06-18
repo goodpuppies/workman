@@ -15,23 +15,21 @@ let baseAccent = .{ r= 0,  g= 121, b= 241, a= 255 };
 let message = "Hello from raylib via Deno FFI";
 let hint = "Close the window or press ESC to exit";
 
-let data = () => {
-  let time = Raylib.GetTime();
-  let pulse = (0.55 + lift Result sin(time * 2) * 0.25);
-  let accent = lift Result Raylib.H.Fade(Result|Ok(baseAccent), pulse|);
-  let messageWidth = Raylib.H.MeasureText(message, 32);
-  let hintWidth = Raylib.H.MeasureText(hint, 20);
-  let screenWidth = Raylib.GetScreenWidth();
-  let centerX = lift Result floor((screenWidth - messageWidth) / 2);
-  let hintX = lift Result floor((screenWidth - hintWidth) / 2);
-  let circleX = lift Result floor(480 + lift Result sin(time) * 180);
-
-  Result|centerX, accent, hintX, circleX|
-      :> Result.mapErr(RenderError)
-};
-
 let drawFrame = () => {
-  match(data()) {
+  match({
+    let time = Raylib.GetTime();
+    let pulse = (0.55 + lift Result sin(time * 2) * 0.25);
+    let accent = lift Result Raylib.H.Fade(Result|Ok(baseAccent), pulse|);
+    let messageWidth = Raylib.H.MeasureText(message, 32);
+    let hintWidth = Raylib.H.MeasureText(hint, 20);
+    let screenWidth = Raylib.GetScreenWidth();
+    let centerX = lift Result floor((screenWidth - messageWidth) / 2);
+    let hintX = lift Result floor((screenWidth - hintWidth) / 2);
+    let circleX = lift Result floor(480 + lift Result sin(time) * 180);
+
+    Result|centerX, accent, hintX, circleX|
+        :> Result.mapErr(RenderError)
+  }) {
     Ok((Var(centerX), Var(accent), Var(hintX), Var(circleX))) => {
       Result|
         Raylib.BeginDrawing(),
@@ -50,7 +48,7 @@ let drawFrame = () => {
 let rec loop = () => {
   match(Raylib.WindowShouldClose() :> Result.mapErr(RenderError)) {
     Ok(true) => { 
-      Ok(void) // exit loop to cleanoup
+      Ok(void) // exit loop to cleanup
     },
     Ok(false) => {
       match(drawFrame()) {
@@ -62,17 +60,14 @@ let rec loop = () => {
   }
 };
 
-let setup = () => {
-  Result|
-    Raylib.loadRaylib(raylibpath),
-    Raylib.H.InitWindow(960, 540, title),
-    Raylib.SetTargetFPS(60)
-  | :> Result.mapErr(RaylibError)
-};
-
-
 let main = () => {
-  match(setup()) {
+  match(
+    Result|
+      Raylib.loadRaylib(raylibpath),
+      Raylib.H.InitWindow(960, 540, title),
+      Raylib.SetTargetFPS(60)
+    | :> Result.mapErr(RaylibError)
+  ) {
     Ok(_) => {
       let result = loop();
 
