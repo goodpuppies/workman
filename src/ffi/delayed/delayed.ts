@@ -5,6 +5,7 @@ import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
+import { generatedJsImports } from "../imports.ts";
 import { generatedForeignDeclsForRefs, generatedImportInsertionIndex } from "./bindings.ts";
 import {
   materializeReceiverCall,
@@ -87,23 +88,36 @@ function resolveDelayedFfiElaborationInner(
     decls,
   };
   rejectAnnotatedDynamicCallbacks(module.decls, ffi.bindings);
-  const foreignDeclsFromRefs = generatedForeignDeclsForRefs(module.decls, ffi.foreignTypeRefs);
+  const rewrittenModule = {
+    ...module,
+    decls: module.decls.flatMap((decl) =>
+      decl.kind === "JsImportDecl" ? generatedJsImports(decl, ffi.bindings, selected) : [decl]
+    ),
+  };
+  const foreignDeclsFromRefs = generatedForeignDeclsForRefs(rewrittenModule.decls, ffi.foreignTypeRefs);
   const foreignDecls = foreignDeclsFromRefs;
+  const existingRecordNames = new Set<string>();
+  for (const decl of rewrittenModule.decls) {
+    if (decl.kind === "RecordDecl") existingRecordNames.add(decl.name);
+  }
+  const deepRecordDecls = [...(ffi.deepRecords?.values() ?? [])]
+    .filter((decl) => !existingRecordNames.has(decl.name));
   const imports = generatedReceiverJsImports(ffi.bindings, selected);
-  const prefixLength = generatedImportInsertionIndex(module.decls);
+  const prefixLength = generatedImportInsertionIndex(rewrittenModule.decls);
+  const leadingGeneratedDecls = [...foreignDecls, ...deepRecordDecls];
   return {
     ...ffi,
-    module: imports.length || foreignDecls.length
+    module: imports.length || foreignDecls.length || deepRecordDecls.length
       ? {
-        ...module,
+        ...rewrittenModule,
         decls: [
-          ...module.decls.slice(0, prefixLength),
-          ...foreignDecls,
+          ...leadingGeneratedDecls,
+          ...rewrittenModule.decls.slice(0, prefixLength),
           ...imports,
-          ...module.decls.slice(prefixLength),
+          ...rewrittenModule.decls.slice(prefixLength),
         ],
       }
-      : module,
+      : rewrittenModule,
     selected: new Set([...ffi.selected, ...selected]),
   };
 }

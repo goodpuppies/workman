@@ -143,6 +143,29 @@ Deno.test("constrained dynamic receiver calls materialize with inferred result t
   expectBinding(result.env, "checked", { type: "Bool", vars: 0 });
 });
 
+Deno.test("deep reflected generic calls expose concrete result members", async () => {
+  const source = `
+    from js.global("Deno") import { dlopen: _deep_ };
+
+    let lib = dlopen("SDL2", JSON{
+      SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
+    });
+    let use = match(lib) {
+      Ok(sdl) => { sdl.symbols.SDL_PollEvent(Panic("ptr")) },
+      Err(e) => { Err(e) }
+    };
+  `;
+  const result = await checkSource(source);
+
+  expectBinding(result.env, "use", { type: "Result<Number, Js.Error>", vars: 0 });
+
+  const js = await compile(source);
+  if (js.includes("__dynamic.symbols.SDL_PollEvent")) {
+    throw new Error("deep reflected member call should not use dynamic receiver fallback");
+  }
+  assertStringIncludes(js, "__deep_record");
+});
+
 Deno.test("dynamic JS callback parameter annotations are rejected", async () => {
   await assertRejects(
     () =>

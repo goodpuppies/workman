@@ -80,8 +80,9 @@ export function collectFfiDecl(
       }
       continue;
     }
-    const reflected = !spec.type;
-    if (spec.type) rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
+    const deep = isDeepImportSpec(spec);
+    const reflected = !spec.type || deep;
+    if (spec.type && !deep) rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
     const localName = spec.alias ?? spec.name;
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     const ref = reflected ? jsTargetMemberValueRef(decl.target, spec.name) : undefined;
@@ -98,7 +99,7 @@ export function collectFfiDecl(
         spec.node,
       );
     }
-    const member = spec.type
+    const member = spec.type && !deep
       ? { name: spec.name, type: spec.type }
       : jsTargetMember(decl.target, spec.name);
     if (!member) continue;
@@ -110,11 +111,15 @@ export function collectFfiDecl(
       surfaceName,
       spec.name,
       decl.target,
-      memberVariants(member),
+      memberVariants(member).map((variant) => ({ ...variant, callRef: ref, deep })),
       !decl.clause.unsafe,
       spec.node,
     );
   }
+}
+
+function isDeepImportSpec(spec: JsImportSpec): boolean {
+  return spec.type?.kind === "TVar" && spec.type.name === "_deep_";
 }
 
 function rejectUnimportedManualForeignTypes(

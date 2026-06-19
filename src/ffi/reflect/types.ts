@@ -1,5 +1,5 @@
 import ts from "typescript";
-import type { TypeExpr } from "../../ast.ts";
+import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import {
   callbackParamRefsFromCall,
   dedupeVariants,
@@ -33,6 +33,12 @@ import { fn, name, varType } from "../type_expr.ts";
 const memberCache = new Map<string, JsMemberType | undefined>();
 const namespaceCache = new Map<string, JsMemberType[]>();
 const refTypeCache = new Map<string, TypeExpr | undefined>();
+const deepCallCache = new Map<string, DeepReflection | undefined>();
+
+export type DeepReflection = {
+  type: TypeExpr;
+  records: Extract<Decl, { kind: "RecordDecl" }>[];
+};
 
 export function jsGlobalMembers(path: string): JsMemberType[] {
   const target = jsGlobalSource(path);
@@ -334,6 +340,38 @@ export function jsRefCall(ref: JsTypeRef, args: JsCallArgHint[]): JsMemberType |
   return jsRefCallTarget(ref, [], args, "call");
 }
 
+export function jsRefDeepCall(
+  ref: JsTypeRef,
+  args: Expr[],
+): DeepReflection | undefined {
+  const argExprs = args.map(tsLiteralExprFromWorkman);
+  if (argExprs.some((arg) => arg === undefined)) return undefined;
+  const key = `${ref.key}:deep(${argExprs.join(",")})`;
+  if (deepCallCache.has(key)) return deepCallCache.get(key);
+  const callExpr = `${ref.expr}(${argExprs.join(", ")})`;
+  const source = `${ref.source}\nconst __wm_deep_result = ${callExpr};`;
+  const reflected = reflectSource(
+    key,
+    source,
+    (checker, sourceFile) => {
+      const result = findVariable(sourceFile, "__wm_deep_result");
+      if (!result) return undefined;
+      const records: Extract<Decl, { kind: "RecordDecl" }>[] = [];
+      const type = deepTypeExprFromTsType(
+        checker,
+        checker.getTypeAtLocation(result.name),
+        key,
+        ["Result"],
+        records,
+        0,
+      );
+      return type ? { type, records } : undefined;
+    },
+  );
+  deepCallCache.set(key, reflected);
+  return reflected;
+}
+
 function jsRefCallTarget(
   ref: JsTypeRef,
   path: string[],
@@ -421,6 +459,103 @@ function jsRefCallTarget(
   );
   memberCache.set(key, reflected);
   return reflected;
+}
+
+function deepTypeExprFromTsType(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  key: string,
+  path: string[],
+  records: Extract<Decl, { kind: "RecordDecl" }>[],
+  depth: number,
+): TypeExpr | undefined {
+  const callable = jsMemberTypeFromTsType(checker, type);
+  const callableType = widestCallableType(callable);
+  if (callableType) return callableType;
+  const shallow = typeExprFromTsType(checker, type);
+  if (shallow && !(shallow.kind === "TName" && shallow.name === "Js.Object")) return shallow;
+  if (depth >= 3 || !isFiniteObjectForDeepReflection(checker, type)) return shallow;
+  const fields = type.getProperties()
+    .map((symbol) => {
+      const fieldType = typeOfSymbol(checker, symbol);
+      if (!fieldType) return undefined;
+      const field = deepTypeExprFromTsType(
+        checker,
+        fieldType,
+        key,
+        [...path, symbol.getName()],
+        records,
+        depth + 1,
+      );
+      return field ? { name: symbol.getName(), type: field } : undefined;
+    })
+    .filter((field): field is { name: string; type: TypeExpr } => !!field);
+  if (fields.length === 0) return shallow;
+  const name = deepRecordName(key, path);
+  if (!records.some((record) => record.name === name)) {
+    records.push({
+      kind: "RecordDecl",
+      exported: true,
+      name,
+      params: [],
+      fields,
+    });
+  }
+  return { kind: "TName", name, args: [] };
+}
+
+function widestCallableType(member: Omit<JsMemberType, "name"> | undefined): TypeExpr | undefined {
+  const variants = member?.variants?.map((variant) => variant.type) ??
+    (member ? [member.type, ...(member.overloads ?? [])] : []);
+  return variants
+    .filter((type): type is Extract<TypeExpr, { kind: "TFn" }> => type.kind === "TFn")
+    .sort((left, right) => right.params.length - left.params.length)[0];
+}
+
+function isFiniteObjectForDeepReflection(checker: ts.TypeChecker, type: ts.Type): boolean {
+  if (!(type.flags & ts.TypeFlags.Object)) return false;
+  const props = type.getProperties();
+  if (props.length === 0 || props.length > 32) return false;
+  const text = checker.typeToString(type);
+  return !/\b(globalThis|Window|Document|ObjectConstructor|ArrayConstructor)\b/.test(text);
+}
+
+function deepRecordName(key: string, path: string[]): string {
+  return `__Deep_${sanitize(`${key}_${path.join("_")}`)}`;
+}
+
+function tsLiteralExprFromWorkman(expr: Expr): string | undefined {
+  switch (expr.kind) {
+    case "String":
+      return JSON.stringify(expr.value);
+    case "Int":
+    case "Float":
+      return String(expr.value);
+    case "Bool":
+      return expr.value ? "true" : "false";
+    case "Void":
+      return "undefined";
+    case "JsonArray":
+      return `(${`[${expr.items.map(tsLiteralExprFromWorkman).join(", ")}]`} as const)`;
+    case "JsonObject":
+      return `(${
+        `{${expr.fields.map((field) => {
+          const value = tsLiteralExprFromWorkman(field.value);
+          return value === undefined ? undefined : `${JSON.stringify(field.key)}: ${value}`;
+        }).join(", ")}}`
+      } as const)`;
+    case "Record": {
+      const fields = expr.fields.map((field) => {
+        if (field.kind !== "Field") return undefined;
+        const value = tsLiteralExprFromWorkman(field.value);
+        return value === undefined ? undefined : `${JSON.stringify(field.name)}: ${value}`;
+      });
+      if (fields.some((field) => field === undefined)) return undefined;
+      return `({${fields.join(", ")}} as const)`;
+    }
+    default:
+      return undefined;
+  }
 }
 
 function jsTargetMember(target: JsReflectionSource, name: string): JsMemberType | undefined {

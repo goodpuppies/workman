@@ -228,7 +228,12 @@ export async function analyzeFile(
       imports.set(edge.specifier, postResolveResults.get(edge.path)!);
     }
     try {
-      postResolveResults.set(path, inferModule(node.module, imports, await standardInferOptions()));
+      postResolveResults.set(
+        path,
+        assertNoPartialDiagnostics(
+          inferModulePartial(node.module, imports, await standardInferOptions()),
+        ),
+      );
     } catch (error) {
       throw new ModuleAnalysisError(path, node.source, error);
     }
@@ -308,7 +313,9 @@ async function checkPreparedModuleWithoutImports(
   } catch (error) {
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
   }
-  const postResolveResult = await inferModuleWithoutImports(resolved.module);
+  const postResolveResult = assertNoPartialDiagnostics(
+    inferModulePartial(resolved.module, new Map(), inferOptions),
+  );
   const finalResolved = resolveDelayedFfiElaboration(resolved, postResolveResult, {
     foreignTypeRefs,
   });

@@ -26,6 +26,7 @@ import { callArgHint, callHintKey, dynamicReceiverArgType, type FfiElaboration, 
 import {
   type JsCallArgHint,
   jsRefCallMember,
+  jsRefDeepCall,
   jsRefMember,
   jsRefTypeExpr,
   jsTypeExprValueRef,
@@ -33,6 +34,7 @@ import {
 } from "../reflect/types.ts";
 import { typeExprKey as reflectTypeExprKey } from "../reflect/ts_type_expr.ts";
 import { callArgHintForReflection, jsTypedArrayMember, receiverTypeThroughObligations } from "./delayed_reflection_hints.ts";
+import { addVariants, selectVariant, type FfiVariant } from "../shared.ts";
 
 export function resolveDelayedDecl(
   decl: Decl,
@@ -66,6 +68,10 @@ function resolveDelayedExpr(
     case "FfiCall":
       return resolveDelayedFfiCall(expr, ffi, result, selected, options, valueRefs);
     case "Call":
+      if (expr.callee.kind === "Var") {
+        const deep = resolveDeepReflectedCall(expr, ffi, result, selected, valueRefs);
+        if (deep) return deep;
+      }
       return {
         ...expr,
         callee: resolveDelayedExpr(expr.callee, ffi, result, selected, options, valueRefs),
@@ -248,6 +254,9 @@ function resolveDelayedFfiGet(
     );
   }
   if (!receiverType || prune(receiverType).tag === "var") {
+    return { ...expr, receiver };
+  }
+  if (isJsObjectTy(receiverType) && (ffi.deepRecords?.size ?? 0) > 0) {
     return { ...expr, receiver };
   }
   if (!isJsObjectTy(receiverType)) {
@@ -461,6 +470,26 @@ function resolveDelayedFfiCall(
       ),
     };
   }
+  const recordCall = recordReceiverCall(
+    expr,
+    receiver,
+    receiverType,
+    ffi,
+    result,
+    selected,
+    options,
+    valueRefs,
+  );
+  if (recordCall) return recordCall;
+  if (isJsObjectTy(receiverType) && (ffi.deepRecords?.size ?? 0) > 0) {
+    return {
+      ...expr,
+      receiver,
+      args: expr.args.map((arg) =>
+        resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
+      ),
+    };
+  }
   if (!isJsObjectTy(receiverType)) {
     throw diagnosticError(
       new Error(
@@ -504,6 +533,52 @@ function dynamicCallResultType(type: Ty | undefined): TypeExpr {
   return candidate && !containsTypeVariable(candidate) ? candidate : name("Js.Value");
 }
 
+function recordReceiverCall(
+  expr: Extract<Expr, { kind: "FfiCall" }>,
+  receiver: Expr,
+  receiverType: Ty | undefined,
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+  options: ResolveOptions,
+  valueRefs: Map<string, JsTypeRef>,
+): Expr | undefined {
+  if (receiver.kind !== "Var" || !receiverType) return undefined;
+  const target = prune(receiverType);
+  if (target.tag !== "named" || !target.recordFields) return undefined;
+  const member = recordPathMember(target, expr.path);
+  if (!member || member.kind !== "TFn") return undefined;
+  const receiverTypeExpr = knownTyToTypeExpr(target);
+  if (!receiverTypeExpr) return undefined;
+  return materializeReceiverCall(
+    expr,
+    receiver,
+    expr.path,
+    expr.args,
+    receiverTypeExpr,
+    { name: expr.path.at(-1)!, type: member },
+    `__deep_record.${typeExprKey(receiverTypeExpr)}.${expr.path.join(".")}`,
+    ffi,
+    result,
+    selected,
+    options,
+    valueRefs,
+    resolveDelayedExpr,
+  );
+}
+
+function recordPathMember(type: Extract<Ty, { tag: "named" }>, path: string[]): TypeExpr | undefined {
+  let current: Ty = type;
+  for (const part of path) {
+    const target = prune(current);
+    if (target.tag !== "named" || !target.recordFields) return undefined;
+    const found = target.recordFields.find((field) => field.name === part);
+    if (!found) return undefined;
+    current = found.type;
+  }
+  return knownTyToTypeExpr(current);
+}
+
 function unwrapCarrierTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
   if (
     type?.kind === "TName" &&
@@ -526,4 +601,71 @@ function containsTypeVariable(type: TypeExpr): boolean {
     case "TFn":
       return type.params.some(containsTypeVariable) || containsTypeVariable(type.result);
   }
+}
+
+function resolveDeepReflectedCall(
+  expr: Extract<Expr, { kind: "Call" }>,
+  ffi: FfiElaboration,
+  _result: InferResult,
+  selected: Set<string>,
+  _valueRefs: Map<string, JsTypeRef>,
+): Expr | undefined {
+  if (expr.callee.kind !== "Var") return undefined;
+  const binding = ffi.bindings.get(expr.callee.name);
+  const variants = binding?.variants.filter((variant) => variant.deep && variant.callRef) ?? [];
+  if (variants.length === 0) return undefined;
+  const original = variants.find((variant) => typeCallArity(variant.type) === expr.args.length);
+  if (!original?.callRef) return undefined;
+  const reflected = jsRefDeepCall(original.callRef, expr.args);
+  if (!reflected) return undefined;
+  ffi.deepRecords ??= new Map();
+  for (const record of reflected.records) ffi.deepRecords.set(record.name, record);
+  const surfaceName = expr.callee.name;
+  addVariants(
+    ffi.bindings,
+    surfaceName,
+    original.memberName,
+    original.target,
+    [{
+      type: replaceCallResult(original.fallible ? unwrapFallibleType(original.type) : original.type, reflected.type),
+      callRef: original.callRef,
+      deep: true,
+    }],
+    original.fallible,
+    original.node,
+  );
+  const specialized = lastVariant(ffi.bindings.get(surfaceName)?.variants ?? []);
+  if (!specialized) return undefined;
+  selected.add(specialized.internalName);
+  return {
+    ...expr,
+    callee: { kind: "Var", name: specialized.internalName },
+  };
+}
+
+function lastVariant(variants: FfiVariant[]): FfiVariant | undefined {
+  return variants.at(-1);
+}
+
+function typeCallArity(type: TypeExpr): number {
+  if (type.kind !== "TFn") return 1;
+  return type.params.length === 1 && type.params[0].kind === "TTuple"
+    ? type.params[0].items.length
+    : type.params.length;
+}
+
+function replaceCallResult(type: TypeExpr, result: TypeExpr): TypeExpr {
+  return type.kind === "TFn" ? { ...type, result } : result;
+}
+
+function unwrapFallibleType(type: TypeExpr): TypeExpr {
+  if (
+    type.kind === "TFn" &&
+    type.result.kind === "TName" &&
+    (type.result.name === "Result" || type.result.name === "Task") &&
+    type.result.args.length === 2
+  ) {
+    return { ...type, result: type.result.args[0] };
+  }
+  return type;
 }

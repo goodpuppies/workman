@@ -85,6 +85,7 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
     bindings,
     foreignTypeRefs: importedTypeRefs,
     selected,
+    deepRecords: new Map(),
   };
 }
 

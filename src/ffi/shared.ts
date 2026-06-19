@@ -11,6 +11,7 @@ export type FfiElaboration = {
   bindings: Map<string, FfiBinding>;
   foreignTypeRefs: Map<string, JsTypeRef>;
   selected: Set<string>;
+  deepRecords?: Map<string, Extract<Decl, { kind: "RecordDecl" }>>;
 };
 
 export type FfiBinding = {
@@ -25,8 +26,10 @@ export type FfiVariant = {
   target: JsTarget;
   type: TypeExpr;
   resultRef?: JsTypeRef;
+  callRef?: JsTypeRef;
   callbackParamRefs?: JsCallbackParamRefs[];
   fallible: boolean;
+  deep?: boolean;
   node?: JsImportSpec["node"];
 };
 
@@ -35,7 +38,13 @@ export function addVariants(
   surfaceName: string,
   memberName: string,
   target: JsTarget,
-  variants: { type: TypeExpr; resultRef?: JsTypeRef; callbackParamRefs?: JsCallbackParamRefs[] }[],
+  variants: {
+    type: TypeExpr;
+    resultRef?: JsTypeRef;
+    callRef?: JsTypeRef;
+    callbackParamRefs?: JsCallbackParamRefs[];
+    deep?: boolean;
+  }[],
   fallible: boolean,
   node?: JsImportSpec["node"],
 ) {
@@ -49,8 +58,10 @@ export function addVariants(
       target,
       type: fallible ? fallibleType(variant.type) : variant.type,
       resultRef: variant.resultRef,
+      callRef: variant.callRef,
       callbackParamRefs: variant.callbackParamRefs,
       fallible,
+      deep: variant.deep,
       node,
     });
   }
