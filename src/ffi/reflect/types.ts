@@ -515,6 +515,10 @@ function canonicalConstructorTypeRef(ref: JsTypeRef): JsTypeRef | undefined {
     const name = ref.key.slice("global-value:".length);
     return jsGlobalTypeRef(name);
   }
+  const globalMember = /^global:(.+)\.([^.:]+):value$/.exec(ref.key);
+  if (globalMember) {
+    return jsGlobalMemberTypeRef(globalMember[1], globalMember[2]);
+  }
   return undefined;
 }
 

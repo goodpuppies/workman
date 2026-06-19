@@ -307,6 +307,29 @@ let bad = floor(1, 2);
   });
 });
 
+Deno.test("lsp validation resolves JS modules from the checked file project", async () => {
+  const dir = await Deno.makeTempDir();
+  const packageDir = `${dir}/node_modules/wm-reflect-local`;
+  await Deno.mkdir(packageDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${packageDir}/package.json`,
+    JSON.stringify({ name: "wm-reflect-local", version: "1.0.0", types: "index.d.ts" }),
+  );
+  await Deno.writeTextFile(`${packageDir}/index.d.ts`, "export function makeScene(): number;\n");
+
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    main,
+    'from js.module("wm-reflect-local") import { makeScene }; let scene = makeScene();',
+  );
+
+  const diagnostics = await diagnosticsForPath(
+    await validateUri(pathToFileUri(main), new Map()),
+    main,
+  );
+  assertEquals(diagnostics, []);
+});
+
 Deno.test("lsp validation reports unknown named imports on the import specifier", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;

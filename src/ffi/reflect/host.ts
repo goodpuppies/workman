@@ -1,5 +1,6 @@
 import ts from "typescript";
 import { fileURLToPath } from "node:url";
+import { dirname, join, normalize } from "node:path";
 
 const compilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -15,8 +16,15 @@ const denoTypesFile = "/__wm_deno_types.d.ts";
 let denoTypesCache: string | undefined;
 const sourceFileCache = new Map<string, ts.SourceFile>();
 let previousProgram: ts.Program | undefined;
+let activeReflectionBasePath: string | undefined;
 
 export type JsReflectionSource = { key: string; source: string };
+
+export function setActiveJsReflectionBasePath(path: string | undefined): string | undefined {
+  const previous = activeReflectionBasePath;
+  activeReflectionBasePath = path;
+  return previous;
+}
 
 export function jsGlobalSource(path: string): JsReflectionSource {
   if (path === "Deno" || path.startsWith("Deno.")) {
@@ -29,11 +37,20 @@ export function jsGlobalSource(path: string): JsReflectionSource {
 }
 
 export function jsModuleSource(specifier: string): JsReflectionSource {
+  const fileName = activeReflectionBasePath
+    ? join(
+      dirname(activeReflectionBasePath),
+      `__wm_js_reflect_${sanitize(`module_${specifier}`)}.ts`,
+    )
+    : undefined;
+  const sourcePrefix = fileName ? `// @wm-reflect-file ${JSON.stringify(fileName)}\n` : "";
+  const keySuffix = fileName ? `@${normalize(fileName)}` : "";
   return {
-    key: `module:${specifier}`,
-    source: `/// <reference path="${nodeTypesPath}" />\nimport * as __wm_target from ${
-      JSON.stringify(specifier)
-    };`,
+    key: `module:${specifier}${keySuffix}`,
+    source:
+      `${sourcePrefix}/// <reference path="${nodeTypesPath}" />\nimport * as __wm_target from ${
+        JSON.stringify(specifier)
+      };`,
   };
 }
 
@@ -45,14 +62,17 @@ export function reflectSource<T>(
     sourceFile: ts.SourceFile,
   ) => T,
 ): T {
-  const fileName = `/__wm_js_reflect_${sanitize(label)}.ts`;
+  const fileName = reflectionFileName(source) ??
+    join(Deno.cwd(), `__wm_js_reflect_${sanitize(label)}.ts`);
   const extraFiles = source.includes(denoTypesFile)
     ? new Map([[denoTypesFile, denoTypesSource()]])
     : new Map<string, string>();
   const host = ts.createCompilerHost(compilerOptions);
   const originalGetSourceFile = host.getSourceFile;
   host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => {
-    if (name === fileName) return cachedSourceFile(name, source, languageVersion);
+    if (normalize(name) === normalize(fileName)) {
+      return cachedSourceFile(name, source, languageVersion);
+    }
     const extraSource = extraFiles.get(name);
     if (extraSource !== undefined) return cachedSourceFile(name, extraSource, languageVersion);
     const cacheKey = sourceFileCacheKey(name, languageVersion);
@@ -103,6 +123,18 @@ function cachedSourceFile(
   const created = ts.createSourceFile(name, source, languageVersion, true);
   sourceFileCache.set(cacheKey, created);
   return created;
+}
+
+function reflectionFileName(source: string): string | undefined {
+  const firstLine = source.split(/\r?\n/, 1)[0];
+  const match = /^\/\/ @wm-reflect-file (.+)$/.exec(firstLine);
+  if (!match) return undefined;
+  try {
+    const parsed = JSON.parse(match[1]);
+    return typeof parsed === "string" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function sourceFileCacheKey(

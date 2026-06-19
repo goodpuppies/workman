@@ -31,7 +31,7 @@ import {
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
-import { recordExprFact, type TypeFacts } from "./type_facts.ts";
+import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_facts.ts";
 
 export function inferMatch(
   expr: Extract<Expr, { kind: "Match" }>,
@@ -55,6 +55,11 @@ export function inferMatch(
     diagnostics,
     provenance,
   );
+  recordConsumedFfiUse(facts, valueType, {
+    kind: "match",
+    message:
+      "cannot match unresolved JS FFI result before FFI reflection resolves the member access",
+  });
   const result = fresh();
   for (const arm of expr.arms) {
     const local = new Map(env);
@@ -196,6 +201,16 @@ export function inferBinary(
     diagnostics,
     provenance,
   );
+  recordConsumedFfiUse(facts, left, {
+    kind: "operator",
+    message:
+      "cannot use unresolved JS FFI result as an operator operand before FFI reflection resolves the member access",
+  });
+  recordConsumedFfiUse(facts, right, {
+    kind: "operator",
+    message:
+      "cannot use unresolved JS FFI result as an operator operand before FFI reflection resolves the member access",
+  });
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
   if (expr.op === "++") {
@@ -374,6 +389,11 @@ export function inferPipe(
     diagnostics,
     provenance,
   );
+  recordConsumedFfiUse(facts, leftType, {
+    kind: "pipe",
+    message:
+      "cannot pipe unresolved JS FFI result before FFI reflection resolves the member access",
+  });
   const right = expr.right;
 
   if (right.kind === "Call") {

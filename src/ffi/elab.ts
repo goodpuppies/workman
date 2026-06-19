@@ -1,6 +1,7 @@
 import type { Decl, Module, TypeExpr } from "../ast.ts";
 import type { JsTypeRef } from "./reflect/types.ts";
 import { jsGlobalTypeRef } from "./reflect/types.ts";
+import { setActiveJsReflectionBasePath } from "./reflect/host.ts";
 import { collectFfiDecl, generatedJsImports, generatedTypeAliases } from "./imports.ts";
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver/receiver.ts";
 import { rewriteDeclCalls } from "./receiver/rewrite_decl.ts";
@@ -12,11 +13,20 @@ import {
   generatedReceiverJsImports,
 } from "./shared.ts";
 
-export function prepareFfiElaboration(module: Module): FfiElaboration {
+export type FfiElaborationOptions = {
+  filePath?: string;
+};
+
+export function prepareFfiElaboration(
+  module: Module,
+  options: FfiElaborationOptions = {},
+): FfiElaboration {
   const previousRecordFields = setActiveRecordFields(recordFieldNames(module));
+  const previousReflectionBasePath = setActiveJsReflectionBasePath(options.filePath);
   try {
     return prepareFfiElaborationInner(module);
   } finally {
+    setActiveJsReflectionBasePath(previousReflectionBasePath);
     setActiveRecordFields(previousRecordFields);
   }
 }
@@ -117,7 +127,7 @@ function collectForeignTypeNames(
     case "TName":
       if (type.args.length === 0 && isReflectedForeignTypeName(type.name, localTypes)) {
         const typeRef = ref ?? jsGlobalTypeRef(type.name);
-        foreignTypeRefs.set(type.name, typeRef);
+        if (!foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
       }
       for (const arg of type.args) collectForeignTypeNames(arg, foreignTypeRefs, localTypes);

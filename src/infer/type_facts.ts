@@ -1,5 +1,5 @@
 import type { Expr, Pattern } from "../ast.ts";
-import type { Scheme, Ty } from "../types.ts";
+import { prune, type Scheme, type Ty } from "../types.ts";
 
 export type TypeFacts = {
   expressions: Map<Expr, TypeFact>;
@@ -46,6 +46,12 @@ export type FfiFact = {
   status: "unresolved" | "resolved";
   instantiated?: Ty;
   origin?: TypeFactOrigin;
+  consumed?: FfiConsumedUse;
+};
+
+export type FfiConsumedUse = {
+  kind: "match" | "binding" | "operator" | "pipe" | "call";
+  message: string;
 };
 
 export function createTypeFacts(): TypeFacts {
@@ -102,6 +108,18 @@ export function resolveFfiFact(
   });
 }
 
+export function recordConsumedFfiUse(
+  facts: TypeFacts,
+  type: Ty,
+  consumed: FfiConsumedUse,
+) {
+  for (const id of unresolvedFfiIds(type)) {
+    const existing = facts.ffi.get(id);
+    if (!existing || existing.status === "resolved") continue;
+    facts.ffi.set(id, { ...existing, consumed });
+  }
+}
+
 export function originForScheme(name: string, scheme: Scheme): TypeFactOrigin {
   return {
     name,
@@ -126,4 +144,23 @@ function mergeFact(
     origin: next.origin ?? existing?.origin,
     notes: [...(existing?.notes ?? []), ...(next.notes ?? [])],
   };
+}
+
+function unresolvedFfiIds(type: Ty, out = new Set<number>()): Set<number> {
+  const target = prune(type);
+  if (target.tag === "ffi") {
+    if (!target.instance) out.add(target.id);
+    return out;
+  }
+  if (target.tag === "fn") {
+    target.params.forEach((param) => unresolvedFfiIds(param, out));
+    unresolvedFfiIds(target.result, out);
+  } else if (target.tag === "tuple") {
+    target.items.forEach((item) => unresolvedFfiIds(item, out));
+  } else if (target.tag === "struct") {
+    target.fields.forEach((field) => unresolvedFfiIds(field.type, out));
+  } else if (target.tag === "named") {
+    target.args.forEach((arg) => unresolvedFfiIds(arg, out));
+  }
+  return out;
 }

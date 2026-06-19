@@ -31,7 +31,13 @@ import {
   jsPromiseFfiCallValue,
 } from "./expr_js_members.ts";
 import { inferBinary, inferBlock, inferMatch, inferParam, inferPipe } from "./expr_flow.ts";
-import { originForScheme, recordExprFact, recordFfiFact, type TypeFacts } from "./type_facts.ts";
+import {
+  originForScheme,
+  recordConsumedFfiUse,
+  recordExprFact,
+  recordFfiFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function inferExpr(
   expr: Expr,
@@ -491,6 +497,11 @@ function inferExprInner(
           provenance,
         );
         const carrier = resultParts(value, typeEnv);
+        recordConsumedFfiUse(facts, value, {
+          kind: "operator",
+          message:
+            "cannot use unresolved JS FFI result as an operator operand before FFI reflection resolves the member access",
+        });
         constrainAt(
           NumberTy,
           carrier?.value ?? value,
@@ -536,6 +547,11 @@ function inferExprInner(
           provenance,
         );
         const carrier = resultParts(value, typeEnv);
+        recordConsumedFfiUse(facts, value, {
+          kind: "operator",
+          message:
+            "cannot use unresolved JS FFI result as an operator operand before FFI reflection resolves the member access",
+        });
         constrainAt(
           BoolTy,
           carrier?.value ?? value,

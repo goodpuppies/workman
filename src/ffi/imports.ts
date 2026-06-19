@@ -55,6 +55,7 @@ export function collectFfiDecl(
       importedRefs.set(surfaceName, ref);
       const construct = jsConstructMember(ref);
       if (construct) {
+        rememberConstructorResultRefs(construct, importedTypeRefs);
         addVariants(
           bindings,
           `${surfaceName}.new`,
@@ -85,7 +86,8 @@ export function collectFfiDecl(
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     const ref = reflected ? jsTargetMemberValueRef(decl.target, spec.name) : undefined;
     const construct = ref ? jsConstructMember(ref) : undefined;
-    if (construct && decl.target.kind === "JsGlobal") {
+    if (construct && (decl.target.kind === "JsGlobal" || decl.target.kind === "JsModule")) {
+      rememberConstructorResultRefs(construct, importedTypeRefs);
       addVariants(
         bindings,
         `${surfaceName}.new`,
@@ -191,6 +193,27 @@ function foreignTypeForRef(
 
 function replaceResultType(type: TypeExpr, result: TypeExpr): TypeExpr {
   return type.kind === "TFn" ? { ...type, result } : result;
+}
+
+function rememberConstructorResultRefs(
+  member: JsMemberType,
+  importedTypeRefs: Map<string, JsTypeRef>,
+) {
+  for (const variant of memberVariants(member)) {
+    const resultName = constructorResultName(variant.type);
+    if (!resultName || !variant.resultRef) continue;
+    if (!isForeignTypeDeclName(resultName)) continue;
+    if (!importedTypeRefs.has(resultName)) importedTypeRefs.set(resultName, variant.resultRef);
+  }
+}
+
+function constructorResultName(type: TypeExpr): string | undefined {
+  const result = type.kind === "TFn" ? type.result : type;
+  if (result.kind !== "TName" || result.name !== "Result" || result.args.length !== 2) {
+    return result.kind === "TName" && result.args.length === 0 ? result.name : undefined;
+  }
+  const value = result.args[0];
+  return value.kind === "TName" && value.args.length === 0 ? value.name : undefined;
 }
 
 function collectFfiTypeDecl(
@@ -330,6 +353,13 @@ function jsTargetMember(target: JsTarget, name: string): JsMemberType | undefine
 function jsTargetMemberConstructorTarget(target: JsTarget, name: string): JsTarget {
   if (target.kind === "JsGlobal") {
     return { ...target, kind: "JsConstructor", path: `${target.path}.${name}` };
+  }
+  if (target.kind === "JsModule") {
+    return {
+      ...target,
+      kind: "JsConstructor",
+      path: `module:${JSON.stringify(target.specifier)}:${JSON.stringify(name)}`,
+    };
   }
   return { ...target, kind: "JsConstructor", path: name };
 }

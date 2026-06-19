@@ -140,6 +140,7 @@ function inferModuleCore(
 
   try {
     assertNoTopLevelUnresolvedFfi(env);
+    assertNoConsumedUnresolvedFfi(facts);
     assertNoTopLevelUnsolvedJsBoundary(env);
   } catch (error) {
     const diagnostic = diagnosticError(error, module.node);
@@ -168,6 +169,19 @@ function inferModuleCore(
     },
     steps,
   };
+}
+
+function assertNoConsumedUnresolvedFfi(facts: TypeFacts) {
+  const consumed = [...facts.ffi.values()].find((fact) =>
+    fact.status === "unresolved" && fact.consumed
+  );
+  if (!consumed?.consumed) return;
+  throw diagnosticError(
+    new Error(
+      `${consumed.consumed.message}: ?ffi#${consumed.id}:${consumed.path.join(".")}`,
+    ),
+    consumed.expr?.node,
+  );
 }
 
 function assertNoTopLevelUnresolvedFfi(env: Env) {

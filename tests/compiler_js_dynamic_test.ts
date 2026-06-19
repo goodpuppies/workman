@@ -98,8 +98,49 @@ Deno.test("unresolved FFI receiver callbacks require an explicit JS value check"
   `);
     throw new Error("expected checkSource to reject");
   } catch (error) {
-    assertStringIncludes(String(error), "cannot resolve JS FFI method unknownJs");
+    assertStringIncludes(String(error), "cannot pipe unresolved JS FFI result");
   }
+});
+
+Deno.test("constrained dynamic receiver calls materialize with inferred result type", async () => {
+  const result = await checkSource(`
+    from js.global("Deno") import { dlopen };
+    from js.global("Deno.UnsafePointer") import { of as pointerOf };
+
+    let expectPointer = (value) => {
+      match(value) {
+        Some(ptr) => { ptr },
+        None => { Panic("ptr") }
+      }
+    };
+
+    let pollOnce = (sdl, eventPtr) => {
+      match(sdl.symbols.SDL_PollEvent(eventPtr)) {
+        Ok(1) => { true },
+        Ok(_) => { false },
+        Err(_) => { false }
+      }
+    };
+
+    let ptr = pointerOf(Panic("buf")) :> Result.map(expectPointer);
+    let checked = match(dlopen("SDL2", JSON{
+      SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
+    })) {
+      Ok(sdl) => {
+        match(ptr) {
+          Ok(eventPtr) => { pollOnce(sdl, eventPtr) },
+          Err(_) => { false }
+        }
+      },
+      Err(_) => { false }
+    };
+  `);
+
+  expectBinding(result.env, "pollOnce", {
+    type: "((Js.Object, Js.Object)) => Bool",
+    vars: 0,
+  });
+  expectBinding(result.env, "checked", { type: "Bool", vars: 0 });
 });
 
 Deno.test("dynamic JS callback parameter annotations are rejected", async () => {

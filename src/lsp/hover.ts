@@ -107,7 +107,7 @@ async function analyzePartialForHover(
     const inferOptions = await standardInferOptions();
     const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
     for (const node of graph.nodes.values()) {
-      const prepared = prepareFfiElaboration(node.module);
+      const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
       ffi.set(node.path, prepared);
       node.module = prepared.module;
       ensurePartialHoverForeignTypes(node.module, node.source);

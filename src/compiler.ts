@@ -49,6 +49,7 @@ export async function compile(
 ): Promise<string> {
   const { module: ast, result } = await checkPreparedModuleWithoutImports(
     resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    filePath,
   );
   return emitCoreProgram(coreProgramFromModule(ast, result));
 }
@@ -89,6 +90,7 @@ export async function checkSource(
 ): Promise<InferResult> {
   return (await checkPreparedModuleWithoutImports(
     resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    filePath,
   )).result;
 }
 
@@ -99,6 +101,7 @@ export async function coreSource(
 ): Promise<CoreSourceResult> {
   const { module, result } = await checkPreparedModuleWithoutImports(
     resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    filePath,
   );
   return { module: coreFromSurface(module, result), result };
 }
@@ -110,6 +113,7 @@ export async function checkSourceSteps(
 ): Promise<InferStep[]> {
   const module = prepareFfiElaboration(
     resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    { filePath },
   ).module;
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
     throw new Error("source strings with imports require checkFile");
@@ -141,7 +145,7 @@ export async function analyzeFile(
   const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
   for (const node of graph.nodes.values()) {
     node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
-    const prepared = prepareFfiElaboration(node.module);
+    const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
     ffi.set(node.path, prepared);
     node.module = prepared.module;
   }
@@ -205,6 +209,7 @@ export async function analyzeFile(
       const resolved = resolveDelayedFfiElaboration(prepared, contextualResult, {
         foreignTypeRefs,
       });
+      ffi.set(path, resolved);
       node.module = resolved.module;
     } catch (error) {
       throw new ModuleAnalysisError(
@@ -212,6 +217,38 @@ export async function analyzeFile(
         node.source,
         error,
         delayedFfiDiagnostics(contextualResults.get(path)),
+      );
+    }
+  }
+  const postResolveResults = new Map<string, InferResult>();
+  for (const path of graph.order) {
+    const node = graph.nodes.get(path)!;
+    const imports = new Map<string, InferResult>();
+    for (const edge of node.imports) {
+      imports.set(edge.specifier, postResolveResults.get(edge.path)!);
+    }
+    try {
+      postResolveResults.set(path, inferModule(node.module, imports, await standardInferOptions()));
+    } catch (error) {
+      throw new ModuleAnalysisError(path, node.source, error);
+    }
+  }
+  for (const path of graph.order) {
+    const node = graph.nodes.get(path)!;
+    try {
+      const prepared = ffi.get(path)!;
+      const postResolveResult = postResolveResults.get(path)!;
+      const resolved = resolveDelayedFfiElaboration(prepared, postResolveResult, {
+        foreignTypeRefs,
+      });
+      ffi.set(path, resolved);
+      node.module = resolved.module;
+    } catch (error) {
+      throw new ModuleAnalysisError(
+        path,
+        node.source,
+        error,
+        delayedFfiDiagnostics(postResolveResults.get(path)),
       );
     }
   }
@@ -248,9 +285,10 @@ function isDelayedFfiPartialDiagnostic(message: string): boolean {
 
 async function checkPreparedModuleWithoutImports(
   module: Module,
+  filePath?: string,
 ): Promise<{ module: Module; result: InferResult }> {
   assertNoSourceImports(module);
-  const prepared = prepareFfiElaboration(module);
+  const prepared = prepareFfiElaboration(module, { filePath });
   const inferOptions = await standardInferOptions();
   const first = assertNoPartialDiagnostics(
     inferModulePartial(prepared.module, new Map(), inferOptions),
@@ -270,7 +308,14 @@ async function checkPreparedModuleWithoutImports(
   } catch (error) {
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
   }
-  return { module: resolved.module, result: await inferModuleWithoutImports(resolved.module) };
+  const postResolveResult = await inferModuleWithoutImports(resolved.module);
+  const finalResolved = resolveDelayedFfiElaboration(resolved, postResolveResult, {
+    foreignTypeRefs,
+  });
+  return {
+    module: finalResolved.module,
+    result: await inferModuleWithoutImports(finalResolved.module),
+  };
 }
 
 function delayedFfiDiagnostics(result: InferResult | undefined): FrontendDiagnostic[] {

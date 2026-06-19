@@ -247,7 +247,10 @@ function resolveDelayedFfiGet(
       expr.node,
     );
   }
-  if (!receiverType || !isJsObjectTy(receiverType)) {
+  if (!receiverType || prune(receiverType).tag === "var") {
+    return { ...expr, receiver };
+  }
+  if (!isJsObjectTy(receiverType)) {
     throw diagnosticError(
       new Error(
         `cannot resolve JS FFI property ${expr.path.join(".")} for receiver type ${
@@ -449,7 +452,16 @@ function resolveDelayedFfiCall(
       );
     }
   }
-  if (!receiverType || !isJsObjectTy(receiverType)) {
+  if (!receiverType || prune(receiverType).tag === "var") {
+    return {
+      ...expr,
+      receiver,
+      args: expr.args.map((arg) =>
+        resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
+      ),
+    };
+  }
+  if (!isJsObjectTy(receiverType)) {
     throw diagnosticError(
       new Error(
         `cannot resolve JS FFI method ${expr.path.join(".")} for receiver type ${
@@ -467,7 +479,7 @@ function resolveDelayedFfiCall(
     name("Js.Object"),
     {
       name: expr.path.at(-1)!,
-      type: fn(expr.args.map(dynamicReceiverArgType), name("Js.Value")),
+      type: fn(expr.args.map(dynamicReceiverArgType), dynamicCallResultType(inferredType(result, expr))),
     },
     `__dynamic.${expr.path.join(".")}`,
     ffi,
@@ -477,4 +489,41 @@ function resolveDelayedFfiCall(
     valueRefs,
     resolveDelayedExpr,
   );
+}
+
+function dynamicCallResultType(type: Ty | undefined): TypeExpr {
+  const target = type ? prune(type) : undefined;
+  if (target?.tag === "ffi") {
+    for (const constraint of target.constraints ?? []) {
+      const constrained = unwrapCarrierTypeExpr(knownTyToTypeExpr(constraint));
+      if (constrained && !containsTypeVariable(constrained)) return constrained;
+    }
+  }
+  const known = target ? knownTyToTypeExpr(target) : undefined;
+  const candidate = unwrapCarrierTypeExpr(known) ?? known;
+  return candidate && !containsTypeVariable(candidate) ? candidate : name("Js.Value");
+}
+
+function unwrapCarrierTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {
+  if (
+    type?.kind === "TName" &&
+    (type.name === "Result" || type.name === "Task") &&
+    type.args.length === 2
+  ) {
+    return type.args[0];
+  }
+  return undefined;
+}
+
+function containsTypeVariable(type: TypeExpr): boolean {
+  switch (type.kind) {
+    case "TVar":
+      return true;
+    case "TName":
+      return type.args.some(containsTypeVariable);
+    case "TTuple":
+      return type.items.some(containsTypeVariable);
+    case "TFn":
+      return type.params.some(containsTypeVariable) || containsTypeVariable(type.result);
+  }
 }

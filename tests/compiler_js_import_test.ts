@@ -113,6 +113,28 @@ Deno.test("reflects local JS module namespace imports", async () => {
   await checkFile(input);
 });
 
+Deno.test("reflects constructor-valued JS module exports through new member", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/thing.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `export class Thing { constructor(readonly name: string) {} }\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./thing.ts") import { Thing };
+      let thing = Thing.new("ok");
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = [...results.values()][0];
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>", vars: 0 });
+});
+
 Deno.test("reflects nested local JS module namespace receiver calls", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

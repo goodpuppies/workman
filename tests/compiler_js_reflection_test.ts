@@ -18,7 +18,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
         };
       `),
     Error,
-    "cannot resolve JS FFI property message",
+    "cannot use unresolved JS FFI result as an operator operand",
   );
 
   await assertRejects(
@@ -30,7 +30,35 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
         };
       `),
     Error,
-    "cannot resolve JS FFI property message",
+    "cannot use unresolved JS FFI result as an operator operand",
+  );
+});
+
+Deno.test("unresolved JS FFI results cannot be hidden by match or discard", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        let f = (x) => {
+          match(x.foo()) {
+            Ok(_) => { Ok(void) },
+            Err(e) => { Err(e) }
+          }
+        };
+      `),
+    Error,
+    "cannot match unresolved JS FFI result",
+  );
+
+  await assertRejects(
+    () =>
+      checkSource(`
+        let f = (x) => {
+          let _ = x.foo();
+          Ok(void)
+        };
+      `),
+    Error,
+    "cannot bind unresolved JS FFI result",
   );
 });
 
@@ -122,13 +150,34 @@ Deno.test("reflects global value constructors through new member", async () => {
 Deno.test("reflects constructor-valued Deno members through new member", async () => {
   const result = await checkSource(`
     from js.global("Deno.UnsafePointer") import { of };
-    from js.global("Deno") import { UnsafePointerView };
+    from js.global("Deno") import { UnsafePointerView, UnsafeWindowSurface };
+    from js.global("Deno") import type { UnsafeWindowSurface };
     let ptr = of(Panic("buf"));
     let view = UnsafePointerView.new(Panic("ptr"));
+    let readPointer = match(view) {
+      Ok(v) => { v.getPointer(8) },
+      Err(e) => { Err(e) },
+    };
+    let readNumber = match(view) {
+      Ok(v) => { v.getUint32(4) },
+      Err(e) => { Err(e) },
+    };
+    let present = (surface: UnsafeWindowSurface) => {
+      surface.present()
+    };
   `);
 
   expectBinding(result.env, "ptr", { type: "Result<Option<Js.Object>, Js.Error>", vars: 0 });
   expectBinding(result.env, "view", { type: "Result<UnsafePointerView, Js.Error>", vars: 0 });
+  expectBinding(result.env, "readPointer", {
+    type: "Result<Option<Js.Object>, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "readNumber", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "present", {
+    type: "(UnsafeWindowSurface) => Result<Void, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("reflects callback parameter object refs before HM", async () => {

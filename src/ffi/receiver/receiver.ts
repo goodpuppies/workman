@@ -45,6 +45,7 @@ export function reflectedReceiverCallCandidate(
     path: string[],
     args: JsCallArgHint[],
   ) => JsMemberType | undefined,
+  receiverType?: TypeExpr,
 ): ReflectedReceiverCall | undefined {
   const parts = name.split(".");
   if (parts.length < 2) return undefined;
@@ -58,14 +59,14 @@ export function reflectedReceiverCallCandidate(
   if (!member) return undefined;
   const suffix = callMember ? `(${callHintKey(args)})` : "";
   const surfaceName = `__receiver.${ref.key}.${path.join(".")}${suffix}`;
-  const receiverType = knownReceiverType(jsRefTypeExpr(ref));
+  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref));
   addVariants(
     bindings,
     surfaceName,
     path.at(-1)!,
     { kind: "JsReceiver", path },
     memberVariants(member).map((variant) => ({
-      type: prependReceiver(variant.type, receiverType),
+      type: prependReceiver(variant.type, reflectedReceiverType),
       resultRef: variant.resultRef,
       callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
         argIndex: item.argIndex + 1,
@@ -272,6 +273,7 @@ export function objectReceiverCall(
       selected,
       new Map([[baseName, access.ref]]),
       jsRefCallMember,
+      access.receiverType,
     );
     if (reflected) return reflected;
     if (isJsPromiseRef(access.ref)) {
@@ -286,40 +288,11 @@ export function objectReceiverCall(
   }
   if (access?.kind === "dynamic") {
     const path = parts.slice(1);
-    if (path.length === 1 && path[0] === "at") {
-      return {
-        kind: "FfiCall",
-        receiver: { kind: "Var", name: baseName },
-        path,
-        args,
-      };
-    }
-    const surfaceName = `__dynamic.${path.join(".")}(${callHintKey(args)})`;
-    addVariants(
-      bindings,
-      surfaceName,
-      path.at(-1)!,
-      { kind: "JsReceiver", path },
-      [{
-        type: fn(
-          [
-            name("Js.Object"),
-            ...args.map(dynamicReceiverArgType),
-          ],
-          name("Js.Value"),
-        ),
-      }],
-      true,
-      undefined,
-    );
-    const allArgs = [{ kind: "Var" as const, name: baseName }, ...args];
-    const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], allArgs);
-    if (!variant) return undefined;
-    selected.add(variant.internalName);
     return {
-      callee: { kind: "Var", name: variant.internalName },
-      args: allArgs,
-      variant,
+      kind: "FfiCall",
+      receiver: { kind: "Var", name: baseName },
+      path,
+      args,
     };
   }
   if (access?.kind !== "unresolved") return undefined;

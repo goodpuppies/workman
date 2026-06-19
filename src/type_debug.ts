@@ -36,7 +36,7 @@ export async function typeDebugFile(input: string): Promise<string> {
 
     const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
     for (const node of graph.nodes.values()) {
-      const prepared = prepareFfiElaboration(node.module);
+      const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
       ffi.set(node.path, prepared);
       node.module = prepared.module;
     }

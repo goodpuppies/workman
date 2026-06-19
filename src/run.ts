@@ -18,11 +18,13 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
   const dir = await Deno.makeTempDir({ dir: dirname(inputPath), prefix: ".wm-mini-" });
   const output = `${dir}/main.mjs`;
   try {
-    await Deno.writeTextFile(output, await compileFile(inputPath, options));
+    const js = await compileFile(inputPath, options);
+    await Deno.writeTextFile(output, js);
     const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "-A",
+        ...runtimeFlags(js),
         output,
         ...(options.args ?? []),
       ],
@@ -33,4 +35,8 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
   } finally {
     await Deno.remove(dir, { recursive: true }).catch(() => {});
   }
+}
+
+function runtimeFlags(js: string): string[] {
+  return js.includes("Deno.UnsafeWindowSurface") ? ["--unstable-webgpu"] : [];
 }

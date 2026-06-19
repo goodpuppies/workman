@@ -72,7 +72,9 @@ function emitDecl(decl: CoreDecl): string[] {
   if (decl.kind === "CoreImport" || decl.kind === "CoreRecord") return [];
   if (decl.kind === "CoreJsImport") {
     const target = jsTargetRef(decl.target);
-    const prefix: string[] = target.kind === "module" ? [target.setup] : [];
+    const prefix: string[] = target.kind === "module" || target.kind === "moduleConstructor"
+      ? [target.setup]
+      : [];
     if (decl.clause.kind === "Namespace") {
       return [
         ...prefix,
@@ -295,6 +297,11 @@ type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
   name: string;
   setup: string;
 } | {
+  kind: "moduleConstructor";
+  moduleName: string;
+  memberName: string;
+  setup: string;
+} | {
   kind: "receiver";
   path: string[];
 } | {
@@ -318,7 +325,21 @@ function jsTargetRef(target: Extract<CoreDecl, { kind: "CoreJsImport" }>["target
     };
   }
   if (target.kind === "JsReceiver") return { kind: "receiver", path: target.path };
-  if (target.kind === "JsConstructor") return { kind: "constructor", path: target.path };
+  if (target.kind === "JsConstructor") {
+    const moduleCtor = parseModuleConstructorPath(target.path);
+    if (moduleCtor) {
+      const name = `__wm_js_module_${jsImportTemp++}`;
+      return {
+        kind: "moduleConstructor",
+        moduleName: name,
+        memberName: moduleCtor.memberName,
+        setup: `const ${name} = await import(${
+          JSON.stringify(runtimeJsModuleSpecifier(moduleCtor.specifier))
+        });`,
+      };
+    }
+    return { kind: "constructor", path: target.path };
+  }
   throw new Error("unsupported JS import target");
 }
 
@@ -331,6 +352,11 @@ function jsMemberRef(target: JsTargetRef, member: string): string {
     return `__wm_js_member(${JSON.stringify(target.path)} + "." + ${member})`;
   }
   if (target.kind === "module") return `__wm_js_member_obj(${target.name}, ${member})`;
+  if (target.kind === "moduleConstructor") {
+    return `(...__wm_ctor_args) => new (${target.moduleName}[${
+      JSON.stringify(target.memberName)
+    }])(...__wm_ctor_args)`;
+  }
   if (target.kind === "constructor") return `__wm_js_construct(${JSON.stringify(target.path)})`;
   return `__wm_js_receiver_member(${JSON.stringify(target.path)})`;
 }
@@ -343,6 +369,23 @@ function jsNamespaceRef(target: JsTargetRef): string {
       : `__wm_js_global(${JSON.stringify(target.path)})`;
   }
   return "{}";
+}
+
+function parseModuleConstructorPath(
+  path: string,
+): { specifier: string; memberName: string } | undefined {
+  if (!path.startsWith("module:")) return undefined;
+  const rest = path.slice("module:".length);
+  const colon = rest.indexOf(":");
+  if (colon < 0) return undefined;
+  try {
+    return {
+      specifier: JSON.parse(rest.slice(0, colon)),
+      memberName: JSON.parse(rest.slice(colon + 1)),
+    };
+  } catch (_error) {
+    return undefined;
+  }
 }
 
 function emitPatternAssert(

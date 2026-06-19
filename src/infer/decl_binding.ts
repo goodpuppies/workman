@@ -29,7 +29,7 @@ import {
   type TypeProvenance,
 } from "./provenance.ts";
 import { inferRecordExpr } from "./records.ts";
-import { type TypeFacts } from "./type_facts.ts";
+import { recordConsumedFfiUse, type TypeFacts } from "./type_facts.ts";
 
 export function generalizeBinding(env: Env, type: Ty, value: Expr): Scheme {
   if (containsUnresolvedFfi(type) || containsFfiBoundary(value, env)) {
@@ -203,6 +203,11 @@ export function inferBinding(
         diagnostics,
         provenance,
       );
+    recordConsumedFfiUse(facts, t, {
+      kind: "binding",
+      message:
+        "cannot bind unresolved JS FFI result before FFI reflection resolves the member access",
+    });
     if (annotated && dynamicFfiWithoutJsonAssert(b.value, env)) {
       throw new Error(
         "type annotations cannot cast dynamic JS/JSON values; use Json.assert for an explicit dynamic shape assertion",

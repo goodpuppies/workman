@@ -26,7 +26,7 @@ import {
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
-import { recordExprFact, type TypeFacts } from "./type_facts.ts";
+import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_facts.ts";
 
 export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
@@ -58,6 +58,13 @@ export function inferCall(
   const argTypes = expr.args.map((a) =>
     inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
   );
+  for (const argType of argTypes) {
+    recordConsumedFfiUse(facts, argType, {
+      kind: "call",
+      message:
+        "cannot pass unresolved JS FFI result as a call argument before FFI reflection resolves the member access",
+    });
+  }
   const arg = callArg(argTypes);
   const calleeFn = prune(callee);
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
