@@ -1,0 +1,91 @@
+-- sim.wm
+-- The simulation core: still 100% pure.
+--
+-- `World` is an immutable snapshot of every body. A frame is just
+-- `step : (World, Field, dt) -> World`. No globals, no mutation, no I/O. You
+-- could run this in a test harness and assert on positions; raylib never enters
+-- the picture.
+
+from "./vec.wm" import { Vec2, add, sub, scale, lengthSq, sqrt };
+from "./rng.wm" import { Rng, next, between };
+
+-- A single point mass. `hue` is carried so rendering can stay a pure read.
+record Body = { pos: Vec2, vel: Vec2, hue: Number };
+
+-- The whole simulation state.
+record World = { bodies: List<Body>, rng: Rng, t: Number };
+
+-- The force configuration for one frame: a fixed central attractor plus an
+-- optional mouse-driven one (positive g attracts, negative g repels).
+record Field = { center: Vec2, centerG: Number, mouse: Vec2, mouseG: Number };
+
+-- Newtonian-ish acceleration toward a target. We add a softening term to the
+-- squared distance so a body sitting exactly on an attractor doesn't fling off
+-- to infinity. a = g * d / (|d|^2 * |d|).
+let accelToward = (target: Vec2, p: Vec2, g: Number) => {
+  let d = sub(target, p);
+  let distSq = lengthSq(d) + 900;
+  let dist = sqrt(distSq);
+  scale(d, g / (distSq * dist))
+};
+
+-- Advance one body with semi-implicit Euler integration and a whisper of drag
+-- so the system stays bounded over long runs.
+let stepBody = (field: Field, dt: Number, b: Body) => {
+  let pull = add(
+    accelToward(field.center, b.pos, field.centerG),
+    accelToward(field.mouse, b.pos, field.mouseG)
+  );
+  let vel = scale(add(b.vel, scale(pull, dt)), 0.9995);
+  let pos = add(b.pos, scale(vel, dt));
+  .{ pos = pos, vel = vel, hue = b.hue }
+};
+
+let step = (w: World, field: Field, dt: Number) => {
+  let bodies = List.map(w.bodies, (b) => { stepBody(field, dt, b) });
+  .{ bodies = bodies, rng = w.rng, t = w.t + dt }
+};
+
+-- Local normalize so we don't have to widen vec.wm's import surface.
+let vecNorm = (v: Vec2) => {
+  let lenSq = lengthSq(v);
+  if (lenSq <= 0) {
+    .{ x = 1, y = 0 }
+  } else {
+    scale(v, 1 / sqrt(lenSq))
+  }
+};
+
+-- Build `count` bodies scattered in a disk around `center`, each given a
+-- tangential velocity so the cloud starts as a rough orbiting swarm. The rng is
+-- threaded through every draw and handed back so callers can keep going.
+let rec spawnBodies = (count: Number, r: Rng, center: Vec2) => {
+  match(count) {
+    0 => { ([], r) },
+    _ => {
+      let ra = next(r);
+      let rb = next(ra);
+      let rc = next(rb);
+      let rd = next(rc);
+
+      let dir = vecNorm(.{ x = between(ra, -1, 1), y = between(rb, -1, 1) });
+      let radius = between(rc, 120, 340);
+      let pos = add(center, scale(dir, radius));
+
+      -- velocity perpendicular to the radius => orbital motion
+      let speed = between(rd, 70, 150);
+      let vel = scale(.{ x = 0 - dir.y, y = dir.x }, speed);
+
+      let hue = 200 + between(rd, 0, 130);
+      let body = .{ pos = pos, vel = vel, hue = hue };
+
+      let (rest, rEnd) = spawnBodies(count - 1, next(rd), center);
+      ([body, ..rest], rEnd)
+    }
+  }
+};
+
+let init = (count: Number, center: Vec2) => {
+  let (bodies, r) = spawnBodies(count, .{ seed = 987654321 }, center);
+  .{ bodies = bodies, rng = r, t = 0 }
+};

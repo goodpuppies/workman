@@ -1,0 +1,23 @@
+-- rng.wm
+-- A pure, deterministic pseudo-random number generator (Park-Miller "MINSTD").
+--
+-- A real `Math.random()` would be impure and would force Result handling into
+-- the simulation core. Instead the generator is just a number we thread by
+-- hand: `next` returns a fresh generator, `value` reads a [0, 1) sample from
+-- it. Same seed, same world, every run.
+
+record Rng = { seed: Number };
+
+-- 16807 * (largest seed < 2^31) stays well under 2^53, so the modulo is exact
+-- in JavaScript's float number type.
+let next = (r: Rng) => {
+  .{ seed = (r.seed * 16807) % 2147483647 }
+};
+
+let value = (r: Rng) => {
+  r.seed / 2147483647
+};
+
+let between = (r: Rng, lo: Number, hi: Number) => {
+  lo + value(r) * (hi - lo)
+};

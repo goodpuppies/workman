@@ -1,0 +1,53 @@
+-- color.wm
+-- A pure HSV -> RGB conversion, plus the Color record the raylib FFI expects.
+--
+-- raylib's `Color` is just { r, g, b, a } with 0..255 channels, so a Workman
+-- record lines up with it field-for-field. We compute colors from a hue angle
+-- with no FFI at all -- standard HSV sextant math.
+
+record Color = { r: Number, g: Number, b: Number, a: Number };
+
+let floorI = (n: Number) => {
+  n - (n % 1)
+};
+
+let absf = (n: Number) => {
+  if (n < 0) { 0 - n } else { n }
+};
+
+-- hue in [0, 360), saturation and value in [0, 1].
+let hsv = (hue: Number, saturation: Number, value: Number) => {
+  let c = value * saturation;
+  let hp = hue / 60;
+  let x = c * (1 - absf((hp % 2) - 1));
+  let m = value - c;
+
+  let parts =
+    if (hp < 1) { (c, x, 0) }
+    else {
+      if (hp < 2) { (x, c, 0) }
+      else {
+        if (hp < 3) { (0, c, x) }
+        else {
+          if (hp < 4) { (0, x, c) }
+          else {
+            if (hp < 5) { (x, 0, c) }
+            else { (c, 0, x) }
+          }
+        }
+      }
+    };
+
+  let (rp, gp, bp) = parts;
+  .{
+    r = floorI((rp + m) * 255),
+    g = floorI((gp + m) * 255),
+    b = floorI((bp + m) * 255),
+    a = 255
+  }
+};
+
+-- A copy of a color with a different alpha channel (for glow halos).
+let withAlpha = (color: Color, alpha: Number) => {
+  .{ r = color.r, g = color.g, b = color.b, a = alpha }
+};

@@ -177,6 +177,8 @@ export function inferBinding(
             provenance,
           ),
         annotated,
+        warnings,
+        diagnostics,
       )
       : inferExpr(
         b.value,

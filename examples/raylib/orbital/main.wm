@@ -1,0 +1,175 @@
+-- main.wm
+-- The one impure module: the raylib boundary.
+--
+-- Everything fallible (FFI) returns Result<_, Js.Error>, so the render path is
+-- a thread of `Result|...|` sequences and `match` on the outcome. The pure
+-- simulation (sim.wm / vec.wm / color.wm / rng.wm) is called straight through;
+-- only the values that cross the FFI line are wrapped.
+--
+-- run from the repo root:
+--   deno run -A src/main.ts run examples/raylib/orbital/main.wm
+
+from js.module("../raylib_ts_bindings_deno/raylib_bindings.ts") import * as Raylib;
+
+from "./vec.wm" import { Vec2 };
+from "./color.wm" import { Color, hsv, withAlpha, floorI };
+from "./sim.wm" import { World, Body, Field, init, step };
+
+type AppError =
+  | RaylibError<Js.Error>
+  | RenderError<Js.Error>;
+
+let raylibpath = "./examples/raylib/raylib.dll";
+let center = .{ x = 480, y = 270 };
+let bodyCount = 90;
+
+let bgColor   = .{ r = 12,  g = 14,  b = 22,  a = 255 };
+let titleColor= .{ r = 232, g = 234, b = 244, a = 255 };
+let hintColor = .{ r = 150, g = 160, b = 184, a = 255 };
+let sunCore   = .{ r = 255, g = 232, b = 160, a = 255 };
+let sunGlow   = .{ r = 255, g = 210, b = 120, a = 45  };
+let cursorCol = .{ r = 120, g = 200, b = 255, a = 255 };
+
+-- Draw one body: a soft glow halo plus a bright core, hue baked in at spawn.
+let drawBody = (b: Body) => {
+  let col = hsv(b.hue, 0.78, 1);
+  let x = floorI(b.pos.x);
+  let y = floorI(b.pos.y);
+  Result|
+    Raylib.H.DrawCircle(x, y, 8, withAlpha(col, 38)),
+    Raylib.H.DrawCircle(x, y, 3, col)
+  |
+};
+
+-- Sequence drawing over the immutable body list. A clean recursive fold that
+-- stops at the first FFI error.
+let rec drawBodies = match(bodies) => {
+  [] => { Ok(void) },
+  [b, ..rest] => {
+    match(drawBody(b)) {
+      Ok(_) => { drawBodies(rest) },
+      Err(e) => { Err(e) }
+    }
+  }
+};
+
+let drawSun = () => {
+  Result|
+    Raylib.H.DrawCircle(480, 270, 15, sunGlow),
+    Raylib.H.DrawCircle(480, 270, 6, sunCore)
+  |
+};
+
+let drawCursor = (mouse: Vec2, active: Bool) => {
+  let mx = floorI(mouse.x);
+  let my = floorI(mouse.y);
+  if (active) {
+    Result| Raylib.H.DrawCircle(mx, my, 22, withAlpha(cursorCol, 55)) |
+  } else {
+    Result| Raylib.H.DrawCircle(mx, my, 4, withAlpha(cursorCol, 140)) |
+  }
+};
+
+let drawHud = () => {
+  Result|
+    Raylib.H.DrawText("orbital sandbox", 16, 44, 22, titleColor),
+    Raylib.H.DrawText("hold left mouse: attract    hold right mouse: repel    esc: quit", 16, 72, 16, hintColor)
+  |
+};
+
+-- Render a full frame. Split into staged matches so each FFI failure short
+-- circuits with a typed AppError.
+let renderWorld = (w: World, mouse: Vec2, active: Bool) => {
+  match(
+    Result|
+      Raylib.BeginDrawing(),
+      Raylib.H.ClearBackground(bgColor)
+    | :> Result.mapErr(RenderError)
+  ) {
+    Ok(_) => {
+      match(drawBodies(w.bodies) :> Result.mapErr(RenderError)) {
+        Ok(_) => {
+          Result|
+            drawSun(),
+            drawCursor(mouse, active),
+            drawHud(),
+            Raylib.DrawFPS(16, 16),
+            Raylib.EndDrawing()
+          | :> Result.mapErr(RenderError)
+        },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+-- Read input, advance the pure simulation, render, hand back the next world.
+let drawFrame = (w: World) => {
+  match({
+    let ft = Raylib.GetFrameTime();
+    let mx = Raylib.GetMouseX();
+    let my = Raylib.GetMouseY();
+    let leftDown = Raylib.IsMouseButtonDown(0);
+    let rightDown = Raylib.IsMouseButtonDown(1);
+    Result|ft, mx, my, leftDown, rightDown| :> Result.mapErr(RenderError)
+  }) {
+    Ok((Var(ft), Var(mx), Var(my), Var(leftDown), Var(rightDown))) => {
+      let mouse = .{ x = mx, y = my };
+      let mouseG =
+        if (leftDown) {
+          9000000
+        } else {
+          if (rightDown) { 0 - 6000000 } else { 0 }
+        };
+      let field = .{ center = center, centerG = 2200000, mouse = mouse, mouseG = mouseG };
+      let nextWorld = step(w, field, ft);
+      match(renderWorld(nextWorld, mouse, leftDown || rightDown)) {
+        Ok(_) => { Ok(nextWorld) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+-- The frame loop: thread the immutable world forward until the window closes.
+let rec loop = (w: World) => {
+  match(Raylib.WindowShouldClose() :> Result.mapErr(RenderError)) {
+    Ok(true) => { Ok(void) },
+    Ok(false) => {
+      match(drawFrame(w)) {
+        Ok(nextWorld) => { loop(nextWorld) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let main = () => {
+  match(
+    Result|
+      Raylib.loadRaylib(raylibpath),
+      Raylib.H.InitWindow(960, 540, "orbital sandbox - workman"),
+      Raylib.SetTargetFPS(60)
+    | :> Result.mapErr(RaylibError)
+  ) {
+    Ok(_) => {
+      let world = init(bodyCount, center);
+      let result = loop(world);
+
+      let cleanup =
+        Result|
+          Raylib.CloseWindow(),
+          Raylib.unloadRaylib()
+        | :> Result.mapErr(RaylibError);
+
+      match(Result|result, cleanup|) {
+        Ok(_) => {},
+        Err(e) => { print(e) }
+      }
+    },
+    Err(e) => { print(e) }
+  }
+};

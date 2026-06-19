@@ -1,4 +1,5 @@
 import type { Expr } from "../ast.ts";
+import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
   fresh,
@@ -39,10 +40,12 @@ export function inferRecordExpr(
   typeEnv: TypeEnv,
   inferValue: InferValue,
   expected?: Ty,
+  warnings?: string[],
+  diagnostics?: FrontendDiagnostic[],
 ): Ty {
   rejectDuplicateFields(expr.fields.map((field) => field.name));
   const result = expectedRecord(expected, typeEnv) ??
-    freshRecord(recordCandidate(typeEnv, expr.fields.map((field) => field.name)));
+    freshRecord(recordCandidate(typeEnv, expr, warnings, diagnostics));
   const fieldTypes = instantiateRecordFields(recordInfo(result, typeEnv), result.args);
   const expectedNames = new Set(fieldTypes.map((field) => field.name));
   for (const field of expr.fields) {
@@ -170,13 +173,25 @@ function recordInfo(type: NamedTy, typeEnv: TypeEnv): TypeInfo {
 
 function recordCandidate(
   typeEnv: TypeEnv,
-  names: string[],
-  mode: "exact" | "contains" = "exact",
+  expr: Extract<Expr, { kind: "Record" }>,
+  warnings?: string[],
+  diagnostics?: FrontendDiagnostic[],
   ambiguous = "ambiguous record type",
 ): TypeInfo {
-  const candidates = findRecordTypes(typeEnv, names, mode);
+  const names = expr.fields.map((field) => field.name);
+  const candidates = findRecordTypes(typeEnv, names, "exact");
   if (candidates.length === 0) throw new Error("no matching record type");
-  if (candidates.length > 1) throw new Error(ambiguous);
+  if (candidates.length > 1) {
+    if (!warnings || !diagnostics) throw new Error(ambiguous);
+    const selected = candidates[0];
+    const candidateNames = candidates.map((candidate) => candidate.name).join(", ");
+    const message = `${ambiguous}; using first matching record type called ${selected.name}. ` +
+      `Candidates: ${candidateNames}. ` +
+      `Hint: use an annotation like \`x: ${selected.name} = .{ ... }\` or explicit form ` +
+      `\`x = ${selected.name}{ ... }\`.`;
+    warnings.push(message);
+    diagnostics.push(warningDiagnostic(message, expr.node, "record.ambiguous-literal"));
+  }
   return candidates[0];
 }
 

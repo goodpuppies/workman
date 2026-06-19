@@ -1,0 +1,416 @@
+-- main.wm
+-- "Orbital Run" — the impure boundary: input, rendering, the frame loop.
+--
+-- The app is a pure value (`App`) threaded through `loop`. Each frame:
+--   1. read raylib input  (FFI -> Result)
+--   2. `advance` the app   (pure: App -> App, a scene state machine)
+--   3. render the scene     (FFI -> Result)
+--
+-- This version leans on more of raylib 5.5:
+--   * Camera2D            — mouse-wheel zoom + proximity screen-shake
+--   * additive blend mode — luminous bloom on orbs / sparks / corona
+--   * DrawRing            — an animated sun corona
+--   * DrawCircleGradient  — soft glows instead of stacked alpha circles
+--   * DrawRectangleRounded / DrawRectangleGradientV — HUD panels + backdrop
+--
+-- run from the repo root:
+--   deno run -A src/main.ts run examples/raylib/orbital_run/main.wm
+
+from js.module("../raylib_ts_bindings_deno/raylib_bindings.ts") import * as Raylib;
+
+from "../orbital/vec.wm" import { Vec2, add, sub, scale, normalize, length };
+from "../orbital/color.wm" import { Color, hsv, withAlpha, floorI };
+from "../orbital/rng.wm" import { Rng };
+from "./listx.wm" import { count };
+from "./game.wm" import {
+  Game, Ship, Orb, Spark, Status, Running, Won, Lost, Input, newGame, stepGame
+};
+
+type AppError =
+  | RaylibError<Js.Error>
+  | RenderError<Js.Error>;
+
+type Scene =
+  | Title
+  | Playing<Game>
+  | Over<Game>;
+
+-- `zoom` is carried in the app so mouse-wheel zoom persists across frames.
+record App = { scene: Scene, rng: Rng, zoom: Number };
+
+-- Records that mirror raylib structs field-for-field. The FFI matches them
+-- structurally, so a Workman record flows straight into a `Vector2`/`Camera2D`/
+-- `Rectangle` parameter.
+record Camera2D = { offset: Vec2, target: Vec2, rotation: Number, zoom: Number };
+record Rectangle = { x: Number, y: Number, width: Number, height: Number };
+
+let raylibpath = "./examples/raylib/raylib.dll";
+let screenW = 960;
+let center = .{ x = 480, y = 270 };
+
+-- additive blend mode constant (raylib BLEND_ADDITIVE)
+let blendAdditive = 1;
+
+-- raylib key codes (verified against the generated bindings).
+let keyRight = 262;
+let keyLeft  = 263;
+let keyDown  = 264;
+let keyUp    = 265;
+let keyW = 87;
+let keyA = 65;
+let keyS = 83;
+let keyD = 68;
+let keySpace = 32;
+let keyR = 82;
+
+-- ---- palette --------------------------------------------------------------
+
+let bgTop       = .{ r = 16,  g = 18,  b = 30,  a = 255 };
+let bgBottom    = .{ r = 4,   g = 5,   b = 10,  a = 255 };
+let panelColor  = .{ r = 18,  g = 22,  b = 34,  a = 180 };
+let titleColor  = .{ r = 236, g = 239, b = 248, a = 255 };
+let hintColor   = .{ r = 150, g = 162, b = 188, a = 255 };
+let accentColor = .{ r = 120, g = 220, b = 255, a = 255 };
+let shipColor   = .{ r = 120, g = 230, b = 255, a = 255 };
+let shipNose    = .{ r = 255, g = 255, b = 255, a = 255 };
+let flameColor  = .{ r = 255, g = 170, b = 70,  a = 255 };
+let sunCore     = .{ r = 255, g = 244, b = 200, a = 255 };
+let sunGlow     = .{ r = 255, g = 210, b = 120, a = 255 };
+let sunHalo     = .{ r = 255, g = 140, b = 50,  a = 255 };
+let dangerColor = .{ r = 255, g = 90,  b = 90,  a = 255 };
+let winColor    = .{ r = 140, g = 255, b = 170, a = 255 };
+let fuelBack    = .{ r = 40,  g = 44,  b = 58,  a = 255 };
+let fuelFill    = .{ r = 120, g = 230, b = 160, a = 255 };
+
+-- ---- tiny pure helpers ----------------------------------------------------
+
+let bit = (b: Bool) => {
+  if (b) { 1 } else { 0 }
+};
+
+let clamp = (v: Number, lo: Number, hi: Number) => {
+  if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
+};
+
+-- fractional part (t is always >= 0 here, so floorI's truncation == floor).
+let frac = (x: Number) => {
+  x - floorI(x)
+};
+
+-- ---- input ----------------------------------------------------------------
+
+-- Read keyboard + mouse wheel at the FFI boundary, then build a pure `Input`.
+let readInput = () => {
+  match(
+    Result|
+      Raylib.IsKeyDown(keyRight), Raylib.IsKeyDown(keyD),
+      Raylib.IsKeyDown(keyLeft),  Raylib.IsKeyDown(keyA),
+      Raylib.IsKeyDown(keyDown),  Raylib.IsKeyDown(keyS),
+      Raylib.IsKeyDown(keyUp),    Raylib.IsKeyDown(keyW),
+      Raylib.IsKeyPressed(keySpace),
+      Raylib.IsKeyPressed(keyR),
+      Raylib.H.GetMouseWheelMove()
+    |
+  ) {
+    Ok((Var(right), Var(d), Var(left), Var(a), Var(down), Var(s), Var(up), Var(w), Var(start), Var(restart), Var(wheel))) => {
+      let dx = bit(right || d) - bit(left || a);
+      let dy = bit(down || s) - bit(up || w);
+      let thrust =
+        if (dx == 0 && dy == 0) {
+          .{ x = 0, y = 0 }
+        } else {
+          normalize(.{ x = dx, y = dy })
+        };
+      Ok(.{ thrust = thrust, start = start, restart = restart, wheel = wheel })
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+-- ---- pure scene transitions ----------------------------------------------
+
+let advance = (app: App, input: Input, dt: Number) => {
+  let zoom = clamp(app.zoom + input.wheel * 0.1, 0.65, 2.4);
+  match(app.scene) {
+    Title => {
+      if (input.start) {
+        let (g, r2) = newGame(app.rng);
+        .{ scene = Playing(g), rng = r2, zoom = zoom }
+      } else {
+        .{ scene = Title, rng = app.rng, zoom = zoom }
+      }
+    },
+    Playing(g) => {
+      let stepped = stepGame(g, input, dt);
+      let scene =
+        match(stepped.status) {
+          Running => { Playing(stepped) },
+          Won => { Over(stepped) },
+          Lost => { Over(stepped) }
+        };
+      .{ scene = scene, rng = app.rng, zoom = zoom }
+    },
+    Over(g) => {
+      if (input.restart) {
+        let (ng, r2) = newGame(app.rng);
+        .{ scene = Playing(ng), rng = r2, zoom = zoom }
+      } else {
+        .{ scene = Over(g), rng = app.rng, zoom = zoom }
+      }
+    }
+  }
+};
+
+-- ---- drawing --------------------------------------------------------------
+
+let drawCenteredText = (text: String, y: Number, size: Number, color: Color) => {
+  match(Raylib.H.MeasureText(text, size)) {
+    Ok(w) => { Raylib.H.DrawText(text, floorI((screenW - w) / 2), y, size, color) },
+    Err(e) => { Err(e) }
+  }
+};
+
+let drawBackground = () => {
+  Result| Raylib.H.DrawRectangleGradientV(0, 0, 960, 540, bgTop, bgBottom) |
+};
+
+-- Additive-blended corona: a soft radial glow plus two counter-rotating rings.
+let drawSunCorona = (t: Number) => {
+  let a = (t * 32) % 360;
+  Result|
+    Raylib.H.DrawCircleGradient(480, 270, 95, withAlpha(sunHalo, 120), withAlpha(sunHalo, 0)),
+    Raylib.H.DrawRing(center, 26, 40, a, a + 210, 64, withAlpha(sunGlow, 80)),
+    Raylib.H.DrawRing(center, 46, 54, 0 - a, 0 - a + 130, 64, withAlpha(sunHalo, 60))
+  |
+};
+
+let drawSunCore = () => {
+  Result|
+    Raylib.H.DrawCircle(480, 270, 13, sunGlow),
+    Raylib.H.DrawCircle(480, 270, 8, sunCore),
+    Raylib.H.DrawCircleLines(480, 270, 28, withAlpha(dangerColor, 110))
+  |
+};
+
+let drawShip = (s: Ship) => {
+  let x = floorI(s.pos.x);
+  let y = floorI(s.pos.y);
+  let dir = if (length(s.vel) > 0) { normalize(s.vel) } else { .{ x = 1, y = 0 } };
+  let nose = add(s.pos, scale(dir, 16));
+  let tail = sub(s.pos, scale(dir, 12));
+  match(
+    Result|
+      Raylib.H.DrawCircleGradient(x, y, 16, withAlpha(shipColor, 120), withAlpha(shipColor, 0)),
+      Raylib.H.DrawCircle(x, y, 6, shipColor),
+      Raylib.H.DrawLine(x, y, floorI(nose.x), floorI(nose.y), shipNose)
+    |
+  ) {
+    Ok(_) => {
+      if (s.thrusting) {
+        Result|
+          Raylib.H.DrawLine(x, y, floorI(tail.x), floorI(tail.y), flameColor),
+          Raylib.H.DrawCircle(floorI(tail.x), floorI(tail.y), 3, flameColor)
+        | :> Result.map((_) => { void })
+      } else {
+        Ok(void)
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let drawOrb = (o: Orb) => {
+  let col = hsv(o.hue, 0.85, 1);
+  let x = floorI(o.pos.x);
+  let y = floorI(o.pos.y);
+  Result|
+    Raylib.H.DrawCircleGradient(x, y, 15, withAlpha(col, 130), withAlpha(col, 0)),
+    Raylib.H.DrawCircle(x, y, 4, col)
+  |
+};
+
+let drawSpark = (s: Spark) => {
+  let col = hsv(s.hue, 0.45, 0.9);
+  Result|
+    Raylib.H.DrawCircle(floorI(s.pos.x), floorI(s.pos.y), s.size, withAlpha(col, 150))
+  |
+};
+
+let rec drawOrbs = match(orbs) => {
+  [] => { Ok(void) },
+  [o, ..rest] => {
+    match(drawOrb(o)) {
+      Ok(_) => { drawOrbs(rest) },
+      Err(e) => { Err(e) }
+    }
+  }
+};
+
+let rec drawSparks = match(sparks) => {
+  [] => { Ok(void) },
+  [s, ..rest] => {
+    match(drawSpark(s)) {
+      Ok(_) => { drawSparks(rest) },
+      Err(e) => { Err(e) }
+    }
+  }
+};
+
+let drawHud = (g: Game) => {
+  let fuelW = floorI(g.ship.fuel * 1.9);
+  Result|
+    Raylib.H.DrawRectangleRounded(.{ x = 10, y = 8, width = 250, height = 66 }, 0.22, 8, panelColor),
+    Raylib.H.DrawText("SCORE " ++ Result.textOf(g.score), 24, 16, 24, titleColor),
+    Raylib.H.DrawText("ORBS " ++ Result.textOf(count(g.orbs)), 24, 46, 18, hintColor),
+    Raylib.H.DrawRectangleRounded(.{ x = 10, y = 496, width = 282, height = 34 }, 0.5, 8, panelColor),
+    Raylib.H.DrawText("FUEL", 24, 505, 16, hintColor),
+    Raylib.H.DrawRectangle(76, 506, 192, 14, fuelBack),
+    Raylib.H.DrawRectangle(76, 506, fuelW, 14, fuelFill),
+    Raylib.DrawFPS(884, 14)
+  |
+};
+
+-- ---- per-scene renderers --------------------------------------------------
+-- Each is a single carrier sequence, so the success-payload arity differs;
+-- renderScene collapses each to Void before the match arms have to agree.
+
+let renderTitle = () => {
+  Result|
+    Raylib.BeginDrawing(),
+    drawBackground(),
+    Raylib.H.BeginBlendMode(blendAdditive),
+    drawSunCorona(0),
+    Raylib.H.EndBlendMode(),
+    drawSunCore(),
+    drawCenteredText("ORBITAL RUN", 120, 60, titleColor),
+    drawCenteredText("sweep up the energy orbs, don't fall into the sun", 360, 18, hintColor),
+    drawCenteredText("WASD / arrows to thrust     mouse wheel to zoom", 388, 18, hintColor),
+    drawCenteredText("press SPACE to launch", 430, 24, accentColor),
+    Raylib.EndDrawing()
+  |
+};
+
+let renderGame = (g: Game, zoom: Number) => {
+  let ship = g.ship;
+  -- proximity screen-shake: the closer to the sun, the harder it rattles.
+  let dist = length(sub(ship.pos, center));
+  let danger = clamp((210 - dist) / 210, 0, 1);
+  let amp = danger * danger * 8;
+  let shakeX = (frac(g.t * 53.3) * 2 - 1) * amp;
+  let shakeY = (frac(g.t * 71.7) * 2 - 1) * amp;
+  let cam = .{
+    offset = center,
+    target = .{ x = center.x + shakeX, y = center.y + shakeY },
+    rotation = 0,
+    zoom = zoom
+  };
+  Result|
+    Raylib.BeginDrawing(),
+    drawBackground(),
+    Raylib.H.BeginMode2D(cam),
+    Raylib.H.BeginBlendMode(blendAdditive),
+    drawSunCorona(g.t),
+    drawSparks(g.sparks),
+    drawOrbs(g.orbs),
+    Raylib.H.EndBlendMode(),
+    drawSunCore(),
+    drawShip(ship),
+    Raylib.H.EndMode2D(),
+    drawHud(g),
+    Raylib.EndDrawing()
+  |
+};
+
+let renderOver = (g: Game) => {
+  let headline =
+    match(g.status) {
+      Won => { ("FIELD CLEARED", winColor) },
+      Lost => { ("LOST TO THE SUN", dangerColor) },
+      Running => { ("RUN", titleColor) }
+    };
+  let (text, headColor) = headline;
+  Result|
+    Raylib.BeginDrawing(),
+    drawBackground(),
+    Raylib.H.BeginBlendMode(blendAdditive),
+    drawSunCorona(g.t),
+    drawSparks(g.sparks),
+    drawOrbs(g.orbs),
+    Raylib.H.EndBlendMode(),
+    drawSunCore(),
+    Raylib.H.DrawRectangleRounded(.{ x = 180, y = 176, width = 600, height = 188 }, 0.18, 12, panelColor),
+    drawCenteredText(text, 204, 46, headColor),
+    drawCenteredText("score  " ++ Result.textOf(g.score), 272, 28, titleColor),
+    drawCenteredText("press R to run again", 326, 20, accentColor),
+    Raylib.EndDrawing()
+  |
+};
+
+let renderScene = (scene: Scene, zoom: Number) => {
+  let drawn =
+    match(scene) {
+      Title => { renderTitle() :> Result.map((_) => { void }) },
+      Playing(g) => { renderGame(g, zoom) :> Result.map((_) => { void }) },
+      Over(g) => { renderOver(g) :> Result.map((_) => { void }) }
+    };
+  drawn :> Result.mapErr(RenderError)
+};
+
+-- ---- frame loop -----------------------------------------------------------
+
+let drawFrame = (app: App) => {
+  match({
+    let ft = Raylib.GetFrameTime();
+    let input = readInput();
+    Result|ft, input| :> Result.mapErr(RenderError)
+  }) {
+    Ok((Var(ft), Var(input))) => {
+      let stepped = advance(app, input, ft);
+      match(renderScene(stepped.scene, stepped.zoom)) {
+        Ok(_) => { Ok(stepped) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let rec loop = (app: App) => {
+  match(Raylib.WindowShouldClose() :> Result.mapErr(RenderError)) {
+    Ok(true) => { Ok(void) },
+    Ok(false) => {
+      match(drawFrame(app)) {
+        Ok(nextApp) => { loop(nextApp) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let main = () => {
+  match(
+    Result|
+      Raylib.loadRaylib(raylibpath),
+      Raylib.H.InitWindow(960, 540, "orbital run - workman"),
+      Raylib.SetTargetFPS(60)
+    | :> Result.mapErr(RaylibError)
+  ) {
+    Ok(_) => {
+      let app = .{ scene = Title, rng = .{ seed = 20260618 }, zoom = 1 };
+      let result = loop(app);
+
+      let cleanup =
+        Result|
+          Raylib.CloseWindow(),
+          Raylib.unloadRaylib()
+        | :> Result.mapErr(RaylibError);
+
+      match(Result|result, cleanup|) {
+        Ok(_) => {},
+        Err(e) => { print(e) }
+      }
+    },
+    Err(e) => { print(e) }
+  }
+};

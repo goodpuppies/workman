@@ -125,6 +125,9 @@ function inferExprInner(
             diagnostics,
             provenance,
           ),
+        undefined,
+        warnings,
+        diagnostics,
       );
       break;
     case "JsonObject":

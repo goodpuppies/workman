@@ -1,0 +1,259 @@
+-- sim.wm
+-- A tiny colony simulation, in the spirit of Dwarf Fortress's job system but
+-- with no player and no RPG: you watch an autonomous colony live.
+--
+-- 100% pure. The whole world is one immutable `Sim` value and a frame is
+-- `stepSim : (Sim, dt) -> Sim`. Agents make local decisions, resources deplete
+-- and regrow, and the population grows when the stockpile crosses rising
+-- thresholds. All the interesting behaviour is emergent from those rules.
+--
+-- The map is a flat list of tiles (index = z * gridN + x). Agents move in
+-- continuous grid space (a Vec2 where `y` is the world's z axis); terrain
+-- height is sampled per tile for rendering.
+
+from "../orbital/vec.wm" import { Vec2, add, sub, scale, length, lengthSq };
+from "../orbital/rng.wm" import { Rng, next, value };
+from "./trig.wm" import { sin, cos, floorReal };
+
+-- An agent's current task. A sum type keeps the state machine honest.
+type Job =
+  | Idle
+  | ToRes<Number>     -- walking to resource tile (carries the tile index)
+  | Mining<Number>    -- harvesting tile index
+  | ToHome;           -- hauling cargo back to the stockpile
+
+record Tile  = { h: Number, res: Number, fertile: Bool };
+record Agent = { pos: Vec2, job: Job, carry: Number };
+
+record Sim = {
+  tiles: List<Tile>,
+  agents: List<Agent>,
+  stockpile: Number,
+  threshold: Number,
+  rng: Rng,
+  t: Number
+};
+
+-- ---- constants ------------------------------------------------------------
+
+let gridN = 16;
+let maxRes = 6;
+let capacity = 4;
+let mineRate = 2.5;
+let regrowRate = 0.15;
+let moveSpeed = 2.4;
+let maxAgents = 48;
+let home = .{ x = 8, y = 8 };
+
+-- ---- small pure helpers ---------------------------------------------------
+
+let clamp = (v: Number, lo: Number, hi: Number) => {
+  if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
+};
+
+let rec count = match(xs) => {
+  [] => { 0 },
+  [_, ..rest] => { 1 + count(rest) }
+};
+
+-- World position of tile `i`'s cell (y holds the world z coordinate).
+let tileCenter = (i: Number) => {
+  .{ x = i % gridN, y = floorReal(i / gridN) }
+};
+
+let terrainH = (x: Number, z: Number) => {
+  let h = 1.6 + 1.2 * sin(x * 0.55) + 1.0 * cos(z * 0.5) + 0.6 * sin((x + z) * 0.4);
+  if (h < 0.4) { 0.4 } else { h }
+};
+
+let moveToward = (pos: Vec2, target: Vec2, dt: Number) => {
+  let d = sub(target, pos);
+  let len = length(d);
+  if (len < 0.0001) {
+    pos
+  } else {
+    let stepLen = moveSpeed * dt;
+    if (stepLen >= len) { target } else { add(pos, scale(d, stepLen / len)) }
+  }
+};
+
+let rec tileRes = (tiles: List<Tile>, i: Number) => {
+  match(tiles) {
+    [] => { 0 },
+    [t, ..rest] => { if (i == 0) { t.res } else { tileRes(rest, i - 1) } }
+  }
+};
+
+-- Nearest fertile, non-empty tile to `from`; returns its index, or -1.
+let rec nearestFrom = (tiles: List<Tile>, i: Number, origin: Vec2, bestIdx: Number, bestD: Number) => {
+  match(tiles) {
+    [] => { bestIdx },
+    [t, ..rest] => {
+      let consider = t.fertile && (t.res >= 1);
+      let d = lengthSq(sub(origin, tileCenter(i)));
+      let better = consider && (d < bestD);
+      let ni = if (better) { i } else { bestIdx };
+      let nd = if (better) { d } else { bestD };
+      nearestFrom(rest, i + 1, origin, ni, nd)
+    }
+  }
+};
+
+let nearestResource = (tiles: List<Tile>, origin: Vec2) => {
+  nearestFrom(tiles, 0, origin, 0 - 1, 1000000)
+};
+
+-- ---- per-agent step -------------------------------------------------------
+-- Returns (agent, harvestTileIdx, harvestAmount, depositAmount).
+-- harvestTileIdx == -1 means "no harvest this frame".
+
+let stepAgent = (tiles: List<Tile>, ag: Agent, dt: Number) => {
+  match(ag.job) {
+    Idle => {
+      let idx = nearestResource(tiles, ag.pos);
+      if (idx >= 0) {
+        (.{ pos = ag.pos, job = ToRes(idx), carry = ag.carry }, 0 - 1, 0, 0)
+      } else {
+        (ag, 0 - 1, 0, 0)
+      }
+    },
+    ToRes(idx) => {
+      let target = tileCenter(idx);
+      if (lengthSq(sub(ag.pos, target)) < 0.09) {
+        (.{ pos = ag.pos, job = Mining(idx), carry = ag.carry }, 0 - 1, 0, 0)
+      } else {
+        (.{ pos = moveToward(ag.pos, target, dt), job = ToRes(idx), carry = ag.carry }, 0 - 1, 0, 0)
+      }
+    },
+    Mining(idx) => {
+      let amt = mineRate * dt;
+      if (tileRes(tiles, idx) < 1) {
+        (.{ pos = ag.pos, job = ToHome, carry = ag.carry }, 0 - 1, 0, 0)
+      } else {
+        if (ag.carry + amt >= capacity) {
+          (.{ pos = ag.pos, job = ToHome, carry = capacity }, idx, amt, 0)
+        } else {
+          (.{ pos = ag.pos, job = Mining(idx), carry = ag.carry + amt }, idx, amt, 0)
+        }
+      }
+    },
+    ToHome => {
+      if (lengthSq(sub(ag.pos, home)) < 0.09) {
+        (.{ pos = ag.pos, job = Idle, carry = 0 }, 0 - 1, 0, ag.carry)
+      } else {
+        (.{ pos = moveToward(ag.pos, home, dt), job = ToHome, carry = ag.carry }, 0 - 1, 0, 0)
+      }
+    }
+  }
+};
+
+-- ---- folding the per-agent results ---------------------------------------
+
+let agentsOf = (results) => {
+  List.map(results, (r) => { let (a, _, _, _) = r; a })
+};
+
+let rec sumDeposits = match(results) => {
+  [] => { 0 },
+  [r, ..rest] => { let (_, _, _, dep) = r; dep + sumDeposits(rest) }
+};
+
+let rec collectHarvests = match(results) => {
+  [] => { [] },
+  [r, ..rest] => {
+    let (_, hidx, hamt, _) = r;
+    if (hidx >= 0) {
+      [(hidx, hamt), ..collectHarvests(rest)]
+    } else {
+      collectHarvests(rest)
+    }
+  }
+};
+
+let rec harvestedAt = (harvests, i: Number) => {
+  match(harvests) {
+    [] => { 0 },
+    [h, ..rest] => {
+      let (idx, amt) = h;
+      -- `idx - i` forces both to Number, sidestepping equality on a generic var
+      if (idx - i == 0) { amt + harvestedAt(rest, i) } else { harvestedAt(rest, i) }
+    }
+  }
+};
+
+-- Regrow fertile tiles and subtract everything harvested this frame.
+let rec rebuildTiles = (tiles: List<Tile>, i: Number, harvests, dt: Number) => {
+  match(tiles) {
+    [] => { [] },
+    [t, ..rest] => {
+      let grow = if (t.fertile) { regrowRate * dt } else { 0 };
+      let taken = harvestedAt(harvests, i);
+      let res = clamp(t.res + grow - taken, 0, maxRes);
+      let nt = .{ h = t.h, res = res, fertile = t.fertile };
+      [nt, ..rebuildTiles(rest, i + 1, harvests, dt)]
+    }
+  }
+};
+
+-- ---- the frame step -------------------------------------------------------
+
+let stepSim = (sim: Sim, dt: Number) => {
+  let results = List.map(sim.agents, (a) => { stepAgent(sim.tiles, a, dt) });
+  let agents = agentsOf(results);
+  let deposits = sumDeposits(results);
+  let harvests = collectHarvests(results);
+  let tiles = rebuildTiles(sim.tiles, 0, harvests, dt);
+  let stock = sim.stockpile + deposits;
+  let n = count(agents);
+  let grow = (stock >= sim.threshold) && (n < maxAgents);
+  let agents2 = if (grow) { [.{ pos = home, job = Idle, carry = 0 }, ..agents] } else { agents };
+  let threshold2 = if (grow) { sim.threshold + 12 } else { sim.threshold };
+  .{
+    tiles = tiles,
+    agents = agents2,
+    stockpile = stock,
+    threshold = threshold2,
+    rng = sim.rng,
+    t = sim.t + dt
+  }
+};
+
+-- ---- world generation -----------------------------------------------------
+
+let rec buildTiles = (i: Number, total: Number, r: Rng) => {
+  if (i >= total) {
+    ([], r)
+  } else {
+    let x = i % gridN;
+    let z = floorReal(i / gridN);
+    let h = terrainH(x, z);
+    let r1 = next(r);
+    let fertile = value(r1) < 0.16;
+    let res = if (fertile) { maxRes } else { 0 };
+    let tile = .{ h = h, res = res, fertile = fertile };
+    let (rest, r2) = buildTiles(i + 1, total, r1);
+    ([tile, ..rest], r2)
+  }
+};
+
+let rec initialAgents = (n: Number) => {
+  match(n) {
+    0 => { [] },
+    _ => {
+      let ag = .{ pos = .{ x = 7 + (n % 3), y = 7 + (n % 2) }, job = Idle, carry = 0 };
+      [ag, ..initialAgents(n - 1)]
+    }
+  }
+};
+
+let initSim = (seed: Number) => {
+  let (tiles, r) = buildTiles(0, gridN * gridN, .{ seed = seed });
+  .{
+    tiles = tiles,
+    agents = initialAgents(6),
+    stockpile = 0,
+    threshold = 10,
+    rng = r,
+    t = 0
+  }
+};

@@ -1,0 +1,287 @@
+-- main3d.wm
+-- The 3D viewer for the colony simulation — the only impure module.
+--
+-- An orbiting Camera3D looks down on a voxel map. Terrain is a cube per tile,
+-- fertile tiles carry a crystal that shrinks as it's mined, agents are spheres
+-- coloured by their current job, and the central stockpile grows as a tower.
+-- You don't control anything: you watch the colony harvest, haul, and grow.
+--
+-- run from the repo root:
+--   deno run -A src/main.ts run examples/raylib/colony/main3d.wm
+
+from js.module("../raylib_ts_bindings_deno/raylib_bindings.ts") import * as Raylib;
+
+from "../orbital/vec.wm" import { Vec2 };
+from "../orbital/color.wm" import { Color, floorI };
+from "./trig.wm" import { sin, cos, floorReal };
+from "./sim.wm" import {
+  Sim, Tile, Agent, Job, Idle, ToRes, Mining, ToHome,
+  initSim, stepSim, terrainH, gridN, maxRes, home, count
+};
+
+type AppError =
+  | RaylibError<Js.Error>
+  | RenderError<Js.Error>;
+
+-- Records that mirror raylib's 3D structs field-for-field (matched structurally
+-- by the FFI).
+record Vec3 = { x: Number, y: Number, z: Number };
+record Camera3D = { position: Vec3, target: Vec3, up: Vec3, fovy: Number, projection: Number };
+
+-- The whole viewer state: the pure sim plus camera orbit + pause.
+record App = { sim: Sim, yaw: Number, pitch: Number, radius: Number, paused: Bool };
+record Input = { yawDelta: Number, pitchDelta: Number, wheel: Number, togglePause: Bool };
+
+let raylibpath = "./examples/raylib/raylib.dll";
+
+let keyLeft  = 263;
+let keyRight = 262;
+let keyUp    = 265;
+let keyDown  = 264;
+let keySpace = 32;
+
+-- ---- palette --------------------------------------------------------------
+
+let sky        = .{ r = 18,  g = 22,  b = 34,  a = 255 };
+let white      = .{ r = 236, g = 240, b = 248, a = 255 };
+let hint       = .{ r = 150, g = 162, b = 188, a = 255 };
+let accent     = .{ r = 255, g = 210, b = 120, a = 255 };
+let waterCol   = .{ r = 38,  g = 66,  b = 116, a = 255 };
+let rockCol    = .{ r = 116, g = 116, b = 128, a = 255 };
+let grassCol   = .{ r = 66,  g = 98,  b = 58,  a = 255 };
+let crystalCol = .{ r = 120, g = 232, b = 255, a = 255 };
+let stockCol   = .{ r = 230, g = 198, b = 90,  a = 255 };
+let beaconCol  = .{ r = 255, g = 240, b = 180, a = 255 };
+let miningCol  = .{ r = 255, g = 150, b = 70,  a = 255 };
+let haulCol    = .{ r = 120, g = 235, b = 150, a = 255 };
+let moveCol    = .{ r = 120, g = 190, b = 255, a = 255 };
+let idleCol    = .{ r = 170, g = 175, b = 190, a = 255 };
+
+-- ---- helpers --------------------------------------------------------------
+
+let bit = (b: Bool) => {
+  if (b) { 1 } else { 0 }
+};
+
+let clamp = (v: Number, lo: Number, hi: Number) => {
+  if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
+};
+
+-- ---- input + camera + update ----------------------------------------------
+
+let readInput = () => {
+  match(
+    Result|
+      Raylib.IsKeyDown(keyLeft),
+      Raylib.IsKeyDown(keyRight),
+      Raylib.IsKeyDown(keyUp),
+      Raylib.IsKeyDown(keyDown),
+      Raylib.H.GetMouseWheelMove(),
+      Raylib.IsKeyPressed(keySpace)
+    |
+  ) {
+    Ok((Var(left), Var(right), Var(up), Var(down), Var(wheel), Var(space))) => {
+      Ok(.{
+        yawDelta = bit(right) - bit(left),
+        pitchDelta = bit(up) - bit(down),
+        wheel = wheel,
+        togglePause = space
+      })
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let buildCamera = (yaw: Number, pitch: Number, radius: Number) => {
+  let mid = (gridN - 1) / 2;
+  let target = .{ x = mid, y = 1.5, z = mid };
+  let cp = cos(pitch);
+  let position = .{
+    x = target.x + radius * cp * sin(yaw),
+    y = target.y + radius * sin(pitch),
+    z = target.z + radius * cp * cos(yaw)
+  };
+  .{ position = position, target = target, up = .{ x = 0, y = 1, z = 0 }, fovy = 50, projection = 0 }
+};
+
+let advance = (app: App, input: Input, dt: Number) => {
+  let yaw = app.yaw + input.yawDelta * 1.4 * dt + 0.12 * dt;
+  let pitch = clamp(app.pitch + input.pitchDelta * 1.0 * dt, 0.18, 1.35);
+  let radius = clamp(app.radius - input.wheel * 1.6, 9, 46);
+  let paused = if (input.togglePause) { !app.paused } else { app.paused };
+  let sim = if (paused) { app.sim } else { stepSim(app.sim, dt) };
+  .{ sim = sim, yaw = yaw, pitch = pitch, radius = radius, paused = paused }
+};
+
+-- ---- drawing --------------------------------------------------------------
+
+let tileColor = (t: Tile) => {
+  if (t.fertile) {
+    .{ r = 60, g = 120 + floorI(t.res * 14), b = 72, a = 255 }
+  } else {
+    if (t.h < 0.7) {
+      waterCol
+    } else {
+      if (t.h > 3.2) { rockCol } else { grassCol }
+    }
+  }
+};
+
+let drawTile = (i: Number, t: Tile) => {
+  let x = i % gridN;
+  let z = floorReal(i / gridN);
+  let pos = .{ x = x, y = t.h / 2, z = z };
+  match(Result| Raylib.H.DrawCube(pos, 0.96, t.h, 0.96, tileColor(t)) |) {
+    Ok(_) => {
+      if (t.fertile && (t.res >= 1)) {
+        let ch = t.res / maxRes * 0.7 + 0.15;
+        let cpos = .{ x = x, y = t.h + ch / 2 + 0.05, z = z };
+        Result| Raylib.H.DrawCube(cpos, 0.4, ch, 0.4, crystalCol) |
+      } else {
+        Ok(void)
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let rec drawTiles = (tiles: List<Tile>, i: Number) => {
+  match(tiles) {
+    [] => { Ok(void) },
+    [t, ..rest] => {
+      match(drawTile(i, t)) {
+        Ok(_) => { drawTiles(rest, i + 1) },
+        Err(e) => { Err(e) }
+      }
+    }
+  }
+};
+
+let agentColor = (job: Job) => {
+  match(job) {
+    Mining(_) => { miningCol },
+    ToHome => { haulCol },
+    ToRes(_) => { moveCol },
+    Idle => { idleCol }
+  }
+};
+
+let drawAgent = (a: Agent) => {
+  let y = terrainH(a.pos.x, a.pos.y) + 0.35;
+  let pos = .{ x = a.pos.x, y = y, z = a.pos.y };
+  Result| Raylib.H.DrawSphere(pos, 0.28, agentColor(a.job)) |
+};
+
+let rec drawAgents = (agents: List<Agent>) => {
+  match(agents) {
+    [] => { Ok(void) },
+    [a, ..rest] => {
+      match(drawAgent(a)) {
+        Ok(_) => { drawAgents(rest) },
+        Err(e) => { Err(e) }
+      }
+    }
+  }
+};
+
+let drawStockpile = (stock: Number) => {
+  let baseY = terrainH(home.x, home.y);
+  let h = clamp(stock * 0.02, 0.25, 7);
+  let basePos = .{ x = home.x, y = baseY, z = home.y };
+  let topPos = .{ x = home.x, y = baseY + h + 0.6, z = home.y };
+  Result|
+    Raylib.H.DrawCylinder(basePos, 0.12, 0.8, h, 14, stockCol),
+    Raylib.H.DrawCylinderEx(basePos, topPos, 0.05, 0.05, 6, beaconCol)
+  |
+};
+
+let pausedLabel = (paused: Bool) => {
+  if (paused) { "PAUSED  (space)" } else { "running  (space to pause)" }
+};
+
+let drawHud = (sim: Sim, paused: Bool) => {
+  Result|
+    Raylib.H.DrawText("COLONY", 16, 12, 28, white),
+    Raylib.H.DrawText("pop    " ++ Result.textOf(count(sim.agents)), 16, 48, 20, hint),
+    Raylib.H.DrawText("stock  " ++ Result.textOf(floorI(sim.stockpile)), 16, 72, 20, hint),
+    Raylib.H.DrawText(pausedLabel(paused), 16, 100, 18, accent),
+    Raylib.H.DrawText("mouse wheel: zoom    arrow keys: orbit    space: pause", 16, 514, 16, hint),
+    Raylib.DrawFPS(884, 14)
+  |
+};
+
+let renderApp = (app: App) => {
+  let cam = buildCamera(app.yaw, app.pitch, app.radius);
+  let drawn =
+    Result|
+      Raylib.BeginDrawing(),
+      Raylib.H.ClearBackground(sky),
+      Raylib.H.BeginMode3D(cam),
+      drawTiles(app.sim.tiles, 0),
+      drawAgents(app.sim.agents),
+      drawStockpile(app.sim.stockpile),
+      Raylib.H.EndMode3D(),
+      drawHud(app.sim, app.paused),
+      Raylib.EndDrawing()
+    |;
+  drawn :> Result.mapErr(RenderError)
+};
+
+-- ---- frame loop -----------------------------------------------------------
+
+let drawFrame = (app: App) => {
+  match({
+    let ft = Raylib.GetFrameTime();
+    let input = readInput();
+    Result|ft, input| :> Result.mapErr(RenderError)
+  }) {
+    Ok((Var(ft), Var(input))) => {
+      let stepped = advance(app, input, ft);
+      match(renderApp(stepped)) {
+        Ok(_) => { Ok(stepped) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let rec loop = (app: App) => {
+  match(Raylib.WindowShouldClose() :> Result.mapErr(RenderError)) {
+    Ok(true) => { Ok(void) },
+    Ok(false) => {
+      match(drawFrame(app)) {
+        Ok(nextApp) => { loop(nextApp) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let main = () => {
+  match(
+    Result|
+      Raylib.loadRaylib(raylibpath),
+      Raylib.H.InitWindow(960, 540, "colony - workman"),
+      Raylib.SetTargetFPS(60)
+    | :> Result.mapErr(RaylibError)
+  ) {
+    Ok(_) => {
+      let app = .{ sim = initSim(20260619), yaw = 0.7, pitch = 0.62, radius = 26, paused = false };
+      let result = loop(app);
+
+      let cleanup =
+        Result|
+          Raylib.CloseWindow(),
+          Raylib.unloadRaylib()
+        | :> Result.mapErr(RaylibError);
+
+      match(Result|result, cleanup|) {
+        Ok(_) => {},
+        Err(e) => { print(e) }
+      }
+    },
+    Err(e) => { print(e) }
+  }
+};

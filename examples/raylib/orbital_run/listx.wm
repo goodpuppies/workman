@@ -1,0 +1,26 @@
+-- listx.wm
+-- A few list helpers the standard library doesn't ship yet (std/list.wm only
+-- has map / foldRight / collectWith). All pure, all recursive.
+
+let rec filter = match(items, keep) => {
+  ([], _) => { [] },
+  ([x, ..rest], _) => {
+    if (keep(x)) {
+      [x, ..filter(rest, keep)]
+    } else {
+      filter(rest, keep)
+    }
+  }
+};
+
+-- Named `count` rather than `length` so it never clashes with vec.wm's vector
+-- length when both are imported into the same module.
+let rec count = match(items) => {
+  [] => { 0 },
+  [_, ..rest] => { 1 + count(rest) }
+};
+
+let isEmpty = match(items) => {
+  [] => { true },
+  _ => { false }
+};

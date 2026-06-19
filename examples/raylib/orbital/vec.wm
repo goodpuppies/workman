@@ -1,0 +1,66 @@
+-- vec.wm
+-- A tiny pure 2D vector module.
+--
+-- Everything here is ordinary Workman arithmetic: no FFI, no Result, no
+-- mutation. That is the whole point of this project -- the simulation core is
+-- pure, so it is trivial to reason about and test, and only `main.wm` ever
+-- touches the impure raylib boundary.
+
+record Vec2 = { x: Number, y: Number };
+
+let add = (a: Vec2, b: Vec2) => {
+  .{ x = a.x + b.x, y = a.y + b.y }
+};
+
+let sub = (a: Vec2, b: Vec2) => {
+  .{ x = a.x - b.x, y = a.y - b.y }
+};
+
+let scale = (v: Vec2, s: Number) => {
+  .{ x = v.x * s, y = v.y * s }
+};
+
+let dot = (a: Vec2, b: Vec2) => {
+  a.x * b.x + a.y * b.y
+};
+
+let lengthSq = (v: Vec2) => {
+  v.x * v.x + v.y * v.y
+};
+
+-- Square root via Newton's method. We have no math FFI in the pure core, so we
+-- grow our own: x_{n+1} = (x_n + value / x_n) / 2. Twenty iterations is plenty
+-- for the magnitudes we deal with here.
+let rec sqrtIter = (value: Number, guess: Number, steps: Number) => {
+  match(steps) {
+    0 => { guess },
+    _ => { sqrtIter(value, (guess + value / guess) / 2, steps - 1) }
+  }
+};
+
+let sqrt = (value: Number) => {
+  if (value <= 0) {
+    0
+  } else {
+    sqrtIter(value, value, 20)
+  }
+};
+
+let length = (v: Vec2) => {
+  sqrt(lengthSq(v))
+};
+
+let normalize = (v: Vec2) => {
+  let len = length(v);
+  if (len <= 0) {
+    .{ x = 0, y = 0 }
+  } else {
+    scale(v, 1 / len)
+  }
+};
+
+-- Rotate a vector 90 degrees counter-clockwise. Handy for turning a radial
+-- direction into a tangential (orbital) one without any trigonometry.
+let perp = (v: Vec2) => {
+  .{ x = 0 - v.y, y = v.x }
+};

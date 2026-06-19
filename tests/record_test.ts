@@ -1,4 +1,4 @@
-import { assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkFile, checkSource, checkSourceSteps, checkVirtual } from "../src/compiler.ts";
 import { expectBinding, expectStepBinding, expectStepMissing } from "./type_helpers.ts";
 
@@ -66,17 +66,21 @@ Deno.test("record elaboration snapshots expose record values after declaration o
   expectStepBinding(steps, 2, "getX", { type: "(Point) => Number", vars: 0 });
 });
 
-Deno.test("records are nominal and reject shape-only ambiguity", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
-        record Point = { x: Number, y: Number };
-        record Vector = { x: Number, y: Number };
-        let p = .{ x = 10, y = 20 };
-      `),
-    Error,
-    "ambiguous record type",
-  );
+Deno.test("records warn and choose first nominal type on shape-only ambiguity", async () => {
+  const result = await checkSource(`
+    record Point = { x: Number, y: Number };
+    record Vector = { x: Number, y: Number };
+    let p = .{ x = 10, y = 20 };
+  `);
+
+  expectBinding(result.env, "p", { type: "Point", vars: 0 });
+  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
+    "record.ambiguous-literal",
+  ]);
+  assertStringIncludes(result.warnings[0], "using first matching record type called Point");
+  assertStringIncludes(result.warnings[0], "Candidates: Point, Vector");
+  assertStringIncludes(result.warnings[0], "Hint: use an annotation like `x: Point = .{ ... }`");
+  assertStringIncludes(result.warnings[0], "or explicit form `x = Point{ ... }`");
 });
 
 Deno.test("record annotations disambiguate same-shaped nominal records", async () => {

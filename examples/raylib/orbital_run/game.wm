@@ -1,0 +1,218 @@
+-- game.wm
+-- "Orbital Run" — the pure game core.
+--
+-- Same discipline as the orbital sandbox: zero FFI here. A frame is a pure
+-- `stepGame : (Game, Input, dt) -> Game`. The whole game is a value you could
+-- run in a test and assert on. main.wm is the only place raylib exists.
+--
+-- You pilot a ship caught in a sun's gravity well. Thrust to steer, sweep up
+-- the orbiting energy orbs (they refuel you), and don't fall into the sun.
+
+from "../orbital/vec.wm" import { Vec2, add, sub, scale, lengthSq, length, sqrt, normalize };
+from "../orbital/rng.wm" import { Rng, next, value, between };
+from "./listx.wm" import { filter, count, isEmpty };
+
+-- Outcome of a run. A sum type is exactly the right shape for "what scene are
+-- we in", and pattern matching keeps the transitions honest.
+type Status = Running | Won | Lost;
+
+record Ship  = { pos: Vec2, vel: Vec2, fuel: Number, thrusting: Bool };
+record Orb   = { pos: Vec2, vel: Vec2, hue: Number };
+-- `size` also keeps Spark structurally distinct from Orb; two nominal records
+-- with identical fields make `.{ ... }` literals ambiguous to infer.
+record Spark = { pos: Vec2, vel: Vec2, hue: Number, size: Number };
+
+record Game = {
+  ship: Ship,
+  orbs: List<Orb>,
+  sparks: List<Spark>,
+  score: Number,
+  status: Status,
+  t: Number
+};
+
+-- A normalized thrust direction (length 0 or 1) plus the meta keys, all read at
+-- the FFI boundary and handed in as plain pure data.
+record Input = { thrust: Vec2, start: Bool, restart: Bool, wheel: Number };
+
+-- ---- world constants ------------------------------------------------------
+
+let screenW = 960;
+let screenH = 540;
+let sun = .{ x = 480, y = 270 };
+let sunG = 2600000;
+let sunRadius = 28;
+let collectRadius = 18;
+let thrustAccel = 540;
+let maxFuel = 100;
+
+-- ---- small pure helpers ---------------------------------------------------
+
+let clamp = (v: Number, lo: Number, hi: Number) => {
+  if (v < lo) { lo } else { if (v > hi) { hi } else { v } }
+};
+
+let fmod = (a: Number, m: Number) => {
+  let r = a % m;
+  if (r < 0) { r + m } else { r }
+};
+
+-- Toroidal wrap so the ship can never be lost off-screen forever.
+let wrap = (p: Vec2) => {
+  .{ x = fmod(p.x, screenW), y = fmod(p.y, screenH) }
+};
+
+let withinSq = (a: Vec2, b: Vec2, radius: Number) => {
+  lengthSq(sub(a, b)) < radius * radius
+};
+
+-- Newtonian-ish gravity with softening, identical idea to the sandbox.
+let gravity = (target: Vec2, p: Vec2, g: Number) => {
+  let d = sub(target, p);
+  let distSq = lengthSq(d) + 400;
+  let dist = sqrt(distSq);
+  scale(d, g / (distSq * dist))
+};
+
+let unit = (v: Vec2) => {
+  if (lengthSq(v) <= 0) {
+    .{ x = 1, y = 0 }
+  } else {
+    normalize(v)
+  }
+};
+
+-- Circular-orbit speed for a body at `radius` from the sun: v = sqrt(G / r).
+let orbitSpeed = (radius: Number) => {
+  sqrt(sunG / radius)
+};
+
+-- ---- per-entity stepping --------------------------------------------------
+
+let stepShip = (s: Ship, input: Input, dt: Number) => {
+  let canThrust = s.fuel > 0;
+  let push =
+    if (canThrust) {
+      scale(input.thrust, thrustAccel)
+    } else {
+      .{ x = 0, y = 0 }
+    };
+  let acc = add(gravity(sun, s.pos, sunG), push);
+  let vel = scale(add(s.vel, scale(acc, dt)), 0.999);
+  let pos = wrap(add(s.pos, scale(vel, dt)));
+  let burning = canThrust && (length(input.thrust) > 0);
+  let burned = if (burning) { 24 * dt } else { 0 };
+  .{ pos = pos, vel = vel, fuel = clamp(s.fuel - burned, 0, maxFuel), thrusting = burning }
+};
+
+let stepOrb = (o: Orb, dt: Number) => {
+  let vel = add(o.vel, scale(gravity(sun, o.pos, sunG), dt));
+  let pos = add(o.pos, scale(vel, dt));
+  .{ pos = pos, vel = vel, hue = o.hue }
+};
+
+let stepSpark = (s: Spark, dt: Number) => {
+  let vel = add(s.vel, scale(gravity(sun, s.pos, sunG), dt));
+  let pos = add(s.pos, scale(vel, dt));
+  .{ pos = pos, vel = vel, hue = s.hue, size = s.size }
+};
+
+-- ---- the frame step -------------------------------------------------------
+
+let stepGame = (g: Game, input: Input, dt: Number) => {
+  let ship = stepShip(g.ship, input, dt);
+
+  let movedOrbs = List.map(g.orbs, (o) => { stepOrb(o, dt) });
+  let remaining = filter(movedOrbs, (o) => { !withinSq(o.pos, ship.pos, collectRadius) });
+  let collected = count(movedOrbs) - count(remaining);
+
+  let fueledShip =
+    .{
+      pos = ship.pos,
+      vel = ship.vel,
+      fuel = clamp(ship.fuel + collected * 22, 0, maxFuel),
+      thrusting = ship.thrusting
+    };
+
+  let sparks = List.map(g.sparks, (s) => { stepSpark(s, dt) });
+
+  let status =
+    if (withinSq(fueledShip.pos, sun, sunRadius)) {
+      Lost
+    } else {
+      if (isEmpty(remaining)) { Won } else { Running }
+    };
+
+  .{
+    ship = fueledShip,
+    orbs = remaining,
+    sparks = sparks,
+    score = g.score + collected,
+    status = status,
+    t = g.t + dt
+  }
+};
+
+-- ---- spawning a fresh run -------------------------------------------------
+
+let rec spawnOrbs = (n: Number, r: Rng) => {
+  match(n) {
+    0 => { ([], r) },
+    _ => {
+      let ra = next(r);
+      let rb = next(ra);
+      let rc = next(rb);
+      let dir = unit(.{ x = between(ra, -1, 1), y = between(rb, -1, 1) });
+      let radius = between(rc, 150, 235);
+      let pos = add(sun, scale(dir, radius));
+      let vel = scale(.{ x = 0 - dir.y, y = dir.x }, orbitSpeed(radius));
+      let hue = between(rc, 35, 190);
+      let orb = .{ pos = pos, vel = vel, hue = hue };
+      let (rest, rEnd) = spawnOrbs(n - 1, next(rc));
+      ([orb, ..rest], rEnd)
+    }
+  }
+};
+
+let rec spawnSparks = (n: Number, r: Rng) => {
+  match(n) {
+    0 => { ([], r) },
+    _ => {
+      let ra = next(r);
+      let rb = next(ra);
+      let rc = next(rb);
+      let dir = unit(.{ x = between(ra, -1, 1), y = between(rb, -1, 1) });
+      let radius = between(rc, 90, 360);
+      let pos = add(sun, scale(dir, radius));
+      let vel = scale(.{ x = 0 - dir.y, y = dir.x }, orbitSpeed(radius));
+      let hue = 205 + between(rc, 0, 60);
+      let size = between(rc, 1, 2.6);
+      let spark = .{ pos = pos, vel = vel, hue = hue, size = size };
+      let (rest, rEnd) = spawnSparks(n - 1, next(rc));
+      ([spark, ..rest], rEnd)
+    }
+  }
+};
+
+-- Returns the new game and the advanced rng so restarts get fresh layouts.
+let newGame = (r: Rng) => {
+  let (orbs, r1) = spawnOrbs(9, r);
+  let (sparks, r2) = spawnSparks(70, r1);
+  let startRadius = 235;
+  let shipStart = .{ x = sun.x, y = sun.y + startRadius };
+  let ship = .{
+    pos = shipStart,
+    vel = .{ x = orbitSpeed(startRadius), y = 0 },
+    fuel = maxFuel,
+    thrusting = false
+  };
+  let game = .{
+    ship = ship,
+    orbs = orbs,
+    sparks = sparks,
+    score = 0,
+    status = Running,
+    t = 0
+  };
+  (game, r2)
+};
