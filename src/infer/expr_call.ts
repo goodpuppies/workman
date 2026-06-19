@@ -347,7 +347,10 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
       t.fields.forEach((field) => assertJsCompatible(field.type, typeEnv));
       return;
     case "named":
-      if (t.name === "Js.Value" || t.name === "Js.Object" || t.name === "Js.Error") return;
+      if (
+        t.name === "Js.Value" || t.name === "Js.Object" || t.name === "Js.Error" ||
+        t.name === "Js.ArrayLike"
+      ) return;
       if (t.name === "Js.Array" && t.args.length === 1) {
         assertJsCompatible(t.args[0], typeEnv);
         return;

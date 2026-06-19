@@ -2,7 +2,11 @@ import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
-import { materializeReceiverCall, materializeReceiverProperty } from "./materialize.ts";
+import {
+  materializeReceiverCall,
+  materializeReceiverProperty,
+  resolveArrayLikeParams,
+} from "./materialize.ts";
 import {
   expressionRefForReceiver,
   ffiCallPromiseElement,
@@ -34,7 +38,7 @@ import {
 } from "../reflect/types.ts";
 import { typeExprKey as reflectTypeExprKey } from "../reflect/ts_type_expr.ts";
 import { callArgHintForReflection, jsTypedArrayMember, receiverTypeThroughObligations } from "./delayed_reflection_hints.ts";
-import { addVariants, selectVariant, type FfiVariant } from "../shared.ts";
+import { addVariants, type FfiBinding, selectVariant, type FfiVariant } from "../shared.ts";
 
 export function resolveDelayedDecl(
   decl: Decl,
@@ -71,6 +75,15 @@ function resolveDelayedExpr(
       if (expr.callee.kind === "Var") {
         const deep = resolveDeepReflectedCall(expr, ffi, result, selected, valueRefs);
         if (deep) return deep;
+        const directArrayLike = resolveDirectArrayLikeCall(
+          expr,
+          ffi,
+          result,
+          selected,
+          options,
+          valueRefs,
+        );
+        if (directArrayLike) return directArrayLike;
       }
       return {
         ...expr,
@@ -556,7 +569,7 @@ function recordReceiverCall(
     expr.path,
     expr.args,
     receiverTypeExpr,
-    { name: expr.path.at(-1)!, type: member },
+    { name: expr.path.at(-1)!, type: flattenTupledParams(member) },
     `__deep_record.${typeExprKey(receiverTypeExpr)}.${expr.path.join(".")}`,
     ffi,
     result,
@@ -565,6 +578,20 @@ function recordReceiverCall(
     valueRefs,
     resolveDelayedExpr,
   );
+}
+
+// Workman represents a multi-argument function as a single tuple parameter
+// (`(a, b) => r` is `fn([(a, b)], r)`), whereas the FFI receiver pipeline
+// (`prependReceiver`/`selectVariant`) works with flat positional parameters like the
+// reflected-receiver path produces. Flatten a lone tuple parameter so a deep-record method
+// matches its call's argument arity.
+function flattenTupledParams(type: TypeExpr): TypeExpr {
+  if (
+    type.kind === "TFn" && type.params.length === 1 && type.params[0].kind === "TTuple"
+  ) {
+    return { ...type, params: type.params[0].items };
+  }
+  return type;
 }
 
 function recordPathMember(type: Extract<Ty, { tag: "named" }>, path: string[]): TypeExpr | undefined {
@@ -641,6 +668,83 @@ function resolveDeepReflectedCall(
     ...expr,
     callee: { kind: "Var", name: specialized.internalName },
   };
+}
+
+// Direct FFI binding calls (global/namespace members, constructors) pick their variant at
+// elaboration time, before argument types exist, so an array-like obligation in that variant's
+// signature is never narrowed there. In the delayed pass the inferred argument types are
+// available, so resolve the obligation on the already-selected variant: when the argument is a
+// concrete array-like, the parameter becomes that type; otherwise the obligation stays and
+// unification safely rejects a non-array-like argument. The elaboration-chosen overload is left
+// untouched — this only narrows, it does not re-select.
+function resolveDirectArrayLikeCall(
+  expr: Extract<Expr, { kind: "Call" }>,
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+  options: ResolveOptions,
+  valueRefs: Map<string, JsTypeRef>,
+): Expr | undefined {
+  if (expr.callee.kind !== "Var") return undefined;
+  const found = findVariantByInternalName(ffi.bindings, expr.callee.name);
+  if (!found || !typeMentionsArrayLike(found.variant.type)) return undefined;
+  const { surfaceName, variant } = found;
+  const argTypes = expr.args.map((arg) => {
+    const type = inferredType(result, arg);
+    return type ? knownTyToTypeExpr(type) : undefined;
+  });
+  const base = variant.fallible ? unwrapFallibleType(variant.type) : variant.type;
+  const resolved = resolveArrayLikeParams(base, argTypes);
+  if (typeExprKey(resolved) === typeExprKey(base)) return undefined;
+  addVariants(
+    ffi.bindings,
+    surfaceName,
+    variant.memberName,
+    variant.target,
+    [{
+      type: resolved,
+      resultRef: variant.resultRef,
+      callRef: variant.callRef,
+      callbackParamRefs: variant.callbackParamRefs,
+      deep: variant.deep,
+    }],
+    variant.fallible,
+    variant.node,
+  );
+  const specialized = lastVariant(ffi.bindings.get(surfaceName)?.variants ?? []);
+  if (!specialized) return undefined;
+  selected.add(specialized.internalName);
+  return {
+    ...expr,
+    callee: { kind: "Var", name: specialized.internalName },
+    args: expr.args.map((arg) =>
+      resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
+    ),
+  };
+}
+
+function findVariantByInternalName(
+  bindings: Map<string, FfiBinding>,
+  internalName: string,
+): { surfaceName: string; variant: FfiVariant } | undefined {
+  for (const binding of bindings.values()) {
+    const variant = binding.variants.find((item) => item.internalName === internalName);
+    if (variant) return { surfaceName: binding.surfaceName, variant };
+  }
+  return undefined;
+}
+
+function typeMentionsArrayLike(type: TypeExpr): boolean {
+  switch (type.kind) {
+    case "TName":
+      return type.name === "Js.ArrayLike" || type.args.some(typeMentionsArrayLike);
+    case "TTuple":
+      return type.items.some(typeMentionsArrayLike);
+    case "TFn":
+      return type.params.some(typeMentionsArrayLike) || typeMentionsArrayLike(type.result);
+    case "TVar":
+      return false;
+  }
 }
 
 function lastVariant(variants: FfiVariant[]): FfiVariant | undefined {

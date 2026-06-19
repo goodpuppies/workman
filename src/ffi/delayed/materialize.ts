@@ -10,6 +10,7 @@ import {
   type FfiBinding,
   type FfiElaboration,
   type FfiVariant,
+  isArrayLikeTypeName,
   memberVariants,
   prependReceiver,
   refsForCallbackArg,
@@ -82,8 +83,16 @@ export function materializeReceiverCall(
   valueRefs: Map<string, JsTypeRef>,
   resolveExpr: ResolveExpr,
 ): Expr {
+  const allArgs = [receiver, ...args];
+  const argTypes = [
+    receiverType,
+    ...args.map((arg) => {
+      const type = inferredType(result, arg);
+      return type ? knownTyToTypeExpr(type) : undefined;
+    }),
+  ];
   const variants = memberVariants(member).map((variant) => ({
-    type: prependReceiver(variant.type, receiverType),
+    type: resolveArrayLikeParams(prependReceiver(variant.type, receiverType), argTypes),
     resultRef: variant.resultRef,
     callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
       argIndex: item.argIndex + 1,
@@ -100,14 +109,6 @@ export function materializeReceiverCall(
     true,
     undefined,
   );
-  const allArgs = [receiver, ...args];
-  const argTypes = [
-    receiverType,
-    ...args.map((arg) => {
-      const type = inferredType(result, arg);
-      return type ? knownTyToTypeExpr(type) : undefined;
-    }),
-  ];
   const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], allArgs, argTypes);
   if (!variant) return { kind: "FfiCall", receiver, path, args };
   solveReflectedFfiValue(original, variant, result);
@@ -132,6 +133,47 @@ export function materializeReceiverCall(
       ),
     ],
   };
+}
+
+// Resolve an array-like obligation (`Js.ArrayLike`, possibly inside `Option`) against the
+// concrete call argument: the obligation leaf becomes the argument's concrete array-like type
+// (e.g. `Uint8Array`), so a `Uint8Array` argument satisfies a buffer-source parameter. The
+// surrounding structure is preserved, so `Option<Js.ArrayLike>` becomes `Option<Uint8Array>`
+// and only `Some(uint8)` satisfies it — a bare `Uint8Array` does not slip past the Option.
+// Arguments that do not supply a matching array-like leave the obligation in place, keeping
+// the boundary type-safe by rejecting them.
+export function resolveArrayLikeParams(
+  type: TypeExpr,
+  argTypes: (TypeExpr | undefined)[],
+): TypeExpr {
+  if (type.kind !== "TFn") return type;
+  return {
+    ...type,
+    params: type.params.map((param, index) => resolveArrayLikeParam(param, argTypes[index])),
+  };
+}
+
+function resolveArrayLikeParam(param: TypeExpr, arg: TypeExpr | undefined): TypeExpr {
+  if (param.kind === "TName" && param.name === "Js.ArrayLike") {
+    return arg && isArrayLikeArg(arg) ? arg : param;
+  }
+  if (param.kind === "TName" && param.name === "Option" && param.args.length === 1) {
+    const inner = resolveArrayLikeParam(param.args[0], optionElement(arg));
+    return inner === param.args[0] ? param : { ...param, args: [inner] };
+  }
+  return param;
+}
+
+// The obligation leaf inside an `Option` is resolved against the argument's `Option` element,
+// so it only narrows when the argument is itself optional (`Some(arraylike)`).
+function optionElement(arg: TypeExpr | undefined): TypeExpr | undefined {
+  return arg?.kind === "TName" && arg.name === "Option" && arg.args.length === 1
+    ? arg.args[0]
+    : undefined;
+}
+
+function isArrayLikeArg(type: TypeExpr): boolean {
+  return isArrayLikeTypeName(type);
 }
 
 export function solveReflectedFfiValue(

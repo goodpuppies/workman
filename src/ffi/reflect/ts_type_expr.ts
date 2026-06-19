@@ -35,6 +35,7 @@ function tsNamedType(type: Extract<TypeExpr, { kind: "TName" }>): string {
   if (type.name === "Void") return "void";
   if (type.name === "Js.Value") return "any";
   if (type.name === "Js.Object") return "object";
+  if (type.name === "Js.ArrayLike") return "AllowSharedBufferSource";
   if (type.name === "Js.Array" && type.args.length === 1) {
     return `Array<${tsTypeFromTypeExpr(type.args[0])}>`;
   }

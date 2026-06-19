@@ -254,6 +254,30 @@ function argScore(
   return 10;
 }
 
+// Concrete array-like / buffer types that satisfy a Js.ArrayLike obligation.
+export const arrayLikeTypeNames = new Set([
+  "Js.Array",
+  "Js.ArrayLike",
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+  "DataView",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Uint16Array",
+  "Uint32Array",
+  "Int8Array",
+  "Int16Array",
+  "Int32Array",
+  "Float32Array",
+  "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
+]);
+
+export function isArrayLikeTypeName(type: TypeExpr): boolean {
+  return type.kind === "TName" && arrayLikeTypeNames.has(type.name);
+}
+
 function typeDistance(expected: TypeExpr, actual: TypeExpr): number | undefined {
   if (expected.kind === "TName" && expected.name === "Js.Value") return 4;
   if (expected.kind !== actual.kind) return undefined;

@@ -165,6 +165,15 @@ export function baseTypeEnv(): TypeEnv {
       basis: true,
       argLabels: ["element"],
     });
+    // An array-like / buffer-source obligation. Reflected JS parameters typed as
+    // ArrayBuffer/BufferSource/AllowSharedBufferSource land here instead of opaque Js.Object;
+    // a call site resolves it to the concrete array-like argument type during FFI
+    // materialization (see resolveArrayLikeParams), so it stays safe rather than accepting
+    // anything like a broad Js.Value would.
+    basisTypeEnvCache.set("Js.ArrayLike", {
+      ...freshTypeInfo("Js.ArrayLike", 0),
+      basis: true,
+    });
     basisTypeEnvCache.set("Js.Dict", {
       ...freshTypeInfo("Js.Dict", 1),
       basis: true,

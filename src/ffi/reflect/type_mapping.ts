@@ -12,6 +12,13 @@ import { fn, name, option } from "../type_expr.ts";
 
 const maxReflectedRestArity = 8;
 
+type ReflectedParam = {
+  type: TypeExpr;
+  optional: boolean;
+  rest: boolean;
+  callbackRefs?: JsTypeRef[];
+};
+
 export function jsMemberTypeFromTsType(
   checker: ts.TypeChecker,
   type: ts.Type,
@@ -70,11 +77,16 @@ export function typeExprFromTsType(
   if (position === "param" && checker.typeToString(type) === "ArrayBuffer") {
     return name("ArrayBuffer");
   }
-  if (
-    position === "param" &&
-    /\b(ArrayBuffer|ArrayBufferLike|BufferSource)\b/.test(checker.typeToString(type))
-  ) {
-    return name("Js.Object");
+  // Buffer-source parameters (ArrayBuffer/BufferSource/AllowSharedBufferSource/typed-array
+  // views, including `| null` unions which TS flattens to several members) become an
+  // array-like obligation rather than an opaque Js.Object. The concrete array-like type is
+  // chosen from the call argument during FFI materialization, so the boundary stays type-safe.
+  // A nullable buffer source keeps Workman's `T | null` => Option modelling as
+  // Option<Js.ArrayLike>. Checked before the generic nullish/union handling because that path
+  // collapses multi-member unions to Js.Value.
+  if (position === "param") {
+    const bufferSource = bufferSourceParamExpr(checker, type);
+    if (bufferSource) return bufferSource;
   }
   if (isTsType(checker, type, "number")) return name("Number");
   if (isTsType(checker, type, "string")) return name("String");
@@ -180,6 +192,49 @@ function isNullish(type: ts.Type): boolean {
   return !!(type.flags & ts.TypeFlags.Null) || !!(type.flags & ts.TypeFlags.Undefined);
 }
 
+const bufferSourceTypeNames = new Set([
+  "AllowSharedBufferSource",
+  "BufferSource",
+  "ArrayBufferView",
+  "ArrayBufferLike",
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+]);
+
+// Maps a buffer-source parameter type to an array-like obligation, preserving nullability as
+// Option. Returns undefined for anything that is not (entirely) a buffer source. A union is a
+// buffer source only when every non-null member is one of the buffer type names; this
+// deliberately excludes unions that merely mention a buffer alongside other shapes (e.g.
+// `ArrayLike<number> | ArrayBuffer` on the Uint8Array constructor), which keep their broader
+// mapping.
+function bufferSourceParamExpr(checker: ts.TypeChecker, type: ts.Type): TypeExpr | undefined {
+  const members = type.isUnion() ? type.types : [type];
+  const nonNull = members.filter((item) => !isNullish(item));
+  if (nonNull.length === 0 || !nonNull.every((item) => isBufferSourceLeaf(checker, item))) {
+    return undefined;
+  }
+  const obligation = name("Js.ArrayLike");
+  return nonNull.length === members.length ? obligation : option(obligation);
+}
+
+function isBufferSourceLeaf(checker: ts.TypeChecker, type: ts.Type): boolean {
+  const own = bufferSourceTypeName(checker, type);
+  if (own && bufferSourceTypeNames.has(own)) return true;
+  if (type.isUnion()) {
+    return type.types.every((item) => isNullish(item) || isBufferSourceLeaf(checker, item));
+  }
+  return false;
+}
+
+function bufferSourceTypeName(checker: ts.TypeChecker, type: ts.Type): string | undefined {
+  const alias = type.aliasSymbol?.getName();
+  if (alias) return alias;
+  const symbol = type.getSymbol()?.getName();
+  if (symbol && symbol !== "__type") return symbol;
+  const text = checker.typeToString(type);
+  return /^[A-Za-z_$][\w$]*$/.test(text) ? text : undefined;
+}
+
 function functionTypeFromSignature(checker: ts.TypeChecker, signature: ts.Signature): TypeExpr {
   return functionVariantsFromSignature(checker, signature)[0].type;
 }
@@ -194,18 +249,19 @@ export function functionVariantsFromSignature(
   ) => JsTypeRef | undefined,
 ): JsCallableVariant[] {
   const declaration = signature.getDeclaration();
-  type ReflectedParam = {
-    type: TypeExpr;
-    optional: boolean;
-    rest: boolean;
-    callbackRefs?: JsTypeRef[];
-  };
   const parameters: ReflectedParam[] = signature
     .getParameters()
     .flatMap((symbol, index): ReflectedParam[] => {
       const declarationParam = declaration?.parameters[index];
       const type = typeOfSymbol(checker, symbol) ?? checker.getAnyType();
       if (declarationParam?.dotDotDotToken) {
+        // A rest parameter typed as a fixed-length tuple (e.g. Deno FFI symbols typed as
+        // `(...args: ToNativeParameterTypes<T["parameters"]>) => ...`) is really a fixed
+        // sequence of positional arguments. `getParameters()` keeps it as a single `args`
+        // symbol, so expand the tuple here to recover the real per-parameter types instead
+        // of fabricating uniform overloads from a single element type.
+        const tuple = tupleRestParams(checker, type, index, callbackParamRef);
+        if (tuple) return tuple;
         const element = restElementType(checker, type) ?? checker.getAnyType();
         const callbackRefs = callbackRefsForParam(checker, element, index, callbackParamRef);
         const mapped = paramTypeExpr(checker, element, index, callbackRefs);
@@ -390,6 +446,43 @@ function typeKey(type: TypeExpr): string {
     case "TFn":
       return `(${type.params.map(typeKey).join(",")})->${typeKey(type.result)}`;
   }
+}
+
+function tupleRestParams(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  baseIndex: number,
+  callbackParamRef?: (
+    paramIndex: number,
+    callbackParamIndex: number,
+    callbackParamType: ts.Type,
+  ) => JsTypeRef | undefined,
+): ReflectedParam[] | undefined {
+  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
+  const ref = type as ts.TypeReference;
+  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
+  if (!target || !(target.objectFlags & ts.ObjectFlags.Tuple)) return undefined;
+  const elements = checker.getTypeArguments(ref);
+  const flags = target.elementFlags ?? [];
+  // Only expand pure fixed/optional tuples; a nested rest/variadic element is still
+  // unbounded, so fall back to the rest-overload handling for those.
+  if (elements.some((_, index) => flags[index] & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic))) {
+    return undefined;
+  }
+  return elements.map((elementType, elementIndex) => {
+    const optional = !!(flags[elementIndex] & ts.ElementFlags.Optional);
+    const callbackRefs = callbackRefsForParam(
+      checker,
+      elementType,
+      baseIndex + elementIndex,
+      callbackParamRef,
+    );
+    const mapped = stripOptionForOptional(
+      paramTypeExpr(checker, elementType, baseIndex + elementIndex, callbackRefs),
+      optional,
+    );
+    return { type: mapped, optional, rest: false, callbackRefs };
+  });
 }
 
 function restElementType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
