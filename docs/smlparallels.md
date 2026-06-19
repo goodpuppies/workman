@@ -9,26 +9,26 @@ mostly expression-oriented programming.
 
 ## Quick Translation Table
 
-| SML concept | Workman spelling |
-| --- | --- |
-| `val x = e` | `let x = e;` |
-| `fun f x = e` | `let f = (x) => { e };` |
-| `fn x => e` | `(x) => { e }` |
-| `fn (x, y) => e` | `(x, y) => { e }` |
-| `f (x, y)` | `f(x, y)` |
-| `f x y` | `f(x)(y)` |
-| `(x, y)` | `(x, y)` |
-| `datatype t = A | B of int` | `type T = A | B<Number>;` |
-| `'a option` | `Option<T>` |
-| `NONE` / `SOME x` | `None` / `Some(x)` |
-| `case e of ...` | `match(e) { ... }` |
-| `if a then b else c` | `if (a) { b } else { c }` |
-| `let val x = a in b end` | `{ let x = a; b }` |
+| SML concept                  | Workman spelling                           |
+| ---------------------------- | ------------------------------------------ |
+| `val x = e`                  | `let x = e;`                               |
+| `fun f x = e`                | `let f = (x) => { e };`                    |
+| `fn x => e`                  | `(x) => { e }`                             |
+| `fn (x, y) => e`             | `(x, y) => { e }`                          |
+| `f (x, y)`                   | `f(x, y)`                                  |
+| `f x y`                      | `f(x)(y)`                                  |
+| `(x, y)`                     | `(x, y)`                                   |
+| `datatype t = A              | B of int`                                  |
+| `'a option`                  | `Option<T>`                                |
+| `NONE` / `SOME x`            | `None` / `Some(x)`                         |
+| `case e of ...`              | `match(e) { ... }`                         |
+| `if a then b else c`         | `if (a) { b } else { c }`                  |
+| `let val x = a in b end`     | `{ let x = a; b }`                         |
 | record type `{x:int, y:int}` | `record Point = { x: Number, y: Number };` |
-| record value `{x=1, y=2}` | `.{ x = 1, y = 2 }` |
-| list `[1,2,3]` | `[1, 2, 3]` |
-| cons pattern `x :: xs` | `[x, ..xs]` |
-| unit `()` | `void` |
+| record value `{x=1, y=2}`    | `.{ x = 1, y = 2 }`                        |
+| list `[1,2,3]`               | `[1, 2, 3]`                                |
+| cons pattern `x :: xs`       | `[x, ..xs]`                                |
+| unit `()`                    | `void`                                     |
 
 ## Values And Bindings
 
@@ -145,8 +145,8 @@ type Option<T> = None | Some<T>;
 type Tree = Leaf | Node<Number, Tree, Tree>;
 ```
 
-Constructor payloads are still one logical argument, as in SML. A constructor with multiple fields is
-a constructor taking a tuple payload.
+Constructor payloads are still one logical argument, as in SML. A constructor with multiple fields
+is a constructor taking a tuple payload.
 
 So:
 
@@ -327,7 +327,11 @@ let y = 2;
 let p = .{ x, y };
 ```
 
-Record spread/update is planned syntax, but not supported yet.
+Record spread/update copies an existing nominal record and applies later field overrides:
+
+```wm
+let p2 = .{ ..p, x = 10 };
+```
 
 ## Blocks Instead Of `let ... in ... end`
 

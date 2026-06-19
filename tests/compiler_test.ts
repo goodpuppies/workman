@@ -144,6 +144,13 @@ Deno.test("supports Workman tuple destructuring let bindings", async () => {
   `);
 });
 
+Deno.test("supports underscore-prefixed binders in let tuple patterns", async () => {
+  await checkSource(`
+    let (_a, __b) = (1, 2);
+    let sum = _a + __b;
+  `);
+});
+
 Deno.test("generalizes destructured let binding components", async () => {
   await checkSource(`
     let (id_a, id_b) = ((x) => { x }, (y) => { y });

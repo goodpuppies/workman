@@ -2,6 +2,7 @@
   "tasks": {
     "check": "deno check src/main.ts src/lsp/server.ts tests/*.ts",
     "test": "deno test --allow-read --allow-write --allow-run --allow-env tests",
+    "install": "deno run --allow-read --allow-write --allow-env scripts/install.ts",
     "compile": "deno run -A src/main.ts",
     "profile:webhook": "deno run -A scripts/profile_typecheck.ts examples/webhook.wm",
     "profile:webhook:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=webhook-typecheck.cpuprofile scripts/profile_typecheck.ts examples/webhook.wm",

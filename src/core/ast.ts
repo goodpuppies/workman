@@ -69,7 +69,7 @@ export type CoreExpr =
   | { kind: "CoreVoid"; node?: AstNode }
   | { kind: "CoreVar"; name: string; bindingId?: BindingId; ctorId?: CtorId; node?: AstNode }
   | { kind: "CoreTuple"; items: CoreExpr[]; node?: AstNode }
-  | { kind: "CoreRecord"; fields: CoreRecordExprField[]; node?: AstNode }
+  | { kind: "CoreRecord"; fields: CoreRecordExprItem[]; node?: AstNode }
   | { kind: "CoreRecordAccess"; record: CoreExpr; field: string; node?: AstNode }
   | { kind: "CoreJsonObject"; fields: CoreJsonObjectField[]; node?: AstNode }
   | { kind: "CoreJsonArray"; items: CoreExpr[]; node?: AstNode }
@@ -80,11 +80,11 @@ export type CoreExpr =
   | { kind: "CorePanic"; message: CoreExpr; node?: AstNode }
   | { kind: "CoreBlock"; items: (CoreDecl | CoreExpr)[]; result: CoreExpr; node?: AstNode };
 
-export type CoreRecordExprField = {
-  name: string;
-  value: CoreExpr;
-  node?: AstNode;
-};
+export type CoreRecordExprItem =
+  | { kind: "CoreRecordField"; name: string; value: CoreExpr; node?: AstNode }
+  | { kind: "CoreRecordSpread"; value: CoreExpr; node?: AstNode };
+export type CoreRecordExprField = Extract<CoreRecordExprItem, { kind: "CoreRecordField" }>;
+export type CoreRecordExprSpread = Extract<CoreRecordExprItem, { kind: "CoreRecordSpread" }>;
 
 export type CoreJsonObjectField = {
   key: string;

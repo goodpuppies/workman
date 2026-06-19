@@ -292,6 +292,43 @@ Deno.test("cli run constructs reflected JS globals and reads properties", async 
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run resolves package imports from the source project", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.mkdir(`${dir}/node_modules/fakepkg`, { recursive: true });
+  await Deno.writeTextFile(
+    `${dir}/package.json`,
+    JSON.stringify({ dependencies: { fakepkg: "1.0.0" } }),
+  );
+  await Deno.writeTextFile(
+    `${dir}/node_modules/fakepkg/package.json`,
+    JSON.stringify({
+      name: "fakepkg",
+      version: "1.0.0",
+      type: "module",
+      exports: "./index.js",
+    }),
+  );
+  await Deno.writeTextFile(
+    `${dir}/node_modules/fakepkg/index.js`,
+    "export const answer = 42;\n",
+  );
+  await Deno.writeTextFile(
+    `${dir}/main.wm`,
+    `
+      from js.module("fakepkg") import unsafe { answer: Number };
+      let main = () => {
+        print(answer)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", `${dir}/main.wm`]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "42\n");
+  assertEquals(result.stderr, "");
+});
+
 async function runCli(args: string[]) {
   const result = await new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-read", "--allow-write", "--allow-run", "--allow-env", cli, ...args],

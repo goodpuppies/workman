@@ -81,14 +81,26 @@ export function collectFfiDecl(
     }
     const reflected = !spec.type;
     if (spec.type) rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
+    const localName = spec.alias ?? spec.name;
+    const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
+    const ref = reflected ? jsTargetMemberValueRef(decl.target, spec.name) : undefined;
+    const construct = ref ? jsConstructMember(ref) : undefined;
+    if (construct && decl.target.kind === "JsGlobal") {
+      addVariants(
+        bindings,
+        `${surfaceName}.new`,
+        "new",
+        jsTargetMemberConstructorTarget(decl.target, spec.name),
+        specializeForeignResultVariants(memberVariants(construct), importedTypeRefs),
+        !decl.clause.unsafe,
+        spec.node,
+      );
+    }
     const member = spec.type
       ? { name: spec.name, type: spec.type }
       : jsTargetMember(decl.target, spec.name);
     if (!member) continue;
-    const localName = spec.alias ?? spec.name;
-    const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     if (reflected) {
-      const ref = jsTargetMemberValueRef(decl.target, spec.name);
       if (ref) importedRefs.set(surfaceName, ref);
     }
     addVariants(
@@ -237,6 +249,7 @@ export function generatedJsImports(
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     const binding = bindings.get(surfaceName);
     if (decl.target.kind === "JsGlobalRoot" && !spec.type && !binding) return [];
+    if (!spec.type && !binding && bindings.has(`${surfaceName}.new`)) return [];
     if (!binding) return [namedJsImportDecl(decl, [spec], clauseNode)];
     const variants = binding.variants;
     if (variants.length === 1 && !decl.clause.alias) {
@@ -312,4 +325,11 @@ function jsTargetMember(target: JsTarget, name: string): JsMemberType | undefine
   if (target.kind === "JsGlobal") return jsGlobalMember(target.path, name);
   if (target.kind === "JsModule") return jsModuleMember(target.specifier, name);
   return undefined;
+}
+
+function jsTargetMemberConstructorTarget(target: JsTarget, name: string): JsTarget {
+  if (target.kind === "JsGlobal") {
+    return { ...target, kind: "JsConstructor", path: `${target.path}.${name}` };
+  }
+  return { ...target, kind: "JsConstructor", path: name };
 }

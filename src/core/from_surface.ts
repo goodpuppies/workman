@@ -9,7 +9,7 @@ import type {
   Module,
   Param,
   Pattern,
-  RecordExprField,
+  RecordExprItem,
   RecordFieldDecl,
   RecordPatternField,
 } from "../ast.ts";
@@ -24,7 +24,7 @@ import type {
   CoreMatchArm,
   CoreModule,
   CorePattern,
-  CoreRecordExprField,
+  CoreRecordExprItem,
   CoreRecordFieldDecl,
   CoreRecordPatternField,
 } from "./ast.ts";
@@ -133,7 +133,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
     case "Record":
       return {
         kind: "CoreRecord",
-        fields: expr.fields.map((field) => coreRecordExprFieldFromSurface(field, context)),
+        fields: expr.fields.map((field) => coreRecordExprItemFromSurface(field, context)),
         node: expr.node,
       };
     case "JsonObject":
@@ -250,11 +250,23 @@ function coreCallArg(args: Expr[], node: Expr["node"], context?: CoreLoweringCon
   return { kind: "CoreTuple", items: args.map((arg) => coreExprFromSurface(arg, context)), node };
 }
 
-function coreRecordExprFieldFromSurface(
-  field: RecordExprField,
+function coreRecordExprItemFromSurface(
+  field: RecordExprItem,
   context?: CoreLoweringContext,
-): CoreRecordExprField {
-  return { name: field.name, value: coreExprFromSurface(field.value, context), node: field.node };
+): CoreRecordExprItem {
+  if (field.kind === "Spread") {
+    return {
+      kind: "CoreRecordSpread",
+      value: coreExprFromSurface(field.value, context),
+      node: field.node,
+    };
+  }
+  return {
+    kind: "CoreRecordField",
+    name: field.name,
+    value: coreExprFromSurface(field.value, context),
+    node: field.node,
+  };
 }
 
 function coreJsonObjectFieldFromSurface(

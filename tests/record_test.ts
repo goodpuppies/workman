@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkFile, checkSource, checkSourceSteps, checkVirtual } from "../src/compiler.ts";
+import {
+  checkFile,
+  checkSource,
+  checkSourceSteps,
+  checkVirtual,
+  compile,
+} from "../src/compiler.ts";
 import { expectBinding, expectStepBinding, expectStepMissing } from "./type_helpers.ts";
 
 Deno.test("nominal records infer construction and field access", async () => {
@@ -95,11 +101,46 @@ Deno.test("record annotations disambiguate same-shaped nominal records", async (
   expectBinding(result.env, "v", { type: "Vector", vars: 0 });
 });
 
+Deno.test("record literals support spread update and field punning", async () => {
+  const source = `
+    record Point = { x: Number, y: Number };
+    let p1: Point = .{ x = 10, y = 20 };
+    let x = 100;
+    let p2 = .{ ..p1, x };
+    let p3: Point = .{ ..p2, y = 30 };
+  `;
+  const result = await checkSource(source);
+  const js = await compile(source);
+
+  expectBinding(result.env, "p2", { type: "Point", vars: 0 });
+  expectBinding(result.env, "p3", { type: "Point", vars: 0 });
+  assertStringIncludes(js, "...");
+});
+
+Deno.test("record spread uses annotated nominal target for nested literals", async () => {
+  const result = await checkSource(`
+    record Point = { x: Number, y: Number };
+    record Vector = { x: Number, y: Number };
+    let v: Vector = .{ .. .{ x = 1, y = 2 }, x = 3 };
+  `);
+
+  expectBinding(result.env, "v", { type: "Vector", vars: 0 });
+});
+
 Deno.test("imported records remain nominal across file boundaries", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/a.wm", "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };"],
-    ["/test/b.wm", "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };"],
-    ["/test/main.wm", "from \"./a.wm\" import * as A; from \"./b.wm\" import * as B; let good: A.Point = A.make(); let bad: A.Point = B.make();"],
+    [
+      "/test/a.wm",
+      "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };",
+    ],
+    [
+      "/test/b.wm",
+      "record Point = { x: Number, y: Number }; let make = () => { .{ x = 1, y = 2 } };",
+    ],
+    [
+      "/test/main.wm",
+      'from "./a.wm" import * as A; from "./b.wm" import * as B; let good: A.Point = A.make(); let bad: A.Point = B.make();',
+    ],
   ]);
 
   await assertRejects(() => checkVirtual("/test/main.wm", virtualFs), Error, "type mismatch");
@@ -108,7 +149,10 @@ Deno.test("imported records remain nominal across file boundaries", async () => 
 Deno.test("imported record annotations guide record literals", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/point.wm", "record Point = { x: Number, y: Number };"],
-    ["/test/main.wm", "from \"./point.wm\" import * as Geometry; let p: Geometry.Point = .{ x = 1, y = 2 }; let x = p.x;"],
+    [
+      "/test/main.wm",
+      'from "./point.wm" import * as Geometry; let p: Geometry.Point = .{ x = 1, y = 2 }; let x = p.x;',
+    ],
   ]);
 
   await checkVirtual("/test/main.wm", virtualFs);
@@ -117,7 +161,10 @@ Deno.test("imported record annotations guide record literals", async () => {
 Deno.test("named imports expose exported record types", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/point.wm", "record Point = { x: Number, y: Number };"],
-    ["/test/main.wm", "from \"./point.wm\" import { Point }; let p: Point = .{ x = 1, y = 2 }; let x = p.x;"],
+    [
+      "/test/main.wm",
+      'from "./point.wm" import { Point }; let p: Point = .{ x = 1, y = 2 }; let x = p.x;',
+    ],
   ]);
 
   await checkVirtual("/test/main.wm", virtualFs);

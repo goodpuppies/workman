@@ -19,10 +19,10 @@ let previousProgram: ts.Program | undefined;
 export type JsReflectionSource = { key: string; source: string };
 
 export function jsGlobalSource(path: string): JsReflectionSource {
-  if (path === "Deno") {
+  if (path === "Deno" || path.startsWith("Deno.")) {
     return {
-      key: "global:Deno",
-      source: `/// <reference path="${denoTypesFile}" />\nconst __wm_target = Deno;`,
+      key: `global:${path}`,
+      source: `/// <reference path="${denoTypesFile}" />\nconst __wm_target = ${path};`,
     };
   }
   return { key: `global:${path}`, source: `const __wm_target = ${path};` };

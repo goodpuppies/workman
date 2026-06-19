@@ -88,6 +88,13 @@ some
 To install the local CLI as `wm`:
 
 ```sh
-deno install --global --allow-read --allow-write --allow-run --allow-env --name wm src/main.ts
+deno task install
 wm run examples/factorial.wm
+```
+
+The installer writes a small launcher into `~/.local/bin` on Unix-like systems, or `~/.deno/bin` on
+Windows. You can override that with `--bin-dir`:
+
+```sh
+deno task install --bin-dir /path/to/bin
 ```

@@ -160,22 +160,34 @@ export function inferBinding(
 ): { bound: Map<string, Ty>; refutable: boolean } {
   try {
     const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv, annotationVars) : undefined;
+    const inferRecordValue = (value: Expr, expected?: Ty): Ty => {
+      if (expected && value.kind === "Record") {
+        return inferRecordExpr(
+          value,
+          typeEnv,
+          inferRecordValue,
+          expected,
+          warnings,
+          diagnostics,
+        );
+      }
+      return inferExpr(
+        value,
+        env,
+        typeEnv,
+        adts,
+        types,
+        facts,
+        warnings,
+        diagnostics,
+        provenance,
+      );
+    };
     const t = annotated && b.value.kind === "Record"
       ? inferRecordExpr(
         b.value,
         typeEnv,
-        (value) =>
-          inferExpr(
-            value,
-            env,
-            typeEnv,
-            adts,
-            types,
-            facts,
-            warnings,
-            diagnostics,
-            provenance,
-          ),
+        inferRecordValue,
         annotated,
         warnings,
         diagnostics,

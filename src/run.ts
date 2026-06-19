@@ -1,4 +1,5 @@
 import { compileFile, type CompileOptions } from "./compiler.ts";
+import { dirname, resolve } from "node:path";
 
 export type RunOptions = CompileOptions & {
   args?: string[];
@@ -13,10 +14,11 @@ export type RunResult = {
 };
 
 export async function runFile(input: string, options: RunOptions = {}): Promise<RunResult> {
-  const dir = await Deno.makeTempDir({ prefix: "wm-mini-" });
+  const inputPath = await Deno.realPath(resolve(input));
+  const dir = await Deno.makeTempDir({ dir: dirname(inputPath), prefix: ".wm-mini-" });
   const output = `${dir}/main.mjs`;
   try {
-    await Deno.writeTextFile(output, await compileFile(input, options));
+    await Deno.writeTextFile(output, await compileFile(inputPath, options));
     const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",

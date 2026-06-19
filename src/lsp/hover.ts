@@ -6,7 +6,7 @@ import type {
   Module,
   Param,
   Pattern,
-  RecordExprField,
+  RecordExprItem,
   RecordPatternField,
 } from "../ast.ts";
 import { analyzeFile } from "../compiler.ts";
@@ -279,7 +279,7 @@ function collectExpr(expr: Expr): Target[] {
   }
 }
 
-function collectRecordExprField(field: RecordExprField): Target[] {
+function collectRecordExprField(field: RecordExprItem): Target[] {
   return collectExpr(field.value);
 }
 

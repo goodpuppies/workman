@@ -119,6 +119,18 @@ Deno.test("reflects global value constructors through new member", async () => {
   expectBinding(result.env, "response", { type: "Result<Response, Js.Error>", vars: 0 });
 });
 
+Deno.test("reflects constructor-valued Deno members through new member", async () => {
+  const result = await checkSource(`
+    from js.global("Deno.UnsafePointer") import { of };
+    from js.global("Deno") import { UnsafePointerView };
+    let ptr = of(Panic("buf"));
+    let view = UnsafePointerView.new(Panic("ptr"));
+  `);
+
+  expectBinding(result.env, "ptr", { type: "Result<Option<Js.Object>, Js.Error>", vars: 0 });
+  expectBinding(result.env, "view", { type: "Result<UnsafePointerView, Js.Error>", vars: 0 });
+});
+
 Deno.test("reflects callback parameter object refs before HM", async () => {
   const result = await checkSource(`
     from js.global("Deno") import { serve };

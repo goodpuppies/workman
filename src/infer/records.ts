@@ -1,4 +1,4 @@
-import type { Expr } from "../ast.ts";
+import type { Expr, RecordExprSpread } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
@@ -15,7 +15,7 @@ import {
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
 
-type InferValue = (expr: Expr) => Ty;
+type InferValue = (expr: Expr, expected?: Ty) => Ty;
 type NamedTy = Extract<Ty, { tag: "named" }>;
 
 export function inferDottedVar(name: string, env: Env, typeEnv: TypeEnv): Ty {
@@ -43,12 +43,33 @@ export function inferRecordExpr(
   warnings?: string[],
   diagnostics?: FrontendDiagnostic[],
 ): Ty {
-  rejectDuplicateFields(expr.fields.map((field) => field.name));
-  const result = expectedRecord(expected, typeEnv) ??
-    freshRecord(recordCandidate(typeEnv, expr, warnings, diagnostics));
+  const fields = expr.fields.filter((field) => field.kind === "Field");
+  const spreads = expr.fields.filter((field) => field.kind === "Spread");
+  rejectDuplicateFields(fields.map((field) => field.name));
+  const expectedResult = expectedRecord(expected, typeEnv);
+  const inferredSpreads = spreads.map((spread) => ({
+    spread,
+    type: inferValue(spread.value, expectedResult),
+  }));
+  const result = expectedResult ?? firstSpreadRecord(inferredSpreads, typeEnv) ??
+    freshRecord(
+      recordCandidate(typeEnv, fields.map((field) => field.name), expr, warnings, diagnostics),
+    );
   const fieldTypes = instantiateRecordFields(recordInfo(result, typeEnv), result.args);
   const expectedNames = new Set(fieldTypes.map((field) => field.name));
-  for (const field of expr.fields) {
+  for (const { spread, type } of inferredSpreads) {
+    constrainRecord(
+      type,
+      result,
+      spread.value,
+      "InferRecord.SpreadValue",
+      "record spread matches literal record type",
+      result.name,
+      "spread value",
+      "record literal",
+    );
+  }
+  for (const field of fields) {
     if (!expectedNames.has(field.name)) {
       throw new Error(`${result.name} has no field ${field.name}`);
     }
@@ -64,10 +85,21 @@ export function inferRecordExpr(
       "declared field",
     );
   }
-  if (fieldTypes.length !== expr.fields.length) {
+  if (spreads.length === 0 && fieldTypes.length !== fields.length) {
     throw new Error(`missing record field for ${result.name}`);
   }
   return result;
+}
+
+function firstSpreadRecord(
+  spreads: { spread: RecordExprSpread; type: Ty }[],
+  typeEnv: TypeEnv,
+): NamedTy | undefined {
+  if (spreads.length === 0) return undefined;
+  const target = prune(spreads[0].type);
+  if (target.tag !== "named") throw new Error("record spread requires a record type");
+  recordInfo(target, typeEnv);
+  return target;
 }
 
 function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
@@ -173,12 +205,12 @@ function recordInfo(type: NamedTy, typeEnv: TypeEnv): TypeInfo {
 
 function recordCandidate(
   typeEnv: TypeEnv,
+  names: string[],
   expr: Extract<Expr, { kind: "Record" }>,
   warnings?: string[],
   diagnostics?: FrontendDiagnostic[],
   ambiguous = "ambiguous record type",
 ): TypeInfo {
-  const names = expr.fields.map((field) => field.name);
   const candidates = findRecordTypes(typeEnv, names, "exact");
   if (candidates.length === 0) throw new Error("no matching record type");
   if (candidates.length > 1) {

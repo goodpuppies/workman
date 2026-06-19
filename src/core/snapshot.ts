@@ -32,9 +32,7 @@ function showDecl(decl: CoreDecl): string {
       }`;
     }
     case "CoreType":
-      return `type ${decl.name}${
-        decl.params.length ? `<${decl.params.join(", ")}>` : ""
-      } = ${
+      return `type ${decl.name}${decl.params.length ? `<${decl.params.join(", ")}>` : ""} = ${
         decl.alias
           ? showType(decl.alias)
           : decl.ctors.map((ctor) =>
@@ -80,7 +78,11 @@ function showExpr(expr: CoreExpr): string {
       return `(${expr.items.map(showExpr).join(", ")})`;
     case "CoreRecord":
       return `.{${
-        expr.fields.map((field) => `${field.name} = ${showExpr(field.value)}`).join(", ")
+        expr.fields.map((field) =>
+          field.kind === "CoreRecordSpread"
+            ? `..${showExpr(field.value)}`
+            : `${field.name} = ${showExpr(field.value)}`
+        ).join(", ")
       }}`;
     case "CoreRecordAccess":
       return `${showExpr(expr.record)}.${expr.field}`;

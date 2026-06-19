@@ -304,7 +304,7 @@ let p: Point = .{ x = 10, y = 20 };
 
 ### Field Punning
 
-When variable name matches field name:
+When a variable name matches the field name, write the name once:
 
 ```workman
 let x = 10;
@@ -319,10 +319,8 @@ let p = .{ x, y };
 
 ### Record Spread
 
-**Not supported yet in current `wm-mini`.** Current record construction supports explicit fields and
-field punning, but not `..source` update syntax.
-
-Planned copy/update syntax:
+Use `..source` inside a record literal to copy an existing record, then override fields by placing
+explicit fields after the spread:
 
 ```workman
 let p1 = .{ x = 10, y = 20 };
@@ -333,10 +331,13 @@ let p2 = .{ ..p1, x = 100 };  -- { x: 100, y: 20 }
 -- Override multiple fields
 let p3 = .{ ..p1, x = 5, y = 5 };
 
--- Spread with punning
-let newX = 50;
-let p4 = .{ ..p1, x = newX };  -- or just: .{ ..p1, newX } if field is named newX
+-- Spread with punning: x is both the field name and the value variable
+let x = 50;
+let p4 = .{ ..p1, x };
 ```
+
+Each spread must have the same nominal record type as the literal being built. Punning and explicit
+`field = value` entries can be mixed in the same literal.
 
 ### Field Access
 
@@ -913,8 +914,8 @@ let empty = [] as List<Number>;
 
 `as` is not a runtime cast. It must not allow unsafe conversions such as `number as String`, and it
 must not be used to turn dynamic JS/JSON data into a Workman record or primitive. Dynamic data needs
-an explicit runtime validation function that returns a typed value, such as a future whole-shape JSON
-assertion.
+an explicit runtime validation function that returns a typed value, such as a future whole-shape
+JSON assertion.
 
 ### 12. Panic for Unrecoverable Errors
 
@@ -957,15 +958,14 @@ These features are not supported yet or are only partially supported:
 - **Binding-level function annotations:** annotate parameters or simple `let` bindings for now;
   `let f: (...) => T = ...` is not generally implemented.
 - **Return type annotations on lambdas:** `let f = (x): T => { ... }` is not implemented.
-- **Record spread/update:** `.{ ..source, field = value }` is listed as intended syntax, but current
-  record construction is `.{ field = value }` or `.{ field }`.
 - **Match guards:** `pattern when cond => ...` is listed as intended syntax, but guards are not
   implemented.
 - **Character literals:** use strings for now; `'a'` is not implemented.
 - **Early return:** there is no `return`; blocks return their final expression.
 - **Loops:** use recursion and lists for now.
 - **Mutation/refs:** no mutable variables or SML refs yet.
-- **Exceptions:** use `Result`, `Option`, and `Panic`; general exception handling is not implemented.
+- **Exceptions:** use `Result`, `Option`, and `Panic`; general exception handling is not
+  implemented.
 - **Async/await syntax:** JS promises are used through FFI methods like `.then(...)`.
 - **String interpolation:** backtick strings are multiline only; they do not interpolate.
 - **Custom operators/fixity:** fixed built-in operators only.
@@ -979,34 +979,33 @@ See [JavaScript FFI](./jsffi.md) for the current JS interop surface.
 
 ## Quick Reference
 
-| Feature              | Syntax                                |
-| -------------------- | ------------------------------------- |
-| Comment              | `-- text` or `// text`                |
-| Let binding          | `let x = value;`                      |
-| Function             | `let f = (a, b) => { body };`         |
-| Recursive            | `let rec f = ...;`                    |
-| Mutual recursion     | `let rec f = ... and g = ...;`        |
-| Type union           | `type T = A \| B<Number>;`            |
-| Record type          | `record R = { field: Type };`         |
-| Record value         | `.{ field = value }` or `.{ field }`  |
-| Record spread        | `.{ ..source, field = value }`        |
-| Record spread status | Planned, not supported yet            |
-| Match                | `match(x) { pattern => { body } }`    |
-| Match guard          | `Var(x) when cond => { body }`        |
-| Match guard status   | Planned, not supported yet            |
-| Bind variable        | `Var(x)` (literals pinned by default) |
-| If/else              | `if (cond) { a } else { b };`         |
-| List literal         | `[1, 2, 3]`                           |
-| List spread          | `[head, ..tail]`                      |
-| Import               | `from "path" import { item };`        |
-| Namespace import     | `from "path" import * as Name;`       |
-| Module value         | `let x = ...;`                        |
-| Pipe                 | `value :> fn`                         |
-| String concat        | `"a" ++ "b"`                          |
-| Multiline string     | `` `line one\nline two` ``            |
-| Type assertion       | `expr as Type`                        |
-| Type assertion status | Planned, not supported yet           |
-| Panic                | `Panic("message")`                    |
-| Tuple destruct       | `let (a, b) = pair;`                  |
-| Tuple param          | `let f = (a, b) => { ... };`          |
-| Void return          | `let f = () => { expr; };`            |
+| Feature               | Syntax                                |
+| --------------------- | ------------------------------------- |
+| Comment               | `-- text` or `// text`                |
+| Let binding           | `let x = value;`                      |
+| Function              | `let f = (a, b) => { body };`         |
+| Recursive             | `let rec f = ...;`                    |
+| Mutual recursion      | `let rec f = ... and g = ...;`        |
+| Type union            | `type T = A \| B<Number>;`            |
+| Record type           | `record R = { field: Type };`         |
+| Record value          | `.{ field = value }` or `.{ field }`  |
+| Record spread         | `.{ ..source, field = value }`        |
+| Match                 | `match(x) { pattern => { body } }`    |
+| Match guard           | `Var(x) when cond => { body }`        |
+| Match guard status    | Planned, not supported yet            |
+| Bind variable         | `Var(x)` (literals pinned by default) |
+| If/else               | `if (cond) { a } else { b };`         |
+| List literal          | `[1, 2, 3]`                           |
+| List spread           | `[head, ..tail]`                      |
+| Import                | `from "path" import { item };`        |
+| Namespace import      | `from "path" import * as Name;`       |
+| Module value          | `let x = ...;`                        |
+| Pipe                  | `value :> fn`                         |
+| String concat         | `"a" ++ "b"`                          |
+| Multiline string      | `` `line one\nline two` ``            |
+| Type assertion        | `expr as Type`                        |
+| Type assertion status | Planned, not supported yet            |
+| Panic                 | `Panic("message")`                    |
+| Tuple destruct        | `let (a, b) = pair;`                  |
+| Tuple param           | `let f = (a, b) => { ... };`          |
+| Void return           | `let f = () => { expr; };`            |

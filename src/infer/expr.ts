@@ -113,8 +113,18 @@ function inferExprInner(
       t = inferRecordExpr(
         expr,
         typeEnv,
-        (value) =>
-          inferExpr(
+        function inferRecordValue(value, expected) {
+          if (expected && value.kind === "Record") {
+            return inferRecordExpr(
+              value,
+              typeEnv,
+              inferRecordValue,
+              expected,
+              warnings,
+              diagnostics,
+            );
+          }
+          return inferExpr(
             value,
             env,
             typeEnv,
@@ -124,7 +134,8 @@ function inferExprInner(
             warnings,
             diagnostics,
             provenance,
-          ),
+          );
+        },
         undefined,
         warnings,
         diagnostics,

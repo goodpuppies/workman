@@ -59,7 +59,7 @@ export type Expr =
   | Located<{ kind: "Void"; implicitStatement?: Expr; implicitTerminatorSpan?: SourceSpan }>
   | Located<{ kind: "Var"; name: string }>
   | Located<{ kind: "Tuple"; items: Expr[] }>
-  | Located<{ kind: "Record"; fields: RecordExprField[] }>
+  | Located<{ kind: "Record"; fields: RecordExprItem[] }>
   | Located<{ kind: "JsonObject"; fields: JsonObjectField[] }>
   | Located<{ kind: "JsonArray"; items: Expr[] }>
   | Located<{ kind: "FfiGet"; receiver: Expr; path: string[] }>
@@ -74,7 +74,11 @@ export type Expr =
   | Located<{ kind: "Unary"; op: string; value: Expr }>
   | Located<{ kind: "Pipe"; left: Expr; right: Expr }>;
 
-export type RecordExprField = Located<{ name: string; value: Expr }>;
+export type RecordExprItem =
+  | Located<{ kind: "Field"; name: string; value: Expr }>
+  | Located<{ kind: "Spread"; value: Expr }>;
+export type RecordExprField = Extract<RecordExprItem, { kind: "Field" }>;
+export type RecordExprSpread = Extract<RecordExprItem, { kind: "Spread" }>;
 export type JsonObjectField = Located<{ key: string; value: Expr }>;
 export type MatchArm = Located<{ pattern: Pattern; body: Expr }>;
 

@@ -60,7 +60,10 @@
     return items.reduceRight((acc, item) => consPattern(item, acc, loc), tail ?? nilPattern(loc));
   }
   function recordField(name, value, loc) {
-    return at({ name, value }, loc);
+    return at({ kind: "Field", name, value }, loc);
+  }
+  function recordSpread(value, loc) {
+    return at({ kind: "Spread", value }, loc);
   }
   function recordPatternField(name, pattern, loc) {
     return at({ name, pattern }, loc);
@@ -182,7 +185,7 @@ LetBinding
     { return at({ pattern, annotation: ann, value }, location()); }
 
 LetPattern
-  = "_" { return at({ kind: "PWildcard" }, location()); }
+  = Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
   / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
@@ -329,7 +332,8 @@ RecordExpr
     { return at({ kind: "Record", fields: fields ?? [] }, location()); }
 RecordExprFieldList = first:RecordExprField rest:(_ "," _ f:RecordExprField { return f; })* _ ","? { return [first, ...rest]; }
 RecordExprField
-  = name:FieldName _ "=" _ value:Expr { return recordField(name, value, location()); }
+  = ".." _ value:Expr { return recordSpread(value, location()); }
+  / name:FieldName _ "=" _ value:Expr { return recordField(name, value, location()); }
   / name:Identifier { return recordField(name, at({ kind: "Var", name }, location()), location()); }
 
 ListExpr
@@ -368,7 +372,7 @@ ParenSeqItem = e:Expr _ semi:SemiToken _ { return { item: e, terminatorSpan: sem
 SemiToken = ";" { return span(location()); }
 
 Pattern
-  = "_" { return at({ kind: "PWildcard" }, location()); }
+  = Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
   / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
@@ -383,7 +387,7 @@ Pattern
 
 ParamList = "(" _ ps:ParamListItems? _ ")" { return ps ?? []; }
 Param = pattern:ParamPattern ann:TypeAnn? { return at({ pattern, annotation: ann }, location()); }
-ParamPattern = "_" { return at({ kind: "PWildcard" }, location()); }
+ParamPattern = Wildcard { return at({ kind: "PWildcard" }, location()); }
   / RecordParamPattern
   / ListParamPattern
   / "(" _ first:ParamPattern _ "," _ rest:ParamPatternList? _ ")" { return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location()); }
@@ -478,6 +482,7 @@ MultilineChar
 LineTerminator = "\r\n" / "\n" / "\r"
 Bool = v:("true" / "false") !IdentPart { return at({ kind: "Bool", value: v === "true" }, location()); }
 Void = "void" !IdentPart { return at({ kind: "Void" }, location()); }
+Wildcard = "_" !IdentPart
 Identifier = !Keyword name:$([a-z_] IdentPart*) { return name; }
 Constructor = !Keyword name:$([A-Z] IdentPart*) { return name; }
 Name = Constructor / Identifier
