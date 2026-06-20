@@ -220,6 +220,37 @@ Deno.test("cli run supports mutually recursive closure bindings", async () => {
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run executes deep direct tail recursion without growing the JS stack", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let rec sumTo = (n, acc) => {
+        if (n == 0) {
+          acc
+        } else {
+          let next = n - 1;
+          match(n > 0) {
+            true => { sumTo(next, acc + n) },
+            false => { acc }
+          }
+        }
+      };
+      let main = () => {
+        print(sumTo(100000, 0));
+        void
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "5000050000\n");
+  assertEquals(result.stderr, "");
+});
+
 Deno.test("cli run supports star import without alias", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;

@@ -188,8 +188,19 @@ let rec factorial = match(n) => {
   _ => { n * factorial(n - 1) }
 };
 
--- Recursive values are also allowed
-let rec x = x;
+-- Recursive references must occur beneath a function
+```
+
+Direct self-calls in tail position are compiled as iteration and do not grow the JavaScript call
+stack. Tail positions include the function result, either branch of a tail-position `if`, each arm
+of a tail-position `match`, and the final result of a block. Mutual tail calls and non-tail
+recursive calls still use the JavaScript call stack.
+
+```workman
+let rec fold = match(items, acc) => {
+  [] => { acc },
+  [head, ..tail] => { fold(tail, acc + head) }
+};
 ```
 
 ### Mutual Recursion

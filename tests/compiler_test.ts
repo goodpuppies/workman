@@ -37,6 +37,28 @@ Deno.test("compiles factorial and ADT match", async () => {
   assertStringIncludes(js, "non-exhaustive match");
 });
 
+Deno.test("compiles direct self tail calls as iteration", async () => {
+  const js = await compile(`
+    let rec count = (n, acc) => {
+      if (n == 0) { acc } else { count(n - 1, acc + 1) }
+    };
+  `);
+
+  assertStringIncludes(js, ": while (true)");
+  assertStringIncludes(js, "continue __wm_tail_");
+});
+
+Deno.test("does not mistake a shadowed call for direct self recursion", async () => {
+  const js = await compile(`
+    let rec outer = (n) => {
+      let outer = (x) => { x };
+      outer(n)
+    };
+  `);
+
+  assertEquals(js.includes(": while (true)"), false);
+});
+
 Deno.test("rejects type errors", async () => {
   await assertRejects(
     () => checkSource("let nope = 1 + true;"),

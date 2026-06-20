@@ -124,7 +124,9 @@ function emitDecl(decl: CoreDecl): string[] {
       if (binding.pattern.kind !== "CorePVar") {
         throw new Error("recursive bindings must bind one name");
       }
-      return `let ${patternBindingName(binding.pattern)} = ${emitExpr(binding.value)};`;
+      return `let ${patternBindingName(binding.pattern)} = ${
+        emitRecursiveBindingValue(binding.value, binding.pattern.bindingId)
+      };`;
     });
   }
   return decl.bindings.flatMap((binding) => {
@@ -271,6 +273,93 @@ function emitExpr(expr: CoreExpr): string {
       };\n})()`;
   }
 }
+
+function emitRecursiveBindingValue(expr: CoreExpr, bindingId: BindingId | undefined): string {
+  if (
+    expr.kind !== "CoreFn" || bindingId === undefined ||
+    !expr.arms.some((arm) => hasDirectSelfTailCall(arm.body, bindingId))
+  ) {
+    return emitExpr(expr);
+  }
+  const label = `__wm_tail_${tailLoopTemp++}`;
+  return `(__arg) => {\n${label}: while (true) {\n${
+    emitTailArmBody(
+      expr.arms,
+      "__arg",
+      "pattern match failure in function",
+      bindingId,
+      label,
+    )
+  }\n}\n}`;
+}
+
+function hasDirectSelfTailCall(expr: CoreExpr, bindingId: BindingId): boolean {
+  if (
+    expr.kind === "CoreApp" && expr.callee.kind === "CoreVar" &&
+    expr.callee.bindingId === bindingId
+  ) {
+    return true;
+  }
+  if (expr.kind === "CoreIf") {
+    return hasDirectSelfTailCall(expr.thenExpr, bindingId) ||
+      hasDirectSelfTailCall(expr.elseExpr, bindingId);
+  }
+  if (expr.kind === "CoreMatch") {
+    return expr.arms.some((arm) => hasDirectSelfTailCall(arm.body, bindingId));
+  }
+  if (expr.kind === "CoreBlock") return hasDirectSelfTailCall(expr.result, bindingId);
+  return false;
+}
+
+function emitTailExpr(
+  expr: CoreExpr,
+  bindingId: BindingId,
+  label: string,
+): string {
+  if (
+    expr.kind === "CoreApp" && expr.callee.kind === "CoreVar" &&
+    expr.callee.bindingId === bindingId
+  ) {
+    return `__arg = ${emitExpr(expr.arg)};\ncontinue ${label};`;
+  }
+  if (expr.kind === "CoreIf") {
+    return `if (${emitExpr(expr.cond)}) {\n${
+      emitTailExpr(expr.thenExpr, bindingId, label)
+    }\n} else {\n${emitTailExpr(expr.elseExpr, bindingId, label)}\n}`;
+  }
+  if (expr.kind === "CoreMatch") {
+    const value = `__wm_tail_value_${tailValueTemp++}`;
+    return `{\nconst ${value} = ${emitExpr(expr.value)};\n${
+      emitTailArmBody(expr.arms, value, "non-exhaustive match", bindingId, label)
+    }\n}`;
+  }
+  if (expr.kind === "CoreBlock") {
+    return `{\n${expr.items.map(emitBlockItem).join("\n")}\n${
+      emitTailExpr(expr.result, bindingId, label)
+    }\n}`;
+  }
+  return `return ${emitExpr(expr)};`;
+}
+
+function emitTailArmBody(
+  arms: CoreMatchArm[],
+  value: string,
+  message: string,
+  bindingId: BindingId,
+  label: string,
+): string {
+  const body = arms.map((arm) => {
+    const checks = patternChecks(arm.pattern, value);
+    const binds = emitPatternBind(arm.pattern, value);
+    return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
+      emitTailExpr(arm.body, bindingId, label)
+    }\n}`;
+  });
+  return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
+}
+
+let tailLoopTemp = 0;
+let tailValueTemp = 0;
 
 function emitArmBody(arms: CoreMatchArm[], value: string, message: string): string {
   const body = arms.map((arm) => {
