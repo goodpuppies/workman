@@ -2,6 +2,6 @@ record LiftFn<A, B> = { fn: (A) => B };
 
 let lift = (x) => { 
     (f) => {
-        x.fn(f) -- means (#fn x)(f)
+        x.fn(f) -- means (#fn x)(f) like sml
     }
 };
