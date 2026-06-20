@@ -4,8 +4,8 @@ import { dirname, join, normalize } from "node:path";
 
 const compilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
-  module: ts.ModuleKind.NodeNext,
-  moduleResolution: ts.ModuleResolutionKind.NodeNext,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
   lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
   strictNullChecks: true,
   skipLibCheck: true,

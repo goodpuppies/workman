@@ -1,110 +1,37 @@
-# Carrier Coercion and Tuple Lifts
+# Lift design pattern
 
-wm-mini has two small conveniences for working with carrier-shaped values such as `Result<T, E>` and
-`Task<T, E>`.
-
-They solve different problems:
-
-- primitive carrier coercion lets primitive operators work through `Result`
-- explicit carrier tuple lifts turn several carrier values into one carrier tuple
-
-Neither mechanism is general operator overloading. They are deliberately small rewrites around
-existing carrier operations.
-
-## Primitive `Result` Coercion
-
-Primitive operators can flow through `Result`.
-
+lift is defined as 
 ```wm
-let x = Ok(2) + 3;
-let y = 3 * Ok(4);
-let z = Ok(8) / Ok(2);
-let n = -Ok(4);
-let b = !Ok(false);
-```
-
-These infer as:
-
-```txt
-x : Result<Number, E>
-y : Result<Number, E>
-z : Result<Number, E>
-n : Result<Number, E>
-b : Result<Bool, E>
-```
-
-The rule is intentionally mechanical:
-
-1. If either operand is `Result<T, E>`, the operator is type-checked against `T`.
-2. Any pure operand is wrapped with `Ok(...)`.
-3. The result is wrapped back into `Result<OperatorResult, E>`.
-4. If both operands are `Result`, their error types must match.
-
-So this:
-
-```wm
-Ok(2) * 3
-```
-
-lowers like:
-
-```wm
-Result.map2(Ok(2), Ok(3), (left, right) => {
-  left * right
-})
-```
-
-And this:
-
-```wm
-Ok(2) * Ok(3)
-```
-
-lowers like:
-
-```wm
-Result.map2(Ok(2), Ok(3), (left, right) => {
-  left * right
-})
-```
-
-At runtime `Result.map2` evaluates the inputs left-to-right. The first `Err` is returned. If every
-input is `Ok`, the primitive operation runs on the unwrapped values and the answer is wrapped in
-`Ok`.
-
-Unary operators use `Result.map`:
-
-```wm
--Ok(4)
-```
-
-lowers like:
-
-```wm
-Result.map(Ok(4), (value) => {
-  -value
-})
-```
-
-This coercion is only for primitive operators. Ordinary functions still keep their declared argument
-types. For example, a JS function such as `Math.floor` still receives `Result<Number, Js.Error>`
-unless it is lifted:
-
-```wm
-from js.global("Math") import { floor as jsFloor };
-
-let liftR = (f) => {
-  Monad.lift Result f
+let lift = (x) => { 
+  (f) => {
+    x.fn(f) -- means (#fn x)(f) like sml
+  }
 };
-
-let floor = liftR jsFloor;
-let rounded = floor(Ok(4.8));
 ```
+
+most carrier structures then define something like
+```wm
+let fn = (f) => {
+  (result) => {
+    result :> andThen(f)
+  }
+};
+```
+
+the idea is pretty simple, lift all expressions you work with to the carrier at definition or use site,
+then simply chain the expressions to thread the side effect trough.
+
+an even simpler parallel can be made lift Task in workman behaves almost like async keyword, 
+but its not a keyword just currying based design pattern.
+
 
 ## Explicit Carrier Tuple Lifts
 
 `Carrier|...|` sequences multiple values in a carrier and returns one carrier containing a tuple of
 the unwrapped values.
+
+think
+(Carrier<T,E>, Carrier<T,E>, ...) -> Carrier<(T,T,...),E>
 
 ```wm
 let pair = Result|Ok(1), Ok("a")|;
@@ -212,4 +139,107 @@ Use the explicit carrier form for new carrier-generic code:
 ```wm
 Result|Ok(1), Ok(2)|
 Task|taskA, taskB|
+```
+
+# Carrier Coercion and Tuple Lifts
+
+wm-mini has two small conveniences for working with carrier-shaped values such as `Result<T, E>` and
+`Task<T, E>`.
+
+They solve different problems:
+
+- primitive carrier coercion lets primitive operators work through `Result`
+- explicit carrier tuple lifts turn several carrier values into one carrier tuple
+
+Neither mechanism is general operator overloading. They are deliberately small rewrites around
+existing carrier operations.
+
+## Primitive `Result` Coercion
+
+Primitive operators can flow through `Result`.
+
+```wm
+let x = Ok(2) + 3;
+let y = 3 * Ok(4);
+let z = Ok(8) / Ok(2);
+let n = -Ok(4);
+let b = !Ok(false);
+```
+
+These infer as:
+
+```txt
+x : Result<Number, E>
+y : Result<Number, E>
+z : Result<Number, E>
+n : Result<Number, E>
+b : Result<Bool, E>
+```
+
+The rule is intentionally mechanical:
+
+1. If either operand is `Result<T, E>`, the operator is type-checked against `T`.
+2. Any pure operand is wrapped with `Ok(...)`.
+3. The result is wrapped back into `Result<OperatorResult, E>`.
+4. If both operands are `Result`, their error types must match.
+
+So this:
+
+```wm
+Ok(2) * 3
+```
+
+lowers like:
+
+```wm
+Result.map2(Ok(2), Ok(3), (left, right) => {
+  left * right
+})
+```
+
+And this:
+
+```wm
+Ok(2) * Ok(3)
+```
+
+lowers like:
+
+```wm
+Result.map2(Ok(2), Ok(3), (left, right) => {
+  left * right
+})
+```
+
+At runtime `Result.map2` evaluates the inputs left-to-right. The first `Err` is returned. If every
+input is `Ok`, the primitive operation runs on the unwrapped values and the answer is wrapped in
+`Ok`.
+
+Unary operators use `Result.map`:
+
+```wm
+-Ok(4)
+```
+
+lowers like:
+
+```wm
+Result.map(Ok(4), (value) => {
+  -value
+})
+```
+
+This coercion is only for primitive operators. Ordinary functions still keep their declared argument
+types. For example, a JS function such as `Math.floor` still receives `Result<Number, Js.Error>`
+unless it is lifted:
+
+```wm
+from js.global("Math") import { floor as jsFloor };
+
+let liftR = (f) => {
+  Monad.lift Result f
+};
+
+let floor = liftR jsFloor;
+let rounded = floor(Ok(4.8));
 ```
