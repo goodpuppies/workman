@@ -453,6 +453,40 @@ Deno.test("FFI-involved handlers stay monomorphic across downstream callback con
   expectBinding(result.env, "server", { type: "Js.Value", vars: 0 });
 });
 
+Deno.test("recursive FFI receiver helpers stay monomorphic across downstream constraints", async () => {
+  const result = await checkSource(`
+    from js.global("Deno") import { UnsafePointerView };
+
+    let try = (result) => {
+      match(result) {
+        Ok(value) => { value },
+        Err(_) => { Panic("ffi") },
+      }
+    };
+
+    let rec readLoop = (view, limit) => {
+      match(limit) {
+        0 => { Ok(0) },
+        _ => {
+          match(view.getUint32(0) :> Result.mapErr((e) => { e })) {
+            Ok(value) => { readLoop(view, limit - 1) },
+            Err(e) => { Err(e) }
+          }
+        }
+      }
+    };
+
+    let view = UnsafePointerView.new(Panic("ptr")) :> try;
+    let value = readLoop(view, 1);
+  `);
+
+  expectBinding(result.env, "readLoop", {
+    type: "((UnsafePointerView, Number)) => Result<Number, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "value", { type: "Result<Number, Js.Error>", vars: 0 });
+});
+
 Deno.test("delayed foreign methods provide callback parameter refs", async () => {
   const virtualFs = new Map<string, string>([
     [

@@ -810,6 +810,7 @@ function resolveDeepReflectedCall(
         original.fallible ? unwrapFallibleType(original.type) : original.type,
         reflected.type,
       ),
+      receiverType: original.receiverType,
       callRef: original.callRef,
       deep: true,
     }],
@@ -858,6 +859,7 @@ function resolveDirectArrayLikeCall(
     variant.target,
     [{
       type: resolved,
+      receiverType: variant.receiverType,
       resultRef: variant.resultRef,
       callRef: variant.callRef,
       callbackParamRefs: variant.callbackParamRefs,

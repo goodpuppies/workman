@@ -26,6 +26,7 @@ export type FfiVariant = {
   memberName: string;
   target: JsTarget;
   type: TypeExpr;
+  receiverType?: TypeExpr;
   resultRef?: JsTypeRef;
   callRef?: JsTypeRef;
   callbackParamRefs?: JsCallbackParamRefs[];
@@ -41,6 +42,7 @@ export function addVariants(
   target: JsTarget,
   variants: {
     type: TypeExpr;
+    receiverType?: TypeExpr;
     resultRef?: JsTypeRef;
     callRef?: JsTypeRef;
     callbackParamRefs?: JsCallbackParamRefs[];
@@ -58,6 +60,7 @@ export function addVariants(
       memberName,
       target,
       type: fallible ? fallibleType(variant.type) : variant.type,
+      receiverType: variant.receiverType,
       resultRef: variant.resultRef,
       callRef: variant.callRef,
       callbackParamRefs: variant.callbackParamRefs,
@@ -117,7 +120,7 @@ export function generatedReceiverJsImports(
       specs: [{
         name: variant.memberName,
         alias: variant.internalName,
-        type: variant.type,
+        type: generatedImportType(variant),
         fallible: variant.fallible,
         node: variant.node,
       }],
@@ -206,6 +209,10 @@ export function prependReceiver(
   return { ...type, params: [receiverType, ...type.params] };
 }
 
+function generatedImportType(variant: FfiVariant): TypeExpr {
+  return variant.receiverType ? prependReceiver(variant.type, variant.receiverType) : variant.type;
+}
+
 export function selectVariant(
   variants: FfiVariant[],
   args: Expr[],
@@ -218,9 +225,8 @@ export function selectVariant(
       score: callScore(candidate, args, argTypes),
       obligations: materializationObligations(candidate.type),
     }))
-    .sort((left, right) =>
-      left.score - right.score || left.obligations - right.obligations
-    )[0]?.candidate;
+    .sort((left, right) => left.score - right.score || left.obligations - right.obligations)[0]
+    ?.candidate;
 }
 
 export function ffiOverloadMessage(name: string, variants: FfiVariant[], args: Expr[]): string {
@@ -236,7 +242,7 @@ function callScore(
   argTypes: (TypeExpr | undefined)[],
 ): number {
   const type = candidate.type;
-  if (type.kind !== "TFn") return Number.POSITIVE_INFINITY;
+  if (type.kind !== "TFn") return args.length === 0 ? 0 : Number.POSITIVE_INFINITY;
   return type.params.reduce(
     (score, param, index) => score + argScore(param, args[index], candidate, argTypes[index]),
     0,
@@ -394,7 +400,10 @@ function dedupeVariantSpecs<T extends { type: TypeExpr }>(types: T[]): T[] {
   const seen = new Set<string>();
   const result: T[] = [];
   for (const type of types) {
-    const key = typeKey(type.type);
+    const receiver = "receiverType" in type && type.receiverType
+      ? `|receiver:${typeKey(type.receiverType as TypeExpr)}`
+      : "";
+    const key = `${typeKey(type.type)}${receiver}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(type);
@@ -450,7 +459,7 @@ function ffiInternalName(surfaceName: string, memberName: string, index: number)
 }
 
 function typeCallArity(type: TypeExpr): number | undefined {
-  return type.kind === "TFn" ? type.params.length : undefined;
+  return type.kind === "TFn" ? type.params.length : 0;
 }
 
 export function isDecl(value: Decl | Expr): value is Decl {

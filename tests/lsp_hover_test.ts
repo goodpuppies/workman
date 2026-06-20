@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 
@@ -119,12 +119,40 @@ let server = serve(JSON{}, handler);
   await Deno.writeTextFile(main, source);
 
   const uri = pathToFileUri(main);
-  const expected = "```wm\nhandler: ((Request, Js.Value)) => Js.Promise<Js.Value>\n```";
+  const expected = "```wm\nhandler: (('a, 'b)) => 'c\n```";
   const definition = await hoverAt(uri, positionOf(source, "handler ="), new Map());
   const use = await hoverAt(uri, positionOf(source, "handler);"), new Map());
 
   assertEquals(definition?.contents.value, expected);
   assertEquals(use?.contents.value, expected);
+});
+
+Deno.test("lsp hover shows generated deep FFI receiver calls as functions", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+from js.global("Deno") import { dlopen: _deep_ };
+
+let lib = dlopen("SDL2", JSON{
+  SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
+});
+let use = match(lib) {
+  Ok(sdl) => { sdl.symbols.SDL_PollEvent(Panic("ptr")) },
+  Err(e) => { Err(e) }
+};
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(
+    pathToFileUri(main),
+    positionOf(source, "SDL_PollEvent(Panic"),
+    new Map(),
+  );
+
+  const value = hover?.contents.value ?? "";
+  assertStringIncludes(value, "SDL_PollEvent:");
+  assertStringIncludes(value, "SDL_PollEvent: ((Option<Js.Object>)) => Result<Number, Js.Error>");
+  assertEquals(value.includes("__Deep"), false);
 });
 
 function positionOf(source: string, text: string) {

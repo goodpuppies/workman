@@ -107,12 +107,12 @@ let rec sumList = (list, val) => {
   );
   assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "error[type.mismatch",
-    "collision:",
-    "  expected: Number",
-    "  actual:   (Int_list) => Number",
-    "rule: InferRecursive.ResultAgreement",
-    "support:",
+    "`sumList` is recursive",
+    "Recursive calls produce:",
+    "Number",
+    "But the body produces:",
+    "(Int_list) => Number",
+    "This looks like an accidental match-function expression.",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
@@ -125,18 +125,33 @@ let rec sumList = (list, val) => {
     character: 2,
   });
   assertEquals(
-    diagnostics?.[0].relatedInformation?.[1].message,
+    diagnostics?.[0].relatedInformation?.find((item) =>
+      item.message === "rec: occurrences share one monomorphic type"
+    )?.message,
     "rec: occurrences share one monomorphic type",
   );
-  assertEquals(diagnostics?.[0].relatedInformation?.[1].location.range.start, {
-    line: 3,
-    character: 8,
-  });
-  assertEquals(diagnostics?.[0].relatedInformation?.[2].message, "operator +: Number");
-  assertEquals(diagnostics?.[0].relatedInformation?.[2].location.range.start, {
-    line: 6,
-    character: 36,
-  });
+  assertEquals(
+    diagnostics?.[0].relatedInformation?.find((item) =>
+      item.message === "rec: occurrences share one monomorphic type"
+    )?.location.range.start,
+    {
+      line: 3,
+      character: 8,
+    },
+  );
+  assertEquals(
+    diagnostics?.[0].relatedInformation?.find((item) => item.message === "operator +: Number")
+      ?.message,
+    "operator +: Number",
+  );
+  assertEquals(
+    diagnostics?.[0].relatedInformation?.find((item) => item.message === "operator +: Number")
+      ?.location.range.start,
+    {
+      line: 6,
+      character: 36,
+    },
+  );
 });
 
 Deno.test("lsp validation relates call argument provenance through published bindings", async () => {
@@ -282,20 +297,15 @@ let bad = floor(1, 2);
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["error", "ffi.unresolved"]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "error[type.mismatch",
-    "collision:",
-    "  expected: Number",
-    "  actual:   (Number, Number)",
-    "rule: InferCall.Argument",
-    "support:",
+    "cannot determine JS FFI overload for floor with 2 arguments; available arities: 1",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 3, character: 10 });
   assertEquals(diagnostics?.[0].range.end, { line: 3, character: 21 });
   assertEquals(
     diagnostics?.[0].relatedInformation?.[0].message,
-    "callee floor: (Number) => Result<Number, Js.Error>",
+    "cannot determine JS FFI overload for floor with 2 arguments; available arities: 1",
   );
   assertEquals(diagnostics?.[0].relatedInformation?.[0].location.range.start, {
     line: 3,
@@ -303,7 +313,7 @@ let bad = floor(1, 2);
   });
   assertEquals(diagnostics?.[0].relatedInformation?.[0].location.range.end, {
     line: 3,
-    character: 15,
+    character: 21,
   });
 });
 

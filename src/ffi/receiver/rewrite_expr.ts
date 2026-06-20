@@ -405,7 +405,10 @@ function rewriteArgsWithVariant(
   importedTypeRefs: Map<string, JsTypeRef>,
 ): Expr[] {
   return args.map((arg, index) => {
-    const callbackRefs = variant.callbackParamRefs?.find((item) => item.argIndex === index);
+    const visibleIndex = variant.receiverType ? index - 1 : index;
+    const callbackRefs = visibleIndex >= 0
+      ? variant.callbackParamRefs?.find((item) => item.argIndex === visibleIndex)
+      : undefined;
     return rewriteExprCalls(
       arg,
       bindings,

@@ -109,6 +109,9 @@ function collectReflectedForeignTypeRefs(
   for (const binding of bindings.values()) {
     for (const variant of binding.variants) {
       collectForeignTypeNames(variant.type, foreignTypeRefs, localTypes);
+      if (variant.receiverType) {
+        collectForeignTypeNames(variant.receiverType, foreignTypeRefs, localTypes);
+      }
       if (variant.resultRef?.type) {
         collectForeignTypeNames(variant.resultRef.type, foreignTypeRefs, localTypes);
       }

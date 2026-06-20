@@ -14,14 +14,13 @@ import {
   type FfiVariant,
   isArrayLikeTypeName,
   memberVariants,
-  prependReceiver,
   refsForCallbackArg,
   selectVariant,
 } from "../shared.ts";
 import {
   jsGlobalTypeRef,
-  jsRefDeepCall,
   type JsMemberType,
+  jsRefDeepCall,
   type JsTypeRef,
 } from "../reflect/types.ts";
 
@@ -47,12 +46,10 @@ export function materializeReceiverProperty(
   selected: Set<string>,
 ): Expr {
   const variants = memberVariants(member).map((variant) => ({
-    type: prependReceiver(variant.type, receiverType),
+    type: variant.type,
+    receiverType,
     resultRef: variant.resultRef,
-    callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
-      argIndex: item.argIndex + 1,
-      params: item.params,
-    })),
+    callbackParamRefs: variant.callbackParamRefs,
   }));
   rememberVariantForeignTypeRefs(variants, foreignTypeRefs);
   addVariants(
@@ -64,7 +61,7 @@ export function materializeReceiverProperty(
     true,
     undefined,
   );
-  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [receiver]);
+  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], []);
   if (!variant) return { kind: "FfiGet", receiver, path };
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
@@ -72,6 +69,7 @@ export function materializeReceiverProperty(
     kind: "Call",
     callee: { kind: "Var", name: variant.internalName },
     args: [receiver],
+    node: original.node,
   };
 }
 
@@ -90,24 +88,18 @@ export function materializeReceiverCall(
   valueRefs: Map<string, JsTypeRef>,
   resolveExpr: ResolveExpr,
 ): Expr {
-  const allArgs = [receiver, ...args];
-  const argTypes = [
-    receiverType,
-    ...args.map((arg) => {
-      const type = inferredType(result, arg);
-      return type ? knownTyToTypeExpr(type) : undefined;
-    }),
-  ];
+  const argTypes = args.map((arg) => {
+    const type = inferredType(result, arg);
+    return type ? knownTyToTypeExpr(type) : undefined;
+  });
   const variants = memberVariants(member).map((variant) => ({
     type: resolveTypeVarsFromArgs(
-      resolveArrayLikeParams(prependReceiver(variant.type, receiverType), argTypes),
+      resolveArrayLikeParams(variant.type, argTypes),
       argTypes,
     ),
+    receiverType,
     resultRef: variant.resultRef,
-    callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
-      argIndex: item.argIndex + 1,
-      params: item.params,
-    })),
+    callbackParamRefs: variant.callbackParamRefs,
   }));
   rememberVariantForeignTypeRefs(variants, ffi.foreignTypeRefs);
   addVariants(
@@ -119,8 +111,13 @@ export function materializeReceiverCall(
     true,
     undefined,
   );
-  const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], allArgs, argTypes);
-  if (!variant) return { kind: "FfiCall", receiver, path, args };
+  const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], args, argTypes);
+  if (!variant) {
+    throw diagnosticError(
+      new Error(receiverOverloadMessage(path.join("."), variants, args.length)),
+      original.node,
+    );
+  }
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
   return {
@@ -131,7 +128,7 @@ export function materializeReceiverCall(
       ...args.map((arg, index) =>
         resolveDelayedCallArg(
           arg,
-          index + 1,
+          index,
           variant,
           ffi,
           result,
@@ -142,6 +139,7 @@ export function materializeReceiverCall(
         )
       ),
     ],
+    node: original.node,
   };
 }
 
@@ -236,6 +234,7 @@ function specializeDeepBindingCall(
     variant.target,
     [{
       type,
+      receiverType: variant.receiverType,
       resultRef: variant.resultRef,
       callRef: variant.callRef,
       callbackParamRefs: variant.callbackParamRefs,
@@ -245,6 +244,25 @@ function specializeDeepBindingCall(
     variant.node,
   );
   return binding.variants.at(-1) ?? variant;
+}
+
+function receiverOverloadMessage(
+  name: string,
+  variants: { type: TypeExpr }[],
+  visibleArgCount: number,
+): string {
+  const arities = [...new Set(variants.map(receiverVisibleArity).filter(isNumber))].sort();
+  return `cannot determine JS FFI overload for ${name} with ${visibleArgCount} arguments${
+    arities.length ? `; available arities: ${arities.join(", ")}` : ""
+  }`;
+}
+
+function receiverVisibleArity(variant: { type: TypeExpr }): number | undefined {
+  return variant.type.kind === "TFn" ? variant.type.params.length : 0;
+}
+
+function isNumber(value: number | undefined): value is number {
+  return typeof value === "number";
 }
 
 function findVariantByType(binding: FfiBinding, type: TypeExpr): FfiVariant | undefined {
@@ -275,6 +293,7 @@ function addResolvedArrayLikeVariants(
       variant.target,
       [{
         type,
+        receiverType: variant.receiverType,
         resultRef: variant.resultRef,
         callRef: variant.callRef,
         callbackParamRefs: variant.callbackParamRefs,
@@ -496,6 +515,7 @@ function unwrapResultTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined 
 function rememberVariantForeignTypeRefs(
   variants: {
     type: TypeExpr;
+    receiverType?: TypeExpr;
     resultRef?: JsTypeRef;
     callbackParamRefs?: { params: JsTypeRef[] }[];
   }[],
@@ -503,6 +523,7 @@ function rememberVariantForeignTypeRefs(
 ) {
   for (const variant of variants) {
     rememberForeignTypeNames(variant.type, foreignTypeRefs);
+    if (variant.receiverType) rememberForeignTypeNames(variant.receiverType, foreignTypeRefs);
     if (variant.resultRef?.type) rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs);
     for (const callback of variant.callbackParamRefs ?? []) {
       for (const ref of callback.params) {

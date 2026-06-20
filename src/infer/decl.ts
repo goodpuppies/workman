@@ -418,7 +418,7 @@ function inferRecursiveLet(
   });
   decl.bindings.forEach((b, i) => {
     const scheme = withSchemeProvenance(
-      { ...generalize(base, placeholders[i]), status: "value" as const },
+      generalizeBinding(base, placeholders[i], b.value),
       placeholders[i],
       provenance,
     );

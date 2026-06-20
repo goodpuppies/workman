@@ -168,7 +168,7 @@ export function constrainAt(
       const attemptedOrigin = error.attemptedSide
         ? sourceAt(options.sources?.[error.attemptedSide], error.path)
         : undefined;
-      const primaryOrigin = options.primarySource
+      const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
         ? sourceAt(options.sources?.[options.primarySource], error.path)
         : undefined;
       const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
@@ -332,6 +332,15 @@ function selectPrimaryCallsite(
   }
   const inheritedPrimary = origins.find((item) => item.primary);
   return reason?.primary ? reason : inheritedPrimary;
+}
+
+function isInheritedCallsitePrimary(
+  primary: EvidenceOrigin | undefined,
+  reason: EvidenceOrigin | undefined,
+): boolean {
+  return primary !== undefined && primary !== reason &&
+    primary.expectedCallTupleShape !== undefined &&
+    primary.actualCallTupleShape !== undefined;
 }
 
 export function rememberProvenance(

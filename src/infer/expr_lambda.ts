@@ -75,7 +75,11 @@ export function inferLambdaTy(
   expr.params.forEach((param, index) => {
     const annotated = annotations[index];
     if (!annotated) return;
-    const obligation = ffiReceiverObligationForParam(expr.body, patternBinders(param.pattern));
+    const obligation = ffiReceiverObligationForParam(
+      expr.body,
+      patternBinders(param.pattern),
+      facts,
+    );
     if (obligation) {
       throw diagnosticError(
         new Error(
@@ -125,6 +129,7 @@ export function inferLambdaTy(
 function ffiReceiverObligationForParam(
   expr: Expr,
   names: string[],
+  facts: TypeFacts,
 ): { kind: "property" | "method"; path: string } | undefined {
   if (names.length === 0) return undefined;
   const bound = new Set(names);
@@ -135,7 +140,8 @@ function ffiReceiverObligationForParam(
       (node.kind === "FfiGet" || node.kind === "FfiCall") &&
       node.receiver.kind === "Var" &&
       bound.has(node.receiver.name) &&
-      !shadowed.has(node.receiver.name)
+      !shadowed.has(node.receiver.name) &&
+      facts.expressions.get(node)?.subject === "ffi-obligation"
     ) {
       found = {
         kind: node.kind === "FfiGet" ? "property" : "method",

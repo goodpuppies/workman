@@ -166,6 +166,26 @@ Deno.test("deep reflected generic calls expose concrete result members", async (
   assertStringIncludes(js, "__deep_record");
 });
 
+Deno.test("deep reflected receiver arity errors point at the source call", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("Deno") import { dlopen: _deep_ };
+
+        let expectNumber = (value: Number) => { value };
+        let lib = dlopen("SDL2", JSON{
+          SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
+        });
+        let use = match(lib) {
+          Ok(sdl) => { sdl.symbols.SDL_PollEvent() :> Result.map(expectNumber) },
+          Err(e) => { Err(e) }
+        };
+      `),
+    Error,
+    "cannot determine JS FFI overload for symbols.SDL_PollEvent with 0 arguments; available arities: 1",
+  );
+});
+
 Deno.test("dynamic JS callback parameter annotations are rejected", async () => {
   await assertRejects(
     () =>

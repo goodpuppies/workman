@@ -57,6 +57,15 @@ export async function hoverAt(
 
 function hoverForTarget(target: Target, result: InferResult): LspHover | null {
   if (target.kind === "expr") {
+    if (
+      target.value.kind === "Call" && target.value.callee.kind === "Var" &&
+      isGeneratedFfiName(target.value.callee.name)
+    ) {
+      return generatedFfiHover(
+        displayVarName(target.value.callee.name),
+        result.env.get(target.value.callee.name),
+      );
+    }
     const fact = result.facts.expressions.get(target.value);
     if (fact) return factHover(labelExpr(target.value), fact);
     const type = result.types.get(target.value);
@@ -155,6 +164,23 @@ async function analyzePartialForHover(
 
 function schemeHover(name: string, scheme: Scheme | undefined): LspHover | null {
   return scheme ? hoverCode(`${name}: ${show(instantiate(scheme))}`) : null;
+}
+
+function generatedFfiHover(name: string, scheme: Scheme | undefined): LspHover | null {
+  if (!scheme) return null;
+  return hoverCode(`${name}: ${show(withoutReceiverParam(instantiate(scheme)))}`);
+}
+
+function withoutReceiverParam(type: Ty): Ty {
+  const target = prune(type);
+  if (target.tag !== "fn") return type;
+  if (target.params.length === 1) {
+    const param = prune(target.params[0]);
+    if (param.tag === "tuple") {
+      return { ...target, params: [{ ...param, items: param.items.slice(1) }] };
+    }
+  }
+  return { ...target, params: target.params.slice(1) };
 }
 
 function factHover(name: string, fact: TypeFact): LspHover | null {
@@ -368,7 +394,25 @@ function isDecl(item: Decl | Expr): item is Decl {
 }
 
 function labelExpr(expr: Expr): string {
-  return expr.kind === "Var" ? expr.name : expr.kind;
+  return expr.kind === "Var" ? displayVarName(expr.name) : expr.kind;
+}
+
+function displayVarName(name: string): string {
+  return isGeneratedFfiName(name) ? displayGeneratedFfiName(name) : name;
+}
+
+function displayGeneratedFfiName(name: string): string {
+  const tokens = name.replace(/^__ffi_/, "").replace(/_\d+$/, "").split("_").filter(Boolean);
+  for (let size = Math.floor(tokens.length / 2); size > 0; size--) {
+    const left = tokens.slice(tokens.length - size * 2, tokens.length - size);
+    const right = tokens.slice(tokens.length - size);
+    if (left.join("\0") === right.join("\0")) return right.join("_");
+  }
+  return tokens.at(-1) ?? name;
+}
+
+function isGeneratedFfiName(name: string): boolean {
+  return name.startsWith("__ffi_");
 }
 
 function ensurePartialHoverForeignTypes(module: Module, source: string) {

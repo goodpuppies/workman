@@ -17,9 +17,8 @@ import {
   type FfiVariant,
   fn,
   memberVariants,
-  name,
+  name as typeName,
   paramBinder,
-  prependReceiver,
   selectVariant,
 } from "../shared.ts";
 
@@ -59,30 +58,29 @@ export function reflectedReceiverCallCandidate(
   if (!member) return undefined;
   const suffix = callMember ? `(${callHintKey(args)})` : "";
   const surfaceName = `__receiver.${ref.key}.${path.join(".")}${suffix}`;
-  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref));
+  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref)) ??
+    typeName("Js.Object");
   addVariants(
     bindings,
     surfaceName,
     path.at(-1)!,
     { kind: "JsReceiver", path },
     memberVariants(member).map((variant) => ({
-      type: prependReceiver(variant.type, reflectedReceiverType),
+      type: variant.type,
+      receiverType: reflectedReceiverType,
       resultRef: variant.resultRef,
-      callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
-        argIndex: item.argIndex + 1,
-        params: item.params,
-      })),
+      callbackParamRefs: variant.callbackParamRefs,
     })),
     true,
     undefined,
   );
-  const allArgs = [{ kind: "Var" as const, name: baseName }, ...args];
-  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], allArgs);
+  const receiver = { kind: "Var" as const, name: baseName };
+  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], args);
   if (!variant) return undefined;
   selected.add(variant.internalName);
   return {
     callee: { kind: "Var", name: variant.internalName },
-    args: allArgs,
+    args: [receiver, ...args],
     variant,
   };
 }
@@ -104,27 +102,23 @@ export function reflectedReceiverProperty(
   const member = jsRefMember(ref, path);
   if (!member) return undefined;
   const surfaceName = `__receiver.${ref.key}.${path.join(".")}`;
-  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref));
+  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref)) ??
+    typeName("Js.Object");
   addVariants(
     bindings,
     surfaceName,
     path.at(-1)!,
     { kind: "JsReceiver", path },
     memberVariants(member).map((variant) => ({
-      type: prependReceiver(variant.type, reflectedReceiverType),
+      type: variant.type,
+      receiverType: reflectedReceiverType,
       resultRef: variant.resultRef,
-      callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
-        argIndex: item.argIndex + 1,
-        params: item.params,
-      })),
+      callbackParamRefs: variant.callbackParamRefs,
     })),
     true,
     undefined,
   );
-  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [{
-    kind: "Var",
-    name: baseName,
-  }]);
+  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], []);
   if (!variant) return undefined;
   selected.add(variant.internalName);
   return {
@@ -154,29 +148,25 @@ export function reflectedReceiverFunctionValue(
   if (variants.length !== 1 || variants[0].type.kind !== "TFn") return undefined;
   const params = variants[0].type.params.map((_, index) => `__wm_js_arg_${index}`);
   const surfaceName = `__receiver.${ref.key}.${path.join(".")}`;
-  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref));
+  const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref)) ??
+    typeName("Js.Object");
   addVariants(
     bindings,
     surfaceName,
     path.at(-1)!,
     { kind: "JsReceiver", path },
     [{
-      type: prependReceiver(variants[0].type, reflectedReceiverType),
+      type: variants[0].type,
+      receiverType: reflectedReceiverType,
       resultRef: variants[0].resultRef,
-      callbackParamRefs: variants[0].callbackParamRefs?.map((item) => ({
-        argIndex: item.argIndex + 1,
-        params: item.params,
-      })),
+      callbackParamRefs: variants[0].callbackParamRefs,
     }],
     true,
     undefined,
   );
   const variant = selectVariant(
     bindings.get(surfaceName)?.variants ?? [],
-    [
-      { kind: "Var", name: baseName },
-      ...params.map((param) => ({ kind: "Var" as const, name: param })),
-    ],
+    params.map((param) => ({ kind: "Var" as const, name: param })),
   );
   if (!variant) return undefined;
   selected.add(variant.internalName);
@@ -232,14 +222,11 @@ export function objectReceiverProperty(
     surfaceName,
     path.at(-1)!,
     { kind: "JsReceiver", path },
-    [{ type: fn([name("Js.Object")], name("Js.Value")) }],
+    [{ type: typeName("Js.Value"), receiverType: typeName("Js.Object") }],
     true,
     undefined,
   );
-  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], [{
-    kind: "Var",
-    name: baseName,
-  }]);
+  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], []);
   if (!variant) return undefined;
   selected.add(variant.internalName);
   return {
