@@ -331,22 +331,23 @@ function inferExprInner(
           provenance,
         );
       }
-      t = freshFfi("call", undefined, [], args, expr.node, expr.name);
-      if (t.tag === "ffi") {
+      const placeholder = freshFfi("call", undefined, [], args, expr.node, expr.name);
+      t = ffiBindingCallType(typeEnv, placeholder, expr.effect);
+      if (placeholder.tag === "ffi") {
         recordExprFact(facts, expr, {
           subject: "ffi-obligation",
           instantiated: t,
           origin: { source: "synthetic" },
         });
         recordFfiFact(facts, {
-          id: t.id,
-          kind: t.kind,
-          path: t.path,
-          receiver: t.receiver,
-          args: t.args,
-          binding: t.binding,
+          id: placeholder.id,
+          kind: placeholder.kind,
+          path: placeholder.path,
+          receiver: placeholder.receiver,
+          args: placeholder.args,
+          binding: placeholder.binding,
           expr,
-          placeholder: t,
+          placeholder,
           status: "unresolved",
           instantiated: t,
           origin: { source: "synthetic" },
@@ -655,6 +656,18 @@ function inferExprInner(
   }
   types.set(expr, t);
   return t;
+}
+
+function ffiBindingCallType(
+  typeEnv: TypeEnv,
+  value: Ty,
+  effect: "Result" | "Task" | undefined,
+): Ty {
+  if (!effect) return value;
+  const carrier = typeEnv.get(effect);
+  const jsError = typeEnv.get("Js.Error");
+  if (!carrier || !jsError) throw new Error("unknown FFI effect basis type");
+  return named(carrier, [value, named(jsError)]);
 }
 
 function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {

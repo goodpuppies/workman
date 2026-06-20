@@ -46,10 +46,12 @@ Deno.test("FFI elaboration rewrites namespace and object calls to delayed bindin
     first?.kind === "FfiBindingCall" && first.name,
     "console.log",
   );
+  assertEquals(first?.kind === "FfiBindingCall" && first.effect, "Result");
   assertEquals(
     second?.kind === "FfiBindingCall" && second.name,
     "Math.sqrt",
   );
+  assertEquals(second?.kind === "FfiBindingCall" && second.effect, "Result");
 });
 
 Deno.test("HM inference rejects unelaborated reflected JS imports", async () => {

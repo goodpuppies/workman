@@ -193,6 +193,7 @@ export function rewriteExprCalls(
             kind: "FfiBindingCall",
             name: expr.callee.name,
             args: expr.args.map((arg) => rewrite(arg)),
+            effect: commonBindingEffect(variants),
             node: expr.node,
           };
         }
@@ -367,6 +368,18 @@ export function rewriteExprCalls(
     default:
       return expr;
   }
+}
+
+function commonBindingEffect(variants: FfiVariant[]): "Result" | "Task" | undefined {
+  const effects = new Set(variants.map((variant) => callEffect(variant.type)));
+  return effects.size === 1 ? effects.values().next().value : undefined;
+}
+
+function callEffect(type: FfiVariant["type"]): "Result" | "Task" | undefined {
+  const result = type.kind === "TFn" ? type.result : type;
+  return result.kind === "TName" && (result.name === "Result" || result.name === "Task")
+    ? result.name
+    : undefined;
 }
 
 function isDottedRecordFieldReceiver(name: string): boolean {

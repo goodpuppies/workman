@@ -172,6 +172,29 @@ Deno.test("reflects JS namespace functions as values", async () => {
   });
 });
 
+Deno.test("delayed JS binding calls preserve their Result carrier in operators", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/helper.ts`,
+    `export function getTime(): number { return 1; }\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./helper.ts") import * as Helper;
+      let time = Helper.getTime();
+      let scaled = time * 2;
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = [...results.values()][0];
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "time", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "scaled", { type: "Result<Number, Js.Error>", vars: 0 });
+});
+
 Deno.test("orders generated receiver imports after local record types", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
