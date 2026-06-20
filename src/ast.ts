@@ -64,6 +64,7 @@ export type Expr =
   | Located<{ kind: "JsonArray"; items: Expr[] }>
   | Located<{ kind: "FfiGet"; receiver: Expr; path: string[] }>
   | Located<{ kind: "FfiCall"; receiver: Expr; path: string[]; args: Expr[] }>
+  | Located<{ kind: "FfiBindingCall"; name: string; args: Expr[] }>
   | Located<{ kind: "Lambda"; params: Param[]; body: Expr }>
   | Located<{ kind: "Call"; callee: Expr; args: Expr[] }>
   | Located<{ kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }>

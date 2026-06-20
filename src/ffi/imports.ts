@@ -82,7 +82,9 @@ export function collectFfiDecl(
     }
     const deep = isDeepImportSpec(spec);
     const reflected = !spec.type || deep;
-    if (spec.type && !deep) rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
+    if (spec.type && !deep) {
+      rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
+    }
     const localName = spec.alias ?? spec.name;
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     const ref = reflected ? jsTargetMemberValueRef(decl.target, spec.name) : undefined;
@@ -246,6 +248,7 @@ export function generatedJsImports(
   decl: Extract<Decl, { kind: "JsImportDecl" }>,
   bindings: Map<string, FfiBinding>,
   selected: Set<string>,
+  options: { selectedOnly?: boolean } = {},
 ): Decl[] {
   if (decl.clause.kind === "Namespace") {
     const specs = [...bindings.values()]
@@ -261,6 +264,16 @@ export function generatedJsImports(
             node: variant.node,
           }))
       );
+    if (options.selectedOnly) {
+      return specs.length === 0 ? [] : [{
+        ...decl,
+        clause: {
+          kind: "Named",
+          specs,
+          node: decl.clause.node,
+        },
+      }];
+    }
     if (specs.length === 0) return [decl];
     return [decl, {
       ...decl,
@@ -278,26 +291,38 @@ export function generatedJsImports(
     const binding = bindings.get(surfaceName);
     if (decl.target.kind === "JsGlobalRoot" && !spec.type && !binding) return [];
     if (!spec.type && !binding && bindings.has(`${surfaceName}.new`)) return [];
-    if (!binding) return [namedJsImportDecl(decl, [spec], clauseNode)];
+    if (!binding) return options.selectedOnly ? [] : [namedJsImportDecl(decl, [spec], clauseNode)];
     const variants = binding.variants;
-    if (variants.length === 1 && !decl.clause.alias) {
-      return [namedJsImportDecl(
-        decl,
-        [{ ...spec, type: variants[0].type, fallible: variants[0].fallible }],
-        clauseNode,
-      )];
-    }
     const selectedVariants = variants.filter((variant) => selected.has(variant.internalName));
-    if (selectedVariants.length === 0) return [];
+    if (selectedVariants.length === 0) {
+      if (variants.length === 1 && !decl.clause.alias) {
+        if (options.selectedOnly) return [];
+        return [namedJsImportDecl(
+          decl,
+          [{ ...spec, type: variants[0].type, fallible: variants[0].fallible }],
+          clauseNode,
+        )];
+      }
+      return [];
+    }
     return [namedJsImportDecl(
       decl,
-      selectedVariants.map((variant) => ({
-        ...spec,
-        name: variant.memberName,
-        alias: variant.internalName,
-        type: variant.type,
-        fallible: variant.fallible,
-      })),
+      [
+        ...(!options.selectedOnly && !decl.clause.alias
+          ? [{
+            ...spec,
+            type: selectedVariants[0].type,
+            fallible: selectedVariants[0].fallible,
+          }]
+          : []),
+        ...selectedVariants.map((variant) => ({
+          ...spec,
+          name: variant.memberName,
+          alias: variant.internalName,
+          type: variant.type,
+          fallible: variant.fallible,
+        })),
+      ],
       clauseNode,
     )];
   });

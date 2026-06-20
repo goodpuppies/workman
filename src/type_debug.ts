@@ -285,22 +285,25 @@ function formatFfiFacts(result: InferResult): string | undefined {
   if (facts.length === 0) return undefined;
   return [
     "ffi facts:",
-    ...facts.flatMap((fact) => [
-      `  ${formatFfiFactHeader(fact)}`,
-      `    kind: ${fact.kind}`,
-      `    status: ${fact.status}`,
-      `    receiver: ${show(fact.receiver)}`,
-      ...(fact.args.length ? [`    args: ${fact.args.map(show).join(", ")}`] : []),
-      ...(fact.instantiated ? [`    type: ${show(fact.instantiated)}`] : []),
-      ...formatFfiConstraints(fact),
-    ]),
+    ...facts.flatMap((fact) =>
+      [
+        `  ${formatFfiFactHeader(fact)}`,
+        `    kind: ${fact.kind}`,
+        `    status: ${fact.status}`,
+        fact.receiver ? `    receiver: ${show(fact.receiver)}` : undefined,
+        fact.binding ? `    binding: ${fact.binding}` : undefined,
+        ...(fact.args.length ? [`    args: ${fact.args.map(show).join(", ")}`] : []),
+        ...(fact.instantiated ? [`    type: ${show(fact.instantiated)}`] : []),
+        ...formatFfiConstraints(fact),
+      ].filter((line): line is string => !!line)
+    ),
   ].join("\n");
 }
 
 function formatFfiFactHeader(fact: FfiFact): string {
   const span = fact.expr?.node?.span ?? fact.placeholder?.node?.span;
   const loc = span ? `${span.line}:${span.col} ` : "";
-  return `${loc}?ffi#${fact.id}:${fact.path.join(".")}`;
+  return `${loc}?ffi#${fact.id}:${fact.binding ?? fact.path.join(".")}`;
 }
 
 function formatFfiConstraints(fact: FfiFact): string[] {

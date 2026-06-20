@@ -159,6 +159,9 @@ function ffiReceiverObligationForParam(
         visit(node.receiver, shadowed);
         node.args.forEach((arg) => visit(arg, shadowed));
         return;
+      case "FfiBindingCall":
+        node.args.forEach((arg) => visit(arg, shadowed));
+        return;
       case "Lambda": {
         const next = new Set(shadowed);
         node.params.flatMap((param) => patternBinders(param.pattern)).forEach((name) =>

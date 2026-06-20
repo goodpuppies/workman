@@ -42,7 +42,7 @@ Deno.test("pipe member segments elaborate to FFI receiver calls", async () => {
     let hex = (byte: Number) => {
       byte :> .toString(16)
     };
-    let joined = (items: Js.Object) => {
+    let joined = (items: Js.Array<String>) => {
       items :> .join("")
     };
   `);
@@ -86,7 +86,7 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
     "InferPipe.StepInput: pipe output matches next function input",
   );
   assertStringIncludes(error.message, "context: Task.andThen callback result");
-  assertStringIncludes(error.message, "expected: Task error: Js.Error");
-  assertStringIncludes(error.message, "actual:   Task error: String");
+  assertStringIncludes(error.message, "expected: Js.Error");
+  assertStringIncludes(error.message, "actual:   String");
   assertStringIncludes(error.message, "source: callback result");
 });

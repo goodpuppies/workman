@@ -91,6 +91,8 @@ export function typeExprFromTsType(
   if (isTsType(checker, type, "number")) return name("Number");
   if (isTsType(checker, type, "string")) return name("String");
   if (isTsType(checker, type, "boolean")) return name("Bool");
+  const pointer = denoPointerTypeExpr(checker, type);
+  if (pointer) return pointer;
   const awaited = awaitedTypeArgument(checker, type, position);
   if (awaited) return awaited;
   const nullish = nullishUnionParts(type);
@@ -190,6 +192,13 @@ function nullishUnionParts(type: ts.Type): { value?: ts.Type } | undefined {
 
 function isNullish(type: ts.Type): boolean {
   return !!(type.flags & ts.TypeFlags.Null) || !!(type.flags & ts.TypeFlags.Undefined);
+}
+
+function denoPointerTypeExpr(checker: ts.TypeChecker, type: ts.Type): TypeExpr | undefined {
+  const text = checker.typeToString(type);
+  if (/^(?:Deno\.)?PointerValue(?:<.*>)?$/.test(text)) return option(name("Js.Object"));
+  if (/^(?:Deno\.)?PointerObject(?:<.*>)?$/.test(text)) return name("Js.Object");
+  return undefined;
 }
 
 const bufferSourceTypeNames = new Set([

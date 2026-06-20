@@ -152,6 +152,8 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       throw new Error("unresolved FFI projection reached Core elaboration");
     case "FfiCall":
       throw new Error("unresolved FFI call reached Core elaboration");
+    case "FfiBindingCall":
+      throw new Error("unresolved FFI binding call reached Core elaboration");
     case "Lambda":
       return {
         kind: "CoreFn",

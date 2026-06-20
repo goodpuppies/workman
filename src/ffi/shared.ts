@@ -11,6 +11,7 @@ export type FfiElaboration = {
   bindings: Map<string, FfiBinding>;
   foreignTypeRefs: Map<string, JsTypeRef>;
   selected: Set<string>;
+  sourceJsImports?: Extract<Decl, { kind: "JsImportDecl" }>[];
   deepRecords?: Map<string, Extract<Decl, { kind: "RecordDecl" }>>;
 };
 
@@ -212,8 +213,14 @@ export function selectVariant(
 ): FfiVariant | undefined {
   return variants
     .filter((candidate) => typeCallArity(candidate.type) === args.length)
-    .map((candidate) => ({ candidate, score: callScore(candidate, args, argTypes) }))
-    .sort((left, right) => left.score - right.score)[0]?.candidate;
+    .map((candidate) => ({
+      candidate,
+      score: callScore(candidate, args, argTypes),
+      obligations: materializationObligations(candidate.type),
+    }))
+    .sort((left, right) =>
+      left.score - right.score || left.obligations - right.obligations
+    )[0]?.candidate;
 }
 
 export function ffiOverloadMessage(name: string, variants: FfiVariant[], args: Expr[]): string {
@@ -312,6 +319,23 @@ function sumTypeDistance(expected: TypeExpr[], actual: TypeExpr[]): number | und
     score += distance;
   }
   return score;
+}
+
+function materializationObligations(type: TypeExpr): number {
+  switch (type.kind) {
+    case "TName":
+      return (type.name === "Js.ArrayLike" ? 1 : 0) +
+        type.args.reduce((sum, arg) => sum + materializationObligations(arg), 0);
+    case "TTuple":
+      return type.items.reduce((sum, item) => sum + materializationObligations(item), 0);
+    case "TFn":
+      return [...type.params, type.result].reduce(
+        (sum, item) => sum + materializationObligations(item),
+        0,
+      );
+    case "TVar":
+      return 0;
+  }
 }
 
 function unknownArgScore(expected: TypeExpr, candidate: FfiVariant): number {

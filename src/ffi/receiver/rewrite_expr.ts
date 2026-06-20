@@ -1,5 +1,4 @@
 import type { Expr } from "../../ast.ts";
-import { diagnosticError } from "../../diagnostics.ts";
 import { jsRefCallMember, type JsTypeRef } from "../reflect/types.ts";
 import {
   type ObjectAccess,
@@ -14,13 +13,7 @@ import {
 } from "./receiver.ts";
 import { rewriteBlock, rewriteMatchArms } from "./rewrite_blocks.ts";
 import { rewriteDeclCalls } from "./rewrite_decl.ts";
-import {
-  type FfiBinding,
-  ffiOverloadMessage,
-  type FfiVariant,
-  refsForCallbackArg,
-  selectVariant,
-} from "../shared.ts";
+import { type FfiBinding, type FfiVariant, refsForCallbackArg } from "../shared.ts";
 
 let activeRecordFields = new Set<string>();
 
@@ -152,18 +145,14 @@ export function rewriteExprCalls(
             ...objectReceiver,
             receiver: sameReceiver ? expr.receiver : objectReceiver.receiver,
             node: objectReceiver.node ?? expr.node,
-            args: objectReceiver.args.map((arg) =>
-              rewrite(arg)
-            ),
+            args: objectReceiver.args.map((arg) => rewrite(arg)),
           };
         }
       }
       return {
         ...expr,
         receiver: rewrite(expr.receiver),
-        args: expr.args.map((arg) =>
-          rewrite(arg)
-        ),
+        args: expr.args.map((arg) => rewrite(arg)),
       };
     }
     case "Var": {
@@ -199,27 +188,13 @@ export function rewriteExprCalls(
           };
         }
         const variants = bindings.get(expr.callee.name)?.variants ?? [];
-        const variant = variants.length > 1 || expr.callee.name.includes(".")
-          ? selectVariant(variants, expr.args)
-          : undefined;
-        if (variant) {
-          selected.add(variant.internalName);
-          const args = rewriteArgsWithVariant(
-            expr.args,
-            variant,
-            bindings,
-            selected,
-            refs,
-            objectAccess,
-            importedTypeRefs,
-          );
-          return { ...expr, callee: { ...expr.callee, name: variant.internalName }, args };
-        }
-        if (variants.length > 0 && (variants.length > 1 || expr.callee.name.includes("."))) {
-          throw diagnosticError(
-            new Error(ffiOverloadMessage(expr.callee.name, variants, expr.args)),
-            expr.node,
-          );
+        if (variants.length > 0) {
+          return {
+            kind: "FfiBindingCall",
+            name: expr.callee.name,
+            args: expr.args.map((arg) => rewrite(arg)),
+            node: expr.node,
+          };
         }
         const receiver = reflectedReceiverCallCandidate(
           expr.callee.name,
@@ -274,9 +249,7 @@ export function rewriteExprCalls(
             return {
               ...objectReceiver,
               node: objectReceiver.node ?? expr.node,
-              args: objectReceiver.args.map((arg) =>
-                rewrite(arg)
-              ),
+              args: objectReceiver.args.map((arg) => rewrite(arg)),
             };
           }
           return objectReceiver;
@@ -284,18 +257,14 @@ export function rewriteExprCalls(
         const unresolved = unresolvedDottedCall(expr);
         if (unresolved) return unresolved;
       }
-      const args = expr.args.map((arg) =>
-        rewrite(arg)
-      );
+      const args = expr.args.map((arg) => rewrite(arg));
       const callee = rewrite(expr.callee);
       return { ...expr, callee, args };
     }
     case "Tuple":
       return {
         ...expr,
-        items: expr.items.map((item) =>
-          rewrite(item)
-        ),
+        items: expr.items.map((item) => rewrite(item)),
       };
     case "Record":
       return {
@@ -316,9 +285,12 @@ export function rewriteExprCalls(
     case "JsonArray":
       return {
         ...expr,
-        items: expr.items.map((item) =>
-          rewrite(item)
-        ),
+        items: expr.items.map((item) => rewrite(item)),
+      };
+    case "FfiBindingCall":
+      return {
+        ...expr,
+        args: expr.args.map((arg) => rewrite(arg)),
       };
     case "Lambda": {
       const localObjectAccess = new Map(objectAccess);

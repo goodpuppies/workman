@@ -3,6 +3,7 @@ import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import {
+  materializeBindingCall,
   materializeReceiverCall,
   materializeReceiverProperty,
   resolveArrayLikeParams,
@@ -26,7 +27,15 @@ import {
   withCallbackParamRefs,
 } from "./receiver_models.ts";
 import type { ResolveOptions } from "./types.ts";
-import { callArgHint, callHintKey, dynamicReceiverArgType, type FfiElaboration, fn, isDecl, name } from "../shared.ts";
+import {
+  callArgHint,
+  callHintKey,
+  dynamicReceiverArgType,
+  type FfiElaboration,
+  fn,
+  isDecl,
+  name,
+} from "../shared.ts";
 import {
   type JsCallArgHint,
   jsRefCallMember,
@@ -37,8 +46,12 @@ import {
   type JsTypeRef,
 } from "../reflect/types.ts";
 import { typeExprKey as reflectTypeExprKey } from "../reflect/ts_type_expr.ts";
-import { callArgHintForReflection, jsTypedArrayMember, receiverTypeThroughObligations } from "./delayed_reflection_hints.ts";
-import { addVariants, type FfiBinding, selectVariant, type FfiVariant } from "../shared.ts";
+import {
+  callArgHintForReflection,
+  jsTypedArrayMember,
+  receiverTypeThroughObligations,
+} from "./delayed_reflection_hints.ts";
+import { addVariants, type FfiBinding, type FfiVariant, selectVariant } from "../shared.ts";
 
 export function resolveDelayedDecl(
   decl: Decl,
@@ -71,6 +84,8 @@ function resolveDelayedExpr(
       return resolveDelayedFfiGet(expr, ffi, result, selected, options, valueRefs);
     case "FfiCall":
       return resolveDelayedFfiCall(expr, ffi, result, selected, options, valueRefs);
+    case "FfiBindingCall":
+      return resolveDelayedFfiBindingCall(expr, ffi, result, selected, options, valueRefs);
     case "Call":
       if (expr.callee.kind === "Var") {
         const deep = resolveDeepReflectedCall(expr, ffi, result, selected, valueRefs);
@@ -184,6 +199,26 @@ function resolveDelayedExpr(
   }
 }
 
+function resolveDelayedFfiBindingCall(
+  expr: Extract<Expr, { kind: "FfiBindingCall" }>,
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+  options: ResolveOptions,
+  valueRefs: Map<string, JsTypeRef>,
+): Expr {
+  return materializeBindingCall(
+    expr,
+    expr.args.map((arg) => resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)),
+    ffi,
+    result,
+    selected,
+    options,
+    valueRefs,
+    resolveDelayedExpr,
+  );
+}
+
 function resolveDelayedFfiGet(
   expr: Extract<Expr, { kind: "FfiGet" }>,
   ffi: FfiElaboration,
@@ -267,9 +302,17 @@ function resolveDelayedFfiGet(
     );
   }
   if (!receiverType || prune(receiverType).tag === "var") {
+    const deepRecordProperty = deepRecordReceiverProperty(
+      expr,
+      receiver,
+      ffi,
+      result,
+      selected,
+    );
+    if (deepRecordProperty) return deepRecordProperty;
     return { ...expr, receiver };
   }
-  if (isJsObjectTy(receiverType) && (ffi.deepRecords?.size ?? 0) > 0) {
+  if (options.dynamicFallback === false) {
     return { ...expr, receiver };
   }
   if (!isJsObjectTy(receiverType)) {
@@ -475,6 +518,16 @@ function resolveDelayedFfiCall(
     }
   }
   if (!receiverType || prune(receiverType).tag === "var") {
+    const deepRecordCall = deepRecordReceiverCall(
+      expr,
+      receiver,
+      ffi,
+      result,
+      selected,
+      options,
+      valueRefs,
+    );
+    if (deepRecordCall) return deepRecordCall;
     return {
       ...expr,
       receiver,
@@ -494,7 +547,7 @@ function resolveDelayedFfiCall(
     valueRefs,
   );
   if (recordCall) return recordCall;
-  if (isJsObjectTy(receiverType) && (ffi.deepRecords?.size ?? 0) > 0) {
+  if (options.dynamicFallback === false) {
     return {
       ...expr,
       receiver,
@@ -521,7 +574,10 @@ function resolveDelayedFfiCall(
     name("Js.Object"),
     {
       name: expr.path.at(-1)!,
-      type: fn(expr.args.map(dynamicReceiverArgType), dynamicCallResultType(inferredType(result, expr))),
+      type: fn(
+        expr.args.map(dynamicReceiverArgType),
+        dynamicCallResultType(inferredType(result, expr)),
+      ),
     },
     `__dynamic.${expr.path.join(".")}`,
     ffi,
@@ -580,6 +636,90 @@ function recordReceiverCall(
   );
 }
 
+function deepRecordReceiverProperty(
+  expr: Extract<Expr, { kind: "FfiGet" }>,
+  receiver: Expr,
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+): Expr | undefined {
+  const match = uniqueDeepRecordMember(ffi, expr.path);
+  if (!match) return undefined;
+  return materializeReceiverProperty(
+    expr,
+    receiver,
+    expr.path,
+    match.receiverType,
+    { name: expr.path.at(-1)!, type: match.member },
+    `__deep_record.${typeExprKey(match.receiverType)}.${expr.path.join(".")}`,
+    ffi.bindings,
+    ffi.foreignTypeRefs,
+    result,
+    selected,
+  );
+}
+
+function deepRecordReceiverCall(
+  expr: Extract<Expr, { kind: "FfiCall" }>,
+  receiver: Expr,
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+  options: ResolveOptions,
+  valueRefs: Map<string, JsTypeRef>,
+): Expr | undefined {
+  const match = uniqueDeepRecordMember(ffi, expr.path);
+  if (!match || match.member.kind !== "TFn") return undefined;
+  return materializeReceiverCall(
+    expr,
+    receiver,
+    expr.path,
+    expr.args,
+    match.receiverType,
+    { name: expr.path.at(-1)!, type: flattenTupledParams(match.member) },
+    `__deep_record.${typeExprKey(match.receiverType)}.${expr.path.join(".")}`,
+    ffi,
+    result,
+    selected,
+    options,
+    valueRefs,
+    resolveDelayedExpr,
+  );
+}
+
+function uniqueDeepRecordMember(
+  ffi: FfiElaboration,
+  path: string[],
+): { receiverType: TypeExpr; member: TypeExpr } | undefined {
+  const matches: { receiverType: TypeExpr; member: TypeExpr }[] = [];
+  for (const record of ffi.deepRecords?.values() ?? []) {
+    const member = recordTypeExprPathMember(ffi, record, path);
+    if (!member) continue;
+    matches.push({
+      receiverType: { kind: "TName", name: record.name, args: [] },
+      member,
+    });
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function recordTypeExprPathMember(
+  ffi: FfiElaboration,
+  record: Extract<Decl, { kind: "RecordDecl" }>,
+  path: string[],
+): TypeExpr | undefined {
+  let currentRecord: Extract<Decl, { kind: "RecordDecl" }> | undefined = record;
+  let current: TypeExpr | undefined;
+  for (const [index, part] of path.entries()) {
+    if (!currentRecord) return undefined;
+    current = currentRecord.fields.find((field) => field.name === part)?.type;
+    if (!current) return undefined;
+    if (index === path.length - 1) return current;
+    currentRecord = current.kind === "TName" ? ffi.deepRecords?.get(current.name) : undefined;
+  }
+  return current;
+}
+
 // Workman represents a multi-argument function as a single tuple parameter
 // (`(a, b) => r` is `fn([(a, b)], r)`), whereas the FFI receiver pipeline
 // (`prependReceiver`/`selectVariant`) works with flat positional parameters like the
@@ -594,7 +734,10 @@ function flattenTupledParams(type: TypeExpr): TypeExpr {
   return type;
 }
 
-function recordPathMember(type: Extract<Ty, { tag: "named" }>, path: string[]): TypeExpr | undefined {
+function recordPathMember(
+  type: Extract<Ty, { tag: "named" }>,
+  path: string[],
+): TypeExpr | undefined {
   let current: Ty = type;
   for (const part of path) {
     const target = prune(current);
@@ -639,7 +782,16 @@ function resolveDeepReflectedCall(
 ): Expr | undefined {
   if (expr.callee.kind !== "Var") return undefined;
   const binding = ffi.bindings.get(expr.callee.name);
-  const variants = binding?.variants.filter((variant) => variant.deep && variant.callRef) ?? [];
+  const directVariants = binding?.variants.filter((variant) => variant.deep && variant.callRef) ??
+    [];
+  const found = directVariants.length === 0
+    ? findVariantByInternalName(ffi.bindings, expr.callee.name)
+    : undefined;
+  const variants = directVariants.length > 0
+    ? directVariants
+    : found?.variant.deep && found.variant.callRef
+    ? [found.variant]
+    : [];
   if (variants.length === 0) return undefined;
   const original = variants.find((variant) => typeCallArity(variant.type) === expr.args.length);
   if (!original?.callRef) return undefined;
@@ -647,14 +799,17 @@ function resolveDeepReflectedCall(
   if (!reflected) return undefined;
   ffi.deepRecords ??= new Map();
   for (const record of reflected.records) ffi.deepRecords.set(record.name, record);
-  const surfaceName = expr.callee.name;
+  const surfaceName = found?.surfaceName ?? expr.callee.name;
   addVariants(
     ffi.bindings,
     surfaceName,
     original.memberName,
     original.target,
     [{
-      type: replaceCallResult(original.fallible ? unwrapFallibleType(original.type) : original.type, reflected.type),
+      type: replaceCallResult(
+        original.fallible ? unwrapFallibleType(original.type) : original.type,
+        reflected.type,
+      ),
       callRef: original.callRef,
       deep: true,
     }],

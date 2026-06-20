@@ -39,8 +39,9 @@ export type FfiFact = {
   id: number;
   kind: "get" | "call";
   path: string[];
-  receiver: Ty;
+  receiver?: Ty;
   args: Ty[];
+  binding?: string;
   expr?: Expr;
   placeholder?: Extract<Ty, { tag: "ffi" }>;
   status: "unresolved" | "resolved";

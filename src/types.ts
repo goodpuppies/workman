@@ -8,9 +8,10 @@ export type Ty =
     tag: "ffi";
     id: number;
     kind: "get" | "call";
-    receiver: Ty;
+    receiver?: Ty;
     path: string[];
     args: Ty[];
+    binding?: string;
     node?: Expr["node"];
     instance?: Ty;
     constraints?: Ty[];
@@ -84,10 +85,11 @@ export const prim = (name: string): Ty => ({ tag: "prim", name });
 export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
 export const freshFfi = (
   kind: "get" | "call",
-  receiver: Ty,
+  receiver: Ty | undefined,
   path: string[],
   args: Ty[] = [],
   node?: Expr["node"],
+  binding?: string,
 ): Ty => ({
   tag: "ffi",
   id: nextFfi++,
@@ -96,6 +98,7 @@ export const freshFfi = (
   path,
   args,
   node,
+  binding,
 });
 export const fn = (params: Ty[], result: Ty): Ty => ({ tag: "fn", params, result });
 export const tuple = (items: Ty[]): Ty => ({ tag: "tuple", items });
@@ -366,7 +369,7 @@ export function ftv(t: Ty, out = new Set<number>()): Set<number> {
   t = prune(t);
   if (t.tag === "var") out.add(t.id);
   else if (t.tag === "ffi") {
-    ftv(t.receiver, out);
+    if (t.receiver) ftv(t.receiver, out);
     t.args.forEach((arg) => ftv(arg, out));
   } else if (t.tag === "fn") {
     t.params.forEach((p) => ftv(p, out));
@@ -459,7 +462,7 @@ export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
     if (t.tag === "ffi") {
       return {
         ...t,
-        receiver: go(t.receiver),
+        receiver: t.receiver ? go(t.receiver) : undefined,
         args: t.args.map(go),
         instance: t.instance ? go(t.instance) : undefined,
       };
@@ -549,7 +552,7 @@ export function show(t: Ty): string {
   const go = (x: Ty): string => {
     x = prune(x);
     if (x.tag === "var") return x.name ?? nameOf(x.id);
-    if (x.tag === "ffi") return `?ffi#${x.id}:${x.path.join(".")}`;
+    if (x.tag === "ffi") return `?ffi#${x.id}:${x.binding ?? x.path.join(".")}`;
     if (x.tag === "prim") return x.name;
     if (x.tag === "tuple") return `(${x.items.map(go).join(", ")})`;
     if (x.tag === "fn") return `(${x.params.map(go).join(", ")}) => ${go(x.result)}`;

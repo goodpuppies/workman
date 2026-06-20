@@ -85,6 +85,9 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
     bindings,
     foreignTypeRefs: importedTypeRefs,
     selected,
+    sourceJsImports: module.decls.filter((decl) =>
+      decl.kind === "JsImportDecl" && !decl.typeOnly
+    ) as Extract<Decl, { kind: "JsImportDecl" }>[],
     deepRecords: new Map(),
   };
 }

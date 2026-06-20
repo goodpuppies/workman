@@ -208,6 +208,7 @@ export async function analyzeFile(
       const contextualResult = contextualResults.get(path)!;
       const resolved = resolveDelayedFfiElaboration(prepared, contextualResult, {
         foreignTypeRefs,
+        dynamicFallback: false,
       });
       ffi.set(path, resolved);
       node.module = resolved.module;
@@ -309,6 +310,7 @@ async function checkPreparedModuleWithoutImports(
   try {
     resolved = resolveDelayedFfiElaboration(contextual, contextualResult, {
       foreignTypeRefs,
+      dynamicFallback: false,
     });
   } catch (error) {
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));

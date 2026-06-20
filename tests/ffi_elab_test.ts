@@ -16,7 +16,7 @@ Deno.test("FFI elaboration collects manual and reflected JS bindings before HM",
   assertEquals(ffi.bindings.get("console.log")?.variants[0].memberName, "log");
 });
 
-Deno.test("FFI elaboration rewrites namespace and object calls to concrete imports", async () => {
+Deno.test("FFI elaboration rewrites namespace and object calls to delayed binding calls", async () => {
   const module = await parse(`
     from js.global("Math") import * as Math;
     from js.global("console") import { log: (String, Number) => Void } as console;
@@ -30,7 +30,6 @@ Deno.test("FFI elaboration rewrites namespace and object calls to concrete impor
   const imports = ffi.module.decls.filter((decl) => decl.kind === "JsImportDecl");
 
   assertEquals(imports.some((decl) => decl.clause.kind === "Namespace"), true);
-  assertEquals(imports.some((decl) => decl.clause.kind === "Named"), true);
   assertEquals(
     ffi.bindings.get("console.log")?.variants[0].internalName,
     "__ffi_console_log_log_0",
@@ -44,12 +43,12 @@ Deno.test("FFI elaboration rewrites namespace and object calls to concrete impor
   const second = block?.kind === "Block" ? block.result : undefined;
 
   assertEquals(
-    first?.kind === "Call" && first.callee.kind === "Var" && first.callee.name,
-    "__ffi_console_log_log_0",
+    first?.kind === "FfiBindingCall" && first.name,
+    "console.log",
   );
   assertEquals(
-    second?.kind === "Call" && second.callee.kind === "Var" && second.callee.name,
-    "__ffi_Math_sqrt_sqrt_0",
+    second?.kind === "FfiBindingCall" && second.name,
+    "Math.sqrt",
   );
 });
 

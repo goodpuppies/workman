@@ -13,7 +13,7 @@ import {
   tyToTypeExpr,
   withCallbackParamRefs,
 } from "./receiver_models.ts";
-import { callArgHint, isDecl, type FfiElaboration } from "../shared.ts";
+import { callArgHint, type FfiElaboration, isDecl, selectVariant } from "../shared.ts";
 import {
   type JsCallArgHint,
   jsRefCallMember,
@@ -27,7 +27,7 @@ export function contextualizeDelayedCallbacks(
   result: InferResult,
 ): FfiElaboration {
   const arities = namedLambdaArities(ffi.module.decls);
-  const contexts = collectNamedCallbackContexts(ffi.module.decls, result, arities);
+  const contexts = collectNamedCallbackContexts(ffi.module.decls, result, arities, ffi.bindings);
   return {
     ...ffi,
     module: {
@@ -43,6 +43,7 @@ function collectNamedCallbackContexts(
   decls: Decl[],
   result: InferResult,
   arities: Map<string, number>,
+  bindings: FfiElaboration["bindings"],
 ): Map<string, TypeExpr[]> {
   const contexts = new Map<string, TypeExpr[]>();
   const visitDecl = (decl: Decl) => {
@@ -54,6 +55,10 @@ function collectNamedCallbackContexts(
       case "FfiCall":
         collectFfiCallCallbackContexts(expr, result, arities, contexts, new Map());
         visitExpr(expr.receiver);
+        expr.args.forEach(visitExpr);
+        return;
+      case "FfiBindingCall":
+        collectFfiBindingCallCallbackContexts(expr, arities, contexts, bindings);
         expr.args.forEach(visitExpr);
         return;
       case "Call":
@@ -115,6 +120,48 @@ function collectNamedCallbackContexts(
   };
   decls.forEach(visitDecl);
   return contexts;
+}
+
+function collectFfiBindingCallCallbackContexts(
+  expr: Extract<Expr, { kind: "FfiBindingCall" }>,
+  arities: Map<string, number>,
+  contexts: Map<string, TypeExpr[]>,
+  bindings: FfiElaboration["bindings"],
+) {
+  for (const callback of callbackParamTypesForFfiBindingCall(expr, arities, bindings)) {
+    const arg = expr.args[callback.argIndex];
+    if (arg?.kind !== "Var") continue;
+    if (callback.params.length) contexts.set(arg.name, callback.params);
+  }
+}
+
+function callbackParamTypesForFfiBindingCall(
+  expr: Extract<Expr, { kind: "FfiBindingCall" }>,
+  arities: Map<string, number>,
+  bindings: FfiElaboration["bindings"],
+): { argIndex: number; params: TypeExpr[] }[] {
+  const binding = bindings.get(expr.name);
+  const variant = binding
+    ? selectVariant(
+      binding.variants,
+      expr.args.map((arg) =>
+        arg.kind === "Var" && arities.has(arg.name)
+          ? {
+            ...arg,
+            kind: "Lambda" as const,
+            params: Array.from({ length: arities.get(arg.name)! }, () => ({
+              pattern: { kind: "PWildcard" as const },
+            })),
+            body: arg,
+          }
+          : arg
+      ),
+    )
+    : undefined;
+  return (variant?.callbackParamRefs ?? []).map((callback) => ({
+    argIndex: callback.argIndex,
+    params: callback.params.map((ref) => ref.type).filter((type): type is TypeExpr => !!type),
+  }));
 }
 
 function collectFfiCallCallbackContexts(
@@ -259,6 +306,27 @@ function contextualizeExpr(
       return {
         ...expr,
         receiver: contextualizeExpr(expr.receiver, result, arities, localTypes, bindings),
+        args: expr.args.map((arg, index) =>
+          contextualizeCallbackArg(
+            arg,
+            callbackParams.get(index),
+            result,
+            arities,
+            localTypes,
+            bindings,
+          )
+        ),
+      };
+    }
+    case "FfiBindingCall": {
+      const callbackParams = new Map(
+        callbackParamTypesForFfiBindingCall(expr, arities, bindings).map((callback) => [
+          callback.argIndex,
+          callback.params,
+        ]),
+      );
+      return {
+        ...expr,
         args: expr.args.map((arg, index) =>
           contextualizeCallbackArg(
             arg,

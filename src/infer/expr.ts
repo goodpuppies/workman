@@ -301,6 +301,59 @@ function inferExprInner(
       }
       break;
     }
+    case "FfiBindingCall": {
+      const args: Ty[] = new Array(expr.args.length);
+      for (const [index, arg] of expr.args.entries()) {
+        if (arg.kind === "Lambda") continue;
+        args[index] = inferExpr(
+          arg,
+          env,
+          typeEnv,
+          adts,
+          types,
+          facts,
+          warnings,
+          diagnostics,
+          provenance,
+        );
+      }
+      for (const [index, arg] of expr.args.entries()) {
+        if (arg.kind !== "Lambda") continue;
+        args[index] = inferLambdaTy(
+          arg,
+          env,
+          typeEnv,
+          adts,
+          types,
+          facts,
+          warnings,
+          diagnostics,
+          provenance,
+        );
+      }
+      t = freshFfi("call", undefined, [], args, expr.node, expr.name);
+      if (t.tag === "ffi") {
+        recordExprFact(facts, expr, {
+          subject: "ffi-obligation",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+        recordFfiFact(facts, {
+          id: t.id,
+          kind: t.kind,
+          path: t.path,
+          receiver: t.receiver,
+          args: t.args,
+          binding: t.binding,
+          expr,
+          placeholder: t,
+          status: "unresolved",
+          instantiated: t,
+          origin: { source: "synthetic" },
+        });
+      }
+      break;
+    }
     case "Lambda":
       t = inferLambdaTy(
         expr,

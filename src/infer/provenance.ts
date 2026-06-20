@@ -217,7 +217,9 @@ export function constrainAt(
         id: writer.nextId("d"),
         code: "type.mismatch",
         severity: "error",
-        primary: primaryOrigin ? anchorFromOrigin(primaryOrigin) : anchorFromEvidence(primary, expr?.node),
+        primary: primaryOrigin
+          ? anchorFromOrigin(primaryOrigin)
+          : anchorFromEvidence(primary, expr?.node),
         failure,
         support: writer.buildSupport([collisionId]),
         repairs: [],
@@ -629,6 +631,9 @@ function visitChildren(node: Expr, visit: (node: Expr) => void) {
       break;
     case "FfiCall":
       visit(node.receiver);
+      node.args.forEach(visit);
+      break;
+    case "FfiBindingCall":
       node.args.forEach(visit);
       break;
     case "Lambda":

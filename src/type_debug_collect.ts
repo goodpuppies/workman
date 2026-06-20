@@ -24,6 +24,9 @@ export function collectExprs(module: Module): Expr[] {
         visitExpr(expr.receiver);
         expr.args.forEach(visitExpr);
         break;
+      case "FfiBindingCall":
+        expr.args.forEach(visitExpr);
+        break;
       case "Lambda":
         visitExpr(expr.body);
         break;
@@ -109,6 +112,9 @@ export function collectPatterns(module: Module): Pattern[] {
         break;
       case "FfiCall":
         visitExpr(expr.receiver);
+        expr.args.forEach(visitExpr);
+        break;
+      case "FfiBindingCall":
         expr.args.forEach(visitExpr);
         break;
       case "Call":

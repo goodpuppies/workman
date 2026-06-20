@@ -242,6 +242,8 @@ function collectExpr(expr: Expr): Target[] {
       return [...own, ...collectExpr(expr.receiver)];
     case "FfiCall":
       return [...own, ...collectExpr(expr.receiver), ...expr.args.flatMap(collectExpr)];
+    case "FfiBindingCall":
+      return [...own, ...expr.args.flatMap(collectExpr)];
     case "Lambda":
       return [...own, ...expr.params.flatMap(collectParam), ...collectExpr(expr.body)];
     case "Call":
@@ -440,7 +442,7 @@ function isPipeOperatorTarget(target: Target, source: string, offset: number): b
   if (target.kind !== "expr") return false;
   if (
     target.value.kind !== "Pipe" && target.value.kind !== "FfiGet" &&
-    target.value.kind !== "FfiCall"
+    target.value.kind !== "FfiCall" && target.value.kind !== "FfiBindingCall"
   ) {
     return false;
   }

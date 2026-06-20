@@ -1,14 +1,16 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
+import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
 import { prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
-import { inferredType, knownTyToTypeExpr } from "./receiver_models.ts";
+import { inferredType, knownTyToTypeExpr, typeExprKey } from "./receiver_models.ts";
 import {
   addVariants,
   type FfiBinding,
   type FfiElaboration,
+  ffiOverloadMessage,
   type FfiVariant,
   isArrayLikeTypeName,
   memberVariants,
@@ -16,7 +18,12 @@ import {
   refsForCallbackArg,
   selectVariant,
 } from "../shared.ts";
-import { jsGlobalTypeRef, type JsMemberType, type JsTypeRef } from "../reflect/types.ts";
+import {
+  jsGlobalTypeRef,
+  jsRefDeepCall,
+  type JsMemberType,
+  type JsTypeRef,
+} from "../reflect/types.ts";
 
 type ResolveExpr = (
   expr: Expr,
@@ -92,7 +99,10 @@ export function materializeReceiverCall(
     }),
   ];
   const variants = memberVariants(member).map((variant) => ({
-    type: resolveArrayLikeParams(prependReceiver(variant.type, receiverType), argTypes),
+    type: resolveTypeVarsFromArgs(
+      resolveArrayLikeParams(prependReceiver(variant.type, receiverType), argTypes),
+      argTypes,
+    ),
     resultRef: variant.resultRef,
     callbackParamRefs: variant.callbackParamRefs?.map((item) => ({
       argIndex: item.argIndex + 1,
@@ -133,6 +143,252 @@ export function materializeReceiverCall(
       ),
     ],
   };
+}
+
+export function materializeBindingCall(
+  original: Extract<Expr, { kind: "FfiBindingCall" }>,
+  args: Expr[],
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+  options: ResolveOptions,
+  valueRefs: Map<string, JsTypeRef>,
+  resolveExpr: ResolveExpr,
+): Expr {
+  const binding = ffi.bindings.get(original.name);
+  if (!binding) {
+    throw diagnosticError(new Error(`unknown JS FFI binding ${original.name}`), original.node);
+  }
+  const argTypes = args.map((arg) => {
+    const type = inferredType(result, arg);
+    return type ? knownTyToTypeExpr(type) : undefined;
+  });
+  addResolvedArrayLikeVariants(binding, argTypes, ffi.bindings);
+  let variant = selectVariant(binding.variants, args, argTypes);
+  if (!variant) {
+    throw diagnosticError(
+      new Error(ffiOverloadMessage(original.name, binding.variants, args)),
+      original.node,
+    );
+  }
+  variant = specializeDeepBindingCall(binding, variant, args, ffi);
+  solveReflectedFfiValue(original, variant, result);
+  selected.add(variant.internalName);
+  return {
+    kind: "Call",
+    callee: { kind: "Var", name: variant.internalName },
+    args: args.map((arg, index) =>
+      resolveDelayedCallArg(
+        arg,
+        index,
+        variant,
+        ffi,
+        result,
+        selected,
+        options,
+        valueRefs,
+        resolveExpr,
+      )
+    ),
+    node: original.node,
+  };
+}
+
+export function solveBindingCallType(
+  original: Extract<Expr, { kind: "FfiBindingCall" }>,
+  args: Expr[],
+  ffi: FfiElaboration,
+  result: InferResult,
+): void {
+  const binding = ffi.bindings.get(original.name);
+  if (!binding) return;
+  const argTypes = args.map((arg) => {
+    const type = inferredType(result, arg);
+    return type ? knownTyToTypeExpr(type) : undefined;
+  });
+  if (binding.variants.length > 1 && argTypes.some((type) => !type)) return;
+  addResolvedArrayLikeVariants(binding, argTypes, ffi.bindings);
+  let variant = selectVariant(binding.variants, args, argTypes);
+  if (!variant) return;
+  variant = specializeDeepBindingCall(binding, variant, args, ffi);
+  solveReflectedFfiValue(original, variant, result);
+}
+
+function specializeDeepBindingCall(
+  binding: FfiBinding,
+  variant: FfiVariant,
+  args: Expr[],
+  ffi: FfiElaboration,
+): FfiVariant {
+  if (!variant.deep || !variant.callRef) return variant;
+  const reflected = jsRefDeepCall(variant.callRef, args);
+  if (!reflected) return variant;
+  ffi.deepRecords ??= new Map();
+  for (const record of reflected.records) ffi.deepRecords.set(record.name, record);
+  const base = variant.fallible ? unwrapFallibleType(variant.type) : variant.type;
+  const type = replaceCallResult(base, reflected.type);
+  const existing = findVariantByType(binding, variant.fallible ? fallibleTypeKey(type) : type);
+  if (existing) return existing;
+  addVariants(
+    ffi.bindings,
+    binding.surfaceName,
+    variant.memberName,
+    variant.target,
+    [{
+      type,
+      resultRef: variant.resultRef,
+      callRef: variant.callRef,
+      callbackParamRefs: variant.callbackParamRefs,
+      deep: true,
+    }],
+    variant.fallible,
+    variant.node,
+  );
+  return binding.variants.at(-1) ?? variant;
+}
+
+function findVariantByType(binding: FfiBinding, type: TypeExpr): FfiVariant | undefined {
+  const key = typeExprKey(type);
+  return binding.variants.find((variant) => typeExprKey(variant.type) === key);
+}
+
+function replaceCallResult(type: TypeExpr, result: TypeExpr): TypeExpr {
+  if (type.kind === "TFn") return { ...type, result };
+  return result;
+}
+
+function addResolvedArrayLikeVariants(
+  binding: FfiBinding,
+  argTypes: (TypeExpr | undefined)[],
+  bindings: Map<string, FfiBinding>,
+) {
+  const existing = new Set(binding.variants.map((variant) => typeExprKey(variant.type)));
+  for (const variant of [...binding.variants]) {
+    const base = variant.fallible ? unwrapFallibleType(variant.type) : variant.type;
+    const type = resolveArrayLikeParams(base, argTypes);
+    const key = typeExprKey(variant.fallible ? fallibleTypeKey(type) : type);
+    if (existing.has(key)) continue;
+    addVariants(
+      bindings,
+      binding.surfaceName,
+      variant.memberName,
+      variant.target,
+      [{
+        type,
+        resultRef: variant.resultRef,
+        callRef: variant.callRef,
+        callbackParamRefs: variant.callbackParamRefs,
+        deep: variant.deep,
+      }],
+      variant.fallible,
+      variant.node,
+    );
+    existing.add(key);
+  }
+}
+
+function fallibleTypeKey(type: TypeExpr): TypeExpr {
+  if (type.kind !== "TFn") return resultType(type);
+  return { ...type, result: resultType(type.result) };
+}
+
+function resultType(type: TypeExpr): TypeExpr {
+  if (
+    type.kind === "TName" &&
+    (type.name === "Result" || type.name === "Task") &&
+    type.args.length === 2
+  ) {
+    return type;
+  }
+  return {
+    kind: "TName",
+    name: "Result",
+    args: [type, { kind: "TName", name: "Js.Error", args: [] }],
+  };
+}
+
+function unwrapFallibleType(type: TypeExpr): TypeExpr {
+  if (
+    type.kind === "TFn" &&
+    type.result.kind === "TName" &&
+    (type.result.name === "Result" || type.result.name === "Task") &&
+    type.result.args.length === 2
+  ) {
+    return { ...type, result: type.result.args[0] };
+  }
+  return type;
+}
+
+function resolveTypeVarsFromArgs(
+  type: TypeExpr,
+  argTypes: (TypeExpr | undefined)[],
+): TypeExpr {
+  if (type.kind !== "TFn") return type;
+  const subst = new Map<string, TypeExpr>();
+  type.params.forEach((param, index) => collectTypeVarBindings(param, argTypes[index], subst));
+  return subst.size ? substituteTypeVars(type, subst) : concretizeTypeVars(type);
+}
+
+function collectTypeVarBindings(
+  expected: TypeExpr,
+  actual: TypeExpr | undefined,
+  subst: Map<string, TypeExpr>,
+) {
+  if (!actual) return;
+  if (expected.kind === "TVar") {
+    subst.set(expected.name, actual);
+    return;
+  }
+  if (expected.kind === "TName" && actual.kind === "TName" && expected.name === actual.name) {
+    expected.args.forEach((arg, index) => collectTypeVarBindings(arg, actual.args[index], subst));
+    return;
+  }
+  if (expected.kind === "TTuple" && actual.kind === "TTuple") {
+    expected.items.forEach((item, index) =>
+      collectTypeVarBindings(item, actual.items[index], subst)
+    );
+    return;
+  }
+  if (expected.kind === "TFn" && actual.kind === "TFn") {
+    expected.params.forEach((param, index) =>
+      collectTypeVarBindings(param, actual.params[index], subst)
+    );
+    collectTypeVarBindings(expected.result, actual.result, subst);
+  }
+}
+
+function substituteTypeVars(type: TypeExpr, subst: Map<string, TypeExpr>): TypeExpr {
+  switch (type.kind) {
+    case "TVar":
+      return subst.get(type.name) ?? type;
+    case "TName":
+      return { ...type, args: type.args.map((arg) => substituteTypeVars(arg, subst)) };
+    case "TTuple":
+      return { ...type, items: type.items.map((item) => substituteTypeVars(item, subst)) };
+    case "TFn":
+      return {
+        ...type,
+        params: type.params.map((param) => substituteTypeVars(param, subst)),
+        result: substituteTypeVars(type.result, subst),
+      };
+  }
+}
+
+function concretizeTypeVars(type: TypeExpr): TypeExpr {
+  switch (type.kind) {
+    case "TVar":
+      return { kind: "TName", name: "Js.Value", args: [] };
+    case "TName":
+      return { ...type, args: type.args.map(concretizeTypeVars) };
+    case "TTuple":
+      return { ...type, items: type.items.map(concretizeTypeVars) };
+    case "TFn":
+      return {
+        ...type,
+        params: type.params.map(concretizeTypeVars),
+        result: concretizeTypeVars(type.result),
+      };
+  }
 }
 
 // Resolve an array-like obligation (`Js.ArrayLike`, possibly inside `Option`) against the

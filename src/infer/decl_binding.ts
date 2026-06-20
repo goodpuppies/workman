@@ -60,6 +60,8 @@ function containsFfiBoundary(expr: Expr, env: Env): boolean {
       return true;
     case "FfiCall":
       return true;
+    case "FfiBindingCall":
+      return true;
     case "Tuple":
     case "JsonArray":
       return expr.items.some((item) => containsFfiBoundary(item, env));
@@ -271,6 +273,9 @@ function dynamicFfiWithoutJsonAssert(expr: Expr, env: Env): boolean {
       case "FfiCall":
         hasDynamicFfi = true;
         visit(node.receiver);
+        node.args.forEach(visit);
+        return;
+      case "FfiBindingCall":
         node.args.forEach(visit);
         return;
       case "Lambda":
