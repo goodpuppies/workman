@@ -155,6 +155,34 @@ let use = match(lib) {
   assertEquals(value.includes("__Deep"), false);
 });
 
+Deno.test("lsp hover hides generated deep FFI types in helper signatures", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+from js.global("Deno") import { dlopen: _deep_ };
+
+let lib = dlopen("SDL2", JSON{
+  SDL_CreateWindow: JSON{ parameters: JSON["buffer", "i32"], result: "pointer" }
+});
+
+let createSurface = (sdl, title) => {
+  sdl.symbols.SDL_CreateWindow(title, 1)
+};
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(
+    pathToFileUri(main),
+    positionOf(source, "createSurface ="),
+    new Map(),
+  );
+
+  const value = hover?.contents.value ?? "";
+  assertStringIncludes(value, "createSurface:");
+  assertStringIncludes(value, "createSurface: ((Js.Object, Option<Js.ArrayLike>))");
+  assertEquals(value.includes("__Deep"), false);
+});
+
 function positionOf(source: string, text: string) {
   const offset = source.indexOf(text);
   if (offset < 0) throw new Error(`missing test text ${text}`);

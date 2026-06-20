@@ -20,14 +20,7 @@ import { expandCallArg } from "../infer/shared.ts";
 import { loadModuleGraph } from "../module_graph.ts";
 import { type AstNode, lineColToOffset, lineStarts } from "../source.ts";
 import { standardInferOptions } from "../standard_library.ts";
-import {
-  instantiate,
-  instantiateRecordFields,
-  prune,
-  type Scheme,
-  show,
-  type Ty,
-} from "../types.ts";
+import { instantiate, instantiateRecordFields, prune, type Scheme, type Ty } from "../types.ts";
 import type { TypeFact } from "../infer/type_facts.ts";
 import { fileUriToPath } from "./uri.ts";
 
@@ -69,7 +62,7 @@ function hoverForTarget(target: Target, result: InferResult): LspHover | null {
     const fact = result.facts.expressions.get(target.value);
     if (fact) return factHover(labelExpr(target.value), fact);
     const type = result.types.get(target.value);
-    if (type) return hoverCode(`${labelExpr(target.value)}: ${show(type)}`);
+    if (type) return hoverCode(`${labelExpr(target.value)}: ${showHoverType(type)}`);
     if (target.value.kind === "Var") {
       return schemeHover(target.value.name, result.env.get(target.value.name));
     }
@@ -82,7 +75,7 @@ function hoverForTarget(target: Target, result: InferResult): LspHover | null {
     const localType = expected && target.expectedPattern
       ? patternBinderType(target.expectedPattern, target.value, expected, result)
       : undefined;
-    if (localType) return hoverCode(`${target.value.name}: ${show(localType)}`);
+    if (localType) return hoverCode(`${target.value.name}: ${showHoverType(localType)}`);
     return schemeHover(target.value.name, result.env.get(target.value.name));
   }
 
@@ -163,12 +156,12 @@ async function analyzePartialForHover(
 }
 
 function schemeHover(name: string, scheme: Scheme | undefined): LspHover | null {
-  return scheme ? hoverCode(`${name}: ${show(instantiate(scheme))}`) : null;
+  return scheme ? hoverCode(`${name}: ${showHoverType(instantiate(scheme))}`) : null;
 }
 
 function generatedFfiHover(name: string, scheme: Scheme | undefined): LspHover | null {
   if (!scheme) return null;
-  return hoverCode(`${name}: ${show(withoutReceiverParam(instantiate(scheme)))}`);
+  return hoverCode(`${name}: ${showHoverType(withoutReceiverParam(instantiate(scheme)))}`);
 }
 
 function withoutReceiverParam(type: Ty): Ty {
@@ -187,15 +180,52 @@ function factHover(name: string, fact: TypeFact): LspHover | null {
   const instantiated = fact.instantiated;
   const general = fact.general?.type;
   if (!instantiated && !general) return null;
-  if (!instantiated) return hoverCode(`${name}: ${show(general!)}`);
-  if (!general || show(instantiated) === show(general)) {
-    return hoverCode(`${name}: ${show(instantiated)}`);
+  if (!instantiated) return hoverCode(`${name}: ${showHoverType(general!)}`);
+  const instantiatedText = showHoverType(instantiated);
+  const generalText = general ? showHoverType(general) : undefined;
+  if (!generalText || instantiatedText === generalText) {
+    return hoverCode(`${name}: ${instantiatedText}`);
   }
-  return hoverCode(`${name}\ntype: ${show(instantiated)}\ngeneral: ${show(general)}`);
+  return hoverCode(`${name}\ntype: ${instantiatedText}\ngeneral: ${generalText}`);
+}
+
+function showHoverType(type: Ty): string {
+  const names = new Map<number, string>();
+  let n = 0;
+  const nameOf = (id: number) =>
+    names.get(id) ?? (names.set(id, `'${String.fromCharCode(97 + n++)}`), names.get(id)!);
+  const go = (target: Ty): string => {
+    const resolved = prune(target);
+    switch (resolved.tag) {
+      case "var":
+        return resolved.name ?? nameOf(resolved.id);
+      case "ffi":
+        return `?ffi#${resolved.id}:${resolved.binding ?? resolved.path.join(".")}`;
+      case "prim":
+        return resolved.name;
+      case "tuple":
+        return `(${resolved.items.map(go).join(", ")})`;
+      case "fn":
+        return `(${resolved.params.map(go).join(", ")}) => ${go(resolved.result)}`;
+      case "struct":
+        return `{ ${
+          resolved.fields.map((field) => `${field.name}: ${go(field.type)}`).join(", ")
+        } }`;
+      case "named": {
+        const name = isGeneratedDeepRecordName(resolved.name) ? "Js.Object" : resolved.name;
+        return resolved.args.length ? `${name}<${resolved.args.map(go).join(", ")}>` : name;
+      }
+    }
+  };
+  return go(type);
 }
 
 function hoverCode(value: string): LspHover {
   return { contents: { kind: "markdown", value: `\`\`\`wm\n${value}\n\`\`\`` } };
+}
+
+function isGeneratedDeepRecordName(name: string): boolean {
+  return name.startsWith("__Deep_");
 }
 
 type Target =
