@@ -51,6 +51,7 @@ let printOk = lift Result (value) => {
 };
 
 let calculate = (input) => {
+  // notice the curried application here "(lift Result)((number..."
   let requirePositive = lift Result (number) => {
     if (number > 0) {
       Ok(number)
