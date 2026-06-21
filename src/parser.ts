@@ -24,7 +24,9 @@ export class ParseError extends Error {
 export async function parse(source: string, surface: Surface = "workman", filePath?: string): Promise<Module> {
   const parser = await loadParser(surface);
   try {
-    return parser.parse(source) as Module;
+    const module = parser.parse(source) as Module;
+    if (hasNoPreludeDirective(source)) module.prelude = "none";
+    return module;
   } catch (error) {
     if (error && typeof error === "object" && "location" in error && "message" in error) {
       const err = error as { location: { start: { line: number; column: number; offset: number } }; message: string };
@@ -39,6 +41,15 @@ export async function parse(source: string, surface: Surface = "workman", filePa
     }
     throw error;
   }
+}
+
+function hasNoPreludeDirective(source: string): boolean {
+  for (const line of source.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    return trimmed === "-- @no-prelude" || trimmed === "// @no-prelude";
+  }
+  return false;
 }
 
 async function loadParser(surface: Surface): Promise<peggy.Parser> {

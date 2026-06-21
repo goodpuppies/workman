@@ -193,7 +193,7 @@ LetPattern
   / RecordLetPattern
   / ListLetPattern
   / "(" _ first:LetPattern _ "," _ rest:LetPatternList? _ ")" { return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location()); }
-  / "Var" _ "(" _ name:Identifier _ ")" { return at({ kind: "PVar", name }, location()); }
+  / "Var" _ "(" _ name:Name _ ")" { return at({ kind: "PVar", name }, location()); }
   / c:LongConstructor _ "(" _ args:LetCtorPatternList? _ ")" { return at({ kind: "PCtor", name: c, args: args ?? [] }, location()); }
   / c:LongConstructor { return at({ kind: "PCtor", name: c, args: [] }, location()); }
   / name:Identifier { return at({ kind: "PVar", name }, location()); }

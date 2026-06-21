@@ -25,7 +25,12 @@ function callArg(items: Ty[]): Ty {
   return tuple(items);
 }
 
-export function baseEnv(typeEnv: TypeEnv = baseTypeEnv()): Env {
+export type BasisOptions = { includeAlgebraicBasis?: boolean };
+
+export function baseEnv(
+  typeEnv: TypeEnv = baseTypeEnv(),
+  options: BasisOptions = {},
+): Env {
   const env: Env = new Map();
   const binaryNum = fn([tuple([NumberTy, NumberTy])], NumberTy);
   for (const op of ["+", "-", "*", "/", "%"]) env.set(op, { vars: [], type: binaryNum });
@@ -41,8 +46,10 @@ export function baseEnv(typeEnv: TypeEnv = baseTypeEnv()): Env {
   env.set("||", { vars: [], type: fn([tuple([BoolTy, BoolTy])], BoolTy) });
   const printable = fresh() as Extract<Ty, { tag: "var" }>;
   env.set("print", { vars: [printable.id], type: fn([printable], VoidTy) });
-  addBasisConstructors(env, typeEnv);
-  addBasisValues(env, typeEnv);
+  if (options.includeAlgebraicBasis !== false) {
+    addBasisConstructors(env, typeEnv);
+    addBasisValues(env, typeEnv);
+  }
   return env;
 }
 
@@ -152,7 +159,7 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
 
 let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
 
-export function baseTypeEnv(): TypeEnv {
+export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
   if (!basisTypeEnvCache) {
     basisTypeEnvCache = new Map(
       ["Number", "Bool", "String", "Void", "Js.Value", "Js.Object"].map((name) => [
@@ -195,7 +202,12 @@ export function baseTypeEnv(): TypeEnv {
       argLabels: ["value", "error"],
     });
   }
-  return new Map(basisTypeEnvCache);
+  const result = new Map(basisTypeEnvCache);
+  if (options.includeAlgebraicBasis === false) {
+    for (const type of basisTypes) result.delete(type.name);
+    result.delete("Task");
+  }
+  return result;
 }
 
 export function baseAdts(typeEnv: TypeEnv): Map<number, TypeDeclInfo> {

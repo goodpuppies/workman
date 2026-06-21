@@ -85,6 +85,11 @@ The example prints:
 some
 ```
 
+For a fully self-contained file, put `-- @no-prelude` on the first non-empty
+line. It omits the algebraic basis (`Option`, `Result`, `List`, and `Js.Error`)
+and automatic standard-library namespaces for that file. Primitive types,
+operators, and `print` remain available. See `examples/result_lift.wm`.
+
 To install the local CLI as `wm`:
 
 ```sh

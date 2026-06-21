@@ -27,6 +27,22 @@ Deno.test("basis exposes Option and Result constructors", async () => {
   expectBinding(result.env, "unwrapped", { type: "Number", vars: 0 });
 });
 
+Deno.test("no-prelude directive permits a self-contained Result", async () => {
+  const result = await checkSource(`
+    -- @no-prelude
+    type Result<T, E> = Ok<T> | Err<E>;
+    record Carrier<A, B> = { liftFn: (A) => B };
+    let Var(Result) = .{ liftFn = (f) => { (value) => { f(value) } } };
+    let value = Ok(1);
+  `);
+
+  expectBinding(result.env, "Ok", { type: "(T) => Result<T, E>", vars: 2 });
+  expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 1 });
+  if (result.env.has("Some") || result.env.has("Result.map")) {
+    throw new Error("no-prelude module unexpectedly received prelude bindings");
+  }
+});
+
 Deno.test("polymorphic datatype constructors generalize over type parameters", async () => {
   const result = await checkSource(`
     type Option<T> = None | Some<T>;

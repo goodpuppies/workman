@@ -78,8 +78,9 @@ function inferModuleCore(
   recover: boolean,
   options: InferModuleOptions,
 ): { result: InferResult; steps: InferStep[] } {
-  const typeEnv = baseTypeEnv();
-  const env = baseEnv(typeEnv);
+  const includePrelude = module.prelude !== "none";
+  const typeEnv = baseTypeEnv({ includeAlgebraicBasis: includePrelude });
+  const env = baseEnv(typeEnv, { includeAlgebraicBasis: includePrelude });
   const exports: Env = new Map();
   const typeExports: TypeEnv = new Map();
   const adts = baseAdts(typeEnv);
@@ -91,7 +92,7 @@ function inferModuleCore(
   const steps: InferStep[] = [];
   const provenance: TypeProvenance = new Map();
 
-  for (const initialImport of options.initialImports ?? []) {
+  for (const initialImport of includePrelude ? options.initialImports ?? [] : []) {
     addImport(env, typeEnv, initialImport.clause, initialImport.result);
     addAdts(adts, initialImport.result.exportedStructure.adts);
     addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.types);

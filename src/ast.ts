@@ -2,7 +2,11 @@ import type { AstNode, SourceSpan } from "./source.ts";
 
 export type Located<T> = T & { node?: AstNode };
 
-export type Module = Located<{ kind: "Module"; decls: Decl[] }>;
+export type Module = Located<{
+  kind: "Module";
+  decls: Decl[];
+  prelude?: "none";
+}>;
 
 export type Decl =
   | Located<{ kind: "ImportDecl"; path: string; pathNode?: AstNode; clause: ImportClause }>

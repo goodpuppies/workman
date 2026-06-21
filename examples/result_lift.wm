@@ -1,0 +1,89 @@
+-- @no-prelude
+
+// This file defines the complete Result pattern itself. The directive above
+
+type Result<T, E> = Ok<T> | Err<E>;
+
+record LiftCarrier<A, B> = { liftFn: (A) => B };
+
+record ResultCarrier<A, B, E> = {
+  liftFn: ((A) => Result<B, E>) => (Result<A, E>) => Result<B, E>,
+  andThen: (Result<A, E>, (A) => Result<B, E>) => Result<B, E>,
+  map: (Result<A, E>, (A) => B) => Result<B, E>
+};
+
+let andThen = (result, f) => {
+  match(result) {
+    Ok(value) => { f(value) },
+    Err(error) => { Err(error) }
+  }
+};
+
+// create Result structure with a lifting function
+let Var(Result) = .{
+  liftFn = (f) => {
+    (result) => {
+      result :> andThen(f)
+    }
+  },
+  map = (result, f) => {
+    match(result) {
+      Ok(value) => { Ok(f(value)) },
+      Err(error) => { Err(error) }
+    }
+  },
+  andThen = andThen,
+};
+
+// the monadic lift function
+// arg1 a Carrier structure that has a lifting functiion
+// arg2 a lambda function to be lifted
+let lift = (x) => {
+  (f) => {
+    x.liftFn(f)
+  }
+};
+
+// Wrap the print function in a lift such that it can print a Result<String,E>
+let printOk = lift Result (value) => {
+  print(value);
+  Ok(void)
+};
+
+let calculate = (input) => {
+  let requirePositive = lift Result (number) => {
+    if (number > 0) {
+      Ok(number)
+    } else {
+      Err("number must be positive")
+    }
+  };
+
+  let double = lift Result (number) => {
+    Ok(number * 2)
+  };
+
+  let divide100By = lift Result (number) => {
+    if (number == 0) {
+      Err("cannot divide by zero")
+    } else {
+      Ok(100 / number)
+    }
+  };
+
+  Ok(input)
+    :> requirePositive
+    :> double
+    :> divide100By
+};
+
+// Result|x,y,...| is (Result<T,E>,Result<T,E>,...) -> Result<(T,T,...),E> // uses andThen + map under the hood
+let main = () => {
+  match(Result|
+    printOk(calculate(10)),
+    printOk(calculate(-2))
+  |) {
+    Ok(_) => { void },
+    Err(error) => { print(error) }
+  }
+};
