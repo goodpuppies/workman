@@ -98,8 +98,12 @@ wm run examples/factorial.wm
 ```
 
 The installer writes a small launcher into `~/.local/bin` on Unix-like systems, or `~/.deno/bin` on
-Windows. You can override that with `--bin-dir`:
+Windows. On Unix it also adds the launcher directory to `PATH` for Bash, Zsh, and Fish. You can
+override the launcher directory with `--bin-dir`:
 
 ```sh
 deno task install --bin-dir /path/to/bin
 ```
+
+Pass `--no-modify-path` if your shell environment manages `PATH` elsewhere.
+Open a new shell after installation for the updated `PATH` to take effect.

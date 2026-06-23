@@ -1,8 +1,8 @@
 -- weather.wm — a weather CLI using wttr.in's JSON API (free, no API key).
 --
--- No `unsafe` imports: every JS boundary call returns Result<_, Js.Error> and is
--- handled with Result/Option/Task combinators. HTTP and file IO stay in Task so
--- async failures and validation failures flow through the same pipeline.
+-- No `unsafe` imports: every JS boundary call returns Result<_, Js.Error>.
+-- Result|...| collects synchronous boundary values, while Task keeps HTTP and
+-- file IO failures in one explicit asynchronous pipeline.
 --
 -- Usage:
 --   wm run examples/weather.wm -- oulu
@@ -28,8 +28,6 @@ from js.global("JSON") import {
   stringify: (Js.Value) => String,
 } as JSON;
 from js.global("Math") import { max as mathMax };
-
-let lift = Monad.lift;
 
 let cacheFile = ".weather-cache.json";
 let cacheTtlMs = 10 * 60 * 1000;
@@ -97,75 +95,56 @@ let pad3 = (n) => {
 
 -- Fetch, validate the response, and assert the wire shape once at the boundary.
 let getWeather = (city) => {
-  let buildUrl = lift Task (rawCity) => {
-    rawCity
-      :> encodeURIComponent
-      :> Result.map((encoded) => {
-        "https://wttr.in/" ++ encoded ++ "?format=j1"
-      })
-      :> Result.mapErr((_) => { "could not encode city" })
-      :> Task.fromResult
-  };
-  let fetchUrl = lift Task (url) => {
-    fetch(url)
-      :> Task.mapErr((_) => { "could not fetch " ++ url })
-  };
-  let checkStatus = lift Task (res, url) => {
+  let checkStatus = (url, res) => {
     match(res :> .ok) {
-      Ok(true) => {
-        res :> Task.succeed
-      },
+      Ok(true) => { Task.succeed(res) },
       Ok(false) => {
-        let statusText = res :> .status :> Result.andThen((status) => {
-          status :> .toString()
-        }) :> Result.withDefault("?");
-        ("HTTP " ++ statusText ++ " fetching " ++ url) :> Task.fail
+        let status = res :> .status :> Result.map(Result.textOf) :> Result.withDefault("?");
+        Task.fail("HTTP " ++ status ++ " fetching " ++ url)
       },
-      Err(_) => {
-        "could not inspect HTTP response" :> Task.fail
-      },
+      Err(_) => { Task.fail("could not inspect HTTP response") },
     }
   };
-  let readJson = lift Task (res) => {
-    res :> .json() :> Task.mapErr((_) => { "could not read weather response" })
-  };
-  let assertWeather = lift Task (body) => {
-    let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
-    data
-      :> Result.mapErr((_) => { "unexpected wttr.in response shape" })
-      :> Task.fromResult
-  };
-
-  let url = city :> Task.succeed :> buildUrl;
-  let res = url :> fetchUrl;
-  let checked = checkStatus(|res, url|);
-
-  checked
-    :> readJson
-    :> assertWeather
+  city
+    :> encodeURIComponent
+    :> Result.map((encoded) => { "https://wttr.in/" ++ encoded ++ "?format=j1" })
+    :> Result.mapErr((_) => { "could not encode city" })
+    :> Task.fromResult
+    :> Task.andThen((url) => {
+      fetch(url)
+        :> Task.mapErr((_) => { "could not fetch " ++ url })
+        :> Task.andThen((res) => { checkStatus(url, res) })
+    })
+    :> Task.andThen((res) => {
+      res :> .json() :> Task.mapErr((_) => { "could not read weather response" })
+    })
+    :> Task.andThen((body) => {
+      let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
+      data
+        :> Result.mapErr((_) => { "unexpected wttr.in response shape" })
+        :> Task.fromResult
+    })
 };
 
 let loadCache = () => {
-  let parseCache = lift Task (text) => {
-    let parsed: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
-      :> Result.andThen((raw) => { raw :> Json.assert });
-    parsed :> Task.fromResult
-  };
   readTextFile(cacheFile)
-    :> parseCache
+    :> Task.andThen((text) => {
+      let parsed: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
+        :> Result.andThen((raw) => { raw :> Json.assert });
+      Task.fromResult(parsed)
+    })
     :> Task.mapErr((_) => { "could not parse cache" })
     :> Task.recover((_) => { Dict.empty() })
 };
 
 let saveCache = (cache) => {
-  let writeCache = lift Task (text) => {
-    writeTextFile(cacheFile, text)
-      :> Task.mapErr((_) => { "could not write cache" })
-  };
   JSON.stringify(cache)
     :> Result.mapErr((_) => { "could not encode cache" })
     :> Task.fromResult
-    :> writeCache
+    :> Task.andThen((text) => {
+      writeTextFile(cacheFile, text)
+        :> Task.mapErr((_) => { "could not write cache" })
+    })
 };
 
 let formatDay = (day, fahrenheit, unit) => {
@@ -187,10 +166,11 @@ let formatDay = (day, fahrenheit, unit) => {
     let chance = toNumber(slot.chanceofrain) :> Result.withDefault(0);
     mathMax(best, chance) :> Result.withDefault(best)
   }, 0) :> Result.andThen(pad3);
-  Result.map4(label, hi, lo, rain, (labelText, hiText, loText, rainText) => {
-    "  " ++ labelText ++ " " ++ hiText ++ unit ++ " / " ++ loText ++ unit ++
-      "  rain " ++ rainText ++ "%"
-  })
+  Result|label, hi, lo, rain|
+    :> Result.map((labelText, hiText, loText, rainText) => {
+      "  " ++ labelText ++ " " ++ hiText ++ unit ++ " / " ++ loText ++ unit ++
+        "  rain " ++ rainText ++ "%"
+    })
 };
 
 let renderReport = (data, fahrenheit, unit) => {
@@ -230,11 +210,12 @@ let renderReport = (data, fahrenheit, unit) => {
         })
         :> Result.map(Js.Array.fromList)
         :> Result.andThen((lines) => { lines :> .join("\n") });
-      Result.map4(temp, feels, wind, rows, (tempText, feelsText, windText, rowText) => {
-        "\n" ++ location ++ "\nNow: " ++ tempText ++ unit ++ " (feels like " ++ feelsText ++
-          unit ++ "), " ++ firstValue(cur.weatherDesc, "Unknown") ++ ", wind " ++ windText ++
-          " km/h\n" ++ rowText
-      })
+      Result|temp, feels, wind, rows|
+        :> Result.map((tempText, feelsText, windText, rowText) => {
+          "\n" ++ location ++ "\nNow: " ++ tempText ++ unit ++ " (feels like " ++ feelsText ++
+            unit ++ "), " ++ firstValue(cur.weatherDesc, "Unknown") ++ ", wind " ++ windText ++
+            " km/h\n" ++ rowText
+        })
     },
     _ => { Err(Panic("missing current condition")) },
   }
@@ -246,19 +227,19 @@ let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
     "\nFailed to get weather for \"" ++ city ++ "\": " ++
       err
   };
-  let renderTask = lift Task (data) => {
+  let renderTask = (data) => {
     renderReport(data, fahrenheit, unit)
       :> Result.mapErr((_) => { "could not render report for " ++ city })
       :> Task.fromResult
   };
-  let cacheData = lift Task (data) => {
+  let cacheData = (data) => {
     Dict.set(cache, key, .{ fetchedAt = now, data = data });
-    data :> Task.succeed
+    Task.succeed(data)
   };
   let fetchReport = () => {
     getWeather(city)
-      :> cacheData
-      :> renderTask
+      :> Task.andThen(cacheData)
+      :> Task.andThen(renderTask)
       :> Task.recover(failure)
   };
   match(Dict.get(cache, key)) {
@@ -266,7 +247,7 @@ let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
       if (!refresh && now - entry.fetchedAt < cacheTtlMs) {
         entry.data
           :> Task.succeed
-          :> renderTask
+          :> Task.andThen(renderTask)
           :> Task.map((report) => {
             report ++ "\n  (cached)"
           })
@@ -305,30 +286,23 @@ let main = () => {
   });
   let now = dateNow() :> Result.withDefault(0);
 
-  let reportCities = lift Task (cityList, cache) => {
-    let printReports = lift Task (resolvedReports) => {
-      resolvedReports :> .map((report, index, array) => {
-        print(report)
-      });
-      saveCache(cache)
-    };
-    cityList
-      :> Js.Array.toList
-      :> List.map((city) => {
-        cityReport(cache, now, refresh, fahrenheit, unit, city)
-      })
-      :> Task.collectList
-      :> Task.map(Js.Array.fromList)
-      :> printReports
-  };
-
   let cityList = cities
     :> Result.mapErr((_) => { "CLI args unavailable" })
     :> Task.fromResult;
-  let cache = loadCache();
-  let pipeline = reportCities(|cityList, cache|);
-
-  pipeline :> Task.recover((err) => {
+  Task|cityList, loadCache()|
+    :> Task.andThen((cityList, cache) => {
+      cityList
+        :> Js.Array.toList
+        :> List.map((city) => {
+          cityReport(cache, now, refresh, fahrenheit, unit, city)
+        })
+        :> Task.collectList
+        :> Task.andThen((reports) => {
+          reports :> List.map((report) => { print(report) });
+          saveCache(cache)
+        })
+    })
+    :> Task.recover((err) => {
     print("weather: " ++ err);
     void
   })

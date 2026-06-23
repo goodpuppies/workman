@@ -3,6 +3,7 @@
 type Options = {
   binDir: string;
   force: boolean;
+  modifyPath: boolean;
 };
 
 const repoRoot = dirname(dirname(pathFromFileUrl(import.meta.url)));
@@ -29,6 +30,10 @@ async function main(args: string[]): Promise<number> {
     console.log(`installed wm -> ${target.path}`);
   }
 
+  if (options.modifyPath && Deno.build.os !== "windows") {
+    await installShellPath(options.binDir);
+  }
+
   console.log(`launcher target: ${join(repoRoot, "src/main.ts")}`);
   return 0;
 }
@@ -36,6 +41,7 @@ async function main(args: string[]): Promise<number> {
 function parseArgs(args: string[]): Options | undefined {
   let binDir = defaultBinDir();
   let force = false;
+  let modifyPath = true;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -45,6 +51,10 @@ function parseArgs(args: string[]): Options | undefined {
     }
     if (arg === "--force") {
       force = true;
+      continue;
+    }
+    if (arg === "--no-modify-path") {
+      modifyPath = false;
       continue;
     }
     if (arg === "--bin-dir") {
@@ -68,7 +78,7 @@ function parseArgs(args: string[]): Options | undefined {
     return undefined;
   }
 
-  return { binDir: expandHome(binDir), force };
+  return { binDir: expandHome(binDir), force, modifyPath };
 }
 
 function defaultBinDir(): string {
@@ -104,6 +114,53 @@ async function readIfExists(path: string): Promise<string | undefined> {
     if (error instanceof Deno.errors.NotFound) return undefined;
     throw error;
   }
+}
+
+const pathBlockStart = "# >>> wm-mini installer >>>";
+const pathBlockEnd = "# <<< wm-mini installer <<<";
+
+async function installShellPath(binDir: string): Promise<void> {
+  const home = Deno.env.get("HOME");
+  if (!home) {
+    console.error(`could not update shell PATH: HOME is not set; add ${binDir} manually`);
+    return;
+  }
+
+  const posixBlock = `${pathBlockStart}\nexport PATH=${
+    shellQuote(binDir)
+  }:"$PATH"\n${pathBlockEnd}`;
+  const fishBlock = `${pathBlockStart}\nfish_add_path --global ${
+    fishQuote(binDir)
+  }\n${pathBlockEnd}`;
+  const fishConfigRoot = Deno.env.get("XDG_CONFIG_HOME") ?? join(home, ".config");
+  const configs = [
+    { shell: "bash", path: join(home, ".bashrc"), block: posixBlock },
+    { shell: "zsh", path: join(home, ".zshrc"), block: posixBlock },
+    {
+      shell: "fish",
+      path: join(fishConfigRoot, "fish", "conf.d", "wm-mini.fish"),
+      block: fishBlock,
+    },
+  ];
+
+  for (const config of configs) {
+    await Deno.mkdir(dirname(config.path), { recursive: true });
+    const existing = await readIfExists(config.path) ?? "";
+    const updated = replaceManagedBlock(existing, config.block);
+    if (updated !== existing) await Deno.writeTextFile(config.path, updated);
+    console.log(`configured ${config.shell} PATH -> ${config.path}`);
+  }
+}
+
+function replaceManagedBlock(content: string, block: string): string {
+  const start = content.indexOf(pathBlockStart);
+  const end = start < 0 ? -1 : content.indexOf(pathBlockEnd, start);
+  if (start >= 0 && end >= 0) {
+    return `${content.slice(0, start)}${block}${content.slice(end + pathBlockEnd.length)}`;
+  }
+
+  const separator = content.length === 0 || content.endsWith("\n") ? "" : "\n";
+  return `${content}${separator}${block}\n`;
 }
 
 function launcherScript(root: string): string {
@@ -144,6 +201,10 @@ deno run -A "${main}" %*\r
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function fishQuote(value: string): string {
+  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
 function join(...parts: string[]): string {
@@ -187,9 +248,11 @@ options:
   --bin-dir DIR   install wm directly into DIR
   --prefix DIR    install wm into DIR/bin
   --force         overwrite an existing non-wm-mini launcher
+  --no-modify-path
+                  do not configure PATH for bash, zsh, and fish
 
 default:
-  ~/.local/bin, or WM_INSTALL_BIN_DIR if set
+  ~/.local/bin, or WM_INSTALL_BIN_DIR if set; shell PATH files are updated
 `);
 }
 
