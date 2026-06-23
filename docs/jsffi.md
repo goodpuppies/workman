@@ -73,6 +73,11 @@ let value = match(rounded) {
 
 This is intentionally explicit: JS can throw, so Workman does not pretend the call is pure or total.
 
+`Js.Error` is a normal matchable Workman datatype with `Js.Error(message)` and
+`Js.Unknown` constructors. See [JavaScript error handling](./js-errors.md) for
+normalization rules, synchronous and Task examples, and preserving JS failures in
+application error types.
+
 Promise-returning JavaScript APIs become `Task<_, Js.Error>`. See [Async and Task](./async.md) for
 the current Task model, including parallel collection with `Task.collectList`.
 
@@ -102,6 +107,16 @@ from js.global("console") import unsafe {
   log: (String, Number) => Void
 } as console;
 ```
+
+## Note on type annotations and ffi
+
+It may seem practical to add `: Type` literally everywhere typescript/rust style.
+Currently though in workman I would recommend avoiding it especially in ffi code.
+- `: Type` is not an assertion, if a ffi thing cant be figured out an annotation wont help, 
+for json/objects use json assert. For other situations more explicit and simple code could help,
+you can also manually type imports as escape hatch.
+- often using `: Type` in ffi heavy code will cause more errors 
+or even errors that dissapear once the annotations are removed.
 
 ## Manual Types
 

@@ -48,6 +48,8 @@ Workman keeps one obvious form when SML has both a core form and sugar:
   `from js.module("node:crypto") import { createHash };`.
 - Promise-returning JavaScript APIs become eager `Task` handles; see
   [`docs/async.md`](./docs/async.md) for the current async model.
+- Safe JavaScript failures are matchable `Js.Error` values; see
+  [`docs/js-errors.md`](./docs/js-errors.md) for normalization and handling.
 - Manual JS type annotations are still available when reflection is too broad:
   `from js.global("console") import { log: (String, Number) => Void } as console;`.
 - Inline structures, functors, signatures, `fun`, and other SML conveniences are not syntax goals

@@ -269,6 +269,10 @@ Task<a, Js.Error>
 JavaScript can reject promises or throw while starting work. Both cases become `Err(Js.Error)` in
 the Task result.
 
+`Js.Error` can be matched as `Js.Error(message)` or `Js.Unknown`; it is not opaque.
+See [JavaScript error handling](./js-errors.md) for the exact normalization and
+context-preserving patterns.
+
 This is intentionally different from direct JavaScript:
 
 ```javascript

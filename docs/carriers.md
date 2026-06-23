@@ -1,28 +1,185 @@
-# Lift design pattern
+# Carrier-oriented procedure design
 
-lift is defined as 
+I like to view workman code as procedures(top level functions), transformations(pipelines) and invocation groups(the code that makes use of procedures).
+
+Workman makes errors and asynchronous effects explicit. Safe JavaScript calls
+therefore produce carrier values such as `Result<T, E>` and `Task<T, E>` instead of
+throwing or implicitly awaiting.
+
+The main Workman pattern is not to write `Result.andThen` after every expression.
+It is:
+
+1. start a procedure with its head input already inside one shared carrier;
+2. define or select transformations lifted into that carrier;
+3. compose those lifted transformations as a pipeline in result position;
+4. group procedure results with `Carrier|...|` and `match` where concrete control
+   flow or effect coordination is required.
+
+“Procedure” here is a coding role, not a separate language construct. It is usually
+a top-level Workman function that returns a carrier.
+
+## Procedure shape
+
 ```wm
-let lift = (x) => { 
+let lift = Monad.lift;
+
+let calculate = (input) => {
+  let requirePositive = lift Result (number) => {
+    if (number > 0) {
+      Ok(number)
+    } else {
+      Err("number must be positive")
+    }
+  };
+
+  let double = lift Result (number) => {
+    Ok(number * 2)
+  };
+
+  let divide100By = lift Result (number) => {
+    if (number == 0) {
+      Err("cannot divide by zero")
+    } else {
+      Ok(100 / number)
+    }
+  };
+
+  Ok(input)
+    :> requirePositive
+    :> double
+    :> divide100By
+};
+```
+
+The procedure has three recognizable parts:
+
+- `Ok(input)` establishes the carrier at the head of the pipeline;
+- local functions describe transformations and are lifted into `Result`;
+- the final expression is the transformation pipeline and remains a `Result`.
+
+For `Task`, `Task.succeed(value)` can establish a pure head value. A Deno/JS call
+that already returns a `Task` can be used directly:
+
+```wm
+let lift = Monad.lift;
+
+let readTitle = (path) => {
+  let readFile = lift Task (filePath) => {
+    readTextFile(filePath)
+      :> Task.mapErr((_) => { "could not read " ++ filePath })
+  };
+
+  let titlePrefix = lift Task (text) => {
+    text
+      :> .slice(0, 9)
+      :> Result.mapErr((_) => { "could not slice title" })
+      :> Task.fromResult
+  };
+
+  Task.succeed(path)
+    :> readFile
+    :> titlePrefix
+};
+```
+
+`lift Task` resembles an `async` procedure boundary, but it is ordinary Workman
+currying and carrier operations rather than a keyword or hidden control flow.
+
+## Lift at definition or call site
+
+Lift a transformation at its definition when it belongs to the procedure's shared
+carrier:
+
+```wm
+let floorR = lift Result jsFloor;
+let rounded = value :> floorR;
+```
+
+Keep a reusable function carrier-generic and lift it where used when that is more
+appropriate:
+
+```wm
+let rounded = lift Result jsFloor(value);
+```
+
+The Raylib examples use this call-site form heavily because reflected FFI values
+are already `Result` values.
+
+## Group procedures at computation boundaries
+
+`Carrier|...|` combines several carrier-producing procedures. Match the combined
+carrier where the program must branch on success/failure or use the unwrapped
+values for concrete computation:
+
+```wm
+match(Result|
+  loadWindow(),
+  readInput(),
+  prepareFrame()
+|) {
+  Ok((Var(window), Var(input), Var(frame))) => {
+    runFrame(window, input, frame)
+  },
+  Err(error) => {
+    handleError(error)
+  }
+}
+```
+
+This keeps procedures carrier-shaped and delays explicit unwrapping until a real
+control-flow boundary. The Raylib renderers use the same shape to group many FFI
+operations into one `Result` before matching.
+
+Concrete references:
+
+- [`examples/result_lift.wm`](../examples/result_lift.wm) shows a complete `Result`
+  procedure pipeline followed by `match(Result|...|)`;
+- [`examples/task_lift.wm`](../examples/task_lift.wm) contrasts nested
+  `Task.andThen` with lifted procedure pipelines;
+- [`examples/raylib/main.wm`](../examples/raylib/main.wm) and
+  [`examples/raylib/orbital_run/main.wm`](../examples/raylib/orbital_run/main.wm)
+  use lifted FFI transformations and carrier grouping throughout rendering and
+  lifecycle control flow.
+
+## Where `andThen` still belongs
+
+`andThen` remains useful when the next operation depends on a successful value and
+the control flow is clearer as an explicit continuation—for example, a conditional
+network step, a dynamically selected procedure, or conversion between carriers.
+It is also the mechanism underneath `lift` and `Carrier|...|`.
+
+The distinction is about code shape:
+
+- routine procedure transformations: lift and pipeline;
+- combine independent or staged procedure results: `Carrier|...|`;
+- perform carrier-dependent branching: `match(Carrier|...|)`;
+- write an explicit dependent continuation when needed: `andThen`.
+
+## How `lift` works
+
+`Monad.lift` is essentially:
+
+```wm
+let lift = (carrier) => {
   (f) => {
-    x.fn(f) -- means (#fn x)(f) like sml
+    carrier.fn(f)
   }
 };
 ```
 
-most carrier structures then define something like
+A carrier structure supplies an `fn` adapter shaped like:
+
 ```wm
 let fn = (f) => {
-  (result) => {
-    result :> andThen(f)
+  (wrapped) => {
+    wrapped :> andThen(f)
   }
 };
 ```
 
-the idea is pretty simple, lift all expressions you work with to the carrier at definition or use site,
-then simply chain the expressions to thread the side effect trough.
-
-an even simpler parallel can be made lift Task in workman behaves almost like async keyword, 
-but its not a keyword just currying based design pattern.
+Lifting therefore changes how a function accepts its input: it consumes a value
+already inside the carrier, applies the function only after success, and preserves
+the carrier through the result.
 
 
 ## Explicit Carrier Tuple Lifts
@@ -141,20 +298,11 @@ Result|Ok(1), Ok(2)|
 Task|taskA, taskB|
 ```
 
-# Carrier Coercion and Tuple Lifts
+## Primitive `Result` coercion
 
-wm-mini has two small conveniences for working with carrier-shaped values such as `Result<T, E>` and
-`Task<T, E>`.
-
-They solve different problems:
-
-- primitive carrier coercion lets primitive operators work through `Result`
-- explicit carrier tuple lifts turn several carrier values into one carrier tuple
-
-Neither mechanism is general operator overloading. They are deliberately small rewrites around
-existing carrier operations.
-
-## Primitive `Result` Coercion
+Primitive carrier coercion is another convenience used inside carrier-oriented
+procedures. It lets primitive operators work through `Result`; it is not general
+operator overloading.
 
 Primitive operators can flow through `Result`.
 

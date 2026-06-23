@@ -9,6 +9,9 @@ and later LSP in current `wm-mini`. It does not replace
 [`docs/carriers.md`](../../docs/carriers.md). It explains one compact design pattern
 and its syntax sugar, but that pattern shapes most real Workman code because errors
 are explicit and FFI-heavy programs produce `Result` and `Task` values constantly.
+Also read [`docs/js-errors.md`](../../docs/js-errors.md): safe JavaScript failures
+carry a matchable `Js.Error(message)` or `Js.Unknown`, so frontend/LSP host failures
+should not be discarded with `_` when their message is useful.
 
 This project uses WM for new frontend and structural-editor implementation code.
 Do not create new TypeScript or JavaScript helpers merely because a familiar API is
@@ -44,15 +47,41 @@ The design comparison is:
 ```text
 Go:       call -> inspect err -> return/continue
 Elm:      value |> andThen (...) |> andThen (...)
-Workman:  value :> Result.andThen(...) / Task.andThen(...)
-          Result|a, b, c| / Task|a, b, c|
-          lifted functions and primitive carrier coercion
+Workman:  wrap head input in Result/Task
+          -> lift transformations into that carrier
+          -> compose a result-position pipeline
+          -> match(Carrier|procedureA, procedureB|) at computation boundaries
 ```
 
 Safe FFI calls return `Result`; Promise-returning calls return `Task`. Carrier
-composition keeps the explicit error information without nesting a `match` around
-every call. This is not a niche convenience. It determines the shape of most
-FFI-heavy Workman code, particularly the Raylib examples.
+composition keeps the explicit error information without nesting a `match` or
+`andThen` around every routine transformation. Explicit `andThen` remains useful
+for genuinely dependent control flow and is the mechanism under the sugar. This is
+not a niche convenience: the procedure/lift/pipeline/group pattern determines the
+shape of most FFI-heavy Workman code, particularly the Raylib examples.
+
+A typical top-level procedure therefore looks like:
+
+```wm
+let procedure = (input) => {
+  let stepA = lift Result (value) => { ... };
+  let stepB = lift Result (value) => { ... };
+
+  Ok(input)
+    :> stepA
+    :> stepB
+};
+```
+
+When several procedures must be performed or their successful values are needed,
+group them and match once:
+
+```wm
+match(Result|procedureA(), procedureB()|) {
+  Ok((Var(a), Var(b))) => { useValues(a, b) },
+  Err(error) => { handleError(error) }
+}
+```
 
 ### Pure functional style
 
