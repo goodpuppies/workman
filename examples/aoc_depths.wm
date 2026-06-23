@@ -70,3 +70,4 @@ let largeDepths = filter((x) => { x > 200 }, adjustedDepths);
 let sampleIncreaseCount = countIncreases(sampleDepths);
 let sampleWindowIncreaseCount = countWindowIncreases(sampleDepths);
 let largeDepthSum = fold((acc, x) => { acc + x }, 0, largeDepths);
+let _ = print(largeDepthSum);
