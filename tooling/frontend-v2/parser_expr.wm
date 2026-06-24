@@ -1,0 +1,82 @@
+from "./types.wm" import {
+  Span, TokenKind, Token,
+  LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile
+};
+from "./parser_support.wm" import {
+  ParserState, advance
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isExpressionBoundary = (kind: TokenKind) => {
+  match(kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => { false },
+  }
+};
+
+let isExpressionBoundaryToken = (token: Token) => {
+  if (isExpressionBoundary(token.kind)) {
+    true
+  } else {
+    isKeywordText(token, "from") ||
+    isKeywordText(token, "type") ||
+    isKeywordText(token, "record") ||
+    isKeywordText(token, "and")
+  }
+};
+
+let isOpenPunctuation = (token: Token) => {
+  match(token.kind) {
+    Punctuation => {
+      token.text == "(" || token.text == "{" || token.text == "["
+    },
+    _ => { false },
+  }
+};
+
+let isClosePunctuation = (token: Token) => {
+  match(token.kind) {
+    Punctuation => {
+      token.text == ")" || token.text == "}" || token.text == "]"
+    },
+    _ => { false },
+  }
+};
+
+let expressionDepthAfter = (token: Token, depth: Number) => {
+  if (isOpenPunctuation(token)) {
+    depth + 1
+  } else {
+    if (isClosePunctuation(token) && depth > 0) {
+      depth - 1
+    } else {
+      depth
+    }
+  }
+};
+
+let rec consumeExpressionTail = (
+  state: ParserState,
+  lastEnd: Number,
+  depth: Number,
+) => {
+  match(state.remaining) {
+    [] => { (lastEnd, state) },
+    [token, ..rest] => {
+      if (depth == 0 && isExpressionBoundaryToken(token)) {
+        (lastEnd, state)
+      } else {
+        let next = advance(state, rest);
+        consumeExpressionTail(next, token.span.end, expressionDepthAfter(token, depth))
+      }
+    },
+  }
+};

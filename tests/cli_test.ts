@@ -53,6 +53,28 @@ Deno.test("cli compile command keeps js-out path", async () => {
   assertStringIncludes(await Deno.readTextFile(output), " = 42;");
 });
 
+Deno.test("cli compile-library writes an importable module without invoking main", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/library.wm`;
+  const output = `${dir}/library.mjs`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => { Panic("must not run during import") };
+      let answer = 42;
+    `,
+  );
+
+  const result = await runCli(["compile-library", input, output]);
+  const module = await import(`${new URL(`file://${output}`).href}?test=${crypto.randomUUID()}`);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertEquals(result.stdout, "");
+  assertEquals(module.answer, 42);
+  assertEquals(typeof module.main, "function");
+});
+
 Deno.test("cli check reports ok for valid modules", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

@@ -1,0 +1,441 @@
+from "./types.wm" import {
+  Span, TokenKind, Token, Pattern, Expr, LetBinding, TopItem,
+  LetKeyword, Keyword, Identifier, Constructor, Equals, Semicolon, Punctuation, Opaque, EndOfFile,
+  NamePattern, HolePattern, ErrorPattern, AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
+  LetItem, ErrorSeverity, WarningSeverity, AutoFix, RecoveryOnly
+};
+from "./parser_support.wm" import {
+  ParserState, freshNode, advance, addRecovery, currentAnchor, observation
+};
+from "./parser_expr.wm" import {
+  isExpressionBoundaryToken, consumeExpressionTail, expressionDepthAfter
+};
+from "./parser_pattern.wm" import {
+  consumePatternTail, patternDepthAfter
+};
+from "./parser_lambda.wm" import {
+  isLambdaArrow, addOptionalUnitParams, addBareLambdaBodyBraces
+};
+from "./parser_match.wm" import { addMissingMatchArmCommas };
+
+let missingPattern = (state: ParserState, subject: Number) => {
+  let anchor = currentAnchor(state);
+  let (nodeId, state1) = freshNode(state);
+  let (recoveryId, state2) = addRecovery(
+    state1,
+    "parse.let.missing-pattern",
+    anchor,
+    "ParseLetBinding",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> RequirePattern",
+    subject,
+    "binding pattern after let",
+    observation(state),
+    "synthesize pattern hole",
+    nodeId,
+    "Pattern",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some("_"),
+    [],
+  );
+  (HolePattern(nodeId, recoveryId, .{ start = anchor, end = anchor }), state2)
+};
+
+let errorPattern = (
+  state: ParserState,
+  subject: Number,
+  token: Token,
+  rest: List<Token>,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let consumed = advance(state1, rest);
+  let (recoveryId, state2) = addRecovery(
+    consumed,
+    "parse.let.unexpected-pattern",
+    token.span.start,
+    "ParseLetBinding",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> RequirePattern",
+    subject,
+    "binding pattern",
+    "token '" ++ token.text ++ "'",
+    "retain token as error pattern",
+    nodeId,
+    "ErrorPattern",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    None,
+    [],
+  );
+  (ErrorPattern(nodeId, recoveryId, token.span, token.text), state2)
+};
+
+let parsePattern = (state: ParserState, subject: Number) => {
+  match(state.remaining) {
+    [token, ..rest] => {
+      match(token.kind) {
+        Equals => { missingPattern(state, subject) },
+        Semicolon => { missingPattern(state, subject) },
+        LetKeyword => { missingPattern(state, subject) },
+        EndOfFile => { missingPattern(state, subject) },
+        Identifier => {
+          let (nodeId, state1) = freshNode(state);
+          let consumed = advance(state1, rest);
+          let (end, next) = consumePatternTail(consumed, token.span.end, 0);
+          (NamePattern(nodeId, token.text, .{ start = token.span.start, end = end }), next)
+        },
+        Constructor => {
+          let (nodeId, state1) = freshNode(state);
+          let consumed = advance(state1, rest);
+          let (end, next) = consumePatternTail(consumed, token.span.end, 0);
+          (NamePattern(nodeId, token.text, .{ start = token.span.start, end = end }), next)
+        },
+        Punctuation => {
+          if (token.text == "_") {
+            let (nodeId, state1) = freshNode(state);
+            let next = advance(state1, rest);
+            (NamePattern(nodeId, token.text, token.span), next)
+          } else {
+            if (token.text == "(" || token.text == "{" || token.text == "[") {
+              let (nodeId, state1) = freshNode(state);
+              let consumed = advance(state1, rest);
+              let (end, next) = consumePatternTail(
+                consumed,
+                token.span.end,
+                patternDepthAfter(token, 0),
+              );
+              (NamePattern(nodeId, token.text, .{ start = token.span.start, end = end }), next)
+            } else {
+              errorPattern(state, subject, token, rest)
+            }
+          }
+        },
+        _ => { errorPattern(state, subject, token, rest) },
+      }
+    },
+    [] => { missingPattern(state, subject) },
+  }
+};
+
+let patternEnd = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(nodeId), Var(text), Var(span)) => { span.end },
+    HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { span.end },
+    ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => { span.end },
+  }
+};
+
+let insertEquals = (state: ParserState, subject: Number, anchor: Number) => {
+  let (nodeId, state1) = freshNode(state);
+  let (recoveryId, state2) = addRecovery(
+    state1,
+    "parse.let.missing-equals",
+    anchor,
+    "ParseLetBinding",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> RequireEquals",
+    subject,
+    "equals sign between pattern and expression",
+    observation(state),
+    "insert missing equals token",
+    nodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some("="),
+    [],
+  );
+  (anchor, Some(recoveryId), state2)
+};
+
+let isAnnotationStart = (token: Token) => {
+  match(token.kind) {
+    Punctuation => { token.text == ":" },
+    _ => { false },
+  }
+};
+
+let isAnnotationBoundary = (kind: TokenKind) => {
+  match(kind) {
+    Equals => { true },
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => { false },
+  }
+};
+
+let rec consumeAnnotationTail = (
+  state: ParserState,
+  lastEnd: Number,
+) => {
+  match(state.remaining) {
+    [] => { (lastEnd, state) },
+    [token, ..rest] => {
+      if (isAnnotationBoundary(token.kind)) {
+        (lastEnd, state)
+      } else {
+        let next = advance(state, rest);
+        consumeAnnotationTail(next, token.span.end)
+      }
+    },
+  }
+};
+
+let consumeOptionalAnnotation = (state: ParserState, anchor: Number) => {
+  match(state.remaining) {
+    [token, ..rest] => {
+      if (isAnnotationStart(token)) {
+        let next = advance(state, rest);
+        consumeAnnotationTail(next, token.span.end)
+      } else {
+        (anchor, state)
+      }
+    },
+    [] => { (anchor, state) },
+  }
+};
+
+let requireEquals = (state: ParserState, subject: Number, anchor: Number) => {
+  match(state.remaining) {
+    [token, ..rest] => {
+      match(token.kind) {
+        Equals => {
+          let next = advance(state, rest);
+          (token.span.end, None, next)
+        },
+        _ => { insertEquals(state, subject, anchor) },
+      }
+    },
+    [] => { insertEquals(state, subject, anchor) },
+  }
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let consumeOptionalRec = (state: ParserState) => {
+  match(state.remaining) {
+    [token, ..rest] => {
+      if (isKeywordText(token, "rec")) {
+        let next = advance(state, rest);
+        next
+      } else {
+        state
+      }
+    },
+    [] => { state },
+  }
+};
+
+let missingExpression = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+  dependsOn: List<Number>,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (recoveryId, state2) = addRecovery(
+    state1,
+    "parse.let.missing-expression",
+    anchor,
+    "ParseLetBinding",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> RequireExpression",
+    subject,
+    "expression after equals",
+    observation(state),
+    "synthesize expression hole",
+    nodeId,
+    "Expression",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some("?"),
+    dependsOn,
+  );
+  (HoleExpr(nodeId, recoveryId, .{ start = anchor, end = anchor }), state2)
+};
+
+let parseExpression = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+  equalsRecovery: Option<Number>,
+) => {
+  let dependencies = match(equalsRecovery) {
+    Some(id) => { [id] },
+    None => { [] },
+  };
+  match(state.remaining) {
+    [token, ..rest] => {
+      if (isExpressionBoundaryToken(token)) {
+        missingExpression(state, subject, anchor, dependencies)
+      } else {
+        let (nodeId, state1) = freshNode(state);
+        let state1a = if (isLambdaArrow(token)) {
+          addOptionalUnitParams(state1, subject, token)
+        } else {
+          state1
+        };
+        let consumed = advance(state1a, rest);
+        match(token.kind) {
+          Opaque => {
+            if (token.text == "?") {
+              (AuthoredHoleExpr(nodeId, token.span), consumed)
+            } else {
+              let (recoveryId, state2) = addRecovery(
+                consumed,
+                "parse.expression.opaque",
+                token.span.start,
+                "ParseExpression",
+                "ParseModule -> ParseLetDecl -> ParseBinding -> RequireExpression",
+                subject,
+                "expression",
+                "opaque token '" ++ token.text ++ "'",
+                "retain token as error expression",
+                nodeId,
+                "ErrorExpression",
+                ErrorSeverity,
+                RecoveryOnly,
+                None,
+                None,
+                dependencies,
+              );
+              (ErrorExpr(nodeId, recoveryId, token.span, token.text), state2)
+            }
+          },
+          _ => {
+            let (end, state2) = consumeExpressionTail(
+              consumed,
+              token.span.end,
+              expressionDepthAfter(token, 0),
+            );
+            let state3 = if (isLambdaArrow(token)) {
+              addBareLambdaBodyBraces(state2, subject, currentAnchor(consumed), end)
+            } else {
+              state2
+            };
+            let state4 = addMissingMatchArmCommas(state3, subject, [token, ..rest]);
+            (AtomExpr(nodeId, token.text, .{ start = token.span.start, end = end }), state4)
+          },
+        }
+      }
+    },
+    [] => { missingExpression(state, subject, anchor, dependencies) },
+  }
+};
+
+let expressionEnd = (expression: Expr) => {
+  match(expression) {
+    AtomExpr(Var(nodeId), Var(text), Var(span)) => { span.end },
+    HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { span.end },
+    AuthoredHoleExpr(Var(nodeId), Var(span)) => { span.end },
+    ErrorExpr(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => { span.end },
+  }
+};
+
+let isLetGroupTailBoundary = (token: Token) => {
+  match(token.kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => {
+      isKeywordText(token, "from") ||
+      isKeywordText(token, "type") ||
+      isKeywordText(token, "record")
+    },
+  }
+};
+
+let rec consumeAndTail = (state: ParserState, lastEnd: Number) => {
+  match(state.remaining) {
+    [] => { (lastEnd, state) },
+    [token, ..rest] => {
+      if (isLetGroupTailBoundary(token)) {
+        (lastEnd, state)
+      } else {
+        let next = advance(state, rest);
+        consumeAndTail(next, token.span.end)
+      }
+    },
+  }
+};
+
+let consumeLetGroupTail = (state: ParserState, anchor: Number) => {
+  match(state.remaining) {
+    [token, ..rest] => {
+      if (isKeywordText(token, "and")) {
+        let next = advance(state, rest);
+        consumeAndTail(next, token.span.end)
+      } else {
+        (anchor, state)
+      }
+    },
+    [] => { (anchor, state) },
+  }
+};
+
+let insertSemicolon = (state: ParserState, subject: Number, anchor: Number) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse.let.missing-semicolon",
+    anchor,
+    "ParseTopPhrase",
+    "ParseModule -> ParseTopPhrase -> RequireSemicolon",
+    subject,
+    "top-level semicolon",
+    observation(state),
+    "insert semicolon",
+    nodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some(";"),
+    Some(";"),
+    [],
+  );
+  (anchor, state2)
+};
+
+let requireSemicolon = (state: ParserState, subject: Number, anchor: Number) => {
+  match(state.remaining) {
+    [token, ..rest] => {
+      match(token.kind) {
+        Semicolon => {
+          let next = advance(state, rest);
+          (token.span.end, next)
+        },
+        _ => { insertSemicolon(state, subject, anchor) },
+      }
+    },
+    [] => { insertSemicolon(state, subject, anchor) },
+  }
+};
+
+let parseLetBinding = (state: ParserState, letToken: Token, rest: List<Token>) => {
+  let afterLet = advance(state, rest);
+  let afterRec = consumeOptionalRec(afterLet);
+  let (bindingId, state1) = freshNode(afterRec);
+  let (pattern, state2) = parsePattern(state1, bindingId);
+  let (equalsAnchor, state2a) = consumeOptionalAnnotation(state2, patternEnd(pattern));
+  let (equalsEnd, equalsRecovery, state3) =
+    requireEquals(state2a, bindingId, equalsAnchor);
+  let (expression, state4) = parseExpression(state3, bindingId, equalsEnd, equalsRecovery);
+  let (semicolonAnchor, state4a) = consumeLetGroupTail(state4, expressionEnd(expression));
+  let (bindingEnd, state5) =
+    requireSemicolon(state4a, bindingId, semicolonAnchor);
+  let binding: LetBinding = .{
+    id = bindingId,
+    pattern = pattern,
+    expression = expression,
+    span = .{ start = letToken.span.start, end = bindingEnd },
+  };
+  let item: TopItem = LetItem(binding);
+  (item, state5)
+};

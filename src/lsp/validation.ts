@@ -138,12 +138,19 @@ function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): L
     );
   return {
     range,
-    severity: diagnostic.severity === "error" ? 1 : 2,
+    severity: lspSeverity(diagnostic.severity),
     code: diagnostic.code,
     source: "wm-mini",
     message: formatDiagnostic(diagnostic, uri ? fileUriToPath(uri) : undefined, source).trimEnd(),
     relatedInformation: relatedInformation.length ? relatedInformation : undefined,
   };
+}
+
+function lspSeverity(severity: FrontendDiagnostic["severity"]): 1 | 2 | 3 | 4 {
+  if (severity === "error") return 1;
+  if (severity === "warning") return 2;
+  if (severity === "information") return 3;
+  return 4;
 }
 
 function errorLocation(error: unknown): PeggyLocation | undefined {

@@ -125,6 +125,13 @@ export async function compileFile(input: string, options: CompileOptions = {}): 
   return emitCoreProgram((await coreFile(input, options)).core);
 }
 
+export async function compileLibraryFile(
+  input: string,
+  options: CompileOptions = {},
+): Promise<string> {
+  return emitCoreProgram((await coreFile(input, options)).core, { target: "library" });
+}
+
 export async function checkFile(input: string): Promise<Map<string, InferResult>> {
   return (await analyzeFile(input)).results;
 }
@@ -380,6 +387,16 @@ export async function compileVirtual(
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<string> {
   return emitCoreProgram((await coreVirtual(entryPath, virtualFs, options)).core);
+}
+
+export async function compileLibraryVirtual(
+  entryPath: string,
+  virtualFs: VirtualFileSystem,
+  options: Omit<CompileOptions, "virtualFs"> = {},
+): Promise<string> {
+  return emitCoreProgram((await coreVirtual(entryPath, virtualFs, options)).core, {
+    target: "library",
+  });
 }
 
 export async function checkVirtual(

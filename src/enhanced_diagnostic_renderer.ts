@@ -7,6 +7,7 @@ import type {
 import { displayTypeVariables } from "./diagnostic_type_display.ts";
 import { lineStarts, sliceSource, type SourceSpan } from "./source.ts";
 import { formatPathSegment } from "./type_diff.ts";
+import { renderViolation } from "./diagnostic_syntax_renderer.ts";
 
 export type EnhancedDiagnosticRenderMode = "authored" | "explain" | "trace";
 
@@ -287,7 +288,7 @@ function renderExplainDiagnostic(
       `collision: ${renderConflictPath(violation.conflictPath)}`,
     );
   } else {
-    lines.push("", "violation:", `  ${violation.message}`);
+    lines.push("", "violation:", `  ${renderViolation(violation)}`);
   }
   const excerpt = source && diagnostic.primary.kind === "source"
     ? renderContextExcerpt(source, diagnostic.primary.span)
@@ -565,6 +566,8 @@ function renderSupportEntry(
         `${entry.id} note: ${entry.message}`,
         ...renderOrigin(entry.origin, filePath, source),
       ];
+    case "recovery":
+      return [];
   }
 }
 
@@ -581,7 +584,7 @@ function renderOrigin(
   filePath: string | undefined,
   source: string | undefined,
 ): string[] {
-  if (anchor.kind === "generated") return [`from generated: ${anchor.label}`];
+  if (anchor.kind !== "source") return [`from ${anchor.kind}: ${anchor.label}`];
   const location = `${filePath || "<input>"}:${anchor.span.line}:${anchor.span.col}`;
   const excerpt = source ? sourceLine(source, anchor.span) : undefined;
   return excerpt ? [`from ${location}`, excerpt] : [`from ${location}`];

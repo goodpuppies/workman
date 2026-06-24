@@ -1,0 +1,16 @@
+from "./dto.wm" import {
+  TokenDto, LexRoundTripDto, StructuralItemDto, RecoveryMarkDto,
+  VirtualArtifactDto, MapPieceDto, StructuralParseDto,
+  lexRoundTrip as lexRoundTripInternal,
+  parseStructural as parseStructuralInternal
+};
+
+-- The entry module owns the stable JavaScript ABI. Internal WM representations
+-- stay behind this wrapper even while the package evolves.
+let lexRoundTrip = (source: String) => {
+  lexRoundTripInternal(source)
+};
+
+let parseStructural = (source: String) => {
+  parseStructuralInternal(source)
+};

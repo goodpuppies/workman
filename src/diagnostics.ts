@@ -13,6 +13,12 @@ import { lineStarts } from "./source.ts";
 import { formatEnhancedDiagnostic } from "./enhanced_diagnostic_renderer.ts";
 import { displayTypeVariables } from "./diagnostic_type_display.ts";
 import { formatPathSegment, TypeMismatchError } from "./type_diff.ts";
+import {
+  renderPredicate as renderDiagnosticPredicate,
+  renderRecoveryEntry,
+  renderRepair,
+  renderViolation,
+} from "./diagnostic_syntax_renderer.ts";
 
 export type FrontendDiagnostic = AuditableDiagnostic;
 
@@ -195,6 +201,9 @@ export function formatDiagnostic(
     lines.push("support:");
     lines.push(...support.map((line) => `  ${line}`));
   }
+  if (diagnostic.repairs.length > 0) {
+    lines.push("repairs:", ...diagnostic.repairs.map((repair) => `  ${renderRepair(repair)}`));
+  }
   const excerpt = anchor.kind === "source" && source
     ? formatExcerpt(source, anchor.span)
     : undefined;
@@ -238,30 +247,25 @@ export function classifyDiagnostic(message: string): string {
 
 export function renderDiagnosticSummary(diagnostic: FrontendDiagnostic): string {
   const violation = diagnostic.failure.violation;
-  if (violation.kind === "unsatisfied") return violation.message;
-  if (violation.kind === "contradicted") {
-    const left = typeSnapshotRendered(diagnostic, violation.observed.left);
-    const right = typeSnapshotRendered(diagnostic, violation.observed.right);
-    const path = violation.conflictPath.length
-      ? violation.conflictPath.map(formatPathSegment).join(" -> ")
-      : "type";
-    return [
-      `type mismatch: ${diagnostic.failure.frame.rule}: ${diagnostic.failure.premise.role}`,
-      violation.context ? `  context: ${violation.context}` : undefined,
-      `  conflict: ${path}`,
-      `  expected: ${left}`,
-      violation.origins?.expected ? `    source: ${violation.origins.expected}` : undefined,
-      `  actual:   ${right}`,
-      violation.origins?.got ? `    source: ${violation.origins.got}` : undefined,
-    ].filter((line): line is string => !!line).join("\n");
-  }
-  return diagnostic.code;
+  if (violation.kind !== "contradicted") return renderViolation(violation);
+  const left = typeSnapshotRendered(diagnostic, violation.observed.left);
+  const right = typeSnapshotRendered(diagnostic, violation.observed.right);
+  const path = violation.conflictPath.length
+    ? violation.conflictPath.map(formatPathSegment).join(" -> ")
+    : "type";
+  return [
+    `type mismatch: ${diagnostic.failure.frame.rule}: ${diagnostic.failure.premise.role}`,
+    violation.context ? `  context: ${violation.context}` : undefined,
+    `  conflict: ${path}`,
+    `  expected: ${left}`,
+    violation.origins?.expected ? `    source: ${violation.origins.expected}` : undefined,
+    `  actual:   ${right}`,
+    violation.origins?.got ? `    source: ${violation.origins.got}` : undefined,
+  ].filter((line): line is string => !!line).join("\n");
 }
 
 function renderDiagnosticHeadline(diagnostic: FrontendDiagnostic): string {
-  const violation = diagnostic.failure.violation;
-  if (violation.kind === "unsatisfied") return violation.message;
-  return "type mismatch";
+  return renderViolation(diagnostic.failure.violation);
 }
 
 export function diagnosticNotes(diagnostic: FrontendDiagnostic): {
@@ -274,11 +278,7 @@ export function diagnosticNotes(diagnostic: FrontendDiagnostic): {
 }
 
 function renderPremise(diagnostic: FrontendDiagnostic): string {
-  const predicate = diagnostic.failure.premise.predicate;
-  if (predicate.kind === "equal") {
-    return `${predicate.left} == ${predicate.right} (${predicate.domain})`;
-  }
-  return diagnostic.failure.premise.role;
+  return renderDiagnosticPredicate(diagnostic.failure.premise.predicate);
 }
 
 function renderCollision(
@@ -287,7 +287,7 @@ function renderCollision(
   source: string | undefined,
 ): string[] {
   const violation = diagnostic.failure.violation;
-  if (violation.kind === "unsatisfied") return [`violation: ${violation.message}`];
+  if (violation.kind !== "contradicted") return [`violation: ${renderViolation(violation)}`];
 
   const left = typeSnapshotRendered(diagnostic, violation.observed.left);
   const right = typeSnapshotRendered(diagnostic, violation.observed.right);
@@ -318,7 +318,7 @@ function renderTypeTrace(
   source: string | undefined,
 ): string[] {
   const violation = diagnostic.failure.violation;
-  if (violation.kind === "unsatisfied") return [];
+  if (violation.kind !== "contradicted") return [];
   const slot = collisionSlot(violation.conflictPath);
   const steps = [
     ...traceStep(diagnostic, violation.origins?.expected, filePath, source),
@@ -414,6 +414,11 @@ function renderSupportEntry(
         `${entry.id} note: ${entry.message}`,
         ...renderSupportOrigin(entry.origin, filePath, source),
       ];
+    case "recovery":
+      return [
+        renderRecoveryEntry(entry),
+        ...renderSupportOrigin(entry.anchor, filePath, source),
+      ];
   }
 }
 
@@ -449,6 +454,7 @@ function renderSupportOrigin(
   source: string | undefined,
 ): string[] {
   if (anchor.kind === "generated") return [`  from generated: ${anchor.label}`];
+  if (anchor.kind === "recovery") return [`  from recovery ${anchor.step}: ${anchor.label}`];
   const location = `${filePath || "<input>"}:${anchor.span.line}:${anchor.span.col}`;
   const excerpt = source ? formatSourceLine(source, anchor.span) : undefined;
   return excerpt ? [`  from ${location}`, `  ${excerpt}`] : [`  from ${location}`];

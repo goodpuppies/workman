@@ -1,0 +1,73 @@
+from js.global("Deno") import unsafe { exit: (Number) => Void };
+from "./types.wm" import {
+  Span, TokenKind, Token, Pattern, Expr, LetBinding, Severity, RepairClass,
+  RecoveryMark, VirtualArtifact, StructuralDocument, TopItem, RenderResult, MapPiece,
+  HoleExpr, LetItem
+};
+from "./structural.wm" import {
+  parseLet, renderVirtualResult, renderVirtual, renderMarkedPreview,
+  renderDocumentConcrete, concreteToVirtual, virtualToConcrete
+};
+
+let rec artifactTexts = match(artifacts) => {
+  [] => { "" },
+  [artifact, ..rest] => { artifact.text ++ artifactTexts(rest) },
+};
+
+let rec firstMarkId = match(marks) => {
+  [mark, .._] => { mark.id },
+  [] => { -1 },
+};
+
+let rec firstFallbackId = match(items) => {
+  [LetItem(binding), ..rest] => {
+    match(binding.expression) {
+      HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { recoveryId },
+      _ => { -1 },
+    }
+  },
+  [_item, ..rest] => { firstFallbackId(rest) },
+  [] => { -1 },
+};
+
+let check = (condition, message) => {
+  if (condition) {
+    true
+  } else {
+    print("FAIL: " ++ message);
+    false
+  }
+};
+
+let main = () => {
+  let completeSource = "let thing = value; -- preserved";
+  let complete = parseLet(completeSource);
+  let incompleteSource = "let thing =";
+  let incomplete = parseLet(incompleteSource);
+  let rendered = renderVirtualResult(incomplete);
+  let missingPattern = parseLet("let =");
+  let continued = parseLet("let a = one\nlet b = two;");
+  let fallbackId = firstFallbackId(incomplete.items);
+  let checks = [
+    check(renderDocumentConcrete(complete) == completeSource, "complete source must round-trip"),
+    check(renderDocumentConcrete(incomplete) == incompleteSource, "incomplete source must round-trip"),
+    check(renderVirtual(incomplete) == "let thing =?;", "virtual recovery must be ordered ? then ;"),
+    check(artifactTexts(incomplete.artifacts) == "?;", "artifacts must remain separate and ordered"),
+    check(fallbackId == firstMarkId(incomplete.marks), "fallback and mark must share recovery identity"),
+    check(renderVirtual(missingPattern) == "let _=?;", "missing pattern must keep later equals"),
+    check(renderVirtual(continued) == "let a = one;\nlet b = two;", "missing semicolon must preserve later declarations"),
+    check(concreteToVirtual(rendered.pieces, 11) == Some(11), "concrete map must reach shared anchor"),
+    check(virtualToConcrete(rendered.pieces, 12) == Some(11), "virtual repairs must map to their concrete anchor"),
+    check(renderDocumentConcrete(complete) == completeSource, "comment must be preserved concretely"),
+  ];
+  let rec all = match(items) => {
+    [] => { true },
+    [head, ..rest] => { head && all(rest) },
+  };
+  if (all(checks)) {
+    print("frontend-v2 structural self-check: ok");
+    print(renderMarkedPreview(incomplete))
+  } else {
+    exit(1)
+  }
+};

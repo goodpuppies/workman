@@ -1,0 +1,127 @@
+from "./types.wm" import {
+  Span, Token, Severity, RepairClass, RecoveryMark, VirtualArtifact, EndOfFile
+};
+
+record ParserState = {
+  remaining: List<Token>,
+  nextNodeId: Number,
+  nextRecoveryId: Number,
+  nextOrder: Number,
+  progressSteps: Number,
+  marksReversed: List<RecoveryMark>,
+  artifactsReversed: List<VirtualArtifact>,
+};
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let freshNode = (state: ParserState) => {
+  let next: ParserState = .{ ..state, nextNodeId = state.nextNodeId + 1 };
+  (state.nextNodeId, next)
+};
+
+let advance = (state: ParserState, rest: List<Token>) => {
+  let next: ParserState = .{
+    ..state,
+    remaining = rest,
+    progressSteps = state.progressSteps + 1,
+  };
+  next
+};
+
+let artifactFor = (
+  recoveryId: Number,
+  anchor: Number,
+  text: String,
+  reason: String,
+  repairClass: RepairClass,
+  order: Number,
+) => {
+  let value: VirtualArtifact = .{
+    recoveryId = recoveryId,
+    anchor = anchor,
+    text = text,
+    reason = reason,
+    repairClass = repairClass,
+    pairId = None,
+    order = order,
+  };
+  value
+};
+
+let addRecovery = (
+  state: ParserState,
+  code: String,
+  anchor: Number,
+  rule: String,
+  rulePath: String,
+  subject: Number,
+  expectation: String,
+  observed: String,
+  recovery: String,
+  fallbackNode: Number,
+  fallbackCategory: String,
+  severity: Severity,
+  repairClass: RepairClass,
+  repairText: Option<String>,
+  artifactText: Option<String>,
+  dependsOn: List<Number>,
+) => {
+  let recoveryId = state.nextRecoveryId;
+  let order = state.nextOrder;
+  let mark: RecoveryMark = .{
+    id = recoveryId,
+    code = code,
+    phase = "parsing",
+    anchor = anchor,
+    rule = rule,
+    rulePath = rulePath,
+    subject = subject,
+    expectation = expectation,
+    observation = observed,
+    recovery = recovery,
+    fallbackNode = fallbackNode,
+    fallbackCategory = fallbackCategory,
+    severity = severity,
+    repairClass = repairClass,
+    repairText = repairText,
+    pairId = None,
+    order = order,
+    dependsOn = dependsOn,
+  };
+  let artifacts = match(artifactText) {
+    Some(text) => {
+      [artifactFor(recoveryId, anchor, text, code, repairClass, order), ..state.artifactsReversed]
+    },
+    None => { state.artifactsReversed },
+  };
+  let next: ParserState = .{
+    ..state,
+    nextRecoveryId = recoveryId + 1,
+    nextOrder = order + 1,
+    marksReversed = [mark, ..state.marksReversed],
+    artifactsReversed = artifacts,
+  };
+  (recoveryId, next)
+};
+
+let currentAnchor = (state: ParserState) => {
+  match(state.remaining) {
+    [token, .._] => { token.span.start },
+    [] => { 0 },
+  }
+};
+
+let observation = (state: ParserState) => {
+  match(state.remaining) {
+    [token, .._] => {
+      match(token.kind) {
+        EndOfFile => { "end of file" },
+        _ => { "token '" ++ token.text ++ "'" },
+      }
+    },
+    [] => { "end of file" },
+  }
+};

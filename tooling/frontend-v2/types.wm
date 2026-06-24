@@ -1,0 +1,122 @@
+-- Shared structural frontend types. Concrete trivia is represented explicitly so
+-- every source character remains owned by the token stream.
+
+record Span = {
+  start: Number,
+  end: Number,
+};
+
+type TokenKind =
+  | LetKeyword
+  | Keyword
+  | Identifier
+  | Constructor
+  | NumberLiteral
+  | StringLiteral
+  | Equals
+  | Semicolon
+  | Punctuation
+  | Operator
+  | Whitespace
+  | Comment
+  | Opaque
+  | EndOfFile;
+
+type TokenOrigin = ConcreteOrigin | VirtualOrigin<Number>;
+
+record Token = {
+  kind: TokenKind,
+  text: String,
+  span: Span,
+  origin: TokenOrigin,
+};
+
+record LexResult = {
+  sourceLength: Number,
+  lineStarts: List<Number>,
+  tokens: List<Token>,
+};
+
+type Pattern =
+  | NamePattern<Number, String, Span>
+  | HolePattern<Number, Number, Span>
+  | ErrorPattern<Number, Number, Span, String>;
+
+type Expr =
+  | AtomExpr<Number, String, Span>
+  | HoleExpr<Number, Number, Span>
+  | AuthoredHoleExpr<Number, Span>
+  | ErrorExpr<Number, Number, Span, String>;
+
+record LetBinding = {
+  id: Number,
+  pattern: Pattern,
+  expression: Expr,
+  span: Span,
+};
+
+type TopItem =
+  | LetItem<LetBinding>
+  | ImportItem<Number, Span, String>
+  | TypeItem<Number, Span>
+  | RecordItem<Number, Span>
+  | OpaqueItem<Number, Number, Span, String>;
+
+type Severity = ErrorSeverity | WarningSeverity | HintSeverity;
+
+type RepairClass = AutoFix | OptionalCanonical | RecoveryOnly;
+
+record RecoveryMark = {
+  id: Number,
+  code: String,
+  phase: String,
+  anchor: Number,
+  rule: String,
+  rulePath: String,
+  subject: Number,
+  expectation: String,
+  observation: String,
+  recovery: String,
+  fallbackNode: Number,
+  fallbackCategory: String,
+  severity: Severity,
+  repairClass: RepairClass,
+  repairText: Option<String>,
+  pairId: Option<Number>,
+  order: Number,
+  dependsOn: List<Number>,
+};
+
+record VirtualArtifact = {
+  recoveryId: Number,
+  anchor: Number,
+  text: String,
+  reason: String,
+  repairClass: RepairClass,
+  pairId: Option<Number>,
+  order: Number,
+};
+
+type MapPieceKind = ConcretePiece | VirtualPiece<Number>;
+
+record MapPiece = {
+  kind: MapPieceKind,
+  concreteStart: Number,
+  concreteEnd: Number,
+  virtualStart: Number,
+  virtualEnd: Number,
+};
+
+record RenderResult = {
+  text: String,
+  pieces: List<MapPiece>,
+};
+
+record StructuralDocument = {
+  source: String,
+  tokens: List<Token>,
+  items: List<TopItem>,
+  marks: List<RecoveryMark>,
+  artifacts: List<VirtualArtifact>,
+  progressSteps: Number,
+};

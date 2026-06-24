@@ -1,0 +1,220 @@
+export const FRONTEND_V2_SCHEMA_VERSION = 1;
+
+export type FrontendV2TokenKind =
+  | "let"
+  | "keyword"
+  | "identifier"
+  | "constructor"
+  | "number"
+  | "string"
+  | "equals"
+  | "semicolon"
+  | "punctuation"
+  | "operator"
+  | "whitespace"
+  | "comment"
+  | "opaque"
+  | "eof";
+
+export type FrontendV2Token = {
+  kind: FrontendV2TokenKind;
+  text: string;
+  start: number;
+  end: number;
+  origin: "concrete" | "virtual";
+};
+
+export type LexRoundTripResult = {
+  schemaVersion: typeof FRONTEND_V2_SCHEMA_VERSION;
+  sourceLength: number;
+  lineStarts: number[];
+  tokens: FrontendV2Token[];
+  rendered: string;
+};
+
+export type FrontendV2 = {
+  lexRoundTrip(source: string): LexRoundTripResult;
+  parseStructural(source: string): StructuralParseResult;
+};
+
+export type StructuralItem = {
+  kind: "let" | "import" | "type" | "record" | "opaque";
+  id: number;
+  start: number;
+  end: number;
+  recoveryId: number;
+  patternKind: "" | "name" | "hole" | "error";
+  patternRecoveryId: number;
+  expressionKind: "" | "atom" | "hole" | "authored-hole" | "error";
+  expressionRecoveryId: number;
+};
+
+export type StructuralRecoveryMark = {
+  id: number;
+  code: string;
+  phase: string;
+  anchor: number;
+  rule: string;
+  rulePath: string;
+  subject: number;
+  expectation: string;
+  observation: string;
+  recovery: string;
+  fallbackNode: number;
+  fallbackCategory: string;
+  severity: "error" | "warning" | "hint";
+  repairClass: "autoFix" | "optionalCanonical" | "recoveryOnly";
+  hasRepair: boolean;
+  repairText: string;
+  pairId: number;
+  order: number;
+  dependsOn: number[];
+};
+
+export type StructuralArtifact = {
+  recoveryId: number;
+  anchor: number;
+  text: string;
+  reason: string;
+  repairClass: StructuralRecoveryMark["repairClass"];
+  pairId: number;
+  order: number;
+};
+
+export type StructuralMapPiece = {
+  kind: "concrete" | "virtual";
+  recoveryId: number;
+  concreteStart: number;
+  concreteEnd: number;
+  virtualStart: number;
+  virtualEnd: number;
+};
+
+export type StructuralParseResult = {
+  schemaVersion: typeof FRONTEND_V2_SCHEMA_VERSION;
+  sourceLength: number;
+  progressSteps: number;
+  concreteText: string;
+  virtualText: string;
+  items: StructuralItem[];
+  marks: StructuralRecoveryMark[];
+  artifacts: StructuralArtifact[];
+  pieces: StructuralMapPiece[];
+};
+
+const tokenKinds = new Set<FrontendV2TokenKind>([
+  "let",
+  "keyword",
+  "identifier",
+  "constructor",
+  "number",
+  "string",
+  "equals",
+  "semicolon",
+  "punctuation",
+  "operator",
+  "whitespace",
+  "comment",
+  "opaque",
+  "eof",
+]);
+
+export async function loadFrontendV2(moduleUrl: URL | string): Promise<FrontendV2> {
+  const specifier = moduleUrl instanceof URL ? moduleUrl.href : moduleUrl;
+  const imported: Record<string, unknown> = await import(specifier);
+  if (typeof imported.lexRoundTrip !== "function") {
+    throw new Error("frontend-v2 module does not export lexRoundTrip");
+  }
+  if (typeof imported.parseStructural !== "function") {
+    throw new Error("frontend-v2 module does not export parseStructural");
+  }
+  const lex = imported.lexRoundTrip as (source: string) => unknown;
+  const parseStructural = imported.parseStructural as (source: string) => unknown;
+  return {
+    lexRoundTrip(source: string): LexRoundTripResult {
+      return validateLexResult(lex(source));
+    },
+    parseStructural(source: string): StructuralParseResult {
+      return validateStructuralResult(parseStructural(source));
+    },
+  };
+}
+
+function validateStructuralResult(value: unknown): StructuralParseResult {
+  if (!isObject(value)) throw new Error("frontend-v2 structural result must be an object");
+  if (value.schemaVersion !== FRONTEND_V2_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported frontend-v2 schema version ${String(value.schemaVersion)}`,
+    );
+  }
+  if (
+    !isNumber(value.sourceLength) ||
+    !isNumber(value.progressSteps) ||
+    typeof value.concreteText !== "string" ||
+    typeof value.virtualText !== "string" ||
+    !Array.isArray(value.items) ||
+    !Array.isArray(value.marks) ||
+    !Array.isArray(value.artifacts) ||
+    !Array.isArray(value.pieces)
+  ) {
+    throw new Error("frontend-v2 structural result has an invalid shape");
+  }
+  value.items.forEach((item) => validateRecord(item, "structural item"));
+  value.marks.forEach((mark) => validateRecord(mark, "recovery mark"));
+  value.artifacts.forEach((artifact) => validateRecord(artifact, "virtual artifact"));
+  value.pieces.forEach((piece) => validateRecord(piece, "map piece"));
+  return value as StructuralParseResult;
+}
+
+function validateLexResult(value: unknown): LexRoundTripResult {
+  if (!isObject(value)) throw new Error("frontend-v2 lex result must be an object");
+  if (value.schemaVersion !== FRONTEND_V2_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported frontend-v2 schema version ${String(value.schemaVersion)}`,
+    );
+  }
+  if (!isNumber(value.sourceLength) || typeof value.rendered !== "string") {
+    throw new Error("frontend-v2 lex result has invalid source metadata");
+  }
+  if (!Array.isArray(value.lineStarts) || !value.lineStarts.every(isNumber)) {
+    throw new Error("frontend-v2 lex result has invalid line starts");
+  }
+  if (!Array.isArray(value.tokens)) {
+    throw new Error("frontend-v2 lex result has invalid tokens");
+  }
+  const tokens = value.tokens.map(validateToken);
+  return {
+    schemaVersion: FRONTEND_V2_SCHEMA_VERSION,
+    sourceLength: value.sourceLength,
+    lineStarts: value.lineStarts,
+    tokens,
+    rendered: value.rendered,
+  };
+}
+
+function validateToken(value: unknown): FrontendV2Token {
+  if (
+    !isObject(value) ||
+    typeof value.kind !== "string" ||
+    !tokenKinds.has(value.kind as FrontendV2TokenKind) ||
+    typeof value.text !== "string" ||
+    !isNumber(value.start) ||
+    !isNumber(value.end) ||
+    (value.origin !== "concrete" && value.origin !== "virtual")
+  ) {
+    throw new Error("frontend-v2 token has an invalid shape");
+  }
+  return value as FrontendV2Token;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function validateRecord(value: unknown, label: string): void {
+  if (!isObject(value)) throw new Error(`frontend-v2 ${label} must be an object`);
+}

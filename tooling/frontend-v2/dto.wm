@@ -1,0 +1,366 @@
+from "./types.wm" import {
+  Span, TokenKind, TokenOrigin, Token, LexResult, Pattern, Expr, LetBinding, TopItem,
+  Severity, RepairClass, RecoveryMark, VirtualArtifact, MapPieceKind, MapPiece,
+  StructuralDocument, RenderResult,
+  LetKeyword, Keyword, Identifier, Constructor, NumberLiteral, StringLiteral,
+  Equals, Semicolon, Punctuation, Operator, Whitespace, Comment, Opaque, EndOfFile,
+  ConcreteOrigin, VirtualOrigin, NamePattern, HolePattern, ErrorPattern,
+  AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
+  LetItem, ImportItem, TypeItem, RecordItem, OpaqueItem,
+  ErrorSeverity, WarningSeverity, HintSeverity,
+  AutoFix, OptionalCanonical, RecoveryOnly, ConcretePiece, VirtualPiece
+};
+from "./lexer.wm" import { lexSource, renderConcrete };
+from "./parser.wm" import { parseStructural as parseStructuralInternal };
+from "./renderer.wm" import { renderVirtualResult };
+
+record TokenDto = {
+  kind: String,
+  text: String,
+  start: Number,
+  end: Number,
+  origin: String,
+};
+
+record LexRoundTripDto = {
+  schemaVersion: Number,
+  sourceLength: Number,
+  lineStarts: Js.Array<Number>,
+  tokens: Js.Array<TokenDto>,
+  rendered: String,
+};
+
+record StructuralItemDto = {
+  kind: String,
+  id: Number,
+  start: Number,
+  end: Number,
+  recoveryId: Number,
+  patternKind: String,
+  patternRecoveryId: Number,
+  expressionKind: String,
+  expressionRecoveryId: Number,
+};
+
+record RecoveryMarkDto = {
+  id: Number,
+  code: String,
+  phase: String,
+  anchor: Number,
+  rule: String,
+  rulePath: String,
+  subject: Number,
+  expectation: String,
+  observation: String,
+  recovery: String,
+  fallbackNode: Number,
+  fallbackCategory: String,
+  severity: String,
+  repairClass: String,
+  hasRepair: Bool,
+  repairText: String,
+  pairId: Number,
+  order: Number,
+  dependsOn: Js.Array<Number>,
+};
+
+record VirtualArtifactDto = {
+  recoveryId: Number,
+  anchor: Number,
+  text: String,
+  reason: String,
+  repairClass: String,
+  pairId: Number,
+  order: Number,
+};
+
+record MapPieceDto = {
+  kind: String,
+  recoveryId: Number,
+  concreteStart: Number,
+  concreteEnd: Number,
+  virtualStart: Number,
+  virtualEnd: Number,
+};
+
+record StructuralParseDto = {
+  schemaVersion: Number,
+  sourceLength: Number,
+  progressSteps: Number,
+  concreteText: String,
+  virtualText: String,
+  items: Js.Array<StructuralItemDto>,
+  marks: Js.Array<RecoveryMarkDto>,
+  artifacts: Js.Array<VirtualArtifactDto>,
+  pieces: Js.Array<MapPieceDto>,
+};
+
+let tokenKindName = (kind: TokenKind) => {
+  match(kind) {
+  LetKeyword => { "let" },
+  Keyword => { "keyword" },
+  Identifier => { "identifier" },
+  Constructor => { "constructor" },
+  NumberLiteral => { "number" },
+  StringLiteral => { "string" },
+  Equals => { "equals" },
+  Semicolon => { "semicolon" },
+  Punctuation => { "punctuation" },
+  Operator => { "operator" },
+  Whitespace => { "whitespace" },
+  Comment => { "comment" },
+  Opaque => { "opaque" },
+  EndOfFile => { "eof" },
+  }
+};
+
+let originName = (origin: TokenOrigin) => {
+  match(origin) {
+  ConcreteOrigin => { "concrete" },
+  VirtualOrigin(_) => { "virtual" },
+  }
+};
+
+let tokenDto = (token: Token) => {
+  let dto: TokenDto = .{
+    kind = tokenKindName(token.kind),
+    text = token.text,
+    start = token.span.start,
+    end = token.span.end,
+    origin = originName(token.origin),
+  };
+  dto
+};
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let rec tokenDtosInto = match(tokens, reversed) => {
+  ([], Var(reversed)) => { Js.Array.fromList(reverseInto(reversed, [])) },
+  ([token, ..rest], Var(reversed)) => {
+    tokenDtosInto(rest, [tokenDto(token), ..reversed])
+  },
+};
+
+let lexRoundTrip = (source: String) => {
+  let result = lexSource(source);
+  let dto: LexRoundTripDto = .{
+    schemaVersion = 1,
+    sourceLength = result.sourceLength,
+    lineStarts = Js.Array.fromList(result.lineStarts),
+    tokens = tokenDtosInto(result.tokens, []),
+    rendered = renderConcrete(result.tokens),
+  };
+  dto
+};
+
+let severityName = (severity: Severity) => {
+  match(severity) {
+    ErrorSeverity => { "error" },
+    WarningSeverity => { "warning" },
+    HintSeverity => { "hint" },
+  }
+};
+
+let repairClassName = (repairClass: RepairClass) => {
+  match(repairClass) {
+    AutoFix => { "autoFix" },
+    OptionalCanonical => { "optionalCanonical" },
+    RecoveryOnly => { "recoveryOnly" },
+  }
+};
+
+let patternInfo = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(nodeId), Var(text), Var(span)) => { ("name", -1) },
+    HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
+    ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
+      ("error", recoveryId)
+    },
+  }
+};
+
+let expressionInfo = (expression: Expr) => {
+  match(expression) {
+    AtomExpr(Var(nodeId), Var(text), Var(span)) => { ("atom", -1) },
+    HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
+    AuthoredHoleExpr(Var(nodeId), Var(span)) => { ("authored-hole", -1) },
+    ErrorExpr(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
+      ("error", recoveryId)
+    },
+  }
+};
+
+let itemDto = (item: TopItem) => {
+  match(item) {
+    LetItem(binding) => {
+      let (patternKind, patternRecoveryId) = patternInfo(binding.pattern);
+      let (expressionKind, expressionRecoveryId) = expressionInfo(binding.expression);
+      let dto: StructuralItemDto = .{
+        kind = "let",
+        id = binding.id,
+        start = binding.span.start,
+        end = binding.span.end,
+        recoveryId = -1,
+        patternKind = patternKind,
+        patternRecoveryId = patternRecoveryId,
+        expressionKind = expressionKind,
+        expressionRecoveryId = expressionRecoveryId,
+      };
+      dto
+    },
+    ImportItem(nodeId, span, form) => {
+      let dto: StructuralItemDto = .{
+        kind = "import",
+        id = nodeId,
+        start = span.start,
+        end = span.end,
+        recoveryId = -1,
+        patternKind = "",
+        patternRecoveryId = -1,
+        expressionKind = "",
+        expressionRecoveryId = -1,
+      };
+      dto
+    },
+    TypeItem(nodeId, span) => {
+      let dto: StructuralItemDto = .{
+        kind = "type",
+        id = nodeId,
+        start = span.start,
+        end = span.end,
+        recoveryId = -1,
+        patternKind = "",
+        patternRecoveryId = -1,
+        expressionKind = "",
+        expressionRecoveryId = -1,
+      };
+      dto
+    },
+    RecordItem(nodeId, span) => {
+      let dto: StructuralItemDto = .{
+        kind = "record",
+        id = nodeId,
+        start = span.start,
+        end = span.end,
+        recoveryId = -1,
+        patternKind = "",
+        patternRecoveryId = -1,
+        expressionKind = "",
+        expressionRecoveryId = -1,
+      };
+      dto
+    },
+    OpaqueItem(nodeId, recoveryId, span, text) => {
+      let dto: StructuralItemDto = .{
+        kind = "opaque",
+        id = nodeId,
+        start = span.start,
+        end = span.end,
+        recoveryId = recoveryId,
+        patternKind = "",
+        patternRecoveryId = -1,
+        expressionKind = "",
+        expressionRecoveryId = -1,
+      };
+      dto
+    },
+  }
+};
+
+let optionText = (value: Option<String>) => {
+  match(value) {
+    Some(text) => { (true, text) },
+    None => { (false, "") },
+  }
+};
+
+let optionNumber = (value: Option<Number>) => {
+  match(value) {
+    Some(number) => { number },
+    None => { -1 },
+  }
+};
+
+let markDto = (mark: RecoveryMark) => {
+  let (hasRepair, repairText) = optionText(mark.repairText);
+  let dto: RecoveryMarkDto = .{
+    id = mark.id,
+    code = mark.code,
+    phase = mark.phase,
+    anchor = mark.anchor,
+    rule = mark.rule,
+    rulePath = mark.rulePath,
+    subject = mark.subject,
+    expectation = mark.expectation,
+    observation = mark.observation,
+    recovery = mark.recovery,
+    fallbackNode = mark.fallbackNode,
+    fallbackCategory = mark.fallbackCategory,
+    severity = severityName(mark.severity),
+    repairClass = repairClassName(mark.repairClass),
+    hasRepair = hasRepair,
+    repairText = repairText,
+    pairId = optionNumber(mark.pairId),
+    order = mark.order,
+    dependsOn = Js.Array.fromList(mark.dependsOn),
+  };
+  dto
+};
+
+let artifactDto = (artifact: VirtualArtifact) => {
+  let dto: VirtualArtifactDto = .{
+    recoveryId = artifact.recoveryId,
+    anchor = artifact.anchor,
+    text = artifact.text,
+    reason = artifact.reason,
+    repairClass = repairClassName(artifact.repairClass),
+    pairId = optionNumber(artifact.pairId),
+    order = artifact.order,
+  };
+  dto
+};
+
+let pieceDto = (piece: MapPiece) => {
+  let (kind, recoveryId) = match(piece.kind) {
+    ConcretePiece => { ("concrete", -1) },
+    VirtualPiece(id) => { ("virtual", id) },
+  };
+  let dto: MapPieceDto = .{
+    kind = kind,
+    recoveryId = recoveryId,
+    concreteStart = piece.concreteStart,
+    concreteEnd = piece.concreteEnd,
+    virtualStart = piece.virtualStart,
+    virtualEnd = piece.virtualEnd,
+  };
+  dto
+};
+
+let rec mapInto = match(items, reversed, convert) => {
+  ([], Var(reversed), Var(convert)) => {
+    Js.Array.fromList(reverseInto(reversed, []))
+  },
+  ([item, ..rest], Var(reversed), Var(convert)) => {
+    mapInto(rest, [convert(item), ..reversed], convert)
+  },
+};
+
+let parseStructural = (source: String) => {
+  let document = parseStructuralInternal(source);
+  let rendered = renderVirtualResult(document);
+  let dto: StructuralParseDto = .{
+    schemaVersion = 1,
+    sourceLength = source :> .length :> Result.withDefault(0),
+    progressSteps = document.progressSteps,
+    concreteText = renderConcrete(document.tokens),
+    virtualText = rendered.text,
+    items = mapInto(document.items, [], itemDto),
+    marks = mapInto(document.marks, [], markDto),
+    artifacts = mapInto(document.artifacts, [], artifactDto),
+    pieces = mapInto(rendered.pieces, [], pieceDto),
+  };
+  dto
+};

@@ -1,0 +1,46 @@
+from "./types.wm" import {
+  StructuralDocument, RenderResult, MapPiece
+};
+from "./parser.wm" import { parseStructural as parseStructuralInternal };
+from "./renderer.wm" import {
+  renderVirtualResult as renderVirtualResultInternal,
+  renderVirtual as renderVirtualInternal,
+  renderMarkedPreview as renderMarkedPreviewInternal,
+  renderDocumentConcrete as renderDocumentConcreteInternal,
+  concreteToVirtual as concreteToVirtualInternal,
+  virtualToConcrete as virtualToConcreteInternal
+};
+
+let parseStructural = (source: String) => {
+  parseStructuralInternal(source)
+};
+
+-- Compatibility name retained for the Phase 0 harness while callers migrate to
+-- the document-level parser.
+let parseLet = (source: String) => {
+  parseStructuralInternal(source)
+};
+
+let renderVirtualResult = (document: StructuralDocument) => {
+  renderVirtualResultInternal(document)
+};
+
+let renderVirtual = (document: StructuralDocument) => {
+  renderVirtualInternal(document)
+};
+
+let renderMarkedPreview = (document: StructuralDocument) => {
+  renderMarkedPreviewInternal(document)
+};
+
+let renderDocumentConcrete = (document: StructuralDocument) => {
+  renderDocumentConcreteInternal(document)
+};
+
+let concreteToVirtual = (pieces: List<MapPiece>, offset: Number) => {
+  concreteToVirtualInternal(pieces, offset)
+};
+
+let virtualToConcrete = (pieces: List<MapPiece>, offset: Number) => {
+  virtualToConcreteInternal(pieces, offset)
+};

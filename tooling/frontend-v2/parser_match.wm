@@ -1,0 +1,164 @@
+from "./types.wm" import {
+  Span, Token, TokenKind,
+  LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile,
+  WarningSeverity, RecoveryOnly
+};
+from "./parser_support.wm" import {
+  ParserState, freshNode, addRecovery
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isExpressionBoundary = (kind: TokenKind) => {
+  match(kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => { false },
+  }
+};
+
+let isExpressionBoundaryToken = (token: Token) => {
+  if (isExpressionBoundary(token.kind)) {
+    true
+  } else {
+    isKeywordText(token, "from") ||
+    isKeywordText(token, "type") ||
+    isKeywordText(token, "record") ||
+    isKeywordText(token, "and")
+  }
+};
+
+let isPunctuationText = (token: Token, text: String) => {
+  match(token.kind) {
+    Punctuation => { token.text == text },
+    _ => { false },
+  }
+};
+
+let needsArmCommaBefore = (tokens: List<Token>) => {
+  match(tokens) {
+    [] => { false },
+    [token, .._] => {
+      if (isPunctuationText(token, ",") || isPunctuationText(token, "}")) {
+        false
+      } else {
+        !isExpressionBoundaryToken(token)
+      }
+    },
+  }
+};
+
+let addMissingArmComma = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse.match.missing-arm-comma",
+    anchor,
+    "ParseMatchArms",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseMatchArms",
+    subject,
+    "comma between match arms",
+    "next match arm",
+    "insert match arm comma",
+    nodeId,
+    "Token",
+    WarningSeverity,
+    RecoveryOnly,
+    None,
+    Some(","),
+    [],
+  );
+  state2
+};
+
+let updateDepth = (token: Token, open: String, close: String, depth: Number) => {
+  if (isPunctuationText(token, open)) {
+    depth + 1
+  } else {
+    if (isPunctuationText(token, close) && depth > 0) {
+      depth - 1
+    } else {
+      depth
+    }
+  }
+};
+
+let rec recoverMatchCommasInto = (
+  tokens: List<Token>,
+  state: ParserState,
+  subject: Number,
+  waitingForMatchBlock: Bool,
+  matchBlockDepth: Number,
+  braceDepth: Number,
+  parenDepth: Number,
+  bracketDepth: Number,
+) => {
+  match(tokens) {
+    [] => { state },
+    [token, ..rest] => {
+      if (
+        parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 &&
+        isExpressionBoundaryToken(token)
+      ) {
+        state
+      } else {
+        let startsMatch = isKeywordText(token, "match");
+        let opensBrace = isPunctuationText(token, "{");
+        let closesBrace = isPunctuationText(token, "}");
+        let state1 = if (
+          closesBrace && matchBlockDepth >= 0 && braceDepth == matchBlockDepth + 1 &&
+          needsArmCommaBefore(rest)
+        ) {
+          addMissingArmComma(state, subject, token.span.end)
+        } else {
+          state
+        };
+        let nextBraceDepth = updateDepth(token, "{", "}", braceDepth);
+        let nextParenDepth = updateDepth(token, "(", ")", parenDepth);
+        let nextBracketDepth = updateDepth(token, "[", "]", bracketDepth);
+        let nextMatchBlockDepth = if (closesBrace && braceDepth == matchBlockDepth) {
+          -1
+        } else {
+          if (waitingForMatchBlock && opensBrace) {
+            nextBraceDepth
+          } else {
+            matchBlockDepth
+          }
+        };
+        let nextWaitingForMatchBlock = if (waitingForMatchBlock && opensBrace) {
+          false
+        } else {
+          if (startsMatch && matchBlockDepth < 0) { true } else { waitingForMatchBlock }
+        };
+        recoverMatchCommasInto(
+          rest,
+          state1,
+          subject,
+          nextWaitingForMatchBlock,
+          nextMatchBlockDepth,
+          nextBraceDepth,
+          nextParenDepth,
+          nextBracketDepth,
+        )
+      }
+    },
+  }
+};
+
+let addMissingMatchArmCommas = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+) => {
+  recoverMatchCommasInto(tokens, state, subject, false, -1, 0, 0, 0)
+};

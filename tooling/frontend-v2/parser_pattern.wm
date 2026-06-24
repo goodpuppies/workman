@@ -1,0 +1,75 @@
+from "./types.wm" import {
+  Span, Token, LetKeyword, Keyword, Equals, Semicolon, Punctuation, EndOfFile
+};
+from "./parser_support.wm" import {
+  ParserState, advance
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isOpenPunctuation = (token: Token) => {
+  match(token.kind) {
+    Punctuation => {
+      token.text == "(" || token.text == "{" || token.text == "["
+    },
+    _ => { false },
+  }
+};
+
+let isClosePunctuation = (token: Token) => {
+  match(token.kind) {
+    Punctuation => {
+      token.text == ")" || token.text == "}" || token.text == "]"
+    },
+    _ => { false },
+  }
+};
+
+let patternDepthAfter = (token: Token, depth: Number) => {
+  if (isOpenPunctuation(token)) {
+    depth + 1
+  } else {
+    if (isClosePunctuation(token) && depth > 0) {
+      depth - 1
+    } else {
+      depth
+    }
+  }
+};
+
+let isPatternBoundaryToken = (token: Token) => {
+  match(token.kind) {
+    Equals => { true },
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    Keyword => {
+      token.text == "from" || token.text == "type" || token.text == "record"
+    },
+    Punctuation => { token.text == ":" },
+    _ => { false },
+  }
+};
+
+let rec consumePatternTail = (
+  state: ParserState,
+  lastEnd: Number,
+  depth: Number,
+) => {
+  match(state.remaining) {
+    [] => { (lastEnd, state) },
+    [token, ..rest] => {
+      if (depth == 0 && isPatternBoundaryToken(token)) {
+        (lastEnd, state)
+      } else {
+        let next = advance(state, rest);
+        consumePatternTail(next, token.span.end, patternDepthAfter(token, depth))
+      }
+    },
+  }
+};

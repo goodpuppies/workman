@@ -12,7 +12,8 @@ export type TypeSnapshotId = EvidenceId;
 
 export type SourceAnchor =
   | { kind: "source"; span: SourceSpan }
-  | { kind: "generated"; label: string };
+  | { kind: "generated"; label: string }
+  | { kind: "recovery"; step: EvidenceId; label: string };
 
 export type RuleFrame = {
   id: RuleFrameId;
@@ -29,7 +30,13 @@ export type Premise = {
   origin: SourceAnchor;
 };
 
-export type Predicate = { kind: "equal"; left: string; right: string; domain: "type" };
+export type Predicate =
+  | { kind: "equal"; left: string; right: string; domain: "type" }
+  | { kind: "present"; subject: string; syntaxCategory: string }
+  | { kind: "token-is"; subject: string; tokenKind: string }
+  | { kind: "well-formed"; subject: string; syntaxCategory: string }
+  | { kind: "delimited"; subject: string; openKind: string; closeKind: string }
+  | { kind: "separated"; subject: string; separatorKind: string };
 
 export type Claim =
   | {
@@ -54,6 +61,24 @@ export type Violation =
   | {
     kind: "unsatisfied";
     message: string;
+  }
+  | {
+    kind: "missing";
+    observedBoundary: string;
+  }
+  | {
+    kind: "unexpected";
+    observedToken: string;
+    expected: string[];
+  }
+  | {
+    kind: "malformed";
+    observedRange: SourceSpan;
+  }
+  | {
+    kind: "unclosed";
+    openToken: string;
+    observedBoundary: string;
   };
 
 export type Failure = {
@@ -116,6 +141,16 @@ export type SupportEntry =
     id: EvidenceId;
     message: string;
     origin: SourceAnchor;
+  }
+  | {
+    kind: "recovery";
+    id: EvidenceId;
+    action: string;
+    anchor: SourceAnchor;
+    insertedText: string;
+    fallbackNode: string;
+    fallbackCategory: string;
+    repairClass: "autoFix" | "optionalCanonical" | "recoveryOnly";
   };
 
 export type SupportGraph = {
@@ -128,12 +163,21 @@ export type SupportGraph = {
 export type AuditableDiagnostic = {
   id: DiagnosticId;
   code: string;
-  severity: "error" | "warning";
+  severity: "error" | "warning" | "information" | "hint";
   primary: SourceAnchor;
   failure: Failure;
   support: SupportGraph;
-  repairs: [];
+  repairs: Repair[];
   dependsOn: DiagnosticId[];
+};
+
+export type Repair = {
+  id: EvidenceId;
+  description: string;
+  edits: { span: SourceSpan; text: string }[];
+  makesTrue: PremiseId;
+  requires: EvidenceId[];
+  applicability: "safe" | "suggested";
 };
 
 export type PremiseContext = {
@@ -280,7 +324,9 @@ function renderShape(shape: TypeSnapshotShape, snapshots: TypeSnapshot[]): strin
     case "tuple":
       return `(${shape.items.map(render).join(", ")})`;
     case "struct":
-      return `{ ${shape.fields.map((field) => `${field.name}: ${render(field.type)}`).join(", ")} }`;
+      return `{ ${
+        shape.fields.map((field) => `${field.name}: ${render(field.type)}`).join(", ")
+      } }`;
     case "named":
       return shape.args.length ? `${shape.name}<${shape.args.map(render).join(", ")}>` : shape.name;
   }

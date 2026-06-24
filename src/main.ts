@@ -1,4 +1,4 @@
-import { analyzeFile, compileFile, ModuleAnalysisError } from "./compiler.ts";
+import { analyzeFile, compileFile, compileLibraryFile, ModuleAnalysisError } from "./compiler.ts";
 import {
   formatDiagnostic,
   formatDiagnosticError,
@@ -10,7 +10,7 @@ import { ParseError } from "./parser.ts";
 import { runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 
-const commands = new Set(["check", "compile", "run", "type-debug", "help"]);
+const commands = new Set(["check", "compile", "compile-library", "run", "type-debug", "help"]);
 
 if (import.meta.main) {
   const code = await main(Deno.args).catch((error) => {
@@ -65,6 +65,8 @@ export async function main(args: string[]): Promise<number> {
       return await checkCommand(commandArgs);
     case "compile":
       return await compileCommand(commandArgs);
+    case "compile-library":
+      return await compileLibraryCommand(commandArgs);
     case "run":
       return await runCommand(commandArgs);
     case "type-debug":
@@ -100,6 +102,15 @@ async function compileCommand(args: string[]): Promise<number> {
   return 0;
 }
 
+async function compileLibraryCommand(args: string[]): Promise<number> {
+  const [input, output] = args;
+  if (!input) return missingInput("compile-library");
+  const js = await compileLibraryFile(input);
+  if (output) await Deno.writeTextFile(output, js);
+  else console.log(js);
+  return 0;
+}
+
 async function runCommand(args: string[]): Promise<number> {
   const separator = args.indexOf("--");
   const inputArgs = separator === -1 ? args : args.slice(0, separator);
@@ -124,7 +135,9 @@ function formatBundleError(
   const primary = error.primary instanceof FrontendDiagnosticError
     ? formatDiagnosticError(error.primary, filePath, source)
     : formatError(error.message, filePath, source, undefined);
-  const additional = error.diagnostics.map((diagnostic) => formatDiagnostic(diagnostic, filePath, source));
+  const additional = error.diagnostics.map((diagnostic) =>
+    formatDiagnostic(diagnostic, filePath, source)
+  );
   return [primary, ...additional].join("");
 }
 
@@ -144,6 +157,8 @@ usage:
 commands:
   check <file.wm>               typecheck a module graph
   compile <file.wm> [out.js]    emit JavaScript
+  compile-library <file.wm> [out.js]
+                                emit an importable ES module without running main
   run <file.wm> [-- args...]    compile and execute with Deno
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help
@@ -155,6 +170,7 @@ examples:
   wm check examples/factorial.wm
   wm run examples/factorial.wm
   wm compile examples/factorial.wm out.mjs
+  wm compile-library tooling/frontend-v2/library_fixture.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
 
 notes:

@@ -1,0 +1,153 @@
+from "./types.wm" import {
+  StructuralDocument, VirtualArtifact, MapPieceKind, MapPiece, RenderResult,
+  ConcretePiece, VirtualPiece
+};
+from "./lexer.wm" import { renderConcrete };
+
+record RenderState = {
+  sourceCursor: Number,
+  virtualCursor: Number,
+  text: String,
+  piecesReversed: List<MapPiece>,
+};
+
+let slice = (source: String, start: Number, end: Number) => {
+  source :> .slice(start, end) :> Result.withDefault("")
+};
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let emitConcreteUntil = (source: String, target: Number, state: RenderState) => {
+  if (target <= state.sourceCursor) {
+    state
+  } else {
+    let concreteText = slice(source, state.sourceCursor, target);
+    let length = target - state.sourceCursor;
+    let piece: MapPiece = .{
+      kind = ConcretePiece,
+      concreteStart = state.sourceCursor,
+      concreteEnd = target,
+      virtualStart = state.virtualCursor,
+      virtualEnd = state.virtualCursor + length,
+    };
+    let next: RenderState = .{
+      sourceCursor = target,
+      virtualCursor = state.virtualCursor + length,
+      text = state.text ++ concreteText,
+      piecesReversed = [piece, ..state.piecesReversed],
+    };
+    next
+  }
+};
+
+let emitArtifact = (artifact: VirtualArtifact, state: RenderState) => {
+  let length = artifact.text :> .length :> Result.withDefault(0);
+  let piece: MapPiece = .{
+    kind = VirtualPiece(artifact.recoveryId),
+    concreteStart = artifact.anchor,
+    concreteEnd = artifact.anchor,
+    virtualStart = state.virtualCursor,
+    virtualEnd = state.virtualCursor + length,
+  };
+  let next: RenderState = .{
+    ..state,
+    virtualCursor = state.virtualCursor + length,
+    text = state.text ++ artifact.text,
+    piecesReversed = [piece, ..state.piecesReversed],
+  };
+  next
+};
+
+let rec renderArtifactsInto = match(source, artifacts, state) => {
+  (Var(source), [], Var(state)) => { state },
+  (Var(source), [artifact, ..rest], Var(state)) => {
+    let aligned = emitConcreteUntil(source, artifact.anchor, state);
+    let inserted = emitArtifact(artifact, aligned);
+    renderArtifactsInto(source, rest, inserted)
+  },
+};
+
+let renderVirtualResult = (document: StructuralDocument) => {
+  let initial: RenderState = .{
+    sourceCursor = 0,
+    virtualCursor = 0,
+    text = "",
+    piecesReversed = [],
+  };
+  let inserted = renderArtifactsInto(document.source, document.artifacts, initial);
+  let complete = emitConcreteUntil(
+    document.source,
+    document.source :> .length :> Result.withDefault(0),
+    inserted,
+  );
+  let result: RenderResult = .{
+    text = complete.text,
+    pieces = reverseInto(complete.piecesReversed, []),
+  };
+  result
+};
+
+let renderVirtual = (document: StructuralDocument) => {
+  let rendered = renderVirtualResult(document);
+  rendered.text
+};
+
+let rec renderMarkedInto = match(source, artifacts, cursor, output) => {
+  (Var(source), [], Var(cursor), Var(output)) => {
+    output ++ slice(source, cursor, source :> .length :> Result.withDefault(0))
+  },
+  (Var(source), [artifact, ..rest], Var(cursor), Var(output)) => {
+    let concrete = slice(source, cursor, artifact.anchor);
+    let marked = "<virtual:" ++ artifact.text ++ ">";
+    renderMarkedInto(source, rest, artifact.anchor, output ++ concrete ++ marked)
+  },
+};
+
+let renderMarkedPreview = (document: StructuralDocument) => {
+  renderMarkedInto(document.source, document.artifacts, 0, "")
+};
+
+let renderDocumentConcrete = (document: StructuralDocument) => {
+  renderConcrete(document.tokens)
+};
+
+let rec concreteToVirtual = match(pieces, offset) => {
+  ([], _) => { None },
+  ([piece, ..rest], Var(offset)) => {
+    match(piece.kind) {
+      ConcretePiece => {
+        if (offset >= piece.concreteStart && offset <= piece.concreteEnd) {
+          Some(piece.virtualStart + (offset - piece.concreteStart))
+        } else {
+          concreteToVirtual(rest, offset)
+        }
+      },
+      VirtualPiece(_) => {
+        if (offset == piece.concreteStart) {
+          Some(piece.virtualStart)
+        } else {
+          concreteToVirtual(rest, offset)
+        }
+      },
+    }
+  },
+};
+
+let rec virtualToConcrete = match(pieces, offset) => {
+  ([], _) => { None },
+  ([piece, ..rest], Var(offset)) => {
+    if (offset >= piece.virtualStart && offset <= piece.virtualEnd) {
+      match(piece.kind) {
+        ConcretePiece => {
+          Some(piece.concreteStart + (offset - piece.virtualStart))
+        },
+        VirtualPiece(_) => { Some(piece.concreteStart) },
+      }
+    } else {
+      virtualToConcrete(rest, offset)
+    }
+  },
+};

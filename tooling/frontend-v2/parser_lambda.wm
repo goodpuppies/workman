@@ -1,0 +1,84 @@
+from "./types.wm" import {
+  Span, Token, Punctuation,
+  HintSeverity, WarningSeverity, OptionalCanonical, RecoveryOnly
+};
+from "./parser_support.wm" import {
+  ParserState, freshNode, addRecovery
+};
+
+let isLambdaArrow = (token: Token) => {
+  match(token.kind) {
+    Punctuation => { token.text == "=>" },
+    _ => { false },
+  }
+};
+
+let addOptionalUnitParams = (state: ParserState, subject: Number, arrow: Token) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse.lambda.optional-unit-params",
+    arrow.span.start,
+    "ParseLambda",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseLambda",
+    subject,
+    "lambda parameter list",
+    "token '=>'",
+    "synthesize canonical unit parameter list",
+    nodeId,
+    "ParameterList",
+    HintSeverity,
+    OptionalCanonical,
+    None,
+    Some("()"),
+    [],
+  );
+  state2
+};
+
+let addBareLambdaBodyBraces = (
+  state: ParserState,
+  subject: Number,
+  bodyStart: Number,
+  bodyEnd: Number,
+) => {
+  let (openNodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse.lambda.missing-body-open-block",
+    bodyStart,
+    "ParseLambdaBody",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseLambdaBody",
+    subject,
+    "lambda body block",
+    "bare expression body",
+    "insert opening block brace",
+    openNodeId,
+    "Token",
+    WarningSeverity,
+    RecoveryOnly,
+    None,
+    Some("{"),
+    [],
+  );
+  let (closeNodeId, state3) = freshNode(state2);
+  let (_, state4) = addRecovery(
+    state3,
+    "parse.lambda.missing-body-close-block",
+    bodyEnd,
+    "ParseLambdaBody",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseLambdaBody",
+    subject,
+    "lambda body block",
+    "bare expression body",
+    "insert closing block brace",
+    closeNodeId,
+    "Token",
+    WarningSeverity,
+    RecoveryOnly,
+    None,
+    Some("}"),
+    [],
+  );
+  state4
+};

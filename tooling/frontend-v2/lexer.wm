@@ -1,0 +1,301 @@
+from "./types.wm" import {
+  Span, TokenKind, TokenOrigin, Token, LexResult,
+  LetKeyword, Keyword, Identifier, Constructor, NumberLiteral, StringLiteral,
+  Equals, Semicolon, Punctuation, Operator, Whitespace, Comment, Opaque, EndOfFile,
+  ConcreteOrigin
+};
+
+let textLength = (text: String) => {
+  text :> .length :> Result.withDefault(0)
+};
+
+let codeAt = (source: String, index: Number) => {
+  source :> .charCodeAt(index) :> Result.withDefault(-1)
+};
+
+let slice = (source: String, start: Number, end: Number) => {
+  source :> .slice(start, end) :> Result.withDefault("")
+};
+
+let isWhitespaceCode = (code: Number) => {
+  code == 32 || code == 9 || code == 10 || code == 13
+};
+
+let isLetterCode = (code: Number) => {
+  (code >= 97 && code <= 122) ||
+  (code >= 65 && code <= 90) ||
+  code == 95
+};
+
+let isUpperCode = (code: Number) => {
+  code >= 65 && code <= 90
+};
+
+let isDigitCode = (code: Number) => {
+  code >= 48 && code <= 57
+};
+
+let isIdentifierPartCode = (code: Number) => {
+  isLetterCode(code) || isDigitCode(code)
+};
+
+let rec scanWhileCode = (source: String, index: Number, length: Number, predicate) => {
+  if (index < length && predicate(codeAt(source, index))) {
+    scanWhileCode(source, index + 1, length, predicate)
+  } else {
+    index
+  }
+};
+
+let rec scanComment = (source: String, index: Number, length: Number) => {
+  if (index >= length || codeAt(source, index) == 10) {
+    index
+  } else {
+    scanComment(source, index + 1, length)
+  }
+};
+
+let rec scanDelimited = (
+  source: String,
+  index: Number,
+  length: Number,
+  delimiter: Number,
+) => {
+  if (index >= length) {
+    length
+  } else {
+    let code = codeAt(source, index);
+    if (code == 92) {
+      if (index + 1 < length) {
+        scanDelimited(source, index + 2, length, delimiter)
+      } else {
+        length
+      }
+    } else {
+      if (code == delimiter) {
+        index + 1
+      } else {
+        scanDelimited(source, index + 1, length, delimiter)
+      }
+    }
+  }
+};
+
+let classifyName = (text: String, firstCode: Number) => {
+  match(text) {
+    "let" => { LetKeyword },
+    "from" => { Keyword },
+    "import" => { Keyword },
+    "as" => { Keyword },
+    "rec" => { Keyword },
+    "and" => { Keyword },
+    "type" => { Keyword },
+    "record" => { Keyword },
+    "if" => { Keyword },
+    "else" => { Keyword },
+    "match" => { Keyword },
+    "true" => { Keyword },
+    "false" => { Keyword },
+    "void" => { Keyword },
+    "_" => { Punctuation },
+    _ => {
+      if (isUpperCode(firstCode)) { Constructor } else { Identifier }
+    },
+  }
+};
+
+let isTwoCharacterSymbol = (text: String) => {
+  text == "=>" || text == "||" || text == "&&" ||
+  text == "==" || text == "!=" || text == "<=" ||
+  text == ">=" || text == "++" || text == ":>" ||
+  text == ".."
+};
+
+let classifySymbol = (text: String) => {
+  match(text) {
+    "=" => { Equals },
+    ";" => { Semicolon },
+    "(" => { Punctuation },
+    ")" => { Punctuation },
+    "{" => { Punctuation },
+    "}" => { Punctuation },
+    "[" => { Punctuation },
+    "]" => { Punctuation },
+    "," => { Punctuation },
+    ":" => { Punctuation },
+    "." => { Punctuation },
+    "|" => { Punctuation },
+    "=>" => { Punctuation },
+    ":>" => { Operator },
+    ".." => { Punctuation },
+    "||" => { Operator },
+    "&&" => { Operator },
+    "==" => { Operator },
+    "!=" => { Operator },
+    "<=" => { Operator },
+    ">=" => { Operator },
+    "++" => { Operator },
+    "<" => { Operator },
+    ">" => { Operator },
+    "!" => { Operator },
+    "+" => { Operator },
+    "-" => { Operator },
+    "*" => { Operator },
+    "/" => { Operator },
+    "%" => { Operator },
+    _ => { Opaque },
+  }
+};
+
+let token = (kind: TokenKind, source: String, start: Number, end: Number) => {
+  let value: Token = .{
+    kind = kind,
+    text = slice(source, start, end),
+    span = .{ start = start, end = end },
+    origin = ConcreteOrigin,
+  };
+  value
+};
+
+let eofToken = (length: Number) => {
+  let value: Token = .{
+    kind = EndOfFile,
+    text = "",
+    span = .{ start = length, end = length },
+    origin = ConcreteOrigin,
+  };
+  value
+};
+
+let rec reverseInto = (items, output) => {
+  match(items) {
+    [] => { output },
+    [head, ..rest] => { reverseInto(rest, [head, ..output]) },
+  }
+};
+
+let symbolWidth = (source: String, index: Number, length: Number) => {
+  if (index + 1 < length && isTwoCharacterSymbol(slice(source, index, index + 2))) {
+    2
+  } else {
+    1
+  }
+};
+
+let opaqueWidth = (source: String, index: Number, length: Number) => {
+  let first = codeAt(source, index);
+  let second = codeAt(source, index + 1);
+  if (
+    index + 1 < length &&
+    first >= 55296 && first <= 56319 &&
+    second >= 56320 && second <= 57343
+  ) {
+    2
+  } else {
+    1
+  }
+};
+
+let rec lexFrom = (source: String, index: Number, length: Number, reversed: List<Token>) => {
+  if (index >= length) {
+    reverseInto([eofToken(length), ..reversed], [])
+  } else {
+    let code = codeAt(source, index);
+    let next = codeAt(source, index + 1);
+    if (isWhitespaceCode(code)) {
+      let end = scanWhileCode(source, index + 1, length, isWhitespaceCode);
+      lexFrom(source, end, length, [token(Whitespace, source, index, end), ..reversed])
+    } else {
+      if ((code == 45 && next == 45) || (code == 47 && next == 47)) {
+        let end = scanComment(source, index + 2, length);
+        lexFrom(source, end, length, [token(Comment, source, index, end), ..reversed])
+      } else {
+        if (isLetterCode(code)) {
+          let end = scanWhileCode(source, index + 1, length, isIdentifierPartCode);
+          let text = slice(source, index, end);
+          lexFrom(source, end, length, [
+            token(classifyName(text, code), source, index, end),
+            ..reversed
+          ])
+        } else {
+          if (isDigitCode(code)) {
+            let integerEnd = scanWhileCode(source, index + 1, length, isDigitCode);
+            let end = if (
+              codeAt(source, integerEnd) == 46 &&
+              isDigitCode(codeAt(source, integerEnd + 1))
+            ) {
+              scanWhileCode(source, integerEnd + 2, length, isDigitCode)
+            } else {
+              integerEnd
+            };
+            lexFrom(source, end, length, [token(NumberLiteral, source, index, end), ..reversed])
+          } else {
+            if (code == 34 || code == 96) {
+              let end = scanDelimited(source, index + 1, length, code);
+              lexFrom(source, end, length, [token(StringLiteral, source, index, end), ..reversed])
+            } else {
+              let width = symbolWidth(source, index, length);
+              let text = slice(source, index, index + width);
+              let kind = classifySymbol(text);
+              let end = if (kind == Opaque) {
+                index + opaqueWidth(source, index, length)
+              } else {
+                index + width
+              };
+              lexFrom(source, end, length, [token(kind, source, index, end), ..reversed])
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec collectLineStarts = (
+  source: String,
+  index: Number,
+  length: Number,
+  reversed: List<Number>,
+) => {
+  if (index >= length) {
+    reverseInto(reversed, [])
+  } else {
+    let code = codeAt(source, index);
+    if (code == 13) {
+      if (codeAt(source, index + 1) == 10) {
+        collectLineStarts(source, index + 2, length, [index + 2, ..reversed])
+      } else {
+        collectLineStarts(source, index + 1, length, [index + 1, ..reversed])
+      }
+    } else {
+      if (code == 10) {
+        collectLineStarts(source, index + 1, length, [index + 1, ..reversed])
+      } else {
+        collectLineStarts(source, index + 1, length, reversed)
+      }
+    }
+  }
+};
+
+let lex = (source: String) => {
+  lexFrom(source, 0, textLength(source), [])
+};
+
+let lexSource = (source: String) => {
+  let length = textLength(source);
+  let result: LexResult = .{
+    sourceLength = length,
+    lineStarts = collectLineStarts(source, 0, length, [0]),
+    tokens = lexFrom(source, 0, length, []),
+  };
+  result
+};
+
+let rec renderInto = match(tokens, output) => {
+  ([], Var(output)) => { output },
+  ([token, ..rest], Var(output)) => { renderInto(rest, output ++ token.text) },
+};
+
+let renderConcrete = (tokens) => {
+  renderInto(tokens, "")
+};

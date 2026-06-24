@@ -1,0 +1,17 @@
+-- Phase A boundary fixture: deliberately pure and limited to plain JS values.
+
+record FixtureDescription = {
+  kind: String,
+  name: String,
+};
+
+let double = (value: Number) => {
+  value * 2
+};
+
+let describe = (name: String) => {
+  .{
+    kind = "frontend-v2-fixture",
+    name = name,
+  }
+};
