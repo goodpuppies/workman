@@ -280,16 +280,34 @@ Compile frontend v2 to an importable JavaScript artifact. Translate its semantic
 projection into the current TypeScript `Module` shape, compare it with Peggy, and
 run compiler/check suites in v2 and comparison modes.
 
+Choose a minimum real-v2 LSP slice before requiring full AST coverage. The first
+slice should cover small programs with imports, top-level simple `let` bindings,
+basic annotations/patterns/expressions, and recovered declaration terminators.
+The target behavior is concrete: a user can omit a top-level semicolon, receive a
+frontend-v2 structural diagnostic, and still get typechecking for independent
+bindings through the v2 semantic path.
+
+Unsupported syntax in this slice should be reported as unsupported by frontend
+v2, not silently sent through Peggy. Full AST coverage remains the later default
+switch requirement.
+
 Exit criteria include semantic AST parity for supported valid source, one isolated
 DTO adapter, measured conversion cost, and no downstream compiler dependency on
 frontend-v2 internals.
 
 ### Phase E — TypeScript compiler and current-LSP adoption
 
-Make frontend v2 the default compiler frontend after parity.
+Make frontend v2 the default compiler frontend after parity. The next high-level
+target is for the current LSP/editor extension to run in a real v2 mode, where
+frontend v2 feeds semantic analysis rather than acting as an auxiliary parser.
 
-Before rewriting the LSP, use the same structural result in the current TypeScript
-server for:
+Do not add a structural-only sidecar mode. It would let frontend v2 recover and
+render syntax while hover, typechecking, imports, and module invalidation still
+depend on Peggy/v1, which would not validate the editor mode this migration needs.
+
+Before rewriting the LSP, route validation, module loading, hover, and diagnostics
+through frontend v2 in the current TypeScript server. Then use the same active v2
+parse result for:
 
 - multiple structural diagnostics;
 - structural-token inlays;
@@ -297,8 +315,8 @@ server for:
 - concrete/virtual source mapping;
 - existing hover, definition, and type-inlay behavior.
 
-This proves the frontend and delivers structural-editor value without waiting for
-transport work.
+This proves the frontend replacement and delivers structural-editor value without
+waiting for transport work.
 
 ### Phase F — rebuild the structural-editor LSP in WM
 

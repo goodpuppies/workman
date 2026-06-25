@@ -245,6 +245,12 @@ Support three internal/test modes:
 - `compare`: run both, use v1 for semantics initially, and report normalized
   differences.
 
+The editor-facing v2 mode must be a real frontend replacement. Do not introduce a
+structural-only sidecar mode where frontend v2 parses for recovery or rendering
+while Peggy/v1 still feeds semantic analysis. That mode would make incomplete or
+new syntax appear recoverable in the editor without proving that typechecking,
+hover, imports, or module invalidation run through frontend v2.
+
 Do not expose long-lived user configuration unless it is needed for rollout. The
 goal is removal of v1, not permanent dual-parser product complexity.
 
@@ -341,10 +347,24 @@ Deliver:
 - normalized AST comparison over repository fixtures and tests;
 - source-span and diagnostic comparison reports.
 
+Plan Phase D around an explicit minimum real-v2 LSP slice before full AST
+coverage. The first useful slice is intentionally small: top-level `let`
+bindings, simple annotations, simple patterns, imports needed by the module
+graph, simple expressions, and recovered declaration terminators. It must be
+large enough that a small imported program can typecheck through frontend v2
+while a missing semicolon is reported structurally without preventing independent
+later bindings from being checked.
+
+Do not use Peggy as a semantic fallback inside this slice. Unsupported syntax
+should produce explicit frontend-v2 unsupported/recovered diagnostics. Falling
+back to v1 would hide the exact integration risk the slice is meant to test.
+
 Exit criteria:
 
 - all supported valid WM sources produce equivalent semantic ASTs, with documented
   intentional differences;
+- the minimum real-v2 LSP slice can check complete and recovered simple programs
+  through frontend v2, including disk imports and unsaved source overrides;
 - compile/check test suites pass in v2 mode;
 - no downstream compiler phase imports frontend-v2 implementation details;
 - performance is measured separately for lex, parse, DTO conversion, and total
@@ -353,7 +373,11 @@ Exit criteria:
 ### Phase E — adopt frontend v2 in the compiler and current LSP
 
 Make v2 the default frontend while retaining a short-lived fallback for debugging.
-Use its structural result in the existing TypeScript LSP before rewriting transport.
+Before rewriting transport, make the existing TypeScript LSP and editor extension
+able to run in a real frontend-v2 mode: validation, module loading, hover, and
+diagnostics must all use the v2 semantic projection rather than Peggy. Structural
+results used by the LSP must come from the same v2 parse that feeds semantic
+analysis.
 
 Initial current-LSP improvements can include:
 
@@ -366,7 +390,13 @@ Initial current-LSP improvements can include:
 Exit criteria:
 
 - v2 is the default compiler parser;
-- the current LSP remains operational and gains at least structural inlays;
+- the current LSP and editor extension can run with v2 as the active semantic
+  frontend, not as a structural sidecar;
+- the first exposed editor v2 mode is allowed to be subset-limited, but every
+  supported file in that subset must validate, typecheck, and hover through
+  frontend v2 rather than Peggy;
+- the current LSP remains operational and gains at least structural inlays from
+  the active v2 parse;
 - v1 comparison finds no unexplained differences for a defined soak period;
 - Peggy can be removed or retained only as an isolated compatibility test oracle.
 
@@ -425,7 +455,8 @@ precise zero-width spans.
 - generated library imports from a fresh Deno process;
 - no build step writes into source directories unexpectedly;
 - compiler tests run in v2 mode in CI;
-- current LSP tests run against v2 before the WM LSP exists;
+- current LSP tests run against real v2 semantic validation before the WM LSP
+  exists;
 - later, the same structural golden cases run against both LSP implementations.
 
 ## Main risks
