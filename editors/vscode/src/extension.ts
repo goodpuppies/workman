@@ -8,6 +8,7 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { Trace } from "vscode-jsonrpc";
+import { denoServerConfig, resolveConfiguredPath } from "./server_options";
 
 let client: LanguageClient | undefined;
 
@@ -25,11 +26,36 @@ export async function activate(context: ExtensionContext) {
       return;
     }
 
-    const denoPath = workspace.getConfiguration("wmMini").get<string>("denoPath") || "deno";
+    const denoPath =
+      workspace.getConfiguration("wmMini").get<string>("denoPath") || "deno";
+    const frontendMode =
+      workspace.getConfiguration("wmMini").get<string>("frontendMode") || "v1";
+    const frontendV2ModulePath = workspace.getConfiguration("wmMini").get<
+      string
+    >(
+      "frontendV2ModulePath",
+    )?.trim();
     outputChannel.appendLine(`Starting wm-mini language server: ${serverPath}`);
+    const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
     const serverOptions: ServerOptions = {
-      run: denoServer(denoPath, serverPath),
-      debug: denoServer(denoPath, serverPath),
+      run: denoServerConfig(
+        denoPath,
+        serverPath,
+        frontendMode,
+        frontendV2ModulePath,
+        TransportKind.stdio,
+        process.env,
+        workspaceFolder,
+      ),
+      debug: denoServerConfig(
+        denoPath,
+        serverPath,
+        frontendMode,
+        frontendV2ModulePath,
+        TransportKind.stdio,
+        process.env,
+        workspaceFolder,
+      ),
     };
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "wm" }],
@@ -47,7 +73,9 @@ export async function activate(context: ExtensionContext) {
           const hover = await next(document, position, token);
           outputChannel.appendLine(
             `[wm-client] hover uri=${document.uri.toString()} ` +
-              `line=${position.line} char=${position.character} result=${hover ? "hit" : "null"}`,
+              `line=${position.line} char=${position.character} result=${
+                hover ? "hit" : "null"
+              }`,
           );
           return hover;
         },
@@ -85,21 +113,17 @@ export async function deactivate(): Promise<void> {
   await client?.stop();
 }
 
-function denoServer(command: string, serverPath: string) {
-  return {
-    command,
-    args: ["run", "--allow-read", "--allow-env", "--allow-run", serverPath],
-    transport: TransportKind.stdio,
-    options: { cwd: path.dirname(path.dirname(path.dirname(serverPath))) },
-  };
-}
-
 function resolveServerPath(context: ExtensionContext): string | undefined {
   const configured = workspace.getConfiguration("wmMini").get<string>(
     "serverPath",
   )?.trim();
   const candidates = [
-    configured ? resolveConfiguredPath(configured) : undefined,
+    configured
+      ? resolveConfiguredPath(
+        configured,
+        workspace.workspaceFolders?.[0]?.uri.fsPath,
+      )
+      : undefined,
     ...workspace.workspaceFolders?.map((folder) =>
       path.join(folder.uri.fsPath, "src", "lsp", "server.ts")
     ) ?? [],
@@ -108,12 +132,6 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
   return candidates.find((candidate): candidate is string =>
     !!candidate && fs.existsSync(candidate)
   );
-}
-
-function resolveConfiguredPath(configured: string): string {
-  if (path.isAbsolute(configured)) return configured;
-  const folder = workspace.workspaceFolders?.[0]?.uri.fsPath;
-  return folder ? path.resolve(folder, configured) : path.resolve(configured);
 }
 
 function traceSetting(): Trace {

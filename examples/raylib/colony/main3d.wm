@@ -32,7 +32,7 @@ record Camera3D = { position: Vec3, target: Vec3, up: Vec3, fovy: Number, projec
 record App = { sim: Sim, yaw: Number, pitch: Number, radius: Number, paused: Bool };
 record Input = { yawDelta: Number, pitchDelta: Number, wheel: Number, togglePause: Bool };
 
-let raylibpath = "./examples/raylib/raylib.dll";
+let raylibpath = "./libraylib.so.5.5.0";
 
 let keyLeft  = 263;
 let keyRight = 262;

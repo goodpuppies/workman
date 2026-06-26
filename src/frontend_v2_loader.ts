@@ -35,6 +35,7 @@ export type LexRoundTripResult = {
 export type FrontendV2 = {
   lexRoundTrip(source: string): LexRoundTripResult;
   parseStructural(source: string): StructuralParseResult;
+  projectSemantic(source: string): SemanticProjectionResult;
 };
 
 export type StructuralItem = {
@@ -102,6 +103,35 @@ export type StructuralParseResult = {
   pieces: StructuralMapPiece[];
 };
 
+export type SemanticDeclStatus = "complete" | "recovered" | "error" | "opaque";
+
+export type SemanticDeclProjection = {
+  structuralId: number;
+  structuralKind: StructuralItem["kind"];
+  semanticKind: "LetDecl" | "ImportDecl" | "TypeDecl" | "RecordDecl" | "ErrorDecl";
+  status: SemanticDeclStatus;
+  recursive: boolean;
+  start: number;
+  end: number;
+  recoveryId: number;
+  patternKind: StructuralItem["patternKind"];
+  patternText: string;
+  patternRecoveryId: number;
+  annotationText: string;
+  groupTailText: string;
+  expressionKind: StructuralItem["expressionKind"];
+  expressionText: string;
+  expressionRecoveryId: number;
+  authoredExpressionHole: boolean;
+};
+
+export type SemanticProjectionResult = {
+  schemaVersion: typeof FRONTEND_V2_SCHEMA_VERSION;
+  sourceLength: number;
+  moduleKind: "Module";
+  decls: SemanticDeclProjection[];
+};
+
 const tokenKinds = new Set<FrontendV2TokenKind>([
   "let",
   "keyword",
@@ -128,8 +158,12 @@ export async function loadFrontendV2(moduleUrl: URL | string): Promise<FrontendV
   if (typeof imported.parseStructural !== "function") {
     throw new Error("frontend-v2 module does not export parseStructural");
   }
+  if (typeof imported.projectSemantic !== "function") {
+    throw new Error("frontend-v2 module does not export projectSemantic");
+  }
   const lex = imported.lexRoundTrip as (source: string) => unknown;
   const parseStructural = imported.parseStructural as (source: string) => unknown;
+  const projectSemantic = imported.projectSemantic as (source: string) => unknown;
   return {
     lexRoundTrip(source: string): LexRoundTripResult {
       return validateLexResult(lex(source));
@@ -137,7 +171,54 @@ export async function loadFrontendV2(moduleUrl: URL | string): Promise<FrontendV
     parseStructural(source: string): StructuralParseResult {
       return validateStructuralResult(parseStructural(source));
     },
+    projectSemantic(source: string): SemanticProjectionResult {
+      return validateSemanticProjection(projectSemantic(source));
+    },
   };
+}
+
+function validateSemanticProjection(value: unknown): SemanticProjectionResult {
+  if (!isObject(value)) throw new Error("frontend-v2 semantic projection must be an object");
+  if (value.schemaVersion !== FRONTEND_V2_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported frontend-v2 schema version ${String(value.schemaVersion)}`,
+    );
+  }
+  if (
+    !isNumber(value.sourceLength) ||
+    value.moduleKind !== "Module" ||
+    !Array.isArray(value.decls)
+  ) {
+    throw new Error("frontend-v2 semantic projection has an invalid shape");
+  }
+  value.decls.forEach(validateSemanticDecl);
+  return value as SemanticProjectionResult;
+}
+
+function validateSemanticDecl(value: unknown): void {
+  validateRecord(value, "semantic declaration");
+  const candidate = value as Record<string, unknown>;
+  if (
+    !isNumber(candidate.structuralId) ||
+    typeof candidate.structuralKind !== "string" ||
+    typeof candidate.semanticKind !== "string" ||
+    typeof candidate.status !== "string" ||
+    typeof candidate.recursive !== "boolean" ||
+    !isNumber(candidate.start) ||
+    !isNumber(candidate.end) ||
+    !isNumber(candidate.recoveryId) ||
+    typeof candidate.patternKind !== "string" ||
+    typeof candidate.patternText !== "string" ||
+    !isNumber(candidate.patternRecoveryId) ||
+    typeof candidate.annotationText !== "string" ||
+    typeof candidate.groupTailText !== "string" ||
+    typeof candidate.expressionKind !== "string" ||
+    typeof candidate.expressionText !== "string" ||
+    !isNumber(candidate.expressionRecoveryId) ||
+    typeof candidate.authoredExpressionHole !== "boolean"
+  ) {
+    throw new Error("frontend-v2 semantic declaration has an invalid shape");
+  }
 }
 
 function validateStructuralResult(value: unknown): StructuralParseResult {

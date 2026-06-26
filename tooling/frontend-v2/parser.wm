@@ -7,9 +7,13 @@ from "./types.wm" import {
 };
 from "./lexer.wm" import { lex };
 from "./parser_support.wm" import {
-  ParserState, reverseInto, freshNode, advance, addRecovery, observation
+  ParserState, reverseInto, sortArtifacts, freshNode, advance, addRecovery, observation
 };
 from "./parser_let.wm" import { parseLetBinding };
+from "./parser_type.wm" import {
+  addTypeDeclarationRecoveries, addRecordDeclarationRecoveries
+};
+from "./parser_import.wm" import { addImportRecoveries };
 
 let rec significantInto = match(tokens, reversed) => {
   ([], Var(reversed)) => { reverseInto(reversed, []) },
@@ -100,8 +104,9 @@ let rec consumeTopDeclTail = (
 let parseImportForm = (state: ParserState, fromToken: Token, rest: List<Token>) => {
   let afterFrom = advance(state, rest);
   let (itemId, state1) = freshNode(afterFrom);
+  let state1a = addImportRecoveries(state1, itemId, fromToken, rest);
   let (itemEnd, state2) = consumeTopDeclTail(
-    state1,
+    state1a,
     itemId,
     fromToken.span.end,
     "parse.import.missing-semicolon",
@@ -112,8 +117,9 @@ let parseImportForm = (state: ParserState, fromToken: Token, rest: List<Token>) 
 let parseTypeForm = (state: ParserState, typeToken: Token, rest: List<Token>) => {
   let afterType = advance(state, rest);
   let (itemId, state1) = freshNode(afterType);
+  let state1a = addTypeDeclarationRecoveries(state1, itemId, typeToken, rest);
   let (itemEnd, state2) = consumeTopDeclTail(
-    state1,
+    state1a,
     itemId,
     typeToken.span.end,
     "parse.type.missing-semicolon",
@@ -124,8 +130,9 @@ let parseTypeForm = (state: ParserState, typeToken: Token, rest: List<Token>) =>
 let parseRecordForm = (state: ParserState, recordToken: Token, rest: List<Token>) => {
   let afterRecord = advance(state, rest);
   let (itemId, state1) = freshNode(afterRecord);
+  let state1a = addRecordDeclarationRecoveries(state1, itemId, recordToken, rest);
   let (itemEnd, state2) = consumeTopDeclTail(
-    state1,
+    state1a,
     itemId,
     recordToken.span.end,
     "parse.record.missing-semicolon",
@@ -194,6 +201,7 @@ let rec parseItems = (state: ParserState, reversed: List<TopItem>) => {
 let parseStructural = (source: String) => {
   let tokens = lex(source);
   let initial: ParserState = .{
+    source = source,
     remaining = significantInto(tokens, []),
     nextNodeId = 1,
     nextRecoveryId = 1,
@@ -208,7 +216,7 @@ let parseStructural = (source: String) => {
     tokens = tokens,
     items = items,
     marks = reverseInto(final.marksReversed, []),
-    artifacts = reverseInto(final.artifactsReversed, []),
+    artifacts = sortArtifacts(final.artifactsReversed, []),
     progressSteps = final.progressSteps,
   };
   document

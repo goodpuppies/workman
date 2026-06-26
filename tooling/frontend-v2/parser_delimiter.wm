@@ -1,9 +1,8 @@
 from "./types.wm" import {
-  Span, Token, LetKeyword, Keyword, Equals, Semicolon, Punctuation, EndOfFile,
-  WarningSeverity, AutoFix
+  Span, Token, Punctuation, WarningSeverity, AutoFix
 };
 from "./parser_support.wm" import {
-  ParserState, freshNode, advance, addRecovery
+  ParserState, freshNode, addRecovery
 };
 
 let isPunctuationText = (token: Token, text: String) => {
@@ -25,45 +24,12 @@ let expectedClose = (token: Token) => {
   }
 };
 
-let patternExpectedCloses = (token: Token) => {
-  match(expectedClose(token)) {
-    Some(text) => { [text] },
-    None => { [] },
-  }
-};
-
 let closeName = (text: String) => {
   match(text) {
     ")" => { "paren" },
     "]" => { "bracket" },
     "}" => { "brace" },
     _ => { "delimiter" },
-  }
-};
-
-let isRequiredPatternBoundary = (token: Token) => {
-  match(token.kind) {
-    Equals => { true },
-    Semicolon => { true },
-    LetKeyword => { true },
-    EndOfFile => { true },
-    Keyword => {
-      token.text == "from" || token.text == "type" || token.text == "record"
-    },
-    _ => { false },
-  }
-};
-
-let atPatternBoundary = (token: Token, expected: List<String>) => {
-  if (isRequiredPatternBoundary(token)) {
-    true
-  } else {
-    match(expected) {
-      [] => { isPunctuationText(token, ":") },
-      [text, .._] => {
-        isPunctuationText(token, ":") && !(text == "}")
-      },
-    }
   }
 };
 
@@ -76,14 +42,14 @@ let addMissingClose = (
   let (nodeId, state1) = freshNode(state);
   let (_, state2) = addRecovery(
     state1,
-    "parse.pattern.missing-close-" ++ closeName(text),
+    "parse.expression.missing-close-" ++ closeName(text),
     anchor,
-    "ParsePatternDelimiters",
-    "ParseModule -> ParseLetDecl -> ParseBinding -> ParsePatternDelimiters",
+    "ParseExpressionDelimiters",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseExpressionDelimiters",
     subject,
-    "closing pattern delimiter '" ++ text ++ "'",
-    "required pattern boundary",
-    "insert missing closing pattern delimiter",
+    "closing delimiter '" ++ text ++ "'",
+    "end of expression",
+    "insert missing closing delimiter",
     nodeId,
     "Token",
     WarningSeverity,
@@ -119,30 +85,35 @@ let closeStack = (token: Token, expected: List<String>) => {
   }
 };
 
-let rec consumePatternTail = (
+let rec recoverExpressionDelimitersInto = (
+  tokens: List<Token>,
   state: ParserState,
   subject: Number,
-  lastEnd: Number,
+  expressionEnd: Number,
   expected: List<String>,
 ) => {
-  match(state.remaining) {
-    [] => {
-      (lastEnd, addMissingCloses(state, subject, lastEnd, expected))
-    },
+  match(tokens) {
+    [] => { addMissingCloses(state, subject, expressionEnd, expected) },
     [token, ..rest] => {
-      if (atPatternBoundary(token, expected)) {
-        (lastEnd, addMissingCloses(state, subject, lastEnd, expected))
+      if (token.span.start >= expressionEnd) {
+        addMissingCloses(state, subject, expressionEnd, expected)
       } else {
-        let next = advance(state, rest);
         match(expectedClose(token)) {
           Some(text) => {
-            consumePatternTail(next, subject, token.span.end, [text, ..expected])
+            recoverExpressionDelimitersInto(
+              rest,
+              state,
+              subject,
+              expressionEnd,
+              [text, ..expected],
+            )
           },
           None => {
-            consumePatternTail(
-              next,
+            recoverExpressionDelimitersInto(
+              rest,
+              state,
               subject,
-              token.span.end,
+              expressionEnd,
               closeStack(token, expected),
             )
           },
@@ -150,4 +121,13 @@ let rec consumePatternTail = (
       }
     },
   }
+};
+
+let addExpressionDelimiterRecoveries = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  recoverExpressionDelimitersInto(tokens, state, subject, expressionEnd, [])
 };

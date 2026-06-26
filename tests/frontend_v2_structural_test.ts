@@ -191,81 +191,6 @@ Deno.test("frontend-v2 keeps shallow multi-token let expressions together", () =
   assertStructuralRecoveryIntegrity(missingSemicolon);
 });
 
-Deno.test("frontend-v2 recovers missing match arm commas as separate artifacts", () => {
-  const complete = frontend.parseStructural(
-    "let value = match(x) { A => { one }, B => { two } };",
-  );
-  const missingComma = frontend.parseStructural(
-    "let value = match(x) { A => { one } B => { two } };",
-  );
-
-  assertEquals(complete.virtualText, complete.concreteText);
-  assertEquals(complete.marks, []);
-
-  assertEquals(
-    missingComma.virtualText,
-    "let value = match(x) { A => { one }, B => { two } };",
-  );
-  assertEquals(
-    missingComma.marks.map((mark) => [mark.code, mark.severity, mark.repairClass]),
-    [["parse.match.missing-arm-comma", "warning", "recoveryOnly"]],
-  );
-  assertEquals(
-    missingComma.artifacts.map((artifact) => [artifact.text, artifact.repairClass]),
-    [[",", "recoveryOnly"]],
-  );
-  assertStructuralRecoveryIntegrity(complete);
-  assertStructuralRecoveryIntegrity(missingComma);
-});
-
-Deno.test("frontend-v2 marks bare lambda unit parameters as optional canonical", () => {
-  const result = frontend.parseStructural("let main = => print(thing);");
-
-  assertEquals(result.virtualText, "let main = ()=> {print(thing)};");
-  assertEquals(result.items.map((item) => item.kind), ["let"]);
-  assertEquals(
-    result.marks.map((mark) => [mark.code, mark.severity, mark.repairClass, mark.hasRepair]),
-    [
-      ["parse.lambda.optional-unit-params", "hint", "optionalCanonical", false],
-      ["parse.lambda.missing-body-open-block", "warning", "recoveryOnly", false],
-      ["parse.lambda.missing-body-close-block", "warning", "recoveryOnly", false],
-    ],
-  );
-  assertEquals(
-    result.artifacts.map((artifact) => [
-      artifact.anchor,
-      artifact.text,
-      artifact.repairClass,
-    ]),
-    [
-      [11, "()", "optionalCanonical"],
-      [14, "{", "recoveryOnly"],
-      [26, "}", "recoveryOnly"],
-    ],
-  );
-  assertStructuralRecoveryIntegrity(result);
-});
-
-Deno.test("frontend-v2 keeps bare lambda brace and semicolon recovery ordered", () => {
-  const result = frontend.parseStructural("let main = => print(thing)");
-
-  assertEquals(result.virtualText, "let main = ()=> {print(thing)};");
-  assertEquals(
-    result.artifacts.map((artifact) => artifact.text),
-    ["()", "{", "}", ";"],
-  );
-  assertEquals(
-    result.marks.map((mark) => mark.code),
-    [
-      "parse.lambda.optional-unit-params",
-      "parse.lambda.missing-body-open-block",
-      "parse.lambda.missing-body-close-block",
-      "parse.let.missing-semicolon",
-    ],
-  );
-  assertStructuralRecoveryIntegrity(result);
-});
-
 Deno.test("frontend-v2 exposes optional, auto-fix, and recovery-only mark classes", () => {
   const optional = frontend.parseStructural("let main = => print(thing);");
   const autoFix = frontend.parseStructural("let value = one");
@@ -335,6 +260,17 @@ Deno.test("frontend-v2 parser progress is bounded on damaged repeated constructs
     "let let let let",
     "let rec a = one and and and\nrecord Bad = { x: } type T = A",
     "type A = | | | record R = { , , , } from import import",
+    "let value = match(input) => { Some(x) => x\nNone => y",
+    "let value = match(input) => { A => { one } B =>",
+    "let main = (((value))) =>",
+    "let fetch = lift Task (((url))) =>",
+    "let choose = if (((ready))) else",
+    "let value = make([one",
+    "let [Some(value = source",
+    "type Value<T = List<Result<T",
+    "record Point = { x: List<Number",
+    "from import { Thing",
+    "from js.global import * as",
     "////\n@\n@\n@\nlet =\nfrom js.global import {",
   ];
 

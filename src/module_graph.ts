@@ -1,13 +1,12 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { posix } from "node:path";
 import type { ImportClause, Module } from "./ast.ts";
+import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { diagnosticError } from "./diagnostics.ts";
-import { parse, type Surface } from "./parser.ts";
 
 export type VirtualFileSystem = Map<string, string>;
 
-export type ModuleGraphOptions = {
-  surface?: Surface;
+export type ModuleGraphOptions = CompilerFrontendOptions & {
   sourceOverrides?: Map<string, string>;
   virtualFs?: VirtualFileSystem;
 };
@@ -76,7 +75,7 @@ async function visitModule(path: string, ctx: LoadContext) {
   ctx.visiting.add(path);
 
   const source = await readModuleSource(path, ctx.options);
-  const module = await parse(source, ctx.options.surface, path);
+  const module = await parseCompilerModule(source, ctx.options, path);
   const imports: ModuleImportEdge[] = [];
   for (const decl of module.decls) {
     if (decl.kind !== "ImportDecl") continue;
@@ -158,7 +157,11 @@ function resolveImport(fromPath: string, specifier: string): string {
   return fileURLToPath(new URL(specifier, pathToFileURL(fromPath)));
 }
 
-async function resolveImportPath(fromPath: string, specifier: string, options: ModuleGraphOptions): Promise<string> {
+async function resolveImportPath(
+  fromPath: string,
+  specifier: string,
+  options: ModuleGraphOptions,
+): Promise<string> {
   const resolved = resolveImport(fromPath, specifier);
   const normalized = normalizeInputPath(resolved);
   const virtualPath = findVirtualPath(resolved, options);

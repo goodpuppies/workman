@@ -5,6 +5,8 @@ import {
   type LexRoundTripResult,
   loadFrontendV2,
 } from "../src/frontend_v2_loader.ts";
+import { compareSupportedFrontendSemantics } from "../src/frontend_v2_compare.ts";
+import { semanticProjectionToModule } from "../src/frontend_v2_semantic.ts";
 
 const frontendSource = new URL("../tooling/frontend-v2/frontend.wm", import.meta.url).pathname;
 const generatedFrontend = await buildFrontend();
@@ -148,7 +150,7 @@ Deno.test("frontend-v2 loader rejects incompatible generated artifacts", async (
   await Deno.writeTextFile(missing, "export const other = 1;");
   await Deno.writeTextFile(
     incompatible,
-    "export const lexRoundTrip = () => ({ schemaVersion: 999 }); export const parseStructural = lexRoundTrip;",
+    "export const lexRoundTrip = () => ({ schemaVersion: 999 }); export const parseStructural = lexRoundTrip; export const projectSemantic = lexRoundTrip;",
   );
 
   await assertRejects(
@@ -162,6 +164,290 @@ Deno.test("frontend-v2 loader rejects incompatible generated artifacts", async (
     Error,
     "unsupported frontend-v2 schema version 999",
   );
+});
+
+Deno.test("frontend-v2 exposes schema-versioned semantic projection provenance", async () => {
+  const frontend = await loadFrontendV2(generatedFrontend);
+  const source = "let complete: Number = one;\nlet recovered =;\nlet authored = ?;\n@";
+  const result = frontend.projectSemantic(source);
+
+  assertEquals(result.schemaVersion, FRONTEND_V2_SCHEMA_VERSION);
+  assertEquals(result.moduleKind, "Module");
+  assertEquals(result.sourceLength, source.length);
+  assertEquals(
+    result.decls.map((decl) => [
+      decl.structuralKind,
+      decl.semanticKind,
+      decl.status,
+      decl.recursive,
+      decl.patternKind,
+      decl.annotationText,
+      decl.expressionKind,
+      decl.authoredExpressionHole,
+    ]),
+    [
+      ["let", "LetDecl", "complete", false, "name", " Number", "atom", false],
+      ["let", "LetDecl", "recovered", false, "name", "", "hole", false],
+      ["let", "LetDecl", "complete", false, "name", "", "authored-hole", true],
+      ["opaque", "ErrorDecl", "opaque", false, "", "", "", false],
+    ],
+  );
+  assertEquals(result.decls[1].expressionRecoveryId > 0, true);
+  assertEquals(result.decls[1].patternText, "recovered");
+  assertEquals(result.decls[1].expressionText, "");
+  assertEquals(result.decls[2].patternText, "authored");
+  assertEquals(result.decls[2].expressionText, "?");
+  assertEquals(result.decls[3].recoveryId > 0, true);
+});
+
+Deno.test("frontend-v2 projects complete simple let declarations into Module shape", async () => {
+  const frontend = await loadFrontendV2(generatedFrontend);
+  const projection = frontend.projectSemantic(
+    'let alias: Number = source;\nlet tupled: (Number, value) = source;\nlet fnTyped: (Number, value) => Result<String, value> = source;\nlet variable: value = source;\nlet nested: Result<String, List<value>> = source;\nlet rec self = self;\nlet _ = 99;\nlet Some = value;\nlet true = flag;\nlet 1 = one;\nlet "tag" = tagged;\nlet void = emptyValue;\nlet count = 42;\nlet ratio = 1.5;\nlet label = "ok";\nlet enabled = true;\nlet empty = void;\nlet first = one and second = two;\nlet recovered =;',
+  );
+  const result = semanticProjectionToModule(projection);
+
+  assertEquals(result.module, {
+    kind: "Module",
+    decls: [
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "alias" },
+          annotation: { kind: "TName", name: "Number", args: [] },
+          value: { kind: "Var", name: "source" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "tupled" },
+          annotation: {
+            kind: "TTuple",
+            items: [
+              { kind: "TName", name: "Number", args: [] },
+              { kind: "TVar", name: "value" },
+            ],
+          },
+          value: { kind: "Var", name: "source" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "fnTyped" },
+          annotation: {
+            kind: "TFn",
+            params: [
+              { kind: "TName", name: "Number", args: [] },
+              { kind: "TVar", name: "value" },
+            ],
+            result: {
+              kind: "TName",
+              name: "Result",
+              args: [
+                { kind: "TName", name: "String", args: [] },
+                { kind: "TVar", name: "value" },
+              ],
+            },
+          },
+          value: { kind: "Var", name: "source" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "variable" },
+          annotation: { kind: "TVar", name: "value" },
+          value: { kind: "Var", name: "source" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "nested" },
+          annotation: {
+            kind: "TName",
+            name: "Result",
+            args: [
+              { kind: "TName", name: "String", args: [] },
+              {
+                kind: "TName",
+                name: "List",
+                args: [{ kind: "TVar", name: "value" }],
+              },
+            ],
+          },
+          value: { kind: "Var", name: "source" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: true,
+        bindings: [{
+          pattern: { kind: "PVar", name: "self" },
+          value: { kind: "Var", name: "self" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{ pattern: { kind: "PWildcard" }, value: { kind: "Int", value: 99 } }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PCtor", name: "Some", args: [] },
+          value: { kind: "Var", name: "value" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PBool", value: true },
+          value: { kind: "Var", name: "flag" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{ pattern: { kind: "PInt", value: 1 }, value: { kind: "Var", name: "one" } }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PString", value: "tag" },
+          value: { kind: "Var", name: "tagged" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{ pattern: { kind: "PVoid" }, value: { kind: "Var", name: "emptyValue" } }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{ pattern: { kind: "PVar", name: "count" }, value: { kind: "Int", value: 42 } }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "ratio" },
+          value: { kind: "Float", value: 1.5 },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "label" },
+          value: { kind: "String", value: "ok" },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name: "enabled" },
+          value: { kind: "Bool", value: true },
+        }],
+      },
+      {
+        kind: "LetDecl",
+        exported: true,
+        recursive: false,
+        bindings: [{ pattern: { kind: "PVar", name: "empty" }, value: { kind: "Void" } }],
+      },
+    ],
+  });
+  assertEquals(result.diagnostics, [
+    {
+      code: "frontend-v2.unsupported-decl",
+      structuralId: projection.decls[17].structuralId,
+      message: "frontend-v2 semantic adapter does not yet project let",
+    },
+    {
+      code: "frontend-v2.recovered-decl",
+      structuralId: projection.decls[18].structuralId,
+      message: "cannot project let declaration with recovered status",
+    },
+  ]);
+});
+
+Deno.test("frontend-v2 semantic adapter anchors repeated RHS text after binding equals", async () => {
+  const frontend = await loadFrontendV2(generatedFrontend);
+  const source = "let value: Number = value;";
+  const result = semanticProjectionToModule(frontend.projectSemantic(source), { source });
+  const binding = result.module.decls[0].kind === "LetDecl"
+    ? result.module.decls[0].bindings[0]
+    : undefined;
+
+  assertEquals(binding?.pattern.node?.span, { line: 1, col: 4, start: 4, end: 9 });
+  assertEquals(binding?.value.node?.span, { line: 1, col: 20, start: 20, end: 25 });
+  assertEquals(binding?.node?.span, { line: 1, col: 4, start: 4, end: 25 });
+});
+
+Deno.test("frontend-v2 semantic projection matches Peggy on supported valid sources", async () => {
+  const frontend = await loadFrontendV2(generatedFrontend);
+  const corpus = [
+    'from "./lib.wm" import { value };',
+    'from "./lib.wm" import { value as alias };',
+    'from "./lib.wm" import { first, second as renamed };\nlet x = renamed;',
+    "let alias = source;",
+    "let typed: Number = source;",
+    "let variable: value = source;",
+    "let qualified: Js.Value = source;",
+    "let nested: Result<String, List<value>> = source;",
+    "let tupled: (Number, value) = source;",
+    "let fnTyped: (Number, value) => Result<String, value> = source;",
+    "let rec self = self;",
+    "let _ = 99;",
+    "let Some = value;",
+    "let true = flag;",
+    "let 1 = one;",
+    'let "tag" = tagged;',
+    "let void = emptyValue;",
+    "let count = 42;",
+    "let ratio = 1.5;",
+    'let label = "ok";',
+    "let enabled = true;",
+    "let disabled = false;",
+    "let empty = void;",
+    "let first = one;\nlet second = 2;",
+  ];
+
+  for (const source of corpus) {
+    const comparison = await compareSupportedFrontendSemantics(source, frontend);
+    assertEquals(comparison.diagnostics, [], source);
+    assertEquals(comparison.equivalent, true, source);
+    assertEquals(comparison.v2, comparison.v1, source);
+  }
 });
 
 function assertConcreteCoverage(source: string, result: LexRoundTripResult): void {

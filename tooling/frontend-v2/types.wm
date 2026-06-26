@@ -50,8 +50,11 @@ type Expr =
 
 record LetBinding = {
   id: Number,
+  recursive: Bool,
   pattern: Pattern,
+  annotationText: String,
   expression: Expr,
+  groupTailText: String,
   span: Span,
 };
 

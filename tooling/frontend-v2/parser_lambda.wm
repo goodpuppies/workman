@@ -1,15 +1,44 @@
 from "./types.wm" import {
-  Span, Token, Punctuation,
-  HintSeverity, WarningSeverity, OptionalCanonical, RecoveryOnly
+  Span, Token,
+  LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile,
+  HintSeverity, WarningSeverity, AutoFix, OptionalCanonical
 };
 from "./parser_support.wm" import {
-  ParserState, freshNode, addRecovery
+  ParserState, freshNode, addRecovery, addRecoveryWithPair
 };
 
 let isLambdaArrow = (token: Token) => {
   match(token.kind) {
     Punctuation => { token.text == "=>" },
     _ => { false },
+  }
+};
+
+let isPunctuationText = (token: Token, text: String) => {
+  match(token.kind) {
+    Punctuation => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isBodyBoundary = (token: Token) => {
+  match(token.kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => {
+      isKeywordText(token, "from") ||
+      isKeywordText(token, "type") ||
+      isKeywordText(token, "record") ||
+      isKeywordText(token, "and")
+    },
   }
 };
 
@@ -42,9 +71,10 @@ let addBareLambdaBodyBraces = (
   bodyStart: Number,
   bodyEnd: Number,
 ) => {
-  let (openNodeId, state1) = freshNode(state);
-  let (_, state2) = addRecovery(
-    state1,
+  let (pairId, state1) = freshNode(state);
+  let (openNodeId, state2) = freshNode(state1);
+  let (_, state3) = addRecoveryWithPair(
+    state2,
     "parse.lambda.missing-body-open-block",
     bodyStart,
     "ParseLambdaBody",
@@ -56,14 +86,15 @@ let addBareLambdaBodyBraces = (
     openNodeId,
     "Token",
     WarningSeverity,
-    RecoveryOnly,
-    None,
+    AutoFix,
     Some("{"),
+    Some("{"),
+    Some(pairId),
     [],
   );
-  let (closeNodeId, state3) = freshNode(state2);
-  let (_, state4) = addRecovery(
-    state3,
+  let (closeNodeId, state4) = freshNode(state3);
+  let (_, state5) = addRecoveryWithPair(
+    state4,
     "parse.lambda.missing-body-close-block",
     bodyEnd,
     "ParseLambdaBody",
@@ -75,10 +106,114 @@ let addBareLambdaBodyBraces = (
     closeNodeId,
     "Token",
     WarningSeverity,
-    RecoveryOnly,
-    None,
+    AutoFix,
     Some("}"),
+    Some("}"),
+    Some(pairId),
     [],
   );
-  state4
+  state5
+};
+
+let addLambdaBodyRecovery = (
+  state: ParserState,
+  subject: Number,
+  arrow: Token,
+  bodyTokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  match(bodyTokens) {
+    [] => {
+      addBareLambdaBodyBraces(state, subject, arrow.span.end, arrow.span.end)
+    },
+    [bodyToken, .._] => {
+      if (isPunctuationText(bodyToken, "{")) {
+        state
+      } else {
+        if (isBodyBoundary(bodyToken)) {
+          addBareLambdaBodyBraces(state, subject, arrow.span.end, arrow.span.end)
+        } else {
+          addBareLambdaBodyBraces(state, subject, bodyToken.span.start, expressionEnd)
+        }
+      }
+    },
+  }
+};
+
+let rec addParameterizedLambdaRecovery = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  depth: Number,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [] => { state },
+    [token, ..rest] => {
+      if (isPunctuationText(token, "(")) {
+        addParameterizedLambdaRecovery(state, subject, rest, depth + 1, expressionEnd)
+      } else {
+        if (isPunctuationText(token, ")")) {
+          if (depth <= 1) {
+            match(rest) {
+              [arrow, ..bodyTokens] => {
+                if (isLambdaArrow(arrow)) {
+                  addLambdaBodyRecovery(state, subject, arrow, bodyTokens, expressionEnd)
+                } else {
+                  state
+                }
+              },
+              [] => { state },
+            }
+          } else {
+            addParameterizedLambdaRecovery(state, subject, rest, depth - 1, expressionEnd)
+          }
+        } else {
+          addParameterizedLambdaRecovery(state, subject, rest, depth, expressionEnd)
+        }
+      }
+    },
+  }
+};
+
+let addLambdaRecoveries = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [] => { state },
+    [token, ..rest] => {
+      if (isLambdaArrow(token)) {
+        let state1 = addOptionalUnitParams(state, subject, token);
+        addLambdaBodyRecovery(state1, subject, token, rest, expressionEnd)
+      } else {
+        if (isPunctuationText(token, "(")) {
+          addParameterizedLambdaRecovery(state, subject, rest, 1, expressionEnd)
+        } else {
+          if (token.text == "lift") {
+            match(rest) {
+              [carrier, open, ..parameterTokens] => {
+                if (isPunctuationText(open, "(")) {
+                  addParameterizedLambdaRecovery(
+                    state,
+                    subject,
+                    parameterTokens,
+                    1,
+                    expressionEnd,
+                  )
+                } else {
+                  state
+                }
+              },
+              _ => { state },
+            }
+          } else {
+            state
+          }
+        }
+      }
+    },
+  }
 };

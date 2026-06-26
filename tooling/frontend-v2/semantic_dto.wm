@@ -1,0 +1,213 @@
+from "./types.wm" import {
+  Span, Pattern, Expr, LetBinding, TopItem, StructuralDocument,
+  NamePattern, HolePattern, ErrorPattern,
+  AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
+  LetItem, ImportItem, TypeItem, RecordItem, OpaqueItem
+};
+from "./parser.wm" import { parseStructural as parseStructuralInternal };
+
+record SemanticDeclDto = {
+  structuralId: Number,
+  structuralKind: String,
+  semanticKind: String,
+  status: String,
+  recursive: Bool,
+  start: Number,
+  end: Number,
+  recoveryId: Number,
+  patternKind: String,
+  patternText: String,
+  patternRecoveryId: Number,
+  annotationText: String,
+  groupTailText: String,
+  expressionKind: String,
+  expressionText: String,
+  expressionRecoveryId: Number,
+  authoredExpressionHole: Bool,
+};
+
+record SemanticProjectionDto = {
+  schemaVersion: Number,
+  sourceLength: Number,
+  moduleKind: String,
+  decls: Js.Array<SemanticDeclDto>,
+};
+
+record SemanticStructuralDto = {
+  kind: String,
+  id: Number,
+  start: Number,
+  end: Number,
+  recoveryId: Number,
+  patternKind: String,
+  patternRecoveryId: Number,
+  expressionKind: String,
+  expressionRecoveryId: Number,
+};
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let rec mapInto = match(items, reversed, convert) => {
+  ([], Var(reversed), Var(convert)) => {
+    Js.Array.fromList(reverseInto(reversed, []))
+  },
+  ([item, ..rest], Var(reversed), Var(convert)) => {
+    mapInto(rest, [convert(item), ..reversed], convert)
+  },
+};
+
+let patternInfo = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(nodeId), Var(text), Var(span)) => { ("name", -1) },
+    HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
+    ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
+      ("error", recoveryId)
+    },
+  }
+};
+
+let expressionInfo = (expression: Expr) => {
+  match(expression) {
+    AtomExpr(Var(nodeId), Var(text), Var(span)) => { ("atom", -1) },
+    HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
+    AuthoredHoleExpr(Var(nodeId), Var(span)) => { ("authored-hole", -1) },
+    ErrorExpr(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
+      ("error", recoveryId)
+    },
+  }
+};
+
+let patternText = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(nodeId), Var(text), Var(span)) => { text },
+    HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { "" },
+    ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => { text },
+  }
+};
+
+let expressionText = (source: String, expression: Expr) => {
+  match(expression) {
+    AtomExpr(Var(nodeId), Var(text), Var(span)) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault(text)
+    },
+    HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { "" },
+    AuthoredHoleExpr(Var(nodeId), Var(span)) => { "?" },
+    ErrorExpr(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault(text)
+    },
+  }
+};
+
+let structuralDto = (item: TopItem) => {
+  match(item) {
+    LetItem(binding) => {
+      let (patternKind, patternRecoveryId) = patternInfo(binding.pattern);
+      let (expressionKind, expressionRecoveryId) = expressionInfo(binding.expression);
+      let dto: SemanticStructuralDto = .{
+        kind = "let",
+        id = binding.id,
+        start = binding.span.start,
+        end = binding.span.end,
+        recoveryId = -1,
+        patternKind = patternKind,
+        patternRecoveryId = patternRecoveryId,
+        expressionKind = expressionKind,
+        expressionRecoveryId = expressionRecoveryId,
+      };
+      dto
+    },
+    ImportItem(nodeId, span, form) => {
+      .{ kind = "import", id = nodeId, start = span.start, end = span.end, recoveryId = -1,
+        patternKind = "", patternRecoveryId = -1, expressionKind = "", expressionRecoveryId = -1 }
+    },
+    TypeItem(nodeId, span) => {
+      .{ kind = "type", id = nodeId, start = span.start, end = span.end, recoveryId = -1,
+        patternKind = "", patternRecoveryId = -1, expressionKind = "", expressionRecoveryId = -1 }
+    },
+    RecordItem(nodeId, span) => {
+      .{ kind = "record", id = nodeId, start = span.start, end = span.end, recoveryId = -1,
+        patternKind = "", patternRecoveryId = -1, expressionKind = "", expressionRecoveryId = -1 }
+    },
+    OpaqueItem(nodeId, recoveryId, span, text) => {
+      .{ kind = "opaque", id = nodeId, start = span.start, end = span.end,
+        recoveryId = recoveryId, patternKind = "", patternRecoveryId = -1, expressionKind = "",
+        expressionRecoveryId = -1 }
+    },
+  }
+};
+
+let semanticStatus = (item: SemanticStructuralDto) => {
+  if (item.recoveryId >= 0 || item.patternRecoveryId >= 0 || item.expressionRecoveryId >= 0) {
+    "recovered"
+  } else {
+    if (item.expressionKind == "error") { "error" } else { "complete" }
+  }
+};
+
+let semanticKind = (kind: String) => {
+  match(kind) {
+    "let" => { "LetDecl" },
+    "import" => { "ImportDecl" },
+    "type" => { "TypeDecl" },
+    "record" => { "RecordDecl" },
+    "opaque" => { "ErrorDecl" },
+    _ => { "ErrorDecl" },
+  }
+};
+
+let semanticDeclDto = (source: String, item: TopItem) => {
+  let structural = structuralDto(item);
+  let (patternSource, expressionSource) = match(item) {
+    LetItem(binding) => {
+      (patternText(binding.pattern), expressionText(source, binding.expression))
+    },
+    _ => { ("", "") },
+  };
+  let annotationSource = match(item) {
+    LetItem(binding) => { binding.annotationText },
+    _ => { "" },
+  };
+  let recursive = match(item) {
+    LetItem(binding) => { binding.recursive },
+    _ => { false },
+  };
+  let groupTailText = match(item) {
+    LetItem(binding) => { binding.groupTailText },
+    _ => { "" },
+  };
+  let status = if (structural.kind == "opaque") { "opaque" } else { semanticStatus(structural) };
+  let dto: SemanticDeclDto = .{
+    structuralId = structural.id,
+    structuralKind = structural.kind,
+    semanticKind = semanticKind(structural.kind),
+    status = status,
+    recursive = recursive,
+    start = structural.start,
+    end = structural.end,
+    recoveryId = structural.recoveryId,
+    patternKind = structural.patternKind,
+    patternText = patternSource,
+    patternRecoveryId = structural.patternRecoveryId,
+    annotationText = annotationSource,
+    groupTailText = groupTailText,
+    expressionKind = structural.expressionKind,
+    expressionText = expressionSource,
+    expressionRecoveryId = structural.expressionRecoveryId,
+    authoredExpressionHole = structural.expressionKind == "authored-hole",
+  };
+  dto
+};
+
+let projectSemantic = (source: String) => {
+  let document = parseStructuralInternal(source);
+  let dto: SemanticProjectionDto = .{
+    schemaVersion = 1,
+    sourceLength = source :> .length :> Result.withDefault(0),
+    moduleKind = "Module",
+    decls = mapInto(document.items, [], (item) => { semanticDeclDto(document.source, item) }),
+  };
+  dto
+};

@@ -3,6 +3,7 @@ from "./types.wm" import {
 };
 
 record ParserState = {
+  source: String,
   remaining: List<Token>,
   nextNodeId: Number,
   nextRecoveryId: Number,
@@ -15,6 +16,40 @@ record ParserState = {
 let rec reverseInto = match(items, output) => {
   ([], Var(output)) => { output },
   ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let artifactBefore = (left: VirtualArtifact, right: VirtualArtifact) => {
+  if (left.anchor < right.anchor) {
+    true
+  } else {
+    if (left.anchor > right.anchor) {
+      false
+    } else {
+      left.order < right.order
+    }
+  }
+};
+
+let rec insertArtifact = (artifact, sorted) => {
+  match(sorted) {
+    [] => { [artifact] },
+    [head, ..rest] => {
+      if (artifactBefore(artifact, head)) {
+        [artifact, ..sorted]
+      } else {
+        [head, ..insertArtifact(artifact, rest)]
+      }
+    },
+  }
+};
+
+let rec sortArtifacts = (items, sorted) => {
+  match(items) {
+    [] => { sorted },
+    [artifact, ..rest] => {
+      sortArtifacts(rest, insertArtifact(artifact, sorted))
+    },
+  }
 };
 
 let freshNode = (state: ParserState) => {
@@ -37,6 +72,7 @@ let artifactFor = (
   text: String,
   reason: String,
   repairClass: RepairClass,
+  pairId: Option<Number>,
   order: Number,
 ) => {
   let value: VirtualArtifact = .{
@@ -45,13 +81,13 @@ let artifactFor = (
     text = text,
     reason = reason,
     repairClass = repairClass,
-    pairId = None,
+    pairId = pairId,
     order = order,
   };
   value
 };
 
-let addRecovery = (
+let addRecoveryWithPair = (
   state: ParserState,
   code: String,
   anchor: Number,
@@ -67,6 +103,7 @@ let addRecovery = (
   repairClass: RepairClass,
   repairText: Option<String>,
   artifactText: Option<String>,
+  pairId: Option<Number>,
   dependsOn: List<Number>,
 ) => {
   let recoveryId = state.nextRecoveryId;
@@ -87,13 +124,13 @@ let addRecovery = (
     severity = severity,
     repairClass = repairClass,
     repairText = repairText,
-    pairId = None,
+    pairId = pairId,
     order = order,
     dependsOn = dependsOn,
   };
   let artifacts = match(artifactText) {
     Some(text) => {
-      [artifactFor(recoveryId, anchor, text, code, repairClass, order), ..state.artifactsReversed]
+      [artifactFor(recoveryId, anchor, text, code, repairClass, pairId, order), ..state.artifactsReversed]
     },
     None => { state.artifactsReversed },
   };
@@ -105,6 +142,45 @@ let addRecovery = (
     artifactsReversed = artifacts,
   };
   (recoveryId, next)
+};
+
+let addRecovery = (
+  state: ParserState,
+  code: String,
+  anchor: Number,
+  rule: String,
+  rulePath: String,
+  subject: Number,
+  expectation: String,
+  observed: String,
+  recovery: String,
+  fallbackNode: Number,
+  fallbackCategory: String,
+  severity: Severity,
+  repairClass: RepairClass,
+  repairText: Option<String>,
+  artifactText: Option<String>,
+  dependsOn: List<Number>,
+) => {
+  addRecoveryWithPair(
+    state,
+    code,
+    anchor,
+    rule,
+    rulePath,
+    subject,
+    expectation,
+    observed,
+    recovery,
+    fallbackNode,
+    fallbackCategory,
+    severity,
+    repairClass,
+    repairText,
+    artifactText,
+    None,
+    dependsOn,
+  )
 };
 
 let currentAnchor = (state: ParserState) => {

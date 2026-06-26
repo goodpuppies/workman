@@ -6,10 +6,20 @@ and rendering foundations. Its maintained modules are:
 
 - `types.wm`: lossless token, structural fallback, recovery mark, and virtual artifact types;
 - `lexer.wm`: lossless current-grammar tokenization, UTF-16 spans, and line maps;
-- `dto.wm`: conversion from internal WM lists and ADTs to schema-versioned plain JavaScript data;
+- `dto.wm`: conversion from internal WM lists and ADTs to schema-versioned lexical/structural
+  JavaScript data;
+- `semantic_dto.wm`: schema-versioned semantic projection DTOs over the structural document;
 - `frontend.wm`: the stable generated-library entry module;
-- `parser.wm`: immutable parser state, typed let fallbacks, opaque top-level recovery, canonical
-  marks, and deterministic recovery IDs;
+- `parser.wm`: top-level structural dispatch and opaque declaration recovery;
+- `parser_support.wm`: immutable parser state, canonical marks/artifacts, paired recovery IDs, and
+  progress accounting;
+- `parser_let.wm`, `parser_expr.wm`, and `parser_pattern.wm`: shallow tolerant let bindings and
+  reusable expression/pattern tail boundaries;
+- `parser_delimiter.wm`: ordered missing-closer recovery for incomplete expressions;
+- `parser_import.wm`: shallow required-slot and clause recovery for Workman and JavaScript imports;
+- `parser_type.wm`: shallow required-slot and delimiter recovery for type and record declarations;
+- `parser_lambda.wm`, `parser_if.wm`, and `parser_match.wm`: shallow block, lambda, branch,
+  match-arm, and ordered-token recovery;
 - `renderer.wm`: concrete/virtual rendering and bidirectional piece maps;
 - `structural.wm`: the stable WM facade over parsing and rendering;
 - `self_check.wm`: executable assertions and preview output.
@@ -36,12 +46,12 @@ deno task frontend-v2:build
 ```
 
 This writes the ignored, reproducible artifact `tooling/frontend-v2/frontend-v2.generated.mjs`. The
-generated ES module exports the schema-versioned `lexRoundTrip(source)` and
-`parseStructural(source)` boundaries and does not invoke `main`. Bindings imported by the entry file
-stay internal. Tests rebuild the artifact in a temporary directory and import it exclusively through
-`src/frontend_v2_loader.ts`. `src/frontend_v2_diagnostics.ts` projects canonical recovery marks into
-wm-mini's shared auditable diagnostic model; it does not define a parallel parser-only diagnostic
-format.
+generated ES module exports the schema-versioned `lexRoundTrip(source)`, `parseStructural(source)`,
+and `projectSemantic(source)` boundaries and does not invoke `main`. Bindings imported by the entry
+file stay internal. Tests rebuild the artifact in a temporary directory and import it exclusively
+through `src/frontend_v2_loader.ts`. `src/frontend_v2_diagnostics.ts` projects canonical recovery
+marks into wm-mini's shared auditable diagnostic model; it does not define a parallel parser-only
+diagnostic format.
 
 The frontend ABI will expose JavaScript-native DTO values deliberately:
 

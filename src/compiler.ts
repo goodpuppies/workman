@@ -24,7 +24,7 @@ import {
   type ModuleGraphOptions,
   type VirtualFileSystem,
 } from "./module_graph.ts";
-import { parse, type Surface } from "./parser.ts";
+import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import {
   type FrontendDiagnostic,
@@ -35,6 +35,7 @@ import {
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import { standardInferOptions } from "./standard_library.ts";
+import { assertCompilerFrontendMode } from "./frontend_mode.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 
@@ -47,14 +48,15 @@ export async function compile(
   options: CompileOptions = {},
   filePath?: string,
 ): Promise<string> {
+  assertCompilerFrontendMode(options.frontend);
   const { module: ast, result } = await checkPreparedModuleWithoutImports(
-    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     filePath,
   );
   return emitCoreProgram(coreProgramFromModule(ast, result));
 }
 
-export type CheckSourceOptions = { surface?: Surface };
+export type CheckSourceOptions = CompilerFrontendOptions;
 export type CoreSourceResult = { module: ReturnType<typeof coreFromSurface>; result: InferResult };
 export type CoreFileResult = {
   graph: ModuleGraph;
@@ -88,8 +90,9 @@ export async function checkSource(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<InferResult> {
+  assertCompilerFrontendMode(options.frontend);
   return (await checkPreparedModuleWithoutImports(
-    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     filePath,
   )).result;
 }
@@ -99,8 +102,9 @@ export async function coreSource(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<CoreSourceResult> {
+  assertCompilerFrontendMode(options.frontend);
   const { module, result } = await checkPreparedModuleWithoutImports(
-    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     filePath,
   );
   return { module: coreFromSurface(module, result), result };
@@ -111,8 +115,9 @@ export async function checkSourceSteps(
   options: CheckSourceOptions = {},
   filePath?: string,
 ): Promise<InferStep[]> {
+  assertCompilerFrontendMode(options.frontend);
   const module = prepareFfiElaboration(
-    resolveLocalJsModuleSpecifiers(await parse(source, options.surface, filePath), filePath),
+    resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     { filePath },
   ).module;
   if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
@@ -148,6 +153,7 @@ export async function analyzeFile(
   input: string,
   options: ModuleGraphOptions = {},
 ): Promise<{ graph: ModuleGraph; results: Map<string, InferResult> }> {
+  assertCompilerFrontendMode(options.frontend);
   const graph = await loadModuleGraph(input, options);
   const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
   for (const node of graph.nodes.values()) {

@@ -1,10 +1,27 @@
 from "./types.wm" import {
   Span, Token, TokenKind,
   LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile,
-  WarningSeverity, RecoveryOnly
+  WarningSeverity, AutoFix, RecoveryOnly
 };
 from "./parser_support.wm" import {
-  ParserState, freshNode, addRecovery
+  ParserState, freshNode, addRecovery, addRecoveryWithPair
+};
+
+let codeAt = (source: String, index: Number) => {
+  source :> .charCodeAt(index) :> Result.withDefault(-1)
+};
+
+let rec hasLineBreak = (source: String, index: Number, end: Number) => {
+  if (index >= end) {
+    false
+  } else {
+    let code = codeAt(source, index);
+    if (code == 10 || code == 13) {
+      true
+    } else {
+      hasLineBreak(source, index + 1, end)
+    }
+  }
 };
 
 let isKeywordText = (token: Token, text: String) => {
@@ -39,6 +56,22 @@ let isPunctuationText = (token: Token, text: String) => {
     Punctuation => { token.text == text },
     _ => { false },
   }
+};
+
+let updateDepth = (token: Token, open: String, close: String, depth: Number) => {
+  if (isPunctuationText(token, open)) {
+    depth + 1
+  } else {
+    if (isPunctuationText(token, close) && depth > 0) {
+      depth - 1
+    } else {
+      depth
+    }
+  }
+};
+
+let sameDepth = (left: Number, right: Number) => {
+  left <= right && left >= right
 };
 
 let needsArmCommaBefore = (tokens: List<Token>) => {
@@ -81,19 +114,99 @@ let addMissingArmComma = (
   state2
 };
 
-let updateDepth = (token: Token, open: String, close: String, depth: Number) => {
-  if (isPunctuationText(token, open)) {
-    depth + 1
-  } else {
-    if (isPunctuationText(token, close) && depth > 0) {
-      depth - 1
-    } else {
-      depth
-    }
+let addBareBodyOpen = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+) => {
+  let (pairId, state1) = freshNode(state);
+  let (nodeId, state2) = freshNode(state1);
+  let (_, state3) = addRecoveryWithPair(
+    state2,
+    "parse.match.missing-arm-body-open-block",
+    anchor,
+    "ParseMatchArmBody",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseMatchArmBody",
+    subject,
+    "match arm body block",
+    "bare expression body",
+    "insert opening block brace",
+    nodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some("{"),
+    Some("{"),
+    Some(pairId),
+    [],
+  );
+  (pairId, state3)
+};
+
+let addBareBodyClose = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+  pairId: Number,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecoveryWithPair(
+    state1,
+    "parse.match.missing-arm-body-close-block",
+    anchor,
+    "ParseMatchArmBody",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseMatchArmBody",
+    subject,
+    "match arm body block",
+    "bare expression body",
+    "insert closing block brace",
+    nodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some("}"),
+    Some("}"),
+    Some(pairId),
+    [],
+  );
+  state2
+};
+
+let rec hasClauseArrowBeforeBoundary = (
+  tokens: List<Token>,
+  matchBlockDepth: Number,
+  braceDepth: Number,
+  parenDepth: Number,
+  bracketDepth: Number,
+) => {
+  match(tokens) {
+    [] => { false },
+    [token, ..rest] => {
+      let atMatchLevel = sameDepth(braceDepth, matchBlockDepth) &&
+        parenDepth == 0 && bracketDepth == 0;
+      if (atMatchLevel && isPunctuationText(token, "=>")) {
+        true
+      } else {
+        if (
+          atMatchLevel &&
+          (isPunctuationText(token, ",") || isPunctuationText(token, "}"))
+        ) {
+          false
+        } else {
+          hasClauseArrowBeforeBoundary(
+            rest,
+            matchBlockDepth,
+            updateDepth(token, "{", "}", braceDepth),
+            updateDepth(token, "(", ")", parenDepth),
+            updateDepth(token, "[", "]", bracketDepth),
+          )
+        }
+      }
+    },
   }
 };
 
-let rec recoverMatchCommasInto = (
+let rec recoverMatchStructureInto = (
   tokens: List<Token>,
   state: ParserState,
   subject: Number,
@@ -102,31 +215,99 @@ let rec recoverMatchCommasInto = (
   braceDepth: Number,
   parenDepth: Number,
   bracketDepth: Number,
+  bareBodyPairId: Number,
+  previousEnd: Number,
 ) => {
   match(tokens) {
-    [] => { state },
+    [] => {
+      if (bareBodyPairId >= 0) {
+        addBareBodyClose(state, subject, previousEnd, bareBodyPairId)
+      } else {
+        state
+      }
+    },
     [token, ..rest] => {
       if (
-        parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 &&
+        bareBodyPairId < 0 && parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 &&
         isExpressionBoundaryToken(token)
       ) {
         state
       } else {
+        let atMatchLevel = matchBlockDepth >= 0 && sameDepth(braceDepth, matchBlockDepth) &&
+          parenDepth == 0 && bracketDepth == 0;
+        let endsAtComma = bareBodyPairId >= 0 && atMatchLevel &&
+          isPunctuationText(token, ",");
+        let endsAtBlock = bareBodyPairId >= 0 && atMatchLevel &&
+          isPunctuationText(token, "}");
+        let startsNextArm = bareBodyPairId >= 0 && atMatchLevel &&
+          hasLineBreak(state.source, previousEnd, token.span.start) &&
+          hasClauseArrowBeforeBoundary(
+            tokens,
+            matchBlockDepth,
+            braceDepth,
+            parenDepth,
+            bracketDepth,
+          );
+        let bodyEnd = previousEnd;
+        let state1 = if (endsAtComma || endsAtBlock || startsNextArm) {
+          addBareBodyClose(state, subject, bodyEnd, bareBodyPairId)
+        } else {
+          state
+        };
+        let state2 = if (startsNextArm) {
+          addMissingArmComma(state1, subject, bodyEnd)
+        } else {
+          state1
+        };
+        let nextBareBodyPairId = if (endsAtComma || endsAtBlock || startsNextArm) {
+          -1
+        } else {
+          bareBodyPairId
+        };
         let startsMatch = isKeywordText(token, "match");
         let opensBrace = isPunctuationText(token, "{");
         let closesBrace = isPunctuationText(token, "}");
-        let state1 = if (
-          closesBrace && matchBlockDepth >= 0 && braceDepth == matchBlockDepth + 1 &&
-          needsArmCommaBefore(rest)
+        let state3 = if (
+          nextBareBodyPairId < 0 && closesBrace && matchBlockDepth >= 0 &&
+          sameDepth(braceDepth, matchBlockDepth + 1) && needsArmCommaBefore(rest)
         ) {
-          addMissingArmComma(state, subject, token.span.end)
+          addMissingArmComma(state2, subject, token.span.end)
         } else {
-          state
+          state2
+        };
+        let isClauseArrow = nextBareBodyPairId < 0 && atMatchLevel &&
+          isPunctuationText(token, "=>");
+        let nextTokenIsBlock = match(rest) {
+          [nextToken, .._] => { isPunctuationText(nextToken, "{") },
+          [] => { false },
+        };
+        let (openedPairId, state4) = if (isClauseArrow && !nextTokenIsBlock) {
+          match(rest) {
+            [bodyToken, .._] => {
+              addBareBodyOpen(state3, subject, bodyToken.span.start)
+            },
+            [] => { (-1, state3) },
+          }
+        } else {
+          (-1, state3)
+        };
+        let bodyPairIdAfterToken = if (openedPairId >= 0) {
+          openedPairId
+        } else {
+          nextBareBodyPairId
+        };
+        let previousEndAfterToken = if (openedPairId >= 0) {
+          match(rest) {
+            [bodyToken, .._] => { bodyToken.span.start },
+            [] => { token.span.end },
+          }
+        } else {
+          token.span.end
         };
         let nextBraceDepth = updateDepth(token, "{", "}", braceDepth);
         let nextParenDepth = updateDepth(token, "(", ")", parenDepth);
         let nextBracketDepth = updateDepth(token, "[", "]", bracketDepth);
-        let nextMatchBlockDepth = if (closesBrace && braceDepth == matchBlockDepth) {
+        let nextMatchBlockDepth = if (closesBrace && sameDepth(braceDepth, matchBlockDepth)) {
           -1
         } else {
           if (waitingForMatchBlock && opensBrace) {
@@ -140,25 +321,27 @@ let rec recoverMatchCommasInto = (
         } else {
           if (startsMatch && matchBlockDepth < 0) { true } else { waitingForMatchBlock }
         };
-        recoverMatchCommasInto(
+        recoverMatchStructureInto(
           rest,
-          state1,
+          state4,
           subject,
           nextWaitingForMatchBlock,
           nextMatchBlockDepth,
           nextBraceDepth,
           nextParenDepth,
           nextBracketDepth,
+          bodyPairIdAfterToken,
+          previousEndAfterToken,
         )
       }
     },
   }
 };
 
-let addMissingMatchArmCommas = (
+let addMatchRecoveries = (
   state: ParserState,
   subject: Number,
   tokens: List<Token>,
 ) => {
-  recoverMatchCommasInto(tokens, state, subject, false, -1, 0, 0, 0)
+  recoverMatchStructureInto(tokens, state, subject, false, -1, 0, 0, 0, -1, 0)
 };

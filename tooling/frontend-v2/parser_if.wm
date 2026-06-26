@@ -1,0 +1,307 @@
+from "./types.wm" import {
+  Span, Token,
+  LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile,
+  WarningSeverity, AutoFix
+};
+from "./parser_support.wm" import {
+  ParserState, freshNode, addRecoveryWithPair
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isPunctuationText = (token: Token, text: String) => {
+  match(token.kind) {
+    Punctuation => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isExpressionBoundary = (token: Token) => {
+  match(token.kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => {
+      isKeywordText(token, "from") ||
+      isKeywordText(token, "type") ||
+      isKeywordText(token, "record") ||
+      isKeywordText(token, "and")
+    },
+  }
+};
+
+let addBranchBraces = (
+  state: ParserState,
+  subject: Number,
+  branch: String,
+  start: Number,
+  end: Number,
+) => {
+  let (pairId, state1) = freshNode(state);
+  let (openNodeId, state2) = freshNode(state1);
+  let (_, state3) = addRecoveryWithPair(
+    state2,
+    "parse.if.missing-" ++ branch ++ "-open-block",
+    start,
+    "ParseIfBranch",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseIfBranch",
+    subject,
+    branch ++ " branch block",
+    "bare or missing branch expression",
+    "insert opening block brace",
+    openNodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some("{"),
+    Some("{"),
+    Some(pairId),
+    [],
+  );
+  let (closeNodeId, state4) = freshNode(state3);
+  let (_, state5) = addRecoveryWithPair(
+    state4,
+    "parse.if.missing-" ++ branch ++ "-close-block",
+    end,
+    "ParseIfBranch",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseIfBranch",
+    subject,
+    branch ++ " branch block",
+    "bare or missing branch expression",
+    "insert closing block brace",
+    closeNodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some("}"),
+    Some("}"),
+    Some(pairId),
+    [],
+  );
+  state5
+};
+
+let rec tokensAfterBlock = (
+  tokens: List<Token>,
+  depth: Number,
+) => {
+  match(tokens) {
+    [] => { None },
+    [token, ..rest] => {
+      if (isPunctuationText(token, "{")) {
+        tokensAfterBlock(rest, depth + 1)
+      } else {
+        if (isPunctuationText(token, "}")) {
+          if (depth <= 1) {
+            Some(rest)
+          } else {
+            tokensAfterBlock(rest, depth - 1)
+          }
+        } else {
+          tokensAfterBlock(rest, depth)
+        }
+      }
+    },
+  }
+};
+
+let recoverElseBranch = (
+  state: ParserState,
+  subject: Number,
+  elseToken: Token,
+  tokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [] => {
+      addBranchBraces(state, subject, "else", elseToken.span.end, elseToken.span.end)
+    },
+    [bodyToken, .._] => {
+      if (isPunctuationText(bodyToken, "{")) {
+        state
+      } else {
+        if (isExpressionBoundary(bodyToken)) {
+          addBranchBraces(state, subject, "else", elseToken.span.end, elseToken.span.end)
+        } else {
+          addBranchBraces(state, subject, "else", bodyToken.span.start, expressionEnd)
+        }
+      }
+    },
+  }
+};
+
+let recoverElseAfterBlock = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [elseToken, ..rest] => {
+      if (isKeywordText(elseToken, "else")) {
+        recoverElseBranch(state, subject, elseToken, rest, expressionEnd)
+      } else {
+        state
+      }
+    },
+    [] => { state },
+  }
+};
+
+let updateDepth = (token: Token, open: String, close: String, depth: Number) => {
+  if (isPunctuationText(token, open)) {
+    depth + 1
+  } else {
+    if (isPunctuationText(token, close) && depth > 0) {
+      depth - 1
+    } else {
+      depth
+    }
+  }
+};
+
+let rec recoverBareThen = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  expressionEnd: Number,
+  branchStart: Number,
+  previousEnd: Number,
+  started: Bool,
+  braceDepth: Number,
+  parenDepth: Number,
+  bracketDepth: Number,
+) => {
+  match(tokens) {
+    [] => {
+      let end = if (started) { previousEnd } else { branchStart };
+      addBranchBraces(state, subject, "then", branchStart, end)
+    },
+    [token, ..rest] => {
+      let atBranchLevel = braceDepth == 0 && parenDepth == 0 && bracketDepth == 0;
+      if (atBranchLevel && isKeywordText(token, "else")) {
+        let end = if (started) { previousEnd } else { branchStart };
+        let state1 = addBranchBraces(state, subject, "then", branchStart, end);
+        recoverElseBranch(state1, subject, token, rest, expressionEnd)
+      } else {
+        if (atBranchLevel && isExpressionBoundary(token)) {
+          let end = if (started) { previousEnd } else { branchStart };
+          addBranchBraces(state, subject, "then", branchStart, end)
+        } else {
+          recoverBareThen(
+            state,
+            subject,
+            rest,
+            expressionEnd,
+            branchStart,
+            token.span.end,
+            true,
+            updateDepth(token, "{", "}", braceDepth),
+            updateDepth(token, "(", ")", parenDepth),
+            updateDepth(token, "[", "]", bracketDepth),
+          )
+        }
+      }
+    },
+  }
+};
+
+let recoverThenBranch = (
+  state: ParserState,
+  subject: Number,
+  conditionEnd: Number,
+  tokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [] => { addBranchBraces(state, subject, "then", conditionEnd, conditionEnd) },
+    [bodyToken, ..rest] => {
+      if (isPunctuationText(bodyToken, "{")) {
+        match(tokensAfterBlock(rest, 1)) {
+          Some(afterBlock) => {
+            recoverElseAfterBlock(state, subject, afterBlock, expressionEnd)
+          },
+          None => { state },
+        }
+      } else {
+        if (isKeywordText(bodyToken, "else") || isExpressionBoundary(bodyToken)) {
+          recoverBareThen(
+            state,
+            subject,
+            tokens,
+            expressionEnd,
+            conditionEnd,
+            conditionEnd,
+            false,
+            0,
+            0,
+            0,
+          )
+        } else {
+          recoverBareThen(
+            state,
+            subject,
+            tokens,
+            expressionEnd,
+            bodyToken.span.start,
+            bodyToken.span.start,
+            false,
+            0,
+            0,
+            0,
+          )
+        }
+      }
+    },
+  }
+};
+
+let rec recoverAfterCondition = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  depth: Number,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [] => { state },
+    [token, ..rest] => {
+      if (isPunctuationText(token, "(")) {
+        recoverAfterCondition(state, subject, rest, depth + 1, expressionEnd)
+      } else {
+        if (isPunctuationText(token, ")")) {
+          if (depth <= 1) {
+            recoverThenBranch(state, subject, token.span.end, rest, expressionEnd)
+          } else {
+            recoverAfterCondition(state, subject, rest, depth - 1, expressionEnd)
+          }
+        } else {
+          recoverAfterCondition(state, subject, rest, depth, expressionEnd)
+        }
+      }
+    },
+  }
+};
+
+let addIfRecoveries = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  expressionEnd: Number,
+) => {
+  match(tokens) {
+    [ifToken, open, ..rest] => {
+      if (isKeywordText(ifToken, "if") && isPunctuationText(open, "(")) {
+        recoverAfterCondition(state, subject, rest, 1, expressionEnd)
+      } else {
+        state
+      }
+    },
+    _ => { state },
+  }
+};

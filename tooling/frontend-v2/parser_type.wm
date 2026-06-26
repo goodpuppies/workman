@@ -1,0 +1,412 @@
+from "./types.wm" import {
+  Span, Token,
+  LetKeyword, Keyword, Identifier, Constructor, Equals, Semicolon, Punctuation, EndOfFile,
+  ErrorSeverity, WarningSeverity, AutoFix, RecoveryOnly
+};
+from "./parser_support.wm" import {
+  ParserState, freshNode, addRecovery, addRecoveryWithPair
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isText = (token: Token, text: String) => {
+  token.text == text
+};
+
+let isBoundary = (token: Token) => {
+  match(token.kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => {
+      isKeywordText(token, "from") ||
+      isKeywordText(token, "type") ||
+      isKeywordText(token, "record")
+    },
+  }
+};
+
+let isDeclarationName = (token: Token) => {
+  match(token.kind) {
+    Constructor => { true },
+    Identifier => { true },
+    _ => { false },
+  }
+};
+
+let isEqualsToken = (token: Token) => {
+  match(token.kind) {
+    Equals => { true },
+    _ => { false },
+  }
+};
+
+let addMissingToken = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  slot: String,
+  anchor: Number,
+  text: String,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse." ++ kind ++ ".missing-" ++ slot,
+    anchor,
+    "ParseTypeDeclaration",
+    "ParseModule -> ParseTypeDeclaration -> Require" ++ slot,
+    subject,
+    kind ++ " declaration " ++ slot,
+    "required declaration boundary",
+    "synthesize missing " ++ slot,
+    nodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some(text),
+    [],
+  );
+  state2
+};
+
+let addMissingClose = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  anchor: Number,
+  text: String,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse." ++ kind ++ ".missing-close-delimiter",
+    anchor,
+    "ParseTypeExpression",
+    "ParseModule -> ParseTypeDeclaration -> ParseTypeExpression",
+    subject,
+    "closing type delimiter '" ++ text ++ "'",
+    "declaration boundary",
+    "insert missing closing type delimiter",
+    nodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some(text),
+    Some(text),
+    [],
+  );
+  state2
+};
+
+let expectedClose = (token: Token) => {
+  if (isText(token, "(")) {
+    Some(")")
+  } else {
+    if (isText(token, "[")) {
+      Some("]")
+    } else {
+      if (isText(token, "{")) {
+        Some("}")
+      } else {
+        if (isText(token, "<")) { Some(">") } else { None }
+      }
+    }
+  }
+};
+
+let closeStack = (token: Token, expected: List<String>) => {
+  match(expected) {
+    [] => { expected },
+    [text, ..rest] => {
+      if (isText(token, text)) { rest } else { expected }
+    },
+  }
+};
+
+let rec addMissingCloses = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  anchor: Number,
+  expected: List<String>,
+) => {
+  match(expected) {
+    [] => { state },
+    [text, ..rest] => {
+      let state1 = addMissingClose(state, subject, kind, anchor, text);
+      addMissingCloses(state1, subject, kind, anchor, rest)
+    },
+  }
+};
+
+let rec recoverName = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  anchor: Number,
+  tokens: List<Token>,
+) => {
+  match(tokens) {
+    [token, ..rest] => {
+      if (isDeclarationName(token)) {
+        (token.span.end, rest, state)
+      } else {
+        (
+          token.span.start,
+          tokens,
+          addMissingToken(state, subject, kind, "name", token.span.start, "_"),
+        )
+      }
+    },
+    [] => { (anchor, tokens, addMissingToken(state, subject, kind, "name", anchor, "_")) },
+  }
+};
+
+let rec scanTypeParams = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  tokens: List<Token>,
+  depth: Number,
+  lastEnd: Number,
+) => {
+  match(tokens) {
+    [] => {
+      (lastEnd, tokens, addMissingClose(state, subject, kind, lastEnd, ">"))
+    },
+    [token, ..rest] => {
+      if (isBoundary(token) || isEqualsToken(token)) {
+        (lastEnd, tokens, addMissingClose(state, subject, kind, lastEnd, ">"))
+      } else {
+        if (isText(token, "<")) {
+          scanTypeParams(state, subject, kind, rest, depth + 1, token.span.end)
+        } else {
+          if (isText(token, ">")) {
+            if (depth <= 1) {
+              (token.span.end, rest, state)
+            } else {
+              scanTypeParams(state, subject, kind, rest, depth - 1, token.span.end)
+            }
+          } else {
+            scanTypeParams(state, subject, kind, rest, depth, token.span.end)
+          }
+        }
+      }
+    },
+  }
+};
+
+let recoverTypeParams = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  tokens: List<Token>,
+  lastEnd: Number,
+) => {
+  match(tokens) {
+    [token, ..rest] => {
+      if (isText(token, "<")) {
+        scanTypeParams(state, subject, kind, rest, 1, token.span.end)
+      } else {
+        (lastEnd, tokens, state)
+      }
+    },
+    [] => { (lastEnd, tokens, state) },
+  }
+};
+
+let requireEquals = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  tokens: List<Token>,
+  anchor: Number,
+) => {
+  match(tokens) {
+    [token, ..rest] => {
+      match(token.kind) {
+        Equals => { (token.span.end, rest, state) },
+        _ => { (anchor, tokens, addMissingToken(state, subject, kind, "equals", anchor, "=")) },
+      }
+    },
+    [] => { (anchor, tokens, addMissingToken(state, subject, kind, "equals", anchor, "=")) },
+  }
+};
+
+let rec recoverBodyDelimiters = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  tokens: List<Token>,
+  lastEnd: Number,
+  expected: List<String>,
+) => {
+  match(tokens) {
+    [] => {
+      (lastEnd, addMissingCloses(state, subject, kind, lastEnd, expected))
+    },
+    [token, ..rest] => {
+      if (isBoundary(token)) {
+        (lastEnd, addMissingCloses(state, subject, kind, lastEnd, expected))
+      } else {
+        match(expectedClose(token)) {
+          Some(text) => {
+            recoverBodyDelimiters(
+              state,
+              subject,
+              kind,
+              rest,
+              token.span.end,
+              [text, ..expected],
+            )
+          },
+          None => {
+            recoverBodyDelimiters(
+              state,
+              subject,
+              kind,
+              rest,
+              token.span.end,
+              closeStack(token, expected),
+            )
+          },
+        }
+      }
+    },
+  }
+};
+
+let addMissingRecordBody = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+) => {
+  let (pairId, state1) = freshNode(state);
+  let (openNodeId, state2) = freshNode(state1);
+  let (_, state3) = addRecoveryWithPair(
+    state2,
+    "parse.record.missing-body-open-block",
+    anchor,
+    "ParseRecordBody",
+    "ParseModule -> ParseRecordDeclaration -> ParseRecordBody",
+    subject,
+    "record field block",
+    "missing record body",
+    "synthesize empty record body",
+    openNodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some("{"),
+    Some(pairId),
+    [],
+  );
+  let (closeNodeId, state4) = freshNode(state3);
+  let (_, state5) = addRecoveryWithPair(
+    state4,
+    "parse.record.missing-body-close-block",
+    anchor,
+    "ParseRecordBody",
+    "ParseModule -> ParseRecordDeclaration -> ParseRecordBody",
+    subject,
+    "record field block",
+    "missing record body",
+    "synthesize empty record body",
+    closeNodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some("}"),
+    Some(pairId),
+    [],
+  );
+  state5
+};
+
+let recoverBody = (
+  state: ParserState,
+  subject: Number,
+  kind: String,
+  tokens: List<Token>,
+  anchor: Number,
+) => {
+  match(tokens) {
+    [] => {
+      if (kind == "record") {
+        addMissingRecordBody(state, subject, anchor)
+      } else {
+        addMissingToken(state, subject, kind, "body", anchor, "?")
+      }
+    },
+    [token, .._] => {
+      if (isBoundary(token)) {
+        if (kind == "record") {
+          addMissingRecordBody(state, subject, anchor)
+        } else {
+          addMissingToken(state, subject, kind, "body", anchor, "?")
+        }
+      } else {
+        let (_, next) = recoverBodyDelimiters(state, subject, kind, tokens, anchor, []);
+        next
+      }
+    },
+  }
+};
+
+let addDeclarationRecoveries = (
+  state: ParserState,
+  subject: Number,
+  keyword: Token,
+  tokens: List<Token>,
+  kind: String,
+) => {
+  let (nameEnd, afterName, state1) = recoverName(
+    state,
+    subject,
+    kind,
+    keyword.span.end,
+    tokens,
+  );
+  let (paramsEnd, afterParams, state2) = recoverTypeParams(
+    state1,
+    subject,
+    kind,
+    afterName,
+    nameEnd,
+  );
+  let (equalsEnd, afterEquals, state3) = requireEquals(
+    state2,
+    subject,
+    kind,
+    afterParams,
+    paramsEnd,
+  );
+  recoverBody(state3, subject, kind, afterEquals, equalsEnd)
+};
+
+let addTypeDeclarationRecoveries = (
+  state: ParserState,
+  subject: Number,
+  keyword: Token,
+  tokens: List<Token>,
+) => {
+  addDeclarationRecoveries(state, subject, keyword, tokens, "type")
+};
+
+let addRecordDeclarationRecoveries = (
+  state: ParserState,
+  subject: Number,
+  keyword: Token,
+  tokens: List<Token>,
+) => {
+  addDeclarationRecoveries(state, subject, keyword, tokens, "record")
+};

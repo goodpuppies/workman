@@ -1,6 +1,7 @@
 from "./types.wm" import {
   Span, TokenKind, Token, Pattern, Expr, LetBinding, TopItem,
-  LetKeyword, Keyword, Identifier, Constructor, Equals, Semicolon, Punctuation, Opaque, EndOfFile,
+  LetKeyword, Keyword, Identifier, Constructor, NumberLiteral, StringLiteral,
+  Equals, Semicolon, Punctuation, Opaque, EndOfFile,
   NamePattern, HolePattern, ErrorPattern, AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
   LetItem, ErrorSeverity, WarningSeverity, AutoFix, RecoveryOnly
 };
@@ -8,15 +9,16 @@ from "./parser_support.wm" import {
   ParserState, freshNode, advance, addRecovery, currentAnchor, observation
 };
 from "./parser_expr.wm" import {
-  isExpressionBoundaryToken, consumeExpressionTail, expressionDepthAfter
+  isExpressionBoundaryToken, consumeExpressionTail,
+  expressionBraceDepthAfter
 };
 from "./parser_pattern.wm" import {
-  consumePatternTail, patternDepthAfter
+  consumePatternTail, patternExpectedCloses
 };
-from "./parser_lambda.wm" import {
-  isLambdaArrow, addOptionalUnitParams, addBareLambdaBodyBraces
-};
-from "./parser_match.wm" import { addMissingMatchArmCommas };
+from "./parser_lambda.wm" import { addLambdaRecoveries };
+from "./parser_match.wm" import { addMatchRecoveries };
+from "./parser_if.wm" import { addIfRecoveries };
+from "./parser_delimiter.wm" import { addExpressionDelimiterRecoveries };
 
 let missingPattern = (state: ParserState, subject: Number) => {
   let anchor = currentAnchor(state);
@@ -79,17 +81,36 @@ let parsePattern = (state: ParserState, subject: Number) => {
         Semicolon => { missingPattern(state, subject) },
         LetKeyword => { missingPattern(state, subject) },
         EndOfFile => { missingPattern(state, subject) },
+        Keyword => {
+          if (token.text == "true" || token.text == "false" || token.text == "void") {
+            let (nodeId, state1) = freshNode(state);
+            let next = advance(state1, rest);
+            (NamePattern(nodeId, token.text, token.span), next)
+          } else {
+            errorPattern(state, subject, token, rest)
+          }
+        },
         Identifier => {
           let (nodeId, state1) = freshNode(state);
           let consumed = advance(state1, rest);
-          let (end, next) = consumePatternTail(consumed, token.span.end, 0);
+          let (end, next) = consumePatternTail(consumed, subject, token.span.end, []);
           (NamePattern(nodeId, token.text, .{ start = token.span.start, end = end }), next)
         },
         Constructor => {
           let (nodeId, state1) = freshNode(state);
           let consumed = advance(state1, rest);
-          let (end, next) = consumePatternTail(consumed, token.span.end, 0);
+          let (end, next) = consumePatternTail(consumed, subject, token.span.end, []);
           (NamePattern(nodeId, token.text, .{ start = token.span.start, end = end }), next)
+        },
+        NumberLiteral => {
+          let (nodeId, state1) = freshNode(state);
+          let next = advance(state1, rest);
+          (NamePattern(nodeId, token.text, token.span), next)
+        },
+        StringLiteral => {
+          let (nodeId, state1) = freshNode(state);
+          let next = advance(state1, rest);
+          (NamePattern(nodeId, token.text, token.span), next)
         },
         Punctuation => {
           if (token.text == "_") {
@@ -102,8 +123,9 @@ let parsePattern = (state: ParserState, subject: Number) => {
               let consumed = advance(state1, rest);
               let (end, next) = consumePatternTail(
                 consumed,
+                subject,
                 token.span.end,
-                patternDepthAfter(token, 0),
+                patternExpectedCloses(token),
               );
               (NamePattern(nodeId, token.text, .{ start = token.span.start, end = end }), next)
             } else {
@@ -188,12 +210,14 @@ let consumeOptionalAnnotation = (state: ParserState, anchor: Number) => {
     [token, ..rest] => {
       if (isAnnotationStart(token)) {
         let next = advance(state, rest);
-        consumeAnnotationTail(next, token.span.end)
+        let (end, consumed) = consumeAnnotationTail(next, token.span.end);
+        let text = state.source :> .slice(token.span.end, end) :> Result.withDefault("");
+        (end, text, consumed)
       } else {
-        (anchor, state)
+        (anchor, "", state)
       }
     },
-    [] => { (anchor, state) },
+    [] => { (anchor, "", state) },
   }
 };
 
@@ -224,12 +248,12 @@ let consumeOptionalRec = (state: ParserState) => {
     [token, ..rest] => {
       if (isKeywordText(token, "rec")) {
         let next = advance(state, rest);
-        next
+        (true, next)
       } else {
-        state
+        (false, state)
       }
     },
-    [] => { state },
+    [] => { (false, state) },
   }
 };
 
@@ -277,12 +301,7 @@ let parseExpression = (
         missingExpression(state, subject, anchor, dependencies)
       } else {
         let (nodeId, state1) = freshNode(state);
-        let state1a = if (isLambdaArrow(token)) {
-          addOptionalUnitParams(state1, subject, token)
-        } else {
-          state1
-        };
-        let consumed = advance(state1a, rest);
+        let consumed = advance(state1, rest);
         match(token.kind) {
           Opaque => {
             if (token.text == "?") {
@@ -313,15 +332,18 @@ let parseExpression = (
             let (end, state2) = consumeExpressionTail(
               consumed,
               token.span.end,
-              expressionDepthAfter(token, 0),
+              expressionBraceDepthAfter(token, 0),
             );
-            let state3 = if (isLambdaArrow(token)) {
-              addBareLambdaBodyBraces(state2, subject, currentAnchor(consumed), end)
-            } else {
-              state2
-            };
-            let state4 = addMissingMatchArmCommas(state3, subject, [token, ..rest]);
-            (AtomExpr(nodeId, token.text, .{ start = token.span.start, end = end }), state4)
+            let state3 = addExpressionDelimiterRecoveries(
+              state2,
+              subject,
+              [token, ..rest],
+              end,
+            );
+            let state4 = addLambdaRecoveries(state3, subject, [token, ..rest], end);
+            let state5 = addIfRecoveries(state4, subject, [token, ..rest], end);
+            let state6 = addMatchRecoveries(state5, subject, [token, ..rest]);
+            (AtomExpr(nodeId, token.text, .{ start = token.span.start, end = end }), state6)
           },
         }
       }
@@ -371,12 +393,14 @@ let consumeLetGroupTail = (state: ParserState, anchor: Number) => {
     [token, ..rest] => {
       if (isKeywordText(token, "and")) {
         let next = advance(state, rest);
-        consumeAndTail(next, token.span.end)
+        let (end, consumed) = consumeAndTail(next, token.span.end);
+        let text = state.source :> .slice(token.span.start, end) :> Result.withDefault("");
+        (end, text, consumed)
       } else {
-        (anchor, state)
+        (anchor, "", state)
       }
     },
-    [] => { (anchor, state) },
+    [] => { (anchor, "", state) },
   }
 };
 
@@ -420,20 +444,25 @@ let requireSemicolon = (state: ParserState, subject: Number, anchor: Number) => 
 
 let parseLetBinding = (state: ParserState, letToken: Token, rest: List<Token>) => {
   let afterLet = advance(state, rest);
-  let afterRec = consumeOptionalRec(afterLet);
+  let (recursive, afterRec) = consumeOptionalRec(afterLet);
   let (bindingId, state1) = freshNode(afterRec);
   let (pattern, state2) = parsePattern(state1, bindingId);
-  let (equalsAnchor, state2a) = consumeOptionalAnnotation(state2, patternEnd(pattern));
+  let (equalsAnchor, annotationText, state2a) =
+    consumeOptionalAnnotation(state2, patternEnd(pattern));
   let (equalsEnd, equalsRecovery, state3) =
     requireEquals(state2a, bindingId, equalsAnchor);
   let (expression, state4) = parseExpression(state3, bindingId, equalsEnd, equalsRecovery);
-  let (semicolonAnchor, state4a) = consumeLetGroupTail(state4, expressionEnd(expression));
+  let (semicolonAnchor, groupTailText, state4a) =
+    consumeLetGroupTail(state4, expressionEnd(expression));
   let (bindingEnd, state5) =
     requireSemicolon(state4a, bindingId, semicolonAnchor);
   let binding: LetBinding = .{
     id = bindingId,
+    recursive = recursive,
     pattern = pattern,
+    annotationText = annotationText,
     expression = expression,
+    groupTailText = groupTailText,
     span = .{ start = letToken.span.start, end = bindingEnd },
   };
   let item: TopItem = LetItem(binding);

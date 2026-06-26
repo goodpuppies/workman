@@ -1,4 +1,5 @@
 import { dirname, normalize, resolve } from "node:path";
+import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { loadModuleGraph } from "../module_graph.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
@@ -25,10 +26,13 @@ export class ProjectIndex {
     this.#roots.add(normalize(resolve(fileUriToPath(uri))));
   }
 
-  async initialize(sourceOverrides: Map<string, string>) {
+  async initialize(
+    sourceOverrides: Map<string, string>,
+    options: CompilerFrontendOptions = {},
+  ) {
     for (const root of this.#roots) {
       for await (const path of walkWmFiles(root)) {
-        await this.refreshFile(path, sourceOverrides);
+        await this.refreshFile(path, sourceOverrides, options);
       }
     }
   }
@@ -36,18 +40,20 @@ export class ProjectIndex {
   async affectedUrisForChange(
     uri: string,
     sourceOverrides: Map<string, string>,
+    options: CompilerFrontendOptions = {},
   ): Promise<string[]> {
     const path = uriPath(uri);
-    await this.refreshFile(path, sourceOverrides);
+    await this.refreshFile(path, sourceOverrides, options);
     return this.#affectedUris(path);
   }
 
   async affectedUrisForWatchedFiles(
     uris: string[],
     sourceOverrides: Map<string, string>,
+    options: CompilerFrontendOptions = {},
   ): Promise<string[]> {
     const changed = uris.map(uriPath);
-    for (const path of changed) await this.refreshFile(path, sourceOverrides);
+    for (const path of changed) await this.refreshFile(path, sourceOverrides, options);
     const affected = new Set<string>();
     for (const path of changed) {
       for (const uri of this.#affectedUris(path)) affected.add(uri);
@@ -59,12 +65,16 @@ export class ProjectIndex {
     return pathToFileUri(uriPath(uri));
   }
 
-  async refreshFile(path: string, sourceOverrides: Map<string, string>) {
+  async refreshFile(
+    path: string,
+    sourceOverrides: Map<string, string>,
+    options: CompilerFrontendOptions = {},
+  ) {
     const normalized = normalize(resolve(path));
     const previousDeps = this.#dependencies.get(normalized) ?? new Set<string>();
     for (const dep of previousDeps) this.#dependents.get(dep)?.delete(normalized);
 
-    const deps = await directDependencies(normalized, sourceOverrides);
+    const deps = await directDependencies(normalized, sourceOverrides, options);
     this.#dependencies.set(normalized, deps);
     for (const dep of deps) {
       const parents = this.#dependents.get(dep) ?? new Set<string>();
@@ -92,9 +102,10 @@ export class ProjectIndex {
 async function directDependencies(
   path: string,
   sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions = {},
 ): Promise<Set<string>> {
   try {
-    const graph = await loadModuleGraph(path, { sourceOverrides });
+    const graph = await loadModuleGraph(path, { ...options, sourceOverrides });
     const node = graph.nodes.get(graph.entry);
     return new Set(node?.imports.map((edge) => edge.path) ?? []);
   } catch {

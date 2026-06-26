@@ -1,0 +1,410 @@
+from "./types.wm" import {
+  Span, Token,
+  LetKeyword, Keyword, Identifier, Constructor, StringLiteral, Semicolon, Punctuation, EndOfFile,
+  ErrorSeverity, WarningSeverity, AutoFix, RecoveryOnly
+};
+from "./parser_support.wm" import {
+  ParserState, freshNode, addRecovery, addRecoveryWithPair
+};
+
+let isText = (token: Token, text: String) => {
+  token.text == text
+};
+
+let isKeywordText = (token: Token, text: String) => {
+  match(token.kind) {
+    Keyword => { token.text == text },
+    _ => { false },
+  }
+};
+
+let isBoundary = (token: Token) => {
+  match(token.kind) {
+    Semicolon => { true },
+    LetKeyword => { true },
+    EndOfFile => { true },
+    _ => {
+      isKeywordText(token, "from") ||
+      isKeywordText(token, "type") ||
+      isKeywordText(token, "record")
+    },
+  }
+};
+
+let isName = (token: Token) => {
+  match(token.kind) {
+    Identifier => { true },
+    Constructor => { true },
+    _ => { false },
+  }
+};
+
+let addMissingToken = (
+  state: ParserState,
+  subject: Number,
+  slot: String,
+  anchor: Number,
+  text: String,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse.import.missing-" ++ slot,
+    anchor,
+    "ParseImportDeclaration",
+    "ParseModule -> ParseImportDeclaration -> Require" ++ slot,
+    subject,
+    "import " ++ slot,
+    "required import boundary",
+    "synthesize missing " ++ slot,
+    nodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some(text),
+    [],
+  );
+  state2
+};
+
+let addMissingClause = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+) => {
+  let (pairId, state1) = freshNode(state);
+  let (openNodeId, state2) = freshNode(state1);
+  let (_, state3) = addRecoveryWithPair(
+    state2,
+    "parse.import.missing-clause-open-brace",
+    anchor,
+    "ParseImportClause",
+    "ParseModule -> ParseImportDeclaration -> ParseImportClause",
+    subject,
+    "import clause",
+    "missing import clause",
+    "synthesize empty named import clause",
+    openNodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some(" {"),
+    Some(pairId),
+    [],
+  );
+  let (closeNodeId, state4) = freshNode(state3);
+  let (_, state5) = addRecoveryWithPair(
+    state4,
+    "parse.import.missing-clause-close-brace",
+    anchor,
+    "ParseImportClause",
+    "ParseModule -> ParseImportDeclaration -> ParseImportClause",
+    subject,
+    "import clause",
+    "missing import clause",
+    "synthesize empty named import clause",
+    closeNodeId,
+    "Token",
+    ErrorSeverity,
+    RecoveryOnly,
+    None,
+    Some("}"),
+    Some(pairId),
+    [],
+  );
+  state5
+};
+
+let addMissingClauseClose = (
+  state: ParserState,
+  subject: Number,
+  anchor: Number,
+) => {
+  let (nodeId, state1) = freshNode(state);
+  let (_, state2) = addRecovery(
+    state1,
+    "parse.import.missing-clause-close-brace",
+    anchor,
+    "ParseImportClause",
+    "ParseModule -> ParseImportDeclaration -> ParseImportClause",
+    subject,
+    "closing import clause brace",
+    "import boundary",
+    "insert missing closing import clause brace",
+    nodeId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some("}"),
+    Some("}"),
+    [],
+  );
+  state2
+};
+
+let rec scanParenTarget = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  depth: Number,
+  lastEnd: Number,
+) => {
+  match(tokens) {
+    [] => {
+      (
+        lastEnd,
+        tokens,
+        addMissingToken(state, subject, "target-close-paren", lastEnd, ")"),
+      )
+    },
+    [token, ..rest] => {
+      if (isBoundary(token) || isKeywordText(token, "import")) {
+        (
+          lastEnd,
+          tokens,
+          addMissingToken(state, subject, "target-close-paren", lastEnd, ")"),
+        )
+      } else {
+        if (isText(token, "(")) {
+          scanParenTarget(state, subject, rest, depth + 1, token.span.end)
+        } else {
+          if (isText(token, ")")) {
+            if (depth <= 1) {
+              (token.span.end, rest, state)
+            } else {
+              scanParenTarget(state, subject, rest, depth - 1, token.span.end)
+            }
+          } else {
+            scanParenTarget(state, subject, rest, depth, token.span.end)
+          }
+        }
+      }
+    },
+  }
+};
+
+let recoverSource = (
+  state: ParserState,
+  subject: Number,
+  fromToken: Token,
+  tokens: List<Token>,
+) => {
+  match(tokens) {
+    [] => {
+      (
+        fromToken.span.end,
+        tokens,
+        false,
+        addMissingToken(state, subject, "source", fromToken.span.end, " \"\""),
+      )
+    },
+    [token, ..rest] => {
+      if (isKeywordText(token, "import") || isBoundary(token)) {
+        (
+          token.span.start,
+          tokens,
+          false,
+          addMissingToken(state, subject, "source", token.span.start, "\"\" "),
+        )
+      } else {
+        match(token.kind) {
+          StringLiteral => { (token.span.end, rest, false, state) },
+          _ => {
+            match(rest) {
+              [dot, member, ..afterMember] => {
+                if (
+                  isText(token, "js") && isText(dot, ".") &&
+                  (isText(member, "global") || isText(member, "module"))
+                ) {
+                  match(afterMember) {
+                    [open, ..afterOpen] => {
+                      if (isText(open, "(")) {
+                        let (end, afterTarget, state1) = scanParenTarget(
+                          state,
+                          subject,
+                          afterOpen,
+                          1,
+                          open.span.end,
+                        );
+                        (end, afterTarget, true, state1)
+                      } else {
+                        (member.span.end, afterMember, true, state)
+                      }
+                    },
+                    [] => { (member.span.end, afterMember, true, state) },
+                  }
+                } else {
+                  (token.span.end, rest, false, state)
+                }
+              },
+              _ => { (token.span.end, rest, false, state) },
+            }
+          },
+        }
+      }
+    },
+  }
+};
+
+let requireImportKeyword = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  sourceEnd: Number,
+) => {
+  match(tokens) {
+    [token, ..rest] => {
+      if (isKeywordText(token, "import")) {
+        (token.span.end, rest, state)
+      } else {
+        (
+          sourceEnd,
+          tokens,
+          addMissingToken(state, subject, "keyword", sourceEnd, " import "),
+        )
+      }
+    },
+    [] => {
+      (
+        sourceEnd,
+        tokens,
+        addMissingToken(state, subject, "keyword", sourceEnd, " import "),
+      )
+    },
+  }
+};
+
+let rec scanNamedClause = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  depth: Number,
+  lastEnd: Number,
+) => {
+  match(tokens) {
+    [] => { addMissingClauseClose(state, subject, lastEnd) },
+    [token, ..rest] => {
+      if (isBoundary(token)) {
+        addMissingClauseClose(state, subject, lastEnd)
+      } else {
+        if (isText(token, "{")) {
+          scanNamedClause(state, subject, rest, depth + 1, token.span.end)
+        } else {
+          if (isText(token, "}")) {
+            if (depth <= 1) {
+              state
+            } else {
+              scanNamedClause(state, subject, rest, depth - 1, token.span.end)
+            }
+          } else {
+            scanNamedClause(state, subject, rest, depth, token.span.end)
+          }
+        }
+      }
+    },
+  }
+};
+
+let rec skipClauseModifiers = (tokens: List<Token>) => {
+  match(tokens) {
+    [token, ..rest] => {
+      if (isText(token, "unsafe") || isKeywordText(token, "type")) {
+        skipClauseModifiers(rest)
+      } else {
+        tokens
+      }
+    },
+    [] => { tokens },
+  }
+};
+
+let recoverNamespaceAlias = (
+  state: ParserState,
+  subject: Number,
+  star: Token,
+  tokens: List<Token>,
+  isJs: Bool,
+) => {
+  match(tokens) {
+    [asToken, ..afterAs] => {
+      if (isText(asToken, "as")) {
+        match(afterAs) {
+          [alias, .._] => {
+            if (isName(alias)) {
+              state
+            } else {
+              addMissingToken(state, subject, "alias", asToken.span.end, " _")
+            }
+          },
+          [] => { addMissingToken(state, subject, "alias", asToken.span.end, " _") },
+        }
+      } else {
+        if (isJs) {
+          let state1 = addMissingToken(state, subject, "as", star.span.end, " as ");
+          addMissingToken(state1, subject, "alias", star.span.end, "_")
+        } else {
+          state
+        }
+      }
+    },
+    [] => {
+      if (isJs) {
+        let state1 = addMissingToken(state, subject, "as", star.span.end, " as ");
+        addMissingToken(state1, subject, "alias", star.span.end, "_")
+      } else {
+        state
+      }
+    },
+  }
+};
+
+let recoverClause = (
+  state: ParserState,
+  subject: Number,
+  tokens: List<Token>,
+  anchor: Number,
+  isJs: Bool,
+) => {
+  let clauseTokens = skipClauseModifiers(tokens);
+  match(clauseTokens) {
+    [] => { addMissingClause(state, subject, anchor) },
+    [token, ..rest] => {
+      if (isBoundary(token)) {
+        addMissingClause(state, subject, token.span.start)
+      } else {
+        if (isText(token, "{")) {
+          scanNamedClause(state, subject, rest, 1, token.span.end)
+        } else {
+          if (isText(token, "*")) {
+            recoverNamespaceAlias(state, subject, token, rest, isJs)
+          } else {
+            state
+          }
+        }
+      }
+    },
+  }
+};
+
+let addImportRecoveries = (
+  state: ParserState,
+  subject: Number,
+  fromToken: Token,
+  tokens: List<Token>,
+) => {
+  let (sourceEnd, afterSource, isJs, state1) = recoverSource(
+    state,
+    subject,
+    fromToken,
+    tokens,
+  );
+  let (importEnd, afterImport, state2) = requireImportKeyword(
+    state1,
+    subject,
+    afterSource,
+    sourceEnd,
+  );
+  recoverClause(state2, subject, afterImport, importEnd, isJs)
+};

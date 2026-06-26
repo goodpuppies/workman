@@ -4,6 +4,10 @@ from "./dto.wm" import {
   lexRoundTrip as lexRoundTripInternal,
   parseStructural as parseStructuralInternal
 };
+from "./semantic_dto.wm" import {
+  SemanticDeclDto, SemanticProjectionDto,
+  projectSemantic as projectSemanticInternal
+};
 
 -- The entry module owns the stable JavaScript ABI. Internal WM representations
 -- stay behind this wrapper even while the package evolves.
@@ -13,4 +17,8 @@ let lexRoundTrip = (source: String) => {
 
 let parseStructural = (source: String) => {
   parseStructuralInternal(source)
+};
+
+let projectSemantic = (source: String) => {
+  projectSemanticInternal(source)
 };

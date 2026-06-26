@@ -1,4 +1,7 @@
+import { pathToFileURL } from "node:url";
+import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { DocumentStore } from "./documents.ts";
+import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { hoverAt } from "./hover.ts";
 import { type InitializeParams, ProjectIndex } from "./project_index.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./rpc.ts";
@@ -6,6 +9,8 @@ import { validateUri } from "./validation.ts";
 
 const documents = new DocumentStore();
 const projectIndex = new ProjectIndex();
+const frontendOptions = frontendOptionsFromEnv();
+const frontendV2ParseCache = new FrontendV2ParseCache();
 const lastPublishedUrisByEntry = new Map<string, Set<string>>();
 let isShutdown = false;
 let writeChain: Promise<void> = Promise.resolve();
@@ -37,7 +42,7 @@ export async function runServer() {
 async function handleMessage(message: RpcMessage) {
   if (message.method === "initialize") {
     projectIndex.rememberWorkspaceRoots(message.params as InitializeParams | undefined);
-    await projectIndex.initialize(documents.sourceOverrides());
+    await projectIndex.initialize(documents.sourceOverrides(), frontendOptions);
     await respond(message.id, {
       capabilities: {
         textDocumentSync: {
@@ -82,6 +87,7 @@ async function handleMessage(message: RpcMessage) {
       params.textDocument.uri,
       params.position,
       documents.sourceOverrides(),
+      frontendOptions,
     );
     log(
       "hover result",
@@ -97,6 +103,7 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didClose") {
     const params = message.params as DidCloseParams;
     documents.close(params.textDocument.uri);
+    frontendV2ParseCache.delete(params.textDocument.uri);
     await notify("textDocument/publishDiagnostics", {
       uri: params.textDocument.uri,
       diagnostics: [],
@@ -113,7 +120,10 @@ async function publishValidation(uri: string) {
   const started = Date.now();
   const validationKey = projectIndex.fallbackUri(uri);
   log("validate start", uri);
-  const results = await validateUri(uri, documents.sourceOverrides());
+  const results = await validateUri(uri, documents.sourceOverrides(), frontendOptions, {
+    frontendV2ParseCache,
+    documentVersion: (diagnosticUri) => documents.version(diagnosticUri),
+  });
   const currentUris = new Set(results.map((result) => result.uri));
   await Promise.all(
     results.map((result) => publishDiagnostics(result.uri, result.diagnostics)),
@@ -127,7 +137,11 @@ async function publishValidation(uri: string) {
 
 async function publishAffectedValidation(uri: string) {
   const started = Date.now();
-  const uris = await projectIndex.affectedUrisForChange(uri, documents.sourceOverrides());
+  const uris = await projectIndex.affectedUrisForChange(
+    uri,
+    documents.sourceOverrides(),
+    frontendOptions,
+  );
   if (uris.length === 0) uris.push(projectIndex.fallbackUri(uri));
   log("affected validate start", uri, `files=${uris.length}`);
   for (const affectedUri of uris) await publishValidation(affectedUri);
@@ -139,6 +153,7 @@ async function publishWatchedFileValidation(uris: string[]) {
   const affectedUris = await projectIndex.affectedUrisForWatchedFiles(
     uris,
     documents.sourceOverrides(),
+    frontendOptions,
   );
   log("watched validate start", `changed=${uris.length}`, `files=${affectedUris.length}`);
   for (const uri of affectedUris) await publishValidation(uri);
@@ -219,6 +234,21 @@ function summarize(message: RpcMessage): string {
 
 function showError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+function frontendOptionsFromEnv(): CompilerFrontendOptions {
+  const mode = Deno.env.get("WM_MINI_FRONTEND");
+  const frontend = mode === "v2" || mode === "compare" || mode === "v1" ? mode : undefined;
+  const modulePath = Deno.env.get("WM_MINI_FRONTEND_V2_MODULE")?.trim();
+  return {
+    ...(frontend ? { frontend } : {}),
+    ...(modulePath ? { frontendV2ModuleUrl: pathToFileUrl(modulePath) } : {}),
+  };
+}
+
+function pathToFileUrl(path: string): URL | string {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) return path;
+  return pathToFileURL(path.startsWith("/") ? path : `${Deno.cwd()}/${path}`);
 }
 
 type DidOpenParams = {

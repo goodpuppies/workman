@@ -1,5 +1,6 @@
 import { normalize, resolve } from "node:path";
 import { analyzeFile, ModuleAnalysisError } from "../compiler.ts";
+import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import {
   classifyDiagnostic,
   diagnosticNotes,
@@ -10,8 +11,11 @@ import {
   FrontendDiagnosticError,
   renderDiagnosticSummary,
 } from "../diagnostics.ts";
+import { structuralDiagnostics } from "../frontend_v2_diagnostics.ts";
+import { type FrontendV2, loadFrontendV2 } from "../frontend_v2_loader.ts";
 import type { InferResult } from "../infer.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
+import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
@@ -37,21 +41,43 @@ export type LspRelatedInformation = {
   message: string;
 };
 
+export type ValidationOptions = {
+  frontendV2ParseCache?: FrontendV2ParseCache;
+  documentVersion?: (uri: string) => number | undefined;
+};
+
 export async function validateUri(
   uri: string,
   sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions = {},
+  validationOptions: ValidationOptions = {},
 ): Promise<ValidationResult[]> {
   const entryPath = normalize(resolve(fileUriToPath(uri)));
   try {
-    const analysis = await analyzeFile(entryPath, { sourceOverrides });
-    return analysis.graph.order.map((path) => ({
-      uri: pathToFileUri(path),
-      diagnostics: diagnosticsFor(
-        analysis.results.get(path),
-        analysis.graph.nodes.get(path)?.source ?? "",
-        pathToFileUri(path),
-      ),
-    }));
+    const analysis = await analyzeFile(entryPath, { ...options, sourceOverrides });
+    const frontendV2 = options.frontend === "v2"
+      ? await loadFrontendV2(options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl)
+      : undefined;
+    return analysis.graph.order.map((path) => {
+      const diagnosticUri = pathToFileUri(path);
+      const source = analysis.graph.nodes.get(path)?.source ?? "";
+      return {
+        uri: diagnosticUri,
+        diagnostics: [
+          ...structuralDiagnosticsFor(
+            frontendV2,
+            source,
+            diagnosticUri,
+            validationOptions,
+          ),
+          ...diagnosticsFor(
+            analysis.results.get(path),
+            source,
+            diagnosticUri,
+          ),
+        ],
+      };
+    });
   } catch (error) {
     if (error instanceof ModuleAnalysisError) {
       const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
@@ -88,6 +114,28 @@ export async function validateUri(
       ],
     }];
   }
+}
+
+const defaultFrontendV2ModuleUrl = new URL(
+  "../../tooling/frontend-v2/frontend-v2.generated.mjs",
+  import.meta.url,
+);
+
+function structuralDiagnosticsFor(
+  frontend: Pick<FrontendV2, "parseStructural"> | undefined,
+  source: string,
+  uri: string,
+  validationOptions: ValidationOptions,
+): LspDiagnostic[] {
+  if (!frontend) return [];
+  const result = validationOptions.frontendV2ParseCache?.structural(
+    uri,
+    source,
+    validationOptions.documentVersion?.(uri),
+    frontend,
+  ) ?? frontend.parseStructural(source);
+  return structuralDiagnostics(result, source)
+    .map((diagnostic) => lspDiagnostic(diagnostic, source, uri));
 }
 
 function diagnosticsFor(result: InferResult | undefined, source = "", uri = ""): LspDiagnostic[] {

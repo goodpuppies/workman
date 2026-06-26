@@ -100,8 +100,8 @@ Deno.test("optional canonical marks stay out of default diagnostics", () => {
     result.marks.map((mark) => [mark.code, mark.repairClass]),
     [
       ["parse.lambda.optional-unit-params", "optionalCanonical"],
-      ["parse.lambda.missing-body-open-block", "recoveryOnly"],
-      ["parse.lambda.missing-body-close-block", "recoveryOnly"],
+      ["parse.lambda.missing-body-open-block", "autoFix"],
+      ["parse.lambda.missing-body-close-block", "autoFix"],
     ],
   );
   assertEquals(
@@ -121,6 +121,28 @@ Deno.test("optional canonical marks stay out of default diagnostics", () => {
     ["parse.lambda.missing-body-close-block", "warning"],
   ]);
   assertEquals(diagnostics[0].support.entries[0].kind, "recovery");
+});
+
+Deno.test("recovered match arm blocks expose separate safe brace repairs", () => {
+  const source = "let value = match(input) => { Some(x) => x };";
+  const result = frontend.parseStructural(source);
+  const diagnostics = structuralDiagnostics(result, source);
+
+  assertEquals(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    [
+      "parse.match.missing-arm-body-open-block",
+      "parse.match.missing-arm-body-close-block",
+    ],
+  );
+  assertEquals(
+    diagnostics.map((diagnostic) => diagnostic.repairs[0]?.edits[0].text),
+    ["{", "}"],
+  );
+  assertEquals(
+    diagnostics.map((diagnostic) => diagnostic.repairs[0]?.applicability),
+    ["safe", "safe"],
+  );
 });
 
 async function buildFrontend(): Promise<URL> {

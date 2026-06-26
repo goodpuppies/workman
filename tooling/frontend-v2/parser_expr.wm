@@ -33,49 +33,43 @@ let isExpressionBoundaryToken = (token: Token) => {
   }
 };
 
-let isOpenPunctuation = (token: Token) => {
+let isEndOfFileToken = (token: Token) => {
   match(token.kind) {
-    Punctuation => {
-      token.text == "(" || token.text == "{" || token.text == "["
-    },
+    EndOfFile => { true },
     _ => { false },
   }
 };
 
-let isClosePunctuation = (token: Token) => {
+let expressionBraceDepthAfter = (token: Token, depth: Number) => {
   match(token.kind) {
     Punctuation => {
-      token.text == ")" || token.text == "}" || token.text == "]"
+      if (token.text == "{") {
+        depth + 1
+      } else {
+        if (token.text == "}" && depth > 0) { depth - 1 } else { depth }
+      }
     },
-    _ => { false },
-  }
-};
-
-let expressionDepthAfter = (token: Token, depth: Number) => {
-  if (isOpenPunctuation(token)) {
-    depth + 1
-  } else {
-    if (isClosePunctuation(token) && depth > 0) {
-      depth - 1
-    } else {
-      depth
-    }
+    _ => { depth },
   }
 };
 
 let rec consumeExpressionTail = (
   state: ParserState,
   lastEnd: Number,
-  depth: Number,
+  braceDepth: Number,
 ) => {
   match(state.remaining) {
     [] => { (lastEnd, state) },
     [token, ..rest] => {
-      if (depth == 0 && isExpressionBoundaryToken(token)) {
+      if (isEndOfFileToken(token) || (braceDepth == 0 && isExpressionBoundaryToken(token))) {
         (lastEnd, state)
       } else {
         let next = advance(state, rest);
-        consumeExpressionTail(next, token.span.end, expressionDepthAfter(token, depth))
+        consumeExpressionTail(
+          next,
+          token.span.end,
+          expressionBraceDepthAfter(token, braceDepth),
+        )
       }
     },
   }

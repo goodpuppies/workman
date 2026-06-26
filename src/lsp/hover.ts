@@ -10,6 +10,7 @@ import type {
   RecordPatternField,
 } from "../ast.ts";
 import { analyzeFile } from "../compiler.ts";
+import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import {
   contextualizeDelayedCallbacks,
   resolveDelayedFfiElaboration,
@@ -22,6 +23,7 @@ import { type AstNode, lineColToOffset, lineStarts } from "../source.ts";
 import { standardInferOptions } from "../standard_library.ts";
 import { instantiate, instantiateRecordFields, prune, type Scheme, type Ty } from "../types.ts";
 import type { TypeFact } from "../infer/type_facts.ts";
+import { showHoverType, withoutReceiverParam } from "./hover_type_display.ts";
 import { fileUriToPath } from "./uri.ts";
 
 export type LspHover = {
@@ -32,9 +34,10 @@ export async function hoverAt(
   uri: string,
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions = {},
 ): Promise<LspHover | null> {
   const entryPath = fileUriToPath(uri);
-  const analysis = await analyzeForHover(entryPath, sourceOverrides);
+  const analysis = await analyzeForHover(entryPath, sourceOverrides, options);
   if (!analysis) return null;
   const node = analysis.graph.nodes.get(analysis.graph.entry);
   const result = analysis.results.get(analysis.graph.entry);
@@ -92,20 +95,22 @@ function hoverForTarget(target: Target, result: InferResult): LspHover | null {
 async function analyzeForHover(
   entryPath: string,
   sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions = {},
 ): Promise<Awaited<ReturnType<typeof analyzeFile>> | null> {
   try {
-    return await analyzeFile(entryPath, { sourceOverrides });
+    return await analyzeFile(entryPath, { ...options, sourceOverrides });
   } catch {
-    return await analyzePartialForHover(entryPath, sourceOverrides);
+    return await analyzePartialForHover(entryPath, sourceOverrides, options);
   }
 }
 
 async function analyzePartialForHover(
   entryPath: string,
   sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions = {},
 ): Promise<Awaited<ReturnType<typeof analyzeFile>> | null> {
   try {
-    const graph = await loadModuleGraph(entryPath, { sourceOverrides });
+    const graph = await loadModuleGraph(entryPath, { ...options, sourceOverrides });
     const inferOptions = await standardInferOptions();
     const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
     for (const node of graph.nodes.values()) {
@@ -164,18 +169,6 @@ function generatedFfiHover(name: string, scheme: Scheme | undefined): LspHover |
   return hoverCode(`${name}: ${showHoverType(withoutReceiverParam(instantiate(scheme)))}`);
 }
 
-function withoutReceiverParam(type: Ty): Ty {
-  const target = prune(type);
-  if (target.tag !== "fn") return type;
-  if (target.params.length === 1) {
-    const param = prune(target.params[0]);
-    if (param.tag === "tuple") {
-      return { ...target, params: [{ ...param, items: param.items.slice(1) }] };
-    }
-  }
-  return { ...target, params: target.params.slice(1) };
-}
-
 function factHover(name: string, fact: TypeFact): LspHover | null {
   const instantiated = fact.instantiated;
   const general = fact.general?.type;
@@ -189,43 +182,8 @@ function factHover(name: string, fact: TypeFact): LspHover | null {
   return hoverCode(`${name}\ntype: ${instantiatedText}\ngeneral: ${generalText}`);
 }
 
-function showHoverType(type: Ty): string {
-  const names = new Map<number, string>();
-  let n = 0;
-  const nameOf = (id: number) =>
-    names.get(id) ?? (names.set(id, `'${String.fromCharCode(97 + n++)}`), names.get(id)!);
-  const go = (target: Ty): string => {
-    const resolved = prune(target);
-    switch (resolved.tag) {
-      case "var":
-        return resolved.name ?? nameOf(resolved.id);
-      case "ffi":
-        return `?ffi#${resolved.id}:${resolved.binding ?? resolved.path.join(".")}`;
-      case "prim":
-        return resolved.name;
-      case "tuple":
-        return `(${resolved.items.map(go).join(", ")})`;
-      case "fn":
-        return `(${resolved.params.map(go).join(", ")}) => ${go(resolved.result)}`;
-      case "struct":
-        return `{ ${
-          resolved.fields.map((field) => `${field.name}: ${go(field.type)}`).join(", ")
-        } }`;
-      case "named": {
-        const name = isGeneratedDeepRecordName(resolved.name) ? "Js.Object" : resolved.name;
-        return resolved.args.length ? `${name}<${resolved.args.map(go).join(", ")}>` : name;
-      }
-    }
-  };
-  return go(type);
-}
-
 function hoverCode(value: string): LspHover {
   return { contents: { kind: "markdown", value: `\`\`\`wm\n${value}\n\`\`\`` } };
-}
-
-function isGeneratedDeepRecordName(name: string): boolean {
-  return name.startsWith("__Deep_");
 }
 
 type Target =
