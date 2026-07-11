@@ -3,17 +3,23 @@ import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artif
 import type { BindingId } from "./ids.ts";
 import { basisCtorJsName } from "../basis.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
-import { emitJsImportDecl, resetJsImportEmitter } from "./emit_js_import.ts";
+import {
+  emitJsImportDecl,
+  resetJsImportEmitter,
+  setWorkerSpecifiers,
+} from "./emit_js_import.ts";
 import { emitJsIdentifier as id } from "./emit_name.ts";
 
 export type CoreEmitTarget = "executable" | "library";
 
 export type CoreEmitOptions = {
   target?: CoreEmitTarget;
+  workerSpecifiers?: Map<string, string>;
 };
 
 export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions = {}): string {
   resetEmitterState();
+  setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
   const target = options.target ?? "executable";
   return [

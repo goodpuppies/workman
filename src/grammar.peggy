@@ -161,6 +161,8 @@ JsTarget
     { return at({ kind: "JsGlobalRoot" }, location()); }
   / "js.module" _ "(" _ specifier:String _ ")"
     { return at({ kind: "JsModule", specifier: specifier.value }, location()); }
+  / "js.worker" _ "(" _ specifier:String _ ")"
+    { return at({ kind: "JsWorker", specifier: specifier.value }, location()); }
 
 JsImportClause
   = unsafe:("unsafe" __)? clause:JsImportClauseBody

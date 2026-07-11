@@ -1,4 +1,11 @@
-import { analyzeFile, compileFile, compileLibraryFile, ModuleAnalysisError } from "./compiler.ts";
+import {
+  analyzeFile,
+  compileFile,
+  compileFileArtifacts,
+  compileLibraryFile,
+  ModuleAnalysisError,
+} from "./compiler.ts";
+import { dirname } from "node:path";
 import {
   formatDiagnostic,
   formatDiagnosticError,
@@ -96,9 +103,17 @@ async function checkCommand(args: string[]): Promise<number> {
 async function compileCommand(args: string[]): Promise<number> {
   const [input, output] = args;
   if (!input) return missingInput("compile");
-  const js = await compileFile(input);
-  if (output) await Deno.writeTextFile(output, js);
-  else console.log(js);
+  if (!output) {
+    console.log(await compileFile(input));
+    return 0;
+  }
+  const artifacts = await compileFileArtifacts(input);
+  const outputDir = dirname(output);
+  await Deno.mkdir(outputDir, { recursive: true });
+  for (const artifact of artifacts) {
+    const target = artifact.kind === "entry" ? output : `${outputDir}/${artifact.path}`;
+    await Deno.writeTextFile(target, artifact.code);
+  }
   return 0;
 }
 

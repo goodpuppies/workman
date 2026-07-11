@@ -21,7 +21,11 @@ export class ParseError extends Error {
   }
 }
 
-export async function parse(source: string, surface: Surface = "workman", filePath?: string): Promise<Module> {
+export async function parse(
+  source: string,
+  surface: Surface = "workman",
+  filePath?: string,
+): Promise<Module> {
   const parser = await loadParser(surface);
   try {
     const module = parser.parse(source) as Module;
@@ -29,7 +33,10 @@ export async function parse(source: string, surface: Surface = "workman", filePa
     return module;
   } catch (error) {
     if (error && typeof error === "object" && "location" in error && "message" in error) {
-      const err = error as { location: { start: { line: number; column: number; offset: number } }; message: string };
+      const err = error as {
+        location: { start: { line: number; column: number; offset: number } };
+        message: string;
+      };
       const { line, column } = err.location.start;
       const offset = err.location.start.offset;
       throw new ParseError(err.message, source, {

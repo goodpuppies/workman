@@ -1,4 +1,4 @@
-import { compileFile, type CompileOptions } from "./compiler.ts";
+import { compileFileArtifacts, type CompileOptions } from "./compiler.ts";
 import { dirname, resolve } from "node:path";
 
 export type RunOptions = CompileOptions & {
@@ -18,13 +18,17 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
   const dir = await Deno.makeTempDir({ dir: dirname(inputPath), prefix: ".wm-mini-" });
   const output = `${dir}/main.mjs`;
   try {
-    const js = await compileFile(inputPath, options);
-    await Deno.writeTextFile(output, js);
+    const artifacts = await compileFileArtifacts(inputPath, options);
+    const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
+    if (!entry) throw new Error("compiler produced no executable artifact");
+    for (const artifact of artifacts) {
+      await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
+    }
     const command = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "-A",
-        ...runtimeFlags(js),
+        ...runtimeFlags(entry.code),
         output,
         ...(options.args ?? []),
       ],

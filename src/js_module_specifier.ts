@@ -18,7 +18,12 @@ export function runtimeJsModuleSpecifier(specifier: string): string {
 }
 
 function resolveJsTarget(target: JsTarget, fromPath: string): JsTarget {
-  if (target.kind !== "JsModule" || !isLocalPathSpecifier(target.specifier)) return target;
+  if (
+    (target.kind !== "JsModule" && target.kind !== "JsWorker") ||
+    !isLocalPathSpecifier(target.specifier)
+  ) {
+    return target;
+  }
   return {
     ...target,
     specifier: resolve(dirname(normalizePathSpecifier(fromPath)), target.specifier),

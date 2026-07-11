@@ -1,4 +1,5 @@
 import type { Module } from "./ast.ts";
+import { basename, dirname, relative } from "node:path";
 import {
   type CoreProgram,
   coreProgramFromAnalysis,
@@ -38,6 +39,11 @@ import { standardInferOptions } from "./standard_library.ts";
 import { assertCompilerFrontendMode } from "./frontend_mode.ts";
 
 export type CompileOptions = ModuleGraphOptions;
+export type CompileArtifact = {
+  path: string;
+  code: string;
+  kind: "entry" | "worker";
+};
 
 export type VirtualCompileOptions = CompileOptions & {
   virtualFs: VirtualFileSystem;
@@ -130,6 +136,39 @@ export async function compileFile(input: string, options: CompileOptions = {}): 
   return emitCoreProgram((await coreFile(input, options)).core);
 }
 
+export async function compileFileArtifacts(
+  input: string,
+  options: CompileOptions = {},
+): Promise<CompileArtifact[]> {
+  const entry = await Deno.realPath(input);
+  const outputNames = new Map<string, string>([[entry, "main.mjs"]]);
+  const usedNames = new Set(["main.mjs"]);
+  const artifacts: CompileArtifact[] = [];
+  const emitted = new Set<string>();
+
+  async function emitOne(path: string, kind: CompileArtifact["kind"]) {
+    if (emitted.has(path)) return;
+    emitted.add(path);
+    const { core } = await coreFile(path, options);
+    for (const worker of workerTargets(core)) {
+      if (!outputNames.has(worker)) {
+        outputNames.set(worker, uniqueWorkerOutputName(worker, usedNames));
+      }
+    }
+    for (const worker of workerTargets(core)) await emitOne(worker, "worker");
+    artifacts.push({
+      path: outputNames.get(path)!,
+      code: emitCoreProgram(core, {
+        workerSpecifiers: relativeWorkerSpecifiers(outputNames.get(path)!, outputNames),
+      }),
+      kind,
+    });
+  }
+
+  await emitOne(entry, "entry");
+  return artifacts;
+}
+
 export async function compileLibraryFile(
   input: string,
   options: CompileOptions = {},
@@ -147,6 +186,44 @@ export async function coreFile(
 ): Promise<CoreFileResult> {
   const { graph, results } = await analyzeFile(input, options);
   return { graph, results, core: coreProgramFromAnalysis(graph, results) };
+}
+
+function workerTargets(core: CoreProgram): string[] {
+  const targets: string[] = [];
+  for (const artifact of core.modules.values()) {
+    for (const decl of artifact.module.decls) {
+      if (decl.kind === "CoreJsImport" && decl.target.kind === "JsWorker") {
+        targets.push(decl.target.specifier);
+      }
+    }
+  }
+  return [...new Set(targets)];
+}
+
+function uniqueWorkerOutputName(path: string, usedNames: Set<string>): string {
+  const stem = basename(path).replace(/\.wm$/i, "") || "worker";
+  const base = `${stem}.worker.mjs`;
+  if (!usedNames.has(base)) {
+    usedNames.add(base);
+    return base;
+  }
+  let index = 2;
+  while (usedNames.has(`${stem}.${index}.worker.mjs`)) index += 1;
+  const name = `${stem}.${index}.worker.mjs`;
+  usedNames.add(name);
+  return name;
+}
+
+function relativeWorkerSpecifiers(
+  fromOutput: string,
+  outputNames: Map<string, string>,
+): Map<string, string> {
+  const fromDir = dirname(fromOutput);
+  return new Map([...outputNames].map(([sourcePath, outputPath]) => {
+    const relativePath = relative(fromDir, outputPath).replaceAll("\\", "/");
+    const specifier = relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+    return [sourcePath, specifier];
+  }));
 }
 
 export async function analyzeFile(

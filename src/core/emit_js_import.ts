@@ -10,6 +10,10 @@ type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
   name: string;
   setup: string;
 } | {
+  kind: "worker";
+  name: string;
+  setup: string;
+} | {
   kind: "moduleConstructor";
   moduleName: string;
   memberName: string;
@@ -23,14 +27,20 @@ type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
 };
 
 let jsImportTemp = 0;
+let workerSpecifiers = new Map<string, string>();
 
 export function resetJsImportEmitter(): void {
   jsImportTemp = 0;
 }
 
+export function setWorkerSpecifiers(specifiers: Map<string, string> | undefined): void {
+  workerSpecifiers = specifiers ?? new Map();
+}
+
 export function emitJsImportDecl(decl: CoreJsImport): string[] {
   const target = jsTargetRef(decl.target);
-  const prefix: string[] = target.kind === "module" || target.kind === "moduleConstructor"
+  const prefix: string[] = target.kind === "module" || target.kind === "moduleConstructor" ||
+      target.kind === "worker"
     ? [target.setup]
     : [];
   if (decl.clause.kind === "Namespace") {
@@ -149,6 +159,19 @@ function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
       });`,
     };
   }
+  if (target.kind === "JsWorker") {
+    const name = `__wm_js_worker_${jsImportTemp++}`;
+    const specifier = workerSpecifiers.get(target.specifier) ?? fallbackWorkerSpecifier(
+      target.specifier,
+    );
+    return {
+      kind: "worker",
+      name,
+      setup: `const ${name} = Object.freeze({ url: new URL(${
+        JSON.stringify(specifier)
+      }, import.meta.url).href, specifier: ${JSON.stringify(specifier)} });`,
+    };
+  }
   if (target.kind === "JsReceiver") return { kind: "receiver", path: target.path };
   if (target.kind === "JsConstructor") {
     const moduleCtor = parseModuleConstructorPath(target.path);
@@ -177,6 +200,7 @@ function jsMemberRef(target: JsTargetRef, member: string): string {
     return `__wm_js_member(${JSON.stringify(target.path)} + "." + ${member})`;
   }
   if (target.kind === "module") return `__wm_js_member_obj(${target.name}, ${member})`;
+  if (target.kind === "worker") return `__wm_js_member_obj(${target.name}, ${member})`;
   if (target.kind === "moduleConstructor") {
     return `(...__wm_ctor_args) => new (${target.moduleName}[${
       JSON.stringify(target.memberName)
@@ -188,12 +212,17 @@ function jsMemberRef(target: JsTargetRef, member: string): string {
 
 function jsNamespaceRef(target: JsTargetRef): string {
   if (target.kind === "module") return target.name;
+  if (target.kind === "worker") return target.name;
   if (target.kind === "global") {
     return target.path.length === 0
       ? "globalThis"
       : `__wm_js_global(${JSON.stringify(target.path)})`;
   }
   return "{}";
+}
+
+function fallbackWorkerSpecifier(specifier: string): string {
+  return specifier.replace(/\.wm$/i, ".mjs");
 }
 
 function parseModuleConstructorPath(

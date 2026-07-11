@@ -1,5 +1,13 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkFile, checkSource, checkVirtual, compile, compileFile } from "../src/compiler.ts";
+import {
+  checkFile,
+  checkSource,
+  checkVirtual,
+  compile,
+  compileFile,
+  compileFileArtifacts,
+} from "../src/compiler.ts";
+import { runFile } from "../src/run.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("supports typed JS namespace imports", async () => {
@@ -94,6 +102,160 @@ Deno.test("resolves local JS module imports relative to source file", async () =
   assertStringIncludes(js, `/helper.ts")`);
 });
 
+Deno.test("reflects JSR module imports", async () => {
+  const result = await checkSource(`
+    from js.module("jsr:@std/path@^1.0.9") import { basename };
+    let file = basename("/tmp/x.txt");
+  `);
+  const js = await compile(`
+    from js.module("jsr:@std/path@^1.0.9") import { basename };
+    let file = basename("/tmp/x.txt");
+  `);
+
+  expectBinding(result.env, "file", { type: "Result<String, Js.Error>", vars: 0 });
+  assertStringIncludes(js, `await import("jsr:@std/path@^1.0.9")`);
+});
+
+Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/deno.json`,
+    JSON.stringify({ imports: { "std-path": "jsr:@std/path@^1.0.9" } }),
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("std-path") import { basename };
+      let file = basename("/tmp/x.txt");
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = results.get(input);
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "file", { type: "Result<String, Js.Error>", vars: 0 });
+});
+
+Deno.test("resolves import-map aliases during delayed reflection independent of process cwd", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/deno.json`,
+    JSON.stringify({ imports: { "sf-local": "./service.ts" } }),
+  );
+  await Deno.writeTextFile(
+    `${dir}/service.ts`,
+    `
+      export class Service {
+        async create(file: string): Promise<{ file: string }> {
+          return { file };
+        }
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("sf-local") import { Service };
+      let app = match(Service.new()) {
+        Ok(service) => {
+          service.create("worker.mjs")
+        },
+        Err(error) => {
+          Task.fail(error)
+        },
+      };
+    `,
+  );
+
+  const previous = Deno.cwd();
+  try {
+    Deno.chdir("/");
+    const results = await checkFile(input);
+    const result = results.get(input);
+    if (!result) throw new Error("missing main result");
+    expectBinding(result.env, "app", { type: "Task<Js.Object, Js.Error>", vars: 0 });
+  } finally {
+    Deno.chdir(previous);
+  }
+});
+
+Deno.test("emits Workman worker targets as sibling artifacts", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(`${dir}/worker.wm`, `let main = () => { void };\n`);
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.worker("./worker.wm") import { url } as AppWorker;
+      let workerUrl = AppWorker.url;
+    `,
+  );
+
+  const artifacts = await compileFileArtifacts(input);
+  const entry = artifacts.find((artifact) => artifact.kind === "entry");
+  const worker = artifacts.find((artifact) => artifact.kind === "worker");
+
+  assertEquals(artifacts.map((artifact) => artifact.path).sort(), [
+    "main.mjs",
+    "worker.worker.mjs",
+  ]);
+  if (!entry || !worker) throw new Error("missing worker artifacts");
+  assertStringIncludes(entry.code, `new URL("./worker.worker.mjs", import.meta.url).href`);
+  assertStringIncludes(worker.code, `await main_`);
+});
+
+Deno.test("runs generated Workman workers", async () => {
+  const dir = await Deno.makeTempDir();
+  const marker = `${dir}/ready.txt`;
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/worker_harness.ts`,
+    `
+      export async function startAndWait(url: string, path: string): Promise<string> {
+        const worker = new Worker(url, { type: "module" });
+        for (let index = 0; index < 100; index++) {
+          try {
+            const text = await Deno.readTextFile(path);
+            worker.terminate();
+            return text;
+          } catch {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+        }
+        worker.terminate();
+        return await Deno.readTextFile(path);
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    `${dir}/worker.wm`,
+    `
+      from js.global("Deno") import unsafe { writeTextFileSync: (String, String) => Void };
+      let main = () => {
+        writeTextFileSync(${JSON.stringify(marker)}, "ready")
+      };
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.worker("./worker.wm") import { url } as AppWorker;
+      from js.module("./worker_harness.ts") import { startAndWait };
+      let main = () => {
+        startAndWait(AppWorker.url, ${JSON.stringify(marker)})
+      };
+    `,
+  );
+
+  const result = await runFile(input, { stdout: "piped", stderr: "piped" });
+
+  assertEquals(result.code, 0);
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+  assertEquals(await Deno.readTextFile(marker), "ready");
+});
+
 Deno.test("reflects local JS module namespace imports", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
@@ -133,6 +295,59 @@ Deno.test("reflects constructor-valued JS module exports through new member", as
   const result = [...results.values()][0];
   if (!result) throw new Error("missing main result");
   expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>", vars: 0 });
+});
+
+Deno.test("reflects static methods on constructor-valued JS module exports", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/thing.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `export class Thing { static greet(name: string): string { return \`hi \${name}\`; } }\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./thing.ts") import { Thing };
+      let msg = Thing.greet("Ada");
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = [...results.values()][0];
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "Thing", { type: "Js.Object", vars: 0 });
+  expectBinding(result.env, "msg", { type: "Result<String, Js.Error>", vars: 0 });
+});
+
+Deno.test("emits imported class values with static members intact", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const helper = `${dir}/thing.ts`;
+  await Deno.writeTextFile(
+    helper,
+    `export class Thing { static greet(name: string): string { return \`hi \${name}\`; } }\n`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./thing.ts") import { Thing };
+      from js.global("console") import unsafe { log: (String) => Void } as console;
+
+      let main = () => {
+        match(Thing.greet("Ada")) {
+          Ok(message) => { console.log(message) },
+          Err(_) => { console.log("err") },
+        }
+      };
+    `,
+  );
+
+  const result = await runFile(input, { stdout: "piped", stderr: "piped" });
+
+  assertEquals(result.code, 0);
+  assertEquals(new TextDecoder().decode(result.stdout), "hi Ada\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
 Deno.test("reflects nested local JS module namespace receiver calls", async () => {

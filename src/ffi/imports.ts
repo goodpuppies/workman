@@ -31,6 +31,10 @@ export function collectFfiDecl(
     collectFfiTypeDecl(importedTypeRefs, decl);
     return;
   }
+  if (decl.target.kind === "JsWorker") {
+    collectWorkerFfiDecl(bindings, decl);
+    return;
+  }
   if (decl.clause.kind === "Namespace") {
     const namespaceRef = jsTargetNamespaceRef(decl.target);
     if (namespaceRef) importedRefs.set(decl.clause.alias, namespaceRef);
@@ -88,6 +92,7 @@ export function collectFfiDecl(
     const localName = spec.alias ?? spec.name;
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     const ref = reflected ? jsTargetMemberValueRef(decl.target, spec.name) : undefined;
+    if (reflected && ref) importedRefs.set(surfaceName, ref);
     const construct = ref ? jsConstructMember(ref) : undefined;
     if (construct && (decl.target.kind === "JsGlobal" || decl.target.kind === "JsModule")) {
       rememberConstructorResultRefs(construct, importedTypeRefs);
@@ -105,9 +110,6 @@ export function collectFfiDecl(
       ? { name: spec.name, type: spec.type }
       : jsTargetMember(decl.target, spec.name);
     if (!member) continue;
-    if (reflected) {
-      if (ref) importedRefs.set(surfaceName, ref);
-    }
     addVariants(
       bindings,
       surfaceName,
@@ -118,6 +120,49 @@ export function collectFfiDecl(
       spec.node,
     );
   }
+}
+
+function collectWorkerFfiDecl(
+  bindings: Map<string, FfiBinding>,
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+) {
+  const members = workerMembers();
+  if (decl.clause.kind === "Namespace") {
+    for (const member of members) {
+      addVariants(
+        bindings,
+        `${decl.clause.alias}.${member.name}`,
+        member.name,
+        decl.target,
+        memberVariants(member),
+        false,
+        decl.node,
+      );
+    }
+    return;
+  }
+  for (const spec of decl.clause.specs) {
+    const member = members.find((item) => item.name === spec.name);
+    if (!member) continue;
+    const localName = spec.alias ?? spec.name;
+    const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
+    addVariants(
+      bindings,
+      surfaceName,
+      spec.name,
+      decl.target,
+      memberVariants(spec.type ? { ...member, type: spec.type } : member),
+      false,
+      spec.node,
+    );
+  }
+}
+
+function workerMembers(): JsMemberType[] {
+  return [
+    { name: "url", type: { kind: "TName", name: "String", args: [] } },
+    { name: "specifier", type: { kind: "TName", name: "String", args: [] } },
+  ];
 }
 
 function isDeepImportSpec(spec: JsImportSpec): boolean {
@@ -290,17 +335,26 @@ export function generatedJsImports(
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
     const binding = bindings.get(surfaceName);
     if (decl.target.kind === "JsGlobalRoot" && !spec.type && !binding) return [];
-    if (!spec.type && !binding && bindings.has(`${surfaceName}.new`)) return [];
+    if (!spec.type && !binding && bindings.has(`${surfaceName}.new`)) {
+      if (options.selectedOnly) return [];
+      return [namedJsImportDecl(
+        decl,
+        [{ ...spec, type: { kind: "TName", name: "Js.Object", args: [] } }],
+        clauseNode,
+        { preserveAlias: true },
+      )];
+    }
     if (!binding) return options.selectedOnly ? [] : [namedJsImportDecl(decl, [spec], clauseNode)];
     const variants = binding.variants;
     const selectedVariants = variants.filter((variant) => selected.has(variant.internalName));
     if (selectedVariants.length === 0) {
-      if (variants.length === 1 && !decl.clause.alias) {
+      if (variants.length === 1) {
         if (options.selectedOnly) return [];
         return [namedJsImportDecl(
           decl,
           [{ ...spec, type: variants[0].type, fallible: variants[0].fallible }],
           clauseNode,
+          { preserveAlias: true },
         )];
       }
       return [];
@@ -346,10 +400,17 @@ function namedJsImportDecl(
   decl: Extract<Decl, { kind: "JsImportDecl" }>,
   specs: JsImportSpec[],
   node: Extract<Decl, { kind: "JsImportDecl" }>["clause"]["node"],
+  options: { preserveAlias?: boolean } = {},
 ): Extract<Decl, { kind: "JsImportDecl" }> {
   return {
     ...decl,
-    clause: { kind: "Named", specs, node },
+    clause: {
+      kind: "Named",
+      specs,
+      alias: options.preserveAlias && decl.clause.kind === "Named" ? decl.clause.alias : undefined,
+      unsafe: decl.clause.unsafe,
+      node,
+    },
   };
 }
 
@@ -357,6 +418,7 @@ function jsTargetMembers(target: JsTarget) {
   if (target.kind === "JsGlobalRoot") return [];
   if (target.kind === "JsGlobal") return jsGlobalMembers(target.path);
   if (target.kind === "JsModule") return jsModuleMembers(target.specifier);
+  if (target.kind === "JsWorker") return workerMembers();
   return [];
 }
 
@@ -377,6 +439,7 @@ function jsTargetMember(target: JsTarget, name: string): JsMemberType | undefine
   if (target.kind === "JsGlobalRoot") return undefined;
   if (target.kind === "JsGlobal") return jsGlobalMember(target.path, name);
   if (target.kind === "JsModule") return jsModuleMember(target.specifier, name);
+  if (target.kind === "JsWorker") return workerMembers().find((member) => member.name === name);
   return undefined;
 }
 

@@ -19,6 +19,9 @@ function showDecl(decl: CoreDecl): string {
       if (decl.target.kind === "JsModule") {
         return `import js.module(${JSON.stringify(decl.target.specifier)})`;
       }
+      if (decl.target.kind === "JsWorker") {
+        return `import js.worker(${JSON.stringify(decl.target.specifier)})`;
+      }
       if (decl.target.kind === "JsConstructor") {
         return `import js.constructor(${JSON.stringify(decl.target.path)})`;
       }

@@ -7,16 +7,18 @@ export function emitRuntimePrelude(): string[] {
     "const __wm_tuple = (...items) => Object.assign(items, { [__wm_tuple_tag]: true });",
     "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_tuple_tag] === true;",
     `const __wm_js_global = (path) => path.split(".").reduce((value, key) => value?.[key], globalThis);`,
+    `const __wm_js_should_bind = (value) =>
+  typeof value === "function" && !/^class\\s/.test(Function.prototype.toString.call(value));`,
     `const __wm_js_member = (path) => {
   const parts = path.split(".");
   const key = parts.pop();
   const owner = parts.length === 0 ? globalThis : __wm_js_global(parts.join("."));
   const value = owner?.[key];
-  return typeof value === "function" ? value.bind(owner) : value;
+  return __wm_js_should_bind(value) ? value.bind(owner) : value;
 };`,
     `const __wm_js_member_obj = (owner, key) => {
   const value = owner?.[key];
-  return typeof value === "function" ? value.bind(owner) : value;
+  return __wm_js_should_bind(value) ? value.bind(owner) : value;
 };`,
     `const __wm_js_receiver_member = (path) => (receiver, ...args) => {
   const owner = path.slice(0, -1).reduce((value, key) => value?.[key], receiver);

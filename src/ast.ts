@@ -39,6 +39,7 @@ export type JsTarget =
   | Located<{ kind: "JsGlobalRoot" }>
   | Located<{ kind: "JsGlobal"; path: string }>
   | Located<{ kind: "JsModule"; specifier: string }>
+  | Located<{ kind: "JsWorker"; specifier: string }>
   | Located<{ kind: "JsReceiver"; path: string[] }>
   | Located<{ kind: "JsConstructor"; path: string }>;
 export type JsImportClause =
