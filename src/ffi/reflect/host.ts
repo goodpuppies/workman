@@ -1,5 +1,4 @@
 import ts from "typescript";
-import { fileURLToPath } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
 
 const compilerOptions: ts.CompilerOptions = {
@@ -11,7 +10,6 @@ const compilerOptions: ts.CompilerOptions = {
   skipLibCheck: true,
 };
 
-const nodeTypesPath = fileURLToPath(import.meta.resolve("npm:@types/node/index.d.ts"));
 const denoTypesFile = "/__wm_deno_types.d.ts";
 let denoTypesCache: string | undefined;
 const sourceFileCache = new Map<string, ts.SourceFile>();
@@ -49,7 +47,7 @@ export function jsModuleSource(specifier: string): JsReflectionSource {
   return {
     key: `module:${specifier}${keySuffix}`,
     source:
-      `${sourcePrefix}/// <reference path="${nodeTypesPath}" />\nimport * as __wm_target from ${
+      `${sourcePrefix}/// <reference path="${nodeTypesReferencePath()}" />\nimport * as __wm_target from ${
         JSON.stringify(specifier)
       };`,
   };
@@ -116,6 +114,12 @@ type DenoInfo = {
   roots?: string[];
   redirects?: Record<string, string>;
   modules?: DenoInfoModule[];
+  npmPackages?: Record<string, DenoInfoNpmPackage>;
+};
+
+type DenoInfoNpmPackage = {
+  name: string;
+  localPath: string;
 };
 
 type DenoModuleGraph = {
@@ -168,6 +172,28 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
   };
   denoModuleGraphs.set(cacheKey, graph);
   return graph;
+}
+
+let nodeTypesPath: string | undefined;
+
+function nodeTypesReferencePath(): string {
+  if (nodeTypesPath) return nodeTypesPath;
+  const output = new Deno.Command(Deno.execPath(), {
+    args: ["info", "--json", "npm:@types/node/index.d.ts"],
+    stdout: "piped",
+    stderr: "piped",
+  }).outputSync();
+  if (!output.success) {
+    const message = new TextDecoder().decode(output.stderr).trim();
+    throw new Error(`cannot resolve Node type declarations${message ? `: ${message}` : ""}`);
+  }
+  const parsed = JSON.parse(new TextDecoder().decode(output.stdout)) as DenoInfo;
+  const nodeTypes = Object.values(parsed.npmPackages ?? {}).find((pkg) =>
+    pkg.name === "@types/node"
+  );
+  if (!nodeTypes) throw new Error("cannot locate @types/node in Deno's npm cache");
+  nodeTypesPath = join(nodeTypes.localPath, "index.d.ts");
+  return nodeTypesPath;
 }
 
 function denoSourceForFileName(graphs: DenoModuleGraph[], fileName: string): string | undefined {
