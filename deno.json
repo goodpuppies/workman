@@ -1,9 +1,9 @@
 {
   "name": "@goodpuppies/workman",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "exports": {
-    ".": "./src/main.ts"
+    ".": "./src/cli.ts"
   },
   "tasks": {
     "check": "deno check src/main.ts src/lsp/server.ts tests/*.ts",

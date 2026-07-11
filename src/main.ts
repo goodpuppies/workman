@@ -19,8 +19,8 @@ import { typeDebugFile } from "./type_debug.ts";
 
 const commands = new Set(["check", "compile", "compile-library", "run", "type-debug", "help"]);
 
-if (import.meta.main) {
-  const code = await main(Deno.args).catch((error) => {
+export async function runCli(args: string[]): Promise<number> {
+  return await main(args).catch((error) => {
     if (error instanceof ParseError) {
       console.error(formatError(error.message, error.filePath, error.source, error.span));
     } else if (error instanceof ModuleAnalysisError) {
@@ -55,7 +55,10 @@ if (import.meta.main) {
     }
     return 1;
   });
-  Deno.exit(code);
+}
+
+if (import.meta.main) {
+  Deno.exit(await runCli(Deno.args));
 }
 
 export async function main(args: string[]): Promise<number> {
