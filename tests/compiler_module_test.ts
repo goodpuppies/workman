@@ -1,6 +1,7 @@
 import { assertRejects, assertStringIncludes } from "@std/assert";
 import { pathToFileURL } from "node:url";
 import { checkSource, checkVirtual, compileFile, compileVirtual } from "../src/compiler.ts";
+import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("compiles file imports as implicit structures", async () => {
   const js = await compileFile(new URL("../examples/use_math.wm", import.meta.url).pathname);
@@ -170,6 +171,51 @@ Deno.test("supports transitive file imports", async () => {
     ],
   ]);
   await checkVirtual("/test/main.wm", virtualFs);
+});
+
+Deno.test("infers imported record projections in lifted callbacks", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/game.wm",
+      `
+        record Controls = { quit: Bool };
+        record Game = { controls: Controls };
+        let initialGame = () => { .{ controls = .{ quit = false } } };
+      `,
+    ],
+    [
+      "/test/main.wm",
+      `
+        from "./game.wm" import { Controls, Game, initialGame };
+        let lift = Monad.lift;
+        let readQuit = lift Result (game) => { Ok(game.controls.quit) };
+        let value = readQuit(Ok(initialGame()));
+      `,
+    ],
+  ]);
+
+  const results = await checkVirtual("/test/main.wm", virtualFs);
+  const result = results.get("/test/main.wm");
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "readQuit", {
+    type: "(Result<Game, 'a>) => Result<Bool, 'a>",
+    vars: 0,
+  });
+
+  virtualFs.set(
+    "/test/main.wm",
+    `
+      from "./game.wm" import { Controls, Game, initialGame };
+      let lift = Monad.lift;
+      let readMissing = lift Result (game) => { Ok(game.missing) };
+      let value = readMissing(Ok(initialGame()));
+    `,
+  );
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "cannot resolve JS FFI property missing for receiver type Game",
+  );
 });
 
 Deno.test("compiles virtual file system to JS", async () => {

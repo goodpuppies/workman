@@ -102,6 +102,43 @@ Deno.test("resolves local JS module imports relative to source file", async () =
   assertStringIncludes(js, `/helper.ts")`);
 });
 
+Deno.test("runs a Workman dependency with a JS module import", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/helper.ts`,
+    `export function shout(text: string): string { return text.toUpperCase(); }\n`,
+  );
+  await Deno.writeTextFile(
+    `${dir}/foreign_runtime.wm`,
+    `
+      from js.module("./helper.ts") import { shout };
+      let fileName = (path: String) => { shout(path) };
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from "./foreign_runtime.wm" import { fileName };
+      from js.global("console") import unsafe { log: (String) => Void } as console;
+      let main = () => {
+        match(fileName("one/two.txt")) {
+          Ok(name) => { console.log(name) },
+          Err(_) => { console.log("err") },
+        }
+      };
+    `,
+  );
+
+  const js = await compileFile(input);
+  assertStringIncludes(js, "await (async () => {");
+
+  const result = await runFile(input, { stdout: "piped", stderr: "piped" });
+  assertEquals(result.code, 0);
+  assertEquals(new TextDecoder().decode(result.stdout), "ONE/TWO.TXT\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
 Deno.test("reflects JSR module imports", async () => {
   const result = await checkSource(`
     from js.module("jsr:@std/path@^1.0.9") import { basename };

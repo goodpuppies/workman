@@ -1,4 +1,4 @@
-import type { Module } from "./ast.ts";
+import type { ImportClause, Module } from "./ast.ts";
 import { basename, dirname, relative } from "node:path";
 import {
   type CoreProgram,
@@ -23,6 +23,7 @@ import {
   loadModuleGraph,
   type ModuleGraph,
   type ModuleGraphOptions,
+  type ModuleNode,
   type VirtualFileSystem,
 } from "./module_graph.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
@@ -242,7 +243,10 @@ export async function analyzeFile(
   const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
   for (const node of graph.nodes.values()) {
     node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
-    const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
+    const prepared = prepareFfiElaboration(node.module, {
+      filePath: node.path,
+      importedRecordFields: importedRecordFields(node, graph),
+    });
     ffi.set(node.path, prepared);
     node.module = prepared.module;
   }
@@ -368,6 +372,27 @@ export async function analyzeFile(
     }
   }
   return { graph, results };
+}
+
+function importedRecordFields(
+  node: ModuleNode,
+  graph: ModuleGraph,
+): Set<string> {
+  const fields = new Set<string>();
+  for (const edge of node.imports) {
+    const imported = graph.nodes.get(edge.path);
+    if (!imported) continue;
+    for (const decl of imported.module.decls) {
+      if (decl.kind !== "RecordDecl" || !importsRecord(edge.clause, decl.name)) continue;
+      for (const field of decl.fields) fields.add(field.name);
+    }
+  }
+  return fields;
+}
+
+function importsRecord(clause: ImportClause, name: string): boolean {
+  return clause.kind === "All" || clause.kind === "Namespace" ||
+    clause.specs.some((spec) => spec.name === name);
 }
 
 function assertNoPartialDiagnostics(result: InferResult): InferResult {

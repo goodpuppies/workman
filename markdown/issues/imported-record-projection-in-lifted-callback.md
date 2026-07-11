@@ -1,6 +1,24 @@
 # Issue: Imported Record Projection Falls Through to FFI in Lifted Callbacks
 
-Status: open
+Status: fixed
+
+## Resolution
+
+Fixed in FFI preparation and module-graph analysis. Before FFI rewriting, the compiler now gathers
+the fields declared by record types explicitly imported from each direct Workman dependency. An
+unannotated callback parameter accessing one of those fields is left as a normal Workman record
+projection for HM inference instead of being rewritten into an unresolved JavaScript FFI access.
+
+Consequently, the minimal reproduction now infers:
+
+```txt
+readQuit : Result<Game, E> -> Result<Bool, E>
+```
+
+Unknown fields are still rewritten and diagnosed as unresolved JS FFI access, so this does not turn
+annotations or imported record names into JavaScript casts. Regression coverage verifies both the
+lifted imported nested projection and that `game.missing` continues to fail as an FFI obligation.
+The fix has also been validated in the `wmthree` game project.
 
 Discovered while moving the `wmthree` FPS state into a pure Workman module.
 

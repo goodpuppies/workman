@@ -15,13 +15,16 @@ import {
 
 export type FfiElaborationOptions = {
   filePath?: string;
+  importedRecordFields?: Iterable<string>;
 };
 
 export function prepareFfiElaboration(
   module: Module,
   options: FfiElaborationOptions = {},
 ): FfiElaboration {
-  const previousRecordFields = setActiveRecordFields(recordFieldNames(module));
+  const previousRecordFields = setActiveRecordFields(
+    recordFieldNames(module, options.importedRecordFields),
+  );
   const previousReflectionBasePath = setActiveJsReflectionBasePath(options.filePath);
   try {
     return prepareFfiElaborationInner(module);
@@ -92,8 +95,8 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
   };
 }
 
-function recordFieldNames(module: Module): Set<string> {
-  const fields = new Set<string>();
+function recordFieldNames(module: Module, importedFields: Iterable<string> = []): Set<string> {
+  const fields = new Set(importedFields);
   for (const decl of module.decls) {
     if (decl.kind !== "RecordDecl") continue;
     for (const field of decl.fields) fields.add(field.name);

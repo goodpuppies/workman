@@ -3,11 +3,7 @@ import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artif
 import type { BindingId } from "./ids.ts";
 import { basisCtorJsName } from "../basis.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
-import {
-  emitJsImportDecl,
-  resetJsImportEmitter,
-  setWorkerSpecifiers,
-} from "./emit_js_import.ts";
+import { emitJsImportDecl, resetJsImportEmitter, setWorkerSpecifiers } from "./emit_js_import.ts";
 import { emitJsIdentifier as id } from "./emit_name.ts";
 
 export type CoreEmitTarget = "executable" | "library";
@@ -62,7 +58,7 @@ function finalExports(exports: CoreDynamicExport[]): CoreDynamicExport[] {
 
 function emitNamespace(artifact: CoreModuleArtifact, program: CoreProgram): string {
   const body = emitModuleBody(artifact, program).join("\n");
-  return `const ${id(artifact.emitName)} = (() => {\n${body}\nreturn { ${
+  return `const ${id(artifact.emitName)} = await (async () => {\n${body}\nreturn { ${
     artifact.dynamicExports.map((item) => `${JSON.stringify(item.name)}: ${emitExportRef(item)}`)
       .join(", ")
   } };\n})();`;
