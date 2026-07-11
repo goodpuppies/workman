@@ -52,7 +52,7 @@ async function handleMessage(message: RpcMessage) {
         },
         hoverProvider: true,
       },
-      serverInfo: { name: "wm-mini-lsp", version: "0.0.1" },
+      serverInfo: { name: "workman-lsp", version: "0.0.1" },
     });
     return;
   }
@@ -237,9 +237,12 @@ function showError(error: unknown): string {
 }
 
 function frontendOptionsFromEnv(): CompilerFrontendOptions {
-  const mode = Deno.env.get("WM_MINI_FRONTEND");
+  const mode = Deno.env.get("WORKMAN_FRONTEND") ?? Deno.env.get("WM_MINI_FRONTEND");
   const frontend = mode === "v2" || mode === "compare" || mode === "v1" ? mode : undefined;
-  const modulePath = Deno.env.get("WM_MINI_FRONTEND_V2_MODULE")?.trim();
+  const modulePath = (
+    Deno.env.get("WORKMAN_FRONTEND_V2_MODULE") ??
+    Deno.env.get("WM_MINI_FRONTEND_V2_MODULE")
+  )?.trim();
   return {
     ...(frontend ? { frontend } : {}),
     ...(modulePath ? { frontendV2ModuleUrl: pathToFileUrl(modulePath) } : {}),

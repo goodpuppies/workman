@@ -195,14 +195,26 @@ function formatDiagnostics(result: InferResult): string | undefined {
 }
 
 function formatEnv(result: InferResult, limit: number): string {
-  const entries = [...result.env.entries()]
-    .filter(([name, scheme]) => !scheme.basis || name.startsWith("__ffi_"))
+  const env = [...result.env.entries()];
+  const hiddenStd = env.filter(([name, scheme]) =>
+    !name.startsWith("__ffi_") && (scheme.basis || scheme.standardLibrary)
+  );
+  const entries = env
+    .filter(([name, scheme]) =>
+      name.startsWith("__ffi_") || (!scheme.basis && !scheme.standardLibrary)
+    )
     .slice(-limit);
-  if (entries.length === 0) return "environment: <empty>";
+  const hiddenNote = hiddenStd.length
+    ? `note: std env hidden (${hiddenStd.length} bindings)`
+    : undefined;
+  if (entries.length === 0) {
+    return ["environment: <empty>", hiddenNote].filter(Boolean).join("\n");
+  }
   return [
     "environment:",
+    hiddenNote,
     ...entries.map(([name, scheme]) => `  ${name}: ${formatScheme(scheme)}`),
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function formatScheme(scheme: Scheme): string {

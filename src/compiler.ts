@@ -140,7 +140,14 @@ export async function compileFileArtifacts(
   input: string,
   options: CompileOptions = {},
 ): Promise<CompileArtifact[]> {
-  const entry = await Deno.realPath(input);
+  return await compileFileArtifactsFromCore(await coreFile(input, options), options);
+}
+
+export async function compileFileArtifactsFromCore(
+  compiled: CoreFileResult,
+  options: CompileOptions = {},
+): Promise<CompileArtifact[]> {
+  const entry = compiled.graph.entry;
   const outputNames = new Map<string, string>([[entry, "main.mjs"]]);
   const usedNames = new Set(["main.mjs"]);
   const artifacts: CompileArtifact[] = [];
@@ -149,7 +156,7 @@ export async function compileFileArtifacts(
   async function emitOne(path: string, kind: CompileArtifact["kind"]) {
     if (emitted.has(path)) return;
     emitted.add(path);
-    const { core } = await coreFile(path, options);
+    const { core } = path === entry ? compiled : await coreFile(path, options);
     for (const worker of workerTargets(core)) {
       if (!outputNames.has(worker)) {
         outputNames.set(worker, uniqueWorkerOutputName(worker, usedNames));

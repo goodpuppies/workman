@@ -43,6 +43,7 @@ export type Scheme = {
   provenance?: TypeProvenanceNote[];
   jsImport?: boolean;
   imported?: boolean;
+  standardLibrary?: boolean;
   node?: AstNode;
 };
 export type TypeProvenanceNote = {

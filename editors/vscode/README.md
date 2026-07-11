@@ -1,7 +1,12 @@
-# wm-mini VS Code Extension
+# Workman VS Code Extension
 
-Small VS Code client for wm-mini. It intentionally launches the language server from Deno source so
-frontend and LSP changes are picked up by running `wm-mini: Restart Language Server`.
+Small VS Code client for Workman. The Marketplace package includes a compiled language server for
+Linux x64/ARM64, Windows x64, and macOS x64/ARM64, so it works without a local Workman checkout.
+When a Workman checkout is open, the extension deliberately prefers its Deno source server so
+frontend and LSP changes are picked up by running `Workman: Restart Language Server`.
+
+The packaged server does not need Deno for ordinary Workman files. JavaScript/TypeScript FFI
+reflection still uses the `deno` executable configured by `workman.denoPath` (default: `deno`).
 
 The server is launched with `--allow-read --allow-env --allow-run`. Environment access is needed
 because the language server uses TypeScript's compiler API for JS FFI type reflection. Run access is
@@ -16,18 +21,30 @@ npm run compile
 ```
 
 Open this folder as a VS Code extension development host, or package it later as a VSIX. The
-included `Run wm-mini Extension` launch config opens the repository root as the test workspace.
+included `Run Workman Extension` launch config opens the repository root as the test workspace.
+
+## Marketplace package
+
+Create the universal VSIX from this directory:
+
+```sh
+npm run package
+```
+
+This compiles one LSP binary for each supported desktop platform and writes
+`dist/goodpuppies.workman-<version>.vsix`. Upload that file through the
+[Visual Studio Marketplace publisher portal](https://marketplace.visualstudio.com/manage/publishers/).
 
 By default the extension looks for `src/lsp/server.ts` in the open workspace. If you install the
 extension once and edit `.wm` files from another workspace, set:
 
 ```json
 {
-  "wmMini.serverPath": "/absolute/path/to/wm-mini/src/lsp/server.ts"
+  "workman.serverPath": "/absolute/path/to/workman/src/lsp/server.ts"
 }
 ```
 
-Then updates to the wm-mini checkout usually only need `wm-mini: Restart Language Server`.
+Then updates to the Workman checkout usually only need `Workman: Restart Language Server`.
 
 ## Frontend v2 migration mode
 
@@ -36,11 +53,11 @@ mode:
 
 ```json
 {
-  "wmMini.frontendMode": "v2"
+  "workman.frontendMode": "v2"
 }
 ```
 
-Before using this mode, build the generated frontend artifact from the wm-mini checkout:
+Before using this mode, build the generated frontend artifact from the Workman checkout:
 
 ```sh
 deno task frontend-v2:build
@@ -51,7 +68,7 @@ contains `src/lsp/server.ts`. To point at another generated artifact, set:
 
 ```json
 {
-  "wmMini.frontendV2ModulePath": "/absolute/path/to/frontend-v2.generated.mjs"
+  "workman.frontendV2ModulePath": "/absolute/path/to/frontend-v2.generated.mjs"
 }
 ```
 

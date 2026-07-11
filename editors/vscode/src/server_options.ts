@@ -19,25 +19,53 @@ export function denoServerConfig<TTransport>(
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
 ): ServerProcessConfig<TTransport> {
-  const env: Record<string, string | undefined> = {
-    ...baseEnv,
-    WM_MINI_FRONTEND: frontendMode,
-  };
-  if (frontendV2ModulePath) {
-    env.WM_MINI_FRONTEND_V2_MODULE = resolveConfiguredPath(
-      frontendV2ModulePath,
-      workspaceFolder,
-    );
-  }
   return {
     command,
     args: ["run", "--allow-read", "--allow-env", "--allow-run", serverPath],
     transport,
     options: {
       cwd: path.dirname(path.dirname(path.dirname(serverPath))),
-      env,
+      env: serverEnvironment(frontendMode, frontendV2ModulePath, baseEnv, workspaceFolder),
     },
   };
+}
+
+export function compiledServerConfig<TTransport>(
+  command: string,
+  frontendMode: string,
+  frontendV2ModulePath: string | undefined,
+  transport: TTransport,
+  baseEnv: Record<string, string | undefined>,
+  workspaceFolder?: string,
+): ServerProcessConfig<TTransport> {
+  return {
+    command,
+    args: [],
+    transport,
+    options: {
+      cwd: workspaceFolder ?? path.dirname(command),
+      env: serverEnvironment(frontendMode, frontendV2ModulePath, baseEnv, workspaceFolder),
+    },
+  };
+}
+
+function serverEnvironment(
+  frontendMode: string,
+  frontendV2ModulePath: string | undefined,
+  baseEnv: Record<string, string | undefined>,
+  workspaceFolder?: string,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {
+    ...baseEnv,
+    WORKMAN_FRONTEND: frontendMode,
+  };
+  if (frontendV2ModulePath) {
+    env.WORKMAN_FRONTEND_V2_MODULE = resolveConfiguredPath(
+      frontendV2ModulePath,
+      workspaceFolder,
+    );
+  }
+  return env;
 }
 
 export function resolveConfiguredPath(

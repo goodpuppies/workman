@@ -8,54 +8,77 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { Trace } from "vscode-jsonrpc";
-import { denoServerConfig, resolveConfiguredPath } from "./server_options";
+import {
+  compiledServerConfig,
+  denoServerConfig,
+  resolveConfiguredPath,
+} from "./server_options";
 
 let client: LanguageClient | undefined;
 
 export async function activate(context: ExtensionContext) {
-  const outputChannel = window.createOutputChannel("wm-mini Language Server");
+  const outputChannel = window.createOutputChannel("Workman Language Server");
   context.subscriptions.push(outputChannel);
 
   const start = async () => {
-    const serverPath = resolveServerPath(context);
-    if (!serverPath) {
+    const server = resolveServer(context);
+    if (!server) {
       const message =
-        "wm-mini language server not found. Set wmMini.serverPath to your wm-mini src/lsp/server.ts checkout.";
+        "Workman language server is unavailable. Reinstall the extension or set workman.serverPath to your Workman src/lsp/server.ts checkout.";
       outputChannel.appendLine(message);
       window.showErrorMessage(message);
       return;
     }
 
     const denoPath =
-      workspace.getConfiguration("wmMini").get<string>("denoPath") || "deno";
+      workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
     const frontendMode =
-      workspace.getConfiguration("wmMini").get<string>("frontendMode") || "v1";
-    const frontendV2ModulePath = workspace.getConfiguration("wmMini").get<
+      workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
+    const frontendV2ModulePath = workspace.getConfiguration("workman").get<
       string
     >(
       "frontendV2ModulePath",
     )?.trim();
-    outputChannel.appendLine(`Starting wm-mini language server: ${serverPath}`);
+    const serverEnvironment = { ...process.env, WORKMAN_DENO_PATH: denoPath };
+    outputChannel.appendLine(`Starting Workman language server: ${server.path}`);
     const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
     const serverOptions: ServerOptions = {
-      run: denoServerConfig(
-        denoPath,
-        serverPath,
-        frontendMode,
-        frontendV2ModulePath,
-        TransportKind.stdio,
-        process.env,
-        workspaceFolder,
-      ),
-      debug: denoServerConfig(
-        denoPath,
-        serverPath,
-        frontendMode,
-        frontendV2ModulePath,
-        TransportKind.stdio,
-        process.env,
-        workspaceFolder,
-      ),
+      run: server.kind === "source"
+        ? denoServerConfig(
+          denoPath,
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        )
+        : compiledServerConfig(
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+      debug: server.kind === "source"
+        ? denoServerConfig(
+          denoPath,
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        )
+        : compiledServerConfig(
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
     };
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "wm" }],
@@ -65,14 +88,14 @@ export async function activate(context: ExtensionContext) {
       middleware: {
         handleDiagnostics: (uri, diagnostics, next) => {
           outputChannel.appendLine(
-            `[wm-client] diagnostics uri=${uri.toString()} count=${diagnostics.length}`,
+            `[workman-client] diagnostics uri=${uri.toString()} count=${diagnostics.length}`,
           );
           next(uri, diagnostics);
         },
         provideHover: async (document, position, token, next) => {
           const hover = await next(document, position, token);
           outputChannel.appendLine(
-            `[wm-client] hover uri=${document.uri.toString()} ` +
+            `[workman-client] hover uri=${document.uri.toString()} ` +
               `line=${position.line} char=${position.character} result=${
                 hover ? "hit" : "null"
               }`,
@@ -85,8 +108,8 @@ export async function activate(context: ExtensionContext) {
     };
 
     client = new LanguageClient(
-      "wm-mini",
-      "wm-mini",
+      "workman",
+      "Workman",
       serverOptions,
       clientOptions,
     );
@@ -96,8 +119,8 @@ export async function activate(context: ExtensionContext) {
   };
 
   context.subscriptions.push(
-    commands.registerCommand("wm-mini.restartLanguageServer", async () => {
-      outputChannel.appendLine("Restarting wm-mini language server...");
+    commands.registerCommand("workman.restartLanguageServer", async () => {
+      outputChannel.appendLine("Restarting Workman language server...");
       if (client) {
         await client.stop();
         client = undefined;
@@ -113,11 +136,13 @@ export async function deactivate(): Promise<void> {
   await client?.stop();
 }
 
-function resolveServerPath(context: ExtensionContext): string | undefined {
-  const configured = workspace.getConfiguration("wmMini").get<string>(
+type Server = { kind: "source" | "compiled"; path: string };
+
+function resolveServer(context: ExtensionContext): Server | undefined {
+  const configured = workspace.getConfiguration("workman").get<string>(
     "serverPath",
   )?.trim();
-  const candidates = [
+  const sourceCandidates = [
     configured
       ? resolveConfiguredPath(
         configured,
@@ -129,13 +154,27 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
     ) ?? [],
     path.resolve(context.extensionPath, "..", "..", "src", "lsp", "server.ts"),
   ];
-  return candidates.find((candidate): candidate is string =>
+  const source = sourceCandidates.find((candidate): candidate is string =>
     !!candidate && fs.existsSync(candidate)
   );
+  if (source) return { kind: "source", path: source };
+
+  const compiled = path.join(
+    context.extensionPath,
+    "bin",
+    compiledServerName(),
+  );
+  return fs.existsSync(compiled) ? { kind: "compiled", path: compiled } : undefined;
+}
+
+function compiledServerName(): string {
+  const target = `${process.platform}-${process.arch}`;
+  const extension = process.platform === "win32" ? ".exe" : "";
+  return `workman-lsp-${target}${extension}`;
 }
 
 function traceSetting(): Trace {
-  const value = workspace.getConfiguration("wmMini").get<string>(
+  const value = workspace.getConfiguration("workman").get<string>(
     "trace.server",
   );
   if (value === "verbose") return Trace.Verbose;

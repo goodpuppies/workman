@@ -32,20 +32,21 @@ export function baseEnv(
   options: BasisOptions = {},
 ): Env {
   const env: Env = new Map();
+  const standard = (vars: number[], type: Ty) => ({ vars, type, standardLibrary: true });
   const binaryNum = fn([tuple([NumberTy, NumberTy])], NumberTy);
-  for (const op of ["+", "-", "*", "/", "%"]) env.set(op, { vars: [], type: binaryNum });
-  env.set("++", { vars: [], type: fn([tuple([StringTy, StringTy])], StringTy) });
+  for (const op of ["+", "-", "*", "/", "%"]) env.set(op, standard([], binaryNum));
+  env.set("++", standard([], fn([tuple([StringTy, StringTy])], StringTy)));
   for (const op of ["<", "<=", ">", ">="]) {
-    env.set(op, { vars: [], type: fn([tuple([NumberTy, NumberTy])], BoolTy) });
+    env.set(op, standard([], fn([tuple([NumberTy, NumberTy])], BoolTy)));
   }
   for (const op of ["==", "!="]) {
     const a = fresh() as Extract<Ty, { tag: "var" }>;
-    env.set(op, { vars: [a.id], type: fn([tuple([a, a])], BoolTy) });
+    env.set(op, standard([a.id], fn([tuple([a, a])], BoolTy)));
   }
-  env.set("&&", { vars: [], type: fn([tuple([BoolTy, BoolTy])], BoolTy) });
-  env.set("||", { vars: [], type: fn([tuple([BoolTy, BoolTy])], BoolTy) });
+  env.set("&&", standard([], fn([tuple([BoolTy, BoolTy])], BoolTy)));
+  env.set("||", standard([], fn([tuple([BoolTy, BoolTy])], BoolTy)));
   const printable = fresh() as Extract<Ty, { tag: "var" }>;
-  env.set("print", { vars: [printable.id], type: fn([printable], VoidTy) });
+  env.set("print", standard([printable.id], fn([printable], VoidTy)));
   if (options.includeAlgebraicBasis !== false) {
     addBasisConstructors(env, typeEnv);
     addBasisValues(env, typeEnv);

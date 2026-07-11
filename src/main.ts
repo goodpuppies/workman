@@ -3,21 +3,31 @@ import {
   compileFile,
   compileFileArtifacts,
   compileLibraryFile,
+  coreFile,
   ModuleAnalysisError,
 } from "./compiler.ts";
 import { dirname } from "node:path";
 import {
   formatDiagnostic,
   formatDiagnosticError,
+  formatDiagnosticInspection,
   formatError,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
 } from "./diagnostics.ts";
 import { ParseError } from "./parser.ts";
-import { runFile } from "./run.ts";
+import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 
-const commands = new Set(["check", "compile", "compile-library", "run", "type-debug", "help"]);
+const commands = new Set([
+  "check",
+  "compile",
+  "compile-library",
+  "run",
+  "err",
+  "type-debug",
+  "help",
+]);
 
 export async function runCli(args: string[]): Promise<number> {
   return await main(args).catch((error) => {
@@ -46,6 +56,8 @@ export async function runCli(args: string[]): Promise<number> {
           console.error(formatDiagnostic(diagnostic, error.path, error.source));
         }
       }
+    } else if (error instanceof RunEntrypointError) {
+      console.error(formatDiagnosticError(error, error.path, error.source));
     } else if (error instanceof FrontendDiagnosticError) {
       console.error(formatDiagnosticError(error, undefined, undefined));
     } else if (error instanceof FrontendDiagnosticBundleError) {
@@ -79,6 +91,8 @@ export async function main(args: string[]): Promise<number> {
       return await compileLibraryCommand(commandArgs);
     case "run":
       return await runCommand(commandArgs);
+    case "err":
+      return await errCommand(commandArgs);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
     case "help":
@@ -138,6 +152,101 @@ async function runCommand(args: string[]): Promise<number> {
   return (await runFile(input, { args: programArgs })).code;
 }
 
+async function errCommand(args: string[]): Promise<number> {
+  const [input] = args;
+  if (!input) return missingInput("err");
+
+  const inspections: string[] = [];
+  let foundError = false;
+  try {
+    const compiled = await coreFile(input);
+    for (const [path, result] of compiled.results) {
+      const source = compiled.graph.nodes.get(path)?.source ?? "";
+      for (const diagnostic of result.diagnostics) {
+        inspections.push(formatDiagnosticInspection(diagnostic, path, source));
+        foundError ||= diagnostic.severity === "error";
+      }
+    }
+    const entryDiagnostic = runEntrypointDiagnostic(compiled);
+    if (entryDiagnostic) {
+      const entry = compiled.core.modules.get(compiled.core.entry)!;
+      inspections.push(formatDiagnosticInspection(entryDiagnostic, entry.path, entry.source));
+      foundError = true;
+    }
+  } catch (error) {
+    foundError = true;
+    if (error instanceof ModuleAnalysisError) {
+      collectErrorInspections(error.originalError, error.path, error.source, inspections);
+      for (const diagnostic of error.diagnostics) {
+        inspections.push(formatDiagnosticInspection(diagnostic, error.path, error.source));
+      }
+    } else {
+      collectErrorInspections(error, undefined, undefined, inspections);
+    }
+  }
+
+  if (inspections.length === 0) {
+    console.error("err: no compiler or runner errors found");
+    return 0;
+  }
+  for (const [index, inspection] of uniqueInspections(inspections).entries()) {
+    console.error(formatInspectionBlock(index + 1, inspection));
+  }
+  console.error("\n--- compiler state ---\n");
+  console.error(await typeDebugFile(input));
+  return foundError ? 1 : 0;
+}
+
+function collectErrorInspections(
+  error: unknown,
+  filePath: string | undefined,
+  source: string | undefined,
+  inspections: string[],
+): void {
+  if (error instanceof FrontendDiagnosticError) {
+    inspections.push(formatDiagnosticInspection(error.diagnostic, filePath, source));
+    return;
+  }
+  if (error instanceof FrontendDiagnosticBundleError) {
+    collectErrorInspections(error.primary, filePath, source, inspections);
+    for (const diagnostic of error.diagnostics) {
+      inspections.push(formatDiagnosticInspection(diagnostic, filePath, source));
+    }
+    return;
+  }
+  if (error instanceof ParseError) {
+    inspections.push(
+      formatError(error.message, error.filePath ?? filePath, error.source ?? source, error.span),
+    );
+    return;
+  }
+  inspections.push(
+    formatError(
+      error instanceof Error ? error.message : String(error),
+      filePath,
+      source,
+      undefined,
+    ),
+  );
+}
+
+function uniqueInspections(inspections: string[]): string[] {
+  return [...new Set(inspections)];
+}
+
+function formatInspectionBlock(number: number, inspection: string): string {
+  const label = `error ${number}`;
+  return [
+    inspectionDivider(label),
+    inspection,
+    inspectionDivider(`${label} end`),
+  ].join("\n\n");
+}
+
+function inspectionDivider(label: string): string {
+  return `-- ${label} ${"-".repeat(Math.max(1, 64 - label.length - 3))}`;
+}
+
 async function typeDebugCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("type-debug");
@@ -178,6 +287,7 @@ commands:
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
   run <file.wm> [-- args...]    compile and execute with Deno
+  err <file.wm>                 print authored diagnostics, evidence, and compiler state
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help
 

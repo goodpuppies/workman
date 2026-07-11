@@ -46,6 +46,7 @@ export type InferModuleOptions = {
 export type InitialImport = {
   clause: ImportClause;
   result: InferResult;
+  standard?: boolean;
 };
 
 export function inferModule(
@@ -93,7 +94,9 @@ function inferModuleCore(
   const provenance: TypeProvenance = new Map();
 
   for (const initialImport of includePrelude ? options.initialImports ?? [] : []) {
-    addImport(env, typeEnv, initialImport.clause, initialImport.result);
+    addImport(env, typeEnv, initialImport.clause, initialImport.result, {
+      standardLibrary: initialImport.standard,
+    });
     addAdts(adts, initialImport.result.exportedStructure.adts);
     addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.types);
   }

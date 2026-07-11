@@ -9,9 +9,10 @@ export function addImport(
   typeEnv: TypeEnv,
   clause: ImportClause,
   imported: InferResult,
+  options: { standardLibrary?: boolean } = {},
 ) {
   if (clause.kind === "Namespace") {
-    addQualifiedImport(env, clause.alias, imported.exportedStructure.values, clause);
+    addQualifiedImport(env, clause.alias, imported.exportedStructure.values, clause, options);
     addQualifiedTypes(typeEnv, clause.alias, imported.exportedStructure.types, clause);
     return;
   }
@@ -22,6 +23,7 @@ export function addImport(
       imported.exportedStructure.values,
       imported.exportedStructure.types,
       clause,
+      options,
     );
     return;
   }
@@ -39,7 +41,7 @@ export function addImport(
         throw diagnosticError(new Error(`duplicate value import ${local}`), spec.node);
       }
       values.add(local);
-      env.set(local, importedScheme(value));
+      env.set(local, importedScheme(value, options));
     }
     if (type) {
       if (types.has(local) || isUserType(typeEnv, local)) {
@@ -56,13 +58,19 @@ export function addAdts(adts: Map<number, TypeDeclInfo>, imported: Map<number, T
   for (const [id, info] of imported) adts.set(id, info);
 }
 
-function addQualifiedImport(env: Env, alias: string, imported: Env, clause: ImportClause) {
+function addQualifiedImport(
+  env: Env,
+  alias: string,
+  imported: Env,
+  clause: ImportClause,
+  options: { standardLibrary?: boolean },
+) {
   for (const [name, scheme] of imported) {
     const local = `${alias}.${name}`;
     if (isUserValue(env, local)) {
       throw diagnosticError(new Error(`duplicate value import ${local}`), clause.node);
     }
-    env.set(local, importedScheme(scheme));
+    env.set(local, importedScheme(scheme, options));
   }
 }
 
@@ -87,6 +95,7 @@ function addAllImports(
   values: Env,
   types: TypeEnv,
   clause: ImportClause,
+  options: { standardLibrary?: boolean },
 ) {
   for (const name of values.keys()) {
     if (isUserValue(env, name)) {
@@ -98,7 +107,7 @@ function addAllImports(
       throw diagnosticError(new Error(`duplicate type import ${name}`), clause.node);
     }
   }
-  for (const [name, scheme] of values) env.set(name, importedScheme(scheme));
+  for (const [name, scheme] of values) env.set(name, importedScheme(scheme, options));
   for (const [name, info] of types) {
     if (typeEnv.get(name)?.basis) removeBasisConstructors(env, name);
     typeEnv.set(name, info);
@@ -110,8 +119,13 @@ function isUserValue(env: Env, name: string): boolean {
   return !!existing && !existing.basis;
 }
 
-function importedScheme(scheme: Scheme): Scheme {
-  return scheme.imported ? scheme : { ...scheme, imported: true };
+function importedScheme(scheme: Scheme, options: { standardLibrary?: boolean } = {}): Scheme {
+  if (scheme.imported && (!options.standardLibrary || scheme.standardLibrary)) return scheme;
+  return {
+    ...scheme,
+    imported: true,
+    standardLibrary: options.standardLibrary || scheme.standardLibrary,
+  };
 }
 
 function isUserType(typeEnv: TypeEnv, name: string): boolean {

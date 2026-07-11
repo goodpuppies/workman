@@ -39,6 +39,39 @@ Deno.test("cli run compiles and executes a wm file", async () => {
   assertEquals(result.stdout, "42\n");
 });
 
+Deno.test("cli run explains when the entry module has no main function", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/hello.wm`;
+  await Deno.writeTextFile(input, 'let greeting = "hello";');
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 1);
+  assertEquals(result.stdout, "");
+  assertStringIncludes(result.stderr, "-- RUNNER");
+  assertStringIncludes(result.stderr, "has no `main` function");
+  assertStringIncludes(result.stderr, "let main = () => {};");
+});
+
+Deno.test("cli err prints the authored and low-level missing-entrypoint diagnostic", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/hello.wm`;
+  await Deno.writeTextFile(input, 'let greeting = "hello";');
+
+  const result = await runCli(["err", input]);
+
+  assertEquals(result.code, 1);
+  assertEquals(result.stdout, "");
+  assertStringIncludes(result.stderr, "-- error 1");
+  assertStringIncludes(result.stderr, "* authored diagnostic:");
+  assertStringIncludes(result.stderr, "let main = () => {};");
+  assertStringIncludes(result.stderr, "* low-level diagnostic:");
+  assertStringIncludes(result.stderr, "rule: Run.EntryPoint");
+  assertStringIncludes(result.stderr, "* compiler trace:");
+  assertStringIncludes(result.stderr, "-- error 1 end");
+  assertStringIncludes(result.stderr, "--- compiler state ---");
+});
+
 Deno.test("cli compile command keeps js-out path", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

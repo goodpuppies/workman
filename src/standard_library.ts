@@ -66,7 +66,7 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
   const out: InitialImport[] = [];
   for (const module of standardModules) {
     const result = await inferStandardModule(module);
-    for (const clause of module.clauses) out.push({ clause, result });
+    for (const clause of module.clauses) out.push({ clause, result, standard: true });
   }
   return out;
 }

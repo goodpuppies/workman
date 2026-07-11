@@ -29,6 +29,12 @@ type EnhancedDiagnosticProfile = {
 
 const enhancedDiagnosticProfiles: EnhancedDiagnosticProfile[] = [
   {
+    id: "missing-entrypoint",
+    codes: ["run.missing-entrypoint"],
+    rules: ["Run.EntryPoint"],
+    render: renderMissingEntrypoint,
+  },
+  {
     id: "pipe-step-input",
     codes: ["type.mismatch"],
     rules: ["InferPipe.StepInput"],
@@ -47,6 +53,28 @@ const enhancedDiagnosticProfiles: EnhancedDiagnosticProfile[] = [
     render: renderMatchArmResultAgreement,
   },
 ];
+
+function renderMissingEntrypoint(
+  diagnostic: AuditableDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+  options: Required<EnhancedDiagnosticRenderOptions>,
+): string {
+  if (options.mode === "trace") return renderTraceDiagnostic(diagnostic, filePath, source);
+  if (options.mode === "explain") return renderExplainDiagnostic(diagnostic, filePath, source);
+
+  return `${
+    [
+      renderHeader(diagnostic, filePath),
+      "",
+      "This file cannot be run because it has no `main` function.",
+      "",
+      "`wm run` starts by calling `main`. Add a top-level entrypoint, for example:",
+      "",
+      "    let main = () => {};",
+    ].join("\n")
+  }\n`;
+}
 
 export function formatEnhancedDiagnostic(
   diagnostic: AuditableDiagnostic,
@@ -323,7 +351,11 @@ function renderTraceDiagnostic(
 }
 
 function renderHeader(diagnostic: AuditableDiagnostic, filePath: string | undefined): string {
-  const label = diagnostic.severity === "error" ? "TYPE CHECKER" : "WARNING";
+  const label = diagnostic.code.startsWith("run.")
+    ? "RUNNER"
+    : diagnostic.severity === "error"
+    ? "TYPE CHECKER"
+    : "WARNING";
   const file = filePath ? basename(filePath) : "<input>";
   const prefix = `-- ${label} `;
   const suffix = ` ${file}`;

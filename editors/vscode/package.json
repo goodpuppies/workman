@@ -1,9 +1,14 @@
 {
-  "name": "wm-mini-language",
-  "displayName": "wm-mini",
-  "description": "Language support for wm-mini",
+  "name": "workman",
+  "displayName": "Workman",
+  "description": "Language support for Workman",
   "version": "0.0.1",
-  "publisher": "wm-mini",
+  "publisher": "goodpuppies",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/goodpuppies/workman.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -12,7 +17,6 @@
   ],
   "keywords": [
     "workman",
-    "wm-mini",
     "sml",
     "ml",
     "functional"
@@ -24,15 +28,14 @@
   "contributes": {
     "commands": [
       {
-        "command": "wm-mini.restartLanguageServer",
-        "title": "wm-mini: Restart Language Server"
+        "command": "workman.restartLanguageServer",
+        "title": "Workman: Restart Language Server"
       }
     ],
     "languages": [
       {
         "id": "wm",
         "aliases": [
-          "wm-mini",
           "Workman"
         ],
         "extensions": [
@@ -48,34 +51,34 @@
     "grammars": [
       {
         "language": "wm",
-        "scopeName": "source.wm-mini",
+        "scopeName": "source.workman",
         "path": "./syntaxes/wm.tmLanguage.json"
       }
     ],
     "iconThemes": [
       {
-        "id": "wm-mini-icons",
-        "label": "wm-mini Icons",
+        "id": "workman-icons",
+        "label": "Workman Icons",
         "path": "./workman-icon-theme.json"
       }
     ],
     "configuration": {
       "type": "object",
-      "title": "wm-mini",
+      "title": "Workman",
       "properties": {
-        "wmMini.serverPath": {
+        "workman.serverPath": {
           "scope": "window",
           "type": "string",
           "default": "",
-          "description": "Absolute path, or workspace-relative path, to wm-mini src/lsp/server.ts. Empty means auto-detect from the current workspace or this extension checkout."
+          "description": "Absolute path, or workspace-relative path, to Workman src/lsp/server.ts. Empty means auto-detect from the current workspace or this extension checkout."
         },
-        "wmMini.denoPath": {
+        "workman.denoPath": {
           "scope": "window",
           "type": "string",
           "default": "deno",
-          "description": "Deno executable used to launch the wm-mini language server."
+          "description": "Deno executable used to launch the Workman language server."
         },
-        "wmMini.frontendMode": {
+        "workman.frontendMode": {
           "scope": "window",
           "type": "string",
           "enum": [
@@ -84,15 +87,15 @@
             "compare"
           ],
           "default": "v1",
-          "description": "Compiler frontend mode used by the wm-mini language server. v2 is currently a subset-limited migration mode."
+          "description": "Compiler frontend mode used by the Workman language server. v2 is currently a subset-limited migration mode."
         },
-        "wmMini.frontendV2ModulePath": {
+        "workman.frontendV2ModulePath": {
           "scope": "window",
           "type": "string",
           "default": "",
           "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the server checkout default tooling/frontend-v2/frontend-v2.generated.mjs."
         },
-        "wmMini.trace.server": {
+        "workman.trace.server": {
           "scope": "window",
           "type": "string",
           "enum": [
@@ -101,14 +104,16 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Traces communication between VS Code and the wm-mini language server."
+          "description": "Traces communication between VS Code and the Workman language server."
         }
       }
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "deno run --allow-read --allow-write --allow-run ../../scripts/package_vscode_extension.ts"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

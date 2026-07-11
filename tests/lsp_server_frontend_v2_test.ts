@@ -30,8 +30,8 @@ Deno.test("lsp server can launch validation in frontend v2 mode", async () => {
       { jsonrpc: "2.0", method: "exit", params: null },
     ],
     {
-      WM_MINI_FRONTEND: "v2",
-      WM_MINI_FRONTEND_V2_MODULE: frontendV2ModuleUrl.href,
+      WORKMAN_FRONTEND: "v2",
+      WORKMAN_FRONTEND_V2_MODULE: frontendV2ModuleUrl.href,
     },
   );
 
@@ -71,8 +71,8 @@ Deno.test("lsp server publishes multiple frontend v2 structural diagnostics", as
       { jsonrpc: "2.0", method: "exit", params: null },
     ],
     {
-      WM_MINI_FRONTEND: "v2",
-      WM_MINI_FRONTEND_V2_MODULE: frontendV2ModuleUrl.href,
+      WORKMAN_FRONTEND: "v2",
+      WORKMAN_FRONTEND_V2_MODULE: frontendV2ModuleUrl.href,
     },
   );
 
