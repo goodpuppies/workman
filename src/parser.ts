@@ -1,7 +1,6 @@
 import peggy from "peggy";
-import workmanGrammar from "./grammar.peggy" with { type: "text" };
-import wmsmlGrammar from "./grammar.wmsml.peggy" with { type: "text" };
 import type { Module } from "./ast.ts";
+import { wmsmlGrammar, workmanGrammar } from "./generated/assets.ts";
 import { offsetToLineCol, type SourceSpan } from "./source.ts";
 
 export type Surface = "workman" | "wmsml";

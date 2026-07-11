@@ -1,10 +1,12 @@
 import { prepareFfiElaboration } from "./ffi/elab.ts";
-import listSource from "../std/list.wm" with { type: "text" };
-import monadSource from "../std/monad.wm" with { type: "text" };
-import optionSource from "../std/option.wm" with { type: "text" };
-import resultSource from "../std/result.wm" with { type: "text" };
-import taskSource from "../std/task.wm" with { type: "text" };
 import type { ImportClause } from "./ast.ts";
+import {
+  listSource,
+  monadSource,
+  optionSource,
+  resultSource,
+  taskSource,
+} from "./generated/assets.ts";
 import {
   inferModule,
   type InferModuleOptions,
