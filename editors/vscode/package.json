@@ -21,6 +21,7 @@
     "ml",
     "functional"
   ],
+  "icon": "./workman.png",
   "main": "./out/extension.js",
   "activationEvents": [
     "onLanguage:wm"
