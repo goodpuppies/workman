@@ -87,12 +87,27 @@ The example prints:
 some
 ```
 
-For a fully self-contained file, put `-- @no-prelude` on the first non-empty
-line. It omits the algebraic basis (`Option`, `Result`, `List`, and `Js.Error`)
-and automatic standard-library namespaces for that file. Primitive types,
-operators, and `print` remain available. See `examples/result_lift.wm`.
+For a fully self-contained file, put `-- @no-prelude` on the first non-empty line. It omits the
+algebraic basis (`Option`, `Result`, `List`, and `Js.Error`) and automatic standard-library
+namespaces for that file. Primitive types, operators, and `print` remain available. See
+`examples/result_lift.wm`.
 
-To install the local CLI as `wm`:
+## Install
+
+Run Workman without installing it:
+
+```sh
+deno x -A jsr:@goodpuppies/workman run hello.wm
+```
+
+Or install it as `wm`:
+
+```sh
+deno install -g -A --name wm jsr:@goodpuppies/workman
+wm run hello.wm
+```
+
+For local development, the repository installer remains available:
 
 ```sh
 deno task install
@@ -107,5 +122,5 @@ override the launcher directory with `--bin-dir`:
 deno task install --bin-dir /path/to/bin
 ```
 
-Pass `--no-modify-path` if your shell environment manages `PATH` elsewhere.
-Open a new shell after installation for the updated `PATH` to take effect.
+Pass `--no-modify-path` if your shell environment manages `PATH` elsewhere. Open a new shell after
+installation for the updated `PATH` to take effect.

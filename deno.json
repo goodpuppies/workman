@@ -1,8 +1,10 @@
 {
   "name": "@goodpuppies/workman",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
-  "exports": "./src/main.ts",
+  "exports": {
+    ".": "./src/main.ts"
+  },
   "tasks": {
     "check": "deno check src/main.ts src/lsp/server.ts tests/*.ts",
     "test": "deno test --allow-read --allow-write --allow-run --allow-env tests",
