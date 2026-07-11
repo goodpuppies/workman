@@ -2,7 +2,7 @@
   "name": "workman",
   "displayName": "Workman",
   "description": "Language support for Workman",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "goodpuppies",
   "license": "MIT",
   "repository": {
