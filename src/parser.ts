@@ -1,4 +1,6 @@
 import peggy from "peggy";
+import workmanGrammar from "./grammar.peggy" with { type: "text" };
+import wmsmlGrammar from "./grammar.wmsml.peggy" with { type: "text" };
 import type { Module } from "./ast.ts";
 import { offsetToLineCol, type SourceSpan } from "./source.ts";
 
@@ -61,13 +63,9 @@ function hasNoPreludeDirective(source: string): boolean {
 
 async function loadParser(surface: Surface): Promise<peggy.Parser> {
   if (surface === "wmsml") {
-    wmsmlParser ??= peggy.generate(
-      await Deno.readTextFile(new URL("./grammar.wmsml.peggy", import.meta.url)),
-    );
+    wmsmlParser ??= peggy.generate(wmsmlGrammar);
     return wmsmlParser;
   }
-  workmanParser ??= peggy.generate(
-    await Deno.readTextFile(new URL("./grammar.peggy", import.meta.url)),
-  );
+  workmanParser ??= peggy.generate(workmanGrammar);
   return workmanParser;
 }

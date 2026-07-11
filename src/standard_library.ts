@@ -1,4 +1,9 @@
 import { prepareFfiElaboration } from "./ffi/elab.ts";
+import listSource from "../std/list.wm" with { type: "text" };
+import monadSource from "../std/monad.wm" with { type: "text" };
+import optionSource from "../std/option.wm" with { type: "text" };
+import resultSource from "../std/result.wm" with { type: "text" };
+import taskSource from "../std/task.wm" with { type: "text" };
 import type { ImportClause } from "./ast.ts";
 import {
   inferModule,
@@ -10,34 +15,34 @@ import { parse } from "./parser.ts";
 
 type StandardModule = {
   path: string;
-  url: URL;
+  source: string;
   clauses: ImportClause[];
 };
 
 const standardModules: StandardModule[] = [
   {
     path: "std/list.wm",
-    url: new URL("../std/list.wm", import.meta.url),
+    source: listSource,
     clauses: [{ kind: "Namespace", alias: "List" }],
   },
   {
     path: "std/option.wm",
-    url: new URL("../std/option.wm", import.meta.url),
+    source: optionSource,
     clauses: [{ kind: "Namespace", alias: "Option" }],
   },
   {
     path: "std/result.wm",
-    url: new URL("../std/result.wm", import.meta.url),
+    source: resultSource,
     clauses: [{ kind: "Namespace", alias: "Result" }],
   },
   {
     path: "std/task.wm",
-    url: new URL("../std/task.wm", import.meta.url),
+    source: taskSource,
     clauses: [{ kind: "Namespace", alias: "Task" }],
   },
   {
     path: "std/monad.wm",
-    url: new URL("../std/monad.wm", import.meta.url),
+    source: monadSource,
     clauses: [{ kind: "Namespace", alias: "Monad" }],
   },
 ];
@@ -65,8 +70,7 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
 }
 
 async function inferStandardModule(module: StandardModule): Promise<InferResult> {
-  const source = await Deno.readTextFile(module.url);
-  const parsed = await parse(source, "workman", module.path);
+  const parsed = await parse(module.source, "workman", module.path);
   const prepared = prepareFfiElaboration(parsed).module;
   return inferModule(prepared);
 }

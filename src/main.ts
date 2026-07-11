@@ -58,7 +58,7 @@ export async function runCli(args: string[]): Promise<number> {
 }
 
 if (import.meta.main) {
-  Deno.exit(await runCli(Deno.args));
+  Deno.exitCode = await runCli(Deno.args);
 }
 
 export async function main(args: string[]): Promise<number> {
