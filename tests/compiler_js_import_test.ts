@@ -116,6 +116,15 @@ Deno.test("reflects JSR module imports", async () => {
   assertStringIncludes(js, `await import("jsr:@std/path@^1.0.9")`);
 });
 
+Deno.test("reflects bare npm modules through node_modules declarations", async () => {
+  const result = await checkSource(`
+    from js.module("typescript") import { createSourceFile };
+    let file = createSourceFile("example.ts", "", 99);
+  `);
+
+  expectBinding(result.env, "file", { type: "Result<SourceFile, Js.Error>", vars: 0 });
+});
+
 Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

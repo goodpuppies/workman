@@ -188,7 +188,10 @@ function denoResolvedModule(
   const specifier = resolveDenoSpecifier(graphs, moduleName, containingFile);
   if (!specifier) return undefined;
   const module = denoModuleForFileName(graphs, specifier);
-  if (!module) return undefined;
+  // `deno info` represents npm packages as a graph node without a local source
+  // file. Let TypeScript's normal resolver handle those so it can follow their
+  // package metadata and declaration files in node_modules.
+  if (!module?.local) return undefined;
   return {
     resolvedFileName: module.specifier,
     extension: tsExtensionForModule(module),
