@@ -1,0 +1,43 @@
+-- Stress test for TypeScript-backed JS FFI reflection.
+--
+-- Exercises:
+-- - reflected global constructors: Request, EventTarget, Event
+-- - cross-module delayed receiver solving for Request/EventTarget
+-- - nested prototype/property paths: headers.get, searchParams.get
+-- - Result wrapping around reflected property and method reads
+-- - callback contextual typing through addEventListener("click", ...)
+
+from js.global import unsafe { Request, EventTarget, Event };
+from js.global import type { Request, EventTarget, Event };
+from "./ffi_reflection_tools.wm" import { RequestSummary, requestSummary };
+
+let request = Request.new("https://example.test/search?q=workman", JSON{
+  method: "POST",
+  headers: JSON{
+    "content-type": "text/plain"
+  },
+  body: "hello from wm-mini"
+});
+
+let main = () => {
+  let summary = requestSummary(request);
+  print(summary.method);
+  print(summary.host);
+  print(summary.query);
+  print(summary.contentType);
+
+  let target = EventTarget.new();
+  let click = Event.new("click");
+  let installed = target.addEventListener("click", (evt) => {
+    print("click")
+  });
+  match(installed) {
+    Ok(_) => {
+      match(target.dispatchEvent(click)) {
+        Ok(dispatched) => { print(dispatched) },
+        Err(_) => { print(false) },
+      }
+    },
+    Err(_) => { print(false) },
+  }
+};

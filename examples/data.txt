@@ -1,0 +1,2 @@
+wm-mini fs stream reflection example
+second line to make the stream do real work

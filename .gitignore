@@ -1,1 +1,3 @@
 *.dll
+node_modules/
+research/

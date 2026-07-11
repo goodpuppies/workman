@@ -1,0 +1,42 @@
+-- Helpers intentionally leave JS receiver parameters unannotated.
+-- The importing module constrains them through reflected constructor results.
+
+from js.global import unsafe { URL };
+from js.global import type { Request };
+
+export record RequestSummary = {
+  method: String,
+  host: String,
+  query: String,
+  contentType: String
+};
+
+let orString = (value, fallback) => {
+  match(value) {
+    Ok(text) => { text },
+    Err(_) => { fallback },
+  }
+};
+
+let orOptionalString = (value, fallback) => {
+  match(value) {
+    Ok(Some(text)) => { text },
+    Ok(None) => { fallback },
+    Err(_) => { fallback },
+  }
+};
+
+export let requestSummary = (req: Request) => {
+  let method = orString(req.method, "?");
+  let urlText = orString(req.url, "https://invalid.local/?q=missing");
+  let url = URL.new(urlText);
+  let host = orString(url.host, "unknown-host");
+  let query = orOptionalString(url.searchParams.get("q"), "missing");
+  let contentType = orOptionalString(req.headers.get("content-type"), "none");
+  .{
+    method,
+    host,
+    query,
+    contentType
+  }
+};
