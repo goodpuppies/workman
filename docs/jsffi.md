@@ -153,6 +153,13 @@ remain nominal and opaque while the operations crossing the boundary remain full
 concepts stay in the shim instead of leaking into ordinary Workman programs or driving expansion of
 the language.
 
+`Js.Object` and `Js.Value` are reserved for genuinely dynamic declarations or an explicitly chosen
+dynamic boundary. They are not fallback types for failed reflection. If TypeScript declares a
+static shape which Workman cannot map, the FFI access remains unresolved and must be made explicit
+or adapted with a shim. Replacing known structure with an opaque value would erase evidence that
+Workman's type inference cannot recover; use an assertion to turn an intentionally dynamic value
+back into a checked Workman shape.
+
 ## Deno APIs
 
 Deno globals live under `Deno`:

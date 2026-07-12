@@ -297,7 +297,8 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
           ),
       );
       if (mapped) return { name: path.at(-1)!, ...mapped };
-      const type = typeExprFromTsType(checker, propertyType) ?? name("Js.Value");
+      const type = typeExprFromTsType(checker, propertyType);
+      if (!type) return undefined;
       return {
         name: path.at(-1)!,
         type,
@@ -441,6 +442,7 @@ function jsRefCallTarget(
       const signature = checker.getResolvedSignature(call);
       if (!signature) return undefined;
       const type = functionTypeFromCall(checker, call, signature, args);
+      if (!type) return undefined;
       const callbackParamRefs = callbackParamRefsFromCall(
         checker,
         call,

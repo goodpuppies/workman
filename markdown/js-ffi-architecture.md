@@ -40,6 +40,24 @@ The limitation is therefore architectural, not merely an unimplemented convenien
 way to handle a genuinely incompatible API should be to adapt it outside Workman, not to expand
 Workman until ordinary program code can impersonate TypeScript.
 
+## Opaque Types Are Not Reflection Recovery
+
+`Js.Object` and `Js.Value` have semantic meaning: they represent values which are genuinely dynamic
+at the Workman boundary. They are not fallback answers for a reflection query which found a static
+TypeScript type that the mapper failed to understand.
+
+Replacing an unsupported static type with an opaque type erases evidence. HM cannot reconstruct the
+lost fields, tuple positions, nominal identity, or call signature; annotations are intentionally not
+casts; and later receiver access or destructuring cannot make the original reflection result more
+precise. The apparent recovery therefore tends to become a downstream deadlock with a less accurate
+diagnostic.
+
+When TypeScript provides a static type, reflection must either map that type honestly or leave the
+FFI obligation unresolved with a diagnostic naming the unsupported shape. Use `Js.Object` or
+`Js.Value` only when the declaration is itself dynamic (`any`, `unknown`, or an intentionally coarse
+dynamic API), or when the programmer explicitly chooses a dynamic boundary. Such values remain
+opaque until an assertion or another checked operation gives Workman usable evidence.
+
 ## Current File Layout
 
 `src/ffi` is organized around three phases:
@@ -176,12 +194,14 @@ errors should still be produced explicitly with `Result.mapErr` or `Task.mapErr`
 - arrays and typed arrays map to `Js.Array<T>` when the element is reasonably knowable;
 - promises map to `Js.Promise<T>`;
 - nullish returns map to `Option<T>`;
-- object-like results map to `Js.Object` when no better nominal type is available;
-- unknown, `any`, and hard unions should fall back to `Js.Value`.
+- genuinely dynamic object-like results map to `Js.Object`;
+- declared `unknown` and `any` map to `Js.Value`;
+- unsupported static objects and unions remain unresolved rather than being recovered as opaque.
 
 Unions are a permanent risk area. The mapper should support common DOM/JS cases, but it should not
-try to encode TypeScript's full union logic in Workman. If a union is not obviously useful, collapse
-it to `Js.Value` and make the user handle it.
+try to encode TypeScript's full union logic in Workman. If a statically declared union cannot be
+mapped honestly, reject it and require the user to provide an explicit dynamic boundary or a typed
+shim. Do not silently collapse it to `Js.Value`.
 
 ## Promise And Array Models
 

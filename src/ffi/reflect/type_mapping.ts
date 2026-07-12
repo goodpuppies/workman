@@ -88,46 +88,49 @@ export function typeExprFromTsType(
     const bufferSource = bufferSourceParamExpr(checker, type);
     if (bufferSource) return bufferSource;
   }
+  if (isAnyOrUnknown(type)) return name("Js.Value");
+  if (type.flags & ts.TypeFlags.Conditional) return name("Js.Value");
   if (isTsType(checker, type, "number")) return name("Number");
   if (isTsType(checker, type, "string")) return name("String");
   if (isTsType(checker, type, "boolean")) return name("Bool");
+  const enumType = enumTypeExpr(type);
+  if (enumType) return enumType;
   const pointer = denoPointerTypeExpr(checker, type);
   if (pointer) return pointer;
   const awaited = awaitedTypeArgument(checker, type, position);
   if (awaited) return awaited;
   const nullish = nullishUnionParts(type);
   if (nullish) {
-    const inner = nullish.value
-      ? (typeExprFromTsType(checker, nullish.value, position) ?? name("Js.Value"))
-      : name("Js.Value");
-    return option(inner);
+    const inner = nullish.value ? typeExprFromTsType(checker, nullish.value, position) : undefined;
+    if (inner) return option(inner);
+    return position === "param" ? option(name("Js.Value")) : undefined;
   }
   if (type.isUnion()) {
-    if (position === "param" && type.types.some(isFunctionType)) return name("Js.Value");
+    const promisedUnion = promisedOrValueUnionType(checker, type, position);
+    if (promisedUnion) return promisedUnion;
     if (type.types.some(isObjectLike)) {
-      if (position === "result" && type.types.every(isObjectLike)) return name("Js.Object");
       return position === "param" && type.types.some(isStringLike) && type.types
           .filter(isObjectLike)
           .every((item) => checker.typeToString(item) === "URL")
         ? name("String")
-        : name("Js.Value");
+        : position === "param"
+        ? name("Js.Value")
+        : undefined;
     }
     if (position === "param" && type.types.some(isStringLike)) return name("String");
     if (type.types.some(isStringLike)) return name("String");
     const mapped = type.types.map((item) => typeExprFromTsType(checker, item, position));
-    if (mapped.some((item) => item?.kind === "TName" && item.name === "Js.Value")) {
-      return name("Js.Value");
-    }
-    if (mapped.some((item) => item?.kind === "TName" && item.name === "String")) {
-      return name("String");
-    }
+    if (mapped.some((item) => !item)) return undefined;
+    const first = mapped[0];
+    if (first && mapped.every((item) => typeKey(item!) === typeKey(first))) return first;
+    return undefined;
   }
   const signature = type.getCallSignatures()[0];
   if (signature) return functionTypeFromSignature(checker, signature);
   if (type.flags & ts.TypeFlags.TypeParameter) {
     const constraint = checker.getBaseConstraintOfType(type);
     if (constraint && !isAnyOrUnknown(constraint)) {
-      return typeExprFromTsType(checker, constraint, position) ?? name("Js.Value");
+      return typeExprFromTsType(checker, constraint, position);
     }
     return name("Js.Value");
   }
@@ -142,10 +145,47 @@ export function typeExprFromTsType(
   }
   const arrayElement = arrayElementType(checker, type, position);
   if (arrayElement) return { kind: "TName", name: "Js.Array", args: [arrayElement] };
+  if (/^(?:Deno\.)?DynamicLibrary<.+>$/.test(checker.typeToString(type))) {
+    return name("Js.Object");
+  }
   const nominal = nominalObjectTypeName(checker, type);
   if (position === "result" && nominal) return name(nominal);
-  if (position === "result" && isObjectLike(type)) return name("Js.Object");
-  return name("Js.Value");
+  const tuple = fixedTupleTypeExpr(checker, type, position);
+  if (tuple) return tuple;
+  if (isExplicitDynamicObject(checker, type)) return name("Js.Object");
+  return position === "param" ? name("Js.Value") : undefined;
+}
+
+function enumTypeExpr(type: ts.Type): TypeExpr | undefined {
+  const symbol = type.aliasSymbol ?? type.getSymbol();
+  const declaration = symbol?.declarations?.find(ts.isEnumDeclaration);
+  if (!declaration) return undefined;
+  const kinds = new Set(
+    declaration.members.map((member) =>
+      member.initializer && ts.isStringLiteralLike(member.initializer) ? "string" : "number"
+    ),
+  );
+  if (kinds.size !== 1) return undefined;
+  return name(kinds.has("string") ? "String" : "Number");
+}
+
+function promisedOrValueUnionType(
+  checker: ts.TypeChecker,
+  type: ts.UnionType,
+  position: "param" | "result",
+): TypeExpr | undefined {
+  if (position !== "result" || type.types.length !== 2) return undefined;
+  const promised = type.types.find((item) =>
+    /\bPromise(?:Like)?</.test(checker.typeToString(item))
+  );
+  const value = type.types.find((item) => item !== promised);
+  if (!promised || !value) return undefined;
+  const promisedValue = promiseElementType(checker, promised, position);
+  const directValue = typeExprFromTsType(checker, value, position);
+  if (!promisedValue || !directValue || typeKey(promisedValue) !== typeKey(directValue)) {
+    return undefined;
+  }
+  return { kind: "TName", name: "Task", args: [directValue, name("Js.Error")] };
 }
 
 export function nominalObjectTypeName(checker: ts.TypeChecker, type: ts.Type): string | undefined {
@@ -155,6 +195,13 @@ export function nominalObjectTypeName(checker: ts.TypeChecker, type: ts.Type): s
   if (!typeName || typeName === "__type" || typeName === "Object") return undefined;
   if (!/^[A-Za-z_$][\w$]*$/.test(typeName)) return undefined;
   if (isNumericTypedArrayName(typeName)) return typeName;
+  if (
+    symbol?.declarations?.some((decl) =>
+      ts.isClassDeclaration(decl) || ts.isInterfaceDeclaration(decl)
+    )
+  ) {
+    return typeName;
+  }
   const text = checker.typeToString(type);
   if (/[<>{}&|()[\],]/.test(text)) return undefined;
   return typeName;
@@ -170,15 +217,15 @@ function awaitedTypeArgument(
     const awaited = (checker as { getAwaitedType?: (type: ts.Type) => ts.Type | undefined })
       .getAwaitedType?.(type);
     if (awaited && awaited !== type) {
-      return typeExprFromTsType(checker, awaited, position) ?? name("Js.Value");
+      return typeExprFromTsType(checker, awaited, position);
     }
   }
   const match = /^Awaited<([A-Za-z_][A-Za-z0-9_]*)>$/.exec(text);
-  if (match) return name("Js.Value");
+  if (match) return undefined;
   if (!/^Awaited<.+>$/.test(text)) return undefined;
   const ref = type as ts.TypeReference;
   const arg = ref.typeArguments?.[0] ?? checker.getTypeArguments(ref)[0];
-  return arg ? typeExprFromTsType(checker, arg, position) ?? name("Js.Value") : name("Js.Value");
+  return arg ? typeExprFromTsType(checker, arg, position) : undefined;
 }
 
 function nullishUnionParts(type: ts.Type): { value?: ts.Type } | undefined {
@@ -244,8 +291,11 @@ function bufferSourceTypeName(checker: ts.TypeChecker, type: ts.Type): string | 
   return /^[A-Za-z_$][\w$]*$/.test(text) ? text : undefined;
 }
 
-function functionTypeFromSignature(checker: ts.TypeChecker, signature: ts.Signature): TypeExpr {
-  return functionVariantsFromSignature(checker, signature)[0].type;
+function functionTypeFromSignature(
+  checker: ts.TypeChecker,
+  signature: ts.Signature,
+): TypeExpr | undefined {
+  return functionVariantsFromSignature(checker, signature)[0]?.type;
 }
 
 export function functionVariantsFromSignature(
@@ -294,8 +344,8 @@ export function functionVariantsFromSignature(
         callbackRefs,
       }];
     });
-  const result = typeExprFromTsType(checker, checker.getReturnTypeOfSignature(signature)) ??
-    name("Js.Value");
+  const result = typeExprFromTsType(checker, checker.getReturnTypeOfSignature(signature));
+  if (!result) return [];
   const restIndex = parameters.findIndex((param) => param.rest);
   if (restIndex !== -1) {
     const fixed = parameters.slice(0, restIndex);
@@ -475,7 +525,9 @@ function tupleRestParams(
   const flags = target.elementFlags ?? [];
   // Only expand pure fixed/optional tuples; a nested rest/variadic element is still
   // unbounded, so fall back to the rest-overload handling for those.
-  if (elements.some((_, index) => flags[index] & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic))) {
+  if (
+    elements.some((_, index) => flags[index] & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic))
+  ) {
     return undefined;
   }
   return elements.map((elementType, elementIndex) => {
@@ -492,6 +544,33 @@ function tupleRestParams(
     );
     return { type: mapped, optional, rest: false, callbackRefs };
   });
+}
+
+function fixedTupleTypeExpr(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  position: "param" | "result",
+): TypeExpr | undefined {
+  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
+  const ref = type as ts.TypeReference;
+  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
+  if (!target || !(target.objectFlags & ts.ObjectFlags.Tuple)) return undefined;
+  const elements = checker.getTypeArguments(ref);
+  const flags = target.elementFlags ?? [];
+  if (
+    elements.some((_, index) =>
+      flags[index] &
+      (ts.ElementFlags.Optional | ts.ElementFlags.Rest | ts.ElementFlags.Variadic)
+    )
+  ) {
+    return undefined;
+  }
+  const items = elements.map((element) => typeExprFromTsType(checker, element, position));
+  if (items.some((item) => !item)) return undefined;
+  return {
+    kind: "TTuple",
+    items: items as TypeExpr[],
+  };
 }
 
 function restElementType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
@@ -527,14 +606,12 @@ function promiseElementType(
   const promised =
     (checker as { getPromisedTypeOfPromise?: (type: ts.Type) => ts.Type | undefined })
       .getPromisedTypeOfPromise?.(type);
-  if (promised) return typeExprFromTsType(checker, promised, position) ?? name("Js.Value");
+  if (promised) return typeExprFromTsType(checker, promised, position);
   const text = checker.typeToString(type);
   if (!/\bPromise(?:Like)?\b/.test(text)) return undefined;
   const ref = type as ts.TypeReference;
   const typeArg = ref.typeArguments?.[0] ?? checker.getTypeArguments(ref)[0];
-  return typeArg
-    ? typeExprFromTsType(checker, typeArg, position) ?? name("Js.Value")
-    : name("Js.Value");
+  return typeArg ? typeExprFromTsType(checker, typeArg, position) : name("Js.Value");
 }
 
 function isNumericTypedArray(checker: ts.TypeChecker, type: ts.Type): boolean {
@@ -573,11 +650,12 @@ function isObjectLike(type: ts.Type): boolean {
   return !!(type.flags & ts.TypeFlags.Object);
 }
 
-function isStringLike(type: ts.Type): boolean {
-  return !!(type.flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral));
+function isExplicitDynamicObject(checker: ts.TypeChecker, type: ts.Type): boolean {
+  const text = checker.typeToString(type);
+  return text === "object" || text === "Object" || text === "{}" ||
+    /^(?:Record<string, (?:any|unknown)>|\{ \[.*: string\]: (?:any|unknown); \})$/.test(text);
 }
 
-function isFunctionType(type: ts.Type): boolean {
-  return type.getCallSignatures().length > 0 || !!(type.flags & ts.TypeFlags.Object) &&
-      /^(Function|TimerHandler)$/.test(type.symbol?.getName() ?? "");
+function isStringLike(type: ts.Type): boolean {
+  return !!(type.flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral));
 }

@@ -194,7 +194,7 @@ Deno.test("resolves import-map aliases during delayed reflection independent of 
     `${dir}/service.ts`,
     `
       export class Service {
-        async create(file: string): Promise<{ file: string }> {
+        async create(file: string): Promise<object> {
           return { file };
         }
       }

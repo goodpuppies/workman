@@ -110,7 +110,7 @@ Deno.test("maps reflected JS nullish returns to basis Option", async () => {
     };
   `);
 
-  expectBinding(result.env, "found", { type: "Result<Option<Js.Value>, Js.Error>", vars: 0 });
+  expectBinding(result.env, "found", { type: "Result<Option<Element>, Js.Error>", vars: 0 });
   expectBinding(result.env, "isMissing", { type: "Bool", vars: 0 });
 });
 
@@ -202,7 +202,7 @@ Deno.test("reflects callback parameter object refs before HM", async () => {
     });
   `);
 
-  expectBinding(result.env, "server", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "server", { type: "Result<HttpServer, Js.Error>", vars: 0 });
 });
 
 Deno.test("reflects dynamic properties from annotated Js.Object values", async () => {
@@ -552,6 +552,44 @@ Deno.test("reflected constructors return imported nominal foreign types", async 
     type: "Result<Option<String>, Js.Error>",
     vars: 0,
   });
+});
+
+Deno.test("reflects fixed TypeScript tuples from functions and foreign members", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import { makePair };
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type {
+      TupleForeign, TupleHandle
+    };
+
+    let pair = makePair();
+    let create = (foreign: TupleForeign) => {
+      foreign.create()
+    };
+  `);
+
+  expectBinding(result.env, "pair", {
+    type: "Result<(Number, String), Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "create", {
+    type: "(TupleForeign) => Result<(Number, TupleHandle), Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("unsupported static foreign results remain unresolved instead of becoming opaque", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleForeign };
+
+        let unsupported = (foreign: TupleForeign) => {
+          foreign.unsupportedObject()
+        };
+      `),
+    Error,
+    "unresolved JS FFI method unsupportedObject",
+  );
 });
 
 Deno.test("unannotated helper receivers keep delayed FFI obligations", async () => {
