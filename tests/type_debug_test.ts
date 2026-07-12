@@ -28,3 +28,20 @@ Deno.test("type-debug hides the standard-library environment by default", async 
   assertStringIncludes(output, "answer: Number");
   assertEquals(output.includes("List.map:"), false);
 });
+
+Deno.test("type-debug completes after recoverable delayed FFI diagnostics", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    main,
+    `
+      from js.global import { parseInt };
+      let value = parseInt("42", 10) :> Result.map((number) => { number + 1 });
+    `,
+  );
+
+  const output = await typeDebugFile(main);
+
+  assertStringIncludes(output, "type-debug: ok");
+  assertStringIncludes(output, "value: Result<Number, Js.Error>");
+});

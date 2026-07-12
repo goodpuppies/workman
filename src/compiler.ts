@@ -1,4 +1,4 @@
-import type { ImportClause, Module } from "./ast.ts";
+import type { Module } from "./ast.ts";
 import { basename, dirname, relative } from "node:path";
 import {
   type CoreProgram,
@@ -31,13 +31,16 @@ import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import {
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
-  FrontendDiagnosticError,
   genericDiagnostic,
-  renderDiagnosticSummary,
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import { standardInferOptions } from "./standard_library.ts";
 import { assertCompilerFrontendMode } from "./frontend_mode.ts";
+import {
+  analyzeModuleGraph,
+  assertNoPartialDiagnostics,
+  StagedAnalysisError,
+} from "./staged_analysis.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 export type CompileArtifact = {
@@ -240,175 +243,19 @@ export async function analyzeFile(
 ): Promise<{ graph: ModuleGraph; results: Map<string, InferResult> }> {
   assertCompilerFrontendMode(options.frontend);
   const graph = await loadModuleGraph(input, options);
-  const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
-  for (const node of graph.nodes.values()) {
-    node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
-    const prepared = prepareFfiElaboration(node.module, {
-      filePath: node.path,
-      importedRecordFields: importedRecordFields(node, graph),
-    });
-    ffi.set(node.path, prepared);
-    node.module = prepared.module;
-  }
-  const results = new Map<string, InferResult>();
-  const firstResults = new Map<string, InferResult>();
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, firstResults.get(edge.path)!);
-    }
-    try {
-      firstResults.set(
-        path,
-        assertNoPartialDiagnostics(
-          inferModulePartial(node.module, imports, await standardInferOptions()),
-        ),
-      );
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  const contextualResults = new Map<string, InferResult>();
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    try {
-      const contextual = contextualizeDelayedCallbacks(ffi.get(path)!, firstResults.get(path)!);
-      ffi.set(path, contextual);
-      node.module = contextual.module;
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, contextualResults.get(edge.path)!);
-    }
-    try {
-      contextualResults.set(
-        path,
-        assertNoPartialDiagnostics(
-          inferModulePartial(node.module, imports, await standardInferOptions()),
-        ),
-      );
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  const foreignTypeRefs = new Map(
-    [...ffi.values()].flatMap((item) =>
-      [...item.foreignTypeRefs.values()].map((ref) => [ref.key, ref])
-    ),
-  );
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    try {
-      const prepared = ffi.get(path)!;
-      const contextualResult = contextualResults.get(path)!;
-      const resolved = resolveDelayedFfiElaboration(prepared, contextualResult, {
-        foreignTypeRefs,
-        dynamicFallback: false,
-      });
-      ffi.set(path, resolved);
-      node.module = resolved.module;
-    } catch (error) {
+  try {
+    return { graph, results: await analyzeModuleGraph(graph) };
+  } catch (error) {
+    if (error instanceof StagedAnalysisError) {
       throw new ModuleAnalysisError(
-        path,
-        node.source,
-        error,
-        delayedFfiDiagnostics(contextualResults.get(path)),
+        error.node.path,
+        error.node.source,
+        error.originalError,
+        error.phase.startsWith("resolve delayed FFI") ? delayedFfiDiagnostics(error.result) : [],
       );
     }
+    throw error;
   }
-  const postResolveResults = new Map<string, InferResult>();
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, postResolveResults.get(edge.path)!);
-    }
-    try {
-      postResolveResults.set(
-        path,
-        assertNoPartialDiagnostics(
-          inferModulePartial(node.module, imports, await standardInferOptions()),
-        ),
-      );
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    try {
-      const prepared = ffi.get(path)!;
-      const postResolveResult = postResolveResults.get(path)!;
-      const resolved = resolveDelayedFfiElaboration(prepared, postResolveResult, {
-        foreignTypeRefs,
-      });
-      ffi.set(path, resolved);
-      node.module = resolved.module;
-    } catch (error) {
-      throw new ModuleAnalysisError(
-        path,
-        node.source,
-        error,
-        delayedFfiDiagnostics(postResolveResults.get(path)),
-      );
-    }
-  }
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, results.get(edge.path)!);
-    }
-    try {
-      results.set(path, inferModule(node.module, imports, await standardInferOptions()));
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  return { graph, results };
-}
-
-function importedRecordFields(
-  node: ModuleNode,
-  graph: ModuleGraph,
-): Set<string> {
-  const fields = new Set<string>();
-  for (const edge of node.imports) {
-    const imported = graph.nodes.get(edge.path);
-    if (!imported) continue;
-    for (const decl of imported.module.decls) {
-      if (decl.kind !== "RecordDecl" || !importsRecord(edge.clause, decl.name)) continue;
-      for (const field of decl.fields) fields.add(field.name);
-    }
-  }
-  return fields;
-}
-
-function importsRecord(clause: ImportClause, name: string): boolean {
-  return clause.kind === "All" || clause.kind === "Namespace" ||
-    clause.specs.some((spec) => spec.name === name);
-}
-
-function assertNoPartialDiagnostics(result: InferResult): InferResult {
-  const diagnostic = result.diagnostics.find((item) =>
-    item.severity === "error" && !isDelayedFfiPartialDiagnostic(renderDiagnosticSummary(item))
-  );
-  if (diagnostic) throw new FrontendDiagnosticError(diagnostic);
-  return result;
-}
-
-function isDelayedFfiPartialDiagnostic(message: string): boolean {
-  return message.startsWith("cannot solve unresolved JS FFI type ") ||
-    message.startsWith("unresolved JS FFI obligation in ") ||
-    message.startsWith("unresolved JS FFI type in ") ||
-    message.startsWith("unsolved JS boundary type in ") ||
-    message.includes("?ffi#");
 }
 
 async function checkPreparedModuleWithoutImports(

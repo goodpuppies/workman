@@ -5,16 +5,10 @@ import {
   FrontendDiagnosticError,
   renderDiagnosticSummary,
 } from "./diagnostics.ts";
-import {
-  contextualizeDelayedCallbacks,
-  resolveDelayedFfiElaboration,
-} from "./ffi/delayed/delayed.ts";
-import { prepareFfiElaboration } from "./ffi/elab.ts";
 import type { InferResult } from "./infer.ts";
-import { inferModule, inferModulePartial } from "./infer.ts";
 import { loadModuleGraph, type ModuleGraph, type ModuleNode } from "./module_graph.ts";
 import { sliceSource, type SourceSpan } from "./source.ts";
-import { standardInferOptions } from "./standard_library.ts";
+import { analyzeModuleGraph, StagedAnalysisError } from "./staged_analysis.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import type { FfiFact, TypeFact } from "./infer/type_facts.ts";
 import { collectExprs, collectPatterns } from "./type_debug_collect.ts";
@@ -32,76 +26,14 @@ export async function typeDebugFile(input: string): Promise<string> {
   try {
     const graph = await loadModuleGraph(input);
     state.graph = graph;
-    const inferOptions = await standardInferOptions();
-
-    const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
-    for (const node of graph.nodes.values()) {
-      const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
-      ffi.set(node.path, prepared);
-      node.module = prepared.module;
-    }
-
-    const firstResults = new Map<string, InferResult>();
-    for (const path of graph.order) {
-      state.phase = "initial partial inference";
-      state.path = path;
-      state.node = graph.nodes.get(path);
-      const imports = importsFor(path, graph, firstResults);
-      const result = inferModulePartial(state.node!.module, imports, inferOptions);
-      firstResults.set(path, result);
-      state.result = result;
-      if (hasFatalPartialDiagnostics(result)) return formatRecoveredDiagnostics(state);
-    }
-
-    for (const path of graph.order) {
-      state.phase = "contextualize delayed callbacks";
-      state.path = path;
-      state.node = graph.nodes.get(path);
-      state.result = firstResults.get(path);
-      const contextual = contextualizeDelayedCallbacks(ffi.get(path)!, state.result!);
-      ffi.set(path, contextual);
-      state.node!.module = contextual.module;
-    }
-
-    const contextualResults = new Map<string, InferResult>();
-    for (const path of graph.order) {
-      state.phase = "contextual partial inference";
-      state.path = path;
-      state.node = graph.nodes.get(path);
-      const imports = importsFor(path, graph, contextualResults);
-      const result = inferModulePartial(state.node!.module, imports, inferOptions);
-      contextualResults.set(path, result);
-      state.result = result;
-      if (hasFatalPartialDiagnostics(result)) return formatRecoveredDiagnostics(state);
-    }
-
-    const foreignTypeRefs = new Map(
-      [...ffi.values()].flatMap((item) =>
-        [...item.foreignTypeRefs.values()].map((ref) => [ref.key, ref] as const)
-      ),
-    );
-
-    for (const path of graph.order) {
-      state.phase = "resolve delayed FFI";
-      state.path = path;
-      state.node = graph.nodes.get(path);
-      state.result = contextualResults.get(path);
-      const resolved = resolveDelayedFfiElaboration(ffi.get(path)!, state.result!, {
-        foreignTypeRefs,
-      });
-      state.node!.module = resolved.module;
-    }
-
-    const finalResults = new Map<string, InferResult>();
-    for (const path of graph.order) {
-      state.phase = "final inference";
-      state.path = path;
-      state.node = graph.nodes.get(path);
-      const imports = importsFor(path, graph, finalResults);
-      const result = inferModule(state.node!.module, imports, inferOptions);
-      finalResults.set(path, result);
-      state.result = result;
-    }
+    const finalResults = await analyzeModuleGraph(graph, {
+      onEvent: ({ phase, node, result }) => {
+        state.phase = phase;
+        state.path = node.path;
+        state.node = node;
+        state.result = result;
+      },
+    });
 
     const entry = finalResults.get(graph.entry);
     return [
@@ -114,50 +46,11 @@ export async function typeDebugFile(input: string): Promise<string> {
   }
 }
 
-function formatRecoveredDiagnostics(state: DebugState): string {
-  return [
-    "type-debug: failed",
-    `phase: ${state.phase}`,
-    state.path ? `module: ${state.path}` : undefined,
-    "error: recoverable diagnostics were produced before later type phases",
-    state.result ? formatDiagnostics(state.result) : undefined,
-    state.result ? formatEnv(state.result, 100) : undefined,
-    state.result && state.node
-      ? formatNearbyTypeFacts(state.node.module, state.node.source, state.result, undefined)
-      : undefined,
-    state.result ? formatFfiFacts(state.result) : undefined,
-  ].filter((item): item is string => !!item && item.length > 0).join("\n\n");
-}
-
-function hasFatalPartialDiagnostics(result: InferResult): boolean {
-  return result.diagnostics.some((item) =>
-    item.severity === "error" && !isDelayedFfiPartialDiagnostic(renderDiagnosticSummary(item))
-  );
-}
-
-function isDelayedFfiPartialDiagnostic(message: string): boolean {
-  return message.startsWith("cannot solve unresolved JS FFI type ") ||
-    message.startsWith("unresolved JS FFI obligation in ") ||
-    message.startsWith("unresolved JS FFI type in ") ||
-    message.startsWith("unsolved JS boundary type in ");
-}
-
-function importsFor(
-  path: string,
-  graph: ModuleGraph,
-  results: Map<string, InferResult>,
-): Map<string, InferResult> {
-  const node = graph.nodes.get(path)!;
-  const imports = new Map<string, InferResult>();
-  for (const edge of node.imports) {
-    const result = results.get(edge.path);
-    if (result) imports.set(edge.specifier, result);
-  }
-  return imports;
-}
-
 function formatDebugFailure(error: unknown, state: DebugState): string {
-  const diagnostic = error instanceof FrontendDiagnosticError ? error.diagnostic : undefined;
+  const originalError = error instanceof StagedAnalysisError ? error.originalError : error;
+  const diagnostic = originalError instanceof FrontendDiagnosticError
+    ? originalError.diagnostic
+    : undefined;
   const span = diagnostic?.primary.kind === "source" ? diagnostic.primary.span : undefined;
   const source = state.node?.source;
   const path = state.path ?? state.node?.path;

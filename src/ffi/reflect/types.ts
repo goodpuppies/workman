@@ -144,11 +144,17 @@ export function jsTypeExprValueRef(key: string, type: TypeExpr): JsTypeRef {
 }
 
 export function jsGlobalMemberValueRef(path: string, name: string): JsTypeRef {
-  return jsTargetMemberValueRef(jsGlobalSource(path), name);
+  return {
+    ...jsTargetMemberValueRef(jsGlobalSource(path), name),
+    constructorTypeRef: jsGlobalMemberTypeRef(path, name),
+  };
 }
 
 export function jsModuleMemberValueRef(specifier: string, name: string): JsTypeRef {
-  return jsTargetMemberValueRef(jsModuleSource(specifier), name);
+  return {
+    ...jsTargetMemberValueRef(jsModuleSource(specifier), name),
+    constructorTypeRef: jsModuleTypeRef(specifier, name),
+  };
 }
 
 function jsTargetMemberValueRef(target: JsReflectionSource, name: string): JsTypeRef {
@@ -538,12 +544,12 @@ function tsLiteralExprFromWorkman(expr: Expr): string | undefined {
     case "JsonArray":
       return `(${`[${expr.items.map(tsLiteralExprFromWorkman).join(", ")}]`} as const)`;
     case "JsonObject":
-      return `(${
-        `{${expr.fields.map((field) => {
+      return `(${`{${
+        expr.fields.map((field) => {
           const value = tsLiteralExprFromWorkman(field.value);
           return value === undefined ? undefined : `${JSON.stringify(field.key)}: ${value}`;
-        }).join(", ")}}`
-      } as const)`;
+        }).join(", ")
+      }}`} as const)`;
     case "Record": {
       const fields = expr.fields.map((field) => {
         if (field.kind !== "Field") return undefined;
@@ -646,6 +652,7 @@ function constructReturnRef(
 }
 
 function canonicalConstructorTypeRef(ref: JsTypeRef): JsTypeRef | undefined {
+  if (ref.constructorTypeRef) return ref.constructorTypeRef;
   if (ref.key.startsWith("global-value:")) {
     const name = ref.key.slice("global-value:".length);
     return jsGlobalTypeRef(name);

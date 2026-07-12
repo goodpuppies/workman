@@ -343,6 +343,78 @@ Deno.test("reflects constructor-valued JS module exports through new member", as
   expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>", vars: 0 });
 });
 
+Deno.test("module constructor results retain nominal identity across Workman modules", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/thing.ts`,
+    `export class Thing { constructor(readonly name: string) {} }\n`,
+  );
+  await Deno.writeTextFile(
+    `${dir}/renderer.wm`,
+    `
+      from js.module("./thing.ts") import type { Thing };
+      let accept = (thing: Thing) => { thing };
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./thing.ts") import { Thing };
+      from "./renderer.wm" import { accept };
+      let thing = Thing.new("ok") :> Result.map(accept);
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = results.get(await Deno.realPath(input));
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>", vars: 0 });
+});
+
+Deno.test("a TypeScript bridge handles foreign class inheritance explicitly", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/three.ts`,
+    `
+      export class Material {}
+      export class MeshStandardMaterial extends Material {}
+      export class Mesh { constructor(readonly material: Material) {} }
+    `,
+  );
+  await Deno.writeTextFile(
+    `${dir}/three_bridge.ts`,
+    `
+      import { Mesh, MeshStandardMaterial } from "./three.ts";
+      export function buildStandardMesh(material: MeshStandardMaterial): Mesh {
+        return new Mesh(material);
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    `${dir}/renderer.wm`,
+    `
+      from js.module("./three.ts") import type { MeshStandardMaterial };
+      from js.module("./three_bridge.ts") import { buildStandardMesh };
+      let build = (material: MeshStandardMaterial) => { buildStandardMesh(material) };
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./three.ts") import { MeshStandardMaterial };
+      from "./renderer.wm" import { build };
+      let mesh = MeshStandardMaterial.new() :> Result.andThen(build);
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = results.get(await Deno.realPath(input));
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "mesh", { type: "Result<Mesh, Js.Error>", vars: 0 });
+});
+
 Deno.test("reflects static methods on constructor-valued JS module exports", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

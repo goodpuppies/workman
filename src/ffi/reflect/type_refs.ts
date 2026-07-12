@@ -18,6 +18,9 @@ export type JsTypeRef = {
   source: string;
   expr: string;
   type?: TypeExpr;
+  // Constructor values can carry the canonical nominal type of their instances.
+  // This avoids deriving identity from a reflection query's transient return key.
+  constructorTypeRef?: JsTypeRef;
 };
 
 export type JsCallbackParamRefs = {
