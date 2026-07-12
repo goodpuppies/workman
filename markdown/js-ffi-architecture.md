@@ -11,6 +11,35 @@ The compiler should not grow an ad hoc model of every awkward JS pattern. If a c
 from real reflection metadata or ordinary HM constraints, prefer a clear escape hatch over a clever
 partial inference rule.
 
+## The FFI Is A Semantic Boundary
+
+The purpose of the FFI is not to make Workman capable of expressing every programming model found
+in a foreign library. It should translate foreign APIs into interfaces that remain natural in
+Workman. Reflection automates the common cases, but the shape of the host language is not the target
+shape of Workman itself.
+
+This distinction matters when reflection rejects an API. Rejection is not by itself evidence that
+the compiler needs foreign subtyping or another TypeScript concept. Adding direct support for each
+host feature makes those features contagious: they affect syntax, inference, diagnostics, tooling,
+and eventually the style of native Workman libraries. An FFI that continually absorbs its host's
+programming model stops being a boundary.
+
+For an API whose interaction model is fundamentally incompatible with Workman, the intended answer
+is a small, type-checked TypeScript shim. The shim terminates the mismatch at the boundary and
+exports the values and operations the Workman program actually needs in an FP-shaped form. This
+encourages capability-oriented interfaces rather than mechanically reproducing a foreign object
+model.
+
+This division remains type-safe and explicit. TypeScript checks the interaction with the foreign
+library, Workman checks the constrained interface used by the program, and the shim defines the
+translation between them. Foreign values may remain nominal and opaque without becoming untyped:
+their identities and the types of operations crossing the boundary are still checked, while their
+representation and host-specific protocols remain outside Workman's type system.
+
+The limitation is therefore architectural, not merely an unimplemented convenience. The cheapest
+way to handle a genuinely incompatible API should be to adapt it outside Workman, not to expand
+Workman until ordinary program code can impersonate TypeScript.
+
 ## Current File Layout
 
 `src/ffi` is organized around three phases:

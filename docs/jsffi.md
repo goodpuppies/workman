@@ -136,6 +136,23 @@ Manual types are trusted declarations about the JS shape. Safe manual imports st
 `Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
 explicitly want a direct JS call.
 
+## Shims Keep The Boundary Workman-Shaped
+
+Reflection covers foreign APIs that map cleanly into Workman. When an API does not map cleanly, that
+does not automatically mean Workman should gain the host language's corresponding feature. In
+particular, a reflection failure is not by itself a reason to add foreign subtyping or reproduce a
+library's complete object model.
+
+Use a small TypeScript shim when the foreign interaction model is fundamentally incompatible with
+Workman. The shim should translate that model into the values and operations the program needs,
+with an interface that remains natural in functional Workman code. TypeScript checks the foreign
+side; Workman checks the interface it receives.
+
+This is an intentional part of the FFI design rather than a loss of type safety. Foreign values can
+remain nominal and opaque while the operations crossing the boundary remain fully typed. Host-only
+concepts stay in the shim instead of leaking into ordinary Workman programs or driving expansion of
+the language.
+
 ## Deno APIs
 
 Deno globals live under `Deno`:
