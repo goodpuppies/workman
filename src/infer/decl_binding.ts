@@ -210,7 +210,7 @@ export function inferBinding(
       message:
         "cannot bind unresolved JS FFI result before FFI reflection resolves the member access",
     });
-    if (annotated && dynamicFfiWithoutJsonAssert(b.value, env)) {
+    if (annotated && dynamicFfiWithoutJsonAssert(b.value, env, types)) {
       throw new Error(
         "type annotations cannot cast dynamic JS/JSON values; use Json.assert for an explicit dynamic shape assertion",
       );
@@ -239,7 +239,30 @@ export function inferBinding(
   }
 }
 
-function dynamicFfiWithoutJsonAssert(expr: Expr, env: Env): boolean {
+function hasUnresolvedFfi(type: Ty | undefined, seen = new Set<Ty>()): boolean {
+  if (!type) return false;
+  const resolved = prune(type);
+  if (seen.has(resolved)) return false;
+  seen.add(resolved);
+  switch (resolved.tag) {
+    case "ffi":
+      return true;
+    case "fn":
+      return resolved.params.some((param) => hasUnresolvedFfi(param, seen)) ||
+        hasUnresolvedFfi(resolved.result, seen);
+    case "tuple":
+      return resolved.items.some((item) => hasUnresolvedFfi(item, seen));
+    case "struct":
+      return resolved.fields.some((field) => hasUnresolvedFfi(field.type, seen));
+    case "named":
+      return resolved.args.some((arg) => hasUnresolvedFfi(arg, seen));
+    case "var":
+    case "prim":
+      return false;
+  }
+}
+
+function dynamicFfiWithoutJsonAssert(expr: Expr, env: Env, types: Map<Expr, Ty>): boolean {
   let hasDynamicFfi = false;
   let hasJsonAssert = false;
   const visit = (node: Expr) => {
@@ -267,11 +290,11 @@ function dynamicFfiWithoutJsonAssert(expr: Expr, env: Env): boolean {
         node.fields.forEach((field) => visit(field.value));
         return;
       case "FfiGet":
-        hasDynamicFfi = true;
+        if (hasUnresolvedFfi(types.get(node))) hasDynamicFfi = true;
         visit(node.receiver);
         return;
       case "FfiCall":
-        hasDynamicFfi = true;
+        if (hasUnresolvedFfi(types.get(node))) hasDynamicFfi = true;
         visit(node.receiver);
         node.args.forEach(visit);
         return;

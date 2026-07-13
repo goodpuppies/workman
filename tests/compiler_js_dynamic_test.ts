@@ -246,6 +246,19 @@ Deno.test("dynamic JS annotations require explicit Json.assert", async () => {
   );
 });
 
+Deno.test("annotated record handlers allow statically typed JS member calls", async () => {
+  await checkSource(`
+    record Payload = { amount: Number };
+    record Api = { add: (Payload, String) => Void };
+    let api: Api = .{
+      add = (payload, sender) => {
+        let amount = payload.amount :> .toString() :> Result.withDefault("?");
+        print(amount ++ sender)
+      }
+    };
+  `);
+});
+
 Deno.test("Json.assert is an explicit dynamic shape assertion", async () => {
   const result = await checkSource(`
     from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
