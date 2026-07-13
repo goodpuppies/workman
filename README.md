@@ -38,7 +38,7 @@ An SML based core with all the fp goodies:
 Besides just fp Workman also has:
 - TSC reflection based ffi so you can simply import typescript without shims or annotation in 80% of the cases
 - a great lsp experience
-- a wthought out typescript like syntax with very little invariance
+- a thought out typescript like syntax with very little invariance
 - great errors with a lot of debug info
 
 ## Lsp/editor extension
