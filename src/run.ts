@@ -10,6 +10,7 @@ import {
   missingEntrypointDiagnostic,
 } from "./diagnostics.ts";
 import { dirname, resolve } from "node:path";
+import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 
 export type RunOptions = CompileOptions & {
   args?: string[];
@@ -58,7 +59,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       args: [
         "run",
         "-A",
-        ...runtimeFlags(entry.code),
+        ...runtimeFlagsForJavaScript(entry.code),
         output,
         ...(options.args ?? []),
       ],
@@ -76,8 +77,4 @@ function assertEntrypoint(compiled: CoreFileResult): void {
   const diagnostic = runEntrypointDiagnostic(compiled);
   if (!diagnostic) return;
   throw new RunEntrypointError(diagnostic, entry.path, entry.source);
-}
-
-function runtimeFlags(js: string): string[] {
-  return js.includes("Deno.UnsafeWindowSurface") ? ["--unstable-webgpu"] : [];
 }

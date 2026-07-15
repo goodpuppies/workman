@@ -162,6 +162,21 @@ Deno.test("reflects global value constructors through new member", async () => {
   expectBinding(result.env, "response", { type: "Result<Response, Js.Error>", vars: 0 });
 });
 
+Deno.test("reflects Deno WebGPU globals", async () => {
+  const result = await checkSource(`
+    from js.global("navigator.gpu") import { requestAdapter };
+    from js.global("GPUBufferUsage") import * as GPUBufferUsage;
+    let adapter = requestAdapter();
+    let storage = GPUBufferUsage.STORAGE;
+  `);
+
+  expectBinding(result.env, "adapter", {
+    type: "Task<Option<GPUAdapter>, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "storage", { type: "Result<Number, Js.Error>", vars: 0 });
+});
+
 Deno.test("reflects constructor-valued Deno members through new member", async () => {
   const result = await checkSource(`
     from js.global("Deno.UnsafePointer") import { of };

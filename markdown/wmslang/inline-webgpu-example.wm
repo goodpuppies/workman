@@ -1,0 +1,148 @@
+-- ILLUSTRATIVE FUTURE WMSLANG SOURCE: @gpu and the Gpu basis are not implemented yet.
+--
+-- This mirrors examples/webgpu_compute.wm. The host program is still ordinary reflected WebGPU;
+-- only the WGSL string has become an inferred, inline Workman function. API spellings marked below
+-- are the proposed minimal surface, not current std bindings.
+
+from js.module("../../examples/webgpu_device.ts") import {
+  getWebGpuDevice,
+  createBuffer,
+  createShaderModule,
+  createComputePipeline,
+  getBindGroupLayout,
+  createBindGroup,
+  createCommandEncoder,
+  beginComputePass,
+  setPipeline,
+  setBindGroup,
+  dispatchOneWorkgroup,
+  endComputePass,
+  copyBuffer,
+  finishCommands,
+  submitCommands,
+  mapBuffer,
+  readFirstUint32
+};
+from js.global("GPUBufferUsage") import * as GPUBufferUsage;
+from js.global("GPUMapMode") import * as GPUMapMode;
+
+let lift = Monad.lift;
+
+let width = 8;
+let height = 8;
+let elementCount = width * height;
+let byteLength = elementCount * 4;
+
+let makeProgram = (rawOutput) => {
+  -- This is the required host/GPU evidence boundary. A raw GPUBuffer does not say what its
+  -- elements are; the typed wrapper says this one is a writable array of u32 values.
+  let output = Gpu.buffer(rawOutput, Gpu.u32, Gpu.readWrite);
+
+  let fillGreen = (id) => {
+    @gpu;
+
+    let (x, y, _) = id;
+    let index = y * width + x;
+    if (index < elementCount) {
+      Gpu.write(output, index, 4278255360)
+    } else {
+      void
+    }
+  };
+
+  -- The stage is typed host construction, not an argument to @gpu. The compiler specializes the
+  -- reachable function graph, generates Slang, compiles it to WGSL, and reflects its ABI here.
+  let program = Gpu.compute((8, 8, 1), fillGreen);
+  (program, output)
+};
+
+let buildAndDispatch = (device) => {
+  let withUsages = lift Result (storage, copySource, copyDestination, mapRead, mapMode) => {
+    let withOutput = lift Result (rawOutput) => {
+      let (program, typedOutput) = makeProgram(rawOutput);
+      let withStaging = lift Result (staging) => {
+        let withModule = lift Result (shaderModule) => {
+          let withPipeline = lift Result (pipeline) => {
+            -- Reflection gives the binding for the captured typed buffer. There is no
+            -- hand-maintained WGSL binding declaration or lookup by source-level string.
+            let binding = Gpu.binding(program, typedOutput);
+            let withLayout = lift Result (bindGroupLayout) => {
+              let withBindGroup = lift Result (bindGroup) => {
+                let withEncoder = lift Result (encoder) => {
+                  let withPass = lift Result (pass) => {
+                    setPipeline(pass, pipeline)
+                      :> Result.andThen((_) => { setBindGroup(pass, bindGroup) })
+                      :> Result.andThen((_) => { dispatchOneWorkgroup(pass) })
+                      :> Result.andThen((_) => { endComputePass(pass) })
+                      :> Result.andThen((_) => {
+                        copyBuffer(encoder, rawOutput, staging, byteLength)
+                      })
+                      :> Result.andThen((_) => { finishCommands(encoder) })
+                      :> Result.andThen((commands) => { submitCommands(device, commands) })
+                      :> Result.map((_) => { (staging, mapMode) })
+                  };
+                  beginComputePass(encoder) :> withPass
+                };
+                createCommandEncoder(device) :> withEncoder
+              };
+              createBindGroup(device, JSON{
+                layout: bindGroupLayout,
+                entries: JSON[
+                  JSON{ binding: binding, resource: JSON{ buffer: rawOutput } }
+                ]
+              }) :> withBindGroup
+            };
+            getBindGroupLayout(pipeline, 0) :> withLayout
+          };
+          createComputePipeline(device, JSON{
+            layout: "auto",
+            compute: JSON{
+              module: shaderModule,
+              entryPoint: Gpu.entryPoint(program)
+            }
+          }) :> withPipeline
+        };
+        createShaderModule(device, JSON{ code: Gpu.wgsl(program) }) :> withModule
+      };
+      createBuffer(device, JSON{
+        size: byteLength,
+        usage: mapRead + copyDestination
+      }) :> withStaging
+    };
+    createBuffer(device, JSON{
+      size: byteLength,
+      usage: storage + copySource
+    }) :> withOutput
+  };
+
+  Result|
+    GPUBufferUsage.STORAGE,
+    GPUBufferUsage.COPY_SRC,
+    GPUBufferUsage.COPY_DST,
+    GPUBufferUsage.MAP_READ,
+    GPUMapMode.READ
+  | :> withUsages
+};
+
+let readBack = lift Task (staging, mapMode) => {
+  let inspect = lift Task (_) => {
+    readFirstUint32(staging)
+      :> Result.map((value) => {
+        print("wmslang wrote " ++ Result.textOf(value) ++ " into the first pixel");
+        void
+      })
+      :> Task.fromResult
+  };
+  mapBuffer(staging, mapMode) :> inspect
+};
+
+let main = () => {
+  let prepare = lift Task (device) => { buildAndDispatch(device) :> Task.fromResult };
+  getWebGpuDevice()
+    :> prepare
+    :> readBack
+    :> Task.recover((_) => {
+      print("WebGPU example failed");
+      void
+    })
+};

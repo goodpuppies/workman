@@ -1,0 +1,166 @@
+-- Direct WebGPU from Workman through the ordinary TypeScript-reflected FFI.
+--
+-- This is the small compute/readback core of examples/dwgpu.ts without SDL or PNG output. It
+-- deliberately keeps the WGSL as a string: markdown/wmslang/inline-webgpu-example.wm shows how the
+-- proposed @gpu dialect will replace that string while leaving the host WebGPU code recognizable.
+
+from js.module("./webgpu_device.ts") import {
+  getWebGpuDevice,
+  createBuffer,
+  createBindGroupLayout,
+  createPipelineLayout,
+  createShaderModule,
+  createComputePipeline,
+  createBindGroup,
+  createCommandEncoder,
+  beginComputePass,
+  setPipeline,
+  setBindGroup,
+  dispatchOneWorkgroup,
+  endComputePass,
+  copyBuffer,
+  finishCommands,
+  submitCommands,
+  mapBuffer,
+  readFirstUint32
+};
+from js.global("GPUBufferUsage") import * as GPUBufferUsage;
+from js.global("GPUMapMode") import * as GPUMapMode;
+from js.global("GPUShaderStage") import * as GPUShaderStage;
+
+let lift = Monad.lift;
+
+let width = 8;
+let height = 8;
+let elementCount = width * height;
+let byteLength = elementCount * 4;
+
+let shaderSource =
+  "@group(0) @binding(0) var<storage, read_write> output: array<u32>;\n" ++
+  "@compute @workgroup_size(8, 8)\n" ++
+  "fn main(@builtin(global_invocation_id) id: vec3<u32>) {\n" ++
+  "  let index = id.y * 8u + id.x;\n" ++
+  "  if (index < 64u) { output[index] = 0xff00ff00u; }\n" ++
+  "}\n";
+
+let getDevice = () => {
+  getWebGpuDevice()
+};
+
+let encodeCommands = (device, pipeline, bindGroup, output, staging) => {
+  let withEncoder = lift Result (encoder) => {
+    let withPass = lift Result (pass) => {
+      setPipeline(pass, pipeline)
+        :> Result.andThen((_) => { setBindGroup(pass, bindGroup) })
+        :> Result.andThen((_) => { dispatchOneWorkgroup(pass) })
+        :> Result.andThen((_) => { endComputePass(pass) })
+        :> Result.andThen((_) => {
+          copyBuffer(encoder, output, staging, byteLength)
+        })
+        :> Result.andThen((_) => { finishCommands(encoder) })
+    };
+    beginComputePass(encoder) :> withPass
+  };
+  createCommandEncoder(device) :> withEncoder
+};
+
+let submit = (device, commandBuffer) => {
+  submitCommands(device, commandBuffer)
+};
+
+let buildAndDispatch = (device) => {
+  let withConstants = lift Result (
+    storageUsage,
+    copySourceUsage,
+    copyDestinationUsage,
+    mapReadBufferUsage,
+    mapReadMode,
+    computeVisibility
+  ) => {
+    let withOutput = lift Result (output) => {
+      let withStaging = lift Result (staging) => {
+        let withLayout = lift Result (bindGroupLayout) => {
+          let withPipelineLayout = lift Result (pipelineLayout) => {
+            let withModule = lift Result (shaderModule) => {
+              let withPipeline = lift Result (pipeline) => {
+                let withBindGroup = lift Result (bindGroup) => {
+                  encodeCommands(device, pipeline, bindGroup, output, staging)
+                    :> Result.andThen((commandBuffer) => {
+                      submit(device, commandBuffer)
+                    })
+                    :> Result.map((_) => { (staging, mapReadMode) })
+                };
+                createBindGroup(device, JSON{
+                  layout: bindGroupLayout,
+                  entries: JSON[
+                    JSON{ binding: 0, resource: JSON{ buffer: output } }
+                  ]
+                }) :> withBindGroup
+              };
+              createComputePipeline(device, JSON{
+                layout: pipelineLayout,
+                compute: JSON{ module: shaderModule, entryPoint: "main" }
+              }) :> withPipeline
+            };
+            createShaderModule(device, JSON{ code: shaderSource })
+              :> withModule
+          };
+          createPipelineLayout(device, JSON{
+            bindGroupLayouts: JSON[bindGroupLayout]
+          }) :> withPipelineLayout
+        };
+        createBindGroupLayout(device, JSON{
+          entries: JSON[
+            JSON{
+              binding: 0,
+              visibility: computeVisibility,
+              buffer: JSON{ "type": "storage" }
+            }
+          ]
+        }) :> withLayout
+      };
+      createBuffer(device, JSON{
+        size: byteLength,
+        usage: mapReadBufferUsage + copyDestinationUsage
+      }) :> withStaging
+    };
+    createBuffer(device, JSON{
+      size: byteLength,
+      usage: storageUsage + copySourceUsage
+    }) :> withOutput
+  };
+
+  Result|
+    GPUBufferUsage.STORAGE,
+    GPUBufferUsage.COPY_SRC,
+    GPUBufferUsage.COPY_DST,
+    GPUBufferUsage.MAP_READ,
+    GPUMapMode.READ,
+    GPUShaderStage.COMPUTE
+  | :> withConstants
+};
+
+let readBack = lift Task (staging, mapReadUsage) => {
+  let inspect = lift Task (_) => {
+    readFirstUint32(staging) :> Result.map((value) => {
+      print("WebGPU wrote " ++ Result.textOf(value) ++ " into the first pixel");
+      void
+    })
+      :> Task.fromResult
+  };
+  mapBuffer(staging, mapReadUsage) :> inspect
+};
+
+let main = () => {
+  let prepare = lift Task (device) => {
+    buildAndDispatch(device) :> Task.fromResult
+  };
+
+  getDevice()
+    :> prepare
+    :> readBack
+    :> Task.recover((_) => {
+      print("WebGPU example failed");
+      void
+    })
+};

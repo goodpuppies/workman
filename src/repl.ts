@@ -1,5 +1,6 @@
 import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
 import { dirname, resolve } from "node:path";
+import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 
 export type ReplEvaluation = {
   code: number;
@@ -54,7 +55,7 @@ async function executeReplArtifacts(
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
     return await new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", ...runtimeFlags(entry.code), `${dir}/${entry.path}`],
+      args: ["run", "-A", ...runtimeFlagsForJavaScript(entry.code), `${dir}/${entry.path}`],
       stdout: "piped",
       stderr: "piped",
     }).output();
@@ -135,8 +136,4 @@ export async function* watchReplChanges(input: string): AsyncGenerator<void> {
   } finally {
     watcher.close();
   }
-}
-
-function runtimeFlags(js: string): string[] {
-  return js.includes("Deno.UnsafeWindowSurface") ? ["--unstable-webgpu"] : [];
 }

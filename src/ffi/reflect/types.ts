@@ -97,17 +97,19 @@ export function jsModuleMember(specifier: string, name: string): JsMemberType | 
 }
 
 export function jsGlobalValueRef(name: string): JsTypeRef {
+  const target = jsGlobalSource(name);
   return {
     key: `global-value:${name}`,
-    source: `const __wm_ref_${sanitize(name)} = ${name};`,
+    source: `${target.source}\nconst __wm_ref_${sanitize(name)} = ${name};`,
     expr: `__wm_ref_${sanitize(name)}`,
   };
 }
 
 export function jsGlobalRootNamespaceRef(): JsTypeRef {
+  const target = jsGlobalSource("globalThis");
   return {
     key: "global:namespace",
-    source: "const __wm_target = globalThis;",
+    source: target.source,
     expr: "__wm_target",
     type: name("Js.Object"),
   };

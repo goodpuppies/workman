@@ -12,6 +12,7 @@ const compilerOptions: ts.CompilerOptions = {
 };
 
 const denoTypesFile = "/__wm_deno_types.d.ts";
+const denoTypesReference = `/// <reference path="${denoTypesFile}" />\n`;
 let denoTypesCache: string | undefined;
 const sourceFileCache = new Map<string, ts.SourceFile>();
 const denoModuleGraphs = new Map<string, DenoModuleGraph>();
@@ -27,13 +28,10 @@ export function setActiveJsReflectionBasePath(path: string | undefined): string 
 }
 
 export function jsGlobalSource(path: string): JsReflectionSource {
-  if (path === "Deno" || path.startsWith("Deno.")) {
-    return {
-      key: `global:${path}`,
-      source: `/// <reference path="${denoTypesFile}" />\nconst __wm_target = ${path};`,
-    };
-  }
-  return { key: `global:${path}`, source: `const __wm_target = ${path};` };
+  return {
+    key: `global:${path}`,
+    source: `${denoTypesReference}const __wm_target = ${path};`,
+  };
 }
 
 export function jsModuleSource(specifier: string): JsReflectionSource {
