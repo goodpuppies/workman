@@ -39,6 +39,22 @@ Deno.test("compiler v2 mode typechecks simple calls", async () => {
   expectBinding(compareResult.env, "printed", { type: "Void", vars: 0 });
 });
 
+Deno.test("compiler v2 mode projects basic arithmetic with precedence", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = [
+    "let sum = 1+1;",
+    "let precedence = 1 + 2 * 3;",
+    "let grouped = (1 + 2) * 3;",
+    "let negative = -(2 + 3);",
+  ].join("\n");
+  const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "sum", { type: "Number", vars: 0 });
+  expectBinding(result.env, "precedence", { type: "Number", vars: 0 });
+  expectBinding(result.env, "grouped", { type: "Number", vars: 0 });
+  expectBinding(result.env, "negative", { type: "Number", vars: 0 });
+});
+
 Deno.test("compiler v2 mode typechecks independent bindings after a recovered semicolon", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
   const source = "let x = 1\nlet ok = true;";

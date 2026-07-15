@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { evaluateReplFile, topLevelPhraseRanges } from "../src/repl.ts";
+import { parseReplArguments } from "../src/main.ts";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
 
@@ -18,7 +19,22 @@ Deno.test("cli prints help with --help", async () => {
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
   assertStringIncludes(result.stdout, "commands:");
-  assertStringIncludes(result.stdout, "repl <file.wm>");
+  assertStringIncludes(result.stdout, "repl [--v2] <file.wm>");
+});
+
+Deno.test("repl parses --v2 before or after its input", () => {
+  assertEquals(parseReplArguments(["--v2", "scratch.wm"]), {
+    input: "scratch.wm",
+    options: { frontend: "v2" },
+  });
+  assertEquals(parseReplArguments(["scratch.wm", "--v2"]), {
+    input: "scratch.wm",
+    options: { frontend: "v2" },
+  });
+  assertEquals(parseReplArguments(["scratch.wm"]), {
+    input: "scratch.wm",
+    options: {},
+  });
 });
 
 Deno.test("repl evaluates top-level bindings without a main function", async () => {
@@ -30,6 +46,40 @@ Deno.test("repl evaluates top-level bindings without a main function", async () 
 
   assertEquals(result.code, 0);
   assertEquals(new TextDecoder().decode(result.stdout), "x = 2 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
+Deno.test("v2 repl evaluates source with recovered terminators and delimiters", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/recovered.wm`;
+  await Deno.writeTextFile(input, "let answer = 42\nlet id = (x) => { x");
+
+  const result = await evaluateReplFile(input, { frontend: "v2" });
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    "answer = 42 : Number\nid = <function> : ('a) => 'a\n",
+  );
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+  assertEquals(result.staticErrors, undefined);
+});
+
+Deno.test("v2 repl evaluates basic arithmetic with precedence", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/arithmetic.wm`;
+  await Deno.writeTextFile(
+    input,
+    "let sum = 1+1\nlet precedence = 1 + 2 * 3\nlet grouped = (1 + 2) * 3",
+  );
+
+  const result = await evaluateReplFile(input, { frontend: "v2" });
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    "sum = 2 : Number\nprecedence = 7 : Number\ngrouped = 9 : Number\n",
+  );
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 

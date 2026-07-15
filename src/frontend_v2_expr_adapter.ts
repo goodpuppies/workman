@@ -200,7 +200,44 @@ class ExprParser {
     const lambda = this.parseLambda(start);
     if (lambda) return lambda;
     this.cursor = start;
-    return this.parseApplication();
+    return this.parseAdditive();
+  }
+
+  private parseAdditive(): Expr | undefined {
+    return this.parseBinary(() => this.parseMultiplicative(), ["++", "+", "-"]);
+  }
+
+  private parseMultiplicative(): Expr | undefined {
+    return this.parseBinary(() => this.parseUnary(), ["*", "/", "%"]);
+  }
+
+  private parseUnary(): Expr | undefined {
+    this.skipSpace();
+    const start = this.cursor;
+    const op = this.consumeOperator(["-", "!"]);
+    if (!op) return this.parseApplication();
+    const value = this.parseUnary();
+    return value ? { kind: "Unary", op, value, ...this.withNode(start, this.cursor) } : undefined;
+  }
+
+  private parseBinary(
+    parseOperand: () => Expr | undefined,
+    operators: string[],
+  ): Expr | undefined {
+    const start = this.cursor;
+    let left = parseOperand();
+    if (!left) return undefined;
+    while (true) {
+      const beforeOperator = this.cursor;
+      const op = this.consumeOperator(operators);
+      if (!op) {
+        this.cursor = beforeOperator;
+        return left;
+      }
+      const right = parseOperand();
+      if (!right) return undefined;
+      left = { kind: "Binary", op, left, right, ...this.withNode(start, this.cursor) };
+    }
   }
 
   private parseLambda(start: number): Expr | undefined {
@@ -420,6 +457,19 @@ class ExprParser {
     }
     this.cursor += text.length;
     return true;
+  }
+
+  private consumeOperator(operators: string[]): string | undefined {
+    const start = this.cursor;
+    this.skipSpace();
+    for (const operator of operators) {
+      if (this.source.startsWith(operator, this.cursor)) {
+        this.cursor += operator.length;
+        return operator;
+      }
+    }
+    this.cursor = start;
+    return undefined;
   }
 
   private skipSpace(): boolean {

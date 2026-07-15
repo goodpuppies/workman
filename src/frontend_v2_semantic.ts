@@ -115,7 +115,8 @@ function projectCompleteDecl(
   };
   const structuralItem = structural?.items.find((item) => item.id === decl.structuralId);
   const expression = structuralItem && context.source
-    ? projectSurfaceExpr(structuralItem, context.source, helpers)
+    ? projectSurfaceExpr(structuralItem, context.source, helpers) ??
+      projectExpr(decl.expressionText, expressionStart, helpers)
     : projectExpr(decl.expressionText, expressionStart, helpers);
   if (
     decl.semanticKind === "LetDecl" &&

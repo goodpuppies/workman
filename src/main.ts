@@ -213,11 +213,11 @@ async function runCommand(args: string[]): Promise<number> {
 }
 
 async function replCommand(args: string[]): Promise<number> {
-  const [input] = args;
+  const { input, options } = parseReplArguments(args);
   if (!input) return missingInput("repl");
   for await (const _ of watchReplChanges(input)) {
     try {
-      const result = await evaluateReplFile(input);
+      const result = await evaluateReplFile(input, options);
       clearReplOutput();
       await Deno.stdout.write(result.stdout);
       await Deno.stderr.write(result.stderr);
@@ -228,6 +228,17 @@ async function replCommand(args: string[]): Promise<number> {
     }
   }
   return 0;
+}
+
+export function parseReplArguments(args: string[]): {
+  input: string | undefined;
+  options: { frontend?: "v2" };
+} {
+  const v2 = args.includes("--v2");
+  return {
+    input: args.find((arg) => arg !== "--v2"),
+    options: v2 ? { frontend: "v2" } : {},
+  };
 }
 
 function clearReplOutput(): void {
@@ -369,7 +380,7 @@ commands:
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
   run <file.wm> [-- args...]    compile and execute with Deno
-  repl <file.wm>                watch and evaluate top-level bindings
+  repl [--v2] <file.wm>         watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help
@@ -383,6 +394,7 @@ examples:
   wm compile examples/factorial.wm out.mjs
   wm compile-library tooling/frontend-v2/library_fixture.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
+  wm repl --v2 scratch.wm
 
 notes:
   JS FFI uses Deno under the hood. Runtime permissions come from the wm launcher.`);
