@@ -43,7 +43,10 @@ export async function parseCompilerModule(
     const frontend = await loadFrontendV2(
       options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl,
     );
-    const projected = semanticProjectionToModule(frontend.projectSemantic(source), { source });
+    const projected = semanticProjectionToModule(frontend.projectSemantic(source), {
+      source,
+      structural: frontend.parseStructural(source),
+    });
     if (projected.diagnostics.length) {
       throw new Error(
         `frontend v2 cannot project source: ${

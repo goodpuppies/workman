@@ -47,6 +47,32 @@ Deno.test("Surface AST represents currying as nested unary lambdas", () => {
   assertUniqueNodeIds(nodes);
 });
 
+Deno.test("Surface AST owns a missing block mate and typed lambda pattern", () => {
+  const source = "let main = (x: String) => {\n  Lib.printer x";
+  const parsed = frontend.parseStructural(source);
+  const item = parsed.items[0];
+  const nodes = item.expressionNodes;
+  const lambda = byId(nodes, item.expressionRootId);
+  const typed = byId(nodes, lambda.children[0]);
+  const type = byId(nodes, typed.children[1]);
+  const block = byId(nodes, lambda.children[1]);
+  const missingClose = parsed.marks.find((mark) =>
+    mark.code === "parse.expression.missing-close-brace"
+  );
+
+  assertEquals(lambda.kind, "lambda");
+  assertEquals(typed.kind, "pattern.typed");
+  assertEquals(type.kind, "type.name");
+  assertEquals(type.nameParts, ["String"]);
+  assertEquals(block.kind, "block");
+  assertEquals(missingClose?.pairId, block.pairId);
+  assertEquals(
+    parsed.artifacts.find((artifact) => artifact.recoveryId === missingClose?.id)?.pairId,
+    block.pairId,
+  );
+  assertUniqueNodeIds(nodes);
+});
+
 function expressionNodes(source: string): SurfaceNode[] {
   const item = frontend.parseStructural(source).items[0];
   assertEquals(item.expressionRootId, item.expressionNodes[0].id);

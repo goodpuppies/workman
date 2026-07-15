@@ -1,6 +1,14 @@
 import type { Expr, ImportClause, ImportSpec, Module, Pattern, TypeExpr } from "./ast.ts";
-import type { SemanticDeclProjection, SemanticProjectionResult } from "./frontend_v2_loader.ts";
-import { projectExpr } from "./frontend_v2_expr_adapter.ts";
+import type {
+  SemanticDeclProjection,
+  SemanticProjectionResult,
+  StructuralParseResult,
+} from "./frontend_v2_loader.ts";
+import {
+  type ExprAdapterHelpers,
+  projectExpr,
+  projectSurfaceExpr,
+} from "./frontend_v2_expr_adapter.ts";
 import { type AstNode, offsetToLineCol } from "./source.ts";
 
 export type FrontendV2SemanticAdapterDiagnostic = {
@@ -21,7 +29,7 @@ type ProjectionContext = {
 
 export function semanticProjectionToModule(
   projection: SemanticProjectionResult,
-  options: { source?: string } = {},
+  options: { source?: string; structural?: StructuralParseResult } = {},
 ): FrontendV2ModuleProjection {
   const diagnostics: FrontendV2SemanticAdapterDiagnostic[] = [];
   const decls: Module["decls"] = [];
@@ -36,7 +44,7 @@ export function semanticProjectionToModule(
       });
       continue;
     }
-    const projected = projectCompleteDecl(decl, context);
+    const projected = projectCompleteDecl(decl, context, options.structural);
     if (projected) {
       decls.push(projected);
     } else {
@@ -92,6 +100,7 @@ function withNode(node: AstNode | undefined): { node?: AstNode } {
 function projectCompleteDecl(
   decl: SemanticDeclProjection,
   context: ProjectionContext,
+  structural?: StructuralParseResult,
 ): Module["decls"][number] | undefined {
   if (decl.semanticKind === "ImportDecl") return projectImportDecl(decl, context);
 
@@ -99,11 +108,15 @@ function projectCompleteDecl(
   const patternStart = sourceIndexOf(context, decl.patternText, decl.start);
   const pattern = projectPattern(decl.patternText, context, patternStart);
   const expressionStart = expressionStartFor(decl, context, patternStart);
-  const expression = projectExpr(decl.expressionText, expressionStart, {
+  const helpers: ExprAdapterHelpers = {
     node: (start, end) => nodeFor(context, start, end),
     pattern: (text, start) => projectPattern(text, context, start),
     type: projectTypeAnnotation,
-  });
+  };
+  const structuralItem = structural?.items.find((item) => item.id === decl.structuralId);
+  const expression = structuralItem && context.source
+    ? projectSurfaceExpr(structuralItem, context.source, helpers)
+    : projectExpr(decl.expressionText, expressionStart, helpers);
   if (
     decl.semanticKind === "LetDecl" &&
     decl.patternKind === "name" &&

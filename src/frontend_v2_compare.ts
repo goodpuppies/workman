@@ -83,11 +83,14 @@ export type FrontendSemanticComparison = {
 
 export async function compareSupportedFrontendSemantics(
   source: string,
-  frontend: Pick<FrontendV2, "projectSemantic">,
+  frontend: Pick<FrontendV2, "projectSemantic" | "parseStructural">,
   options: { surface?: Surface } = {},
 ): Promise<FrontendSemanticComparison> {
   const v1 = normalizeSupportedModule(await parse(source, options.surface));
-  const projected = semanticProjectionToModule(frontend.projectSemantic(source), { source });
+  const projected = semanticProjectionToModule(frontend.projectSemantic(source), {
+    source,
+    structural: frontend.parseStructural(source),
+  });
   const v2 = normalizeSupportedModule(projected.module);
   const diagnostics = projected.diagnostics.map((diagnostic) => diagnostic.message);
   if (JSON.stringify(v1) !== JSON.stringify(v2)) {

@@ -1,6 +1,6 @@
 from "./types.wm" import {
   Span, Pattern, Expr, LetBinding, TopItem, SurfaceProgram, StructuralDocument,
-  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, TypedPattern, HolePattern, ErrorPattern,
   LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr, BlockExpr,
   AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
   LetItem, ImportItem, TypeItem, RecordItem, OpaqueItem
@@ -66,6 +66,7 @@ let patternInfo = (pattern: Pattern) => {
     WildcardPattern(Var(nodeId), Var(span)) => { ("name", -1) },
     VoidPattern(Var(nodeId), Var(pair), Var(span)) => { ("name", -1) },
     TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { ("name", -1) },
+    TypedPattern(Var(nodeId), Var(pattern), Var(annotation), Var(span)) => { ("name", -1) },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
       ("error", recoveryId)
@@ -94,12 +95,13 @@ let expressionInfo = (expression: Expr) => {
   }
 };
 
-let patternText = (pattern: Pattern) => {
+let rec patternText = (pattern: Pattern) => {
   match(pattern) {
     NamePattern(Var(nodeId), Var(text), Var(span)) => { text },
     WildcardPattern(Var(nodeId), Var(span)) => { "_" },
     VoidPattern(Var(nodeId), Var(pair), Var(span)) => { "()" },
     TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { "" },
+    TypedPattern(Var(nodeId), pattern, Var(annotation), Var(span)) => { patternText(pattern) },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { "" },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => { text },
   }

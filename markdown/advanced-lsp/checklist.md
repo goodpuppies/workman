@@ -17,8 +17,8 @@ unfinished earlier boundary.
 
 ## Target model and terminology
 
-Frontend v2 targets **surface-structural losslessness**, not permanent byte-for-byte preservation
-of the editor buffer. The Surface AST is the user-facing syntax model: it retains every meaningful
+Frontend v2 targets **surface-structural losslessness**, not permanent byte-for-byte preservation of
+the editor buffer. The Surface AST is the user-facing syntax model: it retains every meaningful
 piece of authored or recovered syntax needed for diagnostics, editing, lowering, and reprojection.
 Whitespace and newline placement are formatter decisions rather than syntax identity.
 
@@ -48,13 +48,13 @@ Consequences for this checklist:
   `Export` assumptions must not re-enter the parser, Surface AST, formatter, or diagnostics.
 - Comments, opaque islands, authored literals, names, delimiters, and other meaningful syntax must
   survive Surface-AST reprojection. Original spaces and line breaks need not survive.
-- Exact token-stream round-tripping remains useful as a bootstrap/debugging invariant, but it is
-  not the final definition of frontend losslessness.
+- Exact token-stream round-tripping remains useful as a bootstrap/debugging invariant, but it is not
+  the final definition of frontend losslessness.
 - Formatting is emergent from the Surface AST. The formatter does not merely clean up preserved
   whitespace; it renders the canonical legal shape represented by the tree.
 - A mark is syntax-domain recovery state and the source of its diagnostic, inlay, explanation, and
-  possible repair. A mark may be an explicit surface item or be referenced by a typed fallback,
-  but it must remain reachable from the structural result through one stable recovery identity.
+  possible repair. A mark may be an explicit surface item or be referenced by a typed fallback, but
+  it must remain reachable from the structural result through one stable recovery identity.
 
 ## Testing policy
 
@@ -218,9 +218,9 @@ importable-library or TypeScript integration work.
 
 ## Phase C — shallow tolerant-parser and recovery scaffold
 
-Checked grammar items in this phase mean the current scaffold recognizes a form well enough to
-bound it, preserve its source region, and emit deterministic recovery artifacts. They do **not**
-mean frontend v2 already constructs a recursive Surface AST for that form. In particular,
+Checked grammar items in this phase mean the current scaffold recognizes a form well enough to bound
+it, preserve its source region, and emit deterministic recovery artifacts. They do **not** mean
+frontend v2 already constructs a recursive Surface AST for that form. In particular,
 `AtomExpr(text, span)`, shallow declaration records, and TypeScript-side expression/type/import
 parsers are migration scaffolding to be removed in Phase C2.
 
@@ -234,8 +234,8 @@ parsers are migration scaffolding to be removed in Phase C2.
 - [x] Define `OptionalCanonical`, `AutoFix`, and `RecoveryOnly` behavior.
 - [x] Define one valid root structural document for every finite buffer.
 - [x] Ensure tree mark references point to canonical mark entries rather than divergent copies.
-- [ ] Replace provisional shallow structural types with the current-Workman Surface AST in Phase
-      C2; do not treat source-text payloads as finished syntax nodes.
+- [ ] Replace provisional shallow structural types with the current-Workman Surface AST in Phase C2;
+      do not treat source-text payloads as finished syntax nodes.
 
 ### Parser foundation
 
@@ -388,8 +388,8 @@ parsers are migration scaffolding to be removed in Phase C2.
 ### Exit gate
 
 - [ ] Every finite buffer has a valid shallow recovery interpretation with deterministic marks,
-      diagnostics, and virtual rendering. This closes the scaffold only; Surface-AST completeness
-      is gated separately in Phase C2.
+      diagnostics, and virtual rendering. This closes the scaffold only; Surface-AST completeness is
+      gated separately in Phase C2.
   - [x] Current repository `.wm` corpus parses deterministically with identical marks, diagnostics,
         virtual artifacts, maps, and concrete rendering across repeated runs.
   - [x] Bounded generated finite strings parse deterministically and rebuild virtual text from
@@ -398,9 +398,8 @@ parsers are migration scaffolding to be removed in Phase C2.
 ## Phase C2 — current-Workman Surface AST and canonical reprojection
 
 This phase replaces the shallow framing parser with the actual user-facing syntax tree. It should
-reuse the successful WorkmanGR design where it fits while deliberately modeling current Workman.
-The first executable slice is specified by
-[`surface-ast-milestone.md`](./surface-ast-milestone.md).
+reuse the successful WorkmanGR design where it fits while deliberately modeling current Workman. The
+first executable slice is specified by [`surface-ast-milestone.md`](./surface-ast-milestone.md).
 
 ### Current Workman versus WorkmanGR inventory
 
@@ -410,12 +409,12 @@ The first executable slice is specified by
       `parser.gr`, `formatter.gr`, and lowering code.
 - [ ] Label each WorkmanGR syntax form and recovery rule as `adopt`, `adapt`, or `drop` for current
       Workman.
-- [ ] Record the current-language source of truth for every decision: current docs, examples,
-      parser tests, or an explicitly documented new rule.
+- [ ] Record the current-language source of truth for every decision: current docs, examples, parser
+      tests, or an explicitly documented new rule.
 - [ ] Record known language differences before porting code:
   - [x] Top-level declarations export by default; the `export` keyword is removed.
-  - [x] Anchor the first Surface AST slice in SML long identifiers, unary pattern abstraction,
-        tuple arguments, and nested currying as documented by
+  - [x] Anchor the first Surface AST slice in SML long identifiers, unary pattern abstraction, tuple
+        arguments, and nested currying as documented by
         [`surface-ast-slice-inventory.md`](./surface-ast-slice-inventory.md).
   - [x] Current Workman import forms versus WorkmanGR/Grain `include`, `use`, re-export, and module
         forms.
@@ -437,9 +436,10 @@ The first executable slice is specified by
       marks, comments, and opaque islands.
 - [ ] Define recursive surface forms instead of text payloads:
   - [ ] expressions (literal, long-name, unary application, tuple, paren, unary lambda, and complete
-        expression-block nodes are implemented; operators and the remaining forms are opaque);
-  - [ ] patterns (lambda name/wildcard/void/tuple patterns are implemented; let and general match
-        patterns remain shallow);
+        or missing-close expression-block nodes are implemented; operators and the remaining forms
+        are opaque);
+  - [ ] patterns (lambda name/wildcard/void/tuple/typed patterns and named type annotations are
+        implemented; let and general match patterns remain shallow);
   - [ ] type expressions;
   - [ ] blocks and block items;
   - [ ] imports and import clauses;
@@ -449,8 +449,8 @@ The first executable slice is specified by
         and carrier lifts.
 - [ ] Define trivia attachment/island rules for comments and opaque authored regions.
 - [ ] Do not model ordinary spaces or newlines as semantically significant AST children.
-- [ ] Preserve enough authored span and token provenance for diagnostics, selection, navigation,
-      and materialization without making the original buffer the canonical tree.
+- [ ] Preserve enough authored span and token provenance for diagnostics, selection, navigation, and
+      materialization without making the original buffer the canonical tree.
 
 ### Lexer contract for the Surface AST
 
@@ -459,8 +459,8 @@ The first executable slice is specified by
 - [ ] Retain exact text for comments, opaque islands, literals, identifiers, and malformed tokens
       whose spelling is meaningful to reprojection or diagnostics.
 - [ ] Track source positions across Unicode and all supported newline forms.
-- [ ] Add delimiter pairing/mate information, or an explicitly equivalent delimiter structure,
-      where it materially simplifies structural parsing and formatter recovery.
+- [ ] Add delimiter pairing/mate information, or an explicitly equivalent delimiter structure, where
+      it materially simplifies structural parsing and formatter recovery.
 - [ ] Produce marked malformed/unterminated tokens rather than silently classifying them as normal
       literals or losing them.
 - [ ] Give lexical recovery events the same stable mark/fallback identity used by parser recovery.
@@ -476,6 +476,8 @@ The first executable slice is specified by
 - [ ] Replace shallow import/type/record items with their complete structured forms.
 - [ ] Parse current Workman directly into the Surface AST; do not add another textual parser in
       TypeScript or in the semantic adapter.
+  - [x] Parse the representative annotated lambda, qualified whitespace application, and authored
+        block directly into recursive Surface AST nodes, including a required missing close slot.
 - [ ] Implement typed required-slot helpers for token, name, expression, pattern, type, block,
       declaration, and list-element recovery.
 - [ ] Return a category-correct fallback plus one stable mark whenever a required slot is absent or
@@ -502,8 +504,8 @@ The first executable slice is specified by
       diagnostic, explanation, repair, and downstream dependency.
 - [ ] Keep mark construction and result accumulation explicit; do not port WorkmanGR's global
       mutable diagnostic buffers.
-- [ ] Derive structural diagnostics from marks, retaining v2's rule, premise, observation,
-      recovery, fallback, repair-class, and dependency information.
+- [ ] Derive structural diagnostics from marks, retaining v2's rule, premise, observation, recovery,
+      fallback, repair-class, and dependency information.
 - [ ] Add lexer-, parser-, formatter-, and lowering-phase marks without inventing parallel
       diagnostic formats.
 
@@ -534,6 +536,8 @@ The first executable slice is specified by
       and semantic AST shapes.
 - [ ] Lower complete expressions, patterns, types, imports, and declarations from structured nodes,
       never by reparsing stored source strings.
+  - [x] Lower the representative lambda, typed pattern, named type, block, qualified name, and unary
+        application from the generated Surface AST DTO rather than the expression-text adapter.
 - [ ] Carry source node IDs, spans, and recovery provenance through lowering.
 - [ ] Define semantic representations for inferred holes, error nodes/types, missing names, and
       skipped declarations.
@@ -542,8 +546,8 @@ The first executable slice is specified by
       supported by authored syntax.
 - [ ] Remove `frontend_v2_expr_adapter.ts` and TypeScript-side type/import regex parsers after the
       corresponding Surface AST lowering exists.
-- [ ] Keep TypeScript at the generated-WM boundary as DTO translation/semantic integration only,
-      not as a second syntax frontend.
+- [ ] Keep TypeScript at the generated-WM boundary as DTO translation/semantic integration only, not
+      as a second syntax frontend.
 
 ### Surface AST and formatter tests
 
@@ -569,8 +573,7 @@ The first executable slice is specified by
 - [ ] Frontend v2 returns a total current-Workman Surface AST, not a shallow source-region scaffold.
 - [ ] The canonical formatter reproduces all meaningful surface syntax while intentionally owning
       whitespace and newline layout.
-- [ ] Marks are shared syntax/diagnostic identities and all recovered slots contain typed
-      fallbacks.
+- [ ] Marks are shared syntax/diagnostic identities and all recovered slots contain typed fallbacks.
 - [ ] Semantic lowering consumes structured Surface AST nodes without TypeScript-side reparsing.
 - [ ] WorkmanGR differences are documented, intentional, and covered by current-Workman tests.
 
@@ -623,14 +626,14 @@ recursive Surface AST nodes and structured lowering rather than source-text adap
 ### Minimum real v2 LSP slice
 
 This slice is the next high-level target before full AST coverage. The goal is not to cover the
-whole language yet; it is to choose a small, coherent subset that proves the current compiler,
-LSP, and editor extension can run in a real `frontend: "v2"` mode. The representative editor test
-case is: a user edits a small multi-file program, leaves a recoverable syntax issue such as a
-missing semicolon, and the LSP still typechecks the rest of the file through frontend v2 while
-reporting the recovery as a warning or information diagnostic.
+whole language yet; it is to choose a small, coherent subset that proves the current compiler, LSP,
+and editor extension can run in a real `frontend: "v2"` mode. The representative editor test case
+is: a user edits a small multi-file program, leaves a recoverable syntax issue such as a missing
+semicolon, and the LSP still typechecks the rest of the file through frontend v2 while reporting the
+recovery as a warning or information diagnostic.
 
-Full AST coverage remains required before frontend v2 becomes the default, but it is explicitly
-not required for this milestone.
+Full AST coverage remains required before frontend v2 becomes the default, but it is explicitly not
+required for this milestone.
 
 - [ ] Define the supported-source contract for the first real v2 LSP mode.
   - [ ] Chosen first subset:
@@ -639,19 +642,20 @@ not required for this milestone.
           terminators.
     - [x] Simple patterns already covered by the semantic adapter: variables, wildcard, nullary
           constructors, and literal patterns.
-    - [x] Expression forms needed for the first fixtures: variables, literals, `void`,
-          parenthesized single expressions, and simple calls.
-  - [x] Type expressions needed for annotations and imported signatures used by the chosen
-          fixtures.
+    - [x] Expression forms needed for the first fixtures: variables, literals, `void`, parenthesized
+          single expressions, and simple calls.
+  - [x] Type expressions needed for annotations and imported signatures used by the chosen fixtures.
   - [x] Additional compatibility proven after the first gate:
     - [x] Open (`import *`) imports.
     - [x] Namespace imports and qualified variable expressions such as `Lib.value`.
     - [x] Tuple expressions.
     - [x] Simple lambdas, result-only blocks, and whitespace application such as `print value`.
+    - [x] Typed lambda patterns and authored blocks whose required closing brace is structurally
+          missing.
   - [ ] Explicitly deferred while compatibility work continues:
     - [ ] Full declaration/expression/pattern/type AST coverage.
-  - [x] Explicitly reject unsupported declarations and expressions with frontend-v2 diagnostics;
-        do not silently drop them from the module.
+  - [x] Explicitly reject unsupported declarations and expressions with frontend-v2 diagnostics; do
+        not silently drop them from the module.
 - [ ] Build a small v2-mode fixture corpus for the slice.
   - [x] Single-file fixture: complete simple program typechecks through frontend v2.
   - [x] Single-file fixture: missing top-level semicolon produces a structural diagnostic and still
@@ -660,11 +664,13 @@ not required for this milestone.
   - [x] Multi-file fixture: named import alias is resolved and typechecked through frontend v2.
   - [x] Multi-file fixture: unsaved imported source override is resolved and typechecked through
         frontend v2.
+  - [x] Multi-file fixture: namespace call in an annotated lambda typechecks while the import
+        terminator, block close, and declaration terminator remain virtual structural state.
 - [ ] Treat this slice as the first editor-extension v2 gate.
   - [x] `validateUri` can route semantic analysis through frontend v2 for the minimum slice and
         publish structural diagnostics from the same frontend-v2 source.
-  - [x] The VS Code/LSP v2 mode may be exposed for this subset only after `validateUri`, module graph
-        loading, and hover use frontend v2 for the same files.
+  - [x] The VS Code/LSP v2 mode may be exposed for this subset only after `validateUri`, module
+        graph loading, and hover use frontend v2 for the same files.
     - [x] Thread frontend mode through the server validation, project-index dependency tracking, and
           hover analysis entry points.
     - [x] Add VS Code `wmMini.frontendMode` setting and pass it to the server process.
@@ -751,26 +757,25 @@ not required for this milestone.
 
 ## Phase E — compiler and current-LSP adoption
 
-The next high-level target is a real frontend-v2 mode for the current compiler,
-LSP, and editor extension. This must replace the parser used for semantic
-analysis, module graph loading, hover, and diagnostics. A structural-only
-sidecar mode is intentionally out of scope: it would let frontend v2 recover and
-render syntax while the typechecker still depends on Peggy/v1, which would not
-test the editor mode that matters. The plan should therefore advance only modes
-where frontend v2 is the parser feeding semantic analysis; structural display on
-top of v1 typechecking is not a milestone for this project.
+The next high-level target is a real frontend-v2 mode for the current compiler, LSP, and editor
+extension. This must replace the parser used for semantic analysis, module graph loading, hover, and
+diagnostics. A structural-only sidecar mode is intentionally out of scope: it would let frontend v2
+recover and render syntax while the typechecker still depends on Peggy/v1, which would not test the
+editor mode that matters. The plan should therefore advance only modes where frontend v2 is the
+parser feeding semantic analysis; structural display on top of v1 typechecking is not a milestone
+for this project.
 
 ### Compiler adoption
 
-- [ ] Enable real compiler `compare` mode: run frontend v1 and frontend v2 over the same
-      source, keep v1 semantics only as the execution oracle, and fail/report unexplained
-      normalized differences.
+- [ ] Enable real compiler `compare` mode: run frontend v1 and frontend v2 over the same source,
+      keep v1 semantics only as the execution oracle, and fail/report unexplained normalized
+      differences.
   - [x] Cover compare mode on the first supported single-file simple-let and simple-call corpus.
   - [x] Cover compare mode on the first supported multi-file named-import alias corpus.
-- [ ] Enable real compiler `v2` mode for the supported semantic subset by routing parsing
-      through frontend v2's semantic projection instead of Peggy.
-- [ ] Run representative compiler/check tests with `frontend: "v2"` before any editor-facing
-      v2 mode is exposed.
+- [ ] Enable real compiler `v2` mode for the supported semantic subset by routing parsing through
+      frontend v2's semantic projection instead of Peggy.
+- [ ] Run representative compiler/check tests with `frontend: "v2"` before any editor-facing v2 mode
+      is exposed.
 - [ ] Make frontend v2 the default compiler frontend after comparison parity.
 - [ ] Retain a short-lived v1/debug mode rather than permanent user-facing dual parser
       configuration.

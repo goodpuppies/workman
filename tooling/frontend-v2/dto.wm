@@ -6,7 +6,7 @@ from "./types.wm" import {
   LetKeyword, Keyword, Identifier, Constructor, NumberLiteral, StringLiteral,
   Equals, Semicolon, Punctuation, Operator, Whitespace, Comment, Opaque, EndOfFile,
   ConcreteOrigin, VirtualOrigin,
-  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, TypedPattern, HolePattern, ErrorPattern,
   LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr, BlockExpr,
   AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
   ConcreteToken, MissingToken,
@@ -188,6 +188,7 @@ let patternInfo = (pattern: Pattern) => {
     WildcardPattern(Var(nodeId), Var(span)) => { ("name", -1) },
     VoidPattern(Var(nodeId), Var(pair), Var(span)) => { ("name", -1) },
     TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { ("name", -1) },
+    TypedPattern(Var(nodeId), Var(pattern), Var(annotation), Var(span)) => { ("name", -1) },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
       ("error", recoveryId)

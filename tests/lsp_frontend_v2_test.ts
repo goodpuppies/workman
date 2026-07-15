@@ -123,6 +123,34 @@ Deno.test("lsp validation v2 mode checks a lambda after recovering its terminato
   );
 });
 
+Deno.test("lsp validation v2 mode typechecks through a structurally missing block mate", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/lib.wm`;
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(lib, "let printer = (x) => { print x };");
+  await Deno.writeTextFile(
+    main,
+    'from "./lib.wm" import * as Lib\n\nlet main = (x: String) => {\n  Lib.printer x',
+  );
+  const results = await validateUri(pathToFileUri(main), new Map(), {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+  });
+
+  assertEquals(
+    (await diagnosticsForPath(results, main))?.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.severity,
+    ]),
+    [
+      ["parse.import.missing-semicolon", 2],
+      ["parse.expression.missing-close-brace", 2],
+      ["parse.let.missing-semicolon", 2],
+    ],
+  );
+});
+
 async function diagnosticsForPath(results: ValidationResult[], path: string) {
   const realPath = await Deno.realPath(path);
   return results.find((result) => result.uri === pathToFileUri(realPath))?.diagnostics;

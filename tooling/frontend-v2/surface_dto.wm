@@ -1,6 +1,6 @@
 from "./types.wm" import {
-  Span, LongIdentifier, DelimiterPair, Pattern, Expr,
-  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  Span, LongIdentifier, SurfaceTypeAnnotation, DelimiterPair, Pattern, Expr,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, TypedPattern, HolePattern, ErrorPattern,
   LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr,
   BlockExpr, AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr
 };
@@ -34,12 +34,17 @@ let rec namePartsInto = match(parts, reversed) => {
 let emptyStrings = () => { Js.Array.fromList([]) };
 let childArray = (items: List<Number>) => { Js.Array.fromList(items) };
 
+let annotationId = (annotation: SurfaceTypeAnnotation) => { annotation.id };
+let annotationSpan = (annotation: SurfaceTypeAnnotation) => { annotation.span };
+let annotationName = (annotation: SurfaceTypeAnnotation) => { annotation.name };
+
 let patternId = (pattern: Pattern) => {
   match(pattern) {
     NamePattern(Var(id), Var(text), Var(span)) => { id },
     WildcardPattern(Var(id), Var(span)) => { id },
     VoidPattern(Var(id), Var(pair), Var(span)) => { id },
     TuplePattern(Var(id), Var(pair), Var(items), Var(span)) => { id },
+    TypedPattern(Var(id), Var(pattern), Var(annotation), Var(span)) => { id },
     HolePattern(Var(id), Var(recoveryId), Var(span)) => { id },
     ErrorPattern(Var(id), Var(recoveryId), Var(span), Var(text)) => { id },
   }
@@ -98,6 +103,28 @@ let rec patternNodes = (pattern: Pattern) => {
     TuplePattern(Var(id), pair, items, span) => {
       let root = dto(id, "pattern.tuple", span, pair.pairId, -1, patternIds(items, []), emptyStrings());
       [root, ..patternLists(items)]
+    },
+    TypedPattern(Var(id), pattern, annotation, span) => {
+      let typeName = annotationName(annotation);
+      let root = dto(
+        id,
+        "pattern.typed",
+        span,
+        -1,
+        -1,
+        [patternId(pattern), annotationId(annotation)],
+        emptyStrings(),
+      );
+      let typeNode = dto(
+        annotationId(annotation),
+        "type.name",
+        annotationSpan(annotation),
+        -1,
+        -1,
+        [],
+        namePartsInto(typeName.parts, []),
+      );
+      [root, ..append(patternNodes(pattern), [typeNode])]
     },
     HolePattern(Var(id), Var(recoveryId), span) => {
       [dto(id, "pattern.hole", span, -1, recoveryId, [], emptyStrings())]

@@ -1,13 +1,15 @@
 from "./types.wm" import {
-  Span, Token, TokenKind, TokenSlot, LongIdentifier, DelimiterPair, Pattern, Expr,
+  Span, Token, TokenKind, TokenSlot, LongIdentifier, SurfaceTypeAnnotation,
+  DelimiterPair, Pattern, Expr,
   Identifier, Constructor, NumberLiteral, StringLiteral, Keyword, Operator,
   Equals, Semicolon, Punctuation, Opaque,
   ConcreteToken,
-  NamePattern, WildcardPattern, VoidPattern, TuplePattern, ErrorPattern,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, TypedPattern, ErrorPattern,
   LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr,
   BlockExpr, AtomExpr
 };
 from "./parser_support.wm" import { ParserState, freshNode };
+from "./surface_pairs.wm" import { freshPair, missingClosePair };
 
 let rec reverseInto = match(items, output) => {
   ([], Var(output)) => { output },
@@ -65,19 +67,9 @@ let rec takeDelimited = match(tokens, expected, depth, reversed) => {
   },
 };
 
-let freshPair = (state: ParserState, open: Token, close: Token) => {
-  let (pairId, next) = freshNode(state);
-  let pair: DelimiterPair = .{
-    pairId = pairId,
-    open = ConcreteToken(open),
-    close = ConcreteToken(close),
-  };
-  (pair, next)
-};
-
 let isSupportedPunctuation = (text: String) => {
   text == "(" || text == ")" || text == "{" || text == "}" ||
-  text == "," || text == "." || text == "=>" || text == "_"
+  text == "," || text == "." || text == ":" || text == "=>" || text == "_"
 };
 
 let rec hasUnsupportedSliceToken = match(tokens) => {
@@ -179,7 +171,19 @@ let exprSpan = (expression: Expr) => {
   }
 };
 
-let patternFromTokens = (
+let exprSpanFromPattern = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(id), Var(text), Var(span)) => { span },
+    WildcardPattern(Var(id), Var(span)) => { span },
+    VoidPattern(Var(id), Var(pair), Var(span)) => { span },
+    TuplePattern(Var(id), Var(pair), Var(items), Var(span)) => { span },
+    TypedPattern(Var(id), Var(inner), Var(annotation), Var(span)) => { span },
+    ErrorPattern(Var(id), Var(recoveryId), Var(span), Var(text)) => { span },
+    _ => { .{ start = 0, end = 0 } },
+  }
+};
+
+let rec patternFromTokens = (
   state: ParserState,
   nodeId: Number,
   tokens: List<Token>,
@@ -191,19 +195,8 @@ let patternFromTokens = (
       ([], Var(current), Var(reversed)) => { (reverseInto(reversed, []), current) },
       ([group, ..rest], Var(current), Var(reversed)) => {
         let (childId, next) = freshNode(current);
-        let pattern = match(group) {
-          [token] => {
-            if (token.text == "_") {
-              WildcardPattern(childId, token.span)
-            } else {
-              NamePattern(childId, token.text, token.span)
-            }
-          },
-          _ => {
-            ErrorPattern(childId, -1, .{ start = 0, end = 0 }, "unsupported tuple pattern")
-          },
-        };
-        patternsInto(rest, next, [pattern, ..reversed])
+        let (pattern, next1) = patternFromTokens(next, childId, group, delimiters);
+        patternsInto(rest, next1, [pattern, ..reversed])
       },
     };
     let (patterns, next) = patternsInto(groups, state, []);
@@ -218,7 +211,38 @@ let patternFromTokens = (
     };
     (TuplePattern(nodeId, delimiters, patterns, span), next)
   } else {
-    match(tokens) {
+    let (typedGroups, hasColon) = splitTop(tokens, ":");
+    if (hasColon) {
+      match(typedGroups) {
+        [patternTokens, typeTokens] => {
+          let (innerId, state1) = freshNode(state);
+          let (inner, state2) = patternFromTokens(state1, innerId, patternTokens, delimiters);
+          let (parts, remaining) = takeLongName(typeTokens, []);
+          match((parts, remaining)) {
+            ([first, ..rest], []) => {
+              let (typeId, state3) = freshNode(state2);
+              let typeSpan = longNameSpan([first, ..rest]);
+              let name: LongIdentifier = .{ parts = [first, ..rest], span = typeSpan };
+              let annotation: SurfaceTypeAnnotation = .{
+                id = typeId,
+                name = name,
+                span = typeSpan,
+              };
+              let innerSpan = exprSpanFromPattern(inner);
+              let span = .{ start = innerSpan.start, end = typeSpan.end };
+              (TypedPattern(nodeId, inner, annotation, span), state3)
+            },
+            _ => {
+              (ErrorPattern(nodeId, -1, .{ start = 0, end = 0 }, "unsupported type annotation"), state2)
+            },
+          }
+        },
+        _ => {
+          (ErrorPattern(nodeId, -1, .{ start = 0, end = 0 }, "unsupported typed pattern"), state)
+        },
+      }
+    } else {
+      match(tokens) {
       [] => {
         let span = match(delimiters.open) {
           ConcreteToken(open) => {
@@ -241,6 +265,7 @@ let patternFromTokens = (
       _ => {
         (ErrorPattern(nodeId, -1, .{ start = 0, end = 0 }, "unsupported pattern"), state)
       },
+      }
     }
   }
 };
@@ -419,7 +444,19 @@ and parseBlockPrimary = (
         (BlockExpr(nodeId, pair, [], result, span), rest, state3)
       }
     },
-    None => { (AtomExpr(nodeId, open.text, .{ start = 0, end = 0 }), [], state) },
+    None => {
+      let anchor = exprEndFromTokens(inside, open.span.end);
+      let (pair, state1) = missingClosePair(state, open, "}", anchor, nodeId);
+      let (groups, hasSemicolon) = splitTop(inside, ";");
+      if (hasSemicolon) {
+        (AtomExpr(nodeId, open.text, .{ start = open.span.start, end = anchor }), [], state1)
+      } else {
+        let (resultId, state2) = freshNode(state1);
+        let (result, state3) = parseExpressionTokens(state2, resultId, inside);
+        let span = .{ start = open.span.start, end = anchor };
+        (BlockExpr(nodeId, pair, [], result, span), [], state3)
+      }
+    },
   }
 };
 

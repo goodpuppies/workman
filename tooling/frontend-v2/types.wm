@@ -40,6 +40,12 @@ record LongIdentifier = {
   span: Span,
 };
 
+record SurfaceTypeAnnotation = {
+  id: Number,
+  name: LongIdentifier,
+  span: Span,
+};
+
 record DelimiterPair = {
   pairId: Number,
   open: TokenSlot,
@@ -57,6 +63,7 @@ type Pattern =
   | WildcardPattern<Number, Span>
   | VoidPattern<Number, DelimiterPair, Span>
   | TuplePattern<Number, DelimiterPair, List<Pattern>, Span>
+  | TypedPattern<Number, Pattern, SurfaceTypeAnnotation, Span>
   | HolePattern<Number, Number, Span>
   | ErrorPattern<Number, Number, Span, String>;
 

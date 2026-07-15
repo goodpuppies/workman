@@ -74,8 +74,10 @@ export type SurfaceNode = {
     | "pattern.wildcard"
     | "pattern.void"
     | "pattern.tuple"
+    | "pattern.typed"
     | "pattern.hole"
-    | "pattern.error";
+    | "pattern.error"
+    | "type.name";
   start: number;
   end: number;
   pairId: number;

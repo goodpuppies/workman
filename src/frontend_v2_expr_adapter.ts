@@ -1,5 +1,6 @@
 import type { Expr, Param, Pattern, TypeExpr } from "./ast.ts";
 import type { AstNode } from "./source.ts";
+import type { StructuralItem, SurfaceNode } from "./frontend_v2_loader.ts";
 
 export type ExprAdapterHelpers = {
   node(start: number, end: number): AstNode | undefined;
@@ -15,6 +16,168 @@ export function projectExpr(
   const parser = new ExprParser(text, baseOffset, helpers);
   const expr = parser.parseExpr();
   return expr && parser.done() ? expr : undefined;
+}
+
+export function projectSurfaceExpr(
+  item: StructuralItem,
+  source: string,
+  helpers: ExprAdapterHelpers,
+): Expr | undefined {
+  if (item.expressionRootId < 0) return undefined;
+  const nodes = new Map(item.expressionNodes.map((node) => [node.id, node]));
+  const node = nodes.get(item.expressionRootId);
+  return node ? projectNode(node, nodes, source, helpers) : undefined;
+}
+
+function projectNode(
+  node: SurfaceNode,
+  nodes: Map<number, SurfaceNode>,
+  source: string,
+  helpers: ExprAdapterHelpers,
+): Expr | undefined {
+  const located = withSurfaceNode(node, helpers);
+  if (node.kind === "literal") return projectLiteral(source.slice(node.start, node.end), located);
+  if (node.kind === "void") return { kind: "Void", ...located };
+  if (node.kind === "name") {
+    return node.nameParts.length > 0
+      ? { kind: "Var", name: node.nameParts.join("."), ...located }
+      : undefined;
+  }
+  if (node.kind === "apply") {
+    const callee = childExpr(node, 0, nodes, source, helpers);
+    const argument = childExpr(node, 1, nodes, source, helpers);
+    return callee && argument ? { kind: "Call", callee, args: [argument], ...located } : undefined;
+  }
+  if (node.kind === "tuple") {
+    const items = node.children.map((id) => nodes.get(id)).map((child) =>
+      child ? projectNode(child, nodes, source, helpers) : undefined
+    );
+    return items.every((item): item is Expr => !!item)
+      ? { kind: "Tuple", items, ...located }
+      : undefined;
+  }
+  if (node.kind === "paren") return childExpr(node, 0, nodes, source, helpers);
+  if (node.kind === "lambda") {
+    const parameterNode = nodes.get(node.children[0]);
+    const body = childExpr(node, 1, nodes, source, helpers);
+    const parameters = parameterNode
+      ? projectSurfaceParams(parameterNode, nodes, source, helpers)
+      : undefined;
+    return parameters && body
+      ? { kind: "Lambda", params: parameters, body, ...located }
+      : undefined;
+  }
+  if (node.kind === "block") {
+    if (node.children.length === 0) return undefined;
+    const expressions = node.children.map((id) => nodes.get(id)).map((child) =>
+      child ? projectNode(child, nodes, source, helpers) : undefined
+    );
+    if (!expressions.every((expr): expr is Expr => !!expr)) return undefined;
+    return {
+      kind: "Block",
+      items: expressions.slice(0, -1),
+      result: expressions.at(-1)!,
+      ...located,
+    };
+  }
+  return undefined;
+}
+
+function projectSurfaceParams(
+  node: SurfaceNode,
+  nodes: Map<number, SurfaceNode>,
+  source: string,
+  helpers: ExprAdapterHelpers,
+): Param[] | undefined {
+  if (node.kind === "pattern.void") return [];
+  if (node.kind === "pattern.typed") {
+    const patternNode = nodes.get(node.children[0]);
+    const typeNode = nodes.get(node.children[1]);
+    const pattern = patternNode
+      ? projectSurfacePattern(patternNode, nodes, source, helpers)
+      : undefined;
+    const annotation = typeNode ? projectSurfaceType(typeNode) : undefined;
+    return pattern && annotation
+      ? [{ pattern, annotation, ...withSurfaceNode(node, helpers) }]
+      : undefined;
+  }
+  const pattern = projectSurfacePattern(node, nodes, source, helpers);
+  return pattern ? [{ pattern, ...withSurfaceNode(node, helpers) }] : undefined;
+}
+
+function projectSurfacePattern(
+  node: SurfaceNode,
+  nodes: Map<number, SurfaceNode>,
+  source: string,
+  helpers: ExprAdapterHelpers,
+): Pattern | undefined {
+  const located = withSurfaceNode(node, helpers);
+  if (node.kind === "pattern.name") {
+    const name = node.nameParts[0];
+    if (!name) return undefined;
+    return /^[A-Z]/.test(name)
+      ? { kind: "PCtor", name, args: [], ...located }
+      : { kind: "PVar", name, ...located };
+  }
+  if (node.kind === "pattern.wildcard") return { kind: "PWildcard", ...located };
+  if (node.kind === "pattern.void") return { kind: "PVoid", ...located };
+  if (node.kind === "pattern.tuple") {
+    const items = node.children.map((id) => nodes.get(id)).map((child) =>
+      child ? projectSurfacePattern(child, nodes, source, helpers) : undefined
+    );
+    return items.every((item): item is Pattern => !!item)
+      ? { kind: "PTuple", items, ...located }
+      : undefined;
+  }
+  if (node.kind === "pattern.typed") {
+    const inner = nodes.get(node.children[0]);
+    return inner ? projectSurfacePattern(inner, nodes, source, helpers) : undefined;
+  }
+  return undefined;
+}
+
+function projectSurfaceType(node: SurfaceNode): TypeExpr | undefined {
+  return node.kind === "type.name" && node.nameParts.length > 0
+    ? { kind: "TName", name: node.nameParts.join("."), args: [] }
+    : undefined;
+}
+
+function childExpr(
+  node: SurfaceNode,
+  index: number,
+  nodes: Map<number, SurfaceNode>,
+  source: string,
+  helpers: ExprAdapterHelpers,
+): Expr | undefined {
+  const child = nodes.get(node.children[index]);
+  return child ? projectNode(child, nodes, source, helpers) : undefined;
+}
+
+function projectLiteral(
+  text: string,
+  located: { node?: AstNode },
+): Expr | undefined {
+  if (text === "true") return { kind: "Bool", value: true, ...located };
+  if (text === "false") return { kind: "Bool", value: false, ...located };
+  if (text === "void") return { kind: "Void", ...located };
+  if (/^-?[0-9]+$/.test(text)) return { kind: "Int", value: Number(text), ...located };
+  if (/^-?[0-9]+\.[0-9]+$/.test(text)) return { kind: "Float", value: Number(text), ...located };
+  if (text.startsWith('"') && text.endsWith('"')) {
+    try {
+      return { kind: "String", value: JSON.parse(text) as string, ...located };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function withSurfaceNode(
+  node: SurfaceNode,
+  helpers: ExprAdapterHelpers,
+): { node?: AstNode } {
+  const located = helpers.node(node.start, node.end);
+  return located ? { node: located } : {};
 }
 
 class ExprParser {

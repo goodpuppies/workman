@@ -1,0 +1,51 @@
+from "./types.wm" import {
+  Span, Token, DelimiterPair, ConcreteToken, MissingToken, WarningSeverity, AutoFix
+};
+from "./parser_support.wm" import { ParserState, freshNode, addRecoveryWithPair };
+
+let freshPair = (state: ParserState, open: Token, close: Token) => {
+  let (pairId, next) = freshNode(state);
+  let pair: DelimiterPair = .{
+    pairId = pairId,
+    open = ConcreteToken(open),
+    close = ConcreteToken(close),
+  };
+  (pair, next)
+};
+
+let missingClosePair = (
+  state: ParserState,
+  open: Token,
+  closeText: String,
+  anchor: Number,
+  subject: Number,
+) => {
+  let (pairId, state1) = freshNode(state);
+  let (fallbackId, state2) = freshNode(state1);
+  let (recoveryId, state3) = addRecoveryWithPair(
+    state2,
+    "parse.expression.missing-close-brace",
+    anchor,
+    "ParseSurfaceBlock",
+    "ParseModule -> ParseLetDecl -> ParseBinding -> ParseExpression -> ParseSurfaceBlock",
+    subject,
+    "closing delimiter '" ++ closeText ++ "'",
+    "end of block",
+    "complete required block delimiter pair",
+    fallbackId,
+    "Token",
+    WarningSeverity,
+    AutoFix,
+    Some(closeText),
+    Some(closeText),
+    Some(pairId),
+    [],
+  );
+  let missingSpan: Span = .{ start = anchor, end = anchor };
+  let pair: DelimiterPair = .{
+    pairId = pairId,
+    open = ConcreteToken(open),
+    close = MissingToken(recoveryId, closeText, missingSpan),
+  };
+  (pair, state3)
+};

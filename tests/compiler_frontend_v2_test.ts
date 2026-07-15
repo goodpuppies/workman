@@ -217,6 +217,26 @@ Deno.test("compiler v2 mode calls an imported namespace function after virtual t
   });
 });
 
+Deno.test("compiler v2 mode lowers typed lambdas through a structurally missing block mate", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const analysis = await analyzeFile("/main.wm", {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+    sourceOverrides: new Map([
+      [
+        "/main.wm",
+        'from "./lib.wm" import * as Lib\n\nlet main = (x: String) => {\n  Lib.printer x',
+      ],
+      ["/lib.wm", "let printer = (x) => { print x };"],
+    ]),
+  });
+
+  expectBinding(analysis.results.get("/main.wm")!.env, "main", {
+    type: "(String) => Void",
+    vars: 0,
+  });
+});
+
 async function buildFrontendV2(): Promise<URL> {
   const output = (await Deno.makeTempDir()) + "/frontend-v2.mjs";
   await Deno.writeTextFile(output, await compileLibraryFile(frontendSource));
