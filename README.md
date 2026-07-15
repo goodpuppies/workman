@@ -1,111 +1,57 @@
-# wm-mini
+<img src="editors/vscode/workman.png" alt="Workman" width="200" align="left"/>
 
-`wm-mini` is a deliberately boring, small Workman side language: an SML-flavored functional core
-written in Deno TypeScript, with JavaScript as its only backend.
+This is the repository for the **Workman** (.wm) programming language toolchain, it has the compiler and lsp/editor tooling.
 
-The intent is to keep the implementation tiny and legible while preserving the parts that matter for
-experimenting with a complete language:
+Workman is a truly simple functional programming language for application, server-side and game programming with direct access to the JS/TS ecosystem trough the deno runtime(bring all your favourite libraries from npm).
 
-- Hindley-Milner style inference with generalized `let` bindings
-- recursive and mutually recursive `let rec ... and ...`
-- nominal algebraic data types
-- file imports as implicit SML-style structures
-- constructor, tuple, and eventually list/record pattern matching
-- expression blocks, lambdas, `if`, primitive operators, and `void`
-- typed JavaScript namespace imports for small FFI bindings
-- temporary JavaScript output for smoke tests
+So let's get right into the hello world! Here are the steps:
 
-Each implementation source file should stay under 500 lines. Markdown docs and research/stress notes
-may exceed that when the document benefits from staying whole. When the language grows, split source
-files before they become archives.
-
-## Reference Bias
-
-This project uses:
-
-- `research/The-Definition-of-Standard-ML-Revised` for the boring FP core shape: declarations,
-  expressions, patterns, lexical conservatism, and static/dynamic separation.
-- `research/workmangr/docs/reference` for Workman spelling and goals: `let`, `type`, constructor
-  syntax, `match(...) { ... }`, blocks, and explicit semicolon top-level declarations.
-
-Skipped on purpose for now: infection, flow, traits, raw/FFI, backend profiles, mutability, and
-non-JS compilation. Basic lists and nominal records are part of the frontend roadmap; advanced
-record ergonomics are staged later.
-
-## SML Reduction Rule
-
-SML is the semantic checklist, not the surface syntax target.
-
-Workman keeps one obvious form when SML has both a core form and sugar:
-
-- SML `fun f x = e` reduces to Workman `let rec f = (x) => { e };`.
-- SML `structure M = struct ... end` reduces to a Workman file imported as a namespace:
-  `from "./m.wm" import * as M;`.
-- `from "./m.wm" import *;` opens all exported values, constructors, and types into local scope.
-- JavaScript globals can be imported through TypeScript-backed reflection:
-  `from js.global("Math") import { max as jsmax, floor };`.
-- JavaScript modules use the same import clauses with `js.module`, such as
-  `from js.module("node:crypto") import { createHash };`.
-- Promise-returning JavaScript APIs become eager `Task` handles; see
-  [`docs/async.md`](./docs/async.md) for the current async model.
-- Safe JavaScript failures are matchable `Js.Error` values; see
-  [`docs/js-errors.md`](./docs/js-errors.md) for normalization and handling.
-- Manual JS type annotations are still available when reflection is too broad:
-  `from js.global("console") import { log: (String, Number) => Void } as console;`.
-- Inline structures, functors, signatures, `fun`, and other SML conveniences are not syntax goals
-  unless Workman needs them.
-
-Internally, each file should elaborate like an SML structure environment: values, constructors, and
-eventually type names live in that file environment, and imports expose those components through
-long identifiers such as `Math.add`.
-
-## Frontend First
-
-The current priority is the frontend: parsing, file-as-structure imports, long identifiers, nominal
-datatype inference, and SML-guided static semantics. JavaScript emission exists only as a smoke-test
-harness until the frontend is rigorous.
-
-See [`frontend-subset.md`](./frontend-subset.md) for the exact Goal 1 frontend subset and the
-Workman/SML correspondence used by the tests.
-
-## Try It
-
-```sh
-deno task check
-deno task test
-deno task wm run examples/factorial.wm
-deno task compile examples/factorial.wm /tmp/factorial.js
-deno run /tmp/factorial.js
-deno task wm compile examples/use_math.wm /tmp/use_math.js
-deno task wm run examples/use_math.wm
+- install [Deno🦕](https://deno.com/)
+- create a hello.wm
+```ts
+// as you can see workman syntax looks a lot like js
+let main = () => {
+  print("arf~")
+};
 ```
-
-The example prints:
-
-```txt
-120
-some
-```
-
-For a fully self-contained file, put `-- @no-prelude` on the first non-empty line. It omits the
-algebraic basis (`Option`, `Result`, `List`, and `Js.Error`) and automatic standard-library
-namespaces for that file. Primitive types, operators, and `print` remain available. See
-`examples/result_lift.wm`.
+- run the program `deno x -A jsr:@goodpuppies/workman run hello.wm`
 
 ## Install
-
-Run Workman without installing it:
-
-```sh
-deno x -A jsr:@goodpuppies/workman run hello.wm
+To install the wm cli simply run
 ```
-
-Or install it as `wm`:
-
-```sh
 deno install -g -A --name wm jsr:@goodpuppies/workman
-wm run hello.wm
 ```
+
+## Language Features
+
+An SML based core with all the fp goodies:
+- Hindley-Milner type inference, to lessen type annotation
+- lambdas `() => {}` and explicit currying
+- a pipe operator `:>`
+- highly expressive pattern matching with `match ()`
+- Immutable Records `{}` and Tuples `()`
+- expressions oriented programming
+- Result and Option to improve errors and nullability
+- ADT's/Tagged Unions
+- simple modules
+----
+Besides just fp Workman also has:
+- TSC reflection based ffi so you can simply import typescript without shims or annotation in 80% of the cases
+- a great lsp experience
+- a thought out typescript like syntax with very little invariance
+- great errors with a lot of debug info
+
+## Lsp/editor extension
+
+is available for [vscode](https://marketplace.visualstudio.com/items?itemName=goodpuppies.workman)
+
+## Documentation
+
+* To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/wm-minisyntaxguide.md). It is short and the best way to learn the language
+* see [the docs folder](https://github.com/goodpuppies/workman/tree/main/docs)
+* and [examples](https://github.com/goodpuppies/workman/tree/main/examples)
+
+## Development
 
 For local development, the repository installer remains available:
 
