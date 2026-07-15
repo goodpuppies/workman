@@ -1,0 +1,188 @@
+from "./types.wm" import {
+  Span, LongIdentifier, DelimiterPair, Pattern, Expr,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr,
+  BlockExpr, AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr
+};
+
+record SurfaceNodeDto = {
+  id: Number,
+  kind: String,
+  start: Number,
+  end: Number,
+  pairId: Number,
+  recoveryId: Number,
+  children: Js.Array<Number>,
+  nameParts: Js.Array<String>,
+};
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let rec append = match(left, right) => {
+  ([], Var(right)) => { right },
+  ([head, ..rest], Var(right)) => { [head, ..append(rest, right)] },
+};
+
+let rec namePartsInto = match(parts, reversed) => {
+  ([], Var(reversed)) => { Js.Array.fromList(reverseInto(reversed, [])) },
+  ([part, ..rest], Var(reversed)) => { namePartsInto(rest, [part.text, ..reversed]) },
+};
+
+let emptyStrings = () => { Js.Array.fromList([]) };
+let childArray = (items: List<Number>) => { Js.Array.fromList(items) };
+
+let patternId = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(id), Var(text), Var(span)) => { id },
+    WildcardPattern(Var(id), Var(span)) => { id },
+    VoidPattern(Var(id), Var(pair), Var(span)) => { id },
+    TuplePattern(Var(id), Var(pair), Var(items), Var(span)) => { id },
+    HolePattern(Var(id), Var(recoveryId), Var(span)) => { id },
+    ErrorPattern(Var(id), Var(recoveryId), Var(span), Var(text)) => { id },
+  }
+};
+
+let exprId = (expression: Expr) => {
+  match(expression) {
+    LiteralExpr(Var(id), Var(text), Var(span)) => { id },
+    VoidExpr(Var(id), Var(pair), Var(span)) => { id },
+    NameExpr(Var(id), Var(name), Var(span)) => { id },
+    ApplyExpr(Var(id), Var(callee), Var(argument), Var(span)) => { id },
+    TupleExpr(Var(id), Var(pair), Var(items), Var(span)) => { id },
+    ParenExpr(Var(id), Var(pair), Var(inner), Var(span)) => { id },
+    LambdaExpr(Var(id), Var(params), Var(pattern), Var(arrow), Var(body), Var(span)) => { id },
+    BlockExpr(Var(id), Var(braces), Var(items), Var(result), Var(span)) => { id },
+    AtomExpr(Var(id), Var(text), Var(span)) => { id },
+    HoleExpr(Var(id), Var(recoveryId), Var(span)) => { id },
+    AuthoredHoleExpr(Var(id), Var(span)) => { id },
+    ErrorExpr(Var(id), Var(recoveryId), Var(span), Var(text)) => { id },
+  }
+};
+
+let dto = (
+  id: Number,
+  kind: String,
+  span: Span,
+  pairId: Number,
+  recoveryId: Number,
+  children: List<Number>,
+  nameParts: Js.Array<String>,
+) => {
+  let node: SurfaceNodeDto = .{
+    id = id,
+    kind = kind,
+    start = span.start,
+    end = span.end,
+    pairId = pairId,
+    recoveryId = recoveryId,
+    children = childArray(children),
+    nameParts = nameParts,
+  };
+  node
+};
+
+let rec patternNodes = (pattern: Pattern) => {
+  match(pattern) {
+    NamePattern(Var(id), Var(text), span) => {
+      [dto(id, "pattern.name", span, -1, -1, [], Js.Array.fromList([text]))]
+    },
+    WildcardPattern(Var(id), span) => {
+      [dto(id, "pattern.wildcard", span, -1, -1, [], emptyStrings())]
+    },
+    VoidPattern(Var(id), pair, span) => {
+      [dto(id, "pattern.void", span, pair.pairId, -1, [], emptyStrings())]
+    },
+    TuplePattern(Var(id), pair, items, span) => {
+      let root = dto(id, "pattern.tuple", span, pair.pairId, -1, patternIds(items, []), emptyStrings());
+      [root, ..patternLists(items)]
+    },
+    HolePattern(Var(id), Var(recoveryId), span) => {
+      [dto(id, "pattern.hole", span, -1, recoveryId, [], emptyStrings())]
+    },
+    ErrorPattern(Var(id), Var(recoveryId), span, Var(text)) => {
+      [dto(id, "pattern.error", span, -1, recoveryId, [], emptyStrings())]
+    },
+  }
+}
+
+and patternIds = match(items, reversed) => {
+  ([], Var(reversed)) => { reverseInto(reversed, []) },
+  ([item, ..rest], Var(reversed)) => { patternIds(rest, [patternId(item), ..reversed]) },
+}
+
+and patternLists = match(items) => {
+  [] => { [] },
+  [item, ..rest] => { append(patternNodes(item), patternLists(rest)) },
+};
+
+let rec exprIds = match(items, reversed) => {
+  ([], Var(reversed)) => { reverseInto(reversed, []) },
+  ([item, ..rest], Var(reversed)) => { exprIds(rest, [exprId(item), ..reversed]) },
+};
+
+let rec exprLists = match(items) => {
+  [] => { [] },
+  [item, ..rest] => { append(expressionNodes(item), exprLists(rest)) },
+}
+
+and blockItemExpressions = match(items, reversed) => {
+  ([], Var(reversed)) => { reverseInto(reversed, []) },
+  ([(Var(expression), Var(slot)), ..rest], Var(reversed)) => {
+    blockItemExpressions(rest, [expression, ..reversed])
+  },
+}
+
+and expressionNodes = (expression: Expr) => {
+  match(expression) {
+    LiteralExpr(Var(id), Var(text), span) => {
+      [dto(id, "literal", span, -1, -1, [], emptyStrings())]
+    },
+    VoidExpr(Var(id), pair, span) => {
+      [dto(id, "void", span, pair.pairId, -1, [], emptyStrings())]
+    },
+    NameExpr(Var(id), name, span) => {
+      [dto(id, "name", span, -1, -1, [], namePartsInto(name.parts, []))]
+    },
+    ApplyExpr(Var(id), callee, argument, span) => {
+      let root = dto(id, "apply", span, -1, -1, [exprId(callee), exprId(argument)], emptyStrings());
+      [root, ..append(expressionNodes(callee), expressionNodes(argument))]
+    },
+    TupleExpr(Var(id), pair, items, span) => {
+      let root = dto(id, "tuple", span, pair.pairId, -1, exprIds(items, []), emptyStrings());
+      [root, ..exprLists(items)]
+    },
+    ParenExpr(Var(id), pair, inner, span) => {
+      let root = dto(id, "paren", span, pair.pairId, -1, [exprId(inner)], emptyStrings());
+      [root, ..expressionNodes(inner)]
+    },
+    LambdaExpr(Var(id), params, pattern, arrow, body, span) => {
+      let root = dto(id, "lambda", span, params.pairId, -1, [patternId(pattern), exprId(body)], emptyStrings());
+      [root, ..append(patternNodes(pattern), expressionNodes(body))]
+    },
+    BlockExpr(Var(id), braces, items, result, span) => {
+      let itemExprs = blockItemExpressions(items, []);
+      let children = append(exprIds(itemExprs, []), [exprId(result)]);
+      let root = dto(id, "block", span, braces.pairId, -1, children, emptyStrings());
+      [root, ..append(exprLists(itemExprs), expressionNodes(result))]
+    },
+    AtomExpr(Var(id), Var(text), span) => {
+      [dto(id, "opaque", span, -1, -1, [], emptyStrings())]
+    },
+    HoleExpr(Var(id), Var(recoveryId), span) => {
+      [dto(id, "hole", span, -1, recoveryId, [], emptyStrings())]
+    },
+    AuthoredHoleExpr(Var(id), span) => {
+      [dto(id, "authored-hole", span, -1, -1, [], emptyStrings())]
+    },
+    ErrorExpr(Var(id), Var(recoveryId), span, Var(text)) => {
+      [dto(id, "error", span, -1, recoveryId, [], emptyStrings())]
+    },
+  }
+};
+
+let surfaceNodes = (expression: Expr) => {
+  Js.Array.fromList(expressionNodes(expression))
+};

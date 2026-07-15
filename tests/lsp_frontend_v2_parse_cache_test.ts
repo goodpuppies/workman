@@ -1,6 +1,17 @@
 import { assertEquals, assertStrictEquals } from "@std/assert";
 import type { StructuralParseResult } from "../src/frontend_v2_loader.ts";
 import { FrontendV2ParseCache } from "../src/lsp/frontend_v2_parse_cache.ts";
+import { frontendV2ModuleUrl } from "../src/lsp/server.ts";
+
+Deno.test("frontend-v2 LSP default module URL resolves without deferred initialization", () => {
+  const resolved = frontendV2ModuleUrl({ frontend: "v2" });
+  assertEquals(resolved instanceof URL, true);
+  assertEquals(
+    resolved instanceof URL &&
+      resolved.pathname.endsWith("/tooling/frontend-v2/frontend-v2.generated.mjs"),
+    true,
+  );
+});
 
 Deno.test("frontend-v2 LSP parse cache reuses matching URI source and version", () => {
   const cache = new FrontendV2ParseCache();

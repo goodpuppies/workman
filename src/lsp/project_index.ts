@@ -1,6 +1,8 @@
-import { dirname, normalize, resolve } from "node:path";
+import { normalize, resolve } from "node:path";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
-import { loadModuleGraph } from "../module_graph.ts";
+import { runtime } from "../io.ts";
+import { resolveModuleImportPath } from "../module_graph.ts";
+import { directWorkmanImportSpecifiers } from "./import_scan.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type InitializeParams = {
@@ -29,12 +31,10 @@ export class ProjectIndex {
   async initialize(
     sourceOverrides: Map<string, string>,
     options: CompilerFrontendOptions = {},
-  ) {
-    for (const root of this.#roots) {
-      for await (const path of walkWmFiles(root)) {
-        await this.refreshFile(path, sourceOverrides, options);
-      }
-    }
+  ): Promise<number> {
+    const paths = new Set((await Promise.all([...this.#roots].map(collectWmFiles))).flat());
+    await Promise.all([...paths].map((path) => this.refreshFile(path, sourceOverrides, options)));
+    return paths.size;
   }
 
   async affectedUrisForChange(
@@ -105,9 +105,18 @@ async function directDependencies(
   options: CompilerFrontendOptions = {},
 ): Promise<Set<string>> {
   try {
-    const graph = await loadModuleGraph(path, { ...options, sourceOverrides });
-    const node = graph.nodes.get(graph.entry);
-    return new Set(node?.imports.map((edge) => edge.path) ?? []);
+    const source = sourceOverrides.get(path) ?? await runtime.readTextFile(path);
+    const dependencies = new Set<string>();
+    for (const specifier of directWorkmanImportSpecifiers(source)) {
+      try {
+        dependencies.add(
+          await resolveModuleImportPath(path, specifier, { ...options, sourceOverrides }),
+        );
+      } catch {
+        // Missing imports are reported by validation; the index remains usable.
+      }
+    }
+    return dependencies;
   } catch {
     return new Set();
   }
@@ -117,22 +126,25 @@ function uriPath(uri: string): string {
   return normalize(resolve(fileUriToPath(uri)));
 }
 
-async function* walkWmFiles(root: string): AsyncGenerator<string> {
-  let entries: Deno.DirEntry[];
+async function collectWmFiles(root: string): Promise<string[]> {
+  let entries;
   try {
-    entries = [];
-    for await (const entry of Deno.readDir(root)) entries.push(entry);
+    entries = await runtime.readDirectory(root);
   } catch {
-    return;
+    return [];
   }
+  const files: string[] = [];
+  const directories: string[] = [];
   for (const entry of entries) {
     if (entry.name === "node_modules" || entry.name === ".git") continue;
     if (entry.name.startsWith(".") && entry.isDirectory) continue;
     const path = normalize(resolve(root, entry.name));
     if (entry.isDirectory) {
-      yield* walkWmFiles(path);
+      directories.push(path);
     } else if (entry.isFile && path.endsWith(".wm")) {
-      yield path;
+      files.push(path);
     }
   }
+  const descendants = await Promise.all(directories.map(collectWmFiles));
+  return files.concat(...descendants);
 }

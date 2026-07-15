@@ -1,6 +1,5 @@
 from "./types.wm" import {
-  Span, TokenKind, Token,
-  LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile
+  Span, TokenKind, Token, LetKeyword, Keyword, Semicolon, Punctuation, EndOfFile
 };
 from "./parser_support.wm" import {
   ParserState, advance
@@ -72,5 +71,17 @@ let rec consumeExpressionTail = (
         )
       }
     },
+  }
+};
+
+let expressionDelimiterDepthAfter = (token: Token, depth: Number) => {
+  if (token.text == "(" || token.text == "{" || token.text == "[") {
+    depth + 1
+  } else {
+    if (token.text == ")" || token.text == "}" || token.text == "]") {
+      if (depth > 0) { depth - 1 } else { depth }
+    } else {
+      depth
+    }
   }
 };

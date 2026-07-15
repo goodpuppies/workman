@@ -1,8 +1,12 @@
 from "./types.wm" import {
   Span, TokenKind, Token, Pattern, Expr, LetBinding, TopItem,
+  TokenSlot,
   LetKeyword, Keyword, Identifier, Constructor, NumberLiteral, StringLiteral,
   Equals, Semicolon, Punctuation, Opaque, EndOfFile,
-  NamePattern, HolePattern, ErrorPattern, AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr, BlockExpr,
+  AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
+  ConcreteToken, MissingToken,
   LetItem, ErrorSeverity, WarningSeverity, AutoFix, RecoveryOnly
 };
 from "./parser_support.wm" import {
@@ -10,8 +14,9 @@ from "./parser_support.wm" import {
 };
 from "./parser_expr.wm" import {
   isExpressionBoundaryToken, consumeExpressionTail,
-  expressionBraceDepthAfter
+  expressionBraceDepthAfter, expressionDelimiterDepthAfter
 };
+from "./surface_parser.wm" import { surfaceExpression };
 from "./parser_pattern.wm" import {
   consumePatternTail, patternExpectedCloses
 };
@@ -143,6 +148,9 @@ let parsePattern = (state: ParserState, subject: Number) => {
 let patternEnd = (pattern: Pattern) => {
   match(pattern) {
     NamePattern(Var(nodeId), Var(text), Var(span)) => { span.end },
+    WildcardPattern(Var(nodeId), Var(span)) => { span.end },
+    VoidPattern(Var(nodeId), Var(pair), Var(span)) => { span.end },
+    TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { span.end },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { span.end },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => { span.end },
   }
@@ -343,7 +351,8 @@ let parseExpression = (
             let state4 = addLambdaRecoveries(state3, subject, [token, ..rest], end);
             let state5 = addIfRecoveries(state4, subject, [token, ..rest], end);
             let state6 = addMatchRecoveries(state5, subject, [token, ..rest]);
-            (AtomExpr(nodeId, token.text, .{ start = token.span.start, end = end }), state6)
+            let span = .{ start = token.span.start, end = end };
+            surfaceExpression(state6, nodeId, [token, ..rest], span)
           },
         }
       }
@@ -354,6 +363,16 @@ let parseExpression = (
 
 let expressionEnd = (expression: Expr) => {
   match(expression) {
+    LiteralExpr(Var(nodeId), Var(text), Var(span)) => { span.end },
+    VoidExpr(Var(nodeId), Var(pair), Var(span)) => { span.end },
+    NameExpr(Var(nodeId), Var(name), Var(span)) => { span.end },
+    ApplyExpr(Var(nodeId), Var(callee), Var(argument), Var(span)) => { span.end },
+    TupleExpr(Var(nodeId), Var(pair), Var(items), Var(span)) => { span.end },
+    ParenExpr(Var(nodeId), Var(pair), Var(inner), Var(span)) => { span.end },
+    LambdaExpr(Var(nodeId), Var(params), Var(pattern), Var(arrow), Var(body), Var(span)) => {
+      span.end
+    },
+    BlockExpr(Var(nodeId), Var(braces), Var(items), Var(result), Var(span)) => { span.end },
     AtomExpr(Var(nodeId), Var(text), Var(span)) => { span.end },
     HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { span.end },
     AuthoredHoleExpr(Var(nodeId), Var(span)) => { span.end },
@@ -374,15 +393,15 @@ let isLetGroupTailBoundary = (token: Token) => {
   }
 };
 
-let rec consumeAndTail = (state: ParserState, lastEnd: Number) => {
+let rec consumeAndTail = (state: ParserState, lastEnd: Number, depth: Number) => {
   match(state.remaining) {
     [] => { (lastEnd, state) },
     [token, ..rest] => {
-      if (isLetGroupTailBoundary(token)) {
+      if (depth == 0 && isLetGroupTailBoundary(token)) {
         (lastEnd, state)
       } else {
         let next = advance(state, rest);
-        consumeAndTail(next, token.span.end)
+        consumeAndTail(next, token.span.end, expressionDelimiterDepthAfter(token, depth))
       }
     },
   }
@@ -393,7 +412,7 @@ let consumeLetGroupTail = (state: ParserState, anchor: Number) => {
     [token, ..rest] => {
       if (isKeywordText(token, "and")) {
         let next = advance(state, rest);
-        let (end, consumed) = consumeAndTail(next, token.span.end);
+        let (end, consumed) = consumeAndTail(next, token.span.end, 0);
         let text = state.source :> .slice(token.span.start, end) :> Result.withDefault("");
         (end, text, consumed)
       } else {
@@ -406,7 +425,7 @@ let consumeLetGroupTail = (state: ParserState, anchor: Number) => {
 
 let insertSemicolon = (state: ParserState, subject: Number, anchor: Number) => {
   let (nodeId, state1) = freshNode(state);
-  let (_, state2) = addRecovery(
+  let (recoveryId, state2) = addRecovery(
     state1,
     "parse.let.missing-semicolon",
     anchor,
@@ -424,7 +443,7 @@ let insertSemicolon = (state: ParserState, subject: Number, anchor: Number) => {
     Some(";"),
     [],
   );
-  (anchor, state2)
+  (MissingToken(recoveryId, ";", .{ start = anchor, end = anchor }), state2)
 };
 
 let requireSemicolon = (state: ParserState, subject: Number, anchor: Number) => {
@@ -433,7 +452,7 @@ let requireSemicolon = (state: ParserState, subject: Number, anchor: Number) => 
       match(token.kind) {
         Semicolon => {
           let next = advance(state, rest);
-          (token.span.end, next)
+          (ConcreteToken(token), next)
         },
         _ => { insertSemicolon(state, subject, anchor) },
       }
@@ -456,6 +475,10 @@ let parseLetBinding = (state: ParserState, letToken: Token, rest: List<Token>) =
     consumeLetGroupTail(state4, expressionEnd(expression));
   let (bindingEnd, state5) =
     requireSemicolon(state4a, bindingId, semicolonAnchor);
+  let end = match(bindingEnd) {
+    ConcreteToken(token) => { token.span.end },
+    MissingToken(Var(recoveryId), Var(text), span) => { span.end },
+  };
   let binding: LetBinding = .{
     id = bindingId,
     recursive = recursive,
@@ -463,7 +486,8 @@ let parseLetBinding = (state: ParserState, letToken: Token, rest: List<Token>) =
     annotationText = annotationText,
     expression = expression,
     groupTailText = groupTailText,
-    span = .{ start = letToken.span.start, end = bindingEnd },
+    terminator = bindingEnd,
+    span = .{ start = letToken.span.start, end = end },
   };
   let item: TopItem = LetItem(binding);
   (item, state5)

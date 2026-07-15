@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import type { TypeExpr } from "../../ast.ts";
 import { type JsCallArgHint } from "./type_refs.ts";
 import { typeExprFromTsType } from "./type_mapping.ts";

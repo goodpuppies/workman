@@ -122,6 +122,101 @@ Deno.test("compiler compare mode checks named import aliases", async () => {
   expectBinding(analysis.results.get("/main.wm")!.env, "x", { type: "Bool", vars: 0 });
 });
 
+Deno.test("compiler v2 mode typechecks namespace values and tuple expressions", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const analysis = await analyzeFile("/main.wm", {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+    sourceOverrides: new Map([
+      [
+        "/main.wm",
+        'from "./lib.wm" import * as Lib;\nlet pair = (Lib.value, true);',
+      ],
+      ["/lib.wm", "let value = 1;"],
+    ]),
+  });
+
+  expectBinding(analysis.results.get("/main.wm")!.env, "pair", {
+    type: "(Number, Bool)",
+    vars: 0,
+  });
+});
+
+Deno.test("compiler compare mode agrees on namespace and tuple expressions", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const analysis = await analyzeFile("/main.wm", {
+    frontend: "compare",
+    frontendV2ModuleUrl,
+    sourceOverrides: new Map([
+      [
+        "/main.wm",
+        'from "./lib.wm" import * as Lib;\nlet pair = (Lib.value, true);',
+      ],
+      ["/lib.wm", "let value = 1;"],
+    ]),
+  });
+
+  expectBinding(analysis.results.get("/main.wm")!.env, "pair", {
+    type: "(Number, Bool)",
+    vars: 0,
+  });
+});
+
+Deno.test("compiler compare mode agrees on open imports", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const analysis = await analyzeFile("/main.wm", {
+    frontend: "compare",
+    frontendV2ModuleUrl,
+    sourceOverrides: new Map([
+      ["/main.wm", 'from "./lib.wm" import *;\nlet pair = (value, true);'],
+      ["/lib.wm", "let value = 1;"],
+    ]),
+  });
+
+  expectBinding(analysis.results.get("/main.wm")!.env, "pair", {
+    type: "(Number, Bool)",
+    vars: 0,
+  });
+});
+
+Deno.test("compiler v2 mode projects simple lambdas, blocks, and whitespace application", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = 'let printer = (x) => { print x };\nlet main = () => { printer "ok" }';
+  const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "printer", { type: "('a) => Void", vars: 1 });
+  expectBinding(result.env, "main", { type: "(Void) => Void", vars: 0 });
+});
+
+Deno.test("compiler compare mode agrees on simple lambdas and whitespace application", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = 'let printer = (x) => { print x };\nlet main = () => { printer "ok" };';
+  const result = await checkSource(source, { frontend: "compare", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "printer", { type: "('a) => Void", vars: 1 });
+  expectBinding(result.env, "main", { type: "(Void) => Void", vars: 0 });
+});
+
+Deno.test("compiler v2 mode calls an imported namespace function after virtual termination", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const analysis = await analyzeFile("/main.wm", {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+    sourceOverrides: new Map([
+      [
+        "/main.wm",
+        'from "./lib.wm" import * as Lib;\nlet main = () => { Lib.printer "x" }',
+      ],
+      ["/lib.wm", "let printer = (x) => { print x };"],
+    ]),
+  });
+
+  expectBinding(analysis.results.get("/main.wm")!.env, "main", {
+    type: "(Void) => Void",
+    vars: 0,
+  });
+});
+
 async function buildFrontendV2(): Promise<URL> {
   const output = (await Deno.makeTempDir()) + "/frontend-v2.mjs";
   await Deno.writeTextFile(output, await compileLibraryFile(frontendSource));

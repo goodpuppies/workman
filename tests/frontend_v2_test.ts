@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { compileLibraryFile } from "../src/compiler.ts";
 import {
   FRONTEND_V2_SCHEMA_VERSION,
@@ -390,7 +391,8 @@ Deno.test("frontend-v2 projects complete simple let declarations into Module sha
     {
       code: "frontend-v2.unsupported-decl",
       structuralId: projection.decls[17].structuralId,
-      message: "frontend-v2 semantic adapter does not yet project let",
+      message:
+        'frontend-v2 semantic adapter does not yet project let (pattern=name, expression=atom "one")',
     },
     {
       code: "frontend-v2.recovered-decl",
@@ -472,12 +474,13 @@ async function buildFrontend(): Promise<URL> {
 }
 
 async function* wmFiles(root: URL): AsyncGenerator<string> {
+  const directory = new URL(root.href.endsWith("/") ? root.href : root.href + "/");
   for await (const entry of Deno.readDir(root)) {
-    const path = root.pathname + "/" + entry.name;
+    const entryUrl = new URL(entry.name + (entry.isDirectory ? "/" : ""), directory);
     if (entry.isDirectory) {
-      yield* wmFiles(new URL(root.href + "/" + entry.name + "/"));
+      yield* wmFiles(entryUrl);
     } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      yield path;
+      yield fileURLToPath(entryUrl);
     }
   }
 }

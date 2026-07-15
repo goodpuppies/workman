@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import type { TypeExpr } from "../../ast.ts";
 import { typeOfSymbol } from "./host.ts";
 import type {

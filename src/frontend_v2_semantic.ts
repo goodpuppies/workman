@@ -1,5 +1,6 @@
 import type { Expr, ImportClause, ImportSpec, Module, Pattern, TypeExpr } from "./ast.ts";
 import type { SemanticDeclProjection, SemanticProjectionResult } from "./frontend_v2_loader.ts";
+import { projectExpr } from "./frontend_v2_expr_adapter.ts";
 import { type AstNode, offsetToLineCol } from "./source.ts";
 
 export type FrontendV2SemanticAdapterDiagnostic = {
@@ -42,12 +43,25 @@ export function semanticProjectionToModule(
       diagnostics.push({
         code: "frontend-v2.unsupported-decl",
         structuralId: decl.structuralId,
-        message: `frontend-v2 semantic adapter does not yet project ${decl.structuralKind}`,
+        message: unsupportedDeclMessage(decl),
       });
     }
   }
 
   return { module: { kind: "Module", decls }, diagnostics };
+}
+
+function unsupportedDeclMessage(decl: SemanticDeclProjection): string {
+  if (decl.semanticKind !== "LetDecl") {
+    return `frontend-v2 semantic adapter does not yet project ${decl.structuralKind}`;
+  }
+  const expression = decl.expressionText.length > 80
+    ? decl.expressionText.slice(0, 77) + "..."
+    : decl.expressionText;
+  return `frontend-v2 semantic adapter does not yet project let ` +
+    `(pattern=${decl.patternKind}, expression=${decl.expressionKind} ${
+      JSON.stringify(expression)
+    })`;
 }
 
 function sourceIndexOf(context: ProjectionContext, text: string, from: number): number {
@@ -85,7 +99,11 @@ function projectCompleteDecl(
   const patternStart = sourceIndexOf(context, decl.patternText, decl.start);
   const pattern = projectPattern(decl.patternText, context, patternStart);
   const expressionStart = expressionStartFor(decl, context, patternStart);
-  const expression = projectExpr(decl.expressionText, context, expressionStart);
+  const expression = projectExpr(decl.expressionText, expressionStart, {
+    node: (start, end) => nodeFor(context, start, end),
+    pattern: (text, start) => projectPattern(text, context, start),
+    type: projectTypeAnnotation,
+  });
   if (
     decl.semanticKind === "LetDecl" &&
     decl.patternKind === "name" &&
@@ -301,138 +319,5 @@ class TypeAnnotationParser {
 
   private skipSpace(): void {
     while (/\s/.test(this.source[this.cursor] ?? "")) this.cursor += 1;
-  }
-}
-
-function projectExpr(
-  text: string,
-  context: ProjectionContext,
-  baseOffset: number,
-): Expr | undefined {
-  const parser = new ExprParser(text, context, baseOffset);
-  const expr = parser.parseExpr();
-  return expr && parser.done() ? expr : undefined;
-}
-
-class ExprParser {
-  private cursor = 0;
-
-  constructor(
-    private readonly source: string,
-    private readonly context: ProjectionContext,
-    private readonly baseOffset: number,
-  ) {}
-
-  done(): boolean {
-    this.skipSpace();
-    return this.cursor === this.source.length;
-  }
-
-  parseExpr(): Expr | undefined {
-    const start = this.cursor;
-    let expr = this.parseAtomExpr();
-    if (!expr) return undefined;
-    while (true) {
-      this.skipSpace();
-      if (!this.consumeRaw("(")) return expr;
-      const args = this.parseArgs();
-      if (!args) return undefined;
-      expr = {
-        kind: "Call",
-        callee: expr,
-        args,
-        ...withNode(this.node(start, this.cursor)),
-      };
-    }
-  }
-
-  private parseArgs(): Expr[] | undefined {
-    const args: Expr[] = [];
-    this.skipSpace();
-    if (this.consumeRaw(")")) return args;
-    while (true) {
-      const arg = this.parseExpr();
-      if (!arg) return undefined;
-      args.push(arg);
-      this.skipSpace();
-      if (this.consumeRaw(")")) return args;
-      if (!this.consumeRaw(",")) return undefined;
-    }
-  }
-
-  private parseAtomExpr(): Expr | undefined {
-    this.skipSpace();
-    const start = this.cursor;
-    if (this.consumeRaw("(")) {
-      const inner = this.parseExpr();
-      if (!inner || !this.consumeRaw(")")) return undefined;
-      return inner;
-    }
-    const string = this.parseStringLiteral();
-    if (string !== undefined) {
-      return { kind: "String", value: string, ...withNode(this.node(start, this.cursor)) };
-    }
-    const number = this.parseNumberLiteral();
-    if (number) return number;
-    const name = this.parseIdentifier();
-    if (!name) return undefined;
-    const node = this.node(start, this.cursor);
-    if (name === "true") return { kind: "Bool", value: true, ...withNode(node) };
-    if (name === "false") return { kind: "Bool", value: false, ...withNode(node) };
-    if (name === "void") return { kind: "Void", ...withNode(node) };
-    return { kind: "Var", name, ...withNode(node) };
-  }
-
-  private parseIdentifier(): string | undefined {
-    const match = /^[_A-Za-z][_A-Za-z0-9]*/.exec(this.source.slice(this.cursor));
-    if (!match) return undefined;
-    this.cursor += match[0].length;
-    return match[0];
-  }
-
-  private parseNumberLiteral(): Expr | undefined {
-    const start = this.cursor;
-    const match = /^-?[0-9]+(?:\.[0-9]+)?/.exec(this.source.slice(this.cursor));
-    if (!match) return undefined;
-    this.cursor += match[0].length;
-    const node = this.node(start, this.cursor);
-    return match[0].includes(".")
-      ? { kind: "Float", value: Number(match[0]), ...withNode(node) }
-      : { kind: "Int", value: Number(match[0]), ...withNode(node) };
-  }
-
-  private parseStringLiteral(): string | undefined {
-    if (!this.source.startsWith('"', this.cursor)) return undefined;
-    for (let index = this.cursor + 1; index < this.source.length; index += 1) {
-      if (this.source[index] === "\\" && index + 1 < this.source.length) {
-        index += 1;
-        continue;
-      }
-      if (this.source[index] === '"') {
-        const raw = this.source.slice(this.cursor, index + 1);
-        this.cursor = index + 1;
-        try {
-          return JSON.parse(raw) as string;
-        } catch {
-          return undefined;
-        }
-      }
-    }
-    return undefined;
-  }
-
-  private consumeRaw(text: string): boolean {
-    this.skipSpace();
-    if (!this.source.startsWith(text, this.cursor)) return false;
-    this.cursor += text.length;
-    return true;
-  }
-
-  private skipSpace(): void {
-    while (/\s/.test(this.source[this.cursor] ?? "")) this.cursor += 1;
-  }
-
-  private node(start: number, end: number): AstNode | undefined {
-    return nodeFor(this.context, this.baseOffset + start, this.baseOffset + end);
   }
 }

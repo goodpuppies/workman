@@ -31,6 +31,21 @@ record Token = {
   origin: TokenOrigin,
 };
 
+-- Concrete and recovered syntax occupy the same editor-state slots. A missing
+-- token points at the canonical recovery mark which explains its presence.
+type TokenSlot = ConcreteToken<Token> | MissingToken<Number, String, Span>;
+
+record LongIdentifier = {
+  parts: List<Token>,
+  span: Span,
+};
+
+record DelimiterPair = {
+  pairId: Number,
+  open: TokenSlot,
+  close: TokenSlot,
+};
+
 record LexResult = {
   sourceLength: Number,
   lineStarts: List<Number>,
@@ -39,10 +54,21 @@ record LexResult = {
 
 type Pattern =
   | NamePattern<Number, String, Span>
+  | WildcardPattern<Number, Span>
+  | VoidPattern<Number, DelimiterPair, Span>
+  | TuplePattern<Number, DelimiterPair, List<Pattern>, Span>
   | HolePattern<Number, Number, Span>
   | ErrorPattern<Number, Number, Span, String>;
 
 type Expr =
+  | LiteralExpr<Number, String, Span>
+  | VoidExpr<Number, DelimiterPair, Span>
+  | NameExpr<Number, LongIdentifier, Span>
+  | ApplyExpr<Number, Expr, Expr, Span>
+  | TupleExpr<Number, DelimiterPair, List<Expr>, Span>
+  | ParenExpr<Number, DelimiterPair, Expr, Span>
+  | LambdaExpr<Number, DelimiterPair, Pattern, TokenSlot, Expr, Span>
+  | BlockExpr<Number, DelimiterPair, List<(Expr, TokenSlot)>, Expr, Span>
   | AtomExpr<Number, String, Span>
   | HoleExpr<Number, Number, Span>
   | AuthoredHoleExpr<Number, Span>
@@ -55,6 +81,7 @@ record LetBinding = {
   annotationText: String,
   expression: Expr,
   groupTailText: String,
+  terminator: TokenSlot,
   span: Span,
 };
 
@@ -115,11 +142,17 @@ record RenderResult = {
   pieces: List<MapPiece>,
 };
 
+-- This is the authoritative semantic state of the user's editor. Diagnostics,
+-- rendering, lowering, and editor services are projections from this value.
+record SurfaceProgram = {
+  items: List<TopItem>,
+  marks: List<RecoveryMark>,
+};
+
 record StructuralDocument = {
   source: String,
   tokens: List<Token>,
-  items: List<TopItem>,
-  marks: List<RecoveryMark>,
+  program: SurfaceProgram,
   artifacts: List<VirtualArtifact>,
   progressSteps: Number,
 };

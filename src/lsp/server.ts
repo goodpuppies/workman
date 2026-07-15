@@ -1,15 +1,24 @@
 import { pathToFileURL } from "node:url";
+import { once } from "node:events";
+import process from "node:process";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
+import { loadFrontendV2 } from "../frontend_v2_loader.ts";
+import { runtime } from "../io.ts";
 import { DocumentStore } from "./documents.ts";
+import { documentSymbols } from "./document_symbols.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { hoverAt } from "./hover.ts";
 import { type InitializeParams, ProjectIndex } from "./project_index.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./rpc.ts";
+import { definitionAt, referencesAt } from "./symbols.ts";
+import { structuralInlayHints } from "./structural_inlays.ts";
+import { fileUriToPath } from "./uri.ts";
 import { validateUri } from "./validation.ts";
 
 const documents = new DocumentStore();
 const projectIndex = new ProjectIndex();
 const frontendOptions = frontendOptionsFromEnv();
+const structuralInlaysEnabled = process.env.WORKMAN_STRUCTURAL_INLAYS !== "false";
 const frontendV2ParseCache = new FrontendV2ParseCache();
 const lastPublishedUrisByEntry = new Map<string, Set<string>>();
 let isShutdown = false;
@@ -20,8 +29,8 @@ if (import.meta.main) await runServer();
 export async function runServer() {
   log("server start");
   let buffer: Uint8Array<ArrayBufferLike> = new Uint8Array();
-  for await (const chunk of Deno.stdin.readable) {
-    buffer = concat(buffer, chunk);
+  for await (const chunk of process.stdin) {
+    buffer = concat(buffer, typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk);
     const decoded = decodeMessages(buffer);
     buffer = decoded.rest;
     for (const message of decoded.messages) {
@@ -42,7 +51,12 @@ export async function runServer() {
 async function handleMessage(message: RpcMessage) {
   if (message.method === "initialize") {
     projectIndex.rememberWorkspaceRoots(message.params as InitializeParams | undefined);
-    await projectIndex.initialize(documents.sourceOverrides(), frontendOptions);
+    const indexStarted = Date.now();
+    const indexedFiles = await projectIndex.initialize(
+      documents.sourceOverrides(),
+      frontendOptions,
+    );
+    log("initialize index done", `${Date.now() - indexStarted}ms`, `files=${indexedFiles}`);
     await respond(message.id, {
       capabilities: {
         textDocumentSync: {
@@ -51,6 +65,12 @@ async function handleMessage(message: RpcMessage) {
           save: true,
         },
         hoverProvider: true,
+        definitionProvider: true,
+        referencesProvider: true,
+        documentSymbolProvider: true,
+        ...(frontendOptions.frontend === "v2" && structuralInlaysEnabled
+          ? { inlayHintProvider: true }
+          : {}),
       },
       serverInfo: { name: "workman-lsp", version: "0.0.1" },
     });
@@ -61,7 +81,7 @@ async function handleMessage(message: RpcMessage) {
     await respond(message.id, null);
     return;
   }
-  if (message.method === "exit") Deno.exit(isShutdown ? 0 : 1);
+  if (message.method === "exit") process.exit(isShutdown ? 0 : 1);
   if (message.method === "textDocument/didOpen") {
     const params = message.params as DidOpenParams;
     documents.open(params.textDocument.uri, params.textDocument.text, params.textDocument.version);
@@ -100,6 +120,50 @@ async function handleMessage(message: RpcMessage) {
     );
     return;
   }
+  if (message.method === "textDocument/definition") {
+    const params = message.params as TextDocumentPositionParams;
+    await respond(
+      message.id,
+      await definitionAt(
+        params.textDocument.uri,
+        params.position,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/references") {
+    const params = message.params as ReferenceParams;
+    await respond(
+      message.id,
+      await referencesAt(
+        params.textDocument.uri,
+        params.position,
+        params.context?.includeDeclaration ?? true,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/documentSymbol") {
+    const params = message.params as { textDocument: { uri: string } };
+    await respond(
+      message.id,
+      await documentSymbols(
+        params.textDocument.uri,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/inlayHint") {
+    const params = message.params as InlayHintParams;
+    await respond(message.id, await inlayHints(params));
+    return;
+  }
   if (message.method === "textDocument/didClose") {
     const params = message.params as DidCloseParams;
     documents.close(params.textDocument.uri);
@@ -112,8 +176,22 @@ async function handleMessage(message: RpcMessage) {
   }
   if (message.method === "workspace/didChangeWatchedFiles") {
     const params = message.params as DidChangeWatchedFilesParams;
-    await publishWatchedFileValidation(params.changes.map((change) => change.uri));
+    await publishWatchedFileValidation(params.changes);
   }
+}
+
+async function inlayHints(params: InlayHintParams) {
+  if (frontendOptions.frontend !== "v2" || !structuralInlaysEnabled) return [];
+  const uri = params.textDocument.uri;
+  const source = documents.get(uri)?.text ?? await runtime.readTextFile(fileUriToPath(uri));
+  const frontend = await loadFrontendV2(frontendV2ModuleUrl(frontendOptions));
+  const result = frontendV2ParseCache.structural(
+    uri,
+    source,
+    documents.version(uri),
+    frontend,
+  );
+  return structuralInlayHints(source, result, params.range);
 }
 
 async function publishValidation(uri: string) {
@@ -148,15 +226,28 @@ async function publishAffectedValidation(uri: string) {
   log("affected validate done", uri, `${Date.now() - started}ms`, `files=${uris.length}`);
 }
 
-async function publishWatchedFileValidation(uris: string[]) {
+async function publishWatchedFileValidation(changes: DidChangeWatchedFilesParams["changes"]) {
   const started = Date.now();
+  const uris = changes.map((change) => change.uri);
+  const deletedUris = new Set(
+    changes.filter((change) => change.type === 3 && !documents.get(change.uri)).map((change) =>
+      projectIndex.fallbackUri(change.uri)
+    ),
+  );
   const affectedUris = await projectIndex.affectedUrisForWatchedFiles(
     uris,
     documents.sourceOverrides(),
     frontendOptions,
   );
   log("watched validate start", `changed=${uris.length}`, `files=${affectedUris.length}`);
-  for (const uri of affectedUris) await publishValidation(uri);
+  for (const uri of deletedUris) {
+    frontendV2ParseCache.delete(uri);
+    lastPublishedUrisByEntry.delete(uri);
+    await publishDiagnostics(uri, []);
+  }
+  for (const uri of affectedUris) {
+    if (!deletedUris.has(uri)) await publishValidation(uri);
+  }
   log("watched validate done", `${Date.now() - started}ms`, `files=${affectedUris.length}`);
 }
 
@@ -204,12 +295,7 @@ async function write(message: RpcMessage) {
 }
 
 async function writeAll(payload: Uint8Array<ArrayBufferLike>) {
-  let offset = 0;
-  while (offset < payload.length) {
-    const written = await Deno.stdout.write(payload.subarray(offset));
-    if (written <= 0) throw new Error("failed to write LSP message to stdout");
-    offset += written;
-  }
+  if (!process.stdout.write(payload)) await once(process.stdout, "drain");
 }
 
 function concat(
@@ -237,11 +323,11 @@ function showError(error: unknown): string {
 }
 
 function frontendOptionsFromEnv(): CompilerFrontendOptions {
-  const mode = Deno.env.get("WORKMAN_FRONTEND") ?? Deno.env.get("WM_MINI_FRONTEND");
+  const mode = process.env.WORKMAN_FRONTEND ?? process.env.WM_MINI_FRONTEND;
   const frontend = mode === "v2" || mode === "compare" || mode === "v1" ? mode : undefined;
   const modulePath = (
-    Deno.env.get("WORKMAN_FRONTEND_V2_MODULE") ??
-    Deno.env.get("WM_MINI_FRONTEND_V2_MODULE")
+    process.env.WORKMAN_FRONTEND_V2_MODULE ??
+      process.env.WM_MINI_FRONTEND_V2_MODULE
   )?.trim();
   return {
     ...(frontend ? { frontend } : {}),
@@ -249,9 +335,14 @@ function frontendOptionsFromEnv(): CompilerFrontendOptions {
   };
 }
 
+export function frontendV2ModuleUrl(options: CompilerFrontendOptions): string | URL {
+  return options.frontendV2ModuleUrl ??
+    new URL("../../tooling/frontend-v2/frontend-v2.generated.mjs", import.meta.url);
+}
+
 function pathToFileUrl(path: string): URL | string {
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) return path;
-  return pathToFileURL(path.startsWith("/") ? path : `${Deno.cwd()}/${path}`);
+  return pathToFileURL(path.startsWith("/") ? path : `${process.cwd()}/${path}`);
 }
 
 type DidOpenParams = {
@@ -274,6 +365,20 @@ type DidSaveParams = {
 type HoverParams = {
   textDocument: { uri: string };
   position: { line: number; character: number };
+};
+
+type TextDocumentPositionParams = HoverParams;
+
+type ReferenceParams = TextDocumentPositionParams & {
+  context?: { includeDeclaration?: boolean };
+};
+
+type InlayHintParams = {
+  textDocument: { uri: string };
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
 };
 
 type DidChangeWatchedFilesParams = {

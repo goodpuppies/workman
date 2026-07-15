@@ -1,6 +1,7 @@
 from "./types.wm" import {
-  Span, Pattern, Expr, LetBinding, TopItem, StructuralDocument,
-  NamePattern, HolePattern, ErrorPattern,
+  Span, Pattern, Expr, LetBinding, TopItem, SurfaceProgram, StructuralDocument,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr, BlockExpr,
   AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
   LetItem, ImportItem, TypeItem, RecordItem, OpaqueItem
 };
@@ -62,6 +63,9 @@ let rec mapInto = match(items, reversed, convert) => {
 let patternInfo = (pattern: Pattern) => {
   match(pattern) {
     NamePattern(Var(nodeId), Var(text), Var(span)) => { ("name", -1) },
+    WildcardPattern(Var(nodeId), Var(span)) => { ("name", -1) },
+    VoidPattern(Var(nodeId), Var(pair), Var(span)) => { ("name", -1) },
+    TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { ("name", -1) },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
       ("error", recoveryId)
@@ -71,6 +75,16 @@ let patternInfo = (pattern: Pattern) => {
 
 let expressionInfo = (expression: Expr) => {
   match(expression) {
+    LiteralExpr(Var(nodeId), Var(text), Var(span)) => { ("atom", -1) },
+    VoidExpr(Var(nodeId), Var(pair), Var(span)) => { ("atom", -1) },
+    NameExpr(Var(nodeId), Var(name), Var(span)) => { ("atom", -1) },
+    ApplyExpr(Var(nodeId), Var(callee), Var(argument), Var(span)) => { ("atom", -1) },
+    TupleExpr(Var(nodeId), Var(pair), Var(items), Var(span)) => { ("atom", -1) },
+    ParenExpr(Var(nodeId), Var(pair), Var(inner), Var(span)) => { ("atom", -1) },
+    LambdaExpr(Var(nodeId), Var(params), Var(pattern), Var(arrow), Var(body), Var(span)) => {
+      ("atom", -1)
+    },
+    BlockExpr(Var(nodeId), Var(braces), Var(items), Var(result), Var(span)) => { ("atom", -1) },
     AtomExpr(Var(nodeId), Var(text), Var(span)) => { ("atom", -1) },
     HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
     AuthoredHoleExpr(Var(nodeId), Var(span)) => { ("authored-hole", -1) },
@@ -83,6 +97,9 @@ let expressionInfo = (expression: Expr) => {
 let patternText = (pattern: Pattern) => {
   match(pattern) {
     NamePattern(Var(nodeId), Var(text), Var(span)) => { text },
+    WildcardPattern(Var(nodeId), Var(span)) => { "_" },
+    VoidPattern(Var(nodeId), Var(pair), Var(span)) => { "()" },
+    TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { "" },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { "" },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => { text },
   }
@@ -90,6 +107,26 @@ let patternText = (pattern: Pattern) => {
 
 let expressionText = (source: String, expression: Expr) => {
   match(expression) {
+    LiteralExpr(Var(nodeId), Var(text), Var(span)) => { text },
+    VoidExpr(Var(nodeId), Var(pair), Var(span)) => { "()" },
+    NameExpr(Var(nodeId), Var(name), span) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault("")
+    },
+    ApplyExpr(Var(nodeId), Var(callee), Var(argument), span) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault("")
+    },
+    TupleExpr(Var(nodeId), Var(pair), Var(items), span) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault("")
+    },
+    ParenExpr(Var(nodeId), Var(pair), Var(inner), span) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault("")
+    },
+    LambdaExpr(Var(nodeId), Var(params), Var(pattern), Var(arrow), Var(body), span) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault("")
+    },
+    BlockExpr(Var(nodeId), Var(braces), Var(items), Var(result), span) => {
+      source :> .slice(span.start, span.end) :> Result.withDefault("")
+    },
     AtomExpr(Var(nodeId), Var(text), Var(span)) => {
       source :> .slice(span.start, span.end) :> Result.withDefault(text)
     },
@@ -207,7 +244,9 @@ let projectSemantic = (source: String) => {
     schemaVersion = 1,
     sourceLength = source :> .length :> Result.withDefault(0),
     moduleKind = "Module",
-    decls = mapInto(document.items, [], (item) => { semanticDeclDto(document.source, item) }),
+    decls = mapInto(document.program.items, [], (item) => {
+      semanticDeclDto(document.source, item)
+    }),
   };
   dto
 };

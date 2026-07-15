@@ -1,11 +1,15 @@
 from "./types.wm" import {
   Span, TokenKind, TokenOrigin, Token, LexResult, Pattern, Expr, LetBinding, TopItem,
+  TokenSlot, LongIdentifier,
   Severity, RepairClass, RecoveryMark, VirtualArtifact, MapPieceKind, MapPiece,
-  StructuralDocument, RenderResult,
+  SurfaceProgram, StructuralDocument, RenderResult,
   LetKeyword, Keyword, Identifier, Constructor, NumberLiteral, StringLiteral,
   Equals, Semicolon, Punctuation, Operator, Whitespace, Comment, Opaque, EndOfFile,
-  ConcreteOrigin, VirtualOrigin, NamePattern, HolePattern, ErrorPattern,
+  ConcreteOrigin, VirtualOrigin,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, HolePattern, ErrorPattern,
+  LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr, BlockExpr,
   AtomExpr, HoleExpr, AuthoredHoleExpr, ErrorExpr,
+  ConcreteToken, MissingToken,
   LetItem, ImportItem, TypeItem, RecordItem, OpaqueItem,
   ErrorSeverity, WarningSeverity, HintSeverity,
   AutoFix, OptionalCanonical, RecoveryOnly, ConcretePiece, VirtualPiece
@@ -13,6 +17,7 @@ from "./types.wm" import {
 from "./lexer.wm" import { lexSource, renderConcrete };
 from "./parser.wm" import { parseStructural as parseStructuralInternal };
 from "./renderer.wm" import { renderVirtualResult };
+from "./surface_dto.wm" import { SurfaceNodeDto, exprId as expressionRootId, surfaceNodes };
 
 record TokenDto = {
   kind: String,
@@ -40,6 +45,11 @@ record StructuralItemDto = {
   patternRecoveryId: Number,
   expressionKind: String,
   expressionRecoveryId: Number,
+  expressionSurfaceKind: String,
+  expressionNameParts: Js.Array<String>,
+  expressionRootId: Number,
+  expressionNodes: Js.Array<SurfaceNodeDto>,
+  terminatorRecoveryId: Number,
 };
 
 record RecoveryMarkDto = {
@@ -175,6 +185,9 @@ let repairClassName = (repairClass: RepairClass) => {
 let patternInfo = (pattern: Pattern) => {
   match(pattern) {
     NamePattern(Var(nodeId), Var(text), Var(span)) => { ("name", -1) },
+    WildcardPattern(Var(nodeId), Var(span)) => { ("name", -1) },
+    VoidPattern(Var(nodeId), Var(pair), Var(span)) => { ("name", -1) },
+    TuplePattern(Var(nodeId), Var(pair), Var(items), Var(span)) => { ("name", -1) },
     HolePattern(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
     ErrorPattern(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
       ("error", recoveryId)
@@ -184,6 +197,16 @@ let patternInfo = (pattern: Pattern) => {
 
 let expressionInfo = (expression: Expr) => {
   match(expression) {
+    LiteralExpr(Var(nodeId), Var(text), Var(span)) => { ("atom", -1) },
+    VoidExpr(Var(nodeId), Var(pair), Var(span)) => { ("atom", -1) },
+    NameExpr(Var(nodeId), Var(name), Var(span)) => { ("atom", -1) },
+    ApplyExpr(Var(nodeId), Var(callee), Var(argument), Var(span)) => { ("atom", -1) },
+    TupleExpr(Var(nodeId), Var(pair), Var(items), Var(span)) => { ("atom", -1) },
+    ParenExpr(Var(nodeId), Var(pair), Var(inner), Var(span)) => { ("atom", -1) },
+    LambdaExpr(Var(nodeId), Var(params), Var(pattern), Var(arrow), Var(body), Var(span)) => {
+      ("atom", -1)
+    },
+    BlockExpr(Var(nodeId), Var(braces), Var(items), Var(result), Var(span)) => { ("atom", -1) },
     AtomExpr(Var(nodeId), Var(text), Var(span)) => { ("atom", -1) },
     HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => { ("hole", recoveryId) },
     AuthoredHoleExpr(Var(nodeId), Var(span)) => { ("authored-hole", -1) },
@@ -193,11 +216,68 @@ let expressionInfo = (expression: Expr) => {
   }
 };
 
+let rec namePartTextsInto = match(parts, reversed) => {
+  ([], Var(reversed)) => { Js.Array.fromList(reverseInto(reversed, [])) },
+  ([part, ..rest], Var(reversed)) => {
+    namePartTextsInto(rest, [part.text, ..reversed])
+  },
+};
+
+let expressionSurfaceInfo = (expression: Expr) => {
+  match(expression) {
+    LiteralExpr(Var(nodeId), Var(text), Var(span)) => {
+      ("literal", Js.Array.fromList([]))
+    },
+    VoidExpr(Var(nodeId), Var(pair), Var(span)) => {
+      ("void", Js.Array.fromList([]))
+    },
+    NameExpr(Var(nodeId), name, Var(span)) => {
+      ("name", namePartTextsInto(name.parts, []))
+    },
+    ApplyExpr(Var(nodeId), Var(callee), Var(argument), Var(span)) => {
+      ("apply", Js.Array.fromList([]))
+    },
+    TupleExpr(Var(nodeId), Var(pair), Var(items), Var(span)) => {
+      ("tuple", Js.Array.fromList([]))
+    },
+    ParenExpr(Var(nodeId), Var(pair), Var(inner), Var(span)) => {
+      ("paren", Js.Array.fromList([]))
+    },
+    LambdaExpr(Var(nodeId), Var(params), Var(pattern), Var(arrow), Var(body), Var(span)) => {
+      ("lambda", Js.Array.fromList([]))
+    },
+    BlockExpr(Var(nodeId), Var(braces), Var(items), Var(result), Var(span)) => {
+      ("block", Js.Array.fromList([]))
+    },
+    AtomExpr(Var(nodeId), Var(text), Var(span)) => {
+      ("opaque", Js.Array.fromList([]))
+    },
+    HoleExpr(Var(nodeId), Var(recoveryId), Var(span)) => {
+      ("hole", Js.Array.fromList([]))
+    },
+    AuthoredHoleExpr(Var(nodeId), Var(span)) => {
+      ("authored-hole", Js.Array.fromList([]))
+    },
+    ErrorExpr(Var(nodeId), Var(recoveryId), Var(span), Var(text)) => {
+      ("error", Js.Array.fromList([]))
+    },
+  }
+};
+
+let terminatorRecoveryId = (slot: TokenSlot) => {
+  match(slot) {
+    ConcreteToken(Var(token)) => { -1 },
+    MissingToken(Var(recoveryId), Var(text), Var(span)) => { recoveryId },
+  }
+};
+
 let itemDto = (item: TopItem) => {
   match(item) {
     LetItem(binding) => {
       let (patternKind, patternRecoveryId) = patternInfo(binding.pattern);
       let (expressionKind, expressionRecoveryId) = expressionInfo(binding.expression);
+      let (expressionSurfaceKind, expressionNameParts) =
+        expressionSurfaceInfo(binding.expression);
       let dto: StructuralItemDto = .{
         kind = "let",
         id = binding.id,
@@ -208,6 +288,11 @@ let itemDto = (item: TopItem) => {
         patternRecoveryId = patternRecoveryId,
         expressionKind = expressionKind,
         expressionRecoveryId = expressionRecoveryId,
+        expressionSurfaceKind = expressionSurfaceKind,
+        expressionNameParts = expressionNameParts,
+        expressionRootId = expressionRootId(binding.expression),
+        expressionNodes = surfaceNodes(binding.expression),
+        terminatorRecoveryId = terminatorRecoveryId(binding.terminator),
       };
       dto
     },
@@ -222,6 +307,11 @@ let itemDto = (item: TopItem) => {
         patternRecoveryId = -1,
         expressionKind = "",
         expressionRecoveryId = -1,
+        expressionSurfaceKind = "",
+        expressionNameParts = Js.Array.fromList([]),
+        expressionRootId = -1,
+        expressionNodes = Js.Array.fromList([]),
+        terminatorRecoveryId = -1,
       };
       dto
     },
@@ -236,6 +326,11 @@ let itemDto = (item: TopItem) => {
         patternRecoveryId = -1,
         expressionKind = "",
         expressionRecoveryId = -1,
+        expressionSurfaceKind = "",
+        expressionNameParts = Js.Array.fromList([]),
+        expressionRootId = -1,
+        expressionNodes = Js.Array.fromList([]),
+        terminatorRecoveryId = -1,
       };
       dto
     },
@@ -250,6 +345,11 @@ let itemDto = (item: TopItem) => {
         patternRecoveryId = -1,
         expressionKind = "",
         expressionRecoveryId = -1,
+        expressionSurfaceKind = "",
+        expressionNameParts = Js.Array.fromList([]),
+        expressionRootId = -1,
+        expressionNodes = Js.Array.fromList([]),
+        terminatorRecoveryId = -1,
       };
       dto
     },
@@ -264,6 +364,11 @@ let itemDto = (item: TopItem) => {
         patternRecoveryId = -1,
         expressionKind = "",
         expressionRecoveryId = -1,
+        expressionSurfaceKind = "",
+        expressionNameParts = Js.Array.fromList([]),
+        expressionRootId = -1,
+        expressionNodes = Js.Array.fromList([]),
+        terminatorRecoveryId = -1,
       };
       dto
     },
@@ -357,8 +462,8 @@ let parseStructural = (source: String) => {
     progressSteps = document.progressSteps,
     concreteText = renderConcrete(document.tokens),
     virtualText = rendered.text,
-    items = mapInto(document.items, [], itemDto),
-    marks = mapInto(document.marks, [], markDto),
+    items = mapInto(document.program.items, [], itemDto),
+    marks = mapInto(document.program.marks, [], markDto),
     artifacts = mapInto(document.artifacts, [], artifactDto),
     pieces = mapInto(rendered.pieces, [], pieceDto),
   };

@@ -4,7 +4,8 @@ This package contains the WM-native tolerant structural frontend. Phase 0 proved
 added the generated lexer ABI; Phase C is replacing the initial special case with reusable recovery
 and rendering foundations. Its maintained modules are:
 
-- `types.wm`: lossless token, structural fallback, recovery mark, and virtual artifact types;
+- `types.wm`: the authoritative `SurfaceProgram` editor state, lossless tokens, concrete-or-missing
+  syntax slots, initial structured expressions, recovery marks, and virtual artifact types;
 - `lexer.wm`: lossless current-grammar tokenization, UTF-16 spans, and line maps;
 - `dto.wm`: conversion from internal WM lists and ADTs to schema-versioned lexical/structural
   JavaScript data;
@@ -13,8 +14,13 @@ and rendering foundations. Its maintained modules are:
 - `parser.wm`: top-level structural dispatch and opaque declaration recovery;
 - `parser_support.wm`: immutable parser state, canonical marks/artifacts, paired recovery IDs, and
   progress accounting;
-- `parser_let.wm`, `parser_expr.wm`, and `parser_pattern.wm`: shallow tolerant let bindings and
-  reusable expression/pattern tail boundaries;
+- `parser_let.wm`, `parser_expr.wm`, and `parser_pattern.wm`: tolerant let bindings, structured
+  literal/long-identifier expressions, explicit opaque expression islands, and reusable
+  expression/pattern tail boundaries;
+- `surface_parser.wm`: the bounded recursive Surface AST slice for SML-shaped unary application,
+  tuple arguments/patterns, unary lambdas, currying, and complete expression blocks;
+- `surface_dto.wm`: a flat identity-preserving DTO projection of recursive expression and pattern
+  nodes for tests, lowering, and editor consumers;
 - `parser_delimiter.wm`: ordered missing-closer recovery for incomplete expressions;
 - `parser_import.wm`: shallow required-slot and clause recovery for Workman and JavaScript imports;
 - `parser_type.wm`: shallow required-slot and delimiter recovery for type and record declarations;
@@ -36,6 +42,29 @@ The expected final preview line is:
 ```text
 let thing =<virtual:?><virtual:;>
 ```
+
+## Performance profiling
+
+Run a timing-only corpus pass with:
+
+```sh
+deno task profile:frontend-v2
+```
+
+Generate a V8 CPU profile, Markdown hot-function report, and interactive SVG flamegraph with:
+
+```sh
+deno task profile:frontend-v2:cpu
+```
+
+The harness also accepts `raw-structural`, `structural`, or `semantic` followed by an iteration
+count. The raw mode separates generated-WM parser cost from TypeScript DTO validation.
+
+The July 2026 baseline investigation found a quadratic match-recovery look-ahead: every possible new
+arm repeatedly scanned the remaining token tail. A single-pass pending-arm state reduced one raw
+58-file corpus pass from about 79.6 seconds to 5.7 seconds. Replacing the emitted tuple runtime's
+`Object.assign` tagging with direct symbol assignment then reduced two passes to about 1.5 seconds.
+Keep these corpus modes available as the recursive Surface AST expands.
 
 ## Importable library emission
 

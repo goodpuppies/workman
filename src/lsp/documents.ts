@@ -1,4 +1,5 @@
 import { normalize, resolve } from "node:path";
+import { runtime } from "../io.ts";
 import { fileUriToPath } from "./uri.ts";
 
 export type TextDocument = {
@@ -35,7 +36,7 @@ export class DocumentStore {
     for (const doc of this.#documents.values()) {
       if (normalize(resolve(doc.path)) === path) return doc.version;
       try {
-        if (Deno.realPathSync(doc.path) === path) return doc.version;
+        if (runtime.realPathSync(doc.path) === path) return doc.version;
       } catch {
         // Unsaved editor buffers may not exist on disk yet.
       }
@@ -53,7 +54,7 @@ export class DocumentStore {
       const path = normalize(resolve(doc.path));
       overrides.set(path, doc.text);
       try {
-        overrides.set(Deno.realPathSync(path), doc.text);
+        overrides.set(runtime.realPathSync(path), doc.text);
       } catch {
         // Unsaved editor buffers may not exist on disk yet.
       }

@@ -1,8 +1,6 @@
 import { assertEquals } from "@std/assert";
-import {
-  compiledServerConfig,
-  denoServerConfig,
-} from "../editors/vscode/src/server_options.ts";
+import { resolve } from "node:path";
+import { denoServerConfig, nodeServerConfig } from "../editors/vscode/src/server_options.ts";
 
 Deno.test("VS Code extension server config passes frontend v2 mode and artifact path", () => {
   const config = denoServerConfig(
@@ -29,7 +27,7 @@ Deno.test("VS Code extension server config passes frontend v2 mode and artifact 
   assertEquals(config.options.env.WORKMAN_FRONTEND, "v2");
   assertEquals(
     config.options.env.WORKMAN_FRONTEND_V2_MODULE,
-    "/repo/tooling/frontend-v2/frontend-v2.generated.mjs",
+    resolve("/repo", "tooling/frontend-v2/frontend-v2.generated.mjs"),
   );
 });
 
@@ -49,8 +47,8 @@ Deno.test("VS Code extension server config omits frontend v2 artifact env when u
 });
 
 Deno.test("VS Code extension can launch a packaged language server", () => {
-  const config = compiledServerConfig(
-    "/extension/bin/workman-lsp",
+  const config = nodeServerConfig(
+    "/extension/server/workman-lsp.mjs",
     "v1",
     undefined,
     "stdio",
@@ -58,8 +56,8 @@ Deno.test("VS Code extension can launch a packaged language server", () => {
     "/workspace",
   );
 
-  assertEquals(config.command, "/extension/bin/workman-lsp");
-  assertEquals(config.args, []);
+  assertEquals(config.module, "/extension/server/workman-lsp.mjs");
+  assertEquals(config.transport, "stdio");
   assertEquals(config.options.cwd, "/workspace");
   assertEquals(config.options.env.KEEP, "yes");
   assertEquals(config.options.env.WORKMAN_FRONTEND, "v1");

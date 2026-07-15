@@ -23,6 +23,12 @@ The plan is split into:
   attempt, including implementation, tests, previews, and benchmarks.
 - [`checklist.md`](./checklist.md) — phase-by-phase implementation tracker and
   proportionate test plan.
+- [`surface-ast-milestone.md`](./surface-ast-milestone.md) — the next concrete vertical slice:
+  recursive current-Workman Surface AST ownership, paired brace recovery, canonical formatting,
+  direct semantic lowering, and editor proof.
+- [`surface-ast-slice-inventory.md`](./surface-ast-slice-inventory.md) — the first milestone's
+  constructor-by-constructor `adopt`, `adapt`, or `drop` decisions against WorkmanGR and current
+  Workman.
 - [`how-to-workman.md`](./how-to-workman.md) — practical onboarding for implementing
   frontend v2 in current WM, including FP structure, modules, tests, JS/Deno
   interop, and repository examples.

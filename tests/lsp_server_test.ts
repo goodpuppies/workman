@@ -31,8 +31,11 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
     capabilities: {
       textDocumentSync: { openClose: true, change: 1, save: true },
       hoverProvider: true,
+      definitionProvider: true,
+      referencesProvider: true,
+      documentSymbolProvider: true,
     },
-    serverInfo: { name: "wm-mini-lsp", version: "0.0.1" },
+    serverInfo: { name: "workman-lsp", version: "0.0.1" },
   });
   const published = messages.find((message) =>
     message.method === "textDocument/publishDiagnostics"
@@ -42,6 +45,56 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
     | undefined;
   assertEquals(params?.version, 1);
   assertEquals(params?.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+});
+
+Deno.test("lsp server clears diagnostics for a deleted watched file", async () => {
+  const dir = await Deno.makeTempDir();
+  const deletedUri = pathToFileUri(`${dir}/moved.wm`);
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "workspace/didChangeWatchedFiles",
+      params: { changes: [{ uri: deletedUri, type: 3 }] },
+    },
+    { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const publishes = messages.filter((message) =>
+    message.method === "textDocument/publishDiagnostics" &&
+    (message.params as { uri: string }).uri === deletedUri
+  );
+  assertEquals(publishes.length, 1);
+  assertEquals((publishes[0].params as { diagnostics: unknown[] }).diagnostics, []);
+});
+
+Deno.test("lsp server returns definitions for Ctrl+Click", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let identity = (x) => { x }; let result = identity(1);";
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/definition",
+      params: { textDocument: { uri }, position: { line: 0, character: 44 } },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find((message) => message.id === 2)?.result, {
+    uri,
+    range: { start: { line: 0, character: 4 }, end: { line: 0, character: 12 } },
+  });
 });
 
 Deno.test("lsp server publishes closed imported file diagnostics", async () => {
@@ -198,7 +251,9 @@ Deno.test("lsp server revalidates open files after imported file changes", async
       },
     },
     async () => {
-      await delay(700);
+      // Let the initial didOpen validation finish before changing the dependency. Cold Windows
+      // process startup can exceed the old 700 ms allowance under the full test suite.
+      await delay(1500);
       await Deno.writeTextFile(lib, 'let value = "ok";');
       await delay(200);
     },

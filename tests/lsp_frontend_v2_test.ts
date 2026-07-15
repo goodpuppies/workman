@@ -80,6 +80,49 @@ Deno.test("lsp validation v2 mode resolves named import aliases", async () => {
   assertEquals(await diagnosticsForPath(results, main), []);
 });
 
+Deno.test("lsp validation v2 mode checks namespace tuples after a recovered semicolon", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/lib.wm`;
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(lib, "let value = 1;");
+  await Deno.writeTextFile(
+    main,
+    'from "./lib.wm" import * as Lib;\nlet pair = (Lib.value, true)\nlet ok: Bool = true;',
+  );
+  const results = await validateUri(pathToFileUri(main), new Map(), {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+  });
+
+  assertEquals(
+    (await diagnosticsForPath(results, main))?.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.severity,
+    ]),
+    [["parse.let.missing-semicolon", 2]],
+  );
+});
+
+Deno.test("lsp validation v2 mode checks a lambda after recovering its terminator", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(main, 'let main = () => { print "ok" }');
+  const results = await validateUri(pathToFileUri(main), new Map(), {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+  });
+
+  assertEquals(
+    (await diagnosticsForPath(results, main))?.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.severity,
+    ]),
+    [["parse.let.missing-semicolon", 2]],
+  );
+});
+
 async function diagnosticsForPath(results: ValidationResult[], path: string) {
   const realPath = await Deno.realPath(path);
   return results.find((result) => result.uri === pathToFileUri(realPath))?.diagnostics;

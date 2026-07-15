@@ -60,6 +60,19 @@ Deno.test("frontend-v2 distinguishes authored expression holes from inferred hol
   assertStructuralRecoveryIntegrity(inferred);
 });
 
+Deno.test("frontend-v2 SurfaceProgram owns literal, long-name, and missing-terminator state", () => {
+  const source = "let printer = Lib.printer\nlet answer = 42;";
+  const result = frontend.parseStructural(source);
+
+  assertEquals(result.items[0].expressionSurfaceKind, "name");
+  assertEquals(result.items[0].expressionNameParts, ["Lib", "printer"]);
+  assertEquals(result.items[0].terminatorRecoveryId, result.marks[0].id);
+  assertEquals(result.items[1].expressionSurfaceKind, "literal");
+  assertEquals(result.items[1].expressionNameParts, []);
+  assertEquals(result.items[1].terminatorRecoveryId, -1);
+  assertStructuralRecoveryIntegrity(result);
+});
+
 Deno.test("frontend-v2 missing semicolon preserves later declarations and maps repairs", () => {
   const source = "let a = one\nlet b = two;";
   const result = frontend.parseStructural(source);
@@ -316,6 +329,7 @@ function assertStructuralRecoveryIntegrity(
         item.recoveryId,
         item.patternRecoveryId,
         item.expressionRecoveryId,
+        item.terminatorRecoveryId,
       ]
     ) {
       if (recoveryId >= 0) {

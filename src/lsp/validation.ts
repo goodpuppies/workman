@@ -14,6 +14,7 @@ import {
 import { structuralDiagnostics } from "../frontend_v2_diagnostics.ts";
 import { type FrontendV2, loadFrontendV2 } from "../frontend_v2_loader.ts";
 import type { InferResult } from "../infer.ts";
+import { runtime } from "../io.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
@@ -245,7 +246,7 @@ function isValidRange(range: LspRange): boolean {
 
 function canonicalPath(path: string, sourceOverrides: Map<string, string>): string {
   try {
-    return Deno.realPathSync(path);
+    return runtime.realPathSync(path);
   } catch {
     return sourceOverrides.has(path) ? path : path;
   }
@@ -255,14 +256,14 @@ async function sourceForPath(path: string, sourceOverrides: Map<string, string>)
   const override = sourceOverrides.get(path);
   if (override !== undefined) return override;
   try {
-    const real = Deno.realPathSync(path);
+    const real = runtime.realPathSync(path);
     const realOverride = sourceOverrides.get(real);
     if (realOverride !== undefined) return realOverride;
   } catch {
     // Fall through to reading the original path.
   }
   try {
-    return await Deno.readTextFile(path);
+    return await runtime.readTextFile(path);
   } catch {
     return "";
   }

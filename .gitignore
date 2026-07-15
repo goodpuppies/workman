@@ -1,3 +1,4 @@
 *.dll
 node_modules/
 research/
+tooling/frontend-v2/frontend-v2.generated.mjs

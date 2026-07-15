@@ -172,40 +172,6 @@ let addBareBodyClose = (
   state2
 };
 
-let rec hasClauseArrowBeforeBoundary = (
-  tokens: List<Token>,
-  matchBlockDepth: Number,
-  braceDepth: Number,
-  parenDepth: Number,
-  bracketDepth: Number,
-) => {
-  match(tokens) {
-    [] => { false },
-    [token, ..rest] => {
-      let atMatchLevel = sameDepth(braceDepth, matchBlockDepth) &&
-        parenDepth == 0 && bracketDepth == 0;
-      if (atMatchLevel && isPunctuationText(token, "=>")) {
-        true
-      } else {
-        if (
-          atMatchLevel &&
-          (isPunctuationText(token, ",") || isPunctuationText(token, "}"))
-        ) {
-          false
-        } else {
-          hasClauseArrowBeforeBoundary(
-            rest,
-            matchBlockDepth,
-            updateDepth(token, "{", "}", braceDepth),
-            updateDepth(token, "(", ")", parenDepth),
-            updateDepth(token, "[", "]", bracketDepth),
-          )
-        }
-      }
-    },
-  }
-};
-
 let rec recoverMatchStructureInto = (
   tokens: List<Token>,
   state: ParserState,
@@ -216,6 +182,7 @@ let rec recoverMatchStructureInto = (
   parenDepth: Number,
   bracketDepth: Number,
   bareBodyPairId: Number,
+  pendingArmAnchor: Number,
   previousEnd: Number,
 ) => {
   match(tokens) {
@@ -239,16 +206,9 @@ let rec recoverMatchStructureInto = (
           isPunctuationText(token, ",");
         let endsAtBlock = bareBodyPairId >= 0 && atMatchLevel &&
           isPunctuationText(token, "}");
-        let startsNextArm = bareBodyPairId >= 0 && atMatchLevel &&
-          hasLineBreak(state.source, previousEnd, token.span.start) &&
-          hasClauseArrowBeforeBoundary(
-            tokens,
-            matchBlockDepth,
-            braceDepth,
-            parenDepth,
-            bracketDepth,
-          );
-        let bodyEnd = previousEnd;
+        let startsNextArm = bareBodyPairId >= 0 && pendingArmAnchor >= 0 &&
+          atMatchLevel && isPunctuationText(token, "=>");
+        let bodyEnd = if (startsNextArm) { pendingArmAnchor } else { previousEnd };
         let state1 = if (endsAtComma || endsAtBlock || startsNextArm) {
           addBareBodyClose(state, subject, bodyEnd, bareBodyPairId)
         } else {
@@ -263,6 +223,14 @@ let rec recoverMatchStructureInto = (
           -1
         } else {
           bareBodyPairId
+        };
+        let beginsPossibleArm = bareBodyPairId >= 0 && pendingArmAnchor < 0 &&
+          atMatchLevel && !endsAtComma && !endsAtBlock &&
+          hasLineBreak(state.source, previousEnd, token.span.start);
+        let nextPendingArmAnchor = if (endsAtComma || endsAtBlock || startsNextArm) {
+          -1
+        } else {
+          if (beginsPossibleArm) { previousEnd } else { pendingArmAnchor }
         };
         let startsMatch = isKeywordText(token, "match");
         let opensBrace = isPunctuationText(token, "{");
@@ -331,6 +299,7 @@ let rec recoverMatchStructureInto = (
           nextParenDepth,
           nextBracketDepth,
           bodyPairIdAfterToken,
+          nextPendingArmAnchor,
           previousEndAfterToken,
         )
       }
@@ -343,5 +312,5 @@ let addMatchRecoveries = (
   subject: Number,
   tokens: List<Token>,
 ) => {
-  recoverMatchStructureInto(tokens, state, subject, false, -1, 0, 0, 0, -1, 0)
+  recoverMatchStructureInto(tokens, state, subject, false, -1, 0, 0, 0, -1, -1, 0)
 };

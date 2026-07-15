@@ -1,4 +1,5 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runtime } from "../io.ts";
 
 export function pathToFileUri(path: string): string {
   return pathToFileURL(canonicalFilePath(path)).href;
@@ -10,7 +11,7 @@ export function fileUriToPath(uri: string): string {
 
 function canonicalFilePath(path: string): string {
   try {
-    return Deno.realPathSync(path);
+    return runtime.realPathSync(path);
   } catch {
     return path;
   }

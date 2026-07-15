@@ -1,5 +1,6 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import { dirname, extname, join, normalize } from "node:path";
+import { runtime } from "../../io.ts";
 
 const compilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -62,7 +63,7 @@ export function reflectSource<T>(
   ) => T,
 ): T {
   const fileName = reflectionFileName(source) ??
-    join(Deno.cwd(), `__wm_js_reflect_${sanitize(label)}.ts`);
+    join(runtime.cwd(), `__wm_js_reflect_${sanitize(label)}.ts`);
   const extraFiles = source.includes(denoTypesFile)
     ? new Map([[denoTypesFile, denoTypesSource()]])
     : new Map<string, string>();
@@ -139,7 +140,7 @@ function denoReflectionGraphs(source: string): DenoModuleGraph[] {
     ? dirname(activeReflectionBasePath)
     : reflectedFile
     ? dirname(reflectedFile)
-    : Deno.cwd();
+    : runtime.cwd();
   return unique.flatMap((specifier) => {
     const graph = denoModuleGraph(specifier, cwd);
     return graph ? [graph] : [];
@@ -150,20 +151,15 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
   const cacheKey = `${cwd}\0${specifier}`;
   const cached = denoModuleGraphs.get(cacheKey);
   if (cached) return cached;
-  const output = new Deno.Command(denoCliPath(), {
-    args: ["info", "--json", specifier],
-    cwd,
-    stdout: "piped",
-    stderr: "piped",
-  }).outputSync();
+  const output = runtime.runSync(denoCliPath(), ["info", "--json", specifier], { cwd });
   if (!output.success) {
-    const message = new TextDecoder().decode(output.stderr).trim();
+    const message = output.stderr.trim();
     if (!mustResolveWithDeno(specifier)) return undefined;
     throw new Error(
       `cannot resolve JS import ${specifier} for reflection${message ? `: ${message}` : ""}`,
     );
   }
-  const parsed = JSON.parse(new TextDecoder().decode(output.stdout)) as DenoInfo;
+  const parsed = JSON.parse(output.stdout) as DenoInfo;
   const graph = {
     originalSpecifier: specifier,
     entrySpecifier: parsed.roots?.[0],
@@ -178,16 +174,16 @@ let nodeTypesPath: string | undefined;
 
 function nodeTypesReferencePath(): string {
   if (nodeTypesPath) return nodeTypesPath;
-  const output = new Deno.Command(denoCliPath(), {
-    args: ["info", "--json", "npm:@types/node/index.d.ts"],
-    stdout: "piped",
-    stderr: "piped",
-  }).outputSync();
+  const output = runtime.runSync(denoCliPath(), [
+    "info",
+    "--json",
+    "npm:@types/node/index.d.ts",
+  ]);
   if (!output.success) {
-    const message = new TextDecoder().decode(output.stderr).trim();
+    const message = output.stderr.trim();
     throw new Error(`cannot resolve Node type declarations${message ? `: ${message}` : ""}`);
   }
-  const parsed = JSON.parse(new TextDecoder().decode(output.stdout)) as DenoInfo;
+  const parsed = JSON.parse(output.stdout) as DenoInfo;
   const nodeTypes = Object.values(parsed.npmPackages ?? {}).find((pkg) =>
     pkg.name === "@types/node"
   );
@@ -200,7 +196,7 @@ function denoSourceForFileName(graphs: DenoModuleGraph[], fileName: string): str
   const module = denoModuleForFileName(graphs, fileName);
   if (!module?.local) return undefined;
   try {
-    return Deno.readTextFileSync(module.local);
+    return runtime.readTextFileSync(module.local);
   } catch {
     return undefined;
   }
@@ -293,21 +289,17 @@ function isUrl(value: string): boolean {
 
 function denoTypesSource(): string {
   if (denoTypesCache !== undefined) return denoTypesCache;
-  const output = new Deno.Command(denoCliPath(), {
-    args: ["types"],
-    stdout: "piped",
-    stderr: "piped",
-  }).outputSync();
+  const output = runtime.runSync(denoCliPath(), ["types"]);
   if (!output.success) {
-    const message = new TextDecoder().decode(output.stderr).trim();
+    const message = output.stderr.trim();
     throw new Error(`cannot load Deno type declarations${message ? `: ${message}` : ""}`);
   }
-  denoTypesCache = new TextDecoder().decode(output.stdout);
+  denoTypesCache = output.stdout;
   return denoTypesCache;
 }
 
 function denoCliPath(): string {
-  return Deno.env.get("WORKMAN_DENO_PATH")?.trim() || Deno.execPath();
+  return runtime.env("WORKMAN_DENO_PATH")?.trim() || "deno";
 }
 
 function cachedSourceFile(

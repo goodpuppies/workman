@@ -14,12 +14,15 @@
     "frontend-v2:build": "deno run -A src/main.ts compile-library tooling/frontend-v2/frontend.wm tooling/frontend-v2/frontend-v2.generated.mjs",
     "profile:webhook": "deno run -A scripts/profile_typecheck.ts examples/webhook.wm",
     "profile:webhook:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=webhook-typecheck.cpuprofile scripts/profile_typecheck.ts examples/webhook.wm",
+    "profile:frontend-v2": "deno run -A scripts/profile_frontend_v2.ts structural 1",
+    "profile:frontend-v2:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=frontend-v2.cpuprofile scripts/profile_frontend_v2.ts raw-structural 1",
     "wm": "deno run -A src/main.ts"
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.17",
     "peggy": "npm:peggy@^5.0.6",
-    "typescript": "npm:typescript@^6.0.3"
+    "typescript": "npm:typescript@^7.0.2",
+    "typescript-api": "npm:@typescript/typescript6@^6.0.2"
   },
   "fmt": {
     "lineWidth": 100

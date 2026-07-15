@@ -48,6 +48,40 @@ export type StructuralItem = {
   patternRecoveryId: number;
   expressionKind: "" | "atom" | "hole" | "authored-hole" | "error";
   expressionRecoveryId: number;
+  expressionSurfaceKind: "" | "literal" | "name" | "opaque" | "hole" | "authored-hole" | "error";
+  expressionNameParts: string[];
+  expressionRootId: number;
+  expressionNodes: SurfaceNode[];
+  terminatorRecoveryId: number;
+};
+
+export type SurfaceNode = {
+  id: number;
+  kind:
+    | "literal"
+    | "void"
+    | "name"
+    | "apply"
+    | "tuple"
+    | "paren"
+    | "lambda"
+    | "block"
+    | "opaque"
+    | "hole"
+    | "authored-hole"
+    | "error"
+    | "pattern.name"
+    | "pattern.wildcard"
+    | "pattern.void"
+    | "pattern.tuple"
+    | "pattern.hole"
+    | "pattern.error";
+  start: number;
+  end: number;
+  pairId: number;
+  recoveryId: number;
+  children: number[];
+  nameParts: string[];
 };
 
 export type StructuralRecoveryMark = {
@@ -240,11 +274,46 @@ function validateStructuralResult(value: unknown): StructuralParseResult {
   ) {
     throw new Error("frontend-v2 structural result has an invalid shape");
   }
-  value.items.forEach((item) => validateRecord(item, "structural item"));
+  value.items.forEach(validateStructuralItem);
   value.marks.forEach((mark) => validateRecord(mark, "recovery mark"));
   value.artifacts.forEach((artifact) => validateRecord(artifact, "virtual artifact"));
   value.pieces.forEach((piece) => validateRecord(piece, "map piece"));
   return value as StructuralParseResult;
+}
+
+function validateStructuralItem(value: unknown): void {
+  validateRecord(value, "structural item");
+  const item = value as Record<string, unknown>;
+  if (
+    typeof item.expressionSurfaceKind !== "string" ||
+    !Array.isArray(item.expressionNameParts) ||
+    !item.expressionNameParts.every((part) => typeof part === "string") ||
+    !isNumber(item.expressionRootId) ||
+    !Array.isArray(item.expressionNodes) ||
+    !isNumber(item.terminatorRecoveryId)
+  ) {
+    throw new Error("frontend-v2 structural item has an invalid Surface AST shape");
+  }
+  item.expressionNodes.forEach(validateSurfaceNode);
+}
+
+function validateSurfaceNode(value: unknown): void {
+  validateRecord(value, "Surface AST node");
+  const node = value as Record<string, unknown>;
+  if (
+    !isNumber(node.id) ||
+    typeof node.kind !== "string" ||
+    !isNumber(node.start) ||
+    !isNumber(node.end) ||
+    !isNumber(node.pairId) ||
+    !isNumber(node.recoveryId) ||
+    !Array.isArray(node.children) ||
+    !node.children.every(isNumber) ||
+    !Array.isArray(node.nameParts) ||
+    !node.nameParts.every((part) => typeof part === "string")
+  ) {
+    throw new Error("frontend-v2 Surface AST node has an invalid shape");
+  }
 }
 
 function validateLexResult(value: unknown): LexRoundTripResult {

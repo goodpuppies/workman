@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import {
   callbackParamRefsFromCall,

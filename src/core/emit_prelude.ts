@@ -4,7 +4,7 @@ export function emitRuntimePrelude(): string[] {
   return [
     '"use strict";',
     "const __wm_tuple_tag = Symbol('wm.tuple');",
-    "const __wm_tuple = (...items) => Object.assign(items, { [__wm_tuple_tag]: true });",
+    "const __wm_tuple = (...items) => { items[__wm_tuple_tag] = true; return items; };",
     "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_tuple_tag] === true;",
     `const __wm_js_global = (path) => path.split(".").reduce((value, key) => value?.[key], globalThis);`,
     `const __wm_js_should_bind = (value) =>

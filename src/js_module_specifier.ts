@@ -1,6 +1,7 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { JsTarget, Module } from "./ast.ts";
+import { runtime } from "./io.ts";
 
 export function resolveLocalJsModuleSpecifiers(module: Module, fromPath?: string): Module {
   if (!fromPath) return module;
@@ -41,7 +42,7 @@ function isAbsolutePathSpecifier(specifier: string): boolean {
 
 function normalizePathSpecifier(specifier: string): string {
   if (specifier.startsWith("file:")) return fileURLToPath(specifier);
-  if (Deno.build.os === "windows" && /^\/[A-Za-z]:[\\/]/.test(specifier)) {
+  if (runtime.platform === "win32" && /^\/[A-Za-z]:[\\/]/.test(specifier)) {
     return specifier.slice(1);
   }
   return specifier;

@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { compileLibraryFile } from "../src/compiler.ts";
 import { structuralDiagnostics } from "../src/frontend_v2_diagnostics.ts";
 import { type FrontendV2, loadFrontendV2 } from "../src/frontend_v2_loader.ts";
@@ -121,12 +122,13 @@ async function buildFrontend(): Promise<URL> {
 }
 
 async function* wmFiles(root: URL): AsyncGenerator<string> {
+  const directory = new URL(root.href.endsWith("/") ? root.href : root.href + "/");
   for await (const entry of Deno.readDir(root)) {
-    const path = root.pathname + "/" + entry.name;
+    const entryUrl = new URL(entry.name + (entry.isDirectory ? "/" : ""), directory);
     if (entry.isDirectory) {
-      yield* wmFiles(new URL(root.href + "/" + entry.name + "/"));
+      yield* wmFiles(entryUrl);
     } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      yield path;
+      yield fileURLToPath(entryUrl);
     }
   }
 }

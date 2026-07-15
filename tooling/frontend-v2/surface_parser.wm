@@ -1,0 +1,444 @@
+from "./types.wm" import {
+  Span, Token, TokenKind, TokenSlot, LongIdentifier, DelimiterPair, Pattern, Expr,
+  Identifier, Constructor, NumberLiteral, StringLiteral, Keyword, Operator,
+  Equals, Semicolon, Punctuation, Opaque,
+  ConcreteToken,
+  NamePattern, WildcardPattern, VoidPattern, TuplePattern, ErrorPattern,
+  LiteralExpr, VoidExpr, NameExpr, ApplyExpr, TupleExpr, ParenExpr, LambdaExpr,
+  BlockExpr, AtomExpr
+};
+from "./parser_support.wm" import { ParserState, freshNode };
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let isNameToken = (token: Token) => {
+  match(token.kind) {
+    Identifier => { true },
+    Constructor => { true },
+    _ => { false },
+  }
+};
+
+let isLiteralToken = (token: Token) => {
+  match(token.kind) {
+    NumberLiteral => { true },
+    StringLiteral => { true },
+    Keyword => {
+      token.text == "true" || token.text == "false" || token.text == "void"
+    },
+    _ => { false },
+  }
+};
+
+let rec boundedInto = match(tokens, end, reversed) => {
+  ([], Var(end), Var(reversed)) => { reverseInto(reversed, []) },
+  ([token, ..rest], Var(end), Var(reversed)) => {
+    if (token.span.start >= end) {
+      reverseInto(reversed, [])
+    } else {
+      boundedInto(rest, end, [token, ..reversed])
+    }
+  },
+};
+
+let delimiterDelta = (token: Token) => {
+  if (token.text == "(" || token.text == "{" || token.text == "[") {
+    1
+  } else {
+    if (token.text == ")" || token.text == "}" || token.text == "]") { -1 } else { 0 }
+  }
+};
+
+let rec takeDelimited = match(tokens, expected, depth, reversed) => {
+  ([], Var(expected), Var(depth), Var(reversed)) => {
+    (reverseInto(reversed, []), None, [])
+  },
+  ([token, ..rest], Var(expected), Var(depth), Var(reversed)) => {
+    if (depth == 0 && token.text == expected) {
+      (reverseInto(reversed, []), Some(token), rest)
+    } else {
+      takeDelimited(rest, expected, depth + delimiterDelta(token), [token, ..reversed])
+    }
+  },
+};
+
+let freshPair = (state: ParserState, open: Token, close: Token) => {
+  let (pairId, next) = freshNode(state);
+  let pair: DelimiterPair = .{
+    pairId = pairId,
+    open = ConcreteToken(open),
+    close = ConcreteToken(close),
+  };
+  (pair, next)
+};
+
+let isSupportedPunctuation = (text: String) => {
+  text == "(" || text == ")" || text == "{" || text == "}" ||
+  text == "," || text == "." || text == "=>" || text == "_"
+};
+
+let rec hasUnsupportedSliceToken = match(tokens) => {
+  [] => { false },
+  [token, ..rest] => {
+    match(token.kind) {
+      Operator => { true },
+      Equals => { true },
+      Semicolon => { true },
+      Opaque => { true },
+      Keyword => {
+        if (token.text == "true" || token.text == "false" || token.text == "void") {
+          hasUnsupportedSliceToken(rest)
+        } else {
+          true
+        }
+      },
+      Punctuation => {
+        if (isSupportedPunctuation(token.text)) {
+          hasUnsupportedSliceToken(rest)
+        } else {
+          true
+        }
+      },
+      _ => { hasUnsupportedSliceToken(rest) },
+    }
+  },
+};
+
+let rec takeLongName = match(tokens, reversed) => {
+  ([], Var(reversed)) => { (reverseInto(reversed, []), []) },
+  ([token, ..rest], Var(reversed)) => {
+    if (isNameToken(token)) {
+      match(rest) {
+        [dot, next, ..tail] => {
+          if (dot.text == "." && isNameToken(next)) {
+            takeLongName([next, ..tail], [token, ..reversed])
+          } else {
+            (reverseInto([token, ..reversed], []), rest)
+          }
+        },
+        _ => { (reverseInto([token, ..reversed], []), rest) },
+      }
+    } else {
+      (reverseInto(reversed, []), [token, ..rest])
+    }
+  },
+};
+
+let longNameSpan = (parts: List<Token>) => {
+  match(parts) {
+    [first, ..rest] => {
+      let rec lastEnd = match(items, fallback) => {
+        ([], Var(fallback)) => { fallback },
+        ([item, ..tail], Var(fallback)) => { lastEnd(tail, item.span.end) },
+      };
+      .{ start = first.span.start, end = lastEnd(rest, first.span.end) }
+    },
+    [] => { .{ start = 0, end = 0 } },
+  }
+};
+
+let rec splitTopInto = match(tokens, separator, depth, currentRev, groupsRev, found) => {
+  ([], Var(separator), Var(depth), Var(currentRev), Var(groupsRev), Var(found)) => {
+    (reverseInto([reverseInto(currentRev, []), ..groupsRev], []), found)
+  },
+  ([token, ..rest], Var(separator), Var(depth), Var(currentRev), Var(groupsRev), Var(found)) => {
+    if (depth == 0 && token.text == separator) {
+      splitTopInto(rest, separator, 0, [], [reverseInto(currentRev, []), ..groupsRev], true)
+    } else {
+      splitTopInto(
+        rest,
+        separator,
+        depth + delimiterDelta(token),
+        [token, ..currentRev],
+        groupsRev,
+        found,
+      )
+    }
+  },
+};
+
+let splitTop = (tokens: List<Token>, separator: String) => {
+  splitTopInto(tokens, separator, 0, [], [], false)
+};
+
+let exprSpan = (expression: Expr) => {
+  match(expression) {
+    LiteralExpr(Var(literalId), Var(literalText), Var(span)) => { span },
+    VoidExpr(Var(voidId), Var(voidPair), Var(span)) => { span },
+    NameExpr(Var(nameId), Var(name), Var(span)) => { span },
+    ApplyExpr(Var(applyId), Var(callee), Var(argument), Var(span)) => { span },
+    TupleExpr(Var(tupleId), Var(tuplePair), Var(items), Var(span)) => { span },
+    ParenExpr(Var(parenId), Var(parenPair), Var(inner), Var(span)) => { span },
+    LambdaExpr(Var(lambdaId), Var(params), Var(pattern), Var(arrow), Var(body), Var(span)) => { span },
+    BlockExpr(Var(blockId), Var(braces), Var(items), Var(result), Var(span)) => { span },
+    AtomExpr(Var(atomId), Var(atomText), Var(span)) => { span },
+    _ => { .{ start = 0, end = 0 } },
+  }
+};
+
+let patternFromTokens = (
+  state: ParserState,
+  nodeId: Number,
+  tokens: List<Token>,
+  delimiters: DelimiterPair,
+) => {
+  let (groups, hasComma) = splitTop(tokens, ",");
+  if (hasComma) {
+    let rec patternsInto = match(items, current, reversed) => {
+      ([], Var(current), Var(reversed)) => { (reverseInto(reversed, []), current) },
+      ([group, ..rest], Var(current), Var(reversed)) => {
+        let (childId, next) = freshNode(current);
+        let pattern = match(group) {
+          [token] => {
+            if (token.text == "_") {
+              WildcardPattern(childId, token.span)
+            } else {
+              NamePattern(childId, token.text, token.span)
+            }
+          },
+          _ => {
+            ErrorPattern(childId, -1, .{ start = 0, end = 0 }, "unsupported tuple pattern")
+          },
+        };
+        patternsInto(rest, next, [pattern, ..reversed])
+      },
+    };
+    let (patterns, next) = patternsInto(groups, state, []);
+    let span = match(delimiters.open) {
+      ConcreteToken(open) => {
+        match(delimiters.close) {
+          ConcreteToken(close) => { .{ start = open.span.start, end = close.span.end } },
+          _ => { open.span },
+        }
+      },
+      _ => { .{ start = 0, end = 0 } },
+    };
+    (TuplePattern(nodeId, delimiters, patterns, span), next)
+  } else {
+    match(tokens) {
+      [] => {
+        let span = match(delimiters.open) {
+          ConcreteToken(open) => {
+            match(delimiters.close) {
+              ConcreteToken(close) => { .{ start = open.span.start, end = close.span.end } },
+              _ => { open.span },
+            }
+          },
+          _ => { .{ start = 0, end = 0 } },
+        };
+        (VoidPattern(nodeId, delimiters, span), state)
+      },
+      [token] => {
+        if (token.text == "_") {
+          (WildcardPattern(nodeId, token.span), state)
+        } else {
+          (NamePattern(nodeId, token.text, token.span), state)
+        }
+      },
+      _ => {
+        (ErrorPattern(nodeId, -1, .{ start = 0, end = 0 }, "unsupported pattern"), state)
+      },
+    }
+  }
+};
+
+-- The recursive functions below intentionally accept only the first milestone
+-- grammar. Failure returns one opaque island spanning the already-owned tokens.
+let rec parseExpressionTokens = (state: ParserState, nodeId: Number, tokens: List<Token>) => {
+  match(tokens) {
+    [] => { (AtomExpr(nodeId, "", .{ start = 0, end = 0 }), state) },
+    [first, ..rest] => {
+      if (hasUnsupportedSliceToken(tokens)) {
+        let last = exprEndFromTokens(tokens, first.span.end);
+        (AtomExpr(nodeId, first.text, .{ start = first.span.start, end = last }), state)
+      } else {
+        parseLambdaOrApplication(state, nodeId, first, rest, tokens)
+      }
+    },
+  }
+}
+
+and exprEndFromTokens = match(tokens, fallback) => {
+  ([], Var(fallback)) => { fallback },
+  ([token, ..rest], Var(fallback)) => { exprEndFromTokens(rest, token.span.end) },
+}
+
+and parseLambdaOrApplication = (
+  state: ParserState,
+  nodeId: Number,
+  first: Token,
+  rest: List<Token>,
+  all: List<Token>,
+) => {
+  if (first.text == "(") {
+    let (inside, closeOption, after) = takeDelimited(rest, ")", 0, []);
+    match(closeOption) {
+      Some(close) => {
+        match(after) {
+          [arrow, ..bodyTokens] => {
+            if (arrow.text == "=>") {
+              let (params, state1) = freshPair(state, first, close);
+              let (patternId, state1a) = freshNode(state1);
+              let (pattern, state2) = patternFromTokens(state1a, patternId, inside, params);
+              let (bodyId, state3) = freshNode(state2);
+              let (body, state4) = parseExpressionTokens(state3, bodyId, bodyTokens);
+              let bodySpan = exprSpan(body);
+              let span = .{ start = first.span.start, end = bodySpan.end };
+              (LambdaExpr(nodeId, params, pattern, ConcreteToken(arrow), body, span), state4)
+            } else {
+              parseApplicationTokens(state, nodeId, all)
+            }
+          },
+          [] => { parseApplicationTokens(state, nodeId, all) },
+        }
+      },
+      None => { parseApplicationTokens(state, nodeId, all) },
+    }
+  } else {
+    parseApplicationTokens(state, nodeId, all)
+  }
+}
+
+and parseApplicationTokens = (state: ParserState, nodeId: Number, tokens: List<Token>) => {
+  let (first, rest, state1) = parsePrimary(state, nodeId, tokens, false);
+  parseApplicationTail(state1, first, rest)
+}
+
+and parseApplicationTail = (state: ParserState, callee: Expr, tokens: List<Token>) => {
+  match(tokens) {
+    [] => { (callee, state) },
+    _ => {
+      let (argId, state1) = freshNode(state);
+      let (argument, rest, state2) = parsePrimary(state1, argId, tokens, true);
+      let argumentSpan = exprSpan(argument);
+      let calleeSpan = exprSpan(callee);
+      if (argumentSpan.end == 0) {
+        (AtomExpr(argId, "opaque", .{ start = calleeSpan.start, end = exprEndFromTokens(tokens, calleeSpan.end) }), state2)
+      } else {
+        let (applyId, state3) = freshNode(state2);
+        let span = .{ start = calleeSpan.start, end = argumentSpan.end };
+        parseApplicationTail(state3, ApplyExpr(applyId, callee, argument, span), rest)
+      }
+    },
+  }
+}
+
+and parsePrimary = (
+  state: ParserState,
+  nodeId: Number,
+  tokens: List<Token>,
+  callArgument: Bool,
+) => {
+  match(tokens) {
+    [] => { (AtomExpr(nodeId, "", .{ start = 0, end = 0 }), [], state) },
+    [token, ..rest] => {
+      if (isLiteralToken(token)) {
+        (LiteralExpr(nodeId, token.text, token.span), rest, state)
+      } else {
+        if (isNameToken(token)) {
+          let (parts, remaining) = takeLongName([token, ..rest], []);
+          let span = longNameSpan(parts);
+          let name: LongIdentifier = .{ parts = parts, span = span };
+          (NameExpr(nodeId, name, span), remaining, state)
+        } else {
+          if (token.text == "(") {
+            parseParenPrimary(state, nodeId, token, rest, callArgument)
+          } else {
+            if (token.text == "{") {
+              parseBlockPrimary(state, nodeId, token, rest)
+            } else {
+              (AtomExpr(nodeId, token.text, .{ start = 0, end = 0 }), rest, state)
+            }
+          }
+        }
+      }
+    },
+  }
+}
+
+and parseParenPrimary = (
+  state: ParserState,
+  nodeId: Number,
+  open: Token,
+  tokens: List<Token>,
+  callArgument: Bool,
+) => {
+  let (inside, closeOption, rest) = takeDelimited(tokens, ")", 0, []);
+  match(closeOption) {
+    Some(close) => {
+      let (pair, state1) = freshPair(state, open, close);
+      let span = .{ start = open.span.start, end = close.span.end };
+      let (groups, hasComma) = splitTop(inside, ",");
+      if (hasComma) {
+        let (items, state2) = parseGroups(state1, groups, []);
+        (TupleExpr(nodeId, pair, items, span), rest, state2)
+      } else {
+        match(inside) {
+          [] => { (VoidExpr(nodeId, pair, span), rest, state1) },
+          _ => {
+            let (innerId, state2) = freshNode(state1);
+            let (inner, state3) = parseExpressionTokens(state2, innerId, inside);
+            (ParenExpr(nodeId, pair, inner, span), rest, state3)
+          },
+        }
+      }
+    },
+    None => { (AtomExpr(nodeId, open.text, .{ start = 0, end = 0 }), [], state) },
+  }
+}
+
+and parseGroups = match(state, groups, reversed) => {
+  (Var(state), [], Var(reversed)) => { (reverseInto(reversed, []), state) },
+  (Var(state), [group, ..rest], Var(reversed)) => {
+    let (nodeId, state1) = freshNode(state);
+    let (expression, state2) = parseExpressionTokens(state1, nodeId, group);
+    parseGroups(state2, rest, [expression, ..reversed])
+  },
+}
+
+and parseBlockPrimary = (
+  state: ParserState,
+  nodeId: Number,
+  open: Token,
+  tokens: List<Token>,
+) => {
+  let (inside, closeOption, rest) = takeDelimited(tokens, "}", 0, []);
+  match(closeOption) {
+    Some(close) => {
+      let (pair, state1) = freshPair(state, open, close);
+      let (groups, hasSemicolon) = splitTop(inside, ";");
+      if (hasSemicolon) {
+        (AtomExpr(nodeId, open.text, .{ start = open.span.start, end = close.span.end }), rest, state1)
+      } else {
+        let (resultId, state2) = freshNode(state1);
+        let (result, state3) = parseExpressionTokens(state2, resultId, inside);
+        let span = .{ start = open.span.start, end = close.span.end };
+        (BlockExpr(nodeId, pair, [], result, span), rest, state3)
+      }
+    },
+    None => { (AtomExpr(nodeId, open.text, .{ start = 0, end = 0 }), [], state) },
+  }
+};
+
+let surfaceExpression = (
+  state: ParserState,
+  nodeId: Number,
+  tokens: List<Token>,
+  span: Span,
+) => {
+  let bounded = boundedInto(tokens, span.end, []);
+  let (expression, next) = parseExpressionTokens(state, nodeId, bounded);
+  let parsedSpan = exprSpan(expression);
+  if (parsedSpan.end == 0) {
+    let text = match(bounded) {
+      [first, ..rest] => { first.text },
+      [] => { "" },
+    };
+    (AtomExpr(nodeId, text, span), next)
+  } else {
+    (expression, next)
+  }
+};

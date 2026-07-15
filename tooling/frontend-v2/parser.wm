@@ -1,5 +1,5 @@
 from "./types.wm" import {
-  Span, Token, TopItem, StructuralDocument,
+  Span, Token, TopItem, SurfaceProgram, StructuralDocument,
   LetKeyword, Keyword, Semicolon,
   Whitespace, Comment, EndOfFile,
   ImportItem, TypeItem, RecordItem, OpaqueItem,
@@ -211,11 +211,14 @@ let parseStructural = (source: String) => {
     artifactsReversed = [],
   };
   let (items, final) = parseItems(initial, []);
+  let program: SurfaceProgram = .{
+    items = items,
+    marks = reverseInto(final.marksReversed, []),
+  };
   let document: StructuralDocument = .{
     source = source,
     tokens = tokens,
-    items = items,
-    marks = reverseInto(final.marksReversed, []),
+    program = program,
     artifacts = sortArtifacts(final.artifactsReversed, []),
     progressSteps = final.progressSteps,
   };

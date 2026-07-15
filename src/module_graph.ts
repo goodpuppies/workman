@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import type { ImportClause, Module } from "./ast.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { diagnosticError } from "./diagnostics.ts";
+import { runtime } from "./io.ts";
 
 export type VirtualFileSystem = Map<string, string>;
 
@@ -122,7 +123,7 @@ async function visitModule(path: string, ctx: LoadContext) {
 
 async function readModuleSource(path: string, options: ModuleGraphOptions): Promise<string> {
   return getVirtualSource(path, options) ??
-    await Deno.readTextFile(path);
+    await runtime.readTextFile(path);
 }
 
 function importEmitName(path: string, clause: ImportClause): string {
@@ -130,7 +131,7 @@ function importEmitName(path: string, clause: ImportClause): string {
 }
 
 function normalizeInputPath(input: string): string {
-  if (Deno.build.os !== "windows") return input;
+  if (runtime.platform !== "win32") return input;
   const raw = /^\/[A-Za-z]:\//.test(input) ? input.slice(1) : input;
   try {
     return decodeURIComponent(raw);
@@ -144,7 +145,7 @@ async function resolveEntryPath(input: string, options: ModuleGraphOptions): Pro
   const virtualPath = findVirtualPath(input, options);
   if (virtualPath) return virtualPath;
   try {
-    return await Deno.realPath(normalized);
+    return await runtime.realPath(normalized);
   } catch (error) {
     throw error;
   }
@@ -167,10 +168,19 @@ async function resolveImportPath(
   const virtualPath = findVirtualPath(resolved, options);
   if (virtualPath) return virtualPath;
   try {
-    return await Deno.realPath(resolved);
+    return await runtime.realPath(resolved);
   } catch {
     throw new Error(`cannot resolve import ${specifier}`);
   }
+}
+
+/** Resolve one Workman module specifier without loading or parsing its graph. */
+export async function resolveModuleImportPath(
+  fromPath: string,
+  specifier: string,
+  options: ModuleGraphOptions = {},
+): Promise<string> {
+  return await resolveImportPath(fromPath, specifier, options);
 }
 
 function getVirtualSource(path: string, options: ModuleGraphOptions): string | undefined {
@@ -192,7 +202,7 @@ function findVirtualPath(path: string, options: ModuleGraphOptions): string | un
 
 function pathCandidates(input: string): string[] {
   const candidates = [input, normalizeInputPath(input)];
-  if (Deno.build.os === "windows") {
+  if (runtime.platform === "win32") {
     const withoutDrive = input.match(/^\/[A-Za-z]:(\/.*)$/)?.[1] ??
       input.match(/^[A-Za-z]:(\/.*)$/)?.[1];
     if (withoutDrive) candidates.push(withoutDrive);

@@ -8,11 +8,7 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { Trace } from "vscode-jsonrpc";
-import {
-  compiledServerConfig,
-  denoServerConfig,
-  resolveConfiguredPath,
-} from "./server_options";
+import { denoServerConfig, nodeServerConfig, resolveConfiguredPath } from "./server_options";
 
 let client: LanguageClient | undefined;
 
@@ -30,56 +26,65 @@ export async function activate(context: ExtensionContext) {
       return;
     }
 
-    const denoPath =
-      workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
-    const frontendMode =
-      workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
+    const denoPath = workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
+    const frontendMode = workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
     const frontendV2ModulePath = workspace.getConfiguration("workman").get<
       string
     >(
       "frontendV2ModulePath",
     )?.trim();
-    const serverEnvironment = { ...process.env, WORKMAN_DENO_PATH: denoPath };
-    outputChannel.appendLine(`Starting Workman language server: ${server.path}`);
-    const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const serverOptions: ServerOptions = {
-      run: server.kind === "source"
-        ? denoServerConfig(
-          denoPath,
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        )
-        : compiledServerConfig(
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        ),
-      debug: server.kind === "source"
-        ? denoServerConfig(
-          denoPath,
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        )
-        : compiledServerConfig(
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        ),
+    const structuralInlays = workspace.getConfiguration("workman").get<boolean>(
+      "structuralInlayHints.enabled",
+      true,
+    );
+    const serverEnvironment = {
+      ...process.env,
+      WORKMAN_DENO_PATH: denoPath,
+      WORKMAN_STRUCTURAL_INLAYS: String(structuralInlays),
     };
+    outputChannel.appendLine(
+      `Starting Workman language server: ${server.path}`,
+    );
+    const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const serverOptions: ServerOptions = server.kind === "source"
+      ? {
+        run: denoServerConfig(
+          denoPath,
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+        debug: denoServerConfig(
+          denoPath,
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+      }
+      : {
+        run: nodeServerConfig(
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+        debug: nodeServerConfig(
+          server.path,
+          frontendMode,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+      };
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "wm" }],
       synchronize: {
@@ -96,9 +101,7 @@ export async function activate(context: ExtensionContext) {
           const hover = await next(document, position, token);
           outputChannel.appendLine(
             `[workman-client] hover uri=${document.uri.toString()} ` +
-              `line=${position.line} char=${position.character} result=${
-                hover ? "hit" : "null"
-              }`,
+              `line=${position.line} char=${position.character} result=${hover ? "hit" : "null"}`,
           );
           return hover;
         },
@@ -136,7 +139,7 @@ export async function deactivate(): Promise<void> {
   await client?.stop();
 }
 
-type Server = { kind: "source" | "compiled"; path: string };
+type Server = { kind: "source" | "node"; path: string };
 
 function resolveServer(context: ExtensionContext): Server | undefined {
   const configured = workspace.getConfiguration("workman").get<string>(
@@ -159,18 +162,12 @@ function resolveServer(context: ExtensionContext): Server | undefined {
   );
   if (source) return { kind: "source", path: source };
 
-  const compiled = path.join(
+  const bundled = path.join(
     context.extensionPath,
-    "bin",
-    compiledServerName(),
+    "server",
+    "workman-lsp.mjs",
   );
-  return fs.existsSync(compiled) ? { kind: "compiled", path: compiled } : undefined;
-}
-
-function compiledServerName(): string {
-  const target = `${process.platform}-${process.arch}`;
-  const extension = process.platform === "win32" ? ".exe" : "";
-  return `workman-lsp-${target}${extension}`;
+  return fs.existsSync(bundled) ? { kind: "node", path: bundled } : undefined;
 }
 
 function traceSetting(): Trace {

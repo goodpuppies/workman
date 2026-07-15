@@ -50,11 +50,19 @@ export type NormalizedFrontendExpr =
   | { kind: "String"; value: string }
   | { kind: "Bool"; value: boolean }
   | { kind: "Void" }
+  | { kind: "Tuple"; items: NormalizedFrontendExpr[] }
+  | { kind: "Lambda"; params: NormalizedFrontendParam[]; body: NormalizedFrontendExpr }
+  | { kind: "Block"; items: []; result: NormalizedFrontendExpr }
   | {
     kind: "Call";
     callee: NormalizedFrontendExpr;
     args: NormalizedFrontendExpr[];
   };
+
+export type NormalizedFrontendParam = {
+  pattern: NormalizedFrontendPattern;
+  annotation?: NormalizedFrontendTypeExpr;
+};
 
 export type NormalizedFrontendTypeExpr =
   | { kind: "TName"; name: string; args: NormalizedFrontendTypeExpr[] }
@@ -174,6 +182,20 @@ function normalizeSupportedExpr(expr: Expr): NormalizedFrontendExpr {
       return { kind: "Bool", value: expr.value };
     case "Void":
       return { kind: "Void" };
+    case "Tuple":
+      return { kind: "Tuple", items: expr.items.map(normalizeSupportedExpr) };
+    case "Lambda":
+      return {
+        kind: "Lambda",
+        params: expr.params.map((param) => ({
+          pattern: normalizeSupportedPattern(param.pattern),
+          ...(param.annotation ? { annotation: normalizeSupportedType(param.annotation) } : {}),
+        })),
+        body: normalizeSupportedExpr(expr.body),
+      };
+    case "Block":
+      if (expr.items.length > 0) throw new Error("unsupported non-empty block");
+      return { kind: "Block", items: [], result: normalizeSupportedExpr(expr.result) };
     case "Call":
       return {
         kind: "Call",

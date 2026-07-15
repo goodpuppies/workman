@@ -26,7 +26,16 @@ Deno.test("lsp server can launch validation in frontend v2 mode", async () => {
           },
         },
       },
-      { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "textDocument/inlayHint",
+        params: {
+          textDocument: { uri },
+          range: { start: { line: 0, character: 0 }, end: { line: 1, character: 14 } },
+        },
+      },
+      { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
       { jsonrpc: "2.0", method: "exit", params: null },
     ],
     {
@@ -44,6 +53,19 @@ Deno.test("lsp server can launch validation in frontend v2 mode", async () => {
   assertEquals(params?.version, 1);
   assertEquals(params?.diagnostics.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
     ["parse.let.missing-semicolon", 2],
+  ]);
+  assertEquals(
+    (messages.find((message) => message.id === 1)?.result as {
+      capabilities: { inlayHintProvider?: boolean };
+    }).capabilities.inlayHintProvider,
+    true,
+  );
+  const hints = messages.find((message) => message.id === 2)?.result as {
+    label: string;
+    position: { line: number; character: number };
+  }[];
+  assertEquals(hints.map((hint) => [hint.label, hint.position]), [
+    [";", { line: 0, character: 9 }],
   ]);
 });
 
@@ -86,6 +108,51 @@ Deno.test("lsp server publishes multiple frontend v2 structural diagnostics", as
   assertEquals(params?.diagnostics.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
     ["parse.let.missing-semicolon", 2],
     ["parse.let.missing-semicolon", 2],
+  ]);
+});
+
+Deno.test("lsp server renders recovery-only structure as separate inlays", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let =";
+  const messages = await runLsp(
+    [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+      {
+        jsonrpc: "2.0",
+        method: "textDocument/didOpen",
+        params: {
+          textDocument: { uri, languageId: "wm", version: 1, text: source },
+        },
+      },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "textDocument/inlayHint",
+        params: {
+          textDocument: { uri },
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: source.length } },
+        },
+      },
+      { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+      { jsonrpc: "2.0", method: "exit", params: null },
+    ],
+    {
+      WORKMAN_FRONTEND: "v2",
+      WORKMAN_FRONTEND_V2_MODULE: frontendV2ModuleUrl.href,
+    },
+  );
+
+  const hints = messages.find((message) => message.id === 2)?.result as {
+    label: string;
+    data: { repairClass: string };
+  }[];
+  assertEquals(hints.map((hint) => [hint.label, hint.data.repairClass]), [
+    ["_", "recoveryOnly"],
+    ["?", "recoveryOnly"],
+    [";", "autoFix"],
   ]);
 });
 
