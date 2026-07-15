@@ -25,17 +25,44 @@ export function functionTypeFromCall(
         typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??
         name("Js.Value");
     }
-    const symbolType = signatureParams[index]
-      ? typeOfSymbol(checker, signatureParams[index])
+    const lastParameterIndex = signatureParams.length - 1;
+    const hasRestParameter = lastParameterIndex >= 0 &&
+      !!declaration?.parameters[lastParameterIndex]?.dotDotDotToken;
+    const signatureParamIndex = hasRestParameter && index > lastParameterIndex
+      ? lastParameterIndex
+      : index;
+    const symbolType = signatureParams[signatureParamIndex]
+      ? typeOfSymbol(checker, signatureParams[signatureParamIndex])
       : undefined;
-    const mapped = symbolType
-      ? typeExprFromTsType(checker, symbolType, "param") ?? name("Js.Value")
+    const reflectedParamType = symbolType
+      ? suppliedParameterType(checker, symbolType, declaration, signatureParamIndex, index)
+      : undefined;
+    const mapped = reflectedParamType
+      ? typeExprFromTsType(checker, reflectedParamType, "param") ?? name("Js.Value")
       : name("Js.Value");
     return stripSuppliedOptionalParam(mapped, declaration, index);
   });
   const result = typeExprFromTsType(checker, checker.getTypeAtLocation(call));
   if (!result) return undefined;
   return fn(params, result);
+}
+
+function suppliedParameterType(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  declaration: ts.SignatureDeclaration | undefined,
+  declarationIndex: number,
+  argumentIndex: number,
+): ts.Type {
+  const parameter = declaration?.parameters[declarationIndex];
+  if (!parameter?.dotDotDotToken) return type;
+  const ref = type as ts.TypeReference;
+  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
+  if (target && target.objectFlags & ts.ObjectFlags.Tuple) {
+    const elements = checker.getTypeArguments(ref);
+    return elements[argumentIndex - declarationIndex] ?? type;
+  }
+  return checker.getIndexTypeOfType(type, ts.IndexKind.Number) ?? type;
 }
 
 function syntheticCallbackTypeFromArg(

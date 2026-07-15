@@ -8,6 +8,8 @@ export enum TupleStatus {
 export interface TupleForeign {
   create(): [TupleStatus, TupleHandle];
   unsupportedObject(): { value: string };
+  add(...values: number[]): void;
+  fixed(value: number): void;
 }
 
 export declare function foreignValue(): TupleForeign;

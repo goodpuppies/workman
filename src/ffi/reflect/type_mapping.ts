@@ -103,6 +103,7 @@ export function typeExprFromTsType(
   if (nullish) {
     const inner = nullish.value ? typeExprFromTsType(checker, nullish.value, position) : undefined;
     if (inner) return option(inner);
+    if (nullish.values?.every(isObjectLike)) return option(name("Js.Object"));
     return position === "param" ? option(name("Js.Value")) : undefined;
   }
   if (type.isUnion()) {
@@ -130,6 +131,9 @@ export function typeExprFromTsType(
   if (type.flags & ts.TypeFlags.TypeParameter) {
     const constraint = checker.getBaseConstraintOfType(type);
     if (constraint && !isAnyOrUnknown(constraint)) {
+      if (position === "param" && isExplicitDynamicObject(checker, constraint)) {
+        return name("Js.Value");
+      }
       return typeExprFromTsType(checker, constraint, position);
     }
     return name("Js.Value");
@@ -145,14 +149,29 @@ export function typeExprFromTsType(
   }
   const arrayElement = arrayElementType(checker, type, position);
   if (arrayElement) return { kind: "TName", name: "Js.Array", args: [arrayElement] };
-  if (/^(?:Deno\.)?DynamicLibrary<.+>$/.test(checker.typeToString(type))) {
+  /* if (/^(?:Deno\.)?DynamicLibrary<.+>$/.test(checker.typeToString(type))) {
     return name("Js.Object");
-  }
+  } */
   const nominal = nominalObjectTypeName(checker, type);
+  if (nominal === "DynamicLibrary") return name("Js.Object");
   if (position === "result" && nominal) return name(nominal);
   const tuple = fixedTupleTypeExpr(checker, type, position);
   if (tuple) return tuple;
-  if (isExplicitDynamicObject(checker, type)) return name("Js.Object");
+  if (isExplicitDynamicObject(checker, type)) {
+    return position === "param" ? name("Js.Value") : name("Js.Object");
+  }
+  // Anonymous inline object literals (no nominal identity, e.g. `{ enabled; type }`) have no
+  // honest named Workman representation and cannot be asserted back into a foreign type, so a
+  // `Js.Object` recovery is acceptable here. Named static types keep their nominal ref and are
+  // left unresolved rather than silently collapsed to opaque (ffi-principles.md #7).
+  if (
+    position === "result" &&
+    isObjectLike(type) &&
+    !nominal &&
+    checker.typeToString(type).trimStart().startsWith("{")
+  ) {
+    return name("Js.Object");
+  }
   return position === "param" ? name("Js.Value") : undefined;
 }
 
@@ -228,13 +247,15 @@ function awaitedTypeArgument(
   return arg ? typeExprFromTsType(checker, arg, position) : undefined;
 }
 
-function nullishUnionParts(type: ts.Type): { value?: ts.Type } | undefined {
+function nullishUnionParts(
+  type: ts.Type,
+): { value?: ts.Type; values?: ts.Type[] } | undefined {
   if (!type.isUnion()) return undefined;
   const valueTypes = type.types.filter((item) => !isNullish(item));
   if (valueTypes.length === type.types.length) return undefined;
   if (valueTypes.length === 0) return {};
   if (valueTypes.length === 1) return { value: valueTypes[0] };
-  return {};
+  return { values: valueTypes };
 }
 
 function isNullish(type: ts.Type): boolean {

@@ -114,6 +114,21 @@ Deno.test("maps reflected JS nullish returns to basis Option", async () => {
   expectBinding(result.env, "isMissing", { type: "Bool", vars: 0 });
 });
 
+Deno.test("maps nullish unions of foreign objects before applying Option", async () => {
+  const result = await checkSource(`
+    from js.global("Deno") import type { UnsafeWindowSurface };
+
+    let context = (surface: UnsafeWindowSurface) => {
+      surface.getContext("webgpu")
+    };
+  `);
+
+  expectBinding(result.env, "context", {
+    type: "(UnsafeWindowSurface) => Result<Option<Js.Object>, Js.Error>",
+    vars: 0,
+  });
+});
+
 Deno.test("resolves reflected JS optional arities before HM", async () => {
   const result = await checkSource(`
     from js.module("node:child_process") import { spawn };
@@ -577,19 +592,72 @@ Deno.test("reflects fixed TypeScript tuples from functions and foreign members",
   });
 });
 
-Deno.test("unsupported static foreign results remain unresolved instead of becoming opaque", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
-        from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleForeign };
+Deno.test("anonymous structural foreign results use the explicit Js.Object fallback", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleForeign };
 
-        let unsupported = (foreign: TupleForeign) => {
-          foreign.unsupportedObject()
-        };
-      `),
-    Error,
-    "unresolved JS FFI method unsupportedObject",
-  );
+    let structural = (foreign: TupleForeign) => {
+      foreign.unsupportedObject()
+    };
+  `);
+
+  expectBinding(result.env, "structural", {
+    type: "(TupleForeign) => Result<Js.Object, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("broad object parameters do not collapse nominal foreign arguments to Js.Object", async () => {
+  const result = await checkSource(`
+    from js.global("Object") import { assign };
+    from js.global import type { Request };
+
+    let update = (value) => {
+      let _ = assign(value, JSON{ touched: true });
+      value.clone()
+    };
+    let use = (request: Request) => { update(request) };
+  `);
+
+  expectBinding(result.env, "update", {
+    type: "(Request) => Result<Request, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("call-specific reflection maps each supplied rest argument to its element type", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type {
+      TupleForeign
+    };
+
+    let add = (foreign: TupleForeign, value: Number) => {
+      foreign.add(value)
+    };
+  `);
+
+  expectBinding(result.env, "add", {
+    type: "((TupleForeign, Number)) => Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("extra arguments do not inherit the final non-rest parameter type", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type {
+      TupleForeign
+    };
+    from js.global import type { Request };
+
+    let call = (foreign: TupleForeign, value: Number, extra: Request) => {
+      foreign.fixed(value, extra)
+    };
+  `);
+
+  expectBinding(result.env, "call", {
+    type: "((TupleForeign, Number, Request)) => Result<Void, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("unannotated helper receivers keep delayed FFI obligations", async () => {
