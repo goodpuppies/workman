@@ -57,6 +57,43 @@ let answer = {
 };
 ```
 
+## Watched REPL Files
+
+`wm repl file.wm` evaluates the file as a sequence of top-level phrases without requiring `main`. It
+reports the value and inferred type of each final visible binding:
+
+```wm
+let answer = 1 + 1;
+```
+
+```text
+answer = 2 : Number
+```
+
+A bare top-level expression is treated like SML's implicit `it` binding:
+
+```wm
+1 + 1;
+```
+
+```text
+it = 2 : Number
+```
+
+Pattern declarations report every introduced binder, and datatype and record declarations report
+their inferred interface. REPL rendering quotes strings while ordinary `print` keeps its existing
+application-oriented output.
+
+Unlike a traditional stateful SML prompt, the watched file starts from a fresh basis after every
+save. Dependencies and declarations earlier in the file still form the basis for later phrases;
+bindings from a previous version of the file do not survive the next evaluation.
+
+Within one evaluation, semicolon-terminated phrases follow the SML Program model. A successful
+phrase extends the basis. A phrase that fails parsing or elaboration does not modify the basis, and
+later phrases are still attempted against the previously committed basis. Workman's `Panic` remains
+an unrecoverable failure rather than an SML exception; output and external side effects from earlier
+phrases are retained when it aborts the current file evaluation.
+
 ## Functions
 
 SML:

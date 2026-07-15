@@ -34,6 +34,7 @@ export type InferResult = {
   adts: Map<number, TypeDeclInfo>;
   warnings: string[];
   diagnostics: FrontendDiagnostic[];
+  steps: InferStep[];
 };
 
 export { describeEnv, type TypeSnapshot } from "./infer/snapshots.ts";
@@ -170,6 +171,7 @@ function inferModuleCore(
       adts,
       warnings,
       diagnostics,
+      steps,
     },
     steps,
   };

@@ -1,0 +1,6 @@
+let rec map = (f) => {
+  match(xs) => {
+    []          => { [] },
+    [x, ..xs]   => { [f(x), ..map(f)(xs)] },
+  }
+};

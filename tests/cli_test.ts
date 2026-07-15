@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import { evaluateReplFile, topLevelPhraseRanges } from "../src/repl.ts";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
 
@@ -17,6 +18,164 @@ Deno.test("cli prints help with --help", async () => {
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
   assertStringIncludes(result.stdout, "commands:");
+  assertStringIncludes(result.stdout, "repl <file.wm>");
+});
+
+Deno.test("repl evaluates top-level bindings without a main function", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/hello.wm`;
+  await Deno.writeTextFile(input, "let x = 1 + 1;");
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 0);
+  assertEquals(new TextDecoder().decode(result.stdout), "x = 2 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
+Deno.test("repl prints each final top-level binding using Workman value syntax", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/values.wm`;
+  await Deno.writeTextFile(
+    input,
+    'let tuple = (1, "two"); let answer = Some(42);',
+  );
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    'tuple = (1, "two") : (Number, String)\nanswer = Some(42) : Option<Number>\n',
+  );
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
+Deno.test("repl binds a top-level expression to it", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/expression.wm`;
+  await Deno.writeTextFile(input, "1 + 1;");
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 0);
+  assertEquals(new TextDecoder().decode(result.stdout), "it = 2 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
+Deno.test("repl reports every binder introduced by a top-level pattern", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/pattern.wm`;
+  await Deno.writeTextFile(input, 'let (number, text) = (1, "two");');
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    'number = 1 : Number\ntext = "two" : String\n',
+  );
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
+Deno.test("repl reports top-level datatype and record declarations", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/types.wm`;
+  await Deno.writeTextFile(
+    input,
+    "type Box<T> = Empty | Box<T>; record Point = { x: Number, y: Number }; let value = Box(2);",
+  );
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    "type Box<T> = Empty | Box<T>\nrecord Point = { x: Number, y: Number }\nvalue = Box(2) : Box<Number>\n",
+  );
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
+Deno.test("repl reports shadowed phrases with the type in force at each phrase", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/shadow.wm`;
+  await Deno.writeTextFile(input, 'let value = 1; let value = "two";');
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    'value = 1 : Number\nvalue = "two" : String\n',
+  );
+});
+
+Deno.test("repl keeps the basis and continues after static phrase failure", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/static-failure.wm`;
+  await Deno.writeTextFile(
+    input,
+    'let first = 1; let bad = first + "two"; let after = first + 2;',
+  );
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 1);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    "first = 1 : Number\nafter = 3 : Number\n",
+  );
+  assertEquals(result.staticErrors?.length, 1);
+});
+
+Deno.test("repl rejects later phrases that depend on a failed phrase", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/dependent-static-failure.wm`;
+  await Deno.writeTextFile(
+    input,
+    'let first = 1; let bad = first + "two"; let dependent = bad + 1;',
+  );
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 1);
+  assertEquals(new TextDecoder().decode(result.stdout), "first = 1 : Number\n");
+  assertEquals(result.staticErrors?.length, 2);
+});
+
+Deno.test("repl continues after a parse failure at a semicolon phrase boundary", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/parse-failure.wm`;
+  await Deno.writeTextFile(input, "let first = 1; let broken = ; let after = first + 2;");
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 1);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    "first = 1 : Number\nafter = 3 : Number\n",
+  );
+  assertEquals(result.staticErrors?.length, 1);
+});
+
+Deno.test("repl phrase boundaries ignore nested and quoted semicolons", () => {
+  const source = 'let text = ";"; let value = { let inner = 1; inner }; -- ;\n1 + 1;';
+  assertEquals(topLevelPhraseRanges(source).length, 3);
+});
+
+Deno.test("repl preserves successful phrase output before runtime failure", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/runtime-failure.wm`;
+  await Deno.writeTextFile(
+    input,
+    'let first = 1; let bad = Panic("boom"); let never = 3;',
+  );
+
+  const result = await evaluateReplFile(input);
+
+  assertEquals(result.code, 1);
+  assertEquals(new TextDecoder().decode(result.stdout), "first = 1 : Number\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "runtime[Panic]: boom\n");
 });
 
 Deno.test("cli run compiles and executes a wm file", async () => {

@@ -60,6 +60,16 @@ deno task install
 wm run examples/factorial.wm
 ```
 
+For a live top-level evaluation loop, use `wm repl <file.wm>`. The file is evaluated immediately and
+again whenever it is saved; unlike `wm run`, it does not require a `main` function:
+
+```workman
+let answer = 1 + 1;
+```
+
+Running `wm repl answer.wm` displays `answer = 2 : Number`. A bare top-level expression is bound to
+`it`, following the SML top-level convention.
+
 The installer writes a small launcher into `~/.local/bin` on Unix-like systems, or `~/.deno/bin` on
 Windows. On Unix it also adds the launcher directory to `PATH` for Bash, Zsh, and Fish. You can
 override the launcher directory with `--bin-dir`:

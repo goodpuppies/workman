@@ -96,10 +96,10 @@ export function emitRuntimePrelude(): string[] {
     key === bk[index] && __wm_eq(a[key], b[key])
   );
 };`,
-    `const __wm_show = (value, seen = new WeakSet()) => {
+    `const __wm_show = (value, seen = new WeakSet(), quoteStrings = false) => {
   if (value === undefined) return "void";
   if (value === null) return "null";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return quoteStrings ? JSON.stringify(value) : value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "function") return "<function>";
   if (typeof value !== "object") return String(value);
@@ -107,23 +107,24 @@ export function emitRuntimePrelude(): string[] {
   seen.add(value);
   let shown;
   if (__wm_is_tuple(value)) {
-    shown = "(" + value.map((item) => __wm_show(item, seen)).join(", ") + ")";
+    shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + ")";
   } else if ("ctor" in value) {
     shown = value.args.length === 0
       ? value.name
       : value.name + "(" + value.args.map((item) => {
-        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen)).join(", ");
-        return __wm_show(item, seen);
+        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen, quoteStrings)).join(", ");
+        return __wm_show(item, seen, quoteStrings);
       }).join(", ") + ")";
   } else if (globalThis.Array.isArray(value)) {
-    shown = "[" + value.map((item) => __wm_show(item, seen)).join(", ") + "]";
+    shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
   } else {
-    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen)).join(", ") + " }";
+    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen, quoteStrings)).join(", ") + " }";
   }
   seen.delete(value);
   return shown;
 };`,
     "const print = (value) => console.log(__wm_show(value));",
+    "const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true);",
     `const __wm_text_of = (value) => {
   try {
     return value.toString();

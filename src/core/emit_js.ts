@@ -1,4 +1,5 @@
 import type { CoreDecl, CoreExpr, CoreMatchArm, CorePattern } from "./ast.ts";
+import type { TypeExpr } from "../ast.ts";
 import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artifact.ts";
 import type { BindingId } from "./ids.ts";
 import { basisCtorJsName } from "../basis.ts";
@@ -6,7 +7,7 @@ import { emitRuntimePrelude } from "./emit_prelude.ts";
 import { emitJsImportDecl, resetJsImportEmitter, setWorkerSpecifiers } from "./emit_js_import.ts";
 import { emitJsIdentifier as id } from "./emit_name.ts";
 
-export type CoreEmitTarget = "executable" | "library";
+export type CoreEmitTarget = "executable" | "library" | "repl";
 
 export type CoreEmitOptions = {
   target?: CoreEmitTarget;
@@ -18,14 +19,110 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
   const target = options.target ?? "executable";
-  return [
-    ...emitRuntimePrelude(),
+  const body = [
     ...program.order
       .filter((path) => path !== program.entry)
       .map((path) => emitNamespace(program.modules.get(path)!, program)),
-    ...emitModuleBody(entry, program),
-    target === "library" ? emitLibraryExports(entry) : emitMainInvocation(entry),
-  ].join("\n");
+    ...(target === "repl" ? emitReplModuleBody(entry, program) : emitModuleBody(entry, program)),
+    target === "library"
+      ? emitLibraryExports(entry)
+      : target === "repl"
+      ? ""
+      : emitMainInvocation(entry),
+  ];
+  return target === "repl"
+    ? [...emitRuntimePrelude(), "try {", ...body, emitReplRuntimeCatch()].join("\n")
+    : [...emitRuntimePrelude(), ...body].join("\n");
+}
+
+function emitReplRuntimeCatch(): string {
+  return `} catch (__wm_repl_error) {
+  const __wm_repl_error_name = __wm_repl_error instanceof Error ? __wm_repl_error.name : "Error";
+  const __wm_repl_error_message = String(__wm_repl_error instanceof Error ? __wm_repl_error.message : __wm_repl_error)
+    .replace(/\\s+/g, " ").slice(0, 300);
+  console.error("runtime[" + __wm_repl_error_name + "]: " + __wm_repl_error_message);
+  Deno.exitCode = 1;
+}`;
+}
+
+function emitReplModuleBody(entry: CoreModuleArtifact, program: CoreProgram): string[] {
+  return [
+    ...emitImportAliases(entry, program),
+    ...entry.module.decls.flatMap((decl, declIndex) => [
+      ...emitDecl(decl),
+      ...emitReplPhraseResult(decl, declIndex, entry),
+    ]),
+  ];
+}
+
+function emitReplPhraseResult(
+  decl: CoreDecl,
+  declIndex: number,
+  entry: CoreModuleArtifact,
+): string[] {
+  if (decl.kind === "CoreType" && decl.exported) return [emitReplTypeDecl(decl)];
+  if (decl.kind === "CoreRecord" && decl.exported) return [emitReplRecordDecl(decl)];
+  if (decl.kind !== "CoreLet") return [];
+  const phraseEnv = entry.analysis.steps.find((step) => step.declIndex === declIndex)?.env;
+  return decl.bindings.flatMap((binding) =>
+    replPatternBindings(binding.pattern).map((item) =>
+      emitReplBinding(item, phraseEnv?.get(item.name)?.type ?? "?")
+    )
+  );
+}
+
+function emitReplBinding(item: CoreDynamicExport, type: string): string {
+  return `console.log(${JSON.stringify(`${item.name} = `)} + __wm_repl_show(${
+    emitExportRef(item)
+  }) + ${JSON.stringify(` : ${type}`)});`;
+}
+
+function emitReplTypeDecl(decl: Extract<CoreDecl, { kind: "CoreType" }>): string {
+  const params = decl.params.length ? `<${decl.params.join(", ")}>` : "";
+  const body = decl.alias ? showTypeExpr(decl.alias) : decl.ctors.map((ctor) => {
+    if (!ctor.payload) return ctor.name;
+    const args = ctor.payload.kind === "TTuple" ? ctor.payload.items : [ctor.payload];
+    return `${ctor.name}<${args.map(showTypeExpr).join(", ")}>`;
+  }).join(" | ");
+  return `console.log(${JSON.stringify(`type ${decl.name}${params} = ${body}`)});`;
+}
+
+function emitReplRecordDecl(decl: Extract<CoreDecl, { kind: "CoreRecord" }>): string {
+  const params = decl.params.length ? `<${decl.params.join(", ")}>` : "";
+  const fields = decl.fields.map((field) => `${field.name}: ${showTypeExpr(field.type)}`).join(
+    ", ",
+  );
+  return `console.log(${JSON.stringify(`record ${decl.name}${params} = { ${fields} }`)});`;
+}
+
+function showTypeExpr(type: TypeExpr): string {
+  switch (type.kind) {
+    case "TName":
+      return type.args.length
+        ? `${type.name}<${type.args.map(showTypeExpr).join(", ")}>`
+        : type.name;
+    case "TVar":
+      return type.name;
+    case "TTuple":
+      return `(${type.items.map(showTypeExpr).join(", ")})`;
+    case "TFn":
+      return `(${type.params.map(showTypeExpr).join(", ")}) => ${showTypeExpr(type.result)}`;
+  }
+}
+
+function replPatternBindings(pattern: CorePattern): CoreDynamicExport[] {
+  switch (pattern.kind) {
+    case "CorePVar":
+      return [{ name: pattern.name, bindingId: pattern.bindingId }];
+    case "CorePTuple":
+      return pattern.items.flatMap(replPatternBindings);
+    case "CorePRecord":
+      return pattern.fields.flatMap((field) => replPatternBindings(field.pattern));
+    case "CorePCtor":
+      return pattern.payload ? replPatternBindings(pattern.payload) : [];
+    default:
+      return [];
+  }
 }
 
 function resetEmitterState(): void {
