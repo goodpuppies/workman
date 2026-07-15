@@ -16,7 +16,9 @@ const assets: Asset[] = [
 const outputUrl = new URL("../src/generated/assets.ts", import.meta.url);
 const declarations = await Promise.all(
   assets.map(async ({ name, url }) => {
-    const source = await Deno.readTextFile(url);
+    // Keep generated output identical across Windows and Unix checkouts, even
+    // when an editor writes an input asset with CRLF line endings.
+    const source = (await Deno.readTextFile(url)).replace(/\r\n?/g, "\n");
     return `export const ${name} = ${JSON.stringify(source)};`;
   }),
 );
