@@ -12,18 +12,22 @@ import {
   formatDiagnosticError,
   formatDiagnosticInspection,
   formatError,
+  formatReplDiagnostic,
+  formatReplError,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
 } from "./diagnostics.ts";
 import { ParseError } from "./parser.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
+import { evaluateReplFile, watchReplChanges } from "./repl.ts";
 
 const commands = new Set([
   "check",
   "compile",
   "compile-library",
   "run",
+  "repl",
   "err",
   "type-debug",
   "help",
@@ -31,42 +35,96 @@ const commands = new Set([
 
 export async function runCli(args: string[]): Promise<number> {
   return await main(args).catch((error) => {
-    if (error instanceof ParseError) {
-      console.error(formatError(error.message, error.filePath, error.source, error.span));
-    } else if (error instanceof ModuleAnalysisError) {
-      if (error.originalError instanceof ParseError) {
-        console.error(
-          formatError(
-            error.originalError.message,
-            error.originalError.filePath || error.path,
-            error.originalError.source,
-            error.originalError.span,
-          ),
-        );
-      } else if (error.originalError instanceof FrontendDiagnosticError) {
-        console.error(formatDiagnosticError(error.originalError, error.path, error.source));
-        for (const diagnostic of error.diagnostics) {
-          console.error(formatDiagnostic(diagnostic, error.path, error.source));
-        }
-      } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
-        console.error(formatBundleError(error.originalError, error.path, error.source));
-      } else {
-        console.error(formatError(error.message, error.path, error.source, undefined));
-        for (const diagnostic of error.diagnostics) {
-          console.error(formatDiagnostic(diagnostic, error.path, error.source));
-        }
-      }
-    } else if (error instanceof RunEntrypointError) {
-      console.error(formatDiagnosticError(error, error.path, error.source));
-    } else if (error instanceof FrontendDiagnosticError) {
-      console.error(formatDiagnosticError(error, undefined, undefined));
-    } else if (error instanceof FrontendDiagnosticBundleError) {
-      console.error(formatBundleError(error, undefined, undefined));
-    } else {
-      console.error(error instanceof Error ? error.message : String(error));
-    }
+    reportError(error);
     return 1;
   });
+}
+
+function reportError(error: unknown): void {
+  if (error instanceof ParseError) {
+    console.error(formatError(error.message, error.filePath, error.source, error.span));
+  } else if (error instanceof ModuleAnalysisError) {
+    if (error.originalError instanceof ParseError) {
+      console.error(
+        formatError(
+          error.originalError.message,
+          error.originalError.filePath || error.path,
+          error.originalError.source,
+          error.originalError.span,
+        ),
+      );
+    } else if (error.originalError instanceof FrontendDiagnosticError) {
+      console.error(formatDiagnosticError(error.originalError, error.path, error.source));
+      for (const diagnostic of error.diagnostics) {
+        console.error(formatDiagnostic(diagnostic, error.path, error.source));
+      }
+    } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
+      console.error(formatBundleError(error.originalError, error.path, error.source));
+    } else {
+      console.error(formatError(error.message, error.path, error.source, undefined));
+      for (const diagnostic of error.diagnostics) {
+        console.error(formatDiagnostic(diagnostic, error.path, error.source));
+      }
+    }
+  } else if (error instanceof RunEntrypointError) {
+    console.error(formatDiagnosticError(error, error.path, error.source));
+  } else if (error instanceof FrontendDiagnosticError) {
+    console.error(formatDiagnosticError(error, undefined, undefined));
+  } else if (error instanceof FrontendDiagnosticBundleError) {
+    console.error(formatBundleError(error, undefined, undefined));
+  } else {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function reportReplError(error: unknown): void {
+  if (error instanceof ParseError) {
+    console.error(formatReplError(error.message, error.filePath, error.source, error.span));
+  } else if (error instanceof ModuleAnalysisError) {
+    if (error.originalError instanceof ParseError) {
+      console.error(
+        formatReplError(
+          error.originalError.message,
+          error.originalError.filePath || error.path,
+          error.originalError.source,
+          error.originalError.span,
+        ),
+      );
+    } else if (error.originalError instanceof FrontendDiagnosticError) {
+      console.error(formatReplDiagnostic(error.originalError.diagnostic, error.path, error.source));
+      for (const diagnostic of error.diagnostics) {
+        console.error(formatReplDiagnostic(diagnostic, error.path, error.source));
+      }
+    } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
+      if (error.originalError.primary instanceof FrontendDiagnosticError) {
+        console.error(
+          formatReplDiagnostic(error.originalError.primary.diagnostic, error.path, error.source),
+        );
+      } else {
+        console.error(
+          formatReplError(error.originalError.message, error.path, error.source, undefined),
+        );
+      }
+      for (const diagnostic of error.originalError.diagnostics) {
+        console.error(formatReplDiagnostic(diagnostic, error.path, error.source));
+      }
+    } else {
+      console.error(formatReplError(error.message, error.path, error.source, undefined));
+    }
+  } else if (error instanceof FrontendDiagnosticError) {
+    console.error(formatReplDiagnostic(error.diagnostic, undefined, undefined));
+  } else if (error instanceof FrontendDiagnosticBundleError) {
+    if (error.primary instanceof FrontendDiagnosticError) {
+      console.error(formatReplDiagnostic(error.primary.diagnostic, undefined, undefined));
+    } else {
+      console.error(formatReplError(error.message, undefined, undefined, undefined));
+    }
+    for (const diagnostic of error.diagnostics) {
+      console.error(formatReplDiagnostic(diagnostic, undefined, undefined));
+    }
+  } else {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
 }
 
 if (import.meta.main) {
@@ -91,6 +149,8 @@ export async function main(args: string[]): Promise<number> {
       return await compileLibraryCommand(commandArgs);
     case "run":
       return await runCommand(commandArgs);
+    case "repl":
+      return await replCommand(commandArgs);
     case "err":
       return await errCommand(commandArgs);
     case "type-debug":
@@ -150,6 +210,28 @@ async function runCommand(args: string[]): Promise<number> {
   const [input] = inputArgs;
   if (!input) return missingInput("run");
   return (await runFile(input, { args: programArgs })).code;
+}
+
+async function replCommand(args: string[]): Promise<number> {
+  const [input] = args;
+  if (!input) return missingInput("repl");
+  for await (const _ of watchReplChanges(input)) {
+    try {
+      const result = await evaluateReplFile(input);
+      clearReplOutput();
+      await Deno.stdout.write(result.stdout);
+      await Deno.stderr.write(result.stderr);
+      for (const error of result.staticErrors ?? []) reportReplError(error);
+    } catch (error) {
+      clearReplOutput();
+      reportReplError(error);
+    }
+  }
+  return 0;
+}
+
+function clearReplOutput(): void {
+  if (Deno.stdout.isTerminal()) console.log("\x1b[2J\x1b[H");
 }
 
 async function errCommand(args: string[]): Promise<number> {
@@ -287,6 +369,7 @@ commands:
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
   run <file.wm> [-- args...]    compile and execute with Deno
+  repl <file.wm>                watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help

@@ -2,6 +2,7 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import {
   formatDiagnostic,
+  formatReplDiagnostic,
   type FrontendDiagnostic,
   FrontendDiagnosticError,
   renderDiagnosticSummary,
@@ -175,6 +176,23 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   assertStringIncludes(rendered, "But this pipeline step needs:");
   assertStringIncludes(rendered, "    Number");
   assertStringIncludes(rendered, "`render` takes a `Number` as its first argument.");
+});
+
+Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
+  const source = 'let inc = (x: Number) => { x + 1 };\nlet bad = inc("no");';
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatReplDiagnostic(error.diagnostic, "Main.wm", source);
+  assertStringIncludes(rendered, "error[type.mismatch] Main.wm:2:");
+  assertStringIncludes(rendered, "expected Number, got String");
+  assertStringIncludes(rendered, '2 | let bad = inc("no");');
+  assertEquals(rendered.includes("-- TYPE CHECKER"), false);
+  assertEquals(rendered.includes("support:"), false);
+  assertEquals(rendered.includes("rule:"), false);
+  assertEquals(rendered.split("\n").filter(Boolean).length, 3);
 });
 
 Deno.test("pipe mismatch points at trailing semicolon Void source", async () => {

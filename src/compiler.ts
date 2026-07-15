@@ -150,6 +150,7 @@ export async function compileFileArtifacts(
 export async function compileFileArtifactsFromCore(
   compiled: CoreFileResult,
   options: CompileOptions = {},
+  entryTarget: "executable" | "repl" = "executable",
 ): Promise<CompileArtifact[]> {
   const entry = compiled.graph.entry;
   const outputNames = new Map<string, string>([[entry, "main.mjs"]]);
@@ -170,6 +171,7 @@ export async function compileFileArtifactsFromCore(
     artifacts.push({
       path: outputNames.get(path)!,
       code: emitCoreProgram(core, {
+        target: path === entry ? entryTarget : "executable",
         workerSpecifiers: relativeWorkerSpecifiers(outputNames.get(path)!, outputNames),
       }),
       kind,
@@ -178,6 +180,13 @@ export async function compileFileArtifactsFromCore(
 
   await emitOne(entry, "entry");
   return artifacts;
+}
+
+export async function compileReplFileArtifacts(
+  input: string,
+  options: CompileOptions = {},
+): Promise<CompileArtifact[]> {
+  return await compileFileArtifactsFromCore(await coreFile(input, options), options, "repl");
 }
 
 export async function compileLibraryFile(

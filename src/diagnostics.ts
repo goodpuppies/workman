@@ -225,6 +225,76 @@ export function formatDiagnostic(
   return formatDiagnosticEvidence(diagnostic, filePath, source);
 }
 
+export function formatReplDiagnostic(
+  diagnostic: FrontendDiagnostic,
+  filePath: string | undefined,
+  source: string | undefined,
+): string {
+  const anchor = diagnostic.primary;
+  const location = anchor.kind === "source"
+    ? `${filePath || "<input>"}:${anchor.span.line}:${anchor.span.col + 1}`
+    : filePath || "<input>";
+  const header = `${diagnostic.severity}[${diagnostic.code}] ${location}: ${
+    compactDiagnosticMessage(diagnostic)
+  }`;
+  const excerpt = anchor.kind === "source" && source
+    ? formatReplExcerpt(source, anchor.span)
+    : undefined;
+  return `${[header, excerpt].filter(Boolean).join("\n")}\n`;
+}
+
+export function formatReplError(
+  message: string,
+  filePath: string | undefined,
+  source: string | undefined,
+  span: SourceSpan | undefined,
+): string {
+  return formatReplDiagnostic(
+    genericDiagnostic(
+      "error",
+      classifyDiagnostic(message),
+      message,
+      span ? { id: -1, span } : undefined,
+    ),
+    filePath,
+    source,
+  );
+}
+
+function compactDiagnosticMessage(diagnostic: FrontendDiagnostic): string {
+  const violation = diagnostic.failure.violation;
+  if (violation.kind === "contradicted") {
+    const expected = typeSnapshotRendered(diagnostic, violation.observed.left);
+    const actual = typeSnapshotRendered(diagnostic, violation.observed.right);
+    const slot = violation.conflictPath.length
+      ? ` at ${violation.conflictPath.map(formatPathSegment).join(" -> ")}`
+      : "";
+    return truncateReplText(`expected ${expected}, got ${actual}${slot}`);
+  }
+  return truncateReplText(renderViolation(violation));
+}
+
+function truncateReplText(message: string, maxLength = 180): string {
+  const compact = message.replace(/\s+/g, " ").trim();
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1)}…`;
+}
+
+function formatReplExcerpt(source: string, span: SourceSpan): string | undefined {
+  const line = source.split(/\r?\n/)[span.line - 1];
+  if (line === undefined) return undefined;
+  const maxWidth = 100;
+  const windowStart = Math.max(0, Math.min(span.col - 20, line.length - maxWidth));
+  const shown = line.slice(windowStart, windowStart + maxWidth);
+  const prefix = windowStart > 0 ? "…" : "";
+  const suffix = windowStart + maxWidth < line.length ? "…" : "";
+  const display = `${prefix}${shown}${suffix}`;
+  const caretColumn = prefix.length + Math.max(0, span.col - windowStart);
+  const available = Math.max(1, display.length - caretColumn);
+  const width = Math.max(1, Math.min(20, span.end - span.start, available));
+  const gutter = `${span.line} | `;
+  return `${gutter}${display}\n${" ".repeat(gutter.length + caretColumn)}${"^".repeat(width)}`;
+}
+
 export function formatDiagnosticEvidence(
   diagnostic: FrontendDiagnostic,
   filePath: string | undefined,

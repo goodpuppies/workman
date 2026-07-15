@@ -35,6 +35,16 @@
     };
   }
   function mod(decls, loc) { return at({ kind: "Module", decls }, loc); }
+  function topExpression(expr, loc) {
+    const pattern = at({ kind: "PVar", name: "it" }, loc);
+    const binding = at({ pattern, value: expr }, loc);
+    return at({
+      kind: "LetDecl",
+      exported: true,
+      recursive: false,
+      bindings: [binding],
+    }, loc);
+  }
   function asCtor(expr) {
     if (expr.kind !== "TName" || expr.name.includes(".")) {
       throw new Error("variant members must be constructor names");
@@ -134,7 +144,9 @@
 
 Start = &{ nextNodeId = 0; nextLiftId = 0; return true; } _ decls:(_ d:TopPhrase { return d; })* _ EOF { return mod(decls, location()); }
 
-TopPhrase = d:TopDecl _ ";" { return d; }
+TopPhrase
+  = d:TopDecl _ ";" { return d; }
+  / e:Expr _ ";" { return topExpression(e, location()); }
 
 TopDecl = JsImportDecl / ImportDecl / RecordDecl / TypeDecl / LetDecl
 
