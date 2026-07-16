@@ -65,7 +65,7 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     throw new Error("missing compiler-owned Gpu basis types");
   }
 
-  const color = named(colorInfo);
+  const rgba = tuple([NumberTy, NumberTy, NumberTy, NumberTy]);
   const fragment = named(fragmentInfo);
   const basisFn = (
     name: string,
@@ -86,13 +86,13 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     "Gpu.color",
     GPU_SEMANTIC_IDS.color,
     [],
-    fn([tuple([NumberTy, NumberTy, NumberTy, NumberTy])], color),
+    fn([rgba], rgba),
   );
   basisFn(
     "Gpu.fragment",
     GPU_SEMANTIC_IDS.fragment,
     [],
-    fn([fn([tuple([NumberTy, NumberTy])], color)], fragment),
+    fn([fn([tuple([NumberTy, NumberTy])], rgba)], fragment),
   );
   basisFn("Gpu.i32", GPU_SEMANTIC_IDS.i32, [], fn([NumberTy], NumberTy));
   basisFn("Gpu.f32", GPU_SEMANTIC_IDS.f32, [], fn([NumberTy], NumberTy));

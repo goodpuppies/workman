@@ -2,12 +2,26 @@ import type { ProgramAnalysis } from "../program_analysis.ts";
 import type { MaterializedGpuArtifacts, VisualShaderArtifactV1 } from "../gpu_artifact.ts";
 import type { GpuSliceDiagnosticDto } from "./v2_dto.ts";
 import type { WmslangSliceCompiler } from "./v2_loader.ts";
-import type { WmslangSlangBackend } from "./slang_backend.ts";
+import { WmslangBackendError, type WmslangSlangBackend } from "./slang_backend.ts";
+import {
+  formatResolvedGpuDiagnostic,
+  resolveGpuSliceDiagnostic,
+  type WmslangResolvedDiagnostic,
+} from "./diagnostics.ts";
 
 export class WmslangSemanticError extends Error {
-  constructor(readonly diagnostics: GpuSliceDiagnosticDto[]) {
-    super(diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join("\n"));
+  readonly sourceDiagnostics: WmslangResolvedDiagnostic[];
+
+  constructor(
+    readonly diagnostics: GpuSliceDiagnosticDto[],
+    spans: ProgramAnalysis["gpuInput"]["spans"],
+  ) {
+    const sourceDiagnostics = diagnostics.map((diagnostic) =>
+      resolveGpuSliceDiagnostic(diagnostic, spans)
+    );
+    super(sourceDiagnostics.map(formatResolvedGpuDiagnostic).join("\n"));
     this.name = "WmslangSemanticError";
+    this.sourceDiagnostics = sourceDiagnostics;
   }
 }
 
@@ -24,9 +38,27 @@ export async function materializeGpuSliceArtifacts(
 
   const lowered = compiler.compileGpuSlice(analysis.gpuInput);
   if (lowered.diagnostics.length !== 0) {
-    throw new WmslangSemanticError(lowered.diagnostics);
+    throw new WmslangSemanticError(lowered.diagnostics, analysis.gpuInput.spans);
   }
-  const compiled = backend.compile(lowered.slangSource);
+  let compiled: ReturnType<WmslangSlangBackend["compile"]>;
+  try {
+    compiled = backend.compile(lowered.slangSource);
+  } catch (error) {
+    if (!(error instanceof WmslangBackendError)) throw error;
+    const root = analysis.gpuInput.functions.find((fn) =>
+      fn.id === analysis.gpuInput.root.functionId
+    );
+    if (!root) throw new Error("selected GPU root is missing during backend attribution");
+    const diagnostic: GpuSliceDiagnosticDto = {
+      code: error.code,
+      message: error.message,
+      spanId: analysis.gpuInput.root.selectorSpanId,
+      related: [{ spanId: root.spanId, label: `selected shader root ${root.name}` }],
+    };
+    throw error.withSourceDiagnostic(
+      resolveGpuSliceDiagnostic(diagnostic, analysis.gpuInput.spans),
+    );
+  }
   const artifact: VisualShaderArtifactV1 = {
     id: `wms-v1-${await artifactDigest(compiled.wgsl)}`,
     wgsl: compiled.wgsl,

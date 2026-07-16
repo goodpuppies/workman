@@ -67,7 +67,8 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
     case "Var": {
       const scheme = env.get(expr.name);
       if (!scheme) {
-        t = inferDottedVar(expr.name, env, typeEnv);
+        t = context.dialect.inferProjection?.(expr, context) ??
+          inferDottedVar(expr.name, env, typeEnv);
         break;
       }
       t = instantiate(scheme);

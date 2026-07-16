@@ -1,9 +1,9 @@
 # wmslang implementation plan
 
-Status: broad architecture and post-v1 direction. The current implementation target is the thin
-static-fragment vertical slice in [`v1-scope.md`](./v1-scope.md); where this plan proposes more
-language, analysis, resource, diagnostic, packaging, or target breadth, the v1 scope takes
-precedence.
+Status: broad architecture and post-v2 direction. The static fragment slice in
+[`v1-scope.md`](./v1-scope.md) and the narrow pure-result, numeric-tuple-vector, and diagnostic
+attribution slice in [`v2-scope.md`](./v2-scope.md) are implemented. Where this plan proposes more language,
+analysis, resource, diagnostic, packaging, or target breadth, that v2 scope takes precedence.
 
 V1 is intentionally not a production-complete visual release. It fixes all shader numbers to `f32`,
 permits no captures or uniforms, compiles one same-module monomorphic call graph, and proves
@@ -68,6 +68,11 @@ complete protocol.
 
 The ordered implementation handoff and H0 incompatibility audit are in
 [`v1-readiness.md`](./v1-readiness.md).
+
+The first post-v1 ergonomic slice is specified in [`v2-scope.md`](./v2-scope.md). It makes fragment
+color an ordinary pure four-tuple result, carries homogeneous numeric tuple vectors through the
+production IR, adds scalar/vector broadcast, and owns the related-span/backend-attribution
+diagnostic work deliberately left outside v1 completion.
 
 The supporting collection design in [`compiler-collections.md`](./compiler-collections.md) specifies
 a small comparator-based persistent AVL map in Workman `std`. It supplies the scope-preserving,
@@ -813,8 +818,9 @@ Exit criterion: H1 produces a complete typed shader IR and deterministic generat
 
 ### Phase 3: Slang backend service
 
-- Bundle a pinned `slang-wasm` toolchain artifact for Deno compiler use; do not require a native
-  install, CDN, or network access during compilation.
+- Load the pinned official `slang-wasm` release without requiring a native install. The current
+  backend downloads its integrity-checked release archive once into Deno's persistent Cache Storage;
+  later compiler processes work from that cache without network access.
 - Record the upstream commit/build recipe and hashes for all bundled assets, and verify
   `getVersionString()` plus WGSL target availability at startup. The research checkouts do not
   currently contain the required WASM artifacts.
@@ -990,7 +996,7 @@ stage-record catalog, storage/texture resource helpers, matrices, mutual tail re
 packaging, and additional target capabilities. None changes the initial compiler ownership, type
 boundary, IR sequence, or execution semantics.
 
-Implementation is paused at the v1 scoping boundary. When it resumes, follow the ordered release
-gates in [`v1-scope.md`](./v1-scope.md) and the exact fixtures in
-[`v1-acceptance.md`](./v1-acceptance.md), beginning with the selected-program schema, direct `f32`
-mapping, restricted ADT identity, and tail-call lowering.
+The v1 release gates in [`v1-scope.md`](./v1-scope.md) and fixtures in
+[`v1-acceptance.md`](./v1-acceptance.md) are implemented. Continue with the ordered ergonomic gates
+in [`v2-scope.md`](./v2-scope.md) before beginning explicit uniforms or broader GLML-style coercion,
+specialization, and optimization work.

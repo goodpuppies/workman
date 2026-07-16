@@ -43,6 +43,27 @@ let payloadFieldName = (id) => { "wm_p_" ++ text(id) };
 let recursiveResultName = (id) => { "wm_result_" ++ text(id) };
 let recursiveDoneName = (id) => { "wm_done_" ++ text(id) };
 
+let rec listLength = match(items, count) => {
+  ([], Var(count)) => { count },
+  ([Var(_item), ..rest], Var(count)) => { listLength(rest, count + 1) }
+};
+
+let vectorName = (gpuType: GpuSliceTypeDto) => {
+  "float" ++ text(listLength(Js.Array.toList(gpuType.items), 0))
+};
+
+let vectorLaneName = (index: Number) => {
+  if (numberEqual(index, 0)) {
+    "x"
+  } else {
+    if (numberEqual(index, 1)) {
+      "y"
+    } else {
+      if (numberEqual(index, 2)) { "z" } else { "w" }
+    }
+  }
+};
+
 let rec findType = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission type") },
   ([Var(item), ..rest], Var(id)) => {
@@ -152,8 +173,8 @@ let typeName = (typeId, context: SliceEmitContext) => {
       if (gpuType.kind == "void") {
         "void"
       } else {
-        if (gpuType.kind == "color") {
-          "float4"
+        if (gpuType.kind == "vector") {
+          vectorName(gpuType)
         } else {
           if (gpuType.kind == "tuple") {
             tupleName(typeId)
@@ -359,28 +380,33 @@ let operatorText = (operatorId) => {
   }
 };
 
-let rec emitColorItems = match(index, count, tupleText, output) => {
-  (Var(index), Var(count), Var(tupleText), Var(output)) => {
-    if (numberEqual(index, count)) {
-      output
-    } else {
-      let item = tupleText ++ "." ++ tupleFieldName(index);
-      let next = if (output == "") { item } else { output ++ ", " ++ item };
-      emitColorItems(index + 1, count, tupleText, next)
-    }
-  }
-};
-
 let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitContext) => {
   let args = Js.Array.toList(operation.args);
   if (operation.kind == "copy") {
     emitArgs(args, context, "")
   } else {
     if (operation.kind == "tuple") {
-      tupleFactoryName(operation.typeId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+      let resultType = findType(context.types, operation.typeId);
+      let constructor = if (resultType.kind == "vector") {
+        vectorName(resultType)
+      } else {
+        tupleFactoryName(operation.typeId)
+      };
+      constructor ++ "(" ++ emitArgs(args, context, "") ++ ")"
     } else {
       if (operation.kind == "project") {
-        emitArgs(args, context, "") ++ "." ++ tupleFieldName(operation.index)
+        match(args) {
+          [Var(atomId)] => {
+            let atom = findAtom(context.atoms, atomId);
+            let sourceType = findType(context.types, atom.typeId);
+            if (sourceType.kind == "vector") {
+              emitAtom(atomId, context) ++ "." ++ vectorLaneName(operation.index)
+            } else {
+              emitAtom(atomId, context) ++ "." ++ tupleFieldName(operation.index)
+            }
+          },
+          _ => { Panic("projection reached Slang emission with invalid arity") }
+        }
       } else {
         if (operation.kind == "call") {
           functionName(operation.targetFunctionId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
@@ -391,20 +417,15 @@ let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitC
             if (operation.kind == "payload") {
               emitArgs(args, context, "") ++ "." ++ payloadFieldName(operation.fieldId)
             } else {
-              if (operation.kind == "color") {
-                let tupleText = emitArgs(args, context, "");
-                "float4(" ++ emitColorItems(0, 4, tupleText, "") ++ ")"
-              } else {
-                match(args) {
-                  [Var(left)] => {
-                    "(" ++ operatorText(operation.operatorId) ++ emitAtom(left, context) ++ ")"
-                  },
-                  [Var(left), Var(right)] => {
-                    "(" ++ emitAtom(left, context) ++ " " ++ operatorText(operation.operatorId) ++
-                      " " ++ emitAtom(right, context) ++ ")"
-                  },
-                  _ => { Panic("operator reached Slang emission with invalid arity") }
-                }
+              match(args) {
+                [Var(left)] => {
+                  "(" ++ operatorText(operation.operatorId) ++ emitAtom(left, context) ++ ")"
+                },
+                [Var(left), Var(right)] => {
+                  "(" ++ emitAtom(left, context) ++ " " ++ operatorText(operation.operatorId) ++
+                    " " ++ emitAtom(right, context) ++ ")"
+                },
+                _ => { Panic("operator reached Slang emission with invalid arity") }
               }
             }
           }
@@ -588,7 +609,7 @@ let emitWrappers = (context: SliceEmitContext) => {
         "}\n\n" ++
         "[shader(\"fragment\")]\n" ++
         "float4 wm_fragment(float4 position : SV_Position) : SV_Target {\n" ++
-        "  return " ++ functionName(root.functionId) ++ "(" ++ tupleFactoryName(coordLocal.typeId) ++
+        "  return " ++ functionName(root.functionId) ++ "(" ++ typeName(coordLocal.typeId, context) ++
         "(position.x, position.y));\n" ++
         "}\n"
     },
@@ -623,7 +644,7 @@ let emitSliceSlang = (
     cases = Js.Array.toList(cases),
     recursiveFunctionId = -1,
   };
-  "// Generated by wmslang visual v1.\n\n" ++
+  "// Generated by wmslang visual v2.\n\n" ++
     emitTupleDeclarations(context.types, context, "") ++
     emitLayoutDeclarations(context.layouts, context, "") ++
     emitFunctions(context.functions, context, "") ++

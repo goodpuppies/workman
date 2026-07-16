@@ -157,6 +157,31 @@ Deno.test("typing dialect enters @gpu scope and ordinary nested lambdas inherit 
 
 Deno.test("GPU dialect owns tuple-vector arithmetic without changing the host unifier", async () => {
   await checkSource("let scale = (x) => { @gpu; (x, x, x) * 0.5 };");
+  await checkSource("let scale = (uv) => { @gpu; uv * 2.0 - (1280.0, 720.0) };");
+  await checkSource(`
+    let shade = (coord) => { @gpu; (coord.y, 0.0, 0.0, 1.0) };
+    let fragment = Gpu.fragment(shade);
+  `);
+  await assertRejects(
+    () => checkSource("let bad = () => { @gpu; let v = (1.0, 2.0); v.z };"),
+    Error,
+    "has no field z",
+  );
+  await assertRejects(
+    () => checkSource("let bad = () => { let v = (1.0, 2.0); v.y };"),
+    Error,
+    "has no field y",
+  );
+  await assertRejects(
+    () => checkSource("let bad = () => { @gpu; (1.0, 2.0) + (3.0, 4.0, 5.0) };"),
+    Error,
+    "type mismatch",
+  );
+  await assertRejects(
+    () => checkSource("let scale = (x) => { @gpu; x * 0.5 }; let bad = scale(true);"),
+    Error,
+    "GPU arithmetic expects a Number",
+  );
   await assertRejects(
     () => checkSource("let scale = (x) => { (x, x, x) * 0.5 };"),
     Error,

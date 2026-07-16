@@ -33,18 +33,19 @@ let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
 let mandelbrotShade = (coord) => {
   @gpu;
 
-  let (x, y) = coord;
-  let cx = (2.0 * x - 960.0) / 480.0 - 0.5;
-  let cy = (2.0 * y - 640.0) / 480.0;
+  let resolution = (960.0, 640.0);
+  let c = (coord * 2.0 - resolution) / resolution.y;
+  let (normalizedX, cy) = c;
+  let cx = normalizedX - 0.5;
   let escape = escapeIterations(cx, cy, 0.0, 0.0, 128.0);
 
   match(escape) {
     Inside => {
-      Gpu.color((0.015, 0.02, 0.04, 1.0))
+      (0.015, 0.02, 0.04, 1.0)
     },
     Escaped(remaining) => {
       let amount = remaining / 128.0;
-      Gpu.color((amount, 0.18 * amount, 1.0 - amount, 1.0))
+      (amount, 0.18 * amount, 1.0 - amount, 1.0)
     }
   }
 };

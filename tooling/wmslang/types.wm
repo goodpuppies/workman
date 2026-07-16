@@ -302,6 +302,7 @@ record GpuSliceExprDto = {
   operatorId: String,
   numberValue: Number,
   boolValue: Bool,
+  index: Number,
   children: Js.Array<Number>,
 };
 
@@ -357,10 +358,16 @@ record GpuSliceElaborationInputDto = {
   spans: Js.Array<GpuSliceSpanDto>,
 };
 
+record GpuSliceDiagnosticRelatedDto = {
+  spanId: Number,
+  label: String,
+};
+
 record GpuSliceDiagnosticDto = {
   code: String,
   message: String,
   spanId: Number,
+  related: Js.Array<GpuSliceDiagnosticRelatedDto>,
 };
 
 record GpuSliceIrExprDto = {
@@ -378,6 +385,7 @@ record GpuSliceIrExprDto = {
   operatorId: String,
   numberValue: Number,
   boolValue: Bool,
+  index: Number,
   children: Js.Array<Number>,
   armIds: Js.Array<Number>,
 };

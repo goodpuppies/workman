@@ -14,7 +14,7 @@ export type GpuSliceSpanDto = {
 
 export type GpuSliceTypeDto = {
   id: number;
-  kind: "f32" | "bool" | "void" | "tuple" | "function" | "adt" | "color";
+  kind: "f32" | "bool" | "void" | "vector" | "tuple" | "function" | "adt";
   typeNameId: number;
   items: number[];
   params: number[];
@@ -101,10 +101,11 @@ export type GpuSliceExprDto = {
     | "bool"
     | "void"
     | "var"
+    | "project"
+    | "copy"
     | "tuple"
     | "call"
     | "constructor"
-    | "color"
     | "if"
     | "match"
     | "block"
@@ -119,6 +120,7 @@ export type GpuSliceExprDto = {
   operatorId: "" | GpuOperatorId;
   numberValue: number;
   boolValue: boolean;
+  index: number;
   children: number[];
 };
 
@@ -178,6 +180,12 @@ export type GpuSliceDiagnosticDto = {
   code: string;
   message: string;
   spanId: number;
+  related: GpuSliceDiagnosticRelatedDto[];
+};
+
+export type GpuSliceDiagnosticRelatedDto = {
+  spanId: number;
+  label: string;
 };
 
 export type GpuSliceIrExprDto = {
@@ -189,10 +197,11 @@ export type GpuSliceIrExprDto = {
     | "bool"
     | "void"
     | "local"
+    | "project"
+    | "copy"
     | "tuple"
     | "call"
     | "constructor"
-    | "color"
     | "if"
     | "match"
     | "let"
@@ -210,6 +219,7 @@ export type GpuSliceIrExprDto = {
   operatorId: "" | GpuOperatorId;
   numberValue: number;
   boolValue: boolean;
+  index: number;
   children: number[];
   armIds: number[];
 };
@@ -281,7 +291,6 @@ export type GpuSliceLoweredOperationDto = {
     | "project"
     | "call"
     | "construct"
-    | "color"
     | "binary"
     | "unary"
     | "payload";

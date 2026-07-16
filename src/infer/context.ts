@@ -6,6 +6,10 @@ import type { TypeFacts } from "./type_facts.ts";
 
 export type TypingDialect = {
   domain: "host" | "gpu";
+  inferProjection?(
+    expr: Extract<Expr, { kind: "Var" }>,
+    context: InferContext,
+  ): Ty | undefined;
   inferBinary?(
     expr: Extract<Expr, { kind: "Binary" }>,
     left: Ty,

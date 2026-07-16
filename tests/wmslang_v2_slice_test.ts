@@ -9,6 +9,7 @@ import {
   GpuSliceNormalizationError,
   normalizeGpuSliceProgram,
 } from "../src/wmslang/v2_normalize.ts";
+import { WmslangSemanticError } from "../src/wmslang/materialize.ts";
 
 Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () => {
   const source = await acceptanceBlock("static_mandelbrot.wm");
@@ -43,17 +44,17 @@ Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () 
   );
   assertEquals(input.types[0].kind, "f32");
   assertEquals(input.types.some((type) => type.kind === "adt"), true);
-  assertEquals(input.types.some((type) => type.kind === "color"), true);
+  assertEquals(input.types.some((type) => type.kind === "vector"), true);
   assertEquals(
     input.types.some((type) =>
       !new Set([
         "f32",
         "bool",
         "void",
+        "vector",
         "tuple",
         "function",
         "adt",
-        "color",
       ]).has(type.kind)
     ),
     false,
@@ -67,18 +68,13 @@ Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () 
       "tuple",
       "call",
       "constructor",
-      "color",
       "if",
       "match",
       "block",
       "binary",
     ]),
   );
-  assertEquals(input.expressions.filter((expr) => expr.kind === "color").length, 2);
-  assertEquals(
-    input.expressions.every((expr) => expr.semanticId === "gpu.color" || expr.semanticId === ""),
-    true,
-  );
+  assertEquals(input.expressions.every((expr) => expr.semanticId === ""), true);
   assertEquals(
     input.expressions.every((expr) =>
       expr.operatorId === "" || expr.operatorId.startsWith("gpu.operator.")
@@ -359,6 +355,43 @@ Deno.test("schema v2 emits the deterministic flat-color Slang golden", async () 
   assertEquals(compiler.compileGpuSlice(input).slangSource, golden);
 });
 
+Deno.test("schema v2 lowers GLML-style vector arithmetic and scalar broadcasts", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (uv) => {
+        @gpu;
+        let resolution = (1280.0, 720.0);
+        let centered = (uv * 2.0 - resolution) / resolution.y;
+        let reverse = (2.0 * uv) / resolution.y;
+        let (x, y) = centered + reverse;
+        (x / 1280.0, y / 720.0, 0.0, 1.0)
+      };
+
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+
+  assertEquals(output.diagnostics, []);
+  assertEquals(
+    input.types.filter((type) => type.kind === "vector").map((type) => type.items.length),
+    [
+      2,
+      4,
+    ],
+  );
+  assertEquals(input.expressions.some((expression) => expression.kind === "copy"), false);
+  assertEquals(input.expressions.filter((expression) => expression.kind === "project").length, 2);
+  assertEquals(output.slangSource.includes("float2 wm_f_0"), false);
+  assertEquals(output.slangSource.includes("float4 wm_f_0(float2"), true);
+  assertEquals(output.slangSource.includes(" * float(2)"), true);
+  assertEquals(output.slangSource.includes("float(2) * "), true);
+  assertEquals(output.slangSource.includes(" - "), true);
+  assertEquals(output.slangSource.includes(".x"), true);
+  assertEquals(output.slangSource.includes(".y"), true);
+  assertEquals(output.slangSource.includes("wm_tuple_"), false);
+});
+
 Deno.test("schema v2 IR rejects a direct self-call outside tail position", async () => {
   const input = normalizeGpuSliceProgram(
     await analyzeVirtual(
@@ -375,6 +408,30 @@ Deno.test("schema v2 IR rejects a direct self-call outside tail position", async
   assertEquals(
     output.diagnostics[0].spanId,
     input.recursiveReferences.find((reference) => reference.relation === "self")!.spanId,
+  );
+  assertEquals(output.diagnostics[0].related, [{
+    spanId: input.functions.find((fn) => fn.name === "nonTail")!.spanId,
+    label: "recursive function declared here",
+  }]);
+  const semanticError = new WmslangSemanticError(output.diagnostics, input.spans);
+  assertEquals(semanticError.diagnostics, output.diagnostics);
+  assertEquals(semanticError.sourceDiagnostics[0].primary.id, output.diagnostics[0].spanId);
+  assertEquals(
+    semanticError.sourceDiagnostics[0].related[0].span.id,
+    input.functions.find((fn) => fn.name === "nonTail")!.spanId,
+  );
+  assertEquals(semanticError.message.includes("recursive function declared here"), true);
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        diagnostics: [{
+          ...output.diagnostics[0],
+          related: [{ spanId: 999, label: "missing evidence" }],
+        }],
+      }),
+    Error,
+    "references missing id 999",
   );
   assertEquals(output.irExpressions.some((expression) => expression.kind === "tail-call"), false);
   assertEquals(

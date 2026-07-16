@@ -1,4 +1,3 @@
-import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
 import { GPU_OPERATOR_IDS } from "../gpu_operators.ts";
 import {
   GPU_SLICE_SCHEMA_VERSION,
@@ -6,7 +5,15 @@ import {
   type GpuSliceElaborationInput,
 } from "./v2_dto.ts";
 
-const typeKinds = new Set(["f32", "bool", "void", "tuple", "function", "adt", "color"]);
+const typeKinds = new Set([
+  "f32",
+  "bool",
+  "void",
+  "vector",
+  "tuple",
+  "function",
+  "adt",
+]);
 const patternKinds = new Set(["wildcard", "binding", "tuple", "constructor"]);
 const patternContexts = new Set(["parameter", "let", "match"]);
 const expressionKinds = new Set([
@@ -14,10 +21,11 @@ const expressionKinds = new Set([
   "bool",
   "void",
   "var",
+  "project",
+  "copy",
   "tuple",
   "call",
   "constructor",
-  "color",
   "if",
   "match",
   "block",
@@ -29,10 +37,11 @@ const irExpressionKinds = new Set([
   "bool",
   "void",
   "local",
+  "project",
+  "copy",
   "tuple",
   "call",
   "constructor",
-  "color",
   "if",
   "match",
   "let",
@@ -57,7 +66,6 @@ const loweredOperationKinds = new Set([
   "project",
   "call",
   "construct",
-  "color",
   "binary",
   "unary",
   "payload",
@@ -118,6 +126,15 @@ export function validateGpuSliceCompilationOutput(value: unknown): GpuSliceCompi
     string(diagnostic.code, "GPU slice diagnostic code");
     string(diagnostic.message, "GPU slice diagnostic message");
     spanReference(spanIds, diagnostic.spanId, "GPU slice diagnostic spanId");
+    const related = records(diagnostic.related, "GPU slice diagnostic related anchors");
+    for (const anchor of related) {
+      string(anchor.label, "GPU slice diagnostic related label");
+      integer(anchor.spanId, "GPU slice diagnostic related spanId");
+      spanReference(spanIds, anchor.spanId, "GPU slice diagnostic related spanId");
+      if (anchor.spanId === diagnostic.spanId) {
+        throw new Error("GPU slice diagnostic related span duplicates its primary span");
+      }
+    }
   }
   if (diagnostics.length === 0 && (output.slangSource as string).length === 0) {
     throw new Error("successful GPU slice output has no generated Slang source");
@@ -282,6 +299,7 @@ function validateGpuSliceIr(
         "patternId",
         "targetFunctionId",
         "constructorId",
+        "index",
       ],
       "GPU slice IR expression",
     );
@@ -360,13 +378,14 @@ function validateGpuSliceIr(
     if (expression.kind === "void" && (expression.children as number[]).length !== 0) {
       throw new Error("GPU slice IR void must not execute implicit-statement provenance");
     }
-    if (expression.kind === "color") {
-      if (expression.semanticId !== GPU_SEMANTIC_IDS.color) {
-        throw new Error("GPU slice IR color has the wrong semanticId");
+    if (expression.kind === "project") {
+      if ((expression.index as number) < 0 || (expression.children as number[]).length !== 1) {
+        throw new Error("GPU slice IR projection has an invalid index or arity");
       }
-    } else if (expression.semanticId !== "") {
-      throw new Error("GPU slice IR non-color expression has a semanticId");
+    } else if (expression.index !== -1) {
+      throw new Error("GPU slice IR non-projection expression has an index");
     }
+    if (expression.semanticId !== "") throw new Error("GPU slice IR expression has a semanticId");
     if (expression.kind === "binary" || expression.kind === "unary") {
       enumValue(expression.operatorId, operatorIds, "GPU slice IR expression operatorId");
     } else if (expression.operatorId !== "") {
@@ -403,10 +422,6 @@ function validateGpuSliceLowering(
     "id",
   );
   const sourceParams = byId(program.params as unknown as Record<string, unknown>[], "id");
-  const sourcePatterns = byId(
-    program.patterns as unknown as Record<string, unknown>[],
-    "id",
-  );
   const sourceFunctionIds = new Set(sourceFunctions.keys());
   const sourceTypeIds = new Set(sourceTypes.keys());
   const sourceExpressionIds = new Set(sourceExpressions.keys());
@@ -633,12 +648,8 @@ function validateGpuSliceLowering(
     } else if (operation.operatorId !== "") {
       throw new Error("GPU slice lowered non-operator operation has an operatorId");
     }
-    if (operation.kind === "color") {
-      if (operation.semanticId !== GPU_SEMANTIC_IDS.color) {
-        throw new Error("GPU slice lowered color has the wrong semanticId");
-      }
-    } else if (operation.semanticId !== "") {
-      throw new Error("GPU slice lowered non-color operation has a semanticId");
+    if (operation.semanticId !== "") {
+      throw new Error("GPU slice lowered operation has a semanticId");
     }
     if (operation.kind === "project") {
       if ((operation.index as number) < 0 || (operation.args as number[]).length !== 1) {
@@ -648,7 +659,7 @@ function validateGpuSliceLowering(
       throw new Error("GPU slice lowered non-projection operation has an index");
     }
     if (
-      (operation.kind === "copy" || operation.kind === "payload" || operation.kind === "color") &&
+      (operation.kind === "copy" || operation.kind === "payload") &&
       (operation.args as number[]).length !== 1
     ) throw new Error(`GPU slice lowered ${String(operation.kind)} has the wrong arity`);
   }
@@ -891,6 +902,8 @@ export function validateGpuSliceElaborationInput(
   const constructorsById = byId(constructors, "id");
   const functionsById = byId(functions, "id");
   const patternsById = byId(patterns, "id");
+  const paramsById = byId(params, "id");
+  const typesById = byId(types, "id");
 
   const root = record(input.root, "GPU slice root");
   integer(root.functionId, "GPU slice root functionId");
@@ -924,14 +937,24 @@ export function validateGpuSliceElaborationInput(
     enumValue(type.kind, typeKinds, "GPU slice type kind");
     integerArray(type.items, "GPU slice type items");
     integerArray(type.params, "GPU slice type params");
-    for (const item of type.items as number[]) reference(typeIds, item, "GPU slice tuple item");
+    for (const item of type.items as number[]) reference(typeIds, item, "GPU slice aggregate item");
     for (const param of type.params as number[]) {
       reference(typeIds, param, "GPU slice function param");
     }
     if (type.kind === "tuple") {
       if ((type.items as number[]).length === 0) throw new Error("GPU slice tuple type is empty");
+    } else if (type.kind === "vector") {
+      const vectorItems = type.items as number[];
+      if (vectorItems.length < 2 || vectorItems.length > 4) {
+        throw new Error("GPU slice vector width must be between two and four");
+      }
+      if (
+        vectorItems.some((item) => types.find((candidate) => candidate.id === item)?.kind !== "f32")
+      ) {
+        throw new Error("GPU slice vector components must be f32");
+      }
     } else if ((type.items as number[]).length !== 0) {
-      throw new Error("only GPU slice tuple types may have items");
+      throw new Error("only GPU slice tuple/vector types may have items");
     }
     if (type.kind === "function") {
       reference(typeIds, type.result, "GPU slice function type result");
@@ -939,8 +962,8 @@ export function validateGpuSliceElaborationInput(
       throw new Error("only GPU slice function types may have params/result");
     }
     if (type.kind === "adt") reference(adtIds, type.typeNameId, "GPU slice ADT typeNameId");
-    if (type.kind !== "adt" && type.kind !== "color" && type.typeNameId !== -1) {
-      throw new Error("only GPU slice ADT/color types may carry a typeNameId");
+    if (type.kind !== "adt" && type.typeNameId !== -1) {
+      throw new Error("only GPU slice ADT types may carry a typeNameId");
     }
   }
 
@@ -1084,7 +1107,7 @@ export function validateGpuSliceElaborationInput(
   for (const expression of expressions) {
     integers(
       expression,
-      ["id", "typeId", "bindingId", "functionId", "constructorId"],
+      ["id", "typeId", "bindingId", "functionId", "constructorId", "index"],
       "GPU slice expression",
     );
     enumValue(expression.kind, expressionKinds, "GPU slice expression kind");
@@ -1105,10 +1128,18 @@ export function validateGpuSliceElaborationInput(
       if ((expression.bindingId as number) < 0) throw new Error("GPU slice call has no bindingId");
     } else if (expression.kind === "constructor") {
       reference(constructorIds, expression.constructorId, "GPU slice expression constructorId");
-    } else if (expression.kind === "color") {
-      if (expression.semanticId !== GPU_SEMANTIC_IDS.color) {
-        throw new Error("GPU slice color has the wrong semanticId");
+    } else if (expression.kind === "project") {
+      const children = expression.children as number[];
+      if ((expression.index as number) < 0 || children.length !== 1) {
+        throw new Error("GPU slice projection has an invalid index or arity");
       }
+      const receiver = expressionsById.get(children[0])!;
+      const receiverType = typesById.get(receiver.typeId as number)!;
+      const resultType = typesById.get(expression.typeId as number)!;
+      if (
+        receiverType.kind !== "vector" || resultType.kind !== "f32" ||
+        (expression.index as number) >= (receiverType.items as number[]).length
+      ) throw new Error("GPU slice projection does not select a valid vector lane");
     } else if (expression.kind === "binary" || expression.kind === "unary") {
       enumValue(expression.operatorId, operatorIds, "GPU slice expression operatorId");
     }
@@ -1121,9 +1152,10 @@ export function validateGpuSliceElaborationInput(
     if (expression.kind !== "constructor" && expression.constructorId !== -1) {
       throw new Error("GPU slice non-constructor expression has a constructorId");
     }
-    if (expression.kind !== "color" && expression.semanticId !== "") {
-      throw new Error("GPU slice non-color expression has a semanticId");
+    if (expression.kind !== "project" && expression.index !== -1) {
+      throw new Error("GPU slice non-projection expression has an index");
     }
+    if (expression.semanticId !== "") throw new Error("GPU slice expression has a semanticId");
     if (
       expression.kind !== "binary" && expression.kind !== "unary" && expression.operatorId !== ""
     ) throw new Error("GPU slice non-operator expression has an operatorId");
@@ -1156,6 +1188,21 @@ export function validateGpuSliceElaborationInput(
       reference(recursionGroupIds, fn.recursionGroupId, "GPU slice function recursionGroupId");
     }
     spanReference(spanIds, fn.spanId, "GPU slice function spanId");
+  }
+  if (root.functionId !== -1) {
+    const rootFunction = functionsById.get(root.functionId as number)!;
+    const rootParamIds = rootFunction.paramIds as number[];
+    if (rootParamIds.length !== 1) {
+      throw new Error("GPU fragment root must have exactly one coordinate parameter");
+    }
+    const coordinateType = typesById.get(paramsById.get(rootParamIds[0])!.typeId as number)!;
+    const resultType = typesById.get(rootFunction.resultTypeId as number)!;
+    if (coordinateType.kind !== "vector" || (coordinateType.items as number[]).length !== 2) {
+      throw new Error("GPU fragment coordinate parameter must be a numeric vector of width two");
+    }
+    if (resultType.kind !== "vector" || (resultType.items as number[]).length !== 4) {
+      throw new Error("GPU fragment result must be a numeric vector of width four");
+    }
   }
   for (const expression of expressions) {
     if (expression.kind === "var") {

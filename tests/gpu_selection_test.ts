@@ -155,7 +155,9 @@ Deno.test("fragment selection rejects ordinary and dynamically supplied function
         new Map([[
           "/test/main.wm",
           `
-          let make = (shader: ((Number, Number)) => Gpu.Color) => {
+          let make = (
+            shader: ((Number, Number)) => (Number, Number, Number, Number)
+          ) => {
             Gpu.fragment(shader)
           };
         `,

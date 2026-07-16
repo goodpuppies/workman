@@ -208,6 +208,11 @@ V1 is done when:
 Uniform animation, multiple numeric representations, polished evidence traces, and production
 artifact caching are subsequent vertical slices, not unfinished v1 work.
 
+Related Workman spans for recursion diagnostics and Workman-root attribution for generated
+Slang/backend failures are now explicitly owned by the post-v1 diagnostic step in
+[`v2-scope.md`](./v2-scope.md). V1 retains stable codes and primary span IDs but is not reopened for
+that presentation/evidence extension.
+
 ## Runnable window example
 
 [`examples/wmslang_window/src/main.wm`](../../examples/wmslang_window/src/main.wm) is the direct

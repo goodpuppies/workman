@@ -434,6 +434,8 @@ class SliceNormalizer {
   varExpr(
     expression: Extract<Expr, { kind: "Var" }>,
   ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> {
+    const projection = this.vectorProjectionExpr(expression);
+    if (projection) return projection;
     const constructorId = this.constructorId(expression);
     if (constructorId >= 0) {
       const constructor = this.addConstructor(constructorId as CtorId);
@@ -468,7 +470,48 @@ class SliceNormalizer {
         `wmslang v1 does not capture ${expression.name}`,
       );
     }
+    if (expression.name.includes(".")) {
+      throw this.error(
+        "gpu.expression.unsupported",
+        expression,
+        `GPU dotted value ${expression.name} is not a supported vector projection`,
+      );
+    }
     return baseExpr("var", { bindingId });
+  }
+
+  vectorProjectionExpr(
+    expression: Extract<Expr, { kind: "Var" }>,
+  ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> | undefined {
+    const parts = expression.name.split(".");
+    if (parts.length !== 2) return undefined;
+    const index = ({ x: 0, y: 1, z: 2, w: 3 } as const)[
+      parts[1] as "x" | "y" | "z" | "w"
+    ];
+    if (index === undefined) return undefined;
+    const bindingId = this.bindings.references.get(expression);
+    if (bindingId === undefined || !this.#allowedValueBindings.has(bindingId)) return undefined;
+    const binding = this.analysis.patternFacts.patterns.find((fact) =>
+      fact.bindingId === bindingId
+    );
+    if (!binding) return undefined;
+    const receiver = prune(binding.type);
+    if (
+      receiver.tag !== "tuple" || receiver.items.length < 2 || receiver.items.length > 4 ||
+      index >= receiver.items.length ||
+      receiver.items.some((item) => {
+        const type = prune(item);
+        return type.tag !== "prim" || type.name !== "Number";
+      })
+    ) return undefined;
+    const childId = this.expressions.length;
+    this.expressions.push({
+      id: childId,
+      typeId: this.type(binding.type),
+      spanId: this.span(expression),
+      ...baseExpr("var", { bindingId }),
+    });
+    return baseExpr("project", { index, children: [childId] });
   }
 
   callExpr(
@@ -484,8 +527,7 @@ class SliceNormalizer {
           `${semanticId} is not callable inside the static v1 shader slice`,
         );
       }
-      return baseExpr("color", {
-        semanticId,
+      return baseExpr("copy", {
         children: expression.args.map((argument) => this.expr(argument)),
       });
     }
@@ -682,6 +724,15 @@ class SliceNormalizer {
     }
     if (target.tag === "tuple") {
       const items = target.items.map((item) => this.type(item));
+      if (
+        items.length >= 2 && items.length <= 4 &&
+        items.every((item) => this.types[item]?.kind === "f32")
+      ) {
+        return this.internType(`vector:${items.length}`, () => ({
+          ...baseType("vector"),
+          items,
+        }));
+      }
       return this.internType(`tuple:${items.join(",")}`, () => ({ ...baseType("tuple"), items }));
     }
     if (target.tag === "fn") {
@@ -698,12 +749,6 @@ class SliceNormalizer {
       if (typeNameId === undefined) {
         throw this.typeError(`missing nominal identity for ${target.name}`);
       }
-      if (target.name === "Gpu.Color") {
-        return this.internType(`color:${typeNameId}`, () => ({
-          ...baseType("color"),
-          typeNameId,
-        }));
-      }
       const nominal = this.analysis.nominalFacts.types.find((item) => item.id === typeNameId);
       if (!nominal || nominal.kind !== "adt") {
         throw this.typeError(`named type ${target.name} is outside the v1 ADT slice`);
@@ -719,8 +764,8 @@ class SliceNormalizer {
 
   rootCoordinateType(): number {
     const f32 = this.internType("f32", () => baseType("f32"));
-    return this.internType(`tuple:${f32},${f32}`, () => ({
-      ...baseType("tuple"),
+    return this.internType("vector:2", () => ({
+      ...baseType("vector"),
       items: [f32, f32],
     }));
   }
@@ -939,6 +984,7 @@ function baseExpr(
     operatorId: "",
     numberValue: 0,
     boolValue: false,
+    index: -1,
     children: [],
     ...overrides,
   };

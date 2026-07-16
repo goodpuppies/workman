@@ -4,7 +4,14 @@ import type { CompilerSemanticId } from "./compiler_semantics.ts";
 import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
 
 export type Ty =
-  | { tag: "var"; id: number; name?: string; instance?: Ty; jsConstraint?: (t: Ty) => void }
+  | {
+    tag: "var";
+    id: number;
+    name?: string;
+    instance?: Ty;
+    jsConstraint?: (t: Ty) => void;
+    gpuConstraint?: (t: Ty) => void;
+  }
   | {
     tag: "ffi";
     id: number;
@@ -184,6 +191,10 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
       if (b.tag === "var") addJsConstraint(b, a.jsConstraint);
       else a.jsConstraint(b);
     }
+    if (a.gpuConstraint) {
+      if (b.tag === "var") addGpuConstraint(b, a.gpuConstraint);
+      else a.gpuConstraint(b);
+    }
     onBind?.(a, b, path, "right");
     return;
   }
@@ -192,6 +203,9 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     b.instance = a;
     if (b.jsConstraint) {
       b.jsConstraint(a);
+    }
+    if (b.gpuConstraint) {
+      b.gpuConstraint(a);
     }
     onBind?.(b, a, path, "left");
     return;
@@ -322,6 +336,21 @@ export function addJsConstraint(target: Ty, check: (t: Ty) => void): void {
     : check;
 }
 
+export function addGpuConstraint(target: Ty, check: (t: Ty) => void): void {
+  const t = prune(target);
+  if (t.tag !== "var") {
+    check(t);
+    return;
+  }
+  const previous = t.gpuConstraint;
+  t.gpuConstraint = previous
+    ? (bound) => {
+      previous(bound);
+      check(bound);
+    }
+    : check;
+}
+
 export function solveFfi(ffi: Ty, target: Ty): void {
   const placeholder = prune(ffi);
   if (placeholder.tag !== "ffi") {
@@ -395,9 +424,9 @@ export function ftvEnv(env: Env): Set<number> {
 
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
-  // Variables constrained by a broad Js.Value JS boundary stay monomorphic: the program's
-  // ordinary call sites must determine one concrete JS shape for them.
-  const boundary = jsConstrainedVarIds(type);
+  // Deferred JS-boundary and GPU numeric-shape obligations stay monomorphic so a later ordinary
+  // call or stage boundary resolves the same constrained variable.
+  const boundary = new Set([...jsConstrainedVarIds(type), ...gpuConstrainedVarIds(type)]);
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
   return { vars, type, constraints: [] };
 }
@@ -425,6 +454,25 @@ export function containsUnsolvedJsBoundary(type: Ty): boolean {
   return jsConstrainedVarIds(type).size > 0;
 }
 
+function gpuConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
+  const t = prune(type);
+  if (t.tag === "var") {
+    if (t.gpuConstraint) acc.add(t.id);
+    return acc;
+  }
+  if (t.tag === "fn") {
+    for (const param of t.params) gpuConstrainedVarIds(param, acc);
+    gpuConstrainedVarIds(t.result, acc);
+  } else if (t.tag === "tuple") {
+    for (const item of t.items) gpuConstrainedVarIds(item, acc);
+  } else if (t.tag === "struct") {
+    for (const field of t.fields) gpuConstrainedVarIds(field.type, acc);
+  } else if (t.tag === "named") {
+    for (const arg of t.args) gpuConstrainedVarIds(arg, acc);
+  }
+  return acc;
+}
+
 export function instantiate(scheme: Scheme): Ty {
   const map = new Map<number, Ty>();
   for (const id of scheme.vars) map.set(id, fresh());
@@ -434,6 +482,7 @@ export function instantiate(scheme: Scheme): Ty {
       const mapped = map.get(t.id);
       if (!mapped) return t;
       if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
+      if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
       return mapped;
     }
     if (t.tag === "ffi") {

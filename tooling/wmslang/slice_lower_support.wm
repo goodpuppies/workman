@@ -280,7 +280,7 @@ let baseOperation = (
     fieldId = -1,
     operatorId = expression.operatorId,
     semanticId = expression.semanticId,
-    index = -1,
+    index = expression.index,
     args = Js.Array.fromList([]),
   };
   operation

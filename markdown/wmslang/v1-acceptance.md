@@ -1,10 +1,12 @@
-# wmslang v1 acceptance slice
+# wmslang visual acceptance slice
 
-Status: executable specification for the vertical slice in [`v1-scope.md`](./v1-scope.md).
+Status: the executable v1 vertical-slice fixtures, migrated to the pure-result surface and vector
+representation introduced by [`v2-scope.md`](./v2-scope.md). The original nominal-color contract
+remains documented historically in [`v1-scope.md`](./v1-scope.md).
 
-The positive programs use current Workman syntax and compiler-owned names from
-[`v1-basis.md`](./v1-basis.md). They must parse and pass ordinary Workman HM inference before GPU
-capability/lowering begins. Tests must not prepend authored mock `Gpu` definitions.
+The positive programs use current Workman syntax and the compiler-owned fragment selector. They
+must parse and pass ordinary Workman HM inference before GPU capability/lowering begins. Tests must
+not prepend authored mock `Gpu` definitions.
 
 ## A1: `flat_color.wm`
 
@@ -14,7 +16,7 @@ This is the smallest end-to-end compiler/backend/artifact smoke test.
 let flatShade = (_coord) => {
   @gpu;
 
-  Gpu.color((1.0, 0.0, 0.0, 1.0))
+  (1.0, 0.0, 0.0, 1.0)
 };
 
 let flatFragment = Gpu.fragment(flatShade);
@@ -65,11 +67,11 @@ let mandelbrotShade = (coord) => {
 
   match(escape) {
     Inside => {
-      Gpu.color((0.0, 0.0, 0.0, 1.0))
+      (0.0, 0.0, 0.0, 1.0)
     },
     Escaped(remaining) => {
       let amount = remaining / 96.0;
-      Gpu.color((amount, 0.25 * amount, 1.0 - amount, 1.0))
+      (amount, 0.25 * amount, 1.0 - amount, 1.0)
     }
   }
 };
@@ -126,7 +128,7 @@ let illegalFragment = Gpu.fragment((coord) => {
   @gpu;
 
   let (x, _y) = coord;
-  Gpu.color((nonTail(x), 0.0, 0.0, 1.0))
+  (nonTail(x), 0.0, 0.0, 1.0)
 });
 ```
 
@@ -141,7 +143,7 @@ let makeIllegal = (hostValue) => {
   let fragment = Gpu.fragment((_coord) => {
     @gpu;
 
-    Gpu.color((hostValue, 0.0, 0.0, 1.0))
+    (hostValue, 0.0, 0.0, 1.0)
   });
 
   fragment

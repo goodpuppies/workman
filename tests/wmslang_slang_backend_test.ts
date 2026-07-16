@@ -1,10 +1,13 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { compileVirtual, coreVirtual } from "../src/compiler.ts";
+import { analyzeVirtual, compileVirtual, coreVirtual } from "../src/compiler.ts";
 import { emitCoreProgram } from "../src/core/emit_js.ts";
 import {
   loadDefaultWmslangSlangBackend,
   WmslangBackendError,
+  type WmslangSlangBackend,
 } from "../src/wmslang/slang_backend.ts";
+import { materializeGpuSliceArtifacts } from "../src/wmslang/materialize.ts";
+import type { WmslangSliceCompiler } from "../src/wmslang/v2_loader.ts";
 
 Deno.test("bundled Slang compiles the generated Mandelbrot module to whole-program WGSL", async () => {
   const compiled = await coreVirtual(
@@ -47,7 +50,7 @@ Deno.test("bundled Slang failures retain generated source and backend diagnostic
   const invalid = '[shader("fragment")] float4 nope( : SV_Target {';
 
   await assertRejects(
-    async () => backend.compile(invalid),
+    async () => await Promise.resolve(backend.compile(invalid)),
     WmslangBackendError,
     "load generated module",
   );
@@ -58,6 +61,44 @@ Deno.test("bundled Slang failures retain generated source and backend diagnostic
     assertEquals((error as WmslangBackendError).slangSource, invalid);
     assertStringIncludes((error as WmslangBackendError).backendDiagnostic, "/wmslang-v1.slang");
   }
+});
+
+Deno.test("materialization attributes backend failures to the selector and shader root", async () => {
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", await acceptanceBlock("flat_color.wm")]]),
+  );
+  const backendError = new WmslangBackendError(
+    "Slang could not load generated module",
+    "broken generated source",
+    "/wmslang-v2.slang:1: error: expected declaration",
+  );
+  const compiler = {
+    compileGpuSlice: () => ({ diagnostics: [], slangSource: "broken generated source" }),
+  } as unknown as WmslangSliceCompiler;
+  const backend = {
+    compile: () => {
+      throw backendError;
+    },
+  } as unknown as WmslangSlangBackend;
+
+  await assertRejects(
+    () => materializeGpuSliceArtifacts(analysis, compiler, backend),
+    WmslangBackendError,
+    "load generated module",
+  );
+  const sourceDiagnostic = backendError.sourceDiagnostic!;
+  const root = analysis.gpuInput.functions.find((fn) =>
+    fn.id === analysis.gpuInput.root.functionId
+  )!;
+  assertEquals(sourceDiagnostic.diagnostic.code, "gpu.backend.compile");
+  assertEquals(sourceDiagnostic.primary.id, analysis.gpuInput.root.selectorSpanId);
+  assertEquals(sourceDiagnostic.related, [{
+    label: `selected shader root ${root.name}`,
+    span: analysis.gpuInput.spans.find((span) => span.id === root.spanId)!,
+  }]);
+  assertStringIncludes(backendError.message, `selected shader root ${root.name}`);
+  assertStringIncludes(backendError.message, "/test/main.wm:");
 });
 
 Deno.test("completed fragment accessors execute through the minimal host descriptor", async () => {

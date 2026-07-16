@@ -1,5 +1,6 @@
 import createSlangModule from "./vendor/slang-wasm.js";
 import type { MainModule } from "./vendor/slang-wasm.d.ts";
+import { formatResolvedGpuDiagnostic, type WmslangResolvedDiagnostic } from "./diagnostics.ts";
 
 const SLANG_RELEASE_VERSION = "2026.13.1";
 const SLANG_RELEASE_URL =
@@ -25,13 +26,22 @@ export type WmslangBackendArtifact = {
 };
 
 export class WmslangBackendError extends Error {
+  sourceDiagnostic?: WmslangResolvedDiagnostic;
+
   constructor(
     message: string,
     readonly slangSource: string,
     readonly backendDiagnostic: string,
+    readonly code = "gpu.backend.compile",
   ) {
     super(message);
     this.name = "WmslangBackendError";
+  }
+
+  withSourceDiagnostic(diagnostic: WmslangResolvedDiagnostic): this {
+    this.sourceDiagnostic = diagnostic;
+    this.message = `${this.message}\n${formatResolvedGpuDiagnostic(diagnostic)}`;
+    return this;
   }
 }
 

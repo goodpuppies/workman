@@ -4,6 +4,7 @@ from "./types.wm" import {
   GpuSliceBlockItemDto,
   GpuSliceCompilationOutputDto,
   GpuSliceDiagnosticDto,
+  GpuSliceDiagnosticRelatedDto,
   GpuSliceElaborationInputDto,
   GpuSliceExprDto,
   GpuSliceFunctionDto,
@@ -32,6 +33,7 @@ record SliceContext = {
   patterns: List<GpuSlicePatternDto>,
   types: List<GpuSliceTypeDto>,
   adts: List<GpuSliceAdtDto>,
+  functions: List<GpuSliceFunctionDto>,
 };
 
 record SliceIrState = {
@@ -143,6 +145,13 @@ let rec findAdt = match(items, typeNameId) => {
   }
 };
 
+let rec findFunction = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 function") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findFunction(rest, id) }
+  }
+};
+
 let initialState = () => {
   let state: SliceIrState = .{
     nextExpressionId = 0,
@@ -176,6 +185,7 @@ let baseIrExpression = (
     operatorId = source.operatorId,
     numberValue = source.numberValue,
     boolValue = source.boolValue,
+    index = source.index,
     children = Js.Array.fromList([]),
     armIds = Js.Array.fromList([]),
   };
@@ -199,11 +209,16 @@ let addDiagnostic = (diagnostic: GpuSliceDiagnosticDto, state: SliceIrState) => 
   next
 };
 
-let nonTailDiagnostic = (source: GpuSliceExprDto) => {
+let nonTailDiagnostic = (source: GpuSliceExprDto, fn: GpuSliceFunctionDto) => {
+  let declaration: GpuSliceDiagnosticRelatedDto = .{
+    spanId = fn.spanId,
+    label = "recursive function declared here",
+  };
   let diagnostic: GpuSliceDiagnosticDto = .{
     code = "gpu.recursion.non-tail",
     message = "direct self-recursion is allowed only in function, if, match, or block-result tail position",
     spanId = source.spanId,
+    related = Js.Array.fromList([declaration]),
   };
   diagnostic
 };
@@ -213,6 +228,7 @@ let nonExhaustiveDiagnostic = (source: GpuSliceExprDto) => {
     code = "gpu.pattern.non-exhaustive",
     message = "v1 GPU matches require exactly one arm for every constructor",
     spanId = source.spanId,
+    related = Js.Array.fromList([]),
   };
   diagnostic
 };
@@ -284,7 +300,7 @@ let rec buildExpression = (
           if (source.kind == "var") { "local" } else { source.kind }
         };
         let diagnosed = if (selfCall && !tailPosition) {
-          addDiagnostic(nonTailDiagnostic(source), state)
+          addDiagnostic(nonTailDiagnostic(source, findFunction(context.functions, functionId)), state)
         } else {
           state
         };
@@ -605,6 +621,7 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
     patterns = Js.Array.toList(input.patterns),
     types = Js.Array.toList(input.types),
     adts = Js.Array.toList(input.adts),
+    functions = Js.Array.toList(input.functions),
   };
   let state = buildFunctions(Js.Array.toList(input.functions), context, initialState());
   let layouts: GpuSliceLoweringSeedDto = buildSliceLayouts(input);
