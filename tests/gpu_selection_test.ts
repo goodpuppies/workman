@@ -105,7 +105,11 @@ Deno.test("unselected marked lambdas are candidates, not artifact roots", async 
   );
 
   assertEquals(analysis.fragmentSelections.roots, []);
-  assertEquals(analysis.gpuInput.root, { functionId: -1, selectorSpanId: -1 });
+  assertEquals(analysis.gpuInput.root, {
+    functionId: -1,
+    selectorSpanId: -1,
+    environmentId: -1,
+  });
   assertEquals(analysis.gpuInput.functions, []);
 });
 
@@ -124,7 +128,11 @@ Deno.test("same-spelled imported operation is not a compiler fragment selector",
   );
 
   assertEquals(analysis.fragmentSelections.roots, []);
-  assertEquals(analysis.gpuInput.root, { functionId: -1, selectorSpanId: -1 });
+  assertEquals(analysis.gpuInput.root, {
+    functionId: -1,
+    selectorSpanId: -1,
+    environmentId: -1,
+  });
   const fragmentFacts = [...analysis.results.get("/test/main.wm")!.facts.expressions.values()]
     .filter((fact) => fact.origin?.name === "Gpu.fragment");
   assertEquals(fragmentFacts.map((fact) => [fact.origin?.source, fact.origin?.semanticId]), [

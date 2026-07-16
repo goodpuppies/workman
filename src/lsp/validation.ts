@@ -1,5 +1,9 @@
 import { normalize, resolve } from "node:path";
-import { analyzeFile, ModuleAnalysisError } from "../compiler.ts";
+import {
+  analyzeFile,
+  elaborateGpuTypesForLanguageService,
+  ModuleAnalysisError,
+} from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import {
   classifyDiagnostic,
@@ -14,6 +18,7 @@ import {
 import { structuralDiagnostics } from "../frontend_v2_diagnostics.ts";
 import { type FrontendV2, loadFrontendV2 } from "../frontend_v2_loader.ts";
 import type { InferResult } from "../infer.ts";
+import type { ProgramAnalysis } from "../program_analysis.ts";
 import { runtime } from "../io.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
@@ -45,6 +50,9 @@ export type LspRelatedInformation = {
 export type ValidationOptions = {
   frontendV2ParseCache?: FrontendV2ParseCache;
   documentVersion?: (uri: string) => number | undefined;
+  gpuTypeElaborator?: (
+    analysis: ProgramAnalysis,
+  ) => Promise<unknown>;
 };
 
 export async function validateUri(
@@ -59,6 +67,10 @@ export async function validateUri(
     const frontendV2 = options.frontend === "v2"
       ? await loadFrontendV2(options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl)
       : undefined;
+    const gpuWarning = await unresolvedGpuTypeWarning(
+      analysis,
+      validationOptions.gpuTypeElaborator ?? elaborateGpuTypesForLanguageService,
+    );
     return analysis.graph.order.map((path) => {
       const diagnosticUri = pathToFileUri(path);
       const source = analysis.graph.nodes.get(path)?.source ?? "";
@@ -76,6 +88,7 @@ export async function validateUri(
             source,
             diagnosticUri,
           ),
+          ...(gpuWarning?.path === path ? [gpuWarning.diagnostic] : []),
         ],
       };
     });
@@ -114,6 +127,34 @@ export async function validateUri(
         ),
       ],
     }];
+  }
+}
+
+async function unresolvedGpuTypeWarning(
+  analysis: ProgramAnalysis,
+  elaborate: (analysis: ProgramAnalysis) => Promise<unknown>,
+): Promise<{ path: string; diagnostic: LspDiagnostic } | undefined> {
+  if (analysis.gpuInput.root.functionId === -1) return undefined;
+  try {
+    await elaborate(analysis);
+    return undefined;
+  } catch (error) {
+    const span = analysis.gpuInput.spans.find((candidate) =>
+      candidate.id === analysis.gpuInput.root.selectorSpanId
+    );
+    const path = span?.path ?? analysis.graph.entry;
+    const source = analysis.graph.nodes.get(path)?.source ?? "";
+    return {
+      path,
+      diagnostic: {
+        range: span && source ? spanRange(source, span) : startRange,
+        severity: 2,
+        code: "gpu.type.unresolved",
+        source: "wm-mini",
+        message: `GPU type elaboration is unresolved: ${errorMessage(error)}. ` +
+          'Hover inside this shader will show "unresolved GPU type".',
+      },
+    };
   }
 }
 
@@ -162,7 +203,7 @@ function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[
   return [{
     range: span && source ? spanRange(source, span) : peggyLocationRange(errorLocation(error)),
     severity: 1,
-    code: classifyDiagnostic(message),
+    code: compilerErrorCode(error) ?? classifyDiagnostic(message),
     source: "wm-mini",
     message,
   }];
@@ -210,8 +251,10 @@ function errorLocation(error: unknown): PeggyLocation | undefined {
 }
 
 function errorSpan(error: unknown): SourceSpanLike | undefined {
-  if (!error || typeof error !== "object" || !("span" in error)) return undefined;
-  const span = (error as { span?: unknown }).span;
+  if (!error || typeof error !== "object") return undefined;
+  const direct = "span" in error ? (error as { span?: unknown }).span : undefined;
+  const subject = "subject" in error ? (error as { subject?: unknown }).subject : undefined;
+  const span = direct ?? subjectSpan(subject);
   if (!span || typeof span !== "object") return undefined;
   const candidate = span as Partial<SourceSpanLike>;
   if (
@@ -223,6 +266,19 @@ function errorSpan(error: unknown): SourceSpanLike | undefined {
     return undefined;
   }
   return candidate as SourceSpanLike;
+}
+
+function subjectSpan(subject: unknown): unknown {
+  if (!subject || typeof subject !== "object" || !("node" in subject)) return undefined;
+  const node = (subject as { node?: unknown }).node;
+  if (!node || typeof node !== "object" || !("span" in node)) return undefined;
+  return (node as { span?: unknown }).span;
+}
+
+function compilerErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("code" in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
 }
 
 function isValidRange(range: LspRange): boolean {

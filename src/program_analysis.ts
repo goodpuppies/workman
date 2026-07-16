@@ -55,6 +55,9 @@ export function buildProgramAnalysis(
     fragmentSelections,
   });
   const selectedGpuOnlyBindings = new Set(gpuOnlyBindings);
+  for (const root of fragmentSelections.roots) {
+    if (root.factory) selectedGpuOnlyBindings.add(root.factory.bindingId);
+  }
   for (const fn of gpuInput.functions) {
     if (fn.bindingId >= 0) selectedGpuOnlyBindings.add(fn.bindingId as BindingId);
   }

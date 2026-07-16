@@ -36,6 +36,7 @@ export const GPU_SEMANTIC_IDS = {
   wgsl: "gpu.wgsl",
   vertexEntryPoint: "gpu.vertex-entry-point",
   fragmentEntryPoint: "gpu.fragment-entry-point",
+  artifactIdentity: "gpu.artifact-identity",
   uniformBinding: "gpu.uniform-binding",
   uniformByteLength: "gpu.uniform-byte-length",
   uniformBytes: "gpu.uniform-bytes",

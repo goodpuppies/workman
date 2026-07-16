@@ -139,10 +139,15 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     [],
     fn([fragment], StringTy),
   );
+  basisFn(
+    "Gpu.artifactIdentity",
+    GPU_SEMANTIC_IDS.artifactIdentity,
+    [],
+    fn([fragment], StringTy),
+  );
   addGpuUniformAccessor(
     env,
     fragmentInfo,
-    uniformInfo,
     "Gpu.uniformBinding",
     GPU_SEMANTIC_IDS.uniformBinding,
     NumberTy,
@@ -150,7 +155,6 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
   addGpuUniformAccessor(
     env,
     fragmentInfo,
-    uniformInfo,
     "Gpu.uniformByteLength",
     GPU_SEMANTIC_IDS.uniformByteLength,
     NumberTy,
@@ -158,7 +162,6 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
   addGpuUniformAccessor(
     env,
     fragmentInfo,
-    uniformInfo,
     "Gpu.uniformBytes",
     GPU_SEMANTIC_IDS.uniformBytes,
     named(jsArrayInfo, [NumberTy]),
@@ -168,15 +171,13 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
 function addGpuUniformAccessor(
   env: Env,
   fragmentInfo: TypeInfo,
-  uniformInfo: TypeInfo,
   name: string,
   semanticId: CompilerSemanticId,
   result: Ty,
 ) {
-  const value = fresh("gpuUniformValue") as Extract<Ty, { tag: "var" }>;
   env.set(name, {
-    vars: [value.id],
-    type: fn([tuple([named(fragmentInfo), named(uniformInfo, [value])])], result),
+    vars: [],
+    type: fn([named(fragmentInfo)], result),
     status: "value",
     basis: true,
     semanticId,

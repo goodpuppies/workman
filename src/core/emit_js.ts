@@ -43,6 +43,7 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
       wgsl: artifact.wgsl,
       vertexEntry: artifact.vertexEntry,
       fragmentEntry: artifact.fragmentEntry,
+      uniformLayout: artifact.uniformLayout ?? null,
     };
     return `${JSON.stringify(artifactId)}: ${JSON.stringify(descriptor)}`;
   });
@@ -57,7 +58,43 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
     "const __wm_gpu_wgsl = (artifact) => artifact.wgsl;",
     "const __wm_gpu_vertex_entry_point = (artifact) => artifact.vertexEntry;",
     "const __wm_gpu_fragment_entry_point = (artifact) => artifact.fragmentEntry;",
+    "const __wm_shader_artifact_identities = new WeakMap();",
+    "const __wm_gpu_artifact_identity = (artifact) => {",
+    "  const identity = __wm_shader_artifact_identities.get(artifact);",
+    '  if (!identity) throw new Error("value is not a compiler-produced shader artifact");',
+    "  return identity;",
+    "};",
+    "const __wm_gpu_uniform_binding = (artifact) => artifact.uniformLayout?.binding ?? -1;",
+    "const __wm_gpu_uniform_byte_length = (artifact) => artifact.uniformLayout?.byteLength ?? 0;",
+    "const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? [];",
+    "const __wm_bind_shader_artifact = (artifact, environment) => {",
+    "  const layout = artifact.uniformLayout;",
+    '  if (!layout) throw new Error("static shader artifact cannot bind an environment");',
+    '  if (!environment || typeof environment !== "object" || Array.isArray(environment)) {',
+    '    throw new Error("shader environment must be a nominal record value");',
+    "  }",
+    "  const buffer = new ArrayBuffer(layout.byteLength);",
+    "  const view = new DataView(buffer);",
+    "  for (const field of layout.fields) {",
+    "    const value = environment[field.name];",
+    '    const width = field.representation === "f32" ? 1 : Number(field.representation.slice(4));',
+    "    const values = width === 1 ? [value] : value;",
+    '    if (!Array.isArray(values) || values.length !== width || values.some((item) => typeof item !== "number")) {',
+    '      throw new Error("shader environment field " + field.name + " does not match " + field.representation);',
+    "    }",
+    "    for (let lane = 0; lane < width; lane += 1) {",
+    "      view.setFloat32(field.offset + lane * 4, values[lane], true);",
+    "    }",
+    "  }",
+    "  const uniformBytes = Object.freeze(Array.from(new Uint8Array(buffer)));",
+    "  const bound = Object.freeze({ ...artifact, uniformBytes });",
+    "  __wm_shader_artifact_identities.set(bound, __wm_gpu_artifact_identity(artifact));",
+    "  return bound;",
+    "};",
     `const __wm_shader_artifacts = __wm_deep_freeze_shader_artifact({ ${entries.join(", ")} });`,
+    "for (const [identity, artifact] of Object.entries(__wm_shader_artifacts)) {",
+    "  __wm_shader_artifact_identities.set(artifact, identity);",
+    "}",
   ];
 }
 
@@ -269,7 +306,11 @@ function emitExpr(expr: CoreExpr): string {
     case "CoreVoid":
       return "undefined";
     case "CoreShaderRef":
-      return `__wm_shader_artifacts[${JSON.stringify(expr.artifactId)}]`;
+      return expr.environment
+        ? `__wm_bind_shader_artifact(__wm_shader_artifacts[${JSON.stringify(expr.artifactId)}], ${
+          emitExpr(expr.environment)
+        })`
+        : `__wm_shader_artifacts[${JSON.stringify(expr.artifactId)}]`;
     case "CoreVar": {
       if (expr.bindingId === undefined && expr.ctorId !== undefined) {
         const basisName = basisCtorJsName(expr.ctorId);
@@ -583,6 +624,14 @@ function primitiveName(name: string): string | undefined {
       return "__wm_gpu_vertex_entry_point";
     case "Gpu.fragmentEntryPoint":
       return "__wm_gpu_fragment_entry_point";
+    case "Gpu.artifactIdentity":
+      return "__wm_gpu_artifact_identity";
+    case "Gpu.uniformBinding":
+      return "__wm_gpu_uniform_binding";
+    case "Gpu.uniformByteLength":
+      return "__wm_gpu_uniform_byte_length";
+    case "Gpu.uniformBytes":
+      return "__wm_gpu_uniform_bytes";
     default:
       return undefined;
   }

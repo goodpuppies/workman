@@ -9,7 +9,7 @@ import type {
   RecordExprItem,
   RecordPatternField,
 } from "../ast.ts";
-import { analyzeFile } from "../compiler.ts";
+import { analyzeFile, elaborateGpuTypesForLanguageService } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import {
   contextualizeDelayedCallbacks,
@@ -23,6 +23,12 @@ import { type AstNode, lineColToOffset, lineStarts } from "../source.ts";
 import { standardInferOptions } from "../standard_library.ts";
 import { instantiate, instantiateRecordFields, prune, type Scheme, type Ty } from "../types.ts";
 import type { TypeFact } from "../infer/type_facts.ts";
+import type { ProgramAnalysis } from "../program_analysis.ts";
+import type {
+  GpuSliceOccurrenceTypeDto,
+  GpuSliceShaderTypeDto,
+  GpuSliceTypeElaborationOutput,
+} from "../wmslang/v2_dto.ts";
 import { showHoverType, withoutReceiverParam } from "./hover_type_display.ts";
 import { fileUriToPath } from "./uri.ts";
 
@@ -42,16 +48,33 @@ export async function hoverAt(
   const node = analysis.graph.nodes.get(analysis.graph.entry);
   const result = analysis.results.get(analysis.graph.entry);
   if (!node || !result) return null;
+  const gpu = await gpuHoverContext(analysis);
 
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(node.source));
   for (const target of targetsAt(node.module, node.source, offset)) {
-    const hover = hoverForTarget(target, result);
+    if (
+      (!gpu || gpu.kind === "unresolved") &&
+      (analysis.partial || gpu?.kind === "unresolved") && targetInsideGpu(target, node.module)
+    ) {
+      return unresolvedGpuHover(target);
+    }
+    const hover = hoverForTarget(
+      target,
+      result,
+      gpu?.kind === "resolved" ? gpu.context : undefined,
+    );
     if (hover) return hover;
   }
   return null;
 }
 
-function hoverForTarget(target: Target, result: InferResult): LspHover | null {
+function hoverForTarget(
+  target: Target,
+  result: InferResult,
+  gpu: GpuHoverContext | undefined,
+): LspHover | null {
+  const contextualGpu = gpu ? gpuHoverForTarget(target, gpu) : null;
+  if (contextualGpu) return contextualGpu;
   if (target.kind === "expr") {
     if (
       target.value.kind === "Call" && target.value.callee.kind === "Var" &&
@@ -98,7 +121,7 @@ async function analyzeForHover(
   options: CompilerFrontendOptions = {},
 ): Promise<HoverAnalysis | null> {
   try {
-    return await analyzeFile(entryPath, { ...options, sourceOverrides });
+    return { ...await analyzeFile(entryPath, { ...options, sourceOverrides }), partial: false };
   } catch {
     return await analyzePartialForHover(entryPath, sourceOverrides, options);
   }
@@ -154,13 +177,155 @@ async function analyzePartialForHover(
     } catch {
       // Keep the latest successful results; solved placeholders still show through.
     }
-    return { graph, results };
+    return { graph, results, partial: true };
   } catch {
     return null;
   }
 }
 
-type HoverAnalysis = Pick<Awaited<ReturnType<typeof analyzeFile>>, "graph" | "results">;
+type HoverAnalysis =
+  & Pick<Awaited<ReturnType<typeof analyzeFile>>, "graph" | "results">
+  & Partial<Pick<ProgramAnalysis, "bindings" | "gpuInput">>
+  & { partial: boolean };
+
+type GpuHoverContext = {
+  analysis: ProgramAnalysis;
+  elaboration: GpuSliceTypeElaborationOutput;
+};
+
+type GpuHoverState =
+  | { kind: "resolved"; context: GpuHoverContext }
+  | { kind: "unresolved" };
+
+async function gpuHoverContext(
+  analysis: HoverAnalysis,
+): Promise<GpuHoverState | undefined> {
+  if (!analysis.gpuInput || !analysis.bindings || analysis.gpuInput.root.functionId === -1) {
+    return undefined;
+  }
+  const complete = analysis as unknown as ProgramAnalysis;
+  try {
+    return {
+      kind: "resolved",
+      context: {
+        analysis: complete,
+        elaboration: (await elaborateGpuTypesForLanguageService(complete))!,
+      },
+    };
+  } catch {
+    return { kind: "unresolved" };
+  }
+}
+
+function targetInsideGpu(target: Target, module: Module): boolean {
+  return collectModule(module).some((candidate) =>
+    candidate.kind === "expr" && candidate.value.kind === "Lambda" &&
+    candidate.value.directives.some((directive) => directive.name === "gpu") &&
+    candidate.node.span.start <= target.node.span.start &&
+    target.node.span.end <= candidate.node.span.end
+  );
+}
+
+function unresolvedGpuHover(target: Target): LspHover | null {
+  if (target.kind === "expr") return hoverCode(`${labelExpr(target.value)}: unresolved GPU type`);
+  if (target.kind === "pattern" && target.value.kind === "PVar") {
+    return hoverCode(`${target.value.name}: unresolved GPU type`);
+  }
+  return null;
+}
+
+function gpuHoverForTarget(target: Target, context: GpuHoverContext): LspHover | null {
+  const { analysis, elaboration } = context;
+  const input = analysis.gpuInput;
+  const span = target.node.span;
+  let occurrence: GpuSliceOccurrenceTypeDto | undefined;
+
+  if (target.kind === "expr" && target.value.kind === "Var") {
+    const bindingId = analysis.bindings.get(analysis.graph.entry)?.references.get(target.value);
+    const fn = input.functions.find((candidate) => candidate.bindingId === bindingId);
+    if (fn) {
+      occurrence = elaboration.occurrences.find((candidate) =>
+        candidate.kind === "function" && candidate.sourceId === fn.id
+      );
+    }
+  } else if (target.kind === "pattern" && target.value.kind === "PVar") {
+    const bindingId = analysis.bindings.get(analysis.graph.entry)?.binders.get(target.value);
+    const fn = input.functions.find((candidate) => candidate.bindingId === bindingId);
+    if (fn) {
+      occurrence = elaboration.occurrences.find((candidate) =>
+        candidate.kind === "function" && candidate.sourceId === fn.id
+      );
+    }
+  }
+
+  if (!occurrence && target.kind === "expr") {
+    const expectedKind = normalizedExpressionKind(target.value);
+    occurrence = matchingOccurrences("expression", span, context).find((candidate) => {
+      const source = input.expressions.find((expression) => expression.id === candidate.sourceId);
+      return source?.kind === expectedKind;
+    }) ?? matchingOccurrences("expression", span, context)[0];
+  }
+  if (!occurrence && target.kind === "pattern") {
+    occurrence = matchingOccurrences("pattern", span, context)[0];
+  }
+  if (!occurrence) return null;
+
+  const type = elaboration.shaderTypes.find((candidate) => candidate.id === occurrence!.typeId);
+  if (!type) return null;
+  const label = target.kind === "expr"
+    ? labelExpr(target.value)
+    : target.kind === "pattern" && target.value.kind === "PVar"
+    ? target.value.name
+    : "GPU expression";
+  return hoverCode(`${label}: ${showGpuType(type, context)}`);
+}
+
+function matchingOccurrences(
+  kind: GpuSliceOccurrenceTypeDto["kind"],
+  span: AstNode["span"],
+  context: GpuHoverContext,
+): GpuSliceOccurrenceTypeDto[] {
+  const spanIds = new Set(
+    context.analysis.gpuInput.spans.filter((candidate) =>
+      candidate.start === span.start && candidate.end === span.end
+    ).map((candidate) => candidate.id),
+  );
+  return context.elaboration.occurrences.filter((candidate) =>
+    candidate.kind === kind && spanIds.has(candidate.spanId)
+  );
+}
+
+function normalizedExpressionKind(expr: Expr): string {
+  if (expr.kind === "Int" || expr.kind === "Float") return "number";
+  if (expr.kind === "Bool") return "bool";
+  if (expr.kind === "Void") return "void";
+  if (expr.kind === "Var" && expr.name.includes(".")) return "project";
+  return expr.kind.toLowerCase();
+}
+
+function showGpuType(type: GpuSliceShaderTypeDto, context: GpuHoverContext): string {
+  const byId = new Map(
+    context.elaboration.shaderTypes.map((candidate) => [candidate.id, candidate]),
+  );
+  const go = (current: GpuSliceShaderTypeDto): string => {
+    if (current.kind === "f32" || current.kind === "bool" || current.kind === "void") {
+      return current.kind;
+    }
+    if (current.kind === "vector") return `f32x${current.items.length}`;
+    if (current.kind === "tuple") {
+      return `(${current.items.map((id) => go(byId.get(id)!)).join(", ")})`;
+    }
+    if (current.kind === "function") {
+      return `(${current.params.map((id) => go(byId.get(id)!)).join(", ")}) => ${
+        go(byId.get(current.result)!)
+      }`;
+    }
+    return context.analysis.gpuInput.adts.find((adt) => adt.typeNameId === current.typeNameId)
+      ?.name ??
+      `adt#${current.typeNameId}`;
+  };
+  return go(type);
+}
 
 function schemeHover(name: string, scheme: Scheme | undefined): LspHover | null {
   return scheme ? hoverCode(`${name}: ${showHoverType(instantiate(scheme))}`) : null;

@@ -45,6 +45,106 @@ Deno.test("bundled Slang compiles the generated Mandelbrot module to whole-progr
   assertEquals(backend.version, "2026.13.1");
 });
 
+Deno.test("curried environment is reflection-checked and packed into a bound fragment", async () => {
+  const source = `
+    record Uniforms = { resolution: (Number, Number), time: Number };
+    let shade = (uniforms: Uniforms) => {
+      (coord) => {
+        @gpu;
+        let uv = (coord * 2.0 - uniforms.resolution) / uniforms.resolution.y;
+        (uv.x + uniforms.time, uv.y, 0.0, 1.0)
+      }
+    };
+    let fragmentFor = (uniforms: Uniforms) => { Gpu.fragment(shade(uniforms)) };
+    let firstUniforms: Uniforms = .{ resolution = (960.0, 640.0), time = 0.5 };
+    let secondUniforms: Uniforms = .{ resolution = (960.0, 640.0), time = 1.5 };
+    let first = fragmentFor(firstUniforms);
+    let second = fragmentFor(secondUniforms);
+    let main = () => {
+      print(Gpu.uniformBinding(first));
+      print(Gpu.uniformByteLength(first));
+      print(Gpu.artifactIdentity(first) == Gpu.artifactIdentity(second));
+      print(Gpu.wgsl(first) == Gpu.wgsl(second));
+      print(Gpu.uniformBytes(first));
+      print(Gpu.uniformBytes(second))
+    };
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  const hostJavaScript = emitCoreProgram(compiled.core);
+
+  assertEquals(artifact.uniformLayout, {
+    recordName: "Uniforms",
+    binding: 0,
+    byteLength: 16,
+    fields: [
+      {
+        name: "resolution",
+        declaredIndex: 0,
+        representation: "f32x2",
+        offset: 0,
+        byteLength: 8,
+      },
+      {
+        name: "time",
+        declaredIndex: 1,
+        representation: "f32",
+        offset: 8,
+        byteLength: 4,
+      },
+    ],
+  });
+  assertStringIncludes(artifact.wgsl, "@binding(0) @group(0)");
+  assertStringIncludes(hostJavaScript, "__wm_bind_shader_artifact");
+  assertStringIncludes(hostJavaScript, "view.setFloat32");
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/main.mjs`;
+  await Deno.writeTextFile(path, hostJavaScript);
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    assertEquals(
+      new TextDecoder().decode(output.stdout),
+      "0\n16\ntrue\ntrue\n" +
+        "[0, 0, 112, 68, 0, 0, 32, 68, 0, 0, 0, 63, 0, 0, 0, 0]\n" +
+        "[0, 0, 112, 68, 0, 0, 32, 68, 0, 0, 192, 63, 0, 0, 0, 0]\n",
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("artifact identity includes the shader factory and nominal environment schema", async () => {
+  const compile = async (path: string, recordName: string, shaderName: string) => {
+    const source = `
+      record ${recordName} = { time: Number };
+      let ${shaderName} = (uniforms: ${recordName}) => {
+        (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
+      };
+      let current: ${recordName} = .{ time = 1.0 };
+      let fragment = Gpu.fragment(${shaderName}(current));
+    `;
+    const compiled = await coreVirtual(path, new Map([[path, source]]));
+    return [...compiled.core.shaderArtifacts.values()][0];
+  };
+
+  const first = await compile("/test/first.wm", "FirstUniforms", "firstShade");
+  const second = await compile("/test/second.wm", "SecondUniforms", "secondShade");
+
+  assertEquals(first.wgsl, second.wgsl);
+  assertEquals(first.uniformLayout?.fields, second.uniformLayout?.fields);
+  assertEquals(first.id === second.id, false);
+});
+
 Deno.test("bundled Slang failures retain generated source and backend diagnostics", async () => {
   const backend = await loadDefaultWmslangSlangBackend();
   const invalid = '[shader("fragment")] float4 nope( : SV_Target {';
@@ -99,6 +199,59 @@ Deno.test("materialization attributes backend failures to the selector and shade
   }]);
   assertStringIncludes(backendError.message, `selected shader root ${root.name}`);
   assertStringIncludes(backendError.message, "/test/main.wm:");
+});
+
+Deno.test("materialization attributes normalized/reflected uniform disagreement", async () => {
+  const source = `
+    record Uniforms = { time: Number };
+    let shade = (uniforms: Uniforms) => {
+      (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
+    };
+    let current: Uniforms = .{ time = 1.0 };
+    let fragment = Gpu.fragment(shade(current));
+  `;
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const compiler = {
+    compileGpuSlice: () => ({
+      diagnostics: [],
+      slangSource: "generated uniform source",
+      shaderTypes: analysis.gpuInput.types.map((type) => ({
+        ...type,
+        kind: type.kind === "number" ? "f32" : type.kind === "tuple" ? "vector" : type.kind,
+      })),
+    }),
+  } as unknown as WmslangSliceCompiler;
+  const backend = {
+    compile: () => ({
+      wgsl: "generated wgsl",
+      vertexEntry: "wm_vertex",
+      fragmentEntry: "wm_fragment",
+      slangVersion: "test",
+      uniformLayout: { binding: 0, byteLength: 16, fields: [] },
+    }),
+  } as unknown as WmslangSlangBackend;
+
+  await assertRejects(
+    () => materializeGpuSliceArtifacts(analysis, compiler, backend),
+    WmslangBackendError,
+    "Slang reflection disagrees with the normalized shader environment",
+  );
+  try {
+    await materializeGpuSliceArtifacts(analysis, compiler, backend);
+  } catch (error) {
+    assertEquals(error instanceof WmslangBackendError, true);
+    const backendError = error as WmslangBackendError;
+    assertEquals(backendError.code, "gpu.backend.reflection");
+    assertStringIncludes(
+      backendError.backendDiagnostic,
+      "missing from normalization or reflection",
+    );
+    assertEquals(backendError.sourceDiagnostic?.diagnostic.code, "gpu.backend.reflection");
+    assertStringIncludes(backendError.message, "selected shader root");
+  }
 });
 
 Deno.test("completed fragment accessors execute through the minimal host descriptor", async () => {

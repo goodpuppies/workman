@@ -515,7 +515,11 @@ Deno.test("whole-program final analysis shares binding identity with Core and th
   const h0Input = normalizeGpuProgramH0(analysis.graph, analysis.results, analysis.bindings);
   const gpuBinding = h0Input.roots[0].bindingId;
 
-  assertEquals(analysis.gpuInput.root, { functionId: -1, selectorSpanId: -1 });
+  assertEquals(analysis.gpuInput.root, {
+    functionId: -1,
+    selectorSpanId: -1,
+    environmentId: -1,
+  });
   assertEquals(h0Input.functions[0].bindingId, gpuBinding);
   assertEquals(module.bindings.exports.get("tint"), gpuBinding);
   assertEquals(analysis.bindings.get("/test/main.wm"), module.bindings);

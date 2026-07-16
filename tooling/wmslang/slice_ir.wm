@@ -17,7 +17,10 @@ from "./types.wm" import {
   GpuSliceMatchArmDto,
   GpuSliceMatchDto,
   GpuSlicePatternDto,
-  GpuSliceTypeDto
+  GpuSliceTypeDto,
+  GpuSliceTypeEvidenceDto,
+  GpuSliceOccurrenceTypeDto,
+  GpuSliceTypeElaborationOutputDto
 };
 from "./slice_layout.wm" import { buildSliceLayouts };
 from "./slice_lower.wm" import { lowerSliceProgram };
@@ -136,6 +139,135 @@ let rec findType = match(items, id) => {
   ([Var(item), ..rest], Var(id)) => {
     if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
   }
+};
+
+let rec allSemanticNumbers = match(typeIds, types) => {
+  ([], Var(types)) => { true },
+  ([Var(typeId), ..rest], Var(types)) => {
+    let gpuType = findType(types, typeId);
+    gpuType.kind == "number" && allSemanticNumbers(rest, types)
+  }
+};
+
+let shaderTypeKind = (source: GpuSliceTypeDto, types) => {
+  if (source.kind == "number") {
+    "f32"
+  } else {
+    if (source.kind == "tuple") {
+      let items = Js.Array.toList(source.items);
+      let width = listLength(items, 0);
+      if (width >= 2 && width <= 4 && allSemanticNumbers(items, types)) {
+        "vector"
+      } else {
+        "tuple"
+      }
+    } else {
+      source.kind
+    }
+  }
+};
+
+let shaderTypeReason = (semanticKind, shaderKind) => {
+  if (semanticKind == "number") {
+    "shader-number-f32"
+  } else {
+    if (semanticKind == "tuple") {
+      if (shaderKind == "vector") {
+        "homogeneous-numeric-tuple-default"
+      } else {
+        "semantic-product"
+      }
+    } else {
+      "semantic-shape"
+    }
+  }
+};
+
+let rec elaborateSliceTypes = match(sourceTypes, allTypes, shaderTypes, evidence) => {
+  ([], Var(allTypes), Var(shaderTypes), Var(evidence)) => {
+    (reverseInto(shaderTypes, []), reverseInto(evidence, []))
+  },
+  (
+    [Var(source), ..rest], Var(allTypes), Var(shaderTypes), Var(evidence)
+  ) => {
+    let shaderKind = shaderTypeKind(source, allTypes);
+    let shaderType: GpuSliceTypeDto = .{
+      ..source,
+      kind = shaderKind,
+    };
+    let typeEvidence: GpuSliceTypeEvidenceDto = .{
+      typeId = source.id,
+      semanticKind = source.kind,
+      shaderKind = shaderKind,
+      reason = shaderTypeReason(source.kind, shaderKind),
+    };
+    elaborateSliceTypes(
+      rest,
+      allTypes,
+      [shaderType, ..shaderTypes],
+      [typeEvidence, ..evidence]
+    )
+  }
+};
+
+let rec addExpressionOccurrences = match(expressions, occurrences) => {
+  ([], Var(occurrences)) => { occurrences },
+  ([Var(expression), ..rest], Var(occurrences)) => {
+    let occurrence: GpuSliceOccurrenceTypeDto = .{
+      kind = "expression",
+      sourceId = expression.id,
+      typeId = expression.typeId,
+      spanId = expression.spanId,
+    };
+    addExpressionOccurrences(rest, [occurrence, ..occurrences])
+  }
+};
+
+let rec addPatternOccurrences = match(patterns, occurrences) => {
+  ([], Var(occurrences)) => { occurrences },
+  ([Var(pattern), ..rest], Var(occurrences)) => {
+    let occurrence: GpuSliceOccurrenceTypeDto = .{
+      kind = "pattern",
+      sourceId = pattern.id,
+      typeId = pattern.typeId,
+      spanId = pattern.spanId,
+    };
+    addPatternOccurrences(rest, [occurrence, ..occurrences])
+  }
+};
+
+let rec addFunctionOccurrences = match(functions, occurrences) => {
+  ([], Var(occurrences)) => { occurrences },
+  ([Var(fn), ..rest], Var(occurrences)) => {
+    let occurrence: GpuSliceOccurrenceTypeDto = .{
+      kind = "function",
+      sourceId = fn.id,
+      typeId = fn.typeId,
+      spanId = fn.spanId,
+    };
+    addFunctionOccurrences(rest, [occurrence, ..occurrences])
+  }
+};
+
+let elaborateSliceProgramTypes = (input: GpuSliceElaborationInputDto) => {
+  let semanticTypes = Js.Array.toList(input.types);
+  let (shaderTypeItems, typeEvidenceItems) = elaborateSliceTypes(
+    semanticTypes,
+    semanticTypes,
+    [],
+    []
+  );
+  let withExpressions = addExpressionOccurrences(Js.Array.toList(input.expressions), []);
+  let withPatterns = addPatternOccurrences(Js.Array.toList(input.patterns), withExpressions);
+  let occurrenceItems = addFunctionOccurrences(Js.Array.toList(input.functions), withPatterns)
+    :> reverseInto([]);
+  let output: GpuSliceTypeElaborationOutputDto = .{
+    schemaVersion = 2,
+    shaderTypes = Js.Array.fromList(shaderTypeItems),
+    typeEvidence = Js.Array.fromList(typeEvidenceItems),
+    occurrences = Js.Array.fromList(occurrenceItems),
+  };
+  output
 };
 
 let rec findAdt = match(items, typeNameId) => {
@@ -611,20 +743,26 @@ let rec buildFunctions = match(
 };
 
 let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
-  let context: SliceContext = .{
-    expressions = Js.Array.toList(input.expressions),
-    blocks = Js.Array.toList(input.blocks),
-    blockItems = Js.Array.toList(input.blockItems),
-    lets = Js.Array.toList(input.lets),
-    matches = Js.Array.toList(input.matches),
-    matchArms = Js.Array.toList(input.matchArms),
-    patterns = Js.Array.toList(input.patterns),
-    types = Js.Array.toList(input.types),
-    adts = Js.Array.toList(input.adts),
-    functions = Js.Array.toList(input.functions),
+  let elaboration = elaborateSliceProgramTypes(input);
+  let shaderTypes = elaboration.shaderTypes;
+  let elaboratedInput: GpuSliceElaborationInputDto = .{
+    ..input,
+    types = shaderTypes,
   };
-  let state = buildFunctions(Js.Array.toList(input.functions), context, initialState());
-  let layouts: GpuSliceLoweringSeedDto = buildSliceLayouts(input);
+  let context: SliceContext = .{
+    expressions = Js.Array.toList(elaboratedInput.expressions),
+    blocks = Js.Array.toList(elaboratedInput.blocks),
+    blockItems = Js.Array.toList(elaboratedInput.blockItems),
+    lets = Js.Array.toList(elaboratedInput.lets),
+    matches = Js.Array.toList(elaboratedInput.matches),
+    matchArms = Js.Array.toList(elaboratedInput.matchArms),
+    patterns = Js.Array.toList(elaboratedInput.patterns),
+    types = Js.Array.toList(elaboratedInput.types),
+    adts = Js.Array.toList(elaboratedInput.adts),
+    functions = Js.Array.toList(elaboratedInput.functions),
+  };
+  let state = buildFunctions(Js.Array.toList(elaboratedInput.functions), context, initialState());
+  let layouts: GpuSliceLoweringSeedDto = buildSliceLayouts(elaboratedInput);
   let irFunctions = state.functions :> reverseInto([]) :> Js.Array.fromList;
   let irExpressions = state.expressions :> reverseInto([]) :> Js.Array.fromList;
   let irMatchArms = state.matchArms :> reverseInto([]) :> Js.Array.fromList;
@@ -632,16 +770,16 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
     irFunctions,
     irExpressions,
     irMatchArms,
-    input.params,
-    input.patterns,
-    input.constructors,
+    elaboratedInput.params,
+    elaboratedInput.patterns,
+    elaboratedInput.constructors,
     layouts.adtLayouts,
     layouts.adtFields
   );
   let slangSource = match(state.diagnostics) {
     [] => {
       emitSliceSlang(
-        input,
+        elaboratedInput,
         layouts.adtLayouts,
         layouts.adtFields,
         lowered.functions,
@@ -658,6 +796,9 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
   let output: GpuSliceCompilationOutputDto = .{
     schemaVersion = 2,
     program = input,
+    shaderTypes = shaderTypes,
+    typeEvidence = elaboration.typeEvidence,
+    occurrences = elaboration.occurrences,
     irFunctions = irFunctions,
     irExpressions = irExpressions,
     irMatchArms = irMatchArms,

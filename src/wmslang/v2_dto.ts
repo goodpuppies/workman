@@ -14,11 +14,31 @@ export type GpuSliceSpanDto = {
 
 export type GpuSliceTypeDto = {
   id: number;
+  kind: "number" | "bool" | "void" | "tuple" | "function" | "adt";
+  typeNameId: number;
+  items: number[];
+  params: number[];
+  result: number;
+};
+
+export type GpuSliceShaderTypeDto = {
+  id: number;
   kind: "f32" | "bool" | "void" | "vector" | "tuple" | "function" | "adt";
   typeNameId: number;
   items: number[];
   params: number[];
   result: number;
+};
+
+export type GpuSliceTypeEvidenceDto = {
+  typeId: number;
+  semanticKind: GpuSliceTypeDto["kind"];
+  shaderKind: GpuSliceShaderTypeDto["kind"];
+  reason:
+    | "shader-number-f32"
+    | "homogeneous-numeric-tuple-default"
+    | "semantic-product"
+    | "semantic-shape";
 };
 
 export type GpuSliceAdtDto = {
@@ -101,6 +121,7 @@ export type GpuSliceExprDto = {
     | "bool"
     | "void"
     | "var"
+    | "uniform"
     | "project"
     | "copy"
     | "tuple"
@@ -128,6 +149,7 @@ export type GpuSliceFunctionDto = {
   id: number;
   bindingId: number;
   name: string;
+  typeId: number;
   paramIds: number[];
   resultTypeId: number;
   bodyExprId: number;
@@ -135,9 +157,43 @@ export type GpuSliceFunctionDto = {
   spanId: number;
 };
 
+export type GpuSliceOccurrenceTypeDto = {
+  kind: "expression" | "pattern" | "function";
+  sourceId: number;
+  typeId: number;
+  spanId: number;
+};
+
+export type GpuSliceTypeElaborationOutput = {
+  schemaVersion: typeof GPU_SLICE_SCHEMA_VERSION;
+  shaderTypes: GpuSliceShaderTypeDto[];
+  typeEvidence: GpuSliceTypeEvidenceDto[];
+  occurrences: GpuSliceOccurrenceTypeDto[];
+};
+
 export type GpuSliceRootDto = {
   functionId: number;
   selectorSpanId: number;
+  environmentId: number;
+};
+
+export type GpuSliceEnvironmentFieldDto = {
+  id: number;
+  environmentId: number;
+  name: string;
+  declaredIndex: number;
+  typeId: number;
+  spanId: number;
+};
+
+export type GpuSliceEnvironmentDto = {
+  id: number;
+  recordId: number;
+  typeNameId: number;
+  name: string;
+  bindingId: number;
+  fieldIds: number[];
+  spanId: number;
 };
 
 export type GpuSliceRecursionGroupDto = {
@@ -159,6 +215,8 @@ export type GpuSliceElaborationInput = {
   schemaVersion: typeof GPU_SLICE_SCHEMA_VERSION;
   sourcePath: string;
   root: GpuSliceRootDto;
+  environments: GpuSliceEnvironmentDto[];
+  environmentFields: GpuSliceEnvironmentFieldDto[];
   functions: GpuSliceFunctionDto[];
   types: GpuSliceTypeDto[];
   adts: GpuSliceAdtDto[];
@@ -197,6 +255,7 @@ export type GpuSliceIrExprDto = {
     | "bool"
     | "void"
     | "local"
+    | "uniform"
     | "project"
     | "copy"
     | "tuple"
@@ -288,6 +347,7 @@ export type GpuSliceLoweredOperationDto = {
   kind:
     | "copy"
     | "tuple"
+    | "uniform"
     | "project"
     | "call"
     | "construct"
@@ -355,6 +415,9 @@ export type GpuSliceLoweredFunctionDto = {
 export type GpuSliceCompilationOutput = {
   schemaVersion: typeof GPU_SLICE_SCHEMA_VERSION;
   program: GpuSliceElaborationInput;
+  shaderTypes: GpuSliceShaderTypeDto[];
+  typeEvidence: GpuSliceTypeEvidenceDto[];
+  occurrences: GpuSliceOccurrenceTypeDto[];
   irFunctions: GpuSliceIrFunctionDto[];
   irExpressions: GpuSliceIrExprDto[];
   irMatchArms: GpuSliceIrMatchArmDto[];

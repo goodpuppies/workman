@@ -1,9 +1,9 @@
--- A real wmslang fragment presented directly to an SDL native window through WebGPU.
+-- A real mouse-driven wmslang fragment presented to an SDL native window through WebGPU.
 -- Run from the wm-mini repository root:
 --   deno run -A src/main.ts run examples/wmslang_window/src/main.wm
 
 from "./sdl_window.wm" import {
-  NativeRuntime, NativeError, QuitEvent, IgnoredEvent, NoEvent,
+  NativeRuntime, NativeError, QuitEvent, MouseEvent, IgnoredEvent, NoEvent,
   startNative, nativeSurface, pollNative, delayNative, presentNative, closeNative
 };
 from "./webgpu_present.wm" import {
@@ -12,79 +12,154 @@ from "./webgpu_present.wm" import {
 };
 
 type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
-
 type Escape = Inside | Escaped<Number>;
 
-let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
-  if (remaining <= 0) {
-    Inside
-  } else {
-    let magnitudeSquared = zx * zx + zy * zy;
-    if (magnitudeSquared > 4.0) {
-      Escaped(remaining)
-    } else {
-      let nextX = zx * zx - zy * zy + cx;
-      let nextY = 2.0 * zx * zy + cy;
-      escapeIterations(cx, cy, nextX, nextY, remaining - 1)
+record MandelbrotUniforms = {
+  resolution: (Number, Number),
+  center: (Number, Number),
+  scale: Number,
+  time: Number
+};
+
+record FrameState = {
+  quit: Bool,
+  resolution: (Number, Number),
+  center: (Number, Number),
+  scale: Number,
+  time: Number
+};
+
+type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
+
+let mandelbrotShade = (uniforms: MandelbrotUniforms) => {
+  (coord) => {
+    @gpu;
+
+    let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
+      if (remaining <= 0) {
+        Inside
+      } else {
+        let magnitudeSquared = zx * zx + zy * zy;
+        if (magnitudeSquared > 4.0) {
+          Escaped(remaining)
+        } else {
+          let nextX = zx * zx - zy * zy + cx;
+          let nextY = 2.0 * zx * zy + cy;
+          escapeIterations(cx, cy, nextX, nextY, remaining - 1)
+        }
+      }
+    };
+
+    let pixel = (coord * 2.0 - uniforms.resolution) / uniforms.resolution.y;
+    let c = pixel * uniforms.scale + uniforms.center;
+    let escape = escapeIterations(c.x, c.y, 0.0, 0.0, 128.0);
+
+    match(escape) {
+      Inside => {
+        (0.015, 0.02, 0.04, 1.0)
+      },
+      Escaped(remaining) => {
+        let amount = remaining / 128.0;
+        let pulse = 0.85 + uniforms.time * 0.0001;
+        (amount * pulse, 0.18 * amount, 1.0 - amount, 1.0)
+      }
     }
   }
 };
 
-let mandelbrotShade = (coord) => {
-  @gpu;
-
-  let resolution = (960.0, 640.0);
-  let c = (coord * 2.0 - resolution) / resolution.y;
-  let (normalizedX, cy) = c;
-  let cx = normalizedX - 0.5;
-  let escape = escapeIterations(cx, cy, 0.0, 0.0, 128.0);
-
-  match(escape) {
-    Inside => {
-      (0.015, 0.02, 0.04, 1.0)
-    },
-    Escaped(remaining) => {
-      let amount = remaining / 128.0;
-      (amount, 0.18 * amount, 1.0 - amount, 1.0)
-    }
-  }
+let fragmentFor = (uniforms: MandelbrotUniforms) => {
+  Gpu.fragment(mandelbrotShade(uniforms))
 };
 
-let fragment = Gpu.fragment(mandelbrotShade);
 let width = 960;
 let height = 640;
+let initialState: FrameState = .{
+  quit = false,
+  resolution = (960.0, 640.0),
+  center = (-0.5, 0.0),
+  scale = 1.0,
+  time = 0.0
+};
 
-let rec shouldClose = (native: NativeRuntime) => {
-  match(pollNative(native)) {
-    Ok(QuitEvent) => { Ok(true) },
-    Ok(IgnoredEvent) => { shouldClose(native) },
-    Ok(NoEvent) => { Ok(false) },
-    Err(error) => { Err(NativeFailure(error)) }
+let panByMouse = (state: FrameState, dx: Number, dy: Number) => {
+  let (centerX, centerY) = state.center;
+  let (_width, viewHeight) = state.resolution;
+  let worldPerPixel = state.scale * 2.0 / viewHeight;
+  let next: FrameState = .{
+    ..state,
+    center = (
+      centerX - dx * worldPerPixel,
+      centerY - dy * worldPerPixel
+    )
+  };
+  next
+};
+
+let applyNativeEvent = (state: FrameState, event) => {
+  match(event) {
+    QuitEvent => {
+      let next: FrameState = .{ ..state, quit = true };
+      PollDone(next)
+    },
+    MouseEvent(dx, dy) => { PollAgain(panByMouse(state, dx, dy)) },
+    IgnoredEvent => { PollAgain(state) },
+    NoEvent => { PollDone(state) }
   }
 };
 
-let rec frameLoop = (native: NativeRuntime, renderer: FragmentRenderer) => {
-  match(shouldClose(native)) {
-    Ok(true) => { Ok(void) },
-    Ok(false) => {
-      Result|
-        renderFragment(renderer) :> Result.mapErr(HostFailure),
-        presentNative(native) :> Result.mapErr(NativeFailure),
-        delayNative(native, 16) :> Result.mapErr(NativeFailure)
-      | :> Result.andThen((_) => { frameLoop(native, renderer) })
-    },
-    Err(error) => { Err(error) }
+let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Number) => {
+  if (remaining <= 0) {
+    Ok(state)
+  } else {
+    match(pollNative(native)) {
+      Err(error) => { Err(NativeFailure(error)) },
+      Ok(event) => {
+        match(applyNativeEvent(state, event)) {
+          PollDone(done) => { Ok(done) },
+          PollAgain(next) => { drainEvents(native, next, remaining - 1) }
+        }
+      }
+    }
+  }
+};
+
+let uniformsFrom = (state: FrameState) => {
+  let uniforms: MandelbrotUniforms = .{
+    resolution = state.resolution,
+    center = state.center,
+    scale = state.scale,
+    time = state.time
+  };
+  uniforms
+};
+
+let rec frameLoop = (
+  native: NativeRuntime,
+  renderer: FragmentRenderer,
+  state: FrameState
+) => {
+  match(drainEvents(native, state, 256)) {
+    Err(error) => { Err(error) },
+    Ok(inputState) => {
+      if (inputState.quit) {
+        Ok(void)
+      } else {
+        let nextState: FrameState = .{ ..inputState, time = inputState.time + 16.0 };
+        let fragment = fragmentFor(uniformsFrom(nextState));
+        Result|
+          renderFragment(renderer, fragment) :> Result.mapErr(HostFailure),
+          presentNative(native) :> Result.mapErr(NativeFailure),
+          delayNative(native, 16) :> Result.mapErr(NativeFailure)
+        | :> Result.andThen((_) => { frameLoop(native, renderer, nextState) })
+      }
+    }
   }
 };
 
 let runWindow = (native: NativeRuntime) => {
-  createFragmentRenderer(
-    nativeSurface(native),
-    Gpu.wgsl(fragment),
-    Gpu.vertexEntryPoint(fragment),
-    Gpu.fragmentEntryPoint(fragment)
-  ) :> Task.map((renderer) => {
-    let rendered = frameLoop(native, renderer);
+  let initialFragment = fragmentFor(uniformsFrom(initialState));
+  createFragmentRenderer(nativeSurface(native), initialFragment) :> Task.map((renderer) => {
+    let rendered = frameLoop(native, renderer, initialState);
     let cleanup = Result|
       destroyFragmentRenderer(renderer) :> Result.mapErr(HostFailure),
       closeNative(native) :> Result.mapErr(NativeFailure)

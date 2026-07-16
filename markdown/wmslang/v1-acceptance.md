@@ -41,24 +41,24 @@ self-tail recursion.
 ```workman
 type Escape = Inside | Escaped<Number>;
 
-let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
-  if (remaining <= 0) {
-    Inside
-  } else {
-    let magnitudeSquared = zx * zx + zy * zy;
-
-    if (magnitudeSquared > 4.0) {
-      Escaped(remaining)
-    } else {
-      let nextX = zx * zx - zy * zy + cx;
-      let nextY = 2.0 * zx * zy + cy;
-      escapeIterations(cx, cy, nextX, nextY, remaining - 1)
-    }
-  }
-};
-
 let mandelbrotShade = (coord) => {
   @gpu;
+
+  let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
+    if (remaining <= 0) {
+      Inside
+    } else {
+      let magnitudeSquared = zx * zx + zy * zy;
+
+      if (magnitudeSquared > 4.0) {
+        Escaped(remaining)
+      } else {
+        let nextX = zx * zx - zy * zy + cx;
+        let nextY = 2.0 * zx * zy + cy;
+        escapeIterations(cx, cy, nextX, nextY, remaining - 1)
+      }
+    }
+  };
 
   let (x, y) = coord;
   let cx = (2.0 * x - 64.0) / 48.0 - 0.5;
@@ -116,16 +116,16 @@ The CPU oracle selects and documents probes; it cannot replace the real adapter 
 ## N1: `non_tail_recursion.wm`
 
 ```workman
-let rec nonTail = (value) => {
-  if (value <= 0) {
-    0
-  } else {
-    1 + nonTail(value - 1)
-  }
-};
-
 let illegalFragment = Gpu.fragment((coord) => {
   @gpu;
+
+  let rec nonTail = (value) => {
+    if (value <= 0) {
+      0
+    } else {
+      1 + nonTail(value - 1)
+    }
+  };
 
   let (x, _y) = coord;
   (nonTail(x), 0.0, 0.0, 1.0)

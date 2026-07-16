@@ -23,6 +23,20 @@ export type WmslangBackendArtifact = {
   vertexEntry: typeof WMSLANG_VERTEX_ENTRY;
   fragmentEntry: typeof WMSLANG_FRAGMENT_ENTRY;
   slangVersion: string;
+  uniformLayout?: WmslangReflectedUniformLayout;
+};
+
+export type WmslangReflectedUniformField = {
+  index: number;
+  representation: "f32" | "f32x2" | "f32x3" | "f32x4";
+  offset: number;
+  byteLength: number;
+};
+
+export type WmslangReflectedUniformLayout = {
+  binding: 0;
+  byteLength: number;
+  fields: WmslangReflectedUniformField[];
 };
 
 export class WmslangBackendError extends Error {
@@ -109,7 +123,10 @@ export class WmslangSlangBackend {
       if (!linked) throw this.compilerError("link generated program", slangSource);
       const wgsl = linked.getTargetCode(0);
       if (!wgsl) throw this.compilerError("emit whole-program WGSL", slangSource);
-      this.validateReflection(linked.getLayout(0)?.toJsonObject(), slangSource);
+      const uniformLayout = this.validateReflection(
+        linked.getLayout(0)?.toJsonObject(),
+        slangSource,
+      );
       if (!wgsl.includes(`fn ${WMSLANG_VERTEX_ENTRY}`) || !wgsl.includes("@vertex")) {
         throw new WmslangBackendError(
           "Slang emitted WGSL without the fixed vertex entry",
@@ -129,6 +146,7 @@ export class WmslangSlangBackend {
         vertexEntry: WMSLANG_VERTEX_ENTRY,
         fragmentEntry: WMSLANG_FRAGMENT_ENTRY,
         slangVersion: this.version,
+        ...(uniformLayout ? { uniformLayout } : {}),
       };
     } finally {
       session.delete();
@@ -136,7 +154,10 @@ export class WmslangSlangBackend {
     }
   }
 
-  private validateReflection(value: unknown, slangSource: string): void {
+  private validateReflection(
+    value: unknown,
+    slangSource: string,
+  ): WmslangReflectedUniformLayout | undefined {
     const reflection = value as
       | {
         parameters?: unknown[];
@@ -164,13 +185,15 @@ export class WmslangSlangBackend {
         `expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
       );
     }
-    if (!Array.isArray(reflection?.parameters) || reflection.parameters.length !== 0) {
+    if (!Array.isArray(reflection?.parameters)) {
       throw new WmslangBackendError(
-        "static visual-v1 generated an unexpected shader resource",
+        "Slang returned no global-parameter reflection",
         slangSource,
-        `expected no global parameters, received ${JSON.stringify(reflection?.parameters)}`,
+        `expected a parameters array, received ${JSON.stringify(reflection?.parameters)}`,
       );
     }
+    if (reflection.parameters.length === 0) return undefined;
+    return reflectedUniformLayout(reflection.parameters, slangSource);
   }
 
   private compilerError(action: string, slangSource: string): WmslangBackendError {
@@ -182,6 +205,140 @@ export class WmslangSlangBackend {
       diagnostic,
     );
   }
+}
+
+function reflectedUniformLayout(
+  parameters: unknown[],
+  slangSource: string,
+): WmslangReflectedUniformLayout {
+  if (parameters.length !== 1) {
+    throw reflectionError(
+      slangSource,
+      `expected one generated uniform parameter, received ${JSON.stringify(parameters)}`,
+    );
+  }
+  const parameter = reflectedRecord(parameters[0], slangSource, "uniform parameter");
+  const binding = reflectedRecord(parameter.binding, slangSource, "uniform binding");
+  const type = reflectedRecord(parameter.type, slangSource, "uniform type");
+  const elementType = reflectedRecord(type.elementType, slangSource, "uniform element type");
+  const elementLayout = reflectedRecord(
+    type.elementVarLayout,
+    slangSource,
+    "uniform element layout",
+  );
+  const aggregateBinding = reflectedRecord(
+    elementLayout.binding,
+    slangSource,
+    "uniform aggregate binding",
+  );
+  if (
+    parameter.name !== "wm_uniforms" || binding.kind !== "descriptorTableSlot" ||
+    binding.index !== 0 || type.kind !== "constantBuffer" || elementType.kind !== "struct" ||
+    elementType.name !== "wm_environment" || aggregateBinding.kind !== "uniform" ||
+    aggregateBinding.offset !== 0
+  ) {
+    throw reflectionError(
+      slangSource,
+      `generated uniform identity/layout is invalid: ${JSON.stringify(parameter)}`,
+    );
+  }
+  const byteLength = reflectedInteger(
+    aggregateBinding.size,
+    slangSource,
+    "uniform aggregate byte length",
+  );
+  const reflectedFields = elementType.fields;
+  if (!Array.isArray(reflectedFields) || reflectedFields.length === 0) {
+    throw reflectionError(slangSource, "generated uniform struct has no reflected fields");
+  }
+  const fields = reflectedFields.map((value, declaredIndex) => {
+    const field = reflectedRecord(value, slangSource, `uniform field ${declaredIndex}`);
+    const fieldBinding = reflectedRecord(
+      field.binding,
+      slangSource,
+      `uniform field ${declaredIndex} binding`,
+    );
+    if (field.name !== `wm_u_${declaredIndex}` || fieldBinding.kind !== "uniform") {
+      throw reflectionError(
+        slangSource,
+        `uniform field ${declaredIndex} has invalid identity: ${JSON.stringify(field)}`,
+      );
+    }
+    return {
+      index: declaredIndex,
+      representation: reflectedUniformRepresentation(
+        field.type,
+        slangSource,
+        declaredIndex,
+      ),
+      offset: reflectedInteger(
+        fieldBinding.offset,
+        slangSource,
+        `uniform field ${declaredIndex} offset`,
+      ),
+      byteLength: reflectedInteger(
+        fieldBinding.size,
+        slangSource,
+        `uniform field ${declaredIndex} byte length`,
+      ),
+    };
+  });
+  if (
+    byteLength <= 0 || byteLength % 4 !== 0 ||
+    fields.some((field) =>
+      field.offset < 0 || field.offset % 4 !== 0 || field.byteLength <= 0 ||
+      field.offset + field.byteLength > byteLength
+    )
+  ) throw reflectionError(slangSource, "generated uniform byte ranges are invalid");
+  return { binding: 0, byteLength, fields };
+}
+
+function reflectedUniformRepresentation(
+  value: unknown,
+  slangSource: string,
+  fieldIndex: number,
+): WmslangReflectedUniformField["representation"] {
+  const type = reflectedRecord(value, slangSource, `uniform field ${fieldIndex} type`);
+  if (type.kind === "scalar" && type.scalarType === "float32") return "f32";
+  const element = type.kind === "vector"
+    ? reflectedRecord(type.elementType, slangSource, `uniform field ${fieldIndex} element type`)
+    : undefined;
+  if (
+    element?.kind === "scalar" && element.scalarType === "float32" &&
+    Number.isInteger(type.elementCount) && (type.elementCount as number) >= 2 &&
+    (type.elementCount as number) <= 4
+  ) return `f32x${type.elementCount}` as WmslangReflectedUniformField["representation"];
+  throw reflectionError(
+    slangSource,
+    `uniform field ${fieldIndex} has unsupported reflected type ${JSON.stringify(value)}`,
+  );
+}
+
+function reflectedRecord(
+  value: unknown,
+  slangSource: string,
+  label: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw reflectionError(slangSource, `${label} is not an object: ${JSON.stringify(value)}`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function reflectedInteger(value: unknown, slangSource: string, label: string): number {
+  if (!Number.isInteger(value)) {
+    throw reflectionError(slangSource, `${label} is not an integer: ${JSON.stringify(value)}`);
+  }
+  return value as number;
+}
+
+function reflectionError(slangSource: string, diagnostic: string): WmslangBackendError {
+  return new WmslangBackendError(
+    "Slang reflection disagrees with the generated visual shader ABI",
+    slangSource,
+    diagnostic,
+    "gpu.backend.reflection",
+  );
 }
 
 let defaultBackend: Promise<WmslangSlangBackend> | undefined;

@@ -42,16 +42,15 @@ Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () 
       { name: "Escaped", tag: 1, payload: 0 },
     ],
   );
-  assertEquals(input.types[0].kind, "f32");
+  assertEquals(input.types[0].kind, "number");
   assertEquals(input.types.some((type) => type.kind === "adt"), true);
-  assertEquals(input.types.some((type) => type.kind === "vector"), true);
+  assertEquals(input.types.some((type) => type.kind === "tuple"), true);
   assertEquals(
     input.types.some((type) =>
       !new Set([
-        "f32",
+        "number",
         "bool",
         "void",
-        "vector",
         "tuple",
         "function",
         "adt",
@@ -111,7 +110,7 @@ Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () 
   assertEquals(input.matches[0].armIds.length, 2);
 });
 
-Deno.test("schema v2 rejects captures, multiple roots, and cross-module helpers", async () => {
+Deno.test("schema v2 enforces lexical GPU helper ownership", async () => {
   await assertRejects(
     () =>
       analysisFor(`
@@ -120,7 +119,53 @@ Deno.test("schema v2 rejects captures, multiple roots, and cross-module helpers"
       };
     `),
     GpuSliceNormalizationError,
-    "does not capture hostValue",
+    "receive hostValue as a parameter",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+        let hostHelper = (value) => { @gpu; value * value };
+        let shade = (coord) => {
+          @gpu;
+          let (x, _y) = coord;
+          (hostHelper(x), 0.0, 0.0, 1.0)
+        };
+        let fragment = Gpu.fragment(shade);
+      `),
+    GpuSliceNormalizationError,
+    "outside the selected lexical GPU island",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+        let shade = (coord) => {
+          @gpu;
+          let (x, _y) = coord;
+          let localHelper = (value) => { value + x };
+          (localHelper(1.0), 0.0, 0.0, 1.0)
+        };
+        let fragment = Gpu.fragment(shade);
+      `),
+    GpuSliceNormalizationError,
+    "receive x as a parameter",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+        let shade = (coord) => {
+          @gpu;
+          let localHelper = (value) => { value };
+          let escaped = localHelper;
+          let (x, _y) = coord;
+          (x, 0.0, 0.0, 1.0)
+        };
+        let fragment = Gpu.fragment(shade);
+      `),
+    GpuSliceNormalizationError,
+    "may not escape as values",
   );
 
   await assertRejects(
@@ -153,7 +198,7 @@ Deno.test("schema v2 rejects captures, multiple roots, and cross-module helpers"
   await assertRejects(
     () => analyzeVirtual("/test/main.wm", virtualFs),
     GpuSliceNormalizationError,
-    "same-module selected helpers",
+    "first-order helper declared inside",
   );
 });
 
@@ -186,6 +231,15 @@ Deno.test("schema v2 loader rejects dangling semantic references", async () => {
     Error,
     "references missing id 999",
   );
+  assertThrows(
+    () =>
+      validateGpuSliceElaborationInput({
+        ...input,
+        types: input.types.map((type, index) => index === 0 ? { ...type, kind: "f32" } : type),
+      }),
+    Error,
+    "semantic type kind",
+  );
 });
 
 Deno.test("schema v2 round-trips through the real Workman wmslang ABI", async () => {
@@ -200,10 +254,23 @@ Deno.test("schema v2 round-trips through the real Workman wmslang ABI", async ()
   );
   const compiler = await loadGeneratedSliceCompiler(compilerSource);
 
+  const typeOutput = compiler.elaborateGpuSliceTypes(input);
   const output = compiler.compileGpuSlice(input);
 
   assertEquals(output.schemaVersion, 2);
   assertEquals(output.program, input);
+  assertEquals(typeOutput.shaderTypes, output.shaderTypes);
+  assertEquals("slangSource" in typeOutput, false);
+  assertEquals(typeOutput.typeEvidence, output.typeEvidence);
+  assertEquals(typeOutput.occurrences, output.occurrences);
+  assertEquals(
+    typeOutput.occurrences.length,
+    input.expressions.length + input.patterns.length + input.functions.length,
+  );
+  assertEquals(output.program.types.some((type) => type.kind === "number"), true);
+  assertEquals(output.shaderTypes.some((type) => type.kind === "f32"), true);
+  assertEquals(output.shaderTypes.some((type) => type.kind === "vector"), true);
+  assertEquals(output.typeEvidence.length, input.types.length);
   assertEquals(output.diagnostics, []);
   assertEquals(output.irFunctions.map((fn) => fn.name), [
     "mandelbrotShade",
@@ -374,7 +441,7 @@ Deno.test("schema v2 lowers GLML-style vector arithmetic and scalar broadcasts",
 
   assertEquals(output.diagnostics, []);
   assertEquals(
-    input.types.filter((type) => type.kind === "vector").map((type) => type.items.length),
+    output.shaderTypes.filter((type) => type.kind === "vector").map((type) => type.items.length),
     [
       2,
       4,
@@ -390,6 +457,192 @@ Deno.test("schema v2 lowers GLML-style vector arithmetic and scalar broadcasts",
   assertEquals(output.slangSource.includes(".x"), true);
   assertEquals(output.slangSource.includes(".y"), true);
   assertEquals(output.slangSource.includes("wm_tuple_"), false);
+  const binaryOperations = output.loweredOperations.filter((operation) =>
+    operation.kind === "binary"
+  );
+  assertEquals(
+    binaryOperations.filter((operation) =>
+      operation.operatorId === "gpu.operator.multiply"
+    ).length,
+    2,
+  );
+  assertEquals(
+    binaryOperations.filter((operation) =>
+      operation.operatorId === "gpu.operator.subtract"
+    ).length,
+    1,
+  );
+  assertEquals(
+    binaryOperations.filter((operation) =>
+      operation.operatorId === "gpu.operator.multiply" ||
+      operation.operatorId === "gpu.operator.subtract"
+    ).every((operation) =>
+      output.shaderTypes.find((type) => type.id === operation.typeId)?.kind === "vector"
+    ),
+    true,
+  );
+});
+
+Deno.test("schema v2 tuple destructuring preserves vector lane order", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (coord) => {
+        @gpu;
+        let (u, v) = coord;
+        let pair = (u, v) * 1.0;
+        let (first, second) = pair;
+        (first, second, 0.0, 1.0)
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+
+  assertEquals(output.diagnostics, []);
+  assertEquals(
+    output.loweredOperations.filter((operation) => operation.kind === "project").map((operation) =>
+      operation.index
+    ),
+    [0, 1, 0, 1],
+  );
+  assertEquals(
+    [...output.slangSource.matchAll(/ = wm_l_\d+\.(x|y);/g)].map((match) => match[1]),
+    ["x", "y", "x", "y"],
+  );
+});
+
+Deno.test("schema v2 lowers one curried nominal-record environment to uniforms", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      record Uniforms = { resolution: (Number, Number), time: Number };
+      record FrameState = { resolution: (Number, Number), time: Number, quit: Bool };
+
+      let shade = (uniforms: Uniforms) => {
+        (coord) => {
+          @gpu;
+          let uv = (coord * 2.0 - uniforms.resolution) / uniforms.resolution.y;
+          (uv.x + uniforms.time, uv.y, 0.0, 1.0)
+        }
+      };
+
+      let current: Uniforms = .{ resolution = (1280.0, 720.0), time = 0.25 };
+      let fragment = Gpu.fragment(shade(current));
+    `),
+  );
+  validateGpuSliceElaborationInput(input);
+
+  assertEquals(input.root.environmentId, 0);
+  assertEquals(input.environments.map((environment) => environment.name), ["Uniforms"]);
+  assertEquals(
+    input.environmentFields.map((field) => [field.name, field.declaredIndex]),
+    [["resolution", 0], ["time", 1]],
+  );
+  assertEquals(
+    input.expressions.filter((expression) => expression.kind === "uniform").map((expression) =>
+      expression.index
+    ),
+    [0, 0, 1],
+  );
+
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.slangSource.includes("struct wm_environment"), true);
+  assertEquals(output.slangSource.includes("float2 wm_u_0;"), true);
+  assertEquals(output.slangSource.includes("float wm_u_1;"), true);
+  assertEquals(output.slangSource.includes("[[vk::binding(0, 0)]]"), true);
+  assertEquals(
+    output.slangSource.includes("ConstantBuffer<wm_environment> wm_uniforms;"),
+    true,
+  );
+  assertEquals(output.slangSource.includes("wm_uniforms.wm_u_0"), true);
+  assertEquals(output.slangSource.includes("wm_uniforms.wm_u_1"), true);
+});
+
+Deno.test("schema v2 keeps the curried environment boundary closed", async () => {
+  await assertRejects(
+    () =>
+      analysisFor(`
+        record ExpectedUniforms = { time: Number };
+        record WrongUniforms = { time: Number };
+        let shade = (uniforms: ExpectedUniforms) => {
+          (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
+        };
+        let wrong: WrongUniforms = .{ time = 1.0 };
+        let fragment = Gpu.fragment(shade(wrong));
+      `),
+    Error,
+    "type mismatch",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+        record Uniforms = { time: Number };
+        let shade = (uniforms: Uniforms) => {
+          @gpu;
+          (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
+        };
+        let current: Uniforms = .{ time = 1.0 };
+        let fragment = Gpu.fragment(shade(current));
+      `),
+    Error,
+    "shader factory requires one annotated host parameter",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+        record Uniforms = { time: Number };
+        let hostOffset = 0.25;
+        let shade = (uniforms: Uniforms) => {
+          (_coord) => {
+            @gpu;
+            (uniforms.time + hostOffset, 0.0, 0.0, 1.0)
+          }
+        };
+        let current: Uniforms = .{ time = 1.0 };
+        let fragment = Gpu.fragment(shade(current));
+      `),
+    GpuSliceNormalizationError,
+    "instead of capturing it",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+        record Uniforms = { enabled: Bool };
+        let shade = (uniforms: Uniforms) => {
+          (_coord) => {
+            @gpu;
+            if (uniforms.enabled) { (1.0, 0.0, 0.0, 1.0) } else { (0.0, 0.0, 0.0, 1.0) }
+          }
+        };
+        let current: Uniforms = .{ enabled = true };
+        let fragment = Gpu.fragment(shade(current));
+      `),
+    GpuSliceNormalizationError,
+    "must be Number or a homogeneous Number tuple",
+  );
+});
+
+Deno.test("schema v2 vector rules do not leak into host code or resize widths", async () => {
+  await assertRejects(
+    () => analysisFor(`let host = (1.0, 2.0) + (3.0, 4.0);`),
+    Error,
+  );
+  await assertRejects(
+    () =>
+      analysisFor(`
+        let shade = (coord) => {
+          @gpu;
+          let wrongWidth = coord + (1.0, 2.0, 3.0);
+          let (x, y, _z) = wrongWidth;
+          (x, y, 0.0, 1.0)
+        };
+        let fragment = Gpu.fragment(shade);
+      `),
+    Error,
+  );
 });
 
 Deno.test("schema v2 IR rejects a direct self-call outside tail position", async () => {
@@ -448,12 +701,11 @@ Deno.test("schema v2 IR requires complete constructor coverage", async () => {
     await analysisFor(`
       type Shade = Dark | Light;
 
-      let choose = match(value) => {
-        Dark => { 0.0 }
-      };
-
       let shade = (coord) => {
         @gpu;
+        let choose = match(value) => {
+          Dark => { 0.0 }
+        };
         let (_x, _y) = coord;
         Gpu.color((choose(Dark), 0.0, 0.0, 1.0))
       };
@@ -504,15 +756,50 @@ Deno.test("schema v2 output validation rejects a dangling functional IR edge", a
     Error,
     "references missing id 999",
   );
+
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        shaderTypes: output.shaderTypes.map((type, index) =>
+          index === 0 ? { ...type, kind: "bool" } : type
+        ),
+      }),
+    Error,
+    "disagrees with semantic source shape",
+  );
+
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        typeEvidence: output.typeEvidence.map((fact, index) =>
+          index === 0 ? { ...fact, reason: "semantic-shape" } : fact
+        ),
+      }),
+    Error,
+    "evidence disagrees",
+  );
+
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        occurrences: output.occurrences.map((occurrence, index) =>
+          index === 0 ? { ...occurrence, typeId: 999 } : occurrence
+        ),
+      }),
+    Error,
+    "disagrees with its semantic source row",
+  );
 });
 
 Deno.test("schema v2 executes a trailing-semicolon expression exactly once", async () => {
   const input = normalizeGpuSliceProgram(
     await analysisFor(`
-      let touch = (x) => { x + 1.0; };
-
       let shade = (coord) => {
         @gpu;
+        let touch = (x) => { x + 1.0; };
         let (x, _y) = coord;
         touch(x);
         Gpu.color((x, 0.0, 0.0, 1.0))

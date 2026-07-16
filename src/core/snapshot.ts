@@ -76,7 +76,9 @@ function showExpr(expr: CoreExpr): string {
     case "CoreVoid":
       return "void";
     case "CoreShaderRef":
-      return `shader-ref(${expr.artifactId})`;
+      return expr.environment
+        ? `shader-ref(${expr.artifactId}, ${showExpr(expr.environment)})`
+        : `shader-ref(${expr.artifactId})`;
     case "CoreVar":
       return showCtorRef(expr.name, expr.ctorId);
     case "CoreTuple":

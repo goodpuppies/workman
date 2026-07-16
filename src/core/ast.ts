@@ -71,7 +71,12 @@ export type CoreExpr =
   | { kind: "CoreString"; value: string; node?: AstNode }
   | { kind: "CoreBool"; value: boolean; node?: AstNode }
   | { kind: "CoreVoid"; node?: AstNode }
-  | { kind: "CoreShaderRef"; artifactId: VisualShaderArtifactV1["id"]; node?: AstNode }
+  | {
+    kind: "CoreShaderRef";
+    artifactId: VisualShaderArtifactV1["id"];
+    environment?: CoreExpr;
+    node?: AstNode;
+  }
   | { kind: "CoreVar"; name: string; bindingId?: BindingId; ctorId?: CtorId; node?: AstNode }
   | { kind: "CoreTuple"; items: CoreExpr[]; node?: AstNode }
   | { kind: "CoreRecord"; fields: CoreRecordExprItem[]; node?: AstNode }

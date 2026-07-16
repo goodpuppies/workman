@@ -1,8 +1,12 @@
 # wmslang implementation plan
 
 Status: broad architecture and post-v2 direction. The static fragment slice in
-[`v1-scope.md`](./v1-scope.md) and the narrow pure-result, numeric-tuple-vector, and diagnostic
-attribution slice in [`v2-scope.md`](./v2-scope.md) are implemented. Where this plan proposes more language,
+[`v1-scope.md`](./v1-scope.md) and the initial pure-result, numeric-tuple-vector, and diagnostic
+attribution work in [`v2-scope.md`](./v2-scope.md) are implemented. V2 now additionally scopes
+Workman-owned shader type elaboration, lexically owned local helpers, and one curried nominal-record
+CPU environment. Selection, schema normalization, uniform-read IR/lowering, and constant-buffer
+Slang emission, artifact values, reflection-checked packing, stable factory/schema identity, and
+renderer upload are implemented for that environment. Where this plan proposes more language,
 analysis, resource, diagnostic, packaging, or target breadth, that v2 scope takes precedence.
 
 V1 is intentionally not a production-complete visual release. It fixes all shader numbers to `f32`,
@@ -50,8 +54,8 @@ restricted option-like tag switch, evaluation order, and direct-tail-call loop r
 The closed v1 expression vocabulary in [`v1-operations.md`](./v1-operations.md) is scalar `f32` and
 `Bool` only.
 
-The proposed uniform ABI in [`v1-uniform.md`](./v1-uniform.md) is deferred to the next resource
-slice.
+The restricted curried uniform ABI in [`v1-uniform.md`](./v1-uniform.md) is implemented. Its older
+explicit-descriptor sections remain historical research for broader resource slices.
 
 The dual-representation solver in [`v1-numerics.md`](./v1-numerics.md) is deferred. V1 directly maps
 all reachable `Number` occurrences to `f32` and needs no numeric fixed point.
@@ -69,10 +73,22 @@ complete protocol.
 The ordered implementation handoff and H0 incompatibility audit are in
 [`v1-readiness.md`](./v1-readiness.md).
 
-The first post-v1 ergonomic slice is specified in [`v2-scope.md`](./v2-scope.md). It makes fragment
-color an ordinary pure four-tuple result, carries homogeneous numeric tuple vectors through the
-production IR, adds scalar/vector broadcast, and owns the related-span/backend-attribution
-diagnostic work deliberately left outside v1 completion.
+The evolving post-v1 slice is specified in [`v2-scope.md`](./v2-scope.md). Its implemented portion
+makes fragment color an ordinary pure four-tuple result, carries homogeneous numeric tuple vectors
+through the production IR, adds scalar/vector broadcast, and owns related-span/backend attribution.
+The lexical-helper portion now restricts shader helpers to first-order local functions inside the
+selected GPU island and rejects other module-level helpers and cross-function value capture. The
+semantic type-table boundary now leaves `number`/tuple rows unchanged in TypeScript and has Workman
+produce validated concrete `f32`/vector/product rows with evidence. A separate pure Workman entry
+returns stable expression/pattern/function occurrence types for LSP hover without lowering or Slang;
+failed GPU analysis is shown as unresolved rather than a CPU fallback. Richer constraint-edge
+evidence remains. One curried host shader factory now turns its nominal-record parameter into a
+reflected uniform block end to end: applying the factory constructs a fresh immutable bound
+fragment, generated host code copies its fields into the reflected byte layout, and the renderer
+uploads those bytes while reusing one shader module and pipeline. The executable SDL2
+mouse-to-Mandelbrot data flow is specified in [`v2-sdl-mandelbrot.md`](./v2-sdl-mandelbrot.md).
+The requirement-by-requirement completion gate is recorded in
+[`v2-acceptance.md`](./v2-acceptance.md).
 
 The supporting collection design in [`compiler-collections.md`](./compiler-collections.md) specifies
 a small comparator-based persistent AVL map in Workman `std`. It supplies the scope-preserving,
@@ -262,21 +278,22 @@ The initial capabilities are:
 
 ```text
 CPU-only
-GPU-eligible ordinary helper
 GPU-only declared function
+GPU-local inherited function
 ```
 
 An `@gpu;` lambda is a GPU-only declared function and is not emitted as an ordinary CPU-callable
 closure. Host Workman may name it and pass it through compiler-resolved immutable bindings as an
 opaque `GpuFn`, but it cannot escape through arbitrary FFI or dynamic host data. It becomes an
-artifact root only when a typed stage constructor selects it. An ordinary pure Workman helper
-remains CPU-callable and may additionally be proven GPU-eligible when reached from such a root. GPU
-capability therefore does not participate in ordinary HM generalization. Generalized shader
-representation constraints live in a parallel `GpuScheme` fact keyed by the helper's binding ID.
+artifact root only when a typed stage constructor selects it. A function declared lexically inside
+that GPU body inherits GPU-only ownership and may be a first-order local helper. An ordinary
+top-level Workman helper remains CPU-only; it is not reinterpreted merely because a shader root
+calls it. A future explicitly dual declaration may add both capabilities, but that cannot be an
+inferred property of an otherwise ordinary function body.
 
 Required behavior regardless of representation:
 
-- A GPU lambda may call another GPU-capable function.
+- A GPU lambda may call a first-order function owned by the same lexical GPU island.
 - A GPU lambda may not call a CPU-only or arbitrary JS FFI function.
 - Host code may carry a GPU function only as a statically tracked opaque `GpuFn` for stage
   selection.
@@ -289,8 +306,9 @@ construction and code generation.
 ## GPU effects and stage capabilities
 
 Shader effects are also parallel analysis facts rather than additions to ordinary HM function types.
-The closed fact vocabulary distinguishes pure computation, resource reads, resource writes, and
-stage-restricted operations. The first resource slice implements reads; later intrinsics enable
+The closed fact vocabulary distinguishes pure computation, environment/resource reads, resource
+writes, and stage-restricted operations. The first resource slice implements reads from the single
+curried uniform environment; later resource slices and intrinsics enable general resource reads,
 writes, derivatives, atomics, and workgroup memory.
 
 Facts refer to stable resource/capture IDs where applicable, are unioned transitively through the
@@ -422,7 +440,8 @@ Every free resolved binding used by an `@gpu;` lambda is classified before Slang
 | ------------------------------------------------- | --------------------------------------------------------------------- |
 | GPU-capable function                              | dependency edge and specialized/lifted Slang function                 |
 | closed literal scalar/vector constant             | clone the literal tree into the using specialization                  |
-| runtime scalar/vector/record                      | rejected in v1; a later slice uses explicit `Gpu.Uniform<T>` evidence |
+| immediately enclosing shader-factory environment | one typed uniform block                                                |
+| other runtime scalar/vector/record                | rejected; no automatic capture                                        |
 | typed read-only GPU resource                      | reflected resource binding                                            |
 | typed writable GPU resource                       | reflected writable binding plus GPU effect permission                 |
 | sampler/texture handle with Workman type evidence | corresponding Slang resource                                          |
@@ -431,9 +450,10 @@ Every free resolved binding used by an `@gpu;` lambda is classified before Slang
 
 Captures should be keyed by semantic binding ID. Generated names are an implementation detail.
 
-V1 rejects all captured values. The closed static grammar and explicit `Gpu.Uniform<T>` boundary in
-[`v1-captures.md`](./v1-captures.md) describe later slices. Those designs still avoid executing
-Workman or JavaScript merely to discover specialization values.
+V1 rejects all captured values. The first resource slice uses the restricted curried
+shader-environment boundary in [`v1-uniform.md`](./v1-uniform.md): one host nominal-record parameter,
+one returned `@gpu` lambda, and no other dynamic capture. It still avoids executing Workman or
+JavaScript to discover specialization values.
 
 Static shader type information is sufficient to generate WGSL ahead of runtime even when the actual
 GPU resource objects are created later. Runtime scalar captures should become uniform fields rather
@@ -611,7 +631,12 @@ Required diagnostic layers:
 LSP expectations:
 
 - `@gpu` is tokenized and structurally represented rather than treated as opaque damage.
-- Hover continues to show inferred Workman types, optionally with GPU representation facts.
+- Host hover shows inferred Workman types. Inside a lexically owned GPU island, hover shows the
+  concrete wmslang type produced by pure shader elaboration; the host HM shape is only recovery
+  information, not a second displayed instantiation.
+- Live shader checking runs the Workman elaborator but never Slang, WGSL generation, or WebGPU.
+- Failed shader elaboration remains visible as an LSP diagnostic and cannot silently degrade to a
+  successful CPU-only hover.
 - Diagnostics identify the original expression and use Workman terminology.
 - A future command may show generated Slang or WGSL for the selected GPU function.
 - Frontend-v1 preserves directive and lambda structure through the host compiler boundary.
@@ -707,10 +732,10 @@ Acceptance:
 - Generated Slang remains first-order and Slang accepts the result without requiring tag
   optimization.
 
-### H5: post-v1 explicit runtime uniform block
+### H5: post-v1 curried runtime uniform block
 
 Provide one nominal record containing runtime `f32` scalar/vector values such as time and
-resolution. Wrap it explicitly as the fragment artifact's uniform input.
+resolution. Pass it to a host shader factory whose result is the selected `@gpu` fragment lambda.
 
 Acceptance:
 
@@ -718,7 +743,8 @@ Acceptance:
 - Slang reflection supplies final field offsets and aggregate size.
 - Updating the value does not rebuild the shader program.
 - CPU/GPU type disagreement is diagnosed before runtime.
-- Capturing an ordinary host number without explicit uniform evidence remains rejected.
+- Capturing an ordinary host number outside the immediately enclosing environment parameter remains
+  rejected.
 
 ### H6: multiple cooperating GPU functions
 
@@ -793,7 +819,9 @@ materialization is no longer a Phase 2 or v1 requirement.
 
 The implemented schema-v1 merge still treats mixed evidence as `f32` dominance, but that behavior is
 now confined to H0 fixture APIs. Production program analysis uses the schema-v2 vertical slice: one
-semantic `Gpu.fragment` selection, one same-module closure, and direct `Number`-to-`f32` mapping.
+semantic `Gpu.fragment` selection and one lexical GPU island. Its DTO now carries semantic
+`number`/tuple shapes; the Workman slice elaborator owns the concrete `f32`/vector/product table and
+evidence consumed by lowering and emission.
 Uniform/capture inference, numeric coercion, and ordered multi-selector machinery are deferred under
 [`v1-scope.md`](./v1-scope.md), not prerequisites for the visual slice.
 
@@ -880,12 +908,31 @@ Slang remains first-order. Higher-order helpers have a separate post-v1 exit cri
 Exit criterion: H3 creates one real `GPUShaderModule`, a no-vertex-buffer render pipeline, and a
 correct offscreen coordinate image from Workman-generated WGSL.
 
-### Phase 7: post-v1 explicit uniform and reflection
+### Phase 7: post-v1 curried uniform and reflection
 
-- Reify the one explicit nominal uniform record and classify its descriptor capture.
-- Generate the fixed group-zero/binding-zero constant buffer.
-- Predict its field shapes and compare them to Slang layout reflection.
-- Use reflected offsets and sizes for the generated host packer and embedded manifest.
+- [x] Recognize one restricted, directly resolved host shader factory returning exactly one inner
+  `@gpu` lambda; keep the outer lambda host-owned.
+- [x] Reify its annotated, same-module, non-generic nominal-record parameter as an ordered shader
+  environment schema and reject all other captures.
+- [x] Normalize resolved record-field uses as typed uniform reads while keeping the current outer
+  argument out of the GPU expression graph.
+- [x] Preserve those reads through Workman-owned type elaboration, functional IR, lowering, and
+  deterministic group-zero/binding-zero Slang emission.
+- [x] Teach the host artifact/materializer to retain stable shader/schema metadata and lower the
+  current ordinary record to fresh immutable bytes. Reapplying the factory creates a new binding
+  without compiling a shader or retaining a foreign record reference.
+- [x] Predict field shapes, compare them to Slang reflection, and embed authoritative offsets,
+  aggregate byte length, binding identity, and zero-padding requirements in the artifact manifest.
+- [x] Generate the closed host packer for `Number` and homogeneous numeric tuple fields. It must
+  zero-initialize the complete reflected range and reject missing, reordered, or wrong-schema data.
+- [x] Extend fragment renderer creation to allocate the uniform buffer and bind group once, then make
+  each render validate artifact/schema identity, obtain the submitted immutable bytes, call
+  `queue.writeBuffer`, and draw with the existing module/pipeline.
+- [x] Turn the SDL2 mouse-driven Mandelbrot design into a real example: CPU tail-recursive event
+  draining updates immutable center/time/resolution state; GPU-local tail recursion handles escape
+  iteration. Verify two distinct frames without pipeline recreation.
+- [x] Accept chained `uniforms.resolution.y` during GPU pretyping and preserve it as a uniform read
+  followed by a lane projection in normalized IR.
 
 Exit criterion: the animated-uniform visual acceptance shader updates through ordinary WebGPU host
 code without rebuilding its shader module or pipeline.
@@ -898,7 +945,7 @@ code without rebuilding its shader module or pipeline.
   stable capture binding ID.
 
 Exit criterion: a separately scoped resource fixture passes without weakening the explicit uniform
-contract introduced in Phase 7.
+environment contract introduced in Phase 7.
 
 ### Phase 9: target and effect breadth
 
@@ -970,7 +1017,8 @@ explicit v1 exceptions below keep the first implementation a vertical slice:
 1. GPU constraints and generalized `GpuScheme` facts remain parallel to HM types in the broad
    design. V1 skips generalized numeric solving and fixes every reachable `Number` to `f32`.
 2. `@gpu` functions are GPU-only opaque values and become artifact roots only through typed stage
-   constructors. Ordinary pure helpers may be proven GPU-eligible without changing host types.
+   constructors. First-order local helpers inherit the lexical GPU domain; ordinary top-level
+   helpers remain CPU-only unless a future explicit dual-domain feature says otherwise.
 3. Entry stages are compiler-known typed host constructors; nominal `Gpu` stage records carry
    semantic evidence, and `@gpu` has no stage arguments.
 4. Common shader math and operators are stable compiler intrinsics opened only by the GPU typing
@@ -980,15 +1028,18 @@ explicit v1 exceptions below keep the first implementation a vertical slice:
    layouts and higher-order shader values are post-v1.
 7. Resources cross through nominal typed evidence wrappers, never raw reflected WebGPU handles.
 8. V1 has no dynamic shader input. One explicit typed uniform block is the next resource slice;
-   automatic capture and packing remain later work.
+   its nominal-record packer is compiler generated, while automatic capture and general resource
+   packing remain later work.
 9. V1 compiles one same-module artifact root and embeds only its opaque completed artifact, with no
    runtime AST interpreter. Multi-root and cross-module closure are later breadth.
 10. V1 requires a working compile-time Slang-to-WGSL path. Pinned distribution packaging and
     content-addressed toolchain/cache identity are production hardening after the slice.
 11. GPU resource effects and stage restrictions are inferred side facts propagated over the resolved
     call graph; they neither enter host HM types nor permit general mutation.
-12. Stage roots are statically selected. V1 accepts one inline or directly bound root and
-    same-module helpers; cross-module shader graphs come later.
+12. Stage roots are statically selected. The implemented v1 accepted one inline or directly bound
+    root plus same-module helpers; v2 replaces the helper rule with non-escaping local functions in
+    the root's lexical GPU island. Cross-module shader graphs come later only with an explicit domain
+    model.
 
 The deliberately deferred items are additive API breadth: implicit promotion, higher-order shader
 values, optimization, automatic uniform capture, compute and general vertex stages, the full

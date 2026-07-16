@@ -44,7 +44,7 @@ import { buildProgramAnalysis, type ProgramAnalysis } from "./program_analysis.t
 import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
 import type { NominalFacts } from "./nominal_facts.ts";
 import type { BindingFacts } from "./binding_facts.ts";
-import type { GpuSliceElaborationInput } from "./wmslang/v2_dto.ts";
+import type { GpuSliceElaborationInput, GpuSliceTypeElaborationOutput } from "./wmslang/v2_dto.ts";
 import type { ResolvedPatternFacts } from "./pattern_facts.ts";
 import type { RecursionFacts } from "./recursion_facts.ts";
 import { loadDefaultWmslangSlangBackend } from "./wmslang/slang_backend.ts";
@@ -253,20 +253,20 @@ function loadDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
   return defaultWmslangCompiler ??= compileDefaultWmslangCompiler();
 }
 
+export async function elaborateGpuTypesForLanguageService(
+  analysis: ProgramAnalysis,
+): Promise<GpuSliceTypeElaborationOutput | undefined> {
+  if (analysis.gpuInput.root.functionId === -1) return undefined;
+  return (await loadDefaultWmslangCompiler()).elaborateGpuSliceTypes(analysis.gpuInput);
+}
+
 async function compileDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
   const source = await compileLibraryFile(
     new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
   );
-  const directory = await Deno.makeTempDir();
-  const path = `${directory}/wmslang.generated.mjs`;
-  await Deno.writeTextFile(path, source);
-  try {
-    return await loadWmslangSliceCompiler(
-      `${new URL(`file://${path}`).href}?${crypto.randomUUID()}`,
-    );
-  } finally {
-    await Deno.remove(directory, { recursive: true });
-  }
+  return await loadWmslangSliceCompiler(
+    `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`,
+  );
 }
 
 function workerTargets(core: CoreProgram): string[] {

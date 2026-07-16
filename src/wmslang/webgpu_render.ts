@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 
-import type { VisualShaderDescriptorV1 } from "../gpu_artifact.ts";
+import type { VisualShaderArtifactV1, VisualShaderDescriptorV1 } from "../gpu_artifact.ts";
 
 export class WmslangWebGpuUnavailableError extends Error {
   constructor(message: string) {
@@ -13,6 +13,7 @@ export async function renderVisualShaderV1(
   artifact: VisualShaderDescriptorV1,
   width: number,
   height: number,
+  uniformBytes?: Uint8Array,
 ): Promise<Uint8Array> {
   if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
     throw new Error("visual-v1 render dimensions must be positive integers");
@@ -44,6 +45,34 @@ export async function renderVisualShaderV1(
     },
     primitive: { topology: "triangle-list" },
   });
+  const uniformLayout = (artifact as VisualShaderArtifactV1).uniformLayout;
+  if (uniformLayout && uniformBytes?.byteLength !== uniformLayout.byteLength) {
+    device.destroy();
+    throw new Error(
+      `visual shader requires ${uniformLayout.byteLength} uniform bytes, received ${
+        uniformBytes?.byteLength ?? 0
+      }`,
+    );
+  }
+  if (!uniformLayout && uniformBytes) {
+    device.destroy();
+    throw new Error("static visual shader received unexpected uniform bytes");
+  }
+  const uniformBuffer = uniformLayout
+    ? device.createBuffer({
+      size: uniformLayout.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    })
+    : undefined;
+  const bindGroup = uniformBuffer
+    ? device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [{ binding: uniformLayout!.binding, resource: { buffer: uniformBuffer } }],
+    })
+    : undefined;
+  if (uniformBuffer && uniformBytes) {
+    device.queue.writeBuffer(uniformBuffer, 0, uniformBytes.slice().buffer);
+  }
   const texture = device.createTexture({
     size: { width, height },
     format: "rgba8unorm",
@@ -68,6 +97,7 @@ export async function renderVisualShaderV1(
       }],
     });
     pass.setPipeline(pipeline);
+    if (bindGroup) pass.setBindGroup(0, bindGroup);
     pass.setViewport(0, 0, width, height, 0, 1);
     pass.setScissorRect(0, 0, width, height);
     pass.draw(3, 1, 0, 0);
@@ -91,6 +121,7 @@ export async function renderVisualShaderV1(
   } finally {
     if (readback.mapState === "mapped") readback.unmap();
     readback.destroy();
+    uniformBuffer?.destroy();
     texture.destroy();
     device.destroy();
   }

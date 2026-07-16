@@ -18,9 +18,10 @@ from "./types.wm" import {
   GpuDiagnosticDto,
   GpuCompilationOutputDto,
   GpuSliceElaborationInputDto,
-  GpuSliceCompilationOutputDto
+  GpuSliceCompilationOutputDto,
+  GpuSliceTypeElaborationOutputDto
 };
-from "./slice_ir.wm" import { compileSliceProgram };
+from "./slice_ir.wm" import { compileSliceProgram, elaborateSliceProgramTypes };
 
 record SpecializationRegistryEntry = {
   specializationId: Number,
@@ -2398,5 +2399,10 @@ let compileGpu = (input: GpuElaborationInputDto) => {
 
 let compileGpuSlice = (input: GpuSliceElaborationInputDto) => {
   let output: GpuSliceCompilationOutputDto = compileSliceProgram(input);
+  output
+};
+
+let elaborateGpuSliceTypes = (input: GpuSliceElaborationInputDto) => {
+  let output: GpuSliceTypeElaborationOutputDto = elaborateSliceProgramTypes(input);
   output
 };

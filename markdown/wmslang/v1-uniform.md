@@ -1,10 +1,115 @@
 # wmslang deferred uniform descriptor and packing
 
-Status: deferred resource-slice design. The static vertical slice in
-[`v1-scope.md`](./v1-scope.md) has no uniforms or resource bindings. This document records a likely
-next slice for explicit immutable uniform descriptors, reflection, and packing.
+Status: restricted curried shader environment implemented end to end, including reflection
+verification, immutable host packing, and renderer upload. The older explicit-descriptor mechanics
+below remain historical packing and identity research where explicitly noted.
 
 Terminology note: unqualified “v1” statements below describe the former expanded resource contract.
+
+## TypeGPU findings and Workman direction
+
+TypeGPU does not turn arbitrary captured JavaScript values into shader inputs. It requires a runtime
+data schema such as `d.f32`, `d.vec2f`, or `d.struct(...)`, then creates a typed buffer or uniform
+from that schema. The schema drives host serialization, WGSL layout, permitted buffer usage, and the
+TypeScript type of values accepted by `.write(...)` and `.patch(...)`.
+
+TypeGPU exposes two related binding styles:
+
+- `root.createUniform(schema, initial)` returns one object with CPU `.write`/`.patch` operations and
+  a shader-only `$` view; shader resolution discovers that resource and assigns a binding;
+- `tgpu.bindGroupLayout(...)` explicitly declares named uniform, storage, texture, and sampler
+  entries; host code creates matching resources and a bind group, shader code uses the layout's `$`
+  views, and a pipeline is executed with the matching group.
+
+The important property is the schema-bearing resource identity. A JavaScript number or record is
+not a uniform merely because shader code closes over it. TypeGPU's mode-sensitive `$` proxy and
+mutable `.write` API are consequences of executing embedded TypeScript during code generation and
+do not need to be copied into Workman.
+
+Workman already has a better schema source for the first slice: a concrete nominal record
+declaration. It can also make the host/device frequency boundary part of ordinary functional
+structure rather than exposing a mutable buffer wrapper.
+
+```workman
+record FrameParams = {
+  resolution: (Number, Number),
+  time: Number
+};
+
+let shade = (params: FrameParams) => {
+  (coord) => {
+    @gpu;
+    let centered = (coord * 2.0 - params.resolution) / params.resolution.y;
+    -- pure shader computation using params.time
+  }
+};
+
+let fragment = Gpu.fragment(shade(.{
+  resolution = (960.0, 640.0),
+  time = 1.0
+}));
+```
+
+The outer function is a host-side shader factory. Its one nominal record parameter is the dynamic
+per-draw environment. The returned inner function is the GPU island; therefore `@gpu;` belongs on
+the inner lambda. Everything captured from that immediately enclosing parameter is lowered as one
+uniform block, while the inner coordinate parameter remains fragment stage input.
+
+Conceptually the types are:
+
+```text
+shade        : FrameParams -> gpu(f32x2 -> f32x4)
+Gpu.fragment : gpu(f32x2 -> f32x4) -> Gpu.Fragment<FrameParams>
+```
+
+The exact internal type may use an opaque GPU-closure/environment fact rather than adding `gpu(...)`
+to Workman's surface type algebra. The important property is that the environment schema remains
+attached to the returned GPU value and resulting fragment artifact.
+
+Calling `shade(nextParams)` creates a new immutable bound-shader value that shares the same compiled
+shader and schema identity while carrying new runtime data. It replaces user-facing
+`Gpu.withValue`; it does not remove packing, buffer allocation, or `queue.writeBuffer` from the
+runtime. The renderer performs those effects when drawing the bound fragment.
+
+This is a deliberately restricted form of partial application, not general runtime shader closure
+conversion. The first resource slice accepts:
+
+- one directly resolved shader-factory binding;
+- exactly one annotated nominal-record host parameter;
+- a body whose result is exactly one `@gpu` lambda;
+- capture by the inner lambda of that environment parameter only;
+- direct selection of the applied result by `Gpu.fragment`.
+
+The selected call result is statically known even though its environment value is dynamic. The
+compiler emits the shader once and lowers the runtime outer application to construction of a small
+artifact/environment descriptor. Pipeline caching keys on shader/schema identity, never on the
+current record value.
+
+Outer application always means dynamic uniform binding in this slice. It must not sometimes mean
+uniform data and sometimes trigger compile-time specialization based on whether the argument happens
+to be a literal. Static specialization needs a later explicit operation and a visibly different
+cache/code-size contract.
+
+This syntax gives frequency-of-change useful structure without claiming that all curried Workman
+functions have GPU meaning. An ordinary function returning an ordinary function remains ordinary;
+the inner `@gpu` marker and compiler-known stage selection establish this boundary together.
+
+It also resolves the LSP ambiguity:
+
+- the outer parameter occurrence is host `FrameParams`;
+- its uses captured by the inner island are the uniform view of that same explicit boundary;
+- `params.resolution` inside the island is `f32x2` and `params.time` is `f32`;
+- no arbitrary top-level CPU value is reinterpreted or captured.
+
+For the initial resource slice, keep one nominal environment record and one fixed binding.
+TypeGPU-style explicit bind-group layouts become useful when textures, samplers, storage buffers, or
+multiple resource groups arrive. Raw `GPUBuffer` values never acquire element or layout evidence
+automatically; pairing one with a schema must be an explicit unsafe/foreign operation if supported.
+
+The remaining sections predate this curried surface and use `Gpu.Uniform`, `Gpu.read`, and
+`Gpu.withValue` terminology. Preserve their stable identity, reflection, zeroed packing, and failure
+requirements, but translate the descriptor identity to the shader-factory binding/environment schema
+and the current value to the outer application argument.
 
 ## Schema boundary
 
@@ -139,9 +244,9 @@ backend contract errors retaining the raw JSON and generated Slang.
 
 ## Host packing
 
-`Gpu.uniformBytes(fragment, descriptor)` first validates all four identities: descriptor version,
-artifact-captured `UniformId`, nominal `RecordId`, and schema fingerprint. A descriptor created by a
-different `Gpu.uniform` binding is rejected even if its record shape is identical.
+The curried implementation exposes `Gpu.uniformBytes(fragment)`. The fragment was already bound
+through its compiler-selected factory, so no separate descriptor argument or `UniformId` is needed.
+Its hidden artifact/schema metadata and reflected layout govern packing.
 
 The generated packer then:
 
@@ -162,9 +267,13 @@ Host values that round to NaN or infinity are packed as target `f32`, but the vi
 and render gates assign them no stable pixel meaning. Packing never silently clamps, substitutes
 zero, or changes the descriptor.
 
-`Gpu.uniformByteLength(fragment, descriptor)` performs the same identity validation and returns the
-reflected aggregate length. `Gpu.uniformBinding(fragment, descriptor)` performs it and returns zero.
-The accessors do not accept a merely shape-compatible descriptor.
+`Gpu.uniformByteLength(fragment)` returns the reflected aggregate length and
+`Gpu.uniformBinding(fragment)` returns zero. Static fragments report length zero and binding `-1`.
+`Gpu.artifactIdentity(fragment)` exposes the compiler-generated identity used by a presenter to
+reject a fragment from another shader factory or nominal environment schema. The identity manifest
+includes generated WGSL, the selected source factory, and the reflected nominal layout; ordinary
+uniform values do not participate. The accessors never accept a separate shape-compatible
+descriptor.
 
 ## Failure surface
 
@@ -189,9 +298,8 @@ not expose the descriptor's value. The shared phase, provenance, and backend-cod
 - `f32x2`, `f32`, `f32x3`, and `f32x4` layouts pack known bit patterns at reflected offsets while
   all padding stays zero.
 - Reordering JavaScript object properties cannot change bytes.
-- Two `Gpu.withValue` descendants produce different bytes but share resource identity and compiled
-  artifact counters.
-- A descriptor with the same record type from another `Gpu.uniform` binding is rejected.
+- Two applications of the same shader factory produce different bytes but share one compiled
+  artifact and WGSL module.
 - Static artifacts contain no uniform declaration, manifest entry, buffer allocation requirement, or
   packer.
 - Reflection fixtures fail on a wrong group, binding, kind, representation, field order, missing

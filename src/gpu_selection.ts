@@ -1,4 +1,4 @@
-import type { Binding, Decl, Expr, Module } from "./ast.ts";
+import type { Binding, Decl, Expr, Module, Param } from "./ast.ts";
 import type { BindingFacts } from "./binding_facts.ts";
 import { collectResolvedBindingSites, type ResolvedBindingSite } from "./binding_sites.ts";
 import { GPU_SEMANTIC_IDS } from "./compiler_semantics.ts";
@@ -22,6 +22,15 @@ export type GpuFragmentSelectorFact = {
   path: string;
   call: CallExpr;
   argument: Expr;
+  environmentArgument?: Expr;
+};
+
+export type GpuShaderFactoryFact = {
+  path: string;
+  lambda: LambdaExpr;
+  binding: Binding;
+  bindingId: BindingId;
+  parameter: Param;
 };
 
 export type GpuFragmentRootFact = {
@@ -30,6 +39,7 @@ export type GpuFragmentRootFact = {
   lambda: LambdaExpr;
   binding?: Binding;
   bindingId?: BindingId;
+  factory?: GpuShaderFactoryFact;
   selectors: GpuFragmentSelectorFact[];
 };
 
@@ -42,7 +52,10 @@ export type GpuFragmentSelectionFacts = {
 
 export class GpuFragmentSelectionError extends Error {
   constructor(
-    readonly code: "gpu.fragment.unresolved-root" | "gpu.fragment.not-marked",
+    readonly code:
+      | "gpu.fragment.unresolved-root"
+      | "gpu.fragment.not-marked"
+      | "gpu.fragment.invalid-factory",
     readonly path: string,
     readonly expression: Expr,
     message: string,
@@ -76,7 +89,14 @@ export function resolveGpuFragmentSelections(
       if (!argument) {
         throw unresolved(input.path, expr, "Gpu.fragment requires one function value");
       }
-      const resolved = resolveLambda(argument, input.bindings, definitions, new Set());
+      const factoryApplication = resolveShaderFactoryApplication(
+        argument,
+        input.bindings,
+        definitions,
+        input.path,
+      );
+      const resolved = factoryApplication?.inner ??
+        resolveLambda(argument, input.bindings, definitions, new Set());
       if (!resolved) {
         throw unresolved(
           input.path,
@@ -104,6 +124,7 @@ export function resolveGpuFragmentSelections(
           lambda: resolved.lambda,
           binding: resolved.site?.binding,
           bindingId,
+          factory: factoryApplication?.factory,
           selectors: [],
         };
         roots.push(root);
@@ -115,6 +136,7 @@ export function resolveGpuFragmentSelections(
         path: input.path,
         call: expr,
         argument,
+        environmentArgument: factoryApplication?.argument,
       };
       selectors.push(selector);
       root.selectors.push(selector);
@@ -127,6 +149,58 @@ export function resolveGpuFragmentSelections(
     selectedCalls: new Set(selectors.map((item) => item.call)),
     selectedLambdas: new Set(roots.map((item) => item.lambda)),
   };
+}
+
+function resolveShaderFactoryApplication(
+  expression: Expr,
+  references: BindingFacts,
+  definitions: Map<BindingId, ResolvedBindingSite>,
+  currentPath: string,
+): {
+  inner: { lambda: LambdaExpr; site?: ResolvedBindingSite };
+  factory: GpuShaderFactoryFact;
+  argument: Expr;
+} | undefined {
+  if (expression.kind !== "Call") return undefined;
+  const resolved = resolveLambda(expression.callee, references, definitions, new Set());
+  if (!resolved?.site) return undefined;
+  const outer = resolved.lambda;
+  const inner = exactReturnedLambda(outer.body);
+  if (!inner) return undefined;
+  const bindingId = resolved.site.binding.pattern.kind === "PVar"
+    ? resolved.site.bindings.binders.get(resolved.site.binding.pattern)
+    : undefined;
+  if (
+    bindingId === undefined || outer.directives.length !== 0 || outer.params.length !== 1 ||
+    expression.args.length !== 1 || !outer.params[0].annotation
+  ) {
+    throw new GpuFragmentSelectionError(
+      "gpu.fragment.invalid-factory",
+      resolved.site.path ?? currentPath,
+      expression,
+      "a shader factory requires one annotated host parameter and must return exactly one @gpu lambda",
+    );
+  }
+  return {
+    inner: { lambda: inner, site: undefined },
+    factory: {
+      path: resolved.site.path ?? currentPath,
+      lambda: outer,
+      binding: resolved.site.binding,
+      bindingId,
+      parameter: outer.params[0],
+    },
+    argument: expression.args[0],
+  };
+}
+
+function exactReturnedLambda(expression: Expr): LambdaExpr | undefined {
+  if (expression.kind === "Lambda") return expression;
+  if (
+    expression.kind === "Block" && expression.items.length === 0 &&
+    expression.result.kind === "Lambda"
+  ) return expression.result;
+  return undefined;
 }
 
 function definitionSites(sites: ResolvedBindingSite[]): Map<BindingId, ResolvedBindingSite> {

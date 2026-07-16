@@ -125,6 +125,20 @@ function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
       );
       return nominal.type;
     }
+    const shared = sharedNonFunctionFieldType(typeEnv, field);
+    if (shared) {
+      constrainRecord(
+        target,
+        structural([{ name: field, type: shared }]),
+        undefined,
+        "InferRecord.ProjectSharedField",
+        "receiver has the field shape shared by every candidate record",
+        field,
+        "receiver",
+        "shared structural field",
+      );
+      return shared;
+    }
     const result = fresh();
     constrainRecord(
       target,
@@ -183,6 +197,18 @@ function uniqueNonFunctionFieldRecord(
   const record = freshRecord(info);
   const type = instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
   return prune(type).tag === "fn" ? undefined : { record, type };
+}
+
+function sharedNonFunctionFieldType(typeEnv: TypeEnv, field: string): Ty | undefined {
+  const candidates = findRecordTypes(typeEnv, [field], "contains");
+  if (candidates.length < 2) return undefined;
+  const types = candidates.map((info) => {
+    const record = freshRecord(info);
+    return instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
+  });
+  if (types.some((type) => prune(type).tag === "fn")) return undefined;
+  const shape = show(types[0]);
+  return types.every((type) => show(type) === shape) ? types[0] : undefined;
 }
 
 function expectedRecord(expected: Ty | undefined, typeEnv: TypeEnv): NamedTy | undefined {

@@ -7,9 +7,27 @@ export type VisualShaderDescriptorV1 = {
   fragmentEntry: "wm_fragment";
 };
 
+export type VisualShaderUniformRepresentation = "f32" | "f32x2" | "f32x3" | "f32x4";
+
+export type VisualShaderUniformFieldV2 = {
+  name: string;
+  declaredIndex: number;
+  representation: VisualShaderUniformRepresentation;
+  offset: number;
+  byteLength: number;
+};
+
+export type VisualShaderUniformLayoutV2 = {
+  recordName: string;
+  binding: 0;
+  byteLength: number;
+  fields: VisualShaderUniformFieldV2[];
+};
+
 /** Compiler-owned identity plus the minimal runtime descriptor. */
 export type VisualShaderArtifactV1 = VisualShaderDescriptorV1 & {
   id: `wms-v1-${string}`;
+  uniformLayout?: VisualShaderUniformLayoutV2;
 };
 
 export type GpuFragmentCall = Extract<Expr, { kind: "Call" }>;

@@ -44,6 +44,7 @@ type CoreLoweringContext = {
   gpuOnlyBindings: ReadonlySet<BindingId>;
   gpuOnlyTypeNames: ReadonlySet<TypeNameId>;
   selectedFragmentCalls: ReadonlySet<Extract<Expr, { kind: "Call" }>>;
+  fragmentEnvironmentArguments: ReadonlyMap<Extract<Expr, { kind: "Call" }>, Expr>;
   materializedGpuArtifacts: MaterializedGpuArtifacts;
   gpuSemanticIds: ReadonlyMap<Expr, CompilerSemanticId>;
   nominalFacts?: NominalFacts;
@@ -53,6 +54,7 @@ export type CoreGpuHostBoundary = {
   gpuOnlyBindings: ReadonlySet<BindingId>;
   gpuOnlyTypeNames?: ReadonlySet<TypeNameId>;
   selectedFragmentCalls?: ReadonlySet<Extract<Expr, { kind: "Call" }>>;
+  fragmentEnvironmentArguments?: ReadonlyMap<Extract<Expr, { kind: "Call" }>, Expr>;
   materializedGpuArtifacts?: MaterializedGpuArtifacts;
   nominalFacts?: NominalFacts;
 };
@@ -97,6 +99,7 @@ export function coreFromSurface(
       gpuOnlyTypeNames: resolvedBoundary?.gpuOnlyTypeNames ?? new Set<TypeNameId>(),
       selectedFragmentCalls: resolvedBoundary?.selectedFragmentCalls ??
         new Set<Extract<Expr, { kind: "Call" }>>(),
+      fragmentEnvironmentArguments: resolvedBoundary?.fragmentEnvironmentArguments ?? new Map(),
       materializedGpuArtifacts: resolvedBoundary?.materializedGpuArtifacts ?? new Map(),
       gpuSemanticIds: new Map(
         [...(analysis?.facts.expressions ?? [])].flatMap(([expr, fact]) =>
@@ -225,7 +228,11 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
         if (
           semanticId === GPU_SEMANTIC_IDS.wgsl ||
           semanticId === GPU_SEMANTIC_IDS.vertexEntryPoint ||
-          semanticId === GPU_SEMANTIC_IDS.fragmentEntryPoint
+          semanticId === GPU_SEMANTIC_IDS.fragmentEntryPoint ||
+          semanticId === GPU_SEMANTIC_IDS.artifactIdentity ||
+          semanticId === GPU_SEMANTIC_IDS.uniformBinding ||
+          semanticId === GPU_SEMANTIC_IDS.uniformByteLength ||
+          semanticId === GPU_SEMANTIC_IDS.uniformBytes
         ) return { kind: "CoreVar", name: expr.name, node: expr.node };
         throw new Error(
           `compiler-owned GPU operation ${semanticId} reached host Core lowering before materialization`,
@@ -296,7 +303,13 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       if (context?.selectedFragmentCalls.has(expr)) {
         const artifact = context.materializedGpuArtifacts.get(expr);
         if (artifact) {
-          return { kind: "CoreShaderRef", artifactId: artifact.id, node: expr.node };
+          const environment = context.fragmentEnvironmentArguments.get(expr);
+          return {
+            kind: "CoreShaderRef",
+            artifactId: artifact.id,
+            ...(environment ? { environment: coreExprFromSurface(environment, context) } : {}),
+            node: expr.node,
+          };
         }
         throw new Error(
           "selected GPU fragment reached host Core lowering before artifact materialization",

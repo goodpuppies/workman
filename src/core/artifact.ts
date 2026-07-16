@@ -9,7 +9,7 @@ import {
 import type { CoreModule, CorePattern } from "./ast.ts";
 import { coreFromSurface } from "./from_surface.ts";
 import { gpuOnlyBindingIds } from "../gpu_host_boundary.ts";
-import { resolveGpuFragmentSelections } from "../gpu_selection.ts";
+import { type GpuFragmentSelectionFacts, resolveGpuFragmentSelections } from "../gpu_selection.ts";
 import {
   type NominalConstructorFact,
   type NominalFacts,
@@ -64,9 +64,7 @@ export function coreProgramFromAnalysis(
     ids: CoreIdAllocator;
     gpuOnlyBindings?: ReadonlySet<BindingId>;
     gpuOnlyTypeNames?: ReadonlySet<TypeNameId>;
-    fragmentSelections?: {
-      selectedCalls: ReadonlySet<Extract<Expr, { kind: "Call" }>>;
-    };
+    fragmentSelections?: Pick<GpuFragmentSelectionFacts, "selectedCalls" | "selectors">;
     nominalFacts?: NominalFacts;
     materializedGpuArtifacts?: MaterializedGpuArtifacts;
   },
@@ -90,6 +88,11 @@ export function coreProgramFromAnalysis(
       gpuOnlyBindings,
       gpuOnlyTypeNames: elaboration?.gpuOnlyTypeNames,
       selectedFragmentCalls: elaboration?.fragmentSelections?.selectedCalls,
+      fragmentEnvironmentArguments: new Map(
+        elaboration?.fragmentSelections?.selectors.flatMap((selector) =>
+          selector.environmentArgument ? [[selector.call, selector.environmentArgument]] : []
+        ) ?? [],
+      ),
       materializedGpuArtifacts: elaboration?.materializedGpuArtifacts,
       nominalFacts,
     });

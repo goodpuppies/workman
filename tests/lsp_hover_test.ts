@@ -1,6 +1,55 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import { analyzeVirtual, elaborateGpuTypesForLanguageService } from "../src/compiler.ts";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
+import { validateUri } from "../src/lsp/validation.ts";
+
+Deno.test({
+  name: "GPU hover type elaboration does not require filesystem writes",
+  permissions: { read: true, write: false, env: true, net: false, run: true, ffi: false },
+  async fn() {
+    const source = `
+      let shade = (coord) => {
+        @gpu;
+        let projected = coord.y;
+        (projected, 0.0, 0.0, 1.0)
+      };
+      let fragment = Gpu.fragment(shade);
+    `;
+    const analysis = await analyzeVirtual(
+      "/test/main.wm",
+      new Map([["/test/main.wm", source]]),
+    );
+    const elaboration = await elaborateGpuTypesForLanguageService(analysis);
+
+    assertEquals((elaboration?.occurrences.length ?? 0) > 0, true);
+    assertEquals(elaboration?.shaderTypes.some((type) => type.kind === "vector"), true);
+
+    const example = new URL(
+      "../examples/wmslang_window/src/main.wm",
+      import.meta.url,
+    ).pathname;
+    const exampleSource = await Deno.readTextFile(example);
+    const uri = pathToFileUri(example);
+    const hover = await hoverAt(
+      uri,
+      positionOf(exampleSource, "uniforms.resolution.y"),
+      new Map(),
+    );
+    const diagnostics = (await validateUri(uri, new Map())).flatMap((result) =>
+      result.diagnostics
+    );
+
+    if (!hover) {
+      throw new Error(`missing read-only window hover: ${JSON.stringify(diagnostics)}`);
+    }
+    assertEquals(hover.contents.value, "```wm\nuniforms.resolution.y: f32\n```");
+    assertEquals(
+      diagnostics.some((diagnostic) => diagnostic.code === "gpu.type.unresolved"),
+      false,
+    );
+  },
+});
 
 Deno.test("lsp hover returns partial types when delayed FFI resolution fails", async () => {
   const dir = await Deno.makeTempDir();
@@ -39,6 +88,91 @@ let outer = {
   const hover = await hoverAt(pathToFileUri(main), positionOf(source, "x ="), new Map());
 
   assertEquals(hover?.contents.value, "```wm\nx: Number\n```");
+});
+
+Deno.test("lsp hover presents Workman-elaborated shader occurrence types", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let shade = (coord) => {
+  @gpu;
+  let helper = (value) => { value };
+  let local = coord * 2.0;
+  let projected = local.y;
+  let passed = helper(projected);
+  (passed, 0.0, 0.0, 1.0)
+};
+let fragment = Gpu.fragment(shade);
+let host = (1.0, 2.0);
+`;
+  await Deno.writeTextFile(main, source);
+  const uri = pathToFileUri(main);
+
+  const shade = await hoverAt(uri, positionOf(source, "shade ="), new Map());
+  const coord = await hoverAt(uri, positionOf(source, "coord *"), new Map());
+  const helper = await hoverAt(uri, positionOf(source, "helper ="), new Map());
+  const projected = await hoverAt(uri, positionOf(source, "local.y"), new Map());
+  const host = await hoverAt(uri, positionOf(source, "host ="), new Map());
+
+  assertEquals(shade?.contents.value, "```wm\nshade: (f32x2) => f32x4\n```");
+  assertEquals(coord?.contents.value, "```wm\ncoord: f32x2\n```");
+  assertEquals(helper?.contents.value, "```wm\nhelper: (f32) => f32\n```");
+  assertEquals(projected?.contents.value, "```wm\nlocal.y: f32\n```");
+  assertEquals(host?.contents.value, "```wm\nhost: (Number, Number)\n```");
+});
+
+Deno.test("lsp hover presents curried environment fields in their GPU representation", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+record Uniforms = { resolution: (Number, Number), time: Number };
+let shade = (uniforms: Uniforms) => {
+  (coord) => {
+    @gpu;
+    let uv = (coord * 2.0 - uniforms.resolution) / uniforms.resolution.y;
+    (uv.x + uniforms.time, uv.y, 0.0, 1.0)
+  }
+};
+let current: Uniforms = .{ resolution = (960.0, 640.0), time = 0.5 };
+let fragment = Gpu.fragment(shade(current));
+`;
+  await Deno.writeTextFile(main, source);
+  const uri = pathToFileUri(main);
+
+  const resolution = await hoverAt(
+    uri,
+    positionOf(source, "uniforms.resolution"),
+    new Map(),
+  );
+  const time = await hoverAt(uri, positionOf(source, "uniforms.time"), new Map());
+  const lane = await hoverAt(uri, positionOf(source, "uniforms.resolution.y"), new Map());
+
+  assertEquals(resolution?.contents.value, "```wm\nuniforms.resolution: f32x2\n```");
+  assertEquals(time?.contents.value, "```wm\nuniforms.time: f32\n```");
+  assertEquals(lane?.contents.value, "```wm\nuniforms.resolution.y: f32\n```");
+});
+
+Deno.test("lsp hover does not disguise failed GPU elaboration as a CPU type", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let outside = (value) => { value };
+let shade = (coord) => {
+  @gpu;
+  let (x, _y) = coord;
+  (outside(x), 0.0, 0.0, 1.0)
+};
+let fragment = Gpu.fragment(shade);
+`;
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(
+    pathToFileUri(main),
+    positionOf(source, "x), 0.0"),
+    new Map(),
+  );
+
+  assertEquals(hover?.contents.value, "```wm\nx: unresolved GPU type\n```");
 });
 
 Deno.test("lsp hover returns instantiated and general types for polymorphic uses", async () => {

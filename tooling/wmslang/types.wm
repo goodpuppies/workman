@@ -217,6 +217,22 @@ record GpuSliceTypeDto = {
   result: Number,
 };
 
+record GpuSliceShaderTypeDto = {
+  id: Number,
+  kind: String,
+  typeNameId: Number,
+  items: Js.Array<Number>,
+  params: Js.Array<Number>,
+  result: Number,
+};
+
+record GpuSliceTypeEvidenceDto = {
+  typeId: Number,
+  semanticKind: String,
+  shaderKind: String,
+  reason: String,
+};
+
 record GpuSliceAdtDto = {
   typeNameId: Number,
   name: String,
@@ -310,6 +326,7 @@ record GpuSliceFunctionDto = {
   id: Number,
   bindingId: Number,
   name: String,
+  typeId: Number,
   paramIds: Js.Array<Number>,
   resultTypeId: Number,
   bodyExprId: Number,
@@ -317,9 +334,43 @@ record GpuSliceFunctionDto = {
   spanId: Number,
 };
 
+record GpuSliceOccurrenceTypeDto = {
+  kind: String,
+  sourceId: Number,
+  typeId: Number,
+  spanId: Number,
+};
+
+record GpuSliceTypeElaborationOutputDto = {
+  schemaVersion: Number,
+  shaderTypes: Js.Array<GpuSliceTypeDto>,
+  typeEvidence: Js.Array<GpuSliceTypeEvidenceDto>,
+  occurrences: Js.Array<GpuSliceOccurrenceTypeDto>,
+};
+
 record GpuSliceRootDto = {
   functionId: Number,
   selectorSpanId: Number,
+  environmentId: Number,
+};
+
+record GpuSliceEnvironmentFieldDto = {
+  id: Number,
+  environmentId: Number,
+  name: String,
+  declaredIndex: Number,
+  typeId: Number,
+  spanId: Number,
+};
+
+record GpuSliceEnvironmentDto = {
+  id: Number,
+  recordId: Number,
+  typeNameId: Number,
+  name: String,
+  bindingId: Number,
+  fieldIds: Js.Array<Number>,
+  spanId: Number,
 };
 
 record GpuSliceRecursionGroupDto = {
@@ -341,6 +392,8 @@ record GpuSliceElaborationInputDto = {
   schemaVersion: Number,
   sourcePath: String,
   root: GpuSliceRootDto,
+  environments: Js.Array<GpuSliceEnvironmentDto>,
+  environmentFields: Js.Array<GpuSliceEnvironmentFieldDto>,
   functions: Js.Array<GpuSliceFunctionDto>,
   types: Js.Array<GpuSliceTypeDto>,
   adts: Js.Array<GpuSliceAdtDto>,
@@ -528,6 +581,9 @@ record GpuSliceLoweredProgramDto = {
 record GpuSliceCompilationOutputDto = {
   schemaVersion: Number,
   program: GpuSliceElaborationInputDto,
+  shaderTypes: Js.Array<GpuSliceTypeDto>,
+  typeEvidence: Js.Array<GpuSliceTypeEvidenceDto>,
+  occurrences: Js.Array<GpuSliceOccurrenceTypeDto>,
   irFunctions: Js.Array<GpuSliceIrFunctionDto>,
   irExpressions: Js.Array<GpuSliceIrExprDto>,
   irMatchArms: Js.Array<GpuSliceIrMatchArmDto>,

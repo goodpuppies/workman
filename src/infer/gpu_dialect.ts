@@ -2,6 +2,7 @@ import type { Expr } from "../ast.ts";
 import { addGpuConstraint, instantiate, NumberTy, prune, tuple, type Ty } from "../types.ts";
 import type { InferContext, TypingDialect } from "./context.ts";
 import { constrainAt } from "./provenance.ts";
+import { inferDottedVar } from "./records.ts";
 
 export const gpuTypingDialect: TypingDialect = {
   domain: "gpu",
@@ -21,11 +22,16 @@ function inferGpuProjection(
   context: InferContext,
 ): Ty | undefined {
   const parts = expr.name.split(".");
-  if (parts.length !== 2) return undefined;
-  const index = vectorLanes.get(parts[1]);
-  const scheme = context.env.get(parts[0]);
-  if (index === undefined || !scheme) return undefined;
-  const receiver = instantiate(scheme);
+  if (parts.length !== 2 && parts.length !== 3) return undefined;
+  const index = vectorLanes.get(parts.at(-1)!);
+  if (index === undefined) return undefined;
+  const receiver = parts.length === 2
+    ? (() => {
+      const scheme = context.env.get(parts[0]);
+      return scheme ? instantiate(scheme) : undefined;
+    })()
+    : inferDottedVar(parts.slice(0, -1).join("."), context.env, context.typeEnv);
+  if (!receiver) return undefined;
   const resolved = prune(receiver);
   if (resolved.tag === "var") {
     addGpuConstraint(receiver, (bound) => assertProjectedVector(bound, index, expr));

@@ -14,7 +14,7 @@ type NativeError =
   | NativeDenoError<Js.Error>
   | NativeMessage<String>;
 
-type NativeEvent = QuitEvent | IgnoredEvent | NoEvent;
+type NativeEvent = QuitEvent | MouseEvent<Number, Number> | IgnoredEvent | NoEvent;
 type NativeSurface = UnsafeWindowSurface;
 
 record NativeRuntime = {
@@ -28,6 +28,7 @@ let sdlInitVideo = 32;
 let sdlWindowShown = 4;
 let sdlWindowposCentered = 805240832;
 let sdlQuit = 256;
+let sdlMousemotion = 1024;
 
 let denoResult = (value) => { value :> Result.mapErr(NativeDenoError) };
 let sdlResult = (value) => { value :> Result.mapErr(NativeSdlError) };
@@ -50,7 +51,7 @@ let expectOne = (label, value) => {
 let windowTitle = () => {
   Uint8Array.new(JSON[
     119, 109, 115, 108, 97, 110, 103, 32,
-    118, 49, 32, 45, 32,
+    118, 50, 32, 45, 32,
     87, 111, 114, 107, 109, 97, 110, 32,
     77, 97, 110, 100, 101, 108, 98, 114, 111, 116, 0
   ])
@@ -68,6 +69,7 @@ let loadSdl = () => {
     SDL_GetWindowWMInfo: JSON{ parameters: JSON["pointer", "pointer"], result: "i32" },
     SDL_GetVersion: JSON{ parameters: JSON["pointer"], result: "void" },
     SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" },
+    SDL_SetRelativeMouseMode: JSON{ parameters: JSON["i32"], result: "i32" },
     SDL_Delay: JSON{ parameters: JSON["u32"], result: "void" }
   }) :> Result.mapErr(NativeSdlError)
 };
@@ -139,7 +141,20 @@ let pollEvent = (sdl, eventPtr, eventView) => {
   let status = lift Result (value) => {
     if (value == 1) {
       eventView.getUint32(0) :> denoResult
-        :> Result.map((kind) => { if (kind == sdlQuit) { QuitEvent } else { IgnoredEvent } })
+        :> Result.andThen((kind) => {
+          if (kind == sdlQuit) {
+            Ok(QuitEvent)
+          } else {
+            if (kind == sdlMousemotion) {
+              Result|
+                eventView.getInt32(28) :> denoResult,
+                eventView.getInt32(32) :> denoResult
+              | :> Result.map((dx, dy) => { MouseEvent(dx, dy) })
+            } else {
+              Ok(IgnoredEvent)
+            }
+          }
+        })
     } else {
       Ok(NoEvent)
     }
@@ -158,7 +173,11 @@ let startNative = (width: Number, height: Number) => {
       sdl.symbols.SDL_CreateWindow(
         Some(title), sdlWindowposCentered, sdlWindowposCentered,
         width, height, sdlWindowShown
-      ) :> sdlResult :> Result.map((window) => { (sdl, window) })
+      ) :> sdlResult :> Result.andThen((window) => {
+        sdl.symbols.SDL_SetRelativeMouseMode(1) :> sdlResult
+          :> Result.andThen((code) => { expectZero("SDL_SetRelativeMouseMode failed", code) })
+          :> Result.map((_) => { (sdl, window) })
+      })
     };
     windowTitle() :> denoResult :> create
   };

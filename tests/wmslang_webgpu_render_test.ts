@@ -46,6 +46,38 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "visual-v2 renders a reflected curried uniform environment",
+  ignore: webGpuUnavailable,
+  async fn() {
+    const source = `
+      record Uniforms = { color: (Number, Number, Number, Number) };
+      let shade = (uniforms: Uniforms) => {
+        (_coord) => {
+          @gpu;
+          uniforms.color
+        }
+      };
+      let current: Uniforms = .{ color = (1.0, 0.0, 0.0, 1.0) };
+      let fragment = Gpu.fragment(shade(current));
+    `;
+    const compiled = await coreVirtual(
+      "/test/main.wm",
+      new Map([["/test/main.wm", source]]),
+    );
+    const artifact = [...compiled.core.shaderArtifacts.values()][0];
+    assertEquals(artifact.uniformLayout?.byteLength, 16);
+    const bytes = new Uint8Array(16);
+    const view = new DataView(bytes.buffer);
+    [1, 0, 0, 1].forEach((value, index) => view.setFloat32(index * 4, value, true));
+
+    const pixels = await renderVisualShaderV1(artifact, 16, 16, bytes);
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      assertEquals([...pixels.subarray(offset, offset + 4)], [255, 0, 0, 255]);
+    }
+  },
+});
+
 async function compileAcceptanceArtifact(name: string): Promise<VisualShaderDescriptorV1> {
   const compiled = await coreVirtual(
     "/test/main.wm",

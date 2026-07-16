@@ -454,12 +454,37 @@ Capture categories remain:
 - reachable GPU-capable function;
 - illegal CPU/FFI value.
 
+### Typed CPU-data bridge
+
+TypeGPU makes runtime data crossing explicit through a schema-bearing resource. `createUniform`
+combines a schema, GPU buffer identity, CPU `.write`/`.patch` operations, and a shader-only `$` view.
+Its bind-group layouts generalize the same rule to named uniform, storage, texture, and sampler
+entries. Ordinary JavaScript values do not become uniforms solely through capture.
+
+Direction for Workman: use nominal record declarations as the first host-shareable schema and a
+restricted curried shader factory as the bridge. A host function takes one nominal environment
+record and returns an explicitly marked `@gpu` lambda. Applying the outer function constructs a new
+immutable bound-shader value; the captured outer parameter becomes the shader uniform view, and
+`Gpu.fragment` preserves the environment schema in `Gpu.Fragment<T>`. This removes user-facing
+`Gpu.Uniform`, `Gpu.read`, and `Gpu.withValue` while the presentation/runtime layer still owns
+packing, buffer allocation, and `queue.writeBuffer`. Arbitrary CPU records and raw `GPUBuffer`
+handles remain illegal captures, even when their apparent shapes match.
+
+Outer application means dynamic uniform binding, never implicit compile-time specialization. A
+later specialization feature must be explicit so code generation and cache behavior do not depend
+silently on whether a call argument happens to be statically known.
+
+Begin with one deterministic uniform aggregate. TypeGPU-style explicit resource layouts are the
+right later generalization for multiple buffers, textures, and samplers, but its mode-sensitive `$`
+proxy and mutable resource object are not Workman semantics.
+
 ### CPU/GPU dual execution
 
 Direction: do not promise TypeGPU-style dual execution for every `@gpu` function. TypeGPU requires
-bundler operator rewriting and CPU vector implementations to preserve that promise. wmslang keeps
-`@gpu` functions remain GPU-only initially, while pure ordinary helpers may be classified
-`CPU + GPU`; a stage constructor separately selects an artifact root.
+bundler operator rewriting and CPU vector implementations to preserve that promise. Wmslang keeps
+each body under one lexical domain: ordinary top-level helpers are CPU-only, the selected `@gpu`
+root is GPU-only, and first-order local helpers inherit that GPU island. A future shared helper
+requires an explicit dual-domain feature rather than reachability-based reinterpretation.
 
 ### Numeric literals
 

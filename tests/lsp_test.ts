@@ -40,6 +40,59 @@ Deno.test("lsp validation returns diagnostics for unsaved files and clears them"
   assertEquals(await diagnosticsForPath(fixed, main), []);
 });
 
+Deno.test("lsp validation warns when GPU hover types cannot be elaborated", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source =
+    "let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) }; " +
+    "let fragment = Gpu.fragment(shade);";
+  await Deno.writeTextFile(main, source);
+
+  const diagnostics = await diagnosticsForPath(
+    await validateUri(pathToFileUri(main), new Map(), {}, {
+      gpuTypeElaborator: () => Promise.reject(new Error("test elaborator failure")),
+    }),
+    main,
+  );
+
+  assertEquals(diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
+    ["gpu.type.unresolved", 2],
+  ]);
+  assertEquals(diagnostics?.[0].range, charRange(source, "Gpu.fragment(shade)"));
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "GPU type elaboration is unresolved",
+    "test elaborator failure",
+    'Hover inside this shader will show "unresolved GPU type"',
+  ]);
+});
+
+Deno.test("lsp validation publishes source-local GPU ownership errors", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source =
+    "let outside = (x) => { x }; " +
+    "let shade = (coord) => { @gpu; let (x, _y) = coord; (outside(x), 0.0, 0.0, 1.0) }; " +
+    "let fragment = Gpu.fragment(shade);";
+  await Deno.writeTextFile(main, source);
+
+  const diagnostics = await diagnosticsForPath(
+    await validateUri(pathToFileUri(main), new Map()),
+    main,
+  );
+
+  assertEquals(diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
+    ["gpu.function.unsupported", 1],
+  ]);
+  const callStart = source.lastIndexOf("outside");
+  assertEquals(diagnostics?.[0].range, {
+    start: { line: 0, character: callStart },
+    end: { line: 0, character: callStart + "outside".length },
+  });
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "outside the selected lexical GPU island",
+  ]);
+});
+
 Deno.test("lsp validation locates unsaved parse errors", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
