@@ -8,8 +8,12 @@ GLML sources.
 Do not implement all of wmslang in one language.
 
 Use **TypeScript for integration with the existing compiler and external toolchain**, and use
-**Workman for the self-contained wmslang compiler core** once input has crossed a narrow,
-versioned boundary.
+**Workman for the self-contained wmslang compiler core** once input has crossed a narrow, versioned
+boundary.
+
+Frontend scope is fixed to frontend-v1. Frontend-v2 is still experimental and receives no wmslang
+parser, DTO, comparison-mode, tooling, or diagnostic work in this plan. Adding such support later
+would be a separate project decision rather than a deferred wmslang phase.
 
 The intended split is:
 
@@ -21,8 +25,8 @@ Workman: GPU constraints, typed shader IR, specialization and pure lowerings
 TypeScript: slang-wasm, reflection reconciliation, caching and emitted artifacts
 ```
 
-This is not a compromise in which every pass is divided between two implementations. There should
-be one substantial handoff into the Workman package and one result back. The Workman package should
+This is not a compromise in which every pass is divided between two implementations. There should be
+one substantial handoff into the Workman package and one result back. The Workman package should
 look like an importable compiler library, following the precedent established by frontend v2.
 
 The first vertical slice should prove this split before the large functional passes are ported. If
@@ -37,16 +41,16 @@ has direct access to the current AST, mutable HM types, `Map`/`Set`, source diag
 
 It has two longer-term costs:
 
-1. wmslang's functional middle-end would be written in a language with different invariants from
-   the source language it implements. Immutable ADTs, recursive transformations, pattern lowering,
-   ANF, and tail-call conversion are natural Workman programs.
+1. wmslang's functional middle-end would be written in a language with different invariants from the
+   source language it implements. Immutable ADTs, recursive transformations, pattern lowering, ANF,
+   and tail-call conversion are natural Workman programs.
 2. It would miss a valuable self-hosting pressure test. A compiler package large enough to compile
-   creative functional shaders will expose missing Workman library and performance capabilities in
-   a useful, bounded context.
+   creative functional shaders will expose missing Workman library and performance capabilities in a
+   useful, bounded context.
 
-TypeScript remains the fallback for a pass whose data-structure or performance requirements are
-not yet practical in Workman. The architecture must not make the implementation language part of
-the user-visible wmslang semantics.
+TypeScript remains the fallback for a pass whose data-structure or performance requirements are not
+yet practical in Workman. The architecture must not make the implementation language part of the
+user-visible wmslang semantics.
 
 ## Why not all Workman
 
@@ -63,8 +67,8 @@ That is strong evidence for writing tree transformations in Workman. It is not e
 entire current compiler can be moved there today.
 
 The live HM implementation is about 6,300 lines of TypeScript across `types.ts`, `infer.ts`, and
-`src/infer/`. It depends on behavior which is not yet available through an equally direct,
-fully typed Workman library surface:
+`src/infer/`. It depends on behavior which is not yet available through an equally direct, fully
+typed Workman library surface:
 
 - mutable union-find-like type variables whose `instance` field is filled by unification;
 - object-identity maps from surface expressions and patterns to inferred facts;
@@ -74,9 +78,9 @@ fully typed Workman library surface:
 - direct access to the module graph and Core artifact pipeline.
 
 Rewriting that machinery is not required to implement wmslang. Doing so now would combine three
-risks: shader-language design, a second HM implementation, and a larger self-hosting bootstrap.
-The `@gpu` island should reuse the existing checker through a TypeScript integration layer, then
-hand normalized facts to the Workman-owned shader compiler.
+risks: shader-language design, a second HM implementation, and a larger self-hosting bootstrap. The
+`@gpu` island should reuse the existing checker through a TypeScript integration layer, then hand
+normalized facts to the Workman-owned shader compiler.
 
 The Slang service also belongs in TypeScript. It owns WASM loading, async calls, target selection,
 binary/text results, versioned caches, and error handling at an external API boundary. None of that
@@ -84,26 +88,25 @@ benefits from being expressed as a recursive Workman compiler pass.
 
 ## What each side owns
 
-| Component | Initial owner | Reason |
-| --- | --- | --- |
-| Directive parsing in frontend v1 | TypeScript | It modifies the current compiler parser. |
-| Directive parsing in frontend v2 | Workman | It belongs to the existing Workman-native frontend package. |
-| Region-aware FFI traversal | TypeScript | It changes an existing deeply integrated host pass. |
-| Scoped HM dialect hooks | TypeScript | They reuse the live `Ty`, unifier, facts, and diagnostics. |
-| Stable binding and constructor IDs | TypeScript | They must be shared by host Core and shader analysis. |
-| Module reachability and artifact roots | TypeScript | The module graph and compilation orchestration already live there. |
-| Normalized GPU input construction | TypeScript | It snapshots mutable compiler state into an immutable ABI. |
-| GPU scalar/vector constraints | Workman | This is a closed recursive solver over wmslang types, not host HM. |
-| Type reification and capability checks | Workman | They define the shader dialect after ordinary HM inference. |
-| Typed functional shader IR | Workman | ADTs and immutable recursive trees are the natural representation. |
-| Monomorphization | Workman | It is a pure reachable-program transformation once types and IDs are stable. |
-| ADT and pattern lowering | Workman | It maps one typed functional tree into another. |
-| Lambda lifting and defunctionalization | Workman | They are closed transformations over the shader graph. |
-| ANF and tail-call lowering | Workman | They benefit directly from Workman's recursive functional style. |
-| Slang source generation | Workman | It is deterministic tree-to-text lowering and keeps backend naming with the IR. |
-| Slang WASM invocation | TypeScript | It is external async toolchain integration. |
-| Reflection reconciliation | TypeScript | It compares backend output with host artifact/resource contracts. |
-| Cache, WGSL embedding, JS emission | TypeScript | These are existing compiler/toolchain responsibilities. |
+| Component                                                     | Initial owner | Reason                                                                          |
+| ------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------- |
+| Directive parsing in frontend v1                              | TypeScript    | It modifies the current compiler parser.                                        |
+| Region-aware FFI traversal                                    | TypeScript    | It changes an existing deeply integrated host pass.                             |
+| Scoped HM dialect hooks                                       | TypeScript    | They reuse the live `Ty`, unifier, facts, and diagnostics.                      |
+| Stable binding, nominal, pattern, recursion, and operator IDs | TypeScript    | They must be shared by host Core, inference, and shader analysis.               |
+| Module reachability and artifact roots                        | TypeScript    | The module graph and compilation orchestration already live there.              |
+| Normalized GPU input construction                             | TypeScript    | It snapshots mutable compiler state into an immutable ABI.                      |
+| GPU scalar/vector constraints                                 | Workman       | This is a closed recursive solver over wmslang types, not host HM.              |
+| Type reification and capability checks                        | Workman       | They define the shader dialect after ordinary HM inference.                     |
+| Typed functional shader IR                                    | Workman       | ADTs and immutable recursive trees are the natural representation.              |
+| Monomorphization                                              | Workman       | It is a pure reachable-program transformation once types and IDs are stable.    |
+| ADT and pattern lowering                                      | Workman       | It maps one typed functional tree into another.                                 |
+| Lambda lifting and defunctionalization                        | Workman       | They are closed transformations over the shader graph.                          |
+| ANF and tail-call lowering                                    | Workman       | They benefit directly from Workman's recursive functional style.                |
+| Slang source generation                                       | Workman       | It is deterministic tree-to-text lowering and keeps backend naming with the IR. |
+| Slang WASM invocation                                         | TypeScript    | It is external async toolchain integration.                                     |
+| Reflection reconciliation                                     | TypeScript    | It compares backend output with host artifact/resource contracts.               |
+| Cache, WGSL embedding, JS emission                            | TypeScript    | These are existing compiler/toolchain responsibilities.                         |
 
 Some ownership may move later, but avoid alternating TypeScript and Workman at every pass. In
 particular, do not make each Workman transformation serialize an IR back to TypeScript before the
@@ -113,6 +116,11 @@ next transformation.
 
 The boundary must not expose the current mutable `Ty` object graph or use JavaScript object identity
 as semantics. It should use numbers and closed discriminated records.
+
+The deferred [`program evidence graph unification`](../program-evidence-graph-unification.md)
+proposal describes how these resolved facts could later share a provenance substrate with auditable
+diagnostics. That possible convergence does not change this boundary: wmslang receives a compact
+immutable projection, not the host compiler's complete inference history.
 
 An initial conceptual input is:
 
@@ -154,8 +162,12 @@ GpuCompilationOutput {
 ```
 
 Each generated program contains Slang source, source-map/provenance data, stable entry names, and
-enough target-independent identity for TypeScript to attach Slang diagnostics and reflection.
-Large debug snapshots can be optional outside tests and diagnostic builds.
+enough target-independent identity for TypeScript to attach Slang diagnostics and reflection. Large
+debug snapshots can be optional outside tests and diagnostic builds.
+
+The exact schema-v2 diagnostic rows, ordering, generated-source map, and artifact hash framing are
+specified in [`v1-diagnostics.md`](./v1-diagnostics.md). Workman emits structured facts and stable
+codes; TypeScript validates and renders them through Workman's normal diagnostic surface.
 
 ## Bootstrap and dependency direction
 
@@ -172,6 +184,76 @@ existing wm compiler
 The generated library should be reproducible and ignored in the same way as frontend v2's current
 artifact. Tests should build it into a temporary directory and load it through a validating
 TypeScript wrapper.
+
+This boundary now exists under `tooling/wmslang/`. Production program analysis uses
+`src/wmslang/v2_normalize.ts` and the closed schema-v2 DTO; `src/wmslang/v2_loader.ts` validates
+both directions; and `deno task wmslang:build` creates the ignored generated library. The schema-v1
+normalizer and loader remain explicit H0 fixtures only. Core lowering consumes the same
+`BindingFacts`, `NominalFacts`, and compiler ID allocator used by the DTO normalizer, so the two
+downstream targets cannot assign competing value identities.
+
+Schema v1 is only the H0 bootstrap boundary. The v1 vertical slice has made the small atomic
+schema-v2 cut described in [`v1-readiness.md`](./v1-readiness.md): TypeScript carries only the one
+selected same-module program, restricted declarations/patterns, shared constructor identities, and
+authored recursion identity. Every reachable `Number` maps directly to `f32`; representation
+overlays and generalized layouts remain later work. Core and wmslang still consume the same
+constructor facts rather than resolving or allocating them independently.
+
+The downstream branches rejoin only after shader compilation: TypeScript passes host Core lowering a
+map from resolved `Gpu.fragment(...)` call identity to completed `VisualShaderArtifactV1`. Core then
+emits `CoreShaderRef`; it never acts as input to wmslang and never visits the GPU lambda body. Until
+the real backend can populate that map, selected programs fail closed at this handoff.
+
+Pattern evidence follows the same shared-fact rule. Inference records a distinct result type for
+every pattern object, because a constructor lookup's instantiated function type is not the type of
+the value being matched. Final program analysis walks authored module/source order and assigns
+target-neutral pattern, parameter, let, and match-arm facts using the same `BindingId`, `CtorId`,
+and `RecordId` identities as Core. The schema-v2 normalizer serializes the restricted pattern and
+constructor projection needed by the slice; schema v1 remains unchanged as an H0 fixture.
+
+Recursive intent likewise remains an authored semantic fact. TypeScript assigns one group to each
+`let rec ... and ...` declaration, preserves member order and binding identity, and distinguishes
+direct-call, pipe-call, and value-reference edges using resolved references. Workman later decides
+reachability, specialization SCCs, and tail legality. Closed operator IDs are recorded during
+inference from syntax arity/token; Workman later validates their concrete scalar/vector rows.
+
+The current schema-v1 bootstrap output contains refined type and expression tables, classified
+functions, per-region captures, and diagnostics. Binding inputs carry an optional initializer
+expression ID as immutable evidence; Workman—not TypeScript—uses it to distinguish conservative
+compile-time constants from runtime uniforms. Capture output is keyed by region and resolved binding
+ID, so imported aliases and shadowing cannot change semantic identity.
+
+The H0 output's inferred scalar/vector `uniform` category and general expression-tree constants are
+not v1 API. The v1 schema rejects every captured value. Closed literal captures and explicit
+`Gpu.Uniform` provenance remain deferred designs in [`v1-captures.md`](./v1-captures.md).
+
+Normalized type IDs distinguish structural shader shape from representation-variable ownership.
+Numeric and vector occurrences belonging to separate bindings/expressions receive separate IDs;
+semantic constraints explicitly connect operators, value-yielding blocks/branches, and resolved call
+arguments/results. This avoids using global structural interning as an accidental numeric
+unification mechanism while leaving the mutable host `Ty` graph untouched.
+
+Schema v1 currently uses `f32` dominance when mixed evidence meets. V1 does not preserve or repair
+that solver: it maps every reachable `Number` directly to `f32`. The explicit conflict/default
+system in [`v1-numerics.md`](./v1-numerics.md) is a later numeric slice.
+
+The output now makes specialization explicit instead of rewriting one shared function table in
+place. A specialization records its source function/binding, concrete parameter and result
+representations, and a complete numeric type-fact overlay; separate root and call-target tables
+select those instances. Workman assigns IDs depth-first from roots, registers before traversing
+dependencies, and reuses an existing `(function, concrete representation signature)` entry. This is
+the GLML cycle-guard pattern adapted to resolved numeric IDs. It remains useful H0 and post-v1
+infrastructure, but v1 consumes only one monomorphic instance per source helper and no captures.
+Multiple representation signatures, local closures, and serialized static capture keys are later
+work.
+
+Normalized expressions remain an input/debug table rather than masquerading as final shader IR. The
+Workman output now clones each reachable specialization into its own typed functional graph. Every
+IR node records its specialization, source expression and span, resolved binding, concrete
+numeric/vector representation, semantic value origin, cloned child IDs, and specialized call target.
+The loader checks that function bodies and children stay within one specialization and that every
+call edge agrees with an IR call node. This is the immutable input expected by later coercion,
+tail-position, closure, and ANF passes.
 
 Do not let the Workman core call back into internal TypeScript inference functions. Its only inputs
 are the normalized DTO and stable configuration; its result contains data, not compiler callbacks.
@@ -194,10 +276,10 @@ Good candidates to port are:
 - creative examples and pass snapshots as behavioral fixtures.
 
 A line-for-line source port is not a good goal. GLML is built with OCaml Core and `ppx_jane`; its
-compiler makes extensive use of maps, sets, hash tables, exceptions, derived equality/sexp
-printers, labeled arguments, module interfaces, and rich `List` combinators. Workman has the ADTs,
-pattern matching, records, functions, and recursion required for the algorithms, but not the same
-library vocabulary or module system.
+compiler makes extensive use of maps, sets, hash tables, exceptions, derived equality/sexp printers,
+labeled arguments, module interfaces, and rich `List` combinators. Workman has the ADTs, pattern
+matching, records, functions, and recursion required for the algorithms, but not the same library
+vocabulary or module system.
 
 Port each algorithm against the smaller wmslang IR, using explicit `Result` diagnostics and
 tail-recursive state passing where appropriate. Workman's JavaScript interoperability is a normal
@@ -249,8 +331,8 @@ proves general. The persistent map is the exception because its semantics are al
 useful to frontend/tooling packages and its generic implementation has been verified directly.
 
 GLML is MIT licensed. If a function is translated closely enough to be a substantial copy rather
-than an independent implementation of the algorithm, retain the required license notice and note
-its origin. Tests and high-level pass designs can be adapted without pretending the OCaml source is
+than an independent implementation of the algorithm, retain the required license notice and note its
+origin. Tests and high-level pass designs can be adapted without pretending the OCaml source is
 directly reusable Workman code.
 
 ## Performance risk
@@ -284,8 +366,8 @@ Build a narrow H1 compiler library before implementing the full Phase 2:
 3. TypeScript validates the output, compiles the Slang with `slang-wasm`, and reports backend
    diagnostics against Workman spans.
 4. Tests snapshot the normalized input, Workman typed IR, generated Slang, and Slang result.
-5. A benchmark compiles a generated graph with many helpers and constraints to expose poor lookup
-   or recursion behavior early.
+5. A benchmark compiles a generated graph with many helpers and constraints to expose poor lookup or
+   recursion behavior early.
 
 The proof succeeds only if the split preserves actionable diagnostics and remains simple to debug.
 “It generated valid Slang” is necessary but insufficient.

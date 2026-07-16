@@ -1,0 +1,374 @@
+from "./types.wm" import {
+  GpuSliceAdtFieldDto,
+  GpuSliceAdtLayoutDto,
+  GpuSliceConstructorDto,
+  GpuSliceIrExprDto,
+  GpuSliceIrFunctionDto,
+  GpuSliceIrMatchArmDto,
+  GpuSliceLoweredAtomDto,
+  GpuSliceLoweredBlockDto,
+  GpuSliceLoweredCaseDto,
+  GpuSliceLoweredFunctionDto,
+  GpuSliceLoweredLocalDto,
+  GpuSliceLoweredOperationDto,
+  GpuSliceLoweredProgramDto,
+  GpuSliceLoweredStatementDto,
+  GpuSliceParamDto,
+  GpuSlicePatternDto
+};
+
+record SliceLowerContext = {
+  functions: List<GpuSliceIrFunctionDto>,
+  expressions: List<GpuSliceIrExprDto>,
+  matchArms: List<GpuSliceIrMatchArmDto>,
+  params: List<GpuSliceParamDto>,
+  patterns: List<GpuSlicePatternDto>,
+  constructors: List<GpuSliceConstructorDto>,
+  layouts: List<GpuSliceAdtLayoutDto>,
+  fields: List<GpuSliceAdtFieldDto>,
+};
+
+record SliceLowerState = {
+  nextLocalId: Number,
+  nextAtomId: Number,
+  nextOperationId: Number,
+  nextStatementId: Number,
+  nextBlockId: Number,
+  nextCaseId: Number,
+  functions: List<GpuSliceLoweredFunctionDto>,
+  locals: List<GpuSliceLoweredLocalDto>,
+  atoms: List<GpuSliceLoweredAtomDto>,
+  operations: List<GpuSliceLoweredOperationDto>,
+  statements: List<GpuSliceLoweredStatementDto>,
+  blocks: List<GpuSliceLoweredBlockDto>,
+  cases: List<GpuSliceLoweredCaseDto>,
+};
+
+let numberEqual = (left: Number, right: Number) => {
+  !(left < right) && !(left > right)
+};
+
+let rec reverseInto = match(items, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([Var(head), ..rest], Var(reversed)) => { reverseInto(rest, [head, ..reversed]) }
+};
+
+let rec append = match(left, right) => {
+  ([], Var(right)) => { right },
+  ([Var(head), ..rest], Var(right)) => { [head, ..append(rest, right)] }
+};
+
+let initialLowerState = () => {
+  let state: SliceLowerState = .{
+    nextLocalId = 0,
+    nextAtomId = 0,
+    nextOperationId = 0,
+    nextStatementId = 0,
+    nextBlockId = 0,
+    nextCaseId = 0,
+    functions = [],
+    locals = [],
+    atoms = [],
+    operations = [],
+    statements = [],
+    blocks = [],
+    cases = [],
+  };
+  state
+};
+
+let rec findIrFunction = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 IR function") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.functionId, id)) { item } else { findIrFunction(rest, id) }
+  }
+};
+
+let rec findIrExpression = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 IR expression") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findIrExpression(rest, id) }
+  }
+};
+
+let rec findIrMatchArm = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 IR match arm") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findIrMatchArm(rest, id) }
+  }
+};
+
+let rec findLoweredAtom = match(items, id) => {
+  ([], Var(id)) => { Panic("missing lowered atom") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findLoweredAtom(rest, id) }
+  }
+};
+
+let rec findParam = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 parameter") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findParam(rest, id) }
+  }
+};
+
+let rec findPattern = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 pattern") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findPattern(rest, id) }
+  }
+};
+
+let rec findConstructor = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 constructor") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findConstructor(rest, id) }
+  }
+};
+
+let rec findLayoutForType = match(items, typeId) => {
+  ([], Var(typeId)) => { Panic("missing schema-v2 ADT layout") },
+  ([Var(item), ..rest], Var(typeId)) => {
+    if (numberEqual(item.typeId, typeId)) { item } else { findLayoutForType(rest, typeId) }
+  }
+};
+
+let rec findLayoutForConstructor = match(layouts, fields, constructorId) => {
+  ([], Var(fields), Var(constructorId)) => { Panic("missing constructor ADT layout") },
+  ([Var(layout), ..rest], Var(fields), Var(constructorId)) => {
+    if (layoutContainsConstructor(Js.Array.toList(layout.fieldIds), fields, constructorId)) {
+      layout
+    } else {
+      findLayoutForConstructor(rest, fields, constructorId)
+    }
+  }
+}
+
+and layoutContainsConstructor = match(fieldIds, fields, constructorId) => {
+  ([], Var(fields), Var(constructorId)) => { false },
+  ([Var(fieldId), ..rest], Var(fields), Var(constructorId)) => {
+    let field = findField(fields, fieldId);
+    if (numberEqual(field.constructorId, constructorId)) {
+      true
+    } else {
+      layoutContainsConstructor(rest, fields, constructorId)
+    }
+  }
+}
+
+and findField = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 ADT field") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findField(rest, id) }
+  }
+};
+
+let rec findFieldForConstructor = match(items, constructorId) => {
+  ([], Var(constructorId)) => { Panic("missing constructor payload field") },
+  ([Var(item), ..rest], Var(constructorId)) => {
+    if (numberEqual(item.constructorId, constructorId)) {
+      item
+    } else {
+      findFieldForConstructor(rest, constructorId)
+    }
+  }
+};
+
+let pushLocal = (local: GpuSliceLoweredLocalDto, state: SliceLowerState) => {
+  let next: SliceLowerState = .{
+    ..state,
+    nextLocalId = state.nextLocalId + 1,
+    locals = [local, ..state.locals],
+  };
+  (local.id, next)
+};
+
+let freshLocal = (
+  functionId: Number,
+  kind: String,
+  typeId: Number,
+  bindingId: Number,
+  mutable: Bool,
+  spanId: Number,
+  state: SliceLowerState
+) => {
+  let local: GpuSliceLoweredLocalDto = .{
+    id = state.nextLocalId,
+    functionId = functionId,
+    kind = kind,
+    typeId = typeId,
+    bindingId = bindingId,
+    mutable = mutable,
+    spanId = spanId,
+  };
+  pushLocal(local, state)
+};
+
+let pushAtom = (atom: GpuSliceLoweredAtomDto, state: SliceLowerState) => {
+  let next: SliceLowerState = .{
+    ..state,
+    nextAtomId = state.nextAtomId + 1,
+    atoms = [atom, ..state.atoms],
+  };
+  (atom.id, next)
+};
+
+let localAtom = (
+  functionId: Number,
+  typeId: Number,
+  sourceExprId: Number,
+  spanId: Number,
+  localId: Number,
+  state: SliceLowerState
+) => {
+  let atom: GpuSliceLoweredAtomDto = .{
+    id = state.nextAtomId,
+    functionId = functionId,
+    kind = "local",
+    typeId = typeId,
+    sourceExprId = sourceExprId,
+    spanId = spanId,
+    localId = localId,
+    numberValue = 0,
+    boolValue = false,
+  };
+  pushAtom(atom, state)
+};
+
+let literalAtom = (
+  expression: GpuSliceIrExprDto,
+  state: SliceLowerState
+) => {
+  let atom: GpuSliceLoweredAtomDto = .{
+    id = state.nextAtomId,
+    functionId = expression.functionId,
+    kind = expression.kind,
+    typeId = expression.typeId,
+    sourceExprId = expression.sourceExprId,
+    spanId = expression.spanId,
+    localId = -1,
+    numberValue = expression.numberValue,
+    boolValue = expression.boolValue,
+  };
+  pushAtom(atom, state)
+};
+
+let pushOperation = (operation: GpuSliceLoweredOperationDto, state: SliceLowerState) => {
+  let next: SliceLowerState = .{
+    ..state,
+    nextOperationId = state.nextOperationId + 1,
+    operations = [operation, ..state.operations],
+  };
+  (operation.id, next)
+};
+
+let baseOperation = (
+  expression: GpuSliceIrExprDto,
+  kind: String,
+  state: SliceLowerState
+) => {
+  let operation: GpuSliceLoweredOperationDto = .{
+    id = state.nextOperationId,
+    functionId = expression.functionId,
+    kind = kind,
+    typeId = expression.typeId,
+    sourceExprId = expression.sourceExprId,
+    spanId = expression.spanId,
+    targetFunctionId = expression.targetFunctionId,
+    constructorId = expression.constructorId,
+    layoutId = -1,
+    fieldId = -1,
+    operatorId = expression.operatorId,
+    semanticId = expression.semanticId,
+    index = -1,
+    args = Js.Array.fromList([]),
+  };
+  operation
+};
+
+let pushStatement = (statement: GpuSliceLoweredStatementDto, state: SliceLowerState) => {
+  let next: SliceLowerState = .{
+    ..state,
+    nextStatementId = state.nextStatementId + 1,
+    statements = [statement, ..state.statements],
+  };
+  (statement.id, next)
+};
+
+let baseStatement = (
+  functionId: Number,
+  kind: String,
+  sourceExprId: Number,
+  spanId: Number,
+  state: SliceLowerState
+) => {
+  let statement: GpuSliceLoweredStatementDto = .{
+    id = state.nextStatementId,
+    functionId = functionId,
+    kind = kind,
+    sourceExprId = sourceExprId,
+    spanId = spanId,
+    localId = -1,
+    operationId = -1,
+    atomId = -1,
+    conditionAtomId = -1,
+    thenBlockId = -1,
+    elseBlockId = -1,
+    scrutineeAtomId = -1,
+    layoutId = -1,
+    caseIds = Js.Array.fromList([]),
+    bodyBlockId = -1,
+    targetLocalIds = Js.Array.fromList([]),
+    valueAtomIds = Js.Array.fromList([]),
+    reason = "",
+  };
+  statement
+};
+
+let pushBlock = (
+  functionId: Number,
+  statementIds,
+  state: SliceLowerState
+) => {
+  let block: GpuSliceLoweredBlockDto = .{
+    id = state.nextBlockId,
+    functionId = functionId,
+    statementIds = Js.Array.fromList(statementIds),
+  };
+  let next: SliceLowerState = .{
+    ..state,
+    nextBlockId = state.nextBlockId + 1,
+    blocks = [block, ..state.blocks],
+  };
+  (block.id, next)
+};
+
+let pushCase = (gpuCase: GpuSliceLoweredCaseDto, state: SliceLowerState) => {
+  let next: SliceLowerState = .{
+    ..state,
+    nextCaseId = state.nextCaseId + 1,
+    cases = [gpuCase, ..state.cases],
+  };
+  (gpuCase.id, next)
+};
+
+let pushFunction = (fn: GpuSliceLoweredFunctionDto, state: SliceLowerState) => {
+  let next: SliceLowerState = .{
+    ..state,
+    functions = [fn, ..state.functions],
+  };
+  next
+};
+
+let finishLoweredProgram = (state: SliceLowerState) => {
+  let output: GpuSliceLoweredProgramDto = .{
+    functions = state.functions :> reverseInto([]) :> Js.Array.fromList,
+    locals = state.locals :> reverseInto([]) :> Js.Array.fromList,
+    atoms = state.atoms :> reverseInto([]) :> Js.Array.fromList,
+    operations = state.operations :> reverseInto([]) :> Js.Array.fromList,
+    statements = state.statements :> reverseInto([]) :> Js.Array.fromList,
+    blocks = state.blocks :> reverseInto([]) :> Js.Array.fromList,
+    cases = state.cases :> reverseInto([]) :> Js.Array.fromList,
+  };
+  output
+};

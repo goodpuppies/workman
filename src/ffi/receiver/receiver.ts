@@ -175,6 +175,7 @@ export function reflectedReceiverFunctionValue(
     params: params.map((param) => ({
       pattern: { kind: "PVar", name: param },
     })),
+    directives: [],
     body: {
       kind: "Call",
       callee: { kind: "Var", name: variant.internalName },

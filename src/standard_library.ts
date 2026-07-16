@@ -2,6 +2,7 @@ import { prepareFfiElaboration } from "./ffi/elab.ts";
 import type { ImportClause } from "./ast.ts";
 import {
   listSource,
+  mapSource,
   monadSource,
   optionSource,
   resultSource,
@@ -26,6 +27,11 @@ const standardModules: StandardModule[] = [
     path: "std/list.wm",
     source: listSource,
     clauses: [{ kind: "Namespace", alias: "List" }],
+  },
+  {
+    path: "std/map.wm",
+    source: mapSource,
+    clauses: [{ kind: "Namespace", alias: "Map" }],
   },
   {
     path: "std/option.wm",

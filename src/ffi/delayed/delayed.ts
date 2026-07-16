@@ -1,4 +1,5 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 export { contextualizeDelayedCallbacks } from "./delayed_callbacks.ts";
 import { resolveDelayedDecl } from "./delayed_resolve.ts";
 import { diagnosticError } from "../../diagnostics.ts";
@@ -96,7 +97,9 @@ function resolveDelayedFfiElaborationInner(
     const generated = decl.kind === "JsImportDecl"
       ? generatedJsImports(decl, ffi.bindings, importsToGenerate)
       : [decl];
-    return generated.flatMap((item) => filterUnreferencedGeneratedImport(item, referencedGenerated));
+    return generated.flatMap((item) =>
+      filterUnreferencedGeneratedImport(item, referencedGenerated)
+    );
   });
   const recoveredImports = missingGeneratedImports(
     rewrittenDecls,
@@ -255,6 +258,7 @@ function collectGeneratedValueRefsInExpr(expr: Expr, refs: Set<string>): void {
       expr.fields.forEach((field) => collectGeneratedValueRefsInExpr(field.value, refs));
       return;
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return;
       collectGeneratedValueRefsInExpr(expr.body, refs);
       return;
     case "If":
@@ -351,6 +355,7 @@ function solveDelayedBindingTypesInExpr(
       expr.fields.forEach((field) => solveDelayedBindingTypesInExpr(field.value, ffi, result));
       return;
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return;
       solveDelayedBindingTypesInExpr(expr.body, ffi, result);
       return;
     case "If":

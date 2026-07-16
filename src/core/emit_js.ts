@@ -20,6 +20,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   const entry = program.modules.get(program.entry)!;
   const target = options.target ?? "executable";
   const body = [
+    ...emitShaderArtifactTable(program),
     ...program.order
       .filter((path) => path !== program.entry)
       .map((path) => emitNamespace(program.modules.get(path)!, program)),
@@ -33,6 +34,31 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   return target === "repl"
     ? [...emitRuntimePrelude(), "try {", ...body, emitReplRuntimeCatch()].join("\n")
     : [...emitRuntimePrelude(), ...body].join("\n");
+}
+
+function emitShaderArtifactTable(program: CoreProgram): string[] {
+  if (program.shaderArtifacts.size === 0) return [];
+  const entries = [...program.shaderArtifacts].map(([artifactId, artifact]) => {
+    const descriptor = {
+      wgsl: artifact.wgsl,
+      vertexEntry: artifact.vertexEntry,
+      fragmentEntry: artifact.fragmentEntry,
+    };
+    return `${JSON.stringify(artifactId)}: ${JSON.stringify(descriptor)}`;
+  });
+  return [
+    "const __wm_deep_freeze_shader_artifact = (value) => {",
+    '  if (value && typeof value === "object" && !Object.isFrozen(value)) {',
+    "    for (const child of Object.values(value)) __wm_deep_freeze_shader_artifact(child);",
+    "    Object.freeze(value);",
+    "  }",
+    "  return value;",
+    "};",
+    "const __wm_gpu_wgsl = (artifact) => artifact.wgsl;",
+    "const __wm_gpu_vertex_entry_point = (artifact) => artifact.vertexEntry;",
+    "const __wm_gpu_fragment_entry_point = (artifact) => artifact.fragmentEntry;",
+    `const __wm_shader_artifacts = __wm_deep_freeze_shader_artifact({ ${entries.join(", ")} });`,
+  ];
 }
 
 function emitReplRuntimeCatch(): string {
@@ -242,6 +268,8 @@ function emitExpr(expr: CoreExpr): string {
       return expr.value ? "true" : "false";
     case "CoreVoid":
       return "undefined";
+    case "CoreShaderRef":
+      return `__wm_shader_artifacts[${JSON.stringify(expr.artifactId)}]`;
     case "CoreVar": {
       if (expr.bindingId === undefined && expr.ctorId !== undefined) {
         const basisName = basisCtorJsName(expr.ctorId);
@@ -549,6 +577,12 @@ function primitiveName(name: string): string | undefined {
       return "__wm_op_or";
     case "!":
       return "__wm_op_not";
+    case "Gpu.wgsl":
+      return "__wm_gpu_wgsl";
+    case "Gpu.vertexEntryPoint":
+      return "__wm_gpu_vertex_entry_point";
+    case "Gpu.fragmentEntryPoint":
+      return "__wm_gpu_fragment_entry_point";
     default:
       return undefined;
   }

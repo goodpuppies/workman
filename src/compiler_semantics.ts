@@ -1,0 +1,44 @@
+import type { TypeNameId } from "./ids.ts";
+
+export const BASIS_TYPE_NAME_IDS = {
+  Number: -1,
+  Bool: -2,
+  String: -3,
+  Void: -4,
+  "Js.Value": -5,
+  "Js.Object": -6,
+  "Js.Array": -7,
+  "Js.ArrayLike": -8,
+  "Js.Dict": -9,
+  Option: -10,
+  Result: -11,
+  List: -12,
+  "Js.Error": -13,
+  Task: -14,
+  "Gpu.Color": -15,
+  "Gpu.Fragment": -16,
+  "Gpu.Uniform": -17,
+} as const satisfies Record<string, number>;
+
+export function basisTypeNameId(name: string): TypeNameId | undefined {
+  const id = (BASIS_TYPE_NAME_IDS as Record<string, number>)[name];
+  return id === undefined ? undefined : id as TypeNameId;
+}
+
+export const GPU_SEMANTIC_IDS = {
+  color: "gpu.color",
+  fragment: "gpu.fragment",
+  i32: "gpu.i32",
+  f32: "gpu.f32",
+  uniform: "gpu.uniform",
+  read: "gpu.read",
+  withValue: "gpu.with-value",
+  wgsl: "gpu.wgsl",
+  vertexEntryPoint: "gpu.vertex-entry-point",
+  fragmentEntryPoint: "gpu.fragment-entry-point",
+  uniformBinding: "gpu.uniform-binding",
+  uniformByteLength: "gpu.uniform-byte-length",
+  uniformBytes: "gpu.uniform-bytes",
+} as const;
+
+export type CompilerSemanticId = (typeof GPU_SEMANTIC_IDS)[keyof typeof GPU_SEMANTIC_IDS];

@@ -1,5 +1,6 @@
 import type { Decl, Expr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { type FfiBinding, type FfiVariant, isDecl } from "../shared.ts";
 
 export function rejectAnnotatedDynamicCallbacks(
@@ -47,6 +48,7 @@ export function rejectAnnotatedDynamicCallbacks(
         expr.fields.forEach((field) => visit(field.value));
         return;
       case "Lambda":
+        if (!hostFfiDescendsInto(expr)) return;
         visit(expr.body);
         return;
       case "If":

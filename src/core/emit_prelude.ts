@@ -209,6 +209,163 @@ export function emitRuntimePrelude(): string[] {
   },
   collectWith: ([empty, combine, items]) => List.foldRight(__wm_tuple(items, empty, combine)),
 };`,
+    `const __wm_map_height = (tree) => tree?.height ?? 0;
+const __wm_map_node = (key, value, left, right) => ({
+  key,
+  value,
+  left,
+  right,
+  height: 1 + Math.max(__wm_map_height(left), __wm_map_height(right)),
+});
+const __wm_map_rotate_left = (tree) => {
+  const right = tree.right;
+  return __wm_map_node(
+    right.key,
+    right.value,
+    __wm_map_node(tree.key, tree.value, tree.left, right.left),
+    right.right,
+  );
+};
+const __wm_map_rotate_right = (tree) => {
+  const left = tree.left;
+  return __wm_map_node(
+    left.key,
+    left.value,
+    left.left,
+    __wm_map_node(tree.key, tree.value, left.right, tree.right),
+  );
+};
+const __wm_map_balance = (tree) => {
+  const difference = __wm_map_height(tree.left) - __wm_map_height(tree.right);
+  if (difference > 1) {
+    const left = __wm_map_height(tree.left.left) < __wm_map_height(tree.left.right)
+      ? __wm_map_rotate_left(tree.left)
+      : tree.left;
+    return __wm_map_rotate_right(__wm_map_node(tree.key, tree.value, left, tree.right));
+  }
+  if (difference < -1) {
+    const right = __wm_map_height(tree.right.right) < __wm_map_height(tree.right.left)
+      ? __wm_map_rotate_right(tree.right)
+      : tree.right;
+    return __wm_map_rotate_left(__wm_map_node(tree.key, tree.value, tree.left, right));
+  }
+  return __wm_map_node(tree.key, tree.value, tree.left, tree.right);
+};
+const __wm_map_order = (order) => typeof order === "number"
+  ? order
+  : order?.name === "Less" ? -1 : order?.name === "Greater" ? 1 : 0;
+const __wm_map_set_tree = (tree, key, value, compare) => {
+  if (!tree) return __wm_map_node(key, value, undefined, undefined);
+  const order = __wm_map_order(compare(__wm_tuple(key, tree.key)));
+  if (order < 0) {
+    return __wm_map_balance(__wm_map_node(
+      tree.key,
+      tree.value,
+      __wm_map_set_tree(tree.left, key, value, compare),
+      tree.right,
+    ));
+  }
+  if (order > 0) {
+    return __wm_map_balance(__wm_map_node(
+      tree.key,
+      tree.value,
+      tree.left,
+      __wm_map_set_tree(tree.right, key, value, compare),
+    ));
+  }
+  return __wm_map_node(tree.key, value, tree.left, tree.right);
+};
+const __wm_map_remove_smallest = (tree) => {
+  if (!tree.left) return [tree.key, tree.value, tree.right];
+  const [key, value, left] = __wm_map_remove_smallest(tree.left);
+  return [key, value, __wm_map_balance(__wm_map_node(tree.key, tree.value, left, tree.right))];
+};
+const __wm_map_remove_tree = (tree, key, compare) => {
+  if (!tree) return undefined;
+  const order = __wm_map_order(compare(__wm_tuple(key, tree.key)));
+  if (order < 0) {
+    return __wm_map_balance(__wm_map_node(
+      tree.key,
+      tree.value,
+      __wm_map_remove_tree(tree.left, key, compare),
+      tree.right,
+    ));
+  }
+  if (order > 0) {
+    return __wm_map_balance(__wm_map_node(
+      tree.key,
+      tree.value,
+      tree.left,
+      __wm_map_remove_tree(tree.right, key, compare),
+    ));
+  }
+  if (!tree.left) return tree.right;
+  if (!tree.right) return tree.left;
+  const [nextKey, nextValue, right] = __wm_map_remove_smallest(tree.right);
+  return __wm_map_balance(__wm_map_node(nextKey, nextValue, tree.left, right));
+};
+const __wm_map_entries = (tree, entries) => {
+  if (!tree) return;
+  __wm_map_entries(tree.left, entries);
+  entries.push(__wm_tuple(tree.key, tree.value));
+  __wm_map_entries(tree.right, entries);
+};
+const Map = {
+  Less: { name: "Less" },
+  Equal: { name: "Equal" },
+  Greater: { name: "Greater" },
+  numberCompare: ([left, right]) => left < right ? -1 : left > right ? 1 : 0,
+  empty: (compare) => ({ compare, root: undefined }),
+  singleton: ([compare, key, value]) => ({
+    compare,
+    root: __wm_map_node(key, value, undefined, undefined),
+  }),
+  get: ([map, key]) => {
+    let tree = map.root;
+    while (tree) {
+      const order = __wm_map_order(map.compare(__wm_tuple(key, tree.key)));
+      if (order === 0) return __wm_basis_Some(tree.value);
+      tree = order < 0 ? tree.left : tree.right;
+    }
+    return __wm_basis_None;
+  },
+  has: ([map, key]) => Map.get(__wm_tuple(map, key)).ctor === ${basisCtorId("Some")},
+  set: ([map, key, value]) => ({
+    compare: map.compare,
+    root: __wm_map_set_tree(map.root, key, value, map.compare),
+  }),
+  remove: ([map, key]) => ({
+    compare: map.compare,
+    root: __wm_map_remove_tree(map.root, key, map.compare),
+  }),
+  update: ([map, key, transform]) => {
+    const next = transform(Map.get(__wm_tuple(map, key)));
+    return next.ctor === ${basisCtorId("Some")}
+      ? Map.set(__wm_tuple(map, key, next.args[0]))
+      : Map.remove(__wm_tuple(map, key));
+  },
+  fold: ([map, initial, combine]) => {
+    const entries = [];
+    __wm_map_entries(map.root, entries);
+    return entries.reduce((acc, entry) => combine(__wm_tuple(acc, entry[0], entry[1])), initial);
+  },
+  toList: (map) => {
+    const entries = [];
+    __wm_map_entries(map.root, entries);
+    return __wm_array_to_list(entries);
+  },
+  fromList: ([compare, items]) => {
+    let map = Map.empty(compare);
+    let cursor = items;
+    while (cursor?.ctor === ${basisCtorId("Cons")}) {
+      const [entry, rest] = cursor.args[0];
+      map = Map.set(__wm_tuple(map, entry[0], entry[1]));
+      cursor = rest;
+    }
+    return map;
+  },
+  debugHeight: (map) => __wm_map_height(map.root),
+};`,
     `const __wm_result_mapN = (args) => {
   const fn = args[args.length - 1];
   const values = [];

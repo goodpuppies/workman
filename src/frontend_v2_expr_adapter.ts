@@ -64,7 +64,7 @@ function projectNode(
       ? projectSurfaceParams(parameterNode, nodes, source, helpers)
       : undefined;
     return parameters && body
-      ? { kind: "Lambda", params: parameters, body, ...located }
+      ? { kind: "Lambda", params: parameters, directives: [], body, ...located }
       : undefined;
   }
   if (node.kind === "block") {
@@ -249,6 +249,7 @@ class ExprParser {
     return {
       kind: "Lambda",
       params,
+      directives: [],
       body,
       ...this.withNode(start, this.cursor),
     };

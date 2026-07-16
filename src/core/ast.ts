@@ -1,6 +1,7 @@
 import type { AstNode } from "../source.ts";
 import type { JsImportClause, JsTarget, TypeExpr } from "../ast.ts";
-import type { BindingId, CtorId } from "./ids.ts";
+import type { BindingId, CtorId, RecordId, TypeNameId } from "./ids.ts";
+import type { VisualShaderArtifactV1 } from "../gpu_artifact.ts";
 
 export type CoreModule = {
   kind: "CoreModule";
@@ -27,6 +28,7 @@ export type CoreDecl =
     kind: "CoreType";
     exported: boolean;
     name: string;
+    typeNameId?: TypeNameId;
     params: string[];
     ctors: CoreCtorDecl[];
     alias?: TypeExpr;
@@ -36,6 +38,8 @@ export type CoreDecl =
     kind: "CoreRecord";
     exported: boolean;
     name: string;
+    typeNameId?: TypeNameId;
+    recordId?: RecordId;
     params: string[];
     fields: CoreRecordFieldDecl[];
     node?: AstNode;
@@ -67,6 +71,7 @@ export type CoreExpr =
   | { kind: "CoreString"; value: string; node?: AstNode }
   | { kind: "CoreBool"; value: boolean; node?: AstNode }
   | { kind: "CoreVoid"; node?: AstNode }
+  | { kind: "CoreShaderRef"; artifactId: VisualShaderArtifactV1["id"]; node?: AstNode }
   | { kind: "CoreVar"; name: string; bindingId?: BindingId; ctorId?: CtorId; node?: AstNode }
   | { kind: "CoreTuple"; items: CoreExpr[]; node?: AstNode }
   | { kind: "CoreRecord"; fields: CoreRecordExprItem[]; node?: AstNode }

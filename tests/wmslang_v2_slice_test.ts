@@ -1,0 +1,520 @@
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { analyzeVirtual, compileLibraryFile } from "../src/compiler.ts";
+import {
+  loadWmslangSliceCompiler,
+  validateGpuSliceCompilationOutput,
+  validateGpuSliceElaborationInput,
+} from "../src/wmslang/v2_loader.ts";
+import {
+  GpuSliceNormalizationError,
+  normalizeGpuSliceProgram,
+} from "../src/wmslang/v2_normalize.ts";
+
+Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () => {
+  const source = await acceptanceBlock("static_mandelbrot.wm");
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const input = normalizeGpuSliceProgram(analysis);
+  validateGpuSliceElaborationInput(input);
+
+  assertEquals(input.schemaVersion, 2);
+  assertEquals(input.sourcePath, "/test/main.wm");
+  assertEquals(input.root.functionId, 0);
+  assertEquals(input.functions.map((fn) => fn.name), [
+    "mandelbrotShade",
+    "escapeIterations",
+  ]);
+  assertEquals(input.functions.map((fn) => fn.bindingId >= 0), [true, true]);
+  assertEquals(input.functions.map((fn) => fn.recursionGroupId >= 0), [false, true]);
+
+  assertEquals(input.adts.map((adt) => adt.name), ["Escape"]);
+  assertEquals(
+    input.constructors.map((ctor) => ({
+      name: ctor.name,
+      tag: ctor.tag,
+      payload: ctor.payloadTypeId,
+    })),
+    [
+      { name: "Inside", tag: 0, payload: -1 },
+      { name: "Escaped", tag: 1, payload: 0 },
+    ],
+  );
+  assertEquals(input.types[0].kind, "f32");
+  assertEquals(input.types.some((type) => type.kind === "adt"), true);
+  assertEquals(input.types.some((type) => type.kind === "color"), true);
+  assertEquals(
+    input.types.some((type) =>
+      !new Set([
+        "f32",
+        "bool",
+        "void",
+        "tuple",
+        "function",
+        "adt",
+        "color",
+      ]).has(type.kind)
+    ),
+    false,
+  );
+
+  assertEquals(
+    new Set(input.expressions.map((expr) => expr.kind)),
+    new Set([
+      "number",
+      "var",
+      "tuple",
+      "call",
+      "constructor",
+      "color",
+      "if",
+      "match",
+      "block",
+      "binary",
+    ]),
+  );
+  assertEquals(input.expressions.filter((expr) => expr.kind === "color").length, 2);
+  assertEquals(
+    input.expressions.every((expr) => expr.semanticId === "gpu.color" || expr.semanticId === ""),
+    true,
+  );
+  assertEquals(
+    input.expressions.every((expr) =>
+      expr.operatorId === "" || expr.operatorId.startsWith("gpu.operator.")
+    ),
+    true,
+  );
+
+  assertEquals(input.recursionGroups.length, 1);
+  assertEquals(input.recursionGroups[0].memberFunctionIds, [1]);
+  assertEquals(
+    input.recursiveReferences.map((reference) => reference.relation),
+    ["external", "self"],
+  );
+  assertEquals(
+    input.recursiveReferences.every((reference) => reference.invocation === "call"),
+    true,
+  );
+
+  assertEquals(
+    input.patterns.some((pattern) => pattern.context === "parameter" && pattern.kind === "binding"),
+    true,
+  );
+  assertEquals(
+    input.patterns.some((pattern) => pattern.context === "let" && pattern.kind === "tuple"),
+    true,
+  );
+  assertEquals(
+    input.patterns.filter((pattern) =>
+      pattern.context === "match" && pattern.kind === "constructor"
+    ).length,
+    2,
+  );
+  assertEquals(input.matches.length, 1);
+  assertEquals(input.matches[0].armIds.length, 2);
+});
+
+Deno.test("schema v2 rejects captures, multiple roots, and cross-module helpers", async () => {
+  await assertRejects(
+    () =>
+      analysisFor(`
+      let make = (hostValue) => {
+        Gpu.fragment((_coord) => { @gpu; Gpu.color((hostValue, 0.0, 0.0, 1.0)) })
+      };
+    `),
+    GpuSliceNormalizationError,
+    "does not capture hostValue",
+  );
+
+  await assertRejects(
+    () =>
+      analysisFor(`
+      let a = (coord) => { @gpu; Gpu.color((0.0, 0.0, 0.0, 1.0)) };
+      let b = (coord) => { @gpu; Gpu.color((1.0, 1.0, 1.0, 1.0)) };
+      let first = Gpu.fragment(a);
+      let second = Gpu.fragment(b);
+    `),
+    GpuSliceNormalizationError,
+    "exactly one Gpu.fragment",
+  );
+
+  const virtualFs = new Map([
+    ["/test/helper.wm", `let shadePart = (x) => { x * x };`],
+    [
+      "/test/main.wm",
+      `
+        from "./helper.wm" import { shadePart };
+        let shade = (coord) => {
+          @gpu;
+          let (x, _y) = coord;
+          Gpu.color((shadePart(x), 0.0, 0.0, 1.0))
+        };
+        let fragment = Gpu.fragment(shade);
+      `,
+    ],
+  ]);
+  await assertRejects(
+    () => analyzeVirtual("/test/main.wm", virtualFs),
+    GpuSliceNormalizationError,
+    "same-module selected helpers",
+  );
+});
+
+Deno.test("schema v2 loader rejects dangling semantic references", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+    let shade = (_coord) => { @gpu; Gpu.color((1.0, 0.0, 0.0, 1.0)) };
+    let fragment = Gpu.fragment(shade);
+  `),
+  );
+  validateGpuSliceElaborationInput(input);
+
+  assertThrows(
+    () =>
+      validateGpuSliceElaborationInput({
+        ...input,
+        root: { ...input.root, functionId: 999 },
+      }),
+    Error,
+    "references missing id 999",
+  );
+  assertThrows(
+    () =>
+      validateGpuSliceElaborationInput({
+        ...input,
+        expressions: input.expressions.map((expression, index) =>
+          index === 0 ? { ...expression, typeId: 999 } : expression
+        ),
+      }),
+    Error,
+    "references missing id 999",
+  );
+});
+
+Deno.test("schema v2 round-trips through the real Workman wmslang ABI", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analyzeVirtual(
+      "/test/main.wm",
+      new Map([["/test/main.wm", await acceptanceBlock("static_mandelbrot.wm")]]),
+    ),
+  );
+  const compilerSource = await compileLibraryFile(
+    new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+  );
+  const compiler = await loadGeneratedSliceCompiler(compilerSource);
+
+  const output = compiler.compileGpuSlice(input);
+
+  assertEquals(output.schemaVersion, 2);
+  assertEquals(output.program, input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.irFunctions.map((fn) => fn.name), [
+    "mandelbrotShade",
+    "escapeIterations",
+  ]);
+  assertEquals(
+    new Set<string>(output.irExpressions.map((expression) => expression.kind)).has("block"),
+    false,
+  );
+  assertEquals(output.irExpressions.some((expression) => expression.kind === "let"), true);
+  assertEquals(output.irExpressions.some((expression) => expression.kind === "match"), true);
+  const tailCall = output.irExpressions.find((expression) => expression.kind === "tail-call")!;
+  const sourceTailCall = input.expressions.find((expression) =>
+    expression.id === tailCall.sourceExprId
+  )!;
+  const irById = new Map(output.irExpressions.map((expression) => [expression.id, expression]));
+  assertEquals(
+    tailCall.children.map((id) => irById.get(id)!.sourceExprId),
+    sourceTailCall.children,
+  );
+  assertEquals(tailCall.targetFunctionId, tailCall.functionId);
+  assertEquals(output.irMatchArms.length, 2);
+  assertEquals(
+    output.irMatchArms.map((arm) => arm.sourceArmId),
+    input.matchArms.map((arm) => arm.id),
+  );
+  assertEquals(output.adtLayouts, [{
+    id: 0,
+    typeId: input.types.find((type) => type.kind === "adt")!.id,
+    typeNameId: input.adts[0].typeNameId,
+    fieldIds: [0],
+    spanId: input.adts[0].spanId,
+  }]);
+  assertEquals(
+    output.adtFields.map((field) => ({
+      constructorId: field.constructorId,
+      tag: field.tag,
+      typeId: field.typeId,
+    })),
+    [{ constructorId: input.constructors[1].id, tag: 1, typeId: 0 }],
+  );
+
+  const recursiveFunction = output.loweredFunctions.find((fn) => fn.recursive)!;
+  assertEquals(output.loweredFunctions.map((fn) => fn.functionId), [0, 1]);
+  assertEquals(recursiveFunction.functionId, 1);
+  assertEquals(recursiveFunction.physicalParamLocalIds.length, 5);
+  assertEquals(recursiveFunction.loopParamLocalIds.length, 5);
+  assertEquals(
+    output.loweredLocals.filter((local) => local.mutable).map((local) => local.kind),
+    [
+      "join",
+      "loop-parameter",
+      "loop-parameter",
+      "loop-parameter",
+      "loop-parameter",
+      "loop-parameter",
+    ],
+  );
+  assertEquals(
+    output.loweredOperations.some((operation) =>
+      operation.kind === "call" && operation.targetFunctionId === operation.functionId
+    ),
+    false,
+  );
+  assertEquals(output.loweredStatements.filter((statement) => statement.kind === "loop").length, 1);
+
+  const tailContinue = output.loweredStatements.find((statement) => statement.kind === "continue")!;
+  assertEquals(tailContinue.targetLocalIds, recursiveFunction.loopParamLocalIds);
+  const loweredAtoms = new Map(output.loweredAtoms.map((atom) => [atom.id, atom]));
+  const loweredLocals = new Map(output.loweredLocals.map((local) => [local.id, local]));
+  assertEquals(
+    tailContinue.valueAtomIds.map((atomId) =>
+      loweredLocals.get(loweredAtoms.get(atomId)!.localId)!.kind
+    ),
+    ["tail-next", "tail-next", "tail-next", "tail-next", "tail-next"],
+  );
+  const continueBlock = output.loweredBlocks.find((block) =>
+    block.statementIds.includes(tailContinue.id)
+  )!;
+  const statementsById = new Map(
+    output.loweredStatements.map((statement) => [statement.id, statement]),
+  );
+  assertEquals(
+    continueBlock.statementIds.slice(-6).map((id) => {
+      const statement = statementsById.get(id)!;
+      return statement.kind === "let" ? statement.reason : statement.kind;
+    }),
+    ["tail-next", "tail-next", "tail-next", "tail-next", "tail-next", "continue"],
+  );
+
+  const loweredSwitch = output.loweredStatements.find((statement) => statement.kind === "switch")!;
+  const loweredCases = new Map(output.loweredCases.map((gpuCase) => [gpuCase.id, gpuCase]));
+  assertEquals(loweredSwitch.layoutId, 0);
+  assertEquals(loweredSwitch.caseIds.map((id) => loweredCases.get(id)!.tag), [0, 1]);
+  assertEquals(
+    output.loweredOperations.filter((operation) => operation.kind === "payload").map((
+      operation,
+    ) => ({
+      constructorId: operation.constructorId,
+      layoutId: operation.layoutId,
+      fieldId: operation.fieldId,
+    })),
+    [{ constructorId: input.constructors[1].id, layoutId: 0, fieldId: 0 }],
+  );
+  assertEquals(
+    output.loweredOperations.filter((operation) => operation.kind === "construct").map((
+      operation,
+    ) => operation.layoutId),
+    [0, 0],
+  );
+  assertEquals(output.slangSource.includes("struct wm_adt_0"), true);
+  assertEquals(output.slangSource.includes("switch (wm_l_13.tag)"), true);
+  assertEquals(output.slangSource.includes("wm_l_13.wm_p_0"), true);
+  assertEquals(output.slangSource.includes("bool wm_done_1 = false;"), true);
+  assertEquals(output.slangSource.includes("while (!wm_done_1)"), true);
+  assertEquals(output.slangSource.includes("wm_result_1 ="), true);
+  assertEquals(output.slangSource.includes("wm_done_1 = true;"), true);
+  assertEquals(output.slangSource.includes("return wm_result_1;"), true);
+  assertEquals(output.slangSource.includes('[shader("vertex")]'), true);
+  assertEquals(output.slangSource.includes('[shader("fragment")]'), true);
+  assertEquals(output.slangSource.includes("wm_vertex"), true);
+  assertEquals(output.slangSource.includes("wm_fragment"), true);
+  assertEquals(
+    ["ConstantBuffer", "Texture", "Sampler", "RWStructuredBuffer", "vk::binding"].some((token) =>
+      output.slangSource.includes(token)
+    ),
+    false,
+  );
+  assertEquals((output.slangSource.match(/wm_f_1\(/g) ?? []).length, 2);
+});
+
+Deno.test("schema v2 emits the deterministic flat-color Slang golden", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analyzeVirtual(
+      "/test/main.wm",
+      new Map([[
+        "/test/main.wm",
+        await acceptanceBlock("flat_color.wm"),
+      ]]),
+    ),
+  );
+  const compiler = await realSliceCompiler();
+  const output = compiler.compileGpuSlice(input);
+  const golden = await Deno.readTextFile(
+    new URL("./goldens/wmslang_flat_color.slang", import.meta.url),
+  );
+
+  assertEquals(output.slangSource, golden);
+  assertEquals(compiler.compileGpuSlice(input).slangSource, golden);
+});
+
+Deno.test("schema v2 IR rejects a direct self-call outside tail position", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analyzeVirtual(
+      "/test/main.wm",
+      new Map([["/test/main.wm", await acceptanceBlock("non_tail_recursion.wm")]]),
+    ),
+  );
+  const compiler = await realSliceCompiler();
+  const output = compiler.compileGpuSlice(input);
+
+  assertEquals(output.diagnostics.map((diagnostic) => diagnostic.code), [
+    "gpu.recursion.non-tail",
+  ]);
+  assertEquals(
+    output.diagnostics[0].spanId,
+    input.recursiveReferences.find((reference) => reference.relation === "self")!.spanId,
+  );
+  assertEquals(output.irExpressions.some((expression) => expression.kind === "tail-call"), false);
+  assertEquals(
+    output.irExpressions.some((expression) =>
+      expression.kind === "call" && expression.targetFunctionId === expression.functionId
+    ),
+    true,
+  );
+  assertEquals(output.slangSource, "");
+});
+
+Deno.test("schema v2 IR requires complete constructor coverage", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      type Shade = Dark | Light;
+
+      let choose = match(value) => {
+        Dark => { 0.0 }
+      };
+
+      let shade = (coord) => {
+        @gpu;
+        let (_x, _y) = coord;
+        Gpu.color((choose(Dark), 0.0, 0.0, 1.0))
+      };
+
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const compiler = await realSliceCompiler();
+  const output = compiler.compileGpuSlice(input);
+
+  assertEquals(output.diagnostics.map((diagnostic) => diagnostic.code), [
+    "gpu.pattern.non-exhaustive",
+  ]);
+  assertEquals(output.irExpressions.filter((expression) => expression.kind === "match").length, 1);
+});
+
+Deno.test("schema v2 output validation rejects a dangling functional IR edge", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => { @gpu; Gpu.color((1.0, 0.0, 0.0, 1.0)) };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  const parent = output.irExpressions.find((expression) => expression.children.length > 0)!;
+
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        irExpressions: output.irExpressions.map((expression) =>
+          expression.id === parent.id ? { ...expression, children: [999] } : expression
+        ),
+      }),
+    Error,
+    "references missing id 999",
+  );
+
+  const operation = output.loweredOperations.find((candidate) => candidate.args.length > 0)!;
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        loweredOperations: output.loweredOperations.map((candidate) =>
+          candidate.id === operation.id ? { ...candidate, args: [999] } : candidate
+        ),
+      }),
+    Error,
+    "references missing id 999",
+  );
+});
+
+Deno.test("schema v2 executes a trailing-semicolon expression exactly once", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let touch = (x) => { x + 1.0; };
+
+      let shade = (coord) => {
+        @gpu;
+        let (x, _y) = coord;
+        touch(x);
+        Gpu.color((x, 0.0, 0.0, 1.0))
+      };
+
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+
+  assertEquals(input.expressions.filter((expression) => expression.kind === "binary").length, 1);
+  assertEquals(output.irExpressions.filter((expression) => expression.kind === "binary").length, 1);
+  assertEquals(
+    output.irExpressions.every((expression) =>
+      expression.kind !== "void" || expression.children.length === 0
+    ),
+    true,
+  );
+  assertEquals(output.diagnostics, []);
+});
+
+async function analysisFor(source: string) {
+  return await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+}
+
+async function acceptanceBlock(name: string): Promise<string> {
+  const markdown = await Deno.readTextFile(
+    new URL("../markdown/wmslang/v1-acceptance.md", import.meta.url),
+  );
+  const heading = `\`${name}\``;
+  const start = markdown.indexOf(heading);
+  if (start < 0) throw new Error(`missing acceptance heading containing ${heading}`);
+  const fenced = markdown.indexOf("```workman\n", start);
+  const end = markdown.indexOf("```", fenced + 11);
+  if (fenced < 0 || end < 0) throw new Error(`missing Workman block for ${name}`);
+  return markdown.slice(fenced + 11, end);
+}
+
+async function realSliceCompiler() {
+  return await loadGeneratedSliceCompiler(
+    await compileLibraryFile(
+      new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+    ),
+  );
+}
+
+async function loadGeneratedSliceCompiler(source: string) {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/wmslang.generated.mjs`;
+  await Deno.writeTextFile(path, source);
+  try {
+    return await loadWmslangSliceCompiler(
+      `${new URL(`file://${path}`).href}?${crypto.randomUUID()}`,
+    );
+  } finally {
+    // Imported ES modules remain alive after the file is removed.
+    await Deno.remove(dir, { recursive: true });
+  }
+}

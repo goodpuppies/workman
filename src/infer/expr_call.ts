@@ -1,8 +1,6 @@
 import type { Expr } from "../ast.ts";
-import type { FrontendDiagnostic } from "../diagnostics.ts";
 import {
   addJsConstraint,
-  type Env,
   fn,
   fresh,
   instantiateRecordFields,
@@ -13,51 +11,33 @@ import {
   show,
   tuple,
   type Ty,
-  type TypeDeclInfo,
   type TypeEnv,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
 import {
   constrainAt,
+  type EvidenceOrigin,
   sourceForTypedExpr,
   tupleSource,
-  type EvidenceOrigin,
   type TypeProvenance,
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
+import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
-import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_facts.ts";
+import { recordConsumedFfiUse, recordExprFact } from "./type_facts.ts";
 
 export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
+  const { env, typeEnv, types, facts, provenance } = context;
   const result = fresh();
   const isPrintCall = expr.callee.kind === "Var" && expr.callee.name === "print";
-  const callee = inferExpr(
-    expr.callee,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const callee = inferExpr(expr.callee, context);
   const calleeProvenance = expr.callee.kind === "Var"
     ? (env.get(expr.callee.name)?.provenance ?? [])
     : [];
-  const argTypes = expr.args.map((a) =>
-    inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
-  );
+  const argTypes = expr.args.map((a) => inferExpr(a, context));
   for (const argType of argTypes) {
     recordConsumedFfiUse(facts, argType, {
       kind: "call",

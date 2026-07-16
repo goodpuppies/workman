@@ -1,0 +1,107 @@
+-- A real wmslang fragment presented directly to an SDL native window through WebGPU.
+-- Run from the wm-mini repository root:
+--   deno run -A src/main.ts run examples/wmslang_window/src/main.wm
+
+from "./sdl_window.wm" import {
+  NativeRuntime, NativeError, QuitEvent, IgnoredEvent, NoEvent,
+  startNative, nativeSurface, pollNative, delayNative, presentNative, closeNative
+};
+from "./webgpu_present.wm" import {
+  FragmentRenderer,
+  createFragmentRenderer, renderFragment, destroyFragmentRenderer
+};
+
+type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
+
+type Escape = Inside | Escaped<Number>;
+
+let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
+  if (remaining <= 0) {
+    Inside
+  } else {
+    let magnitudeSquared = zx * zx + zy * zy;
+    if (magnitudeSquared > 4.0) {
+      Escaped(remaining)
+    } else {
+      let nextX = zx * zx - zy * zy + cx;
+      let nextY = 2.0 * zx * zy + cy;
+      escapeIterations(cx, cy, nextX, nextY, remaining - 1)
+    }
+  }
+};
+
+let mandelbrotShade = (coord) => {
+  @gpu;
+
+  let (x, y) = coord;
+  let cx = (2.0 * x - 960.0) / 480.0 - 0.5;
+  let cy = (2.0 * y - 640.0) / 480.0;
+  let escape = escapeIterations(cx, cy, 0.0, 0.0, 128.0);
+
+  match(escape) {
+    Inside => {
+      Gpu.color((0.015, 0.02, 0.04, 1.0))
+    },
+    Escaped(remaining) => {
+      let amount = remaining / 128.0;
+      Gpu.color((amount, 0.18 * amount, 1.0 - amount, 1.0))
+    }
+  }
+};
+
+let fragment = Gpu.fragment(mandelbrotShade);
+let width = 960;
+let height = 640;
+
+let rec shouldClose = (native: NativeRuntime) => {
+  match(pollNative(native)) {
+    Ok(QuitEvent) => { Ok(true) },
+    Ok(IgnoredEvent) => { shouldClose(native) },
+    Ok(NoEvent) => { Ok(false) },
+    Err(error) => { Err(NativeFailure(error)) }
+  }
+};
+
+let rec frameLoop = (native: NativeRuntime, renderer: FragmentRenderer) => {
+  match(shouldClose(native)) {
+    Ok(true) => { Ok(void) },
+    Ok(false) => {
+      Result|
+        renderFragment(renderer) :> Result.mapErr(HostFailure),
+        presentNative(native) :> Result.mapErr(NativeFailure),
+        delayNative(native, 16) :> Result.mapErr(NativeFailure)
+      | :> Result.andThen((_) => { frameLoop(native, renderer) })
+    },
+    Err(error) => { Err(error) }
+  }
+};
+
+let runWindow = (native: NativeRuntime) => {
+  createFragmentRenderer(
+    nativeSurface(native),
+    Gpu.wgsl(fragment),
+    Gpu.vertexEntryPoint(fragment),
+    Gpu.fragmentEntryPoint(fragment)
+  ) :> Task.map((renderer) => {
+    let rendered = frameLoop(native, renderer);
+    let cleanup = Result|
+      destroyFragmentRenderer(renderer) :> Result.mapErr(HostFailure),
+      closeNative(native) :> Result.mapErr(NativeFailure)
+    |;
+    match(Result|rendered, cleanup|) {
+      Ok(_) => { void },
+      Err(error) => { print(error) }
+    }
+  }) :> Task.mapErr(HostFailure) :> Task.recover((error) => {
+    let _closed = closeNative(native);
+    print(error)
+  })
+};
+
+let main = () => {
+  startNative(width, height)
+    :> Result.mapErr(NativeFailure)
+    :> Task.fromResult
+    :> Task.andThen(runWindow)
+    :> Task.recover((error) => { print(error) })
+};

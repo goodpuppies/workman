@@ -1,0 +1,169 @@
+from "./types.wm" import {
+  GpuSliceAdtDto,
+  GpuSliceAdtFieldDto,
+  GpuSliceAdtLayoutDto,
+  GpuSliceConstructorDto,
+  GpuSliceElaborationInputDto,
+  GpuSliceLoweringSeedDto,
+  GpuSliceTypeDto
+};
+
+let numberEqual = (left: Number, right: Number) => {
+  !(left < right) && !(left > right)
+};
+
+let rec reverseInto = match(items, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([Var(head), ..rest], Var(reversed)) => { reverseInto(rest, [head, ..reversed]) }
+};
+
+let rec findAdtType = match(types, typeNameId) => {
+  ([], Var(typeNameId)) => { Panic("missing schema-v2 ADT type") },
+  ([Var(gpuType), ..rest], Var(typeNameId)) => {
+    if (gpuType.kind == "adt" && numberEqual(gpuType.typeNameId, typeNameId)) {
+      gpuType
+    } else {
+      findAdtType(rest, typeNameId)
+    }
+  }
+};
+
+let rec findConstructor = match(constructors, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 constructor") },
+  ([Var(constructor), ..rest], Var(id)) => {
+    if (numberEqual(constructor.id, id)) {
+      constructor
+    } else {
+      findConstructor(rest, id)
+    }
+  }
+};
+
+let rec fieldsForConstructors = match(
+  constructorIds,
+  constructors,
+  layoutId,
+  nextFieldId,
+  reversedIds,
+  reversedFields
+) => {
+  (
+    [],
+    Var(constructors),
+    Var(layoutId),
+    Var(nextFieldId),
+    Var(reversedIds),
+    Var(reversedFields)
+  ) => {
+    (reverseInto(reversedIds, []), nextFieldId, reverseInto(reversedFields, []))
+  },
+  (
+    [Var(constructorId), ..rest],
+    Var(constructors),
+    Var(layoutId),
+    Var(nextFieldId),
+    Var(reversedIds),
+    Var(reversedFields)
+  ) => {
+    let constructor = findConstructor(constructors, constructorId);
+    if (constructor.payloadTypeId < 0) {
+      fieldsForConstructors(
+        rest,
+        constructors,
+        layoutId,
+        nextFieldId,
+        reversedIds,
+        reversedFields
+      )
+    } else {
+      let field: GpuSliceAdtFieldDto = .{
+        id = nextFieldId,
+        layoutId = layoutId,
+        constructorId = constructor.id,
+        tag = constructor.tag,
+        typeId = constructor.payloadTypeId,
+        spanId = constructor.spanId,
+      };
+      fieldsForConstructors(
+        rest,
+        constructors,
+        layoutId,
+        nextFieldId + 1,
+        [field.id, ..reversedIds],
+        [field, ..reversedFields]
+      )
+    }
+  }
+};
+
+let rec buildLayouts = match(
+  adts,
+  types,
+  constructors,
+  nextLayoutId,
+  nextFieldId,
+  reversedLayouts,
+  reversedFields
+) => {
+  (
+    [],
+    Var(types),
+    Var(constructors),
+    Var(nextLayoutId),
+    Var(nextFieldId),
+    Var(reversedLayouts),
+    Var(reversedFields)
+  ) => { (reverseInto(reversedLayouts, []), reverseInto(reversedFields, [])) },
+  (
+    [Var(adt), ..rest],
+    Var(types),
+    Var(constructors),
+    Var(nextLayoutId),
+    Var(nextFieldId),
+    Var(reversedLayouts),
+    Var(reversedFields)
+  ) => {
+    let gpuType = findAdtType(types, adt.typeNameId);
+    let (fieldIds, afterFieldId, fields) = fieldsForConstructors(
+      Js.Array.toList(adt.constructorIds),
+      constructors,
+      nextLayoutId,
+      nextFieldId,
+      [],
+      []
+    );
+    let layout: GpuSliceAdtLayoutDto = .{
+      id = nextLayoutId,
+      typeId = gpuType.id,
+      typeNameId = adt.typeNameId,
+      fieldIds = Js.Array.fromList(fieldIds),
+      spanId = adt.spanId,
+    };
+    buildLayouts(
+      rest,
+      types,
+      constructors,
+      nextLayoutId + 1,
+      afterFieldId,
+      [layout, ..reversedLayouts],
+      reverseInto(fields, reversedFields)
+    )
+  }
+};
+
+let buildSliceLayouts = (input: GpuSliceElaborationInputDto) => {
+  let (layouts, fields) = buildLayouts(
+    Js.Array.toList(input.adts),
+    Js.Array.toList(input.types),
+    Js.Array.toList(input.constructors),
+    0,
+    0,
+    [],
+    []
+  );
+  let seed: GpuSliceLoweringSeedDto = .{
+    adtLayouts = Js.Array.fromList(layouts),
+    adtFields = Js.Array.fromList(fields),
+  };
+  seed
+};

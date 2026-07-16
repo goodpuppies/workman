@@ -1,6 +1,7 @@
 import type { Expr, ImportClause, Module } from "./ast.ts";
 import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
 import { inferDecl } from "./infer/decl.ts";
+import { hostTypingDialect, type InferContext } from "./infer/context.ts";
 import { addAdts, addImport } from "./infer/imports.ts";
 import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
 import { snapshotEnv, type TypeSnapshot } from "./infer/snapshots.ts";
@@ -93,6 +94,17 @@ function inferModuleCore(
   const diagnostics: FrontendDiagnostic[] = [];
   const steps: InferStep[] = [];
   const provenance: TypeProvenance = new Map();
+  const context: InferContext = {
+    env,
+    typeEnv,
+    adts,
+    types,
+    facts,
+    warnings,
+    diagnostics,
+    provenance,
+    dialect: hostTypingDialect,
+  };
 
   for (const initialImport of includePrelude ? options.initialImports ?? [] : []) {
     addImport(env, typeEnv, initialImport.clause, initialImport.result, {
@@ -122,17 +134,10 @@ function inferModuleCore(
     try {
       inferDecl(
         decl,
-        env,
+        context,
         exports,
-        typeEnv,
         typeExports,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
         exportableTypeIds,
-        provenance,
       );
     } catch (error) {
       const diagnostic = diagnosticError(error, decl.node);

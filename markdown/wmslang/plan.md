@@ -1,13 +1,21 @@
 # wmslang implementation plan
 
-Status: architecture reviewed and locked for implementation spikes. Small milestones still have to
-validate the design, but they should refine representations rather than reopen the ownership,
-typing, execution, or artifact model below.
+Status: broad architecture and post-v1 direction. The current implementation target is the thin
+static-fragment vertical slice in [`v1-scope.md`](./v1-scope.md); where this plan proposes more
+language, analysis, resource, diagnostic, packaging, or target breadth, the v1 scope takes
+precedence.
+
+V1 is intentionally not a production-complete visual release. It fixes all shader numbers to `f32`,
+permits no captures or uniforms, compiles one same-module monomorphic call graph, and proves
+immutability, one option-like ADT, and direct self-tail recursion in a single rendered artifact.
+Uniforms, dual numeric representations, generalized specialization, multi-module roots, general
+pattern matrices, exact artifact identity, and the full evidence protocol resume only after that
+slice works end to end.
 
 The compiler ownership and isolation strategy is specified in
-[`compiler-boundary.md`](./compiler-boundary.md). In particular, `@gpu` is an elaboration island:
-it reuses Workman's HM machinery through a scoped typing dialect, while shader analysis, IR,
-Slang lowering, and artifacts remain a sidecar pipeline.
+[`compiler-boundary.md`](./compiler-boundary.md). In particular, `@gpu` is an elaboration island: it
+reuses Workman's HM machinery through a scoped typing dialect, while shader analysis, IR, Slang
+lowering, and artifacts remain a sidecar pipeline.
 
 The comparison with TypeGPU, Tinyest, `typegpu-three`, and `typegpu-gl` is recorded in
 [`typegpu-research.md`](./typegpu-research.md). The resulting decision is to build a Workman-owned
@@ -15,12 +23,51 @@ typed functional shader IR rather than reuse Tinyest as the canonical representa
 
 The comparison with the immutable HM shader language GLML is recorded in
 [`glml-research.md`](./glml-research.md). It refines the design toward deferred GPU constraints,
-reachable monomorphization, finite ADTs and higher-order functions, and two shader IR levels.
+reachable monomorphization, finite ADTs and higher-order functions, and two shader IR levels. GLML
+remains a semantic and architectural reference, not the v1 feature checklist. In particular,
+implicit coercion, higher-order shader values, and optimization are post-v1 work.
 
 The implementation-language and bootstrap boundary is specified in
 [`implementation-language.md`](./implementation-language.md). The compiler integration and Slang
 service remain in TypeScript, while a generated Workman library owns the closed, pure wmslang
 middle-end behind a versioned DTO.
+
+The v1 source and host basis is specified in [`v1-basis.md`](./v1-basis.md). It contains only the
+fragment/color boundary and three artifact accessors; math intrinsics are post-v1.
+
+The minimal backend proof is specified by [`v1-scope.md`](./v1-scope.md) and
+[`v1-acceptance.md`](./v1-acceptance.md). [`v1-backend.md`](./v1-backend.md) retains the broader
+production packaging, reflection, manifest, and release design for later slices.
+
+The executable specification in [`v1-acceptance.md`](./v1-acceptance.md) contains one flat-color
+smoke shader, one combined static Mandelbrot release shader, and focused non-tail/capture/isolation
+safeguards.
+
+The expanded semantic implementation design remains in
+[`v1-functional-lowering.md`](./v1-functional-lowering.md). V1 takes only its immutable joins,
+restricted option-like tag switch, evaluation order, and direct-tail-call loop rewrite.
+
+The closed v1 expression vocabulary in [`v1-operations.md`](./v1-operations.md) is scalar `f32` and
+`Bool` only.
+
+The proposed uniform ABI in [`v1-uniform.md`](./v1-uniform.md) is deferred to the next resource
+slice.
+
+The dual-representation solver in [`v1-numerics.md`](./v1-numerics.md) is deferred. V1 directly maps
+all reachable `Number` occurrences to `f32` and needs no numeric fixed point.
+
+The expanded closure design in [`v1-captures.md`](./v1-captures.md) is deferred. V1 permits direct
+same-module helpers and rejects every captured value.
+
+The entry design in [`v1-entry.md`](./v1-entry.md) supplies raw coordinates, nominal color, and
+host-runtime isolation. V1 requires only one inline or directly bound selection.
+
+The production diagnostic and artifact protocol in [`v1-diagnostics.md`](./v1-diagnostics.md) is
+deferred. V1 uses focused codes/spans and retains generated backend output without freezing the
+complete protocol.
+
+The ordered implementation handoff and H0 incompatibility audit are in
+[`v1-readiness.md`](./v1-readiness.md).
 
 The supporting collection design in [`compiler-collections.md`](./compiler-collections.md) specifies
 a small comparator-based persistent AVL map in Workman `std`. It supplies the scope-preserving,
@@ -44,8 +91,8 @@ let palette = (t) => {
 ```
 
 Workman owns parsing, name resolution, type inference, shader eligibility, and diagnostics. A typed
-shader IR is lowered to generated Slang. Slang validates and compiles that generated program to
-WGSL or another target. The emitted JavaScript uses the resulting WGSL with normal WebGPU APIs.
+shader IR is lowered to generated Slang. Slang validates and compiles that generated program to WGSL
+or another target. The emitted JavaScript uses the resulting WGSL with normal WebGPU APIs.
 
 The intended end state is one large program shaped like this. The fuller compute/readback sketch in
 [`illustrative-example.md`](./illustrative-example.md) places the current raw-WebGPU Workman example
@@ -72,13 +119,18 @@ let main = () => {
       });
 
       -- The rest is ordinary typed WebGPU setup through the existing TS FFI.
-      setupPipeline(device, module, Gpu.entryPoint(fragment))
+      setupPipeline(
+        device,
+        module,
+        Gpu.vertexEntryPoint(fragment),
+        Gpu.fragmentEntryPoint(fragment)
+      )
     })
 };
 ```
 
-`Gpu.wgsl` and `Gpu.entryPoint` above illustrate compile-time shader artifacts, not a requirement
-that source-to-source compilation happen at runtime.
+`Gpu.wgsl` and the entry-point accessors above inspect a completed compile-time shader artifact;
+they do not imply that source-to-source compilation happens at runtime.
 
 ## Firm direction
 
@@ -93,8 +145,8 @@ that source-to-source compilation happen at runtime.
 - Direct self-tail recursion is Workman's primary shader-loop syntax and lowers to an imperative
   loop in generated Slang.
 - Generated Slang should be inspectable for debugging, but users are not expected to author it.
-- The existing Slang playground is a reference implementation and potential development harness,
-  not the semantic definition of wmslang or a required production runtime.
+- The existing Slang playground is a reference implementation and potential development harness, not
+  the semantic definition of wmslang or a required production runtime.
 
 ## Non-goals for the first implementation
 
@@ -107,6 +159,10 @@ that source-to-source compilation happen at runtime.
 - Mutual tail recursion in the first tail-call lowering pass.
 - Automatically treating an opaque TypeScript `GPUBuffer` as a typed `Buffer<T>` without any
   Workman-side evidence for `T`.
+- Implicit numeric promotion or narrowing; v1 conversions are explicit compiler intrinsics.
+- Higher-order shader values, closure conversion, or optimization.
+- Automatic uniform capture and packing.
+- Compute and general user-authored vertex stages; v1 proves one fullscreen fragment artifact first.
 
 ## Compilation model
 
@@ -116,7 +172,7 @@ Workman source
   -> normal name resolution plus shader-aware HM inference
   -> GPU capability and capture analysis
   -> typed functional wmslang IR
-  -> reachable specialization, ADT lowering, and closure conversion
+  -> reachable specialization and finite ADT lowering
   -> lowered control-flow IR (ANF, switches, parameterized loops)
   -> generated Slang module
   -> Slang parse/check/link
@@ -146,7 +202,8 @@ Rules:
 - It applies to the immediately containing lambda, not nested lambdas.
 - Repeated `@gpu;` is an error.
 - An `@gpu;` outside a lambda is an error initially.
-- Directives must be preserved by both frontends, structural tooling, formatting, and diagnostics.
+- Directives are owned by frontend-v1 and must be preserved in its surface AST, formatting, and
+  diagnostics. Frontend-v2 support is not part of the wmslang plan.
 - A directive is not an expression returning `Void`; it is semantic syntax removed before runtime
   Core lowering.
 
@@ -192,8 +249,8 @@ limitation or compiler defect and remapped to the originating Workman span where
 
 ## Function capabilities
 
-Function execution capability is an analysis fact, not part of the ordinary HM `Ty` union and not
-a user-written effect annotation. Facts are keyed by resolved binding/lambda identity and, after
+Function execution capability is an analysis fact, not part of the ordinary HM `Ty` union and not a
+user-written effect annotation. Facts are keyed by resolved binding/lambda identity and, after
 specialization, by specialization identity.
 
 The initial capabilities are:
@@ -216,18 +273,19 @@ Required behavior regardless of representation:
 
 - A GPU lambda may call another GPU-capable function.
 - A GPU lambda may not call a CPU-only or arbitrary JS FFI function.
-- Host code may carry a GPU function only as a statically tracked opaque `GpuFn` for stage selection.
+- Host code may carry a GPU function only as a statically tracked opaque `GpuFn` for stage
+  selection.
 - Entry-point constructors accept only GPU-capable functions.
 - GPU dependency discovery follows resolved binding identity, not source spelling.
 
-Illegal cross-domain calls are diagnosed during final shader semantic analysis, before functional
-IR construction and code generation.
+Illegal cross-domain calls are diagnosed during final shader semantic analysis, before functional IR
+construction and code generation.
 
 ## GPU effects and stage capabilities
 
-Shader effects are also parallel analysis facts rather than additions to ordinary HM function
-types. The closed fact vocabulary distinguishes pure computation, resource reads, resource writes,
-and stage-restricted operations. The first resource slice implements reads; later intrinsics enable
+Shader effects are also parallel analysis facts rather than additions to ordinary HM function types.
+The closed fact vocabulary distinguishes pure computation, resource reads, resource writes, and
+stage-restricted operations. The first resource slice implements reads; later intrinsics enable
 writes, derivatives, atomics, and workgroup memory.
 
 Facts refer to stable resource/capture IDs where applicable, are unioned transitively through the
@@ -244,30 +302,30 @@ shader-local capability analysis, not a new host-language effect system.
 This is a representation mapping after Workman inference plus GPU constraint solving, not a
 replacement HM type system.
 
-| Workman type/shape | Initial Slang representation | Notes |
-| --- | --- | --- |
-| `Bool` | `bool` | Value and control-flow type. |
-| `Number` from a floating context | `float` | Defaults to 32-bit for the first target. |
-| integer required by a GPU builtin | `int` or `uint` | Context fixes signedness before typed IR. |
-| `Void` | `void` | Entry points and effectful operations. |
-| `(Number, Number)` | `float2` | Homogeneous numeric tuple reification. |
-| `(Number, Number, Number)` | `float3` | Primary creative-coding vector syntax. |
-| `(Number, Number, Number, Number)` | `float4` | Color and position syntax. |
-| homogeneous integer tuple of arity 2-4 | corresponding integer vector | Context decides signedness. |
-| nominal Workman record | generated Slang `struct` | All fields must be reifiable. |
-| structural record | generated private Slang `struct` | Stable field order and identity are required. |
-| function | specialized direct call or defunctionalized closure | First-order H1; finite higher-order closure sets follow. |
-| `String` | unsupported runtime shader value | Compile-time diagnostic text may be handled separately. |
-| `List<T>` | unsupported runtime value initially | Later compile-time unrolling is separate from storage. |
-| finite monomorphized ADT | generated tag plus payload struct | Initially private shader values; ABI use is deferred. |
+| Workman type/shape                     | Initial Slang representation                        | Notes                                                    |
+| -------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `Bool`                                 | `bool`                                              | Value and control-flow type.                             |
+| `Number` from a floating context       | `float`                                             | Defaults to 32-bit for the first target.                 |
+| integer required by a GPU builtin      | `int` or `uint`                                     | Context fixes signedness before typed IR.                |
+| `Void`                                 | `void`                                              | Entry points and effectful operations.                   |
+| `(Number, Number)`                     | `float2`                                            | Homogeneous numeric tuple reification.                   |
+| `(Number, Number, Number)`             | `float3`                                            | Primary creative-coding vector syntax.                   |
+| `(Number, Number, Number, Number)`     | `float4`                                            | Color and position syntax.                               |
+| homogeneous integer tuple of arity 2-4 | corresponding integer vector                        | Context decides signedness.                              |
+| nominal Workman record                 | generated Slang `struct`                            | All fields must be reifiable.                            |
+| structural record                      | generated private Slang `struct`                    | Stable field order and identity are required.            |
+| function                               | specialized direct call or defunctionalized closure | First-order H1; finite higher-order closure sets follow. |
+| `String`                               | unsupported runtime shader value                    | Compile-time diagnostic text may be handled separately.  |
+| `List<T>`                              | unsupported runtime value initially                 | Later compile-time unrolling is separate from storage.   |
+| finite monomorphized ADT               | generated tag plus payload struct                   | Initially private shader values; ABI use is deferred.    |
 
 Important distinctions:
 
 - Ordinary CPU tuples keep their existing JavaScript representation.
 - Vector reification happens only inside a GPU function or GPU ABI.
 - `f(x, y, z)` remains a multi-argument call; `f((x, y, z))` passes one vector-shaped value.
-- Heterogeneous and non-vector tuples become generated private product structs when every element
-  is shader-reifiable. They are rejected at entry, resource, and uniform ABI boundaries initially.
+- Heterogeneous and non-vector tuples become generated private product structs when every element is
+  shader-reifiable. They are rejected at entry, resource, and uniform ABI boundaries initially.
 - Nested homogeneous tuples as matrices are attractive, but deferred until matrix orientation and
   multiplication semantics are specified.
 
@@ -282,35 +340,33 @@ It consumes pruned normalized HM types, expression facts, and resolved IDs. Gene
 carry a parallel `GpuScheme`; each reachable specialization instantiates and solves that scheme
 before typed functional IR is finalized. The solver never mutates the host `Ty` graph.
 
-Fractional or exponent-form literals seed `f32`. Integral spelling creates an unresolved numeric
-representation that context may fix to `i32`, `u32`, or `f32`; a negative value excludes `u32`.
-Indexing, dispatch IDs, bit operations, and resource operations must provide integer/signedness
-evidence. Otherwise an unresolved integral-form shader number defaults to `i32`; decimal-form
-creative math remains `f32`. Required promotions and conversions are materialized explicitly in
-typed IR.
+The vertical v1 slice maps both `Int` and `Float` Workman syntax directly to shader `f32`; it does
+not run this representation solver. The dual `i32`/`f32` conflict/default algorithm in
+[`v1-numerics.md`](./v1-numerics.md), user-visible `u32`, contextual literal representation, and any
+coercion system require later explicit language slices.
 
-Homogeneous numeric tuples of width 2-4 are vector candidates and default to vectors in GPU code.
-A persistent representation fact records that choice so later lowering never re-derives it from
-shape. Product representation is reserved for heterogeneous, nested, or explicitly product-typed
-values; matrices remain deferred until their orientation and multiplication semantics are defined.
+Homogeneous numeric tuples of width 2-4 are vector candidates and default to vectors in GPU code. A
+persistent representation fact records that choice so later lowering never re-derives it from shape.
+Product representation is reserved for heterogeneous, nested, or explicitly product-typed values;
+matrices remain deferred until their orientation and multiplication semantics are defined.
 
 ## Expression mapping
 
 Initial mappings:
 
-| Workman construct | Typed wmslang IR | Generated Slang |
-| --- | --- | --- |
-| literal | typed literal | scalar literal |
-| variable | resolved local/capture | local/global/generated parameter |
-| tuple expression | vector or product construction | `floatN(...)` or generated product |
-| record expression | typed struct construction | generated struct constructor/initializer |
-| immutable `let` | `Let` | Slang `let` |
-| function call | resolved GPU call | specialized Slang call |
-| arithmetic/comparison | typed operator | native Slang operator/intrinsic |
-| `if` expression | typed branch expression | return branches or generated temporary/control flow |
-| block result | expression result | final expression becomes `return` where required |
-| direct tail call | typed functional `TailCall` | lowered parameter update plus loop `continue` |
-| pipe | elaborated call | ordinary specialized call |
+| Workman construct     | Typed wmslang IR               | Generated Slang                                     |
+| --------------------- | ------------------------------ | --------------------------------------------------- |
+| literal               | typed literal                  | scalar literal                                      |
+| variable              | resolved local/capture         | local/global/generated parameter                    |
+| tuple expression      | vector or product construction | `floatN(...)` or generated product                  |
+| record expression     | typed struct construction      | generated struct constructor/initializer            |
+| immutable `let`       | `Let`                          | Slang `let`                                         |
+| function call         | resolved GPU call              | specialized Slang call                              |
+| arithmetic/comparison | typed operator                 | native Slang operator/intrinsic                     |
+| `if` expression       | typed branch expression        | return branches or generated temporary/control flow |
+| block result          | expression result              | final expression becomes `return` where required    |
+| direct tail call      | typed functional `TailCall`    | lowered parameter update plus loop `continue`       |
+| pipe                  | elaborated call                | ordinary specialized call                           |
 
 Later mappings include record/tuple patterns, suitable `match` forms, texture operations, buffer
 operations, atomics, workgroup memory, derivatives, and stage-specific builtins.
@@ -353,32 +409,31 @@ Lowering requirements:
 This pass should share tail-position analysis concepts with the current JavaScript direct-tail-call
 optimization, while producing a shader-specific IR transformation rather than reusing JS emission.
 
-## Lexical captures and closure conversion
+## Lexical captures and future closure conversion
 
 Every free resolved binding used by an `@gpu;` lambda is classified before Slang generation.
 
-| Capture category | Intended lowering |
-| --- | --- |
-| GPU-capable function | dependency edge and specialized/lifted Slang function |
-| compile-time scalar/vector/record constant | inline constant or generated Slang constant |
-| runtime scalar/vector/record | uniform data |
-| typed read-only GPU resource | reflected resource binding |
-| typed writable GPU resource | reflected writable binding plus GPU effect permission |
-| sampler/texture handle with Workman type evidence | corresponding Slang resource |
-| arbitrary JS object or CPU-only function | compile-time error |
-| opaque raw `GPUBuffer` without element evidence | compile-time error or explicit typed wrapping |
+| Capture category                                  | Intended lowering                                                     |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| GPU-capable function                              | dependency edge and specialized/lifted Slang function                 |
+| closed literal scalar/vector constant             | clone the literal tree into the using specialization                  |
+| runtime scalar/vector/record                      | rejected in v1; a later slice uses explicit `Gpu.Uniform<T>` evidence |
+| typed read-only GPU resource                      | reflected resource binding                                            |
+| typed writable GPU resource                       | reflected writable binding plus GPU effect permission                 |
+| sampler/texture handle with Workman type evidence | corresponding Slang resource                                          |
+| arbitrary JS object or CPU-only function          | compile-time error                                                    |
+| opaque raw `GPUBuffer` without element evidence   | compile-time error or explicit typed wrapping                         |
 
 Captures should be keyed by semantic binding ID. Generated names are an implementation detail.
 
-Compile-time capture means a pure expression composed only of literals, immutable constructors,
-and other compiler-evaluable constants. The compiler does not execute arbitrary Workman or
-JavaScript to discover specialization values. Any other legal scalar/vector/record host capture is
-runtime uniform data; changing it must not change the shader cache key.
+V1 rejects all captured values. The closed static grammar and explicit `Gpu.Uniform<T>` boundary in
+[`v1-captures.md`](./v1-captures.md) describe later slices. Those designs still avoid executing
+Workman or JavaScript merely to discover specialization values.
 
-Static shader type information is sufficient to generate WGSL ahead of runtime even when the
-actual GPU resource objects are created later. Runtime scalar captures should become uniform fields
-rather than forcing runtime source generation. Pipeline/source caching therefore keys on shader IR,
-types, entry-point configuration, and static specialization values—not on ordinary uniform values.
+Static shader type information is sufficient to generate WGSL ahead of runtime even when the actual
+GPU resource objects are created later. Runtime scalar captures should become uniform fields rather
+than forcing runtime source generation. Pipeline/source caching therefore keys on shader IR, types,
+entry-point configuration, and static specialization values—not on ordinary uniform values.
 
 ## Typed GPU boundary
 
@@ -407,8 +462,8 @@ This layer must:
 
 Raw WebGPU objects never acquire shader element types through TypeScript reflection alone. A typed
 wrapper constructor pairs the raw object with static schema/access evidence, and the compiler emits
-that evidence in the predicted manifest. Phase 7 may add only the constructors demanded by its
-first resource fixture; allocation, update, and full WebGPU convenience APIs remain intentionally
+that evidence in the predicted manifest. Uniforms and these general resource wrappers begin after
+the static v1 slice; allocation, update, and full WebGPU convenience APIs remain intentionally
 outside wmslang.
 
 ## Entry points
@@ -421,19 +476,22 @@ let fragment = Gpu.fragment(shade);
 let compute = Gpu.compute(workgroupSize, kernel);
 ```
 
-`Gpu.fragment`, `Gpu.vertex`, and `Gpu.compute` have ordinary typed surface declarations but are
+`Gpu.fragment`, `Gpu.vertex`, and `Gpu.compute` eventually have typed surface declarations but are
 recognized by stable intrinsic IDs and never execute as normal JavaScript calls. They accept an
 opaque GPU function plus typed stage configuration and produce an opaque `ShaderArtifact` host
 value. Entry lambdas use nominal records from the compiler-owned `Gpu` basis for stage inputs,
-outputs, builtins, and interpolation evidence. There is no positional convention or field-name
-magic. The H3 catalog is deliberately one case: a no-input fragment function returning the nominal
-color output constructed by `Gpu.color`. Later stage records extend this model rather than overload
-tuple shape or field spelling with stage semantics.
+outputs, builtins, and interpolation evidence. There is no field-name magic. The v1 catalog is one
+fullscreen case: a fragment function receives raw `f32` fragment coordinates and returns the nominal
+color output constructed by `Gpu.color`. Normalization and aspect correction use explicit resolution
+input in ordinary shader code. The artifact also contains a compiler-generated fullscreen-triangle
+vertex wrapper. Its exact simpler signature is the one in [`v1-basis.md`](./v1-basis.md); later
+stage records extend this model rather than overload ordinary tuple shape or field spelling with
+stage semantics.
 
 Stage construction is statically resolved. H3 accepts a direct GPU-function binding; later finite
-function selection may use the same closed-world defunctionalization as higher-order shader code.
-An arbitrary runtime choice of function cannot become an entry point because there is no runtime
-shader compiler or AST interpreter.
+function selection may use the same closed-world defunctionalization as higher-order shader code. An
+arbitrary runtime choice of function cannot become an entry point because there is no runtime shader
+compiler or AST interpreter.
 
 Shader operators and common creative-math names are likewise stable compiler intrinsics. The GPU
 typing dialect opens the compiler-owned math basis within an `@gpu` body, allowing `sin`, `cos`,
@@ -504,23 +562,28 @@ type ShaderArtifact = {
 };
 ```
 
+The general shape above is post-v1 extensibility. V1 needs only WGSL plus the two fixed entry names
+defined in [`v1-scope.md`](./v1-scope.md); draw setup remains in the focused host harness. The
+richer descriptor is retained in [`v1-backend.md`](./v1-backend.md) for later work.
+
 The JavaScript backend can embed the WGSL and metadata directly. Generated Slang may be retained in
 debug artifacts, compiler snapshots, or an opt-in CLI output, but need not ship in production code.
 
 At Workman compile time, a stage constructor is a compiler-known artifact selection operation. It
 may appear inside ordinary host code so it can capture current uniform values and resource handles,
-but its GPU function, static stage configuration, and ABI must be resolvable during compilation.
-The emitter replaces it with construction of an immutable runtime descriptor holding precompiled
-WGSL, stable entry names, binding metadata, and the current dynamic binding values. It is not a
-callable CPU function and does not contain or interpret source/IR at runtime. `Gpu.wgsl` and similar
+but its GPU function, static stage configuration, and ABI must be resolvable during compilation. The
+emitter replaces it with construction of an immutable runtime descriptor holding precompiled WGSL,
+stable entry names, binding metadata, and the current dynamic binding values. It is not a callable
+CPU function and does not contain or interpret source/IR at runtime. `Gpu.wgsl` and similar
 accessors are typed projections from that descriptor.
 
 The module graph discovers shader dependencies lazily from selected artifact roots across imported
 Workman source modules. The specialization key is the resolved binding ID, normalized GPU type
 arguments, and relevant compile-time captures. Each entry root initially produces one independently
 cacheable Slang/WGSL artifact; reachable helpers are deduplicated within it. Core contains only an
-opaque artifact reference, and each single-file, worker, library, or REPL output embeds the artifact
-table entries it actually references—never a runtime shader AST.
+opaque artifact reference supplied after shader/backend materialization, and each single-file,
+worker, library, or REPL output embeds the artifact table entries it actually references—never a
+runtime shader AST.
 
 Lazy GPU functions cross Workman source-module boundaries only while those modules are present in
 the same compiler graph. A standalone emitted JavaScript library may export completed
@@ -546,7 +609,9 @@ LSP expectations:
 - Hover continues to show inferred Workman types, optionally with GPU representation facts.
 - Diagnostics identify the original expression and use Workman terminology.
 - A future command may show generated Slang or WGSL for the selected GPU function.
-- Frontend-v1, frontend-v2, and compare mode agree on directive and lambda structure.
+- Frontend-v1 preserves directive and lambda structure through the host compiler boundary.
+- Frontend-v2 and frontend compare mode are not wmslang targets or future milestones. Supporting
+  them would require a separate decision after frontend-v2 matures.
 
 ## Hello-world ladder
 
@@ -564,7 +629,7 @@ let tint = (color) => {
 
 Acceptance:
 
-- Both frontends attach `@gpu` to the lambda.
+- Frontend-v1 attaches `@gpu` to the lambda.
 - HM inference infers the ordinary function shape.
 - GPU analysis records a GPU-capable function.
 - A typed shader IR snapshot exists.
@@ -597,51 +662,58 @@ Acceptance:
 - No recursive call remains in generated Slang.
 - A non-tail recursive variant receives a focused diagnostic.
 
-### H3: one fragment entry point
+### H3: one fullscreen fragment entry point
 
-Use the smallest general fragment ABI: no stage input and one explicitly constructed color output.
+Use the smallest useful visual ABI: raw fragment-coordinate input and one explicitly constructed
+color output. The compiler supplies the fixed fullscreen vertex stage.
 
 ```workman
-let solid = () => {
+let shade = (coord) => {
   @gpu;
-  Gpu.color((0.2, 0.4, 0.8, 1.0))
+  let (x, y) = coord;
+  Gpu.color((x / 256.0, y / 256.0, 0.8, 1.0))
 };
 
-let fragment = Gpu.fragment(solid);
+let fragment = Gpu.fragment(shade);
 ```
 
-`Gpu.color` constructs the nominal initial fragment-output type; it is not return-shape or field-name
-magic. This bootstrap entry does not define a Shadertoy/playground ABI. Typed vertex-to-fragment
-interfaces extend the same nominal stage-record model later.
+`Gpu.color` constructs the nominal initial fragment-output type; it is not return-shape or
+field-name magic. The stage constructor fixes the sole shader parameter to a fragment-coordinate
+vector; normalization is visible source code. Typed user-authored vertex-to-fragment interfaces
+extend the same stage-record model later.
 
 Acceptance:
 
 - Slang links the entry point and emits WGSL.
 - The artifact exposes a stable entry-point name.
-- Reflection reports fragment stage and the expected color output.
-- A minimal JS/WebGPU harness can create the shader module.
+- Reflection reports the generated vertex entry, fragment entry, and expected color output.
+- A minimal JS/WebGPU harness can draw the fullscreen triangle and verify rendered pixels.
 
-### H4: one typed resource
+### H4: finite ADT and immutable match
 
-Introduce one read-only buffer or texture with explicit Workman type evidence.
-
-Acceptance:
-
-- The resource type flows from host construction into the GPU lambda.
-- Generated Slang uses the correct resource type and access.
-- Reflection agrees with Workman's predicted binding manifest.
-- Ordinary WebGPU FFI code can bind the underlying resource and dispatch/draw.
-
-### H5: one runtime uniform capture
-
-Capture a host `Number` or numeric tuple from an inline GPU function.
+Have a reachable helper construct an option-like finite ADT and match its immutable result into a
+color.
 
 Acceptance:
 
-- The capture becomes a uniform rather than source specialization.
-- Slang reflection supplies the final byte offset and size.
+- Constructor and pattern identity follows resolved Workman declaration IDs.
+- The typed functional IR retains the exhaustive expression-valued match.
+- Lowered control-flow IR uses deterministic private tag and payload storage.
+- Generated Slang remains first-order and Slang accepts the result without requiring tag
+  optimization.
+
+### H5: post-v1 explicit runtime uniform block
+
+Provide one nominal record containing runtime `f32` scalar/vector values such as time and
+resolution. Wrap it explicitly as the fragment artifact's uniform input.
+
+Acceptance:
+
+- The explicit record becomes one uniform block rather than source specialization.
+- Slang reflection supplies final field offsets and aggregate size.
 - Updating the value does not rebuild the shader program.
 - CPU/GPU type disagreement is diagnosed before runtime.
+- Capturing an ordinary host number without explicit uniform evidence remains rejected.
 
 ### H6: multiple cooperating GPU functions
 
@@ -655,10 +727,13 @@ Acceptance:
 ## Implementation phases
 
 The language ownership below follows `implementation-language.md`: changes to the current host
-compiler are TypeScript, frontend-v2 changes are Workman, and the pure wmslang compiler core is an
-importable Workman library. Slang WASM and emitted artifact orchestration stay in TypeScript.
+compiler are TypeScript, and the pure wmslang compiler core is an importable Workman library. Slang
+WASM and emitted artifact orchestration stay in TypeScript. Frontend-v2 support is not part of this
+plan and is not deferred to a later phase.
 
 ### Supporting milestone: persistent std Map
+
+Status: implemented.
 
 - Add a generic comparator-based persistent `Map<K,V>` implemented in Workman.
 - Use an ADT wrapper and height-annotated AVL tree.
@@ -669,8 +744,8 @@ importable Workman library. Slang WASM and emitted artifact orchestration stay i
   insertion performance.
 - Load it under the standard `Map` namespace and keep internal tree constructors undocumented.
 
-Exit criterion: a few thousand sorted numeric inserts remain balanced, old map versions retain
-their values, and `Map<K,V>` inference works without annotations introducing type variables.
+Exit criterion: a few thousand sorted numeric inserts remain balanced, old map versions retain their
+values, and `Map<K,V>` inference works without annotations introducing type variables.
 
 This milestone does not block Phase 1 directive syntax. Complete it before Phase 2's Workman
 constraint solver and specialization registry grow beyond tiny list-backed fixtures.
@@ -679,22 +754,57 @@ constraint solver and specialization registry grow beyond tiny list-backed fixtu
 
 - Add `Directive` to the Workman surface AST.
 - Parse lambda directive prologues in frontend-v1.
-- Add equivalent structural and semantic representation to frontend-v2.
-- Update comparison normalization, DTOs, syntax highlighting, and recovery.
+- Add frontend-v1 placement, spelling, duplicate, and damaged-directive diagnostics.
 - Record GPU-marked lambdas/bindings in analysis facts.
-- Add directive placement and recovery tests.
+- Add parser and ordinary-compilation regression tests.
 
 Exit criterion: H0 parses and checks without changing generated JavaScript behavior elsewhere.
 
 ### Phase 2: typed wmslang IR
 
-- Define and validate the versioned `GpuElaborationInput` and `GpuCompilationOutput` DTOs.
-- Add the generated Workman wmslang library and TypeScript loader, following the frontend-v2
-  build/test pattern.
+Status: in progress. Schema-v1 input/output DTOs, the generated Workman library bootstrap, the
+validating TypeScript loader, final-inference H0 normalization, stable
+source/binding/type/expression tables, the initial deterministic function registry, and
+scalar/vector `i32`/`f32` fixed-point refinement are implemented. GPU-rooted, resolved-ID call-graph
+reachability now crosses module boundaries, classifies candidate helpers, and scopes capability
+diagnostics to reachable expression trees. Per-root capture closure now classifies compiler-known
+constants, dynamic scalar/vector uniforms, reachable functions, and illegal CPU/non-reifiable values
+while excluding lexical locals; the resource category awaits nominal wrapper evidence. Explicit
+user-requested conversion nodes remain part of this phase; user-visible `u32`, implicit coercions,
+and the broader promotion vocabulary are post-v1. Numeric representation facts now use
+binding/expression occurrence IDs and propagate through resolved calls, preventing unrelated GPU
+roots from sharing evidence merely because both host types prune to `Number`; generalized helper
+specializations now give a fixed-shape helper distinct `i32`/`f32` instances, deduplicate equal
+instances across roots, preserve direct recursion through register-before-descend, reject mutual
+recursion, and record call-expression-to-specialization edges. Concrete representation facts live on
+each specialization; the shared type table is only their consensus. Full `GpuScheme` instantiation
+across HM-polymorphic shapes and compile-time capture values remains part of this phase. Every
+specialization now owns a typed functional IR clone with concrete representation overlays, resolved
+call targets, value-origin classification, stable child IDs, and Workman source provenance. The
+graph preserves blocks, immutable `let` declarations, tuples/vectors, calls, operators, and
+expression-valued branches without introducing backend mutation. Explicit conversion/intrinsic
+nodes, supported record/product reification, and pattern/ADT cases remain. Implicit coercion
+materialization is no longer a Phase 2 or v1 requirement.
+
+The implemented schema-v1 merge still treats mixed evidence as `f32` dominance, but that behavior is
+now confined to H0 fixture APIs. Production program analysis uses the schema-v2 vertical slice: one
+semantic `Gpu.fragment` selection, one same-module closure, and direct `Number`-to-`f32` mapping.
+Uniform/capture inference, numeric coercion, and ordered multi-selector machinery are deferred under
+[`v1-scope.md`](./v1-scope.md), not prerequisites for the visual slice.
+
+Target-neutral prerequisites preserve complete resolved patterns, authored recursion-group
+membership and reference kinds, and the closed visual operator catalog. Schema v2 now transports the
+restricted projection needed by the selected program.
+
+- Define and validate the versioned selected-program schema-v2 input/output DTOs. (Done.)
+- Transport shared constructor/declaration facts together with restricted patterns, ADT shapes, and
+  recursive-group identity; do not guess them from schema-v1 strings. (Done for the v1 slice.)
+- Add the generated Workman wmslang entry and dedicated TypeScript loader without coupling wmslang
+  to frontend-v2. (Done; focused ABI roundtrip covered.)
 - Define shader types, values, functions, captures, and source spans.
 - Implement shader reification from inferred Workman types.
-- Implement generalized GPU constraints, numeric refinement, tuple-vector representation facts,
-  and coercion materialization.
+- Implement the v1 strict numeric contract, explicit conversions, and tuple-vector representation
+  facts. Keep `u32` internal to the generated vertex ABI and defer user-visible unsigned numbers.
 - Implement scalar operators, tuple-vector lifting, records, `let`, calls, blocks, and `if`.
 - Implement GPU dependency and capability validation.
 - Add stable structural snapshots.
@@ -705,15 +815,20 @@ Exit criterion: H1 produces a complete typed shader IR and deterministic generat
 
 - Bundle a pinned `slang-wasm` toolchain artifact for Deno compiler use; do not require a native
   install, CDN, or network access during compilation.
+- Record the upstream commit/build recipe and hashes for all bundled assets, and verify
+  `getVersionString()` plus WGSL target availability at startup. The research checkouts do not
+  currently contain the required WASM artifacts.
 - Create sessions and load generated source.
-- Link selected generated functions/entry points.
+- Explicitly check vertex and fragment entries with their Slang stage constants, link them in stable
+  order, and retrieve one whole-program WGSL module.
 - Return target code, diagnostics, layout JSON, and compiler version.
 - Add content-addressed cache keys including generated source, target/profile/options, and the
   runtime-reported Slang version.
 - Preserve generated Slang for failed compilation diagnostics.
 - Reconcile Workman-predicted entry/resource facts with Slang reflection in TypeScript.
 
-Exit criterion: generated H1 Slang is checked in tests without invoking an external native install.
+Exit criterion: a compiler-owned vertex/fragment smoke module and generated H1 declarations are
+checked in focused tests without invoking an external native install.
 
 ### Phase 4: tail-call lowering
 
@@ -731,57 +846,57 @@ Exit criterion: H2 passes semantic and generated-code tests.
 - Monomorphize GPU helpers from reachable artifact roots and generalized GPU constraints.
 - Lower suitable finite Workman ADTs to tagged payload structs.
 - Lower exhaustive matches to result joins, branches, and switches.
-- Add lambda lifting, closure conversion, and defunctionalization for finite reachable function
-  sets.
-- Specialize and devirtualize statically known higher-order calls.
-- Add GLML-inspired SDF combinator, palette closure, and material ADT fixtures.
+- For v1, lower the one restricted option-like ADT directly to declaration-order tags and one
+  optional scalar payload. The general layout and pattern-matrix design in
+  [`v1-functional-lowering.md`](./v1-functional-lowering.md) is later breadth.
+- Keep v1 first-order. Lambda lifting, closure conversion, defunctionalization, and higher-order
+  shader fixtures are post-v1 breadth.
 
 The first ADT slice is closed, finite, monomorphized, exhaustively matched, and private to shader
-code. Recursive layouts and ABI-crossing ADTs are rejected. Function/resource payloads wait for
-the closure slice. The first higher-order slice accepts only a finite reachable set of lambdas with
-shader-reifiable captures; it lambda-lifts, closure-converts, defunctionalizes, and rejects escaping
-or unknown function sets. Function values do not cross entry/resource/uniform ABIs.
+code. Recursive layouts and ABI-crossing ADTs are rejected. Function/resource payloads and all
+higher-order shader values wait until after v1. Function values do not cross entry/resource/uniform
+ABIs.
 
-Exit criterion: a shader can use an option-like ADT and a captured higher-order helper while the
-generated Slang remains first-order.
+Exit criterion for v1: a shader can use an option-like ADT and exhaustive match while generated
+Slang remains first-order. Higher-order helpers have a separate post-v1 exit criterion.
 
 ### Phase 6: entry points and artifacts
 
-- Implement the compiler-owned typed entry constructors and the minimal nominal stage-record catalog.
-- Generate stage wrappers and semantics.
+- Implement `Gpu.fragment` and the minimal v1 artifact containing WGSL plus fixed entry names.
+- Generate the fixed `SV_VertexID` fullscreen-triangle vertex wrapper and raw-`SV_Position` fragment
+  wrapper from [`v1-backend.md`](./v1-backend.md).
 - Link entry points and emit WGSL.
 - Add `ShaderArtifact` to the compiler pipeline.
 - Embed WGSL and stable entry names into JavaScript output.
 - Add a minimal WebGPU integration test where the environment supports it, plus compile-only tests
   everywhere.
 
-Exit criterion: H3 creates a real `GPUShaderModule` from Workman-generated WGSL.
+Exit criterion: H3 creates one real `GPUShaderModule`, a no-vertex-buffer render pipeline, and a
+correct offscreen coordinate image from Workman-generated WGSL.
 
-### Phase 7: typed resources and reflection
+### Phase 7: post-v1 explicit uniform and reflection
 
-- Introduce the smallest typed wrappers/evidence for one read-only buffer or texture; add the other
-  resource families only when a fixture requires them.
-- Classify resource captures.
-- Predict a binding manifest from wmslang IR.
-- Compare the prediction to Slang layout reflection.
-- Embed reflected layout metadata for host binding code.
+- Reify the one explicit nominal uniform record and classify its descriptor capture.
+- Generate the fixed group-zero/binding-zero constant buffer.
+- Predict its field shapes and compare them to Slang layout reflection.
+- Use reflected offsets and sizes for the generated host packer and embedded manifest.
 
-Exit criterion: H4 binds and uses one resource through otherwise ordinary TS-reflected WebGPU code.
+Exit criterion: the animated-uniform visual acceptance shader updates through ordinary WebGPU host
+code without rebuilding its shader module or pipeline.
 
-### Phase 8: uniform capture packing
+### Phase 8: further resource and capture breadth
 
-- Reify runtime scalar/vector/record captures into uniform fields.
-- Initially generate one deterministic uniform aggregate per entry root, ordered by stable capture
-  binding ID; explicit user grouping is deferred until a real layout/API case requires it.
-- Use reflected offsets and sizes for packing.
-- Add cache behavior that excludes ordinary uniform values.
-- Support shared captures and multiple GPU helper functions.
+- Introduce typed read-only buffers or textures when a post-v1 fixture requires them.
+- Support shared resource captures and multiple resource groups.
+- Automatic scalar/vector/record captures may be packed into a deterministic aggregate ordered by
+  stable capture binding ID.
 
-Exit criterion: H5 and H6 pass, including updates without shader recompilation.
+Exit criterion: a separately scoped resource fixture passes without weakening the explicit uniform
+contract introduced in Phase 7.
 
 ### Phase 9: target and effect breadth
 
-- Math intrinsic basis and swizzles.
+- Additional math intrinsic breadth and swizzles beyond the small visual v1 basis.
 - Matrices with defined orientation and multiplication.
 - Texture sampling and derivatives.
 - More pattern forms and larger ADTs.
@@ -793,7 +908,7 @@ Exit criterion: H5 and H6 pass, including updates without shader recompilation.
 ## Testing strategy
 
 - Parser tests for valid, misplaced, duplicated, and damaged directives.
-- Frontend-v1/v2 equivalence tests.
+- Frontend-v1 directive and ordinary-compilation isolation tests.
 - HM inference tests for scalar/vector lifting and cross-domain calls.
 - Shader reification unit tests independent of Slang.
 - Golden typed-IR and generated-Slang snapshots.
@@ -801,7 +916,8 @@ Exit criterion: H5 and H6 pass, including updates without shader recompilation.
 - Slang compile tests through the WASM API.
 - Reflection contract tests comparing expected and actual ABI.
 - JavaScript emission tests proving WGSL is embedded and no runtime Workman shader source remains.
-- WebGPU smoke tests when an adapter is available, with deterministic compile-only coverage otherwise.
+- WebGPU smoke tests in developer environments, plus a mandatory supported release environment that
+  renders the offscreen visual suite; a release cannot pass with every adapter test skipped.
 - Regression tests showing ordinary Workman programs are unchanged.
 
 The Slang playground demos are useful fixtures for identifying the minimum Slang constructs and
@@ -842,10 +958,11 @@ The implementation-language audit additionally established:
 - other compiler utilities remain package-local Workman structures or coarse TypeScript helpers
   imported through normal carrier-oriented FFI until broader reuse is demonstrated.
 
-The architecture-critical questions are now answered:
+The broad architecture questions are now answered. These describe the intended system beyond v1; the
+explicit v1 exceptions below keep the first implementation a vertical slice:
 
-1. GPU constraints and generalized `GpuScheme` facts are parallel to HM types, are captured in the
-   final elaboration DTO, and are solved per reachable specialization after final FFI/HM inference.
+1. GPU constraints and generalized `GpuScheme` facts remain parallel to HM types in the broad
+   design. V1 skips generalized numeric solving and fixes every reachable `Number` to `f32`.
 2. `@gpu` functions are GPU-only opaque values and become artifact roots only through typed stage
    constructors. Ordinary pure helpers may be proven GPU-eligible without changing host types.
 3. Entry stages are compiler-known typed host constructors; nominal `Gpu` stage records carry
@@ -853,24 +970,27 @@ The architecture-critical questions are now answered:
 4. Common shader math and operators are stable compiler intrinsics opened only by the GPU typing
    dialect. Host constructors/artifact access remain explicitly qualified under `Gpu`.
 5. Plain direct tail recursion is semantically unbounded and has no hidden budget or fallback.
-6. The initial ADT and higher-order subsets are finite, reachable, monomorphized, private shader
-   values lowered to first-order code; recursive/escaping/unknown cases are rejected.
+6. The v1 ADT subset is one finite, non-generic option-like private shape. General monomorphized ADT
+   layouts and higher-order shader values are post-v1.
 7. Resources cross through nominal typed evidence wrappers, never raw reflected WebGPU handles.
-8. Runtime captures initially form one deterministic reflected uniform aggregate per entry root;
-   updates change data, not shader code or cache identity.
-9. Shader compilation is lazy from artifact roots across the resolved module graph. Each output
-   unit embeds only referenced opaque artifacts, and no runtime AST interpreter exists.
-10. A pinned bundled `slang-wasm` service is part of the compiler toolchain, and its reported
-    version plus all compilation inputs participate in content-addressed cache keys.
-11. GPU resource effects and stage restrictions are inferred side facts propagated over the
-    resolved call graph; they neither enter host HM types nor permit general mutation.
-12. Stage roots are statically selected. Unresolved GPU functions cross source modules in one
-    compiler graph, while standalone JavaScript libraries expose only completed artifacts.
+8. V1 has no dynamic shader input. One explicit typed uniform block is the next resource slice;
+   automatic capture and packing remain later work.
+9. V1 compiles one same-module artifact root and embeds only its opaque completed artifact, with no
+   runtime AST interpreter. Multi-root and cross-module closure are later breadth.
+10. V1 requires a working compile-time Slang-to-WGSL path. Pinned distribution packaging and
+    content-addressed toolchain/cache identity are production hardening after the slice.
+11. GPU resource effects and stage restrictions are inferred side facts propagated over the resolved
+    call graph; they neither enter host HM types nor permit general mutation.
+12. Stage roots are statically selected. V1 accepts one inline or directly bound root and
+    same-module helpers; cross-module shader graphs come later.
 
-The deliberately deferred items are additive API breadth: the full stage-record catalog, complete
-resource allocation/update helpers, explicit uniform grouping, matrices, mutual tail recursion,
-multi-entry packaging, and additional target capabilities. None changes the initial compiler
-ownership, type boundary, IR sequence, or execution semantics.
+The deliberately deferred items are additive API breadth: implicit promotion, higher-order shader
+values, optimization, automatic uniform capture, compute and general vertex stages, the full
+stage-record catalog, storage/texture resource helpers, matrices, mutual tail recursion, multi-entry
+packaging, and additional target capabilities. None changes the initial compiler ownership, type
+boundary, IR sequence, or execution semantics.
 
-The next implementation proof remains the cross-language scalar/vector specialization fixture in
-`implementation-language.md`, followed by H0 and H1 before any resource runtime work.
+Implementation is paused at the v1 scoping boundary. When it resumes, follow the ordered release
+gates in [`v1-scope.md`](./v1-scope.md) and the exact fixtures in
+[`v1-acceptance.md`](./v1-acceptance.md), beginning with the selected-program schema, direct `f32`
+mapping, restricted ADT identity, and tail-call lowering.

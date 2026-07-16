@@ -1,8 +1,7 @@
 import type { Expr } from "../ast.ts";
-import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostics.ts";
 import {
   BoolTy,
-  type Env,
   fresh,
   freshFfi,
   instantiate,
@@ -12,13 +11,13 @@ import {
   StringTy,
   tuple,
   type Ty,
-  type TypeDeclInfo,
   type TypeEnv,
   VoidTy,
 } from "../types.ts";
 import { assertJsonCompatible, jsonValueTy } from "./json.ts";
+import type { InferContext } from "./context.ts";
 
-import { constrainAt, sourceForTypedExpr, type TypeProvenance } from "./provenance.ts";
+import { constrainAt, sourceForTypedExpr } from "./provenance.ts";
 import { inferDottedVar, inferRecordExpr } from "./records.ts";
 import { ffiGetResultTy, inferCall } from "./expr_call.ts";
 import { inferLambdaTy } from "./expr_lambda.ts";
@@ -30,54 +29,26 @@ import {
   jsPrimitiveFfiGetValue,
   jsPromiseFfiCallValue,
 } from "./expr_js_members.ts";
-import { inferBinary, inferBlock, inferMatch, inferParam, inferPipe } from "./expr_flow.ts";
+import { inferBinary, inferBlock, inferMatch, inferPipe } from "./expr_flow.ts";
 import {
   originForScheme,
   recordConsumedFfiUse,
   recordExprFact,
   recordFfiFact,
-  type TypeFacts,
+  recordOperatorFact,
 } from "./type_facts.ts";
+import { gpuOperatorId } from "../gpu_operators.ts";
 
-export function inferExpr(
-  expr: Expr,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[] = [],
-  diagnostics: FrontendDiagnostic[] = [],
-  provenance: TypeProvenance = new Map(),
-): Ty {
+export function inferExpr(expr: Expr, context: InferContext): Ty {
   try {
-    return inferExprInner(
-      expr,
-      env,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
-      provenance,
-    );
+    return inferExprInner(expr, context);
   } catch (error) {
     throw diagnosticError(error, expr.node);
   }
 }
 
-function inferExprInner(
-  expr: Expr,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[] = [],
-  diagnostics: FrontendDiagnostic[] = [],
-  provenance: TypeProvenance = new Map(),
-): Ty {
+function inferExprInner(expr: Expr, context: InferContext): Ty {
+  const { env, typeEnv, types, facts, warnings, diagnostics, provenance } = context;
   let t: Ty;
   switch (expr.kind) {
     case "Int":
@@ -110,9 +81,7 @@ function inferExprInner(
     }
     case "Tuple":
       t = tuple(
-        expr.items.map((x) =>
-          inferExpr(x, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
-        ),
+        expr.items.map((x) => inferExpr(x, context)),
       );
       break;
     case "Record":
@@ -130,17 +99,7 @@ function inferExprInner(
               diagnostics,
             );
           }
-          return inferExpr(
-            value,
-            env,
-            typeEnv,
-            adts,
-            types,
-            facts,
-            warnings,
-            diagnostics,
-            provenance,
-          );
+          return inferExpr(value, context);
         },
         undefined,
         warnings,
@@ -149,50 +108,20 @@ function inferExprInner(
       break;
     case "JsonObject":
       for (const field of expr.fields) {
-        const valueType = inferExpr(
-          field.value,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        );
+        const valueType = inferExpr(field.value, context);
         assertJsonCompatible(valueType, typeEnv, field.value);
       }
       t = jsonValueTy(typeEnv);
       break;
     case "JsonArray":
       for (const item of expr.items) {
-        const itemType = inferExpr(
-          item,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        );
+        const itemType = inferExpr(item, context);
         assertJsonCompatible(itemType, typeEnv, item);
       }
       t = jsonValueTy(typeEnv);
       break;
     case "FfiGet": {
-      const receiver = inferExpr(
-        expr.receiver,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+      const receiver = inferExpr(expr.receiver, context);
       const value = jsArrayFfiGetValue(typeEnv, receiver, expr.path) ??
         jsPrimitiveFfiGetValue(receiver, expr.path);
       t = value
@@ -226,45 +155,18 @@ function inferExprInner(
       break;
     }
     case "FfiCall": {
-      const receiver = inferExpr(
-        expr.receiver,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+      const receiver = inferExpr(expr.receiver, context);
       const args: Ty[] = new Array(expr.args.length);
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind === "Lambda") continue;
-        args[index] = inferExpr(
-          arg,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        );
+        args[index] = inferExpr(arg, context);
       }
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind !== "Lambda") continue;
         const hints = ffiCallbackParamHints(typeEnv, receiver, expr.path, index, args);
         args[index] = inferLambdaTy(
           arg,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
+          context,
           hints,
         );
       }
@@ -305,30 +207,13 @@ function inferExprInner(
       const args: Ty[] = new Array(expr.args.length);
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind === "Lambda") continue;
-        args[index] = inferExpr(
-          arg,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        );
+        args[index] = inferExpr(arg, context);
       }
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind !== "Lambda") continue;
         args[index] = inferLambdaTy(
           arg,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
+          context,
         );
       }
       const placeholder = freshFfi("call", undefined, [], args, expr.node, expr.name);
@@ -358,42 +243,18 @@ function inferExprInner(
     case "Lambda":
       t = inferLambdaTy(
         expr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
+        context,
       );
       break;
     case "Call":
       t = inferCall(
         expr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
+        context,
       );
       break;
     case "If":
       constrainAt(
-        inferExpr(
-          expr.cond,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        ),
+        inferExpr(expr.cond, context),
         BoolTy,
         expr.cond,
         undefined,
@@ -414,30 +275,10 @@ function inferExprInner(
           },
         },
       );
-      t = inferExpr(
-        expr.thenExpr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+      t = inferExpr(expr.thenExpr, context);
       constrainAt(
         t,
-        inferExpr(
-          expr.elseExpr,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        ),
+        inferExpr(expr.elseExpr, context),
         expr.elseExpr,
         undefined,
         [],
@@ -461,28 +302,11 @@ function inferExprInner(
     case "Match":
       t = inferMatch(
         expr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
+        context,
       );
       break;
-    case "Panic":
-      const panicMessage = inferExpr(
-        expr.message,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+    case "Panic": {
+      const panicMessage = inferExpr(expr.message, context);
       constrainAt(
         StringTy,
         panicMessage,
@@ -511,45 +335,22 @@ function inferExprInner(
       );
       t = fresh();
       break;
+    }
     case "Block":
       t = inferBlock(
         expr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
+        context,
       );
       break;
     case "Binary":
       t = inferBinary(
         expr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
+        context,
       );
       break;
     case "Unary":
       if (expr.op === "-") {
-        const value = inferExpr(
-          expr.value,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        );
+        const value = inferExpr(expr.value, context);
         const carrier = resultParts(value, typeEnv);
         recordConsumedFfiUse(facts, value, {
           kind: "operator",
@@ -589,17 +390,7 @@ function inferExprInner(
         );
         t = carrier ? wrapResult(NumberTy, carrier.error, typeEnv) : NumberTy;
       } else {
-        const value = inferExpr(
-          expr.value,
-          env,
-          typeEnv,
-          adts,
-          types,
-          facts,
-          warnings,
-          diagnostics,
-          provenance,
-        );
+        const value = inferExpr(expr.value, context);
         const carrier = resultParts(value, typeEnv);
         recordConsumedFfiUse(facts, value, {
           kind: "operator",
@@ -643,16 +434,13 @@ function inferExprInner(
     case "Pipe":
       t = inferPipe(
         expr,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
+        context,
       );
       break;
+  }
+  if (expr.kind === "Unary" || expr.kind === "Binary") {
+    const operatorId = gpuOperatorId(expr);
+    if (operatorId) recordOperatorFact(facts, expr, operatorId);
   }
   types.set(expr, t);
   return t;

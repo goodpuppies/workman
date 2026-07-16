@@ -1,5 +1,15 @@
 # GLML research for wmslang
 
+Scope note: GLML demonstrates a valuable long-term functional shader design, but it is not the v1
+feature checklist. The narrower release contract is [`v1-scope.md`](./v1-scope.md). Automatic
+coercion, higher-order shader values, and optimization described here are intentionally post-v1;
+finite ADTs, immutable semantics, and direct tail recursion remain the parts promoted into v1. Their
+restricted Workman-specific rules are fixed in [`v1-scope.md`](./v1-scope.md); the broader lowering
+design remains in [`v1-functional-lowering.md`](./v1-functional-lowering.md). V1 also follows GLML's
+useful low-level entry convention of passing raw fragment pixel coordinates. Its static acceptance
+shader uses authored dimensions directly; explicit resolution/time uniforms are the next resource
+slice rather than compiler-inserted coordinate magic.
+
 Status: compiler and language-design comparison against the local GLML checkout. GLML is a much
 closer semantic reference than TypeGPU because it is an immutable HM language with recursion,
 higher-order functions, records, polymorphic ADTs, and pattern matching that compiles to shaders.
@@ -23,9 +33,9 @@ Relevant local sources:
 
 ## Executive conclusion
 
-GLML validates the ambitious part of wmslang: an immutable, inferred, higher-order functional
-shader language is practical. Shader authoring does not need to resemble GLSL, WGSL, or Slang to
-produce conventional target code.
+GLML validates the ambitious part of wmslang: an immutable, inferred, higher-order functional shader
+language is practical. Shader authoring does not need to resemble GLSL, WGSL, or Slang to produce
+conventional target code.
 
 Its strongest lessons are:
 
@@ -81,12 +91,12 @@ parse
   -> print GLSL
 ```
 
-This phase ordering is more valuable to wmslang than any individual surface syntax choice. It
-avoids making one emitter responsible for inference, closures, ADTs, recursion, and target syntax.
+This phase ordering is more valuable to wmslang than any individual surface syntax choice. It avoids
+making one emitter responsible for inference, closures, ADTs, recursion, and target syntax.
 
-TypeGPU largely interprets its untyped Tinyest tree into typed snippets while generating code.
-GLML instead finishes progressively stronger whole-program representations before emitting GLSL.
-wmslang should follow the latter model because Workman already owns static typing and compilation.
+TypeGPU largely interprets its untyped Tinyest tree into typed snippets while generating code. GLML
+instead finishes progressively stronger whole-program representations before emitting GLSL. wmslang
+should follow the latter model because Workman already owns static typing and compilation.
 
 ## Shader-aware HM inference
 
@@ -103,8 +113,8 @@ FieldAccess(record, field, result)
 Coerce(source, target)
 ```
 
-The type classes include generic float/vector types, integer types, boolean types, matrices,
-numeric types, comparable types, and equatable types.
+The type classes include generic float/vector types, integer types, boolean types, matrices, numeric
+types, comparable types, and equatable types.
 
 This solves several shader-language problems without contaminating the basic unifier:
 
@@ -122,9 +132,9 @@ numeric combination to Workman's global environment.
 
 ## Recommended Workman integration
 
-Workman's ordinary HM result should still own structural program typing: functions, records,
-tuples, ADTs, branches, and bindings. wmslang should add a parallel GPU constraint/refinement layer
-for operations whose shader representation is more precise than Workman's public types.
+Workman's ordinary HM result should still own structural program typing: functions, records, tuples,
+ADTs, branches, and bindings. wmslang should add a parallel GPU constraint/refinement layer for
+operations whose shader representation is more precise than Workman's public types.
 
 An illustrative constraint set is:
 
@@ -135,24 +145,24 @@ type GpuConstraint =
   | { kind: "FloatLike"; value: GpuTypeVar }
   | { kind: "IntegerLike"; value: GpuTypeVar }
   | {
-      kind: "Broadcast";
-      left: GpuTypeRef;
-      right: GpuTypeRef;
-      result: GpuTypeRef;
-    }
+    kind: "Broadcast";
+    left: GpuTypeRef;
+    right: GpuTypeRef;
+    result: GpuTypeRef;
+  }
   | {
-      kind: "Multiply";
-      left: GpuTypeRef;
-      right: GpuTypeRef;
-      result: GpuTypeRef;
-    }
+    kind: "Multiply";
+    left: GpuTypeRef;
+    right: GpuTypeRef;
+    result: GpuTypeRef;
+  }
   | { kind: "Coerce"; from: GpuTypeRef; to: GpuTypeRef }
   | { kind: "VectorCandidate"; tuple: Ty; width: 2 | 3 | 4; element: GpuTypeRef }
   | { kind: "Intrinsic"; intrinsic: GpuIntrinsic; args: GpuTypeRef[]; result: GpuTypeRef };
 ```
 
-The exact private Workman ADT encoding needs a spike, but the architectural representation is
-fixed as parallel GPU constraint and representation facts. Its required properties are:
+The exact private Workman ADT encoding needs a spike, but the architectural representation is fixed
+as parallel GPU constraint and representation facts. Its required properties are:
 
 - constraints are emitted only while using the GPU typing dialect;
 - constraints can be generalized with a GPU-capable function and instantiated at each
@@ -207,14 +217,13 @@ Recommended defaults after constraints:
 
 - decimal/exponent syntax defaults to `f32`;
 - integral syntax defaults to `i32`;
-- creative vector arithmetic with any float demand promotes compatible integral components to
-  `f32`;
-- indexing, dispatch IDs, bit operations, and resource dimensions require explicit integer
-  evidence and choose signedness from their operation;
+- creative vector arithmetic with any float demand promotes compatible integral components to `f32`;
+- indexing, dispatch IDs, bit operations, and resource dimensions require explicit integer evidence
+  and choose signedness from their operation;
 - no implicit float-to-int conversion.
 
-Unlike GLML, wmslang must model `u32` because WebGPU builtins, indexing, layouts, and Slang/WGSL APIs
-use unsigned values extensively.
+Unlike GLML, wmslang must model `u32` because WebGPU builtins, indexing, layouts, and Slang/WGSL
+APIs use unsigned values extensively.
 
 ## Vectors versus tuples
 
@@ -244,8 +253,8 @@ Recommended rule:
 - if users eventually need a homogeneous numeric product distinct from a vector, add an explicit
   record/newtype mechanism rather than weakening the common tuple-vector default.
 
-Thus the remaining implementation question is no longer “type shape or fact?” The design needs
-both: type shape identifies candidates, and a representation constraint/fact records the decision.
+Thus the remaining implementation question is no longer “type shape or fact?” The design needs both:
+type shape identifies candidates, and a representation constraint/fact records the decision.
 
 ## Immutability and target mutation
 
@@ -320,6 +329,13 @@ This strongly validates the Workman tail-call plan and provides concrete impleme
 - structs and vectors need valid fallback/control-flow handling;
 - `main`/entry wrappers should not themselves be recursive.
 
+The implemented static slice makes one intentional staging change from GLML. GLML discovers and
+patches recursive returns after ANF; wmslang marks resolved direct self-calls in its typed
+functional IR before ANF. This lets source diagnostics retain the exact recursive call span and
+leaves S3 free to lower an already validated `tail-call` node into simultaneous loop-parameter
+updates. As in GLML, conditions, operands, arguments, and let initializers are non-tail; unlike
+GLML, wmslang will not add an iteration counter or type-directed zero fallback.
+
 ### Where wmslang should differ
 
 GLML silently gives every recursive function a 1000-iteration loop and returns a type-directed zero
@@ -335,10 +351,10 @@ wmslang should not silently return zero. The alternatives considered were:
 3. Provide a typed standard helper for bounded iteration while leaving plain tail recursion
    semantically unbounded.
 
-Decision: lower plain direct tail recursion to a normal unbounded Slang loop with no hidden
-semantic fallback or compiler budget. Add static diagnostics for obviously unconditional recursion
-and document GPU watchdog risks. A future bounded-iteration helper must be explicit and does not
-change plain tail-recursion semantics.
+Decision: lower plain direct tail recursion to a normal unbounded Slang loop with no hidden semantic
+fallback or compiler budget. Add static diagnostics for obviously unconditional recursion and
+document GPU watchdog risks. A future bounded-iteration helper must be explicit and does not change
+plain tail-recursion semantics.
 
 ## ADTs and pattern matching
 
@@ -428,9 +444,9 @@ with HM, ADTs, and immutable source semantics.
 
 ## Monomorphization
 
-GLML preserves constraints inside generalized schemes and creates concrete function
-specializations from observed uses. It registers a specialization before recursively processing
-its dependencies, which acts as a cycle guard for recursive functions.
+GLML preserves constraints inside generalized schemes and creates concrete function specializations
+from observed uses. It registers a specialization before recursively processing its dependencies,
+which acts as a cycle guard for recursive functions.
 
 wmslang needs the analogous key:
 
@@ -449,6 +465,20 @@ The specialization pass should:
 - deduplicate the same specialization reached from multiple roots;
 - retain a mapping back to the source binding and type instantiation.
 
+The bootstrap now implements the representation-level subset of this algorithm. It starts from GPU
+roots, solves a concrete `i32`/`f32` overlay per function instance, registers the instance before
+walking calls, reuses equal signatures across roots, and emits explicit root/call-target mappings.
+This proves the recursion guard and prevents cross-instance representation widening. It does not yet
+instantiate general Workman type variables, parametrized ADT shapes, or varying static capture
+values; those require the parallel `GpuScheme` and richer specialization key described above.
+
+The same bootstrap stage now produces a distinct typed functional expression graph per
+specialization. Concrete representation overlays are applied while cloning; direct calls point to
+specialization IDs; and resolved variables are classified as locals, captures, or function
+dependencies. This intentionally mirrors GLML's typed-term ownership before ANF rather than its
+later GLSL statement form. Backend temporaries, assignments, and loops are therefore still absent
+from the canonical graph.
+
 This is the correct place to finalize polymorphic ADT layouts and closure arrow families.
 
 Unlike GLML, Workman libraries may contain GPU-capable functions that are never used by any shader
@@ -460,8 +490,8 @@ GLML uses a pattern-matrix style analysis/lowering strategy and performs usefuln
 redundant and non-exhaustive arms before variants disappear. It later chooses switches for finite
 integer/tag domains and nested conditions for other patterns.
 
-Workman should preserve its existing match typing and diagnostics, then add a GPU lowering pass
-that consumes already-resolved patterns. Useful principles to borrow:
+Workman should preserve its existing match typing and diagnostics, then add a GPU lowering pass that
+consumes already-resolved patterns. Useful principles to borrow:
 
 - evaluate the scrutinee once;
 - compile nested patterns through projections of stable temporaries;
@@ -472,9 +502,9 @@ that consumes already-resolved patterns. Useful principles to borrow:
 
 ## Constant folding and global values
 
-GLML runs constant folding, common-subexpression elimination, dead-code elimination, and inlining
-on ANF. It also distinguishes top-level expressions that can become GLSL constants from those that
-must become zero-argument functions.
+GLML runs constant folding, common-subexpression elimination, dead-code elimination, and inlining on
+ANF. It also distinguishes top-level expressions that can become GLSL constants from those that must
+become zero-argument functions.
 
 wmslang should initially use conservative compile-time evaluation:
 
@@ -618,8 +648,8 @@ effect features.
 
 ### Tail recursion
 
-Decision: use explicit unbounded parameterized loops in lowered IR and reject non-tail recursion.
-Do not copy GLML's silent zero fallback or insert a hidden loop budget.
+Decision: use explicit unbounded parameterized loops in lowered IR and reject non-tail recursion. Do
+not copy GLML's silent zero fallback or insert a hidden loop budget.
 
 ### Specialization
 
@@ -630,8 +660,8 @@ generalized GPU constraints alongside function capability facts.
 
 1. Generalized GPU constraints attach as `GpuScheme` facts keyed by resolved helper identity and do
    not alter ordinary imported/host schemes.
-2. Literal and constraint seeds survive both frontends in the final elaboration DTO; solving occurs
-   after the final FFI/HM pass, not during every partial pass.
+2. Literal and constraint seeds survive frontend-v1 in the final elaboration DTO; solving occurs
+   after the final FFI/HM pass, not during every partial pass. Frontend-v2 is not a wmslang target.
 3. Homogeneous numeric tuples of width 2-4 default to vectors in GPU code and carry a persistent
    representation fact; private heterogeneous products do not cross an initial ABI.
 4. The first ADT subset excludes function/resource payloads. Function payloads arrive only with
@@ -639,8 +669,8 @@ generalized GPU constraints alongside function capability facts.
 5. Reachable helpers are monomorphized before lowering; using Slang generics later is only a backend
    optimization and cannot change Workman semantics.
 6. Plain direct tail recursion is an unbounded loop with no hidden budget or fallback.
-7. Closure/ADT lowering begins without an optimization prerequisite; snapshots and corpus
-   benchmarks decide later optimization work without weakening the semantic subset.
+7. Closure/ADT lowering begins without an optimization prerequisite; snapshots and corpus benchmarks
+   decide later optimization work without weakening the semantic subset.
 
 ## Recommended next compiler spike
 

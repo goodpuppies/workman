@@ -1,4 +1,5 @@
 import { basisTypes } from "./basis.ts";
+import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "./compiler_semantics.ts";
 import {
   BoolTy,
   type Env,
@@ -51,7 +52,135 @@ export function baseEnv(
     addBasisConstructors(env, typeEnv);
     addBasisValues(env, typeEnv);
   }
+  addGpuBasisValues(env, typeEnv);
   return env;
+}
+
+function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
+  const colorInfo = typeEnv.get("Gpu.Color");
+  const fragmentInfo = typeEnv.get("Gpu.Fragment");
+  const uniformInfo = typeEnv.get("Gpu.Uniform");
+  const jsArrayInfo = typeEnv.get("Js.Array");
+  if (!colorInfo || !fragmentInfo || !uniformInfo || !jsArrayInfo) {
+    throw new Error("missing compiler-owned Gpu basis types");
+  }
+
+  const color = named(colorInfo);
+  const fragment = named(fragmentInfo);
+  const basisFn = (
+    name: string,
+    semanticId: CompilerSemanticId,
+    vars: Extract<Ty, { tag: "var" }>[],
+    type: Ty,
+  ) => {
+    env.set(name, {
+      vars: vars.map((item) => item.id),
+      type,
+      status: "value",
+      basis: true,
+      semanticId,
+    });
+  };
+
+  basisFn(
+    "Gpu.color",
+    GPU_SEMANTIC_IDS.color,
+    [],
+    fn([tuple([NumberTy, NumberTy, NumberTy, NumberTy])], color),
+  );
+  basisFn(
+    "Gpu.fragment",
+    GPU_SEMANTIC_IDS.fragment,
+    [],
+    fn([fn([tuple([NumberTy, NumberTy])], color)], fragment),
+  );
+  basisFn("Gpu.i32", GPU_SEMANTIC_IDS.i32, [], fn([NumberTy], NumberTy));
+  basisFn("Gpu.f32", GPU_SEMANTIC_IDS.f32, [], fn([NumberTy], NumberTy));
+
+  {
+    const value = fresh("gpuUniformValue") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Gpu.uniform",
+      GPU_SEMANTIC_IDS.uniform,
+      [value],
+      fn([value], named(uniformInfo, [value])),
+    );
+  }
+  {
+    const value = fresh("gpuUniformValue") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Gpu.read",
+      GPU_SEMANTIC_IDS.read,
+      [value],
+      fn([named(uniformInfo, [value])], value),
+    );
+  }
+  {
+    const value = fresh("gpuUniformValue") as Extract<Ty, { tag: "var" }>;
+    const uniform = named(uniformInfo, [value]);
+    basisFn(
+      "Gpu.withValue",
+      GPU_SEMANTIC_IDS.withValue,
+      [value],
+      fn([tuple([uniform, value])], uniform),
+    );
+  }
+
+  basisFn("Gpu.wgsl", GPU_SEMANTIC_IDS.wgsl, [], fn([fragment], StringTy));
+  basisFn(
+    "Gpu.vertexEntryPoint",
+    GPU_SEMANTIC_IDS.vertexEntryPoint,
+    [],
+    fn([fragment], StringTy),
+  );
+  basisFn(
+    "Gpu.fragmentEntryPoint",
+    GPU_SEMANTIC_IDS.fragmentEntryPoint,
+    [],
+    fn([fragment], StringTy),
+  );
+  addGpuUniformAccessor(
+    env,
+    fragmentInfo,
+    uniformInfo,
+    "Gpu.uniformBinding",
+    GPU_SEMANTIC_IDS.uniformBinding,
+    NumberTy,
+  );
+  addGpuUniformAccessor(
+    env,
+    fragmentInfo,
+    uniformInfo,
+    "Gpu.uniformByteLength",
+    GPU_SEMANTIC_IDS.uniformByteLength,
+    NumberTy,
+  );
+  addGpuUniformAccessor(
+    env,
+    fragmentInfo,
+    uniformInfo,
+    "Gpu.uniformBytes",
+    GPU_SEMANTIC_IDS.uniformBytes,
+    named(jsArrayInfo, [NumberTy]),
+  );
+}
+
+function addGpuUniformAccessor(
+  env: Env,
+  fragmentInfo: TypeInfo,
+  uniformInfo: TypeInfo,
+  name: string,
+  semanticId: CompilerSemanticId,
+  result: Ty,
+) {
+  const value = fresh("gpuUniformValue") as Extract<Ty, { tag: "var" }>;
+  env.set(name, {
+    vars: [value.id],
+    type: fn([tuple([named(fragmentInfo), named(uniformInfo, [value])])], result),
+    status: "value",
+    basis: true,
+    semanticId,
+  });
 }
 
 function addTaskValues(env: Env, typeEnv: TypeEnv) {
@@ -184,6 +313,19 @@ export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
     });
     basisTypeEnvCache.set("Js.Dict", {
       ...freshTypeInfo("Js.Dict", 1),
+      basis: true,
+      argLabels: ["value"],
+    });
+    basisTypeEnvCache.set("Gpu.Color", {
+      ...freshTypeInfo("Gpu.Color", 0),
+      basis: true,
+    });
+    basisTypeEnvCache.set("Gpu.Fragment", {
+      ...freshTypeInfo("Gpu.Fragment", 0),
+      basis: true,
+    });
+    basisTypeEnvCache.set("Gpu.Uniform", {
+      ...freshTypeInfo("Gpu.Uniform", 1),
       basis: true,
       argLabels: ["value"],
     });

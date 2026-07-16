@@ -7,6 +7,7 @@ const assets: Asset[] = [
   { name: "workmanGrammar", url: new URL("../src/grammar.peggy", import.meta.url) },
   { name: "wmsmlGrammar", url: new URL("../src/grammar.wmsml.peggy", import.meta.url) },
   { name: "listSource", url: new URL("../std/list.wm", import.meta.url) },
+  { name: "mapSource", url: new URL("../std/map.wm", import.meta.url) },
   { name: "monadSource", url: new URL("../std/monad.wm", import.meta.url) },
   { name: "optionSource", url: new URL("../std/option.wm", import.meta.url) },
   { name: "resultSource", url: new URL("../std/result.wm", import.meta.url) },

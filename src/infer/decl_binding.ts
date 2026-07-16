@@ -4,16 +4,14 @@ import {
   type Env,
   generalize,
   prune,
-  quoteType,
   type Scheme,
   show,
   type Ty,
-  type TypeDeclInfo,
-  type TypeEnv,
   typeFromAst,
   type TypeVarScope,
 } from "../types.ts";
 import { resultExpr } from "./ast_utils.ts";
+import type { InferContext } from "./context.ts";
 import {
   findAccidentalMatchFnInFunction,
   hasTrailingStatementLikeResult,
@@ -29,7 +27,7 @@ import {
   type TypeProvenance,
 } from "./provenance.ts";
 import { inferRecordExpr } from "./records.ts";
-import { recordConsumedFfiUse, type TypeFacts } from "./type_facts.ts";
+import { recordConsumedFfiUse } from "./type_facts.ts";
 
 export function generalizeBinding(env: Env, type: Ty, value: Expr): Scheme {
   if (containsUnresolvedFfi(type) || containsFfiBoundary(value, env)) {
@@ -150,16 +148,10 @@ export function withSchemeProvenance(
 
 export function inferBinding(
   b: Binding,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: import("../diagnostics.ts").FrontendDiagnostic[],
+  context: InferContext,
   annotationVars: TypeVarScope,
-  provenance: TypeProvenance,
 ): { bound: Map<string, Ty>; refutable: boolean } {
+  const { env, typeEnv, adts, facts, warnings, diagnostics, provenance } = context;
   try {
     const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv, annotationVars) : undefined;
     const inferRecordValue = (value: Expr, expected?: Ty): Ty => {
@@ -173,17 +165,7 @@ export function inferBinding(
           diagnostics,
         );
       }
-      return inferExpr(
-        value,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+      return inferExpr(value, context);
     };
     const t = annotated && b.value.kind === "Record"
       ? inferRecordExpr(
@@ -194,17 +176,7 @@ export function inferBinding(
         warnings,
         diagnostics,
       )
-      : inferExpr(
-        b.value,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+      : inferExpr(b.value, context);
     recordConsumedFfiUse(facts, t, {
       kind: "binding",
       message:

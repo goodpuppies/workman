@@ -1,4 +1,5 @@
 import type { Expr } from "../../ast.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { jsRefCallMember, type JsTypeRef } from "../reflect/types.ts";
 import {
   type ObjectAccess,
@@ -294,6 +295,7 @@ export function rewriteExprCalls(
         args: expr.args.map((arg) => rewrite(arg)),
       };
     case "Lambda": {
+      if (!hostFfiDescendsInto(expr)) return expr;
       const localObjectAccess = new Map(objectAccess);
       rememberObjectParams(expr.params, localObjectAccess, importedTypeRefs);
       rememberUnannotatedParams(expr.params, localObjectAccess);

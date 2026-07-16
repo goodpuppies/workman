@@ -1,0 +1,1559 @@
+from "./types.wm" import {
+  GpuSliceAdtFieldDto,
+  GpuSliceAdtLayoutDto,
+  GpuSliceCompilationOutputDto,
+  GpuSliceConstructorDto,
+  GpuSliceIrExprDto,
+  GpuSliceIrFunctionDto,
+  GpuSliceIrMatchArmDto,
+  GpuSliceLoweredAtomDto,
+  GpuSliceLoweredCaseDto,
+  GpuSliceLoweredFunctionDto,
+  GpuSliceLoweredLocalDto,
+  GpuSliceLoweredOperationDto,
+  GpuSliceLoweredProgramDto,
+  GpuSliceLoweredStatementDto,
+  GpuSliceParamDto,
+  GpuSlicePatternDto
+};
+from "./slice_lower_support.wm" import {
+  SliceLowerContext,
+  SliceLowerState,
+  append,
+  baseOperation,
+  baseStatement,
+  findConstructor,
+  findFieldForConstructor,
+  findIrFunction,
+  findIrExpression,
+  findIrMatchArm,
+  findLoweredAtom,
+  findLayoutForType,
+  findParam,
+  findPattern,
+  finishLoweredProgram,
+  freshLocal,
+  initialLowerState,
+  literalAtom,
+  localAtom,
+  numberEqual,
+  pushAtom,
+  pushBlock,
+  pushCase,
+  pushFunction,
+  pushOperation,
+  pushStatement,
+  reverseInto
+};
+
+record LowerScope = {
+  bindings: Map.Map<Number, Number>,
+  loopParamLocalIds: List<Number>,
+};
+
+record LowerValueResult = {
+  statementIds: List<Number>,
+  atomId: Number,
+  state: SliceLowerState,
+};
+
+record LowerTailResult = {
+  statementIds: List<Number>,
+  state: SliceLowerState,
+};
+
+record LowerChildrenResult = {
+  statementIds: List<Number>,
+  atomIds: List<Number>,
+  state: SliceLowerState,
+};
+
+record LowerBindResult = {
+  statementIds: List<Number>,
+  scope: LowerScope,
+  state: SliceLowerState,
+};
+
+record LowerParamResult = {
+  physicalLocalIds: List<Number>,
+  activeLocalIds: List<Number>,
+  initialStatementIds: List<Number>,
+  iterationStatementIds: List<Number>,
+  scope: LowerScope,
+  state: SliceLowerState,
+};
+
+record LowerCasesResult = {
+  caseIds: List<Number>,
+  state: SliceLowerState,
+};
+
+let emptyScope = () => {
+  let scope: LowerScope = .{
+    bindings = Map.empty(Map.numberCompare),
+    loopParamLocalIds = [],
+  };
+  scope
+};
+
+let rec lowerLetValue = (
+  lower,
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(expression.children)) {
+    [valueExpressionId, bodyExpressionId] => {
+      let value = lower(valueExpressionId, scope, context, state);
+      let bound = bindPattern(
+        expression.patternId,
+        value.atomId,
+        expression,
+        scope,
+        context,
+        value.state
+      );
+      let body = lower(bodyExpressionId, bound.scope, context, bound.state);
+      let result: LowerValueResult = .{
+        statementIds = append(
+          value.statementIds,
+          append(bound.statementIds, body.statementIds)
+        ),
+        atomId = body.atomId,
+        state = body.state,
+      };
+      result
+    },
+    _ => { Panic("functional let does not have value and body children") }
+  }
+}
+
+and lowerSequenceValue = (
+  lower,
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(expression.children)) {
+    [discardedExpressionId, bodyExpressionId] => {
+      let discarded = lower(discardedExpressionId, scope, context, state);
+      let body = lower(bodyExpressionId, scope, context, discarded.state);
+      let result: LowerValueResult = .{
+        statementIds = append(discarded.statementIds, body.statementIds),
+        atomId = body.atomId,
+        state = body.state,
+      };
+      result
+    },
+    _ => { Panic("functional sequence does not have discarded and body children") }
+  }
+}
+
+and bindPattern = (
+  patternId: Number,
+  atomId: Number,
+  owner: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  let pattern = findPattern(context.patterns, patternId);
+  if (pattern.kind == "wildcard") {
+    let result: LowerBindResult = .{
+      statementIds = [],
+      scope = scope,
+      state = state,
+    };
+    result
+  } else {
+    if (pattern.kind == "binding") {
+      bindPatternValue(pattern, atomId, owner, "copy", -1, scope, state)
+    } else {
+      if (pattern.kind == "tuple") {
+        bindTupleChildren(
+          Js.Array.toList(pattern.children),
+          atomId,
+          owner,
+          scope,
+          context,
+          state,
+          0,
+          []
+        )
+      } else {
+        Panic("constructor pattern reached irrefutable binding lowering")
+      }
+    }
+  }
+}
+
+and bindPatternValue = (
+  pattern: GpuSlicePatternDto,
+  atomId: Number,
+  owner: GpuSliceIrExprDto,
+  operationKind: String,
+  index: Number,
+  scope: LowerScope,
+  state: SliceLowerState
+) => {
+  let operation: GpuSliceLoweredOperationDto = .{
+    ..baseOperation(owner, operationKind, state),
+    typeId = pattern.typeId,
+    index = index,
+    args = Js.Array.fromList([atomId]),
+  };
+  let (operationId, afterOperation) = pushOperation(operation, state);
+  let (localId, afterLocal) = freshLocal(
+    owner.functionId,
+    "binding",
+    pattern.typeId,
+    pattern.bindingId,
+    false,
+    pattern.spanId,
+    afterOperation
+  );
+  let statement: GpuSliceLoweredStatementDto = .{
+    ..baseStatement(
+      owner.functionId,
+      "let",
+      owner.sourceExprId,
+      pattern.spanId,
+      afterLocal
+    ),
+    localId = localId,
+    operationId = operationId,
+    reason = "binding",
+  };
+  let (statementId, afterStatement) = pushStatement(statement, afterLocal);
+  let nextScope: LowerScope = .{
+    ..scope,
+    bindings = Map.set(scope.bindings, pattern.bindingId, localId),
+  };
+  let result: LowerBindResult = .{
+    statementIds = [statementId],
+    scope = nextScope,
+    state = afterStatement,
+  };
+  result
+}
+
+and bindTupleChildren = match(
+  childPatternIds,
+  atomId,
+  owner,
+  scope,
+  context,
+  state,
+  index,
+  reversedStatements
+) => {
+  (
+    [],
+    Var(atomId),
+    Var(owner),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(index),
+    Var(reversedStatements)
+  ) => {
+    let result: LowerBindResult = .{
+      statementIds = reverseInto(reversedStatements, []),
+      scope = scope,
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(childPatternId), ..rest],
+    Var(atomId),
+    Var(owner),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(index),
+    Var(reversedStatements)
+  ) => {
+    let pattern = findPattern(context.patterns, childPatternId);
+    if (pattern.kind == "wildcard") {
+      bindTupleChildren(
+        rest,
+        atomId,
+        owner,
+        scope,
+        context,
+        state,
+        index + 1,
+        reversedStatements
+      )
+    } else {
+      let bound = bindPatternValue(pattern, atomId, owner, "project", index, scope, state);
+      bindTupleChildren(
+        rest,
+        atomId,
+        owner,
+        bound.scope,
+        context,
+        bound.state,
+        index + 1,
+        reverseInto(bound.statementIds, reversedStatements)
+      )
+    }
+  }
+};
+
+let assignJoin = (
+  expression: GpuSliceIrExprDto,
+  localId: Number,
+  atomId: Number,
+  state: SliceLowerState
+) => {
+  let statement: GpuSliceLoweredStatementDto = .{
+    ..baseStatement(
+      expression.functionId,
+      "assign",
+      expression.sourceExprId,
+      expression.spanId,
+      state
+    ),
+    localId = localId,
+    atomId = atomId,
+    reason = "join",
+  };
+  pushStatement(statement, state)
+};
+
+let lowerIfValue = (
+  lower,
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(expression.children)) {
+    [conditionExpressionId, thenExpressionId, elseExpressionId] => {
+      let condition = lower(conditionExpressionId, scope, context, state);
+      let (joinLocalId, afterJoin) = freshLocal(
+        expression.functionId,
+        "join",
+        expression.typeId,
+        -1,
+        true,
+        expression.spanId,
+        condition.state
+      );
+      let thenValue = lower(thenExpressionId, scope, context, afterJoin);
+      let (thenAssignId, afterThenAssign) = assignJoin(
+        expression,
+        joinLocalId,
+        thenValue.atomId,
+        thenValue.state
+      );
+      let (thenBlockId, afterThenBlock) = pushBlock(
+        expression.functionId,
+        append(thenValue.statementIds, [thenAssignId]),
+        afterThenAssign
+      );
+      let elseValue = lower(elseExpressionId, scope, context, afterThenBlock);
+      let (elseAssignId, afterElseAssign) = assignJoin(
+        expression,
+        joinLocalId,
+        elseValue.atomId,
+        elseValue.state
+      );
+      let (elseBlockId, afterElseBlock) = pushBlock(
+        expression.functionId,
+        append(elseValue.statementIds, [elseAssignId]),
+        afterElseAssign
+      );
+      let statement: GpuSliceLoweredStatementDto = .{
+        ..baseStatement(
+          expression.functionId,
+          "if",
+          expression.sourceExprId,
+          expression.spanId,
+          afterElseBlock
+        ),
+        localId = joinLocalId,
+        conditionAtomId = condition.atomId,
+        thenBlockId = thenBlockId,
+        elseBlockId = elseBlockId,
+        reason = "join",
+      };
+      let (statementId, afterIf) = pushStatement(statement, afterElseBlock);
+      let (atomId, afterAtom) = localAtom(
+        expression.functionId,
+        expression.typeId,
+        expression.sourceExprId,
+        expression.spanId,
+        joinLocalId,
+        afterIf
+      );
+      let result: LowerValueResult = .{
+        statementIds = append(condition.statementIds, [statementId]),
+        atomId = atomId,
+        state = afterAtom,
+      };
+      result
+    },
+    _ => { Panic("functional if does not have three children") }
+  }
+};
+
+let rec lowerMatchValue = (
+  lower,
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(expression.children)) {
+    [scrutineeExpressionId] => {
+      let scrutinee = lower(scrutineeExpressionId, scope, context, state);
+      let scrutineeExpression = findIrExpression(context.expressions, scrutineeExpressionId);
+      let layout = findLayoutForType(context.layouts, scrutineeExpression.typeId);
+      let (joinLocalId, afterJoin) = freshLocal(
+        expression.functionId,
+        "join",
+        expression.typeId,
+        -1,
+        true,
+        expression.spanId,
+        scrutinee.state
+      );
+      let cases = lowerMatchValueCases(
+        lower,
+        Js.Array.toList(expression.armIds),
+        expression,
+        scrutinee.atomId,
+        joinLocalId,
+        scope,
+        context,
+        afterJoin,
+        []
+      );
+      let statement: GpuSliceLoweredStatementDto = .{
+        ..baseStatement(
+          expression.functionId,
+          "switch",
+          expression.sourceExprId,
+          expression.spanId,
+          cases.state
+        ),
+        localId = joinLocalId,
+        scrutineeAtomId = scrutinee.atomId,
+        layoutId = layout.id,
+        caseIds = Js.Array.fromList(cases.caseIds),
+        reason = "join",
+      };
+      let (statementId, afterSwitch) = pushStatement(statement, cases.state);
+      let (atomId, afterAtom) = localAtom(
+        expression.functionId,
+        expression.typeId,
+        expression.sourceExprId,
+        expression.spanId,
+        joinLocalId,
+        afterSwitch
+      );
+      let result: LowerValueResult = .{
+        statementIds = append(scrutinee.statementIds, [statementId]),
+        atomId = atomId,
+        state = afterAtom,
+      };
+      result
+    },
+    _ => { Panic("functional match does not have one scrutinee child") }
+  }
+}
+
+and lowerMatchValueCases = match(
+  lower,
+  armIds,
+  expression,
+  scrutineeAtomId,
+  joinLocalId,
+  scope,
+  context,
+  state,
+  reversedCases
+) => {
+  (
+    Var(lower),
+    [],
+    Var(expression),
+    Var(scrutineeAtomId),
+    Var(joinLocalId),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(reversedCases)
+  ) => {
+    let result: LowerCasesResult = .{
+      caseIds = reverseInto(reversedCases, []),
+      state = state,
+    };
+    result
+  },
+  (
+    Var(lower),
+    [Var(armId), ..rest],
+    Var(expression),
+    Var(scrutineeAtomId),
+    Var(joinLocalId),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(reversedCases)
+  ) => {
+    let arm = findIrMatchArm(context.matchArms, armId);
+    let pattern = findPattern(context.patterns, arm.patternId);
+    let constructor = findConstructor(context.constructors, pattern.constructorId);
+    let bound = bindMatchPayload(
+      pattern,
+      scrutineeAtomId,
+      expression,
+      scope,
+      context,
+      state
+    );
+    let body = lower(arm.bodyExprId, bound.scope, context, bound.state);
+    let (assignId, afterAssign) = assignJoin(
+      expression,
+      joinLocalId,
+      body.atomId,
+      body.state
+    );
+    let (blockId, afterBlock) = pushBlock(
+      expression.functionId,
+      append(bound.statementIds, append(body.statementIds, [assignId])),
+      afterAssign
+    );
+    let gpuCase: GpuSliceLoweredCaseDto = .{
+      id = afterBlock.nextCaseId,
+      functionId = expression.functionId,
+      constructorId = constructor.id,
+      tag = constructor.tag,
+      blockId = blockId,
+      spanId = arm.spanId,
+    };
+    let (caseId, afterCase) = pushCase(gpuCase, afterBlock);
+    lowerMatchValueCases(
+      lower,
+      rest,
+      expression,
+      scrutineeAtomId,
+      joinLocalId,
+      scope,
+      context,
+      afterCase,
+      [caseId, ..reversedCases]
+    )
+  }
+}
+
+and bindMatchPayload = (
+  pattern: GpuSlicePatternDto,
+  scrutineeAtomId: Number,
+  owner: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(pattern.children)) {
+    [] => {
+      let result: LowerBindResult = .{
+        statementIds = [],
+        scope = scope,
+        state = state,
+      };
+      result
+    },
+    [childPatternId] => {
+      let child = findPattern(context.patterns, childPatternId);
+      if (child.kind == "wildcard") {
+        let result: LowerBindResult = .{
+          statementIds = [],
+          scope = scope,
+          state = state,
+        };
+        result
+      } else {
+        let field = findFieldForConstructor(context.fields, pattern.constructorId);
+        let operation: GpuSliceLoweredOperationDto = .{
+          ..baseOperation(owner, "payload", state),
+          typeId = child.typeId,
+          constructorId = pattern.constructorId,
+          layoutId = field.layoutId,
+          fieldId = field.id,
+          args = Js.Array.fromList([scrutineeAtomId]),
+        };
+        let (operationId, afterOperation) = pushOperation(operation, state);
+        let (localId, afterLocal) = freshLocal(
+          owner.functionId,
+          "binding",
+          child.typeId,
+          child.bindingId,
+          false,
+          child.spanId,
+          afterOperation
+        );
+        let statement: GpuSliceLoweredStatementDto = .{
+          ..baseStatement(
+            owner.functionId,
+            "let",
+            owner.sourceExprId,
+            child.spanId,
+            afterLocal
+          ),
+          localId = localId,
+          operationId = operationId,
+          reason = "binding",
+        };
+        let (statementId, afterStatement) = pushStatement(statement, afterLocal);
+        let nextScope: LowerScope = .{
+          ..scope,
+          bindings = Map.set(scope.bindings, child.bindingId, localId),
+        };
+        let result: LowerBindResult = .{
+          statementIds = [statementId],
+          scope = nextScope,
+          state = afterStatement,
+        };
+        result
+      }
+    },
+    _ => { Panic("v1 constructor pattern has multiple payload children") }
+  }
+};
+
+let operationKind = (expression: GpuSliceIrExprDto) => {
+  if (expression.kind == "constructor") {
+    "construct"
+  } else {
+    expression.kind
+  }
+};
+
+let bindOperation = (
+  expression: GpuSliceIrExprDto,
+  kind: String,
+  args,
+  localKind: String,
+  reason: String,
+  layoutId: Number,
+  state: SliceLowerState
+) => {
+  let operation: GpuSliceLoweredOperationDto = .{
+    ..baseOperation(expression, kind, state),
+    layoutId = layoutId,
+    args = Js.Array.fromList(args),
+  };
+  let (operationId, afterOperation) = pushOperation(operation, state);
+  let (localId, afterLocal) = freshLocal(
+    expression.functionId,
+    localKind,
+    expression.typeId,
+    -1,
+    false,
+    expression.spanId,
+    afterOperation
+  );
+  let statement: GpuSliceLoweredStatementDto = .{
+    ..baseStatement(
+      expression.functionId,
+      "let",
+      expression.sourceExprId,
+      expression.spanId,
+      afterLocal
+    ),
+    localId = localId,
+    operationId = operationId,
+    reason = reason,
+  };
+  let (statementId, afterStatement) = pushStatement(statement, afterLocal);
+  let (atomId, afterAtom) = localAtom(
+    expression.functionId,
+    expression.typeId,
+    expression.sourceExprId,
+    expression.spanId,
+    localId,
+    afterStatement
+  );
+  let result: LowerValueResult = .{
+    statementIds = [statementId],
+    atomId = atomId,
+    state = afterAtom,
+  };
+  result
+};
+
+let bindSourceOperation = (
+  expression: GpuSliceIrExprDto,
+  args,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  if (expression.kind == "constructor") {
+    let layout = findLayoutForType(context.layouts, expression.typeId);
+    bindOperation(
+      expression,
+      "construct",
+      args,
+      "temporary",
+      "temporary",
+      layout.id,
+      state
+    )
+  } else {
+    bindOperation(
+      expression,
+      operationKind(expression),
+      args,
+      "temporary",
+      "temporary",
+      -1,
+      state
+    )
+  }
+};
+
+let rec lowerValue = (
+  expressionId: Number,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  let expression = findIrExpression(context.expressions, expressionId);
+  if (
+    expression.kind == "number" || expression.kind == "bool" || expression.kind == "void"
+  ) {
+    let (atomId, next) = literalAtom(expression, state);
+    let result: LowerValueResult = .{
+      statementIds = [],
+      atomId = atomId,
+      state = next,
+    };
+    result
+  } else {
+    if (expression.kind == "local") {
+      match(Map.get(scope.bindings, expression.bindingId)) {
+        Some(localId) => {
+          let (atomId, next) = localAtom(
+            expression.functionId,
+            expression.typeId,
+            expression.sourceExprId,
+            expression.spanId,
+            localId,
+            state
+          );
+          let result: LowerValueResult = .{
+            statementIds = [],
+            atomId = atomId,
+            state = next,
+          };
+          result
+        },
+        None => { Panic("lowered local has no lexical binding") }
+      }
+    } else {
+      if (expression.kind == "let") {
+        lowerLetValue(lowerValue, expression, scope, context, state)
+      } else {
+        if (expression.kind == "sequence") {
+          lowerSequenceValue(lowerValue, expression, scope, context, state)
+        } else {
+          if (expression.kind == "if") {
+            lowerIfValue(lowerValue, expression, scope, context, state)
+          } else {
+            if (expression.kind == "match") {
+              lowerMatchValue(lowerValue, expression, scope, context, state)
+            } else {
+              if (expression.kind == "tail-call") {
+                Panic("tail-call reached a value context")
+              } else {
+                let children = lowerChildren(
+                  Js.Array.toList(expression.children),
+                  scope,
+                  context,
+                  state,
+                  [],
+                  []
+                );
+                let value = bindSourceOperation(
+                  expression,
+                  children.atomIds,
+                  context,
+                  children.state
+                );
+                let result: LowerValueResult = .{
+                  statementIds = append(children.statementIds, value.statementIds),
+                  atomId = value.atomId,
+                  state = value.state,
+                };
+                result
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+and lowerChildren = match(
+  expressionIds,
+  scope,
+  context,
+  state,
+  reversedStatements,
+  reversedAtoms
+) => {
+  (
+    [],
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(reversedStatements),
+    Var(reversedAtoms)
+  ) => {
+    let result: LowerChildrenResult = .{
+      statementIds = reverseInto(reversedStatements, []),
+      atomIds = reverseInto(reversedAtoms, []),
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(expressionId), ..rest],
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(reversedStatements),
+    Var(reversedAtoms)
+  ) => {
+    let value = lowerValue(expressionId, scope, context, state);
+    lowerChildren(
+      rest,
+      scope,
+      context,
+      value.state,
+      reverseInto(value.statementIds, reversedStatements),
+      [value.atomId, ..reversedAtoms]
+    )
+  }
+};
+
+let returnStatement = (
+  expression: GpuSliceIrExprDto,
+  atomId: Number,
+  state: SliceLowerState
+) => {
+  let statement: GpuSliceLoweredStatementDto = .{
+    ..baseStatement(
+      expression.functionId,
+      "return",
+      expression.sourceExprId,
+      expression.spanId,
+      state
+    ),
+    atomId = atomId,
+  };
+  pushStatement(statement, state)
+};
+
+let rec lowerTail = (
+  expressionId: Number,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  let expression = findIrExpression(context.expressions, expressionId);
+  if (expression.kind == "tail-call") {
+    lowerTailCall(expression, scope, context, state)
+  } else {
+    if (expression.kind == "let") {
+      match(Js.Array.toList(expression.children)) {
+        [valueExpressionId, bodyExpressionId] => {
+          let value = lowerValue(valueExpressionId, scope, context, state);
+          let bound = bindPattern(
+            expression.patternId,
+            value.atomId,
+            expression,
+            scope,
+            context,
+            value.state
+          );
+          let body = lowerTail(bodyExpressionId, bound.scope, context, bound.state);
+          let result: LowerTailResult = .{
+            statementIds = append(
+              value.statementIds,
+              append(bound.statementIds, body.statementIds)
+            ),
+            state = body.state,
+          };
+          result
+        },
+        _ => { Panic("tail-position let does not have value and body children") }
+      }
+    } else {
+      if (expression.kind == "sequence") {
+        match(Js.Array.toList(expression.children)) {
+          [discardedExpressionId, bodyExpressionId] => {
+            let discarded = lowerValue(discardedExpressionId, scope, context, state);
+            let body = lowerTail(bodyExpressionId, scope, context, discarded.state);
+            let result: LowerTailResult = .{
+              statementIds = append(discarded.statementIds, body.statementIds),
+              state = body.state,
+            };
+            result
+          },
+          _ => { Panic("tail-position sequence does not have two children") }
+        }
+      } else {
+        if (expression.kind == "if") {
+          lowerTailIf(expression, scope, context, state)
+        } else {
+          if (expression.kind == "match") {
+            lowerTailMatch(expression, scope, context, state)
+          } else {
+            let value = lowerValue(expressionId, scope, context, state);
+            let (returnId, afterReturn) = returnStatement(expression, value.atomId, value.state);
+            let result: LowerTailResult = .{
+              statementIds = append(value.statementIds, [returnId]),
+              state = afterReturn,
+            };
+            result
+          }
+        }
+      }
+    }
+  }
+}
+
+and lowerTailIf = (
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(expression.children)) {
+    [conditionExpressionId, thenExpressionId, elseExpressionId] => {
+      let condition = lowerValue(conditionExpressionId, scope, context, state);
+      let thenTail = lowerTail(thenExpressionId, scope, context, condition.state);
+      let (thenBlockId, afterThen) = pushBlock(
+        expression.functionId,
+        thenTail.statementIds,
+        thenTail.state
+      );
+      let elseTail = lowerTail(elseExpressionId, scope, context, afterThen);
+      let (elseBlockId, afterElse) = pushBlock(
+        expression.functionId,
+        elseTail.statementIds,
+        elseTail.state
+      );
+      let statement: GpuSliceLoweredStatementDto = .{
+        ..baseStatement(
+          expression.functionId,
+          "if",
+          expression.sourceExprId,
+          expression.spanId,
+          afterElse
+        ),
+        conditionAtomId = condition.atomId,
+        thenBlockId = thenBlockId,
+        elseBlockId = elseBlockId,
+      };
+      let (statementId, afterIf) = pushStatement(statement, afterElse);
+      let result: LowerTailResult = .{
+        statementIds = append(condition.statementIds, [statementId]),
+        state = afterIf,
+      };
+      result
+    },
+    _ => { Panic("tail-position if does not have three children") }
+  }
+}
+
+and lowerTailMatch = (
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  match(Js.Array.toList(expression.children)) {
+    [scrutineeExpressionId] => {
+      let scrutinee = lowerValue(scrutineeExpressionId, scope, context, state);
+      let scrutineeExpression = findIrExpression(context.expressions, scrutineeExpressionId);
+      let layout = findLayoutForType(context.layouts, scrutineeExpression.typeId);
+      let cases = lowerTailMatchCases(
+        Js.Array.toList(expression.armIds),
+        expression,
+        scrutinee.atomId,
+        scope,
+        context,
+        scrutinee.state,
+        []
+      );
+      let statement: GpuSliceLoweredStatementDto = .{
+        ..baseStatement(
+          expression.functionId,
+          "switch",
+          expression.sourceExprId,
+          expression.spanId,
+          cases.state
+        ),
+        scrutineeAtomId = scrutinee.atomId,
+        layoutId = layout.id,
+        caseIds = Js.Array.fromList(cases.caseIds),
+      };
+      let (statementId, afterSwitch) = pushStatement(statement, cases.state);
+      let result: LowerTailResult = .{
+        statementIds = append(scrutinee.statementIds, [statementId]),
+        state = afterSwitch,
+      };
+      result
+    },
+    _ => { Panic("tail-position match does not have one scrutinee") }
+  }
+}
+
+and lowerTailMatchCases = match(
+  armIds,
+  expression,
+  scrutineeAtomId,
+  scope,
+  context,
+  state,
+  reversedCases
+) => {
+  (
+    [],
+    Var(expression),
+    Var(scrutineeAtomId),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(reversedCases)
+  ) => {
+    let result: LowerCasesResult = .{
+      caseIds = reverseInto(reversedCases, []),
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(armId), ..rest],
+    Var(expression),
+    Var(scrutineeAtomId),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(reversedCases)
+  ) => {
+    let arm = findIrMatchArm(context.matchArms, armId);
+    let pattern = findPattern(context.patterns, arm.patternId);
+    let constructor = findConstructor(context.constructors, pattern.constructorId);
+    let bound = bindMatchPayload(
+      pattern,
+      scrutineeAtomId,
+      expression,
+      scope,
+      context,
+      state
+    );
+    let body = lowerTail(arm.bodyExprId, bound.scope, context, bound.state);
+    let (blockId, afterBlock) = pushBlock(
+      expression.functionId,
+      append(bound.statementIds, body.statementIds),
+      body.state
+    );
+    let gpuCase: GpuSliceLoweredCaseDto = .{
+      id = afterBlock.nextCaseId,
+      functionId = expression.functionId,
+      constructorId = constructor.id,
+      tag = constructor.tag,
+      blockId = blockId,
+      spanId = arm.spanId,
+    };
+    let (caseId, afterCase) = pushCase(gpuCase, afterBlock);
+    lowerTailMatchCases(
+      rest,
+      expression,
+      scrutineeAtomId,
+      scope,
+      context,
+      afterCase,
+      [caseId, ..reversedCases]
+    )
+  }
+}
+
+and lowerTailCall = (
+  expression: GpuSliceIrExprDto,
+  scope: LowerScope,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  let children = lowerChildren(
+    Js.Array.toList(expression.children),
+    scope,
+    context,
+    state,
+    [],
+    []
+  );
+  let nextValues = materializeTailNext(
+    children.atomIds,
+    expression,
+    children.state,
+    [],
+    []
+  );
+  let statement: GpuSliceLoweredStatementDto = .{
+    ..baseStatement(
+      expression.functionId,
+      "continue",
+      expression.sourceExprId,
+      expression.spanId,
+      nextValues.state
+    ),
+    targetLocalIds = Js.Array.fromList(scope.loopParamLocalIds),
+    valueAtomIds = Js.Array.fromList(nextValues.atomIds),
+  };
+  let (statementId, afterContinue) = pushStatement(statement, nextValues.state);
+  let result: LowerTailResult = .{
+    statementIds = append(
+      children.statementIds,
+      append(nextValues.statementIds, [statementId])
+    ),
+    state = afterContinue,
+  };
+  result
+}
+
+and materializeTailNext = match(
+  atomIds,
+  expression,
+  state,
+  reversedStatements,
+  reversedAtoms
+) => {
+  (
+    [],
+    Var(expression),
+    Var(state),
+    Var(reversedStatements),
+    Var(reversedAtoms)
+  ) => {
+    let result: LowerChildrenResult = .{
+      statementIds = reverseInto(reversedStatements, []),
+      atomIds = reverseInto(reversedAtoms, []),
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(atomId), ..rest],
+    Var(expression),
+    Var(state),
+    Var(reversedStatements),
+    Var(reversedAtoms)
+  ) => {
+    let atom = findLoweredAtom(state.atoms, atomId);
+    let operation: GpuSliceLoweredOperationDto = .{
+      ..baseOperation(expression, "copy", state),
+      typeId = atom.typeId,
+      targetFunctionId = -1,
+      args = Js.Array.fromList([atomId]),
+    };
+    let (operationId, afterOperation) = pushOperation(operation, state);
+    let (localId, afterLocal) = freshLocal(
+      expression.functionId,
+      "tail-next",
+      atom.typeId,
+      -1,
+      false,
+      expression.spanId,
+      afterOperation
+    );
+    let statement: GpuSliceLoweredStatementDto = .{
+      ..baseStatement(
+        expression.functionId,
+        "let",
+        expression.sourceExprId,
+        expression.spanId,
+        afterLocal
+      ),
+      localId = localId,
+      operationId = operationId,
+      reason = "tail-next",
+    };
+    let (statementId, afterStatement) = pushStatement(statement, afterLocal);
+    let (nextAtomId, afterAtom) = localAtom(
+      expression.functionId,
+      atom.typeId,
+      expression.sourceExprId,
+      expression.spanId,
+      localId,
+      afterStatement
+    );
+    materializeTailNext(
+      rest,
+      expression,
+      afterAtom,
+      [statementId, ..reversedStatements],
+      [nextAtomId, ..reversedAtoms]
+    )
+  }
+};
+
+let rec setupParameters = match(
+  paramIds,
+  functionId,
+  context,
+  scope,
+  state,
+  reversedPhysicalIds,
+  reversedStatements
+) => {
+  (
+    [],
+    Var(functionId),
+    Var(context),
+    Var(scope),
+    Var(state),
+    Var(reversedPhysicalIds),
+    Var(reversedStatements)
+  ) => {
+    let result: LowerParamResult = .{
+      physicalLocalIds = reverseInto(reversedPhysicalIds, []),
+      activeLocalIds = reverseInto(reversedPhysicalIds, []),
+      initialStatementIds = reverseInto(reversedStatements, []),
+      iterationStatementIds = [],
+      scope = scope,
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(paramId), ..rest],
+    Var(functionId),
+    Var(context),
+    Var(scope),
+    Var(state),
+    Var(reversedPhysicalIds),
+    Var(reversedStatements)
+  ) => {
+    let param = findParam(context.params, paramId);
+    let pattern = findPattern(context.patterns, param.patternId);
+    let bindingId = if (pattern.kind == "binding") { pattern.bindingId } else { -1 };
+    let (localId, afterLocal) = freshLocal(
+      functionId,
+      "parameter",
+      param.typeId,
+      bindingId,
+      false,
+      param.spanId,
+      state
+    );
+    let (atomId, afterAtom) = localAtom(
+      functionId,
+      param.typeId,
+      -1,
+      param.spanId,
+      localId,
+      afterLocal
+    );
+    if (pattern.kind == "binding") {
+      let nextScope: LowerScope = .{
+        ..scope,
+        bindings = Map.set(scope.bindings, pattern.bindingId, localId),
+      };
+      setupParameters(
+        rest,
+        functionId,
+        context,
+        nextScope,
+        afterAtom,
+        [localId, ..reversedPhysicalIds],
+        reversedStatements
+      )
+    } else {
+      let fn = findIrFunction(context.functions, functionId);
+      let owner = findIrExpression(context.expressions, fn.bodyExprId);
+      let bound = bindPattern(
+        pattern.id,
+        atomId,
+        owner,
+        scope,
+        context,
+        afterAtom
+      );
+      setupParameters(
+        rest,
+        functionId,
+        context,
+        bound.scope,
+        bound.state,
+        [localId, ..reversedPhysicalIds],
+        reverseInto(bound.statementIds, reversedStatements)
+      )
+    }
+  }
+};
+
+let lowerNonrecursiveFunction = (
+  fn: GpuSliceIrFunctionDto,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  let params = setupParameters(
+    Js.Array.toList(fn.paramIds),
+    fn.functionId,
+    context,
+    emptyScope(),
+    state,
+    [],
+    []
+  );
+  let body = lowerValue(fn.bodyExprId, params.scope, context, params.state);
+  let bodyExpression = findIrExpression(context.expressions, fn.bodyExprId);
+  let (returnId, afterReturn) = returnStatement(bodyExpression, body.atomId, body.state);
+  let (blockId, afterBlock) = pushBlock(
+    fn.functionId,
+    append(params.initialStatementIds, append(body.statementIds, [returnId])),
+    afterReturn
+  );
+  let lowered: GpuSliceLoweredFunctionDto = .{
+    functionId = fn.functionId,
+    physicalParamLocalIds = Js.Array.fromList(params.physicalLocalIds),
+    loopParamLocalIds = Js.Array.fromList([]),
+    bodyBlockId = blockId,
+    recursive = false,
+    spanId = fn.spanId,
+  };
+  pushFunction(lowered, afterBlock)
+};
+
+let rec setupRecursiveParameters = match(
+  paramIds,
+  fn,
+  context,
+  scope,
+  state,
+  reversedPhysicalIds,
+  reversedLoopIds,
+  reversedInitialStatements,
+  reversedIterationStatements
+) => {
+  (
+    [],
+    Var(fn),
+    Var(context),
+    Var(scope),
+    Var(state),
+    Var(reversedPhysicalIds),
+    Var(reversedLoopIds),
+    Var(reversedInitialStatements),
+    Var(reversedIterationStatements)
+  ) => {
+    let loopIds = reverseInto(reversedLoopIds, []);
+    let nextScope: LowerScope = .{ ..scope, loopParamLocalIds = loopIds };
+    let result: LowerParamResult = .{
+      physicalLocalIds = reverseInto(reversedPhysicalIds, []),
+      activeLocalIds = loopIds,
+      initialStatementIds = reverseInto(reversedInitialStatements, []),
+      iterationStatementIds = reverseInto(reversedIterationStatements, []),
+      scope = nextScope,
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(paramId), ..rest],
+    Var(fn),
+    Var(context),
+    Var(scope),
+    Var(state),
+    Var(reversedPhysicalIds),
+    Var(reversedLoopIds),
+    Var(reversedInitialStatements),
+    Var(reversedIterationStatements)
+  ) => {
+    let param = findParam(context.params, paramId);
+    let pattern = findPattern(context.patterns, param.patternId);
+    let bindingId = if (pattern.kind == "binding") { pattern.bindingId } else { -1 };
+    let owner = findIrExpression(context.expressions, fn.bodyExprId);
+    let (physicalId, afterPhysical) = freshLocal(
+      fn.functionId,
+      "parameter",
+      param.typeId,
+      bindingId,
+      false,
+      param.spanId,
+      state
+    );
+    let (physicalAtomId, afterPhysicalAtom) = localAtom(
+      fn.functionId,
+      param.typeId,
+      -1,
+      param.spanId,
+      physicalId,
+      afterPhysical
+    );
+    let operation: GpuSliceLoweredOperationDto = .{
+      ..baseOperation(owner, "copy", afterPhysicalAtom),
+      typeId = param.typeId,
+      args = Js.Array.fromList([physicalAtomId]),
+    };
+    let (operationId, afterOperation) = pushOperation(operation, afterPhysicalAtom);
+    let (loopId, afterLoopLocal) = freshLocal(
+      fn.functionId,
+      "loop-parameter",
+      param.typeId,
+      bindingId,
+      true,
+      param.spanId,
+      afterOperation
+    );
+    let initial: GpuSliceLoweredStatementDto = .{
+      ..baseStatement(fn.functionId, "let", owner.sourceExprId, param.spanId, afterLoopLocal),
+      localId = loopId,
+      operationId = operationId,
+      reason = "loop-initial",
+    };
+    let (initialId, afterInitial) = pushStatement(initial, afterLoopLocal);
+    let (loopAtomId, afterLoopAtom) = localAtom(
+      fn.functionId,
+      param.typeId,
+      owner.sourceExprId,
+      param.spanId,
+      loopId,
+      afterInitial
+    );
+    if (pattern.kind == "binding") {
+      let nextScope: LowerScope = .{
+        ..scope,
+        bindings = Map.set(scope.bindings, pattern.bindingId, loopId),
+      };
+      setupRecursiveParameters(
+        rest,
+        fn,
+        context,
+        nextScope,
+        afterLoopAtom,
+        [physicalId, ..reversedPhysicalIds],
+        [loopId, ..reversedLoopIds],
+        [initialId, ..reversedInitialStatements],
+        reversedIterationStatements
+      )
+    } else {
+      let bound = bindPattern(
+        pattern.id,
+        loopAtomId,
+        owner,
+        scope,
+        context,
+        afterLoopAtom
+      );
+      setupRecursiveParameters(
+        rest,
+        fn,
+        context,
+        bound.scope,
+        bound.state,
+        [physicalId, ..reversedPhysicalIds],
+        [loopId, ..reversedLoopIds],
+        [initialId, ..reversedInitialStatements],
+        reverseInto(bound.statementIds, reversedIterationStatements)
+      )
+    }
+  }
+};
+
+let lowerRecursiveFunction = (
+  fn: GpuSliceIrFunctionDto,
+  context: SliceLowerContext,
+  state: SliceLowerState
+) => {
+  let params = setupRecursiveParameters(
+    Js.Array.toList(fn.paramIds),
+    fn,
+    context,
+    emptyScope(),
+    state,
+    [],
+    [],
+    [],
+    []
+  );
+  let tail = lowerTail(fn.bodyExprId, params.scope, context, params.state);
+  let (loopBodyId, afterLoopBody) = pushBlock(
+    fn.functionId,
+    append(params.iterationStatementIds, tail.statementIds),
+    tail.state
+  );
+  let bodyExpression = findIrExpression(context.expressions, fn.bodyExprId);
+  let loopStatement: GpuSliceLoweredStatementDto = .{
+    ..baseStatement(
+      fn.functionId,
+      "loop",
+      bodyExpression.sourceExprId,
+      bodyExpression.spanId,
+      afterLoopBody
+    ),
+    bodyBlockId = loopBodyId,
+  };
+  let (loopStatementId, afterLoop) = pushStatement(loopStatement, afterLoopBody);
+  let (outerBlockId, afterOuter) = pushBlock(
+    fn.functionId,
+    append(params.initialStatementIds, [loopStatementId]),
+    afterLoop
+  );
+  let lowered: GpuSliceLoweredFunctionDto = .{
+    functionId = fn.functionId,
+    physicalParamLocalIds = Js.Array.fromList(params.physicalLocalIds),
+    loopParamLocalIds = Js.Array.fromList(params.activeLocalIds),
+    bodyBlockId = outerBlockId,
+    recursive = true,
+    spanId = fn.spanId,
+  };
+  pushFunction(lowered, afterOuter)
+};
+
+let rec lowerFunctions = match(functions, context, state) => {
+  ([], Var(context), Var(state)) => { state },
+  ([Var(fn), ..rest], Var(context), Var(state)) => {
+    if (fn.recursionGroupId < 0) {
+      lowerFunctions(rest, context, lowerNonrecursiveFunction(fn, context, state))
+    } else {
+      lowerFunctions(rest, context, lowerRecursiveFunction(fn, context, state))
+    }
+  }
+};
+
+let lowerSliceProgram = (
+  functions,
+  expressions,
+  matchArms,
+  params,
+  patterns,
+  constructors,
+  layouts,
+  fields
+) => {
+  let context: SliceLowerContext = .{
+    functions = Js.Array.toList(functions),
+    expressions = Js.Array.toList(expressions),
+    matchArms = Js.Array.toList(matchArms),
+    params = Js.Array.toList(params),
+    patterns = Js.Array.toList(patterns),
+    constructors = Js.Array.toList(constructors),
+    layouts = Js.Array.toList(layouts),
+    fields = Js.Array.toList(fields),
+  };
+  let state = lowerFunctions(context.functions, context, initialLowerState());
+  finishLoweredProgram(state)
+};

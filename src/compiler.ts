@@ -23,7 +23,6 @@ import {
   loadModuleGraph,
   type ModuleGraph,
   type ModuleGraphOptions,
-  type ModuleNode,
   type VirtualFileSystem,
 } from "./module_graph.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
@@ -41,6 +40,16 @@ import {
   assertNoPartialDiagnostics,
   StagedAnalysisError,
 } from "./staged_analysis.ts";
+import { buildProgramAnalysis, type ProgramAnalysis } from "./program_analysis.ts";
+import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
+import type { NominalFacts } from "./nominal_facts.ts";
+import type { BindingFacts } from "./binding_facts.ts";
+import type { GpuSliceElaborationInput } from "./wmslang/v2_dto.ts";
+import type { ResolvedPatternFacts } from "./pattern_facts.ts";
+import type { RecursionFacts } from "./recursion_facts.ts";
+import { loadDefaultWmslangSlangBackend } from "./wmslang/slang_backend.ts";
+import { materializeGpuSliceArtifacts } from "./wmslang/materialize.ts";
+import { loadWmslangSliceCompiler, type WmslangSliceCompiler } from "./wmslang/v2_loader.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 export type CompileArtifact = {
@@ -71,6 +80,12 @@ export type CoreSourceResult = { module: ReturnType<typeof coreFromSurface>; res
 export type CoreFileResult = {
   graph: ModuleGraph;
   results: Map<string, InferResult>;
+  bindings: Map<string, BindingFacts>;
+  nominalFacts: NominalFacts;
+  patternFacts: ResolvedPatternFacts;
+  recursionFacts: RecursionFacts;
+  fragmentSelections: GpuFragmentSelectionFacts;
+  gpuInput: GpuSliceElaborationInput;
   core: CoreProgram;
 };
 
@@ -204,8 +219,54 @@ export async function coreFile(
   input: string,
   options: ModuleGraphOptions = {},
 ): Promise<CoreFileResult> {
-  const { graph, results } = await analyzeFile(input, options);
-  return { graph, results, core: coreProgramFromAnalysis(graph, results) };
+  const analysis = await analyzeFile(input, options);
+  return await coreResultFromAnalysis(analysis);
+}
+
+async function coreResultFromAnalysis(analysis: ProgramAnalysis): Promise<CoreFileResult> {
+  const materializedGpuArtifacts = analysis.gpuInput.root.functionId === -1
+    ? undefined
+    : await materializeGpuSliceArtifacts(
+      analysis,
+      await loadDefaultWmslangCompiler(),
+      await loadDefaultWmslangSlangBackend(),
+    );
+  return {
+    graph: analysis.graph,
+    results: analysis.results,
+    bindings: analysis.bindings,
+    nominalFacts: analysis.nominalFacts,
+    patternFacts: analysis.patternFacts,
+    recursionFacts: analysis.recursionFacts,
+    fragmentSelections: analysis.fragmentSelections,
+    gpuInput: analysis.gpuInput,
+    core: coreProgramFromAnalysis(analysis.graph, analysis.results, {
+      ...analysis,
+      materializedGpuArtifacts,
+    }),
+  };
+}
+
+let defaultWmslangCompiler: Promise<WmslangSliceCompiler> | undefined;
+
+function loadDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
+  return defaultWmslangCompiler ??= compileDefaultWmslangCompiler();
+}
+
+async function compileDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
+  const source = await compileLibraryFile(
+    new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+  );
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/wmslang.generated.mjs`;
+  await Deno.writeTextFile(path, source);
+  try {
+    return await loadWmslangSliceCompiler(
+      `${new URL(`file://${path}`).href}?${crypto.randomUUID()}`,
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
 }
 
 function workerTargets(core: CoreProgram): string[] {
@@ -249,11 +310,11 @@ function relativeWorkerSpecifiers(
 export async function analyzeFile(
   input: string,
   options: ModuleGraphOptions = {},
-): Promise<{ graph: ModuleGraph; results: Map<string, InferResult> }> {
+): Promise<ProgramAnalysis> {
   assertCompilerFrontendMode(options.frontend);
   const graph = await loadModuleGraph(input, options);
   try {
-    return { graph, results: await analyzeModuleGraph(graph) };
+    return buildProgramAnalysis(graph, await analyzeModuleGraph(graph));
   } catch (error) {
     if (error instanceof StagedAnalysisError) {
       throw new ModuleAnalysisError(
@@ -383,14 +444,14 @@ export async function coreVirtual(
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<CoreFileResult> {
-  const { graph, results } = await analyzeVirtual(entryPath, virtualFs, options);
-  return { graph, results, core: coreProgramFromAnalysis(graph, results) };
+  const analysis = await analyzeVirtual(entryPath, virtualFs, options);
+  return await coreResultFromAnalysis(analysis);
 }
 
-export async function analyzeVirtual(
+export function analyzeVirtual(
   entryPath: string,
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
-): Promise<{ graph: ModuleGraph; results: Map<string, InferResult> }> {
+): Promise<ProgramAnalysis> {
   return analyzeFile(entryPath, { ...options, virtualFs });
 }

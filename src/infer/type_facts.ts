@@ -1,10 +1,15 @@
-import type { Expr, Pattern } from "../ast.ts";
-import { prune, type Scheme, type Ty } from "../types.ts";
+import type { Decl, Expr, Pattern } from "../ast.ts";
+import type { CompilerSemanticId } from "../compiler_semantics.ts";
+import type { GpuOperatorId, OperatorExpr } from "../gpu_operators.ts";
+import { prune, type Scheme, type Ty, type TypeInfo } from "../types.ts";
 
 export type TypeFacts = {
   expressions: Map<Expr, TypeFact>;
   patterns: Map<Pattern, TypeFact>;
+  patternTypes: Map<Pattern, Ty>;
+  operators: Map<OperatorExpr, GpuOperatorId>;
   bindings: Map<string, TypeFact[]>;
+  typeDeclarations: Map<Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>, TypeInfo>;
   ffi: Map<number, FfiFact>;
 };
 
@@ -28,6 +33,7 @@ export type TypeFactSubject =
 export type TypeFactOrigin = {
   name?: string;
   source: "local" | "import" | "basis" | "js-import" | "reflected-ffi" | "synthetic";
+  semanticId?: CompilerSemanticId;
 };
 
 export type TypeFactNote = {
@@ -59,9 +65,32 @@ export function createTypeFacts(): TypeFacts {
   return {
     expressions: new Map(),
     patterns: new Map(),
+    patternTypes: new Map(),
+    operators: new Map(),
     bindings: new Map(),
+    typeDeclarations: new Map(),
     ffi: new Map(),
   };
+}
+
+export function recordOperatorFact(
+  facts: TypeFacts,
+  expression: OperatorExpr,
+  operatorId: GpuOperatorId,
+) {
+  facts.operators.set(expression, operatorId);
+}
+
+export function recordPatternType(facts: TypeFacts, pattern: Pattern, type: Ty) {
+  facts.patternTypes.set(pattern, type);
+}
+
+export function recordTypeDeclarationFact(
+  facts: TypeFacts,
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>,
+  info: TypeInfo,
+) {
+  facts.typeDeclarations.set(declaration, info);
 }
 
 export function recordExprFact(
@@ -124,6 +153,7 @@ export function recordConsumedFfiUse(
 export function originForScheme(name: string, scheme: Scheme): TypeFactOrigin {
   return {
     name,
+    semanticId: scheme.semanticId,
     source: scheme.jsImport
       ? "js-import"
       : scheme.basis

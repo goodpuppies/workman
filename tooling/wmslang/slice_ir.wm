@@ -1,0 +1,660 @@
+from "./types.wm" import {
+  GpuSliceAdtDto,
+  GpuSliceBlockDto,
+  GpuSliceBlockItemDto,
+  GpuSliceCompilationOutputDto,
+  GpuSliceDiagnosticDto,
+  GpuSliceElaborationInputDto,
+  GpuSliceExprDto,
+  GpuSliceFunctionDto,
+  GpuSliceIrExprDto,
+  GpuSliceIrFunctionDto,
+  GpuSliceIrMatchArmDto,
+  GpuSliceLetDto,
+  GpuSliceLoweringSeedDto,
+  GpuSliceLoweredProgramDto,
+  GpuSliceMatchArmDto,
+  GpuSliceMatchDto,
+  GpuSlicePatternDto,
+  GpuSliceTypeDto
+};
+from "./slice_layout.wm" import { buildSliceLayouts };
+from "./slice_lower.wm" import { lowerSliceProgram };
+from "./slice_emit.wm" import { emitSliceSlang };
+
+record SliceContext = {
+  expressions: List<GpuSliceExprDto>,
+  blocks: List<GpuSliceBlockDto>,
+  blockItems: List<GpuSliceBlockItemDto>,
+  lets: List<GpuSliceLetDto>,
+  matches: List<GpuSliceMatchDto>,
+  matchArms: List<GpuSliceMatchArmDto>,
+  patterns: List<GpuSlicePatternDto>,
+  types: List<GpuSliceTypeDto>,
+  adts: List<GpuSliceAdtDto>,
+};
+
+record SliceIrState = {
+  nextExpressionId: Number,
+  nextArmId: Number,
+  functions: List<GpuSliceIrFunctionDto>,
+  expressions: List<GpuSliceIrExprDto>,
+  matchArms: List<GpuSliceIrMatchArmDto>,
+  diagnostics: List<GpuSliceDiagnosticDto>,
+};
+
+record BuiltBlockItem = {
+  itemId: Number,
+  valueExprId: Number,
+};
+
+let rec reverseInto = match(items, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([Var(head), ..rest], Var(reversed)) => { reverseInto(rest, [head, ..reversed]) }
+};
+
+let rec listLength = match(items, length) => {
+  ([], Var(length)) => { length },
+  ([_, ..rest], Var(length)) => { listLength(rest, length + 1) }
+};
+
+let numberEqual = (left: Number, right: Number) => {
+  !(left < right) && !(left > right)
+};
+
+let rec contains = (items: List<Number>, expected: Number) => {
+  match(items) {
+    [] => { false },
+    [head, ..rest] => {
+      if (numberEqual(head, expected)) { true } else { contains(rest, expected) }
+    }
+  }
+};
+
+let rec unique = (items: List<Number>, seen: List<Number>) => {
+  match(items) {
+    [] => { true },
+    [head, ..rest] => {
+      if (contains(seen, head)) { false } else { unique(rest, [head, ..seen]) }
+    }
+  }
+};
+
+let rec findExpression = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 expression") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findExpression(rest, id) }
+  }
+};
+
+let rec findBlock = match(items, expressionId) => {
+  ([], Var(expressionId)) => { Panic("missing schema-v2 block") },
+  ([Var(item), ..rest], Var(expressionId)) => {
+    if (numberEqual(item.expressionId, expressionId)) { item } else { findBlock(rest, expressionId) }
+  }
+};
+
+let rec findBlockItem = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 block item") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findBlockItem(rest, id) }
+  }
+};
+
+let rec findLet = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 let") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findLet(rest, id) }
+  }
+};
+
+let rec findMatch = match(items, expressionId) => {
+  ([], Var(expressionId)) => { Panic("missing schema-v2 match") },
+  ([Var(item), ..rest], Var(expressionId)) => {
+    if (numberEqual(item.expressionId, expressionId)) { item } else { findMatch(rest, expressionId) }
+  }
+};
+
+let rec findMatchArm = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 match arm") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findMatchArm(rest, id) }
+  }
+};
+
+let rec findPattern = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 pattern") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findPattern(rest, id) }
+  }
+};
+
+let rec findType = match(items, id) => {
+  ([], Var(id)) => { Panic("missing schema-v2 type") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
+  }
+};
+
+let rec findAdt = match(items, typeNameId) => {
+  ([], Var(typeNameId)) => { Panic("missing schema-v2 ADT") },
+  ([Var(item), ..rest], Var(typeNameId)) => {
+    if (numberEqual(item.typeNameId, typeNameId)) { item } else { findAdt(rest, typeNameId) }
+  }
+};
+
+let initialState = () => {
+  let state: SliceIrState = .{
+    nextExpressionId = 0,
+    nextArmId = 0,
+    functions = [],
+    expressions = [],
+    matchArms = [],
+    diagnostics = [],
+  };
+  state
+};
+
+let baseIrExpression = (
+  state: SliceIrState,
+  source: GpuSliceExprDto,
+  functionId: Number,
+  kind: String
+) => {
+  let expression: GpuSliceIrExprDto = .{
+    id = state.nextExpressionId,
+    functionId = functionId,
+    sourceExprId = source.id,
+    kind = kind,
+    typeId = source.typeId,
+    spanId = source.spanId,
+    bindingId = if (source.kind == "var") { source.bindingId } else { -1 },
+    patternId = -1,
+    targetFunctionId = if (source.kind == "call") { source.functionId } else { -1 },
+    constructorId = if (source.kind == "constructor") { source.constructorId } else { -1 },
+    semanticId = source.semanticId,
+    operatorId = source.operatorId,
+    numberValue = source.numberValue,
+    boolValue = source.boolValue,
+    children = Js.Array.fromList([]),
+    armIds = Js.Array.fromList([]),
+  };
+  expression
+};
+
+let addExpression = (expression: GpuSliceIrExprDto, state: SliceIrState) => {
+  let next: SliceIrState = .{
+    ..state,
+    nextExpressionId = state.nextExpressionId + 1,
+    expressions = [expression, ..state.expressions],
+  };
+  (expression.id, next)
+};
+
+let addDiagnostic = (diagnostic: GpuSliceDiagnosticDto, state: SliceIrState) => {
+  let next: SliceIrState = .{
+    ..state,
+    diagnostics = [diagnostic, ..state.diagnostics],
+  };
+  next
+};
+
+let nonTailDiagnostic = (source: GpuSliceExprDto) => {
+  let diagnostic: GpuSliceDiagnosticDto = .{
+    code = "gpu.recursion.non-tail",
+    message = "direct self-recursion is allowed only in function, if, match, or block-result tail position",
+    spanId = source.spanId,
+  };
+  diagnostic
+};
+
+let nonExhaustiveDiagnostic = (source: GpuSliceExprDto) => {
+  let diagnostic: GpuSliceDiagnosticDto = .{
+    code = "gpu.pattern.non-exhaustive",
+    message = "v1 GPU matches require exactly one arm for every constructor",
+    spanId = source.spanId,
+  };
+  diagnostic
+};
+
+let rec constructorPatterns = match(armIds, context, constructors, valid) => {
+  ([], Var(context), Var(constructors), Var(valid)) => { (constructors, valid) },
+  ([Var(armId), ..rest], Var(context), Var(constructors), Var(valid)) => {
+    let arm = findMatchArm(context.matchArms, armId);
+    let pattern = findPattern(context.patterns, arm.patternId);
+    if (pattern.kind == "constructor") {
+      constructorPatterns(rest, context, [pattern.constructorId, ..constructors], valid)
+    } else {
+      constructorPatterns(rest, context, constructors, false)
+    }
+  }
+};
+
+let rec matchIsExhaustive = (
+  source: GpuSliceExprDto,
+  row: GpuSliceMatchDto,
+  context: SliceContext
+) => {
+  let value = findExpression(context.expressions, row.valueExprId);
+  let valueType = findType(context.types, value.typeId);
+  if (valueType.kind == "adt") {
+    let adt = findAdt(context.adts, valueType.typeNameId);
+    let (constructors, valid) = constructorPatterns(
+      Js.Array.toList(row.armIds),
+      context,
+      [],
+      true
+    );
+    valid && unique(constructors, []) &&
+      numberEqual(listLength(constructors, 0), listLength(Js.Array.toList(adt.constructorIds), 0)) &&
+      constructorSetContains(Js.Array.toList(adt.constructorIds), constructors)
+  } else {
+    false
+  }
+}
+
+and constructorSetContains = match(expected, actual) => {
+  ([], Var(actual)) => { true },
+  ([Var(head), ..rest], Var(actual)) => {
+    contains(actual, head) && constructorSetContains(rest, actual)
+  }
+};
+
+let rec buildExpression = (
+  sourceId: Number,
+  functionId: Number,
+  tailPosition: Bool,
+  context: SliceContext,
+  state: SliceIrState
+) => {
+  let source = findExpression(context.expressions, sourceId);
+  if (source.kind == "block") {
+    buildBlock(source, functionId, tailPosition, context, state)
+  } else {
+    if (source.kind == "if") {
+      buildIf(source, functionId, tailPosition, context, state)
+    } else {
+      if (source.kind == "match") {
+        buildMatch(source, functionId, tailPosition, context, state)
+      } else {
+        let selfCall = source.kind == "call" && numberEqual(source.functionId, functionId);
+        let kind = if (selfCall && tailPosition) {
+          "tail-call"
+        } else {
+          if (source.kind == "var") { "local" } else { source.kind }
+        };
+        let diagnosed = if (selfCall && !tailPosition) {
+          addDiagnostic(nonTailDiagnostic(source), state)
+        } else {
+          state
+        };
+        let (children, withChildren) = buildChildren(
+          Js.Array.toList(source.children),
+          functionId,
+          context,
+          diagnosed,
+          []
+        );
+        let expression: GpuSliceIrExprDto = .{
+          ..baseIrExpression(withChildren, source, functionId, kind),
+          children = Js.Array.fromList(children),
+        };
+        addExpression(expression, withChildren)
+      }
+    }
+  }
+}
+
+and buildChildren = match(
+  sourceIds,
+  functionId,
+  context,
+  state,
+  reversed
+) => {
+  ([], Var(functionId), Var(context), Var(state), Var(reversed)) => {
+    (reverseInto(reversed, []), state)
+  },
+  ([Var(sourceId), ..rest], Var(functionId), Var(context), Var(state), Var(reversed)) => {
+    let (childId, afterChild) = buildExpression(sourceId, functionId, false, context, state);
+    buildChildren(rest, functionId, context, afterChild, [childId, ..reversed])
+  }
+}
+
+and buildIf = (
+  source: GpuSliceExprDto,
+  functionId: Number,
+  tailPosition: Bool,
+  context: SliceContext,
+  state: SliceIrState
+) => {
+  match(Js.Array.toList(source.children)) {
+    [conditionId, thenId, elseId] => {
+      let (conditionIr, afterCondition) = buildExpression(
+        conditionId,
+        functionId,
+        false,
+        context,
+        state
+      );
+      let (thenIr, afterThen) = buildExpression(
+        thenId,
+        functionId,
+        tailPosition,
+        context,
+        afterCondition
+      );
+      let (elseIr, afterElse) = buildExpression(
+        elseId,
+        functionId,
+        tailPosition,
+        context,
+        afterThen
+      );
+      let expression: GpuSliceIrExprDto = .{
+        ..baseIrExpression(afterElse, source, functionId, "if"),
+        children = Js.Array.fromList([conditionIr, thenIr, elseIr]),
+      };
+      addExpression(expression, afterElse)
+    },
+    _ => { Panic("schema-v2 if does not have three children") }
+  }
+}
+
+and buildMatch = (
+  source: GpuSliceExprDto,
+  functionId: Number,
+  tailPosition: Bool,
+  context: SliceContext,
+  state: SliceIrState
+) => {
+  let row = findMatch(context.matches, source.id);
+  let diagnosed = if (matchIsExhaustive(source, row, context)) {
+    state
+  } else {
+    addDiagnostic(nonExhaustiveDiagnostic(source), state)
+  };
+  let (valueIr, afterValue) = buildExpression(
+    row.valueExprId,
+    functionId,
+    false,
+    context,
+    diagnosed
+  );
+  let (armIds, afterArms) = buildMatchArms(
+    Js.Array.toList(row.armIds),
+    functionId,
+    tailPosition,
+    context,
+    afterValue,
+    []
+  );
+  let expression: GpuSliceIrExprDto = .{
+    ..baseIrExpression(afterArms, source, functionId, "match"),
+    children = Js.Array.fromList([valueIr]),
+    armIds = Js.Array.fromList(armIds),
+  };
+  addExpression(expression, afterArms)
+}
+
+and buildMatchArms = match(
+  sourceArmIds,
+  functionId,
+  tailPosition,
+  context,
+  state,
+  reversed
+) => {
+  ([], Var(functionId), Var(tailPosition), Var(context), Var(state), Var(reversed)) => {
+    (reverseInto(reversed, []), state)
+  },
+  (
+    [Var(sourceArmId), ..rest],
+    Var(functionId),
+    Var(tailPosition),
+    Var(context),
+    Var(state),
+    Var(reversed)
+  ) => {
+    let sourceArm = findMatchArm(context.matchArms, sourceArmId);
+    let (bodyIr, afterBody) = buildExpression(
+      sourceArm.bodyExprId,
+      functionId,
+      tailPosition,
+      context,
+      state
+    );
+    let arm: GpuSliceIrMatchArmDto = .{
+      id = afterBody.nextArmId,
+      sourceArmId = sourceArm.id,
+      patternId = sourceArm.patternId,
+      bodyExprId = bodyIr,
+      spanId = sourceArm.spanId,
+    };
+    let afterArm: SliceIrState = .{
+      ..afterBody,
+      nextArmId = afterBody.nextArmId + 1,
+      matchArms = [arm, ..afterBody.matchArms],
+    };
+    buildMatchArms(
+      rest,
+      functionId,
+      tailPosition,
+      context,
+      afterArm,
+      [arm.id, ..reversed]
+    )
+  }
+}
+
+and buildBlock = (
+  source: GpuSliceExprDto,
+  functionId: Number,
+  tailPosition: Bool,
+  context,
+  state
+) => {
+  let row = findBlock(context.blocks, source.id);
+  let (builtItems, afterItems) = buildBlockValues(
+    Js.Array.toList(row.itemIds),
+    functionId,
+    context,
+    state,
+    []
+  );
+  let (resultIr, afterResult) = buildExpression(
+    row.resultExprId,
+    functionId,
+    tailPosition,
+    context,
+    afterItems
+  );
+  buildBlockWrappers(
+    reverseInto(builtItems, []),
+    source,
+    functionId,
+    resultIr,
+    context,
+    afterResult
+  )
+}
+
+and buildBlockValues = match(
+  itemIds,
+  functionId,
+  context,
+  state,
+  reversed
+) => {
+  ([], Var(functionId), Var(context), Var(state), Var(reversed)) => {
+    (reverseInto(reversed, []), state)
+  },
+  ([Var(itemId), ..rest], Var(functionId), Var(context), Var(state), Var(reversed)) => {
+    let item = findBlockItem(context.blockItems, itemId);
+    if (item.kind == "let") {
+      let letRow = findLet(context.lets, item.letId);
+      let (valueIr, afterValue) = buildExpression(
+        letRow.valueExprId,
+        functionId,
+        false,
+        context,
+        state
+      );
+      let built: BuiltBlockItem = .{
+        itemId = item.id,
+        valueExprId = valueIr,
+      };
+      buildBlockValues(rest, functionId, context, afterValue, [built, ..reversed])
+    } else {
+      let (valueIr, afterValue) = buildExpression(
+        item.expressionId,
+        functionId,
+        false,
+        context,
+        state
+      );
+      let built: BuiltBlockItem = .{
+        itemId = item.id,
+        valueExprId = valueIr,
+      };
+      buildBlockValues(rest, functionId, context, afterValue, [built, ..reversed])
+    }
+  }
+}
+
+and buildBlockWrappers = match(
+  builtItems,
+  source,
+  functionId,
+  bodyIr,
+  context,
+  state
+) => {
+  ([], Var(source), Var(functionId), Var(bodyIr), Var(context), Var(state)) => {
+    (bodyIr, state)
+  },
+  (
+    [Var(built), ..rest],
+    Var(source),
+    Var(functionId),
+    Var(bodyIr),
+    Var(context),
+    Var(state)
+  ) => {
+    let item = findBlockItem(context.blockItems, built.itemId);
+    if (item.kind == "let") {
+      let letRow = findLet(context.lets, item.letId);
+      let expression: GpuSliceIrExprDto = .{
+        ..baseIrExpression(state, source, functionId, "let"),
+        spanId = item.spanId,
+        bindingId = -1,
+        patternId = letRow.patternId,
+        targetFunctionId = -1,
+        children = Js.Array.fromList([built.valueExprId, bodyIr]),
+      };
+      let (letIr, afterLet) = addExpression(expression, state);
+      buildBlockWrappers(rest, source, functionId, letIr, context, afterLet)
+    } else {
+      let expression: GpuSliceIrExprDto = .{
+        ..baseIrExpression(state, source, functionId, "sequence"),
+        spanId = item.spanId,
+        bindingId = -1,
+        targetFunctionId = -1,
+        children = Js.Array.fromList([built.valueExprId, bodyIr]),
+      };
+      let (sequenceIr, afterSequence) = addExpression(expression, state);
+      buildBlockWrappers(rest, source, functionId, sequenceIr, context, afterSequence)
+    }
+  }
+};
+
+let rec buildFunctions = match(
+  functions,
+  context,
+  state
+) => {
+  ([], Var(context), Var(state)) => { state },
+  ([Var(fn), ..rest], Var(context), Var(state)) => {
+    let (bodyIr, afterBody) = buildExpression(fn.bodyExprId, fn.id, true, context, state);
+    let irFunction: GpuSliceIrFunctionDto = .{
+      functionId = fn.id,
+      bindingId = fn.bindingId,
+      name = fn.name,
+      paramIds = fn.paramIds,
+      resultTypeId = fn.resultTypeId,
+      bodyExprId = bodyIr,
+      recursionGroupId = fn.recursionGroupId,
+      spanId = fn.spanId,
+    };
+    let afterFunction: SliceIrState = .{
+      ..afterBody,
+      functions = [irFunction, ..afterBody.functions],
+    };
+    buildFunctions(rest, context, afterFunction)
+  }
+};
+
+let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
+  let context: SliceContext = .{
+    expressions = Js.Array.toList(input.expressions),
+    blocks = Js.Array.toList(input.blocks),
+    blockItems = Js.Array.toList(input.blockItems),
+    lets = Js.Array.toList(input.lets),
+    matches = Js.Array.toList(input.matches),
+    matchArms = Js.Array.toList(input.matchArms),
+    patterns = Js.Array.toList(input.patterns),
+    types = Js.Array.toList(input.types),
+    adts = Js.Array.toList(input.adts),
+  };
+  let state = buildFunctions(Js.Array.toList(input.functions), context, initialState());
+  let layouts: GpuSliceLoweringSeedDto = buildSliceLayouts(input);
+  let irFunctions = state.functions :> reverseInto([]) :> Js.Array.fromList;
+  let irExpressions = state.expressions :> reverseInto([]) :> Js.Array.fromList;
+  let irMatchArms = state.matchArms :> reverseInto([]) :> Js.Array.fromList;
+  let lowered: GpuSliceLoweredProgramDto = lowerSliceProgram(
+    irFunctions,
+    irExpressions,
+    irMatchArms,
+    input.params,
+    input.patterns,
+    input.constructors,
+    layouts.adtLayouts,
+    layouts.adtFields
+  );
+  let slangSource = match(state.diagnostics) {
+    [] => {
+      emitSliceSlang(
+        input,
+        layouts.adtLayouts,
+        layouts.adtFields,
+        lowered.functions,
+        lowered.locals,
+        lowered.atoms,
+        lowered.operations,
+        lowered.statements,
+        lowered.blocks,
+        lowered.cases
+      )
+    },
+    _ => { "" }
+  };
+  let output: GpuSliceCompilationOutputDto = .{
+    schemaVersion = 2,
+    program = input,
+    irFunctions = irFunctions,
+    irExpressions = irExpressions,
+    irMatchArms = irMatchArms,
+    adtLayouts = layouts.adtLayouts,
+    adtFields = layouts.adtFields,
+    loweredFunctions = lowered.functions,
+    loweredLocals = lowered.locals,
+    loweredAtoms = lowered.atoms,
+    loweredOperations = lowered.operations,
+    loweredStatements = lowered.statements,
+    loweredBlocks = lowered.blocks,
+    loweredCases = lowered.cases,
+    slangSource = slangSource,
+    diagnostics = state.diagnostics :> reverseInto([]) :> Js.Array.fromList,
+  };
+  output
+};

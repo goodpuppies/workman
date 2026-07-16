@@ -1,7 +1,7 @@
 # Persistent Workman map for compiler passes
 
-Status: design verified with a generic persistent-map prototype compiled and executed by the
-current wm-mini compiler.
+Status: implemented in `std/map.wm`, loaded as the standard `Map` namespace, and covered by focused
+inference, persistence, ordered-traversal, update/removal, and AVL-height tests.
 
 ## Decision
 
@@ -11,6 +11,17 @@ scope-preserving environments or deterministic keyed state.
 Do not attempt to reproduce the full OCaml Core `Map` API before shader work begins. The initial
 library should provide the functional operations used repeatedly by compiler passes, with an AVL
 tree or similarly simple balanced binary tree underneath.
+
+The implementation now provides `empty`, `singleton`, `get`, `has`, `set`, `update`, `remove`,
+`fold`, `toList`, and `fromList`, plus `numberCompare`. `fromList` is last-write-wins. A
+`debugHeight` helper exists for balance tests while the current file-module system has no private
+declarations; it is not part of the encouraged application API.
+
+As with the existing Workman-authored `List`, `Option`, and `Result` standard modules, the `.wm`
+source is the inference contract and the JavaScript emitter carries a matching runtime
+implementation. This duplication is a property of the current standard-library bootstrap, not a
+wmslang design choice. The persistent semantics and comparator ordering are tested through emitted
+programs so the two sides cannot silently diverge on the operations wmslang will use.
 
 ## Why a native persistent map fits
 
@@ -241,3 +252,6 @@ The map is a small supporting standard-library milestone before the Workman wmsl
 grows beyond trivial lists. It does not block directive parsing or the TypeScript/HM bridge. Phase
 2's constraint solver and initial specialization registry may depend on the tested `Map` API; later
 functional passes can extend the library only where their semantics require it.
+
+The initial balanced-map milestone is complete. The next compiler-use test should be the Phase 2
+specialization registry itself rather than another speculative collection feature.

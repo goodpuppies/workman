@@ -1,5 +1,5 @@
 import type { Expr, Param } from "../ast.ts";
-import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import { diagnosticError, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
   fn,
@@ -15,6 +15,7 @@ import {
   type TypeEnv,
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
+import { deriveInferContext, type InferContext } from "./context.ts";
 import { inferDecl } from "./decl.ts";
 import { assertEqualityType } from "./equality.ts";
 import { checkExhaustive, mentionsLocalType } from "./exhaustiveness.ts";
@@ -35,26 +36,10 @@ import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_fac
 
 export function inferMatch(
   expr: Extract<Expr, { kind: "Match" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
-  const valueType = inferExpr(
-    expr.value,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const { env, typeEnv, adts, facts, warnings, diagnostics, provenance } = context;
+  const valueType = inferExpr(expr.value, context);
   recordConsumedFfiUse(facts, valueType, {
     kind: "match",
     message:
@@ -64,17 +49,7 @@ export function inferMatch(
   for (const arm of expr.arms) {
     const local = new Map(env);
     inferPattern(arm.pattern, valueType, local, typeEnv, adts, new Set(), facts);
-    const armType = inferExpr(
-      arm.body,
-      local,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
-      provenance,
-    );
+    const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
     constrainAt(
       result,
       armType,
@@ -110,15 +85,9 @@ export function inferMatch(
 
 export function inferBlock(
   expr: Extract<Expr, { kind: "Block" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
+  const { env, typeEnv } = context;
   const local = new Map(env);
   const localTypes = new Map(typeEnv);
   const outerTypeIds = new Set([...typeEnv.values()].map((info) => info.id));
@@ -126,40 +95,16 @@ export function inferBlock(
     isDecl(s)
       ? inferDecl(
         s,
-        local,
+        deriveInferContext(context, { env: local, typeEnv: localTypes }),
         new Map(),
-        localTypes,
         new Map(),
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
         new Set([...localTypes.values()].map((info) => info.id)),
-        provenance,
       )
-      : inferExpr(
-        s,
-        local,
-        localTypes,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      )
+      : inferExpr(s, deriveInferContext(context, { env: local, typeEnv: localTypes }))
   );
   const result = inferExpr(
     expr.result,
-    local,
-    localTypes,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
+    deriveInferContext(context, { env: local, typeEnv: localTypes }),
   );
   if (mentionsLocalType(result, outerTypeIds)) throw new Error("local type escapes scope");
   return result;
@@ -167,40 +112,14 @@ export function inferBlock(
 
 export function inferBinary(
   expr: Extract<Expr, { kind: "Binary" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
+  const { env, typeEnv, adts, facts, provenance } = context;
   const result = fresh();
   const op: Scheme | undefined = env.get(expr.op);
   if (!op) throw new Error(`unknown operator ${expr.op}`);
-  const left = inferExpr(
-    expr.left,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
-  const right = inferExpr(
-    expr.right,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const left = inferExpr(expr.left, context);
+  const right = inferExpr(expr.right, context);
   recordConsumedFfiUse(facts, left, {
     kind: "operator",
     message:
@@ -213,6 +132,8 @@ export function inferBinary(
   });
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
+  const dialectResult = context.dialect.inferBinary?.(expr, left, right, context);
+  if (dialectResult) return dialectResult;
   if (expr.op === "++") {
     rejectUnresolvedFfiResultOperand(expr.left, left, typeEnv);
     rejectUnresolvedFfiResultOperand(expr.right, right, typeEnv);
@@ -369,26 +290,10 @@ export function inferParam(
 
 export function inferPipe(
   expr: Extract<Expr, { kind: "Pipe" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
-  const leftType = inferExpr(
-    expr.left,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const { facts, provenance } = context;
+  const leftType = inferExpr(expr.left, context);
   recordConsumedFfiUse(facts, leftType, {
     kind: "pipe",
     message:
@@ -397,20 +302,8 @@ export function inferPipe(
   const right = expr.right;
 
   if (right.kind === "Call") {
-    const calleeType = inferExpr(
-      right.callee,
-      env,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
-      provenance,
-    );
-    const argTypes = right.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
-    );
+    const calleeType = inferExpr(right.callee, context);
+    const argTypes = right.args.map((a) => inferExpr(a, context));
     const allArgs = [leftType, ...argTypes];
     const argType = callArg(allArgs);
     const result = constrainPipe(
@@ -429,17 +322,7 @@ export function inferPipe(
     return result;
   }
 
-  const calleeType = inferExpr(
-    right,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const calleeType = inferExpr(right, context);
   const result = constrainPipe(
     expr,
     calleeType,

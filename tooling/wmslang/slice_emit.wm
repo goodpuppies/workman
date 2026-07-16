@@ -1,0 +1,631 @@
+from "./types.wm" import {
+  GpuSliceAdtFieldDto,
+  GpuSliceAdtLayoutDto,
+  GpuSliceConstructorDto,
+  GpuSliceElaborationInputDto,
+  GpuSliceLoweredAtomDto,
+  GpuSliceLoweredBlockDto,
+  GpuSliceLoweredCaseDto,
+  GpuSliceLoweredFunctionDto,
+  GpuSliceLoweredLocalDto,
+  GpuSliceLoweredOperationDto,
+  GpuSliceLoweredStatementDto,
+  GpuSliceRootDto,
+  GpuSliceTypeDto
+};
+from "./slice_lower_support.wm" import { numberEqual };
+
+record SliceEmitContext = {
+  input: GpuSliceElaborationInputDto,
+  types: List<GpuSliceTypeDto>,
+  constructors: List<GpuSliceConstructorDto>,
+  layouts: List<GpuSliceAdtLayoutDto>,
+  fields: List<GpuSliceAdtFieldDto>,
+  functions: List<GpuSliceLoweredFunctionDto>,
+  locals: List<GpuSliceLoweredLocalDto>,
+  atoms: List<GpuSliceLoweredAtomDto>,
+  operations: List<GpuSliceLoweredOperationDto>,
+  statements: List<GpuSliceLoweredStatementDto>,
+  blocks: List<GpuSliceLoweredBlockDto>,
+  cases: List<GpuSliceLoweredCaseDto>,
+  recursiveFunctionId: Number,
+};
+
+let text = (value) => { Result.textOf(value) };
+let localName = (id) => { "wm_l_" ++ text(id) };
+let functionName = (id) => { "wm_f_" ++ text(id) };
+let tupleName = (id) => { "wm_tuple_" ++ text(id) };
+let tupleFactoryName = (id) => { "wm_make_tuple_" ++ text(id) };
+let tupleFieldName = (index) => { "wm_i_" ++ text(index) };
+let layoutName = (id) => { "wm_adt_" ++ text(id) };
+let constructorName = (id) => { "wm_make_ctor_" ++ text(id) };
+let payloadFieldName = (id) => { "wm_p_" ++ text(id) };
+let recursiveResultName = (id) => { "wm_result_" ++ text(id) };
+let recursiveDoneName = (id) => { "wm_done_" ++ text(id) };
+
+let rec findType = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission type") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
+  }
+};
+
+let rec findLayout = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission ADT layout") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findLayout(rest, id) }
+  }
+};
+
+let rec findLayoutByType = match(items, typeId) => {
+  ([], Var(typeId)) => { Panic("missing Slang-emission ADT type layout") },
+  ([Var(item), ..rest], Var(typeId)) => {
+    if (numberEqual(item.typeId, typeId)) { item } else { findLayoutByType(rest, typeId) }
+  }
+};
+
+let rec findField = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission ADT field") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findField(rest, id) }
+  }
+};
+
+let rec findConstructor = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission constructor") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findConstructor(rest, id) }
+  }
+};
+
+let rec findLocal = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission local") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findLocal(rest, id) }
+  }
+};
+
+let rec findAtom = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission atom") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findAtom(rest, id) }
+  }
+};
+
+let rec findOperation = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission operation") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findOperation(rest, id) }
+  }
+};
+
+let rec findStatement = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission statement") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findStatement(rest, id) }
+  }
+};
+
+let rec findBlock = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission block") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findBlock(rest, id) }
+  }
+};
+
+let rec findCase = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission case") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findCase(rest, id) }
+  }
+};
+
+let rec findFunction = match(items, id) => {
+  ([], Var(id)) => { Panic("missing Slang-emission function") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.functionId, id)) { item } else { findFunction(rest, id) }
+  }
+};
+
+let rec findAdtForEmit = match(items, typeNameId) => {
+  ([], Var(typeNameId)) => { Panic("missing Slang-emission ADT") },
+  ([Var(item), ..rest], Var(typeNameId)) => {
+    if (numberEqual(item.typeNameId, typeNameId)) { item } else { findAdtForEmit(rest, typeNameId) }
+  }
+};
+
+let rec findSourceFunction = match(items, functionId) => {
+  ([], Var(functionId)) => { Panic("missing Slang-emission source function") },
+  ([Var(item), ..rest], Var(functionId)) => {
+    if (numberEqual(item.id, functionId)) { item } else { findSourceFunction(rest, functionId) }
+  }
+};
+
+let typeName = (typeId, context: SliceEmitContext) => {
+  let gpuType = findType(context.types, typeId);
+  if (gpuType.kind == "f32") {
+    "float"
+  } else {
+    if (gpuType.kind == "bool") {
+      "bool"
+    } else {
+      if (gpuType.kind == "void") {
+        "void"
+      } else {
+        if (gpuType.kind == "color") {
+          "float4"
+        } else {
+          if (gpuType.kind == "tuple") {
+            tupleName(typeId)
+          } else {
+            if (gpuType.kind == "adt") {
+              let layout = findLayoutByType(context.layouts, typeId);
+              layoutName(layout.id)
+            } else {
+              Panic("function type reached Slang value emission")
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec joinText = match(items, separator, output) => {
+  ([], Var(separator), Var(output)) => { output },
+  ([Var(item), ..rest], Var(separator), Var(output)) => {
+    let next = if (output == "") { item } else { output ++ separator ++ item };
+    joinText(rest, separator, next)
+  }
+};
+
+let rec emitTupleFields = match(typeIds, index, context, output) => {
+  ([], Var(index), Var(context), Var(output)) => { output },
+  ([Var(typeId), ..rest], Var(index), Var(context), Var(output)) => {
+    emitTupleFields(
+      rest,
+      index + 1,
+      context,
+      output ++ "  " ++ typeName(typeId, context) ++ " " ++ tupleFieldName(index) ++ ";\n"
+    )
+  }
+};
+
+let rec emitTupleParams = match(typeIds, index, context, output) => {
+  ([], Var(index), Var(context), Var(output)) => { output },
+  ([Var(typeId), ..rest], Var(index), Var(context), Var(output)) => {
+    let parameter = typeName(typeId, context) ++ " " ++ tupleFieldName(index);
+    let next = if (output == "") { parameter } else { output ++ ", " ++ parameter };
+    emitTupleParams(rest, index + 1, context, next)
+  }
+};
+
+let rec emitTupleAssignments = match(typeIds, index, output) => {
+  ([], Var(index), Var(output)) => { output },
+  ([Var(_typeId), ..rest], Var(index), Var(output)) => {
+    let field = tupleFieldName(index);
+    emitTupleAssignments(rest, index + 1, output ++ "  value." ++ field ++ " = " ++ field ++ ";\n")
+  }
+};
+
+let emitTupleDeclaration = (gpuType: GpuSliceTypeDto, context: SliceEmitContext) => {
+  let items = Js.Array.toList(gpuType.items);
+  "struct " ++ tupleName(gpuType.id) ++ " {\n" ++
+    emitTupleFields(items, 0, context, "") ++ "};\n\n" ++
+    tupleName(gpuType.id) ++ " " ++ tupleFactoryName(gpuType.id) ++ "(" ++
+    emitTupleParams(items, 0, context, "") ++ ") {\n" ++
+    "  " ++ tupleName(gpuType.id) ++ " value;\n" ++
+    emitTupleAssignments(items, 0, "") ++
+    "  return value;\n}\n\n"
+};
+
+let rec emitTupleDeclarations = match(types, context, output) => {
+  ([], Var(context), Var(output)) => { output },
+  ([Var(gpuType), ..rest], Var(context), Var(output)) => {
+    let next = if (gpuType.kind == "tuple") {
+      output ++ emitTupleDeclaration(gpuType, context)
+    } else {
+      output
+    };
+    emitTupleDeclarations(rest, context, next)
+  }
+};
+
+let rec emitLayoutFields = match(fieldIds, context, output) => {
+  ([], Var(context), Var(output)) => { output },
+  ([Var(fieldId), ..rest], Var(context), Var(output)) => {
+    let field = findField(context.fields, fieldId);
+    emitLayoutFields(
+      rest,
+      context,
+      output ++ "  " ++ typeName(field.typeId, context) ++ " " ++ payloadFieldName(field.id) ++ ";\n"
+    )
+  }
+};
+
+let rec emitConstructorFieldAssignments = match(fields, constructorId, payloadName, output) => {
+  ([], Var(constructorId), Var(payloadName), Var(output)) => { output },
+  ([Var(field), ..rest], Var(constructorId), Var(payloadName), Var(output)) => {
+    let value = if (numberEqual(field.constructorId, constructorId)) { payloadName } else { "float(0)" };
+    emitConstructorFieldAssignments(
+      rest,
+      constructorId,
+      payloadName,
+      output ++ "  value." ++ payloadFieldName(field.id) ++ " = " ++ value ++ ";\n"
+    )
+  }
+};
+
+let emitConstructorDeclaration = (
+  constructor: GpuSliceConstructorDto,
+  layout: GpuSliceAdtLayoutDto,
+  context: SliceEmitContext
+) => {
+  let parameter = if (numberEqual(constructor.payloadTypeId, -1)) {
+    ""
+  } else {
+    typeName(constructor.payloadTypeId, context) ++ " payload"
+  };
+  let payloadName = if (numberEqual(constructor.payloadTypeId, -1)) { "float(0)" } else { "payload" };
+  layoutName(layout.id) ++ " " ++ constructorName(constructor.id) ++ "(" ++ parameter ++ ") {\n" ++
+    "  " ++ layoutName(layout.id) ++ " value;\n" ++
+    "  value.tag = " ++ text(constructor.tag) ++ ";\n" ++
+    emitConstructorFieldAssignments(context.fields, constructor.id, payloadName, "") ++
+    "  return value;\n}\n\n"
+};
+
+let rec emitLayoutConstructors = match(constructorIds, layout, context, output) => {
+  ([], Var(layout), Var(context), Var(output)) => { output },
+  ([Var(constructorId), ..rest], Var(layout), Var(context), Var(output)) => {
+    let constructor = findConstructor(context.constructors, constructorId);
+    emitLayoutConstructors(
+      rest,
+      layout,
+      context,
+      output ++ emitConstructorDeclaration(constructor, layout, context)
+    )
+  }
+};
+
+let emitLayoutDeclaration = (layout: GpuSliceAdtLayoutDto, context: SliceEmitContext) => {
+  let adt = context.input.adts :> Js.Array.toList :> findAdtForEmit(layout.typeNameId);
+  "struct " ++ layoutName(layout.id) ++ " {\n  int tag;\n" ++
+    emitLayoutFields(Js.Array.toList(layout.fieldIds), context, "") ++ "};\n\n" ++
+    emitLayoutConstructors(Js.Array.toList(adt.constructorIds), layout, context, "")
+};
+
+let rec emitLayoutDeclarations = match(layouts, context, output) => {
+  ([], Var(context), Var(output)) => { output },
+  ([Var(layout), ..rest], Var(context), Var(output)) => {
+    emitLayoutDeclarations(rest, context, output ++ emitLayoutDeclaration(layout, context))
+  }
+};
+
+let emitAtom = (atomId, context: SliceEmitContext) => {
+  let atom = findAtom(context.atoms, atomId);
+  if (atom.kind == "local") {
+    localName(atom.localId)
+  } else {
+    if (atom.kind == "number") {
+      "float(" ++ text(atom.numberValue) ++ ")"
+    } else {
+      if (atom.kind == "bool") {
+        if (atom.boolValue) { "true" } else { "false" }
+      } else {
+        ""
+      }
+    }
+  }
+};
+
+let rec emitArgs = match(atomIds, context, output) => {
+  ([], Var(context), Var(output)) => { output },
+  ([Var(atomId), ..rest], Var(context), Var(output)) => {
+    let argument = emitAtom(atomId, context);
+    let next = if (output == "") { argument } else { output ++ ", " ++ argument };
+    emitArgs(rest, context, next)
+  }
+};
+
+let operatorText = (operatorId) => {
+  if (operatorId == "gpu.operator.negate") { "-" } else {
+    if (operatorId == "gpu.operator.not") { "!" } else {
+      if (operatorId == "gpu.operator.add") { "+" } else {
+        if (operatorId == "gpu.operator.subtract") { "-" } else {
+          if (operatorId == "gpu.operator.multiply") { "*" } else {
+            if (operatorId == "gpu.operator.divide") { "/" } else {
+              if (operatorId == "gpu.operator.less-than") { "<" } else {
+                if (operatorId == "gpu.operator.less-than-or-equal") { "<=" } else {
+                  if (operatorId == "gpu.operator.greater-than") { ">" } else {
+                    if (operatorId == "gpu.operator.greater-than-or-equal") { ">=" } else {
+                      if (operatorId == "gpu.operator.equal") { "==" } else {
+                        if (operatorId == "gpu.operator.not-equal") { "!=" } else {
+                          if (operatorId == "gpu.operator.and") { "&&" } else {
+                            if (operatorId == "gpu.operator.or") { "||" } else {
+                              Panic("unsupported Slang-emission operator")
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec emitColorItems = match(index, count, tupleText, output) => {
+  (Var(index), Var(count), Var(tupleText), Var(output)) => {
+    if (numberEqual(index, count)) {
+      output
+    } else {
+      let item = tupleText ++ "." ++ tupleFieldName(index);
+      let next = if (output == "") { item } else { output ++ ", " ++ item };
+      emitColorItems(index + 1, count, tupleText, next)
+    }
+  }
+};
+
+let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitContext) => {
+  let args = Js.Array.toList(operation.args);
+  if (operation.kind == "copy") {
+    emitArgs(args, context, "")
+  } else {
+    if (operation.kind == "tuple") {
+      tupleFactoryName(operation.typeId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+    } else {
+      if (operation.kind == "project") {
+        emitArgs(args, context, "") ++ "." ++ tupleFieldName(operation.index)
+      } else {
+        if (operation.kind == "call") {
+          functionName(operation.targetFunctionId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+        } else {
+          if (operation.kind == "construct") {
+            constructorName(operation.constructorId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+          } else {
+            if (operation.kind == "payload") {
+              emitArgs(args, context, "") ++ "." ++ payloadFieldName(operation.fieldId)
+            } else {
+              if (operation.kind == "color") {
+                let tupleText = emitArgs(args, context, "");
+                "float4(" ++ emitColorItems(0, 4, tupleText, "") ++ ")"
+              } else {
+                match(args) {
+                  [Var(left)] => {
+                    "(" ++ operatorText(operation.operatorId) ++ emitAtom(left, context) ++ ")"
+                  },
+                  [Var(left), Var(right)] => {
+                    "(" ++ emitAtom(left, context) ++ " " ++ operatorText(operation.operatorId) ++
+                      " " ++ emitAtom(right, context) ++ ")"
+                  },
+                  _ => { Panic("operator reached Slang emission with invalid arity") }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec emitBlockStatements = match(statementIds, indent, context, output) => {
+  ([], Var(indent), Var(context), Var(output)) => { output },
+  ([Var(statementId), ..rest], Var(indent), Var(context), Var(output)) => {
+    let statement = findStatement(context.statements, statementId);
+    emitBlockStatements(rest, indent, context, output ++ emitStatement(statement, indent, context))
+  }
+}
+
+and emitBlock = (blockId, indent, context: SliceEmitContext) => {
+  let block = findBlock(context.blocks, blockId);
+  emitBlockStatements(Js.Array.toList(block.statementIds), indent, context, "")
+}
+
+and emitCases = match(caseIds, indent, context, output) => {
+  ([], Var(indent), Var(context), Var(output)) => { output },
+  ([Var(caseId), ..rest], Var(indent), Var(context), Var(output)) => {
+    let gpuCase = findCase(context.cases, caseId);
+    let item = indent ++ "case " ++ text(gpuCase.tag) ++ ": {\n" ++
+      emitBlock(gpuCase.blockId, indent ++ "  ", context) ++
+      indent ++ "  break;\n" ++ indent ++ "}\n";
+    emitCases(rest, indent, context, output ++ item)
+  }
+}
+
+and emitParallelAssignments = match(targetIds, valueIds, indent, context, output) => {
+  ([], [], Var(indent), Var(context), Var(output)) => { output },
+  ([Var(targetId), ..targetRest], [Var(valueId), ..valueRest], Var(indent), Var(context), Var(output)) => {
+    emitParallelAssignments(
+      targetRest,
+      valueRest,
+      indent,
+      context,
+      output ++ indent ++ localName(targetId) ++ " = " ++ emitAtom(valueId, context) ++ ";\n"
+    )
+  },
+  _ => { Panic("parallel tail update arity changed after validation") }
+}
+
+and emitStatement = (statement: GpuSliceLoweredStatementDto, indent, context: SliceEmitContext) => {
+  if (statement.kind == "let") {
+    let local = findLocal(context.locals, statement.localId);
+    let operation = findOperation(context.operations, statement.operationId);
+    indent ++ typeName(local.typeId, context) ++ " " ++ localName(local.id) ++ " = " ++
+      emitOperation(operation, context) ++ ";\n"
+  } else {
+    if (statement.kind == "assign") {
+      indent ++ localName(statement.localId) ++ " = " ++ emitAtom(statement.atomId, context) ++ ";\n"
+    } else {
+      if (statement.kind == "if") {
+        let join = if (numberEqual(statement.localId, -1)) {
+          ""
+        } else {
+          let local = findLocal(context.locals, statement.localId);
+          indent ++ typeName(local.typeId, context) ++ " " ++ localName(local.id) ++ ";\n"
+        };
+        join ++ indent ++ "if (" ++ emitAtom(statement.conditionAtomId, context) ++ ") {\n" ++
+          emitBlock(statement.thenBlockId, indent ++ "  ", context) ++
+          indent ++ "} else {\n" ++
+          emitBlock(statement.elseBlockId, indent ++ "  ", context) ++
+          indent ++ "}\n"
+      } else {
+        if (statement.kind == "switch") {
+          let join = if (numberEqual(statement.localId, -1)) {
+            ""
+          } else {
+            let local = findLocal(context.locals, statement.localId);
+            indent ++ typeName(local.typeId, context) ++ " " ++ localName(local.id) ++ ";\n"
+          };
+          join ++ indent ++ "switch (" ++ emitAtom(statement.scrutineeAtomId, context) ++ ".tag) {\n" ++
+            emitCases(Js.Array.toList(statement.caseIds), indent ++ "  ", context, "") ++
+            indent ++ "}\n"
+        } else {
+          if (statement.kind == "loop") {
+            indent ++ "while (!" ++ recursiveDoneName(statement.functionId) ++ ") {\n" ++
+              emitBlock(statement.bodyBlockId, indent ++ "  ", context) ++
+              indent ++ "}\n"
+          } else {
+            if (statement.kind == "continue") {
+              emitParallelAssignments(
+                Js.Array.toList(statement.targetLocalIds),
+                Js.Array.toList(statement.valueAtomIds),
+                indent,
+                context,
+                ""
+              ) ++ indent ++ "continue;\n"
+            } else {
+              let atom = findAtom(context.atoms, statement.atomId);
+              if (atom.kind == "void") {
+                if (numberEqual(context.recursiveFunctionId, statement.functionId)) {
+                  indent ++ recursiveDoneName(statement.functionId) ++ " = true;\n"
+                } else {
+                  indent ++ "return;\n"
+                }
+              } else {
+                if (numberEqual(context.recursiveFunctionId, statement.functionId)) {
+                  indent ++ recursiveResultName(statement.functionId) ++ " = " ++
+                    emitAtom(statement.atomId, context) ++ ";\n" ++
+                    indent ++ recursiveDoneName(statement.functionId) ++ " = true;\n"
+                } else {
+                  indent ++ "return " ++ emitAtom(statement.atomId, context) ++ ";\n"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec emitFunctionParams = match(localIds, context, output) => {
+  ([], Var(context), Var(output)) => { output },
+  ([Var(localId), ..rest], Var(context), Var(output)) => {
+    let local = findLocal(context.locals, localId);
+    let parameter = typeName(local.typeId, context) ++ " " ++ localName(local.id);
+    let next = if (output == "") { parameter } else { output ++ ", " ++ parameter };
+    emitFunctionParams(rest, context, next)
+  }
+};
+
+let emitFunction = (fn: GpuSliceLoweredFunctionDto, context: SliceEmitContext) => {
+  let source = context.input.functions :> Js.Array.toList :> findSourceFunction(fn.functionId);
+  let functionContext: SliceEmitContext = .{
+    ..context,
+    recursiveFunctionId = if (fn.recursive) { fn.functionId } else { -1 },
+  };
+  let resultType = findType(context.types, source.resultTypeId);
+  let recursivePrefix = if (fn.recursive) {
+    let result = if (resultType.kind == "void") {
+      ""
+    } else {
+      "  " ++ typeName(source.resultTypeId, context) ++ " " ++ recursiveResultName(fn.functionId) ++
+        ";\n"
+    };
+    result ++ "  bool " ++ recursiveDoneName(fn.functionId) ++ " = false;\n"
+  } else {
+    ""
+  };
+  let recursiveSuffix = if (fn.recursive) {
+    if (resultType.kind == "void") {
+      "  return;\n"
+    } else {
+      "  return " ++ recursiveResultName(fn.functionId) ++ ";\n"
+    }
+  } else {
+    ""
+  };
+  typeName(source.resultTypeId, context) ++ " " ++ functionName(fn.functionId) ++ "(" ++
+    emitFunctionParams(Js.Array.toList(fn.physicalParamLocalIds), context, "") ++ ") {\n" ++
+    recursivePrefix ++ emitBlock(fn.bodyBlockId, "  ", functionContext) ++ recursiveSuffix ++
+    "}\n\n"
+};
+
+let rec emitFunctions = match(functions, context, output) => {
+  ([], Var(context), Var(output)) => { output },
+  ([Var(fn), ..rest], Var(context), Var(output)) => {
+    emitFunctions(rest, context, output ++ emitFunction(fn, context))
+  }
+};
+
+let emitWrappers = (context: SliceEmitContext) => {
+  let input = context.input;
+  let rootRow: GpuSliceRootDto = input.root;
+  let root = findFunction(context.functions, rootRow.functionId);
+  match(Js.Array.toList(root.physicalParamLocalIds)) {
+    [Var(coordLocalId)] => {
+      let coordLocal = findLocal(context.locals, coordLocalId);
+      "[shader(\"vertex\")]\n" ++
+        "float4 wm_vertex(uint vertexID : SV_VertexID) : SV_Position {\n" ++
+        "  float2 uv = float2((vertexID << 1) & 2, vertexID & 2);\n" ++
+        "  return float4(uv * 2.0 - 1.0, 0.0, 1.0);\n" ++
+        "}\n\n" ++
+        "[shader(\"fragment\")]\n" ++
+        "float4 wm_fragment(float4 position : SV_Position) : SV_Target {\n" ++
+        "  return " ++ functionName(root.functionId) ++ "(" ++ tupleFactoryName(coordLocal.typeId) ++
+        "(position.x, position.y));\n" ++
+        "}\n"
+    },
+    _ => { Panic("v1 fragment root does not have one physical coordinate parameter") }
+  }
+};
+
+let emitSliceSlang = (
+  input: GpuSliceElaborationInputDto,
+  layouts,
+  fields,
+  functions,
+  locals,
+  atoms,
+  operations,
+  statements,
+  blocks,
+  cases
+) => {
+  let context: SliceEmitContext = .{
+    input = input,
+    types = Js.Array.toList(input.types),
+    constructors = Js.Array.toList(input.constructors),
+    layouts = Js.Array.toList(layouts),
+    fields = Js.Array.toList(fields),
+    functions = Js.Array.toList(functions),
+    locals = Js.Array.toList(locals),
+    atoms = Js.Array.toList(atoms),
+    operations = Js.Array.toList(operations),
+    statements = Js.Array.toList(statements),
+    blocks = Js.Array.toList(blocks),
+    cases = Js.Array.toList(cases),
+    recursiveFunctionId = -1,
+  };
+  "// Generated by wmslang visual v1.\n\n" ++
+    emitTupleDeclarations(context.types, context, "") ++
+    emitLayoutDeclarations(context.layouts, context, "") ++
+    emitFunctions(context.functions, context, "") ++
+    emitWrappers(context)
+};

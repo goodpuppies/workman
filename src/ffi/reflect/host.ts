@@ -292,7 +292,13 @@ function denoTypesSource(): string {
     const message = output.stderr.trim();
     throw new Error(`cannot load Deno type declarations${message ? `: ${message}` : ""}`);
   }
-  denoTypesCache = output.stdout;
+  denoTypesCache = `${output.stdout}
+declare namespace Deno {
+  interface UnsafeWindowSurface {
+    getContext(contextId: "webgpu", options?: any): GPUCanvasContext | null;
+  }
+}
+`;
   return denoTypesCache;
 }
 

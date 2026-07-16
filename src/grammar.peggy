@@ -97,7 +97,7 @@
     return at({ pattern: at({ kind: "PVar", name }, loc) }, loc);
   }
   function liftedLambda(name, body, loc) {
-    return at({ kind: "Lambda", params: [liftedParam(name, loc)], body }, loc);
+    return at({ kind: "Lambda", params: [liftedParam(name, loc)], directives: [], body }, loc);
   }
   function taskTupleLift(tasks, loc) {
     if (tasks.length === 0) {
@@ -270,7 +270,7 @@ MatchFn
       const value = names.length === 1
         ? at({ kind: "Var", name: names[0] }, location())
         : at({ kind: "Tuple", items: names.map((name) => at({ kind: "Var", name }, location())) }, location());
-      return at({ kind: "Lambda", params, body: at({ kind: "Match", value, arms }, location()) }, location());
+      return at({ kind: "Lambda", params, directives: [], body: at({ kind: "Match", value, arms }, location()) }, location());
     }
 
 MatchFnParams = first:Identifier rest:(_ "," _ n:Identifier { return n; })* _ ","? { return [first, ...rest]; }
@@ -279,10 +279,27 @@ MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { 
 MatchArm = pattern:Pattern _ "=>" _ body:Block { return at({ pattern, body }, location()); }
 
 Lambda
-  = params:ParamList _ "=>" _ body:LambdaBody { return at({ kind: "Lambda", params, body }, location()); }
-  / "=>" _ body:LambdaBody { return at({ kind: "Lambda", params: [], body }, location()); }
+  = params:ParamList _ "=>" _ parsed:LambdaBody {
+      return at({ kind: "Lambda", params, directives: parsed.directives, body: parsed.body }, location());
+    }
+  / "=>" _ parsed:LambdaBody {
+      return at({ kind: "Lambda", params: [], directives: parsed.directives, body: parsed.body }, location());
+    }
 
-LambdaBody = Block / ParenSeq
+LambdaBody
+  = LambdaBlock
+  / body:ParenSeq { return { directives: [], body }; }
+
+LambdaBlock
+  = "{" _ directives:(directive:Directive _ { return directive; })* seq:BlockSeqBody _ "}" {
+      return {
+        directives,
+        body: at({ kind: "Block", items: seq.items, result: seq.result }, location()),
+      };
+    }
+
+Directive
+  = "@" name:Identifier _ SemiToken { return at({ name }, location()); }
 
 Binary = Or
 Or = left:And rest:(_ op:("||") _ right:And { return { op, right }; })*

@@ -1,41 +1,22 @@
-import type { Expr, Param } from "../ast.ts";
-import { diagnosticError, type FrontendDiagnostic } from "../diagnostics.ts";
-import {
-  BoolTy,
-  type Env,
-  fn,
-  fresh,
-  NumberTy,
-  prune,
-  quoteType,
-  StringTy,
-  tuple,
-  type Ty,
-  type TypeDeclInfo,
-  type TypeEnv,
-  typeFromAst,
-  type TypeVarScope,
-} from "../types.ts";
+import type { Expr } from "../ast.ts";
+import { diagnosticError } from "../diagnostics.ts";
+import { isGpuLambda } from "../directives.ts";
+import { fn, prune, quoteType, tuple, type Ty, typeFromAst, type TypeVarScope } from "../types.ts";
 import { inferExpr } from "./expr.ts";
+import { deriveInferContext, type InferContext, type TypingDialect } from "./context.ts";
+import { gpuTypingDialect } from "./gpu_dialect.ts";
 import { inferParam } from "./expr_flow.ts";
-import { ffiCallbackParamHints } from "./expr_js_members.ts";
-import { inferPattern, patternBinders } from "./patterns.ts";
-import { constrainAt, type TypeProvenance } from "./provenance.ts";
+import { patternBinders } from "./patterns.ts";
+import { constrainAt } from "./provenance.ts";
 import { callArg } from "./shared.ts";
-import { type TypeFacts } from "./type_facts.ts";
+import type { TypeFacts } from "./type_facts.ts";
 
 export function inferLambdaTy(
   expr: Extract<Expr, { kind: "Lambda" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
   paramHints?: Ty[],
 ): Ty {
+  const { env, typeEnv, adts, types, facts, provenance } = context;
   const local = new Map(env);
   const annotationVars: TypeVarScope = new Map();
   const binders = new Set<string>();
@@ -62,14 +43,10 @@ export function inferLambdaTy(
   });
   const body = inferExpr(
     expr.body,
-    local,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
+    deriveInferContext(context, {
+      env: local,
+      dialect: lambdaTypingDialect(expr, context.dialect),
+    }),
   );
   const signatureParams = [...params];
   expr.params.forEach((param, index) => {
@@ -124,6 +101,13 @@ export function inferLambdaTy(
   );
   types.set(expr, t);
   return t;
+}
+
+export function lambdaTypingDialect(
+  lambda: Extract<Expr, { kind: "Lambda" }>,
+  parent: TypingDialect,
+): TypingDialect {
+  return isGpuLambda(lambda) ? gpuTypingDialect : parent;
 }
 
 function ffiReceiverObligationForParam(

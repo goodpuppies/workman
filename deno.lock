@@ -11,6 +11,7 @@
     "jsr:@std/path@^1.0.9": "1.1.5",
     "npm:@types/node@*": "25.9.1",
     "npm:@typescript/typescript6@^6.0.2": "6.0.2",
+    "npm:@webgpu/types@0.1.64": "0.1.64",
     "npm:peggy@*": "5.1.0",
     "npm:peggy@^5.0.6": "5.1.0",
     "npm:typescript@5.6.2": "5.6.2",
@@ -172,6 +173,9 @@
       ],
       "bin": true
     },
+    "@webgpu/types@0.1.64": {
+      "integrity": "sha512-84kRIAGV46LJTlJZWxShiOrNL30A+9KokD7RB3dRCIqODFjodS5tCD5yyiZ8kIReGVZSDfA3XkkwyyOIF6K62A=="
+    },
     "commander@14.0.3": {
       "integrity": "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="
     },
@@ -233,6 +237,7 @@
     "dependencies": [
       "jsr:@std/assert@^1.0.17",
       "npm:@typescript/typescript6@^6.0.2",
+      "npm:@webgpu/types@0.1.64",
       "npm:peggy@^5.0.6",
       "npm:typescript@^7.0.2"
     ]

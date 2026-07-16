@@ -1,5 +1,6 @@
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
+import type { CompilerSemanticId } from "./compiler_semantics.ts";
 import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
 
 export type Ty =
@@ -44,6 +45,8 @@ export type Scheme = {
   jsImport?: boolean;
   imported?: boolean;
   standardLibrary?: boolean;
+  semanticId?: CompilerSemanticId;
+  constructorDecl?: CtorDecl;
   node?: AstNode;
 };
 export type TypeProvenanceNote = {

@@ -1,5 +1,6 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { prune } from "../../types.ts";
 import {
   ffiCallPromiseElement,
@@ -74,6 +75,7 @@ function collectNamedCallbackContexts(
         expr.fields.forEach((field) => visitExpr(field.value));
         return;
       case "Lambda":
+        if (!hostFfiDescendsInto(expr)) return;
         visitExpr(expr.body);
         return;
       case "If":
@@ -152,6 +154,7 @@ function callbackParamTypesForFfiBindingCall(
             params: Array.from({ length: arities.get(arg.name)! }, () => ({
               pattern: { kind: "PWildcard" as const },
             })),
+            directives: [],
             body: arg,
           }
           : arg
@@ -272,6 +275,7 @@ function contextualizeDecl(
     bindings: decl.bindings.map((binding) => {
       const value = contextualizeExpr(binding.value, result, arities, new Map(), bindings);
       if (binding.pattern.kind !== "PVar" || binding.value.kind !== "Lambda") return binding;
+      if (!hostFfiDescendsInto(binding.value)) return binding;
       const params = contexts.get(binding.pattern.name);
       if (!params) return { ...binding, value };
       return {
@@ -381,6 +385,7 @@ function contextualizeExpr(
         ),
       };
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return expr;
       return {
         ...expr,
         body: contextualizeExpr(expr.body, result, arities, new Map(localTypes), bindings),
@@ -455,6 +460,7 @@ function contextualizeCallbackArg(
   localTypes: Map<string, TypeExpr>,
   bindings: FfiElaboration["bindings"],
 ): Expr {
+  if (arg.kind === "Lambda" && !hostFfiDescendsInto(arg)) return arg;
   if (arg.kind !== "Lambda" || !params) {
     return contextualizeExpr(arg, result, arities, localTypes, bindings);
   }

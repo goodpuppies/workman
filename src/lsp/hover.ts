@@ -96,7 +96,7 @@ async function analyzeForHover(
   entryPath: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
-): Promise<Awaited<ReturnType<typeof analyzeFile>> | null> {
+): Promise<HoverAnalysis | null> {
   try {
     return await analyzeFile(entryPath, { ...options, sourceOverrides });
   } catch {
@@ -108,7 +108,7 @@ async function analyzePartialForHover(
   entryPath: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
-): Promise<Awaited<ReturnType<typeof analyzeFile>> | null> {
+): Promise<HoverAnalysis | null> {
   try {
     const graph = await loadModuleGraph(entryPath, { ...options, sourceOverrides });
     const inferOptions = await standardInferOptions();
@@ -159,6 +159,8 @@ async function analyzePartialForHover(
     return null;
   }
 }
+
+type HoverAnalysis = Pick<Awaited<ReturnType<typeof analyzeFile>>, "graph" | "results">;
 
 function schemeHover(name: string, scheme: Scheme | undefined): LspHover | null {
   return scheme ? hoverCode(`${name}: ${showHoverType(instantiate(scheme))}`) : null;

@@ -1,6 +1,6 @@
-import type { Decl, Expr } from "../ast.ts";
+import type { Decl } from "../ast.ts";
 import { basisCtorNamesForType } from "../basis.ts";
-import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import { warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
   fn,
@@ -16,6 +16,7 @@ import {
   type TypeVarScope,
 } from "../types.ts";
 import { hasUnguardedRecursiveRef, referencesTypeName, rejectDuplicates } from "./decl_helpers.ts";
+import { deriveInferContext, type InferContext } from "./context.ts";
 import {
   constrainBinding,
   generalizeBinding,
@@ -26,29 +27,24 @@ import { inferExpr } from "./expr.ts";
 import { addJsImport } from "./js_imports.ts";
 import { assertExportableRecord, assertExportableType } from "./module_exports.ts";
 import { patternBinders, showPattern } from "./patterns.ts";
-import { constrainAt, provenanceFor, type TypeProvenance } from "./provenance.ts";
+import { constrainAt } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import {
   originForScheme,
   recordBindingFact,
   recordPatternFact,
-  type TypeFacts,
+  recordPatternType,
+  recordTypeDeclarationFact,
 } from "./type_facts.ts";
 
 export function inferDecl(
   decl: Decl,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
   typeExports: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
-  provenance: TypeProvenance,
 ) {
+  const { env, typeEnv, adts, facts } = context;
   if (decl.kind === "ImportDecl") return;
   if (decl.kind === "JsImportDecl") {
     addJsImport(env, typeEnv, decl);
@@ -59,26 +55,14 @@ export function inferDecl(
     return;
   }
   if (decl.kind === "RecordDecl") {
-    inferRecordDecl(decl, env, typeEnv, typeExports, exportableTypeIds);
+    inferRecordDecl(decl, env, typeEnv, typeExports, exportableTypeIds, facts);
     return;
   }
   if (decl.kind === "TypeDecl") {
-    inferTypeDecl(decl, env, exports, typeEnv, typeExports, adts, exportableTypeIds);
+    inferTypeDecl(decl, env, exports, typeEnv, typeExports, adts, exportableTypeIds, facts);
     return;
   }
-  inferLetDecl(
-    decl,
-    env,
-    exports,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    exportableTypeIds,
-    provenance,
-  );
+  inferLetDecl(decl, context, exports, exportableTypeIds);
 }
 
 function addForeignType(
@@ -123,6 +107,7 @@ function inferRecordDecl(
   typeEnv: TypeEnv,
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
+  facts: import("./type_facts.ts").TypeFacts,
 ) {
   const existing = typeEnv.get(decl.name);
   if (existing && !existing.basis) throw new Error(`duplicate type declaration ${decl.name}`);
@@ -130,6 +115,7 @@ function inferRecordDecl(
   rejectDuplicates(decl.params, "type parameter");
   rejectDuplicates(decl.fields.map((field) => field.name), "record field");
   const info = freshTypeInfo(decl.name, decl.params.length);
+  recordTypeDeclarationFact(facts, decl, info);
   typeEnv.set(decl.name, info);
   if (decl.exported) typeExports.set(decl.name, info);
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
@@ -156,12 +142,14 @@ function inferTypeDecl(
   typeExports: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   exportableTypeIds: Set<number>,
+  facts: import("./type_facts.ts").TypeFacts,
 ) {
   const existing = typeEnv.get(decl.name);
   if (existing && !existing.basis) throw new Error(`duplicate type declaration ${decl.name}`);
   if (existing?.basis) removeBasisConstructors(env, decl.name);
   rejectDuplicates(decl.params, "type parameter");
   const info = freshTypeInfo(decl.name, decl.params.length);
+  recordTypeDeclarationFact(facts, decl, info);
   typeEnv.set(decl.name, info);
   if (decl.exported) typeExports.set(decl.name, info);
   if (decl.alias) {
@@ -187,7 +175,11 @@ function inferTypeDecl(
       );
     }
     const t = args.length === 0 ? result : fn([callArg(args)], result);
-    const scheme = { ...generalize(env, t), status: "constructor" as const };
+    const scheme = {
+      ...generalize(env, t),
+      status: "constructor" as const,
+      constructorDecl: c,
+    };
     env.set(c.name, scheme);
     if (decl.exported) exports.set(c.name, scheme);
   }
@@ -225,80 +217,30 @@ function inferAliasDecl(
 
 function inferLetDecl(
   decl: Extract<Decl, { kind: "LetDecl" }>,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
-  provenance: TypeProvenance,
 ) {
   rejectDuplicates(decl.bindings.flatMap((b) => patternBinders(b.pattern)), "binding");
   const annotationVars: TypeVarScope = new Map();
   if (!decl.recursive) {
-    inferNonRecursiveLet(
-      decl,
-      env,
-      exports,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
-      exportableTypeIds,
-      annotationVars,
-      provenance,
-    );
+    inferNonRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars);
     return;
   }
-  inferRecursiveLet(
-    decl,
-    env,
-    exports,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    exportableTypeIds,
-    annotationVars,
-    provenance,
-  );
+  inferRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars);
 }
 
 function inferNonRecursiveLet(
   decl: Extract<Decl, { kind: "LetDecl" }>,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
-  provenance: TypeProvenance,
 ) {
+  const { env, facts, warnings, diagnostics, provenance } = context;
   const base = new Map(env);
   const inferred = decl.bindings.map((b) =>
-    inferBinding(
-      b,
-      base,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
-      annotationVars,
-      provenance,
-    )
+    inferBinding(b, deriveInferContext(context, { env: base }), annotationVars)
   );
   inferred.forEach((result, i) => {
     if (result.refutable) {
@@ -340,18 +282,12 @@ function inferNonRecursiveLet(
 
 function inferRecursiveLet(
   decl: Extract<Decl, { kind: "LetDecl" }>,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
-  provenance: TypeProvenance,
 ) {
+  const { env, typeEnv, types, facts, provenance } = context;
   const base = new Map(env);
   for (const b of decl.bindings) {
     if (b.pattern.kind !== "PVar") throw new Error("recursive bindings must bind one name");
@@ -363,29 +299,20 @@ function inferRecursiveLet(
     }
   }
   const placeholders = decl.bindings.map(() => fresh());
-  decl.bindings.forEach((b, i) =>
+  decl.bindings.forEach((b, i) => {
+    recordPatternType(facts, b.pattern, placeholders[i]);
     env.set((b.pattern as { name: string }).name, {
       vars: [],
       type: placeholders[i],
       status: "value",
-    })
-  );
+    });
+  });
   decl.bindings.forEach((b, i) => {
     const name = (b.pattern as { name: string }).name;
     constrainBinding(
       name,
       placeholders[i],
-      inferExpr(
-        b.value,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      ),
+      inferExpr(b.value, context),
       b.value,
       b.pattern.node,
       types,

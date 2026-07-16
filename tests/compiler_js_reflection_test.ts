@@ -114,9 +114,10 @@ Deno.test("maps reflected JS nullish returns to basis Option", async () => {
   expectBinding(result.env, "isMissing", { type: "Bool", vars: 0 });
 });
 
-Deno.test("maps nullish unions of foreign objects before applying Option", async () => {
+Deno.test("reflects the UnsafeWindowSurface webgpu discriminator precisely", async () => {
   const result = await checkSource(`
     from js.global("Deno") import type { UnsafeWindowSurface };
+    from js.global import type { GPUCanvasContext };
 
     let context = (surface: UnsafeWindowSurface) => {
       surface.getContext("webgpu")
@@ -124,7 +125,7 @@ Deno.test("maps nullish unions of foreign objects before applying Option", async
   `);
 
   expectBinding(result.env, "context", {
-    type: "(UnsafeWindowSurface) => Result<Option<Js.Object>, Js.Error>",
+    type: "(UnsafeWindowSurface) => Result<Option<GPUCanvasContext>, Js.Error>",
     vars: 0,
   });
 });

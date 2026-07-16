@@ -1,6 +1,7 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import {
   materializeBindingCall,
@@ -138,6 +139,7 @@ function resolveDelayedExpr(
         ),
       };
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return expr;
       return {
         ...expr,
         body: resolveDelayedExpr(expr.body, ffi, result, selected, options, new Map(valueRefs)),

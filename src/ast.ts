@@ -55,6 +55,7 @@ export type Binding = Located<{ pattern: Pattern; annotation?: TypeExpr; value: 
 export type CtorDecl = Located<{ name: string; args: TypeExpr[] }>;
 export type RecordFieldDecl = Located<{ name: string; type: TypeExpr }>;
 export type Param = Located<{ pattern: Pattern; annotation?: TypeExpr }>;
+export type Directive = Located<{ name: string }>;
 
 export type Expr =
   | Located<{ kind: "Int"; value: number }>
@@ -75,7 +76,7 @@ export type Expr =
     args: Expr[];
     effect?: "Result" | "Task";
   }>
-  | Located<{ kind: "Lambda"; params: Param[]; body: Expr }>
+  | Located<{ kind: "Lambda"; params: Param[]; directives: Directive[]; body: Expr }>
   | Located<{ kind: "Call"; callee: Expr; args: Expr[] }>
   | Located<{ kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }>
   | Located<{ kind: "Match"; value: Expr; arms: MatchArm[] }>

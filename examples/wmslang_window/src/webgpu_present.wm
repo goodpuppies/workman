@@ -1,0 +1,166 @@
+-- WebGPU presentation written in Workman. The only manual declaration is the
+-- global navigator.gpu property; all methods are reflected from imported GPU types.
+
+from js.global("navigator") import unsafe { gpu: GPU };
+from js.global import type {
+  GPU,
+  GPUAdapter,
+  GPUCanvasContext,
+  GPUCommandBuffer,
+  GPUCommandEncoder,
+  GPUDevice,
+  GPURenderPassEncoder,
+  GPURenderPipeline,
+  GPUQueue,
+  GPUShaderModule,
+  GPUTexture,
+  GPUTextureView
+};
+from js.global("Deno") import type { UnsafeWindowSurface };
+
+let lift = Monad.lift;
+
+record FragmentRenderer = {
+  device: GPUDevice,
+  context: GPUCanvasContext,
+  pipeline: GPURenderPipeline
+};
+
+let requireAdapter = (adapter: Option<GPUAdapter>) => {
+  match(adapter) {
+    Some(value) => { value.requestDevice() },
+    None => { Js.Error("WebGPU found no suitable adapter") :> Task.fail }
+  }
+};
+
+let requireContext = (context: Option<GPUCanvasContext>) => {
+  match(context) {
+    Some(value) => { Ok(value) },
+    None => { Err(Js.Error("UnsafeWindowSurface returned no WebGPU context")) }
+  }
+};
+
+let createShaderModule = (device: GPUDevice, wgsl: String) => {
+  device.createShaderModule(JSON{ code: wgsl })
+};
+
+let configureContext = (context: GPUCanvasContext, device: GPUDevice, format: String) => {
+  context.configure(JSON{
+    device: device,
+    format: format,
+    alphaMode: "opaque"
+  })
+};
+
+let createPipeline = (
+  device: GPUDevice,
+  module: GPUShaderModule,
+  format: String,
+  vertexEntry: String,
+  fragmentEntry: String
+) => {
+  device.createRenderPipeline(JSON{
+    layout: "auto",
+    vertex: JSON{ module: module, entryPoint: vertexEntry },
+    fragment: JSON{
+      module: module,
+      entryPoint: fragmentEntry,
+      targets: JSON[JSON{ format: format }]
+    },
+    primitive: JSON{ topology: "triangle-list" }
+  })
+};
+
+let buildRenderer = (
+  device: GPUDevice,
+  context: GPUCanvasContext,
+  wgsl: String,
+  vertexEntry: String,
+  fragmentEntry: String
+) => {
+  let assemble = lift Result (format, module) => {
+    configureContext(context, device, format)
+      :> Result.andThen((_) => {
+        createPipeline(device, module, format, vertexEntry, fragmentEntry)
+      })
+      :> Result.map((pipeline) => { .{ device, context, pipeline } })
+  };
+  Result|
+    gpu.getPreferredCanvasFormat(),
+    createShaderModule(device, wgsl)
+  | :> assemble
+};
+
+let createFragmentRenderer = (
+  surface: UnsafeWindowSurface,
+  wgsl: String,
+  vertexEntry: String,
+  fragmentEntry: String
+) => {
+  let withDevice = lift Task (device) => {
+    let withContext = lift Result (context) => {
+      buildRenderer(device, context, wgsl, vertexEntry, fragmentEntry)
+    };
+    surface.getContext("webgpu")
+      :> Result.andThen(requireContext)
+      :> withContext
+      :> Task.fromResult
+  };
+  gpu.requestAdapter() :> Task.andThen(requireAdapter) :> withDevice
+};
+
+let currentTexture = (context: GPUCanvasContext) => { context.getCurrentTexture() };
+let createView = (texture: GPUTexture) => { texture.createView() };
+let createEncoder = (device: GPUDevice) => { device.createCommandEncoder() };
+let beginPass = (encoder: GPUCommandEncoder, view: GPUTextureView) => {
+  encoder.beginRenderPass(JSON{
+    colorAttachments: JSON[JSON{
+      view: view,
+      loadOp: "clear",
+      storeOp: "store",
+      clearValue: JSON{ r: 0, g: 0, b: 0, a: 1 }
+    }]
+  })
+};
+let setPipeline = (pass: GPURenderPassEncoder, pipeline: GPURenderPipeline) => {
+  pass.setPipeline(pipeline)
+};
+let drawFullscreenTriangle = (pass: GPURenderPassEncoder) => { pass.draw(3, 1, 0, 0) };
+let endPass = (pass: GPURenderPassEncoder) => { pass.end() };
+let finishCommands = (encoder: GPUCommandEncoder) => { encoder.finish() };
+let deviceQueue = (device: GPUDevice) => { device.queue };
+let submit = (queue: GPUQueue, command: GPUCommandBuffer) => {
+  queue.submit(JSON[command])
+};
+
+let renderFragment = (renderer: FragmentRenderer) => {
+  let encode = lift Result (texture, encoder) => {
+    let withView = lift Result (view) => {
+      let withPass = lift Result (pass) => {
+        setPipeline(pass, renderer.pipeline)
+          :> Result.andThen((_) => { drawFullscreenTriangle(pass) })
+          :> Result.andThen((_) => { endPass(pass) })
+          :> Result.andThen((_) => { finishCommands(encoder) })
+      };
+      beginPass(encoder, view) :> withPass
+    };
+    createView(texture) :> withView
+  };
+  let send = lift Result (command, queue) => { submit(queue, command) };
+  let command = Result|
+    currentTexture(renderer.context),
+    createEncoder(renderer.device)
+  | :> encode;
+  Result|command, deviceQueue(renderer.device)| :> send
+};
+
+let presentSurface = (surface: UnsafeWindowSurface) => { surface.present() };
+let unconfigure = (context: GPUCanvasContext) => { context.unconfigure() };
+let destroyDevice = (device: GPUDevice) => { device.destroy() };
+
+let destroyFragmentRenderer = (renderer: FragmentRenderer) => {
+  Result|
+    unconfigure(renderer.context),
+    destroyDevice(renderer.device)
+  | :> Result.map((_) => { void })
+};

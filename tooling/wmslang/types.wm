@@ -1,0 +1,537 @@
+record GpuSpanDto = {
+  id: Number,
+  path: String,
+  line: Number,
+  col: Number,
+  start: Number,
+  end: Number,
+};
+
+record GpuTypeDto = {
+  id: Number,
+  kind: String,
+  name: String,
+  representation: String,
+  width: Number,
+  items: Js.Array<Number>,
+  params: Js.Array<Number>,
+  result: Number,
+};
+
+record GpuBindingDto = {
+  id: Number,
+  name: String,
+  typeId: Number,
+  definitionExprId: Number,
+  spanId: Number,
+  scope: String,
+};
+
+record GpuParamDto = {
+  bindingId: Number,
+  name: String,
+  typeId: Number,
+};
+
+record GpuExprDto = {
+  id: Number,
+  kind: String,
+  typeId: Number,
+  spanId: Number,
+  bindingId: Number,
+  name: String,
+  operator: String,
+  numberValue: Number,
+  boolValue: Bool,
+  children: Js.Array<Number>,
+  capability: String,
+};
+
+record GpuRootDto = {
+  regionId: Number,
+  functionId: Number,
+  bindingId: Number,
+};
+
+record GpuFunctionDto = {
+  id: Number,
+  regionId: Number,
+  bindingId: Number,
+  name: String,
+  params: Js.Array<GpuParamDto>,
+  resultTypeId: Number,
+  bodyExprId: Number,
+  spanId: Number,
+  capability: String,
+};
+
+record GpuElaborationInputDto = {
+  schemaVersion: Number,
+  roots: Js.Array<GpuRootDto>,
+  functions: Js.Array<GpuFunctionDto>,
+  bindings: Js.Array<GpuBindingDto>,
+  types: Js.Array<GpuTypeDto>,
+  expressions: Js.Array<GpuExprDto>,
+  spans: Js.Array<GpuSpanDto>,
+};
+
+record TypedGpuExprDto = {
+  id: Number,
+  kind: String,
+  typeId: Number,
+  spanId: Number,
+  bindingId: Number,
+  name: String,
+  operator: String,
+  numberValue: Number,
+  boolValue: Bool,
+  children: Js.Array<Number>,
+  capability: String,
+};
+
+record TypedGpuFunctionDto = {
+  id: Number,
+  regionId: Number,
+  bindingId: Number,
+  name: String,
+  params: Js.Array<GpuParamDto>,
+  resultTypeId: Number,
+  bodyExprId: Number,
+  spanId: Number,
+  capability: String,
+};
+
+record GpuCaptureDto = {
+  regionId: Number,
+  bindingId: Number,
+  typeId: Number,
+  spanId: Number,
+  category: String,
+};
+
+record GpuRepresentationFactDto = {
+  typeId: Number,
+  representation: String,
+};
+
+record GpuSpecializationDto = {
+  id: Number,
+  functionId: Number,
+  bindingId: Number,
+  name: String,
+  paramTypeIds: Js.Array<Number>,
+  resultTypeId: Number,
+  paramRepresentations: Js.Array<String>,
+  resultRepresentation: String,
+  typeFacts: Js.Array<GpuRepresentationFactDto>,
+};
+
+record GpuRootSpecializationDto = {
+  regionId: Number,
+  specializationId: Number,
+};
+
+record GpuSpecializedCallDto = {
+  callerSpecializationId: Number,
+  expressionId: Number,
+  targetSpecializationId: Number,
+};
+
+record GpuIrParamDto = {
+  bindingId: Number,
+  name: String,
+  typeId: Number,
+  representation: String,
+};
+
+record GpuIrExprDto = {
+  id: Number,
+  specializationId: Number,
+  sourceExprId: Number,
+  kind: String,
+  typeId: Number,
+  representation: String,
+  spanId: Number,
+  bindingId: Number,
+  name: String,
+  operator: String,
+  numberValue: Number,
+  boolValue: Bool,
+  children: Js.Array<Number>,
+  capability: String,
+  valueKind: String,
+  callTargetSpecializationId: Number,
+};
+
+record GpuIrFunctionDto = {
+  specializationId: Number,
+  functionId: Number,
+  bindingId: Number,
+  name: String,
+  params: Js.Array<GpuIrParamDto>,
+  resultTypeId: Number,
+  resultRepresentation: String,
+  bodyExprId: Number,
+  spanId: Number,
+};
+
+record GpuDiagnosticDto = {
+  code: String,
+  message: String,
+  spanId: Number,
+};
+
+record GpuCompilationOutputDto = {
+  schemaVersion: Number,
+  functions: Js.Array<TypedGpuFunctionDto>,
+  captures: Js.Array<GpuCaptureDto>,
+  specializations: Js.Array<GpuSpecializationDto>,
+  rootSpecializations: Js.Array<GpuRootSpecializationDto>,
+  calls: Js.Array<GpuSpecializedCallDto>,
+  irFunctions: Js.Array<GpuIrFunctionDto>,
+  irExpressions: Js.Array<GpuIrExprDto>,
+  types: Js.Array<GpuTypeDto>,
+  expressions: Js.Array<TypedGpuExprDto>,
+  diagnostics: Js.Array<GpuDiagnosticDto>,
+};
+
+-- Schema 2 is the deliberately small static-fragment vertical slice. The H0
+-- records above remain available to the separate compileGpu entry point while
+-- the slice is brought up atomically.
+
+record GpuSliceSpanDto = {
+  id: Number,
+  path: String,
+  line: Number,
+  col: Number,
+  start: Number,
+  end: Number,
+};
+
+record GpuSliceTypeDto = {
+  id: Number,
+  kind: String,
+  typeNameId: Number,
+  items: Js.Array<Number>,
+  params: Js.Array<Number>,
+  result: Number,
+};
+
+record GpuSliceAdtDto = {
+  typeNameId: Number,
+  name: String,
+  constructorIds: Js.Array<Number>,
+  spanId: Number,
+};
+
+record GpuSliceConstructorDto = {
+  id: Number,
+  typeNameId: Number,
+  name: String,
+  tag: Number,
+  payloadTypeId: Number,
+  spanId: Number,
+};
+
+record GpuSlicePatternDto = {
+  id: Number,
+  context: String,
+  kind: String,
+  typeId: Number,
+  bindingId: Number,
+  constructorId: Number,
+  children: Js.Array<Number>,
+  spanId: Number,
+};
+
+record GpuSliceParamDto = {
+  id: Number,
+  patternId: Number,
+  typeId: Number,
+  declaredIndex: Number,
+  spanId: Number,
+};
+
+record GpuSliceLetDto = {
+  id: Number,
+  patternId: Number,
+  valueExprId: Number,
+  declaredIndex: Number,
+  spanId: Number,
+};
+
+record GpuSliceMatchArmDto = {
+  id: Number,
+  patternId: Number,
+  bodyExprId: Number,
+  declaredIndex: Number,
+  spanId: Number,
+};
+
+record GpuSliceBlockItemDto = {
+  id: Number,
+  blockExprId: Number,
+  declaredIndex: Number,
+  kind: String,
+  expressionId: Number,
+  letId: Number,
+  spanId: Number,
+};
+
+record GpuSliceBlockDto = {
+  expressionId: Number,
+  itemIds: Js.Array<Number>,
+  resultExprId: Number,
+};
+
+record GpuSliceMatchDto = {
+  expressionId: Number,
+  valueExprId: Number,
+  armIds: Js.Array<Number>,
+};
+
+record GpuSliceExprDto = {
+  id: Number,
+  kind: String,
+  typeId: Number,
+  spanId: Number,
+  bindingId: Number,
+  functionId: Number,
+  constructorId: Number,
+  semanticId: String,
+  operatorId: String,
+  numberValue: Number,
+  boolValue: Bool,
+  children: Js.Array<Number>,
+};
+
+record GpuSliceFunctionDto = {
+  id: Number,
+  bindingId: Number,
+  name: String,
+  paramIds: Js.Array<Number>,
+  resultTypeId: Number,
+  bodyExprId: Number,
+  recursionGroupId: Number,
+  spanId: Number,
+};
+
+record GpuSliceRootDto = {
+  functionId: Number,
+  selectorSpanId: Number,
+};
+
+record GpuSliceRecursionGroupDto = {
+  id: Number,
+  memberFunctionIds: Js.Array<Number>,
+  spanId: Number,
+};
+
+record GpuSliceRecursiveReferenceDto = {
+  expressionId: Number,
+  groupId: Number,
+  targetFunctionId: Number,
+  relation: String,
+  invocation: String,
+  spanId: Number,
+};
+
+record GpuSliceElaborationInputDto = {
+  schemaVersion: Number,
+  sourcePath: String,
+  root: GpuSliceRootDto,
+  functions: Js.Array<GpuSliceFunctionDto>,
+  types: Js.Array<GpuSliceTypeDto>,
+  adts: Js.Array<GpuSliceAdtDto>,
+  constructors: Js.Array<GpuSliceConstructorDto>,
+  patterns: Js.Array<GpuSlicePatternDto>,
+  params: Js.Array<GpuSliceParamDto>,
+  lets: Js.Array<GpuSliceLetDto>,
+  matchArms: Js.Array<GpuSliceMatchArmDto>,
+  blockItems: Js.Array<GpuSliceBlockItemDto>,
+  blocks: Js.Array<GpuSliceBlockDto>,
+  matches: Js.Array<GpuSliceMatchDto>,
+  expressions: Js.Array<GpuSliceExprDto>,
+  recursionGroups: Js.Array<GpuSliceRecursionGroupDto>,
+  recursiveReferences: Js.Array<GpuSliceRecursiveReferenceDto>,
+  spans: Js.Array<GpuSliceSpanDto>,
+};
+
+record GpuSliceDiagnosticDto = {
+  code: String,
+  message: String,
+  spanId: Number,
+};
+
+record GpuSliceIrExprDto = {
+  id: Number,
+  functionId: Number,
+  sourceExprId: Number,
+  kind: String,
+  typeId: Number,
+  spanId: Number,
+  bindingId: Number,
+  patternId: Number,
+  targetFunctionId: Number,
+  constructorId: Number,
+  semanticId: String,
+  operatorId: String,
+  numberValue: Number,
+  boolValue: Bool,
+  children: Js.Array<Number>,
+  armIds: Js.Array<Number>,
+};
+
+record GpuSliceIrMatchArmDto = {
+  id: Number,
+  sourceArmId: Number,
+  patternId: Number,
+  bodyExprId: Number,
+  spanId: Number,
+};
+
+record GpuSliceIrFunctionDto = {
+  functionId: Number,
+  bindingId: Number,
+  name: String,
+  paramIds: Js.Array<Number>,
+  resultTypeId: Number,
+  bodyExprId: Number,
+  recursionGroupId: Number,
+  spanId: Number,
+};
+
+record GpuSliceAdtLayoutDto = {
+  id: Number,
+  typeId: Number,
+  typeNameId: Number,
+  fieldIds: Js.Array<Number>,
+  spanId: Number,
+};
+
+record GpuSliceAdtFieldDto = {
+  id: Number,
+  layoutId: Number,
+  constructorId: Number,
+  tag: Number,
+  typeId: Number,
+  spanId: Number,
+};
+
+record GpuSliceLoweringSeedDto = {
+  adtLayouts: Js.Array<GpuSliceAdtLayoutDto>,
+  adtFields: Js.Array<GpuSliceAdtFieldDto>,
+};
+
+record GpuSliceLoweredLocalDto = {
+  id: Number,
+  functionId: Number,
+  kind: String,
+  typeId: Number,
+  bindingId: Number,
+  mutable: Bool,
+  spanId: Number,
+};
+
+record GpuSliceLoweredAtomDto = {
+  id: Number,
+  functionId: Number,
+  kind: String,
+  typeId: Number,
+  sourceExprId: Number,
+  spanId: Number,
+  localId: Number,
+  numberValue: Number,
+  boolValue: Bool,
+};
+
+record GpuSliceLoweredOperationDto = {
+  id: Number,
+  functionId: Number,
+  kind: String,
+  typeId: Number,
+  sourceExprId: Number,
+  spanId: Number,
+  targetFunctionId: Number,
+  constructorId: Number,
+  layoutId: Number,
+  fieldId: Number,
+  operatorId: String,
+  semanticId: String,
+  index: Number,
+  args: Js.Array<Number>,
+};
+
+record GpuSliceLoweredStatementDto = {
+  id: Number,
+  functionId: Number,
+  kind: String,
+  sourceExprId: Number,
+  spanId: Number,
+  localId: Number,
+  operationId: Number,
+  atomId: Number,
+  conditionAtomId: Number,
+  thenBlockId: Number,
+  elseBlockId: Number,
+  scrutineeAtomId: Number,
+  layoutId: Number,
+  caseIds: Js.Array<Number>,
+  bodyBlockId: Number,
+  targetLocalIds: Js.Array<Number>,
+  valueAtomIds: Js.Array<Number>,
+  reason: String,
+};
+
+record GpuSliceLoweredBlockDto = {
+  id: Number,
+  functionId: Number,
+  statementIds: Js.Array<Number>,
+};
+
+record GpuSliceLoweredCaseDto = {
+  id: Number,
+  functionId: Number,
+  constructorId: Number,
+  tag: Number,
+  blockId: Number,
+  spanId: Number,
+};
+
+record GpuSliceLoweredFunctionDto = {
+  functionId: Number,
+  physicalParamLocalIds: Js.Array<Number>,
+  loopParamLocalIds: Js.Array<Number>,
+  bodyBlockId: Number,
+  recursive: Bool,
+  spanId: Number,
+};
+
+record GpuSliceLoweredProgramDto = {
+  functions: Js.Array<GpuSliceLoweredFunctionDto>,
+  locals: Js.Array<GpuSliceLoweredLocalDto>,
+  atoms: Js.Array<GpuSliceLoweredAtomDto>,
+  operations: Js.Array<GpuSliceLoweredOperationDto>,
+  statements: Js.Array<GpuSliceLoweredStatementDto>,
+  blocks: Js.Array<GpuSliceLoweredBlockDto>,
+  cases: Js.Array<GpuSliceLoweredCaseDto>,
+};
+
+record GpuSliceCompilationOutputDto = {
+  schemaVersion: Number,
+  program: GpuSliceElaborationInputDto,
+  irFunctions: Js.Array<GpuSliceIrFunctionDto>,
+  irExpressions: Js.Array<GpuSliceIrExprDto>,
+  irMatchArms: Js.Array<GpuSliceIrMatchArmDto>,
+  adtLayouts: Js.Array<GpuSliceAdtLayoutDto>,
+  adtFields: Js.Array<GpuSliceAdtFieldDto>,
+  loweredFunctions: Js.Array<GpuSliceLoweredFunctionDto>,
+  loweredLocals: Js.Array<GpuSliceLoweredLocalDto>,
+  loweredAtoms: Js.Array<GpuSliceLoweredAtomDto>,
+  loweredOperations: Js.Array<GpuSliceLoweredOperationDto>,
+  loweredStatements: Js.Array<GpuSliceLoweredStatementDto>,
+  loweredBlocks: Js.Array<GpuSliceLoweredBlockDto>,
+  loweredCases: Js.Array<GpuSliceLoweredCaseDto>,
+  slangSource: String,
+  diagnostics: Js.Array<GpuSliceDiagnosticDto>,
+};

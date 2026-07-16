@@ -18,7 +18,12 @@ import {
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
 import { expandCallArg } from "./shared.ts";
-import { originForScheme, recordPatternFact, type TypeFacts } from "./type_facts.ts";
+import {
+  originForScheme,
+  recordPatternFact,
+  recordPatternType,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function showPattern(pattern: Pattern): string {
   switch (pattern.kind) {
@@ -58,6 +63,7 @@ export function inferPattern(
   binders = new Set<string>(),
   facts?: TypeFacts,
 ): Ty {
+  if (facts) recordPatternType(facts, p, expected);
   switch (p.kind) {
     case "PWildcard":
       return expected;
@@ -186,6 +192,7 @@ export function inferBindingPattern(
   binders = new Set<string>(),
   facts?: TypeFacts,
 ) {
+  if (facts) recordPatternType(facts, pattern, expected);
   switch (pattern.kind) {
     case "PVar":
       if (binders.has(pattern.name)) throw new Error(`duplicate pattern binder ${pattern.name}`);

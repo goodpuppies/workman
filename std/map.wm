@@ -1,0 +1,202 @@
+type Ordering = Less | Equal | Greater;
+
+type MapTree<K, V> =
+  | MapEmpty
+  | MapNode<Number, K, V, MapTree<K, V>, MapTree<K, V>>;
+
+type Map<K, V> =
+  | MapValue<(K, K) => Ordering, MapTree<K, V>>;
+
+let numberCompare = (left, right) => {
+  if (left < right) {
+    Less
+  } else {
+    if (left > right) { Greater } else { Equal }
+  }
+};
+
+let height = match(tree) => {
+  MapEmpty => { 0 },
+  MapNode(nodeHeight, _key, _value, _left, _right) => { nodeHeight }
+};
+
+let max = (left, right) => {
+  if (left > right) { left } else { right }
+};
+
+let node = (key, value, left, right) => {
+  MapNode(1 + max(height(left), height(right)), key, value, left, right)
+};
+
+let rotateLeft = match(tree) => {
+  MapNode(_height, key, value, left, MapNode(_rightHeight, rightKey, rightValue, rightLeft, rightRight)) => {
+    node(rightKey, rightValue, node(key, value, left, rightLeft), rightRight)
+  },
+  _ => { tree }
+};
+
+let rotateRight = match(tree) => {
+  MapNode(_height, key, value, MapNode(_leftHeight, leftKey, leftValue, leftLeft, leftRight), right) => {
+    node(leftKey, leftValue, leftLeft, node(key, value, leftRight, right))
+  },
+  _ => { tree }
+};
+
+let balance = match(tree) => {
+  MapEmpty => { MapEmpty },
+  MapNode(_height, key, value, left, right) => {
+    let difference = height(left) - height(right);
+    if (difference > 1) {
+      match(left) {
+        MapNode(_leftHeight, _leftKey, _leftValue, leftLeft, leftRight) => {
+          if (height(leftLeft) < height(leftRight)) {
+            rotateRight(node(key, value, rotateLeft(left), right))
+          } else {
+            rotateRight(node(key, value, left, right))
+          }
+        },
+        MapEmpty => { node(key, value, left, right) }
+      }
+    } else {
+      if (difference < -1) {
+        match(right) {
+          MapNode(_rightHeight, _rightKey, _rightValue, rightLeft, rightRight) => {
+            if (height(rightRight) < height(rightLeft)) {
+              rotateLeft(node(key, value, left, rotateRight(right)))
+            } else {
+              rotateLeft(node(key, value, left, right))
+            }
+          },
+          MapEmpty => { node(key, value, left, right) }
+        }
+      } else {
+        node(key, value, left, right)
+      }
+    }
+  }
+};
+
+let empty = (compare) => {
+  MapValue(compare, MapEmpty)
+};
+
+let rec getTree = match(tree, key, compare) => {
+  (MapEmpty, _, _) => { None },
+  (MapNode(_height, nodeKey, value, left, right), key, compare) => {
+    match(compare(key, nodeKey)) {
+      Less => { getTree(left, key, compare) },
+      Equal => { Some(value) },
+      Greater => { getTree(right, key, compare) }
+    }
+  }
+};
+
+let get = match(map, key) => {
+  (MapValue(compare, tree), key) => { getTree(tree, key, compare) }
+};
+
+let has = (map, key) => {
+  match(get(map, key)) {
+    Some(_) => { true },
+    None => { false }
+  }
+};
+
+let rec setTree = match(tree, key, value, compare) => {
+  (MapEmpty, key, value, _) => { node(key, value, MapEmpty, MapEmpty) },
+  (MapNode(_height, nodeKey, nodeValue, left, right), key, value, compare) => {
+    match(compare(key, nodeKey)) {
+      Less => { balance(node(nodeKey, nodeValue, setTree(left, key, value, compare), right)) },
+      Equal => { node(nodeKey, value, left, right) },
+      Greater => { balance(node(nodeKey, nodeValue, left, setTree(right, key, value, compare))) }
+    }
+  }
+};
+
+let set = match(map, key, value) => {
+  (MapValue(compare, tree), key, value) => {
+    MapValue(compare, setTree(tree, key, value, compare))
+  }
+};
+
+let singleton = (compare, key, value) => {
+  empty(compare) :> set(key, value)
+};
+
+let rec removeSmallest = match(tree) => {
+  MapNode(_height, key, value, MapEmpty, right) => { (key, value, right) },
+  MapNode(_height, key, value, left, right) => {
+    let (smallestKey, smallestValue, remainingLeft) = removeSmallest(left);
+    (smallestKey, smallestValue, balance(node(key, value, remainingLeft, right)))
+  },
+  MapEmpty => { Panic("Map.removeSmallest called with an empty tree") }
+};
+
+let rec removeTree = match(tree, key, compare) => {
+  (MapEmpty, _, _) => { MapEmpty },
+  (MapNode(_height, nodeKey, value, left, right), key, compare) => {
+    match(compare(key, nodeKey)) {
+      Less => { balance(node(nodeKey, value, removeTree(left, key, compare), right)) },
+      Greater => { balance(node(nodeKey, value, left, removeTree(right, key, compare))) },
+      Equal => {
+        match((left, right)) {
+          (MapEmpty, _) => { right },
+          (_, MapEmpty) => { left },
+          (_, right) => {
+            let (nextKey, nextValue, remainingRight) = removeSmallest(right);
+            balance(node(nextKey, nextValue, left, remainingRight))
+          }
+        }
+      }
+    }
+  }
+};
+
+let remove = match(map, key) => {
+  (MapValue(compare, tree), key) => {
+    MapValue(compare, removeTree(tree, key, compare))
+  }
+};
+
+let update = (map, key, transform) => {
+  match(transform(get(map, key))) {
+    Some(value) => { set(map, key, value) },
+    None => { remove(map, key) }
+  }
+};
+
+let rec foldTree = match(tree, initial, combine) => {
+  (MapEmpty, initial, _) => { initial },
+  (MapNode(_height, key, value, left, right), initial, combine) => {
+    let afterLeft = foldTree(left, initial, combine);
+    foldTree(right, combine(afterLeft, key, value), combine)
+  }
+};
+
+let fold = match(map, initial, combine) => {
+  (MapValue(_compare, tree), initial, combine) => { foldTree(tree, initial, combine) }
+};
+
+let rec toListTree = match(tree, tail) => {
+  (MapEmpty, tail) => { tail },
+  (MapNode(_height, key, value, left, right), tail) => {
+    toListTree(left, [(key, value), ..toListTree(right, tail)])
+  }
+};
+
+let toList = match(map) => {
+  MapValue(_compare, tree) => { toListTree(tree, []) }
+};
+
+let debugHeight = match(map) => {
+  MapValue(_compare, tree) => { height(tree) }
+};
+
+let rec fromListItems = match(map, items) => {
+  (map, []) => { map },
+  (map, [(Var(key), Var(value)), ..rest]) => { fromListItems(set(map, key, value), rest) }
+};
+
+let fromList = (compare, items) => {
+  fromListItems(empty(compare), items)
+};
