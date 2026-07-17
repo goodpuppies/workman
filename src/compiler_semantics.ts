@@ -18,6 +18,10 @@ export const BASIS_TYPE_NAME_IDS = {
   "Gpu.Color": -15,
   "Gpu.Fragment": -16,
   "Gpu.Uniform": -17,
+  "Gpu.Texture2D": -18,
+  "Gpu.SampledTexture2D": -19,
+  "Gpu.RenderTarget2D": -20,
+  "Gpu.Sampler": -21,
 } as const satisfies Record<string, number>;
 
 export function basisTypeNameId(name: string): TypeNameId | undefined {
@@ -40,6 +44,16 @@ export const GPU_SEMANTIC_IDS = {
   uniformBinding: "gpu.uniform-binding",
   uniformByteLength: "gpu.uniform-byte-length",
   uniformBytes: "gpu.uniform-bytes",
+  texture2D: "gpu.texture-2d",
+  sampledTexture2D: "gpu.sampled-texture-2d",
+  renderTarget2D: "gpu.render-target-2d",
+  nearestSampler: "gpu.nearest-sampler",
+  linearSampler: "gpu.linear-sampler",
+  destroyTexture2D: "gpu.destroy-texture-2d",
+  bindGroupEntries: "gpu.bind-group-entries",
+  bindingCount: "gpu.binding-count",
+  renderTargetView: "gpu.render-target-view",
+  validateRenderTarget: "gpu.validate-render-target",
 } as const;
 
 export type CompilerSemanticId = (typeof GPU_SEMANTIC_IDS)[keyof typeof GPU_SEMANTIC_IDS];

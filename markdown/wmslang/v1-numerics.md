@@ -1,9 +1,10 @@
 # wmslang deferred numeric representation solving
 
-Status: deferred dual-representation design. The vertical slice in
-[`v1-scope.md`](./v1-scope.md) maps every reachable Workman `Number` directly to shader `f32` and
-does not implement representation variables, `i32`, conversions, defaulting, vector
-classification, or numeric specialization. This document is a candidate subsequent numeric slice.
+Status: historical deferred dual-representation design. The implemented vertical slices through V4
+map every reachable Workman `Number` directly to shader `f32`. The authoritative next numeric scope
+is now [`v5-scope.md`](./v5-scope.md): it retains spelling-based `i32`/`f32` evidence, explicit
+conversions, and occurrence-local representation solving from this document, but deliberately
+rejects unresolved reachable representations instead of applying this draft's `i32` default.
 
 Terminology note: unqualified “v1” statements below describe the former expanded numeric contract.
 

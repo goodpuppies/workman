@@ -43,16 +43,13 @@ let layoutName = (id) => { "wm_adt_" ++ text(id) };
 let constructorName = (id) => { "wm_make_ctor_" ++ text(id) };
 let payloadFieldName = (id) => { "wm_p_" ++ text(id) };
 let uniformFieldName = (index) => { "wm_u_" ++ text(index) };
+let resourceFieldName = (binding) => { "wm_r_" ++ text(binding) };
 let recursiveResultName = (id) => { "wm_result_" ++ text(id) };
 let recursiveDoneName = (id) => { "wm_done_" ++ text(id) };
 
 let rec listLength = match(items, count) => {
   ([], Var(count)) => { count },
   ([Var(_item), ..rest], Var(count)) => { listLength(rest, count + 1) }
-};
-
-let vectorName = (gpuType: GpuSliceTypeDto) => {
-  "float" ++ text(listLength(Js.Array.toList(gpuType.items), 0))
 };
 
 let vectorLaneName = (index: Number) => {
@@ -72,6 +69,15 @@ let rec findType = match(items, id) => {
   ([Var(item), ..rest], Var(id)) => {
     if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
   }
+};
+
+let vectorName = (gpuType: GpuSliceTypeDto, context: SliceEmitContext) => {
+  let scalar = match(Js.Array.toList(gpuType.items)) {
+    [typeId, .._] => { findType(context.types, typeId) },
+    [] => { Panic("shader vector has no component type") }
+  };
+  (if (scalar.kind == "i32") { "int" } else { "float" }) ++
+    text(listLength(Js.Array.toList(gpuType.items), 0))
 };
 
 let rec findEnvironmentField = match(items, environmentId, index) => {
@@ -181,23 +187,35 @@ let typeName = (typeId, context: SliceEmitContext) => {
   if (gpuType.kind == "f32") {
     "float"
   } else {
-    if (gpuType.kind == "bool") {
-      "bool"
+    if (gpuType.kind == "i32") {
+      "int"
     } else {
-      if (gpuType.kind == "void") {
-        "void"
+      if (gpuType.kind == "bool") {
+      "bool"
       } else {
-        if (gpuType.kind == "vector") {
-          vectorName(gpuType)
+        if (gpuType.kind == "void") {
+          "void"
         } else {
-          if (gpuType.kind == "tuple") {
-            tupleName(typeId)
+          if (gpuType.kind == "vector") {
+            vectorName(gpuType, context)
           } else {
-            if (gpuType.kind == "adt") {
-              let layout = findLayoutByType(context.layouts, typeId);
-              layoutName(layout.id)
+            if (gpuType.kind == "tuple") {
+              tupleName(typeId)
             } else {
-              Panic("function type reached Slang value emission")
+              if (gpuType.kind == "adt") {
+                let layout = findLayoutByType(context.layouts, typeId);
+                layoutName(layout.id)
+              } else {
+                if (gpuType.kind == "sampled-texture-2d") {
+                  "Texture2D<float4>"
+                } else {
+                  if (gpuType.kind == "sampler") {
+                    "SamplerState"
+                  } else {
+                    Panic("function type reached Slang value emission")
+                  }
+                }
+              }
             }
           }
         }
@@ -212,9 +230,33 @@ let rec emitEnvironmentFields = match(items, context, output) => {
     emitEnvironmentFields(
       rest,
       context,
-      output ++ "  " ++ typeName(field.typeId, context) ++ " " ++
-        uniformFieldName(field.declaredIndex) ++ ";\n"
+      if (field.kind == "uniform") {
+        output ++ "  " ++ typeName(field.typeId, context) ++ " " ++
+          uniformFieldName(field.declaredIndex) ++ ";\n"
+      } else {
+        output
+      }
     )
+  }
+};
+
+let rec hasUniformField = match(items) => {
+  [] => { false },
+  [Var(field), ..rest] => {
+    if (field.kind == "uniform") { true } else { hasUniformField(rest) }
+  }
+};
+
+let rec emitResourceDeclarations = match(items, context, output) => {
+  ([], Var(_context), Var(output)) => { output },
+  ([Var(field), ..rest], Var(context), Var(output)) => {
+    let next = if (field.kind == "uniform") {
+      output
+    } else {
+      output ++ "[[vk::binding(" ++ text(field.binding) ++ ", 0)]]\n" ++
+        typeName(field.typeId, context) ++ " " ++ resourceFieldName(field.binding) ++ ";\n\n"
+    };
+    emitResourceDeclarations(rest, context, next)
   }
 };
 
@@ -223,9 +265,14 @@ let emitEnvironmentDeclaration = (context: SliceEmitContext) => {
     ""
   } else {
     let fields: List<GpuSliceEnvironmentFieldDto> = context.environmentFields;
-    "struct wm_environment {\n" ++ emitEnvironmentFields(fields, context, "") ++ "};\n" ++
-      "[[vk::binding(0, 0)]]\n" ++
-      "ConstantBuffer<wm_environment> wm_uniforms;\n\n"
+    let uniformDeclaration = if (hasUniformField(fields)) {
+      "struct wm_environment {\n" ++ emitEnvironmentFields(fields, context, "") ++ "};\n" ++
+        "[[vk::binding(0, 0)]]\n" ++
+        "ConstantBuffer<wm_environment> wm_uniforms;\n\n"
+    } else {
+      ""
+    };
+    uniformDeclaration ++ emitResourceDeclarations(fields, context, "")
   }
 };
 
@@ -361,18 +408,15 @@ let rec emitLayoutDeclarations = match(layouts, context, output) => {
 
 let emitAtom = (atomId, context: SliceEmitContext) => {
   let atom = findAtom(context.atoms, atomId);
-  if (atom.kind == "local") {
-    localName(atom.localId)
-  } else {
-    if (atom.kind == "number") {
-      "float(" ++ text(atom.numberValue) ++ ")"
-    } else {
-      if (atom.kind == "bool") {
-        if (atom.boolValue) { "true" } else { "false" }
-      } else {
-        ""
-      }
-    }
+  match(atom.kind) {
+    "local" => { localName(atom.localId) },
+    "number" => {
+      let gpuType = findType(context.types, atom.typeId);
+      (if (gpuType.kind == "i32") { "int(" } else { "float(" }) ++
+        text(atom.numberValue) ++ ")"
+    },
+    "bool" => { if (atom.boolValue) { "true" } else { "false" } },
+    _ => { "" }
   }
 };
 
@@ -385,99 +429,134 @@ let rec emitArgs = match(atomIds, context, output) => {
   }
 };
 
-let operatorText = (operatorId) => {
-  if (operatorId == "gpu.operator.negate") { "-" } else {
-    if (operatorId == "gpu.operator.not") { "!" } else {
-      if (operatorId == "gpu.operator.add") { "+" } else {
-        if (operatorId == "gpu.operator.subtract") { "-" } else {
-          if (operatorId == "gpu.operator.multiply") { "*" } else {
-            if (operatorId == "gpu.operator.divide") { "/" } else {
-              if (operatorId == "gpu.operator.less-than") { "<" } else {
-                if (operatorId == "gpu.operator.less-than-or-equal") { "<=" } else {
-                  if (operatorId == "gpu.operator.greater-than") { ">" } else {
-                    if (operatorId == "gpu.operator.greater-than-or-equal") { ">=" } else {
-                      if (operatorId == "gpu.operator.equal") { "==" } else {
-                        if (operatorId == "gpu.operator.not-equal") { "!=" } else {
-                          if (operatorId == "gpu.operator.and") { "&&" } else {
-                            if (operatorId == "gpu.operator.or") { "||" } else {
-                              Panic("unsupported Slang-emission operator")
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+let operatorText = match(operatorId) => {
+  "gpu.operator.negate" => { "-" },
+  "gpu.operator.not" => { "!" },
+  "gpu.operator.add" => { "+" },
+  "gpu.operator.subtract" => { "-" },
+  "gpu.operator.multiply" => { "*" },
+  "gpu.operator.divide" => { "/" },
+  "gpu.operator.remainder" => { "%" },
+  "gpu.operator.less-than" => { "<" },
+  "gpu.operator.less-than-or-equal" => { "<=" },
+  "gpu.operator.greater-than" => { ">" },
+  "gpu.operator.greater-than-or-equal" => { ">=" },
+  "gpu.operator.equal" => { "==" },
+  "gpu.operator.not-equal" => { "!=" },
+  "gpu.operator.and" => { "&&" },
+  "gpu.operator.or" => { "||" },
+  _ => { Panic("unsupported Slang-emission operator") }
+};
+
+let emitResourceCall = (operation, args, context: SliceEmitContext) => {
+  match(operation.resourceOperation) {
+    "sample" => {
+      match(args) {
+        [Var(texture), Var(sampler), Var(coordinate)] => {
+          emitAtom(texture, context) ++ ".Sample(" ++ emitAtom(sampler, context) ++ ", " ++
+            emitAtom(coordinate, context) ++ ")"
+        },
+        _ => { Panic("texture Sample reached Slang emission with invalid arity") }
       }
+    },
+    "load" => {
+      match(args) {
+        [Var(texture), Var(coordinate)] => {
+          emitAtom(texture, context) ++ ".Load(" ++ emitAtom(coordinate, context) ++ ")"
+        },
+        _ => { Panic("texture Load reached Slang emission with invalid arity") }
+      }
+    },
+    _ => { Panic("resource call reached Slang emission without an operation") }
+  }
+};
+
+let emitProjection = (operation, args, context: SliceEmitContext) => {
+  match(args) {
+    [Var(atomId)] => {
+      let atom = findAtom(context.atoms, atomId);
+      let sourceType = findType(context.types, atom.typeId);
+      if (sourceType.kind == "vector") {
+        emitAtom(atomId, context) ++ "." ++ vectorLaneName(operation.index)
+      } else {
+        emitAtom(atomId, context) ++ "." ++ tupleFieldName(operation.index)
+      }
+    },
+    _ => { Panic("projection reached Slang emission with invalid arity") }
+  }
+};
+
+let emitOperatorOperation = (operation, args, context: SliceEmitContext) => {
+  let signedMinimum = match(args) {
+    [Var(atomId)] => {
+      let atom = findAtom(context.atoms, atomId);
+      operation.operatorId == "gpu.operator.negate" && atom.kind == "number" &&
+        atom.numberKind == "i32" && numberEqual(atom.numberValue, 2147483648)
+    },
+    _ => { false }
+  };
+  if (signedMinimum) {
+    "int(-2147483648)"
+  } else {
+    match(args) {
+      [Var(left)] => {
+        "(" ++ operatorText(operation.operatorId) ++ emitAtom(left, context) ++ ")"
+      },
+      [Var(left), Var(right)] => {
+        "(" ++ emitAtom(left, context) ++ " " ++ operatorText(operation.operatorId) ++
+          " " ++ emitAtom(right, context) ++ ")"
+      },
+      _ => { Panic("operator reached Slang emission with invalid arity") }
     }
   }
 };
 
 let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitContext) => {
   let args = Js.Array.toList(operation.args);
-  if (operation.kind == "uniform") {
-    let field = findEnvironmentField(
-      context.environmentFields,
-      context.input.root.environmentId,
-      operation.index
-    );
-    "wm_uniforms." ++ uniformFieldName(field.declaredIndex)
-  } else {
-  if (operation.kind == "copy") {
-    emitArgs(args, context, "")
-  } else {
-    if (operation.kind == "tuple") {
+  match(operation.kind) {
+    "uniform" => {
+      let field = findEnvironmentField(
+        context.environmentFields,
+        context.input.root.environmentId,
+        operation.index
+      );
+      "wm_uniforms." ++ uniformFieldName(field.declaredIndex)
+    },
+    "resource" => {
+      let field = findEnvironmentField(
+        context.environmentFields,
+        context.input.root.environmentId,
+        operation.index
+      );
+      resourceFieldName(field.binding)
+    },
+    "resource-call" => { emitResourceCall(operation, args, context) },
+    "copy" => { emitArgs(args, context, "") },
+    "tuple" => {
       let resultType = findType(context.types, operation.typeId);
       let constructor = if (resultType.kind == "vector") {
-        vectorName(resultType)
+        vectorName(resultType, context)
       } else {
         tupleFactoryName(operation.typeId)
       };
       constructor ++ "(" ++ emitArgs(args, context, "") ++ ")"
-    } else {
-      if (operation.kind == "project") {
-        match(args) {
-          [Var(atomId)] => {
-            let atom = findAtom(context.atoms, atomId);
-            let sourceType = findType(context.types, atom.typeId);
-            if (sourceType.kind == "vector") {
-              emitAtom(atomId, context) ++ "." ++ vectorLaneName(operation.index)
-            } else {
-              emitAtom(atomId, context) ++ "." ++ tupleFieldName(operation.index)
-            }
-          },
-          _ => { Panic("projection reached Slang emission with invalid arity") }
-        }
-      } else {
-        if (operation.kind == "call") {
-          functionName(operation.targetFunctionId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
-        } else {
-          if (operation.kind == "construct") {
-            constructorName(operation.constructorId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
-          } else {
-            if (operation.kind == "payload") {
-              emitArgs(args, context, "") ++ "." ++ payloadFieldName(operation.fieldId)
-            } else {
-              match(args) {
-                [Var(left)] => {
-                  "(" ++ operatorText(operation.operatorId) ++ emitAtom(left, context) ++ ")"
-                },
-                [Var(left), Var(right)] => {
-                  "(" ++ emitAtom(left, context) ++ " " ++ operatorText(operation.operatorId) ++
-                    " " ++ emitAtom(right, context) ++ ")"
-                },
-                _ => { Panic("operator reached Slang emission with invalid arity") }
-              }
-            }
-          }
-        }
-      }
-    }
-  }}
+    },
+    "project" => { emitProjection(operation, args, context) },
+    "call" => {
+      functionName(operation.targetFunctionId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+    },
+    "convert" => {
+      typeName(operation.typeId, context) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+    },
+    "builtin" => { operation.builtinName ++ "(" ++ emitArgs(args, context, "") ++ ")" },
+    "construct" => {
+      constructorName(operation.constructorId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
+    },
+    "payload" => { emitArgs(args, context, "") ++ "." ++ payloadFieldName(operation.fieldId) },
+    "binary" => { emitOperatorOperation(operation, args, context) },
+    "unary" => { emitOperatorOperation(operation, args, context) },
+    _ => { Panic("unsupported Slang-emission operation") }
+  }
 };
 
 let rec emitBlockStatements = match(statementIds, indent, context, output) => {

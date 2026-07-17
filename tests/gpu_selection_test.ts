@@ -7,6 +7,7 @@ import { GPU_SEMANTIC_IDS } from "../src/compiler_semantics.ts";
 import { GpuFragmentSelectionError } from "../src/gpu_selection.ts";
 import type { VisualShaderArtifactV1 } from "../src/gpu_artifact.ts";
 import { baseEnv, baseTypeEnv } from "../src/types.ts";
+import { GPU_SLICE_SCHEMA_VERSION } from "../src/wmslang/v2_dto.ts";
 
 Deno.test("compiler Gpu basis carries closed semantic identity", async () => {
   const analysis = await analyzeVirtual(
@@ -67,7 +68,7 @@ Deno.test("fragment selection resolves same-module aliases into the selected sli
     analysis.fragmentSelections.roots[0].bindingId,
     analysis.bindings.get("/test/main.wm")!.exports.get("shade"),
   );
-  assertEquals(analysis.gpuInput.schemaVersion, 2);
+  assertEquals(analysis.gpuInput.schemaVersion, GPU_SLICE_SCHEMA_VERSION);
   assertEquals(analysis.gpuInput.root.functionId, 0);
   assertEquals(analysis.gpuInput.functions.map((fn) => fn.name), ["shade"]);
 });

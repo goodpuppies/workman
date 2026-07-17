@@ -3,7 +3,7 @@
 --   deno run -A src/main.ts run examples/wmslang_window/src/main.wm
 
 from "./sdl_window.wm" import {
-  NativeRuntime, NativeError, QuitEvent, MouseEvent, IgnoredEvent, NoEvent,
+  NativeRuntime, NativeError, QuitEvent, MouseEvent, ResizeEvent, IgnoredEvent, NoEvent,
   startNative, nativeSurface, pollNative, delayNative, presentNative, closeNative
 };
 from "./webgpu_present.wm" import {
@@ -41,7 +41,7 @@ let mandelbrotShade = (uniforms: MandelbrotUniforms) => {
       } else {
         let magnitudeSquared = zx * zx + zy * zy;
         if (magnitudeSquared > 4.0) {
-          Escaped(remaining)
+          Escaped(Gpu.f32(remaining))
         } else {
           let nextX = zx * zx - zy * zy + cx;
           let nextY = 2.0 * zx * zy + cy;
@@ -52,7 +52,7 @@ let mandelbrotShade = (uniforms: MandelbrotUniforms) => {
 
     let pixel = (coord * 2.0 - uniforms.resolution) / uniforms.resolution.y;
     let c = pixel * uniforms.scale + uniforms.center;
-    let escape = escapeIterations(c.x, c.y, 0.0, 0.0, 128.0);
+    let escape = escapeIterations(c.x, c.y, 0.0, 0.0, 128);
 
     match(escape) {
       Inside => {
@@ -102,6 +102,7 @@ let applyNativeEvent = (state: FrameState, event) => {
       PollDone(next)
     },
     MouseEvent(dx, dy) => { PollAgain(panByMouse(state, dx, dy)) },
+    ResizeEvent(_width, _height) => { PollAgain(state) },
     IgnoredEvent => { PollAgain(state) },
     NoEvent => { PollDone(state) }
   }

@@ -60,13 +60,32 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
   const colorInfo = typeEnv.get("Gpu.Color");
   const fragmentInfo = typeEnv.get("Gpu.Fragment");
   const uniformInfo = typeEnv.get("Gpu.Uniform");
+  const textureInfo = typeEnv.get("Gpu.Texture2D");
+  const sampledTextureInfo = typeEnv.get("Gpu.SampledTexture2D");
+  const renderTargetInfo = typeEnv.get("Gpu.RenderTarget2D");
+  const samplerInfo = typeEnv.get("Gpu.Sampler");
   const jsArrayInfo = typeEnv.get("Js.Array");
-  if (!colorInfo || !fragmentInfo || !uniformInfo || !jsArrayInfo) {
+  const jsObjectInfo = typeEnv.get("Js.Object");
+  const jsErrorInfo = typeEnv.get("Js.Error");
+  const resultInfo = typeEnv.get("Result");
+  const optionInfo = typeEnv.get("Option");
+  if (
+    !colorInfo || !fragmentInfo || !uniformInfo || !textureInfo || !sampledTextureInfo ||
+    !renderTargetInfo || !samplerInfo || !jsArrayInfo || !jsObjectInfo || !jsErrorInfo ||
+    !resultInfo || !optionInfo
+  ) {
     throw new Error("missing compiler-owned Gpu basis types");
   }
 
   const rgba = tuple([NumberTy, NumberTy, NumberTy, NumberTy]);
   const fragment = named(fragmentInfo);
+  const texture = named(textureInfo);
+  const sampledTexture = named(sampledTextureInfo);
+  const renderTarget = named(renderTargetInfo);
+  const sampler = named(samplerInfo);
+  const jsError = named(jsErrorInfo);
+  const jsObject = named(jsObjectInfo);
+  const result = (value: Ty) => named(resultInfo, [value, jsError]);
   const basisFn = (
     name: string,
     semanticId: CompilerSemanticId,
@@ -166,6 +185,78 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
     GPU_SEMANTIC_IDS.uniformBytes,
     named(jsArrayInfo, [NumberTy]),
   );
+
+  {
+    const device = fresh("gpuDevice") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Gpu.texture2D",
+      GPU_SEMANTIC_IDS.texture2D,
+      [device],
+      fn([tuple([device, NumberTy, NumberTy])], result(texture)),
+    );
+  }
+  basisFn(
+    "Gpu.sampledTexture2D",
+    GPU_SEMANTIC_IDS.sampledTexture2D,
+    [],
+    fn([texture], result(sampledTexture)),
+  );
+  basisFn(
+    "Gpu.renderTarget2D",
+    GPU_SEMANTIC_IDS.renderTarget2D,
+    [],
+    fn([texture], result(renderTarget)),
+  );
+  for (
+    const [name, semanticId] of [
+      ["Gpu.nearestSampler", GPU_SEMANTIC_IDS.nearestSampler],
+      ["Gpu.linearSampler", GPU_SEMANTIC_IDS.linearSampler],
+    ] as const
+  ) {
+    const device = fresh("gpuDevice") as Extract<Ty, { tag: "var" }>;
+    basisFn(name, semanticId, [device], fn([device], result(sampler)));
+  }
+  basisFn(
+    "Gpu.destroyTexture2D",
+    GPU_SEMANTIC_IDS.destroyTexture2D,
+    [],
+    fn([texture], result(VoidTy)),
+  );
+  {
+    const device = fresh("gpuDevice") as Extract<Ty, { tag: "var" }>;
+    const buffer = fresh("gpuUniformBuffer") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Gpu.bindGroupEntries",
+      GPU_SEMANTIC_IDS.bindGroupEntries,
+      [device, buffer],
+      fn(
+        [tuple([fragment, device, named(optionInfo, [buffer])])],
+        result(named(jsArrayInfo, [jsObject])),
+      ),
+    );
+  }
+  addGpuUniformAccessor(
+    env,
+    fragmentInfo,
+    "Gpu.bindingCount",
+    GPU_SEMANTIC_IDS.bindingCount,
+    NumberTy,
+  );
+  basisFn(
+    "Gpu.renderTargetView",
+    GPU_SEMANTIC_IDS.renderTargetView,
+    [],
+    fn([renderTarget], result(jsObject)),
+  );
+  {
+    const device = fresh("gpuDevice") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Gpu.validateRenderTarget",
+      GPU_SEMANTIC_IDS.validateRenderTarget,
+      [device],
+      fn([tuple([fragment, renderTarget, device])], result(VoidTy)),
+    );
+  }
 }
 
 function addGpuUniformAccessor(
@@ -330,6 +421,19 @@ export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
       basis: true,
       argLabels: ["value"],
     });
+    for (
+      const name of [
+        "Gpu.Texture2D",
+        "Gpu.SampledTexture2D",
+        "Gpu.RenderTarget2D",
+        "Gpu.Sampler",
+      ]
+    ) {
+      basisTypeEnvCache.set(name, {
+        ...freshTypeInfo(name, 0),
+        basis: true,
+      });
+    }
     for (const type of basisTypes) {
       basisTypeEnvCache.set(type.name, {
         ...freshTypeInfo(type.name, type.params.length),

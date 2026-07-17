@@ -1,7 +1,14 @@
 import { GPU_OPERATOR_IDS } from "../gpu_operators.ts";
+import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
+import {
+  WMSLANG_BUILTIN_CATALOG_IDENTITY,
+  WMSLANG_BUILTIN_CATALOG_SCHEMA_VERSION,
+  WMSLANG_BUILTIN_OVERLOADS,
+} from "./builtin_catalog.generated.ts";
 import {
   GPU_SLICE_SCHEMA_VERSION,
   type GpuSliceCompilationOutput,
+  type GpuSliceDiagnosticDto,
   type GpuSliceElaborationInput,
   type GpuSliceShaderTypeDto,
   type GpuSliceTypeElaborationOutput,
@@ -14,15 +21,20 @@ const semanticTypeKinds = new Set([
   "tuple",
   "function",
   "adt",
+  "sampled-texture-2d",
+  "sampler",
 ]);
 const shaderTypeKinds = new Set([
   "f32",
+  "i32",
   "bool",
   "void",
   "vector",
   "tuple",
   "function",
   "adt",
+  "sampled-texture-2d",
+  "sampler",
 ]);
 const patternKinds = new Set(["wildcard", "binding", "tuple", "constructor"]);
 const patternContexts = new Set(["parameter", "let", "match"]);
@@ -32,10 +44,14 @@ const expressionKinds = new Set([
   "void",
   "var",
   "uniform",
+  "resource",
+  "resource-call",
   "project",
   "copy",
+  "convert",
   "tuple",
   "call",
+  "builtin",
   "constructor",
   "if",
   "match",
@@ -49,10 +65,14 @@ const irExpressionKinds = new Set([
   "void",
   "local",
   "uniform",
+  "resource",
+  "resource-call",
   "project",
   "copy",
+  "convert",
   "tuple",
   "call",
+  "builtin",
   "constructor",
   "if",
   "match",
@@ -74,10 +94,14 @@ const loweredLocalKinds = new Set([
 const loweredAtomKinds = new Set(["local", "number", "bool", "void"]);
 const loweredOperationKinds = new Set([
   "copy",
+  "convert",
   "tuple",
   "uniform",
+  "resource",
+  "resource-call",
   "project",
   "call",
+  "builtin",
   "construct",
   "binary",
   "unary",
@@ -100,11 +124,28 @@ const loweredStatementReasons = new Set([
   "loop-initial",
   "tail-next",
 ]);
+const numberKinds = new Set(["", "i32", "f32"]);
+const resourceOperations = new Set(["", "sample", "load"]);
+const conversionSemanticIds = new Set([GPU_SEMANTIC_IDS.i32, GPU_SEMANTIC_IDS.f32]);
 
 export type WmslangSliceCompiler = {
   compileGpuSlice(input: GpuSliceElaborationInput): GpuSliceCompilationOutput;
   elaborateGpuSliceTypes(input: GpuSliceElaborationInput): GpuSliceTypeElaborationOutput;
 };
+
+export class WmslangNumericDiagnosticError extends Error {
+  languageServiceInput?: GpuSliceElaborationInput;
+
+  constructor(readonly diagnostic: GpuSliceDiagnosticDto) {
+    super(diagnostic.message);
+    this.name = "WmslangNumericDiagnosticError";
+  }
+
+  withLanguageServiceInput(input: GpuSliceElaborationInput): this {
+    this.languageServiceInput = input;
+    return this;
+  }
+}
 
 export async function loadWmslangSliceCompiler(
   moduleUrl: URL | string,
@@ -124,13 +165,64 @@ export async function loadWmslangSliceCompiler(
   return {
     compileGpuSlice(input) {
       validateGpuSliceElaborationInput(input);
-      return validateGpuSliceCompilationOutput(compileGpuSlice(input));
+      try {
+        return validateGpuSliceCompilationOutput(compileGpuSlice(input));
+      } catch (error) {
+        throw decodeNumericDiagnostic(error, input);
+      }
     },
     elaborateGpuSliceTypes(input) {
       validateGpuSliceElaborationInput(input);
-      return validateGpuSliceTypeElaborationOutput(elaborateGpuSliceTypes(input), input);
+      try {
+        return validateGpuSliceTypeElaborationOutput(elaborateGpuSliceTypes(input), input);
+      } catch (error) {
+        throw decodeNumericDiagnostic(error, input);
+      }
     },
   };
+}
+
+function decodeNumericDiagnostic(
+  error: unknown,
+  input: GpuSliceElaborationInput,
+): unknown {
+  if (!(error instanceof Error)) return error;
+  const conflict = error.message.match(
+    /^WM_GPU_NUMERIC_CONFLICT\|(\d+)\|(\d+)\|(i32|f32)\|(i32|f32)$/,
+  );
+  if (conflict) {
+    const leftSpanId = Number(conflict[1]);
+    const rightSpanId = Number(conflict[2]);
+    requireNumericSpan(input, leftSpanId);
+    requireNumericSpan(input, rightSpanId);
+    return new WmslangNumericDiagnosticError({
+      code: "gpu.numeric.conflict",
+      message: `conflicting GPU numeric representations: ${conflict[3]} and ${conflict[4]}`,
+      spanId: leftSpanId,
+      related: leftSpanId === rightSpanId ? [] : [{
+        spanId: rightSpanId,
+        label: `${conflict[4]} representation originates here`,
+      }],
+    });
+  }
+  const unresolved = error.message.match(/^WM_GPU_NUMERIC_UNRESOLVED\|(\d+)\|(.+)$/);
+  if (unresolved) {
+    const spanId = Number(unresolved[1]);
+    requireNumericSpan(input, spanId);
+    return new WmslangNumericDiagnosticError({
+      code: "gpu.numeric.unresolved",
+      message: `GPU numeric representation has insufficient context at ${unresolved[2]}`,
+      spanId,
+      related: [],
+    });
+  }
+  return error;
+}
+
+function requireNumericSpan(input: GpuSliceElaborationInput, spanId: number): void {
+  if (!input.spans.some((span) => span.id === spanId)) {
+    throw new Error(`Workman numeric evidence references missing span ${spanId}`);
+  }
 }
 
 export function validateGpuSliceCompilationOutput(value: unknown): GpuSliceCompilationOutput {
@@ -142,9 +234,44 @@ export function validateGpuSliceCompilationOutput(value: unknown): GpuSliceCompi
   const program = output.program as GpuSliceElaborationInput;
   const typeElaboration = validateGpuSliceTypeElaborationOutput(output, program);
   const shaderTypes = typeElaboration.shaderTypes;
+  const occurrenceType = new Map(
+    typeElaboration.occurrences.map((occurrence) => [
+      `${occurrence.kind}:${occurrence.sourceId}`,
+      occurrence.shaderTypeId,
+    ]),
+  );
+  const concreteExpressions = program.expressions.map((expression) => ({
+    ...expression,
+    typeId: occurrenceType.get(`expression:${expression.id}`) ?? expression.typeId,
+  }));
+  const concretePatterns = program.patterns.map((pattern) => ({
+    ...pattern,
+    typeId: occurrenceType.get(`pattern:${pattern.id}`) ?? pattern.typeId,
+  }));
+  const concretePatternById = new Map(concretePatterns.map((pattern) => [pattern.id, pattern]));
+  const concreteExpressionById = new Map(
+    concreteExpressions.map((expression) => [expression.id, expression]),
+  );
   const shaderProgram = {
     ...program,
     types: shaderTypes,
+    expressions: concreteExpressions,
+    patterns: concretePatterns,
+    params: program.params.map((param) => ({
+      ...param,
+      typeId: concretePatternById.get(param.patternId)?.typeId ?? param.typeId,
+    })),
+    functions: program.functions.map((fn) => ({
+      ...fn,
+      resultTypeId: concreteExpressionById.get(fn.bodyExprId)?.typeId ?? fn.resultTypeId,
+    })),
+    environmentFields: program.environmentFields.map((field) => ({
+      ...field,
+      typeId:
+        concreteExpressions.find((expression) =>
+          expression.kind === "uniform" && expression.index === field.declaredIndex
+        )?.typeId ?? field.typeId,
+    })),
   } as unknown as GpuSliceElaborationInput;
   validateGpuSliceLayouts(output, shaderProgram);
   validateGpuSliceIr(output, shaderProgram);
@@ -194,9 +321,24 @@ export function validateGpuSliceTypeElaborationOutput(
   }
   const seen = new Set<string>();
   const shaderTypeIds = new Set(shaderTypes.map((type) => type.id));
+  const shaderTypesById = new Map(shaderTypes.map((type) => [type.id, type]));
   for (const occurrence of occurrences) {
     string(occurrence.kind, "GPU slice occurrence kind");
-    integers(occurrence, ["sourceId", "typeId", "spanId"], "GPU slice occurrence");
+    enumValue(
+      occurrence.representationEvidence,
+      numberKinds,
+      "GPU slice occurrence representationEvidence",
+    );
+    enumValue(
+      occurrence.representation,
+      numberKinds,
+      "GPU slice occurrence representation",
+    );
+    integers(
+      occurrence,
+      ["sourceId", "typeId", "shaderTypeId", "spanId"],
+      "GPU slice occurrence",
+    );
     if (!new Set(["expression", "pattern", "function"]).has(String(occurrence.kind))) {
       throw new Error("GPU slice occurrence has an invalid kind");
     }
@@ -211,14 +353,107 @@ export function validateGpuSliceTypeElaborationOutput(
     if (
       !source || source.typeId !== occurrence.typeId || source.spanId !== occurrence.spanId
     ) throw new Error("GPU slice occurrence disagrees with its semantic source row");
+    const expectedRepresentationEvidence = occurrence.kind === "expression" &&
+        "numberKind" in source
+      ? source.numberKind
+      : "";
+    if (occurrence.representationEvidence !== expectedRepresentationEvidence) {
+      throw new Error("GPU slice occurrence has the wrong representation evidence");
+    }
+    if (
+      occurrence.representationEvidence !== "" &&
+      occurrence.representation !== occurrence.representationEvidence
+    ) {
+      throw new Error("GPU slice occurrence representation contradicts its evidence");
+    }
+    const concreteShaderType = shaderTypesById.get(occurrence.shaderTypeId as number);
+    const shaderKind = concreteShaderType?.kind;
+    if (
+      shaderKind !== "f32" && shaderKind !== "i32" && shaderKind !== "vector" &&
+      occurrence.representation !== ""
+    ) {
+      throw new Error("non-numeric GPU slice occurrence has a representation");
+    }
+    if (
+      occurrence.representation === "i32" &&
+      shaderKind !== "i32" && shaderKind !== "vector"
+    ) {
+      throw new Error("i32 GPU slice occurrence has the wrong shader type");
+    }
+    if (occurrence.representation === "f32" && shaderKind !== "f32" && shaderKind !== "vector") {
+      throw new Error("f32 GPU slice occurrence has the wrong shader type");
+    }
     reference(shaderTypeIds, occurrence.typeId, "GPU slice occurrence shader typeId");
+    reference(shaderTypeIds, occurrence.shaderTypeId, "GPU slice occurrence concrete shaderTypeId");
+  }
+  const builtinSelections = records(
+    output.builtinSelections,
+    "GPU slice builtin selections",
+  );
+  const builtinExpressions = program.expressions.filter((expression) =>
+    expression.kind === "builtin"
+  );
+  if (builtinSelections.length !== builtinExpressions.length) {
+    throw new Error("GPU slice must select one overload for every builtin expression");
+  }
+  const seenBuiltinExpressions = new Set<number>();
+  const expressionsById = new Map(
+    program.expressions.map((expression) => [expression.id, expression]),
+  );
+  const expressionOccurrences = new Map(
+    occurrences.filter((occurrence) => occurrence.kind === "expression").map((occurrence) => [
+      occurrence.sourceId as number,
+      occurrence,
+    ]),
+  );
+  const overloadsById = new Map(
+    program.builtinCatalog.overloads.map((overload) => [overload.id, overload]),
+  );
+  for (const selection of builtinSelections) {
+    integers(selection, ["expressionId", "overloadId"], "GPU slice builtin selection");
+    if (seenBuiltinExpressions.has(selection.expressionId as number)) {
+      throw new Error("duplicate GPU slice builtin selection");
+    }
+    seenBuiltinExpressions.add(selection.expressionId as number);
+    const expression = expressionsById.get(selection.expressionId as number);
+    const overload = overloadsById.get(selection.overloadId as number);
+    if (!expression || expression.kind !== "builtin" || !overload) {
+      throw new Error("GPU slice builtin selection has an invalid expression or overload");
+    }
+    const result = shaderTypesById.get(
+      expressionOccurrences.get(expression.id)?.shaderTypeId as number,
+    );
+    const params = expression.children.map((id) =>
+      shaderTypesById.get(expressionOccurrences.get(id)?.shaderTypeId as number)!
+    );
+    if (
+      overload.name !== expression.builtinName ||
+      overload.result !== builtinTypeName(result, shaderTypesById) ||
+      JSON.stringify(overload.params) !== JSON.stringify(
+          params.map((type) => builtinTypeName(type, shaderTypesById)),
+        )
+    ) throw new Error("GPU slice builtin selection does not exactly match its source types");
   }
   return {
     schemaVersion: GPU_SLICE_SCHEMA_VERSION,
     shaderTypes,
     typeEvidence: output.typeEvidence,
     occurrences,
+    builtinSelections,
   } as GpuSliceTypeElaborationOutput;
+}
+
+function builtinTypeName(
+  type: GpuSliceShaderTypeDto | undefined,
+  types: Map<number, GpuSliceShaderTypeDto>,
+): string {
+  if (type?.kind === "f32") return "f32";
+  if (type?.kind === "i32") return "i32";
+  if (type?.kind === "vector") {
+    const component = types.get(type.items[0]);
+    return `${component?.kind === "i32" ? "i32" : "f32"}x${type.items.length}`;
+  }
+  return "";
 }
 
 function validateGpuSliceShaderTypes(
@@ -232,7 +467,7 @@ function validateGpuSliceShaderTypes(
   const semanticById = new Map(program.types.map((type) => [type.id, type]));
   const shaderById = byId(rows, "id");
   const expectedIds = new Set(program.types.map((type) => type.id));
-  if (rows.length !== program.types.length || evidence.length !== program.types.length) {
+  if (rows.length < program.types.length || evidence.length !== program.types.length) {
     throw new Error("GPU slice must elaborate every semantic type exactly once");
   }
   for (const typeId of expectedIds) {
@@ -244,21 +479,26 @@ function validateGpuSliceShaderTypes(
     enumValue(row.kind, shaderTypeKinds, "GPU slice shader type kind");
     integerArray(row.items, "GPU slice shader type items");
     integerArray(row.params, "GPU slice shader type params");
-    const semantic = semanticById.get(row.id as number);
+    const typeOffset = program.types.length;
+    const clone = (row.id as number) >= typeOffset;
+    const semantic = semanticById.get(clone ? (row.id as number) - typeOffset : row.id as number);
     if (!semantic) throw new Error("GPU slice shader type has no semantic source type");
     const homogeneousNumericTuple = semantic.kind === "tuple" && semantic.items.length >= 2 &&
       semantic.items.length <= 4 && semantic.items.every((item) =>
         semanticById.get(item)?.kind === "number"
       );
     const expectedKind = semantic.kind === "number"
-      ? "f32"
+      ? clone ? "i32" : "f32"
       : homogeneousNumericTuple
       ? "vector"
       : semantic.kind;
+    const expectedItems = clone && homogeneousNumericTuple
+      ? semantic.items.map((item) => typeOffset + item)
+      : semantic.items;
     if (
       row.kind !== expectedKind || row.typeNameId !== semantic.typeNameId ||
       row.result !== semantic.result ||
-      JSON.stringify(row.items) !== JSON.stringify(semantic.items) ||
+      JSON.stringify(row.items) !== JSON.stringify(expectedItems) ||
       JSON.stringify(row.params) !== JSON.stringify(semantic.params)
     ) throw new Error("GPU slice shader type disagrees with semantic source shape");
     for (const item of row.items as number[]) {
@@ -268,10 +508,17 @@ function validateGpuSliceShaderTypes(
       reference(shaderIds, param, "GPU slice shader function param");
     }
     if (row.kind === "vector") {
+      const componentKinds = new Set(
+        (row.items as number[]).map((item) => shaderById.get(item)?.kind),
+      );
+      if (
+        componentKinds.size !== 1 ||
+        (!componentKinds.has("f32") && !componentKinds.has("i32"))
+      ) {
+        throw new Error("GPU slice shader vector components must share one numeric representation");
+      }
       for (const item of row.items as number[]) {
-        if (shaderById.get(item)?.kind !== "f32") {
-          throw new Error("GPU slice shader vector components must be f32");
-        }
+        reference(shaderIds, item, "GPU slice shader vector component");
       }
     }
   }
@@ -372,6 +619,9 @@ function validateGpuSliceIr(
   const paramIds = new Set(program.params.map((param) => param.id));
   const typeIds = new Set(program.types.map((type) => type.id));
   const constructorIds = new Set(program.constructors.map((constructor) => constructor.id));
+  const builtinOverloads = new Map(
+    program.builtinCatalog.overloads.map((overload) => [overload.id, overload]),
+  );
   const localBindingIds = new Set(
     program.patterns.filter((pattern) => pattern.kind === "binding").map((pattern) =>
       pattern.bindingId
@@ -449,6 +699,7 @@ function validateGpuSliceIr(
         "patternId",
         "targetFunctionId",
         "constructorId",
+        "builtinOverloadId",
         "index",
       ],
       "GPU slice IR expression",
@@ -464,7 +715,14 @@ function validateGpuSliceIr(
     spanReference(spanIds, expression.spanId, "GPU slice IR expression spanId");
     string(expression.semanticId, "GPU slice IR expression semanticId");
     string(expression.operatorId, "GPU slice IR expression operatorId");
+    string(expression.builtinName, "GPU slice IR expression builtinName");
+    enumValue(
+      expression.resourceOperation,
+      resourceOperations,
+      "GPU slice IR expression resourceOperation",
+    );
     finiteNumber(expression.numberValue, "GPU slice IR expression numberValue");
+    enumValue(expression.numberKind, numberKinds, "GPU slice IR expression numberKind");
     boolean(expression.boolValue, "GPU slice IR expression boolValue");
     integerArray(expression.children, "GPU slice IR expression children");
     for (const child of expression.children as number[]) {
@@ -498,6 +756,14 @@ function validateGpuSliceIr(
       ) throw new Error("GPU slice IR tail-call does not target its owning function");
     } else if (expression.targetFunctionId !== -1) {
       throw new Error("GPU slice IR non-call expression has a targetFunctionId");
+    }
+    if (expression.kind === "builtin") {
+      const overload = builtinOverloads.get(expression.builtinOverloadId as number);
+      if (!overload || overload.name !== expression.builtinName) {
+        throw new Error("GPU slice IR builtin has an invalid selected overload");
+      }
+    } else if (expression.builtinName !== "" || expression.builtinOverloadId !== -1) {
+      throw new Error("GPU slice IR non-builtin expression carries builtin identity");
     }
     if (expression.kind === "constructor") {
       reference(
@@ -538,10 +804,50 @@ function validateGpuSliceIr(
         !source || source.kind !== "uniform" || source.index !== expression.index ||
         (expression.children as number[]).length !== 0
       ) throw new Error("GPU slice IR uniform disagrees with its source field");
+    } else if (expression.kind === "resource") {
+      const source = program.expressions.find((item) => item.id === expression.sourceExprId);
+      if (
+        !source || source.kind !== "resource" || source.index !== expression.index ||
+        source.typeId !== expression.typeId || (expression.children as number[]).length !== 0
+      ) throw new Error("GPU slice IR resource disagrees with its source field");
     } else if (expression.index !== -1) {
       throw new Error("GPU slice IR non-indexed expression has an index");
     }
-    if (expression.semanticId !== "") throw new Error("GPU slice IR expression has a semanticId");
+    if (expression.kind === "resource-call") {
+      const source = program.expressions.find((item) => item.id === expression.sourceExprId);
+      const children = (expression.children as number[]).map((id) =>
+        expressions.find((candidate) => candidate.id === id)!
+      );
+      const validArity = expression.resourceOperation === "sample"
+        ? children.length === 3
+        : expression.resourceOperation === "load"
+        ? children.length === 2
+        : false;
+      if (
+        !source || source.kind !== "resource-call" ||
+        source.resourceOperation !== expression.resourceOperation || !validArity ||
+        children[0]?.kind !== "resource"
+      ) throw new Error("GPU slice IR resource call disagrees with its source operation");
+    } else if (expression.resourceOperation !== "") {
+      throw new Error("GPU slice IR non-resource-call expression carries a resource operation");
+    }
+    if (expression.kind === "convert") {
+      enumValue(
+        expression.semanticId,
+        conversionSemanticIds,
+        "GPU slice IR conversion semanticId",
+      );
+      if ((expression.children as number[]).length !== 1) {
+        throw new Error("GPU slice IR conversion must have one argument");
+      }
+    } else if (expression.semanticId !== "") {
+      throw new Error("GPU slice IR non-conversion expression has a semanticId");
+    }
+    const source = program.expressions.find((item) => item.id === expression.sourceExprId);
+    const expectedNumberKind = expression.kind === "number" ? source?.numberKind : "";
+    if (expression.numberKind !== expectedNumberKind) {
+      throw new Error("GPU slice IR expression has the wrong numberKind");
+    }
     if (expression.kind === "binary" || expression.kind === "unary") {
       enumValue(expression.operatorId, operatorIds, "GPU slice IR expression operatorId");
     } else if (expression.operatorId !== "") {
@@ -714,6 +1020,7 @@ function validateGpuSliceLowering(
     sourceExprReference(atom.sourceExprId, "GPU slice lowered atom sourceExprId");
     spanReference(spanIds, atom.spanId, "GPU slice lowered atom spanId");
     finiteNumber(atom.numberValue, "GPU slice lowered atom numberValue");
+    enumValue(atom.numberKind, numberKinds, "GPU slice lowered atom numberKind");
     boolean(atom.boolValue, "GPU slice lowered atom boolValue");
     if (atom.kind === "local") {
       reference(localIds, atom.localId, "GPU slice lowered atom localId");
@@ -726,8 +1033,15 @@ function validateGpuSliceLowering(
     } else if (atom.localId !== -1) {
       throw new Error("GPU slice literal atom has a localId");
     }
+    const source = atom.sourceExprId === -1
+      ? undefined
+      : sourceExpressions.get(atom.sourceExprId as number);
+    const expectedNumberKind = atom.kind === "number" ? source?.numberKind : "";
+    if (atom.numberKind !== expectedNumberKind) {
+      throw new Error("GPU slice lowered atom has the wrong numberKind");
+    }
     const expectedKind = atom.kind === "number"
-      ? "f32"
+      ? atom.numberKind
       : atom.kind === "bool"
       ? "bool"
       : atom.kind === "void"
@@ -751,6 +1065,7 @@ function validateGpuSliceLowering(
         "constructorId",
         "layoutId",
         "fieldId",
+        "builtinOverloadId",
         "index",
       ],
       "GPU slice lowered operation",
@@ -763,6 +1078,12 @@ function validateGpuSliceLowering(
     spanReference(spanIds, operation.spanId, "GPU slice lowered operation spanId");
     string(operation.operatorId, "GPU slice lowered operation operatorId");
     string(operation.semanticId, "GPU slice lowered operation semanticId");
+    string(operation.builtinName, "GPU slice lowered operation builtinName");
+    enumValue(
+      operation.resourceOperation,
+      resourceOperations,
+      "GPU slice lowered operation resourceOperation",
+    );
     integerArray(operation.args, "GPU slice lowered operation args");
     for (const atomId of operation.args as number[]) {
       reference(atomIds, atomId, "GPU slice lowered operation arg");
@@ -772,6 +1093,16 @@ function validateGpuSliceLowering(
       reference(sourceFunctionIds, operation.targetFunctionId, "GPU slice lowered call target");
     } else if (operation.targetFunctionId !== -1) {
       throw new Error("GPU slice lowered non-call operation has a targetFunctionId");
+    }
+    if (operation.kind === "builtin") {
+      const overload = program.builtinCatalog.overloads.find((candidate) =>
+        candidate.id === operation.builtinOverloadId
+      );
+      if (!overload || overload.name !== operation.builtinName) {
+        throw new Error("GPU slice lowered builtin has an invalid selected overload");
+      }
+    } else if (operation.builtinName !== "" || operation.builtinOverloadId !== -1) {
+      throw new Error("GPU slice lowered non-builtin operation carries builtin identity");
     }
     if (operation.kind === "construct" || operation.kind === "payload") {
       reference(sourceConstructorIds, operation.constructorId, "GPU slice lowered constructor");
@@ -804,8 +1135,17 @@ function validateGpuSliceLowering(
     } else if (operation.operatorId !== "") {
       throw new Error("GPU slice lowered non-operator operation has an operatorId");
     }
-    if (operation.semanticId !== "") {
-      throw new Error("GPU slice lowered operation has a semanticId");
+    if (operation.kind === "convert") {
+      enumValue(
+        operation.semanticId,
+        conversionSemanticIds,
+        "GPU slice lowered conversion semanticId",
+      );
+      if ((operation.args as number[]).length !== 1) {
+        throw new Error("GPU slice lowered conversion must have one argument");
+      }
+    } else if (operation.semanticId !== "") {
+      throw new Error("GPU slice lowered non-conversion operation has a semanticId");
     }
     if (operation.kind === "project") {
       if ((operation.index as number) < 0 || (operation.args as number[]).length !== 1) {
@@ -817,8 +1157,29 @@ function validateGpuSliceLowering(
         !source || source.kind !== "uniform" || source.index !== operation.index ||
         (operation.args as number[]).length !== 0 || source.typeId !== operation.typeId
       ) throw new Error("GPU slice lowered uniform disagrees with its source field");
+    } else if (operation.kind === "resource") {
+      const source = program.expressions.find((item) => item.id === operation.sourceExprId);
+      if (
+        !source || source.kind !== "resource" || source.index !== operation.index ||
+        (operation.args as number[]).length !== 0 || source.typeId !== operation.typeId
+      ) throw new Error("GPU slice lowered resource disagrees with its source field");
     } else if (operation.index !== -1) {
       throw new Error("GPU slice lowered non-indexed operation has an index");
+    }
+    if (operation.kind === "resource-call") {
+      const source = program.expressions.find((item) => item.id === operation.sourceExprId);
+      const args = operation.args as number[];
+      const validArity = operation.resourceOperation === "sample"
+        ? args.length === 3
+        : operation.resourceOperation === "load"
+        ? args.length === 2
+        : false;
+      if (
+        !source || source.kind !== "resource-call" ||
+        source.resourceOperation !== operation.resourceOperation || !validArity
+      ) throw new Error("GPU slice lowered resource call disagrees with its source operation");
+    } else if (operation.resourceOperation !== "") {
+      throw new Error("GPU slice lowered non-resource operation carries a resource operation");
     }
     if (
       (operation.kind === "copy" || operation.kind === "payload") &&
@@ -1027,6 +1388,7 @@ export function validateGpuSliceElaborationInput(
     throw new Error(`unsupported GPU slice schema version ${String(input.schemaVersion)}`);
   }
   string(input.sourcePath, "GPU slice sourcePath");
+  validateBuiltinCatalog(input.builtinCatalog);
 
   const functions = records(input.functions, "GPU slice functions");
   const environments = records(input.environments, "GPU slice environments");
@@ -1166,13 +1528,21 @@ export function validateGpuSliceElaborationInput(
     ) throw new Error("GPU slice environment fieldIds are incomplete or out of declaration order");
   }
   const declaredIndices = new Set<number>();
+  const resourceBindings = new Set<number>();
+  const hasUniformFields = environmentFields.some((field) => field.kind === "uniform");
+  let expectedResourceBinding = hasUniformFields ? 1 : 0;
   for (const field of environmentFields) {
     integers(
       field,
-      ["id", "environmentId", "declaredIndex", "typeId"],
+      ["id", "environmentId", "declaredIndex", "binding", "typeId"],
       "GPU slice environment field",
     );
     string(field.name, "GPU slice environment field name");
+    enumValue(
+      field.kind,
+      new Set(["uniform", "sampled-texture-2d", "sampler"]),
+      "GPU slice environment field kind",
+    );
     reference(environmentIds, field.environmentId, "GPU slice environment field environmentId");
     reference(typeIds, field.typeId, "GPU slice environment field typeId");
     spanReference(spanIds, field.spanId, "GPU slice environment field spanId");
@@ -1181,11 +1551,26 @@ export function validateGpuSliceElaborationInput(
     }
     declaredIndices.add(field.declaredIndex as number);
     const type = typesById.get(field.typeId as number)!;
-    const supported = type.kind === "number" ||
+    const numeric = type.kind === "number" ||
       (type.kind === "tuple" && (type.items as number[]).length >= 2 &&
         (type.items as number[]).length <= 4 &&
         (type.items as number[]).every((id) => typesById.get(id)?.kind === "number"));
-    if (!supported) throw new Error("GPU slice environment field has an unsupported type");
+    const kindMatches = field.kind === "uniform"
+      ? numeric && field.binding === 0
+      : field.kind === "sampled-texture-2d"
+      ? type.kind === "sampled-texture-2d"
+      : type.kind === "sampler";
+    if (!kindMatches) throw new Error("GPU slice environment field kind disagrees with its type");
+    if (field.kind !== "uniform") {
+      if (
+        field.binding !== expectedResourceBinding ||
+        resourceBindings.has(field.binding as number)
+      ) {
+        throw new Error("GPU slice resource field has a non-deterministic binding");
+      }
+      resourceBindings.add(field.binding as number);
+      expectedResourceBinding += 1;
+    }
   }
 
   if (adts.length > 1) throw new Error("GPU slice contains more than one ADT");
@@ -1223,17 +1608,21 @@ export function validateGpuSliceElaborationInput(
   for (const pattern of patterns) {
     integers(
       pattern,
-      ["id", "typeId", "bindingId", "constructorId"],
+      ["id", "typeId", "ownerFunctionId", "bindingId", "constructorId"],
       "GPU slice pattern",
     );
     enumValue(pattern.context, patternContexts, "GPU slice pattern context");
     enumValue(pattern.kind, patternKinds, "GPU slice pattern kind");
     reference(typeIds, pattern.typeId, "GPU slice pattern typeId");
+    reference(functionIds, pattern.ownerFunctionId, "GPU slice pattern ownerFunctionId");
     integerArray(pattern.children, "GPU slice pattern children");
     for (const child of pattern.children as number[]) {
       reference(patternIds, child, "GPU slice pattern child");
       if (patternsById.get(child)?.context !== pattern.context) {
         throw new Error("GPU slice pattern child has a different context");
+      }
+      if (patternsById.get(child)?.ownerFunctionId !== pattern.ownerFunctionId) {
+        throw new Error("GPU slice pattern child crosses a function boundary");
       }
     }
     if (pattern.kind === "binding") {
@@ -1330,25 +1719,45 @@ export function validateGpuSliceElaborationInput(
   for (const expression of expressions) {
     integers(
       expression,
-      ["id", "typeId", "bindingId", "functionId", "constructorId", "index"],
+      [
+        "id",
+        "typeId",
+        "ownerFunctionId",
+        "bindingId",
+        "functionId",
+        "constructorId",
+        "index",
+      ],
       "GPU slice expression",
     );
     enumValue(expression.kind, expressionKinds, "GPU slice expression kind");
     reference(typeIds, expression.typeId, "GPU slice expression typeId");
+    reference(functionIds, expression.ownerFunctionId, "GPU slice expression ownerFunctionId");
     spanReference(spanIds, expression.spanId, "GPU slice expression spanId");
     finiteNumber(expression.numberValue, "GPU slice expression numberValue");
+    enumValue(expression.numberKind, numberKinds, "GPU slice expression numberKind");
     boolean(expression.boolValue, "GPU slice expression boolValue");
     integerArray(expression.children, "GPU slice expression children");
     for (const child of expression.children as number[]) {
       reference(expressionIds, child, "GPU slice expression child");
+      if (expressionsById.get(child)?.ownerFunctionId !== expression.ownerFunctionId) {
+        throw new Error("GPU slice expression child crosses a function boundary");
+      }
     }
     string(expression.semanticId, "GPU slice expression semanticId");
     string(expression.operatorId, "GPU slice expression operatorId");
+    string(expression.builtinName, "GPU slice expression builtinName");
+    enumValue(
+      expression.resourceOperation,
+      resourceOperations,
+      "GPU slice expression resourceOperation",
+    );
     if (expression.kind === "var") {
       if ((expression.bindingId as number) < 0) throw new Error("GPU slice var has no bindingId");
     } else if (expression.kind === "uniform") {
       const field = environmentFields.find((item) =>
-        item.environmentId === root.environmentId && item.declaredIndex === expression.index
+        item.environmentId === root.environmentId && item.declaredIndex === expression.index &&
+        item.kind === "uniform"
       );
       if (!field || (expression.children as number[]).length !== 0) {
         throw new Error("GPU slice uniform has an invalid field index or arity");
@@ -1356,9 +1765,43 @@ export function validateGpuSliceElaborationInput(
       if (field.typeId !== expression.typeId) {
         throw new Error("GPU slice uniform has the wrong field type");
       }
+    } else if (expression.kind === "resource") {
+      const field = environmentFields.find((item) =>
+        item.environmentId === root.environmentId && item.declaredIndex === expression.index &&
+        item.kind !== "uniform"
+      );
+      if (!field || (expression.children as number[]).length !== 0) {
+        throw new Error("GPU slice resource has an invalid field index or arity");
+      }
+      if (field.typeId !== expression.typeId) {
+        throw new Error("GPU slice resource has the wrong field type");
+      }
+    } else if (expression.kind === "resource-call") {
+      const children = (expression.children as number[]).map((id) => expressionsById.get(id)!);
+      const childKinds = children.map((child) => typesById.get(child.typeId as number)?.kind);
+      const result = typesById.get(expression.typeId as number);
+      const resultIsColor = result?.kind === "tuple" && (result.items as number[]).length === 4 &&
+        (result.items as number[]).every((id) => typesById.get(id)?.kind === "number");
+      const coordinate = typesById.get(children.at(-1)?.typeId as number);
+      const validSample = expression.resourceOperation === "sample" && children.length === 3 &&
+        childKinds[0] === "sampled-texture-2d" && childKinds[1] === "sampler" &&
+        coordinate?.kind === "tuple" && (coordinate.items as number[]).length === 2;
+      const validLoad = expression.resourceOperation === "load" && children.length === 2 &&
+        childKinds[0] === "sampled-texture-2d" && coordinate?.kind === "tuple" &&
+        (coordinate.items as number[]).length === 3;
+      if (!resultIsColor || (!validSample && !validLoad)) {
+        throw new Error("GPU slice resource call has an invalid signature");
+      }
     } else if (expression.kind === "call") {
       reference(functionIds, expression.functionId, "GPU slice call functionId");
       if ((expression.bindingId as number) < 0) throw new Error("GPU slice call has no bindingId");
+    } else if (expression.kind === "builtin") {
+      if (
+        expression.builtinName === "" ||
+        !(input.builtinCatalog as GpuSliceElaborationInput["builtinCatalog"]).overloads.some(
+          (overload) => overload.name === expression.builtinName,
+        )
+      ) throw new Error("GPU slice builtin has an unknown catalog name");
     } else if (expression.kind === "constructor") {
       reference(constructorIds, expression.constructorId, "GPU slice expression constructorId");
     } else if (expression.kind === "project") {
@@ -1385,13 +1828,39 @@ export function validateGpuSliceElaborationInput(
     if (expression.kind !== "constructor" && expression.constructorId !== -1) {
       throw new Error("GPU slice non-constructor expression has a constructorId");
     }
-    if (expression.kind !== "project" && expression.kind !== "uniform" && expression.index !== -1) {
+    if (
+      expression.kind !== "project" && expression.kind !== "uniform" &&
+      expression.kind !== "resource" && expression.index !== -1
+    ) {
       throw new Error("GPU slice non-indexed expression has an index");
     }
-    if (expression.semanticId !== "") throw new Error("GPU slice expression has a semanticId");
+    if (expression.kind === "convert") {
+      enumValue(
+        expression.semanticId,
+        conversionSemanticIds,
+        "GPU slice conversion semanticId",
+      );
+      if ((expression.children as number[]).length !== 1) {
+        throw new Error("GPU slice conversion must have one argument");
+      }
+    } else if (expression.semanticId !== "") {
+      throw new Error("GPU slice non-conversion expression has a semanticId");
+    }
+    const expectedNumberKind = expression.kind === "number"
+      ? expression.numberKind === "i32" || expression.numberKind === "f32"
+      : expression.numberKind === "";
+    if (!expectedNumberKind) {
+      throw new Error("GPU slice expression has the wrong numberKind");
+    }
     if (
       expression.kind !== "binary" && expression.kind !== "unary" && expression.operatorId !== ""
     ) throw new Error("GPU slice non-operator expression has an operatorId");
+    if (expression.kind !== "builtin" && expression.builtinName !== "") {
+      throw new Error("GPU slice non-builtin expression has a builtinName");
+    }
+    if (expression.kind !== "resource-call" && expression.resourceOperation !== "") {
+      throw new Error("GPU slice non-resource-call expression has a resourceOperation");
+    }
   }
 
   const bindingIds = new Set<number>();
@@ -1401,17 +1870,33 @@ export function validateGpuSliceElaborationInput(
   for (const fn of functions) {
     integers(
       fn,
-      ["id", "bindingId", "typeId", "resultTypeId", "bodyExprId", "recursionGroupId"],
+      [
+        "id",
+        "bindingId",
+        "sourceBindingId",
+        "typeId",
+        "resultTypeId",
+        "bodyExprId",
+        "recursionGroupId",
+      ],
       "GPU slice function",
     );
     string(fn.name, "GPU slice function name");
     integerArray(fn.paramIds, "GPU slice function paramIds");
     for (const paramId of fn.paramIds as number[]) {
       reference(paramIds, paramId, "GPU slice function param");
+      const param = paramsById.get(paramId);
+      const pattern = param ? patternsById.get(param.patternId as number) : undefined;
+      if (pattern?.ownerFunctionId !== fn.id) {
+        throw new Error("GPU slice function parameter pattern has the wrong owner");
+      }
     }
     reference(typeIds, fn.typeId, "GPU slice function typeId");
     reference(typeIds, fn.resultTypeId, "GPU slice function resultTypeId");
     reference(expressionIds, fn.bodyExprId, "GPU slice function bodyExprId");
+    if (expressionsById.get(fn.bodyExprId as number)?.ownerFunctionId !== fn.id) {
+      throw new Error("GPU slice function body expression has the wrong owner");
+    }
     if (fn.bindingId !== -1) {
       if (bindingIds.has(fn.bindingId as number)) {
         throw new Error("GPU slice function binding collides with a local pattern binding");
@@ -1488,6 +1973,61 @@ export function validateGpuSliceElaborationInput(
       throw new Error("GPU slice recursive reference has an invalid invocation");
     }
     spanReference(spanIds, referenceRow.spanId, "GPU slice recursive reference spanId");
+  }
+}
+
+function validateBuiltinCatalog(value: unknown): void {
+  const catalog = record(value, "GPU slice builtin catalog");
+  const identity = record(catalog.identity, "GPU slice builtin catalog identity");
+  integer(identity.schemaVersion, "GPU slice builtin catalog schemaVersion");
+  string(identity.slangVersion, "GPU slice builtin catalog slangVersion");
+  string(identity.sourceSha256, "GPU slice builtin catalog sourceSha256");
+  const expectedIdentity = {
+    schemaVersion: WMSLANG_BUILTIN_CATALOG_SCHEMA_VERSION,
+    ...WMSLANG_BUILTIN_CATALOG_IDENTITY,
+  };
+  if (JSON.stringify(identity) !== JSON.stringify(expectedIdentity)) {
+    throw new Error(
+      `GPU slice builtin catalog identity mismatch: expected ${
+        JSON.stringify(expectedIdentity)
+      }, received ${JSON.stringify(identity)}`,
+    );
+  }
+  const overloads = records(catalog.overloads, "GPU slice builtin catalog overloads");
+  const valueTypes = new Set([
+    "f32",
+    "f32x2",
+    "f32x3",
+    "f32x4",
+    "i32",
+    "i32x2",
+    "i32x3",
+    "i32x4",
+  ]);
+  const ids = new Set<number>();
+  for (const overload of overloads) {
+    integer(overload.id, "GPU slice builtin overload id");
+    string(overload.name, "GPU slice builtin overload name");
+    string(overload.result, "GPU slice builtin overload result");
+    string(overload.sourceSignature, "GPU slice builtin overload sourceSignature");
+    if (!valueTypes.has(String(overload.result))) {
+      throw new Error("GPU slice builtin overload has an unsupported result type");
+    }
+    if (ids.has(overload.id as number)) throw new Error("duplicate GPU slice builtin overload id");
+    ids.add(overload.id as number);
+    if (!Array.isArray(overload.params)) {
+      throw new Error("GPU slice builtin overload params is not an array");
+    }
+    for (const param of overload.params) {
+      if (!valueTypes.has(String(param))) {
+        throw new Error("GPU slice builtin overload has an unsupported parameter type");
+      }
+    }
+  }
+  if (JSON.stringify(overloads) !== JSON.stringify(WMSLANG_BUILTIN_OVERLOADS)) {
+    throw new Error(
+      "GPU slice builtin catalog overloads disagree with the pinned generated catalog",
+    );
   }
 }
 

@@ -49,7 +49,14 @@ import type { ResolvedPatternFacts } from "./pattern_facts.ts";
 import type { RecursionFacts } from "./recursion_facts.ts";
 import { loadDefaultWmslangSlangBackend } from "./wmslang/slang_backend.ts";
 import { materializeGpuSliceArtifacts } from "./wmslang/materialize.ts";
-import { loadWmslangSliceCompiler, type WmslangSliceCompiler } from "./wmslang/v2_loader.ts";
+import {
+  WmslangNumericDiagnosticError,
+  type WmslangSliceCompiler,
+} from "./wmslang/v2_loader.ts";
+import {
+  defaultWmslangCompilerIdentity,
+  loadCachedWmslangCompiler,
+} from "./wmslang/compiler_cache.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 export type CompileArtifact = {
@@ -256,17 +263,39 @@ function loadDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
 export async function elaborateGpuTypesForLanguageService(
   analysis: ProgramAnalysis,
 ): Promise<GpuSliceTypeElaborationOutput | undefined> {
-  if (analysis.gpuInput.root.functionId === -1) return undefined;
-  return (await loadDefaultWmslangCompiler()).elaborateGpuSliceTypes(analysis.gpuInput);
+  return (await elaborateGpuSlicesForLanguageService(analysis))[0]?.elaboration;
+}
+
+export async function elaborateGpuSlicesForLanguageService(
+  analysis: ProgramAnalysis,
+): Promise<
+  Array<{
+    input: GpuSliceElaborationInput;
+    elaboration: GpuSliceTypeElaborationOutput;
+  }>
+> {
+  if (analysis.gpuSlices.length === 0) return [];
+  const compiler = await loadDefaultWmslangCompiler();
+  return analysis.gpuSlices.map(({ input }) => {
+    try {
+      return { input, elaboration: compiler.elaborateGpuSliceTypes(input) };
+    } catch (error) {
+      if (error instanceof WmslangNumericDiagnosticError) {
+        throw error.withLanguageServiceInput(input);
+      }
+      throw error;
+    }
+  });
 }
 
 async function compileDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
-  const source = await compileLibraryFile(
-    new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
-  );
-  return await loadWmslangSliceCompiler(
-    `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`,
-  );
+  return await loadCachedWmslangCompiler({
+    identity: await defaultWmslangCompilerIdentity(),
+    build: () =>
+      compileLibraryFile(
+        new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+      ),
+  });
 }
 
 function workerTargets(core: CoreProgram): string[] {

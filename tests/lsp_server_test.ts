@@ -34,6 +34,7 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
       definitionProvider: true,
       referencesProvider: true,
       documentSymbolProvider: true,
+      completionProvider: { triggerCharacters: [] },
     },
     serverInfo: { name: "workman-lsp", version: "0.0.1" },
   });

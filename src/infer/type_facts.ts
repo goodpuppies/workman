@@ -8,9 +8,44 @@ export type TypeFacts = {
   patterns: Map<Pattern, TypeFact>;
   patternTypes: Map<Pattern, Ty>;
   operators: Map<OperatorExpr, GpuOperatorId>;
+  gpuBuiltins: Map<Extract<Expr, { kind: "Call" }>, string>;
+  gpuResourceCalls: Map<Extract<Expr, { kind: "Call" }>, GpuResourceCallFact>;
+  gpuOperations: Map<Expr, GpuOperationObligation>;
+  primitiveCarriers: Map<Expr, PrimitiveCarrierPlan>;
   bindings: Map<string, TypeFact[]>;
   typeDeclarations: Map<Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>, TypeInfo>;
   ffi: Map<number, FfiFact>;
+};
+
+export type GpuOperationShape = "f32" | "f32x2" | "f32x3" | "f32x4";
+
+export type GpuResourceCallFact = {
+  operation: "sample" | "load";
+  receiverName: string;
+};
+
+export type GpuOperationRow = {
+  id: number;
+  args: GpuOperationShape[];
+  result: GpuOperationShape;
+};
+
+export type GpuOperationObligation = {
+  kind: "builtin" | "operator" | "projection";
+  identity: string;
+  occurrence: Expr;
+  args: Ty[];
+  result: Ty;
+  rows: GpuOperationRow[];
+  determiningArgs: number[];
+};
+
+export type PrimitiveCarrierPlan = {
+  carrier: "Result";
+  occurrence: Expr;
+  error: Ty;
+  operands: ("wrapped" | "pure")[];
+  payloadResult: Ty;
 };
 
 export type TypeFact = {
@@ -67,10 +102,44 @@ export function createTypeFacts(): TypeFacts {
     patterns: new Map(),
     patternTypes: new Map(),
     operators: new Map(),
+    gpuBuiltins: new Map(),
+    gpuResourceCalls: new Map(),
+    gpuOperations: new Map(),
+    primitiveCarriers: new Map(),
     bindings: new Map(),
     typeDeclarations: new Map(),
     ffi: new Map(),
   };
+}
+
+export function recordPrimitiveCarrierFact(
+  facts: TypeFacts,
+  plan: PrimitiveCarrierPlan,
+): void {
+  facts.primitiveCarriers.set(plan.occurrence, plan);
+}
+
+export function recordGpuOperationFact(
+  facts: TypeFacts,
+  obligation: GpuOperationObligation,
+): void {
+  facts.gpuOperations.set(obligation.occurrence, obligation);
+}
+
+export function recordGpuBuiltinFact(
+  facts: TypeFacts,
+  expression: Extract<Expr, { kind: "Call" }>,
+  name: string,
+): void {
+  facts.gpuBuiltins.set(expression, name);
+}
+
+export function recordGpuResourceCallFact(
+  facts: TypeFacts,
+  expression: Extract<Expr, { kind: "Call" }>,
+  fact: GpuResourceCallFact,
+): void {
+  facts.gpuResourceCalls.set(expression, fact);
 }
 
 export function recordOperatorFact(

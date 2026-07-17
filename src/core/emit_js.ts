@@ -44,6 +44,7 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
       vertexEntry: artifact.vertexEntry,
       fragmentEntry: artifact.fragmentEntry,
       uniformLayout: artifact.uniformLayout ?? null,
+      resourceLayout: artifact.resourceLayout ?? null,
     };
     return `${JSON.stringify(artifactId)}: ${JSON.stringify(descriptor)}`;
   });
@@ -67,27 +68,211 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
     "const __wm_gpu_uniform_binding = (artifact) => artifact.uniformLayout?.binding ?? -1;",
     "const __wm_gpu_uniform_byte_length = (artifact) => artifact.uniformLayout?.byteLength ?? 0;",
     "const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? [];",
+    "const __wm_gpu_binding_count = (artifact) => (artifact.uniformLayout ? 1 : 0) + (artifact.resourceLayout?.bindings.length ?? 0);",
+    `const __wm_gpu_texture_brand = Symbol("wm.gpu.texture2d");
+const __wm_gpu_sampled_brand = Symbol("wm.gpu.sampled-texture2d");
+const __wm_gpu_target_brand = Symbol("wm.gpu.render-target2d");
+const __wm_gpu_sampler_brand = Symbol("wm.gpu.sampler");
+const __wm_gpu_destroyed_textures = new WeakSet();
+const __wm_gpu_result = (thunk) => {
+  try { return __wm_basis_Ok(thunk()); }
+  catch (error) { return __wm_basis_Err(__wm_js_error(error)); }
+};
+const __wm_gpu_require = (value, brand, label) => {
+  if (!value || typeof value !== "object" || value[brand] !== true) {
+    throw new Error("value is not a compiler-produced " + label);
+  }
+  return value;
+};
+const __wm_gpu_require_live_texture = (value) => {
+  const texture = __wm_gpu_require(value, __wm_gpu_texture_brand, "Gpu.Texture2D");
+  if (__wm_gpu_destroyed_textures.has(texture)) throw new Error("Gpu.Texture2D is destroyed");
+  return texture;
+};
+const __wm_gpu_texture_2d = (args) => __wm_gpu_result(() => {
+  const [device, width, height] = args;
+  if (!device || typeof device.createTexture !== "function" || !device.queue) {
+    throw new Error("Gpu.texture2D requires a GPUDevice-like value");
+  }
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+    throw new Error("Gpu.texture2D dimensions must be positive integers");
+  }
+  const usage = globalThis.GPUTextureUsage;
+  if (!usage) throw new Error("Gpu.texture2D requires WebGPU texture usage constants");
+  const raw = device.createTexture({
+    size: { width, height, depthOrArrayLayers: 1 },
+    dimension: "2d",
+    format: "rgba16float",
+    mipLevelCount: 1,
+    sampleCount: 1,
+    usage: usage.TEXTURE_BINDING | usage.RENDER_ATTACHMENT | usage.COPY_DST,
+  });
+  const texture = Object.freeze({
+    [__wm_gpu_texture_brand]: true,
+    device,
+    raw,
+    width,
+    height,
+    format: "rgba16float",
+  });
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({ colorAttachments: [{
+    view: raw.createView(),
+    loadOp: "clear",
+    storeOp: "store",
+    clearValue: { r: 0, g: 0, b: 0, a: 0 },
+  }] });
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+  return texture;
+});
+const __wm_gpu_sampled_texture_2d = (value) => __wm_gpu_result(() => {
+  const texture = __wm_gpu_require_live_texture(value);
+  const view = texture.raw.createView({
+    format: "rgba16float", dimension: "2d", aspect: "all",
+    baseMipLevel: 0, mipLevelCount: 1,
+    baseArrayLayer: 0, arrayLayerCount: 1,
+  });
+  return Object.freeze({
+    [__wm_gpu_sampled_brand]: true,
+    kind: "sampled-texture-2d",
+    device: texture.device,
+    texture,
+    view,
+  });
+});
+const __wm_gpu_render_target_2d = (value) => __wm_gpu_result(() => {
+  const texture = __wm_gpu_require_live_texture(value);
+  const view = texture.raw.createView({
+    format: "rgba16float", dimension: "2d", aspect: "all",
+    baseMipLevel: 0, mipLevelCount: 1,
+    baseArrayLayer: 0, arrayLayerCount: 1,
+  });
+  return Object.freeze({
+    [__wm_gpu_target_brand]: true,
+    device: texture.device,
+    texture,
+    view,
+  });
+});
+const __wm_gpu_sampler = (device, filter) => __wm_gpu_result(() => {
+  if (!device || typeof device.createSampler !== "function") {
+    throw new Error("Gpu sampler creation requires a GPUDevice-like value");
+  }
+  const raw = device.createSampler({
+    addressModeU: "clamp-to-edge",
+    addressModeV: "clamp-to-edge",
+    addressModeW: "clamp-to-edge",
+    magFilter: filter,
+    minFilter: filter,
+    mipmapFilter: filter,
+  });
+  return Object.freeze({ [__wm_gpu_sampler_brand]: true, kind: "sampler", device, raw, filter });
+});
+const __wm_gpu_nearest_sampler = (device) => __wm_gpu_sampler(device, "nearest");
+const __wm_gpu_linear_sampler = (device) => __wm_gpu_sampler(device, "linear");
+const __wm_gpu_destroy_texture_2d = (value) => __wm_gpu_result(() => {
+  const texture = __wm_gpu_require(value, __wm_gpu_texture_brand, "Gpu.Texture2D");
+  if (!__wm_gpu_destroyed_textures.has(texture)) {
+    texture.raw.destroy();
+    __wm_gpu_destroyed_textures.add(texture);
+  }
+  return undefined;
+});
+const __wm_gpu_bound_resource = (field, value) => {
+  const brand = field.kind === "sampled-texture-2d" ? __wm_gpu_sampled_brand : __wm_gpu_sampler_brand;
+  const label = field.kind === "sampled-texture-2d" ? "Gpu.SampledTexture2D" : "Gpu.Sampler";
+  const resource = __wm_gpu_require(value, brand, label);
+  if (resource.kind !== field.kind) throw new Error("shader resource field " + field.name + " has the wrong kind");
+  if (resource.texture && __wm_gpu_destroyed_textures.has(resource.texture)) {
+    throw new Error("shader resource field " + field.name + " uses a destroyed texture");
+  }
+  return Object.freeze({ field, resource });
+};
+const __wm_gpu_bind_group_entries = (args) => __wm_gpu_result(() => {
+  const [artifact, device, uniformOption] = args;
+  __wm_gpu_artifact_identity(artifact);
+  const uniformBuffer = __wm_js_option_unwrap(uniformOption);
+  const entries = [];
+  if (artifact.uniformLayout) {
+    if (!uniformBuffer) throw new Error("shader requires a uniform buffer");
+    entries.push({ binding: artifact.uniformLayout.binding, resource: { buffer: uniformBuffer } });
+  } else if (uniformBuffer !== undefined) {
+    throw new Error("shader without uniforms received a uniform buffer");
+  }
+  const expected = artifact.resourceLayout?.bindings ?? [];
+  const bound = artifact.resourceBindings ?? [];
+  if (expected.length !== bound.length) throw new Error("bound fragment has incomplete GPU resources");
+  for (let index = 0; index < expected.length; index += 1) {
+    const item = bound[index];
+    if (item.field.binding !== expected[index].binding || item.resource.device !== device) {
+      throw new Error("shader resource belongs to a different device or layout");
+    }
+    if (item.resource.texture && __wm_gpu_destroyed_textures.has(item.resource.texture)) {
+      throw new Error("shader resource uses a destroyed texture");
+    }
+    entries.push({
+      binding: item.field.binding,
+      resource: item.field.kind === "sampler" ? item.resource.raw : item.resource.view,
+    });
+  }
+  return entries;
+});
+const __wm_gpu_render_target_view = (value) => __wm_gpu_result(() => {
+  const target = __wm_gpu_require(value, __wm_gpu_target_brand, "Gpu.RenderTarget2D");
+  __wm_gpu_require_live_texture(target.texture);
+  return target.view;
+});
+const __wm_gpu_validate_render_target = (args) => __wm_gpu_result(() => {
+  const [artifact, value, device] = args;
+  __wm_gpu_artifact_identity(artifact);
+  const target = __wm_gpu_require(value, __wm_gpu_target_brand, "Gpu.RenderTarget2D");
+  __wm_gpu_require_live_texture(target.texture);
+  if (target.device !== device) throw new Error("render target belongs to a different device");
+  for (const item of artifact.resourceBindings ?? []) {
+    if (item.resource.texture === target.texture) {
+      throw new Error("fragment cannot sample the texture used as its render target");
+    }
+  }
+  return undefined;
+});`,
     "const __wm_bind_shader_artifact = (artifact, environment) => {",
     "  const layout = artifact.uniformLayout;",
-    '  if (!layout) throw new Error("static shader artifact cannot bind an environment");',
+    "  const resourceLayout = artifact.resourceLayout;",
+    '  if (!layout && !resourceLayout) throw new Error("static shader artifact cannot bind an environment");',
     '  if (!environment || typeof environment !== "object" || Array.isArray(environment)) {',
     '    throw new Error("shader environment must be a nominal record value");',
     "  }",
-    "  const buffer = new ArrayBuffer(layout.byteLength);",
-    "  const view = new DataView(buffer);",
-    "  for (const field of layout.fields) {",
+    "  const buffer = layout ? new ArrayBuffer(layout.byteLength) : undefined;",
+    "  const view = buffer ? new DataView(buffer) : undefined;",
+    "  for (const field of layout?.fields ?? []) {",
     "    const value = environment[field.name];",
-    '    const width = field.representation === "f32" ? 1 : Number(field.representation.slice(4));',
+    '    const width = field.representation.includes("x") ? Number(field.representation.at(-1)) : 1;',
     "    const values = width === 1 ? [value] : value;",
     '    if (!Array.isArray(values) || values.length !== width || values.some((item) => typeof item !== "number")) {',
     '      throw new Error("shader environment field " + field.name + " does not match " + field.representation);',
     "    }",
     "    for (let lane = 0; lane < width; lane += 1) {",
-    "      view.setFloat32(field.offset + lane * 4, values[lane], true);",
+    '      if (field.representation.startsWith("i32")) {',
+    "        const laneValue = values[lane];",
+    "        if (!Number.isInteger(laneValue) || laneValue < -2147483648 || laneValue > 2147483647) {",
+    '          throw new Error("shader environment field " + field.name + " is outside signed i32 range");',
+    "        }",
+    "        view.setInt32(field.offset + lane * 4, laneValue, true);",
+    "      } else {",
+    "        view.setFloat32(field.offset + lane * 4, values[lane], true);",
+    "      }",
     "    }",
     "  }",
-    "  const uniformBytes = Object.freeze(Array.from(new Uint8Array(buffer)));",
-    "  const bound = Object.freeze({ ...artifact, uniformBytes });",
+    "  const uniformBytes = buffer ? Object.freeze(Array.from(new Uint8Array(buffer))) : undefined;",
+    "  const resourceBindings = Object.freeze((resourceLayout?.bindings ?? []).map((field) =>",
+    "    __wm_gpu_bound_resource(field, environment[field.name])",
+    "  ));",
+    "  const bound = Object.freeze({",
+    "    ...artifact,",
+    "    ...(uniformBytes ? { uniformBytes } : {}),",
+    "    ...(resourceLayout ? { resourceBindings } : {}),",
+    "  });",
     "  __wm_shader_artifact_identities.set(bound, __wm_gpu_artifact_identity(artifact));",
     "  return bound;",
     "};",
@@ -632,6 +817,26 @@ function primitiveName(name: string): string | undefined {
       return "__wm_gpu_uniform_byte_length";
     case "Gpu.uniformBytes":
       return "__wm_gpu_uniform_bytes";
+    case "Gpu.texture2D":
+      return "__wm_gpu_texture_2d";
+    case "Gpu.sampledTexture2D":
+      return "__wm_gpu_sampled_texture_2d";
+    case "Gpu.renderTarget2D":
+      return "__wm_gpu_render_target_2d";
+    case "Gpu.nearestSampler":
+      return "__wm_gpu_nearest_sampler";
+    case "Gpu.linearSampler":
+      return "__wm_gpu_linear_sampler";
+    case "Gpu.destroyTexture2D":
+      return "__wm_gpu_destroy_texture_2d";
+    case "Gpu.bindGroupEntries":
+      return "__wm_gpu_bind_group_entries";
+    case "Gpu.bindingCount":
+      return "__wm_gpu_binding_count";
+    case "Gpu.renderTargetView":
+      return "__wm_gpu_render_target_view";
+    case "Gpu.validateRenderTarget":
+      return "__wm_gpu_validate_render_target";
     default:
       return undefined;
   }

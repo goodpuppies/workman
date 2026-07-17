@@ -2,7 +2,8 @@ import createSlangModule from "./vendor/slang-wasm.js";
 import type { MainModule } from "./vendor/slang-wasm.d.ts";
 import { formatResolvedGpuDiagnostic, type WmslangResolvedDiagnostic } from "./diagnostics.ts";
 
-const SLANG_RELEASE_VERSION = "2026.13.1";
+export const WMSLANG_SLANG_VERSION = "2026.13.1" as const;
+const SLANG_RELEASE_VERSION = WMSLANG_SLANG_VERSION;
 const SLANG_RELEASE_URL =
   `https://github.com/shader-slang/slang/releases/download/v${SLANG_RELEASE_VERSION}/slang-${SLANG_RELEASE_VERSION}-wasm.zip`;
 const SLANG_RELEASE_SHA256 = "ff5c1a83ddfaf9a86cfbe81580ca9694e0a3ded4158722549a24a57cf6f03255";
@@ -24,11 +25,12 @@ export type WmslangBackendArtifact = {
   fragmentEntry: typeof WMSLANG_FRAGMENT_ENTRY;
   slangVersion: string;
   uniformLayout?: WmslangReflectedUniformLayout;
+  resourceLayout?: WmslangReflectedResourceLayout;
 };
 
 export type WmslangReflectedUniformField = {
   index: number;
-  representation: "f32" | "f32x2" | "f32x3" | "f32x4";
+  representation: "f32" | "f32x2" | "f32x3" | "f32x4" | "i32" | "i32x2" | "i32x3" | "i32x4";
   offset: number;
   byteLength: number;
 };
@@ -37,6 +39,17 @@ export type WmslangReflectedUniformLayout = {
   binding: 0;
   byteLength: number;
   fields: WmslangReflectedUniformField[];
+};
+
+export type WmslangReflectedResourceBinding = {
+  name: string;
+  binding: number;
+  kind: "sampled-texture-2d" | "sampler";
+};
+
+export type WmslangReflectedResourceLayout = {
+  group: 0;
+  bindings: WmslangReflectedResourceBinding[];
 };
 
 export class WmslangBackendError extends Error {
@@ -123,7 +136,7 @@ export class WmslangSlangBackend {
       if (!linked) throw this.compilerError("link generated program", slangSource);
       const wgsl = linked.getTargetCode(0);
       if (!wgsl) throw this.compilerError("emit whole-program WGSL", slangSource);
-      const uniformLayout = this.validateReflection(
+      const reflectedLayout = this.validateReflection(
         linked.getLayout(0)?.toJsonObject(),
         slangSource,
       );
@@ -146,7 +159,7 @@ export class WmslangSlangBackend {
         vertexEntry: WMSLANG_VERTEX_ENTRY,
         fragmentEntry: WMSLANG_FRAGMENT_ENTRY,
         slangVersion: this.version,
-        ...(uniformLayout ? { uniformLayout } : {}),
+        ...reflectedLayout,
       };
     } finally {
       session.delete();
@@ -157,7 +170,10 @@ export class WmslangSlangBackend {
   private validateReflection(
     value: unknown,
     slangSource: string,
-  ): WmslangReflectedUniformLayout | undefined {
+  ): {
+    uniformLayout?: WmslangReflectedUniformLayout;
+    resourceLayout?: WmslangReflectedResourceLayout;
+  } {
     const reflection = value as
       | {
         parameters?: unknown[];
@@ -192,8 +208,27 @@ export class WmslangSlangBackend {
         `expected a parameters array, received ${JSON.stringify(reflection?.parameters)}`,
       );
     }
-    if (reflection.parameters.length === 0) return undefined;
-    return reflectedUniformLayout(reflection.parameters, slangSource);
+    const parameters = reflection.parameters;
+    const uniforms = parameters.filter((value) =>
+      reflectedRecord(value, slangSource, "global parameter").name === "wm_uniforms"
+    );
+    const resources = parameters.filter((value) =>
+      reflectedRecord(value, slangSource, "global parameter").name !== "wm_uniforms"
+    );
+    if (uniforms.length > 1) {
+      throw reflectionError(
+        slangSource,
+        `expected at most one generated uniform parameter, received ${JSON.stringify(uniforms)}`,
+      );
+    }
+    return {
+      ...(uniforms.length === 1
+        ? { uniformLayout: reflectedUniformLayout(uniforms, slangSource) }
+        : {}),
+      ...(resources.length > 0
+        ? { resourceLayout: reflectedResourceLayout(resources, slangSource) }
+        : {}),
+    };
   }
 
   private compilerError(action: string, slangSource: string): WmslangBackendError {
@@ -205,6 +240,71 @@ export class WmslangSlangBackend {
       diagnostic,
     );
   }
+}
+
+function reflectedResourceLayout(
+  parameters: unknown[],
+  slangSource: string,
+): WmslangReflectedResourceLayout {
+  const bindings = parameters.map((value, index): WmslangReflectedResourceBinding => {
+    const parameter = reflectedRecord(value, slangSource, `resource parameter ${index}`);
+    const binding = reflectedRecord(
+      parameter.binding,
+      slangSource,
+      `resource parameter ${index} binding`,
+    );
+    const type = reflectedRecord(parameter.type, slangSource, `resource parameter ${index} type`);
+    const bindingIndex = reflectedInteger(
+      binding.index,
+      slangSource,
+      `resource parameter ${index} binding index`,
+    );
+    if (
+      binding.kind !== "descriptorTableSlot" || parameter.name !== `wm_r_${bindingIndex}`
+    ) {
+      throw reflectionError(
+        slangSource,
+        `generated resource identity/layout is invalid: ${JSON.stringify(parameter)}`,
+      );
+    }
+    let kind: WmslangReflectedResourceBinding["kind"];
+    if (type.kind === "samplerState") {
+      kind = "sampler";
+    } else if (type.kind === "resource" && type.baseShape === "texture2D") {
+      const result = reflectedRecord(
+        type.resultType,
+        slangSource,
+        `resource parameter ${index} result type`,
+      );
+      const scalar = reflectedRecord(
+        result.elementType,
+        slangSource,
+        `resource parameter ${index} scalar type`,
+      );
+      if (
+        result.kind !== "vector" || result.elementCount !== 4 || scalar.kind !== "scalar" ||
+        scalar.scalarType !== "float32"
+      ) {
+        throw reflectionError(
+          slangSource,
+          `sampled texture ${String(parameter.name)} is not a float4 texture: ${
+            JSON.stringify(type)
+          }`,
+        );
+      }
+      kind = "sampled-texture-2d";
+    } else {
+      throw reflectionError(
+        slangSource,
+        `unsupported generated resource type: ${JSON.stringify(parameter)}`,
+      );
+    }
+    return { name: String(parameter.name), binding: bindingIndex, kind };
+  }).sort((left, right) => left.binding - right.binding);
+  if (new Set(bindings.map((binding) => binding.binding)).size !== bindings.length) {
+    throw reflectionError(slangSource, "generated resources contain duplicate bindings");
+  }
+  return { group: 0, bindings };
 }
 
 function reflectedUniformLayout(
@@ -251,17 +351,21 @@ function reflectedUniformLayout(
   if (!Array.isArray(reflectedFields) || reflectedFields.length === 0) {
     throw reflectionError(slangSource, "generated uniform struct has no reflected fields");
   }
-  const fields = reflectedFields.map((value, declaredIndex) => {
-    const field = reflectedRecord(value, slangSource, `uniform field ${declaredIndex}`);
+  const fields = reflectedFields.map((value, fieldIndex) => {
+    const field = reflectedRecord(value, slangSource, `uniform field ${fieldIndex}`);
     const fieldBinding = reflectedRecord(
       field.binding,
       slangSource,
-      `uniform field ${declaredIndex} binding`,
+      `uniform field ${fieldIndex} binding`,
     );
-    if (field.name !== `wm_u_${declaredIndex}` || fieldBinding.kind !== "uniform") {
+    const name = typeof field.name === "string" ? /^wm_u_(\d+)$/.exec(field.name) : null;
+    const declaredIndex = name ? Number(name[1]) : -1;
+    if (
+      !Number.isSafeInteger(declaredIndex) || declaredIndex < 0 || fieldBinding.kind !== "uniform"
+    ) {
       throw reflectionError(
         slangSource,
-        `uniform field ${declaredIndex} has invalid identity: ${JSON.stringify(field)}`,
+        `uniform field ${fieldIndex} has invalid identity: ${JSON.stringify(field)}`,
       );
     }
     return {
@@ -283,6 +387,9 @@ function reflectedUniformLayout(
       ),
     };
   });
+  if (new Set(fields.map((field) => field.index)).size !== fields.length) {
+    throw reflectionError(slangSource, "generated uniform struct contains duplicate field indices");
+  }
   if (
     byteLength <= 0 || byteLength % 4 !== 0 ||
     fields.some((field) =>
@@ -300,14 +407,19 @@ function reflectedUniformRepresentation(
 ): WmslangReflectedUniformField["representation"] {
   const type = reflectedRecord(value, slangSource, `uniform field ${fieldIndex} type`);
   if (type.kind === "scalar" && type.scalarType === "float32") return "f32";
+  if (type.kind === "scalar" && type.scalarType === "int32") return "i32";
   const element = type.kind === "vector"
     ? reflectedRecord(type.elementType, slangSource, `uniform field ${fieldIndex} element type`)
     : undefined;
   if (
-    element?.kind === "scalar" && element.scalarType === "float32" &&
+    element?.kind === "scalar" &&
+    (element.scalarType === "float32" || element.scalarType === "int32") &&
     Number.isInteger(type.elementCount) && (type.elementCount as number) >= 2 &&
     (type.elementCount as number) <= 4
-  ) return `f32x${type.elementCount}` as WmslangReflectedUniformField["representation"];
+  ) {
+    const scalar = element.scalarType === "int32" ? "i32" : "f32";
+    return `${scalar}x${type.elementCount}` as WmslangReflectedUniformField["representation"];
+  }
   throw reflectionError(
     slangSource,
     `uniform field ${fieldIndex} has unsupported reflected type ${JSON.stringify(value)}`,

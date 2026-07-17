@@ -424,9 +424,10 @@ export function ftvEnv(env: Env): Set<number> {
 
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
-  // Deferred JS-boundary and GPU numeric-shape obligations stay monomorphic so a later ordinary
-  // call or stage boundary resolves the same constrained variable.
-  const boundary = new Set([...jsConstrainedVarIds(type), ...gpuConstrainedVarIds(type)]);
+  // JS boundary obligations are tied to one unresolved foreign interaction. GPU constraints are
+  // verification callbacks only; compiler-owned GPU operation obligations live in sidecar facts
+  // and must remain ordinarily generalizable for per-use shader specialization.
+  const boundary = jsConstrainedVarIds(type);
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
   return { vars, type, constraints: [] };
 }
@@ -452,25 +453,6 @@ function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
 
 export function containsUnsolvedJsBoundary(type: Ty): boolean {
   return jsConstrainedVarIds(type).size > 0;
-}
-
-function gpuConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
-  const t = prune(type);
-  if (t.tag === "var") {
-    if (t.gpuConstraint) acc.add(t.id);
-    return acc;
-  }
-  if (t.tag === "fn") {
-    for (const param of t.params) gpuConstrainedVarIds(param, acc);
-    gpuConstrainedVarIds(t.result, acc);
-  } else if (t.tag === "tuple") {
-    for (const item of t.items) gpuConstrainedVarIds(item, acc);
-  } else if (t.tag === "struct") {
-    for (const field of t.fields) gpuConstrainedVarIds(field.type, acc);
-  } else if (t.tag === "named") {
-    for (const arg of t.args) gpuConstrainedVarIds(arg, acc);
-  }
-  return acc;
 }
 
 export function instantiate(scheme: Scheme): Ty {
@@ -501,6 +483,15 @@ export function instantiate(scheme: Scheme): Ty {
 
 export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
   const freshen = new Map<number, Ty>();
+  return freshenTypeVars(template, subst, freshen);
+}
+
+/** Clone a type graph while sharing one freshening map across every owned occurrence. */
+export function freshenTypeVars(
+  template: Ty,
+  subst: Map<number, Ty>,
+  freshen: Map<number, Ty>,
+): Ty {
   const go = (t: Ty): Ty => {
     t = prune(t);
     if (t.tag === "var") {

@@ -2,10 +2,14 @@ from "./types.wm" import {
   GpuSliceAdtDto,
   GpuSliceBlockDto,
   GpuSliceBlockItemDto,
+  GpuSliceBuiltinOverloadDto,
+  GpuSliceBuiltinCatalogDto,
+  GpuSliceBuiltinSelectionDto,
   GpuSliceCompilationOutputDto,
   GpuSliceDiagnosticDto,
   GpuSliceDiagnosticRelatedDto,
   GpuSliceElaborationInputDto,
+  GpuSliceEnvironmentFieldDto,
   GpuSliceExprDto,
   GpuSliceFunctionDto,
   GpuSliceIrExprDto,
@@ -20,11 +24,18 @@ from "./types.wm" import {
   GpuSliceTypeDto,
   GpuSliceTypeEvidenceDto,
   GpuSliceOccurrenceTypeDto,
+  GpuSliceParamDto,
   GpuSliceTypeElaborationOutputDto
 };
 from "./slice_layout.wm" import { buildSliceLayouts };
 from "./slice_lower.wm" import { lowerSliceProgram };
 from "./slice_emit.wm" import { emitSliceSlang };
+from "./slice_numeric.wm" import {
+  NumericEvidence,
+  expressionRepresentation,
+  patternRepresentation,
+  solveSliceNumericRepresentations
+};
 
 record SliceContext = {
   expressions: List<GpuSliceExprDto>,
@@ -37,6 +48,8 @@ record SliceContext = {
   types: List<GpuSliceTypeDto>,
   adts: List<GpuSliceAdtDto>,
   functions: List<GpuSliceFunctionDto>,
+  builtinOverloads: List<GpuSliceBuiltinOverloadDto>,
+  occurrences: List<GpuSliceOccurrenceTypeDto>,
 };
 
 record SliceIrState = {
@@ -56,6 +69,11 @@ record BuiltBlockItem = {
 let rec reverseInto = match(items, reversed) => {
   ([], Var(reversed)) => { reversed },
   ([Var(head), ..rest], Var(reversed)) => { reverseInto(rest, [head, ..reversed]) }
+};
+
+let rec append = match(left, right) => {
+  ([], Var(right)) => { right },
+  ([Var(head), ..rest], Var(right)) => { [head, ..append(rest, right)] }
 };
 
 let rec listLength = match(items, length) => {
@@ -141,6 +159,88 @@ let rec findType = match(items, id) => {
   }
 };
 
+let rec findExpressionOccurrence = match(items, sourceId) => {
+  ([], Var(sourceId)) => { Panic("missing schema-v2 expression type occurrence") },
+  ([Var(item), ..rest], Var(sourceId)) => {
+    if (item.kind == "expression" && numberEqual(item.sourceId, sourceId)) {
+      item
+    } else {
+      findExpressionOccurrence(rest, sourceId)
+    }
+  }
+};
+
+let shaderBuiltinTypeName = (source: GpuSliceExprDto, context: SliceContext) => {
+  let occurrence = findExpressionOccurrence(context.occurrences, source.id);
+  let typeId = occurrence.shaderTypeId;
+  let gpuType = findType(context.types, typeId);
+  if (gpuType.kind == "f32") {
+    "f32"
+  } else {
+    if (gpuType.kind == "i32") {
+      "i32"
+    } else {
+      if (gpuType.kind == "vector") {
+        let items = Js.Array.toList(gpuType.items);
+        let component = match(items) {
+          [first, .._] => { findType(context.types, first) },
+          [] => { Panic("GPU builtin vector type is empty") }
+        };
+        let prefix = if (component.kind == "i32") { "i32x" } else { "f32x" };
+        prefix ++ Result.textOf(listLength(items, 0))
+      } else {
+        ""
+      }
+    }
+  }
+};
+
+let rec builtinParamsMatch = match(expected, sourceIds, context) => {
+  ([], [], Var(context)) => { true },
+  ([Var(expectedType), ..expectedRest], [Var(sourceId), ..sourceRest], Var(context)) => {
+    let source = findExpression(context.expressions, sourceId);
+    expectedType == shaderBuiltinTypeName(source, context) &&
+      builtinParamsMatch(expectedRest, sourceRest, context)
+  },
+  (_, _, Var(context)) => { false }
+};
+
+let rec selectBuiltinOverload = match(overloads, source, context) => {
+  ([], Var(source), Var(context)) => {
+    Panic("no exact pinned Slang builtin overload survived Workman GPU elaboration")
+  },
+  ([Var(overload), ..rest], Var(source), Var(context)) => {
+    if (
+      overload.name == source.builtinName &&
+      overload.result == shaderBuiltinTypeName(source, context) &&
+      builtinParamsMatch(
+        Js.Array.toList(overload.params),
+        Js.Array.toList(source.children),
+        context
+      )
+    ) {
+      overload.id
+    } else {
+      selectBuiltinOverload(rest, source, context)
+    }
+  }
+};
+
+let rec collectBuiltinSelections = match(expressions, context, selections) => {
+  ([], Var(context), Var(selections)) => { reverseInto(selections, []) },
+  ([Var(expression), ..rest], Var(context), Var(selections)) => {
+    if (expression.kind == "builtin") {
+      let selection: GpuSliceBuiltinSelectionDto = .{
+        expressionId = expression.id,
+        overloadId = selectBuiltinOverload(context.builtinOverloads, expression, context),
+      };
+      collectBuiltinSelections(rest, context, [selection, ..selections])
+    } else {
+      collectBuiltinSelections(rest, context, selections)
+    }
+  }
+};
+
 let rec allSemanticNumbers = match(typeIds, types) => {
   ([], Var(types)) => { true },
   ([Var(typeId), ..rest], Var(types)) => {
@@ -183,6 +283,56 @@ let shaderTypeReason = (semanticKind, shaderKind) => {
   }
 };
 
+let rec offsetTypeIds = match(typeIds, offset, output) => {
+  ([], Var(offset), Var(output)) => { reverseInto(output, []) },
+  ([Var(typeId), ..rest], Var(offset), Var(output)) => {
+    offsetTypeIds(rest, offset, [offset + typeId, ..output])
+  }
+};
+
+let rec addI32ShaderTypes = match(sourceTypes, allTypes, offset, output) => {
+  ([], Var(allTypes), Var(offset), Var(output)) => { reverseInto(output, []) },
+  ([Var(source), ..rest], Var(allTypes), Var(offset), Var(output)) => {
+    let items = Js.Array.toList(source.items);
+    let width = listLength(items, 0);
+    let numericVector = source.kind == "tuple" && width >= 2 && width <= 4 &&
+      allSemanticNumbers(items, allTypes);
+    if (source.kind == "number" || numericVector) {
+      let clone: GpuSliceTypeDto = .{
+        ..source,
+        id = offset + source.id,
+        kind = if (source.kind == "number") { "i32" } else { "vector" },
+        items = if (numericVector) {
+          items :> offsetTypeIds(offset, []) :> Js.Array.fromList
+        } else {
+          source.items
+        },
+      };
+      addI32ShaderTypes(rest, allTypes, offset, [clone, ..output])
+    } else {
+      addI32ShaderTypes(rest, allTypes, offset, output)
+    }
+  }
+};
+
+let concreteShaderTypeId = (semanticTypeId, representation, offset, types) => {
+  if (representation == "i32") {
+    let source = findType(types, semanticTypeId);
+    let items = Js.Array.toList(source.items);
+    let width = listLength(items, 0);
+    if (
+      source.kind == "number" ||
+      (source.kind == "tuple" && width >= 2 && width <= 4 && allSemanticNumbers(items, types))
+    ) {
+      offset + semanticTypeId
+    } else {
+      semanticTypeId
+    }
+  } else {
+    semanticTypeId
+  }
+};
+
 let rec elaborateSliceTypes = match(sourceTypes, allTypes, shaderTypes, evidence) => {
   ([], Var(allTypes), Var(shaderTypes), Var(evidence)) => {
     (reverseInto(shaderTypes, []), reverseInto(evidence, []))
@@ -210,29 +360,69 @@ let rec elaborateSliceTypes = match(sourceTypes, allTypes, shaderTypes, evidence
   }
 };
 
-let rec addExpressionOccurrences = match(expressions, occurrences) => {
-  ([], Var(occurrences)) => { occurrences },
-  ([Var(expression), ..rest], Var(occurrences)) => {
+let rec addExpressionOccurrences = match(
+  expressions, representations, typeOffset, types, occurrences
+) => {
+  ([], Var(representations), Var(typeOffset), Var(types), Var(occurrences)) => { occurrences },
+  (
+    [Var(expression), ..rest], Var(representations), Var(typeOffset), Var(types), Var(occurrences)
+  ) => {
+    let concreteRepresentation = expressionRepresentation(representations, expression.id);
     let occurrence: GpuSliceOccurrenceTypeDto = .{
       kind = "expression",
       sourceId = expression.id,
       typeId = expression.typeId,
+      shaderTypeId = concreteShaderTypeId(
+        expression.typeId,
+        concreteRepresentation,
+        typeOffset,
+        types
+      ),
       spanId = expression.spanId,
+      representationEvidence = expression.numberKind,
+      representation = concreteRepresentation,
     };
-    addExpressionOccurrences(rest, [occurrence, ..occurrences])
+    addExpressionOccurrences(rest, representations, typeOffset, types, [occurrence, ..occurrences])
   }
 };
 
-let rec addPatternOccurrences = match(patterns, occurrences) => {
-  ([], Var(occurrences)) => { occurrences },
-  ([Var(pattern), ..rest], Var(occurrences)) => {
+let rec addPatternOccurrences = match(
+  patterns, expressionCount, representations, typeOffset, types, occurrences
+) => {
+  (
+    [], Var(expressionCount), Var(representations), Var(typeOffset), Var(types), Var(occurrences)
+  ) => { occurrences },
+  (
+    [Var(pattern), ..rest], Var(expressionCount), Var(representations), Var(typeOffset), Var(types),
+    Var(occurrences)
+  ) => {
+    let concreteRepresentation = patternRepresentation(
+      representations,
+      expressionCount,
+      pattern.id
+    );
     let occurrence: GpuSliceOccurrenceTypeDto = .{
       kind = "pattern",
       sourceId = pattern.id,
       typeId = pattern.typeId,
+      shaderTypeId = concreteShaderTypeId(
+        pattern.typeId,
+        concreteRepresentation,
+        typeOffset,
+        types
+      ),
       spanId = pattern.spanId,
+      representationEvidence = "",
+      representation = concreteRepresentation,
     };
-    addPatternOccurrences(rest, [occurrence, ..occurrences])
+    addPatternOccurrences(
+      rest,
+      expressionCount,
+      representations,
+      typeOffset,
+      types,
+      [occurrence, ..occurrences]
+    )
   }
 };
 
@@ -243,7 +433,10 @@ let rec addFunctionOccurrences = match(functions, occurrences) => {
       kind = "function",
       sourceId = fn.id,
       typeId = fn.typeId,
+      shaderTypeId = fn.typeId,
       spanId = fn.spanId,
+      representationEvidence = "",
+      representation = "",
     };
     addFunctionOccurrences(rest, [occurrence, ..occurrences])
   }
@@ -257,15 +450,53 @@ let elaborateSliceProgramTypes = (input: GpuSliceElaborationInputDto) => {
     [],
     []
   );
-  let withExpressions = addExpressionOccurrences(Js.Array.toList(input.expressions), []);
-  let withPatterns = addPatternOccurrences(Js.Array.toList(input.patterns), withExpressions);
+  let typeOffset = listLength(semanticTypes, 0);
+  let allShaderTypeItems = append(
+    shaderTypeItems,
+    addI32ShaderTypes(semanticTypes, semanticTypes, typeOffset, [])
+  );
+  let expressionItems = Js.Array.toList(input.expressions);
+  let numericRepresentations = solveSliceNumericRepresentations(input);
+  let withExpressions = addExpressionOccurrences(
+    expressionItems,
+    numericRepresentations,
+    typeOffset,
+    semanticTypes,
+    []
+  );
+  let withPatterns = addPatternOccurrences(
+    Js.Array.toList(input.patterns),
+    listLength(expressionItems, 0),
+    numericRepresentations,
+    typeOffset,
+    semanticTypes,
+    withExpressions
+  );
   let occurrenceItems = addFunctionOccurrences(Js.Array.toList(input.functions), withPatterns)
     :> reverseInto([]);
+  let builtinCatalog: GpuSliceBuiltinCatalogDto = input.builtinCatalog;
+  let typeContext: SliceContext = .{
+    expressions = Js.Array.toList(input.expressions),
+    blocks = Js.Array.toList(input.blocks),
+    blockItems = Js.Array.toList(input.blockItems),
+    lets = Js.Array.toList(input.lets),
+    matches = Js.Array.toList(input.matches),
+    matchArms = Js.Array.toList(input.matchArms),
+    patterns = Js.Array.toList(input.patterns),
+    types = allShaderTypeItems,
+    adts = Js.Array.toList(input.adts),
+    functions = Js.Array.toList(input.functions),
+    builtinOverloads = Js.Array.toList(builtinCatalog.overloads),
+    occurrences = occurrenceItems,
+  };
   let output: GpuSliceTypeElaborationOutputDto = .{
-    schemaVersion = 2,
-    shaderTypes = Js.Array.fromList(shaderTypeItems),
+    schemaVersion = 5,
+    shaderTypes = Js.Array.fromList(allShaderTypeItems),
     typeEvidence = Js.Array.fromList(typeEvidenceItems),
     occurrences = Js.Array.fromList(occurrenceItems),
+    builtinSelections = Js.Array.fromList(
+      collectBuiltinSelections(Js.Array.toList(input.expressions), typeContext, [])
+    ),
   };
   output
 };
@@ -315,7 +546,11 @@ let baseIrExpression = (
     constructorId = if (source.kind == "constructor") { source.constructorId } else { -1 },
     semanticId = source.semanticId,
     operatorId = source.operatorId,
+    builtinName = source.builtinName,
+    builtinOverloadId = -1,
+    resourceOperation = source.resourceOperation,
     numberValue = source.numberValue,
+    numberKind = source.numberKind,
     boolValue = source.boolValue,
     index = source.index,
     children = Js.Array.fromList([]),
@@ -445,6 +680,11 @@ let rec buildExpression = (
         );
         let expression: GpuSliceIrExprDto = .{
           ..baseIrExpression(withChildren, source, functionId, kind),
+          builtinOverloadId = if (source.kind == "builtin") {
+            selectBuiltinOverload(context.builtinOverloads, source, context)
+          } else {
+            -1
+          },
           children = Js.Array.fromList(children),
         };
         addExpression(expression, withChildren)
@@ -742,13 +982,118 @@ let rec buildFunctions = match(
   }
 };
 
+let rec findOccurrence = match(items, kind, sourceId) => {
+  ([], Var(kind), Var(sourceId)) => { Panic("missing concrete GPU occurrence type") },
+  ([Var(item), ..rest], Var(kind), Var(sourceId)) => {
+    if (item.kind == kind && numberEqual(item.sourceId, sourceId)) {
+      item
+    } else {
+      findOccurrence(rest, kind, sourceId)
+    }
+  }
+};
+
+let rec concretizeExpressions = match(expressions, occurrences, output) => {
+  ([], Var(occurrences), Var(output)) => { reverseInto(output, []) },
+  ([Var(expression), ..rest], Var(occurrences), Var(output)) => {
+    let occurrence = findOccurrence(occurrences, "expression", expression.id);
+    let concrete: GpuSliceExprDto = .{
+      ..expression,
+      typeId = occurrence.shaderTypeId,
+    };
+    concretizeExpressions(rest, occurrences, [concrete, ..output])
+  }
+};
+
+let rec concretizePatterns = match(patterns, occurrences, output) => {
+  ([], Var(occurrences), Var(output)) => { reverseInto(output, []) },
+  ([Var(pattern), ..rest], Var(occurrences), Var(output)) => {
+    let occurrence = findOccurrence(occurrences, "pattern", pattern.id);
+    let concrete: GpuSlicePatternDto = .{
+      ..pattern,
+      typeId = occurrence.shaderTypeId,
+    };
+    concretizePatterns(rest, occurrences, [concrete, ..output])
+  }
+};
+
+let rec concretizeParams = match(params, patterns, output) => {
+  ([], Var(patterns), Var(output)) => { reverseInto(output, []) },
+  ([Var(param), ..rest], Var(patterns), Var(output)) => {
+    let pattern = findPattern(patterns, param.patternId);
+    let concrete: GpuSliceParamDto = .{
+      ..param,
+      typeId = pattern.typeId,
+    };
+    concretizeParams(rest, patterns, [concrete, ..output])
+  }
+};
+
+let rec concretizeFunctions = match(functions, expressions, output) => {
+  ([], Var(expressions), Var(output)) => { reverseInto(output, []) },
+  ([Var(fn), ..rest], Var(expressions), Var(output)) => {
+    let body = findExpression(expressions, fn.bodyExprId);
+    let concrete: GpuSliceFunctionDto = .{
+      ..fn,
+      resultTypeId = body.typeId,
+    };
+    concretizeFunctions(rest, expressions, [concrete, ..output])
+  }
+};
+
+let rec uniformShaderTypeId = match(expressions, occurrences, index, fallback) => {
+  ([], Var(occurrences), Var(index), Var(fallback)) => { fallback },
+  ([Var(expression), ..rest], Var(occurrences), Var(index), Var(fallback)) => {
+    if (expression.kind == "uniform" && numberEqual(expression.index, index)) {
+      let occurrence = findOccurrence(occurrences, "expression", expression.id);
+      occurrence.shaderTypeId
+    } else {
+      uniformShaderTypeId(rest, occurrences, index, fallback)
+    }
+  }
+};
+
+let rec concretizeEnvironmentFields = match(fields, expressions, occurrences, output) => {
+  ([], Var(expressions), Var(occurrences), Var(output)) => { reverseInto(output, []) },
+  ([Var(field), ..rest], Var(expressions), Var(occurrences), Var(output)) => {
+    let concrete: GpuSliceEnvironmentFieldDto = .{
+      ..field,
+      typeId = uniformShaderTypeId(expressions, occurrences, field.declaredIndex, field.typeId),
+    };
+    concretizeEnvironmentFields(rest, expressions, occurrences, [concrete, ..output])
+  }
+};
+
 let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
   let elaboration = elaborateSliceProgramTypes(input);
   let shaderTypes = elaboration.shaderTypes;
+  let occurrences = Js.Array.toList(elaboration.occurrences);
+  let sourceExpressions = Js.Array.toList(input.expressions);
+  let concreteExpressions = concretizeExpressions(sourceExpressions, occurrences, []);
+  let concretePatterns = concretizePatterns(Js.Array.toList(input.patterns), occurrences, []);
   let elaboratedInput: GpuSliceElaborationInputDto = .{
     ..input,
     types = shaderTypes,
+    environmentFields = concretizeEnvironmentFields(
+      Js.Array.toList(input.environmentFields),
+      sourceExpressions,
+      occurrences,
+      []
+    ) :> Js.Array.fromList,
+    functions = concretizeFunctions(
+      Js.Array.toList(input.functions),
+      concreteExpressions,
+      []
+    ) :> Js.Array.fromList,
+    patterns = Js.Array.fromList(concretePatterns),
+    params = concretizeParams(
+      Js.Array.toList(input.params),
+      concretePatterns,
+      []
+    ) :> Js.Array.fromList,
+    expressions = Js.Array.fromList(concreteExpressions),
   };
+  let builtinCatalog: GpuSliceBuiltinCatalogDto = elaboratedInput.builtinCatalog;
   let context: SliceContext = .{
     expressions = Js.Array.toList(elaboratedInput.expressions),
     blocks = Js.Array.toList(elaboratedInput.blocks),
@@ -760,6 +1105,8 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
     types = Js.Array.toList(elaboratedInput.types),
     adts = Js.Array.toList(elaboratedInput.adts),
     functions = Js.Array.toList(elaboratedInput.functions),
+    builtinOverloads = Js.Array.toList(builtinCatalog.overloads),
+    occurrences = occurrences,
   };
   let state = buildFunctions(Js.Array.toList(elaboratedInput.functions), context, initialState());
   let layouts: GpuSliceLoweringSeedDto = buildSliceLayouts(elaboratedInput);
@@ -794,11 +1141,12 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
     _ => { "" }
   };
   let output: GpuSliceCompilationOutputDto = .{
-    schemaVersion = 2,
+    schemaVersion = 5,
     program = input,
     shaderTypes = shaderTypes,
     typeEvidence = elaboration.typeEvidence,
     occurrences = elaboration.occurrences,
+    builtinSelections = elaboration.builtinSelections,
     irFunctions = irFunctions,
     irExpressions = irExpressions,
     irMatchArms = irMatchArms,

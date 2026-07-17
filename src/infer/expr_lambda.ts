@@ -1,7 +1,18 @@
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import { isGpuLambda } from "../directives.ts";
-import { fn, prune, quoteType, tuple, type Ty, typeFromAst, type TypeVarScope } from "../types.ts";
+import {
+  addGpuConstraint,
+  fn,
+  prune,
+  quoteType,
+  substituteTypeVars,
+  tuple,
+  type Ty,
+  typeFromAst,
+  type TypeVarScope,
+  unify,
+} from "../types.ts";
 import { inferExpr } from "./expr.ts";
 import { deriveInferContext, type InferContext, type TypingDialect } from "./context.ts";
 import { gpuTypingDialect } from "./gpu_dialect.ts";
@@ -23,6 +34,7 @@ export function inferLambdaTy(
   const annotations = expr.params.map((param) =>
     param.annotation ? typeFromAst(param.annotation, typeEnv, annotationVars) : undefined
   );
+  const dialect = lambdaTypingDialect(expr, context.dialect);
   const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders, facts));
   paramHints?.forEach((hint, index) => {
     if (index < params.length) {
@@ -45,7 +57,7 @@ export function inferLambdaTy(
     expr.body,
     deriveInferContext(context, {
       env: local,
-      dialect: lambdaTypingDialect(expr, context.dialect),
+      dialect,
     }),
   );
   const signatureParams = [...params];
@@ -67,8 +79,14 @@ export function inferLambdaTy(
         param.node,
       );
     }
+    // GPU annotations are verification only. Check a fresh copy so an annotation can
+    // reject an inferred shader type, but cannot bind a pending GPU shape, select an
+    // overload, or otherwise make an annotation-erased shader fail.
+    const checkedParam = dialect.domain === "gpu"
+      ? substituteTypeVars(params[index], new Map())
+      : params[index];
     constrainAt(
-      params[index],
+      checkedParam,
       annotated,
       param,
       () => `type mismatch ${quoteType(annotated)}, got ${quoteType(params[index])}`,
@@ -89,7 +107,8 @@ export function inferLambdaTy(
         },
       },
     );
-    signatureParams[index] = annotated;
+    if (dialect.domain === "gpu") deferGpuAnnotationCheck(params[index], annotated);
+    if (dialect.domain !== "gpu") signatureParams[index] = annotated;
   });
   const replacements = new Map<number, Ty>();
   params.forEach((param, index) => {
@@ -101,6 +120,23 @@ export function inferLambdaTy(
   );
   types.set(expr, t);
   return t;
+}
+
+function deferGpuAnnotationCheck(inferred: Ty, annotated: Ty): void {
+  const target = prune(inferred);
+  const expected = prune(annotated);
+  if (target.tag === "var") {
+    addGpuConstraint(target, (bound) => {
+      unify(substituteTypeVars(bound, new Map()), substituteTypeVars(expected, new Map()));
+    });
+    return;
+  }
+  if (
+    target.tag === "tuple" && expected.tag === "tuple" &&
+    target.items.length === expected.items.length
+  ) {
+    target.items.forEach((item, index) => deferGpuAnnotationCheck(item, expected.items[index]));
+  }
 }
 
 export function lambdaTypingDialect(

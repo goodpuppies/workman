@@ -2,10 +2,11 @@ import type { BindingFacts } from "../binding_facts.ts";
 import { discoverGpuRegions } from "../directives.ts";
 import type { Decl, Expr, Module, Pattern } from "../ast.ts";
 import type { InferResult } from "../infer.ts";
+import type { GpuOperationShape } from "../infer/type_facts.ts";
 import type { BindingId } from "../ids.ts";
 import type { ModuleGraph } from "../module_graph.ts";
 import type { SourceSpan } from "../source.ts";
-import { prune, type Ty } from "../types.ts";
+import { NumberTy, prune, type Ty } from "../types.ts";
 import {
   GPU_ELABORATION_SCHEMA_VERSION,
   type GpuBindingDto,
@@ -56,6 +57,7 @@ function normalizeGpuModules(
   modules: ModuleInput[],
 ): GpuElaborationInput {
   const state = new NormalizationState();
+  modules.forEach((input) => state.registerGpuOperationTypes(input.result));
   let nextRegion = 0;
   for (const input of modules) {
     for (const region of discoverGpuRegions(input.module)) {
@@ -88,6 +90,35 @@ class NormalizationState {
   #spansByKey = new Map<string, number>();
   #bindingIndexes = new Map<number, number>();
   #functionsByLambda = new Set<Expr>();
+  #gpuOperationVarShapes = new Map<number, GpuOperationShape>();
+  #conflictingGpuOperationVars = new Set<number>();
+
+  registerGpuOperationTypes(result: InferResult): void {
+    for (const operation of result.facts.gpuOperations.values()) {
+      const occurrences = [...operation.args, operation.result];
+      const candidates = operation.rows.filter((row) =>
+        operation.args.every((type, index) => {
+          const shape = h0GpuShape(type);
+          return shape === undefined || row.args[index] === shape;
+        })
+      );
+      for (const [index, type] of occurrences.entries()) {
+        const target = prune(type);
+        if (target.tag !== "var") continue;
+        const shapes = new Set(
+          candidates.map((row) => index < row.args.length ? row.args[index] : row.result),
+        );
+        const shape = shapes.size === 1 ? [...shapes][0] : "f32";
+        const previous = this.#gpuOperationVarShapes.get(target.id);
+        if (previous !== undefined && previous !== shape) {
+          this.#gpuOperationVarShapes.delete(target.id);
+          this.#conflictingGpuOperationVars.add(target.id);
+        } else if (!this.#conflictingGpuOperationVars.has(target.id)) {
+          this.#gpuOperationVarShapes.set(target.id, shape);
+        }
+      }
+    }
+  }
 
   addRoot(
     input: ModuleInput,
@@ -388,6 +419,26 @@ class NormalizationState {
   ): number {
     if (!type) return this.internType("unknown", () => baseType("unknown"));
     const target = prune(type);
+    const gpuShape = target.tag === "var" ? this.#gpuOperationVarShapes.get(target.id) : undefined;
+    if (target.tag === "var" && (target.gpuConstraint !== undefined || gpuShape !== undefined)) {
+      if (gpuShape && gpuShape !== "f32") {
+        const width = Number(gpuShape.at(-1));
+        const items = Array.from(
+          { length: width },
+          (_item, index) => this.type(NumberTy, hint, `${identity}:gpu-item:${index}`),
+        );
+        return this.internType(`vector:${identity}:${items.join(",")}`, () => ({
+          ...baseType("vector"),
+          representation: hint || "abstract",
+          width,
+          items,
+        }));
+      }
+      return this.internType(`number:${identity}`, () => ({
+        ...baseType("number"),
+        representation: hint || "abstract",
+      }));
+    }
     if (target.tag === "prim") {
       if (target.name === "Number") {
         const representation = hint || "abstract";
@@ -485,6 +536,21 @@ function topLevelLambdaBindings(
       )
       : []
   );
+}
+
+function h0GpuShape(type: Ty): GpuOperationShape | undefined {
+  const target = prune(type);
+  if (target.tag === "prim" && target.name === "Number") return "f32";
+  if (
+    target.tag === "tuple" && target.items.length >= 2 && target.items.length <= 4 &&
+    target.items.every((item) => {
+      const component = prune(item);
+      return component.tag === "prim" && component.name === "Number";
+    })
+  ) {
+    return `f32x${target.items.length}` as GpuOperationShape;
+  }
+  return undefined;
 }
 
 function topLevelValueBindings(module: Module): import("../ast.ts").Binding[] {

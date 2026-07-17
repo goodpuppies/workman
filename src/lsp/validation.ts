@@ -21,6 +21,7 @@ import type { InferResult } from "../infer.ts";
 import type { ProgramAnalysis } from "../program_analysis.ts";
 import { runtime } from "../io.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
+import { WmslangNumericDiagnosticError } from "../wmslang/v2_loader.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
@@ -139,6 +140,36 @@ async function unresolvedGpuTypeWarning(
     await elaborate(analysis);
     return undefined;
   } catch (error) {
+    if (error instanceof WmslangNumericDiagnosticError) {
+      const gpuInput = error.languageServiceInput ?? analysis.gpuInput;
+      const diagnostic = error.diagnostic;
+      const span = gpuInput.spans.find((candidate) => candidate.id === diagnostic.spanId);
+      const path = span?.path ?? analysis.graph.entry;
+      const source = analysis.graph.nodes.get(path)?.source ?? "";
+      const relatedInformation = diagnostic.related.flatMap((related) => {
+        const relatedSpan = gpuInput.spans.find((candidate) => candidate.id === related.spanId);
+        if (!relatedSpan) return [];
+        const relatedSource = analysis.graph.nodes.get(relatedSpan.path)?.source ?? "";
+        return [{
+          location: {
+            uri: pathToFileUri(relatedSpan.path),
+            range: relatedSource ? spanRange(relatedSource, relatedSpan) : startRange,
+          },
+          message: related.label,
+        }];
+      });
+      return {
+        path,
+        diagnostic: {
+          range: span && source ? spanRange(source, span) : startRange,
+          severity: 1,
+          code: diagnostic.code,
+          source: "wm-mini",
+          message: diagnostic.message,
+          relatedInformation: relatedInformation.length ? relatedInformation : undefined,
+        },
+      };
+    }
     const span = analysis.gpuInput.spans.find((candidate) =>
       candidate.id === analysis.gpuInput.root.selectorSpanId
     );

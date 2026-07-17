@@ -76,6 +76,7 @@ Deno.test("inference records only the frozen visual-v1 operator catalog", async 
        let subtract = 2 - 1;
        let multiply = 2 * 3;
        let divide = 4 / 2;
+       let remainder = 5 % 2;
        let less = 1 < 2;
        let lessEqual = 1 <= 2;
        let greater = 2 > 1;
@@ -86,7 +87,6 @@ Deno.test("inference records only the frozen visual-v1 operator catalog", async 
        let either = true || false;
        let negate = -1;
        let not = !false;
-       let remainder = 5 % 2;
        let append = "a" ++ "b";`,
     ]]),
   );
@@ -97,6 +97,7 @@ Deno.test("inference records only the frozen visual-v1 operator catalog", async 
     GPU_OPERATOR_IDS.subtract,
     GPU_OPERATOR_IDS.multiply,
     GPU_OPERATOR_IDS.divide,
+    GPU_OPERATOR_IDS.remainder,
     GPU_OPERATOR_IDS.lessThan,
     GPU_OPERATOR_IDS.lessThanOrEqual,
     GPU_OPERATOR_IDS.greaterThan,
@@ -113,7 +114,7 @@ Deno.test("inference records only the frozen visual-v1 operator catalog", async 
     .map((expression) => expression.op);
   assertEquals(allOperatorTokens.includes("%"), true);
   assertEquals(allOperatorTokens.includes("++"), true);
-  assertEquals(result.facts.operators.size, 14);
+  assertEquals(result.facts.operators.size, 15);
 });
 
 function range(length: number): number[] {

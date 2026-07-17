@@ -1,13 +1,20 @@
 # wmslang implementation plan
 
-Status: broad architecture and post-v2 direction. The static fragment slice in
+Status: broad architecture and post-v5 direction. The static fragment slice in
 [`v1-scope.md`](./v1-scope.md) and the initial pure-result, numeric-tuple-vector, and diagnostic
 attribution work in [`v2-scope.md`](./v2-scope.md) are implemented. V2 now additionally scopes
 Workman-owned shader type elaboration, lexically owned local helpers, and one curried nominal-record
 CPU environment. Selection, schema normalization, uniform-read IR/lowering, and constant-buffer
 Slang emission, artifact values, reflection-checked packing, stable factory/schema identity, and
-renderer upload are implemented for that environment. Where this plan proposes more language,
-analysis, resource, diagnostic, packaging, or target breadth, that v2 scope takes precedence.
+renderer upload are implemented for that environment. V3 is narrowly scoped in
+[`v3-scope.md`](./v3-scope.md) as a generated, pinned Slang builtin bridge plus two creative
+acceptance probes and is complete. The implemented V4 slice in [`v4-scope.md`](./v4-scope.md) adds
+HM-preserving reachable GPU specialization, deferred exact operation validation, and a bounded
+statically eliminable higher-order subset. The scoped V5 slice in [`v5-scope.md`](./v5-scope.md)
+adds strict `i32` representation plus sampled two-dimensional textures, offscreen fragment targets,
+explicit host-controlled ping-pong, and multiple ordered fragment passes. Where this plan proposes
+more language, analysis, resource, diagnostic, packaging, or target breadth, those versioned scope
+documents take precedence.
 
 V1 is intentionally not a production-complete visual release. It fixes all shader numbers to `f32`,
 permits no captures or uniforms, compiles one same-module monomorphic call graph, and proves
@@ -86,9 +93,78 @@ evidence remains. One curried host shader factory now turns its nominal-record p
 reflected uniform block end to end: applying the factory constructs a fresh immutable bound
 fragment, generated host code copies its fields into the reflected byte layout, and the renderer
 uploads those bytes while reusing one shader module and pipeline. The executable SDL2
-mouse-to-Mandelbrot data flow is specified in [`v2-sdl-mandelbrot.md`](./v2-sdl-mandelbrot.md).
-The requirement-by-requirement completion gate is recorded in
-[`v2-acceptance.md`](./v2-acceptance.md).
+mouse-to-Mandelbrot data flow is specified in [`v2-sdl-mandelbrot.md`](./v2-sdl-mandelbrot.md). The
+requirement-by-requirement completion gate is recorded in [`v2-acceptance.md`](./v2-acceptance.md).
+
+The completed V3 slice is specified in [`v3-scope.md`](./v3-scope.md). It resolves direct
+GPU-contextual calls against a deterministic catalog derived from the pinned Slang core module,
+while keeping Workman responsible for overload selection, occurrence types, diagnostics, hover, and
+completion. Eligibility is structural: V3 exposes the pure Slang overloads representable by the
+current `f32`/vector functional type universe and legal for the fragment/WGSL target, rather than a
+handwritten math allowlist. Warped-noise and raymarching ports test whether that bridge is
+sufficient; new capabilities found by those probes require an explicit scope amendment rather than
+entering V3 implicitly.
+
+The implemented V4 slice is specified in [`v4-scope.md`](./v4-scope.md). It removes routine
+scalar/vector annotations from connected shader helpers without introducing typeclasses or coercion.
+V4 also removes V3's transitional use of annotations as GPU elaboration evidence: accepted shader
+meaning is invariant under erasing ordinary type annotations, while incorrect annotations may still
+add verification errors. Ordinary HM inference produces generalized helper shapes and occurrence
+equalities; reachable monomorphization freshens complete typed bodies and sidecar facts for concrete
+GPU instances; and a finite worklist validates builtin/operator obligations against exact catalog
+rows after substitution. Catalog-derived fixed types and argument/result equalities seed HM
+immediately; only non-equality mappings between overload shapes remain argument-driven at
+specialization. Specializations preregister from canonical concrete call inputs and static
+identities, then finalize their result types after body obligations converge; unresolved result
+metavariable IDs never enter a deduplication key. Compiler-owned operators retain the finite V2
+scalar/vector table, and existing primitive `Result` coercion composes outside exact
+payload-operation selection rather than becoming general implicit lifting. Recursion remains
+monomorphic within each specialization. A bounded higher-order subset is included only where every
+authored function identity is statically known and eliminated before shader IR emission. Runtime
+closures, explicit numeric-operation carriers, polymorphic recursion, imported/module-level GPU
+helpers, and general defunctionalization remain outside the slice. V4 deliberately reuses the
+delayed TypeScript FFI system's placeholder/facts discipline without its whole-program reinference
+pipeline: the closed exact shader catalog needs one ordinary HM result and a specialization-local
+monotone worklist, while FFI callback contextualization, reflection, generated imports/types, and
+AST rewriting require repeated partial/final HM verification. This is an ownership rule, not merely
+a current optimization: wmslang is a Workman-owned language whose semantics and concrete IR finish
+before Slang runs. Slang/WGSL validation is terminal and never feeds overload selection, type
+variables, specialization, or another HM pass back into the compiler.
+
+The scoped V5 slice is specified in [`v5-scope.md`](./v5-scope.md). It introduces `i32` as the only
+new scalar representation, with spelling-based literal evidence, exact finite operation rows,
+explicit `Gpu.i32`/`Gpu.f32` conversions, and no promotion or defaulting. The same slice adds one
+`rgba16float` sampled-texture family, separate sampled/render-target views and samplers, resource
+fields in the existing curried nominal environment, offscreen fragment rendering, and multiple
+selected fragment roots. Concrete resources are explicit immutable runtime bindings and never part
+of shader identity or serialized shader IR. Ping-pong orientation, pass ordering, initialization,
+resize, and cleanup remain ordinary host Workman behavior; the compiler adds no render graph,
+storage mutation, compute stage, or general bind-group language.
+
+TypeGPU is the V5 reference for host resource ownership, not the shader backend: stable layouts are
+separate from concrete swappable bindings, sampled and attachment views have distinct roles, and
+host code owns ping-pong orientation and pass order. Slang supplies the other half directly through
+`Texture2D<float4>`, `SamplerState`, canonical `Sample`/`Load` methods, WGSL lowering, explicit
+group/binding attributes, and terminal resource reflection. The first slice emits flat deterministic
+resource globals rather than Slang `ParameterBlock`s. Sampled textures are shader parameters, while
+offscreen outputs remain host render-pass attachments; swapping resources never recompiles Slang.
+Slang's unrelated hardware `FeedbackTexture2D` type is not used. This similarity is deliberately
+limited to the resource ABI and ownership pattern: Workman facts and typed wmslang IR replace
+TypeGPU's shader-schema layer, while the Workman/WebGPU adapter—not Slang—creates resources, bind
+groups, attachments, and commands. Shader/layout identity, concrete binding identity, and
+render-destination identity remain separate so inverse ping-pong bindings and attachments reuse one
+compiled pipeline.
+
+The V5 compiler flow remains strictly one-way: Workman HM and GPU elaboration finish first, typed
+wmslang IR predicts the complete resource layout, generated Slang is compiled to WGSL, and Slang
+reflection performs only a terminal agreement check. It cannot add fields, select overloads, alter
+specializations, or trigger another Workman pass. “Multiple fragment passes” refers only to ordered
+host-submitted WebGPU render passes; it does not introduce a multipass inference or backend-feedback
+loop. Implementation ownership follows the same boundary: Workman/wmslang owns source semantics and
+the predicted interface, the Slang backend owns shader declarations and terminal target validation,
+and the Workman/WebGPU adapter alone owns concrete resources, bind groups, attachments, commands,
+and lifetime. TypeGPU is design evidence for that adapter layer, not a dependency or substitute for
+it.
 
 The supporting collection design in [`compiler-collections.md`](./compiler-collections.md) specifies
 a small comparator-based persistent AVL map in Workman `std`. It supplies the scope-preserving,
@@ -436,24 +512,24 @@ optimization, while producing a shader-specific IR transformation rather than re
 
 Every free resolved binding used by an `@gpu;` lambda is classified before Slang generation.
 
-| Capture category                                  | Intended lowering                                                     |
-| ------------------------------------------------- | --------------------------------------------------------------------- |
-| GPU-capable function                              | dependency edge and specialized/lifted Slang function                 |
-| closed literal scalar/vector constant             | clone the literal tree into the using specialization                  |
-| immediately enclosing shader-factory environment | one typed uniform block                                                |
-| other runtime scalar/vector/record                | rejected; no automatic capture                                        |
-| typed read-only GPU resource                      | reflected resource binding                                            |
-| typed writable GPU resource                       | reflected writable binding plus GPU effect permission                 |
-| sampler/texture handle with Workman type evidence | corresponding Slang resource                                          |
-| arbitrary JS object or CPU-only function          | compile-time error                                                    |
-| opaque raw `GPUBuffer` without element evidence   | compile-time error or explicit typed wrapping                         |
+| Capture category                                  | Intended lowering                                     |
+| ------------------------------------------------- | ----------------------------------------------------- |
+| GPU-capable function                              | dependency edge and specialized/lifted Slang function |
+| closed literal scalar/vector constant             | clone the literal tree into the using specialization  |
+| immediately enclosing shader-factory environment  | one typed uniform block                               |
+| other runtime scalar/vector/record                | rejected; no automatic capture                        |
+| typed read-only GPU resource                      | reflected resource binding                            |
+| typed writable GPU resource                       | reflected writable binding plus GPU effect permission |
+| sampler/texture handle with Workman type evidence | corresponding Slang resource                          |
+| arbitrary JS object or CPU-only function          | compile-time error                                    |
+| opaque raw `GPUBuffer` without element evidence   | compile-time error or explicit typed wrapping         |
 
 Captures should be keyed by semantic binding ID. Generated names are an implementation detail.
 
 V1 rejects all captured values. The first resource slice uses the restricted curried
-shader-environment boundary in [`v1-uniform.md`](./v1-uniform.md): one host nominal-record parameter,
-one returned `@gpu` lambda, and no other dynamic capture. It still avoids executing Workman or
-JavaScript to discover specialization values.
+shader-environment boundary in [`v1-uniform.md`](./v1-uniform.md): one host nominal-record
+parameter, one returned `@gpu` lambda, and no other dynamic capture. It still avoids executing
+Workman or JavaScript to discover specialization values.
 
 Static shader type information is sufficient to generate WGSL ahead of runtime even when the actual
 GPU resource objects are created later. Runtime scalar captures should become uniform fields rather
@@ -603,12 +679,15 @@ CPU function and does not contain or interpret source/IR at runtime. `Gpu.wgsl` 
 accessors are typed projections from that descriptor.
 
 The module graph discovers shader dependencies lazily from selected artifact roots across imported
-Workman source modules. The specialization key is the resolved binding ID, normalized GPU type
-arguments, and relevant compile-time captures. Each entry root initially produces one independently
-cacheable Slang/WGSL artifact; reachable helpers are deduplicated within it. Core contains only an
-opaque artifact reference supplied after shader/backend materialization, and each single-file,
-worker, library, or REPL output embeds the artifact table entries it actually references—never a
-runtime shader AST.
+Workman source modules. A specialization preregistration seed consists of the resolved binding ID,
+canonical concrete call-input types, compile-time function identities, relevant compile-time
+captures, and any other already-concrete scheme inputs required by body or layout. It never includes
+the allocation identity of an unresolved result metavariable. The complete result type and function
+signature are finalized after the specialized body's finite obligations converge. Each entry root
+initially produces one independently cacheable Slang/WGSL artifact; reachable helpers are
+deduplicated within it. Core contains only an opaque artifact reference supplied after
+shader/backend materialization, and each single-file, worker, library, or REPL output embeds the
+artifact table entries it actually references—never a runtime shader AST.
 
 Lazy GPU functions cross Workman source-module boundaries only while those modules are present in
 the same compiler graph. A standalone emitted JavaScript library may export completed
@@ -821,9 +900,9 @@ The implemented schema-v1 merge still treats mixed evidence as `f32` dominance, 
 now confined to H0 fixture APIs. Production program analysis uses the schema-v2 vertical slice: one
 semantic `Gpu.fragment` selection and one lexical GPU island. Its DTO now carries semantic
 `number`/tuple shapes; the Workman slice elaborator owns the concrete `f32`/vector/product table and
-evidence consumed by lowering and emission.
-Uniform/capture inference, numeric coercion, and ordered multi-selector machinery are deferred under
-[`v1-scope.md`](./v1-scope.md), not prerequisites for the visual slice.
+evidence consumed by lowering and emission. Uniform/capture inference, numeric coercion, and ordered
+multi-selector machinery are deferred under [`v1-scope.md`](./v1-scope.md), not prerequisites for
+the visual slice.
 
 Target-neutral prerequisites preserve complete resolved patterns, authored recursion-group
 membership and reference kinds, and the closed visual operator catalog. Schema v2 now transports the
@@ -911,28 +990,30 @@ correct offscreen coordinate image from Workman-generated WGSL.
 ### Phase 7: post-v1 curried uniform and reflection
 
 - [x] Recognize one restricted, directly resolved host shader factory returning exactly one inner
-  `@gpu` lambda; keep the outer lambda host-owned.
+      `@gpu` lambda; keep the outer lambda host-owned.
 - [x] Reify its annotated, same-module, non-generic nominal-record parameter as an ordered shader
-  environment schema and reject all other captures.
+      environment schema and reject all other captures.
 - [x] Normalize resolved record-field uses as typed uniform reads while keeping the current outer
-  argument out of the GPU expression graph.
+      argument out of the GPU expression graph.
 - [x] Preserve those reads through Workman-owned type elaboration, functional IR, lowering, and
-  deterministic group-zero/binding-zero Slang emission.
+      deterministic group-zero/binding-zero Slang emission.
 - [x] Teach the host artifact/materializer to retain stable shader/schema metadata and lower the
-  current ordinary record to fresh immutable bytes. Reapplying the factory creates a new binding
-  without compiling a shader or retaining a foreign record reference.
+      current ordinary record to fresh immutable bytes. Reapplying the factory creates a new binding
+      without compiling a shader or retaining a foreign record reference.
 - [x] Predict field shapes, compare them to Slang reflection, and embed authoritative offsets,
-  aggregate byte length, binding identity, and zero-padding requirements in the artifact manifest.
+      aggregate byte length, binding identity, and zero-padding requirements in the artifact
+      manifest.
 - [x] Generate the closed host packer for `Number` and homogeneous numeric tuple fields. It must
-  zero-initialize the complete reflected range and reject missing, reordered, or wrong-schema data.
-- [x] Extend fragment renderer creation to allocate the uniform buffer and bind group once, then make
-  each render validate artifact/schema identity, obtain the submitted immutable bytes, call
-  `queue.writeBuffer`, and draw with the existing module/pipeline.
+      zero-initialize the complete reflected range and reject missing, reordered, or wrong-schema
+      data.
+- [x] Extend fragment renderer creation to allocate the uniform buffer and bind group once, then
+      make each render validate artifact/schema identity, obtain the submitted immutable bytes, call
+      `queue.writeBuffer`, and draw with the existing module/pipeline.
 - [x] Turn the SDL2 mouse-driven Mandelbrot design into a real example: CPU tail-recursive event
-  draining updates immutable center/time/resolution state; GPU-local tail recursion handles escape
-  iteration. Verify two distinct frames without pipeline recreation.
+      draining updates immutable center/time/resolution state; GPU-local tail recursion handles
+      escape iteration. Verify two distinct frames without pipeline recreation.
 - [x] Accept chained `uniforms.resolution.y` during GPU pretyping and preserve it as a uniform read
-  followed by a lane projection in normalized IR.
+      followed by a lane projection in normalized IR.
 
 Exit criterion: the animated-uniform visual acceptance shader updates through ordinary WebGPU host
 code without rebuilding its shader module or pipeline.
@@ -1027,9 +1108,9 @@ explicit v1 exceptions below keep the first implementation a vertical slice:
 6. The v1 ADT subset is one finite, non-generic option-like private shape. General monomorphized ADT
    layouts and higher-order shader values are post-v1.
 7. Resources cross through nominal typed evidence wrappers, never raw reflected WebGPU handles.
-8. V1 has no dynamic shader input. One explicit typed uniform block is the next resource slice;
-   its nominal-record packer is compiler generated, while automatic capture and general resource
-   packing remain later work.
+8. V1 has no dynamic shader input. One explicit typed uniform block is the next resource slice; its
+   nominal-record packer is compiler generated, while automatic capture and general resource packing
+   remain later work.
 9. V1 compiles one same-module artifact root and embeds only its opaque completed artifact, with no
    runtime AST interpreter. Multi-root and cross-module closure are later breadth.
 10. V1 requires a working compile-time Slang-to-WGSL path. Pinned distribution packaging and
@@ -1038,8 +1119,8 @@ explicit v1 exceptions below keep the first implementation a vertical slice:
     call graph; they neither enter host HM types nor permit general mutation.
 12. Stage roots are statically selected. The implemented v1 accepted one inline or directly bound
     root plus same-module helpers; v2 replaces the helper rule with non-escaping local functions in
-    the root's lexical GPU island. Cross-module shader graphs come later only with an explicit domain
-    model.
+    the root's lexical GPU island. Cross-module shader graphs come later only with an explicit
+    domain model.
 
 The deliberately deferred items are additive API breadth: implicit promotion, higher-order shader
 values, optimization, automatic uniform capture, compute and general vertex stages, the full

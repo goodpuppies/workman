@@ -67,7 +67,8 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
     case "Var": {
       const scheme = env.get(expr.name);
       if (!scheme) {
-        t = context.dialect.inferProjection?.(expr, context) ??
+        t = context.dialect.inferUnboundVar?.(expr, context) ??
+          context.dialect.inferProjection?.(expr, context) ??
           inferDottedVar(expr.name, env, typeEnv);
         break;
       }
@@ -80,11 +81,11 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       });
       break;
     }
-    case "Tuple":
-      t = tuple(
-        expr.items.map((x) => inferExpr(x, context)),
-      );
+    case "Tuple": {
+      const items = expr.items.map((x) => inferExpr(x, context));
+      t = context.dialect.inferTuple?.(expr, items, context) ?? tuple(items);
       break;
+    }
     case "Record":
       t = inferRecordExpr(
         expr,
@@ -248,10 +249,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       );
       break;
     case "Call":
-      t = inferCall(
-        expr,
-        context,
-      );
+      t = context.dialect.inferCall?.(expr, context) ?? inferCall(expr, context);
       break;
     case "If":
       constrainAt(

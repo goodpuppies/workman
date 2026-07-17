@@ -1,7 +1,11 @@
 import type { Binding, CtorDecl, Decl, Expr, Pattern } from "../ast.ts";
 import type { BindingFacts } from "../binding_facts.ts";
 import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
-import type { GpuFragmentSelectionFacts } from "../gpu_selection.ts";
+import type {
+  GpuFragmentRootFact,
+  GpuFragmentSelectionFacts,
+  GpuFragmentSelectorFact,
+} from "../gpu_selection.ts";
 import type { InferResult } from "../infer.ts";
 import type { CtorId } from "../ids.ts";
 import type { ModuleGraph, ModuleNode } from "../module_graph.ts";
@@ -24,6 +28,18 @@ import {
   type GpuSliceSpanDto,
   type GpuSliceTypeDto,
 } from "./v2_dto.ts";
+import {
+  WMSLANG_BUILTIN_CATALOG_IDENTITY,
+  WMSLANG_BUILTIN_CATALOG_SCHEMA_VERSION,
+  WMSLANG_BUILTIN_OVERLOADS,
+} from "./builtin_catalog.generated.ts";
+import {
+  canonicalGpuType,
+  type GpuFunctionSpecialization,
+  type GpuFunctionTemplate,
+  GpuSpecializationError,
+  specializeGpuTemplates,
+} from "./v4_specialize.ts";
 
 type LambdaExpr = Extract<Expr, { kind: "Lambda" }>;
 type CallExpr = Extract<Expr, { kind: "Call" }>;
@@ -38,6 +54,12 @@ export type GpuSliceAnalysis = {
   fragmentSelections: GpuFragmentSelectionFacts;
 };
 
+export type NormalizedGpuSlice = {
+  root: GpuFragmentRootFact;
+  selectors: GpuFragmentSelectorFact[];
+  input: GpuSliceElaborationInput;
+};
+
 export class GpuSliceNormalizationError extends Error {
   constructor(
     readonly code:
@@ -49,6 +71,11 @@ export class GpuSliceNormalizationError extends Error {
       | "gpu.adt.unsupported"
       | "gpu.pattern.unsupported"
       | "gpu.expression.unsupported"
+      | "gpu.builtin.ambiguous"
+      | "gpu.operation.overload"
+      | "gpu.operation.ambiguous"
+      | "gpu.operation.unresolved"
+      | "gpu.numeric.range"
       | "gpu.recursion.mutual",
     readonly path: string,
     readonly subject: Expr | Pattern | Decl | Binding | CtorDecl | undefined,
@@ -73,10 +100,32 @@ export function normalizeGpuSliceProgram(analysis: GpuSliceAnalysis): GpuSliceEl
   return new SliceNormalizer(analysis).normalize();
 }
 
+export function normalizeGpuSlicePrograms(analysis: GpuSliceAnalysis): NormalizedGpuSlice[] {
+  const selections = analysis.fragmentSelections;
+  return selections.roots.map((root) => {
+    const selector = root.selectors[0];
+    if (!selector) {
+      throw new Error(`selected GPU root ${root.id} has no selector`);
+    }
+    const narrowed: GpuFragmentSelectionFacts = {
+      roots: [root],
+      selectors: [selector],
+      selectedCalls: new Set([selector.call]),
+      selectedLambdas: new Set([root.lambda]),
+    };
+    return {
+      root,
+      selectors: [...root.selectors],
+      input: normalizeGpuSliceProgram({ ...analysis, fragmentSelections: narrowed }),
+    };
+  });
+}
+
 function emptyInput(sourcePath: string): GpuSliceElaborationInput {
   return {
     schemaVersion: GPU_SLICE_SCHEMA_VERSION,
     sourcePath,
+    builtinCatalog: builtinCatalog(),
     root: { functionId: -1, selectorSpanId: -1, environmentId: -1 },
     environments: [],
     environmentFields: [],
@@ -100,6 +149,7 @@ function emptyInput(sourcePath: string): GpuSliceElaborationInput {
 
 type FunctionSite = {
   id: number;
+  templateId?: number;
   bindingId: number;
   name: string;
   lambda: LambdaExpr;
@@ -133,18 +183,30 @@ class SliceNormalizer {
   readonly spans: GpuSliceSpanDto[] = [];
 
   readonly #functionSites: FunctionSite[] = [];
+  readonly #specializedSites: FunctionSite[] = [];
   readonly #functionByBinding = new Map<number, FunctionSite>();
   readonly #topLevelLambdas = new Map<number, { binding: Binding; lambda: LambdaExpr }>();
   readonly #localLambdas = new Map<number, { binding: Binding; lambda: LambdaExpr }>();
+  readonly #inlineLambdaBindings = new Map<LambdaExpr, number>();
   readonly #valueBindingOwner = new Map<number, number>();
   readonly #typesByKey = new Map<string, number>();
-  readonly #patternsById = new Map<number, GpuSlicePatternDto>();
+  readonly #patternsById = new Map<string, GpuSlicePatternDto>();
   readonly #adtsById = new Map<number, GpuSliceAdtDto>();
   readonly #constructorsById = new Map<number, GpuSliceConstructorDto>();
   readonly #spansByKey = new Map<string, number>();
   readonly #environmentFieldsByName = new Map<string, GpuSliceEnvironmentFieldDto>();
+  readonly #environmentFieldTypes = new Map<string, Ty>();
+  readonly #usedResourceFieldIndexes = new Set<number>();
+  readonly #specializationById = new Map<number, GpuFunctionSpecialization>();
+  readonly #functionBindingById = new Map<number, number>();
+  readonly #recursionGroupByFunctionId = new Map<number, number>();
+  readonly #minimumI32MagnitudeLiterals = new WeakSet<Expr>();
   #environmentBindingId = -1;
   #currentFunctionId = -1;
+  #currentTemplateId = -1;
+  #currentSpecialization: GpuFunctionSpecialization | undefined;
+  #nextSyntheticBindingId = 0;
+  #nextInlineBindingId = -2;
 
   constructor(readonly analysis: GpuSliceAnalysis) {
     this.root = analysis.fragmentSelections.roots[0];
@@ -153,6 +215,7 @@ class SliceNormalizer {
     this.node = required(analysis.graph.nodes, this.path, "selected root module");
     this.result = required(analysis.results, this.path, "selected root inference result");
     this.bindings = required(analysis.bindings, this.path, "selected root binding facts");
+    this.#nextSyntheticBindingId = Math.max(-1, ...this.bindings.local) + 1;
     if (this.selector.path !== this.path) {
       throw new GpuSliceNormalizationError(
         "gpu.fragment.cross-module",
@@ -169,11 +232,15 @@ class SliceNormalizer {
     this.addEnvironment();
     this.discoverFunctions();
     this.collectOwnedBindings();
-    this.#functionSites.forEach((site) => this.addFunction(site));
+    this.validateFunctionCaptures();
+    this.specializeFunctions();
     this.addRecursionGroups();
+    this.#specializedSites.forEach((site) => this.addFunction(site));
+    this.validateResourceFieldsAreUsed();
     return {
       schemaVersion: GPU_SLICE_SCHEMA_VERSION,
       sourcePath: this.path,
+      builtinCatalog: builtinCatalog(),
       root: {
         functionId: 0,
         selectorSpanId: this.span(this.selector.call),
@@ -197,6 +264,18 @@ class SliceNormalizer {
       recursiveReferences: this.recursiveReferences,
       spans: this.spans,
     };
+  }
+
+  validateResourceFieldsAreUsed(): void {
+    const unused = this.environmentFields.find((field) =>
+      field.kind !== "uniform" && !this.#usedResourceFieldIndexes.has(field.declaredIndex)
+    );
+    if (!unused) return;
+    throw this.error(
+      "gpu.type.unsupported",
+      this.selector.call,
+      `shader environment resource ${unused.name} is declared but never used by the selected GPU root; unused resources would make the reflected WebGPU layout ambiguous`,
+    );
   }
 
   indexTopLevelLambdas(): void {
@@ -240,23 +319,31 @@ class SliceNormalizer {
       );
     }
     const bindingId = this.bindings.binders.get(factory.parameter.pattern);
-    const annotation = factory.parameter.annotation;
-    const nominal = annotation?.kind === "TName"
-      ? this.analysis.nominalFacts.types.find((item) =>
-        item.modulePath === this.path && item.name === annotation.name && item.kind === "record"
-      )
+    const appliedEnvironment = this.selector.environmentArgument
+      ? this.result.types.get(this.selector.environmentArgument)
       : undefined;
+    const parameterFact = this.analysis.patternFacts.byParam.get(factory.parameter);
+    const environmentSource = appliedEnvironment ?? parameterFact?.type;
+    const environmentType = environmentSource ? prune(environmentSource) : undefined;
+    const typeNameId = environmentType?.tag === "named"
+      ? this.analysis.nominalFacts.inferenceTypeIds.get(environmentType.id)
+      : undefined;
+    const nominal = typeNameId === undefined
+      ? undefined
+      : this.analysis.nominalFacts.types.find((item) =>
+        item.id === typeNameId && item.kind === "record"
+      );
     const record = nominal
       ? this.analysis.nominalFacts.records.find((item) => item.typeNameId === nominal.id)
       : undefined;
     const info = record
       ? [...this.result.typeEnv.values()].find((item) => item.id === record.inferenceTypeId)
       : undefined;
-    if (bindingId === undefined || !annotation || annotation.kind !== "TName" || !record || !info) {
+    if (bindingId === undefined || environmentType?.tag !== "named" || !record || !info) {
       throw this.error(
         "gpu.type.unsupported",
         factory.parameter.pattern,
-        "the v2 shader environment parameter must have one directly named nominal record type",
+        "the shader factory argument must infer one nominal record environment type",
       );
     }
     if (!info.recordFields || record.modulePath !== this.path) {
@@ -266,7 +353,7 @@ class SliceNormalizer {
         "the v2 shader environment must use a nominal record declared beside the shader factory",
       );
     }
-    if (record.declaration.params.length !== 0 || annotation.args.length !== 0) {
+    if (record.declaration.params.length !== 0 || environmentType.args.length !== 0) {
       throw this.error(
         "gpu.type.unsupported",
         record.declaration,
@@ -276,7 +363,7 @@ class SliceNormalizer {
 
     const environmentId = 0;
     const fields = instantiateRecordFields(info, []);
-    fields.forEach((field, declaredIndex) => {
+    const normalizedFields = fields.map((field, declaredIndex) => {
       let typeId: number;
       try {
         typeId = this.type(field.type);
@@ -284,31 +371,45 @@ class SliceNormalizer {
         throw this.error(
           "gpu.type.unsupported",
           record.declaration,
-          `shader environment field ${field.name} must be Number or a homogeneous Number tuple of width 2 to 4`,
+          `shader environment field ${field.name} must be a numeric uniform, Gpu.SampledTexture2D, or Gpu.Sampler`,
         );
       }
       const normalizedType = this.types[typeId];
       const supported = normalizedType.kind === "number" ||
         (normalizedType.kind === "tuple" && normalizedType.items.length >= 2 &&
           normalizedType.items.length <= 4 &&
-          normalizedType.items.every((item) => this.types[item]?.kind === "number"));
+          normalizedType.items.every((item) => this.types[item]?.kind === "number")) ||
+        normalizedType.kind === "sampled-texture-2d" || normalizedType.kind === "sampler";
       if (!supported) {
         throw this.error(
           "gpu.type.unsupported",
           record.declaration,
-          `shader environment field ${field.name} must be Number or a homogeneous Number tuple of width 2 to 4`,
+          `shader environment field ${field.name} must be a numeric uniform, Gpu.SampledTexture2D, or Gpu.Sampler`,
         );
       }
+      const kind: GpuSliceEnvironmentFieldDto["kind"] = normalizedType.kind === "sampled-texture-2d"
+        ? "sampled-texture-2d"
+        : normalizedType.kind === "sampler"
+        ? "sampler"
+        : "uniform";
+      return { field, declaredIndex, typeId, kind };
+    });
+    const hasUniforms = normalizedFields.some((field) => field.kind === "uniform");
+    let resourceIndex = 0;
+    normalizedFields.forEach(({ field, declaredIndex, typeId, kind }) => {
       const row: GpuSliceEnvironmentFieldDto = {
         id: this.environmentFields.length,
         environmentId,
         name: field.name,
         declaredIndex,
+        kind,
+        binding: kind === "uniform" ? 0 : (hasUniforms ? 1 : 0) + resourceIndex++,
         typeId,
         spanId: this.span(record.declaration),
       };
       this.environmentFields.push(row);
       this.#environmentFieldsByName.set(row.name, row);
+      this.#environmentFieldTypes.set(row.name, field.type);
     });
     this.#environmentBindingId = bindingId;
     this.environments.push({
@@ -335,23 +436,195 @@ class SliceNormalizer {
     });
     for (let index = 0; index < this.#functionSites.length; index++) {
       this.walk(this.#functionSites[index].lambda.body, (expression) => {
-        if (expression.kind !== "Call" || expression.callee.kind !== "Var") return;
-        if (this.semanticId(expression.callee) || this.constructorId(expression.callee) !== -1) {
-          return;
+        if (expression.kind !== "Call") return;
+        const candidates = [expression.callee, ...expression.args];
+        for (const candidate of candidates) {
+          if (candidate.kind === "Lambda") {
+            if (this.#inlineLambdaBindings.has(candidate)) continue;
+            const bindingId = this.#nextInlineBindingId--;
+            this.#inlineLambdaBindings.set(candidate, bindingId);
+            this.registerFunction({
+              id: this.#functionSites.length,
+              bindingId,
+              name: "lambda",
+              lambda: candidate,
+            });
+            continue;
+          }
+          if (candidate.kind !== "Var") continue;
+          if (candidate === expression.callee) {
+            if (this.semanticId(candidate) || this.constructorId(candidate) !== -1) continue;
+          }
+          const bindingId = this.bindings.references.get(candidate);
+          if (bindingId === undefined || this.#functionByBinding.has(bindingId)) continue;
+          const helper = this.#localLambdas.get(bindingId);
+          if (!helper) continue;
+          this.registerFunction({
+            id: this.#functionSites.length,
+            bindingId,
+            name: helper.binding.pattern.kind === "PVar" ? helper.binding.pattern.name : "helper",
+            lambda: helper.lambda,
+            binding: helper.binding,
+          });
         }
-        const bindingId = this.bindings.references.get(expression.callee);
-        if (bindingId === undefined || this.#functionByBinding.has(bindingId)) return;
-        const helper = this.#localLambdas.get(bindingId);
-        if (!helper) return;
-        this.registerFunction({
-          id: this.#functionSites.length,
-          bindingId,
-          name: helper.binding.pattern.kind === "PVar" ? helper.binding.pattern.name : "helper",
-          lambda: helper.lambda,
-          binding: helper.binding,
-        });
       });
     }
+  }
+
+  specializeFunctions(): void {
+    const templates = new Map<number, GpuFunctionTemplate>();
+    for (const site of this.#functionSites) {
+      templates.set(site.bindingId, this.functionTemplate(site));
+    }
+    const selected = this.result.types.get(this.selector.argument);
+    const selectedType = selected ? prune(selected) : undefined;
+    if (!selectedType || selectedType.tag !== "fn" || selectedType.params.length !== 1) {
+      throw this.error(
+        "gpu.type.unsupported",
+        this.selector.argument,
+        "selected fragment has no contextual function type",
+      );
+    }
+    const rootSite = requiredObject(this.#functionSites[0], "missing root function site");
+    let instances: GpuFunctionSpecialization[];
+    try {
+      instances = specializeGpuTemplates({
+        rootBindingId: rootSite.bindingId,
+        rootArgs: unpackCallType(selectedType.params[0], rootSite.lambda.params.length),
+        rootResult: selectedType.result,
+        templates,
+        freshenCallSites: true,
+      });
+    } catch (error) {
+      if (!(error instanceof GpuSpecializationError)) throw error;
+      throw this.error(
+        error.code === "gpu.operation.overload"
+          ? "gpu.operation.overload"
+          : error.code === "gpu.operation.ambiguous"
+          ? "gpu.operation.ambiguous"
+          : error.code === "gpu.operation.unresolved"
+          ? "gpu.operation.unresolved"
+          : error.code === "gpu.higher-order.unsupported"
+          ? "gpu.function.unsupported"
+          : "gpu.type.unsupported",
+        error.occurrence ?? this.root.lambda,
+        error.message,
+      );
+    }
+    const instanceCounts = new Map<number, number>();
+    for (const instance of instances) {
+      instanceCounts.set(
+        instance.template.bindingId,
+        (instanceCounts.get(instance.template.bindingId) ?? 0) + 1,
+      );
+    }
+    for (const instance of instances) {
+      const templateSite = requiredObject(
+        this.#functionSites.find((site) => site.bindingId === instance.template.bindingId),
+        `missing function site for ${instance.template.name}`,
+      );
+      this.#specializationById.set(instance.id, instance);
+      this.#functionBindingById.set(instance.id, this.#nextSyntheticBindingId++);
+      this.#specializedSites.push({
+        ...templateSite,
+        id: instance.id,
+        templateId: templateSite.id,
+        name: (instanceCounts.get(instance.template.bindingId) ?? 0) === 1
+          ? templateSite.name
+          : `${templateSite.name}__${specializationSuffix(instance)}`,
+      });
+    }
+  }
+
+  functionTemplate(site: FunctionSite): GpuFunctionTemplate {
+    const lambdaType = this.result.types.get(site.lambda);
+    const resolved = lambdaType ? prune(lambdaType) : undefined;
+    if (!resolved || resolved.tag !== "fn") {
+      throw this.error("gpu.type.unsupported", site.lambda, "GPU helper has no HM function type");
+    }
+    const params = site.lambda.params.map((param) =>
+      requiredObject(this.analysis.patternFacts.byParam.get(param), "missing GPU parameter fact")
+        .type
+    );
+    const occurrenceTypes = new Map<object, Ty>([[site.lambda, lambdaType!]]);
+    const operations: GpuFunctionTemplate["operations"] = [];
+    const calls: GpuFunctionTemplate["calls"] = [];
+    const equalities: [Ty, Ty][] = [];
+    const functionParamBindings = new Map<number, number>();
+    site.lambda.params.forEach((param, index) => {
+      const bindingId = param.pattern.kind === "PVar"
+        ? this.bindings.binders.get(param.pattern)
+        : undefined;
+      if (bindingId !== undefined) functionParamBindings.set(bindingId, index);
+    });
+    visitOwnedFunction(
+      site.lambda,
+      (expression) => {
+        const type = this.result.types.get(expression);
+        if (type) occurrenceTypes.set(expression, type);
+        const operation = this.result.facts.gpuOperations.get(expression);
+        if (operation) operations.push(operation);
+        if (expression.kind === "Var" && this.#environmentBindingId >= 0) {
+          const bindingId = this.bindings.references.get(expression);
+          const parts = expression.name.split(".");
+          const fieldType = bindingId === this.#environmentBindingId
+            ? this.#environmentFieldTypes.get(parts[1])
+            : undefined;
+          if (type && fieldType) {
+            equalities.push([
+              type,
+              parts.length === 3 ? numberComponent(fieldType, parts[2]) : fieldType,
+            ]);
+            if (parts.length === 3 && operation?.kind === "projection") {
+              equalities.push([operation.args[0], fieldType]);
+            }
+          }
+        }
+        if (expression.kind !== "Call" || expression.callee.kind !== "Var") return;
+        const targetBindingId = this.bindings.references.get(expression.callee);
+        if (targetBindingId === undefined) return;
+        const directTarget = this.#functionByBinding.has(targetBindingId)
+          ? targetBindingId
+          : undefined;
+        const targetFunctionParam = functionParamBindings.get(targetBindingId);
+        if (directTarget === undefined && targetFunctionParam === undefined) return;
+        const result = requiredObject(
+          this.result.types.get(expression),
+          "missing GPU call result type",
+        );
+        calls.push({
+          occurrence: expression,
+          targetBindingId: directTarget,
+          targetFunctionParam,
+          args: expression.args.map((argument) =>
+            requiredObject(this.result.types.get(argument), "missing GPU call argument type")
+          ),
+          result,
+          staticFunctionArgs: expression.args.map((argument) => {
+            if (argument.kind === "Lambda") return this.#inlineLambdaBindings.get(argument);
+            if (argument.kind !== "Var") return undefined;
+            const bindingId = this.bindings.references.get(argument);
+            return bindingId !== undefined && this.#localLambdas.has(bindingId)
+              ? bindingId
+              : undefined;
+          }),
+        });
+      },
+      (pattern) => {
+        const fact = this.analysis.patternFacts.byPattern.get(pattern);
+        if (fact) occurrenceTypes.set(pattern, fact.type);
+      },
+    );
+    return {
+      bindingId: site.bindingId,
+      name: site.name,
+      params,
+      result: resolved.result,
+      occurrenceTypes,
+      equalities,
+      operations,
+      calls,
+    };
   }
 
   registerFunction(site: FunctionSite): void {
@@ -363,6 +636,57 @@ class SliceNormalizer {
     for (const site of this.#functionSites) {
       site.lambda.params.forEach((param) => this.collectPatternBindings(param.pattern, site.id));
       this.collectExpressionBindings(site.lambda.body, site.id);
+    }
+  }
+
+  validateFunctionCaptures(): void {
+    for (const site of this.#functionSites) {
+      visitOwnedFunction(
+        site.lambda,
+        (expression) => {
+          if (
+            (expression.kind === "Record" || expression.kind === "JsonObject") &&
+            expression.fields.some((field) => {
+              const type = this.result.types.get(field.value);
+              return type !== undefined && prune(type).tag === "fn";
+            })
+          ) {
+            throw this.error(
+              "gpu.function.unsupported",
+              expression,
+              "GPU function values may not be stored in records or survive specialization",
+            );
+          }
+          if (
+            expression.kind === "Tuple" && expression.items.some((item) => {
+              const type = this.result.types.get(item);
+              return type !== undefined && prune(type).tag === "fn";
+            })
+          ) {
+            throw this.error(
+              "gpu.function.unsupported",
+              expression,
+              "GPU function values may not be stored in tuples or survive specialization",
+            );
+          }
+          if (expression.kind !== "Var") return;
+          const bindingId = this.bindings.references.get(expression);
+          if (bindingId === undefined || bindingId === this.#environmentBindingId) return;
+          const expressionType = this.result.types.get(expression);
+          if (expressionType && prune(expressionType).tag === "fn") return;
+          if (
+            this.#functionByBinding.has(bindingId) || this.#localLambdas.has(bindingId) ||
+            this.#topLevelLambdas.has(bindingId)
+          ) return;
+          if (this.#valueBindingOwner.get(bindingId) === site.id) return;
+          throw this.error(
+            "gpu.capture.illegal",
+            expression,
+            `GPU-local functions must receive ${expression.name} as a parameter instead of capturing it`,
+          );
+        },
+        () => {},
+      );
     }
   }
 
@@ -456,30 +780,37 @@ class SliceNormalizer {
   }
 
   addFunction(site: FunctionSite): void {
-    const lambdaType = this.result.types.get(site.lambda);
-    const resolved = lambdaType ? prune(lambdaType) : undefined;
-    if (!resolved || resolved.tag !== "fn") {
-      throw this.error("gpu.type.unsupported", site.lambda, "GPU function has no resolved type");
-    }
-    const paramIds = site.lambda.params.map((param, index) => {
+    const specialization = requiredObject(
+      this.#specializationById.get(site.id),
+      `missing specialization for ${site.name}`,
+    );
+    const previousFunctionId = this.#currentFunctionId;
+    const previousTemplateId = this.#currentTemplateId;
+    const previousSpecialization = this.#currentSpecialization;
+    this.#currentFunctionId = site.id;
+    this.#currentTemplateId = site.templateId ?? site.id;
+    this.#currentSpecialization = specialization;
+    const paramIds = site.lambda.params.flatMap((param, index) => {
+      if (specialization.staticFunctionParams[index] !== undefined) return [];
       const fact = requiredObject(
         this.analysis.patternFacts.byParam.get(param),
         "missing resolved parameter fact",
       );
       const typeId = site.id === 0 && index === 0
         ? this.rootCoordinateType()
-        : this.type(fact.type);
+        : this.type(specialization.occurrenceTypes.get(fact.param.pattern) ?? fact.type);
       const patternId = this.addPattern(fact.patternId, "parameter", typeId);
+      const paramId = this.params.length;
       this.params.push({
-        id: fact.id,
+        id: paramId,
         patternId,
         typeId,
         declaredIndex: index,
         spanId: this.span(param),
       });
-      return fact.id as number;
+      return [paramId];
     });
-    const resultTypeId = this.type(resolved.result);
+    const resultTypeId = this.type(specialization.result);
     const normalizedParamTypeIds = paramIds.map((paramId) =>
       requiredObject(
         this.params.find((param) => param.id === paramId),
@@ -494,54 +825,54 @@ class SliceNormalizer {
         result: resultTypeId,
       }),
     );
-    const previousFunctionId = this.#currentFunctionId;
-    this.#currentFunctionId = site.id;
     let bodyExprId: number;
     try {
       bodyExprId = this.expr(site.lambda.body);
     } finally {
       this.#currentFunctionId = previousFunctionId;
+      this.#currentTemplateId = previousTemplateId;
+      this.#currentSpecialization = previousSpecialization;
     }
-    const recursion = site.binding
-      ? this.analysis.recursionFacts.byBinding.get(site.binding)
-      : undefined;
     this.functions.push({
       id: site.id,
-      bindingId: site.bindingId,
+      bindingId: requiredObject(
+        this.#functionBindingById.get(site.id),
+        `missing cloned function binding for ${site.name}`,
+      ),
+      sourceBindingId: site.bindingId,
       name: site.name,
       typeId: functionTypeId,
       paramIds,
       resultTypeId,
       bodyExprId,
-      recursionGroupId: recursion?.groupId ?? -1,
+      recursionGroupId: this.#recursionGroupByFunctionId.get(site.id) ?? -1,
       spanId: this.span(site.lambda),
     });
   }
 
   addRecursionGroups(): void {
-    const functionIds = new Map(
-      this.#functionSites.filter((site) => site.bindingId >= 0).map((
-        site,
-      ) => [site.bindingId, site.id]),
-    );
-    for (const group of this.analysis.recursionFacts.groups) {
-      const members = group.members.flatMap((member) => {
-        const id = functionIds.get(member.bindingId);
-        return id === undefined ? [] : [id];
-      });
-      if (members.length === 0) continue;
-      if (group.members.length !== 1 || members.length !== 1) {
+    for (const site of this.#specializedSites) {
+      const recursion = site.binding
+        ? this.analysis.recursionFacts.byBinding.get(site.binding)
+        : undefined;
+      if (!recursion) continue;
+      const sourceGroup = this.analysis.recursionFacts.groups.find((group) =>
+        group.id === recursion.groupId
+      );
+      if (!sourceGroup || sourceGroup.members.length !== 1) {
         throw new GpuSliceNormalizationError(
           "gpu.recursion.mutual",
-          group.path,
-          group.declaration,
+          sourceGroup?.path ?? this.path,
+          sourceGroup?.declaration ?? site.binding,
           "wmslang v1 accepts only a single-member recursive group",
         );
       }
+      const groupId = this.recursionGroups.length;
+      this.#recursionGroupByFunctionId.set(site.id, groupId);
       this.recursionGroups.push({
-        id: group.id,
-        memberFunctionIds: members,
-        spanId: this.span(group.declaration),
+        id: groupId,
+        memberFunctionIds: [site.id],
+        spanId: this.span(sourceGroup.declaration),
       });
     }
   }
@@ -549,11 +880,25 @@ class SliceNormalizer {
   expr(expression: Expr): number {
     const id = this.expressions.length;
     this.expressions.push(undefined as unknown as GpuSliceExprDto);
-    let row: Omit<GpuSliceExprDto, "id" | "typeId" | "spanId">;
+    let row: GpuSliceExprRow;
     switch (expression.kind) {
       case "Int":
+        if (
+          !Number.isSafeInteger(expression.value) || expression.value < -2_147_483_648 ||
+          (expression.value > 2_147_483_647 &&
+            !(expression.value === 2_147_483_648 &&
+              this.#minimumI32MagnitudeLiterals.has(expression)))
+        ) {
+          throw this.error(
+            "gpu.numeric.range",
+            expression,
+            `GPU integer literal ${expression.value} is outside signed i32 range`,
+          );
+        }
+        row = baseExpr("number", { numberValue: expression.value, numberKind: "i32" });
+        break;
       case "Float":
-        row = baseExpr("number", { numberValue: expression.value });
+        row = baseExpr("number", { numberValue: expression.value, numberKind: "f32" });
         break;
       case "Bool":
         row = baseExpr("bool", { boolValue: expression.value });
@@ -591,14 +936,15 @@ class SliceNormalizer {
           );
           const patternId = this.addPattern(fact.patternId, "match");
           const bodyExprId = this.expr(arm.body);
+          const armId = this.matchArms.length;
           this.matchArms.push({
-            id: fact.id,
+            id: armId,
             patternId,
             bodyExprId,
             declaredIndex: index,
             spanId: this.span(arm),
           });
-          return fact.id as number;
+          return armId;
         });
         this.matches.push({ expressionId: id, valueExprId, armIds });
         row = baseExpr("match", {
@@ -627,6 +973,12 @@ class SliceNormalizer {
             `operator ${expression.op} is outside the v1 catalog`,
           );
         }
+        if (
+          expression.kind === "Unary" && expression.op === "-" &&
+          expression.value.kind === "Int" && expression.value.value === 2_147_483_648
+        ) {
+          this.#minimumI32MagnitudeLiterals.add(expression.value);
+        }
         row = baseExpr(expression.kind === "Binary" ? "binary" : "unary", {
           operatorId,
           children: expression.kind === "Binary"
@@ -642,7 +994,7 @@ class SliceNormalizer {
           `${expression.kind} is outside the wmslang v1 expression slice`,
         );
     }
-    const type = this.result.types.get(expression);
+    const type = this.typeForExpr(expression);
     if (!type) {
       throw this.error("gpu.type.unsupported", expression, "missing inferred expression type");
     }
@@ -655,6 +1007,7 @@ class SliceNormalizer {
         ).typeId
         : this.type(type),
       spanId: this.span(expression),
+      ownerFunctionId: this.#currentFunctionId,
       ...row,
     };
     return id;
@@ -662,7 +1015,7 @@ class SliceNormalizer {
 
   varExpr(
     expression: Extract<Expr, { kind: "Var" }>,
-  ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> {
+  ): GpuSliceExprRow {
     const uniform = this.environmentProjectionExpr(expression);
     if (uniform) return uniform;
     const projection = this.vectorProjectionExpr(expression);
@@ -701,7 +1054,7 @@ class SliceNormalizer {
         "top-level helpers are outside the selected lexical GPU island; declare the helper inside the @gpu root",
       );
     }
-    if (this.#valueBindingOwner.get(bindingId) !== this.#currentFunctionId) {
+    if (this.#valueBindingOwner.get(bindingId) !== this.#currentTemplateId) {
       throw this.error(
         "gpu.capture.illegal",
         expression,
@@ -720,7 +1073,7 @@ class SliceNormalizer {
 
   environmentProjectionExpr(
     expression: Extract<Expr, { kind: "Var" }>,
-  ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> | undefined {
+  ): GpuSliceExprRow | undefined {
     if (this.#environmentBindingId < 0) return undefined;
     const parts = expression.name.split(".");
     if (parts.length !== 2 && parts.length !== 3) return undefined;
@@ -754,16 +1107,20 @@ class SliceNormalizer {
         id: childId,
         typeId: field.typeId,
         spanId: this.span(expression),
+        ownerFunctionId: this.#currentFunctionId,
         ...baseExpr("uniform", { index: field.declaredIndex }),
       });
       return baseExpr("project", { index: lane, children: [childId] });
     }
-    return baseExpr("uniform", { index: field.declaredIndex });
+    if (field.kind !== "uniform") this.#usedResourceFieldIndexes.add(field.declaredIndex);
+    return baseExpr(field.kind === "uniform" ? "uniform" : "resource", {
+      index: field.declaredIndex,
+    });
   }
 
   vectorProjectionExpr(
     expression: Extract<Expr, { kind: "Var" }>,
-  ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> | undefined {
+  ): GpuSliceExprRow | undefined {
     const parts = expression.name.split(".");
     if (parts.length !== 2) return undefined;
     const index = ({ x: 0, y: 1, z: 2, w: 3 } as const)[
@@ -773,13 +1130,14 @@ class SliceNormalizer {
     const bindingId = this.bindings.references.get(expression);
     if (
       bindingId === undefined ||
-      this.#valueBindingOwner.get(bindingId) !== this.#currentFunctionId
+      this.#valueBindingOwner.get(bindingId) !== this.#currentTemplateId
     ) return undefined;
     const binding = this.analysis.patternFacts.patterns.find((fact) =>
       fact.bindingId === bindingId
     );
     if (!binding) return undefined;
-    const receiver = prune(binding.type);
+    const receiverType = this.typeForPattern(binding.pattern, binding.type);
+    const receiver = prune(receiverType);
     if (
       receiver.tag !== "tuple" || receiver.items.length < 2 || receiver.items.length > 4 ||
       index >= receiver.items.length ||
@@ -791,8 +1149,9 @@ class SliceNormalizer {
     const childId = this.expressions.length;
     this.expressions.push({
       id: childId,
-      typeId: this.type(binding.type),
+      typeId: this.type(receiverType),
       spanId: this.span(expression),
+      ownerFunctionId: this.#currentFunctionId,
       ...baseExpr("var", { bindingId }),
     });
     return baseExpr("project", { index, children: [childId] });
@@ -801,9 +1160,70 @@ class SliceNormalizer {
   callExpr(
     expression: CallExpr,
     expressionId: number,
-  ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> {
+  ): GpuSliceExprRow {
+    const resourceCall = this.result.facts.gpuResourceCalls.get(expression);
+    if (resourceCall) {
+      const parts = resourceCall.receiverName.split(".");
+      const receiverBindingId = expression.callee.kind === "Var"
+        ? this.bindings.references.get(expression.callee)
+        : undefined;
+      const field = parts.length === 2 && receiverBindingId === this.#environmentBindingId
+        ? this.#environmentFieldsByName.get(parts[1])
+        : undefined;
+      if (!field || field.kind !== "sampled-texture-2d") {
+        throw this.error(
+          "gpu.expression.unsupported",
+          expression,
+          "sampled texture calls require a Gpu.SampledTexture2D field from the current shader environment",
+        );
+      }
+      this.#usedResourceFieldIndexes.add(field.declaredIndex);
+      const receiverId = this.expressions.length;
+      this.expressions.push({
+        id: receiverId,
+        typeId: field.typeId,
+        spanId: this.span(expression.callee),
+        ownerFunctionId: this.#currentFunctionId,
+        ...baseExpr("resource", { index: field.declaredIndex }),
+      });
+      return baseExpr("resource-call", {
+        resourceOperation: resourceCall.operation,
+        children: [receiverId, ...expression.args.map((argument) => this.expr(argument))],
+      });
+    }
+    const builtinName = this.result.facts.gpuBuiltins.get(expression);
+    if (builtinName) {
+      const unresolved = [...expression.args, expression].some((item) => {
+        const type = this.typeForExpr(item);
+        return type !== undefined && containsUnresolvedType(type);
+      });
+      if (unresolved) {
+        throw this.error(
+          "gpu.builtin.ambiguous",
+          expression,
+          `Slang builtin ${builtinName} remains unresolved because no reachable GPU use determines its scalar/vector shape`,
+        );
+      }
+      return baseExpr("builtin", {
+        builtinName,
+        children: expression.args.map((argument) => this.expr(argument)),
+      });
+    }
     const semanticId = this.semanticId(expression.callee);
     if (semanticId) {
+      if (semanticId === GPU_SEMANTIC_IDS.i32 || semanticId === GPU_SEMANTIC_IDS.f32) {
+        if (expression.args.length !== 1) {
+          throw this.error(
+            "gpu.expression.unsupported",
+            expression,
+            `${semanticId} requires exactly one numeric argument`,
+          );
+        }
+        return baseExpr("convert", {
+          semanticId,
+          children: [this.expr(expression.args[0])],
+        });
+      }
       if (semanticId !== GPU_SEMANTIC_IDS.color) {
         throw this.error(
           "gpu.expression.unsupported",
@@ -836,8 +1256,8 @@ class SliceNormalizer {
       );
     }
     const bindingId = this.bindings.references.get(expression.callee);
-    const target = bindingId === undefined ? undefined : this.#functionByBinding.get(bindingId);
-    if (!target) {
+    const targetFunctionId = this.#currentSpecialization?.callTargets.get(expression);
+    if (targetFunctionId === undefined) {
       const topLevel = bindingId === undefined ? undefined : this.#topLevelLambdas.get(bindingId);
       throw this.error(
         "gpu.function.unsupported",
@@ -847,28 +1267,41 @@ class SliceNormalizer {
           : "GPU calls require a first-order helper declared inside the selected @gpu root",
       );
     }
+    const targetSpecialization = requiredObject(
+      this.#specializationById.get(targetFunctionId),
+      "missing target specialization",
+    );
     const recursion = this.analysis.recursionFacts.byExpression.get(expression);
     if (recursion) {
+      const groupId = requiredObject(
+        this.#recursionGroupByFunctionId.get(targetFunctionId),
+        "missing cloned recursion group",
+      );
       this.recursiveReferences.push({
         expressionId,
-        groupId: recursion.groupId,
-        targetFunctionId: target.id,
+        groupId,
+        targetFunctionId,
         relation: recursion.relation,
         invocation: recursion.invocation,
         spanId: this.span(expression),
       });
     }
     return baseExpr("call", {
-      bindingId,
-      functionId: target.id,
-      children: expression.args.map((argument) => this.expr(argument)),
+      bindingId: requiredObject(
+        this.#functionBindingById.get(targetFunctionId),
+        "missing specialized call binding",
+      ),
+      functionId: targetFunctionId,
+      children: expression.args.flatMap((argument, index) =>
+        targetSpecialization.staticFunctionParams[index] === undefined ? [this.expr(argument)] : []
+      ),
     });
   }
 
   blockExpr(
     expression: Extract<Expr, { kind: "Block" }>,
     expressionId: number,
-  ): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> {
+  ): GpuSliceExprRow {
     const itemIds: number[] = [];
     expression.items.forEach((item, declaredIndex) => {
       if (isLocalFunctionDeclaration(item, this.bindings, this.#localLambdas)) return;
@@ -901,8 +1334,9 @@ class SliceNormalizer {
       );
       const patternId = this.addPattern(fact.patternId, "let");
       const valueExprId = this.expr(binding.value);
+      const letId = this.lets.length;
       this.lets.push({
-        id: fact.id,
+        id: letId,
         patternId,
         valueExprId,
         declaredIndex: fact.declaredIndex,
@@ -914,7 +1348,7 @@ class SliceNormalizer {
         declaredIndex,
         kind: "let",
         expressionId: -1,
-        letId: fact.id,
+        letId,
         spanId: this.span(item),
       });
       itemIds.push(itemId);
@@ -935,26 +1369,30 @@ class SliceNormalizer {
     expectedContext: GpuSlicePatternDto["context"],
     forcedTypeId?: number,
   ): number {
-    const existing = this.#patternsById.get(patternId);
+    const key = `${this.#currentFunctionId}:${patternId}`;
+    const existing = this.#patternsById.get(key);
     if (existing) return existing.id;
     const fact = requiredObject(
       this.analysis.patternFacts.patterns.find((item) => item.id === patternId),
       `missing resolved pattern ${patternId}`,
     );
     const kind = this.validatePattern(fact, expectedContext);
+    const rowId = this.patterns.length;
+    this.patterns.push(undefined as unknown as GpuSlicePatternDto);
     const row: GpuSlicePatternDto = {
-      id: fact.id,
+      id: rowId,
       context: expectedContext,
       kind,
-      typeId: forcedTypeId ?? this.type(fact.type),
+      typeId: forcedTypeId ?? this.type(this.typeForPattern(fact.pattern, fact.type)),
+      ownerFunctionId: this.#currentFunctionId,
       bindingId: fact.bindingId ?? -1,
       constructorId: fact.constructorId ?? -1,
       children: fact.children.map((child) => this.addPattern(child, expectedContext)),
       spanId: this.span(fact.pattern),
     };
     if (fact.constructorId !== undefined) this.addConstructor(fact.constructorId);
-    this.#patternsById.set(row.id, row);
-    this.patterns.push(row);
+    this.#patternsById.set(key, row);
+    this.patterns[rowId] = row;
     return row.id;
   }
 
@@ -1001,6 +1439,15 @@ class SliceNormalizer {
     );
   }
 
+  typeForExpr(expression: Expr): Ty | undefined {
+    return this.#currentSpecialization?.occurrenceTypes.get(expression) ??
+      this.result.types.get(expression);
+  }
+
+  typeForPattern(pattern: Pattern, fallback: Ty): Ty {
+    return this.#currentSpecialization?.occurrenceTypes.get(pattern) ?? fallback;
+  }
+
   type(type: Ty): number {
     const target = prune(type);
     if (target.tag === "var") {
@@ -1026,6 +1473,12 @@ class SliceNormalizer {
       }));
     }
     if (target.tag === "named") {
+      if (target.name === "Gpu.SampledTexture2D") {
+        return this.internType("sampled-texture-2d", () => baseType("sampled-texture-2d"));
+      }
+      if (target.name === "Gpu.Sampler") {
+        return this.internType("sampler", () => baseType("sampler"));
+      }
       const typeNameId = this.analysis.nominalFacts.inferenceTypeIds.get(target.id);
       if (typeNameId === undefined) {
         throw this.typeError(`missing nominal identity for ${target.name}`);
@@ -1248,14 +1701,156 @@ class SliceNormalizer {
   }
 }
 
+function containsUnresolvedType(type: Ty): boolean {
+  const target = prune(type);
+  if (target.tag === "var") return true;
+  if (target.tag === "tuple") return target.items.some(containsUnresolvedType);
+  if (target.tag === "fn") {
+    return target.params.some(containsUnresolvedType) || containsUnresolvedType(target.result);
+  }
+  if (target.tag === "named") return target.args.some(containsUnresolvedType);
+  return false;
+}
+
+function unpackCallType(type: Ty, arity: number): Ty[] {
+  if (arity === 1) return [type];
+  const target = prune(type);
+  if (target.tag !== "tuple" || target.items.length !== arity) {
+    throw new Error(`GPU function expected ${arity} contextual arguments`);
+  }
+  return target.items;
+}
+
+function specializationSuffix(instance: GpuFunctionSpecialization): string {
+  return instance.params.map((param, index) =>
+    instance.staticFunctionParams[index] === undefined
+      ? canonicalGpuType(param)
+      : `Fn${instance.staticFunctionParams[index]}`
+  )
+    .join("_and_")
+    .replaceAll(/[^A-Za-z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "") || "unit";
+}
+
+function numberComponent(type: Ty, lane: string): Ty {
+  const index = ({ x: 0, y: 1, z: 2, w: 3 } as const)[lane as "x" | "y" | "z" | "w"];
+  const target = prune(type);
+  if (index === undefined || target.tag !== "tuple" || index >= target.items.length) {
+    throw new Error(`invalid shader environment vector projection .${lane}`);
+  }
+  return target.items[index];
+}
+
+function visitOwnedFunction(
+  lambda: LambdaExpr,
+  visitExpression: (expression: Expr) => void,
+  visitPattern: (pattern: Pattern) => void,
+): void {
+  const pattern = (value: Pattern): void => {
+    visitPattern(value);
+    if (value.kind === "PTuple") value.items.forEach(pattern);
+    else if (value.kind === "PRecord") value.fields.forEach((field) => pattern(field.pattern));
+    else if (value.kind === "PCtor") value.args.forEach(pattern);
+  };
+  const expression = (value: Expr): void => {
+    visitExpression(value);
+    switch (value.kind) {
+      case "Tuple":
+      case "JsonArray":
+        value.items.forEach(expression);
+        return;
+      case "Record":
+      case "JsonObject":
+        value.fields.forEach((field) => expression(field.value));
+        return;
+      case "FfiGet":
+        expression(value.receiver);
+        return;
+      case "FfiCall":
+        expression(value.receiver);
+        value.args.forEach(expression);
+        return;
+      case "FfiBindingCall":
+        value.args.forEach(expression);
+        return;
+      case "Lambda":
+        return;
+      case "Call":
+        expression(value.callee);
+        value.args.forEach(expression);
+        return;
+      case "If":
+        expression(value.cond);
+        expression(value.thenExpr);
+        expression(value.elseExpr);
+        return;
+      case "Match":
+        expression(value.value);
+        value.arms.forEach((arm) => {
+          pattern(arm.pattern);
+          expression(arm.body);
+        });
+        return;
+      case "Panic":
+        expression(value.message);
+        return;
+      case "Block":
+        value.items.forEach((item) => {
+          if (!isDecl(item)) {
+            expression(item);
+            return;
+          }
+          if (item.kind !== "LetDecl") return;
+          item.bindings.forEach((binding) => {
+            if (binding.value.kind === "Lambda") return;
+            pattern(binding.pattern);
+            expression(binding.value);
+          });
+        });
+        expression(value.result);
+        return;
+      case "Binary":
+      case "Pipe":
+        expression(value.left);
+        expression(value.right);
+        return;
+      case "Unary":
+        expression(value.value);
+        return;
+      default:
+        return;
+    }
+  };
+  lambda.params.forEach((param) => pattern(param.pattern));
+  expression(lambda.body);
+}
+
+function builtinCatalog(): GpuSliceElaborationInput["builtinCatalog"] {
+  return {
+    identity: {
+      schemaVersion: WMSLANG_BUILTIN_CATALOG_SCHEMA_VERSION,
+      ...WMSLANG_BUILTIN_CATALOG_IDENTITY,
+    },
+    overloads: WMSLANG_BUILTIN_OVERLOADS.map((overload) => ({
+      ...overload,
+      params: [...overload.params],
+    })),
+  };
+}
+
 function baseType(kind: GpuSliceTypeDto["kind"]): Omit<GpuSliceTypeDto, "id"> {
   return { kind, typeNameId: -1, items: [], params: [], result: -1 };
 }
 
+type GpuSliceExprRow = Omit<
+  GpuSliceExprDto,
+  "id" | "typeId" | "spanId" | "ownerFunctionId"
+>;
+
 function baseExpr(
   kind: GpuSliceExprDto["kind"],
-  overrides: Partial<Omit<GpuSliceExprDto, "id" | "kind" | "typeId" | "spanId">> = {},
-): Omit<GpuSliceExprDto, "id" | "typeId" | "spanId"> {
+  overrides: Partial<Omit<GpuSliceExprRow, "kind">> = {},
+): GpuSliceExprRow {
   return {
     kind,
     bindingId: -1,
@@ -1263,7 +1858,10 @@ function baseExpr(
     constructorId: -1,
     semanticId: "",
     operatorId: "",
+    builtinName: "",
+    resourceOperation: "",
     numberValue: 0,
+    numberKind: "",
     boolValue: false,
     index: -1,
     children: [],

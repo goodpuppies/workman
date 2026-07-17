@@ -4,12 +4,20 @@ import {
   loadWmslangSliceCompiler,
   validateGpuSliceCompilationOutput,
   validateGpuSliceElaborationInput,
+  WmslangNumericDiagnosticError,
 } from "../src/wmslang/v2_loader.ts";
 import {
   GpuSliceNormalizationError,
   normalizeGpuSliceProgram,
 } from "../src/wmslang/v2_normalize.ts";
 import { WmslangSemanticError } from "../src/wmslang/materialize.ts";
+import { loadDefaultWmslangSlangBackend } from "../src/wmslang/slang_backend.ts";
+import { GPU_SLICE_SCHEMA_VERSION } from "../src/wmslang/v2_dto.ts";
+import {
+  WMSLANG_BUILTIN_CATALOG_IDENTITY,
+  WMSLANG_BUILTIN_CATALOG_SCHEMA_VERSION,
+  WMSLANG_BUILTIN_OVERLOADS,
+} from "../src/wmslang/builtin_catalog.generated.ts";
 
 Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () => {
   const source = await acceptanceBlock("static_mandelbrot.wm");
@@ -20,7 +28,12 @@ Deno.test("schema v2 normalizes the static Mandelbrot vertical slice", async () 
   const input = normalizeGpuSliceProgram(analysis);
   validateGpuSliceElaborationInput(input);
 
-  assertEquals(input.schemaVersion, 2);
+  assertEquals(input.schemaVersion, GPU_SLICE_SCHEMA_VERSION);
+  assertEquals(input.builtinCatalog.identity, {
+    schemaVersion: WMSLANG_BUILTIN_CATALOG_SCHEMA_VERSION,
+    ...WMSLANG_BUILTIN_CATALOG_IDENTITY,
+  });
+  assertEquals(input.builtinCatalog.overloads, WMSLANG_BUILTIN_OVERLOADS);
   assertEquals(input.sourcePath, "/test/main.wm");
   assertEquals(input.root.functionId, 0);
   assertEquals(input.functions.map((fn) => fn.name), [
@@ -168,17 +181,13 @@ Deno.test("schema v2 enforces lexical GPU helper ownership", async () => {
     "may not escape as values",
   );
 
-  await assertRejects(
-    () =>
-      analysisFor(`
+  const multiple = await analysisFor(`
       let a = (coord) => { @gpu; Gpu.color((0.0, 0.0, 0.0, 1.0)) };
       let b = (coord) => { @gpu; Gpu.color((1.0, 1.0, 1.0, 1.0)) };
       let first = Gpu.fragment(a);
       let second = Gpu.fragment(b);
-    `),
-    GpuSliceNormalizationError,
-    "exactly one Gpu.fragment",
-  );
+    `);
+  assertEquals(multiple.gpuSlices.length, 2);
 
   const virtualFs = new Map([
     ["/test/helper.wm", `let shadePart = (x) => { x * x };`],
@@ -257,7 +266,7 @@ Deno.test("schema v2 round-trips through the real Workman wmslang ABI", async ()
   const typeOutput = compiler.elaborateGpuSliceTypes(input);
   const output = compiler.compileGpuSlice(input);
 
-  assertEquals(output.schemaVersion, 2);
+  assertEquals(output.schemaVersion, GPU_SLICE_SCHEMA_VERSION);
   assertEquals(output.program, input);
   assertEquals(typeOutput.shaderTypes, output.shaderTypes);
   assertEquals("slangSource" in typeOutput, false);
@@ -272,6 +281,20 @@ Deno.test("schema v2 round-trips through the real Workman wmslang ABI", async ()
   assertEquals(output.shaderTypes.some((type) => type.kind === "vector"), true);
   assertEquals(output.typeEvidence.length, input.types.length);
   assertEquals(output.diagnostics, []);
+  const semanticTypesById = new Map(input.types.map((type) => [type.id, type]));
+  const numericSemanticType = (typeId: number) => {
+    const type = semanticTypesById.get(typeId);
+    return type?.kind === "number" ||
+      (type?.kind === "tuple" && type.items.length >= 2 && type.items.length <= 4 &&
+        type.items.every((item) => semanticTypesById.get(item)?.kind === "number"));
+  };
+  assertEquals(
+    output.occurrences.filter((occurrence) =>
+      occurrence.kind !== "function" && numericSemanticType(occurrence.typeId) &&
+      occurrence.representation === ""
+    ),
+    [],
+  );
   assertEquals(output.irFunctions.map((fn) => fn.name), [
     "mandelbrotShade",
     "escapeIterations",
@@ -440,8 +463,14 @@ Deno.test("schema v2 lowers GLML-style vector arithmetic and scalar broadcasts",
   const output = (await realSliceCompiler()).compileGpuSlice(input);
 
   assertEquals(output.diagnostics, []);
+  const shaderTypesById = new Map(output.shaderTypes.map((type) => [type.id, type]));
   assertEquals(
-    output.shaderTypes.filter((type) => type.kind === "vector").map((type) => type.items.length),
+    output.shaderTypes
+      .filter((type) =>
+        type.kind === "vector" &&
+        type.items.every((item) => shaderTypesById.get(item)?.kind === "f32")
+      )
+      .map((type) => type.items.length),
     [
       2,
       4,
@@ -461,15 +490,11 @@ Deno.test("schema v2 lowers GLML-style vector arithmetic and scalar broadcasts",
     operation.kind === "binary"
   );
   assertEquals(
-    binaryOperations.filter((operation) =>
-      operation.operatorId === "gpu.operator.multiply"
-    ).length,
+    binaryOperations.filter((operation) => operation.operatorId === "gpu.operator.multiply").length,
     2,
   );
   assertEquals(
-    binaryOperations.filter((operation) =>
-      operation.operatorId === "gpu.operator.subtract"
-    ).length,
+    binaryOperations.filter((operation) => operation.operatorId === "gpu.operator.subtract").length,
     1,
   );
   assertEquals(
@@ -584,9 +609,9 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
         };
         let current: Uniforms = .{ time = 1.0 };
         let fragment = Gpu.fragment(shade(current));
-      `),
+    `),
     Error,
-    "shader factory requires one annotated host parameter",
+    "shader factory requires one host parameter",
   );
 
   await assertRejects(
@@ -819,6 +844,464 @@ Deno.test("schema v2 executes a trailing-semicolon expression exactly once", asy
     true,
   );
   assertEquals(output.diagnostics, []);
+});
+
+Deno.test("schema v5 preserves numeric literal representation evidence through lowering", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => {
+        @gpu;
+        let integerEvidence = 7;
+        let floatEvidence = 8.5;
+        integerEvidence;
+        floatEvidence;
+        Gpu.color((0.0, 0.0, 0.0, 1.0))
+      };
+
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  validateGpuSliceElaborationInput(input);
+
+  const sourceKinds = new Map(
+    input.expressions
+      .filter((expression) => expression.kind === "number")
+      .map((expression) => [expression.numberValue, expression.numberKind]),
+  );
+  assertEquals(sourceKinds.get(7), "i32");
+  assertEquals(sourceKinds.get(8.5), "f32");
+  assertEquals(
+    input.expressions
+      .filter((expression) => expression.kind !== "number")
+      .every((expression) => expression.numberKind === ""),
+    true,
+  );
+
+  const integer = input.expressions.find((expression) => expression.numberValue === 7)!;
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  validateGpuSliceCompilationOutput(output);
+  const occurrenceEvidence = new Map(
+    output.occurrences
+      .filter((occurrence) => occurrence.kind === "expression")
+      .map((occurrence) => [occurrence.sourceId, occurrence.representationEvidence]),
+  );
+  assertEquals(occurrenceEvidence.get(integer.id), "i32");
+  assertEquals(
+    occurrenceEvidence.get(
+      input.expressions.find((expression) => expression.numberValue === 8.5)!.id,
+    ),
+    "f32",
+  );
+  const occurrenceRepresentations = new Map(
+    output.occurrences
+      .filter((occurrence) => occurrence.kind === "expression")
+      .map((occurrence) => [occurrence.sourceId, occurrence.representation]),
+  );
+  assertEquals(occurrenceRepresentations.get(integer.id), "i32");
+  assertEquals(
+    occurrenceRepresentations.get(
+      input.expressions.find((expression) => expression.numberValue === 8.5)!.id,
+    ),
+    "f32",
+  );
+  const integerOccurrence = output.occurrences.find((occurrence) =>
+    occurrence.kind === "expression" && occurrence.sourceId === integer.id
+  )!;
+  const floatOccurrence = output.occurrences.find((occurrence) =>
+    occurrence.kind === "expression" &&
+    occurrence.sourceId ===
+      input.expressions.find((expression) => expression.numberValue === 8.5)!.id
+  )!;
+  assertEquals(
+    output.shaderTypes.find((type) => type.id === integerOccurrence.shaderTypeId)?.kind,
+    "i32",
+  );
+  assertEquals(
+    output.shaderTypes.find((type) => type.id === floatOccurrence.shaderTypeId)?.kind,
+    "f32",
+  );
+  const irKinds = new Map(
+    output.irExpressions
+      .filter((expression) => expression.kind === "number")
+      .map((expression) => [expression.numberValue, expression.numberKind]),
+  );
+  const loweredKinds = new Map(
+    output.loweredAtoms
+      .filter((atom) => atom.kind === "number")
+      .map((atom) => [atom.numberValue, atom.numberKind]),
+  );
+  assertEquals(irKinds.get(7), "i32");
+  assertEquals(irKinds.get(8.5), "f32");
+  assertEquals(loweredKinds.get(7), "i32");
+  assertEquals(loweredKinds.get(8.5), "f32");
+  const integerAtom = output.loweredAtoms.find((atom) => atom.numberValue === 7)!;
+  assertEquals(
+    output.shaderTypes.find((type) => type.id === integerAtom.typeId)?.kind,
+    "i32",
+  );
+  assertEquals(output.slangSource.includes("int(7)"), true);
+  assertEquals(output.slangSource.includes("float(8.5)"), true);
+
+  assertThrows(
+    () =>
+      validateGpuSliceElaborationInput({
+        ...input,
+        expressions: input.expressions.map((expression) =>
+          expression.id === integer.id ? { ...expression, numberKind: "" } : expression
+        ),
+      }),
+    Error,
+    "wrong numberKind",
+  );
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        occurrences: output.occurrences.map((occurrence) =>
+          occurrence.kind === "expression" && occurrence.sourceId === integer.id
+            ? { ...occurrence, representationEvidence: "f32" }
+            : occurrence
+        ),
+      }),
+    Error,
+    "wrong representation evidence",
+  );
+  assertThrows(
+    () =>
+      validateGpuSliceCompilationOutput({
+        ...output,
+        occurrences: output.occurrences.map((occurrence) =>
+          occurrence.kind === "expression" && occurrence.sourceId === integer.id
+            ? { ...occurrence, representation: "f32" }
+            : occurrence
+        ),
+      }),
+    Error,
+    "contradicts its evidence",
+  );
+});
+
+Deno.test("schema v5 validates signed i32 literals only in reachable GPU code", async () => {
+  const accepted = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let hostOnly = 9007199254740991;
+      let shade = (_coord) => {
+        @gpu;
+        let minimum = -2147483648;
+        minimum;
+        Gpu.color((0.0, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  assertEquals(
+    accepted.expressions.some((expression) =>
+      expression.kind === "number" &&
+      (expression.numberValue === -2_147_483_648 || expression.numberValue === 2_147_483_648)
+    ),
+    true,
+  );
+  const acceptedOutput = (await realSliceCompiler()).compileGpuSlice(accepted);
+  assertEquals(acceptedOutput.slangSource.includes("int(2147483648)"), false);
+  assertEquals(acceptedOutput.slangSource.includes("-2147483648"), true);
+
+  for (const literal of ["2147483648", "-2147483649", "9007199254740991"]) {
+    const error = await assertRejects(
+      () =>
+        analysisFor(`
+          let shade = (_coord) => {
+            @gpu;
+            Gpu.color((${literal}, 0.0, 0.0, 1.0))
+          };
+          let fragment = Gpu.fragment(shade);
+        `).then(normalizeGpuSliceProgram),
+      GpuSliceNormalizationError,
+      "outside signed i32 range",
+    );
+    assertEquals(error.code, "gpu.numeric.range");
+  }
+});
+
+Deno.test("schema v5 lowers exact i32 scalar/vector arithmetic and rejects mixed flow", async () => {
+  const compiler = await realSliceCompiler();
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => {
+        @gpu;
+        let scalar = ((7 + 3) * 2 - 1) % 5;
+        let vector = (1, 2) + (3, 4);
+        scalar;
+        vector;
+        Gpu.color((0.0, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = compiler.compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.slangSource.includes("int2"), true);
+  assertEquals(output.slangSource.includes("int(7)"), true);
+  assertEquals(output.slangSource.includes(" % int(5)"), true);
+  assertEquals(
+    output.irExpressions
+      .filter((expression) => expression.kind === "binary")
+      .every((expression) =>
+        ["i32", "vector"].includes(
+          output.shaderTypes.find((type) => type.id === expression.typeId)?.kind ?? "",
+        )
+      ),
+    true,
+  );
+
+  const mixed = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => {
+        @gpu;
+        let invalid = 1 + 1.0;
+        invalid;
+        Gpu.color((0.0, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const conflict = assertThrows(
+    () => compiler.compileGpuSlice(mixed),
+    WmslangNumericDiagnosticError,
+    "conflicting GPU numeric representations",
+  );
+  assertEquals(conflict.diagnostic.code, "gpu.numeric.conflict");
+  assertEquals(conflict.diagnostic.related.length, 1);
+  assertEquals(conflict.diagnostic.related[0].spanId === conflict.diagnostic.spanId, false);
+  assertEquals(
+    conflict.diagnostic.related[0].label.includes("representation originates here"),
+    true,
+  );
+});
+
+Deno.test("schema v5 selects verified pure i32 Slang builtin overloads", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => {
+        @gpu;
+        let integerScalar = abs(-7);
+        let integerVector = max((1, 4), (3, 2));
+        let floatScalar = abs(-7.0);
+        integerScalar;
+        integerVector;
+        floatScalar;
+        Gpu.color((0.0, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  const selected = output.builtinSelections.map((selection) =>
+    WMSLANG_BUILTIN_OVERLOADS.find((overload) => overload.id === selection.overloadId)!
+  );
+  assertEquals(
+    selected.map((overload) => [overload.name, overload.params, overload.result]),
+    [
+      ["abs", ["i32"], "i32"],
+      ["max", ["i32x2", "i32x2"], "i32x2"],
+      ["abs", ["f32"], "f32"],
+    ],
+  );
+  assertEquals(output.slangSource.includes("int wm_l_"), true);
+  assertEquals(output.slangSource.includes("int2 wm_l_"), true);
+  assertEquals(output.slangSource.includes("float wm_l_"), true);
+  assertEquals(output.slangSource.includes(" = abs("), true);
+  assertEquals(output.slangSource.includes(" = max("), true);
+});
+
+Deno.test("schema v5 preserves explicit numeric conversions through IR and Slang", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => {
+        @gpu;
+        let integer = Gpu.i32(3.5);
+        let float = Gpu.f32(integer);
+        let repaired = Gpu.f32(1) + 1.0;
+        integer;
+        Gpu.color((float + repaired, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  assertEquals(
+    input.expressions
+      .filter((expression) => expression.kind === "convert")
+      .map((expression) => expression.semanticId),
+    ["gpu.i32", "gpu.f32", "gpu.f32"],
+  );
+
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(
+    output.irExpressions.filter((expression) => expression.kind === "convert").length,
+    3,
+  );
+  assertEquals(
+    output.loweredOperations
+      .filter((operation) => operation.kind === "convert")
+      .map((operation) => operation.semanticId),
+    ["gpu.i32", "gpu.f32", "gpu.f32"],
+  );
+  assertEquals(output.slangSource.includes("int(float(3.5))"), true);
+  assertEquals(output.slangSource.includes("float(int(1))"), true);
+});
+
+Deno.test("schema v5 never defaults an unresolved numeric flow, with or without annotation", async () => {
+  const compiler = await realSliceCompiler();
+  for (const annotation of ["", ": Number"]) {
+    const input = normalizeGpuSliceProgram(
+      await analysisFor(`
+        record Uniforms = { value: Number };
+        let shade = (uniforms: Uniforms) => {
+          (_coord) => {
+            @gpu;
+            let value${annotation} = uniforms.value;
+            value;
+            Gpu.color((0.0, 0.0, 0.0, 1.0))
+          }
+        };
+        let current: Uniforms = .{ value = 42 };
+        let fragment = Gpu.fragment(shade(current));
+      `),
+    );
+    const unresolved = assertThrows(
+      () => compiler.compileGpuSlice(input),
+      WmslangNumericDiagnosticError,
+      "GPU numeric representation has insufficient context",
+    );
+    assertEquals(unresolved.diagnostic.code, "gpu.numeric.unresolved");
+    assertEquals(unresolved.diagnostic.related, []);
+  }
+});
+
+Deno.test("schema v5 freshens one HM helper for independent i32 and f32 instances", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (_coord) => {
+        @gpu;
+        let twice = (value) => { value + value };
+        let integer = twice(2);
+        let float = twice(2.0);
+        integer;
+        float;
+        Gpu.color((0.0, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  const helpers = output.irFunctions.filter((fn) => fn.name.startsWith("twice"));
+  assertEquals(helpers.length, 2);
+  assertEquals(
+    helpers.map((fn) => output.shaderTypes.find((type) => type.id === fn.resultTypeId)?.kind)
+      .sort(),
+    ["f32", "i32"],
+  );
+  assertEquals(output.slangSource.includes("int wm_f_"), true);
+  assertEquals(output.slangSource.includes("float wm_f_"), true);
+});
+
+Deno.test("schema v5 lowers sampled texture Sample and Load through the resource ABI", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      record Inputs = {
+        resolution: (Number, Number),
+        previous: Gpu.SampledTexture2D,
+        sampler: Gpu.Sampler
+      };
+      let shade = (inputs: Inputs) => {
+        (coord) => {
+          @gpu;
+          let uv = coord / inputs.resolution;
+          let sampled = inputs.previous.Sample(inputs.sampler, uv);
+          let loaded = inputs.previous.Load((0, 0, 0));
+          (sampled.x + loaded.x * 0.0, sampled.y, sampled.z, 1.0)
+        }
+      };
+      let texture: Gpu.SampledTexture2D = Panic("not evaluated by shader compilation");
+      let sampler: Gpu.Sampler = Panic("not evaluated by shader compilation");
+      let current: Inputs = .{
+        resolution = (640.0, 480.0),
+        previous = texture,
+        sampler = sampler
+      };
+      let fragment = Gpu.fragment(shade(current));
+    `),
+  );
+  validateGpuSliceElaborationInput(input);
+  assertEquals(
+    input.environmentFields.map((field) => [field.name, field.kind, field.binding]),
+    [
+      ["resolution", "uniform", 0],
+      ["previous", "sampled-texture-2d", 1],
+      ["sampler", "sampler", 2],
+    ],
+  );
+  assertEquals(
+    input.expressions
+      .filter((expression) => expression.kind === "resource-call")
+      .map((expression) => expression.resourceOperation),
+    ["sample", "load"],
+  );
+
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(
+    output.irExpressions
+      .filter((expression) => expression.kind === "resource-call")
+      .map((expression) => expression.resourceOperation),
+    ["sample", "load"],
+  );
+  assertEquals(
+    output.loweredOperations
+      .filter((operation) => operation.kind === "resource-call")
+      .map((operation) => operation.resourceOperation),
+    ["sample", "load"],
+  );
+  assertEquals(output.slangSource.includes("ConstantBuffer<wm_environment> wm_uniforms"), true);
+  assertEquals(output.slangSource.includes("Texture2D<float4> wm_r_1"), true);
+  assertEquals(output.slangSource.includes("SamplerState wm_r_2"), true);
+  assertEquals(output.slangSource.includes(".Sample("), true);
+  assertEquals(output.slangSource.includes(".Load("), true);
+  const compiled = (await loadDefaultWmslangSlangBackend()).compile(output.slangSource);
+  assertEquals(compiled.resourceLayout, {
+    group: 0,
+    bindings: [
+      { name: "wm_r_1", binding: 1, kind: "sampled-texture-2d" },
+      { name: "wm_r_2", binding: 2, kind: "sampler" },
+    ],
+  });
+  assertEquals(compiled.wgsl.includes("@binding(1) @group(0)"), true);
+  assertEquals(compiled.wgsl.includes("@binding(2) @group(0)"), true);
+});
+
+Deno.test("schema v5 rejects declared resources omitted by the linked shader", async () => {
+  const error = await assertRejects(
+    () =>
+      analysisFor(`
+        record Inputs = {
+          previous: Gpu.SampledTexture2D,
+          sampler: Gpu.Sampler
+        };
+        let shade = (inputs: Inputs) => {
+          (_coord) => {
+            @gpu;
+            inputs.previous.Load((0, 0, 0))
+          }
+        };
+        let texture: Gpu.SampledTexture2D = Panic("not evaluated by shader compilation");
+        let sampler: Gpu.Sampler = Panic("not evaluated by shader compilation");
+        let current: Inputs = .{ previous = texture, sampler = sampler };
+        let fragment = Gpu.fragment(shade(current));
+      `).then(normalizeGpuSliceProgram),
+    GpuSliceNormalizationError,
+    "sampler is declared but never used",
+  );
+  assertEquals(error.code, "gpu.type.unsupported");
 });
 
 async function analysisFor(source: string) {

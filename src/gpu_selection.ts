@@ -172,13 +172,13 @@ function resolveShaderFactoryApplication(
     : undefined;
   if (
     bindingId === undefined || outer.directives.length !== 0 || outer.params.length !== 1 ||
-    expression.args.length !== 1 || !outer.params[0].annotation
+    expression.args.length !== 1
   ) {
     throw new GpuFragmentSelectionError(
       "gpu.fragment.invalid-factory",
       resolved.site.path ?? currentPath,
       expression,
-      "a shader factory requires one annotated host parameter and must return exactly one @gpu lambda",
+      "a shader factory requires one host parameter and must return exactly one @gpu lambda",
     );
   }
   return {

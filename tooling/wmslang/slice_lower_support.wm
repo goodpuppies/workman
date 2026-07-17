@@ -230,6 +230,7 @@ let localAtom = (
     spanId = spanId,
     localId = localId,
     numberValue = 0,
+    numberKind = "",
     boolValue = false,
   };
   pushAtom(atom, state)
@@ -248,6 +249,7 @@ let literalAtom = (
     spanId = expression.spanId,
     localId = -1,
     numberValue = expression.numberValue,
+    numberKind = expression.numberKind,
     boolValue = expression.boolValue,
   };
   pushAtom(atom, state)
@@ -280,6 +282,9 @@ let baseOperation = (
     fieldId = -1,
     operatorId = expression.operatorId,
     semanticId = expression.semanticId,
+    builtinName = expression.builtinName,
+    builtinOverloadId = expression.builtinOverloadId,
+    resourceOperation = expression.resourceOperation,
     index = expression.index,
     args = Js.Array.fromList([]),
   };

@@ -120,10 +120,10 @@ let illegalFragment = Gpu.fragment((coord) => {
   @gpu;
 
   let rec nonTail = (value) => {
-    if (value <= 0) {
-      0
+    if (value <= 0.0) {
+      0.0
     } else {
-      1 + nonTail(value - 1)
+      1.0 + nonTail(value - 1.0)
     }
   };
 

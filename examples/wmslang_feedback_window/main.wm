@@ -1,0 +1,377 @@
+-- A local-Shadertoy-style two-pass Game of Life. The update fragment reads the
+-- previous rgba16float texture and writes the next state offscreen; the display
+-- fragment samples that result onto the SDL window. Host recursion owns pass
+-- order and immutable ping-pong orientation.
+
+from "../wmslang_window/src/sdl_window.wm" import {
+  NativeRuntime, NativeError, QuitEvent, MouseEvent, IgnoredEvent, NoEvent,
+  ResizeEvent,
+  startResizableNative, nativeSurface, pollNative, resizeNative, delayNative,
+  presentNative, closeNative
+};
+from "../wmslang_window/src/webgpu_present.wm" import {
+  FragmentRenderer, OffscreenFragmentRenderer,
+  createFragmentRenderer, createSiblingFragmentRenderer,
+  createFeedbackTexture2D, createNearestSampler,
+  createOffscreenFragmentRenderer, renderFragment, renderFragmentTo,
+  destroyOffscreenFragmentRenderer, destroyFragmentRenderer
+};
+
+type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
+
+record UpdateInputs = {
+  frame: Number,
+  previous: Gpu.SampledTexture2D
+};
+
+record DisplayInputs = {
+  resolution: (Number, Number),
+  image: Gpu.SampledTexture2D,
+  sampler: Gpu.Sampler
+};
+
+record FeedbackTexture = {
+  physical: Gpu.Texture2D,
+  sampled: Gpu.SampledTexture2D,
+  target: Gpu.RenderTarget2D
+};
+
+record FeedbackPair = {
+  read: FeedbackTexture,
+  write: FeedbackTexture
+};
+
+record FrameState = {
+  quit: Bool,
+  frame: Number,
+  width: Number,
+  height: Number,
+  pendingResize: Option<(Number, Number)>,
+  pair: FeedbackPair
+};
+
+type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
+
+let width = 960;
+let height = 640;
+
+let bootstrapShade = (_coord) => {
+  @gpu;
+  (0.0, 0.0, 0.0, 1.0)
+};
+
+let updateShade = (inputs: UpdateInputs) => {
+  (coord) => {
+    @gpu;
+
+    let x = Gpu.i32(coord.x);
+    let y = Gpu.i32(coord.y);
+    let centerPixel = inputs.previous.Load((x, y, 0));
+    let northwest = inputs.previous.Load((x - 1, y - 1, 0));
+    let north = inputs.previous.Load((x, y - 1, 0));
+    let northeast = inputs.previous.Load((x + 1, y - 1, 0));
+    let west = inputs.previous.Load((x - 1, y, 0));
+    let east = inputs.previous.Load((x + 1, y, 0));
+    let southwest = inputs.previous.Load((x - 1, y + 1, 0));
+    let south = inputs.previous.Load((x, y + 1, 0));
+    let southeast = inputs.previous.Load((x + 1, y + 1, 0));
+    let center = centerPixel.x;
+    let neighbors =
+      northwest.x + north.x + northeast.x + west.x +
+      east.x + southwest.x + south.x + southeast.x;
+
+    -- Repeat a tiny glider across the feedback surface. Unlike isolated random
+    -- cells, this seed is still visibly alive after several ping-pong passes.
+    let tileX = x % 8;
+    let tileY = y % 8;
+    let seeded =
+      (tileX == 1 && tileY == 0) ||
+      (tileX == 2 && tileY == 1) ||
+      (tileX == 0 && tileY == 2) ||
+      (tileX == 1 && tileY == 2) ||
+      (tileX == 2 && tileY == 2);
+    let alive = if (inputs.frame == 0) {
+      seeded
+    } else {
+      if (center > 0.5) {
+        neighbors == 2.0 || neighbors == 3.0
+      } else {
+        neighbors == 3.0
+      }
+    };
+    if (alive) {
+      (1.0, 0.72, 0.24, 1.0)
+    } else {
+      -- The red lane is the exact simulation state consumed by the next pass.
+      (0.0, 0.008, 0.015, 1.0)
+    }
+  }
+};
+
+let displayShade = (inputs: DisplayInputs) => {
+  (coord) => {
+    @gpu;
+    inputs.image.Sample(inputs.sampler, coord / inputs.resolution)
+  }
+};
+
+let bootstrapFragment = Gpu.fragment(bootstrapShade);
+let updateFragmentFor = (inputs: UpdateInputs) => {
+  Gpu.fragment(updateShade(inputs))
+};
+let displayFragmentFor = (inputs: DisplayInputs) => {
+  Gpu.fragment(displayShade(inputs))
+};
+
+let makeFeedbackTexture = (
+  renderer: FragmentRenderer,
+  textureWidth: Number,
+  textureHeight: Number
+) => {
+  createFeedbackTexture2D(renderer, textureWidth, textureHeight)
+    :> Result.andThen((physical) => {
+    let assemble = Monad.lift Result (sampled, target) => {
+      let texture: FeedbackTexture = .{
+        physical = physical,
+        sampled = sampled,
+        target = target
+      };
+      Ok(texture)
+    };
+    Result|
+      Gpu.sampledTexture2D(physical),
+      Gpu.renderTarget2D(physical)
+    | :> assemble
+  })
+};
+
+let makeFeedbackPair = (
+  renderer: FragmentRenderer,
+  textureWidth: Number,
+  textureHeight: Number
+) => {
+  let assemble = Monad.lift Result (read, write) => {
+    let pair: FeedbackPair = .{ read = read, write = write };
+    Ok(pair)
+  };
+  Result|
+    makeFeedbackTexture(renderer, textureWidth, textureHeight),
+    makeFeedbackTexture(renderer, textureWidth, textureHeight)
+  | :> assemble
+};
+
+let swap = (pair: FeedbackPair) => {
+  let next: FeedbackPair = .{ read = pair.write, write = pair.read };
+  next
+};
+
+let updateFragment = (state: FrameState) => {
+  let inputs: UpdateInputs = .{
+    frame = state.frame,
+    previous = state.pair.read.sampled
+  };
+  updateFragmentFor(inputs)
+};
+
+let displayFragment = (state: FrameState, sampler: Gpu.Sampler) => {
+  let inputs: DisplayInputs = .{
+    resolution = (state.width, state.height),
+    image = state.pair.write.sampled,
+    sampler = sampler
+  };
+  displayFragmentFor(inputs)
+};
+
+let applyNativeEvent = (state: FrameState, event) => {
+  match(event) {
+    QuitEvent => {
+      let next: FrameState = .{ ..state, quit = true };
+      PollDone(next)
+    },
+    MouseEvent(_dx, _dy) => { PollAgain(state) },
+    ResizeEvent(nextWidth, nextHeight) => {
+      if (nextWidth <= 0 || nextHeight <= 0) {
+        PollAgain(state)
+      } else {
+        let next: FrameState = .{
+          ..state,
+          pendingResize = Some((nextWidth, nextHeight))
+        };
+        PollAgain(next)
+      }
+    },
+    IgnoredEvent => { PollAgain(state) },
+    NoEvent => { PollDone(state) }
+  }
+};
+
+let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Number) => {
+  if (remaining <= 0) {
+    Ok(state)
+  } else {
+    match(pollNative(native)) {
+      Err(error) => { Err(NativeFailure(error)) },
+      Ok(event) => {
+        match(applyNativeEvent(state, event)) {
+          PollDone(done) => { Ok(done) },
+          PollAgain(next) => { drainEvents(native, next, remaining - 1) }
+        }
+      }
+    }
+  }
+};
+
+let destroyPair = (pair: FeedbackPair) => {
+  Result|
+    Gpu.destroyTexture2D(pair.read.physical),
+    Gpu.destroyTexture2D(pair.write.physical)
+  | :> Result.map((_) => { void })
+};
+
+let resizeFrame = (
+  native: NativeRuntime,
+  renderer: FragmentRenderer,
+  state: FrameState,
+  nextWidth: Number,
+  nextHeight: Number
+) => {
+  match(makeFeedbackPair(renderer, nextWidth, nextHeight)) {
+    Err(error) => { Err(HostFailure(error)) },
+    Ok(nextPair) => {
+      match(resizeNative(native, nextWidth, nextHeight)) {
+        Err(error) => {
+          let _retired = destroyPair(nextPair);
+          Err(NativeFailure(error))
+        },
+        Ok(_) => {
+          destroyPair(state.pair) :> Result.mapErr(HostFailure) :> Result.map((_) => {
+            let resized: FrameState = .{
+              ..state,
+              frame = 0,
+              width = nextWidth,
+              height = nextHeight,
+              pendingResize = None,
+              pair = nextPair
+            };
+            resized
+          })
+        }
+      }
+    }
+  }
+};
+
+let rec frameLoop = (
+  native: NativeRuntime,
+  displayRenderer: FragmentRenderer,
+  updateRenderer: OffscreenFragmentRenderer,
+  sampler: Gpu.Sampler,
+  state: FrameState
+) => {
+  match(drainEvents(native, state, 256)) {
+    Err(error) => { Err(error) },
+    Ok(inputState) => {
+      if (inputState.quit) {
+        Ok(inputState)
+      } else {
+        match(inputState.pendingResize) {
+          Some(size) => {
+            let (nextWidth, nextHeight) = size;
+            resizeFrame(native, displayRenderer, inputState, nextWidth, nextHeight)
+              :> Result.andThen((resized) => {
+                frameLoop(native, displayRenderer, updateRenderer, sampler, resized)
+              })
+          },
+          None => {
+            let update = updateFragment(inputState);
+            let display = displayFragment(inputState, sampler);
+            Result|
+              renderFragmentTo(updateRenderer, update, inputState.pair.write.target)
+                :> Result.mapErr(HostFailure),
+              renderFragment(displayRenderer, display) :> Result.mapErr(HostFailure),
+              presentNative(native) :> Result.mapErr(NativeFailure),
+              delayNative(native, 75) :> Result.mapErr(NativeFailure)
+            | :> Result.andThen((_) => {
+              let next: FrameState = .{
+                ..inputState,
+                frame = inputState.frame + 1,
+                pair = swap(inputState.pair)
+              };
+              frameLoop(native, displayRenderer, updateRenderer, sampler, next)
+            })
+          }
+        }
+      }
+    }
+  }
+};
+
+let runWindow = (native: NativeRuntime) => {
+  createFragmentRenderer(nativeSurface(native), bootstrapFragment) :> Task.map((bootstrap) => {
+    let collect = Monad.lift Result (pair, sampler) => { Ok((pair, sampler)) };
+    let resources = Result|
+      makeFeedbackPair(bootstrap, width, height),
+      createNearestSampler(bootstrap)
+    | :> collect;
+    match(resources) {
+      Err(error) => {
+        let _closed = closeNative(native);
+        print(HostFailure(error))
+      },
+      Ok(values) => {
+        let (pair, sampler) = values;
+        let initial: FrameState = .{
+          quit = false,
+          frame = 0,
+          width = width,
+          height = height,
+          pendingResize = None,
+          pair = pair
+        };
+        let renderers = Result|
+          createSiblingFragmentRenderer(bootstrap, displayFragment(initial, sampler)),
+          createOffscreenFragmentRenderer(bootstrap, updateFragment(initial))
+        |;
+        match(renderers) {
+          Err(error) => {
+            let _textures = destroyPair(pair);
+            let _renderer = destroyFragmentRenderer(bootstrap);
+            let _closed = closeNative(native);
+            print(HostFailure(error))
+          },
+          Ok(rendererValues) => {
+            let (displayRenderer, updateRenderer) = rendererValues;
+            let rendered = frameLoop(
+              native,
+              displayRenderer,
+              updateRenderer,
+              sampler,
+              initial
+            );
+            let cleanup = Result|
+              destroyOffscreenFragmentRenderer(updateRenderer) :> Result.mapErr(HostFailure),
+              destroyPair(pair) :> Result.mapErr(HostFailure),
+              destroyFragmentRenderer(displayRenderer) :> Result.mapErr(HostFailure),
+              closeNative(native) :> Result.mapErr(NativeFailure)
+            |;
+            match(Result|rendered, cleanup|) {
+              Ok(_) => { void },
+              Err(error) => { print(error) }
+            }
+          }
+        }
+      }
+    }
+  }) :> Task.mapErr(HostFailure) :> Task.recover((error) => {
+    let _closed = closeNative(native);
+    print(error)
+  })
+};
+
+let main = () => {
+  startResizableNative(width, height)
+    :> Result.mapErr(NativeFailure)
+    :> Task.fromResult
+    :> Task.andThen(runWindow)
+    :> Task.recover((error) => { print(error) })
+};

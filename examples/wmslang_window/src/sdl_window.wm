@@ -1,6 +1,7 @@
 -- Focused SDL2 -> Deno.UnsafeWindowSurface boundary, adapted from wmthree.
 
 from js.global import { Uint8Array };
+from js.global("Reflect") import { set as reflectSet };
 from js.global("Deno") import {
   dlopen: _deep_, UnsafePointerView, UnsafeWindowSurface
 };
@@ -14,12 +15,18 @@ type NativeError =
   | NativeDenoError<Js.Error>
   | NativeMessage<String>;
 
-type NativeEvent = QuitEvent | MouseEvent<Number, Number> | IgnoredEvent | NoEvent;
+type NativeEvent =
+  | QuitEvent
+  | MouseEvent<Number, Number>
+  | ResizeEvent<Number, Number>
+  | IgnoredEvent
+  | NoEvent;
 type NativeSurface = UnsafeWindowSurface;
 
 record NativeRuntime = {
   surface: NativeSurface,
   poll: (Void) => Result<NativeEvent, NativeError>,
+  resize: (Number, Number) => Result<Void, NativeError>,
   delay: (Number) => Result<Void, NativeError>,
   close: (Void) => Result<Void, NativeError>
 };
@@ -29,6 +36,8 @@ let sdlWindowShown = 4;
 let sdlWindowposCentered = 805240832;
 let sdlQuit = 256;
 let sdlMousemotion = 1024;
+let sdlWindowevent = 512;
+let sdlWindoweventSizeChanged = 6;
 
 let denoResult = (value) => { value :> Result.mapErr(NativeDenoError) };
 let sdlResult = (value) => { value :> Result.mapErr(NativeSdlError) };
@@ -145,13 +154,26 @@ let pollEvent = (sdl, eventPtr, eventView) => {
           if (kind == sdlQuit) {
             Ok(QuitEvent)
           } else {
-            if (kind == sdlMousemotion) {
+            if (kind == sdlWindowevent) {
+              eventView.getUint8(12) :> denoResult :> Result.andThen((windowEvent) => {
+                if (windowEvent == sdlWindoweventSizeChanged) {
+                  Result|
+                    eventView.getInt32(16) :> denoResult,
+                    eventView.getInt32(20) :> denoResult
+                  | :> Result.map((width, height) => { ResizeEvent(width, height) })
+                } else {
+                  Ok(IgnoredEvent)
+                }
+              })
+            } else {
+              if (kind == sdlMousemotion) {
               Result|
                 eventView.getInt32(28) :> denoResult,
                 eventView.getInt32(32) :> denoResult
               | :> Result.map((dx, dy) => { MouseEvent(dx, dy) })
-            } else {
-              Ok(IgnoredEvent)
+              } else {
+                Ok(IgnoredEvent)
+              }
             }
           }
         })
@@ -162,7 +184,7 @@ let pollEvent = (sdl, eventPtr, eventView) => {
   sdl.symbols.SDL_PollEvent(Some(eventPtr)) :> sdlResult :> status
 };
 
-let startNative = (width: Number, height: Number) => {
+let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) => {
   let initialize = lift Result (sdl) => {
     sdl.symbols.SDL_Init(sdlInitVideo) :> sdlResult
       :> Result.andThen((code) => { expectZero("SDL_Init failed", code) })
@@ -172,7 +194,7 @@ let startNative = (width: Number, height: Number) => {
     let create = lift Result (title) => {
       sdl.symbols.SDL_CreateWindow(
         Some(title), sdlWindowposCentered, sdlWindowposCentered,
-        width, height, sdlWindowShown
+        width, height, windowFlags
       ) :> sdlResult :> Result.andThen((window) => {
         sdl.symbols.SDL_SetRelativeMouseMode(1) :> sdlResult
           :> Result.andThen((code) => { expectZero("SDL_SetRelativeMouseMode failed", code) })
@@ -190,6 +212,12 @@ let startNative = (width: Number, height: Number) => {
       .{
         surface,
         poll = (_) => { pollEvent(sdl, eventPtr, eventView) },
+        resize = (nextWidth, nextHeight) => {
+          Result|
+            reflectSet(surface, "width", nextWidth) :> denoResult,
+            reflectSet(surface, "height", nextHeight) :> denoResult
+          | :> Result.map((_) => { void })
+        },
         delay = (milliseconds) => {
           sdl.symbols.SDL_Delay(milliseconds) :> sdlResult
         },
@@ -205,8 +233,18 @@ let startNative = (width: Number, height: Number) => {
   loadSdl() :> initialize :> openWindow :> attachSurface :> attachEvents
 };
 
+let startNative = (width: Number, height: Number) => {
+  startNativeWithFlags(width, height, sdlWindowShown)
+};
+let startResizableNative = (width: Number, height: Number) => {
+  startNativeWithFlags(width, height, sdlWindowShown + 32)
+};
+
 let nativeSurface = (runtime: NativeRuntime) => { runtime.surface };
 let pollNative = (runtime: NativeRuntime) => { runtime.poll(void) };
+let resizeNative = (runtime: NativeRuntime, width: Number, height: Number) => {
+  runtime.resize(width, height)
+};
 let delayNative = (runtime: NativeRuntime, milliseconds: Number) => {
   runtime.delay(milliseconds)
 };

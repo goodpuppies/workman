@@ -5,6 +5,7 @@ import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { loadFrontendV2 } from "../frontend_v2_loader.ts";
 import { runtime } from "../io.ts";
 import { DocumentStore } from "./documents.ts";
+import { completionAt } from "./completion.ts";
 import { documentSymbols } from "./document_symbols.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { hoverAt } from "./hover.ts";
@@ -68,6 +69,7 @@ async function handleMessage(message: RpcMessage) {
         definitionProvider: true,
         referencesProvider: true,
         documentSymbolProvider: true,
+        completionProvider: { triggerCharacters: [] },
         ...(frontendOptions.frontend === "v2" && structuralInlaysEnabled
           ? { inlayHintProvider: true }
           : {}),
@@ -117,6 +119,19 @@ async function handleMessage(message: RpcMessage) {
     await respond(
       message.id,
       hover,
+    );
+    return;
+  }
+  if (message.method === "textDocument/completion") {
+    const params = message.params as TextDocumentPositionParams;
+    await respond(
+      message.id,
+      await completionAt(
+        params.textDocument.uri,
+        params.position,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
     );
     return;
   }

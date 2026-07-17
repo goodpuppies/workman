@@ -32,7 +32,12 @@ import {
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
-import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_facts.ts";
+import {
+  recordConsumedFfiUse,
+  recordExprFact,
+  recordPrimitiveCarrierFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function inferMatch(
   expr: Extract<Expr, { kind: "Match" }>,
@@ -132,17 +137,32 @@ export function inferBinary(
   });
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
-  const dialectResult = context.dialect.inferBinary?.(expr, left, right, context);
-  if (dialectResult) return dialectResult;
+  const leftCarrier = resultParts(left, typeEnv);
+  const rightCarrier = resultParts(right, typeEnv);
+  const leftOperand = leftCarrier?.value ?? left;
+  const rightOperand = rightCarrier?.value ?? right;
+  const dialectResult = context.dialect.inferBinary?.(
+    expr,
+    leftOperand,
+    rightOperand,
+    context,
+  );
+  if (dialectResult) {
+    return wrapBinaryCarrierResult(
+      expr,
+      dialectResult,
+      leftCarrier,
+      rightCarrier,
+      typeEnv,
+      facts,
+      provenance,
+    );
+  }
   if (expr.op === "++") {
     rejectUnresolvedFfiResultOperand(expr.left, left, typeEnv);
     rejectUnresolvedFfiResultOperand(expr.right, right, typeEnv);
   }
   const operatorType = instantiate(op);
-  const leftCarrier = resultParts(left, typeEnv);
-  const rightCarrier = resultParts(right, typeEnv);
-  const leftOperand = leftCarrier?.value ?? left;
-  const rightOperand = rightCarrier?.value ?? right;
   const actual = fn([tuple([leftOperand, rightOperand])], result);
   constrainAt(
     operatorType,
@@ -181,6 +201,26 @@ export function inferBinary(
     },
   );
   if (expr.op === "==" || expr.op === "!=") assertEqualityType(leftOperand, typeEnv, adts);
+  return wrapBinaryCarrierResult(
+    expr,
+    result,
+    leftCarrier,
+    rightCarrier,
+    typeEnv,
+    facts,
+    provenance,
+  );
+}
+
+function wrapBinaryCarrierResult(
+  expr: Extract<Expr, { kind: "Binary" }>,
+  result: Ty,
+  leftCarrier: { value: Ty; error: Ty } | undefined,
+  rightCarrier: { value: Ty; error: Ty } | undefined,
+  typeEnv: TypeEnv,
+  facts: TypeFacts,
+  provenance: TypeProvenance,
+): Ty {
   if (!leftCarrier && !rightCarrier) return result;
   if (leftCarrier && rightCarrier) {
     constrainAt(
@@ -209,6 +249,13 @@ export function inferBinary(
   const carrier = leftCarrier ?? rightCarrier;
   const resultInfo = typeEnv.get("Result");
   if (!carrier || !resultInfo) return result;
+  recordPrimitiveCarrierFact(facts, {
+    carrier: "Result",
+    occurrence: expr,
+    error: carrier.error,
+    operands: [leftCarrier ? "wrapped" : "pure", rightCarrier ? "wrapped" : "pure"],
+    payloadResult: result,
+  });
   return named(resultInfo, [result, carrier.error]);
 }
 

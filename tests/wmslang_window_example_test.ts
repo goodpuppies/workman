@@ -23,3 +23,18 @@ Deno.test("SDL window example keeps the complete WebGPU presentation path in Wor
   assertEquals(javaScript.includes("const Inside"), false);
   assertEquals(javaScript.includes("const Escaped"), false);
 });
+
+Deno.test("SDL feedback example compiles explicit resize and texture retirement", async () => {
+  const javaScript = await compileFile(
+    new URL("../examples/wmslang_feedback_window/main.wm", import.meta.url).pathname,
+  );
+
+  assertStringIncludes(javaScript, "__wm_gpu_texture_2d");
+  assertStringIncludes(javaScript, "__wm_gpu_sampled_texture_2d");
+  assertStringIncludes(javaScript, "__wm_gpu_render_target_2d");
+  assertStringIncludes(javaScript, "__wm_gpu_destroy_texture_2d");
+  assertStringIncludes(javaScript, "__wm_gpu_validate_render_target");
+  assertStringIncludes(javaScript, '__wm_js_member("Reflect" + "." + "set")');
+  assertStringIncludes(javaScript, "resizeFrame");
+  assertStringIncludes(javaScript, "frameLoop");
+});

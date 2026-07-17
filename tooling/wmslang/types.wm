@@ -254,6 +254,7 @@ record GpuSlicePatternDto = {
   context: String,
   kind: String,
   typeId: Number,
+  ownerFunctionId: Number,
   bindingId: Number,
   constructorId: Number,
   children: Js.Array<Number>,
@@ -311,20 +312,44 @@ record GpuSliceExprDto = {
   kind: String,
   typeId: Number,
   spanId: Number,
+  ownerFunctionId: Number,
   bindingId: Number,
   functionId: Number,
   constructorId: Number,
   semanticId: String,
   operatorId: String,
+  builtinName: String,
+  resourceOperation: String,
   numberValue: Number,
+  numberKind: String,
   boolValue: Bool,
   index: Number,
   children: Js.Array<Number>,
 };
 
+record GpuSliceBuiltinCatalogIdentityDto = {
+  schemaVersion: Number,
+  slangVersion: String,
+  sourceSha256: String,
+};
+
+record GpuSliceBuiltinOverloadDto = {
+  id: Number,
+  name: String,
+  params: Js.Array<String>,
+  result: String,
+  sourceSignature: String,
+};
+
+record GpuSliceBuiltinCatalogDto = {
+  identity: GpuSliceBuiltinCatalogIdentityDto,
+  overloads: Js.Array<GpuSliceBuiltinOverloadDto>,
+};
+
 record GpuSliceFunctionDto = {
   id: Number,
   bindingId: Number,
+  sourceBindingId: Number,
   name: String,
   typeId: Number,
   paramIds: Js.Array<Number>,
@@ -338,7 +363,15 @@ record GpuSliceOccurrenceTypeDto = {
   kind: String,
   sourceId: Number,
   typeId: Number,
+  shaderTypeId: Number,
   spanId: Number,
+  representationEvidence: String,
+  representation: String,
+};
+
+record GpuSliceBuiltinSelectionDto = {
+  expressionId: Number,
+  overloadId: Number,
 };
 
 record GpuSliceTypeElaborationOutputDto = {
@@ -346,6 +379,7 @@ record GpuSliceTypeElaborationOutputDto = {
   shaderTypes: Js.Array<GpuSliceTypeDto>,
   typeEvidence: Js.Array<GpuSliceTypeEvidenceDto>,
   occurrences: Js.Array<GpuSliceOccurrenceTypeDto>,
+  builtinSelections: Js.Array<GpuSliceBuiltinSelectionDto>,
 };
 
 record GpuSliceRootDto = {
@@ -359,6 +393,8 @@ record GpuSliceEnvironmentFieldDto = {
   environmentId: Number,
   name: String,
   declaredIndex: Number,
+  kind: String,
+  binding: Number,
   typeId: Number,
   spanId: Number,
 };
@@ -391,6 +427,7 @@ record GpuSliceRecursiveReferenceDto = {
 record GpuSliceElaborationInputDto = {
   schemaVersion: Number,
   sourcePath: String,
+  builtinCatalog: GpuSliceBuiltinCatalogDto,
   root: GpuSliceRootDto,
   environments: Js.Array<GpuSliceEnvironmentDto>,
   environmentFields: Js.Array<GpuSliceEnvironmentFieldDto>,
@@ -436,7 +473,11 @@ record GpuSliceIrExprDto = {
   constructorId: Number,
   semanticId: String,
   operatorId: String,
+  builtinName: String,
+  builtinOverloadId: Number,
+  resourceOperation: String,
   numberValue: Number,
+  numberKind: String,
   boolValue: Bool,
   index: Number,
   children: Js.Array<Number>,
@@ -503,6 +544,7 @@ record GpuSliceLoweredAtomDto = {
   spanId: Number,
   localId: Number,
   numberValue: Number,
+  numberKind: String,
   boolValue: Bool,
 };
 
@@ -519,6 +561,9 @@ record GpuSliceLoweredOperationDto = {
   fieldId: Number,
   operatorId: String,
   semanticId: String,
+  builtinName: String,
+  builtinOverloadId: Number,
+  resourceOperation: String,
   index: Number,
   args: Js.Array<Number>,
 };
@@ -584,6 +629,7 @@ record GpuSliceCompilationOutputDto = {
   shaderTypes: Js.Array<GpuSliceTypeDto>,
   typeEvidence: Js.Array<GpuSliceTypeEvidenceDto>,
   occurrences: Js.Array<GpuSliceOccurrenceTypeDto>,
+  builtinSelections: Js.Array<GpuSliceBuiltinSelectionDto>,
   irFunctions: Js.Array<GpuSliceIrFunctionDto>,
   irExpressions: Js.Array<GpuSliceIrExprDto>,
   irMatchArms: Js.Array<GpuSliceIrMatchArmDto>,

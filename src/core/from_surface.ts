@@ -14,12 +14,13 @@ import type {
   RecordPatternField,
 } from "../ast.ts";
 import type { InferResult } from "../infer.ts";
+import { basisCtorId } from "../basis.ts";
 import { type BindingFacts, resolveModuleBindingFacts } from "../binding_facts.ts";
 import { gpuOnlyBindingIds } from "../gpu_host_boundary.ts";
 import { resolveGpuFragmentSelections } from "../gpu_selection.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
 import { type NominalFacts, resolveModuleNominalFacts } from "../nominal_facts.ts";
-import { type BindingId, CompilerIdAllocator, type TypeNameId } from "../ids.ts";
+import { type BindingId, CompilerIdAllocator, type CtorId, type TypeNameId } from "../ids.ts";
 import type { MaterializedGpuArtifacts } from "../gpu_artifact.ts";
 import { prune, type Ty, type TypeEnv } from "../types.ts";
 import type {
@@ -232,7 +233,17 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
           semanticId === GPU_SEMANTIC_IDS.artifactIdentity ||
           semanticId === GPU_SEMANTIC_IDS.uniformBinding ||
           semanticId === GPU_SEMANTIC_IDS.uniformByteLength ||
-          semanticId === GPU_SEMANTIC_IDS.uniformBytes
+          semanticId === GPU_SEMANTIC_IDS.uniformBytes ||
+          semanticId === GPU_SEMANTIC_IDS.texture2D ||
+          semanticId === GPU_SEMANTIC_IDS.sampledTexture2D ||
+          semanticId === GPU_SEMANTIC_IDS.renderTarget2D ||
+          semanticId === GPU_SEMANTIC_IDS.nearestSampler ||
+          semanticId === GPU_SEMANTIC_IDS.linearSampler ||
+          semanticId === GPU_SEMANTIC_IDS.destroyTexture2D ||
+          semanticId === GPU_SEMANTIC_IDS.bindGroupEntries ||
+          semanticId === GPU_SEMANTIC_IDS.bindingCount ||
+          semanticId === GPU_SEMANTIC_IDS.renderTargetView ||
+          semanticId === GPU_SEMANTIC_IDS.validateRenderTarget
         ) return { kind: "CoreVar", name: expr.name, node: expr.node };
         throw new Error(
           `compiler-owned GPU operation ${semanticId} reached host Core lowering before materialization`,
@@ -679,7 +690,12 @@ function resultCarrierExpr(expr: Expr, context: CoreLoweringContext): CoreExpr {
   if (isResultCarrier(context.types.get(expr), context.typeEnv)) return value;
   return {
     kind: "CoreApp",
-    callee: { kind: "CoreVar", name: "Ok", node: expr.node },
+    callee: {
+      kind: "CoreVar",
+      name: "Ok",
+      ctorId: basisCtorId("Ok") as CtorId,
+      node: expr.node,
+    },
     arg: value,
     node: expr.node,
   };

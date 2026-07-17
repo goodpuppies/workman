@@ -3,7 +3,11 @@ import type { InferResult } from "./infer.ts";
 import { CompilerIdAllocator } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import type { GpuSliceElaborationInput } from "./wmslang/v2_dto.ts";
-import { normalizeGpuSliceProgram } from "./wmslang/v2_normalize.ts";
+import {
+  type NormalizedGpuSlice,
+  normalizeGpuSliceProgram,
+  normalizeGpuSlicePrograms,
+} from "./wmslang/v2_normalize.ts";
 import { gpuOnlyBindingIds } from "./gpu_host_boundary.ts";
 import type { BindingId } from "./ids.ts";
 import type { TypeNameId } from "./ids.ts";
@@ -22,6 +26,7 @@ export type ProgramAnalysis = {
   gpuOnlyBindings: ReadonlySet<BindingId>;
   gpuOnlyTypeNames: ReadonlySet<TypeNameId>;
   fragmentSelections: GpuFragmentSelectionFacts;
+  gpuSlices: NormalizedGpuSlice[];
   gpuInput: GpuSliceElaborationInput;
   ids: CompilerIdAllocator;
 };
@@ -45,7 +50,7 @@ export function buildProgramAnalysis(
     result: results.get(path)!,
     bindings: bindings.get(path)!,
   })));
-  const gpuInput = normalizeGpuSliceProgram({
+  const gpuAnalysis = {
     graph,
     results,
     bindings,
@@ -53,16 +58,20 @@ export function buildProgramAnalysis(
     patternFacts,
     recursionFacts,
     fragmentSelections,
-  });
+  };
+  const gpuSlices = normalizeGpuSlicePrograms(gpuAnalysis);
+  const gpuInput = gpuSlices[0]?.input ?? normalizeGpuSliceProgram(gpuAnalysis);
   const selectedGpuOnlyBindings = new Set(gpuOnlyBindings);
   for (const root of fragmentSelections.roots) {
     if (root.factory) selectedGpuOnlyBindings.add(root.factory.bindingId);
   }
-  for (const fn of gpuInput.functions) {
-    if (fn.bindingId >= 0) selectedGpuOnlyBindings.add(fn.bindingId as BindingId);
+  for (const slice of gpuSlices) {
+    for (const fn of slice.input.functions) {
+      if (fn.bindingId >= 0) selectedGpuOnlyBindings.add(fn.bindingId as BindingId);
+    }
   }
   const gpuOnlyTypeNames = new Set(
-    gpuInput.adts.map((adt) => adt.typeNameId as TypeNameId),
+    gpuSlices.flatMap((slice) => slice.input.adts.map((adt) => adt.typeNameId as TypeNameId)),
   );
   return {
     graph,
@@ -74,6 +83,7 @@ export function buildProgramAnalysis(
     gpuOnlyBindings: selectedGpuOnlyBindings,
     gpuOnlyTypeNames,
     fragmentSelections,
+    gpuSlices,
     gpuInput,
     ids,
   };

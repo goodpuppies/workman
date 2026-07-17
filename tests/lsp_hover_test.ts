@@ -36,9 +36,7 @@ Deno.test({
       positionOf(exampleSource, "uniforms.resolution.y"),
       new Map(),
     );
-    const diagnostics = (await validateUri(uri, new Map())).flatMap((result) =>
-      result.diagnostics
-    );
+    const diagnostics = (await validateUri(uri, new Map())).flatMap((result) => result.diagnostics);
 
     if (!hover) {
       throw new Error(`missing read-only window hover: ${JSON.stringify(diagnostics)}`);
@@ -49,6 +47,60 @@ Deno.test({
       false,
     );
   },
+});
+
+Deno.test("GPU numeric conflicts publish both representation evidence paths", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let shade = (_coord) => {
+  @gpu;
+  let invalid = 1 + 1.0;
+  invalid;
+  (0.0, 0.0, 0.0, 1.0)
+};
+let fragment = Gpu.fragment(shade);
+`;
+  await Deno.writeTextFile(main, source);
+  const diagnostics = (await validateUri(pathToFileUri(main), new Map())).flatMap((result) =>
+    result.diagnostics
+  );
+  const conflict = diagnostics.find((diagnostic) => diagnostic.code === "gpu.numeric.conflict");
+  assertEquals(conflict?.severity, 1);
+  assertStringIncludes(conflict?.message ?? "", "conflicting GPU numeric representations");
+  assertEquals(conflict?.relatedInformation?.length, 1);
+  assertStringIncludes(
+    conflict?.relatedInformation?.[0].message ?? "",
+    "representation originates here",
+  );
+  assertEquals(
+    JSON.stringify(conflict?.range) ===
+      JSON.stringify(conflict?.relatedInformation?.[0].location.range),
+    false,
+  );
+});
+
+Deno.test("GPU diagnostics retain the owning fragment root in a multi-root program", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let valid = (_coord) => { @gpu; (0.0, 0.0, 0.0, 1.0) };
+let invalid = (_coord) => {
+  @gpu;
+  let mixed = 1 + 1.0;
+  mixed;
+  (0.0, 0.0, 0.0, 1.0)
+};
+let first = Gpu.fragment(valid);
+let second = Gpu.fragment(invalid);
+`;
+  await Deno.writeTextFile(main, source);
+  const diagnostics = (await validateUri(pathToFileUri(main), new Map())).flatMap((result) =>
+    result.diagnostics
+  );
+  const conflict = diagnostics.find((diagnostic) => diagnostic.code === "gpu.numeric.conflict");
+  assertEquals(conflict?.range.start.line, positionOf(source, "1 + 1.0").line);
+  assertEquals(conflict?.severity, 1);
 });
 
 Deno.test("lsp hover returns partial types when delayed FFI resolution fails", async () => {
@@ -150,6 +202,78 @@ let fragment = Gpu.fragment(shade(current));
   assertEquals(resolution?.contents.value, "```wm\nuniforms.resolution: f32x2\n```");
   assertEquals(time?.contents.value, "```wm\nuniforms.time: f32\n```");
   assertEquals(lane?.contents.value, "```wm\nuniforms.resolution.y: f32\n```");
+});
+
+Deno.test("lsp hover presents occurrence-local i32 types without changing host Number", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+let shade = (_coord) => {
+  @gpu;
+  let count = (7 + 3) % 4;
+  let lanes = (1, 2) + (3, 4);
+  count;
+  lanes;
+  (0.0, 0.0, 0.0, 1.0)
+};
+let fragment = Gpu.fragment(shade);
+let host = 7;
+`;
+  await Deno.writeTextFile(main, source);
+  const uri = pathToFileUri(main);
+
+  const count = await hoverAt(uri, positionOf(source, "count ="), new Map());
+  const lanes = await hoverAt(uri, positionOf(source, "lanes ="), new Map());
+  const literal = await hoverAt(uri, positionOf(source, "7 +"), new Map());
+  const host = await hoverAt(uri, positionOf(source, "host ="), new Map());
+
+  assertEquals(count?.contents.value, "```wm\ncount: i32\n```");
+  assertEquals(lanes?.contents.value, "```wm\nlanes: i32x2\n```");
+  assertEquals(literal?.contents.value, "```wm\nInt: i32\n```");
+  assertEquals(host?.contents.value, "```wm\nhost: Number\n```");
+});
+
+Deno.test("lsp hover elaborates every selected fragment root and resource type", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = `
+record Inputs = { previous: Gpu.SampledTexture2D, sampler: Gpu.Sampler };
+let integerShade = (_coord) => {
+  @gpu;
+  let count = 2 + 3;
+  count;
+  (0.0, 0.0, 0.0, 1.0)
+};
+let textureShade = (inputs: Inputs) => {
+  (coord) => {
+    @gpu;
+    let color = inputs.previous.Sample(inputs.sampler, coord / (8.0, 8.0));
+    color
+  }
+};
+let texture: Gpu.SampledTexture2D = Panic("host");
+let sampler: Gpu.Sampler = Panic("host");
+let current: Inputs = .{ previous = texture, sampler = sampler };
+let first = Gpu.fragment(integerShade);
+let second = Gpu.fragment(textureShade(current));
+`;
+  await Deno.writeTextFile(main, source);
+  const uri = pathToFileUri(main);
+
+  const count = await hoverAt(uri, positionOf(source, "count ="), new Map());
+  const texture = await hoverAt(
+    uri,
+    positionOf(source, "inputs.previous.Sample"),
+    new Map(),
+  );
+  const color = await hoverAt(uri, positionOf(source, "color ="), new Map());
+
+  assertEquals(count?.contents.value, "```wm\ncount: i32\n```");
+  assertEquals(
+    texture?.contents.value,
+    "```wm\ninputs.previous.Sample: Gpu.SampledTexture2D\n```",
+  );
+  assertEquals(color?.contents.value, "```wm\ncolor: f32x4\n```");
 });
 
 Deno.test("lsp hover does not disguise failed GPU elaboration as a CPU type", async () => {

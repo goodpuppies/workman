@@ -8,6 +8,7 @@ from js.global import type {
   GPU,
   GPUAdapter,
   GPUBindGroup,
+  GPUBindGroupLayout,
   GPUBuffer,
   GPUCanvasContext,
   GPUCommandBuffer,
@@ -27,10 +28,20 @@ let lift = Monad.lift;
 record FragmentRenderer = {
   device: GPUDevice,
   context: GPUCanvasContext,
+  module: GPUShaderModule,
   pipeline: GPURenderPipeline,
   artifactIdentity: String,
   uniformBuffer: Option<GPUBuffer>,
-  bindGroup: Option<GPUBindGroup>
+  bindGroupLayout: Option<GPUBindGroupLayout>
+};
+
+record OffscreenFragmentRenderer = {
+  device: GPUDevice,
+  module: GPUShaderModule,
+  pipeline: GPURenderPipeline,
+  artifactIdentity: String,
+  uniformBuffer: Option<GPUBuffer>,
+  bindGroupLayout: Option<GPUBindGroupLayout>
 };
 
 let requireAdapter = (adapter: Option<GPUAdapter>) => {
@@ -98,37 +109,45 @@ let buildRenderer = (
       :> Result.andThen((pipeline) => {
         let finish = lift Result (uniformUsage, copyDestinationUsage) => {
           let byteLength = Gpu.uniformByteLength(fragment);
-          if (byteLength <= 0) {
+          let bindingCount = Gpu.bindingCount(fragment);
+          if (bindingCount <= 0) {
             Ok(.{
               device,
               context,
+              module,
               pipeline,
               artifactIdentity = Gpu.artifactIdentity(fragment),
               uniformBuffer = None,
-              bindGroup = None
+              bindGroupLayout = None
             })
           } else {
-            device.createBuffer(JSON{
-              size: byteLength,
-              usage: uniformUsage + copyDestinationUsage
-            }) :> Result.andThen((uniformBuffer) => {
-              pipeline.getBindGroupLayout(0) :> Result.andThen((layout) => {
-                device.createBindGroup(JSON{
-                  layout: layout,
-                  entries: JSON[
-                    JSON{ binding: Gpu.uniformBinding(fragment), resource: JSON{ buffer: uniformBuffer } }
-                  ]
-                }) :> Result.map((bindGroup) => {
+            pipeline.getBindGroupLayout(0) :> Result.andThen((bindGroupLayout) => {
+              if (byteLength <= 0) {
+                Ok(.{
+                  device,
+                  context,
+                  module,
+                  pipeline,
+                  artifactIdentity = Gpu.artifactIdentity(fragment),
+                  uniformBuffer = None,
+                  bindGroupLayout = Some(bindGroupLayout)
+                })
+              } else {
+                device.createBuffer(JSON{
+                  size: byteLength,
+                  usage: uniformUsage + copyDestinationUsage
+                }) :> Result.map((uniformBuffer) => {
                   .{
                     device,
                     context,
+                    module,
                     pipeline,
                     artifactIdentity = Gpu.artifactIdentity(fragment),
                     uniformBuffer = Some(uniformBuffer),
-                    bindGroup = Some(bindGroup)
+                    bindGroupLayout = Some(bindGroupLayout)
                   }
                 })
-              })
+              }
             })
           }
         };
@@ -155,6 +174,29 @@ let createFragmentRenderer = (
       :> Task.fromResult
   };
   gpu.requestAdapter() :> Task.andThen(requireAdapter) :> withDevice
+};
+
+let createSiblingFragmentRenderer = (
+  renderer: FragmentRenderer,
+  fragment: Gpu.Fragment
+) => {
+  buildRenderer(renderer.device, renderer.context, fragment)
+};
+
+let createFeedbackTexture2D = (
+  renderer: FragmentRenderer,
+  width: Number,
+  height: Number
+) => {
+  Gpu.texture2D(renderer.device, width, height)
+};
+
+let createNearestSampler = (renderer: FragmentRenderer) => {
+  Gpu.nearestSampler(renderer.device)
+};
+
+let createLinearSampler = (renderer: FragmentRenderer) => {
+  Gpu.linearSampler(renderer.device)
 };
 
 let currentTexture = (context: GPUCanvasContext) => { context.getCurrentTexture() };
@@ -184,42 +226,89 @@ let submit = (queue: GPUQueue, command: GPUCommandBuffer) => {
   queue.submit(JSON[command])
 };
 
-let uploadEnvironment = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
-  if (renderer.artifactIdentity != Gpu.artifactIdentity(fragment)) {
+let uploadEnvironmentParts = (
+  device: GPUDevice,
+  artifactIdentity: String,
+  uniformBuffer: Option<GPUBuffer>,
+  fragment: Gpu.Fragment
+) => {
+  if (artifactIdentity != Gpu.artifactIdentity(fragment)) {
     Err(Js.Error("fragment renderer received a different shader artifact"))
   } else {
-    match((renderer.uniformBuffer, renderer.bindGroup)) {
-      (None, None) => {
+    match(uniformBuffer) {
+      None => {
         if (Gpu.uniformByteLength(fragment) == 0) {
           Ok(void)
         } else {
           Err(Js.Error("bound fragment has no renderer uniform buffer"))
         }
       },
-      (Some(buffer), Some(_bindGroup)) => {
+      Some(buffer) => {
         if (Gpu.uniformByteLength(fragment) <= 0) {
           Err(Js.Error("static fragment cannot use a uniform renderer"))
         } else {
           Uint8Array.new(Gpu.uniformBytes(fragment)) :> Result.andThen((bytes) => {
-            let device: GPUDevice = renderer.device;
             device.queue :> Result.andThen((queue) => {
               queue.writeBuffer(buffer, 0, bytes)
             })
           })
         }
-      },
-      _ => { Err(Js.Error("fragment renderer has incomplete uniform resources")) }
+      }
     }
   }
 };
 
+let uploadEnvironment = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
+  uploadEnvironmentParts(
+    renderer.device,
+    renderer.artifactIdentity,
+    renderer.uniformBuffer,
+    fragment
+  )
+};
+
+let createFrameBindGroupParts = (
+  device: GPUDevice,
+  bindGroupLayout: Option<GPUBindGroupLayout>,
+  uniformBuffer: Option<GPUBuffer>,
+  fragment: Gpu.Fragment
+) => {
+  match(bindGroupLayout) {
+    None => {
+      if (Gpu.bindingCount(fragment) == 0) {
+        Ok(None)
+      } else {
+        Err(Js.Error("fragment renderer is missing its resource layout"))
+      }
+    },
+    Some(layout) => {
+      Gpu.bindGroupEntries(fragment, device, uniformBuffer)
+        :> Result.andThen((entries) => {
+          device.createBindGroup(JSON{
+            layout: layout,
+            entries: entries
+          }) :> Result.map(Some)
+        })
+    }
+  }
+};
+
+let createFrameBindGroup = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
+  createFrameBindGroupParts(
+    renderer.device,
+    renderer.bindGroupLayout,
+    renderer.uniformBuffer,
+    fragment
+  )
+};
+
 let renderFragment = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
-  let encode = lift Result (texture, encoder) => {
+  let encode = lift Result (texture, encoder, frameBindGroup) => {
     let withView = lift Result (view) => {
       let withPass = lift Result (pass) => {
         setPipeline(pass, renderer.pipeline)
           :> Result.andThen((_) => {
-            match(renderer.bindGroup) {
+            match(frameBindGroup) {
               Some(bindGroup) => { setBindGroup(pass, bindGroup) },
               None => { Ok(void) }
             }
@@ -236,10 +325,137 @@ let renderFragment = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
   uploadEnvironment(renderer, fragment) :> Result.andThen((_) => {
     let command = Result|
       currentTexture(renderer.context),
-      createEncoder(renderer.device)
+      createEncoder(renderer.device),
+      createFrameBindGroup(renderer, fragment)
     | :> encode;
     Result|command, deviceQueue(renderer.device)| :> send
   })
+};
+
+let createOffscreenFragmentRenderer = (
+  surfaceRenderer: FragmentRenderer,
+  fragment: Gpu.Fragment
+) => {
+  let device: GPUDevice = surfaceRenderer.device;
+  let module = if (
+    surfaceRenderer.artifactIdentity == Gpu.artifactIdentity(fragment)
+  ) {
+    Ok(surfaceRenderer.module)
+  } else {
+    createShaderModule(device, Gpu.wgsl(fragment))
+  };
+  module :> Result.andThen((module) => {
+    createPipeline(
+      device,
+      module,
+      "rgba16float",
+      Gpu.vertexEntryPoint(fragment),
+      Gpu.fragmentEntryPoint(fragment)
+    ) :> Result.andThen((pipeline) => {
+      let finish = lift Result (uniformUsage, copyDestinationUsage) => {
+        let byteLength = Gpu.uniformByteLength(fragment);
+        if (Gpu.bindingCount(fragment) <= 0) {
+          Ok(.{
+            device,
+            module,
+            pipeline,
+            artifactIdentity = Gpu.artifactIdentity(fragment),
+            uniformBuffer = None,
+            bindGroupLayout = None
+          })
+        } else {
+          pipeline.getBindGroupLayout(0) :> Result.andThen((bindGroupLayout) => {
+            if (byteLength <= 0) {
+              Ok(.{
+                device,
+                module,
+                pipeline,
+                artifactIdentity = Gpu.artifactIdentity(fragment),
+                uniformBuffer = None,
+                bindGroupLayout = Some(bindGroupLayout)
+              })
+            } else {
+              device.createBuffer(JSON{
+                size: byteLength,
+                usage: uniformUsage + copyDestinationUsage
+              }) :> Result.map((uniformBuffer) => {
+                .{
+                  device,
+                  module,
+                  pipeline,
+                  artifactIdentity = Gpu.artifactIdentity(fragment),
+                  uniformBuffer = Some(uniformBuffer),
+                  bindGroupLayout = Some(bindGroupLayout)
+                }
+              })
+            }
+          })
+        }
+      };
+      Result|GPUBufferUsage.UNIFORM, GPUBufferUsage.COPY_DST| :> finish
+    })
+  })
+};
+
+let beginOffscreenPass = (encoder: GPUCommandEncoder, view: Js.Object) => {
+  encoder.beginRenderPass(JSON{
+    colorAttachments: JSON[JSON{
+      view: view,
+      loadOp: "clear",
+      storeOp: "store",
+      clearValue: JSON{ r: 0, g: 0, b: 0, a: 0 }
+    }]
+  })
+};
+
+let renderFragmentTo = (
+  renderer: OffscreenFragmentRenderer,
+  fragment: Gpu.Fragment,
+  target: Gpu.RenderTarget2D
+) => {
+  let device: GPUDevice = renderer.device;
+  let encode = lift Result (view, encoder, frameBindGroup) => {
+    beginOffscreenPass(encoder, view) :> Result.andThen((pass) => {
+      setPipeline(pass, renderer.pipeline)
+        :> Result.andThen((_) => {
+          match(frameBindGroup) {
+            Some(bindGroup) => { setBindGroup(pass, bindGroup) },
+            None => { Ok(void) }
+          }
+        })
+        :> Result.andThen((_) => { drawFullscreenTriangle(pass) })
+        :> Result.andThen((_) => { endPass(pass) })
+        :> Result.andThen((_) => { finishCommands(encoder) })
+    })
+  };
+  uploadEnvironmentParts(
+    device,
+    renderer.artifactIdentity,
+    renderer.uniformBuffer,
+    fragment
+  ) :> Result.andThen((_) => {
+    Gpu.validateRenderTarget(fragment, target, device) :> Result.andThen((_) => {
+      let command = Result|
+        Gpu.renderTargetView(target),
+        createEncoder(device),
+        createFrameBindGroupParts(
+          device,
+          renderer.bindGroupLayout,
+          renderer.uniformBuffer,
+          fragment
+        )
+      | :> encode;
+      let send = lift Result (ready, queue) => { submit(queue, ready) };
+      Result|command, deviceQueue(device)| :> send
+    })
+  })
+};
+
+let destroyOffscreenFragmentRenderer = (renderer: OffscreenFragmentRenderer) => {
+  match(renderer.uniformBuffer) {
+    Some(buffer) => { buffer.destroy() },
+    None => { Ok(void) }
+  }
 };
 
 let presentSurface = (surface: UnsafeWindowSurface) => { surface.present() };

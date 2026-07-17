@@ -6,6 +6,10 @@ import type { TypeFacts } from "./type_facts.ts";
 
 export type TypingDialect = {
   domain: "host" | "gpu";
+  inferUnboundVar?(
+    expr: Extract<Expr, { kind: "Var" }>,
+    context: InferContext,
+  ): Ty | undefined;
   inferProjection?(
     expr: Extract<Expr, { kind: "Var" }>,
     context: InferContext,
@@ -16,6 +20,12 @@ export type TypingDialect = {
     right: Ty,
     context: InferContext,
   ): Ty | undefined;
+  inferTuple?(
+    expr: Extract<Expr, { kind: "Tuple" }>,
+    items: Ty[],
+    context: InferContext,
+  ): Ty | undefined;
+  inferCall?(expr: Extract<Expr, { kind: "Call" }>, context: InferContext): Ty | undefined;
 };
 
 export const hostTypingDialect: TypingDialect = { domain: "host" };

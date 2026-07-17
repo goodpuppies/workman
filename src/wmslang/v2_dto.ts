@@ -1,7 +1,36 @@
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import type { GpuOperatorId } from "../gpu_operators.ts";
 
-export const GPU_SLICE_SCHEMA_VERSION = 2 as const;
+export const GPU_SLICE_SCHEMA_VERSION = 5 as const;
+
+export type GpuSliceBuiltinCatalogIdentityDto = {
+  schemaVersion: number;
+  slangVersion: string;
+  sourceSha256: string;
+};
+
+export type GpuSliceBuiltinOverloadDto = {
+  id: number;
+  name: string;
+  params: GpuSliceBuiltinValueType[];
+  result: GpuSliceBuiltinValueType;
+  sourceSignature: string;
+};
+
+export type GpuSliceBuiltinValueType =
+  | "f32"
+  | "f32x2"
+  | "f32x3"
+  | "f32x4"
+  | "i32"
+  | "i32x2"
+  | "i32x3"
+  | "i32x4";
+
+export type GpuSliceBuiltinCatalogDto = {
+  identity: GpuSliceBuiltinCatalogIdentityDto;
+  overloads: GpuSliceBuiltinOverloadDto[];
+};
 
 export type GpuSliceSpanDto = {
   id: number;
@@ -14,7 +43,15 @@ export type GpuSliceSpanDto = {
 
 export type GpuSliceTypeDto = {
   id: number;
-  kind: "number" | "bool" | "void" | "tuple" | "function" | "adt";
+  kind:
+    | "number"
+    | "bool"
+    | "void"
+    | "tuple"
+    | "function"
+    | "adt"
+    | "sampled-texture-2d"
+    | "sampler";
   typeNameId: number;
   items: number[];
   params: number[];
@@ -23,7 +60,17 @@ export type GpuSliceTypeDto = {
 
 export type GpuSliceShaderTypeDto = {
   id: number;
-  kind: "f32" | "bool" | "void" | "vector" | "tuple" | "function" | "adt";
+  kind:
+    | "f32"
+    | "i32"
+    | "bool"
+    | "void"
+    | "vector"
+    | "tuple"
+    | "function"
+    | "adt"
+    | "sampled-texture-2d"
+    | "sampler";
   typeNameId: number;
   items: number[];
   params: number[];
@@ -62,6 +109,7 @@ export type GpuSlicePatternDto = {
   context: "parameter" | "let" | "match";
   kind: "wildcard" | "binding" | "tuple" | "constructor";
   typeId: number;
+  ownerFunctionId: number;
   bindingId: number;
   constructorId: number;
   children: number[];
@@ -122,10 +170,14 @@ export type GpuSliceExprDto = {
     | "void"
     | "var"
     | "uniform"
+    | "resource"
+    | "resource-call"
     | "project"
     | "copy"
+    | "convert"
     | "tuple"
     | "call"
+    | "builtin"
     | "constructor"
     | "if"
     | "match"
@@ -134,12 +186,16 @@ export type GpuSliceExprDto = {
     | "unary";
   typeId: number;
   spanId: number;
+  ownerFunctionId: number;
   bindingId: number;
   functionId: number;
   constructorId: number;
   semanticId: "" | CompilerSemanticId;
   operatorId: "" | GpuOperatorId;
+  builtinName: string;
+  resourceOperation: "" | "sample" | "load";
   numberValue: number;
+  numberKind: "" | "i32" | "f32";
   boolValue: boolean;
   index: number;
   children: number[];
@@ -148,6 +204,7 @@ export type GpuSliceExprDto = {
 export type GpuSliceFunctionDto = {
   id: number;
   bindingId: number;
+  sourceBindingId: number;
   name: string;
   typeId: number;
   paramIds: number[];
@@ -161,7 +218,15 @@ export type GpuSliceOccurrenceTypeDto = {
   kind: "expression" | "pattern" | "function";
   sourceId: number;
   typeId: number;
+  shaderTypeId: number;
   spanId: number;
+  representationEvidence: "" | "i32" | "f32";
+  representation: "" | "i32" | "f32";
+};
+
+export type GpuSliceBuiltinSelectionDto = {
+  expressionId: number;
+  overloadId: number;
 };
 
 export type GpuSliceTypeElaborationOutput = {
@@ -169,6 +234,7 @@ export type GpuSliceTypeElaborationOutput = {
   shaderTypes: GpuSliceShaderTypeDto[];
   typeEvidence: GpuSliceTypeEvidenceDto[];
   occurrences: GpuSliceOccurrenceTypeDto[];
+  builtinSelections: GpuSliceBuiltinSelectionDto[];
 };
 
 export type GpuSliceRootDto = {
@@ -182,6 +248,8 @@ export type GpuSliceEnvironmentFieldDto = {
   environmentId: number;
   name: string;
   declaredIndex: number;
+  kind: "uniform" | "sampled-texture-2d" | "sampler";
+  binding: number;
   typeId: number;
   spanId: number;
 };
@@ -214,6 +282,7 @@ export type GpuSliceRecursiveReferenceDto = {
 export type GpuSliceElaborationInput = {
   schemaVersion: typeof GPU_SLICE_SCHEMA_VERSION;
   sourcePath: string;
+  builtinCatalog: GpuSliceBuiltinCatalogDto;
   root: GpuSliceRootDto;
   environments: GpuSliceEnvironmentDto[];
   environmentFields: GpuSliceEnvironmentFieldDto[];
@@ -256,10 +325,14 @@ export type GpuSliceIrExprDto = {
     | "void"
     | "local"
     | "uniform"
+    | "resource"
+    | "resource-call"
     | "project"
     | "copy"
+    | "convert"
     | "tuple"
     | "call"
+    | "builtin"
     | "constructor"
     | "if"
     | "match"
@@ -276,7 +349,11 @@ export type GpuSliceIrExprDto = {
   constructorId: number;
   semanticId: "" | CompilerSemanticId;
   operatorId: "" | GpuOperatorId;
+  builtinName: string;
+  builtinOverloadId: number;
+  resourceOperation: "" | "sample" | "load";
   numberValue: number;
+  numberKind: "" | "i32" | "f32";
   boolValue: boolean;
   index: number;
   children: number[];
@@ -338,6 +415,7 @@ export type GpuSliceLoweredAtomDto = {
   spanId: number;
   localId: number;
   numberValue: number;
+  numberKind: "" | "i32" | "f32";
   boolValue: boolean;
 };
 
@@ -346,10 +424,14 @@ export type GpuSliceLoweredOperationDto = {
   functionId: number;
   kind:
     | "copy"
+    | "convert"
     | "tuple"
     | "uniform"
+    | "resource"
+    | "resource-call"
     | "project"
     | "call"
+    | "builtin"
     | "construct"
     | "binary"
     | "unary"
@@ -363,6 +445,9 @@ export type GpuSliceLoweredOperationDto = {
   fieldId: number;
   operatorId: "" | GpuOperatorId;
   semanticId: "" | CompilerSemanticId;
+  builtinName: string;
+  builtinOverloadId: number;
+  resourceOperation: "" | "sample" | "load";
   index: number;
   args: number[];
 };
@@ -418,6 +503,7 @@ export type GpuSliceCompilationOutput = {
   shaderTypes: GpuSliceShaderTypeDto[];
   typeEvidence: GpuSliceTypeEvidenceDto[];
   occurrences: GpuSliceOccurrenceTypeDto[];
+  builtinSelections: GpuSliceBuiltinSelectionDto[];
   irFunctions: GpuSliceIrFunctionDto[];
   irExpressions: GpuSliceIrExprDto[];
   irMatchArms: GpuSliceIrMatchArmDto[];

@@ -11,9 +11,12 @@ deno task wmslang:build
 ```
 
 The generated `wmslang.generated.mjs` exports the production `compileGpuSlice(input)` entry. Load it
-through `src/wmslang/v2_loader.ts`, which validates both input and output schema shapes. Tests
-compile the Workman entry into a temporary library rather than relying on a checked-in generated
-file. The older `compileGpu(input)` export and schema-v1 loader remain H0 research fixtures only.
+through `src/wmslang/v2_loader.ts`, which validates both input and output schema shapes. Normal CLI
+and LSP use stores the validated generated source in CacheStorage under a digest of the compiler
+inputs; a source or host-compiler edit therefore performs one bootstrap rebuild and subsequent
+processes reuse it. Tests may still compile the Workman entry into a temporary library to verify the
+bootstrap rather than trusting the cache. The older `compileGpu(input)` export and schema-v1 loader
+remain H0 research fixtures only.
 
 Current H0 responsibilities:
 

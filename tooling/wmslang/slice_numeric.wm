@@ -1,0 +1,543 @@
+from "./types.wm" import {
+  GpuSliceBlockDto,
+  GpuSliceElaborationInputDto,
+  GpuSliceEnvironmentFieldDto,
+  GpuSliceExprDto,
+  GpuSliceFunctionDto,
+  GpuSliceLetDto,
+  GpuSliceParamDto,
+  GpuSlicePatternDto,
+  GpuSliceRootDto,
+  GpuSliceTypeDto
+};
+
+record NumericContext = {
+  expressionOffset: Number,
+  fieldOffset: Number,
+  types: List<GpuSliceTypeDto>,
+  expressions: List<GpuSliceExprDto>,
+  patterns: List<GpuSlicePatternDto>,
+  params: List<GpuSliceParamDto>,
+  lets: List<GpuSliceLetDto>,
+  blocks: List<GpuSliceBlockDto>,
+  functions: List<GpuSliceFunctionDto>,
+  environmentFields: List<GpuSliceEnvironmentFieldDto>,
+};
+
+record NumericEvidence = {
+  representation: String,
+  spanId: Number,
+};
+
+let numberEqual = (left: Number, right: Number) => {
+  !(left < right) && !(left > right)
+};
+
+let rec listLength = match(items, length) => {
+  ([], Var(length)) => { length },
+  ([_, ..rest], Var(length)) => { listLength(rest, length + 1) }
+};
+
+let rec findType = match(items, id) => {
+  ([], Var(id)) => { Panic("missing numeric semantic type") },
+  ([Var(item), ..rest], Var(id)) => {
+    if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
+  }
+};
+
+let rec allNumberTypes = match(typeIds, types) => {
+  ([], Var(types)) => { true },
+  ([Var(typeId), ..rest], Var(types)) => {
+    let gpuType = findType(types, typeId);
+    gpuType.kind == "number" && allNumberTypes(rest, types)
+  }
+};
+
+let numericType = (typeId, context: NumericContext) => {
+  let gpuType = findType(context.types, typeId);
+  if (gpuType.kind == "number") {
+    true
+  } else {
+    if (gpuType.kind == "tuple") {
+      let items = Js.Array.toList(gpuType.items);
+      let width = listLength(items, 0);
+      width >= 2 && width <= 4 && allNumberTypes(items, context.types)
+    } else {
+      false
+    }
+  }
+};
+
+let expressionNode = (expression: GpuSliceExprDto, context: NumericContext) => {
+  if (numericType(expression.typeId, context)) { expression.id } else { -1 }
+};
+
+let patternNode = (pattern: GpuSlicePatternDto, context: NumericContext) => {
+  if (numericType(pattern.typeId, context)) {
+    context.expressionOffset + pattern.id
+  } else {
+    -1
+  }
+};
+
+let fieldNode = (field: GpuSliceEnvironmentFieldDto, context: NumericContext) => {
+  if (numericType(field.typeId, context)) { context.fieldOffset + field.id } else { -1 }
+};
+
+let evidence = (representations, node) => {
+  if (node < 0) {
+    None
+  } else {
+    Map.get(representations, node)
+  }
+};
+
+let representation = (representations, node) => {
+  match(evidence(representations, node)) {
+    Some(value) => { value.representation },
+    None => { "" }
+  }
+};
+
+let numericConflict = (left: NumericEvidence, right: NumericEvidence) => {
+  Panic(
+    "WM_GPU_NUMERIC_CONFLICT|" ++ Result.textOf(left.spanId) ++ "|" ++
+      Result.textOf(right.spanId) ++ "|" ++ left.representation ++ "|" ++
+      right.representation
+  )
+};
+
+let setEvidence = (representations, node, value: NumericEvidence) => {
+  if (node < 0 || value.representation == "") {
+    (representations, false)
+  } else {
+    match(evidence(representations, node)) {
+      None => { (Map.set(representations, node, value), true) },
+      Some(previous) => {
+        if (previous.representation == value.representation) {
+          (representations, false)
+        } else {
+          numericConflict(previous, value)
+        }
+      }
+    }
+  }
+};
+
+let setRepresentation = (representations, node, value, spanId) => {
+  let item: NumericEvidence = .{ representation = value, spanId = spanId };
+  setEvidence(representations, node, item)
+};
+
+let rec combinedEvidence = match(nodes, representations, combined) => {
+  ([], Var(representations), Var(combined)) => { combined },
+  ([Var(node), ..rest], Var(representations), Var(combined)) => {
+    match(evidence(representations, node)) {
+      None => { combinedEvidence(rest, representations, combined) },
+      Some(value) => {
+        match(combined) {
+          None => { combinedEvidence(rest, representations, Some(value)) },
+          Some(previous) => {
+            if (previous.representation == value.representation) {
+              combinedEvidence(rest, representations, combined)
+            } else {
+              numericConflict(previous, value)
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec setGroup = match(nodes, value, representations, changed) => {
+  ([], Var(value), Var(representations), Var(changed)) => { (representations, changed) },
+  ([Var(node), ..rest], Var(value), Var(representations), Var(changed)) => {
+    let (next, itemChanged) = match(value) {
+      Some(item) => { setEvidence(representations, node, item) },
+      None => { (representations, false) }
+    };
+    setGroup(rest, value, next, changed || itemChanged)
+  }
+};
+
+let mergeGroup = (nodes, representations) => {
+  let value = combinedEvidence(nodes, representations, None);
+  setGroup(nodes, value, representations, false)
+};
+
+let rec findPatternByBinding = match(patterns, bindingId, ownerFunctionId) => {
+  ([], Var(bindingId), Var(ownerFunctionId)) => { None },
+  ([Var(pattern), ..rest], Var(bindingId), Var(ownerFunctionId)) => {
+    if (
+      numberEqual(pattern.bindingId, bindingId) &&
+      numberEqual(pattern.ownerFunctionId, ownerFunctionId)
+    ) {
+      Some(pattern)
+    } else {
+      findPatternByBinding(rest, bindingId, ownerFunctionId)
+    }
+  }
+};
+
+let rec findParam = match(params, id) => {
+  ([], Var(id)) => { Panic("missing numeric function parameter") },
+  ([Var(param), ..rest], Var(id)) => {
+    if (numberEqual(param.id, id)) { param } else { findParam(rest, id) }
+  }
+};
+
+let rec findPattern = match(patterns, id) => {
+  ([], Var(id)) => { Panic("missing numeric pattern") },
+  ([Var(pattern), ..rest], Var(id)) => {
+    if (numberEqual(pattern.id, id)) { pattern } else { findPattern(rest, id) }
+  }
+};
+
+let rec findFunction = match(functions, id) => {
+  ([], Var(id)) => { Panic("missing numeric function") },
+  ([Var(fn), ..rest], Var(id)) => {
+    if (numberEqual(fn.id, id)) { fn } else { findFunction(rest, id) }
+  }
+};
+
+let rec findExpression = match(expressions, id) => {
+  ([], Var(id)) => { Panic("missing numeric expression") },
+  ([Var(expression), ..rest], Var(id)) => {
+    if (numberEqual(expression.id, id)) { expression } else { findExpression(rest, id) }
+  }
+};
+
+let rec findBlock = match(blocks, expressionId) => {
+  ([], Var(expressionId)) => { Panic("missing numeric block") },
+  ([Var(block), ..rest], Var(expressionId)) => {
+    if (numberEqual(block.expressionId, expressionId)) { block } else { findBlock(rest, expressionId) }
+  }
+};
+
+let rec findEnvironmentField = match(fields, declaredIndex) => {
+  ([], Var(declaredIndex)) => { Panic("missing numeric environment field") },
+  ([Var(field), ..rest], Var(declaredIndex)) => {
+    if (numberEqual(field.declaredIndex, declaredIndex)) {
+      field
+    } else {
+      findEnvironmentField(rest, declaredIndex)
+    }
+  }
+};
+
+let rec numericChildNodes = match(children, context, nodes) => {
+  ([], Var(context), Var(nodes)) => { nodes },
+  ([Var(childId), ..rest], Var(context), Var(nodes)) => {
+    let child = findExpression(context.expressions, childId);
+    let node = expressionNode(child, context);
+    numericChildNodes(rest, context, if (node < 0) { nodes } else { [node, ..nodes] })
+  }
+};
+
+let ownAndChildren = (expression: GpuSliceExprDto, context: NumericContext) => {
+  let own = expressionNode(expression, context);
+  let children = numericChildNodes(Js.Array.toList(expression.children), context, []);
+  if (own < 0) { children } else { [own, ..children] }
+};
+
+let rec mergeArguments = match(argumentIds, paramIds, context, representations, changed) => {
+  ([], _, Var(context), Var(representations), Var(changed)) => { (representations, changed) },
+  (_, [], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
+  (
+    [Var(argumentId), ..argumentRest], [Var(paramId), ..paramRest], Var(context),
+    Var(representations), Var(changed)
+  ) => {
+    let argument = findExpression(context.expressions, argumentId);
+    let param = findParam(context.params, paramId);
+    let pattern = findPattern(context.patterns, param.patternId);
+    let (next, pairChanged) = mergeGroup(
+      [expressionNode(argument, context), patternNode(pattern, context)],
+      representations
+    );
+    mergeArguments(argumentRest, paramRest, context, next, changed || pairChanged)
+  }
+};
+
+let applyExpression = (expression: GpuSliceExprDto, context: NumericContext, representations) => {
+  if (expression.kind == "var") {
+    match(
+      findPatternByBinding(
+        context.patterns,
+        expression.bindingId,
+        expression.ownerFunctionId
+      )
+    ) {
+      Some(pattern) => {
+        mergeGroup([expressionNode(expression, context), patternNode(pattern, context)], representations)
+      },
+      None => { (representations, false) }
+    }
+  } else {
+    if (expression.kind == "uniform") {
+      let field = findEnvironmentField(context.environmentFields, expression.index);
+      mergeGroup([expressionNode(expression, context), fieldNode(field, context)], representations)
+    } else {
+      if (
+        expression.kind == "project" || expression.kind == "copy" ||
+        expression.kind == "tuple" || expression.kind == "binary" ||
+        expression.kind == "unary" || expression.kind == "builtin"
+      ) {
+        mergeGroup(ownAndChildren(expression, context), representations)
+      } else {
+        if (expression.kind == "if") {
+          mergeGroup(ownAndChildren(expression, context), representations)
+        } else {
+          if (expression.kind == "block") {
+            let block = findBlock(context.blocks, expression.id);
+            let result = findExpression(context.expressions, block.resultExprId);
+            mergeGroup(
+              [expressionNode(expression, context), expressionNode(result, context)],
+              representations
+            )
+          } else {
+            if (expression.kind == "call") {
+              let target = findFunction(context.functions, expression.functionId);
+              let body = findExpression(context.expressions, target.bodyExprId);
+              let (withResult, resultChanged) = mergeGroup(
+                [expressionNode(expression, context), expressionNode(body, context)],
+                representations
+              );
+              mergeArguments(
+                Js.Array.toList(expression.children),
+                Js.Array.toList(target.paramIds),
+                context,
+                withResult,
+                resultChanged
+              )
+            } else {
+              (representations, false)
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec expressionSweep = match(expressions, context, representations, changed) => {
+  ([], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
+  ([Var(expression), ..rest], Var(context), Var(representations), Var(changed)) => {
+    let (next, itemChanged) = applyExpression(expression, context, representations);
+    expressionSweep(rest, context, next, changed || itemChanged)
+  }
+};
+
+let rec patternSweep = match(patterns, context, representations, changed) => {
+  ([], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
+  ([Var(pattern), ..rest], Var(context), Var(representations), Var(changed)) => {
+    let childNodes = pattern.children :> Js.Array.toList :> mapPatternNodes(context, []);
+    let own = patternNode(pattern, context);
+    let nodes = if (own < 0) { childNodes } else { [own, ..childNodes] };
+    let (next, itemChanged) = if (pattern.kind == "tuple") {
+      mergeGroup(nodes, representations)
+    } else {
+      (representations, false)
+    };
+    patternSweep(rest, context, next, changed || itemChanged)
+  }
+}
+and mapPatternNodes = match(ids, context, nodes) => {
+  ([], Var(context), Var(nodes)) => { nodes },
+  ([Var(id), ..rest], Var(context), Var(nodes)) => {
+    let pattern = findPattern(context.patterns, id);
+    let node = patternNode(pattern, context);
+    mapPatternNodes(rest, context, if (node < 0) { nodes } else { [node, ..nodes] })
+  }
+};
+
+let rec letSweep = match(lets, context, representations, changed) => {
+  ([], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
+  ([Var(binding), ..rest], Var(context), Var(representations), Var(changed)) => {
+    let pattern = findPattern(context.patterns, binding.patternId);
+    let value = findExpression(context.expressions, binding.valueExprId);
+    let (next, itemChanged) = mergeGroup(
+      [patternNode(pattern, context), expressionNode(value, context)],
+      representations
+    );
+    letSweep(rest, context, next, changed || itemChanged)
+  }
+};
+
+let rec seedExpressions = match(expressions, context, representations) => {
+  ([], Var(context), Var(representations)) => { representations },
+  ([Var(expression), ..rest], Var(context), Var(representations)) => {
+    let explicit = if (expression.semanticId == "gpu.i32") {
+      "i32"
+    } else {
+      if (expression.semanticId == "gpu.f32") { "f32" } else { expression.numberKind }
+    };
+    let (next, _changed) = setRepresentation(
+      representations,
+      expressionNode(expression, context),
+      explicit,
+      expression.spanId
+    );
+    let withResourceResult = if (expression.kind == "resource-call") {
+      let (updated, _resourceChanged) = setRepresentation(
+        next,
+        expressionNode(expression, context),
+        "f32",
+        expression.spanId
+      );
+      updated
+    } else {
+      next
+    };
+    let withResourceCoordinate = if (expression.kind == "resource-call") {
+      let coordinateId = match(Js.Array.toList(expression.children)) {
+        [_texture, _sampler, id] => { id },
+        [_texture, id] => { id },
+        _ => { Panic("GPU resource call has invalid coordinate arity") }
+      };
+      let coordinate = findExpression(context.expressions, coordinateId);
+      let coordinateRepresentation = if (expression.resourceOperation == "load") {
+        "i32"
+      } else {
+        "f32"
+      };
+      let (updated, _coordinateChanged) = setRepresentation(
+        withResourceResult,
+        expressionNode(coordinate, context),
+        coordinateRepresentation,
+        coordinate.spanId
+      );
+      updated
+    } else {
+      withResourceResult
+    };
+    seedExpressions(rest, context, withResourceCoordinate)
+  }
+};
+
+let seedFragmentAbi = (input: GpuSliceElaborationInputDto, context: NumericContext, representations) => {
+  let root = findFunction(context.functions, input.root.functionId);
+  let firstParamId = match(Js.Array.toList(root.paramIds)) {
+    [id, .._] => { id },
+    [] => { Panic("fragment root has no coordinate parameter") }
+  };
+  let param = findParam(context.params, firstParamId);
+  let pattern = findPattern(context.patterns, param.patternId);
+  let body = findExpression(context.expressions, root.bodyExprId);
+  let (withCoord, _coordChanged) = setRepresentation(
+    representations,
+    patternNode(pattern, context),
+    "f32",
+    pattern.spanId
+  );
+  let (withResult, _resultChanged) = setRepresentation(
+    withCoord,
+    expressionNode(body, context),
+    "f32",
+    body.spanId
+  );
+  withResult
+};
+
+let rec solveFixedPoint = (context, representations) => {
+  let (afterExpressions, expressionChanged) = expressionSweep(
+    context.expressions,
+    context,
+    representations,
+    false
+  );
+  let (afterPatterns, patternChanged) = patternSweep(
+    context.patterns,
+    context,
+    afterExpressions,
+    false
+  );
+  let (afterLets, letChanged) = letSweep(
+    context.lets,
+    context,
+    afterPatterns,
+    false
+  );
+  if (expressionChanged || patternChanged || letChanged) {
+    solveFixedPoint(context, afterLets)
+  } else {
+    afterLets
+  }
+};
+
+let rec ensureExpressionsResolved = match(expressions, context, representations) => {
+  ([], Var(context), Var(representations)) => { void },
+  ([Var(expression), ..rest], Var(context), Var(representations)) => {
+    let node = expressionNode(expression, context);
+    if (node >= 0 && representation(representations, node) == "") {
+      Panic(
+        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Result.textOf(expression.spanId) ++
+          "|expression " ++ Result.textOf(expression.id)
+      )
+    } else {
+      ensureExpressionsResolved(rest, context, representations)
+    }
+  }
+};
+
+let rec ensurePatternsResolved = match(patterns, context, representations) => {
+  ([], Var(context), Var(representations)) => { void },
+  ([Var(pattern), ..rest], Var(context), Var(representations)) => {
+    let node = patternNode(pattern, context);
+    if (node >= 0 && representation(representations, node) == "") {
+      Panic(
+        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Result.textOf(pattern.spanId) ++
+          "|pattern " ++ Result.textOf(pattern.id)
+      )
+    } else {
+      ensurePatternsResolved(rest, context, representations)
+    }
+  }
+};
+
+let rec ensureFieldsResolved = match(fields, context, representations) => {
+  ([], Var(context), Var(representations)) => { void },
+  ([Var(field), ..rest], Var(context), Var(representations)) => {
+    let node = fieldNode(field, context);
+    if (node >= 0 && representation(representations, node) == "") {
+      Panic(
+        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Result.textOf(field.spanId) ++
+          "|environment field " ++ field.name
+      )
+    } else {
+      ensureFieldsResolved(rest, context, representations)
+    }
+  }
+};
+
+let solveSliceNumericRepresentations = (input: GpuSliceElaborationInputDto) => {
+  let expressions = Js.Array.toList(input.expressions);
+  let patterns = Js.Array.toList(input.patterns);
+  let expressionOffset = listLength(expressions, 0);
+  let context: NumericContext = .{
+    expressionOffset = expressionOffset,
+    fieldOffset = expressionOffset + listLength(patterns, 0),
+    types = Js.Array.toList(input.types),
+    expressions = expressions,
+    patterns = patterns,
+    params = Js.Array.toList(input.params),
+    lets = Js.Array.toList(input.lets),
+    blocks = Js.Array.toList(input.blocks),
+    functions = Js.Array.toList(input.functions),
+    environmentFields = Js.Array.toList(input.environmentFields),
+  };
+  let seeded = seedExpressions(expressions, context, Map.empty(Map.numberCompare));
+  let solved = solveFixedPoint(context, seedFragmentAbi(input, context, seeded));
+  ensureExpressionsResolved(expressions, context, solved);
+  ensurePatternsResolved(patterns, context, solved);
+  ensureFieldsResolved(context.environmentFields, context, solved);
+  solved
+};
+
+let expressionRepresentation = (representations, expressionId) => {
+  representation(representations, expressionId)
+};
+
+let patternRepresentation = (representations, expressionCount, patternId) => {
+  representation(representations, expressionCount + patternId)
+};

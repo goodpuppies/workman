@@ -12,6 +12,8 @@
     "install": "deno run --allow-read --allow-write --allow-env scripts/install.ts",
     "compile": "deno run -A src/main.ts",
     "frontend-v2:build": "deno run -A src/main.ts compile-library tooling/frontend-v2/frontend.wm tooling/frontend-v2/frontend-v2.generated.mjs",
+    "wmslang:builtins": "deno run -A scripts/generate_wmslang_builtin_catalog.ts",
+    "wmslang:builtins:check": "deno run -A scripts/generate_wmslang_builtin_catalog.ts --check",
     "wmslang:build": "deno run -A src/main.ts compile-library tooling/wmslang/compiler.wm tooling/wmslang/wmslang.generated.mjs",
     "profile:webhook": "deno run -A scripts/profile_typecheck.ts examples/webhook.wm",
     "profile:webhook:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=webhook-typecheck.cpuprofile scripts/profile_typecheck.ts examples/webhook.wm",
