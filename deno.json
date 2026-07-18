@@ -9,6 +9,8 @@
     "generate-assets": "deno run --allow-read --allow-write scripts/generate_assets.ts",
     "check": "deno check src/main.ts src/lsp/server.ts tests/*.ts",
     "test": "deno test --allow-read --allow-write --allow-run --allow-env --allow-net=github.com,release-assets.githubusercontent.com tests",
+    "publish": "deno task generate-assets && deno task publish:vscode",
+    "publish:vscode": "npm --prefix editors/vscode ci --include=dev && npm --prefix editors/vscode run package",
     "install": "deno run --allow-read --allow-write --allow-env scripts/install.ts",
     "compile": "deno run -A src/main.ts",
     "frontend-v2:build": "deno run -A src/main.ts compile-library tooling/frontend-v2/frontend.wm tooling/frontend-v2/frontend-v2.generated.mjs",
