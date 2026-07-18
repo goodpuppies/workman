@@ -1,12 +1,12 @@
-import peggy from "peggy";
 import type { Decl, Expr, Module } from "./ast.ts";
-import { wmsmlGrammar, workmanGrammar } from "./generated/assets.ts";
 import { offsetToLineCol, type SourceSpan } from "./source.ts";
 
 export type Surface = "workman" | "wmsml";
 
-let workmanParser: peggy.Parser | undefined;
-let wmsmlParser: peggy.Parser | undefined;
+type GeneratedParser = { parse(source: string): unknown };
+
+let workmanParser: Promise<GeneratedParser> | undefined;
+let wmsmlParser: Promise<GeneratedParser> | undefined;
 
 export class ParseError extends Error {
   source: string;
@@ -165,11 +165,9 @@ function hasNoPreludeDirective(source: string): boolean {
   return false;
 }
 
-async function loadParser(surface: Surface): Promise<peggy.Parser> {
+async function loadParser(surface: Surface): Promise<GeneratedParser> {
   if (surface === "wmsml") {
-    wmsmlParser ??= peggy.generate(wmsmlGrammar);
-    return wmsmlParser;
+    return await (wmsmlParser ??= import("./generated/wmsml_parser.js"));
   }
-  workmanParser ??= peggy.generate(workmanGrammar);
-  return workmanParser;
+  return await (workmanParser ??= import("./generated/workman_parser.js"));
 }

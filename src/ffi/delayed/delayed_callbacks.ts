@@ -1,6 +1,7 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
+import { collectExprs } from "../../type_debug_collect.ts";
 import { prune } from "../../types.ts";
 import {
   ffiCallPromiseElement,
@@ -27,9 +28,10 @@ export function contextualizeDelayedCallbacks(
   ffi: FfiElaboration,
   result: InferResult,
 ): FfiElaboration {
+  const annotationCount = callbackAnnotationCount(ffi.module);
   const arities = namedLambdaArities(ffi.module.decls);
   const contexts = collectNamedCallbackContexts(ffi.module.decls, result, arities, ffi.bindings);
-  return {
+  const contextual = {
     ...ffi,
     module: {
       ...ffi.module,
@@ -38,6 +40,16 @@ export function contextualizeDelayedCallbacks(
       ),
     },
   };
+  return callbackAnnotationCount(contextual.module) === annotationCount ? ffi : contextual;
+}
+
+function callbackAnnotationCount(module: FfiElaboration["module"]): number {
+  let count = 0;
+  for (const expr of collectExprs(module)) {
+    if (expr.kind !== "Lambda") continue;
+    count += expr.params.filter((param) => param.annotation !== undefined).length;
+  }
+  return count;
 }
 
 function collectNamedCallbackContexts(

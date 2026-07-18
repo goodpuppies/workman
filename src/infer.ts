@@ -56,7 +56,7 @@ export function inferModule(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleWithSteps(module, imports, options).result;
+  return inferModuleCore(module, imports, false, options, true).result;
 }
 
 export function inferModulePartial(
@@ -64,7 +64,7 @@ export function inferModulePartial(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleCore(module, imports, true, options).result;
+  return inferModuleCore(module, imports, true, options, false).result;
 }
 
 export function inferModuleWithSteps(
@@ -72,7 +72,7 @@ export function inferModuleWithSteps(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): { result: InferResult; steps: InferStep[] } {
-  return inferModuleCore(module, imports, false, options);
+  return inferModuleCore(module, imports, false, options, true);
 }
 
 function inferModuleCore(
@@ -80,6 +80,7 @@ function inferModuleCore(
   imports: Map<string, InferResult>,
   recover: boolean,
   options: InferModuleOptions,
+  captureSteps: boolean,
 ): { result: InferResult; steps: InferStep[] } {
   const includePrelude = module.prelude !== "none";
   const typeEnv = baseTypeEnv({ includeAlgebraicBasis: includePrelude });
@@ -145,7 +146,7 @@ function inferModuleCore(
       diagnostics.push(diagnostic.diagnostic);
       break;
     }
-    steps.push({ declIndex, env: snapshotEnv(env) });
+    if (captureSteps) steps.push({ declIndex, env: snapshotEnv(env) });
   }
 
   try {

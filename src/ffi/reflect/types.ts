@@ -14,8 +14,11 @@ import {
   findVariable,
   jsGlobalSource,
   jsModuleSource,
+  type JsReflectionRequest,
   type JsReflectionSource,
+  prepareReflectionSources,
   reflectSource,
+  setActiveJsReflectionBasePath,
   typeOfSymbol,
 } from "./host.ts";
 import type {
@@ -39,6 +42,82 @@ export type DeepReflection = {
   type: TypeExpr;
   records: Extract<Decl, { kind: "RecordDecl" }>[];
 };
+
+export function prepareInitialJsImportReflection(
+  modules: Array<{
+    filePath: string;
+    decls: Extract<Decl, { kind: "JsImportDecl" }>[];
+  }>,
+): void {
+  prepareReflectionSources(initialJsImportReflectionRequests(modules));
+}
+
+export function initialJsImportReflectionRequests(
+  modules: Array<{
+    filePath: string;
+    decls: Extract<Decl, { kind: "JsImportDecl" }>[];
+  }>,
+): JsReflectionRequest[] {
+  const requests = modules.flatMap(({ filePath, decls }) => {
+    const previous = setActiveJsReflectionBasePath(filePath);
+    try {
+      return decls.flatMap(initialJsImportDeclReflectionRequests);
+    } finally {
+      setActiveJsReflectionBasePath(previous);
+    }
+  });
+  return requests;
+}
+
+function initialJsImportDeclReflectionRequests(
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+): JsReflectionRequest[] {
+  if (decl.typeOnly || decl.target.kind === "JsWorker") return [];
+  const target = reflectionTarget(decl.target);
+  if (decl.clause.kind === "Namespace") {
+    return target
+      ? [{ label: target.key, source: target.source, sharedSource: target.source }]
+      : [];
+  }
+  const requests: JsReflectionRequest[] = [];
+  for (const spec of decl.clause.specs) {
+    const deep = spec.type?.kind === "TVar" && spec.type.name === "_deep_";
+    if (spec.type && !deep) continue;
+    if (decl.target.kind === "JsGlobalRoot") {
+      const ref = jsGlobalValueRef(spec.name);
+      const sharedSource = jsGlobalSource(spec.name).source;
+      requests.push(
+        { label: `${ref.key}.new`, source: ref.source, sharedSource },
+        { label: `${ref.key}:call`, source: ref.source, sharedSource },
+      );
+      continue;
+    }
+    if (!target) continue;
+    const ref = jsTargetMemberValueRef(target, spec.name);
+    requests.push(
+      { label: `${ref.key}.new`, source: ref.source, sharedSource: target.source },
+      targetMemberReflectionRequest(target, spec.name),
+    );
+  }
+  return requests;
+}
+
+function reflectionTarget(target: Extract<Decl, { kind: "JsImportDecl" }>["target"]) {
+  if (target.kind === "JsGlobal") return jsGlobalSource(target.path);
+  if (target.kind === "JsModule") return jsModuleSource(target.specifier);
+  return undefined;
+}
+
+function targetMemberReflectionRequest(
+  target: JsReflectionSource,
+  name: string,
+): JsReflectionRequest {
+  return {
+    label: `${target.key}.${name}`,
+    source: `${target.source}\nconst __wm_member = ${propertyPath("__wm_target", [name])};`,
+    sharedSource: target.source,
+  };
+}
 
 export function jsGlobalMembers(path: string): JsMemberType[] {
   const target = jsGlobalSource(path);

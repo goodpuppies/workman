@@ -207,6 +207,7 @@ export function createDiagnosticWriter(): DiagnosticWriter {
   const entries: SupportEntry[] = [];
   const edges: { from: EvidenceId; to: EvidenceId; role: string }[] = [];
   const types: TypeSnapshot[] = [];
+  const renderedTypes = new Map<TypeSnapshotId, string>();
 
   const writer: DiagnosticWriter = {
     nextId(prefix = "e") {
@@ -216,7 +217,9 @@ export function createDiagnosticWriter(): DiagnosticWriter {
     snapshotType(type: Ty) {
       const id = writer.nextId("t");
       const shape = snapshotShape(type, writer);
-      types.push({ id, rendered: renderShape(shape, types), shape });
+      const rendered = renderShape(shape, renderedTypes);
+      renderedTypes.set(id, rendered);
+      types.push({ id, rendered, shape });
       return id;
     },
     add(entry) {
@@ -307,9 +310,8 @@ function snapshotShape(type: Ty, writer: DiagnosticWriter): TypeSnapshotShape {
   }
 }
 
-function renderShape(shape: TypeSnapshotShape, snapshots: TypeSnapshot[]): string {
-  const byId = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot.rendered]));
-  const render = (id: TypeSnapshotId) => byId.get(id) ?? id;
+function renderShape(shape: TypeSnapshotShape, renderedTypes: Map<TypeSnapshotId, string>): string {
+  const render = (id: TypeSnapshotId) => renderedTypes.get(id) ?? id;
   switch (shape.kind) {
     case "named-var":
       return shape.name;

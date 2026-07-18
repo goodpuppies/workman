@@ -5,12 +5,15 @@ import {
   resolveDelayedFfiElaboration,
 } from "./ffi/delayed/delayed.ts";
 import { prepareFfiElaboration } from "./ffi/elab.ts";
+import { prepareInitialJsImportReflection } from "./ffi/reflect/types.ts";
 import { inferModule, inferModulePartial, type InferResult } from "./infer.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import type { ModuleGraph, ModuleNode } from "./module_graph.ts";
 import { standardInferOptions } from "./standard_library.ts";
+import { collectExprs } from "./type_debug_collect.ts";
 
 export type StagedAnalysisPhase =
+  | "prepare JS reflection"
   | "prepare FFI"
   | "initial partial inference"
   | "contextualize delayed callbacks"
@@ -28,6 +31,13 @@ export type StagedAnalysisEvent = {
 
 export type StagedAnalysisOptions = {
   onEvent?: (event: StagedAnalysisEvent) => void;
+  onTiming?: (event: StagedAnalysisTimingEvent) => void;
+};
+
+export type StagedAnalysisTimingEvent = {
+  phase: StagedAnalysisPhase | "load standard library";
+  node?: ModuleNode;
+  milliseconds: number;
 };
 
 export class StagedAnalysisError extends Error {
@@ -57,17 +67,34 @@ export async function analyzeModuleGraph(
     result: InferResult | undefined,
     action: () => T | Promise<T>,
   ): Promise<T> => {
+    const started = performance.now();
     try {
       return await action();
     } catch (error) {
       throw new StagedAnalysisError(phase, node, error, result);
+    } finally {
+      options.onTiming?.({ phase, node, milliseconds: performance.now() - started });
     }
   };
+
+  for (const node of graph.nodes.values()) {
+    node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
+  }
+  const firstNode = graph.nodes.get(graph.order[0]);
+  if (firstNode) {
+    await run("prepare JS reflection", firstNode, undefined, () => {
+      prepareInitialJsImportReflection(
+        [...graph.nodes.values()].map((node) => ({
+          filePath: node.path,
+          decls: node.module.decls.filter((decl) => decl.kind === "JsImportDecl"),
+        })),
+      );
+    });
+  }
 
   const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
   for (const node of graph.nodes.values()) {
     await run("prepare FFI", node, undefined, () => {
-      node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
       const prepared = prepareFfiElaboration(node.module, {
         filePath: node.path,
         importedRecordFields: importedRecordFields(node, graph),
@@ -78,7 +105,38 @@ export async function analyzeModuleGraph(
     });
   }
 
+  const standardLibraryStarted = performance.now();
   const inferOptions = await standardInferOptions();
+  options.onTiming?.({
+    phase: "load standard library",
+    milliseconds: performance.now() - standardLibraryStarted,
+  });
+
+  const requiresFfiStaging =
+    [...ffi.values()].some((item) =>
+      item.bindings.size > 0 || item.foreignTypeRefs.size > 0 ||
+      (item.sourceJsImports?.length ?? 0) > 0
+    ) || [...graph.nodes.values()].some((node) =>
+      collectExprs(node.module).some((expr) =>
+        expr.kind === "FfiGet" || expr.kind === "FfiCall" || expr.kind === "FfiBindingCall"
+      )
+    );
+  if (!requiresFfiStaging) {
+    const results = new Map<string, InferResult>();
+    for (const path of graph.order) {
+      const node = graph.nodes.get(path)!;
+      const result = await run(
+        "final inference",
+        node,
+        undefined,
+        () => inferModule(node.module, importsFor(node, results), inferOptions),
+      );
+      results.set(path, result);
+      emit("final inference", node, result);
+    }
+    return results;
+  }
+
   const firstResults = new Map<string, InferResult>();
   for (const path of graph.order) {
     const node = graph.nodes.get(path)!;
@@ -93,10 +151,13 @@ export async function analyzeModuleGraph(
     await run("initial partial inference", node, result, () => assertNoPartialDiagnostics(result));
   }
 
+  const contextualizedPaths = new Set<string>();
   for (const path of graph.order) {
     const node = graph.nodes.get(path)!;
     await run("contextualize delayed callbacks", node, firstResults.get(path), () => {
-      const contextual = contextualizeDelayedCallbacks(ffi.get(path)!, firstResults.get(path)!);
+      const previous = ffi.get(path)!;
+      const contextual = contextualizeDelayedCallbacks(previous, firstResults.get(path)!);
+      if (contextual !== previous) contextualizedPaths.add(path);
       ffi.set(path, contextual);
       node.module = contextual.module;
       emit("contextualize delayed callbacks", node, firstResults.get(path));
@@ -104,14 +165,21 @@ export async function analyzeModuleGraph(
   }
 
   const contextualResults = new Map<string, InferResult>();
+  const contextuallyReinferredPaths = new Set<string>();
   for (const path of graph.order) {
     const node = graph.nodes.get(path)!;
+    const requiresReinference = contextualizedPaths.has(path) ||
+      node.imports.some((edge) => contextuallyReinferredPaths.has(edge.path));
     const result = await run(
       "contextual partial inference",
       node,
       undefined,
-      () => inferModulePartial(node.module, importsFor(node, contextualResults), inferOptions),
+      () =>
+        requiresReinference
+          ? inferModulePartial(node.module, importsFor(node, contextualResults), inferOptions)
+          : firstResults.get(path)!,
     );
+    if (requiresReinference) contextuallyReinferredPaths.add(path);
     contextualResults.set(path, result);
     emit("contextual partial inference", node, result);
     await run(
@@ -141,15 +209,25 @@ export async function analyzeModuleGraph(
     });
   }
 
+  const pathsWithDelayedFfi = new Set(
+    graph.order.filter((path) => moduleHasDelayedFfi(graph.nodes.get(path)!.module)),
+  );
   const postResolveResults = new Map<string, InferResult>();
+  const postResolutionReinferredPaths = new Set<string>();
   for (const path of graph.order) {
     const node = graph.nodes.get(path)!;
+    const requiresReinference = pathsWithDelayedFfi.has(path) ||
+      node.imports.some((edge) => postResolutionReinferredPaths.has(edge.path));
     const result = await run(
       "post-resolution partial inference",
       node,
       undefined,
-      () => inferModulePartial(node.module, importsFor(node, postResolveResults), inferOptions),
+      () =>
+        requiresReinference
+          ? inferModulePartial(node.module, importsFor(node, postResolveResults), inferOptions)
+          : contextualResults.get(path)!,
     );
+    if (requiresReinference) postResolutionReinferredPaths.add(path);
     postResolveResults.set(path, result);
     emit("post-resolution partial inference", node, result);
     await run(
@@ -165,6 +243,7 @@ export async function analyzeModuleGraph(
     const result = postResolveResults.get(path)!;
     await run("resolve delayed FFI (second pass)", node, result, () => {
       emit("resolve delayed FFI (second pass)", node, result);
+      if (!postResolutionReinferredPaths.has(path)) return;
       const resolved = resolveDelayedFfiElaboration(ffi.get(path)!, result, { foreignTypeRefs });
       ffi.set(path, resolved);
       node.module = resolved.module;
@@ -184,6 +263,12 @@ export async function analyzeModuleGraph(
     emit("final inference", node, result);
   }
   return results;
+}
+
+function moduleHasDelayedFfi(module: ModuleNode["module"]): boolean {
+  return collectExprs(module).some((expr) =>
+    expr.kind === "FfiGet" || expr.kind === "FfiCall" || expr.kind === "FfiBindingCall"
+  );
 }
 
 export function isDelayedFfiPartialDiagnostic(message: string): boolean {
