@@ -15,3 +15,5 @@ export interface TupleForeign {
 export declare function foreignValue(): TupleForeign;
 
 export declare function makePair(): [number, string];
+
+export declare function acceptHandle(handle: TupleHandle): void;

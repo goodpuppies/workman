@@ -54,6 +54,37 @@ Deno.test("cli run calls inferred JS imports", async () => {
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run converts reflected TypeScript tuple results and parameters", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/tuple.ts`,
+    `
+      export function makePair(): [number, string] { return [42, "answer"]; }
+      export function showPair(pair: [number, string]): string {
+        return pair[1] + ":" + pair[0];
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./tuple.ts") import { makePair, showPair };
+      let main = () => {
+        makePair()
+          :> Result.andThen((number, text) => { showPair((number, text)) })
+          :> Result.map((shown) => { print(shown) })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0, result.stderr);
+  assertEquals(result.stdout, "answer:42\n");
+  assertEquals(result.stderr, "");
+});
+
 Deno.test("cli run calls inferred variadic JS imports", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

@@ -31,6 +31,10 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? undefined : value?.ctor === -2 ? value.args[0] : value;`,
     `const __wm_js_to_workman = (value, converter) => {
   if (converter === "option") return __wm_js_option_wrap(value);
+  if (typeof converter === "object" && converter.kind === "tuple") {
+    if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript tuple array");
+    return __wm_tuple(...converter.items.map((item, index) => __wm_js_to_workman(value[index], item)));
+  }
   if (typeof converter === "object" && converter.kind === "fn") {
     return (...args) => __wm_js_to_workman(
       value(...args.map((arg, index) => __wm_js_to_js(arg, converter.params[index] ?? "id"))),
@@ -41,6 +45,10 @@ export function emitRuntimePrelude(): string[] {
 };`,
     `const __wm_js_to_js = (value, converter) => {
   if (converter === "option") return __wm_js_option_unwrap(value);
+  if (typeof converter === "object" && converter.kind === "tuple") {
+    if (!__wm_is_tuple(value)) throw new TypeError("expected Workman tuple");
+    return converter.items.map((item, index) => __wm_js_to_js(value[index], item));
+  }
   if (typeof converter === "object" && converter.kind === "fn") {
     return (...args) => {
       const converted = args.map((arg, index) => __wm_js_to_workman(arg, converter.params[index] ?? "id"));

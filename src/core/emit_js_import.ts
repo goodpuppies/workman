@@ -99,6 +99,9 @@ type JsConverter = "id" | "option" | {
   kind: "fn";
   params: JsConverter[];
   result: JsConverter;
+} | {
+  kind: "tuple";
+  items: JsConverter[];
 };
 
 function jsParamConverters(type: TypeExpr | undefined): JsConverter[] {
@@ -118,6 +121,9 @@ function jsValueConverter(type: TypeExpr | undefined): JsConverter {
 
 function jsConverter(type: TypeExpr): JsConverter {
   if (type.kind === "TName" && type.name === "Option") return "option";
+  if (type.kind === "TTuple") {
+    return { kind: "tuple", items: type.items.map(jsConverter) };
+  }
   if (type.kind === "TFn") {
     return {
       kind: "fn",

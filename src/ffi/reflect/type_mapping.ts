@@ -157,6 +157,8 @@ export function typeExprFromTsType(
   if (position === "result" && nominal) return name(nominal);
   const tuple = fixedTupleTypeExpr(checker, type, position);
   if (tuple) return tuple;
+  const opaqueTupleAlias = opaqueTupleAliasTypeName(type);
+  if (opaqueTupleAlias) return name(opaqueTupleAlias);
   if (isExplicitDynamicObject(checker, type)) {
     return position === "param" ? name("Js.Value") : name("Js.Object");
   }
@@ -173,6 +175,14 @@ export function typeExprFromTsType(
     return name("Js.Object");
   }
   return position === "param" ? name("Js.Value") : undefined;
+}
+
+function opaqueTupleAliasTypeName(type: ts.Type): string | undefined {
+  const symbol = type.aliasSymbol;
+  const declaration = symbol?.declarations?.find(ts.isTypeAliasDeclaration);
+  if (!declaration || !ts.isTupleTypeNode(declaration.type)) return undefined;
+  const typeName = symbol?.getName();
+  return typeName && /^[A-Za-z_$][\w$]*$/.test(typeName) ? typeName : undefined;
 }
 
 function enumTypeExpr(type: ts.Type): TypeExpr | undefined {

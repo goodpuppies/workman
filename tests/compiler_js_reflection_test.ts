@@ -608,6 +608,22 @@ Deno.test("reflects fixed TypeScript tuples from functions and foreign members",
   });
 });
 
+Deno.test("preserves unsupported named tuple aliases in reflected parameters", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import { acceptHandle };
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleHandle };
+
+    let accept = (handle: TupleHandle) => {
+      acceptHandle(handle)
+    };
+  `);
+
+  expectBinding(result.env, "accept", {
+    type: "(TupleHandle) => Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
 Deno.test("anonymous structural foreign results use the explicit Js.Object fallback", async () => {
   const result = await checkSource(`
     from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleForeign };
