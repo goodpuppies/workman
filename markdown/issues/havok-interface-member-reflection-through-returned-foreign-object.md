@@ -87,7 +87,7 @@ outer tuple and therefore did not prove that interface member dispatch itself wa
 
 ## Application follow-up
 
-`wmthree` currently contains typed top-level Havok forwarding functions introduced as a workaround.
-They can be reviewed and removed where they only compensate for tuple-return reflection. Shims
-which intentionally translate the foreign interaction model into a better Workman API remain a
-separate architectural choice.
+The runtime boundary now also converts reflected fixed-tuple arrays into tagged Workman tuples (and
+tagged tuple parameters back into JavaScript arrays). `wmthree` retains a narrow typed adapter to
+turn Havok status codes into fallible Workman calls and to give opaque C-like handles explicit
+import signatures; it is no longer needed merely to make fixed-tuple returns destructurable.
