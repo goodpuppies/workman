@@ -38,6 +38,7 @@ export type CoreDecl =
     kind: "CoreRecord";
     exported: boolean;
     name: string;
+    constructorBindingId?: BindingId;
     typeNameId?: TypeNameId;
     recordId?: RecordId;
     params: string[];

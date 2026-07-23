@@ -353,6 +353,12 @@ let p = .{ x = 1, y = 2 };
 let x = p.x;
 ```
 
+The declaration also introduces an ordinary ordered constructor:
+
+```wm
+let p = Point(1, 2);
+```
+
 This is intentionally different from SML flexible record inference. It keeps the mini compiler
 smaller and avoids a large record-polymorphism feature.
 

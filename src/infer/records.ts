@@ -245,8 +245,8 @@ function recordCandidate(
     const candidateNames = candidates.map((candidate) => candidate.name).join(", ");
     const message = `${ambiguous}; using first matching record type called ${selected.name}. ` +
       `Candidates: ${candidateNames}. ` +
-      `Hint: use an annotation like \`x: ${selected.name} = .{ ... }\` or explicit form ` +
-      `\`x = ${selected.name}{ ... }\`.`;
+      `Hint: use an annotation like \`x: ${selected.name} = .{ ... }\` or its ordered ` +
+      `constructor like \`x = ${selected.name}(...)\`.`;
     warnings.push(message);
     diagnostics.push(warningDiagnostic(message, expr.node, "record.ambiguous-literal"));
   }

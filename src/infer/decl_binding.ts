@@ -134,7 +134,9 @@ function isNonExpansive(expr: Expr, env: Env): boolean {
 }
 
 function isConstructorExpr(expr: Expr, env: Env): boolean {
-  return expr.kind === "Var" && env.get(expr.name)?.status === "constructor";
+  if (expr.kind !== "Var") return false;
+  const status = env.get(expr.name)?.status;
+  return status === "constructor" || status === "record-constructor";
 }
 
 export function withSchemeProvenance(

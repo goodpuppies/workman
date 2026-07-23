@@ -4,6 +4,7 @@ import type { ModuleGraph } from "./module_graph.ts";
 
 export type BindingFacts = {
   binders: Map<Pattern, BindingId>;
+  recordConstructors: Map<Extract<Decl, { kind: "RecordDecl" }>, BindingId>;
   references: Map<Expr | Pattern, BindingId>;
   local: Set<BindingId>;
   exports: Map<string, BindingId>;
@@ -34,6 +35,7 @@ export function resolveModuleBindingFacts(
 ): BindingFacts {
   const facts: BindingFacts = {
     binders: new Map(),
+    recordConstructors: new Map(),
     references: new Map(),
     local: new Set(),
     exports: new Map(),
@@ -68,6 +70,17 @@ function resolveDecl(
   facts: BindingFacts,
   ids: CompilerIdAllocator,
 ): ValueEnv {
+  if (decl.kind === "RecordDecl") {
+    const id = ids.binding();
+    facts.recordConstructors.set(decl, id);
+    facts.local.add(id);
+    const next = new Map(env);
+    next.set(decl.name, id);
+    if (decl.exported) {
+      facts.exports.set(decl.name, id);
+    }
+    return next;
+  }
   if (decl.kind !== "LetDecl") return env;
   if (decl.recursive) {
     const recursive = new Map(env);

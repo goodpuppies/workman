@@ -130,6 +130,16 @@ function collectTopDefinitions(node: ModuleNode): ModuleSymbols {
           const def = definition(node, ctor.name, "value", nameSpan(node.source, ctor, ctor.name));
           if (def) addDefinition(values, exportedValues, def, decl.exported);
         }
+      } else {
+        const constructorDef = definition(
+          node,
+          decl.name,
+          "value",
+          nameSpan(node.source, decl, decl.name),
+        );
+        if (constructorDef) {
+          addDefinition(values, exportedValues, constructorDef, decl.exported);
+        }
       }
     } else if (decl.kind === "ForeignTypeDecl") {
       const def = definition(node, decl.name, "type", nameSpan(node.source, decl, decl.name));
@@ -266,6 +276,23 @@ function collectDecl(
     collectType(node, decl.alias, scope, out);
   } else if (decl.kind === "RecordDecl") {
     for (const field of decl.fields) collectType(node, field.type, scope, out);
+    if (!topLevel) {
+      const constructorDef = definition(
+        node,
+        decl.name,
+        "value",
+        nameSpan(node.source, decl, decl.name),
+      );
+      if (constructorDef) {
+        scope.values.set(decl.name, constructorDef);
+        out.push({
+          path: node.path,
+          span: constructorDef.span,
+          target: constructorDef,
+          declaration: true,
+        });
+      }
+    }
   } else if (decl.kind === "JsImportDecl") {
     if (decl.clause.kind === "Named") {
       for (const spec of decl.clause.specs) collectType(node, spec.type, scope, out);

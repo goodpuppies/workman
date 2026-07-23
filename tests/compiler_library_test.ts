@@ -41,9 +41,13 @@ Deno.test("compiled WM library is importable through stable plain-data exports",
   const first = await importGenerated(js, "fixture-first");
   const second = await importGenerated(js, "fixture-second");
 
-  assertEquals(Object.keys(first).sort(), ["describe", "double"]);
+  assertEquals(Object.keys(first).sort(), ["FixtureDescription", "describe", "double"]);
   assertEquals(first.double(6), 12);
   assertEquals(second.double(7), 14);
+  assertEquals(first.FixtureDescription(["frontend-v2-fixture", "zero"]), {
+    kind: "frontend-v2-fixture",
+    name: "zero",
+  });
   assertEquals(first.describe("one"), {
     kind: "frontend-v2-fixture",
     name: "one",

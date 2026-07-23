@@ -7,6 +7,7 @@ import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
 import { snapshotEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 import { createTypeFacts, type TypeFacts } from "./infer/type_facts.ts";
 import type { TypeProvenance } from "./infer/provenance.ts";
+import { warnWideTuples } from "./infer/wide_tuples.ts";
 import {
   baseAdts,
   baseEnv,
@@ -110,6 +111,7 @@ function inferModuleCore(
     provenance,
     dialect: hostTypingDialect,
   };
+  warnWideTuples(module, warnings, diagnostics);
 
   for (const initialImport of includePrelude ? options.initialImports ?? [] : []) {
     addImport(env, typeEnv, initialImport.clause, initialImport.result, {

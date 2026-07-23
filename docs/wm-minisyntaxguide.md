@@ -313,6 +313,36 @@ let p = .{ x = 10, y = 20 };
 let p: Point = .{ x = 10, y = 20 };
 ```
 
+### Ordered Constructors
+
+Every record declaration also introduces an ordinary constructor function. Its arguments follow
+field declaration order:
+
+```workman
+record Point = { x: Number, y: Number };
+
+let p = Point(10, 20);
+```
+
+For a polymorphic record, the constructor is polymorphic in the same way as the record:
+
+```workman
+record Pair<A, B> = { first: A, second: B };
+
+let pair = Pair(1, "one");
+```
+
+Because the constructor is an ordinary function, it composes with carrier operations without any
+record-specific carrier behavior:
+
+```workman
+Result|xResult, yResult|
+  :> Result.map(Point)
+```
+
+This has type `Result<Point, E>`. Use an explicit record literal when values do not follow
+declaration order or when naming the fields is clearer.
+
 ### Field Punning
 
 When a variable name matches the field name, write the name once:
@@ -357,8 +387,8 @@ let p = .{ x = 10, y = 20 };
 let xVal = p.x;  -- 10
 ```
 
-See [Generic programming](./generic-programming.md) for using records in place
-of traits, interfaces, and other capability abstractions.
+See [Generic programming](./generic-programming.md) for using records in place of traits,
+interfaces, and other capability abstractions.
 
 ---
 

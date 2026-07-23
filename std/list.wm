@@ -3,10 +3,92 @@ let rec map = match(items, f) => {
   ([head, ..rest], f) => { [f(head), ..map(rest, f)] }
 };
 
+let rec length = match(items) => {
+  [] => { 0 },
+  [_, ..rest] => { 1 + length(rest) }
+};
+
+let rec append = match(left, right) => {
+  ([], right) => { right },
+  ([head, ..rest], right) => {
+    [head, ..append(rest, right)]
+  }
+};
+
+let rec filter = match(items, predicate) => {
+  ([], _) => { [] },
+  ([head, ..rest], predicate) => {
+    if (predicate(head)) {
+      [head, ..filter(rest, predicate)]
+    } else {
+      filter(rest, predicate)
+    }
+  }
+};
+
+let rec take = match(items, count) => {
+  ([], _) => { [] },
+  (_, 0) => { [] },
+  ([head, ..rest], count) => {
+    [head, ..take(rest, count - 1)]
+  }
+};
+
+let rec drop = match(items, count) => {
+  (items, 0) => { items },
+  ([], _) => { [] },
+  ([_, ..rest], count) => {
+    drop(rest, count - 1)
+  }
+};
+
+let rec at = match(items, index) => {
+  ([], _) => { None },
+  ([head, .._], 0) => { Some(head) },
+  ([_, ..rest], index) => {
+    at(rest, index - 1)
+  }
+};
+
+let rec foldLeft = match(items, initial, f) => {
+  ([], initial, _) => { initial },
+  ([head, ..rest], initial, f) => {
+    foldLeft(rest, f(initial, head), f)
+  }
+};
+
 let rec foldRight = match(items, initial, f) => {
   ([], initial, _) => { initial },
   ([head, ..rest], initial, f) => {
     f(head, foldRight(rest, initial, f))
+  }
+};
+
+let reverse = (items) => {
+  foldLeft(items, [], (reversed, item) => {
+    [item, ..reversed]
+  })
+};
+
+let rec any = match(items, predicate) => {
+  ([], _) => { false },
+  ([head, ..rest], predicate) => {
+    if (predicate(head)) {
+      true
+    } else {
+      any(rest, predicate)
+    }
+  }
+};
+
+let rec all = match(items, predicate) => {
+  ([], _) => { true },
+  ([head, ..rest], predicate) => {
+    if (predicate(head)) {
+      all(rest, predicate)
+    } else {
+      false
+    }
   }
 };
 

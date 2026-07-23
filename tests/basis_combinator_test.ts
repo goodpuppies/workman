@@ -20,6 +20,11 @@ Deno.test("Result and Option combinators infer generically", async () => {
     });
     let plain = opt :> Option.withDefault(0);
     let listMapped = [1, 2, 3] :> List.map((n) => { n + 1 });
+    let listLength = [1, 2, 3] :> List.length;
+    let listItem = [1, 2, 3] :> List.at(1);
+    let missingListItem = [1, 2, 3] :> List.at(8);
+    let filtered = [1, 2, 3, 4] :> List.filter((n) => { n > 2 });
+    let reversed = [1, 2, 3] :> List.reverse;
     let traversed = [1, 2, 3] :> Result.traverse((n) => {
       if (n > 0) { Ok(n * 2) } else { Err(Panic("bad")) }
     });
@@ -54,6 +59,11 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
   expectBinding(result.env, "listMapped", { type: "List<Number>", vars: 0 });
+  expectBinding(result.env, "listLength", { type: "Number", vars: 0 });
+  expectBinding(result.env, "listItem", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "missingListItem", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "filtered", { type: "List<Number>", vars: 0 });
+  expectBinding(result.env, "reversed", { type: "List<Number>", vars: 0 });
   expectBinding(result.env, "traversed", { type: "Result<List<Number>, 'a>", vars: 0 });
   expectBinding(result.env, "collectedResults", { type: "Result<List<Number>, 'a>", vars: 0 });
   expectBinding(result.env, "collectedOptions", { type: "Option<List<Number>>", vars: 0 });
@@ -117,6 +127,48 @@ Deno.test("Traverse.with sequences through a standard carrier and stops on failu
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "Err(stop)\n");
+});
+
+Deno.test("expanded List helpers evaluate with current argument order", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => {
+        print(List.length([1, 2, 3]));
+        print(List.append([1, 2], [3, 4]));
+        print(List.filter([1, 2, 3, 4], (n) => { n > 2 }));
+        print(List.take([1, 2, 3], 2));
+        print(List.drop([1, 2, 3], 2));
+        print(List.at([1, 2, 3], 1));
+        print(List.at([1, 2, 3], 8));
+        print(List.foldLeft([1, 2, 3], 0, (sum, n) => { sum + n }));
+        print(List.reverse([1, 2, 3]));
+        print(List.any([1, 2, 3], (n) => { n > 2 }));
+        print(List.all([1, 2, 3], (n) => { n > 0 }))
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(
+    result.stdout,
+    "3\n" +
+      "Cons(1, Cons(2, Cons(3, Cons(4, Nil))))\n" +
+      "Cons(3, Cons(4, Nil))\n" +
+      "Cons(1, Cons(2, Nil))\n" +
+      "Cons(3, Nil)\n" +
+      "Some(2)\n" +
+      "None\n" +
+      "6\n" +
+      "Cons(3, Cons(2, Cons(1, Nil)))\n" +
+      "true\n" +
+      "true\n",
+  );
 });
 
 Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async () => {

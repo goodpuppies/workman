@@ -55,7 +55,15 @@ export function inferDecl(
     return;
   }
   if (decl.kind === "RecordDecl") {
-    inferRecordDecl(decl, env, typeEnv, typeExports, exportableTypeIds, facts);
+    inferRecordDecl(
+      decl,
+      env,
+      exports,
+      typeEnv,
+      typeExports,
+      exportableTypeIds,
+      facts,
+    );
     return;
   }
   if (decl.kind === "TypeDecl") {
@@ -104,6 +112,7 @@ function canonicalForeignTypeName(name: string, key: string): string {
 function inferRecordDecl(
   decl: Extract<Decl, { kind: "RecordDecl" }>,
   env: Env,
+  exports: Env,
   typeEnv: TypeEnv,
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
@@ -131,6 +140,23 @@ function inferRecordDecl(
   if (decl.exported) {
     exportableTypeIds.add(info.id);
     assertExportableRecord(info, exportableTypeIds);
+  }
+  const result = named(info, decl.params.map((param) => vars.get(param)!));
+  const constructorType = fn([callArg(info.recordFields.map((field) => field.type))], result);
+  const constructor = {
+    ...generalize(env, constructorType),
+    status: "record-constructor" as const,
+    node: decl.node,
+  };
+  env.set(decl.name, constructor);
+  recordBindingFact(facts, decl.name, {
+    subject: "binding",
+    instantiated: constructor.type,
+    general: constructor,
+    origin: originForScheme(decl.name, constructor),
+  });
+  if (decl.exported) {
+    exports.set(decl.name, constructor);
   }
 }
 
@@ -271,12 +297,14 @@ function inferNonRecursiveLet(
         general: scheme,
         origin: originForScheme(name, scheme),
       });
-      recordPatternFact(facts, decl.bindings[i].pattern, {
-        subject: "pattern",
-        instantiated: type,
-        general: scheme,
-        origin: originForScheme(name, scheme),
-      });
+      if (decl.bindings[i].pattern.kind === "PVar") {
+        recordPatternFact(facts, decl.bindings[i].pattern, {
+          subject: "pattern",
+          instantiated: type,
+          general: scheme,
+          origin: originForScheme(name, scheme),
+        });
+      }
       if (decl.exported) {
         assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
         exports.set(name, scheme);

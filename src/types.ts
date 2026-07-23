@@ -41,7 +41,7 @@ export type Ty =
   };
 
 export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
-export type IdentifierStatus = "value" | "constructor";
+export type IdentifierStatus = "value" | "constructor" | "record-constructor";
 export type Scheme = {
   vars: number[];
   type: Ty;

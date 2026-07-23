@@ -204,6 +204,9 @@ export function dynamicExports(module: CoreModule): CoreDynamicExport[] {
     if (decl.kind === "CoreType" && decl.exported && !decl.alias) {
       exports.push(...decl.ctors.map((ctor) => ({ name: ctor.name })));
     }
+    if (decl.kind === "CoreRecord" && decl.exported) {
+      exports.push({ name: decl.name, bindingId: decl.constructorBindingId });
+    }
   }
   return exports;
 }

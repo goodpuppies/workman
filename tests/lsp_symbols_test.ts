@@ -60,6 +60,28 @@ Deno.test("lsp definition resolves namespace members and namespace modules", asy
   assertEquals(namespace?.range.start, { line: 0, character: 0 });
 });
 
+Deno.test("lsp definition resolves an imported record constructor to its declaration", async () => {
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/records.wm`;
+  const main = `${dir}/main.wm`;
+  const libSource = "record Point = { x: Number, y: Number };";
+  const mainSource = 'from "./records.wm" import { Point }; let point = Point(1, 2);';
+  await Deno.writeTextFile(lib, libSource);
+  await Deno.writeTextFile(main, mainSource);
+
+  const result = await definitionAt(
+    pathToFileUri(main),
+    positionOf(mainSource, "Point(1"),
+    new Map(),
+  );
+
+  assertEquals(result?.uri, pathToFileUri(lib));
+  assertEquals(result?.range, {
+    start: { line: 0, character: 7 },
+    end: { line: 0, character: 12 },
+  });
+});
+
 Deno.test("lsp references respect includeDeclaration", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;

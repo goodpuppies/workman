@@ -117,6 +117,25 @@ Deno.test("recursive binding placeholders provide authoritative pattern types", 
   assertEquals(prune(binding.type).tag, "fn");
 });
 
+Deno.test("destructuring lets retain constructor facts at the pattern root", async () => {
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([[
+      "/test/main.wm",
+      `let main = () => {
+         let [first, second] = [1, 2];
+         first + second
+       };`,
+    ]]),
+  );
+  const constructors = analysis.patternFacts.patterns.filter((fact) => fact.kind === "constructor");
+
+  assertEquals(
+    constructors.map((fact) => (fact.pattern as Extract<Pattern, { kind: "PCtor" }>).name),
+    ["Cons", "Cons", "Nil"],
+  );
+});
+
 function namedPattern(
   facts: import("../src/pattern_facts.ts").ResolvedPatternFact[],
   name: string,

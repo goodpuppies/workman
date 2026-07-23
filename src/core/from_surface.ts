@@ -179,6 +179,7 @@ function coreDeclFromSurface(
         kind: "CoreRecord",
         exported: decl.exported,
         name: decl.name,
+        constructorBindingId: context?.bindings?.recordConstructors.get(decl),
         typeNameId: context?.nominalFacts?.typeDeclarations.get(decl),
         recordId: context?.nominalFacts?.recordDeclarations.get(decl),
         params: decl.params,

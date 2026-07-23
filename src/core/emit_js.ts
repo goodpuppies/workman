@@ -453,8 +453,21 @@ function emitImportAliases(artifact: CoreModuleArtifact, program: CoreProgram): 
 }
 
 function emitDecl(decl: CoreDecl): string[] {
-  if (decl.kind === "CoreImport" || decl.kind === "CoreRecord") return [];
+  if (decl.kind === "CoreImport") return [];
   if (decl.kind === "CoreJsImport") return emitJsImportDecl(decl);
+  if (decl.kind === "CoreRecord") {
+    const argument = "__record_args";
+    const fieldValue = (index: number) => {
+      if (decl.fields.length === 1) return argument;
+      return `${argument}[${index}]`;
+    };
+    const fields = decl.fields.map((field, index) => `${id(field.name)}: ${fieldValue(index)}`);
+    return [
+      `const ${valueRefName(decl.name, decl.constructorBindingId)} = (${argument}) => ({ ${
+        fields.join(", ")
+      } });`,
+    ];
+  }
   if (decl.kind === "CoreType") {
     if (decl.alias) return [];
     return decl.ctors.map((ctor) => {
