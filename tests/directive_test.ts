@@ -40,7 +40,12 @@ Deno.test("directive placement, duplication, spelling, and damage are rejected",
   await assertRejects(
     () => parse("let f = (x) => { @cpu; x };"),
     ParseError,
-    "unknown directive @cpu",
+    "unknown directive @cpu; available directives: @gpu",
+  );
+  await assertRejects(
+    () => parse("let f = (x) => { @; x };"),
+    ParseError,
+    'Expected a directive name after "@"; available directives: @gpu',
   );
   await assertRejects(() => parse("let f = (x) => { x; @gpu; x };"), ParseError);
   await assertRejects(() => parse("@gpu;"), ParseError);
@@ -67,7 +72,7 @@ Deno.test("unmaterialized GPU values fail closed on the host Core path", async (
         let host = () => { tint(1.0) };
       `),
     Error,
-    "GPU-only function reference reached host Core lowering before artifact materialization",
+    "GPU-only function `tint` cannot be used by host code",
   );
   await assertRejects(
     () => compile("let pair = (1, (color) => { @gpu; color * 0.5 });"),
@@ -95,7 +100,7 @@ Deno.test("compiler-only GPU aliases remain compile-time-only across modules", a
   await assertRejects(
     () => compileVirtual("/test/main.wm", virtualFs),
     Error,
-    "GPU-only function reference reached host Core lowering before artifact materialization",
+    "GPU-only function `shade` cannot be used by host code",
   );
 });
 

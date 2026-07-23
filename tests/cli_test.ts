@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { evaluateReplFile, topLevelPhraseRanges } from "../src/repl.ts";
 import { parseReplArguments } from "../src/main.ts";
+import denoConfig from "../deno.json" with { type: "json" };
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
 
@@ -9,17 +10,107 @@ Deno.test("cli prints help with no arguments", async () => {
 
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
-  assertStringIncludes(result.stdout, "wm-mini - Workman subset compiler and runner");
+  assertStringIncludes(result.stdout, `🗿 workman ${denoConfig.version} - compiler and runner`);
   assertStringIncludes(result.stdout, "wm run examples/factorial.wm");
 });
 
-Deno.test("cli prints help with --help", async () => {
-  const result = await runCli(["--help"]);
+Deno.test("cli prints help with command and flag variants", async () => {
+  for (const args of [["help"], ["--help"], ["-h"]]) {
+    const result = await runCli(args);
+
+    assertEquals(result.code, 0);
+    assertEquals(result.stderr, "");
+    assertStringIncludes(result.stdout, "commands:");
+    assertStringIncludes(result.stdout, "repl [--v2] <file.wm>");
+  }
+});
+
+Deno.test("cli prints the deno.json version with command and flag variants", async () => {
+  for (const args of [["version"], ["--version"], ["-v"], ["-V"]]) {
+    const result = await runCli(args);
+
+    assertEquals(result.code, 0);
+    assertEquals(result.stderr, "");
+    assertEquals(result.stdout, `🗿 workman ${denoConfig.version}\n`);
+  }
+});
+
+Deno.test("cli treats a wm path as the compatibility compile form", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/answer.wm`;
+  await Deno.writeTextFile(input, "let answer = 42;");
+
+  const result = await runCli([input]);
 
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
-  assertStringIncludes(result.stdout, "commands:");
-  assertStringIncludes(result.stdout, "repl [--v2] <file.wm>");
+  assertStringIncludes(result.stdout, " = 42;");
+});
+
+Deno.test("cli rejects an unknown command instead of treating it as a file", async () => {
+  const result = await runCli(["comiple"]);
+
+  assertEquals(result.code, 2);
+  assertEquals(result.stdout, "");
+  assertEquals(result.stderr, "unknown command: comiple\ntry: wm --help\n");
+});
+
+Deno.test("cli explains how to import JavaScript and TypeScript modules", async () => {
+  for (const extension of ["js", "ts"]) {
+    const dir = await Deno.makeTempDir();
+    const input = `${dir}/main.wm`;
+    await Deno.writeTextFile(
+      input,
+      `from "./helper.${extension}" import { helper }; let answer = 42;`,
+    );
+    await Deno.writeTextFile(`${dir}/helper.${extension}`, "export const helper = 1;");
+
+    const result = await runCli(["check", input]);
+
+    assertEquals(result.code, 1);
+    assertEquals(result.stdout, "");
+    assertStringIncludes(result.stderr, "JavaScript and TypeScript modules use js.module(...)");
+    assertStringIncludes(
+      result.stderr,
+      `try: from js.module("./helper.${extension}") import ...`,
+    );
+  }
+});
+
+Deno.test("cli lists valid members after incomplete js namespaces", async () => {
+  const cases = [
+    {
+      source: "from js. import { value };",
+      expected: 'Expected "global", "module", or "worker" after "js."',
+    },
+    {
+      source: "let value: Js. = void;",
+      expected:
+        'Expected "Array", "ArrayLike", "Dict", "Error", "Object", "Promise", "Unknown", or "Value" after "Js."',
+    },
+    {
+      source: "let value = Gpu.;",
+      expected:
+        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
+    },
+    {
+      source: "let value: Gpu. = void;",
+      expected:
+        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
+    },
+  ];
+
+  for (const testCase of cases) {
+    const dir = await Deno.makeTempDir();
+    const input = `${dir}/main.wm`;
+    await Deno.writeTextFile(input, testCase.source);
+
+    const result = await runCli(["check", input]);
+
+    assertEquals(result.code, 1);
+    assertEquals(result.stdout, "");
+    assertStringIncludes(result.stderr, testCase.expected);
+  }
 });
 
 Deno.test("repl parses --v2 before or after its input", () => {

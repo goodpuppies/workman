@@ -373,6 +373,7 @@ export function errorMessage(error: unknown): string {
 
 export function classifyDiagnostic(message: string): string {
   if (message.includes("type mismatch")) return "type.mismatch";
+  if (message.includes("cannot resolve npm package")) return "js.package-resolution";
   if (message.includes("unknown import")) return "module.unknown-import";
   if (message.includes("duplicate value import") || message.includes("duplicate type import")) {
     return "module.duplicate-import";

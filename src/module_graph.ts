@@ -80,6 +80,19 @@ async function visitModule(path: string, ctx: LoadContext) {
   const imports: ModuleImportEdge[] = [];
   for (const decl of module.decls) {
     if (decl.kind !== "ImportDecl") continue;
+    if (isJavaScriptModuleSpecifier(decl.path)) {
+      throw new ModuleGraphDiagnosticError(
+        path,
+        source,
+        diagnosticError(
+          new Error(
+            `JavaScript and TypeScript modules use js.module(...); try: from js.module("${decl.path}") import ...`,
+          ),
+          decl.pathNode ?? decl.node,
+          "module.javascript-import-syntax",
+        ),
+      );
+    }
     let child: string;
     try {
       child = await resolveImportPath(path, decl.path, ctx.options);
@@ -156,6 +169,10 @@ function resolveImport(fromPath: string, specifier: string): string {
     return posix.normalize(posix.join(posix.dirname(fromPath), specifier));
   }
   return fileURLToPath(new URL(specifier, pathToFileURL(fromPath)));
+}
+
+function isJavaScriptModuleSpecifier(specifier: string): boolean {
+  return /\.[cm]?[jt]sx?(?:[?#].*)?$/i.test(specifier);
 }
 
 async function resolveImportPath(

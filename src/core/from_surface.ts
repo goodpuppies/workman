@@ -16,6 +16,7 @@ import type {
 import type { InferResult } from "../infer.ts";
 import { basisCtorId } from "../basis.ts";
 import { type BindingFacts, resolveModuleBindingFacts } from "../binding_facts.ts";
+import { diagnosticError } from "../diagnostics.ts";
 import { gpuOnlyBindingIds } from "../gpu_host_boundary.ts";
 import { resolveGpuFragmentSelections } from "../gpu_selection.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
@@ -262,8 +263,10 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       }
       const id = context?.bindings?.references.get(expr);
       if (id !== undefined && context?.gpuOnlyBindings.has(id)) {
-        throw new Error(
-          "GPU-only function reference reached host Core lowering before artifact materialization",
+        throw diagnosticError(
+          new Error(gpuOnlyHostReferenceMessage(expr.name)),
+          expr.node,
+          "gpu.fragment.host-call",
         );
       }
       return desugarDottedVar(
@@ -489,8 +492,10 @@ function corePatternFromSurface(
     case "PPinned": {
       const id = context?.bindings?.references.get(pattern);
       if (id !== undefined && context?.gpuOnlyBindings.has(id)) {
-        throw new Error(
-          "GPU-only function reference reached host Core lowering before artifact materialization",
+        throw diagnosticError(
+          new Error(gpuOnlyHostReferenceMessage(pattern.name)),
+          pattern.node,
+          "gpu.fragment.host-call",
         );
       }
       return {
@@ -521,6 +526,10 @@ function corePatternFromSurface(
         node: pattern.node,
       };
   }
+}
+
+function gpuOnlyHostReferenceMessage(name: string): string {
+  return `GPU-only function \`${name}\` cannot be used by host code. Functions marked @gpu are not emitted as CPU-callable JavaScript. Pass it to Gpu.fragment(...) to create a shader artifact, or remove @gpu if the function should run on the CPU.`;
 }
 
 function isGpuOnlyBinding(binding: Binding, context?: CoreLoweringContext): boolean {

@@ -21,6 +21,7 @@ import { ParseError } from "./parser.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, watchReplChanges } from "./repl.ts";
+import denoConfig from "../deno.json" with { type: "json" };
 
 const commands = new Set([
   "check",
@@ -31,7 +32,9 @@ const commands = new Set([
   "err",
   "type-debug",
   "help",
+  "version",
 ]);
+const VERSION = denoConfig.version;
 
 export async function runCli(args: string[]): Promise<number> {
   return await main(args).catch((error) => {
@@ -137,7 +140,16 @@ export async function main(args: string[]): Promise<number> {
     usage();
     return 0;
   }
-  const command = commands.has(head ?? "") ? head : "compile";
+  if (head === "--version" || head === "-V" || head === "-v") {
+    version();
+    return 0;
+  }
+  if (!commands.has(head) && !head.endsWith(".wm")) {
+    console.error(`unknown command: ${head}`);
+    console.error("try: wm --help");
+    return 2;
+  }
+  const command = commands.has(head) ? head : "compile";
   const commandArgs = command === head ? rest : args;
 
   switch (command) {
@@ -155,6 +167,9 @@ export async function main(args: string[]): Promise<number> {
       return await errCommand(commandArgs);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
+    case "version":
+      version();
+      return 0;
     case "help":
     default:
       usage();
@@ -367,8 +382,12 @@ function missingInput(command: string): number {
   return 2;
 }
 
-function usage() {
-  console.log(`wm-mini - Workman subset compiler and runner
+function version(): void {
+  console.log(`🗿 workman ${VERSION}`);
+}
+
+function usage(): void {
+  console.log(`🗿 workman ${VERSION} - compiler and runner
 
 usage:
   wm <command> [args]
@@ -383,7 +402,8 @@ commands:
   repl [--v2] <file.wm>         watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   type-debug <file.wm>           print staged typechecker state on failure
-  help                          show this help
+  help                          show this help (-h, --help)
+  version                       show the version (-v, -V, --version)
 
 compat:
   wm <file.wm> [out.js]         same as wm compile <file.wm> [out.js]

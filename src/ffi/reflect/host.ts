@@ -1,6 +1,7 @@
 import ts from "typescript-api";
 import { dirname, extname, join, normalize } from "node:path";
 import { isBuiltin } from "node:module";
+import { existsSync, writeFileSync } from "node:fs";
 import { runtime } from "../../io.ts";
 
 const compilerOptions: ts.CompilerOptions = {
@@ -174,16 +175,42 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
     return loaded;
   };
   host.resolveModuleNames = (moduleNames, containingFile) =>
-    moduleNames.map((moduleName) =>
-      denoResolvedModule(denoGraphs, moduleName, containingFile) ??
-        ts.resolveModuleName(
-          moduleName,
-          containingFile,
-          compilerOptions,
-          host,
-          moduleResolutionCache(),
-        ).resolvedModule
-    );
+    moduleNames.map((moduleName) => {
+      const resolveModule = () =>
+        denoResolvedModule(denoGraphs, moduleName, containingFile) ??
+          ts.resolveModuleName(
+            moduleName,
+            containingFile,
+            compilerOptions,
+            host,
+            moduleResolutionCache(),
+          ).resolvedModule;
+      let resolved = resolveModule();
+      if (!resolved && isNpmGraphImport(denoGraphs, moduleName)) {
+        const projectDirectory = enableNodeModulesDir(containingFile);
+        if (projectDirectory) {
+          const installed = runtime.runSync(denoCliPath(), ["install"], {
+            cwd: projectDirectory,
+          });
+          if (!installed.success) {
+            const detail = installed.stderr.trim();
+            throw new Error(
+              `enabled nodeModulesDir for npm import ${moduleName}, but deno install failed${
+                detail ? `: ${detail}` : ""
+              }`,
+            );
+          }
+          clearModuleResolutionCaches();
+          resolved = resolveModule();
+        }
+        if (!resolved) {
+          throw new Error(
+            `cannot resolve npm package "${moduleName}" for JS import; ensure it is listed in deno.json, set "nodeModulesDir": "auto", and run deno install`,
+          );
+        }
+      }
+      return resolved;
+    });
   const programStarted = reflectionProfileSink ? performance.now() : 0;
   const program = ts.createProgram(
     [...roots.keys()],
@@ -371,6 +398,7 @@ type DenoModuleGraph = {
   entrySpecifier?: string;
   redirects: Map<string, string>;
   modules: Map<string, DenoInfoModule>;
+  npmPackages: Map<string, DenoInfoNpmPackage>;
 };
 
 function denoReflectionGraphs(source: string): DenoModuleGraph[] {
@@ -408,9 +436,56 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
     entrySpecifier: parsed.roots?.[0],
     redirects: new Map(Object.entries(parsed.redirects ?? {})),
     modules: new Map((parsed.modules ?? []).map((module) => [module.specifier, module])),
+    npmPackages: new Map(Object.entries(parsed.npmPackages ?? {})),
   };
   denoModuleGraphs.set(cacheKey, graph);
   return graph;
+}
+
+function isNpmGraphImport(graphs: DenoModuleGraph[], moduleName: string): boolean {
+  return graphs.some((graph) =>
+    graph.originalSpecifier === moduleName &&
+    graph.npmPackages.size > 0 &&
+    (graph.entrySpecifier?.startsWith("npm:") ?? false)
+  );
+}
+
+function enableNodeModulesDir(containingFile: string): string | undefined {
+  let directory = dirname(containingFile);
+  while (true) {
+    const configPath = join(directory, "deno.json");
+    if (existsSync(configPath)) {
+      const source = runtime.readTextFileSync(configPath);
+      const config = JSON.parse(source) as Record<string, unknown>;
+      if ("nodeModulesDir" in config) return undefined;
+      const newline = source.includes("\r\n") ? "\r\n" : "\n";
+      const indent = source.match(/^[ \t]+(?=")/m)?.[0] ?? "  ";
+      const openingBrace = source.indexOf("{");
+      const closingBrace = source.lastIndexOf("}");
+      const empty = source.slice(openingBrace + 1, closingBrace).trim() === "";
+      const updated = empty
+        ? source.slice(0, openingBrace + 1) +
+          `${newline}${indent}"nodeModulesDir": "auto"${newline}` +
+          source.slice(closingBrace)
+        : source.slice(0, openingBrace + 1) +
+          `${newline}${indent}"nodeModulesDir": "auto",` +
+          source.slice(openingBrace + 1);
+      writeFileSync(configPath, updated);
+      return directory;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
+
+function clearModuleResolutionCaches(): void {
+  fileExistsCache.clear();
+  readFileCache.clear();
+  directoryExistsCache.clear();
+  directoriesCache.clear();
+  realPathCache.clear();
+  moduleResolutionCaches.clear();
 }
 
 let nodeTypesPath: string | undefined;

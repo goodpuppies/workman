@@ -162,6 +162,59 @@ Deno.test("reflects bare npm modules through node_modules declarations", async (
   expectBinding(result.env, "file", { type: "Result<SourceFile, Js.Error>", vars: 0 });
 });
 
+Deno.test("enables nodeModulesDir and installs npm imports when needed", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/deno.json`,
+    JSON.stringify({ imports: { peggy: "npm:peggy@^5.0.6" } }, null, 2) + "\n",
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("peggy") import { generate };
+      let parser = generate("start = \\"x\\"");
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = results.get(input);
+  if (!result) throw new Error("missing main result");
+
+  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
+  const config = JSON.parse(await Deno.readTextFile(`${dir}/deno.json`));
+  assertEquals(config.nodeModulesDir, "auto");
+});
+
+Deno.test("reports unresolved npm modules as package resolution errors", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/deno.json`,
+    JSON.stringify(
+      {
+        nodeModulesDir: "none",
+        imports: { peggy: "npm:peggy@^5.0.6" },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("peggy") import { generate };
+      let parser = generate("start = \\"x\\"");
+    `,
+  );
+
+  await assertRejects(
+    () => checkFile(input),
+    Error,
+    'cannot resolve npm package "peggy" for JS import',
+  );
+});
+
 Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
