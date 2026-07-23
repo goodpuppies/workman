@@ -1,5 +1,26 @@
 # Carrier-oriented procedure design
 
+For practical patterns for writing code that works with several carriers, see
+[Generic programming](./generic-programming.md).
+
+## Terms used in this guide
+
+`Result` is a monad: it lets successful values move through a pipeline while
+threading errors past the remaining steps. `Result<_, E>` is its **carrier
+type**, and an `Ok` or `Err` is a **carrier value**.
+
+`Result.carrier` is an ordinary record containing composition operations such
+as `succeed`, `map`, and `andThen`. These docs call it a **carrier record**.
+Bare `Result` selects that record when used as a value:
+
+```wm
+Monad.lift Result transform
+```
+
+Not every type with operations is a monad. A `Number` module might expose
+`compare`, `minimum`, and `maximum`, but that does not provide the `succeed` and
+`andThen` composition required by a monad.
+
 I like to view workman code as procedures(top level functions), transformations(pipelines) and invocation groups(the code that makes use of procedures).
 
 Workman makes errors and asynchronous effects explicit. Safe JavaScript calls
@@ -104,6 +125,49 @@ let rounded = lift Result jsFloor(value);
 
 The Raylib examples use this call-site form heavily because reflected FFI values
 are already `Result` values.
+
+## Compose procedures with different error types
+
+Every value in a carrier pipeline must have the same error type. A JavaScript
+operation returning `Task<_, Js.Error>` therefore cannot be composed directly
+with validation returning `Task<_, String>`.
+
+First, define one error ADT for the procedure:
+
+```wm
+type AppError =
+  | JavaScriptFailure<Js.Error>
+  | ValidationFailure<String>;
+```
+
+The basic solution is to map each transformation's error at the end:
+
+```wm
+let readBody = Monad.lift Task (response) => {
+  response
+    :> .json()
+    :> Task.mapErr(JavaScriptFailure)
+};
+```
+
+`Monad.liftError` combines that final `mapErr` with `lift`:
+
+```wm
+let readBody = Monad.liftError Task JavaScriptFailure (response) => {
+  response :> .json()
+};
+
+let requireValue = Monad.liftError Task ValidationFailure (value) => {
+  if (value == "") {
+    Task.fail("value was empty")
+  } else {
+    Task.succeed(value)
+  }
+};
+```
+
+Use plain `Monad.lift` when the transformation already returns the pipeline's
+error type.
 
 ## Group procedures at computation boundaries
 

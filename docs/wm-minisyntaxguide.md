@@ -357,6 +357,9 @@ let p = .{ x = 10, y = 20 };
 let xVal = p.x;  -- 10
 ```
 
+See [Generic programming](./generic-programming.md) for using records in place
+of traits, interfaces, and other capability abstractions.
+
 ---
 
 ## Pattern Matching
