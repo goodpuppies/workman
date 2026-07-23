@@ -1,0 +1,37 @@
+from "./monad.wm" import { Carrier };
+
+let with = (.{ succeed, map, andThen }: Carrier<
+  fnArg,
+  fnResult,
+  errorArg,
+  errorResult,
+  List<output>,
+  listEffect,
+  listEffect,
+  (List<output>) => List<output>,
+  listEffect,
+  map2Left,
+  map2Right,
+  map2Combine,
+  map2Result,
+  itemEffect,
+  (output) => listEffect,
+  listEffect,
+>) => {
+  let rec traverse = match(items, transform) => {
+    ([], _) => {
+      succeed([])
+    },
+    ([item, ..rest], transform) => {
+      transform(item)
+        :> andThen((value) => {
+          traverse(rest, transform)
+            :> map((values) => {
+              [value, ..values]
+            })
+        })
+    }
+  };
+
+  traverse
+};

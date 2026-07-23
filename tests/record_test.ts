@@ -237,9 +237,26 @@ Deno.test("record field projection can infer a structural field requirement", as
     let ox = getX(offset);
   `);
 
-  expectBinding(result.env, "getX", { type: "({ x: 'a }) => 'a", vars: 1 });
+  expectBinding(result.env, "getX", { type: "({ x: Number }) => Number", vars: 0 });
   expectBinding(result.env, "px", { type: "Number", vars: 0 });
   expectBinding(result.env, "ox", { type: "Number", vars: 0 });
+});
+
+Deno.test("repeated projections preserve one accumulated structural record requirement", async () => {
+  const result = await checkSource(`
+    record PairOps<A, B> = {
+      first: (A) => B,
+      second: (B) => A,
+    };
+    let useBoth = (ops, value) => {
+      ops.second(ops.first(value))
+    };
+  `);
+
+  expectBinding(result.env, "useBoth", {
+    type: "(({ second: ('a) => 'b, first: ('c) => 'a }, 'c)) => 'b",
+    vars: 3,
+  });
 });
 
 Deno.test("record function fields compose with whitespace curried calls", async () => {

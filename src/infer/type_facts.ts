@@ -5,6 +5,7 @@ import { prune, type Scheme, type Ty, type TypeInfo } from "../types.ts";
 
 export type TypeFacts = {
   expressions: Map<Expr, TypeFact>;
+  namespaceValues: Map<Expr, string>;
   patterns: Map<Pattern, TypeFact>;
   patternTypes: Map<Pattern, Ty>;
   operators: Map<OperatorExpr, GpuOperatorId>;
@@ -99,6 +100,7 @@ export type FfiConsumedUse = {
 export function createTypeFacts(): TypeFacts {
   return {
     expressions: new Map(),
+    namespaceValues: new Map(),
     patterns: new Map(),
     patternTypes: new Map(),
     operators: new Map(),

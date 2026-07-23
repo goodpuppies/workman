@@ -54,6 +54,12 @@ export type CoreProgram = {
   constructors: CoreConstructorInfo[];
   nominalFacts: NominalFacts;
   shaderArtifacts: Map<VisualShaderArtifactV1["id"], VisualShaderArtifactV1>;
+  standardNamespaces?: {
+    path: string;
+    publicName: string;
+    emitName: string;
+    basisName?: string;
+  }[];
 };
 
 export function coreProgramFromAnalysis(

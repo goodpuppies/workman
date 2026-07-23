@@ -85,6 +85,49 @@ Deno.test("cli run converts reflected TypeScript tuple results and parameters", 
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run converts reflected tuples nested in JS arrays", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/tuple_array.ts`,
+    `
+      export function makeRows(): Array<[number, string]> {
+        return [[42, "answer"], [7, "lucky"]];
+      }
+      export function showRows(rows: Array<[number, string]>): string {
+        return rows.map(([number, text]) => text + ":" + number).join(",");
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./tuple_array.ts") import { makeRows, showRows };
+      let main = () => {
+        makeRows()
+          :> Result.andThen((rows) => {
+            match(Js.Array.toList(rows)) {
+              [(Var(firstNumber), Var(firstText)), (Var(secondNumber), Var(secondText))] => {
+                showRows(Js.Array.fromList([
+                  (firstNumber, firstText),
+                  (secondNumber, secondText)
+                ]))
+              },
+              _ => { Panic("unexpected rows") }
+            }
+          })
+          :> Result.map((shown) => { print(shown) })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0, result.stderr);
+  assertEquals(result.stdout, "answer:42,lucky:7\n");
+  assertEquals(result.stderr, "");
+});
+
 Deno.test("cli run calls inferred variadic JS imports", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

@@ -54,6 +54,19 @@ Deno.test("accepts exhaustive boolean matches without wildcard", async () => {
   await checkSource("let flag = true; let ok = match(flag) => { true => { 1 }, false => { 0 } };");
 });
 
+Deno.test("constructor rows and default rows jointly cover multi-argument matches", async () => {
+  const result = await checkSource(`
+    type Result<T, E> = Ok<T> | Err<E>;
+    let map2 = match(left, right) => {
+      (Ok(a), Ok(b)) => { Ok((a, b)) },
+      (Err(error), _) => { Err(error) },
+      (_, Err(error)) => { Err(error) },
+    };
+  `);
+
+  assertEquals(result.warnings, []);
+});
+
 Deno.test("warns for non-exhaustive non-sum matches", async () => {
   const result = await checkSource("let n = 0; let bad = match(n) => { 0 => { 1 } };");
   assertStringIncludes(result.warnings.join("\n"), "non-exhaustive match");

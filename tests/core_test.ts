@@ -81,7 +81,7 @@ Deno.test("coreFile returns module-ordered Core artifacts", async () => {
   const mainArtifact = result.core.modules.get(mainPath);
 
   assertEquals(result.core.entry, mainPath);
-  assertEquals(result.core.order, [libPath, mainPath]);
+  assertEquals(result.core.order.slice(-2), [libPath, mainPath]);
   assertEquals(libArtifact?.dynamicExports.map((item) => item.name), ["None", "Some", "wrap"]);
   assertEquals(libArtifact?.constructors.map((ctor) => [ctor.name, ctor.id]), [
     ["None", 0],

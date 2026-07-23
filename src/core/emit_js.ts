@@ -19,10 +19,15 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
   const target = options.target ?? "executable";
+  const standardPaths = new Set(program.standardNamespaces?.map((item) => item.path) ?? []);
   const body = [
     ...emitShaderArtifactTable(program),
     ...program.order
-      .filter((path) => path !== program.entry)
+      .filter((path) => path !== program.entry && standardPaths.has(path))
+      .map((path) => emitNamespace(program.modules.get(path)!, program)),
+    ...emitStandardNamespaces(program),
+    ...program.order
+      .filter((path) => path !== program.entry && !standardPaths.has(path))
       .map((path) => emitNamespace(program.modules.get(path)!, program)),
     ...(target === "repl" ? emitReplModuleBody(entry, program) : emitModuleBody(entry, program)),
     target === "library"
@@ -34,6 +39,15 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   return target === "repl"
     ? [...emitRuntimePrelude(), "try {", ...body, emitReplRuntimeCatch()].join("\n")
     : [...emitRuntimePrelude(), ...body].join("\n");
+}
+
+function emitStandardNamespaces(program: CoreProgram): string[] {
+  return (program.standardNamespaces ?? []).map((namespace) => {
+    const fields = namespace.basisName
+      ? `...${id(namespace.basisName)}, ...${id(namespace.emitName)}`
+      : `...${id(namespace.emitName)}`;
+    return `const ${id(namespace.publicName)} = { ${fields} };`;
+  });
 }
 
 function emitShaderArtifactTable(program: CoreProgram): string[] {

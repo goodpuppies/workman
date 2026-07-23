@@ -1,10 +1,6 @@
-import type { Module } from "./ast.ts";
+import type { CtorDecl, Expr, Module, Pattern } from "./ast.ts";
 import { basename, dirname, relative } from "node:path";
-import {
-  type CoreProgram,
-  coreProgramFromAnalysis,
-  coreProgramFromModule,
-} from "./core/artifact.ts";
+import { type CoreProgram, coreProgramFromAnalysis } from "./core/artifact.ts";
 import { emitCoreProgram } from "./core/emit_js.ts";
 import { coreFromSurface } from "./core/from_surface.ts";
 import {
@@ -33,7 +29,7 @@ import {
   genericDiagnostic,
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
-import { standardInferOptions } from "./standard_library.ts";
+import { standardInferOptions, standardRuntimeGraph } from "./standard_library.ts";
 import { assertCompilerFrontendMode } from "./frontend_mode.ts";
 import {
   analyzeModuleGraph,
@@ -42,17 +38,16 @@ import {
 } from "./staged_analysis.ts";
 import { buildProgramAnalysis, type ProgramAnalysis } from "./program_analysis.ts";
 import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
-import type { NominalFacts } from "./nominal_facts.ts";
 import type { BindingFacts } from "./binding_facts.ts";
+import { resolveProgramBindingFacts } from "./binding_facts.ts";
+import { type NominalFacts, resolveProgramNominalFacts } from "./nominal_facts.ts";
 import type { GpuSliceElaborationInput, GpuSliceTypeElaborationOutput } from "./wmslang/v2_dto.ts";
 import type { ResolvedPatternFacts } from "./pattern_facts.ts";
 import type { RecursionFacts } from "./recursion_facts.ts";
+import { CompilerIdAllocator } from "./ids.ts";
 import { loadDefaultWmslangSlangBackend } from "./wmslang/slang_backend.ts";
 import { materializeGpuSliceArtifacts } from "./wmslang/materialize.ts";
-import {
-  WmslangNumericDiagnosticError,
-  type WmslangSliceCompiler,
-} from "./wmslang/v2_loader.ts";
+import { WmslangNumericDiagnosticError, type WmslangSliceCompiler } from "./wmslang/v2_loader.ts";
 import {
   defaultWmslangCompilerIdentity,
   loadCachedWmslangCompiler,
@@ -79,7 +74,31 @@ export async function compile(
     resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     filePath,
   );
-  return emitCoreProgram(coreProgramFromModule(ast, result));
+  const path = filePath ?? "<source>";
+  const graph: ModuleGraph = {
+    entry: path,
+    order: [path],
+    nodes: new Map([[path, {
+      path,
+      source,
+      module: ast,
+      imports: [],
+      emitName: "Main",
+    }]]),
+  };
+  const results = new Map([[path, result]]);
+  const ids = new CompilerIdAllocator();
+  const bindings = resolveProgramBindingFacts(graph, ids);
+  const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
+  return emitCoreProgram(
+    await coreProgramWithStandardRuntime({
+      graph,
+      results,
+      ids,
+      bindings,
+      nominalFacts,
+    }),
+  );
 }
 
 export type CheckSourceOptions = CompilerFrontendOptions;
@@ -238,6 +257,14 @@ async function coreResultFromAnalysis(analysis: ProgramAnalysis): Promise<CoreFi
       await loadDefaultWmslangCompiler(),
       await loadDefaultWmslangSlangBackend(),
     );
+  const core = await coreProgramWithStandardRuntime({
+    graph: analysis.graph,
+    results: analysis.results,
+    ids: analysis.ids,
+    bindings: analysis.bindings,
+    nominalFacts: analysis.nominalFacts,
+    elaboration: { ...analysis, materializedGpuArtifacts },
+  });
   return {
     graph: analysis.graph,
     results: analysis.results,
@@ -247,10 +274,103 @@ async function coreResultFromAnalysis(analysis: ProgramAnalysis): Promise<CoreFi
     recursionFacts: analysis.recursionFacts,
     fragmentSelections: analysis.fragmentSelections,
     gpuInput: analysis.gpuInput,
-    core: coreProgramFromAnalysis(analysis.graph, analysis.results, {
-      ...analysis,
-      materializedGpuArtifacts,
-    }),
+    core,
+  };
+}
+
+async function coreProgramWithStandardRuntime(input: {
+  graph: ModuleGraph;
+  results: Map<string, InferResult>;
+  ids: CompilerIdAllocator;
+  bindings: Map<string, BindingFacts>;
+  nominalFacts: NominalFacts;
+  elaboration?: Parameters<typeof coreProgramFromAnalysis>[2];
+}): Promise<CoreProgram> {
+  if ([...input.graph.nodes.values()].every((node) => node.module.prelude === "none")) {
+    return coreProgramFromAnalysis(input.graph, input.results, {
+      ...input.elaboration,
+      bindings: input.bindings,
+      ids: input.ids,
+      nominalFacts: input.nominalFacts,
+    });
+  }
+  const standard = await standardRuntimeGraph();
+  const standardBindings = resolveProgramBindingFacts(standard.graph, input.ids);
+  const standardNominalFacts = resolveProgramNominalFacts(
+    standard.graph,
+    standard.results,
+    input.ids,
+  );
+  const nominalFacts = mergeStandardNominalFacts(
+    input.nominalFacts,
+    standardNominalFacts,
+    input.results,
+  );
+  const userCore = coreProgramFromAnalysis(input.graph, input.results, {
+    ...input.elaboration,
+    bindings: input.bindings,
+    ids: input.ids,
+    nominalFacts,
+  });
+  const standardCore = coreProgramFromAnalysis(standard.graph, standard.results, {
+    bindings: standardBindings,
+    ids: input.ids,
+    nominalFacts,
+    gpuOnlyBindings: new Set(),
+  });
+  return {
+    ...userCore,
+    order: [...standard.graph.order, ...userCore.order],
+    modules: new Map([...standardCore.modules, ...userCore.modules]),
+    constructors: [...standardCore.constructors, ...userCore.constructors],
+    nominalFacts,
+    standardNamespaces: standard.namespaces.map((namespace) => ({
+      ...namespace,
+      basisName: namespace.publicName === "Task" || namespace.publicName === "Result"
+        ? `__wm_basis_${namespace.publicName}`
+        : undefined,
+    })),
+  };
+}
+
+function mergeStandardNominalFacts(
+  user: NominalFacts,
+  standard: NominalFacts,
+  userResults: Map<string, InferResult>,
+): NominalFacts {
+  const constructorReferences = new Map<Expr | Pattern, import("./ids.ts").CtorId>([
+    ...standard.constructorReferences,
+    ...user.constructorReferences,
+  ]);
+  const importedConstructor = (declaration: CtorDecl | undefined) =>
+    declaration === undefined ? undefined : standard.constructorDeclarations.get(declaration);
+  for (const result of userResults.values()) {
+    for (const [expression, fact] of result.facts.expressions) {
+      const id = importedConstructor(fact.general?.constructorDecl);
+      if (fact.subject === "constructor" && id !== undefined) {
+        constructorReferences.set(expression, id);
+      }
+    }
+    for (const [pattern, fact] of result.facts.patterns) {
+      const id = importedConstructor(fact.general?.constructorDecl);
+      if (fact.subject === "constructor" && id !== undefined) {
+        constructorReferences.set(pattern, id);
+      }
+    }
+  }
+  return {
+    types: [...user.types, ...standard.types],
+    records: [...user.records, ...standard.records],
+    constructors: [...user.constructors, ...standard.constructors],
+    typeDeclarations: new Map([...user.typeDeclarations, ...standard.typeDeclarations]),
+    recordDeclarations: new Map([...user.recordDeclarations, ...standard.recordDeclarations]),
+    constructorDeclarations: new Map([
+      ...user.constructorDeclarations,
+      ...standard.constructorDeclarations,
+    ]),
+    inferenceTypeIds: new Map([...user.inferenceTypeIds, ...standard.inferenceTypeIds]),
+    recordTypeIds: new Map([...user.recordTypeIds, ...standard.recordTypeIds]),
+    constructorReferences,
   };
 }
 

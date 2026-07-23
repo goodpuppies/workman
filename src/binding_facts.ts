@@ -48,6 +48,8 @@ function importedEnv(imports: { clause: ImportClause; facts: BindingFacts }[]): 
   for (const { clause, facts } of imports) {
     if (clause.kind === "Namespace") {
       for (const [name, id] of facts.exports) env.set(`${clause.alias}.${name}`, id);
+      const carrier = facts.exports.get("carrier");
+      if (carrier !== undefined) env.set(clause.alias, carrier);
     } else if (clause.kind === "All") {
       for (const [name, id] of facts.exports) env.set(name, id);
     } else {

@@ -67,12 +67,20 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
     case "Var": {
       const scheme = env.get(expr.name);
       if (!scheme) {
+        if (context.namespaces.has(expr.name)) {
+          throw new Error(
+            `namespace ${expr.name} cannot be used as a value; ` +
+              `${expr.name} does not export carrier`,
+          );
+        }
         t = context.dialect.inferUnboundVar?.(expr, context) ??
           context.dialect.inferProjection?.(expr, context) ??
           inferDottedVar(expr.name, env, typeEnv);
         break;
       }
       t = instantiate(scheme);
+      const namespaceValue = context.namespaceValues.get(expr.name);
+      if (namespaceValue) facts.namespaceValues.set(expr, namespaceValue);
       recordExprFact(facts, expr, {
         subject: scheme.status === "constructor" ? "constructor" : "expr",
         instantiated: t,

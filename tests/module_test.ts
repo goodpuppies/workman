@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { checkFile, checkVirtual } from "../src/compiler.ts";
+import { checkFile, checkVirtual, compileVirtual } from "../src/compiler.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
 import { expectBinding } from "./type_helpers.ts";
 
@@ -86,6 +86,61 @@ Deno.test("module graph exposes ordered nodes and import edges", async () => {
   assertEquals(graph.nodes.get(basePath)?.emitName, "Base");
   assertEquals(graph.nodes.get(basePath)?.source, "let value = 1;");
   assertEquals(graph.nodes.get(mainPath)?.imports.map((edge) => edge.path), [basePath]);
+});
+
+Deno.test("Workman namespace in value position resolves its explicit carrier export", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/lib.wm",
+      "record Carrier<A> = { apply: (A) => A }; " +
+      "let carrier = .{ apply = (value) => { value } };",
+    ],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import * as Lib; ' +
+      "let selected = Lib; " +
+      'let main = () => { print(selected.apply("ok")) };',
+    ],
+  ]);
+
+  const javaScript = await compileVirtual("/test/main.wm", virtualFs);
+  assertEquals(javaScript.includes("Lib.carrier"), true);
+
+  const output: string[] = [];
+  const original = console.log;
+  console.log = (value) => output.push(String(value));
+  try {
+    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+  } finally {
+    console.log = original;
+  }
+  assertEquals(output, ["ok"]);
+});
+
+Deno.test("Workman namespace without carrier rejects bare value use", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/lib.wm", "let value = 1;"],
+    ["/test/main.wm", 'from "./lib.wm" import * as Lib; let selected = Lib;'],
+  ]);
+
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "namespace Lib cannot be used as a value; Lib does not export carrier",
+  );
+});
+
+Deno.test("local value cannot collide with a Workman namespace alias", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/lib.wm", "let value = 1;"],
+    ["/test/main.wm", 'from "./lib.wm" import * as lib; let lib = 2;'],
+  ]);
+
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "value lib conflicts with a module namespace",
+  );
 });
 
 Deno.test("file elaboration exports declarations by default", async () => {

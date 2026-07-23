@@ -20,8 +20,15 @@ export function checkExhaustive(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
 ): string | undefined {
-  const missing = findMissingCases(patterns.map((pattern) => [pattern]), [valueType], typeEnv, adts, []);
+  const missing = findMissingCases(
+    patterns.map((pattern) => [pattern]),
+    [valueType],
+    typeEnv,
+    adts,
+    [],
+  );
   if (missing.length === 0) return undefined;
+  if (isShallowConstructorComplete(patterns, valueType, adts)) return undefined;
 
   const scrutinee = prune(valueType);
   if (scrutinee.tag === "named") {
@@ -45,6 +52,54 @@ export function checkExhaustive(
     return `non-exhaustive match: in ${context}, missing: ${first.missing}`;
   }
   return `non-exhaustive match: missing ${first.missing}`;
+}
+
+// The full witness finder above descends into constructor payloads, but its
+// early default-row shortcut can lose constructor-specific rows in a later
+// tuple column. This conservative second proof handles the common matrix where
+// every constructor payload is already irrefutable. It never suppresses a
+// warning for a literal or nested refutable payload.
+function isShallowConstructorComplete(
+  patterns: Pattern[],
+  valueType: Ty,
+  adts: Map<number, TypeDeclInfo>,
+): boolean {
+  const target = prune(valueType);
+  const rows = target.tag === "tuple"
+    ? patterns
+      .filter((pattern): pattern is Extract<Pattern, { kind: "PTuple" }> =>
+        pattern.kind === "PTuple" && pattern.items.length === target.items.length
+      )
+      .map((pattern) => pattern.items)
+    : patterns.map((pattern) => [pattern]);
+  const types = target.tag === "tuple" ? target.items : [target];
+  if (rows.length === 0) return false;
+  return shallowColumnsComplete(rows, types, adts);
+}
+
+function shallowColumnsComplete(
+  rows: Pattern[][],
+  types: Ty[],
+  adts: Map<number, TypeDeclInfo>,
+): boolean {
+  if (types.length === 0) return rows.length > 0;
+  const [headType, ...tailTypes] = types;
+  if (rows.every((row) => isIrrefutable(row[0]))) {
+    return shallowColumnsComplete(rows.map((row) => row.slice(1)), tailTypes, adts);
+  }
+  const head = prune(headType);
+  if (head.tag !== "named") return false;
+  const info = adts.get(head.id);
+  if (!info) return false;
+  return info.ctors.every((ctor) => {
+    const selected = rows.filter((row) => {
+      const pattern = row[0];
+      if (isIrrefutable(pattern)) return true;
+      return pattern.kind === "PCtor" && constructorPatternMatches(pattern.name, ctor.name) &&
+        pattern.args.every(isIrrefutable);
+    }).map((row) => row.slice(1));
+    return selected.length > 0 && shallowColumnsComplete(selected, tailTypes, adts);
+  });
 }
 
 export function isVectorExhaustive(
@@ -133,7 +188,10 @@ function findMissingCases(
           ...row.slice(1),
         ]);
       if (recordRows.length === 0) {
-        return [{ path: [...path], missing: `.{ ${fields.map((f) => `${f.name} = _`).join(", ")} }` }];
+        return [{
+          path: [...path],
+          missing: `.{ ${fields.map((f) => `${f.name} = _`).join(", ")} }`,
+        }];
       }
       return findMissingCases(
         recordRows,
@@ -164,10 +222,16 @@ function findMissingCases(
         missing.push({ path: [...path], missing: ctorPattern });
       } else {
         const ctorTypes = constructorArgTypes(info, ctor, head, typeEnv);
-        const ctorMissing = findMissingCases(ctorRows, [...ctorTypes, ...tailTypes], typeEnv, adts, [
-          ...path,
-          ctor.name,
-        ]);
+        const ctorMissing = findMissingCases(
+          ctorRows,
+          [...ctorTypes, ...tailTypes],
+          typeEnv,
+          adts,
+          [
+            ...path,
+            ctor.name,
+          ],
+        );
         missing.push(...ctorMissing);
       }
     }

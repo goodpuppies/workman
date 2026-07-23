@@ -12,6 +12,7 @@ const assets: Asset[] = [
   { name: "optionSource", url: new URL("../std/option.wm", import.meta.url) },
   { name: "resultSource", url: new URL("../std/result.wm", import.meta.url) },
   { name: "taskSource", url: new URL("../std/task.wm", import.meta.url) },
+  { name: "traverseSource", url: new URL("../std/traverse.wm", import.meta.url) },
 ];
 
 const outputUrl = new URL("../src/generated/assets.ts", import.meta.url);

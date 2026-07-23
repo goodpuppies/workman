@@ -1,8 +1,8 @@
 -- weather.wm — a weather CLI using wttr.in's JSON API (free, no API key).
 --
--- No `unsafe` imports: every JS boundary call returns Result<_, Js.Error>.
--- Result|...| collects synchronous boundary values, while Task keeps HTTP and
--- file IO failures in one explicit asynchronous pipeline.
+-- No `unsafe` imports: JS boundary calls return Result<_, Js.Error> or
+-- Task<_, Js.Error>. Result|...| collects synchronous boundary values, while
+-- Task keeps HTTP and file IO failures in one explicit asynchronous pipeline.
 --
 -- Usage:
 --   wm run examples/weather.wm -- oulu
@@ -29,8 +29,32 @@ from js.global("JSON") import {
 } as JSON;
 from js.global("Math") import { max as mathMax };
 
+let lift = Monad.lift;
 let cacheFile = ".weather-cache.json";
 let cacheTtlMs = 10 * 60 * 1000;
+
+type WeatherError =
+  | JavaScriptFailure<Js.Error>
+  | WeatherFailure<String>;
+
+type TemperatureScale = Celsius | Fahrenheit;
+
+let selectTemperature = (scale, celsius, fahrenheit) => {
+  match(scale) {
+    Celsius => { celsius },
+    Fahrenheit => { fahrenheit },
+  }
+};
+
+let describeError = match(error) => {
+  JavaScriptFailure(jsError) => {
+    match(jsError) {
+      Js.Error(message) => { message },
+      Js.Unknown => { "unknown JavaScript error" },
+    }
+  },
+  WeatherFailure(message) => { message },
+};
 
 -- The shapes we claim the API returns (the Json.assert points). wttr.in quirks,
 -- faithfully modeled: every scalar is a string, and names/descriptions are
@@ -81,10 +105,13 @@ record CacheEntry = {
 
 -- Dig scalars out of wttr.in's nested { value } wrappers.
 let firstValue = (items, fallback) => {
-  items :> .at(0)
-    :> Result.withDefault(None)
-    :> Option.map((item) => { item.value })
-    :> Option.withDefault(fallback)
+  items
+    :> .at(0)
+    :> Result.map((first) => {
+      first
+        :> Option.map((item) => { item.value })
+        :> Option.withDefault(fallback)
+    })
 };
 
 let pad3 = (n) => {
@@ -95,59 +122,75 @@ let pad3 = (n) => {
 
 -- Fetch, validate the response, and assert the wire shape once at the boundary.
 let getWeather = (city) => {
-  let checkStatus = (url, res) => {
-    match(res :> .ok) {
-      Ok(true) => { Task.succeed(res) },
-      Ok(false) => {
-        let status = res :> .status :> Result.map(Result.textOf) :> Result.withDefault("?");
-        Task.fail("HTTP " ++ status ++ " fetching " ++ url)
-      },
-      Err(_) => { Task.fail("could not inspect HTTP response") },
+  let encodeCity = Monad.liftError Task JavaScriptFailure (name) => {
+    name
+      :> encodeURIComponent
+      :> Result.map((encoded) => { ("https://wttr.in/" ++ encoded ++ "?format=j1") })
+      :> Task.fromResult
+  };
+  let request = Monad.liftError Task JavaScriptFailure (url) => {
+    fetch(url)
+      :> Task.map((response) => { (url, response) })
+  };
+  let inspectStatus = Monad.liftError Task JavaScriptFailure (url, response) => {
+    Result|response.ok, response.status|
+      :> Result.map((ok, status) => { (url, response, ok, status) })
+      :> Task.fromResult
+  };
+  let requireOk = Monad.liftError Task WeatherFailure (url, response, ok, status) => {
+    if (ok) {
+      Task.succeed(response)
+    } else {
+      Task.fail("HTTP " ++ Result.textOf(status) ++ " fetching " ++ url)
     }
   };
-  city
-    :> encodeURIComponent
-    :> Result.map((encoded) => { "https://wttr.in/" ++ encoded ++ "?format=j1" })
-    :> Result.mapErr((_) => { "could not encode city" })
-    :> Task.fromResult
-    :> Task.andThen((url) => {
-      fetch(url)
-        :> Task.mapErr((_) => { "could not fetch " ++ url })
-        :> Task.andThen((res) => { checkStatus(url, res) })
-    })
-    :> Task.andThen((res) => {
-      res :> .json() :> Task.mapErr((_) => { "could not read weather response" })
-    })
-    :> Task.andThen((body) => {
-      let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
-      data
-        :> Result.mapErr((_) => { "unexpected wttr.in response shape" })
-        :> Task.fromResult
-    })
+  let readBody = Monad.liftError Task JavaScriptFailure (response) => {
+    response :> .json()
+  };
+  let assertBody = Monad.liftError Task JavaScriptFailure (body) => {
+    let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
+    data :> Task.fromResult
+  };
+  Task.succeed(city)
+    :> encodeCity
+    :> request
+    :> inspectStatus
+    :> requireOk
+    :> readBody
+    :> assertBody
 };
 
 let loadCache = () => {
+  let parseCache = lift Task (text) => {
+    let cache: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
+      :> Result.andThen((raw) => {
+        raw :> Json.assert
+      });
+    cache :> Task.fromResult
+  };
   readTextFile(cacheFile)
-    :> Task.andThen((text) => {
-      let parsed: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
-        :> Result.andThen((raw) => { raw :> Json.assert });
-      Task.fromResult(parsed)
-    })
-    :> Task.mapErr((_) => { "could not parse cache" })
+    :> parseCache
+    :> Task.mapErr(JavaScriptFailure)
+    -- A missing or stale cache is optional state, so recover only after the
+    -- complete read, parse, and validation pipeline.
     :> Task.recover((_) => { Dict.empty() })
 };
 
 let saveCache = (cache) => {
-  JSON.stringify(cache)
-    :> Result.mapErr((_) => { "could not encode cache" })
-    :> Task.fromResult
-    :> Task.andThen((text) => {
-      writeTextFile(cacheFile, text)
-        :> Task.mapErr((_) => { "could not write cache" })
-    })
+  let encodeCache = lift Task (value) => {
+    JSON.stringify(value)
+      :> Task.fromResult
+  };
+  let writeCache = lift Task (text) => {
+    writeTextFile(cacheFile, text)
+  };
+  Task.succeed(cache)
+    :> encodeCache
+    :> writeCache
+    :> Task.mapErr(JavaScriptFailure)
 };
 
-let formatDay = (day, fahrenheit, unit) => {
+let formatDay = (day, scale, unit) => {
   let label = Date.new(day.date ++ "T00:00:00")
     :> Result.andThen((date) => {
       date :> .toLocaleDateString("en-US", JSON{
@@ -160,86 +203,92 @@ let formatDay = (day, fahrenheit, unit) => {
   let tempText = (raw) => {
     raw :> toNumber :> Result.andThen(pad3)
   };
-  let hi = (if (fahrenheit) { day.maxtempF } else { day.maxtempC }) :> tempText;
-  let lo = (if (fahrenheit) { day.mintempF } else { day.mintempC }) :> tempText;
+  let hi = selectTemperature(scale, day.maxtempC, day.maxtempF) :> tempText;
+  let lo = selectTemperature(scale, day.mintempC, day.mintempF) :> tempText;
   let rain = day.hourly :> .reduce((best, slot, index, array) => {
     let chance = toNumber(slot.chanceofrain) :> Result.withDefault(0);
     mathMax(best, chance) :> Result.withDefault(best)
   }, 0) :> Result.andThen(pad3);
-  Result|label, hi, lo, rain|
-    :> Result.map((labelText, hiText, loText, rainText) => {
-      "  " ++ labelText ++ " " ++ hiText ++ unit ++ " / " ++ loText ++ unit ++
-        "  rain " ++ rainText ++ "%"
-    })
+  "  " ++ label ++ " " ++ hi ++ unit ++ " / " ++ lo ++ unit ++
+    "  rain " ++ rain ++ "%"
 };
 
-let renderReport = (data, fahrenheit, unit) => {
+let renderReport = (data, scale, city) => {
   let locationFor = (area) => {
-    let parts: Result<Js.Array<String>, Js.Error> = JSON[
+    Result|
       firstValue(area.areaName, "Unknown"),
       firstValue(area.region, ""),
-      firstValue(area.country, ""),
-    ] :> Json.assert;
-    parts :> Result.andThen((items) => {
-      items :> .filter((part, index, array) => {
-        (part :> .length :> Result.withDefault(0)) > 0
+      firstValue(area.country, "")
+    |
+      :> Result.andThen((areaName, region, country) => {
+        [
+          areaName,
+          region,
+          country,
+        ]
+          :> Js.Array.fromList
+          :> .filter((part, index, array) => {
+            (part :> .length :> Result.withDefault(0)) > 0
+          })
       })
-    }) :> Result.andThen((kept) => { kept :> .join(", ") })
-      :> Result.withDefault("Unknown")
+      :> Result.andThen((kept) => { kept :> .join(", ") })
   };
   let location = match(data.nearest_area :> .at(0)) {
-    Ok(Some(area)) => {
-      locationFor(area)
-    },
-    _ => { "Unknown" },
+    Ok(Some(area)) => { locationFor(area) },
+    Ok(None) => { Ok("Unknown") },
+    Err(error) => { Err(error) },
   };
   match(data.current_condition :> .at(0)) {
     Ok(Some(cur)) => {
       let numberText = (raw) => {
         raw :> toNumber :> Result.andThen((n) => { n :> .toString() })
       };
-      let temp = (if (fahrenheit) { cur.temp_F } else { cur.temp_C }) :> numberText;
-      let feels = (if (fahrenheit) { cur.FeelsLikeF } else { cur.FeelsLikeC }) :> numberText;
+      let temp = selectTemperature(scale, cur.temp_C, cur.temp_F) :> numberText;
+      let feels = selectTemperature(scale, cur.FeelsLikeC, cur.FeelsLikeF) :> numberText;
+      let unit = match(scale) {
+        Celsius => { "°C" },
+        Fahrenheit => { "°F" },
+      };
       let wind = cur.windspeedKmph
         :> toNumber
         :> Result.andThen((n) => { n :> .toFixed(0) });
+      let description = firstValue(cur.weatherDesc, "Unknown");
       let rows = data.weather
         :> Js.Array.toList
         :> Result.traverse((day) => {
-          formatDay(day, fahrenheit, unit)
+          formatDay(day, scale, unit)
         })
         :> Result.map(Js.Array.fromList)
         :> Result.andThen((lines) => { lines :> .join("\n") });
-      Result|temp, feels, wind, rows|
-        :> Result.map((tempText, feelsText, windText, rowText) => {
-          "\n" ++ location ++ "\nNow: " ++ tempText ++ unit ++ " (feels like " ++ feelsText ++
-            unit ++ "), " ++ firstValue(cur.weatherDesc, "Unknown") ++ ", wind " ++ windText ++
-            " km/h\n" ++ rowText
-        })
+      ("\n" ++ location ++ "\nNow: " ++ temp ++ unit ++ " (feels like " ++ feels ++
+        unit ++ "), " ++ description ++ ", wind " ++ wind ++ " km/h\n" ++ rows)
+        :> Result.mapErr(JavaScriptFailure)
     },
-    _ => { Err(Panic("missing current condition")) },
+    Ok(None) => {
+      Err(WeatherFailure("weather response for " ++ city ++ " has no current condition"))
+    },
+    Err(error) => { Err(JavaScriptFailure(error)) },
   }
 };
 
-let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
+let cityReport = (cache, now, refresh, scale, city) => {
   let key = city :> .toLowerCase() :> Result.withDefault(city);
   let failure = (err) => {
     "\nFailed to get weather for \"" ++ city ++ "\": " ++
-      err
+      describeError(err)
   };
-  let renderTask = (data) => {
-    renderReport(data, fahrenheit, unit)
-      :> Result.mapErr((_) => { "could not render report for " ++ city })
+  let renderTask = lift Task (data) => {
+    renderReport(data, scale, city)
       :> Task.fromResult
   };
-  let cacheData = (data) => {
+  let cacheData = lift Task (data) => {
     Dict.set(cache, key, .{ fetchedAt = now, data = data });
     Task.succeed(data)
   };
   let fetchReport = () => {
     getWeather(city)
-      :> Task.andThen(cacheData)
-      :> Task.andThen(renderTask)
+      :> cacheData
+      :> renderTask
       :> Task.recover(failure)
   };
   match(Dict.get(cache, key)) {
@@ -247,7 +296,7 @@ let cityReport = (cache, now, refresh, fahrenheit, unit, city) => {
       if (!refresh && now - entry.fetchedAt < cacheTtlMs) {
         entry.data
           :> Task.succeed
-          :> Task.andThen(renderTask)
+          :> renderTask
           :> Task.map((report) => {
             report ++ "\n  (cached)"
           })
@@ -268,33 +317,42 @@ let main = () => {
       isFlag(a)
     })
   });
-  let fahrenheit = flags
+  let useFahrenheit = flags
     :> Result.andThen((xs) => { xs :> .includes("--f") })
     :> Result.withDefault(false);
   let refresh = flags
     :> Result.andThen((xs) => { xs :> .includes("--refresh") })
     :> Result.withDefault(false);
-  let unit = if (fahrenheit) { "°F" } else { "°C" };
+  let scale = if (useFahrenheit) {
+    Fahrenheit
+  } else {
+    Celsius
+  };
   let cities = args :> Result.andThen((xs) => {
     xs :> .filter((a, index, array) => {
       !isFlag(a)
     })
   }) :> Result.andThen((xs) => {
     xs :> .length :> Result.andThen((count) => {
-      if (count == 0) { JSON["Oulu"] :> Json.assert } else { Ok(xs) }
+      if (count == 0) {
+        Ok(["Oulu"] :> Js.Array.fromList)
+      } else {
+        Ok(xs)
+      }
     })
   });
-  let now = dateNow() :> Result.withDefault(0);
-
   let cityList = cities
-    :> Result.mapErr((_) => { "CLI args unavailable" })
+    :> Result.mapErr(JavaScriptFailure)
     :> Task.fromResult;
-  Task|cityList, loadCache()|
-    :> Task.andThen((cityList, cache) => {
+  let now = dateNow()
+    :> Result.mapErr(JavaScriptFailure)
+    :> Task.fromResult;
+  Task|cityList, now, loadCache()|
+    :> Task.andThen((cityList, now, cache) => {
       cityList
         :> Js.Array.toList
         :> List.map((city) => {
-          cityReport(cache, now, refresh, fahrenheit, unit, city)
+          cityReport(cache, now, refresh, scale, city)
         })
         :> Task.collectList
         :> Task.andThen((reports) => {
@@ -303,7 +361,7 @@ let main = () => {
         })
     })
     :> Task.recover((err) => {
-    print("weather: " ++ err);
-    void
-  })
+      print("weather: " ++ describeError(err));
+      void
+    })
 };

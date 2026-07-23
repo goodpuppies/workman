@@ -55,6 +55,7 @@ export type Scheme = {
   semanticId?: CompilerSemanticId;
   constructorDecl?: CtorDecl;
   node?: AstNode;
+  preserveStructuralRows?: boolean;
 };
 export type TypeProvenanceNote = {
   message: string;
@@ -473,6 +474,10 @@ export function instantiate(scheme: Scheme): Ty {
     if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
     if (t.tag === "tuple") return tuple(t.items.map(go));
     if (t.tag === "struct") {
+      // Structural requirements are open, mutable rows during inference.
+      // Repeated uses of one monomorphic receiver must accumulate fields on
+      // the same row; polymorphic occurrences still need independent rows.
+      if (scheme.preserveStructuralRows && scheme.vars.length === 0) return t;
       return structural(t.fields.map((field) => ({ ...field, type: go(field.type) })));
     }
     if (t.tag === "named") return { ...t, args: t.args.map(go) };

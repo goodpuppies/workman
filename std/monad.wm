@@ -1,7 +1,39 @@
-record LiftFn<A, B> = { fn: (A) => B };
+record Carrier<
+  FnArg,
+  FnResult,
+  ErrorArg,
+  ErrorResult,
+  SucceedArg,
+  SucceedResult,
+  MapCarrier,
+  MapTransform,
+  MapResult,
+  Map2Left,
+  Map2Right,
+  Map2Combine,
+  Map2Result,
+  AndThenCarrier,
+  AndThenTransform,
+  AndThenResult,
+> = {
+  fn: (FnArg) => FnResult,
+  fnError: (ErrorArg) => ErrorResult,
+  succeed: (SucceedArg) => SucceedResult,
+  map: (MapCarrier, MapTransform) => MapResult,
+  map2: (Map2Left, Map2Right, Map2Combine) => Map2Result,
+  andThen: (AndThenCarrier, AndThenTransform) => AndThenResult,
+};
 
-let lift = (x) => { 
+let lift = (domain) => {
+  (f) => {
+    domain.fn(f)
+  }
+};
+
+let liftError = (domain) => {
+  (inject) => {
     (f) => {
-        x.fn(f) -- means (#fn x)(f) like sml
+      domain.fnError(inject)(f)
     }
+  }
 };

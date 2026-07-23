@@ -85,7 +85,12 @@ Deno.test("host patterns over compiler standard-library records retain field evi
     "/test/main.wm",
     new Map([[
       "/test/main.wm",
-      `let get = (.{ fn }: Monad.LiftFn<Number, Number>) => { fn };`,
+      `let get = (.{ fn }: Monad.Carrier<
+        Number, Number, Number, Number,
+        Number, Number, Number, Number,
+        Number, Number, Number, Number,
+        Number, Number, Number, Number
+      >) => { fn };`,
     ]]),
   );
   const record = analysis.patternFacts.patterns.find((fact) => fact.kind === "record")!;

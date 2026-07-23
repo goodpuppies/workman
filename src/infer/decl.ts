@@ -221,7 +221,12 @@ function inferLetDecl(
   exports: Env,
   exportableTypeIds: Set<number>,
 ) {
-  rejectDuplicates(decl.bindings.flatMap((b) => patternBinders(b.pattern)), "binding");
+  const binders = decl.bindings.flatMap((b) => patternBinders(b.pattern));
+  rejectDuplicates(binders, "binding");
+  const namespaceCollision = binders.find((name) => context.namespaces.has(name));
+  if (namespaceCollision) {
+    throw new Error(`value ${namespaceCollision} conflicts with a module namespace`);
+  }
   const annotationVars: TypeVarScope = new Map();
   if (!decl.recursive) {
     inferNonRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars);

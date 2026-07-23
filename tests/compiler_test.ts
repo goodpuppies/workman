@@ -37,6 +37,21 @@ Deno.test("compiles factorial and ADT match", async () => {
   assertStringIncludes(js, "non-exhaustive match");
 });
 
+Deno.test("emits standard-library values from Workman modules", async () => {
+  const js = await compile(`
+    let lifted = Monad.lift Result (number) => {
+      Ok(number + 1)
+    };
+    let value = Ok(1) :> lifted;
+  `);
+
+  assertStringIncludes(js, "const __wm_std_Monad");
+  assertStringIncludes(js, "const __wm_std_Result");
+  assertStringIncludes(js, "const __wm_std_Traverse");
+  assertStringIncludes(js, "const Result = { ...__wm_basis_Result, ...__wm_std_Result };");
+  assertEquals(js.includes("__wm_legacy_"), false);
+});
+
 Deno.test("compiles direct self tail calls as iteration", async () => {
   const js = await compile(`
     let rec count = (n, acc) => {
@@ -56,7 +71,8 @@ Deno.test("does not mistake a shadowed call for direct self recursion", async ()
     };
   `);
 
-  assertEquals(js.includes(": while (true)"), false);
+  const outer = js.slice(js.indexOf("let outer_"));
+  assertEquals(outer.includes(": while (true)"), false);
 });
 
 Deno.test("rejects type errors", async () => {

@@ -39,6 +39,7 @@ import type {
 
 type CoreLoweringContext = {
   types: Map<Expr, Ty>;
+  namespaceValues: ReadonlyMap<Expr, string>;
   typeEnv: TypeEnv;
   bindings?: BindingFacts;
   ids?: CompilerIdAllocator;
@@ -93,6 +94,7 @@ export function coreFromSurface(
   const context = analysis || resolvedBindings || resolvedBoundary || resolvedNominalFacts
     ? {
       types: analysis?.types ?? new Map<Expr, Ty>(),
+      namespaceValues: analysis?.facts.namespaceValues ?? new Map<Expr, string>(),
       typeEnv: analysis?.typeEnv ?? new Map(),
       bindings: resolvedBindings,
       ids: resolvedIds,
@@ -224,6 +226,10 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
     case "Void":
       return { kind: "CoreVoid", node: expr.node };
     case "Var": {
+      const namespaceValue = context?.namespaceValues.get(expr);
+      if (namespaceValue) {
+        return desugarDottedVar(namespaceValue, expr.node);
+      }
       const semanticId = context?.gpuSemanticIds.get(expr);
       if (semanticId) {
         if (

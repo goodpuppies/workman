@@ -95,8 +95,12 @@ function inferModuleCore(
   const diagnostics: FrontendDiagnostic[] = [];
   const steps: InferStep[] = [];
   const provenance: TypeProvenance = new Map();
+  const namespaces = new Set<string>();
+  const namespaceValues = new Map<string, string>();
   const context: InferContext = {
     env,
+    namespaces,
+    namespaceValues,
     typeEnv,
     adts,
     types,
@@ -110,6 +114,8 @@ function inferModuleCore(
   for (const initialImport of includePrelude ? options.initialImports ?? [] : []) {
     addImport(env, typeEnv, initialImport.clause, initialImport.result, {
       standardLibrary: initialImport.standard,
+      namespaces,
+      namespaceValues,
     });
     addAdts(adts, initialImport.result.exportedStructure.adts);
     addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.types);
@@ -120,7 +126,7 @@ function inferModuleCore(
       try {
         const imported = imports.get(decl.path);
         if (!imported) throw new Error(`unknown import ${decl.path}`);
-        addImport(env, typeEnv, decl.clause, imported);
+        addImport(env, typeEnv, decl.clause, imported, { namespaces, namespaceValues });
         addAdts(adts, imported.exportedStructure.adts);
         addExportableTypes(exportableTypeIds, imported.exportedStructure.types);
       } catch (error) {

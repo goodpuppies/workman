@@ -70,7 +70,12 @@ export function inferPattern(
     case "PVar":
       if (binders.has(p.name)) throw new Error(`duplicate pattern binder ${p.name}`);
       binders.add(p.name);
-      env.set(p.name, { vars: [], type: expected, status: "value" });
+      env.set(p.name, {
+        vars: [],
+        type: expected,
+        status: "value",
+        preserveStructuralRows: true,
+      });
       if (facts) {
         recordPatternFact(facts, p, {
           subject: "pattern",

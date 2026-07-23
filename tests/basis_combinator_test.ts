@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import { inferModule } from "../src/infer.ts";
 import { parse } from "../src/parser.ts";
@@ -45,6 +45,8 @@ Deno.test("Result and Option combinators infer generically", async () => {
           :> Task.map(Js.Array.fromList)
       });
     let allResults = Js.Array.fromList([Ok(1), Ok(2)]) :> Result.all;
+    let genericResults = Traverse.with Result ([1, 2], (n) => { Ok(n * 2) });
+    let genericTasks = Traverse.with Task ([1, 2], (n) => { Task.succeed(n * 2) });
   `);
   expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "chained", { type: "Result<Number, String>", vars: 0 });
@@ -74,6 +76,14 @@ Deno.test("Result and Option combinators infer generically", async () => {
     type: "Result<Js.Array<Number>, 'a>",
     vars: 0,
   });
+  expectBinding(result.env, "genericResults", {
+    type: "Result<List<Number>, 'a>",
+    vars: 0,
+  });
+  expectBinding(result.env, "genericTasks", {
+    type: "Task<List<Number>, 'a>",
+    vars: 0,
+  });
   assertEquals(result.env.get("Option.map")?.imported, true);
   assertEquals(result.env.get("Option.map")?.basis ?? false, false);
   assertEquals(result.env.get("List.map")?.imported, true);
@@ -82,6 +92,44 @@ Deno.test("Result and Option combinators infer generically", async () => {
   assertEquals(result.env.get("Result.map")?.basis ?? false, false);
   assertEquals(result.env.get("Result.all")?.imported, true);
   assertEquals(result.env.get("Result.all")?.basis ?? false, false);
+  assertEquals(result.env.get("Traverse.with")?.imported, true);
+});
+
+Deno.test("Traverse.with sequences through a standard carrier and stops on failure", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let transform = match(number) => {
+        1 => { Err("stop") },
+        _ => { Panic("visited the tail after failure") }
+      };
+
+      let main = () => {
+        print(Traverse.with Result ([1, 2], transform))
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "Err(stop)\n");
+});
+
+Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        let rec grow = (task) => {
+          grow(task :> Task.map((value) => { [value] }))
+        };
+      `),
+    Error,
+    "recursive type",
+  );
 });
 
 Deno.test("Monad.lift works over structural fn records", async () => {
@@ -132,6 +180,93 @@ Deno.test("Monad.lift composes over Result.fn", async () => {
     vars: 0,
   });
   expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 0 });
+});
+
+Deno.test("carrier liftError injects native errors into one application error", async () => {
+  const result = await checkSource(`
+    type AppError = JsFailure<Js.Error> | DomainFailure<String>;
+
+    let takePrefix = Monad.liftError Task JsFailure (text) => {
+      text :> .slice(0, 3) :> Task.fromResult
+    };
+    let requirePrefix = Monad.liftError Task DomainFailure (text) => {
+      if (text == "") { Task.fail("empty") } else { Task.succeed(text) }
+    };
+    let task = Task.succeed("hello") :> takePrefix :> requirePrefix;
+
+    let requirePositive = Monad.liftError Result DomainFailure (number) => {
+      if (number > 0) { Ok(number) } else { Err("not positive") }
+    };
+    let result = Ok(1) :> requirePositive;
+  `);
+
+  expectBinding(result.env, "task", { type: "Task<String, AppError>", vars: 0 });
+  expectBinding(result.env, "result", { type: "Result<Number, AppError>", vars: 0 });
+});
+
+Deno.test("carrier records instantiate independently across liftError uses", async () => {
+  const result = await checkSource(`
+    type FetchError = | JavaScriptFailure<Js.Error>;
+    type NameError = | ValidationFailure<String>;
+
+    let fetch = Monad.liftError Task.carrier JavaScriptFailure (input) => {
+      input :> .slice(0, 1) :> Task.fromResult
+    };
+    let validate = Monad.liftError Task ValidationFailure (input) => {
+      if (input == "") {
+        Task.fail("empty")
+      } else {
+        Task.succeed(input)
+      }
+    };
+
+    let fetched: Task<String, FetchError> = Task.succeed("abc") :> fetch;
+    let validated: Task<String, NameError> = Task.succeed("abc") :> validate;
+  `);
+
+  expectBinding(result.env, "fetched", { type: "Task<String, FetchError>", vars: 0 });
+  expectBinding(result.env, "validated", { type: "Task<String, NameError>", vars: 0 });
+});
+
+Deno.test("carrier liftError evaluates the injected error", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      type AppError = | DomainFailure<String>;
+
+      let rejectTask = Monad.liftError Task DomainFailure (value) => {
+        Task.fail("bad task " ++ value)
+      };
+      let rejectResult = Monad.liftError Result DomainFailure (value) => {
+        Err("bad result " ++ value)
+      };
+
+      let main = () => {
+        print(Ok("value") :> rejectResult);
+        Task.succeed("value")
+          :> rejectTask
+          :> Task.map((value) => {
+            print(Ok(value));
+            void
+          })
+          :> Task.recover((error) => {
+            print(Err(error));
+            void
+          })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(
+    result.stdout,
+    "Err(DomainFailure(bad result value))\nErr(DomainFailure(bad task value))\n",
+  );
 });
 
 Deno.test("Result carrier coercion infers over primitive operators", async () => {

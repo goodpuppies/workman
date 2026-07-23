@@ -32,6 +32,8 @@ export const hostTypingDialect: TypingDialect = { domain: "host" };
 
 export type InferContext = {
   env: Env;
+  namespaces: ReadonlySet<string>;
+  namespaceValues: ReadonlyMap<string, string>;
   typeEnv: TypeEnv;
   adts: Map<number, TypeDeclInfo>;
   types: Map<Expr, Ty>;

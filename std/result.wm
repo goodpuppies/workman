@@ -1,3 +1,9 @@
+from "./monad.wm" import { Carrier };
+
+let succeed = (value) => {
+  Ok(value)
+};
+
 let map = match(result, f) => {
   (Ok(value), f) => { Ok(f(value)) },
   (Err(error), _) => { Err(error) }
@@ -19,15 +25,32 @@ let mapErr = match(result, f) => {
   (Err(error), f) => { Err(f(error)) }
 };
 
-let withDefault = match(result, fallback) => {
-  (Ok(value), _) => { value },
-  (Err(_), fallback) => { fallback }
+let fnError = (inject) => {
+  (f) => {
+    fn((value) => {
+      f(value) :> mapErr(inject)
+    })
+  }
 };
 
 let map2 = match(a, b, f) => {
   (Ok(left), Ok(right), f) => { Ok(f(left, right)) },
   (Err(error), _, _) => { Err(error) },
   (_, Err(error), _) => { Err(error) }
+};
+
+let carrier = .{
+  fn = fn,
+  fnError = fnError,
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+  andThen = andThen,
+};
+
+let withDefault = match(result, fallback) => {
+  (Ok(value), _) => { value },
+  (Err(_), fallback) => { fallback }
 };
 
 let map3 = match(a, b, c, f) => {

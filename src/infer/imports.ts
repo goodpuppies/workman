@@ -9,11 +9,24 @@ export function addImport(
   typeEnv: TypeEnv,
   clause: ImportClause,
   imported: InferResult,
-  options: { standardLibrary?: boolean } = {},
+  options: {
+    standardLibrary?: boolean;
+    namespaces?: Set<string>;
+    namespaceValues?: Map<string, string>;
+  } = {},
 ) {
   if (clause.kind === "Namespace") {
+    options.namespaces?.add(clause.alias);
     addQualifiedImport(env, clause.alias, imported.exportedStructure.values, clause, options);
     addQualifiedTypes(typeEnv, clause.alias, imported.exportedStructure.types, clause);
+    const carrier = imported.exportedStructure.values.get("carrier");
+    if (carrier) {
+      if (isUserValue(env, clause.alias)) {
+        throw diagnosticError(new Error(`duplicate value import ${clause.alias}`), clause.node);
+      }
+      env.set(clause.alias, importedScheme(carrier, options));
+      options.namespaceValues?.set(clause.alias, `${clause.alias}.carrier`);
+    }
     return;
   }
   if (clause.kind === "All") {
