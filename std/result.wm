@@ -14,6 +14,16 @@ let andThen = match(result, f) => {
   (Err(error), _) => { Err(error) }
 };
 
+let toBool = match(r) => {
+  Ok(v) => {
+    match(v) {
+      true => {true},
+      false => {false}
+    }
+  },
+  Err(_) => {false}
+};
+
 let fn = (f) => {
   (result) => {
     result :> andThen(f)

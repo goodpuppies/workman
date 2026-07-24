@@ -366,6 +366,33 @@ Deno.test("cli run constructs reflected JS globals and reads properties", async 
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run exposes literal lexical import.meta values", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.global import unsafe { URL };
+      from js.meta import { url, main as isMain, resolve };
+      let main = () => {
+        let assetPath = URL.new("./asset.txt", url) :> .pathname;
+        print(url :> .endsWith("/main.mjs") :> Result.withDefault(false));
+        print(assetPath :> Result.map((path) => {
+          path :> .endsWith("/asset.txt") :> Result.withDefault(false)
+        }) :> Result.withDefault(false));
+        print(isMain);
+        print(resolve("./asset.txt") :> .endsWith("/asset.txt") :> Result.withDefault(false))
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0, result.stderr);
+  assertEquals(result.stdout, "true\ntrue\ntrue\ntrue\n");
+  assertEquals(result.stderr, "");
+});
+
 Deno.test("cli run resolves package imports from the source project", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.mkdir(`${dir}/node_modules/fakepkg`, { recursive: true });

@@ -803,6 +803,14 @@ let makePoint = (x: Number, y: Number) => { .{ x, y } };
 
 -- Annotate record parameters for clarity
 let pointX = (p: Point) => { p.x };
+
+-- Equivalent function return annotations
+let first: (Void) => Bool = () => { true };
+let second = (): Bool => { true };
+let third = () => { true }: Bool;
+
+-- Annotation positions can be combined when they agree
+let checked: (Void) => Bool = (): Bool => { true }: Bool;
 ```
 
 ### 8. Out of Scope (for now)
@@ -999,9 +1007,6 @@ These features are not supported yet or are only partially supported:
 - **Full SML modules/functors/signatures:** files are the current module boundary.
 - **Opaque type declarations:** `type Handle;` is planned/design syntax, not current syntax.
 - **Typed holes:** `?` is not implemented. Use `Panic("todo")` for temporary unreachable values.
-- **Binding-level function annotations:** annotate parameters or simple `let` bindings for now;
-  `let f: (...) => T = ...` is not generally implemented.
-- **Return type annotations on lambdas:** `let f = (x): T => { ... }` is not implemented.
 - **Match guards:** `pattern when cond => ...` is listed as intended syntax, but guards are not
   implemented.
 - **Character literals:** use strings for now; `'a'` is not implemented.

@@ -73,10 +73,9 @@ let value = match(rounded) {
 
 This is intentionally explicit: JS can throw, so Workman does not pretend the call is pure or total.
 
-`Js.Error` is a normal matchable Workman datatype with `Js.Error(message)` and
-`Js.Unknown` constructors. See [JavaScript error handling](./js-errors.md) for
-normalization rules, synchronous and Task examples, and preserving JS failures in
-application error types.
+`Js.Error` is a normal matchable Workman datatype with `Js.Error(message)` and `Js.Unknown`
+constructors. See [JavaScript error handling](./js-errors.md) for normalization rules, synchronous
+and Task examples, and preserving JS failures in application error types.
 
 Promise-returning JavaScript APIs become `Task<_, Js.Error>`. See [Async and Task](./async.md) for
 the current Task model, including parallel collection with `Task.collectList`.
@@ -110,13 +109,14 @@ from js.global("console") import unsafe {
 
 ## Note on type annotations and ffi
 
-It may seem practical to add `: Type` literally everywhere typescript/rust style.
-Currently though in workman I would recommend avoiding it especially in ffi code.
-- `: Type` is not an assertion, if a ffi thing cant be figured out an annotation wont help, 
-for json/objects use json assert. For other situations more explicit and simple code could help,
-you can also manually type imports as escape hatch.
-- often using `: Type` in ffi heavy code will cause more errors 
-or even errors that dissapear once the annotations are removed.
+It may seem practical to add `: Type` literally everywhere typescript/rust style. Currently though
+in workman I would recommend avoiding it especially in ffi code.
+
+- `: Type` is not an assertion, if a ffi thing cant be figured out an annotation wont help, for
+  json/objects use json assert. For other situations more explicit and simple code could help, you
+  can also manually type imports as escape hatch.
+- often using `: Type` in ffi heavy code will cause more errors or even errors that dissapear once
+  the annotations are removed.
 
 ## Manual Types
 
@@ -144,9 +144,9 @@ particular, a reflection failure is not by itself a reason to add foreign subtyp
 library's complete object model.
 
 Use a small TypeScript shim when the foreign interaction model is fundamentally incompatible with
-Workman. The shim should translate that model into the values and operations the program needs,
-with an interface that remains natural in functional Workman code. TypeScript checks the foreign
-side; Workman checks the interface it receives.
+Workman. The shim should translate that model into the values and operations the program needs, with
+an interface that remains natural in functional Workman code. TypeScript checks the foreign side;
+Workman checks the interface it receives.
 
 This is an intentional part of the FFI design rather than a loss of type safety. Foreign values can
 remain nominal and opaque while the operations crossing the boundary remain fully typed. Host-only
@@ -154,9 +154,9 @@ concepts stay in the shim instead of leaking into ordinary Workman programs or d
 the language.
 
 `Js.Object` and `Js.Value` are reserved for genuinely dynamic declarations or an explicitly chosen
-dynamic boundary. They are not fallback types for failed reflection. If TypeScript declares a
-static shape which Workman cannot map, the FFI access remains unresolved and must be made explicit
-or adapted with a shim. Replacing known structure with an opaque value would erase evidence that
+dynamic boundary. They are not fallback types for failed reflection. If TypeScript declares a static
+shape which Workman cannot map, the FFI access remains unresolved and must be made explicit or
+adapted with a shim. Replacing known structure with an opaque value would erase evidence that
 Workman's type inference cannot recover; use an assertion to turn an intentionally dynamic value
 back into a checked Workman shape.
 
@@ -201,6 +201,31 @@ or directly:
 ```sh
 deno run --allow-read --allow-write --allow-run --allow-env --allow-net src/main.ts run examples/server.wm
 ```
+
+## Module Metadata
+
+JavaScript's lexical `import.meta` object is available through `js.meta`:
+
+```wm
+from js.global import unsafe { URL };
+from js.meta import { url, main, filename, dirname, resolve };
+
+let assetPath = URL.new("./assets/data.txt", url) :> .pathname;
+```
+
+`url` is emitted as a direct access to the generated ES module's literal `import.meta.url`. It is
+not rewritten to the original Workman source path. The built-in metadata members have these types:
+
+```txt
+url      : String
+main     : Bool
+filename : Option<String>
+dirname  : Option<String>
+resolve  : (String) => String
+```
+
+Because these are lexical module values rather than calls across an arbitrary JavaScript boundary,
+they are imported directly rather than wrapped in `Result`.
 
 ## Node APIs
 

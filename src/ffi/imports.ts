@@ -31,6 +31,10 @@ export function collectFfiDecl(
     collectFfiTypeDecl(importedTypeRefs, decl);
     return;
   }
+  if (decl.target.kind === "JsMeta") {
+    collectMetaFfiDecl(bindings, decl);
+    return;
+  }
   if (decl.target.kind === "JsWorker") {
     collectWorkerFfiDecl(bindings, decl);
     return;
@@ -120,6 +124,57 @@ export function collectFfiDecl(
       spec.node,
     );
   }
+}
+
+function collectMetaFfiDecl(
+  bindings: Map<string, FfiBinding>,
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+) {
+  const members = metaMembers();
+  if (decl.clause.kind === "Namespace") {
+    for (const member of members) {
+      addVariants(
+        bindings,
+        `${decl.clause.alias}.${member.name}`,
+        member.name,
+        decl.target,
+        memberVariants(member),
+        false,
+        decl.node,
+      );
+    }
+    return;
+  }
+  for (const spec of decl.clause.specs) {
+    const member = members.find((item) => item.name === spec.name) ??
+      (spec.type ? { name: spec.name, type: spec.type } : undefined);
+    if (!member) continue;
+    const localName = spec.alias ?? spec.name;
+    const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
+    addVariants(
+      bindings,
+      surfaceName,
+      spec.name,
+      decl.target,
+      memberVariants(spec.type ? { ...member, type: spec.type } : member),
+      false,
+      spec.node,
+    );
+  }
+}
+
+function metaMembers(): JsMemberType[] {
+  const string: TypeExpr = { kind: "TName", name: "String", args: [] };
+  return [
+    { name: "url", type: string },
+    { name: "filename", type: { kind: "TName", name: "Option", args: [string] } },
+    { name: "dirname", type: { kind: "TName", name: "Option", args: [string] } },
+    { name: "main", type: { kind: "TName", name: "Bool", args: [] } },
+    {
+      name: "resolve",
+      type: { kind: "TFn", params: [string], result: string },
+    },
+  ];
 }
 
 function collectWorkerFfiDecl(
@@ -417,6 +472,7 @@ function namedJsImportDecl(
 function jsTargetMembers(target: JsTarget) {
   if (target.kind === "JsGlobalRoot") return [];
   if (target.kind === "JsGlobal") return jsGlobalMembers(target.path);
+  if (target.kind === "JsMeta") return metaMembers();
   if (target.kind === "JsModule") return jsModuleMembers(target.specifier);
   if (target.kind === "JsWorker") return workerMembers();
   return [];
@@ -438,6 +494,7 @@ function jsTargetNamespaceRef(target: JsTarget): JsTypeRef | undefined {
 function jsTargetMember(target: JsTarget, name: string): JsMemberType | undefined {
   if (target.kind === "JsGlobalRoot") return undefined;
   if (target.kind === "JsGlobal") return jsGlobalMember(target.path, name);
+  if (target.kind === "JsMeta") return metaMembers().find((member) => member.name === name);
   if (target.kind === "JsModule") return jsModuleMember(target.specifier, name);
   if (target.kind === "JsWorker") return workerMembers().find((member) => member.name === name);
   return undefined;

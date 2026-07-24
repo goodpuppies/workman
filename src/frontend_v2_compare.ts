@@ -51,7 +51,13 @@ export type NormalizedFrontendExpr =
   | { kind: "Bool"; value: boolean }
   | { kind: "Void" }
   | { kind: "Tuple"; items: NormalizedFrontendExpr[] }
-  | { kind: "Lambda"; params: NormalizedFrontendParam[]; body: NormalizedFrontendExpr }
+  | {
+    kind: "Lambda";
+    params: NormalizedFrontendParam[];
+    body: NormalizedFrontendExpr;
+    returnAnnotation?: NormalizedFrontendTypeExpr;
+    trailingReturnAnnotation?: NormalizedFrontendTypeExpr;
+  }
   | { kind: "Block"; items: []; result: NormalizedFrontendExpr }
   | {
     kind: "Call";
@@ -195,6 +201,12 @@ function normalizeSupportedExpr(expr: Expr): NormalizedFrontendExpr {
           ...(param.annotation ? { annotation: normalizeSupportedType(param.annotation) } : {}),
         })),
         body: normalizeSupportedExpr(expr.body),
+        ...(expr.returnAnnotation
+          ? { returnAnnotation: normalizeSupportedType(expr.returnAnnotation) }
+          : {}),
+        ...(expr.trailingReturnAnnotation
+          ? { trailingReturnAnnotation: normalizeSupportedType(expr.trailingReturnAnnotation) }
+          : {}),
       };
     case "Block":
       if (expr.items.length > 0) throw new Error("unsupported non-empty block");

@@ -204,6 +204,14 @@ Deno.test("compiler v2 mode projects simple lambdas, blocks, and whitespace appl
   expectBinding(result.env, "main", { type: "(Void) => Void", vars: 0 });
 });
 
+Deno.test("compiler frontends agree on lambda return annotations", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = "let init: (Void) => Bool = (): Bool => { true }: Bool;";
+  const result = await checkSource(source, { frontend: "compare", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "init", { type: "(Void) => Bool", vars: 0 });
+});
+
 Deno.test("compiler compare mode agrees on simple lambdas and whitespace application", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
   const source = 'let printer = (x) => { print x };\nlet main = () => { printer "ok" };';

@@ -604,7 +604,11 @@ function hasDirectSelfTailCall(expr: CoreExpr, bindingId: BindingId): boolean {
   if (expr.kind === "CoreMatch") {
     return expr.arms.some((arm) => hasDirectSelfTailCall(arm.body, bindingId));
   }
-  if (expr.kind === "CoreBlock") return hasDirectSelfTailCall(expr.result, bindingId);
+  if (expr.kind === "CoreBlock") {
+    return hasDirectSelfTailCall(expr.result, bindingId) ||
+      !!finalDiscardedExpr(expr) &&
+        hasDirectSelfTailCall(finalDiscardedExpr(expr)!, bindingId);
+  }
   return false;
 }
 
@@ -631,11 +635,23 @@ function emitTailExpr(
     }\n}`;
   }
   if (expr.kind === "CoreBlock") {
+    const discardedTail = finalDiscardedExpr(expr);
+    if (discardedTail && hasDirectSelfTailCall(discardedTail, bindingId)) {
+      return `{\n${expr.items.slice(0, -1).map(emitBlockItem).join("\n")}\n${
+        emitTailExpr(discardedTail, bindingId, label)
+      }\n}`;
+    }
     return `{\n${expr.items.map(emitBlockItem).join("\n")}\n${
       emitTailExpr(expr.result, bindingId, label)
     }\n}`;
   }
   return `return ${emitExpr(expr)};`;
+}
+
+function finalDiscardedExpr(expr: Extract<CoreExpr, { kind: "CoreBlock" }>): CoreExpr | undefined {
+  if (expr.result.kind !== "CoreVoid") return undefined;
+  const last = expr.items.at(-1);
+  return last && !isDecl(last) ? last : undefined;
 }
 
 function emitTailArmBody(

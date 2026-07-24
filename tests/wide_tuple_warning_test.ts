@@ -17,7 +17,7 @@ Deno.test("wide tuple expressions and patterns produce style warnings", async ()
   assertStringIncludes(result.warnings[1], "tuple pattern has 5 elements");
 });
 
-Deno.test("wide carrier pipes remain valid and recommend a record boundary", async () => {
+Deno.test("wide carrier pipes do not produce positional tuple warnings", async () => {
   const result = await checkSource(`
     record Values = {
       first: Number,
@@ -33,11 +33,8 @@ Deno.test("wide carrier pipes remain valid and recommend a record boundary", asy
       });
   `);
 
-  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
-    "style.wide-tuple",
-  ]);
-  assertStringIncludes(result.warnings[0], "carrier pipe has 5 elements");
-  assertStringIncludes(result.warnings[0], "named record immediately");
+  assertEquals(result.diagnostics, []);
+  assertEquals(result.warnings, []);
 });
 
 Deno.test("tuples with four elements do not produce a style warning", async () => {

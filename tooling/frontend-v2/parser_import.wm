@@ -216,7 +216,10 @@ let recoverSource = (
               [dot, member, ..afterMember] => {
                 if (
                   isText(token, "js") && isText(dot, ".") &&
-                  (isText(member, "global") || isText(member, "module"))
+                  (
+                    isText(member, "global") || isText(member, "meta") ||
+                    isText(member, "module") || isText(member, "worker")
+                  )
                 ) {
                   match(afterMember) {
                     [open, ..afterOpen] => {

@@ -70,16 +70,16 @@ function visitExpr(
         const carrierTuple = expr.items.every((item) =>
           item.kind === "Var" && item.name.startsWith("__wm_lift_")
         );
-        reportWideTuple(
-          expr.items.length,
-          carrierTuple ? "carrier pipe" : "tuple expression",
-          carrierTuple
-            ? "Map the collected values into a named record immediately after the carrier pipe."
-            : "Use a named record when the positions have distinct meanings.",
-          expr.node,
-          warnings,
-          diagnostics,
-        );
+        if (!carrierTuple) {
+          reportWideTuple(
+            expr.items.length,
+            "tuple expression",
+            "Use a named record when the positions have distinct meanings.",
+            expr.node,
+            warnings,
+            diagnostics,
+          );
+        }
       }
       expr.items.forEach((item) => visitExpr(item, warnings, diagnostics));
       return;
@@ -108,6 +108,12 @@ function visitExpr(
         if (param.annotation) {
           visitType(param.annotation, warnings, diagnostics);
         }
+      }
+      if (expr.returnAnnotation) {
+        visitType(expr.returnAnnotation, warnings, diagnostics);
+      }
+      if (expr.trailingReturnAnnotation) {
+        visitType(expr.trailingReturnAnnotation, warnings, diagnostics);
       }
       visitExpr(expr.body, warnings, diagnostics);
       return;

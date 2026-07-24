@@ -29,6 +29,7 @@ export function addJsImport(env: Env, typeEnv: TypeEnv, decl: JsImportDecl) {
 function jsTargetLabel(target: JsImportDecl["target"]): string {
   if (target.kind === "JsGlobalRoot") return "globalThis";
   if (target.kind === "JsGlobal") return target.path;
+  if (target.kind === "JsMeta") return "import.meta";
   if (target.kind === "JsModule") return target.specifier;
   if (target.kind === "JsWorker") return `worker ${target.specifier}`;
   if (target.kind === "JsConstructor") return `new ${target.path}`;

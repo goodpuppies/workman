@@ -38,6 +38,7 @@ export type ImportSpec = Located<{ name: string; alias?: string }>;
 export type JsTarget =
   | Located<{ kind: "JsGlobalRoot" }>
   | Located<{ kind: "JsGlobal"; path: string }>
+  | Located<{ kind: "JsMeta" }>
   | Located<{ kind: "JsModule"; specifier: string }>
   | Located<{ kind: "JsWorker"; specifier: string }>
   | Located<{ kind: "JsReceiver"; path: string[] }>
@@ -76,7 +77,14 @@ export type Expr =
     args: Expr[];
     effect?: "Result" | "Task";
   }>
-  | Located<{ kind: "Lambda"; params: Param[]; directives: Directive[]; body: Expr }>
+  | Located<{
+    kind: "Lambda";
+    params: Param[];
+    directives: Directive[];
+    body: Expr;
+    returnAnnotation?: TypeExpr;
+    trailingReturnAnnotation?: TypeExpr;
+  }>
   | Located<{ kind: "Call"; callee: Expr; args: Expr[] }>
   | Located<{ kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }>
   | Located<{ kind: "Match"; value: Expr; arms: MatchArm[] }>

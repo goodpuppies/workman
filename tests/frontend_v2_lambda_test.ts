@@ -75,6 +75,15 @@ Deno.test("frontend-v2 preserves parameterized lambda blocks", () => {
   assertStructuralRecoveryIntegrity(result);
 });
 
+Deno.test("frontend-v2 preserves lambda return annotations", () => {
+  const source = "let init: (Void) => Bool = (): Bool => { true }: Bool;";
+  const result = frontend.parseStructural(source);
+
+  assertEquals(result.virtualText, source);
+  assertEquals(result.marks, []);
+  assertStructuralRecoveryIntegrity(result);
+});
+
 Deno.test("frontend-v2 recovers a missing parameterized lambda body as an empty block", () => {
   const result = frontend.parseStructural("let main = (thing) =>;");
 

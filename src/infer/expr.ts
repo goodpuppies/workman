@@ -73,6 +73,10 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
               `${expr.name} does not export carrier`,
           );
         }
+        const qualifier = expr.name.includes(".") ? expr.name.slice(0, expr.name.indexOf(".")) : "";
+        if (qualifier && context.namespaces.has(qualifier)) {
+          throw new Error(`unknown name ${expr.name}`);
+        }
         t = context.dialect.inferUnboundVar?.(expr, context) ??
           context.dialect.inferProjection?.(expr, context) ??
           inferDottedVar(expr.name, env, typeEnv);

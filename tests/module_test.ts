@@ -6,7 +6,10 @@ import { expectBinding } from "./type_helpers.ts";
 Deno.test("imported type constructors and constructors remain available through namespace", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/option.wm", "type Option<T> = None | Some<T>; let wrap = (x) => { Some(x) };"],
-    ["/test/main.wm", "from \"./option.wm\" import * as Opt; let value: Opt.Option<Number> = Opt.wrap(1); let get = match(value) => { Opt.Some(x) => { x }, Opt.None => { 0 } };"],
+    [
+      "/test/main.wm",
+      'from "./option.wm" import * as Opt; let value: Opt.Option<Number> = Opt.wrap(1); let get = match(value) => { Opt.Some(x) => { x }, Opt.None => { 0 } };',
+    ],
   ]);
 
   const results = await checkVirtual("/test/main.wm", virtualFs);
@@ -27,7 +30,10 @@ Deno.test("named import allows a type and constructor to share one local spellin
 Deno.test("named imports can replace basis option type and constructors together", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Option<T> = None | Some<T>;"],
-    ["/test/main.wm", "from \"./lib.wm\" import { Option, Some, None }; let value: Option<Number> = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };"],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import { Option, Some, None }; let value: Option<Number> = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };',
+    ],
   ]);
 
   await checkVirtual("/test/main.wm", virtualFs);
@@ -46,29 +52,44 @@ Deno.test("star import without alias rejects collisions", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "let value = 1;"],
     ["/test/b.wm", "let value = 2;"],
-    ["/test/main.wm", "from \"./a.wm\" import *; from \"./b.wm\" import *; let x = value;"],
+    ["/test/main.wm", 'from "./a.wm" import *; from "./b.wm" import *; let x = value;'],
   ]);
 
-  await assertRejects(() => checkVirtual("/test/main.wm", virtualFs), Error, "duplicate value import value");
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "duplicate value import value",
+  );
 });
 
 Deno.test("type imports reject collisions with existing local type declarations", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Box<T> = T;"],
-    ["/test/main.wm", "type Box = | LocalBox; from \"./lib.wm\" import { Box }; let x = 1;"],
+    ["/test/main.wm", 'type Box = | LocalBox; from "./lib.wm" import { Box }; let x = 1;'],
   ]);
 
-  await assertRejects(() => checkVirtual("/test/main.wm", virtualFs), Error, "duplicate type import Box");
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "duplicate type import Box",
+  );
 });
 
 Deno.test("value imports reject collisions with imported constructors", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "type A = | Ctor;"],
     ["/test/b.wm", "type B = | Ctor;"],
-    ["/test/main.wm", "from \"./a.wm\" import { Ctor }; from \"./b.wm\" import { Ctor }; let x = Ctor;"],
+    [
+      "/test/main.wm",
+      'from "./a.wm" import { Ctor }; from "./b.wm" import { Ctor }; let x = Ctor;',
+    ],
   ]);
 
-  await assertRejects(() => checkVirtual("/test/main.wm", virtualFs), Error, "duplicate value import Ctor");
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "duplicate value import Ctor",
+  );
 });
 
 Deno.test("module graph exposes ordered nodes and import edges", async () => {
@@ -115,6 +136,48 @@ Deno.test("Workman namespace in value position resolves its explicit carrier exp
     console.log = original;
   }
   assertEquals(output, ["ok"]);
+});
+
+Deno.test("only a bare namespace value resolves to its carrier export", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/lib.wm",
+      "record Carrier<A> = { apply: (A) => A }; " +
+      "let carrier = .{ apply = (value) => { value } }; " +
+      "let toBool = match(value) => { true => { true }, false => { false } };",
+    ],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import * as Lib; ' +
+      "let selected = Lib; " +
+      "let qualified = true :> Lib.toBool;",
+    ],
+  ]);
+
+  const javaScript = await compileVirtual("/test/main.wm", virtualFs);
+  assertEquals(javaScript.includes("Lib.carrier"), true);
+  assertEquals(javaScript.includes("Lib.toBool"), true);
+  assertEquals(javaScript.includes("Lib.carrier.toBool"), false);
+});
+
+Deno.test("missing qualified members do not fall back through a namespace carrier", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/lib.wm",
+      "record Carrier<A> = { apply: (A) => A }; " +
+      "let carrier = .{ apply = (value) => { value } };",
+    ],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import * as Lib; let missing = Lib.toBool;',
+    ],
+  ]);
+
+  await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    Error,
+    "unknown name Lib.toBool",
+  );
 });
 
 Deno.test("Workman namespace without carrier rejects bare value use", async () => {
@@ -181,8 +244,14 @@ Deno.test("default-exported values and aliases may mention local types", async (
 
 Deno.test("named imports keep aliases transparent inside datatype constructor payloads", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/lib.wm", "type Pair<T> = (T, T); type Box<T> = | Box<Pair<T>>; let make = (x, y) => { Box((x, y)) };"],
-    ["/test/main.wm", "from \"./lib.wm\" import { Pair, Box, make }; let pair: Pair<Number> = (1, 2); let value: Box<Number> = make(1, 2); let sum = match(value) { Box(left, right) => { left + right } };"],
+    [
+      "/test/lib.wm",
+      "type Pair<T> = (T, T); type Box<T> = | Box<Pair<T>>; let make = (x, y) => { Box((x, y)) };",
+    ],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import { Pair, Box, make }; let pair: Pair<Number> = (1, 2); let value: Box<Number> = make(1, 2); let sum = match(value) { Box(left, right) => { left + right } };',
+    ],
   ]);
 
   const results = await checkVirtual("/test/main.wm", virtualFs);
@@ -193,8 +262,14 @@ Deno.test("named imports keep aliases transparent inside datatype constructor pa
 
 Deno.test("namespace imports keep aliases transparent for datatype exhaustiveness", async () => {
   const virtualFs = new Map<string, string>([
-    ["/test/lib.wm", "type Pair<T> = (T, T); type Box<T> = | Box<Pair<T>>; let make = (x, y) => { Box((x, y)) };"],
-    ["/test/main.wm", "from \"./lib.wm\" import * as Lib; let value: Lib.Box<Number> = Lib.make(1, 2); let sum = match(value) { Lib.Box(left, right) => { left + right } };"],
+    [
+      "/test/lib.wm",
+      "type Pair<T> = (T, T); type Box<T> = | Box<Pair<T>>; let make = (x, y) => { Box((x, y)) };",
+    ],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import * as Lib; let value: Lib.Box<Number> = Lib.make(1, 2); let sum = match(value) { Lib.Box(left, right) => { left + right } };',
+    ],
   ]);
 
   const results = await checkVirtual("/test/main.wm", virtualFs);
@@ -207,7 +282,10 @@ Deno.test("namespace imports keep same-spelled type aliases distinct when their 
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "type Box = | Box; type Alias = Box; let make = () => { Box };"],
     ["/test/b.wm", "type Box = | Box; type Alias = Box; let make = () => { Box };"],
-    ["/test/main.wm", "from \"./a.wm\" import * as A; from \"./b.wm\" import * as B; let bad: A.Alias = B.make();"],
+    [
+      "/test/main.wm",
+      'from "./a.wm" import * as A; from "./b.wm" import * as B; let bad: A.Alias = B.make();',
+    ],
   ]);
 
   await assertRejects(() => checkVirtual("/test/main.wm", virtualFs), Error, "type mismatch");

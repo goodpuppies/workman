@@ -171,6 +171,8 @@ JsTarget
     { return at({ kind: "JsGlobal", path: path.value }, location()); }
   / "js.global" !IdentPart
     { return at({ kind: "JsGlobalRoot" }, location()); }
+  / "js.meta" !IdentPart
+    { return at({ kind: "JsMeta" }, location()); }
   / "js.module" _ "(" _ specifier:String _ ")"
     { return at({ kind: "JsModule", specifier: specifier.value }, location()); }
   / "js.worker" _ "(" _ specifier:String _ ")"
@@ -279,12 +281,30 @@ MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { 
 MatchArm = pattern:Pattern _ "=>" _ body:Block { return at({ pattern, body }, location()); }
 
 Lambda
-  = params:ParamList _ "=>" _ parsed:LambdaBody {
-      return at({ kind: "Lambda", params, directives: parsed.directives, body: parsed.body }, location());
+  = params:ParamList returnAnnotation:LambdaReturnAnnotation? _ "=>" _ parsed:LambdaBody
+    trailingReturnAnnotation:LambdaReturnAnnotation? {
+      return at({
+        kind: "Lambda",
+        params,
+        directives: parsed.directives,
+        body: parsed.body,
+        returnAnnotation: returnAnnotation ?? undefined,
+        trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
+      }, location());
     }
-  / "=>" _ parsed:LambdaBody {
-      return at({ kind: "Lambda", params: [], directives: parsed.directives, body: parsed.body }, location());
+  / returnAnnotation:LambdaReturnAnnotation? _ "=>" _ parsed:LambdaBody
+    trailingReturnAnnotation:LambdaReturnAnnotation? {
+      return at({
+        kind: "Lambda",
+        params: [],
+        directives: parsed.directives,
+        body: parsed.body,
+        returnAnnotation: returnAnnotation ?? undefined,
+        trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
+      }, location());
     }
+
+LambdaReturnAnnotation = _ ":" _ type:TypeExpr { return type; }
 
 LambdaBody
   = LambdaBlock
@@ -331,9 +351,9 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right
   }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
-Postfix = head:Primary tail:(SpaceCall / ExplicitCall)*
+Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
   { return tail.reduce((callee, item) => at({ kind: "Call", callee, args: item.args }, location()), head); }
-ExplicitCall = _ "(" _ args:ArgList? _ ")" { return { kind: "Call", args: args ?? [] }; }
+ExplicitCall = _ "(" _ args:ArgList? _ ")" !(_ "=>") { return { kind: "Call", args: args ?? [] }; }
 SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 

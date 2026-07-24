@@ -34,6 +34,14 @@ export function inferLambdaTy(
   const annotations = expr.params.map((param) =>
     param.annotation ? typeFromAst(param.annotation, typeEnv, annotationVars) : undefined
   );
+  const returnAnnotations = [
+    expr.returnAnnotation,
+    expr.trailingReturnAnnotation,
+  ].filter((annotation): annotation is NonNullable<typeof annotation> => !!annotation)
+    .map((annotation) => ({
+      ast: annotation,
+      type: typeFromAst(annotation, typeEnv, annotationVars),
+    }));
   const dialect = lambdaTypingDialect(expr, context.dialect);
   const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders, facts));
   paramHints?.forEach((hint, index) => {
@@ -114,9 +122,37 @@ export function inferLambdaTy(
   params.forEach((param, index) => {
     collectParamReplacements(param, signatureParams[index], replacements);
   });
+  let signatureBody = replaceParamOccurrences(body, replacements);
+  for (const annotation of returnAnnotations) {
+    constrainAt(
+      body,
+      annotation.type,
+      expr,
+      () => `type mismatch ${quoteType(annotation.type)}, got ${quoteType(body)}`,
+      [],
+      provenance,
+      {
+        message: "return annotation",
+        node: annotation.ast.node,
+        span: annotation.ast.node?.span,
+      },
+      {
+        premise: {
+          rule: "InferAnnotation.ReturnMatchesAnnotation",
+          role: "lambda body matches return annotation",
+          subject: "return annotation",
+          leftRole: "body",
+          rightRole: "annotation",
+        },
+      },
+    );
+    if (dialect.domain !== "gpu") {
+      signatureBody = replaceParamOccurrences(annotation.type, replacements);
+    }
+  }
   const t = fn(
     [callArg(signatureParams)],
-    replaceParamOccurrences(body, replacements),
+    signatureBody,
   );
   types.set(expr, t);
   return t;

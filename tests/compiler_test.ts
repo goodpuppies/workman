@@ -63,6 +63,29 @@ Deno.test("compiles direct self tail calls as iteration", async () => {
   assertStringIncludes(js, "continue __wm_tail_");
 });
 
+Deno.test("compiles a final semicolon-discarded Void self call as iteration", async () => {
+  const js = await compile(`
+    let rec loop = (n) => {
+      if (n == 0) { void } else { loop(n - 1) };
+    };
+  `);
+
+  assertStringIncludes(js, ": while (true)");
+  assertStringIncludes(js, "continue __wm_tail_");
+});
+
+Deno.test("does not tail-compile a discarded self call followed by work", async () => {
+  const js = await compile(`
+    let rec loop = (n) => {
+      if (n == 0) { void } else { loop(n - 1) };
+      print(n);
+    };
+  `);
+
+  const loop = js.slice(js.indexOf("let loop_"));
+  assertEquals(loop.includes(": while (true)"), false);
+});
+
 Deno.test("does not mistake a shadowed call for direct self recursion", async () => {
   const js = await compile(`
     let rec outer = (n) => {
@@ -332,6 +355,39 @@ Deno.test("supports typed lambda parameters", async () => {
     let inc = (x: Number) => { x + 1 };
     let ok = inc(41);
   `);
+});
+
+Deno.test("supports lambda return annotations before and after the body", async () => {
+  const result = await checkSource(`
+    let bindingAnnotated: (Void) => Bool = () => { true };
+    let arrowAnnotated = (): Bool => { true };
+    let bodyAnnotated = () => { true }: Bool;
+    let fullyAnnotated: (Void) => Bool = (): Bool => { true }: Bool;
+  `);
+
+  for (
+    const name of [
+      "bindingAnnotated",
+      "arrowAnnotated",
+      "bodyAnnotated",
+      "fullyAnnotated",
+    ]
+  ) {
+    expectBinding(result.env, name, { type: "(Void) => Bool", vars: 0 });
+  }
+});
+
+Deno.test("lambda return annotations check the inferred body", async () => {
+  await assertRejects(
+    () => checkSource(`let init = (): Bool => { 1 };`),
+    Error,
+    "type mismatch",
+  );
+  await assertRejects(
+    () => checkSource(`let init = () => { 1 }: Bool;`),
+    Error,
+    "type mismatch",
+  );
 });
 
 Deno.test("typed lambda parameters reject incompatible calls", async () => {

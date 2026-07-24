@@ -243,16 +243,54 @@ class ExprParser {
   private parseLambda(start: number): Expr | undefined {
     if (!this.consumeRaw("(")) return undefined;
     const params = this.parseParams();
-    if (!params || !this.consumeRaw("=>")) return undefined;
+    if (!params) return undefined;
+    const returnAnnotation = this.parseReturnAnnotationBeforeArrow();
+    if (!this.consumeRaw("=>")) return undefined;
     const body = this.parseBlock();
     if (!body) return undefined;
+    const trailingReturnAnnotation = this.parseTrailingReturnAnnotation();
     return {
       kind: "Lambda",
       params,
       directives: [],
       body,
+      ...(returnAnnotation ? { returnAnnotation } : {}),
+      ...(trailingReturnAnnotation ? { trailingReturnAnnotation } : {}),
       ...this.withNode(start, this.cursor),
     };
+  }
+
+  private parseReturnAnnotationBeforeArrow(): TypeExpr | undefined {
+    this.skipSpace();
+    if (!this.consumeRaw(":")) return undefined;
+    const typeStart = this.cursor;
+    let arrow = this.source.indexOf("=>", typeStart);
+    while (arrow >= 0) {
+      let bodyStart = arrow + 2;
+      while (/\s/.test(this.source[bodyStart] ?? "")) bodyStart += 1;
+      if (this.source[bodyStart] === "{") break;
+      arrow = this.source.indexOf("=>", arrow + 2);
+    }
+    if (arrow < 0) return undefined;
+    const typeText = this.source.slice(typeStart, arrow).trim();
+    const annotation = typeText ? this.helpers.type(typeText) : undefined;
+    if (!annotation) return undefined;
+    this.cursor = arrow;
+    return annotation;
+  }
+
+  private parseTrailingReturnAnnotation(): TypeExpr | undefined {
+    const beforeSpace = this.cursor;
+    this.skipSpace();
+    if (!this.consumeRaw(":")) {
+      this.cursor = beforeSpace;
+      return undefined;
+    }
+    const typeText = this.source.slice(this.cursor).trim();
+    const annotation = typeText ? this.helpers.type(typeText) : undefined;
+    if (!annotation) return undefined;
+    this.cursor = this.source.length;
+    return annotation;
   }
 
   private parseParams(): Param[] | undefined {

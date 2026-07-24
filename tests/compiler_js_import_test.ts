@@ -37,6 +37,44 @@ Deno.test("manual non-unsafe imports are fallible", async () => {
   expectBinding(result.env, "args", { type: "Result<Js.Array<String>, Js.Error>", vars: 0 });
 });
 
+Deno.test("imports lexical JavaScript module metadata directly", async () => {
+  const result = await checkSource(`
+    from js.global import unsafe { URL };
+    from js.meta import { url, main as isMain, filename, dirname, resolve };
+    let assetPath = URL.new("./asset.txt", url) :> .pathname;
+  `);
+
+  expectBinding(result.env, "url", { type: "String", vars: 0 });
+  expectBinding(result.env, "isMain", { type: "Bool", vars: 0 });
+  expectBinding(result.env, "filename", { type: "Option<String>", vars: 0 });
+  expectBinding(result.env, "dirname", { type: "Option<String>", vars: 0 });
+  expectBinding(result.env, "resolve", { type: "(String) => String", vars: 0 });
+  expectBinding(result.env, "assetPath", { type: "Result<String, Js.Error>", vars: 0 });
+
+  const js = await compile(`
+    from js.meta import { url };
+    let value = url;
+  `);
+  assertStringIncludes(js, 'import.meta["url"]');
+});
+
+Deno.test("explicit calls ignore whitespace and newlines before parentheses", async () => {
+  const result = await checkSource(`
+    from js.global import unsafe { URL };
+    let specifier = "./asset.txt";
+    let base = "file:///tmp/main.mjs";
+    let adjacent = URL.new(specifier, base);
+    let spaced = URL.new (specifier, base);
+    let newline = URL.new
+    (specifier, base);
+    let lifted = Monad.lift Result (value) => { Ok(value) };
+  `);
+
+  expectBinding(result.env, "adjacent", { type: "URL", vars: 0 });
+  expectBinding(result.env, "spaced", { type: "URL", vars: 0 });
+  expectBinding(result.env, "newline", { type: "URL", vars: 0 });
+});
+
 Deno.test("Js.Error is a matchable basis datatype", async () => {
   const result = await checkSource(`
     let describe = (error: Js.Error) => {

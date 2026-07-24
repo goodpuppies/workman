@@ -6,6 +6,8 @@ import { emitJsIdentifier as id } from "./emit_name.ts";
 type CoreJsImport = Extract<CoreDecl, { kind: "CoreJsImport" }>;
 
 type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
+  kind: "meta";
+} | {
   kind: "module";
   name: string;
   setup: string;
@@ -86,7 +88,10 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
       }
       return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(__wm_js_error(error)); } })()`;
     }
-    return memberRef;
+    const converter = jsValueConverter(spec.type);
+    return converter === "id"
+      ? memberRef
+      : `__wm_js_to_workman(${memberRef}, ${JSON.stringify(converter)})`;
   }
   return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${
     JSON.stringify(jsParamConverters(spec.type))
@@ -162,6 +167,7 @@ function fallibleOkType(type: TypeExpr): TypeExpr | undefined {
 function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
   if (target.kind === "JsGlobalRoot") return { kind: "global", path: "" };
   if (target.kind === "JsGlobal") return { kind: "global", path: target.path };
+  if (target.kind === "JsMeta") return { kind: "meta" };
   if (target.kind === "JsModule") {
     const name = `__wm_js_module_${jsImportTemp++}`;
     return {
@@ -205,6 +211,7 @@ function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
 }
 
 function jsMemberRef(target: JsTargetRef, member: string): string {
+  if (target.kind === "meta") return `import.meta[${member}]`;
   if (target.kind === "global") {
     if (target.path.length === 0) return `__wm_js_member(${member})`;
     if (member === JSON.stringify(target.path)) {
@@ -224,6 +231,7 @@ function jsMemberRef(target: JsTargetRef, member: string): string {
 }
 
 function jsNamespaceRef(target: JsTargetRef): string {
+  if (target.kind === "meta") return "import.meta";
   if (target.kind === "module") return target.name;
   if (target.kind === "worker") return target.name;
   if (target.kind === "global") {

@@ -7,7 +7,7 @@ const frontend = await loadFrontendV2(await buildFrontend());
 
 Deno.test("frontend-v2 preserves complete Workman and JavaScript imports", () => {
   const source =
-    'from "./dep.wm" import { Thing };\nfrom js.global("console") import unsafe { log };';
+    'from "./dep.wm" import { Thing };\nfrom js.global("console") import unsafe { log };\nfrom js.meta import { url };';
   const result = frontend.parseStructural(source);
 
   assertEquals(result.virtualText, source);

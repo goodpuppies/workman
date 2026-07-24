@@ -72,7 +72,7 @@ export function initialJsImportReflectionRequests(
 function initialJsImportDeclReflectionRequests(
   decl: Extract<Decl, { kind: "JsImportDecl" }>,
 ): JsReflectionRequest[] {
-  if (decl.typeOnly || decl.target.kind === "JsWorker") return [];
+  if (decl.typeOnly || decl.target.kind === "JsMeta" || decl.target.kind === "JsWorker") return [];
   const target = reflectionTarget(decl.target);
   if (decl.clause.kind === "Namespace") {
     return target
