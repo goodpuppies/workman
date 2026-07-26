@@ -5,11 +5,13 @@ import { GPU_SEMANTIC_IDS } from "./compiler_semantics.ts";
 import { isGpuLambda } from "./directives.ts";
 import type { InferResult } from "./infer.ts";
 import type { BindingId, GpuRootId, GpuSelectorId } from "./ids.ts";
+import type { ModuleId } from "./module_id.ts";
 
 type LambdaExpr = Extract<Expr, { kind: "Lambda" }>;
 type CallExpr = Extract<Expr, { kind: "Call" }>;
 
 export type GpuSelectionModule = {
+  moduleId: ModuleId;
   path: string;
   module: Module;
   result: InferResult;
@@ -20,6 +22,7 @@ export type GpuFragmentSelectorFact = {
   id: GpuSelectorId;
   rootId: GpuRootId;
   path: string;
+  moduleId: ModuleId;
   call: CallExpr;
   argument: Expr;
   environmentArgument?: Expr;
@@ -27,6 +30,7 @@ export type GpuFragmentSelectorFact = {
 
 export type GpuShaderFactoryFact = {
   path: string;
+  moduleId: ModuleId;
   lambda: LambdaExpr;
   binding: Binding;
   bindingId: BindingId;
@@ -36,6 +40,7 @@ export type GpuShaderFactoryFact = {
 export type GpuFragmentRootFact = {
   id: GpuRootId;
   path: string;
+  moduleId: ModuleId;
   lambda: LambdaExpr;
   binding?: Binding;
   bindingId?: BindingId;
@@ -94,6 +99,7 @@ export function resolveGpuFragmentSelections(
         input.bindings,
         definitions,
         input.path,
+        input.moduleId,
       );
       const resolved = factoryApplication?.inner ??
         resolveLambda(argument, input.bindings, definitions, new Set());
@@ -121,6 +127,7 @@ export function resolveGpuFragmentSelections(
         root = {
           id: roots.length as GpuRootId,
           path: resolved.site?.path ?? input.path,
+          moduleId: resolved.site?.moduleId ?? input.moduleId,
           lambda: resolved.lambda,
           binding: resolved.site?.binding,
           bindingId,
@@ -134,6 +141,7 @@ export function resolveGpuFragmentSelections(
         id: selectors.length as GpuSelectorId,
         rootId: root.id,
         path: input.path,
+        moduleId: input.moduleId,
         call: expr,
         argument,
         environmentArgument: factoryApplication?.argument,
@@ -156,6 +164,7 @@ function resolveShaderFactoryApplication(
   references: BindingFacts,
   definitions: Map<BindingId, ResolvedBindingSite>,
   currentPath: string,
+  currentModuleId: ModuleId,
 ): {
   inner: { lambda: LambdaExpr; site?: ResolvedBindingSite };
   factory: GpuShaderFactoryFact;
@@ -185,6 +194,7 @@ function resolveShaderFactoryApplication(
     inner: { lambda: inner, site: undefined },
     factory: {
       path: resolved.site.path ?? currentPath,
+      moduleId: resolved.site.moduleId ?? currentModuleId,
       lambda: outer,
       binding: resolved.site.binding,
       bindingId,

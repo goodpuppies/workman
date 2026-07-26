@@ -9,11 +9,12 @@ import type {
 import type { InferResult } from "../infer.ts";
 import type { CtorId } from "../ids.ts";
 import type { ModuleGraph, ModuleNode } from "../module_graph.ts";
+import type { ModuleMap } from "../module_id.ts";
 import type { NominalConstructorFact, NominalFacts, NominalTypeFact } from "../nominal_facts.ts";
 import type { ResolvedPatternFact, ResolvedPatternFacts } from "../pattern_facts.ts";
 import type { RecursionFacts } from "../recursion_facts.ts";
 import type { SourceSpan } from "../source.ts";
-import { instantiateRecordFields, prune, type Ty } from "../types.ts";
+import { instantiateRecordFields, prune, type Ty, typeInfoById } from "../types.ts";
 import {
   GPU_SLICE_SCHEMA_VERSION,
   type GpuSliceAdtDto,
@@ -46,8 +47,8 @@ type CallExpr = Extract<Expr, { kind: "Call" }>;
 
 export type GpuSliceAnalysis = {
   graph: ModuleGraph;
-  results: Map<string, InferResult>;
-  bindings: Map<string, BindingFacts>;
+  results: ModuleMap<InferResult>;
+  bindings: ModuleMap<BindingFacts>;
   nominalFacts: NominalFacts;
   patternFacts: ResolvedPatternFacts;
   recursionFacts: RecursionFacts;
@@ -88,11 +89,13 @@ export class GpuSliceNormalizationError extends Error {
 
 export function normalizeGpuSliceProgram(analysis: GpuSliceAnalysis): GpuSliceElaborationInput {
   const selections = analysis.fragmentSelections;
-  if (selections.selectors.length === 0) return emptyInput(analysis.graph.entry);
+  if (selections.selectors.length === 0) {
+    return emptyInput(analysis.graph.nodes.get(analysis.graph.entry)!.path);
+  }
   if (selections.selectors.length !== 1 || selections.roots.length !== 1) {
     throw new GpuSliceNormalizationError(
       "gpu.fragment.count",
-      analysis.graph.entry,
+      analysis.graph.nodes.get(analysis.graph.entry)!.path,
       selections.selectors[1]?.call,
       "wmslang v1 accepts exactly one Gpu.fragment selection per program",
     );
@@ -212,11 +215,19 @@ class SliceNormalizer {
     this.root = analysis.fragmentSelections.roots[0];
     this.selector = analysis.fragmentSelections.selectors[0];
     this.path = this.root.path;
-    this.node = required(analysis.graph.nodes, this.path, "selected root module");
-    this.result = required(analysis.results, this.path, "selected root inference result");
-    this.bindings = required(analysis.bindings, this.path, "selected root binding facts");
+    this.node = required(analysis.graph.nodes, this.root.moduleId, "selected root module");
+    this.result = required(
+      analysis.results,
+      this.root.moduleId,
+      "selected root inference result",
+    );
+    this.bindings = required(
+      analysis.bindings,
+      this.root.moduleId,
+      "selected root binding facts",
+    );
     this.#nextSyntheticBindingId = Math.max(-1, ...this.bindings.local) + 1;
-    if (this.selector.path !== this.path) {
+    if (this.selector.moduleId !== this.root.moduleId) {
       throw new GpuSliceNormalizationError(
         "gpu.fragment.cross-module",
         this.selector.path,
@@ -336,9 +347,7 @@ class SliceNormalizer {
     const record = nominal
       ? this.analysis.nominalFacts.records.find((item) => item.typeNameId === nominal.id)
       : undefined;
-    const info = record
-      ? [...this.result.typeEnv.values()].find((item) => item.id === record.inferenceTypeId)
-      : undefined;
+    const info = record ? typeInfoById(this.result.typeEnv, record.inferenceTypeId) : undefined;
     if (bindingId === undefined || environmentType?.tag !== "named" || !record || !info) {
       throw this.error(
         "gpu.type.unsupported",
@@ -346,7 +355,7 @@ class SliceNormalizer {
         "the shader factory argument must infer one nominal record environment type",
       );
     }
-    if (!info.recordFields || record.modulePath !== this.path) {
+    if (!info.recordFields || record.moduleId !== this.node.id) {
       throw this.error(
         "gpu.type.unsupported",
         factory.parameter.pattern,
@@ -1507,7 +1516,7 @@ class SliceNormalizer {
   addAdt(fact: NominalTypeFact): GpuSliceAdtDto {
     const existing = this.#adtsById.get(fact.id);
     if (existing) return existing;
-    if (fact.modulePath !== this.path || fact.declaration.kind !== "TypeDecl") {
+    if (fact.moduleId !== this.node.id || fact.declaration.kind !== "TypeDecl") {
       throw this.adtError(fact.declaration, "v1 ADTs must be declared beside the selected root");
     }
     if (fact.declaration.params.length !== 0 || fact.declaration.alias) {

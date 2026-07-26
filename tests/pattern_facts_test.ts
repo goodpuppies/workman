@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { analyzeVirtual } from "../src/compiler.ts";
 import type { Pattern } from "../src/ast.ts";
+import { moduleId } from "../src/module_id.ts";
 import { prune } from "../src/types.ts";
 
 Deno.test("resolved pattern facts preserve all Workman grammar contexts and semantic IDs", async () => {
@@ -32,8 +33,8 @@ Deno.test("resolved pattern facts preserve all Workman grammar contexts and sema
     ]),
   );
   const facts = analysis.patternFacts;
-  const mainResult = analysis.results.get("/test/main.wm")!;
-  const mainBindings = analysis.bindings.get("/test/main.wm")!;
+  const mainResult = analysis.results.get(moduleId("/test/main.wm"))!;
+  const mainBindings = analysis.bindings.get(moduleId("/test/main.wm"))!;
 
   assertEquals(facts.patterns.map((fact) => fact.id), range(facts.patterns.length));
   assertEquals(facts.params.map((fact) => fact.declaredIndex), [0]);

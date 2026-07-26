@@ -359,6 +359,7 @@ export function generatedJsImports(
           .map((variant) => ({
             name: variant.memberName,
             alias: variant.internalName,
+            sourceName: `${decl.clause.alias}.${variant.memberName}`,
             type: variant.type,
             fallible: variant.fallible,
             node: variant.node,
@@ -428,6 +429,7 @@ export function generatedJsImports(
           ...spec,
           name: variant.memberName,
           alias: variant.internalName,
+          sourceName: spec.sourceName ?? spec.alias ?? spec.name,
           type: variant.type,
           fallible: variant.fallible,
         })),
@@ -437,14 +439,38 @@ export function generatedJsImports(
   });
 }
 
-export function generatedTypeAliases(importedTypeRefs: Map<string, JsTypeRef>): Decl[] {
+export function generatedTypeAliases(
+  importedTypeRefs: Map<string, JsTypeRef>,
+  sourceDeclarations: readonly Decl[] = [],
+): Decl[] {
   return [...importedTypeRefs]
     .filter(([typeName]) => isForeignTypeDeclName(typeName))
-    .map(([typeName, ref]) => ({
-      kind: "ForeignTypeDecl" as const,
-      name: typeName,
-      foreignKey: ref.key,
-    }));
+    .map(([typeName, ref]) => {
+      const source = sourceForeignTypeSpec(sourceDeclarations, typeName);
+      return {
+        kind: "ForeignTypeDecl" as const,
+        name: typeName,
+        foreignKey: ref.key,
+        node: source?.node,
+      };
+    });
+}
+
+function sourceForeignTypeSpec(
+  declarations: readonly Decl[],
+  localName: string,
+): JsImportSpec | undefined {
+  for (const declaration of declarations) {
+    if (
+      declaration.kind !== "JsImportDecl" || !declaration.typeOnly ||
+      declaration.clause.kind !== "Named"
+    ) continue;
+    const spec = declaration.clause.specs.find((candidate) =>
+      (candidate.alias ?? candidate.name) === localName
+    );
+    if (spec) return spec;
+  }
+  return undefined;
 }
 
 export function isForeignTypeDeclName(name: string): boolean {
@@ -457,12 +483,17 @@ function namedJsImportDecl(
   node: Extract<Decl, { kind: "JsImportDecl" }>["clause"]["node"],
   options: { preserveAlias?: boolean } = {},
 ): Extract<Decl, { kind: "JsImportDecl" }> {
+  const preserveAlias = options.preserveAlias && decl.clause.kind === "Named";
   return {
     ...decl,
+    sourceClause: decl.sourceClause ??
+      (!preserveAlias && decl.clause.kind === "Named" && decl.clause.alias
+        ? decl.clause
+        : undefined),
     clause: {
       kind: "Named",
       specs,
-      alias: options.preserveAlias && decl.clause.kind === "Named" ? decl.clause.alias : undefined,
+      alias: preserveAlias ? decl.clause.alias : undefined,
       unsafe: decl.clause.unsafe,
       node,
     },

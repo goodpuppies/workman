@@ -96,15 +96,15 @@ Deno.test("Result and Option combinators infer generically", async () => {
     type: "Task<List<Number>, 'a>",
     vars: 0,
   });
-  assertEquals(result.env.get("Option.map")?.imported, true);
-  assertEquals(result.env.get("Option.map")?.basis ?? false, false);
-  assertEquals(result.env.get("List.map")?.imported, true);
-  assertEquals(result.env.get("List.map")?.basis ?? false, false);
-  assertEquals(result.env.get("Result.map")?.imported, true);
-  assertEquals(result.env.get("Result.map")?.basis ?? false, false);
-  assertEquals(result.env.get("Result.all")?.imported, true);
-  assertEquals(result.env.get("Result.all")?.basis ?? false, false);
-  assertEquals(result.env.get("Traverse.with")?.imported, true);
+  assertEquals(result.structure.strEnv.get("Option")?.valEnv.get("map")?.imported, true);
+  assertEquals(result.structure.strEnv.get("Option")?.valEnv.get("map")?.basis ?? false, false);
+  assertEquals(result.structure.strEnv.get("List")?.valEnv.get("map")?.imported, true);
+  assertEquals(result.structure.strEnv.get("List")?.valEnv.get("map")?.basis ?? false, false);
+  assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("map")?.imported, true);
+  assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("map")?.basis ?? false, false);
+  assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("all")?.imported, true);
+  assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("all")?.basis ?? false, false);
+  assertEquals(result.structure.strEnv.get("Traverse")?.valEnv.get("with")?.imported, true);
 });
 
 Deno.test("Traverse.with sequences through a standard carrier and stops on failure", async () => {
@@ -194,7 +194,7 @@ Deno.test("Monad.lift works over structural fn records", async () => {
   `);
 
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
-  assertEquals(result.env.get("Monad.lift")?.imported, true);
+  assertEquals(result.structure.strEnv.get("Monad")?.valEnv.get("lift")?.imported, true);
 });
 
 Deno.test("Monad.lift composes over Task.fn", async () => {

@@ -31,8 +31,8 @@ Deno.test("executable emission retains main invocation", async () => {
   ]);
   const js = await compileVirtual("/test/main.wm", virtualFs);
 
-  assertStringIncludes(js, "if (typeof main_");
-  assertStringIncludes(js, "await main_");
+  assertStringIncludes(js, 'if (typeof __wm_module_0["main"]');
+  assertStringIncludes(js, 'await __wm_module_0["main"]');
 });
 
 Deno.test("compiled WM library is importable through stable plain-data exports", async () => {

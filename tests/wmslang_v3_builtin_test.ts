@@ -304,7 +304,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "v3 completion is GPU-local, catalog-only, and respects lexical shadowing",
+  name: "completion merges ordinary scope with GPU-local catalog and respects lexical shadowing",
   permissions: { read: true, write: false, env: true, net: false, run: true, ffi: false },
   async fn() {
     const path = "/test/main.wm";
@@ -333,8 +333,13 @@ Deno.test({
       overrides,
     );
 
-    assertEquals(host, []);
-    assertEquals(hidden.some((item) => item.label === "sin"), false);
+    assertEquals(host.some((item) => item.label === "print"), true);
+    assertEquals(host.some((item) => item.label === "sin"), false);
+    assertEquals(host.some((item) => item.label === "smoothstep"), false);
+    assertEquals(
+      hidden.filter((item) => item.label === "sin").map((item) => item.kind),
+      [6],
+    );
     assertEquals(visible.map((item) => item.label), ["smoothstep"]);
     assertStringIncludes(visible[0].detail, "(f32, f32, f32) => f32");
   },

@@ -3,6 +3,7 @@ import type { FrontendDiagnostic } from "../diagnostics.ts";
 import type { Env, Ty, TypeDeclInfo, TypeEnv } from "../types.ts";
 import type { TypeProvenance } from "./provenance.ts";
 import type { TypeFacts } from "./type_facts.ts";
+import type { StrEnv } from "./environment.ts";
 
 export type TypingDialect = {
   domain: "host" | "gpu";
@@ -32,8 +33,8 @@ export const hostTypingDialect: TypingDialect = { domain: "host" };
 
 export type InferContext = {
   env: Env;
-  namespaces: ReadonlySet<string>;
-  namespaceValues: ReadonlyMap<string, string>;
+  strEnv: StrEnv;
+  operators: ReadonlyMap<string, import("../types.ts").Scheme>;
   typeEnv: TypeEnv;
   adts: Map<number, TypeDeclInfo>;
   types: Map<Expr, Ty>;

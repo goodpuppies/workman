@@ -1,5 +1,8 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { analyzeVirtual, elaborateGpuTypesForLanguageService } from "../src/compiler.ts";
+import {
+  analyzeVirtual,
+  elaborateProjectGpuSemantics,
+} from "../src/compiler.ts";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri } from "../src/lsp/validation.ts";
@@ -20,10 +23,20 @@ Deno.test({
       "/test/main.wm",
       new Map([["/test/main.wm", source]]),
     );
-    const elaboration = await elaborateGpuTypesForLanguageService(analysis);
+    const semanticElaboration = await elaborateProjectGpuSemantics(
+      analysis.projectSnapshot,
+    );
+    const semanticSlice = semanticElaboration.modules.values().next().value?.[0];
 
-    assertEquals((elaboration?.occurrences.length ?? 0) > 0, true);
-    assertEquals(elaboration?.shaderTypes.some((type) => type.kind === "vector"), true);
+    assertEquals(semanticElaboration.projectSnapshotId, analysis.projectSnapshot.id);
+    assertEquals(semanticElaboration.generation, analysis.projectSnapshot.generation);
+    assertEquals((semanticSlice?.elaboration.occurrences.length ?? 0) > 0, true);
+    assertEquals(
+      semanticSlice?.elaboration.shaderTypes.some((type) => type.kind === "vector"),
+      true,
+    );
+    assertEquals(Object.isFrozen(semanticSlice?.elaboration), true);
+    assertEquals(Object.isFrozen(semanticSlice?.elaboration.occurrences), true);
 
     const example = new URL(
       "../examples/wmslang_window/src/main.wm",
@@ -140,6 +153,36 @@ let outer = {
   const hover = await hoverAt(pathToFileUri(main), positionOf(source, "x ="), new Map());
 
   assertEquals(hover?.contents.value, "```wm\nx: Number\n```");
+});
+
+Deno.test("lsp hover uses current compiler facts after a failed phrase", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = "let broken = Missing; let good = 1; let use = good;";
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(
+    pathToFileUri(main),
+    positionOf(source, "good;"),
+    new Map(),
+  );
+
+  assertEquals(hover?.contents.value, "```wm\ngood: Number\n```");
+});
+
+Deno.test("lsp hover does not infer a fallback type for a failed phrase", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = "let broken = Missing; let use = broken;";
+  await Deno.writeTextFile(main, source);
+
+  const hover = await hoverAt(
+    pathToFileUri(main),
+    positionOf(source, "broken;"),
+    new Map(),
+  );
+
+  assertEquals(hover, null);
 });
 
 Deno.test("lsp hover presents Workman-elaborated shader occurrence types", async () => {

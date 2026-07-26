@@ -2,6 +2,8 @@ import { assert, assertEquals } from "@std/assert";
 import { analyzeVirtual, compile, compileVirtual, coreVirtual } from "../src/compiler.ts";
 import { basisTypeNameId } from "../src/compiler_semantics.ts";
 import type { CoreModule } from "../src/core/ast.ts";
+import { moduleId } from "../src/module_id.ts";
+import { typeInfoByName } from "../src/types.ts";
 
 Deno.test("program analysis assigns shared type, record, constructor, and basis identities", async () => {
   const analysis = await coreVirtual(
@@ -24,22 +26,35 @@ Deno.test("program analysis assigns shared type, record, constructor, and basis 
   assertEquals(facts.records.map((fact) => [fact.name, fact.id, fact.typeNameId]), [
     ["Point", 0, 1],
   ]);
+  assertEquals(
+    facts.fields.map((fact) => [
+      fact.name,
+      fact.id,
+      fact.recordId,
+      fact.typeNameId,
+      fact.declaredIndex,
+    ]),
+    [
+      ["x", 0, 0, 1, 0],
+      ["y", 1, 0, 1, 1],
+    ],
+  );
   assertEquals(facts.constructors.map((fact) => [fact.name, fact.id, fact.tag]), [
     ["EmptyChoice", 0, 0],
     ["Choice", 1, 1],
   ]);
 
-  const result = analysis.results.get("/test/main.wm")!;
+  const result = analysis.results.get(moduleId("/test/main.wm"))!;
   assertEquals(
     facts.inferenceTypeIds.get(result.typeEnv.get("Option")!.id),
     basisTypeNameId("Option"),
   );
   assertEquals(
-    facts.inferenceTypeIds.get(result.typeEnv.get("Gpu.Color")!.id),
+    facts.inferenceTypeIds.get(typeInfoByName(result.typeEnv, "Gpu.Color")!.id),
     basisTypeNameId("Gpu.Color"),
   );
 
-  const core = analysis.core.modules.get("/test/main.wm")!.module;
+  const core = analysis.core.modules.get(moduleId("/test/main.wm"))!.module;
   const choice = core.decls.find((decl) => decl.kind === "CoreType" && decl.name === "Choice");
   const point = core.decls.find((decl) => decl.kind === "CoreRecord" && decl.name === "Point");
   assert(choice?.kind === "CoreType" && point?.kind === "CoreRecord");
@@ -47,6 +62,13 @@ Deno.test("program analysis assigns shared type, record, constructor, and basis 
   assertEquals(choice.ctors.map((ctor) => ctor.id), facts.constructors.map((ctor) => ctor.id));
   assertEquals(point.typeNameId, facts.types[1].id);
   assertEquals(point.recordId, facts.records[0].id);
+  assertEquals(
+    facts.fieldIds.get(facts.records[0].inferenceTypeId),
+    new Map([
+      ["x", facts.fields[0].id],
+      ["y", facts.fields[1].id],
+    ]),
+  );
 });
 
 Deno.test("qualified same-spelled constructors keep distinct inference-owned identities", async () => {
@@ -84,7 +106,9 @@ Deno.test("qualified same-spelled constructors keep distinct inference-owned ide
     ["PCtor", "B.Box", 1],
   ]);
 
-  const coreIds = constructorIds(analysis.core.modules.get("/test/main.wm")!.module);
+  const coreIds = constructorIds(
+    analysis.core.modules.get(moduleId("/test/main.wm"))!.module,
+  );
   assertEquals(coreIds, [0, 1, 0, 1]);
 
   const output: string[] = [];
@@ -110,7 +134,7 @@ Deno.test("constructor facts follow inference when a local value shadows an impo
       ],
     ]),
   );
-  const main = analysis.results.get("/test/main.wm")!;
+  const main = analysis.results.get(moduleId("/test/main.wm"))!;
   const refs = [...main.facts.expressions.entries()].filter(([expr]) =>
     expr.kind === "Var" && expr.name === "box"
   );
@@ -139,7 +163,7 @@ Deno.test("block-local nominal declarations receive non-exported shared identiti
   assertEquals(localCtor.exported, false);
   assertEquals(localCtor.typeNameId, localType.id);
   assertEquals(
-    constructorIds(analysis.core.modules.get("/test/main.wm")!.module),
+    constructorIds(analysis.core.modules.get(moduleId("/test/main.wm"))!.module),
     [localCtor.id],
   );
 
@@ -162,7 +186,8 @@ function constructorIds(value: CoreModule): number[] {
   const ids: number[] = [];
   visit(value, (record) => {
     if (
-      (record.kind === "CoreVar" || record.kind === "CorePCtor") &&
+      (record.kind === "CoreVar" || record.kind === "CorePCtor" ||
+        record.kind === "CoreRecordAccess") &&
       typeof record.ctorId === "number"
     ) {
       ids.push(record.ctorId);

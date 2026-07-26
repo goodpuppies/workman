@@ -1,8 +1,14 @@
 import type { CoreDecl, CoreExpr, CoreMatchArm, CorePattern } from "./ast.ts";
 import type { TypeExpr } from "../ast.ts";
 import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artifact.ts";
-import type { BindingId } from "./ids.ts";
+import type { BindingId, StructureId } from "./ids.ts";
 import { basisCtorJsName } from "../basis.ts";
+import {
+  basisIntrinsicDescriptor,
+  basisIntrinsicDescriptorBySemanticId,
+  basisOperatorDescriptor,
+} from "../basis_manifest.ts";
+import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
 import { emitJsImportDecl, resetJsImportEmitter, setWorkerSpecifiers } from "./emit_js_import.ts";
 import { emitJsIdentifier as id } from "./emit_name.ts";
@@ -19,17 +25,18 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
   const target = options.target ?? "executable";
-  const standardPaths = new Set(program.standardNamespaces?.map((item) => item.path) ?? []);
+  const standardIds = new Set(program.standardNamespaces?.map((item) => item.id) ?? []);
   const body = [
     ...emitShaderArtifactTable(program),
+    ...emitModuleRuntime(),
+    ...program.order.map((moduleId) =>
+      emitModuleDefinition(program.modules.get(moduleId)!, program, target)
+    ),
     ...program.order
-      .filter((path) => path !== program.entry && standardPaths.has(path))
-      .map((path) => emitNamespace(program.modules.get(path)!, program)),
+      .filter((moduleId) => moduleId !== program.entry && standardIds.has(moduleId))
+      .map((moduleId) => emitModuleRequest(program.modules.get(moduleId)!)),
     ...emitStandardNamespaces(program),
-    ...program.order
-      .filter((path) => path !== program.entry && !standardPaths.has(path))
-      .map((path) => emitNamespace(program.modules.get(path)!, program)),
-    ...(target === "repl" ? emitReplModuleBody(entry, program) : emitModuleBody(entry, program)),
+    emitModuleRequest(entry),
     target === "library"
       ? emitLibraryExports(entry)
       : target === "repl"
@@ -41,17 +48,58 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
     : [...emitRuntimePrelude(), ...body].join("\n");
 }
 
+function emitModuleRuntime(): string[] {
+  return [
+    "const __wm_module_instances = new globalThis.Map();",
+    "const __wm_define_module = (key, dependencies, initialize, publish) => {",
+    '  if (__wm_module_instances.has(key)) throw new globalThis.Error("duplicate Workman module instance");',
+    "  __wm_module_instances.set(key, {",
+    '    state: "uninitialized", dependencies, initialize, publish, value: undefined, error: undefined',
+    "  });",
+    "};",
+    "const __wm_request_module = async (key) => {",
+    "  const instance = __wm_module_instances.get(key);",
+    '  if (!instance) throw new globalThis.Error("unknown Workman module instance");',
+    '  if (instance.state === "completed") return instance.value;',
+    '  if (instance.state === "failed") throw instance.error;',
+    '  if (instance.state === "initializing") {',
+    '    throw new globalThis.Error("cyclic Workman module initialization");',
+    "  }",
+    '  instance.state = "initializing";',
+    "  try {",
+    "    for (const dependency of instance.dependencies) {",
+    "      await __wm_request_module(dependency);",
+    "    }",
+    "    const value = await instance.initialize();",
+    "    instance.value = value;",
+    "    instance.publish(value);",
+    '    instance.state = "completed";',
+    "    return value;",
+    "  } catch (error) {",
+    "    instance.error = error;",
+    '    instance.state = "failed";',
+    "    throw error;",
+    "  }",
+    "};",
+  ];
+}
+
 function emitStandardNamespaces(program: CoreProgram): string[] {
   return (program.standardNamespaces ?? []).map((namespace) => {
-    const fields = namespace.basisName
-      ? `...${id(namespace.basisName)}, ...${id(namespace.emitName)}`
-      : `...${id(namespace.emitName)}`;
-    return `const ${id(namespace.publicName)} = { ${fields} };`;
+    if (!namespace.basisName) {
+      return `const ${id(namespace.publicName)} = ${id(namespace.emitName)};`;
+    }
+    const field = (owner: string, name: string) =>
+      `${JSON.stringify(name)}: ${id(owner)}[${JSON.stringify(name)}]`;
+    const fields = [
+      ...namespace.basisMembers.map((name) => field(namespace.basisName!, name)),
+      ...namespace.sourceMembers.map((name) => field(namespace.emitName, name)),
+    ];
+    return `const ${id(namespace.publicName)} = { ${fields.join(", ")} };`;
   });
 }
 
 function emitShaderArtifactTable(program: CoreProgram): string[] {
-  if (program.shaderArtifacts.size === 0) return [];
   const entries = [...program.shaderArtifacts].map(([artifactId, artifact]) => {
     const descriptor = {
       wgsl: artifact.wgsl,
@@ -308,13 +356,13 @@ function emitReplRuntimeCatch(): string {
 }
 
 function emitReplModuleBody(entry: CoreModuleArtifact, program: CoreProgram): string[] {
-  return [
-    ...emitImportAliases(entry, program),
-    ...entry.module.decls.flatMap((decl, declIndex) => [
+  const emittedAliases = new Set<string>();
+  return entry.module.decls.flatMap((decl, declIndex) =>
+    decl.kind === "CoreImport" ? emitImportAliases(decl, entry, program, emittedAliases) : [
       ...emitDecl(decl),
       ...emitReplPhraseResult(decl, declIndex, entry),
-    ]),
-  ];
+    ]
+  );
 }
 
 function emitReplPhraseResult(
@@ -395,15 +443,20 @@ function resetEmitterState(): void {
 }
 
 function emitMainInvocation(entry: CoreModuleArtifact): string {
-  const main = mainRef(entry);
+  const main = `${id(entry.emitName)}[${JSON.stringify("main")}]`;
   return `if (typeof ${main} === "function") await ${main}();`;
 }
 
 function emitLibraryExports(entry: CoreModuleArtifact): string {
   const publicExports = finalExports(entry.dynamicExports);
   if (publicExports.length === 0) return "export {};";
-  const exports = publicExports.map((item) => `  ${emitExportRef(item)} as ${id(item.name)}`);
-  return `export {\n${exports.join(",\n")}\n};`;
+  const bindings = publicExports.map((item, index) =>
+    `const __wm_library_export_${index} = ${id(entry.emitName)}[${JSON.stringify(item.name)}];`
+  );
+  const exports = publicExports.map((item, index) =>
+    `  __wm_library_export_${index} as ${id(item.name)}`
+  );
+  return `${bindings.join("\n")}\nexport {\n${exports.join(",\n")}\n};`;
 }
 
 function finalExports(exports: CoreDynamicExport[]): CoreDynamicExport[] {
@@ -415,41 +468,101 @@ function finalExports(exports: CoreDynamicExport[]): CoreDynamicExport[] {
   }).reverse();
 }
 
-function emitNamespace(artifact: CoreModuleArtifact, program: CoreProgram): string {
-  const body = emitModuleBody(artifact, program).join("\n");
-  return `const ${id(artifact.emitName)} = await (async () => {\n${body}\nreturn { ${
-    artifact.dynamicExports.map((item) => `${JSON.stringify(item.name)}: ${emitExportRef(item)}`)
+function emitModuleDefinition(
+  artifact: CoreModuleArtifact,
+  program: CoreProgram,
+  target: CoreEmitTarget,
+): string {
+  const body = artifact === program.modules.get(program.entry) &&
+      target === "repl"
+    ? emitReplModuleBody(artifact, program).join("\n")
+    : emitModuleBody(artifact, program).join("\n");
+  const dependencies = artifact.imports.map((edge) =>
+    JSON.stringify(program.modules.get(edge.target)!.emitName)
+  );
+  return `let ${id(artifact.emitName)};
+__wm_define_module(
+  ${JSON.stringify(artifact.emitName)},
+  [${dependencies.join(", ")}],
+  async () => {
+${body}
+return { ${
+    finalExports(artifact.dynamicExports).map((item) =>
+      `${JSON.stringify(item.name)}: ${emitExportRef(item)}`
+    )
       .join(", ")
-  } };\n})();`;
+  } };
+  },
+  (value) => { ${id(artifact.emitName)} = value; },
+);`;
+}
+
+function emitModuleRequest(artifact: CoreModuleArtifact): string {
+  return `await __wm_request_module(${JSON.stringify(artifact.emitName)});`;
 }
 
 function emitModuleBody(artifact: CoreModuleArtifact, program: CoreProgram): string[] {
-  return [
-    ...emitImportAliases(artifact, program),
-    ...artifact.module.decls.flatMap((decl) => emitDecl(decl)),
-  ];
+  const emittedAliases = new Set<string>();
+  return artifact.module.decls.flatMap((decl) =>
+    decl.kind === "CoreImport"
+      ? emitImportAliases(decl, artifact, program, emittedAliases)
+      : emitDecl(decl)
+  );
 }
 
-function emitImportAliases(artifact: CoreModuleArtifact, program: CoreProgram): string[] {
+function emitImportAliases(
+  decl: Extract<CoreDecl, { kind: "CoreImport" }>,
+  artifact: CoreModuleArtifact,
+  program: CoreProgram,
+  emittedAliases: Set<string>,
+): string[] {
   const aliases: string[] = [];
-  for (const edge of artifact.imports) {
-    const imported = program.modules.get(edge.path)!;
-    if (edge.clause.kind === "All") {
-      for (const item of imported.dynamicExports) {
-        aliases.push(`const ${id(item.name)} = ${id(imported.emitName)}.${id(item.name)};`);
-      }
-      continue;
+  const target = decl.target ??
+    artifact.imports.find((edge) => edge.specifierNode === decl.node)?.target;
+  if (!target) throw new Error(`unresolved Core import ${decl.path}`);
+  const imported = program.modules.get(target)!;
+  if (decl.clause.kind === "Namespace") {
+    const alias = valueRefName(decl.clause.alias, decl.structureId);
+    if (!emittedAliases.has(alias)) {
+      emittedAliases.add(alias);
+      aliases.push(`const ${alias} = ${id(imported.emitName)};`);
     }
-    if (edge.clause.kind !== "Named") continue;
-    for (const spec of edge.clause.specs) {
-      if (imported.dynamicExports.some((item) => item.name === spec.name)) {
-        aliases.push(
-          `const ${id(spec.alias ?? spec.name)} = ${id(imported.emitName)}.${id(spec.name)};`,
-        );
-      }
+    return aliases;
+  }
+  if (decl.clause.kind === "All") {
+    for (const item of finalExports(imported.dynamicExports)) {
+      emitImportedValueAlias(aliases, emittedAliases, imported, item, item.name);
+    }
+    return aliases;
+  }
+  for (const spec of decl.clause.specs) {
+    const item = imported.dynamicExports.find((item) => item.name === spec.name);
+    if (item) {
+      emitImportedValueAlias(
+        aliases,
+        emittedAliases,
+        imported,
+        item,
+        spec.alias ?? spec.name,
+      );
     }
   }
   return aliases;
+}
+
+function emitImportedValueAlias(
+  aliases: string[],
+  emittedAliases: Set<string>,
+  imported: CoreModuleArtifact,
+  item: CoreDynamicExport,
+  localName: string,
+): void {
+  const alias = dynamicExportLocalRef(item, localName);
+  if (emittedAliases.has(alias)) return;
+  emittedAliases.add(alias);
+  aliases.push(
+    `const ${alias} = ${id(imported.emitName)}[${JSON.stringify(item.name)}];`,
+  );
 }
 
 function emitDecl(decl: CoreDecl): string[] {
@@ -472,11 +585,12 @@ function emitDecl(decl: CoreDecl): string[] {
     if (decl.alias) return [];
     return decl.ctors.map((ctor) => {
       const ctorId = ctor.id ?? ctor.name;
+      const name = ctorRefName(ctor.name, ctor.id);
       return ctor.payload
-        ? `const ${id(ctor.name)} = (__payload) => ({ ctor: ${JSON.stringify(ctorId)}, name: ${
+        ? `const ${name} = (__payload) => ({ ctor: ${JSON.stringify(ctorId)}, name: ${
           JSON.stringify(ctor.name)
         }, args: [__payload] });`
-        : `const ${id(ctor.name)} = Object.freeze({ ctor: ${JSON.stringify(ctorId)}, name: ${
+        : `const ${name} = Object.freeze({ ctor: ${JSON.stringify(ctorId)}, name: ${
           JSON.stringify(ctor.name)
         }, args: [] });`;
     });
@@ -527,8 +641,9 @@ function emitExpr(expr: CoreExpr): string {
       if (expr.bindingId === undefined && expr.ctorId !== undefined) {
         const basisName = basisCtorJsName(expr.ctorId);
         if (basisName) return basisName;
+        return ctorRefName(expr.name, expr.ctorId);
       }
-      return primitiveName(expr.name) ?? valueRefName(expr.name, expr.bindingId);
+      return primitiveName(expr.name, expr.semanticId) ?? valueRefName(expr.name, expr.bindingId);
     }
     case "CoreTuple":
       return `__wm_tuple(${expr.items.map(emitExpr).join(", ")})`;
@@ -767,40 +882,16 @@ function emitPatternBind(pattern: CorePattern, value: string): string[] {
 }
 
 function emitExportRef(item: CoreDynamicExport): string {
-  return item.bindingId === undefined ? id(item.name) : bindingName(item.name, item.bindingId);
+  return dynamicExportLocalRef(item, item.name);
 }
 
-function mainRef(artifact: CoreModuleArtifact): string {
-  for (const decl of artifact.module.decls) {
-    if (decl.kind !== "CoreLet") continue;
-    for (const binding of decl.bindings) {
-      const found = findPatternBinding(binding.pattern, "main");
-      if (found !== undefined) return bindingName("main", found);
-    }
-  }
-  return "main";
+function dynamicExportLocalRef(item: CoreDynamicExport, localName: string): string {
+  if (item.bindingId !== undefined) return bindingName(localName, item.bindingId);
+  if (item.ctorId !== undefined) return ctorRefName(localName, item.ctorId);
+  return id(localName);
 }
 
-function findPatternBinding(pattern: CorePattern, name: string): BindingId | undefined {
-  switch (pattern.kind) {
-    case "CorePVar":
-      return pattern.name === name ? pattern.bindingId : undefined;
-    case "CorePTuple":
-      return firstDefined(pattern.items.map((item) => findPatternBinding(item, name)));
-    case "CorePRecord":
-      return firstDefined(pattern.fields.map((field) => findPatternBinding(field.pattern, name)));
-    case "CorePCtor":
-      return pattern.payload ? findPatternBinding(pattern.payload, name) : undefined;
-    default:
-      return undefined;
-  }
-}
-
-function firstDefined<T>(items: (T | undefined)[]): T | undefined {
-  return items.find((item): item is T => item !== undefined);
-}
-
-function valueRefName(name: string, bindingId: BindingId | undefined): string {
+function valueRefName(name: string, bindingId: BindingId | StructureId | undefined): string {
   return bindingId === undefined ? id(name) : bindingName(name, bindingId);
 }
 
@@ -810,76 +901,23 @@ function patternBindingName(pattern: Extract<CorePattern, { kind: "CorePVar" }>)
     : bindingName(pattern.name, pattern.bindingId);
 }
 
-function bindingName(name: string, bindingId: BindingId): string {
+function bindingName(name: string, bindingId: BindingId | StructureId): string {
   return `${id(name)}_${bindingId}`;
 }
 
-function primitiveName(name: string): string | undefined {
+function ctorRefName(name: string, ctorId: CoreDynamicExport["ctorId"]): string {
+  return ctorId === undefined ? id(name) : `${id(name)}_ctor_${ctorId}`;
+}
+
+function primitiveName(name: string, semanticId?: CompilerSemanticId): string | undefined {
+  const operator = basisOperatorDescriptor(name);
+  if (operator) return operator.runtimeName;
+  if (semanticId) return basisIntrinsicDescriptorBySemanticId(semanticId)?.runtimeName;
+  const intrinsic = basisIntrinsicDescriptor(name);
+  if (intrinsic?.runtimeName) return intrinsic.runtimeName;
   switch (name) {
-    case "++":
-      return "__wm_op_concat";
-    case "+":
-      return "__wm_op_add";
-    case "-":
-      return "__wm_op_sub";
-    case "*":
-      return "__wm_op_mul";
-    case "/":
-      return "__wm_op_div";
-    case "%":
-      return "__wm_op_mod";
-    case "==":
-      return "__wm_op_eq";
-    case "!=":
-      return "__wm_op_ne";
-    case "<":
-      return "__wm_op_lt";
-    case "<=":
-      return "__wm_op_lte";
-    case ">":
-      return "__wm_op_gt";
-    case ">=":
-      return "__wm_op_gte";
-    case "&&":
-      return "__wm_op_and";
-    case "||":
-      return "__wm_op_or";
     case "!":
       return "__wm_op_not";
-    case "Gpu.wgsl":
-      return "__wm_gpu_wgsl";
-    case "Gpu.vertexEntryPoint":
-      return "__wm_gpu_vertex_entry_point";
-    case "Gpu.fragmentEntryPoint":
-      return "__wm_gpu_fragment_entry_point";
-    case "Gpu.artifactIdentity":
-      return "__wm_gpu_artifact_identity";
-    case "Gpu.uniformBinding":
-      return "__wm_gpu_uniform_binding";
-    case "Gpu.uniformByteLength":
-      return "__wm_gpu_uniform_byte_length";
-    case "Gpu.uniformBytes":
-      return "__wm_gpu_uniform_bytes";
-    case "Gpu.texture2D":
-      return "__wm_gpu_texture_2d";
-    case "Gpu.sampledTexture2D":
-      return "__wm_gpu_sampled_texture_2d";
-    case "Gpu.renderTarget2D":
-      return "__wm_gpu_render_target_2d";
-    case "Gpu.nearestSampler":
-      return "__wm_gpu_nearest_sampler";
-    case "Gpu.linearSampler":
-      return "__wm_gpu_linear_sampler";
-    case "Gpu.destroyTexture2D":
-      return "__wm_gpu_destroy_texture_2d";
-    case "Gpu.bindGroupEntries":
-      return "__wm_gpu_bind_group_entries";
-    case "Gpu.bindingCount":
-      return "__wm_gpu_binding_count";
-    case "Gpu.renderTargetView":
-      return "__wm_gpu_render_target_view";
-    case "Gpu.validateRenderTarget":
-      return "__wm_gpu_validate_render_target";
     default:
       return undefined;
   }

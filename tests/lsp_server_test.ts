@@ -32,9 +32,12 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
       textDocumentSync: { openClose: true, change: 1, save: true },
       hoverProvider: true,
       definitionProvider: true,
+      typeDefinitionProvider: true,
       referencesProvider: true,
+      documentHighlightProvider: true,
+      renameProvider: { prepareProvider: true },
       documentSymbolProvider: true,
-      completionProvider: { triggerCharacters: [] },
+      completionProvider: { triggerCharacters: ["."] },
     },
     serverInfo: { name: "workman-lsp", version: "0.0.1" },
   });
@@ -96,6 +99,123 @@ Deno.test("lsp server returns definitions for Ctrl+Click", async () => {
     uri,
     range: { start: { line: 0, character: 4 }, end: { line: 0, character: 12 } },
   });
+});
+
+Deno.test("lsp server returns type definitions and document highlights", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "record Point = { x: Number }; let point = Point(1); let use = point;";
+  const position = { line: 0, character: source.lastIndexOf("point") + 1 };
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/typeDefinition",
+      params: { textDocument: { uri }, position },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "textDocument/documentHighlight",
+      params: { textDocument: { uri }, position },
+    },
+    { jsonrpc: "2.0", id: 4, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find((message) => message.id === 2)?.result, [{
+    uri,
+    range: {
+      start: { line: 0, character: source.indexOf("Point") },
+      end: { line: 0, character: source.indexOf("Point") + 5 },
+    },
+  }]);
+  const highlights = messages.find((message) => message.id === 3)?.result as unknown[];
+  assertEquals(highlights.length, 2);
+});
+
+Deno.test("lsp server returns ordinary compiler-owned completion items", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let outer = 1; let result = ou";
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/completion",
+      params: {
+        textDocument: { uri },
+        position: { line: 0, character: source.length },
+      },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const items = messages.find((message) => message.id === 2)?.result as {
+    label: string;
+    kind: number;
+  }[];
+  assertEquals(items.map(({ label, kind }) => ({ label, kind })), [{
+    label: "outer",
+    kind: 6,
+  }]);
+});
+
+Deno.test("lsp server prepares and returns standard workspace rename edits", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let value = 1; let result = value;";
+  const position = { line: 0, character: source.lastIndexOf("value") + 1 };
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/prepareRename",
+      params: { textDocument: { uri }, position },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "textDocument/rename",
+      params: { textDocument: { uri }, position, newName: "answer" },
+    },
+    { jsonrpc: "2.0", id: 4, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find((message) => message.id === 2)?.result, {
+    range: {
+      start: { line: 0, character: source.lastIndexOf("value") },
+      end: { line: 0, character: source.lastIndexOf("value") + 5 },
+    },
+    placeholder: "value",
+  });
+  const edit = messages.find((message) => message.id === 3)?.result as {
+    changes: Record<string, unknown[]>;
+  };
+  assertEquals(edit.changes[uri].length, 2);
 });
 
 Deno.test("lsp server publishes closed imported file diagnostics", async () => {
@@ -283,14 +403,15 @@ Deno.test("lsp server revalidates open files after imported file changes", async
   assertEquals(last.diagnostics, []);
 });
 
-Deno.test("lsp server revalidates unopened dependents after dependency edits", async () => {
+Deno.test("lsp server revalidates the active unopened project head after dependency edits", async () => {
   const dir = await Deno.makeTempDir();
   const http = `${dir}/http.wm`;
   const server = `${dir}/server.wm`;
   await Deno.writeTextFile(http, "let dispatch = (req, info) => { req + info };");
   await Deno.writeTextFile(
     server,
-    'from "./http.wm" import * as Http; let handler = Http.dispatch(1, 2);',
+    'from "./http.wm" import * as Http; let handler = Http.dispatch(1, 2); ' +
+      "let main = () => { handler };",
   );
   const httpUri = pathToFileUri(http);
   const serverUri = pathToFileUri(server);

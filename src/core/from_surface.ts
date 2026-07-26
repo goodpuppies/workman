@@ -21,9 +21,16 @@ import { gpuOnlyBindingIds } from "../gpu_host_boundary.ts";
 import { resolveGpuFragmentSelections } from "../gpu_selection.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
 import { type NominalFacts, resolveModuleNominalFacts } from "../nominal_facts.ts";
-import { type BindingId, CompilerIdAllocator, type CtorId, type TypeNameId } from "../ids.ts";
+import {
+  type BindingId,
+  CompilerIdAllocator,
+  type CtorId,
+  type StructureId,
+  type TypeNameId,
+} from "../ids.ts";
 import type { MaterializedGpuArtifacts } from "../gpu_artifact.ts";
-import { prune, type Ty, type TypeEnv } from "../types.ts";
+import { moduleId } from "../module_id.ts";
+import { prune, type Ty, type TypeEnv, typeInfoByName } from "../types.ts";
 import type {
   CoreBinding,
   CoreCtorDecl,
@@ -79,6 +86,7 @@ export function coreFromSurface(
       gpuOnlyBindings: gpuOnlyBindingIds([{ module, bindings: resolvedBindings }]),
       selectedFragmentCalls: analysis
         ? resolveGpuFragmentSelections([{
+          moduleId: moduleId("<source>"),
           path: "<source>",
           module,
           result: analysis,
@@ -129,7 +137,13 @@ function coreDeclFromSurface(
 ): CoreDecl | undefined {
   switch (decl.kind) {
     case "ImportDecl":
-      return { kind: "CoreImport", path: decl.path, node: decl.node };
+      return {
+        kind: "CoreImport",
+        path: decl.path,
+        clause: decl.clause,
+        structureId: context?.bindings?.structureBinders.get(decl),
+        node: decl.node,
+      };
     case "ForeignTypeDecl":
       return {
         kind: "CoreType",
@@ -144,6 +158,12 @@ function coreDeclFromSurface(
         kind: "CoreJsImport",
         clause: decl.clause,
         target: decl.target,
+        bindingIds: decl.clause.kind === "Namespace"
+          ? optionalItem(context?.bindings?.jsImportBinders.get(decl))
+          : decl.clause.specs.flatMap((spec) =>
+            optionalItem(context?.bindings?.jsImportBinders.get(spec))
+          ),
+        structureId: context?.bindings?.jsStructureBinders.get(decl),
         node: decl.node,
       };
     case "LetDecl": {
@@ -190,6 +210,10 @@ function coreDeclFromSurface(
   }
 }
 
+function optionalItem<T>(value: T | undefined): T[] {
+  return value === undefined ? [] : [value];
+}
+
 function coreBindingFromSurface(binding: Binding, context?: CoreLoweringContext): CoreBinding {
   return {
     pattern: corePatternFromSurface(binding.pattern, context),
@@ -230,7 +254,12 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
     case "Var": {
       const namespaceValue = context?.namespaceValues.get(expr);
       if (namespaceValue) {
-        return desugarDottedVar(namespaceValue, expr.node);
+        return desugarDottedVar(
+          namespaceValue,
+          expr.node,
+          context?.bindings?.structureReferences.get(expr),
+          { memberBindingId: context?.bindings?.references.get(expr) },
+        );
       }
       const semanticId = context?.gpuSemanticIds.get(expr);
       if (semanticId) {
@@ -252,16 +281,23 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
           semanticId === GPU_SEMANTIC_IDS.bindingCount ||
           semanticId === GPU_SEMANTIC_IDS.renderTargetView ||
           semanticId === GPU_SEMANTIC_IDS.validateRenderTarget
-        ) return { kind: "CoreVar", name: expr.name, node: expr.node };
+        ) return { kind: "CoreVar", name: expr.name, semanticId, node: expr.node };
         throw new Error(
           `compiler-owned GPU operation ${semanticId} reached host Core lowering before materialization`,
         );
       }
+      const id = context?.bindings?.references.get(expr);
+      const structureId = context?.bindings?.structureReferences.get(expr);
       const ctorId = context?.nominalFacts?.constructorReferences.get(expr);
+      if (structureId !== undefined) {
+        return desugarDottedVar(expr.name, expr.node, structureId, {
+          memberBindingId: id,
+          ctorId,
+        });
+      }
       if (ctorId !== undefined) {
         return { kind: "CoreVar", name: expr.name, ctorId, node: expr.node };
       }
-      const id = context?.bindings?.references.get(expr);
       if (id !== undefined && context?.gpuOnlyBindings.has(id)) {
         throw diagnosticError(
           new Error(gpuOnlyHostReferenceMessage(expr.name)),
@@ -272,7 +308,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       return desugarDottedVar(
         expr.name,
         expr.node,
-        id !== undefined && context?.bindings?.local.has(id) ? id : undefined,
+        id,
       );
     }
     case "Tuple":
@@ -782,14 +818,15 @@ function unaryOperatorFn(
 function isResultCarrier(type: Ty | undefined, typeEnv: TypeEnv): boolean {
   if (!type) return false;
   const resolved = prune(type);
-  const result = typeEnv.get("Result");
+  const result = typeInfoByName(typeEnv, "Result");
   return !!result && resolved.tag === "named" && resolved.id === result.id;
 }
 
 function desugarDottedVar(
   name: string,
   node: Expr["node"],
-  bindingId?: import("../ids.ts").BindingId,
+  bindingId?: BindingId | StructureId,
+  member?: { memberBindingId?: BindingId; ctorId?: CtorId },
 ): CoreExpr {
   const parts = name.split(".");
   if (parts.length === 1) {
@@ -798,7 +835,13 @@ function desugarDottedVar(
   // Desugar r.bottomRight.x into (((r).bottomRight).x)
   let result: CoreExpr = { kind: "CoreVar", name: parts[0], bindingId, node };
   for (let i = 1; i < parts.length; i++) {
-    result = { kind: "CoreRecordAccess", record: result, field: parts[i], node };
+    result = {
+      kind: "CoreRecordAccess",
+      record: result,
+      field: parts[i],
+      ...(i === parts.length - 1 ? member : undefined),
+      node,
+    };
   }
   return result;
 }

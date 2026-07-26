@@ -18,6 +18,10 @@ import {
   type InitialImport,
 } from "./infer.ts";
 import { parse } from "./parser.ts";
+import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
+import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
+import { modifiedStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
+import { standardValueId } from "./compiler_semantics.ts";
 
 type StandardModule = {
   path: string;
@@ -100,22 +104,35 @@ export function loadStandardModules(): Promise<LoadedStandardModule[]> {
 
 export async function standardRuntimeGraph(): Promise<{
   graph: ModuleGraph;
-  results: Map<string, InferResult>;
-  namespaces: { path: string; publicName: string; emitName: string }[];
+  results: ModuleMap<InferResult>;
+  namespaces: {
+    id: ModuleId;
+    path: string;
+    publicName: string;
+    emitName: string;
+    hostMembers: string[];
+    sourceMembers: string[];
+  }[];
 }> {
   const modules = await loadStandardModules();
+  const ids = new Map(modules.map((module) => [module.path, moduleId(module.path)]));
+  const hostStructures = initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv;
   return {
     graph: {
-      entry: modules.at(-1)?.path ?? "std/monad.wm",
-      order: modules.map((module) => module.path),
-      nodes: new Map(modules.map((module) => [module.path, {
+      entry: ids.get(modules.at(-1)?.path ?? "") ?? moduleId("std/monad.wm"),
+      order: modules.map((module) => ids.get(module.path)!),
+      nodes: new Map(modules.map((module) => [ids.get(module.path)!, {
+        id: ids.get(module.path)!,
         path: module.path,
         source: module.source,
         module: module.module,
         imports: module.module.decls.flatMap((decl) =>
           decl.kind === "ImportDecl"
             ? [{
+              referrer: ids.get(module.path)!,
               specifier: decl.path,
+              specifierNode: decl.pathNode ?? decl.node,
+              target: ids.get(standardImportPath(module.path, decl.path))!,
               path: standardImportPath(module.path, decl.path),
               clause: decl.clause,
             }]
@@ -124,11 +141,15 @@ export async function standardRuntimeGraph(): Promise<{
         emitName: `__wm_std_${module.alias}`,
       }])),
     },
-    results: new Map(modules.map((module) => [module.path, module.result])),
+    results: new Map(modules.map((module) => [ids.get(module.path)!, module.result])),
     namespaces: modules.map((module) => ({
+      id: ids.get(module.path)!,
       path: module.path,
       publicName: module.alias,
       emitName: `__wm_std_${module.alias}`,
+      hostMembers: [...(hostStructures.get(module.alias)?.valEnv.keys() ?? [])]
+        .filter((name) => !module.result.exports.has(name)),
+      sourceMembers: [...module.result.exports.keys()],
     })),
   };
 }
@@ -137,11 +158,48 @@ async function loadStandardModulesUncached(): Promise<LoadedStandardModule[]> {
   const loaded: LoadedStandardModule[] = [];
   const results = new Map<string, InferResult>();
   for (const module of standardModules) {
-    const item = await inferStandardModule(module, results);
+    const inferred = await inferStandardModule(module, results);
+    const item = composeInitialStructure(inferred);
     loaded.push(item);
     results.set(item.path, item.result);
   }
   return loaded;
+}
+
+function composeInitialStructure(module: LoadedStandardModule): LoadedStandardModule {
+  const source = withStandardValueIds(module.result.exportedStructure, module.path);
+  const host = initialBasis(BASIS_PROFILES.default)
+    .instantiate()
+    .environment.strEnv.get(module.alias);
+  const environment = host ? modifiedStaticEnv(host, source) : source;
+  return {
+    ...module,
+    result: {
+      ...module.result,
+      exportedStructure: {
+        ...environment,
+        adts: module.result.exportedStructure.adts,
+      },
+    },
+  };
+}
+
+function withStandardValueIds(
+  environment: StaticEnv,
+  modulePath: string,
+  prefix = "",
+): StaticEnv {
+  return staticEnv(
+    new Map([...environment.strEnv].map(([name, nested]) => [
+      name,
+      withStandardValueIds(nested, modulePath, prefix ? `${prefix}.${name}` : name),
+    ])),
+    new Map(environment.tyEnv),
+    new Map([...environment.valEnv].map(([name, scheme]) => {
+      const qualified = prefix ? `${prefix}.${name}` : name;
+      return [name, { ...scheme, valueId: standardValueId(modulePath, qualified) }];
+    })),
+  );
 }
 
 async function inferStandardModule(

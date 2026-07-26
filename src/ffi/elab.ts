@@ -72,7 +72,7 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
   collectReflectedForeignTypeRefs(bindings, importedTypeRefs, localTypes);
   const receiverImports = generatedReceiverJsImports(bindings, selected);
   const baseDecls = [
-    ...generatedTypeAliases(importedTypeRefs),
+    ...generatedTypeAliases(importedTypeRefs, module.decls),
     ...rewrittenDecls.flatMap((decl) =>
       decl.kind === "JsImportDecl" ? generatedJsImports(decl, bindings, selected) : [decl]
     ),

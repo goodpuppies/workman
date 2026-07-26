@@ -3,6 +3,7 @@ import { coreFile, coreSource, coreVirtual } from "../src/compiler.ts";
 import { coreFromSurface } from "../src/core/from_surface.ts";
 import { showCore } from "../src/core/snapshot.ts";
 import { parse } from "../src/parser.ts";
+import { moduleId } from "../src/module_id.ts";
 
 Deno.test("core lowers Workman multi-argument call to one tuple argument", async () => {
   const module = await parse(`
@@ -68,6 +69,19 @@ Deno.test("coreSource rejects imports at the source-string boundary", async () =
   );
 });
 
+Deno.test("[module update R501] Core retains compiler intrinsic identity", async () => {
+  const { module } = await coreSource("let getWgsl = Gpu.wgsl;");
+  const decl = module.decls[0];
+  if (decl?.kind !== "CoreLet") throw new Error("missing Core let");
+  const value = decl.bindings[0]?.value;
+  assertEquals(value, {
+    kind: "CoreVar",
+    name: "Gpu.wgsl",
+    semanticId: "gpu.wgsl",
+    node: value?.node,
+  });
+});
+
 Deno.test("coreFile returns module-ordered Core artifacts", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Option<T> = None | Some<T>; let wrap = (x) => { Some(x) };"],
@@ -77,11 +91,11 @@ Deno.test("coreFile returns module-ordered Core artifacts", async () => {
   const result = await coreVirtual("/test/main.wm", virtualFs);
   const libPath = "/test/lib.wm";
   const mainPath = "/test/main.wm";
-  const libArtifact = result.core.modules.get(libPath);
-  const mainArtifact = result.core.modules.get(mainPath);
+  const libArtifact = result.core.modules.get(moduleId(libPath));
+  const mainArtifact = result.core.modules.get(moduleId(mainPath));
 
-  assertEquals(result.core.entry, mainPath);
-  assertEquals(result.core.order.slice(-2), [libPath, mainPath]);
+  assertEquals(result.core.entry, moduleId(mainPath));
+  assertEquals(result.core.order.slice(-2), [moduleId(libPath), moduleId(mainPath)]);
   assertEquals(libArtifact?.dynamicExports.map((item) => item.name), ["None", "Some", "wrap"]);
   assertEquals(libArtifact?.constructors.map((ctor) => [ctor.name, ctor.id]), [
     ["None", 0],
@@ -96,7 +110,10 @@ Deno.test("coreFile gives same-spelled constructors distinct runtime identities"
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "type A = | Box;"],
     ["/test/b.wm", "type B = | Box;"],
-    ["/test/main.wm", 'from "./a.wm" import * as A; from "./b.wm" import * as B; let a = A.Box; let b = B.Box;'],
+    [
+      "/test/main.wm",
+      'from "./a.wm" import * as A; from "./b.wm" import * as B; let a = A.Box; let b = B.Box;',
+    ],
   ]);
 
   const result = await coreVirtual("/test/main.wm", virtualFs);
@@ -106,11 +123,11 @@ Deno.test("coreFile gives same-spelled constructors distinct runtime identities"
   assertEquals(boxes[0].id === boxes[1].id, false);
   assertEquals(boxes.map((ctor) => ctor.typeName), ["A", "B"]);
   assertStringIncludes(
-    showCore(result.core.modules.get("/test/main.wm")!.module),
+    showCore(result.core.modules.get(moduleId("/test/main.wm"))!.module),
     "let a = A.Box",
   );
   assertStringIncludes(
-    showCore(result.core.modules.get("/test/main.wm")!.module),
+    showCore(result.core.modules.get(moduleId("/test/main.wm"))!.module),
     "let b = B.Box",
   );
 });
@@ -118,11 +135,14 @@ Deno.test("coreFile gives same-spelled constructors distinct runtime identities"
 Deno.test("coreFile resolves named imported constructor references", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Option<T> = None | Some<T>;"],
-    ["/test/main.wm", "from \"./lib.wm\" import { Some, None }; let value = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };"],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import { Some, None }; let value = Some(1); let get = match(value) => { Some(x) => { x }, None => { 0 } };',
+    ],
   ]);
 
   const result = await coreVirtual("/test/main.wm", virtualFs);
-  const mainArtifact = result.core.modules.get("/test/main.wm")!;
+  const mainArtifact = result.core.modules.get(moduleId("/test/main.wm"))!;
   const snapshot = showCore(mainArtifact.module);
 
   assertStringIncludes(snapshot, "let value = app(Some#1, 1)");

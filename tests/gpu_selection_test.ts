@@ -6,6 +6,7 @@ import { showCore } from "../src/core/snapshot.ts";
 import { GPU_SEMANTIC_IDS } from "../src/compiler_semantics.ts";
 import { GpuFragmentSelectionError } from "../src/gpu_selection.ts";
 import type { VisualShaderArtifactV1 } from "../src/gpu_artifact.ts";
+import { moduleId } from "../src/module_id.ts";
 import { baseEnv, baseTypeEnv } from "../src/types.ts";
 import { GPU_SLICE_SCHEMA_VERSION } from "../src/wmslang/v2_dto.ts";
 
@@ -23,16 +24,17 @@ Deno.test("compiler Gpu basis carries closed semantic identity", async () => {
     `,
     ]]),
   );
-  const result = analysis.results.get("/test/main.wm")!;
+  const result = analysis.results.get(moduleId("/test/main.wm"))!;
   const semanticIds = [...result.facts.expressions.values()]
     .map((fact) => fact.origin?.semanticId)
     .filter((id) => id !== undefined);
 
   assertEquals(semanticIds.includes(GPU_SEMANTIC_IDS.color), true);
   assertEquals(semanticIds.includes(GPU_SEMANTIC_IDS.fragment), true);
-  assertEquals(result.typeEnv.has("Gpu.Color"), true);
-  assertEquals(result.typeEnv.has("Gpu.Fragment"), true);
-  assertEquals(result.typeEnv.has("Gpu.Uniform"), true);
+  assertEquals(result.typeEnv.has("Gpu.Color"), false);
+  assertEquals(result.structure.strEnv.get("Gpu")?.tyEnv.has("Color"), true);
+  assertEquals(result.structure.strEnv.get("Gpu")?.tyEnv.has("Fragment"), true);
+  assertEquals(result.structure.strEnv.get("Gpu")?.tyEnv.has("Uniform"), true);
   assertEquals(
     [...baseEnv(baseTypeEnv()).values()]
       .map((scheme) => scheme.semanticId)
@@ -66,7 +68,7 @@ Deno.test("fragment selection resolves same-module aliases into the selected sli
   assertEquals(analysis.fragmentSelections.roots[0].selectors.map((item) => item.id), [0]);
   assertEquals(
     analysis.fragmentSelections.roots[0].bindingId,
-    analysis.bindings.get("/test/main.wm")!.exports.get("shade"),
+    analysis.bindings.get(moduleId("/test/main.wm"))!.exports.get("shade"),
   );
   assertEquals(analysis.gpuInput.schemaVersion, GPU_SLICE_SCHEMA_VERSION);
   assertEquals(analysis.gpuInput.root.functionId, 0);
@@ -122,7 +124,7 @@ Deno.test("same-spelled imported operation is not a compiler fragment selector",
       [
         "/test/main.wm",
         `from "./fake.wm" import * as Gpu;
-         let ordinary = (coord) => { Gpu.color((0.0, 0.0, 0.0, 1.0)) };
+         let ordinary = (coord) => { coord };
          let result = Gpu.fragment(ordinary);`,
       ],
     ]),
@@ -134,7 +136,9 @@ Deno.test("same-spelled imported operation is not a compiler fragment selector",
     selectorSpanId: -1,
     environmentId: -1,
   });
-  const fragmentFacts = [...analysis.results.get("/test/main.wm")!.facts.expressions.values()]
+  const fragmentFacts = [
+    ...analysis.results.get(moduleId("/test/main.wm"))!.facts.expressions.values(),
+  ]
     .filter((fact) => fact.origin?.name === "Gpu.fragment");
   assertEquals(fragmentFacts.map((fact) => [fact.origin?.source, fact.origin?.semanticId]), [
     ["import", undefined],
@@ -220,7 +224,7 @@ Deno.test("host Core consumes only a completed opaque fragment artifact", async 
     ...analysis,
     materializedGpuArtifacts: new Map([[selectedCall, artifact]]),
   });
-  const module = core.modules.get("/test/main.wm")!.module;
+  const module = core.modules.get(moduleId("/test/main.wm"))!.module;
   const emitted = emitCoreProgram(core);
 
   assertEquals(showCore(module), `let fragment = shader-ref(${artifact.id})`);

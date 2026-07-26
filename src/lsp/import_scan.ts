@@ -49,6 +49,51 @@ export function directWorkmanImportSpecifiers(source: string): string[] {
   return [...imports];
 }
 
+/** Discovery-only head candidate scan; semantic entrypoint validation remains compiler-owned. */
+export function hasTopLevelMainBinding(source: string): boolean {
+  let braces = 0;
+  let brackets = 0;
+  let parens = 0;
+  for (let i = 0; i < source.length;) {
+    const triviaEnd = skipTrivia(source, i);
+    if (triviaEnd !== i) {
+      i = triviaEnd;
+      continue;
+    }
+    const char = source[i];
+    if (char === '"' || char === "`") {
+      i = scanString(source, i, char).end;
+      continue;
+    }
+    if (isIdentifierStart(char)) {
+      const identifier = scanIdentifier(source, i);
+      if (
+        identifier.value === "let" && braces === 0 && brackets === 0 && parens === 0
+      ) {
+        let binderStart = skipTrivia(source, identifier.end);
+        if (source.slice(binderStart, binderStart + 3) === "rec") {
+          const afterRec = binderStart + 3;
+          if (!isIdentifierPart(source[afterRec])) binderStart = skipTrivia(source, afterRec);
+        }
+        if (isIdentifierStart(source[binderStart])) {
+          const binder = scanIdentifier(source, binderStart);
+          if (binder.value === "main") return true;
+        }
+      }
+      i = identifier.end;
+      continue;
+    }
+    if (char === "{") braces++;
+    else if (char === "}") braces = Math.max(0, braces - 1);
+    else if (char === "[") brackets++;
+    else if (char === "]") brackets = Math.max(0, brackets - 1);
+    else if (char === "(") parens++;
+    else if (char === ")") parens = Math.max(0, parens - 1);
+    i++;
+  }
+  return false;
+}
+
 function scanImportDeclaration(
   source: string,
   afterFrom: number,

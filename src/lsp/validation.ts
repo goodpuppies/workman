@@ -1,7 +1,7 @@
 import { normalize, resolve } from "node:path";
 import {
   analyzeFile,
-  elaborateGpuTypesForLanguageService,
+  elaborateProjectGpuSemantics,
   ModuleAnalysisError,
 } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
@@ -17,13 +17,13 @@ import {
 } from "../diagnostics.ts";
 import { structuralDiagnostics } from "../frontend_v2_diagnostics.ts";
 import { type FrontendV2, loadFrontendV2 } from "../frontend_v2_loader.ts";
-import type { InferResult } from "../infer.ts";
-import type { ProgramAnalysis } from "../program_analysis.ts";
+import type { ProjectSnapshot } from "../module_interface.ts";
 import { runtime } from "../io.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
 import { WmslangNumericDiagnosticError } from "../wmslang/v2_loader.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
+import { semanticSourceForPath } from "./semantic_context.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type ValidationResult = {
@@ -52,7 +52,7 @@ export type ValidationOptions = {
   frontendV2ParseCache?: FrontendV2ParseCache;
   documentVersion?: (uri: string) => number | undefined;
   gpuTypeElaborator?: (
-    analysis: ProgramAnalysis,
+    project: ProjectSnapshot,
   ) => Promise<unknown>;
 };
 
@@ -68,13 +68,15 @@ export async function validateUri(
     const frontendV2 = options.frontend === "v2"
       ? await loadFrontendV2(options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl)
       : undefined;
+    const project = analysis.projectSnapshot;
     const gpuWarning = await unresolvedGpuTypeWarning(
-      analysis,
-      validationOptions.gpuTypeElaborator ?? elaborateGpuTypesForLanguageService,
+      project,
+      validationOptions.gpuTypeElaborator ?? elaborateProjectGpuSemantics,
+      sourceOverrides,
     );
-    return analysis.graph.order.map((path) => {
-      const diagnosticUri = pathToFileUri(path);
-      const source = analysis.graph.nodes.get(path)?.source ?? "";
+    return await Promise.all([...project.interfaces.values()].map(async (moduleInterface) => {
+      const diagnosticUri = pathToFileUri(moduleInterface.path);
+      const source = await semanticSourceForPath(moduleInterface.path, sourceOverrides) ?? "";
       return {
         uri: diagnosticUri,
         diagnostics: [
@@ -85,14 +87,16 @@ export async function validateUri(
             validationOptions,
           ),
           ...diagnosticsFor(
-            analysis.results.get(path),
+            moduleInterface.diagnostics,
             source,
             diagnosticUri,
           ),
-          ...(gpuWarning?.path === path ? [gpuWarning.diagnostic] : []),
+          ...(gpuWarning && gpuWarning.path === moduleInterface.path
+            ? [gpuWarning.diagnostic]
+            : []),
         ],
       };
-    });
+    }));
   } catch (error) {
     if (error instanceof ModuleAnalysisError) {
       const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
@@ -132,24 +136,35 @@ export async function validateUri(
 }
 
 async function unresolvedGpuTypeWarning(
-  analysis: ProgramAnalysis,
-  elaborate: (analysis: ProgramAnalysis) => Promise<unknown>,
+  project: ProjectSnapshot,
+  elaborate: (project: ProjectSnapshot) => Promise<unknown>,
+  sourceOverrides: Map<string, string>,
 ): Promise<{ path: string; diagnostic: LspDiagnostic } | undefined> {
-  if (analysis.gpuInput.root.functionId === -1) return undefined;
+  const interfaceInput = [...project.interfaces.values()]
+    .flatMap((moduleInterface) => moduleInterface.gpuFacts.slices)
+    .at(0)?.input;
+  if (!interfaceInput || interfaceInput.root.functionId === -1) return undefined;
+  const sources = new Map(
+    await Promise.all([...project.interfaces.values()].map(async (moduleInterface) => [
+      moduleInterface.path,
+      await semanticSourceForPath(moduleInterface.path, sourceOverrides) ?? "",
+    ] as const)),
+  );
+  const headPath = project.interfaces.get(project.head)?.path ?? "<module>";
   try {
-    await elaborate(analysis);
+    await elaborate(project);
     return undefined;
   } catch (error) {
     if (error instanceof WmslangNumericDiagnosticError) {
-      const gpuInput = error.languageServiceInput ?? analysis.gpuInput;
+      const gpuInput = error.languageServiceInput ?? interfaceInput;
       const diagnostic = error.diagnostic;
       const span = gpuInput.spans.find((candidate) => candidate.id === diagnostic.spanId);
-      const path = span?.path ?? analysis.graph.entry;
-      const source = analysis.graph.nodes.get(path)?.source ?? "";
+      const path = span?.path ?? headPath;
+      const source = sources.get(path) ?? "";
       const relatedInformation = diagnostic.related.flatMap((related) => {
         const relatedSpan = gpuInput.spans.find((candidate) => candidate.id === related.spanId);
         if (!relatedSpan) return [];
-        const relatedSource = analysis.graph.nodes.get(relatedSpan.path)?.source ?? "";
+        const relatedSource = sources.get(relatedSpan.path) ?? "";
         return [{
           location: {
             uri: pathToFileUri(relatedSpan.path),
@@ -170,11 +185,11 @@ async function unresolvedGpuTypeWarning(
         },
       };
     }
-    const span = analysis.gpuInput.spans.find((candidate) =>
-      candidate.id === analysis.gpuInput.root.selectorSpanId
+    const span = interfaceInput.spans.find((candidate) =>
+      candidate.id === interfaceInput.root.selectorSpanId
     );
-    const path = span?.path ?? analysis.graph.entry;
-    const source = analysis.graph.nodes.get(path)?.source ?? "";
+    const path = span?.path ?? headPath;
+    const source = sources.get(path) ?? "";
     return {
       path,
       diagnostic: {
@@ -211,8 +226,12 @@ function structuralDiagnosticsFor(
     .map((diagnostic) => lspDiagnostic(diagnostic, source, uri));
 }
 
-function diagnosticsFor(result: InferResult | undefined, source = "", uri = ""): LspDiagnostic[] {
-  return result?.diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, source, uri)) ?? [];
+function diagnosticsFor(
+  diagnostics: readonly FrontendDiagnostic[],
+  source = "",
+  uri = "",
+): LspDiagnostic[] {
+  return diagnostics.map((diagnostic) => lspDiagnostic(diagnostic, source, uri));
 }
 
 function errorDiagnostic(error: unknown, source = "", uri = ""): LspDiagnostic {

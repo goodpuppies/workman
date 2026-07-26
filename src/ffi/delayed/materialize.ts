@@ -174,7 +174,12 @@ export function materializeBindingCall(
   selected.add(variant.internalName);
   return {
     kind: "Call",
-    callee: { kind: "Var", name: variant.internalName },
+    callee: {
+      kind: "Var",
+      name: variant.internalName,
+      sourceName: original.name,
+      node: original.node,
+    },
     args: args.map((arg, index) =>
       resolveDelayedCallArg(
         arg,
@@ -480,7 +485,10 @@ function materializeReflectedType(
   result: InferResult,
 ) {
   try {
-    return typeFromAst(reflected, result.typeEnv, new Map(), { allowFreeVars: false });
+    return typeFromAst(reflected, result.typeEnv, new Map(), {
+      allowFreeVars: false,
+      strEnv: result.structure.strEnv,
+    });
   } catch {
     return undefined;
   }

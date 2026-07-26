@@ -12,10 +12,12 @@ import {
   tuple,
   type Ty,
   type TypeEnv,
+  typeInfoByName,
   VoidTy,
 } from "../types.ts";
 import { assertJsonCompatible, jsonValueTy } from "./json.ts";
 import type { InferContext } from "./context.ts";
+import { lookupLongValue } from "./environment.ts";
 
 import { constrainAt, sourceForTypedExpr } from "./provenance.ts";
 import { inferDottedVar, inferRecordExpr } from "./records.ts";
@@ -65,26 +67,39 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       t = VoidTy;
       break;
     case "Var": {
-      const scheme = env.get(expr.name);
-      if (!scheme) {
-        if (context.namespaces.has(expr.name)) {
-          throw new Error(
-            `namespace ${expr.name} cannot be used as a value; ` +
-              `${expr.name} does not export carrier`,
-          );
+      const qualifier = expr.name.includes(".")
+        ? expr.name.slice(0, expr.name.indexOf("."))
+        : undefined;
+      let scheme = qualifier && context.strEnv.has(qualifier)
+        ? lookupLongValue(context.strEnv, expr.name)
+        : env.get(expr.name);
+      let namespaceCarrier: string | undefined;
+      if (!scheme && !qualifier) {
+        const carrier = context.strEnv.get(expr.name)?.valEnv.get("carrier");
+        if (carrier) {
+          scheme = carrier;
+          namespaceCarrier = `${expr.name}.carrier`;
         }
-        const qualifier = expr.name.includes(".") ? expr.name.slice(0, expr.name.indexOf(".")) : "";
-        if (qualifier && context.namespaces.has(qualifier)) {
+      }
+      if (!scheme) {
+        if (context.strEnv.has(expr.name)) {
+          throw new Error(`unknown name ${expr.name}.carrier`);
+        }
+        if (qualifier && context.strEnv.has(qualifier)) {
           throw new Error(`unknown name ${expr.name}`);
         }
         t = context.dialect.inferUnboundVar?.(expr, context) ??
           context.dialect.inferProjection?.(expr, context) ??
-          inferDottedVar(expr.name, env, typeEnv);
+          inferDottedVar(expr.name, env, typeEnv, context.strEnv, {
+            expression: expr,
+            facts,
+            warnings,
+            diagnostics,
+          });
         break;
       }
       t = instantiate(scheme);
-      const namespaceValue = context.namespaceValues.get(expr.name);
-      if (namespaceValue) facts.namespaceValues.set(expr, namespaceValue);
+      if (namespaceCarrier) facts.namespaceValues.set(expr, namespaceCarrier);
       recordExprFact(facts, expr, {
         subject: scheme.status === "constructor" ? "constructor" : "expr",
         instantiated: t,
@@ -111,6 +126,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
               expected,
               warnings,
               diagnostics,
+              facts,
             );
           }
           return inferExpr(value, context);
@@ -118,6 +134,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         undefined,
         warnings,
         diagnostics,
+        facts,
       );
       break;
     case "JsonObject":
@@ -463,20 +480,20 @@ function ffiBindingCallType(
   effect: "Result" | "Task" | undefined,
 ): Ty {
   if (!effect) return value;
-  const carrier = typeEnv.get(effect);
-  const jsError = typeEnv.get("Js.Error");
+  const carrier = typeInfoByName(typeEnv, effect);
+  const jsError = typeInfoByName(typeEnv, "Js.Error");
   if (!carrier || !jsError) throw new Error("unknown FFI effect basis type");
   return named(carrier, [value, named(jsError)]);
 }
 
 function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {
   const resolved = prune(type);
-  const result = typeEnv.get("Result");
+  const result = typeInfoByName(typeEnv, "Result");
   if (!result || resolved.tag !== "named" || resolved.id !== result.id) return undefined;
   return { value: resolved.args[0], error: resolved.args[1] };
 }
 
 function wrapResult(value: Ty, error: Ty, typeEnv: TypeEnv): Ty {
-  const result = typeEnv.get("Result");
+  const result = typeInfoByName(typeEnv, "Result");
   return result ? named(result, [value, error]) : value;
 }

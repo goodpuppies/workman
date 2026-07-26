@@ -7,6 +7,7 @@ import type {
   RecursiveReferenceId,
 } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
+import type { ModuleId, ModuleMap } from "./module_id.ts";
 
 export type RecursionMemberFact = {
   groupId: RecursionGroupId;
@@ -52,13 +53,13 @@ type RecursionModuleInput = {
 
 export function resolveProgramRecursionFacts(
   graph: ModuleGraph,
-  bindings: Map<string, BindingFacts>,
+  bindings: ModuleMap<BindingFacts>,
   ids: CompilerIdAllocator,
 ): RecursionFacts {
-  const inputs = graph.order.map((path) => ({
-    path,
-    module: graph.nodes.get(path)!.module,
-    bindings: required(bindings, path),
+  const inputs = graph.order.map((id) => ({
+    path: graph.nodes.get(id)!.path,
+    module: graph.nodes.get(id)!.module,
+    bindings: required(bindings, id),
   }));
   const state = new RecursionFactState(ids);
   inputs.forEach((input) => state.discoverModule(input));
@@ -354,8 +355,8 @@ function visitExprDeclarations(expression: Expr, visit: (declaration: Decl) => v
   }
 }
 
-function required<T>(map: Map<string, T>, path: string): T {
-  const value = map.get(path);
-  if (!value) throw new Error(`missing binding facts for ${path}`);
+function required<T>(map: ModuleMap<T>, id: ModuleId): T {
+  const value = map.get(id);
+  if (!value) throw new Error(`missing binding facts for ${id}`);
   return value;
 }

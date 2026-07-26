@@ -7,6 +7,7 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   typeFromAst,
+  typeInfoById,
 } from "../types.ts";
 
 export interface MissingCase {
@@ -173,7 +174,8 @@ function findMissingCases(
   }
 
   if (head.tag === "named") {
-    const record = [...typeEnv.values()].find((info) => info.id === head.id && info.recordFields);
+    const candidate = typeInfoById(typeEnv, head.id);
+    const record = candidate?.recordFields ? candidate : undefined;
     if (record?.recordFields) {
       const fields = instantiateRecordFields(record, head.args);
       const recordRows = rows

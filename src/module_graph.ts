@@ -1,36 +1,59 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { posix } from "node:path";
 import type { ImportClause, Module } from "./ast.ts";
-import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
-import { diagnosticError } from "./diagnostics.ts";
+import {
+  type CompilerFrontendOptions,
+  parseCompilerModule,
+  parseCompilerModuleRecovered,
+} from "./compiler_frontend.ts";
+import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
 import { runtime } from "./io.ts";
+import { type ModuleId, moduleId } from "./module_id.ts";
+import type { AstNode } from "./source.ts";
 
 export type VirtualFileSystem = Map<string, string>;
 
 export type ModuleGraphOptions = CompilerFrontendOptions & {
   sourceOverrides?: Map<string, string>;
   virtualFs?: VirtualFileSystem;
+  syntaxRecovery?: boolean;
 };
 
 export type ModuleImportEdge = {
+  referrer: ModuleId;
   specifier: string;
+  specifierNode?: AstNode;
+  target: ModuleId;
+  /** Compatibility/source-display path; semantic consumers use target. */
   path: string;
   clause: ImportClause;
 };
 
 export type ModuleNode = {
+  id: ModuleId;
+  /** Compatibility/source-display path; semantic consumers use id. */
   path: string;
   source: string;
   module: Module;
   imports: ModuleImportEdge[];
   emitName: string;
+  syntaxStatus?: "complete" | "recovered";
+  syntaxDiagnostics?: readonly FrontendDiagnostic[];
+  syntaxRecoveryBoundaries?: readonly Readonly<{ start: number; end: number }>[];
+  importDiagnostics?: readonly FrontendDiagnostic[];
+  importRecoveryBoundaries?: readonly Readonly<{ start: number; end: number }>[];
 };
 
 export type ModuleGraph = {
-  entry: string;
-  order: string[];
-  nodes: Map<string, ModuleNode>;
+  entry: ModuleId;
+  order: ModuleId[];
+  nodes: Map<ModuleId, ModuleNode>;
 };
+
+/** Compatibility lookup for diagnostics and document APIs that still carry source paths. */
+export function moduleNodeForPath(graph: ModuleGraph, path: string): ModuleNode | undefined {
+  return [...graph.nodes.values()].find((node) => node.path === path);
+}
 
 export class ModuleGraphDiagnosticError extends Error {
   path: string;
@@ -48,11 +71,14 @@ export class ModuleGraphDiagnosticError extends Error {
 
 type LoadContext = {
   options: ModuleGraphOptions;
-  visiting: Set<string>;
-  nodes: Map<string, ModuleNode>;
-  order: string[];
-  names: Map<string, string>;
+  visiting: Set<ModuleId>;
+  stack: ModuleId[];
+  nodes: Map<ModuleId, ModuleNode>;
+  paths: Map<ModuleId, string>;
+  order: ModuleId[];
 };
+
+type ResolvedModule = { id: ModuleId; path: string };
 
 export async function loadModuleGraph(
   input: string,
@@ -62,85 +88,156 @@ export async function loadModuleGraph(
   const ctx: LoadContext = {
     options,
     visiting: new Set(),
+    stack: [],
     nodes: new Map(),
+    paths: new Map([[entry.id, entry.path]]),
     order: [],
-    names: new Map([[entry, fallbackModuleName(entry)]]),
   };
-  await visitModule(entry, ctx);
-  return { entry, order: ctx.order, nodes: ctx.nodes };
+  await visitModule(entry.id, ctx);
+  ctx.order.forEach((id, index) => {
+    ctx.nodes.get(id)!.emitName = `__wm_module_${index}`;
+  });
+  return { entry: entry.id, order: ctx.order, nodes: ctx.nodes };
 }
 
-async function visitModule(path: string, ctx: LoadContext) {
-  if (ctx.nodes.has(path)) return;
-  if (ctx.visiting.has(path)) throw new Error(`import cycle involving ${path}`);
-  ctx.visiting.add(path);
+async function visitModule(id: ModuleId, ctx: LoadContext) {
+  if (ctx.nodes.has(id)) return;
+  if (ctx.visiting.has(id)) throw new Error(importCycleMessage(ctx.stack, id, ctx));
+  ctx.visiting.add(id);
+  ctx.stack.push(id);
 
+  const path = ctx.paths.get(id)!;
   const source = await readModuleSource(path, ctx.options);
-  const module = await parseCompilerModule(source, ctx.options, path);
+  const parsed = ctx.options.syntaxRecovery
+    ? await parseCompilerModuleRecovered(source, ctx.options, path)
+    : {
+      module: await parseCompilerModule(source, ctx.options, path),
+      syntax: "complete" as const,
+      diagnostics: [] as readonly FrontendDiagnostic[],
+      recoveryBoundaries: [] as readonly Readonly<{ start: number; end: number }>[],
+      importRecoveryBoundaries: [] as readonly Readonly<{ start: number; end: number }>[],
+    };
+  const module = parsed.module;
+  const importDiagnostics: FrontendDiagnostic[] = [];
+  const importRecoveryBoundaries: { start: number; end: number }[] = [];
+  const failedImports = new Set<Module["decls"][number]>();
   const imports: ModuleImportEdge[] = [];
   for (const decl of module.decls) {
     if (decl.kind !== "ImportDecl") continue;
     if (isJavaScriptModuleSpecifier(decl.path)) {
+      const error = diagnosticError(
+        new Error(
+          `JavaScript and TypeScript modules use js.module(...); try: from js.module("${decl.path}") import ...`,
+        ),
+        decl.pathNode ?? decl.node,
+        "module.javascript-import-syntax",
+      );
+      if (ctx.options.syntaxRecovery) {
+        importDiagnostics.push(error.diagnostic);
+        addImportRecoveryBoundary(importRecoveryBoundaries, decl);
+        failedImports.add(decl);
+        continue;
+      }
       throw new ModuleGraphDiagnosticError(
         path,
         source,
-        diagnosticError(
-          new Error(
-            `JavaScript and TypeScript modules use js.module(...); try: from js.module("${decl.path}") import ...`,
-          ),
-          decl.pathNode ?? decl.node,
-          "module.javascript-import-syntax",
-        ),
+        error,
       );
     }
-    let child: string;
+    let child: ResolvedModule;
     try {
       child = await resolveImportPath(path, decl.path, ctx.options);
     } catch {
+      const error = diagnosticError(
+        new Error(`cannot resolve import ${decl.path}`),
+        decl.pathNode ?? decl.node,
+        "module.resolve-import",
+      );
+      if (ctx.options.syntaxRecovery) {
+        importDiagnostics.push(error.diagnostic);
+        addImportRecoveryBoundary(importRecoveryBoundaries, decl);
+        failedImports.add(decl);
+        continue;
+      }
       throw new ModuleGraphDiagnosticError(
         path,
         source,
-        diagnosticError(
-          new Error(`cannot resolve import ${decl.path}`),
-          decl.pathNode ?? decl.node,
-          "module.resolve-import",
-        ),
+        error,
       );
     }
-    if (ctx.visiting.has(child)) {
+    ctx.paths.set(child.id, child.path);
+    if (ctx.visiting.has(child.id)) {
+      const error = diagnosticError(
+        new Error(importCycleMessage(ctx.stack, child.id, ctx)),
+        decl.pathNode ?? decl.node,
+        "module.import-cycle",
+      );
+      if (ctx.options.syntaxRecovery) {
+        importDiagnostics.push(error.diagnostic);
+        addImportRecoveryBoundary(importRecoveryBoundaries, decl);
+        failedImports.add(decl);
+        continue;
+      }
       throw new ModuleGraphDiagnosticError(
         path,
         source,
-        diagnosticError(
-          new Error(`import cycle involving ${child}`),
-          decl.pathNode ?? decl.node,
-          "module.import-cycle",
-        ),
+        error,
       );
     }
-    imports.push({ specifier: decl.path, path: child, clause: decl.clause });
-    ctx.names.set(child, ctx.names.get(child) ?? importEmitName(child, decl.clause));
-    await visitModule(child, ctx);
+    imports.push({
+      referrer: id,
+      specifier: decl.path,
+      specifierNode: decl.pathNode ?? decl.node,
+      target: child.id,
+      path: child.path,
+      clause: decl.clause,
+    });
+    await visitModule(child.id, ctx);
   }
 
-  ctx.visiting.delete(path);
-  ctx.nodes.set(path, {
+  ctx.stack.pop();
+  ctx.visiting.delete(id);
+  ctx.nodes.set(id, {
+    id,
     path,
     source,
-    module,
+    module: failedImports.size === 0
+      ? module
+      : { ...module, decls: module.decls.filter((decl) => !failedImports.has(decl)) },
     imports,
-    emitName: ctx.names.get(path) ?? fallbackModuleName(path),
+    emitName: "",
+    syntaxStatus: parsed.syntax,
+    syntaxDiagnostics: parsed.diagnostics,
+    syntaxRecoveryBoundaries: parsed.recoveryBoundaries,
+    importDiagnostics: Object.freeze(importDiagnostics),
+    importRecoveryBoundaries: Object.freeze([
+      ...parsed.importRecoveryBoundaries,
+      ...importRecoveryBoundaries,
+    ]),
   });
-  ctx.order.push(path);
+  ctx.order.push(id);
+}
+
+function addImportRecoveryBoundary(
+  output: { start: number; end: number }[],
+  declaration: Extract<Module["decls"][number], { kind: "ImportDecl" }>,
+): void {
+  if (!declaration.node) return;
+  output.push({
+    start: declaration.node.span.start,
+    end: declaration.node.span.end,
+  });
+}
+
+function importCycleMessage(stack: ModuleId[], repeated: ModuleId, ctx: LoadContext): string {
+  const start = stack.indexOf(repeated);
+  const cycle = [...stack.slice(start < 0 ? 0 : start), repeated];
+  return `import cycle: ${cycle.map((id) => ctx.paths.get(id) ?? "<module>").join(" -> ")}`;
 }
 
 async function readModuleSource(path: string, options: ModuleGraphOptions): Promise<string> {
   return getVirtualSource(path, options) ??
     await runtime.readTextFile(path);
-}
-
-function importEmitName(path: string, clause: ImportClause): string {
-  return clause.kind === "Namespace" ? clause.alias : fallbackModuleName(path);
 }
 
 function normalizeInputPath(input: string): string {
@@ -153,12 +250,13 @@ function normalizeInputPath(input: string): string {
   }
 }
 
-async function resolveEntryPath(input: string, options: ModuleGraphOptions): Promise<string> {
+async function resolveEntryPath(input: string, options: ModuleGraphOptions): Promise<ResolvedModule> {
   const normalized = normalizeInputPath(input);
   const virtualPath = findVirtualPath(input, options);
-  if (virtualPath) return virtualPath;
+  if (virtualPath) return { id: moduleId(virtualPath), path: virtualPath };
   try {
-    return await runtime.realPath(normalized);
+    const path = await runtime.realPath(normalized);
+    return { id: moduleId(path), path };
   } catch (error) {
     throw error;
   }
@@ -179,13 +277,14 @@ async function resolveImportPath(
   fromPath: string,
   specifier: string,
   options: ModuleGraphOptions,
-): Promise<string> {
+): Promise<ResolvedModule> {
   const resolved = resolveImport(fromPath, specifier);
   const normalized = normalizeInputPath(resolved);
   const virtualPath = findVirtualPath(resolved, options);
-  if (virtualPath) return virtualPath;
+  if (virtualPath) return { id: moduleId(virtualPath), path: virtualPath };
   try {
-    return await runtime.realPath(resolved);
+    const path = await runtime.realPath(resolved);
+    return { id: moduleId(path), path };
   } catch {
     throw new Error(`cannot resolve import ${specifier}`);
   }
@@ -197,7 +296,7 @@ export async function resolveModuleImportPath(
   specifier: string,
   options: ModuleGraphOptions = {},
 ): Promise<string> {
-  return await resolveImportPath(fromPath, specifier, options);
+  return (await resolveImportPath(fromPath, specifier, options)).path;
 }
 
 function getVirtualSource(path: string, options: ModuleGraphOptions): string | undefined {
@@ -229,10 +328,4 @@ function pathCandidates(input: string): string[] {
 
 function isPosixVirtualPath(path: string): boolean {
   return path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path);
-}
-
-function fallbackModuleName(path: string): string {
-  const stem = path.split(/[\\/]/).at(-1)?.replace(/\.wm$/, "") || "Module";
-  const name = stem.replace(/[^A-Za-z0-9_]/g, "_");
-  return /^[A-Za-z_]/.test(name) ? name : `Module_${name}`;
 }

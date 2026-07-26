@@ -1,6 +1,8 @@
 import type { AstNode } from "../source.ts";
-import type { JsImportClause, JsTarget, TypeExpr } from "../ast.ts";
-import type { BindingId, CtorId, RecordId, TypeNameId } from "./ids.ts";
+import type { ImportClause, JsImportClause, JsTarget, TypeExpr } from "../ast.ts";
+import type { ModuleId } from "../module_id.ts";
+import type { CompilerSemanticId } from "../compiler_semantics.ts";
+import type { BindingId, CtorId, RecordId, StructureId, TypeNameId } from "./ids.ts";
 import type { VisualShaderArtifactV1 } from "../gpu_artifact.ts";
 
 export type CoreModule = {
@@ -10,11 +12,20 @@ export type CoreModule = {
 };
 
 export type CoreDecl =
-  | { kind: "CoreImport"; path: string; node?: AstNode }
+  | {
+    kind: "CoreImport";
+    path: string;
+    clause: ImportClause;
+    target?: ModuleId;
+    structureId?: StructureId;
+    node?: AstNode;
+  }
   | {
     kind: "CoreJsImport";
     clause: JsImportClause;
     target: JsTarget;
+    bindingIds?: readonly BindingId[];
+    structureId?: StructureId;
     node?: AstNode;
   }
   | {
@@ -78,10 +89,24 @@ export type CoreExpr =
     environment?: CoreExpr;
     node?: AstNode;
   }
-  | { kind: "CoreVar"; name: string; bindingId?: BindingId; ctorId?: CtorId; node?: AstNode }
+  | {
+    kind: "CoreVar";
+    name: string;
+    bindingId?: BindingId | StructureId;
+    ctorId?: CtorId;
+    semanticId?: CompilerSemanticId;
+    node?: AstNode;
+  }
   | { kind: "CoreTuple"; items: CoreExpr[]; node?: AstNode }
   | { kind: "CoreRecord"; fields: CoreRecordExprItem[]; node?: AstNode }
-  | { kind: "CoreRecordAccess"; record: CoreExpr; field: string; node?: AstNode }
+  | {
+    kind: "CoreRecordAccess";
+    record: CoreExpr;
+    field: string;
+    memberBindingId?: BindingId;
+    ctorId?: CtorId;
+    node?: AstNode;
+  }
   | { kind: "CoreJsonObject"; fields: CoreJsonObjectField[]; node?: AstNode }
   | { kind: "CoreJsonArray"; items: CoreExpr[]; node?: AstNode }
   | { kind: "CoreFn"; arms: CoreMatchArm[]; node?: AstNode }

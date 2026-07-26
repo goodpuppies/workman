@@ -1,9 +1,7 @@
-import type { Decl, Pattern } from "../ast.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
-import { loadModuleGraph } from "../module_graph.ts";
-import type { SourceSpan } from "../source.ts";
+import type { SemanticTopLevelDeclaration } from "../module_interface.ts";
 import { type LspRange, spanRange } from "./range.ts";
-import { fileUriToPath } from "./uri.ts";
+import { semanticDocumentContext } from "./semantic_context.ts";
 
 export type LspDocumentSymbol = {
   name: string;
@@ -18,73 +16,36 @@ export async function documentSymbols(
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
 ): Promise<LspDocumentSymbol[]> {
-  try {
-    const graph = await loadModuleGraph(fileUriToPath(uri), { ...options, sourceOverrides });
-    const node = graph.nodes.get(graph.entry);
-    return node ? node.module.decls.flatMap((decl) => symbolForDecl(node.source, decl)) : [];
-  } catch {
-    return [];
-  }
+  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  if (!context) return [];
+  return context.moduleInterface.declarations.map((declaration) =>
+    documentSymbol(context.source, declaration)
+  );
 }
 
-function symbolForDecl(source: string, decl: Decl): LspDocumentSymbol[] {
-  if (!decl.node) return [];
-  const range = spanRange(source, decl.node.span);
-  if (decl.kind === "LetDecl") {
-    return decl.bindings.flatMap((binding) =>
-      binderPatterns(binding.pattern).filter((pattern) => pattern.node).map((pattern) => ({
-        name: pattern.name,
-        kind: binding.value.kind === "Lambda" ? 12 : 13,
-        range,
-        selectionRange: spanRange(source, pattern.node!.span),
-      }))
-    );
-  }
-  if (decl.kind === "TypeDecl" || decl.kind === "RecordDecl" || decl.kind === "ForeignTypeDecl") {
-    const span = nameSpan(source, decl, decl.name) ?? decl.node.span;
-    const children = decl.kind === "TypeDecl"
-      ? decl.ctors.flatMap((ctor) => {
-        const ctorSpan = nameSpan(source, ctor, ctor.name);
-        return ctorSpan
-          ? [{
-            name: ctor.name,
-            kind: 22,
-            range: spanRange(source, ctor.node!.span),
-            selectionRange: spanRange(source, ctorSpan),
-          }]
-          : [];
-      })
-      : undefined;
-    return [{
-      name: decl.name,
-      kind: decl.kind === "RecordDecl" ? 23 : decl.kind === "TypeDecl" ? 10 : 5,
-      range,
-      selectionRange: spanRange(source, span),
-      ...(children?.length ? { children } : {}),
-    }];
-  }
-  return [];
-}
-
-function binderPatterns(pattern: Pattern): Extract<Pattern, { kind: "PVar" }>[] {
-  if (pattern.kind === "PVar") return [pattern];
-  if (pattern.kind === "PTuple") return pattern.items.flatMap(binderPatterns);
-  if (pattern.kind === "PRecord") {
-    return pattern.fields.flatMap((field) => binderPatterns(field.pattern));
-  }
-  return [];
-}
-
-function nameSpan(
+function documentSymbol(
   source: string,
-  value: { node?: { span: SourceSpan } },
-  name: string,
-): SourceSpan | undefined {
-  if (!value.node) return undefined;
-  const relative = source.slice(value.node.span.start, value.node.span.end).indexOf(name);
-  return relative < 0 ? undefined : {
-    ...value.node.span,
-    start: value.node.span.start + relative,
-    end: value.node.span.start + relative + name.length,
+  declaration: SemanticTopLevelDeclaration,
+): LspDocumentSymbol {
+  const children = declaration.constructors?.map((constructor) => ({
+    name: constructor.name,
+    kind: 22,
+    range: spanRange(source, constructor.span),
+    selectionRange: spanRange(source, constructor.selectionSpan),
+  }));
+  return {
+    name: declaration.name,
+    kind: declaration.kind === "function"
+      ? 12
+      : declaration.kind === "value"
+      ? 13
+      : declaration.kind === "datatype"
+      ? 10
+      : declaration.kind === "record"
+      ? 23
+      : 5,
+    range: spanRange(source, declaration.span),
+    selectionRange: spanRange(source, declaration.selectionSpan),
+    ...(children?.length ? { children } : {}),
   };
 }

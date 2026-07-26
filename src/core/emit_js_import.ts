@@ -48,14 +48,17 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
   if (decl.clause.kind === "Namespace") {
     return [
       ...prefix,
-      `const ${id(decl.clause.alias)} = ${jsNamespaceRef(target)};`,
+      `const ${boundName(
+        decl.clause.alias,
+        decl.bindingIds?.[0],
+      )} = ${jsNamespaceRef(target)};`,
     ];
   }
   const alias = decl.clause.alias;
   if (alias) {
     return [
       ...prefix,
-      `const ${id(alias)} = { ${
+      `const ${boundName(alias, decl.structureId)} = { ${
         decl.clause.specs.map((spec) =>
           `${id(spec.alias ?? spec.name)}: ${
             jsImportWrapper(
@@ -69,12 +72,17 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
   }
   return [
     ...prefix,
-    ...decl.clause.specs.map((spec) =>
-      `const ${id(spec.alias ?? spec.name)} = ${
+    ...decl.clause.specs.map((spec, index) =>
+      `const ${boundName(spec.alias ?? spec.name, decl.bindingIds?.[index])} = ${
         jsImportWrapper(jsMemberRef(target, JSON.stringify(spec.name)), spec)
       };`
     ),
   ];
+}
+
+function boundName(name: string, bindingId: number | undefined): string {
+  const emitted = id(name);
+  return bindingId === undefined ? emitted : `${emitted}_${bindingId}`;
 }
 
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {

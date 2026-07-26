@@ -45,10 +45,13 @@ Deno.test("emits standard-library values from Workman modules", async () => {
     let value = Ok(1) :> lifted;
   `);
 
-  assertStringIncludes(js, "const __wm_std_Monad");
-  assertStringIncludes(js, "const __wm_std_Result");
-  assertStringIncludes(js, "const __wm_std_Traverse");
-  assertStringIncludes(js, "const Result = { ...__wm_basis_Result, ...__wm_std_Result };");
+  assertStringIncludes(js, "let __wm_std_Monad");
+  assertStringIncludes(js, "let __wm_std_Result");
+  assertStringIncludes(js, "let __wm_std_Traverse");
+  assertStringIncludes(js, '"textOf": __wm_basis_Result["textOf"]');
+  assertStringIncludes(js, '"map": __wm_std_Result["map"]');
+  assertEquals(js.includes("...__wm_basis_Result"), false);
+  assertEquals(js.includes("...__wm_std_Result"), false);
   assertEquals(js.includes("__wm_legacy_"), false);
 });
 
@@ -287,12 +290,18 @@ Deno.test("rejects duplicate type parameters and constructors", async () => {
   );
 });
 
-Deno.test("rejects duplicate type declarations in the same scope", async () => {
-  await assertRejects(
-    () => checkSource("type Box = Number; type Box = String;"),
-    Error,
-    "duplicate type declaration Box",
-  );
+Deno.test("[module update B312/B313] sequential type declarations shadow by namespace", async () => {
+  const result = await checkSource(`
+    type Box = Number;
+    let first: Box = 1;
+    type Box = String;
+    let second: Box = "two";
+    let original = first + 1;
+  `);
+
+  expectBinding(result.env, "first", { type: "Number", vars: 0 });
+  expectBinding(result.env, "second", { type: "String", vars: 0 });
+  expectBinding(result.env, "original", { type: "Number", vars: 0 });
 });
 
 Deno.test("disambiguates alias and variant single-item type bodies", async () => {

@@ -1,4 +1,5 @@
 import { basisTypes } from "./basis.ts";
+import { BASIS_OPERATORS, BASIS_TYPES } from "./basis_manifest.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "./compiler_semantics.ts";
 import {
   BoolTy,
@@ -15,6 +16,7 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   typeFromAst,
+  typeInfoByName,
   type TypeInfo,
   VoidTy,
 } from "./types.ts";
@@ -27,47 +29,115 @@ function callArg(items: Ty[]): Ty {
 
 export type BasisOptions = { includeAlgebraicBasis?: boolean };
 
+export type PervasiveBinding = Readonly<{
+  source: string;
+  target: string;
+  profiles: readonly ("kernel" | "default")[];
+}>;
+
+export const PERVASIVE_BINDINGS: readonly PervasiveBinding[] = Object.freeze([
+  Object.freeze({
+    source: "print",
+    target: "print",
+    profiles: Object.freeze(["kernel", "default"] as const),
+  }),
+  ...[
+    ["Option.None", "None"],
+    ["Option.Some", "Some"],
+    ["Result.Ok", "Ok"],
+    ["Result.Err", "Err"],
+    ["List.Nil", "Nil"],
+    ["List.Cons", "Cons"],
+  ].map(([source, target]) =>
+    Object.freeze({
+      source,
+      target,
+      profiles: Object.freeze(["default"] as const),
+    })
+  ),
+]);
+
 export function baseEnv(
   typeEnv: TypeEnv = baseTypeEnv(),
   options: BasisOptions = {},
 ): Env {
   const env: Env = new Map();
-  const standard = (vars: number[], type: Ty) => ({ vars, type, standardLibrary: true });
-  const binaryNum = fn([tuple([NumberTy, NumberTy])], NumberTy);
-  for (const op of ["+", "-", "*", "/", "%"]) env.set(op, standard([], binaryNum));
-  env.set("++", standard([], fn([tuple([StringTy, StringTy])], StringTy)));
-  for (const op of ["<", "<=", ">", ">="]) {
-    env.set(op, standard([], fn([tuple([NumberTy, NumberTy])], BoolTy)));
-  }
-  for (const op of ["==", "!="]) {
-    const a = fresh() as Extract<Ty, { tag: "var" }>;
-    env.set(op, standard([a.id], fn([tuple([a, a])], BoolTy)));
-  }
-  env.set("&&", standard([], fn([tuple([BoolTy, BoolTy])], BoolTy)));
-  env.set("||", standard([], fn([tuple([BoolTy, BoolTy])], BoolTy)));
+  const pervasiveSources: Env = new Map();
   const printable = fresh() as Extract<Ty, { tag: "var" }>;
-  env.set("print", standard([printable.id], fn([printable], VoidTy)));
+  pervasiveSources.set("print", {
+    vars: [printable.id],
+    type: fn([printable], VoidTy),
+    standardLibrary: true,
+  });
   if (options.includeAlgebraicBasis !== false) {
-    addBasisConstructors(env, typeEnv);
+    addBasisConstructors(env, pervasiveSources, typeEnv);
     addBasisValues(env, typeEnv);
     addGpuBasisValues(env, typeEnv);
+  }
+  installPervasiveBindings(
+    env,
+    pervasiveSources,
+    options.includeAlgebraicBasis === false ? "kernel" : "default",
+  );
+  return env;
+}
+
+/** Fixed expression operators belong to the language kernel, not the ordinary value namespace. */
+export function basisOperatorEnv(): Env {
+  const env: Env = new Map();
+  const operator = (vars: number[], type: Ty) => ({ vars, type, standardLibrary: true });
+  for (const descriptor of BASIS_OPERATORS) {
+    switch (descriptor.kind) {
+      case "number":
+        env.set(
+          descriptor.spelling,
+          operator([], fn([tuple([NumberTy, NumberTy])], NumberTy)),
+        );
+        break;
+      case "string":
+        env.set(
+          descriptor.spelling,
+          operator([], fn([tuple([StringTy, StringTy])], StringTy)),
+        );
+        break;
+      case "number-order":
+        env.set(
+          descriptor.spelling,
+          operator([], fn([tuple([NumberTy, NumberTy])], BoolTy)),
+        );
+        break;
+      case "equality": {
+        const a = fresh() as Extract<Ty, { tag: "var" }>;
+        env.set(
+          descriptor.spelling,
+          operator([a.id], fn([tuple([a, a])], BoolTy)),
+        );
+        break;
+      }
+      case "boolean":
+        env.set(
+          descriptor.spelling,
+          operator([], fn([tuple([BoolTy, BoolTy])], BoolTy)),
+        );
+        break;
+    }
   }
   return env;
 }
 
 function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
-  const colorInfo = typeEnv.get("Gpu.Color");
-  const fragmentInfo = typeEnv.get("Gpu.Fragment");
-  const uniformInfo = typeEnv.get("Gpu.Uniform");
-  const textureInfo = typeEnv.get("Gpu.Texture2D");
-  const sampledTextureInfo = typeEnv.get("Gpu.SampledTexture2D");
-  const renderTargetInfo = typeEnv.get("Gpu.RenderTarget2D");
-  const samplerInfo = typeEnv.get("Gpu.Sampler");
-  const jsArrayInfo = typeEnv.get("Js.Array");
-  const jsObjectInfo = typeEnv.get("Js.Object");
-  const jsErrorInfo = typeEnv.get("Js.Error");
-  const resultInfo = typeEnv.get("Result");
-  const optionInfo = typeEnv.get("Option");
+  const colorInfo = typeInfoByName(typeEnv, "Gpu.Color");
+  const fragmentInfo = typeInfoByName(typeEnv, "Gpu.Fragment");
+  const uniformInfo = typeInfoByName(typeEnv, "Gpu.Uniform");
+  const textureInfo = typeInfoByName(typeEnv, "Gpu.Texture2D");
+  const sampledTextureInfo = typeInfoByName(typeEnv, "Gpu.SampledTexture2D");
+  const renderTargetInfo = typeInfoByName(typeEnv, "Gpu.RenderTarget2D");
+  const samplerInfo = typeInfoByName(typeEnv, "Gpu.Sampler");
+  const jsArrayInfo = typeInfoByName(typeEnv, "Js.Array");
+  const jsObjectInfo = typeInfoByName(typeEnv, "Js.Object");
+  const jsErrorInfo = typeInfoByName(typeEnv, "Js.Error");
+  const resultInfo = typeInfoByName(typeEnv, "Result");
+  const optionInfo = typeInfoByName(typeEnv, "Option");
   if (
     !colorInfo || !fragmentInfo || !uniformInfo || !textureInfo || !sampledTextureInfo ||
     !renderTargetInfo || !samplerInfo || !jsArrayInfo || !jsObjectInfo || !jsErrorInfo ||
@@ -275,9 +345,9 @@ function addGpuUniformAccessor(
 }
 
 function addTaskValues(env: Env, typeEnv: TypeEnv) {
-  const result = typeEnv.get("Result");
-  const taskInfo = typeEnv.get("Task");
-  const jsArray = typeEnv.get("Js.Array");
+  const result = typeInfoByName(typeEnv, "Result");
+  const taskInfo = typeInfoByName(typeEnv, "Task");
+  const jsArray = typeInfoByName(typeEnv, "Js.Array");
   if (!result || !taskInfo) return;
   const task = (value: Ty, error: Ty) => named(taskInfo, [value, error]);
   const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
@@ -346,32 +416,6 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.all", [a, e], fn([named(jsArray, [task(a, e)])], task(named(jsArray, [a]), e)));
   }
-  const listInfo = typeEnv.get("List");
-  if (listInfo) {
-    {
-      const a = fresh("a") as Extract<Ty, { tag: "var" }>;
-      const e = fresh("e") as Extract<Ty, { tag: "var" }>;
-      basisFn(
-        "Task.collectList",
-        [a, e],
-        fn([named(listInfo, [task(a, e)])], task(named(listInfo, [a]), e)),
-      );
-    }
-    const input = fresh("input") as Extract<Ty, { tag: "var" }>;
-    const output = fresh("output") as Extract<Ty, { tag: "var" }>;
-    const err = fresh("err") as Extract<Ty, { tag: "var" }>;
-    basisFn(
-      "Task.traverse",
-      [input, output, err],
-      fn(
-        [tuple([
-          named(listInfo, [input]),
-          fn([input], task(output, err)),
-        ])],
-        task(named(listInfo, [output]), err),
-      ),
-    );
-  }
 }
 
 let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
@@ -379,76 +423,27 @@ let basisTypeEnvCache: Map<string, TypeInfo> | undefined;
 export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
   if (!basisTypeEnvCache) {
     basisTypeEnvCache = new Map(
-      ["Number", "Bool", "String", "Void", "Js.Value", "Js.Object"].map((name) => [
-        name,
-        { ...freshTypeInfo(name, 0), basis: true },
+      [...BASIS_TYPES].sort((left, right) => {
+        const leftKernel = left.profiles.some((profile) => profile === "kernel");
+        const rightKernel = right.profiles.some((profile) => profile === "kernel");
+        return Number(rightKernel) - Number(leftKernel);
+      }).map((descriptor) => [
+        descriptor.name,
+        {
+          ...freshTypeInfo(descriptor.name, descriptor.arity),
+          basis: true,
+          basisConstructors: descriptor.constructors?.map((ctor) => ctor.name),
+          argLabels: descriptor.argLabels ? [...descriptor.argLabels] : undefined,
+        },
       ]),
     );
-    basisTypeEnvCache.set("Js.Array", {
-      ...freshTypeInfo("Js.Array", 1),
-      basis: true,
-      argLabels: ["element"],
-    });
-    // An array-like / buffer-source obligation. Reflected JS parameters typed as
-    // ArrayBuffer/BufferSource/AllowSharedBufferSource land here instead of opaque Js.Object;
-    // a call site resolves it to the concrete array-like argument type during FFI
-    // materialization (see resolveArrayLikeParams), so it stays safe rather than accepting
-    // anything like a broad Js.Value would.
-    basisTypeEnvCache.set("Js.ArrayLike", {
-      ...freshTypeInfo("Js.ArrayLike", 0),
-      basis: true,
-    });
-    basisTypeEnvCache.set("Js.Dict", {
-      ...freshTypeInfo("Js.Dict", 1),
-      basis: true,
-      argLabels: ["value"],
-    });
-    basisTypeEnvCache.set("Gpu.Color", {
-      ...freshTypeInfo("Gpu.Color", 0),
-      basis: true,
-    });
-    basisTypeEnvCache.set("Gpu.Fragment", {
-      ...freshTypeInfo("Gpu.Fragment", 0),
-      basis: true,
-    });
-    basisTypeEnvCache.set("Gpu.Uniform", {
-      ...freshTypeInfo("Gpu.Uniform", 1),
-      basis: true,
-      argLabels: ["value"],
-    });
-    for (
-      const name of [
-        "Gpu.Texture2D",
-        "Gpu.SampledTexture2D",
-        "Gpu.RenderTarget2D",
-        "Gpu.Sampler",
-      ]
-    ) {
-      basisTypeEnvCache.set(name, {
-        ...freshTypeInfo(name, 0),
-        basis: true,
-      });
-    }
-    for (const type of basisTypes) {
-      basisTypeEnvCache.set(type.name, {
-        ...freshTypeInfo(type.name, type.params.length),
-        basis: true,
-        basisConstructors: type.ctors.map((ctor) => ctor.name),
-        argLabels: type.params.map((param) =>
-          param === "e" || param === "err" ? "error" : param === "a" ? "value" : param
-        ),
-      });
-    }
-    basisTypeEnvCache.set("Task", {
-      ...freshTypeInfo("Task", 2),
-      basis: true,
-      argLabels: ["value", "error"],
-    });
   }
   const result = new Map(basisTypeEnvCache);
-  if (options.includeAlgebraicBasis === false) {
-    for (const type of basisTypes) result.delete(type.name);
-    result.delete("Task");
+  const profile = options.includeAlgebraicBasis === false ? "kernel" : "default";
+  for (const descriptor of BASIS_TYPES) {
+    if (!descriptor.profiles.some((candidate) => candidate === profile)) {
+      result.delete(descriptor.name);
+    }
   }
   return result;
 }
@@ -456,7 +451,7 @@ export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
 export function baseAdts(typeEnv: TypeEnv): Map<number, TypeDeclInfo> {
   const adts = new Map<number, TypeDeclInfo>();
   for (const type of basisTypes) {
-    const info = typeEnv.get(type.name);
+    const info = typeInfoByName(typeEnv, type.name);
     if (!info) continue;
     adts.set(info.id, {
       type: info,
@@ -468,9 +463,9 @@ export function baseAdts(typeEnv: TypeEnv): Map<number, TypeDeclInfo> {
   return adts;
 }
 
-function addBasisConstructors(env: Env, typeEnv: TypeEnv) {
+function addBasisConstructors(env: Env, pervasiveSources: Env, typeEnv: TypeEnv) {
   for (const type of basisTypes) {
-    const info = typeEnv.get(type.name);
+    const info = typeInfoByName(typeEnv, type.name);
     if (!info) continue;
     const vars = new Map(type.params.map((name) => [name, fresh(name)] as const));
     const result = named(info, type.params.map((name) => vars.get(name)!));
@@ -479,18 +474,38 @@ function addBasisConstructors(env: Env, typeEnv: TypeEnv) {
         typeFromAst(arg, typeEnv, vars, { allowFreeVars: false })
       );
       const ctorType = args.length === 0 ? result : fn([callArg(args)], result);
-      env.set(ctor.name, {
+      const scheme = {
         ...generalize(new Map(), ctorType),
-        status: "constructor",
+        status: "constructor" as const,
         basis: true,
-      });
+      };
+      if (ctor.name.includes(".")) {
+        env.set(ctor.name, scheme);
+      } else {
+        const qualified = `${type.name}.${ctor.name}`;
+        env.set(qualified, scheme);
+        pervasiveSources.set(qualified, scheme);
+      }
     }
   }
 }
 
+function installPervasiveBindings(
+  target: Env,
+  sources: ReadonlyMap<string, import("./types.ts").Scheme>,
+  profile: "kernel" | "default",
+): void {
+  for (const binding of PERVASIVE_BINDINGS) {
+    if (!binding.profiles.includes(profile)) continue;
+    const scheme = sources.get(binding.source);
+    if (!scheme) throw new Error(`missing pervasive basis source ${binding.source}`);
+    target.set(binding.target, scheme);
+  }
+}
+
 function addBasisValues(env: Env, typeEnv: TypeEnv) {
-  const result = typeEnv.get("Result");
-  const jsError = typeEnv.get("Js.Error");
+  const result = typeInfoByName(typeEnv, "Result");
+  const jsError = typeInfoByName(typeEnv, "Js.Error");
   if (!result || !jsError) return;
   const input = fresh("input") as Extract<Ty, { tag: "var" }>;
   const output = fresh("output") as Extract<Ty, { tag: "var" }>;
@@ -509,8 +524,8 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   });
   addTaskValues(env, typeEnv);
   addJsArrayValues(env, typeEnv);
-  const option = typeEnv.get("Option");
-  const jsDict = typeEnv.get("Js.Dict");
+  const option = typeInfoByName(typeEnv, "Option");
+  const jsDict = typeInfoByName(typeEnv, "Js.Dict");
   if (option && jsDict) {
     const emptyValue = fresh("value") as Extract<Ty, { tag: "var" }>;
     env.set("Dict.empty", {
@@ -537,8 +552,8 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
 }
 
 function addJsArrayValues(env: Env, typeEnv: TypeEnv) {
-  const jsArray = typeEnv.get("Js.Array");
-  const listInfo = typeEnv.get("List");
+  const jsArray = typeInfoByName(typeEnv, "Js.Array");
+  const listInfo = typeInfoByName(typeEnv, "List");
   if (!jsArray || !listInfo) return;
   const basisFn = (name: string, vars: Extract<Ty, { tag: "var" }>[], type: Ty) => {
     env.set(name, { vars: vars.map((v) => v.id), type, status: "value", basis: true });

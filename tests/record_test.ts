@@ -327,7 +327,7 @@ Deno.test("record literals reject missing and extra fields against the nominal t
   );
 });
 
-Deno.test("record field projection can infer a structural field requirement", async () => {
+Deno.test("ambiguous record projection chooses the first identity and warns for an annotation", async () => {
   const result = await checkSource(`
     record Point = { x: Number };
     record Offset = { x: Number };
@@ -341,6 +341,12 @@ Deno.test("record field projection can infer a structural field requirement", as
   expectBinding(result.env, "getX", { type: "({ x: Number }) => Number", vars: 0 });
   expectBinding(result.env, "px", { type: "Number", vars: 0 });
   expectBinding(result.env, "ox", { type: "Number", vars: 0 });
+  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
+    "record.ambiguous-projection",
+  ]);
+  assertStringIncludes(result.warnings[0], "using first record type Point");
+  assertStringIncludes(result.warnings[0], "Candidates: Point, Offset");
+  assertStringIncludes(result.warnings[0], "annotate the receiver, binding, or parameter");
 });
 
 Deno.test("repeated projections preserve one accumulated structural record requirement", async () => {
@@ -375,7 +381,7 @@ Deno.test("record function fields compose with whitespace curried calls", async 
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
 });
 
-Deno.test("record function fields support generic structural lift", async () => {
+Deno.test("ambiguous function fields select the first identity without collapsing their row", async () => {
   const result = await checkSource(`
     record TaskLike = { fn: (() => Number) => Number };
     let lift = (x) => {
@@ -389,4 +395,8 @@ Deno.test("record function fields support generic structural lift", async () => 
 
   expectBinding(result.env, "lift", { type: "({ fn: ('a) => 'b }) => ('a) => 'b", vars: 2 });
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
+  assertEquals(
+    result.diagnostics.some((diagnostic) => diagnostic.code === "record.ambiguous-projection"),
+    true,
+  );
 });

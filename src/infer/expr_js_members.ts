@@ -7,6 +7,7 @@ import {
   prune,
   StringTy,
   tuple,
+  typeInfoByName,
   type Ty,
   type TypeEnv,
 } from "../types.ts";
@@ -41,7 +42,7 @@ export function ffiCallbackParamHints(
 }
 
 function jsValueTy(typeEnv: TypeEnv): Ty {
-  const info = typeEnv.get("Js.Value");
+  const info = typeInfoByName(typeEnv, "Js.Value");
   if (!info) throw new Error("unknown type Js.Value");
   return named(info);
 }
@@ -132,7 +133,9 @@ function inferArrayElementFromMember(
 
 function jsArrayElement(typeEnv: TypeEnv, receiver: Ty): Ty | undefined {
   const target = prune(receiver);
-  if (target.tag !== "named" || target.id !== typeEnv.get("Js.Array")?.id) return undefined;
+  if (target.tag !== "named" || target.id !== typeInfoByName(typeEnv, "Js.Array")?.id) {
+    return undefined;
+  }
   return target.args[0];
 }
 
@@ -234,13 +237,13 @@ function inferPrimitiveReceiverFromMember(receiver: Ty, member: string): string 
 }
 
 function jsArrayTy(typeEnv: TypeEnv, element: Ty): Ty {
-  const info = typeEnv.get("Js.Array");
+  const info = typeInfoByName(typeEnv, "Js.Array");
   if (!info) throw new Error("unknown type Js.Array");
   return named(info, [element]);
 }
 
 function optionTy(typeEnv: TypeEnv, element: Ty): Ty {
-  const info = typeEnv.get("Option");
+  const info = typeInfoByName(typeEnv, "Option");
   if (!info) throw new Error("unknown type Option");
   return named(info, [element]);
 }
@@ -287,12 +290,14 @@ function constrainMember(left: Ty, right: Ty, subject: string, role: string) {
 
 function jsPromiseElement(typeEnv: TypeEnv, receiver: Ty): Ty | undefined {
   const target = prune(receiver);
-  if (target.tag !== "named" || target.id !== typeEnv.get("Js.Promise")?.id) return undefined;
+  if (target.tag !== "named" || target.id !== typeInfoByName(typeEnv, "Js.Promise")?.id) {
+    return undefined;
+  }
   return target.args[0];
 }
 
 function jsPromiseTy(typeEnv: TypeEnv, element: Ty): Ty {
-  const info = typeEnv.get("Js.Promise");
+  const info = typeInfoByName(typeEnv, "Js.Promise");
   if (!info) throw new Error("unknown type Js.Promise");
   return named(info, [element]);
 }
@@ -316,14 +321,14 @@ function jsPromiseCallbackActual(typeEnv: TypeEnv, expected: Ty, actual: Ty): Ty
 
 function isJsValueTy(typeEnv: TypeEnv, type: Ty): boolean {
   const target = prune(type);
-  return target.tag === "named" && target.id === typeEnv.get("Js.Value")?.id;
+  return target.tag === "named" && target.id === typeInfoByName(typeEnv, "Js.Value")?.id;
 }
 
 function isJsObjectLikeTy(typeEnv: TypeEnv, type: Ty): boolean {
   const target = prune(type);
   if (target.tag !== "named") return false;
-  return target.id === typeEnv.get("Js.Object")?.id ||
-    target.id === typeEnv.get("Js.Array")?.id ||
-    target.id === typeEnv.get("Js.Promise")?.id ||
-    Boolean(target.foreign || typeEnv.get(target.name)?.foreign);
+  return target.id === typeInfoByName(typeEnv, "Js.Object")?.id ||
+    target.id === typeInfoByName(typeEnv, "Js.Array")?.id ||
+    target.id === typeInfoByName(typeEnv, "Js.Promise")?.id ||
+    Boolean(target.foreign || typeInfoByName(typeEnv, target.name)?.foreign);
 }

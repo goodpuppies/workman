@@ -1,6 +1,7 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { checkFile, checkVirtual, compileVirtual } from "../src/compiler.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
+import { moduleId } from "../src/module_id.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("imported type constructors and constructors remain available through namespace", async () => {
@@ -48,48 +49,40 @@ Deno.test("star import without alias opens module members", async () => {
   await checkVirtual("/test/main.wm", virtualFs);
 });
 
-Deno.test("star import without alias rejects collisions", async () => {
+Deno.test("later star import shadows earlier values in its namespace", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "let value = 1;"],
-    ["/test/b.wm", "let value = 2;"],
+    ["/test/b.wm", 'let value = "later";'],
     ["/test/main.wm", 'from "./a.wm" import *; from "./b.wm" import *; let x = value;'],
   ]);
 
-  await assertRejects(
-    () => checkVirtual("/test/main.wm", virtualFs),
-    Error,
-    "duplicate value import value",
-  );
+  const main = (await checkVirtual("/test/main.wm", virtualFs)).get("/test/main.wm")!;
+  expectBinding(main.env, "x", { type: "String", vars: 0 });
 });
 
-Deno.test("type imports reject collisions with existing local type declarations", async () => {
+Deno.test("later type imports shadow existing local type declarations", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Box<T> = T;"],
-    ["/test/main.wm", 'type Box = | LocalBox; from "./lib.wm" import { Box }; let x = 1;'],
+    [
+      "/test/main.wm",
+      'type Box = | LocalBox; from "./lib.wm" import { Box }; let x: Box<Number> = 1;',
+    ],
   ]);
 
-  await assertRejects(
-    () => checkVirtual("/test/main.wm", virtualFs),
-    Error,
-    "duplicate type import Box",
-  );
+  await checkVirtual("/test/main.wm", virtualFs);
 });
 
-Deno.test("value imports reject collisions with imported constructors", async () => {
+Deno.test("later constructor imports shadow earlier constructor values", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "type A = | Ctor;"],
     ["/test/b.wm", "type B = | Ctor;"],
     [
       "/test/main.wm",
-      'from "./a.wm" import { Ctor }; from "./b.wm" import { Ctor }; let x = Ctor;',
+      'from "./a.wm" import { Ctor }; from "./b.wm" import { B, Ctor }; let x: B = Ctor;',
     ],
   ]);
 
-  await assertRejects(
-    () => checkVirtual("/test/main.wm", virtualFs),
-    Error,
-    "duplicate value import Ctor",
-  );
+  await checkVirtual("/test/main.wm", virtualFs);
 });
 
 Deno.test("module graph exposes ordered nodes and import edges", async () => {
@@ -99,14 +92,35 @@ Deno.test("module graph exposes ordered nodes and import edges", async () => {
   ]);
 
   const graph = await loadModuleGraph("/test/main.wm", { virtualFs });
-  const basePath = "/test/base.wm";
-  const mainPath = "/test/main.wm";
+  const basePath = moduleId("/test/base.wm");
+  const mainPath = moduleId("/test/main.wm");
 
   assertEquals(graph.entry, mainPath);
   assertEquals(graph.order, [basePath, mainPath]);
-  assertEquals(graph.nodes.get(basePath)?.emitName, "Base");
+  assertEquals(graph.nodes.get(basePath)?.id, basePath);
+  assertEquals(graph.nodes.get(basePath)?.emitName, "__wm_module_0");
   assertEquals(graph.nodes.get(basePath)?.source, "let value = 1;");
-  assertEquals(graph.nodes.get(mainPath)?.imports.map((edge) => edge.path), [basePath]);
+  assertEquals(graph.nodes.get(mainPath)?.imports.map((edge) => edge.referrer), [mainPath]);
+  assertEquals(graph.nodes.get(mainPath)?.imports.map((edge) => edge.target), [basePath]);
+  assertEquals(graph.nodes.get(mainPath)?.imports.map((edge) => edge.path), ["/test/base.wm"]);
+  assertEquals(graph.nodes.get(mainPath)?.imports[0].specifierNode !== undefined, true);
+  assertEquals(typeof graph.entry, "object");
+  assertEquals(Object.keys(graph.entry), []);
+  assertThrows(() => String(graph.entry), TypeError);
+});
+
+Deno.test("import cycles report the complete ordered cycle", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/a.wm", 'from "./b.wm" import *;'],
+    ["/test/b.wm", 'from "./c.wm" import *;'],
+    ["/test/c.wm", 'from "./a.wm" import *;'],
+  ]);
+
+  await assertRejects(
+    () => loadModuleGraph("/test/a.wm", { virtualFs }),
+    Error,
+    "import cycle: /test/a.wm -> /test/b.wm -> /test/c.wm -> /test/a.wm",
+  );
 });
 
 Deno.test("Workman namespace in value position resolves its explicit carrier export", async () => {
@@ -180,7 +194,7 @@ Deno.test("missing qualified members do not fall back through a namespace carrie
   );
 });
 
-Deno.test("Workman namespace without carrier rejects bare value use", async () => {
+Deno.test("[module update T121] bare namespace fallback reports a missing qualified carrier", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "let value = 1;"],
     ["/test/main.wm", 'from "./lib.wm" import * as Lib; let selected = Lib;'],
@@ -189,21 +203,17 @@ Deno.test("Workman namespace without carrier rejects bare value use", async () =
   await assertRejects(
     () => checkVirtual("/test/main.wm", virtualFs),
     Error,
-    "namespace Lib cannot be used as a value; Lib does not export carrier",
+    "unknown name Lib.carrier",
   );
 });
 
-Deno.test("local value cannot collide with a Workman namespace alias", async () => {
+Deno.test("local value and Workman namespace alias occupy separate namespaces", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "let value = 1;"],
-    ["/test/main.wm", 'from "./lib.wm" import * as lib; let lib = 2;'],
+    ["/test/main.wm", 'from "./lib.wm" import * as lib; let lib = 2; let x = lib + lib.value;'],
   ]);
 
-  await assertRejects(
-    () => checkVirtual("/test/main.wm", virtualFs),
-    Error,
-    "value lib conflicts with a module namespace",
-  );
+  await checkVirtual("/test/main.wm", virtualFs);
 });
 
 Deno.test("file elaboration exports declarations by default", async () => {
@@ -216,10 +226,10 @@ Deno.test("file elaboration exports declarations by default", async () => {
   const lib = results.get("/test/lib.wm");
   if (!lib) throw new Error("missing lib result");
 
-  assertEquals(lib.structure.values.has("hidden"), true);
-  assertEquals(lib.exportedStructure.values.has("hidden"), true);
-  assertEquals(lib.exportedStructure.values.has("shown"), true);
-  assertEquals(lib.exportedStructure.types.has("Box"), true);
+  assertEquals(lib.structure.valEnv.has("hidden"), true);
+  assertEquals(lib.exportedStructure.valEnv.has("hidden"), true);
+  assertEquals(lib.exportedStructure.valEnv.has("shown"), true);
+  assertEquals(lib.exportedStructure.tyEnv.has("Box"), true);
   assertEquals(lib.exportedStructure.adts.size, 1);
 });
 
@@ -235,11 +245,11 @@ Deno.test("default-exported values and aliases may mention local types", async (
   const lib = results.get("/test/lib.wm");
   if (!lib) throw new Error("missing lib result");
 
-  assertEquals(lib.exportedStructure.values.has("Hidden"), true);
-  assertEquals(lib.exportedStructure.values.has("leak"), true);
-  assertEquals(lib.exportedStructure.types.has("Hidden"), true);
-  assertEquals(lib.exportedStructure.types.has("Alias"), true);
-  assertEquals(lib.exportedStructure.types.has("Public"), true);
+  assertEquals(lib.exportedStructure.valEnv.has("Hidden"), true);
+  assertEquals(lib.exportedStructure.valEnv.has("leak"), true);
+  assertEquals(lib.exportedStructure.tyEnv.has("Hidden"), true);
+  assertEquals(lib.exportedStructure.tyEnv.has("Alias"), true);
+  assertEquals(lib.exportedStructure.tyEnv.has("Public"), true);
 });
 
 Deno.test("named imports keep aliases transparent inside datatype constructor payloads", async () => {

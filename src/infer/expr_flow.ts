@@ -1,15 +1,18 @@
 import type { Expr, Param } from "../ast.ts";
 import { diagnosticError, warningDiagnostic } from "../diagnostics.ts";
 import {
+  cloneTypeEnv,
   type Env,
   fn,
   fresh,
   instantiate,
+  knownTypeIds,
   named,
   prune,
   quoteType,
   type Scheme,
   tuple,
+  typeInfoByName,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
@@ -43,7 +46,7 @@ export function inferMatch(
   expr: Extract<Expr, { kind: "Match" }>,
   context: InferContext,
 ): Ty {
-  const { env, typeEnv, adts, facts, warnings, diagnostics, provenance } = context;
+  const { env, typeEnv, strEnv, adts, facts, warnings, diagnostics, provenance } = context;
   const valueType = inferExpr(expr.value, context);
   recordConsumedFfiUse(facts, valueType, {
     kind: "match",
@@ -53,7 +56,7 @@ export function inferMatch(
   const result = fresh();
   for (const arm of expr.arms) {
     const local = new Map(env);
-    inferPattern(arm.pattern, valueType, local, typeEnv, adts, new Set(), facts);
+    inferPattern(arm.pattern, valueType, local, typeEnv, strEnv, adts, new Set(), facts);
     const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
     constrainAt(
       result,
@@ -94,8 +97,8 @@ export function inferBlock(
 ): Ty {
   const { env, typeEnv } = context;
   const local = new Map(env);
-  const localTypes = new Map(typeEnv);
-  const outerTypeIds = new Set([...typeEnv.values()].map((info) => info.id));
+  const localTypes = cloneTypeEnv(typeEnv);
+  const outerTypeIds = knownTypeIds(typeEnv);
   expr.items.forEach((s) =>
     isDecl(s)
       ? inferDecl(
@@ -103,7 +106,7 @@ export function inferBlock(
         deriveInferContext(context, { env: local, typeEnv: localTypes }),
         new Map(),
         new Map(),
-        new Set([...localTypes.values()].map((info) => info.id)),
+        knownTypeIds(localTypes),
       )
       : inferExpr(s, deriveInferContext(context, { env: local, typeEnv: localTypes }))
   );
@@ -119,9 +122,9 @@ export function inferBinary(
   expr: Extract<Expr, { kind: "Binary" }>,
   context: InferContext,
 ): Ty {
-  const { env, typeEnv, adts, facts, provenance } = context;
+  const { typeEnv, adts, facts, provenance } = context;
   const result = fresh();
-  const op: Scheme | undefined = env.get(expr.op);
+  const op: Scheme | undefined = context.operators.get(expr.op);
   if (!op) throw new Error(`unknown operator ${expr.op}`);
   const left = inferExpr(expr.left, context);
   const right = inferExpr(expr.right, context);
@@ -247,7 +250,7 @@ function wrapBinaryCarrierResult(
     );
   }
   const carrier = leftCarrier ?? rightCarrier;
-  const resultInfo = typeEnv.get("Result");
+  const resultInfo = typeInfoByName(typeEnv, "Result");
   if (!carrier || !resultInfo) return result;
   recordPrimitiveCarrierFact(facts, {
     carrier: "Result",
@@ -307,7 +310,7 @@ function resultValueType(type: Ty, typeEnv: TypeEnv): Ty | undefined {
 
 function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {
   const resolved = prune(type);
-  const result = typeEnv.get("Result");
+  const result = typeInfoByName(typeEnv, "Result");
   if (!result || resolved.tag !== "named" || resolved.id !== result.id) return undefined;
   return { value: resolved.args[0], error: resolved.args[1] };
 }
@@ -327,12 +330,13 @@ export function inferParam(
   param: Param,
   env: Env,
   typeEnv: TypeEnv,
+  strEnv: import("./environment.ts").StrEnv,
   adts: Map<number, TypeDeclInfo>,
   binders: Set<string>,
   facts: TypeFacts,
 ): Ty {
   const expected = fresh();
-  return inferPattern(param.pattern, expected, env, typeEnv, adts, binders, facts);
+  return inferPattern(param.pattern, expected, env, typeEnv, strEnv, adts, binders, facts);
 }
 
 export function inferPipe(

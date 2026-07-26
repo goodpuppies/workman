@@ -1,7 +1,9 @@
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
 import type { CompilerSemanticId } from "./compiler_semantics.ts";
+import type { ValueId } from "./ids.ts";
 import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
+import { resolveLongType, type StaticEnv, type StrEnv } from "./infer/environment.ts";
 
 export type Ty =
   | {
@@ -54,6 +56,7 @@ export type Scheme = {
   imported?: boolean;
   standardLibrary?: boolean;
   semanticId?: CompilerSemanticId;
+  valueId?: ValueId;
   constructorDecl?: CtorDecl;
   node?: AstNode;
   preserveStructuralRows?: boolean;
@@ -93,6 +96,49 @@ export type TypeVarScope = Map<string, Ty>;
 let nextVar = 0;
 let nextFfi = 0;
 let nextType = 0;
+const typeRegistries = new WeakMap<TypeEnv, Map<number, TypeInfo>>();
+
+export function registerTypeInfo(typeEnv: TypeEnv, info: TypeInfo): void {
+  let registry = typeRegistries.get(typeEnv);
+  if (!registry) {
+    registry = new Map([...typeEnv.values()].map((existing) => [existing.id, existing]));
+    typeRegistries.set(typeEnv, registry);
+  }
+  registry.set(info.id, info);
+}
+
+export function typeInfoById(typeEnv: TypeEnv, id: number): TypeInfo | undefined {
+  return typeRegistries.get(typeEnv)?.get(id) ??
+    [...typeEnv.values()].find((info) => info.id === id);
+}
+
+/** Resolve compiler metadata by its canonical name without implying source-level visibility. */
+export function typeInfoByName(typeEnv: TypeEnv, name: string): TypeInfo | undefined {
+  return typeEnv.get(name) ??
+    [...(typeRegistries.get(typeEnv)?.values() ?? [])].find((info) => info.name === name);
+}
+
+export function knownTypeIds(typeEnv: TypeEnv): Set<number> {
+  return new Set([
+    ...[...typeEnv.values()].map((info) => info.id),
+    ...(typeRegistries.get(typeEnv)?.keys() ?? []),
+  ]);
+}
+
+/** Every type known in this environment, including structurally qualified types. */
+export function knownTypeInfos(typeEnv: TypeEnv): TypeInfo[] {
+  const infos = new Map<number, TypeInfo>();
+  for (const info of typeEnv.values()) infos.set(info.id, info);
+  for (const info of typeRegistries.get(typeEnv)?.values() ?? []) infos.set(info.id, info);
+  return [...infos.values()];
+}
+
+export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
+  const cloned = new Map(typeEnv);
+  const registry = typeRegistries.get(typeEnv);
+  if (registry) typeRegistries.set(cloned, new Map(registry));
+  return cloned;
+}
 
 export const prim = (name: string): Ty => ({ tag: "prim", name });
 export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
@@ -598,9 +644,23 @@ export function typeFromAst(
   expr: TypeExpr,
   typeEnv: TypeEnv,
   vars: TypeVarScope = new Map(),
-  options: { allowFreeVars?: boolean } = {},
+  options: {
+    allowFreeVars?: boolean;
+    strEnv?: StrEnv;
+    onResolveName?: (
+      expression: Extract<TypeExpr, { kind: "TName" }>,
+      info: TypeInfo,
+      qualifier?: Readonly<{ name: string; environment: StaticEnv }>,
+    ) => void;
+    onResolveVariable?: (expression: TypeExpr, type: Ty) => void;
+    onResolveType?: (expression: TypeExpr, type: Ty) => void;
+  } = {},
 ): Ty {
   const allowFreeVars = options.allowFreeVars ?? true;
+  const resolved = (type: Ty): Ty => {
+    options.onResolveType?.(expr, type);
+    return type;
+  };
   const instantiateAlias = (template: Ty, params: number[], args: Ty[]): Ty => {
     const subst = new Map<number, Ty>();
     params.forEach((id, i) => subst.set(id, args[i]));
@@ -609,35 +669,56 @@ export function typeFromAst(
 
   if (expr.kind === "TVar") {
     const existing = vars.get(expr.name);
-    if (existing) return existing;
+    if (existing) {
+      options.onResolveVariable?.(expr, existing);
+      return resolved(existing);
+    }
     if (!allowFreeVars) throw new Error(`unbound type variable ${expr.name}`);
     const created = fresh(expr.name);
     vars.set(expr.name, created);
-    return created;
+    options.onResolveVariable?.(expr, created);
+    return resolved(created);
   }
   if (expr.kind === "TTuple") {
-    return tuple(expr.items.map((x) => typeFromAst(x, typeEnv, vars, options)));
+    return resolved(tuple(expr.items.map((x) => typeFromAst(x, typeEnv, vars, options))));
   }
   if (expr.kind === "TFn") {
-    return fn(
+    return resolved(fn(
       [callArg(expr.params.map((x) => typeFromAst(x, typeEnv, vars, options)))],
       typeFromAst(expr.result, typeEnv, vars, options),
-    );
+    ));
   }
-  if (expr.args.length === 0 && vars.has(expr.name)) return vars.get(expr.name)!;
-  const info = typeEnv.get(expr.name);
+  if (expr.args.length === 0 && vars.has(expr.name)) {
+    const variable = vars.get(expr.name)!;
+    options.onResolveVariable?.(expr, variable);
+    return resolved(variable);
+  }
+  const qualified = expr.name.includes(".") && options.strEnv
+    ? resolveLongType(options.strEnv, expr.name)
+    : undefined;
+  const info = qualified?.info ?? typeEnv.get(expr.name);
   if (!info) throw new Error(`unknown type ${expr.name}`);
   if (info.arity !== expr.args.length) {
     throw new Error(`${expr.name} expects ${info.arity} type arguments`);
   }
+  options.onResolveName?.(
+    expr,
+    info,
+    qualified
+      ? Object.freeze({
+        name: expr.name.split(".")[0],
+        environment: qualified.root,
+      })
+      : undefined,
+  );
   if (info.alias) {
     const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
-    return instantiateAlias(info.alias, info.aliasParams ?? [], args);
+    return resolved(instantiateAlias(info.alias, info.aliasParams ?? [], args));
   }
   if (expr.args.length === 0 && ["Number", "Bool", "String", "Void"].includes(expr.name)) {
-    return prim(expr.name);
+    return resolved(prim(expr.name));
   }
-  return named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options)));
+  return resolved(named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options))));
 }
 
 export function show(t: Ty): string {

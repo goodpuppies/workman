@@ -1,6 +1,9 @@
 import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
+import { maskSourceRange, topLevelPhraseRanges } from "./top_level_phrases.ts";
+
+export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
 export type ReplEvaluation = {
   code: number;
@@ -77,51 +80,6 @@ function withEntrySource(
 
 function emptyEvaluation(): ReplEvaluation {
   return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
-}
-
-export function topLevelPhraseRanges(source: string): { start: number; end: number }[] {
-  const ranges: { start: number; end: number }[] = [];
-  const stack: string[] = [];
-  let stringEnd: '"' | "`" | undefined;
-  let escaped = false;
-  let lineComment = false;
-  for (let index = 0; index < source.length; index++) {
-    const char = source[index];
-    const next = source[index + 1];
-    if (lineComment) {
-      if (char === "\n" || char === "\r") lineComment = false;
-      continue;
-    }
-    if (stringEnd) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === stringEnd) stringEnd = undefined;
-      continue;
-    }
-    if ((char === "/" && next === "/") || (char === "-" && next === "-")) {
-      lineComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '"' || char === "`") {
-      stringEnd = char;
-      continue;
-    }
-    if (char === "(" || char === "[" || char === "{") stack.push(char);
-    else if (char === ")" || char === "]" || char === "}") stack.pop();
-    else if (char === ";" && stack.length === 0) {
-      const start = ranges.at(-1)?.end ?? 0;
-      ranges.push({ start, end: index + 1 });
-    }
-  }
-  const trailingStart = ranges.at(-1)?.end ?? 0;
-  if (source.slice(trailingStart).trim()) ranges.push({ start: trailingStart, end: source.length });
-  return ranges;
-}
-
-function maskSourceRange(source: string, start: number, end: number): string {
-  const masked = source.slice(start, end).replace(/[^\r\n]/g, " ");
-  return source.slice(0, start) + masked + source.slice(end);
 }
 
 export async function* watchReplChanges(input: string): AsyncGenerator<void> {

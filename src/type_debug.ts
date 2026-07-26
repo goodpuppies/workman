@@ -38,7 +38,7 @@ export async function typeDebugFile(input: string): Promise<string> {
     const entry = finalResults.get(graph.entry);
     return [
       `type-debug: ok`,
-      `entry: ${graph.entry}`,
+      `entry: ${graph.nodes.get(graph.entry)?.path ?? "<module>"}`,
       entry ? formatEnv(entry, 80) : "",
     ].filter(Boolean).join("\n");
   } catch (error) {

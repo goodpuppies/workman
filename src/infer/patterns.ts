@@ -5,6 +5,7 @@ import {
   fresh,
   instantiate,
   instantiateRecordFields,
+  knownTypeInfos,
   named,
   NumberTy,
   prune,
@@ -14,14 +15,17 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   type TypeInfo,
+  typeInfoById,
   VoidTy,
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
 import { expandCallArg } from "./shared.ts";
+import { lookupLongValue, type StrEnv } from "./environment.ts";
 import {
   originForScheme,
   recordPatternFact,
   recordPatternType,
+  recordRecordFieldFact,
   type TypeFacts,
 } from "./type_facts.ts";
 
@@ -59,6 +63,7 @@ export function inferPattern(
   expected: Ty,
   env: Env,
   typeEnv: TypeEnv,
+  strEnv: StrEnv,
   adts: Map<number, TypeDeclInfo>,
   binders = new Set<string>(),
   facts?: TypeFacts,
@@ -85,7 +90,7 @@ export function inferPattern(
       }
       return expected;
     case "PPinned": {
-      const scheme = env.get(p.name);
+      const scheme = lookupPatternValue(env, strEnv, p.name);
       if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
       const pinned = instantiate(scheme);
       constrainPattern(expected, pinned, p, "InferPattern.Pinned", "pinned pattern matches value");
@@ -126,7 +131,9 @@ export function inferPattern(
         "InferPattern.Tuple",
         "tuple pattern matches tuple",
       );
-      p.items.forEach((x, i) => inferPattern(x, items[i], env, typeEnv, adts, binders, facts));
+      p.items.forEach((x, i) =>
+        inferPattern(x, items[i], env, typeEnv, strEnv, adts, binders, facts)
+      );
       return expected;
     }
     case "PRecord": {
@@ -143,12 +150,22 @@ export function inferPattern(
       for (const field of p.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
         if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
-        inferPattern(field.pattern, expectedField.type, env, typeEnv, adts, binders, facts);
+        if (facts) recordRecordFieldFact(facts, field, record.info, expectedField.type);
+        inferPattern(
+          field.pattern,
+          expectedField.type,
+          env,
+          typeEnv,
+          strEnv,
+          adts,
+          binders,
+          facts,
+        );
       }
       return expected;
     }
     case "PCtor": {
-      const scheme = env.get(p.name);
+      const scheme = lookupPatternValue(env, strEnv, p.name);
       if (!scheme) throw new Error(`unknown constructor ${p.name}`);
       if (scheme.status !== "constructor") throw new Error(`${p.name} is not a constructor`);
       const ctor = instantiate(scheme);
@@ -172,7 +189,9 @@ export function inferPattern(
           "InferPattern.ConstructorResult",
           "constructor pattern result matches scrutinee",
         );
-        p.args.forEach((x, i) => inferPattern(x, args[i], env, typeEnv, adts, binders, facts));
+        p.args.forEach((x, i) =>
+          inferPattern(x, args[i], env, typeEnv, strEnv, adts, binders, facts)
+        );
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
         constrainPattern(
@@ -193,6 +212,7 @@ export function inferBindingPattern(
   expected: Ty,
   env: Env,
   typeEnv: TypeEnv,
+  strEnv: StrEnv,
   out: Map<string, Ty>,
   binders = new Set<string>(),
   facts?: TypeFacts,
@@ -259,7 +279,7 @@ export function inferBindingPattern(
         "tuple let pattern matches tuple",
       );
       pattern.items.forEach((item, i) =>
-        inferBindingPattern(item, items[i], env, typeEnv, out, binders, facts)
+        inferBindingPattern(item, items[i], env, typeEnv, strEnv, out, binders, facts)
       );
       return;
     }
@@ -281,12 +301,22 @@ export function inferBindingPattern(
       for (const field of pattern.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
         if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
-        inferBindingPattern(field.pattern, expectedField.type, env, typeEnv, out, binders, facts);
+        if (facts) recordRecordFieldFact(facts, field, record.info, expectedField.type);
+        inferBindingPattern(
+          field.pattern,
+          expectedField.type,
+          env,
+          typeEnv,
+          strEnv,
+          out,
+          binders,
+          facts,
+        );
       }
       return;
     }
     case "PCtor": {
-      const scheme = env.get(pattern.name);
+      const scheme = lookupPatternValue(env, strEnv, pattern.name);
       if (!scheme) throw new Error(`unknown constructor ${pattern.name}`);
       if (scheme.status !== "constructor") {
         throw new Error(`${pattern.name} is not a constructor`);
@@ -313,7 +343,7 @@ export function inferBindingPattern(
           "constructor let pattern result matches value",
         );
         pattern.args.forEach((item, i) =>
-          inferBindingPattern(item, args[i], env, typeEnv, out, binders, facts)
+          inferBindingPattern(item, args[i], env, typeEnv, strEnv, out, binders, facts)
         );
       } else {
         if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
@@ -330,6 +360,11 @@ export function inferBindingPattern(
     default:
       throw new Error("unsupported let pattern");
   }
+}
+
+function lookupPatternValue(env: Env, strEnv: StrEnv, name: string) {
+  const qualifier = name.includes(".") ? name.split(".", 1)[0] : undefined;
+  return qualifier && strEnv.has(qualifier) ? lookupLongValue(strEnv, name) : env.get(name);
 }
 
 function constrainPattern(
@@ -376,7 +411,7 @@ function recordPatternTarget(
 ): { info: TypeInfo; type: Extract<Ty, { tag: "named" }> } {
   const target = prune(expected);
   if (target.tag === "named") {
-    const info = [...typeEnv.values()].find((candidate) => candidate.id === target.id);
+    const info = typeInfoById(typeEnv, target.id);
     if (!info?.recordFields) throw new Error(`${target.name} is not a record type`);
     return { info, type: target };
   }
@@ -395,7 +430,7 @@ function recordPatternTarget(
 }
 
 function findRecordTypes(typeEnv: TypeEnv, names: string[]): TypeInfo[] {
-  return [...typeEnv.values()].filter((info) => {
+  return knownTypeInfos(typeEnv).filter((info) => {
     if (!info.recordFields) return false;
     const fields = info.recordFields.map((field) => field.name);
     return names.every((name) => fields.includes(name));

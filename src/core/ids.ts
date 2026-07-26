@@ -5,5 +5,6 @@ export {
   type CtorId,
   type ModuleId,
   type RecordId,
+  type StructureId,
   type TypeNameId,
 } from "../ids.ts";

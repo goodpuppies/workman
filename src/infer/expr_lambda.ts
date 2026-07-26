@@ -20,19 +20,33 @@ import { inferParam } from "./expr_flow.ts";
 import { patternBinders } from "./patterns.ts";
 import { constrainAt } from "./provenance.ts";
 import { callArg } from "./shared.ts";
-import type { TypeFacts } from "./type_facts.ts";
+import {
+  recordTypeExpressionFact,
+  recordTypeReferenceFact,
+  recordTypeVariableFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function inferLambdaTy(
   expr: Extract<Expr, { kind: "Lambda" }>,
   context: InferContext,
   paramHints?: Ty[],
 ): Ty {
-  const { env, typeEnv, adts, types, facts, provenance } = context;
+  const { env, typeEnv, strEnv, adts, types, facts, provenance } = context;
   const local = new Map(env);
   const annotationVars: TypeVarScope = new Map();
   const binders = new Set<string>();
   const annotations = expr.params.map((param) =>
-    param.annotation ? typeFromAst(param.annotation, typeEnv, annotationVars) : undefined
+    param.annotation
+      ? typeFromAst(param.annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, expr.node),
+      })
+      : undefined
   );
   const returnAnnotations = [
     expr.returnAnnotation,
@@ -40,10 +54,19 @@ export function inferLambdaTy(
   ].filter((annotation): annotation is NonNullable<typeof annotation> => !!annotation)
     .map((annotation) => ({
       ast: annotation,
-      type: typeFromAst(annotation, typeEnv, annotationVars),
+      type: typeFromAst(annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, expr.node),
+      }),
     }));
   const dialect = lambdaTypingDialect(expr, context.dialect);
-  const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders, facts));
+  const params = expr.params.map((p) =>
+    inferParam(p, local, typeEnv, strEnv, adts, binders, facts)
+  );
   paramHints?.forEach((hint, index) => {
     if (index < params.length) {
       constrainAt(params[index], hint, expr.params[index], undefined, [], provenance, {

@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { analyzeVirtual } from "../src/compiler.ts";
 import { GPU_OPERATOR_IDS } from "../src/gpu_operators.ts";
+import { moduleId } from "../src/module_id.ts";
 
 Deno.test("recursion facts preserve authored groups and resolved invocation kinds", async () => {
   const analysis = await analyzeVirtual(
@@ -90,7 +91,7 @@ Deno.test("inference records only the frozen visual-v1 operator catalog", async 
        let append = "a" ++ "b";`,
     ]]),
   );
-  const result = analysis.results.get("/test/main.wm")!;
+  const result = analysis.results.get(moduleId("/test/main.wm"))!;
 
   assertEquals([...result.facts.operators.values()], [
     GPU_OPERATOR_IDS.add,

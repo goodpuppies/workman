@@ -1,7 +1,18 @@
-import type { Decl, Expr, Pattern } from "../ast.ts";
-import type { CompilerSemanticId } from "../compiler_semantics.ts";
+import type {
+  Decl,
+  Expr,
+  JsImportSpec,
+  Pattern,
+  RecordExprField,
+  RecordPatternField,
+  TypeExpr,
+} from "../ast.ts";
+import type { AstNode } from "../source.ts";
+import { basisStructureId, type CompilerSemanticId } from "../compiler_semantics.ts";
+import type { StructureSemanticId, ValueId } from "../ids.ts";
 import type { GpuOperatorId, OperatorExpr } from "../gpu_operators.ts";
 import { prune, type Scheme, type Ty, type TypeInfo } from "../types.ts";
+import type { StaticEnv } from "./environment.ts";
 
 export type TypeFacts = {
   expressions: Map<Expr, TypeFact>;
@@ -14,7 +25,18 @@ export type TypeFacts = {
   gpuOperations: Map<Expr, GpuOperationObligation>;
   primitiveCarriers: Map<Expr, PrimitiveCarrierPlan>;
   bindings: Map<string, TypeFact[]>;
-  typeDeclarations: Map<Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>, TypeInfo>;
+  typeDeclarations: Map<
+    Extract<Decl, { kind: "TypeDecl" | "RecordDecl" | "ForeignTypeDecl" }>,
+    TypeInfo
+  >;
+  typeReferences: Map<Extract<TypeExpr, { kind: "TName" }>, TypeReferenceFact>;
+  typeExpressions: Map<TypeExpr, Ty>;
+  typeVariables: Map<TypeExpr, TypeVariableFact>;
+  typeVariableDeclarations: TypeVariableDeclarationFact[];
+  structureImports: Map<Extract<Decl, { kind: "ImportDecl" }>, StaticEnv>;
+  jsImportSchemes: Map<Extract<Decl, { kind: "JsImportDecl" }> | JsImportSpec, Scheme>;
+  recordFields: Map<RecordExprField | RecordPatternField, RecordFieldFact>;
+  recordProjections: Map<Extract<Expr, { kind: "Var" }>, RecordProjectionFact[]>;
   ffi: Map<number, FfiFact>;
 };
 
@@ -23,6 +45,7 @@ export type GpuOperationShape = "f32" | "f32x2" | "f32x3" | "f32x4";
 export type GpuResourceCallFact = {
   operation: "sample" | "load";
   receiverName: string;
+  receiverType: Ty;
 };
 
 export type GpuOperationRow = {
@@ -57,6 +80,36 @@ export type TypeFact = {
   notes?: TypeFactNote[];
 };
 
+export type RecordProjectionFact = {
+  name: string;
+  partIndex: number;
+  record: TypeInfo;
+  type: Ty;
+};
+
+export type RecordFieldFact = {
+  record: TypeInfo;
+  type: Ty;
+};
+
+export type TypeReferenceFact = {
+  info: TypeInfo;
+  qualifier?: Readonly<{ name: string; environment: StaticEnv }>;
+};
+
+export type TypeVariableFact = {
+  type: Ty;
+  region: AstNode;
+};
+
+export type TypeVariableDeclarationFact = {
+  name: string;
+  type: Ty;
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>;
+  parameterIndex: number;
+  region: AstNode;
+};
+
 export type TypeFactSubject =
   | "expr"
   | "pattern"
@@ -70,6 +123,8 @@ export type TypeFactOrigin = {
   name?: string;
   source: "local" | "import" | "basis" | "js-import" | "reflected-ffi" | "synthetic";
   semanticId?: CompilerSemanticId;
+  valueId?: ValueId;
+  structureId?: StructureSemanticId;
 };
 
 export type TypeFactNote = {
@@ -110,6 +165,14 @@ export function createTypeFacts(): TypeFacts {
     primitiveCarriers: new Map(),
     bindings: new Map(),
     typeDeclarations: new Map(),
+    typeReferences: new Map(),
+    typeExpressions: new Map(),
+    typeVariables: new Map(),
+    typeVariableDeclarations: [],
+    structureImports: new Map(),
+    jsImportSchemes: new Map(),
+    recordFields: new Map(),
+    recordProjections: new Map(),
     ffi: new Map(),
   };
 }
@@ -158,10 +221,75 @@ export function recordPatternType(facts: TypeFacts, pattern: Pattern, type: Ty) 
 
 export function recordTypeDeclarationFact(
   facts: TypeFacts,
-  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>,
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" | "ForeignTypeDecl" }>,
   info: TypeInfo,
 ) {
   facts.typeDeclarations.set(declaration, info);
+}
+
+export function recordTypeReferenceFact(
+  facts: TypeFacts,
+  expression: Extract<TypeExpr, { kind: "TName" }>,
+  info: TypeInfo,
+  qualifier?: Readonly<{ name: string; environment: StaticEnv }>,
+) {
+  facts.typeReferences.set(expression, { info, qualifier });
+}
+
+export function recordTypeExpressionFact(
+  facts: TypeFacts,
+  expression: TypeExpr,
+  type: Ty,
+) {
+  facts.typeExpressions.set(expression, type);
+}
+
+export function recordTypeVariableFact(
+  facts: TypeFacts,
+  expression: TypeExpr,
+  type: Ty,
+  region: AstNode | undefined,
+) {
+  if (region) facts.typeVariables.set(expression, { type, region });
+}
+
+export function recordTypeVariableDeclarationFact(
+  facts: TypeFacts,
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>,
+  parameterIndex: number,
+  name: string,
+  type: Ty,
+) {
+  if (!declaration.node) return;
+  facts.typeVariableDeclarations.push({
+    name,
+    type,
+    declaration,
+    parameterIndex,
+    region: declaration.node,
+  });
+}
+
+export function recordRecordFieldFact(
+  facts: TypeFacts,
+  field: RecordExprField | RecordPatternField,
+  record: TypeInfo,
+  type: Ty,
+) {
+  facts.recordFields.set(field, { record, type });
+}
+
+export function recordRecordProjectionFact(
+  facts: TypeFacts,
+  expression: Extract<Expr, { kind: "Var" }>,
+  fact: RecordProjectionFact,
+) {
+  const existing = facts.recordProjections.get(expression) ?? [];
+  if (
+    existing.some((item) => item.partIndex === fact.partIndex && item.record.id === fact.record.id)
+  ) return;
+  existing.push(fact);
+  facts.recordProjections.set(expression, existing);
 }
 
 export function recordExprFact(
@@ -225,6 +353,10 @@ export function originForScheme(name: string, scheme: Scheme): TypeFactOrigin {
   return {
     name,
     semanticId: scheme.semanticId,
+    valueId: scheme.valueId,
+    structureId: scheme.valueId && name.includes(".")
+      ? basisStructureId(name.split(".")[0])
+      : undefined,
     source: scheme.jsImport
       ? "js-import"
       : scheme.basis

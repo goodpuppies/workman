@@ -5,6 +5,7 @@ import {
   fresh,
   instantiate,
   instantiateRecordFields,
+  knownTypeInfos,
   named,
   prune,
   show,
@@ -12,21 +13,66 @@ import {
   type Ty,
   type TypeEnv,
   type TypeInfo,
+  typeInfoById,
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
+import { resolveLongValue, type StrEnv } from "./environment.ts";
+import { recordRecordFieldFact, recordRecordProjectionFact, type TypeFacts } from "./type_facts.ts";
 
 type InferValue = (expr: Expr, expected?: Ty) => Ty;
 type NamedTy = Extract<Ty, { tag: "named" }>;
 
-export function inferDottedVar(name: string, env: Env, typeEnv: TypeEnv): Ty {
+export function inferDottedVar(
+  name: string,
+  env: Env,
+  typeEnv: TypeEnv,
+  strEnv?: StrEnv,
+  occurrence?: {
+    expression: Extract<Expr, { kind: "Var" }>;
+    facts: TypeFacts;
+    warnings: string[];
+    diagnostics: FrontendDiagnostic[];
+  },
+): Ty {
   const scheme = env.get(name);
   if (scheme) return instantiate(scheme);
+  const structured = strEnv && resolveLongValue(strEnv, name);
+  if (structured) {
+    const parts = name.split(".");
+    const firstFieldIndex = parts.length - structured.remaining.length;
+    return structured.remaining.reduce((type, field, index) => {
+      const resolved = inferRecordField(type, field, typeEnv, occurrence);
+      if (resolved.record && occurrence) {
+        recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
+          name: field,
+          partIndex: firstFieldIndex + index,
+          record: resolved.record,
+          type: resolved.type,
+        });
+      }
+      return resolved.type;
+    }, instantiate(structured.scheme));
+  }
   const dot = name.lastIndexOf(".");
   if (dot < 0) throw new Error(`unknown name ${name}`);
   const baseName = name.slice(0, dot);
   const field = name.slice(dot + 1);
   try {
-    return inferRecordField(inferDottedVar(baseName, env, typeEnv), field, typeEnv);
+    const resolved = inferRecordField(
+      inferDottedVar(baseName, env, typeEnv, strEnv, occurrence),
+      field,
+      typeEnv,
+      occurrence,
+    );
+    if (resolved.record && occurrence) {
+      recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
+        name: field,
+        partIndex: name.split(".").length - 1,
+        record: resolved.record,
+        type: resolved.type,
+      });
+    }
+    return resolved.type;
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("unknown name ")) {
       throw new Error(`unknown name ${name}`);
@@ -42,6 +88,7 @@ export function inferRecordExpr(
   expected?: Ty,
   warnings?: string[],
   diagnostics?: FrontendDiagnostic[],
+  facts?: TypeFacts,
 ): Ty {
   const fields = expr.fields.filter((field) => field.kind === "Field");
   const spreads = expr.fields.filter((field) => field.kind === "Spread");
@@ -74,6 +121,14 @@ export function inferRecordExpr(
       throw new Error(`${result.name} has no field ${field.name}`);
     }
     const expectedField = fieldTypes.find((item) => item.name === field.name)!;
+    if (facts) {
+      recordRecordFieldFact(
+        facts,
+        field,
+        recordInfo(result, typeEnv),
+        expectedField.type,
+      );
+    }
     constrainRecord(
       inferValue(field.value),
       expectedField.type,
@@ -102,42 +157,52 @@ function firstSpreadRecord(
   return target;
 }
 
-function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
+function inferRecordField(
+  base: Ty,
+  field: string,
+  typeEnv: TypeEnv,
+  occurrence?: {
+    expression: Extract<Expr, { kind: "Var" }>;
+    facts: TypeFacts;
+    warnings: string[];
+    diagnostics: FrontendDiagnostic[];
+  },
+): { type: Ty; record?: TypeInfo } {
   const target = prune(base);
   if (target.tag === "named") {
-    const fields = instantiateRecordFields(recordInfo(target, typeEnv), target.args);
+    const info = recordInfo(target, typeEnv);
+    const fields = instantiateRecordFields(info, target.args);
     const found = fields.find((item) => item.name === field);
     if (!found) throw new Error(`${target.name} has no field ${field}`);
-    return found.type;
+    return { type: found.type, record: info };
   }
   if (target.tag === "var") {
-    const nominal = uniqueNonFunctionFieldRecord(typeEnv, field);
+    const nominal = selectedFieldRecord(typeEnv, field, occurrence);
     if (nominal) {
-      constrainRecord(
-        target,
-        nominal.record,
-        undefined,
-        "InferRecord.ProjectNominal",
-        "receiver matches record containing projected field",
-        field,
-        "receiver",
-        "record",
-      );
-      return nominal.type;
-    }
-    const shared = sharedNonFunctionFieldType(typeEnv, field);
-    if (shared) {
-      constrainRecord(
-        target,
-        structural([{ name: field, type: shared }]),
-        undefined,
-        "InferRecord.ProjectSharedField",
-        "receiver has the field shape shared by every candidate record",
-        field,
-        "receiver",
-        "shared structural field",
-      );
-      return shared;
+      if (nominal.nominalReceiver) {
+        constrainRecord(
+          target,
+          nominal.record,
+          undefined,
+          "InferRecord.ProjectNominal",
+          "receiver matches record containing projected field",
+          field,
+          "receiver",
+          "record",
+        );
+      } else {
+        constrainRecord(
+          target,
+          structural([{ name: field, type: nominal.type }]),
+          undefined,
+          "InferRecord.ProjectAmbiguous",
+          "receiver retains a structural field requirement until an annotation selects a record",
+          field,
+          "receiver",
+          "structural field",
+        );
+      }
+      return { type: nominal.type, record: nominal.info };
     }
     const result = fresh();
     constrainRecord(
@@ -150,14 +215,14 @@ function inferRecordField(base: Ty, field: string, typeEnv: TypeEnv): Ty {
       "receiver",
       "structural field",
     );
-    return result;
+    return { type: result };
   }
   if (target.tag === "struct") {
     const found = target.fields.find((item) => item.name === field);
-    if (found) return found.type;
+    if (found) return { type: found.type };
     const result = fresh();
     target.fields.push({ name: field, type: result });
-    return result;
+    return { type: result };
   }
   throw new Error(`type ${show(base)} has no field ${field}`);
 }
@@ -187,16 +252,41 @@ function constrainRecord(
   });
 }
 
-function uniqueNonFunctionFieldRecord(
+function selectedFieldRecord(
   typeEnv: TypeEnv,
   field: string,
-): { record: NamedTy; type: Ty } | undefined {
+  occurrence?: {
+    expression: Extract<Expr, { kind: "Var" }>;
+    facts: TypeFacts;
+    warnings: string[];
+    diagnostics: FrontendDiagnostic[];
+  },
+): { record: NamedTy; type: Ty; info: TypeInfo; nominalReceiver: boolean } | undefined {
   const candidates = findRecordTypes(typeEnv, [field], "contains");
-  if (candidates.length !== 1) return undefined;
+  if (candidates.length === 0) return undefined;
   const info = candidates[0];
   const record = freshRecord(info);
-  const type = instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
-  return prune(type).tag === "fn" ? undefined : { record, type };
+  const declaredType =
+    instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
+  if (candidates.length === 1 && prune(declaredType).tag !== "fn") {
+    return { record, type: declaredType, info, nominalReceiver: true };
+  }
+  if (candidates.length > 1 && occurrence) {
+    const candidateNames = candidates.map((candidate) => candidate.name).join(", ");
+    const message = `ambiguous record projection ${field}; using first record type ${info.name}. ` +
+      `Candidates: ${candidateNames}. ` +
+      `Hint: annotate the receiver, binding, or parameter with the intended record type.`;
+    occurrence.warnings.push(message);
+    occurrence.diagnostics.push(
+      warningDiagnostic(
+        message,
+        occurrence.expression.node,
+        "record.ambiguous-projection",
+      ),
+    );
+  }
+  const type = sharedNonFunctionFieldType(typeEnv, field) ?? fresh();
+  return { record, type, info, nominalReceiver: false };
 }
 
 function sharedNonFunctionFieldType(typeEnv: TypeEnv, field: string): Ty | undefined {
@@ -224,7 +314,7 @@ function freshRecord(info: TypeInfo): NamedTy {
 }
 
 function recordInfo(type: NamedTy, typeEnv: TypeEnv): TypeInfo {
-  const info = [...typeEnv.values()].find((candidate) => candidate.id === type.id);
+  const info = typeInfoById(typeEnv, type.id);
   if (!info?.recordFields) throw new Error(`${type.name} is not a record type`);
   return info;
 }
@@ -259,7 +349,7 @@ function findRecordTypes(
   mode: "exact" | "contains",
 ): TypeInfo[] {
   const wanted = [...names].sort();
-  return [...typeEnv.values()].filter((info) => {
+  return knownTypeInfos(typeEnv).filter((info) => {
     if (!info.recordFields) return false;
     const fields = info.recordFields.map((field) => field.name);
     if (mode === "contains") return wanted.every((name) => fields.includes(name));

@@ -10,7 +10,14 @@ export type Module = Located<{
 
 export type Decl =
   | Located<{ kind: "ImportDecl"; path: string; pathNode?: AstNode; clause: ImportClause }>
-  | Located<{ kind: "JsImportDecl"; target: JsTarget; clause: JsImportClause; typeOnly?: boolean }>
+  | Located<{
+    kind: "JsImportDecl";
+    target: JsTarget;
+    clause: JsImportClause;
+    typeOnly?: boolean;
+    /** Authored clause retained when FFI lowering replaces it with compiler-only imports. */
+    sourceClause?: JsImportClause;
+  }>
   | Located<{ kind: "ForeignTypeDecl"; name: string; foreignKey?: string }>
   | Located<{ kind: "LetDecl"; exported: boolean; recursive: boolean; bindings: Binding[] }>
   | Located<{
@@ -49,6 +56,13 @@ export type JsImportClause =
 export type JsImportSpec = Located<{
   name: string;
   alias?: string;
+  /**
+   * Authored local name retained by FFI-generated import variants.
+   *
+   * Generated aliases use this to retain a compiler-owned semantic relation and source mapping to
+   * the import spec that caused them to exist. Their lowering binding remains distinct.
+   */
+  sourceName?: string;
   type?: TypeExpr;
   fallible?: boolean;
 }>;
@@ -64,7 +78,12 @@ export type Expr =
   | Located<{ kind: "String"; value: string }>
   | Located<{ kind: "Bool"; value: boolean }>
   | Located<{ kind: "Void"; implicitStatement?: Expr; implicitTerminatorSpan?: SourceSpan }>
-  | Located<{ kind: "Var"; name: string }>
+  | Located<{
+    kind: "Var";
+    name: string;
+    /** Authored spelling retained when lowering replaces `name` with a compiler-only binding. */
+    sourceName?: string;
+  }>
   | Located<{ kind: "Tuple"; items: Expr[] }>
   | Located<{ kind: "Record"; fields: RecordExprItem[] }>
   | Located<{ kind: "JsonObject"; fields: JsonObjectField[] }>

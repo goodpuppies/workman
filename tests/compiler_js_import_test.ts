@@ -169,7 +169,7 @@ Deno.test("runs a Workman dependency with a JS module import", async () => {
   );
 
   const js = await compileFile(input);
-  assertStringIncludes(js, "await (async () => {");
+  assertStringIncludes(js, '__wm_define_module(\n  "__wm_module_');
 
   const result = await runFile(input, { stdout: "piped", stderr: "piped" });
   assertEquals(result.code, 0);
@@ -340,7 +340,7 @@ Deno.test("emits Workman worker targets as sibling artifacts", async () => {
   ]);
   if (!entry || !worker) throw new Error("missing worker artifacts");
   assertStringIncludes(entry.code, `new URL("./worker.worker.mjs", import.meta.url).href`);
-  assertStringIncludes(worker.code, `await main_`);
+  assertStringIncludes(worker.code, `["main"]()`);
 });
 
 Deno.test("runs generated Workman workers", async () => {

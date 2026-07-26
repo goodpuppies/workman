@@ -1,0 +1,3092 @@
+import type { Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
+import type {
+  BindingFacts,
+  BindingScopeCheckpoint,
+  BindingScopeSnapshot,
+} from "./binding_facts.ts";
+import { basisCtorId } from "./basis.ts";
+import { basisStructureId } from "./compiler_semantics.ts";
+import type { FrontendDiagnostic } from "./diagnostics.ts";
+import { discoverGpuRegions } from "./directives.ts";
+import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
+import type { StructureEnv } from "./infer.ts";
+import type {
+  BindingId,
+  CtorId,
+  FieldId,
+  GpuRootId,
+  GpuSelectorId,
+  StructureId,
+  StructureSemanticId,
+  TypeNameId,
+  TypeVariableId,
+  ValueId,
+} from "./ids.ts";
+import type { ModuleGraph, ModuleImportEdge, ModuleNode } from "./module_graph.ts";
+import type { ModuleId, ModuleMap } from "./module_id.ts";
+import type { NominalFacts } from "./nominal_facts.ts";
+import type { InferResult } from "./infer.ts";
+import type { BasisProfileName } from "./initial_basis.ts";
+import type { BasisGeneration } from "./initial_basis.ts";
+import {
+  createSemanticTypeArena,
+  type SemanticType,
+  type SemanticTypeArena,
+  type SemanticTypeId,
+} from "./semantic_types.ts";
+import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
+import type { Scheme, Ty } from "./types.ts";
+import type { GpuSliceElaborationInput, GpuSliceTypeElaborationOutput } from "./wmslang/v2_dto.ts";
+import type { NormalizedGpuSlice } from "./wmslang/v2_normalize.ts";
+import { WMSLANG_BUILTIN_OVERLOADS } from "./wmslang/builtin_catalog.generated.ts";
+
+declare const interfaceGenerationBrand: unique symbol;
+export type InterfaceGeneration = object & {
+  readonly [interfaceGenerationBrand]: true;
+};
+
+declare const projectSnapshotIdBrand: unique symbol;
+export type ProjectSnapshotId = object & {
+  readonly [projectSnapshotIdBrand]: true;
+};
+
+export type ModuleCompleteness = Readonly<{
+  syntax: "complete" | "recovered" | "unavailable";
+  imports: "complete" | "partial" | "unavailable";
+  elaboration: "complete" | "partial" | "unavailable";
+  occurrences: "complete" | "partial" | "unavailable";
+  scopes: "complete" | "partial" | "unavailable";
+  ffi: "complete" | "partial" | "unavailable" | "not-applicable";
+  gpu: "complete" | "partial" | "unavailable" | "not-applicable";
+  recoveryBoundaries: readonly Readonly<{ start: number; end: number }>[];
+}>;
+
+export type DeclarationOrigin =
+  | Readonly<{
+    kind: "value";
+    moduleId: ModuleId;
+    bindingId: BindingId;
+    visibility: "public";
+    span: SourceSpan;
+  }>
+  | Readonly<{
+    kind: "type";
+    moduleId: ModuleId;
+    typeNameId: TypeNameId;
+    visibility: "public";
+    span: SourceSpan;
+  }>
+  | Readonly<{
+    kind: "constructor";
+    moduleId: ModuleId;
+    ctorId: CtorId;
+    visibility: "public";
+    span: SourceSpan;
+  }>;
+
+export type ImportTarget = Readonly<{
+  sourceName: string;
+  localName: string;
+  value?: BindingId;
+  type?: TypeNameId;
+  constructor?: CtorId;
+}>;
+
+export type ModuleImportOccurrence = Readonly<{
+  declaration: Extract<Decl, { kind: "ImportDecl" }>;
+  clause: ImportClause;
+  edge: ModuleImportEdge;
+  target: ModuleId;
+  structureAlias?: Readonly<{ name: string; id: StructureId }>;
+  targets: readonly ImportTarget[];
+}>;
+
+export type SemanticOccurrenceTarget =
+  | Readonly<{ kind: "value"; id: ValueId }>
+  | Readonly<{ kind: "structure"; id: StructureSemanticId }>
+  | Readonly<{ kind: "type"; id: TypeNameId }>
+  | Readonly<{ kind: "constructor"; id: CtorId }>
+  | Readonly<{ kind: "field"; id: FieldId }>
+  | Readonly<{ kind: "type-variable"; id: TypeVariableId }>
+  | Readonly<{ kind: "module"; id: ModuleId }>;
+
+export type ModuleSemanticOccurrence = Readonly<{
+  name: string;
+  role:
+    | "declaration"
+    | "reference"
+    | "qualifier"
+    | "import-path"
+    | "import-source"
+    | "import-alias";
+  target: SemanticOccurrenceTarget;
+  span: SourceSpan;
+  inferredType?: SemanticOccurrenceType;
+  declaration?: Readonly<{
+    moduleId: ModuleId;
+    visibility: "public" | "private";
+  }>;
+}>;
+
+export type SemanticOccurrenceType = Readonly<{
+  id: SemanticTypeId;
+  generalized: boolean;
+  quantifiedVariables: number;
+}>;
+
+export type SemanticCarrierOperation = Readonly<{
+  carrier: "Result";
+  span: SourceSpan;
+  operands: readonly ("wrapped" | "pure")[];
+  errorType: SemanticTypeId;
+  payloadResultType: SemanticTypeId;
+}>;
+
+export type SemanticTypedNode = Readonly<{
+  kind: "expression" | "pattern" | "type-expression";
+  label: string;
+  span: SourceSpan;
+  type: SemanticOccurrenceType;
+  generalType?: SemanticOccurrenceType;
+  presentation?: "generated-ffi-receiver";
+}>;
+
+export type SemanticTopLevelDeclaration = Readonly<{
+  kind: "value" | "function" | "datatype" | "record" | "foreign-type";
+  name: string;
+  target: SemanticOccurrenceTarget;
+  span: SourceSpan;
+  selectionSpan: SourceSpan;
+  constructors?: readonly Readonly<{
+    name: string;
+    id: CtorId;
+    span: SourceSpan;
+    selectionSpan: SourceSpan;
+  }>[];
+}>;
+
+export type SemanticGpuOperation = Readonly<{
+  kind: "builtin" | "operator" | "projection";
+  identity: string;
+  span: SourceSpan;
+  args: readonly SemanticTypeId[];
+  result: SemanticTypeId;
+  rows: readonly Readonly<{
+    id: number;
+    args: readonly string[];
+    result: string;
+  }>[];
+  determiningArgs: readonly number[];
+}>;
+
+export type SemanticGpuFragmentRoot = Readonly<{
+  id: GpuRootId;
+  span: SourceSpan;
+  bindingId?: BindingId;
+  selectorIds: readonly GpuSelectorId[];
+  factory?: Readonly<{
+    bindingId: BindingId;
+    span: SourceSpan;
+    parameter?: SourceSpan;
+  }>;
+}>;
+
+export type SemanticGpuFragmentSelector = Readonly<{
+  id: GpuSelectorId;
+  rootId: GpuRootId;
+  span: SourceSpan;
+  argument: SourceSpan;
+  environmentArgument?: SourceSpan;
+}>;
+
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T
+  : T extends readonly (infer Item)[] ? readonly DeepReadonly<Item>[]
+  : T extends object ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+  : T;
+
+export type SemanticGpuSlice = Readonly<{
+  rootId: GpuRootId;
+  selectorIds: readonly GpuSelectorId[];
+  input: DeepReadonly<GpuSliceElaborationInput>;
+}>;
+
+export type SemanticGpuElaboratedSlice = Readonly<{
+  rootId: GpuRootId;
+  selectorIds: readonly GpuSelectorId[];
+  input: DeepReadonly<GpuSliceElaborationInput>;
+  elaboration: DeepReadonly<GpuSliceTypeElaborationOutput>;
+}>;
+
+export type SemanticGpuElaboration = Readonly<{
+  projectSnapshotId: ProjectSnapshotId;
+  generation: InterfaceGeneration;
+  modules: ReadonlyMap<ModuleId, readonly SemanticGpuElaboratedSlice[]>;
+}>;
+
+export type SemanticGpuFacts = Readonly<{
+  operations: readonly SemanticGpuOperation[];
+  builtins: readonly Readonly<{ name: string; span: SourceSpan }>[];
+  resources: readonly Readonly<{
+    operation: "sample" | "load";
+    receiverName: string;
+    receiverType: SemanticTypeId;
+    span: SourceSpan;
+  }>[];
+  roots: readonly SemanticGpuFragmentRoot[];
+  selectors: readonly SemanticGpuFragmentSelector[];
+  slices: readonly SemanticGpuSlice[];
+}>;
+
+export type SemanticCompletionScopeNames = Readonly<{
+  values: readonly string[];
+  structures: readonly string[];
+  types: readonly string[];
+  constructors: readonly string[];
+}>;
+
+export type SemanticCompletionFacts = Readonly<{
+  gpuRegions: readonly SourceSpan[];
+  scopes: Readonly<{
+    nodes: readonly Readonly<{ span: SourceSpan; names: SemanticCompletionScopeNames }>[];
+    checkpoints: readonly Readonly<{
+      container: SourceSpan;
+      offset: number;
+      names: SemanticCompletionScopeNames;
+    }>[];
+  }>;
+}>;
+
+export type SemanticCompletionCandidate = Readonly<{
+  name: string;
+  kind: "value" | "constructor" | "type" | "structure" | "field" | "keyword" | "gpu-builtin";
+  origin: "lexical" | "recovery" | "namespace" | "record" | "keyword" | "gpu";
+  rank: number;
+  type?: Readonly<{
+    moduleId: ModuleId;
+    occurrence: SemanticOccurrenceType;
+  }>;
+  overloads?: readonly Readonly<{
+    params: readonly string[];
+    result: string;
+  }>[];
+}>;
+
+export type SemanticCompletionResult = Readonly<{
+  prefix: string;
+  candidates: readonly SemanticCompletionCandidate[];
+}>;
+
+export type SemanticStructureMember = Readonly<{
+  name: string;
+  kind: "value" | "constructor" | "type" | "structure";
+  type?: SemanticOccurrenceType;
+}>;
+
+export type SemanticScopeTargetType = Readonly<{
+  target: SemanticOccurrenceTarget;
+  type: SemanticOccurrenceType;
+}>;
+
+export type SemanticJsTarget =
+  | Readonly<{ kind: "global-root" }>
+  | Readonly<{ kind: "global"; path: string }>
+  | Readonly<{ kind: "meta" }>
+  | Readonly<{ kind: "module"; specifier: string }>
+  | Readonly<{ kind: "worker"; specifier: string }>
+  | Readonly<{ kind: "receiver"; path: readonly string[] }>
+  | Readonly<{ kind: "constructor"; path: string }>;
+
+export type SemanticJsImport = Readonly<{
+  span: SourceSpan;
+  target: SemanticJsTarget;
+  unsafe: boolean;
+  typeOnly: boolean;
+  structureAlias?: Readonly<{ name: string; id: StructureId }>;
+  bindings: readonly Readonly<{
+    sourceName: string;
+    localName: string;
+    id: BindingId;
+    fallible: boolean;
+    type?: SemanticOccurrenceType;
+  }>[];
+}>;
+
+export type SemanticFfiFacts = Readonly<{
+  imports: readonly SemanticJsImport[];
+  calls: readonly Readonly<{
+    label: string;
+    span: SourceSpan;
+    type: SemanticOccurrenceType;
+    receiverElided: true;
+  }>[];
+  foreignTypes: readonly Readonly<{
+    name: string;
+    id: TypeNameId;
+    foreignKey?: string;
+    span: SourceSpan;
+  }>[];
+}>;
+
+export type SemanticTypeVariableRegion = Readonly<{
+  id: TypeVariableId;
+  name: string;
+  scope: SourceSpan;
+  binder?: SourceSpan;
+  occurrences: readonly SourceSpan[];
+}>;
+
+export type ProjectSemanticOccurrence = Readonly<{
+  moduleId: ModuleId;
+  occurrence: ModuleSemanticOccurrence;
+}>;
+
+export type SemanticRenamePlan = Readonly<{
+  kind: "local-import-alias" | "target";
+  placeholder: string;
+  selection: SourceSpan;
+  occurrences: readonly ProjectSemanticOccurrence[];
+}>;
+
+export type SemanticDocumentHighlight = Readonly<{
+  occurrence: ModuleSemanticOccurrence;
+  access: "read" | "write";
+}>;
+
+export type SemanticScopeValue =
+  | Readonly<{ kind: "value"; id: ValueId }>
+  | Readonly<{ kind: "constructor"; id: CtorId }>;
+
+export type SemanticScope = Readonly<{
+  values: ReadonlyMap<string, SemanticScopeValue>;
+  structures: ReadonlyMap<string, StructureSemanticId>;
+  types: ReadonlyMap<string, TypeNameId>;
+  typeVariables: ReadonlyMap<string, TypeVariableId>;
+}>;
+
+export type ModuleSemanticScopes = Readonly<{
+  initial: SemanticScope;
+  nodes: readonly Readonly<{ span: SourceSpan; scope: SemanticScope }>[];
+  checkpoints: readonly Readonly<{
+    container: SourceSpan;
+    offset: number;
+    scope: SemanticScope;
+  }>[];
+}>;
+
+export type ModuleInterface = Readonly<{
+  projectSnapshotId: ProjectSnapshotId;
+  moduleId: ModuleId;
+  path: string;
+  sourceSpan: SourceSpan;
+  generation: InterfaceGeneration;
+  basis: Readonly<{
+    profile: BasisProfileName;
+    generation: BasisGeneration;
+  }>;
+  publicEnvironment: StructureEnv;
+  origins: ReadonlyMap<string, readonly DeclarationOrigin[]>;
+  dependencies: readonly ModuleImportEdge[];
+  reverseDependencies: readonly ModuleId[];
+  imports: readonly ModuleImportOccurrence[];
+  occurrences: readonly ModuleSemanticOccurrence[];
+  scopes: ModuleSemanticScopes;
+  initialScopeTypes: readonly SemanticScopeTargetType[];
+  structureMembers: ReadonlyMap<StructureSemanticId, readonly SemanticStructureMember[]>;
+  typeVariables: readonly SemanticTypeVariableRegion[];
+  declarations: readonly SemanticTopLevelDeclaration[];
+  typedNodes: readonly SemanticTypedNode[];
+  carrierOperations: readonly SemanticCarrierOperation[];
+  gpuFacts: SemanticGpuFacts;
+  completionFacts: SemanticCompletionFacts;
+  ffiFacts: SemanticFfiFacts;
+  semanticTypes: readonly SemanticType[];
+  diagnostics: readonly FrontendDiagnostic[];
+  completeness: ModuleCompleteness;
+}>;
+
+export type ProjectSnapshot = Readonly<{
+  id: ProjectSnapshotId;
+  kind: "headed" | "detached";
+  head: ModuleId;
+  configuration: ProjectConfiguration;
+  basisGenerations: ReadonlyMap<BasisProfileName, BasisGeneration>;
+  generation: InterfaceGeneration;
+  interfaces: ReadonlyMap<ModuleId, ModuleInterface>;
+}>;
+
+export type ProjectConfiguration = Readonly<{
+  frontend: "v1" | "v2" | "compare";
+  surface: "workman" | "wmsml";
+}>;
+
+export type ProjectSnapshotContext = Readonly<{
+  kind?: "headed" | "detached";
+  configuration?: Partial<ProjectConfiguration>;
+}>;
+
+export type ProjectSemanticFacts = Readonly<{
+  gpuSelections?: GpuFragmentSelectionFacts;
+  gpuSlices?: readonly NormalizedGpuSlice[];
+  completionFacts?: ReadonlyMap<ModuleId, SemanticCompletionFacts>;
+}>;
+
+export function buildProjectSnapshot(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+  bindings: ModuleMap<BindingFacts>,
+  nominalFacts: NominalFacts,
+  context: ProjectSnapshotContext = {},
+  semanticFacts: ProjectSemanticFacts = {},
+): ProjectSnapshot {
+  const projectSnapshotId = projectSnapshotToken();
+  const generation = generationToken();
+  const reverse = reverseDependencies(graph);
+  const targetTypes = semanticTargetTypes(results, bindings, nominalFacts);
+  const interfaces = new Map<ModuleId, ModuleInterface>();
+  for (const id of graph.order) {
+    const node = graph.nodes.get(id)!;
+    const result = results.get(id)!;
+    const moduleBindings = bindings.get(id)!;
+    const imports = Object.freeze(
+      importOccurrences(node.module.decls, node.imports, bindings, nominalFacts),
+    );
+    const typeArena = createSemanticTypeArena(nominalFacts);
+    const typeVariables = semanticTypeVariableRegions(node.source, result);
+    const occurrences = Object.freeze(
+      annotateDeclarationOwnership(
+        semanticOccurrences(
+          id,
+          node.source,
+          node.imports,
+          imports,
+          moduleBindings,
+          nominalFacts,
+          result,
+          typeArena,
+          typeVariables,
+          targetTypes,
+        ),
+        id,
+        moduleBindings,
+        nominalFacts,
+      ),
+    );
+    const scopes = semanticScopes(moduleBindings, result, nominalFacts);
+    const initialScopeTypes = semanticInitialScopeTypes(result, typeArena);
+    const structureMembers = semanticStructureMembers(result, nominalFacts, typeArena);
+    const declarations = semanticTopLevelDeclarations(
+      node.module.decls,
+      node.source,
+      moduleBindings,
+      nominalFacts,
+    );
+    const typedNodes = semanticTypedNodes(result, moduleBindings, typeArena);
+    const carrierOperations = semanticCarrierOperations(result, typeArena);
+    const gpuFacts = semanticGpuFacts(
+      id,
+      result,
+      semanticFacts.gpuSelections,
+      semanticFacts.gpuSlices,
+      typeArena,
+    );
+    const completionFacts = semanticFacts.completionFacts?.get(id) ??
+      semanticCompletionFacts(node.module, moduleBindings);
+    const ffiFacts = semanticFfiFacts(
+      id,
+      node.module.decls,
+      node.source,
+      moduleBindings,
+      nominalFacts,
+      result,
+      typeArena,
+    );
+    interfaces.set(
+      id,
+      Object.freeze({
+        projectSnapshotId,
+        moduleId: id,
+        path: node.path,
+        sourceSpan: Object.freeze({
+          line: 1,
+          col: 0,
+          start: 0,
+          end: node.source.length,
+        }),
+        generation,
+        basis: Object.freeze({
+          profile: result.basis.profile.name,
+          generation: result.basis.generation,
+        }),
+        publicEnvironment: result.exportedStructure,
+        origins: declarationOrigins(id, node.source, moduleBindings, nominalFacts),
+        dependencies: Object.freeze([...node.imports]),
+        reverseDependencies: Object.freeze([...(reverse.get(id) ?? [])]),
+        imports,
+        occurrences,
+        scopes,
+        initialScopeTypes,
+        structureMembers,
+        typeVariables,
+        declarations,
+        typedNodes,
+        carrierOperations,
+        gpuFacts,
+        completionFacts,
+        ffiFacts,
+        semanticTypes: typeArena.finish(),
+        diagnostics: Object.freeze([
+          ...(node.syntaxDiagnostics ?? []),
+          ...(node.importDiagnostics ?? []),
+          ...result.diagnostics,
+        ]),
+        // Reaching this builder means strict parsing, graph loading, staged FFI preparation, and
+        // final host inference completed. Warnings do not make those facts partial. The first
+        // The occurrence artifact deliberately reports partial coverage until every
+        // recovery-produced and role-specific source mapping is represented. Final specialized GPU
+        // occurrence types are not yet part of this artifact.
+        completeness: analysisCompleteness(
+          result,
+          node,
+          ffiFacts,
+          gpuFacts,
+        ),
+      }),
+    );
+  }
+  return Object.freeze({
+    id: projectSnapshotId,
+    kind: context.kind ?? "headed",
+    head: graph.entry,
+    configuration: Object.freeze({
+      frontend: context.configuration?.frontend ?? "v1",
+      surface: context.configuration?.surface ?? "workman",
+    }),
+    basisGenerations: new Map(
+      [...results.values()].map((result) => [
+        result.basis.profile.name,
+        result.basis.generation,
+      ]),
+    ),
+    generation,
+    interfaces,
+  });
+}
+
+function semanticTopLevelDeclarations(
+  declarations: readonly Decl[],
+  source: string,
+  bindings: BindingFacts,
+  nominalFacts: NominalFacts,
+): readonly SemanticTopLevelDeclaration[] {
+  const output: SemanticTopLevelDeclaration[] = [];
+  for (const declaration of declarations) {
+    if (!declaration.node) continue;
+    if (declaration.kind === "LetDecl") {
+      for (const binding of declaration.bindings) {
+        for (const pattern of topLevelPatternBinders(binding.pattern)) {
+          const id = bindings.binders.get(pattern);
+          if (id === undefined || !pattern.node) continue;
+          output.push(Object.freeze({
+            kind: binding.value.kind === "Lambda" ? "function" : "value",
+            name: pattern.name,
+            target: Object.freeze({ kind: "value", id }),
+            span: Object.freeze({ ...declaration.node.span }),
+            selectionSpan: Object.freeze({ ...pattern.node.span }),
+          }));
+        }
+      }
+      continue;
+    }
+    if (
+      declaration.kind !== "TypeDecl" &&
+      declaration.kind !== "RecordDecl" &&
+      declaration.kind !== "ForeignTypeDecl"
+    ) continue;
+    const typeFact = nominalFacts.types.find((fact) => fact.declaration === declaration);
+    const selectionSpan = identifierSpan(source, declaration.node, declaration.name, "first");
+    if (!typeFact || !selectionSpan) continue;
+    const constructors = declaration.kind === "TypeDecl"
+      ? declaration.ctors.flatMap((constructor) => {
+        const fact = nominalFacts.constructors.find((candidate) =>
+          candidate.declaration === constructor
+        );
+        const constructorSpan = constructor.node &&
+          identifierSpan(source, constructor.node, constructor.name, "first");
+        return fact && constructor.node && constructorSpan
+          ? [Object.freeze({
+            name: constructor.name,
+            id: fact.id,
+            span: Object.freeze({ ...constructor.node.span }),
+            selectionSpan: Object.freeze(constructorSpan),
+          })]
+          : [];
+      })
+      : undefined;
+    output.push(Object.freeze({
+      kind: declaration.kind === "TypeDecl"
+        ? "datatype"
+        : declaration.kind === "RecordDecl"
+        ? "record"
+        : "foreign-type",
+      name: declaration.name,
+      target: Object.freeze({ kind: "type", id: typeFact.id }),
+      span: Object.freeze({ ...declaration.node.span }),
+      selectionSpan: Object.freeze(selectionSpan),
+      constructors: constructors && Object.freeze(constructors),
+    }));
+  }
+  return Object.freeze(output);
+}
+
+function topLevelPatternBinders(
+  pattern: Pattern,
+): Extract<Pattern, { kind: "PVar" }>[] {
+  if (pattern.kind === "PVar") return [pattern];
+  if (pattern.kind === "PTuple") return pattern.items.flatMap(topLevelPatternBinders);
+  if (pattern.kind === "PRecord") {
+    return pattern.fields.flatMap((field) => topLevelPatternBinders(field.pattern));
+  }
+  return [];
+}
+
+type SemanticTypeSource = Readonly<{
+  type: Ty;
+  scheme?: Scheme;
+}>;
+
+function semanticTargetTypes(
+  results: ModuleMap<InferResult>,
+  bindings: ModuleMap<BindingFacts>,
+  nominalFacts: NominalFacts,
+): ReadonlyMap<string, SemanticTypeSource> {
+  const types = new Map<string, SemanticTypeSource>();
+  for (const [moduleId, moduleBindings] of bindings) {
+    const result = results.get(moduleId)!;
+    for (const [pattern, id] of moduleBindings.binders) {
+      const fact = result.facts.patterns.get(pattern);
+      const type = fact?.instantiated ?? result.facts.patternTypes.get(pattern);
+      if (!type) continue;
+      types.set(
+        semanticTargetKey({ kind: "value", id }),
+        Object.freeze({ type, scheme: fact?.general }),
+      );
+    }
+    for (const [declaration, id] of moduleBindings.recordConstructors) {
+      const scheme = result.facts.bindings.get(declaration.name)?.find((fact) =>
+        fact.general?.status === "record-constructor" &&
+        fact.general.node === declaration.node
+      )?.general;
+      if (!scheme) continue;
+      types.set(
+        semanticTargetKey({ kind: "value", id }),
+        Object.freeze({ type: scheme.type, scheme }),
+      );
+    }
+  }
+  for (const constructor of nominalFacts.constructors) {
+    const result = results.get(constructor.moduleId);
+    const scheme = result?.facts.bindings.get(constructor.name)?.find((fact) =>
+      fact.general?.constructorDecl === constructor.declaration
+    )?.general;
+    if (!scheme) continue;
+    types.set(
+      semanticTargetKey({ kind: "constructor", id: constructor.id }),
+      Object.freeze({ type: scheme.type, scheme }),
+    );
+  }
+  return types;
+}
+
+function semanticFfiFacts(
+  moduleId: ModuleId,
+  declarations: readonly Decl[],
+  source: string,
+  bindings: BindingFacts,
+  nominalFacts: NominalFacts,
+  result: InferResult,
+  typeArena: SemanticTypeArena,
+): SemanticFfiFacts {
+  const jsDeclarations = declarations
+    .filter((declaration): declaration is Extract<Decl, { kind: "JsImportDecl" }> =>
+      declaration.kind === "JsImportDecl" && declaration.node !== undefined
+    );
+  const imports = jsDeclarations
+    .filter((declaration) =>
+      declaration.sourceClause !== undefined ||
+      declaration.clause.kind !== "Named" ||
+      declaration.clause.specs.some((spec) => spec.sourceName === undefined)
+    )
+    .map((declaration) => {
+      const clause = declaration.sourceClause ?? declaration.clause;
+      const importedBindings: SemanticJsImport["bindings"] = clause.kind === "Namespace"
+        ? (() => {
+          const id = bindings.jsImportBinders.get(declaration);
+          const scheme = result.facts.jsImportSchemes.get(declaration);
+          const namespace = id === undefined ? [] : [Object.freeze({
+            sourceName: clause.alias,
+            localName: clause.alias,
+            id,
+            fallible: false,
+            type: semanticOccurrenceType(typeArena, scheme?.type, scheme),
+          })];
+          const members = jsDeclarations.flatMap((candidate) =>
+            candidate === declaration || candidate.node !== declaration.node ||
+              candidate.clause.kind !== "Named"
+              ? []
+              : candidate.clause.specs.flatMap((spec) => {
+                if (!spec.sourceName?.startsWith(`${clause.alias}.`)) return [];
+                const memberId = bindings.jsImportBinders.get(spec);
+                const memberScheme = result.facts.jsImportSchemes.get(spec);
+                if (memberId === undefined) return [];
+                return [Object.freeze({
+                  sourceName: spec.name,
+                  localName: spec.sourceName,
+                  id: memberId,
+                  fallible: spec.fallible ?? false,
+                  type: semanticOccurrenceType(
+                    typeArena,
+                    memberScheme?.type,
+                    memberScheme,
+                  ),
+                })];
+              })
+          );
+          return [...namespace, ...members];
+        })()
+        : clause.specs.filter((spec) => spec.sourceName === undefined).flatMap((spec) => {
+          const id = bindings.jsImportBinders.get(spec);
+          if (id === undefined) return [];
+          const scheme = result.facts.jsImportSchemes.get(spec) ??
+            jsImportSourceScheme(id, bindings, result);
+          return [Object.freeze({
+            sourceName: spec.name,
+            localName: spec.alias ?? spec.name,
+            id,
+            fallible: spec.fallible ?? false,
+            type: semanticOccurrenceType(typeArena, scheme?.type, scheme),
+          })];
+        });
+      const structureId = bindings.jsStructureBinders.get(declaration);
+      return Object.freeze({
+        span: Object.freeze({ ...declaration.node!.span }),
+        target: semanticJsTarget(declaration.target),
+        unsafe: clause.unsafe ?? false,
+        typeOnly: declaration.typeOnly ?? false,
+        structureAlias: clause.kind === "Named" && clause.alias && structureId !== undefined
+          ? Object.freeze({ name: clause.alias, id: structureId })
+          : undefined,
+        bindings: Object.freeze(importedBindings),
+      });
+    });
+  const foreignTypes = nominalFacts.types
+    .flatMap((fact) => {
+      const declaration = fact.declaration;
+      if (
+        fact.moduleId !== moduleId ||
+        declaration.kind !== "ForeignTypeDecl" ||
+        !declaration.node
+      ) return [];
+      const span = identifierSpan(
+        source,
+        declaration.node,
+        declaration.name,
+        "first",
+      );
+      return span
+        ? [Object.freeze({
+          name: fact.name,
+          id: fact.id,
+          foreignKey: declaration.foreignKey,
+          span: Object.freeze(span),
+        })]
+        : [];
+    });
+  const calls = [...result.types]
+    .flatMap(([expression]) => {
+      if (
+        expression.kind !== "Call" ||
+        expression.callee.kind !== "Var" ||
+        !expression.callee.name.startsWith("__ffi_") ||
+        !expression.node
+      ) return [];
+      const scheme = result.env.get(expression.callee.name);
+      const type = semanticOccurrenceType(typeArena, scheme?.type, scheme);
+      if (!type) return [];
+      const label = expression.callee.sourceName ??
+        displayGeneratedFfiName(expression.callee.name);
+      return [Object.freeze({
+        label,
+        span: Object.freeze(
+          identifierSpan(source, expression.node, label, "last") ??
+            expression.node.span,
+        ),
+        type,
+        receiverElided: true as const,
+      })];
+    })
+    .sort((left, right) => left.span.start - right.span.start);
+  return Object.freeze({
+    imports: Object.freeze(imports),
+    calls: Object.freeze(calls),
+    foreignTypes: Object.freeze(foreignTypes),
+  });
+}
+
+function displayGeneratedFfiName(name: string): string {
+  const tokens = name.replace(/^__ffi_/, "").replace(/_\d+$/, "").split("_").filter(Boolean);
+  for (let size = Math.floor(tokens.length / 2); size > 0; size--) {
+    const left = tokens.slice(tokens.length - size * 2, tokens.length - size);
+    const right = tokens.slice(tokens.length - size);
+    if (left.join("\0") === right.join("\0")) return right.join("_");
+  }
+  return tokens.at(-1) ?? name;
+}
+
+function semanticJsTarget(
+  target: Extract<Decl, { kind: "JsImportDecl" }>["target"],
+): SemanticJsTarget {
+  switch (target.kind) {
+    case "JsGlobalRoot":
+      return Object.freeze({ kind: "global-root" });
+    case "JsGlobal":
+      return Object.freeze({ kind: "global", path: target.path });
+    case "JsMeta":
+      return Object.freeze({ kind: "meta" });
+    case "JsModule":
+      return Object.freeze({ kind: "module", specifier: target.specifier });
+    case "JsWorker":
+      return Object.freeze({ kind: "worker", specifier: target.specifier });
+    case "JsReceiver":
+      return Object.freeze({ kind: "receiver", path: Object.freeze([...target.path]) });
+    case "JsConstructor":
+      return Object.freeze({ kind: "constructor", path: target.path });
+  }
+}
+
+function semanticGpuFacts(
+  moduleId: ModuleId,
+  result: InferResult,
+  selections: GpuFragmentSelectionFacts | undefined,
+  normalizedSlices: readonly NormalizedGpuSlice[] | undefined,
+  typeArena: SemanticTypeArena,
+): SemanticGpuFacts {
+  const operations = [...result.facts.gpuOperations.values()]
+    .flatMap((operation) =>
+      operation.occurrence.node
+        ? [Object.freeze({
+          kind: operation.kind,
+          identity: operation.identity,
+          span: Object.freeze({ ...operation.occurrence.node.span }),
+          args: Object.freeze(operation.args.map((type) => typeArena.snapshot(type))),
+          result: typeArena.snapshot(operation.result),
+          rows: Object.freeze(
+            operation.rows.map((row) =>
+              Object.freeze({
+                id: row.id,
+                args: Object.freeze([...row.args]),
+                result: row.result,
+              })
+            ),
+          ),
+          determiningArgs: Object.freeze([...operation.determiningArgs]),
+        })]
+        : []
+    )
+    .sort((left, right) => left.span.start - right.span.start);
+  const builtins = [...result.facts.gpuBuiltins]
+    .flatMap(([expression, name]) =>
+      expression.node
+        ? [Object.freeze({
+          name,
+          span: Object.freeze({ ...expression.node.span }),
+        })]
+        : []
+    )
+    .sort((left, right) => left.span.start - right.span.start);
+  const resources = [...result.facts.gpuResourceCalls]
+    .flatMap(([expression, resource]) =>
+      expression.node
+        ? [Object.freeze({
+          ...resource,
+          receiverType: typeArena.snapshot(resource.receiverType),
+          span: Object.freeze({ ...expression.node.span }),
+        })]
+        : []
+    )
+    .sort((left, right) => left.span.start - right.span.start);
+  const roots = (selections?.roots ?? [])
+    .filter((root) => root.moduleId === moduleId && root.lambda.node)
+    .map((root) =>
+      Object.freeze({
+        id: root.id,
+        span: Object.freeze({ ...root.lambda.node!.span }),
+        bindingId: root.bindingId,
+        selectorIds: Object.freeze(root.selectors.map((selector) => selector.id)),
+        factory: root.factory?.lambda.node
+          ? Object.freeze({
+            bindingId: root.factory.bindingId,
+            span: Object.freeze({ ...root.factory.lambda.node.span }),
+            parameter: root.factory.parameter.node
+              ? Object.freeze({ ...root.factory.parameter.node.span })
+              : undefined,
+          })
+          : undefined,
+      })
+    )
+    .sort((left, right) => left.span.start - right.span.start);
+  const selectors = (selections?.selectors ?? [])
+    .filter((selector) =>
+      selector.moduleId === moduleId && selector.call.node && selector.argument.node
+    )
+    .map((selector) =>
+      Object.freeze({
+        id: selector.id,
+        rootId: selector.rootId,
+        span: Object.freeze({ ...selector.call.node!.span }),
+        argument: Object.freeze({ ...selector.argument.node!.span }),
+        environmentArgument: selector.environmentArgument?.node
+          ? Object.freeze({ ...selector.environmentArgument.node.span })
+          : undefined,
+      })
+    )
+    .sort((left, right) => left.span.start - right.span.start);
+  const slices = (normalizedSlices ?? [])
+    .filter((slice) => slice.root.moduleId === moduleId)
+    .map((slice) =>
+      Object.freeze({
+        rootId: slice.root.id,
+        selectorIds: Object.freeze(slice.selectors.map((selector) => selector.id)),
+        input: immutableCopy(slice.input),
+      })
+    );
+  return Object.freeze({
+    operations: Object.freeze(operations),
+    builtins: Object.freeze(builtins),
+    resources: Object.freeze(resources),
+    roots: Object.freeze(roots),
+    selectors: Object.freeze(selectors),
+    slices: Object.freeze(slices),
+  });
+}
+
+function semanticTypedNodes(
+  result: InferResult,
+  bindings: BindingFacts,
+  typeArena: SemanticTypeArena,
+): readonly SemanticTypedNode[] {
+  const nodes: SemanticTypedNode[] = [];
+  for (const [expression, type] of result.types) {
+    if (!expression.node) continue;
+    const fact = result.facts.expressions.get(expression);
+    const bindingId = expression.kind === "Var"
+      ? bindings.references.get(expression)
+      : undefined;
+    nodes.push(Object.freeze({
+      kind: "expression",
+      label: semanticExpressionLabel(expression),
+      span: Object.freeze({ ...expression.node.span }),
+      type: semanticOccurrenceType(typeArena, fact?.instantiated ?? type)!,
+      generalType: semanticOccurrenceType(typeArena, undefined, fact?.general),
+      presentation: bindingId !== undefined && bindings.jsImportSourceBindings.has(bindingId)
+        ? "generated-ffi-receiver"
+        : undefined,
+    }));
+  }
+  for (const [pattern, type] of result.facts.patternTypes) {
+    if (!pattern.node) continue;
+    const fact = result.facts.patterns.get(pattern);
+    nodes.push(Object.freeze({
+      kind: "pattern",
+      label: semanticPatternLabel(pattern),
+      span: Object.freeze({ ...pattern.node.span }),
+      type: semanticOccurrenceType(
+        typeArena,
+        fact?.instantiated ?? type,
+        fact?.general,
+      )!,
+    }));
+  }
+  for (const [expression, type] of result.facts.typeExpressions) {
+    if (!expression.node) continue;
+    nodes.push(Object.freeze({
+      kind: "type-expression",
+      label: semanticTypeExpressionLabel(expression),
+      span: Object.freeze({ ...expression.node.span }),
+      type: semanticOccurrenceType(typeArena, type)!,
+    }));
+  }
+  return Object.freeze(
+    nodes.sort((left, right) =>
+      left.span.start - right.span.start ||
+      left.span.end - right.span.end ||
+      typedNodeKindOrder(left.kind) - typedNodeKindOrder(right.kind)
+    ),
+  );
+}
+
+function semanticExpressionLabel(expression: Expr): string {
+  return expression.kind === "Var"
+    ? expression.sourceName ?? expression.name
+    : expression.kind;
+}
+
+function semanticPatternLabel(pattern: Pattern): string {
+  return pattern.kind === "PVar" || pattern.kind === "PPinned"
+    ? pattern.name
+    : pattern.kind;
+}
+
+function semanticTypeExpressionLabel(expression: import("./ast.ts").TypeExpr): string {
+  return expression.kind === "TName" ? expression.name : expression.kind;
+}
+
+function semanticCarrierOperations(
+  result: InferResult,
+  typeArena: SemanticTypeArena,
+): readonly SemanticCarrierOperation[] {
+  return Object.freeze(
+    [...result.facts.primitiveCarriers.values()]
+      .flatMap((plan) =>
+        plan.occurrence.node
+          ? [Object.freeze({
+            carrier: plan.carrier,
+            span: Object.freeze({ ...plan.occurrence.node.span }),
+            operands: Object.freeze([...plan.operands]),
+            errorType: typeArena.snapshot(plan.error),
+            payloadResultType: typeArena.snapshot(plan.payloadResult),
+          })]
+          : []
+      )
+      .sort((left, right) => left.span.start - right.span.start),
+  );
+}
+
+function annotateDeclarationOwnership(
+  occurrences: readonly ModuleSemanticOccurrence[],
+  moduleId: ModuleId,
+  bindings: BindingFacts,
+  nominalFacts: NominalFacts,
+): ModuleSemanticOccurrence[] {
+  const publicTargets = new Set<string>();
+  for (const id of bindings.exports.values()) {
+    publicTargets.add(semanticTargetKey({ kind: "value", id }));
+  }
+  for (const fact of nominalFacts.types) {
+    if (fact.moduleId === moduleId && fact.exported) {
+      publicTargets.add(semanticTargetKey({ kind: "type", id: fact.id }));
+    }
+  }
+  for (const fact of nominalFacts.constructors) {
+    if (fact.moduleId === moduleId && fact.exported) {
+      publicTargets.add(semanticTargetKey({ kind: "constructor", id: fact.id }));
+    }
+  }
+  for (const fact of nominalFacts.fields) {
+    if (fact.moduleId === moduleId && fact.exported) {
+      publicTargets.add(semanticTargetKey({ kind: "field", id: fact.id }));
+    }
+  }
+  const localStructures = new Set<StructureSemanticId>([
+    ...bindings.structureBinders.values(),
+    ...bindings.jsStructureBinders.values(),
+  ]);
+  return occurrences.map((occurrence) => {
+    const localAlias = occurrence.role === "import-alias" &&
+      ((occurrence.target.kind === "value" &&
+        typeof occurrence.target.id === "number" &&
+        bindings.local.has(occurrence.target.id)) ||
+        (occurrence.target.kind === "structure" &&
+          localStructures.has(occurrence.target.id)));
+    if (occurrence.role !== "declaration" && !localAlias) return occurrence;
+    const key = semanticTargetKey(occurrence.target);
+    return Object.freeze({
+      ...occurrence,
+      declaration: Object.freeze({
+        moduleId,
+        visibility: publicTargets.has(key) ? "public" : "private",
+      }),
+    });
+  });
+}
+
+function semanticTargetKey(target: SemanticOccurrenceTarget): string {
+  return `${target.kind}:${String(target.id)}`;
+}
+
+/** Snapshot-local conservative invalidation: a change invalidates the module and every importer. */
+export function dependentInterfaceClosure(
+  interfaces: ReadonlyMap<ModuleId, ModuleInterface>,
+  changed: Iterable<ModuleId>,
+): ReadonlySet<ModuleId> {
+  const invalid = new Set<ModuleId>(changed);
+  const pending = [...invalid];
+  while (pending.length > 0) {
+    const id = pending.pop()!;
+    for (const dependent of interfaces.get(id)?.reverseDependencies ?? []) {
+      if (invalid.has(dependent)) continue;
+      invalid.add(dependent);
+      pending.push(dependent);
+    }
+  }
+  return invalid;
+}
+
+export function semanticOccurrenceAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): ModuleSemanticOccurrence | undefined {
+  return semanticOccurrencesAt(moduleInterface, offset)[0];
+}
+
+export function semanticOccurrencesAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): readonly ModuleSemanticOccurrence[] {
+  return moduleInterface.occurrences
+    .filter((item) => item.span.start <= offset && offset < item.span.end)
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start) ||
+      occurrenceRoleOrder(left.role) - occurrenceRoleOrder(right.role)
+    );
+}
+
+export function semanticOccurrencesForTarget(
+  project: ProjectSnapshot,
+  target: SemanticOccurrenceTarget,
+): readonly ProjectSemanticOccurrence[] {
+  const occurrences: ProjectSemanticOccurrence[] = [];
+  for (const [moduleId, moduleInterface] of project.interfaces) {
+    for (const occurrence of moduleInterface.occurrences) {
+      if (occurrence.target.kind !== target.kind || occurrence.target.id !== target.id) continue;
+      occurrences.push(Object.freeze({ moduleId, occurrence }));
+    }
+  }
+  return Object.freeze(occurrences);
+}
+
+/**
+ * Select a safe, project-local rename group. Import aliases retain their target semantic identity,
+ * so their occurrence role and local spelling distinguish alias-only rename from target rename.
+ */
+export function semanticRenameAt(
+  project: ProjectSnapshot,
+  moduleId: ModuleId,
+  offset: number,
+): SemanticRenamePlan | undefined {
+  const moduleInterface = project.interfaces.get(moduleId);
+  if (!moduleInterface || !renameSnapshotIsComplete(project)) return;
+  const selection = semanticOccurrenceSelectionAt(moduleInterface, offset);
+  if (!selection || selection.targets.some(({ kind }) => kind === "module")) return;
+  const { primary, targets: selectedTargets, localAlias } = selection;
+  if (
+    selectedTargets.some(({ kind }) => kind === "field") &&
+    moduleInterface.diagnostics.some((diagnostic) =>
+      diagnostic.code === "record.ambiguous-projection" &&
+      diagnostic.primary.kind === "source" &&
+      spansOverlap(diagnostic.primary.span, primary.span)
+    )
+  ) return;
+
+  if (localAlias) {
+    const occurrences = moduleInterface.occurrences
+      .filter((occurrence) =>
+        selectedTargets.some((target) => sameSemanticTarget(target, occurrence.target)) &&
+        occurrence.name === primary.name &&
+        (occurrence.role === "import-alias" ||
+          occurrence.role === "reference" ||
+          occurrence.role === "qualifier")
+      )
+      .map((occurrence) => Object.freeze({ moduleId, occurrence }));
+    return occurrences.length === 0
+      ? undefined
+      : Object.freeze({
+        kind: "local-import-alias",
+        placeholder: primary.name,
+        selection: primary.span,
+        occurrences: freezeDistinctProjectOccurrences(occurrences),
+      });
+  }
+
+  const occurrences: ProjectSemanticOccurrence[] = [];
+  for (const [ownerId, owner] of project.interfaces) {
+    for (const occurrence of owner.occurrences) {
+      if (!selectedTargets.some((target) => sameSemanticTarget(target, occurrence.target))) continue;
+      if (occurrence.name !== primary.name || occurrence.role === "import-alias") continue;
+      occurrences.push(Object.freeze({ moduleId: ownerId, occurrence }));
+    }
+  }
+  if (
+    occurrences.length === 0 ||
+    !occurrences.some(({ occurrence }) => occurrence.declaration !== undefined)
+  ) return;
+  return Object.freeze({
+    kind: "target",
+    placeholder: primary.name,
+    selection: primary.span,
+    occurrences: freezeDistinctProjectOccurrences(occurrences),
+  });
+}
+
+/** Select identity-correct read/write highlights within one module interface. */
+export function semanticDocumentHighlightsAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): readonly SemanticDocumentHighlight[] {
+  const selection = semanticOccurrenceSelectionAt(moduleInterface, offset);
+  if (!selection) return [];
+  const occurrences = moduleInterface.occurrences.filter((occurrence) =>
+    selection.targets.some((target) => sameSemanticTarget(target, occurrence.target)) &&
+    (!selection.localAlias ||
+      (occurrence.name === selection.primary.name &&
+        (occurrence.role === "import-alias" ||
+          occurrence.role === "reference" ||
+          occurrence.role === "qualifier")))
+  );
+  const distinct = freezeDistinctProjectOccurrences(
+    occurrences.map((occurrence) =>
+      Object.freeze({ moduleId: moduleInterface.moduleId, occurrence })
+    ),
+  );
+  return Object.freeze(distinct.map(({ occurrence }) =>
+    Object.freeze({
+      occurrence,
+      access: occurrence.role === "declaration" || occurrence.role === "import-alias"
+        ? "write"
+        : "read",
+    })
+  ));
+}
+
+type SemanticOccurrenceSelection = Readonly<{
+  primary: ModuleSemanticOccurrence;
+  targets: readonly SemanticOccurrenceTarget[];
+  localAlias: boolean;
+}>;
+
+function semanticOccurrenceSelectionAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): SemanticOccurrenceSelection | undefined {
+  const selected = semanticOccurrencesAt(moduleInterface, offset);
+  if (selected.length === 0) return;
+  const primary = selected[0];
+  const targets = selected
+    .filter((occurrence) =>
+      occurrence.name === primary.name && sameSpan(occurrence.span, primary.span)
+    )
+    .map((occurrence) => occurrence.target);
+  const matchingAliases = moduleInterface.occurrences.filter((occurrence) =>
+    occurrence.role === "import-alias" &&
+    occurrence.name === primary.name &&
+    targets.some((target) => sameSemanticTarget(target, occurrence.target))
+  );
+  const localAlias = primary.role === "import-alias" ||
+    ((primary.role === "reference" || primary.role === "qualifier") &&
+      matchingAliases.length > 0);
+  if (!localAlias) return Object.freeze({ primary, targets: Object.freeze(targets), localAlias });
+  const aliasTargets = matchingAliases.flatMap((alias) =>
+    moduleInterface.occurrences
+      .filter((occurrence) =>
+        occurrence.role === "import-alias" &&
+        occurrence.name === alias.name &&
+        sameSpan(occurrence.span, alias.span)
+      )
+      .map((occurrence) => occurrence.target)
+  );
+  return Object.freeze({
+    primary,
+    targets: Object.freeze(aliasTargets),
+    localAlias,
+  });
+}
+
+export function semanticRenameNameIsValid(plan: SemanticRenamePlan, name: string): boolean {
+  if (workmanKeywords.has(name)) return false;
+  return /^[A-Z]/.test(plan.placeholder)
+    ? /^[A-Z][A-Za-z0-9_]*$/.test(name)
+    : /^[a-z_][A-Za-z0-9_]*$/.test(name);
+}
+
+const workmanKeywords = new Set([
+  "from",
+  "import",
+  "as",
+  "let",
+  "rec",
+  "and",
+  "type",
+  "record",
+  "if",
+  "else",
+  "match",
+  "true",
+  "false",
+  "void",
+]);
+
+function renameSnapshotIsComplete(project: ProjectSnapshot): boolean {
+  return [...project.interfaces.values()].every(({ completeness }) =>
+    completeness.syntax === "complete" &&
+    completeness.imports === "complete" &&
+    completeness.elaboration === "complete"
+  );
+}
+
+function freezeDistinctProjectOccurrences(
+  occurrences: readonly ProjectSemanticOccurrence[],
+): readonly ProjectSemanticOccurrence[] {
+  const seen = new Map<ModuleId, Set<string>>();
+  return Object.freeze(occurrences.filter(({ moduleId, occurrence }) => {
+    const spans = seen.get(moduleId) ?? new Set<string>();
+    const key = `${occurrence.span.start}:${occurrence.span.end}`;
+    if (spans.has(key)) return false;
+    spans.add(key);
+    seen.set(moduleId, spans);
+    return true;
+  }));
+}
+
+function sameSemanticTarget(
+  left: SemanticOccurrenceTarget,
+  right: SemanticOccurrenceTarget,
+): boolean {
+  return left.kind === right.kind && left.id === right.id;
+}
+
+function spansOverlap(left: SourceSpan, right: SourceSpan): boolean {
+  return left.start < right.end && right.start < left.end;
+}
+
+export type SemanticSourceLocation = Readonly<{
+  moduleId: ModuleId;
+  path: string;
+  span: SourceSpan;
+  occurrence?: ModuleSemanticOccurrence;
+}>;
+
+export function semanticDefinitionsForTarget(
+  project: ProjectSnapshot,
+  target: SemanticOccurrenceTarget,
+): readonly SemanticSourceLocation[] {
+  if (target.kind === "module") {
+    const moduleInterface = project.interfaces.get(target.id);
+    return moduleInterface
+      ? [Object.freeze({
+        moduleId: target.id,
+        path: moduleInterface.path,
+        span: moduleInterface.sourceSpan,
+      })]
+      : [];
+  }
+  if (target.kind === "structure") {
+    for (const moduleInterface of project.interfaces.values()) {
+      const imported = moduleInterface.imports.find((item) =>
+        item.structureAlias?.id === target.id
+      );
+      if (!imported) continue;
+      const targetInterface = project.interfaces.get(imported.target);
+      if (!targetInterface) return [];
+      return [Object.freeze({
+        moduleId: imported.target,
+        path: targetInterface.path,
+        span: targetInterface.sourceSpan,
+      })];
+    }
+  }
+  return Object.freeze(
+    semanticOccurrencesForTarget(project, target)
+      .filter(({ occurrence }) => occurrence.declaration !== undefined)
+      .map(({ moduleId, occurrence }) => {
+        const moduleInterface = project.interfaces.get(moduleId)!;
+        return Object.freeze({
+          moduleId,
+          path: moduleInterface.path,
+          span: occurrence.span,
+          occurrence,
+        });
+      }),
+  );
+}
+
+export function semanticDefinitionsAt(
+  project: ProjectSnapshot,
+  moduleId: ModuleId,
+  offset: number,
+): readonly SemanticSourceLocation[] {
+  const moduleInterface = project.interfaces.get(moduleId);
+  if (!moduleInterface) return [];
+  const occurrence = semanticOccurrenceAt(moduleInterface, offset);
+  return occurrence ? semanticDefinitionsForTarget(project, occurrence.target) : [];
+}
+
+/** Resolve the nominal declarations named by the selected occurrence's compiler-owned type. */
+export function semanticTypeDefinitionsAt(
+  project: ProjectSnapshot,
+  moduleId: ModuleId,
+  offset: number,
+): readonly SemanticSourceLocation[] {
+  const moduleInterface = project.interfaces.get(moduleId);
+  if (!moduleInterface) return [];
+  const selected = semanticOccurrencesAt(moduleInterface, offset);
+  const directTypes = selected
+    .filter((occurrence) => occurrence.target.kind === "type")
+    .map((occurrence) => occurrence.target as Extract<SemanticOccurrenceTarget, { kind: "type" }>);
+  const typeNames = directTypes.length > 0
+    ? directTypes.map(({ id }) => id)
+    : semanticTypeNameIdsAt(moduleInterface, selected, offset);
+  const locations = typeNames.flatMap((id) =>
+    semanticDefinitionsForTarget(project, { kind: "type", id })
+  );
+  const seen = new Map<ModuleId, Set<string>>();
+  return Object.freeze(locations.filter((location) => {
+    const spans = seen.get(location.moduleId) ?? new Set<string>();
+    const key = `${location.span.start}:${location.span.end}`;
+    if (spans.has(key)) return false;
+    spans.add(key);
+    seen.set(location.moduleId, spans);
+    return true;
+  }));
+}
+
+function semanticTypeNameIdsAt(
+  moduleInterface: ModuleInterface,
+  occurrences: readonly ModuleSemanticOccurrence[],
+  offset: number,
+): readonly TypeNameId[] {
+  const roots = occurrences.flatMap((occurrence) =>
+    occurrence.inferredType ? [occurrence.inferredType.id] : []
+  );
+  if (roots.length === 0) {
+    const node = semanticTypedNodeAt(moduleInterface, offset);
+    if (node) roots.push(node.type.id);
+  }
+  const names: TypeNameId[] = [];
+  const seenTypes = new Set<SemanticTypeId>();
+  const seenNames = new Set<TypeNameId>();
+  const visit = (id: SemanticTypeId) => {
+    if (seenTypes.has(id)) return;
+    seenTypes.add(id);
+    const shape = moduleInterface.semanticTypes[id]?.shape;
+    if (!shape) return;
+    switch (shape.kind) {
+      case "named":
+        if (shape.typeNameId !== undefined && !seenNames.has(shape.typeNameId)) {
+          seenNames.add(shape.typeNameId);
+          names.push(shape.typeNameId);
+        }
+        shape.args.forEach(visit);
+        return;
+      case "function":
+        shape.params.forEach(visit);
+        visit(shape.result);
+        return;
+      case "tuple":
+        shape.items.forEach(visit);
+        return;
+      case "structural-record":
+        shape.fields.forEach((field) => visit(field.type));
+        return;
+      default:
+        return;
+    }
+  };
+  roots.forEach(visit);
+  return names;
+}
+
+export function semanticScopeAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): SemanticScope {
+  const containers = moduleInterface.scopes.checkpoints.map((checkpoint) => checkpoint.container);
+  const node = moduleInterface.scopes.nodes
+    .filter(({ span }) =>
+      !containers.some((container) => sameSpan(container, span)) &&
+      span.start <= offset &&
+      offset < span.end
+    )
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start) ||
+      right.span.start - left.span.start
+    )[0];
+  const checkpoint = moduleInterface.scopes.checkpoints
+    .filter(({ container, offset: checkpointOffset }) =>
+      container.start <= offset &&
+      offset < container.end &&
+      checkpointOffset <= offset
+    )
+    .sort((left, right) =>
+      (left.container.end - left.container.start) -
+        (right.container.end - right.container.start) ||
+      right.offset - left.offset
+    )[0];
+  const nodeWidth = node ? node.span.end - node.span.start : Number.POSITIVE_INFINITY;
+  const checkpointWidth = checkpoint
+    ? checkpoint.container.end - checkpoint.container.start
+    : Number.POSITIVE_INFINITY;
+  const trailing = !node && !checkpoint
+    ? outermostTrailingSemanticCheckpoint(moduleInterface.scopes.checkpoints, offset)
+    : undefined;
+  const base = checkpointWidth <= nodeWidth
+    ? checkpoint?.scope ?? trailing?.scope ?? moduleInterface.scopes.initial
+    : node?.scope ?? trailing?.scope ?? moduleInterface.scopes.initial;
+  const active = moduleInterface.typeVariables
+    .filter(({ scope }) => scope.start <= offset && offset < scope.end)
+    .sort((left, right) =>
+      (right.scope.end - right.scope.start) - (left.scope.end - left.scope.start) ||
+      left.scope.start - right.scope.start
+    );
+  if (active.length === 0) return base;
+  const typeVariables = new Map(base.typeVariables);
+  for (const variable of active) typeVariables.set(variable.name, variable.id);
+  return freezeSemanticScope(
+    new Map(base.values),
+    new Map(base.structures),
+    new Map(base.types),
+    typeVariables,
+  );
+}
+
+/**
+ * Preserve current-source lexical names for completion even when elaboration transactionally
+ * removes the containing phrase. These facts intentionally carry no semantic identities.
+ */
+export function semanticCompletionFacts(
+  module: Module,
+  bindings: BindingFacts,
+): SemanticCompletionFacts {
+  const names = (scope: BindingScopeSnapshot): SemanticCompletionScopeNames =>
+    Object.freeze({
+      values: sortedNames(scope.values),
+      structures: sortedNames(scope.structures),
+      types: sortedNames(scope.types),
+      constructors: sortedNames(scope.constructors),
+    });
+  return Object.freeze({
+    gpuRegions: Object.freeze(
+      discoverGpuRegions(module)
+        .flatMap(({ lambda }) =>
+          lambda.node ? [Object.freeze({ ...lambda.node.span })] : []
+        )
+        .sort((left, right) => left.start - right.start),
+    ),
+    scopes: Object.freeze({
+      nodes: Object.freeze(
+        [...bindings.scopeNodes].map(([node, scope]) =>
+          Object.freeze({
+            span: Object.freeze({ ...node.span }),
+            names: names(scope),
+          })
+        ),
+      ),
+      checkpoints: Object.freeze(
+        bindings.scopeCheckpoints.map((checkpoint) =>
+          Object.freeze({
+            container: Object.freeze({ ...checkpoint.container.span }),
+            offset: checkpoint.offset,
+            names: names(checkpoint.scope),
+          })
+        ),
+      ),
+    }),
+  });
+}
+
+function sortedNames(values: ReadonlyMap<string, unknown>): readonly string[] {
+  return Object.freeze([...values.keys()].sort((left, right) => left.localeCompare(right)));
+}
+
+/** Compiler-owned, protocol-neutral completion query for contextual GPU builtins. */
+export function semanticGpuBuiltinCompletionsAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+  prefix: string,
+): readonly SemanticCompletionCandidate[] {
+  if (
+    !moduleInterface.completionFacts.gpuRegions.some((span) =>
+      span.start <= offset && offset <= span.end
+    )
+  ) return [];
+  const shadowed = new Set(completionScopeNamesAt(moduleInterface.completionFacts, offset).values);
+  const candidates = new Map<
+    string,
+    NonNullable<SemanticCompletionCandidate["overloads"]>[number][]
+  >();
+  for (const overload of WMSLANG_BUILTIN_OVERLOADS) {
+    if (shadowed.has(overload.name) || !overload.name.startsWith(prefix)) continue;
+    const family = candidates.get(overload.name) ?? [];
+    family.push(Object.freeze({
+      params: Object.freeze([...overload.params]),
+      result: overload.result,
+    }));
+    candidates.set(overload.name, family);
+  }
+  return Object.freeze(
+    [...candidates]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, overloads]) =>
+        Object.freeze({
+          name,
+          kind: "gpu-builtin",
+          origin: "gpu",
+          rank: 40,
+          overloads: Object.freeze(overloads),
+        })
+      ),
+  );
+}
+
+/** Compiler-owned general completion query over one current project snapshot. */
+export function semanticCompletionsAt(
+  project: ProjectSnapshot,
+  moduleId: ModuleId,
+  source: string,
+  offset: number,
+): SemanticCompletionResult {
+  const moduleInterface = project.interfaces.get(moduleId);
+  if (!moduleInterface) return Object.freeze({ prefix: "", candidates: Object.freeze([]) });
+  const context = completionContext(source, offset);
+  const scope = semanticScopeAt(moduleInterface, offset);
+  const recovery = completionScopeNamesAt(moduleInterface.completionFacts, offset);
+  let candidates: SemanticCompletionCandidate[];
+
+  if (context.qualifier) {
+    const structure = scope.structures.get(context.qualifier);
+    candidates = structure !== undefined
+      ? namespaceCompletionCandidates(project, moduleInterface, structure)
+      : recordCompletionCandidates(project, scope, context.qualifier);
+  } else if (context.typePosition) {
+    candidates = [
+      ...[...scope.types].map(([name, id]) =>
+        completionCandidate(name, "type", "lexical", 10, completionTypeForTarget(project, {
+          kind: "type",
+          id,
+        }))
+      ),
+      ...[...scope.typeVariables.keys()].map((name) =>
+        completionCandidate(name, "type", "lexical", 5)
+      ),
+      ...recovery.types
+        .filter((name) => !scope.types.has(name))
+        .map((name) => completionCandidate(name, "type", "recovery", 30)),
+    ];
+  } else {
+    candidates = [
+      ...[...scope.values].map(([name, target]) =>
+        completionCandidate(
+          name,
+          target.kind,
+          "lexical",
+          10,
+          completionTypeForTarget(project, target),
+        )
+      ),
+      ...[...scope.structures.keys()].map((name) =>
+        completionCandidate(name, "structure", "lexical", 15)
+      ),
+      ...recovery.values
+        .filter((name) => !scope.values.has(name))
+        .map((name) => completionCandidate(name, "value", "recovery", 30)),
+      ...recovery.constructors
+        .filter((name) => !scope.values.has(name))
+        .map((name) => completionCandidate(name, "constructor", "recovery", 30)),
+      ...recovery.structures
+        .filter((name) => !scope.structures.has(name))
+        .map((name) => completionCandidate(name, "structure", "recovery", 30)),
+      ...workmanCompletionKeywords.map((name) =>
+        completionCandidate(name, "keyword", "keyword", 80)
+      ),
+      ...semanticGpuBuiltinCompletionsAt(moduleInterface, offset, context.prefix),
+    ];
+  }
+
+  const filtered = candidates
+    .filter(({ name }) => name.startsWith(context.prefix))
+    .sort((left, right) =>
+      left.rank - right.rank ||
+      Number(right.name === context.prefix) - Number(left.name === context.prefix) ||
+      left.name.localeCompare(right.name) ||
+      completionKindOrder(left.kind) - completionKindOrder(right.kind)
+    );
+  const seen = new Set<string>();
+  return Object.freeze({
+    prefix: context.prefix,
+    candidates: Object.freeze(filtered.filter((candidate) => {
+      const key = `${candidate.kind}:${candidate.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })),
+  });
+}
+
+function completionCandidate(
+  name: string,
+  kind: SemanticCompletionCandidate["kind"],
+  origin: SemanticCompletionCandidate["origin"],
+  rank: number,
+  type?: SemanticCompletionCandidate["type"],
+): SemanticCompletionCandidate {
+  return Object.freeze({ name, kind, origin, rank, type });
+}
+
+function completionTypeForTarget(
+  project: ProjectSnapshot,
+  target: SemanticOccurrenceTarget,
+): SemanticCompletionCandidate["type"] | undefined {
+  const typed = semanticOccurrencesForTarget(project, target)
+    .find(({ occurrence }) =>
+      occurrence.declaration !== undefined && occurrence.inferredType !== undefined
+    ) ??
+    semanticOccurrencesForTarget(project, target)
+      .find(({ occurrence }) => occurrence.inferredType !== undefined);
+  if (typed?.occurrence.inferredType) {
+    return Object.freeze({
+      moduleId: typed.moduleId,
+      occurrence: typed.occurrence.inferredType,
+    });
+  }
+  for (const moduleInterface of project.interfaces.values()) {
+    const initial = moduleInterface.initialScopeTypes.find((entry) =>
+      sameSemanticTarget(entry.target, target)
+    );
+    if (initial) {
+      return Object.freeze({
+        moduleId: moduleInterface.moduleId,
+        occurrence: initial.type,
+      });
+    }
+  }
+  return undefined;
+}
+
+function namespaceCompletionCandidates(
+  project: ProjectSnapshot,
+  owner: ModuleInterface,
+  structure: StructureSemanticId,
+): SemanticCompletionCandidate[] {
+  const imported = owner.imports.find(({ structureAlias }) => structureAlias?.id === structure);
+  if (imported) {
+    const target = project.interfaces.get(imported.target);
+    if (!target) return [];
+    return target.occurrences.flatMap((occurrence) => {
+      if (
+        occurrence.role !== "declaration" ||
+        occurrence.declaration?.visibility !== "public" ||
+        (occurrence.target.kind !== "value" &&
+          occurrence.target.kind !== "constructor" &&
+          occurrence.target.kind !== "type")
+      ) return [];
+      return [completionCandidate(
+        occurrence.name,
+        occurrence.target.kind,
+        "namespace",
+        10,
+        occurrence.inferredType
+          ? Object.freeze({
+            moduleId: target.moduleId,
+            occurrence: occurrence.inferredType,
+          })
+          : undefined,
+      )];
+    });
+  }
+  const builtIn = owner.structureMembers.get(structure);
+  if (builtIn) {
+    return builtIn.map((member) =>
+      completionCandidate(
+        member.name,
+        member.kind,
+        "namespace",
+        10,
+        member.type
+          ? Object.freeze({ moduleId: owner.moduleId, occurrence: member.type })
+          : undefined,
+      )
+    );
+  }
+  const ffi = owner.ffiFacts.imports.find(({ structureAlias }) => structureAlias?.id === structure);
+  return ffi
+    ? ffi.bindings.map((binding) =>
+      completionCandidate(
+        binding.sourceName,
+        "value",
+        "namespace",
+        10,
+        binding.type
+          ? Object.freeze({ moduleId: owner.moduleId, occurrence: binding.type })
+          : undefined,
+      )
+    )
+    : [];
+}
+
+function recordCompletionCandidates(
+  project: ProjectSnapshot,
+  scope: SemanticScope,
+  receiverName: string,
+): SemanticCompletionCandidate[] {
+  const value = scope.values.get(receiverName);
+  if (!value) return [];
+  const typeRef = completionTypeForTarget(project, value);
+  if (!typeRef) return [];
+  const owner = project.interfaces.get(typeRef.moduleId);
+  const shape = owner?.semanticTypes[typeRef.occurrence.id]?.shape;
+  if (!owner || shape?.kind !== "named" || shape.typeNameId === undefined) return [];
+  const candidates: SemanticCompletionCandidate[] = [];
+  for (const moduleInterface of project.interfaces.values()) {
+    const declaration = moduleInterface.declarations.find(({ kind, target }) =>
+      kind === "record" &&
+      target.kind === "type" &&
+      target.id === shape.typeNameId
+    );
+    if (!declaration) continue;
+    for (const occurrence of moduleInterface.occurrences) {
+      if (
+        occurrence.target.kind !== "field" ||
+        occurrence.role !== "declaration" ||
+        occurrence.span.start < declaration.span.start ||
+        occurrence.span.end > declaration.span.end
+      ) continue;
+      candidates.push(completionCandidate(
+        occurrence.name,
+        "field",
+        "record",
+        10,
+        occurrence.inferredType
+          ? Object.freeze({
+            moduleId: moduleInterface.moduleId,
+            occurrence: occurrence.inferredType,
+          })
+          : undefined,
+      ));
+    }
+  }
+  return candidates;
+}
+
+function completionContext(
+  source: string,
+  offset: number,
+): Readonly<{ prefix: string; qualifier?: string; typePosition: boolean }> {
+  const before = source.slice(0, Math.max(0, Math.min(offset, source.length)));
+  const prefix = before.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? "";
+  const prefixStart = before.length - prefix.length;
+  const preceding = before.slice(0, prefixStart);
+  const qualifier = preceding.match(/([A-Za-z_][A-Za-z0-9_]*)\.\s*$/)?.[1];
+  const typePosition = qualifier === undefined &&
+    /(?::|<|\btype\s+[A-Z][A-Za-z0-9_]*\s*=)\s*$/.test(preceding);
+  return Object.freeze({ prefix, qualifier, typePosition });
+}
+
+const workmanCompletionKeywords = Object.freeze([
+  "from",
+  "let",
+  "type",
+  "record",
+  "if",
+  "match",
+  "true",
+  "false",
+  "void",
+]);
+
+function completionKindOrder(kind: SemanticCompletionCandidate["kind"]): number {
+  return kind === "value"
+    ? 0
+    : kind === "constructor"
+    ? 1
+    : kind === "field"
+    ? 2
+    : kind === "type"
+    ? 3
+    : kind === "structure"
+    ? 4
+    : kind === "gpu-builtin"
+    ? 5
+    : 6;
+}
+
+function completionScopeNamesAt(
+  facts: SemanticCompletionFacts,
+  offset: number,
+): SemanticCompletionScopeNames {
+  const containers = facts.scopes.checkpoints.map((checkpoint) => checkpoint.container);
+  const node = facts.scopes.nodes
+    .filter(({ span }) =>
+      !containers.some((container) => sameSpan(container, span)) &&
+      span.start <= offset &&
+      offset < span.end
+    )
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start) ||
+      right.span.start - left.span.start
+    )[0];
+  const checkpoint = facts.scopes.checkpoints
+    .filter(({ container, offset: checkpointOffset }) =>
+      container.start <= offset &&
+      offset < container.end &&
+      checkpointOffset <= offset
+    )
+    .sort((left, right) =>
+      (left.container.end - left.container.start) -
+        (right.container.end - right.container.start) ||
+      right.offset - left.offset
+    )[0];
+  const trailing = !node && !checkpoint
+    ? outermostTrailingCompletionCheckpoint(facts.scopes.checkpoints, offset)
+    : undefined;
+  if (!node) return checkpoint?.names ?? trailing?.names ?? emptyCompletionScopeNames;
+  if (!checkpoint) return node.names;
+  const nodeWidth = node.span.end - node.span.start;
+  const checkpointWidth = checkpoint.container.end - checkpoint.container.start;
+  return checkpointWidth <= nodeWidth ? checkpoint.names : node.names;
+}
+
+function outermostTrailingSemanticCheckpoint(
+  checkpoints: ModuleSemanticScopes["checkpoints"],
+  offset: number,
+): ModuleSemanticScopes["checkpoints"][number] | undefined {
+  return checkpoints
+    .filter((candidate) => candidate.offset <= offset)
+    .sort((left, right) =>
+      left.container.start - right.container.start ||
+      (right.container.end - right.container.start) -
+        (left.container.end - left.container.start) ||
+      right.offset - left.offset
+    )[0];
+}
+
+function outermostTrailingCompletionCheckpoint(
+  checkpoints: SemanticCompletionFacts["scopes"]["checkpoints"],
+  offset: number,
+): SemanticCompletionFacts["scopes"]["checkpoints"][number] | undefined {
+  return checkpoints
+    .filter((candidate) => candidate.offset <= offset)
+    .sort((left, right) =>
+      left.container.start - right.container.start ||
+      (right.container.end - right.container.start) -
+        (left.container.end - left.container.start) ||
+      right.offset - left.offset
+    )[0];
+}
+
+const emptyCompletionScopeNames: SemanticCompletionScopeNames = Object.freeze({
+  values: Object.freeze([]),
+  structures: Object.freeze([]),
+  types: Object.freeze([]),
+  constructors: Object.freeze([]),
+});
+
+export function semanticTypedNodeAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): SemanticTypedNode | undefined {
+  return semanticTypedNodesAt(moduleInterface, offset)[0];
+}
+
+export function semanticTypedNodesAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): readonly SemanticTypedNode[] {
+  return moduleInterface.typedNodes
+    .filter((item) => item.span.start <= offset && offset < item.span.end)
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start) ||
+      typedNodeKindOrder(left.kind) - typedNodeKindOrder(right.kind)
+    );
+}
+
+function generationToken(): InterfaceGeneration {
+  return Object.freeze(Object.create(null)) as InterfaceGeneration;
+}
+
+function projectSnapshotToken(): ProjectSnapshotId {
+  return Object.freeze(Object.create(null)) as ProjectSnapshotId;
+}
+
+function analysisCompleteness(
+  result: InferResult,
+  node: ModuleNode,
+  ffiFacts: SemanticFfiFacts,
+  gpuFacts: SemanticGpuFacts,
+): ModuleCompleteness {
+  const complete = result.elaboration.complete;
+  const recoveryBoundaries = distinctBoundaries([
+    ...(node.syntaxRecoveryBoundaries ?? []),
+    ...(node.importRecoveryBoundaries ?? []),
+    ...result.elaboration.recoveryBoundaries,
+  ]);
+  return Object.freeze({
+    syntax: node.syntaxStatus ?? "complete",
+    imports: (node.importDiagnostics?.length ?? 0) > 0 ||
+        result.elaboration.failure === "import"
+      ? "partial"
+      : "complete",
+    elaboration: complete ? "complete" : "partial",
+    occurrences: "partial",
+    scopes: "partial",
+    ffi: !complete
+      ? "partial"
+      : ffiFacts.imports.length === 0 &&
+          ffiFacts.calls.length === 0 &&
+          ffiFacts.foreignTypes.length === 0
+      ? "not-applicable"
+      : "complete",
+    gpu: !complete ? "partial" : gpuFacts.operations.length === 0 &&
+        gpuFacts.builtins.length === 0 &&
+        gpuFacts.resources.length === 0 &&
+        gpuFacts.roots.length === 0 &&
+        gpuFacts.selectors.length === 0 &&
+        gpuFacts.slices.length === 0
+      ? "not-applicable"
+      : "complete",
+    recoveryBoundaries: Object.freeze(
+      recoveryBoundaries.map((boundary) => Object.freeze({ ...boundary })),
+    ),
+  });
+}
+
+function distinctBoundaries(
+  boundaries: readonly Readonly<{ start: number; end: number }>[],
+): Readonly<{ start: number; end: number }>[] {
+  const seen = new Set<string>();
+  return boundaries.filter((boundary) => {
+    const key = `${boundary.start}:${boundary.end}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function semanticScopes(
+  bindings: BindingFacts,
+  result: InferResult,
+  nominalFacts: NominalFacts,
+): ModuleSemanticScopes {
+  const initial = initialSemanticScope(result, nominalFacts);
+  const nodes = [...bindings.scopeNodes].map(([node, scope]) =>
+    Object.freeze({
+      span: Object.freeze({ ...node.span }),
+      scope: overlayBindingScope(
+        initial,
+        scope,
+        nominalFacts,
+        bindings.jsImportSourceBindings,
+      ),
+    })
+  );
+  const checkpoints = bindings.scopeCheckpoints.map((checkpoint) =>
+    semanticScopeCheckpoint(
+      initial,
+      checkpoint,
+      nominalFacts,
+      bindings.jsImportSourceBindings,
+    )
+  );
+  return Object.freeze({
+    initial,
+    nodes: Object.freeze(nodes),
+    checkpoints: Object.freeze(checkpoints),
+  });
+}
+
+function semanticStructureMembers(
+  result: InferResult,
+  nominalFacts: NominalFacts,
+  typeArena: SemanticTypeArena,
+): ReadonlyMap<StructureSemanticId, readonly SemanticStructureMember[]> {
+  const structures = new Map<StructureSemanticId, readonly SemanticStructureMember[]>();
+  for (const [name, environment] of result.initialStructure.strEnv) {
+    const members: SemanticStructureMember[] = [];
+    for (const [memberName, scheme] of environment.valEnv) {
+      members.push(Object.freeze({
+        name: memberName,
+        kind: scheme.status === "constructor" || scheme.status === "record-constructor"
+          ? "constructor"
+          : "value",
+        type: semanticOccurrenceType(typeArena, scheme.type, scheme),
+      }));
+    }
+    for (const [memberName, info] of environment.tyEnv) {
+      const id = nominalFacts.inferenceTypeIds.get(info.id);
+      members.push(Object.freeze({
+        name: memberName,
+        kind: "type",
+        type: id === undefined
+          ? undefined
+          : semanticOccurrenceType(typeArena, {
+            tag: "named",
+            id: info.id,
+            name: memberName,
+            args: [],
+          }),
+      }));
+    }
+    for (const memberName of environment.strEnv.keys()) {
+      members.push(Object.freeze({ name: memberName, kind: "structure" }));
+    }
+    structures.set(
+      basisStructureId(name),
+      Object.freeze(members.sort((left, right) =>
+        left.name.localeCompare(right.name) ||
+        completionKindOrder(left.kind) - completionKindOrder(right.kind)
+      )),
+    );
+  }
+  return structures;
+}
+
+function semanticInitialScopeTypes(
+  result: InferResult,
+  typeArena: SemanticTypeArena,
+): readonly SemanticScopeTargetType[] {
+  return Object.freeze(
+    [...result.initialStructure.valEnv].flatMap(([name, scheme]) => {
+      const target: SemanticOccurrenceTarget | undefined =
+        scheme.status === "constructor" || scheme.status === "record-constructor"
+          ? (() => {
+            const id = basisCtorId(name);
+            return id === undefined ? undefined : { kind: "constructor", id: id as CtorId };
+          })()
+          : scheme.valueId === undefined
+          ? undefined
+          : { kind: "value", id: scheme.valueId };
+      const type = semanticOccurrenceType(typeArena, scheme.type, scheme);
+      return target && type ? [Object.freeze({ target: Object.freeze(target), type })] : [];
+    }),
+  );
+}
+
+function initialSemanticScope(result: InferResult, nominalFacts: NominalFacts): SemanticScope {
+  const values = new Map<string, SemanticScopeValue>();
+  for (const [name, scheme] of result.initialStructure.valEnv) {
+    if (scheme.status === "constructor") {
+      const constructor = basisCtorId(name);
+      if (constructor !== undefined) {
+        values.set(name, Object.freeze({ kind: "constructor", id: constructor as CtorId }));
+        continue;
+      }
+    }
+    if (scheme.valueId !== undefined) {
+      values.set(name, Object.freeze({ kind: "value", id: scheme.valueId }));
+    }
+  }
+  const structures = new Map<string, StructureSemanticId>(
+    [...result.initialStructure.strEnv].map(([name]) => [name, basisStructureId(name)]),
+  );
+  const types = new Map<string, TypeNameId>();
+  for (const [name, info] of result.initialStructure.tyEnv) {
+    const id = nominalFacts.inferenceTypeIds.get(info.id);
+    if (id !== undefined) types.set(name, id);
+  }
+  return freezeSemanticScope(values, structures, types);
+}
+
+function overlayBindingScope(
+  initial: SemanticScope,
+  bindings: BindingScopeSnapshot,
+  nominalFacts?: NominalFacts,
+  generatedJsBindings: ReadonlyMap<BindingId, BindingId> = new Map(),
+): SemanticScope {
+  const values = new Map(initial.values);
+  for (const [name, id] of bindings.values) {
+    if (generatedJsBindings.has(id)) continue;
+    values.set(name, Object.freeze({ kind: "value", id }));
+  }
+  if (nominalFacts) {
+    for (const [name, declaration] of bindings.constructors) {
+      const id = nominalFacts.constructorDeclarations.get(declaration);
+      if (id !== undefined) {
+        values.set(name, Object.freeze({ kind: "constructor", id }));
+      }
+    }
+  }
+  const structures = new Map(initial.structures);
+  for (const [name, id] of bindings.structures) structures.set(name, id);
+  const types = new Map(initial.types);
+  if (nominalFacts) {
+    for (const [name, declaration] of bindings.types) {
+      const id = nominalFacts.typeDeclarations.get(declaration);
+      if (id !== undefined) types.set(name, id);
+    }
+  }
+  return freezeSemanticScope(values, structures, types);
+}
+
+function semanticScopeCheckpoint(
+  initial: SemanticScope,
+  checkpoint: BindingScopeCheckpoint,
+  nominalFacts: NominalFacts,
+  generatedJsBindings: ReadonlyMap<BindingId, BindingId>,
+): Readonly<{ container: SourceSpan; offset: number; scope: SemanticScope }> {
+  return Object.freeze({
+    container: Object.freeze({ ...checkpoint.container.span }),
+    offset: checkpoint.offset,
+    scope: overlayBindingScope(
+      initial,
+      checkpoint.scope,
+      nominalFacts,
+      generatedJsBindings,
+    ),
+  });
+}
+
+function freezeSemanticScope(
+  values: Map<string, SemanticScopeValue>,
+  structures: Map<string, StructureSemanticId>,
+  types: Map<string, TypeNameId>,
+  typeVariables: Map<string, TypeVariableId> = new Map(),
+): SemanticScope {
+  return Object.freeze({ values, structures, types, typeVariables });
+}
+
+function sameSpan(left: SourceSpan, right: SourceSpan): boolean {
+  return left.start === right.start && left.end === right.end;
+}
+
+export function immutableCopy<T>(value: T): DeepReadonly<T> {
+  return deepFreeze(structuredClone(value)) as DeepReadonly<T>;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+function semanticOccurrences(
+  moduleId: ModuleId,
+  source: string,
+  imports: readonly ModuleImportEdge[],
+  importFacts: readonly ModuleImportOccurrence[],
+  bindings: BindingFacts,
+  nominalFacts: NominalFacts,
+  result: InferResult,
+  typeArena: SemanticTypeArena,
+  typeVariables: readonly SemanticTypeVariableRegion[],
+  targetTypes: ReadonlyMap<string, SemanticTypeSource>,
+): ModuleSemanticOccurrence[] {
+  const occurrences: ModuleSemanticOccurrence[] = [];
+  for (const edge of imports) {
+    addSemanticOccurrence(
+      occurrences,
+      edge.specifier,
+      "import-path",
+      { kind: "module", id: edge.target },
+      edge.specifierNode,
+      source,
+    );
+  }
+  for (const imported of importFacts) {
+    if (imported.clause.kind !== "Named") continue;
+    for (const spec of imported.clause.specs) {
+      const target = imported.targets.find((item) =>
+        item.sourceName === spec.name && item.localName === (spec.alias ?? spec.name)
+      );
+      if (!target) continue;
+      for (const semanticTarget of importTargetIdentities(target)) {
+        const targetType = targetTypes.get(semanticTargetKey(semanticTarget));
+        const inferredType = semanticOccurrenceType(
+          typeArena,
+          targetType?.type,
+          targetType?.scheme,
+        );
+        addSemanticOccurrence(
+          occurrences,
+          spec.name,
+          "import-source",
+          semanticTarget,
+          spec.node ?? imported.declaration.node,
+          source,
+          "first",
+          inferredType,
+        );
+        if (spec.alias) {
+          addSemanticOccurrence(
+            occurrences,
+            spec.alias,
+            "import-alias",
+            semanticTarget,
+            spec.node ?? imported.declaration.node,
+            source,
+            "last",
+            inferredType,
+          );
+        }
+      }
+    }
+  }
+  for (const [pattern, id] of bindings.binders) {
+    if (pattern.kind !== "PVar") continue;
+    const fact = result.facts.patterns.get(pattern);
+    addSemanticOccurrence(
+      occurrences,
+      pattern.name,
+      "declaration",
+      { kind: "value", id },
+      pattern.node,
+      source,
+      "first",
+      semanticOccurrenceType(
+        typeArena,
+        fact?.instantiated ?? result.facts.patternTypes.get(pattern),
+        fact?.general,
+      ),
+    );
+  }
+  for (const [declaration, id] of bindings.recordConstructors) {
+    const scheme = result.facts.bindings.get(declaration.name)?.find((fact) =>
+      fact.general?.status === "record-constructor" &&
+      fact.general.node === declaration.node
+    )?.general;
+    addSemanticOccurrence(
+      occurrences,
+      declaration.name,
+      "declaration",
+      { kind: "value", id },
+      declaration.node,
+      source,
+      "first",
+      semanticOccurrenceType(typeArena, scheme?.type, scheme),
+    );
+  }
+  for (const [site, id] of bindings.jsImportBinders) {
+    let declaration: Extract<Decl, { kind: "JsImportDecl" }> | undefined;
+    let spec: JsImportSpec | undefined;
+    if (isJsImportDeclaration(site)) declaration = site;
+    else spec = site;
+    if (spec?.sourceName) continue;
+    const name = declaration?.clause.kind === "Namespace"
+      ? declaration.clause.alias
+      : spec?.alias ?? spec?.name ?? "";
+    const node = declaration?.clause.kind === "Namespace"
+      ? declaration.clause.node ?? declaration.node
+      : spec?.node;
+    const scheme = result.facts.jsImportSchemes.get(site) ??
+      jsImportSourceScheme(id, bindings, result);
+    addSemanticOccurrence(
+      occurrences,
+      name,
+      spec?.alias ? "import-alias" : "declaration",
+      { kind: "value", id },
+      node,
+      source,
+      spec?.alias ? "last" : "first",
+      semanticOccurrenceType(typeArena, scheme?.type, scheme),
+    );
+    if (spec?.alias) {
+      addSemanticOccurrence(
+        occurrences,
+        spec.name,
+        "import-source",
+        { kind: "value", id },
+        spec.node,
+        source,
+        "first",
+        semanticOccurrenceType(typeArena, scheme?.type, scheme),
+      );
+    }
+  }
+  for (const [declaration, id] of bindings.jsStructureBinders) {
+    const clause = declaration.sourceClause ?? declaration.clause;
+    if (clause.kind !== "Named" || !clause.alias) continue;
+    addSemanticOccurrence(
+      occurrences,
+      clause.alias,
+      "import-alias",
+      { kind: "structure", id },
+      clause.node ?? declaration.node,
+      source,
+      "last",
+    );
+  }
+  for (const [reference, id] of bindings.references) {
+    if (nominalFacts.constructorReferences.has(reference)) continue;
+    const spelling = reference.kind === "Var"
+      ? reference.sourceName ?? reference.name
+      : reference.kind === "PPinned"
+      ? reference.name
+      : "";
+    const qualified = bindings.structureReferences.has(reference) ||
+      (reference.kind === "Var" &&
+        (bindings.sourceStructureReferences.has(reference) ||
+          (reference.sourceName?.includes(".") === true &&
+            bindings.jsImportSourceBindings.has(id))));
+    const name = qualified ? spelling.split(".").at(-1)! : spelling.split(".")[0];
+    const fact = isPattern(reference)
+      ? result.facts.patterns.get(reference)
+      : result.facts.expressions.get(reference);
+    const type = isPattern(reference)
+      ? result.facts.patternTypes.get(reference)
+      : result.types.get(reference);
+    addSemanticOccurrence(
+      occurrences,
+      name,
+      "reference",
+      { kind: "value", id: bindings.jsImportSourceBindings.get(id) ?? id },
+      reference.node,
+      source,
+      qualified ? "last" : "first",
+      semanticOccurrenceType(typeArena, fact?.instantiated ?? type),
+    );
+  }
+  for (const [expression, fact] of result.facts.expressions) {
+    if (expression.kind !== "Var" || fact.origin?.valueId === undefined) continue;
+    addExternalValueOccurrences(
+      occurrences,
+      expression.name,
+      expression.node,
+      fact.origin.valueId,
+      fact.origin.structureId,
+      source,
+      semanticOccurrenceType(typeArena, fact.instantiated ?? result.types.get(expression)),
+    );
+  }
+  for (const [pattern, fact] of result.facts.patterns) {
+    if (
+      pattern.kind !== "PPinned" || fact.origin?.valueId === undefined
+    ) continue;
+    addExternalValueOccurrences(
+      occurrences,
+      pattern.name,
+      pattern.node,
+      fact.origin.valueId,
+      fact.origin.structureId,
+      source,
+      semanticOccurrenceType(
+        typeArena,
+        fact.instantiated ?? result.facts.patternTypes.get(pattern),
+      ),
+    );
+  }
+  for (const [declaration, id] of bindings.structureBinders) {
+    if (declaration.clause.kind !== "Namespace") continue;
+    addSemanticOccurrence(
+      occurrences,
+      declaration.clause.alias,
+      "import-alias",
+      { kind: "structure", id },
+      declaration.clause.node ?? declaration.node,
+      source,
+      "last",
+    );
+  }
+  for (
+    const [reference, id] of [
+      ...bindings.structureReferences,
+      ...bindings.sourceStructureReferences,
+    ]
+  ) {
+    if (
+      reference.kind !== "Var" && reference.kind !== "PCtor" &&
+      reference.kind !== "PPinned"
+    ) continue;
+    addSemanticOccurrence(
+      occurrences,
+      (reference.kind === "Var" ? reference.sourceName ?? reference.name : reference.name)
+        .split(".")[0],
+      "qualifier",
+      { kind: "structure", id },
+      reference.node,
+      source,
+      "first",
+    );
+  }
+  for (const fact of nominalFacts.types) {
+    if (fact.moduleId !== moduleId) continue;
+    addSemanticOccurrence(
+      occurrences,
+      fact.name,
+      "declaration",
+      { kind: "type", id: fact.id },
+      fact.declaration.node,
+      source,
+      "first",
+    );
+  }
+  for (const [reference, referenceFact] of result.facts.typeReferences) {
+    const id = nominalFacts.inferenceTypeIds.get(referenceFact.info.id);
+    if (id === undefined) continue;
+    if (referenceFact.qualifier) {
+      const declaration = [...result.facts.structureImports].find(([, environment]) =>
+        environment === referenceFact.qualifier!.environment
+      )?.[0];
+      const structureId = declaration ? bindings.structureBinders.get(declaration) : undefined;
+      if (structureId !== undefined) {
+        addSemanticOccurrence(
+          occurrences,
+          referenceFact.qualifier.name,
+          "qualifier",
+          { kind: "structure", id: structureId },
+          reference.node,
+          source,
+          "first",
+        );
+      }
+    }
+    addSemanticOccurrence(
+      occurrences,
+      reference.name.split(".").at(-1)!,
+      "reference",
+      { kind: "type", id },
+      reference.node,
+      source,
+      "last",
+    );
+  }
+  for (const fact of nominalFacts.fields) {
+    if (fact.moduleId !== moduleId) continue;
+    const record = nominalFacts.records.find((candidate) => candidate.id === fact.recordId);
+    const info = record ? result.facts.typeDeclarations.get(record.declaration) : undefined;
+    addSemanticOccurrence(
+      occurrences,
+      fact.name,
+      "declaration",
+      { kind: "field", id: fact.id },
+      fact.declaration.node,
+      source,
+      "first",
+      semanticOccurrenceType(typeArena, info?.recordFields?.[fact.declaredIndex]?.type),
+    );
+  }
+  for (const [field, fieldFact] of result.facts.recordFields) {
+    const id = nominalFacts.fieldIds.get(fieldFact.record.id)?.get(field.name);
+    if (id === undefined) continue;
+    addSemanticOccurrence(
+      occurrences,
+      field.name,
+      "reference",
+      { kind: "field", id },
+      field.node,
+      source,
+      "first",
+      semanticOccurrenceType(typeArena, fieldFact.type),
+    );
+  }
+  for (const [expression, projections] of result.facts.recordProjections) {
+    for (const projection of projections) {
+      const id = nominalFacts.fieldIds.get(projection.record.id)?.get(projection.name);
+      const span = dottedNameSegmentSpan(
+        source,
+        expression.node,
+        expression.name,
+        projection.partIndex,
+      );
+      if (id === undefined || !span) continue;
+      addSemanticOccurrenceAtSpan(
+        occurrences,
+        projection.name,
+        "reference",
+        { kind: "field", id },
+        span,
+        semanticOccurrenceType(typeArena, projection.type),
+      );
+    }
+  }
+  for (const fact of nominalFacts.constructors) {
+    if (fact.moduleId !== moduleId) continue;
+    const scheme = result.facts.bindings.get(fact.name)?.find((binding) =>
+      binding.general?.constructorDecl === fact.declaration
+    )?.general;
+    addSemanticOccurrence(
+      occurrences,
+      fact.name,
+      "declaration",
+      { kind: "constructor", id: fact.id },
+      fact.declaration.node,
+      source,
+      "first",
+      semanticOccurrenceType(typeArena, scheme?.type, scheme),
+    );
+  }
+  for (const [reference, id] of nominalFacts.constructorReferences) {
+    const belongsToModule = isPattern(reference)
+      ? result.facts.patterns.has(reference as Pattern)
+      : result.facts.expressions.has(reference as Expr);
+    if (!belongsToModule) continue;
+    const name = reference.kind === "Var" || reference.kind === "PCtor"
+      ? reference.name.split(".").at(-1)!
+      : "";
+    const referenceFact = isPattern(reference)
+      ? result.facts.patterns.get(reference)
+      : result.facts.expressions.get(reference);
+    const type = isPattern(reference)
+      ? result.facts.patternTypes.get(reference)
+      : result.types.get(reference);
+    addSemanticOccurrence(
+      occurrences,
+      name,
+      "reference",
+      { kind: "constructor", id },
+      reference.node,
+      source,
+      "last",
+      semanticOccurrenceType(typeArena, referenceFact?.instantiated ?? type),
+    );
+  }
+  for (const variable of typeVariables) {
+    if (variable.binder) {
+      addSemanticOccurrenceAtSpan(
+        occurrences,
+        variable.name,
+        "declaration",
+        { kind: "type-variable", id: variable.id },
+        variable.binder,
+      );
+    }
+    for (const span of variable.occurrences) {
+      addSemanticOccurrenceAtSpan(
+        occurrences,
+        variable.name,
+        "reference",
+        { kind: "type-variable", id: variable.id },
+        span,
+      );
+    }
+  }
+  return occurrences.sort((left, right) =>
+    left.span.start - right.span.start || left.span.end - right.span.end ||
+    occurrenceRoleOrder(left.role) - occurrenceRoleOrder(right.role)
+  );
+}
+
+function semanticTypeVariableRegions(
+  source: string,
+  result: InferResult,
+): readonly SemanticTypeVariableRegion[] {
+  type MutableRegion = {
+    id: TypeVariableId;
+    name: string;
+    scope: SourceSpan;
+    binder?: SourceSpan;
+    occurrences: SourceSpan[];
+  };
+  const byRegion = new Map<AstNode, Map<TypeVariableId, MutableRegion>>();
+  const ensure = (
+    region: AstNode,
+    id: TypeVariableId,
+    name: string,
+  ): MutableRegion => {
+    let variables = byRegion.get(region);
+    if (!variables) {
+      variables = new Map();
+      byRegion.set(region, variables);
+    }
+    let variable = variables.get(id);
+    if (!variable) {
+      variable = {
+        id,
+        name,
+        scope: Object.freeze({ ...region.span }),
+        occurrences: [],
+      };
+      variables.set(id, variable);
+    }
+    return variable;
+  };
+
+  for (const [expression, fact] of result.facts.typeVariables) {
+    if (
+      fact.type.tag !== "var" || !expression.node ||
+      (expression.kind !== "TVar" && expression.kind !== "TName")
+    ) continue;
+    const variable = ensure(
+      fact.region,
+      fact.type.id as TypeVariableId,
+      expression.name,
+    );
+    variable.occurrences.push(Object.freeze({ ...expression.node.span }));
+  }
+  for (const declaration of result.facts.typeVariableDeclarations) {
+    if (declaration.type.tag !== "var") continue;
+    const variable = ensure(
+      declaration.region,
+      declaration.type.id as TypeVariableId,
+      declaration.name,
+    );
+    variable.binder = typeParameterBinderSpan(
+      source,
+      declaration.declaration,
+      declaration.parameterIndex,
+      declaration.name,
+    );
+  }
+
+  return Object.freeze(
+    [...byRegion.values()]
+      .flatMap((variables) => [...variables.values()])
+      .map((variable) =>
+        Object.freeze({
+          id: variable.id,
+          name: variable.name,
+          scope: variable.scope,
+          binder: variable.binder && Object.freeze({ ...variable.binder }),
+          occurrences: Object.freeze(
+            variable.occurrences
+              .sort((left, right) => left.start - right.start)
+              .map((span) => Object.freeze({ ...span })),
+          ),
+        })
+      )
+      .sort((left, right) =>
+        left.scope.start - right.scope.start ||
+        left.scope.end - right.scope.end ||
+        left.id - right.id
+      ),
+  );
+}
+
+function typeParameterBinderSpan(
+  source: string,
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>,
+  parameterIndex: number,
+  expectedName: string,
+): SourceSpan | undefined {
+  if (!declaration.node) return undefined;
+  const declarationText = source.slice(declaration.node.span.start, declaration.node.span.end);
+  const headerEnd = declarationText.indexOf("=");
+  const header = headerEnd < 0 ? declarationText : declarationText.slice(0, headerEnd);
+  const parametersStart = header.indexOf("<");
+  const parametersEnd = parametersStart < 0 ? -1 : header.indexOf(">", parametersStart + 1);
+  if (parametersStart < 0 || parametersEnd < 0) return undefined;
+  const parameters = header.slice(parametersStart + 1, parametersEnd);
+  const tokens = [...parameters.matchAll(/'?[A-Za-z_][A-Za-z0-9_']*/g)];
+  const token = tokens[parameterIndex];
+  if (!token || token[0] !== expectedName || token.index === undefined) return undefined;
+  const start = declaration.node.span.start + parametersStart + 1 + token.index;
+  const position = offsetToLineCol(source, start);
+  return {
+    line: position.line,
+    col: position.col,
+    start,
+    end: start + expectedName.length,
+  };
+}
+
+function importTargetIdentities(target: ImportTarget): SemanticOccurrenceTarget[] {
+  const identities: SemanticOccurrenceTarget[] = [];
+  if (target.value !== undefined) identities.push({ kind: "value", id: target.value });
+  if (target.type !== undefined) identities.push({ kind: "type", id: target.type });
+  if (target.constructor !== undefined) {
+    identities.push({ kind: "constructor", id: target.constructor });
+  }
+  return identities;
+}
+
+function addSemanticOccurrence(
+  output: ModuleSemanticOccurrence[],
+  name: string,
+  role: ModuleSemanticOccurrence["role"],
+  target: SemanticOccurrenceTarget,
+  node: AstNode | undefined,
+  source: string,
+  occurrence: "first" | "last" = "first",
+  inferredType?: SemanticOccurrenceType,
+): void {
+  if (!node || name.length === 0) return;
+  const span = identifierSpan(source, node, name, occurrence);
+  if (!span) return;
+  addSemanticOccurrenceAtSpan(output, name, role, target, span, inferredType);
+}
+
+function addSemanticOccurrenceAtSpan(
+  output: ModuleSemanticOccurrence[],
+  name: string,
+  role: ModuleSemanticOccurrence["role"],
+  target: SemanticOccurrenceTarget,
+  span: SourceSpan,
+  inferredType?: SemanticOccurrenceType,
+): void {
+  output.push(Object.freeze({
+    name,
+    role,
+    target: Object.freeze(target),
+    span: Object.freeze(span),
+    inferredType,
+  }));
+}
+
+function semanticOccurrenceType(
+  arena: SemanticTypeArena,
+  type: Ty | undefined,
+  scheme?: Scheme,
+): SemanticOccurrenceType | undefined {
+  const selected = scheme?.type ?? type;
+  if (!selected) return undefined;
+  return Object.freeze({
+    id: arena.snapshot(selected),
+    generalized: scheme !== undefined,
+    quantifiedVariables: scheme?.vars.length ?? 0,
+  });
+}
+
+function addExternalValueOccurrences(
+  output: ModuleSemanticOccurrence[],
+  name: string,
+  node: AstNode | undefined,
+  valueId: ValueId,
+  structureId: StructureSemanticId | undefined,
+  source: string,
+  inferredType: SemanticOccurrenceType | undefined,
+): void {
+  if (structureId !== undefined && name.includes(".")) {
+    addSemanticOccurrence(
+      output,
+      name.split(".")[0],
+      "qualifier",
+      { kind: "structure", id: structureId },
+      node,
+      source,
+      "first",
+    );
+  }
+  addSemanticOccurrence(
+    output,
+    name.split(".").at(-1)!,
+    "reference",
+    { kind: "value", id: valueId },
+    node,
+    source,
+    "last",
+    inferredType,
+  );
+}
+
+function dottedNameSegmentSpan(
+  source: string,
+  node: AstNode | undefined,
+  name: string,
+  partIndex: number,
+): SourceSpan | undefined {
+  if (!node) return undefined;
+  const parts = name.split(".");
+  const part = parts[partIndex];
+  if (part === undefined) return undefined;
+  const nodeText = source.slice(node.span.start, node.span.end);
+  const nameStart = nodeText.indexOf(name);
+  if (nameStart < 0) return undefined;
+  const prefix = parts.slice(0, partIndex).join(".");
+  const start = node.span.start + nameStart + prefix.length + (partIndex === 0 ? 0 : 1);
+  const position = offsetToLineCol(source, start);
+  return {
+    line: position.line,
+    col: position.col,
+    start,
+    end: start + part.length,
+  };
+}
+
+function identifierSpan(
+  source: string,
+  node: AstNode,
+  name: string,
+  occurrence: "first" | "last",
+): SourceSpan | undefined {
+  const text = source.slice(node.span.start, node.span.end);
+  const relative = occurrence === "first" ? text.indexOf(name) : text.lastIndexOf(name);
+  if (relative < 0) return undefined;
+  const start = node.span.start + relative;
+  const position = offsetToLineCol(source, start);
+  return {
+    line: position.line,
+    col: position.col,
+    start,
+    end: start + name.length,
+  };
+}
+
+function occurrenceRoleOrder(role: ModuleSemanticOccurrence["role"]): number {
+  return role === "declaration"
+    ? 0
+    : role === "import-path"
+    ? 1
+    : role === "import-source"
+    ? 2
+    : role === "import-alias"
+    ? 3
+    : role === "qualifier"
+    ? 4
+    : 5;
+}
+
+function typedNodeKindOrder(kind: SemanticTypedNode["kind"]): number {
+  return kind === "type-expression" ? 0 : kind === "pattern" ? 1 : 2;
+}
+
+function isPattern(value: Expr | Pattern): value is Pattern {
+  return value.kind === "PWildcard" || value.kind === "PVar" || value.kind === "PInt" ||
+    value.kind === "PString" || value.kind === "PBool" || value.kind === "PVoid" ||
+    value.kind === "PPinned" || value.kind === "PTuple" || value.kind === "PRecord" ||
+    value.kind === "PCtor";
+}
+
+function isJsImportDeclaration(
+  value: Extract<Decl, { kind: "JsImportDecl" }> | JsImportSpec,
+): value is Extract<Decl, { kind: "JsImportDecl" }> {
+  return "kind" in value && value.kind === "JsImportDecl";
+}
+
+function jsImportSourceScheme(
+  sourceId: BindingId,
+  bindings: BindingFacts,
+  result: InferResult,
+): Scheme | undefined {
+  for (const [generatedId, authoredId] of bindings.jsImportSourceBindings) {
+    if (authoredId !== sourceId) continue;
+    for (const [site, id] of bindings.jsImportBinders) {
+      if (id !== generatedId) continue;
+      const scheme = result.facts.jsImportSchemes.get(site);
+      if (scheme) return scheme;
+    }
+  }
+  return undefined;
+}
+
+function reverseDependencies(graph: ModuleGraph): ModuleMap<ModuleId[]> {
+  const reverse = new Map<ModuleId, ModuleId[]>();
+  for (const id of graph.order) reverse.set(id, []);
+  for (const id of graph.order) {
+    for (const edge of graph.nodes.get(id)!.imports) {
+      const dependents = reverse.get(edge.target)!;
+      if (!dependents.includes(id)) dependents.push(id);
+    }
+  }
+  return reverse;
+}
+
+function declarationOrigins(
+  moduleId: ModuleId,
+  source: string,
+  bindings: BindingFacts,
+  nominalFacts: NominalFacts,
+): ReadonlyMap<string, readonly DeclarationOrigin[]> {
+  const origins = new Map<string, DeclarationOrigin[]>();
+  for (const [name, bindingId] of bindings.exports) {
+    const binder = [...bindings.binders].find(([pattern, id]) =>
+      id === bindingId && pattern.kind === "PVar" && pattern.name === name
+    )?.[0];
+    const record = [...bindings.recordConstructors].find(([, id]) => id === bindingId)?.[0];
+    const node = binder?.node ?? record?.node;
+    const span = node ? identifierSpan(source, node, name, "first") : undefined;
+    if (span) {
+      addOrigin(
+        origins,
+        name,
+        Object.freeze({ kind: "value", moduleId, bindingId, visibility: "public", span }),
+      );
+    }
+  }
+  for (const fact of nominalFacts.types) {
+    if (fact.moduleId !== moduleId || !fact.exported) continue;
+    const span = fact.declaration.node
+      ? identifierSpan(source, fact.declaration.node, fact.name, "first")
+      : undefined;
+    if (!span) continue;
+    addOrigin(
+      origins,
+      fact.name,
+      Object.freeze({
+        kind: "type",
+        moduleId,
+        typeNameId: fact.id,
+        visibility: "public",
+        span,
+      }),
+    );
+  }
+  for (const fact of nominalFacts.constructors) {
+    if (fact.moduleId !== moduleId || !fact.exported) continue;
+    const span = fact.declaration.node
+      ? identifierSpan(source, fact.declaration.node, fact.name, "first")
+      : undefined;
+    if (!span) continue;
+    addOrigin(
+      origins,
+      fact.name,
+      Object.freeze({
+        kind: "constructor",
+        moduleId,
+        ctorId: fact.id,
+        visibility: "public",
+        span,
+      }),
+    );
+  }
+  return new Map([...origins].map(([name, items]) => [name, Object.freeze(items)]));
+}
+
+function addOrigin(
+  origins: Map<string, DeclarationOrigin[]>,
+  name: string,
+  origin: DeclarationOrigin,
+): void {
+  const items = origins.get(name) ?? [];
+  items.push(origin);
+  origins.set(name, items);
+}
+
+function importOccurrences(
+  declarations: Decl[],
+  edges: readonly ModuleImportEdge[],
+  bindings: ModuleMap<BindingFacts>,
+  nominalFacts: NominalFacts,
+): ModuleImportOccurrence[] {
+  const occurrences: ModuleImportOccurrence[] = [];
+  let edgeIndex = 0;
+  for (const declaration of declarations) {
+    if (declaration.kind !== "ImportDecl") continue;
+    const edge = edges[edgeIndex++];
+    if (!edge) throw new Error(`missing resolved edge for import ${declaration.path}`);
+    const targetBindings = bindings.get(edge.target)!;
+    const structureId = bindings.get(edge.referrer)!.structureBinders.get(declaration);
+    occurrences.push(Object.freeze({
+      declaration,
+      clause: edge.clause,
+      edge,
+      target: edge.target,
+      structureAlias: edge.clause.kind === "Namespace" && structureId !== undefined
+        ? Object.freeze({ name: edge.clause.alias, id: structureId })
+        : undefined,
+      targets: Object.freeze(projectedTargets(edge, targetBindings, nominalFacts)),
+    }));
+  }
+  return occurrences;
+}
+
+function projectedTargets(
+  edge: ModuleImportEdge,
+  bindings: BindingFacts,
+  nominalFacts: NominalFacts,
+): ImportTarget[] {
+  const names = edge.clause.kind === "Named"
+    ? edge.clause.specs.map((spec) => ({
+      sourceName: spec.name,
+      localName: spec.alias ?? spec.name,
+    }))
+    : edge.clause.kind === "All" || edge.clause.kind === "Namespace"
+    ? [
+      ...new Set([
+        ...bindings.exports.keys(),
+        ...nominalFacts.types.filter((fact) => fact.moduleId === edge.target && fact.exported).map((
+          fact,
+        ) => fact.name),
+      ]),
+    ].map((name) => ({ sourceName: name, localName: name }))
+    : [];
+  return names.map(({ sourceName, localName }) => {
+    const type = nominalFacts.types.find((fact) =>
+      fact.moduleId === edge.target && fact.exported && fact.name === sourceName
+    );
+    const constructor = nominalFacts.constructors.find((fact) =>
+      fact.moduleId === edge.target && fact.exported && fact.name === sourceName
+    );
+    return Object.freeze({
+      sourceName,
+      localName,
+      value: bindings.exports.get(sourceName),
+      type: type?.id,
+      constructor: constructor?.id,
+    });
+  });
+}

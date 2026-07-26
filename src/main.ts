@@ -18,6 +18,7 @@ import {
   FrontendDiagnosticError,
 } from "./diagnostics.ts";
 import { ParseError } from "./parser.ts";
+import { moduleNodeForPath } from "./module_graph.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, watchReplChanges } from "./repl.ts";
@@ -181,11 +182,12 @@ async function checkCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("check");
   const analysis = await analyzeFile(input);
-  for (const path of analysis.graph.order) {
-    const result = analysis.results.get(path);
-    const source = analysis.graph.nodes.get(path)?.source ?? "";
+  for (const id of analysis.graph.order) {
+    const node = analysis.graph.nodes.get(id);
+    const result = analysis.results.get(id);
+    const source = node?.source ?? "";
     for (const diagnostic of result?.diagnostics ?? []) {
-      console.error(formatDiagnostic(diagnostic, path, source));
+      console.error(formatDiagnostic(diagnostic, node?.path ?? "<module>", source));
     }
   }
   console.log("ok");
@@ -268,8 +270,9 @@ async function errCommand(args: string[]): Promise<number> {
   let foundError = false;
   try {
     const compiled = await coreFile(input);
-    for (const [path, result] of compiled.results) {
-      const source = compiled.graph.nodes.get(path)?.source ?? "";
+    for (const [id, result] of compiled.results) {
+      const path = compiled.graph.nodes.get(id)?.path ?? "<module>";
+      const source = compiled.graph.nodes.get(id)?.source ?? "";
       for (const diagnostic of result.diagnostics) {
         inspections.push(formatDiagnosticInspection(diagnostic, path, source));
         foundError ||= diagnostic.severity === "error";

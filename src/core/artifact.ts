@@ -18,6 +18,7 @@ import {
 } from "../nominal_facts.ts";
 import { type BindingId, CoreIdAllocator, type CtorId, type TypeNameId } from "./ids.ts";
 import type { MaterializedGpuArtifacts, VisualShaderArtifactV1 } from "../gpu_artifact.ts";
+import { type ModuleId, moduleId, type ModuleMap } from "../module_id.ts";
 
 export type CoreConstructorInfo = {
   id: CtorId;
@@ -25,6 +26,7 @@ export type CoreConstructorInfo = {
   typeName: string;
   typeNameId: TypeNameId;
   typeId: number;
+  moduleId: ModuleId;
   modulePath: string;
   exported: boolean;
   payload?: TypeExpr;
@@ -33,6 +35,7 @@ export type CoreConstructorInfo = {
 export type CoreDynamicExport = {
   name: string;
   bindingId?: BindingId;
+  ctorId?: CtorId;
 };
 
 export type CoreModuleArtifact = {
@@ -48,25 +51,28 @@ export type CoreModuleArtifact = {
 };
 
 export type CoreProgram = {
-  entry: string;
-  order: string[];
-  modules: Map<string, CoreModuleArtifact>;
+  entry: ModuleId;
+  order: ModuleId[];
+  modules: ModuleMap<CoreModuleArtifact>;
   constructors: CoreConstructorInfo[];
   nominalFacts: NominalFacts;
   shaderArtifacts: Map<VisualShaderArtifactV1["id"], VisualShaderArtifactV1>;
   standardNamespaces?: {
+    id: ModuleId;
     path: string;
     publicName: string;
     emitName: string;
     basisName?: string;
+    basisMembers: string[];
+    sourceMembers: string[];
   }[];
 };
 
 export function coreProgramFromAnalysis(
   graph: ModuleGraph,
-  results: Map<string, InferResult>,
+  results: ModuleMap<InferResult>,
   elaboration?: {
-    bindings: Map<string, BindingFacts>;
+    bindings: ModuleMap<BindingFacts>;
     ids: CoreIdAllocator;
     gpuOnlyBindings?: ReadonlySet<BindingId>;
     gpuOnlyTypeNames?: ReadonlySet<TypeNameId>;
@@ -79,17 +85,17 @@ export function coreProgramFromAnalysis(
   const bindingFacts = elaboration?.bindings ?? resolveProgramBindingFacts(graph, ids);
   const nominalFacts = elaboration?.nominalFacts ?? resolveProgramNominalFacts(graph, results, ids);
   const gpuOnlyBindings = elaboration?.gpuOnlyBindings ??
-    gpuOnlyBindingIds(graph.order.map((path) => ({
-      module: graph.nodes.get(path)!.module,
-      bindings: bindingFacts.get(path)!,
+    gpuOnlyBindingIds(graph.order.map((id) => ({
+      module: graph.nodes.get(id)!.module,
+      bindings: bindingFacts.get(id)!,
     })));
-  const modules = new Map<string, CoreModuleArtifact>();
+  const modules = new Map<ModuleId, CoreModuleArtifact>();
   const constructors: CoreConstructorInfo[] = [];
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const analysis = results.get(path);
-    if (!analysis) throw new Error(`missing analysis result for ${path}`);
-    const bindings = bindingFacts.get(path)!;
+  for (const id of graph.order) {
+    const node = graph.nodes.get(id)!;
+    const analysis = results.get(id);
+    if (!analysis) throw new Error(`missing analysis result for ${node.path}`);
+    const bindings = bindingFacts.get(id)!;
     const module = coreFromSurface(node.module, analysis, bindings, ids, {
       gpuOnlyBindings,
       gpuOnlyTypeNames: elaboration?.gpuOnlyTypeNames,
@@ -102,12 +108,17 @@ export function coreProgramFromAnalysis(
       materializedGpuArtifacts: elaboration?.materializedGpuArtifacts,
       nominalFacts,
     });
+    let importIndex = 0;
+    for (const decl of module.decls) {
+      if (decl.kind !== "CoreImport") continue;
+      decl.target = node.imports[importIndex++]?.target;
+    }
     const moduleConstructors = nominalFacts.constructors
-      .filter((constructor) => constructor.modulePath === path)
+      .filter((constructor) => constructor.moduleId === id)
       .map(coreConstructorInfo);
     constructors.push(...moduleConstructors);
-    modules.set(path, {
-      path,
+    modules.set(id, {
+      path: node.path,
       source: node.source,
       emitName: node.emitName,
       imports: node.imports,
@@ -118,8 +129,8 @@ export function coreProgramFromAnalysis(
       dynamicExports: [],
     });
   }
-  for (const path of graph.order) {
-    modules.get(path)!.dynamicExports = dynamicExports(modules.get(path)!.module);
+  for (const id of graph.order) {
+    modules.get(id)!.dynamicExports = dynamicExports(modules.get(id)!.module);
   }
   return {
     entry: graph.entry,
@@ -140,10 +151,12 @@ export function coreProgramFromModule(
   source = "<source>",
 ): CoreProgram {
   const ids = new CoreIdAllocator();
+  const id = moduleId(source);
   const bindings = resolveModuleBindingFacts(surfaceModule, ids);
   const nominalFacts = resolveModuleNominalFacts(surfaceModule, analysis, ids, source);
   const gpuOnlyBindings = gpuOnlyBindingIds([{ module: surfaceModule, bindings }]);
   const fragmentSelections = resolveGpuFragmentSelections([{
+    moduleId: id,
     path: source,
     module: surfaceModule,
     result: analysis,
@@ -156,10 +169,10 @@ export function coreProgramFromModule(
   });
   const constructors = nominalFacts.constructors.map(coreConstructorInfo);
   return {
-    entry: source,
-    order: [source],
+    entry: id,
+    order: [id],
     modules: new Map([
-      [source, {
+      [id, {
         path: source,
         source,
         emitName: "Main",
@@ -202,7 +215,7 @@ export function dynamicExports(module: CoreModule): CoreDynamicExport[] {
       exports.push(...decl.bindings.flatMap((binding) => patternBinders(binding.pattern)));
     }
     if (decl.kind === "CoreType" && decl.exported && !decl.alias) {
-      exports.push(...decl.ctors.map((ctor) => ({ name: ctor.name })));
+      exports.push(...decl.ctors.map((ctor) => ({ name: ctor.name, ctorId: ctor.id })));
     }
     if (decl.kind === "CoreRecord" && decl.exported) {
       exports.push({ name: decl.name, bindingId: decl.constructorBindingId });
@@ -233,6 +246,7 @@ function coreConstructorInfo(constructor: NominalConstructorFact): CoreConstruct
     typeName: constructor.typeName,
     typeNameId: constructor.typeNameId,
     typeId: constructor.inferenceTypeId,
+    moduleId: constructor.moduleId,
     modulePath: constructor.modulePath,
     exported: constructor.exported,
     payload: constructor.payload,

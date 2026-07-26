@@ -5,6 +5,7 @@ import type { InferResult } from "../infer.ts";
 import type { GpuOperationShape } from "../infer/type_facts.ts";
 import type { BindingId } from "../ids.ts";
 import type { ModuleGraph } from "../module_graph.ts";
+import type { ModuleId, ModuleMap } from "../module_id.ts";
 import type { SourceSpan } from "../source.ts";
 import { NumberTy, prune, type Ty } from "../types.ts";
 import {
@@ -31,14 +32,14 @@ type ModuleInput = {
  */
 export function normalizeGpuProgramH0(
   graph: ModuleGraph,
-  results: Map<string, InferResult>,
-  bindings: Map<string, BindingFacts>,
+  results: ModuleMap<InferResult>,
+  bindings: ModuleMap<BindingFacts>,
 ): GpuElaborationInput {
-  return normalizeGpuModules(graph.order.map((path) => ({
-    path,
-    module: graph.nodes.get(path)!.module,
-    result: required(results, path, "inference result"),
-    bindings: required(bindings, path, "binding facts"),
+  return normalizeGpuModules(graph.order.map((id) => ({
+    path: graph.nodes.get(id)!.path,
+    module: graph.nodes.get(id)!.module,
+    result: required(results, id, "inference result"),
+    bindings: required(bindings, id, "binding facts"),
   })));
 }
 
@@ -641,8 +642,8 @@ function isDecl(value: Decl | Expr): value is Decl {
   return value.kind.endsWith("Decl");
 }
 
-function required<T>(map: Map<string, T>, path: string, label: string): T {
-  const value = map.get(path);
-  if (!value) throw new Error(`missing ${label} for ${path}`);
+function required<T>(map: ModuleMap<T>, id: ModuleId, label: string): T {
+  const value = map.get(id);
+  if (!value) throw new Error(`missing ${label} for ${id}`);
   return value;
 }

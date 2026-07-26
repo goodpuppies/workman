@@ -1,5 +1,8 @@
 import { assertEquals } from "@std/assert";
-import { directWorkmanImportSpecifiers } from "../src/lsp/import_scan.ts";
+import {
+  directWorkmanImportSpecifiers,
+  hasTopLevelMainBinding,
+} from "../src/lsp/import_scan.ts";
 
 Deno.test("direct import scan handles multiline imports and ignores non-module text", () => {
   const source = String.raw`
@@ -23,4 +26,13 @@ Deno.test("direct import scan tolerates comments between import tokens", () => {
     directWorkmanImportSpecifiers('from -- source\n "./lib.wm" // clause\n import * as Lib;'),
     ["./lib.wm"],
   );
+});
+
+Deno.test("[module update A613] discovery finds only top-level main binders", () => {
+  assertEquals(hasTopLevelMainBinding("let main = () => { 0 };"), true);
+  assertEquals(hasTopLevelMainBinding("let rec main = () => { main() };"), true);
+  assertEquals(hasTopLevelMainBinding("let maintain = 1;"), false);
+  assertEquals(hasTopLevelMainBinding('let text = "let main = 1";'), false);
+  assertEquals(hasTopLevelMainBinding("let nested = () => { let main = 1; main };"), false);
+  assertEquals(hasTopLevelMainBinding("-- let main = 1;\nlet value = 2;"), false);
 });

@@ -194,7 +194,17 @@ export function emitRuntimePrelude(): string[] {
     fromList: __wm_list_to_array,
   },
 };`,
+    `const __wm_basis_Option = {
+  None: __wm_basis_None,
+  Some: __wm_basis_Some,
+};`,
+    `const __wm_basis_List = {
+  Nil: __wm_basis_Nil,
+  Cons: __wm_basis_Cons,
+};`,
     `const __wm_basis_Result = {
+  Ok: __wm_basis_Ok,
+  Err: __wm_basis_Err,
   textOf: __wm_text_of,
 };`,
     `const __wm_error_message = (error) => {

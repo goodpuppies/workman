@@ -12,8 +12,9 @@ import type {
   RecordId,
 } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
+import type { ModuleId, ModuleMap } from "./module_id.ts";
 import type { NominalFacts } from "./nominal_facts.ts";
-import { prune, type Ty, type TypeInfo } from "./types.ts";
+import { prune, type Ty, type TypeInfo, typeInfoById } from "./types.ts";
 
 export type PatternContext = "match" | "let" | "parameter";
 
@@ -97,17 +98,17 @@ type PatternModuleInput = {
 
 export function resolveProgramPatternFacts(
   graph: ModuleGraph,
-  results: Map<string, InferResult>,
-  bindings: Map<string, BindingFacts>,
+  results: ModuleMap<InferResult>,
+  bindings: ModuleMap<BindingFacts>,
   nominalFacts: NominalFacts,
   ids: CompilerIdAllocator,
 ): ResolvedPatternFacts {
   return resolvePatternFacts(
-    graph.order.map((path) => ({
-      path,
-      module: graph.nodes.get(path)!.module,
-      result: required(results, path, "inference result"),
-      bindings: required(bindings, path, "binding facts"),
+    graph.order.map((id) => ({
+      path: graph.nodes.get(id)!.path,
+      module: graph.nodes.get(id)!.module,
+      result: required(results, id, "inference result"),
+      bindings: required(bindings, id, "binding facts"),
     })),
     nominalFacts,
     ids,
@@ -374,7 +375,7 @@ class PatternFactState {
     if (target.tag !== "named") {
       throw invariant(input.path, pattern, "record pattern type is not named");
     }
-    const info = [...input.result.typeEnv.values()].find((candidate) => candidate.id === target.id);
+    const info = typeInfoById(input.result.typeEnv, target.id);
     if (!info?.recordFields) {
       throw invariant(input.path, pattern, "missing record field metadata");
     }
@@ -391,8 +392,8 @@ function isDecl(value: Decl | Expr): value is Decl {
   return value.kind.endsWith("Decl");
 }
 
-function required<T>(map: Map<string, T>, path: string, kind: string): T {
-  const value = map.get(path);
-  if (!value) throw new Error(`missing ${kind} for ${path}`);
+function required<T>(map: ModuleMap<T>, id: ModuleId, kind: string): T {
+  const value = map.get(id);
+  if (!value) throw new Error(`missing ${kind} for ${id}`);
   return value;
 }

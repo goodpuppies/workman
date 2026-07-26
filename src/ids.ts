@@ -1,9 +1,17 @@
 export type CompilerId<Tag extends string> = number & { readonly __compilerId: Tag };
 
 export type BindingId = CompilerId<"binding">;
+export type BasisValueId = string & { readonly __compilerId: "basisValue" };
+export type ValueId = BindingId | BasisValueId;
+export type StructureId = CompilerId<"structure">;
+export type BasisStructureId = string & { readonly __compilerId: "basisStructure" };
+export type StructureSemanticId = StructureId | BasisStructureId;
 export type CtorId = CompilerId<"ctor">;
 export type TypeNameId = CompilerId<"typeName">;
+/** Snapshot-local identity of one elaborator-bound annotation/type-parameter variable. */
+export type TypeVariableId = CompilerId<"typeVariable">;
 export type RecordId = CompilerId<"record">;
+export type FieldId = CompilerId<"field">;
 export type ModuleId = CompilerId<"module">;
 export type PatternId = CompilerId<"pattern">;
 export type ParamId = CompilerId<"param">;
@@ -16,9 +24,11 @@ export type GpuSelectorId = CompilerId<"gpuSelector">;
 
 export class CompilerIdAllocator {
   #nextBinding = 0;
+  #nextStructure = 0;
   #nextCtor = 0;
   #nextTypeName = 0;
   #nextRecord = 0;
+  #nextField = 0;
   #nextModule = 0;
   #nextPattern = 0;
   #nextParam = 0;
@@ -31,6 +41,10 @@ export class CompilerIdAllocator {
     return this.#nextBinding++ as BindingId;
   }
 
+  structure(): StructureId {
+    return this.#nextStructure++ as StructureId;
+  }
+
   ctor(): CtorId {
     return this.#nextCtor++ as CtorId;
   }
@@ -41,6 +55,10 @@ export class CompilerIdAllocator {
 
   record(): RecordId {
     return this.#nextRecord++ as RecordId;
+  }
+
+  field(): FieldId {
+    return this.#nextField++ as FieldId;
   }
 
   module(): ModuleId {

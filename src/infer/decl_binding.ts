@@ -1,4 +1,5 @@
 import type { Binding, Decl, Expr } from "../ast.ts";
+import type { AstNode } from "../source.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import {
   type Env,
@@ -27,7 +28,12 @@ import {
   type TypeProvenance,
 } from "./provenance.ts";
 import { inferRecordExpr } from "./records.ts";
-import { recordConsumedFfiUse } from "./type_facts.ts";
+import {
+  recordConsumedFfiUse,
+  recordTypeExpressionFact,
+  recordTypeReferenceFact,
+  recordTypeVariableFact,
+} from "./type_facts.ts";
 
 export function generalizeBinding(env: Env, type: Ty, value: Expr): Scheme {
   if (containsUnresolvedFfi(type) || containsFfiBoundary(value, env)) {
@@ -152,10 +158,20 @@ export function inferBinding(
   b: Binding,
   context: InferContext,
   annotationVars: TypeVarScope,
+  typeVariableRegion?: AstNode,
 ): { bound: Map<string, Ty>; refutable: boolean } {
-  const { env, typeEnv, adts, facts, warnings, diagnostics, provenance } = context;
+  const { env, typeEnv, strEnv, adts, facts, warnings, diagnostics, provenance } = context;
   try {
-    const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv, annotationVars) : undefined;
+    const annotated = b.annotation
+      ? typeFromAst(b.annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, typeVariableRegion),
+      })
+      : undefined;
     const inferRecordValue = (value: Expr, expected?: Ty): Ty => {
       if (expected && value.kind === "Record") {
         return inferRecordExpr(
@@ -165,6 +181,7 @@ export function inferBinding(
           expected,
           warnings,
           diagnostics,
+          facts,
         );
       }
       return inferExpr(value, context);
@@ -177,6 +194,7 @@ export function inferBinding(
         annotated,
         warnings,
         diagnostics,
+        facts,
       )
       : inferExpr(b.value, context);
     recordConsumedFfiUse(facts, t, {
@@ -205,7 +223,7 @@ export function inferBinding(
       });
     }
     const bound = new Map<string, Ty>();
-    inferBindingPattern(b.pattern, t, env, typeEnv, bound, undefined, facts);
+    inferBindingPattern(b.pattern, t, env, typeEnv, strEnv, bound, undefined, facts);
     const refutable = !isVectorExhaustive([[b.pattern]], [t], typeEnv, adts);
     return { bound, refutable };
   } catch (error) {

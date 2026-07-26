@@ -11,6 +11,7 @@ import { prepareFfiElaboration } from "./ffi/elab.ts";
 import {
   inferModule,
   inferModulePartial,
+  inferModuleRecovered,
   inferModuleWithSteps,
   type InferResult,
   type InferStep,
@@ -23,6 +24,7 @@ import {
 } from "./module_graph.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
+import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import {
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
@@ -36,12 +38,23 @@ import {
   assertNoPartialDiagnostics,
   StagedAnalysisError,
 } from "./staged_analysis.ts";
-import { buildProgramAnalysis, type ProgramAnalysis } from "./program_analysis.ts";
-import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
+import {
+  buildPartialProjectSnapshot,
+  buildProgramAnalysis,
+  currentSourceCompletionFacts,
+  type ProgramAnalysis,
+} from "./program_analysis.ts";
+import {
+  immutableCopy,
+  type ProjectSnapshot,
+  type SemanticGpuElaboratedSlice,
+  type SemanticGpuElaboration,
+} from "./module_interface.ts";
+import { type GpuFragmentSelectionFacts, resolveGpuFragmentSelections } from "./gpu_selection.ts";
 import type { BindingFacts } from "./binding_facts.ts";
 import { resolveProgramBindingFacts } from "./binding_facts.ts";
 import { type NominalFacts, resolveProgramNominalFacts } from "./nominal_facts.ts";
-import type { GpuSliceElaborationInput, GpuSliceTypeElaborationOutput } from "./wmslang/v2_dto.ts";
+import type { GpuSliceElaborationInput } from "./wmslang/v2_dto.ts";
 import type { ResolvedPatternFacts } from "./pattern_facts.ts";
 import type { RecursionFacts } from "./recursion_facts.ts";
 import { CompilerIdAllocator } from "./ids.ts";
@@ -75,10 +88,12 @@ export async function compile(
     filePath,
   );
   const path = filePath ?? "<source>";
+  const id = moduleId(path);
   const graph: ModuleGraph = {
-    entry: path,
-    order: [path],
-    nodes: new Map([[path, {
+    entry: id,
+    order: [id],
+    nodes: new Map([[id, {
+      id,
       path,
       source,
       module: ast,
@@ -86,10 +101,17 @@ export async function compile(
       emitName: "Main",
     }]]),
   };
-  const results = new Map([[path, result]]);
+  const results = new Map([[id, result]]);
   const ids = new CompilerIdAllocator();
   const bindings = resolveProgramBindingFacts(graph, ids);
   const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
+  const fragmentSelections = resolveGpuFragmentSelections([{
+    moduleId: id,
+    path,
+    module: ast,
+    result,
+    bindings: bindings.get(id)!,
+  }]);
   return emitCoreProgram(
     await coreProgramWithStandardRuntime({
       graph,
@@ -97,6 +119,7 @@ export async function compile(
       ids,
       bindings,
       nominalFacts,
+      elaboration: { bindings, ids, nominalFacts, fragmentSelections },
     }),
   );
 }
@@ -105,8 +128,8 @@ export type CheckSourceOptions = CompilerFrontendOptions;
 export type CoreSourceResult = { module: ReturnType<typeof coreFromSurface>; result: InferResult };
 export type CoreFileResult = {
   graph: ModuleGraph;
-  results: Map<string, InferResult>;
-  bindings: Map<string, BindingFacts>;
+  results: ModuleMap<InferResult>;
+  bindings: ModuleMap<BindingFacts>;
   nominalFacts: NominalFacts;
   patternFacts: ResolvedPatternFacts;
   recursionFacts: RecursionFacts;
@@ -193,7 +216,8 @@ export async function compileFileArtifactsFromCore(
   options: CompileOptions = {},
   entryTarget: "executable" | "repl" = "executable",
 ): Promise<CompileArtifact[]> {
-  const entry = compiled.graph.entry;
+  const entryId = compiled.graph.entry;
+  const entry = compiled.graph.nodes.get(entryId)!.path;
   const outputNames = new Map<string, string>([[entry, "main.mjs"]]);
   const usedNames = new Set(["main.mjs"]);
   const artifacts: CompileArtifact[] = [];
@@ -238,7 +262,8 @@ export async function compileLibraryFile(
 }
 
 export async function checkFile(input: string): Promise<Map<string, InferResult>> {
-  return (await analyzeFile(input)).results;
+  const analysis = await analyzeFile(input);
+  return resultsBySourcePath(analysis.graph, analysis.results);
 }
 
 export async function coreFile(
@@ -280,9 +305,9 @@ async function coreResultFromAnalysis(analysis: ProgramAnalysis): Promise<CoreFi
 
 async function coreProgramWithStandardRuntime(input: {
   graph: ModuleGraph;
-  results: Map<string, InferResult>;
+  results: ModuleMap<InferResult>;
   ids: CompilerIdAllocator;
-  bindings: Map<string, BindingFacts>;
+  bindings: ModuleMap<BindingFacts>;
   nominalFacts: NominalFacts;
   elaboration?: Parameters<typeof coreProgramFromAnalysis>[2];
 }): Promise<CoreProgram> {
@@ -326,9 +351,10 @@ async function coreProgramWithStandardRuntime(input: {
     nominalFacts,
     standardNamespaces: standard.namespaces.map((namespace) => ({
       ...namespace,
-      basisName: namespace.publicName === "Task" || namespace.publicName === "Result"
+      basisName: namespace.hostMembers.length > 0
         ? `__wm_basis_${namespace.publicName}`
         : undefined,
+      basisMembers: namespace.hostMembers,
     })),
   };
 }
@@ -336,7 +362,7 @@ async function coreProgramWithStandardRuntime(input: {
 function mergeStandardNominalFacts(
   user: NominalFacts,
   standard: NominalFacts,
-  userResults: Map<string, InferResult>,
+  userResults: ModuleMap<InferResult>,
 ): NominalFacts {
   const constructorReferences = new Map<Expr | Pattern, import("./ids.ts").CtorId>([
     ...standard.constructorReferences,
@@ -361,15 +387,18 @@ function mergeStandardNominalFacts(
   return {
     types: [...user.types, ...standard.types],
     records: [...user.records, ...standard.records],
+    fields: [...user.fields, ...standard.fields],
     constructors: [...user.constructors, ...standard.constructors],
     typeDeclarations: new Map([...user.typeDeclarations, ...standard.typeDeclarations]),
     recordDeclarations: new Map([...user.recordDeclarations, ...standard.recordDeclarations]),
+    fieldDeclarations: new Map([...user.fieldDeclarations, ...standard.fieldDeclarations]),
     constructorDeclarations: new Map([
       ...user.constructorDeclarations,
       ...standard.constructorDeclarations,
     ]),
     inferenceTypeIds: new Map([...user.inferenceTypeIds, ...standard.inferenceTypeIds]),
     recordTypeIds: new Map([...user.recordTypeIds, ...standard.recordTypeIds]),
+    fieldIds: new Map([...user.fieldIds, ...standard.fieldIds]),
     constructorReferences,
   };
 }
@@ -380,31 +409,42 @@ function loadDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
   return defaultWmslangCompiler ??= compileDefaultWmslangCompiler();
 }
 
-export async function elaborateGpuTypesForLanguageService(
-  analysis: ProgramAnalysis,
-): Promise<GpuSliceTypeElaborationOutput | undefined> {
-  return (await elaborateGpuSlicesForLanguageService(analysis))[0]?.elaboration;
-}
-
-export async function elaborateGpuSlicesForLanguageService(
-  analysis: ProgramAnalysis,
-): Promise<
-  Array<{
-    input: GpuSliceElaborationInput;
-    elaboration: GpuSliceTypeElaborationOutput;
-  }>
-> {
-  if (analysis.gpuSlices.length === 0) return [];
+/**
+ * Elaborate the normalized GPU programs owned by one immutable project snapshot.
+ *
+ * Tooling consumes this artifact instead of reaching back into ProgramAnalysis, binding maps, or
+ * mutable inference state. The snapshot and interface generation tokens make stale results
+ * detectable when this query eventually moves behind an incremental scheduler.
+ */
+export async function elaborateProjectGpuSemantics(
+  project: ProjectSnapshot,
+): Promise<SemanticGpuElaboration> {
   const compiler = await loadDefaultWmslangCompiler();
-  return analysis.gpuSlices.map(({ input }) => {
-    try {
-      return { input, elaboration: compiler.elaborateGpuSliceTypes(input) };
-    } catch (error) {
-      if (error instanceof WmslangNumericDiagnosticError) {
-        throw error.withLanguageServiceInput(input);
+  const modules = new Map<ModuleId, readonly SemanticGpuElaboratedSlice[]>();
+  for (const [moduleId, moduleInterface] of project.interfaces) {
+    if (moduleInterface.gpuFacts.slices.length === 0) continue;
+    const slices = moduleInterface.gpuFacts.slices.map((slice) => {
+      const input = structuredClone(slice.input) as GpuSliceElaborationInput;
+      try {
+        return Object.freeze({
+          rootId: slice.rootId,
+          selectorIds: slice.selectorIds,
+          input: slice.input,
+          elaboration: immutableCopy(compiler.elaborateGpuSliceTypes(input)),
+        });
+      } catch (error) {
+        if (error instanceof WmslangNumericDiagnosticError) {
+          throw error.withLanguageServiceInput(input);
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
+    modules.set(moduleId, Object.freeze(slices));
+  }
+  return Object.freeze({
+    projectSnapshotId: project.id,
+    generation: project.generation,
+    modules: Object.freeze(modules),
   });
 }
 
@@ -475,6 +515,57 @@ export async function analyzeFile(
     }
     throw error;
   }
+}
+
+/**
+ * Produce the compiler-owned semantic snapshot for the current source, retaining independently
+ * recoverable top-level phrases and never substituting last-known-good analysis.
+ */
+export async function analyzeRecoveredFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<ProjectSnapshot> {
+  return await analyzeRecoveredSnapshot(input, options, "headed");
+}
+
+/** Analyze one uncovered document without claiming that it is a main-bearing project head. */
+export async function analyzeDetachedFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<ProjectSnapshot> {
+  return await analyzeRecoveredSnapshot(input, options, "detached");
+}
+
+async function analyzeRecoveredSnapshot(
+  input: string,
+  options: ModuleGraphOptions,
+  kind: ProjectSnapshot["kind"],
+): Promise<ProjectSnapshot> {
+  assertCompilerFrontendMode(options.frontend);
+  const graph = await loadModuleGraph(input, { ...options, syntaxRecovery: true });
+  const completionFacts = currentSourceCompletionFacts(graph);
+  const inferOptions = await standardInferOptions();
+  const results = new Map<ModuleId, InferResult>();
+  for (const id of graph.order) {
+    const node = graph.nodes.get(id)!;
+    const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
+    node.module = prepared.module;
+    const imports = new Map<string, InferResult>();
+    for (const edge of node.imports) {
+      const imported = results.get(edge.target);
+      if (imported) imports.set(edge.specifier, imported);
+    }
+    const recovered = inferModuleRecovered(node.module, imports, inferOptions);
+    node.module = recovered.module;
+    results.set(id, recovered.result);
+  }
+  return buildPartialProjectSnapshot(graph, results, {
+    kind,
+    configuration: {
+      frontend: options.frontend ?? "v1",
+      surface: options.surface ?? "workman",
+    },
+  }, { completionFacts });
 }
 
 async function checkPreparedModuleWithoutImports(
@@ -585,7 +676,8 @@ export async function checkVirtual(
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<Map<string, InferResult>> {
-  return (await analyzeVirtual(entryPath, virtualFs, options)).results;
+  const analysis = await analyzeVirtual(entryPath, virtualFs, options);
+  return resultsBySourcePath(analysis.graph, analysis.results);
 }
 
 export async function coreVirtual(
@@ -603,4 +695,27 @@ export function analyzeVirtual(
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<ProgramAnalysis> {
   return analyzeFile(entryPath, { ...options, virtualFs });
+}
+
+export function analyzeRecoveredVirtual(
+  entryPath: string,
+  virtualFs: VirtualFileSystem,
+  options: Omit<CompileOptions, "virtualFs"> = {},
+): Promise<ProjectSnapshot> {
+  return analyzeRecoveredFile(entryPath, { ...options, virtualFs });
+}
+
+export function analyzeDetachedVirtual(
+  entryPath: string,
+  virtualFs: VirtualFileSystem,
+  options: Omit<CompileOptions, "virtualFs"> = {},
+): Promise<ProjectSnapshot> {
+  return analyzeDetachedFile(entryPath, { ...options, virtualFs });
+}
+
+function resultsBySourcePath(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+): Map<string, InferResult> {
+  return new Map(graph.order.map((id) => [graph.nodes.get(id)!.path, results.get(id)!]));
 }

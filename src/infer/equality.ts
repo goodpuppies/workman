@@ -7,7 +7,9 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
+  typeInfoById,
 } from "../types.ts";
+import { basisPrimitiveAdmitsEquality } from "../basis_manifest.ts";
 
 export function assertEqualityType(
   type: Ty,
@@ -36,7 +38,7 @@ function requireEquality(
   }
   if (resolved.tag === "ffi") return;
   if (resolved.tag === "prim") {
-    if (!["Number", "Bool", "String", "Void"].includes(resolved.name)) {
+    if (!basisPrimitiveAdmitsEquality(resolved.name)) {
       rejectEquality(resolved);
     }
     return;
@@ -50,7 +52,7 @@ function requireEquality(
     if (seen.has(key)) return;
     seen.add(key);
 
-    const record = [...typeEnv.values()].find((info) => info.id === resolved.id);
+    const record = typeInfoById(typeEnv, resolved.id);
     if (record?.recordFields) {
       instantiateRecordFields(record, resolved.args)
         .forEach((field) => requireEquality(field.type, typeEnv, adts, seen));
@@ -62,9 +64,7 @@ function requireEquality(
     const subst = new Map<number, Ty>();
     (adt.paramTypeIds ?? []).forEach((id, index) => subst.set(id, resolved.args[index]));
     return (adt.ctorTypes ?? []).flat()
-      .forEach((arg) =>
-        requireEquality(substituteTypeVars(arg, subst), typeEnv, adts, seen)
-      );
+      .forEach((arg) => requireEquality(substituteTypeVars(arg, subst), typeEnv, adts, seen));
   }
   rejectEquality(resolved);
 }

@@ -1,7 +1,14 @@
-import { prune, type Ty, type TypeDeclInfo, type TypeEnv, type TypeInfo } from "../types.ts";
+import {
+  knownTypeInfos,
+  prune,
+  type Ty,
+  type TypeDeclInfo,
+  type TypeEnv,
+  type TypeInfo,
+} from "../types.ts";
 
 export function addExportableTypes(ids: Set<number>, typeEnv: TypeEnv) {
-  for (const info of typeEnv.values()) ids.add(info.id);
+  for (const info of knownTypeInfos(typeEnv)) ids.add(info.id);
 }
 
 export function assertExportableType(t: Ty, exportableTypeIds: Set<number>, label: string) {

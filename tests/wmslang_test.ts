@@ -3,6 +3,7 @@ import { resolveModuleBindingFacts } from "../src/binding_facts.ts";
 import { compileLibraryFile, coreVirtual } from "../src/compiler.ts";
 import { CompilerIdAllocator } from "../src/ids.ts";
 import { inferModule } from "../src/infer.ts";
+import { moduleId } from "../src/module_id.ts";
 import { parse } from "../src/parser.ts";
 import { standardInferOptions } from "../src/standard_library.ts";
 import type { GpuElaborationInput } from "../src/wmslang/dto.ts";
@@ -511,7 +512,7 @@ Deno.test("whole-program final analysis shares binding identity with Core and th
     "/test/main.wm",
     new Map([["/test/main.wm", "let tint = (color) => { @gpu; color * 0.5 }; "]]),
   );
-  const module = analysis.core.modules.get("/test/main.wm")!;
+  const module = analysis.core.modules.get(moduleId("/test/main.wm"))!;
   const h0Input = normalizeGpuProgramH0(analysis.graph, analysis.results, analysis.bindings);
   const gpuBinding = h0Input.roots[0].bindingId;
 
@@ -522,7 +523,7 @@ Deno.test("whole-program final analysis shares binding identity with Core and th
   });
   assertEquals(h0Input.functions[0].bindingId, gpuBinding);
   assertEquals(module.bindings.exports.get("tint"), gpuBinding);
-  assertEquals(analysis.bindings.get("/test/main.wm"), module.bindings);
+  assertEquals(analysis.bindings.get(moduleId("/test/main.wm")), module.bindings);
 
   const crossModule = await coreVirtual(
     "/test/main.wm",
@@ -537,7 +538,7 @@ Deno.test("whole-program final analysis shares binding identity with Core and th
       ],
     ]),
   );
-  const helperBinding = crossModule.bindings.get("/test/lib.wm")!.exports.get("helper")!;
+  const helperBinding = crossModule.bindings.get(moduleId("/test/lib.wm"))!.exports.get("helper")!;
   const crossModuleH0 = normalizeGpuProgramH0(
     crossModule.graph,
     crossModule.results,

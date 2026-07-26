@@ -6,6 +6,7 @@ import {
   compile,
   compileLibraryFile,
 } from "../src/compiler.ts";
+import { moduleId } from "../src/module_id.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 const frontendSource = new URL("../tooling/frontend-v2/frontend.wm", import.meta.url).pathname;
@@ -90,7 +91,7 @@ Deno.test("compiler v2 mode resolves imports from disk", async () => {
 
   const analysis = await analyzeFile(main, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(analysis.results.get(await Deno.realPath(main))!.env, "x", {
+  expectBinding(analysis.results.get(moduleId(await Deno.realPath(main)))!.env, "x", {
     type: "Number",
     vars: 0,
   });
@@ -107,7 +108,7 @@ Deno.test("compiler v2 mode resolves imports from source overrides", async () =>
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "x", { type: "Bool", vars: 0 });
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "x", { type: "Bool", vars: 0 });
 });
 
 Deno.test("compiler v2 mode resolves named import aliases", async () => {
@@ -121,7 +122,7 @@ Deno.test("compiler v2 mode resolves named import aliases", async () => {
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "x", { type: "Number", vars: 0 });
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "x", { type: "Number", vars: 0 });
 });
 
 Deno.test("compiler compare mode checks named import aliases", async () => {
@@ -135,7 +136,7 @@ Deno.test("compiler compare mode checks named import aliases", async () => {
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "x", { type: "Bool", vars: 0 });
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "x", { type: "Bool", vars: 0 });
 });
 
 Deno.test("compiler v2 mode typechecks namespace values and tuple expressions", async () => {
@@ -152,7 +153,7 @@ Deno.test("compiler v2 mode typechecks namespace values and tuple expressions", 
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "pair", {
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "pair", {
     type: "(Number, Bool)",
     vars: 0,
   });
@@ -172,7 +173,7 @@ Deno.test("compiler compare mode agrees on namespace and tuple expressions", asy
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "pair", {
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "pair", {
     type: "(Number, Bool)",
     vars: 0,
   });
@@ -189,7 +190,7 @@ Deno.test("compiler compare mode agrees on open imports", async () => {
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "pair", {
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "pair", {
     type: "(Number, Bool)",
     vars: 0,
   });
@@ -235,7 +236,7 @@ Deno.test("compiler v2 mode calls an imported namespace function after virtual t
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "main", {
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "main", {
     type: "(Void) => Void",
     vars: 0,
   });
@@ -255,7 +256,7 @@ Deno.test("compiler v2 mode lowers typed lambdas through a structurally missing 
     ]),
   });
 
-  expectBinding(analysis.results.get("/main.wm")!.env, "main", {
+  expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "main", {
     type: "(String) => Void",
     vars: 0,
   });

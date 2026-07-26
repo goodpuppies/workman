@@ -5,9 +5,9 @@ import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("compiles file imports as implicit structures", async () => {
   const js = await compileFile(new URL("../examples/use_math.wm", import.meta.url).pathname);
-  assertStringIncludes(js, "const Math");
-  assertStringIncludes(js, "Math.add");
-  assertStringIncludes(js, "Math.Just");
+  assertStringIncludes(js, "const Math_");
+  assertStringIncludes(js, ".add");
+  assertStringIncludes(js, ".Just");
 });
 
 Deno.test("source-only frontend rejects imports with clear API boundary", async () => {
@@ -102,36 +102,30 @@ Deno.test("rejects duplicate imported bindings in the same namespace", async () 
   );
 });
 
-Deno.test("rejects duplicate qualified imports from repeated namespace aliases", async () => {
+Deno.test("later namespace imports shadow earlier structure aliases", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "let value = 1;"],
-    ["/test/b.wm", "let value = 2;"],
+    ["/test/b.wm", 'let value = "later";'],
     [
       "/test/main.wm",
       'from "./a.wm" import * as Lib; from "./b.wm" import * as Lib; let x = Lib.value;',
     ],
   ]);
-  await assertRejects(
-    () => checkVirtual("/test/main.wm", virtualFs),
-    Error,
-    "duplicate value import Lib.value",
-  );
+  const main = (await checkVirtual("/test/main.wm", virtualFs)).get("/test/main.wm")!;
+  expectBinding(main.env, "x", { type: "String", vars: 0 });
 });
 
-Deno.test("rejects duplicate named imports across import declarations", async () => {
+Deno.test("later named imports shadow earlier imports", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", "let value = 1;"],
-    ["/test/b.wm", "let value = 2;"],
+    ["/test/b.wm", 'let value = "later";'],
     [
       "/test/main.wm",
       'from "./a.wm" import { value }; from "./b.wm" import { value }; let x = value;',
     ],
   ]);
-  await assertRejects(
-    () => checkVirtual("/test/main.wm", virtualFs),
-    Error,
-    "duplicate value import value",
-  );
+  const main = (await checkVirtual("/test/main.wm", virtualFs)).get("/test/main.wm")!;
+  expectBinding(main.env, "x", { type: "String", vars: 0 });
 });
 
 Deno.test("local declarations shadow imported bindings", async () => {
@@ -272,8 +266,8 @@ Deno.test("compiles virtual file system to JS", async () => {
     ["/test/main.wm", 'from "./lib.wm" import * as Lib; let value = Lib.wrap(1);'],
   ]);
   const js = await compileVirtual("/test/main.wm", virtualFs);
-  assertStringIncludes(js, "const Lib");
-  assertStringIncludes(js, "Lib.wrap");
+  assertStringIncludes(js, "const Lib_");
+  assertStringIncludes(js, ".wrap");
   assertStringIncludes(js, "Some");
 });
 

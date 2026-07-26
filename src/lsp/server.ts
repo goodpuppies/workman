@@ -10,8 +10,14 @@ import { documentSymbols } from "./document_symbols.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { hoverAt } from "./hover.ts";
 import { type InitializeParams, ProjectIndex } from "./project_index.ts";
+import { prepareRenameAt, renameAt } from "./rename.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./rpc.ts";
-import { definitionAt, referencesAt } from "./symbols.ts";
+import {
+  definitionAt,
+  documentHighlightsAt,
+  referencesAt,
+  typeDefinitionAt,
+} from "./symbols.ts";
 import { structuralInlayHints } from "./structural_inlays.ts";
 import { fileUriToPath } from "./uri.ts";
 import { validateUri } from "./validation.ts";
@@ -67,9 +73,12 @@ async function handleMessage(message: RpcMessage) {
         },
         hoverProvider: true,
         definitionProvider: true,
+        typeDefinitionProvider: true,
         referencesProvider: true,
+        documentHighlightProvider: true,
+        renameProvider: { prepareProvider: true },
         documentSymbolProvider: true,
-        completionProvider: { triggerCharacters: [] },
+        completionProvider: { triggerCharacters: ["."] },
         ...(frontendOptions.frontend === "v2" && structuralInlaysEnabled
           ? { inlayHintProvider: true }
           : {}),
@@ -148,6 +157,19 @@ async function handleMessage(message: RpcMessage) {
     );
     return;
   }
+  if (message.method === "textDocument/typeDefinition") {
+    const params = message.params as TextDocumentPositionParams;
+    await respond(
+      message.id,
+      await typeDefinitionAt(
+        params.textDocument.uri,
+        params.position,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
   if (message.method === "textDocument/references") {
     const params = message.params as ReferenceParams;
     await respond(
@@ -156,6 +178,46 @@ async function handleMessage(message: RpcMessage) {
         params.textDocument.uri,
         params.position,
         params.context?.includeDeclaration ?? true,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/documentHighlight") {
+    const params = message.params as TextDocumentPositionParams;
+    await respond(
+      message.id,
+      await documentHighlightsAt(
+        params.textDocument.uri,
+        params.position,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/prepareRename") {
+    const params = message.params as TextDocumentPositionParams;
+    await respond(
+      message.id,
+      await prepareRenameAt(
+        params.textDocument.uri,
+        params.position,
+        documents.sourceOverrides(),
+        frontendOptions,
+      ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/rename") {
+    const params = message.params as RenameParams;
+    await respond(
+      message.id,
+      await renameAt(
+        params.textDocument.uri,
+        params.position,
+        params.newName,
         documents.sourceOverrides(),
         frontendOptions,
       ),
@@ -181,6 +243,7 @@ async function handleMessage(message: RpcMessage) {
   }
   if (message.method === "textDocument/didClose") {
     const params = message.params as DidCloseParams;
+    projectIndex.forgetOpenFile(params.textDocument.uri);
     documents.close(params.textDocument.uri);
     frontendV2ParseCache.delete(params.textDocument.uri);
     await notify("textDocument/publishDiagnostics", {
@@ -386,6 +449,10 @@ type TextDocumentPositionParams = HoverParams;
 
 type ReferenceParams = TextDocumentPositionParams & {
   context?: { includeDeclaration?: boolean };
+};
+
+type RenameParams = TextDocumentPositionParams & {
+  newName: string;
 };
 
 type InlayHintParams = {

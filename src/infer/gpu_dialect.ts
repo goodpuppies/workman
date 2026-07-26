@@ -1,5 +1,14 @@
 import type { Expr } from "../ast.ts";
-import { fresh, instantiate, named, NumberTy, prune, tuple, type Ty } from "../types.ts";
+import {
+  fresh,
+  instantiate,
+  named,
+  NumberTy,
+  prune,
+  tuple,
+  typeInfoByName,
+  type Ty,
+} from "../types.ts";
 import type { InferContext, TypingDialect } from "./context.ts";
 import { constrainAt } from "./provenance.ts";
 import { inferDottedVar } from "./records.ts";
@@ -17,6 +26,7 @@ import {
   type WmslangBuiltinValueType,
 } from "../wmslang/builtin_catalog.generated.ts";
 import { diagnosticError } from "../diagnostics.ts";
+import { lookupLongValue } from "./environment.ts";
 
 export const gpuTypingDialect: TypingDialect = {
   domain: "gpu",
@@ -87,7 +97,12 @@ function inferGpuProjection(
       const scheme = context.env.get(parts[0]);
       return scheme ? instantiate(scheme) : undefined;
     })()
-    : inferDottedVar(parts.slice(0, -1).join("."), context.env, context.typeEnv);
+    : inferDottedVar(
+      parts.slice(0, -1).join("."),
+      context.env,
+      context.typeEnv,
+      context.strEnv,
+    );
   if (!receiver) return undefined;
   const resolved = prune(receiver);
   if (resolved.tag === "var") {
@@ -164,7 +179,9 @@ function inferGpuBuiltinCall(
   const resource = inferGpuResourceCall(expr, context);
   if (resource) return resource;
   if (
-    expr.callee.kind !== "Var" || context.env.has(expr.callee.name)
+    expr.callee.kind !== "Var" ||
+    context.env.has(expr.callee.name) ||
+    lookupLongValue(context.strEnv, expr.callee.name) !== undefined
   ) return undefined;
   const overloads = builtinOverloadsByName.get(expr.callee.name);
   if (!overloads) {
@@ -244,7 +261,7 @@ function inferGpuResourceCall(
       );
     }
     const sampler = inferExpr(expr.args[0], context);
-    const samplerInfo = context.typeEnv.get("Gpu.Sampler");
+    const samplerInfo = typeInfoByName(context.typeEnv, "Gpu.Sampler");
     if (!samplerInfo) throw new Error("missing compiler-owned Gpu.Sampler type");
     constrainAt(sampler, named(samplerInfo), expr.args[0], undefined, [], context.provenance, {
       message: "sampled texture sampler",
@@ -265,7 +282,11 @@ function inferGpuResourceCall(
         span: expr.args[1].node?.span,
       },
     );
-    recordGpuResourceCallFact(context.facts, expr, { operation: "sample", receiverName });
+    recordGpuResourceCallFact(context.facts, expr, {
+      operation: "sample",
+      receiverName,
+      receiverType: receiver,
+    });
     return rgba;
   }
   if (expr.args.length !== 1) {
@@ -289,7 +310,11 @@ function inferGpuResourceCall(
       span: expr.args[0].node?.span,
     },
   );
-  recordGpuResourceCallFact(context.facts, expr, { operation: "load", receiverName });
+  recordGpuResourceCallFact(context.facts, expr, {
+    operation: "load",
+    receiverName,
+    receiverType: receiver,
+  });
   return rgba;
 }
 
@@ -298,7 +323,7 @@ function inferGpuDottedValue(name: string, context: InferContext): Ty | undefine
     const scheme = context.env.get(name);
     return scheme ? instantiate(scheme) : undefined;
   }
-  return inferDottedVar(name, context.env, context.typeEnv);
+  return inferDottedVar(name, context.env, context.typeEnv, context.strEnv);
 }
 
 function isNamed(type: Ty, name: string): boolean {
