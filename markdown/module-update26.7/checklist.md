@@ -1,0 +1,598 @@
+# Module update checklist
+
+## How to use this document
+
+This is the canonical progress tracker for the module update. The research documents explain why;
+this file records what remains.
+
+Checkbox meanings:
+
+- `[ ]` not started;
+- `[x]` complete with the stated evidence.
+
+For active or blocked work, retain an unchecked box and append **in progress** or **blocked: ...**.
+
+An item is complete only when its code, focused tests, and relevant documentation agree. A passing
+JavaScript snapshot alone is not sufficient evidence for a semantic item.
+
+## Locked constraints
+
+These are not implementation choices to reopen while working through the checklist:
+
+- [x] **C001** Shared language forms use exact Revised SML semantics.
+- [x] **C002** File resolution and initialization use the separately specified Workman protocol.
+- [x] **C003** Imports remain declaration-ordered for lexical visibility.
+- [x] **C004** The file graph is acyclic.
+- [x] **C005** Files are public by default; `private` is deferred.
+- [x] **C006** Imports do not automatically re-export their targets.
+- [x] **C007** Structures, types, and values occupy separate semantic namespaces.
+- [x] **C008** A file namespace is static and is not a first-class Workman value.
+- [x] **C009** `Module` expression fallback means `Module.carrier`, after ordinary value lookup.
+- [x] **C010** Later phrases use SML right-biased modification in each namespace.
+- [x] **C011** A resolved local file has one opaque, resolver-owned `ModuleId`.
+- [x] **C012** Dependencies initialize once, dependency-first, in source-edge DFS order.
+- [x] **C013** Initial-basis semantics follow SML independently of Workman's library size.
+- [x] **C014** Workman operators are fixed syntax, not user-rebindable `ValEnv` identifiers.
+- [x] **C015** The first refactor preserves the current default source API unless correctness
+      requires a change; it does not add a new stdlib API.
+- [x] **C016** Compiled standard-library initialization is observationally effect-free.
+- [x] **C017** Package resolution, persistent fingerprints, `private`, re-export, and cyclic modules
+      are outside the first implementation.
+- [x] **C018** The per-module, per-project-snapshot interface is the sole semantic API for all
+      tooling.
+- [x] **C019** Incomplete editor input uses compiler-produced facts from the current snapshot, with
+      explicit structured completeness and no LSP-invented environment.
+- [x] **C020** Workspace containment does not imply project membership.
+- [x] **C021** One Workman project is one `main` head plus its complete reachable graph. Opening an
+      existing member uses that project; only a file outside every active graph searches for its
+      closest head.
+- [x] **C022** Project membership is independent of document-open state; document context remains
+      stable while its selected project still contains it.
+
+Evidence: [`decisions.md`](./decisions.md) and [`proposed-semantics.md`](./proposed-semantics.md).
+
+## Stage 0: Specification lock and inventories
+
+Dependencies: locked constraints only.
+
+- [ ] **S001** Review `proposed-semantics.md` line by line and remove “proposed” wording from every
+      accepted normative rule.
+- [x] **S002** Build the SML conformance matrix described in
+      [`sml-correctness-audit.md`](./sml-correctness-audit.md).
+- [x] **S003** Record exact Definition rules/translations for sequential declarations, `local`,
+      `open`, namespace separation, schemes, constructor status, and nominal identity.
+- [x] **S004** Inventory every current initial type, constructor, value, operator, intrinsic,
+      standard structure, and pervasive binding.
+- [x] **S005** Classify each inventory entry as language kernel, host intrinsic, source-defined
+      standard member, or explicit pervasive projection.
+- [x] **S006** Record the exact compatibility interface for the `default` profile.
+- [x] **S007** Record the exact interface for `@no-prelude`: mandatory language/host facts remain;
+      optional source library structures and pervasive additions do not.
+- [x] **S008** Give every initial binding one static owner and one dynamic owner.
+- [x] **S009** Inventory every current semantic use of canonical path, source specifier, display
+      path, module alias, basename, emit name, numeric type ID, and constructor ID.
+- [x] **S010** Add a discrepancy log mapping every audit finding (`I1`–`I12`, `B1`–`B9`) to one or
+      more checklist items.
+- [ ] **S011** Update `docs/smlparallels.md` terminology after the normative review.
+
+Gate:
+
+- [x] **G0** No first-pass implementation behavior depends on an unanswered semantic question.
+- [x] **G1** Every current basis entry and module identity string has a classified migration target.
+- [x] **G2** Every shared semantic operation needed by an import has a Definition citation and test
+      plan.
+
+## Stage 1: Characterization and failing regressions
+
+Dependencies: `G0`–`G2`.
+
+### Identity and graph
+
+- [x] **T101** Permanently test one canonical file imported through two namespace aliases.
+- [x] **T102** Test normalized relative specifiers resolving to one module instance.
+- [x] **T103** Test two distinct same-basename files.
+- [x] **T104** Test two distinct files containing textually identical datatype declarations.
+- [x] **T105** Test virtual-source identity stability within one project snapshot.
+- [x] **T106** Test a cycle diagnostic containing the complete ordered import-edge path.
+
+### Static environments
+
+- [x] **T107** Test value and structure bindings sharing one spelling.
+- [x] **T108** Test value and type bindings sharing one spelling.
+- [x] **T109** Test namespace, open, and named imports preserving values, types, constructors,
+      constructor status, records, and nominal identities.
+- [x] **T110** Test imported polymorphic values at multiple independent types through every import
+      form.
+- [x] **T111** Test imports before, between, and after shadowing declarations.
+- [x] **T112** Test later imports shadowing earlier locals and imports within each namespace.
+- [x] **T113** Test later local declarations shadowing imports and initial-basis bindings.
+- [x] **T114** Test a later open import winning for overlapping members.
+- [x] **T115** Test that type shadowing does not delete a constructor value binding.
+- [x] **T116** Test named projection/renaming independently in `StrEnv`, `TyEnv`, and `ValEnv`.
+- [x] **T117** Test rejection of duplicate local targets within one simultaneous named-import
+      clause.
+- [x] **T118** Test that prelude and imported bindings are not automatically re-exported.
+- [x] **T119** Test that imports are unavailable before their declaration position.
+- [x] **T120** Test ordinary value lookup winning over namespace-to-`carrier` fallback.
+- [x] **T121** Test missing `carrier` as an ordinary qualified-lookup error.
+
+### Runtime
+
+- [x] **T122** Test dependency initialization once through a diamond graph.
+- [x] **T123** Test source-edge DFS order for independent effectful dependencies.
+- [x] **T124** Test source declaration evaluation order with interspersed imports and shadowing.
+- [x] **T125** Test dependency failure preventing importer initialization.
+- [x] **T126** Test remembered dependency failure on repeated requests.
+- [x] **T127** Test that effects completed before initialization failure are retained.
+- [x] **T128** Test entry `main` invocation only after successful graph initialization.
+- [x] **T129** Test namespace, open, and named imports at analysis, Core, and emitted-runtime
+      layers.
+
+### Initial basis
+
+- [x] **T130** Snapshot the static interface of every selected basis profile.
+- [x] **T131** Test every statically visible initial value has a runtime implementation.
+- [x] **T132** Test primitive type arity, equality behavior, and nominal identity.
+- [x] **T133** Test datatype constructor metadata and `ValEnv` status refer to the same constructor.
+- [x] **T134** Test pervasive projections resolve to the same semantic targets as structure members.
+- [x] **T135** Test fixed operator typing/evaluation without looking up a user `ValEnv` binding.
+- [x] **T136** Test that ordinary initial values such as `print` can be shadowed.
+- [x] **T137** Test that building the compiled standard library has no visible user effect.
+
+Gate:
+
+- [x] **G3** Every known reproduced failure has a focused regression that fails for the intended
+      semantic reason.
+- [x] **G4** Existing conforming behavior has characterization coverage before representation
+      changes begin.
+- [x] **G5** Tests distinguish analysis, Core lowering, and runtime behavior.
+
+Known-failure evidence:
+[`tests/module_update_regression_test.ts`](../../tests/module_update_regression_test.ts) contains
+the desired-semantics regressions introduced by the audit. The six original regressions are now
+enabled permanently and passing. Add further audit regressions here or in the closest focused suite
+before implementing their corresponding slice.
+
+## Stage 2: Semantic foundations
+
+Dependencies: `G3`–`G5`.
+
+### Module identity
+
+- [x] **M201** Introduce an opaque `ModuleId` type owned by the resolver.
+- [x] **M202** Separate source specifier, resolved local identity, display path, and backend emit
+      name in graph nodes and edges.
+- [x] **M203** Make all graph, analysis, and interface maps key on `ModuleId`.
+- [x] **M204** Preserve ordered edge records with referrer, specifier location, and target
+      `ModuleId`.
+- [x] **M205** Remove basename and first-importer alias from semantic or backend identity.
+- [x] **M206** Define stable virtual-source identity for one project snapshot.
+- [x] **M207** Emit complete cycle paths from ordered edge records.
+
+### SML-shaped environments
+
+- [x] **M208** Introduce explicit `Env = StrEnv × TyEnv × ValEnv`.
+- [x] **M209** Represent `StrEnv` recursively as structure identifiers mapped to environments.
+- [x] **M210** Give values, types, constructors, structures, and aliases compiler-owned semantic
+      identities/origins.
+- [x] **M211** Implement namespace-specific, right-biased environment modification once.
+- [x] **M212** Implement environment opening using the same modification operation.
+- [x] **M213** Implement namespace-preserving named projection and key-only renaming.
+- [x] **M214** Preserve schemes, identifier status, nominal identity, and intrinsic metadata during
+      projection.
+- [ ] **M215** Remove semantic dotted-name splitting and construction.
+- [x] **M216** Permit the same spelling in separate structure, type, and value components.
+
+Gate:
+
+- [x] **G6** Compiler consumers cannot inspect a `ModuleId` as a display or emit string.
+- [ ] **G7** Semantic qualification uses `StrEnv`; dotted strings exist only after resolution.
+- [x] **G8** Environment composition has one SML-defined implementation used by basis, import, open,
+      and local declaration paths.
+
+## Stage 3: Initial basis correction
+
+Dependencies: `G7`–`G8` and `S004`–`S008`.
+
+- [x] **B301** Introduce immutable `InitialBasis` and `BasisProfile` compiler artifacts.
+- [ ] **B302** Consolidate primitive type identity, arity, equality, constructor, overload,
+      operator, and intrinsic descriptions.
+- [ ] **B303** Build corresponding static and dynamic kernel artifacts from the same description.
+- [x] **B304** Move fixed operators out of the ordinary value environment into the kernel syntax
+      catalog.
+- [x] **B305** Keep ordinary pervasive values shadowable through normal `ValEnv` composition.
+- [x] **B306** Install `List`, `Option`, `Result`, `Task`, `Js`, `Gpu`, and other qualified
+      facilities through real structure environments according to the approved inventory.
+- [x] **B307** Compile every source-expressible `std/*.wm` module through the ordinary front end.
+- [x] **B308** Install compiled standard public environments without privileged import collision
+      behavior.
+- [x] **B309** Define pervasive bindings through an explicit projection table.
+- [x] **B310** Preserve the current default source API or document each correctness-required
+      compatibility change.
+- [x] **B311** Make `@no-prelude` select its recorded minimal profile rather than scattered
+      conditionals.
+- [x] **B312** Remove `basis`, `imported`, and `standardLibrary` from collision semantics.
+- [x] **B313** Remove basis-constructor deletion when a type key is shadowed.
+- [x] **B314** Replace separate handwritten semantic-ID tables with derived or validated identities.
+- [x] **B315** Give every `Result` and `Task` member one owner.
+- [x] **B316** Replace semantic JavaScript object merging for standard structures.
+- [x] **B317** Make standard-library build order deterministic and effect-free.
+- [x] **B318** Expose basis membership, pervasive aliases, constructor status, and intrinsic tags as
+      compiler facts.
+- [x] **B319** Give ordinary initial-basis values, compiled-standard public values, and basis
+      structures stable semantic identities. Pervasive projections retain their source target
+      identity rather than receiving an alias-local identity.
+
+Gate:
+
+- [ ] **G9** Static and dynamic profile snapshots correspond exactly.
+- [x] **G10** Standard structures use the same lookup and shadowing rules as imported structures.
+- [x] **G11** No provenance flag or backend object merge changes language binding semantics.
+- [x] **G12** The default profile retains its approved compatibility interface.
+
+## Stage 4: Declaration-ordered import elaboration
+
+Dependencies: `G6`–`G12`.
+
+- [x] **I401** Make graph discovery collect every edge without installing lexical bindings.
+- [x] **I402** Elaborate each dependency public environment once per `ModuleId`.
+- [x] **I403** Consume imports at their declaration positions in binding and inference facts.
+- [x] **I404** Bind namespace imports as static `StrEnv` aliases only.
+- [x] **I405** Implement open imports as SML environment opening.
+- [x] **I406** Implement named imports as namespace-preserving environment projection.
+- [x] **I407** Preserve target declaration identities through every import form.
+- [x] **I408** Replace import collision rejection with sequential SML modification.
+- [x] **I409** Retain only the simultaneous named-clause duplicate-target restriction.
+- [x] **I410** Derive a module's inferred public environment using the normative nested-`local`
+      model.
+- [x] **I411** Keep imported and prelude bindings out of the public environment.
+- [x] **I412** Remove the fabricated namespace value used for `carrier`.
+- [x] **I413** Resolve bare namespace expression fallback only after ordinary value lookup.
+- [x] **I414** Diagnose missing members through structural qualified lookup.
+- [x] **I415** Ensure dependency compile order grants no ambient lexical visibility.
+
+Gate:
+
+- [x] **G13** Static import behavior passes `T107`–`T121` through one environment model.
+- [x] **G14** Repeated/renamed imports share target semantic and nominal identities.
+- [x] **G15** Public environments contain exactly module-introduced declarations.
+
+## Stage 5: Lowering and runtime protocol
+
+Dependencies: `G13`–`G15`.
+
+- [x] **R501** Carry resolved module, structure, member, declaration, and intrinsic identities into
+      Core.
+- [x] **R502** Allocate collision-free backend module names independently of source aliases and
+      basenames.
+- [x] **R503** Lower qualified access from resolved structure/member facts.
+- [x] **R504** Lower namespace-to-`carrier` fallback without creating a module runtime value.
+- [x] **R505** Derive runtime exports from the final inferred public environment.
+- [x] **R506** Derive runtime aliases from resolved import occurrences, not source-name history.
+- [x] **R507** Preserve declaration-position binding semantics despite dependency-first module
+      initialization.
+- [x] **R508** Make module instance states explicit: uninitialized, initializing, completed, failed.
+- [x] **R509** Initialize outgoing dependencies by source-edge DFS order.
+- [x] **R510** Reuse a completed instance and remember a failed instance.
+- [x] **R511** Reject cycles before entering the initializing state.
+- [x] **R512** Preserve effects performed before failure and prevent importer start.
+- [x] **R513** Align executable, library, test, and REPL graph initialization.
+- [x] **R514** Keep entry `main` invocation outside module initialization.
+- [x] **R515** Remove accidental dependence on JavaScript namespace-object semantics.
+
+Gate:
+
+- [x] **G16** All identity, ordering, failure, same-basename, and repeated-alias runtime regressions
+      pass.
+- [x] **G17** Analysis, Core, and runtime select the same target for every tested occurrence.
+- [x] **G18** Backend renaming cannot alter source-level binding or module identity.
+
+## Stage 6: Module interface artifact
+
+Dependencies: `G13`–`G18`.
+
+- [x] **A601** Define a compiler-owned module interface containing `ModuleId`, source range, public
+      `Env`, declaration origins and visibility, nominal identities, dependency edges, diagnostics,
+      and structured completeness. Source/identity queries resolve definitions through those
+      compiler facts; the remaining feature breadth is tracked by `A608` and `G21`.
+- [x] **A602** Include exact initial-basis profile identity and opaque generation in analysis
+      inputs, inference results, every module interface, and the owning project snapshot. Interface
+      assembly records the same `InitialBasis` artifact consumed by inference rather than inferring
+      profile ownership afterward.
+- [x] **A603** Expose resolved module paths, named import sources, explicit named aliases, and
+      namespace aliases separately from their target declarations while retaining every projected
+      namespace identity.
+- [x] **A604** Expose module structure aliases and compiler-resolved qualifier occurrences for
+      values, constructors, pinned patterns, and types. Qualified type uses retain the exact
+      elaborated `StaticEnv`, so repeated aliases of one target keep distinct `StructureId`s without
+      a syntax-derived resolver.
+- [x] **A605** Expose dependency and reverse-dependency relationships.
+- [x] **A606** Begin with conservative dependent invalidation and a snapshot-local interface
+      generation.
+- [x] **A607** Make the artifact per project snapshot and prevent path identity from merging
+      interfaces produced in different project contexts.
+- [ ] **A608** **in progress:** Add per-module semantic occurrences, scopes, types, and
+      bidirectional source mapping. Value, structure, type-declaration, and constructor occurrences
+      now carry source spans and compiler identities. Type uses are reported by elaboration and
+      translated to stable project type identities. Nominal record-field declarations, literals,
+      patterns, and inference-resolved projections share stable field identities; structurally
+      ambiguous projections select the first candidate identity and emit an annotation warning
+      without collapsing the receiver's structural row. Labels with no nominal candidates remain
+      structural and have no nominal target. Compiler-owned lexical scope snapshots now cover
+      declaration-ordered top-level declarations, imports, blocks, lambdas, and match arms using the
+      same `BindingId` and `StructureId` resolver as lowering. The semantic interface overlays those
+      snapshots on the captured initial static environment, including stable basis/standard value,
+      structure, constructor, and type identities. Local and imported types and constructors also
+      retain their nominal identities and independent namespace shadowing at each checkpoint. JS
+      imports now receive lowering-safe compiler binding identities plus an explicit compiler-owned
+      relation from generated FFI aliases back to the authored import binding; source scopes and
+      occurrences never expose compiler-only aliases. Reflected foreign types receive stable nominal
+      identities, declaration spans, public origins, and scope entries. Compiler-owned type-variable
+      regions now cover simultaneous declaration groups, lambda annotations, and explicit
+      record/datatype parameters. They expose elaborator identities, lexical extents, reference
+      spans, optional explicit binder spans, scope membership, and definition mapping; failed
+      declarations contribute no regions to partial interfaces. Every elaborated expression,
+      pattern, and authored type expression with a source node now appears in an immutable
+      typed-node index. Offset queries prefer the smallest containing node, preserve generalized
+      binder schemes versus instantiated uses, retain nominal identity through shadowing, and
+      exclude failed phrases while including independently recovered later phrases. Named
+      value/constructor import source and alias occurrences retain the target's generalized scheme
+      while ordinary references retain their local instantiation. Typed nodes also retain authored
+      source labels, optional generalized schemes, and compiler-owned presentation facts for
+      generated FFI receivers. Compiler-owned top-level declaration facts provide declaration and
+      selection spans plus datatype-constructor children for structural tooling. Scope and
+      occurrence completeness remain explicitly partial while complete role-specific/recovery
+      mappings remain. Ordinary
+      basis and compiled-standard value references are included even though they have no
+      project-local `BindingId`. Value, constructor, and nominal-field occurrences now reference
+      immutable semantic type snapshots rather than mutable inference objects. Result
+      carrier-lifting plans are source-mapped into the interface and reference the same immutable
+      type arena for their error and payload-result types. GPU overload obligations,
+      builtin/resource occurrences, selected fragment roots, and selector calls are likewise
+      source-mapped and share that arena. Normalized inputs are recursively frozen on the
+      root-owning interface, and an immutable project/generation-keyed compiler query exposes final
+      specialized occurrence types, representation evidence, shader types, and builtin selections.
+      GPU hover consumes only these interface-owned facts; applicable GPU completeness is complete
+      and modules without GPU semantics report `not-applicable`. Current-source completion facts
+      preserve name-only value, structure, type, and constructor scopes plus GPU regions before
+      failed phrases are transactionally removed. Initial-basis target types and basis-structure
+      members are immutable interface facts. The compiler's protocol-neutral completion query owns
+      context selection, catalog merging, prefix filtering, lexical shadowing, namespace members,
+      nominal record fields, recovery-only candidates, keywords, and ranking without assigning
+      semantic identities to uncertified names.
+      Final-graph FFI facts explicitly expose authored JS
+      targets, modes, binding identities, fallibility, signature types, structure aliases, and
+      reflected foreign-type identities while excluding generated aliases. FFI completeness
+      distinguishes strict applicable, absent, and certified-partial analysis. Delayed reflected
+      types use ordinary `StrEnv` qualification rather than flat dotted lookup.
+- [x] **A609** Replace the completeness boolean/diagnostic heuristic with structured syntax, import,
+      elaboration, occurrence, scope, FFI, and GPU completeness.
+- [x] **A610** Expose the current conservative declaration-prefix interface produced by
+      `inferModulePartial`. The inference result records the exact accepted declaration count,
+      failure phase, and recovery boundary. A failed declaration is transactionally discarded by
+      re-elaborating the accepted prefix from a clean initial environment, and partial project
+      snapshots contain only imports/modules reachable through certified prefix declarations.
+- [x] **A611** Extend compiler recovery to transactional top-level phrases: a failed phrase
+      contributes no basis change and later recoverable phrases use the last committed basis. The
+      compiler shares the REPL's delimiter-aware top-level phrase scanner, masks malformed phrases
+      without changing source offsets, and re-elaborates the surviving declaration set from a fresh
+      initial environment after each static failure. Independent later declarations and imports
+      remain; declarations depending on a failed binder fail as their own phrases.
+      Unresolvable/cyclic imports are removed with import-partial completeness rather than blocking
+      the rest of the module. Recovery inside one malformed phrase remains frontend-v2 territory.
+- [x] **A612** Define project snapshots keyed by one `main` head and configuration, overlapping
+      reachable closures, and detached-document snapshots without treating every workspace file as a
+      participant. Snapshots record headed/detached kind and frontend/surface configuration;
+      active-context keys include configuration, and overlapping closures retain separate snapshot
+      ownership.
+- [x] **A613** Build a lightweight reverse-import discovery index used only when an open file is
+      outside every active project graph; it finds one closest main-bearing head without
+      typechecking or semantically enrolling every indexed file. Equal-distance candidates use
+      canonical path order as the deterministic one-head tie break.
+- [x] **A614** Ensure a dependency-local `main` remains ordinary unless that module is independently
+      selected as another project head. Active reachable coverage is checked before reverse
+      discovery.
+- [x] **A615** Keep reverse head selection and forward reachable-graph expansion as separate one-way
+      phases; forward expansion must never trigger another reverse head search. Both the compiler
+      registry and LSP validation index implement this ordering.
+
+Gate:
+
+- [ ] **G19** No compiler or tooling consumer must reconstruct module semantics from syntax, paths,
+      dotted names, or emitted JavaScript.
+- [x] **G20** Conservative invalidation is correct before optimization with fingerprints.
+- [ ] **G21** The interface artifact contains every fact listed in the LSP handoff.
+- [x] **G21a** The same path can participate in two project snapshots without interface, diagnostic,
+      occurrence, or nominal-identity collision.
+- [ ] **G21b** Current malformed source exposes only compiler-certified partial facts; no consumer
+      needs a fallback semantic environment.
+- [x] **G21c** One or more heads may share source modules without merging their project-specific
+      interfaces, and discovery-only files produce no project diagnostics.
+- [x] **G21d** Opening a file already contained in an active project uses its existing module
+      interface and performs no reverse-head search or membership mutation.
+- [x] **G21e** Reaching library code while expanding one selected head cannot activate a second
+      library test/example head.
+
+Current Stage 6 evidence:
+
+- [`tests/module_interface_test.ts`](../../tests/module_interface_test.ts) covers strict structured
+  completeness despite warnings, one project owner across a graph, separate ownership for repeated
+  analyses of the same paths, dependencies/reverse dependencies, conservative invalidation,
+  source-to-occurrence lookup, identity-to-project-occurrences lookup, namespace qualifiers,
+  elaborator-resolved type uses, and separate named-import source/alias occurrences that retain
+  simultaneous type/constructor targets. Nominal record fields retain identity across declaration,
+  construction, pattern, projection, and module boundaries. Ambiguous projections select the first
+  candidate identity with a warning while retaining their structural receiver constraint; only
+  projections with no nominal candidates lack a field identity. Scope queries cover sequential
+  top-level and block declarations, lambda-local binders, initial-basis values/types/structures,
+  simultaneous imported type/constructor identities, independent namespace shadowing, and exclusion
+  of locals outside their lexical region. Type-variable tests cover shared declaration-group
+  identity, separate later groups, lambda parameter/result regions, explicit record/datatype
+  parameter binders, definition mapping, shadowing, and certified-prefix recovery. JS aliases retain
+  authored identity through FFI lowering without merging runtime bindings, and reflected foreign
+  types retain source declarations, nominal identity, public origin, and scope membership. Public
+  declaration origins and project-level definition queries use compiler source mappings.
+  Current-source tests cover certified-prefix interfaces, syntax phrase recovery, independent
+  semantic continuation, dependent phrase removal, unresolved-import recovery, and dependencies
+  introduced after a recovered phrase.
+- Typed-node tests cover generalized binder schemes, nested expression types, compound annotation
+  nodes, nominal identity across same-spelled type shadowing, certified-prefix exclusion, and
+  independently recovered later phrases.
+- Result carrier operations retain their compiler-selected wrapped/pure operand plan and immutable
+  error/payload semantic types. An explicit two-head overlap regression proves separate interface,
+  diagnostic, occurrence, scope, semantic-type, nominal-definition, and query ownership even when
+  snapshot-local numeric compiler IDs repeat.
+- GPU interface tests cover overload rows and determining arguments, immutable HM type references,
+  builtin identity, fragment root/selector source mappings, recursively frozen normalized slices,
+  immutable specialized query results tied to snapshot/generation identity, LSP consumption without
+  `ProgramAnalysis` maps, and direct-compile consumption of the same selection facts.
+- Definition and references now select compiler occurrences and aggregate matching identities only
+  within one `ProjectSnapshot`; `src/lsp/symbols.ts` contains no syntax walk, scope builder, path
+  identity, or open-graph merger. Namespace `StructureId` definitions follow their compiler import
+  relation to the target module. Strict failures use transactionally recovered compiler interfaces,
+  and failed phrases contribute no fallback definitions.
+- Hover, successful validation, and document symbols now use the shared semantic-document adapter.
+  Hover selects compiler typed nodes and occurrences, including generalized types, pipe
+  specialization, generated-FFI presentation, and interface-owned GPU specialization. Validation
+  publishes interface diagnostics. Document symbols map compiler top-level declaration facts.
+  Strict failures use the recovered snapshot in all three paths, and failed phrases contribute no
+  LSP-invented environment or declarations.
+- GPU completion now uses compiler-owned current-source region and name-only scope facts. The LSP
+  performs only source-position/prefix extraction and protocol conversion; builtin catalog
+  selection and lexical shadowing are compiler queries. Recovery tests cover a failed outer phrase,
+  an uncertified GPU phrase, local builtin shadowing, and a later visible catalog prefix without
+  inventing semantic identities for either failed phrase.
+- Ordinary completion now uses the same compiler query and current snapshot. Tests cover lexical
+  values and shadowing, generalized/prelude type details, annotation type context, project and basis
+  namespace members, nominal record fields, keywords, GPU catalog merging, failed semantic phrases,
+  trailing malformed syntax, and standard `.` triggering. The LSP only maps neutral candidate kinds,
+  ranks, and semantic type references to `CompletionItem`s using the hover type renderer.
+- Top-level scope lookup now returns the last certified module checkpoint when syntax recovery
+  shortens the AST before the cursor. This makes the transactional partial basis available after a
+  trailing malformed phrase without treating the malformed phrase as certified.
+- The compiler now exposes a role-aware rename query over one complete `ProjectSnapshot`. Local
+  named-import aliases rename only their alias occurrence and local uses; selecting an import source
+  or declaration renames the shared target. The query refuses incomplete snapshots, targets without
+  editable project declarations, and structurally ambiguous record projections. The LSP implements
+  standard `prepareRename` and `WorkspaceEdit` conversion and preserves the source spelling's
+  identifier/constructor lexical category.
+- Compiler-owned type-definition queries walk immutable semantic type shapes to their nominal
+  `TypeNameId`s and then use project definition mappings. Direct type occurrences, inferred values
+  and constructors, imported types, composite types, and certified recovered phrases are covered;
+  primitive-only types return no location. Compiler-owned document-highlight queries reuse the
+  rename alias/target selection policy and classify declarations/import aliases as writes and uses
+  as reads. Both are exposed as standard LSP requests.
+- A projection source-mapping regression found during highlight work is fixed: in `value.x`, the
+  receiver binding maps to `value` and the nominal field maps to `x`; namespace and authored FFI
+  member references continue to map their target to the final qualified segment. Definition and
+  highlights at an ambiguous projection therefore use the first compiler-selected field identity,
+  not the receiver binding.
+- FFI interface tests cover authored-versus-generated identity, target/mode/fallibility metadata,
+  structure aliases, immutable signatures, reflected foreign keys, strict applicability, and
+  certified-prefix exclusion. The delayed-reflection regression covers qualified `Js.Error`
+  materialization through `StrEnv`.
+- The focused interface, binding, nominal, characterization, runtime-module, record, project, type
+  elaboration, and LSP scheduling run passes 113/113.
+- [`tests/project_context_test.ts`](../../tests/project_context_test.ts) and
+  [`tests/project_index_test.ts`](../../tests/project_index_test.ts) pass 5/5 and cover closest-head
+  selection, configuration-separated contexts, detached documents, main-bearing dependencies,
+  overlapping closures, document context stability, one-way expansion, and exclusion of unrelated
+  indexed files from validation.
+- The compiler-interface/LSP/project/binding/frontend-v2 compatibility run passes 143/143. The
+  complete generated GPU builtin, hover, completion, diagnostic, and specialization run passes
+  27/27. Repository-wide `deno task check` and `git diff --check` pass.
+- The repository-wide run still exposes known baseline failures outside the module-interface slice
+  (including an external network-content expectation). They remain visible baseline work rather than
+  being folded into the interface change.
+
+Remaining Stage 6 work is implementation work, not a language-design blocker:
+
+1. finish occurrence-local type coverage and the remaining source mappings;
+2. finish import-clause/path completion and expected-type-aware completion ranking;
+3. migrate the remaining semantic frontend-v2 consumers and structural inlays where applicable;
+4. add the remaining general LSP features against compiler queries,
+   closing `G19`, `G21`, and `G21b`.
+
+## Stage 7: Documentation and LSP handoff
+
+Dependencies: `G19`–`G21`.
+
+- [ ] **L701** Update `docs/smlparallels.md` to the implemented module and basis semantics.
+- [ ] **L702** Convert the accepted normative plan into stable compiler-facing documentation.
+- [ ] **L703** Record every intentional SML restriction and Workman extension discovered during the
+      pass.
+- [ ] **L704** Update the deferred LSP plan to consume `ModuleId`, public `Env`, target/alias
+      identities, basis facts, and interface generations.
+- [ ] **L705** Remove LSP assumptions based on paths, dotted names, or VS Code-specific behavior.
+- [x] **L706** Rerun completion, navigation, references, rename, diagnostics, and invalidation
+      baselines.
+- [ ] **L707** Build project/reference indexes only as aggregations of per-module interfaces.
+- [ ] **L708** Remove recursive workspace discovery as a definition of project checking,
+      diagnostics, references, or rename scope.
+- [ ] **L709** Route frontend-v2 semantic facts through the module interface while retaining its
+      syntax/structural services.
+- [x] **L710** Delete `src/lsp/symbols.ts` semantic resolution and `hover.ts` partial-inference
+      fallback immediately after interface parity tests pass.
+
+Gate:
+
+- [ ] **G22** The implemented behavior, normative documents, checklist, and tests agree.
+- [ ] **G23** The LSP can use compiler-owned module facts without implementing a second module
+      resolver or environment model.
+
+## Explicitly deferred work
+
+These are tracked so they do not return as accidental first-pass requirements:
+
+- [ ] **D801** Add `private` only with a concrete visibility use case.
+- [ ] **D802** Design environment restriction and private nominal-type leakage rules.
+- [ ] **D803** Design direct re-export/forwarding independently for every namespace.
+- [ ] **D804** Design persistent/cross-build interface identities and cache serialization.
+- [ ] **D805** Design package names, import maps, lockfiles, integrity, and vendoring.
+- [ ] **D806** Consider URL modules beyond the existing local-file policy.
+- [ ] **D807** Consider recursive/cyclic modules only with whole-component static and dynamic
+      semantics.
+- [ ] **D808** Consider signatures, functors, sharing, nested source structures, or first-class
+      modules independently.
+- [ ] **D809** Consider expanding the standard-library API after the semantic migration.
+
+Deferred items do not block `G22` or `G23`.
+
+## Audit coverage index
+
+This is the discrepancy log required by `S010`.
+
+| Finding                                          | Checklist coverage                           |
+| ------------------------------------------------ | -------------------------------------------- |
+| I1: dotted semantic structures                   | `M208`, `M209`, `M215`, `B306`, `R503`       |
+| I2: structure/value namespace collision          | `T107`, `M216`, `I404`                       |
+| I3: fabricated `carrier` value                   | `T120`, `T121`, `I412`–`I414`, `R504`        |
+| I4: custom import collisions                     | `T111`–`T117`, `M211`–`M213`, `I408`, `I409` |
+| I5: imports preinstalled in binding facts        | `T119`, `I401`, `I403`                       |
+| I6: runtime aliases hoisted by source name       | `T124`, `R506`, `R507`                       |
+| I7: alias/basename backend identity              | `T101`, `T103`, `M202`, `M205`, `R502`       |
+| I8: type shadowing deletes constructors          | `T115`, `B313`                               |
+| I9: paths/specifiers used as semantic links      | `S009`, `M201`–`M204`                        |
+| I10: privileged standard-library import behavior | `B307`, `B308`, `B312`                       |
+| I11: incomplete cycle paths                      | `T106`, `M204`, `M207`                       |
+| I12: implicit initialization protocol            | `T122`–`T128`, `R508`–`R514`                 |
+| B1: multiple basis sources of truth              | `S004`–`S008`, `B301`–`B303`, `B314`         |
+| B2: standard structures flattened                | `M208`, `M209`, `B306`                       |
+| B3: provenance changes bindings                  | `T113`, `B312`                               |
+| B4: type/constructor deletion coupling           | `T115`, `B313`                               |
+| B5: static/runtime prelude drift                 | `T130`–`T133`, `B301`–`B303`, `G9`           |
+| B6: hybrid `Result`/`Task` merging               | `B315`, `B316`                               |
+| B7: implicit prelude profiles                    | `S006`, `S007`, `B301`, `B311`               |
+| B8: ambiguous operator status                    | `T135`, `B302`, `B304`                       |
+| B9: scattered overload/equality facts            | `T132`, `B302`                               |
+
+## Completion definition
+
+The module update is complete when `G22` and `G23` are checked. At that point:
+
+- the accepted Workman fragment uses SML environment and identity semantics;
+- the file graph uses the specified acyclic ESM-derived protocol;
+- the initial basis has coherent static and dynamic profiles;
+- source, analysis, Core, runtime, and tooling agree on every module and binding identity;
+- known current representation failures have permanent regressions;
+- the LSP update can resume on compiler-owned facts.
