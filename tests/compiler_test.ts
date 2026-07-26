@@ -205,6 +205,20 @@ Deno.test("supports Workman tuple destructuring let bindings", async () => {
   `);
 });
 
+Deno.test("primitive parameter annotations discharge deferred equality checks", async () => {
+  const result = await checkSource(`
+    let sameText = (left: String, right: String) => {
+      left == right
+    };
+    let equal = sameText("surface", "surface");
+  `);
+
+  expectBinding(result.env, "sameText", {
+    type: "((String, String)) => Bool",
+    vars: 0,
+  });
+});
+
 Deno.test("supports underscore-prefixed binders in let tuple patterns", async () => {
   await checkSource(`
     let (_a, __b) = (1, 2);

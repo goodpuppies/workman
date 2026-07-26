@@ -11,6 +11,7 @@ export type Ty =
     instance?: Ty;
     jsConstraint?: (t: Ty) => void;
     gpuConstraint?: (t: Ty) => void;
+    equalityConstraint?: (t: Ty) => void;
   }
   | {
     tag: "ffi";
@@ -196,6 +197,10 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
       if (b.tag === "var") addGpuConstraint(b, a.gpuConstraint);
       else a.gpuConstraint(b);
     }
+    if (a.equalityConstraint) {
+      if (b.tag === "var") addEqualityConstraint(b, a.equalityConstraint);
+      else a.equalityConstraint(b);
+    }
     onBind?.(a, b, path, "right");
     return;
   }
@@ -207,6 +212,9 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     }
     if (b.gpuConstraint) {
       b.gpuConstraint(a);
+    }
+    if (b.equalityConstraint) {
+      b.equalityConstraint(a);
     }
     onBind?.(b, a, path, "left");
     return;
@@ -352,6 +360,21 @@ export function addGpuConstraint(target: Ty, check: (t: Ty) => void): void {
     : check;
 }
 
+export function addEqualityConstraint(target: Ty, check: (t: Ty) => void): void {
+  const t = prune(target);
+  if (t.tag !== "var") {
+    check(t);
+    return;
+  }
+  const previous = t.equalityConstraint;
+  t.equalityConstraint = previous
+    ? (bound) => {
+      previous(bound);
+      check(bound);
+    }
+    : check;
+}
+
 export function solveFfi(ffi: Ty, target: Ty): void {
   const placeholder = prune(ffi);
   if (placeholder.tag !== "ffi") {
@@ -429,6 +452,10 @@ export function generalize(env: Env, type: Ty): Scheme {
   // verification callbacks only; compiler-owned GPU operation obligations live in sidecar facts
   // and must remain ordinarily generalizable for per-use shader specialization.
   const boundary = jsConstrainedVarIds(type);
+  const equality = equalityConstrainedVarIds(type);
+  if (equality.size > 0) {
+    throw new Error("type variable does not admit equality");
+  }
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
   return { vars, type, constraints: [] };
 }
@@ -452,6 +479,25 @@ function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
   return acc;
 }
 
+function equalityConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
+  const t = prune(type);
+  if (t.tag === "var") {
+    if (t.equalityConstraint) acc.add(t.id);
+    return acc;
+  }
+  if (t.tag === "fn") {
+    for (const param of t.params) equalityConstrainedVarIds(param, acc);
+    equalityConstrainedVarIds(t.result, acc);
+  } else if (t.tag === "tuple") {
+    for (const item of t.items) equalityConstrainedVarIds(item, acc);
+  } else if (t.tag === "struct") {
+    for (const field of t.fields) equalityConstrainedVarIds(field.type, acc);
+  } else if (t.tag === "named") {
+    for (const arg of t.args) equalityConstrainedVarIds(arg, acc);
+  }
+  return acc;
+}
+
 export function containsUnsolvedJsBoundary(type: Ty): boolean {
   return jsConstrainedVarIds(type).size > 0;
 }
@@ -466,6 +512,7 @@ export function instantiate(scheme: Scheme): Ty {
       if (!mapped) return t;
       if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
       if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
+      if (t.equalityConstraint) addEqualityConstraint(mapped, t.equalityConstraint);
       return mapped;
     }
     if (t.tag === "ffi") {

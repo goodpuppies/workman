@@ -1,4 +1,5 @@
 import {
+  addEqualityConstraint,
   instantiateRecordFields,
   prune,
   quoteType,
@@ -13,40 +14,57 @@ export function assertEqualityType(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
 ) {
-  if (!admitsEquality(type, typeEnv, adts)) {
-    throw new Error(`type ${quoteType(type)} does not admit equality`);
-  }
+  requireEquality(type, typeEnv, adts);
 }
 
-function admitsEquality(
+function rejectEquality(type: Ty): never {
+  throw new Error(`type ${quoteType(type)} does not admit equality`);
+}
+
+function requireEquality(
   type: Ty,
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   seen = new Set<string>(),
-): boolean {
+): void {
   const resolved = prune(type);
-  if (resolved.tag === "ffi") return true;
-  if (resolved.tag === "prim") return ["Number", "Bool", "String", "Void"].includes(resolved.name);
+  if (resolved.tag === "var") {
+    addEqualityConstraint(resolved, (bound) => {
+      requireEquality(bound, typeEnv, adts);
+    });
+    return;
+  }
+  if (resolved.tag === "ffi") return;
+  if (resolved.tag === "prim") {
+    if (!["Number", "Bool", "String", "Void"].includes(resolved.name)) {
+      rejectEquality(resolved);
+    }
+    return;
+  }
   if (resolved.tag === "tuple") {
-    return resolved.items.every((item) => admitsEquality(item, typeEnv, adts, seen));
+    resolved.items.forEach((item) => requireEquality(item, typeEnv, adts, seen));
+    return;
   }
   if (resolved.tag === "named") {
     const key = `${resolved.id}<${resolved.args.map((arg) => quoteType(arg)).join(",")}>`;
-    if (seen.has(key)) return true;
+    if (seen.has(key)) return;
     seen.add(key);
 
     const record = [...typeEnv.values()].find((info) => info.id === resolved.id);
     if (record?.recordFields) {
-      return instantiateRecordFields(record, resolved.args)
-        .every((field) => admitsEquality(field.type, typeEnv, adts, seen));
+      instantiateRecordFields(record, resolved.args)
+        .forEach((field) => requireEquality(field.type, typeEnv, adts, seen));
+      return;
     }
 
     const adt = adts.get(resolved.id);
-    if (!adt) return false;
+    if (!adt) rejectEquality(resolved);
     const subst = new Map<number, Ty>();
     (adt.paramTypeIds ?? []).forEach((id, index) => subst.set(id, resolved.args[index]));
     return (adt.ctorTypes ?? []).flat()
-      .every((arg) => admitsEquality(substituteTypeVars(arg, subst), typeEnv, adts, seen));
+      .forEach((arg) =>
+        requireEquality(substituteTypeVars(arg, subst), typeEnv, adts, seen)
+      );
   }
-  return false;
+  rejectEquality(resolved);
 }

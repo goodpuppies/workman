@@ -38,6 +38,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
     let task = Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
       :> Task.andThen((n) => { Task.succeed(n + 1) });
     let pairedTask = Task.map2(Task.succeed(1), Task.succeed(2), (a, b) => { a + b });
+    let racedTask = Task.race(Task.succeed(1), Task.succeed(2));
     let collectedTasks = [Task.succeed(1), Task.succeed(2), Task.succeed(3)] :> Task.collectList;
     let taskItems = [1, 2]
       :> Task.traverse((n) => {
@@ -73,6 +74,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
   });
   expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
   expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "racedTask", { type: "Task<Number, 'a>", vars: 0 });
   expectBinding(result.env, "collectedTasks", { type: "Task<List<Number>, 'a>", vars: 0 });
   expectBinding(result.env, "taskItems", {
     type: "Task<List<Number>, 'a>",
@@ -592,6 +594,26 @@ Deno.test("Task.map2 supports fixed task composition through pipe rules", async 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "profile/settings\n");
+});
+
+Deno.test("Task.race settles with the first eager task handle", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => {
+        Task.race(Task.succeed("left"), Task.succeed("right"))
+          :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "left\n");
 });
 
 Deno.test("lifted Task tuple syntax sequences task values into one tuple task", async () => {

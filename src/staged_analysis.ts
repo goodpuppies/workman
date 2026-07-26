@@ -165,11 +165,15 @@ export async function analyzeModuleGraph(
   }
 
   const contextualResults = new Map<string, InferResult>();
-  const contextuallyReinferredPaths = new Set<string>();
+  // Imported monomorphic schemes are deliberately shared so constraints from a
+  // downstream module can settle an unresolved FFI binding. Once any module's
+  // AST changes, those schemes and nominal type identities must be rebuilt as
+  // one coherent graph wave; mixing reused dependency results with reinferred
+  // consumers retains constraints from the preceding wave.
+  const requiresContextualGraphReinference = contextualizedPaths.size > 0;
   for (const path of graph.order) {
     const node = graph.nodes.get(path)!;
-    const requiresReinference = contextualizedPaths.has(path) ||
-      node.imports.some((edge) => contextuallyReinferredPaths.has(edge.path));
+    const requiresReinference = requiresContextualGraphReinference;
     const result = await run(
       "contextual partial inference",
       node,
@@ -179,7 +183,6 @@ export async function analyzeModuleGraph(
           ? inferModulePartial(node.module, importsFor(node, contextualResults), inferOptions)
           : firstResults.get(path)!,
     );
-    if (requiresReinference) contextuallyReinferredPaths.add(path);
     contextualResults.set(path, result);
     emit("contextual partial inference", node, result);
     await run(
@@ -214,10 +217,10 @@ export async function analyzeModuleGraph(
   );
   const postResolveResults = new Map<string, InferResult>();
   const postResolutionReinferredPaths = new Set<string>();
+  const requiresPostResolutionGraphReinference = pathsWithDelayedFfi.size > 0;
   for (const path of graph.order) {
     const node = graph.nodes.get(path)!;
-    const requiresReinference = pathsWithDelayedFfi.has(path) ||
-      node.imports.some((edge) => postResolutionReinferredPaths.has(edge.path));
+    const requiresReinference = requiresPostResolutionGraphReinference;
     const result = await run(
       "post-resolution partial inference",
       node,

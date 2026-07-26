@@ -317,6 +317,15 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
   }
   {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Task.race",
+      [a, e],
+      fn([tuple([task(a, e), task(a, e)])], task(a, e)),
+    );
+  }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
     const b = fresh("b") as Extract<Ty, { tag: "var" }>;
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.andThen", [a, b, e], fn([tuple([task(a, e), fn([a], task(b, e))])], task(b, e)));

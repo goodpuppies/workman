@@ -63,6 +63,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
         output,
         ...(options.args ?? []),
       ],
+      stdin: "inherit",
       stdout: options.stdout ?? "inherit",
       stderr: options.stderr ?? "inherit",
     });

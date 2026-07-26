@@ -17,8 +17,7 @@ export function emitRuntimePrelude(): string[] {
   return __wm_js_should_bind(value) ? value.bind(owner) : value;
 };`,
     `const __wm_js_member_obj = (owner, key) => {
-  const value = owner?.[key];
-  return __wm_js_should_bind(value) ? value.bind(owner) : value;
+  return owner?.[key];
 };`,
     `const __wm_js_receiver_member = (path) => (receiver, ...args) => {
   const owner = path.slice(0, -1).reduce((value, key) => value?.[key], receiver);
@@ -219,6 +218,10 @@ export function emitRuntimePrelude(): string[] {
     if (right.ctor !== ${basisCtorId("Ok")}) return right;
     return __wm_basis_Ok(fn(__wm_tuple(left.args[0], right.args[0])));
   }),
+  race: ([leftTask, rightTask]) => Promise.race([
+    Promise.resolve(leftTask),
+    Promise.resolve(rightTask),
+  ]),
   andThen: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result
   ),

@@ -173,6 +173,51 @@ Deno.test("supports transitive file imports", async () => {
   await checkVirtual("/test/main.wm", virtualFs);
 });
 
+Deno.test("staged FFI reinference rebuilds shared monotypes with consumer nominals", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/runtime.wm",
+      `
+        from js.global("console") import unsafe {
+          log: (String) => Void
+        } as Console;
+
+        type Step<State> = | Continue<State>;
+
+        let run = (initial, update) => {
+          let _ = Console.log("start");
+          update(initial)
+        };
+      `,
+    ],
+    [
+      "/test/trigger.wm",
+      `
+        let clean = (text, needle: String) => {
+          text :> .replaceAll(needle, "") :> Result.withDefault(text)
+        };
+      `,
+    ],
+    [
+      "/test/main.wm",
+      `
+        from "./runtime.wm" import * as Runtime;
+        from "./trigger.wm" import * as Trigger;
+
+        type State = | State<Number>;
+
+        let label = Trigger.clean("hello", "h");
+        let result = Runtime.run(
+          State(0),
+          (state: State) => { Runtime.Continue(state) },
+        );
+      `,
+    ],
+  ]);
+
+  await checkVirtual("/test/main.wm", virtualFs);
+});
+
 Deno.test("infers imported record projections in lifted callbacks", async () => {
   const virtualFs = new Map<string, string>([
     [

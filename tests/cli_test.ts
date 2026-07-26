@@ -669,12 +669,56 @@ Deno.test("cli run uses basis Option and Result constructors", async () => {
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run passes stdin through to the Workman program", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("node:fs") import {
+        readFileSync: (Number, String) => String
+      };
+
+      let main = () => {
+        match(readFileSync(0, "utf8")) {
+          Ok(text) => { print(text) },
+          Err(_) => { print("read failed") },
+        }
+      };
+    `,
+  );
+
+  const result = await runCliWithStdin(["run", input], "hello from stdin");
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "hello from stdin\n");
+  assertEquals(result.stderr, "");
+});
+
 async function runCli(args: string[]) {
   const result = await new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-read", "--allow-write", "--allow-run", "--allow-env", cli, ...args],
     stdout: "piped",
     stderr: "piped",
   }).output();
+  return {
+    code: result.code,
+    stdout: new TextDecoder().decode(result.stdout),
+    stderr: new TextDecoder().decode(result.stderr),
+  };
+}
+
+async function runCliWithStdin(args: string[], input: string) {
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["run", "--allow-read", "--allow-write", "--allow-run", "--allow-env", cli, ...args],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const writer = child.stdin.getWriter();
+  await writer.write(new TextEncoder().encode(input));
+  await writer.close();
+  const result = await child.output();
   return {
     code: result.code,
     stdout: new TextDecoder().decode(result.stdout),

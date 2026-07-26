@@ -559,6 +559,37 @@ Deno.test("emits imported class values with static members intact", async () => 
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
+Deno.test("module imports preserve static methods on callable constructors", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("node:buffer") import { Buffer };
+      from js.global("console") import unsafe { log: (String) => Void } as console;
+
+      let main = () => {
+        match(Buffer.from("ok")) {
+          Err(_) => { console.log("err") },
+          Ok(buffer) => {
+            let typed: Buffer = buffer;
+            match(typed :> .toString("base64")) {
+              Ok(encoded) => { console.log(encoded) },
+              Err(_) => { console.log("err") },
+            }
+          },
+        }
+      };
+    `,
+  );
+
+  const result = await runFile(input, { stdout: "piped", stderr: "piped" });
+
+  assertEquals(result.code, 0);
+  assertEquals(new TextDecoder().decode(result.stdout), "b2s=\n");
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+});
+
 Deno.test("reflects nested local JS module namespace receiver calls", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
