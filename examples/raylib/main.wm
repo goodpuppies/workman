@@ -1,4 +1,4 @@
-from js.module("./raylib_ts_bindings_deno/raylib_bindings.ts") import * as Raylib;
+from js.module("raylib") import * as Raylib;
 from js.global("Math") import {sin, floor};
 let lift = Monad.lift;
 

@@ -403,8 +403,11 @@ async function handleMessage(message: RpcMessage) {
     );
     projectIndex.forgetOpenFile(params.textDocument.uri);
     await refreshSemanticDocumentContexts();
-    if (affectedUris.length === 0) affectedUris.push(params.textDocument.uri);
-    for (const uri of affectedUris) await publishValidation(uri);
+    const activeKeys = activeValidationKeys();
+    for (const uri of affectedUris) {
+      if (activeKeys.has(projectIndex.fallbackUri(uri))) await publishValidation(uri);
+    }
+    await clearInactiveProjectDiagnostics(activeKeys);
     return;
   }
   if (message.method === "workspace/didChangeWatchedFiles") {
@@ -474,6 +477,24 @@ async function publishValidation(uri: string) {
   }
   lastPublishedUrisByEntry.set(validationKey, currentUris);
   log("validate done", uri, `${Date.now() - started}ms`, `results=${results.length}`);
+}
+
+function activeValidationKeys(): Set<string> {
+  return new Set(documents.uris().map((uri) => projectIndex.fallbackUri(uri)));
+}
+
+async function clearInactiveProjectDiagnostics(activeKeys: Set<string>): Promise<void> {
+  const retained = new Set<string>();
+  for (const [key, uris] of lastPublishedUrisByEntry) {
+    if (activeKeys.has(key)) { for (const uri of uris) retained.add(uri); }
+  }
+  for (const [key, uris] of lastPublishedUrisByEntry) {
+    if (activeKeys.has(key)) continue;
+    lastPublishedUrisByEntry.delete(key);
+    for (const uri of uris) {
+      if (!retained.has(uri)) await publishDiagnostics(uri, []);
+    }
+  }
 }
 
 async function publishAffectedValidation(uri: string) {

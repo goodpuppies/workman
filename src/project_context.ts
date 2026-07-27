@@ -247,6 +247,10 @@ export class ProjectContextRegistry {
         invalidKeys.add(context.key);
       }
     }
+    for (const [documentKey, contextKey] of this.#documents) {
+      const separator = documentKey.indexOf("\0");
+      if (changed.has(documentKey.slice(separator + 1))) invalidKeys.add(contextKey);
+    }
     for (const key of invalidKeys) {
       this.#active.delete(key);
       this.#detached.delete(key);
