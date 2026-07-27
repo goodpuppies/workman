@@ -35,6 +35,7 @@ import { inferBinary, inferBlock, inferMatch, inferPipe } from "./expr_flow.ts";
 import {
   originForScheme,
   recordConsumedFfiUse,
+  recordExpectedExprType,
   recordExprFact,
   recordFfiFact,
   recordOperatorFact,
@@ -118,6 +119,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         expr,
         typeEnv,
         function inferRecordValue(value, expected) {
+          if (expected) recordExpectedExprType(facts, value, expected);
           if (expected && value.kind === "Record") {
             return inferRecordExpr(
               value,
@@ -281,6 +283,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       t = context.dialect.inferCall?.(expr, context) ?? inferCall(expr, context);
       break;
     case "If":
+      recordExpectedExprType(facts, expr.cond, BoolTy);
       constrainAt(
         inferExpr(expr.cond, context),
         BoolTy,
@@ -304,9 +307,12 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         },
       );
       t = inferExpr(expr.thenExpr, context);
+      recordExpectedExprType(facts, expr.elseExpr, t);
+      const elseType = inferExpr(expr.elseExpr, context);
+      recordExpectedExprType(facts, expr.thenExpr, elseType);
       constrainAt(
         t,
-        inferExpr(expr.elseExpr, context),
+        elseType,
         expr.elseExpr,
         undefined,
         [],
@@ -334,6 +340,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       );
       break;
     case "Panic": {
+      recordExpectedExprType(facts, expr.message, StringTy);
       const panicMessage = inferExpr(expr.message, context);
       constrainAt(
         StringTy,
@@ -378,6 +385,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       break;
     case "Unary":
       if (expr.op === "-") {
+        recordExpectedExprType(facts, expr.value, NumberTy);
         const value = inferExpr(expr.value, context);
         const carrier = resultParts(value, typeEnv);
         recordConsumedFfiUse(facts, value, {
@@ -418,6 +426,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         );
         t = carrier ? wrapResult(NumberTy, carrier.error, typeEnv) : NumberTy;
       } else {
+        recordExpectedExprType(facts, expr.value, BoolTy);
         const value = inferExpr(expr.value, context);
         const carrier = resultParts(value, typeEnv);
         recordConsumedFfiUse(facts, value, {

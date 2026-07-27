@@ -45,6 +45,7 @@ export type ProgramAnalysis = {
 export function buildProgramAnalysis(
   graph: ModuleGraph,
   results: ModuleMap<InferResult>,
+  context: ProjectSnapshotContext = {},
 ): ProgramAnalysis {
   const ids = new CompilerIdAllocator();
   const bindings = resolveProgramBindingFacts(graph, ids);
@@ -90,7 +91,7 @@ export function buildProgramAnalysis(
     results,
     bindings,
     nominalFacts,
-    {},
+    context,
     { gpuSelections: fragmentSelections, gpuSlices },
   );
   const interfaces = projectSnapshot.interfaces;

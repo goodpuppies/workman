@@ -140,6 +140,62 @@ Deno.test("[module update A612] project configuration is part of active context 
   assertEquals(registry.activeSnapshots().length, 2);
 });
 
+Deno.test("[module update A612] changed closures invalidate and closed contexts are released", async () => {
+  const files = new Map<string, string>([
+    ["/ws/main.wm", 'from "./lib.wm" import { value }; let main = () => { value };'],
+    ["/ws/lib.wm", "let value = 1;"],
+    ["/ws/note.wm", "let note = 2;"],
+  ]);
+  const discovery = await discoveryIndex(files);
+  const registry = new ProjectContextRegistry(discovery);
+  let headedAnalyses = 0;
+  let detachedAnalyses = 0;
+  const analyzeHead = (head: string) => {
+    headedAnalyses++;
+    return analyzeRecoveredVirtual(head, files);
+  };
+  const analyzeDetached = (path: string) => {
+    detachedAnalyses++;
+    return analyzeDetachedVirtual(path, files);
+  };
+
+  const first = await registry.openDocument(
+    "/ws/main.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  await registry.openDocument(
+    "/ws/lib.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  const detached = await registry.openDocument(
+    "/ws/note.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  assertEquals(headedAnalyses, 1);
+  assertEquals(detachedAnalyses, 1);
+  assertEquals(registry.openSnapshots().length, 2);
+
+  registry.invalidatePaths(["/ws/lib.wm"]);
+  const refreshed = await registry.openDocument(
+    "/ws/main.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  assertNotStrictEquals(refreshed.snapshot, first.snapshot);
+  assertEquals(headedAnalyses, 2);
+  assertStrictEquals(registry.openSnapshots()[1], detached.snapshot);
+
+  registry.forgetDocument("/ws/note.wm", configuration);
+  assertEquals(registry.openSnapshots().some((snapshot) => snapshot === detached.snapshot), false);
+});
+
 Deno.test("[module update G21a] overlapping project snapshots isolate every semantic artifact", async () => {
   const sharedSource = "record First = { x: Number }; record Second = { x: Number }; " +
     "let read = (value) => { value.x };";

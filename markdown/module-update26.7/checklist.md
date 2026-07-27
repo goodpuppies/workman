@@ -342,12 +342,11 @@ Dependencies: `G13`–`G18`.
       generated FFI receivers. Compiler-owned top-level declaration facts provide declaration and
       selection spans plus datatype-constructor children for structural tooling. Scope and
       occurrence completeness remain explicitly partial while complete role-specific/recovery
-      mappings remain. Ordinary
-      basis and compiled-standard value references are included even though they have no
-      project-local `BindingId`. Value, constructor, and nominal-field occurrences now reference
-      immutable semantic type snapshots rather than mutable inference objects. Result
-      carrier-lifting plans are source-mapped into the interface and reference the same immutable
-      type arena for their error and payload-result types. GPU overload obligations,
+      mappings remain. Ordinary basis and compiled-standard value references are included even
+      though they have no project-local `BindingId`. Value, constructor, and nominal-field
+      occurrences now reference immutable semantic type snapshots rather than mutable inference
+      objects. Result carrier-lifting plans are source-mapped into the interface and reference the
+      same immutable type arena for their error and payload-result types. GPU overload obligations,
       builtin/resource occurrences, selected fragment roots, and selector calls are likewise
       source-mapped and share that arena. Normalized inputs are recursively frozen on the
       root-owning interface, and an immutable project/generation-keyed compiler query exposes final
@@ -359,8 +358,7 @@ Dependencies: `G13`–`G18`.
       members are immutable interface facts. The compiler's protocol-neutral completion query owns
       context selection, catalog merging, prefix filtering, lexical shadowing, namespace members,
       nominal record fields, recovery-only candidates, keywords, and ranking without assigning
-      semantic identities to uncertified names.
-      Final-graph FFI facts explicitly expose authored JS
+      semantic identities to uncertified names. Final-graph FFI facts explicitly expose authored JS
       targets, modes, binding identities, fallibility, signature types, structure aliases, and
       reflected foreign-type identities while excluding generated aliases. FFI completeness
       distinguishes strict applicable, absent, and certified-partial analysis. Delayed reflected
@@ -454,19 +452,66 @@ Current Stage 6 evidence:
 - Hover, successful validation, and document symbols now use the shared semantic-document adapter.
   Hover selects compiler typed nodes and occurrences, including generalized types, pipe
   specialization, generated-FFI presentation, and interface-owned GPU specialization. Validation
-  publishes interface diagnostics. Document symbols map compiler top-level declaration facts.
-  Strict failures use the recovered snapshot in all three paths, and failed phrases contribute no
+  publishes interface diagnostics. Document symbols map compiler top-level declaration facts. Strict
+  failures use the recovered snapshot in all three paths, and failed phrases contribute no
   LSP-invented environment or declarations.
 - GPU completion now uses compiler-owned current-source region and name-only scope facts. The LSP
-  performs only source-position/prefix extraction and protocol conversion; builtin catalog
-  selection and lexical shadowing are compiler queries. Recovery tests cover a failed outer phrase,
-  an uncertified GPU phrase, local builtin shadowing, and a later visible catalog prefix without
+  performs only source-position/prefix extraction and protocol conversion; builtin catalog selection
+  and lexical shadowing are compiler queries. Recovery tests cover a failed outer phrase, an
+  uncertified GPU phrase, local builtin shadowing, and a later visible catalog prefix without
   inventing semantic identities for either failed phrase.
 - Ordinary completion now uses the same compiler query and current snapshot. Tests cover lexical
   values and shadowing, generalized/prelude type details, annotation type context, project and basis
   namespace members, nominal record fields, keywords, GPU catalog merging, failed semantic phrases,
   trailing malformed syntax, and standard `.` triggering. The LSP only maps neutral candidate kinds,
   ranks, and semantic type references to `CompletionItem`s using the hover type renderer.
+- Named-import and module-path completion use compiler-owned detached discovery. Tests cover public
+  value/type candidates with shared SML spellings, exclusion of already selected imports, semantic
+  type details, and nearby disk/virtual file and directory paths. Inspecting an unfinished import
+  does not enroll its target in the selected project graph.
+- Expected-type completion ranking consumes inference-produced expression expectations frozen in the
+  module semantic type arena. Compatible candidates sort first without removing unknown or
+  incompatible names. Tests cover annotations, calls, operators, lambda returns, and match arms;
+  compiler facts also cover nominal record fields, both conditional branches, unary operands, panic
+  messages, recursive bindings, and piped-call arguments.
+- Ordinary inferred-type inlays consume compiler-owned typed binder/parameter facts. Standard,
+  range-aware LSP hints cover top-level/local bindings, useful inferred parameters, and destructured
+  binders while omitting explicit annotations, unconstrained parameters, and obvious literals.
+  Compact labels and full tooltips share the hover type renderer. Recovery exposes only certified
+  hints, and initialization options configure type, parameter, and structural inlays independently.
+- Parameter-name inlays use compiler-resolved callable `ValueId`s and authored lambda parameter
+  names, including cross-module named-import calls. Nominal record constructors use authored field
+  names. Same-named arguments are not repeated, and aliases without reliable authored callable
+  metadata remain unhinted. Type, parameter, and structural hints have independent initialization
+  options and environment fallbacks.
+- Standard signature help consumes compiler-owned callable definitions and call-site facts rather
+  than reconstructing application semantics in the LSP. Tests cover tuple-shaped arguments,
+  multi-parameter and nested calls, named imports, curried parenthesized/whitespace stages, forward
+  pipe, record field names, active-argument selection, and certified incomplete unqualified and
+  qualified calls. Strings and comments do not create false argument separators, and unresolved
+  incomplete callees return no signature.
+- Full-document semantic tokens consume interface-owned token facts. Compiler target namespaces,
+  semantic callable shapes, and lambda-parameter binding identities classify namespace, type,
+  type-parameter, parameter, variable, property, constructor, and function tokens. Tests cover
+  imported qualifiers/members, declarations/references, generic types, datatypes, nominal fields,
+  functions, parameters, locals, standard relative encoding, and certified recovery. Exact-span
+  multi-namespace facts remain distinct underneath a deterministic non-overlapping LSP presentation.
+- The LSP `SemanticService` now consumes `ProjectContextRegistry` rather than analyzing each request
+  as an unrelated entry. Validation, hover, completion, navigation, rename, symbols, inlays,
+  signature help, and semantic tokens reuse the same immutable selected snapshot. Changed paths
+  invalidate every containing closure; open-document head selection survives rebuilds; overlapping
+  projects remain distinct; detached contexts are released on close. Strict compiler failures are
+  retained beside recovered interfaces so diagnostics preserve the originating error while editor
+  queries retain certified partial facts.
+- Standard workspace symbols aggregate only active headed snapshots and currently open detached
+  contexts. Module, top-level value/function/type/record/foreign-type, and constructor facts come
+  from `ModuleInterface`; unrelated recursively indexed files remain absent. Shared declarations
+  reached through overlapping heads are deduplicated by source location only in presentation.
+- The portable protocol shell now advertises UTF-16, enforces initialize/shutdown state, returns
+  standard parse/invalid/method/lifecycle errors, handles fragmented and batched frames, accepts
+  `$/cancelRequest`, and rejects read results from an older workspace revision. Semantic operations
+  are serialized so invalidation cannot race snapshot construction. `didClose` removes the source
+  override and republishes the on-disk graph instead of blindly clearing diagnostics.
 - Top-level scope lookup now returns the last certified module checkpoint when syntax recovery
   shortens the AST before the cursor. This makes the transactional partial basis available after a
   trailing malformed phrase without treating the malformed phrase as certified.
@@ -494,11 +539,14 @@ Current Stage 6 evidence:
 - The focused interface, binding, nominal, characterization, runtime-module, record, project, type
   elaboration, and LSP scheduling run passes 113/113.
 - [`tests/project_context_test.ts`](../../tests/project_context_test.ts) and
-  [`tests/project_index_test.ts`](../../tests/project_index_test.ts) pass 5/5 and cover closest-head
+  [`tests/project_index_test.ts`](../../tests/project_index_test.ts) pass 6/6 and cover closest-head
   selection, configuration-separated contexts, detached documents, main-bearing dependencies,
-  overlapping closures, document context stability, one-way expansion, and exclusion of unrelated
-  indexed files from validation.
-- The compiler-interface/LSP/project/binding/frontend-v2 compatibility run passes 143/143. The
+  overlapping closures, document context stability, invalidation/release, one-way expansion, and
+  exclusion of unrelated indexed files from validation. Two semantic-service tests cover retained
+  snapshot selection, overlapping-project isolation, strict/recovered pairing, and reuse; two
+  workspace-symbol tests cover active-only aggregation, shared-source deduplication, query
+  filtering, and detached-context lifetime.
+- The compiler-interface/LSP/project/binding/frontend-v2 compatibility run passes 188/188. The
   complete generated GPU builtin, hover, completion, diagnostic, and specialization run passes
   27/27. Repository-wide `deno task check` and `git diff --check` pass.
 - The repository-wide run still exposes known baseline failures outside the module-interface slice
@@ -508,10 +556,14 @@ Current Stage 6 evidence:
 Remaining Stage 6 work is implementation work, not a language-design blocker:
 
 1. finish occurrence-local type coverage and the remaining source mappings;
-2. finish import-clause/path completion and expected-type-aware completion ranking;
+2. improve expected-type recovery inside uncertified phrases where facts can be certified;
 3. migrate the remaining semantic frontend-v2 consumers and structural inlays where applicable;
-4. add the remaining general LSP features against compiler queries,
-   closing `G19`, `G21`, and `G21b`.
+4. add the remaining general LSP features against compiler queries, closing `G19`, `G21`, and
+   `G21b`.
+
+The workspace-symbol ordering dependency is now satisfied: semantic requests and validation share
+the compiler `ProjectContextRegistry`, and workspace symbols aggregate its active headed snapshots
+and open detached contexts without treating recursive discovery as project membership.
 
 ## Stage 7: Documentation and LSP handoff
 
@@ -526,8 +578,8 @@ Dependencies: `G19`–`G21`.
 - [ ] **L705** Remove LSP assumptions based on paths, dotted names, or VS Code-specific behavior.
 - [x] **L706** Rerun completion, navigation, references, rename, diagnostics, and invalidation
       baselines.
-- [ ] **L707** Build project/reference indexes only as aggregations of per-module interfaces.
-- [ ] **L708** Remove recursive workspace discovery as a definition of project checking,
+- [x] **L707** Build project/reference indexes only as aggregations of per-module interfaces.
+- [x] **L708** Remove recursive workspace discovery as a definition of project checking,
       diagnostics, references, or rename scope.
 - [ ] **L709** Route frontend-v2 semantic facts through the module interface while retaining its
       syntax/structural services.

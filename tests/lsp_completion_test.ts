@@ -62,6 +62,45 @@ Deno.test("ordinary completion respects lexical shadowing", async () => {
   assertEquals(items.filter(({ label }) => label === "outer").length, 1);
 });
 
+Deno.test("ordinary completion ranks nearer lexical declarations first", async () => {
+  const path = "/test/main.wm";
+  const source = "let aOuter = 1; let work = () => { let zInner = 2; zInner };";
+  const use = source.lastIndexOf("zInner");
+  const items = await completionAt(
+    pathToFileUri(path),
+    positionAt(source, use),
+    new Map([[path, source]]),
+  );
+  const inner = items.find(({ label }) => label === "zInner")!;
+  const outer = items.find(({ label }) => label === "aOuter")!;
+
+  assertEquals(items.indexOf(inner) < items.indexOf(outer), true);
+  assertEquals(inner.sortText! < outer.sortText!, true);
+});
+
+Deno.test("ordinary completion ranks local, imported, then basis values", async () => {
+  const main = "/test/main.wm";
+  const lib = "/test/lib.wm";
+  const source = 'from "./lib.wm" import { aImported }; let zLocal = 1; let result = zLocal;';
+  const use = source.lastIndexOf("zLocal");
+  const items = await completionAt(
+    pathToFileUri(main),
+    positionAt(source, use),
+    new Map([
+      [main, source],
+      [lib, "let aImported = 1;"],
+    ]),
+  );
+  const local = items.find(({ label }) => label === "zLocal")!;
+  const imported = items.find(({ label }) => label === "aImported")!;
+  const basis = items.find(({ label }) => label === "print")!;
+
+  assertEquals(items.indexOf(local) < items.indexOf(imported), true);
+  assertEquals(items.indexOf(imported) < items.indexOf(basis), true);
+  assertEquals(local.sortText! < imported.sortText!, true);
+  assertEquals(imported.sortText! < basis.sortText!, true);
+});
+
 Deno.test("ordinary completion distinguishes type position", async () => {
   const path = "/test/main.wm";
   const source = "record Point = { x: Number }; let read = (point: Point) => { point };";
@@ -129,7 +168,7 @@ Deno.test("ordinary completion lists project and basis namespace members", async
 Deno.test("ordinary completion uses nominal receiver identity for record fields", async () => {
   const path = "/test/main.wm";
   const source = "record Point = { x: Number, y: String }; " +
-    "let point = Point(1, \"a\"); let read = point.x;";
+    'let point = Point(1, "a"); let read = point.x;';
   const fieldStart = source.indexOf("point.x") + "point.".length;
   const items = await completionAt(
     pathToFileUri(path),
@@ -155,6 +194,175 @@ Deno.test("ordinary completion exposes standard keyword items", async () => {
   assertEquals(items.find(({ label }) => label === "let")?.kind, 14);
   assertEquals(items.find(({ label }) => label === "record")?.kind, 14);
   assertEquals(items.find(({ label }) => label === "print")?.detail, "('a) => Void");
+});
+
+Deno.test("ordinary completion ranks annotation-compatible values first", async () => {
+  const path = "/test/main.wm";
+  const source = 'let betaString = "ok"; let alphaNumber = 1; let result: String = betaString;';
+  const value = source.lastIndexOf("betaString");
+  const items = await completionAt(
+    pathToFileUri(path),
+    positionAt(source, value),
+    new Map([[path, source]]),
+  );
+
+  assertEquals(
+    items.findIndex(({ label }) => label === "betaString") <
+      items.findIndex(({ label }) => label === "alphaNumber"),
+    true,
+  );
+  assertEquals(
+    items.find(({ label }) => label === "betaString")!.sortText! <
+      items.find(({ label }) => label === "alphaNumber")!.sortText!,
+    true,
+  );
+});
+
+Deno.test("ordinary completion ranks call-argument-compatible values first", async () => {
+  const path = "/test/main.wm";
+  const source = 'let betaString = "ok"; let alphaNumber = 1; ' +
+    "let take = (value: String) => { value }; let result = take(betaString);";
+  const value = source.lastIndexOf("betaString");
+  const items = await completionAt(
+    pathToFileUri(path),
+    positionAt(source, value),
+    new Map([[path, source]]),
+  );
+
+  assertEquals(
+    items.findIndex(({ label }) => label === "betaString") <
+      items.findIndex(({ label }) => label === "alphaNumber"),
+    true,
+  );
+  assertEquals(
+    items.find(({ label }) => label === "betaString")!.sortText! <
+      items.find(({ label }) => label === "alphaNumber")!.sortText!,
+    true,
+  );
+});
+
+Deno.test("ordinary completion uses operator operand expectations", async () => {
+  const path = "/test/main.wm";
+  const source =
+    'let betaNumber = 1; let alphaString = "no"; let result = betaNumber + betaNumber;';
+  const value = source.lastIndexOf("betaNumber");
+  const items = await completionAt(
+    pathToFileUri(path),
+    positionAt(source, value),
+    new Map([[path, source]]),
+  );
+
+  assertEquals(
+    items.findIndex(({ label }) => label === "betaNumber") <
+      items.findIndex(({ label }) => label === "alphaString"),
+    true,
+  );
+});
+
+Deno.test("ordinary completion uses lambda return expectations", async () => {
+  const path = "/test/main.wm";
+  const source = 'let betaString = "ok"; let alphaNumber = 1; ' +
+    "let make = (): String => { betaString };";
+  const value = source.lastIndexOf("betaString");
+  const items = await completionAt(
+    pathToFileUri(path),
+    positionAt(source, value),
+    new Map([[path, source]]),
+  );
+
+  assertEquals(
+    items.findIndex(({ label }) => label === "betaString") <
+      items.findIndex(({ label }) => label === "alphaNumber"),
+    true,
+  );
+});
+
+Deno.test("ordinary completion uses shared match-arm result expectations", async () => {
+  const path = "/test/main.wm";
+  const source = 'let betaString = "ok"; let alphaNumber = 1; let flag = true; ' +
+    "let result = match(flag) { true => { betaString }, false => { betaString } };";
+  const value = source.lastIndexOf("betaString");
+  const items = await completionAt(
+    pathToFileUri(path),
+    positionAt(source, value),
+    new Map([[path, source]]),
+  );
+
+  assertEquals(
+    items.findIndex(({ label }) => label === "betaString") <
+      items.findIndex(({ label }) => label === "alphaNumber"),
+    true,
+  );
+});
+
+Deno.test("import completion discovers exported namespaces in an unfinished clause", async () => {
+  const main = "/test/main.wm";
+  const lib = "/test/lib.wm";
+  const source = 'from "./lib.wm" import { Bo';
+  const items = await completionAt(
+    pathToFileUri(main),
+    positionAt(source, source.length),
+    new Map([
+      [main, source],
+      [lib, "record Box = { value: Number }; let bonus = 1;"],
+    ]),
+  );
+
+  assertEquals(items.map(({ label, kind }) => ({ label, kind })), [
+    { label: "Box", kind: 7 },
+    { label: "Box", kind: 6 },
+  ]);
+});
+
+Deno.test("import completion excludes names already selected in the clause", async () => {
+  const main = "/test/main.wm";
+  const lib = "/test/lib.wm";
+  const source = 'from "./lib.wm" import { first, s';
+  const items = await completionAt(
+    pathToFileUri(main),
+    positionAt(source, source.length),
+    new Map([
+      [main, source],
+      [lib, "let first = 1; let second = 2;"],
+    ]),
+  );
+
+  assertEquals(items.map(({ label, detail }) => ({ label, detail })), [{
+    label: "second",
+    detail: "Number",
+  }]);
+});
+
+Deno.test("import path completion lists nearby Workman files and virtual directories", async () => {
+  const main = "/test/main.wm";
+  const source = 'from "./l';
+  const overrides = new Map([
+    [main, source],
+    ["/test/lib.wm", "let value = 1;"],
+    ["/test/list.wm", "let value = 2;"],
+    ["/test/sub/item.wm", "let value = 3;"],
+  ]);
+  const files = await completionAt(
+    pathToFileUri(main),
+    positionAt(source, source.length),
+    overrides,
+  );
+  const directorySource = 'from "./s';
+  overrides.set(main, directorySource);
+  const directories = await completionAt(
+    pathToFileUri(main),
+    positionAt(directorySource, directorySource.length),
+    overrides,
+  );
+
+  assertEquals(files.map(({ label, kind }) => ({ label, kind })), [
+    { label: "lib.wm", kind: 17 },
+    { label: "list.wm", kind: 17 },
+  ]);
+  assertEquals(directories.map(({ label, kind }) => ({ label, kind })), [{
+    label: "sub/",
+    kind: 19,
+  }]);
 });
 
 function positionAt(source: string, offset: number): { line: number; character: number } {

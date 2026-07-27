@@ -7,6 +7,7 @@ import {
 import { lineColToOffset, lineStarts } from "../source.ts";
 import { type LspRange, spanRange } from "./range.ts";
 import { semanticDocumentContext, semanticSourceForPath } from "./semantic_context.ts";
+import type { SemanticService } from "./semantic_service.ts";
 import { pathToFileUri } from "./uri.ts";
 
 export type PrepareRenameResult = {
@@ -23,8 +24,9 @@ export async function prepareRenameAt(
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<PrepareRenameResult | null> {
-  const selected = await renamePlanAt(uri, position, sourceOverrides, options);
+  const selected = await renamePlanAt(uri, position, sourceOverrides, options, service);
   return selected
     ? {
       range: spanRange(selected.context.source, selected.plan.selection),
@@ -39,8 +41,9 @@ export async function renameAt(
   newName: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<WorkspaceEdit | null> {
-  const selected = await renamePlanAt(uri, position, sourceOverrides, options);
+  const selected = await renamePlanAt(uri, position, sourceOverrides, options, service);
   if (!selected || !semanticRenameNameIsValid(selected.plan, newName)) return null;
   const changes: WorkspaceEdit["changes"] = {};
   for (const { moduleId, occurrence } of selected.plan.occurrences) {
@@ -59,8 +62,9 @@ async function renamePlanAt(
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions,
+  service?: SemanticService,
 ) {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return null;
   const offset = lineColToOffset(
     position.line + 1,

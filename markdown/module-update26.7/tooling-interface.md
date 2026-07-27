@@ -378,8 +378,8 @@ frontend-v2 supplies richer recovery, missing current facts remain explicitly mi
 
 Definition and references no longer use the former `symbols.ts` resolver. They select occurrences
 from the requested module interface, follow compiler definition queries, and aggregate references
-only by target identity within the owning `ProjectSnapshot`. Namespace qualifiers retain their
-local `StructureId`; the compiler query follows that import binding to the target module. Unrelated
+only by target identity within the owning `ProjectSnapshot`. Namespace qualifiers retain their local
+`StructureId`; the compiler query follows that import binding to the target module. Unrelated
 open-document graphs are not merged. If strict analysis fails, these queries consume the compiler's
 transactionally recovered snapshot, so failed phrases contribute no invented fallback bindings.
 
@@ -394,23 +394,36 @@ Successful validation publishes each interface's diagnostic list rather than rea
 datatype constructor children, and recovered files expose only transactionally certified
 declarations.
 
-GPU completion now consumes compiler-owned current-source completion facts. These facts preserve
-GPU region spans and name-only value/structure/type/constructor lexical scopes before failed phrases
-are transactionally removed. They deliberately do not assign semantic identities to uncertified
-declarations. The interface also exposes initial-basis target types and basis-structure members.
-A protocol-neutral compiler query owns context and prefix detection, lexical shadowing, project and
+GPU completion now consumes compiler-owned current-source completion facts. These facts preserve GPU
+region spans and name-only value/structure/type/constructor lexical scopes before failed phrases are
+transactionally removed. They deliberately do not assign semantic identities to uncertified
+declarations. The interface also exposes initial-basis target types and basis-structure members. A
+protocol-neutral compiler query owns context and prefix detection, lexical shadowing, project and
 basis namespace members, nominal record fields, keywords, GPU catalog merging, and candidate
 ranking. The LSP only converts candidate kinds and compiler semantic-type references to completion
 items through the shared hover type renderer.
 
+Import discovery is also compiler-owned. An unfinished named-import clause resolves and analyzes its
+target as a detached file snapshot, returning public value, constructor, and type candidates without
+adding that target to the selected project's reachable graph. Same-spelled SML namespaces remain
+distinct. Import-path discovery merges nearby disk entries with virtual/current-source files and
+directories; the LSP only maps the resulting neutral file/folder candidates.
+
+Expected-type ranking likewise comes from inference. Static rules record expression expectations,
+which the interface freezes in the same semantic type arena used by hover and completion detail. The
+completion query compares those immutable shapes and promotes compatible candidates without
+filtering uncertain or incompatible names. Initial coverage includes binding annotations, ordinary
+call arguments, nominal record fields, Boolean conditions and unary operands, panic messages, and
+already-inferred `else` branches.
+
 Rename is likewise a compiler query, not an LSP-side name search. It consumes occurrence roles and
 target identities from one complete project snapshot. Selecting a named-import alias produces a
-local alias-and-use group; selecting the source name or exported declaration produces a target
-group across the reachable project. This preserves the module rule that aliases change environment
-keys without creating a second target identity while still supporting the editor operation users
-expect. Incomplete snapshots, targets without editable project declarations, and ambiguous nominal
-record projections are refused. The language server only validates the requested lexical category
-through the compiler query and converts its source spans into a standard `WorkspaceEdit`.
+local alias-and-use group; selecting the source name or exported declaration produces a target group
+across the reachable project. This preserves the module rule that aliases change environment keys
+without creating a second target identity while still supporting the editor operation users expect.
+Incomplete snapshots, targets without editable project declarations, and ambiguous nominal record
+projections are refused. The language server only validates the requested lexical category through
+the compiler query and converts its source spans into a standard `WorkspaceEdit`.
 
 Type definition walks the selected occurrence's immutable semantic type shape and resolves every
 genuinely present nominal `TypeNameId` through project definition mappings. Composite types may
@@ -448,13 +461,35 @@ independently.
    aggregating module interfaces.
 6. **Implemented:** route successful validation and strict/recovered hover through the interface.
 7. **Implemented:** route definition, references, and document symbols through the interface.
-8. **Implemented for ordinary and GPU completion:** route completion through current-source,
-   compiler-owned semantic and name-only recovery scopes. Import-clause/path candidates and
-   expected-type ranking remain. Ordinary inlays and remaining semantic portions of frontend-v2
-   remain.
-9. **Implemented:** delete the handwritten definition/reference resolver after parity and recovery
-   tests pass.
-10. Improve recovery beyond the implemented phrase transactions toward Millet's tolerant CST/HIR
+8. **Implemented for ordinary, GPU, named-import, and path completion:** route completion through
+   current-source, compiler-owned semantic and name-only recovery scopes plus detached import
+   discovery. Initial compiler-owned expected-type ranking is implemented; broader expectation
+   recovery remains.
+9. **Implemented for ordinary inferred-type inlays:** compiler-owned binder/parameter facts feed
+   standard, range-aware LSP hints using the shared semantic type renderer. Structural frontend-v2
+   inlays remain a separate fact source and configuration category. Compiler-resolved named Workman
+   callables and record constructors also expose authored parameter/field names across imports;
+   unreliable value aliases and foreign functions without parameter metadata remain unhinted.
+10. **Implemented for initial signature help:** per-module callable definitions and call sites carry
+    resolved semantic parameter/result types, authored parameter stages, argument spans, and
+    pipe-supplied arity. A project-snapshot query selects the active signature or conservatively
+    resolves an incomplete call through the certified scope. The LSP layer only renders standard
+    `SignatureHelp`.
+11. **Implemented for initial semantic tokens:** each interface owns compiler-classified symbol
+    spans for structures/modules, types, type parameters, lambda parameters, values, fields,
+    constructors, and functions. Exact-span SML multi-namespace occurrences retain separate
+    identities; a deterministic presentation-only selection satisfies LSP's non-overlap rule.
+12. **Implemented for shared LSP snapshot lifetime:** `SemanticService` consumes the compiler
+    `ProjectContextRegistry`, retains closest-headed/detached snapshots across unchanged requests,
+    invalidates affected forward closures, preserves overlapping-project ownership, and pairs strict
+    failures with current recovered interfaces.
+13. **Implemented for initial workspace symbols:** a protocol-neutral aggregation of active
+    `ProjectSnapshot` declarations feeds standard workspace symbols. Recursive discovery never
+    supplies semantic members, and identical shared-source locations are deduplicated only in the
+    presentation.
+14. **Implemented:** delete the handwritten definition/reference resolver after parity and recovery
+    tests pass.
+15. Improve recovery beyond the implemented phrase transactions toward Millet's tolerant CST/HIR
     model when finer within-phrase semantics become worthwhile.
 
 The first implemented occurrence slice now includes compiler identities and source spans for values,
@@ -539,8 +574,8 @@ The compiler's language-service query accepts only the immutable `ProjectSnapsho
 immutable per-module elaboration artifact carrying the same snapshot and generation identities.
 Specialized occurrence types, representation evidence, shader types, and builtin selections
 therefore no longer require `ProgramAnalysis`, binding maps, or LSP-side semantic reconstruction.
-Applicable GPU completeness is `complete`; a module with no GPU semantics reports
-`not-applicable`, not `unavailable`.
+Applicable GPU completeness is `complete`; a module with no GPU semantics reports `not-applicable`,
+not `unavailable`.
 
 Final FFI lowering also produces an explicit interface DTO rather than requiring tooling to inspect
 generated declarations. Each authored JS import records its target kind/path, source range,

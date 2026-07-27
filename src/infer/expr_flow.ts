@@ -12,10 +12,10 @@ import {
   quoteType,
   type Scheme,
   tuple,
-  typeInfoByName,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
+  typeInfoByName,
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
 import { deriveInferContext, type InferContext } from "./context.ts";
@@ -37,6 +37,7 @@ import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
 import {
   recordConsumedFfiUse,
+  recordExpectedExprType,
   recordExprFact,
   recordPrimitiveCarrierFact,
   type TypeFacts,
@@ -57,6 +58,7 @@ export function inferMatch(
   for (const arm of expr.arms) {
     const local = new Map(env);
     inferPattern(arm.pattern, valueType, local, typeEnv, strEnv, adts, new Set(), facts);
+    recordExpectedExprType(facts, arm.body, result);
     const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
     constrainAt(
       result,
@@ -126,6 +128,15 @@ export function inferBinary(
   const result = fresh();
   const op: Scheme | undefined = context.operators.get(expr.op);
   if (!op) throw new Error(`unknown operator ${expr.op}`);
+  const operatorType = instantiate(op);
+  const operatorFn = prune(operatorType);
+  if (operatorFn.tag === "fn" && operatorFn.params.length === 1) {
+    const operands = prune(operatorFn.params[0]);
+    if (operands.tag === "tuple" && operands.items.length === 2) {
+      recordExpectedExprType(facts, expr.left, operands.items[0]);
+      recordExpectedExprType(facts, expr.right, operands.items[1]);
+    }
+  }
   const left = inferExpr(expr.left, context);
   const right = inferExpr(expr.right, context);
   recordConsumedFfiUse(facts, left, {
@@ -165,7 +176,6 @@ export function inferBinary(
     rejectUnresolvedFfiResultOperand(expr.left, left, typeEnv);
     rejectUnresolvedFfiResultOperand(expr.right, right, typeEnv);
   }
-  const operatorType = instantiate(op);
   const actual = fn([tuple([leftOperand, rightOperand])], result);
   constrainAt(
     operatorType,
@@ -354,6 +364,18 @@ export function inferPipe(
 
   if (right.kind === "Call") {
     const calleeType = inferExpr(right.callee, context);
+    const expectedInput = prune(calleeType);
+    if (expectedInput.tag === "fn" && expectedInput.params.length === 1) {
+      const expectedArgs = prune(expectedInput.params[0]);
+      if (
+        expectedArgs.tag === "tuple" &&
+        expectedArgs.items.length === right.args.length + 1
+      ) {
+        right.args.forEach((arg, index) =>
+          recordExpectedExprType(facts, arg, expectedArgs.items[index + 1])
+        );
+      }
+    }
     const argTypes = right.args.map((a) => inferExpr(a, context));
     const allArgs = [leftType, ...argTypes];
     const argType = callArg(allArgs);

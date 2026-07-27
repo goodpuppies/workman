@@ -9,6 +9,7 @@ import { basisStructureId } from "./compiler_semantics.ts";
 import type { FrontendDiagnostic } from "./diagnostics.ts";
 import { discoverGpuRegions } from "./directives.ts";
 import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
+import { isDecl } from "./infer/ast_utils.ts";
 import type { StructureEnv } from "./infer.ts";
 import type {
   BindingId,
@@ -35,7 +36,7 @@ import {
   type SemanticTypeId,
 } from "./semantic_types.ts";
 import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
-import type { Scheme, Ty } from "./types.ts";
+import { prune, type Scheme, type Ty } from "./types.ts";
 import type { GpuSliceElaborationInput, GpuSliceTypeElaborationOutput } from "./wmslang/v2_dto.ts";
 import type { NormalizedGpuSlice } from "./wmslang/v2_normalize.ts";
 import { WMSLANG_BUILTIN_OVERLOADS } from "./wmslang/builtin_catalog.generated.ts";
@@ -256,11 +257,96 @@ export type SemanticCompletionFacts = Readonly<{
   }>;
 }>;
 
+export type SemanticExpectedType = Readonly<{
+  span: SourceSpan;
+  type: SemanticTypeId;
+}>;
+
+export type SemanticInferredTypeHint = Readonly<{
+  kind: "binding" | "parameter";
+  span: SourceSpan;
+  type: SemanticOccurrenceType;
+}>;
+
+export type SemanticParameterHint = Readonly<{
+  name: string;
+  span: SourceSpan;
+}>;
+
+export type SemanticCallableDefinition = Readonly<{
+  name: string;
+  target: BindingId;
+  parameterStages: readonly (readonly string[] | undefined)[];
+}>;
+
+export type SemanticCallSite = Readonly<{
+  span: SourceSpan;
+  activationStart: number;
+  callee: string;
+  parameters: readonly Readonly<{ name?: string; type: SemanticTypeId }>[];
+  result: SemanticTypeId;
+  arguments: readonly SourceSpan[];
+  implicitParameters: number;
+}>;
+
+export type SemanticSignatureHelp = Readonly<{
+  callee: string;
+  parameters: readonly Readonly<{
+    name?: string;
+    type: Readonly<{ moduleId: ModuleId; id: SemanticTypeId }>;
+  }>[];
+  result: Readonly<{ moduleId: ModuleId; id: SemanticTypeId }>;
+  activeParameter: number;
+}>;
+
+export type SemanticTokenFact = Readonly<{
+  span: SourceSpan;
+  kind:
+    | "namespace"
+    | "type"
+    | "type-parameter"
+    | "parameter"
+    | "variable"
+    | "property"
+    | "constructor"
+    | "function";
+  modifiers: readonly ("declaration" | "readonly" | "default-library")[];
+}>;
+
+export type SemanticWorkspaceSymbolFact = Readonly<{
+  projectSnapshotId: ProjectSnapshotId;
+  moduleId: ModuleId;
+  path: string;
+  name: string;
+  kind: "module" | SemanticTopLevelDeclaration["kind"] | "constructor";
+  span: SourceSpan;
+  selectionSpan: SourceSpan;
+  containerName?: string;
+}>;
+
 export type SemanticCompletionCandidate = Readonly<{
   name: string;
-  kind: "value" | "constructor" | "type" | "structure" | "field" | "keyword" | "gpu-builtin";
-  origin: "lexical" | "recovery" | "namespace" | "record" | "keyword" | "gpu";
+  kind:
+    | "value"
+    | "constructor"
+    | "type"
+    | "structure"
+    | "field"
+    | "keyword"
+    | "gpu-builtin"
+    | "file"
+    | "folder";
+  origin:
+    | "lexical"
+    | "recovery"
+    | "namespace"
+    | "record"
+    | "keyword"
+    | "gpu"
+    | "import";
   rank: number;
+  proximity?: number;
+  expectedCompatibility?: "compatible" | "unknown" | "incompatible";
   type?: Readonly<{
     moduleId: ModuleId;
     occurrence: SemanticOccurrenceType;
@@ -273,6 +359,7 @@ export type SemanticCompletionCandidate = Readonly<{
 
 export type SemanticCompletionResult = Readonly<{
   prefix: string;
+  expectedType?: Readonly<{ moduleId: ModuleId; type: SemanticTypeId }>;
   candidates: readonly SemanticCompletionCandidate[];
 }>;
 
@@ -398,6 +485,12 @@ export type ModuleInterface = Readonly<{
   carrierOperations: readonly SemanticCarrierOperation[];
   gpuFacts: SemanticGpuFacts;
   completionFacts: SemanticCompletionFacts;
+  expectedTypes: readonly SemanticExpectedType[];
+  inferredTypeHints: readonly SemanticInferredTypeHint[];
+  parameterHints: readonly SemanticParameterHint[];
+  callableDefinitions: readonly SemanticCallableDefinition[];
+  callSites: readonly SemanticCallSite[];
+  semanticTokens: readonly SemanticTokenFact[];
   ffiFacts: SemanticFfiFacts;
   semanticTypes: readonly SemanticType[];
   diagnostics: readonly FrontendDiagnostic[];
@@ -442,6 +535,7 @@ export function buildProjectSnapshot(
   const generation = generationToken();
   const reverse = reverseDependencies(graph);
   const targetTypes = semanticTargetTypes(results, bindings, nominalFacts);
+  const callableParameters = semanticCallableParameters(graph, bindings);
   const interfaces = new Map<ModuleId, ModuleInterface>();
   for (const id of graph.order) {
     const node = graph.nodes.get(id)!;
@@ -491,6 +585,29 @@ export function buildProjectSnapshot(
     );
     const completionFacts = semanticFacts.completionFacts?.get(id) ??
       semanticCompletionFacts(node.module, moduleBindings);
+    const expectedTypes = semanticExpectedTypes(result, typeArena);
+    const inferredTypeHints = semanticInferredTypeHints(
+      node.module,
+      node.source,
+      result,
+      typedNodes,
+    );
+    const parameterHints = semanticParameterHints(
+      result,
+      moduleBindings,
+      callableParameters,
+    );
+    const callableDefinitions = semanticCallableDefinitions(
+      moduleBindings,
+      callableParameters,
+    );
+    const callSites = semanticCallSites(
+      node.source,
+      result,
+      moduleBindings,
+      callableParameters,
+      typeArena,
+    );
     const ffiFacts = semanticFfiFacts(
       id,
       node.module.decls,
@@ -499,6 +616,12 @@ export function buildProjectSnapshot(
       nominalFacts,
       result,
       typeArena,
+    );
+    const semanticTypes = typeArena.finish();
+    const semanticTokens = semanticTokenFacts(
+      occurrences,
+      semanticTypes,
+      semanticParameterTargets(node.module, moduleBindings),
     );
     interfaces.set(
       id,
@@ -532,8 +655,14 @@ export function buildProjectSnapshot(
         carrierOperations,
         gpuFacts,
         completionFacts,
+        expectedTypes,
+        inferredTypeHints,
+        parameterHints,
+        callableDefinitions,
+        callSites,
+        semanticTokens,
         ffiFacts,
-        semanticTypes: typeArena.finish(),
+        semanticTypes,
         diagnostics: Object.freeze([
           ...(node.syntaxDiagnostics ?? []),
           ...(node.importDiagnostics ?? []),
@@ -978,9 +1107,7 @@ function semanticTypedNodes(
   for (const [expression, type] of result.types) {
     if (!expression.node) continue;
     const fact = result.facts.expressions.get(expression);
-    const bindingId = expression.kind === "Var"
-      ? bindings.references.get(expression)
-      : undefined;
+    const bindingId = expression.kind === "Var" ? bindings.references.get(expression) : undefined;
     nodes.push(Object.freeze({
       kind: "expression",
       label: semanticExpressionLabel(expression),
@@ -1024,16 +1151,738 @@ function semanticTypedNodes(
   );
 }
 
+function semanticExpectedTypes(
+  result: InferResult,
+  typeArena: SemanticTypeArena,
+): readonly SemanticExpectedType[] {
+  return Object.freeze(
+    [...result.facts.expectedExpressions]
+      .flatMap(([expression, type]) =>
+        expression.node
+          ? [Object.freeze({
+            span: Object.freeze({ ...expression.node.span }),
+            type: typeArena.snapshot(type),
+          })]
+          : []
+      )
+      .sort((left, right) =>
+        left.span.start - right.span.start ||
+        left.span.end - right.span.end
+      ),
+  );
+}
+
+function semanticInferredTypeHints(
+  module: Module,
+  source: string,
+  result: InferResult,
+  typedNodes: readonly SemanticTypedNode[],
+): readonly SemanticInferredTypeHint[] {
+  const hints: SemanticInferredTypeHint[] = [];
+  const addPattern = (
+    pattern: Pattern,
+    kind: SemanticInferredTypeHint["kind"],
+    suppress: boolean,
+  ) => {
+    if (!suppress && pattern.kind === "PVar" && pattern.node) {
+      const typed = typedNodes.find((candidate) =>
+        candidate.kind === "pattern" &&
+        candidate.label === pattern.name &&
+        sameSpan(candidate.span, pattern.node!.span)
+      );
+      const inferred = [...result.facts.patternTypes].find(([candidate]) =>
+        candidate.kind === "PVar" &&
+        candidate.name === pattern.name &&
+        candidate.node !== undefined &&
+        sameSpan(candidate.node.span, pattern.node!.span)
+      )?.[1];
+      const type = typed?.generalType ?? typed?.type;
+      if (
+        type &&
+        (kind !== "parameter" ||
+          (inferred !== undefined && prune(inferred).tag !== "var"))
+      ) {
+        const span = identifierSpan(source, pattern.node, pattern.name, "first");
+        if (span) {
+          hints.push(Object.freeze({
+            kind,
+            span: Object.freeze(span),
+            type,
+          }));
+        }
+      }
+      return;
+    }
+    if (pattern.kind === "PTuple") {
+      pattern.items.forEach((item) => addPattern(item, kind, suppress));
+    } else if (pattern.kind === "PRecord") {
+      pattern.fields.forEach((field) => addPattern(field.pattern, kind, suppress));
+    } else if (pattern.kind === "PCtor") {
+      pattern.args.forEach((argument) => addPattern(argument, kind, suppress));
+    }
+  };
+  const visitDecl = (declaration: Decl) => {
+    if (declaration.kind !== "LetDecl") return;
+    for (const binding of declaration.bindings) {
+      const obvious = binding.pattern.kind === "PVar" && obviousInferredType(binding.value);
+      addPattern(binding.pattern, "binding", binding.annotation != null || obvious);
+      visitExpr(binding.value, binding.annotation != null);
+    }
+  };
+  const visitExpr = (expression: Expr, suppressLambdaParams = false): void => {
+    switch (expression.kind) {
+      case "Tuple":
+      case "JsonArray":
+        expression.items.forEach((item) => visitExpr(item));
+        return;
+      case "Record":
+      case "JsonObject":
+        expression.fields.forEach((field) => visitExpr(field.value));
+        return;
+      case "FfiGet":
+        visitExpr(expression.receiver);
+        return;
+      case "FfiCall":
+        visitExpr(expression.receiver);
+        expression.args.forEach((argument) => visitExpr(argument));
+        return;
+      case "FfiBindingCall":
+        expression.args.forEach((argument) => visitExpr(argument));
+        return;
+      case "Lambda":
+        expression.params.forEach((parameter) =>
+          addPattern(
+            parameter.pattern,
+            "parameter",
+            suppressLambdaParams || parameter.annotation != null,
+          )
+        );
+        visitExpr(expression.body);
+        return;
+      case "Call":
+        visitExpr(expression.callee);
+        expression.args.forEach((argument) => visitExpr(argument));
+        return;
+      case "If":
+        visitExpr(expression.cond);
+        visitExpr(expression.thenExpr);
+        visitExpr(expression.elseExpr);
+        return;
+      case "Match":
+        visitExpr(expression.value);
+        expression.arms.forEach((arm) => visitExpr(arm.body));
+        return;
+      case "Panic":
+        visitExpr(expression.message);
+        return;
+      case "Block":
+        expression.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
+        visitExpr(expression.result);
+        return;
+      case "Binary":
+        visitExpr(expression.left);
+        visitExpr(expression.right);
+        return;
+      case "Unary":
+        visitExpr(expression.value);
+        return;
+      case "Pipe":
+        visitExpr(expression.left);
+        visitExpr(expression.right);
+        return;
+      case "Int":
+      case "Float":
+      case "String":
+      case "Bool":
+      case "Void":
+      case "Var":
+        return;
+    }
+  };
+  module.decls.forEach(visitDecl);
+  return Object.freeze(
+    hints.sort((left, right) =>
+      left.span.start - right.span.start ||
+      left.span.end - right.span.end
+    ),
+  );
+}
+
+function obviousInferredType(expression: Expr): boolean {
+  return expression.kind === "Int" || expression.kind === "Float" ||
+    expression.kind === "String" || expression.kind === "Bool" ||
+    expression.kind === "Void";
+}
+
+type SemanticCallableParameterStages = readonly (readonly string[] | undefined)[];
+
+function semanticCallableParameters(
+  graph: ModuleGraph,
+  bindings: ModuleMap<BindingFacts>,
+): ReadonlyMap<BindingId, SemanticCallableParameterStages> {
+  const callables = new Map<BindingId, SemanticCallableParameterStages>();
+  for (const moduleId of graph.order) {
+    const module = graph.nodes.get(moduleId)?.module;
+    const moduleBindings = bindings.get(moduleId);
+    if (!module || !moduleBindings) continue;
+    const visitDecl = (declaration: Decl) => {
+      if (declaration.kind === "RecordDecl") {
+        const target = [...moduleBindings.recordConstructors].find(([candidate]) =>
+          candidate.name === declaration.name &&
+          candidate.node !== undefined &&
+          declaration.node !== undefined &&
+          sameSpan(candidate.node.span, declaration.node.span)
+        )?.[1];
+        if (target !== undefined) {
+          callables.set(
+            target,
+            Object.freeze([
+              Object.freeze(declaration.fields.map((field) => field.name)),
+            ]),
+          );
+        }
+        return;
+      }
+      if (declaration.kind !== "LetDecl") return;
+      for (const binding of declaration.bindings) {
+        if (
+          binding.pattern.kind === "PVar" &&
+          binding.pattern.node &&
+          binding.value.kind === "Lambda"
+        ) {
+          const bindingName = binding.pattern.name;
+          const id = [...moduleBindings.binders].find(([candidate]) =>
+            candidate.kind === "PVar" &&
+            candidate.name === bindingName &&
+            candidate.node !== undefined &&
+            sameSpan(candidate.node.span, binding.pattern.node!.span)
+          )?.[1];
+          const stages = callableParameterStages(binding.value);
+          if (id !== undefined) callables.set(id, stages);
+        }
+        visitExpr(binding.value);
+      }
+    };
+    const visitExpr = (expression: Expr): void => {
+      switch (expression.kind) {
+        case "Tuple":
+        case "JsonArray":
+          expression.items.forEach(visitExpr);
+          return;
+        case "Record":
+        case "JsonObject":
+          expression.fields.forEach((field) => visitExpr(field.value));
+          return;
+        case "FfiGet":
+          visitExpr(expression.receiver);
+          return;
+        case "FfiCall":
+          visitExpr(expression.receiver);
+          expression.args.forEach(visitExpr);
+          return;
+        case "FfiBindingCall":
+          expression.args.forEach(visitExpr);
+          return;
+        case "Lambda":
+          visitExpr(expression.body);
+          return;
+        case "Call":
+          visitExpr(expression.callee);
+          expression.args.forEach(visitExpr);
+          return;
+        case "If":
+          visitExpr(expression.cond);
+          visitExpr(expression.thenExpr);
+          visitExpr(expression.elseExpr);
+          return;
+        case "Match":
+          visitExpr(expression.value);
+          expression.arms.forEach((arm) => visitExpr(arm.body));
+          return;
+        case "Panic":
+          visitExpr(expression.message);
+          return;
+        case "Block":
+          expression.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
+          visitExpr(expression.result);
+          return;
+        case "Binary":
+          visitExpr(expression.left);
+          visitExpr(expression.right);
+          return;
+        case "Unary":
+          visitExpr(expression.value);
+          return;
+        case "Pipe":
+          visitExpr(expression.left);
+          visitExpr(expression.right);
+          return;
+        case "Int":
+        case "Float":
+        case "String":
+        case "Bool":
+        case "Void":
+        case "Var":
+          return;
+      }
+    };
+    module.decls.forEach(visitDecl);
+  }
+  return callables;
+}
+
+function callableParameterNames(
+  lambda: Extract<Expr, { kind: "Lambda" }>,
+): readonly string[] | undefined {
+  if (!lambda.params.every((parameter) => parameter.pattern.kind === "PVar")) return;
+  return Object.freeze(
+    lambda.params.map((parameter) =>
+      (parameter.pattern as Extract<Pattern, { kind: "PVar" }>).name
+    ),
+  );
+}
+
+function callableParameterStages(
+  lambda: Extract<Expr, { kind: "Lambda" }>,
+): SemanticCallableParameterStages {
+  const stages: (readonly string[] | undefined)[] = [];
+  let current: Expr = lambda;
+  while (current.kind === "Lambda") {
+    stages.push(callableParameterNames(current));
+    current = lambdaResultExpression(current.body);
+  }
+  return Object.freeze(stages);
+}
+
+function semanticCallableDefinitions(
+  bindings: BindingFacts,
+  callables: ReadonlyMap<BindingId, SemanticCallableParameterStages>,
+): readonly SemanticCallableDefinition[] {
+  return Object.freeze(
+    [
+      ...[...bindings.binders].flatMap(([pattern, target]) => {
+        const parameterStages = callables.get(target);
+        return pattern.kind === "PVar" && parameterStages
+          ? [Object.freeze({
+            name: pattern.name,
+            target,
+            parameterStages,
+          })]
+          : [];
+      }),
+      ...[...bindings.recordConstructors].flatMap(([declaration, target]) => {
+        const parameterStages = callables.get(target);
+        return parameterStages
+          ? [Object.freeze({
+            name: declaration.name,
+            target,
+            parameterStages,
+          })]
+          : [];
+      }),
+    ]
+      .sort((left, right) => left.name.localeCompare(right.name) || left.target - right.target),
+  );
+}
+
+function lambdaResultExpression(expression: Expr): Expr {
+  return expression.kind === "Block" ? lambdaResultExpression(expression.result) : expression;
+}
+
+function semanticParameterHints(
+  result: InferResult,
+  bindings: BindingFacts,
+  callables: ReadonlyMap<BindingId, SemanticCallableParameterStages>,
+): readonly SemanticParameterHint[] {
+  const hints: SemanticParameterHint[] = [];
+  for (const [expression] of result.types) {
+    if (expression.kind !== "Call") continue;
+    const names = parameterNamesForCallee(expression.callee, bindings, callables);
+    if (!names || names.length !== expression.args.length) continue;
+    expression.args.forEach((argument, index) => {
+      if (!argument.node || argumentUsesParameterName(argument, names[index])) return;
+      hints.push(Object.freeze({
+        name: names[index],
+        span: Object.freeze({ ...argument.node.span }),
+      }));
+    });
+  }
+  return Object.freeze(
+    hints.sort((left, right) =>
+      left.span.start - right.span.start ||
+      left.span.end - right.span.end
+    ),
+  );
+}
+
+function semanticCallSites(
+  source: string,
+  result: InferResult,
+  bindings: BindingFacts,
+  callables: ReadonlyMap<BindingId, SemanticCallableParameterStages>,
+  typeArena: SemanticTypeArena,
+): readonly SemanticCallSite[] {
+  const sites: SemanticCallSite[] = [];
+  for (const [expression] of result.types) {
+    if (expression.kind === "Call") {
+      addSemanticCallSite(
+        sites,
+        expression,
+        expression.callee,
+        expression.args,
+        0,
+        source,
+        result,
+        bindings,
+        callables,
+        typeArena,
+      );
+    } else if (
+      expression.kind === "Pipe" &&
+      expression.right.kind === "Call"
+    ) {
+      addSemanticCallSite(
+        sites,
+        expression.right,
+        expression.right.callee,
+        expression.right.args,
+        1,
+        source,
+        result,
+        bindings,
+        callables,
+        typeArena,
+      );
+    }
+  }
+  const seen = new Set<string>();
+  return Object.freeze(
+    sites
+      .sort((left, right) =>
+        left.span.start - right.span.start ||
+        left.span.end - right.span.end
+      )
+      .filter((site) => {
+        const key = `${site.span.start}:${site.span.end}:${site.activationStart}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
+  );
+}
+
+function addSemanticCallSite(
+  sites: SemanticCallSite[],
+  call: Expr,
+  callee: Expr,
+  args: readonly Expr[],
+  implicitParameters: number,
+  source: string,
+  result: InferResult,
+  bindings: BindingFacts,
+  callables: ReadonlyMap<BindingId, SemanticCallableParameterStages>,
+  typeArena: SemanticTypeArena,
+): void {
+  if (!call.node || !callee.node || args.some((argument) => !argument.node)) return;
+  const calleeFact = result.facts.expressions.get(callee);
+  const inferredCallee = calleeFact?.instantiated ?? result.types.get(callee);
+  if (!inferredCallee) return;
+  const calleeType = prune(inferredCallee);
+  if (calleeType.tag !== "fn") return;
+  const arity = args.length + implicitParameters;
+  const parameterTypes = callParameterTypes(calleeType, arity);
+  if (!parameterTypes || parameterTypes.length !== arity) return;
+  const names = parameterNamesForCallee(callee, bindings, callables);
+  const bounds = callSyntaxBounds(source, call, args);
+  if (!bounds) return;
+  sites.push(Object.freeze({
+    span: Object.freeze({ ...call.node.span, end: bounds.end }),
+    activationStart: bounds.activationStart,
+    callee: semanticCalleeLabel(callee),
+    parameters: Object.freeze(
+      parameterTypes.map((type, index) =>
+        Object.freeze({
+          name: names?.length === arity ? names[index] : undefined,
+          type: typeArena.snapshot(type),
+        })
+      ),
+    ),
+    result: typeArena.snapshot(calleeType.result),
+    arguments: Object.freeze(
+      args.map((argument) => Object.freeze({ ...argument.node!.span })),
+    ),
+    implicitParameters,
+  }));
+}
+
+function callSyntaxBounds(
+  source: string,
+  call: Expr,
+  args: readonly Expr[],
+): Readonly<{ activationStart: number; end: number }> | undefined {
+  if (!call.node || args.length === 0 || !args[0].node || !args.at(-1)?.node) return;
+  const before = args[0].node.span.start;
+  const open = source.lastIndexOf("(", before);
+  if (
+    open >= call.node.span.start &&
+    open < before &&
+    source.slice(open + 1, before).trim().length === 0
+  ) {
+    return Object.freeze({
+      activationStart: open + 1,
+      end: matchingCallEnd(source, open) ?? call.node.span.end,
+    });
+  }
+  return Object.freeze({
+    activationStart: before,
+    end: args.at(-1)!.node!.span.end,
+  });
+}
+
+function matchingCallEnd(source: string, open: number): number | undefined {
+  let depth = 0;
+  let quote: '"' | "'" | undefined;
+  let escaped = false;
+  for (let index = open; index < source.length; index++) {
+    const char = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") depth++;
+    else if (char === ")" && --depth === 0) return index + 1;
+  }
+  return undefined;
+}
+
+function semanticCalleeLabel(callee: Expr): string {
+  if (callee.kind === "Call") return semanticCalleeLabel(callee.callee);
+  return callee.kind === "Lambda" ? "<lambda>" : semanticExpressionLabel(callee);
+}
+
+function callParameterTypes(
+  callee: Extract<Ty, { tag: "fn" }>,
+  arity: number,
+): readonly Ty[] | undefined {
+  if (callee.params.length === arity) return callee.params;
+  if (callee.params.length !== 1) return;
+  const parameter = prune(callee.params[0]);
+  if (arity > 1 && parameter.tag === "tuple" && parameter.items.length === arity) {
+    return parameter.items;
+  }
+  return arity === 1 ? [callee.params[0]] : undefined;
+}
+
+function parameterNamesForCallee(
+  callee: Expr,
+  bindings: BindingFacts,
+  callables: ReadonlyMap<BindingId, SemanticCallableParameterStages>,
+): readonly string[] | undefined {
+  let stage = 0;
+  let root = callee;
+  while (root.kind === "Call") {
+    stage++;
+    root = root.callee;
+  }
+  if (root.kind === "Lambda") return callableParameterStages(root)[stage];
+  if (root.kind !== "Var") return;
+  const id = bindings.references.get(root);
+  return id === undefined ? undefined : callables.get(id)?.[stage];
+}
+
+function semanticParameterTargets(
+  module: Module,
+  bindings: BindingFacts,
+): ReadonlySet<BindingId> {
+  const targets = new Set<BindingId>();
+  const addPattern = (pattern: Pattern): void => {
+    if (pattern.kind === "PVar") {
+      const target = bindings.binders.get(pattern);
+      if (target !== undefined) targets.add(target);
+      return;
+    }
+    if (pattern.kind === "PTuple") {
+      pattern.items.forEach(addPattern);
+    } else if (pattern.kind === "PRecord") {
+      pattern.fields.forEach((field) => addPattern(field.pattern));
+    } else if (pattern.kind === "PCtor") {
+      pattern.args.forEach(addPattern);
+    }
+  };
+  const visitDeclaration = (declaration: Decl): void => {
+    if (declaration.kind !== "LetDecl") return;
+    declaration.bindings.forEach((binding) => visitExpression(binding.value));
+  };
+  const visitExpression = (expression: Expr): void => {
+    switch (expression.kind) {
+      case "Tuple":
+      case "JsonArray":
+        expression.items.forEach(visitExpression);
+        return;
+      case "Record":
+      case "JsonObject":
+        expression.fields.forEach((field) => visitExpression(field.value));
+        return;
+      case "FfiGet":
+        visitExpression(expression.receiver);
+        return;
+      case "FfiCall":
+        visitExpression(expression.receiver);
+        expression.args.forEach(visitExpression);
+        return;
+      case "FfiBindingCall":
+        expression.args.forEach(visitExpression);
+        return;
+      case "Lambda":
+        expression.params.forEach((parameter) => addPattern(parameter.pattern));
+        visitExpression(expression.body);
+        return;
+      case "Call":
+        visitExpression(expression.callee);
+        expression.args.forEach(visitExpression);
+        return;
+      case "If":
+        visitExpression(expression.cond);
+        visitExpression(expression.thenExpr);
+        visitExpression(expression.elseExpr);
+        return;
+      case "Match":
+        visitExpression(expression.value);
+        expression.arms.forEach((arm) => visitExpression(arm.body));
+        return;
+      case "Panic":
+        visitExpression(expression.message);
+        return;
+      case "Block":
+        expression.items.forEach((item) =>
+          isDecl(item) ? visitDeclaration(item) : visitExpression(item)
+        );
+        visitExpression(expression.result);
+        return;
+      case "Binary":
+        visitExpression(expression.left);
+        visitExpression(expression.right);
+        return;
+      case "Unary":
+        visitExpression(expression.value);
+        return;
+      case "Pipe":
+        visitExpression(expression.left);
+        visitExpression(expression.right);
+        return;
+      case "Int":
+      case "Float":
+      case "String":
+      case "Bool":
+      case "Void":
+      case "Var":
+        return;
+    }
+  };
+  module.decls.forEach(visitDeclaration);
+  return targets;
+}
+
+function semanticTokenFacts(
+  occurrences: readonly ModuleSemanticOccurrence[],
+  semanticTypes: readonly SemanticType[],
+  parameterTargets: ReadonlySet<BindingId>,
+): readonly SemanticTokenFact[] {
+  const candidates = occurrences
+    .filter((occurrence) => occurrence.role !== "import-path")
+    .map((occurrence) => {
+      const kind = semanticTokenKind(occurrence, semanticTypes, parameterTargets);
+      return Object.freeze({
+        span: occurrence.span,
+        kind,
+        modifiers: Object.freeze(
+          occurrence.role === "declaration" || occurrence.role === "import-alias"
+            ? ["declaration" as const]
+            : [],
+        ),
+      });
+    }).sort((left, right) =>
+      left.span.start - right.span.start ||
+      left.span.end - right.span.end ||
+      semanticTokenKindOrder(left.kind) - semanticTokenKindOrder(right.kind)
+    );
+  const tokens: SemanticTokenFact[] = [];
+  for (const candidate of candidates) {
+    const previous = tokens.at(-1);
+    if (
+      previous &&
+      candidate.span.start === previous.span.start &&
+      candidate.span.end === previous.span.end
+    ) continue;
+    if (previous && candidate.span.start < previous.span.end) continue;
+    tokens.push(candidate);
+  }
+  return Object.freeze(tokens);
+}
+
+function semanticTokenKind(
+  occurrence: ModuleSemanticOccurrence,
+  semanticTypes: readonly SemanticType[],
+  parameterTargets: ReadonlySet<BindingId>,
+): SemanticTokenFact["kind"] {
+  switch (occurrence.target.kind) {
+    case "structure":
+    case "module":
+      return "namespace";
+    case "type":
+      return "type";
+    case "type-variable":
+      return "type-parameter";
+    case "field":
+      return "property";
+    case "constructor":
+      return "constructor";
+    case "value": {
+      if (parameterTargets.has(occurrence.target.id as BindingId)) return "parameter";
+      const type = occurrence.inferredType === undefined
+        ? undefined
+        : semanticTypes[occurrence.inferredType.id];
+      return type?.shape.kind === "function" ? "function" : "variable";
+    }
+  }
+}
+
+function semanticTokenKindOrder(kind: SemanticTokenFact["kind"]): number {
+  return kind === "type"
+    ? 0
+    : kind === "type-parameter"
+    ? 1
+    : kind === "constructor"
+    ? 2
+    : kind === "function"
+    ? 3
+    : kind === "parameter"
+    ? 4
+    : kind === "property"
+    ? 5
+    : kind === "namespace"
+    ? 6
+    : 7;
+}
+
+function argumentUsesParameterName(argument: Expr, parameter: string): boolean {
+  return argument.kind === "Var" &&
+    !(argument.sourceName ?? argument.name).includes(".") &&
+    (argument.sourceName ?? argument.name) === parameter;
+}
+
 function semanticExpressionLabel(expression: Expr): string {
-  return expression.kind === "Var"
-    ? expression.sourceName ?? expression.name
-    : expression.kind;
+  return expression.kind === "Var" ? expression.sourceName ?? expression.name : expression.kind;
 }
 
 function semanticPatternLabel(pattern: Pattern): string {
-  return pattern.kind === "PVar" || pattern.kind === "PPinned"
-    ? pattern.name
-    : pattern.kind;
+  return pattern.kind === "PVar" || pattern.kind === "PPinned" ? pattern.name : pattern.kind;
 }
 
 function semanticTypeExpressionLabel(expression: import("./ast.ts").TypeExpr): string {
@@ -1197,20 +2046,20 @@ export function semanticRenameAt(
           occurrence.role === "qualifier")
       )
       .map((occurrence) => Object.freeze({ moduleId, occurrence }));
-    return occurrences.length === 0
-      ? undefined
-      : Object.freeze({
-        kind: "local-import-alias",
-        placeholder: primary.name,
-        selection: primary.span,
-        occurrences: freezeDistinctProjectOccurrences(occurrences),
-      });
+    return occurrences.length === 0 ? undefined : Object.freeze({
+      kind: "local-import-alias",
+      placeholder: primary.name,
+      selection: primary.span,
+      occurrences: freezeDistinctProjectOccurrences(occurrences),
+    });
   }
 
   const occurrences: ProjectSemanticOccurrence[] = [];
   for (const [ownerId, owner] of project.interfaces) {
     for (const occurrence of owner.occurrences) {
-      if (!selectedTargets.some((target) => sameSemanticTarget(target, occurrence.target))) continue;
+      if (!selectedTargets.some((target) => sameSemanticTarget(target, occurrence.target))) {
+        continue;
+      }
       if (occurrence.name !== primary.name || occurrence.role === "import-alias") continue;
       occurrences.push(Object.freeze({ moduleId: ownerId, occurrence }));
     }
@@ -1565,9 +2414,7 @@ export function semanticCompletionFacts(
   return Object.freeze({
     gpuRegions: Object.freeze(
       discoverGpuRegions(module)
-        .flatMap(({ lambda }) =>
-          lambda.node ? [Object.freeze({ ...lambda.node.span })] : []
-        )
+        .flatMap(({ lambda }) => lambda.node ? [Object.freeze({ ...lambda.node.span })] : [])
         .sort((left, right) => left.start - right.start),
     ),
     scopes: Object.freeze({
@@ -1657,14 +2504,23 @@ export function semanticCompletionsAt(
       : recordCompletionCandidates(project, scope, context.qualifier);
   } else if (context.typePosition) {
     candidates = [
-      ...[...scope.types].map(([name, id]) =>
-        completionCandidate(name, "type", "lexical", 10, completionTypeForTarget(project, {
-          kind: "type",
-          id,
-        }))
-      ),
-      ...[...scope.typeVariables.keys()].map((name) =>
-        completionCandidate(name, "type", "lexical", 5)
+      ...[...scope.types].map(([name, id]) => {
+        const target = Object.freeze({ kind: "type" as const, id });
+        return completionCandidate(
+          name,
+          "type",
+          "lexical",
+          completionLexicalMetadata(moduleInterface, target, offset),
+          completionTypeForTarget(project, target),
+        );
+      }),
+      ...[...scope.typeVariables].map(([name, id]) =>
+        completionCandidate(
+          name,
+          "type",
+          "lexical",
+          completionTypeVariableMetadata(moduleInterface, id, offset),
+        )
       ),
       ...recovery.types
         .filter((name) => !scope.types.has(name))
@@ -1677,13 +2533,19 @@ export function semanticCompletionsAt(
           name,
           target.kind,
           "lexical",
-          10,
+          completionLexicalMetadata(moduleInterface, target, offset),
           completionTypeForTarget(project, target),
         )
       ),
-      ...[...scope.structures.keys()].map((name) =>
-        completionCandidate(name, "structure", "lexical", 15)
-      ),
+      ...[...scope.structures].map(([name, id]) => {
+        const target = Object.freeze({ kind: "structure" as const, id });
+        return completionCandidate(
+          name,
+          "structure",
+          "lexical",
+          completionLexicalMetadata(moduleInterface, target, offset),
+        );
+      }),
       ...recovery.values
         .filter((name) => !scope.values.has(name))
         .map((name) => completionCandidate(name, "value", "recovery", 30)),
@@ -1700,10 +2562,27 @@ export function semanticCompletionsAt(
     ];
   }
 
-  const filtered = candidates
+  const expectedType = expectedCompletionTypeAt(moduleInterface, offset);
+  const ranked = expectedType !== undefined
+    ? candidates.map((candidate) =>
+      Object.freeze({
+        ...candidate,
+        expectedCompatibility: completionTypeCompatibility(
+          project,
+          candidate.type,
+          moduleInterface,
+          expectedType,
+        ),
+      })
+    )
+    : candidates;
+  const filtered = ranked
     .filter(({ name }) => name.startsWith(context.prefix))
     .sort((left, right) =>
       left.rank - right.rank ||
+      completionCompatibilityOrder(left.expectedCompatibility) -
+        completionCompatibilityOrder(right.expectedCompatibility) ||
+      completionProximity(left) - completionProximity(right) ||
       Number(right.name === context.prefix) - Number(left.name === context.prefix) ||
       left.name.localeCompare(right.name) ||
       completionKindOrder(left.kind) - completionKindOrder(right.kind)
@@ -1711,6 +2590,9 @@ export function semanticCompletionsAt(
   const seen = new Set<string>();
   return Object.freeze({
     prefix: context.prefix,
+    expectedType: expectedType === undefined
+      ? undefined
+      : Object.freeze({ moduleId, type: expectedType }),
     candidates: Object.freeze(filtered.filter((candidate) => {
       const key = `${candidate.kind}:${candidate.name}`;
       if (seen.has(key)) return false;
@@ -1720,14 +2602,560 @@ export function semanticCompletionsAt(
   });
 }
 
+/** Compiler-owned signature selection for the innermost active call site. */
+export function semanticSignatureHelpAt(
+  project: ProjectSnapshot,
+  moduleId: ModuleId,
+  source: string,
+  offset: number,
+): SemanticSignatureHelp | undefined {
+  const moduleInterface = project.interfaces.get(moduleId);
+  if (!moduleInterface) return;
+  const site = moduleInterface.callSites
+    .filter(({ span, activationStart }) => activationStart <= offset && offset <= span.end)
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start) ||
+      right.span.start - left.span.start
+    )[0];
+  if (site && site.parameters.length > 0) {
+    const completedArguments = site.arguments.filter((argument) => argument.end < offset).length;
+    const explicitParameter = site.arguments.length === 0
+      ? 0
+      : Math.min(completedArguments, site.arguments.length - 1);
+    return Object.freeze({
+      callee: site.callee,
+      parameters: Object.freeze(
+        site.parameters.map((parameter) =>
+          Object.freeze({
+            name: parameter.name,
+            type: Object.freeze({
+              moduleId: moduleInterface.moduleId,
+              id: parameter.type,
+            }),
+          })
+        ),
+      ),
+      result: Object.freeze({
+        moduleId: moduleInterface.moduleId,
+        id: site.result,
+      }),
+      activeParameter: Math.min(
+        site.parameters.length - 1,
+        site.implicitParameters + explicitParameter,
+      ),
+    });
+  }
+  const recovered = recoveredCallContext(source, offset);
+  if (!recovered) return;
+  const resolved = recoveredCallable(
+    project,
+    moduleInterface,
+    recovered.callee,
+    offset,
+  );
+  if (!resolved) return;
+  return semanticSignatureFromType(
+    resolved.owner,
+    recovered.callee,
+    resolved.type,
+    resolved.names,
+    recovered.activeParameter,
+  );
+}
+
+/** Return compiler-classified semantic symbol tokens for one immutable module interface. */
+export function semanticTokensForModule(
+  moduleInterface: ModuleInterface,
+): readonly SemanticTokenFact[] {
+  return moduleInterface.semanticTokens;
+}
+
+/** Aggregate declaration facts without treating indexed-but-inactive files as project members. */
+export function semanticWorkspaceSymbols(
+  projects: Iterable<ProjectSnapshot>,
+): readonly SemanticWorkspaceSymbolFact[] {
+  const facts: SemanticWorkspaceSymbolFact[] = [];
+  for (const project of projects) {
+    for (const [moduleId, moduleInterface] of project.interfaces) {
+      facts.push(Object.freeze({
+        projectSnapshotId: project.id,
+        moduleId,
+        path: moduleInterface.path,
+        name: moduleInterface.path,
+        kind: "module",
+        span: moduleInterface.sourceSpan,
+        selectionSpan: Object.freeze({
+          ...moduleInterface.sourceSpan,
+          end: Math.min(
+            moduleInterface.sourceSpan.end,
+            moduleInterface.sourceSpan.start + 1,
+          ),
+        }),
+      }));
+      for (const declaration of moduleInterface.declarations) {
+        facts.push(Object.freeze({
+          projectSnapshotId: project.id,
+          moduleId,
+          path: moduleInterface.path,
+          name: declaration.name,
+          kind: declaration.kind,
+          span: declaration.span,
+          selectionSpan: declaration.selectionSpan,
+        }));
+        for (const constructor of declaration.constructors ?? []) {
+          facts.push(Object.freeze({
+            projectSnapshotId: project.id,
+            moduleId,
+            path: moduleInterface.path,
+            name: constructor.name,
+            kind: "constructor",
+            span: constructor.span,
+            selectionSpan: constructor.selectionSpan,
+            containerName: declaration.name,
+          }));
+        }
+      }
+    }
+  }
+  return Object.freeze(facts);
+}
+
+function recoveredCallContext(
+  source: string,
+  offset: number,
+): Readonly<{ callee: string; activeParameter: number }> | undefined {
+  const stack: number[] = [];
+  let quote: '"' | "'" | undefined;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  const limit = Math.max(0, Math.min(offset, source.length));
+  for (let index = 0; index < limit; index++) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (lineComment) {
+      if (char === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === "*" && next === "/") {
+        blockComment = false;
+        index++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      lineComment = true;
+      index++;
+    } else if (char === "/" && next === "*") {
+      blockComment = true;
+      index++;
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "(") stack.push(index);
+    else if (char === ")") stack.pop();
+  }
+  for (const open of stack.reverse()) {
+    const callee = source.slice(0, open)
+      .match(/([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*$/)?.[1];
+    if (!callee) continue;
+    return Object.freeze({
+      callee,
+      activeParameter: topLevelCommaCount(source, open + 1, limit),
+    });
+  }
+  return undefined;
+}
+
+function topLevelCommaCount(source: string, start: number, end: number): number {
+  const stack: string[] = [];
+  let commas = 0;
+  let quote: '"' | "'" | undefined;
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = start; index < end; index++) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (lineComment) {
+      if (char === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === "*" && next === "/") {
+        blockComment = false;
+        index++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "/" && next === "/") {
+      lineComment = true;
+      index++;
+    } else if (char === "/" && next === "*") {
+      blockComment = true;
+      index++;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "(" || char === "[" || char === "{") stack.push(char);
+    else if (char === ")" || char === "]" || char === "}") stack.pop();
+    else if (char === "," && stack.length === 0) commas++;
+  }
+  return commas;
+}
+
+function recoveredCallable(
+  project: ProjectSnapshot,
+  owner: ModuleInterface,
+  callee: string,
+  offset: number,
+):
+  | Readonly<{
+    owner: ModuleInterface;
+    type: SemanticTypeId;
+    names?: readonly string[];
+  }>
+  | undefined {
+  const scope = semanticScopeAt(owner, offset);
+  if (!callee.includes(".")) {
+    const target = scope.values.get(callee);
+    if (!target) return;
+    const type = completionTypeForTarget(project, target);
+    if (!type) return;
+    const typeOwner = project.interfaces.get(type.moduleId);
+    if (!typeOwner) return;
+    return Object.freeze({
+      owner: typeOwner,
+      type: type.occurrence.id,
+      names: callableNamesForTarget(project, target),
+    });
+  }
+  const [qualifier, ...memberParts] = callee.split(".");
+  const member = memberParts.join(".");
+  const structure = scope.structures.get(qualifier);
+  if (structure === undefined) return;
+  const imported = owner.imports.find(({ structureAlias }) => structureAlias?.id === structure);
+  if (imported) {
+    const targetOwner = project.interfaces.get(imported.target);
+    const occurrence = targetOwner?.occurrences.find((candidate) =>
+      candidate.role === "declaration" &&
+      candidate.declaration?.visibility === "public" &&
+      candidate.name === member &&
+      candidate.inferredType !== undefined &&
+      (candidate.target.kind === "value" ||
+        candidate.target.kind === "constructor")
+    );
+    if (!targetOwner || !occurrence?.inferredType) return;
+    return Object.freeze({
+      owner: targetOwner,
+      type: occurrence.inferredType.id,
+      names: callableNamesForTarget(project, occurrence.target),
+    });
+  }
+  const builtIn = owner.structureMembers.get(structure)?.find((candidate) =>
+    candidate.name === member && candidate.type !== undefined
+  );
+  if (builtIn?.type) {
+    return Object.freeze({ owner, type: builtIn.type.id });
+  }
+  const ffi = owner.ffiFacts.imports
+    .find(({ structureAlias }) => structureAlias?.id === structure)
+    ?.bindings.find((binding) => binding.sourceName === member && binding.type !== undefined);
+  return ffi?.type ? Object.freeze({ owner, type: ffi.type.id }) : undefined;
+}
+
+function callableNamesForTarget(
+  project: ProjectSnapshot,
+  target: SemanticOccurrenceTarget,
+): readonly string[] | undefined {
+  if (target.kind !== "value" || typeof target.id !== "number") return;
+  for (const moduleInterface of project.interfaces.values()) {
+    const definition = moduleInterface.callableDefinitions.find((candidate) =>
+      candidate.target === target.id
+    );
+    if (definition) return definition.parameterStages[0];
+  }
+  return undefined;
+}
+
+function semanticSignatureFromType(
+  owner: ModuleInterface,
+  callee: string,
+  type: SemanticTypeId,
+  names: readonly string[] | undefined,
+  activeParameter: number,
+): SemanticSignatureHelp | undefined {
+  const shape = owner.semanticTypes[type]?.shape;
+  if (shape?.kind !== "function") return;
+  const arity = names?.length ?? Math.max(1, activeParameter + 1);
+  let parameterTypes = shape.params;
+  if (shape.params.length === 1 && arity > 1) {
+    const parameter = owner.semanticTypes[shape.params[0]]?.shape;
+    if (parameter?.kind === "tuple" && parameter.items.length === arity) {
+      parameterTypes = parameter.items;
+    }
+  }
+  if (parameterTypes.length !== arity) {
+    if (shape.params.length !== 1) return;
+    parameterTypes = shape.params;
+  }
+  return Object.freeze({
+    callee,
+    parameters: Object.freeze(
+      parameterTypes.map((parameter, index) =>
+        Object.freeze({
+          name: names?.length === parameterTypes.length ? names[index] : undefined,
+          type: Object.freeze({ moduleId: owner.moduleId, id: parameter }),
+        })
+      ),
+    ),
+    result: Object.freeze({ moduleId: owner.moduleId, id: shape.result }),
+    activeParameter: Math.min(parameterTypes.length - 1, activeParameter),
+  });
+}
+
+function completionLexicalMetadata(
+  moduleInterface: ModuleInterface,
+  target: SemanticOccurrenceTarget,
+  offset: number,
+): Readonly<{ rank: number; proximity?: number }> {
+  const localDeclaration = moduleInterface.occurrences
+    .filter((occurrence) =>
+      occurrence.role === "declaration" &&
+      sameSemanticTarget(occurrence.target, target) &&
+      occurrence.span.end <= offset
+    )
+    .sort((left, right) => right.span.end - left.span.end)[0];
+  if (localDeclaration) {
+    return Object.freeze({
+      rank: 10,
+      proximity: offset - localDeclaration.span.end,
+    });
+  }
+  const imported = moduleInterface.imports.find((item) =>
+    item.targets.some((projected) =>
+      importTargetIdentities(projected).some((identity) => sameSemanticTarget(identity, target))
+    ) || (target.kind === "structure" && item.structureAlias?.id === target.id)
+  );
+  const importAlias = moduleInterface.occurrences
+    .filter((occurrence) =>
+      occurrence.role === "import-alias" &&
+      sameSemanticTarget(occurrence.target, target) &&
+      occurrence.span.end <= offset
+    )
+    .sort((left, right) => right.span.end - left.span.end)[0];
+  const importedEnd = importAlias?.span.end ?? imported?.declaration.node?.span.end;
+  if (importedEnd !== undefined) {
+    return Object.freeze({
+      rank: 20,
+      proximity: Math.max(0, offset - importedEnd),
+    });
+  }
+  if (
+    moduleInterface.initialScopeTypes.some((entry) => sameSemanticTarget(entry.target, target)) ||
+    (target.kind === "structure" && moduleInterface.structureMembers.has(target.id))
+  ) return Object.freeze({ rank: 30 });
+  return Object.freeze({ rank: 20 });
+}
+
+function completionTypeVariableMetadata(
+  moduleInterface: ModuleInterface,
+  id: TypeVariableId,
+  offset: number,
+): Readonly<{ rank: number; proximity?: number }> {
+  const variable = moduleInterface.typeVariables.find((candidate) => candidate.id === id);
+  return Object.freeze({
+    rank: 5,
+    proximity: variable?.binder && variable.binder.end <= offset
+      ? offset - variable.binder.end
+      : undefined,
+  });
+}
+
+function expectedCompletionTypeAt(
+  moduleInterface: ModuleInterface,
+  offset: number,
+): SemanticTypeId | undefined {
+  return moduleInterface.expectedTypes
+    .filter(({ span }) => span.start <= offset && offset <= span.end)
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start) ||
+      right.span.start - left.span.start
+    )[0]?.type;
+}
+
+function completionTypeCompatibility(
+  project: ProjectSnapshot,
+  candidate: SemanticCompletionCandidate["type"],
+  expectedOwner: ModuleInterface,
+  expected: SemanticTypeId,
+): "compatible" | "unknown" | "incompatible" {
+  if (!candidate) return "unknown";
+  const candidateOwner = project.interfaces.get(candidate.moduleId);
+  if (!candidateOwner) return "unknown";
+  return semanticTypeCompatibility(
+    candidateOwner,
+    candidate.occurrence.id,
+    expectedOwner,
+    expected,
+    new Set(),
+  );
+}
+
+function semanticTypeCompatibility(
+  leftOwner: ModuleInterface,
+  leftId: SemanticTypeId,
+  rightOwner: ModuleInterface,
+  rightId: SemanticTypeId,
+  visited: Set<string>,
+): "compatible" | "unknown" | "incompatible" {
+  const visitKey = `${leftOwner.path}:${leftId}|${rightOwner.path}:${rightId}`;
+  if (visited.has(visitKey)) return "unknown";
+  visited.add(visitKey);
+  const result = semanticTypeCompatibilityInner(
+    leftOwner,
+    leftId,
+    rightOwner,
+    rightId,
+    visited,
+  );
+  visited.delete(visitKey);
+  return result;
+}
+
+function semanticTypeCompatibilityInner(
+  leftOwner: ModuleInterface,
+  leftId: SemanticTypeId,
+  rightOwner: ModuleInterface,
+  rightId: SemanticTypeId,
+  visited: Set<string>,
+): "compatible" | "unknown" | "incompatible" {
+  const left = leftOwner.semanticTypes[leftId]?.shape;
+  const right = rightOwner.semanticTypes[rightId]?.shape;
+  if (
+    !left || !right || left.kind === "variable" || right.kind === "variable" ||
+    left.kind === "ffi" || right.kind === "ffi"
+  ) return "unknown";
+  if (left.kind !== right.kind) return "incompatible";
+  switch (left.kind) {
+    case "primitive":
+      return left.name === (right as typeof left).name ? "compatible" : "incompatible";
+    case "named": {
+      const other = right as typeof left;
+      const sameIdentity = left.typeNameId !== undefined && other.typeNameId !== undefined
+        ? left.typeNameId === other.typeNameId
+        : left.foreignKey !== undefined || other.foreignKey !== undefined
+        ? left.foreignKey === other.foreignKey
+        : left.inferenceTypeId === other.inferenceTypeId;
+      if (!sameIdentity || left.args.length !== other.args.length) return "incompatible";
+      return combineCompletionCompatibility(
+        left.args.map((id, index) =>
+          semanticTypeCompatibility(
+            leftOwner,
+            id,
+            rightOwner,
+            other.args[index],
+            visited,
+          )
+        ),
+      );
+    }
+    case "function": {
+      const other = right as typeof left;
+      if (left.params.length !== other.params.length) return "incompatible";
+      return combineCompletionCompatibility([
+        ...left.params.map((id, index) =>
+          semanticTypeCompatibility(
+            leftOwner,
+            id,
+            rightOwner,
+            other.params[index],
+            visited,
+          )
+        ),
+        semanticTypeCompatibility(
+          leftOwner,
+          left.result,
+          rightOwner,
+          other.result,
+          visited,
+        ),
+      ]);
+    }
+    case "tuple": {
+      const other = right as typeof left;
+      if (left.items.length !== other.items.length) return "incompatible";
+      return combineCompletionCompatibility(
+        left.items.map((id, index) =>
+          semanticTypeCompatibility(
+            leftOwner,
+            id,
+            rightOwner,
+            other.items[index],
+            visited,
+          )
+        ),
+      );
+    }
+    case "structural-record": {
+      const other = right as typeof left;
+      if (
+        left.fields.length !== other.fields.length ||
+        left.fields.some((field, index) => field.name !== other.fields[index]?.name)
+      ) return "incompatible";
+      return combineCompletionCompatibility(
+        left.fields.map((field, index) =>
+          semanticTypeCompatibility(
+            leftOwner,
+            field.type,
+            rightOwner,
+            other.fields[index].type,
+            visited,
+          )
+        ),
+      );
+    }
+  }
+}
+
+function combineCompletionCompatibility(
+  items: readonly ("compatible" | "unknown" | "incompatible")[],
+): "compatible" | "unknown" | "incompatible" {
+  if (items.some((item) => item === "incompatible")) return "incompatible";
+  return items.some((item) => item === "unknown") ? "unknown" : "compatible";
+}
+
+function completionCompatibilityOrder(
+  compatibility: SemanticCompletionCandidate["expectedCompatibility"],
+): number {
+  return compatibility === "compatible" ? 0 : compatibility === "unknown" ? 1 : 2;
+}
+
+function completionProximity(candidate: SemanticCompletionCandidate): number {
+  return candidate.proximity ?? Number.MAX_SAFE_INTEGER;
+}
+
 function completionCandidate(
   name: string,
   kind: SemanticCompletionCandidate["kind"],
   origin: SemanticCompletionCandidate["origin"],
-  rank: number,
+  ranking: number | Readonly<{ rank: number; proximity?: number }>,
   type?: SemanticCompletionCandidate["type"],
 ): SemanticCompletionCandidate {
-  return Object.freeze({ name, kind, origin, rank, type });
+  const { rank, proximity } = typeof ranking === "number"
+    ? { rank: ranking, proximity: undefined }
+    : ranking;
+  return Object.freeze({ name, kind, origin, rank, proximity, type });
 }
 
 function completionTypeForTarget(
@@ -1904,7 +3332,11 @@ function completionKindOrder(kind: SemanticCompletionCandidate["kind"]): number 
     ? 4
     : kind === "gpu-builtin"
     ? 5
-    : 6;
+    : kind === "file"
+    ? 6
+    : kind === "folder"
+    ? 7
+    : 8;
 }
 
 function completionScopeNamesAt(
@@ -2026,11 +3458,9 @@ function analysisCompleteness(
     elaboration: complete ? "complete" : "partial",
     occurrences: "partial",
     scopes: "partial",
-    ffi: !complete
-      ? "partial"
-      : ffiFacts.imports.length === 0 &&
-          ffiFacts.calls.length === 0 &&
-          ffiFacts.foreignTypes.length === 0
+    ffi: !complete ? "partial" : ffiFacts.imports.length === 0 &&
+        ffiFacts.calls.length === 0 &&
+        ffiFacts.foreignTypes.length === 0
       ? "not-applicable"
       : "complete",
     gpu: !complete ? "partial" : gpuFacts.operations.length === 0 &&
@@ -2113,14 +3543,12 @@ function semanticStructureMembers(
       members.push(Object.freeze({
         name: memberName,
         kind: "type",
-        type: id === undefined
-          ? undefined
-          : semanticOccurrenceType(typeArena, {
-            tag: "named",
-            id: info.id,
-            name: memberName,
-            args: [],
-          }),
+        type: id === undefined ? undefined : semanticOccurrenceType(typeArena, {
+          tag: "named",
+          id: info.id,
+          name: memberName,
+          args: [],
+        }),
       }));
     }
     for (const memberName of environment.strEnv.keys()) {

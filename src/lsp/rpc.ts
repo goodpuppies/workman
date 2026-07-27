@@ -10,6 +10,12 @@ export type RpcMessage = {
   error?: unknown;
 };
 
+export type RpcDecodeError = Readonly<{
+  id: number | string | null;
+  code: -32700 | -32600;
+  message: "parse error" | "invalid request";
+}>;
+
 export function encodeMessage(message: RpcMessage): Uint8Array {
   const body = JSON.stringify(message);
   const bytes = encoder.encode(body);
@@ -18,8 +24,13 @@ export function encodeMessage(message: RpcMessage): Uint8Array {
 
 export function decodeMessages(
   buffer: Uint8Array<ArrayBufferLike>,
-): { messages: RpcMessage[]; rest: Uint8Array<ArrayBufferLike> } {
+): {
+  messages: RpcMessage[];
+  errors: RpcDecodeError[];
+  rest: Uint8Array<ArrayBufferLike>;
+} {
   const messages: RpcMessage[] = [];
+  const errors: RpcDecodeError[] = [];
   let bytes = buffer;
   while (true) {
     const headerEnd = headerEndIndex(bytes);
@@ -34,13 +45,44 @@ export function decodeMessages(
     const bodyEnd = bodyStart + length;
     if (bytes.length < bodyEnd) break;
     try {
-      messages.push(JSON.parse(decoder.decode(bytes.slice(bodyStart, bodyEnd))));
+      const parsed: unknown = JSON.parse(decoder.decode(bytes.slice(bodyStart, bodyEnd)));
+      if (isRpcMessage(parsed)) {
+        messages.push(parsed);
+      } else {
+        errors.push(Object.freeze({
+          id: recoverRpcId(parsed),
+          code: -32600,
+          message: "invalid request",
+        }));
+      }
     } catch {
-      // Drop malformed message payload and continue decoding subsequent frames.
+      errors.push(Object.freeze({
+        id: null,
+        code: -32700,
+        message: "parse error",
+      }));
     }
     bytes = bytes.slice(bodyEnd);
   }
-  return { messages, rest: bytes };
+  return { messages, errors, rest: bytes };
+}
+
+function isRpcMessage(value: unknown): value is RpcMessage {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const message = value as Record<string, unknown>;
+  if (message.jsonrpc !== "2.0" || !validRpcId(message.id)) return false;
+  if ("method" in message) return typeof message.method === "string";
+  return "id" in message && ("result" in message || "error" in message);
+}
+
+function recoverRpcId(value: unknown): number | string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === "number" || typeof id === "string" || id === null ? id : null;
+}
+
+function validRpcId(id: unknown): boolean {
+  return id === undefined || id === null || typeof id === "number" || typeof id === "string";
 }
 
 function contentLength(header: string): number | undefined {

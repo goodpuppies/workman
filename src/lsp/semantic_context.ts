@@ -3,6 +3,7 @@ import { analyzeFile, analyzeRecoveredFile } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { runtime } from "../io.ts";
 import type { ModuleInterface, ProjectSnapshot } from "../module_interface.ts";
+import type { SemanticService } from "./semantic_service.ts";
 import { fileUriToPath } from "./uri.ts";
 
 export type SemanticDocumentContext = Readonly<{
@@ -17,7 +18,9 @@ export async function semanticDocumentContext(
   uri: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<SemanticDocumentContext | null> {
+  if (service) return await service.documentContext(uri);
   const entryPath = normalize(resolve(fileUriToPath(uri)));
   let project: ProjectSnapshot;
   let recovered = false;

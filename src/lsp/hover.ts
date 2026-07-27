@@ -4,18 +4,16 @@ import {
   type DeepReadonly,
   type ModuleInterface,
   type ProjectSnapshot,
-  semanticOccurrencesAt,
-  semanticTypedNodeAt,
   type SemanticGpuElaboratedSlice,
+  semanticOccurrencesAt,
   type SemanticOccurrenceType,
   type SemanticTypedNode,
+  semanticTypedNodeAt,
 } from "../module_interface.ts";
 import { lineColToOffset, lineStarts, type SourceSpan } from "../source.ts";
-import type {
-  GpuSliceOccurrenceTypeDto,
-  GpuSliceShaderTypeDto,
-} from "../wmslang/v2_dto.ts";
+import type { GpuSliceOccurrenceTypeDto, GpuSliceShaderTypeDto } from "../wmslang/v2_dto.ts";
 import { semanticDocumentContext } from "./semantic_context.ts";
+import type { SemanticService } from "./semantic_service.ts";
 import { renderSemanticType } from "./hover_type_display.ts";
 
 export type LspHover = {
@@ -27,8 +25,9 @@ export async function hoverAt(
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<LspHover | null> {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return null;
   const { project, moduleInterface, source } = context;
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(source));
@@ -121,9 +120,7 @@ async function gpuHoverContext(
   project: ProjectSnapshot,
   moduleInterface: ModuleInterface,
 ): Promise<GpuHoverState | undefined> {
-  const hasRoots = [...project.interfaces.values()].some((item) =>
-    item.gpuFacts.roots.length > 0
-  );
+  const hasRoots = [...project.interfaces.values()].some((item) => item.gpuFacts.roots.length > 0);
   const hasSlices = [...project.interfaces.values()].some((item) =>
     item.gpuFacts.slices.length > 0
   );
@@ -155,13 +152,9 @@ function gpuHoverAt(
     )
     .sort((left, right) => spanWidth(left.span) - spanWidth(right.span))[0];
   if (resource) {
-    const label = `${resource.receiverName}.${
-      resource.operation === "sample" ? "Sample" : "Load"
-    }`;
+    const label = `${resource.receiverName}.${resource.operation === "sample" ? "Sample" : "Load"}`;
     return hoverCode(
-      `${label}: ${
-        renderSemanticType(moduleInterface, resource.receiverType)
-      }`,
+      `${label}: ${renderSemanticType(moduleInterface, resource.receiverType)}`,
     );
   }
   const builtin = gpuBuiltinHover(offset, moduleInterface, slices);
@@ -195,9 +188,8 @@ function gpuHoverAt(
       if (expectedKind) {
         const exact = specialized.filter((candidate) =>
           candidate.kind === "expression" &&
-          context.input.expressions.find((expression) =>
-              expression.id === candidate.sourceId
-            )?.kind === expectedKind
+          context.input.expressions.find((expression) => expression.id === candidate.sourceId)
+              ?.kind === expectedKind
         );
         if (exact.length > 0) specialized = exact;
       }
@@ -211,11 +203,9 @@ function gpuHoverAt(
   }
   const unique = [...new Set(types)].sort();
   if (unique.length === 0) return null;
-  return unique.length === 1
-    ? hoverCode(`${label}: ${unique[0]}`)
-    : hoverCode(
-      `${label}\nGPU specializations:\n${unique.map((type) => `- ${type}`).join("\n")}`,
-    );
+  return unique.length === 1 ? hoverCode(`${label}: ${unique[0]}`) : hoverCode(
+    `${label}\nGPU specializations:\n${unique.map((type) => `- ${type}`).join("\n")}`,
+  );
 }
 
 function normalizedExpressionKind(node: SemanticTypedNode): string | undefined {
@@ -266,11 +256,9 @@ function gpuBuiltinHover(
   }
   const unique = [...new Set(signatures)].sort();
   if (unique.length === 0) return null;
-  return unique.length === 1
-    ? hoverCode(`${fact.name}: ${unique[0]}`)
-    : hoverCode(
-      `${fact.name}\nGPU specializations:\n${unique.map((item) => `- ${item}`).join("\n")}`,
-    );
+  return unique.length === 1 ? hoverCode(`${fact.name}: ${unique[0]}`) : hoverCode(
+    `${fact.name}\nGPU specializations:\n${unique.map((item) => `- ${item}`).join("\n")}`,
+  );
 }
 
 function matchingGpuOccurrences(

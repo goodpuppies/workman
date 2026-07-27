@@ -13,7 +13,18 @@ Deno.test("lsp server can launch validation in frontend v2 mode", async () => {
   const uri = pathToFileUri(main);
   const messages = await runLsp(
     [
-      { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          initializationOptions: {
+            typeInlayHints: false,
+            parameterInlayHints: false,
+            structuralInlayHints: true,
+          },
+        },
+      },
       {
         jsonrpc: "2.0",
         method: "textDocument/didOpen",

@@ -29,6 +29,7 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
 
   assertEquals(messages.find((message) => message.id === 1)?.result, {
     capabilities: {
+      positionEncoding: "utf-16",
       textDocumentSync: { openClose: true, change: 1, save: true },
       hoverProvider: true,
       definitionProvider: true,
@@ -37,7 +38,29 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
       documentHighlightProvider: true,
       renameProvider: { prepareProvider: true },
       documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
       completionProvider: { triggerCharacters: ["."] },
+      signatureHelpProvider: {
+        triggerCharacters: ["(", ",", " "],
+        retriggerCharacters: [","],
+      },
+      semanticTokensProvider: {
+        legend: {
+          tokenTypes: [
+            "namespace",
+            "type",
+            "typeParameter",
+            "parameter",
+            "variable",
+            "property",
+            "enumMember",
+            "function",
+          ],
+          tokenModifiers: ["declaration", "readonly", "defaultLibrary"],
+        },
+        full: true,
+      },
+      inlayHintProvider: true,
     },
     serverInfo: { name: "workman-lsp", version: "0.0.1" },
   });
@@ -49,6 +72,158 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
     | undefined;
   assertEquals(params?.version, 1);
   assertEquals(params?.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+});
+
+Deno.test("lsp server enforces lifecycle and returns standard JSON-RPC errors", async () => {
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "workspace/symbol", params: { query: "" } },
+    { jsonrpc: "2.0", id: 2, method: "initialize", params: {} },
+    { jsonrpc: "2.0", method: "initialized", params: {} },
+    { jsonrpc: "2.0", id: 3, method: "initialize", params: {} },
+    { jsonrpc: "2.0", id: 4, method: "workman/unknown", params: {} },
+    { jsonrpc: "2.0", id: 7 },
+    { jsonrpc: "2.0", id: 5, method: "shutdown", params: null },
+    { jsonrpc: "2.0", id: 6, method: "workspace/symbol", params: { query: "" } },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find(({ id }) => id === 1)?.error, {
+    code: -32002,
+    message: "server not initialized",
+  });
+  assertEquals(messages.find(({ id }) => id === 3)?.error, {
+    code: -32600,
+    message: "initialize may only be requested once",
+  });
+  assertEquals(messages.find(({ id }) => id === 4)?.error, {
+    code: -32601,
+    message: "method not found: workman/unknown",
+  });
+  assertEquals(messages.find(({ id }) => id === 7)?.error, {
+    code: -32600,
+    message: "invalid request",
+  });
+  assertEquals(messages.find(({ id }) => id === 5)?.result, null);
+  assertEquals(messages.find(({ id }) => id === 6)?.error, {
+    code: -32600,
+    message: "server has shut down",
+  });
+});
+
+Deno.test("lsp server cancels requests and rejects results from older document state", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    [
+      { jsonrpc: "2.0", id: 2, method: "workspace/symbol", params: { query: "" } },
+      { jsonrpc: "2.0", method: "$/cancelRequest", params: { id: 2 } },
+    ],
+    [
+      { jsonrpc: "2.0", id: 3, method: "workspace/symbol", params: { query: "" } },
+      {
+        jsonrpc: "2.0",
+        method: "textDocument/didOpen",
+        params: {
+          textDocument: {
+            uri,
+            languageId: "wm",
+            version: 1,
+            text: "let main = () => { 0 };",
+          },
+        },
+      },
+    ],
+    { jsonrpc: "2.0", id: 4, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find(({ id }) => id === 2)?.error, {
+    code: -32800,
+    message: "request cancelled",
+  });
+  assertEquals(messages.find(({ id }) => id === 3)?.error, {
+    code: -32801,
+    message: "document state changed during request",
+  });
+});
+
+Deno.test("ordinary type inlays can be disabled independently", async () => {
+  const messages = await runLsp(
+    [
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          initializationOptions: {
+            typeInlayHints: false,
+            parameterInlayHints: false,
+          },
+        },
+      },
+      { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+      { jsonrpc: "2.0", method: "exit", params: null },
+    ],
+  );
+
+  const capabilities = (messages.find((message) => message.id === 1)?.result as {
+    capabilities: { inlayHintProvider?: boolean };
+  }).capabilities;
+  assertEquals(capabilities.inlayHintProvider, undefined);
+});
+
+Deno.test("parameter-name inlays can remain enabled without type inlays", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let add = (left, right) => { left + right }; let result = add(1, 2);";
+  const messages = await runLsp([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        initializationOptions: {
+          typeInlayHints: false,
+          parameterInlayHints: true,
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/inlayHint",
+      params: {
+        textDocument: { uri },
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: source.length },
+        },
+      },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const capabilities = (messages.find((message) => message.id === 1)?.result as {
+    capabilities: { inlayHintProvider?: boolean };
+  }).capabilities;
+  assertEquals(capabilities.inlayHintProvider, true);
+  const hints = messages.find((message) => message.id === 2)?.result as {
+    label: string;
+    kind: number;
+  }[];
+  assertEquals(hints.map(({ label, kind }) => [label, kind]), [
+    ["left:", 2],
+    ["right:", 2],
+  ]);
 });
 
 Deno.test("lsp server clears diagnostics for a deleted watched file", async () => {
@@ -176,6 +351,186 @@ Deno.test("lsp server returns ordinary compiler-owned completion items", async (
   }]);
 });
 
+Deno.test("lsp server returns standard signature help", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source =
+    'let format = (count: Number, label: String) => { label }; let result = format(1, "x");';
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/signatureHelp",
+      params: {
+        textDocument: { uri },
+        position: { line: 0, character: source.indexOf('"x"') },
+      },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find((message) => message.id === 2)?.result, {
+    signatures: [{
+      label: "format(count: Number, label: String) => String",
+      parameters: [
+        { label: "count: Number" },
+        { label: "label: String" },
+      ],
+    }],
+    activeSignature: 0,
+    activeParameter: 1,
+  });
+});
+
+Deno.test("lsp server returns standard full semantic tokens", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let identity = (value) => { value }; let result = identity(1);";
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/semanticTokens/full",
+      params: { textDocument: { uri } },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const result = messages.find((message) => message.id === 2)?.result as {
+    data: number[];
+  };
+  assertEquals(result.data.slice(0, 5), [0, 4, "identity".length, 7, 1]);
+  assertEquals(result.data.length, 25);
+});
+
+Deno.test("lsp server returns symbols from active projects only", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const lib = `${dir}/lib.wm`;
+  const unrelated = `${dir}/unrelated.wm`;
+  await Deno.writeTextFile(
+    main,
+    'from "./lib.wm" import { helper }; let main = () => { helper };',
+  );
+  await Deno.writeTextFile(lib, "let helper = 1;");
+  await Deno.writeTextFile(unrelated, "let unrelated = 2;");
+  const uri = pathToFileUri(main);
+  const messages = await runLsp([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        rootUri: pathToFileUri(dir),
+        workspaceFolders: [{ uri: pathToFileUri(dir), name: "test" }],
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri,
+          languageId: "wm",
+          version: 1,
+          text: await Deno.readTextFile(main),
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "workspace/symbol",
+      params: { query: "" },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const symbols = messages.find((message) => message.id === 2)?.result as {
+    name: string;
+    kind: number;
+  }[];
+  assertEquals(symbols.some(({ name, kind }) => name === "main" && kind === 12), true);
+  assertEquals(symbols.some(({ name }) => name === "helper"), true);
+  assertEquals(symbols.some(({ name }) => name === "unrelated"), false);
+});
+
+Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = "let increment = (value) => { value + 1 };";
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: { textDocument: { uri, languageId: "wm", version: 1, text: source } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/inlayHint",
+      params: {
+        textDocument: { uri },
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: source.length },
+        },
+      },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const hints = messages.find((message) => message.id === 2)?.result as {
+    label: string;
+    kind: number;
+    position: { line: number; character: number };
+    tooltip: { kind: string; value: string };
+    paddingLeft: boolean;
+    paddingRight: boolean;
+    data: { kind: string; category: string };
+  }[];
+  assertEquals(hints, [
+    {
+      position: { line: 0, character: "let increment".length },
+      label: ": (Number) => Number",
+      kind: 1,
+      tooltip: { kind: "markdown", value: "```workman\n(Number) => Number\n```" },
+      paddingLeft: false,
+      paddingRight: true,
+      data: { kind: "workman.inferred-type", category: "binding" },
+    },
+    {
+      position: { line: 0, character: "let increment = (value".length },
+      label: ": Number",
+      kind: 1,
+      tooltip: { kind: "markdown", value: "```workman\nNumber\n```" },
+      paddingLeft: false,
+      paddingRight: true,
+      data: { kind: "workman.inferred-type", category: "parameter" },
+    },
+  ]);
+});
+
 Deno.test("lsp server prepares and returns standard workspace rename edits", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
@@ -300,6 +655,47 @@ Deno.test("lsp server clears diagnostics after didChange", async () => {
   assertEquals(first.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertEquals(second.version, 2);
   assertEquals(second.diagnostics, []);
+});
+
+Deno.test("lsp server revalidates on-disk source after didClose", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  await Deno.writeTextFile(main, "let value: String = 1;");
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri,
+          languageId: "wm",
+          version: 1,
+          text: 'let value: String = "editor";',
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didClose",
+      params: { textDocument: { uri } },
+    },
+    { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const publishes = messages.filter((message) =>
+    message.method === "textDocument/publishDiagnostics" &&
+    (message.params as { uri: string }).uri === uri
+  );
+  assertEquals((publishes[0].params as { diagnostics: unknown[] }).diagnostics, []);
+  assertEquals(
+    (publishes.at(-1)!.params as { diagnostics: { code: string }[] }).diagnostics.map(
+      ({ code }) => code,
+    ),
+    ["type.mismatch"],
+  );
 });
 
 Deno.test("lsp server clears diagnostics for files no longer in validation results", async () => {
@@ -577,10 +973,14 @@ Deno.test("lsp server returns null for hover misses", async () => {
   assertEquals(messages.find((message) => message.id === 2)?.result, null);
 });
 
-async function runLsp(steps: (RpcMessage | (() => Promise<void>))[]): Promise<RpcMessage[]> {
+async function runLsp(
+  steps: (RpcMessage | readonly RpcMessage[] | (() => Promise<void>))[],
+  env: Record<string, string> = {},
+): Promise<RpcMessage[]> {
   const child = new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-read", "--allow-env", "--allow-run", "src/lsp/server.ts"],
     cwd: fileURLToPath(new URL("../", import.meta.url)),
+    env,
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -588,12 +988,31 @@ async function runLsp(steps: (RpcMessage | (() => Promise<void>))[]): Promise<Rp
   const writer = child.stdin.getWriter();
   for (const step of steps) {
     if (typeof step === "function") await step();
+    else if (isMessageBatch(step)) await writer.write(encodeMessageBatch(step));
     else await writer.write(encodeMessage(step));
   }
   await writer.close();
   const output = await child.output();
   assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
   return decodeMessages(output.stdout).messages;
+}
+
+function isMessageBatch(
+  step: RpcMessage | readonly RpcMessage[],
+): step is readonly RpcMessage[] {
+  return Array.isArray(step);
+}
+
+function encodeMessageBatch(messages: readonly RpcMessage[]): Uint8Array {
+  const encoded = messages.map(encodeMessage);
+  const length = encoded.reduce((sum, message) => sum + message.length, 0);
+  const batch = new Uint8Array(length);
+  let offset = 0;
+  for (const message of encoded) {
+    batch.set(message, offset);
+    offset += message.length;
+  }
+  return batch;
 }
 
 function delay(ms: number): Promise<void> {

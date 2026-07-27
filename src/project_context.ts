@@ -121,12 +121,67 @@ export class ProjectContextRegistry {
     analyzeHead: AnalyzeProjectHead,
     analyzeDetached: AnalyzeDetachedDocument,
   ): Promise<ProjectContextSelection> {
+    return await this.#selectContext(
+      path,
+      configurationKey,
+      analyzeHead,
+      analyzeDetached,
+      true,
+    );
+  }
+
+  /** Select a snapshot for a non-document operation without extending its open lifetime. */
+  async contextForPath(
+    path: string,
+    configurationKey: string,
+    analyzeHead: AnalyzeProjectHead,
+    analyzeDetached: AnalyzeDetachedDocument,
+  ): Promise<ProjectContextSelection> {
+    return await this.#selectContext(
+      path,
+      configurationKey,
+      analyzeHead,
+      analyzeDetached,
+      false,
+    );
+  }
+
+  async #selectContext(
+    path: string,
+    configurationKey: string,
+    analyzeHead: AnalyzeProjectHead,
+    analyzeDetached: AnalyzeDetachedDocument,
+    rememberDocument: boolean,
+  ): Promise<ProjectContextSelection> {
     const file = canonicalPath(path);
     const documentKey = `${configurationKey}\0${file}`;
     const selectedKey = this.#documents.get(documentKey);
-    const selected = selectedKey
+    let selected = selectedKey
       ? this.#active.get(selectedKey) ?? this.#detached.get(selectedKey)
       : undefined;
+    if (!selected && selectedKey) {
+      const descriptor = parseContextKey(selectedKey);
+      if (descriptor?.configurationKey === configurationKey) {
+        const snapshot = descriptor.kind === "headed"
+          ? await analyzeHead(descriptor.path, configurationKey)
+          : await analyzeDetached(descriptor.path, configurationKey);
+        const restored = activeContext(
+          selectedKey,
+          configurationKey,
+          snapshot,
+          ++this.#clock,
+        );
+        if (restored.paths.has(file)) {
+          (descriptor.kind === "headed" ? this.#active : this.#detached).set(
+            selectedKey,
+            restored,
+          );
+          selected = restored;
+        } else {
+          this.#documents.delete(documentKey);
+        }
+      }
+    }
     if (selected?.paths.has(file)) {
       selected.lastUsed = ++this.#clock;
       return Object.freeze({
@@ -135,13 +190,11 @@ export class ProjectContextRegistry {
       });
     }
     const covering = [...this.#active.values()]
-      .filter((context) =>
-        context.configurationKey === configurationKey && context.paths.has(file)
-      )
+      .filter((context) => context.configurationKey === configurationKey && context.paths.has(file))
       .sort((left, right) => right.lastUsed - left.lastUsed)[0];
     if (covering) {
       covering.lastUsed = ++this.#clock;
-      this.#documents.set(documentKey, covering.key);
+      if (rememberDocument) this.#documents.set(documentKey, covering.key);
       return Object.freeze({ snapshot: covering.snapshot, reason: "active-reachable" });
     }
 
@@ -151,13 +204,13 @@ export class ProjectContextRegistry {
       const existing = this.#active.get(key);
       if (existing) {
         existing.lastUsed = ++this.#clock;
-        this.#documents.set(documentKey, existing.key);
+        if (rememberDocument) this.#documents.set(documentKey, existing.key);
         return Object.freeze({ snapshot: existing.snapshot, reason: "closest-head" });
       }
       const snapshot = await analyzeHead(head, configurationKey);
       const context = activeContext(key, configurationKey, snapshot, ++this.#clock);
       this.#active.set(key, context);
-      this.#documents.set(documentKey, key);
+      if (rememberDocument) this.#documents.set(documentKey, key);
       return Object.freeze({ snapshot, reason: "closest-head" });
     }
 
@@ -165,22 +218,62 @@ export class ProjectContextRegistry {
     const existing = this.#detached.get(key);
     if (existing) {
       existing.lastUsed = ++this.#clock;
-      this.#documents.set(documentKey, existing.key);
+      if (rememberDocument) this.#documents.set(documentKey, existing.key);
       return Object.freeze({ snapshot: existing.snapshot, reason: "detached" });
     }
     const snapshot = await analyzeDetached(file, configurationKey);
     const context = activeContext(key, configurationKey, snapshot, ++this.#clock);
     this.#detached.set(key, context);
-    this.#documents.set(documentKey, key);
+    if (rememberDocument) this.#documents.set(documentKey, key);
     return Object.freeze({ snapshot, reason: "detached" });
   }
 
   forgetDocument(path: string, configurationKey: string): void {
-    this.#documents.delete(`${configurationKey}\0${canonicalPath(path)}`);
+    const documentKey = `${configurationKey}\0${canonicalPath(path)}`;
+    const contextKey = this.#documents.get(documentKey);
+    this.#documents.delete(documentKey);
+    if (contextKey && ![...this.#documents.values()].includes(contextKey)) {
+      this.#active.delete(contextKey);
+      this.#detached.delete(contextKey);
+    }
+  }
+
+  /** Drop every snapshot whose forward closure contains a changed source path. */
+  invalidatePaths(paths: Iterable<string>): void {
+    const changed = new Set([...paths].map(canonicalPath));
+    const invalidKeys = new Set<string>();
+    for (const context of [...this.#active.values(), ...this.#detached.values()]) {
+      if ([...changed].some((path) => context.paths.has(path))) {
+        invalidKeys.add(context.key);
+      }
+    }
+    for (const key of invalidKeys) {
+      this.#active.delete(key);
+      this.#detached.delete(key);
+    }
   }
 
   activeSnapshots(): readonly ProjectSnapshot[] {
     return [...this.#active.values()].map((context) => context.snapshot);
+  }
+
+  /** Every semantic context currently selected by an open document, including detached files. */
+  openSnapshots(): readonly ProjectSnapshot[] {
+    const selected = new Set(this.#documents.values());
+    return [...this.#active.values(), ...this.#detached.values()]
+      .filter((context) => selected.has(context.key))
+      .map((context) => context.snapshot);
+  }
+
+  /** Release contexts created only for a transient non-document query. */
+  releaseUnselectedContexts(): void {
+    const selected = new Set(this.#documents.values());
+    for (const key of this.#active.keys()) {
+      if (!selected.has(key)) this.#active.delete(key);
+    }
+    for (const key of this.#detached.keys()) {
+      if (!selected.has(key)) this.#detached.delete(key);
+    }
   }
 
   contextsForPath(path: string): readonly ProjectSnapshot[] {
@@ -212,6 +305,27 @@ function contextKey(
   configurationKey: string,
 ): string {
   return `${kind}\0${configurationKey}\0${canonicalPath(path)}`;
+}
+
+function parseContextKey(
+  key: string,
+):
+  | Readonly<{
+    kind: "headed" | "detached";
+    configurationKey: string;
+    path: string;
+  }>
+  | undefined {
+  const first = key.indexOf("\0");
+  const second = first < 0 ? -1 : key.indexOf("\0", first + 1);
+  if (first < 0 || second < 0) return;
+  const kind = key.slice(0, first);
+  if (kind !== "headed" && kind !== "detached") return;
+  return Object.freeze({
+    kind,
+    configurationKey: key.slice(first + 1, second),
+    path: key.slice(second + 1),
+  });
 }
 
 function canonicalPath(path: string): string {

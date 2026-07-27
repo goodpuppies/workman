@@ -4,6 +4,35 @@ import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.t
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri, type ValidationResult } from "../src/lsp/validation.ts";
 
+Deno.test("rpc decoding preserves fragments and reports malformed requests", () => {
+  const valid = encodeMessage({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "example",
+    params: { text: "λ" },
+  });
+  const split = Math.floor(valid.length / 2);
+  const first = decodeMessages(valid.slice(0, split));
+  assertEquals(first.messages, []);
+  assertEquals(first.errors, []);
+  const completed = decodeMessages(concatBytes(first.rest, valid.slice(split)));
+  assertEquals(completed.messages.map(({ id, method }) => ({ id, method })), [{
+    id: 1,
+    method: "example",
+  }]);
+
+  const decoded = decodeMessages(
+    concatBytes(
+      framedText("{"),
+      framedText('{"jsonrpc":"2.0","id":7,"method":42}'),
+    ),
+  );
+  assertEquals(decoded.errors, [
+    { id: null, code: -32700, message: "parse error" },
+    { id: 7, code: -32600, message: "invalid request" },
+  ]);
+});
+
 Deno.test("document store exposes source overrides for open files", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
@@ -43,8 +72,7 @@ Deno.test("lsp validation returns diagnostics for unsaved files and clears them"
 Deno.test("lsp validation warns when GPU hover types cannot be elaborated", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
-  const source =
-    "let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) }; " +
+  const source = "let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) }; " +
     "let fragment = Gpu.fragment(shade);";
   await Deno.writeTextFile(main, source);
 
@@ -69,8 +97,7 @@ Deno.test("lsp validation warns when GPU hover types cannot be elaborated", asyn
 Deno.test("lsp validation publishes source-local GPU ownership errors", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
-  const source =
-    "let outside = (x) => { x }; " +
+  const source = "let outside = (x) => { x }; " +
     "let shade = (coord) => { @gpu; let (x, _y) = coord; (outside(x), 0.0, 0.0, 1.0) }; " +
     "let fragment = Gpu.fragment(shade);";
   await Deno.writeTextFile(main, source);
@@ -473,4 +500,15 @@ function charRange(source: string, text: string) {
     start: { line: 0, character: start },
     end: { line: 0, character: start + text.length },
   };
+}
+
+function framedText(body: string): Uint8Array {
+  return new TextEncoder().encode(`Content-Length: ${body.length}\r\n\r\n${body}`);
+}
+
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+  const bytes = new Uint8Array(left.length + right.length);
+  bytes.set(left);
+  bytes.set(right, left.length);
+  return bytes;
 }

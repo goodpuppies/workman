@@ -11,6 +11,7 @@ import {
 import { lineColToOffset, lineStarts, type SourceSpan } from "../source.ts";
 import { type LspRange, spanRange } from "./range.ts";
 import { semanticDocumentContext, semanticSourceForPath } from "./semantic_context.ts";
+import type { SemanticService } from "./semantic_service.ts";
 import { pathToFileUri } from "./uri.ts";
 
 export type LspLocation = { uri: string; range: LspRange };
@@ -21,17 +22,16 @@ export async function definitionAt(
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<LspLocation | null> {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return null;
   const { project, moduleInterface, source } = context;
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(source));
   const occurrence = occurrenceAt(moduleInterface, offset);
   if (!occurrence) return null;
   const definition = semanticDefinitionsForTarget(project, occurrence.target)[0];
-  return definition
-    ? await location(definition.path, definition.span, sourceOverrides)
-    : null;
+  return definition ? await location(definition.path, definition.span, sourceOverrides) : null;
 }
 
 export async function referencesAt(
@@ -40,8 +40,9 @@ export async function referencesAt(
   includeDeclaration: boolean,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<LspLocation[]> {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return [];
   const { project, moduleInterface, source } = context;
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(source));
@@ -52,9 +53,7 @@ export async function referencesAt(
   const locations = await Promise.all(
     occurrences.map(async ({ moduleId, occurrence }) => {
       const owner = project.interfaces.get(moduleId);
-      return owner
-        ? await location(owner.path, occurrence.span, sourceOverrides)
-        : null;
+      return owner ? await location(owner.path, occurrence.span, sourceOverrides) : null;
     }),
   );
   return locations.filter((item): item is LspLocation => item !== null);
@@ -65,8 +64,9 @@ export async function typeDefinitionAt(
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<LspLocation[]> {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return [];
   const offset = lineColToOffset(
     position.line + 1,
@@ -89,8 +89,9 @@ export async function documentHighlightsAt(
   position: { line: number; character: number },
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<LspDocumentHighlight[]> {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return [];
   const offset = lineColToOffset(
     position.line + 1,
@@ -121,9 +122,7 @@ async function location(
   sourceOverrides: Map<string, string>,
 ): Promise<LspLocation | null> {
   const source = await semanticSourceForPath(path, sourceOverrides);
-  return source === undefined
-    ? null
-    : { uri: pathToFileUri(path), range: spanRange(source, span) };
+  return source === undefined ? null : { uri: pathToFileUri(path), range: spanRange(source, span) };
 }
 
 function spanWidth(span: SourceSpan): number {

@@ -47,6 +47,7 @@ import {
 import {
   immutableCopy,
   type ProjectSnapshot,
+  type ProjectSnapshotContext,
   type SemanticGpuElaboratedSlice,
   type SemanticGpuElaboration,
 } from "./module_interface.ts";
@@ -500,10 +501,26 @@ export async function analyzeFile(
   input: string,
   options: ModuleGraphOptions = {},
 ): Promise<ProgramAnalysis> {
+  return await analyzeStrictSnapshot(input, options, {});
+}
+
+/** Strict analysis for an uncovered document without promoting it to a headed project. */
+export async function analyzeStrictDetachedFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<ProgramAnalysis> {
+  return await analyzeStrictSnapshot(input, options, { kind: "detached" });
+}
+
+async function analyzeStrictSnapshot(
+  input: string,
+  options: ModuleGraphOptions,
+  context: ProjectSnapshotContext,
+): Promise<ProgramAnalysis> {
   assertCompilerFrontendMode(options.frontend);
   const graph = await loadModuleGraph(input, options);
   try {
-    return buildProgramAnalysis(graph, await analyzeModuleGraph(graph));
+    return buildProgramAnalysis(graph, await analyzeModuleGraph(graph), context);
   } catch (error) {
     if (error instanceof StagedAnalysisError) {
       throw new ModuleAnalysisError(

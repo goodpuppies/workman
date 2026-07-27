@@ -7,29 +7,55 @@ export function renderSemanticType(
   id: SemanticTypeId,
   dropReceiver = false,
 ): string {
+  return renderSemanticTypeWithLimits(moduleInterface, id, dropReceiver);
+}
+
+/** Concise structured rendering for inline labels; full rendering remains available for tooltips. */
+export function renderSemanticTypeCompact(
+  moduleInterface: ModuleInterface,
+  id: SemanticTypeId,
+): string {
+  return renderSemanticTypeWithLimits(moduleInterface, id, false, {
+    maxDepth: 4,
+    maxItems: 4,
+  });
+}
+
+function renderSemanticTypeWithLimits(
+  moduleInterface: ModuleInterface,
+  id: SemanticTypeId,
+  dropReceiver: boolean,
+  limits?: Readonly<{ maxDepth: number; maxItems: number }>,
+): string {
   const variables = new Map<number, string>();
   let nextVariable = 0;
-  const render = (currentId: SemanticTypeId): string => {
+  const render = (currentId: SemanticTypeId, depth = 0): string => {
     const type = moduleInterface.semanticTypes[currentId];
     if (!type) return `?type#${currentId}`;
-    return renderSemanticShape(type.shape, render, (variable) => {
+    if (
+      limits && depth >= limits.maxDepth &&
+      type.shape.kind !== "variable" &&
+      type.shape.kind !== "ffi" &&
+      type.shape.kind !== "primitive"
+    ) return "…";
+    return renderSemanticShape(type.shape, (child) => render(child, depth + 1), (variable) => {
       const existing = variables.get(variable);
       if (existing) return existing;
       const name = `'${String.fromCharCode(97 + nextVariable++)}`;
       variables.set(variable, name);
       return name;
-    });
+    }, limits?.maxItems);
   };
   const type = moduleInterface.semanticTypes[id];
   if (!type || !dropReceiver || type.shape.kind !== "function") return render(id);
   if (type.shape.params.length === 1) {
     const parameter = moduleInterface.semanticTypes[type.shape.params[0]]?.shape;
     if (parameter?.kind === "tuple") {
-      const tuple = `(${parameter.items.slice(1).map(render).join(", ")})`;
+      const tuple = `(${parameter.items.slice(1).map((item) => render(item)).join(", ")})`;
       return `(${tuple}) => ${render(type.shape.result)}`;
     }
   }
-  return `(${type.shape.params.slice(1).map(render).join(", ")}) => ${
+  return `(${type.shape.params.slice(1).map((item) => render(item)).join(", ")}) => ${
     render(type.shape.result)
   }`;
 }
@@ -38,7 +64,12 @@ function renderSemanticShape(
   shape: SemanticTypeShape,
   render: (id: SemanticTypeId) => string,
   variableName: (variable: number) => string,
+  maxItems = Number.POSITIVE_INFINITY,
 ): string {
+  const renderItems = (items: readonly SemanticTypeId[]): string[] => [
+    ...items.slice(0, maxItems).map(render),
+    ...(items.length > maxItems ? ["…"] : []),
+  ];
   switch (shape.kind) {
     case "variable":
       return shape.name ?? variableName(shape.variable);
@@ -47,18 +78,19 @@ function renderSemanticShape(
     case "primitive":
       return shape.name;
     case "function":
-      return `(${shape.params.map(render).join(", ")}) => ${render(shape.result)}`;
+      return `(${renderItems(shape.params).join(", ")}) => ${render(shape.result)}`;
     case "tuple":
-      return `(${shape.items.map(render).join(", ")})`;
+      return `(${renderItems(shape.items).join(", ")})`;
     case "structural-record":
       return `{ ${
-        shape.fields.map((field) => `${field.name}: ${render(field.type)}`).join(", ")
+        [
+          ...shape.fields.slice(0, maxItems).map((field) => `${field.name}: ${render(field.type)}`),
+          ...(shape.fields.length > maxItems ? ["…"] : []),
+        ].join(", ")
       } }`;
     case "named": {
       const name = shape.name.startsWith("__Deep_") ? "Js.Object" : shape.name;
-      return shape.args.length === 0
-        ? name
-        : `${name}<${shape.args.map(render).join(", ")}>`;
+      return shape.args.length === 0 ? name : `${name}<${renderItems(shape.args).join(", ")}>`;
     }
   }
 }

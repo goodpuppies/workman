@@ -2,6 +2,7 @@ import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import type { SemanticTopLevelDeclaration } from "../module_interface.ts";
 import { type LspRange, spanRange } from "./range.ts";
 import { semanticDocumentContext } from "./semantic_context.ts";
+import type { SemanticService } from "./semantic_service.ts";
 
 export type LspDocumentSymbol = {
   name: string;
@@ -15,8 +16,9 @@ export async function documentSymbols(
   uri: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
+  service?: SemanticService,
 ): Promise<LspDocumentSymbol[]> {
-  const context = await semanticDocumentContext(uri, sourceOverrides, options);
+  const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return [];
   return context.moduleInterface.declarations.map((declaration) =>
     documentSymbol(context.source, declaration)

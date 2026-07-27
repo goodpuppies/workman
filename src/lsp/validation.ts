@@ -1,9 +1,5 @@
 import { normalize, resolve } from "node:path";
-import {
-  analyzeFile,
-  elaborateProjectGpuSemantics,
-  ModuleAnalysisError,
-} from "../compiler.ts";
+import { analyzeFile, elaborateProjectGpuSemantics, ModuleAnalysisError } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import {
   classifyDiagnostic,
@@ -24,6 +20,7 @@ import { WmslangNumericDiagnosticError } from "../wmslang/v2_loader.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
 import { semanticSourceForPath } from "./semantic_context.ts";
+import type { SemanticService } from "./semantic_service.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type ValidationResult = {
@@ -51,6 +48,7 @@ export type LspRelatedInformation = {
 export type ValidationOptions = {
   frontendV2ParseCache?: FrontendV2ParseCache;
   documentVersion?: (uri: string) => number | undefined;
+  semanticService?: SemanticService;
   gpuTypeElaborator?: (
     project: ProjectSnapshot,
   ) => Promise<unknown>;
@@ -63,76 +61,116 @@ export async function validateUri(
   validationOptions: ValidationOptions = {},
 ): Promise<ValidationResult[]> {
   const entryPath = normalize(resolve(fileUriToPath(uri)));
+  const serviceContext = validationOptions.semanticService
+    ? await validationOptions.semanticService.documentContext(uri, false)
+    : null;
+  if (serviceContext) {
+    const strictFailure = validationOptions.semanticService?.strictFailure(
+      serviceContext.project,
+    );
+    if (strictFailure !== undefined) {
+      return await validationResultsForFailure(
+        strictFailure,
+        entryPath,
+        sourceOverrides,
+      );
+    }
+    return await validationResultsForProject(
+      serviceContext.project,
+      sourceOverrides,
+      options,
+      validationOptions,
+    );
+  }
   try {
     const analysis = await analyzeFile(entryPath, { ...options, sourceOverrides });
-    const frontendV2 = options.frontend === "v2"
-      ? await loadFrontendV2(options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl)
-      : undefined;
-    const project = analysis.projectSnapshot;
-    const gpuWarning = await unresolvedGpuTypeWarning(
-      project,
-      validationOptions.gpuTypeElaborator ?? elaborateProjectGpuSemantics,
+    return await validationResultsForProject(
+      analysis.projectSnapshot,
       sourceOverrides,
+      options,
+      validationOptions,
     );
-    return await Promise.all([...project.interfaces.values()].map(async (moduleInterface) => {
-      const diagnosticUri = pathToFileUri(moduleInterface.path);
-      const source = await semanticSourceForPath(moduleInterface.path, sourceOverrides) ?? "";
-      return {
-        uri: diagnosticUri,
-        diagnostics: [
-          ...structuralDiagnosticsFor(
-            frontendV2,
-            source,
-            diagnosticUri,
-            validationOptions,
-          ),
-          ...diagnosticsFor(
-            moduleInterface.diagnostics,
-            source,
-            diagnosticUri,
-          ),
-          ...(gpuWarning && gpuWarning.path === moduleInterface.path
-            ? [gpuWarning.diagnostic]
-            : []),
-        ],
-      };
-    }));
   } catch (error) {
-    if (error instanceof ModuleAnalysisError) {
-      const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
-      const diagnosticUri = pathToFileUri(error.path);
-      const result = {
-        uri: diagnosticUri,
-        diagnostics: [
-          ...errorDiagnostics(error.originalError, error.source, diagnosticUri),
-          ...error.diagnostics.map((diagnostic) =>
-            lspDiagnostic(diagnostic, error.source, diagnosticUri)
-          ),
-        ],
-      };
-      return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
-    }
-    if (error instanceof ModuleGraphDiagnosticError) {
-      const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
-      const diagnosticUri = pathToFileUri(error.path);
-      const result = {
-        uri: diagnosticUri,
-        diagnostics: [errorDiagnostic(error.originalError, error.source, diagnosticUri)],
-      };
-      return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
-    }
-    const canonical = canonicalPath(entryPath, sourceOverrides);
-    return [{
-      uri: pathToFileUri(canonical),
+    return await validationResultsForFailure(error, entryPath, sourceOverrides);
+  }
+}
+
+async function validationResultsForFailure(
+  error: unknown,
+  entryPath: string,
+  sourceOverrides: Map<string, string>,
+): Promise<ValidationResult[]> {
+  if (error instanceof ModuleAnalysisError) {
+    const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
+    const diagnosticUri = pathToFileUri(error.path);
+    const result = {
+      uri: diagnosticUri,
       diagnostics: [
-        ...errorDiagnostics(
-          error,
-          await sourceForPath(canonical, sourceOverrides),
-          pathToFileUri(canonical),
+        ...errorDiagnostics(error.originalError, error.source, diagnosticUri),
+        ...error.diagnostics.map((diagnostic) =>
+          lspDiagnostic(diagnostic, error.source, diagnosticUri)
         ),
       ],
-    }];
+    };
+    return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
   }
+  if (error instanceof ModuleGraphDiagnosticError) {
+    const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
+    const diagnosticUri = pathToFileUri(error.path);
+    const result = {
+      uri: diagnosticUri,
+      diagnostics: [errorDiagnostic(error.originalError, error.source, diagnosticUri)],
+    };
+    return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
+  }
+  const canonical = canonicalPath(entryPath, sourceOverrides);
+  return [{
+    uri: pathToFileUri(canonical),
+    diagnostics: [
+      ...errorDiagnostics(
+        error,
+        await sourceForPath(canonical, sourceOverrides),
+        pathToFileUri(canonical),
+      ),
+    ],
+  }];
+}
+
+async function validationResultsForProject(
+  project: ProjectSnapshot,
+  sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions,
+  validationOptions: ValidationOptions,
+): Promise<ValidationResult[]> {
+  const frontendV2 = options.frontend === "v2"
+    ? await loadFrontendV2(options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl)
+    : undefined;
+  const gpuWarning = await unresolvedGpuTypeWarning(
+    project,
+    validationOptions.gpuTypeElaborator ?? elaborateProjectGpuSemantics,
+    sourceOverrides,
+  );
+  return await Promise.all([...project.interfaces.values()].map(async (moduleInterface) => {
+    const diagnosticUri = pathToFileUri(moduleInterface.path);
+    const source = await semanticSourceForPath(moduleInterface.path, sourceOverrides) ?? "";
+    return {
+      uri: diagnosticUri,
+      diagnostics: [
+        ...structuralDiagnosticsFor(
+          frontendV2,
+          source,
+          diagnosticUri,
+          validationOptions,
+        ),
+        ...diagnosticsFor(
+          moduleInterface.diagnostics,
+          source,
+          diagnosticUri,
+        ),
+        ...(gpuWarning && gpuWarning.path === moduleInterface.path ? [gpuWarning.diagnostic] : []),
+      ],
+    };
+  }));
 }
 
 async function unresolvedGpuTypeWarning(
@@ -145,10 +183,12 @@ async function unresolvedGpuTypeWarning(
     .at(0)?.input;
   if (!interfaceInput || interfaceInput.root.functionId === -1) return undefined;
   const sources = new Map(
-    await Promise.all([...project.interfaces.values()].map(async (moduleInterface) => [
-      moduleInterface.path,
-      await semanticSourceForPath(moduleInterface.path, sourceOverrides) ?? "",
-    ] as const)),
+    await Promise.all([...project.interfaces.values()].map(async (moduleInterface) =>
+      [
+        moduleInterface.path,
+        await semanticSourceForPath(moduleInterface.path, sourceOverrides) ?? "",
+      ] as const
+    )),
   );
   const headPath = project.interfaces.get(project.head)?.path ?? "<module>";
   try {

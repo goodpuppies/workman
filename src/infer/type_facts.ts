@@ -16,6 +16,7 @@ import type { StaticEnv } from "./environment.ts";
 
 export type TypeFacts = {
   expressions: Map<Expr, TypeFact>;
+  expectedExpressions: Map<Expr, Ty>;
   namespaceValues: Map<Expr, string>;
   patterns: Map<Pattern, TypeFact>;
   patternTypes: Map<Pattern, Ty>;
@@ -155,6 +156,7 @@ export type FfiConsumedUse = {
 export function createTypeFacts(): TypeFacts {
   return {
     expressions: new Map(),
+    expectedExpressions: new Map(),
     namespaceValues: new Map(),
     patterns: new Map(),
     patternTypes: new Map(),
@@ -298,6 +300,11 @@ export function recordExprFact(
   fact: Partial<TypeFact> & Pick<TypeFact, "subject">,
 ) {
   facts.expressions.set(expr, mergeFact(facts.expressions.get(expr), fact));
+}
+
+/** Record a type required by the static semantics at an expression site. */
+export function recordExpectedExprType(facts: TypeFacts, expr: Expr, type: Ty) {
+  facts.expectedExpressions.set(expr, type);
 }
 
 export function recordPatternFact(

@@ -10,9 +10,9 @@ import {
   quoteType,
   show,
   tuple,
-  typeInfoByName,
   type Ty,
   type TypeEnv,
+  typeInfoByName,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
 import {
@@ -25,7 +25,7 @@ import {
 import { callArg } from "./shared.ts";
 import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
-import { recordConsumedFfiUse, recordExprFact } from "./type_facts.ts";
+import { recordConsumedFfiUse, recordExpectedExprType, recordExprFact } from "./type_facts.ts";
 
 export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
@@ -38,6 +38,17 @@ export function inferCall(
   const calleeProvenance = expr.callee.kind === "Var"
     ? (env.get(expr.callee.name)?.provenance ?? [])
     : [];
+  const calleeFn = prune(callee);
+  if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
+    const expectedArg = prune(calleeFn.params[0]);
+    if (expr.args.length === 1) {
+      recordExpectedExprType(facts, expr.args[0], expectedArg);
+    } else if (expectedArg.tag === "tuple" && expectedArg.items.length === expr.args.length) {
+      expr.args.forEach((arg, index) =>
+        recordExpectedExprType(facts, arg, expectedArg.items[index])
+      );
+    }
+  }
   const argTypes = expr.args.map((a) => inferExpr(a, context));
   for (const argType of argTypes) {
     recordConsumedFfiUse(facts, argType, {
@@ -47,7 +58,6 @@ export function inferCall(
     });
   }
   const arg = callArg(argTypes);
-  const calleeFn = prune(callee);
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
     const argExpr = expr.args.length === 1 ? expr.args[0] : expr;
     const calleeRelated = callCalleeRelated(expr.callee, calleeFn);

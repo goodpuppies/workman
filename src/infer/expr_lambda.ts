@@ -21,6 +21,7 @@ import { patternBinders } from "./patterns.ts";
 import { constrainAt } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import {
+  recordExpectedExprType,
   recordTypeExpressionFact,
   recordTypeReferenceFact,
   recordTypeVariableFact,
@@ -84,6 +85,8 @@ export function inferLambdaTy(
       });
     }
   });
+  const expectedBody = returnAnnotations.at(-1)?.type;
+  if (expectedBody) recordExpectedExprType(facts, expr.body, expectedBody);
   const body = inferExpr(
     expr.body,
     deriveInferContext(context, {

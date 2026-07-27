@@ -2,10 +2,8 @@ import { normalize, resolve } from "node:path";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { runtime } from "../io.ts";
 import { resolveModuleImportPath } from "../module_graph.ts";
-import {
-  directWorkmanImportSpecifiers,
-  hasTopLevelMainBinding,
-} from "./import_scan.ts";
+import { ReverseImportDiscoveryIndex } from "../project_context.ts";
+import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./import_scan.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type InitializeParams = {
@@ -15,6 +13,7 @@ export type InitializeParams = {
 };
 
 export class ProjectIndex {
+  readonly discovery = new ReverseImportDiscoveryIndex();
   #roots = new Set<string>();
   #dependencies = new Map<string, Set<string>>();
   #dependents = new Map<string, Set<string>>();
@@ -92,6 +91,24 @@ export class ProjectIndex {
     for (const dep of previousDeps) this.#dependents.get(dep)?.delete(normalized);
 
     const discovery = await directDiscovery(normalized, sourceOverrides, options);
+    if (discovery.source === undefined) {
+      this.discovery.remove(normalized);
+    } else {
+      await this.discovery.update(
+        normalized,
+        discovery.source,
+        async (referrer, specifier) => {
+          try {
+            return await resolveModuleImportPath(referrer, specifier, {
+              ...options,
+              sourceOverrides,
+            });
+          } catch {
+            return undefined;
+          }
+        },
+      );
+    }
     const deps = discovery.dependencies;
     this.#dependencies.set(normalized, deps);
     if (discovery.main) this.#heads.add(normalized);
@@ -161,7 +178,7 @@ async function directDiscovery(
   path: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
-): Promise<{ dependencies: Set<string>; main: boolean }> {
+): Promise<{ source?: string; dependencies: Set<string>; main: boolean }> {
   try {
     const source = sourceOverrides.get(path) ?? await runtime.readTextFile(path);
     const dependencies = new Set<string>();
@@ -174,9 +191,9 @@ async function directDiscovery(
         // Missing imports are reported by validation; the index remains usable.
       }
     }
-    return { dependencies, main: hasTopLevelMainBinding(source) };
+    return { source, dependencies, main: hasTopLevelMainBinding(source) };
   } catch {
-    return { dependencies: new Set(), main: false };
+    return { source: undefined, dependencies: new Set(), main: false };
   }
 }
 

@@ -33,6 +33,7 @@ import { callArg } from "./shared.ts";
 import {
   originForScheme,
   recordBindingFact,
+  recordExpectedExprType,
   recordPatternFact,
   recordPatternType,
   recordTypeDeclarationFact,
@@ -414,6 +415,17 @@ function inferRecursiveLet(
   });
   decl.bindings.forEach((b, i) => {
     const name = (b.pattern as { name: string }).name;
+    const annotation = b.annotation
+      ? typeFromAst(b.annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, decl.node),
+      })
+      : undefined;
+    if (annotation) recordExpectedExprType(facts, b.value, annotation);
     constrainBinding(
       name,
       placeholders[i],
@@ -421,19 +433,13 @@ function inferRecursiveLet(
       b.value,
       b.pattern.node,
       types,
+      facts,
       provenance,
     );
-    if (b.annotation) {
+    if (annotation) {
       constrainAt(
         placeholders[i],
-        typeFromAst(b.annotation, typeEnv, annotationVars, {
-          strEnv,
-          onResolveName: (expression, resolved, qualifier) =>
-            recordTypeReferenceFact(facts, expression, resolved, qualifier),
-          onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
-          onResolveVariable: (expression, type) =>
-            recordTypeVariableFact(facts, expression, type, decl.node),
-        }),
+        annotation,
         b.value,
         undefined,
         [],

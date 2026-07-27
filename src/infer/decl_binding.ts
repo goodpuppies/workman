@@ -30,6 +30,7 @@ import {
 import { inferRecordExpr } from "./records.ts";
 import {
   recordConsumedFfiUse,
+  recordExpectedExprType,
   recordTypeExpressionFact,
   recordTypeReferenceFact,
   recordTypeVariableFact,
@@ -173,6 +174,7 @@ export function inferBinding(
       })
       : undefined;
     const inferRecordValue = (value: Expr, expected?: Ty): Ty => {
+      if (expected) recordExpectedExprType(facts, value, expected);
       if (expected && value.kind === "Record") {
         return inferRecordExpr(
           value,
@@ -186,6 +188,7 @@ export function inferBinding(
       }
       return inferExpr(value, context);
     };
+    if (annotated) recordExpectedExprType(facts, b.value, annotated);
     const t = annotated && b.value.kind === "Record"
       ? inferRecordExpr(
         b.value,
@@ -327,6 +330,7 @@ export function constrainBinding(
   value: Expr,
   bindingNode: Binding["pattern"]["node"],
   types: Map<Expr, Ty>,
+  facts: InferContext["facts"],
   provenance: TypeProvenance,
 ) {
   const expectedFn = prune(expected);
@@ -359,6 +363,7 @@ export function constrainBinding(
       );
       const evidence = recursiveResultEvidence(name, value, expectedFn.result, types);
       const bodyResult = resultExpr(value.body);
+      recordExpectedExprType(facts, bodyResult, expectedFn.result);
       const accidentalMatchFn = findAccidentalMatchFnInFunction(value.body);
       const trailingStatementLikeResult = hasTrailingStatementLikeResult(value.body);
       const listElementVsListHint = recursiveListElementVsListHint(
@@ -437,6 +442,7 @@ export function constrainBinding(
       return;
     }
   }
+  recordExpectedExprType(facts, resultExpr(value), expected);
   constrainAt(expected, actual, resultExpr(value), undefined, [], provenance, {
     message: "binding value",
     node: value.node,

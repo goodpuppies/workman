@@ -254,8 +254,10 @@ both and provides a useful end-to-end regression.
 4. Spreading an unconstrained parameter after field evidence selects or constructs the correct
    record type.
 5. An actually non-record spread still fails.
-6. Ambiguous records sharing the same field names produce an actionable ambiguity diagnostic rather
-   than dropping constraints.
+6. Ambiguous records sharing the same field names deterministically select the first visible
+   nominal identity for semantic facts and produce an actionable warning asking for an annotation,
+   while unresolved field constraints remain structural until the full shape or an annotation
+   selects a nominal record.
 
 ### Exhaustiveness
 
