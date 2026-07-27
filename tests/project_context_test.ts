@@ -116,6 +116,23 @@ Deno.test("[module update A613/A615] reverse discovery stops at the closest head
   assertEquals(discovery.closestHead("/ws/outer.wm"), "/ws/outer.wm");
 });
 
+Deno.test("reverse discovery prefers a directory-local head at equal import distance", async () => {
+  const files = new Map<string, string>([
+    [
+      "/ws/orbital/main.wm",
+      'from "./color.wm" import { Color }; let main = () => { Color };',
+    ],
+    [
+      "/ws/colony/main3d.wm",
+      'from "../orbital/color.wm" import { Color }; let main = () => { Color };',
+    ],
+    ["/ws/orbital/color.wm", "record Color = { r: Number };"],
+  ]);
+  const discovery = await discoveryIndex(files);
+
+  assertEquals(discovery.closestHead("/ws/orbital/color.wm"), "/ws/orbital/main.wm");
+});
+
 Deno.test("[module update A612] project configuration is part of active context identity", async () => {
   const files = new Map([["/ws/main.wm", "let main = () => { 0 };"]]);
   const discovery = await discoveryIndex(files);
@@ -194,6 +211,50 @@ Deno.test("[module update A612] changed closures invalidate and closed contexts 
 
   registry.forgetDocument("/ws/note.wm", configuration);
   assertEquals(registry.openSnapshots().some((snapshot) => snapshot === detached.snapshot), false);
+});
+
+Deno.test("closing a project's anchor reselects its remaining open documents", async () => {
+  const files = new Map<string, string>([
+    [
+      "/ws/run/main.wm",
+      'from "../orbital/bridge.wm" import { bridge }; let main = () => { bridge };',
+    ],
+    [
+      "/ws/orbital/main.wm",
+      'from "./vec.wm" import { value }; let main = () => { value };',
+    ],
+    ["/ws/orbital/bridge.wm", 'from "./vec.wm" import { value }; let bridge = value;'],
+    ["/ws/orbital/vec.wm", "let value = 1;"],
+  ]);
+  const discovery = await discoveryIndex(files);
+  const registry = new ProjectContextRegistry(discovery);
+  const analyzeHead = (head: string) => analyzeRecoveredVirtual(head, files);
+  const analyzeDetached = (path: string) => analyzeDetachedVirtual(path, files);
+
+  const bridge = await registry.openDocument(
+    "/ws/orbital/bridge.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  const covered = await registry.openDocument(
+    "/ws/orbital/vec.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  assertStrictEquals(covered.snapshot, bridge.snapshot);
+
+  registry.forgetDocument("/ws/orbital/bridge.wm", configuration);
+  const reselected = await registry.openDocument(
+    "/ws/orbital/vec.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+
+  assertNotStrictEquals(reselected.snapshot, bridge.snapshot);
+  assertEquals(reselected.snapshot.head, moduleId("/ws/orbital/main.wm"));
 });
 
 Deno.test("[module update G21a] overlapping project snapshots isolate every semantic artifact", async () => {

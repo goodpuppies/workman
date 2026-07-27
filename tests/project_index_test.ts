@@ -64,4 +64,7 @@ Deno.test("[module update A612-A615] LSP project indexing enrolls only active fo
     await index.affectedUrisForWatchedFiles([pathToFileUri(unrelated)], new Map()),
     [],
   );
+
+  index.forgetOpenFile(pathToFileUri(main));
+  assertEquals(index.fallbackUri(pathToFileUri(shared)), pathToFileUri(libraryTest));
 });

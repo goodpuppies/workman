@@ -6,6 +6,7 @@ import {
   MarkdownString,
   StatusBarAlignment,
   type TextEditor,
+  Uri,
   window,
   workspace,
 } from "vscode";
@@ -16,7 +17,11 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { Trace } from "vscode-jsonrpc";
-import { denoServerConfig, nodeServerConfig, resolveConfiguredPath } from "./server_options";
+import {
+  denoServerConfig,
+  nodeServerConfig,
+  resolveConfiguredPath,
+} from "./server_options";
 
 let client: LanguageClient | undefined;
 
@@ -41,13 +46,15 @@ export async function activate(context: ExtensionContext) {
 
   // Displays which project head owns the active file, so head selection and
   // stability (one `main` head plus its reachable graph) are observable in real use.
-  const projectStatusItem = window.createStatusBarItem(StatusBarAlignment.Left, 90);
-  projectStatusItem.name = "Workman Project";
-  context.subscriptions.push(projectStatusItem);
+  const projectStatusItems = [createProjectStatusItem(90)];
+  context.subscriptions.push(...projectStatusItems);
 
   const updateProjectStatus = async (editor: TextEditor | undefined) => {
-    if (!editor || editor.document.languageId !== "wm" || !client || !client.isRunning()) {
-      projectStatusItem.hide();
+    if (
+      !editor || editor.document.languageId !== "wm" || !client ||
+      !client.isRunning()
+    ) {
+      projectStatusItems.forEach((item) => item.hide());
       return;
     }
     try {
@@ -55,13 +62,15 @@ export async function activate(context: ExtensionContext) {
         "workman/projectStatus",
         { textDocument: { uri: editor.document.uri.toString() } },
       );
-      renderProjectStatus(projectStatusItem, status);
+      renderProjectStatus(projectStatusItems, status, context);
     } catch {
-      projectStatusItem.hide();
+      projectStatusItems.forEach((item) => item.hide());
     }
   };
   context.subscriptions.push(
-    window.onDidChangeActiveTextEditor((editor) => void updateProjectStatus(editor)),
+    window.onDidChangeActiveTextEditor((editor) =>
+      void updateProjectStatus(editor)
+    ),
   );
 
   const start = async () => {
@@ -74,8 +83,10 @@ export async function activate(context: ExtensionContext) {
       return;
     }
 
-    const denoPath = workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
-    const frontendMode = workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
+    const denoPath =
+      workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
+    const frontendMode =
+      workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
     const frontendV2ModulePath = workspace.getConfiguration("workman").get<
       string
     >(
@@ -151,7 +162,9 @@ export async function activate(context: ExtensionContext) {
           const hover = await next(document, position, token);
           outputChannel.appendLine(
             `[workman-client] hover uri=${document.uri.toString()} ` +
-              `line=${position.line} char=${position.character} result=${hover ? "hit" : "null"}`,
+              `line=${position.line} char=${position.character} result=${
+                hover ? "hit" : "null"
+              }`,
           );
           return hover;
         },
@@ -221,41 +234,69 @@ function resolveServer(context: ExtensionContext): Server | undefined {
   return fs.existsSync(bundled) ? { kind: "node", path: bundled } : undefined;
 }
 
+function createProjectStatusItem(priority: number) {
+  const item = window.createStatusBarItem(StatusBarAlignment.Left, priority);
+  item.name = "Workman Project";
+  return item;
+}
+
 function renderProjectStatus(
-  item: ReturnType<typeof window.createStatusBarItem>,
+  items: ReturnType<typeof window.createStatusBarItem>[],
   status: ProjectStatusResult,
+  context: ExtensionContext,
 ): void {
   const selected = status.selected;
   if (!selected) {
-    item.hide();
+    items.forEach((item) => item.hide());
     return;
   }
-  const headName = path.basename(selected.headPath);
-  item.text = selected.kind === "headed"
-    ? `$(symbol-structure) WM: ${headName}${selected.recovered ? " ⚠" : ""}`
-    : `$(symbol-structure) WM: detached`;
-
-  const tooltip = new MarkdownString();
-  tooltip.appendMarkdown(
-    selected.kind === "headed"
-      ? `**Project head:** \`${selected.headPath}\`\n\n${selected.moduleCount} module(s)`
-      : `**Detached document** (no \`main\` head selects this file)`,
-  );
-  if (selected.recovered) {
-    tooltip.appendMarkdown("\n\n⚠ strict analysis failed; showing recovered facts");
+  const heads = [
+    { ...selected, containsDocument: true },
+    ...status.activeHeads.filter((head) => head.headPath !== selected.headPath),
+  ];
+  while (items.length < heads.length) {
+    const item = createProjectStatusItem(90 - items.length);
+    items.push(item);
+    context.subscriptions.push(item);
   }
-  const others = status.activeHeads.filter((head) => head.headPath !== selected.headPath);
-  if (others.length > 0) {
-    tooltip.appendMarkdown("\n\n**Other active projects:**");
-    for (const head of others) {
+
+  heads.forEach((head, index) => {
+    const item = items[index];
+    const displayPath = projectDisplayPath(head.headPath);
+    item.text = head.kind === "headed"
+      ? `${index === 0 ? "$(symbol-structure) WM: " : ""}${displayPath}` +
+        `${index === 0 && selected.recovered ? " ⚠" : ""}`
+      : `${index === 0 ? "$(symbol-structure) WM: " : ""}detached`;
+    const tooltip = new MarkdownString();
+    tooltip.appendMarkdown(
+      head.kind === "headed"
+        ? `**Project head:** \`${displayPath}\`\n\n${head.moduleCount} module(s)`
+        : `**Detached document:** \`${displayPath}\` (no \`main\` head selects this file)`,
+    );
+    if (index === 0 && selected.recovered) {
       tooltip.appendMarkdown(
-        `\n- \`${head.headPath}\` (${head.moduleCount} module(s)` +
-          `${head.containsDocument ? ", also contains this file" : ""})`,
+        "\n\n⚠ strict analysis failed; showing recovered facts",
       );
     }
-  }
-  item.tooltip = tooltip;
-  item.show();
+    if (head.containsDocument && index > 0) {
+      tooltip.appendMarkdown("\n\nAlso contains the active file");
+    }
+    item.tooltip = tooltip;
+    item.command = {
+      command: "vscode.open",
+      title: "Open Workman project head",
+      arguments: [Uri.file(head.headPath)],
+    };
+    item.show();
+  });
+  items.slice(heads.length).forEach((item) => item.hide());
+}
+
+function projectDisplayPath(headPath: string): string {
+  const folder = workspace.getWorkspaceFolder(Uri.file(headPath));
+  return folder
+    ? path.relative(folder.uri.fsPath, headPath) || path.basename(headPath)
+    : headPath;
 }
 
 function traceSetting(): Trace {

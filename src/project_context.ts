@@ -1,4 +1,4 @@
-import { normalize, resolve } from "node:path";
+import { dirname, normalize, relative, resolve, sep } from "node:path";
 import type { ProjectSnapshot } from "./module_interface.ts";
 import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./lsp/import_scan.ts";
 
@@ -52,7 +52,7 @@ export class ReverseImportDiscoveryIndex {
 
   /**
    * Reverse breadth-first search returns the nearest main-bearing importer. Equal-distance ties
-   * use canonical path order so one open file selects exactly one project deterministically.
+   * prefer the head whose directory is nearest to the opened file, then canonical path order.
    */
   closestHead(path: string): string | undefined {
     this.#closestHeadQueries += 1;
@@ -60,7 +60,11 @@ export class ReverseImportDiscoveryIndex {
     const visited = new Set([start]);
     let frontier = [start];
     while (frontier.length > 0) {
-      const heads = frontier.filter((candidate) => this.#heads.has(candidate)).sort();
+      const heads = frontier.filter((candidate) => this.#heads.has(candidate)).sort(
+        (left, right) =>
+          headDirectoryDistance(start, left) - headDirectoryDistance(start, right) ||
+          left.localeCompare(right),
+      );
       if (heads.length > 0) return heads[0];
       const next = new Set<string>();
       for (const current of frontier) {
@@ -230,12 +234,14 @@ export class ProjectContextRegistry {
 
   forgetDocument(path: string, configurationKey: string): void {
     const documentKey = `${configurationKey}\0${canonicalPath(path)}`;
-    const contextKey = this.#documents.get(documentKey);
+    const selectedContextKey = this.#documents.get(documentKey);
     this.#documents.delete(documentKey);
-    if (contextKey && ![...this.#documents.values()].includes(contextKey)) {
-      this.#active.delete(contextKey);
-      this.#detached.delete(contextKey);
+    if (!selectedContextKey) return;
+    for (const [openDocumentKey, contextKey] of this.#documents) {
+      if (contextKey === selectedContextKey) this.#documents.delete(openDocumentKey);
     }
+    this.#active.delete(selectedContextKey);
+    this.#detached.delete(selectedContextKey);
   }
 
   /** Drop every snapshot whose forward closure contains a changed source path. */
@@ -330,6 +336,11 @@ function parseContextKey(
     configurationKey: key.slice(first + 1, second),
     path: key.slice(second + 1),
   });
+}
+
+function headDirectoryDistance(start: string, head: string): number {
+  const path = relative(dirname(start), dirname(head));
+  return path === "" ? 0 : path.split(sep).length;
 }
 
 function canonicalPath(path: string): string {

@@ -16,8 +16,6 @@ export class ProjectIndex {
   readonly discovery = new ReverseImportDiscoveryIndex();
   #roots = new Set<string>();
   #dependencies = new Map<string, Set<string>>();
-  #dependents = new Map<string, Set<string>>();
-  #heads = new Set<string>();
   #contexts = new Map<string, Set<string>>();
   #documentContexts = new Map<string, string>();
 
@@ -76,9 +74,13 @@ export class ProjectIndex {
     const path = uriPath(uri);
     const context = this.#documentContexts.get(path);
     this.#documentContexts.delete(path);
-    if (context && ![...this.#documentContexts.values()].includes(context)) {
-      this.#contexts.delete(context);
-    }
+    if (!context) return;
+    const affected = [...this.#documentContexts]
+      .filter(([, selected]) => selected === context)
+      .map(([document]) => document);
+    for (const document of affected) this.#documentContexts.delete(document);
+    this.#contexts.delete(context);
+    for (const document of affected) this.#ensureDocumentContext(document);
   }
 
   async refreshFile(
@@ -87,9 +89,6 @@ export class ProjectIndex {
     options: CompilerFrontendOptions = {},
   ) {
     const normalized = normalize(resolve(path));
-    const previousDeps = this.#dependencies.get(normalized) ?? new Set<string>();
-    for (const dep of previousDeps) this.#dependents.get(dep)?.delete(normalized);
-
     const discovery = await directDiscovery(normalized, sourceOverrides, options);
     if (discovery.source === undefined) {
       this.discovery.remove(normalized);
@@ -109,15 +108,7 @@ export class ProjectIndex {
         },
       );
     }
-    const deps = discovery.dependencies;
-    this.#dependencies.set(normalized, deps);
-    if (discovery.main) this.#heads.add(normalized);
-    else this.#heads.delete(normalized);
-    for (const dep of deps) {
-      const parents = this.#dependents.get(dep) ?? new Set<string>();
-      parents.add(normalized);
-      this.#dependents.set(dep, parents);
-    }
+    this.#dependencies.set(normalized, discovery.dependencies);
   }
 
   #ensureDocumentContext(path: string): void {
@@ -129,28 +120,9 @@ export class ProjectIndex {
       this.#documentContexts.set(file, covering[0]);
       return;
     }
-    const root = this.#closestHead(file) ?? file;
+    const root = this.discovery.closestHead(file) ?? file;
     this.#contexts.set(root, this.#forwardClosure(root));
     this.#documentContexts.set(file, root);
-  }
-
-  #closestHead(path: string): string | undefined {
-    const visited = new Set([path]);
-    let frontier = [path];
-    while (frontier.length > 0) {
-      const heads = frontier.filter((candidate) => this.#heads.has(candidate)).sort();
-      if (heads.length > 0) return heads[0];
-      const next = new Set<string>();
-      for (const current of frontier) {
-        for (const dependent of this.#dependents.get(current) ?? []) {
-          if (visited.has(dependent)) continue;
-          visited.add(dependent);
-          next.add(dependent);
-        }
-      }
-      frontier = [...next];
-    }
-    return undefined;
   }
 
   #forwardClosure(root: string): Set<string> {
