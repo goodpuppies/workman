@@ -1,5 +1,6 @@
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
+import { isQualified, pathOf } from "./ast.ts";
 import type { CompilerSemanticId } from "./compiler_semantics.ts";
 import type { ValueId } from "./ids.ts";
 import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
@@ -693,8 +694,9 @@ export function typeFromAst(
     options.onResolveVariable?.(expr, variable);
     return resolved(variable);
   }
-  const qualified = expr.name.includes(".") && options.strEnv
-    ? resolveLongType(options.strEnv, expr.name)
+  const path = pathOf(expr);
+  const qualified = isQualified(path) && options.strEnv
+    ? resolveLongType(options.strEnv, path)
     : undefined;
   const info = qualified?.info ?? typeEnv.get(expr.name);
   if (!info) throw new Error(`unknown type ${expr.name}`);
@@ -706,7 +708,7 @@ export function typeFromAst(
     info,
     qualified
       ? Object.freeze({
-        name: expr.name.split(".")[0],
+        name: path.qualifiers[0],
         environment: qualified.root,
       })
       : undefined,

@@ -1,5 +1,8 @@
 import { assertEquals } from "@std/assert";
+import type { LongId } from "../src/ast.ts";
+import { longIdSpelling } from "../src/ast.ts";
 import { checkVirtual, compileVirtual } from "../src/compiler.ts";
+import { parse } from "../src/parser.ts";
 
 /**
  * Desired-semantics regressions for the module update.
@@ -226,4 +229,58 @@ async function runVirtual(
     console.log = original;
   }
   return output;
+}
+
+/**
+ * `M215`/`G7`: qualified source names are the Revised Definition's long identifiers
+ * (Section 2.4, `LongX = StrId* x X`), not dotted strings that semantic code re-parses.
+ *
+ * Both frontends must produce the same structured object for the same source, and every
+ * source-derived qualified node must carry it, so elaboration never has to recover the
+ * structure from a rendered spelling.
+ */
+Deno.test("[module update M215] source-derived long identifiers carry structured paths", async () => {
+  const source = 'from "./lib.wm" import * as Lib; ' +
+    "type Wrapper = | Holder<Lib.Thing>; " +
+    "let value = A.B.member; " +
+    "let typed = (x: Lib.Thing) => { x }; " +
+    "let matched = match(v) => { Lib.Some(x) => { x }, _ => { 0 } };";
+
+  const module = await parse(source);
+  const qualified = collectLongIdNodes(module);
+
+  // Every qualified occurrence in the source is represented structurally.
+  const bySpelling = new Map(qualified.map((node) => [node.name, node.path]));
+  assertEquals(bySpelling.get("Lib.Thing"), { qualifiers: ["Lib"], id: "Thing" });
+  assertEquals(bySpelling.get("A.B.member"), { qualifiers: ["A", "B"], id: "member" });
+  assertEquals(bySpelling.get("Lib.Some"), { qualifiers: ["Lib"], id: "Some" });
+
+  // No source-derived node relies on recovering its path from the spelling, and the
+  // spelling remains an exact rendering of the structure for display and emit.
+  for (const node of qualified) {
+    assertEquals(typeof node.path, "object", `${node.name} lost its structured path`);
+    assertEquals(longIdSpelling(node.path!), node.name);
+  }
+});
+
+type LongIdNode = { name: string; path?: LongId };
+
+/** Collect every node kind that can carry a long identifier, at any depth. */
+function collectLongIdNodes(root: unknown): LongIdNode[] {
+  const found: LongIdNode[] = [];
+  const kinds = new Set(["Var", "PPinned", "PCtor", "TName"]);
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (!value || typeof value !== "object") return;
+    const node = value as Record<string, unknown>;
+    if (typeof node.kind === "string" && kinds.has(node.kind) && typeof node.name === "string") {
+      const path = node.path as LongId | undefined;
+      if (path && path.qualifiers.length > 0) found.push({ name: node.name, path });
+    }
+    for (const key of Object.keys(node)) {
+      if (key !== "node") visit(node[key]);
+    }
+  };
+  visit(root);
+  return found;
 }

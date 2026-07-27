@@ -5,6 +5,8 @@ export type BasisCtorDecl = {
   name: string;
   id: number;
   args: TypeExpr[];
+  /** The manifest-declared runtime name; never recomputed from `name`. */
+  runtimeName: string;
 };
 
 export type BasisTypeDecl = {
@@ -22,6 +24,7 @@ export const basisTypes: BasisTypeDecl[] = BASIS_TYPES.flatMap((type) =>
         name: ctor.name,
         id: ctor.id,
         args: [...ctor.args],
+        runtimeName: ctor.runtimeName,
       })),
     }]
     : []
@@ -38,7 +41,7 @@ export function basisCtorId(name: string): number | undefined {
 export function basisCtorJsName(id: number): string | undefined {
   for (const type of basisTypes) {
     const ctor = type.ctors.find((item) => item.id === id);
-    if (ctor) return `__wm_basis_${ctor.name.replaceAll(".", "_")}`;
+    if (ctor) return ctor.runtimeName;
   }
   return undefined;
 }

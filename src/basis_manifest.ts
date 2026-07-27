@@ -187,6 +187,25 @@ export const BASIS_OPERATORS: readonly BasisOperatorDescriptor[] = Object.freeze
   } as BasisOperatorDescriptor)
 ));
 
+/**
+ * Fixed unary operators.
+ *
+ * These are a separate catalog from `BASIS_OPERATORS` because the binary catalog defines
+ * the operator *syntax* Workman parses into binary nodes, and several consumers enumerate
+ * it as exactly that set. Unary minus is deliberately absent: it shares the binary `-`
+ * descriptor, whose implementation distinguishes the tuple and scalar cases, so it already
+ * resolves through the manifest.
+ */
+export const BASIS_UNARY_OPERATORS: readonly BasisOperatorDescriptor[] = Object.freeze([
+  Object.freeze({ spelling: "!", kind: "boolean", runtimeName: "__wm_op_not" }),
+] as BasisOperatorDescriptor[]);
+
+export function basisUnaryOperatorDescriptor(
+  spelling: string,
+): BasisOperatorDescriptor | undefined {
+  return BASIS_UNARY_OPERATORS.find((descriptor) => descriptor.spelling === spelling);
+}
+
 export type BasisIntrinsicDescriptor = Readonly<{
   exportName: string;
   semanticId: `gpu.${string}`;

@@ -60,6 +60,24 @@ environment plus exported ADTs. Qualified imported values, constructors, records
 looked up by recursive structure projection. A type-identity registry keeps imported nominal
 metadata available without making those types unqualified.
 
+Qualified source names are now the Revised Definition's long identifiers rather than dotted strings.
+The parser produces `LongId = { qualifiers, id }` (the Definition's `LongX = StrId* x X`) on `Var`,
+`PPinned`, `PCtor`, and `TName`; the joined spelling is retained only for display and emit.
+Elaboration resolves through `StrEnv` from that structure, so no semantic lookup re-parses a name.
+Per `D33`, JavaScript FFI member paths, reflected foreign-type keys, and the GPU backend are
+permanently not SML long identifiers and keep their own representations.
+
+The kernel's dynamic artifact is built from the same manifest as the static one: binary and unary
+operator definitions and constructor runtime names derive from the catalog, a catalog entry without
+an implementation fails emission loudly, and a regression evaluates every basis fact — including
+dotted host members — proving each is a defined runtime value.
+
+Record projection through a qualified value member (`Lib.origin.x`) now typechecks, lowers, and
+runs: inference previously rejected any qualified spelling that was not entirely a structure member
+before the record-projection path could consume `resolveLongValue`'s remaining fields. Occurrence
+completeness on strict analyses is audited by a permanent regression over every authored named node
+and reported as `complete`; scope completeness remains explicitly partial.
+
 The initial basis now also exposes its qualified facilities through real structure environments. Its
 working `TyEnv` contains only unqualified bindings; `Js.*` and `Gpu.*` types live under `StrEnv`.
 Compiler metadata lookup uses a non-visible identity registry, not a parallel dotted source

@@ -1,4 +1,5 @@
 import type { Pattern } from "../ast.ts";
+import { parseLongId } from "../ast.ts";
 import {
   instantiateRecordFields,
   prune,
@@ -256,12 +257,14 @@ export function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
   return false;
 }
 
-function baseName(name: string): string {
-  return name.split(".").at(-1)!;
-}
-
+/**
+ * A constructor pattern may be written qualified (`Lib.Some`) or unqualified
+ * (`Some`) for the same constructor. Both denote the same value identifier, so
+ * exhaustiveness compares the Definition's base identifier of the long
+ * identifier against the constructor's own name.
+ */
 function constructorPatternMatches(patternName: string, ctorName: string): boolean {
-  return patternName === ctorName || baseName(patternName) === ctorName;
+  return patternName === ctorName || parseLongId(patternName).id === ctorName;
 }
 
 function isIrrefutable(pattern: Pattern): boolean {

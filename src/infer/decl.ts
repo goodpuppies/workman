@@ -1,4 +1,5 @@
 import type { Decl } from "../ast.ts";
+import { isQualified, parseLongId } from "../ast.ts";
 import { warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
@@ -102,7 +103,8 @@ function addForeignType(
   const key = decl.foreignKey ?? `name:${decl.name}`;
   const info = foreignTypeInfo(canonicalForeignTypeName(decl.name, key), key);
   registerTypeInfo(typeEnv, info);
-  if (decl.name.includes(".")) bindLongType(strEnv, decl.name, info);
+  const path = parseLongId(decl.name);
+  if (isQualified(path)) bindLongType(strEnv, path, info);
   else bindType(staticEnv(strEnv, typeEnv), decl.name, info);
   typeExports.set(decl.name, info);
   exportableTypeIds.add(info.id);

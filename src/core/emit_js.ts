@@ -1,5 +1,6 @@
 import type { CoreDecl, CoreExpr, CoreMatchArm, CorePattern } from "./ast.ts";
 import type { TypeExpr } from "../ast.ts";
+import { parseLongId } from "../ast.ts";
 import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artifact.ts";
 import type { BindingId, StructureId } from "./ids.ts";
 import { basisCtorJsName } from "../basis.ts";
@@ -7,6 +8,7 @@ import {
   basisIntrinsicDescriptor,
   basisIntrinsicDescriptorBySemanticId,
   basisOperatorDescriptor,
+  basisUnaryOperatorDescriptor,
 } from "../basis_manifest.ts";
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
@@ -854,7 +856,9 @@ function patternChecks(pattern: CorePattern, value: string): string[] {
         ),
       ];
     case "CorePCtor": {
-      const ctorId = pattern.ctorId ?? pattern.name.split(".").at(-1)!;
+      // Resolved constructor identity when available; otherwise the runtime tag is the
+      // base identifier of the authored spelling (unresolved/legacy Core inputs only).
+      const ctorId = pattern.ctorId ?? parseLongId(pattern.name).id;
       return [
         `${value}?.ctor === ${JSON.stringify(ctorId)}`,
         `${value}.args.length === ${pattern.payload ? 1 : 0}`,
@@ -915,10 +919,5 @@ function primitiveName(name: string, semanticId?: CompilerSemanticId): string | 
   if (semanticId) return basisIntrinsicDescriptorBySemanticId(semanticId)?.runtimeName;
   const intrinsic = basisIntrinsicDescriptor(name);
   if (intrinsic?.runtimeName) return intrinsic.runtimeName;
-  switch (name) {
-    case "!":
-      return "__wm_op_not";
-    default:
-      return undefined;
-  }
+  return basisUnaryOperatorDescriptor(name)?.runtimeName;
 }

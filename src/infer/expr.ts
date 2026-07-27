@@ -1,4 +1,5 @@
 import type { Expr } from "../ast.ts";
+import { pathOf } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import {
   BoolTy,
@@ -68,11 +69,10 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       t = VoidTy;
       break;
     case "Var": {
-      const qualifier = expr.name.includes(".")
-        ? expr.name.slice(0, expr.name.indexOf("."))
-        : undefined;
+      const path = pathOf(expr);
+      const qualifier = path.qualifiers[0];
       let scheme = qualifier && context.strEnv.has(qualifier)
-        ? lookupLongValue(context.strEnv, expr.name)
+        ? lookupLongValue(context.strEnv, path)
         : env.get(expr.name);
       let namespaceCarrier: string | undefined;
       if (!scheme && !qualifier) {
@@ -86,12 +86,13 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         if (context.strEnv.has(expr.name)) {
           throw new Error(`unknown name ${expr.name}.carrier`);
         }
-        if (qualifier && context.strEnv.has(qualifier)) {
-          throw new Error(`unknown name ${expr.name}`);
-        }
+        // A qualified spelling that is not entirely a structure member may still be a
+        // record projection through one: `resolveLongValue` reaches the deepest value
+        // member and `inferDottedVar` projects the remaining fields, so the spelling
+        // falls through rather than failing at the first non-member segment.
         t = context.dialect.inferUnboundVar?.(expr, context) ??
           context.dialect.inferProjection?.(expr, context) ??
-          inferDottedVar(expr.name, env, typeEnv, context.strEnv, {
+          inferDottedVar(path, env, typeEnv, context.strEnv, {
             expression: expr,
             facts,
             warnings,

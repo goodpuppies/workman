@@ -1,4 +1,5 @@
-import type { Expr } from "../ast.ts";
+import type { Expr, LongId } from "../ast.ts";
+import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
 import {
   fresh,
   instantiate,
@@ -6,8 +7,8 @@ import {
   NumberTy,
   prune,
   tuple,
-  typeInfoByName,
   type Ty,
+  typeInfoByName,
 } from "../types.ts";
 import type { InferContext, TypingDialect } from "./context.ts";
 import { constrainAt } from "./provenance.ts";
@@ -88,17 +89,20 @@ function inferGpuProjection(
   expr: Extract<Expr, { kind: "Var" }>,
   context: InferContext,
 ): Ty | undefined {
-  const parts = expr.name.split(".");
-  if (parts.length !== 2 && parts.length !== 3) return undefined;
-  const index = vectorLanes.get(parts.at(-1)!);
+  // GPU swizzles (`v.xy`) are a dialect extension, not a Definition long
+  // identifier, but they read the same structured path the parser produced.
+  const path = pathOf(expr);
+  const { qualifiers } = path;
+  if (qualifiers.length !== 1 && qualifiers.length !== 2) return undefined;
+  const index = vectorLanes.get(path.id);
   if (index === undefined) return undefined;
-  const receiver = parts.length === 2
+  const receiver = qualifiers.length === 1
     ? (() => {
-      const scheme = context.env.get(parts[0]);
+      const scheme = context.env.get(qualifiers[0]);
       return scheme ? instantiate(scheme) : undefined;
     })()
     : inferDottedVar(
-      parts.slice(0, -1).join("."),
+      { qualifiers: qualifiers.slice(0, -1), id: qualifiers.at(-1)! },
       context.env,
       context.typeEnv,
       context.strEnv,
@@ -109,7 +113,7 @@ function inferGpuProjection(
     const minimumWidth = Math.max(2, index + 1);
     recordGpuOperationFact(context.facts, {
       kind: "projection",
-      identity: `gpu.projection.${parts.at(-1)!}`,
+      identity: `gpu.projection.${path.id}`,
       occurrence: expr,
       args: [receiver],
       result: NumberTy,
@@ -181,7 +185,7 @@ function inferGpuBuiltinCall(
   if (
     expr.callee.kind !== "Var" ||
     context.env.has(expr.callee.name) ||
-    lookupLongValue(context.strEnv, expr.callee.name) !== undefined
+    lookupLongValue(context.strEnv, pathOf(expr.callee)) !== undefined
   ) return undefined;
   const overloads = builtinOverloadsByName.get(expr.callee.name);
   if (!overloads) {
@@ -245,11 +249,16 @@ function inferGpuResourceCall(
   context: InferContext,
 ): Ty | undefined {
   if (expr.callee.kind !== "Var") return undefined;
-  const parts = expr.callee.name.split(".");
-  const method = parts.at(-1);
+  const path = pathOf(expr.callee);
+  const method = path.id;
   if (method !== "Sample" && method !== "Load") return undefined;
-  const receiverName = parts.slice(0, -1).join(".");
-  const receiver = inferGpuDottedValue(receiverName, context);
+  if (path.qualifiers.length === 0) return undefined;
+  const receiverPath: LongId = {
+    qualifiers: path.qualifiers.slice(0, -1),
+    id: path.qualifiers.at(-1)!,
+  };
+  const receiverName = longIdSpelling(receiverPath);
+  const receiver = inferGpuDottedValue(receiverPath, context);
   if (!receiver || !isNamed(receiver, "Gpu.SampledTexture2D")) return undefined;
   const rgba = tuple([NumberTy, NumberTy, NumberTy, NumberTy]);
   if (method === "Sample") {
@@ -318,12 +327,12 @@ function inferGpuResourceCall(
   return rgba;
 }
 
-function inferGpuDottedValue(name: string, context: InferContext): Ty | undefined {
-  if (!name.includes(".")) {
-    const scheme = context.env.get(name);
+function inferGpuDottedValue(path: LongId, context: InferContext): Ty | undefined {
+  if (!isQualified(path)) {
+    const scheme = context.env.get(path.id);
     return scheme ? instantiate(scheme) : undefined;
   }
-  return inferDottedVar(name, context.env, context.typeEnv, context.strEnv);
+  return inferDottedVar(path, context.env, context.typeEnv, context.strEnv);
 }
 
 function isNamed(type: Ty, name: string): boolean {

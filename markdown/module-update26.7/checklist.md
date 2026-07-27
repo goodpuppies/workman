@@ -153,6 +153,13 @@ the desired-semantics regressions introduced by the audit. The six original regr
 enabled permanently and passing. Add further audit regressions here or in the closest focused suite
 before implementing their corresponding slice.
 
+The two `carrier` tests in [`tests/module_test.ts`](../../tests/module_test.ts) (`T120`) asserted
+that emitted JavaScript literally contained `Lib.carrier`. `R502` gives backend aliases
+compiler-owned identities, so the emitted spelling is `Lib_0.carrier` and both tests failed against
+correct behavior. They now assert the semantic shape and the runtime result instead of an emit
+spelling, which is what `G18` requires: a backend rename must not be observable as a source-level
+fact. An emitted-name assertion is not valid evidence for a semantic item.
+
 ## Stage 2: Semantic foundations
 
 Dependencies: `G3`–`G5`.
@@ -180,13 +187,42 @@ Dependencies: `G3`–`G5`.
 - [x] **M213** Implement namespace-preserving named projection and key-only renaming.
 - [x] **M214** Preserve schemes, identifier status, nominal identity, and intrinsic metadata during
       projection.
-- [ ] **M215** Remove semantic dotted-name splitting and construction.
+- [x] **M215** Remove semantic dotted-name splitting and construction. The AST now
+      carries the Definition's long identifier (Section 2.4, `LongX = StrId* x X`) as
+      `LongId = { qualifiers, id }` on the four nodes that can be qualified: `Var`, `PPinned`, and
+      `PCtor` (`longvid`) and `TName` (`longtycon`). The grammar builds it directly; `name` is
+      retained only as the authored display/emit spelling. Semantic resolution consumes the
+      structured path and no longer splits: `E(longvid)`/`E(longtycon)` (`resolveLongValue`,
+      `resolveLongType`, `lookupLongEnvironment`, `insertQualified`), constructor and pinned pattern
+      lookup, the record-projection fallback, unguarded-recursion detection, basis origin structure
+      attribution, constructor exhaustiveness matching, and GPU receiver/swizzle resolution.
+      `parseLongId` is the single sanctioned string-to-`LongId` construction point and is used only
+      for compiler-owned table keys (basis manifest, standard-structure members), authored FFI
+      spellings with no parsed node, and current-source text scanned near the cursor. Module
+      interface occurrence assembly and the recovered signature-help callable now consume
+      `pathOf`/`parseLongId` instead of ad-hoc splits, and the grammar's task tuple lift supplies
+      structured paths for its generated `Task.map`/`Task.andThen` references. Remaining dotted
+      splitting is confined to Core lowering and emit names (permitted by D16: `desugarDottedVar`
+      runs after resolution with binding identities attached) and to JavaScript FFI host member
+      paths, reflected foreign-type keys, and the wmslang GPU backend, which `D33` permanently
+      excludes from long-identifier semantics. The `[module update M215]` regression proves every
+      source-derived qualified node carries the structured path and that spellings render exactly
+      from it. `path` remains optional on the node types, like `node?`: programmatic constructors
+      in FFI lowering build compiler-internal names, and `pathOf` is the single accessor whose
+      fallback runs through the sanctioned constructor. Enforcement is therefore by construction
+      and regression, not by the type system.
 - [x] **M216** Permit the same spelling in separate structure, type, and value components.
 
 Gate:
 
 - [x] **G6** Compiler consumers cannot inspect a `ModuleId` as a display or emit string.
-- [ ] **G7** Semantic qualification uses `StrEnv`; dotted strings exist only after resolution.
+- [x] **G7** Semantic qualification uses `StrEnv`; dotted strings exist only after resolution.
+      Qualification has always walked `StrEnv`; the remaining gap was that its key was a re-parsed
+      dotted string. Elaboration now consumes the parser-produced `LongId` throughout (see `M215`),
+      so a dotted string is no longer a semantic key anywhere in the SML fragment. `D33` classifies
+      the non-SML host paths (JS FFI members, reflected foreign-type keys, GPU backend) as
+      permanently outside long-identifier semantics, which closes the scope question this gate was
+      waiting on.
 - [x] **G8** Environment composition has one SML-defined implementation used by basis, import, open,
       and local declaration paths.
 
@@ -195,9 +231,30 @@ Gate:
 Dependencies: `G7`–`G8` and `S004`–`S008`.
 
 - [x] **B301** Introduce immutable `InitialBasis` and `BasisProfile` compiler artifacts.
-- [ ] **B302** Consolidate primitive type identity, arity, equality, constructor, overload,
-      operator, and intrinsic descriptions.
-- [ ] **B303** Build corresponding static and dynamic kernel artifacts from the same description.
+- [x] **B302** Consolidate primitive type identity, arity, equality, constructor, overload,
+      operator, and intrinsic descriptions. `basis_manifest.ts` owns type identity, arity, equality,
+      constructor identity and runtime names, the fixed binary and unary operator catalogs, host
+      values, and GPU intrinsics. `basisCtorJsName` returns the manifest's declared `runtimeName`
+      instead of recomputing the same `__wm_basis_*` formula, so a constructor's runtime name is one
+      fact rather than two agreeing copies. `BASIS_UNARY_OPERATORS` describes `!`, replacing the
+      hand-written `switch` in `emit_js` and the hand-written definition in the prelude; unary `-`
+      deliberately has no entry because it shares the binary `-` descriptor, whose implementation
+      distinguishes the tuple and scalar cases. Overload descriptions are the GPU builtin rows,
+      which live in the generated, versioned wmslang builtin catalog consumed by both the GPU
+      dialect and the interface artifact; per `D33` the GPU domain owns that single description
+      rather than duplicating it into the kernel manifest.
+- [x] **B303** Build corresponding static and dynamic kernel artifacts from the same description.
+      Constructors already emitted from `BASIS_TYPES`; operator definitions were hand-written
+      JavaScript whose names could drift from the manifest's `runtimeName`. The emitted prelude now
+      derives each operator's runtime name from the binary and unary catalogs and supplies only the
+      body, and a manifest entry with no implementation fails the build with an explicit message.
+      Verified by renaming operators in the manifest: the emitted definition, Core lowering, and a
+      running program all follow the rename, which previously would have produced a reference to an
+      undefined runtime value. Host values, intrinsics with runtime names, and constructors are now
+      also verified dynamically: a compiled library binds every fact's export name and the test
+      asserts none evaluate to `undefined`, which catches a missing member of an existing namespace
+      object that reference-only compilation would let through. A negative control (removing
+      `textOf` from the emitted `Result`) fails the test naming exactly `Result.textOf`.
 - [x] **B304** Move fixed operators out of the ordinary value environment into the kernel syntax
       catalog.
 - [x] **B305** Keep ordinary pervasive values shadowable through normal `ValEnv` composition.
@@ -225,7 +282,13 @@ Dependencies: `G7`–`G8` and `S004`–`S008`.
 
 Gate:
 
-- [ ] **G9** Static and dynamic profile snapshots correspond exactly.
+- [x] **G9** Static and dynamic profile snapshots correspond exactly. `T130` snapshots both profile
+      interfaces; `T131` proves every statically visible initial value has an implementation fact
+      and compiles; operator and constructor runtime names derive from one description with
+      emitted-definition and no-stray-definition regressions plus a fail-loud guard for catalog
+      entries without implementations; and the defined-runtime-value regression evaluates every
+      basis fact, including dotted host members such as `Js.Array.toList` and `Result.textOf`,
+      proving none are `undefined` at runtime.
 - [x] **G10** Standard structures use the same lookup and shadowing rules as imported structures.
 - [x] **G11** No provenance flag or backend object merge changes language binding semantics.
 - [x] **G12** The default profile retains its approved compatibility interface.
@@ -340,9 +403,19 @@ Dependencies: `G13`–`G18`.
       while ordinary references retain their local instantiation. Typed nodes also retain authored
       source labels, optional generalized schemes, and compiler-owned presentation facts for
       generated FFI receivers. Compiler-owned top-level declaration facts provide declaration and
-      selection spans plus datatype-constructor children for structural tooling. Scope and
-      occurrence completeness remain explicitly partial while complete role-specific/recovery
-      mappings remain. Ordinary basis and compiled-standard value references are included even
+      selection spans plus datatype-constructor children for structural tooling. Occurrence
+      completeness is now audited and derived rather than hardcoded: a permanent regression walks
+      every authored named node (values, constructors, pinned patterns, type uses, and pattern
+      binders at any nesting depth, across namespace/named/open imports, qualified projections,
+      match arms, list patterns, and blocks) and proves each has a semantic occurrence inside its
+      span; nodes fabricated by list desugaring are excluded because their spelling does not appear
+      in the authored source. Strict complete elaboration therefore reports
+      `occurrences: "complete"`, while recovered analyses remain `partial` because failed phrases
+      contribute no occurrences. The audit also exposed and fixed a real inference gap: record
+      projection through a qualified value member (`Lib.origin.x`) was rejected as unknown before
+      `resolveLongValue`'s remaining-field contract could reach `inferDottedVar`; it now
+      typechecks, lowers, and runs. Scope completeness remains explicitly partial until it has
+      equivalent audit evidence. Ordinary basis and compiled-standard value references are included even
       though they have no project-local `BindingId`. Value, constructor, and nominal-field
       occurrences now reference immutable semantic type snapshots rather than mutable inference
       objects. Result carrier-lifting plans are source-mapped into the interface and reference the

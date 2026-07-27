@@ -1,8 +1,9 @@
 import { assertEquals, assertStrictEquals } from "@std/assert";
-import { BASIS_OPERATORS, BASIS_TYPES } from "../src/basis_manifest.ts";
-import { basisCtorId } from "../src/basis.ts";
+import { BASIS_OPERATORS, BASIS_TYPES, BASIS_UNARY_OPERATORS } from "../src/basis_manifest.ts";
+import { parseLongId } from "../src/ast.ts";
+import { basisCtorId, basisCtorJsName } from "../src/basis.ts";
 import { BASIS_TYPE_NAME_IDS, GPU_SEMANTIC_IDS } from "../src/compiler_semantics.ts";
-import { checkSource, compile } from "../src/compiler.ts";
+import { checkSource, compile, compileLibraryVirtual } from "../src/compiler.ts";
 import { lookupLongValue } from "../src/infer/environment.ts";
 import type { StaticEnv } from "../src/infer/environment.ts";
 import { BASIS_PROFILES, initialBasis } from "../src/initial_basis.ts";
@@ -188,7 +189,7 @@ Deno.test("[module update B309/T134] pervasive constructors project the structur
   const basis = artifact.instantiate();
 
   for (const binding of artifact.pervasiveBindings.filter((item) => item.source.includes("."))) {
-    const member = lookupLongValue(basis.environment.strEnv, binding.source);
+    const member = lookupLongValue(basis.environment.strEnv, parseLongId(binding.source));
     const pervasive = basis.environment.valEnv.get(binding.target);
     if (!member || !pervasive) throw new Error(`missing pervasive projection ${binding.target}`);
     assertStrictEquals(pervasive, member);
@@ -211,7 +212,7 @@ Deno.test("[module update B302/T135] fixed operator static and runtime catalogs 
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    const compiled = await compile('let main = () => { print((1 + 2) * 3 == 9) };');
+    const compiled = await compile("let main = () => { print((1 + 2) * 3 == 9) };");
     await import(`data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`);
   } finally {
     console.log = original;
@@ -421,4 +422,88 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       { alias: "Traverse", values: ["with"], types: [] },
     ],
   );
+});
+
+/**
+ * `B303`/`G9`: the dynamic profile is built from the same description as the static one.
+ *
+ * Every runtime name the manifest declares must actually be defined by the emitted
+ * prelude. Without this, a manifest edit could leave the static basis advertising an
+ * implementation that no longer exists, which is exactly the static/runtime prelude
+ * drift recorded as audit finding `B5`.
+ */
+Deno.test("[module update B303/G9] emitted runtime defines every manifest runtime name", async () => {
+  const compiled = await compile("let main = () => { print(1) };");
+
+  const missingOperators = [...BASIS_OPERATORS, ...BASIS_UNARY_OPERATORS]
+    .filter((operator) => !compiled.includes(`const ${operator.runtimeName} =`))
+    .map((operator) => `${operator.spelling} -> ${operator.runtimeName}`);
+  assertEquals(missingOperators, []);
+
+  const missingConstructors = BASIS_TYPES
+    .flatMap((type) => type.constructors ?? [])
+    .filter((constructor) => !compiled.includes(`const ${constructor.runtimeName} =`))
+    .map((constructor) => `${constructor.name} -> ${constructor.runtimeName}`);
+  assertEquals(missingConstructors, []);
+
+  // The converse: every emitted operator definition traces back to a catalog entry, so no
+  // hand-written definition can survive alongside the manifest-derived ones.
+  const emittedOperators = [...compiled.matchAll(/const (__wm_op_[A-Za-z0-9_]+) =/g)]
+    .map((match) => match[1]);
+  const declared = new Set(
+    [...BASIS_OPERATORS, ...BASIS_UNARY_OPERATORS].map((operator) => operator.runtimeName),
+  );
+  assertEquals(emittedOperators.filter((name) => !declared.has(name)), []);
+});
+
+/**
+ * The constructor runtime name is a single manifest fact rather than a formula that
+ * lowering recomputes from the constructor's spelling.
+ */
+Deno.test("[module update B302] constructor runtime names come from the manifest", () => {
+  for (const type of BASIS_TYPES) {
+    for (const constructor of type.constructors ?? []) {
+      assertEquals(basisCtorJsName(constructor.id), constructor.runtimeName);
+    }
+  }
+});
+
+/**
+ * `B303`/`G9` for host values: every statically visible basis value, intrinsic with a
+ * runtime name, and constructor must evaluate to a defined runtime value, including
+ * qualified members such as `Js.Array.toList` and `Result.textOf`.
+ *
+ * `T131` above proves the references compile and the program loads; this test proves
+ * each reference is actually *defined*, because a missing member of an existing
+ * namespace object evaluates to `undefined` without throwing.
+ */
+Deno.test("[module update B303/G9] every basis fact evaluates to a defined runtime value", async () => {
+  const artifact = initialBasis(BASIS_PROFILES.default);
+  const references = [
+    ...artifact.facts.values.map((value) => value.exportName),
+    ...artifact.facts.intrinsics.flatMap((intrinsic) =>
+      intrinsic.runtimeName ? [intrinsic.exportName] : []
+    ),
+    ...artifact.facts.constructors.map((constructor) =>
+      constructor.name.includes(".")
+        ? constructor.name
+        : `${constructor.typeName}.${constructor.name}`
+    ),
+  ];
+
+  const source = references
+    .map((reference, index) => `let probe${index} = ${reference};`)
+    .join(" ");
+  const compiled = await compileLibraryVirtual(
+    "/test/probe.wm",
+    new Map([["/test/probe.wm", source]]),
+  );
+  const module = await import(
+    `data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`
+  ) as Record<string, unknown>;
+
+  const undefinedReferences = references
+    .filter((_, index) => module[`probe${index}`] === undefined)
+    .sort();
+  assertEquals(undefinedReferences, []);
 });

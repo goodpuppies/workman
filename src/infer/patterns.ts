@@ -1,4 +1,5 @@
-import type { Pattern } from "../ast.ts";
+import type { LongId, Pattern } from "../ast.ts";
+import { parseLongId } from "../ast.ts";
 import {
   BoolTy,
   type Env,
@@ -90,7 +91,7 @@ export function inferPattern(
       }
       return expected;
     case "PPinned": {
-      const scheme = lookupPatternValue(env, strEnv, p.name);
+      const scheme = lookupPatternValue(env, strEnv, p.name, p.path);
       if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
       const pinned = instantiate(scheme);
       constrainPattern(expected, pinned, p, "InferPattern.Pinned", "pinned pattern matches value");
@@ -165,7 +166,7 @@ export function inferPattern(
       return expected;
     }
     case "PCtor": {
-      const scheme = lookupPatternValue(env, strEnv, p.name);
+      const scheme = lookupPatternValue(env, strEnv, p.name, p.path);
       if (!scheme) throw new Error(`unknown constructor ${p.name}`);
       if (scheme.status !== "constructor") throw new Error(`${p.name} is not a constructor`);
       const ctor = instantiate(scheme);
@@ -316,7 +317,7 @@ export function inferBindingPattern(
       return;
     }
     case "PCtor": {
-      const scheme = lookupPatternValue(env, strEnv, pattern.name);
+      const scheme = lookupPatternValue(env, strEnv, pattern.name, pattern.path);
       if (!scheme) throw new Error(`unknown constructor ${pattern.name}`);
       if (scheme.status !== "constructor") {
         throw new Error(`${pattern.name} is not a constructor`);
@@ -362,9 +363,10 @@ export function inferBindingPattern(
   }
 }
 
-function lookupPatternValue(env: Env, strEnv: StrEnv, name: string) {
-  const qualifier = name.includes(".") ? name.split(".", 1)[0] : undefined;
-  return qualifier && strEnv.has(qualifier) ? lookupLongValue(strEnv, name) : env.get(name);
+function lookupPatternValue(env: Env, strEnv: StrEnv, name: string, path?: LongId) {
+  const resolved = path ?? parseLongId(name);
+  const qualifier = resolved.qualifiers[0];
+  return qualifier && strEnv.has(qualifier) ? lookupLongValue(strEnv, resolved) : env.get(name);
 }
 
 function constrainPattern(

@@ -1,4 +1,9 @@
 import { basisCtorId, basisCtorJsName, basisTypes } from "../basis.ts";
+import {
+  BASIS_OPERATORS,
+  BASIS_UNARY_OPERATORS,
+  type BasisOperatorDescriptor,
+} from "../basis_manifest.ts";
 
 export function emitRuntimePrelude(): string[] {
   return [
@@ -250,22 +255,67 @@ export function emitRuntimePrelude(): string[] {
     return __wm_basis_Ok(values);
   }),
 };`,
-    "const __wm_op_concat = ([a, b]) => a + b;",
-    "const __wm_op_add = ([a, b]) => a + b;",
-    "const __wm_op_sub = (x) => __wm_is_tuple(x) ? x[0] - x[1] : -x;",
-    "const __wm_op_mul = ([a, b]) => a * b;",
-    "const __wm_op_div = ([a, b]) => a / b;",
-    "const __wm_op_mod = ([a, b]) => a % b;",
-    "const __wm_op_eq = ([a, b]) => __wm_eq(a, b);",
-    "const __wm_op_ne = ([a, b]) => !__wm_eq(a, b);",
-    "const __wm_op_lt = ([a, b]) => a < b;",
-    "const __wm_op_lte = ([a, b]) => a <= b;",
-    "const __wm_op_gt = ([a, b]) => a > b;",
-    "const __wm_op_gte = ([a, b]) => a >= b;",
-    "const __wm_op_and = ([a, b]) => a && b;",
-    "const __wm_op_or = ([a, b]) => a || b;",
-    "const __wm_op_not = (x) => !x;",
+    ...emitBasisOperators(),
   ];
+}
+
+/**
+ * Implementations of the fixed operator catalog, keyed by the manifest's spelling.
+ *
+ * `B303`/`G9`: the dynamic artifact is built from the same description as the static
+ * one. The runtime *name* of each operator comes from `BASIS_OPERATORS`, so a manifest
+ * change cannot leave the static basis advertising a runtime value nothing defines.
+ * Only the JavaScript body lives here.
+ */
+const OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  "++": "([a, b]) => a + b",
+  "+": "([a, b]) => a + b",
+  "-": "(x) => __wm_is_tuple(x) ? x[0] - x[1] : -x",
+  "*": "([a, b]) => a * b",
+  "/": "([a, b]) => a / b",
+  "%": "([a, b]) => a % b",
+  "==": "([a, b]) => __wm_eq(a, b)",
+  "!=": "([a, b]) => !__wm_eq(a, b)",
+  "<": "([a, b]) => a < b",
+  "<=": "([a, b]) => a <= b",
+  ">": "([a, b]) => a > b",
+  ">=": "([a, b]) => a >= b",
+  "&&": "([a, b]) => a && b",
+  "||": "([a, b]) => a || b",
+});
+
+/**
+ * Unary operator implementations, keyed by spelling like the binary bodies above.
+ *
+ * Unary minus has no entry: it shares the binary `-` descriptor, whose implementation
+ * already distinguishes the tuple and scalar cases.
+ */
+const UNARY_OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  "!": "(x) => !x",
+});
+
+function emitBasisOperators(): string[] {
+  return [
+    ...definitionsFor(BASIS_OPERATORS, OPERATOR_BODIES, "BASIS_OPERATORS"),
+    ...definitionsFor(BASIS_UNARY_OPERATORS, UNARY_OPERATOR_BODIES, "BASIS_UNARY_OPERATORS"),
+  ];
+}
+
+function definitionsFor(
+  operators: readonly BasisOperatorDescriptor[],
+  bodies: Readonly<Record<string, string>>,
+  catalog: string,
+): string[] {
+  return operators.map((operator) => {
+    const body = bodies[operator.spelling];
+    if (!body) {
+      throw new Error(
+        `basis operator ${operator.spelling} has no runtime implementation; ` +
+          `every ${catalog} entry needs one so static and dynamic profiles correspond`,
+      );
+    }
+    return `const ${operator.runtimeName} = ${body};`;
+  });
 }
 
 function emitBasisConstructors(): string[] {

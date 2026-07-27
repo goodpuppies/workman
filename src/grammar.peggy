@@ -34,6 +34,19 @@
       end: loc.end.offset,
     };
   }
+  // A Revised Definition long identifier: LongX = StrId* x X. `qualifiers` is the
+  // StrId* prefix, `id` the base identifier. `spelling` is display/emit only.
+  function longId(first, rest) {
+    const parts = [first, ...rest];
+    return { qualifiers: parts.slice(0, -1), id: parts.at(-1) };
+  }
+  function spelling(path) {
+    return path.qualifiers.length === 0 ? path.id : path.qualifiers.join(".") + "." + path.id;
+  }
+  /** Build a node carrying both the semantic long identifier and its spelling. */
+  function longNode(kind, path, extra, loc) {
+    return at({ kind, name: spelling(path), path, ...extra }, loc);
+  }
   function mod(decls, loc) { return at({ kind: "Module", decls }, loc); }
   function topExpression(expr, loc) {
     const pattern = at({ kind: "PVar", name: "it" }, loc);
@@ -46,7 +59,7 @@
     }, loc);
   }
   function asCtor(expr) {
-    if (expr.kind !== "TName" || expr.name.includes(".")) {
+    if (expr.kind !== "TName" || (expr.path && expr.path.qualifiers.length > 0)) {
       throw new Error("variant members must be constructor names");
     }
     return { name: expr.name, args: expr.args, node: expr.node };
@@ -113,7 +126,7 @@
         ? tupleExpr(nextValues, loc)
         : build(index + 1, nextValues);
       return callExpr(
-        varExpr(index === tasks.length - 1 ? "Task.map" : "Task.andThen", loc),
+        longNode("Var", { qualifiers: ["Task"], id: index === tasks.length - 1 ? "map" : "andThen" }, {}, loc),
         [tasks[index], liftedLambda(name, body, loc)],
         loc,
       );
@@ -132,8 +145,10 @@
       const nextValues = [...values, value];
       const isLast = index === items.length - 1;
       const body = isLast ? tupleExpr(nextValues, loc) : build(index + 1, nextValues);
+      // `carrier` is a long identifier; the lifted member extends its qualifiers.
+      const member = { qualifiers: [...carrier.qualifiers, carrier.id], id: isLast ? "map" : "andThen" };
       return callExprAtSpan(
-        varExpr(`${carrier}.${isLast ? "map" : "andThen"}`, loc),
+        longNode("Var", member, {}, loc),
         [items[index], liftedLambda(name, body, loc)],
         items[index].node?.span ?? span(loc),
       );
@@ -210,8 +225,8 @@ LetPattern
   / ListLetPattern
   / "(" _ first:LetPattern _ "," _ rest:LetPatternList? _ ")" { return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location()); }
   / "Var" _ "(" _ name:Name _ ")" { return at({ kind: "PVar", name }, location()); }
-  / c:LongConstructor _ "(" _ args:LetCtorPatternList? _ ")" { return at({ kind: "PCtor", name: c, args: args ?? [] }, location()); }
-  / c:LongConstructor { return at({ kind: "PCtor", name: c, args: [] }, location()); }
+  / c:LongConstructor _ "(" _ args:LetCtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
+  / c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
   / name:Identifier { return at({ kind: "PVar", name }, location()); }
 
 LetPatternList = first:LetPattern rest:(_ "," _ p:LetPattern { return p; })* _ ","? { return [first, ...rest]; }
@@ -358,7 +373,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return at({ kind: "Var", name: v }, location()); }
+  = Float / Int / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
@@ -432,9 +447,9 @@ Pattern
   / ListPattern
   / "(" _ first:Pattern _ "," _ rest:PatternList? _ ")" { return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location()); }
   / "Var" _ "(" _ name:Identifier _ ")" { return at({ kind: "PVar", name }, location()); }
-  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return at({ kind: "PCtor", name: c, args: args ?? [] }, location()); }
-  / c:LongConstructor { return at({ kind: "PCtor", name: c, args: [] }, location()); }
-  / v:LongName { return at({ kind: "PPinned", name: v }, location()); }
+  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
+  / c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
+  / v:LongName { return longNode("PPinned", v, {}, location()); }
 
 ParamList = "(" _ ps:ParamListItems? _ ")" { return ps ?? []; }
 Param = pattern:ParamPattern ann:TypeAnn? { return at({ pattern, annotation: ann }, location()); }
@@ -450,8 +465,8 @@ CtorPattern
   = "Var" _ "(" _ name:Identifier _ ")" { return at({ kind: "PVar", name }, location()); }
   / RecordPattern
   / ListPattern
-  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return at({ kind: "PCtor", name: c, args: args ?? [] }, location()); }
-  / c:LongConstructor { return at({ kind: "PCtor", name: c, args: [] }, location()); }
+  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
+  / c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
   / v:Identifier { return at({ kind: "PVar", name: v }, location()); }
   / p:Pattern { return p; }
 CtorPatternList = first:CtorPattern rest:(_ "," _ p:CtorPattern { return p; })* _ ","? { return [first, ...rest]; }
@@ -465,8 +480,8 @@ ListPatternItem
   = "Var" _ "(" _ name:Identifier _ ")" { return at({ kind: "PVar", name }, location()); }
   / RecordPattern
   / ListPattern
-  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return at({ kind: "PCtor", name: c, args: args ?? [] }, location()); }
-  / c:LongConstructor { return at({ kind: "PCtor", name: c, args: [] }, location()); }
+  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
+  / c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
   / v:Identifier { return at({ kind: "PVar", name: v }, location()); }
   / p:Pattern { return p; }
 ListLetPattern
@@ -507,7 +522,7 @@ FnType = "(" _ ps:TypeList? _ ")" _ "=>" _ r:TypeExpr { return at({ kind: "TFn",
 TypeAtom
   = "(" _ first:TypeExpr _ "," _ rest:TypeList? _ ")" { return at({ kind: "TTuple", items: [first, ...(rest ?? [])] }, location()); }
   / "(" _ t:TypeExpr _ ")" { return t; }
-  / name:LongConstructor args:("<" _ xs:TypeList _ ">" { return xs; })? { return at({ kind: "TName", name, args: args ?? [] }, location()); }
+  / name:LongConstructor args:("<" _ xs:TypeList _ ">" { return xs; })? { return longNode("TName", name, { args: args ?? [] }, location()); }
   / name:Identifier { return at({ kind: "TVar", name }, location()); }
 TypeList = first:TypeExpr rest:(_ "," _ t:TypeExpr { return t; })* _ ","? { return [first, ...rest]; }
 TypeParams = "<" _ first:TypeParam rest:(_ "," _ t:TypeParam { return t; })* _ ","? _ ">" { return [first, ...rest]; }
@@ -539,8 +554,8 @@ Constructor = !Keyword name:$([A-Z] IdentPart*) { return name; }
 Name = Constructor / Identifier
 MemberName = name:$([a-zA-Z_] IdentPart*) { return name; }
 FieldName = !Keyword name:MemberName { return name; }
-LongName = first:Name rest:("." n:MemberName { return n; })* { return [first, ...rest].join("."); }
-LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* { return [first, ...rest].join("."); }
+LongName = first:Name rest:("." n:MemberName { return n; })* { return longId(first, rest); }
+LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* { return longId(first, rest); }
 IdentPart = [a-zA-Z0-9_]
 Keyword = ("from" / "import" / "as" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
 __ = (Whitespace / Comment)+

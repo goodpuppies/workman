@@ -1,4 +1,5 @@
-import type { Expr, RecordExprSpread } from "../ast.ts";
+import type { Expr, LongId, RecordExprSpread } from "../ast.ts";
+import { longIdSpelling } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
@@ -22,8 +23,19 @@ import { recordRecordFieldFact, recordRecordProjectionFact, type TypeFacts } fro
 type InferValue = (expr: Expr, expected?: Ty) => Ty;
 type NamedTy = Extract<Ty, { tag: "named" }>;
 
+/**
+ * Resolve a dotted expression that is not (or not entirely) an SML long
+ * identifier.
+ *
+ * Workman overloads `.` for both structure qualification and nominal record
+ * projection, so a spelling such as `Lib.value.field` may resolve partly through
+ * `StrEnv` and partly by projecting fields out of the reached value. Structure
+ * qualification is tried first via `resolveLongValue`; every qualifier it does
+ * not consume is a record projection. Record projection is a Workman extension,
+ * not a Definition long identifier, so it peels segments off the path directly.
+ */
 export function inferDottedVar(
-  name: string,
+  path: LongId,
   env: Env,
   typeEnv: TypeEnv,
   strEnv?: StrEnv,
@@ -34,12 +46,13 @@ export function inferDottedVar(
     diagnostics: FrontendDiagnostic[];
   },
 ): Ty {
+  const name = longIdSpelling(path);
   const scheme = env.get(name);
   if (scheme) return instantiate(scheme);
-  const structured = strEnv && resolveLongValue(strEnv, name);
+  const structured = strEnv && resolveLongValue(strEnv, path);
   if (structured) {
-    const parts = name.split(".");
-    const firstFieldIndex = parts.length - structured.remaining.length;
+    const segments = path.qualifiers.length + 1;
+    const firstFieldIndex = segments - structured.remaining.length;
     return structured.remaining.reduce((type, field, index) => {
       const resolved = inferRecordField(type, field, typeEnv, occurrence);
       if (resolved.record && occurrence) {
@@ -53,13 +66,17 @@ export function inferDottedVar(
       return resolved.type;
     }, instantiate(structured.scheme));
   }
-  const dot = name.lastIndexOf(".");
-  if (dot < 0) throw new Error(`unknown name ${name}`);
-  const baseName = name.slice(0, dot);
-  const field = name.slice(dot + 1);
+  // No structure prefix resolved: the final segment is a record field of the
+  // value denoted by the remaining prefix.
+  if (path.qualifiers.length === 0) throw new Error(`unknown name ${name}`);
+  const receiver: LongId = {
+    qualifiers: path.qualifiers.slice(0, -1),
+    id: path.qualifiers.at(-1)!,
+  };
+  const field = path.id;
   try {
     const resolved = inferRecordField(
-      inferDottedVar(baseName, env, typeEnv, strEnv, occurrence),
+      inferDottedVar(receiver, env, typeEnv, strEnv, occurrence),
       field,
       typeEnv,
       occurrence,
@@ -67,7 +84,7 @@ export function inferDottedVar(
     if (resolved.record && occurrence) {
       recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
         name: field,
-        partIndex: name.split(".").length - 1,
+        partIndex: path.qualifiers.length,
         record: resolved.record,
         type: resolved.type,
       });

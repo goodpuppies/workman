@@ -355,8 +355,8 @@ function peg$parse(input, options) {
   function peg$f35(s) {    return at({ kind: "PString", value: s.value }, location());  }
   function peg$f36(first, rest) {    return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location());  }
   function peg$f37(name) {    return at({ kind: "PVar", name }, location());  }
-  function peg$f38(c, args) {    return at({ kind: "PCtor", name: c, args: args ?? [] }, location());  }
-  function peg$f39(c) {    return at({ kind: "PCtor", name: c, args: [] }, location());  }
+  function peg$f38(c, args) {    return longNode("PCtor", c, { args: args ?? [] }, location());  }
+  function peg$f39(c) {    return longNode("PCtor", c, { args: [] }, location());  }
   function peg$f40(name) {    return at({ kind: "PVar", name }, location());  }
   function peg$f41(first, p) {    return p;  }
   function peg$f42(first, rest) {    return [first, ...rest];  }
@@ -468,7 +468,7 @@ function peg$parse(input, options) {
   function peg$f88(head, tail) {    return tail.reduce((callee, item) => at({ kind: "Call", callee, args: item.args }, location()), head);  }
   function peg$f89(args) {    return { kind: "Call", args: args ?? [] };  }
   function peg$f90(arg) {    return { kind: "Call", args: [arg] };  }
-  function peg$f91(v) {    return at({ kind: "Var", name: v }, location());  }
+  function peg$f91(v) {    return longNode("Var", v, {}, location());  }
   function peg$f92(carrier, args) {    return carrierTupleLift(carrier, args, location());  }
   function peg$f93(args) {    return taskTupleLift(args, location());  }
   function peg$f94(message) {    return at({ kind: "Panic", message }, location());  }
@@ -512,9 +512,9 @@ function peg$parse(input, options) {
   function peg$f126(s) {    return at({ kind: "PString", value: s.value }, location());  }
   function peg$f127(first, rest) {    return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location());  }
   function peg$f128(name) {    return at({ kind: "PVar", name }, location());  }
-  function peg$f129(c, args) {    return at({ kind: "PCtor", name: c, args: args ?? [] }, location());  }
-  function peg$f130(c) {    return at({ kind: "PCtor", name: c, args: [] }, location());  }
-  function peg$f131(v) {    return at({ kind: "PPinned", name: v }, location());  }
+  function peg$f129(c, args) {    return longNode("PCtor", c, { args: args ?? [] }, location());  }
+  function peg$f130(c) {    return longNode("PCtor", c, { args: [] }, location());  }
+  function peg$f131(v) {    return longNode("PPinned", v, {}, location());  }
   function peg$f132(ps) {    return ps ?? [];  }
   function peg$f133(pattern, ann) {    return at({ pattern, annotation: ann }, location());  }
   function peg$f134() {    return at({ kind: "PWildcard" }, location());  }
@@ -527,8 +527,8 @@ function peg$parse(input, options) {
   function peg$f141(first, p) {    return p;  }
   function peg$f142(first, rest) {    return [first, ...rest];  }
   function peg$f143(name) {    return at({ kind: "PVar", name }, location());  }
-  function peg$f144(c, args) {    return at({ kind: "PCtor", name: c, args: args ?? [] }, location());  }
-  function peg$f145(c) {    return at({ kind: "PCtor", name: c, args: [] }, location());  }
+  function peg$f144(c, args) {    return longNode("PCtor", c, { args: args ?? [] }, location());  }
+  function peg$f145(c) {    return longNode("PCtor", c, { args: [] }, location());  }
   function peg$f146(v) {    return at({ kind: "PVar", name: v }, location());  }
   function peg$f147(p) {    return p;  }
   function peg$f148(first, p) {    return p;  }
@@ -541,8 +541,8 @@ function peg$parse(input, options) {
   function peg$f155(first, rest, t) {    return t;  }
   function peg$f156(first, rest, tail) {    return listPattern([first, ...rest], tail ?? undefined, location());  }
   function peg$f157(name) {    return at({ kind: "PVar", name }, location());  }
-  function peg$f158(c, args) {    return at({ kind: "PCtor", name: c, args: args ?? [] }, location());  }
-  function peg$f159(c) {    return at({ kind: "PCtor", name: c, args: [] }, location());  }
+  function peg$f158(c, args) {    return longNode("PCtor", c, { args: args ?? [] }, location());  }
+  function peg$f159(c) {    return longNode("PCtor", c, { args: [] }, location());  }
   function peg$f160(v) {    return at({ kind: "PVar", name: v }, location());  }
   function peg$f161(p) {    return p;  }
   function peg$f162() {    return nilPattern(location());  }
@@ -575,7 +575,7 @@ function peg$parse(input, options) {
   function peg$f189(first, rest) {    return at({ kind: "TTuple", items: [first, ...(rest ?? [])] }, location());  }
   function peg$f190(t) {    return t;  }
   function peg$f191(name, xs) {    return xs;  }
-  function peg$f192(name, args) {    return at({ kind: "TName", name, args: args ?? [] }, location());  }
+  function peg$f192(name, args) {    return longNode("TName", name, { args: args ?? [] }, location());  }
   function peg$f193(name) {    return at({ kind: "TVar", name }, location());  }
   function peg$f194(first, t) {    return t;  }
   function peg$f195(first, rest) {    return [first, ...rest];  }
@@ -603,9 +603,9 @@ function peg$parse(input, options) {
   function peg$f217(name) {    return name;  }
   function peg$f218(name) {    return name;  }
   function peg$f219(first, n) {    return n;  }
-  function peg$f220(first, rest) {    return [first, ...rest].join(".");  }
+  function peg$f220(first, rest) {    return longId(first, rest);  }
   function peg$f221(first, n) {    return n;  }
-  function peg$f222(first, rest) {    return [first, ...rest].join(".");  }
+  function peg$f222(first, rest) {    return longId(first, rest);  }
   let peg$currPos = options.peg$currPos | 0;
   let peg$savedPos = peg$currPos;
   const peg$posDetailsCache = [{ line: 1, column: 1 }];
@@ -10777,6 +10777,19 @@ function peg$parse(input, options) {
       end: loc.end.offset,
     };
   }
+  // A Revised Definition long identifier: LongX = StrId* x X. `qualifiers` is the
+  // StrId* prefix, `id` the base identifier. `spelling` is display/emit only.
+  function longId(first, rest) {
+    const parts = [first, ...rest];
+    return { qualifiers: parts.slice(0, -1), id: parts.at(-1) };
+  }
+  function spelling(path) {
+    return path.qualifiers.length === 0 ? path.id : path.qualifiers.join(".") + "." + path.id;
+  }
+  /** Build a node carrying both the semantic long identifier and its spelling. */
+  function longNode(kind, path, extra, loc) {
+    return at({ kind, name: spelling(path), path, ...extra }, loc);
+  }
   function mod(decls, loc) { return at({ kind: "Module", decls }, loc); }
   function topExpression(expr, loc) {
     const pattern = at({ kind: "PVar", name: "it" }, loc);
@@ -10789,7 +10802,7 @@ function peg$parse(input, options) {
     }, loc);
   }
   function asCtor(expr) {
-    if (expr.kind !== "TName" || expr.name.includes(".")) {
+    if (expr.kind !== "TName" || (expr.path && expr.path.qualifiers.length > 0)) {
       throw new Error("variant members must be constructor names");
     }
     return { name: expr.name, args: expr.args, node: expr.node };
@@ -10856,7 +10869,7 @@ function peg$parse(input, options) {
         ? tupleExpr(nextValues, loc)
         : build(index + 1, nextValues);
       return callExpr(
-        varExpr(index === tasks.length - 1 ? "Task.map" : "Task.andThen", loc),
+        longNode("Var", { qualifiers: ["Task"], id: index === tasks.length - 1 ? "map" : "andThen" }, {}, loc),
         [tasks[index], liftedLambda(name, body, loc)],
         loc,
       );
@@ -10875,8 +10888,10 @@ function peg$parse(input, options) {
       const nextValues = [...values, value];
       const isLast = index === items.length - 1;
       const body = isLast ? tupleExpr(nextValues, loc) : build(index + 1, nextValues);
+      // `carrier` is a long identifier; the lifted member extends its qualifiers.
+      const member = { qualifiers: [...carrier.qualifiers, carrier.id], id: isLast ? "map" : "andThen" };
       return callExprAtSpan(
-        varExpr(`${carrier}.${isLast ? "map" : "andThen"}`, loc),
+        longNode("Var", member, {}, loc),
         [items[index], liftedLambda(name, body, loc)],
         items[index].node?.span ?? span(loc),
       );

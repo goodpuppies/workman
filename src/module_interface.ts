@@ -1,4 +1,5 @@
 import type { Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
+import { isQualified, parseLongId, pathOf } from "./ast.ts";
 import type {
   BindingFacts,
   BindingScopeCheckpoint,
@@ -1872,9 +1873,9 @@ function semanticTokenKindOrder(kind: SemanticTokenFact["kind"]): number {
 }
 
 function argumentUsesParameterName(argument: Expr, parameter: string): boolean {
-  return argument.kind === "Var" &&
-    !(argument.sourceName ?? argument.name).includes(".") &&
-    (argument.sourceName ?? argument.name) === parameter;
+  if (argument.kind !== "Var") return false;
+  const spelling = argument.sourceName ?? argument.name;
+  return !isQualified(parseLongId(spelling)) && spelling === parameter;
 }
 
 function semanticExpressionLabel(expression: Expr): string {
@@ -2826,8 +2827,11 @@ function recoveredCallable(
     names?: readonly string[];
   }>
   | undefined {
+  // `callee` is raw text scanned from unparsed current source near the cursor, so its
+  // path is reconstructed through the one sanctioned constructor.
+  const calleePath = parseLongId(callee);
   const scope = semanticScopeAt(owner, offset);
-  if (!callee.includes(".")) {
+  if (!isQualified(calleePath)) {
     const target = scope.values.get(callee);
     if (!target) return;
     const type = completionTypeForTarget(project, target);
@@ -2840,8 +2844,8 @@ function recoveredCallable(
       names: callableNamesForTarget(project, target),
     });
   }
-  const [qualifier, ...memberParts] = callee.split(".");
-  const member = memberParts.join(".");
+  const qualifier = calleePath.qualifiers[0];
+  const member = [...calleePath.qualifiers.slice(1), calleePath.id].join(".");
   const structure = scope.structures.get(qualifier);
   if (structure === undefined) return;
   const imported = owner.imports.find(({ structureAlias }) => structureAlias?.id === structure);
@@ -3456,7 +3460,12 @@ function analysisCompleteness(
       ? "partial"
       : "complete",
     elaboration: complete ? "complete" : "partial",
-    occurrences: "partial",
+    // Occurrence coverage of authored names is audited by the
+    // `[module update A608] strict occurrences cover every authored named node`
+    // regression; a failed phrase contributes no occurrences, so recovered
+    // analyses remain partial. Scope completeness stays explicitly partial until
+    // it has equivalent audit evidence.
+    occurrences: complete ? "complete" : "partial",
     scopes: "partial",
     ffi: !complete ? "partial" : ffiFacts.imports.length === 0 &&
         ffiFacts.calls.length === 0 &&
@@ -3836,12 +3845,15 @@ function semanticOccurrences(
       : reference.kind === "PPinned"
       ? reference.name
       : "";
+    // `sourceName` is an authored FFI spelling with no parsed node, so the path is
+    // reconstructed through the one sanctioned constructor rather than ad-hoc splits.
+    const spellingPath = parseLongId(spelling);
     const qualified = bindings.structureReferences.has(reference) ||
       (reference.kind === "Var" &&
         (bindings.sourceStructureReferences.has(reference) ||
-          (reference.sourceName?.includes(".") === true &&
+          (reference.sourceName !== undefined && isQualified(spellingPath) &&
             bindings.jsImportSourceBindings.has(id))));
-    const name = qualified ? spelling.split(".").at(-1)! : spelling.split(".")[0];
+    const name = qualified ? spellingPath.id : spellingPath.qualifiers[0] ?? spellingPath.id;
     const fact = isPattern(reference)
       ? result.facts.patterns.get(reference)
       : result.facts.expressions.get(reference);
@@ -3910,10 +3922,12 @@ function semanticOccurrences(
       reference.kind !== "Var" && reference.kind !== "PCtor" &&
       reference.kind !== "PPinned"
     ) continue;
+    const qualifierPath = reference.kind === "Var" && reference.sourceName !== undefined
+      ? parseLongId(reference.sourceName)
+      : pathOf(reference);
     addSemanticOccurrence(
       occurrences,
-      (reference.kind === "Var" ? reference.sourceName ?? reference.name : reference.name)
-        .split(".")[0],
+      qualifierPath.qualifiers[0] ?? qualifierPath.id,
       "qualifier",
       { kind: "structure", id },
       reference.node,
@@ -3955,7 +3969,7 @@ function semanticOccurrences(
     }
     addSemanticOccurrence(
       occurrences,
-      reference.name.split(".").at(-1)!,
+      pathOf(reference).id,
       "reference",
       { kind: "type", id },
       reference.node,
@@ -4033,9 +4047,7 @@ function semanticOccurrences(
       ? result.facts.patterns.has(reference as Pattern)
       : result.facts.expressions.has(reference as Expr);
     if (!belongsToModule) continue;
-    const name = reference.kind === "Var" || reference.kind === "PCtor"
-      ? reference.name.split(".").at(-1)!
-      : "";
+    const name = reference.kind === "Var" || reference.kind === "PCtor" ? pathOf(reference).id : "";
     const referenceFact = isPattern(reference)
       ? result.facts.patterns.get(reference)
       : result.facts.expressions.get(reference);
@@ -4258,10 +4270,13 @@ function addExternalValueOccurrences(
   source: string,
   inferredType: SemanticOccurrenceType | undefined,
 ): void {
-  if (structureId !== undefined && name.includes(".")) {
+  // `name` is a basis/standard spelling from a compiler-owned table, so the path is
+  // constructed once through the sanctioned constructor.
+  const path = parseLongId(name);
+  if (structureId !== undefined && isQualified(path)) {
     addSemanticOccurrence(
       output,
-      name.split(".")[0],
+      path.qualifiers[0],
       "qualifier",
       { kind: "structure", id: structureId },
       node,
@@ -4271,7 +4286,7 @@ function addExternalValueOccurrences(
   }
   addSemanticOccurrence(
     output,
-    name.split(".").at(-1)!,
+    path.id,
     "reference",
     { kind: "value", id: valueId },
     node,

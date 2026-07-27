@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { assertEquals, assertMatch, assertRejects, assertThrows } from "@std/assert";
 import { checkFile, checkVirtual, compileVirtual } from "../src/compiler.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
 import { moduleId } from "../src/module_id.ts";
@@ -139,7 +139,10 @@ Deno.test("Workman namespace in value position resolves its explicit carrier exp
   ]);
 
   const javaScript = await compileVirtual("/test/main.wm", virtualFs);
-  assertEquals(javaScript.includes("Lib.carrier"), true);
+  // The backend alias carries a compiler-owned identity (R502), so the emitted
+  // spelling is not `Lib`. The semantic fact is that the bare namespace selects
+  // the `carrier` member of the module alias.
+  assertMatch(javaScript, /const selected_\d+ = \w+\.carrier;/);
 
   const output: string[] = [];
   const original = console.log;
@@ -164,14 +167,28 @@ Deno.test("only a bare namespace value resolves to its carrier export", async ()
       "/test/main.wm",
       'from "./lib.wm" import * as Lib; ' +
       "let selected = Lib; " +
-      "let qualified = true :> Lib.toBool;",
+      "let qualified = true :> Lib.toBool; " +
+      "let main = () => { print(qualified) };",
     ],
   ]);
 
   const javaScript = await compileVirtual("/test/main.wm", virtualFs);
-  assertEquals(javaScript.includes("Lib.carrier"), true);
-  assertEquals(javaScript.includes("Lib.toBool"), true);
-  assertEquals(javaScript.includes("Lib.carrier.toBool"), false);
+  // Bare `Lib` desugars to `Lib.carrier`; a qualified `Lib.toBool` resolves the
+  // member directly and is never routed through the carrier. Backend aliases
+  // carry compiler-owned identities, so match the shape rather than a spelling.
+  assertMatch(javaScript, /const selected_\d+ = \w+\.carrier;/);
+  assertMatch(javaScript, /const qualified_\d+ = \w+\.toBool\(true\);/);
+  assertEquals(/\.carrier\.toBool/.test(javaScript), false);
+
+  const output: string[] = [];
+  const original = console.log;
+  console.log = (value) => output.push(String(value));
+  try {
+    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+  } finally {
+    console.log = original;
+  }
+  assertEquals(output, ["true"]);
 });
 
 Deno.test("missing qualified members do not fall back through a namespace carrier", async () => {

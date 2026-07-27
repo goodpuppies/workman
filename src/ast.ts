@@ -2,6 +2,71 @@ import type { AstNode, SourceSpan } from "./source.ts";
 
 export type Located<T> = T & { node?: AstNode };
 
+/**
+ * A Revised Definition long identifier.
+ *
+ * The Definition (Section 2.4, "Identifiers") gives long identifiers the shape
+ *
+ * ```text
+ * LongX = StrId* x X
+ * longx ::= x | strid_1. ... .strid_n.x   (n >= 1)
+ * ```
+ *
+ * and defines lookup as iterated structure-environment projection followed by a
+ * lookup in the component environment (Section 4.3): for
+ * `longvid = strid_1. ... .strid_k.vid`, `E(longvid)` projects `SE` k times and
+ * then applies `VE`.
+ *
+ * `qualifiers` is therefore the `StrId*` prefix and `id` is the base identifier.
+ * An unqualified identifier has no qualifiers. This is the semantic object; the
+ * dotted spelling is a display/emit rendering of it and is never a semantic key.
+ *
+ * Host member paths (JavaScript FFI receivers, GPU intrinsic names, reflected
+ * foreign-type keys) are not SML long identifiers and keep their own
+ * representation.
+ */
+export type LongId = Readonly<{ qualifiers: readonly string[]; id: string }>;
+
+/** The long identifier for an unqualified name. */
+export function longId(id: string): LongId {
+  return { qualifiers: [], id };
+}
+
+/** The authored/display spelling of a long identifier. Never a semantic key. */
+export function longIdSpelling(path: LongId): string {
+  return path.qualifiers.length === 0 ? path.id : `${path.qualifiers.join(".")}.${path.id}`;
+}
+
+/** True when the long identifier is qualified by at least one structure identifier. */
+export function isQualified(path: LongId): boolean {
+  return path.qualifiers.length > 0;
+}
+
+/**
+ * The long identifier of a source node carrying one.
+ *
+ * Source-derived nodes always carry an explicit `path` from the parser. Nodes
+ * built programmatically by desugaring and FFI lowering may omit it; this is the
+ * single place permitted to recover the structure from a dotted spelling, so
+ * that semantic code never splits names itself.
+ */
+export function pathOf(node: { name: string; path?: LongId }): LongId {
+  return node.path ?? parseLongId(node.name);
+}
+
+/**
+ * Recover a long identifier from a dotted spelling.
+ *
+ * This is for *constructing* long identifiers from compiler-owned tables whose
+ * keys are authored as dotted text (the basis manifest, standard-structure
+ * member tables). It is not a name resolver: semantic lookup consumes a `LongId`
+ * and never re-derives one from a rendered name.
+ */
+export function parseLongId(spelling: string): LongId {
+  const parts = spelling.split(".");
+  return { qualifiers: parts.slice(0, -1), id: parts.at(-1)! };
+}
+
 export type Module = Located<{
   kind: "Module";
   decls: Decl[];
@@ -81,6 +146,8 @@ export type Expr =
   | Located<{
     kind: "Var";
     name: string;
+    /** The Definition's `longvid`. Semantic lookup uses this, never `name`. */
+    path?: LongId;
     /** Authored spelling retained when lowering replaces `name` with a compiler-only binding. */
     sourceName?: string;
   }>
@@ -128,14 +195,14 @@ export type Pattern =
   | Located<{ kind: "PString"; value: string }>
   | Located<{ kind: "PBool"; value: boolean }>
   | Located<{ kind: "PVoid" }>
-  | Located<{ kind: "PPinned"; name: string }>
+  | Located<{ kind: "PPinned"; name: string; path?: LongId }>
   | Located<{ kind: "PTuple"; items: Pattern[] }>
   | Located<{ kind: "PRecord"; fields: RecordPatternField[] }>
-  | Located<{ kind: "PCtor"; name: string; args: Pattern[] }>;
+  | Located<{ kind: "PCtor"; name: string; path?: LongId; args: Pattern[] }>;
 
 export type RecordPatternField = Located<{ name: string; pattern: Pattern }>;
 export type TypeExpr =
-  | Located<{ kind: "TName"; name: string; args: TypeExpr[] }>
+  | Located<{ kind: "TName"; name: string; path?: LongId; args: TypeExpr[] }>
   | Located<{ kind: "TVar"; name: string }>
   | Located<{ kind: "TTuple"; items: TypeExpr[] }>
   | Located<{ kind: "TFn"; params: TypeExpr[]; result: TypeExpr }>;

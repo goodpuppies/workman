@@ -16,6 +16,7 @@ import {
 import { moduleId } from "../src/module_id.ts";
 import type { ModuleMap } from "../src/module_id.ts";
 import { loadModuleGraph, type ModuleGraph } from "../src/module_graph.ts";
+import { parse } from "../src/parser.ts";
 import { buildPartialProjectSnapshot } from "../src/program_analysis.ts";
 import { topLevelPhraseRanges } from "../src/top_level_phrases.ts";
 
@@ -49,7 +50,7 @@ Deno.test("[module update A601-A606] strict analysis produces one owned interfac
     syntax: "complete",
     imports: "complete",
     elaboration: "complete",
-    occurrences: "partial",
+    occurrences: "complete",
     scopes: "partial",
     ffi: "not-applicable",
     gpu: "not-applicable",
@@ -1213,15 +1214,18 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
     main.ffiFacts.imports[0].bindings.some((binding) => binding.localName.startsWith("__ffi_")),
     false,
   );
-  assertEquals(main.ffiFacts.calls.map((call) => ({
-    label: call.label,
-    source: source.slice(call.span.start, call.span.end),
-    receiverElided: call.receiverElided,
-  })), [{
-    label: "jsmax",
-    source: "jsmax",
-    receiverElided: true,
-  }]);
+  assertEquals(
+    main.ffiFacts.calls.map((call) => ({
+      label: call.label,
+      source: source.slice(call.span.start, call.span.end),
+      receiverElided: call.receiverElided,
+    })),
+    [{
+      label: "jsmax",
+      source: "jsmax",
+      receiverElided: true,
+    }],
+  );
   assertEquals(Object.isFrozen(main.ffiFacts.calls), true);
   assertEquals(Object.isFrozen(main.ffiFacts.calls[0]), true);
 });
@@ -1355,3 +1359,70 @@ function declarationTextRange(source: string, startText: string): { start: numbe
   const start = source.indexOf(startText);
   return { start, end: source.indexOf(";", start) };
 }
+
+/**
+ * `A608` occurrence-completeness audit: in a strict, fully elaborated analysis, every
+ * authored named node — values, constructors, pinned patterns, type uses, and pattern
+ * binders at any nesting depth — has a semantic occurrence inside its source span.
+ *
+ * Nodes fabricated by list desugaring (`Cons`/`Nil` at bracket spans) are excluded by
+ * checking the authored source text: an occurrence for a spelling that does not appear
+ * at its span would itself be wrong. This audit is the evidence for reporting
+ * `occurrences: "complete"` on strict analyses.
+ */
+Deno.test("[module update A608] strict occurrences cover every authored named node", async () => {
+  const lib = [
+    "record Point<T> = { x: T, y: T };",
+    "type Shape = | Dot<Point<Number>> | Empty;",
+    "let origin = Point(0, 0);",
+    "let describe = (shape: Shape) => { match(shape) { Dot(Var(p)) => { p.x }, Empty => { 0 } } };",
+  ].join(" ");
+  const main = [
+    'from "./lib.wm" import * as Lib;',
+    'from "./lib.wm" import { describe as label, Shape };',
+    'from "./lib.wm" import *;',
+    "let selected = Lib.origin;",
+    "let dot: Lib.Shape = Lib.Dot(selected);",
+    "let value = label(dot);",
+    "let sum = selected.x + Lib.origin.y;",
+    "let matched = match(dot) { Lib.Dot(Var(inner)) => { inner.x }, _ => { 0 } };",
+    "let listy = match([1, 2]) { [Var(h), ..Var(t)] => { h + describe(Dot(origin)) }, [] => { 0 } };",
+    "let block = { let local = origin; describe(Dot(local)) };",
+  ].join(" ");
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/lib.wm", lib], ["/test/main.wm", main]]),
+  );
+
+  for (const [path, source] of [["/test/lib.wm", lib], ["/test/main.wm", main]] as const) {
+    const moduleInterface = analysis.projectSnapshot.interfaces.get(moduleId(path))!;
+    assertEquals(moduleInterface.completeness.occurrences, "complete", path);
+
+    const missing: string[] = [];
+    const visit = (value: unknown) => {
+      if (Array.isArray(value)) return value.forEach(visit);
+      if (!value || typeof value !== "object") return;
+      const node = value as Record<string, unknown>;
+      const kind = node.kind as string | undefined;
+      const named = kind === "Var" || kind === "PCtor" || kind === "PPinned" ||
+        kind === "TName" || kind === "PVar";
+      const span = (node.node as { span?: { start: number; end: number } } | undefined)?.span;
+      if (named && span && typeof node.name === "string") {
+        const baseName = node.name.split(".").at(-1)!;
+        const authored = source.slice(span.start, span.end).includes(baseName);
+        const covered = moduleInterface.occurrences.some((item) =>
+          item.span.start >= span.start && item.span.end <= span.end &&
+          (item.name === node.name || item.name === baseName)
+        );
+        if (authored && !covered) {
+          missing.push(`${kind} ${node.name} @${span.start}-${span.end}`);
+        }
+      }
+      for (const key of Object.keys(node)) {
+        if (key !== "node") visit(node[key]);
+      }
+    };
+    visit(await parse(source));
+    assertEquals(missing, [], path);
+  }
+});

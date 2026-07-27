@@ -1,3 +1,5 @@
+import type { LongId } from "../ast.ts";
+import { parseLongId } from "../ast.ts";
 import type { Env as ValEnv, Scheme, TypeEnv as TyEnv, TypeInfo } from "../types.ts";
 
 /** The SML static environment product implemented by Workman. */
@@ -77,81 +79,101 @@ export function projectStaticEnv(
 }
 
 /** Bind an implementation-provided long type name into its structural namespace. */
-export function bindLongType(strEnv: StrEnv, name: string, info: TypeInfo): void {
-  insertQualified(strEnv, name, (environment, member) => bindType(environment, member, info));
+export function bindLongType(strEnv: StrEnv, path: LongId, info: TypeInfo): void {
+  insertQualified(strEnv, path, (environment, member) => bindType(environment, member, info));
 }
 
-/** Build the structure portion of the legacy basis from its qualified bindings. */
+/**
+ * Build the structure portion of the basis from its qualified table entries.
+ *
+ * The basis manifest is a compiler-owned table whose keys are authored as dotted
+ * spellings. Parsing them here is construction of a structure environment, not
+ * semantic name resolution: after this point every lookup goes through `StrEnv`.
+ */
 export function basisStrEnv(tyEnv: TyEnv, valEnv: ValEnv): StrEnv {
   const strEnv: StrEnv = new Map();
   for (const [name, info] of tyEnv) {
-    bindLongType(strEnv, name, info);
+    bindLongType(strEnv, parseLongId(name), info);
   }
   for (const [name, scheme] of valEnv) {
-    insertQualified(strEnv, name, (environment, member) => bindValue(environment, member, scheme));
+    insertQualified(
+      strEnv,
+      parseLongId(name),
+      (environment, member) => bindValue(environment, member, scheme),
+    );
   }
   return strEnv;
 }
 
-export function lookupLongValue(strEnv: ReadonlyMap<string, StaticEnv>, name: string):
+export function lookupLongValue(strEnv: ReadonlyMap<string, StaticEnv>, path: LongId):
   | Scheme
   | undefined {
-  const resolved = resolveLongValue(strEnv, name);
+  const resolved = resolveLongValue(strEnv, path);
   return resolved?.remaining.length === 0 ? resolved.scheme : undefined;
 }
 
-export function lookupLongType(strEnv: ReadonlyMap<string, StaticEnv>, name: string):
+export function lookupLongType(strEnv: ReadonlyMap<string, StaticEnv>, path: LongId):
   | TypeInfo
   | undefined {
-  return resolveLongType(strEnv, name)?.info;
+  return resolveLongType(strEnv, path)?.info;
 }
 
 export function resolveLongType(
   strEnv: ReadonlyMap<string, StaticEnv>,
-  name: string,
+  path: LongId,
 ): { info: TypeInfo; root: StaticEnv } | undefined {
-  const resolved = lookupLongEnvironment(strEnv, name);
+  const resolved = lookupLongEnvironment(strEnv, path);
   const info = resolved?.environment.tyEnv.get(resolved.member);
   return resolved && info ? { info, root: resolved.root } : undefined;
 }
 
+/**
+ * The Definition's `E(longtycon)`: project `SE` once per structure identifier,
+ * then look the base identifier up in the reached environment's component.
+ */
 function lookupLongEnvironment(
   strEnv: ReadonlyMap<string, StaticEnv>,
-  name: string,
+  path: LongId,
 ): { environment: StaticEnv; member: string; root: StaticEnv } | undefined {
-  const parts = name.split(".");
-  if (parts.length < 2) return undefined;
-  const root = strEnv.get(parts[0]);
+  const [first, ...nestedQualifiers] = path.qualifiers;
+  if (first === undefined) return undefined;
+  const root = strEnv.get(first);
   if (!root) return undefined;
   let environment = root;
-  for (const structure of parts.slice(1, -1)) {
+  for (const structure of nestedQualifiers) {
     const nested = environment.strEnv.get(structure);
     if (!nested) return undefined;
     environment = nested;
   }
-  return { environment, member: parts.at(-1)!, root };
+  return { environment, member: path.id, root };
 }
 
+/**
+ * `E(longvid)`, allowing the base identifier to be reached before the qualifier
+ * list is exhausted. The unconsumed qualifiers are returned as `remaining` so a
+ * caller can continue with record-field projection through a value.
+ */
 export function resolveLongValue(
   strEnv: ReadonlyMap<string, StaticEnv>,
-  name: string,
+  path: LongId,
 ): { scheme: Scheme; remaining: string[] } | undefined {
-  const parts = name.split(".");
-  if (parts.length < 2) return undefined;
-  let environment: StaticEnv | undefined = strEnv.get(parts[0]);
-  for (let index = 1; index < parts.length; index += 1) {
+  const [first, ...rest] = path.qualifiers;
+  if (first === undefined) return undefined;
+  const members = [...rest, path.id];
+  let environment: StaticEnv | undefined = strEnv.get(first);
+  for (let index = 0; index < members.length; index += 1) {
     if (!environment) return undefined;
-    const part = parts[index];
-    if (index < parts.length - 1) {
-      const nested: StaticEnv | undefined = environment.strEnv.get(part);
+    const member = members[index];
+    if (index < members.length - 1) {
+      const nested: StaticEnv | undefined = environment.strEnv.get(member);
       if (nested) {
         environment = nested;
         continue;
       }
     }
-    const scheme = environment.valEnv.get(part);
+    const scheme = environment.valEnv.get(member);
     if (!scheme) return undefined;
-    return { scheme, remaining: parts.slice(index + 1) };
+    return { scheme, remaining: members.slice(index + 1) };
   }
   return undefined;
 }
@@ -162,18 +184,18 @@ function modifyMap<K, V>(left: Map<K, V>, right: ReadonlyMap<K, V>): void {
 
 function insertQualified(
   strEnv: StrEnv,
-  name: string,
+  path: LongId,
   insert: (environment: StaticEnv, member: string) => void,
 ): void {
-  const parts = name.split(".");
-  if (parts.length < 2) return;
-  const root = strEnv.get(parts[0]) ?? staticEnv();
-  bindStructure(staticEnv(strEnv), parts[0], root);
+  const [first, ...nestedQualifiers] = path.qualifiers;
+  if (first === undefined) return;
+  const root = strEnv.get(first) ?? staticEnv();
+  bindStructure(staticEnv(strEnv), first, root);
   let environment: StaticEnv = root;
-  for (const part of parts.slice(1, -1)) {
-    const nested: StaticEnv = environment.strEnv.get(part) ?? staticEnv();
-    bindStructure(environment, part, nested);
+  for (const qualifier of nestedQualifiers) {
+    const nested: StaticEnv = environment.strEnv.get(qualifier) ?? staticEnv();
+    bindStructure(environment, qualifier, nested);
     environment = nested;
   }
-  insert(environment, parts.at(-1)!);
+  insert(environment, path.id);
 }

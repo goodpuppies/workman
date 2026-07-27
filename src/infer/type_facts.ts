@@ -7,6 +7,7 @@ import type {
   RecordPatternField,
   TypeExpr,
 } from "../ast.ts";
+import { isQualified, parseLongId } from "../ast.ts";
 import type { AstNode } from "../source.ts";
 import { basisStructureId, type CompilerSemanticId } from "../compiler_semantics.ts";
 import type { StructureSemanticId, ValueId } from "../ids.ts";
@@ -357,12 +358,15 @@ export function recordConsumedFfiUse(
 }
 
 export function originForScheme(name: string, scheme: Scheme): TypeFactOrigin {
+  // `name` is the occurrence spelling; a qualified basis member such as
+  // `Option.map` owns its structure through the leading structure identifier.
+  const path = parseLongId(name);
   return {
     name,
     semanticId: scheme.semanticId,
     valueId: scheme.valueId,
-    structureId: scheme.valueId && name.includes(".")
-      ? basisStructureId(name.split(".")[0])
+    structureId: scheme.valueId && isQualified(path)
+      ? basisStructureId(path.qualifiers[0])
       : undefined,
     source: scheme.jsImport
       ? "js-import"

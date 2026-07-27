@@ -433,6 +433,29 @@ selection runs again. A compiler-produced current-source `main` candidate keeps 
 discoverable while `main` is incomplete or ill-typed; the semantic problem is diagnosed rather than
 making the project disappear.
 
+### D33. Qualified source names are SML long identifiers; host paths are not
+
+**Status:** decided
+
+A qualified Workman name in the SML fragment is the Revised Definition's long identifier
+(Section 2.4):
+
+```text
+LongX = StrId* x X
+```
+
+The parser produces this structure directly; the dotted spelling is retained only as a
+display/emit rendering and is never a semantic key. Semantic resolution consumes the structured
+path through `StrEnv`; recovering structure from a rendered spelling is reserved for the one
+sanctioned constructor and is permitted only for compiler-owned table keys, authored FFI
+spellings with no parsed node, and raw current-source text scanned near a cursor.
+
+JavaScript FFI host member paths, reflected foreign-type keys, and GPU backend member paths are
+**permanently not** SML long identifiers. They denote host-object traversal under host
+semantics, not `StrEnv` projection, and they keep their own representations. Making them long
+identifiers would misstate their lookup rules and force SML environment semantics onto systems
+that do not have them.
+
 ## Resolved terminology and non-blocking future questions
 
 ### Interface terminology
