@@ -41,7 +41,9 @@ type ProjectStatusResult = {
 };
 
 export async function activate(context: ExtensionContext) {
-  const outputChannel = window.createOutputChannel("Workman Language Server");
+  const outputChannel = window.createOutputChannel("Workman Language Server", {
+    log: true,
+  });
   context.subscriptions.push(outputChannel);
 
   // Displays which project head owns the active file, so head selection and

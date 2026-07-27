@@ -2,7 +2,7 @@
   "name": "workman",
   "displayName": "Workman",
   "description": "Language support for Workman",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "publisher": "goodpuppies",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
     "url": "https://github.com/goodpuppies/workman.git"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages"
@@ -123,14 +123,13 @@
     "watch": "tsc -watch -p ./",
     "package": "node ./scripts/package.mjs"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.91.0",
     "esbuild": "^0.25.0",
     "peggy": "^5.1.0",
     "typescript": "^7.0.2",
     "typescript-api": "npm:@typescript/typescript6@^6.0.2",
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^10.1.0"
   }
 }

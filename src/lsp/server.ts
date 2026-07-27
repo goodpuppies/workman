@@ -392,6 +392,7 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didClose") {
     workspaceRevision++;
     const params = message.params as DidCloseParams;
+    const previousActiveKeys = activeValidationKeys();
     await semanticService.closeDocument(params.textDocument.uri);
     documents.close(params.textDocument.uri);
     frontendV2ParseCache.delete(params.textDocument.uri);
@@ -404,9 +405,13 @@ async function handleMessage(message: RpcMessage) {
     projectIndex.forgetOpenFile(params.textDocument.uri);
     await refreshSemanticDocumentContexts();
     const activeKeys = activeValidationKeys();
-    for (const uri of affectedUris) {
-      if (activeKeys.has(projectIndex.fallbackUri(uri))) await publishValidation(uri);
+    const validationUris = new Set(
+      affectedUris.filter((uri) => activeKeys.has(projectIndex.fallbackUri(uri))),
+    );
+    for (const key of activeKeys) {
+      if (!previousActiveKeys.has(key)) validationUris.add(key);
     }
+    for (const uri of validationUris) await publishValidation(uri);
     await clearInactiveProjectDiagnostics(activeKeys);
     return;
   }
