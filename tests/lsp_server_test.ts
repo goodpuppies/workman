@@ -1018,3 +1018,115 @@ function encodeMessageBatch(messages: readonly RpcMessage[]): Uint8Array {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+Deno.test("workman/projectStatus reports the selected head and active projects", async () => {
+  const dir = await Deno.makeTempDir();
+  const libPath = `${dir}/lib.wm`;
+  const mainPath = `${dir}/main.wm`;
+  await Deno.writeTextFile(libPath, "let value = 1;");
+  await Deno.writeTextFile(
+    mainPath,
+    'from "./lib.wm" import * as Lib; let main = () => { print(Lib.value) };',
+  );
+  const mainUri = pathToFileUri(mainPath);
+  const libUri = pathToFileUri(libPath);
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: mainUri,
+          languageId: "wm",
+          version: 1,
+          text: await Deno.readTextFile(mainPath),
+        },
+      },
+    },
+    // The library file is inside the already-active headed project, so opening it
+    // must reuse that context rather than searching for another head (D32).
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: libUri,
+          languageId: "wm",
+          version: 1,
+          text: await Deno.readTextFile(libPath),
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "workman/projectStatus",
+      params: { textDocument: { uri: mainUri } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "workman/projectStatus",
+      params: { textDocument: { uri: libUri } },
+    },
+    { jsonrpc: "2.0", id: 4, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const forMain = messages.find((message) => message.id === 2)?.result as {
+    selected: { kind: string; headPath: string; moduleCount: number; recovered: boolean };
+    activeHeads: { kind: string; headPath: string; containsDocument: boolean }[];
+  };
+  assertEquals(forMain.selected.kind, "headed");
+  assertEquals(fileUriToPath(pathToFileUri(forMain.selected.headPath)), mainPath);
+  assertEquals(forMain.selected.moduleCount, 2);
+  assertEquals(forMain.selected.recovered, false);
+
+  const forLib = messages.find((message) => message.id === 3)?.result as typeof forMain;
+  assertEquals(forLib.selected.kind, "headed");
+  assertEquals(fileUriToPath(pathToFileUri(forLib.selected.headPath)), mainPath);
+  assertEquals(
+    forLib.activeHeads.some((head) =>
+      fileUriToPath(pathToFileUri(head.headPath)) === mainPath && head.containsDocument
+    ),
+    true,
+  );
+});
+
+Deno.test("workman/projectStatus reports a detached context for a headless file", async () => {
+  const dir = await Deno.makeTempDir();
+  const lonePath = `${dir}/lone.wm`;
+  await Deno.writeTextFile(lonePath, "let value = 1;");
+  const loneUri = pathToFileUri(lonePath);
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: loneUri,
+          languageId: "wm",
+          version: 1,
+          text: "let value = 1;",
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "workman/projectStatus",
+      params: { textDocument: { uri: loneUri } },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const status = messages.find((message) => message.id === 2)?.result as {
+    selected: { kind: string; headPath: string; moduleCount: number };
+  };
+  assertEquals(status.selected.kind, "detached");
+  assertEquals(fileUriToPath(pathToFileUri(status.selected.headPath)), lonePath);
+  assertEquals(status.selected.moduleCount, 1);
+});

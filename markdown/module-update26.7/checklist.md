@@ -723,6 +723,40 @@ Gate:
       queries through the shared semantic service; the former parallel resolver and fallback are
       deleted, and `src/lsp/` holds no environment model, name resolution, or path identity.
 
+## Stage 8: LSP and editor adoption of the module system
+
+Dependencies: `G22`–`G23`. This stage tracks the resumed LSP/editor work that consumes the new
+module system, beginning with making its behavior observable in real usage. The general feature
+plan lives in [`../lsp-update26.7/`](../lsp-update26.7/); items here are specifically the module
+system's editor surface.
+
+- [x] **E801** Expose a protocol-neutral project-status query derived entirely from compiler
+      facts: the document's selected `ProjectSnapshot` kind (headed/detached), its head's display
+      path, module count, and strict/recovered state, plus every active project head and whether
+      each contains the document. Implemented as the `workman/projectStatus` request over
+      `SemanticService`/`ProjectContextRegistry`; head paths are display facts taken from the
+      head interface, never identities.
+- [x] **E802** Surface the active project head in the editor. The VS Code extension shows a status
+      bar item with the selected head's basename (or `detached`), a recovered-analysis marker, and
+      a tooltip listing the full head path, module count, and other active projects. It refreshes
+      on active-editor change and after each diagnostics publication, making `D31`/`D32` head
+      selection and document-context stability directly observable while editing.
+- [x] **E803** Cover the status surface with server-protocol regressions: an entry file reports
+      itself as a headed project; opening a library file inside an already-active headed project
+      reuses that context and reports the same head with `containsDocument`; a headless file
+      reports a detached single-module context.
+- [ ] **E804** Notify rather than poll: push a `workman/projectStatus` change notification when
+      invalidation or head selection changes a document's owning project, instead of recomputing
+      on every diagnostics publication.
+- [ ] **E805** Extend the status surface to overlapping heads: when one shared path participates
+      in several active snapshots, let the editor switch which project context the document uses
+      and display the choice.
+- [ ] **E806** Display the selected basis profile and frontend/surface configuration alongside the
+      head, from the snapshot's recorded configuration facts.
+- [ ] **E807** Audit the remaining LSP features against project-context boundaries in real
+      multi-project workspaces (two heads sharing a library) using the status surface as ground
+      truth, and record any discrepancies as focused regressions.
+
 ## Explicitly deferred work
 
 These are tracked so they do not return as accidental first-pass requirements:

@@ -10,6 +10,7 @@ import { documentSymbols } from "./document_symbols.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { hoverAt } from "./hover.ts";
 import { type InitializeParams, ProjectIndex } from "./project_index.ts";
+import { projectStatusForUri } from "./project_status.ts";
 import { prepareRenameAt, renameAt } from "./rename.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./rpc.ts";
 import {
@@ -410,6 +411,14 @@ async function handleMessage(message: RpcMessage) {
     workspaceRevision++;
     const params = message.params as DidChangeWatchedFilesParams;
     await publishWatchedFileValidation(params.changes);
+    return;
+  }
+  if (message.method === "workman/projectStatus") {
+    const params = message.params as { textDocument: { uri: string } };
+    await respond(
+      message.id,
+      await projectStatusForUri(semanticService, params.textDocument.uri),
+    );
     return;
   }
   if (message.method !== undefined) {

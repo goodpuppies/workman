@@ -239,47 +239,35 @@ Every analyzed module should produce a semantic index with:
 
 ### Symbol identity
 
-A first symbol identity can use:
+Symbol identity is compiler-owned; the LSP defines no identity model of its own. The module
+update's handoff supplies:
 
-```ts
-type SymbolId = {
-  namespace: "value" | "type" | "constructor" | "field";
-  module: ModuleId;
-  definingNodeId: number;
-};
+- an opaque, resolver-owned `ModuleId` with no display, path, or emit representation — an earlier
+  draft here sketched `ModuleId = { canonicalPath: string }`, which is now explicitly forbidden
+  (paths are display facts, never identity);
+- `ValueId`, `CtorId`, `TypeNameId`, `FieldId`, `StructureId`, and `TypeVariableId` carried by
+  interface occurrences, scopes, and typed nodes;
+- stable `basis-value:*`, `standard-value:*`, and `basis-structure:*` identities for initial-basis
+  and compiled-standard members, so `print` and `Option.map` use the same occurrence model as
+  local declarations;
+- snapshot-local interface generations for conservative invalidation.
 
-type ModuleId = {
-  canonicalPath: string;
-};
+Alias and import relationships are interface facts, already implemented with these behaviors:
 
-type StructureAliasId = {
-  owner: ModuleId;
-  definingNodeId: number;
-};
-```
-
-When a stable compiler node ID is unavailable, a definition span and declaration kind may be used
-within the captured snapshot. Names alone must never define identity.
-
-Aliases and imports need explicit relationships:
-
-- a named import occurrence refers to the exported target symbol;
-- a local import alias has a local spelling but the same target identity for definition/reference
-  purposes;
-- a namespace alias is a local structure binding and refers separately to the target `ModuleId`;
+- a named import occurrence refers to the exported target symbol; its local alias shares the
+  target identity for definition/reference purposes;
+- a namespace alias is a local `StructureId` with a compiler relation to the target `ModuleId`;
+  repeated aliases of one module keep distinct `StructureId`s while sharing every target nominal
+  identity;
 - a namespace qualifier occurrence refers to that local structure alias;
-- a record type and its constructor are different symbols;
+- a record type and its constructor are different symbols; nominal record fields share one
+  `FieldId` across declarations, literals, patterns, and projections;
 - a pinned pattern name is a reference;
-- a type alias declaration is a symbol even though its denoted type may share another nominal
-  identity.
+- FFI-generated `__ffi_*` aliases are compiler-only lowering identities related back to their
+  authored import binding and never appear in source scopes or occurrences.
 
-Rename may later need both "rename target symbol" and "rename local alias" operations. The semantic
-index must retain enough role information to make that choice explicit.
-
-The module/file semantics underlying these identities are being specified in
-[`../module-update26.7/`](../module-update26.7/). This section is provisional until that plan's LSP
-handoff. In particular, importing one canonical source unit under multiple aliases must not create
-multiple nominal type identities.
+The compiler rename query already distinguishes "rename target symbol" from "rename local alias"
+through occurrence roles; the LSP only validates the lexical category and converts spans.
 
 ## Partial analysis
 

@@ -1,6 +1,14 @@
 import * as fs from "fs";
 import * as path from "path";
-import { commands, type ExtensionContext, window, workspace } from "vscode";
+import {
+  commands,
+  type ExtensionContext,
+  MarkdownString,
+  StatusBarAlignment,
+  type TextEditor,
+  window,
+  workspace,
+} from "vscode";
 import {
   LanguageClient,
   type LanguageClientOptions,
@@ -12,9 +20,49 @@ import { denoServerConfig, nodeServerConfig, resolveConfiguredPath } from "./ser
 
 let client: LanguageClient | undefined;
 
+type ProjectStatusResult = {
+  selected: {
+    kind: "headed" | "detached";
+    headPath: string;
+    moduleCount: number;
+    recovered: boolean;
+  } | null;
+  activeHeads: {
+    kind: "headed" | "detached";
+    headPath: string;
+    moduleCount: number;
+    containsDocument: boolean;
+  }[];
+};
+
 export async function activate(context: ExtensionContext) {
   const outputChannel = window.createOutputChannel("Workman Language Server");
   context.subscriptions.push(outputChannel);
+
+  // Displays which project head owns the active file, so head selection and
+  // stability (one `main` head plus its reachable graph) are observable in real use.
+  const projectStatusItem = window.createStatusBarItem(StatusBarAlignment.Left, 90);
+  projectStatusItem.name = "Workman Project";
+  context.subscriptions.push(projectStatusItem);
+
+  const updateProjectStatus = async (editor: TextEditor | undefined) => {
+    if (!editor || editor.document.languageId !== "wm" || !client || !client.isRunning()) {
+      projectStatusItem.hide();
+      return;
+    }
+    try {
+      const status = await client.sendRequest<ProjectStatusResult>(
+        "workman/projectStatus",
+        { textDocument: { uri: editor.document.uri.toString() } },
+      );
+      renderProjectStatus(projectStatusItem, status);
+    } catch {
+      projectStatusItem.hide();
+    }
+  };
+  context.subscriptions.push(
+    window.onDidChangeActiveTextEditor((editor) => void updateProjectStatus(editor)),
+  );
 
   const start = async () => {
     const server = resolveServer(context);
@@ -96,6 +144,8 @@ export async function activate(context: ExtensionContext) {
             `[workman-client] diagnostics uri=${uri.toString()} count=${diagnostics.length}`,
           );
           next(uri, diagnostics);
+          // Revalidation may have changed which project owns the active file.
+          void updateProjectStatus(window.activeTextEditor);
         },
         provideHover: async (document, position, token, next) => {
           const hover = await next(document, position, token);
@@ -119,6 +169,7 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(client);
     await client.start();
     await client.setTrace(traceSetting());
+    void updateProjectStatus(window.activeTextEditor);
   };
 
   context.subscriptions.push(
@@ -168,6 +219,43 @@ function resolveServer(context: ExtensionContext): Server | undefined {
     "workman-lsp.mjs",
   );
   return fs.existsSync(bundled) ? { kind: "node", path: bundled } : undefined;
+}
+
+function renderProjectStatus(
+  item: ReturnType<typeof window.createStatusBarItem>,
+  status: ProjectStatusResult,
+): void {
+  const selected = status.selected;
+  if (!selected) {
+    item.hide();
+    return;
+  }
+  const headName = path.basename(selected.headPath);
+  item.text = selected.kind === "headed"
+    ? `$(symbol-structure) WM: ${headName}${selected.recovered ? " ⚠" : ""}`
+    : `$(symbol-structure) WM: detached`;
+
+  const tooltip = new MarkdownString();
+  tooltip.appendMarkdown(
+    selected.kind === "headed"
+      ? `**Project head:** \`${selected.headPath}\`\n\n${selected.moduleCount} module(s)`
+      : `**Detached document** (no \`main\` head selects this file)`,
+  );
+  if (selected.recovered) {
+    tooltip.appendMarkdown("\n\n⚠ strict analysis failed; showing recovered facts");
+  }
+  const others = status.activeHeads.filter((head) => head.headPath !== selected.headPath);
+  if (others.length > 0) {
+    tooltip.appendMarkdown("\n\n**Other active projects:**");
+    for (const head of others) {
+      tooltip.appendMarkdown(
+        `\n- \`${head.headPath}\` (${head.moduleCount} module(s)` +
+          `${head.containsDocument ? ", also contains this file" : ""})`,
+      );
+    }
+  }
+  item.tooltip = tooltip;
+  item.show();
 }
 
 function traceSetting(): Trace {
