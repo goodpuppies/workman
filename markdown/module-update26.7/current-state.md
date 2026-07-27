@@ -75,8 +75,11 @@ dotted host members — proving each is a defined runtime value.
 Record projection through a qualified value member (`Lib.origin.x`) now typechecks, lowers, and
 runs: inference previously rejected any qualified spelling that was not entirely a structure member
 before the record-projection path could consume `resolveLongValue`'s remaining fields. Occurrence
-completeness on strict analyses is audited by a permanent regression over every authored named node
-and reported as `complete`; scope completeness remains explicitly partial.
+and scope completeness on strict analyses are audited by permanent regressions — every authored
+named node has an occurrence in its span, and every reference/qualifier occurrence is reproducible
+from the lexical scope at its own offset with the same identity — and both report `complete`;
+recovered analyses remain partial. Receiver-model `__ffi_*` helper bindings no longer leak into
+source scopes.
 
 The initial basis now also exposes its qualified facilities through real structure environments. Its
 working `TyEnv` contains only unqualified bindings; `Js.*` and `Gpu.*` types live under `StrEnv`.
@@ -192,19 +195,20 @@ The parallel-semantics audit originally confirmed several concrete failures. Rep
 same-basename backend declarations, right-biased import shadowing, constructor preservation,
 declaration-position closure capture, explicit initialization state, and final runtime exports are
 now fixed and covered by permanent regressions. Binding facts consume imports at declaration
-position, and qualified imported lookup is structural. The remaining migration risks are:
+position, and qualified imported lookup is structural. The migration risks formerly listed here are
+resolved: the LSP contains no dotted-name resolution or path-derived identity (`L705`), FFI host
+member paths are permanently outside long-identifier semantics by `D33` with authored/generated
+identities related through compiler facts, and intrinsic and qualified-member facts travel on the
+module interface artifact (`A601`–`A615`, audited by the `A608` occurrence and scope regressions).
 
-- FFI binding tables and current LSP symbol scopes still use some resolved dotted spellings;
-- some intrinsic and qualified-member facts still need to be carried uniformly into the final module
-  interface artifact rather than being available through several compiler fact tables.
+See [`parallel-semantics-audit.md`](./parallel-semantics-audit.md) for the original reproductions
+and common causes.
 
-See [`parallel-semantics-audit.md`](./parallel-semantics-audit.md) for the reproductions, common
-causes, and required fixes.
+## Current implementation gaps against the normative semantics
 
-## Current implementation gaps against the draft semantics
-
-- FFI-specific resolved bindings and the current LSP symbol index still need migration away from
-  flattened dotted keys.
+- FFI host member paths keep their own non-long-identifier representation permanently (`D33`);
+  authored and generated FFI identities are related through compiler facts, and the LSP symbol
+  index consumes only interface occurrences.
 - Internal visibility flags remain unused; surface `private` is deliberately deferred.
 - Re-export is deliberately absent until forwarding identity is designed.
 - `src/module_interface.ts` now contains an initial strict-analysis artifact with `ModuleId`, public
@@ -250,8 +254,9 @@ causes, and required fixes.
   consume those same facts. Every elaborated expression, pattern, and authored type expression with
   a source node is also frozen into a per-interface typed-node index. Smallest-containing-node
   queries distinguish generalized binder schemes from instantiated occurrences and preserve nominal
-  identity through type shadowing. Scope completeness remains partial for the remaining source
-  mappings. For successfully parsed current source, partial inference now records a certified
+  identity through type shadowing. Occurrence and scope completeness are audited and derived:
+  strict analyses report both complete, recovered analyses partial.
+  For successfully parsed current source, partial inference now records a certified
   declaration prefix and recovery boundary, transactionally re-elaborates that prefix after a
   failure, and can build a partial project snapshot containing only its certified semantic facts and
   reachable imports. Recovered analysis additionally masks malformed explicit top-level phrases
@@ -287,5 +292,5 @@ causes, and required fixes.
   scopes, semantic type arenas, definitions, and query results in both snapshots, even when their
   snapshot-local numeric compiler IDs happen to repeat.
 - Namespace-to-`carrier` is an expression-level fallback and does not install an alias value.
-- The Core and analysis facts now carry module, structure, value, constructor, and qualified-member
-  identities, but these still need consolidation into the planned module interface artifact.
+- The Core and analysis facts carry module, structure, value, constructor, and qualified-member
+  identities, consolidated into the module interface artifact (`A601`–`A615`).

@@ -55,8 +55,12 @@ Evidence: [`decisions.md`](./decisions.md) and [`proposed-semantics.md`](./propo
 
 Dependencies: locked constraints only.
 
-- [ ] **S001** Review `proposed-semantics.md` line by line and remove “proposed” wording from every
-      accepted normative rule.
+- [x] **S001** Review `proposed-semantics.md` line by line and remove “proposed” wording from every
+      accepted normative rule. The document now states it is the accepted normative specification
+      (the filename is historical), and the four hedged rules — resolution path form, structural
+      environment representation, and the interface artifact — are stated as implemented facts with
+      decision citations. Deferred areas (packages, fingerprints) retain future wording because
+      they are genuinely deferred, not proposed.
 - [x] **S002** Build the SML conformance matrix described in
       [`sml-correctness-audit.md`](./sml-correctness-audit.md).
 - [x] **S003** Record exact Definition rules/translations for sequential declarations, `local`,
@@ -73,7 +77,11 @@ Dependencies: locked constraints only.
       path, module alias, basename, emit name, numeric type ID, and constructor ID.
 - [x] **S010** Add a discrepancy log mapping every audit finding (`I1`–`I12`, `B1`–`B9`) to one or
       more checklist items.
-- [ ] **S011** Update `docs/smlparallels.md` terminology after the normative review.
+- [x] **S011** Update `docs/smlparallels.md` terminology after the normative review. The Modules
+      section now states the two-foundation split, the SML environment product, long-identifier
+      lookup, right-biased modification, declaration-position imports, non-re-export via the
+      `local` model, the protocol's ESM-derived properties, and the SML-model initial basis; the
+      translation table no longer calls a file a "flat structure".
 
 Gate:
 
@@ -374,7 +382,7 @@ Dependencies: `G13`–`G18`.
       generation.
 - [x] **A607** Make the artifact per project snapshot and prevent path identity from merging
       interfaces produced in different project contexts.
-- [ ] **A608** **in progress:** Add per-module semantic occurrences, scopes, types, and
+- [x] **A608** Add per-module semantic occurrences, scopes, types, and
       bidirectional source mapping. Value, structure, type-declaration, and constructor occurrences
       now carry source spans and compiler identities. Type uses are reported by elaboration and
       translated to stable project type identities. Nominal record-field declarations, literals,
@@ -414,8 +422,16 @@ Dependencies: `G13`–`G18`.
       contribute no occurrences. The audit also exposed and fixed a real inference gap: record
       projection through a qualified value member (`Lib.origin.x`) was rejected as unknown before
       `resolveLongValue`'s remaining-field contract could reach `inferDottedVar`; it now
-      typechecks, lowers, and runs. Scope completeness remains explicitly partial until it has
-      equivalent audit evidence. Ordinary basis and compiled-standard value references are included even
+      typechecks, lowers, and runs. Scope completeness is audited and derived the same way: a
+      permanent regression proves every reference and qualifier occurrence is reproducible from the
+      lexical scope at its own offset with the same compiler identity, across SML, cross-module,
+      and FFI modules. Per `D33` an FFI receiver's authored name is satisfied by its
+      foreign-type scope entry, and the audit found and fixed a real leak: receiver-model
+      `__ffi_*` helper bindings carried no authored relation and appeared in source scopes;
+      the scope overlay now excludes them, restoring the documented rule that compiler-only
+      aliases never appear. Strict complete elaboration therefore reports both
+      `occurrences: "complete"` and `scopes: "complete"`; recovered analyses remain partial.
+      Ordinary basis and compiled-standard value references are included even
       though they have no project-local `BindingId`. Value, constructor, and nominal-field
       occurrences now reference immutable semantic type snapshots rather than mutable inference
       objects. Result carrier-lifting plans are source-mapped into the interface and reference the
@@ -469,14 +485,27 @@ Dependencies: `G13`–`G18`.
 
 Gate:
 
-- [ ] **G19** No compiler or tooling consumer must reconstruct module semantics from syntax, paths,
-      dotted names, or emitted JavaScript.
+- [x] **G19** No compiler or tooling consumer must reconstruct module semantics from syntax, paths,
+      dotted names, or emitted JavaScript. Semantic elaboration consumes structured long identifiers
+      (`M215`/`G7`); every LSP feature routes through `ProjectSnapshot`/`ModuleInterface` queries
+      with the handwritten resolver and hover fallback deleted (`L710`); `src/lsp/` contains no
+      dotted-name splitting or path-derived identity (`L705`). Frontend-v2 remains a syntax
+      frontend feeding ordinary elaboration, which the contract permits; it supplies no semantic
+      facts of its own.
 - [x] **G20** Conservative invalidation is correct before optimization with fingerprints.
-- [ ] **G21** The interface artifact contains every fact listed in the LSP handoff.
+- [x] **G21** The interface artifact contains every fact listed in the LSP handoff: `ModuleId`,
+      public environments, declaration/alias/target identities, namespace membership, basis facts,
+      dependency and reverse-dependency edges, interface generations, and graph/initialization
+      diagnostics (`A601`–`A615`, all closed). Occurrence and scope coverage are audited by the
+      `A608` regressions rather than asserted.
 - [x] **G21a** The same path can participate in two project snapshots without interface, diagnostic,
       occurrence, or nominal-identity collision.
-- [ ] **G21b** Current malformed source exposes only compiler-certified partial facts; no consumer
-      needs a fallback semantic environment.
+- [x] **G21b** Current malformed source exposes only compiler-certified partial facts; no consumer
+      needs a fallback semantic environment. Transactional phrase recovery (`A610`/`A611`) feeds
+      every LSP path; failed phrases contribute no bindings, occurrences, scope entries, or typed
+      nodes; recovered analyses report partial completeness by derivation; and the former LSP
+      fallback resolvers are deleted (`L710`). Recovery-only completion scopes carry names without
+      invented identities.
 - [x] **G21c** One or more heads may share source modules without merging their project-specific
       interfaces, and discovery-only files produce no project diagnostics.
 - [x] **G21d** Opening a file already contained in an active project uses its existing module
@@ -628,11 +657,16 @@ Current Stage 6 evidence:
 
 Remaining Stage 6 work is implementation work, not a language-design blocker:
 
-1. finish occurrence-local type coverage and the remaining source mappings;
-2. improve expected-type recovery inside uncertified phrases where facts can be certified;
-3. migrate the remaining semantic frontend-v2 consumers and structural inlays where applicable;
-4. add the remaining general LSP features against compiler queries, closing `G19`, `G21`, and
+1. improve expected-type recovery inside uncertified phrases where facts can be certified;
+2. migrate the remaining semantic frontend-v2 consumers and structural inlays where applicable
+   (deprioritized: the module update completes against the regular frontend first);
+3. add the remaining general LSP features against compiler queries, closing `G19`, `G21`, and
    `G21b`.
+
+Occurrence-local type coverage and the source mappings formerly listed here are closed by the
+`A608` audits: every authored named node maps to an occurrence, every reference/qualifier
+occurrence maps back through the scope at its offset to the same compiler identity, and both
+completeness fields are derived from strict elaboration rather than hardcoded.
 
 The workspace-symbol ordering dependency is now satisfied: semantic requests and validation share
 the compiler `ProjectContextRegistry`, and workspace symbols aggregate its active headed snapshots
@@ -642,28 +676,52 @@ and open detached contexts without treating recursive discovery as project membe
 
 Dependencies: `G19`–`G21`.
 
-- [ ] **L701** Update `docs/smlparallels.md` to the implemented module and basis semantics.
-- [ ] **L702** Convert the accepted normative plan into stable compiler-facing documentation.
-- [ ] **L703** Record every intentional SML restriction and Workman extension discovered during the
-      pass.
-- [ ] **L704** Update the deferred LSP plan to consume `ModuleId`, public `Env`, target/alias
-      identities, basis facts, and interface generations.
-- [ ] **L705** Remove LSP assumptions based on paths, dotted names, or VS Code-specific behavior.
+- [x] **L701** Update `docs/smlparallels.md` to the implemented module and basis semantics (see
+      `S011`; the Modules section also now covers the initial-basis model and shadowing).
+- [x] **L702** Convert the accepted normative plan into stable compiler-facing documentation.
+      `docs/modules.md` summarizes ownership, environments and long identifiers, import forms,
+      identity/graph/evaluation, the basis model, and the interface artifact, and links the
+      normative specification and decision register as the authorities.
+- [x] **L703** Record every intentional SML restriction and Workman extension discovered during the
+      pass. `docs/modules.md` carries the register: restrictions (fixed operators, no module
+      layer, no re-export, acyclic graph, no `local` phrase, simultaneous-clause duplicate rule)
+      and extensions (file protocol, named imports, `carrier`, nominal records, pinned patterns,
+      FFI, GPU, public-by-default).
+- [x] **L704** Update the deferred LSP plan to consume `ModuleId`, public `Env`, target/alias
+      identities, basis facts, and interface generations. The plan's symbol-identity section no
+      longer sketches an LSP-owned path-keyed `ModuleId` (now explicitly forbidden there); it
+      consumes the compiler's opaque `ModuleId`, occurrence/scope/typed-node identities, stable
+      basis/standard identities, snapshot generations, and the implemented alias/rename relations.
+- [x] **L705** Remove LSP assumptions based on paths, dotted names, or VS Code-specific behavior.
+      `src/lsp/` contains no dotted-name splitting, no path-derived identity, and no VS Code
+      references. The one remaining dot check (`hover.ts` classifying a typed-node label to choose
+      a hover word) is presentation over a compiler-owned label, which the tooling contract
+      explicitly leaves frontend-owned.
 - [x] **L706** Rerun completion, navigation, references, rename, diagnostics, and invalidation
       baselines.
 - [x] **L707** Build project/reference indexes only as aggregations of per-module interfaces.
 - [x] **L708** Remove recursive workspace discovery as a definition of project checking,
       diagnostics, references, or rename scope.
 - [ ] **L709** Route frontend-v2 semantic facts through the module interface while retaining its
-      syntax/structural services.
+      syntax/structural services. **Deprioritized by decision:** the module update completes
+      against the regular frontend first; frontend-v2 today acts only as a syntax frontend feeding
+      ordinary elaboration and supplies no semantic facts of its own, so this item does not block
+      `G19`–`G23`.
 - [x] **L710** Delete `src/lsp/symbols.ts` semantic resolution and `hover.ts` partial-inference
       fallback immediately after interface parity tests pass.
 
 Gate:
 
-- [ ] **G22** The implemented behavior, normative documents, checklist, and tests agree.
-- [ ] **G23** The LSP can use compiler-owned module facts without implementing a second module
-      resolver or environment model.
+- [x] **G22** The implemented behavior, normative documents, checklist, and tests agree. The
+      normative specification is accepted wording (`S001`), `docs/smlparallels.md` and the new
+      `docs/modules.md` state the implemented semantics (`S011`, `L701`–`L703`), and
+      `current-state.md` no longer carries claims contradicted by verified behavior. `L709`
+      (routing frontend-v2 semantic consumers) remains open and explicitly deprioritized; the
+      documents record that status rather than contradicting it.
+- [x] **G23** The LSP can use compiler-owned module facts without implementing a second module
+      resolver or environment model. All features consume `ProjectSnapshot`/`ModuleInterface`
+      queries through the shared semantic service; the former parallel resolver and fallback are
+      deleted, and `src/lsp/` holds no environment model, name resolution, or path identity.
 
 ## Explicitly deferred work
 
@@ -721,3 +779,7 @@ The module update is complete when `G22` and `G23` are checked. At that point:
 - source, analysis, Core, runtime, and tooling agree on every module and binding identity;
 - known current representation failures have permanent regressions;
 - the LSP update can resume on compiler-owned facts.
+
+**Status: `G22` and `G23` are checked; the module update is complete by this definition.** The
+only open non-deferred item is `L709` (frontend-v2 semantic routing), explicitly deprioritized and
+non-blocking. Deferred `D801`–`D809` remain future work by design.

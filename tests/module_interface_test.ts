@@ -51,7 +51,7 @@ Deno.test("[module update A601-A606] strict analysis produces one owned interfac
     imports: "complete",
     elaboration: "complete",
     occurrences: "complete",
-    scopes: "partial",
+    scopes: "complete",
     ffi: "not-applicable",
     gpu: "not-applicable",
     recoveryBoundaries: [],
@@ -1424,5 +1424,89 @@ Deno.test("[module update A608] strict occurrences cover every authored named no
     };
     visit(await parse(source));
     assertEquals(missing, [], path);
+  }
+});
+
+/**
+ * `A608` scope-completeness audit: every reference and qualifier occurrence in a strict
+ * analysis is reproducible from the lexical scope at its own offset — same name, same
+ * namespace, same compiler identity.
+ *
+ * Qualified members are excluded because their base identifier deliberately does not
+ * enter the flat lexical scope; the leading qualifier occurrence is checked instead.
+ * Per `D33`, an FFI receiver's authored name is a foreign *type*, not a lexical value,
+ * so a value-role receiver occurrence is satisfied by the type-namespace entry. This
+ * audit is the evidence for reporting `scopes: "complete"` on strict analyses; it also
+ * guards the rule that compiler-only `__ffi_*` aliases never appear in source scopes.
+ */
+Deno.test("[module update A608] strict scopes reproduce every reference occurrence", async () => {
+  const lib = [
+    "record Point<T> = { x: T, y: T };",
+    "type Shape = | Dot<Point<Number>> | Empty;",
+    "let origin = Point(0, 0);",
+    "let describe = (shape: Shape) => { match(shape) { Dot(Var(p)) => { p.x }, Empty => { 0 } } };",
+  ].join(" ");
+  const ffi = [
+    'from js.global("console") import unsafe { log: (String) => Void } as console;',
+    "from js.global import unsafe { URL };",
+    "let show = (text: String) => { console.log(text) };",
+    'let made = URL.new("https://example.com");',
+  ].join(" ");
+  const main = [
+    'from "./lib.wm" import * as Lib;',
+    'from "./ffi.wm" import * as F;',
+    'from "./lib.wm" import { describe as label, Shape };',
+    'from "./lib.wm" import *;',
+    "let selected = Lib.origin;",
+    "let dot: Lib.Shape = Lib.Dot(selected);",
+    "let sum = selected.x + Lib.origin.y;",
+    "let matched = match(dot) { Lib.Dot(Var(inner)) => { inner.x }, _ => { 0 } };",
+    "let block = { let local = origin; label(Dot(local)) };",
+  ].join(" ");
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/lib.wm", lib], ["/test/ffi.wm", ffi], ["/test/main.wm", main]]),
+  );
+
+  for (const path of ["/test/lib.wm", "/test/ffi.wm", "/test/main.wm"]) {
+    const moduleInterface = analysis.projectSnapshot.interfaces.get(moduleId(path))!;
+    assertEquals(moduleInterface.completeness.scopes, "complete", path);
+
+    const memberStarts = new Set(
+      moduleInterface.occurrences
+        .filter((item) => item.role === "qualifier" || item.role === "reference")
+        .map((item) => item.span.end + 1),
+    );
+    const failures: string[] = [];
+    for (const item of moduleInterface.occurrences) {
+      if (memberStarts.has(item.span.start)) continue;
+      const scope = semanticScopeAt(moduleInterface, item.span.start);
+      if (scope.values.has("__ffi_URL_new_new_0")) {
+        failures.push("compiler-only __ffi_* alias leaked into a source scope");
+      }
+      if (item.role === "qualifier" && item.target.kind === "structure") {
+        if (scope.structures.get(item.name) !== item.target.id) {
+          failures.push(`structure ${item.name} @${item.span.start}`);
+        }
+      } else if (item.role === "reference" && item.target.kind === "value") {
+        const entry = scope.values.get(item.name);
+        if (entry?.id !== item.target.id && !scope.types.has(item.name)) {
+          failures.push(`value ${item.name} @${item.span.start}`);
+        }
+      } else if (item.role === "reference" && item.target.kind === "constructor") {
+        if (scope.values.get(item.name)?.id !== item.target.id) {
+          failures.push(`constructor ${item.name} @${item.span.start}`);
+        }
+      } else if (item.role === "reference" && item.target.kind === "type") {
+        if (scope.types.get(item.name) !== item.target.id) {
+          failures.push(`type ${item.name} @${item.span.start}`);
+        }
+      } else if (item.role === "reference" && item.target.kind === "type-variable") {
+        if (scope.typeVariables.get(item.name) !== item.target.id) {
+          failures.push(`type variable ${item.name} @${item.span.start}`);
+        }
+      }
+    }
+    assertEquals(failures, [], path);
   }
 });

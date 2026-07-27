@@ -3460,13 +3460,13 @@ function analysisCompleteness(
       ? "partial"
       : "complete",
     elaboration: complete ? "complete" : "partial",
-    // Occurrence coverage of authored names is audited by the
-    // `[module update A608] strict occurrences cover every authored named node`
-    // regression; a failed phrase contributes no occurrences, so recovered
-    // analyses remain partial. Scope completeness stays explicitly partial until
-    // it has equivalent audit evidence.
+    // Occurrence and scope coverage are audited by the `[module update A608]`
+    // regressions: every authored named node has an occurrence in its span, and
+    // every reference/qualifier occurrence is reproducible from the scope at its
+    // own offset with the same identity. A failed phrase contributes no
+    // occurrences or scope entries, so recovered analyses remain partial.
     occurrences: complete ? "complete" : "partial",
-    scopes: "partial",
+    scopes: complete ? "complete" : "partial",
     ffi: !complete ? "partial" : ffiFacts.imports.length === 0 &&
         ffiFacts.calls.length === 0 &&
         ffiFacts.foreignTypes.length === 0
@@ -3629,6 +3629,10 @@ function overlayBindingScope(
   const values = new Map(initial.values);
   for (const [name, id] of bindings.values) {
     if (generatedJsBindings.has(id)) continue;
+    // Receiver-model FFI lowering installs `__ffi_*` helper bindings with no authored
+    // relation entry; like related generated bindings, they are compiler-only lowering
+    // identities and never appear in source scopes.
+    if (name.startsWith("__ffi_")) continue;
     values.set(name, Object.freeze({ kind: "value", id }));
   }
   if (nominalFacts) {

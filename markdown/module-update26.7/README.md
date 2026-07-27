@@ -57,8 +57,8 @@ properties are specified directly.
   MLB, SML/NJ CM, and Workman's proposed DAG of declaration sequences.
 - [`esm-research.md`](./esm-research.md) separates ECMAScript module semantics from host resolution
   and identifies which properties Workman should and should not adopt.
-- [`proposed-semantics.md`](./proposed-semantics.md) is the normative Workman file-module draft
-  specification.
+- [`proposed-semantics.md`](./proposed-semantics.md) is the normative Workman file-module
+  specification (the filename is historical; the rules are accepted).
 - [`decisions.md`](./decisions.md) records settled first-pass decisions and explicitly deferred
   questions.
 - [`milestones.md`](./milestones.md) orders the correctness audit, specification, implementation,

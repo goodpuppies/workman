@@ -77,7 +77,7 @@ form.
 | `^`                                      | `++`                                                        | String concatenation |
 | `open Math`                              | `from "./math.wm" import *;`                                | Practical equivalent: Workman opens a file rather than an SML structure |
 | qualified name `Math.f`                  | namespace import plus `Math.f`                              | `from "./math.wm" import * as Math;` |
-| `structure Math = struct ... end`        | file `math.wm`, imported with `* as Math`                    | Every Workman file is an implicit, flat structure |
+| `structure Math = struct ... end`        | file `math.wm`, imported with `* as Math`                    | A file's public environment is a real SML structure environment |
 | program execution                        | `let main = () => { ... };`                                 | `wm run` invokes `main`; watched REPL files accept top-level expressions |
 | SML comment `(* text *)`                 | `-- text` or `// text`                                      | Workman comments are line comments |
 
@@ -720,36 +720,60 @@ if (n < 0) {
 
 ## Modules
 
-Every Workman file is an implicit, flat structure. Its top-level value, type, record, and datatype
-constructor declarations form an exported structure environment. Import forms select how that
-structure environment enters another file:
+Workman's module system has two deliberately separate foundations. The shared language fragment
+uses exact Revised Definition semantics: environments are the SML product
+`Env = StrEnv × TyEnv × ValEnv` with `StrEnv = StrId → Env`, and structures, types, and values
+occupy separate namespaces. The file layer — resolution, canonical module identity, graph
+discovery, and initialization — is a small Workman compilation-unit protocol specified directly,
+not an SML feature and not approximate ESM. The normative rules live in
+[`../markdown/module-update26.7/proposed-semantics.md`](../markdown/module-update26.7/proposed-semantics.md).
+
+Every Workman file elaborates to a public SML environment containing its module-owned top-level
+value, type, record, and datatype declarations. Import forms select how that environment enters
+another file:
 
 ```wm
-from "./math.wm" import * as Math; -- bind the file structure as Math
-from "./math.wm" import { add };   -- project selected structure members
-from "./math.wm" import *;         -- open the structure into local scope
+from "./math.wm" import * as Math; -- bind Math as a static structure identifier in StrEnv
+from "./math.wm" import { add };   -- project selected members, preserving each namespace
+from "./math.wm" import *;         -- SML open: right-biased environment modification
 ```
 
-The namespace form is Workman's file-structure identifier:
-
-```wm
-Math.add(1, 2)
-```
-
-It qualifies values, types, and constructors:
+A qualified name such as `Math.add` is the Definition's long identifier
+(`strid_1.….strid_n.x`): lookup is iterated structure-environment projection, never string
+matching on the dotted spelling. It qualifies values, types, and constructors, and imported
+semantic objects keep their defining schemes, constructor status, and nominal identities:
 
 ```wm
 from "./option.wm" import * as Opt;
 let value: Opt.Option<Number> = Opt.Some(1);
 ```
 
-The open form corresponds to the common SML `open Math` use case by bringing the file structure's
-visible names into unqualified scope.
+Collisions follow the Definition's sequential, right-biased environment modification: a later
+import or local declaration shadows an earlier binding in the same namespace, and equal spellings
+in different namespaces do not collide. Imports take effect at their declaration positions, like
+ordered SML environment declarations, and are not re-exported: the normative account nests each
+import as the local part of an SML `local … in … end` around the remaining declarations.
+
+The file protocol contributes the ESM-derived properties: every import is statically
+discoverable; resolution produces one canonical `ModuleId`, so all spellings of one file share
+one module instance and one set of nominal identities; the graph is acyclic; dependencies
+initialize once, dependency-first, in source-edge depth-first order, and a remembered
+initialization failure prevents importers from starting. A bare namespace name in expression
+position is a syntactic extension meaning `Math.carrier`, resolved only after ordinary value
+lookup; it does not make the module a first-class value.
+
+The initial basis follows the SML model independently of library size: a minimal kernel of
+non-source-expressible facts, compiled standard structures (`Option`, `Result`, `List`, `Task`, …)
+installed as real structure environments in `StrEnv`, and an explicit pervasive table whose
+unqualified bindings (`print`, `Some`, `Ok`, …) are genuine projections of the same semantic
+objects as their qualified members. Ordinary initial values shadow normally; fixed operators are
+kernel syntax, not rebindable `ValEnv` identifiers. Each file starts from this basis plus its
+explicit imports — compilation order grants no ambient visibility.
 
 The limitation is that Workman identifies a structure with a file. It has no separate syntax for
 creating anonymous, local, or nested structures; no structure expressions independent of file
-loading; and no full SML module layer with signatures, ascription, functors, or sharing constraints.
-Top-level file declarations are visible by default.
+loading; and no full SML module layer with signatures, ascription, functors, or sharing
+constraints. Top-level file declarations are public by default; `private` is deferred.
 
 ## Recursion
 

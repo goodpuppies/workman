@@ -1,7 +1,8 @@
-# Proposed file-module semantics
+# File-module semantics
 
-This is the normative draft for review. The first-pass choices it relies on are settled in
-[`decisions.md`](./decisions.md); implementation progress and evidence are tracked in
+This is the normative Workman file-module specification. The filename is historical: these rules
+are accepted, not proposed. Each is settled by the decision register in
+[`decisions.md`](./decisions.md); implementation evidence is tracked in
 [`checklist.md`](./checklist.md).
 
 ## Terms
@@ -41,8 +42,8 @@ Resolution must be deterministic for one project configuration. Two successful r
 the same `ModuleId` identify the same source unit, public environment, nominal declarations, and
 module instance.
 
-Initial local-file resolution should retain explicit relative paths and `.wm` extensions. Package
-names, import maps, URLs beyond `file:`, and generated sources require later decisions.
+Local-file resolution requires explicit relative paths and `.wm` extensions. Package names, import
+maps, URLs beyond `file:`, and generated sources require later decisions (`D25`).
 
 `ModuleId` is opaque to compiler consumers. Initially, an ordinary local file is identified by its
 canonical real path; a virtual source provider supplies a stable identity within the current project
@@ -154,9 +155,10 @@ PublicEnv = StrEnv x TyEnv x ValEnv
 restricted to the components Workman implements. Constructor identifier status and nominal type
 identity are part of the exported semantic object.
 
-The semantic representation should contain real structure-environment relationships. Flattened
-backend names such as `Lib.value` may be a lowering strategy, but they are not the normative
-environment model.
+The semantic representation contains real structure-environment relationships, and qualified
+names are the Definition's long identifiers (`D16`, `D33`). Flattened backend names such as
+`Lib.value` are a lowering strategy only; they are not the environment model and are never
+semantic keys.
 
 `private` and public-environment restriction are deferred until they are needed. When introduced,
 they must restrict this environment without creating fresh identities for retained declarations.
@@ -276,7 +278,7 @@ that states its behavior independently for values, types, constructors, and stru
 
 ## Interface artifact
 
-Every elaborated module should expose a compiler-owned summary containing:
+Every elaborated module exposes a compiler-owned summary containing:
 
 - `ModuleId`;
 - public value/type/structure environments;
