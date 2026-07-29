@@ -60,12 +60,12 @@ type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
 let width = 960;
 let height = 640;
 
-let bootstrapShade = (_coord) => {
+let bootstrapShader = (_coord) => {
   @gpu;
   (0.0, 0.0, 0.0, 1.0)
 };
 
-let updateShade = (inputs: UpdateInputs) => {
+let updateShader = (inputs: UpdateInputs) => {
   (coord) => {
     @gpu;
 
@@ -228,9 +228,9 @@ let displayShade = (inputs: DisplayInputs) => {
   }
 };
 
-let bootstrapFragment = Gpu.fragment(bootstrapShade);
+let bootstrapFragment = Gpu.fragment(bootstrapShader);
 let updateFragmentFor = (inputs: UpdateInputs) => {
-  Gpu.fragment(updateShade(inputs))
+  Gpu.fragment(updateShader(inputs))
 };
 let displayFragmentFor = (inputs: DisplayInputs) => {
   Gpu.fragment(displayShade(inputs))
