@@ -129,6 +129,11 @@ export function typeExprFromTsType(
   const signature = type.getCallSignatures()[0];
   if (signature) return functionTypeFromSignature(checker, signature);
   if (type.flags & ts.TypeFlags.TypeParameter) {
+    // Polymorphic `this` returns (for example Ora.start(): this) are represented by
+    // TypeScript as type parameters whose symbol still points at the owning interface/class.
+    // Preserve that nominal receiver instead of collapsing it to Js.Value.
+    const receiverType = nominalTypeParameterObjectName(type);
+    if (position === "result" && receiverType) return name(receiverType);
     const constraint = checker.getBaseConstraintOfType(type);
     if (constraint && !isAnyOrUnknown(constraint)) {
       if (position === "param" && isExplicitDynamicObject(checker, constraint)) {
@@ -175,6 +180,17 @@ export function typeExprFromTsType(
     return name("Js.Object");
   }
   return position === "param" ? name("Js.Value") : undefined;
+}
+
+function nominalTypeParameterObjectName(type: ts.Type): string | undefined {
+  const symbol = type.getSymbol();
+  const typeName = symbol?.getName();
+  if (!symbol || !typeName || !/^[A-Za-z_$][\w$]*$/.test(typeName)) return undefined;
+  return symbol.declarations?.some((declaration) =>
+      ts.isClassDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)
+    )
+    ? typeName
+    : undefined;
 }
 
 function opaqueTupleAliasTypeName(type: ts.Type): string | undefined {

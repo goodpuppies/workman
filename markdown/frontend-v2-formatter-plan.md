@@ -1,5 +1,36 @@
 # Frontend-v2 formatter: shipping plan
 
+## Primary first goal
+
+The first shipping milestone is deliberately narrow:
+
+1. **Peggy recognition parity.** The generator covers the complete Peggy grammar with no unknown or
+   unemitted rule, and frontend-v2 matches Peggy recognition for every `.wm` file under `examples`.
+   There is no hand-selected grammar subset. Small positive/negative cases may test individual
+   generator combinators, but they do not define parity. Targeted tolerant recovery is tested
+   separately. This checkpoint does not require reproducing Peggy's semantic AST or desugarings.
+2. **Canonical whitespace formatting.** The parity-complete syntax tree can regenerate valid source
+   with the initial canonical spacing, indentation, and line-break rules.
+3. **Three targeted recovery marks.** At committed grammar positions, missing `;`, `{`, and `}`
+   produce marks. Ordinary formatting omits their fallbacks; fix formatting materializes them.
+
+The milestone does not require a fully lossless or fully total parser for arbitrary malformed input.
+General error islands, complete comment/trivia ownership, generalized continuation analysis,
+category holes, other missing tokens, structural inlays, broad malformed-source round-trip laws,
+semantic lowering parity, typechecking/runtime equivalence, LSP integration, and making frontend-v2
+the default parser come later unless one is strictly needed to demonstrate this first slice.
+
+Work is eligible for the first milestone only when it directly supports:
+
+- grammar generation or valid-source recognition parity;
+- the syntax ownership required by canonical whitespace formatting;
+- committed recovery and formatting for missing `;`, `{`, or `}`;
+- the smallest executable API or CLI path needed to exercise those behaviors;
+- focused correctness and performance checks for those behaviors.
+
+When a broader architectural improvement is useful but not necessary for this milestone, record it
+as follow-up work rather than placing it on the critical path.
+
 ## Outcome
 
 Ship the generated frontend-v2 parser as Workman's default parser together with one useful
@@ -438,9 +469,10 @@ The corpus is finite evidence of compatibility, not a proof over all valid progr
 generator/lowering bug unless it is an intentional grammar change with one recorded regression
 fixture.
 
-Peggy is the migration oracle, not a permanent second runtime frontend. Once v2 owns the grammar,
-choose explicitly whether normalized grammar IR becomes the maintained specification or generation
-is retired in favor of WM-native grammar data.
+Peggy is the migration oracle and generator input, not a permanent runtime frontend. The initial
+retirement target keeps `src/grammar.peggy` as the maintained grammar and generates the WM parser
+from it, while removing Peggy parsing from compiler, CLI, REPL, and LSP execution. Replacing Peggy
+as the grammar source can be a later independent decision.
 
 ## Internal architecture
 
@@ -748,7 +780,8 @@ Deliver:
 - define the named generator-exception ABI and the release cap of eight grammar/lexical exceptions;
 - define the generated marked Surface schema, frontend ABI, required DTO projections, and formatter
   mode extension point, with only `Real` and `RealFix` in the first API;
-- choose a small representative Peggy parity corpus and initial whitespace/block formatter examples.
+- use every `.wm` file under `examples` as the recognition-parity corpus, plus small generator
+  combinator smoke cases and initial whitespace/block formatter examples.
 
 Exit gate:
 
@@ -785,9 +818,8 @@ unverifiable generator rewrite.
 
 Exit gate:
 
-- the generated lexer/parser accepts the valid corpus with Peggy parity;
-- one differential harness finds no unexplained semantic DTO mismatch across the grammar fixtures
-  and repository corpus accepted by Peggy;
+- the generator reports every Peggy rule as emitted with no unknown grammar construct;
+- the generated lexer/parser matches Peggy recognition for every `.wm` file under `examples`;
 - the generated parser constructs the complete planned Surface AST;
 - every hand-written grammar/lexical hook is named, reported, fixture-backed, and within the cap of
   eight;
@@ -837,6 +869,14 @@ Exit gate:
 
 ### Phase 3 — make it the product default
 
+Parser:
+
+- complete the Surface-to-current-semantic-AST projection, including existing desugarings;
+- use differential AST and compiler-result tests while Peggy remains the migration oracle;
+- move compiler, CLI, generated libraries, REPL, and LSP onto frontend-v2;
+- remove the generated Peggy JavaScript parser and Peggy runtime path after the soak gate;
+- keep grammar changes single-source: edit `src/grammar.peggy`, then regenerate frontend-v2.
+
 CLI:
 
 ```text
@@ -852,8 +892,7 @@ without writing affected files. `--fix` is documented narrowly as missing-semico
 
 LSP:
 
-- switch compiler, CLI, generated library, and LSP parsing to frontend-v2 by default after parity
-  and soak gates pass;
+- switch LSP parsing to frontend-v2 by default after parity and soak gates pass;
 - advertise `documentFormattingProvider`;
 - use the open document source/version;
 - use `Real` for document formatting and return one full-document edit when output changed and `[]`

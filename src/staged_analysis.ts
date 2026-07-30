@@ -279,7 +279,7 @@ export function isDelayedFfiPartialDiagnostic(message: string): boolean {
   return message.startsWith("cannot solve unresolved JS FFI type ") ||
     message.startsWith("unresolved JS FFI obligation in ") ||
     message.startsWith("unresolved JS FFI type in ") ||
-    message.startsWith("unsolved JS boundary type in ") ||
+    message.startsWith("cannot generalize JS FFI boundary in ") ||
     message.includes("?ffi#");
 }
 

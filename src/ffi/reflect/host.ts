@@ -219,6 +219,16 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
     previousProgram,
   );
   const programMs = reflectionProfileSink ? performance.now() - programStarted : 0;
+  const unresolvedImport = program.getSemanticDiagnostics().find((diagnostic) =>
+    diagnostic.code === 2307
+  );
+  if (unresolvedImport) {
+    throw new Error(
+      `cannot resolve JS import for reflection: ${
+        ts.flattenDiagnosticMessageText(unresolvedImport.messageText, "\n")
+      }`,
+    );
+  }
   previousProgram = program;
   const checkerStarted = reflectionProfileSink ? performance.now() : 0;
   const checker = program.getTypeChecker();
@@ -379,6 +389,7 @@ type DenoInfoModule = {
   specifier: string;
   local?: string;
   mediaType?: string;
+  error?: string;
 };
 
 type DenoInfo = {
@@ -431,6 +442,16 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
     );
   }
   const parsed = JSON.parse(output.stdout) as DenoInfo;
+  const failedRoot = (parsed.modules ?? []).find((module) =>
+    module.error &&
+    (module.specifier === specifier || parsed.roots?.includes(module.specifier))
+  );
+  if (
+    failedRoot?.error &&
+    (mustResolveWithDeno(specifier) || specifier.startsWith("npm:"))
+  ) {
+    throw new Error(`cannot resolve JS import ${specifier} for reflection: ${failedRoot.error}`);
+  }
   const graph = {
     originalSpecifier: specifier,
     entrySpecifier: parsed.roots?.[0],
@@ -529,14 +550,51 @@ function denoResolvedModule(
   if (!specifier) return undefined;
   const module = denoModuleForFileName(graphs, specifier);
   // `deno info` represents npm packages as a graph node without a local source
-  // file. Let TypeScript's normal resolver handle those so it can follow their
-  // package metadata and declaration files in node_modules.
-  if (!module?.local) return undefined;
+  // file. Resolve those from Deno's package cache so direct `npm:` imports do
+  // not degrade to an untyped namespace when no node_modules tree is present.
+  if (!module?.local) {
+    if (!moduleName.startsWith("npm:")) return undefined;
+    const packagePath = npmPackagePathForSpecifier(graphs, specifier);
+    if (!packagePath) return undefined;
+    return ts.resolveModuleName(
+      packagePath,
+      containingFile,
+      compilerOptions,
+      ts.sys,
+      moduleResolutionCache(),
+    ).resolvedModule;
+  }
   return {
     resolvedFileName: module.specifier,
     extension: tsExtensionForModule(module),
     isExternalLibraryImport: true,
   };
+}
+
+function npmPackagePathForSpecifier(
+  graphs: DenoModuleGraph[],
+  specifier: string,
+): string | undefined {
+  const packageName = npmPackageName(specifier);
+  if (!packageName) return undefined;
+  for (const graph of graphs) {
+    const pkg = [...graph.npmPackages.values()].find((candidate) => candidate.name === packageName);
+    if (pkg) return pkg.localPath;
+  }
+  return undefined;
+}
+
+function npmPackageName(specifier: string): string | undefined {
+  if (!specifier.startsWith("npm:")) return undefined;
+  const value = specifier.slice("npm:".length).replace(/^\/+/, "");
+  if (value.startsWith("@")) {
+    const slash = value.indexOf("/");
+    if (slash < 0) return undefined;
+    const version = value.indexOf("@", slash);
+    return version < 0 ? value : value.slice(0, version);
+  }
+  const version = value.indexOf("@");
+  return version < 0 ? value : value.slice(0, version);
 }
 
 function resolveDenoSpecifier(
@@ -581,7 +639,8 @@ function tsExtensionForModule(module: DenoInfoModule): ts.Extension {
 }
 
 function needsDenoModuleResolution(specifier: string): boolean {
-  return mustResolveWithDeno(specifier) || isBareDenoSpecifier(specifier);
+  return mustResolveWithDeno(specifier) || specifier.startsWith("npm:") ||
+    isBareDenoSpecifier(specifier);
 }
 
 function mustResolveWithDeno(specifier: string): boolean {

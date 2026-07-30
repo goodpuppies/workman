@@ -2,7 +2,31 @@
 
 This package contains the WM-native tolerant structural frontend. Phase 0 proved the model; Phase B
 added the generated lexer ABI; Phase C is replacing the initial special case with reusable recovery
-and rendering foundations. Its maintained modules are:
+and rendering foundations.
+
+The formatter/default-parser migration intentionally supersedes this handwritten bootstrap. The
+versioned Peggy-AST boundary, generated layout, action classification rules, exception cap, and
+initial parity/formatter fixtures are specified in [`generator/README.md`](generator/README.md).
+Until generated modules replace this package, the files below remain behavioral references rather
+than a compatibility target for the new Surface schema.
+
+The in-progress generated Surface path can be exercised directly:
+
+```sh
+deno task wm fmt path/to/program.wm
+deno task wm fmt --fix path/to/incomplete-program.wm
+deno task wm fmt --stdout examples/exercises/math.wm
+deno task frontend-v2:format path/to/program.wm
+deno task frontend-v2:format --fix path/to/incomplete-program.wm
+deno task frontend-v2:format --stdout examples/exercises/math.wm
+```
+
+Formatting is in place by default. Plain formatting canonicalizes authored whitespace while
+omitting marked fallbacks; `--fix` additionally materializes committed missing `;`, `{`, and `}`.
+The formatter errors when a recognized program contains a grammar form whose explicit Surface
+builder is not implemented; it never formats a silently partial tree.
+
+Its current modules are:
 
 - `types.wm`: the authoritative `SurfaceProgram` editor state, lossless tokens, concrete-or-missing
   syntax slots, initial structured expressions, recovery marks, and virtual artifact types;

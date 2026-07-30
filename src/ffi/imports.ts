@@ -8,6 +8,7 @@ import {
   jsGlobalMemberValueRef,
   jsGlobalNamespaceRef,
   jsGlobalRootNamespaceRef,
+  jsGlobalTargetInfo,
   jsGlobalTypeRef,
   jsGlobalValueMember,
   jsGlobalValueRef,
@@ -27,6 +28,7 @@ export function collectFfiDecl(
   importedTypeRefs: Map<string, JsTypeRef>,
   decl: Extract<Decl, { kind: "JsImportDecl" }>,
 ) {
+  assertReflectedGlobalTarget(decl);
   if (decl.typeOnly) {
     collectFfiTypeDecl(importedTypeRefs, decl);
     return;
@@ -124,6 +126,28 @@ export function collectFfiDecl(
       spec.node,
     );
   }
+}
+
+function assertReflectedGlobalTarget(
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+): void {
+  if (decl.target.kind !== "JsGlobal") return;
+  const needsReflection = decl.clause.kind === "Namespace" ||
+    decl.typeOnly ||
+    decl.clause.specs.some((spec) =>
+      !spec.type || (spec.type.kind === "TVar" && spec.type.name === "_deep_")
+    );
+  if (!needsReflection) return;
+  const info = jsGlobalTargetInfo(decl.target.path);
+  if (info.exists) return;
+  const suggestion = info.suggestion
+    ? `; JavaScript global names are case-sensitive; did you mean "${info.suggestion}"?`
+    : "";
+  throw diagnosticError(
+    new Error(`cannot resolve JS global "${decl.target.path}"${suggestion}`),
+    decl.target.node ?? decl.node,
+    "ffi.unknown-global",
+  );
 }
 
 function collectMetaFfiDecl(

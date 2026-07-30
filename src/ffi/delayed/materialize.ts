@@ -61,7 +61,55 @@ export function materializeReceiverProperty(
     true,
     undefined,
   );
-  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], []);
+  const bindingVariants = bindings.get(surfaceName)?.variants ?? [];
+  const expectedFunction = contextualFunctionType(original, result);
+  if (expectedFunction) {
+    const argTypes = expectedFunction.params.map(knownTyToTypeExpr);
+    const args = expectedFunction.params.map((_, index) => ({
+      kind: "Var" as const,
+      name: `__wm_js_arg_${index}`,
+    }));
+    const variant = selectVariant(bindingVariants, args, argTypes);
+    if (!variant || variant.type.kind !== "TFn") {
+      throw diagnosticError(
+        new Error(ffiOverloadMessage(path.join("."), bindingVariants, args)),
+        original.node,
+      );
+    }
+    const variantType = variant.type;
+    const contextualType: TypeExpr = {
+      ...variantType,
+      params: argTypes.map((type, index) => type ?? variantType.params[index]),
+    };
+    solveReflectedFfiFunctionValue(original, variant, contextualType, result);
+    selected.add(variant.internalName);
+    return {
+      kind: "Lambda",
+      params: args.map((arg, index) => ({
+        pattern: { kind: "PVar", name: arg.name },
+        annotation: argTypes[index],
+      })),
+      directives: [],
+      body: {
+        kind: "Call",
+        callee: { kind: "Var", name: variant.internalName },
+        args: [receiver, ...args],
+      },
+      node: original.node,
+    };
+  }
+  if (
+    bindingVariants.length > 1 &&
+    bindingVariants.every((variant) => variant.type.kind === "TFn")
+  ) {
+    throw diagnosticError(
+      new Error(
+        `cannot determine JS FFI overload for ${path.join(".")} as a first-class function`,
+      ),
+      original.node,
+    );
+  }
+  const variant = selectVariant(bindingVariants, []);
   if (!variant) return { kind: "FfiGet", receiver, path };
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
@@ -71,6 +119,58 @@ export function materializeReceiverProperty(
     args: [receiver],
     node: original.node,
   };
+}
+
+function contextualFunctionType(
+  original: Expr,
+  result: InferResult,
+) {
+  const inferred = inferredType(result, original);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  if (placeholder?.tag !== "ffi") return undefined;
+  return placeholder.constraints
+    ?.map(prune)
+    .find((constraint): constraint is Extract<typeof constraint, { tag: "fn" }> =>
+      constraint.tag === "fn" && constraint.params.every(isConcreteContextType)
+    );
+}
+
+function isConcreteContextType(type: ReturnType<typeof prune>): boolean {
+  const target = prune(type);
+  switch (target.tag) {
+    case "var":
+    case "ffi":
+    case "struct":
+      return false;
+    case "prim":
+      return true;
+    case "fn":
+      return target.params.every(isConcreteContextType) && isConcreteContextType(target.result);
+    case "tuple":
+      return target.items.every(isConcreteContextType);
+    case "named":
+      return target.args.every(isConcreteContextType);
+  }
+}
+
+function solveReflectedFfiFunctionValue(
+  original: Expr,
+  variant: FfiVariant,
+  contextualType: TypeExpr,
+  result: InferResult,
+): void {
+  const inferred = inferredType(result, original);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  if (placeholder?.tag !== "ffi") return;
+  const materializedType = materializeReflectedType(contextualType, result);
+  if (!materializedType) return;
+  solveFfi(placeholder, materializedType);
+  resolveFfiFact(result.facts, placeholder.id, materializedType);
+  recordExprFact(result.facts, original, {
+    subject: "ffi-reflected",
+    instantiated: inferred,
+    origin: { source: "reflected-ffi", name: variant.internalName },
+  });
 }
 
 export function materializeReceiverCall(
@@ -532,7 +632,9 @@ function rememberVariantForeignTypeRefs(
   for (const variant of variants) {
     rememberForeignTypeNames(variant.type, foreignTypeRefs);
     if (variant.receiverType) rememberForeignTypeNames(variant.receiverType, foreignTypeRefs);
-    if (variant.resultRef?.type) rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs);
+    if (variant.resultRef?.type) {
+      rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs, variant.resultRef);
+    }
     for (const callback of variant.callbackParamRefs ?? []) {
       for (const ref of callback.params) {
         if (ref.type) rememberForeignTypeNames(ref.type, foreignTypeRefs, ref);
@@ -550,7 +652,7 @@ function rememberForeignTypeNames(
     case "TName":
       if (type.args.length === 0 && isReflectedForeignTypeName(type.name)) {
         const typeRef = ref ?? jsGlobalTypeRef(type.name);
-        foreignTypeRefs.set(type.name, typeRef);
+        if (ref || !foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
       }
       for (const arg of type.args) rememberForeignTypeNames(arg, foreignTypeRefs);

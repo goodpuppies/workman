@@ -669,7 +669,16 @@ function desugarPipe(
   const left = coreExprFromSurface(pipe.left, context);
   const right = pipe.right;
 
-  if (right.kind === "Call") {
+  if (right.kind === "Call" && right.args.length > 0 && right.callee.kind === "Call") {
+    // A nested application produces a function. Apply the piped value to that
+    // result: task :> lift Task callback -> (lift Task callback)(task).
+    return {
+      kind: "CoreApp",
+      callee: coreExprFromSurface(right, context),
+      arg: left,
+      node: pipe.node,
+    };
+  } else if (right.kind === "Call") {
     // e.g., 10 :> add(5) -> add(10, 5)
     const callee = coreExprFromSurface(right.callee, context);
     const args = [pipe.left, ...right.args];

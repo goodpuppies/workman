@@ -465,7 +465,13 @@ function peg$parse(input, options) {
   function peg$f85(first, n) {    return n;  }
   function peg$f86(first, rest, args) {    return args ?? [];  }
   function peg$f87(first, rest, call) {    return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined };  }
-  function peg$f88(head, tail) {    return tail.reduce((callee, item) => at({ kind: "Call", callee, args: item.args }, location()), head);  }
+  function peg$f88(head, tail, annotation) {
+    const value = tail.reduce(
+      (callee, item) => at({ kind: "Call", callee, args: item.args }, location()),
+      head,
+    );
+    return annotation ? ascribedExpr(value, annotation, location()) : value;
+  }
   function peg$f89(args) {    return { kind: "Call", args: args ?? [] };  }
   function peg$f90(arg) {    return { kind: "Call", args: [arg] };  }
   function peg$f91(v) {    return longNode("Var", v, {}, location());  }
@@ -4612,8 +4618,12 @@ function peg$parse(input, options) {
           s3 = peg$parseSpaceCall();
         }
       }
+      s3 = peg$parseTypeAnn();
+      if (s3 === peg$FAILED) {
+        s3 = null;
+      }
       peg$savedPos = s0;
-      s0 = peg$f88(s1, s2);
+      s0 = peg$f88(s1, s2, s3);
     } else {
       peg$currPos = s0;
       s0 = peg$FAILED;
@@ -10854,6 +10864,14 @@ function peg$parse(input, options) {
   }
   function liftedLambda(name, body, loc) {
     return at({ kind: "Lambda", params: [liftedParam(name, loc)], directives: [], body }, loc);
+  }
+  function ascribedExpr(value, annotation, loc) {
+    const name = `__wm_ascription_${nextLiftId++}`;
+    const pattern = at({ kind: "PVar", name }, loc);
+    const param = at({ pattern, annotation }, loc);
+    const body = at({ kind: "Var", name }, loc);
+    const callee = at({ kind: "Lambda", params: [param], directives: [], body }, loc);
+    return at({ kind: "Call", callee, args: [value] }, loc);
   }
   function taskTupleLift(tasks, loc) {
     if (tasks.length === 0) {

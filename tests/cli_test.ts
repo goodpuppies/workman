@@ -55,6 +55,53 @@ Deno.test("cli rejects an unknown command instead of treating it as a file", asy
   assertEquals(result.stderr, "unknown command: comiple\ntry: wm --help\n");
 });
 
+Deno.test("cli fmt --stdout prints canonical Surface formatting without changing the file", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/math.wm`;
+  const source = await Deno.readTextFile(
+    new URL("../examples/exercises/math.wm", import.meta.url),
+  );
+  await Deno.writeTextFile(input, source);
+
+  const result = await runCli(["fmt", "--stdout", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertStringIncludes(result.stdout, "let rec myDiv = (n, d) => {\n");
+  assertStringIncludes(result.stdout, "    1 + myDiv(n - d, d)\n");
+  assertEquals(await Deno.readTextFile(input), source);
+});
+
+Deno.test("cli fmt formats in place by default and is idempotent", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(input, "let answer=1+2*3;");
+
+  const first = await runCli(["fmt", input]);
+  const formatted = await Deno.readTextFile(input);
+  const second = await runCli(["fmt", input]);
+
+  assertEquals(first, { code: 0, stdout: "", stderr: "" });
+  assertEquals(second, { code: 0, stdout: "", stderr: "" });
+  assertEquals(formatted, "let answer = 1 + 2 * 3;");
+  assertEquals(await Deno.readTextFile(input), formatted);
+});
+
+Deno.test("cli fmt --fix materializes marked missing braces and semicolon", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(input, 'let main=()=>print "hello world"');
+
+  const first = await runCli(["fmt", "--fix", input]);
+  const formatted = await Deno.readTextFile(input);
+  const second = await runCli(["fmt", "--fix", input]);
+
+  assertEquals(first, { code: 0, stdout: "", stderr: "" });
+  assertEquals(second, { code: 0, stdout: "", stderr: "" });
+  assertEquals(formatted, 'let main = () => {\n  print "hello world"\n};');
+  assertEquals(await Deno.readTextFile(input), formatted);
+});
+
 Deno.test("cli explains how to import JavaScript and TypeScript modules", async () => {
   for (const extension of ["js", "ts"]) {
     const dir = await Deno.makeTempDir();

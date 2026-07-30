@@ -1,5 +1,5 @@
-import { assertStringIncludes } from "@std/assert";
-import { checkSource } from "../src/compiler.ts";
+import { assertEquals, assertStringIncludes } from "@std/assert";
+import { checkSource, compileLibraryVirtual } from "../src/compiler.ts";
 
 Deno.test("basic pipe to function", async () => {
   await checkSource(`
@@ -29,6 +29,35 @@ Deno.test("pipe with tuple for multiple arguments", async () => {
     let add = (x, y) => { x + y };
     let result = (10, 5) :> add;
   `);
+});
+
+Deno.test("pipe applies to functions produced by nested applications", async () => {
+  const source = `
+    let makeTransform = (offset) => {
+      (transform) => {
+        (value) => {
+          transform(value + offset)
+        }
+      }
+    };
+
+    let withoutPlaceholder = 40 :> makeTransform 1 (value) => { value + 1 };
+    let withPlaceholder = 40 :> makeTransform 1 (value) => { value + 1 }();
+
+    let add = (left, right) => { left + right };
+    let ordinaryPipe = 10 :> add(5);
+  `;
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([
+      ["/test/library.wm", source],
+    ]),
+  );
+  const module = await importGenerated(js);
+
+  assertEquals(module.withoutPlaceholder, 42);
+  assertEquals(module.withPlaceholder, 42);
+  assertEquals(module.ordinaryPipe, 15);
 });
 
 Deno.test("pipe preserves FFI receiver reflection in inline functions", async () => {
@@ -90,3 +119,14 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
   assertStringIncludes(error.message, "actual:   String");
   assertStringIncludes(error.message, "source: callback result");
 });
+
+async function importGenerated(source: string): Promise<Record<string, unknown>> {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/pipe.mjs`;
+  await Deno.writeTextFile(path, source);
+  try {
+    return await import(`${new URL(`file://${path}`).href}?cache=${crypto.randomUUID()}`);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}

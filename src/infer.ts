@@ -8,16 +8,8 @@ import { snapshotEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 import { createTypeFacts, type TypeFacts } from "./infer/type_facts.ts";
 import type { TypeProvenance } from "./infer/provenance.ts";
 import { warnWideTuples } from "./infer/wide_tuples.ts";
-import {
-  snapshotStaticEnv,
-  type StaticEnv,
-  staticEnv,
-} from "./infer/environment.ts";
-import {
-  basisProfile,
-  initialBasis,
-  type InitialBasis,
-} from "./initial_basis.ts";
+import { snapshotStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
+import { basisProfile, type InitialBasis, initialBasis } from "./initial_basis.ts";
 import type { SourceSpan } from "./source.ts";
 import {
   containsUnsolvedJsBoundary,
@@ -377,13 +369,13 @@ function assertNoTopLevelUnsolvedJsBoundary(env: Env) {
   if (leaking.length === 0) return;
   const [name, scheme] = leaking[0];
   const remaining = leaking.length > 1
-    ? `; ${leaking.length - 1} more binding(s) also have unsolved JS boundary types`
+    ? `; ${leaking.length - 1} more binding(s) also cannot be generalized across JS FFI boundaries`
     : "";
   throw diagnosticError(
     new Error(
-      `unsolved JS boundary type in ${name}: ${
+      `cannot generalize JS FFI boundary in ${name}: ${
         showSchemeType(scheme)
-      }; a broad Js.Value JS parameter leaves this type undetermined and no call site determines it; annotate it with the concrete JS shape${remaining}`,
+      }; the parameter type is still unknown, so the compiler cannot determine a safe FFI specialization; call this helper with a concrete JS-compatible value or annotate its parameter${remaining}`,
     ),
     scheme.node,
   );

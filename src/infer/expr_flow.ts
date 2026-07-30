@@ -362,6 +362,24 @@ export function inferPipe(
   });
   const right = expr.right;
 
+  if (right.kind === "Call" && isComputedPipeCall(right)) {
+    const calleeType = inferExpr(right, context);
+    const result = constrainPipe(
+      expr,
+      calleeType,
+      leftType,
+      provenance,
+      right,
+      [expr.left],
+      [leftType],
+    );
+    recordExprFact(facts, right, {
+      subject: "expr",
+      instantiated: fn([leftType], result),
+    });
+    return result;
+  }
+
   if (right.kind === "Call") {
     const calleeType = inferExpr(right.callee, context);
     const expectedInput = prune(calleeType);
@@ -410,6 +428,10 @@ export function inferPipe(
     instantiated: fn([leftType], result),
   });
   return result;
+}
+
+function isComputedPipeCall(expr: Extract<Expr, { kind: "Call" }>): boolean {
+  return expr.args.length > 0 && expr.callee.kind === "Call";
 }
 
 function constrainPipe(

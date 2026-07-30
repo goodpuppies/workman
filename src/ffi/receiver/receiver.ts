@@ -187,6 +187,31 @@ export function reflectedReceiverFunctionValue(
   };
 }
 
+export function delayedReflectedReceiverFunctionValue(
+  name: string,
+  refs: Map<string, JsTypeRef>,
+  node?: Expr["node"],
+): Expr | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const baseName = parts[0];
+  const ref = refs.get(baseName);
+  if (!ref || isJsPromiseRef(ref)) return undefined;
+  const path = parts.slice(1);
+  const member = jsRefMember(ref, path);
+  if (!member) return undefined;
+  const variants = memberVariants(member);
+  if (variants.length < 2 || variants.some((variant) => variant.type.kind !== "TFn")) {
+    return undefined;
+  }
+  return {
+    kind: "FfiGet",
+    receiver: { kind: "Var", name: baseName },
+    path,
+    node,
+  };
+}
+
 export function objectReceiverProperty(
   exprName: string,
   bindings: Map<string, FfiBinding>,

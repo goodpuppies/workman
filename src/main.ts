@@ -22,6 +22,7 @@ import { moduleNodeForPath } from "./module_graph.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, watchReplChanges } from "./repl.ts";
+import { formatFrontendV2Source } from "./frontend_v2_formatter.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 
 const commands = new Set([
@@ -31,6 +32,7 @@ const commands = new Set([
   "run",
   "repl",
   "err",
+  "fmt",
   "type-debug",
   "help",
   "version",
@@ -166,6 +168,8 @@ export async function main(args: string[]): Promise<number> {
       return await replCommand(commandArgs);
     case "err":
       return await errCommand(commandArgs);
+    case "fmt":
+      return await fmtCommand(commandArgs);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
     case "version":
@@ -308,6 +312,33 @@ async function errCommand(args: string[]): Promise<number> {
   return foundError ? 1 : 0;
 }
 
+async function fmtCommand(args: string[]): Promise<number> {
+  const stdout = args.includes("--stdout");
+  const fix = args.includes("--fix");
+  const supported = new Set(["--stdout", "--fix"]);
+  const unsupported = args.filter((arg) => arg.startsWith("-") && !supported.has(arg));
+  if (unsupported.length > 0) {
+    console.error(`unknown fmt option: ${unsupported[0]}`);
+    console.error("usage: wm fmt [--stdout] [--fix] <input.wm>");
+    return 2;
+  }
+  const inputs = args.filter((arg) => !supported.has(arg));
+  if (inputs.length !== 1) {
+    console.error("usage: wm fmt [--stdout] [--fix] <input.wm>");
+    console.error("try: wm --help");
+    return 2;
+  }
+  const [input] = inputs;
+  const source = await Deno.readTextFile(input);
+  const formatted = await formatFrontendV2Source(source, input, fix);
+  if (stdout) {
+    await Deno.stdout.write(new TextEncoder().encode(formatted));
+  } else {
+    if (formatted !== source) await Deno.writeTextFile(input, formatted);
+  }
+  return 0;
+}
+
 function collectErrorInspections(
   error: unknown,
   filePath: string | undefined,
@@ -404,6 +435,8 @@ commands:
   run <file.wm> [-- args...]    compile and execute with Deno
   repl [--v2] <file.wm>         watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
+  fmt [--stdout] [--fix] <file.wm>
+                                format in place; --fix inserts marked ;, {, and }
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help (-h, --help)
   version                       show the version (-v, -V, --version)
@@ -418,6 +451,7 @@ examples:
   wm compile-library tooling/frontend-v2/library_fixture.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
   wm repl --v2 scratch.wm
+  wm fmt scratch.wm
 
 notes:
   JS FFI uses Deno under the hood. Runtime permissions come from the wm launcher.`);

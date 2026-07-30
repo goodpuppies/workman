@@ -1,5 +1,6 @@
 import ts from "typescript-api";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
+import { diagnosticError } from "../../diagnostics.ts";
 import {
   callbackParamRefsFromCall,
   dedupeVariants,
@@ -36,6 +37,7 @@ import { fn, name, varType } from "../type_expr.ts";
 const memberCache = new Map<string, JsMemberType | undefined>();
 const namespaceCache = new Map<string, JsMemberType[]>();
 const refTypeCache = new Map<string, TypeExpr | undefined>();
+const refMemberPathCache = new Map<string, boolean>();
 const deepCallCache = new Map<string, DeepReflection | undefined>();
 
 export type DeepReflection = {
@@ -49,7 +51,18 @@ export function prepareInitialJsImportReflection(
     decls: Extract<Decl, { kind: "JsImportDecl" }>[];
   }>,
 ): void {
-  prepareReflectionSources(initialJsImportReflectionRequests(modules));
+  try {
+    prepareReflectionSources(initialJsImportReflectionRequests(modules));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const declarations = modules.flatMap((module) => module.decls);
+    const declaration = declarations.find((decl) =>
+      decl.target.kind === "JsModule" && message.includes(decl.target.specifier)
+    ) ?? declarations.find((decl) =>
+      decl.target.kind === "JsModule"
+    );
+    throw diagnosticError(error, declaration?.node, "ffi.import-resolution");
+  }
 }
 
 export function initialJsImportReflectionRequests(
@@ -127,13 +140,26 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
     target.key,
     target.source,
     (checker, sourceFile) => {
-      const target = findVariable(sourceFile, "__wm_target")?.initializer ??
+      const targetExpression = findVariable(sourceFile, "__wm_target")?.initializer ??
         findDeclaredValue(sourceFile, "__wm_target");
-      if (!target) return [];
+      if (!targetExpression) return [];
       const members: JsMemberType[] = [];
-      for (const symbol of checker.getTypeAtLocation(target).getProperties()) {
+      for (const symbol of checker.getTypeAtLocation(targetExpression).getProperties()) {
         const type = typeOfSymbol(checker, symbol);
-        const mapped = type ? jsMemberTypeFromTsType(checker, type) : undefined;
+        const memberName = symbol.getName();
+        const access = propertyPath("__wm_target", [memberName]);
+        const mapped = type
+          ? jsMemberTypeFromTsType(
+            checker,
+            type,
+            (index) =>
+              returnTypeRef(
+                `${target.key}.${memberName}:return:${index}`,
+                target.source,
+                `ReturnType<typeof ${access}>`,
+              ),
+          )
+          : undefined;
         if (mapped?.type.kind === "TFn") members.push({ name: symbol.getName(), ...mapped });
       }
       return members;
@@ -141,6 +167,30 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
   );
   namespaceCache.set(target.key, reflected);
   return reflected;
+}
+
+export function jsGlobalTargetInfo(
+  path: string,
+): { exists: boolean; suggestion?: string } {
+  const target = jsGlobalSource(path);
+  return reflectSource(
+    `${target.key}:target-info`,
+    target.source,
+    (checker, sourceFile) => {
+      const expression = findVariable(sourceFile, "__wm_target")?.initializer;
+      if (!expression) return { exists: false };
+      const symbol = ts.isPropertyAccessExpression(expression)
+        ? checker.getSymbolAtLocation(expression.name)
+        : checker.getSymbolAtLocation(expression);
+      if (symbol) return { exists: true };
+      const root = leftmostIdentifier(expression);
+      if (!root) return { exists: false };
+      const suggestion = checker.getSymbolsInScope(root, ts.SymbolFlags.Value)
+        .map((candidate) => candidate.getName())
+        .find((name) => name !== root.text && name.toLowerCase() === root.text.toLowerCase());
+      return suggestion ? { exists: false, suggestion } : { exists: false };
+    },
+  );
 }
 
 export function jsGlobalMember(path: string, name: string): JsMemberType | undefined {
@@ -155,13 +205,26 @@ export function jsModuleMembers(specifier: string): JsMemberType[] {
     target.key,
     target.source,
     (checker, sourceFile) => {
-      const target = findVariable(sourceFile, "__wm_target")?.initializer ??
+      const targetExpression = findVariable(sourceFile, "__wm_target")?.initializer ??
         findDeclaredValue(sourceFile, "__wm_target");
-      if (!target) return [];
+      if (!targetExpression) return [];
       const members: JsMemberType[] = [];
-      for (const symbol of checker.getTypeAtLocation(target).getProperties()) {
+      for (const symbol of checker.getTypeAtLocation(targetExpression).getProperties()) {
         const type = typeOfSymbol(checker, symbol);
-        const mapped = type ? jsMemberTypeFromTsType(checker, type) : undefined;
+        const memberName = symbol.getName();
+        const access = propertyPath("__wm_target", [memberName]);
+        const mapped = type
+          ? jsMemberTypeFromTsType(
+            checker,
+            type,
+            (index) =>
+              returnTypeRef(
+                `${target.key}.${memberName}:return:${index}`,
+                target.source,
+                `ReturnType<typeof ${access}>`,
+              ),
+          )
+          : undefined;
         if (mapped?.type.kind === "TFn") members.push({ name: symbol.getName(), ...mapped });
       }
       return members;
@@ -211,6 +274,7 @@ export function jsModuleNamespaceRef(specifier: string): JsTypeRef {
     source: target.source,
     expr: "__wm_target",
     type: name("Js.Object"),
+    moduleNamespaceSpecifier: specifier,
   };
 }
 
@@ -246,6 +310,12 @@ function jsTargetMemberValueRef(target: JsReflectionSource, name: string): JsTyp
     source: `${target.source}\nconst ${refName} = ${propertyPath("__wm_target", [name])};`,
     expr: refName,
   };
+}
+
+function leftmostIdentifier(expression: ts.Expression): ts.Identifier | undefined {
+  let current = expression;
+  while (ts.isPropertyAccessExpression(current)) current = current.expression;
+  return ts.isIdentifier(current) ? current : undefined;
 }
 
 export function jsGlobalValueMember(name: string): JsMemberType | undefined {
@@ -391,6 +461,32 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
     },
   );
   memberCache.set(key, reflected);
+  return reflected;
+}
+
+export function jsRefHasMemberPath(ref: JsTypeRef, path: string[]): boolean {
+  const key = `${ref.key}:has-member:${path.join(".")}`;
+  const cached = refMemberPathCache.get(key);
+  if (cached !== undefined) return cached;
+  const reflected = reflectSource(
+    key,
+    ref.source,
+    (checker, sourceFile) => {
+      const value = findVariable(sourceFile, ref.expr)?.initializer ??
+        findDeclaredValue(sourceFile, ref.expr);
+      if (!value) return false;
+      let type = checker.getTypeAtLocation(value);
+      for (const segment of path) {
+        const symbol = type.getProperty(segment);
+        if (!symbol) return false;
+        const next = typeOfSymbol(checker, symbol);
+        if (!next) return false;
+        type = next;
+      }
+      return true;
+    },
+  );
+  refMemberPathCache.set(key, reflected);
   return reflected;
 }
 

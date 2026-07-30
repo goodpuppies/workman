@@ -10,6 +10,7 @@ export type FfiElaboration = {
   module: Module;
   bindings: Map<string, FfiBinding>;
   foreignTypeRefs: Map<string, JsTypeRef>;
+  valueRefs?: Map<string, JsTypeRef>;
   selected: Set<string>;
   sourceJsImports?: Extract<Decl, { kind: "JsImportDecl" }>[];
   deepRecords?: Map<string, Extract<Decl, { kind: "RecordDecl" }>>;

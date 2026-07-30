@@ -7,6 +7,7 @@ import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
 import { generatedJsImports } from "../imports.ts";
+import { recordFieldNamesInDecls } from "../record_fields.ts";
 import { generatedForeignDeclsForRefs, generatedImportInsertionIndex } from "./bindings.ts";
 import {
   materializeReceiverCall,
@@ -58,7 +59,7 @@ export function resolveDelayedFfiElaboration(
   result: InferResult,
   options: ResolveOptions = {},
 ): FfiElaboration {
-  const previousRecordFields = setActiveRecordFields(recordFieldNames(ffi.module.decls));
+  const previousRecordFields = setActiveRecordFields(recordFieldNamesInDecls(ffi.module.decls));
   const previousFfiSolve = setActiveFfiSolve((original, internalName) => {
     const variant = [...ffi.bindings.values()]
       .flatMap((binding) => binding.variants)
@@ -80,7 +81,7 @@ function resolveDelayedFfiElaborationInner(
 ): FfiElaboration {
   solveDelayedBindingTypes(ffi.module.decls, ffi, result);
   const selected = new Set<string>();
-  const valueRefs = new Map<string, JsTypeRef>();
+  const valueRefs = new Map<string, JsTypeRef>(ffi.valueRefs);
   const decls: Decl[] = [];
   for (const decl of ffi.module.decls) {
     const resolved = resolveDelayedDecl(decl, ffi, result, selected, options, valueRefs);
@@ -396,13 +397,4 @@ function solveDelayedBindingTypesInExpr(
     case "Var":
       return;
   }
-}
-
-function recordFieldNames(decls: Decl[]): Set<string> {
-  const fields = new Set<string>();
-  for (const decl of decls) {
-    if (decl.kind !== "RecordDecl") continue;
-    for (const field of decl.fields) fields.add(field.name);
-  }
-  return fields;
 }

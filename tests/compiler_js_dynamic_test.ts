@@ -431,7 +431,7 @@ Deno.test("undetermined JS boundary parameters are reported, not defaulted", asy
         };
       `),
     Error,
-    "unsolved JS boundary type in save",
+    "cannot generalize JS FFI boundary in save",
   );
 });
 

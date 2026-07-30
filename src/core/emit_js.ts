@@ -671,8 +671,10 @@ function emitExpr(expr: CoreExpr): string {
       return `(__arg) => {\n${
         emitArmBody(expr.arms, "__arg", "pattern match failure in function")
       }\n}`;
-    case "CoreApp":
-      return `${emitExpr(expr.callee)}(${emitExpr(expr.arg)})`;
+    case "CoreApp": {
+      const callee = emitExpr(expr.callee);
+      return `${expr.callee.kind === "CoreFn" ? `(${callee})` : callee}(${emitExpr(expr.arg)})`;
+    }
     case "CoreIf":
       return `(${emitExpr(expr.cond)} ? ${emitExpr(expr.thenExpr)} : ${emitExpr(expr.elseExpr)})`;
     case "CoreMatch":

@@ -1,4 +1,5 @@
 import type { Decl, Module, TypeExpr } from "../ast.ts";
+import { diagnosticError } from "../diagnostics.ts";
 import type { JsTypeRef } from "./reflect/types.ts";
 import { jsGlobalTypeRef } from "./reflect/types.ts";
 import { setActiveJsReflectionBasePath } from "./reflect/host.ts";
@@ -6,6 +7,7 @@ import { collectFfiDecl, generatedJsImports, generatedTypeAliases } from "./impo
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver/receiver.ts";
 import { rewriteDeclCalls } from "./receiver/rewrite_decl.ts";
 import { rewriteExprCalls, setActiveRecordFields } from "./receiver/rewrite_expr.ts";
+import { recordFieldNamesInDecls } from "./record_fields.ts";
 import {
   type FfiBinding,
   type FfiElaboration,
@@ -23,7 +25,7 @@ export function prepareFfiElaboration(
   options: FfiElaborationOptions = {},
 ): FfiElaboration {
   const previousRecordFields = setActiveRecordFields(
-    recordFieldNames(module, options.importedRecordFields),
+    recordFieldNamesInDecls(module.decls, options.importedRecordFields),
   );
   const previousReflectionBasePath = setActiveJsReflectionBasePath(options.filePath);
   try {
@@ -41,11 +43,11 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
   const localTypes = localTypeNames(module);
   for (const decl of module.decls) {
     if (decl.kind !== "JsImportDecl" || !decl.typeOnly) continue;
-    collectFfiDecl(bindings, importedRefs, importedTypeRefs, decl);
+    collectFfiDeclAtImport(bindings, importedRefs, importedTypeRefs, decl);
   }
   for (const decl of module.decls) {
     if (decl.kind !== "JsImportDecl" || decl.typeOnly) continue;
-    collectFfiDecl(bindings, importedRefs, importedTypeRefs, decl);
+    collectFfiDeclAtImport(bindings, importedRefs, importedTypeRefs, decl);
   }
   collectReflectedForeignTypeRefs(bindings, importedTypeRefs, localTypes);
   const selected = new Set<string>();
@@ -87,6 +89,7 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
     module: { ...module, decls },
     bindings,
     foreignTypeRefs: importedTypeRefs,
+    valueRefs: importedRefs,
     selected,
     sourceJsImports: module.decls.filter((decl) =>
       decl.kind === "JsImportDecl" && !decl.typeOnly
@@ -95,13 +98,17 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
   };
 }
 
-function recordFieldNames(module: Module, importedFields: Iterable<string> = []): Set<string> {
-  const fields = new Set(importedFields);
-  for (const decl of module.decls) {
-    if (decl.kind !== "RecordDecl") continue;
-    for (const field of decl.fields) fields.add(field.name);
+function collectFfiDeclAtImport(
+  bindings: Map<string, FfiBinding>,
+  importedRefs: Map<string, JsTypeRef>,
+  importedTypeRefs: Map<string, JsTypeRef>,
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+): void {
+  try {
+    collectFfiDecl(bindings, importedRefs, importedTypeRefs, decl);
+  } catch (error) {
+    throw diagnosticError(error, decl.node, "ffi.import-resolution");
   }
-  return fields;
 }
 
 function collectReflectedForeignTypeRefs(
@@ -116,7 +123,12 @@ function collectReflectedForeignTypeRefs(
         collectForeignTypeNames(variant.receiverType, foreignTypeRefs, localTypes);
       }
       if (variant.resultRef?.type) {
-        collectForeignTypeNames(variant.resultRef.type, foreignTypeRefs, localTypes);
+        collectForeignTypeNames(
+          variant.resultRef.type,
+          foreignTypeRefs,
+          localTypes,
+          variant.resultRef,
+        );
       }
       for (const callback of variant.callbackParamRefs ?? []) {
         for (const ref of callback.params) {
@@ -137,7 +149,7 @@ function collectForeignTypeNames(
     case "TName":
       if (type.args.length === 0 && isReflectedForeignTypeName(type.name, localTypes)) {
         const typeRef = ref ?? jsGlobalTypeRef(type.name);
-        if (!foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
+        if (ref || !foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
       }
       for (const arg of type.args) collectForeignTypeNames(arg, foreignTypeRefs, localTypes);

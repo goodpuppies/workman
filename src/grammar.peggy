@@ -112,6 +112,14 @@
   function liftedLambda(name, body, loc) {
     return at({ kind: "Lambda", params: [liftedParam(name, loc)], directives: [], body }, loc);
   }
+  function ascribedExpr(value, annotation, loc) {
+    const name = `__wm_ascription_${nextLiftId++}`;
+    const pattern = at({ kind: "PVar", name }, loc);
+    const param = at({ pattern, annotation }, loc);
+    const body = at({ kind: "Var", name }, loc);
+    const callee = at({ kind: "Lambda", params: [param], directives: [], body }, loc);
+    return at({ kind: "Call", callee, args: [value] }, loc);
+  }
   function taskTupleLift(tasks, loc) {
     if (tasks.length === 0) {
       throw new Error("lifted Task tuple requires at least one task argument");
@@ -366,8 +374,14 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right
   }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
-Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
-  { return tail.reduce((callee, item) => at({ kind: "Call", callee, args: item.args }, location()), head); }
+Postfix = head:Primary tail:(ExplicitCall / SpaceCall)* annotation:TypeAnn?
+  {
+    const value = tail.reduce(
+      (callee, item) => at({ kind: "Call", callee, args: item.args }, location()),
+      head,
+    );
+    return annotation ? ascribedExpr(value, annotation, location()) : value;
+  }
 ExplicitCall = _ "(" _ args:ArgList? _ ")" !(_ "=>") { return { kind: "Call", args: args ?? [] }; }
 SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary

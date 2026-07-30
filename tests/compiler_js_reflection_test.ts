@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { checkSource, checkVirtual } from "../src/compiler.ts";
+import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
 import {
   contextualizeDelayedCallbacks,
   resolveDelayedFfiElaboration,
@@ -90,6 +90,92 @@ Deno.test("supports inferred variadic JS imports as polymorphic unary functions"
   expectBinding(result.env, "main", { type: "(Void) => Result<Void, Js.Error>", vars: 0 });
 });
 
+Deno.test("uses lift context to select a variadic reflected function value", async () => {
+  const result = await checkSource(`
+    from js.global("console") import * as console;
+    let input: Result<String, Js.Error> = Ok("hello");
+    let output = Monad.lift Result console.log(input);
+  `);
+
+  expectBinding(result.env, "output", {
+    type: "Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("resolves nested reflected results before selecting a variadic function value", async () => {
+  const result = await checkSource(`
+    from js.global("console") import * as console;
+    from js.module("npm:chalk") import * as chalk;
+    from js.module("npm:figlet") import * as figlet;
+    let output = Monad.lift Result console.log(
+      Monad.lift Result chalk.default.magenta(
+        figlet.textSync("Node-Gotchi", JSON{ horizontalLayout: "full" })
+      )
+    );
+  `);
+
+  expectBinding(result.env, "output", {
+    type: "Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("expression ascriptions constrain JSON assertions before a pipe", async () => {
+  const source = `
+    from js.module("npm:inquirer") import * as inquirer;
+
+    let getPetName = () => {
+      let inquiry = () => {
+        inquirer.default.prompt(JSON[
+          JSON{
+            "type": "input",
+            name: "petName",
+            message: "What would you like to name your pet?",
+            default: "BiteSize",
+          }
+        ])
+      };
+      let parseAnswer = Monad.lift Task (raw) => {
+        record PetNameAnswer = { petName: String };
+        Json.assert(raw): Result<PetNameAnswer, Js.Error>
+          :> Result.map((value) => { value.petName })
+          :> Task.fromResult
+      };
+
+      inquiry() :> parseAnswer
+    };
+  `;
+  const result = await checkSource(source);
+
+  expectBinding(result.env, "getPetName", {
+    type: "(Void) => Task<String, Js.Error>",
+    vars: 0,
+  });
+
+  const js = await compile(source);
+  new Function(`return async () => {\n${js}\n};`);
+});
+
+Deno.test("rejects an unconstrained variadic reflected function value", async () => {
+  for (
+    const expression of [
+      "console.log",
+      "Monad.lift Result console.log",
+    ]
+  ) {
+    await assertRejects(
+      () =>
+        checkSource(`
+        from js.global("console") import * as console;
+        let log = ${expression};
+      `),
+      Error,
+      "cannot determine JS FFI overload for log as a first-class function",
+    );
+  }
+});
+
 Deno.test("supports inferred JS module imports", async () => {
   const result = await checkSource(`
     from js.module("node:crypto") import { createHash };
@@ -97,6 +183,26 @@ Deno.test("supports inferred JS module imports", async () => {
   `);
 
   expectBinding(result.env, "hash", { type: "Result<Hash, Js.Error>", vars: 0 });
+});
+
+Deno.test("preserves nominal receivers returned through polymorphic this", async () => {
+  const result = await checkSource(`
+    from js.module("npm:ora") import * as ora;
+
+    let try = match(result) => {
+      Ok(value) => { value },
+      Err(_) => { Panic("ffi") },
+    };
+
+    let spinner = ora.default("Loading") :> try :> .start() :> try;
+    let finished = spinner.succeed("Done");
+  `);
+
+  expectBinding(result.env, "spinner", { type: "Ora", vars: 0 });
+  expectBinding(result.env, "finished", {
+    type: "Result<Ora, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("maps reflected JS nullish returns to basis Option", async () => {

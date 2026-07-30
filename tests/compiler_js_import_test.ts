@@ -117,6 +117,18 @@ Deno.test("supports inferred JS named and namespace imports", async () => {
   expectBinding(result.env, "rooted", { type: "Result<Number, Js.Error>", vars: 0 });
 });
 
+Deno.test("rejects unknown reflected JS globals instead of using a dynamic namespace", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("math") import * as Math;
+        let value = Math.sin(1);
+      `),
+    Error,
+    'cannot resolve JS global "math"; JavaScript global names are case-sensitive; did you mean "Math"?',
+  );
+});
+
 Deno.test("resolves local JS module imports relative to source file", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
@@ -138,6 +150,52 @@ Deno.test("resolves local JS module imports relative to source file", async () =
 
   assertStringIncludes(js, `await import("file:///`);
   assertStringIncludes(js, `/helper.ts")`);
+});
+
+Deno.test("reports missing local JS modules at the import declaration", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `from js.module("./missing.ts") import * as Missing;
+     let value = Missing.nope();`,
+  );
+
+  await assertRejects(
+    () => checkFile(input),
+    Error,
+    "cannot resolve JS import",
+  );
+});
+
+Deno.test("reflects direct npm specifiers instead of treating them as dynamic JS", async () => {
+  const result = await checkSource(`
+    from js.module("npm:figlet") import * as figlet;
+    let banner = figlet.textSync("hello");
+  `);
+
+  expectBinding(result.env, "banner", { type: "Result<String, Js.Error>", vars: 0 });
+});
+
+Deno.test("rejects missing typed module namespace members instead of using dynamic JS", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/chalk.ts`,
+    `const chalk = { magenta(text: unknown): string { return String(text); } };
+     export default chalk;`,
+  );
+  await Deno.writeTextFile(
+    input,
+    `from js.module("./chalk.ts") import * as chalk;
+     let colored = chalk.magenta("hello");`,
+  );
+
+  await assertRejects(
+    () => checkFile(input),
+    Error,
+    "has no export magenta; use chalk.default.magenta",
+  );
 });
 
 Deno.test("runs a Workman dependency with a JS module import", async () => {
