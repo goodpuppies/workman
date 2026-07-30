@@ -1,0 +1,371 @@
+from js.module("npm:chalk") import * as chalk;
+from js.module("npm:boxen") import * as boxen;
+from js.module("npm:ora") import * as ora;
+from js.module("npm:figlet") import * as figlet;
+from js.module("npm:inquirer") import * as inquirer;
+from js.global("console") import * as console;
+from js.global("Math") import * as Math;
+from js.module("node:timers/promises") import {
+  setTimeout as wait:(Number)=>Task<Void, Js.Error>
+};
+
+let lift = Monad.lift;
+
+let try = match(result) => {
+  Ok(value) => { value },
+  Err(_) => { Panic("JavaScript operation failed") }
+};
+
+type Mood = Happy | Sad | Tired | Dead;
+type Action = Feed | Play | Sleep | Do_Nothing | Quit;
+
+record PetState = {
+  name: String,
+  hunger: Number,
+  happiness: Number,
+  energy: Number,
+  age: Number
+};
+
+let log = (text: String) => {
+  console.log(text) :> try;
+};
+
+let isAlive = (state) => {
+  state.hunger < 100 &&
+  state.happiness > 0 &&
+  state.energy > 0
+};
+
+let mood = (state) => {
+  if (!isAlive(state)) {
+    Dead
+  } else {
+    if (state.energy < 30) {
+      Tired
+    } else {
+      if (state.hunger > 70 || state.happiness < 30) {
+        Sad
+      } else {
+        Happy
+      }
+    }
+  }
+};
+
+let moodText = match(currentMood) => {
+  Happy => { "Happy" },
+  Sad => { "Sad" },
+  Tired => { "Tired" },
+  Dead => { "Dead" }
+};
+
+let face = match(currentMood) => {
+  Happy => { " ( ^.^ ) " },
+  Sad => { " ( ;.; ) " },
+  Tired => { " ( -.- )z" },
+  Dead => { " ( x.x ) " }
+};
+
+let asciiArt = (state) => {
+  `
+      /\\_/\\
+     ` ++ face(mood(state)) ++ `
+      > ^ <
+    `
+};
+
+let hungerText = (state) => {
+  let text = "Hunger:    " ++ Result.textOf(Math.max(0, state.hunger) :> try) ++ " / 100";
+  if (state.hunger < 50) {
+    chalk.default.green(text) :> try
+  } else {
+    if (state.hunger < 80) {
+      chalk.default.yellow(text) :> try
+    } else {
+      chalk.default.red(text) :> try
+    }
+  }
+};
+
+let happinessText = (state) => {
+  let text = "Happiness: " ++ Result.textOf(Math.max(0, state.happiness) :> try) ++ " / 100";
+  if (state.happiness > 50) {
+    chalk.default.green(text) :> try
+  } else {
+    if (state.happiness > 20) {
+      chalk.default.yellow(text) :> try
+    } else {
+      chalk.default.red(text) :> try
+    }
+  }
+};
+
+let energyText = (state) => {
+  let text = "Energy:    " ++ Result.textOf(Math.max(0, state.energy) :> try) ++ " / 100";
+  if (state.energy > 50) {
+    chalk.default.green(text) :> try
+  } else {
+    if (state.energy > 20) {
+      chalk.default.yellow(text) :> try
+    } else {
+      chalk.default.red(text) :> try
+    }
+  }
+};
+
+let printStatus = (state) => {
+  let nameAndAge = "Name: " ++ state.name ++ " (Age: " ++ Result.textOf(state.age) ++ ")";
+  let stats =
+    (chalk.default.cyan.bold(nameAndAge) :> try) ++ "\n" ++
+    "Mood: " ++ (chalk.default.bold(moodText(mood(state))) :> try) ++ "\n" ++
+    hungerText(state) ++ "\n" ++
+    happinessText(state) ++ "\n" ++
+    energyText(state);
+  let display =
+    (chalk.default.magenta(asciiArt(state)) :> try) ++
+    "\n\n" ++ stats;
+  let boxed = boxen.default(display, JSON{
+    padding: 1,
+    margin: 1,
+    borderStyle: "round",
+    borderColor: "cyan",
+    title: " Node-Gotchi Status ",
+    titleAlignment: "center"
+  }) :> try;
+
+  log(boxed)
+};
+
+let randomChange = => {
+  let random = Math.random() :> try;
+  (Math.floor(random * 10) :> try) + 5
+};
+
+let tick = (state) => {
+  let hungerChange = randomChange();
+  let happinessChange = randomChange();
+  let energyChange = randomChange();
+  .{name = state.name
+  , hunger = Math.min(110, state.hunger + hungerChange) :> try
+  , happiness = Math.max(-10, state.happiness - happinessChange) :> try
+  , energy = Math.max(-10, state.energy - energyChange) :> try
+  , age = state.age + 1
+  }
+};
+
+let getPetName = => {
+  let inquiry = => {
+    inquirer.default.prompt(JSON[JSON{
+      "type": "input",
+      name: "petName",
+      message: "What would you like to name your pet?",
+      default: "BiteSize"
+    }])
+  };
+  let parseAnswer = lift Task (raw) => {
+    record PetNameAnswer = { petName: String };
+    Json.assert(raw): Result<PetNameAnswer, Js.Error>
+      :> Result.map((answer) => { answer.petName })
+      :> Task.fromResult
+  };
+
+  inquiry()
+    :> parseAnswer
+};
+
+let getAction = => {
+  let inquiry = => {
+    inquirer.default.prompt(JSON[JSON{
+      "type": "rawlist",
+      name: "action",
+      message: "What do you want to do?",
+      choices: JSON["Feed", "Play", "Sleep", "Do Nothing", "Quit"]
+    }])
+  };
+  let parseAnswer = lift Task (raw) => {
+    record ActionAnswer = { action: String };
+    Json.assert(raw): Result<ActionAnswer, Js.Error>
+      :> Result.map((answer) => { answer.action })
+      :> Task.fromResult
+  };
+  let parseAction = lift Task (answer) => {
+    Task.succeed(match(answer) {
+      "Feed" => { Feed },
+      "Play" => { Play },
+      "Sleep" => { Sleep },
+      "Do Nothing" => { Do_Nothing },
+      "Quit" => { Quit },
+      _ => { Panic("unknown action") }
+    })
+  };
+
+  inquiry()
+    :> parseAnswer
+    :> parseAction
+};
+
+let createPet = lift Task (name) => {
+  Task.succeed
+    .{name = name
+    , hunger = 50
+    , happiness = 50
+    , energy = 50
+    , age = 0
+    }
+};
+
+let spinwait = (starting) => { (finished) => { (duration) => {
+  let spinner = ora.default(starting)
+    :> try
+    :> .start()
+    :> try;
+  wait(duration)
+    :> lift Task => {
+      spinner.succeed(finished)
+        :> Result.map((_) => { void })
+        :> Task.fromResult
+    }
+}}};
+
+let feed = (state) => {
+  spinwait 
+    "Feeding your pet..." 
+    "Yum! That was delicious." 
+    1500 
+    
+    :> lift Task => {
+      Task.succeed
+        .{name = state.name
+        , hunger = Math.max(0, state.hunger - 30) :> try
+        , happiness = state.happiness
+        , energy = state.energy + 5
+        , age = state.age
+        }
+    }
+};
+
+let play = (state) => {
+  spinwait
+    "Playing a game..."
+    "So much fun!"
+    1500
+  
+    :> lift Task => {
+      Task.succeed
+        .{name = state.name
+        , hunger = state.hunger + 10
+        , happiness = Math.min(100, state.happiness + 30) :> try
+        , energy = state.energy - 15
+        , age = state.age
+        }
+    }
+};
+
+let sleep = (state) => {
+  spinwait
+    "Sleeping..."
+    "Zzz... Well rested!"
+    2500
+  
+    :> lift Task => {
+      Task.succeed
+        .{name = state.name
+        , hunger = state.hunger + 15
+        , happiness = state.happiness
+        , energy = Math.min(100, state.energy + 40) :> try
+        , age = state.age
+        }
+    }
+};
+
+let doNothing = (state) => {
+  chalk.default.italic("You stare at your pet. It stares back...")
+    :> try
+    :> log;
+  wait(1500)
+    :> lift Task => {
+      Task.succeed state
+    }
+};
+
+let quit = => {
+  chalk.default.yellow("\nThanks for playing! Goodbye.")
+    :> try
+    :> log;
+  Task.succeed void
+};
+
+let doAction = (action, state) => {
+  match(action) {
+    Feed => { feed(state) },
+    Play => { play(state) },
+    Sleep => { sleep(state) },
+    Do_Nothing => { doNothing(state) },
+    Quit => { Panic("unreachable") }
+  }
+};
+
+let gameOver = (state) => {
+  console.clear();
+  printStatus(state);
+  chalk.default.bgRed.white.bold("\n G A M E   O V E R \n")
+    :> try
+    :> log;
+  chalk.default.red(
+    "Sadly, through neglect, " ++ state.name ++
+    " has passed away at age " ++ Result.textOf(state.age) ++ ".\n"
+  )
+    :> try
+    :> log;
+};
+
+let rec petLoop = lift Task (state) => {
+  if (isAlive(state)) {
+    console.clear();
+    printStatus(state);
+
+    let continue = lift Task (action) => {
+      match(action) {
+        Quit => { quit() },
+        _ => {
+
+          doAction(action, state)
+            :> lift Task (actedState) => {
+              let nextState = tick(actedState);
+              wait(1000)
+                :> lift Task => {
+                  Task.succeed nextState
+                }
+            }
+            :> petLoop
+        }
+      }
+    };
+
+    getAction()
+      :> continue
+  } else {
+    gameOver(state)
+      :> Task.succeed
+  }
+};
+
+let main = => {
+  console.clear();
+  figlet.textSync("Node-Gotchi", JSON{ horizontalLayout: "full" })
+    :> lift Result chalk.default.magenta()
+    :> lift Result console.log();
+  chalk.default.gray("A terminal virtual pet written in Workman\n")
+    :> try
+    :> log;
+
+  getPetName()
+    :> createPet
+    :> petLoop
+    :> Task.recover((error) => {
+      let message = chalk.default.red("A fatal error occurred:") :> try;
+      console.error(message, error) :> try;
+      Panic("Node-Gotchi stopped after a fatal error")
+    })
+};
