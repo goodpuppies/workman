@@ -82,6 +82,9 @@ const constructors: readonly string[] = Object.freeze([
   "ParenthesizedSequenceNode<SurfaceValue<SurfaceToken>, List<SurfaceNode>, Option<SurfaceNode>, SurfaceValue<SurfaceToken>, Span>",
   "BlockBodyNode<List<SurfaceNode>, Option<SurfaceNode>, Span>",
   "BlockItemNode<SurfaceNode, SurfaceValue<SurfaceToken>, Span>",
+  "InterpolatedStringExpressionNode<SurfaceToken, List<SurfaceNode>, SurfaceValue<SurfaceToken>, Span>",
+  "InterpolatedStringTextNode<SurfaceToken, Span>",
+  "StringInterpolationNode<SurfaceToken, SurfaceNode, SurfaceValue<SurfaceToken>, Span>",
 ]);
 
 export type SurfaceRuleKind =
@@ -134,6 +137,9 @@ const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = 
     "ExplicitCall",
     "SpaceCall",
     "Primary",
+    "InterpolatedString",
+    "InterpolatedStringText",
+    "StringInterpolation",
     "CarrierLiftTupleExpr",
     "LiftTupleExpr",
     "PanicExpr",
@@ -213,6 +219,7 @@ const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = 
     "String",
     "QuotedString",
     "MultilineString",
+    "InterpolatedChar",
     "QuotedChar",
     "MultilineChar",
     "LineTerminator",
@@ -300,6 +307,7 @@ export const surfaceBuilderPlan: Readonly<Record<string, readonly string[]>> = O
   SpaceCall: ["SpaceCallNode"],
   Primary: [
     "LiteralExpressionNode",
+    "InterpolatedStringExpressionNode",
     "NameExpressionNode",
     "PanicExpressionNode",
     "CarrierLiftExpressionNode",
@@ -314,6 +322,9 @@ export const surfaceBuilderPlan: Readonly<Record<string, readonly string[]>> = O
     "GroupedExpressionNode",
     "BlockExpressionNode",
   ],
+  InterpolatedString: ["InterpolatedStringExpressionNode"],
+  InterpolatedStringText: ["InterpolatedStringTextNode"],
+  StringInterpolation: ["StringInterpolationNode"],
   CarrierLiftTupleExpr: ["CarrierLiftExpressionNode"],
   LiftTupleExpr: ["LiftTupleExpressionNode"],
   PanicExpr: ["PanicExpressionNode"],

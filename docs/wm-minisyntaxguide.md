@@ -93,7 +93,8 @@ Double-quoted strings are single-line:
 let short = "hello\nworld";
 ```
 
-Backtick strings can span multiple lines. They do not interpolate expressions:
+Backtick strings can span multiple lines and use JavaScript-style `${...}` interpolation.
+Interpolated expressions must have type `String`:
 
 ```workman
 let page = `first line
@@ -101,6 +102,8 @@ second line
 third line`;
 
 let withTick = `use \` to include a backtick`;
+let greeting = `Hello, ${name}!`;
+let escaped = `write \${name} to show it literally`;
 ```
 
 ### Tuple Destructuring
@@ -403,6 +406,12 @@ let describe = match(n) => {
   0 => { "zero" },
   1 => { "one" },
   _ => { "many" }
+};
+
+-- Match several subjects directly; no extra tuple parentheses are needed
+match(status, ready) {
+  (Ok, true) => { "go" },
+  _ => { "wait" }
 };
 ```
 
@@ -947,6 +956,9 @@ let wrong = "Hello" + " World";  -- This is arithmetic!
 
 -- ✅ Use ++
 let right = "Hello" ++ " " ++ "World";
+
+-- Prefer interpolation when assembling a string from several pieces
+let clearer = `Hello ${name}, welcome to ${place}`;
 ```
 
 ### 11. Type Constraints Use `:`
@@ -1014,7 +1026,6 @@ These features are not supported yet or are only partially supported:
 - **Exceptions:** use `Result`, `Option`, and `Panic`; general exception handling is not
   implemented.
 - **Async/await syntax:** JS promises are used through FFI methods like `.then(...)`.
-- **String interpolation:** backtick strings are multiline only; they do not interpolate.
 - **Custom operators/fixity:** fixed built-in operators only.
 - **Automatic JS record/object conversion:** use `JSON{}` and `JSON[]` for current JS object/array
   literals.

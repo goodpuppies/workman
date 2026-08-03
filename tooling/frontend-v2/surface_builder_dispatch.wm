@@ -40,7 +40,10 @@ from "./surface_builders_import.wm" import {
   buildJsTarget, buildJsImportClauseBody, buildJsImportClause,
   buildJsImportSpec, buildJsImportDecl
 };
-from "./surface_builders_misc.wm" import { buildDirective, buildPanic };
+from "./surface_builders_misc.wm" import {
+  buildDirective, buildPanic, buildInterpolatedStringText,
+  buildStringInterpolation, buildInterpolatedString
+};
 
 let buildTokenRuleValue = (
   value: ParseValue,
@@ -173,6 +176,9 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "CarrierLiftTupleExpr" => { buildCarrierLift(value, span) },
             "LiftTupleExpr" => { buildLiftTuple(value, span) },
             "PanicExpr" => { buildPanic(value, span) },
+            "InterpolatedStringText" => { buildInterpolatedStringText(source, span) },
+            "StringInterpolation" => { buildStringInterpolation(value, span) },
+            "InterpolatedString" => { buildInterpolatedString(value, span) },
             "JsonObjectField" => { buildJsonObjectField(value, span) },
             "JsonExpr" => { buildJsonExpr(value, span) },
             "RecordExprField" => { buildRecordExprField(value, span) },

@@ -276,6 +276,27 @@ Deno.test("record spread uses annotated nominal target for nested literals", asy
   expectBinding(result.env, "v", { type: "Vector", vars: 0 });
 });
 
+Deno.test("record updates infer an unannotated spread parameter from overridden fields", async () => {
+  const result = await checkSource(`
+    record PetState = {
+      name: String,
+      hunger: Number,
+      happiness: Number,
+      energy: Number,
+      age: Number
+    };
+    let feed = (state) => {
+      .{
+        ..state,
+        hunger = state.hunger - 30,
+        energy = state.energy + 5,
+      }
+    };
+  `);
+
+  expectBinding(result.env, "feed", { type: "PetState -> PetState", vars: 0 });
+});
+
 Deno.test("imported records remain nominal across file boundaries", async () => {
   const virtualFs = new Map<string, string>([
     [

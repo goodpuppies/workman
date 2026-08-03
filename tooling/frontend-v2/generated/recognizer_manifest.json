@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "grammarHash": "195621adf008708ca11f8121167021a542a7dfb2f34917ce6b46eaf29071514d",
+  "grammarHash": "a5698108ba389db91ff03ab8795226ccc23344f605036261786d594354f4f248",
   "grammarPath": "src/grammar.peggy",
-  "ruleCount": 128,
+  "ruleCount": 132,
   "recoveryAnnotations": [
     {
       "rule": "TopPhrase",

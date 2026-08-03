@@ -1,5 +1,6 @@
 from "./generated/surface_types.wm" import {
-  Span, SurfaceToken, MatchArmNode, MatchExpressionNode, MatchFunctionNode
+  Span, SurfaceToken, MatchArmNode, MatchExpressionNode, MatchFunctionNode,
+  TupleExpressionNode
 };
 from "./surface_parse_value.wm" import {
   ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue,
@@ -19,38 +20,45 @@ let buildMatchArm = (value: ParseValue, span: Span) => {
 };
 
 let buildMatchExpr = (value: ParseValue, span: Span) => {
-  let tokens = collectTokens(value);
-  match(collectNodes(value)) {
-    [matched, firstArm, ..restArms] => {
-      match((
-        firstTokenWithText(tokens, "match"),
-        firstTokenWithText(tokens, "("),
-        firstTokenWithText(tokens, ")"),
-        firstTokenWithText(tokens, "{"),
-        lastTokenWithText(tokens, "}", None)
-      )) {
-        (
-          Some(matchToken),
-          Some(open),
-          Some(close),
-          Some(openBrace),
-          Some(closeBrace)
-        ) => {
-          NodeParseValue(
-            MatchExpressionNode(
-              matchToken,
-              surfaceValue(open),
-              matched,
-              surfaceValue(close),
-              surfaceValue(openBrace),
-              [firstArm, ..restArms],
-              surfaceValue(closeBrace),
-              span,
-            )
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(matchToken),
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      NodeListParseValue(matched),
+      EmptyParseValue,
+      TokenParseValue(close),
+      EmptyParseValue,
+      TokenParseValue(openBrace),
+      EmptyParseValue,
+      NodeListParseValue(arms),
+      EmptyParseValue,
+      TokenParseValue(closeBrace),
+    ]) => {
+      let matchedNode = match(matched) {
+        [single] => { single },
+        [first, second, ..rest] => {
+          TupleExpressionNode(
+            surfaceValue(open),
+            [first, second, ..rest],
+            surfaceValue(close),
+            span,
           )
         },
-        _ => { RuleParseValue("MatchExpr", value, span) },
-      }
+      };
+      NodeParseValue(
+        MatchExpressionNode(
+          matchToken,
+          surfaceValue(open),
+          matchedNode,
+          surfaceValue(close),
+          surfaceValue(openBrace),
+          arms,
+          surfaceValue(closeBrace),
+          span,
+        )
+      )
     },
     _ => { RuleParseValue("MatchExpr", value, span) },
   }

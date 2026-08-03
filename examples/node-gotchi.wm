@@ -236,11 +236,10 @@ let feed = (state) => {
     
     :> lift Task => {
       Task.succeed
-        .{name = state.name
-        , hunger = Math.max(0, state.hunger - 30) :> try
-        , happiness = state.happiness
-        , energy = state.energy + 5
-        , age = state.age
+        .{
+          ..state,
+          hunger= Math.max(0, state.hunger - 30) :> try,
+          energy= state.energy + 5,
         }
     }
 };

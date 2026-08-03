@@ -1,11 +1,14 @@
 from "./generated/surface_types.wm" import {
-  Span, AuthoredValue, DirectiveNode, PanicExpressionNode
+  Span, AuthoredValue, DirectiveNode, PanicExpressionNode,
+  InterpolatedStringExpressionNode, InterpolatedStringTextNode, StringInterpolationNode
 };
 from "./surface_parse_value.wm" import {
-  ParseValue, NodeParseValue, RuleParseValue
+  ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue,
+  NodeParseValue, RuleParseValue
 };
 from "./surface_builder_support.wm" import {
-  collectTokens, firstTokenWithText, lastTokenWithText, firstNode, surfaceValue
+  token, collectNodes, collectTokens, firstTokenWithText, lastTokenWithText, firstNode,
+  surfaceValue
 };
 
 let buildDirective = (value: ParseValue, span: Span) => {
@@ -40,5 +43,51 @@ let buildPanic = (value: ParseValue, span: Span) => {
       )
     },
     _ => { RuleParseValue("PanicExpr", value, span) },
+  }
+};
+
+let buildInterpolatedStringText = (source: String, span: Span) => {
+  NodeParseValue(
+    InterpolatedStringTextNode(
+      token(source, span.start, span.end, "InterpolatedStringText"),
+      span,
+    )
+  )
+};
+
+let buildStringInterpolation = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(open),
+      EmptyParseValue,
+      NodeParseValue(expression),
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      NodeParseValue(
+        StringInterpolationNode(open, expression, surfaceValue(close), span)
+      )
+    },
+    _ => { RuleParseValue("StringInterpolation", value, span) },
+  }
+};
+
+let buildInterpolatedString = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "`"),
+    lastTokenWithText(tokens, "`", None)
+  )) {
+    (Some(open), Some(close)) => {
+      NodeParseValue(
+        InterpolatedStringExpressionNode(
+          open,
+          collectNodes(value),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("InterpolatedString", value, span) },
   }
 };

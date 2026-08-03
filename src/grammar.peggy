@@ -106,6 +106,10 @@
   function tupleExpr(items, loc) {
     return at({ kind: "Tuple", items }, loc);
   }
+  function matchExpr(values, arms, loc) {
+    const value = values.length === 1 ? values[0] : tupleExpr(values, loc);
+    return at({ kind: "Match", value, arms }, loc);
+  }
   function liftedParam(name, loc) {
     return at({ pattern: at({ kind: "PVar", name }, loc) }, loc);
   }
@@ -288,8 +292,8 @@ IfExpr
     { return at({ kind: "If", cond, thenExpr, elseExpr }, location()); }
 
 MatchExpr
-  = "match" _ "(" _ value:Expr _ ")" _ "{" _ arms:MatchArmList _ "}"
-    { return at({ kind: "Match", value, arms }, location()); }
+  = "match" _ "(" _ values:ArgList _ ")" _ "{" _ arms:MatchArmList _ "}"
+    { return matchExpr(values, arms, location()); }
 
 MatchFn
   = "match" _ "(" _ names:MatchFnParams _ ")" _ "=>" _ "{" _ arms:MatchArmList _ "}"
@@ -392,7 +396,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
+  = Float / Int / InterpolatedString / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
@@ -566,6 +570,18 @@ TypeParam = name:(Identifier / Constructor) { return name; }
 Float = n:$("-"? [0-9]+ "." [0-9]+) !IdentPart { return at({ kind: "Float", value: Number(n) }, location()); }
 Int = n:$("-"? [0-9]+) !IdentPart { return at({ kind: "Int", value: Number(n) }, location()); }
 String = MultilineString / QuotedString
+InterpolatedString
+  = "`" InterpolatedStringText? StringInterpolation
+    (InterpolatedStringText? StringInterpolation)* InterpolatedStringText? "`"
+StringInterpolation = "${" _ Expr _ "}"
+InterpolatedStringText = InterpolatedChar+
+InterpolatedChar
+  = "\\n"
+  / "\\t"
+  / "\\`"
+  / "\\$"
+  / "\\\\"
+  / !("`" / "\\" / "${") .
 QuotedString = "\"" chars:QuotedChar* "\"" { return at({ kind: "String", value: chars.join("") }, location()); }
 MultilineString = "`" chars:MultilineChar* "`" { return at({ kind: "String", value: chars.join("") }, location()); }
 QuotedChar
@@ -578,8 +594,9 @@ MultilineChar
   = "\\n" { return "\n"; }
   / "\\t" { return "\t"; }
   / "\\`" { return "`"; }
+  / "\\$" { return "$"; }
   / "\\\\" { return "\\"; }
-  / !("`" / "\\") c:. { return c; }
+  / !("`" / "\\" / "${") c:. { return c; }
 LineTerminator = "\r\n" / "\n" / "\r"
 Bool = v:("true" / "false") !IdentPart { return at({ kind: "Bool", value: v === "true" }, location()); }
 Void = "void" !IdentPart { return at({ kind: "Void" }, location()); }

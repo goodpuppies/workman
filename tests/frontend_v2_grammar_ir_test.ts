@@ -31,29 +31,29 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 128);
+  assertEquals(inventory.ruleCount, 132);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 233,
+    unclassified: 234,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 232,
-    any: 3,
-    choice: 50,
-    class: 17,
-    group: 9,
+    action: 233,
+    any: 4,
+    choice: 53,
+    class: 18,
+    group: 10,
     labeled: 314,
-    literal: 300,
-    oneOrMore: 5,
-    optional: 74,
-    ruleRef: 662,
+    literal: 312,
+    oneOrMore: 6,
+    optional: 77,
+    ruleRef: 672,
     semanticAnd: 1,
-    sequence: 202,
-    simpleNot: 22,
+    sequence: 206,
+    simpleNot: 23,
     text: 5,
-    zeroOrMore: 47,
+    zeroOrMore: 48,
   });
 });
 
@@ -66,13 +66,13 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "195621adf008708ca11f8121167021a542a7dfb2f34917ce6b46eaf29071514d",
+    "a5698108ba389db91ff03ab8795226ccc23344f605036261786d594354f4f248",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 220);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 221);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [
@@ -127,6 +127,7 @@ Deno.test("frontend-v2 inventories every initializer helper as a named WM bounda
     "callExpr",
     "callExprAtSpan",
     "tupleExpr",
+    "matchExpr",
     "liftedParam",
     "liftedLambda",
     "ascribedExpr",

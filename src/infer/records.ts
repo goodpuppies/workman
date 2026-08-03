@@ -137,10 +137,18 @@ export function inferRecordExpr(
     spread,
     type: inferValue(spread.value, expectedResult),
   }));
-  const result = explicitResult ?? expectedResult ?? firstSpreadRecord(inferredSpreads, typeEnv) ??
-    freshRecord(
-      recordCandidate(typeEnv, fields.map((field) => field.name), expr, warnings, diagnostics),
-    );
+  const spreadResult = firstSpreadRecord(inferredSpreads, typeEnv);
+  const result = explicitResult ?? expectedResult ?? spreadResult ?? freshRecord(
+    recordCandidate(
+      typeEnv,
+      fields.map((field) => field.name),
+      expr,
+      warnings,
+      diagnostics,
+      spreads.length === 0 ? "exact" : "contains",
+      spreads.length === 0 ? "ambiguous record type" : "ambiguous record update type",
+    ),
+  );
   const fieldTypes = instantiateRecordFields(recordInfo(result, typeEnv), result.args);
   const expectedNames = new Set(fieldTypes.map((field) => field.name));
   for (const { spread, type } of inferredSpreads) {
@@ -220,6 +228,7 @@ function firstSpreadRecord(
 ): NamedTy | undefined {
   if (spreads.length === 0) return undefined;
   const target = prune(spreads[0].type);
+  if (target.tag === "var" || target.tag === "struct") return undefined;
   if (target.tag !== "named") throw new Error("record spread requires a record type");
   recordInfo(target, typeEnv);
   return target;
@@ -393,9 +402,10 @@ function recordCandidate(
   expr: Extract<Expr, { kind: "Record" }>,
   warnings?: string[],
   diagnostics?: FrontendDiagnostic[],
+  mode: "exact" | "contains" = "exact",
   ambiguous = "ambiguous record type",
 ): TypeInfo {
-  const candidates = findRecordTypes(typeEnv, names, "exact");
+  const candidates = findRecordTypes(typeEnv, names, mode);
   if (candidates.length === 0) throw new Error("no matching record type");
   if (candidates.length > 1) {
     if (!warnings || !diagnostics) throw new Error(ambiguous);

@@ -757,14 +757,22 @@ function projectExpr(node: WmVariant, context: Context): Expr {
       };
     }
     case "MatchExpressionNode": {
-      const [, , valueNode, , , armsValue] = fields(node);
+      const [, , valuesValue, , , armsValue] = fields(node);
+      // Keep the tracked stage-0 artifact able to compile the new self-hosted
+      // sources: the previous surface ABI stored one matched node here.
+      const values = (Array.isArray(valuesValue) ? list(valuesValue) : [valuesValue])
+        .map((value) => projectExpr(variant(value), context));
       return {
         kind: "Match",
-        value: projectExpr(variant(valueNode), context),
+        value: values.length === 1
+          ? values[0]
+          : { kind: "Tuple", items: values, node: nodeFor(context, spanOf(node)) },
         arms: projectMatchArms(armsValue, context),
         ...located,
       };
     }
+    case "InterpolatedStringExpressionNode":
+      return projectInterpolatedString(node, context);
     case "MatchFunctionNode": {
       const [, , namesValue, , , , armsValue] = fields(node);
       const names = list(namesValue).map(tokenText);
@@ -1095,12 +1103,47 @@ function projectLiteralExpr(text: string, located: { node: AstNode }): Expr {
     : { kind: "Int", value: Number(text), ...located };
 }
 
+function projectInterpolatedString(node: WmVariant, context: Context): Expr {
+  const [, partsValue] = fields(node);
+  const outerNode = nodeFor(context, spanOf(node));
+  const parts: Expr[] = [{ kind: "String", value: "", node: outerNode }];
+  for (const partValue of list(partsValue)) {
+    const part = variant(partValue);
+    if (part.name === "InterpolatedStringTextNode") {
+      const [textValue] = fields(part);
+      parts.push({
+        kind: "String",
+        value: decodeMultilineText(tokenText(textValue)),
+        node: nodeFor(context, spanOf(part)),
+      });
+      continue;
+    }
+    if (part.name === "StringInterpolationNode") {
+      const [, expressionValue] = fields(part);
+      parts.push(projectExpr(variant(expressionValue), context));
+      continue;
+    }
+    throw unsupported("interpolated string part", part);
+  }
+  parts.push({ kind: "String", value: "", node: outerNode });
+  return parts.slice(1).reduce<Expr>((left, right) => ({
+    kind: "Binary",
+    op: "++",
+    left,
+    right,
+    node: outerNode,
+  }), parts[0]);
+}
+
 function decodeStringLiteral(text: string): string {
   if (text.startsWith('"')) return JSON.parse(text) as string;
   if (!text.startsWith("`") || !text.endsWith("`")) {
     throw new Error(`frontend-v2 cannot decode string literal ${JSON.stringify(text)}`);
   }
-  const body = text.slice(1, -1);
+  return decodeMultilineText(text.slice(1, -1));
+}
+
+function decodeMultilineText(body: string): string {
   let output = "";
   for (let index = 0; index < body.length; index += 1) {
     if (body[index] !== "\\") {
@@ -1112,6 +1155,7 @@ function decodeStringLiteral(text: string): string {
     if (escaped === "n") output += "\n";
     else if (escaped === "t") output += "\t";
     else if (escaped === "`") output += "`";
+    else if (escaped === "$") output += "$";
     else if (escaped === "\\") output += "\\";
     else throw new Error(`frontend-v2 cannot decode multiline escape \\${escaped ?? ""}`);
   }

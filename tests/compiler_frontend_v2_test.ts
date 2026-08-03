@@ -58,6 +58,42 @@ Deno.test("compiler v2 mode projects basic arithmetic with precedence", async ()
   expectBinding(result.env, "negative", { type: "Number", vars: 0 });
 });
 
+Deno.test("compiler v2 supports typed JavaScript-style string interpolation", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = [
+    'let name = "Ada";',
+    "let greeting = `Hello, ${name}!`;",
+    "let escaped = `\\${name}`;",
+  ].join("\n");
+  const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "greeting", { type: "String", vars: 0 });
+  expectBinding(result.env, "escaped", { type: "String", vars: 0 });
+  assertEquals(await formatFrontendV2Source(source), source);
+  const javaScript = await compile(source, { frontend: "v2", frontendV2ModuleUrl });
+  assertStringIncludes(javaScript, '__wm_tuple("", "Hello, ")');
+  assertStringIncludes(javaScript, "name_0");
+  assertStringIncludes(javaScript, 'const escaped_2 = "${name}";');
+});
+
+Deno.test("compiler v2 supports comma-separated match subjects without a nested tuple", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = "let selected = match(1, true) { (Var(number), Var(flag)) => { flag } };";
+  const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "selected", { type: "Bool", vars: 0 });
+  assertEquals(
+    await formatFrontendV2Source(source),
+    "let selected = match(1, true) {\n  (Var(number), Var(flag)) => {\n    flag\n  }\n};",
+  );
+  assertEquals(
+    await formatFrontendV2Source(
+      "let selected = match((1, true)) { (Var(number), Var(flag)) => { flag } };",
+    ),
+    "let selected = match(1, true) {\n  (Var(number), Var(flag)) => {\n    flag\n  }\n};",
+  );
+});
+
 Deno.test("compiler v2 mode typechecks independent bindings after a recovered semicolon", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
   const source = "let x = 1\nlet ok = true;";

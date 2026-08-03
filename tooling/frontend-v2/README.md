@@ -7,6 +7,10 @@ Surface parsing is the compiler, formatter, and LSP authority.
 The versioned Peggy-AST boundary, generated layout, action classification rules, and generator
 contracts are specified in [`generator/README.md`](generator/README.md).
 
+Parser changes and recovery from a broken stage-0 artifact are documented in
+[`bootstrap.md`](bootstrap.md). Frontend v2 self-hosts from its tracked generated artifact; there is
+no supported v1 Workman parser fallback.
+
 Exercise the generated frontend directly:
 
 ```sh

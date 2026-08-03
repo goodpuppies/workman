@@ -14,6 +14,7 @@ from "./generated/surface_types.wm" import {
   NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode,
   TypeArgumentsNode, LongNameNode, LiteralExpressionNode,
+  InterpolatedStringExpressionNode, InterpolatedStringTextNode, StringInterpolationNode,
   BinaryExpressionNode, UnaryExpressionNode, PipeExpressionNode, PipeMemberNode,
   ApplyExpressionNode,
   ExplicitCallNode, SpaceCallNode, NameExpressionNode
@@ -233,8 +234,14 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
   ), Var(depth), Var(materializeMarks)) => {
     let armIndent = indentation(depth + 1, "");
     let closeIndent = indentation(depth, "");
+    let matchedText = match(matched) {
+      TupleExpressionNode(tupleOpen, items, tupleClose, tupleSpan) => {
+        renderNodes(items, ", ", "", depth, materializeMarks)
+      },
+      _ => { renderSurfaceNodeAt(matched, depth, materializeMarks) },
+    };
     match((
-      renderSurfaceNodeAt(matched, depth, materializeMarks),
+      matchedText,
       renderNodes(arms, ",\n" ++ armIndent, "", depth + 1, materializeMarks)
     )) {
       (Some(matchedText), Some(armsText)) => {
@@ -280,6 +287,25 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
         Some(patternText ++ " " ++ renderSurfaceValue(arrow, materializeMarks) ++ " " ++ bodyText)
       },
       _ => { None },
+    }
+  },
+  (InterpolatedStringExpressionNode(open, parts, close, span), Var(depth), Var(materializeMarks)) => {
+    match(renderNodes(parts, "", "", depth, materializeMarks)) {
+      Some(partsText) => {
+        Some(renderToken(open) ++ partsText ++ renderSurfaceValue(close, materializeMarks))
+      },
+      None => { None },
+    }
+  },
+  (InterpolatedStringTextNode(text, span), Var(depth), Var(materializeMarks)) => {
+    Some(renderToken(text))
+  },
+  (StringInterpolationNode(open, expression, close, span), Var(depth), Var(materializeMarks)) => {
+    match(renderSurfaceNodeAt(expression, depth, materializeMarks)) {
+      Some(expressionText) => {
+        Some(renderToken(open) ++ expressionText ++ renderSurfaceValue(close, materializeMarks))
+      },
+      None => { None },
     }
   },
   (TupleExpressionNode(open, items, close, span), Var(depth), Var(materializeMarks)) => {
