@@ -1,4 +1,5 @@
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
+import type { ModuleInterface, SemanticInferredTypeHint } from "../module_interface.ts";
 import { lineColToOffset, lineStarts, offsetToLineColFromStarts } from "../source.ts";
 import { renderSemanticType, renderSemanticTypeCompact } from "./hover_type_display.ts";
 import type { LspPosition, LspRange } from "./range.ts";
@@ -14,7 +15,7 @@ export type InferredTypeInlayHint = {
   paddingRight: true;
   data: Readonly<{
     kind: "workman.inferred-type";
-    category: "binding" | "parameter";
+    category: "binding" | "parameter" | "result";
   }>;
 };
 
@@ -34,6 +35,8 @@ export type SemanticInlayOptions = Readonly<{
   parameterHints?: boolean;
 }>;
 
+const MAX_TYPE_INLAY_LABEL_LENGTH = 60;
+
 /** Standard, editor-neutral inferred-type inlays from compiler-owned module-interface facts. */
 export async function semanticInlayHints(
   uri: string,
@@ -52,13 +55,17 @@ export async function semanticInlayHints(
     ? []
     : context.moduleInterface.inferredTypeHints
       .filter((hint) => hint.span.end >= start && hint.span.end <= end)
-      .map((hint) => {
+      .flatMap((hint) => {
+        const typeId = inferredHintTypeId(context.moduleInterface, hint);
+        if (typeId === undefined) return [];
         const position = offsetToLineColFromStarts(hint.span.end, starts);
-        const full = renderSemanticType(context.moduleInterface, hint.type.id);
-        const compact = renderSemanticTypeCompact(context.moduleInterface, hint.type.id);
-        return {
+        const full = renderSemanticType(context.moduleInterface, typeId);
+        const compact = truncateTypeInlay(
+          `: ${renderSemanticTypeCompact(context.moduleInterface, typeId)}`,
+        );
+        return [{
           position: { line: position.line - 1, character: position.col },
-          label: `: ${compact}`,
+          label: compact,
           kind: 1 as const,
           tooltip: Object.freeze({
             kind: "markdown" as const,
@@ -70,7 +77,7 @@ export async function semanticInlayHints(
             kind: "workman.inferred-type" as const,
             category: hint.kind,
           }),
-        };
+        }];
       });
   const parameters: WorkmanSemanticInlayHint[] = inlayOptions.parameterHints === false
     ? []
@@ -93,6 +100,20 @@ export async function semanticInlayHints(
     left.position.character - right.position.character ||
     left.kind - right.kind
   );
+}
+
+function inferredHintTypeId(
+  moduleInterface: ModuleInterface,
+  hint: SemanticInferredTypeHint,
+) {
+  if (hint.kind !== "result") return hint.type.id;
+  const shape = moduleInterface.semanticTypes[hint.type.id]?.shape;
+  return shape?.kind === "function" ? shape.result : undefined;
+}
+
+function truncateTypeInlay(label: string): string {
+  if (label.length <= MAX_TYPE_INLAY_LABEL_LENGTH) return label;
+  return `${label.slice(0, MAX_TYPE_INLAY_LABEL_LENGTH - 3).trimEnd()}...`;
 }
 
 function positionOffset(position: LspPosition, starts: number[], sourceLength: number): number {

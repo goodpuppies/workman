@@ -25,6 +25,7 @@ import { surfaceRecoveryInlayHints } from "./surface_recovery.ts";
 import { semanticInlayHints } from "./type_inlays.ts";
 import { fileUriToPath } from "./uri.ts";
 import { validateUri } from "./validation.ts";
+import { ValidationScheduler, type ValidationTicket } from "./validation_scheduler.ts";
 import { workspaceSymbols } from "./workspace_symbols.ts";
 
 const documents = new DocumentStore();
@@ -34,6 +35,7 @@ const semanticService = new SemanticService(projectIndex.discovery, {
   sourceOverrides: () => documents.sourceOverrides(),
   frontendOptions: () => frontendOptions,
 });
+const validationScheduler = new ValidationScheduler();
 let structuralInlaysEnabled = process.env.WORKMAN_STRUCTURAL_INLAYS !== "false";
 let typeInlaysEnabled = process.env.WORKMAN_TYPE_INLAYS !== "false";
 let parameterInlaysEnabled = process.env.WORKMAN_PARAMETER_INLAYS !== "false";
@@ -81,6 +83,7 @@ export async function runServer() {
       }
     }
   }
+  await validationScheduler.drain();
   await Promise.allSettled([...pending]);
   log("server stop");
 }
@@ -197,10 +200,14 @@ async function handleMessage(message: RpcMessage) {
     return;
   }
   if (message.method === "shutdown") {
+    await validationScheduler.drain();
     isShutdown = true;
     await respond(message.id, null);
     return;
   }
+  // Requests observe a complete semantic snapshot for every notification received before them.
+  // The compiler cache makes this cheap after the latest scheduled validation has completed.
+  if (message.id !== undefined) await validationScheduler.drain();
   if (message.method === "textDocument/didOpen") {
     workspaceRevision++;
     const params = message.params as DidOpenParams;
@@ -209,7 +216,7 @@ async function handleMessage(message: RpcMessage) {
       params.textDocument.text,
       params.textDocument.version,
     );
-    await publishAffectedValidation(params.textDocument.uri);
+    scheduleAffectedValidation(params.textDocument.uri);
     return;
   }
   if (message.method === "textDocument/didChange") {
@@ -221,12 +228,12 @@ async function handleMessage(message: RpcMessage) {
       params.contentChanges,
       params.textDocument.version,
     );
-    await publishAffectedValidation(params.textDocument.uri);
+    scheduleAffectedValidation(params.textDocument.uri);
     return;
   }
   if (message.method === "textDocument/didSave") {
     const params = message.params as DidSaveParams;
-    await publishAffectedValidation(params.textDocument.uri);
+    scheduleAffectedValidation(params.textDocument.uri);
     return;
   }
   if (message.method === "textDocument/hover") {
@@ -409,6 +416,8 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didClose") {
     workspaceRevision++;
     const params = message.params as DidCloseParams;
+    await validationScheduler.drain();
+    validationScheduler.cancel(params.textDocument.uri);
     const previousActiveKeys = activeValidationKeys();
     await semanticService.closeDocument(params.textDocument.uri);
     documents.close(params.textDocument.uri);
@@ -491,7 +500,10 @@ async function inlayHints(params: InlayHintParams) {
   );
 }
 
-async function publishValidation(uri: string) {
+async function publishValidation(
+  uri: string,
+  isCurrent: () => boolean = () => true,
+) {
   const started = Date.now();
   const validationKey = projectIndex.fallbackUri(uri);
   log("validate start", uri);
@@ -505,13 +517,20 @@ async function publishValidation(uri: string) {
       semanticService,
     },
   );
+  if (!isCurrent()) {
+    log("validate stale", uri, `${Date.now() - started}ms`);
+    return;
+  }
   const currentUris = new Set(results.map((result) => result.uri));
-  await Promise.all(
-    results.map((result) => publishDiagnostics(result.uri, result.diagnostics)),
-  );
+  for (const result of results) {
+    if (!isCurrent()) return;
+    await publishDiagnostics(result.uri, result.diagnostics);
+  }
   for (const staleUri of lastPublishedUrisByEntry.get(validationKey) ?? []) {
+    if (!isCurrent()) return;
     if (!currentUris.has(staleUri)) await publishDiagnostics(staleUri, []);
   }
+  if (!isCurrent()) return;
   lastPublishedUrisByEntry.set(validationKey, currentUris);
   log(
     "validate done",
@@ -541,18 +560,34 @@ async function clearInactiveProjectDiagnostics(
   }
 }
 
-async function publishAffectedValidation(uri: string) {
+function scheduleAffectedValidation(uri: string): void {
+  validationScheduler.schedule(
+    uri,
+    (ticket) =>
+      publishAffectedValidation(uri, ticket).catch((error) => {
+        log("affected validate error", uri, String(error));
+      }),
+  );
+}
+
+async function publishAffectedValidation(uri: string, ticket: ValidationTicket) {
   const started = Date.now();
   await semanticService.invalidateUris([uri]);
+  if (!ticket.isCurrent()) return;
   const uris = await projectIndex.affectedUrisForChange(
     uri,
     documents.sourceOverrides(),
     frontendOptions,
   );
+  if (!ticket.isCurrent()) return;
   await refreshSemanticDocumentContexts();
+  if (!ticket.isCurrent()) return;
   if (uris.length === 0) uris.push(projectIndex.fallbackUri(uri));
   log("affected validate start", uri, `files=${uris.length}`);
-  for (const affectedUri of uris) await publishValidation(affectedUri);
+  for (const affectedUri of uris) {
+    if (!ticket.isCurrent()) return;
+    await publishValidation(affectedUri, ticket.isCurrent);
+  }
   log(
     "affected validate done",
     uri,

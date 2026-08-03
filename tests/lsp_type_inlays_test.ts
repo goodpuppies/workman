@@ -22,19 +22,24 @@ Deno.test("ordinary type inlays cover useful binders and inferred parameters", a
     typeHints.map(({ label, position, data }) => ({ label, position, category: data.category })),
     [
       {
-        label: ": 'a -> 'a",
-        position: { line: 1, character: "let identity".length },
-        category: "binding",
+        label: ": 'a",
+        position: { line: 1, character: "let identity = (item".length },
+        category: "parameter",
       },
       {
-        label: ": Number -> Number",
-        position: { line: 2, character: "let increment".length },
-        category: "binding",
+        label: ": 'a",
+        position: { line: 1, character: "let identity = (item)".length },
+        category: "result",
       },
       {
         label: ": Number",
         position: { line: 2, character: "let increment = (value".length },
         category: "parameter",
+      },
+      {
+        label: ": Number",
+        position: { line: 2, character: "let increment = (value)".length },
+        category: "result",
       },
       {
         label: ": Number",
@@ -83,8 +88,8 @@ Deno.test("ordinary type inlays include local let binders", async () => {
   assertEquals(
     typeHints.map(({ label, data }) => [label, data.category]),
     [
-      [": Number -> Number", "binding"],
       [": Number", "parameter"],
+      [": Number", "result"],
       [": Number", "binding"],
     ],
   );
@@ -100,7 +105,49 @@ Deno.test("ordinary type inlays expose only compiler-certified recovered binders
     new Map([[path, source]]),
   );
 
-  assertEquals(hints.map(({ label }) => label), [": 'a -> 'a"]);
+  assertEquals(hints.map(({ label }) => label), [": 'a", ": 'a"]);
+});
+
+Deno.test("direct function inlays respect authored annotations and empty parameters", async () => {
+  const path = "/test/main.wm";
+  const source = "let annotated = (value: Number): Number => { value }; " +
+    "let empty = () => { 1 };";
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+  );
+  const typeHints = hints.filter((hint) => hint.kind === 1);
+
+  assertEquals(
+    typeHints.map(({ label, position, data }) => ({
+      label,
+      position,
+      category: data.category,
+    })),
+    [{
+      label: ": Number",
+      position: { line: 0, character: source.indexOf("()") + 2 },
+      category: "result",
+    }],
+  );
+});
+
+Deno.test("type inlay labels have a hard ASCII ellipsis cutoff and full tooltip", async () => {
+  const path = "/test/main.wm";
+  const typeName = "ExtraordinarilyLongRecordTypeWhoseNameCannotFitInsideOneInlayLabel";
+  const source = `record ${typeName} = { value: Number }; ` +
+    `let value = ${typeName}(1);`;
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+  );
+  const hint = hints.find((candidate) => candidate.kind === 1)!;
+
+  assertEquals(hint.label.length, 60);
+  assertEquals(hint.label.endsWith("..."), true);
+  assertEquals(hint.tooltip.value.includes(typeName), true);
 });
 
 Deno.test("parameter-name inlays use compiler-resolved Workman callables", async () => {

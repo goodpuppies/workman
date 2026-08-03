@@ -532,15 +532,6 @@ Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
   }[];
   assertEquals(hints, [
     {
-      position: { line: 0, character: "let increment".length },
-      label: ": Number -> Number",
-      kind: 1,
-      tooltip: { kind: "markdown", value: "```workman\nNumber -> Number\n```" },
-      paddingLeft: false,
-      paddingRight: true,
-      data: { kind: "workman.inferred-type", category: "binding" },
-    },
-    {
       position: { line: 0, character: "let increment = (value".length },
       label: ": Number",
       kind: 1,
@@ -548,6 +539,15 @@ Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
       paddingLeft: false,
       paddingRight: true,
       data: { kind: "workman.inferred-type", category: "parameter" },
+    },
+    {
+      position: { line: 0, character: "let increment = (value)".length },
+      label: ": Number",
+      kind: 1,
+      tooltip: { kind: "markdown", value: "```workman\nNumber\n```" },
+      paddingLeft: false,
+      paddingRight: true,
+      data: { kind: "workman.inferred-type", category: "result" },
     },
   ]);
 });
@@ -665,17 +665,10 @@ Deno.test("lsp server clears diagnostics after didChange", async () => {
   const mainPublishes = publishes.filter((message) =>
     (message.params as { uri: string }).uri === uri
   );
-  assertEquals(
-    mainPublishes.length,
-    2,
-    JSON.stringify(mainPublishes.map((message) => message.params), null, 2),
-  );
-  const first = mainPublishes[0].params as { diagnostics: { code: string }[]; version?: number };
-  const second = mainPublishes[1].params as { diagnostics: { code: string }[]; version?: number };
-  assertEquals(first.version, 1);
-  assertEquals(first.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
-  assertEquals(second.version, 2);
-  assertEquals(second.diagnostics, []);
+  assertEquals(mainPublishes.length, 1);
+  const latest = mainPublishes[0].params as { diagnostics: { code: string }[]; version?: number };
+  assertEquals(latest.version, 2);
+  assertEquals(latest.diagnostics, []);
 });
 
 Deno.test("lsp server clears project diagnostics after didClose", async () => {
@@ -874,6 +867,9 @@ Deno.test("lsp server clears diagnostics for files no longer in validation resul
         },
       },
     },
+    async () => {
+      await delay(1500);
+    },
     {
       jsonrpc: "2.0",
       method: "textDocument/didChange",
@@ -961,11 +957,7 @@ Deno.test("lsp server clears an imported document diagnostic on the next edit", 
       codes: (message.params as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code),
       version: (message.params as { version?: number }).version,
     })),
-    [
-      { codes: [], version: 1 },
-      { codes: ["type.mismatch"], version: 2 },
-      { codes: [], version: 3 },
-    ],
+    [{ codes: [], version: 3 }],
   );
 });
 
@@ -1204,6 +1196,9 @@ Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", as
         textDocument: { uri, languageId: "wm", version: 1, text: "let x: String = 1;" },
       },
     },
+    async () => {
+      await delay(1500);
+    },
     {
       jsonrpc: "2.0",
       method: "textDocument/didSave",
@@ -1217,6 +1212,52 @@ Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", as
     message.method === "textDocument/publishDiagnostics"
   );
   assertEquals(publishes.length, 2);
+});
+
+Deno.test("lsp server validates only the latest rapid document update", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri,
+          languageId: "wm",
+          version: 1,
+          text: "let x: String = 1;",
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri, version: 2 },
+        contentChanges: [{ text: "let x: String =" }],
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri, version: 3 },
+        contentChanges: [{ text: 'let x: String = "ok";' }],
+      },
+    },
+    { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const publishes = messages.filter((message) =>
+    message.method === "textDocument/publishDiagnostics" &&
+    (message.params as { uri: string }).uri === uri
+  );
+  assertEquals(publishes.length, 1);
+  assertEquals(publishes[0].params, { uri, version: 3, diagnostics: [] });
 });
 
 Deno.test("lsp server returns hover types", async () => {

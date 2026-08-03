@@ -24,6 +24,8 @@
     "profile:webhook:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=webhook-typecheck.cpuprofile scripts/profile_typecheck.ts examples/webhook.wm",
     "profile:frontend-v2": "deno run -A scripts/profile_frontend_v2.ts surface 1",
     "profile:frontend-v2:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=frontend-v2.cpuprofile scripts/profile_frontend_v2.ts surface 1",
+    "profile:lsp-typing": "deno run -A scripts/profile_lsp_typing.ts",
+    "profile:lsp-typing:cpu": "deno run -A scripts/profile_lsp_typing.ts --cpu-profile",
     "wm": "deno run -A src/main.ts"
   },
   "imports": {

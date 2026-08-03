@@ -265,7 +265,7 @@ export type SemanticExpectedType = Readonly<{
 }>;
 
 export type SemanticInferredTypeHint = Readonly<{
-  kind: "binding" | "parameter";
+  kind: "binding" | "parameter" | "result";
   span: SourceSpan;
   type: SemanticOccurrenceType;
 }>;
@@ -1188,6 +1188,7 @@ function semanticInferredTypeHints(
     pattern: Pattern,
     kind: SemanticInferredTypeHint["kind"],
     suppress: boolean,
+    includeVariables = false,
   ) => {
     if (!suppress && pattern.kind === "PVar" && pattern.node) {
       const typed = typedNodes.find((candidate) =>
@@ -1204,7 +1205,7 @@ function semanticInferredTypeHints(
       const type = typed?.generalType ?? typed?.type;
       if (
         type &&
-        (kind !== "parameter" ||
+        (kind !== "parameter" || includeVariables ||
           (inferred !== undefined && prune(inferred).tag !== "var"))
       ) {
         const span = identifierSpan(source, pattern.node, pattern.name, "first");
@@ -1219,21 +1220,61 @@ function semanticInferredTypeHints(
       return;
     }
     if (pattern.kind === "PTuple") {
-      pattern.items.forEach((item) => addPattern(item, kind, suppress));
+      pattern.items.forEach((item) => addPattern(item, kind, suppress, includeVariables));
     } else if (pattern.kind === "PRecord") {
-      pattern.fields.forEach((field) => addPattern(field.pattern, kind, suppress));
+      pattern.fields.forEach((field) =>
+        addPattern(field.pattern, kind, suppress, includeVariables)
+      );
     } else if (pattern.kind === "PCtor") {
-      pattern.args.forEach((argument) => addPattern(argument, kind, suppress));
+      pattern.args.forEach((argument) => addPattern(argument, kind, suppress, includeVariables));
     } else if (pattern.kind === "PAscribed") {
-      addPattern(pattern.pattern, kind, true);
+      addPattern(pattern.pattern, kind, true, includeVariables);
     }
+  };
+  const addDirectLambdaResult = (lambda: Extract<Expr, { kind: "Lambda" }>) => {
+    if (
+      !lambda.node || lambda.returnAnnotation != null ||
+      lambda.trailingReturnAnnotation != null
+    ) return;
+    const typed = typedNodes.find((candidate) =>
+      candidate.kind === "expression" && sameSpan(candidate.span, lambda.node!.span)
+    );
+    const end = lambdaParameterListEnd(source, lambda);
+    if (!typed || end === undefined) return;
+    const position = offsetToLineCol(source, end);
+    hints.push(Object.freeze({
+      kind: "result",
+      span: Object.freeze({ ...position, start: end, end }),
+      type: typed.type,
+    }));
   };
   const visitDecl = (declaration: Decl) => {
     if (declaration.kind !== "LetDecl") return;
     for (const binding of declaration.bindings) {
       const obvious = binding.pattern.kind === "PVar" && obviousInferredType(binding.value);
-      addPattern(binding.pattern, "binding", binding.annotation != null || obvious);
-      visitExpr(binding.value, binding.annotation != null);
+      const directLambda = binding.pattern.kind === "PVar" && binding.value.kind === "Lambda";
+      addPattern(
+        binding.pattern,
+        "binding",
+        binding.annotation != null || obvious || directLambda,
+      );
+      if (
+        binding.pattern.kind === "PVar" && binding.value.kind === "Lambda" &&
+        binding.annotation == null
+      ) {
+        binding.value.params.forEach((parameter) =>
+          addPattern(
+            parameter.pattern,
+            "parameter",
+            parameter.annotation != null,
+            true,
+          )
+        );
+        addDirectLambdaResult(binding.value);
+        visitExpr(binding.value.body);
+      } else {
+        visitExpr(binding.value, binding.annotation != null);
+      }
     }
   };
   const visitExpr = (expression: Expr, suppressLambdaParams = false): void => {
@@ -1322,6 +1363,35 @@ function obviousInferredType(expression: Expr): boolean {
   return expression.kind === "Int" || expression.kind === "Float" ||
     expression.kind === "String" || expression.kind === "Bool" ||
     expression.kind === "Void";
+}
+
+function lambdaParameterListEnd(
+  source: string,
+  lambda: Extract<Expr, { kind: "Lambda" }>,
+): number | undefined {
+  if (!lambda.node) return undefined;
+  let start = lambda.node.span.start;
+  while (/\s/.test(source[start] ?? "")) start++;
+  if (source[start] !== "(") return undefined;
+  let depth = 0;
+  let quote: '"' | "'" | undefined;
+  let escaped = false;
+  for (let offset = start; offset < lambda.node.span.end; offset++) {
+    const character = source[offset];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "(") depth++;
+    else if (character === ")" && --depth === 0) return offset + 1;
+  }
+  return undefined;
 }
 
 type SemanticCallableParameterStages = readonly (readonly string[] | undefined)[];
