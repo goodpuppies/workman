@@ -74,6 +74,26 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
   assertEquals(params?.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
 });
 
+Deno.test("wm lsp runs the stdio language server through the public CLI", async () => {
+  const messages = await runLsp(
+    [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+      { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+      { jsonrpc: "2.0", method: "exit", params: null },
+    ],
+    {},
+    ["run", "-A", "src/cli.ts", "lsp"],
+  );
+
+  assertEquals(
+    (messages.find(({ id }) => id === 1)?.result as {
+      serverInfo?: { name: string };
+    }).serverInfo?.name,
+    "workman-lsp",
+  );
+  assertEquals(messages.find(({ id }) => id === 2)?.result, null);
+});
+
 Deno.test("lsp server enforces lifecycle and returns standard JSON-RPC errors", async () => {
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "workspace/symbol", params: { query: "" } },
@@ -1179,9 +1199,16 @@ Deno.test("lsp server returns null for hover misses", async () => {
 async function runLsp(
   steps: (RpcMessage | readonly RpcMessage[] | (() => Promise<void>))[],
   env: Record<string, string> = {},
+  commandArgs: string[] = [
+    "run",
+    "--allow-read",
+    "--allow-env",
+    "--allow-run",
+    "src/lsp/server.ts",
+  ],
 ): Promise<RpcMessage[]> {
   const child = new Deno.Command(Deno.execPath(), {
-    args: ["run", "--allow-read", "--allow-env", "--allow-run", "src/lsp/server.ts"],
+    args: commandArgs,
     cwd: fileURLToPath(new URL("../", import.meta.url)),
     env,
     stdin: "piped",

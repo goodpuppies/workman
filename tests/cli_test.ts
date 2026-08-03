@@ -22,7 +22,19 @@ Deno.test("cli prints help with command and flag variants", async () => {
     assertEquals(result.stderr, "");
     assertStringIncludes(result.stdout, "commands:");
     assertStringIncludes(result.stdout, "repl [--v2] <file.wm>");
+    assertStringIncludes(
+      result.stdout,
+      "lsp                           run the Workman language server",
+    );
   }
+});
+
+Deno.test("cli rejects arguments to the stdio language server", async () => {
+  const result = await runCli(["lsp", "unexpected"]);
+
+  assertEquals(result.code, 2);
+  assertEquals(result.stdout, "");
+  assertEquals(result.stderr, "usage: wm lsp\n");
 });
 
 Deno.test("cli prints the deno.json version with command and flag variants", async () => {

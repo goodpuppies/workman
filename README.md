@@ -45,6 +45,15 @@ Besides just fp Workman also has:
 
 is available for [vscode](https://marketplace.visualstudio.com/items?itemName=goodpuppies.workman)
 
+Install the Workman CLI with Deno:
+
+```sh
+deno install -g -A --name wm jsr:@goodpuppies/workman
+```
+
+Editors can start the language server over stdio with `wm lsp`. Editor-specific
+configuration lives under [`editors`](./editors/README.md).
+
 ## Documentation
 
 * To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/wm-minisyntaxguide.md). It is short and the best way to learn the language

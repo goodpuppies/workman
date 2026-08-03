@@ -33,6 +33,7 @@ const commands = new Set([
   "repl",
   "err",
   "fmt",
+  "lsp",
   "type-debug",
   "help",
   "version",
@@ -170,6 +171,8 @@ export async function main(args: string[]): Promise<number> {
       return await errCommand(commandArgs);
     case "fmt":
       return await fmtCommand(commandArgs);
+    case "lsp":
+      return await lspCommand(commandArgs);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
     case "version":
@@ -416,6 +419,16 @@ function missingInput(command: string): number {
   return 2;
 }
 
+async function lspCommand(args: string[]): Promise<number> {
+  if (args.length > 0) {
+    console.error("usage: wm lsp");
+    return 2;
+  }
+  const { runServer } = await import("./lsp/server.ts");
+  await runServer();
+  return 0;
+}
+
 function version(): void {
   console.log(`🗿 workman ${VERSION}`);
 }
@@ -437,6 +450,7 @@ commands:
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   fmt [--stdout] [--fix] <file.wm>
                                 format in place; --fix inserts marked ;, {, and }
+  lsp                           run the Workman language server over stdio
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help (-h, --help)
   version                       show the version (-v, -V, --version)
