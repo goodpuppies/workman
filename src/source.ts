@@ -24,19 +24,26 @@ export function makeSpan(line: number, col: number, start: number, end: number):
   return { line, col, start, end };
 }
 
-export function offsetToLineCol(source: string, offset: number): { line: number; col: number } {
-  const limit = Math.max(0, offset);
-  let line = 1;
-  let col = 0;
-  for (let i = 0; i < source.length && i < limit; i++) {
-    if (source[i] === "\n") {
-      line++;
-      col = 0;
-    } else {
-      col++;
-    }
+const lineStartsCacheLimit = 32;
+const lineStartsCache = new Map<string, number[]>();
+
+function cachedLineStarts(source: string): number[] {
+  const cached = lineStartsCache.get(source);
+  if (cached) return cached;
+  const starts = lineStarts(source);
+  if (lineStartsCache.size >= lineStartsCacheLimit) {
+    const oldest = lineStartsCache.keys().next();
+    if (!oldest.done) lineStartsCache.delete(oldest.value);
   }
-  return { line, col };
+  lineStartsCache.set(source, starts);
+  return starts;
+}
+
+export function offsetToLineCol(source: string, offset: number): { line: number; col: number } {
+  // The scanning implementation this replaced stopped at the end of the
+  // source, so out-of-range offsets clamp rather than run past the last line.
+  const limit = Math.min(Math.max(0, offset), source.length);
+  return offsetToLineColFromStarts(limit, cachedLineStarts(source));
 }
 
 export function lineStarts(source: string): number[] {

@@ -2,7 +2,7 @@
 -- Grammar: src/grammar.peggy
 -- Grammar IR SHA-256: a5698108ba389db91ff03ab8795226ccc23344f605036261786d594354f4f248
 -- Directly compiled rules: Start, TopPhrase, TopDecl, ImportDecl, ImportClause, ImportSpecList, ImportSpec, JsImportDecl, JsTarget, JsImportClause, JsImportClauseBody, JsImportSpecList, JsImportSpec, LetDecl, LetBinding, LetPattern, LetPatternList, LetCtorPattern, LetCtorPatternList, RecordDecl, RecordFieldDeclList, RecordFieldDecl, TypeDecl, TypeDeclBody, Expr, IfExpr, MatchExpr, MatchFn, MatchFnParams, MatchArmList, MatchArm, Lambda, LambdaReturnAnnotation, LambdaBody, LambdaBlock, Directive, Or, And, Equality, Compare, Add, Mul, Unary, Pipe, PipeMember, Postfix, ExplicitCall, SpaceCall, SpaceArg, Primary, CarrierLiftTupleExpr, LiftTupleExpr, PanicExpr, JsonExpr, JsonObjectFieldList, JsonObjectField, RecordExpr, NamedRecordExpr, RecordExprFieldList, RecordExprField, ListExpr, TupleOrGroup, ParenSeq, Block, BlockSeqBody, BlockSeqItem, BlockDecl, ParenSeqBody, ParenSeqItem, SemiToken, Pattern, PatternCore, ParamList, Param, ParamPattern, ParamListItems, ParamPatternList, PatternList, CtorPattern, CtorPatternList, ArgList, ListPattern, ListPatternItem, ListLetPattern, ListParamPattern, RecordPattern, RecordPatternFieldList, RecordPatternField, RecordLetPattern, RecordLetPatternFieldList, RecordLetPatternField, RecordParamPattern, RecordParamPatternFieldList, RecordParamPatternField, TypeAnn, FnType, FunctionType, FnTypeDomain, GroupedFunctionType, TypeAtom, TypeList, TypeParams, TypeParam, Float, Int, String, InterpolatedString, StringInterpolation, InterpolatedStringText, InterpolatedChar, QuotedString, MultilineString, QuotedChar, MultilineChar, LineTerminator, Bool, Void, Wildcard, Identifier, Constructor, Name, MemberName, FieldName, LongName, LongConstructor, IdentPart, Keyword, __, _, Whitespace, Comment, EOF
-from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, compiledRuleMemoKey, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };
+from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, compiledRuleMemoSlot, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };
 from "./compiled_probe_rules_00.wm" import * as Probe0;
 from "./compiled_probe_rules_01.wm" import * as Probe1;
 from "./compiled_probe_rules_02.wm" import * as Probe2;
@@ -19,275 +19,298 @@ from "./compiled_probe_rules_12.wm" import * as Probe12;
 from "./compiled_probe_rules_13.wm" import * as Probe13;
 from "./compiled_probe_rules_14.wm" import * as Probe14;
 
+let strictCompiledRules = {
+  let rules = Table.empty();
+  Table.set(rules, "Start", (source, offset, diagnose, parseRule) => { Probe0.rule_Start(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TopPhrase", (source, offset, diagnose, parseRule) => { Probe0.rule_TopPhrase(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TopDecl", (source, offset, diagnose, parseRule) => { Probe0.rule_TopDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ImportDecl", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ImportClause", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportClause(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ImportSpecList", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportSpecList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ImportSpec", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportSpec(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsImportDecl", (source, offset, diagnose, parseRule) => { Probe0.rule_JsImportDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsTarget", (source, offset, diagnose, parseRule) => { Probe1.rule_JsTarget(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsImportClause", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportClause(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsImportClauseBody", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportClauseBody(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsImportSpecList", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportSpecList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsImportSpec", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportSpec(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LetDecl", (source, offset, diagnose, parseRule) => { Probe1.rule_LetDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LetBinding", (source, offset, diagnose, parseRule) => { Probe2.rule_LetBinding(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LetPattern", (source, offset, diagnose, parseRule) => { Probe2.rule_LetPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LetPatternList", (source, offset, diagnose, parseRule) => { Probe2.rule_LetPatternList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LetCtorPattern", (source, offset, diagnose, parseRule) => { Probe2.rule_LetCtorPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LetCtorPatternList", (source, offset, diagnose, parseRule) => { Probe2.rule_LetCtorPatternList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordDecl", (source, offset, diagnose, parseRule) => { Probe2.rule_RecordDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordFieldDeclList", (source, offset, diagnose, parseRule) => { Probe3.rule_RecordFieldDeclList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordFieldDecl", (source, offset, diagnose, parseRule) => { Probe3.rule_RecordFieldDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeDecl", (source, offset, diagnose, parseRule) => { Probe3.rule_TypeDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeDeclBody", (source, offset, diagnose, parseRule) => { Probe3.rule_TypeDeclBody(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Expr", (source, offset, diagnose, parseRule) => { Probe3.rule_Expr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "IfExpr", (source, offset, diagnose, parseRule) => { Probe3.rule_IfExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MatchExpr", (source, offset, diagnose, parseRule) => { Probe3.rule_MatchExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MatchFn", (source, offset, diagnose, parseRule) => { Probe3.rule_MatchFn(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MatchFnParams", (source, offset, diagnose, parseRule) => { Probe3.rule_MatchFnParams(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MatchArmList", (source, offset, diagnose, parseRule) => { Probe4.rule_MatchArmList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MatchArm", (source, offset, diagnose, parseRule) => { Probe4.rule_MatchArm(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Lambda", (source, offset, diagnose, parseRule) => { Probe4.rule_Lambda(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LambdaReturnAnnotation", (source, offset, diagnose, parseRule) => { Probe4.rule_LambdaReturnAnnotation(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LambdaBody", (source, offset, diagnose, parseRule) => { Probe4.rule_LambdaBody(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LambdaBlock", (source, offset, diagnose, parseRule) => { Probe4.rule_LambdaBlock(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Directive", (source, offset, diagnose, parseRule) => { Probe4.rule_Directive(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Or", (source, offset, diagnose, parseRule) => { Probe4.rule_Or(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "And", (source, offset, diagnose, parseRule) => { Probe4.rule_And(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Equality", (source, offset, diagnose, parseRule) => { Probe4.rule_Equality(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Compare", (source, offset, diagnose, parseRule) => { Probe5.rule_Compare(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Add", (source, offset, diagnose, parseRule) => { Probe5.rule_Add(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Mul", (source, offset, diagnose, parseRule) => { Probe5.rule_Mul(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Unary", (source, offset, diagnose, parseRule) => { Probe5.rule_Unary(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Pipe", (source, offset, diagnose, parseRule) => { Probe5.rule_Pipe(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "PipeMember", (source, offset, diagnose, parseRule) => { Probe5.rule_PipeMember(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Postfix", (source, offset, diagnose, parseRule) => { Probe5.rule_Postfix(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ExplicitCall", (source, offset, diagnose, parseRule) => { Probe5.rule_ExplicitCall(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "SpaceCall", (source, offset, diagnose, parseRule) => { Probe5.rule_SpaceCall(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "SpaceArg", (source, offset, diagnose, parseRule) => { Probe5.rule_SpaceArg(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Primary", (source, offset, diagnose, parseRule) => { Probe6.rule_Primary(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "CarrierLiftTupleExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_CarrierLiftTupleExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LiftTupleExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_LiftTupleExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "PanicExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_PanicExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsonExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_JsonExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsonObjectFieldList", (source, offset, diagnose, parseRule) => { Probe6.rule_JsonObjectFieldList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "JsonObjectField", (source, offset, diagnose, parseRule) => { Probe6.rule_JsonObjectField(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_RecordExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "NamedRecordExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_NamedRecordExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordExprFieldList", (source, offset, diagnose, parseRule) => { Probe7.rule_RecordExprFieldList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordExprField", (source, offset, diagnose, parseRule) => { Probe7.rule_RecordExprField(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ListExpr", (source, offset, diagnose, parseRule) => { Probe7.rule_ListExpr(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TupleOrGroup", (source, offset, diagnose, parseRule) => { Probe7.rule_TupleOrGroup(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParenSeq", (source, offset, diagnose, parseRule) => { Probe7.rule_ParenSeq(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Block", (source, offset, diagnose, parseRule) => { Probe7.rule_Block(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "BlockSeqBody", (source, offset, diagnose, parseRule) => { Probe7.rule_BlockSeqBody(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "BlockSeqItem", (source, offset, diagnose, parseRule) => { Probe8.rule_BlockSeqItem(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "BlockDecl", (source, offset, diagnose, parseRule) => { Probe8.rule_BlockDecl(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParenSeqBody", (source, offset, diagnose, parseRule) => { Probe8.rule_ParenSeqBody(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParenSeqItem", (source, offset, diagnose, parseRule) => { Probe8.rule_ParenSeqItem(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "SemiToken", (source, offset, diagnose, parseRule) => { Probe8.rule_SemiToken(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Pattern", (source, offset, diagnose, parseRule) => { Probe8.rule_Pattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "PatternCore", (source, offset, diagnose, parseRule) => { Probe8.rule_PatternCore(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParamList", (source, offset, diagnose, parseRule) => { Probe8.rule_ParamList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Param", (source, offset, diagnose, parseRule) => { Probe8.rule_Param(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParamPattern", (source, offset, diagnose, parseRule) => { Probe9.rule_ParamPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParamListItems", (source, offset, diagnose, parseRule) => { Probe9.rule_ParamListItems(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ParamPatternList", (source, offset, diagnose, parseRule) => { Probe9.rule_ParamPatternList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "PatternList", (source, offset, diagnose, parseRule) => { Probe9.rule_PatternList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "CtorPattern", (source, offset, diagnose, parseRule) => { Probe9.rule_CtorPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "CtorPatternList", (source, offset, diagnose, parseRule) => { Probe9.rule_CtorPatternList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ArgList", (source, offset, diagnose, parseRule) => { Probe9.rule_ArgList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ListPattern", (source, offset, diagnose, parseRule) => { Probe10.rule_ListPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ListPatternItem", (source, offset, diagnose, parseRule) => { Probe10.rule_ListPatternItem(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ListLetPattern", (source, offset, diagnose, parseRule) => { Probe10.rule_ListLetPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "ListParamPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_ListParamPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordPatternFieldList", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordPatternFieldList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordPatternField", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordPatternField(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordLetPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordLetPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordLetPatternFieldList", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordLetPatternFieldList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordLetPatternField", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordLetPatternField(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordParamPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordParamPattern(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordParamPatternFieldList", (source, offset, diagnose, parseRule) => { Probe12.rule_RecordParamPatternFieldList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "RecordParamPatternField", (source, offset, diagnose, parseRule) => { Probe12.rule_RecordParamPatternField(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeAnn", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeAnn(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "FnType", (source, offset, diagnose, parseRule) => { Probe12.rule_FnType(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "FunctionType", (source, offset, diagnose, parseRule) => { Probe12.rule_FunctionType(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "FnTypeDomain", (source, offset, diagnose, parseRule) => { Probe12.rule_FnTypeDomain(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "GroupedFunctionType", (source, offset, diagnose, parseRule) => { Probe12.rule_GroupedFunctionType(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeAtom", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeAtom(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeList", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeList(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeParams", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeParams(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "TypeParam", (source, offset, diagnose, parseRule) => { Probe13.rule_TypeParam(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Float", (source, offset, diagnose, parseRule) => { Probe13.rule_Float(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Int", (source, offset, diagnose, parseRule) => { Probe13.rule_Int(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "String", (source, offset, diagnose, parseRule) => { Probe13.rule_String(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "InterpolatedString", (source, offset, diagnose, parseRule) => { Probe13.rule_InterpolatedString(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "StringInterpolation", (source, offset, diagnose, parseRule) => { Probe13.rule_StringInterpolation(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "InterpolatedStringText", (source, offset, diagnose, parseRule) => { Probe13.rule_InterpolatedStringText(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "InterpolatedChar", (source, offset, diagnose, parseRule) => { Probe13.rule_InterpolatedChar(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "QuotedString", (source, offset, diagnose, parseRule) => { Probe13.rule_QuotedString(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MultilineString", (source, offset, diagnose, parseRule) => { Probe13.rule_MultilineString(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "QuotedChar", (source, offset, diagnose, parseRule) => { Probe13.rule_QuotedChar(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MultilineChar", (source, offset, diagnose, parseRule) => { Probe13.rule_MultilineChar(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LineTerminator", (source, offset, diagnose, parseRule) => { Probe13.rule_LineTerminator(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Bool", (source, offset, diagnose, parseRule) => { Probe13.rule_Bool(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Void", (source, offset, diagnose, parseRule) => { Probe13.rule_Void(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Wildcard", (source, offset, diagnose, parseRule) => { Probe14.rule_Wildcard(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Identifier", (source, offset, diagnose, parseRule) => { Probe14.rule_Identifier(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Constructor", (source, offset, diagnose, parseRule) => { Probe14.rule_Constructor(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Name", (source, offset, diagnose, parseRule) => { Probe14.rule_Name(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "MemberName", (source, offset, diagnose, parseRule) => { Probe14.rule_MemberName(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "FieldName", (source, offset, diagnose, parseRule) => { Probe14.rule_FieldName(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LongName", (source, offset, diagnose, parseRule) => { Probe14.rule_LongName(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "LongConstructor", (source, offset, diagnose, parseRule) => { Probe14.rule_LongConstructor(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "IdentPart", (source, offset, diagnose, parseRule) => { Probe14.rule_IdentPart(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Keyword", (source, offset, diagnose, parseRule) => { Probe14.rule_Keyword(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "__", (source, offset, diagnose, parseRule) => { Probe14.rule___(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "_", (source, offset, diagnose, parseRule) => { Probe14.rule__(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Whitespace", (source, offset, diagnose, parseRule) => { Probe14.rule_Whitespace(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "Comment", (source, offset, diagnose, parseRule) => { Probe14.rule_Comment(source, offset, false, diagnose, parseRule) });
+  Table.set(rules, "EOF", (source, offset, diagnose, parseRule) => { Probe14.rule_EOF(source, offset, false, diagnose, parseRule) });
+  rules
+};
+
+let recoveringCompiledRules = {
+  let rules = Table.empty();
+  Table.set(rules, "Start", (source, offset, diagnose, parseRule) => { if (false) { Probe0.rule_Start(source, offset, true, diagnose, parseRule) } else { matchCommittedRule((activeRecover) => { Probe0.rule_Start(source, offset, activeRecover, diagnose, parseRule) }, true) } });
+  Table.set(rules, "TopPhrase", (source, offset, diagnose, parseRule) => { Probe0.rule_TopPhrase(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TopDecl", (source, offset, diagnose, parseRule) => { Probe0.rule_TopDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ImportDecl", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ImportClause", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportClause(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ImportSpecList", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportSpecList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ImportSpec", (source, offset, diagnose, parseRule) => { Probe0.rule_ImportSpec(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsImportDecl", (source, offset, diagnose, parseRule) => { Probe0.rule_JsImportDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsTarget", (source, offset, diagnose, parseRule) => { Probe1.rule_JsTarget(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsImportClause", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportClause(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsImportClauseBody", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportClauseBody(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsImportSpecList", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportSpecList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsImportSpec", (source, offset, diagnose, parseRule) => { Probe1.rule_JsImportSpec(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LetDecl", (source, offset, diagnose, parseRule) => { Probe1.rule_LetDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LetBinding", (source, offset, diagnose, parseRule) => { Probe2.rule_LetBinding(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LetPattern", (source, offset, diagnose, parseRule) => { Probe2.rule_LetPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LetPatternList", (source, offset, diagnose, parseRule) => { Probe2.rule_LetPatternList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LetCtorPattern", (source, offset, diagnose, parseRule) => { Probe2.rule_LetCtorPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LetCtorPatternList", (source, offset, diagnose, parseRule) => { Probe2.rule_LetCtorPatternList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordDecl", (source, offset, diagnose, parseRule) => { Probe2.rule_RecordDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordFieldDeclList", (source, offset, diagnose, parseRule) => { Probe3.rule_RecordFieldDeclList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordFieldDecl", (source, offset, diagnose, parseRule) => { Probe3.rule_RecordFieldDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeDecl", (source, offset, diagnose, parseRule) => { Probe3.rule_TypeDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeDeclBody", (source, offset, diagnose, parseRule) => { Probe3.rule_TypeDeclBody(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Expr", (source, offset, diagnose, parseRule) => { Probe3.rule_Expr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "IfExpr", (source, offset, diagnose, parseRule) => { Probe3.rule_IfExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MatchExpr", (source, offset, diagnose, parseRule) => { Probe3.rule_MatchExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MatchFn", (source, offset, diagnose, parseRule) => { Probe3.rule_MatchFn(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MatchFnParams", (source, offset, diagnose, parseRule) => { Probe3.rule_MatchFnParams(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MatchArmList", (source, offset, diagnose, parseRule) => { Probe4.rule_MatchArmList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MatchArm", (source, offset, diagnose, parseRule) => { Probe4.rule_MatchArm(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Lambda", (source, offset, diagnose, parseRule) => { Probe4.rule_Lambda(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LambdaReturnAnnotation", (source, offset, diagnose, parseRule) => { Probe4.rule_LambdaReturnAnnotation(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LambdaBody", (source, offset, diagnose, parseRule) => { if (false) { Probe4.rule_LambdaBody(source, offset, true, diagnose, parseRule) } else { matchCommittedRule((activeRecover) => { Probe4.rule_LambdaBody(source, offset, activeRecover, diagnose, parseRule) }, true) } });
+  Table.set(rules, "LambdaBlock", (source, offset, diagnose, parseRule) => { Probe4.rule_LambdaBlock(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Directive", (source, offset, diagnose, parseRule) => { Probe4.rule_Directive(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Or", (source, offset, diagnose, parseRule) => { Probe4.rule_Or(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "And", (source, offset, diagnose, parseRule) => { Probe4.rule_And(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Equality", (source, offset, diagnose, parseRule) => { Probe4.rule_Equality(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Compare", (source, offset, diagnose, parseRule) => { Probe5.rule_Compare(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Add", (source, offset, diagnose, parseRule) => { Probe5.rule_Add(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Mul", (source, offset, diagnose, parseRule) => { Probe5.rule_Mul(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Unary", (source, offset, diagnose, parseRule) => { Probe5.rule_Unary(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Pipe", (source, offset, diagnose, parseRule) => { Probe5.rule_Pipe(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "PipeMember", (source, offset, diagnose, parseRule) => { Probe5.rule_PipeMember(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Postfix", (source, offset, diagnose, parseRule) => { Probe5.rule_Postfix(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ExplicitCall", (source, offset, diagnose, parseRule) => { Probe5.rule_ExplicitCall(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "SpaceCall", (source, offset, diagnose, parseRule) => { Probe5.rule_SpaceCall(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "SpaceArg", (source, offset, diagnose, parseRule) => { Probe5.rule_SpaceArg(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Primary", (source, offset, diagnose, parseRule) => { if (commitsJsonPrimaryRecovery(source, offset)) { Probe6.rule_Primary(source, offset, true, diagnose, parseRule) } else { matchCommittedRule((activeRecover) => { Probe6.rule_Primary(source, offset, activeRecover, diagnose, parseRule) }, true) } });
+  Table.set(rules, "CarrierLiftTupleExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_CarrierLiftTupleExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LiftTupleExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_LiftTupleExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "PanicExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_PanicExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsonExpr", (source, offset, diagnose, parseRule) => { if (false) { Probe6.rule_JsonExpr(source, offset, true, diagnose, parseRule) } else { matchCommittedRule((activeRecover) => { Probe6.rule_JsonExpr(source, offset, activeRecover, diagnose, parseRule) }, true) } });
+  Table.set(rules, "JsonObjectFieldList", (source, offset, diagnose, parseRule) => { Probe6.rule_JsonObjectFieldList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "JsonObjectField", (source, offset, diagnose, parseRule) => { Probe6.rule_JsonObjectField(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_RecordExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "NamedRecordExpr", (source, offset, diagnose, parseRule) => { Probe6.rule_NamedRecordExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordExprFieldList", (source, offset, diagnose, parseRule) => { Probe7.rule_RecordExprFieldList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordExprField", (source, offset, diagnose, parseRule) => { Probe7.rule_RecordExprField(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ListExpr", (source, offset, diagnose, parseRule) => { Probe7.rule_ListExpr(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TupleOrGroup", (source, offset, diagnose, parseRule) => { Probe7.rule_TupleOrGroup(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParenSeq", (source, offset, diagnose, parseRule) => { Probe7.rule_ParenSeq(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Block", (source, offset, diagnose, parseRule) => { Probe7.rule_Block(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "BlockSeqBody", (source, offset, diagnose, parseRule) => { Probe7.rule_BlockSeqBody(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "BlockSeqItem", (source, offset, diagnose, parseRule) => { Probe8.rule_BlockSeqItem(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "BlockDecl", (source, offset, diagnose, parseRule) => { Probe8.rule_BlockDecl(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParenSeqBody", (source, offset, diagnose, parseRule) => { Probe8.rule_ParenSeqBody(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParenSeqItem", (source, offset, diagnose, parseRule) => { Probe8.rule_ParenSeqItem(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "SemiToken", (source, offset, diagnose, parseRule) => { Probe8.rule_SemiToken(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Pattern", (source, offset, diagnose, parseRule) => { Probe8.rule_Pattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "PatternCore", (source, offset, diagnose, parseRule) => { Probe8.rule_PatternCore(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParamList", (source, offset, diagnose, parseRule) => { Probe8.rule_ParamList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Param", (source, offset, diagnose, parseRule) => { Probe8.rule_Param(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParamPattern", (source, offset, diagnose, parseRule) => { Probe9.rule_ParamPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParamListItems", (source, offset, diagnose, parseRule) => { Probe9.rule_ParamListItems(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ParamPatternList", (source, offset, diagnose, parseRule) => { Probe9.rule_ParamPatternList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "PatternList", (source, offset, diagnose, parseRule) => { Probe9.rule_PatternList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "CtorPattern", (source, offset, diagnose, parseRule) => { Probe9.rule_CtorPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "CtorPatternList", (source, offset, diagnose, parseRule) => { Probe9.rule_CtorPatternList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ArgList", (source, offset, diagnose, parseRule) => { Probe9.rule_ArgList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ListPattern", (source, offset, diagnose, parseRule) => { Probe10.rule_ListPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ListPatternItem", (source, offset, diagnose, parseRule) => { Probe10.rule_ListPatternItem(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ListLetPattern", (source, offset, diagnose, parseRule) => { Probe10.rule_ListLetPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "ListParamPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_ListParamPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordPatternFieldList", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordPatternFieldList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordPatternField", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordPatternField(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordLetPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordLetPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordLetPatternFieldList", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordLetPatternFieldList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordLetPatternField", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordLetPatternField(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordParamPattern", (source, offset, diagnose, parseRule) => { Probe11.rule_RecordParamPattern(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordParamPatternFieldList", (source, offset, diagnose, parseRule) => { Probe12.rule_RecordParamPatternFieldList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "RecordParamPatternField", (source, offset, diagnose, parseRule) => { Probe12.rule_RecordParamPatternField(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeAnn", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeAnn(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "FnType", (source, offset, diagnose, parseRule) => { Probe12.rule_FnType(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "FunctionType", (source, offset, diagnose, parseRule) => { Probe12.rule_FunctionType(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "FnTypeDomain", (source, offset, diagnose, parseRule) => { Probe12.rule_FnTypeDomain(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "GroupedFunctionType", (source, offset, diagnose, parseRule) => { Probe12.rule_GroupedFunctionType(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeAtom", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeAtom(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeList", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeList(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeParams", (source, offset, diagnose, parseRule) => { Probe12.rule_TypeParams(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "TypeParam", (source, offset, diagnose, parseRule) => { Probe13.rule_TypeParam(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Float", (source, offset, diagnose, parseRule) => { Probe13.rule_Float(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Int", (source, offset, diagnose, parseRule) => { Probe13.rule_Int(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "String", (source, offset, diagnose, parseRule) => { Probe13.rule_String(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "InterpolatedString", (source, offset, diagnose, parseRule) => { Probe13.rule_InterpolatedString(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "StringInterpolation", (source, offset, diagnose, parseRule) => { Probe13.rule_StringInterpolation(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "InterpolatedStringText", (source, offset, diagnose, parseRule) => { Probe13.rule_InterpolatedStringText(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "InterpolatedChar", (source, offset, diagnose, parseRule) => { Probe13.rule_InterpolatedChar(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "QuotedString", (source, offset, diagnose, parseRule) => { Probe13.rule_QuotedString(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MultilineString", (source, offset, diagnose, parseRule) => { Probe13.rule_MultilineString(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "QuotedChar", (source, offset, diagnose, parseRule) => { Probe13.rule_QuotedChar(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MultilineChar", (source, offset, diagnose, parseRule) => { Probe13.rule_MultilineChar(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LineTerminator", (source, offset, diagnose, parseRule) => { Probe13.rule_LineTerminator(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Bool", (source, offset, diagnose, parseRule) => { Probe13.rule_Bool(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Void", (source, offset, diagnose, parseRule) => { Probe13.rule_Void(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Wildcard", (source, offset, diagnose, parseRule) => { Probe14.rule_Wildcard(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Identifier", (source, offset, diagnose, parseRule) => { Probe14.rule_Identifier(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Constructor", (source, offset, diagnose, parseRule) => { Probe14.rule_Constructor(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Name", (source, offset, diagnose, parseRule) => { Probe14.rule_Name(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "MemberName", (source, offset, diagnose, parseRule) => { Probe14.rule_MemberName(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "FieldName", (source, offset, diagnose, parseRule) => { Probe14.rule_FieldName(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LongName", (source, offset, diagnose, parseRule) => { Probe14.rule_LongName(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "LongConstructor", (source, offset, diagnose, parseRule) => { Probe14.rule_LongConstructor(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "IdentPart", (source, offset, diagnose, parseRule) => { Probe14.rule_IdentPart(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Keyword", (source, offset, diagnose, parseRule) => { Probe14.rule_Keyword(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "__", (source, offset, diagnose, parseRule) => { Probe14.rule___(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "_", (source, offset, diagnose, parseRule) => { Probe14.rule__(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Whitespace", (source, offset, diagnose, parseRule) => { Probe14.rule_Whitespace(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "Comment", (source, offset, diagnose, parseRule) => { Probe14.rule_Comment(source, offset, true, diagnose, parseRule) });
+  Table.set(rules, "EOF", (source, offset, diagnose, parseRule) => { Probe14.rule_EOF(source, offset, true, diagnose, parseRule) });
+  rules
+};
+
 let makeCompiledParser = () => {
-  let cache = Dict.empty();
+  let cache = Table.empty();
   let rec parseCompiledRule = (name, source, offset, diagnose, recover) => {
-    match((name, recover)) {
-      ("Start", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Start", offset, diagnose, false), () => { wrapCompiledRule("Start", offset, Probe0.rule_Start(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TopPhrase", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TopPhrase", offset, diagnose, false), () => { wrapCompiledRule("TopPhrase", offset, Probe0.rule_TopPhrase(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TopDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TopDecl", offset, diagnose, false), () => { wrapCompiledRule("TopDecl", offset, Probe0.rule_TopDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ImportDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportDecl", offset, diagnose, false), () => { wrapCompiledRule("ImportDecl", offset, Probe0.rule_ImportDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ImportClause", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportClause", offset, diagnose, false), () => { wrapCompiledRule("ImportClause", offset, Probe0.rule_ImportClause(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ImportSpecList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportSpecList", offset, diagnose, false), () => { wrapCompiledRule("ImportSpecList", offset, Probe0.rule_ImportSpecList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ImportSpec", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportSpec", offset, diagnose, false), () => { wrapCompiledRule("ImportSpec", offset, Probe0.rule_ImportSpec(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsImportDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportDecl", offset, diagnose, false), () => { wrapCompiledRule("JsImportDecl", offset, Probe0.rule_JsImportDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsTarget", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsTarget", offset, diagnose, false), () => { wrapCompiledRule("JsTarget", offset, Probe1.rule_JsTarget(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsImportClause", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportClause", offset, diagnose, false), () => { wrapCompiledRule("JsImportClause", offset, Probe1.rule_JsImportClause(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsImportClauseBody", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportClauseBody", offset, diagnose, false), () => { wrapCompiledRule("JsImportClauseBody", offset, Probe1.rule_JsImportClauseBody(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsImportSpecList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportSpecList", offset, diagnose, false), () => { wrapCompiledRule("JsImportSpecList", offset, Probe1.rule_JsImportSpecList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsImportSpec", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportSpec", offset, diagnose, false), () => { wrapCompiledRule("JsImportSpec", offset, Probe1.rule_JsImportSpec(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LetDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetDecl", offset, diagnose, false), () => { wrapCompiledRule("LetDecl", offset, Probe1.rule_LetDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LetBinding", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetBinding", offset, diagnose, false), () => { wrapCompiledRule("LetBinding", offset, Probe2.rule_LetBinding(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LetPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetPattern", offset, diagnose, false), () => { wrapCompiledRule("LetPattern", offset, Probe2.rule_LetPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LetPatternList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetPatternList", offset, diagnose, false), () => { wrapCompiledRule("LetPatternList", offset, Probe2.rule_LetPatternList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LetCtorPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetCtorPattern", offset, diagnose, false), () => { wrapCompiledRule("LetCtorPattern", offset, Probe2.rule_LetCtorPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LetCtorPatternList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetCtorPatternList", offset, diagnose, false), () => { wrapCompiledRule("LetCtorPatternList", offset, Probe2.rule_LetCtorPatternList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordDecl", offset, diagnose, false), () => { wrapCompiledRule("RecordDecl", offset, Probe2.rule_RecordDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordFieldDeclList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordFieldDeclList", offset, diagnose, false), () => { wrapCompiledRule("RecordFieldDeclList", offset, Probe3.rule_RecordFieldDeclList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordFieldDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordFieldDecl", offset, diagnose, false), () => { wrapCompiledRule("RecordFieldDecl", offset, Probe3.rule_RecordFieldDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeDecl", offset, diagnose, false), () => { wrapCompiledRule("TypeDecl", offset, Probe3.rule_TypeDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeDeclBody", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeDeclBody", offset, diagnose, false), () => { wrapCompiledRule("TypeDeclBody", offset, Probe3.rule_TypeDeclBody(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Expr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Expr", offset, diagnose, false), () => { wrapCompiledRule("Expr", offset, Probe3.rule_Expr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("IfExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("IfExpr", offset, diagnose, false), () => { wrapCompiledRule("IfExpr", offset, Probe3.rule_IfExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MatchExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchExpr", offset, diagnose, false), () => { wrapCompiledRule("MatchExpr", offset, Probe3.rule_MatchExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MatchFn", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchFn", offset, diagnose, false), () => { wrapCompiledRule("MatchFn", offset, Probe3.rule_MatchFn(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MatchFnParams", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchFnParams", offset, diagnose, false), () => { wrapCompiledRule("MatchFnParams", offset, Probe3.rule_MatchFnParams(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MatchArmList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchArmList", offset, diagnose, false), () => { wrapCompiledRule("MatchArmList", offset, Probe4.rule_MatchArmList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MatchArm", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchArm", offset, diagnose, false), () => { wrapCompiledRule("MatchArm", offset, Probe4.rule_MatchArm(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Lambda", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Lambda", offset, diagnose, false), () => { wrapCompiledRule("Lambda", offset, Probe4.rule_Lambda(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LambdaReturnAnnotation", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LambdaReturnAnnotation", offset, diagnose, false), () => { wrapCompiledRule("LambdaReturnAnnotation", offset, Probe4.rule_LambdaReturnAnnotation(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LambdaBody", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LambdaBody", offset, diagnose, false), () => { wrapCompiledRule("LambdaBody", offset, Probe4.rule_LambdaBody(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LambdaBlock", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LambdaBlock", offset, diagnose, false), () => { wrapCompiledRule("LambdaBlock", offset, Probe4.rule_LambdaBlock(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Directive", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Directive", offset, diagnose, false), () => { wrapCompiledRule("Directive", offset, Probe4.rule_Directive(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Or", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Or", offset, diagnose, false), () => { wrapCompiledRule("Or", offset, Probe4.rule_Or(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("And", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("And", offset, diagnose, false), () => { wrapCompiledRule("And", offset, Probe4.rule_And(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Equality", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Equality", offset, diagnose, false), () => { wrapCompiledRule("Equality", offset, Probe4.rule_Equality(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Compare", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Compare", offset, diagnose, false), () => { wrapCompiledRule("Compare", offset, Probe5.rule_Compare(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Add", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Add", offset, diagnose, false), () => { wrapCompiledRule("Add", offset, Probe5.rule_Add(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Mul", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Mul", offset, diagnose, false), () => { wrapCompiledRule("Mul", offset, Probe5.rule_Mul(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Unary", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Unary", offset, diagnose, false), () => { wrapCompiledRule("Unary", offset, Probe5.rule_Unary(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Pipe", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Pipe", offset, diagnose, false), () => { wrapCompiledRule("Pipe", offset, Probe5.rule_Pipe(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("PipeMember", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PipeMember", offset, diagnose, false), () => { wrapCompiledRule("PipeMember", offset, Probe5.rule_PipeMember(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Postfix", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Postfix", offset, diagnose, false), () => { wrapCompiledRule("Postfix", offset, Probe5.rule_Postfix(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ExplicitCall", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ExplicitCall", offset, diagnose, false), () => { wrapCompiledRule("ExplicitCall", offset, Probe5.rule_ExplicitCall(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("SpaceCall", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("SpaceCall", offset, diagnose, false), () => { wrapCompiledRule("SpaceCall", offset, Probe5.rule_SpaceCall(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("SpaceArg", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("SpaceArg", offset, diagnose, false), () => { wrapCompiledRule("SpaceArg", offset, Probe5.rule_SpaceArg(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Primary", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Primary", offset, diagnose, false), () => { wrapCompiledRule("Primary", offset, Probe6.rule_Primary(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("CarrierLiftTupleExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("CarrierLiftTupleExpr", offset, diagnose, false), () => { wrapCompiledRule("CarrierLiftTupleExpr", offset, Probe6.rule_CarrierLiftTupleExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LiftTupleExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LiftTupleExpr", offset, diagnose, false), () => { wrapCompiledRule("LiftTupleExpr", offset, Probe6.rule_LiftTupleExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("PanicExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PanicExpr", offset, diagnose, false), () => { wrapCompiledRule("PanicExpr", offset, Probe6.rule_PanicExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsonExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsonExpr", offset, diagnose, false), () => { wrapCompiledRule("JsonExpr", offset, Probe6.rule_JsonExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsonObjectFieldList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsonObjectFieldList", offset, diagnose, false), () => { wrapCompiledRule("JsonObjectFieldList", offset, Probe6.rule_JsonObjectFieldList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("JsonObjectField", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsonObjectField", offset, diagnose, false), () => { wrapCompiledRule("JsonObjectField", offset, Probe6.rule_JsonObjectField(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordExpr", offset, diagnose, false), () => { wrapCompiledRule("RecordExpr", offset, Probe6.rule_RecordExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("NamedRecordExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("NamedRecordExpr", offset, diagnose, false), () => { wrapCompiledRule("NamedRecordExpr", offset, Probe6.rule_NamedRecordExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordExprFieldList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordExprFieldList", offset, diagnose, false), () => { wrapCompiledRule("RecordExprFieldList", offset, Probe7.rule_RecordExprFieldList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordExprField", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordExprField", offset, diagnose, false), () => { wrapCompiledRule("RecordExprField", offset, Probe7.rule_RecordExprField(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ListExpr", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListExpr", offset, diagnose, false), () => { wrapCompiledRule("ListExpr", offset, Probe7.rule_ListExpr(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TupleOrGroup", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TupleOrGroup", offset, diagnose, false), () => { wrapCompiledRule("TupleOrGroup", offset, Probe7.rule_TupleOrGroup(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParenSeq", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParenSeq", offset, diagnose, false), () => { wrapCompiledRule("ParenSeq", offset, Probe7.rule_ParenSeq(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Block", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Block", offset, diagnose, false), () => { wrapCompiledRule("Block", offset, Probe7.rule_Block(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("BlockSeqBody", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("BlockSeqBody", offset, diagnose, false), () => { wrapCompiledRule("BlockSeqBody", offset, Probe7.rule_BlockSeqBody(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("BlockSeqItem", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("BlockSeqItem", offset, diagnose, false), () => { wrapCompiledRule("BlockSeqItem", offset, Probe8.rule_BlockSeqItem(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("BlockDecl", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("BlockDecl", offset, diagnose, false), () => { wrapCompiledRule("BlockDecl", offset, Probe8.rule_BlockDecl(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParenSeqBody", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParenSeqBody", offset, diagnose, false), () => { wrapCompiledRule("ParenSeqBody", offset, Probe8.rule_ParenSeqBody(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParenSeqItem", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParenSeqItem", offset, diagnose, false), () => { wrapCompiledRule("ParenSeqItem", offset, Probe8.rule_ParenSeqItem(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("SemiToken", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("SemiToken", offset, diagnose, false), () => { wrapCompiledRule("SemiToken", offset, Probe8.rule_SemiToken(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Pattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Pattern", offset, diagnose, false), () => { wrapCompiledRule("Pattern", offset, Probe8.rule_Pattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("PatternCore", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PatternCore", offset, diagnose, false), () => { wrapCompiledRule("PatternCore", offset, Probe8.rule_PatternCore(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParamList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamList", offset, diagnose, false), () => { wrapCompiledRule("ParamList", offset, Probe8.rule_ParamList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Param", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Param", offset, diagnose, false), () => { wrapCompiledRule("Param", offset, Probe8.rule_Param(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParamPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamPattern", offset, diagnose, false), () => { wrapCompiledRule("ParamPattern", offset, Probe9.rule_ParamPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParamListItems", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamListItems", offset, diagnose, false), () => { wrapCompiledRule("ParamListItems", offset, Probe9.rule_ParamListItems(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ParamPatternList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamPatternList", offset, diagnose, false), () => { wrapCompiledRule("ParamPatternList", offset, Probe9.rule_ParamPatternList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("PatternList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PatternList", offset, diagnose, false), () => { wrapCompiledRule("PatternList", offset, Probe9.rule_PatternList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("CtorPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("CtorPattern", offset, diagnose, false), () => { wrapCompiledRule("CtorPattern", offset, Probe9.rule_CtorPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("CtorPatternList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("CtorPatternList", offset, diagnose, false), () => { wrapCompiledRule("CtorPatternList", offset, Probe9.rule_CtorPatternList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ArgList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ArgList", offset, diagnose, false), () => { wrapCompiledRule("ArgList", offset, Probe9.rule_ArgList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ListPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListPattern", offset, diagnose, false), () => { wrapCompiledRule("ListPattern", offset, Probe10.rule_ListPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ListPatternItem", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListPatternItem", offset, diagnose, false), () => { wrapCompiledRule("ListPatternItem", offset, Probe10.rule_ListPatternItem(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ListLetPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListLetPattern", offset, diagnose, false), () => { wrapCompiledRule("ListLetPattern", offset, Probe10.rule_ListLetPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("ListParamPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListParamPattern", offset, diagnose, false), () => { wrapCompiledRule("ListParamPattern", offset, Probe11.rule_ListParamPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordPattern", offset, diagnose, false), () => { wrapCompiledRule("RecordPattern", offset, Probe11.rule_RecordPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordPatternFieldList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordPatternFieldList", offset, diagnose, false), () => { wrapCompiledRule("RecordPatternFieldList", offset, Probe11.rule_RecordPatternFieldList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordPatternField", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordPatternField", offset, diagnose, false), () => { wrapCompiledRule("RecordPatternField", offset, Probe11.rule_RecordPatternField(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordLetPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordLetPattern", offset, diagnose, false), () => { wrapCompiledRule("RecordLetPattern", offset, Probe11.rule_RecordLetPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordLetPatternFieldList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordLetPatternFieldList", offset, diagnose, false), () => { wrapCompiledRule("RecordLetPatternFieldList", offset, Probe11.rule_RecordLetPatternFieldList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordLetPatternField", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordLetPatternField", offset, diagnose, false), () => { wrapCompiledRule("RecordLetPatternField", offset, Probe11.rule_RecordLetPatternField(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordParamPattern", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordParamPattern", offset, diagnose, false), () => { wrapCompiledRule("RecordParamPattern", offset, Probe11.rule_RecordParamPattern(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordParamPatternFieldList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordParamPatternFieldList", offset, diagnose, false), () => { wrapCompiledRule("RecordParamPatternFieldList", offset, Probe12.rule_RecordParamPatternFieldList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("RecordParamPatternField", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordParamPatternField", offset, diagnose, false), () => { wrapCompiledRule("RecordParamPatternField", offset, Probe12.rule_RecordParamPatternField(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeAnn", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeAnn", offset, diagnose, false), () => { wrapCompiledRule("TypeAnn", offset, Probe12.rule_TypeAnn(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("FnType", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FnType", offset, diagnose, false), () => { wrapCompiledRule("FnType", offset, Probe12.rule_FnType(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("FunctionType", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FunctionType", offset, diagnose, false), () => { wrapCompiledRule("FunctionType", offset, Probe12.rule_FunctionType(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("FnTypeDomain", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FnTypeDomain", offset, diagnose, false), () => { wrapCompiledRule("FnTypeDomain", offset, Probe12.rule_FnTypeDomain(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("GroupedFunctionType", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("GroupedFunctionType", offset, diagnose, false), () => { wrapCompiledRule("GroupedFunctionType", offset, Probe12.rule_GroupedFunctionType(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeAtom", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeAtom", offset, diagnose, false), () => { wrapCompiledRule("TypeAtom", offset, Probe12.rule_TypeAtom(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeList", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeList", offset, diagnose, false), () => { wrapCompiledRule("TypeList", offset, Probe12.rule_TypeList(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeParams", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeParams", offset, diagnose, false), () => { wrapCompiledRule("TypeParams", offset, Probe12.rule_TypeParams(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("TypeParam", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeParam", offset, diagnose, false), () => { wrapCompiledRule("TypeParam", offset, Probe13.rule_TypeParam(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Float", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Float", offset, diagnose, false), () => { wrapCompiledRule("Float", offset, Probe13.rule_Float(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Int", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Int", offset, diagnose, false), () => { wrapCompiledRule("Int", offset, Probe13.rule_Int(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("String", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("String", offset, diagnose, false), () => { wrapCompiledRule("String", offset, Probe13.rule_String(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("InterpolatedString", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("InterpolatedString", offset, diagnose, false), () => { wrapCompiledRule("InterpolatedString", offset, Probe13.rule_InterpolatedString(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("StringInterpolation", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("StringInterpolation", offset, diagnose, false), () => { wrapCompiledRule("StringInterpolation", offset, Probe13.rule_StringInterpolation(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("InterpolatedStringText", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("InterpolatedStringText", offset, diagnose, false), () => { wrapCompiledRule("InterpolatedStringText", offset, Probe13.rule_InterpolatedStringText(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("InterpolatedChar", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("InterpolatedChar", offset, diagnose, false), () => { wrapCompiledRule("InterpolatedChar", offset, Probe13.rule_InterpolatedChar(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("QuotedString", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("QuotedString", offset, diagnose, false), () => { wrapCompiledRule("QuotedString", offset, Probe13.rule_QuotedString(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MultilineString", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MultilineString", offset, diagnose, false), () => { wrapCompiledRule("MultilineString", offset, Probe13.rule_MultilineString(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("QuotedChar", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("QuotedChar", offset, diagnose, false), () => { wrapCompiledRule("QuotedChar", offset, Probe13.rule_QuotedChar(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MultilineChar", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MultilineChar", offset, diagnose, false), () => { wrapCompiledRule("MultilineChar", offset, Probe13.rule_MultilineChar(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LineTerminator", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LineTerminator", offset, diagnose, false), () => { wrapCompiledRule("LineTerminator", offset, Probe13.rule_LineTerminator(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Bool", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Bool", offset, diagnose, false), () => { wrapCompiledRule("Bool", offset, Probe13.rule_Bool(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Void", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Void", offset, diagnose, false), () => { wrapCompiledRule("Void", offset, Probe13.rule_Void(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Wildcard", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Wildcard", offset, diagnose, false), () => { wrapCompiledRule("Wildcard", offset, Probe14.rule_Wildcard(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Identifier", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Identifier", offset, diagnose, false), () => { wrapCompiledRule("Identifier", offset, Probe14.rule_Identifier(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Constructor", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Constructor", offset, diagnose, false), () => { wrapCompiledRule("Constructor", offset, Probe14.rule_Constructor(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Name", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Name", offset, diagnose, false), () => { wrapCompiledRule("Name", offset, Probe14.rule_Name(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("MemberName", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MemberName", offset, diagnose, false), () => { wrapCompiledRule("MemberName", offset, Probe14.rule_MemberName(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("FieldName", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FieldName", offset, diagnose, false), () => { wrapCompiledRule("FieldName", offset, Probe14.rule_FieldName(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LongName", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LongName", offset, diagnose, false), () => { wrapCompiledRule("LongName", offset, Probe14.rule_LongName(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("LongConstructor", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LongConstructor", offset, diagnose, false), () => { wrapCompiledRule("LongConstructor", offset, Probe14.rule_LongConstructor(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("IdentPart", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("IdentPart", offset, diagnose, false), () => { wrapCompiledRule("IdentPart", offset, Probe14.rule_IdentPart(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Keyword", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Keyword", offset, diagnose, false), () => { wrapCompiledRule("Keyword", offset, Probe14.rule_Keyword(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("__", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("__", offset, diagnose, false), () => { wrapCompiledRule("__", offset, Probe14.rule___(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("_", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("_", offset, diagnose, false), () => { wrapCompiledRule("_", offset, Probe14.rule__(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Whitespace", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Whitespace", offset, diagnose, false), () => { wrapCompiledRule("Whitespace", offset, Probe14.rule_Whitespace(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Comment", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Comment", offset, diagnose, false), () => { wrapCompiledRule("Comment", offset, Probe14.rule_Comment(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("EOF", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("EOF", offset, diagnose, false), () => { wrapCompiledRule("EOF", offset, Probe14.rule_EOF(source, offset, false, diagnose, parseCompiledRule)) }) },
-      ("Start", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Start", offset, diagnose, true), () => { wrapCompiledRule("Start", offset, if (false) { Probe0.rule_Start(source, offset, true, diagnose, parseCompiledRule) } else { matchCommittedRule((activeRecover) => { Probe0.rule_Start(source, offset, activeRecover, diagnose, parseCompiledRule) }, true) }) }) },
-      ("TopPhrase", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TopPhrase", offset, diagnose, true), () => { wrapCompiledRule("TopPhrase", offset, Probe0.rule_TopPhrase(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TopDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TopDecl", offset, diagnose, true), () => { wrapCompiledRule("TopDecl", offset, Probe0.rule_TopDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ImportDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportDecl", offset, diagnose, true), () => { wrapCompiledRule("ImportDecl", offset, Probe0.rule_ImportDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ImportClause", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportClause", offset, diagnose, true), () => { wrapCompiledRule("ImportClause", offset, Probe0.rule_ImportClause(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ImportSpecList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportSpecList", offset, diagnose, true), () => { wrapCompiledRule("ImportSpecList", offset, Probe0.rule_ImportSpecList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ImportSpec", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ImportSpec", offset, diagnose, true), () => { wrapCompiledRule("ImportSpec", offset, Probe0.rule_ImportSpec(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsImportDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportDecl", offset, diagnose, true), () => { wrapCompiledRule("JsImportDecl", offset, Probe0.rule_JsImportDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsTarget", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsTarget", offset, diagnose, true), () => { wrapCompiledRule("JsTarget", offset, Probe1.rule_JsTarget(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsImportClause", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportClause", offset, diagnose, true), () => { wrapCompiledRule("JsImportClause", offset, Probe1.rule_JsImportClause(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsImportClauseBody", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportClauseBody", offset, diagnose, true), () => { wrapCompiledRule("JsImportClauseBody", offset, Probe1.rule_JsImportClauseBody(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsImportSpecList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportSpecList", offset, diagnose, true), () => { wrapCompiledRule("JsImportSpecList", offset, Probe1.rule_JsImportSpecList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsImportSpec", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsImportSpec", offset, diagnose, true), () => { wrapCompiledRule("JsImportSpec", offset, Probe1.rule_JsImportSpec(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LetDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetDecl", offset, diagnose, true), () => { wrapCompiledRule("LetDecl", offset, Probe1.rule_LetDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LetBinding", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetBinding", offset, diagnose, true), () => { wrapCompiledRule("LetBinding", offset, Probe2.rule_LetBinding(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LetPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetPattern", offset, diagnose, true), () => { wrapCompiledRule("LetPattern", offset, Probe2.rule_LetPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LetPatternList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetPatternList", offset, diagnose, true), () => { wrapCompiledRule("LetPatternList", offset, Probe2.rule_LetPatternList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LetCtorPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetCtorPattern", offset, diagnose, true), () => { wrapCompiledRule("LetCtorPattern", offset, Probe2.rule_LetCtorPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LetCtorPatternList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LetCtorPatternList", offset, diagnose, true), () => { wrapCompiledRule("LetCtorPatternList", offset, Probe2.rule_LetCtorPatternList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordDecl", offset, diagnose, true), () => { wrapCompiledRule("RecordDecl", offset, Probe2.rule_RecordDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordFieldDeclList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordFieldDeclList", offset, diagnose, true), () => { wrapCompiledRule("RecordFieldDeclList", offset, Probe3.rule_RecordFieldDeclList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordFieldDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordFieldDecl", offset, diagnose, true), () => { wrapCompiledRule("RecordFieldDecl", offset, Probe3.rule_RecordFieldDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeDecl", offset, diagnose, true), () => { wrapCompiledRule("TypeDecl", offset, Probe3.rule_TypeDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeDeclBody", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeDeclBody", offset, diagnose, true), () => { wrapCompiledRule("TypeDeclBody", offset, Probe3.rule_TypeDeclBody(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Expr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Expr", offset, diagnose, true), () => { wrapCompiledRule("Expr", offset, Probe3.rule_Expr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("IfExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("IfExpr", offset, diagnose, true), () => { wrapCompiledRule("IfExpr", offset, Probe3.rule_IfExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MatchExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchExpr", offset, diagnose, true), () => { wrapCompiledRule("MatchExpr", offset, Probe3.rule_MatchExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MatchFn", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchFn", offset, diagnose, true), () => { wrapCompiledRule("MatchFn", offset, Probe3.rule_MatchFn(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MatchFnParams", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchFnParams", offset, diagnose, true), () => { wrapCompiledRule("MatchFnParams", offset, Probe3.rule_MatchFnParams(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MatchArmList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchArmList", offset, diagnose, true), () => { wrapCompiledRule("MatchArmList", offset, Probe4.rule_MatchArmList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MatchArm", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MatchArm", offset, diagnose, true), () => { wrapCompiledRule("MatchArm", offset, Probe4.rule_MatchArm(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Lambda", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Lambda", offset, diagnose, true), () => { wrapCompiledRule("Lambda", offset, Probe4.rule_Lambda(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LambdaReturnAnnotation", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LambdaReturnAnnotation", offset, diagnose, true), () => { wrapCompiledRule("LambdaReturnAnnotation", offset, Probe4.rule_LambdaReturnAnnotation(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LambdaBody", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LambdaBody", offset, diagnose, true), () => { wrapCompiledRule("LambdaBody", offset, if (false) { Probe4.rule_LambdaBody(source, offset, true, diagnose, parseCompiledRule) } else { matchCommittedRule((activeRecover) => { Probe4.rule_LambdaBody(source, offset, activeRecover, diagnose, parseCompiledRule) }, true) }) }) },
-      ("LambdaBlock", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LambdaBlock", offset, diagnose, true), () => { wrapCompiledRule("LambdaBlock", offset, Probe4.rule_LambdaBlock(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Directive", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Directive", offset, diagnose, true), () => { wrapCompiledRule("Directive", offset, Probe4.rule_Directive(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Or", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Or", offset, diagnose, true), () => { wrapCompiledRule("Or", offset, Probe4.rule_Or(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("And", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("And", offset, diagnose, true), () => { wrapCompiledRule("And", offset, Probe4.rule_And(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Equality", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Equality", offset, diagnose, true), () => { wrapCompiledRule("Equality", offset, Probe4.rule_Equality(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Compare", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Compare", offset, diagnose, true), () => { wrapCompiledRule("Compare", offset, Probe5.rule_Compare(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Add", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Add", offset, diagnose, true), () => { wrapCompiledRule("Add", offset, Probe5.rule_Add(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Mul", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Mul", offset, diagnose, true), () => { wrapCompiledRule("Mul", offset, Probe5.rule_Mul(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Unary", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Unary", offset, diagnose, true), () => { wrapCompiledRule("Unary", offset, Probe5.rule_Unary(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Pipe", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Pipe", offset, diagnose, true), () => { wrapCompiledRule("Pipe", offset, Probe5.rule_Pipe(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("PipeMember", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PipeMember", offset, diagnose, true), () => { wrapCompiledRule("PipeMember", offset, Probe5.rule_PipeMember(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Postfix", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Postfix", offset, diagnose, true), () => { wrapCompiledRule("Postfix", offset, Probe5.rule_Postfix(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ExplicitCall", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ExplicitCall", offset, diagnose, true), () => { wrapCompiledRule("ExplicitCall", offset, Probe5.rule_ExplicitCall(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("SpaceCall", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("SpaceCall", offset, diagnose, true), () => { wrapCompiledRule("SpaceCall", offset, Probe5.rule_SpaceCall(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("SpaceArg", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("SpaceArg", offset, diagnose, true), () => { wrapCompiledRule("SpaceArg", offset, Probe5.rule_SpaceArg(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Primary", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Primary", offset, diagnose, true), () => { wrapCompiledRule("Primary", offset, if (commitsJsonPrimaryRecovery(source, offset)) { Probe6.rule_Primary(source, offset, true, diagnose, parseCompiledRule) } else { matchCommittedRule((activeRecover) => { Probe6.rule_Primary(source, offset, activeRecover, diagnose, parseCompiledRule) }, true) }) }) },
-      ("CarrierLiftTupleExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("CarrierLiftTupleExpr", offset, diagnose, true), () => { wrapCompiledRule("CarrierLiftTupleExpr", offset, Probe6.rule_CarrierLiftTupleExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LiftTupleExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LiftTupleExpr", offset, diagnose, true), () => { wrapCompiledRule("LiftTupleExpr", offset, Probe6.rule_LiftTupleExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("PanicExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PanicExpr", offset, diagnose, true), () => { wrapCompiledRule("PanicExpr", offset, Probe6.rule_PanicExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsonExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsonExpr", offset, diagnose, true), () => { wrapCompiledRule("JsonExpr", offset, if (false) { Probe6.rule_JsonExpr(source, offset, true, diagnose, parseCompiledRule) } else { matchCommittedRule((activeRecover) => { Probe6.rule_JsonExpr(source, offset, activeRecover, diagnose, parseCompiledRule) }, true) }) }) },
-      ("JsonObjectFieldList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsonObjectFieldList", offset, diagnose, true), () => { wrapCompiledRule("JsonObjectFieldList", offset, Probe6.rule_JsonObjectFieldList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("JsonObjectField", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("JsonObjectField", offset, diagnose, true), () => { wrapCompiledRule("JsonObjectField", offset, Probe6.rule_JsonObjectField(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordExpr", offset, diagnose, true), () => { wrapCompiledRule("RecordExpr", offset, Probe6.rule_RecordExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("NamedRecordExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("NamedRecordExpr", offset, diagnose, true), () => { wrapCompiledRule("NamedRecordExpr", offset, Probe6.rule_NamedRecordExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordExprFieldList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordExprFieldList", offset, diagnose, true), () => { wrapCompiledRule("RecordExprFieldList", offset, Probe7.rule_RecordExprFieldList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordExprField", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordExprField", offset, diagnose, true), () => { wrapCompiledRule("RecordExprField", offset, Probe7.rule_RecordExprField(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ListExpr", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListExpr", offset, diagnose, true), () => { wrapCompiledRule("ListExpr", offset, Probe7.rule_ListExpr(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TupleOrGroup", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TupleOrGroup", offset, diagnose, true), () => { wrapCompiledRule("TupleOrGroup", offset, Probe7.rule_TupleOrGroup(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParenSeq", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParenSeq", offset, diagnose, true), () => { wrapCompiledRule("ParenSeq", offset, Probe7.rule_ParenSeq(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Block", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Block", offset, diagnose, true), () => { wrapCompiledRule("Block", offset, Probe7.rule_Block(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("BlockSeqBody", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("BlockSeqBody", offset, diagnose, true), () => { wrapCompiledRule("BlockSeqBody", offset, Probe7.rule_BlockSeqBody(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("BlockSeqItem", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("BlockSeqItem", offset, diagnose, true), () => { wrapCompiledRule("BlockSeqItem", offset, Probe8.rule_BlockSeqItem(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("BlockDecl", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("BlockDecl", offset, diagnose, true), () => { wrapCompiledRule("BlockDecl", offset, Probe8.rule_BlockDecl(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParenSeqBody", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParenSeqBody", offset, diagnose, true), () => { wrapCompiledRule("ParenSeqBody", offset, Probe8.rule_ParenSeqBody(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParenSeqItem", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParenSeqItem", offset, diagnose, true), () => { wrapCompiledRule("ParenSeqItem", offset, Probe8.rule_ParenSeqItem(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("SemiToken", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("SemiToken", offset, diagnose, true), () => { wrapCompiledRule("SemiToken", offset, Probe8.rule_SemiToken(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Pattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Pattern", offset, diagnose, true), () => { wrapCompiledRule("Pattern", offset, Probe8.rule_Pattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("PatternCore", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PatternCore", offset, diagnose, true), () => { wrapCompiledRule("PatternCore", offset, Probe8.rule_PatternCore(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParamList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamList", offset, diagnose, true), () => { wrapCompiledRule("ParamList", offset, Probe8.rule_ParamList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Param", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Param", offset, diagnose, true), () => { wrapCompiledRule("Param", offset, Probe8.rule_Param(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParamPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamPattern", offset, diagnose, true), () => { wrapCompiledRule("ParamPattern", offset, Probe9.rule_ParamPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParamListItems", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamListItems", offset, diagnose, true), () => { wrapCompiledRule("ParamListItems", offset, Probe9.rule_ParamListItems(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ParamPatternList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ParamPatternList", offset, diagnose, true), () => { wrapCompiledRule("ParamPatternList", offset, Probe9.rule_ParamPatternList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("PatternList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("PatternList", offset, diagnose, true), () => { wrapCompiledRule("PatternList", offset, Probe9.rule_PatternList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("CtorPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("CtorPattern", offset, diagnose, true), () => { wrapCompiledRule("CtorPattern", offset, Probe9.rule_CtorPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("CtorPatternList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("CtorPatternList", offset, diagnose, true), () => { wrapCompiledRule("CtorPatternList", offset, Probe9.rule_CtorPatternList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ArgList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ArgList", offset, diagnose, true), () => { wrapCompiledRule("ArgList", offset, Probe9.rule_ArgList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ListPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListPattern", offset, diagnose, true), () => { wrapCompiledRule("ListPattern", offset, Probe10.rule_ListPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ListPatternItem", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListPatternItem", offset, diagnose, true), () => { wrapCompiledRule("ListPatternItem", offset, Probe10.rule_ListPatternItem(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ListLetPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListLetPattern", offset, diagnose, true), () => { wrapCompiledRule("ListLetPattern", offset, Probe10.rule_ListLetPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("ListParamPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("ListParamPattern", offset, diagnose, true), () => { wrapCompiledRule("ListParamPattern", offset, Probe11.rule_ListParamPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordPattern", offset, diagnose, true), () => { wrapCompiledRule("RecordPattern", offset, Probe11.rule_RecordPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordPatternFieldList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordPatternFieldList", offset, diagnose, true), () => { wrapCompiledRule("RecordPatternFieldList", offset, Probe11.rule_RecordPatternFieldList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordPatternField", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordPatternField", offset, diagnose, true), () => { wrapCompiledRule("RecordPatternField", offset, Probe11.rule_RecordPatternField(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordLetPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordLetPattern", offset, diagnose, true), () => { wrapCompiledRule("RecordLetPattern", offset, Probe11.rule_RecordLetPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordLetPatternFieldList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordLetPatternFieldList", offset, diagnose, true), () => { wrapCompiledRule("RecordLetPatternFieldList", offset, Probe11.rule_RecordLetPatternFieldList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordLetPatternField", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordLetPatternField", offset, diagnose, true), () => { wrapCompiledRule("RecordLetPatternField", offset, Probe11.rule_RecordLetPatternField(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordParamPattern", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordParamPattern", offset, diagnose, true), () => { wrapCompiledRule("RecordParamPattern", offset, Probe11.rule_RecordParamPattern(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordParamPatternFieldList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordParamPatternFieldList", offset, diagnose, true), () => { wrapCompiledRule("RecordParamPatternFieldList", offset, Probe12.rule_RecordParamPatternFieldList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("RecordParamPatternField", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("RecordParamPatternField", offset, diagnose, true), () => { wrapCompiledRule("RecordParamPatternField", offset, Probe12.rule_RecordParamPatternField(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeAnn", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeAnn", offset, diagnose, true), () => { wrapCompiledRule("TypeAnn", offset, Probe12.rule_TypeAnn(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("FnType", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FnType", offset, diagnose, true), () => { wrapCompiledRule("FnType", offset, Probe12.rule_FnType(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("FunctionType", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FunctionType", offset, diagnose, true), () => { wrapCompiledRule("FunctionType", offset, Probe12.rule_FunctionType(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("FnTypeDomain", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FnTypeDomain", offset, diagnose, true), () => { wrapCompiledRule("FnTypeDomain", offset, Probe12.rule_FnTypeDomain(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("GroupedFunctionType", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("GroupedFunctionType", offset, diagnose, true), () => { wrapCompiledRule("GroupedFunctionType", offset, Probe12.rule_GroupedFunctionType(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeAtom", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeAtom", offset, diagnose, true), () => { wrapCompiledRule("TypeAtom", offset, Probe12.rule_TypeAtom(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeList", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeList", offset, diagnose, true), () => { wrapCompiledRule("TypeList", offset, Probe12.rule_TypeList(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeParams", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeParams", offset, diagnose, true), () => { wrapCompiledRule("TypeParams", offset, Probe12.rule_TypeParams(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("TypeParam", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("TypeParam", offset, diagnose, true), () => { wrapCompiledRule("TypeParam", offset, Probe13.rule_TypeParam(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Float", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Float", offset, diagnose, true), () => { wrapCompiledRule("Float", offset, Probe13.rule_Float(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Int", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Int", offset, diagnose, true), () => { wrapCompiledRule("Int", offset, Probe13.rule_Int(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("String", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("String", offset, diagnose, true), () => { wrapCompiledRule("String", offset, Probe13.rule_String(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("InterpolatedString", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("InterpolatedString", offset, diagnose, true), () => { wrapCompiledRule("InterpolatedString", offset, Probe13.rule_InterpolatedString(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("StringInterpolation", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("StringInterpolation", offset, diagnose, true), () => { wrapCompiledRule("StringInterpolation", offset, Probe13.rule_StringInterpolation(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("InterpolatedStringText", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("InterpolatedStringText", offset, diagnose, true), () => { wrapCompiledRule("InterpolatedStringText", offset, Probe13.rule_InterpolatedStringText(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("InterpolatedChar", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("InterpolatedChar", offset, diagnose, true), () => { wrapCompiledRule("InterpolatedChar", offset, Probe13.rule_InterpolatedChar(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("QuotedString", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("QuotedString", offset, diagnose, true), () => { wrapCompiledRule("QuotedString", offset, Probe13.rule_QuotedString(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MultilineString", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MultilineString", offset, diagnose, true), () => { wrapCompiledRule("MultilineString", offset, Probe13.rule_MultilineString(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("QuotedChar", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("QuotedChar", offset, diagnose, true), () => { wrapCompiledRule("QuotedChar", offset, Probe13.rule_QuotedChar(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MultilineChar", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MultilineChar", offset, diagnose, true), () => { wrapCompiledRule("MultilineChar", offset, Probe13.rule_MultilineChar(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LineTerminator", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LineTerminator", offset, diagnose, true), () => { wrapCompiledRule("LineTerminator", offset, Probe13.rule_LineTerminator(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Bool", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Bool", offset, diagnose, true), () => { wrapCompiledRule("Bool", offset, Probe13.rule_Bool(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Void", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Void", offset, diagnose, true), () => { wrapCompiledRule("Void", offset, Probe13.rule_Void(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Wildcard", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Wildcard", offset, diagnose, true), () => { wrapCompiledRule("Wildcard", offset, Probe14.rule_Wildcard(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Identifier", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Identifier", offset, diagnose, true), () => { wrapCompiledRule("Identifier", offset, Probe14.rule_Identifier(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Constructor", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Constructor", offset, diagnose, true), () => { wrapCompiledRule("Constructor", offset, Probe14.rule_Constructor(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Name", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Name", offset, diagnose, true), () => { wrapCompiledRule("Name", offset, Probe14.rule_Name(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("MemberName", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("MemberName", offset, diagnose, true), () => { wrapCompiledRule("MemberName", offset, Probe14.rule_MemberName(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("FieldName", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("FieldName", offset, diagnose, true), () => { wrapCompiledRule("FieldName", offset, Probe14.rule_FieldName(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LongName", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LongName", offset, diagnose, true), () => { wrapCompiledRule("LongName", offset, Probe14.rule_LongName(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("LongConstructor", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("LongConstructor", offset, diagnose, true), () => { wrapCompiledRule("LongConstructor", offset, Probe14.rule_LongConstructor(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("IdentPart", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("IdentPart", offset, diagnose, true), () => { wrapCompiledRule("IdentPart", offset, Probe14.rule_IdentPart(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Keyword", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Keyword", offset, diagnose, true), () => { wrapCompiledRule("Keyword", offset, Probe14.rule_Keyword(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("__", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("__", offset, diagnose, true), () => { wrapCompiledRule("__", offset, Probe14.rule___(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("_", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("_", offset, diagnose, true), () => { wrapCompiledRule("_", offset, Probe14.rule__(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Whitespace", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Whitespace", offset, diagnose, true), () => { wrapCompiledRule("Whitespace", offset, Probe14.rule_Whitespace(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("Comment", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("Comment", offset, diagnose, true), () => { wrapCompiledRule("Comment", offset, Probe14.rule_Comment(source, offset, true, diagnose, parseCompiledRule)) }) },
-      ("EOF", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("EOF", offset, diagnose, true), () => { wrapCompiledRule("EOF", offset, Probe14.rule_EOF(source, offset, true, diagnose, parseCompiledRule)) }) },
-      (Var(unknownName), Var(unknownRecover)) => { CompiledProbeNoMatch(offset, "known grammar rule", unknownName) },
+    let selected = if (recover) {
+      Table.get(recoveringCompiledRules, name)
+    } else {
+      Table.get(strictCompiledRules, name)
+    };
+    match(selected) {
+      Some(parseRule) => {
+        memoizedCompiledRule(
+          cache,
+          name,
+          compiledRuleMemoSlot(offset, diagnose, recover),
+          () => { wrapCompiledRule(name, offset, parseRule(source, offset, diagnose, parseCompiledRule)) },
+        )
+      },
+      None => { CompiledProbeNoMatch(offset, "known grammar rule", name) },
     }
   };
   parseCompiledRule

@@ -320,28 +320,28 @@ let matchAnyCharacter = (rule: String, source: String, offset: Number) => {
   }
 };
 
-let compiledRuleMemoKey = (
-  name: String,
+let compiledRuleMemoSlot = (
   offset: Number,
   diagnose: Bool,
   recover: Bool,
 ) => {
-  let offsetText = offset :> .toString() :> Result.withDefault("");
-  name
-    ++ "@"
-    ++ offsetText
-    ++ "@"
-    ++ (if (diagnose) { "1" } else { "0" })
-    ++ "@"
-    ++ (if (recover) { "1" } else { "0" })
+  offset * 4 + (if (diagnose) { 2 } else { 0 }) + (if (recover) { 1 } else { 0 })
 };
 
-let memoizedCompiledRule = (cache, key: String, parse) => {
-  match(Dict.get(cache, key)) {
+let memoizedCompiledRule = (cache, name: String, slot: Number, parse) => {
+  let slots = match(Table.get(cache, name)) {
+    Some(existing) => { existing },
+    None => {
+      let created = Table.empty();
+      Table.set(cache, name, created);
+      created
+    },
+  };
+  match(Table.getAt(slots, slot)) {
     Some(result) => { result },
     None => {
       let result = parse();
-      Dict.set(cache, key, result);
+      Table.setAt(slots, slot, result);
       result
     },
   }

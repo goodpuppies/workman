@@ -65,6 +65,17 @@ export const BASIS_TYPES = Object.freeze(
       argLabels: ["value"],
     },
     {
+      // Map-backed sibling of Js.Dict for large, hot, string-keyed caches.
+      // Deliberately not JS-interop compatible: it never crosses the FFI
+      // boundary, which is what frees it from Js.Dict's plain-object contract.
+      name: "Js.Table",
+      typeNameId: -22,
+      arity: 1,
+      profiles,
+      equality: "never",
+      argLabels: ["value"],
+    },
+    {
       name: "Option",
       typeNameId: -10,
       arity: 1,
@@ -249,6 +260,11 @@ export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
     exportName: `Dict.${name}`,
     profiles: defaultOnly,
     runtimeName: `Dict.${name}`,
+  })),
+  ...["empty", "get", "set", "getAt", "setAt"].map((name) => ({
+    exportName: `Table.${name}`,
+    profiles: defaultOnly,
+    runtimeName: `Table.${name}`,
   })),
 ]);
 

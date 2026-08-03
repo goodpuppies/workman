@@ -1,4 +1,4 @@
-import type { ProgramAnalysis } from "../program_analysis.ts";
+import type { CoreProgramAnalysis, ProgramAnalysis } from "../program_analysis.ts";
 import type { GpuFragmentSelectorFact } from "../gpu_selection.ts";
 import type {
   MaterializedGpuArtifacts,
@@ -33,7 +33,7 @@ export class WmslangSemanticError extends Error {
 }
 
 export async function materializeGpuSliceArtifacts(
-  analysis: ProgramAnalysis,
+  analysis: CoreProgramAnalysis,
   compiler: WmslangSliceCompiler,
   backend: WmslangSlangBackend,
 ): Promise<MaterializedGpuArtifacts> {

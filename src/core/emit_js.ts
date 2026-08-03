@@ -26,6 +26,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   resetEmitterState();
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
+  directFns = collectProgramDirectFns(program);
   const target = options.target ?? "executable";
   const standardIds = new Set(program.standardNamespaces?.map((item) => item.id) ?? []);
   const body = [
@@ -496,9 +497,14 @@ __wm_define_module(
   async () => {
 ${body}
 return { ${
-    finalExports(artifact.dynamicExports).map((item) =>
-      `${JSON.stringify(item.name)}: ${emitExportRef(item)}`
-    )
+    finalExports(artifact.dynamicExports).flatMap((item) => {
+      const entries = [`${JSON.stringify(item.name)}: ${emitExportRef(item)}`];
+      const direct = ownedDirectFn(item, artifact.emitName);
+      if (direct) {
+        entries.push(`${JSON.stringify(item.name + direct.exportKey)}: ${direct.name}`);
+      }
+      return entries;
+    })
       .join(", ")
   } };
   },
@@ -572,6 +578,102 @@ function emitImportedValueAlias(
   aliases.push(
     `const ${alias} = ${id(imported.emitName)}[${JSON.stringify(item.name)}];`,
   );
+  const direct = ownedDirectFn(item, imported.emitName);
+  if (direct) {
+    aliases.push(
+      `const ${direct.name} = ${id(imported.emitName)}[${
+        JSON.stringify(item.name + direct.exportKey)
+      }];`,
+    );
+  }
+}
+
+/**
+ * Arity raising.
+ *
+ * Workman is an SML: a function takes one tuple argument, so the tupled entry
+ * point must stay for first-class and partial use. But a call to a statically
+ * known function with a literal tuple of matching arity need not materialize
+ * that tuple. Eligible functions get a second multi-parameter entry point, and
+ * such call sites target it directly.
+ *
+ * This is collected across the whole program rather than per module. Binding
+ * ids are program-global, and an imported value is aliased under the exporting
+ * module's binding id, so a call site in any module resolves to the same entry.
+ * That matters because the hot calls in the generated parser are cross-module.
+ */
+type DirectFn = { name: string; arity: number; owner: string; exportKey: string };
+
+let directFns = new Map<BindingId | StructureId, DirectFn>();
+
+function arityRaiseCandidate(
+  binding: { pattern: CorePattern; value: CoreExpr },
+  owner: string,
+): { bindingId: BindingId; direct: DirectFn } | undefined {
+  const pattern = binding.pattern;
+  if (pattern.kind !== "CorePVar" || pattern.bindingId === undefined) return undefined;
+  const value = binding.value;
+  if (value.kind !== "CoreFn" || value.arms.length !== 1) return undefined;
+  const arm = value.arms[0];
+  if (arm.pattern.kind !== "CorePTuple") return undefined;
+  const items = arm.pattern.items;
+  if (items.length < 2) return undefined;
+  // Only simple destructuring: anything else carries runtime checks the direct
+  // entry point would have to reproduce.
+  if (!items.every((item) => item.kind === "CorePVar" || item.kind === "CorePWildcard")) {
+    return undefined;
+  }
+  const suffix = `__wm_d${items.length}`;
+  return {
+    bindingId: pattern.bindingId,
+    direct: {
+      name: `${bindingName(pattern.name, pattern.bindingId)}${suffix}`,
+      arity: items.length,
+      owner,
+      exportKey: suffix,
+    },
+  };
+}
+
+function collectProgramDirectFns(program: CoreProgram): Map<BindingId | StructureId, DirectFn> {
+  const found = new Map<BindingId | StructureId, DirectFn>();
+  for (const moduleId of program.order) {
+    const artifact = program.modules.get(moduleId)!;
+    for (const decl of artifact.module.decls) {
+      if (decl.kind !== "CoreLet") continue;
+      for (const binding of decl.bindings) {
+        const candidate = arityRaiseCandidate(binding, artifact.emitName);
+        if (candidate) found.set(candidate.bindingId, candidate.direct);
+      }
+    }
+  }
+  return found;
+}
+
+function emitArityRaisedBinding(
+  binding: { pattern: Extract<CorePattern, { kind: "CorePVar" }>; value: CoreExpr },
+  direct: DirectFn,
+): string[] {
+  const fn = binding.value as Extract<CoreExpr, { kind: "CoreFn" }>;
+  const arm = fn.arms[0];
+  const items = (arm.pattern as Extract<CorePattern, { kind: "CorePTuple" }>).items;
+  const params = items.map((item, index) =>
+    item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`
+  );
+  const forwarded = params.map((_, index) => `__arg[${index}]`).join(", ");
+  return [
+    `const ${direct.name} = (${params.join(", ")}) => {\n${emitReturnExpr(arm.body)}\n};`,
+    `const ${patternBindingName(binding.pattern)} = (__arg) => {\n` +
+    `if (__wm_is_tuple(__arg) && __arg.length === ${direct.arity}) return ${direct.name}(${forwarded});\n` +
+    `__wm_fail("Match", "pattern match failure in function");\n};`,
+  ];
+}
+
+/** Direct entry point for an exported binding this module actually defines. */
+function ownedDirectFn(item: CoreDynamicExport, owner: string): DirectFn | undefined {
+  if (item.bindingId === undefined) return undefined;
+  const direct = directFns.get(item.bindingId);
+  return direct && direct.owner === owner ? direct : undefined;
 }
 
 function emitDecl(decl: CoreDecl): string[] {
@@ -605,17 +707,35 @@ function emitDecl(decl: CoreDecl): string[] {
     });
   }
   if (decl.recursive) {
-    return decl.bindings.map((binding) => {
+    return decl.bindings.flatMap((binding) => {
       if (binding.pattern.kind !== "CorePVar") {
         throw new Error("recursive bindings must bind one name");
       }
-      return `let ${patternBindingName(binding.pattern)} = ${
+      const direct = binding.pattern.bindingId === undefined
+        ? undefined
+        : directFns.get(binding.pattern.bindingId);
+      if (direct && binding.pattern.bindingId !== undefined) {
+        return emitArityRaisedRecursiveBinding(
+          { pattern: binding.pattern, value: binding.value, bindingId: binding.pattern.bindingId },
+          direct,
+        );
+      }
+      return [`let ${patternBindingName(binding.pattern)} = ${
         emitRecursiveBindingValue(binding.value, binding.pattern.bindingId)
-      };`;
+      };`];
     });
   }
   return decl.bindings.flatMap((binding) => {
     if (binding.pattern.kind === "CorePVar") {
+      const direct = binding.pattern.bindingId === undefined
+        ? undefined
+        : directFns.get(binding.pattern.bindingId);
+      if (direct) {
+        return emitArityRaisedBinding(
+          { pattern: binding.pattern, value: binding.value },
+          direct,
+        );
+      }
       return [`const ${patternBindingName(binding.pattern)} = ${emitExpr(binding.value)};`];
     }
     const tmp = `__wm_bind_${bindingTemp++}`;
@@ -679,15 +799,21 @@ function emitExpr(expr: CoreExpr): string {
         emitArmBody(expr.arms, "__arg", "pattern match failure in function")
       }\n}`;
     case "CoreApp": {
+      if (expr.callee.kind === "CoreVar" && expr.callee.bindingId !== undefined) {
+        const direct = directFns.get(expr.callee.bindingId);
+        if (direct && expr.arg.kind === "CoreTuple" && expr.arg.items.length === direct.arity) {
+          return `${direct.name}(${expr.arg.items.map(emitExpr).join(", ")})`;
+        }
+      }
       const callee = emitExpr(expr.callee);
       return `${expr.callee.kind === "CoreFn" ? `(${callee})` : callee}(${emitExpr(expr.arg)})`;
     }
     case "CoreIf":
       return `(${emitExpr(expr.cond)} ? ${emitExpr(expr.thenExpr)} : ${emitExpr(expr.elseExpr)})`;
     case "CoreMatch":
-      return `((__v) => {\n${emitArmBody(expr.arms, "__v", "non-exhaustive match")}\n})(${
-        emitExpr(expr.value)
-      })`;
+      return `((__v) => {\n${
+        emitArmBody(expr.arms, "__v", "non-exhaustive match", literalTupleArity(expr.value))
+      }\n})(${emitExpr(expr.value)})`;
     case "CorePanic":
       return `__wm_fail("Panic", ${emitExpr(expr.message)})`;
     case "CoreBlock":
@@ -695,6 +821,45 @@ function emitExpr(expr: CoreExpr): string {
         emitExpr(expr.result)
       };\n})()`;
   }
+}
+
+
+/**
+ * Specialize a recursive binding. When the body tail-calls itself the loop runs
+ * over the parameters directly, so a self tail call assigns them instead of
+ * rebuilding the argument tuple on every iteration.
+ */
+function emitArityRaisedRecursiveBinding(
+  binding: {
+    pattern: Extract<CorePattern, { kind: "CorePVar" }>;
+    value: CoreExpr;
+    bindingId: BindingId;
+  },
+  direct: DirectFn,
+): string[] {
+  const fn = binding.value as Extract<CoreExpr, { kind: "CoreFn" }>;
+  const arm = fn.arms[0];
+  const items = (arm.pattern as Extract<CorePattern, { kind: "CorePTuple" }>).items;
+  // The parameters are the bound names themselves, so no destructuring is
+  // needed at the top of the specialized entry point.
+  const params = items.map((item, index) =>
+    item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`
+  );
+  const body = hasDirectSelfTailCall(arm.body, binding.bindingId)
+    ? (() => {
+      const label = `__wm_tail_${tailLoopTemp++}`;
+      return `${label}: while (true) {\n${
+        emitTailExpr(arm.body, binding.bindingId, label, params)
+      }\n}`;
+    })()
+    : emitReturnExpr(arm.body);
+  const forwarded = params.map((_, index) => `__arg[${index}]`).join(", ");
+  return [
+    `const ${direct.name} = (${params.join(", ")}) => {\n${body}\n};`,
+    `const ${patternBindingName(binding.pattern)} = (__arg) => {\n` +
+    `if (__wm_is_tuple(__arg) && __arg.length === ${direct.arity}) return ${direct.name}(${forwarded});\n` +
+    `__wm_fail("Match", "pattern match failure in function");\n};`,
+  ];
 }
 
 function emitRecursiveBindingValue(expr: CoreExpr, bindingId: BindingId | undefined): string {
@@ -742,33 +907,59 @@ function emitTailExpr(
   expr: CoreExpr,
   bindingId: BindingId,
   label: string,
+  tailParams?: readonly string[],
 ): string {
   if (
     expr.kind === "CoreApp" && expr.callee.kind === "CoreVar" &&
     expr.callee.bindingId === bindingId
   ) {
+    if (tailParams) {
+      const slot = tailValueTemp++;
+      // Stage into temporaries so the assignments are simultaneous.
+      if (expr.arg.kind === "CoreTuple" && expr.arg.items.length === tailParams.length) {
+        const staged = expr.arg.items.map((item, index) =>
+          `const __wm_tail_arg_${slot}_${index} = ${emitExpr(item)};`
+        );
+        const assigned = tailParams.map((param, index) =>
+          `${param} = __wm_tail_arg_${slot}_${index};`
+        );
+        return `{\n${staged.join("\n")}\n${assigned.join("\n")}\ncontinue ${label};\n}`;
+      }
+      const source = `__wm_tail_arg_${slot}`;
+      return `{\nconst ${source} = ${emitExpr(expr.arg)};\n${
+        tailParams.map((param, index) => `${param} = ${source}[${index}];`).join("\n")
+      }\ncontinue ${label};\n}`;
+    }
     return `__arg = ${emitExpr(expr.arg)};\ncontinue ${label};`;
   }
   if (expr.kind === "CoreIf") {
     return `if (${emitExpr(expr.cond)}) {\n${
-      emitTailExpr(expr.thenExpr, bindingId, label)
-    }\n} else {\n${emitTailExpr(expr.elseExpr, bindingId, label)}\n}`;
+      emitTailExpr(expr.thenExpr, bindingId, label, tailParams)
+    }\n} else {\n${emitTailExpr(expr.elseExpr, bindingId, label, tailParams)}\n}`;
   }
   if (expr.kind === "CoreMatch") {
     const value = `__wm_tail_value_${tailValueTemp++}`;
     return `{\nconst ${value} = ${emitExpr(expr.value)};\n${
-      emitTailArmBody(expr.arms, value, "non-exhaustive match", bindingId, label)
+      emitTailArmBody(
+        expr.arms,
+        value,
+        "non-exhaustive match",
+        bindingId,
+        label,
+        tailParams,
+        literalTupleArity(expr.value),
+      )
     }\n}`;
   }
   if (expr.kind === "CoreBlock") {
     const discardedTail = finalDiscardedExpr(expr);
     if (discardedTail && hasDirectSelfTailCall(discardedTail, bindingId)) {
       return `{\n${expr.items.slice(0, -1).map(emitBlockItem).join("\n")}\n${
-        emitTailExpr(discardedTail, bindingId, label)
+        emitTailExpr(discardedTail, bindingId, label, tailParams)
       }\n}`;
     }
     return `{\n${expr.items.map(emitBlockItem).join("\n")}\n${
-      emitTailExpr(expr.result, bindingId, label)
+      emitTailExpr(expr.result, bindingId, label, tailParams)
     }\n}`;
   }
   return `return ${emitExpr(expr)};`;
@@ -786,12 +977,14 @@ function emitTailArmBody(
   message: string,
   bindingId: BindingId,
   label: string,
+  tailParams?: readonly string[],
+  knownTupleArity?: number,
 ): string {
   const body = arms.map((arm) => {
-    const checks = patternChecks(arm.pattern, value);
+    const checks = patternChecks(arm.pattern, value, knownTupleArity);
     const binds = emitPatternBind(arm.pattern, value);
     return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
-      emitTailExpr(arm.body, bindingId, label)
+      emitTailExpr(arm.body, bindingId, label, tailParams)
     }\n}`;
   });
   return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
@@ -813,15 +1006,20 @@ function emitReturnExpr(expr: CoreExpr): string {
   if (expr.kind === "CoreMatch") {
     const value = `__wm_return_value_${returnValueTemp++}`;
     return `const ${value} = ${emitExpr(expr.value)};\n${
-      emitReturnArmBody(expr.arms, value, "non-exhaustive match")
+      emitReturnArmBody(expr.arms, value, "non-exhaustive match", literalTupleArity(expr.value))
     }`;
   }
   return `return ${emitExpr(expr)};`;
 }
 
-function emitReturnArmBody(arms: CoreMatchArm[], value: string, message: string): string {
+function emitReturnArmBody(
+  arms: CoreMatchArm[],
+  value: string,
+  message: string,
+  knownTupleArity?: number,
+): string {
   const body = arms.map((arm) => {
-    const checks = patternChecks(arm.pattern, value);
+    const checks = patternChecks(arm.pattern, value, knownTupleArity);
     const binds = emitPatternBind(arm.pattern, value);
     return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
       emitReturnExpr(arm.body)
@@ -830,9 +1028,14 @@ function emitReturnArmBody(arms: CoreMatchArm[], value: string, message: string)
   return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
 }
 
-function emitArmBody(arms: CoreMatchArm[], value: string, message: string): string {
+function emitArmBody(
+  arms: CoreMatchArm[],
+  value: string,
+  message: string,
+  knownTupleArity?: number,
+): string {
   const body = arms.map((arm) => {
-    const checks = patternChecks(arm.pattern, value);
+    const checks = patternChecks(arm.pattern, value, knownTupleArity);
     const binds = emitPatternBind(arm.pattern, value);
     return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
       emitReturnExpr(arm.body)
@@ -843,6 +1046,12 @@ function emitArmBody(arms: CoreMatchArm[], value: string, message: string): stri
 
 function emitBlockItem(item: CoreDecl | CoreExpr): string {
   return isDecl(item) ? emitDecl(item).join("\n") : `${emitExpr(item)};`;
+}
+
+// A scrutinee written as a tuple literal has a shape the arms cannot fail on,
+// which lets patternChecks drop the per-arm `__wm_is_tuple`/length guards.
+function literalTupleArity(expr: CoreExpr): number | undefined {
+  return expr.kind === "CoreTuple" ? expr.items.length : undefined;
 }
 
 function isDecl(value: CoreDecl | CoreExpr): value is CoreDecl {
@@ -865,7 +1074,11 @@ function emitPatternAssert(
   ];
 }
 
-function patternChecks(pattern: CorePattern, value: string): string[] {
+function patternChecks(
+  pattern: CorePattern,
+  value: string,
+  knownTupleArity?: number,
+): string[] {
   switch (pattern.kind) {
     case "CorePWildcard":
     case "CorePVar":
@@ -880,12 +1093,19 @@ function patternChecks(pattern: CorePattern, value: string): string[] {
       return [`${value} === undefined`];
     case "CorePPinned":
       return [`__wm_eq(${value}, ${valueRefName(pattern.name, pattern.bindingId)})`];
-    case "CorePTuple":
+    case "CorePTuple": {
+      const items = pattern.items.flatMap((item, index) =>
+        patternChecks(item, `${value}[${index}]`)
+      );
+      // When the scrutinee is a tuple literal of this arity the shape guards are
+      // statically true, and every arm of the match would otherwise re-test them.
+      if (knownTupleArity === pattern.items.length) return items;
       return [
         `__wm_is_tuple(${value})`,
         `${value}.length === ${pattern.items.length}`,
-        ...pattern.items.flatMap((item, index) => patternChecks(item, `${value}[${index}]`)),
+        ...items,
       ];
+    }
     case "CorePRecord":
       return [
         `${value} !== null`,

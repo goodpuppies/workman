@@ -23,6 +23,7 @@ const jsTypes = [
   "Js.Array",
   "Js.ArrayLike",
   "Js.Dict",
+  "Js.Table",
 ];
 
 const gpuTypes = [

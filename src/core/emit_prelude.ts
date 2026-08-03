@@ -24,10 +24,23 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_member_obj = (owner, key) => {
   return owner?.[key];
 };`,
-    `const __wm_js_receiver_member = (path) => (receiver, ...args) => {
-  const owner = path.slice(0, -1).reduce((value, key) => value?.[key], receiver);
-  const value = owner?.[path[path.length - 1]];
-  return typeof value === "function" ? value.apply(owner, args) : value;
+    `const __wm_js_receiver_member = (path) => {
+  // The path is fixed when the binding is created, so resolve it once here
+  // instead of slicing and reducing on every call.
+  const key = path[path.length - 1];
+  if (path.length === 1) {
+    return (receiver, ...args) => {
+      const value = receiver?.[key];
+      return typeof value === "function" ? value.apply(receiver, args) : value;
+    };
+  }
+  const ownerPath = path.slice(0, -1);
+  return (receiver, ...args) => {
+    let owner = receiver;
+    for (let index = 0; index < ownerPath.length; index++) owner = owner?.[ownerPath[index]];
+    const value = owner?.[key];
+    return typeof value === "function" ? value.apply(owner, args) : value;
+  };
 };`,
     `const __wm_js_construct = (path) => (...args) => new (__wm_js_global(path))(...args);`,
     `const __wm_js_call = (fn, arg) => __wm_is_tuple(arg) ? fn(...arg) : fn(arg);`,
@@ -76,8 +89,19 @@ export function emitRuntimePrelude(): string[] {
   return value;
 };`,
     `const __wm_js_apply = (fn, arg, converters, resultConverter, fallible) => {
-  const raw = converters.length === 0 ? [] : converters.length === 1 ? [arg] : (__wm_is_tuple(arg) ? Array.from(arg) : [arg]);
-  const args = raw.map((value, index) => __wm_js_to_js(value, converters[index] ?? "id"));
+  // Convert in place; the extra map allocated a second array on every call.
+  const arity = converters.length;
+  let args;
+  if (arity === 0) {
+    args = [];
+  } else if (arity === 1) {
+    args = [__wm_js_to_js(arg, converters[0] ?? "id")];
+  } else {
+    args = __wm_is_tuple(arg) ? Array.from(arg) : [arg];
+    for (let index = 0; index < args.length; index++) {
+      args[index] = __wm_js_to_js(args[index], converters[index] ?? "id");
+    }
+  }
   if (fallible === "task") {
     return __wm_js_task_from_thunk(() => fn(...args), resultConverter);
   }
@@ -175,6 +199,13 @@ export function emitRuntimePrelude(): string[] {
   empty: () => ({}),
   get: ([dict, key]) => __wm_js_option_wrap(Object.hasOwn(dict, key) ? dict[key] : undefined),
   set: ([dict, key, value]) => { dict[key] = value; },
+};`,
+    `const Table = {
+  empty: () => new globalThis.Map(),
+  get: ([table, key]) => __wm_js_option_wrap(table.get(key)),
+  set: ([table, key, value]) => { table.set(key, value); },
+  getAt: ([table, key]) => __wm_js_option_wrap(table.get(key)),
+  setAt: ([table, key, value]) => { table.set(key, value); },
 };`,
     `const __wm_array_to_list = (items) => {
   let list = __wm_basis_Nil;

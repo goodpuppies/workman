@@ -25,7 +25,7 @@ import {
   semanticCompletionFacts,
 } from "./module_interface.ts";
 
-export type ProgramAnalysis = {
+export type CoreProgramAnalysis = {
   graph: ModuleGraph;
   results: ModuleMap<InferResult>;
   bindings: ModuleMap<BindingFacts>;
@@ -38,15 +38,18 @@ export type ProgramAnalysis = {
   gpuSlices: NormalizedGpuSlice[];
   gpuInput: GpuSliceElaborationInput;
   ids: CompilerIdAllocator;
+};
+
+export type ProgramAnalysis = CoreProgramAnalysis & {
   projectSnapshot: ProjectSnapshot;
   interfaces: ReadonlyModuleMap<ModuleInterface>;
 };
 
-export function buildProgramAnalysis(
+/** Compiler/codegen facts without the language-service-only module interface snapshot. */
+export function buildCoreProgramAnalysis(
   graph: ModuleGraph,
   results: ModuleMap<InferResult>,
-  context: ProjectSnapshotContext = {},
-): ProgramAnalysis {
+): CoreProgramAnalysis {
   const ids = new CompilerIdAllocator();
   const bindings = resolveProgramBindingFacts(graph, ids);
   const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
@@ -86,15 +89,6 @@ export function buildProgramAnalysis(
   const gpuOnlyTypeNames = new Set(
     gpuSlices.flatMap((slice) => slice.input.adts.map((adt) => adt.typeNameId as TypeNameId)),
   );
-  const projectSnapshot = buildProjectSnapshot(
-    graph,
-    results,
-    bindings,
-    nominalFacts,
-    context,
-    { gpuSelections: fragmentSelections, gpuSlices },
-  );
-  const interfaces = projectSnapshot.interfaces;
   return {
     graph,
     results,
@@ -108,8 +102,27 @@ export function buildProgramAnalysis(
     gpuSlices,
     gpuInput,
     ids,
+  };
+}
+
+export function buildProgramAnalysis(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+  context: ProjectSnapshotContext = {},
+): ProgramAnalysis {
+  const analysis = buildCoreProgramAnalysis(graph, results);
+  const projectSnapshot = buildProjectSnapshot(
+    graph,
+    results,
+    analysis.bindings,
+    analysis.nominalFacts,
+    context,
+    { gpuSelections: analysis.fragmentSelections, gpuSlices: analysis.gpuSlices },
+  );
+  return {
+    ...analysis,
     projectSnapshot,
-    interfaces,
+    interfaces: projectSnapshot.interfaces,
   };
 }
 

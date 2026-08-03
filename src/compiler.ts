@@ -39,8 +39,10 @@ import {
   StagedAnalysisError,
 } from "./staged_analysis.ts";
 import {
+  buildCoreProgramAnalysis,
   buildPartialProjectSnapshot,
   buildProgramAnalysis,
+  type CoreProgramAnalysis,
   currentSourceCompletionFacts,
   type ProgramAnalysis,
 } from "./program_analysis.ts";
@@ -271,11 +273,11 @@ export async function coreFile(
   input: string,
   options: ModuleGraphOptions = {},
 ): Promise<CoreFileResult> {
-  const analysis = await analyzeFile(input, options);
+  const analysis = await analyzeCoreFile(input, options);
   return await coreResultFromAnalysis(analysis);
 }
 
-async function coreResultFromAnalysis(analysis: ProgramAnalysis): Promise<CoreFileResult> {
+async function coreResultFromAnalysis(analysis: CoreProgramAnalysis): Promise<CoreFileResult> {
   const materializedGpuArtifacts = analysis.gpuInput.root.functionId === -1
     ? undefined
     : await materializeGpuSliceArtifacts(
@@ -517,10 +519,29 @@ async function analyzeStrictSnapshot(
   options: ModuleGraphOptions,
   context: ProjectSnapshotContext,
 ): Promise<ProgramAnalysis> {
+  return await analyzeStrict(
+    input,
+    options,
+    (graph, results) => buildProgramAnalysis(graph, results, context),
+  );
+}
+
+async function analyzeCoreFile(
+  input: string,
+  options: ModuleGraphOptions,
+): Promise<CoreProgramAnalysis> {
+  return await analyzeStrict(input, options, buildCoreProgramAnalysis);
+}
+
+async function analyzeStrict<T>(
+  input: string,
+  options: ModuleGraphOptions,
+  build: (graph: ModuleGraph, results: ModuleMap<InferResult>) => T,
+): Promise<T> {
   assertCompilerFrontendMode(options.frontend);
   const graph = await loadModuleGraph(input, options);
   try {
-    return buildProgramAnalysis(graph, await analyzeModuleGraph(graph), context);
+    return build(graph, await analyzeModuleGraph(graph));
   } catch (error) {
     if (error instanceof StagedAnalysisError) {
       throw new ModuleAnalysisError(

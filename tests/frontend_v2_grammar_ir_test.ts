@@ -259,6 +259,19 @@ Deno.test("frontend-v2 compiled recovery is driven by declared annotations", () 
   assertStringIncludes(withRecoveries, '"RecordExpr:close-brace"');
 });
 
+Deno.test("frontend-v2 compiled rule dispatch uses constant-time lookup tables", () => {
+  const dispatch = emitCompiledProbe(
+    grammar,
+    "fixture",
+    frontendV2RecoveryAnnotations,
+  ).get("compiled_probe_dispatch.wm")!;
+
+  assertStringIncludes(dispatch, "let strictCompiledRules = {");
+  assertStringIncludes(dispatch, "let recoveringCompiledRules = {");
+  assertEquals(dispatch.includes("match((name, recover))"), false);
+  assertEquals(dispatch.match(/Table\.set\(rules,/g)?.length, grammar.rules.length * 2);
+});
+
 Deno.test("frontend-v2 generated recognizer accepts every positive smoke fixture", () => {
   for (const fixture of recognizerSmokeFixtures) {
     assertEquals(

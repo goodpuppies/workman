@@ -549,6 +549,46 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
       basis: true,
     });
   }
+  const jsTable = typeInfoByName(typeEnv, "Js.Table");
+  if (option && jsTable) {
+    const tableEmpty = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Table.empty", {
+      vars: [tableEmpty.id],
+      type: fn([VoidTy], named(jsTable, [tableEmpty])),
+      status: "value",
+      basis: true,
+    });
+    const tableGet = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Table.get", {
+      vars: [tableGet.id],
+      type: fn([tuple([named(jsTable, [tableGet]), StringTy])], named(option, [tableGet])),
+      status: "value",
+      basis: true,
+    });
+    const tableSet = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Table.set", {
+      vars: [tableSet.id],
+      type: fn([tuple([named(jsTable, [tableSet]), StringTy, tableSet])], VoidTy),
+      status: "value",
+      basis: true,
+    });
+    // Number-keyed accessors: integer keys hash far cheaper than freshly built
+    // strings, which never have a cached hash.
+    const tableGetAt = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Table.getAt", {
+      vars: [tableGetAt.id],
+      type: fn([tuple([named(jsTable, [tableGetAt]), NumberTy])], named(option, [tableGetAt])),
+      status: "value",
+      basis: true,
+    });
+    const tableSetAt = fresh("value") as Extract<Ty, { tag: "var" }>;
+    env.set("Table.setAt", {
+      vars: [tableSetAt.id],
+      type: fn([tuple([named(jsTable, [tableSetAt]), NumberTy, tableSetAt])], VoidTy),
+      status: "value",
+      basis: true,
+    });
+  }
 }
 
 function addJsArrayValues(env: Env, typeEnv: TypeEnv) {
