@@ -50,6 +50,58 @@ Deno.test("document store exposes source overrides for open files", async () => 
   assertEquals(docs.sourceOverrides().size, 0);
 });
 
+Deno.test("document store applies incremental changes in order with UTF-16 positions", async () => {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/main.wm`;
+  const uri = pathToFileUri(path);
+  const docs = new DocumentStore();
+
+  docs.open(uri, 'let face = "😀";\r\nlet value = 1;', 1);
+  docs.change(uri, [
+    {
+      range: {
+        start: { line: 0, character: 12 },
+        end: { line: 0, character: 14 },
+      },
+      text: "λ",
+    },
+    {
+      range: {
+        start: { line: 1, character: 4 },
+        end: { line: 1, character: 9 },
+      },
+      text: "answer",
+    },
+    {
+      range: {
+        start: { line: 1, character: 13 },
+        end: { line: 1, character: 14 },
+      },
+      text: "42",
+    },
+  ], 2);
+
+  assertEquals(docs.get(uri)?.text, 'let face = "λ";\r\nlet answer = 42;');
+  assertEquals(docs.version(uri), 2);
+});
+
+Deno.test("document store accepts a full change after incremental changes", async () => {
+  const dir = await Deno.makeTempDir();
+  const uri = pathToFileUri(`${dir}/main.wm`);
+  const docs = new DocumentStore();
+
+  docs.open(uri, "let value = 1;", 1);
+  docs.change(uri, [{
+    range: {
+      start: { line: 0, character: 12 },
+      end: { line: 0, character: 13 },
+    },
+    text: "2",
+  }, { text: "let final = 3;" }], 2);
+
+  assertEquals(docs.get(uri)?.text, "let final = 3;");
+});
+
 Deno.test("lsp validation returns diagnostics for unsaved files and clears them", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;

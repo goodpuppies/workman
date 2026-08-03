@@ -30,7 +30,7 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
   assertEquals(messages.find((message) => message.id === 1)?.result, {
     capabilities: {
       positionEncoding: "utf-16",
-      textDocumentSync: { openClose: true, change: 1, save: true },
+      textDocumentSync: { openClose: true, change: 2, save: true },
       hoverProvider: true,
       definitionProvider: true,
       typeDefinitionProvider: true,
@@ -1020,6 +1020,113 @@ Deno.test("lsp server revalidates open files after imported file changes", async
   const last = mainPublishes.at(-1)?.params as { diagnostics: { code: string }[] };
   assertEquals(first.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertEquals(last.diagnostics, []);
+});
+
+Deno.test("lsp server refreshes an open namespace import after incremental edits", async () => {
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/lib.wm`;
+  const main = `${dir}/main.wm`;
+  const initialLib = "let value = (a, b) => { a ++ b };";
+  const initialMain = 'from "./lib.wm" import * as Lib; let main = () => { Lib.value("h", "i") };';
+  const changedMain = 'from "./lib.wm" import * as Lib; let main = () => { Lib.c("h", "i") };';
+  await Deno.writeTextFile(lib, initialLib);
+  await Deno.writeTextFile(main, initialMain);
+  const libUri = pathToFileUri(lib);
+  const mainUri = pathToFileUri(main);
+
+  const messages = await runLsp([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        rootUri: pathToFileUri(dir),
+        workspaceFolders: [{ uri: pathToFileUri(dir), name: "test" }],
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: mainUri,
+          languageId: "wm",
+          version: 1,
+          text: initialMain,
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: libUri,
+          languageId: "wm",
+          version: 1,
+          text: initialLib,
+        },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri: mainUri, version: 2 },
+        contentChanges: [{
+          range: {
+            start: { line: 0, character: initialMain.indexOf("value") },
+            end: { line: 0, character: initialMain.indexOf("value") + "value".length },
+          },
+          text: "c",
+        }],
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didChange",
+      params: {
+        textDocument: { uri: libUri, version: 2 },
+        contentChanges: [{
+          range: {
+            start: { line: 0, character: "let ".length },
+            end: { line: 0, character: "let value".length },
+          },
+          text: "c",
+        }],
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "textDocument/didSave",
+      params: { textDocument: { uri: libUri } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/inlayHint",
+      params: {
+        textDocument: { uri: mainUri },
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: changedMain.length },
+        },
+      },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const mainPublishes = messages.filter((message) =>
+    message.method === "textDocument/publishDiagnostics" &&
+    (message.params as { uri: string }).uri === mainUri
+  );
+  const last = mainPublishes.at(-1)?.params as
+    | { diagnostics: { message: string }[]; version?: number }
+    | undefined;
+  assertEquals(last?.version, 2);
+  assertEquals(last?.diagnostics, []);
+  assertEquals(messages.find((message) => message.id === 2)?.error, undefined);
 });
 
 Deno.test("lsp server revalidates the active unopened project head after dependency edits", async () => {

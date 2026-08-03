@@ -4,7 +4,7 @@ import process from "node:process";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { loadFrontendV2Surface } from "../frontend_v2_surface_loader.ts";
 import { runtime } from "../io.ts";
-import { DocumentStore } from "./documents.ts";
+import { type ContentChange, DocumentStore } from "./documents.ts";
 import { completionAt } from "./completion.ts";
 import { documentSymbols } from "./document_symbols.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
@@ -149,7 +149,7 @@ async function handleMessage(message: RpcMessage) {
         positionEncoding: "utf-16",
         textDocumentSync: {
           openClose: true,
-          change: 1,
+          change: 2,
           save: true,
         },
         hoverProvider: true,
@@ -215,11 +215,10 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didChange") {
     workspaceRevision++;
     const params = message.params as DidChangeParams;
-    const text = params.contentChanges.at(-1)?.text;
-    if (text === undefined) return;
+    if (params.contentChanges.length === 0) return;
     documents.change(
       params.textDocument.uri,
-      text,
+      params.contentChanges,
       params.textDocument.version,
     );
     await publishAffectedValidation(params.textDocument.uri);
@@ -787,7 +786,7 @@ type DidOpenParams = {
 
 type DidChangeParams = {
   textDocument: { uri: string; version?: number };
-  contentChanges: { text: string }[];
+  contentChanges: ContentChange[];
 };
 
 type DidCloseParams = {
