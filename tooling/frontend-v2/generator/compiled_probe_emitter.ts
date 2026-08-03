@@ -53,40 +53,43 @@ function emitDispatch(
 ): string {
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
-    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
+    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, compiledRuleMemoKey, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
     ...modules.map((_, index) => `from "./${moduleName(index)}" import * as Probe${index};`),
     "",
-    "let rec parseStrictCompiledRule = match(name, source, offset, diagnose, ignoredRecover) => {",
+    "let makeCompiledParser = () => {",
+    "  let cache = Dict.empty();",
+    "  let rec parseCompiledRule = (name, source, offset, diagnose, recover) => {",
+    "    match((name, recover)) {",
     ...modules.flatMap((rules, index) =>
       rules.map((rule) => emitStrictDispatchRule(rule.name, index))
     ),
-    '  (Var(name), Var(source), Var(offset), Var(diagnose), Var(ignoredRecover)) => { CompiledProbeNoMatch(offset, "known grammar rule", name) },',
-    "};",
-    "",
-    "let rec parseRecoveringCompiledRule = match(name, source, offset, diagnose, recover) => {",
-    "  (Var(name), Var(source), Var(offset), Var(diagnose), false) => {",
-    "    parseStrictCompiledRule(name, source, offset, diagnose, false)",
-    "  },",
     ...modules.flatMap((rules, index) =>
       rules.map((rule) => emitRecoveringDispatchRule(rule.name, index))
     ),
-    '  (Var(name), Var(source), Var(offset), Var(diagnose), Var(recover)) => { CompiledProbeNoMatch(offset, "known grammar rule", name) },',
+    '      (Var(unknownName), Var(unknownRecover)) => { CompiledProbeNoMatch(offset, "known grammar rule", unknownName) },',
+    "    }",
+    "  };",
+    "  parseCompiledRule",
     "};",
     "",
     "let recognizeCompiled = (source: String) => {",
-    '  isCompleteProbe(source, parseStrictCompiledRule("Start", source, 0, false, false))',
+    "  let parseRule = makeCompiledParser();",
+    '  isCompleteProbe(source, parseRule("Start", source, 0, false, false))',
     "};",
     "",
     "let parseCompiledCapture = (source: String): Option<CompiledCapture> => {",
-    '  completedCapture(source, parseStrictCompiledRule("Start", source, 0, false, false))',
+    "  let parseRule = makeCompiledParser();",
+    '  completedCapture(source, parseRule("Start", source, 0, false, false))',
     "};",
     "",
     "let parseRecoveringCompiledCapture = (source: String): Option<CompiledCapture> => {",
-    '  completedCapture(source, parseRecoveringCompiledRule("Start", source, 0, false, true))',
+    "  let parseRule = makeCompiledParser();",
+    '  completedCapture(source, parseRule("Start", source, 0, false, true))',
     "};",
     "",
     "let parseCompiledFailure = (source: String): Option<CompiledParseFailure> => {",
-    '  compiledFailure(source, parseStrictCompiledRule("Start", source, 0, true, false))',
+    "  let parseRule = makeCompiledParser();",
+    '  compiledFailure(source, parseRule("Start", source, 0, true, false))',
     "};",
     "",
   ].join("\n");
@@ -94,13 +97,13 @@ function emitDispatch(
 
 function emitStrictDispatchRule(ruleName: string, moduleIndex: number): string {
   const call =
-    `Probe${moduleIndex}.rule_${ruleName}(source, offset, false, diagnose, parseStrictCompiledRule)`;
-  return `  ("${ruleName}", Var(source), Var(offset), Var(diagnose), Var(ignoredRecover)) => { wrapCompiledRule("${ruleName}", offset, ${call}) },`;
+    `Probe${moduleIndex}.rule_${ruleName}(source, offset, false, diagnose, parseCompiledRule)`;
+  return `      ("${ruleName}", false) => { memoizedCompiledRule(cache, compiledRuleMemoKey("${ruleName}", offset, diagnose, false), () => { wrapCompiledRule("${ruleName}", offset, ${call}) }) },`;
 }
 
 function emitRecoveringDispatchRule(ruleName: string, moduleIndex: number): string {
   const call = (recover: string) =>
-    `Probe${moduleIndex}.rule_${ruleName}(source, offset, ${recover}, diagnose, parseRecoveringCompiledRule)`;
+    `Probe${moduleIndex}.rule_${ruleName}(source, offset, ${recover}, diagnose, parseCompiledRule)`;
   let recovering = call("true");
   if (probeBeforeRecoveryRules.has(ruleName)) {
     const committed = ruleName === "Primary"
@@ -110,7 +113,7 @@ function emitRecoveringDispatchRule(ruleName: string, moduleIndex: number): stri
       call("true")
     } } else { matchCommittedRule((activeRecover) => { ${call("activeRecover")} }, true) }`;
   }
-  return `  ("${ruleName}", Var(source), Var(offset), Var(diagnose), true) => { wrapCompiledRule("${ruleName}", offset, ${recovering}) },`;
+  return `      ("${ruleName}", true) => { memoizedCompiledRule(cache, compiledRuleMemoKey("${ruleName}", offset, diagnose, true), () => { wrapCompiledRule("${ruleName}", offset, ${recovering}) }) },`;
 }
 
 function emitRuleExpression(

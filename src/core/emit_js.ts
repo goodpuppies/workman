@@ -447,6 +447,7 @@ function resetEmitterState(): void {
   bindingTemp = 0;
   tailLoopTemp = 0;
   tailValueTemp = 0;
+  returnValueTemp = 0;
   resetJsImportEmitter();
 }
 
@@ -798,14 +799,44 @@ function emitTailArmBody(
 
 let tailLoopTemp = 0;
 let tailValueTemp = 0;
+let returnValueTemp = 0;
+
+function emitReturnExpr(expr: CoreExpr): string {
+  if (expr.kind === "CoreBlock") {
+    return `${expr.items.map(emitBlockItem).join("\n")}\n${emitReturnExpr(expr.result)}`;
+  }
+  if (expr.kind === "CoreIf") {
+    return `if (${emitExpr(expr.cond)}) {\n${emitReturnExpr(expr.thenExpr)}\n} else {\n${
+      emitReturnExpr(expr.elseExpr)
+    }\n}`;
+  }
+  if (expr.kind === "CoreMatch") {
+    const value = `__wm_return_value_${returnValueTemp++}`;
+    return `const ${value} = ${emitExpr(expr.value)};\n${
+      emitReturnArmBody(expr.arms, value, "non-exhaustive match")
+    }`;
+  }
+  return `return ${emitExpr(expr)};`;
+}
+
+function emitReturnArmBody(arms: CoreMatchArm[], value: string, message: string): string {
+  const body = arms.map((arm) => {
+    const checks = patternChecks(arm.pattern, value);
+    const binds = emitPatternBind(arm.pattern, value);
+    return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
+      emitReturnExpr(arm.body)
+    }\n}`;
+  });
+  return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
+}
 
 function emitArmBody(arms: CoreMatchArm[], value: string, message: string): string {
   const body = arms.map((arm) => {
     const checks = patternChecks(arm.pattern, value);
     const binds = emitPatternBind(arm.pattern, value);
-    return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\nreturn ${
-      emitExpr(arm.body)
-    };\n}`;
+    return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
+      emitReturnExpr(arm.body)
+    }\n}`;
   });
   return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
 }

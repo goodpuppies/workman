@@ -320,6 +320,37 @@ let matchAnyCharacter = (rule: String, source: String, offset: Number) => {
   }
 };
 
+let compiledRuleMemoKey = (
+  name: String,
+  offset: Number,
+  diagnose: Bool,
+  recover: Bool,
+) => {
+  let offsetText = offset :> .toString() :> Result.withDefault("");
+  name
+    ++ "@"
+    ++ offsetText
+    ++ "@"
+    ++ (if (diagnose) { "1" } else { "0" })
+    ++ "@"
+    ++ (if (recover) { "1" } else { "0" })
+};
+
+let memoizedCompiledRule = (cache, key: String, parse) => {
+  match(Dict.get(cache, key)) {
+    Some(result) => { result },
+    None => {
+      let result = parse();
+      Dict.set(cache, key, result);
+      result
+    },
+  }
+};
+
+let ensureProgress = (before: Number, after: Number) => {
+  after > before
+};
+
 let rec reverseInto = match(items, output) => {
   ([], Var(output)) => { output },
   ([item, ..rest], Var(output)) => { reverseInto(rest, [item, ..output]) },
@@ -418,7 +449,7 @@ let rec matchRepeatedInto = match(parser, diagnose, source, offset, reversed, be
     match(parser(source, offset)) {
       CompiledProbeMatched(next, capture, latent) => {
         let nextBest = if (diagnose) { bestFailure(best, latent) } else { None };
-        if (next == offset) {
+        if (!ensureProgress(offset, next)) {
           CompiledProbeMatched(
             offset,
             RepeatedCompiledCapture(reverseInto(reversed, [])),
@@ -453,7 +484,7 @@ let matchRepeated = (parser, diagnose: Bool, source: String, offset: Number) => 
 let matchOneOrMore = (parser, diagnose: Bool, source: String, offset: Number) => {
   match(parser(source, offset)) {
     CompiledProbeMatched(next, capture, latent) => {
-      if (next == offset) {
+      if (!ensureProgress(offset, next)) {
         CompiledProbeNoMatch(offset, "one or more repetitions", "<repetition>")
       } else {
         matchRepeatedInto(parser, diagnose, source, next, [capture], latent)

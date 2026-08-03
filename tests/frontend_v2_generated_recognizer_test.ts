@@ -194,6 +194,27 @@ Deno.test("frontend-v2 parses a deeply nested generated matcher module without o
   assertEquals(surfaceParser.parseSurfaceProgram(source).name, "Some");
 });
 
+Deno.test("frontend-v2 parses a long binary chain without matcher stack overflow", () => {
+  const tags = [
+    7,
+    9,
+    10,
+    11,
+    12,
+    65541,
+    65543,
+    65544,
+    65545,
+    65546,
+    65547,
+    65548,
+    131084,
+  ];
+  const condition = tags.map((tag) => `value == ${tag}`).join(" || ");
+  const source = `let isTag = (value: Number) => { ${condition} };`;
+  assertEquals(surfaceParser.parseSurfaceProgram(source).name, "Some");
+});
+
 Deno.test("frontend-v2 generated Surface semantics match the repository golden", async () => {
   const roots = [
     ["std", new URL("../std/", import.meta.url)],

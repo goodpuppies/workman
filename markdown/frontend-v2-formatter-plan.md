@@ -65,6 +65,18 @@ retaining inert JavaScript frames, so the runtime parses its own deeply nested g
 modules within the normal stack and keeps those modules in the repository-wide golden corpus. The
 complete default-frontend repository release soak passes all 856 tests.
 
+The external runtime-parser soak found and closed two generated-matcher gates:
+
+- per-parse rule/offset memoization removed three stack overflows and two parses exceeding ten
+  seconds;
+- compact generated dispatch and return-position JS emission removed the remaining default-stack
+  overflows without V8 flags.
+
+After migrating coordinated function-type spelling, the external audit has exact recognition parity
+for all 100 tracked `wmthree` files and all 51 tracked `testing-wm` files. Frontend-v2 accepts all
+88 and 50 files respectively that the current grammar accepts. The remaining 12 and 1 files are
+rejected by both and are language/source migration work, not frontend-v2 parity blockers.
+
 Ongoing parser work follows four rules:
 
 1. Change the grammar and generator so frontend-v2 receives each syntax fix directly.
