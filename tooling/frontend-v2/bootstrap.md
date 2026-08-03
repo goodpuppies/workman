@@ -28,12 +28,16 @@ Then regenerate and rebuild:
 
 ```sh
 deno task frontend-v2:grammar-report
-deno task frontend-v2:generate-recognizer
-deno task frontend-v2:build
+deno task generate
 ```
 
-One build produces the next stage; it does not itself prove a fixed point. Run another build and
-verify that it leaves the artifact byte-identical:
+The repository-wide `generate` task updates every tracked generated artifact owned by this
+repository. For frontend v2 it repeatedly builds the next stage until two consecutive artifacts are
+byte-identical, failing after eight changing stages instead of leaving an unverified bootstrap
+artifact behind.
+
+To rebuild only frontend v2 by hand, generate the recognizer and run builds until the artifact is
+unchanged:
 
 ```sh
 before=$(sha256sum src/generated/frontend_v2_parser.js | cut -d' ' -f1)
@@ -41,6 +45,14 @@ deno task frontend-v2:build
 after=$(sha256sum src/generated/frontend_v2_parser.js | cut -d' ' -f1)
 test "$before" = "$after"
 ```
+
+`deno task publish` is the one-command release preparation path. It runs `deno task generate`, then
+builds and packages the VS Code extension; it does not upload or publish anything externally.
+
+The semantic golden is a reviewed test expectation, not a generated release artifact. Update it
+explicitly with `scripts/update_frontend_v2_semantic_golden.ts` only after reviewing an intentional
+semantic or span change. The tree-sitter editor checkout is also excluded because it is a separate
+git submodule with its own generation and release lifecycle.
 
 Finish with focused parser tests, the repository type-check, and the full test suite:
 
