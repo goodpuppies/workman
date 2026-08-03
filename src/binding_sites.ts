@@ -56,9 +56,7 @@ function collectExprBindingSites(
   switch (expr.kind) {
     case "Tuple":
     case "JsonArray":
-      return expr.items.flatMap((item) =>
-        collectExprBindingSites(item, bindings, path, moduleId)
-      );
+      return expr.items.flatMap((item) => collectExprBindingSites(item, bindings, path, moduleId));
     case "Record":
     case "JsonObject":
       return expr.fields.flatMap((field) =>
@@ -71,9 +69,7 @@ function collectExprBindingSites(
         collectExprBindingSites(item, bindings, path, moduleId)
       );
     case "FfiBindingCall":
-      return expr.args.flatMap((item) =>
-        collectExprBindingSites(item, bindings, path, moduleId)
-      );
+      return expr.args.flatMap((item) => collectExprBindingSites(item, bindings, path, moduleId));
     case "Lambda":
       return collectExprBindingSites(expr.body, bindings, path, moduleId);
     case "Call":
@@ -99,6 +95,8 @@ function collectExprBindingSites(
         ),
         ...collectExprBindingSites(expr.result, bindings, path, moduleId),
       ];
+    case "Ascribed":
+      return collectExprBindingSites(expr.value, bindings, path, moduleId);
     case "Binary":
     case "Pipe":
       return [expr.left, expr.right].flatMap((item) =>

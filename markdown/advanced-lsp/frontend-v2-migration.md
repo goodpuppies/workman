@@ -191,32 +191,23 @@ before using the mode for frontend v2.
 
 ## Bootstrap rule
 
-Frontend v2 is initially compiled by frontend v1. This creates a real bootstrap
-constraint:
-
-- frontend-v2 WM source must remain valid in the v1 language subset until v2 can
-  compile itself;
-- generated JavaScript must be reproducible from a documented command;
-- CI must rebuild and compare or rebuild then test the artifact;
-- the TypeScript compiler must not require frontend v2 to compile frontend v2 until
-  a separately tested bootstrap artifact is available.
-
-Use a three-stage check when self-hosting becomes possible:
+Frontend v2 was initially compiled by frontend v1. The tracked generated artifact
+is now the separately tested stage-0 compiler used to rebuild frontend v2:
 
 ```text
-stage 0: v1 compiler -> frontend-v2.js
-stage 1: compiler using frontend-v2.js -> frontend-v2-stage1.js
-stage 2: compiler using stage1       -> frontend-v2-stage2.js
+stage 0: tracked frontend-v2.js
+stage 1: compiler using stage 0 -> frontend-v2-stage1.js
 
-require normalized stage1 == normalized stage2
+require stage 1 == stage 0 byte for byte
 ```
 
-Do not make self-host equality a prerequisite for initial TypeScript adoption. It
-is a later confidence gate.
+The documented build command fails if the tracked seed is absent and replaces it
+only when self-hosted output changes. Peggy remains available as build-time grammar
+input, but the executable Workman Peggy parser and parity oracle have been retired.
 
 ## Migration architecture in TypeScript
 
-Introduce a narrow frontend interface rather than scattering v2 checks:
+The migration now has one narrow compiler entry point rather than scattered frontend checks:
 
 ```ts
 interface WorkmanFrontend {
@@ -224,35 +215,22 @@ interface WorkmanFrontend {
 }
 ```
 
-Provide:
+Current components:
 
-- `PeggyFrontend` wrapping the current `parse` function;
-- `WorkmanFrontendV2` wrapping the generated JS ABI and translating DTOs;
-- a comparison harness that runs both on valid-source corpora;
-- one configuration point in compiler/module graph construction.
+- `parseCompilerModule` wrapping the generated JS ABI and translating its Surface tree;
+- one generated Workman frontend asset shared by compiler, CLI, formatter, REPL, and LSP;
+- a checked-in 99-file recognition and semantic/span golden initially captured from Peggy;
+- grammar-IR, generated-parser, and compiler integration tests that run without a second parser.
 
-The rest of the compiler should receive the existing TypeScript `Module` shape at
-first. Keep DTO translation in one adapter. Once v2 is established, the TypeScript
-surface types can evolve deliberately rather than forcing a simultaneous compiler
-rewrite.
+The rest of the compiler receives the existing TypeScript `Module` shape. Surface translation stays
+in one adapter so the generated tree can evolve deliberately.
 
-### Modes during rollout
+### Retired rollout modes
 
-Support three internal/test modes:
-
-- `v1`: Peggy only;
-- `v2`: WM frontend only;
-- `compare`: run both, use v1 for semantics initially, and report normalized
-  differences.
-
-The editor-facing v2 mode must be a real frontend replacement. Do not introduce a
-structural-only sidecar mode where frontend v2 parses for recovery or rendering
-while Peggy/v1 still feeds semantic analysis. That mode would make incomplete or
-new syntax appear recoverable in the editor without proving that typechecking,
-hover, imports, or module invalidation run through frontend v2.
-
-Do not expose long-lived user configuration unless it is needed for rollout. The
-goal is removal of v1, not permanent dual-parser product complexity.
+The former `v1`, `v2`, and `compare` selection has been removed. Frontend-v2 is the only Workman
+runtime parser. The executable Workman Peggy parser is deleted; the frozen compatibility golden
+retains its observable semantic/span baseline.
+No user-facing frontend selection remains.
 
 ## Frontend-first delivery plan
 
@@ -469,15 +447,15 @@ changes do not rewrite compiler integration.
 
 ### Grammar drift during migration
 
-Frontend v1 remains the compiler used to build v2 while v2 is replacing v1. Keep
-the v2 source within v1 syntax and run comparison continuously. Avoid adding new
-surface syntax solely to make the frontend implementation more convenient.
+Frontend v2 compiles its own generated artifact while v1 remains available for
+explicit migration comparison. Run comparison continuously until that runtime path
+is deleted. Avoid adding new surface syntax solely to make the frontend
+implementation more convenient.
 
 ### Circular build dependency
 
-The compiler can consume a previously built frontend-v2 artifact, but building that
-artifact must have a clear stage-0 path. Pin the bootstrap command/artifact policy
-before switching the default frontend.
+The tracked `src/generated/frontend_v2_parser.js` artifact is the clear stage-0
+path for `deno task frontend-v2:build`.
 
 ### Performance hidden by serialization
 

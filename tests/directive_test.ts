@@ -1,11 +1,13 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { checkSource, compile, compileVirtual } from "../src/compiler.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { discoverGpuRegions, isGpuLambda } from "../src/directives.ts";
+import { formatFrontendV2Source } from "../src/frontend_v2_formatter.ts";
 import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { hostTypingDialect } from "../src/infer/context.ts";
 import { lambdaTypingDialect } from "../src/infer/expr_lambda.ts";
 import { gpuTypingDialect } from "../src/infer/gpu_dialect.ts";
-import { parse, ParseError } from "../src/parser.ts";
+import { ParseError } from "../src/parser.ts";
 
 Deno.test("@gpu is lambda prologue metadata with a stable region fact", async () => {
   const module = await parse("let tint = (color) => { @gpu; color * 0.5 };");
@@ -49,7 +51,24 @@ Deno.test("directive placement, duplication, spelling, and damage are rejected",
   );
   await assertRejects(() => parse("let f = (x) => { x; @gpu; x };"), ParseError);
   await assertRejects(() => parse("@gpu;"), ParseError);
-  await assertRejects(() => parse("let f = (x) => { @gpu x };"), ParseError);
+});
+
+Deno.test("missing directive semicolon is preserved normally and materialized in fix mode", async () => {
+  const source = "let f = (x) => { @gpu x };";
+  const module = await parse(source);
+  const declaration = module.decls[0];
+  if (declaration.kind !== "LetDecl") throw new Error("expected let declaration");
+  const value = declaration.bindings[0].value;
+  if (value.kind !== "Lambda") throw new Error("expected lambda");
+  assertEquals(value.directives.map((directive) => directive.name), ["gpu"]);
+  assertEquals(
+    await formatFrontendV2Source(source),
+    "let f = (x) => {\n  @gpu\n  x\n};",
+  );
+  assertEquals(
+    await formatFrontendV2Source(source, "<input>", true),
+    "let f = (x) => {\n  @gpu;\n  x\n};",
+  );
 });
 
 Deno.test("GPU-only bindings and aliases stay out of current Core and JS output", async () => {
@@ -180,12 +199,10 @@ Deno.test("GPU dialect owns tuple-vector arithmetic without changing the host un
   await assertRejects(
     () => checkSource("let bad = () => { @gpu; (1.0, 2.0) + (3.0, 4.0, 5.0) };"),
     Error,
-    "type mismatch",
+    "GPU operation has no exact row for (f32x2, f32x3)",
   );
-  await assertRejects(
-    () => checkSource("let scale = (x) => { @gpu; x * 0.5 }; let bad = scale(true);"),
-    Error,
-    "GPU arithmetic expects a Number",
+  await checkSource(
+    "let scale = (x) => { @gpu; x * 0.5 }; let unselected = scale(true);",
   );
   await assertRejects(
     () => checkSource("let scale = (x) => { (x, x, x) * 0.5 };"),

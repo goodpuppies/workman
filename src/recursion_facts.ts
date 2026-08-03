@@ -224,6 +224,9 @@ class RecursionFactState {
         );
         this.walkExpr(expression.result, input, callerBindingId, visitNestedDeclaration);
         return;
+      case "Ascribed":
+        this.walkExpr(expression.value, input, callerBindingId, visitNestedDeclaration);
+        return;
       case "Binary":
         this.walkExpr(expression.left, input, callerBindingId, visitNestedDeclaration);
         this.walkExpr(expression.right, input, callerBindingId, visitNestedDeclaration);
@@ -341,6 +344,9 @@ function visitExprDeclarations(expression: Expr, visit: (declaration: Decl) => v
         isDecl(item) ? visit(item) : visitExprDeclarations(item, visit)
       );
       visitExprDeclarations(expression.result, visit);
+      return;
+    case "Ascribed":
+      visitExprDeclarations(expression.value, visit);
       return;
     case "Binary":
     case "Pipe":

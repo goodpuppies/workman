@@ -11,8 +11,7 @@ import {
   FrontendDiagnosticError,
   renderDiagnosticSummary,
 } from "../diagnostics.ts";
-import { structuralDiagnostics } from "../frontend_v2_diagnostics.ts";
-import { type FrontendV2, loadFrontendV2 } from "../frontend_v2_loader.ts";
+import { type FrontendV2Surface, loadFrontendV2Surface } from "../frontend_v2_surface_loader.ts";
 import type { ProjectSnapshot } from "../module_interface.ts";
 import { runtime } from "../io.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
@@ -21,6 +20,7 @@ import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
 import { semanticSourceForPath } from "./semantic_context.ts";
 import type { SemanticService } from "./semantic_service.ts";
+import { surfaceRecoveryDiagnostics } from "./surface_recovery.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type ValidationResult = {
@@ -142,9 +142,9 @@ async function validationResultsForProject(
   options: CompilerFrontendOptions,
   validationOptions: ValidationOptions,
 ): Promise<ValidationResult[]> {
-  const frontendV2 = options.frontend === "v2"
-    ? await loadFrontendV2(options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl)
-    : undefined;
+  const frontendV2 = options.surface === "wmsml" ? undefined : await loadFrontendV2Surface(
+    options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl,
+  );
   const gpuWarning = await unresolvedGpuTypeWarning(
     project,
     validationOptions.gpuTypeElaborator ?? elaborateProjectGpuSemantics,
@@ -245,25 +245,25 @@ async function unresolvedGpuTypeWarning(
 }
 
 const defaultFrontendV2ModuleUrl = new URL(
-  "../../tooling/frontend-v2/frontend-v2.generated.mjs",
+  "../generated/frontend_v2_parser.js",
   import.meta.url,
 );
 
 function structuralDiagnosticsFor(
-  frontend: Pick<FrontendV2, "parseStructural"> | undefined,
+  frontend: Pick<FrontendV2Surface, "parseSurfaceProgram"> | undefined,
   source: string,
   uri: string,
   validationOptions: ValidationOptions,
 ): LspDiagnostic[] {
   if (!frontend) return [];
-  const result = validationOptions.frontendV2ParseCache?.structural(
+  const version = validationOptions.documentVersion?.(uri);
+  const surface = validationOptions.frontendV2ParseCache?.surface(
     uri,
     source,
-    validationOptions.documentVersion?.(uri),
+    version,
     frontend,
-  ) ?? frontend.parseStructural(source);
-  return structuralDiagnostics(result, source)
-    .map((diagnostic) => lspDiagnostic(diagnostic, source, uri));
+  ) ?? frontend.parseSurfaceProgram(source);
+  return surfaceRecoveryDiagnostics(source, surface);
 }
 
 function diagnosticsFor(

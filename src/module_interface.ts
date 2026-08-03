@@ -8,6 +8,7 @@ import type {
 import { basisCtorId } from "./basis.ts";
 import { basisStructureId } from "./compiler_semantics.ts";
 import type { FrontendDiagnostic } from "./diagnostics.ts";
+import { resolveCompilerFrontend } from "./frontend_mode.ts";
 import { discoverGpuRegions } from "./directives.ts";
 import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
 import { isDecl } from "./infer/ast_utils.ts";
@@ -509,7 +510,7 @@ export type ProjectSnapshot = Readonly<{
 }>;
 
 export type ProjectConfiguration = Readonly<{
-  frontend: "v1" | "v2" | "compare";
+  frontend: "v2";
   surface: "workman" | "wmsml";
 }>;
 
@@ -688,7 +689,10 @@ export function buildProjectSnapshot(
     kind: context.kind ?? "headed",
     head: graph.entry,
     configuration: Object.freeze({
-      frontend: context.configuration?.frontend ?? "v1",
+      frontend: resolveCompilerFrontend(
+        context.configuration?.frontend,
+        context.configuration?.surface,
+      ),
       surface: context.configuration?.surface ?? "workman",
     }),
     basisGenerations: new Map(
@@ -1220,6 +1224,8 @@ function semanticInferredTypeHints(
       pattern.fields.forEach((field) => addPattern(field.pattern, kind, suppress));
     } else if (pattern.kind === "PCtor") {
       pattern.args.forEach((argument) => addPattern(argument, kind, suppress));
+    } else if (pattern.kind === "PAscribed") {
+      addPattern(pattern.pattern, kind, true);
     }
   };
   const visitDecl = (declaration: Decl) => {
@@ -1279,6 +1285,9 @@ function semanticInferredTypeHints(
       case "Block":
         expression.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
         visitExpr(expression.result);
+        return;
+      case "Ascribed":
+        visitExpr(expression.value, true);
         return;
       case "Binary":
         visitExpr(expression.left);
@@ -1406,6 +1415,9 @@ function semanticCallableParameters(
         case "Block":
           expression.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
           visitExpr(expression.result);
+          return;
+        case "Ascribed":
+          visitExpr(expression.value);
           return;
         case "Binary":
           visitExpr(expression.left);
@@ -1714,6 +1726,8 @@ function semanticParameterTargets(
       pattern.fields.forEach((field) => addPattern(field.pattern));
     } else if (pattern.kind === "PCtor") {
       pattern.args.forEach(addPattern);
+    } else if (pattern.kind === "PAscribed") {
+      addPattern(pattern.pattern);
     }
   };
   const visitDeclaration = (declaration: Decl): void => {
@@ -1765,6 +1779,9 @@ function semanticParameterTargets(
           isDecl(item) ? visitDeclaration(item) : visitExpression(item)
         );
         visitExpression(expression.result);
+        return;
+      case "Ascribed":
+        visitExpression(expression.value);
         return;
       case "Binary":
         visitExpression(expression.left);

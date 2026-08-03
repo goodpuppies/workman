@@ -196,7 +196,7 @@ type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
 let applyNativeEvent = (state: FrameState, event: NativeEvent) => {
   match(event) {
     QuitEvent => { PollDone(.{ ..state, quit = true }) },
-    MouseEvent(Var(dx), Var(dy)) => {
+    MouseEvent(dx, dy) => {
       PollAgain(panByMouse(state, dx, dy))
     },
     IgnoredEvent => { PollAgain(state) },

@@ -1,8 +1,8 @@
 # SML Syntax Updates 2026-07-24
 
-This note records agreed Workman syntax changes derived from the review of
-`docs/smlparallels.md` against the Revised Definition of Standard ML. It is an implementation and
-migration document, not user-facing language documentation.
+This note records agreed Workman syntax changes derived from the review of `docs/smlparallels.md`
+against the Revised Definition of Standard ML. It is an implementation and migration document, not
+user-facing language documentation.
 
 The design criterion is to keep SML features that add local expressive power through small,
 orthogonal rules. Workman does not need to reproduce complex SML machinery when files, imports,
@@ -38,8 +38,10 @@ General constraints extend that mechanism to precise nested locations. They impr
 document intermediate intent, constrain direct call arguments, and disambiguate nominal record
 literals.
 
-The implementation must decide how type-variable names introduced in arbitrary constraints are
-scoped. That decision should agree with existing annotation-variable behavior wherever possible.
+Type-variable names introduced by a general constraint are local to that one constraint site.
+Repeated names within the constraint refer to the same variable, but the same spelling in a separate
+constraint introduces a fresh variable. Existing let-group annotations and the parameter and result
+annotations of one lambda retain their wider shared scopes.
 
 Definition anchors:
 

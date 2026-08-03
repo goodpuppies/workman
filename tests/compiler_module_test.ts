@@ -173,7 +173,7 @@ Deno.test("staged FFI reinference rebuilds shared monotypes with consumer nomina
       "/test/runtime.wm",
       `
         from js.global("console") import unsafe {
-          log: (String) => Void
+          log: String -> Void
         } as Console;
 
         type Step<State> = | Continue<State>;
@@ -237,7 +237,7 @@ Deno.test("infers imported record projections in lifted callbacks", async () => 
   const result = results.get("/test/main.wm");
   if (!result) throw new Error("missing main result");
   expectBinding(result.env, "readQuit", {
-    type: "(Result<Game, 'a>) => Result<Bool, 'a>",
+    type: "Result<Game, 'a> -> Result<Bool, 'a>",
     vars: 0,
   });
 

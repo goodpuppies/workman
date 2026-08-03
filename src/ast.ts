@@ -152,7 +152,12 @@ export type Expr =
     sourceName?: string;
   }>
   | Located<{ kind: "Tuple"; items: Expr[] }>
-  | Located<{ kind: "Record"; fields: RecordExprItem[] }>
+  | Located<{
+    kind: "Record";
+    fields: RecordExprItem[];
+    /** Explicit nominal target from `RecordName{ ... }`; absent for inferred `.{ ... }`. */
+    target?: Extract<TypeExpr, { kind: "TName" }>;
+  }>
   | Located<{ kind: "JsonObject"; fields: JsonObjectField[] }>
   | Located<{ kind: "JsonArray"; items: Expr[] }>
   | Located<{ kind: "FfiGet"; receiver: Expr; path: string[] }>
@@ -176,6 +181,7 @@ export type Expr =
   | Located<{ kind: "Match"; value: Expr; arms: MatchArm[] }>
   | Located<{ kind: "Panic"; message: Expr }>
   | Located<{ kind: "Block"; items: (Decl | Expr)[]; result: Expr }>
+  | Located<{ kind: "Ascribed"; value: Expr; annotation: TypeExpr }>
   | Located<{ kind: "Binary"; op: string; left: Expr; right: Expr }>
   | Located<{ kind: "Unary"; op: string; value: Expr }>
   | Located<{ kind: "Pipe"; left: Expr; right: Expr }>;
@@ -198,7 +204,8 @@ export type Pattern =
   | Located<{ kind: "PPinned"; name: string; path?: LongId }>
   | Located<{ kind: "PTuple"; items: Pattern[] }>
   | Located<{ kind: "PRecord"; fields: RecordPatternField[] }>
-  | Located<{ kind: "PCtor"; name: string; path?: LongId; args: Pattern[] }>;
+  | Located<{ kind: "PCtor"; name: string; path?: LongId; args: Pattern[] }>
+  | Located<{ kind: "PAscribed"; pattern: Pattern; annotation: TypeExpr }>;
 
 export type RecordPatternField = Located<{ name: string; pattern: Pattern }>;
 export type TypeExpr =

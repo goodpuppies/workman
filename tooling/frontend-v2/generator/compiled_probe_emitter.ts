@@ -2,11 +2,16 @@ import type {
   GrammarExpression,
   WorkmanGrammarIr,
 } from "../../../scripts/frontend_v2_grammar_ir.ts";
+import type { RequiredTokenRecovery } from "./contract.ts";
 
 export function emitCompiledProbe(
   grammar: WorkmanGrammarIr,
   grammarHash: string,
+  recoveries: readonly RequiredTokenRecovery[],
 ): ReadonlyMap<string, string> {
+  const recoveryIndex = new Set(
+    recoveries.map(({ rule, token }) => recoveryKey(rule, token)),
+  );
   const files = new Map<string, string>();
   files.set(
     "compiled_probe_types.wm",
@@ -16,7 +21,7 @@ export function emitCompiledProbe(
       "",
     ].join("\n"),
   );
-  const modules = partitionRules(grammar.rules, 420);
+  const modules = partitionRules(grammar.rules, 420, recoveryIndex);
   for (const [index, rules] of modules.entries()) {
     files.set(
       moduleName(index),
@@ -26,8 +31,8 @@ export function emitCompiledProbe(
         'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
         "",
         ...rules.flatMap((rule) => [
-          `let rule_${rule.name} = (source: String, offset: Number, recover: Bool, parseRule): CompiledProbeMatch => {`,
-          indent(emitRuleExpression(rule.expression, rule.name), 1),
+          `let rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {`,
+          indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
           "};",
           "",
         ]),
@@ -48,36 +53,40 @@ function emitDispatch(
 ): string {
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
-    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, isCompleteProbe, completedCapture };',
+    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
     ...modules.map((_, index) => `from "./${moduleName(index)}" import * as Probe${index};`),
     "",
-    "let rec parseStrictCompiledRule = match(name, source, offset, ignoredRecover) => {",
+    "let rec parseStrictCompiledRule = match(name, source, offset, diagnose, ignoredRecover) => {",
     ...modules.flatMap((rules, index) =>
       rules.map((rule) => emitStrictDispatchRule(rule.name, index))
     ),
-    "  _ => { CompiledProbeNoMatch },",
+    '  (Var(name), Var(source), Var(offset), Var(diagnose), Var(ignoredRecover)) => { CompiledProbeNoMatch(offset, "known grammar rule", name) },',
     "};",
     "",
-    "let rec parseRecoveringCompiledRule = match(name, source, offset, recover) => {",
-    "  (Var(name), Var(source), Var(offset), false) => {",
-    "    parseStrictCompiledRule(name, source, offset, false)",
+    "let rec parseRecoveringCompiledRule = match(name, source, offset, diagnose, recover) => {",
+    "  (Var(name), Var(source), Var(offset), Var(diagnose), false) => {",
+    "    parseStrictCompiledRule(name, source, offset, diagnose, false)",
     "  },",
     ...modules.flatMap((rules, index) =>
       rules.map((rule) => emitRecoveringDispatchRule(rule.name, index))
     ),
-    "  _ => { CompiledProbeNoMatch },",
+    '  (Var(name), Var(source), Var(offset), Var(diagnose), Var(recover)) => { CompiledProbeNoMatch(offset, "known grammar rule", name) },',
     "};",
     "",
     "let recognizeCompiled = (source: String) => {",
-    '  isCompleteProbe(source, parseStrictCompiledRule("Start", source, 0, false))',
+    '  isCompleteProbe(source, parseStrictCompiledRule("Start", source, 0, false, false))',
     "};",
     "",
     "let parseCompiledCapture = (source: String): Option<CompiledCapture> => {",
-    '  completedCapture(source, parseStrictCompiledRule("Start", source, 0, false))',
+    '  completedCapture(source, parseStrictCompiledRule("Start", source, 0, false, false))',
     "};",
     "",
     "let parseRecoveringCompiledCapture = (source: String): Option<CompiledCapture> => {",
-    '  completedCapture(source, parseRecoveringCompiledRule("Start", source, 0, true))',
+    '  completedCapture(source, parseRecoveringCompiledRule("Start", source, 0, false, true))',
+    "};",
+    "",
+    "let parseCompiledFailure = (source: String): Option<CompiledParseFailure> => {",
+    '  compiledFailure(source, parseStrictCompiledRule("Start", source, 0, true, false))',
     "};",
     "",
   ].join("\n");
@@ -85,13 +94,13 @@ function emitDispatch(
 
 function emitStrictDispatchRule(ruleName: string, moduleIndex: number): string {
   const call =
-    `Probe${moduleIndex}.rule_${ruleName}(source, offset, false, parseStrictCompiledRule)`;
-  return `  ("${ruleName}", Var(source), Var(offset), Var(ignoredRecover)) => { wrapCompiledRule("${ruleName}", offset, ${call}) },`;
+    `Probe${moduleIndex}.rule_${ruleName}(source, offset, false, diagnose, parseStrictCompiledRule)`;
+  return `  ("${ruleName}", Var(source), Var(offset), Var(diagnose), Var(ignoredRecover)) => { wrapCompiledRule("${ruleName}", offset, ${call}) },`;
 }
 
 function emitRecoveringDispatchRule(ruleName: string, moduleIndex: number): string {
   const call = (recover: string) =>
-    `Probe${moduleIndex}.rule_${ruleName}(source, offset, ${recover}, parseRecoveringCompiledRule)`;
+    `Probe${moduleIndex}.rule_${ruleName}(source, offset, ${recover}, diagnose, parseRecoveringCompiledRule)`;
   let recovering = call("true");
   if (probeBeforeRecoveryRules.has(ruleName)) {
     const committed = ruleName === "Primary"
@@ -101,14 +110,15 @@ function emitRecoveringDispatchRule(ruleName: string, moduleIndex: number): stri
       call("true")
     } } else { matchCommittedRule((activeRecover) => { ${call("activeRecover")} }, true) }`;
   }
-  return `  ("${ruleName}", Var(source), Var(offset), true) => { wrapCompiledRule("${ruleName}", offset, ${recovering}) },`;
+  return `  ("${ruleName}", Var(source), Var(offset), Var(diagnose), true) => { wrapCompiledRule("${ruleName}", offset, ${recovering}) },`;
 }
 
 function emitRuleExpression(
   expression: GrammarExpression,
   ruleName: string,
+  recoveries: ReadonlySet<string>,
 ): string {
-  return emitExpression(expression, ruleName, "recover");
+  return emitExpression(expression, ruleName, "recover", recoveries);
 }
 
 type RecoveryMode = "recover" | "true" | "false";
@@ -117,13 +127,14 @@ function emitExpression(
   expression: GrammarExpression,
   ruleName: string,
   recoveryMode: RecoveryMode,
+  recoveries: ReadonlySet<string>,
 ): string {
   switch (expression.kind) {
     case "literal":
       if (expression.ignoreCase) {
         throw new Error("compiled probe does not support case-insensitive literals");
       }
-      if (isRecoverableLiteral(ruleName, expression.value)) {
+      if (recoveries.has(recoveryKey(ruleName, expression.value))) {
         if (expression.value === "{") {
           return `matchRecoverableOpeningBrace(${
             JSON.stringify(recoverySite(ruleName, expression.value))
@@ -135,7 +146,9 @@ function emitExpression(
           JSON.stringify(recoverySite(ruleName, expression.value))
         }, ${recoveryMode}, source, offset)`;
       }
-      return `matchLiteral(${numberList(codeUnits(expression.value))}, source, offset)`;
+      return `matchLiteral(${numberList(codeUnits(expression.value))}, ${
+        JSON.stringify(literalExpectation(expression.value))
+      }, ${JSON.stringify(ruleName)}, source, offset)`;
     case "class":
       if (expression.ignoreCase) {
         throw new Error("compiled probe does not support case-insensitive classes");
@@ -156,17 +169,24 @@ function emitExpression(
           }
           return `CodeRange(${start[0]}, ${end[0]})`;
         }).join(", ")
-      }], ${expression.inverted ? "true" : "false"}, source, offset)`;
+      }], ${expression.inverted ? "true" : "false"}, ${
+        JSON.stringify(
+          expression.inverted ? "a character outside the class" : "a character in the class",
+        )
+      }, ${JSON.stringify(ruleName)}, source, offset)`;
     case "any":
-      return "matchAnyCharacter(source, offset)";
+      return `matchAnyCharacter(${JSON.stringify(ruleName)}, source, offset)`;
     case "ruleRef":
-      return `parseRule(${JSON.stringify(expression.name)}, source, offset, ${recoveryMode})`;
+      return `parseRule(${
+        JSON.stringify(expression.name)
+      }, source, offset, diagnose, ${recoveryMode})`;
     case "sequence":
       return emitParserList(
         "matchSequence",
         expression.elements,
         ruleName,
         recoveryMode,
+        recoveries,
       );
     case "choice":
       if (ruleName === "BlockSeqItem" && recoveryMode !== "false") {
@@ -175,6 +195,7 @@ function emitExpression(
           expression.alternatives,
           ruleName,
           recoveryMode,
+          recoveries,
           [recoveryMode, "false"],
         );
       }
@@ -183,47 +204,47 @@ function emitExpression(
         expression.alternatives,
         ruleName,
         recoveryMode,
+        recoveries,
       );
     case "labeled":
       return [
-        `matchLabeled(${emitOptionalString(expression.label)}, (source, offset) => {`,
-        indent(emitExpression(expression.expression, ruleName, recoveryMode), 1),
-        "}, source, offset)",
+        `matchLabeled(${emitOptionalString(expression.label)},`,
+        indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
+        ")",
       ].join("\n");
     case "text":
       return [
-        "matchText((source, offset) => {",
-        indent(emitExpression(expression.expression, ruleName, recoveryMode), 1),
-        "}, source, offset)",
+        "matchText(",
+        indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
+        ", offset)",
       ].join("\n");
     case "group":
-      return emitExpression(expression.expression, ruleName, recoveryMode);
+      return emitExpression(expression.expression, ruleName, recoveryMode, recoveries);
     case "action":
       return [
-        `matchSyntaxAction(${JSON.stringify(expression.actionId)}, (source, offset) => {`,
-        indent(emitExpression(expression.expression, ruleName, recoveryMode), 1),
-        "}, source, offset)",
+        `matchSyntaxAction(${JSON.stringify(expression.actionId)},`,
+        indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
+        ")",
       ].join("\n");
     case "simpleNot":
-      return emitUnaryParser(
-        "matchNegativeLookahead",
-        expression.expression,
-        ruleName,
-        "false",
-      );
+      return [
+        "matchNegativeLookahead(",
+        indent(emitExpression(expression.expression, ruleName, "false", recoveries), 1),
+        ", offset)",
+      ].join("\n");
     case "optional":
-      return emitUnaryParser(
-        "matchOptional",
-        expression.expression,
-        ruleName,
-        "false",
-      );
+      return [
+        "matchOptional(",
+        indent(emitExpression(expression.expression, ruleName, "false", recoveries), 1),
+        ", diagnose, offset)",
+      ].join("\n");
     case "zeroOrMore":
       return emitUnaryParser(
         "matchRepeated",
         expression.expression,
         ruleName,
         recoveryRepetitionRules.has(ruleName) ? recoveryMode : "false",
+        recoveries,
       );
     case "oneOrMore":
       return emitUnaryParser(
@@ -231,9 +252,12 @@ function emitExpression(
         expression.expression,
         ruleName,
         "false",
+        recoveries,
       );
     case "semanticAnd":
-      return `matchSemanticPredicate(${JSON.stringify(expression.actionId)}, offset)`;
+      return `matchSemanticPredicate(${JSON.stringify(expression.actionId)}, ${
+        JSON.stringify(ruleName)
+      }, offset)`;
   }
 }
 
@@ -242,9 +266,15 @@ function emitParserList(
   expressions: readonly GrammarExpression[],
   ruleName: string,
   recoveryMode: RecoveryMode,
+  recoveries: ReadonlySet<string>,
   recoveryModes?: readonly RecoveryMode[],
 ): string {
-  if (expressions.length === 0) return `${combinator}([], source, offset)`;
+  const diagnosticArgument = combinator === "matchChoice" || combinator === "matchSequence"
+    ? "diagnose, "
+    : "";
+  if (expressions.length === 0) {
+    return `${combinator}([], ${diagnosticArgument}source, offset)`;
+  }
   return [
     `${combinator}([`,
     ...expressions.flatMap((expression, index) => [
@@ -254,12 +284,13 @@ function emitParserList(
           expression,
           ruleName,
           recoveryModes?.[index] ?? recoveryMode,
+          recoveries,
         ),
         2,
       ),
       "  },",
     ]),
-    "], source, offset)",
+    `], ${diagnosticArgument}source, offset)`,
   ].join("\n");
 }
 
@@ -268,23 +299,29 @@ function emitUnaryParser(
   expression: GrammarExpression,
   ruleName: string,
   recoveryMode: RecoveryMode,
+  recoveries: ReadonlySet<string>,
 ): string {
+  const diagnosticArgument = combinator === "matchRepeated" ||
+      combinator === "matchOneOrMore"
+    ? "diagnose, "
+    : "";
   return [
     `${combinator}((source, offset) => {`,
-    indent(emitExpression(expression, ruleName, recoveryMode), 1),
-    "}, source, offset)",
+    indent(emitExpression(expression, ruleName, recoveryMode, recoveries), 1),
+    `}, ${diagnosticArgument}source, offset)`,
   ].join("\n");
 }
 
 function partitionRules(
   rules: WorkmanGrammarIr["rules"],
   maximumLines: number,
+  recoveries: ReadonlySet<string>,
 ): readonly (readonly WorkmanGrammarIr["rules"][number][])[] {
   const modules: WorkmanGrammarIr["rules"][number][][] = [];
   let current: WorkmanGrammarIr["rules"][number][] = [];
   let currentLines = 4;
   for (const rule of rules) {
-    const lines = emitRuleExpression(rule.expression, rule.name).split("\n").length + 4;
+    const lines = emitRuleExpression(rule.expression, rule.name, recoveries).split("\n").length + 4;
     if (current.length > 0 && currentLines + lines > maximumLines) {
       modules.push(current);
       current = [];
@@ -296,21 +333,6 @@ function partitionRules(
   if (current.length > 0) modules.push(current);
   return modules;
 }
-
-const recoverableBraceRules = new Set([
-  "ImportClause",
-  "JsImportClauseBody",
-  "RecordDecl",
-  "MatchExpr",
-  "MatchFn",
-  "LambdaBlock",
-  "JsonExpr",
-  "RecordExpr",
-  "Block",
-  "RecordPattern",
-  "RecordLetPattern",
-  "RecordParamPattern",
-]);
 
 const probeBeforeRecoveryRules = new Set([
   "Start",
@@ -325,12 +347,8 @@ const recoveryRepetitionRules = new Set([
   "BlockSeqBody",
 ]);
 
-function isRecoverableLiteral(ruleName: string, value: string): boolean {
-  if (value === ";") {
-    return ruleName === "TopPhrase" || ruleName === "SemiToken";
-  }
-  return (value === "{" || value === "}") &&
-    recoverableBraceRules.has(ruleName);
+function recoveryKey(ruleName: string, value: string): string {
+  return `${ruleName}\u0000${value}`;
 }
 
 function recoverySite(ruleName: string, value: string): string {
@@ -358,6 +376,13 @@ function indent(value: string, depth: number): string {
 
 function codeUnits(value: string): number[] {
   return Array.from({ length: value.length }, (_, index) => value.charCodeAt(index));
+}
+
+function literalExpectation(value: string): string {
+  const codes = codeUnits(value);
+  return codes.some((code) => code < 32 || code === 127)
+    ? `character sequence ${codes.join(",")}`
+    : value;
 }
 
 function numberList(values: readonly number[]): string {

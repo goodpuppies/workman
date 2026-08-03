@@ -47,6 +47,8 @@ export function findAccidentalMatchFnInFunction(
     }
     case "Panic":
       return findAccidentalMatchFnInFunction(expr.message);
+    case "Ascribed":
+      return findAccidentalMatchFnInFunction(expr.value);
     case "Binary":
       return findAccidentalMatchFnInFunction(expr.left) ??
         findAccidentalMatchFnInFunction(expr.right);

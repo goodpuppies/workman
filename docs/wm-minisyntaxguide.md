@@ -702,7 +702,7 @@ from js.global("Math") import { max as jsmax, floor };
 from js.global("Math") import * as Math;
 
 -- Manual type annotations are available when needed
-from js.global("console") import { log: (String, Number) => Void } as console;
+from js.global("console") import { log: (String, Number) -> Void } as console;
 
 -- Import types
 from "./option.wm" import { Option, Some, None };
@@ -805,12 +805,12 @@ let makePoint = (x: Number, y: Number) => { .{ x, y } };
 let pointX = (p: Point) => { p.x };
 
 -- Equivalent function return annotations
-let first: (Void) => Bool = () => { true };
+let first: Void -> Bool = () => { true };
 let second = (): Bool => { true };
 let third = () => { true }: Bool;
 
 -- Annotation positions can be combined when they agree
-let checked: (Void) => Bool = (): Bool => { true }: Bool;
+let checked: Void -> Bool = (): Bool => { true }: Bool;
 ```
 
 ### 8. Out of Scope (for now)
@@ -844,19 +844,19 @@ type Usize;
 
 #### Function Type Annotations
 
-**Partially supported.** Parameter annotations are supported. Full binding-level function
-annotations and return annotations in the examples below are not supported yet.
+Function types use `->`; lambda and match arrows remain `=>`. The type arrow associates to the
+right, and a higher-order domain is grouped explicitly, as in `(A -> B) -> C`.
 
 Annotate function bindings with their full signature:
 
 ```workman
--- Function type annotation: (params) => ReturnType
-let zig_gpa_init: (Void) => GpaHandle = ?;
-let zig_gpa_deinit: (Ptr<GpaHandle, s>) => Void = ?;
+-- Function type annotation: Domain -> ReturnType
+let zig_gpa_init: Void -> GpaHandle = ?;
+let zig_gpa_deinit: Ptr<GpaHandle, s> -> Void = ?;
 
 -- Multiple parameters
-let zig_gpa_create: (Ptr<GpaHandle, s>, t) => Ptr<t, s> = ?;
-let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) => Slice<t, s> = ?;
+let zig_gpa_create: (Ptr<GpaHandle, s>, t) -> Ptr<t, s> = ?;
+let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) -> Slice<t, s> = ?;
 ```
 
 #### Lowercase vs Uppercase in Types
@@ -866,7 +866,7 @@ let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) => Slice<t, s> = ?;
 
 ```workman
 -- 't' and 's' are type variables (generic parameters)
-let zig_gpa_create: (Ptr<GpaHandle, s>, t) => Ptr<t, s> = ?;
+let zig_gpa_create: (Ptr<GpaHandle, s>, t) -> Ptr<t, s> = ?;
 
 -- 'T' would refer to a specific type constructor named T
 type Container<T> = Empty | Full<T>;
@@ -883,11 +883,11 @@ typecheck(but workman has no defined runtime support):
 
 ```workman
 -- Hole expression: placeholder for unimplemented value
-let zig_gpa_init: (Void) => GpaHandle = ?;
-let zig_free: (Ptr<t, s>) => () = ?;
+let zig_gpa_init: Void -> GpaHandle = ?;
+let zig_free: Ptr<t, s> -> Void = ?;
 
 -- Useful during development
-let todoFunction: (Number) => String = ?;
+let todoFunction: Number -> String = ?;
 
 -- The typechecker infers what type the hole must be
 let calculate = (x: Number): Number => {
@@ -949,25 +949,23 @@ let wrong = "Hello" + " World";  -- This is arithmetic!
 let right = "Hello" ++ " " ++ "World";
 ```
 
-### 11. Type Assertions Use `as`
+### 11. Type Constraints Use `:`
 
-**Not supported yet in current `wm-mini`.** Prefer annotations on `let` bindings or lambda
-parameters for now.
-
-Use `as` to ask the typechecker to verify that an expression already has a specific type:
+Use `:` to require an expression or pattern to have a specific type:
 
 ```workman
-let x = someValue as Number;
-let result = compute() as Option<String>;
+let x = (someValue : Number);
+let result = compute() : Option<String>;
 
--- Useful for disambiguating polymorphic expressions
-let empty = [] as List<Number>;
+match(result) {
+  (Some(value) : Option<String>) => { value },
+  None => { "" },
+}
 ```
 
-`as` is not a runtime cast. It must not allow unsafe conversions such as `number as String`, and it
-must not be used to turn dynamic JS/JSON data into a Workman record or primitive. Dynamic data needs
-an explicit runtime validation function that returns a typed value, such as a future whole-shape
-JSON assertion.
+This is a compile-time equality constraint, not a runtime cast or conversion. It cannot turn dynamic
+JS/JSON data into a Workman record or primitive; use an explicit runtime validator such as
+`Json.assert` for dynamic data.
 
 ### 12. Panic for Unrecoverable Errors
 

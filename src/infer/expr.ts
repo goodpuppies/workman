@@ -42,6 +42,7 @@ import {
   recordOperatorFact,
 } from "./type_facts.ts";
 import { gpuOperatorId } from "../gpu_operators.ts";
+import { elaborateConstraint } from "./constraints.ts";
 
 export function inferExpr(expr: Expr, context: InferContext): Ty {
   try {
@@ -130,6 +131,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
               warnings,
               diagnostics,
               facts,
+              context.strEnv,
             );
           }
           return inferExpr(value, context);
@@ -138,6 +140,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         warnings,
         diagnostics,
         facts,
+        context.strEnv,
       );
       break;
     case "JsonObject":
@@ -378,6 +381,52 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         context,
       );
       break;
+    case "Ascribed": {
+      const annotation = elaborateConstraint(expr.annotation, context, expr.node);
+      recordExpectedExprType(facts, expr.value, annotation);
+      const inferRecordValue = (value: Expr, expected?: Ty): Ty => {
+        if (expected) recordExpectedExprType(facts, value, expected);
+        if (expected && value.kind === "Record") {
+          return inferRecordExpr(
+            value,
+            typeEnv,
+            inferRecordValue,
+            expected,
+            warnings,
+            diagnostics,
+            facts,
+            context.strEnv,
+          );
+        }
+        return inferExpr(value, context);
+      };
+      t = expr.value.kind === "Record"
+        ? inferRecordExpr(
+          expr.value,
+          typeEnv,
+          inferRecordValue,
+          annotation,
+          warnings,
+          diagnostics,
+          facts,
+          context.strEnv,
+        )
+        : inferExpr(expr.value, context);
+      constrainAt(t, annotation, expr, undefined, [], provenance, {
+        message: "expression type constraint",
+        node: expr.node,
+        span: expr.node?.span,
+      }, {
+        premise: {
+          rule: "InferConstraint.Expression",
+          role: "expression matches written type constraint",
+          subject: "expression type constraint",
+          leftRole: "expression",
+          rightRole: "written type",
+        },
+      });
+      break;
+    }
     case "Binary":
       t = inferBinary(
         expr,

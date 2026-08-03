@@ -1,0 +1,298 @@
+from "./compiled_probe_runtime.wm" import {
+  CompiledCapture, EmptyCompiledCapture, TokenCompiledCapture,
+  MissingCompiledCapture,
+  SequenceCompiledCapture, ChoiceCompiledCapture, OptionalCompiledCapture,
+  RepeatedCompiledCapture, LabeledCompiledCapture, ActionCompiledCapture,
+  RuleCompiledCapture, textLength, codeAt
+};
+from "./generated/compiled_probe_dispatch.wm" import {
+  parseCompiledCapture as parseGeneratedCapture,
+  parseRecoveringCompiledCapture as parseRecoveringGeneratedCapture
+};
+from "./generated/surface_types.wm" import {
+  SurfaceProgram, RecoveryMark, AutoFix
+};
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
+from "./surface_builder_support.wm" import {
+  reverseInto, slice, token, recoveryToken
+};
+from "./surface_builder_dispatch.wm" import { buildRuleValue };
+
+let isPreambleWhitespace = (code: Number) => {
+  code == 9 || code == 10 || code == 13 || code == 32
+};
+
+let rec firstNonWhitespaceOffset = (source: String, offset: Number, length: Number) => {
+  if (offset >= length) {
+    offset
+  } else {
+    if (isPreambleWhitespace(codeAt(source, offset))) {
+      firstNonWhitespaceOffset(source, offset + 1, length)
+    } else {
+      offset
+    }
+  }
+};
+
+let rec directiveTailIsWhitespace = (source: String, offset: Number, length: Number) => {
+  if (offset >= length) {
+    true
+  } else {
+    let code = codeAt(source, offset);
+    if (code == 10) {
+      true
+    } else {
+      if (code == 9 || code == 13 || code == 32) {
+        directiveTailIsWhitespace(source, offset + 1, length)
+      } else {
+        false
+      }
+    }
+  }
+};
+
+let preservedPreamble = (source: String) => {
+  let length = textLength(source);
+  let start = firstNonWhitespaceOffset(source, 0, length);
+  let end = start + 14;
+  let line = slice(source, start, end);
+  if (
+    (line == "-- @no-prelude" || line == "// @no-prelude") &&
+    directiveTailIsWhitespace(source, end, length)
+  ) {
+    line ++ "\n"
+  } else {
+    ""
+  }
+};
+
+record SurfaceBuildState = {
+  nextRecoveryId: Number,
+  marksReversed: List<RecoveryMark>,
+};
+
+record SurfaceBuildResult = {
+  value: ParseValue,
+  state: SurfaceBuildState,
+};
+
+let buildResult = (
+  value: ParseValue,
+  state: SurfaceBuildState,
+) => {
+  let result: SurfaceBuildResult = .{ value = value, state = state };
+  result
+};
+
+let rec buildCompiledCaptureList = match(captures, source, state, reversed) => {
+  ([], Var(source), Var(state), Var(reversed)) => {
+    (reverseInto(reversed, []), state)
+  },
+  ([capture, ..rest], Var(source), Var(state), Var(reversed)) => {
+    let built = buildCompiledCapture(capture, source, state);
+    buildCompiledCaptureList(
+      rest,
+      source,
+      built.state,
+      [built.value, ..reversed],
+    )
+  },
+}
+and buildCompiledCapture = match(capture, source, state) => {
+  (EmptyCompiledCapture, Var(source), Var(state)) => {
+    buildResult(EmptyParseValue, state)
+  },
+  (TokenCompiledCapture(kind, start, end), Var(source), Var(state)) => {
+    buildResult(TokenParseValue(token(source, start, end, kind)), state)
+  },
+  (MissingCompiledCapture(expectedText, anchor, site), Var(source), Var(state)) => {
+    let recoveryId = state.nextRecoveryId;
+    let mark: RecoveryMark = .{
+      id = recoveryId,
+      anchor = anchor,
+      expectedText = expectedText,
+      rule = site,
+      repairClass = AutoFix,
+    };
+    let nextState: SurfaceBuildState = .{
+      nextRecoveryId = recoveryId + 1,
+      marksReversed = [mark, ..state.marksReversed],
+    };
+    buildResult(
+      TokenParseValue(recoveryToken(expectedText, anchor, recoveryId)),
+      nextState,
+    )
+  },
+  (SequenceCompiledCapture(captures), Var(source), Var(state)) => {
+    let (values, nextState) = buildCompiledCaptureList(
+      captures,
+      source,
+      state,
+      [],
+    );
+    buildResult(SequenceParseValue(values), nextState)
+  },
+  (ChoiceCompiledCapture(index, inner), Var(source), Var(state)) => {
+    let built = buildCompiledCapture(inner, source, state);
+    buildResult(ChoiceParseValue(index, built.value), built.state)
+  },
+  (OptionalCompiledCapture(Some(inner)), Var(source), Var(state)) => {
+    let built = buildCompiledCapture(inner, source, state);
+    buildResult(OptionalParseValue(Some(built.value)), built.state)
+  },
+  (OptionalCompiledCapture(None), Var(source), Var(state)) => {
+    buildResult(OptionalParseValue(None), state)
+  },
+  (RepeatedCompiledCapture(captures), Var(source), Var(state)) => {
+    let (values, nextState) = buildCompiledCaptureList(
+      captures,
+      source,
+      state,
+      [],
+    );
+    buildResult(RepeatedParseValue(values), nextState)
+  },
+  (LabeledCompiledCapture(label, inner), Var(source), Var(state)) => {
+    buildCompiledCapture(inner, source, state)
+  },
+  (ActionCompiledCapture(actionId, inner), Var(source), Var(state)) => {
+    buildCompiledCapture(inner, source, state)
+  },
+  (RuleCompiledCapture(name, inner, start, end), Var(source), Var(state)) => {
+    let built = buildCompiledCapture(inner, source, state);
+    buildResult(
+      buildRuleValue(
+        name,
+        built.value,
+        .{ start = start, end = end },
+        source,
+      ),
+      built.state,
+    )
+  },
+};
+
+let parseCapture = (source: String) => {
+  match(parseRecoveringGeneratedCapture(source)) {
+    Some(capture) => {
+      let initial: SurfaceBuildState = .{
+        nextRecoveryId = 1,
+        marksReversed = [],
+      };
+      Some(buildCompiledCapture(capture, source, initial))
+    },
+    None => { None },
+  }
+};
+
+let isFingerprintTrivia = (name: String) => {
+  name == "__" || name == "_" || name == "Whitespace" || name == "Comment" ||
+  name == "EOF"
+};
+
+let rec compiledFingerprintList = match(captures, source, ignored, output) => {
+  ([], Var(source), Var(ignored), Var(output)) => { output },
+  ([capture, ..rest], Var(source), Var(ignored), Var(output)) => {
+    compiledFingerprintList(
+      rest,
+      source,
+      ignored,
+      output ++ compiledFingerprint(capture, source, ignored),
+    )
+  },
+}
+and compiledFingerprint = match(capture, source, ignored) => {
+  (EmptyCompiledCapture, Var(source), Var(ignored)) => { "" },
+  (TokenCompiledCapture(kind, start, end), Var(source), Var(ignored)) => {
+    if (ignored) { "" } else { slice(source, start, end) }
+  },
+  (MissingCompiledCapture(expectedText, anchor, site), Var(source), Var(ignored)) => {
+    ""
+  },
+  (SequenceCompiledCapture(captures), Var(source), Var(ignored)) => {
+    compiledFingerprintList(captures, source, ignored, "")
+  },
+  (ChoiceCompiledCapture(index, inner), Var(source), Var(ignored)) => {
+    compiledFingerprint(inner, source, ignored)
+  },
+  (OptionalCompiledCapture(Some(inner)), Var(source), Var(ignored)) => {
+    compiledFingerprint(inner, source, ignored)
+  },
+  (OptionalCompiledCapture(None), Var(source), Var(ignored)) => { "" },
+  (RepeatedCompiledCapture(captures), Var(source), Var(ignored)) => {
+    compiledFingerprintList(captures, source, ignored, "")
+  },
+  (LabeledCompiledCapture(label, inner), Var(source), Var(ignored)) => {
+    compiledFingerprint(inner, source, ignored)
+  },
+  (ActionCompiledCapture(actionId, inner), Var(source), Var(ignored)) => {
+    compiledFingerprint(inner, source, ignored)
+  },
+  (RuleCompiledCapture(name, inner, start, end), Var(source), Var(ignored)) => {
+    compiledFingerprint(inner, source, ignored || isFingerprintTrivia(name))
+  },
+};
+
+let surfaceSyntaxFingerprint = (source: String) => {
+  match(parseGeneratedCapture(source)) {
+    Some(capture) => { Some(compiledFingerprint(capture, source, false)) },
+    None => { None },
+  }
+};
+
+let rec firstConstructionGapInList = match(values) => {
+  [] => { None },
+  [value, ..rest] => {
+    match(firstConstructionGap(value)) {
+      Some(name) => { Some(name) },
+      None => { firstConstructionGapInList(rest) },
+    }
+  },
+}
+and firstConstructionGap = match(value) => {
+  RuleParseValue(name, inner, span) => {
+    match(firstConstructionGap(inner)) {
+      Some(innerName) => { Some(innerName) },
+      None => { Some(name) },
+    }
+  },
+  SequenceParseValue(values) => { firstConstructionGapInList(values) },
+  ChoiceParseValue(index, inner) => { firstConstructionGap(inner) },
+  OptionalParseValue(Some(inner)) => { firstConstructionGap(inner) },
+  OptionalParseValue(None) => { None },
+  RepeatedParseValue(values) => { firstConstructionGapInList(values) },
+  _ => { None },
+};
+
+let surfaceConstructionGap = (source: String) => {
+  match(parseCapture(source)) {
+    Some(built) => { firstConstructionGap(built.value) },
+    None => { Some("<recognition>") },
+  }
+};
+
+let parseSurfaceProgram = (source: String) => {
+  match(parseCapture(source)) {
+    Some(built) => {
+      match(built.value) {
+        NodeParseValue(root) => {
+          let program: SurfaceProgram = .{
+            root = root,
+            marks = reverseInto(built.state.marksReversed, []),
+            preamble = preservedPreamble(source),
+          };
+          Some(program)
+        },
+        _ => { None },
+      }
+    },
+    None => { None },
+  }
+};
+
+let parsesSurfaceSyntax = (source: String) => {
+  match(parseGeneratedCapture(source)) {
+    Some(_) => { true },
+    None => { false },
+  }
+};

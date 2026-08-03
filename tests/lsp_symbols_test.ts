@@ -117,7 +117,7 @@ Deno.test("lsp type definition returns each nominal component of a composite typ
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
   const source = "record Left = { value: Number }; record Right = { value: String }; " +
-    "let pair = (Left(1), Right(\"x\")); let use = pair;";
+    'let pair = (Left(1), Right("x")); let use = pair;';
   await Deno.writeTextFile(path, source);
 
   const definitions = await typeDefinitionAt(
@@ -126,9 +126,10 @@ Deno.test("lsp type definition returns each nominal component of a composite typ
     new Map(),
   );
 
-  assertEquals(definitions.map(({ range }) =>
-    source.slice(range.start.character, range.end.character)
-  ), ["Left", "Right"]);
+  assertEquals(
+    definitions.map(({ range }) => source.slice(range.start.character, range.end.character)),
+    ["Left", "Right"],
+  );
 });
 
 Deno.test("lsp type definition uses certified recovered types and ignores primitives", async () => {
@@ -142,9 +143,10 @@ Deno.test("lsp type definition uses certified recovered types and ignores primit
   const nominal = await typeDefinitionAt(uri, positionOf(source, "good;"), new Map());
   const primitive = await typeDefinitionAt(uri, positionOf(source, "primitive ="), new Map());
 
-  assertEquals(nominal.map(({ range }) =>
-    source.slice(range.start.character, range.end.character)
-  ), ["Good"]);
+  assertEquals(
+    nominal.map(({ range }) => source.slice(range.start.character, range.end.character)),
+    ["Good"],
+  );
   assertEquals(primitive, []);
 });
 
@@ -174,14 +176,17 @@ Deno.test("lsp document highlights classify declarations and reads", async () =>
     new Map(),
   );
 
-  assertEquals(highlights.map(({ range, kind }) => ({
-    text: source.slice(range.start.character, range.end.character),
-    kind,
-  })), [
-    { text: "value", kind: 3 },
-    { text: "value", kind: 2 },
-    { text: "value", kind: 2 },
-  ]);
+  assertEquals(
+    highlights.map(({ range, kind }) => ({
+      text: source.slice(range.start.character, range.end.character),
+      kind,
+    })),
+    [
+      { text: "value", kind: 3 },
+      { text: "value", kind: 2 },
+      { text: "value", kind: 2 },
+    ],
+  );
 });
 
 Deno.test("lsp document highlights preserve local import-alias selection", async () => {
@@ -196,21 +201,27 @@ Deno.test("lsp document highlights preserve local import-alias selection", async
   const alias = await documentHighlightsAt(uri, positionOf(source, "plus(1"), new Map());
   const target = await documentHighlightsAt(uri, positionOf(source, "add as"), new Map());
 
-  assertEquals(alias.map(({ range, kind }) => ({
-    text: source.slice(range.start.character, range.end.character),
-    kind,
-  })), [
-    { text: "plus", kind: 3 },
-    { text: "plus", kind: 2 },
-  ]);
-  assertEquals(target.map(({ range, kind }) => ({
-    text: source.slice(range.start.character, range.end.character),
-    kind,
-  })), [
-    { text: "add", kind: 2 },
-    { text: "plus", kind: 3 },
-    { text: "plus", kind: 2 },
-  ]);
+  assertEquals(
+    alias.map(({ range, kind }) => ({
+      text: source.slice(range.start.character, range.end.character),
+      kind,
+    })),
+    [
+      { text: "plus", kind: 3 },
+      { text: "plus", kind: 2 },
+    ],
+  );
+  assertEquals(
+    target.map(({ range, kind }) => ({
+      text: source.slice(range.start.character, range.end.character),
+      kind,
+    })),
+    [
+      { text: "add", kind: 2 },
+      { text: "plus", kind: 3 },
+      { text: "plus", kind: 2 },
+    ],
+  );
 });
 
 Deno.test("lsp document highlights use certified and deterministic field identities", async () => {
@@ -231,13 +242,16 @@ Deno.test("lsp document highlights use certified and deterministic field identit
     new Map(),
   );
 
-  assertEquals(highlights.map(({ range, kind }) => ({
-    text: source.slice(range.start.character, range.end.character),
-    kind,
-  })), [
-    { text: "x", kind: 3 },
-    { text: "x", kind: 2 },
-  ]);
+  assertEquals(
+    highlights.map(({ range, kind }) => ({
+      text: source.slice(range.start.character, range.end.character),
+      kind,
+    })),
+    [
+      { text: "x", kind: 3 },
+      { text: "x", kind: 2 },
+    ],
+  );
   assertEquals(definition?.range.start.character, source.indexOf("x: Number"));
 });
 
@@ -274,16 +288,19 @@ Deno.test("lsp rename edits one compiler-selected local binding group", async ()
   const renamed = await renameAt(uri, positionOf(source, "value;"), "answer", new Map());
 
   assertEquals(prepared?.placeholder, "value");
-  assertEquals(renamed?.changes[uri].map((edit) => ({
-    text: source.slice(
-      edit.range.start.character,
-      edit.range.end.character,
-    ),
-    newText: edit.newText,
-  })), [
-    { text: "value", newText: "answer" },
-    { text: "value", newText: "answer" },
-  ]);
+  assertEquals(
+    renamed?.changes[uri].map((edit) => ({
+      text: source.slice(
+        edit.range.start.character,
+        edit.range.end.character,
+      ),
+      newText: edit.newText,
+    })),
+    [
+      { text: "value", newText: "answer" },
+      { text: "value", newText: "answer" },
+    ],
+  );
 });
 
 Deno.test("lsp rename distinguishes a local named-import alias from its target", async () => {
@@ -304,9 +321,12 @@ Deno.test("lsp rename distinguishes a local named-import alias from its target",
     new Map(),
   );
   assertEquals(Object.keys(local?.changes ?? {}), [mainUri]);
-  assertEquals(local?.changes[mainUri].map((edit) =>
-    mainSource.slice(edit.range.start.character, edit.range.end.character)
-  ), ["plus", "plus"]);
+  assertEquals(
+    local?.changes[mainUri].map((edit) =>
+      mainSource.slice(edit.range.start.character, edit.range.end.character)
+    ),
+    ["plus", "plus"],
+  );
 
   const target = await renameAt(
     mainUri,
@@ -315,12 +335,18 @@ Deno.test("lsp rename distinguishes a local named-import alias from its target",
     new Map(),
   );
   assertEquals(Object.keys(target?.changes ?? {}).sort(), [libUri, mainUri].sort());
-  assertEquals(target?.changes[libUri].map((edit) =>
-    libSource.slice(edit.range.start.character, edit.range.end.character)
-  ), ["add"]);
-  assertEquals(target?.changes[mainUri].map((edit) =>
-    mainSource.slice(edit.range.start.character, edit.range.end.character)
-  ), ["add"]);
+  assertEquals(
+    target?.changes[libUri].map((edit) =>
+      libSource.slice(edit.range.start.character, edit.range.end.character)
+    ),
+    ["add"],
+  );
+  assertEquals(
+    target?.changes[mainUri].map((edit) =>
+      mainSource.slice(edit.range.start.character, edit.range.end.character)
+    ),
+    ["add"],
+  );
 });
 
 Deno.test("lsp rename covers namespace aliases and nominal record fields", async () => {

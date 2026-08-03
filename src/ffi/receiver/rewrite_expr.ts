@@ -361,6 +361,8 @@ export function rewriteExprCalls(
         rewriteDeclCalls,
         rewriteExprCalls,
       );
+    case "Ascribed":
+      return { ...expr, value: rewrite(expr.value) };
     case "Binary":
       return {
         ...expr,

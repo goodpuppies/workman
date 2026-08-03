@@ -4,11 +4,13 @@
 
 The first shipping milestone is deliberately narrow:
 
-1. **Peggy recognition parity.** The generator covers the complete Peggy grammar with no unknown or
-   unemitted rule, and frontend-v2 matches Peggy recognition for every `.wm` file under `examples`.
+1. **Peggy-derived recognition parity.** The generator covers the complete Peggy grammar with no
+   unknown or unemitted rule, and frontend-v2 matches the frozen Peggy-derived acceptance set for
+   every `.wm` file under `examples`.
    There is no hand-selected grammar subset. Small positive/negative cases may test individual
    generator combinators, but they do not define parity. Targeted tolerant recovery is tested
-   separately. This checkpoint does not require reproducing Peggy's semantic AST or desugarings.
+   separately. This checkpoint does not require reproducing Peggy's semantic AST or desugarings;
+   the semantic/span golden is additional evidence for the later compiler-parser migration.
 2. **Canonical whitespace formatting.** The parity-complete syntax tree can regenerate valid source
    with the initial canonical spacing, indentation, and line-break rules.
 3. **Three targeted recovery marks.** At committed grammar positions, missing `;`, `{`, and `}`
@@ -30,6 +32,54 @@ Work is eligible for the first milestone only when it directly supports:
 
 When a broader architectural improvement is useful but not necessary for this milestone, record it
 as follow-up work rather than placing it on the critical path.
+
+## Parser direction
+
+Frontend-v2 is intended to become Workman's runtime parser, not remain a formatter-only sidecar.
+After the first formatter slice, generally keep pushing the generated parser forward: parser fixes,
+new syntax, diagnostics, recovery, losslessness, totality, and performance work should make
+frontend-v2 more capable. Do not introduce a second Workman runtime path or behavior that exists
+only in a parallel parser.
+
+Frontend-v2 is the only Workman runtime parser, and the executable Workman Peggy parser has been
+deleted. Peggy remains only as build-time infrastructure that supplies the grammar AST to the
+frontend-v2 generator; it also generates the separate WMSML parser. The original 99-file Peggy
+recognition and normalized semantic/span result is retained as a checked-in golden. This longer
+migration did not expand the first formatter slice's shipping gate.
+
+The migration order is: project the generated Surface tree to the compiler AST, prove compatible
+compiler behavior and source locations, retain useful generated failure provenance, move diagnostics
+to the same tree, soak it as the default runtime frontend, then delete Peggy runtime parsing and the
+transitional handwritten parser. Equivalent implementation details are not required when the
+observable compiler result is the same.
+
+Current migration state: the generated parser is packaged and is the default compiler, CLI, REPL,
+and sole LSP frontend; the transitional handwritten parser and explicit compiler `v1` path are
+removed. The LSP and VS Code extension no longer expose frontend selection, and production compiler
+`compare` mode is replaced by grammar-IR, semantic-golden, and generated-parser conformance tests.
+The executable Workman Peggy parser and artifact are deleted. Ordinary compiler, Core, inference,
+FFI, module, binding-fact, directive, and wmslang tests parse through frontend-v2. The tracked
+frontend-v2 artifact is stage 0 for its byte-identical self-hosted rebuild, so normal frontend
+regeneration does not parse Workman through Peggy. Generated matcher wrappers are evaluated without
+retaining inert JavaScript frames, so the runtime parses its own deeply nested generated rule
+modules within the normal stack and keeps those modules in the repository-wide golden corpus. The
+complete default-frontend repository release soak passes all 856 tests.
+
+Ongoing parser work follows four rules:
+
+1. Change the grammar and generator so frontend-v2 receives each syntax fix directly.
+2. Keep the exact repository corpus and semantic/span golden synchronized through explicit reviewed
+   snapshot changes.
+3. Improve recovery, diagnostics, losslessness, totality, and performance incrementally; they are
+   not all gates on the first formatter release.
+4. Do not reintroduce an executable Workman parser beside frontend-v2.
+
+The first post-release parser slice moves the existing 26 missing-`;`/brace sites out of
+emitter-internal rule lists and into the validated recovery-annotation inventory. The report and
+generated manifest now expose those sites, and regeneration remains byte-identical. Next, derive
+conservative continuation/FIRST evidence and use it for one additional committed exact-token family,
+starting with closing `)`. General islands and arbitrary malformed-input totality remain independent
+later work.
 
 ## Outcome
 
@@ -145,9 +195,10 @@ resolution are deferred. The formatter does not reinterpret `2 3` as `2 ? 3`.
 7. **Projection, not reinterpretation.** Rendering a fallback never creates a new parse decision.
 8. **Stability and preservation.** Each implemented mode's emitted text is idempotent. Formatting
    valid source preserves its semantic projection.
-9. **The stable Peggy frontend is authoritative.** Its grammar and semantic results decide accepted
-   syntax. Current tests, examples, and language documentation resolve intent when the grammar and
-   expected behavior disagree.
+9. **The grammar and compatibility golden are authoritative.** `grammar.peggy` decides generated
+   syntax structure, while the frozen Peggy-derived semantic/span golden guards the retired
+   frontend's observable contract. Current tests, examples, and language documentation resolve
+   intentional changes.
 10. **No semantic formatting.** Formatting never consults inferred types, module resolution, or
     binding identity.
 11. **Bounded modules.** Maintained code remains at or below the repository's 500-line limit.
@@ -830,9 +881,11 @@ Exit gate:
 
 Extend the generated valid-source frontend without reintroducing hand-written productions:
 
-1. make parsing total with progress-bounded exact islands as the general fallback;
-2. add committed required-slot recovery only for missing `;`, `{`, and `}`;
-3. preserve comments in generated trivia gaps and preserve malformed lexical regions;
+1. keep valid-source recognition grammar-complete and add a tolerant path only at explicitly
+   committed recovery sites;
+2. add required-slot recovery only for missing `;`, `{`, and `}`;
+3. preserve comments exercised by valid/recoverable syntax without requiring general malformed
+   lexical islands;
 4. implement the direct structural writer with `Real` and `RealFix`;
 5. make `RealFix` materialize only the three initial repair token kinds;
 6. emit recovery provenance pieces directly from those marks;
@@ -851,14 +904,15 @@ Do not create a hand-authored test matrix for every generated constructor. Inste
   later-sibling preservation;
 - add a regression fixture whenever a corpus or fuzz case exposes a distinct failure.
 
-Valid grammar coverage receives canonical layout. Damage outside the three repair token kinds
-remains an identity-projected island. Rendering is still total, but broad recovery quality is not
-allowed to delay the formatter.
+Valid grammar coverage receives canonical layout. Damage outside the three repair token kinds may
+still reject; it must never be accepted by silently dropping authored text. Exact islands and total
+malformed-input rendering are Phase 4 work and do not delay the formatter.
 
 Exit gate:
 
-- every finite buffer produces a lossless marked Surface AST and formatted projection;
 - valid repository syntax is fully structured rather than hidden in islands;
+- each accepted targeted-recovery input retains all authored content and produces the declared
+  marks;
 - the repository corpus formats deterministically;
 - emitted text is idempotent in `Real` and `RealFix`;
 - formatting valid corpus input preserves its normalized semantic DTO;
@@ -917,6 +971,7 @@ Frontend-v1 deletion remains a separate cleanup gate; it is not the default afte
 
 Add independently, based on observed editor value:
 
+- progress-bounded exact islands and lossless/total projections for arbitrary finite buffers;
 - `Virtual` mode and virtual-artifact DTOs for structural inlays;
 - generated continuation/FIRST-set analysis;
 - other uniquely determined exact tokens such as `)`, `]`, `=`, or `else`;

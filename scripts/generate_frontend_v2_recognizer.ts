@@ -8,13 +8,20 @@ import {
   emitSurfaceTypes,
 } from "../tooling/frontend-v2/generator/surface_schema.ts";
 import { emitCompiledProbe } from "../tooling/frontend-v2/generator/compiled_probe_emitter.ts";
+import { validateRecoveryAnnotations } from "../tooling/frontend-v2/generator/contract.ts";
+import { frontendV2RecoveryAnnotations } from "../tooling/frontend-v2/generator/recovery_annotations.ts";
 
 export async function emitRecognizer(
   grammar: WorkmanGrammarIr,
 ): Promise<ReadonlyMap<string, string>> {
   const files = new Map<string, string>();
   const grammarHash = await hashGrammarIr(grammar);
-  const compiledProbe = emitCompiledProbe(grammar, grammarHash);
+  validateRecoveryAnnotations(grammar, frontendV2RecoveryAnnotations);
+  const compiledProbe = emitCompiledProbe(
+    grammar,
+    grammarHash,
+    frontendV2RecoveryAnnotations,
+  );
   files.set(
     "surface_types.wm",
     emitSurfaceTypes(grammar, grammarHash),
@@ -31,6 +38,7 @@ export async function emitRecognizer(
         grammarHash: await hashGrammarIr(grammar),
         grammarPath: grammar.sourcePath,
         ruleCount: grammar.rules.length,
+        recoveryAnnotations: frontendV2RecoveryAnnotations,
         compiledProbeModules: [...compiledProbe.keys()],
       },
       null,

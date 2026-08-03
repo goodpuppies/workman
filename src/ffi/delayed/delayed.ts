@@ -281,6 +281,9 @@ function collectGeneratedValueRefsInExpr(expr: Expr, refs: Set<string>): void {
       }
       collectGeneratedValueRefsInExpr(expr.result, refs);
       return;
+    case "Ascribed":
+      collectGeneratedValueRefsInExpr(expr.value, refs);
+      return;
     case "Binary":
       collectGeneratedValueRefsInExpr(expr.left, refs);
       collectGeneratedValueRefsInExpr(expr.right, refs);
@@ -377,6 +380,9 @@ function solveDelayedBindingTypesInExpr(
         else solveDelayedBindingTypesInExpr(item, ffi, result);
       }
       solveDelayedBindingTypesInExpr(expr.result, ffi, result);
+      return;
+    case "Ascribed":
+      solveDelayedBindingTypesInExpr(expr.value, ffi, result);
       return;
     case "Binary":
       solveDelayedBindingTypesInExpr(expr.left, ffi, result);

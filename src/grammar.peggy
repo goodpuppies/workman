@@ -113,12 +113,13 @@
     return at({ kind: "Lambda", params: [liftedParam(name, loc)], directives: [], body }, loc);
   }
   function ascribedExpr(value, annotation, loc) {
-    const name = `__wm_ascription_${nextLiftId++}`;
-    const pattern = at({ kind: "PVar", name }, loc);
-    const param = at({ pattern, annotation }, loc);
-    const body = at({ kind: "Var", name }, loc);
-    const callee = at({ kind: "Lambda", params: [param], directives: [], body }, loc);
-    return at({ kind: "Call", callee, args: [value] }, loc);
+    return at({ kind: "Ascribed", value, annotation }, loc);
+  }
+  function ascribedPattern(pattern, annotation, loc) {
+    return at({ kind: "PAscribed", pattern, annotation }, loc);
+  }
+  function maybeAscribedPattern(pattern, annotation, loc) {
+    return annotation ? ascribedPattern(pattern, annotation, loc) : pattern;
   }
   function taskTupleLift(tasks, loc) {
     if (tasks.length === 0) {
@@ -224,7 +225,9 @@ LetBinding
     { return at({ pattern, annotation: ann, value }, location()); }
 
 LetPattern
-  = Wildcard { return at({ kind: "PWildcard" }, location()); }
+  = "(" _ pattern:LetPattern _ annotation:TypeAnn _ ")"
+    { return ascribedPattern(pattern, annotation, location()); }
+  / Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
   / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
@@ -240,7 +243,7 @@ LetPattern
 LetPatternList = first:LetPattern rest:(_ "," _ p:LetPattern { return p; })* _ ","? { return [first, ...rest]; }
 LetCtorPattern
   = name:Identifier { return at({ kind: "PVar", name }, location()); }
-  / p:LetPattern { return p; }
+  / !"Var" p:LetPattern { return p; }
 LetCtorPatternList = first:LetCtorPattern rest:(_ "," _ p:LetCtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 
 RecordDecl
@@ -331,6 +334,7 @@ LambdaReturnAnnotation = _ ":" _ type:TypeExpr { return type; }
 
 LambdaBody
   = LambdaBlock
+  / body:Lambda { return { directives: [], body }; }
   / body:ParenSeq { return { directives: [], body }; }
 
 LambdaBlock
@@ -374,7 +378,8 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right
   }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
-Postfix = head:Primary tail:(ExplicitCall / SpaceCall)* annotation:TypeAnn?
+Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
+  annotation:(_ value:TypeAnn { return value; })?
   {
     const value = tail.reduce(
       (callee, item) => at({ kind: "Call", callee, args: item.args }, location()),
@@ -387,7 +392,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
+  = Float / Int / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
@@ -410,6 +415,9 @@ JsonObjectField
 RecordExpr
   = "." _ "{" _ fields:RecordExprFieldList? _ "}"
     { return at({ kind: "Record", fields: fields ?? [] }, location()); }
+NamedRecordExpr
+  = target:(name:LongConstructor { return longNode("TName", name, { args: [] }, location()); }) _ "{" _ fields:RecordExprFieldList? _ "}"
+    { return at({ kind: "Record", target, fields: fields ?? [] }, location()); }
 RecordExprFieldList = first:RecordExprField rest:(_ "," _ f:RecordExprField { return f; })* _ ","? { return [first, ...rest]; }
 RecordExprField
   = ".." _ value:Expr { return recordSpread(value, location()); }
@@ -452,6 +460,9 @@ ParenSeqItem = e:Expr _ semi:SemiToken _ { return { item: e, terminatorSpan: sem
 SemiToken = ";" { return span(location()); }
 
 Pattern
+  = pattern:PatternCore annotation:(_ value:TypeAnn { return value; })?
+    { return maybeAscribedPattern(pattern, annotation, location()); }
+PatternCore
   = Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
@@ -460,6 +471,7 @@ Pattern
   / RecordPattern
   / ListPattern
   / "(" _ first:Pattern _ "," _ rest:PatternList? _ ")" { return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location()); }
+  / "(" _ pattern:Pattern _ ")" { return pattern; }
   / "Var" _ "(" _ name:Identifier _ ")" { return at({ kind: "PVar", name }, location()); }
   / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
   / c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
@@ -467,7 +479,10 @@ Pattern
 
 ParamList = "(" _ ps:ParamListItems? _ ")" { return ps ?? []; }
 Param = pattern:ParamPattern ann:TypeAnn? { return at({ pattern, annotation: ann }, location()); }
-ParamPattern = Wildcard { return at({ kind: "PWildcard" }, location()); }
+ParamPattern
+  = "(" _ pattern:ParamPattern _ annotation:TypeAnn _ ")"
+    { return ascribedPattern(pattern, annotation, location()); }
+  / Wildcard { return at({ kind: "PWildcard" }, location()); }
   / RecordParamPattern
   / ListParamPattern
   / "(" _ first:ParamPattern _ "," _ rest:ParamPatternList? _ ")" { return at({ kind: "PTuple", items: [first, ...(rest ?? [])] }, location()); }
@@ -476,13 +491,12 @@ ParamListItems = first:Param rest:(_ "," _ p:Param { return p; })* _ ","? { retu
 ParamPatternList = first:ParamPattern rest:(_ "," _ p:ParamPattern { return p; })* _ ","? { return [first, ...rest]; }
 PatternList = first:Pattern rest:(_ "," _ p:Pattern { return p; })* _ ","? { return [first, ...rest]; }
 CtorPattern
-  = "Var" _ "(" _ name:Identifier _ ")" { return at({ kind: "PVar", name }, location()); }
-  / RecordPattern
+  = RecordPattern
   / ListPattern
-  / c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
-  / c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
+  / !"Var" c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
+  / !"Var" c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
   / v:Identifier { return at({ kind: "PVar", name: v }, location()); }
-  / p:Pattern { return p; }
+  / !"Var" p:Pattern { return p; }
 CtorPatternList = first:CtorPattern rest:(_ "," _ p:CtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 ArgList = first:Expr rest:(_ "," _ e:Expr { return e; })* _ ","? { return [first, ...rest]; }
 ListPattern
@@ -532,10 +546,17 @@ RecordParamPatternField
 
 TypeAnn = ":" _ t:TypeExpr { return t; }
 TypeExpr = FnType
-FnType = "(" _ ps:TypeList? _ ")" _ "=>" _ r:TypeExpr { return at({ kind: "TFn", params: ps ?? [], result: r }, location()); } / TypeAtom
+FnType = FunctionType / TypeAtom
+FunctionType
+  = ps:FnTypeDomain _ "->" _ r:TypeExpr
+    { return at({ kind: "TFn", params: ps, result: r }, location()); }
+FnTypeDomain
+  = "(" _ first:TypeExpr _ "," _ rest:TypeList? _ ")" { return [first, ...(rest ?? [])]; }
+  / t:TypeAtom { return [t]; }
+GroupedFunctionType = "(" _ t:FunctionType _ ")" { return t; }
 TypeAtom
   = "(" _ first:TypeExpr _ "," _ rest:TypeList? _ ")" { return at({ kind: "TTuple", items: [first, ...(rest ?? [])] }, location()); }
-  / "(" _ t:TypeExpr _ ")" { return t; }
+  / GroupedFunctionType
   / name:LongConstructor args:("<" _ xs:TypeList _ ">" { return xs; })? { return longNode("TName", name, { args: args ?? [] }, location()); }
   / name:Identifier { return at({ kind: "TVar", name }, location()); }
 TypeList = first:TypeExpr rest:(_ "," _ t:TypeExpr { return t; })* _ ","? { return [first, ...rest]; }

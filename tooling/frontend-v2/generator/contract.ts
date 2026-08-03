@@ -73,9 +73,67 @@ export function validateGeneratorContract(contract: GeneratorContract): void {
       throw new Error(`generator exception for ${exception.peggyRule} is incomplete`);
     }
   }
-  for (const recovery of contract.recoveries) {
+  validateRecoveryAnnotations(contract.grammar, contract.recoveries);
+}
+
+export function validateRecoveryAnnotations(
+  grammar: WorkmanGrammarIr,
+  recoveries: readonly RequiredTokenRecovery[],
+): void {
+  const rules = new Map(grammar.rules.map((rule) => [rule.name, rule]));
+  const recoveryKeys = new Set<string>();
+  for (const recovery of recoveries) {
     if (!rules.has(recovery.rule)) {
       throw new Error(`recovery annotation references unknown rule ${recovery.rule}`);
     }
+    const key = `${recovery.rule}\u0000${recovery.token}`;
+    if (recoveryKeys.has(key)) {
+      throw new Error(
+        `recovery token ${JSON.stringify(recovery.token)} is annotated twice in ${recovery.rule}`,
+      );
+    }
+    recoveryKeys.add(key);
+    const rule = rules.get(recovery.rule)!;
+    if (!expressionContainsRequiredLiteral(rule.expression, recovery.token)) {
+      throw new Error(
+        `recovery annotation ${recovery.rule} references no required literal ${
+          JSON.stringify(recovery.token)
+        }`,
+      );
+    }
+    if (!recovery.after.trim()) {
+      throw new Error(`recovery annotation ${recovery.rule} has no commitment description`);
+    }
+    if (recovery.synchronizeAt.length === 0) {
+      throw new Error(`recovery annotation ${recovery.rule} has no synchronization boundary`);
+    }
+  }
+}
+
+function expressionContainsRequiredLiteral(
+  expression: WorkmanGrammarIr["rules"][number]["expression"],
+  value: string,
+): boolean {
+  switch (expression.kind) {
+    case "literal":
+      return expression.value === value;
+    case "sequence":
+      return expression.elements.some((item) => expressionContainsRequiredLiteral(item, value));
+    case "choice":
+      return expression.alternatives.some((item) => expressionContainsRequiredLiteral(item, value));
+    case "labeled":
+    case "text":
+    case "group":
+    case "action":
+      return expressionContainsRequiredLiteral(expression.expression, value);
+    case "class":
+    case "any":
+    case "ruleRef":
+    case "semanticAnd":
+    case "simpleNot":
+    case "optional":
+    case "zeroOrMore":
+    case "oneOrMore":
+      return false;
   }
 }

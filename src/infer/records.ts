@@ -1,5 +1,5 @@
-import type { Expr, LongId, RecordExprSpread } from "../ast.ts";
-import { longIdSpelling } from "../ast.ts";
+import type { Expr, LongId, RecordExprSpread, TypeExpr } from "../ast.ts";
+import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
@@ -17,8 +17,14 @@ import {
   typeInfoById,
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
-import { resolveLongValue, type StrEnv } from "./environment.ts";
-import { recordRecordFieldFact, recordRecordProjectionFact, type TypeFacts } from "./type_facts.ts";
+import { resolveLongType, resolveLongValue, type StrEnv } from "./environment.ts";
+import {
+  recordRecordFieldFact,
+  recordRecordProjectionFact,
+  recordTypeExpressionFact,
+  recordTypeReferenceFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 type InferValue = (expr: Expr, expected?: Ty) => Ty;
 type NamedTy = Extract<Ty, { tag: "named" }>;
@@ -106,16 +112,32 @@ export function inferRecordExpr(
   warnings?: string[],
   diagnostics?: FrontendDiagnostic[],
   facts?: TypeFacts,
+  strEnv?: StrEnv,
 ): Ty {
   const fields = expr.fields.filter((field) => field.kind === "Field");
   const spreads = expr.fields.filter((field) => field.kind === "Spread");
   rejectDuplicateFields(fields.map((field) => field.name));
+  const explicitResult = expr.target
+    ? explicitRecord(expr.target, typeEnv, strEnv, facts)
+    : undefined;
   const expectedResult = expectedRecord(expected, typeEnv);
+  if (explicitResult && expectedResult) {
+    constrainRecord(
+      explicitResult,
+      expectedResult,
+      expr,
+      "InferRecord.ExplicitTarget",
+      "explicit record name matches contextual record type",
+      explicitResult.name,
+      "explicit record",
+      "contextual record",
+    );
+  }
   const inferredSpreads = spreads.map((spread) => ({
     spread,
     type: inferValue(spread.value, expectedResult),
   }));
-  const result = expectedResult ?? firstSpreadRecord(inferredSpreads, typeEnv) ??
+  const result = explicitResult ?? expectedResult ?? firstSpreadRecord(inferredSpreads, typeEnv) ??
     freshRecord(
       recordCandidate(typeEnv, fields.map((field) => field.name), expr, warnings, diagnostics),
     );
@@ -160,6 +182,35 @@ export function inferRecordExpr(
   if (spreads.length === 0 && fieldTypes.length !== fields.length) {
     throw new Error(`missing record field for ${result.name}`);
   }
+  return result;
+}
+
+function explicitRecord(
+  target: Extract<TypeExpr, { kind: "TName" }>,
+  typeEnv: TypeEnv,
+  strEnv?: StrEnv,
+  facts?: TypeFacts,
+): NamedTy {
+  const path = pathOf(target);
+  const qualified = isQualified(path) && strEnv ? resolveLongType(strEnv, path) : undefined;
+  const info = qualified?.info ?? typeEnv.get(target.name);
+  if (!info) throw new Error(`unknown record type ${target.name}`);
+  if (!info.recordFields) throw new Error(`${target.name} is not a record type`);
+  if (facts) {
+    recordTypeReferenceFact(
+      facts,
+      target,
+      info,
+      qualified
+        ? Object.freeze({
+          name: path.qualifiers[0],
+          environment: qualified.root,
+        })
+        : undefined,
+    );
+  }
+  const result = freshRecord(info);
+  if (facts) recordTypeExpressionFact(facts, target, result);
   return result;
 }
 

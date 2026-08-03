@@ -336,6 +336,9 @@ function visitExprDeclarations(
       });
       visitExprDeclarations(expression.result, visit);
       return;
+    case "Ascribed":
+      visitExprDeclarations(expression.value, visit);
+      return;
     case "Binary":
     case "Pipe":
       visitExprDeclarations(expression.left, visit);

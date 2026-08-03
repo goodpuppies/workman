@@ -62,7 +62,6 @@ Define an editor-neutral initialization-options schema:
 
 ```ts
 type WorkmanInitializationOptions = {
-  frontend?: "v1" | "v2" | "compare";
   frontendV2Module?: string;
   denoPath?: string;
   structuralInlayHints?: boolean;

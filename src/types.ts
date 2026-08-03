@@ -728,13 +728,20 @@ export function show(t: Ty): string {
   let n = 0;
   const nameOf = (id: number) =>
     names.get(id) ?? (names.set(id, `'${String.fromCharCode(97 + n++)}`), names.get(id)!);
+  const functionDomain = (params: Ty[]): string => {
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${params.map(go).join(", ")})`;
+    const param = prune(params[0]);
+    const rendered = go(param);
+    return param.tag === "fn" ? `(${rendered})` : rendered;
+  };
   const go = (x: Ty): string => {
     x = prune(x);
     if (x.tag === "var") return x.name ?? nameOf(x.id);
     if (x.tag === "ffi") return `?ffi#${x.id}:${x.binding ?? x.path.join(".")}`;
     if (x.tag === "prim") return x.name;
     if (x.tag === "tuple") return `(${x.items.map(go).join(", ")})`;
-    if (x.tag === "fn") return `(${x.params.map(go).join(", ")}) => ${go(x.result)}`;
+    if (x.tag === "fn") return `${functionDomain(x.params)} -> ${go(x.result)}`;
     if (x.tag === "struct") {
       return `{ ${x.fields.map((field) => `${field.name}: ${go(field.type)}`).join(", ")} }`;
     }

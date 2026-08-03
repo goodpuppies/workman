@@ -41,7 +41,6 @@ const gpuFunctions = [
 
 type GeneratedParser = { parse(source: string): unknown };
 
-let workmanParser: Promise<GeneratedParser> | undefined;
 let wmsmlParser: Promise<GeneratedParser> | undefined;
 
 export class ParseError extends Error {
@@ -58,17 +57,21 @@ export class ParseError extends Error {
   }
 }
 
-export async function parse(
+export async function parseWmsml(
   source: string,
-  surface: Surface = "workman",
   filePath?: string,
 ): Promise<Module> {
-  const parser = await loadParser(surface);
+  return await parseGeneratedModule(source, await loadWmsmlParser(), filePath);
+}
+
+export async function parseGeneratedModule(
+  source: string,
+  parser: GeneratedParser,
+  filePath?: string,
+): Promise<Module> {
   try {
     const module = parser.parse(source) as Module;
-    validateDirectives(module, source, filePath);
-    if (hasNoPreludeDirective(source)) module.prelude = "none";
-    return module;
+    return finalizeParsedModule(module, source, filePath);
   } catch (error) {
     if (error && typeof error === "object" && "location" in error && "message" in error) {
       const err = error as {
@@ -88,7 +91,17 @@ export async function parse(
   }
 }
 
-function contextualSyntaxError(message: string, source: string, offset: number): string {
+export function finalizeParsedModule(
+  module: Module,
+  source: string,
+  filePath?: string,
+): Module {
+  validateDirectives(module, source, filePath);
+  if (hasNoPreludeDirective(source)) module.prelude = "none";
+  return module;
+}
+
+export function contextualSyntaxError(message: string, source: string, offset: number): string {
   const before = source.slice(0, offset);
   const after = source.slice(offset);
   if (before.endsWith("js.") || after.startsWith("js.")) {
@@ -189,6 +202,9 @@ function visitExprDirectives(expr: Expr, source: string, filePath?: string): voi
       });
       visitExprDirectives(expr.result, source, filePath);
       return;
+    case "Ascribed":
+      visitExprDirectives(expr.value, source, filePath);
+      return;
     case "Binary":
     case "Pipe":
       visitExprDirectives(expr.left, source, filePath);
@@ -230,9 +246,6 @@ function hasNoPreludeDirective(source: string): boolean {
   return false;
 }
 
-async function loadParser(surface: Surface): Promise<GeneratedParser> {
-  if (surface === "wmsml") {
-    return await (wmsmlParser ??= import("./generated/wmsml_parser.js"));
-  }
-  return await (workmanParser ??= import("./generated/workman_parser.js"));
+async function loadWmsmlParser(): Promise<GeneratedParser> {
+  return await (wmsmlParser ??= import("./generated/wmsml_parser.js"));
 }

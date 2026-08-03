@@ -1,10 +1,15 @@
 import type { Module } from "./ast.ts";
-import { genericDiagnostic, type FrontendDiagnostic } from "./diagnostics.ts";
-import { compareSupportedFrontendSemantics } from "./frontend_v2_compare.ts";
-import { loadFrontendV2 } from "./frontend_v2_loader.ts";
-import { semanticProjectionToModule } from "./frontend_v2_semantic.ts";
-import type { FrontendMode } from "./frontend_mode.ts";
-import { parse, ParseError, type Surface } from "./parser.ts";
+import { type FrontendDiagnostic, genericDiagnostic } from "./diagnostics.ts";
+import { loadFrontendV2Surface } from "./frontend_v2_surface_loader.ts";
+import { surfaceProgramToModule } from "./frontend_v2_surface_semantic.ts";
+import { type FrontendMode, resolveCompilerFrontend } from "./frontend_mode.ts";
+import {
+  contextualSyntaxError,
+  finalizeParsedModule,
+  ParseError,
+  parseWmsml,
+  type Surface,
+} from "./parser.ts";
 import { offsetToLineCol } from "./source.ts";
 import { maskSourceRange, topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -23,7 +28,7 @@ export type RecoveredCompilerModule = Readonly<{
 }>;
 
 const defaultFrontendV2ModuleUrl = new URL(
-  "../tooling/frontend-v2/frontend-v2.generated.mjs",
+  "./generated/frontend_v2_parser.js",
   import.meta.url,
 );
 
@@ -32,32 +37,22 @@ export async function parseCompilerModule(
   options: CompilerFrontendOptions = {},
   filePath?: string,
 ): Promise<Module> {
-  const mode = options.frontend ?? "v1";
-  if (mode === "v1") return parse(source, options.surface, filePath);
-
-  if (mode === "compare") {
-    const frontend = await loadFrontendV2(
-      options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl,
-    );
-    const comparison = await compareSupportedFrontendSemantics(source, frontend, {
-      surface: options.surface,
-    });
-    if (!comparison.equivalent) {
-      throw new Error(
-        `frontend compare mode found differences: ${comparison.diagnostics.join("; ")}`,
-      );
-    }
-    return parse(source, options.surface, filePath);
-  }
+  if (options.surface === "wmsml") return await parseWmsml(source, filePath);
+  const mode = resolveCompilerFrontend(options.frontend, options.surface);
 
   if (mode === "v2") {
-    const frontend = await loadFrontendV2(
+    const frontend = await loadFrontendV2Surface(
       options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl,
     );
-    const projected = semanticProjectionToModule(frontend.projectSemantic(source), {
-      source,
-      structural: frontend.parseStructural(source),
-    });
+    const surface = frontend.parseSurfaceProgram(source);
+    if (!surface) {
+      throw generatedParseError(
+        source,
+        frontend.parseSurfaceFailure(source),
+        filePath,
+      );
+    }
+    const projected = surfaceProgramToModule(surface, source);
     if (projected.diagnostics.length) {
       throw new Error(
         `frontend v2 cannot project source: ${
@@ -65,10 +60,39 @@ export async function parseCompilerModule(
         }`,
       );
     }
-    return projected.module;
+    return finalizeParsedModule(projected.module, source, filePath);
   }
 
   throw new Error(`unknown frontend mode ${String(mode)}`);
+}
+
+function generatedParseError(
+  source: string,
+  failure: Readonly<{ offset: number; expected: string; rule: string }> | undefined,
+  filePath?: string,
+): ParseError {
+  const offset = Math.max(0, Math.min(source.length, failure?.offset ?? 0));
+  const position = offsetToLineCol(source, offset);
+  const expected = failure?.expected ?? "valid Workman syntax";
+  const rule = failure?.rule && !failure.rule.startsWith("<")
+    ? ` while parsing ${failure.rule}`
+    : "";
+  const message = contextualSyntaxError(
+    `Expected ${expected}${rule}.`,
+    source,
+    offset,
+  );
+  return new ParseError(
+    message,
+    source,
+    {
+      line: position.line,
+      col: position.col,
+      start: offset,
+      end: Math.min(source.length, offset + 1),
+    },
+    filePath,
+  );
 }
 
 /**
@@ -127,13 +151,11 @@ function parseRecoveryDiagnostic(
   source: string,
   fallbackOffset: number,
 ): FrontendDiagnostic {
-  const span = error instanceof ParseError
-    ? error.span
-    : {
-      ...offsetToLineCol(source, fallbackOffset),
-      start: fallbackOffset,
-      end: Math.min(source.length, fallbackOffset + 1),
-    };
+  const span = error instanceof ParseError ? error.span : {
+    ...offsetToLineCol(source, fallbackOffset),
+    start: fallbackOffset,
+    end: Math.min(source.length, fallbackOffset + 1),
+  };
   const message = error instanceof Error ? error.message : String(error);
   return genericDiagnostic("error", "parse.recovered-phrase", message, {
     id: -1,

@@ -151,6 +151,10 @@ function visitExpr(
       }
       visitExpr(expr.result, warnings, diagnostics);
       return;
+    case "Ascribed":
+      visitExpr(expr.value, warnings, diagnostics);
+      visitType(expr.annotation, warnings, diagnostics);
+      return;
     case "Binary":
     case "Pipe":
       visitExpr(expr.left, warnings, diagnostics);
@@ -193,6 +197,10 @@ function visitPattern(
       return;
     case "PCtor":
       pattern.args.forEach((arg) => visitPattern(arg, warnings, diagnostics));
+      return;
+    case "PAscribed":
+      visitPattern(pattern.pattern, warnings, diagnostics);
+      visitType(pattern.annotation, warnings, diagnostics);
       return;
     case "PWildcard":
     case "PVar":

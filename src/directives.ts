@@ -83,6 +83,9 @@ function visitExpr(expr: Expr, regions: GpuRegionFact[], directBinding?: Binding
       });
       visitExpr(expr.result, regions);
       return;
+    case "Ascribed":
+      visitExpr(expr.value, regions);
+      return;
     case "Binary":
     case "Pipe":
       visitExpr(expr.left, regions);

@@ -22,7 +22,6 @@ export type ServerModuleConfig<TTransport> = {
 export function denoServerConfig<TTransport>(
   command: string,
   serverPath: string,
-  frontendMode: string,
   frontendV2ModulePath: string | undefined,
   transport: TTransport,
   baseEnv: Record<string, string | undefined>,
@@ -35,7 +34,6 @@ export function denoServerConfig<TTransport>(
     options: {
       cwd: path.dirname(path.dirname(path.dirname(serverPath))),
       env: serverEnvironment(
-        frontendMode,
         frontendV2ModulePath,
         baseEnv,
         workspaceFolder,
@@ -46,7 +44,6 @@ export function denoServerConfig<TTransport>(
 
 export function nodeServerConfig<TTransport>(
   module: string,
-  frontendMode: string,
   frontendV2ModulePath: string | undefined,
   transport: TTransport,
   baseEnv: Record<string, string | undefined>,
@@ -58,7 +55,6 @@ export function nodeServerConfig<TTransport>(
     options: {
       cwd: workspaceFolder ?? path.dirname(module),
       env: serverEnvironment(
-        frontendMode,
         frontendV2ModulePath,
         baseEnv,
         workspaceFolder,
@@ -68,15 +64,11 @@ export function nodeServerConfig<TTransport>(
 }
 
 function serverEnvironment(
-  frontendMode: string,
   frontendV2ModulePath: string | undefined,
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
 ): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = {
-    ...baseEnv,
-    WORKMAN_FRONTEND: frontendMode,
-  };
+  const env: Record<string, string | undefined> = { ...baseEnv };
   if (frontendV2ModulePath) {
     env.WORKMAN_FRONTEND_V2_MODULE = resolveConfiguredPath(
       frontendV2ModulePath,
@@ -91,5 +83,7 @@ export function resolveConfiguredPath(
   workspaceFolder?: string,
 ): string {
   if (path.isAbsolute(configured)) return configured;
-  return workspaceFolder ? path.resolve(workspaceFolder, configured) : path.resolve(configured);
+  return workspaceFolder
+    ? path.resolve(workspaceFolder, configured)
+    : path.resolve(configured);
 }

@@ -10,7 +10,7 @@ import { CompilerIdAllocator } from "../src/ids.ts";
 import { inferModule } from "../src/infer.ts";
 import { moduleId } from "../src/module_id.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 
 Deno.test("surface binding facts and Core share lexical identities", async () => {
   const module = await parse(`

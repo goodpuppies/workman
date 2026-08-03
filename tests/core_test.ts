@@ -1,8 +1,9 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { coreFile, coreSource, coreVirtual } from "../src/compiler.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { coreFromSurface } from "../src/core/from_surface.ts";
 import { showCore } from "../src/core/snapshot.ts";
-import { parse } from "../src/parser.ts";
+import { parseWmsml } from "../src/parser.ts";
 import { moduleId } from "../src/module_id.ts";
 
 Deno.test("core lowers Workman multi-argument call to one tuple argument", async () => {
@@ -31,8 +32,25 @@ Deno.test("core lowers nullary Workman functions and calls through unit", async 
   );
 });
 
+Deno.test("core erases expression and pattern type constraints after checking", async () => {
+  const module = await parse(`
+    type Option<T> = None | Some<T>;
+    let value = (Some(1) : Option<Number>);
+    let get = match(value) {
+      (Some(x) : Option<Number>) => { x },
+      None => { 0 },
+    };
+  `);
+
+  const snapshot = showCore(coreFromSurface(module));
+  assertStringIncludes(snapshot, "let value = app(Some, 1)");
+  assertStringIncludes(snapshot, "Some x => x");
+  assertEquals(snapshot.includes("PAscribed"), false);
+  assertEquals(snapshot.includes("Ascribed"), false);
+});
+
 Deno.test("core preserves SML application as single argument application", async () => {
-  const module = await parse("val value = add (1, 2);", "wmsml");
+  const module = await parseWmsml("val value = add (1, 2);");
 
   assertEquals(showCore(coreFromSurface(module)), "let value = app(add, (1, 2))");
 });

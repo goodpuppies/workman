@@ -30,9 +30,9 @@ Deno.test("list patterns lower to constructor patterns", async () => {
     };
   `);
 
-  expectBinding(result.env, "sum", { type: "(List<Number>) => Number", vars: 0 });
+  expectBinding(result.env, "sum", { type: "List<Number> -> Number", vars: 0 });
   expectBinding(result.env, "first_two", {
-    type: "(List<Number>) => (Number, Number)",
+    type: "List<Number> -> (Number, Number)",
     vars: 0,
   });
 });

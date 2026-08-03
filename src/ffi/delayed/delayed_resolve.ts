@@ -183,6 +183,11 @@ function resolveDelayedExpr(
         result: resolveDelayedExpr(expr.result, ffi, result, selected, options, localValueRefs),
       };
     }
+    case "Ascribed":
+      return {
+        ...expr,
+        value: resolveDelayedExpr(expr.value, ffi, result, selected, options, valueRefs),
+      };
     case "Binary":
       return {
         ...expr,

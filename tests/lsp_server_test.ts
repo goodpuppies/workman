@@ -149,7 +149,7 @@ Deno.test("lsp server cancels requests and rejects results from older document s
   });
 });
 
-Deno.test("ordinary type inlays can be disabled independently", async () => {
+Deno.test("all independent inlay providers can be disabled", async () => {
   const messages = await runLsp(
     [
       {
@@ -158,6 +158,7 @@ Deno.test("ordinary type inlays can be disabled independently", async () => {
         method: "initialize",
         params: {
           initializationOptions: {
+            structuralInlayHints: false,
             typeInlayHints: false,
             parameterInlayHints: false,
           },
@@ -379,7 +380,7 @@ Deno.test("lsp server returns standard signature help", async () => {
 
   assertEquals(messages.find((message) => message.id === 2)?.result, {
     signatures: [{
-      label: "format(count: Number, label: String) => String",
+      label: "format(count: Number, label: String) -> String",
       parameters: [
         { label: "count: Number" },
         { label: "label: String" },
@@ -512,9 +513,9 @@ Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
   assertEquals(hints, [
     {
       position: { line: 0, character: "let increment".length },
-      label: ": (Number) => Number",
+      label: ": Number -> Number",
       kind: 1,
-      tooltip: { kind: "markdown", value: "```workman\n(Number) => Number\n```" },
+      tooltip: { kind: "markdown", value: "```workman\nNumber -> Number\n```" },
       paddingLeft: false,
       paddingRight: true,
       data: { kind: "workman.inferred-type", category: "binding" },
@@ -1117,7 +1118,7 @@ Deno.test("lsp server returns hover types", async () => {
   const hover = messages.find((message) => message.id === 2)?.result as {
     contents: { value: string };
   };
-  assertEquals(hover.contents.value, "```wm\nid: ('a) => 'a\n```");
+  assertEquals(hover.contents.value, "```wm\nid: 'a -> 'a\n```");
 });
 
 Deno.test("lsp server returns constructor hover types", async () => {
@@ -1147,7 +1148,7 @@ Deno.test("lsp server returns constructor hover types", async () => {
   };
   assertEquals(
     hover.contents.value,
-    "```wm\nSome\ntype: (Number) => Option<Number>\ngeneral: (T) => Option<T>\n```",
+    "```wm\nSome\ntype: Number -> Option<Number>\ngeneral: T -> Option<T>\n```",
   );
 });
 

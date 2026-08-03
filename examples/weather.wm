@@ -13,7 +13,7 @@
 
 from js.global import {
   Date,
-  Number as toNumber: (String) => Number,
+  Number as toNumber: String -> Number,
   encodeURIComponent,
   fetch,
 };
@@ -24,8 +24,8 @@ from js.global("Deno") import {
   writeTextFile,
 };
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
-  stringify: (Js.Value) => String,
+  parse: String -> Js.Object,
+  stringify: Js.Value -> String,
 } as JSON;
 from js.global("Math") import { max as mathMax };
 

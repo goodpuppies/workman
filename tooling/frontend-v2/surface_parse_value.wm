@@ -1,0 +1,13 @@
+from "./generated/surface_types.wm" import { Span, SurfaceToken, SurfaceNode };
+
+type ParseValue =
+  | EmptyParseValue
+  | TokenParseValue<SurfaceToken>
+  | SequenceParseValue<List<ParseValue>>
+  | ChoiceParseValue<Number, ParseValue>
+  | OptionalParseValue<Option<ParseValue>>
+  | RepeatedParseValue<List<ParseValue>>
+  | NodeParseValue<SurfaceNode>
+  | NodeListParseValue<List<SurfaceNode>>
+  | TokenListParseValue<List<SurfaceToken>>
+  | RuleParseValue<String, ParseValue, Span>;

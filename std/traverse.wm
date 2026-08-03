@@ -8,14 +8,14 @@ let with = (.{ succeed, map, andThen }: Carrier<
   List<output>,
   listEffect,
   listEffect,
-  (List<output>) => List<output>,
+  List<output> -> List<output>,
   listEffect,
   map2Left,
   map2Right,
   map2Combine,
   map2Result,
   itemEffect,
-  (output) => listEffect,
+  output -> listEffect,
   listEffect,
 >) => {
   let rec traverse = match(items, transform) => {

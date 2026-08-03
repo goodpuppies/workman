@@ -1,5 +1,6 @@
 import { checkSourceSteps } from "../src/compiler.ts";
 import { assertRejects } from "@std/assert";
+import { checkSource } from "../src/compiler.ts";
 import { expectStepBinding, expectStepMissing } from "./type_helpers.ts";
 
 Deno.test("Workman elaboration snapshots show declaration-ordered generalized lets", async () => {
@@ -9,11 +10,30 @@ Deno.test("Workman elaboration snapshots show declaration-ordered generalized le
     let use_string = id("s");
   `);
 
-  expectStepBinding(steps, 0, "id", { type: "('a) => 'a", vars: 1 });
+  expectStepBinding(steps, 0, "id", { type: "'a -> 'a", vars: 1 });
   expectStepMissing(steps, 0, "use_number");
-  expectStepBinding(steps, 1, "id", { type: "('a) => 'a", vars: 1 });
+  expectStepBinding(steps, 1, "id", { type: "'a -> 'a", vars: 1 });
   expectStepBinding(steps, 1, "use_number", { type: "Number", vars: 0 });
   expectStepBinding(steps, 2, "use_string", { type: "String", vars: 0 });
+});
+
+Deno.test("general expression constraints unify at their exact expression site", async () => {
+  await checkSource(`
+    record Point = { x: Number, y: Number };
+    let point = (.{ x = 1, y = 2 } : Point);
+    let pair = ((1 : t), ("text" : t));
+  `);
+
+  await assertRejects(
+    () => checkSource("let bad = (1 : String);"),
+    Error,
+    "InferConstraint.Expression",
+  );
+  await assertRejects(
+    () => checkSource('let bad = ((1, "text") : (t, t));'),
+    Error,
+    "InferConstraint.Expression",
+  );
 });
 
 Deno.test("wmsml elaboration snapshots match SML val generalization boundaries", async () => {
@@ -26,7 +46,7 @@ Deno.test("wmsml elaboration snapshots match SML val generalization boundaries",
     { surface: "wmsml" },
   );
 
-  expectStepBinding(steps, 0, "id", { type: "('a) => 'a", vars: 1 });
+  expectStepBinding(steps, 0, "id", { type: "'a -> 'a", vars: 1 });
   expectStepMissing(steps, 0, "use_number");
   expectStepBinding(steps, 1, "use_number", { type: "Number", vars: 0 });
   expectStepBinding(steps, 2, "use_string", { type: "String", vars: 0 });
@@ -46,10 +66,10 @@ Deno.test("wmsml datatype elaboration snapshots expose constructors before later
   );
 
   expectStepBinding(steps, 0, "NONE", { type: "option<a>", vars: 1 });
-  expectStepBinding(steps, 0, "SOME", { type: "(a) => option<a>", vars: 1 });
+  expectStepBinding(steps, 0, "SOME", { type: "a -> option<a>", vars: 1 });
   expectStepMissing(steps, 0, "one");
   expectStepBinding(steps, 1, "one", { type: "option<Number>", vars: 0 });
-  expectStepBinding(steps, 2, "get", { type: "(option<Number>) => Number", vars: 0 });
+  expectStepBinding(steps, 2, "get", { type: "option<Number> -> Number", vars: 0 });
 });
 
 Deno.test("Workman simultaneous non-recursive and-group snapshots publish only after group inference", async () => {
@@ -59,8 +79,8 @@ Deno.test("Workman simultaneous non-recursive and-group snapshots publish only a
     let use_b = id_b("s");
   `);
 
-  expectStepBinding(steps, 0, "id_a", { type: "('a) => 'a", vars: 1 });
-  expectStepBinding(steps, 0, "id_b", { type: "('a) => 'a", vars: 1 });
+  expectStepBinding(steps, 0, "id_a", { type: "'a -> 'a", vars: 1 });
+  expectStepBinding(steps, 0, "id_b", { type: "'a -> 'a", vars: 1 });
   expectStepBinding(steps, 1, "use_a", { type: "Number", vars: 0 });
   expectStepBinding(steps, 2, "use_b", { type: "String", vars: 0 });
 });
@@ -72,7 +92,7 @@ Deno.test("Workman recursive group snapshots generalize after solving the group"
     let use_string = id("s");
   `);
 
-  expectStepBinding(steps, 0, "id", { type: "('a) => 'a", vars: 1 });
+  expectStepBinding(steps, 0, "id", { type: "'a -> 'a", vars: 1 });
   expectStepBinding(steps, 1, "use_number", { type: "Number", vars: 0 });
   expectStepBinding(steps, 2, "use_string", { type: "String", vars: 0 });
 });
@@ -86,7 +106,7 @@ Deno.test("Workman local declaration snapshots do not leak block-local values", 
     let use_outer = outer();
   `);
 
-  expectStepBinding(steps, 0, "outer", { type: "(Void) => Number", vars: 0 });
+  expectStepBinding(steps, 0, "outer", { type: "Void -> Number", vars: 0 });
   expectStepMissing(steps, 0, "local_id");
   expectStepBinding(steps, 1, "use_outer", { type: "Number", vars: 0 });
 });
@@ -117,7 +137,7 @@ Deno.test("wmsml arrow type annotations are right associative", async () => {
     { surface: "wmsml" },
   );
 
-  expectStepBinding(steps, 0, "keep", { type: "(Number) => (Number) => Number", vars: 0 });
+  expectStepBinding(steps, 0, "keep", { type: "Number -> Number -> Number", vars: 0 });
   expectStepBinding(steps, 1, "result", { type: "Number", vars: 0 });
 });
 

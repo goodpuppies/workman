@@ -103,7 +103,7 @@ Manual typed unsafe imports are also supported:
 
 ```wm
 from js.global("console") import unsafe {
-  log: (String, Number) => Void
+  log: (String, Number) -> Void
 } as console;
 ```
 
@@ -124,8 +124,8 @@ When reflection cannot infer a useful type, write the JS type manually:
 
 ```wm
 from js.global import {
-  fetch: (String) => Js.Promise<Js.Object>,
-  encodeURIComponent: (String) => String,
+  fetch: String -> Js.Promise<Js.Object>,
+  encodeURIComponent: String -> String,
 };
 ```
 
@@ -221,7 +221,7 @@ url      : String
 main     : Bool
 filename : Option<String>
 dirname  : Option<String>
-resolve  : (String) => String
+resolve  : String -> String
 ```
 
 Because these are lexical module values rather than calls across an arbitrary JavaScript boundary,
@@ -292,7 +292,7 @@ If reflection cannot discover the type, add a manual type:
 
 ```wm
 from js.module("./helpers.js") import {
-  shout: (String) => String
+  shout: String -> String
 };
 ```
 

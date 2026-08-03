@@ -193,7 +193,7 @@ Deno.test("ordinary completion exposes standard keyword items", async () => {
 
   assertEquals(items.find(({ label }) => label === "let")?.kind, 14);
   assertEquals(items.find(({ label }) => label === "record")?.kind, 14);
-  assertEquals(items.find(({ label }) => label === "print")?.detail, "('a) => Void");
+  assertEquals(items.find(({ label }) => label === "print")?.detail, "'a -> Void");
 });
 
 Deno.test("ordinary completion ranks annotation-compatible values first", async () => {

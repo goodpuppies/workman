@@ -644,9 +644,9 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
         };
         let current: Uniforms = .{ enabled = true };
         let fragment = Gpu.fragment(shade(current));
-      `),
+    `),
     GpuSliceNormalizationError,
-    "must be Number or a homogeneous Number tuple",
+    "must be a numeric uniform, Gpu.SampledTexture2D, or Gpu.Sampler",
   );
 });
 

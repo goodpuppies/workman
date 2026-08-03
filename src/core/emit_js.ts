@@ -408,6 +408,12 @@ function emitReplRecordDecl(decl: Extract<CoreDecl, { kind: "CoreRecord" }>): st
 }
 
 function showTypeExpr(type: TypeExpr): string {
+  const functionDomain = (params: TypeExpr[]): string => {
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${params.map(showTypeExpr).join(", ")})`;
+    const rendered = showTypeExpr(params[0]);
+    return params[0].kind === "TFn" ? `(${rendered})` : rendered;
+  };
   switch (type.kind) {
     case "TName":
       return type.args.length
@@ -418,7 +424,7 @@ function showTypeExpr(type: TypeExpr): string {
     case "TTuple":
       return `(${type.items.map(showTypeExpr).join(", ")})`;
     case "TFn":
-      return `(${type.params.map(showTypeExpr).join(", ")}) => ${showTypeExpr(type.result)}`;
+      return `${functionDomain(type.params)} -> ${showTypeExpr(type.result)}`;
   }
 }
 

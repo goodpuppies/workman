@@ -379,6 +379,7 @@ const builtInTypeNames = new Set([
 ]);
 
 function literalType(expr: Expr): string | undefined {
+  if (expr.kind === "Ascribed") return literalType(expr.value);
   switch (expr.kind) {
     case "Int":
     case "Float":

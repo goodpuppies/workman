@@ -1,5 +1,3 @@
-import { compileLibraryFile } from "./compiler.ts";
-
 type WorkmanOption<T> =
   | Readonly<{ name: "Some"; args: readonly [T] }>
   | Readonly<{ name: "None"; args: readonly [] }>;
@@ -27,19 +25,5 @@ export async function formatFrontendV2Source(
 }
 
 async function loadFormatter(): Promise<FormatterLibrary> {
-  const frontendPath = new URL(
-    "../tooling/frontend-v2/surface_parser_frontend.wm",
-    import.meta.url,
-  ).pathname;
-  const javaScript = await compileLibraryFile(frontendPath);
-  const directory = await Deno.makeTempDir({ prefix: "wm-frontend-v2-format-" });
-  const modulePath = `${directory}/formatter.mjs`;
-  try {
-    await Deno.writeTextFile(modulePath, javaScript);
-    return await import(
-      `${new URL(`file://${modulePath}`).href}?cache=${crypto.randomUUID()}`
-    ) as FormatterLibrary;
-  } finally {
-    await Deno.remove(directory, { recursive: true });
-  }
+  return await import("./generated/frontend_v2_parser.js") as FormatterLibrary;
 }

@@ -1,22 +1,29 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 import {
   hashGrammarIr,
   inventoryGrammar,
   parseWorkmanGrammar,
 } from "../scripts/frontend_v2_grammar_ir.ts";
+import { decodeSurfaceProgram } from "../src/frontend_v2_surface_loader.ts";
 import {
   FRONTEND_V2_GENERATOR_CONTRACT_VERSION,
   validateGeneratorContract,
 } from "../tooling/frontend-v2/generator/contract.ts";
 import { classifyGrammarActions } from "../tooling/frontend-v2/generator/action_ir.ts";
+import { emitCompiledProbe } from "../tooling/frontend-v2/generator/compiled_probe_emitter.ts";
 import { inventoryInitializer } from "../tooling/frontend-v2/generator/initializer_inventory.ts";
+import { frontendV2RecoveryAnnotations } from "../tooling/frontend-v2/generator/recovery_annotations.ts";
 import {
   formatterFixtures,
   negativeRecognizerSmokeFixtures,
   recognizerSmokeFixtures,
 } from "../tooling/frontend-v2/generator/fixtures.ts";
 import { recognizeGrammar } from "../tooling/frontend-v2/generator/recognizer.ts";
-import { parse } from "../src/parser.ts";
+import { frontendV2SemanticGolden, repositoryWmPath } from "./frontend_v2_semantic_golden.ts";
+
+const surfaceParser = await import("../src/generated/frontend_v2_parser.js") as {
+  parseSurfaceProgram(source: string): unknown;
+};
 
 const grammarPath = new URL("../src/grammar.peggy", import.meta.url);
 const grammarSource = await Deno.readTextFile(grammarPath);
@@ -24,27 +31,27 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 123);
+  assertEquals(inventory.ruleCount, 128);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 223,
+    unclassified: 233,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 222,
+    action: 232,
     any: 3,
-    choice: 49,
+    choice: 50,
     class: 17,
     group: 9,
-    labeled: 299,
-    literal: 290,
+    labeled: 314,
+    literal: 300,
     oneOrMore: 5,
-    optional: 72,
-    ruleRef: 635,
+    optional: 74,
+    ruleRef: 662,
     semanticAnd: 1,
-    sequence: 192,
-    simpleNot: 18,
+    sequence: 202,
+    simpleNot: 22,
     text: 5,
     zeroOrMore: 47,
   });
@@ -59,13 +66,13 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "d9bb191c8e9dad43f39e59918e426b2ec8671dd5efddc346b24f9ee72a271b76",
+    "195621adf008708ca11f8121167021a542a7dfb2f34917ce6b46eaf29071514d",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 210);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 220);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [
@@ -123,6 +130,8 @@ Deno.test("frontend-v2 inventories every initializer helper as a named WM bounda
     "liftedParam",
     "liftedLambda",
     "ascribedExpr",
+    "ascribedPattern",
+    "maybeAscribedPattern",
     "taskTupleLift",
     "carrierTupleLift",
   ]);
@@ -136,9 +145,41 @@ Deno.test("frontend-v2 generator contract enforces the exception cap and known r
     grammar,
     initializer,
     actions,
-    recoveries: [],
+    recoveries: frontendV2RecoveryAnnotations,
   } as const;
   validateGeneratorContract({ ...base, exceptions: [] });
+  assertEquals(frontendV2RecoveryAnnotations.length, 26);
+  assertEquals(
+    frontendV2RecoveryAnnotations.map(({ rule, token }) => `${rule}:${token}`),
+    [
+      "TopPhrase:;",
+      "SemiToken:;",
+      "ImportClause:{",
+      "ImportClause:}",
+      "JsImportClauseBody:{",
+      "JsImportClauseBody:}",
+      "RecordDecl:{",
+      "RecordDecl:}",
+      "MatchExpr:{",
+      "MatchExpr:}",
+      "MatchFn:{",
+      "MatchFn:}",
+      "LambdaBlock:{",
+      "LambdaBlock:}",
+      "JsonExpr:{",
+      "JsonExpr:}",
+      "RecordExpr:{",
+      "RecordExpr:}",
+      "Block:{",
+      "Block:}",
+      "RecordPattern:{",
+      "RecordPattern:}",
+      "RecordLetPattern:{",
+      "RecordLetPattern:}",
+      "RecordParamPattern:{",
+      "RecordParamPattern:}",
+    ],
+  );
   assertThrows(
     () => validateGeneratorContract({ ...base, actions: actions.slice(1), exceptions: [] }),
     Error,
@@ -174,52 +215,106 @@ Deno.test("frontend-v2 generator contract enforces the exception cap and known r
     Error,
     "unknown rule",
   );
+  assertThrows(
+    () =>
+      validateGeneratorContract({
+        ...base,
+        exceptions: [],
+        recoveries: [
+          ...frontendV2RecoveryAnnotations,
+          frontendV2RecoveryAnnotations[0],
+        ],
+      }),
+    Error,
+    "annotated twice",
+  );
+  assertThrows(
+    () =>
+      validateGeneratorContract({
+        ...base,
+        exceptions: [],
+        recoveries: [{
+          rule: "TopPhrase",
+          after: "fixture",
+          token: "{",
+          synchronizeAt: ["end of input"],
+        }],
+      }),
+    Error,
+    "no required literal",
+  );
 });
 
-Deno.test("frontend-v2 recognizer smoke fixtures are accepted by the Peggy frontend", async () => {
+Deno.test("frontend-v2 compiled recovery is driven by declared annotations", () => {
+  const withoutRecoveries = [...emitCompiledProbe(grammar, "fixture", []).values()].join("\n");
+  assertEquals(withoutRecoveries.includes('"TopPhrase:semicolon"'), false);
+  assertEquals(withoutRecoveries.includes('"RecordExpr:open-brace"'), false);
+
+  const withRecoveries = [
+    ...emitCompiledProbe(grammar, "fixture", frontendV2RecoveryAnnotations).values(),
+  ].join("\n");
+  assertStringIncludes(withRecoveries, '"TopPhrase:semicolon"');
+  assertStringIncludes(withRecoveries, '"RecordExpr:open-brace"');
+  assertStringIncludes(withRecoveries, '"RecordExpr:close-brace"');
+});
+
+Deno.test("frontend-v2 generated recognizer accepts every positive smoke fixture", () => {
   for (const fixture of recognizerSmokeFixtures) {
-    await parse(fixture.source);
+    assertEquals(
+      decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(fixture.source)) !== undefined,
+      true,
+      fixture.name,
+    );
   }
 });
 
-Deno.test("frontend-v2 normalized IR matches Peggy recognition smoke cases", async () => {
+Deno.test("frontend-v2 normalized IR matches generated recognition smoke cases", () => {
   for (const fixture of recognizerSmokeFixtures) {
-    await parse(fixture.source);
     assertEquals(recognizeGrammar(grammar, fixture.source), true, fixture.name);
+    assertEquals(
+      decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(fixture.source)) !== undefined,
+      true,
+      fixture.name,
+    );
   }
   for (const fixture of negativeRecognizerSmokeFixtures) {
-    let peggyAccepted = true;
-    try {
-      await parse(fixture.source);
-    } catch {
-      peggyAccepted = false;
-    }
-    assertEquals(peggyAccepted, false, fixture.name);
     assertEquals(recognizeGrammar(grammar, fixture.source), false, fixture.name);
+    const recovered = decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(fixture.source));
+    if (recovered) {
+      assertEquals(recovered.marks.length > 0, true, fixture.name);
+      assertEquals(
+        recovered.marks.every((mark) => [";", "{", "}"].includes(mark.expectedText)),
+        true,
+        fixture.name,
+      );
+    }
   }
 });
 
-Deno.test("frontend-v2 normalized IR matches Peggy on the repository WM corpus", async () => {
+Deno.test("frontend-v2 normalized IR matches the repository semantic golden corpus", async () => {
   const roots = [
     new URL("../std", import.meta.url),
     new URL("../examples", import.meta.url),
     new URL("../tooling", import.meta.url),
   ];
-  let checked = 0;
+  const checked: string[] = [];
   for (const root of roots) {
     for await (const path of wmFiles(root)) {
       const source = await Deno.readTextFile(path);
-      let peggyAccepted = true;
-      try {
-        await parse(source);
-      } catch {
-        peggyAccepted = false;
-      }
-      assertEquals(recognizeGrammar(grammar, source), peggyAccepted, path);
-      checked += 1;
+      const relative = repositoryWmPath(path);
+      const expected = frontendV2SemanticGolden.files[relative];
+      if (expected === undefined) throw new Error(`missing semantic golden for ${relative}`);
+      const accepted = expected !== null;
+      assertEquals(recognizeGrammar(grammar, source), accepted, relative);
+      assertEquals(
+        decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(source)) !== undefined,
+        accepted,
+        relative,
+      );
+      checked.push(relative);
     }
   }
-  assertEquals(checked >= 80, true);
+  assertEquals(checked.sort(), Object.keys(frontendV2SemanticGolden.files).sort());
 });
 
 Deno.test("frontend-v2 Phase 0 formatter fixtures declare stable mode outputs", () => {

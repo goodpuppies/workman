@@ -564,6 +564,11 @@ Deno.test("materialization attributes normalized/reflected uniform disagreement"
         ...type,
         kind: type.kind === "number" ? "f32" : type.kind === "tuple" ? "vector" : type.kind,
       })),
+      occurrences: analysis.gpuInput.expressions.map((expression) => ({
+        kind: "expression",
+        sourceId: expression.id,
+        shaderTypeId: expression.typeId,
+      })),
     }),
   } as unknown as WmslangSliceCompiler;
   const backend = {

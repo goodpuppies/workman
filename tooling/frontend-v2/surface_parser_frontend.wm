@@ -1,0 +1,49 @@
+from "./generated/surface_types.wm" import { SurfaceProgram };
+from "./compiled_probe_runtime.wm" import { CompiledParseFailure };
+from "./generated/compiled_probe_dispatch.wm" import {
+  parseCompiledFailure as parseCompiledFailureInternal
+};
+from "./surface_parse_runtime.wm" import {
+  parseSurfaceProgram as parseSurfaceProgramInternal,
+  parsesSurfaceSyntax as parsesSurfaceSyntaxInternal,
+  surfaceConstructionGap as surfaceConstructionGapInternal,
+  surfaceSyntaxFingerprint as surfaceSyntaxFingerprintInternal
+};
+from "./surface_renderer.wm" import {
+  renderSurfaceProgram as renderSurfaceProgramInternal,
+  renderSurfaceProgramFix as renderSurfaceProgramFixInternal
+};
+
+let parseSurfaceProgram = (source: String): Option<SurfaceProgram> => {
+  parseSurfaceProgramInternal(source)
+};
+
+let parseSurfaceFailure = (source: String): Option<CompiledParseFailure> => {
+  parseCompiledFailureInternal(source)
+};
+
+let parsesSurfaceSyntax = (source: String) => {
+  parsesSurfaceSyntaxInternal(source)
+};
+
+let surfaceConstructionGap = (source: String) => {
+  surfaceConstructionGapInternal(source)
+};
+
+let surfaceSyntaxFingerprint = (source: String) => {
+  surfaceSyntaxFingerprintInternal(source)
+};
+
+let formatSurfaceSource = (source: String): Option<String> => {
+  match(parseSurfaceProgramInternal(source)) {
+    Some(program) => { renderSurfaceProgramInternal(program) },
+    None => { None },
+  }
+};
+
+let formatSurfaceSourceFix = (source: String): Option<String> => {
+  match(parseSurfaceProgramInternal(source)) {
+    Some(program) => { renderSurfaceProgramFixInternal(program) },
+    None => { None },
+  }
+};

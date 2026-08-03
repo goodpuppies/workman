@@ -15,7 +15,10 @@ references only and are not inputs to generation.
    arbitrary operators cross the boundary.
 4. An explicit inventory of initializer state and named Workman helper functions. Initializer
    JavaScript is retained for audit only and is not compiled.
-5. Recovery annotations for committed missing `;`, `{`, and `}` slots.
+5. Recovery annotations for committed missing `;`, `{`, and `}` slots. Each annotation identifies
+   one Peggy rule/literal pair plus its commitment description and synchronization boundaries.
+   Generation rejects duplicate sites, unknown rules, and literals that are not required by the
+   annotated rule.
 6. At most eight named grammar/lexical exceptions. Each exception names its Peggy rule, Workman
    function, reason, and focused fixture.
 

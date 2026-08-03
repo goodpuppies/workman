@@ -319,6 +319,9 @@ function visitExpr(expression: Expr, visit: (expression: Expr) => void): void {
       });
       visitExpr(expression.result, visit);
       return;
+    case "Ascribed":
+      visitExpr(expression.value, visit);
+      return;
     case "Binary":
     case "Pipe":
       visitExpr(expression.left, visit);

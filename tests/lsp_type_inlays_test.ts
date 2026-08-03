@@ -8,7 +8,7 @@ Deno.test("ordinary type inlays cover useful binders and inferred parameters", a
     "let literal = 1;",
     "let identity = (item) => { item };",
     "let increment = (value) => { value + 1 };",
-    "let annotated: (Number) => Number = (hidden) => { hidden + 1 };",
+    "let annotated: Number -> Number = (hidden) => { hidden + 1 };",
     'let (left, right) = (1, "x");',
   ].join("\n");
   const hints = await semanticInlayHints(
@@ -22,12 +22,12 @@ Deno.test("ordinary type inlays cover useful binders and inferred parameters", a
     typeHints.map(({ label, position, data }) => ({ label, position, category: data.category })),
     [
       {
-        label: ": ('a) => 'a",
+        label: ": 'a -> 'a",
         position: { line: 1, character: "let identity".length },
         category: "binding",
       },
       {
-        label: ": (Number) => Number",
+        label: ": Number -> Number",
         position: { line: 2, character: "let increment".length },
         category: "binding",
       },
@@ -83,7 +83,7 @@ Deno.test("ordinary type inlays include local let binders", async () => {
   assertEquals(
     typeHints.map(({ label, data }) => [label, data.category]),
     [
-      [": (Number) => Number", "binding"],
+      [": Number -> Number", "binding"],
       [": Number", "parameter"],
       [": Number", "binding"],
     ],
@@ -100,7 +100,7 @@ Deno.test("ordinary type inlays expose only compiler-certified recovered binders
     new Map([[path, source]]),
   );
 
-  assertEquals(hints.map(({ label }) => label), [": ('a) => 'a"]);
+  assertEquals(hints.map(({ label }) => label), [": 'a -> 'a"]);
 });
 
 Deno.test("parameter-name inlays use compiler-resolved Workman callables", async () => {

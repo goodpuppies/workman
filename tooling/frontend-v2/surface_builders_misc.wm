@@ -1,0 +1,44 @@
+from "./generated/surface_types.wm" import {
+  Span, AuthoredValue, DirectiveNode, PanicExpressionNode
+};
+from "./surface_parse_value.wm" import {
+  ParseValue, NodeParseValue, RuleParseValue
+};
+from "./surface_builder_support.wm" import {
+  collectTokens, firstTokenWithText, lastTokenWithText, firstNode, surfaceValue
+};
+
+let buildDirective = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match(tokens) {
+    [atToken, name, semicolon] => {
+      NodeParseValue(
+        DirectiveNode(atToken, name, surfaceValue(semicolon), span)
+      )
+    },
+    _ => { RuleParseValue("Directive", value, span) },
+  }
+};
+
+let buildPanic = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "Panic"),
+    firstTokenWithText(tokens, "("),
+    firstNode(value),
+    lastTokenWithText(tokens, ")", None)
+  )) {
+    (Some(panicToken), Some(open), Some(message), Some(close)) => {
+      NodeParseValue(
+        PanicExpressionNode(
+          panicToken,
+          surfaceValue(open),
+          message,
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("PanicExpr", value, span) },
+  }
+};

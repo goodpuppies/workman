@@ -1,9 +1,6 @@
 import { assertEquals } from "@std/assert";
-import { compileLibraryFile } from "../src/compiler.ts";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
-
-const frontendSource = new URL("../tooling/frontend-v2/frontend.wm", import.meta.url).pathname;
 
 Deno.test("lsp hover v2 mode returns top-level simple-let types", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
@@ -38,7 +35,7 @@ Deno.test("lsp hover v2 mode returns simple call callee types", async () => {
 
   assertEquals(
     hover?.contents.value,
-    "```wm\nprint\ntype: (Number) => Void\ngeneral: ('a) => Void\n```",
+    "```wm\nprint\ntype: Number -> Void\ngeneral: 'a -> Void\n```",
   );
 });
 
@@ -68,7 +65,5 @@ function positionOf(source: string, needle: string): { line: number; character: 
 }
 
 async function buildFrontendV2(): Promise<URL> {
-  const output = (await Deno.makeTempDir()) + "/frontend-v2.mjs";
-  await Deno.writeTextFile(output, await compileLibraryFile(frontendSource));
-  return new URL("file://" + output);
+  return new URL("../src/generated/frontend_v2_parser.js", import.meta.url);
 }

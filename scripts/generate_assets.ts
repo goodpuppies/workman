@@ -41,16 +41,15 @@ if (current !== output) await Deno.writeTextFile(outputUrl, output);
 
 await Promise.all([
   generateParser(
-    new URL("../src/grammar.peggy", import.meta.url),
-    new URL("../src/generated/workman_parser.js", import.meta.url),
-  ),
-  generateParser(
     new URL("../src/grammar.wmsml.peggy", import.meta.url),
     new URL("../src/generated/wmsml_parser.js", import.meta.url),
   ),
 ]);
 
-async function generateParser(grammarUrl: URL, parserUrl: URL): Promise<void> {
+async function generateParser(
+  grammarUrl: URL,
+  parserUrl: URL,
+): Promise<void> {
   const grammar = (await Deno.readTextFile(grammarUrl)).replace(/\r\n?/g, "\n");
   const source = peggy.generate(grammar, {
     output: "source",

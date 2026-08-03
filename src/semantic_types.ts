@@ -127,6 +127,12 @@ function snapshotShape(
 
 function renderShape(shape: SemanticTypeShape, types: readonly SemanticType[]): string {
   const render = (id: SemanticTypeId) => types[id]?.rendered ?? `?type#${id}`;
+  const functionDomain = (params: readonly SemanticTypeId[]): string => {
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${params.map(render).join(", ")})`;
+    const rendered = render(params[0]);
+    return types[params[0]]?.shape.kind === "function" ? `(${rendered})` : rendered;
+  };
   switch (shape.kind) {
     case "variable":
       return shape.name ?? `'${String.fromCharCode(97 + shape.variable)}`;
@@ -135,7 +141,7 @@ function renderShape(shape: SemanticTypeShape, types: readonly SemanticType[]): 
     case "primitive":
       return shape.name;
     case "function":
-      return `(${shape.params.map(render).join(", ")}) => ${render(shape.result)}`;
+      return `${functionDomain(shape.params)} -> ${render(shape.result)}`;
     case "tuple":
       return `(${shape.items.map(render).join(", ")})`;
     case "structural-record":

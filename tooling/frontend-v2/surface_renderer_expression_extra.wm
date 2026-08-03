@@ -1,0 +1,366 @@
+from "./generated/surface_types.wm" import {
+  SurfaceToken, AuthoredValue, MarkedValue,
+  AscribedExpressionNode, TypeAnnotationNode, TypedPatternNode, GroupedPatternNode,
+  VariablePatternNode, ExplicitVariablePatternNode, WildcardPatternNode,
+  LiteralPatternNode,
+  ParenthesizedSequenceNode,
+  BlockExpressionNode,
+  DirectiveNode, PanicExpressionNode,
+  CarrierLiftExpressionNode, LiftTupleExpressionNode,
+  JsonObjectExpressionNode, JsonArrayExpressionNode, JsonObjectFieldNode,
+  RecordExpressionNode, NamedRecordExpressionNode, RecordFieldNode, RecordSpreadNode
+};
+
+let renderExtraToken = (value: SurfaceToken) => { value.text };
+
+let renderExtraSurfaceValue = match(value, materializeMarks) => {
+  (AuthoredValue(token), Var(materializeMarks)) => { token.text },
+  (MarkedValue(mark, fallback), true) => { fallback.text },
+  (MarkedValue(mark, fallback), false) => { "" },
+};
+
+let rec extraIndentation = match(depth, output) => {
+  (0, Var(output)) => { output },
+  (Var(depth), Var(output)) => { extraIndentation(depth - 1, output ++ "  ") },
+};
+
+let renderExtraBlock = (
+  openText: String,
+  body: String,
+  closeText: String,
+  bodyIndent: String,
+  closeIndent: String,
+) => {
+  if (body == "") {
+    Some(openText ++ closeText)
+  } else {
+    let beforeBody = if (openText == "") { "\n" } else { openText ++ "\n" };
+    let afterBody = if (closeText == "") {
+      ""
+    } else {
+      "\n" ++ closeIndent ++ closeText
+    };
+    Some(beforeBody ++ bodyIndent ++ body ++ afterBody)
+  }
+};
+
+let rec renderExtraNodes = match(
+  nodes,
+  separator,
+  output,
+  depth,
+  materializeMarks,
+  renderNode,
+) => {
+  ([], Var(separator), Var(output), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(output)
+  },
+  ([node, ..rest], Var(separator), Var(output), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(node, depth, materializeMarks)) {
+      Some(text) => {
+        let next = if (output == "") { text } else { output ++ separator ++ text };
+        renderExtraNodes(rest, separator, next, depth, materializeMarks, renderNode)
+      },
+      None => { None },
+    }
+  },
+};
+
+let renderExpressionExtraNode = match(node, depth, materializeMarks, renderNode) => {
+  (
+    VariablePatternNode(name, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    Some(renderExtraToken(name))
+  },
+  (
+    ExplicitVariablePatternNode(varToken, open, name, close, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    Some(
+      renderExtraToken(varToken) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+      renderExtraToken(name) ++ renderExtraSurfaceValue(close, materializeMarks)
+    )
+  },
+  (
+    WildcardPatternNode(token, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    Some(renderExtraToken(token))
+  },
+  (
+    LiteralPatternNode(token, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    Some(renderExtraToken(token))
+  },
+  (
+    TypeAnnotationNode(colon, annotation, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    renderNode(annotation, depth, materializeMarks)
+  },
+  (
+    TypedPatternNode(pattern, colon, annotation, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    match((
+      renderNode(pattern, depth, materializeMarks),
+      renderNode(annotation, depth, materializeMarks)
+    )) {
+      (Some(patternText), Some(annotationText)) => {
+        Some(
+          patternText ++ " " ++ renderExtraSurfaceValue(colon, materializeMarks) ++
+          " " ++ annotationText
+        )
+      },
+      _ => { None },
+    }
+  },
+  (
+    GroupedPatternNode(open, pattern, close, span),
+    Var(depth),
+    Var(materializeMarks),
+    Var(renderNode),
+  ) => {
+    match(renderNode(pattern, depth, materializeMarks)) {
+      Some(patternText) => {
+        Some(
+          renderExtraSurfaceValue(open, materializeMarks) ++ patternText ++
+          renderExtraSurfaceValue(close, materializeMarks)
+        )
+      },
+      None => { None },
+    }
+  },
+  (BlockExpressionNode(open, items, result, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    let bodyIndent = extraIndentation(depth + 1, "");
+    let closeIndent = extraIndentation(depth, "");
+    let openText = renderExtraSurfaceValue(open, materializeMarks);
+    let closeText = renderExtraSurfaceValue(close, materializeMarks);
+    match((
+      renderExtraNodes(
+        items,
+        "\n" ++ bodyIndent,
+        "",
+        depth + 1,
+        materializeMarks,
+        renderNode,
+      ),
+      result
+    )) {
+      (Some(itemsText), Some(resultNode)) => {
+        match(renderNode(resultNode, depth + 1, materializeMarks)) {
+          Some(resultText) => {
+            let separator = if (itemsText == "") { "" } else { "\n" ++ bodyIndent };
+            renderExtraBlock(
+              openText,
+              itemsText ++ separator ++ resultText,
+              closeText,
+              bodyIndent,
+              closeIndent,
+            )
+          },
+          None => { None },
+        }
+      },
+      (Some(itemsText), None) => {
+        renderExtraBlock(openText, itemsText, closeText, bodyIndent, closeIndent)
+      },
+      _ => { None },
+    }
+  },
+  (ParenthesizedSequenceNode(open, items, result, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((
+      renderExtraNodes(items, " ", "", depth, materializeMarks, renderNode),
+      result
+    )) {
+      (Some(itemsText), Some(resultNode)) => {
+        match(renderNode(resultNode, depth, materializeMarks)) {
+          Some(resultText) => {
+            let separator = if (itemsText == "") { "" } else { " " };
+            Some(
+              renderExtraSurfaceValue(open, materializeMarks) ++ itemsText ++
+              separator ++ resultText ++ renderExtraSurfaceValue(close, materializeMarks)
+            )
+          },
+          None => { None },
+        }
+      },
+      (Some(itemsText), None) => {
+        Some(
+          renderExtraSurfaceValue(open, materializeMarks) ++ itemsText ++
+          renderExtraSurfaceValue(close, materializeMarks)
+        )
+      },
+      _ => { None },
+    }
+  },
+  (AscribedExpressionNode(value, colon, annotation, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((
+      renderNode(value, depth, materializeMarks),
+      renderNode(annotation, depth, materializeMarks)
+    )) {
+      (Some(valueText), Some(annotationText)) => {
+        Some(valueText ++ " " ++ renderExtraSurfaceValue(colon, materializeMarks) ++ " " ++ annotationText)
+      },
+      _ => { None },
+    }
+  },
+  (DirectiveNode(atToken, name, terminator, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(
+      renderExtraToken(atToken) ++ renderExtraToken(name) ++
+      renderExtraSurfaceValue(terminator, materializeMarks)
+    )
+  },
+  (PanicExpressionNode(panicToken, open, message, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(message, depth, materializeMarks)) {
+      Some(text) => {
+        Some(
+          renderExtraToken(panicToken) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+          text ++ renderExtraSurfaceValue(close, materializeMarks)
+        )
+      },
+      None => { None },
+    }
+  },
+  (CarrierLiftExpressionNode(carrier, open, arguments, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((
+      renderNode(carrier, depth, materializeMarks),
+      renderExtraNodes(arguments, ", ", "", depth, materializeMarks, renderNode)
+    )) {
+      (Some(carrierText), Some(argumentsText)) => {
+        Some(
+          carrierText ++ renderExtraToken(open) ++ argumentsText ++
+          renderExtraSurfaceValue(close, materializeMarks)
+        )
+      },
+      _ => { None },
+    }
+  },
+  (LiftTupleExpressionNode(open, arguments, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderExtraNodes(arguments, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(argumentsText) => {
+        Some(
+          renderExtraToken(open) ++ argumentsText ++
+          renderExtraSurfaceValue(close, materializeMarks)
+        )
+      },
+      None => { None },
+    }
+  },
+  (JsonObjectExpressionNode(jsonToken, open, fields, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderExtraNodes(fields, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(fieldsText) => {
+        if (fieldsText == "") {
+          Some(
+            renderExtraToken(jsonToken) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+            renderExtraSurfaceValue(close, materializeMarks)
+          )
+        } else {
+          Some(
+            renderExtraToken(jsonToken) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+            " " ++ fieldsText ++ " " ++ renderExtraSurfaceValue(close, materializeMarks)
+          )
+        }
+      },
+      None => { None },
+    }
+  },
+  (JsonArrayExpressionNode(jsonToken, open, items, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderExtraNodes(items, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(itemsText) => {
+        Some(
+          renderExtraToken(jsonToken) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+          itemsText ++ renderExtraSurfaceValue(close, materializeMarks)
+        )
+      },
+      None => { None },
+    }
+  },
+  (JsonObjectFieldNode(key, colon, expression, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(expression, depth, materializeMarks)) {
+      Some(text) => {
+        Some(
+          renderExtraToken(key) ++ renderExtraSurfaceValue(colon, materializeMarks) ++ " " ++ text
+        )
+      },
+      None => { None },
+    }
+  },
+  (RecordExpressionNode(dot, open, fields, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderExtraNodes(fields, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(fieldsText) => {
+        if (fieldsText == "") {
+          Some(
+            renderExtraToken(dot) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+            renderExtraSurfaceValue(close, materializeMarks)
+          )
+        } else {
+          Some(
+            renderExtraToken(dot) ++ renderExtraSurfaceValue(open, materializeMarks) ++
+            " " ++ fieldsText ++ " " ++ renderExtraSurfaceValue(close, materializeMarks)
+          )
+        }
+      },
+      None => { None },
+    }
+  },
+  (NamedRecordExpressionNode(target, open, fields, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((
+      renderNode(target, depth, materializeMarks),
+      renderExtraNodes(fields, ", ", "", depth, materializeMarks, renderNode)
+    )) {
+      (Some(targetText), Some(fieldsText)) => {
+        if (fieldsText == "") {
+          Some(
+            targetText ++ renderExtraSurfaceValue(open, materializeMarks) ++
+            renderExtraSurfaceValue(close, materializeMarks)
+          )
+        } else {
+          Some(
+            targetText ++ renderExtraSurfaceValue(open, materializeMarks) ++
+            " " ++ fieldsText ++ " " ++ renderExtraSurfaceValue(close, materializeMarks)
+          )
+        }
+      },
+      _ => { None },
+    }
+  },
+  (RecordFieldNode(name, equalsToken, expression, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(expression) {
+      Some(value) => {
+        match(renderNode(value, depth, materializeMarks)) {
+          Some(text) => {
+            let equalsText = match(equalsToken) {
+              Some(token) => { " " ++ renderExtraSurfaceValue(token, materializeMarks) ++ " " },
+              None => { " " },
+            };
+            Some(renderExtraToken(name) ++ equalsText ++ text)
+          },
+          None => { None },
+        }
+      },
+      None => { Some(renderExtraToken(name)) },
+    }
+  },
+  (RecordSpreadNode(spread, expression, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(expression, depth, materializeMarks)) {
+      Some(text) => { Some(renderExtraToken(spread) ++ text) },
+      None => { None },
+    }
+  },
+  _ => { None },
+};

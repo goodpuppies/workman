@@ -16,7 +16,7 @@ import {
 import { moduleId } from "../src/module_id.ts";
 import type { ModuleMap } from "../src/module_id.ts";
 import { loadModuleGraph, type ModuleGraph } from "../src/module_graph.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { buildPartialProjectSnapshot } from "../src/program_analysis.ts";
 import { topLevelPhraseRanges } from "../src/top_level_phrases.ts";
 
@@ -259,7 +259,7 @@ Deno.test("[module update A608] occurrence records preserve type, constructor, a
       "/test/main.wm",
       "type Maybe<T> = | None | Some<T>; " +
       "let value = Some(1); " +
-      "let read = match(value) { Some(Var(x)) => { x }, None => { 0 } };",
+      "let read = match(value) { Some(x) => { x }, None => { 0 } };",
     ]]),
   );
   const occurrences = analysis.interfaces.get(moduleId("/test/main.wm"))!.occurrences;
@@ -419,7 +419,7 @@ Deno.test("[module update A603/A608] named import source and alias retain every 
   const constructorAlias = semanticOccurrencesAt(main, aliasOffset).find((item) =>
     item.target.kind === "constructor"
   )!;
-  assertEquals(main.semanticTypes[constructor.inferredType!.id].rendered, "(Number) => Box");
+  assertEquals(main.semanticTypes[constructor.inferredType!.id].rendered, "Number -> Box");
   assertEquals(constructor.inferredType?.generalized, true);
   assertStrictEquals(constructor.inferredType?.id, constructorAlias.inferredType?.id);
   assertEquals(
@@ -460,19 +460,19 @@ Deno.test("[module update A608] named value imports retain declaration and use-s
     [
       {
         role: "import-source",
-        type: "('a) => 'a",
+        type: "'a -> 'a",
         generalized: true,
         variables: 1,
       },
       {
         role: "import-alias",
-        type: "('a) => 'a",
+        type: "'a -> 'a",
         generalized: true,
         variables: 1,
       },
       {
         role: "reference",
-        type: "(Number) => Number",
+        type: "Number -> Number",
         generalized: false,
         variables: 0,
       },
@@ -573,14 +573,14 @@ Deno.test("[module update A608] occurrences reference immutable semantic type sn
     generalized: true,
     quantifiedVariables: 1,
   });
-  assertEquals(declarationType.rendered, "('a) => 'a");
+  assertEquals(declarationType.rendered, "'a -> 'a");
   assertEquals(declarationType.shape.kind, "function");
   assertEquals(identities[1].inferredType, {
     id: referenceType.id,
     generalized: false,
     quantifiedVariables: 0,
   });
-  assertEquals(referenceType.rendered, "(Number) => Number");
+  assertEquals(referenceType.rendered, "Number -> Number");
   assertEquals(Object.isFrozen(main.semanticTypes), true);
   assertEquals(Object.isFrozen(declarationType.shape), true);
 });
@@ -608,7 +608,7 @@ Deno.test("[module update A608] typed-node queries cover expressions, patterns, 
     },
     {
       kind: "pattern",
-      rendered: "(t) => t",
+      rendered: "t -> t",
       generalized: true,
       quantifiedVariables: 1,
     },
@@ -628,8 +628,8 @@ Deno.test("[module update A608] typed-node queries cover expressions, patterns, 
   assertEquals(main.semanticTypes[string.type.id].rendered, "String");
   assertEquals(id.label, "id");
   assertEquals(idUse.label, "id");
-  assertEquals(main.semanticTypes[idUse.type.id].rendered, "(Number) => Number");
-  assertEquals(main.semanticTypes[idUse.generalType!.id].rendered, "(t) => t");
+  assertEquals(main.semanticTypes[idUse.type.id].rendered, "Number -> Number");
+  assertEquals(main.semanticTypes[idUse.generalType!.id].rendered, "t -> t");
   assertEquals(Object.isFrozen(main.typedNodes), true);
   assertEquals(Object.isFrozen(number), true);
 });
@@ -914,7 +914,7 @@ Deno.test("[module update A610] failed declarations contribute no type-variable 
 
 Deno.test("[module update A610] uncertified JS imports contribute no FFI facts", async () => {
   const source = "let good = 1; let bad: String = 1; " +
-    'from js.global("Math") import unsafe { max: (Number, Number) => Number };';
+    'from js.global("Math") import unsafe { max: (Number, Number) -> Number };';
   const graph = await loadModuleGraph("/test/main.wm", {
     virtualFs: new Map([["/test/main.wm", source]]),
   });
@@ -1155,7 +1155,7 @@ Deno.test("[module update A601/A608] public origins and definitions carry compil
 });
 
 Deno.test("[module update A608] JS imports use compiler binding identities in scopes and mappings", async () => {
-  const source = 'from js.global("Math") import { max as jsmax: (Number, Number) => Number }; ' +
+  const source = 'from js.global("Math") import { max as jsmax: (Number, Number) -> Number }; ' +
     "let read = jsmax(1, 2);";
   const analysis = await analyzeVirtual(
     "/test/main.wm",
@@ -1200,12 +1200,12 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
       target: { kind: "global", path: "Math" },
       unsafe: false,
       typeOnly: false,
-      source: 'from js.global("Math") import { max as jsmax: (Number, Number) => Number }',
+      source: 'from js.global("Math") import { max as jsmax: (Number, Number) -> Number }',
       bindings: [{
         sourceName: "max",
         localName: "jsmax",
         fallible: true,
-        type: "((Number, Number)) => Result<Number, Js.Error>",
+        type: "(Number, Number) -> Result<Number, Js.Error>",
       }],
     }],
   );
@@ -1266,7 +1266,7 @@ Deno.test("[module update A608] inferred JS namespace members retain authored FF
 });
 
 Deno.test("[module update A608] lowered JS structures retain authored qualifier identities", async () => {
-  const source = 'from js.global("console") import unsafe { log: (Number) => Void } as console; ' +
+  const source = 'from js.global("console") import unsafe { log: Number -> Void } as console; ' +
     "let main = () => { console.log(1) };";
   const analysis = await analyzeVirtual(
     "/test/main.wm",
@@ -1375,7 +1375,7 @@ Deno.test("[module update A608] strict occurrences cover every authored named no
     "record Point<T> = { x: T, y: T };",
     "type Shape = | Dot<Point<Number>> | Empty;",
     "let origin = Point(0, 0);",
-    "let describe = (shape: Shape) => { match(shape) { Dot(Var(p)) => { p.x }, Empty => { 0 } } };",
+    "let describe = (shape: Shape) => { match(shape) { Dot(p) => { p.x }, Empty => { 0 } } };",
   ].join(" ");
   const main = [
     'from "./lib.wm" import * as Lib;',
@@ -1385,7 +1385,7 @@ Deno.test("[module update A608] strict occurrences cover every authored named no
     "let dot: Lib.Shape = Lib.Dot(selected);",
     "let value = label(dot);",
     "let sum = selected.x + Lib.origin.y;",
-    "let matched = match(dot) { Lib.Dot(Var(inner)) => { inner.x }, _ => { 0 } };",
+    "let matched = match(dot) { Lib.Dot(inner) => { inner.x }, _ => { 0 } };",
     "let listy = match([1, 2]) { [Var(h), ..Var(t)] => { h + describe(Dot(origin)) }, [] => { 0 } };",
     "let block = { let local = origin; describe(Dot(local)) };",
   ].join(" ");
@@ -1444,10 +1444,10 @@ Deno.test("[module update A608] strict scopes reproduce every reference occurren
     "record Point<T> = { x: T, y: T };",
     "type Shape = | Dot<Point<Number>> | Empty;",
     "let origin = Point(0, 0);",
-    "let describe = (shape: Shape) => { match(shape) { Dot(Var(p)) => { p.x }, Empty => { 0 } } };",
+    "let describe = (shape: Shape) => { match(shape) { Dot(p) => { p.x }, Empty => { 0 } } };",
   ].join(" ");
   const ffi = [
-    'from js.global("console") import unsafe { log: (String) => Void } as console;',
+    'from js.global("console") import unsafe { log: String -> Void } as console;',
     "from js.global import unsafe { URL };",
     "let show = (text: String) => { console.log(text) };",
     'let made = URL.new("https://example.com");',
@@ -1460,7 +1460,7 @@ Deno.test("[module update A608] strict scopes reproduce every reference occurren
     "let selected = Lib.origin;",
     "let dot: Lib.Shape = Lib.Dot(selected);",
     "let sum = selected.x + Lib.origin.y;",
-    "let matched = match(dot) { Lib.Dot(Var(inner)) => { inner.x }, _ => { 0 } };",
+    "let matched = match(dot) { Lib.Dot(inner) => { inner.x }, _ => { 0 } };",
     "let block = { let local = origin; label(Dot(local)) };",
   ].join(" ");
   const analysis = await analyzeVirtual(

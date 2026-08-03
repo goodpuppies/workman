@@ -5,7 +5,7 @@ type MapTree<K, V> =
   | MapNode<Number, K, V, MapTree<K, V>, MapTree<K, V>>;
 
 type Map<K, V> =
-  | MapValue<(K, K) => Ordering, MapTree<K, V>>;
+  | MapValue<(K, K) -> Ordering, MapTree<K, V>>;
 
 let numberCompare = (left, right) => {
   if (left < right) {

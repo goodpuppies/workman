@@ -686,11 +686,12 @@ required for this milestone.
             equals instead of reusing the pattern span.
   - [x] Document unsupported syntax in the mode as a known limitation rather than falling back to
         Peggy for semantic analysis.
-  - [x] Add explicit launch/extension smoke tests for selecting frontend-v2 mode with the generated
-        artifact path and receiving v2 diagnostics.
-    - [x] LSP server launch test verifies `WM_MINI_FRONTEND=v2` publishes v2 structural diagnostics.
-    - [x] VS Code extension config test verifies frontend-v2 mode and generated artifact path are
-          passed into the Deno server environment.
+  - [x] Add explicit launch/extension smoke tests for the generated artifact path and generated
+        diagnostics.
+    - [x] LSP server launch test verifies the sole Workman frontend publishes generated structural
+          diagnostics without a mode environment variable.
+    - [x] VS Code extension config test verifies only the optional generated artifact path is passed
+          into the Deno server environment.
 
 - [ ] Run Peggy and frontend v2 over the same valid-source corpus.
   - [x] Add a supported-source semantic comparison harness that runs Peggy and frontend v2 over the
@@ -718,7 +719,8 @@ required for this milestone.
 - [ ] Record and justify intentional semantic or span differences.
 - [ ] Run compiler/check tests in v2 mode.
 - [ ] Measure lexing, parsing, DTO construction, adaptation, and total compile time.
-- [ ] Define the bootstrap artifact policy before frontend v2 becomes the default.
+- [x] Define the bootstrap artifact policy before frontend v2 becomes the default: the tracked
+      frontend-v2 runtime artifact is stage 0 for a byte-identical self-hosted rebuild.
 
 ### Recovery-aware semantics
 

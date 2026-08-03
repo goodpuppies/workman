@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import { once } from "node:events";
 import process from "node:process";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
-import { loadFrontendV2 } from "../frontend_v2_loader.ts";
+import { loadFrontendV2Surface } from "../frontend_v2_surface_loader.ts";
 import { runtime } from "../io.ts";
 import { DocumentStore } from "./documents.ts";
 import { completionAt } from "./completion.ts";
@@ -21,7 +21,7 @@ import {
 import { SemanticService } from "./semantic_service.ts";
 import { signatureHelpAt } from "./signature_help.ts";
 import { definitionAt, documentHighlightsAt, referencesAt, typeDefinitionAt } from "./symbols.ts";
-import { structuralInlayHints } from "./structural_inlays.ts";
+import { surfaceRecoveryInlayHints } from "./surface_recovery.ts";
 import { semanticInlayHints } from "./type_inlays.ts";
 import { fileUriToPath } from "./uri.ts";
 import { validateUri } from "./validation.ts";
@@ -56,7 +56,10 @@ export async function runServer() {
   let buffer: Uint8Array<ArrayBufferLike> = new Uint8Array();
   const pending = new Set<Promise<void>>();
   for await (const chunk of process.stdin) {
-    buffer = concat(buffer, typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk);
+    buffer = concat(
+      buffer,
+      typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk,
+    );
     const decoded = decodeMessages(buffer);
     buffer = decoded.rest;
     for (const error of decoded.errors) {
@@ -121,7 +124,11 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "exit") process.exit(isShutdown ? 0 : 1);
   if (message.method === "initialize") {
     if (hasInitialized || isShutdown) {
-      await respondError(message.id, -32600, "initialize may only be requested once");
+      await respondError(
+        message.id,
+        -32600,
+        "initialize may only be requested once",
+      );
       return;
     }
     const params = message.params as WorkmanInitializeParams | undefined;
@@ -132,7 +139,11 @@ async function handleMessage(message: RpcMessage) {
       documents.sourceOverrides(),
       frontendOptions,
     );
-    log("initialize index done", `${Date.now() - indexStarted}ms`, `files=${indexedFiles}`);
+    log(
+      "initialize index done",
+      `${Date.now() - indexStarted}ms`,
+      `files=${indexedFiles}`,
+    );
     await respond(message.id, {
       capabilities: {
         positionEncoding: "utf-16",
@@ -161,8 +172,7 @@ async function handleMessage(message: RpcMessage) {
           },
           full: true,
         },
-        ...(typeInlaysEnabled || parameterInlaysEnabled ||
-            (frontendOptions.frontend === "v2" && structuralInlaysEnabled)
+        ...(typeInlaysEnabled || parameterInlaysEnabled || structuralInlaysEnabled
           ? { inlayHintProvider: true }
           : {}),
       },
@@ -194,7 +204,11 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didOpen") {
     workspaceRevision++;
     const params = message.params as DidOpenParams;
-    documents.open(params.textDocument.uri, params.textDocument.text, params.textDocument.version);
+    documents.open(
+      params.textDocument.uri,
+      params.textDocument.text,
+      params.textDocument.version,
+    );
     await publishAffectedValidation(params.textDocument.uri);
     return;
   }
@@ -203,7 +217,11 @@ async function handleMessage(message: RpcMessage) {
     const params = message.params as DidChangeParams;
     const text = params.contentChanges.at(-1)?.text;
     if (text === undefined) return;
-    documents.change(params.textDocument.uri, text, params.textDocument.version);
+    documents.change(
+      params.textDocument.uri,
+      text,
+      params.textDocument.version,
+    );
     await publishAffectedValidation(params.textDocument.uri);
     return;
   }
@@ -430,7 +448,11 @@ async function handleMessage(message: RpcMessage) {
     return;
   }
   if (message.method !== undefined) {
-    await respondError(message.id, -32601, `method not found: ${message.method}`);
+    await respondError(
+      message.id,
+      -32601,
+      `method not found: ${message.method}`,
+    );
   }
 }
 
@@ -449,16 +471,22 @@ async function inlayHints(params: InlayHintParams) {
       semanticService,
     )
     : [];
-  if (frontendOptions.frontend !== "v2" || !structuralInlaysEnabled) return ordinary;
-  const source = documents.get(uri)?.text ?? await runtime.readTextFile(fileUriToPath(uri));
-  const frontend = await loadFrontendV2(frontendV2ModuleUrl(frontendOptions));
-  const result = frontendV2ParseCache.structural(
+  if (!structuralInlaysEnabled) {
+    return ordinary;
+  }
+  const source = documents.get(uri)?.text ??
+    await runtime.readTextFile(fileUriToPath(uri));
+  const frontend = await loadFrontendV2Surface(
+    frontendV2ModuleUrl(frontendOptions),
+  );
+  const surface = frontendV2ParseCache.surface(
     uri,
     source,
     documents.version(uri),
     frontend,
   );
-  return [...ordinary, ...structuralInlayHints(source, result, params.range)].sort((left, right) =>
+  const generated = surfaceRecoveryInlayHints(source, surface, params.range);
+  return [...ordinary, ...generated].sort((left, right) =>
     left.position.line - right.position.line ||
     left.position.character - right.position.character
   );
@@ -468,11 +496,16 @@ async function publishValidation(uri: string) {
   const started = Date.now();
   const validationKey = projectIndex.fallbackUri(uri);
   log("validate start", uri);
-  const results = await validateUri(uri, documents.sourceOverrides(), frontendOptions, {
-    frontendV2ParseCache,
-    documentVersion: (diagnosticUri) => documents.version(diagnosticUri),
-    semanticService,
-  });
+  const results = await validateUri(
+    uri,
+    documents.sourceOverrides(),
+    frontendOptions,
+    {
+      frontendV2ParseCache,
+      documentVersion: (diagnosticUri) => documents.version(diagnosticUri),
+      semanticService,
+    },
+  );
   const currentUris = new Set(results.map((result) => result.uri));
   await Promise.all(
     results.map((result) => publishDiagnostics(result.uri, result.diagnostics)),
@@ -481,14 +514,21 @@ async function publishValidation(uri: string) {
     if (!currentUris.has(staleUri)) await publishDiagnostics(staleUri, []);
   }
   lastPublishedUrisByEntry.set(validationKey, currentUris);
-  log("validate done", uri, `${Date.now() - started}ms`, `results=${results.length}`);
+  log(
+    "validate done",
+    uri,
+    `${Date.now() - started}ms`,
+    `results=${results.length}`,
+  );
 }
 
 function activeValidationKeys(): Set<string> {
   return new Set(documents.uris().map((uri) => projectIndex.fallbackUri(uri)));
 }
 
-async function clearInactiveProjectDiagnostics(activeKeys: Set<string>): Promise<void> {
+async function clearInactiveProjectDiagnostics(
+  activeKeys: Set<string>,
+): Promise<void> {
   const retained = new Set<string>();
   for (const [key, uris] of lastPublishedUrisByEntry) {
     if (activeKeys.has(key)) { for (const uri of uris) retained.add(uri); }
@@ -514,17 +554,23 @@ async function publishAffectedValidation(uri: string) {
   if (uris.length === 0) uris.push(projectIndex.fallbackUri(uri));
   log("affected validate start", uri, `files=${uris.length}`);
   for (const affectedUri of uris) await publishValidation(affectedUri);
-  log("affected validate done", uri, `${Date.now() - started}ms`, `files=${uris.length}`);
+  log(
+    "affected validate done",
+    uri,
+    `${Date.now() - started}ms`,
+    `files=${uris.length}`,
+  );
 }
 
-async function publishWatchedFileValidation(changes: DidChangeWatchedFilesParams["changes"]) {
+async function publishWatchedFileValidation(
+  changes: DidChangeWatchedFilesParams["changes"],
+) {
   const started = Date.now();
   const uris = changes.map((change) => change.uri);
   await semanticService.invalidateUris(uris);
   const deletedUris = new Set(
-    changes.filter((change) => change.type === 3 && !documents.get(change.uri)).map((change) =>
-      projectIndex.fallbackUri(change.uri)
-    ),
+    changes.filter((change) => change.type === 3 && !documents.get(change.uri))
+      .map((change) => projectIndex.fallbackUri(change.uri)),
   );
   const affectedUris = await projectIndex.affectedUrisForWatchedFiles(
     uris,
@@ -532,7 +578,11 @@ async function publishWatchedFileValidation(changes: DidChangeWatchedFilesParams
     frontendOptions,
   );
   await refreshSemanticDocumentContexts();
-  log("watched validate start", `changed=${uris.length}`, `files=${affectedUris.length}`);
+  log(
+    "watched validate start",
+    `changed=${uris.length}`,
+    `files=${affectedUris.length}`,
+  );
   for (const uri of deletedUris) {
     frontendV2ParseCache.delete(uri);
     lastPublishedUrisByEntry.delete(uri);
@@ -541,11 +591,17 @@ async function publishWatchedFileValidation(changes: DidChangeWatchedFilesParams
   for (const uri of affectedUris) {
     if (!deletedUris.has(uri)) await publishValidation(uri);
   }
-  log("watched validate done", `${Date.now() - started}ms`, `files=${affectedUris.length}`);
+  log(
+    "watched validate done",
+    `${Date.now() - started}ms`,
+    `files=${affectedUris.length}`,
+  );
 }
 
 async function refreshSemanticDocumentContexts(): Promise<void> {
-  for (const uri of documents.uris()) await semanticService.documentContext(uri);
+  for (const uri of documents.uris()) {
+    await semanticService.documentContext(uri);
+  }
 }
 
 async function publishDiagnostics(uri: string, diagnostics: unknown[]) {
@@ -556,7 +612,11 @@ async function publishDiagnostics(uri: string, diagnostics: unknown[]) {
     `count=${diagnostics.length}`,
     version === undefined ? "version=-" : `version=${version}`,
   );
-  await notify("textDocument/publishDiagnostics", { uri, diagnostics, version });
+  await notify("textDocument/publishDiagnostics", {
+    uri,
+    diagnostics,
+    version,
+  });
 }
 
 async function respond(id: RpcMessage["id"], result: unknown) {
@@ -571,7 +631,11 @@ async function respond(id: RpcMessage["id"], result: unknown) {
   await write({ jsonrpc: "2.0", id, result });
 }
 
-async function respondError(id: RpcMessage["id"], code: number, message: string) {
+async function respondError(
+  id: RpcMessage["id"],
+  code: number,
+  message: string,
+) {
   if (id === undefined) return;
   const claim = claimRequestResponse(id);
   if (claim.kind === "skip") return;
@@ -594,12 +658,20 @@ function claimRequestResponse(id: RpcMessage["id"]):
     return { kind: "error", code: -32800, message: "request cancelled" };
   }
   if (state.revision !== workspaceRevision) {
-    return { kind: "error", code: -32801, message: "document state changed during request" };
+    return {
+      kind: "error",
+      code: -32801,
+      message: "document state changed during request",
+    };
   }
   return { kind: "normal" };
 }
 
-async function writeRpcError(id: RpcMessage["id"], code: number, message: string) {
+async function writeRpcError(
+  id: RpcMessage["id"],
+  code: number,
+  message: string,
+) {
   log("send error", `id=${String(id)}`, `code=${code}`, message);
   await write({
     jsonrpc: "2.0",
@@ -653,23 +725,22 @@ function showError(error: unknown): string {
 }
 
 function frontendOptionsFromEnv(): CompilerFrontendOptions {
-  const mode = process.env.WORKMAN_FRONTEND ?? process.env.WM_MINI_FRONTEND;
-  const frontend = mode === "v2" || mode === "compare" || mode === "v1" ? mode : undefined;
   const modulePath = (
     process.env.WORKMAN_FRONTEND_V2_MODULE ??
       process.env.WM_MINI_FRONTEND_V2_MODULE
   )?.trim();
   return {
-    ...(frontend ? { frontend } : {}),
+    frontend: "v2",
     ...(modulePath ? { frontendV2ModuleUrl: pathToFileUrl(modulePath) } : {}),
   };
 }
 
-function applyInitializationOptions(options: WorkmanInitializationOptions | undefined): void {
+function applyInitializationOptions(
+  options: WorkmanInitializationOptions | undefined,
+): void {
   if (!options) return;
   frontendOptions = {
     ...frontendOptions,
-    ...(options.frontend ? { frontend: options.frontend } : {}),
     ...(options.frontendV2Module
       ? { frontendV2ModuleUrl: pathToFileUrl(options.frontendV2Module) }
       : {}),
@@ -677,24 +748,29 @@ function applyInitializationOptions(options: WorkmanInitializationOptions | unde
   if (options.structuralInlayHints !== undefined) {
     structuralInlaysEnabled = options.structuralInlayHints;
   }
-  if (options.typeInlayHints !== undefined) typeInlaysEnabled = options.typeInlayHints;
+  if (options.typeInlayHints !== undefined) {
+    typeInlaysEnabled = options.typeInlayHints;
+  }
   if (options.parameterInlayHints !== undefined) {
     parameterInlaysEnabled = options.parameterInlayHints;
   }
 }
 
-export function frontendV2ModuleUrl(options: CompilerFrontendOptions): string | URL {
+export function frontendV2ModuleUrl(
+  options: CompilerFrontendOptions,
+): string | URL {
   return options.frontendV2ModuleUrl ??
-    new URL("../../tooling/frontend-v2/frontend-v2.generated.mjs", import.meta.url);
+    new URL("../generated/frontend_v2_parser.js", import.meta.url);
 }
 
 function pathToFileUrl(path: string): URL | string {
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) return path;
-  return pathToFileURL(path.startsWith("/") ? path : `${process.cwd()}/${path}`);
+  return pathToFileURL(
+    path.startsWith("/") ? path : `${process.cwd()}/${path}`,
+  );
 }
 
 type WorkmanInitializationOptions = {
-  frontend?: "v1" | "v2" | "compare";
   frontendV2Module?: string;
   structuralInlayHints?: boolean;
   typeInlayHints?: boolean;

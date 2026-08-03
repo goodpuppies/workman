@@ -2,7 +2,7 @@ import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 import type { Expr } from "../src/ast.ts";
 import { inferModule } from "../src/infer.ts";
 import type { GpuOperationRow } from "../src/infer/type_facts.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { standardInferOptions } from "../src/standard_library.ts";
 import { fn, fresh, NumberTy, prune, show, tuple } from "../src/types.ts";
 import {
@@ -34,8 +34,8 @@ Deno.test("v4 GPU operation skeletons remain ordinary generalized HM", async () 
   if (!twice || !wave) throw new Error("missing generalized GPU helper facts");
   assertEquals(twice.vars.length, 2);
   assertEquals(wave.vars.length, 1);
-  assertEquals(show(twice.type), "('a) => 'b");
-  assertEquals(show(wave.type).replaceAll(/'\w+/g, "'a"), "('a) => 'a");
+  assertEquals(show(twice.type), "'a -> 'b");
+  assertEquals(show(wave.type).replaceAll(/'\w+/g, "'a"), "'a -> 'a");
   assertEquals(result.facts.gpuOperations.size, 2);
   assertEquals(
     [...result.facts.gpuOperations.values()].map((operation) => operation.kind),
@@ -62,15 +62,15 @@ Deno.test("v4 catalog skeletons contribute only universal HM equalities", async 
     if (!binding) throw new Error(`missing ${name} scheme`);
     return show(binding.type).replaceAll(/'\w+/g, "'a");
   };
-  assertEquals(scheme("floored"), "('a) => 'a");
-  assertEquals(scheme("magnitude"), "('a) => Number");
-  assertEquals(scheme("dotted"), "(('a, 'a)) => Number");
+  assertEquals(scheme("floored"), "'a -> 'a");
+  assertEquals(scheme("magnitude"), "'a -> Number");
+  assertEquals(scheme("dotted"), "('a, 'a) -> Number");
   assertEquals(
     scheme("crossed"),
-    "(((Number, Number, Number), (Number, Number, Number))) => (Number, Number, Number)",
+    "((Number, Number, Number), (Number, Number, Number)) -> (Number, Number, Number)",
   );
-  assertEquals(scheme("bent"), "(('a, 'a, Number)) => 'a");
-  assertEquals(scheme("eased"), "(('a, 'a, 'a)) => 'a");
+  assertEquals(scheme("bent"), "('a, 'a, Number) -> 'a");
+  assertEquals(scheme("eased"), "('a, 'a, 'a) -> 'a");
 });
 
 Deno.test("v4 GPU operators see Result payloads and retain a separate carrier plan", async () => {

@@ -448,7 +448,7 @@ examples:
   wm check examples/factorial.wm
   wm run examples/factorial.wm
   wm compile examples/factorial.wm out.mjs
-  wm compile-library tooling/frontend-v2/library_fixture.wm frontend-v2.mjs
+  wm compile-library tooling/frontend-v2/compiler_frontend.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
   wm repl --v2 scratch.wm
   wm fmt scratch.wm

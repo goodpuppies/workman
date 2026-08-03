@@ -1,8 +1,5 @@
 import { assertEquals } from "@std/assert";
-import {
-  directWorkmanImportSpecifiers,
-  hasTopLevelMainBinding,
-} from "../src/lsp/import_scan.ts";
+import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "../src/lsp/import_scan.ts";
 
 Deno.test("direct import scan handles multiline imports and ignores non-module text", () => {
   const source = String.raw`

@@ -29,6 +29,7 @@ import {
   recordRecordFieldFact,
   type TypeFacts,
 } from "./type_facts.ts";
+import { elaborateConstraint } from "./constraints.ts";
 
 export function showPattern(pattern: Pattern): string {
   switch (pattern.kind) {
@@ -56,6 +57,8 @@ export function showPattern(pattern: Pattern): string {
       return pattern.args.length
         ? `${pattern.name}(${pattern.args.map(showPattern).join(", ")})`
         : pattern.name;
+    case "PAscribed":
+      return `(${showPattern(pattern.pattern)} : type)`;
   }
 }
 
@@ -203,6 +206,18 @@ export function inferPattern(
           "nullary constructor pattern matches scrutinee",
         );
       }
+      return expected;
+    }
+    case "PAscribed": {
+      const annotation = elaborateConstraint(p.annotation, { typeEnv, strEnv, facts }, p.node);
+      constrainPattern(
+        expected,
+        annotation,
+        p,
+        "InferConstraint.Pattern",
+        "pattern matches written type constraint",
+      );
+      inferPattern(p.pattern, annotation, env, typeEnv, strEnv, adts, binders, facts);
       return expected;
     }
   }
@@ -358,6 +373,31 @@ export function inferBindingPattern(
       }
       return;
     }
+    case "PAscribed": {
+      const annotation = elaborateConstraint(
+        pattern.annotation,
+        { typeEnv, strEnv, facts },
+        pattern.node,
+      );
+      constrainPattern(
+        expected,
+        annotation,
+        pattern,
+        "InferBindingConstraint.Pattern",
+        "binding pattern matches written type constraint",
+      );
+      inferBindingPattern(
+        pattern.pattern,
+        annotation,
+        env,
+        typeEnv,
+        strEnv,
+        out,
+        binders,
+        facts,
+      );
+      return;
+    }
     default:
       throw new Error("unsupported let pattern");
   }
@@ -401,6 +441,8 @@ export function patternBinders(pattern: Pattern): string[] {
       return pattern.fields.flatMap((field) => patternBinders(field.pattern));
     case "PCtor":
       return pattern.args.flatMap(patternBinders);
+    case "PAscribed":
+      return patternBinders(pattern.pattern);
     default:
       return [];
   }

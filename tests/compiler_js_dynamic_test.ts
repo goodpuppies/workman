@@ -32,7 +32,7 @@ Deno.test("rejects Workman ADT values passed to JS FFI calls", async () => {
 Deno.test("supports JSON literals as explicit JS values", async () => {
   const result = await checkSource(`
     from js.module("node:child_process") import unsafe {
-      spawn: (String, Js.Value, Js.Value) => Js.Value
+      spawn: (String, Js.Value, Js.Value) -> Js.Value
     };
     let proc = spawn(
       "curl",
@@ -45,7 +45,7 @@ Deno.test("supports JSON literals as explicit JS values", async () => {
   `);
 
   expectBinding(result.env, "spawn", {
-    type: "((String, Js.Value, Js.Value)) => Js.Value",
+    type: "(String, Js.Value, Js.Value) -> Js.Value",
     vars: 0,
   });
   expectBinding(result.env, "proc", { type: "Js.Value", vars: 0 });
@@ -60,13 +60,13 @@ Deno.test("JSON literal variables can settle to primitive types", async () => {
     let value = response("ok", 200);
   `);
 
-  expectBinding(result.env, "response", { type: "((String, Number)) => Response", vars: 0 });
+  expectBinding(result.env, "response", { type: "(String, Number) -> Response", vars: 0 });
   expectBinding(result.env, "value", { type: "Response", vars: 0 });
 });
 
 Deno.test("dynamic JS receiver callbacks adapt Workman lambdas", async () => {
   const js = await compile(`
-    from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+    from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
     let try = (result) => {
       match(result) {
         Ok(value) => { value },
@@ -137,7 +137,7 @@ Deno.test("constrained dynamic receiver calls materialize with inferred result t
   `);
 
   expectBinding(result.env, "pollOnce", {
-    type: "((Js.Object, Js.Object)) => Bool",
+    type: "(Js.Object, Js.Object) -> Bool",
     vars: 0,
   });
   expectBinding(result.env, "checked", { type: "Bool", vars: 0 });
@@ -190,7 +190,7 @@ Deno.test("dynamic JS callback parameter annotations are rejected", async () => 
   await assertRejects(
     () =>
       compile(`
-        from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+        from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
         let try = (result) => {
           match(result) {
             Ok(value) => { value },
@@ -210,7 +210,7 @@ Deno.test("dynamic JS callback parameter annotations are rejected", async () => 
   await assertRejects(
     () =>
       compile(`
-        from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+        from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
         let try = (result) => {
           match(result) {
             Ok(value) => { value },
@@ -231,7 +231,7 @@ Deno.test("dynamic JS annotations require explicit Json.assert", async () => {
   await assertRejects(
     () =>
       checkSource(`
-        from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+        from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
         let try = (result) => {
           match(result) {
             Ok(value) => { value },
@@ -246,9 +246,28 @@ Deno.test("dynamic JS annotations require explicit Json.assert", async () => {
   );
 });
 
+Deno.test("general expression constraints are not dynamic JS casts", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
+        let try = (result) => {
+          match(result) {
+            Ok(value) => { value },
+            Err(_) => { Panic("ffi") },
+          }
+        };
+        let payload = JSON.parse("{}");
+        let commits = ((payload :> .commits :> try) : Js.Object);
+      `),
+    Error,
+    "InferConstraint.Expression",
+  );
+});
+
 Deno.test("Json.assert is an explicit dynamic shape assertion", async () => {
   const result = await checkSource(`
-    from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+    from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
     record Commit = { id: String, message: String };
     let try = (result) => {
       match(result) {
@@ -267,7 +286,7 @@ Deno.test("dynamic JS array receiver annotations require an explicit assertion",
   await assertRejects(
     () =>
       compile(`
-        from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+        from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
         record Commit = { id: String, message: String };
         record PushPayload = { commits: Js.Array<Commit> };
         let formatCommit = (commit: Commit) => {
@@ -325,7 +344,7 @@ Deno.test("typed JS array at constrains unannotated helper receivers", async () 
     };
   `);
   expectBinding(result.env, "firstValue", {
-    type: "((Js.Array<WttrValue>, String)) => String",
+    type: "(Js.Array<WttrValue>, String) -> String",
     vars: 0,
   });
 });
@@ -347,7 +366,7 @@ Deno.test("typed JS array at works through record field receivers", async () => 
       }
     };
   `);
-  expectBinding(result.env, "firstLabel", { type: "(Payload) => String", vars: 0 });
+  expectBinding(result.env, "firstLabel", { type: "Payload -> String", vars: 0 });
 });
 
 Deno.test("primitive JS methods constrain unannotated helper receivers", async () => {
@@ -368,16 +387,16 @@ Deno.test("primitive JS methods constrain unannotated helper receivers", async (
       text :> .repeat(count) :> try
     };
   `);
-  expectBinding(result.env, "numberText", { type: "(Number) => String", vars: 0 });
-  expectBinding(result.env, "paddedRight", { type: "((String, Number)) => String", vars: 0 });
-  expectBinding(result.env, "repeated", { type: "((String, Number)) => String", vars: 0 });
+  expectBinding(result.env, "numberText", { type: "Number -> String", vars: 0 });
+  expectBinding(result.env, "paddedRight", { type: "(String, Number) -> String", vars: 0 });
+  expectBinding(result.env, "repeated", { type: "(String, Number) -> String", vars: 0 });
 });
 
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
   const result = await checkSource(`
     from js.global("JSON") import unsafe {
-      parse: (String) => Js.Object,
-      stringify: (Js.Value) => String,
+      parse: String -> Js.Object,
+      stringify: Js.Value -> String,
     } as JSON;
     record Entry = { city: String };
     let try = (result) => {
@@ -396,8 +415,8 @@ Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", 
     let text = save(cache);
     let annotatedText = saveAnnotated(cache);
   `);
-  expectBinding(result.env, "save", { type: "(Js.Dict<Entry>) => String", vars: 0 });
-  expectBinding(result.env, "saveAnnotated", { type: "(Js.Dict<Entry>) => String", vars: 0 });
+  expectBinding(result.env, "save", { type: "Js.Dict<Entry> -> String", vars: 0 });
+  expectBinding(result.env, "saveAnnotated", { type: "Js.Dict<Entry> -> String", vars: 0 });
   expectBinding(result.env, "text", { type: "String", vars: 0 });
   expectBinding(result.env, "annotatedText", { type: "String", vars: 0 });
 });
@@ -407,7 +426,7 @@ Deno.test("Workman ADT values are still rejected through JS boundary helpers", a
     () =>
       checkSource(`
         from js.global("JSON") import unsafe {
-          stringify: (Js.Value) => String,
+          stringify: Js.Value -> String,
         } as JSON;
         let save = (value) => {
           JSON.stringify(value)
@@ -424,7 +443,7 @@ Deno.test("undetermined JS boundary parameters are reported, not defaulted", asy
     () =>
       checkSource(`
         from js.global("JSON") import unsafe {
-          stringify: (Js.Value) => String,
+          stringify: Js.Value -> String,
         } as JSON;
         let save = (value) => {
           JSON.stringify(value)
@@ -438,8 +457,8 @@ Deno.test("undetermined JS boundary parameters are reported, not defaulted", asy
 Deno.test("Js.Dict supports typed string-key access through Dict.get and Dict.set", async () => {
   const result = await checkSource(`
     from js.global("JSON") import unsafe {
-      parse: (String) => Js.Object,
-      stringify: (Js.Value) => String,
+      parse: String -> Js.Object,
+      stringify: Js.Value -> String,
     } as JSON;
     record CacheEntry = { fetchedAt: Number, city: String };
     let try = (result) => {
@@ -484,7 +503,7 @@ Deno.test("Response.json() result feeds a following then", async () => {
     };
   `);
   expectBinding(result.env, "fetchJson", {
-    type: "(String) => Task<Js.Object, Js.Error>",
+    type: "String -> Task<Js.Object, Js.Error>",
     vars: 0,
   });
 });
@@ -508,7 +527,7 @@ Deno.test("typed JS array filter and includes infer with string callbacks", asyn
     let fahrenheit = flags(args) :> .includes("--f") :> try;
   `);
   expectBinding(result.env, "flags", {
-    type: "(Js.Array<String>) => Js.Array<String>",
+    type: "Js.Array<String> -> Js.Array<String>",
     vars: 0,
   });
   expectBinding(result.env, "fahrenheit", { type: "Bool", vars: 0 });
@@ -516,7 +535,7 @@ Deno.test("typed JS array filter and includes infer with string callbacks", asyn
 
 Deno.test("typed JS array receiver results infer through map and join", async () => {
   const result = await checkSource(`
-    from js.global("JSON") import unsafe { parse: (String) => Js.Object } as JSON;
+    from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
     record Commit = { id: String, message: String };
     record PushPayload = { commits: Js.Array<Commit> };
     let formatCommit = (commit: Commit) => {
@@ -563,7 +582,7 @@ Deno.test("Array.from works with explicit typed array element annotations", asyn
   const results = await checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
   const result = results.get("/test/main.wm")!;
 
-  expectBinding(result.env, "makeHex", { type: "(Void) => String", vars: 0 });
+  expectBinding(result.env, "makeHex", { type: "Void -> String", vars: 0 });
 });
 
 Deno.test("JSON literals reject ordinary ML values at the JS boundary", async () => {

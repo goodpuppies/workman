@@ -109,6 +109,9 @@ function collectNamedCallbackContexts(
         }
         visitExpr(expr.result);
         return;
+      case "Ascribed":
+        visitExpr(expr.value);
+        return;
       case "Binary":
         visitExpr(expr.left);
         visitExpr(expr.right);
@@ -437,6 +440,11 @@ function contextualizeExpr(
         result: contextualizeExpr(expr.result, result, arities, blockTypes, bindings),
       };
     }
+    case "Ascribed":
+      return {
+        ...expr,
+        value: contextualizeExpr(expr.value, result, arities, localTypes, bindings),
+      };
     case "Binary":
       return {
         ...expr,

@@ -419,6 +419,8 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
           node: expr.node,
         };
       }
+    case "Ascribed":
+      return coreExprFromSurface(expr.value, context);
     case "Binary":
       if (
         context && isResultCarrier(context.types.get(expr.left), context.typeEnv) ||
@@ -561,6 +563,8 @@ function corePatternFromSurface(
         payload: coreCtorPatternPayload(pattern.args, pattern.node, context),
         node: pattern.node,
       };
+    case "PAscribed":
+      return corePatternFromSurface(pattern.pattern, context);
   }
 }
 
@@ -615,6 +619,8 @@ function exprContainsGpuLambda(expr: Expr): boolean {
       return expr.items.some((item) =>
         isDecl(item) ? declContainsGpuLambda(item) : exprContainsGpuLambda(item)
       ) || exprContainsGpuLambda(expr.result);
+    case "Ascribed":
+      return exprContainsGpuLambda(expr.value);
     case "Binary":
     case "Pipe":
       return exprContainsGpuLambda(expr.left) || exprContainsGpuLambda(expr.right);

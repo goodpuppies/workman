@@ -191,14 +191,14 @@ let rec sumList = (list, val) => {
     "Recursive calls produce:",
     "Number",
     "But the body produces:",
-    "(Int_list) => Number",
+    "Int_list -> Number",
     "This looks like an accidental match-function expression.",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
   assertEquals(
     diagnostics?.[0].relatedInformation?.[0].message,
-    "body: (Int_list) => Number",
+    "body: Int_list -> Number",
   );
   assertEquals(diagnostics?.[0].relatedInformation?.[0].location.range.start, {
     line: 4,

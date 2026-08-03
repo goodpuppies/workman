@@ -84,6 +84,7 @@ function shallowColumnsComplete(
   types: Ty[],
   adts: Map<number, TypeDeclInfo>,
 ): boolean {
+  rows = rows.map((row) => row.length === 0 ? row : [withoutConstraint(row[0]), ...row.slice(1)]);
   if (types.length === 0) return rows.length > 0;
   const [headType, ...tailTypes] = types;
   if (rows.every((row) => isIrrefutable(row[0]))) {
@@ -120,6 +121,7 @@ function findMissingCases(
   adts: Map<number, TypeDeclInfo>,
   path: string[],
 ): MissingCase[] {
+  rows = rows.map((row) => row.length === 0 ? row : [withoutConstraint(row[0]), ...row.slice(1)]);
   if (types.length === 0) return rows.length > 0 ? [] : [{ path: [...path], missing: "_" }];
 
   const [headType, ...tailTypes] = types;
@@ -268,12 +270,17 @@ function constructorPatternMatches(patternName: string, ctorName: string): boole
 }
 
 function isIrrefutable(pattern: Pattern): boolean {
+  pattern = withoutConstraint(pattern);
   if (pattern.kind === "PWildcard" || pattern.kind === "PVar") return true;
   if (pattern.kind === "PTuple") return pattern.items.every(isIrrefutable);
   if (pattern.kind === "PRecord") {
     return pattern.fields.every((field) => isIrrefutable(field.pattern));
   }
   return false;
+}
+
+function withoutConstraint(pattern: Pattern): Pattern {
+  return pattern.kind === "PAscribed" ? withoutConstraint(pattern.pattern) : pattern;
 }
 
 function constructorArgTypes(

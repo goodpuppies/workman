@@ -65,7 +65,7 @@ export async function signatureHelpAt(
       Object.freeze({
         label: `${signature.callee}(${
           parameters.map(({ label }) => label).join(", ")
-        }) => ${result}`,
+        }) -> ${result}`,
         parameters: Object.freeze(parameters),
       }),
     ]),

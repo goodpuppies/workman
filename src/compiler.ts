@@ -32,7 +32,7 @@ import {
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import { standardInferOptions, standardRuntimeGraph } from "./standard_library.ts";
-import { assertCompilerFrontendMode } from "./frontend_mode.ts";
+import { assertCompilerFrontendMode, resolveCompilerFrontend } from "./frontend_mode.ts";
 import {
   analyzeModuleGraph,
   assertNoPartialDiagnostics,
@@ -579,7 +579,7 @@ async function analyzeRecoveredSnapshot(
   return buildPartialProjectSnapshot(graph, results, {
     kind,
     configuration: {
-      frontend: options.frontend ?? "v1",
+      frontend: resolveCompilerFrontend(options.frontend, options.surface),
       surface: options.surface ?? "workman",
     },
   }, { completionFacts });

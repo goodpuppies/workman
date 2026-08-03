@@ -8,7 +8,7 @@ Deno.test("cli run calls typed JS namespace imports", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("console") import unsafe { log: (String, Number) => Void } as console;
+      from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
       let main = () => {
         console.log("answer", 42)
       };
@@ -176,8 +176,8 @@ Deno.test("cli run passes JSON arrays as one JS argument", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("Array") import unsafe { isArray: (Js.Value) => Bool } as Array;
-      from js.global("JSON") import unsafe { stringify: (Js.Value) => String } as JSON;
+      from js.global("Array") import unsafe { isArray: Js.Value -> Bool } as Array;
+      from js.global("JSON") import unsafe { stringify: Js.Value -> String } as JSON;
       let main = () => {
         print(Array.isArray(JSON[1, 2]));
         print(JSON.stringify(JSON{
@@ -204,8 +204,8 @@ Deno.test("cli run wraps and unwraps JS nullish Option values", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("JSON") import unsafe { parse: (String) => Option<Js.Value> } as JSON;
-      from js.global("Object") import unsafe { is: (Option<Js.Value>, Js.Value) => Bool } as Object;
+      from js.global("JSON") import unsafe { parse: String -> Option<Js.Value> } as JSON;
+      from js.global("Object") import unsafe { is: (Option<Js.Value>, Js.Value) -> Bool } as Object;
       let main = () => {
         let none = JSON.parse("null");
         let some = JSON.parse("{\\"ok\\":true}");
@@ -256,7 +256,7 @@ Deno.test("cli run grants generated JS permissions for reflected child process i
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "0\n");
+  assertEquals(result.stdout, "Some(0)\n");
   assertEquals(result.stderr, "");
 });
 
@@ -314,7 +314,7 @@ Deno.test("cli run normalizes JS throws into matchable Js.Error values", async (
   await Deno.writeTextFile(
     input,
     `
-      from js.global import { eval as jsEval: (String) => Js.Value };
+      from js.global import { eval as jsEval: String -> Js.Value };
       let main = () => {
         print(match(jsEval("throw 'boom'")) {
           Ok(_) => { "ok" },

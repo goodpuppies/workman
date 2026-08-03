@@ -6,6 +6,7 @@ import {
   analyzeStrictDetachedFile,
 } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
+import { resolveCompilerFrontend } from "../frontend_mode.ts";
 import type { ModuleInterface, ProjectSnapshot } from "../module_interface.ts";
 import { ProjectContextRegistry, type ReverseImportDiscoveryIndex } from "../project_context.ts";
 import { fileUriToPath } from "./uri.ts";
@@ -148,7 +149,7 @@ function interfaceForPath(
 
 function configurationKey(options: CompilerFrontendOptions): string {
   return JSON.stringify({
-    frontend: options.frontend ?? "v1",
+    frontend: resolveCompilerFrontend(options.frontend, options.surface),
     surface: options.surface ?? "workman",
     frontendV2ModuleUrl: options.frontendV2ModuleUrl?.toString(),
   });

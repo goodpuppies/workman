@@ -327,8 +327,8 @@ Manual annotations are still the fallback when TypeScript reflection is unavaila
 when overload selection needs help. Manual annotations currently mean "use this raw boundary":
 
 ```txt
-from js.global("console") import { log: (String, Number) => Void } as console;
-from js.global("Deno") import { readTextFileSync: (String) => String } as Deno;
+from js.global("console") import { log: (String, Number) -> Void } as console;
+from js.global("Deno") import { readTextFileSync: String -> String } as Deno;
 ```
 
 Raw JavaScript object and array values must be marked explicitly with JSON literals:

@@ -312,6 +312,12 @@ function snapshotShape(type: Ty, writer: DiagnosticWriter): TypeSnapshotShape {
 
 function renderShape(shape: TypeSnapshotShape, renderedTypes: Map<TypeSnapshotId, string>): string {
   const render = (id: TypeSnapshotId) => renderedTypes.get(id) ?? id;
+  const functionDomain = (params: readonly TypeSnapshotId[]): string => {
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${params.map(render).join(", ")})`;
+    const rendered = render(params[0]);
+    return rendered.includes(" -> ") ? `(${rendered})` : rendered;
+  };
   switch (shape.kind) {
     case "named-var":
       return shape.name;
@@ -322,7 +328,7 @@ function renderShape(shape: TypeSnapshotShape, renderedTypes: Map<TypeSnapshotId
     case "primitive":
       return shape.name;
     case "function":
-      return `(${shape.params.map(render).join(", ")}) => ${render(shape.result)}`;
+      return `${functionDomain(shape.params)} -> ${render(shape.result)}`;
     case "tuple":
       return `(${shape.items.map(render).join(", ")})`;
     case "struct":

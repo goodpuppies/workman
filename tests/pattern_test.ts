@@ -1,5 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
+import { ParseError } from "../src/parser.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("constructor fields bind while bare tuple identifiers pin", async () => {
@@ -15,6 +17,67 @@ Deno.test("constructor fields bind while bare tuple identifiers pin", async () =
       _ => { 0 },
     };
   `);
+});
+
+Deno.test("direct constructor payloads reject redundant Var binders", async () => {
+  await assertRejects(
+    () =>
+      parse(`
+        type Option<T> = None | Some<T>;
+        let bad = match(value) => {
+          Some(Var(x)) => { x },
+          None => { 0 },
+        };
+      `),
+    ParseError,
+  );
+  await assertRejects(
+    () => parse("type Option<T> = None | Some<T>; let Some(Var(x)) = Some(1);"),
+    ParseError,
+  );
+});
+
+Deno.test("general pattern constraints retain binders and check the scrutinee type", async () => {
+  const source = `
+    type Option<T> = None | Some<T>;
+    let get = (value: Option<Number>) => {
+      match(value) {
+        (Some(x) : Option<Number>) => { x },
+        None => { 0 },
+      }
+    };
+  `;
+  const module = await parse(source);
+  const declaration = module.decls[1];
+  assertEquals(declaration.kind, "LetDecl");
+  const lambda = declaration.kind === "LetDecl" ? declaration.bindings[0].value : undefined;
+  const match = lambda?.kind === "Lambda" && lambda.body.kind === "Block"
+    ? lambda.body.result
+    : undefined;
+  const constrained = match?.kind === "Match" ? match.arms[0].pattern : undefined;
+  assertEquals(constrained?.kind, "PAscribed");
+  assertEquals(
+    constrained?.kind === "PAscribed" ? constrained.pattern.kind : undefined,
+    "PCtor",
+  );
+  await checkSource(source);
+  await checkSource(`
+    let (left, (right : Number)) = (1, 2);
+    let add = ((x : Number), y) => { x + y };
+  `);
+
+  await assertRejects(
+    () =>
+      checkSource(`
+        type Option<T> = None | Some<T>;
+        let bad = match(Some(1)) {
+          (Some(x) : Option<String>) => { x },
+          None => { "" },
+        };
+      `),
+    Error,
+    "InferConstraint.Pattern",
+  );
 });
 
 Deno.test("bare match identifiers must already be in scope", async () => {
@@ -135,7 +198,7 @@ Deno.test("constructor payload binders reject duplicates across nested patterns"
       checkSource(`
         type Pair<T> = | Pair<T, T>;
         let bad = match(value) => {
-          Pair(Var(x), (Var(y), Var(x))) => { y },
+          Pair(x, (Var(y), Var(x))) => { y },
           _ => { 0 },
         };
       `),

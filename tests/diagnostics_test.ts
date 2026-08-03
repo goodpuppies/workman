@@ -197,7 +197,7 @@ Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
 
 Deno.test("pipe mismatch points at trailing semicolon Void source", async () => {
   const source = `
-let parseConfig: (Number) => Result<String, Js.Error> = (n) => { Ok("ok") };
+let parseConfig: Number -> Result<String, Js.Error> = (n) => { Ok("ok") };
 let input: Result<Number, Js.Error> = Err(Js.Unknown);
 let bad = input
   :> Result.mapErr((e) => {
@@ -304,7 +304,7 @@ Deno.test("binary operand mismatch records an operator premise", async () => {
   assertEquals(error.diagnostic.failure.premise.role, "operator operands match operator type");
   assertEquals(constraintRoles(error.diagnostic), ["operator", "operands"]);
   assertEquals(
-    ['operator +: "((Number, Number)) => Number"', "left operand", "right operand"]
+    ['operator +: "(Number, Number) -> Number"', "left operand", "right operand"]
       .every((subject) => claimSubjects(error.diagnostic).includes(subject)),
     true,
   );

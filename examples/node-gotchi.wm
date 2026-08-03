@@ -6,7 +6,7 @@ from js.module("npm:inquirer") import * as inquirer;
 from js.global("console") import * as console;
 from js.global("Math") import * as Math;
 from js.module("node:timers/promises") import {
-  setTimeout as wait:(Number)=>Task<Void, Js.Error>
+  setTimeout as wait:Number -> Task<Void, Js.Error>
 };
 
 let lift = Monad.lift;

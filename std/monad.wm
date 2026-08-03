@@ -16,12 +16,12 @@ record Carrier<
   AndThenTransform,
   AndThenResult,
 > = {
-  fn: (FnArg) => FnResult,
-  fnError: (ErrorArg) => ErrorResult,
-  succeed: (SucceedArg) => SucceedResult,
-  map: (MapCarrier, MapTransform) => MapResult,
-  map2: (Map2Left, Map2Right, Map2Combine) => Map2Result,
-  andThen: (AndThenCarrier, AndThenTransform) => AndThenResult,
+  fn: FnArg -> FnResult,
+  fnError: ErrorArg -> ErrorResult,
+  succeed: SucceedArg -> SucceedResult,
+  map: (MapCarrier, MapTransform) -> MapResult,
+  map2: (Map2Left, Map2Right, Map2Combine) -> Map2Result,
+  andThen: (AndThenCarrier, AndThenTransform) -> AndThenResult,
 };
 
 let lift = (domain) => {

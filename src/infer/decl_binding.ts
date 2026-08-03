@@ -93,6 +93,8 @@ function containsFfiBoundary(expr: Expr, env: Env): boolean {
           ? item.bindings.some((binding) => containsFfiBoundary(binding.value, env))
           : !isTypeOnlyDecl(item) && containsFfiBoundary(item, env)
       ) || containsFfiBoundary(expr.result, env);
+    case "Ascribed":
+      return containsFfiBoundary(expr.value, env);
     case "Binary":
       return containsFfiBoundary(expr.left, env) || containsFfiBoundary(expr.right, env);
     case "Unary":
@@ -125,6 +127,8 @@ function isNonExpansive(expr: Expr, env: Env): boolean {
     case "Lambda":
     case "Panic":
       return true;
+    case "Ascribed":
+      return isNonExpansive(expr.value, env);
     case "Tuple":
       return expr.items.every((item) => isNonExpansive(item, env));
     case "Record":
@@ -184,6 +188,7 @@ export function inferBinding(
           warnings,
           diagnostics,
           facts,
+          strEnv,
         );
       }
       return inferExpr(value, context);
@@ -198,6 +203,7 @@ export function inferBinding(
         warnings,
         diagnostics,
         facts,
+        strEnv,
       )
       : inferExpr(b.value, context);
     recordConsumedFfiUse(facts, t, {

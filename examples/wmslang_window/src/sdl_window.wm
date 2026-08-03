@@ -25,10 +25,10 @@ type NativeSurface = UnsafeWindowSurface;
 
 record NativeRuntime = {
   surface: NativeSurface,
-  poll: (Void) => Result<NativeEvent, NativeError>,
-  resize: (Number, Number) => Result<Void, NativeError>,
-  delay: (Number) => Result<Void, NativeError>,
-  close: (Void) => Result<Void, NativeError>
+  poll: Void -> Result<NativeEvent, NativeError>,
+  resize: (Number, Number) -> Result<Void, NativeError>,
+  delay: Number -> Result<Void, NativeError>,
+  close: Void -> Result<Void, NativeError>
 };
 
 let sdlInitVideo = 32;

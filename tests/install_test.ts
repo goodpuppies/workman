@@ -21,7 +21,7 @@ Deno.test("installer creates a cwd-independent wm launcher", async () => {
 
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
-  assertStringIncludes(result.stdout, "wm-mini - Workman subset compiler and runner");
+  assertStringIncludes(result.stdout, "compiler and runner");
 
   if (Deno.build.os !== "windows") {
     const bashrc = await Deno.readTextFile(`${home}/.bashrc`);

@@ -70,6 +70,8 @@ export function hasUnguardedRecursiveRef(
       return hasUnguardedRecursiveRef(expr.message, names, guarded);
     case "Block":
       return hasUnguardedRecursiveBlockRef(expr, names, guarded);
+    case "Ascribed":
+      return hasUnguardedRecursiveRef(expr.value, names, guarded);
     case "Binary":
       return hasUnguardedRecursiveRef(expr.left, names, guarded) ||
         hasUnguardedRecursiveRef(expr.right, names, guarded);
@@ -138,6 +140,8 @@ function patternBindingNames(pattern: Pattern): string[] {
       return pattern.fields.flatMap((field) => patternBindingNames(field.pattern));
     case "PCtor":
       return pattern.args.flatMap(patternBindingNames);
+    case "PAscribed":
+      return patternBindingNames(pattern.pattern);
     default:
       return [];
   }

@@ -1,8 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import {
-  analyzeVirtual,
-  elaborateProjectGpuSemantics,
-} from "../src/compiler.ts";
+import { analyzeVirtual, elaborateProjectGpuSemantics } from "../src/compiler.ts";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri } from "../src/lsp/validation.ts";
@@ -209,9 +206,9 @@ let host = (1.0, 2.0);
   const projected = await hoverAt(uri, positionOf(source, "local.y"), new Map());
   const host = await hoverAt(uri, positionOf(source, "host ="), new Map());
 
-  assertEquals(shade?.contents.value, "```wm\nshade: (f32x2) => f32x4\n```");
+  assertEquals(shade?.contents.value, "```wm\nshade: f32x2 -> f32x4\n```");
   assertEquals(coord?.contents.value, "```wm\ncoord: f32x2\n```");
-  assertEquals(helper?.contents.value, "```wm\nhelper: (f32) => f32\n```");
+  assertEquals(helper?.contents.value, "```wm\nhelper: f32 -> f32\n```");
   assertEquals(projected?.contents.value, "```wm\nlocal.y: f32\n```");
   assertEquals(host?.contents.value, "```wm\nhost: (Number, Number)\n```");
 });
@@ -355,7 +352,7 @@ let value = id(1);
 
   assertEquals(
     hover?.contents.value,
-    "```wm\nid\ntype: (Number) => Number\ngeneral: ('a) => 'a\n```",
+    "```wm\nid\ntype: Number -> Number\ngeneral: 'a -> 'a\n```",
   );
 });
 
@@ -387,7 +384,7 @@ let speed = "12" :> toNumber;
 
   assertEquals(
     hover?.contents.value,
-    "```wm\ntoNumber\ntype: (String) => Number\ngeneral: ('a) => Number\n```",
+    "```wm\ntoNumber\ntype: String -> Number\ngeneral: 'a -> Number\n```",
   );
 });
 
@@ -397,7 +394,7 @@ Deno.test("lsp hover agrees for FFI-constrained handler definition and use", asy
   const source = `
 from js.global import type { Request };
 from js.global("Deno") import unsafe {
-  serve: (Js.Value, (Request, Js.Value) => Js.Promise<Js.Value>) => Js.Value
+  serve: (Js.Value, (Request, Js.Value) -> Js.Promise<Js.Value>) -> Js.Value
 };
 from js.global("Promise") import unsafe { resolve as promiseResolve };
 
@@ -420,7 +417,7 @@ let server = serve(JSON{}, handler);
   await Deno.writeTextFile(main, source);
 
   const uri = pathToFileUri(main);
-  const expected = "```wm\nhandler: (('a, 'b)) => 'c\n```";
+  const expected = "```wm\nhandler: ('a, 'b) -> 'c\n```";
   const definition = await hoverAt(uri, positionOf(source, "handler ="), new Map());
   const use = await hoverAt(uri, positionOf(source, "handler);"), new Map());
 
@@ -452,7 +449,7 @@ let use = match(lib) {
 
   const value = hover?.contents.value ?? "";
   assertStringIncludes(value, "SDL_PollEvent:");
-  assertStringIncludes(value, "SDL_PollEvent: ((Option<Js.Object>)) => Result<Number, Js.Error>");
+  assertStringIncludes(value, "SDL_PollEvent: Option<Js.Object> -> Result<Number, Js.Error>");
   assertEquals(value.includes("__Deep"), false);
 });
 
@@ -480,7 +477,7 @@ let createSurface = (sdl, title) => {
 
   const value = hover?.contents.value ?? "";
   assertStringIncludes(value, "createSurface:");
-  assertStringIncludes(value, "createSurface: ((Js.Object, Option<Js.ArrayLike>))");
+  assertStringIncludes(value, "createSurface: (Js.Object, Option<Js.ArrayLike>)");
   assertEquals(value.includes("__Deep"), false);
 });
 

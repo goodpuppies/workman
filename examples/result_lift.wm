@@ -4,12 +4,12 @@
 
 type Result<T, E> = Ok<T> | Err<E>;
 
-record LiftCarrier<A, B> = { liftFn: (A) => B };
+record LiftCarrier<A, B> = { liftFn: A -> B };
 
 record ResultCarrier<A, B, E> = {
-  liftFn: ((A) => Result<B, E>) => (Result<A, E>) => Result<B, E>,
-  andThen: (Result<A, E>, (A) => Result<B, E>) => Result<B, E>,
-  map: (Result<A, E>, (A) => B) => Result<B, E>
+  liftFn: (A -> Result<B, E>) -> Result<A, E> -> Result<B, E>,
+  andThen: (Result<A, E>, A -> Result<B, E>) -> Result<B, E>,
+  map: (Result<A, E>, A -> B) -> Result<B, E>
 };
 
 let andThen = (result, f) => {

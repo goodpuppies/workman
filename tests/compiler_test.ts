@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, compile } from "../src/compiler.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("parses type and let declarations", async () => {
@@ -22,11 +22,23 @@ Deno.test("parses semicolons at phrase layers", async () => {
   assertEquals(ast.decls.length, 8);
 });
 
+Deno.test("supports lightweight chained curried lambdas", async () => {
+  const source = "let add3 = (a) => (b) => (c) => { a + b + c };";
+  const ast = await parse(source);
+  const declaration = ast.decls[0];
+  const outer = declaration.kind === "LetDecl" ? declaration.bindings[0].value : undefined;
+  assertEquals(outer?.kind, "Lambda");
+  assertEquals(outer?.kind === "Lambda" ? outer.body.kind : undefined, "Lambda");
+  const middle = outer?.kind === "Lambda" && outer.body.kind === "Lambda" ? outer.body : undefined;
+  assertEquals(middle?.body.kind, "Lambda");
+  await checkSource(source);
+});
+
 Deno.test("rejects unsupported SML and advanced Workman syntax", async () => {
   await assertRejects(() => parse("fun id x = x;"));
   await assertRejects(() => parse("structure Math = struct end;"));
-  await assertRejects(() => parse("infectious effect type IO<T> = Pure<T>;"));
-  await assertRejects(() => parse("export let value = 1;"));
+  await assertRejects(() => parse("infectious effect IO<T> = Pure<T>;"));
+  await assertRejects(() => parse("effect IO<T> = Pure<T>;"));
 });
 
 Deno.test("compiles factorial and ADT match", async () => {
@@ -129,7 +141,7 @@ Deno.test("compiled Panic emits runtime Panic failure", async () => {
 
 Deno.test("compiled manual root JS imports target global member names", async () => {
   const js = await compile(`
-    from js.global import unsafe { isFinite: (Number) => Bool };
+    from js.global import unsafe { isFinite: Number -> Bool };
     let ok = isFinite(1);
   `);
 
@@ -158,9 +170,9 @@ Deno.test("reports inferred principal type shapes for core bindings", async () =
     let fst = (x, y) => { x };
     let pair = (x, y) => { (x, y) };
   `);
-  expectBinding(result.env, "id", { type: "('a) => 'a", vars: 1 });
-  expectBinding(result.env, "fst", { type: "(('a, 'b)) => 'a", vars: 2 });
-  expectBinding(result.env, "pair", { type: "(('a, 'b)) => ('a, 'b)", vars: 2 });
+  expectBinding(result.env, "id", { type: "'a -> 'a", vars: 1 });
+  expectBinding(result.env, "fst", { type: "('a, 'b) -> 'a", vars: 2 });
+  expectBinding(result.env, "pair", { type: "('a, 'b) -> ('a, 'b)", vars: 2 });
 });
 
 Deno.test("inferred match function type reflects constructor payload constraints", async () => {
@@ -171,7 +183,7 @@ Deno.test("inferred match function type reflects constructor payload constraints
       None => { 0 },
     };
   `);
-  expectBinding(result.env, "get", { type: "(Option<Number>) => Number", vars: 0 });
+  expectBinding(result.env, "get", { type: "Option<Number> -> Number", vars: 0 });
 });
 
 Deno.test("single-item alias declarations are transparent in inferred types", async () => {
@@ -179,7 +191,7 @@ Deno.test("single-item alias declarations are transparent in inferred types", as
     type MyNumber = Number;
     let inc = (x: MyNumber) => { x + 1 };
   `);
-  expectBinding(result.env, "inc", { type: "(Number) => Number", vars: 0 });
+  expectBinding(result.env, "inc", { type: "Number -> Number", vars: 0 });
 });
 
 Deno.test("rejects duplicate pattern binders", async () => {
@@ -217,7 +229,7 @@ Deno.test("primitive parameter annotations discharge deferred equality checks", 
   `);
 
   expectBinding(result.env, "sameText", {
-    type: "((String, String)) => Bool",
+    type: "(String, String) -> Bool",
     vars: 0,
   });
 });
@@ -326,8 +338,8 @@ Deno.test("statement-only blocks infer Void", async () => {
 
 Deno.test("parenthesized expression sequences infer their final result", async () => {
   await checkSource(`
-    let seqnum: () => Number = () => (1; 2);
-    let sequnit: () => Void = () => (1;);
+    let seqnum: Void -> Number = () => (1; 2);
+    let sequnit: Void -> Void = () => (1;);
   `);
 });
 
@@ -382,10 +394,10 @@ Deno.test("supports typed lambda parameters", async () => {
 
 Deno.test("supports lambda return annotations before and after the body", async () => {
   const result = await checkSource(`
-    let bindingAnnotated: (Void) => Bool = () => { true };
+    let bindingAnnotated: Void -> Bool = () => { true };
     let arrowAnnotated = (): Bool => { true };
     let bodyAnnotated = () => { true }: Bool;
-    let fullyAnnotated: (Void) => Bool = (): Bool => { true }: Bool;
+    let fullyAnnotated: Void -> Bool = (): Bool => { true }: Bool;
   `);
 
   for (
@@ -396,7 +408,7 @@ Deno.test("supports lambda return annotations before and after the body", async 
       "fullyAnnotated",
     ]
   ) {
-    expectBinding(result.env, name, { type: "(Void) => Bool", vars: 0 });
+    expectBinding(result.env, name, { type: "Void -> Bool", vars: 0 });
   }
 });
 

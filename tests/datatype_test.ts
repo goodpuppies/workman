@@ -15,15 +15,15 @@ Deno.test("basis exposes Option and Result constructors", async () => {
     let unwrapped = get(maybe);
   `);
 
-  expectBinding(result.env, "Some", { type: "(T) => Option<T>", vars: 1 });
+  expectBinding(result.env, "Some", { type: "T -> Option<T>", vars: 1 });
   expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
-  expectBinding(result.env, "Ok", { type: "(T) => Result<T, E>", vars: 2 });
-  expectBinding(result.env, "Err", { type: "(E) => Result<T, E>", vars: 2 });
+  expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
+  expectBinding(result.env, "Err", { type: "E -> Result<T, E>", vars: 2 });
   expectBinding(result.env, "maybe", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "missing", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "ok", { type: "Result<String, 'a>", vars: 1 });
   expectBinding(result.env, "err", { type: "Result<String, Number>", vars: 0 });
-  expectBinding(result.env, "get", { type: "(Option<Number>) => Number", vars: 0 });
+  expectBinding(result.env, "get", { type: "Option<Number> -> Number", vars: 0 });
   expectBinding(result.env, "unwrapped", { type: "Number", vars: 0 });
 });
 
@@ -31,12 +31,12 @@ Deno.test("no-prelude directive permits a self-contained Result", async () => {
   const result = await checkSource(`
     -- @no-prelude
     type Result<T, E> = Ok<T> | Err<E>;
-    record Carrier<A, B> = { liftFn: (A) => B };
+    record Carrier<A, B> = { liftFn: A -> B };
     let Var(Result) = .{ liftFn = (f) => { (value) => { f(value) } } };
     let value = Ok(1);
   `);
 
-  expectBinding(result.env, "Ok", { type: "(T) => Result<T, E>", vars: 2 });
+  expectBinding(result.env, "Ok", { type: "T -> Result<T, E>", vars: 2 });
   expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 1 });
   if (result.env.has("Some") || result.env.has("Result.map")) {
     throw new Error("no-prelude module unexpectedly received prelude bindings");
@@ -52,7 +52,7 @@ Deno.test("polymorphic datatype constructors generalize over type parameters", a
   `);
 
   expectBinding(result.env, "None", { type: "Option<T>", vars: 1 });
-  expectBinding(result.env, "Some", { type: "(T) => Option<T>", vars: 1 });
+  expectBinding(result.env, "Some", { type: "T -> Option<T>", vars: 1 });
   expectBinding(result.env, "none", { type: "Option<'a>", vars: 1 });
   expectBinding(result.env, "some_number", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "some_string", { type: "Option<String>", vars: 0 });
@@ -199,7 +199,7 @@ Deno.test("type alias parameter substitution preserves sharing", async () => {
     };
   `);
 
-  expectBinding(result.env, "first_same", { type: "((Number, Number)) => Number", vars: 0 });
+  expectBinding(result.env, "first_same", { type: "(Number, Number) -> Number", vars: 0 });
 });
 
 Deno.test("type alias substitution is applied inside datatype constructor payloads", async () => {
@@ -212,9 +212,9 @@ Deno.test("type alias substitution is applied inside datatype constructor payloa
     };
   `);
 
-  expectBinding(result.env, "Box", { type: "((T, T)) => Box<T>", vars: 1 });
+  expectBinding(result.env, "Box", { type: "(T, T) -> Box<T>", vars: 1 });
   expectBinding(result.env, "boxed", { type: "Box<Number>", vars: 0 });
-  expectBinding(result.env, "unbox", { type: "(Box<Number>) => Number", vars: 0 });
+  expectBinding(result.env, "unbox", { type: "Box<Number> -> Number", vars: 0 });
 });
 
 Deno.test("datatype constructors reject payloads mentioning unbound type variables", async () => {

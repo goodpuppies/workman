@@ -1,13 +1,9 @@
 import { assertEquals } from "@std/assert";
-import { compileLibraryFile } from "../src/compiler.ts";
 import { DocumentStore } from "../src/lsp/documents.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri, type ValidationResult } from "../src/lsp/validation.ts";
 
-const frontendSource = new URL("../tooling/frontend-v2/frontend.wm", import.meta.url).pathname;
-
-Deno.test("lsp validation v2 mode typechecks after a recovered semicolon", async () => {
-  const frontendV2ModuleUrl = await buildFrontendV2();
+Deno.test("lsp validation defaults to generated recovery diagnostics", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
   await Deno.writeTextFile(main, "let x = 1;");
@@ -15,15 +11,40 @@ Deno.test("lsp validation v2 mode typechecks after a recovered semicolon", async
   const docs = new DocumentStore();
 
   docs.open(uri, "let x = 1\nlet ok = true;", 1);
-  const results = await validateUri(uri, docs.sourceOverrides(), {
-    frontend: "v2",
-    frontendV2ModuleUrl,
-  });
+  const results = await validateUri(uri, docs.sourceOverrides());
   const diagnostics = await diagnosticsForPath(results, main);
 
   assertEquals(diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
     ["parse.let.missing-semicolon", 2],
   ]);
+});
+
+Deno.test("lsp validation v2 rejection uses the generated failure range", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(main, "let Ctor(Var(x)) = value;");
+  const results = await validateUri(pathToFileUri(main), new Map(), {
+    frontend: "v2",
+    frontendV2ModuleUrl,
+  });
+
+  const diagnostics = await diagnosticsForPath(results, main);
+  assertEquals(
+    diagnostics?.map((diagnostic) => ({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      range: diagnostic.range,
+    })),
+    [{
+      code: "parse.syntax-error",
+      message: "Expected ) while parsing LetPattern.",
+      range: {
+        start: { line: 0, character: 9 },
+        end: { line: 0, character: 10 },
+      },
+    }],
+  );
 });
 
 Deno.test("lsp validation v2 mode publishes multiple structural diagnostics", async () => {
@@ -157,7 +178,5 @@ async function diagnosticsForPath(results: ValidationResult[], path: string) {
 }
 
 async function buildFrontendV2(): Promise<URL> {
-  const output = (await Deno.makeTempDir()) + "/frontend-v2.mjs";
-  await Deno.writeTextFile(output, await compileLibraryFile(frontendSource));
-  return new URL("file://" + output);
+  return new URL("../src/generated/frontend_v2_parser.js", import.meta.url);
 }

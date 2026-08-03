@@ -70,6 +70,9 @@ export function recordFieldNamesInDecls(
         }
         visitExpr(expr.result);
         return;
+      case "Ascribed":
+        visitExpr(expr.value);
+        return;
       case "Binary":
         visitExpr(expr.left);
         visitExpr(expr.right);

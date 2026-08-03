@@ -738,6 +738,8 @@ function tsLiteralExprFromWorkman(expr: Expr): string | undefined {
       if (fields.some((field) => field === undefined)) return undefined;
       return `({${fields.join(", ")}} as const)`;
     }
+    case "Ascribed":
+      return tsLiteralExprFromWorkman(expr.value);
     default:
       return undefined;
   }

@@ -197,7 +197,7 @@ Deno.test("v2 repl evaluates source with recovered terminators and delimiters", 
   assertEquals(result.code, 0);
   assertEquals(
     new TextDecoder().decode(result.stdout),
-    "answer = 42 : Number\nid = <function> : ('a) => 'a\n",
+    "answer = 42 : Number\nid = <function> : 'a -> 'a\n",
   );
   assertEquals(new TextDecoder().decode(result.stderr), "");
   assertEquals(result.staticErrors, undefined);
@@ -723,7 +723,7 @@ Deno.test("cli run passes stdin through to the Workman program", async () => {
     input,
     `
       from js.module("node:fs") import {
-        readFileSync: (Number, String) => String
+        readFileSync: (Number, String) -> String
       };
 
       let main = () => {

@@ -63,7 +63,6 @@ function topFunctions(nodes: ProfileNode[], limit: number) {
 
 function category(url: string): string {
   if (url.includes("lib/typescript.js")) return "TypeScript internals";
-  if (url.includes("generated/workman_parser.js")) return "Workman parser";
   if (url.includes("/src/ffi/reflect/")) return "FFI reflection mapping";
   if (url.includes("/src/ffi/delayed/")) return "FFI delayed resolution";
   if (url.includes("/src/ffi/receiver/") || /\/src\/ffi\/(elab|imports|shared)\.ts/.test(url)) {

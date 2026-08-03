@@ -1,0 +1,58 @@
+from "./generated/surface_types.wm" import {
+  Span, RecordPatternNode, RecordPatternFieldNode
+};
+from "./surface_parse_value.wm" import {
+  ParseValue, NodeParseValue, RuleParseValue
+};
+from "./surface_builder_support.wm" import {
+  collectNodes, collectTokens, firstTokenWithText, lastTokenWithText,
+  surfaceValue
+};
+
+let buildRecordPatternField = (
+  name: String,
+  value: ParseValue,
+  span: Span,
+) => {
+  let tokens = collectTokens(value);
+  match(tokens) {
+    [field] => {
+      NodeParseValue(RecordPatternFieldNode(field, None, span))
+    },
+    [field, equals] => {
+      match(collectNodes(value)) {
+        [pattern] => {
+          NodeParseValue(RecordPatternFieldNode(field, Some(pattern), span))
+        },
+        _ => { RuleParseValue(name, value, span) },
+      }
+    },
+    _ => { RuleParseValue(name, value, span) },
+  }
+};
+
+let buildRecordPattern = (
+  name: String,
+  value: ParseValue,
+  span: Span,
+) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "."),
+    firstTokenWithText(tokens, "{"),
+    lastTokenWithText(tokens, "}", None)
+  )) {
+    (Some(dot), Some(open), Some(close)) => {
+      NodeParseValue(
+        RecordPatternNode(
+          dot,
+          surfaceValue(open),
+          collectNodes(value),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue(name, value, span) },
+  }
+};

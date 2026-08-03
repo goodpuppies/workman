@@ -16,7 +16,7 @@ Deno.test("imported type constructors and constructors remain available through 
   const results = await checkVirtual("/test/main.wm", virtualFs);
   const main = results.get("/test/main.wm");
   if (!main) throw new Error("missing main result");
-  expectBinding(main.env, "get", { type: "(Option<Number>) => Number", vars: 0 });
+  expectBinding(main.env, "get", { type: "Option<Number> -> Number", vars: 0 });
 });
 
 Deno.test("named import allows a type and constructor to share one local spelling", async () => {
@@ -127,7 +127,7 @@ Deno.test("Workman namespace in value position resolves its explicit carrier exp
   const virtualFs = new Map<string, string>([
     [
       "/test/lib.wm",
-      "record Carrier<A> = { apply: (A) => A }; " +
+      "record Carrier<A> = { apply: A -> A }; " +
       "let carrier = .{ apply = (value) => { value } };",
     ],
     [
@@ -159,7 +159,7 @@ Deno.test("only a bare namespace value resolves to its carrier export", async ()
   const virtualFs = new Map<string, string>([
     [
       "/test/lib.wm",
-      "record Carrier<A> = { apply: (A) => A }; " +
+      "record Carrier<A> = { apply: A -> A }; " +
       "let carrier = .{ apply = (value) => { value } }; " +
       "let toBool = match(value) => { true => { true }, false => { false } };",
     ],
@@ -195,7 +195,7 @@ Deno.test("missing qualified members do not fall back through a namespace carrie
   const virtualFs = new Map<string, string>([
     [
       "/test/lib.wm",
-      "record Carrier<A> = { apply: (A) => A }; " +
+      "record Carrier<A> = { apply: A -> A }; " +
       "let carrier = .{ apply = (value) => { value } };",
     ],
     [

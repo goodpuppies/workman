@@ -79,22 +79,11 @@
           "default": "deno",
           "description": "Deno executable used to launch the Workman language server."
         },
-        "workman.frontendMode": {
-          "scope": "window",
-          "type": "string",
-          "enum": [
-            "v1",
-            "v2",
-            "compare"
-          ],
-          "default": "v1",
-          "description": "Compiler frontend mode used by the Workman language server. v2 is currently a subset-limited migration mode."
-        },
         "workman.frontendV2ModulePath": {
           "scope": "window",
           "type": "string",
           "default": "",
-          "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the server checkout default tooling/frontend-v2/frontend-v2.generated.mjs."
+          "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the packaged src/generated/frontend_v2_parser.js asset."
         },
         "workman.structuralInlayHints.enabled": {
           "scope": "window",

@@ -1,0 +1,101 @@
+from "./generated/surface_types.wm" import {
+  Span, SurfaceToken, MatchArmNode, MatchExpressionNode, MatchFunctionNode
+};
+from "./surface_parse_value.wm" import {
+  ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue,
+  NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue
+};
+from "./surface_builder_support.wm" import {
+  collectNodes, collectTokens, firstTokenWithText, lastTokenWithText, surfaceValue
+};
+
+let buildMatchArm = (value: ParseValue, span: Span) => {
+  match((collectNodes(value), firstTokenWithText(collectTokens(value), "=>"))) {
+    ([pattern, body], Some(arrow)) => {
+      NodeParseValue(MatchArmNode(pattern, surfaceValue(arrow), body, span))
+    },
+    _ => { RuleParseValue("MatchArm", value, span) },
+  }
+};
+
+let buildMatchExpr = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match(collectNodes(value)) {
+    [matched, firstArm, ..restArms] => {
+      match((
+        firstTokenWithText(tokens, "match"),
+        firstTokenWithText(tokens, "("),
+        firstTokenWithText(tokens, ")"),
+        firstTokenWithText(tokens, "{"),
+        lastTokenWithText(tokens, "}", None)
+      )) {
+        (
+          Some(matchToken),
+          Some(open),
+          Some(close),
+          Some(openBrace),
+          Some(closeBrace)
+        ) => {
+          NodeParseValue(
+            MatchExpressionNode(
+              matchToken,
+              surfaceValue(open),
+              matched,
+              surfaceValue(close),
+              surfaceValue(openBrace),
+              [firstArm, ..restArms],
+              surfaceValue(closeBrace),
+              span,
+            )
+          )
+        },
+        _ => { RuleParseValue("MatchExpr", value, span) },
+      }
+    },
+    _ => { RuleParseValue("MatchExpr", value, span) },
+  }
+};
+
+let buildMatchFnParams = (value: ParseValue, span: Span) => {
+  TokenListParseValue(
+    collectTokens(value)
+      :> List.filter((value: SurfaceToken) => { value.kind == "Identifier" })
+  )
+};
+
+let buildMatchFn = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(matchToken),
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      TokenListParseValue(names),
+      EmptyParseValue,
+      TokenParseValue(close),
+      EmptyParseValue,
+      TokenParseValue(arrow),
+      EmptyParseValue,
+      TokenParseValue(openBrace),
+      EmptyParseValue,
+      NodeListParseValue(arms),
+      EmptyParseValue,
+      TokenParseValue(closeBrace),
+    ]) => {
+      NodeParseValue(
+        MatchFunctionNode(
+          matchToken,
+          surfaceValue(open),
+          names,
+          surfaceValue(close),
+          surfaceValue(arrow),
+          surfaceValue(openBrace),
+          arms,
+          surfaceValue(closeBrace),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("MatchFn", value, span) },
+  }
+};

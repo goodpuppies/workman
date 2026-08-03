@@ -1,0 +1,80 @@
+from "./generated/surface_types.wm" import {
+  SurfaceToken, AuthoredValue, MarkedValue,
+  RecordDeclarationNode, RecordFieldDeclarationNode
+};
+
+let renderRecordToken = (value: SurfaceToken) => { value.text };
+
+let renderRecordSurfaceValue = match(value, materializeMarks) => {
+  (AuthoredValue(token), Var(materializeMarks)) => { token.text },
+  (MarkedValue(mark, fallback), true) => { fallback.text },
+  (MarkedValue(mark, fallback), false) => { "" },
+};
+
+let rec renderRecordNodes = match(
+  nodes,
+  separator,
+  output,
+  depth,
+  materializeMarks,
+  renderNode,
+) => {
+  ([], Var(separator), Var(output), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(output)
+  },
+  ([node, ..rest], Var(separator), Var(output), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(node, depth, materializeMarks)) {
+      Some(text) => {
+        let next = if (output == "") { text } else { output ++ separator ++ text };
+        renderRecordNodes(rest, separator, next, depth, materializeMarks, renderNode)
+      },
+      None => { None },
+    }
+  },
+};
+
+let renderRecordNode = match(node, depth, materializeMarks, renderNode) => {
+  (RecordDeclarationNode(
+    recordToken,
+    name,
+    params,
+    equalsToken,
+    open,
+    fields,
+    close,
+    span,
+  ), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    let paramsText = match(params) {
+      Some(node) => { renderNode(node, depth, materializeMarks) },
+      None => { Some("") },
+    };
+    match((paramsText, renderRecordNodes(fields, ", ", "", depth, materializeMarks, renderNode))) {
+      (Some(renderedParams), Some(renderedFields)) => {
+        let body = if (renderedFields == "") {
+          renderRecordSurfaceValue(open, materializeMarks) ++ renderRecordSurfaceValue(close, materializeMarks)
+        } else {
+          renderRecordSurfaceValue(open, materializeMarks) ++ " " ++ renderedFields ++ " " ++
+          renderRecordSurfaceValue(close, materializeMarks)
+        };
+        Some(
+          renderRecordToken(recordToken) ++ " " ++ renderRecordToken(name) ++
+          renderedParams ++ " " ++ renderRecordSurfaceValue(equalsToken, materializeMarks) ++
+          " " ++ body
+        )
+      },
+      _ => { None },
+    }
+  },
+  (RecordFieldDeclarationNode(name, colon, typeNode, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(typeNode, depth, materializeMarks)) {
+      Some(typeText) => {
+        Some(
+          renderRecordToken(name) ++ renderRecordSurfaceValue(colon, materializeMarks) ++
+          " " ++ typeText
+        )
+      },
+      None => { None },
+    }
+  },
+  _ => { None },
+};

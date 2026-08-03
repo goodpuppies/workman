@@ -84,7 +84,11 @@ function completionDetail(
 ): string | undefined {
   if (candidate.overloads) {
     return candidate.overloads
-      .map(({ params, result }) => `(${params.join(", ")}) => ${result}`)
+      .map(({ params, result }) =>
+        `${
+          params.length === 0 ? "Void" : params.length === 1 ? params[0] : `(${params.join(", ")})`
+        } -> ${result}`
+      )
       .join(" | ");
   }
   if (!candidate.type) return;

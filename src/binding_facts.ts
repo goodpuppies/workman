@@ -1,12 +1,4 @@
-import type {
-  CtorDecl,
-  Decl,
-  Expr,
-  ImportClause,
-  JsImportSpec,
-  Module,
-  Pattern,
-} from "./ast.ts";
+import type { CtorDecl, Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
 import type { BindingId, CompilerIdAllocator, StructureId } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
@@ -429,6 +421,9 @@ function resolveExpr(
       resolveExpr(expr.result, local, facts, ids);
       return;
     }
+    case "Ascribed":
+      resolveExpr(expr.value, env, facts, ids);
+      return;
     case "Binary":
       resolveExpr(expr.left, env, facts, ids);
       resolveExpr(expr.right, env, facts, ids);
@@ -462,6 +457,8 @@ function resolvePatternReferences(pattern: Pattern, env: BindingEnv, facts: Bind
     const structure = lookupStructure(env, pattern.name);
     if (structure !== undefined) facts.structureReferences.set(pattern, structure);
     pattern.args.forEach((arg) => resolvePatternReferences(arg, env, facts));
+  } else if (pattern.kind === "PAscribed") {
+    resolvePatternReferences(pattern.pattern, env, facts);
   }
 }
 
@@ -525,6 +522,7 @@ function binderPatterns(pattern: Pattern): Extract<Pattern, { kind: "PVar" }>[] 
     return pattern.fields.flatMap((field) => binderPatterns(field.pattern));
   }
   if (pattern.kind === "PCtor") return pattern.args.flatMap(binderPatterns);
+  if (pattern.kind === "PAscribed") return binderPatterns(pattern.pattern);
   return [];
 }
 

@@ -20,7 +20,7 @@ Deno.test("signature help selects active parameters for named Workman calls", as
 
   assertEquals(first, {
     signatures: [{
-      label: "format(count: Number, label: String) => String",
+      label: "format(count: Number, label: String) -> String",
       parameters: [
         { label: "count: Number", documentation: undefined },
         { label: "label: String", documentation: undefined },
@@ -52,9 +52,9 @@ Deno.test("signature help follows named imports and innermost nested calls", asy
     overrides,
   );
 
-  assertEquals(inner?.signatures[0].label, "join(left: Number, right: Number) => Number");
+  assertEquals(inner?.signatures[0].label, "join(left: Number, right: Number) -> Number");
   assertEquals(inner?.activeParameter, 1);
-  assertEquals(outer?.signatures[0].label, "wrap(value: Number) => Number");
+  assertEquals(outer?.signatures[0].label, "wrap(value: Number) -> Number");
   assertEquals(outer?.activeParameter, 0);
 });
 
@@ -91,13 +91,13 @@ Deno.test("signature help supports constructors, pipes, and curried stages", asy
     overrides,
   );
 
-  assertEquals(constructor?.signatures[0].label, "Point(x: Number, y: String) => Point");
+  assertEquals(constructor?.signatures[0].label, "Point(x: Number, y: String) -> Point");
   assertEquals(constructor?.activeParameter, 1);
-  assertEquals(pipe?.signatures[0].label, "combine(left: Number, right: Number) => Number");
+  assertEquals(pipe?.signatures[0].label, "combine(left: Number, right: Number) -> Number");
   assertEquals(pipe?.activeParameter, 1);
-  assertEquals(curried?.signatures[0].label, "curried(right: Number) => Number");
+  assertEquals(curried?.signatures[0].label, "curried(right: Number) -> Number");
   assertEquals(curried?.activeParameter, 0);
-  assertEquals(whitespace?.signatures[0].label, "curried(right: Number) => Number");
+  assertEquals(whitespace?.signatures[0].label, "curried(right: Number) -> Number");
   assertEquals(whitespace?.activeParameter, 0);
 });
 
@@ -111,7 +111,7 @@ Deno.test("signature help keeps tuple-shaped arguments as one parameter", async 
     new Map([[path, source]]),
   );
 
-  assertEquals(help?.signatures[0].label, "consume(pair: (Number, String)) => (Number, String)");
+  assertEquals(help?.signatures[0].label, "consume(pair: (Number, String)) -> (Number, String)");
   assertEquals(help?.signatures[0].parameters.length, 1);
   assertEquals(help?.activeParameter, 0);
 });
@@ -138,11 +138,11 @@ Deno.test("signature help survives incomplete current calls from certified scope
     overrides,
   );
 
-  assertEquals(local?.signatures[0].label, "local(first: String, second: String) => String");
+  assertEquals(local?.signatures[0].label, "local(first: String, second: String) -> String");
   assertEquals(local?.activeParameter, 1);
   assertEquals(
     namespace?.signatures[0].label,
-    "Lib.combine(left: Number, right: Number) => Number",
+    "Lib.combine(left: Number, right: Number) -> Number",
   );
   assertEquals(namespace?.activeParameter, 1);
 });
@@ -159,7 +159,7 @@ Deno.test("incomplete record calls use field names and ignore commas in comments
     new Map([[path, source]]),
   );
 
-  assertEquals(help?.signatures[0].label, "Point(x: Number, y: String) => Point");
+  assertEquals(help?.signatures[0].label, "Point(x: Number, y: String) -> Point");
   assertEquals(help?.activeParameter, 1);
 });
 

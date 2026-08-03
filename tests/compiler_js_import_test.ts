@@ -12,20 +12,20 @@ import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("supports typed JS namespace imports", async () => {
   const result = await checkSource(`
-    from js.global("console") import unsafe { log: (String, Number) => Void } as console;
+    from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
     let main = () => {
       console.log("answer", 42)
     };
   `);
 
-  expectBinding(result.env, "main", { type: "(Void) => Void", vars: 0 });
+  expectBinding(result.env, "main", { type: "Void -> Void", vars: 0 });
 });
 
 Deno.test("manual non-unsafe imports are fallible", async () => {
   const result = await checkSource(`
     from js.global("JSON") import {
-      parse: (String) => Js.Object,
-      stringify: (Js.Value) => Result<String, Js.Error>,
+      parse: String -> Js.Object,
+      stringify: Js.Value -> Result<String, Js.Error>,
     } as JSON;
     from js.global("Deno") import { args: Js.Array<String> };
     let parsed = JSON.parse("{}");
@@ -48,7 +48,7 @@ Deno.test("imports lexical JavaScript module metadata directly", async () => {
   expectBinding(result.env, "isMain", { type: "Bool", vars: 0 });
   expectBinding(result.env, "filename", { type: "Option<String>", vars: 0 });
   expectBinding(result.env, "dirname", { type: "Option<String>", vars: 0 });
-  expectBinding(result.env, "resolve", { type: "(String) => String", vars: 0 });
+  expectBinding(result.env, "resolve", { type: "String -> String", vars: 0 });
   expectBinding(result.env, "assetPath", { type: "Result<String, Js.Error>", vars: 0 });
 
   const js = await compile(`
@@ -85,7 +85,7 @@ Deno.test("Js.Error is a matchable basis datatype", async () => {
     };
   `);
 
-  expectBinding(result.env, "describe", { type: "(Js.Error) => String", vars: 0 });
+  expectBinding(result.env, "describe", { type: "Js.Error -> String", vars: 0 });
   assertEquals(result.warnings, []);
 });
 
@@ -94,7 +94,7 @@ Deno.test("rejects generic handwritten JS FFI signatures", async () => {
     () =>
       checkSource(`
         from js.global import unsafe {
-          id: (T) => T
+          id: T -> T
         };
       `),
     Error,
@@ -111,7 +111,7 @@ Deno.test("supports inferred JS named and namespace imports", async () => {
     let rooted = Math.sqrt(9);
   `);
 
-  expectBinding(result.env, "floor", { type: "(Number) => Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "floor", { type: "Number -> Result<Number, Js.Error>", vars: 0 });
   expectBinding(result.env, "bigger", { type: "Result<Number, Js.Error>", vars: 0 });
   expectBinding(result.env, "rounded", { type: "Result<Number, Js.Error>", vars: 0 });
   expectBinding(result.env, "rooted", { type: "Result<Number, Js.Error>", vars: 0 });
@@ -216,7 +216,7 @@ Deno.test("runs a Workman dependency with a JS module import", async () => {
     input,
     `
       from "./foreign_runtime.wm" import { fileName };
-      from js.global("console") import unsafe { log: (String) => Void } as console;
+      from js.global("console") import unsafe { log: String -> Void } as console;
       let main = () => {
         match(fileName("one/two.txt")) {
           Ok(name) => { console.log(name) },
@@ -427,7 +427,7 @@ Deno.test("runs generated Workman workers", async () => {
   await Deno.writeTextFile(
     `${dir}/worker.wm`,
     `
-      from js.global("Deno") import unsafe { writeTextFileSync: (String, String) => Void };
+      from js.global("Deno") import unsafe { writeTextFileSync: (String, String) -> Void };
       let main = () => {
         writeTextFileSync(${JSON.stringify(marker)}, "ready")
       };
@@ -599,7 +599,7 @@ Deno.test("emits imported class values with static members intact", async () => 
     input,
     `
       from js.module("./thing.ts") import { Thing };
-      from js.global("console") import unsafe { log: (String) => Void } as console;
+      from js.global("console") import unsafe { log: String -> Void } as console;
 
       let main = () => {
         match(Thing.greet("Ada")) {
@@ -624,7 +624,7 @@ Deno.test("module imports preserve static methods on callable constructors", asy
     input,
     `
       from js.module("node:buffer") import { Buffer };
-      from js.global("console") import unsafe { log: (String) => Void } as console;
+      from js.global("console") import unsafe { log: String -> Void } as console;
 
       let main = () => {
         match(Buffer.from("ok")) {
@@ -676,7 +676,7 @@ Deno.test("reflects JS namespace functions as values", async () => {
   `);
 
   expectBinding(result.env, "sin", {
-    type: "(Result<Number, Js.Error>) => Result<Number, Js.Error>",
+    type: "Result<Number, Js.Error> -> Result<Number, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "wave", {
@@ -807,7 +807,7 @@ Deno.test("typed JS promise receiver results infer through then", async () => {
     };
   `);
 
-  expectBinding(result.env, "readBang", { type: "(Void) => Task<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "readBang", { type: "Void -> Task<String, Js.Error>", vars: 0 });
 });
 
 Deno.test("maps function-valued JS union parameters as JS values", async () => {
@@ -847,10 +847,10 @@ Deno.test("typed task receivers work through explicit foreign receiver types", a
       let textTask = req :> .text();
       textTask :> Task.map((bodyText) => { bodyText })
     };
-    let checked = ((handler: (Request) => Task<String, Js.Error>, req: Request) => {
+    let checked = ((handler: Request -> Task<String, Js.Error>, req: Request) => {
       handler(req)
     })(useText, Panic("req"));
   `);
 
-  expectBinding(result.env, "useText", { type: "(Request) => Task<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "useText", { type: "Request -> Task<String, Js.Error>", vars: 0 });
 });

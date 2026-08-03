@@ -4,7 +4,7 @@ import { compileLibraryFile, coreVirtual } from "../src/compiler.ts";
 import { CompilerIdAllocator } from "../src/ids.ts";
 import { inferModule } from "../src/infer.ts";
 import { moduleId } from "../src/module_id.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { standardInferOptions } from "../src/standard_library.ts";
 import type { GpuElaborationInput } from "../src/wmslang/dto.ts";
 import {

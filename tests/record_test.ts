@@ -20,6 +20,54 @@ Deno.test("nominal records infer construction and field access", async () => {
   expectBinding(result.env, "xVal", { type: "Number", vars: 0 });
 });
 
+Deno.test("explicit nominal record expressions select their record and infer type arguments", async () => {
+  const result = await checkSource(`
+    record User = { name: String };
+    record Box<T> = { value: T };
+    record Empty = {};
+    let user = User{ name = "Ada" };
+    let box = Box{ value = 42 };
+    let empty = Empty{};
+  `);
+
+  expectBinding(result.env, "user", { type: "User", vars: 0 });
+  expectBinding(result.env, "box", { type: "Box<Number>", vars: 0 });
+  expectBinding(result.env, "empty", { type: "Empty", vars: 0 });
+});
+
+Deno.test("explicit nominal record expressions support punning and spread", async () => {
+  const result = await checkSource(`
+    record User = { name: String, active: Bool };
+    let name = "Ada";
+    let first = User{ name, active = true };
+    let second = User{ ..first, active = false };
+  `);
+
+  expectBinding(result.env, "first", { type: "User", vars: 0 });
+  expectBinding(result.env, "second", { type: "User", vars: 0 });
+});
+
+Deno.test("qualified explicit nominal record expressions resolve imported record types", async () => {
+  await checkVirtual(
+    "/test/main.wm",
+    new Map([
+      ["/test/records.wm", "record Point = { x: Number, y: Number };"],
+      [
+        "/test/main.wm",
+        'from "./records.wm" import * as Geometry; let point = Geometry.Point{ x = 1, y = 2 };',
+      ],
+    ]),
+  );
+});
+
+Deno.test("explicit nominal record expressions reject non-record targets", async () => {
+  await assertRejects(
+    () => checkSource("type Option<T> = None | Some<T>; let bad = Option{};"),
+    Error,
+    "Option is not a record type",
+  );
+});
+
 Deno.test("polymorphic record fields preserve type parameters", async () => {
   const result = await checkSource(`
     record Pair<A, B> = { first: A, second: B };
@@ -41,7 +89,7 @@ Deno.test("record declarations expose ordered polymorphic constructors", async (
   `);
 
   expectBinding(result.env, "Pair", {
-    type: "((A, B)) => Pair<A, B>",
+    type: "(A, B) -> Pair<A, B>",
     vars: 2,
   });
   expectBinding(result.env, "numberText", {
@@ -56,7 +104,7 @@ Deno.test("record declarations expose ordered polymorphic constructors", async (
 
 Deno.test("record constructor applications retain non-expansive generalization", async () => {
   const result = await checkSource(`
-    record Identity<A> = { run: (A) => A };
+    record Identity<A> = { run: A -> A };
     let identity = Identity((value) => { value });
     let number = identity.run(1);
     let text = identity.run("text");
@@ -165,12 +213,12 @@ Deno.test("record elaboration snapshots expose record values after declaration o
   `);
 
   expectStepBinding(steps, 0, "Point", {
-    type: "((Number, Number)) => Point",
+    type: "(Number, Number) -> Point",
     vars: 0,
   });
   expectStepMissing(steps, 0, "p");
   expectStepBinding(steps, 1, "p", { type: "Point", vars: 0 });
-  expectStepBinding(steps, 2, "getX", { type: "(Point) => Number", vars: 0 });
+  expectStepBinding(steps, 2, "getX", { type: "Point -> Number", vars: 0 });
 });
 
 Deno.test("records warn and choose first nominal type on shape-only ambiguity", async () => {
@@ -338,7 +386,7 @@ Deno.test("ambiguous record projection chooses the first identity and warns for 
     let ox = getX(offset);
   `);
 
-  expectBinding(result.env, "getX", { type: "({ x: Number }) => Number", vars: 0 });
+  expectBinding(result.env, "getX", { type: "{ x: Number } -> Number", vars: 0 });
   expectBinding(result.env, "px", { type: "Number", vars: 0 });
   expectBinding(result.env, "ox", { type: "Number", vars: 0 });
   assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
@@ -352,8 +400,8 @@ Deno.test("ambiguous record projection chooses the first identity and warns for 
 Deno.test("repeated projections preserve one accumulated structural record requirement", async () => {
   const result = await checkSource(`
     record PairOps<A, B> = {
-      first: (A) => B,
-      second: (B) => A,
+      first: A -> B,
+      second: B -> A,
     };
     let useBoth = (ops, value) => {
       ops.second(ops.first(value))
@@ -361,14 +409,14 @@ Deno.test("repeated projections preserve one accumulated structural record requi
   `);
 
   expectBinding(result.env, "useBoth", {
-    type: "(({ second: ('a) => 'b, first: ('c) => 'a }, 'c)) => 'b",
+    type: "({ second: 'a -> 'b, first: 'c -> 'a }, 'c) -> 'b",
     vars: 3,
   });
 });
 
 Deno.test("record function fields compose with whitespace curried calls", async () => {
   const result = await checkSource(`
-    record Task = { fn: (() => Number) => Number };
+    record Task = { fn: (Void -> Number) -> Number };
     let lift = (x) => {
       (f) => {
         x.fn(f)
@@ -383,7 +431,7 @@ Deno.test("record function fields compose with whitespace curried calls", async 
 
 Deno.test("ambiguous function fields select the first identity without collapsing their row", async () => {
   const result = await checkSource(`
-    record TaskLike = { fn: (() => Number) => Number };
+    record TaskLike = { fn: (Void -> Number) -> Number };
     let lift = (x) => {
       (f) => {
         x.fn(f)
@@ -393,7 +441,7 @@ Deno.test("ambiguous function fields select the first identity without collapsin
     let value = lift task () => { 42 };
   `);
 
-  expectBinding(result.env, "lift", { type: "({ fn: ('a) => 'b }) => ('a) => 'b", vars: 2 });
+  expectBinding(result.env, "lift", { type: "{ fn: 'a -> 'b } -> 'a -> 'b", vars: 2 });
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
   assertEquals(
     result.diagnostics.some((diagnostic) => diagnostic.code === "record.ambiguous-projection"),

@@ -5,6 +5,7 @@ import {
   FRONTEND_V2_GENERATOR_CONTRACT_VERSION,
   validateGeneratorContract,
 } from "../tooling/frontend-v2/generator/contract.ts";
+import { frontendV2RecoveryAnnotations } from "../tooling/frontend-v2/generator/recovery_annotations.ts";
 
 const grammarPath = Deno.args[0] ?? "src/grammar.peggy";
 const source = await Deno.readTextFile(grammarPath);
@@ -17,7 +18,7 @@ validateGeneratorContract({
   initializer,
   actions,
   exceptions: [],
-  recoveries: [],
+  recoveries: frontendV2RecoveryAnnotations,
 });
 
 const mechanical = actions.filter((action) => action.kind === "mechanical");
@@ -40,6 +41,7 @@ console.log(JSON.stringify(
         parameters,
       })),
     },
+    recoveries: frontendV2RecoveryAnnotations,
   },
   null,
   2,

@@ -70,6 +70,9 @@ export function rejectAnnotatedDynamicCallbacks(
         }
         visit(expr.result);
         return;
+      case "Ascribed":
+        visit(expr.value);
+        return;
       case "Binary":
         visit(expr.left);
         visit(expr.right);

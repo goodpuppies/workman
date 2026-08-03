@@ -17,7 +17,7 @@ import {
   type InferResult,
   type InitialImport,
 } from "./infer.ts";
-import { parse } from "./parser.ts";
+import { parseCompilerModule } from "./compiler_frontend.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
 import { modifiedStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
@@ -206,7 +206,7 @@ async function inferStandardModule(
   module: StandardModule,
   loaded: Map<string, InferResult>,
 ): Promise<LoadedStandardModule> {
-  const parsed = await parse(module.source, "workman", module.path);
+  const parsed = await parseCompilerModule(module.source, {}, module.path);
   const prepared = prepareFfiElaboration(parsed).module;
   const clause = module.clauses.find((item) => item.kind === "Namespace");
   if (!clause || clause.kind !== "Namespace") {

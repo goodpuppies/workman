@@ -2,7 +2,7 @@ import { assertEquals } from "@std/assert";
 import type { LongId } from "../src/ast.ts";
 import { longIdSpelling } from "../src/ast.ts";
 import { checkVirtual, compileVirtual } from "../src/compiler.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 
 /**
  * Desired-semantics regressions for the module update.
@@ -201,7 +201,7 @@ Deno.test({
         "let option: Option<Number> = 6; " +
         "let stillSome = Some(5); " +
         "let print = 3; " +
-        'from js.global("console") import unsafe { log: (Number) => Void } as console; ' +
+        'from js.global("console") import unsafe { log: Number -> Void } as console; ' +
         "let main = () => { " +
         "match((Local, Thing(4), stillSome)) { " +
         "(Local, .{ local }, Some(number)) => { " +

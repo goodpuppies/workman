@@ -250,6 +250,9 @@ class PatternFactState {
         );
         this.visitExpr(expression.result, input);
         return;
+      case "Ascribed":
+        this.visitExpr(expression.value, input);
+        return;
       case "Binary":
       case "Pipe":
         this.visitExpr(expression.left, input);
@@ -274,6 +277,11 @@ class PatternFactState {
         throw new Error(`pattern identity appears in both ${existing.context} and ${context}`);
       }
       return existing;
+    }
+    if (pattern.kind === "PAscribed") {
+      const inner = this.addPattern(pattern.pattern, context, input);
+      this.byPattern.set(pattern, inner);
+      return inner;
     }
     const type = input.result.facts.patternTypes.get(pattern);
     if (!type) throw invariant(input.path, pattern, "missing inferred pattern type");

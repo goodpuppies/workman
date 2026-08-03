@@ -1,0 +1,481 @@
+from "./generated/surface_types.wm" import {
+  Span, SurfaceToken, AuthoredValue, LongNameNode, NameExpressionNode,
+  LiteralExpressionNode,
+  ExplicitCallNode, SpaceCallNode,
+  BinaryExpressionNode,
+  UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, IfExpressionNode,
+  CarrierLiftExpressionNode, LiftTupleExpressionNode,
+  JsonObjectExpressionNode, JsonArrayExpressionNode, JsonObjectFieldNode,
+  RecordExpressionNode, NamedRecordExpressionNode, RecordFieldNode, RecordSpreadNode,
+  TupleExpressionNode, GroupedExpressionNode, ListExpressionNode
+};
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
+from "./surface_builder_support.wm" import {
+  reverseInto, firstSyntax, collectNodes, collectTokens, firstTokenWithText,
+  lastTokenWithText, firstNode, surfaceValue
+};
+
+let buildPrimary = (value: ParseValue, span: Span) => {
+  match(firstSyntax(value)) {
+    Some(NodeParseValue(LongNameNode(parts, separators, nameSpan))) => {
+      NodeParseValue(
+        NameExpressionNode(LongNameNode(parts, separators, nameSpan), span)
+      )
+    },
+    Some(NodeParseValue(node)) => { NodeParseValue(node) },
+    Some(TokenParseValue(value)) => {
+      NodeParseValue(LiteralExpressionNode(value, span))
+    },
+    _ => { RuleParseValue("Primary", value, span) },
+  }
+};
+
+let buildExplicitCall = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((firstTokenWithText(tokens, "("), lastTokenWithText(tokens, ")", None))) {
+    (Some(open), Some(close)) => {
+      NodeParseValue(
+        ExplicitCallNode(
+          surfaceValue(open),
+          collectNodes(value),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("ExplicitCall", value, span) },
+  }
+};
+
+let buildSpaceCall = (value: ParseValue, span: Span) => {
+  match(firstNode(value)) {
+    Some(argument) => { NodeParseValue(SpaceCallNode(argument, span)) },
+    None => { RuleParseValue("SpaceCall", value, span) },
+  }
+};
+
+let buildUnary = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, inner) => {
+      match((collectTokens(inner), firstNode(inner))) {
+        ([operator], Some(operand)) => {
+          NodeParseValue(UnaryExpressionNode(operator, operand, span))
+        },
+        _ => { RuleParseValue("Unary", value, span) },
+      }
+    },
+    ChoiceParseValue(1, inner) => {
+      match(firstNode(inner)) {
+        Some(node) => { NodeParseValue(node) },
+        None => { RuleParseValue("Unary", value, span) },
+      }
+    },
+    _ => { RuleParseValue("Unary", value, span) },
+  }
+};
+
+let buildPipeMember = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match(firstTokenWithText(tokens, ".")) {
+    Some(dot) => {
+      let names = tokens
+        :> List.filter((value: SurfaceToken) => { value.kind == "MemberName" });
+      let call = match((
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(open), Some(close)) => {
+          Some(
+            ExplicitCallNode(
+              surfaceValue(open),
+              collectNodes(value),
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+        _ => { None },
+      };
+      NodeParseValue(PipeMemberNode(dot, names, call, span))
+    },
+    None => { RuleParseValue("PipeMember", value, span) },
+  }
+};
+
+let rec foldPipeItems = match(items, left, span) => {
+  ([], Var(left), Var(span)) => { Some(left) },
+  ([value, ..rest], Var(left), Var(span)) => {
+    match((firstTokenWithText(collectTokens(value), ":>"), firstNode(value))) {
+      (Some(operator), Some(right)) => {
+        foldPipeItems(rest, PipeExpressionNode(left, operator, right, span), span)
+      },
+      _ => { None },
+    }
+  },
+};
+
+let buildPipe = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(left),
+      RepeatedParseValue(items),
+    ]) => {
+      match(foldPipeItems(items, left, span)) {
+        Some(node) => { NodeParseValue(node) },
+        None => { RuleParseValue("Pipe", value, span) },
+      }
+    },
+    _ => { RuleParseValue("Pipe", value, span) },
+  }
+};
+
+let buildCarrierLift = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(carrier),
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      NodeListParseValue(arguments),
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      NodeParseValue(
+        CarrierLiftExpressionNode(
+          carrier,
+          open,
+          arguments,
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("CarrierLiftTupleExpr", value, span) },
+  }
+};
+
+let buildLiftTuple = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(open),
+      EmptyParseValue,
+      NodeListParseValue(arguments),
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      NodeParseValue(
+        LiftTupleExpressionNode(open, arguments, surfaceValue(close), span)
+      )
+    },
+    _ => { RuleParseValue("LiftTupleExpr", value, span) },
+  }
+};
+
+let buildRecordExprField = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, SequenceParseValue([
+      TokenParseValue(spread),
+      EmptyParseValue,
+      NodeParseValue(expression),
+    ])) => {
+      NodeParseValue(RecordSpreadNode(spread, expression, span))
+    },
+    ChoiceParseValue(1, SequenceParseValue([
+      TokenParseValue(name),
+      EmptyParseValue,
+      TokenParseValue(equalsToken),
+      EmptyParseValue,
+      NodeParseValue(expression),
+    ])) => {
+      NodeParseValue(
+        RecordFieldNode(
+          name,
+          Some(surfaceValue(equalsToken)),
+          Some(expression),
+          span,
+        )
+      )
+    },
+    ChoiceParseValue(2, TokenParseValue(name)) => {
+      NodeParseValue(RecordFieldNode(name, None, None, span))
+    },
+    _ => { RuleParseValue("RecordExprField", value, span) },
+  }
+};
+
+let buildRecordExpr = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(dot),
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      fieldsValue,
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      NodeParseValue(
+        RecordExpressionNode(
+          dot,
+          surfaceValue(open),
+          collectNodes(fieldsValue),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("RecordExpr", value, span) },
+  }
+};
+
+let buildNamedRecordExpr = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      targetValue,
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      fieldsValue,
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      match(firstNode(targetValue)) {
+        Some(target) => {
+          NodeParseValue(
+            NamedRecordExpressionNode(
+              target,
+              surfaceValue(open),
+              collectNodes(fieldsValue),
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+        None => { RuleParseValue("NamedRecordExpr", value, span) },
+      }
+    },
+    _ => { RuleParseValue("NamedRecordExpr", value, span) },
+  }
+};
+
+let buildJsonObjectField = (value: ParseValue, span: Span) => {
+  match((collectTokens(value), firstNode(value))) {
+    ([key, colon], Some(expression)) => {
+      NodeParseValue(
+        JsonObjectFieldNode(key, surfaceValue(colon), expression, span)
+      )
+    },
+    _ => { RuleParseValue("JsonObjectField", value, span) },
+  }
+};
+
+let buildJsonExpr = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  let items = collectNodes(value);
+  match(value) {
+    ChoiceParseValue(0, inner) => {
+      match((
+        firstTokenWithText(tokens, "JSON"),
+        firstTokenWithText(tokens, "{"),
+        lastTokenWithText(tokens, "}", None)
+      )) {
+        (Some(jsonToken), Some(open), Some(close)) => {
+          NodeParseValue(
+            JsonObjectExpressionNode(
+              jsonToken,
+              surfaceValue(open),
+              items,
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+        _ => { RuleParseValue("JsonExpr", value, span) },
+      }
+    },
+    ChoiceParseValue(1, inner) => {
+      match((
+        firstTokenWithText(tokens, "JSON"),
+        firstTokenWithText(tokens, "["),
+        lastTokenWithText(tokens, "]", None)
+      )) {
+        (Some(jsonToken), Some(open), Some(close)) => {
+          NodeParseValue(
+            JsonArrayExpressionNode(
+              jsonToken,
+              surfaceValue(open),
+              items,
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+        _ => { RuleParseValue("JsonExpr", value, span) },
+      }
+    },
+    _ => { RuleParseValue("JsonExpr", value, span) },
+  }
+};
+
+let rec foldBinaryItems = match(items, left, span) => {
+  ([], Var(left), Var(span)) => { Some(left) },
+  ([value, ..rest], Var(left), Var(span)) => {
+    let tokens = collectTokens(value);
+    match(firstNode(value)) {
+      Some(right) => {
+        match(tokens) {
+          [operator] => {
+            foldBinaryItems(
+              rest,
+              BinaryExpressionNode(left, operator, right, span),
+              span,
+            )
+          },
+          _ => { None },
+        }
+      },
+      None => { None },
+    }
+  },
+};
+
+let buildBinaryFold = (name: String, value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(left),
+      RepeatedParseValue(items),
+    ]) => {
+      match(foldBinaryItems(items, left, span)) {
+        Some(node) => { NodeParseValue(node) },
+        None => { RuleParseValue(name, value, span) },
+      }
+    },
+    _ => { RuleParseValue(name, value, span) },
+  }
+};
+
+let buildIf = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match(collectNodes(value)) {
+    [condition, thenExpression, elseExpression] => {
+      match((
+        firstTokenWithText(tokens, "if"),
+        firstTokenWithText(tokens, "("),
+        firstTokenWithText(tokens, ")"),
+        firstTokenWithText(tokens, "else")
+      )) {
+        (Some(ifToken), Some(open), Some(close), Some(elseToken)) => {
+          NodeParseValue(
+            IfExpressionNode(
+              ifToken,
+              surfaceValue(open),
+              condition,
+              surfaceValue(close),
+              thenExpression,
+              elseToken,
+              elseExpression,
+              span,
+            )
+          )
+        },
+        _ => { RuleParseValue("IfExpr", value, span) },
+      }
+    },
+    _ => { RuleParseValue("IfExpr", value, span) },
+  }
+};
+
+let buildTupleOrGroup = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "("),
+    collectNodes(value),
+    lastTokenWithText(tokens, ")", None)
+  )) {
+    (Some(open), [only], Some(close)) => {
+      match(firstTokenWithText(tokens, ",")) {
+        Some(comma) => {
+          NodeParseValue(
+            TupleExpressionNode(
+              surfaceValue(open),
+              [only],
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+        None => {
+          NodeParseValue(
+            GroupedExpressionNode(
+              surfaceValue(open),
+              only,
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+      }
+    },
+    (Some(open), [first, second, ..rest], Some(close)) => {
+      NodeParseValue(
+        TupleExpressionNode(
+          surfaceValue(open),
+          [first, second, ..rest],
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("TupleOrGroup", value, span) },
+  }
+};
+
+let rec splitLastNode = match(nodes, reversed) => {
+  ([last], Var(reversed)) => { Some((reverseInto(reversed, []), last)) },
+  ([first, second, ..rest], Var(reversed)) => {
+    splitLastNode([second, ..rest], [first, ..reversed])
+  },
+  _ => { None },
+};
+
+let buildListExpr = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  let nodes = collectNodes(value);
+  match((
+    firstTokenWithText(tokens, "["),
+    lastTokenWithText(tokens, "]", None)
+  )) {
+    (Some(open), Some(close)) => {
+      match(firstTokenWithText(tokens, "..")) {
+        Some(spread) => {
+          match(splitLastNode(nodes, [])) {
+            Some((Var(items), Var(tail))) => {
+              NodeParseValue(
+                ListExpressionNode(
+                  surfaceValue(open),
+                  items,
+                  Some(tail),
+                  surfaceValue(close),
+                  span,
+                )
+              )
+            },
+            None => { RuleParseValue("ListExpr", value, span) },
+          }
+        },
+        None => {
+          NodeParseValue(
+            ListExpressionNode(
+              surfaceValue(open),
+              nodes,
+              None,
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+      }
+    },
+    _ => { RuleParseValue("ListExpr", value, span) },
+  }
+};

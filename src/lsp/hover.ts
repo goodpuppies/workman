@@ -251,7 +251,14 @@ function gpuBuiltinHover(
       const overload = context.input.builtinCatalog.overloads.find((candidate) =>
         candidate.id === selection?.overloadId
       );
-      if (overload) signatures.push(`(${overload.params.join(", ")}) => ${overload.result}`);
+      if (overload) {
+        const domain = overload.params.length === 0
+          ? "Void"
+          : overload.params.length === 1
+          ? overload.params[0]
+          : `(${overload.params.join(", ")})`;
+        signatures.push(`${domain} -> ${overload.result}`);
+      }
     }
   }
   const unique = [...new Set(signatures)].sort();
@@ -301,9 +308,14 @@ function showGpuType(
       return `(${current.items.map((id) => show(byId.get(id)!)).join(", ")})`;
     }
     if (current.kind === "function") {
-      return `(${current.params.map((id) => show(byId.get(id)!)).join(", ")}) => ${
-        show(byId.get(current.result)!)
-      }`;
+      const params = current.params.map((id) => byId.get(id)!);
+      const rendered = params.map(show);
+      const domain = params.length === 0
+        ? "Void"
+        : params.length === 1
+        ? params[0].kind === "function" ? `(${rendered[0]})` : rendered[0]
+        : `(${rendered.join(", ")})`;
+      return `${domain} -> ${show(byId.get(current.result)!)}`;
     }
     return context.input.adts.find((adt) => adt.typeNameId === current.typeNameId)?.name ??
       `adt#${current.typeNameId}`;

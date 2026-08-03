@@ -41,7 +41,7 @@ value before wrapping:
 
 ```wm
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
+  parse: String -> Js.Object,
 } as JSON;
 
 let parsed = JSON.parse("{}");
@@ -89,7 +89,7 @@ readable message.
 
 ```wm
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
+  parse: String -> Js.Object,
 } as JSON;
 
 let parseConfig = (text) => {
@@ -166,7 +166,7 @@ string or `_`.
 ```wm
 from js.global("Deno") import { readTextFile };
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
+  parse: String -> Js.Object,
 } as JSON;
 
 type AppError =

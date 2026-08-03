@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import { inferModule } from "../src/infer.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
@@ -188,7 +188,7 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
 
 Deno.test("Monad.lift works over structural fn records", async () => {
   const result = await checkSource(`
-    record TaskLike = { fn: (() => Number) => Number };
+    record TaskLike = { fn: (Void -> Number) -> Number };
     let task: TaskLike = .{ fn = (f) => { f() } };
     let value = Monad.lift task () => { 42 };
   `);
@@ -210,11 +210,11 @@ Deno.test("Monad.lift composes over Task.fn", async () => {
   `);
 
   expectBinding(result.env, "fetchUser", {
-    type: "(Task<String, 'a>) => Task<User, 'a>",
+    type: "Task<String, 'a> -> Task<User, 'a>",
     vars: 0,
   });
   expectBinding(result.env, "getDisplayName", {
-    type: "(Task<User, 'a>) => Task<String, 'a>",
+    type: "Task<User, 'a> -> Task<String, 'a>",
     vars: 0,
   });
   expectBinding(result.env, "greeting", { type: "Task<String, 'a>", vars: 0 });
@@ -230,7 +230,7 @@ Deno.test("Monad.lift composes over Result.fn", async () => {
   `);
 
   expectBinding(result.env, "keepNumber", {
-    type: "(Result<Number, 'a>) => Result<Number, 'a>",
+    type: "Result<Number, 'a> -> Result<Number, 'a>",
     vars: 0,
   });
   expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 0 });
@@ -628,7 +628,7 @@ Deno.test("lifted Task tuple syntax sequences task values into one tuple task", 
   `);
 
   expectBinding(result.env, "render", {
-    type: "(Task<(String, String), 'a>) => Task<String, 'a>",
+    type: "Task<(String, String), 'a> -> Task<String, 'a>",
     vars: 0,
   });
   expectBinding(result.env, "tupled", { type: "Task<(String, String), 'a>", vars: 0 });
@@ -707,6 +707,8 @@ Deno.test("Task.fn evaluates lifted fect-style composition", async () => {
 Deno.test("Task.fn composes real async JS tasks", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
+  const message = `${dir}/message.txt`;
+  await Deno.writeTextFile(message, "Task flow is deterministic.");
   await Deno.writeTextFile(
     input,
     `
@@ -724,7 +726,7 @@ Deno.test("Task.fn composes real async JS tasks", async () => {
       };
 
       let main = () => {
-        "README.md"
+        ${JSON.stringify(message)}
           :> Task.succeed
           :> readFile
           :> titlePrefix
@@ -737,7 +739,7 @@ Deno.test("Task.fn composes real async JS tasks", async () => {
 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "# wm-mini\n");
+  assertEquals(result.stdout, "Task flow\n");
 });
 
 async function runCli(args: string[]) {

@@ -311,8 +311,8 @@ Workman can import platform APIs directly:
 ```wm
 from js.global("Deno") import { readTextFile };
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
-  stringify: (Js.Value) => String,
+  parse: String -> Js.Object,
+  stringify: Js.Value -> String,
 } as JSON;
 from js.module("node:path") import { resolve };
 ```

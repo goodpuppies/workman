@@ -1,31 +1,38 @@
-import type { FrontendV2, StructuralParseResult } from "../frontend_v2_loader.ts";
+import type { FrontendV2Surface, FrontendV2SurfaceProgram } from "../frontend_v2_surface_loader.ts";
 
 type CacheEntry = {
   source: string;
   version?: number;
-  result: StructuralParseResult;
+  surface?: FrontendV2SurfaceProgram;
+  surfaceParsed: boolean;
 };
 
 export class FrontendV2ParseCache {
   #entries = new Map<string, CacheEntry>();
 
-  structural(
+  surface(
     uri: string,
     source: string,
     version: number | undefined,
-    frontend: Pick<FrontendV2, "parseStructural">,
-  ): StructuralParseResult {
+    frontend: Pick<FrontendV2Surface, "parseSurfaceProgram">,
+  ): FrontendV2SurfaceProgram | undefined {
     const current = this.#entries.get(uri);
     if (
       current &&
       current.source === source &&
-      versionsMatch(current.version, version)
+      versionsMatch(current.version, version) &&
+      current.surfaceParsed
     ) {
-      return current.result;
+      return current.surface;
     }
-    const result = frontend.parseStructural(source);
-    this.#entries.set(uri, { source, version, result });
-    return result;
+    const surface = frontend.parseSurfaceProgram(source);
+    this.#entries.set(uri, {
+      source,
+      version,
+      surface,
+      surfaceParsed: true,
+    });
+    return surface;
   }
 
   delete(uri: string): void {

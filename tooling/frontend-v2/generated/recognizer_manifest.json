@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "grammarHash": "195621adf008708ca11f8121167021a542a7dfb2f34917ce6b46eaf29071514d",
+  "grammarPath": "src/grammar.peggy",
+  "ruleCount": 128,
+  "recoveryAnnotations": [
+    {
+      "rule": "TopPhrase",
+      "after": "complete top-level declaration or expression",
+      "token": ";",
+      "synchronizeAt": [
+        "end of input",
+        "next top-level phrase"
+      ]
+    },
+    {
+      "rule": "SemiToken",
+      "after": "committed directive or block item",
+      "token": ";",
+      "synchronizeAt": [
+        "}",
+        "next block item"
+      ]
+    },
+    {
+      "rule": "ImportClause",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "ImportClause",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "JsImportClauseBody",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "JsImportClauseBody",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordDecl",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordDecl",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "MatchExpr",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "MatchExpr",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "MatchFn",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "MatchFn",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "LambdaBlock",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "LambdaBlock",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "JsonExpr",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "JsonExpr",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordExpr",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordExpr",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "Block",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "Block",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordPattern",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordPattern",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordLetPattern",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordLetPattern",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordParamPattern",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "RecordParamPattern",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    }
+  ],
+  "compiledProbeModules": [
+    "compiled_probe_types.wm",
+    "compiled_probe_rules_00.wm",
+    "compiled_probe_rules_01.wm",
+    "compiled_probe_rules_02.wm",
+    "compiled_probe_rules_03.wm",
+    "compiled_probe_rules_04.wm",
+    "compiled_probe_rules_05.wm",
+    "compiled_probe_rules_06.wm",
+    "compiled_probe_rules_07.wm",
+    "compiled_probe_rules_08.wm",
+    "compiled_probe_rules_09.wm",
+    "compiled_probe_rules_10.wm",
+    "compiled_probe_rules_11.wm",
+    "compiled_probe_rules_12.wm",
+    "compiled_probe_rules_13.wm",
+    "compiled_probe_rules_14.wm",
+    "compiled_probe_dispatch.wm"
+  ]
+}

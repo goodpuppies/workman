@@ -775,6 +775,9 @@ class SliceNormalizer {
         });
         this.collectExpressionBindings(expression.result, functionId);
         return;
+      case "Ascribed":
+        this.collectExpressionBindings(expression.value, functionId);
+        return;
       case "Binary":
       case "Pipe":
         this.collectExpressionBindings(expression.left, functionId);
@@ -971,6 +974,9 @@ class SliceNormalizer {
       }
       case "Block":
         row = this.blockExpr(expression, id);
+        break;
+      case "Ascribed":
+        row = baseExpr("copy", { children: [this.expr(expression.value)] });
         break;
       case "Binary":
       case "Unary": {
@@ -1677,6 +1683,9 @@ class SliceNormalizer {
         });
         this.walk(expression.result, visitExpression, visitPattern);
         return;
+      case "Ascribed":
+        this.walk(expression.value, visitExpression, visitPattern);
+        return;
       case "Binary":
       case "Pipe":
         this.walk(expression.left, visitExpression, visitPattern);
@@ -1760,6 +1769,7 @@ function visitOwnedFunction(
     if (value.kind === "PTuple") value.items.forEach(pattern);
     else if (value.kind === "PRecord") value.fields.forEach((field) => pattern(field.pattern));
     else if (value.kind === "PCtor") value.args.forEach(pattern);
+    else if (value.kind === "PAscribed") pattern(value.pattern);
   };
   const expression = (value: Expr): void => {
     visitExpression(value);
@@ -1817,6 +1827,9 @@ function visitOwnedFunction(
           });
         });
         expression(value.result);
+        return;
+      case "Ascribed":
+        expression(value.value);
         return;
       case "Binary":
       case "Pipe":

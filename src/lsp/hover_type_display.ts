@@ -38,31 +38,47 @@ function renderSemanticTypeWithLimits(
       type.shape.kind !== "ffi" &&
       type.shape.kind !== "primitive"
     ) return "…";
-    return renderSemanticShape(type.shape, (child) => render(child, depth + 1), (variable) => {
-      const existing = variables.get(variable);
-      if (existing) return existing;
-      const name = `'${String.fromCharCode(97 + nextVariable++)}`;
-      variables.set(variable, name);
-      return name;
-    }, limits?.maxItems);
+    return renderSemanticShape(
+      type.shape,
+      (child) => render(child, depth + 1),
+      (child) => moduleInterface.semanticTypes[child]?.shape.kind === "function",
+      (variable) => {
+        const existing = variables.get(variable);
+        if (existing) return existing;
+        const name = `'${String.fromCharCode(97 + nextVariable++)}`;
+        variables.set(variable, name);
+        return name;
+      },
+      limits?.maxItems,
+    );
   };
   const type = moduleInterface.semanticTypes[id];
   if (!type || !dropReceiver || type.shape.kind !== "function") return render(id);
   if (type.shape.params.length === 1) {
     const parameter = moduleInterface.semanticTypes[type.shape.params[0]]?.shape;
     if (parameter?.kind === "tuple") {
-      const tuple = `(${parameter.items.slice(1).map((item) => render(item)).join(", ")})`;
-      return `(${tuple}) => ${render(type.shape.result)}`;
+      const remaining = parameter.items.slice(1);
+      const domain = remaining.length === 0
+        ? "Void"
+        : remaining.length === 1
+        ? render(remaining[0])
+        : `(${remaining.map((item) => render(item)).join(", ")})`;
+      return `${domain} -> ${render(type.shape.result)}`;
     }
   }
-  return `(${type.shape.params.slice(1).map((item) => render(item)).join(", ")}) => ${
-    render(type.shape.result)
-  }`;
+  const remaining = type.shape.params.slice(1);
+  const domain = remaining.length === 0
+    ? "Void"
+    : remaining.length === 1
+    ? render(remaining[0])
+    : `(${remaining.map((item) => render(item)).join(", ")})`;
+  return `${domain} -> ${render(type.shape.result)}`;
 }
 
 function renderSemanticShape(
   shape: SemanticTypeShape,
   render: (id: SemanticTypeId) => string,
+  isFunction: (id: SemanticTypeId) => boolean,
   variableName: (variable: number) => string,
   maxItems = Number.POSITIVE_INFINITY,
 ): string {
@@ -70,6 +86,12 @@ function renderSemanticShape(
     ...items.slice(0, maxItems).map(render),
     ...(items.length > maxItems ? ["…"] : []),
   ];
+  const functionDomain = (params: readonly SemanticTypeId[]): string => {
+    const rendered = renderItems(params);
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${rendered.join(", ")})`;
+    return isFunction(params[0]) ? `(${rendered[0]})` : rendered[0];
+  };
   switch (shape.kind) {
     case "variable":
       return shape.name ?? variableName(shape.variable);
@@ -78,7 +100,7 @@ function renderSemanticShape(
     case "primitive":
       return shape.name;
     case "function":
-      return `(${renderItems(shape.params).join(", ")}) => ${render(shape.result)}`;
+      return `${functionDomain(shape.params)} -> ${render(shape.result)}`;
     case "tuple":
       return `(${renderItems(shape.items).join(", ")})`;
     case "structural-record":

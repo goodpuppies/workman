@@ -315,6 +315,8 @@ class NormalizationState {
           ),
           this.expr(expr.result, input),
         ];
+      case "Ascribed":
+        return [this.expr(expr.value, input)];
       case "Binary":
       case "Pipe":
         return [this.expr(expr.left, input), this.expr(expr.right, input)];
@@ -575,6 +577,7 @@ function numericHint(expr: Expr): GpuTypeDto["representation"] {
 }
 
 function exprKind(expr: Expr): string {
+  if (expr.kind === "Ascribed") return "copy";
   return expr.kind === "Int" || expr.kind === "Float" ? "number" : expr.kind.toLowerCase();
 }
 
@@ -621,6 +624,7 @@ function firstPatternBindingId(pattern: Pattern, facts: BindingFacts): BindingId
       if (id !== undefined) return id;
     }
   }
+  if (pattern.kind === "PAscribed") return firstPatternBindingId(pattern.pattern, facts);
   return undefined;
 }
 
@@ -631,6 +635,7 @@ function firstPatternName(pattern: Pattern): string | undefined {
     return pattern.fields.map((field) => firstPatternName(field.pattern)).find(Boolean);
   }
   if (pattern.kind === "PCtor") return pattern.args.map(firstPatternName).find(Boolean);
+  if (pattern.kind === "PAscribed") return firstPatternName(pattern.pattern);
   return undefined;
 }
 

@@ -1,12 +1,12 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { inferModule } from "../src/infer.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 
 Deno.test("FFI elaboration collects manual and reflected JS bindings before HM", async () => {
   const module = await parse(`
     from js.global("Math") import { floor as jsfloor };
-    from js.global("console") import { log: (String) => Void } as console;
+    from js.global("console") import { log: String -> Void } as console;
   `);
 
   const ffi = prepareFfiElaboration(module);
@@ -19,7 +19,7 @@ Deno.test("FFI elaboration collects manual and reflected JS bindings before HM",
 Deno.test("FFI elaboration rewrites namespace and object calls to delayed binding calls", async () => {
   const module = await parse(`
     from js.global("Math") import * as Math;
-    from js.global("console") import { log: (String, Number) => Void } as console;
+    from js.global("console") import { log: (String, Number) -> Void } as console;
     let main = () => {
       console.log("answer", 42);
       Math.sqrt(9)

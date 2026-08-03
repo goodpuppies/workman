@@ -13,7 +13,7 @@ from js.global("Deno") import {
   connect,
 };
 from js.global import {
-  Number as toNumber: (String) => Number,
+  Number as toNumber: String -> Number,
 };
 
 type ScanResult = Open<Number> | Closed<Number>;

@@ -264,7 +264,7 @@ Deno.test({
       positionOf(source, "sin(coord)"),
       new Map([[path, source]]),
     );
-    assertEquals(hover?.contents.value, "```wm\nsin: (f32x2) => f32x2\n```");
+    assertEquals(hover?.contents.value, "```wm\nsin: f32x2 -> f32x2\n```");
   },
 });
 
@@ -290,7 +290,7 @@ Deno.test({
     const builtin = await hoverAt(uri, positionOf(source, "sin(x)"), overrides);
     assertEquals(
       helper?.contents.value,
-      "```wm\nwave\nGPU specializations:\n- (f32) => f32\n- (f32x2) => f32x2\n```",
+      "```wm\nwave\nGPU specializations:\n- f32 -> f32\n- f32x2 -> f32x2\n```",
     );
     assertEquals(
       parameter?.contents.value,
@@ -298,7 +298,7 @@ Deno.test({
     );
     assertEquals(
       builtin?.contents.value,
-      "```wm\nsin\nGPU specializations:\n- (f32) => f32\n- (f32x2) => f32x2\n```",
+      "```wm\nsin\nGPU specializations:\n- f32 -> f32\n- f32x2 -> f32x2\n```",
     );
   },
 });
@@ -341,7 +341,7 @@ Deno.test({
       [6],
     );
     assertEquals(visible.map((item) => item.label), ["smoothstep"]);
-    assertStringIncludes(visible[0].detail, "(f32, f32, f32) => f32");
+    assertStringIncludes(visible[0].detail, "(f32, f32, f32) -> f32");
   },
 });
 
@@ -754,7 +754,7 @@ Deno.test("v4 rejects returned, stored, and dynamically selected functions befor
     },
     {
       path: "/test/stored-function.wm",
-      prefix: "record Holder = { function: (Number) => Number };",
+      prefix: "record Holder = { function: Number -> Number };",
       body: `
         let double = (x) => { x * 2.0 };
         let held: Holder = .{ function = double };

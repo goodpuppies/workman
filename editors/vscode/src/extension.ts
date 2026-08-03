@@ -87,8 +87,6 @@ export async function activate(context: ExtensionContext) {
 
     const denoPath =
       workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
-    const frontendMode =
-      workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
     const frontendV2ModulePath = workspace.getConfiguration("workman").get<
       string
     >(
@@ -112,7 +110,6 @@ export async function activate(context: ExtensionContext) {
         run: denoServerConfig(
           denoPath,
           server.path,
-          frontendMode,
           frontendV2ModulePath,
           TransportKind.stdio,
           serverEnvironment,
@@ -121,7 +118,6 @@ export async function activate(context: ExtensionContext) {
         debug: denoServerConfig(
           denoPath,
           server.path,
-          frontendMode,
           frontendV2ModulePath,
           TransportKind.stdio,
           serverEnvironment,
@@ -131,7 +127,6 @@ export async function activate(context: ExtensionContext) {
       : {
         run: nodeServerConfig(
           server.path,
-          frontendMode,
           frontendV2ModulePath,
           TransportKind.stdio,
           serverEnvironment,
@@ -139,7 +134,6 @@ export async function activate(context: ExtensionContext) {
         ),
         debug: nodeServerConfig(
           server.path,
-          frontendMode,
           frontendV2ModulePath,
           TransportKind.stdio,
           serverEnvironment,

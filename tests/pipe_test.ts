@@ -96,7 +96,7 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
   let error: Error | undefined;
   try {
     await checkSource(`
-      let scanAll: () => Task<Void, Js.Error> = () => {
+      let scanAll: Void -> Task<Void, Js.Error> = () => {
         void :> Task.succeed
       };
       let left: Result<Number, String> = Err("cli");
