@@ -1,7 +1,21 @@
 "use strict";
-const __wm_tuple_tag = Symbol('wm.tuple');
-const __wm_tuple = (...items) => { items[__wm_tuple_tag] = true; return items; };
-const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_tuple_tag] === true;
+const __wm_js_array_tag = Symbol('wm.jsArray');
+const __wm_tuple = (...items) => items;
+const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true;
+const __wm_js_array_mark = (value) => {
+  if (globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true) {
+    // Defined rather than assigned so the mark is non-enumerable and stays
+    // invisible to structural comparison of arrays handed back to JavaScript.
+    // A foreign array may be frozen or sealed; an unmarked one is only ever
+    // mistaken for a tuple, so failing to mark is not worth throwing over.
+    try {
+      globalThis.Object.defineProperty(value, __wm_js_array_tag, { value: true });
+    } catch {
+      // ignore
+    }
+  }
+  return value;
+};
 const __wm_js_global = (path) => path.split(".").reduce((value, key) => value?.[key], globalThis);
 const __wm_js_should_bind = (value) =>
   typeof value === "function" && !/^class\s/.test(Function.prototype.toString.call(value));
@@ -10,10 +24,11 @@ const __wm_js_member = (path) => {
   const key = parts.pop();
   const owner = parts.length === 0 ? globalThis : __wm_js_global(parts.join("."));
   const value = owner?.[key];
-  return __wm_js_should_bind(value) ? value.bind(owner) : value;
+  return __wm_js_should_bind(value) ? value.bind(owner) : __wm_js_array_mark(value);
 };
 const __wm_js_member_obj = (owner, key) => {
-  return owner?.[key];
+  const value = owner?.[key];
+  return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
 };
 const __wm_js_receiver_member = (path) => {
   // The path is fixed when the binding is created, so resolve it once here
@@ -22,7 +37,8 @@ const __wm_js_receiver_member = (path) => {
   if (path.length === 1) {
     return (receiver, ...args) => {
       const value = receiver?.[key];
-      return typeof value === "function" ? value.apply(receiver, args) : value;
+      if (typeof value === "function") return value.apply(receiver, args);
+      return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
     };
   }
   const ownerPath = path.slice(0, -1);
@@ -30,7 +46,8 @@ const __wm_js_receiver_member = (path) => {
     let owner = receiver;
     for (let index = 0; index < ownerPath.length; index++) owner = owner?.[ownerPath[index]];
     const value = owner?.[key];
-    return typeof value === "function" ? value.apply(owner, args) : value;
+    if (typeof value === "function") return value.apply(owner, args);
+    return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
   };
 };
 const __wm_js_construct = (path) => (...args) => new (__wm_js_global(path))(...args);
@@ -45,7 +62,7 @@ const __wm_js_to_workman = (value, converter) => {
   }
   if (typeof converter === "object" && converter.kind === "array") {
     if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript array");
-    return value.map((item) => __wm_js_to_workman(item, converter.item));
+    return __wm_js_array_mark(value.map((item) => __wm_js_to_workman(item, converter.item)));
   }
   if (typeof converter === "object" && converter.kind === "fn") {
     return (...args) => __wm_js_to_workman(
@@ -53,7 +70,10 @@ const __wm_js_to_workman = (value, converter) => {
       converter.result,
     );
   }
-  return value;
+  // The "id" converter hands back a raw JavaScript value; an array arriving
+  // this way has to be marked or it would read as a tuple. Guarded inline
+  // because this runs on every FFI return, and almost none are arrays.
+  return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
 };
 const __wm_js_to_js = (value, converter) => {
   if (converter === "option") return __wm_js_option_unwrap(value);
@@ -220,7 +240,7 @@ const __wm_list_to_array = (list) => {
     items.push(head);
     cursor = tail;
   }
-  return items;
+  return __wm_js_array_mark(items);
 };
 const Js = {
   Array: {
@@ -317,7 +337,7 @@ const __wm_gpu_artifact_identity = (artifact) => {
 };
 const __wm_gpu_uniform_binding = (artifact) => artifact.uniformLayout?.binding ?? -1;
 const __wm_gpu_uniform_byte_length = (artifact) => artifact.uniformLayout?.byteLength ?? 0;
-const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? [];
+const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? __wm_js_array_mark([]);
 const __wm_gpu_binding_count = (artifact) => (artifact.uniformLayout ? 1 : 0) + (artifact.resourceLayout?.bindings.length ?? 0);
 const __wm_gpu_texture_brand = Symbol("wm.gpu.texture2d");
 const __wm_gpu_sampled_brand = Symbol("wm.gpu.sampled-texture2d");
@@ -514,7 +534,7 @@ const __wm_bind_shader_artifact = (artifact, environment) => {
       }
     }
   }
-  const uniformBytes = buffer ? Object.freeze(Array.from(new Uint8Array(buffer))) : undefined;
+  const uniformBytes = buffer ? Object.freeze(__wm_js_array_mark(Array.from(new Uint8Array(buffer)))) : undefined;
   const resourceBindings = Object.freeze((resourceLayout?.bindings ?? []).map((field) =>
     __wm_gpu_bound_resource(field, environment[field.name])
   ));

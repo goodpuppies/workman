@@ -17,6 +17,16 @@ export type ModuleGraphOptions = CompilerFrontendOptions & {
   sourceOverrides?: Map<string, string>;
   virtualFs?: VirtualFileSystem;
   syntaxRecovery?: boolean;
+  /**
+   * Called as each module finishes parsing. Imports are followed depth-first,
+   * so the final count is not known until the graph closes — this reports how
+   * many are done, not a fraction.
+   */
+  onModuleParsed?: (loaded: number, path: string) => void;
+  /** Called when the compiler enters a named stage, for CLI progress output. */
+  onStage?: (name: string) => void;
+  /** Called as each module clears an analysis phase. */
+  onAnalysisProgress?: (done: number, total: number, phase: string) => void;
 };
 
 export type ModuleImportEdge = {
@@ -76,6 +86,7 @@ type LoadContext = {
   nodes: Map<ModuleId, ModuleNode>;
   paths: Map<ModuleId, string>;
   order: ModuleId[];
+  parsed: number;
 };
 
 type ResolvedModule = { id: ModuleId; path: string };
@@ -92,6 +103,7 @@ export async function loadModuleGraph(
     nodes: new Map(),
     paths: new Map([[entry.id, entry.path]]),
     order: [],
+    parsed: 0,
   };
   await visitModule(entry.id, ctx);
   ctx.order.forEach((id, index) => {
@@ -118,6 +130,8 @@ async function visitModule(id: ModuleId, ctx: LoadContext) {
       importRecoveryBoundaries: [] as readonly Readonly<{ start: number; end: number }>[],
     };
   const module = parsed.module;
+  ctx.parsed++;
+  ctx.options.onModuleParsed?.(ctx.parsed, path);
   const importDiagnostics: FrontendDiagnostic[] = [];
   const importRecoveryBoundaries: { start: number; end: number }[] = [];
   const failedImports = new Set<Module["decls"][number]>();

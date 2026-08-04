@@ -274,10 +274,14 @@ export async function coreFile(
   options: ModuleGraphOptions = {},
 ): Promise<CoreFileResult> {
   const analysis = await analyzeCoreFile(input, options);
-  return await coreResultFromAnalysis(analysis);
+  return await coreResultFromAnalysis(analysis, options);
 }
 
-async function coreResultFromAnalysis(analysis: CoreProgramAnalysis): Promise<CoreFileResult> {
+async function coreResultFromAnalysis(
+  analysis: CoreProgramAnalysis,
+  options: ModuleGraphOptions = {},
+): Promise<CoreFileResult> {
+  options.onStage?.("build core");
   const materializedGpuArtifacts = analysis.gpuInput.root.functionId === -1
     ? undefined
     : await materializeGpuSliceArtifacts(
@@ -539,9 +543,24 @@ async function analyzeStrict<T>(
   build: (graph: ModuleGraph, results: ModuleMap<InferResult>) => T,
 ): Promise<T> {
   assertCompilerFrontendMode(options.frontend);
+  options.onStage?.("load modules");
   const graph = await loadModuleGraph(input, options);
   try {
-    return build(graph, await analyzeModuleGraph(graph));
+    options.onStage?.("analyze");
+    const total = graph.nodes.size;
+    const cleared = new Map<string, Set<string>>();
+    return build(
+      graph,
+      await analyzeModuleGraph(graph, {
+        onEvent: ({ phase, node }) => {
+          if (!options.onAnalysisProgress) return;
+          const seen = cleared.get(phase) ?? new Set<string>();
+          seen.add(node.path);
+          cleared.set(phase, seen);
+          options.onAnalysisProgress(seen.size, total, phase);
+        },
+      }),
+    );
   } catch (error) {
     if (error instanceof StagedAnalysisError) {
       throw new ModuleAnalysisError(

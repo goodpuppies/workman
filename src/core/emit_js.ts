@@ -132,7 +132,7 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
     "};",
     "const __wm_gpu_uniform_binding = (artifact) => artifact.uniformLayout?.binding ?? -1;",
     "const __wm_gpu_uniform_byte_length = (artifact) => artifact.uniformLayout?.byteLength ?? 0;",
-    "const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? [];",
+    "const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? __wm_js_array_mark([]);",
     "const __wm_gpu_binding_count = (artifact) => (artifact.uniformLayout ? 1 : 0) + (artifact.resourceLayout?.bindings.length ?? 0);",
     `const __wm_gpu_texture_brand = Symbol("wm.gpu.texture2d");
 const __wm_gpu_sampled_brand = Symbol("wm.gpu.sampled-texture2d");
@@ -329,7 +329,11 @@ const __wm_gpu_validate_render_target = (args) => __wm_gpu_result(() => {
     "      }",
     "    }",
     "  }",
-    "  const uniformBytes = buffer ? Object.freeze(Array.from(new Uint8Array(buffer))) : undefined;",
+    // Marked before freezing: a frozen array cannot take the Js.Array mark
+    // afterwards, and an unmarked array reads as a tuple.
+    "  const uniformBytes = buffer" +
+    " ? Object.freeze(__wm_js_array_mark(Array.from(new Uint8Array(buffer))))" +
+    " : undefined;",
     "  const resourceBindings = Object.freeze((resourceLayout?.bindings ?? []).map((field) =>",
     "    __wm_gpu_bound_resource(field, environment[field.name])",
     "  ));",
