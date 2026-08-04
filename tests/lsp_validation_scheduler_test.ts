@@ -7,6 +7,7 @@ Deno.test("validation scheduler debounces to the latest idle generation", async 
   scheduler.schedule("main", ({ generation }) => {
     runs.push(generation);
   });
+  assertEquals(scheduler.hasWork("main"), true);
   scheduler.schedule("main", ({ generation }) => {
     runs.push(generation);
   });
@@ -17,6 +18,7 @@ Deno.test("validation scheduler debounces to the latest idle generation", async 
   await scheduler.drain();
 
   assertEquals(runs, [3]);
+  assertEquals(scheduler.hasWork("main"), false);
 });
 
 Deno.test("validation scheduler drops intermediate work behind an active generation", async () => {

@@ -975,6 +975,23 @@ Deno.test("[module update A611] recovered syntax retains later independent phras
   assertEquals(afterScope.values.has("broken"), false);
 });
 
+Deno.test("targeted syntax recovery masks multiple parser-reported phrases", async () => {
+  const source = "let first = 1; let broken = ; let middle = 2; let also = ; let after = 3;";
+  const snapshot = await analyzeRecoveredVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const main = snapshot.interfaces.get(moduleId("/test/main.wm"))!;
+  const ranges = topLevelPhraseRanges(source);
+
+  assertEquals(main.completeness.syntax, "recovered");
+  assertEquals(main.completeness.recoveryBoundaries, [ranges[1], ranges[3]]);
+  assertEquals(
+    main.occurrences.filter((item) => item.role === "declaration").map((item) => item.name),
+    ["first", "middle", "after"],
+  );
+});
+
 Deno.test("[module update A608/G21b] recovered interfaces own incomplete GPU completion scopes", async () => {
   const source = `
     let failed = missing;

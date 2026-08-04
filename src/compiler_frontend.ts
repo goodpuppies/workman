@@ -12,11 +12,13 @@ import {
 } from "./parser.ts";
 import { offsetToLineCol } from "./source.ts";
 import { maskSourceRange, topLevelPhraseRanges } from "./top_level_phrases.ts";
+import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 
 export type CompilerFrontendOptions = {
   surface?: Surface;
   frontend?: FrontendMode;
   frontendV2ModuleUrl?: string | URL;
+  frontendV2ParseCache?: FrontendV2ParseCache;
 };
 
 export type RecoveredCompilerModule = Readonly<{
@@ -44,11 +46,16 @@ export async function parseCompilerModule(
     const frontend = await loadFrontendV2Surface(
       options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl,
     );
-    const surface = frontend.parseSurfaceProgram(source);
+    const cacheKey = filePath ?? "<source>";
+    const surface = options.frontendV2ParseCache
+      ? options.frontendV2ParseCache.surface(cacheKey, source, undefined, frontend)
+      : frontend.parseSurfaceProgram(source);
     if (!surface) {
       throw generatedParseError(
         source,
-        frontend.parseSurfaceFailure(source),
+        options.frontendV2ParseCache
+          ? options.frontendV2ParseCache.failure(cacheKey, source, undefined, frontend)
+          : frontend.parseSurfaceFailure(source),
         filePath,
       );
     }
@@ -114,36 +121,103 @@ export async function parseCompilerModuleRecovered(
       recoveryBoundaries: Object.freeze([]),
       importRecoveryBoundaries: Object.freeze([]),
     });
-  } catch {
-    let working = source;
-    const diagnostics: FrontendDiagnostic[] = [];
-    const recoveryBoundaries: { start: number; end: number }[] = [];
-    const importRecoveryBoundaries: { start: number; end: number }[] = [];
-    for (const range of topLevelPhraseRanges(source)) {
-      try {
-        await parseCompilerModule(working.slice(0, range.end), options, filePath);
-      } catch (error) {
-        diagnostics.push(parseRecoveryDiagnostic(error, source, range.start));
-        recoveryBoundaries.push({ start: range.start, end: range.end });
-        if (source.slice(range.start, range.end).trimStart().startsWith("from ")) {
-          importRecoveryBoundaries.push({ start: range.start, end: range.end });
-        }
-        working = maskSourceRange(working, range.start, range.end);
-      }
-    }
-    const module = await parseCompilerModule(working, options, filePath);
-    return Object.freeze({
-      module,
-      syntax: "recovered",
-      diagnostics: Object.freeze(diagnostics),
-      recoveryBoundaries: Object.freeze(
-        recoveryBoundaries.map((boundary) => Object.freeze(boundary)),
-      ),
-      importRecoveryBoundaries: Object.freeze(
-        importRecoveryBoundaries.map((boundary) => Object.freeze(boundary)),
-      ),
-    });
+  } catch (initialError) {
+    return await targetedPhraseRecovery(source, options, filePath, initialError) ??
+      await prefixPhraseRecovery(source, options, filePath);
   }
+}
+
+async function targetedPhraseRecovery(
+  source: string,
+  options: CompilerFrontendOptions,
+  filePath: string | undefined,
+  initialError: unknown,
+): Promise<RecoveredCompilerModule | undefined> {
+  const ranges = topLevelPhraseRanges(source);
+  const masked = new Set<number>();
+  const diagnostics: FrontendDiagnostic[] = [];
+  const recoveryBoundaries: { start: number; end: number }[] = [];
+  const importRecoveryBoundaries: { start: number; end: number }[] = [];
+  let working = source;
+  let error = initialError;
+  while (error instanceof ParseError) {
+    const parseError = error;
+    const index = ranges.findIndex((range, candidate) =>
+      !masked.has(candidate) && range.start <= parseError.span.start &&
+      (parseError.span.start < range.end ||
+        (parseError.span.start === source.length && range.end === source.length))
+    );
+    if (index < 0) return undefined;
+    const range = ranges[index];
+    masked.add(index);
+    diagnostics.push(parseRecoveryDiagnostic(parseError, source, range.start));
+    recoveryBoundaries.push({ start: range.start, end: range.end });
+    if (source.slice(range.start, range.end).trimStart().startsWith("from ")) {
+      importRecoveryBoundaries.push({ start: range.start, end: range.end });
+    }
+    working = maskSourceRange(working, range.start, range.end);
+    try {
+      const module = await parseCompilerModule(working, options, filePath);
+      return recoveredCompilerModule(
+        module,
+        diagnostics,
+        recoveryBoundaries,
+        importRecoveryBoundaries,
+      );
+    } catch (nextError) {
+      error = nextError;
+    }
+  }
+  return undefined;
+}
+
+async function prefixPhraseRecovery(
+  source: string,
+  options: CompilerFrontendOptions,
+  filePath?: string,
+): Promise<RecoveredCompilerModule> {
+  let working = source;
+  const diagnostics: FrontendDiagnostic[] = [];
+  const recoveryBoundaries: { start: number; end: number }[] = [];
+  const importRecoveryBoundaries: { start: number; end: number }[] = [];
+  for (const range of topLevelPhraseRanges(source)) {
+    try {
+      await parseCompilerModule(working.slice(0, range.end), options, filePath);
+    } catch (error) {
+      diagnostics.push(parseRecoveryDiagnostic(error, source, range.start));
+      recoveryBoundaries.push({ start: range.start, end: range.end });
+      if (source.slice(range.start, range.end).trimStart().startsWith("from ")) {
+        importRecoveryBoundaries.push({ start: range.start, end: range.end });
+      }
+      working = maskSourceRange(working, range.start, range.end);
+    }
+  }
+  const module = await parseCompilerModule(working, options, filePath);
+  return recoveredCompilerModule(
+    module,
+    diagnostics,
+    recoveryBoundaries,
+    importRecoveryBoundaries,
+  );
+}
+
+function recoveredCompilerModule(
+  module: Module,
+  diagnostics: FrontendDiagnostic[],
+  recoveryBoundaries: { start: number; end: number }[],
+  importRecoveryBoundaries: { start: number; end: number }[],
+): RecoveredCompilerModule {
+  return Object.freeze({
+    module,
+    syntax: "recovered",
+    diagnostics: Object.freeze(diagnostics),
+    recoveryBoundaries: Object.freeze(
+      recoveryBoundaries.map((boundary) => Object.freeze(boundary)),
+    ),
+    importRecoveryBoundaries: Object.freeze(
+      importRecoveryBoundaries.map((boundary) => Object.freeze(boundary)),
+    ),
+  });
 }
 
 function parseRecoveryDiagnostic(

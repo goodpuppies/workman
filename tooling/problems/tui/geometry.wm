@@ -1,0 +1,123 @@
+-- Integer terminal geometry. Coordinates are zero-based inside the library;
+-- ANSI conversion happens only in the drawing layer.
+
+from js.global("Math") import {
+  floor: Number -> Number,
+};
+
+record Size = {
+  width: Number,
+  height: Number,
+  cellWidth: Number,
+  cellHeight: Number,
+};
+
+record Rect = {
+  x: Number,
+  y: Number,
+  width: Number,
+  height: Number,
+};
+
+let clamp = (minimum, maximum, value) => {
+  if (value < minimum) {
+    minimum
+  } else {
+    if (value > maximum) {
+      maximum
+    } else {
+      value
+    }
+  }
+};
+
+let nonNegative = (value) => {
+  if (value < 0) { 0 } else { value }
+};
+
+let rect = (x, y, width, height) => {
+  Rect(x, y, nonNegative(width), nonNegative(height))
+};
+
+let screen = (size) => {
+  rect(0, 0, size.width, size.height)
+};
+
+let inset = (area, amount) => {
+  rect(
+    area.x + amount,
+    area.y + amount,
+    area.width - amount * 2,
+    area.height - amount * 2,
+  )
+};
+
+let reserveBottom = (area, rows) => {
+  let reserved = clamp(0, area.height, rows);
+  (
+    rect(area.x, area.y, area.width, area.height - reserved),
+    rect(area.x, area.y + area.height - reserved, area.width, reserved),
+  )
+};
+
+let splitColumns = (area, requestedLeft, gap) => {
+  let actualGap = clamp(0, area.width, gap);
+  let leftWidth = clamp(0, area.width - actualGap, requestedLeft);
+  (
+    rect(area.x, area.y, leftWidth, area.height),
+    rect(
+      area.x + leftWidth + actualGap,
+      area.y,
+      area.width - leftWidth - actualGap,
+      area.height,
+    ),
+  )
+};
+
+let splitRows = (area, requestedTop, gap) => {
+  let actualGap = clamp(0, area.height, gap);
+  let topHeight = clamp(0, area.height - actualGap, requestedTop);
+  (
+    rect(area.x, area.y, area.width, topHeight),
+    rect(
+      area.x,
+      area.y + topHeight + actualGap,
+      area.width,
+      area.height - topHeight - actualGap,
+    ),
+  )
+};
+
+let percentOf = (total, percent) => {
+  floor(total * clamp(0, 100, percent) / 100)
+    :> Result.withDefault(0)
+};
+
+let aspectColumns = (
+  rows,
+  terminal: Size,
+  widthRatio,
+  heightRatio,
+) => {
+  if (
+    rows <= 0 ||
+    terminal.cellWidth <= 0 ||
+    terminal.cellHeight <= 0 ||
+    widthRatio <= 0 ||
+    heightRatio <= 0
+  ) {
+    0
+  } else {
+    floor(
+      rows * terminal.cellHeight * widthRatio /
+        (heightRatio * terminal.cellWidth),
+    ) :> Result.withDefault(0)
+  }
+};
+
+let contains = (area, x, y) => {
+  x >= area.x &&
+    y >= area.y &&
+    x < area.x + area.width &&
+    y < area.y + area.height
+};

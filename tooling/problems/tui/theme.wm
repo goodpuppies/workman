@@ -1,0 +1,23 @@
+-- Default palette translated from Helix's adwaita-dark theme:
+-- /home/ellie/git/helix/runtime/themes/adwaita-dark.toml
+--
+-- Keep terminal colors here so widgets use semantic roles instead of embedding
+-- ANSI palette indices throughout the renderer.
+
+record Color = {
+  red: Number,
+  green: Number,
+  blue: Number,
+};
+
+let libadwaitaDark = Color(28, 28, 31);
+let libadwaitaDarkAlt = Color(40, 40, 44);
+let splitAndBorders = Color(79, 79, 79);
+
+let light1 = Color(255, 255, 255);
+let light4 = Color(222, 221, 218);
+let light7 = Color(154, 153, 150);
+let dark1 = Color(119, 118, 123);
+
+let blue2 = Color(98, 160, 234);
+let blue7 = Color(25, 61, 102);

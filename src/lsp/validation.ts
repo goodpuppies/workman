@@ -257,12 +257,9 @@ function structuralDiagnosticsFor(
 ): LspDiagnostic[] {
   if (!frontend) return [];
   const version = validationOptions.documentVersion?.(uri);
-  const surface = validationOptions.frontendV2ParseCache?.surface(
-    uri,
-    source,
-    version,
-    frontend,
-  ) ?? frontend.parseSurfaceProgram(source);
+  const surface = validationOptions.frontendV2ParseCache
+    ? validationOptions.frontendV2ParseCache.surface(uri, source, version, frontend)
+    : frontend.parseSurfaceProgram(source);
   return surfaceRecoveryDiagnostics(source, surface);
 }
 

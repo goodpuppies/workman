@@ -1,9 +1,10 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
+import { createTemporaryDirectory, type TemporaryDirectory } from "../src/temporary_directory.ts";
 
 type ServerName = "current" | "old";
-type ScenarioName = "tiny" | "node-gotchi";
+type ScenarioName = "tiny" | "node-gotchi" | "file";
 
 type Options = Readonly<{
   servers: readonly ServerName[];
@@ -13,6 +14,12 @@ type Options = Readonly<{
   cpuProfile: boolean;
   outputDir: string;
   scenario: ScenarioName;
+  entry?: string;
+  root?: string;
+  deletePosition?: Readonly<{ line: number; column: number }>;
+  initialDeletePosition?: Readonly<{ line: number; column: number }>;
+  saveAfterMs?: number;
+  watchedAfterMs?: number;
 }>;
 
 type ReceivedMessage = Readonly<{ message: RpcMessage; at: number }>;
@@ -33,6 +40,11 @@ type BenchmarkResult = Readonly<{
   publicationsAfterLastKey: number;
   maximumWriteLagMs: number;
   matchedEditPublications: number;
+  editDiagnostics: readonly Readonly<{
+    version: number;
+    latencyMs: number;
+    count: number;
+  }>[];
   diagnosticLatencyP50Ms?: number;
   diagnosticLatencyP95Ms?: number;
   diagnosticLatencyMaxMs?: number;
@@ -53,6 +65,7 @@ type CpuProfile = Readonly<{
 
 type Scenario = Readonly<{
   directory: string;
+  temporaryDirectory?: TemporaryDirectory;
   mainPath: string;
   initialSource: string;
   editSources: readonly string[];
@@ -74,8 +87,8 @@ async function main(): Promise<void> {
 }
 
 async function benchmark(server: ServerName, options: Options): Promise<BenchmarkResult> {
-  const scenario = await prepareScenario(server, options.scenario);
-  const { directory: temporaryProject, mainPath, initialSource, editSources } = scenario;
+  const scenario = await prepareScenario(server, options);
+  const { directory: projectDirectory, mainPath, initialSource, editSources } = scenario;
 
   const profileName = `${server}.cpuprofile`;
   const launch = serverLaunch(server, options, profileName);
@@ -96,7 +109,7 @@ async function benchmark(server: ServerName, options: Options): Promise<Benchmar
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
-      params: initializeParams(server, temporaryProject),
+      params: initializeParams(server, projectDirectory),
     });
     await client.waitFor(({ message }) => message.id === 1, 0, options.timeoutMs);
     const initializedAt = performance.now();
@@ -145,6 +158,22 @@ async function benchmark(server: ServerName, options: Options): Promise<Benchmar
           contentChanges: [{ text: editSources[index] }],
         },
       });
+      if (options.saveAfterMs !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, options.saveAfterMs));
+        await client.send({
+          jsonrpc: "2.0",
+          method: "textDocument/didSave",
+          params: { textDocument: { uri: mainUri } },
+        });
+      }
+      if (options.watchedAfterMs !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, options.watchedAfterMs));
+        await client.send({
+          jsonrpc: "2.0",
+          method: "workspace/didChangeWatchedFiles",
+          params: { changes: [{ uri: mainUri, type: 2 }] },
+        });
+      }
     }
     const lastKeyAt = performance.now();
 
@@ -178,15 +207,24 @@ async function benchmark(server: ServerName, options: Options): Promise<Benchmar
       isMainDiagnostics(received, mainUri)
     );
     const editPublications = mainPublications.filter((item) => item.at >= typingStartedAt);
-    const diagnosticLatencies = server === "current"
+    const editDiagnostics = server === "current"
       ? editPublications.flatMap((publication) => {
         const version = diagnosticVersion(publication.message);
         const sentAt = version === undefined ? undefined : editSentByVersion.get(version);
-        return sentAt === undefined ? [] : [publication.at - sentAt];
+        return sentAt === undefined || version === undefined ? [] : [{
+          version,
+          latencyMs: publication.at - sentAt,
+          count: diagnosticCount(publication.message),
+        }];
       })
       : editPublications.length === editSentAt.length
-      ? editSentAt.map((sentAt, index) => editPublications[index].at - sentAt)
+      ? editSentAt.map((sentAt, index) => ({
+        version: index + 2,
+        latencyMs: editPublications[index].at - sentAt,
+        count: diagnosticCount(editPublications[index].message),
+      }))
       : [];
+    const diagnosticLatencies = editDiagnostics.map((item) => item.latencyMs);
     const matchedEditPublications = diagnosticLatencies.length;
     const cpu = options.cpuProfile
       ? await summarizeCpuProfile(join(options.outputDir, profileName))
@@ -210,6 +248,7 @@ async function benchmark(server: ServerName, options: Options): Promise<Benchmar
       publicationsAfterLastKey: mainPublications.filter((item) => item.at >= lastKeyAt).length,
       maximumWriteLagMs,
       matchedEditPublications,
+      editDiagnostics,
       diagnosticLatencyP50Ms: percentile(diagnosticLatencies, 0.5),
       diagnosticLatencyP95Ms: percentile(diagnosticLatencies, 0.95),
       diagnosticLatencyMaxMs: diagnosticLatencies.length
@@ -226,7 +265,7 @@ async function benchmark(server: ServerName, options: Options): Promise<Benchmar
     } catch {
       // The normal path has already exited and written its CPU profile.
     }
-    await Deno.remove(temporaryProject, { recursive: true });
+    await scenario.temporaryDirectory?.cleanup();
   }
 }
 
@@ -375,6 +414,11 @@ function diagnosticVersion(message: RpcMessage): number | undefined {
   return typeof params?.version === "number" ? params.version : undefined;
 }
 
+function diagnosticCount(message: RpcMessage): number {
+  const params = message.params as { diagnostics?: unknown } | undefined;
+  return Array.isArray(params?.diagnostics) ? params.diagnostics.length : 0;
+}
+
 function concatenate(
   left: Uint8Array<ArrayBufferLike>,
   right: Uint8Array<ArrayBufferLike>,
@@ -398,6 +442,12 @@ function parseOptions(args: readonly string[]): Options {
   let cpuProfile = false;
   let outputDir = join(repositoryRoot, "profiles", "lsp-typing");
   let scenario: ScenarioName = "tiny";
+  let entry: string | undefined;
+  let root: string | undefined;
+  let deletePosition: Readonly<{ line: number; column: number }> | undefined;
+  let initialDeletePosition: Readonly<{ line: number; column: number }> | undefined;
+  let saveAfterMs: number | undefined;
+  let watchedAfterMs: number | undefined;
   for (const arg of args) {
     if (arg.startsWith("--server=")) {
       const value = arg.slice("--server=".length);
@@ -415,10 +465,29 @@ function parseOptions(args: readonly string[]): Options {
       outputDir = resolve(arg.slice("--output-dir=".length));
     } else if (arg.startsWith("--scenario=")) {
       const value = arg.slice("--scenario=".length);
-      if (value !== "tiny" && value !== "node-gotchi") {
+      if (value !== "tiny" && value !== "node-gotchi" && value !== "file") {
         throw new Error(`invalid --scenario value: ${value}`);
       }
       scenario = value;
+    } else if (arg.startsWith("--entry=")) {
+      entry = resolve(arg.slice("--entry=".length));
+      scenario = "file";
+    } else if (arg.startsWith("--root=")) {
+      root = resolve(arg.slice("--root=".length));
+    } else if (arg.startsWith("--delete=")) {
+      deletePosition = sourcePosition(arg.slice("--delete=".length), "--delete");
+    } else if (arg.startsWith("--initial-delete=")) {
+      initialDeletePosition = sourcePosition(
+        arg.slice("--initial-delete=".length),
+        "--initial-delete",
+      );
+    } else if (arg.startsWith("--save-after-ms=")) {
+      saveAfterMs = nonNegativeNumber(arg.slice("--save-after-ms=".length), "--save-after-ms");
+    } else if (arg.startsWith("--watched-after-ms=")) {
+      watchedAfterMs = nonNegativeNumber(
+        arg.slice("--watched-after-ms=".length),
+        "--watched-after-ms",
+      );
     } else if (arg === "--cpu-profile") {
       cpuProfile = true;
     } else if (arg === "--help" || arg === "-h") {
@@ -431,13 +500,46 @@ function parseOptions(args: readonly string[]): Options {
   if (scenario === "node-gotchi" && servers.includes("old")) {
     throw new Error("the node-gotchi scenario is only available for --server=current");
   }
-  return { servers, delayMs, quietMs, timeoutMs, cpuProfile, outputDir, scenario };
+  if (scenario === "file" && !entry) throw new Error("--scenario=file requires --entry=PATH");
+  if (deletePosition && scenario !== "file") {
+    throw new Error("--delete requires --entry=PATH");
+  }
+  if (initialDeletePosition && scenario !== "file") {
+    throw new Error("--initial-delete requires --entry=PATH");
+  }
+  if (deletePosition && initialDeletePosition) {
+    throw new Error("--delete and --initial-delete are mutually exclusive");
+  }
+  return {
+    servers,
+    delayMs,
+    quietMs,
+    timeoutMs,
+    cpuProfile,
+    outputDir,
+    scenario,
+    entry,
+    root,
+    deletePosition,
+    initialDeletePosition,
+    saveAfterMs,
+    watchedAfterMs,
+  };
 }
 
-async function prepareScenario(server: ServerName, name: ScenarioName): Promise<Scenario> {
-  if (name === "node-gotchi") return await prepareNodeGotchiScenario();
+async function prepareScenario(server: ServerName, options: Options): Promise<Scenario> {
+  if (options.scenario === "file") {
+    return await prepareFileScenario(
+      options.entry!,
+      options.root,
+      options.deletePosition,
+      options.initialDeletePosition,
+    );
+  }
+  if (options.scenario === "node-gotchi") return await prepareNodeGotchiScenario();
   const fixture = join(repositoryRoot, "benchmarks", "lsp-typing", server);
-  const directory = await Deno.makeTempDir({ prefix: `wm-lsp-${server}-` });
+  const temporaryDirectory = await createTemporaryDirectory({ prefix: `wm-lsp-${server}-` });
+  const directory = temporaryDirectory.path;
   const mainPath = join(directory, "main.wm");
   const initialSource = await Deno.readTextFile(join(fixture, "main.wm"));
   const fragment = await Deno.readTextFile(
@@ -451,7 +553,64 @@ async function prepareScenario(server: ServerName, name: ScenarioName): Promise<
     source += character;
     editSources.push(source);
   }
-  return { directory, mainPath, initialSource, editSources, typedCharacters: fragment.length };
+  return {
+    directory,
+    temporaryDirectory,
+    mainPath,
+    initialSource,
+    editSources,
+    typedCharacters: fragment.length,
+  };
+}
+
+async function prepareFileScenario(
+  entry: string,
+  root?: string,
+  deletePosition?: Readonly<{ line: number; column: number }>,
+  initialDeletePosition?: Readonly<{ line: number; column: number }>,
+): Promise<Scenario> {
+  const diskSource = await Deno.readTextFile(entry);
+  const initialSource = initialDeletePosition
+    ? deleteAt(diskSource, initialDeletePosition.line, initialDeletePosition.column)
+    : diskSource;
+  const editedSource = deletePosition
+    ? deleteAt(initialSource, deletePosition.line, deletePosition.column)
+    : initialDeletePosition
+    ? diskSource
+    : `${initialSource}\n`;
+  return {
+    directory: root ?? dirname(entry),
+    mainPath: entry,
+    initialSource,
+    editSources: [editedSource, initialSource],
+    typedCharacters: 1,
+  };
+}
+
+function deleteAt(source: string, line: number, column: number): string {
+  const lines = source.split("\n");
+  const text = lines[line - 1];
+  if (text === undefined) throw new Error(`--delete line ${line} does not exist`);
+  if (column > text.length) {
+    throw new Error(`--delete column ${column} is past line ${line}'s ${text.length} characters`);
+  }
+  const lineStart = lines.slice(0, line - 1).reduce((length, item) => length + item.length + 1, 0);
+  const offset = lineStart + column - 1;
+  return source.slice(0, offset) + source.slice(offset + 1);
+}
+
+function sourcePosition(
+  value: string,
+  option: string,
+): Readonly<{ line: number; column: number }> {
+  const match = /^(\d+):(\d+)$/.exec(value);
+  if (!match) throw new Error(`${option} must be LINE:COLUMN using one-based positions`);
+  const line = positiveNumber(match[1], `${option} line`);
+  const column = positiveNumber(match[2], `${option} column`);
+  if (!Number.isInteger(line) || !Number.isInteger(column)) {
+    throw new Error(`${option} must use integer positions`);
+  }
+  return { line, column };
 }
 
 async function prepareNodeGotchiScenario(): Promise<Scenario> {
@@ -470,13 +629,21 @@ async function prepareNodeGotchiScenario(): Promise<Scenario> {
     editSources.push(source);
   }
   if (source !== initialSource) throw new Error("node-gotchi edit did not restore the source");
-  const directory = await Deno.makeTempDir({
+  const temporaryDirectory = await createTemporaryDirectory({
     dir: join(repositoryRoot, "examples"),
     prefix: ".lsp-node-gotchi-",
   });
+  const directory = temporaryDirectory.path;
   const mainPath = join(directory, "node-gotchi.wm");
   await Deno.writeTextFile(mainPath, initialSource);
-  return { directory, mainPath, initialSource, editSources, typedCharacters: word.length };
+  return {
+    directory,
+    temporaryDirectory,
+    mainPath,
+    initialSource,
+    editSources,
+    typedCharacters: word.length,
+  };
 }
 
 function positiveNumber(value: string, option: string): number {
@@ -563,6 +730,11 @@ function printResults(results: readonly BenchmarkResult[], options: Options): vo
         `${formatOptionalMs(result.activeCpuMs).padStart(12)} ` +
         `${formatOptionalPercent(result.cpuUtilizationPercent).padStart(15)}`,
     );
+    for (const edit of result.editDiagnostics) {
+      console.log(
+        `  version ${edit.version}: ${formatMs(edit.latencyMs)}, ${edit.count} diagnostics`,
+      );
+    }
   }
   console.log(`reports: ${join(options.outputDir, "summary.md")}`);
 }
@@ -584,7 +756,13 @@ function usage(): void {
 
 options:
   --server=current|old|both  servers to compare, default both
-  --scenario=tiny|node-gotchi benchmark scenario, default tiny
+  --scenario=tiny|node-gotchi|file  benchmark scenario, default tiny
+  --entry=PATH               profile an existing file without modifying it
+  --root=PATH                workspace root for --entry, default entry directory
+  --delete=LINE:COLUMN       delete one character in-memory, then restore it
+  --initial-delete=LINE:COLUMN  open with one character deleted, then repair it
+  --save-after-ms=N           send didSave N ms after every edit
+  --watched-after-ms=N        send a watched-file change after every edit/save
   --delay-ms=N               delay between full-document changes, default 200
   --quiet-ms=N               diagnostic quiet period, default 1000
   --timeout-ms=N             per-stage timeout, default 120000

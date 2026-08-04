@@ -1,0 +1,314 @@
+from "./tui/command.wm" import * as Command;
+from "./tui/draw.wm" import * as Draw;
+from "./tui/event.wm" import * as Event;
+from "./tui/geometry.wm" import * as Geometry;
+from "./tui/runtime.wm" import * as Runtime;
+from js.global("Deno") import {
+  args: Js.Array<String>,
+  readTextFile: String -> Task<String, Js.Error>,
+};
+from js.global("JSON") import {
+  parse: String -> Result<Js.Value, Js.Error>,
+} as JSON;
+from js.module("node:timers/promises") import { setTimeout as delay };
+
+record Problem = {
+  path: String,
+  line: Number,
+  column: Number,
+  severity: Number,
+  code: String,
+  message: String,
+};
+
+record Snapshot = {
+  revision: Number,
+  problems: Js.Array<Problem>,
+};
+
+record Frame<Memory> = {
+  output: String,
+  memory: Memory,
+};
+
+record Model = {
+  problems: List<Problem>,
+  selected: Number,
+  top: Number,
+  expanded: Bool,
+  listRows: Number,
+  errors: Bool,
+  warnings: Bool,
+  infos: Bool,
+  hints: Bool,
+  revision: Number,
+};
+
+let severityEnabled = (severity, model) => {
+  if (severity == 1) { model.errors } else {
+    if (severity == 2) { model.warnings } else {
+      if (severity == 3) { model.infos } else { model.hints }
+    }
+  }
+};
+
+let filteredProblems = (model) => {
+  List.filter(model.problems, (problem) => { severityEnabled(problem.severity, model) })
+};
+
+let count = (model) => { List.length(filteredProblems(model)) };
+let totalCount = (model) => { List.length(model.problems) };
+
+let changed = (model, errors, warnings, infos, hints) => {
+  Model(
+    model.problems,
+    0,
+    0,
+    false,
+    model.listRows,
+    errors,
+    warnings,
+    infos,
+    hints,
+    model.revision,
+  )
+};
+
+let toggleSeverity = (severity, model) => {
+  if (severity == 1) {
+    changed(model, !model.errors, model.warnings, model.infos, model.hints)
+  } else {
+    if (severity == 2) {
+      changed(model, model.errors, !model.warnings, model.infos, model.hints)
+    } else {
+      if (severity == 3) {
+        changed(model, model.errors, model.warnings, !model.infos, model.hints)
+      } else {
+        changed(model, model.errors, model.warnings, model.infos, !model.hints)
+      }
+    }
+  }
+};
+
+let move = (delta, model) => {
+  let last = Geometry.nonNegative(count(model) - 1);
+  let selected = Geometry.clamp(0, last, model.selected + delta);
+  let top = if (selected < model.top) {
+    selected
+  } else {
+    if (selected >= model.top + model.listRows) {
+      Geometry.nonNegative(selected - model.listRows + 1)
+    } else {
+      model.top
+    }
+  };
+  Model(
+    model.problems,
+    selected,
+    top,
+    model.expanded,
+    model.listRows,
+    model.errors,
+    model.warnings,
+    model.infos,
+    model.hints,
+    model.revision,
+  )
+};
+
+let selectAt = (row, model) => {
+  let index = model.top + row - 2;
+  if (index < 0 || index >= count(model)) {
+    model
+  } else {
+    Model(
+      model.problems,
+      index,
+      model.top,
+      if (index == model.selected) { !model.expanded } else { false },
+      model.listRows,
+      model.errors,
+      model.warnings,
+      model.infos,
+      model.hints,
+      model.revision,
+    )
+  }
+};
+
+let update = match(event, model) => {
+  (Event.CtrlC, _) => { Command.Quit },
+  (Event.Escape, _) => { Command.Quit },
+  (Event.Character("q"), _) => { Command.Quit },
+  (Event.Character("e"), _) => { Command.Continue(toggleSeverity(1, model)) },
+  (Event.Character("w"), _) => { Command.Continue(toggleSeverity(2, model)) },
+  (Event.Character("i"), _) => { Command.Continue(toggleSeverity(3, model)) },
+  (Event.Character("h"), _) => { Command.Continue(toggleSeverity(4, model)) },
+  (Event.Character("a"), _) => {
+    Command.Continue(changed(model, true, true, true, true))
+  },
+  (Event.Up, _) => { Command.Continue(move(-1, model)) },
+  (Event.Character("k"), _) => { Command.Continue(move(-1, model)) },
+  (Event.WheelUp, _) => { Command.Continue(move(-3, model)) },
+  (Event.Down, _) => { Command.Continue(move(1, model)) },
+  (Event.Character("j"), _) => { Command.Continue(move(1, model)) },
+  (Event.WheelDown, _) => { Command.Continue(move(3, model)) },
+  (Event.PageUp, _) => { Command.Continue(move(-model.listRows, model)) },
+  (Event.PageDown, _) => { Command.Continue(move(model.listRows, model)) },
+  (Event.Enter, _) => {
+    Command.Continue(Model(
+      model.problems,
+      model.selected,
+      model.top,
+      !model.expanded,
+      model.listRows,
+      model.errors,
+      model.warnings,
+      model.infos,
+      model.hints,
+      model.revision,
+    ))
+  },
+  (Event.MouseDown(_, row), _) => { Command.Continue(selectAt(row, model)) },
+  _ => { Command.Continue(model) },
+};
+
+let severity = (value) => {
+  if (value == 1) { "error" } else {
+    if (value == 2) { "warning" } else {
+      if (value == 3) { "info" } else { "hint" }
+    }
+  }
+};
+
+let summary = (problem) => {
+  let description = if (problem.code == "") {
+    problem.message
+  } else {
+    `[${problem.code}] ${problem.message}`
+  };
+  `${severity(problem.severity)} ${problem.path}:${Result.textOf(problem.line)}:${Result.textOf(problem.column)} ${description}`
+};
+
+let rec visibleRows = match(problems, skip, remaining, selected, index) => {
+  (_, _, 0, _, _) => { [] },
+  ([], _, _, _, _) => { [] },
+  ([_head, ..tail], skip, remaining, selected, index) => {
+    if (skip > 0) {
+      visibleRows(tail, skip - 1, remaining, selected, index + 1)
+    } else {
+      match(problems) {
+        [head, ..rest] => {
+          let marker = if (index == selected) { "›" } else { " " };
+          [`${marker} ${summary(head)}`, ..visibleRows(rest, 0, remaining - 1, selected, index + 1)]
+        },
+        [] => { [] },
+      }
+    }
+  },
+};
+
+let selectedProblem = (model) => { List.at(filteredProblems(model), model.selected) };
+
+let filterState = (label, enabled) => {
+  if (enabled) { `${label}:on` } else { `${label}:off` }
+};
+
+let render = (_, model, size) => {
+  let (body, footer) = Geometry.reserveBottom(Geometry.screen(size), 1);
+  let detailRows = if (model.expanded) { Geometry.clamp(3, 7, body.height / 3) } else { 0 };
+  let listRows = Geometry.nonNegative(body.height - detailRows - 2);
+  let listArea = Geometry.rect(0, 2, body.width, listRows);
+  let problems = filteredProblems(model);
+  let rows = visibleRows(problems, model.top, listRows, model.selected, 0);
+  let detail = match(selectedProblem(model)) {
+    None => { "No problems found." },
+    Some(problem) => {
+      if (model.expanded) {
+        `${problem.path}:${Result.textOf(problem.line)}:${Result.textOf(problem.column)}\n${severity(problem.severity)} [${problem.code}]\n${problem.message}`
+      } else {
+        "Enter or click the selected problem to expand"
+      }
+    },
+  };
+  let output = Draw.beginFrame ++
+    Draw.fill(body, " ", Draw.plain) ++
+    Draw.text(
+      Geometry.rect(0, 0, body.width, 1),
+      ` Workman problems  ${Result.textOf(count(model))}/${Result.textOf(totalCount(model))}  ${filterState("E", model.errors)} ${filterState("W", model.warnings)} ${filterState("I", model.infos)} ${filterState("H", model.hints)}`,
+      Draw.accent,
+    ) ++
+    Draw.text(Geometry.rect(0, 1, body.width, 1), "─" :> .repeat(body.width) :> Result.withDefault(""), Draw.separator) ++
+    Draw.lines(listArea, rows, Draw.plain) ++
+    Draw.lines(Geometry.rect(0, 2 + listRows, body.width, detailRows), detail :> .split("\n") :> Result.map(Js.Array.toList) :> Result.withDefault([]), Draw.muted) ++
+    Draw.fill(footer, " ", Draw.status) ++
+    Draw.text(footer, " ↑/↓ wheel move  Enter/click expand  e/w/i/h filter  a all  q quit ", Draw.status) ++
+    Draw.endFrame;
+  Frame(output, model)
+};
+
+let decodeSnapshot = (text) => {
+  let decoded: Result<Snapshot, Js.Error> = JSON.parse(text) :> Result.andThen(Json.assert);
+  decoded
+};
+
+let refresh = (path) => {
+  delay(150)
+    :> Task.andThen((_) => { readTextFile(path) })
+    :> Task.andThen((text) => { decodeSnapshot(text) :> Task.fromResult })
+    :> Task.map((snapshot) => {
+      (model) => {
+        if (snapshot.revision <= model.revision) {
+          model
+        } else {
+          Model(
+            Js.Array.toList(snapshot.problems),
+            0,
+            0,
+            false,
+            model.listRows,
+            model.errors,
+            model.warnings,
+            model.infos,
+            model.hints,
+            snapshot.revision,
+          )
+        }
+      }
+    })
+    :> Task.recover((_) => { (model) => { model } })
+};
+
+let start = (path, snapshot) => {
+  let initial = Model(
+    Js.Array.toList(snapshot.problems),
+    0,
+    0,
+    false,
+    10,
+    true,
+    true,
+    true,
+    true,
+    snapshot.revision,
+  );
+  Runtime.runRetainedManaged(
+    initial,
+    [refresh(path)],
+    (model) => { Command.Spawn(model, refresh(path)) },
+    update,
+    render,
+  )
+};
+
+let main = () => {
+  let path = args :> Result.andThen((values) => { values :> .at(0) }) :> Result.map((value) => {
+    value :> Option.withDefault("")
+  }) :> Result.withDefault("");
+  readTextFile(path)
+    :> Task.andThen((text) => {
+      decodeSnapshot(text) :> Task.fromResult
+    })
+    :> Task.map((snapshot) => { start(path, snapshot) })
+    :> Task.recover((_) => { print("could not load problems data") })
+};

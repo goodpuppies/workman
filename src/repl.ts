@@ -2,6 +2,7 @@ import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseRanges } from "./top_level_phrases.ts";
+import { createTemporaryDirectory } from "./temporary_directory.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -50,7 +51,11 @@ async function executeReplArtifacts(
   inputPath: string,
   artifacts: Awaited<ReturnType<typeof compileReplFileArtifacts>>,
 ): Promise<ReplEvaluation> {
-  const dir = await Deno.makeTempDir({ dir: dirname(inputPath), prefix: ".wm-mini-repl-" });
+  const temporaryDirectory = await createTemporaryDirectory({
+    dir: dirname(inputPath),
+    prefix: ".wm-mini-repl-",
+  });
+  const dir = temporaryDirectory.path;
   try {
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no REPL artifact");
@@ -63,7 +68,7 @@ async function executeReplArtifacts(
       stderr: "piped",
     }).output();
   } finally {
-    await Deno.remove(dir, { recursive: true }).catch(() => {});
+    await temporaryDirectory.cleanup();
   }
 }
 

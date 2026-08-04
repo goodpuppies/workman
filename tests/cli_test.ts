@@ -26,6 +26,7 @@ Deno.test("cli prints help with command and flag variants", async () => {
       result.stdout,
       "lsp                           run the Workman language server",
     );
+    assertStringIncludes(result.stdout, "problems <entrypoint.wm>");
   }
 });
 
@@ -35,6 +36,14 @@ Deno.test("cli rejects arguments to the stdio language server", async () => {
   assertEquals(result.code, 2);
   assertEquals(result.stdout, "");
   assertEquals(result.stderr, "usage: wm lsp\n");
+});
+
+Deno.test("cli requires one problems entrypoint", async () => {
+  const result = await runCli(["problems"]);
+
+  assertEquals(result.code, 2);
+  assertEquals(result.stdout, "");
+  assertEquals(result.stderr, "usage: wm problems <entrypoint.wm>\n");
 });
 
 Deno.test("cli prints the deno.json version with command and flag variants", async () => {
@@ -410,6 +419,31 @@ Deno.test("cli run explains when the entry module has no main function", async (
   assertStringIncludes(result.stderr, "-- RUNNER");
   assertStringIncludes(result.stderr, "has no `main` function");
   assertStringIncludes(result.stderr, "let main = () => {};");
+});
+
+Deno.test("cli run suggests every importing entrypoint with main", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const library = `${dir}/library.wm`;
+    await Deno.writeTextFile(library, "let answer = 42;");
+    await Deno.writeTextFile(
+      `${dir}/main.wm`,
+      'from "./library.wm" import * as Library; let main = () => {};',
+    );
+    await Deno.writeTextFile(
+      `${dir}/test.wm`,
+      'from "./library.wm" import * as Library; let main = () => {};',
+    );
+
+    const result = await runCli(["run", library]);
+
+    assertEquals(result.code, 1);
+    assertStringIncludes(result.stderr, "Did you mean one of these entrypoint files?");
+    assertStringIncludes(result.stderr, `${dir}/main.wm`);
+    assertStringIncludes(result.stderr, `${dir}/test.wm`);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("cli err prints the authored and low-level missing-entrypoint diagnostic", async () => {

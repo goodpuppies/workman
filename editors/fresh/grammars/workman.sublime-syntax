@@ -62,6 +62,29 @@ contexts:
     - meta_scope: string.quoted.other.workman
     - match: '\\.'
       scope: constant.character.escape.workman
+    - match: '\$\{'
+      scope: punctuation.section.interpolation.begin.workman
+      push: interpolation
     - match: '`'
       scope: punctuation.definition.string.end.workman
       pop: true
+
+  interpolation:
+    - clear_scopes: 1
+    - meta_scope: meta.interpolation.workman
+    - match: '\}'
+      scope: punctuation.section.interpolation.end.workman
+      pop: true
+    - match: '\{'
+      scope: punctuation.section.block.begin.workman
+      push: interpolation-braces
+    - include: main
+
+  interpolation-braces:
+    - match: '\}'
+      scope: punctuation.section.block.end.workman
+      pop: true
+    - match: '\{'
+      scope: punctuation.section.block.begin.workman
+      push: interpolation-braces
+    - include: main

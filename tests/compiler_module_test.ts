@@ -271,6 +271,18 @@ Deno.test("compiles virtual file system to JS", async () => {
   assertStringIncludes(js, "Some");
 });
 
+Deno.test("imported values retain their identity in pinned match patterns", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/materials.wm", "let panel = 1;"],
+    [
+      "/test/main.wm",
+      'from "./materials.wm" import { panel }; let selected = match(1) { panel => { true }, _ => { false } };',
+    ],
+  ]);
+  const js = await compileVirtual("/test/main.wm", virtualFs);
+  await import(`data:text/javascript;base64,${btoa(js)}#${crypto.randomUUID()}`);
+});
+
 Deno.test("rejects import cycles", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/a.wm", 'from "./b.wm" import * as B; let x = 1;'],

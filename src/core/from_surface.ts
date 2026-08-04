@@ -539,7 +539,7 @@ function corePatternFromSurface(
       return {
         kind: "CorePPinned",
         name: pattern.name,
-        bindingId: id !== undefined && context?.bindings?.local.has(id) ? id : undefined,
+        bindingId: id,
         node: pattern.node,
       };
     }

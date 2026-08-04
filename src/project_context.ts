@@ -56,16 +56,26 @@ export class ReverseImportDiscoveryIndex {
    */
   closestHead(path: string): string | undefined {
     this.#closestHeadQueries += 1;
+    return this.headsFor(path)[0];
+  }
+
+  /**
+   * Return every main-bearing reverse importer, ordered by import distance. Directory proximity
+   * and canonical path provide the same deterministic tie breaks as closestHead.
+   */
+  headsFor(path: string): readonly string[] {
     const start = canonicalPath(path);
     const visited = new Set([start]);
     let frontier = [start];
+    const heads: string[] = [];
     while (frontier.length > 0) {
-      const heads = frontier.filter((candidate) => this.#heads.has(candidate)).sort(
-        (left, right) =>
-          headDirectoryDistance(start, left) - headDirectoryDistance(start, right) ||
-          left.localeCompare(right),
+      heads.push(
+        ...frontier.filter((candidate) => this.#heads.has(candidate)).sort(
+          (left, right) =>
+            headDirectoryDistance(start, left) - headDirectoryDistance(start, right) ||
+            left.localeCompare(right),
+        ),
       );
-      if (heads.length > 0) return heads[0];
       const next = new Set<string>();
       for (const current of frontier) {
         for (const dependent of this.#dependents.get(current) ?? []) {
@@ -76,7 +86,7 @@ export class ReverseImportDiscoveryIndex {
       }
       frontier = [...next];
     }
-    return undefined;
+    return heads;
   }
 
   dependenciesOf(path: string): ReadonlySet<string> {

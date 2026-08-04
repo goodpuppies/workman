@@ -23,6 +23,12 @@ export class ValidationScheduler {
 
   constructor(readonly debounceMs = 50) {}
 
+  hasWork(key: string): boolean {
+    const state = this.#states.get(key);
+    return state !== undefined &&
+      (state.pending !== undefined || state.timer !== undefined || state.running !== undefined);
+  }
+
   schedule(key: string, operation: ValidationOperation): number {
     const state = this.#states.get(key) ?? { generation: 0 };
     this.#states.set(key, state);

@@ -1,0 +1,198 @@
+-- Immutable TUI commands and concurrent task scheduling.
+
+from "./event.wm" import * as Event;
+
+type Step<State, Error> =
+  | Continue<State>
+  | Await<State, Task<State, Error>>
+  | Spawn<State, Task<State -> State, Error>>
+  | SpawnMany<State, List<Task<State -> State, Error>>>
+  | Quit;
+
+type Pending<State, Error> =
+  | Pending<Number, Task<State -> State, Error>>;
+
+type Wake<State> =
+  | InputWake<List<Event.Key>>
+  | TaskWake<Number, State -> State>;
+
+type Applied<State, Error> =
+  | Applied<(State, Number, Number), List<Task<State -> State, Error>>>
+  | AppliedQuit;
+
+type Settled<State, Error> =
+  | Settled<State, List<Task<State -> State, Error>>>
+  | SettledQuit;
+
+
+let rec applyPatches = match(patches, state) => {
+  ([], _) => { state },
+  ([patch, ..rest], _) => {
+    applyPatches(rest, patch(state))
+  },
+};
+
+let settleStep = match(step) => {
+  Continue(state) => { Settled(state, []) },
+  Spawn(state, task) => { Settled(state, [task]) },
+  SpawnMany(state, tasks) => { Settled(state, tasks) },
+  Await(state, task) => {
+    Settled(
+      state,
+      [
+        task :> Task.map((next) => {
+          (_) => { next }
+        })
+      ],
+    )
+  },
+  Quit => { SettledQuit },
+};
+
+let rec applyEvents = match(update, events, running) => {
+  (_, [], _) => { Continue(running) },
+  (_, [Event.CellSize(width, height), ..rest], _) => {
+    let (model, _cellWidth, _cellHeight) = running;
+    applyEvents(update, rest, (model, width, height))
+  },
+  (_, [event, ..rest], _) => {
+    let (model, cellWidth, cellHeight) = running;
+    match(update(event, model)) {
+      Quit => { Quit },
+      Continue(next) => {
+        applyEvents(update, rest, (next, cellWidth, cellHeight))
+      },
+      Await(pending, task) => {
+        Await(
+          (pending, cellWidth, cellHeight),
+          task :> Task.map((next) => {
+            (next, cellWidth, cellHeight)
+          }),
+        )
+      },
+      Spawn(pending, task) => {
+        Await(
+          (pending, cellWidth, cellHeight),
+          task :> Task.map((patch) => {
+            (patch(pending), cellWidth, cellHeight)
+          }),
+        )
+      },
+      SpawnMany(pending, tasks) => {
+        Await(
+          (pending, cellWidth, cellHeight),
+          tasks
+            :> Task.collectList
+            :> Task.map((patches) => {
+              (
+                applyPatches(patches, pending),
+                cellWidth,
+                cellHeight,
+              )
+            }),
+        )
+      },
+    }
+  },
+};
+
+
+let rec applyConcurrent = match(update, events, running) => {
+  (_, [], _) => { Applied(running, []) },
+  (_, [Event.CellSize(width, height), ..rest], _) => {
+    let (model, _cellWidth, _cellHeight) = running;
+    applyConcurrent(update, rest, (model, width, height))
+  },
+  (_, [event, ..rest], _) => {
+    let (model, cellWidth, cellHeight) = running;
+    match(update(event, model)) {
+      Quit => { AppliedQuit },
+      Continue(next) => {
+        applyConcurrent(update, rest, (next, cellWidth, cellHeight))
+      },
+      Spawn(pending, task) => {
+        match(applyConcurrent(
+          update,
+          rest,
+          (pending, cellWidth, cellHeight),
+        )) {
+          AppliedQuit => { AppliedQuit },
+          Applied(next, tasks) => { Applied(next, [task, ..tasks]) },
+        }
+      },
+      SpawnMany(pending, spawned) => {
+        match(applyConcurrent(
+          update,
+          rest,
+          (pending, cellWidth, cellHeight),
+        )) {
+          AppliedQuit => { AppliedQuit },
+          Applied(next, tasks) => {
+            Applied(next, List.append(spawned, tasks))
+          },
+        }
+      },
+      Await(pending, task) => {
+        let patchTask = task :> Task.map((next) => {
+          (_) => { next }
+        });
+        match(applyConcurrent(
+          update,
+          rest,
+          (pending, cellWidth, cellHeight),
+        )) {
+          AppliedQuit => { AppliedQuit },
+          Applied(next, tasks) => { Applied(next, [patchTask, ..tasks]) },
+        }
+      },
+    }
+  },
+};
+
+let completionWake = match(pending) => {
+  Pending(id, task) => {
+    task
+      :> Task.map((patch) => { TaskWake(id, patch) })
+      :> Task.mapErr((_) => { Js.Unknown })
+  },
+};
+
+let rec racePending = match(pending) => {
+  [] => { Task.fail(Js.Unknown) },
+  [item] => { completionWake(item) },
+  [item, ..rest] => {
+    Task.race(completionWake(item), racePending(rest))
+  },
+};
+
+let rec removePending = (id, pending) => {
+  match(pending) {
+    [] => { [] },
+    [item, ..rest] => {
+      match(item) {
+        Pending(itemId, task) => {
+          if (id == itemId) {
+            rest
+          } else {
+            [Pending(itemId, task), ..removePending(id, rest)]
+          }
+        },
+      }
+    },
+  }
+};
+
+let rec enqueue = match(tasks, pending, nextId) => {
+  ([], _, _) => { (pending, nextId) },
+  ([task, ..rest], _, _) => {
+    enqueue(rest, [Pending(nextId, task), ..pending], nextId + 1)
+  },
+};
+
+let nextWake = (inputTask, pending) => {
+  let inputWake = inputTask :> Task.map(InputWake);
+  match(pending) {
+    [] => { inputWake },
+    _ => { Task.race(inputWake, racePending(pending)) },
+  }
+};

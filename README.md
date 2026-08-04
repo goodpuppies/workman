@@ -54,6 +54,12 @@ deno install -g -A --name wm jsr:@goodpuppies/workman
 Editors can start the language server over stdio with `wm lsp`. Editor-specific
 configuration lives under [`editors`](./editors/README.md).
 
+Use `wm problems entrypoint.wm` for a terminal diagnostics list in editors without a problems
+panel. The viewer is written in Workman and gets its snapshot from an independent LSP process.
+Press `e`, `w`, `i`, or `h` to toggle error, warning, information, or hint diagnostics; `a` restores
+all severities. It watches the entrypoint directory recursively and refreshes when `.wm` files are
+saved.
+
 ## Documentation
 
 * To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/wm-minisyntaxguide.md). It is short and the best way to learn the language

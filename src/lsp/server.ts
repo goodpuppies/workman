@@ -30,7 +30,8 @@ import { workspaceSymbols } from "./workspace_symbols.ts";
 
 const documents = new DocumentStore();
 const projectIndex = new ProjectIndex();
-let frontendOptions = frontendOptionsFromEnv();
+const frontendV2ParseCache = new FrontendV2ParseCache();
+let frontendOptions = { ...frontendOptionsFromEnv(), frontendV2ParseCache };
 const semanticService = new SemanticService(projectIndex.discovery, {
   sourceOverrides: () => documents.sourceOverrides(),
   frontendOptions: () => frontendOptions,
@@ -39,7 +40,6 @@ const validationScheduler = new ValidationScheduler();
 let structuralInlaysEnabled = process.env.WORKMAN_STRUCTURAL_INLAYS !== "false";
 let typeInlaysEnabled = process.env.WORKMAN_TYPE_INLAYS !== "false";
 let parameterInlaysEnabled = process.env.WORKMAN_PARAMETER_INLAYS !== "false";
-const frontendV2ParseCache = new FrontendV2ParseCache();
 const lastPublishedUrisByEntry = new Map<string, Set<string>>();
 let isShutdown = false;
 let hasInitialized = false;
@@ -233,7 +233,11 @@ async function handleMessage(message: RpcMessage) {
   }
   if (message.method === "textDocument/didSave") {
     const params = message.params as DidSaveParams;
-    scheduleAffectedValidation(params.textDocument.uri);
+    // didChange already scheduled this exact open-buffer state. Do not make an
+    // in-flight analysis stale and repeat it merely because the editor saved.
+    if (!validationScheduler.hasWork(params.textDocument.uri)) {
+      scheduleAffectedValidation(params.textDocument.uri);
+    }
     return;
   }
   if (message.method === "textDocument/hover") {
@@ -599,6 +603,10 @@ async function publishAffectedValidation(uri: string, ticket: ValidationTicket) 
 async function publishWatchedFileValidation(
   changes: DidChangeWatchedFilesParams["changes"],
 ) {
+  // The open document is authoritative and didChange already invalidated it.
+  // Filesystem watchers commonly echo the same save a moment later.
+  changes = changes.filter((change) => documents.get(change.uri) === undefined);
+  if (changes.length === 0) return;
   const started = Date.now();
   const uris = changes.map((change) => change.uri);
   await semanticService.invalidateUris(uris);

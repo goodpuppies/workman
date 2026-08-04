@@ -6,7 +6,7 @@ import {
   coreFile,
   ModuleAnalysisError,
 } from "./compiler.ts";
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
   formatDiagnostic,
   formatDiagnosticError,
@@ -34,6 +34,7 @@ const commands = new Set([
   "err",
   "fmt",
   "lsp",
+  "problems",
   "type-debug",
   "help",
   "version",
@@ -74,7 +75,19 @@ function reportError(error: unknown): void {
       }
     }
   } else if (error instanceof RunEntrypointError) {
-    console.error(formatDiagnosticError(error, error.path, error.source));
+    let rendered = formatDiagnosticError(error, error.path, error.source).trimEnd();
+    if (error.suggestedEntrypoints.length > 0) {
+      const cwd = resolve(Deno.cwd());
+      const paths = error.suggestedEntrypoints.map((path) => {
+        const display = relative(cwd, path);
+        return `    ${display.startsWith("..") ? path : display}`;
+      });
+      rendered +=
+        `\n\nDid you mean one of these entrypoint files? They contain a \`main\` function:\n\n${
+          paths.join("\n")
+        }`;
+    }
+    console.error(rendered);
   } else if (error instanceof FrontendDiagnosticError) {
     console.error(formatDiagnosticError(error, undefined, undefined));
   } else if (error instanceof FrontendDiagnosticBundleError) {
@@ -173,6 +186,8 @@ export async function main(args: string[]): Promise<number> {
       return await fmtCommand(commandArgs);
     case "lsp":
       return await lspCommand(commandArgs);
+    case "problems":
+      return await problemsCommand(commandArgs);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
     case "version":
@@ -429,6 +444,11 @@ async function lspCommand(args: string[]): Promise<number> {
   return 0;
 }
 
+async function problemsCommand(args: string[]): Promise<number> {
+  const { problemsCommand } = await import("./problems.ts");
+  return await problemsCommand(args);
+}
+
 function version(): void {
   console.log(`🗿 workman ${VERSION}`);
 }
@@ -451,6 +471,7 @@ commands:
   fmt [--stdout] [--fix] <file.wm>
                                 format in place; --fix inserts marked ;, {, and }
   lsp                           run the Workman language server over stdio
+  problems <entrypoint.wm>      browse LSP diagnostics in a Workman TUI
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help (-h, --help)
   version                       show the version (-v, -V, --version)

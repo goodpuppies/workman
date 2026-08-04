@@ -40,6 +40,23 @@ Deno.test("frontend-v2 LSP Surface cache invalidates by source and delete", () =
   assertEquals(frontend.calls, 3);
 });
 
+Deno.test("frontend-v2 cache shares path and file URI entries", () => {
+  const cache = new FrontendV2ParseCache();
+  const frontend = countingSurfaceFrontend();
+  const path = "/tmp/workman-cache/main.wm";
+
+  const compilerSurface = cache.surface(path, "let x = 1;", undefined, frontend);
+  const lspSurface = cache.surface(
+    "file:///tmp/workman-cache/main.wm",
+    "let x = 1;",
+    4,
+    frontend,
+  );
+
+  assertStrictEquals(lspSurface, compilerSurface);
+  assertEquals(frontend.calls, 1);
+});
+
 Deno.test("frontend-v2 LSP Surface cache remembers generated rejection", () => {
   const cache = new FrontendV2ParseCache();
   let calls = 0;

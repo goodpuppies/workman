@@ -114,6 +114,10 @@ Deno.test("[module update A613/A615] reverse discovery stops at the closest head
   assertEquals(discovery.closestHead("/ws/lib/implementation.wm"), "/ws/lib/test.wm");
   assertEquals(discovery.closestHead("/ws/lib/test.wm"), "/ws/lib/test.wm");
   assertEquals(discovery.closestHead("/ws/outer.wm"), "/ws/outer.wm");
+  assertEquals(discovery.headsFor("/ws/lib/implementation.wm"), [
+    "/ws/lib/test.wm",
+    "/ws/outer.wm",
+  ]);
 });
 
 Deno.test("reverse discovery prefers a directory-local head at equal import distance", async () => {

@@ -1,0 +1,50 @@
+-- ANSI/ECMA-48 terminal controls kept in Workman rather than a host shim.
+
+from js.global("String") import {
+  fromCharCode: Number -> String,
+};
+
+let esc = fromCharCode(27) :> Result.withDefault("");
+let csi = esc ++ "[";
+
+let alternateScreen = csi ++ "?1049h";
+let normalScreen = csi ++ "?1049l";
+let hideCursor = csi ++ "?25l";
+let showCursor = csi ++ "?25h";
+let clear = csi ++ "2J";
+let home = csi ++ "H";
+let reset = csi ++ "0m";
+let queryCellSize = csi ++ "16t";
+let beginSynchronizedUpdate = csi ++ "?2026h";
+let endSynchronizedUpdate = csi ++ "?2026l";
+let enableMouse = csi ++ "?1000h" ++ csi ++ "?1006h";
+let disableMouse = csi ++ "?1006l" ++ csi ++ "?1000l";
+
+let cursorTo = (row, column) => {
+  csi ++ Result.textOf(row) ++ ";" ++ Result.textOf(column) ++ "H"
+};
+
+let foreground = (code) => {
+  csi ++ "38;5;" ++ Result.textOf(code) ++ "m"
+};
+
+let background = (code) => {
+  csi ++ "48;5;" ++ Result.textOf(code) ++ "m"
+};
+
+let foregroundRgb = (red, green, blue) => {
+  csi ++ "38;2;" ++ Result.textOf(red) ++ ";" ++
+    Result.textOf(green) ++ ";" ++ Result.textOf(blue) ++ "m"
+};
+
+let backgroundRgb = (red, green, blue) => {
+  csi ++ "48;2;" ++ Result.textOf(red) ++ ";" ++
+    Result.textOf(green) ++ ";" ++ Result.textOf(blue) ++ "m"
+};
+
+let bold = csi ++ "1m";
+let dim = csi ++ "2m";
+let reverse = csi ++ "7m";
+
+let enter = alternateScreen ++ enableMouse ++ hideCursor ++ clear ++ home;
+let leave = reset ++ disableMouse ++ showCursor ++ normalScreen;
