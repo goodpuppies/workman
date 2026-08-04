@@ -301,14 +301,18 @@ let start = (path, snapshot) => {
   )
 };
 
-let main = () => {
-  let path = args :> Result.andThen((values) => { values :> .at(0) }) :> Result.map((value) => {
-    value :> Option.withDefault("")
-  }) :> Result.withDefault("");
+let runProblems = (path) => {
   readTextFile(path)
     :> Task.andThen((text) => {
       decodeSnapshot(text) :> Task.fromResult
     })
     :> Task.map((snapshot) => { start(path, snapshot) })
     :> Task.recover((_) => { print("could not load problems data") })
+};
+
+let main = () => {
+  let path = args :> Result.andThen((values) => { values :> .at(0) }) :> Result.map((value) => {
+    value :> Option.withDefault("")
+  }) :> Result.withDefault("");
+  runProblems(path)
 };

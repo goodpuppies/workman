@@ -1,9 +1,8 @@
 import { dirname, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { runProblems } from "./generated/problems_tui.js";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./lsp/rpc.ts";
 import { pathToFileUri } from "./lsp/uri.ts";
-
-const problemsTui = new URL("./generated/problems_tui.mjs", import.meta.url).pathname;
 
 type Problem = {
   path: string;
@@ -28,7 +27,8 @@ export async function problemsCommand(args: string[]): Promise<number> {
     await writeSnapshot(dataPath, 0, problems);
     const watchTask = watchProject(input, dataPath, watcher.signal, session);
     try {
-      return (await runProblemsTui(dataPath)).code;
+      await runProblems(dataPath);
+      return 0;
     } finally {
       watcher.abort();
       await watchTask;
@@ -37,15 +37,6 @@ export async function problemsCommand(args: string[]): Promise<number> {
     await session.close();
     await Deno.remove(dataPath).catch(() => undefined);
   }
-}
-
-function runProblemsTui(dataPath: string): Promise<Deno.CommandOutput> {
-  return new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", problemsTui, dataPath],
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
 }
 
 export interface ProblemsSession {
