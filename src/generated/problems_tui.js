@@ -3377,7 +3377,7 @@ const __wm_return_value_41 = error_384;
 if (__wm_return_value_41?.ctor === -7 && __wm_return_value_41.args.length === 1) {
 const message_385 = __wm_return_value_41.args[0];
 return message_385;
-} else if (__wm_return_value_41 === __wm_basis_Js_Unknown) {
+} else if (__wm_return_value_41?.ctor === -8 && __wm_return_value_41.args.length === 0) {
 
 return "unknown JavaScript error";
 }
@@ -3982,10 +3982,10 @@ __wm_fail("Match", "pattern match failure in function");
 };
 const update_607__wm_d2 = (event_603, model_604) => {
 const __wm_return_value_70 = [event_603, model_604];
-if (__wm_return_value_70[0] === CtrlC_ctor_18) {
+if (__wm_return_value_70[0]?.ctor === 18 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Quit;
-} else if (__wm_return_value_70[0] === Escape_ctor_6) {
+} else if (__wm_return_value_70[0]?.ctor === 6 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Quit;
 } else if (__wm_return_value_70[0]?.ctor === 0 && __wm_return_value_70[0].args.length === 1 && __wm_return_value_70[0].args[0] === "q") {
@@ -4006,31 +4006,31 @@ return Command_9.Continue(toggleSeverity_592__wm_d2(4, model_604));
 } else if (__wm_return_value_70[0]?.ctor === 0 && __wm_return_value_70[0].args.length === 1 && __wm_return_value_70[0].args[0] === "a") {
 
 return Command_9.Continue(changed_589__wm_d5(model_604, true, true, true, true));
-} else if (__wm_return_value_70[0] === Up_ctor_1) {
+} else if (__wm_return_value_70[0]?.ctor === 1 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(move_598__wm_d2(__wm_op_sub(1), model_604));
 } else if (__wm_return_value_70[0]?.ctor === 0 && __wm_return_value_70[0].args.length === 1 && __wm_return_value_70[0].args[0] === "k") {
 
 return Command_9.Continue(move_598__wm_d2(__wm_op_sub(1), model_604));
-} else if (__wm_return_value_70[0] === WheelUp_ctor_12) {
+} else if (__wm_return_value_70[0]?.ctor === 12 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(move_598__wm_d2(__wm_op_sub(3), model_604));
-} else if (__wm_return_value_70[0] === Down_ctor_2) {
+} else if (__wm_return_value_70[0]?.ctor === 2 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(move_598__wm_d2(1, model_604));
 } else if (__wm_return_value_70[0]?.ctor === 0 && __wm_return_value_70[0].args.length === 1 && __wm_return_value_70[0].args[0] === "j") {
 
 return Command_9.Continue(move_598__wm_d2(1, model_604));
-} else if (__wm_return_value_70[0] === WheelDown_ctor_13) {
+} else if (__wm_return_value_70[0]?.ctor === 13 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(move_598__wm_d2(3, model_604));
-} else if (__wm_return_value_70[0] === PageUp_ctor_10) {
+} else if (__wm_return_value_70[0]?.ctor === 10 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(move_598__wm_d2(__wm_op_sub(model_604.listRows), model_604));
-} else if (__wm_return_value_70[0] === PageDown_ctor_11) {
+} else if (__wm_return_value_70[0]?.ctor === 11 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(move_598__wm_d2(model_604.listRows, model_604));
-} else if (__wm_return_value_70[0] === Enter_ctor_5) {
+} else if (__wm_return_value_70[0]?.ctor === 5 && __wm_return_value_70[0].args.length === 0) {
 
 return Command_9.Continue(Model_569([model_604.problems, model_604.selected, model_604.top, __wm_op_not(model_604.expanded), model_604.listRows, model_604.errors, model_604.warnings, model_604.infos, model_604.hints, model_604.revision]));
 } else if (__wm_return_value_70[0]?.ctor === 14 && __wm_return_value_70[0].args.length === 1 && __wm_is_tuple(__wm_return_value_70[0].args[0]) && __wm_return_value_70[0].args[0].length === 2) {

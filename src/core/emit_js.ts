@@ -1296,9 +1296,20 @@ function patternChecks(
         ),
       ];
     case "CorePCtor": {
-      const ctorName = parseLongId(pattern.name).id;
+      const path = parseLongId(pattern.name);
+      const ctorName = path.id;
       const ctorId = pattern.ctorId ?? ctorName;
       if (!pattern.payload) {
+        // Qualified constructors are available through their namespace object,
+        // not through the exporting module's local singleton binding. Core
+        // patterns do not yet retain the resolved structure id needed to name
+        // that alias, so use the stable constructor tag at this boundary.
+        if (path.qualifiers.length > 0) {
+          return [
+            `${value}?.ctor === ${JSON.stringify(ctorId)}`,
+            `${value}.args.length === 0`,
+          ];
+        }
         const ctor = pattern.ctorId === undefined
           ? id(ctorName)
           : basisCtorJsName(pattern.ctorId) ?? ctorRefName(ctorName, pattern.ctorId);
