@@ -1,5 +1,13 @@
-import { assertEquals } from "@std/assert";
-import { collectProblems, type ProblemsSession, watchProject } from "../src/problems.ts";
+import { assertEquals, assertRejects } from "@std/assert";
+import {
+  collectProblems,
+  collectSnapshot,
+  defaultEntrypoint,
+  type ProblemsSession,
+  startProblemsSession,
+  watchProject,
+} from "../src/problems.ts";
+import { current, nextSnapshot, publish, reset } from "../src/problems_client.ts";
 import { runFile } from "../src/run.ts";
 
 Deno.test("problems collects a stable snapshot from a separate LSP process", async () => {
@@ -17,6 +25,74 @@ Deno.test("problems collects a stable snapshot from a separate LSP process", asy
   } finally {
     await Deno.remove(directory, { recursive: true });
   }
+});
+
+Deno.test("problems reports the project head owning the entrypoint", async () => {
+  const directory = await Deno.makeTempDir();
+  const input = `${directory}/main.wm`;
+  try {
+    await Deno.writeTextFile(`${directory}/helper.wm`, "let answer = 42;");
+    await Deno.writeTextFile(
+      input,
+      'from "./helper.wm" import { answer };\nlet main = () => { print(Result.textOf(answer)) };\n',
+    );
+    const snapshot = await collectSnapshot(input);
+    assertEquals(snapshot.head.kind, "headed");
+    assertEquals(snapshot.head.path, "main.wm");
+    assertEquals(snapshot.head.moduleCount, 2);
+    assertEquals(snapshot.head.recovered, false);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("problems defaults to main.wm, then to a lone .wm file", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${directory}/only.wm`, "let answer = 42;");
+    assertEquals(await defaultEntrypoint(directory), `${directory}/only.wm`);
+
+    await Deno.writeTextFile(`${directory}/main.wm`, "let answer = 42;");
+    assertEquals(await defaultEntrypoint(directory), `${directory}/main.wm`);
+
+    await Deno.remove(`${directory}/main.wm`);
+    await Deno.writeTextFile(`${directory}/other.wm`, "let answer = 42;");
+    assertEquals(await defaultEntrypoint(directory), undefined);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+// The TUI exits by ending the process, so `problemsCommand` tears the session
+// down from an `unload` handler, where only synchronous work can run.
+Deno.test("problems session disposes synchronously without awaiting shutdown", async () => {
+  const directory = await Deno.makeTempDir();
+  const input = `${directory}/main.wm`;
+  try {
+    await Deno.writeTextFile(input, "let answer = 42;");
+    const session = await startProblemsSession(input);
+    await session.refresh();
+    session.dispose();
+    await assertRejects(() => session.refresh(), Error, "closed");
+    await session.close();
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("problems TUI wraps diagnostic text to the terminal width", async () => {
+  const probe = new URL("../tooling/problems/wrap-probe.wm", import.meta.url).pathname;
+  const result = await runFile(probe, { stdout: "piped", stderr: "piped", progress: false });
+
+  assertEquals(result.code, 0);
+  assertEquals(
+    new TextDecoder().decode(result.stdout),
+    "type mismatch|between String|and Number\n" +
+      "main.wm:1:1|error [type.mismatch]\n" +
+      "supercal|ifragili|stic\n" +
+      "[]\n",
+  );
+  assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
 Deno.test("problems TUI decodes clicks and wheel input in Workman", async () => {
@@ -40,19 +116,18 @@ Deno.test("problems TUI toggles severity filters in Workman", async () => {
 Deno.test("problems watcher adds and clears diagnostics after saves", async () => {
   const directory = await Deno.makeTempDir();
   const input = `${directory}/main.wm`;
-  const data = `${directory}/problems.json`;
   const controller = new AbortController();
+  reset();
   try {
     await Deno.writeTextFile(input, "let answer = 42;");
-    await Deno.writeTextFile(data, JSON.stringify({ revision: 0, problems: [] }));
-    const watching = watchProject(input, data, controller.signal);
+    const watching = watchProject(input, controller.signal);
 
     await Deno.writeTextFile(input, "let answer: String = 42;");
-    const broken = await waitForSnapshot(data, 1);
+    const broken = await nextSnapshot(0);
     assertEquals(broken.problems.map((problem) => problem.code), ["type.mismatch"]);
 
     await Deno.writeTextFile(input, "let answer = 42;");
-    const fixed = await waitForSnapshot(data, 2);
+    const fixed = await nextSnapshot(broken.revision);
     assertEquals(fixed.problems, []);
 
     controller.abort();
@@ -66,29 +141,29 @@ Deno.test("problems watcher adds and clears diagnostics after saves", async () =
 Deno.test("problems watcher coalesces one editor save burst", async () => {
   const directory = await Deno.makeTempDir();
   const input = `${directory}/main.wm`;
-  const data = `${directory}/problems.json`;
   const controller = new AbortController();
   let refreshes = 0;
   const session: ProblemsSession = {
     async refresh() {
       refreshes++;
-      return [];
+      return { problems: [], head: detachedHead };
     },
     async close() {},
+    dispose() {},
   };
+  reset();
   try {
     await Deno.writeTextFile(input, "let answer = 1;");
-    await Deno.writeTextFile(data, JSON.stringify({ revision: 0, problems: [] }));
-    const watching = watchProject(input, data, controller.signal, session);
+    const watching = watchProject(input, controller.signal, session);
 
     await Deno.writeTextFile(input, "let answer = 2;");
     await Deno.writeTextFile(input, "let answer = 3;");
     await Deno.writeTextFile(input, "let answer = 4;");
-    await waitForSnapshot(data, 1);
+    await nextSnapshot(0);
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     assertEquals(refreshes, 1);
-    assertEquals(JSON.parse(await Deno.readTextFile(data)).revision, 1);
+    assertEquals(current().revision, 1);
     controller.abort();
     await watching;
   } finally {
@@ -97,15 +172,21 @@ Deno.test("problems watcher coalesces one editor save burst", async () => {
   }
 });
 
-async function waitForSnapshot(
-  path: string,
-  revision: number,
-): Promise<{ revision: number; problems: { code: string }[] }> {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const snapshot = JSON.parse(await Deno.readTextFile(path));
-    if (snapshot.revision >= revision) return snapshot;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`timed out waiting for problems revision ${revision}`);
-}
+// A waiter parked before the publish must be woken by it, not left for a poll.
+Deno.test("problems client wakes a waiter parked before the publish", async () => {
+  reset();
+  const waiting = nextSnapshot(0);
+  let settled = false;
+  void waiting.then(() => (settled = true));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assertEquals(settled, false);
+
+  publish([], detachedHead);
+  const snapshot = await waiting;
+  assertEquals(snapshot.revision, 1);
+  // A revision already in hand resolves without waiting for another publish.
+  assertEquals((await nextSnapshot(0)).revision, 1);
+  reset();
+});
+
+const detachedHead = { kind: "detached", path: "main.wm", moduleCount: 0, recovered: false };

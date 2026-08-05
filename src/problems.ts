@@ -1,56 +1,106 @@
-import { dirname, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runProblems } from "./generated/problems_tui.js";
+import type { ProjectStatusResult } from "./lsp/project_status.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./lsp/rpc.ts";
 import { pathToFileUri } from "./lsp/uri.ts";
+import { type Head, type Problem, publish } from "./problems_client.ts";
 
-type Problem = {
-  path: string;
-  line: number;
-  column: number;
-  severity: number;
-  code: string;
-  message: string;
+/**
+ * One analysis result: the diagnostics, plus which project head produced them.
+ * `Head` mirrors the status bar the VS Code extension builds from
+ * `workman/projectStatus`, so head selection is observable without an editor.
+ */
+type Snapshot = {
+  problems: Problem[];
+  head: Head;
 };
 
 export async function problemsCommand(args: string[]): Promise<number> {
-  if (args.length !== 1) {
-    console.error("usage: wm problems <entrypoint.wm>");
+  if (args.length > 1) {
+    console.error("usage: wm problems [entrypoint.wm]");
     return 2;
   }
-  const input = await Deno.realPath(resolve(args[0]));
+  const requested = args.length === 1 ? args[0] : await defaultEntrypoint(Deno.cwd());
+  if (requested === undefined) return 2;
+  if (!Deno.stdin.isTerminal()) {
+    console.error("wm problems needs a terminal; run it directly in a shell");
+    return 2;
+  }
+  const input = await Deno.realPath(resolve(requested));
   const session = await startProblemsSession(input);
-  const dataPath = await Deno.makeTempFile({ prefix: "wm-problems-", suffix: ".json" });
   const watcher = new AbortController();
+  // The TUI drives itself from terminal callbacks and ends the run by exiting the
+  // process, so `runProblems` resolves once it is wired up rather than when the
+  // user quits. The watcher and the LSP session have to outlive that resolution,
+  // which leaves process exit as the only point where tearing them down is
+  // correct.
+  const release = () => {
+    watcher.abort();
+    session.dispose();
+  };
+  globalThis.addEventListener("unload", release);
   try {
-    const problems = await session.refresh();
-    await writeSnapshot(dataPath, 0, problems);
-    const watchTask = watchProject(input, dataPath, watcher.signal, session);
-    try {
-      await runProblems(dataPath);
-      return 0;
-    } finally {
-      watcher.abort();
-      await watchTask;
-    }
-  } finally {
-    await session.close();
-    await Deno.remove(dataPath).catch(() => undefined);
+    publishSnapshot(await session.refresh());
+    const watching = watchProject(input, watcher.signal, session);
+    await runProblems();
+    // Outlives the TUI only if it quits; a watcher failure surfaces here instead
+    // of silently leaving the display frozen.
+    await watching;
+    return 0;
+  } catch (error) {
+    release();
+    throw error;
   }
 }
 
 export interface ProblemsSession {
-  refresh(): Promise<Problem[]>;
+  refresh(): Promise<Snapshot>;
   close(): Promise<void>;
+  /** Synchronous teardown for exit handlers, where awaiting a shutdown is not possible. */
+  dispose(): void;
+}
+
+/**
+ * `wm problems` with no argument picks the obvious entrypoint: `main.wm` when it
+ * exists, otherwise the sole `.wm` file in the directory. Anything else is
+ * ambiguous, so the user names the file instead of us guessing.
+ */
+export async function defaultEntrypoint(directory: string): Promise<string | undefined> {
+  const main = join(directory, "main.wm");
+  if (await isFile(main)) return main;
+  const candidates: string[] = [];
+  for await (const entry of Deno.readDir(directory)) {
+    if (entry.isDirectory || !entry.name.endsWith(".wm")) continue;
+    candidates.push(join(directory, entry.name));
+  }
+  if (candidates.length === 1) return candidates[0];
+  if (candidates.length === 0) {
+    console.error("no .wm file found here; run: wm problems <entrypoint.wm>");
+    return undefined;
+  }
+  candidates.sort();
+  console.error(
+    `no main.wm and ${candidates.length} .wm files here ` +
+      `(${candidates.map((path) => basename(path)).join(", ")}); ` +
+      "run: wm problems <entrypoint.wm>",
+  );
+  return undefined;
+}
+
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await Deno.stat(path)).isFile;
+  } catch {
+    return false;
+  }
 }
 
 export async function watchProject(
   input: string,
-  dataPath: string,
   signal: AbortSignal,
   providedSession?: ProblemsSession,
 ): Promise<void> {
-  let revision = 0;
   const ownsSession = providedSession === undefined;
   const watcher = Deno.watchFs(dirname(input), { recursive: true });
   const events = watcher[Symbol.asyncIterator]();
@@ -78,8 +128,7 @@ export async function watchProject(
       }
       if (signal.aborted) break;
       try {
-        const problems = await session.refresh();
-        await writeSnapshot(dataPath, ++revision, problems);
+        publishSnapshot(await session.refresh());
       } catch (error) {
         if (!signal.aborted) console.error(`problems refresh failed: ${showError(error)}`);
       }
@@ -95,12 +144,8 @@ export async function watchProject(
   }
 }
 
-async function writeSnapshot(
-  dataPath: string,
-  revision: number,
-  problems: Problem[],
-): Promise<void> {
-  await Deno.writeTextFile(dataPath, JSON.stringify({ revision, problems }));
+function publishSnapshot(snapshot: Snapshot): void {
+  publish(snapshot.problems, snapshot.head);
 }
 
 function showError(error: unknown): string {
@@ -108,6 +153,10 @@ function showError(error: unknown): string {
 }
 
 export async function collectProblems(input: string): Promise<Problem[]> {
+  return (await collectSnapshot(input)).problems;
+}
+
+export async function collectSnapshot(input: string): Promise<Snapshot> {
   const session = await startProblemsSession(input);
   try {
     return await session.refresh();
@@ -158,6 +207,7 @@ export async function startProblemsSession(input: string): Promise<ProblemsSessi
     const result = await response;
     waiting.delete(id);
     if (result.error) throw new Error(`LSP ${method} failed: ${JSON.stringify(result.error)}`);
+    return result.result;
   };
   try {
     await request("initialize", {
@@ -177,7 +227,7 @@ export async function startProblemsSession(input: string): Promise<ProblemsSessi
     throw error;
   }
   return {
-    async refresh(): Promise<Problem[]> {
+    async refresh(): Promise<Snapshot> {
       if (closed) throw new Error("problems LSP session is closed");
       const text = await Deno.readTextFile(input);
       publications.clear();
@@ -208,7 +258,19 @@ export async function startProblemsSession(input: string): Promise<ProblemsSessi
       }
       // A request drains validation scheduled by all preceding notifications.
       await request("workspace/symbol", { query: "" });
-      return flatten(publications, root);
+      const status = await request("workman/projectStatus", {
+        textDocument: { uri: pathToFileUri(input) },
+      }) as ProjectStatusResult | undefined;
+      return { problems: flatten(publications, root), head: describeHead(status, input, root) };
+    },
+    dispose(): void {
+      if (closed) return;
+      closed = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // Process already exited.
+      }
     },
     async close(): Promise<void> {
       if (closed) return;
@@ -225,6 +287,28 @@ export async function startProblemsSession(input: string): Promise<ProblemsSessi
   };
 }
 
+function describeHead(
+  status: ProjectStatusResult | undefined,
+  input: string,
+  root: string,
+): Head {
+  const selected = status?.selected;
+  if (!selected) {
+    return { kind: "detached", path: displayPath(input, root), moduleCount: 0, recovered: false };
+  }
+  return {
+    kind: selected.kind,
+    path: displayPath(selected.headPath, root),
+    moduleCount: selected.moduleCount,
+    recovered: selected.recovered,
+  };
+}
+
+function displayPath(path: string, root: string): string {
+  const display = relative(root, path);
+  return display === "" || display.startsWith("..") ? path : display;
+}
+
 function flatten(publications: Map<string, unknown[]>, root: string): Problem[] {
   return [...publications].flatMap(([uri, values]) =>
     values.flatMap((value) => {
@@ -236,9 +320,8 @@ function flatten(publications: Map<string, unknown[]>, root: string): Problem[] 
         typeof range.start.character !== "number"
       ) return [];
       const absolute = new URL(uri).pathname;
-      const display = relative(root, absolute);
       return [{
-        path: display.startsWith("..") ? absolute : display,
+        path: displayPath(absolute, root),
         line: range.start.line + 1,
         column: range.start.character + 1,
         severity: typeof item.severity === "number" ? item.severity : 1,

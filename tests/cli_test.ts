@@ -26,7 +26,7 @@ Deno.test("cli prints help with command and flag variants", async () => {
       result.stdout,
       "lsp                           run the Workman language server",
     );
-    assertStringIncludes(result.stdout, "problems <entrypoint.wm>");
+    assertStringIncludes(result.stdout, "problems [entrypoint.wm]");
   }
 });
 
@@ -38,12 +38,44 @@ Deno.test("cli rejects arguments to the stdio language server", async () => {
   assertEquals(result.stderr, "usage: wm lsp\n");
 });
 
-Deno.test("cli requires one problems entrypoint", async () => {
-  const result = await runCli(["problems"]);
+Deno.test("cli rejects more than one problems entrypoint", async () => {
+  const result = await runCli(["problems", "a.wm", "b.wm"]);
 
   assertEquals(result.code, 2);
   assertEquals(result.stdout, "");
-  assertEquals(result.stderr, "usage: wm problems <entrypoint.wm>\n");
+  assertEquals(result.stderr, "usage: wm problems [entrypoint.wm]\n");
+});
+
+Deno.test("cli refuses to start the problems TUI without a terminal", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${directory}/main.wm`, "let answer = 42;");
+    const result = await runCli(["problems"], directory);
+
+    assertEquals(result.code, 2);
+    assertEquals(result.stdout, "");
+    assertEquals(result.stderr, "wm problems needs a terminal; run it directly in a shell\n");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("cli explains an ambiguous default problems entrypoint", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${directory}/alpha.wm`, "let answer = 1;");
+    await Deno.writeTextFile(`${directory}/beta.wm`, "let answer = 2;");
+    const result = await runCli(["problems"], directory);
+
+    assertEquals(result.code, 2);
+    assertEquals(result.stdout, "");
+    assertEquals(
+      result.stderr,
+      "no main.wm and 2 .wm files here (alpha.wm, beta.wm); run: wm problems <entrypoint.wm>\n",
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
 });
 
 Deno.test("cli prints the deno.json version with command and flag variants", async () => {
@@ -788,9 +820,10 @@ Deno.test("cli run passes stdin through to the Workman program", async () => {
   assertEquals(result.stderr, "");
 });
 
-async function runCli(args: string[]) {
+async function runCli(args: string[], cwd?: string) {
   const result = await new Deno.Command(Deno.execPath(), {
     args: ["run", "--allow-read", "--allow-write", "--allow-run", "--allow-env", cli, ...args],
+    cwd,
     stdout: "piped",
     stderr: "piped",
   }).output();

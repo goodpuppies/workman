@@ -96,6 +96,76 @@ let truncate = (text, width) => {
   }
 };
 
+let widthOf = (value) => {
+  value :> .length :> Result.withDefault(0)
+};
+
+-- A word wider than the line has no break opportunity, so split it by force
+-- rather than letting `truncate` drop the tail.
+let rec chunk = (word, width) => {
+  if (width <= 0 || widthOf(word) <= width) {
+    [word]
+  } else {
+    let head = word :> .slice(0, width) :> Result.withDefault(word);
+    let tail = word :> .slice(width) :> Result.withDefault("");
+    [head, ..chunk(tail, width)]
+  }
+};
+
+let rec chunkAll = match(words, width) => {
+  ([], _) => { [] },
+  ([word, ..rest], width) => {
+    List.append(chunk(word, width), chunkAll(rest, width))
+  },
+};
+
+let rec pack = (words, width, current, rows) => {
+  match(words) {
+    [] => {
+      if (current == "") { rows } else { List.append(rows, [current]) }
+    },
+    [word, ..rest] => {
+      if (current == "") {
+        pack(rest, width, word, rows)
+      } else {
+        let joined = `${current} ${word}`;
+        if (widthOf(joined) <= width) {
+          pack(rest, width, joined, rows)
+        } else {
+          pack(rest, width, word, List.append(rows, [current]))
+        }
+      }
+    },
+  }
+};
+
+let words = (value) => {
+  value :> .split(" ") :> Result.map(Js.Array.toList) :> Result.withDefault([])
+};
+
+let wrapLine = (value, width) => {
+  if (width <= 0) {
+    []
+  } else {
+    let rows = pack(chunkAll(words(safeText(value)), width), width, "", []);
+    if (List.length(rows) == 0) { [""] } else { rows }
+  }
+};
+
+let rec wrapAll = match(values, width) => {
+  ([], _) => { [] },
+  ([line, ..rest], width) => {
+    List.append(wrapLine(line, width), wrapAll(rest, width))
+  },
+};
+
+-- Diagnostics are written for editors, not for an 80-column budget. Wrapping
+-- to the live terminal width keeps a long message readable at any size, and
+-- hard newlines in the source text stay as breaks.
+let wrap = (value, width) => {
+  wrapAll(value :> .split("\n") :> Result.map(Js.Array.toList) :> Result.withDefault([]), width)
+};
+
 let styleCode = (style) => {
   let fg = match(style.foreground) {
     Some(color) => { Ansi.foregroundRgb(color.red, color.green, color.blue) },

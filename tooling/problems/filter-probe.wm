@@ -1,4 +1,4 @@
-from "./app.wm" import { Problem, Model, count, toggleSeverity };
+from "./app.wm" import { Problem, Head, Model, count, toggleSeverity };
 
 let problems = [
   Problem("main.wm", 1, 1, 1, "error", "error"),
@@ -8,7 +8,8 @@ let problems = [
 ];
 
 let main = () => {
-  let initial = Model(problems, 0, 0, false, 10, true, true, true, true, 0);
+  let head = Head("headed", "main.wm", 1, false);
+  let initial = Model(problems, 0, 0, false, 10, true, true, true, true, 0, head);
   let noWarnings = toggleSeverity(2, initial);
   let warningsAgain = toggleSeverity(2, noWarnings);
   print(

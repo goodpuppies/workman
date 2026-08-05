@@ -1,0 +1,14 @@
+from "./tui/draw.wm" import * as Draw;
+
+let show = (rows) => {
+  rows :> List.foldLeft("", (acc, row) => {
+    if (acc == "") { row } else { `${acc}|${row}` }
+  })
+};
+
+let main = () => {
+  print(show(Draw.wrap("type mismatch between String and Number", 16)));
+  print(show(Draw.wrap("main.wm:1:1\nerror [type.mismatch]", 40)));
+  print(show(Draw.wrap("supercalifragilistic", 8)));
+  print(`[${show(Draw.wrap("anything", 0))}]`)
+};

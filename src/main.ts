@@ -471,7 +471,8 @@ commands:
   fmt [--stdout] [--fix] <file.wm>
                                 format in place; --fix inserts marked ;, {, and }
   lsp                           run the Workman language server over stdio
-  problems <entrypoint.wm>      browse LSP diagnostics in a Workman TUI
+  problems [entrypoint.wm]      browse LSP diagnostics in a Workman TUI
+                                defaults to ./main.wm, or the only .wm file here
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help (-h, --help)
   version                       show the version (-v, -V, --version)
