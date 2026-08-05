@@ -14,7 +14,6 @@ export function emitRuntimePrelude(): string[] {
     // boundary. A missing-symbol load is nearly free because V8 caches the
     // negative lookup on the array's map, so the check stays cheap.
     "const __wm_js_array_tag = Symbol('wm.jsArray');",
-    "const __wm_tuple = (...items) => items;",
     "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true;",
     `const __wm_js_array_mark = (value) => {
   if (globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true) {
@@ -72,7 +71,7 @@ export function emitRuntimePrelude(): string[] {
   if (converter === "option") return __wm_js_option_wrap(value);
   if (typeof converter === "object" && converter.kind === "tuple") {
     if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript tuple array");
-    return __wm_tuple(...converter.items.map((item, index) => __wm_js_to_workman(value[index], item)));
+    return converter.items.map((item, index) => __wm_js_to_workman(value[index], item));
   }
   if (typeof converter === "object" && converter.kind === "array") {
     if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript array");
@@ -104,7 +103,7 @@ export function emitRuntimePrelude(): string[] {
       const converted = args.map((arg, index) => __wm_js_to_workman(arg, converter.params[index] ?? "id"));
       const expected = converter.params.length;
       const limited = converted.slice(0, expected);
-      const workmanArg = limited.length === 0 ? undefined : limited.length === 1 ? limited[0] : __wm_tuple(...limited);
+      const workmanArg = limited.length === 0 ? undefined : limited.length === 1 ? limited[0] : limited;
       return __wm_js_to_js(
         value(workmanArg),
         converter.result,
@@ -235,7 +234,7 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_array_to_list = (items) => {
   let list = __wm_basis_Nil;
   for (let index = items.length - 1; index >= 0; index--) {
-    list = __wm_basis_Cons(__wm_tuple(items[index], list));
+    list = __wm_basis_Cons([items[index], list]);
   }
   return list;
 };`,
@@ -287,7 +286,7 @@ export function emitRuntimePrelude(): string[] {
     const right = results[1];
     if (left.ctor !== ${basisCtorId("Ok")}) return left;
     if (right.ctor !== ${basisCtorId("Ok")}) return right;
-    return __wm_basis_Ok(fn(__wm_tuple(left.args[0], right.args[0])));
+    return __wm_basis_Ok(fn([left.args[0], right.args[0]]));
   }),
   race: ([leftTask, rightTask]) => Promise.race([
     Promise.resolve(leftTask),
@@ -354,6 +353,10 @@ function emitBasisOperators(): string[] {
   return [
     ...definitionsFor(BASIS_OPERATORS, OPERATOR_BODIES, "BASIS_OPERATORS"),
     ...definitionsFor(BASIS_UNARY_OPERATORS, UNARY_OPERATOR_BODIES, "BASIS_UNARY_OPERATORS"),
+    // Direct eager entry points let statically known boolean applications avoid
+    // their argument tuple without adopting JavaScript's short-circuit semantics.
+    "const __wm_op_and_d2 = (a, b) => a && b;",
+    "const __wm_op_or_d2 = (a, b) => a || b;",
   ];
 }
 

@@ -5,7 +5,7 @@ import { loadFrontendV2Surface } from "../src/frontend_v2_surface_loader.ts";
 type Mode = "surface" | "failure" | "format";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const artifact = resolve(root, "src/generated/frontend_v2_parser.js");
+const artifact = resolve(root, Deno.args[2] ?? "src/generated/frontend_v2_parser.js");
 const mode = modeFrom(Deno.args[0]);
 const iterations = positiveInteger(Deno.args[1] ?? "1");
 const files = await corpusFiles([
@@ -38,6 +38,7 @@ for (let iteration = 0; iteration < iterations; iteration += 1) {
 const elapsed = performance.now() - started;
 samples.sort((left, right) => right.milliseconds - left.milliseconds);
 console.log(`frontend-v2 profile mode=${mode} iterations=${iterations}`);
+console.log(`artifact=${artifact.slice(root.length + 1)}`);
 console.log(
   `files=${files.length * iterations} bytes=${totalBytes} elapsed=${elapsed.toFixed(1)}ms`,
 );

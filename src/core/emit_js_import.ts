@@ -48,10 +48,12 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
   if (decl.clause.kind === "Namespace") {
     return [
       ...prefix,
-      `const ${boundName(
-        decl.clause.alias,
-        decl.bindingIds?.[0],
-      )} = ${jsNamespaceRef(target)};`,
+      `const ${
+        boundName(
+          decl.clause.alias,
+          decl.bindingIds?.[0],
+        )
+      } = ${jsNamespaceRef(target)};`,
     ];
   }
   const alias = decl.clause.alias;
@@ -101,11 +103,20 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
       ? memberRef
       : `__wm_js_to_workman(${memberRef}, ${JSON.stringify(converter)})`;
   }
-  return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${
-    JSON.stringify(jsParamConverters(spec.type))
-  }, ${JSON.stringify(jsResultConverter(spec.type, !!spec.fallible))}, ${
-    JSON.stringify(spec.fallible ? jsFallibleMode(spec.type) : false)
-  })`;
+  const params = jsParamConverters(spec.type);
+  const result = jsResultConverter(spec.type, !!spec.fallible);
+  if (!spec.fallible && params.every((converter) => converter === "id") && result === "id") {
+    const direct = `__wm_js_direct_${jsImportTemp++}`;
+    const call = params.length === 0
+      ? `${direct}()`
+      : params.length === 1
+      ? `${direct}(__arg)`
+      : `${direct}(...__arg)`;
+    return `(() => { const ${direct} = ${memberRef}; return (__arg) => ${call}; })()`;
+  }
+  return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${JSON.stringify(params)}, ${
+    JSON.stringify(result)
+  }, ${JSON.stringify(spec.fallible ? jsFallibleMode(spec.type) : false)})`;
 }
 
 type JsConverter = "id" | "option" | {

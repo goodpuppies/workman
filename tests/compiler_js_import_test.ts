@@ -21,6 +21,17 @@ Deno.test("supports typed JS namespace imports", async () => {
   expectBinding(result.env, "main", { type: "Void -> Void", vars: 0 });
 });
 
+Deno.test("unsafe primitive imports bypass the conversion runtime", async () => {
+  const js = await compile(`
+    from js.global("Math") import unsafe { max: (Number, Number) -> Number };
+    let answer = max(1, 2);
+  `);
+
+  const binding = js.slice(js.indexOf("const max_"), js.indexOf("const answer_"));
+  assertStringIncludes(binding, "(...__arg)");
+  assertEquals(binding.includes("__wm_js_apply"), false);
+});
+
 Deno.test("manual non-unsafe imports are fallible", async () => {
   const result = await checkSource(`
     from js.global("JSON") import {

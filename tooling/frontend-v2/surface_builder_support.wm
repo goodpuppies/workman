@@ -3,8 +3,12 @@ from "./generated/surface_types.wm" import {
 };
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
 
+from js.global("String.prototype.slice") import unsafe {
+  call as sliceString: (String, Number, Number) -> String
+};
+
 let slice = (source: String, start: Number, end: Number) => {
-  source :> .slice(start, end) :> Result.withDefault("")
+  sliceString(source, start, end)
 };
 
 let token = (source: String, start: Number, end: Number, kind: String) => {

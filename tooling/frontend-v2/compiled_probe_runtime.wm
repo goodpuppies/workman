@@ -2,6 +2,10 @@ from "./generated/compiled_probe_types.wm" import {
   ClassPart, SingleCode, CodeRange
 };
 
+from js.global("String.prototype.charCodeAt") import unsafe {
+  call as charCodeAt: (String, Number) -> Number
+};
+
 type CompiledCapture =
   | EmptyCompiledCapture
   | TokenCompiledCapture<String, Number, Number>
@@ -29,7 +33,7 @@ let textLength = (text: String) => {
 };
 
 let codeAt = (source: String, offset: Number) => {
-  source :> .charCodeAt(offset) :> Result.withDefault(-1)
+  charCodeAt(source, offset)
 };
 
 let failurePriority = (rule: String) => {

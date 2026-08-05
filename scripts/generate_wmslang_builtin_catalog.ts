@@ -4,7 +4,7 @@ import {
 } from "../src/wmslang/builtin_catalog.generated.ts";
 
 const ROOT = new URL("../", import.meta.url);
-const SOURCE = new URL("research/slang/docs/stdlib-doc.md", ROOT);
+const SOURCE = new URL("tooling/wmslang/stdlib-doc.md", ROOT);
 const OUTPUT = new URL("src/wmslang/builtin_catalog.generated.ts", ROOT);
 
 const CATALOG_SCHEMA_VERSION = 3;

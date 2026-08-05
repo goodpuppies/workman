@@ -78,6 +78,35 @@ Deno.test("compiles direct self tail calls as iteration", async () => {
   assertStringIncludes(js, "continue __wm_tail_");
 });
 
+Deno.test("arity raises local recursive tuple functions", async () => {
+  const js = await compile(`
+    let run = (limit) => {
+      let rec loop = (index, acc) => {
+        if (index >= limit) { acc } else { loop(index + 1, acc + index) }
+      };
+      loop(0, 0)
+    };
+  `);
+
+  assertStringIncludes(js, "const loop_");
+  assertStringIncludes(js, "__wm_d2 = (index_");
+  assertStringIncludes(js, "continue __wm_tail_");
+  assertEquals(js.includes("__arg = __wm_tuple"), false);
+});
+
+Deno.test("matches payload-free constructors by singleton identity", async () => {
+  const js = await compile(`
+    type Mode = Default | Ident;
+    let active = match(mode) => {
+      Default => { false },
+      Ident => { true },
+    };
+  `);
+
+  assertStringIncludes(js, "=== Default_ctor_");
+  assertStringIncludes(js, "=== Ident_ctor_");
+});
+
 Deno.test("compiles a final semicolon-discarded Void self call as iteration", async () => {
   const js = await compile(`
     let rec loop = (n) => {
@@ -210,6 +239,42 @@ Deno.test("rejects duplicate pattern binders", async () => {
     Error,
     "duplicate pattern binder x",
   );
+});
+
+Deno.test("emits Workman tuples as packed array literals", async () => {
+  const js = await compile(`let pair = (1, 2);`);
+
+  assertStringIncludes(js, "const pair_");
+  assertStringIncludes(js, "[1, 2]");
+  assertEquals(js.includes("__wm_tuple"), false);
+});
+
+Deno.test("lowers known primitive operator applications without argument tuples", async () => {
+  const js = await compile(`
+    let sum = 1 + 2;
+    let ordered = sum >= 2;
+    let equal = sum == 3;
+    let eager = true && false;
+  `);
+
+  assertStringIncludes(js, "(1 + 2)");
+  assertStringIncludes(js, " >= 2)");
+  assertStringIncludes(js, "__wm_eq(");
+  assertStringIncludes(js, "__wm_op_and_d2(true, false)");
+  assertEquals(js.includes("__wm_op_add([1, 2])"), false);
+  assertEquals(js.includes("__wm_op_gte(["), false);
+});
+
+Deno.test("scalar replaces tuple literals consumed immediately by matches", async () => {
+  const js = await compile(`
+    let total = match((1, 2)) {
+      (Var(left), Var(right)) => { left + right }
+    };
+  `);
+
+  assertStringIncludes(js, "__wm_scalar_");
+  assertEquals(js.includes(")([1, 2])"), false);
+  assertEquals(js.includes("[1, 2]"), false);
 });
 
 Deno.test("supports Workman tuple destructuring let bindings", async () => {

@@ -453,6 +453,7 @@ function resetEmitterState(): void {
   tailLoopTemp = 0;
   tailValueTemp = 0;
   returnValueTemp = 0;
+  scalarTupleTemp = 0;
   resetJsImportEmitter();
 }
 
@@ -644,14 +645,63 @@ function collectProgramDirectFns(program: CoreProgram): Map<BindingId | Structur
   for (const moduleId of program.order) {
     const artifact = program.modules.get(moduleId)!;
     for (const decl of artifact.module.decls) {
-      if (decl.kind !== "CoreLet") continue;
-      for (const binding of decl.bindings) {
-        const candidate = arityRaiseCandidate(binding, artifact.emitName);
-        if (candidate) found.set(candidate.bindingId, candidate.direct);
-      }
+      collectDirectFnsInDecl(decl, artifact.emitName, found);
     }
   }
   return found;
+}
+
+function collectDirectFnsInDecl(
+  decl: CoreDecl,
+  owner: string,
+  found: Map<BindingId | StructureId, DirectFn>,
+): void {
+  if (decl.kind !== "CoreLet") return;
+  for (const binding of decl.bindings) {
+    const candidate = arityRaiseCandidate(binding, owner);
+    if (candidate) found.set(candidate.bindingId, candidate.direct);
+    collectDirectFnsInExpr(binding.value, owner, found);
+  }
+}
+
+function collectDirectFnsInExpr(
+  expr: CoreExpr,
+  owner: string,
+  found: Map<BindingId | StructureId, DirectFn>,
+): void {
+  if (expr.kind === "CoreFn") {
+    for (const arm of expr.arms) collectDirectFnsInExpr(arm.body, owner, found);
+  } else if (expr.kind === "CoreTuple") {
+    for (const item of expr.items) collectDirectFnsInExpr(item, owner, found);
+  } else if (expr.kind === "CoreRecord") {
+    for (const field of expr.fields) collectDirectFnsInExpr(field.value, owner, found);
+  } else if (expr.kind === "CoreRecordAccess") {
+    collectDirectFnsInExpr(expr.record, owner, found);
+  } else if (expr.kind === "CoreJsonObject") {
+    for (const field of expr.fields) collectDirectFnsInExpr(field.value, owner, found);
+  } else if (expr.kind === "CoreJsonArray") {
+    for (const item of expr.items) collectDirectFnsInExpr(item, owner, found);
+  } else if (expr.kind === "CoreApp") {
+    collectDirectFnsInExpr(expr.callee, owner, found);
+    collectDirectFnsInExpr(expr.arg, owner, found);
+  } else if (expr.kind === "CoreIf") {
+    collectDirectFnsInExpr(expr.cond, owner, found);
+    collectDirectFnsInExpr(expr.thenExpr, owner, found);
+    collectDirectFnsInExpr(expr.elseExpr, owner, found);
+  } else if (expr.kind === "CoreMatch") {
+    collectDirectFnsInExpr(expr.value, owner, found);
+    for (const arm of expr.arms) collectDirectFnsInExpr(arm.body, owner, found);
+  } else if (expr.kind === "CorePanic") {
+    collectDirectFnsInExpr(expr.message, owner, found);
+  } else if (expr.kind === "CoreBlock") {
+    for (const item of expr.items) {
+      if (isDecl(item)) collectDirectFnsInDecl(item, owner, found);
+      else collectDirectFnsInExpr(item, owner, found);
+    }
+    collectDirectFnsInExpr(expr.result, owner, found);
+  } else if (expr.kind === "CoreShaderRef" && expr.environment) {
+    collectDirectFnsInExpr(expr.environment, owner, found);
+  }
 }
 
 function emitArityRaisedBinding(
@@ -724,9 +774,11 @@ function emitDecl(decl: CoreDecl): string[] {
           direct,
         );
       }
-      return [`let ${patternBindingName(binding.pattern)} = ${
-        emitRecursiveBindingValue(binding.value, binding.pattern.bindingId)
-      };`];
+      return [
+        `let ${patternBindingName(binding.pattern)} = ${
+          emitRecursiveBindingValue(binding.value, binding.pattern.bindingId)
+        };`,
+      ];
     });
   }
   return decl.bindings.flatMap((binding) => {
@@ -779,7 +831,7 @@ function emitExpr(expr: CoreExpr): string {
       return primitiveName(expr.name, expr.semanticId) ?? valueRefName(expr.name, expr.bindingId);
     }
     case "CoreTuple":
-      return `__wm_tuple(${expr.items.map(emitExpr).join(", ")})`;
+      return `[${expr.items.map(emitExpr).join(", ")}]`;
     case "CoreRecord":
       return `{ ${
         expr.fields.map((field) =>
@@ -803,6 +855,8 @@ function emitExpr(expr: CoreExpr): string {
         emitArmBody(expr.arms, "__arg", "pattern match failure in function")
       }\n}`;
     case "CoreApp": {
+      const primitive = emitPrimitiveOperatorApp(expr);
+      if (primitive) return primitive;
       if (expr.callee.kind === "CoreVar" && expr.callee.bindingId !== undefined) {
         const direct = directFns.get(expr.callee.bindingId);
         if (direct && expr.arg.kind === "CoreTuple" && expr.arg.items.length === direct.arity) {
@@ -815,6 +869,12 @@ function emitExpr(expr: CoreExpr): string {
     case "CoreIf":
       return `(${emitExpr(expr.cond)} ? ${emitExpr(expr.thenExpr)} : ${emitExpr(expr.elseExpr)})`;
     case "CoreMatch":
+      if (canScalarizeTupleMatch(expr)) {
+        const values = scalarTupleValueNames(expr.value.items.length);
+        return `((${values.join(", ")}) => {\n${
+          emitScalarTupleArmBody(expr.arms, values, "non-exhaustive match", emitReturnExpr)
+        }\n})(${expr.value.items.map(emitExpr).join(", ")})`;
+      }
       return `((__v) => {\n${
         emitArmBody(expr.arms, "__v", "non-exhaustive match", literalTupleArity(expr.value))
       }\n})(${emitExpr(expr.value)})`;
@@ -827,6 +887,45 @@ function emitExpr(expr: CoreExpr): string {
   }
 }
 
+function emitPrimitiveOperatorApp(
+  expr: Extract<CoreExpr, { kind: "CoreApp" }>,
+): string | undefined {
+  if (
+    expr.callee.kind !== "CoreVar" || expr.arg.kind !== "CoreTuple" || expr.arg.items.length !== 2
+  ) {
+    return undefined;
+  }
+  const operator = basisOperatorDescriptor(expr.callee.name);
+  if (!operator) return undefined;
+  const [leftExpr, rightExpr] = expr.arg.items;
+  const left = emitExpr(leftExpr);
+  const right = emitExpr(rightExpr);
+  switch (operator.spelling) {
+    case "+":
+    case "-":
+    case "*":
+    case "/":
+    case "%":
+    case "<":
+    case "<=":
+    case ">":
+    case ">=":
+      return `(${left} ${operator.spelling} ${right})`;
+    case "++":
+      return `(${left} + ${right})`;
+    case "==":
+      return `__wm_eq(${left}, ${right})`;
+    case "!=":
+      return `!__wm_eq(${left}, ${right})`;
+    // Workman operators are eager because applications evaluate their tuple
+    // argument before the call. Keep that behavior for JavaScript's normally
+    // short-circuiting operators while still avoiding tuple allocation.
+    case "&&":
+      return `__wm_op_and_d2(${left}, ${right})`;
+    case "||":
+      return `__wm_op_or_d2(${left}, ${right})`;
+  }
+}
 
 /**
  * Specialize a recursive binding. When the body tail-calls itself the loop runs
@@ -942,6 +1041,22 @@ function emitTailExpr(
     }\n} else {\n${emitTailExpr(expr.elseExpr, bindingId, label, tailParams)}\n}`;
   }
   if (expr.kind === "CoreMatch") {
+    if (canScalarizeTupleMatch(expr)) {
+      const values = scalarTupleValueNames(expr.value.items.length);
+      const declarations = values.map((value, index) =>
+        `const ${value} = ${emitExpr(expr.value.items[index])};`
+      );
+      return `{\n${declarations.join("\n")}\n${
+        emitScalarTupleTailArmBody(
+          expr.arms,
+          values,
+          "non-exhaustive match",
+          bindingId,
+          label,
+          tailParams,
+        )
+      }\n}`;
+    }
     const value = `__wm_tail_value_${tailValueTemp++}`;
     return `{\nconst ${value} = ${emitExpr(expr.value)};\n${
       emitTailArmBody(
@@ -997,6 +1112,7 @@ function emitTailArmBody(
 let tailLoopTemp = 0;
 let tailValueTemp = 0;
 let returnValueTemp = 0;
+let scalarTupleTemp = 0;
 
 function emitReturnExpr(expr: CoreExpr): string {
   if (expr.kind === "CoreBlock") {
@@ -1008,6 +1124,15 @@ function emitReturnExpr(expr: CoreExpr): string {
     }\n}`;
   }
   if (expr.kind === "CoreMatch") {
+    if (canScalarizeTupleMatch(expr)) {
+      const values = scalarTupleValueNames(expr.value.items.length);
+      const declarations = values.map((value, index) =>
+        `const ${value} = ${emitExpr(expr.value.items[index])};`
+      );
+      return `${declarations.join("\n")}\n${
+        emitScalarTupleArmBody(expr.arms, values, "non-exhaustive match", emitReturnExpr)
+      }`;
+    }
     const value = `__wm_return_value_${returnValueTemp++}`;
     return `const ${value} = ${emitExpr(expr.value)};\n${
       emitReturnArmBody(expr.arms, value, "non-exhaustive match", literalTupleArity(expr.value))
@@ -1046,6 +1171,58 @@ function emitArmBody(
     }\n}`;
   });
   return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
+}
+
+function canScalarizeTupleMatch(
+  expr: Extract<CoreExpr, { kind: "CoreMatch" }>,
+): expr is Extract<CoreExpr, { kind: "CoreMatch" }> & {
+  value: Extract<CoreExpr, { kind: "CoreTuple" }>;
+} {
+  if (expr.value.kind !== "CoreTuple") return false;
+  const arity = expr.value.items.length;
+  return expr.arms.every((arm) =>
+    arm.pattern.kind === "CorePTuple" && arm.pattern.items.length === arity
+  );
+}
+
+function scalarTupleValueNames(arity: number): string[] {
+  const slot = scalarTupleTemp++;
+  return Array.from({ length: arity }, (_, index) => `__wm_scalar_${slot}_${index}`);
+}
+
+function emitScalarTupleArmBody(
+  arms: CoreMatchArm[],
+  values: readonly string[],
+  message: string,
+  emitBody: (expr: CoreExpr) => string,
+): string {
+  const body = arms.map((arm) => {
+    if (arm.pattern.kind !== "CorePTuple" || arm.pattern.items.length !== values.length) {
+      throw new Error("scalar tuple match requires fixed-arity tuple patterns");
+    }
+    const checks = arm.pattern.items.flatMap((item, index) => patternChecks(item, values[index]));
+    const binds = arm.pattern.items.flatMap((item, index) => emitPatternBind(item, values[index]));
+    return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
+      emitBody(arm.body)
+    }\n}`;
+  });
+  return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
+}
+
+function emitScalarTupleTailArmBody(
+  arms: CoreMatchArm[],
+  values: readonly string[],
+  message: string,
+  bindingId: BindingId,
+  label: string,
+  tailParams?: readonly string[],
+): string {
+  return emitScalarTupleArmBody(
+    arms,
+    values,
+    message,
+    (body) => emitTailExpr(body, bindingId, label, tailParams),
+  );
 }
 
 function emitBlockItem(item: CoreDecl | CoreExpr): string {
@@ -1119,13 +1296,18 @@ function patternChecks(
         ),
       ];
     case "CorePCtor": {
-      // Resolved constructor identity when available; otherwise the runtime tag is the
-      // base identifier of the authored spelling (unresolved/legacy Core inputs only).
-      const ctorId = pattern.ctorId ?? parseLongId(pattern.name).id;
+      const ctorName = parseLongId(pattern.name).id;
+      const ctorId = pattern.ctorId ?? ctorName;
+      if (!pattern.payload) {
+        const ctor = pattern.ctorId === undefined
+          ? id(ctorName)
+          : basisCtorJsName(pattern.ctorId) ?? ctorRefName(ctorName, pattern.ctorId);
+        return [`${value} === ${ctor}`];
+      }
       return [
         `${value}?.ctor === ${JSON.stringify(ctorId)}`,
-        `${value}.args.length === ${pattern.payload ? 1 : 0}`,
-        ...(pattern.payload ? patternChecks(pattern.payload, `${value}.args[0]`) : []),
+        `${value}.args.length === 1`,
+        ...patternChecks(pattern.payload, `${value}.args[0]`),
       ];
     }
   }
