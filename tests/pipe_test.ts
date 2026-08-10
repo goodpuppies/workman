@@ -117,7 +117,7 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
   assertStringIncludes(error.message, "context: Task.andThen callback result");
   assertStringIncludes(error.message, "expected: Js.Error");
   assertStringIncludes(error.message, "actual:   String");
-  assertStringIncludes(error.message, "source: callback result");
+  assertStringIncludes(error.message, "source: scanAll call result");
 });
 
 async function importGenerated(source: string): Promise<Record<string, unknown>> {

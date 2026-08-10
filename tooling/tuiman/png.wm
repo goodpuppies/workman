@@ -1,0 +1,150 @@
+from js.global("Math") import { abs, floor };
+from js.module("node:buffer") import { Buffer };
+from js.module("node:zlib") import { inflateSync };
+
+record Pixels = {
+  bytes: Buffer,
+  width: Number,
+  height: Number,
+};
+
+let length = (buffer) => {
+  buffer :> .length :> Result.withDefault(0)
+};
+
+let byte = (buffer, index) => {
+  buffer :> .readUInt8(index) :> Result.withDefault(0)
+};
+
+let writeByte = (buffer, index, value) => {
+  buffer :> .writeUInt8(value, index) :> Result.withDefault(0)
+};
+
+let uint32 = (buffer, index) => {
+  buffer :> .readUInt32BE(index) :> Result.withDefault(0)
+};
+
+let rec blit = (source, sourceIndex, target, targetIndex, count) => {
+  if (count <= 0) {
+    0
+  } else {
+    let _ = writeByte(target, targetIndex, byte(source, sourceIndex));
+    blit(source, sourceIndex + 1, target, targetIndex + 1, count - 1)
+  }
+};
+
+let chunkIs = (buffer, offset, a, b, c, d) => {
+  byte(buffer, offset + 4) == a && byte(buffer, offset + 5) == b &&
+    byte(buffer, offset + 6) == c && byte(buffer, offset + 7) == d
+};
+
+let rec idatSize = (buffer, offset, total) => {
+  if (offset + 12 > length(buffer)) {
+    total
+  } else {
+    let size = uint32(buffer, offset);
+    let next = offset + 12 + size;
+    let updated = if (chunkIs(buffer, offset, 73, 68, 65, 84)) { total + size } else { total };
+    if (chunkIs(buffer, offset, 73, 69, 78, 68)) { updated } else { idatSize(buffer, next, updated) }
+  }
+};
+
+let rec copyIdat = (buffer, offset, target, targetOffset) => {
+  if (offset + 12 > length(buffer)) {
+    targetOffset
+  } else {
+    let size = uint32(buffer, offset);
+    let next = offset + 12 + size;
+    let updated = if (chunkIs(buffer, offset, 73, 68, 65, 84)) {
+      let _ = blit(buffer, offset + 8, target, targetOffset, size);
+      targetOffset + size
+    } else {
+      targetOffset
+    };
+    if (chunkIs(buffer, offset, 73, 69, 78, 68)) { updated } else { copyIdat(buffer, next, target, updated) }
+  }
+};
+
+let paeth = (left, above, upperLeft) => {
+  let estimate = left + above - upperLeft;
+  let leftDistance = abs(estimate - left) :> Result.withDefault(0);
+  let aboveDistance = abs(estimate - above) :> Result.withDefault(0);
+  let diagonalDistance = abs(estimate - upperLeft) :> Result.withDefault(0);
+  if (leftDistance <= aboveDistance && leftDistance <= diagonalDistance) {
+    left
+  } else {
+    if (aboveDistance <= diagonalDistance) { above } else { upperLeft }
+  }
+};
+
+let rec unfilterBytes = (raw, pixels, index, end, stride, channels, filter) => {
+  if (index >= end) {
+    0
+  } else {
+    let column = index - (floor(index / stride) :> Result.withDefault(0)) * stride;
+    let left = if (column >= channels) { byte(pixels, index - channels) } else { 0 };
+    let above = if (index >= stride) { byte(pixels, index - stride) } else { 0 };
+    let upperLeft = if (index >= stride && column >= channels) { byte(pixels, index - stride - channels) } else { 0 };
+    let sourceIndex = index + 1 + (floor(index / stride) :> Result.withDefault(0));
+    let source = byte(raw, sourceIndex);
+    let predictor = if (filter == 1) {
+      left
+    } else {
+      if (filter == 2) {
+        above
+      } else {
+        if (filter == 3) {
+          floor((left + above) / 2) :> Result.withDefault(0)
+        } else {
+          if (filter == 4) { paeth(left, above, upperLeft) } else { 0 }
+        }
+      }
+    };
+    let value = source + predictor;
+    let normalized = value - (floor(value / 256) :> Result.withDefault(0)) * 256;
+    let _ = writeByte(pixels, index, normalized);
+    let next = index + 1;
+    let nextFilter = if (next < end && next - (floor(next / stride) :> Result.withDefault(0)) * stride == 0) {
+      byte(raw, next + (floor(next / stride) :> Result.withDefault(0)))
+    } else {
+      filter
+    };
+    unfilterBytes(raw, pixels, next, end, stride, channels, nextFilter)
+  }
+};
+
+let decode = (base64: String) => {
+  Buffer.from(base64, "base64") :> Result.andThen((png: Buffer) => {
+    let width = uint32(png, 16);
+    let height = uint32(png, 20);
+    let depth = byte(png, 24);
+    let colorType = byte(png, 25);
+    let channels = if (colorType == 6) { 4 } else { if (colorType == 2) { 3 } else { 0 } };
+    if (width <= 0 || height <= 0 || depth != 8 || channels == 0) {
+      Buffer.alloc(-1) :> Result.map((bytes) => { Pixels(bytes, 0, 0) })
+    } else {
+      Buffer.alloc(idatSize(png, 33, 0)) :> Result.andThen((compressed: Buffer) => {
+        let _ = copyIdat(png, 33, compressed, 0);
+        inflateSync(compressed) :> Result.andThen((inflated) => {
+          Buffer.from(inflated) :> Result.andThen((raw: Buffer) => {
+            let stride = width * channels;
+            Buffer.alloc(stride * height) :> Result.map((pixels: Buffer) => {
+              let _ = unfilterBytes(raw, pixels, 0, stride * height, stride, channels, byte(raw, 0));
+              Pixels(pixels, width, height)
+            })
+          })
+        })
+      })
+    }
+  })
+};
+
+let rgba = (pixels: Pixels, x, y) => {
+  let channels = length(pixels.bytes) / (pixels.width * pixels.height);
+  let offset = (y * pixels.width + x) * channels;
+  if (channels == 4) {
+    (byte(pixels.bytes, offset), byte(pixels.bytes, offset + 1), byte(pixels.bytes, offset + 2), byte(pixels.bytes, offset + 3))
+  } else {
+    (byte(pixels.bytes, offset), byte(pixels.bytes, offset + 1), byte(pixels.bytes, offset + 2), 255)
+  }
+};

@@ -29,7 +29,7 @@ import { inferExpr } from "./expr.ts";
 import { addJsImport } from "./js_imports.ts";
 import { assertExportableRecord, assertExportableType } from "./module_exports.ts";
 import { patternBinders, showPattern } from "./patterns.ts";
-import { constrainAt } from "./provenance.ts";
+import { constrainAt, rememberSchemeSource } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import {
   originForScheme,
@@ -365,6 +365,7 @@ function inferNonRecursiveLet(
         provenance,
       );
       scheme.node = decl.bindings[i].node;
+      rememberSchemeSource(scheme, decl.bindings[i].value, type, provenance);
       bindValue(staticEnv(context.strEnv, context.typeEnv, env), name, scheme);
       recordBindingFact(facts, name, {
         subject: "binding",
@@ -470,6 +471,7 @@ function inferRecursiveLet(
       provenance,
     );
     scheme.node = b.node;
+    rememberSchemeSource(scheme, b.value, placeholders[i], provenance);
     const name = (b.pattern as { name: string }).name;
     bindValue(staticEnv(strEnv, typeEnv, env), name, scheme);
     recordBindingFact(facts, name, {

@@ -66,7 +66,7 @@ export function inferLambdaTy(
     }));
   const dialect = lambdaTypingDialect(expr, context.dialect);
   const params = expr.params.map((p) =>
-    inferParam(p, local, typeEnv, strEnv, adts, binders, facts)
+    inferParam(p, local, typeEnv, strEnv, adts, binders, facts, provenance)
   );
   paramHints?.forEach((hint, index) => {
     if (index < params.length) {

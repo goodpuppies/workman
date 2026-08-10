@@ -1,0 +1,302 @@
+-- Minimal Kitty graphics protocol support for Ghostty/Kitty-compatible
+-- terminals. PNG bytes are transmitted directly as base64 APC chunks.
+
+from "./ansi.wm" import * as Ansi;
+from "./geometry.wm" import * as Geometry;
+from "./png.wm" import * as Png;
+from "./png-jsr.wm" import * as PngJsr;
+from "./terminal-cap.wm" import * as Cap;
+from js.global import { fetch };
+from js.module("node:buffer") import { Buffer };
+from js.global("Math") import {
+  ceil: Number -> Number,
+  floor: Number -> Number,
+};
+
+-- The library owns its own image failure type so that image loading does not
+-- depend on any one application's error ADT. Applications map this into their
+-- own errors at the call site.
+type ImageError =
+  | ImageJsFailure<Js.Error>
+  | ImageHttpFailure<Number, String>;
+
+let describeImageError = match(error) => {
+  ImageJsFailure(jsError) => {
+    match(jsError) {
+      Js.Error(message) => { message },
+      Js.Unknown => { "unknown JavaScript error" },
+    }
+  },
+  ImageHttpFailure(status, body) => {
+    "HTTP " ++ Result.textOf(status) ++ ": " ++ body
+  },
+};
+
+type Scale = Fit | Fill;
+
+record Image = {
+  base64: String,
+  alt: String,
+  width: Number,
+  height: Number,
+  pixels: Option<Png.Pixels>,
+};
+
+record Placement = {
+  offsetX: Number,
+  offsetY: Number,
+  columns: Number,
+  rows: Number,
+  control: String,
+};
+
+let apc = (control, payload) => {
+  `${Ansi.esc}_G${control};${payload}${Ansi.esc}\\`
+};
+
+let deleteAll = match(Cap.backend) {
+  Cap.KittyGraphics => { apc("a=d,d=A,q=2", "") },
+  Cap.HalfBlock => { "" },
+};
+
+let deleteImage = (identifier) => {
+  match(Cap.backend) {
+    Cap.KittyGraphics => { apc(`a=d,d=I,i=${Result.textOf(identifier)},q=2`, "") },
+    Cap.HalfBlock => { "" },
+  }
+};
+
+let rec transmitChunks = (remaining, first, placement, identifier) => {
+  let size = remaining :> .length :> Result.withDefault(0);
+  let more = size > 4096;
+  let chunk = remaining :> .slice(0, 4096) :> Result.withDefault("");
+  let rest = remaining :> .slice(4096) :> Result.withDefault("");
+  let continuation = if (more) { "1" } else { "0" };
+  let control = if (first) {
+    `a=T,f=100,q=2,C=1,${
+      if (identifier > 0) {
+        `i=${Result.textOf(identifier)},`
+      } else {
+        ""
+      }
+    }${placement.control},m=${continuation}`
+  } else {
+    `q=2,m=${continuation}`
+  };
+  apc(control, chunk) ++
+    (if (more) {
+      transmitChunks(rest, false, placement, identifier)
+    } else {
+      ""
+    })
+};
+
+let roundedUp = (value) => {
+  ceil(value) :> Result.withDefault(1)
+};
+
+let roundedDown = (value) => {
+  floor(value) :> Result.withDefault(0)
+};
+
+let squareColumns = (rows, terminal: Geometry.Size) => {
+  if (rows <= 0 || terminal.cellWidth <= 0 || terminal.cellHeight <= 0) {
+    0
+  } else {
+    Geometry.clamp(
+      1,
+      8,
+      roundedUp(rows * terminal.cellHeight / terminal.cellWidth),
+    )
+  }
+};
+
+let fitPlacement = (area: Geometry.Rect, terminal: Geometry.Size, image: Image) => {
+  let pixelWidth = area.width * terminal.cellWidth;
+  let pixelHeight = area.height * terminal.cellHeight;
+  let widthScale = pixelWidth / image.width;
+  let heightScale = pixelHeight / image.height;
+  if (widthScale <= heightScale) {
+    let rows = Geometry.clamp(
+      1,
+      area.height,
+      roundedUp(image.height * widthScale / terminal.cellHeight),
+    );
+    Placement(
+      0,
+      roundedDown((area.height - rows) / 2),
+      area.width,
+      rows,
+      `c=${Result.textOf(area.width)},r=${Result.textOf(rows)}`,
+    )
+  } else {
+    let columns = Geometry.clamp(
+      1,
+      area.width,
+      roundedUp(image.width * heightScale / terminal.cellWidth),
+    );
+    Placement(
+      0,
+      0,
+      columns,
+      area.height,
+      `c=${Result.textOf(columns)},r=${Result.textOf(area.height)}`,
+    )
+  }
+};
+
+let fillPlacement = (area: Geometry.Rect, terminal: Geometry.Size, image: Image) => {
+  let targetRatio =
+    (area.width * terminal.cellWidth) / (area.height * terminal.cellHeight);
+  let imageRatio = image.width / image.height;
+  let (sourceX, sourceY, sourceWidth, sourceHeight) =
+    if (imageRatio > targetRatio) {
+      let cropWidth = Geometry.clamp(
+        1,
+        image.width,
+        roundedDown(image.height * targetRatio),
+      );
+      (
+        roundedDown((image.width - cropWidth) / 2),
+        0,
+        cropWidth,
+        image.height,
+      )
+    } else {
+      let cropHeight = Geometry.clamp(
+        1,
+        image.height,
+        roundedDown(image.width / targetRatio),
+      );
+      (
+        0,
+        roundedDown((image.height - cropHeight) / 2),
+        image.width,
+        cropHeight,
+      )
+    };
+  let control = `x=${Result.textOf(sourceX)},y=${Result.textOf(sourceY)},w=${
+    Result.textOf(sourceWidth)
+  },h=${Result.textOf(sourceHeight)},c=${Result.textOf(area.width)},r=${
+    Result.textOf(area.height)
+  }`;
+  Placement(0, 0, area.width, area.height, control)
+};
+
+let placement = match(area, terminal, mode, image) => {
+  (_, _, Fit, _) => { fitPlacement(area, terminal, image) },
+  (_, _, Fill, _) => { fillPlacement(area, terminal, image) },
+};
+
+let renderWithId = (
+  identifier,
+  area: Geometry.Rect,
+  terminal: Geometry.Size,
+  mode,
+  image: Image,
+) => {
+  if (
+    area.width <= 0 || area.height <= 0 ||
+    terminal.cellWidth <= 0 || terminal.cellHeight <= 0 ||
+    image.width <= 0 || image.height <= 0 ||
+    image.base64 == ""
+  ) {
+    ""
+  } else {
+    let placed = placement(area, terminal, mode, image);
+    Ansi.cursorTo(area.y + placed.offsetY + 1, area.x + placed.offsetX + 1) ++
+      transmitChunks(image.base64, true, placed, identifier)
+  }
+};
+
+let render = (area: Geometry.Rect, terminal: Geometry.Size, mode, image: Image) => {
+  renderWithId(0, area, terminal, mode, image)
+};
+
+let pngUrl = (url) => {
+  Result|
+    url :> .endsWith("@jpeg"),
+    url :> .endsWith("@webp"),
+    url :> .endsWith("@png")
+  | :> Result.andThen((jpeg, webp, png) => {
+    if (png) {
+      Ok(url)
+    } else {
+      if (jpeg || webp) {
+        url :> .slice(0, -5) :> Result.map((base) => { `${base}@png` })
+      } else {
+        Ok(`${url}@png`)
+      }
+    }
+  }) :> Result.withDefault(url)
+};
+
+let loadPng = (url, alt) => {
+  let inspectStatus = Monad.liftError Task ImageJsFailure (response) => {
+    Result|response.ok, response.status|
+      :> Result.map((ok, status) => {
+        (response, ok, status)
+      })
+      :> Task.fromResult
+  };
+  let requireOk = Monad.lift Task (response, ok, status) => {
+    if (ok) {
+      Task.succeed(response)
+    } else {
+      response :> .text()
+        :> Task.mapErr(ImageJsFailure)
+        :> Task.andThen((body) => {
+          Task.fail(ImageHttpFailure(status, body))
+        })
+    }
+  };
+  let readBytes = Monad.liftError Task ImageJsFailure (response) => {
+    response :> .arrayBuffer()
+  };
+  let decodePng = Monad.lift Task (bytes) => {
+    Buffer.from(bytes)
+      :> Result.mapErr(ImageJsFailure)
+      :> Task.fromResult
+      :> Task.andThen((buffer: Buffer) => {
+        buffer :> .toString("base64")
+          :> Result.mapErr(ImageJsFailure)
+          :> Task.fromResult
+          :> Task.andThen((base64) => {
+            match(Cap.backend) {
+              Cap.KittyGraphics => {
+                Result|buffer :> .readUInt32BE(16), buffer :> .readUInt32BE(20)|
+                  :> Result.mapErr(ImageJsFailure)
+                  :> Task.fromResult
+                  :> Task.map((width, height) => {
+                    Image(base64, alt, width, height, None)
+                  })
+              },
+              Cap.HalfBlock => {
+                PngJsr.decode(buffer)
+                  :> Task.mapErr(ImageJsFailure)
+                  :> Task.map((pixels) => {
+                    Image(base64, alt, pixels.width, pixels.height, Some(pixels))
+                  })
+              },
+            }
+          })
+      })
+  };
+
+  fetch(pngUrl(url))
+    :> Task.mapErr(ImageJsFailure)
+    :> inspectStatus
+    :> requireOk
+    :> readBytes
+    :> decodePng
+};
+
+-- `pngUrl` and `loadAvatar` encode Bluesky CDN URL conventions rather than
+-- anything terminal-related. They stay here so the atview integration keeps
+-- working, but they are the first candidates to move into an application.
+let loadAvatar = (url) => {
+  let thumbnail = url
+    :> .replace("/img/avatar/plain/", "/img/avatar_thumbnail/plain/")
+    :> Result.withDefault(url);
+  loadPng(thumbnail, "")
+};

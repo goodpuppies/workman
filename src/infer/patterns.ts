@@ -19,7 +19,7 @@ import {
   typeInfoById,
   VoidTy,
 } from "../types.ts";
-import { constrainAt } from "./provenance.ts";
+import { constrainAt, type TypeProvenance } from "./provenance.ts";
 import { expandCallArg } from "./shared.ts";
 import { lookupLongValue, type StrEnv } from "./environment.ts";
 import {
@@ -71,6 +71,7 @@ export function inferPattern(
   adts: Map<number, TypeDeclInfo>,
   binders = new Set<string>(),
   facts?: TypeFacts,
+  provenance?: TypeProvenance,
 ): Ty {
   if (facts) recordPatternType(facts, p, expected);
   switch (p.kind) {
@@ -97,7 +98,14 @@ export function inferPattern(
       const scheme = lookupPatternValue(env, strEnv, p.name, p.path);
       if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
       const pinned = instantiate(scheme);
-      constrainPattern(expected, pinned, p, "InferPattern.Pinned", "pinned pattern matches value");
+      constrainPattern(
+        expected,
+        pinned,
+        p,
+        "InferPattern.Pinned",
+        "pinned pattern matches value",
+        provenance,
+      );
       if (facts) {
         recordPatternFact(facts, p, {
           subject: "pattern",
@@ -109,7 +117,14 @@ export function inferPattern(
       return expected;
     }
     case "PInt":
-      constrainPattern(expected, NumberTy, p, "InferPattern.Int", "integer pattern matches Number");
+      constrainPattern(
+        expected,
+        NumberTy,
+        p,
+        "InferPattern.Int",
+        "integer pattern matches Number",
+        provenance,
+      );
       return expected;
     case "PString":
       constrainPattern(
@@ -118,13 +133,28 @@ export function inferPattern(
         p,
         "InferPattern.String",
         "string pattern matches String",
+        provenance,
       );
       return expected;
     case "PBool":
-      constrainPattern(expected, BoolTy, p, "InferPattern.Bool", "boolean pattern matches Bool");
+      constrainPattern(
+        expected,
+        BoolTy,
+        p,
+        "InferPattern.Bool",
+        "boolean pattern matches Bool",
+        provenance,
+      );
       return expected;
     case "PVoid":
-      constrainPattern(expected, VoidTy, p, "InferPattern.Void", "void pattern matches Void");
+      constrainPattern(
+        expected,
+        VoidTy,
+        p,
+        "InferPattern.Void",
+        "void pattern matches Void",
+        provenance,
+      );
       return expected;
     case "PTuple": {
       const items = p.items.map(() => fresh());
@@ -134,9 +164,10 @@ export function inferPattern(
         p,
         "InferPattern.Tuple",
         "tuple pattern matches tuple",
+        provenance,
       );
       p.items.forEach((x, i) =>
-        inferPattern(x, items[i], env, typeEnv, strEnv, adts, binders, facts)
+        inferPattern(x, items[i], env, typeEnv, strEnv, adts, binders, facts, provenance)
       );
       return expected;
     }
@@ -149,6 +180,7 @@ export function inferPattern(
         p,
         "InferPattern.Record",
         "record pattern matches record type",
+        provenance,
       );
       const fields = instantiateRecordFields(record.info, record.type.args);
       for (const field of p.fields) {
@@ -164,6 +196,7 @@ export function inferPattern(
           adts,
           binders,
           facts,
+          provenance,
         );
       }
       return expected;
@@ -192,9 +225,10 @@ export function inferPattern(
           p,
           "InferPattern.ConstructorResult",
           "constructor pattern result matches scrutinee",
+          provenance,
         );
         p.args.forEach((x, i) =>
-          inferPattern(x, args[i], env, typeEnv, strEnv, adts, binders, facts)
+          inferPattern(x, args[i], env, typeEnv, strEnv, adts, binders, facts, provenance)
         );
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
@@ -204,6 +238,7 @@ export function inferPattern(
           p,
           "InferPattern.NullaryConstructor",
           "nullary constructor pattern matches scrutinee",
+          provenance,
         );
       }
       return expected;
@@ -216,8 +251,19 @@ export function inferPattern(
         p,
         "InferConstraint.Pattern",
         "pattern matches written type constraint",
+        provenance,
       );
-      inferPattern(p.pattern, annotation, env, typeEnv, strEnv, adts, binders, facts);
+      inferPattern(
+        p.pattern,
+        annotation,
+        env,
+        typeEnv,
+        strEnv,
+        adts,
+        binders,
+        facts,
+        provenance,
+      );
       return expected;
     }
   }
@@ -415,8 +461,9 @@ function constrainPattern(
   pattern: Pattern,
   rule: string,
   role: string,
+  provenance?: TypeProvenance,
 ) {
-  constrainAt(left, right, pattern, undefined, [], undefined, {
+  constrainAt(left, right, pattern, undefined, [], provenance, {
     message: showPattern(pattern),
     node: pattern.node,
     span: pattern.node?.span,

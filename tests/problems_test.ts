@@ -96,7 +96,7 @@ Deno.test("problems TUI wraps diagnostic text to the terminal width", async () =
 });
 
 Deno.test("problems TUI decodes clicks and wheel input in Workman", async () => {
-  const probe = new URL("../tooling/problems/tui/mouse-probe.wm", import.meta.url).pathname;
+  const probe = new URL("../tooling/tuiman/mouse-probe.wm", import.meta.url).pathname;
   const result = await runFile(probe, { stdout: "piped", stderr: "piped", progress: false });
 
   assertEquals(result.code, 0);

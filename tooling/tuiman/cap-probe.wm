@@ -1,0 +1,5 @@
+from "./terminal-cap.wm" import * as Cap;
+
+let main = () => {
+  print("backend=" ++ Cap.backendName(Cap.backend))
+};

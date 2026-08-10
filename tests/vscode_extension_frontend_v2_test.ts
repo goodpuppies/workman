@@ -1,9 +1,38 @@
 import { assertEquals } from "@std/assert";
 import { resolve } from "node:path";
-import {
-  denoServerConfig,
-  nodeServerConfig,
-} from "../editors/vscode/src/server_options.ts";
+import { denoServerConfig, nodeServerConfig } from "../editors/vscode/src/server_options.ts";
+
+const repoRoot = resolve(import.meta.dirname!, "..");
+
+Deno.test("VS Code bracket colors do not split arrow and pipe operators", async () => {
+  const configuration = JSON.parse(
+    await Deno.readTextFile(
+      resolve(repoRoot, "editors/vscode/language-configuration.json"),
+    ),
+  );
+
+  assertEquals(
+    configuration.brackets.some(([open, close]: string[]) => open === "<" && close === ">"),
+    false,
+  );
+  assertEquals(
+    configuration.autoClosingPairs.some(
+      ([open, close]: string[]) => open === "<" && close === ">",
+    ),
+    true,
+  );
+});
+
+Deno.test("VS Code grammar scopes lowercase let bindings as constants", async () => {
+  const grammar = JSON.parse(
+    await Deno.readTextFile(
+      resolve(repoRoot, "editors/vscode/syntaxes/wm.tmLanguage.json"),
+    ),
+  );
+  const binding = grammar.repository.bindings.patterns[0];
+
+  assertEquals(binding.captures["3"].name, "variable.other.constant.workman");
+});
 
 Deno.test("VS Code extension server config passes the generated frontend artifact path", () => {
   const config = denoServerConfig(

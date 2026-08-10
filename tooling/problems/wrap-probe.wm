@@ -1,4 +1,4 @@
-from "./tui/draw.wm" import * as Draw;
+from "../tuiman/draw.wm" import * as Draw;
 
 let show = (rows) => {
   rows :> List.foldLeft("", (acc, row) => {

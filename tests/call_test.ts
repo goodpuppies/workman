@@ -25,7 +25,7 @@ Deno.test("empty call syntax passes a unit/void argument", async () => {
   await assertRejects(
     () => checkSource("let one = () => { 1 }; let bad = one(1);"),
     Error,
-    "type mismatch",
+    "type collision",
   );
 });
 
@@ -42,7 +42,7 @@ Deno.test("reuses repeated type variables within an annotation", async () => {
         let bad = first_same(1, "s");
       `),
     Error,
-    "type mismatch",
+    "type collision",
   );
 });
 

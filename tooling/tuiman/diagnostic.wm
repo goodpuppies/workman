@@ -1,0 +1,72 @@
+-- Flowing semantic terminal documents for compiler output. Unlike Draw, this
+-- renderer does not address screen coordinates or own the terminal lifecycle:
+-- it emits ordinary lines suitable for stderr.
+
+from "./ansi.wm" import * as Ansi;
+from "./theme.wm" import * as Theme;
+
+record Span = {
+  text: String,
+  role: String,
+};
+
+record Line = {
+  spans: Js.Array<Span>,
+};
+
+record Document = {
+  lines: Js.Array<Line>,
+};
+
+let color = (value: Theme.Color) => {
+  Ansi.foregroundRgb(value.red, value.green, value.blue)
+};
+
+let roleCode = (role) => {
+  if (role == "error") {
+    color(Theme.errorRed) ++ Ansi.bold
+  } else {
+    if (role == "warning") {
+      color(Theme.warningYellow) ++ Ansi.bold
+    } else {
+      if (role == "type") {
+        color(Theme.radioactiveGreen)
+      } else {
+        if (role == "secondary") {
+          color(Theme.blue2) ++ Ansi.bold
+        } else {
+          if (role == "header") {
+            Ansi.bold
+          } else {
+            if (role == "hint") { Ansi.dim } else { "" }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec renderSpans = match(spans, colors) => {
+  ([], _) => { "" },
+  ([span, ..rest], false) => { span.text ++ renderSpans(rest, false) },
+  ([span, ..rest], true) => {
+    Ansi.reset ++ roleCode(span.role) ++ span.text ++ renderSpans(rest, true)
+  },
+};
+
+let renderLine = (line: Line, colors) => {
+  let reset = if (colors) { Ansi.reset } else { "" };
+  renderSpans(Js.Array.toList(line.spans), colors) ++ reset
+};
+
+let rec renderLines = match(lines, colors) => {
+  ([], _) => { "" },
+  ([line], colors) => { renderLine(line, colors) },
+  ([line, ..rest], colors) => {
+    renderLine(line, colors) ++ "\n" ++ renderLines(rest, colors)
+  },
+};
+
+let renderDocument = (document: Document, colors: Bool) => {
+  renderLines(Js.Array.toList(document.lines), colors)
+};

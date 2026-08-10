@@ -20,7 +20,12 @@ import { assertJsonCompatible, jsonValueTy } from "./json.ts";
 import type { InferContext } from "./context.ts";
 import { lookupLongValue } from "./environment.ts";
 
-import { constrainAt, sourceForTypedExpr } from "./provenance.ts";
+import {
+  constrainAt,
+  rememberExpressionSource,
+  rememberVariableSource,
+  sourceForTypedExpr,
+} from "./provenance.ts";
 import { inferDottedVar, inferRecordExpr } from "./records.ts";
 import { ffiGetResultTy, inferCall } from "./expr_call.ts";
 import { inferLambdaTy } from "./expr_lambda.ts";
@@ -102,6 +107,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         break;
       }
       t = instantiate(scheme);
+      rememberVariableSource(expr, t, scheme, provenance);
       if (namespaceCarrier) facts.namespaceValues.set(expr, namespaceCarrier);
       recordExprFact(facts, expr, {
         subject: scheme.status === "constructor" ? "constructor" : "expr",
@@ -530,6 +536,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
     if (operatorId) recordOperatorFact(facts, expr, operatorId);
   }
   types.set(expr, t);
+  rememberExpressionSource(expr, t, provenance);
   return t;
 }
 

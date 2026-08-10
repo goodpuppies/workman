@@ -1,0 +1,31 @@
+-- Deterministic probe for recursive declarative element composition.
+
+from "./draw.wm" import * as Draw;
+from "./element.wm" import * as Ui;
+from "./geometry.wm" import * as Geometry;
+
+let main = () => {
+  let firstArea = Geometry.rect(0, 0, 8, 1);
+  let secondArea = Geometry.rect(0, 1, 8, 1);
+  let terminal = Geometry.Size(8, 2, 1, 2);
+  let tree = Ui.fragment([
+    Ui.text(firstArea, "one", Draw.plain),
+    Ui.showIf(false, Ui.text(secondArea, "hidden", Draw.plain)),
+    Ui.fragment([
+      Ui.optional(Some("two"), (value) => {
+        Ui.text(secondArea, value, Draw.muted)
+      }),
+      Ui.optional(None, (value) => {
+        Ui.text(secondArea, value, Draw.plain)
+      }),
+    ]),
+  ]);
+  let expected =
+    Draw.text(firstArea, "one", Draw.plain) ++
+    Draw.text(secondArea, "two", Draw.muted);
+  if (Ui.render(terminal, tree) == expected) {
+    print("element composition ok")
+  } else {
+    print("element composition mismatch")
+  }
+};

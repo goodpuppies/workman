@@ -1,8 +1,8 @@
-from "./tui/command.wm" import * as Command;
-from "./tui/draw.wm" import * as Draw;
-from "./tui/event.wm" import * as Event;
-from "./tui/geometry.wm" import * as Geometry;
-from "./tui/runtime.wm" import * as Runtime;
+from "../tuiman/command.wm" import * as Command;
+from "../tuiman/draw.wm" import * as Draw;
+from "../tuiman/event.wm" import * as Event;
+from "../tuiman/geometry.wm" import * as Geometry;
+from "../tuiman/runtime.wm" import * as Runtime;
 -- The backend runs in this process and pushes snapshots through this module, so
 -- the TUI waits to be woken rather than polling for changes.
 from js.module("#problems-client") import {

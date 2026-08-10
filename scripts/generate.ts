@@ -9,6 +9,7 @@ await runTask("generate-assets");
 await runTask("frontend-v2:generate-recognizer");
 await convergeFrontendV2();
 await runTask("wmslang:builtins");
+await runTask("tuiman:build"); // has to be in order
 await runTask("problems:build");
 
 console.log("generation complete");

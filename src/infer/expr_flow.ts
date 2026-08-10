@@ -31,6 +31,7 @@ import {
   sourceForTypedExpr,
   tupleSource,
   type TypeProvenance,
+  type TypeSource,
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import { inferExpr } from "./expr.ts";
@@ -55,11 +56,28 @@ export function inferMatch(
       "cannot match unresolved JS FFI result before FFI reflection resolves the member access",
   });
   const result = fresh();
+  const previousArmSources: TypeSource[] = [];
   for (const arm of expr.arms) {
     const local = new Map(env);
-    inferPattern(arm.pattern, valueType, local, typeEnv, strEnv, adts, new Set(), facts);
+    inferPattern(
+      arm.pattern,
+      valueType,
+      local,
+      typeEnv,
+      strEnv,
+      adts,
+      new Set(),
+      facts,
+      provenance,
+    );
     recordExpectedExprType(facts, arm.body, result);
     const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
+    const armSource = sourceForTypedExpr(arm.body, armType, provenance, "match arm result");
+    const participant: TypeSource = {
+      ...sourceForTypedExpr(arm.body, armType, provenance, "earlier match arm"),
+      type: snapshotType(armType),
+      derivedFrom: undefined,
+    };
     constrainAt(
       result,
       armType,
@@ -74,14 +92,29 @@ export function inferMatch(
       },
       {
         premise: {
+          code: "type.match-arm-results-disagree",
           rule: "InferMatch.ArmsSameType",
           role: "match arm result agrees with previous arms",
           subject: "match arm result",
           leftRole: "match result",
           rightRole: "arm result",
         },
+        sources: {
+          left: {
+            origin: {
+              message: "match result established by previous arms",
+              node: expr.node,
+              span: expr.node?.span,
+            },
+            type: result,
+            provenance,
+            related: previousArmSources,
+          },
+          right: armSource,
+        },
       },
     );
+    previousArmSources.push(participant);
   }
   const armPatterns = expr.arms.map((arm) => arm.pattern);
   warnRedundantMatchArms(armPatterns, valueType, typeEnv, adts, warnings, diagnostics);
@@ -91,6 +124,54 @@ export function inferMatch(
     diagnostics.push(warningDiagnostic(exhaustiveWarning, expr.node, "pattern.non-exhaustive"));
   }
   return result;
+}
+
+function snapshotType(type: Ty, variables = new Map<number, Ty>()): Ty {
+  const resolved = prune(type);
+  switch (resolved.tag) {
+    case "var": {
+      const existing = variables.get(resolved.id);
+      if (existing) return existing;
+      const variable: Ty = { tag: "var", id: resolved.id, name: resolved.name };
+      variables.set(resolved.id, variable);
+      return variable;
+    }
+    case "prim":
+      return resolved;
+    case "ffi":
+      return {
+        ...resolved,
+        receiver: resolved.receiver ? snapshotType(resolved.receiver, variables) : undefined,
+        args: resolved.args.map((arg) => snapshotType(arg, variables)),
+        instance: resolved.instance ? snapshotType(resolved.instance, variables) : undefined,
+        constraints: resolved.constraints?.map((item) => snapshotType(item, variables)),
+      };
+    case "fn":
+      return {
+        tag: "fn",
+        params: resolved.params.map((param) => snapshotType(param, variables)),
+        result: snapshotType(resolved.result, variables),
+      };
+    case "tuple":
+      return { tag: "tuple", items: resolved.items.map((item) => snapshotType(item, variables)) };
+    case "struct":
+      return {
+        tag: "struct",
+        fields: resolved.fields.map((field) => ({
+          name: field.name,
+          type: snapshotType(field.type, variables),
+        })),
+      };
+    case "named":
+      return {
+        ...resolved,
+        args: resolved.args.map((arg) => snapshotType(arg, variables)),
+        recordFields: resolved.recordFields?.map((field) => ({
+          name: field.name,
+          type: snapshotType(field.type, variables),
+        })),
+      };
+  }
 }
 
 export function inferBlock(
@@ -344,9 +425,20 @@ export function inferParam(
   adts: Map<number, TypeDeclInfo>,
   binders: Set<string>,
   facts: TypeFacts,
+  provenance: TypeProvenance,
 ): Ty {
   const expected = fresh();
-  return inferPattern(param.pattern, expected, env, typeEnv, strEnv, adts, binders, facts);
+  return inferPattern(
+    param.pattern,
+    expected,
+    env,
+    typeEnv,
+    strEnv,
+    adts,
+    binders,
+    facts,
+    provenance,
+  );
 }
 
 export function inferPipe(
@@ -463,6 +555,7 @@ function constrainPipe(
     },
     {
       premise: {
+        code: "type.pipe-input-mismatch",
         rule: "InferPipe.StepInput",
         role: "pipe output matches next function input",
         subject: callee.kind === "Var" ? callee.name : "pipe",

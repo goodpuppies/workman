@@ -10,6 +10,7 @@
     "generate-assets": "deno run --allow-read --allow-write scripts/generate_assets.ts",
     "generate": "deno run -A scripts/generate.ts",
     "problems:build": "deno run -A scripts/build_problems_tui.ts",
+    "tuiman:build": "deno run -A scripts/build_tuiman.ts",
     "check": "deno check src/main.ts src/lsp/server.ts tests/*.ts",
     "test": "deno test --allow-read --allow-write --allow-run --allow-env --allow-net=github.com,release-assets.githubusercontent.com tests",
     "publish": "deno task generate && deno task publish:vscode",

@@ -21,3 +21,6 @@ let dark1 = Color(119, 118, 123);
 
 let blue2 = Color(98, 160, 234);
 let blue7 = Color(25, 61, 102);
+let errorRed = Color(255, 92, 92);
+let warningYellow = Color(255, 211, 67);
+let radioactiveGreen = Color(57, 255, 20);

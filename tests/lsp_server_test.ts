@@ -1180,7 +1180,9 @@ Deno.test("lsp server revalidates the active unopened project head after depende
   const last = serverPublishes.at(-1)?.params as
     | { diagnostics: { code: string }[] }
     | undefined;
-  assertEquals(last?.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(last?.diagnostics.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
 });
 
 Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", async () => {

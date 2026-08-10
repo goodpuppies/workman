@@ -71,7 +71,10 @@ let digit = match(character) => {
   _ => { None },
 };
 
-let rec positiveUntil = (
+-- Zero is a legitimate field value in SGR mouse reports (button 0 is the left
+-- button), so this accepts it and callers that need a positive number check the
+-- decoded value themselves.
+let rec numberUntil = (
   input,
   delimiter: String,
   value,
@@ -90,7 +93,7 @@ let rec positiveUntil = (
         match(digit(character)) {
           None => { InvalidNumberPrefix },
           Some(next) => {
-            positiveUntil(rest, delimiter, value * 10 + next, true)
+            numberUntil(rest, delimiter, value * 10 + next, true)
           },
         }
       }
@@ -122,13 +125,20 @@ let rec positiveUntilMouseEnd = (input, value, seen) => {
 
 let cellSizePrefix = match(input) => {
   [escape, "[", "6", ";", ..rest] => {
-    match(positiveUntil(rest, ";", 0, false)) {
+    match(numberUntil(rest, ";", 0, false)) {
       InvalidNumberPrefix => { None },
       NumberPrefix(height, afterHeight) => {
-        match(positiveUntil(afterHeight, "t", 0, false)) {
+        match(numberUntil(afterHeight, "t", 0, false)) {
           InvalidNumberPrefix => { None },
           NumberPrefix(width, afterWidth) => {
-            Some((CellSize(width, height), afterWidth))
+            -- A reported cell of zero width or height is nonsense and would
+            -- divide image layout by zero, so it is rejected here rather than
+            -- by the shared number parser.
+            if (width > 0 && height > 0) {
+              Some((CellSize(width, height), afterWidth))
+            } else {
+              None
+            }
           },
         }
       },
@@ -139,10 +149,10 @@ let cellSizePrefix = match(input) => {
 
 let mousePrefix = match(input) => {
   [escape, "[", "<", ..rest] => {
-    match(positiveUntil(rest, ";", 0, false)) {
+    match(numberUntil(rest, ";", 0, false)) {
       InvalidNumberPrefix => { None },
       NumberPrefix(button, afterButton) => {
-        match(positiveUntil(afterButton, ";", 0, false)) {
+        match(numberUntil(afterButton, ";", 0, false)) {
           InvalidNumberPrefix => { None },
           NumberPrefix(column, afterColumn) => {
             match(positiveUntilMouseEnd(afterColumn, 0, false)) {
@@ -154,7 +164,9 @@ let mousePrefix = match(input) => {
                   if (button == 65) {
                     Some((WheelDown, afterRow))
                   } else {
-                    if (button == 0) {
+                    -- SGR reports are one-based; the library speaks in
+                    -- zero-based cell coordinates like the rest of geometry.
+                    if (button == 0 && column > 0) {
                       Some((MouseDown(column - 1, row - 1), afterRow))
                     } else {
                       Some((Unknown("mouse"), afterRow))

@@ -1,0 +1,52 @@
+-- Deterministic coverage for list-prefix terminal event matching.
+
+from "./ansi.wm" import * as Ansi;
+from "./event.wm" import * as Event;
+from js.global("String") import {
+  fromCharCode: Number -> String,
+};
+
+let controlC = fromCharCode(3) :> Result.withDefault("");
+
+let input =
+  Ansi.esc ++ "[A" ++
+  Ansi.esc ++ "OB" ++
+  Ansi.esc ++ "[Z" ++
+  Ansi.esc ++ "[5~" ++
+  Ansi.esc ++ "[6~" ++
+  Ansi.esc ++ "[H" ++
+  Ansi.esc ++ "[1~" ++
+  Ansi.esc ++ "[F" ++
+  Ansi.esc ++ "[4~" ++
+  Ansi.esc ++ "[6;20;10t" ++
+  Ansi.esc ++ "[<64;10;5M" ++
+  Ansi.esc ++ "[<65;10;5M" ++
+  "x" ++ controlC;
+
+let expected = match(events) => {
+  [
+    Event.Up,
+    Event.Down,
+    Event.ShiftTab,
+    Event.PageUp,
+    Event.PageDown,
+    Event.Home,
+    Event.Home,
+    Event.End,
+    Event.End,
+    Event.CellSize(10, 20),
+    Event.WheelUp,
+    Event.WheelDown,
+    Event.Character("x"),
+    Event.CtrlC
+  ] => { true },
+  _ => { false },
+};
+
+let main = () => {
+  if (expected(Event.decodeMany(input))) {
+    print("event prefix patterns ok")
+  } else {
+    print("event prefix patterns failed")
+  }
+};

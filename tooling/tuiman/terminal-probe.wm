@@ -1,0 +1,97 @@
+-- First direct terminal probe. Run in a real PTY:
+--   wm run tui/terminal-probe.wm
+--
+-- q / Ctrl-C restores the terminal and exits. Arrow keys prove that raw chunks arrive.
+
+from "./ansi.wm" import * as Ansi;
+from js.module("node:tty") import type { ReadStream, WriteStream };
+from js.global("process") import {
+  stdin: ReadStream,
+  stdout: WriteStream,
+  exit: Number -> Void,
+};
+from js.global import {
+  String as toString: Js.Value -> String,
+};
+from js.global("String") import {
+  fromCharCode: Number -> String,
+};
+
+let errorText = match(error) => {
+  Js.Error(message) => { message },
+  Js.Unknown => { "unknown JavaScript error" },
+};
+
+let write = (output, text) => {
+  output.write(text)
+};
+
+let restore = (input, output, status) => {
+  let _ = input.setRawMode(false);
+  let _ = input.pause();
+  let _ = write(output, Ansi.leave);
+  match(exit(status)) {
+    Ok(_) => { void },
+    Err(_) => { void },
+  }
+};
+
+let fromCtrlC = fromCharCode(3) :> Result.withDefault("");
+
+let rec listen = (input, output, count) => {
+  match(input.once("data", (chunk) => {
+    match(toString(chunk)) {
+      Err(error) => {
+        let _ = write(output, Ansi.cursorTo(4, 2) ++ "decode failed: " ++ errorText(error));
+        restore(input, output, 1)
+      },
+      Ok(text) => {
+        if (text == "q" || text == Ansi.esc ++ "[113;5u" || text == Ansi.esc ++ "[99;5u" || text == fromCtrlC) {
+          restore(input, output, 0)
+        } else {
+          let line = "event " ++ Result.textOf(count) ++ " bytes=" ++
+            Result.textOf(text :> .length :> Result.withDefault(0));
+          let _ = write(output, Ansi.cursorTo(4, 2) ++ line ++ "                    ");
+          listen(input, output, count + 1)
+        }
+      },
+    }
+  })) {
+    Ok(_) => { void },
+    Err(error) => {
+      let _ = write(output, Ansi.cursorTo(5, 2) ++ "listener failed: " ++ errorText(error));
+      restore(input, output, 1)
+    },
+  }
+};
+
+let main = () => {
+  match(stdin) {
+    Err(error) => {
+      print("terminal unavailable: " ++ errorText(error))
+    },
+    Ok(input) => {
+      match(stdout) {
+        Err(error) => {
+          print("terminal output unavailable: " ++ errorText(error))
+        },
+        Ok(output) => {
+          match(input.setRawMode(true)) {
+            Err(error) => {
+              print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
+            },
+            Ok(_) => {
+              let _ = input.resume();
+              let _ = write(output,
+                Ansi.enter ++
+                Ansi.cursorTo(2, 2) ++ Ansi.bold ++ "Workman terminal probe" ++ Ansi.reset ++
+                Ansi.cursorTo(3, 2) ++ "Press keys; q or Ctrl-C quits."
+              );
+              listen(input, output, 1)
+            },
+          }
+        },
+      }
+    },
+  }
+};

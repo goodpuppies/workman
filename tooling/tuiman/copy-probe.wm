@@ -1,0 +1,74 @@
+from js.module("node:buffer") import { Buffer };
+
+let readByte = (buf, i) => {
+  match(buf :> .readUInt8(i)) {
+    Ok(n) => { n },
+    Err(_) => { 0 },
+  }
+};
+
+let writeByte = (buf, i, value) => {
+  match(buf :> .writeUInt8(value, i)) {
+    Ok(_) => { 0 },
+    Err(_) => { 0 },
+  }
+};
+
+let rec blit = (src, srcIndex, dest, destIndex, count) => {
+  if (count <= 0) {
+    0
+  } else {
+    let _ = writeByte(dest, destIndex, readByte(src, srcIndex));
+    blit(src, srcIndex + 1, dest, destIndex + 1, count - 1)
+  }
+};
+
+let bufferLen = (buf) => {
+  match(buf :> .length) {
+    Ok(n) => { n },
+    Err(_) => { 0 },
+  }
+};
+
+let rec copyAll = (dest, offset, pieces) => {
+  match(pieces) {
+    [] => { offset },
+    [head, ..tail] => {
+      let len = bufferLen(head);
+      let _ = blit(head, 0, dest, offset, len);
+      copyAll(dest, offset + len, tail)
+    },
+  }
+};
+
+let reverse = (list) => {
+  let rec go = match(rest, acc) => {
+    ([], _) => { acc },
+    ([h, ..t], _) => { go(t, [h, ..acc]) },
+  };
+  go(list, [])
+};
+
+let main = () => {
+  match(Buffer.from("ab")) {
+    Err(_) => { print("f") },
+    Ok(a) => {
+      match(Buffer.from("cd")) {
+        Err(_) => { print("f") },
+        Ok(b) => {
+          match(Buffer.alloc(4)) {
+            Err(_) => { print("alloc") },
+            Ok(dest) => {
+              let pieces = reverse([b, a]);
+              let _ = copyAll(dest, 0, pieces);
+              match(dest :> .toString("utf8")) {
+                Err(_) => { print("str") },
+                Ok(s) => { print("ok=" ++ s) },
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+};

@@ -1,0 +1,87 @@
+type Resource<Error, Value> =
+  | Pending
+  | Loading
+  | Ready<Value>
+  | Failed<Error>;
+
+let succeed = (value) => {
+  Ready(value)
+};
+
+let fail = (error) => {
+  Failed(error)
+};
+
+let map = match(resource, transform) => {
+  (Pending, _) => { Pending },
+  (Loading, _) => { Loading },
+  (Failed(error), _) => { Failed(error) },
+  (Ready(value), _) => { Ready(transform(value)) },
+};
+
+let andThen = match(resource, transform) => {
+  (Pending, _) => { Pending },
+  (Loading, _) => { Loading },
+  (Failed(error), _) => { Failed(error) },
+  (Ready(value), _) => { transform(value) },
+};
+
+let map2 = (left, right, combine) => {
+  left :> andThen((leftValue) => {
+    right :> map((rightValue) => { combine(leftValue, rightValue) })
+  })
+};
+
+let mapError = match(resource, transform) => {
+  (Pending, _) => { Pending },
+  (Loading, _) => { Loading },
+  (Failed(error), _) => { Failed(transform(error)) },
+  (Ready(value), _) => { Ready(value) },
+};
+
+let fn = (transform) => {
+  (resource) => { resource :> andThen(transform) }
+};
+
+let fnError = (wrap) => {
+  (transform) => {
+    (resource) => {
+      resource :> andThen((value) => {
+        transform(value) :> mapError(wrap)
+      })
+    }
+  }
+};
+
+let carrier = .{
+  fn = fn,
+  fnError = fnError,
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+  andThen = andThen,
+};
+
+let resolve = match(resource, pending, failed, ready) => {
+  (Pending, _, _, _) => { pending },
+  (Loading, _, _, _) => { pending },
+  (Failed(error), _, _, _) => { failed(error) },
+  (Ready(value), _, _, _) => { ready(value) },
+};
+
+let withDefault = match(fallback, resource) => {
+  (_, Pending) => { fallback },
+  (_, Loading) => { fallback },
+  (_, Failed(_)) => { fallback },
+  (_, Ready(value)) => { value },
+};
+
+let isPending = match(resource) => {
+  Pending => { true },
+  _ => { false },
+};
+
+let isLoading = match(resource) => {
+  Loading => { true },
+  _ => { false },
+};

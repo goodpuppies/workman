@@ -448,7 +448,7 @@ Deno.test("cli run explains when the entry module has no main function", async (
 
   assertEquals(result.code, 1);
   assertEquals(result.stdout, "");
-  assertStringIncludes(result.stderr, "-- RUNNER");
+  assertStringIncludes(result.stderr, "Error: RUNNER[run.missing-entrypoint]");
   assertStringIncludes(result.stderr, "has no `main` function");
   assertStringIncludes(result.stderr, "let main = () => {};");
 });

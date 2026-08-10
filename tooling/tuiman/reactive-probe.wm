@@ -1,0 +1,105 @@
+from "./reactive.wm" import * as Reactive;
+
+type Dependency = Count | DetailsVisible | Details;
+
+record Model = {
+  count: Number,
+  detailsVisible: Bool,
+  details: String,
+};
+
+let sameDependency = match(left, right) => {
+  (Count, Count) => { true },
+  (DetailsVisible, DetailsVisible) => { true },
+  (Details, Details) => { true },
+  _ => { false },
+};
+
+let count = Reactive.signal(Count, (model: Model) => { model.count });
+let detailsVisible = Reactive.signal(
+  DetailsVisible,
+  (model: Model) => { model.detailsVisible },
+);
+let details = Reactive.signal(
+  Details,
+  (model: Model) => { model.details },
+);
+
+let countEffect = Reactive.effect(
+  "count",
+  Reactive.read(count) :> Reactive.map((value) => {
+    Reactive.commands(["count=" ++ Result.textOf(value)])
+  }),
+);
+
+let detailsEffect = Reactive.effect(
+  "details",
+  Reactive.read(detailsVisible) :> Reactive.andThen((visible) => {
+    if (visible) {
+      Reactive.read(details) :> Reactive.map((value) => {
+        Reactive.commands(["details=" ++ value])
+      })
+    } else {
+      Reactive.succeed(Reactive.commands(["details hidden"]))
+    }
+  }),
+);
+
+let summaryEffect = Reactive.effect(
+  "summary",
+  Reactive|
+    Reactive.read(count),
+    Reactive.read(detailsVisible)
+  | :> Reactive.map((value, visible) => {
+    Reactive.commands(
+      [
+        "summary=" ++ Result.textOf(value) ++
+          (if (visible) { "+details" } else { "" })
+      ],
+    )
+  }),
+);
+
+let rec show = match(items) => {
+  [] => { "" },
+  [item] => { item },
+  [item, ..tail] => { item ++ "," ++ show(tail) },
+};
+
+let main = () => {
+  let initial = Reactive.mount(
+    Model(0, false, "alpha"),
+    [countEffect, detailsEffect, summaryEffect],
+  );
+  print("initial " ++ show(initial.output));
+
+  let hiddenDetails = Reactive.flush(
+    initial.graph,
+    Reactive.Transition(
+      Model(0, false, "beta"),
+      [Details],
+    ),
+    sameDependency,
+  );
+  print("hidden update " ++ show(hiddenDetails.output));
+
+  let reveal = Reactive.flush(
+    hiddenDetails.graph,
+    Reactive.Transition(
+      Model(0, true, "beta"),
+      [DetailsVisible],
+    ),
+    sameDependency,
+  );
+  print("reveal " ++ show(reveal.output));
+
+  let visibleDetails = Reactive.flush(
+    reveal.graph,
+    Reactive.Transition(
+      Model(0, true, "gamma"),
+      [Details],
+    ),
+    sameDependency,
+  );
+  print("visible update " ++ show(visibleDetails.output))
+};

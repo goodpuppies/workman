@@ -2,6 +2,8 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import {
   formatDiagnostic,
+  formatDiagnosticDocument,
+  formatDiagnosticInspection,
   formatReplDiagnostic,
   type FrontendDiagnostic,
   FrontendDiagnosticError,
@@ -15,7 +17,7 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   );
 
   const diagnostic = error.diagnostic;
-  assertEquals(diagnostic.code, "type.mismatch");
+  assertEquals(diagnostic.code, "type.call-argument-mismatch");
   assertEquals(diagnostic.failure.frame.rule, "InferCall.Argument");
   assertEquals(diagnostic.failure.premise.role, "argument matches parameter");
   assertEquals(diagnostic.failure.violation.kind, "contradicted");
@@ -35,12 +37,69 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   assertEquals(
     renderDiagnosticSummary(diagnostic),
     [
-      "type mismatch: InferCall.Argument: argument matches parameter",
+      "type collision: InferCall.Argument: argument matches parameter",
       "  conflict: type",
-      "  expected: Number",
-      "  actual:   String",
+      "  left: Number",
+      "    source: parameter x",
+      "  right: String",
+      "    source: argument",
     ].join("\n"),
   );
+});
+
+Deno.test("HM call collision renders neutral origins and both provenance paths", async () => {
+  const source = `record Coord = { x: Number, y: Number };
+type Step<State> = | Continue<State>;
+let coordUpdate = (coord) => {};
+let update = match(event, model) => {
+  (0, _) => { Continue(coordUpdate(model)) },
+  _ => { Continue(model) },
+};
+let run = (initial, updateFn) => { updateFn(0, initial) };
+let bad = run(.{ x=0, y=0 }, update);`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "case.wm", source);
+  assertStringIncludes(rendered, "Error: TYPE CHECKER[type.call-argument-mismatch]");
+  assertStringIncludes(rendered, "type error: update can't be both:\n  - Void\n  - Coord");
+  assertStringIncludes(rendered, "case.wm:9:");
+  assertEquals(rendered.includes(" ~ "), false);
+  assertStringIncludes(rendered, "Coord");
+  assertStringIncludes(rendered, "Void");
+  assertStringIncludes(rendered, ".{ x=0, y=0 }");
+  assertStringIncludes(rendered, "let coordUpdate = (coord) => {}");
+  assertStringIncludes(rendered, "empty block result: Void");
+  assertStringIncludes(rendered, "record literal: Coord");
+  assertStringIncludes(rendered, "-- Origins ");
+  assertStringIncludes(rendered, "│");
+  assertStringIncludes(rendered, "use wm err case.wm to see a more detailed error");
+  assertEquals(rendered.includes("-- Provenance "), false);
+  assertEquals(rendered.includes("Collision at"), false);
+  assertEquals(rendered.includes("expected:"), false);
+  assertEquals(rendered.includes("actual:"), false);
+
+  const document = formatDiagnosticDocument(error.diagnostic, "case.wm", source);
+  assertEquals(document.lines[0].spans[0], { text: "Error:", role: "error" });
+  assertEquals(document.lines[0].spans[1].role, "header");
+  const typed = document.lines.flatMap((line) => line.spans)
+    .filter((span) => span.role === "type")
+    .map((span) => span.text);
+  assertEquals(typed, ["Void", "Coord", "Void", "Coord"]);
+  const hint = document.lines.flatMap((line) => line.spans)
+    .find((span) => span.text.startsWith("- use wm err"));
+  assertEquals(hint?.role, "hint");
+
+  const inspection = formatDiagnosticInspection(error.diagnostic, "case.wm", source);
+  assertStringIncludes(inspection, "-- Provenance ");
+  assertStringIncludes(inspection, "case.wm:");
+  assertStringIncludes(inspection, " : ");
+  assertStringIncludes(inspection, "* low-level diagnostic:");
+  assertStringIncludes(inspection, "rule: InferCall.Argument");
+  assertStringIncludes(inspection, "support:");
+  assertStringIncludes(inspection, "* compiler trace:");
 });
 
 Deno.test("call mismatch prefers use-site argument over callee definition", async () => {
@@ -149,6 +208,7 @@ Deno.test("pipe mismatch records a pipe step premise", async () => {
     FrontendDiagnosticError,
   );
 
+  assertEquals(error.diagnostic.code, "type.pipe-input-mismatch");
   assertEquals(error.diagnostic.failure.frame.rule, "InferPipe.StepInput");
   assertEquals(error.diagnostic.failure.premise.role, "pipe output matches next function input");
   assertEquals(constraintRoles(error.diagnostic), ["callee", "pipe function"]);
@@ -168,7 +228,7 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   );
 
   const rendered = formatDiagnostic(error.diagnostic, "Main.wm", source);
-  assertStringIncludes(rendered, "-- TYPE CHECKER");
+  assertStringIncludes(rendered, "Error: TYPE CHECKER[type.pipe-input-mismatch]");
   assertStringIncludes(rendered, "Main.wm");
   assertStringIncludes(rendered, "This expression produces:");
   assertStringIncludes(rendered, "    String");
@@ -186,10 +246,10 @@ Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
   );
 
   const rendered = formatReplDiagnostic(error.diagnostic, "Main.wm", source);
-  assertStringIncludes(rendered, "error[type.mismatch] Main.wm:2:");
-  assertStringIncludes(rendered, "expected Number, got String");
+  assertStringIncludes(rendered, "error[type.call-argument-mismatch] Main.wm:2:");
+  assertStringIncludes(rendered, "Number conflicts with String");
   assertStringIncludes(rendered, '2 | let bad = inc("no");');
-  assertEquals(rendered.includes("-- TYPE CHECKER"), false);
+  assertEquals(rendered.includes("Error: TYPE CHECKER"), false);
   assertEquals(rendered.includes("support:"), false);
   assertEquals(rendered.includes("rule:"), false);
   assertEquals(rendered.split("\n").filter(Boolean).length, 3);
@@ -244,6 +304,7 @@ let rec filterList = (fn, list) => {
     FrontendDiagnosticError,
   );
 
+  assertEquals(error.diagnostic.code, "type.recursive-result-mismatch");
   const rendered = formatDiagnostic(error.diagnostic, "math.wm", source);
   assertStringIncludes(rendered, "`filterList` is recursive");
   assertStringIncludes(rendered, "Recursive calls produce:");
@@ -255,7 +316,7 @@ let rec filterList = (fn, list) => {
   assertStringIncludes(rendered, "Use `match(list) { ... }`");
 });
 
-Deno.test("match arm mismatch explains previous and current arm result types", async () => {
+Deno.test("match arm mismatch uses the shared neutral collision diagnostic", async () => {
   const source = `type AppError = | RenderError<String>;
 let renderErr = (e) => { RenderError(e) };
 let bad = match(true) {
@@ -267,20 +328,58 @@ let bad = match(true) {
     FrontendDiagnosticError,
   );
 
+  assertEquals(error.diagnostic.code, "type.match-arm-results-disagree");
   const rendered = formatDiagnostic(error.diagnostic, "test.wm", source);
-  assertStringIncludes(rendered, "-- TYPE CHECKER");
-  assertStringIncludes(rendered, "These match arms return different types.");
-  assertStringIncludes(rendered, "Earlier arm result:");
-  assertStringIncludes(rendered, "    Result<T, String>");
-  assertStringIncludes(rendered, '4|   true => { Result|Err("js")| },');
-  assertStringIncludes(rendered, "This arm result:");
-  assertStringIncludes(rendered, "    Result<T, AppError>");
-  assertStringIncludes(rendered, '5|   false => { Err(renderErr("app")) }');
-  assertStringIncludes(rendered, "Different part:");
-  assertStringIncludes(rendered, "Result<_, E>");
-  assertStringIncludes(rendered, "previous arm(s): String");
-  assertStringIncludes(rendered, "this arm:       AppError");
+  assertStringIncludes(rendered, "Error: TYPE CHECKER[type.match-arm-results-disagree]");
+  assertStringIncludes(rendered, "type error: match arms can't be both:");
+  assertStringIncludes(rendered, "4|   true => {..} : Result<T, String>");
+  assertStringIncludes(rendered, "5|   false => {..}: Result<T, AppError>");
+  assertStringIncludes(rendered, "expression: String");
+  assertStringIncludes(rendered, "RenderError call result: AppError");
+  assertStringIncludes(rendered, "-- Origins ");
+  assertStringIncludes(rendered, "use wm err test.wm to see a more detailed error");
+  assertEquals(rendered.includes("These match arms return different types."), false);
   assertEquals(rendered.includes("expected: AppError"), false);
+});
+
+Deno.test("match arm collision traces Void to an ending semicolon", async () => {
+  const source = `record Coord = { x: Number, y: Number };
+type Step<State> = | Continue<State> | Quit;
+let coordUpdate = (coord) => {
+  coord;
+};
+let update = match(event, model) => {
+  (0, _) => { Continue(coordUpdate(model)) },
+  (1, _) => { Continue(coordUpdate(model)) },
+  (2, _) => { Continue(coordUpdate(model)) },
+  (3, _) => { Continue(coordUpdate(model)) },
+  (4, _) => { Quit },
+  _ => { Continue(.{..model, x=model.x}) },
+};`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "case.wm", source);
+  assertStringIncludes(rendered, "type error: match arms can't be both:");
+  assertStringIncludes(rendered, "10|   (3, _) => {..}: Step<Void>");
+  assertStringIncludes(rendered, "12|   _ => {..}     : Step<Coord>");
+  assertEquals(rendered.includes("11|   (4, _) => {..}"), false);
+  assertStringIncludes(rendered, "^ ending semicolon: Void");
+  assertStringIncludes(rendered, "record literal: Coord");
+
+  const document = formatDiagnosticDocument(error.diagnostic, "case.wm", source);
+  const types = document.lines.flatMap((line) => line.spans)
+    .filter((span) => span.role === "type")
+    .map((span) => span.text);
+  assertEquals(types, ["Step<Void>", "Step<Coord>", "Void", "Coord"]);
+
+  const inspection = formatDiagnosticInspection(error.diagnostic, "case.wm", source);
+  assertStringIncludes(inspection, "10|   (3, _) => {..}: Step<Void>");
+  assertStringIncludes(inspection, "12|   _ => {..}     : Step<Coord>");
+  assertStringIncludes(inspection, "-- Provenance ");
+  assertStringIncludes(inspection, "* low-level diagnostic:");
 });
 
 Deno.test("if branch mismatch records an if branch premise", async () => {

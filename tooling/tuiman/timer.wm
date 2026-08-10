@@ -1,0 +1,5 @@
+from js.module("node:timers/promises") import { setTimeout as delayNative };
+
+let delay = (milliseconds) => {
+  delayNative(milliseconds) :> Task.map((_) => { void })
+};

@@ -1,0 +1,57 @@
+-- Retained terminal surfaces. Regions keep only their projected dependencies;
+-- changed regions stage typed host commands, which are encoded at the terminal
+-- boundary. This is the immutable Workman counterpart of signal/effect
+-- invalidation rather than a whole-model rerender contract.
+
+from "./draw.wm" import * as Draw;
+from "./geometry.wm" import * as Geometry;
+from "./halfblock.wm" import * as HalfBlock;
+from "./kitty.wm" import * as Kitty;
+from "./terminal-cap.wm" import * as Cap;
+
+type Command =
+  | Raw<String>
+  | Text<Geometry.Rect, String, Draw.Style>
+  | Fill<Geometry.Rect, String, Draw.Style>
+  | DeleteAllImages
+  | DeleteImage<Number>
+  | PlaceImage<Number, Geometry.Rect, Kitty.Scale, Kitty.Image>;
+
+record Frame<Memory> = {
+  output: String,
+  memory: Memory,
+};
+
+let rec encode = match(commands, terminal) => {
+  ([], _) => { "" },
+  ([command, ..tail], _) => {
+    let output = match(command) {
+      Raw(value) => { value },
+      Text(area, value, style) => { Draw.text(area, value, style) },
+      Fill(area, symbol, style) => { Draw.fill(area, symbol, style) },
+      DeleteAllImages => {
+        match(Cap.backend) {
+          Cap.KittyGraphics => { Kitty.deleteAll },
+          Cap.HalfBlock => { "" },
+        }
+      },
+      DeleteImage(identifier) => {
+        match(Cap.backend) {
+          Cap.KittyGraphics => { Kitty.deleteImage(identifier) },
+          Cap.HalfBlock => { "" },
+        }
+      },
+      PlaceImage(identifier, area, scale, image) => {
+        match(Cap.backend) {
+          Cap.KittyGraphics => { Kitty.renderWithId(identifier, area, terminal, scale, image) },
+          Cap.HalfBlock => { HalfBlock.render(area, scale, image) },
+        }
+      },
+    };
+    output ++ encode(tail, terminal)
+  },
+};
+
+let frame = (memory, terminal, commands) => {
+  Frame(encode(commands, terminal), memory)
+};

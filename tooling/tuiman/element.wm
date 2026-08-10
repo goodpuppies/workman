@@ -1,0 +1,99 @@
+-- Declarative terminal composition using ordinary Workman values.
+--
+-- Components are functions returning Element. Fragment provides JSX-like
+-- nesting without custom syntax, and render is the single ANSI/Kitty
+-- interpretation boundary.
+
+from "./draw.wm" import * as Draw;
+from "./geometry.wm" import * as Geometry;
+from "./halfblock.wm" import * as HalfBlock;
+from "./kitty.wm" import * as Kitty;
+from "./resource.wm" import * as Resource;
+from "./terminal-cap.wm" import * as Cap;
+
+type Element =
+  | Empty
+  | Fragment<List<Element>>
+  | Text<Geometry.Rect, String, Draw.Style>
+  | Lines<Geometry.Rect, List<String>, Draw.Style>
+  | Fill<Geometry.Rect, String, Draw.Style>
+  | Box<Geometry.Rect, String, Bool>
+  | TimelineBox<Geometry.Rect, Bool, Bool, Bool>
+  | Image<Number, Geometry.Rect, Kitty.Scale, Kitty.Image>;
+
+let empty = Empty;
+
+let fragment = (children) => {
+  Fragment(children)
+};
+
+let text = (area, value, style) => {
+  Text(area, value, style)
+};
+
+let lines = (area, values, style) => {
+  Lines(area, values, style)
+};
+
+let fill = (area, symbol, style) => {
+  Fill(area, symbol, style)
+};
+
+let box = (area, title, active) => {
+  Box(area, title, active)
+};
+
+let timelineBox = (area, active, joinedTop, joinedBottom) => {
+  TimelineBox(area, active, joinedTop, joinedBottom)
+};
+
+let image = (identifier, area, scale, value) => {
+  Image(identifier, area, scale, value)
+};
+
+let showIf = (condition, element) => {
+  if (condition) { element } else { Empty }
+};
+
+let optional = match(value, present) => {
+  (None, _) => { Empty },
+  (Some(item), _) => { present(item) },
+};
+
+let suspense = (resource, pending, failed, ready) => {
+  Resource.resolve(resource, pending, failed, ready)
+};
+
+let rec render = match(terminal, element) => {
+  (_, Empty) => { "" },
+  (_, Fragment(children)) => {
+    let rec renderChildren = match(remaining) => {
+      [] => { "" },
+      [child, ..rest] => {
+        render(terminal, child) ++ renderChildren(rest)
+      },
+    };
+    renderChildren(children)
+  },
+  (_, Text(area, value, style)) => {
+    Draw.text(area, value, style)
+  },
+  (_, Lines(area, values, style)) => {
+    Draw.lines(area, values, style)
+  },
+  (_, Fill(area, symbol, style)) => {
+    Draw.fill(area, symbol, style)
+  },
+  (_, Box(area, title, active)) => {
+    Draw.box(area, title, active)
+  },
+  (_, TimelineBox(area, active, joinedTop, joinedBottom)) => {
+    Draw.timelineBox(area, active, joinedTop, joinedBottom)
+  },
+  (_, Image(identifier, area, scale, value)) => {
+    match(Cap.backend) {
+      Cap.KittyGraphics => { Kitty.renderWithId(identifier, area, terminal, scale, value) },
+      Cap.HalfBlock => { HalfBlock.render(area, scale, value) },
+    }
+  },
+};

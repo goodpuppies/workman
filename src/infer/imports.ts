@@ -8,6 +8,7 @@ import {
   type TypeEnv,
 } from "../types.ts";
 import type { InferResult } from "../infer.ts";
+import { inheritSchemeSource, rememberSchemeSourceDocument } from "./provenance.ts";
 import {
   bindStructure,
   modifyStaticEnv,
@@ -107,11 +108,28 @@ export function addAdts(adts: Map<number, TypeDeclInfo>, imported: Map<number, T
   for (const [id, info] of imported) adts.set(id, info);
 }
 
+/** Attach the owning source unit before this public environment crosses an import boundary. */
+export function rememberExportedSourceDocument(
+  result: InferResult,
+  filePath: string,
+  source: string,
+): void {
+  const visit = (environment: StaticEnv) => {
+    for (const scheme of environment.valEnv.values()) {
+      rememberSchemeSourceDocument(scheme, filePath, source);
+    }
+    for (const nested of environment.strEnv.values()) visit(nested);
+  };
+  visit(result.exportedStructure);
+}
+
 function importedScheme(scheme: Scheme, options: { standardLibrary?: boolean } = {}): Scheme {
   if (scheme.imported && (!options.standardLibrary || scheme.standardLibrary)) return scheme;
-  return {
+  const imported = {
     ...scheme,
     imported: true,
     standardLibrary: options.standardLibrary || scheme.standardLibrary,
   };
+  inheritSchemeSource(scheme, imported);
+  return imported;
 }

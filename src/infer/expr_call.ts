@@ -18,6 +18,7 @@ import type { Ty as TyNode } from "../types.ts";
 import {
   constrainAt,
   type EvidenceOrigin,
+  fnSource,
   sourceForTypedExpr,
   tupleSource,
   type TypeProvenance,
@@ -79,14 +80,19 @@ export function inferCall(
         instantiated: fn([arg], calleeFn.result),
       });
     }
-    const argumentSources = expr.args.length > 1
-      ? {
-        primarySource: "right" as const,
-        sources: {
-          right: callArgSource(expr.args, argTypes, provenance),
-        },
-      }
-      : {};
+    const calleeSource = sourceForTypedExpr(
+      expr.callee,
+      callee,
+      provenance,
+      expr.callee.kind === "Var" ? expr.callee.name : "callee",
+    );
+    const argumentSources = {
+      primarySource: "right" as const,
+      sources: {
+        left: calleeSource.fnParams?.[0],
+        right: callArgSource(expr.args, argTypes, provenance),
+      },
+    };
     constrainAt(
       expectedArg,
       actualArg,
@@ -106,6 +112,7 @@ export function inferCall(
       {
         ...argumentSources,
         premise: {
+          code: "type.call-argument-mismatch",
           rule: "InferCall.Argument",
           role: "argument matches parameter",
           subject: "call argument",
@@ -116,15 +123,31 @@ export function inferCall(
     );
     if (isPrintCall) assertPrintable(arg);
     if (isJsImport) assertJsCompatible(arg, typeEnv);
-    constrainAt(result, calleeFn.result, expr, undefined, [], undefined, undefined, {
-      premise: {
-        rule: "InferCall.Result",
-        role: "call result matches callee result",
-        subject: "call result",
-        leftRole: "call result",
-        rightRole: "callee result",
+    constrainAt(
+      result,
+      calleeFn.result,
+      expr,
+      undefined,
+      [],
+      provenance,
+      {
+        message: "call result",
+        node: expr.node,
+        span: expr.node?.span,
       },
-    });
+      {
+        premise: {
+          rule: "InferCall.Result",
+          role: "call result matches callee result",
+          subject: "call result",
+          leftRole: "call result",
+          rightRole: "callee result",
+        },
+        sources: {
+          right: calleeSource.fnResult ?? calleeSource,
+        },
+      },
+    );
   } else {
     const callDepth =
       maxCallDepth([...callCalleeRelated(expr.callee, callee), ...calleeProvenance]) + 1;
@@ -145,6 +168,15 @@ export function inferCall(
         callDepth,
       },
       {
+        sources: {
+          left: sourceForTypedExpr(
+            expr.callee,
+            callee,
+            provenance,
+            expr.callee.kind === "Var" ? expr.callee.name : "callee",
+          ),
+          right: fnSource([callArgSource(expr.args, argTypes, provenance)]),
+        },
         premise: {
           rule: "InferCall.CalleeCallable",
           role: "callee is callable",

@@ -10,7 +10,7 @@ import {
 } from "../diagnostic_writer.ts";
 import type { AstNode, SourceSpan } from "../source.ts";
 import { type DiffPath, type DiffPathSegment, TypeMismatchError } from "../type_diff.ts";
-import { JsBoundaryError, prune, show, type Ty, type UnifyBind } from "../types.ts";
+import { JsBoundaryError, prune, type Scheme, show, type Ty, type UnifyBind } from "../types.ts";
 import { isDecl, resultExpr } from "./ast_utils.ts";
 import { constrain } from "./shared.ts";
 
@@ -24,6 +24,7 @@ export type TypeProvenanceEntry = {
 export type TypeCommitment = {
   type: Ty;
   origin?: ConstraintOrigin;
+  source?: TypeSource;
 };
 
 export type ConstraintOrigin = {
@@ -31,6 +32,9 @@ export type ConstraintOrigin = {
   node?: AstNode;
   span?: SourceSpan;
   note?: string;
+  derivedFrom?: ConstraintOrigin[];
+  filePath?: string;
+  source?: string;
 };
 
 export type EvidenceOrigin = ConstraintOrigin & {
@@ -42,6 +46,7 @@ export type EvidenceOrigin = ConstraintOrigin & {
 
 export type TypeSource = {
   origin?: ConstraintOrigin;
+  definition?: ConstraintOrigin;
   notes?: ConstraintOrigin[];
   type?: Ty;
   provenance?: TypeProvenance;
@@ -49,13 +54,68 @@ export type TypeSource = {
   fnResult?: TypeSource;
   tupleItems?: TypeSource[];
   namedArgs?: TypeSource[];
+  derivedFrom?: TypeSource[];
+  related?: TypeSource[];
+  document?: { filePath: string; source: string };
 };
+
+const expressionSources = new WeakMap<Expr, TypeSource>();
+const schemeSources = new WeakMap<Scheme, TypeSource>();
+
+export function rememberSchemeSourceDocument(
+  scheme: Scheme,
+  filePath: string,
+  source: string,
+): void {
+  const existing = schemeSources.get(scheme);
+  if (!existing) return;
+  schemeSources.set(
+    scheme,
+    mapSourceOrigins(
+      existing,
+      (origin) => ({ ...origin, filePath, source }),
+      new WeakMap(),
+      { filePath, source },
+    ),
+  );
+}
+
+export function inheritSchemeSource(source: Scheme, target: Scheme): void {
+  const existing = schemeSources.get(source);
+  if (existing) schemeSources.set(target, existing);
+}
+
+function mapSourceOrigins(
+  source: TypeSource,
+  map: (origin: ConstraintOrigin) => ConstraintOrigin,
+  seen = new WeakMap<TypeSource, TypeSource>(),
+  document = source.document,
+): TypeSource {
+  const previous = seen.get(source);
+  if (previous) return previous;
+  const mapped: TypeSource = {};
+  seen.set(source, mapped);
+  Object.assign(mapped, source, {
+    document,
+    origin: source.origin ? map(source.origin) : undefined,
+    definition: source.definition ? map(source.definition) : undefined,
+    notes: source.notes?.map(map),
+    fnParams: source.fnParams?.map((item) => mapSourceOrigins(item, map, seen, document)),
+    fnResult: source.fnResult ? mapSourceOrigins(source.fnResult, map, seen, document) : undefined,
+    tupleItems: source.tupleItems?.map((item) => mapSourceOrigins(item, map, seen, document)),
+    namedArgs: source.namedArgs?.map((item) => mapSourceOrigins(item, map, seen, document)),
+    derivedFrom: source.derivedFrom?.map((item) => mapSourceOrigins(item, map, seen, document)),
+    related: source.related?.map((item) => mapSourceOrigins(item, map, seen, document)),
+  });
+  return mapped;
+}
 
 export type ConstrainAtOptions = {
   sources?: { left?: TypeSource; right?: TypeSource };
   primarySource?: "left" | "right";
   context?: (path: DiffPath) => string | undefined;
   premise?: {
+    code?: string;
     rule: string;
     role: string;
     subject?: string;
@@ -168,18 +228,18 @@ export function constrainAt(
       const attemptedOrigin = error.attemptedSide
         ? sourceAt(options.sources?.[error.attemptedSide], error.path)
         : undefined;
-      const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
-        ? sourceAt(options.sources?.[options.primarySource], error.path)
-        : undefined;
       const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
       const observedRight = writer.snapshotType(commitment?.type ?? error.right);
       const useSourcePathOrigins = options.primarySource !== undefined;
-      const expectedOrigin = attemptedOrigin ??
+      const leftOrigin = attemptedOrigin ??
         (useSourcePathOrigins ? sourceAt(options.sources?.left, error.path) : undefined);
-      const actualOrigin = commitment?.origin ??
+      const rightOrigin = commitment?.origin ??
         (useSourcePathOrigins ? sourceAt(options.sources?.right, error.path) : undefined);
-      const expectedClaim = addObservedOriginClaim(writer, expectedOrigin, observedLeft);
-      const actualClaim = addObservedOriginClaim(writer, actualOrigin, observedRight);
+      const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
+        ? primaryOriginForSource(options.sources?.[options.primarySource], error.path)
+        : undefined;
+      const leftClaim = addObservedOriginClaim(writer, leftOrigin, observedLeft);
+      const rightClaim = addObservedOriginClaim(writer, rightOrigin, observedRight);
       writer.add({
         kind: "collision",
         id: collisionId,
@@ -188,8 +248,8 @@ export function constrainAt(
         right: observedRight,
         path: error.path,
       });
-      if (expectedClaim) writer.addEdge({ from: expectedClaim, to: collisionId, role: "observed" });
-      if (actualClaim) writer.addEdge({ from: actualClaim, to: collisionId, role: "observed" });
+      if (leftClaim) writer.addEdge({ from: leftClaim, to: collisionId, role: "observed" });
+      if (rightClaim) writer.addEdge({ from: rightClaim, to: collisionId, role: "observed" });
       writer.addEdge({ from: constraintId, to: collisionId, role: "failed" });
       const failure: Failure = {
         frame: context.frame,
@@ -208,14 +268,14 @@ export function constrainAt(
           conflictPath: error.path,
           context: options.context?.(error.path),
           origins: {
-            expected: expectedOrigin?.message,
-            got: actualOrigin?.message,
+            left: leftOrigin?.message,
+            right: rightOrigin?.message,
           },
         },
       };
       throw new FrontendDiagnosticError({
         id: writer.nextId("d"),
-        code: "type.mismatch",
+        code: premise?.code ?? "type.mismatch",
         severity: "error",
         primary: primaryOrigin
           ? anchorFromOrigin(primaryOrigin)
@@ -244,6 +304,7 @@ function claimsForSource(
   const claims: ClaimId[] = [];
   const origin = source?.origin;
   if (origin) {
+    registerOriginSource(writer, origin);
     const claimId = writer.nextId("cl");
     writer.add({
       kind: "claim",
@@ -258,6 +319,7 @@ function claimsForSource(
     claims.push(claimId);
   }
   for (const note of source.notes ?? []) {
+    registerOriginSource(writer, note);
     writer.add({
       kind: "note",
       id: writer.nextId("n"),
@@ -285,6 +347,9 @@ function claimsForSource(
       ...claimsForSource(writer, arg, `${fallbackSubject} argument ${index + 1}`, fallbackType),
     );
   });
+  for (const related of source.related ?? []) {
+    claims.push(...claimsForSource(writer, related, fallbackSubject, fallbackType));
+  }
   return claims;
 }
 
@@ -294,6 +359,10 @@ function addObservedOriginClaim(
   type: TypeSnapshotId,
 ): ClaimId | undefined {
   if (!origin) return undefined;
+  registerOriginSource(writer, origin);
+  const derivedClaims = (origin.derivedFrom ?? [])
+    .map((derived) => addObservedOriginClaim(writer, derived, type))
+    .filter((claim): claim is ClaimId => !!claim);
   const claimId = writer.nextId("cl");
   writer.add({
     kind: "claim",
@@ -308,6 +377,9 @@ function addObservedOriginClaim(
       message: origin.note,
       origin: anchorFromOrigin(origin),
     });
+  }
+  for (const derived of derivedClaims) {
+    writer.addEdge({ from: derived, to: claimId, role: "derived" });
   }
   return claimId;
 }
@@ -326,6 +398,7 @@ function selectPrimaryCallsite(
       item.expectedCallTupleShape !== item.actualCallTupleShape
     );
     if (mismatch) return mismatch;
+    if (reason?.primary) return reason;
     const targetShape = byDepth[0].actualCallTupleShape!;
     const boundary = byDepth.find((item) => item.actualCallTupleShape !== targetShape);
     if (boundary) return boundary;
@@ -353,7 +426,7 @@ export function rememberProvenance(
     const origin = sourceAt(sources?.[targetSide], path) ?? originAsConstraint(reason);
     provenance.set(variable.id, {
       origins: dedupeOrigins([...current.origins, reason]),
-      commitment: { type: target, origin },
+      commitment: { type: target, origin, source: sources?.[targetSide] },
     });
   };
 }
@@ -380,7 +453,7 @@ export function dedupeOrigins(
   const seen = new Set<string>();
   return items.filter((item) => {
     const span = item.span;
-    const key = `${item.message}:${span?.start ?? -1}:${span?.end ?? -1}`;
+    const key = `${item.filePath ?? ""}:${item.message}:${span?.start ?? -1}:${span?.end ?? -1}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -488,16 +561,11 @@ export function sourceForExpr(expr: Expr, message = "expression"): TypeSource {
   if (expr.kind === "Void") return { origin, notes };
   if (expr.kind !== "Lambda") return { origin };
   const body = resultExpr(expr.body);
+  const params = expr.params.map((param) => patternSource(param.pattern));
   return {
     origin,
     notes,
-    fnParams: expr.params.map((param) => ({
-      origin: {
-        message: "lambda parameter",
-        node: param.node,
-        span: param.node?.span,
-      },
-    })),
+    fnParams: params.length === 0 ? [] : [params.length === 1 ? params[0] : tupleSource(params)],
     fnResult: sourceForExpr(body, "callback result"),
   };
 }
@@ -508,11 +576,133 @@ export function sourceForTypedExpr(
   provenance: TypeProvenance,
   message = "expression",
 ): TypeSource {
+  const inferred = expressionSources.get(expr);
+  if (inferred) {
+    return {
+      ...inferred,
+      origin: sourceForExpr(expr, message).origin,
+      type,
+      provenance,
+      derivedFrom: [inferred, ...(inferred.derivedFrom ?? [])],
+    };
+  }
   return {
     ...sourceForExpr(expr, message),
     type,
     provenance,
   };
+}
+
+export function rememberVariableSource(
+  expr: Extract<Expr, { kind: "Var" }>,
+  type: Ty,
+  scheme: Scheme,
+  provenance: TypeProvenance,
+): void {
+  const definition = schemeSources.get(scheme);
+  expressionSources.set(expr, {
+    ...(definition ?? sourceForExpr(expr, expr.name)),
+    origin: sourceForExpr(expr, expr.name).origin,
+    type,
+    provenance,
+    derivedFrom: definition ? [definition] : undefined,
+  });
+}
+
+export function rememberSchemeSource(
+  scheme: Scheme,
+  value: Expr,
+  type: Ty,
+  provenance: TypeProvenance,
+): void {
+  const inferred = expressionSources.get(value) ?? sourceForTypedExpr(
+    value,
+    type,
+    provenance,
+    "binding value",
+  );
+  schemeSources.set(scheme, {
+    ...inferred,
+    definition: scheme.node?.span
+      ? { message: "function definition", node: scheme.node, span: scheme.node.span }
+      : inferred.origin,
+    type,
+    provenance,
+  });
+}
+
+export function rememberExpressionSource(
+  expr: Expr,
+  type: Ty,
+  provenance: TypeProvenance,
+): void {
+  if (expressionSources.has(expr)) return;
+  const base: TypeSource = {
+    ...sourceForExpr(expr, expressionSourceMessage(expr)),
+    type,
+    provenance,
+  };
+  switch (expr.kind) {
+    case "Block": {
+      const result = expressionSources.get(expr.result);
+      expressionSources.set(expr, {
+        ...base,
+        derivedFrom: result ? [result] : undefined,
+      });
+      return;
+    }
+    case "Call": {
+      const callee = expressionSources.get(expr.callee);
+      expressionSources.set(expr, {
+        ...base,
+        derivedFrom: callee?.fnResult ? [callee.fnResult] : undefined,
+      });
+      return;
+    }
+    case "Lambda": {
+      const resolved = prune(type);
+      const parameterType = resolved.tag === "fn" ? resolved.params[0] : undefined;
+      const resolvedParameter = parameterType ? prune(parameterType) : undefined;
+      const parameterItems = expr.params.length > 1 && resolvedParameter?.tag === "tuple"
+        ? resolvedParameter.items
+        : parameterType
+        ? [parameterType]
+        : [];
+      const parameterSources = expr.params.map((param, index) =>
+        patternSource(param.pattern, parameterItems[index], provenance)
+      );
+      const body = expressionSources.get(resultExpr(expr.body));
+      expressionSources.set(expr, {
+        ...base,
+        fnParams: parameterSources.length === 0
+          ? []
+          : [parameterSources.length === 1 ? parameterSources[0] : tupleSource(parameterSources)],
+        fnResult: body ?? sourceForExpr(resultExpr(expr.body), "callback result"),
+      });
+      return;
+    }
+    default:
+      expressionSources.set(expr, base);
+  }
+}
+
+function expressionSourceMessage(expr: Expr): string {
+  switch (expr.kind) {
+    case "Void":
+      return expr.implicitStatement ? "block result" : "empty block result";
+    case "Record":
+      return "record literal";
+    case "Block":
+      return "block result";
+    case "Call":
+      return expr.callee.kind === "Var" ? `${expr.callee.name} call result` : "call result";
+    case "Match":
+      return "match result";
+    case "Lambda":
+      return "function";
+    default:
+      return "expression";
+  }
 }
 
 export function fnSource(params: TypeSource[], result?: TypeSource): TypeSource {
@@ -521,6 +711,53 @@ export function fnSource(params: TypeSource[], result?: TypeSource): TypeSource 
 
 export function tupleSource(items: TypeSource[]): TypeSource {
   return { tupleItems: items };
+}
+
+function typedSource(
+  origin: ConstraintOrigin,
+  type: Ty | undefined,
+  provenance: TypeProvenance,
+): TypeSource {
+  if (!type) return { origin };
+  const commitment = commitmentOriginForType(type, provenance) ??
+    provenanceForType(type, provenance).at(-1);
+  return {
+    origin,
+    type,
+    provenance,
+    derivedFrom: commitment ? [{ origin: commitment, type, provenance }] : undefined,
+  };
+}
+
+function patternSource(
+  pattern: Pattern,
+  type?: Ty,
+  provenance?: TypeProvenance,
+): TypeSource {
+  const origin: ConstraintOrigin = {
+    message: pattern.kind === "PVar" ? `parameter ${pattern.name}` : "lambda parameter",
+    node: pattern.node,
+    span: pattern.node?.span,
+  };
+  const resolved = type ? prune(type) : undefined;
+  if (pattern.kind === "PTuple") {
+    const itemTypes = resolved?.tag === "tuple" ? resolved.items : [];
+    return {
+      origin,
+      type,
+      provenance,
+      tupleItems: pattern.items.map((item, index) =>
+        patternSource(item, itemTypes[index], provenance)
+      ),
+    };
+  }
+  if (pattern.kind === "PAscribed") {
+    return {
+      ...patternSource(pattern.pattern, type, provenance),
+      origin,
+    };
+  }
+  return provenance ? typedSource(origin, type, provenance) : { origin };
 }
 
 function sourceAt(source: TypeSource | undefined, path: DiffPath): ConstraintOrigin | undefined {
@@ -533,24 +770,88 @@ function sourceAt(source: TypeSource | undefined, path: DiffPath): ConstraintOri
     lastNote = current.notes?.[0]?.message ?? lastNote;
     current = childSource(current, segment);
   }
-  const origin = current?.origin ?? last;
+  const origin = originForSource(current) ?? last;
   const note = current?.notes?.[0]?.message ?? lastNote;
   return origin && note ? { ...origin, note } : origin;
 }
 
+function primaryOriginForSource(
+  source: TypeSource | undefined,
+  path: DiffPath,
+): ConstraintOrigin | undefined {
+  let current = source;
+  let functionDefinition: ConstraintOrigin | undefined;
+  // A unary call source is the argument expression itself. Keep the call expression as the
+  // primary collision site; only descend when a packed multi-argument tuple identifies one slot.
+  if (current?.origin) return undefined;
+  for (const [index, segment] of path.entries()) {
+    current = current ? childSource(current, segment) : undefined;
+    if (current?.origin) {
+      const resolved = current.type ? prune(current.type) : undefined;
+      const entersFunction = resolved?.tag === "fn" &&
+        path.slice(index + 1).some((part) => part.kind === "fn-param" || part.kind === "fn-result");
+      if (entersFunction) {
+        functionDefinition = current.definition ?? current.origin;
+        continue;
+      }
+      return current.origin;
+    }
+  }
+  return functionDefinition;
+}
+
+function originForSource(source: TypeSource | undefined): ConstraintOrigin | undefined {
+  if (!source) return undefined;
+  const origin = source.origin && source.document
+    ? { ...source.origin, ...source.document }
+    : source.origin;
+  const derivedFrom = (source.derivedFrom ?? [])
+    .map((derived) => originForSource(inheritSourceDocument(source, derived)))
+    .filter((item): item is ConstraintOrigin => !!item);
+  if (!origin) return derivedFrom[0];
+  return derivedFrom.length > 0 ? { ...origin, derivedFrom } : origin;
+}
+
 function childSource(source: TypeSource, segment: DiffPathSegment): TypeSource | undefined {
+  const committedSource = source.type?.tag === "var" && source.provenance
+    ? source.provenance.get(source.type.id)?.commitment?.source
+    : undefined;
+  const committedChild = committedSource ? childSource(committedSource, segment) : undefined;
+  if (committedChild) {
+    return source.document && !committedChild.document
+      ? { ...committedChild, document: source.document }
+      : committedChild;
+  }
   switch (segment.kind) {
     case "fn-param":
-      return source.fnParams?.[segment.index] ?? childTypeSource(source, segment);
+      return inheritSourceDocument(
+        source,
+        source.fnParams?.[segment.index] ?? childTypeSource(source, segment),
+      );
     case "fn-result":
-      return source.fnResult ?? childTypeSource(source, segment);
+      return inheritSourceDocument(source, source.fnResult ?? childTypeSource(source, segment));
     case "tuple-item":
-      return source.tupleItems?.[segment.index] ?? childTypeSource(source, segment);
+      return inheritSourceDocument(
+        source,
+        source.tupleItems?.[segment.index] ?? childTypeSource(source, segment),
+      );
     case "record-field":
-      return childTypeSource(source, segment);
+      return inheritSourceDocument(source, childTypeSource(source, segment));
     case "named-arg":
-      return source.namedArgs?.[segment.index] ?? childTypeSource(source, segment);
+      return inheritSourceDocument(
+        source,
+        source.namedArgs?.[segment.index] ?? childTypeSource(source, segment),
+      );
   }
+}
+
+function inheritSourceDocument(
+  parent: TypeSource,
+  child: TypeSource | undefined,
+): TypeSource | undefined {
+  return child && parent.document && !child.document
+    ? { ...child, document: parent.document }
+    : child;
 }
 
 function childTypeSource(source: TypeSource, segment: DiffPathSegment): TypeSource | undefined {
@@ -560,7 +861,11 @@ function childTypeSource(source: TypeSource, segment: DiffPathSegment): TypeSour
   return {
     type,
     provenance: source.provenance,
-    origin: commitmentOriginForType(type, source.provenance),
+    // A structural child such as the first parameter of an inferred callback may not contain a
+    // type variable of its own. In that case its shape still came from the parent variable's
+    // commitment (for example `render(None, ...)` committing a callback parameter to Option).
+    origin: commitmentOriginForType(type, source.provenance) ??
+      source.derivedFrom?.map(originForSource).find((origin) => !!origin),
   };
 }
 
@@ -590,8 +895,14 @@ function commitmentOriginForType(
   if (type.tag === "var") {
     if (seen.has(type.id)) return undefined;
     seen.add(type.id);
-    return provenance.get(type.id)?.commitment?.origin ??
-      (type.instance ? commitmentOriginForType(type.instance, provenance, seen) : undefined);
+    const commitment = provenance.get(type.id)?.commitment;
+    const downstream = commitment?.type
+      ? commitmentOriginForType(commitment.type, provenance, seen)
+      : type.instance
+      ? commitmentOriginForType(type.instance, provenance, seen)
+      : undefined;
+    if (!commitment?.origin) return downstream;
+    return downstream ? { ...commitment.origin, derivedFrom: [downstream] } : commitment.origin;
   }
   if (type.tag === "ffi") {
     return type.instance ? commitmentOriginForType(type.instance, provenance, seen) : undefined;
@@ -604,6 +915,8 @@ function originAsConstraint(origin: EvidenceOrigin): ConstraintOrigin {
     message: origin.message,
     node: origin.node,
     span: origin.span,
+    filePath: origin.filePath,
+    source: origin.source,
   };
 }
 
@@ -615,10 +928,19 @@ function anchorFromEvidence(evidence: EvidenceOrigin | undefined, fallback?: Ast
 
 function anchorFromOrigin(origin: ConstraintOrigin) {
   return origin.span
-    ? { kind: "source" as const, span: origin.span }
+    ? { kind: "source" as const, span: origin.span, filePath: origin.filePath }
     : origin.node?.span
-    ? { kind: "source" as const, span: origin.node.span }
+    ? { kind: "source" as const, span: origin.node.span, filePath: origin.filePath }
     : { kind: "generated" as const, label: origin.message };
+}
+
+function registerOriginSource(
+  writer: ReturnType<typeof createDiagnosticWriter>,
+  origin: ConstraintOrigin,
+): void {
+  if (origin.filePath && origin.source !== undefined) {
+    writer.addSource(origin.filePath, origin.source);
+  }
 }
 
 function visitChildren(node: Expr, visit: (node: Expr) => void) {

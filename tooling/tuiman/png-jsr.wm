@@ -1,0 +1,32 @@
+from "./png.wm" import * as Png;
+from js.global import type { Uint8Array };
+from js.module("jsr:@img/png@0.1.6") import {
+  decodePNG: Uint8Array -> Task<Js.Object, Js.Error>,
+};
+from js.module("node:buffer") import { Buffer };
+from js.global("Uint8Array") import unsafe {
+  from: Buffer -> Uint8Array
+} as Uint8ArrayConstructor;
+
+record Header = {
+  width: Number,
+  height: Number,
+};
+
+record Decoded = {
+  header: Header,
+  body: Js.Value,
+};
+
+let decode = (buffer) => {
+  decodePNG(Uint8ArrayConstructor.from(buffer))
+    :> Task.andThen((raw) => {
+      let decoded: Result<Decoded, Js.Error> = raw :> Json.assert;
+      decoded :> Task.fromResult
+    })
+    :> Task.andThen((decoded) => {
+      Buffer.from(decoded.body) :> Task.fromResult :> Task.map((body) => {
+        Png.Pixels(body, decoded.header.width, decoded.header.height)
+      })
+    })
+};

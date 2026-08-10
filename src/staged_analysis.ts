@@ -7,6 +7,7 @@ import {
 import { prepareFfiElaboration } from "./ffi/elab.ts";
 import { prepareInitialJsImportReflection } from "./ffi/reflect/types.ts";
 import { inferModule, inferModulePartial, type InferResult } from "./infer.ts";
+import { rememberExportedSourceDocument } from "./infer/imports.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import type { ModuleGraph, ModuleNode } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
@@ -132,6 +133,7 @@ export async function analyzeModuleGraph(
         undefined,
         () => inferModule(node.module, importsFor(node, results), inferOptions),
       );
+      rememberExportedSourceDocument(result, node.path, node.source);
       results.set(id, result);
       emit("final inference", node, result);
     }
@@ -147,6 +149,7 @@ export async function analyzeModuleGraph(
       undefined,
       () => inferModulePartial(node.module, importsFor(node, firstResults), inferOptions),
     );
+    rememberExportedSourceDocument(result, node.path, node.source);
     firstResults.set(id, result);
     emit("initial partial inference", node, result);
     await run("initial partial inference", node, result, () => assertNoPartialDiagnostics(result));
@@ -184,6 +187,7 @@ export async function analyzeModuleGraph(
           ? inferModulePartial(node.module, importsFor(node, contextualResults), inferOptions)
           : firstResults.get(id)!,
     );
+    rememberExportedSourceDocument(result, node.path, node.source);
     contextualResults.set(id, result);
     emit("contextual partial inference", node, result);
     await run(
@@ -231,6 +235,7 @@ export async function analyzeModuleGraph(
           ? inferModulePartial(node.module, importsFor(node, postResolveResults), inferOptions)
           : contextualResults.get(id)!,
     );
+    rememberExportedSourceDocument(result, node.path, node.source);
     if (requiresReinference) postResolutionReinferredIds.add(id);
     postResolveResults.set(id, result);
     emit("post-resolution partial inference", node, result);
@@ -263,6 +268,7 @@ export async function analyzeModuleGraph(
       undefined,
       () => inferModule(node.module, importsFor(node, results), inferOptions),
     );
+    rememberExportedSourceDocument(result, node.path, node.source);
     results.set(id, result);
     emit("final inference", node, result);
   }

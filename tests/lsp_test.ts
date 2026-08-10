@@ -237,7 +237,9 @@ let rec sumList = (list, val) => {
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.recursive-result-mismatch",
+  ]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
     "`sumList` is recursive",
     "Recursive calls produce:",
@@ -310,14 +312,17 @@ let bad = sumList(Cons(1, Empty));
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "error[type.mismatch",
-    "collision:",
-    "  expected: (Int_list, Number)",
-    "  actual:   Int_list",
-    "rule: InferCall.Argument",
-    "support:",
+    "type error: inner(list) can't be both:\n  - (Int_list, Number)\n  - Int_list",
+    "(Int_list, Number)",
+    "Int_list",
+    "-- Origins ",
+    "call argument: (Int_list, Number)",
+    "Cons: Int_list",
+    "│",
   ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 10,
@@ -353,7 +358,9 @@ let rec sumList = (list) => {
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 16,
     character: 2,
@@ -396,7 +403,9 @@ let rec sumList = (list) => {
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 12,
     character: 2,

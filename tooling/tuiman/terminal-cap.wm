@@ -1,0 +1,62 @@
+from js.global("Deno") import unsafe * as Deno;
+
+type Backend =
+  | KittyGraphics
+  | HalfBlock;
+
+let envString = (name) => {
+  match(Deno.env.get(name)) {
+    Err(_) => { "" },
+    Ok(None) => { "" },
+    Ok(Some(value)) => { value },
+  }
+};
+
+let textIncludes = (haystack, needle) => {
+  match(haystack :> .indexOf(needle)) {
+    Ok(index) => { index >= 0 },
+    Err(_) => { false },
+  }
+};
+
+let nonEmpty = (value) => {
+  value != ""
+};
+
+let detectBackend = () => {
+  let override = envString("ATVIEW_IMAGE_BACKEND");
+  if (override == "kitty") {
+    KittyGraphics
+  } else {
+    if (override == "half" || override == "ansi" || override == "halfblock") {
+      HalfBlock
+    } else {
+      let term = envString("TERM");
+      let termProgram = envString("TERM_PROGRAM");
+      let termux = envString("TERMUX_VERSION");
+      let kittyWindow = envString("KITTY_WINDOW_ID");
+      let ghostty = envString("GHOSTTY_RESOURCES_DIR");
+      let wez = envString("WEZTERM_EXECUTABLE");
+      if (nonEmpty(termux)) {
+        HalfBlock
+      } else {
+        if (
+          nonEmpty(kittyWindow) || nonEmpty(ghostty) || nonEmpty(wez) ||
+          termProgram == "ghostty" || termProgram == "WezTerm" ||
+          textIncludes(term, "kitty") || textIncludes(term, "ghostty")
+        ) {
+          KittyGraphics
+        } else {
+          HalfBlock
+        }
+      }
+    }
+  }
+};
+
+let backendName = match(backend) => {
+  KittyGraphics => { "kitty" },
+  HalfBlock => { "half-block" },
+};
+
+let backend = detectBackend();

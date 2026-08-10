@@ -11,7 +11,7 @@ export type ClaimId = EvidenceId;
 export type TypeSnapshotId = EvidenceId;
 
 export type SourceAnchor =
-  | { kind: "source"; span: SourceSpan }
+  | { kind: "source"; span: SourceSpan; filePath?: string }
   | { kind: "generated"; label: string }
   | { kind: "recovery"; step: EvidenceId; label: string };
 
@@ -56,7 +56,7 @@ export type Violation =
     observed: { left: TypeSnapshotId; right: TypeSnapshotId };
     conflictPath: DiffPath;
     context?: string;
-    origins?: { expected?: string; got?: string };
+    origins?: { left?: string; right?: string };
   }
   | {
     kind: "unsatisfied";
@@ -158,6 +158,7 @@ export type SupportGraph = {
   edges: { from: EvidenceId; to: EvidenceId; role: string }[];
   roots: EvidenceId[];
   types: TypeSnapshot[];
+  sources?: { filePath: string; source: string }[];
 };
 
 export type AuditableDiagnostic = {
@@ -199,6 +200,7 @@ export type DiagnosticWriter = {
   snapshotType(type: Ty): TypeSnapshotId;
   add(entry: SupportEntry): void;
   addEdge(edge: { from: EvidenceId; to: EvidenceId; role: string }): void;
+  addSource(filePath: string, source: string): void;
   buildSupport(roots: EvidenceId[]): SupportGraph;
 };
 
@@ -208,6 +210,7 @@ export function createDiagnosticWriter(): DiagnosticWriter {
   const edges: { from: EvidenceId; to: EvidenceId; role: string }[] = [];
   const types: TypeSnapshot[] = [];
   const renderedTypes = new Map<TypeSnapshotId, string>();
+  const sources = new Map<string, string>();
 
   const writer: DiagnosticWriter = {
     nextId(prefix = "e") {
@@ -228,12 +231,16 @@ export function createDiagnosticWriter(): DiagnosticWriter {
     addEdge(edge) {
       edges.push(edge);
     },
+    addSource(filePath, source) {
+      sources.set(filePath, source);
+    },
     buildSupport(roots) {
       return {
         entries: [...entries],
         edges: [...edges],
         roots,
         types: [...types],
+        sources: [...sources].map(([filePath, source]) => ({ filePath, source })),
       };
     },
   };

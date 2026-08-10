@@ -1,6 +1,13 @@
-import { assertRejects, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { pathToFileURL } from "node:url";
-import { checkSource, checkVirtual, compileFile, compileVirtual } from "../src/compiler.ts";
+import {
+  checkSource,
+  checkVirtual,
+  compileFile,
+  compileVirtual,
+  ModuleAnalysisError,
+} from "../src/compiler.ts";
+import { formatDiagnostic, FrontendDiagnosticError } from "../src/diagnostics.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("compiles file imports as implicit structures", async () => {
@@ -16,6 +23,37 @@ Deno.test("source-only frontend rejects imports with clear API boundary", async 
     Error,
     "source strings with imports require checkFile",
   );
+});
+
+Deno.test("type diagnostics retain the constraint origin across an imported callback", async () => {
+  const mainSource = `record Coord = { x: Number };
+from "./runtime.wm" import * as Runtime;
+let render = (model, state) => { model.x };
+let bad = Runtime.run(.{x=0}, render);`;
+  const virtualFs = new Map<string, string>([
+    ["/test/runtime.wm", "let run = (initial, render) => { render(None, initial) };"],
+    ["/test/main.wm", mainSource],
+  ]);
+  const error = await assertRejects(
+    () => checkVirtual("/test/main.wm", virtualFs),
+    ModuleAnalysisError,
+  );
+  if (!(error.originalError instanceof FrontendDiagnosticError)) {
+    throw new Error("expected a frontend diagnostic");
+  }
+
+  const diagnostic = error.originalError.diagnostic;
+  if (diagnostic.primary.kind !== "source") throw new Error("expected a source primary");
+  assertEquals(diagnostic.primary.span.start, mainSource.indexOf("model"));
+  assertEquals(diagnostic.primary.span.end, mainSource.indexOf("model") + "model".length);
+  const rendered = formatDiagnostic(diagnostic, error.path, error.source);
+  assertStringIncludes(rendered.split("-- Origins")[0], "let render = (model, state)");
+  assertStringIncludes(rendered, "type error: render parameter 1 can't be both:");
+  assertStringIncludes(rendered, "render(None, initial)");
+  assertStringIncludes(rendered, "runtime.wm:1:");
+  assertStringIncludes(rendered, "Option<T>");
+  assertStringIncludes(rendered, "Coord");
+  assertEquals(rendered.includes("│"), false);
 });
 
 Deno.test("imports are declaration-ordered and not hoisted", async () => {

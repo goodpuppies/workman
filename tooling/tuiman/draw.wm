@@ -162,7 +162,7 @@ let rec wrapAll = match(values, width) => {
 -- Diagnostics are written for editors, not for an 80-column budget. Wrapping
 -- to the live terminal width keeps a long message readable at any size, and
 -- hard newlines in the source text stay as breaks.
-let wrap = (value, width) => {
+let wrap = (value: String, width) => {
   wrapAll(value :> .split("\n") :> Result.map(Js.Array.toList) :> Result.withDefault([]), width)
 };
 

@@ -437,6 +437,7 @@ export function constrainBinding(
         undefined,
         {
           premise: {
+            code: "type.recursive-result-mismatch",
             rule: "InferRecursive.ResultAgreement",
             role: "recursive binding result matches inferred body",
             subject: name,

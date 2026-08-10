@@ -1,0 +1,18 @@
+-- Small deterministic protocol probe for aspect-preserving placement math.
+-- The payload is deliberately tiny; inspect the emitted Kitty controls rather
+-- than trying to display these invalid placeholder bytes as an image.
+
+from "./geometry.wm" import * as Geometry;
+from "./kitty.wm" import * as Kitty;
+
+let terminal = Geometry.Size(80, 24, 10, 20);
+let area = Geometry.rect(4, 3, 40, 8);
+let wide = Kitty.Image("AA==", "wide", 2000, 500, None);
+let landscape = Kitty.Image("AA==", "landscape", 1000, 500, None);
+let portrait = Kitty.Image("AA==", "portrait", 500, 1000, None);
+
+let main = () => {
+  print(Kitty.render(area, terminal, Kitty.Fit, wide));
+  print(Kitty.render(area, terminal, Kitty.Fit, portrait));
+  print(Kitty.render(area, terminal, Kitty.Fill, landscape))
+};
