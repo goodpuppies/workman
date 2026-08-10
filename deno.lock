@@ -11,7 +11,6 @@
     "jsr:@std/path@^1.0.9": "1.1.5",
     "npm:@typescript/typescript6@^6.0.2": "6.0.2",
     "npm:@webgpu/types@0.1.64": "0.1.64",
-    "npm:peggy@*": "5.1.0",
     "npm:peggy@^5.0.6": "5.1.0",
     "npm:typescript@^6.0.3": "6.0.3",
     "npm:typescript@^7.0.2": "7.0.2"

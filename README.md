@@ -21,6 +21,8 @@ To install the wm cli simply run
 ```
 deno install -g -A --name wm jsr:@goodpuppies/workman
 ```
+for fresher versions, you can add the argument
+`--min-dep-age=0`
 
 ## Language Features
 
