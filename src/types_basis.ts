@@ -16,8 +16,8 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   typeFromAst,
-  typeInfoByName,
   type TypeInfo,
+  typeInfoByName,
   VoidTy,
 } from "./types.ts";
 
@@ -68,6 +68,13 @@ export function baseEnv(
     vars: [printable.id],
     type: fn([printable], VoidTy),
     standardLibrary: true,
+  });
+  const textValue = fresh() as Extract<Ty, { tag: "var" }>;
+  env.set("Text.of", {
+    vars: [textValue.id],
+    type: fn([textValue], StringTy),
+    status: "value",
+    basis: true,
   });
   if (options.includeAlgebraicBasis !== false) {
     addBasisConstructors(env, pervasiveSources, typeEnv);
@@ -509,13 +516,6 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   if (!result || !jsError) return;
   const input = fresh("input") as Extract<Ty, { tag: "var" }>;
   const output = fresh("output") as Extract<Ty, { tag: "var" }>;
-  const textValue = fresh("value") as Extract<Ty, { tag: "var" }>;
-  env.set("Result.textOf", {
-    vars: [textValue.id],
-    type: fn([textValue], StringTy),
-    status: "value",
-    basis: true,
-  });
   env.set("Json.assert", {
     vars: [input.id, output.id],
     type: fn([input], named(result, [output, named(jsError)])),

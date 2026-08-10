@@ -1120,7 +1120,17 @@ function projectInterpolatedString(node: WmVariant, context: Context): Expr {
     }
     if (part.name === "StringInterpolationNode") {
       const [, expressionValue] = fields(part);
-      parts.push(projectExpr(variant(expressionValue), context));
+      const partNode = nodeFor(context, spanOf(part));
+      parts.push({
+        kind: "Call",
+        callee: {
+          kind: "Var",
+          name: "Text.of",
+          node: partNode,
+        },
+        args: [projectExpr(variant(expressionValue), context)],
+        node: partNode,
+      });
       continue;
     }
     throw unsupported("interpolated string part", part);

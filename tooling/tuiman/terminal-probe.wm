@@ -49,8 +49,8 @@ let rec listen = (input, output, count) => {
         if (text == "q" || text == Ansi.esc ++ "[113;5u" || text == Ansi.esc ++ "[99;5u" || text == fromCtrlC) {
           restore(input, output, 0)
         } else {
-          let line = "event " ++ Result.textOf(count) ++ " bytes=" ++
-            Result.textOf(text :> .length :> Result.withDefault(0));
+          let line = "event " ++ Text.of(count) ++ " bytes=" ++
+            Text.of(text :> .length :> Result.withDefault(0));
           let _ = write(output, Ansi.cursorTo(4, 2) ++ line ++ "                    ");
           listen(input, output, count + 1)
         }

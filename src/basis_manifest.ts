@@ -234,13 +234,9 @@ export type BasisValueDescriptor = Readonly<{
 /** Host values which are neither datatype constructors nor compiler intrinsics. */
 export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "print", profiles, runtimeName: "print" },
+  { exportName: "Text.of", profiles, runtimeName: "Text.of" },
   { exportName: "Js.Array.toList", profiles: defaultOnly, runtimeName: "Js.Array.toList" },
   { exportName: "Js.Array.fromList", profiles: defaultOnly, runtimeName: "Js.Array.fromList" },
-  {
-    exportName: "Result.textOf",
-    profiles: defaultOnly,
-    runtimeName: "__wm_basis_Result.textOf",
-  },
   { exportName: "Json.assert", profiles: defaultOnly, runtimeName: "Json.assert" },
   ...[
     "fromResult",

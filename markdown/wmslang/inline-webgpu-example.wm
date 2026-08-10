@@ -128,7 +128,7 @@ let readBack = lift Task (staging, mapMode) => {
   let inspect = lift Task (_) => {
     readFirstUint32(staging)
       :> Result.map((value) => {
-        print("wmslang wrote " ++ Result.textOf(value) ++ " into the first pixel");
+        print("wmslang wrote " ++ Text.of(value) ++ " into the first pixel");
         void
       })
       :> Task.fromResult

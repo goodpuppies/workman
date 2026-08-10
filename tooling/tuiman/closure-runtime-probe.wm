@@ -22,7 +22,7 @@ let update = match(count, key, state) => {
 let render = (environment: Probe.Environment, _, state: ClosureState, size: Geometry.Size) => {
   Draw.beginFrame ++ Draw.text(
     Geometry.rect(0, 0, size.width, 1),
-    environment.label ++ " " ++ Result.textOf(state.selected),
+    environment.label ++ " " ++ Text.of(state.selected),
     Draw.plain,
   )
 };

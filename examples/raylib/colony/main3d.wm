@@ -202,8 +202,8 @@ let pausedLabel = (paused: Bool) => {
 let drawHud = (sim: Sim, paused: Bool) => {
   Result|
     Raylib.H.DrawText("COLONY", 16, 12, 28, white),
-    Raylib.H.DrawText("pop    " ++ Result.textOf(count(sim.agents)), 16, 48, 20, hint),
-    Raylib.H.DrawText("stock  " ++ Result.textOf(floorI(sim.stockpile)), 16, 72, 20, hint),
+    Raylib.H.DrawText("pop    " ++ Text.of(count(sim.agents)), 16, 48, 20, hint),
+    Raylib.H.DrawText("stock  " ++ Text.of(floorI(sim.stockpile)), 16, 72, 20, hint),
     Raylib.H.DrawText(pausedLabel(paused), 16, 100, 18, accent),
     Raylib.H.DrawText("mouse wheel: zoom    arrow keys: orbit    space: pause", 16, 514, 16, hint),
     Raylib.DrawFPS(884, 14)

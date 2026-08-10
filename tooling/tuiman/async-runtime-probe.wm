@@ -20,7 +20,7 @@ let update = match(key, model) => {
 let render = (_, model, size) => {
   Draw.beginFrame ++ Draw.text(
     Geometry.rect(0, 0, size.width, 1),
-    "events " ++ Result.textOf(model.count) ++ " — q quits",
+    "events " ++ Text.of(model.count) ++ " — q quits",
     Draw.plain,
   )
 };

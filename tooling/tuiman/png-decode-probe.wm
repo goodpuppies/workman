@@ -16,7 +16,7 @@ let main = () => {
         Err(_) => { print("meta fail") },
         Ok(meta) => {
           let (end, w, h, bitDepth, colorType) = meta;
-          print("wh=" ++ Result.textOf(w) ++ "x" ++ Result.textOf(h) ++ " ct=" ++ Result.textOf(colorType));
+          print("wh=" ++ Text.of(w) ++ "x" ++ Text.of(h) ++ " ct=" ++ Text.of(colorType));
           match(buf :> .readUInt32BE(33)) {
             Err(_) => { print("len fail") },
             Ok(idatLen) => {
@@ -30,7 +30,7 @@ let main = () => {
                         Err(_) => { print("pix fail") },
                         Ok(pix) => {
                           let (n, f, r) = pix;
-                          print("raw=" ++ Result.textOf(n) ++ " f=" ++ Result.textOf(f) ++ " r=" ++ Result.textOf(r))
+                          print("raw=" ++ Text.of(n) ++ " f=" ++ Text.of(f) ++ " r=" ++ Text.of(r))
                         },
                       }
                     },

@@ -254,6 +254,9 @@ export function emitRuntimePrelude(): string[] {
     fromList: __wm_list_to_array,
   },
 };`,
+    `const Text = {
+  of: __wm_text_of,
+};`,
     `const __wm_basis_Option = {
   None: __wm_basis_None,
   Some: __wm_basis_Some,
@@ -265,7 +268,6 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_basis_Result = {
   Ok: __wm_basis_Ok,
   Err: __wm_basis_Err,
-  textOf: __wm_text_of,
 };`,
     `const __wm_error_message = (error) => {
   if (error && typeof error === "object" && "message" in error) return String(error.message);

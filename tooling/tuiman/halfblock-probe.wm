@@ -13,7 +13,7 @@ let main = () => {
       if (pixels.width == 1 && pixels.height == 1 && red == 255 && green == 0 && blue == 0 && alpha == 127 && rendered != "") {
         print("half-block png ok")
       } else {
-        print(`half-block png mismatch ${Result.textOf(pixels.width)}x${Result.textOf(pixels.height)} rgba=${Result.textOf(red)},${Result.textOf(green)},${Result.textOf(blue)},${Result.textOf(alpha)}`)
+        print(`half-block png mismatch ${Text.of(pixels.width)}x${Text.of(pixels.height)} rgba=${Text.of(red)},${Text.of(green)},${Text.of(blue)},${Text.of(alpha)}`)
       }
     },
   }

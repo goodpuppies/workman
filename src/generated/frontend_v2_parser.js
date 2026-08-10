@@ -247,6 +247,9 @@ const Js = {
     fromList: __wm_list_to_array,
   },
 };
+const Text = {
+  of: __wm_text_of,
+};
 const __wm_basis_Option = {
   None: __wm_basis_None,
   Some: __wm_basis_Some,
@@ -258,7 +261,6 @@ const __wm_basis_List = {
 const __wm_basis_Result = {
   Ok: __wm_basis_Ok,
   Err: __wm_basis_Err,
-  textOf: __wm_text_of,
 };
 const __wm_error_message = (error) => {
   if (error && typeof error === "object" && "message" in error) return String(error.message);
@@ -22448,7 +22450,7 @@ const List = { "Nil": __wm_basis_List["Nil"], "Cons": __wm_basis_List["Cons"], "
 const Map = __wm_std_Map;
 const Option = { "None": __wm_basis_Option["None"], "Some": __wm_basis_Option["Some"], "map": __wm_std_Option["map"], "andThen": __wm_std_Option["andThen"], "withDefault": __wm_std_Option["withDefault"], "map2": __wm_std_Option["map2"], "traverse": __wm_std_Option["traverse"], "collectList": __wm_std_Option["collectList"] };
 const Monad = __wm_std_Monad;
-const Result = { "Ok": __wm_basis_Result["Ok"], "Err": __wm_basis_Result["Err"], "textOf": __wm_basis_Result["textOf"], "succeed": __wm_std_Result["succeed"], "map": __wm_std_Result["map"], "andThen": __wm_std_Result["andThen"], "toBool": __wm_std_Result["toBool"], "fn": __wm_std_Result["fn"], "mapErr": __wm_std_Result["mapErr"], "fnError": __wm_std_Result["fnError"], "map2": __wm_std_Result["map2"], "carrier": __wm_std_Result["carrier"], "withDefault": __wm_std_Result["withDefault"], "map3": __wm_std_Result["map3"], "map4": __wm_std_Result["map4"], "traverse": __wm_std_Result["traverse"], "all": __wm_std_Result["all"], "collectList": __wm_std_Result["collectList"] };
+const Result = { "Ok": __wm_basis_Result["Ok"], "Err": __wm_basis_Result["Err"], "succeed": __wm_std_Result["succeed"], "map": __wm_std_Result["map"], "andThen": __wm_std_Result["andThen"], "toBool": __wm_std_Result["toBool"], "fn": __wm_std_Result["fn"], "mapErr": __wm_std_Result["mapErr"], "fnError": __wm_std_Result["fnError"], "map2": __wm_std_Result["map2"], "carrier": __wm_std_Result["carrier"], "withDefault": __wm_std_Result["withDefault"], "map3": __wm_std_Result["map3"], "map4": __wm_std_Result["map4"], "traverse": __wm_std_Result["traverse"], "all": __wm_std_Result["all"], "collectList": __wm_std_Result["collectList"] };
 const Task = { "fromResult": __wm_basis_Task["fromResult"], "succeed": __wm_basis_Task["succeed"], "fail": __wm_basis_Task["fail"], "map": __wm_basis_Task["map"], "map2": __wm_basis_Task["map2"], "race": __wm_basis_Task["race"], "andThen": __wm_basis_Task["andThen"], "mapErr": __wm_basis_Task["mapErr"], "recover": __wm_basis_Task["recover"], "all": __wm_basis_Task["all"], "fn": __wm_std_Task["fn"], "fnError": __wm_std_Task["fnError"], "carrier": __wm_std_Task["carrier"], "collectList": __wm_std_Task["collectList"], "traverse": __wm_std_Task["traverse"] };
 const Traverse = __wm_std_Traverse;
 await __wm_request_module("__wm_module_38");

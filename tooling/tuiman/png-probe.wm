@@ -18,24 +18,24 @@ let main = () => {
       let len = buf :> .length :> Result.withDefault(0);
       let w = buf :> .readUInt32BE(16) :> Result.withDefault(0);
       let h = buf :> .readUInt32BE(20) :> Result.withDefault(0);
-      print("len=" ++ Result.textOf(len) ++ " wh=" ++ Result.textOf(w) ++ "x" ++ Result.textOf(h));
+      print("len=" ++ Text.of(len) ++ " wh=" ++ Text.of(w) ++ "x" ++ Text.of(h));
       print("TERM=" ++ envString("TERM"));
       print("KITTY=" ++ envString("KITTY_WINDOW_ID"));
       print("COLORTERM=" ++ envString("COLORTERM"));
       print("TERM_PROGRAM=" ++ envString("TERM_PROGRAM"));
       print("GHOSTTY=" ++ envString("GHOSTTY_RESOURCES_DIR"));
       let b0 = buf :> .readUInt8(0) :> Result.withDefault(0);
-      print("sig0=" ++ Result.textOf(b0));
+      print("sig0=" ++ Text.of(b0));
       let ihdrLen = buf :> .readUInt32BE(8) :> Result.withDefault(0);
-      print("ihdrLen=" ++ Result.textOf(ihdrLen));
+      print("ihdrLen=" ++ Text.of(ihdrLen));
       let pos = 8 + 4 + 4 + ihdrLen + 4;
-      print("nextChunkAt=" ++ Result.textOf(pos));
+      print("nextChunkAt=" ++ Text.of(pos));
       let chunkLen = buf :> .readUInt32BE(pos) :> Result.withDefault(0);
       let t0 = buf :> .readUInt8(pos + 4) :> Result.withDefault(0);
       let t1 = buf :> .readUInt8(pos + 5) :> Result.withDefault(0);
       let t2 = buf :> .readUInt8(pos + 6) :> Result.withDefault(0);
       let t3 = buf :> .readUInt8(pos + 7) :> Result.withDefault(0);
-      print("chunk len=" ++ Result.textOf(chunkLen) ++ " type " ++ Result.textOf(t0) ++ "," ++ Result.textOf(t1) ++ "," ++ Result.textOf(t2) ++ "," ++ Result.textOf(t3));
+      print("chunk len=" ++ Text.of(chunkLen) ++ " type " ++ Text.of(t0) ++ "," ++ Text.of(t1) ++ "," ++ Text.of(t2) ++ "," ++ Text.of(t3));
       match(buf :> .subarray(pos + 8, pos + 8 + chunkLen)) {
         Err(_) => { print("sub fail") },
         Ok(idat) => {
@@ -43,12 +43,12 @@ let main = () => {
             Err(_) => { print("inflate fail") },
             Ok(raw) => {
               let olen = raw :> .length :> Result.withDefault(0);
-              print("pixels+filter=" ++ Result.textOf(olen));
+              print("pixels+filter=" ++ Text.of(olen));
               let f0 = raw :> .readUInt8(0) :> Result.withDefault(-1);
               let r = raw :> .readUInt8(1) :> Result.withDefault(-1);
               let g = raw :> .readUInt8(2) :> Result.withDefault(-1);
               let b = raw :> .readUInt8(3) :> Result.withDefault(-1);
-              print("row0 filter=" ++ Result.textOf(f0) ++ " rgb=" ++ Result.textOf(r) ++ "," ++ Result.textOf(g) ++ "," ++ Result.textOf(b))
+              print("row0 filter=" ++ Text.of(f0) ++ " rgb=" ++ Text.of(r) ++ "," ++ Text.of(g) ++ "," ++ Text.of(b))
             },
           }
         },

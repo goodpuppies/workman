@@ -28,7 +28,7 @@ let details = Reactive.signal(
 let countEffect = Reactive.effect(
   "count",
   Reactive.read(count) :> Reactive.map((value) => {
-    Reactive.commands(["count=" ++ Result.textOf(value)])
+    Reactive.commands(["count=" ++ Text.of(value)])
   }),
 );
 
@@ -53,7 +53,7 @@ let summaryEffect = Reactive.effect(
   | :> Reactive.map((value, visible) => {
     Reactive.commands(
       [
-        "summary=" ++ Result.textOf(value) ++
+        "summary=" ++ Text.of(value) ++
           (if (visible) { "+details" } else { "" })
       ],
     )

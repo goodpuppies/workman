@@ -141,7 +141,7 @@ let getWeather = (city) => {
     if (ok) {
       Task.succeed(response)
     } else {
-      Task.fail("HTTP " ++ Result.textOf(status) ++ " fetching " ++ url)
+      Task.fail("HTTP " ++ Text.of(status) ++ " fetching " ++ url)
     }
   };
   let readBody = Monad.liftError Task JavaScriptFailure (response) => {

@@ -4,8 +4,8 @@ let expect = (actual: Number, wanted: Number, label) => {
   if (actual == wanted) {
     void
   } else {
-    print(label ++ ": expected " ++ Result.textOf(wanted) ++
-      ", got " ++ Result.textOf(actual))
+    print(label ++ ": expected " ++ Text.of(wanted) ++
+      ", got " ++ Text.of(actual))
   }
 };
 

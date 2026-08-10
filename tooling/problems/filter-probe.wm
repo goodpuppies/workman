@@ -13,6 +13,6 @@ let main = () => {
   let noWarnings = toggleSeverity(2, initial);
   let warningsAgain = toggleSeverity(2, noWarnings);
   print(
-    `${Result.textOf(count(initial))},${Result.textOf(count(noWarnings))},${Result.textOf(count(warningsAgain))}`,
+    `${Text.of(count(initial))},${Text.of(count(noWarnings))},${Text.of(count(warningsAgain))}`,
   )
 };

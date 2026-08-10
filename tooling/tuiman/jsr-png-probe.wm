@@ -30,7 +30,7 @@ let main = () => {
             :> Task.andThen((decoded) => {
               Buffer.from(decoded.body) :> Task.fromResult :> Task.map((body) => {
                 let length = body :> .length :> Result.withDefault(0);
-                print(`decoded ${Result.textOf(decoded.header.width)}x${Result.textOf(decoded.header.height)} bytes=${Result.textOf(length)}`)
+                print(`decoded ${Text.of(decoded.header.width)}x${Text.of(decoded.header.height)} bytes=${Text.of(length)}`)
               })
             })
             :> Task.recover((error) => {

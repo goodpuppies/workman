@@ -262,7 +262,7 @@ Dependencies: `G7`–`G8` and `S004`–`S008`.
       also verified dynamically: a compiled library binds every fact's export name and the test
       asserts none evaluate to `undefined`, which catches a missing member of an existing namespace
       object that reference-only compilation would let through. A negative control (removing
-      `textOf` from the emitted `Result`) fails the test naming exactly `Result.textOf`.
+      `of` from the emitted `Text`) fails the test naming exactly `Text.of`.
 - [x] **B304** Move fixed operators out of the ordinary value environment into the kernel syntax
       catalog.
 - [x] **B305** Keep ordinary pervasive values shadowable through normal `ValEnv` composition.
@@ -295,7 +295,7 @@ Gate:
       and compiles; operator and constructor runtime names derive from one description with
       emitted-definition and no-stray-definition regressions plus a fail-loud guard for catalog
       entries without implementations; and the defined-runtime-value regression evaluates every
-      basis fact, including dotted host members such as `Js.Array.toList` and `Result.textOf`,
+      basis fact, including dotted host members such as `Js.Array.toList` and `Text.of`,
       proving none are `undefined` at runtime.
 - [x] **G10** Standard structures use the same lookup and shadowing rules as imported structures.
 - [x] **G11** No provenance flag or backend object merge changes language binding semantics.

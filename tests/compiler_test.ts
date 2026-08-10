@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkSource, compile } from "../src/compiler.ts";
+import { checkSource, compile, compileLibraryVirtual } from "../src/compiler.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
 
@@ -60,7 +60,7 @@ Deno.test("emits standard-library values from Workman modules", async () => {
   assertStringIncludes(js, "let __wm_std_Monad");
   assertStringIncludes(js, "let __wm_std_Result");
   assertStringIncludes(js, "let __wm_std_Traverse");
-  assertStringIncludes(js, '"textOf": __wm_basis_Result["textOf"]');
+  assertStringIncludes(js, "const Text = {");
   assertStringIncludes(js, '"map": __wm_std_Result["map"]');
   assertEquals(js.includes("...__wm_basis_Result"), false);
   assertEquals(js.includes("...__wm_std_Result"), false);
@@ -184,6 +184,32 @@ Deno.test("supports multiline string literals", async () => {
 
   expectBinding(result.env, "text", { type: "String", vars: 0 });
   assertStringIncludes(js, JSON.stringify("first\nsecond\nthird ` quoted"));
+});
+
+Deno.test("interpolated strings convert primitive values to text", async () => {
+  const source = 'let text = `number=${42}, bool=${true}, text=${"ok"}`;';
+  const result = await checkSource(source);
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([["/test/library.wm", source]]),
+  );
+  const module = await import(`data:text/javascript;base64,${btoa(js)}`);
+
+  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  assertEquals(module.text, "number=42, bool=true, text=ok");
+});
+
+Deno.test("interpolated value conversion is available without the default prelude", async () => {
+  const source = "-- @no-prelude\nlet text = `number=${42}, bool=${false}`;";
+  const result = await checkSource(source);
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([["/test/library.wm", source]]),
+  );
+  const module = await import(`data:text/javascript;base64,${btoa(js)}`);
+
+  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  assertEquals(module.text, "number=42, bool=false");
 });
 
 Deno.test("quoted string literals reject raw newlines", async () => {

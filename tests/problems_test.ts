@@ -34,7 +34,7 @@ Deno.test("problems reports the project head owning the entrypoint", async () =>
     await Deno.writeTextFile(`${directory}/helper.wm`, "let answer = 42;");
     await Deno.writeTextFile(
       input,
-      'from "./helper.wm" import { answer };\nlet main = () => { print(Result.textOf(answer)) };\n',
+      'from "./helper.wm" import { answer };\nlet main = () => { print(Text.of(answer)) };\n',
     );
     const snapshot = await collectSnapshot(input);
     assertEquals(snapshot.head.kind, "headed");

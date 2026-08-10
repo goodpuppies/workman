@@ -9,9 +9,9 @@ let main = () => {
   let pending = Resource.Pending :> Resource.map((value) => { value + 1 });
   let loading = Resource.Loading :> Resource.map((value) => { value + 1 });
   let paired = Resource|Resource.Ready("ok"), Resource.Ready(7)|;
-  let resolved = Resource.resolve(ready, "pending", (_) => { "failed" }, Result.textOf);
-  let pendingText = Resource.resolve(pending, "pending", (_) => { "failed" }, Result.textOf);
-  let loadingText = Resource.resolve(loading, "pending", (_) => { "failed" }, Result.textOf);
+  let resolved = Resource.resolve(ready, "pending", (_) => { "failed" }, Text.of);
+  let pendingText = Resource.resolve(pending, "pending", (_) => { "failed" }, Text.of);
+  let loadingText = Resource.resolve(loading, "pending", (_) => { "failed" }, Text.of);
   match(paired) {
     Resource.Ready(values) => {
       let (label, number) = values;

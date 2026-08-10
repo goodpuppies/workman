@@ -110,7 +110,7 @@ collision branch in import elaboration. Basis installation, namespace imports, o
 projections, JS import bindings, and ordinary top-level declarations all extend their working
 environment through the same right-biased SML environment-modification operation.
 
-`Result.textOf` is host-owned. The source `Result` module owns its remaining members. The host owns
+`Text.of` is host-owned. The source `Result` module owns all of its members. The host owns
 the irreducible `Task` operations; `std/task.wm` uniquely owns `fn`, `fnError`, `carrier`,
 `collectList`, and `traverse`. Runtime namespace construction uses this compiler-owned member table
 and emits explicit references rather than using JavaScript object spread to decide ownership.

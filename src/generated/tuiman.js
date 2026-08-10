@@ -248,6 +248,9 @@ const Js = {
     fromList: __wm_list_to_array,
   },
 };
+const Text = {
+  of: __wm_text_of,
+};
 const __wm_basis_Option = {
   None: __wm_basis_None,
   Some: __wm_basis_Some,
@@ -259,7 +262,6 @@ const __wm_basis_List = {
 const __wm_basis_Result = {
   Ok: __wm_basis_Ok,
   Err: __wm_basis_Err,
-  textOf: __wm_text_of,
 };
 const __wm_error_message = (error) => {
   if (error && typeof error === "object" && "message" in error) return String(error.message);
@@ -2070,7 +2072,7 @@ const endSynchronizedUpdate_13 = (csi_3 + "?2026l");
 const enableMouse_14 = (((csi_3 + "?1000h") + csi_3) + "?1006h");
 const disableMouse_15 = (((csi_3 + "?1006l") + csi_3) + "?1000l");
 const cursorTo_18__wm_d2 = (row_16, column_17) => {
-return ((((csi_3 + Result.textOf(row_16)) + ";") + Result.textOf(column_17)) + "H");
+return ((((csi_3 + Text.of(row_16)) + ";") + Text.of(column_17)) + "H");
 };
 const cursorTo_18 = (__arg) => {
 if (__wm_is_tuple(__arg) && __arg.length === 2) return cursorTo_18__wm_d2(__arg[0], __arg[1]);
@@ -2079,26 +2081,26 @@ __wm_fail("Match", "pattern match failure in function");
 const foreground_20 = (__arg) => {
 if (true) {
 const code_19 = __arg;
-return (((csi_3 + "38;5;") + Result.textOf(code_19)) + "m");
+return (((csi_3 + "38;5;") + Text.of(code_19)) + "m");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
 const background_22 = (__arg) => {
 if (true) {
 const code_21 = __arg;
-return (((csi_3 + "48;5;") + Result.textOf(code_21)) + "m");
+return (((csi_3 + "48;5;") + Text.of(code_21)) + "m");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
 const foregroundRgb_26__wm_d3 = (red_23, green_24, blue_25) => {
-return (((((((csi_3 + "38;2;") + Result.textOf(red_23)) + ";") + Result.textOf(green_24)) + ";") + Result.textOf(blue_25)) + "m");
+return (((((((csi_3 + "38;2;") + Text.of(red_23)) + ";") + Text.of(green_24)) + ";") + Text.of(blue_25)) + "m");
 };
 const foregroundRgb_26 = (__arg) => {
 if (__wm_is_tuple(__arg) && __arg.length === 3) return foregroundRgb_26__wm_d3(__arg[0], __arg[1], __arg[2]);
 __wm_fail("Match", "pattern match failure in function");
 };
 const backgroundRgb_30__wm_d3 = (red_27, green_28, blue_29) => {
-return (((((((csi_3 + "48;2;") + Result.textOf(red_27)) + ";") + Result.textOf(green_28)) + ";") + Result.textOf(blue_29)) + "m");
+return (((((((csi_3 + "48;2;") + Text.of(red_27)) + ";") + Text.of(green_28)) + ";") + Text.of(blue_29)) + "m");
 };
 const backgroundRgb_30 = (__arg) => {
 if (__wm_is_tuple(__arg) && __arg.length === 3) return backgroundRgb_30__wm_d3(__arg[0], __arg[1], __arg[2]);
@@ -2254,7 +2256,7 @@ const List = { "Nil": __wm_basis_List["Nil"], "Cons": __wm_basis_List["Cons"], "
 const Map = __wm_std_Map;
 const Option = { "None": __wm_basis_Option["None"], "Some": __wm_basis_Option["Some"], "map": __wm_std_Option["map"], "andThen": __wm_std_Option["andThen"], "withDefault": __wm_std_Option["withDefault"], "map2": __wm_std_Option["map2"], "traverse": __wm_std_Option["traverse"], "collectList": __wm_std_Option["collectList"] };
 const Monad = __wm_std_Monad;
-const Result = { "Ok": __wm_basis_Result["Ok"], "Err": __wm_basis_Result["Err"], "textOf": __wm_basis_Result["textOf"], "succeed": __wm_std_Result["succeed"], "map": __wm_std_Result["map"], "andThen": __wm_std_Result["andThen"], "toBool": __wm_std_Result["toBool"], "fn": __wm_std_Result["fn"], "mapErr": __wm_std_Result["mapErr"], "fnError": __wm_std_Result["fnError"], "map2": __wm_std_Result["map2"], "carrier": __wm_std_Result["carrier"], "withDefault": __wm_std_Result["withDefault"], "map3": __wm_std_Result["map3"], "map4": __wm_std_Result["map4"], "traverse": __wm_std_Result["traverse"], "all": __wm_std_Result["all"], "collectList": __wm_std_Result["collectList"] };
+const Result = { "Ok": __wm_basis_Result["Ok"], "Err": __wm_basis_Result["Err"], "succeed": __wm_std_Result["succeed"], "map": __wm_std_Result["map"], "andThen": __wm_std_Result["andThen"], "toBool": __wm_std_Result["toBool"], "fn": __wm_std_Result["fn"], "mapErr": __wm_std_Result["mapErr"], "fnError": __wm_std_Result["fnError"], "map2": __wm_std_Result["map2"], "carrier": __wm_std_Result["carrier"], "withDefault": __wm_std_Result["withDefault"], "map3": __wm_std_Result["map3"], "map4": __wm_std_Result["map4"], "traverse": __wm_std_Result["traverse"], "all": __wm_std_Result["all"], "collectList": __wm_std_Result["collectList"] };
 const Task = { "fromResult": __wm_basis_Task["fromResult"], "succeed": __wm_basis_Task["succeed"], "fail": __wm_basis_Task["fail"], "map": __wm_basis_Task["map"], "map2": __wm_basis_Task["map2"], "race": __wm_basis_Task["race"], "andThen": __wm_basis_Task["andThen"], "mapErr": __wm_basis_Task["mapErr"], "recover": __wm_basis_Task["recover"], "all": __wm_basis_Task["all"], "fn": __wm_std_Task["fn"], "fnError": __wm_std_Task["fnError"], "carrier": __wm_std_Task["carrier"], "collectList": __wm_std_Task["collectList"], "traverse": __wm_std_Task["traverse"] };
 const Traverse = __wm_std_Traverse;
 await __wm_request_module("__wm_module_2");

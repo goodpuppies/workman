@@ -33,7 +33,7 @@ record SliceEmitContext = {
   recursiveFunctionId: Number,
 };
 
-let text = (value) => { Result.textOf(value) };
+let text = (value) => { Text.of(value) };
 let localName = (id) => { "wm_l_" ++ text(id) };
 let functionName = (id) => { "wm_f_" ++ text(id) };
 let tupleName = (id) => { "wm_tuple_" ++ text(id) };

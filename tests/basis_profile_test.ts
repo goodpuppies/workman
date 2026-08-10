@@ -99,7 +99,7 @@ Deno.test("[module update T130/T133] current default constructors and low-level 
   );
   assertEquals(
     [...basis.environment.strEnv.get("Result")!.valEnv.keys()],
-    ["Ok", "Err", "textOf"],
+    ["Ok", "Err"],
   );
   assertEquals(
     [...basis.environment.strEnv.get("Task")!.valEnv.keys()],
@@ -380,7 +380,6 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         values: [
           "Ok",
           "Err",
-          "textOf",
           "succeed",
           "map",
           "andThen",
@@ -477,7 +476,7 @@ Deno.test("[module update B302] constructor runtime names come from the manifest
 /**
  * `B303`/`G9` for host values: every statically visible basis value, intrinsic with a
  * runtime name, and constructor must evaluate to a defined runtime value, including
- * qualified members such as `Js.Array.toList` and `Result.textOf`.
+ * qualified members such as `Js.Array.toList` and `Text.of`.
  *
  * `T131` above proves the references compile and the program loads; this test proves
  * each reference is actually *defined*, because a missing member of an existing

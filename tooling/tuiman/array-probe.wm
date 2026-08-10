@@ -18,7 +18,7 @@ let main = () => {
                     Ok(m) => {
                       match(dest :> .toString("utf8")) {
                         Err(_) => { print("str fail") },
-                        Ok(s) => { print("ok=" ++ s ++ " n=" ++ Result.textOf(n) ++ " m=" ++ Result.textOf(m)) },
+                        Ok(s) => { print("ok=" ++ s ++ " n=" ++ Text.of(n) ++ " m=" ++ Text.of(m)) },
                       }
                     },
                   }

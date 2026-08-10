@@ -76,7 +76,7 @@ let asciiArt = (state) => {
 };
 
 let hungerText = (state) => {
-  let text = "Hunger:    " ++ Result.textOf(Math.max(0, state.hunger) :> try) ++ " / 100";
+  let text = "Hunger:    " ++ Text.of(Math.max(0, state.hunger) :> try) ++ " / 100";
   if (state.hunger < 50) {
     chalk.default.green(text) :> try
   } else {
@@ -89,7 +89,7 @@ let hungerText = (state) => {
 };
 
 let happinessText = (state) => {
-  let text = "Happiness: " ++ Result.textOf(Math.max(0, state.happiness) :> try) ++ " / 100";
+  let text = "Happiness: " ++ Text.of(Math.max(0, state.happiness) :> try) ++ " / 100";
   if (state.happiness > 50) {
     chalk.default.green(text) :> try
   } else {
@@ -102,7 +102,7 @@ let happinessText = (state) => {
 };
 
 let energyText = (state) => {
-  let text = "Energy:    " ++ Result.textOf(Math.max(0, state.energy) :> try) ++ " / 100";
+  let text = "Energy:    " ++ Text.of(Math.max(0, state.energy) :> try) ++ " / 100";
   if (state.energy > 50) {
     chalk.default.green(text) :> try
   } else {
@@ -115,7 +115,7 @@ let energyText = (state) => {
 };
 
 let printStatus = (state) => {
-  let nameAndAge = "Name: " ++ state.name ++ " (Age: " ++ Result.textOf(state.age) ++ ")";
+  let nameAndAge = "Name: " ++ state.name ++ " (Age: " ++ Text.of(state.age) ++ ")";
   let stats =
     (chalk.default.cyan.bold(nameAndAge) :> try) ++ "\n" ++
     "Mood: " ++ (chalk.default.bold(moodText(mood(state))) :> try) ++ "\n" ++
@@ -313,7 +313,7 @@ let gameOver = (state) => {
     :> log;
   chalk.default.red(
     "Sadly, through neglect, " ++ state.name ++
-    " has passed away at age " ++ Result.textOf(state.age) ++ ".\n"
+    " has passed away at age " ++ Text.of(state.age) ++ ".\n"
   )
     :> try
     :> log;

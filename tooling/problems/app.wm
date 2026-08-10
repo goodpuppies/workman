@@ -160,7 +160,7 @@ let summary = (problem) => {
   } else {
     `[${problem.code}] ${problem.message}`
   };
-  `${severity(problem.severity)} ${problem.path}:${Result.textOf(problem.line)}:${Result.textOf(problem.column)} ${description}`
+  `${severity(problem.severity)} ${problem.path}:${Text.of(problem.line)}:${Text.of(problem.column)} ${description}`
 };
 
 let rec visibleRows = match(problems, skip, remaining, selected, index) => {
@@ -188,7 +188,7 @@ let filterState = (label, enabled) => {
 };
 
 let moduleLabel = (modules) => {
-  if (modules == 1) { "1 module" } else { `${Result.textOf(modules)} modules` }
+  if (modules == 1) { "1 module" } else { `${Text.of(modules)} modules` }
 };
 
 let headLine = (head) => {
@@ -209,7 +209,7 @@ let detailText = (model) => {
     None => { "No problems found." },
     Some(problem) => {
       if (model.expanded) {
-        `${problem.path}:${Result.textOf(problem.line)}:${Result.textOf(problem.column)}\n${severity(problem.severity)} [${problem.code}]\n${problem.message}`
+        `${problem.path}:${Text.of(problem.line)}:${Text.of(problem.column)}\n${severity(problem.severity)} [${problem.code}]\n${problem.message}`
       } else {
         "Enter or click the selected problem to expand"
       }
@@ -240,7 +240,7 @@ let render = (_, model, size) => {
     Draw.fill(body, " ", Draw.plain) ++
     Draw.text(
       Geometry.rect(0, 0, body.width, 1),
-      ` Workman problems  ${Result.textOf(count(model))}/${Result.textOf(totalCount(model))}  ${filterState("E", model.errors)} ${filterState("W", model.warnings)} ${filterState("I", model.infos)} ${filterState("H", model.hints)}`,
+      ` Workman problems  ${Text.of(count(model))}/${Text.of(totalCount(model))}  ${filterState("E", model.errors)} ${filterState("W", model.warnings)} ${filterState("I", model.infos)} ${filterState("H", model.hints)}`,
       Draw.accent,
     ) ++
     Draw.text(Geometry.rect(0, 1, body.width, 1), headLine(model.head), Draw.muted) ++

@@ -28,7 +28,7 @@ let describeImageError = match(error) => {
     }
   },
   ImageHttpFailure(status, body) => {
-    "HTTP " ++ Result.textOf(status) ++ ": " ++ body
+    "HTTP " ++ Text.of(status) ++ ": " ++ body
   },
 };
 
@@ -61,7 +61,7 @@ let deleteAll = match(Cap.backend) {
 
 let deleteImage = (identifier) => {
   match(Cap.backend) {
-    Cap.KittyGraphics => { apc(`a=d,d=I,i=${Result.textOf(identifier)},q=2`, "") },
+    Cap.KittyGraphics => { apc(`a=d,d=I,i=${Text.of(identifier)},q=2`, "") },
     Cap.HalfBlock => { "" },
   }
 };
@@ -75,7 +75,7 @@ let rec transmitChunks = (remaining, first, placement, identifier) => {
   let control = if (first) {
     `a=T,f=100,q=2,C=1,${
       if (identifier > 0) {
-        `i=${Result.textOf(identifier)},`
+        `i=${Text.of(identifier)},`
       } else {
         ""
       }
@@ -127,7 +127,7 @@ let fitPlacement = (area: Geometry.Rect, terminal: Geometry.Size, image: Image) 
       roundedDown((area.height - rows) / 2),
       area.width,
       rows,
-      `c=${Result.textOf(area.width)},r=${Result.textOf(rows)}`,
+      `c=${Text.of(area.width)},r=${Text.of(rows)}`,
     )
   } else {
     let columns = Geometry.clamp(
@@ -140,7 +140,7 @@ let fitPlacement = (area: Geometry.Rect, terminal: Geometry.Size, image: Image) 
       0,
       columns,
       area.height,
-      `c=${Result.textOf(columns)},r=${Result.textOf(area.height)}`,
+      `c=${Text.of(columns)},r=${Text.of(area.height)}`,
     )
   }
 };
@@ -175,10 +175,10 @@ let fillPlacement = (area: Geometry.Rect, terminal: Geometry.Size, image: Image)
         cropHeight,
       )
     };
-  let control = `x=${Result.textOf(sourceX)},y=${Result.textOf(sourceY)},w=${
-    Result.textOf(sourceWidth)
-  },h=${Result.textOf(sourceHeight)},c=${Result.textOf(area.width)},r=${
-    Result.textOf(area.height)
+  let control = `x=${Text.of(sourceX)},y=${Text.of(sourceY)},w=${
+    Text.of(sourceWidth)
+  },h=${Text.of(sourceHeight)},c=${Text.of(area.width)},r=${
+    Text.of(area.height)
   }`;
   Placement(0, 0, area.width, area.height, control)
 };

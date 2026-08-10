@@ -71,8 +71,7 @@ Deno.test("compiler v2 supports typed JavaScript-style string interpolation", as
   expectBinding(result.env, "escaped", { type: "String", vars: 0 });
   assertEquals(await formatFrontendV2Source(source), source);
   const javaScript = await compile(source, { frontend: "v2", frontendV2ModuleUrl });
-  assertStringIncludes(javaScript, '(("" + "Hello, ") + name_0)');
-  assertStringIncludes(javaScript, "name_0");
+  assertStringIncludes(javaScript, '(("" + "Hello, ") + Text.of(name_0))');
   assertStringIncludes(javaScript, 'const escaped_2 = "${name}";');
 });
 

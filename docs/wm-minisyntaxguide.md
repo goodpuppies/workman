@@ -94,7 +94,7 @@ let short = "hello\nworld";
 ```
 
 Backtick strings can span multiple lines and use JavaScript-style `${...}` interpolation.
-Interpolated expressions must have type `String`:
+Interpolation converts primitive values such as numbers and booleans to text:
 
 ```workman
 let page = `first line
@@ -103,8 +103,12 @@ third line`;
 
 let withTick = `use \` to include a backtick`;
 let greeting = `Hello, ${name}!`;
+let score = `score: ${42}, complete: ${true}`;
 let escaped = `write \${name} to show it literally`;
 ```
+
+The same conversion is available explicitly as `Text.of(value)`. Ordinary `++` remains strict
+string concatenation and does not convert its operands.
 
 ### Tuple Destructuring
 
@@ -639,6 +643,24 @@ let result = (10, 5) :> add;
 let result = 42 :> double :> add(10) :> print;
 -- Equivalent to: print(add(double(42), 10))
 ```
+
+When the right side is a nested application that produces a function, the pipe calls that produced
+function with the piped value:
+
+```workman
+let makeTransform = (offset) => {
+  (transform) => {
+    (value) => { transform(value + offset) }
+  }
+};
+
+let result = 40 :> makeTransform 1 (value) => { value + 1 };
+-- Equivalent to: ((makeTransform(1))((value) => { value + 1 }))(40)
+```
+
+This rule enables compact carrier continuations such as `task :> Monad.lift Task (value) => { ... }`.
+See [Inline lifted continuations](./advancedsyntax.md#inline-lifted-task-continuations) for the
+full expansion into `Task.andThen`.
 
 ---
 

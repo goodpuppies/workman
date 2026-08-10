@@ -101,8 +101,8 @@ let representation = (representations, node) => {
 
 let numericConflict = (left: NumericEvidence, right: NumericEvidence) => {
   Panic(
-    "WM_GPU_NUMERIC_CONFLICT|" ++ Result.textOf(left.spanId) ++ "|" ++
-      Result.textOf(right.spanId) ++ "|" ++ left.representation ++ "|" ++
+    "WM_GPU_NUMERIC_CONFLICT|" ++ Text.of(left.spanId) ++ "|" ++
+      Text.of(right.spanId) ++ "|" ++ left.representation ++ "|" ++
       right.representation
   )
 };
@@ -471,8 +471,8 @@ let rec ensureExpressionsResolved = match(expressions, context, representations)
     let node = expressionNode(expression, context);
     if (node >= 0 && representation(representations, node) == "") {
       Panic(
-        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Result.textOf(expression.spanId) ++
-          "|expression " ++ Result.textOf(expression.id)
+        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Text.of(expression.spanId) ++
+          "|expression " ++ Text.of(expression.id)
       )
     } else {
       ensureExpressionsResolved(rest, context, representations)
@@ -486,8 +486,8 @@ let rec ensurePatternsResolved = match(patterns, context, representations) => {
     let node = patternNode(pattern, context);
     if (node >= 0 && representation(representations, node) == "") {
       Panic(
-        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Result.textOf(pattern.spanId) ++
-          "|pattern " ++ Result.textOf(pattern.id)
+        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Text.of(pattern.spanId) ++
+          "|pattern " ++ Text.of(pattern.id)
       )
     } else {
       ensurePatternsResolved(rest, context, representations)
@@ -501,7 +501,7 @@ let rec ensureFieldsResolved = match(fields, context, representations) => {
     let node = fieldNode(field, context);
     if (node >= 0 && representation(representations, node) == "") {
       Panic(
-        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Result.textOf(field.spanId) ++
+        "WM_GPU_NUMERIC_UNRESOLVED|" ++ Text.of(field.spanId) ++
           "|environment field " ++ field.name
       )
     } else {

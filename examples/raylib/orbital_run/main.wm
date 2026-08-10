@@ -260,8 +260,8 @@ let drawHud = (g: Game) => {
   let fuelW = floorI(g.ship.fuel * 1.9);
   Result|
     Raylib.H.DrawRectangleRounded(.{ x = 10, y = 8, width = 250, height = 66 }, 0.22, 8, panelColor),
-    Raylib.H.DrawText("SCORE " ++ Result.textOf(g.score), 24, 16, 24, titleColor),
-    Raylib.H.DrawText("ORBS " ++ Result.textOf(count(g.orbs)), 24, 46, 18, hintColor),
+    Raylib.H.DrawText("SCORE " ++ Text.of(g.score), 24, 16, 24, titleColor),
+    Raylib.H.DrawText("ORBS " ++ Text.of(count(g.orbs)), 24, 46, 18, hintColor),
     Raylib.H.DrawRectangleRounded(.{ x = 10, y = 496, width = 282, height = 34 }, 0.5, 8, panelColor),
     Raylib.H.DrawText("FUEL", 24, 505, 16, hintColor),
     Raylib.H.DrawRectangle(76, 506, 192, 14, fuelBack),
@@ -340,7 +340,7 @@ let renderOver = (g: Game) => {
     drawSunCore(),
     Raylib.H.DrawRectangleRounded(.{ x = 180, y = 176, width = 600, height = 188 }, 0.18, 12, panelColor),
     drawCenteredText(text, 204, 46, headColor),
-    drawCenteredText("score  " ++ Result.textOf(g.score), 272, 28, titleColor),
+    drawCenteredText("score  " ++ Text.of(g.score), 272, 28, titleColor),
     drawCenteredText("press R to run again", 326, 20, accentColor),
     Raylib.EndDrawing()
   |

@@ -135,10 +135,10 @@ These are currently flat dotted `ValEnv` keys. They migrate to real structure me
 ### `Result`
 
 ```text
-Result.textOf
+Text.of
 ```
 
-`Result.textOf` is a host primitive/default member.
+`Text.of` is a host primitive available in every basis profile.
 
 ### `Json`
 

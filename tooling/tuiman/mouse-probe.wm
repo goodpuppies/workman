@@ -3,7 +3,7 @@ from "./ansi.wm" import * as Ansi;
 
 let show = match(event) => {
   Event.MouseDown(column, row) => {
-    `click ${Result.textOf(column)},${Result.textOf(row)}`
+    `click ${Text.of(column)},${Text.of(row)}`
   },
   Event.WheelUp => { "up" },
   Event.WheelDown => { "down" },
