@@ -3,6 +3,7 @@ import { lineStarts, sliceSource, type SourceSpan } from "../source.ts";
 import {
   findConstraintForFrame,
   indent,
+  isDirectPipeInputConflict,
   renderContextExcerpt,
   renderExplainDiagnostic,
   renderHeader,
@@ -41,6 +42,16 @@ const collisionAdapters: CollisionAdapter[] = [
     code: "type.match-arm-results-disagree",
     equation: "constraint",
     subject: () => "match arms",
+  },
+  {
+    code: "type.pipe-input-mismatch",
+    equation: "leaf",
+    subject: () => "pipe sides",
+  },
+  {
+    code: "type.if-branch-results-disagree",
+    equation: "constraint",
+    subject: () => "if branches",
   },
 ];
 
@@ -107,6 +118,13 @@ function renderNeutralTypeCollision(
     claim !== leftObserved && claim.claim.kind === "has-type" &&
     typeSnapshotRendered(diagnostic, claim.claim.type) === rightLeaf
   );
+  const participants = adapter.code === "type.match-arm-results-disagree"
+    ? matchParticipants(diagnostic, leftType, rightType)
+    : adapter.code === "type.pipe-input-mismatch"
+    ? pipeParticipants(diagnostic, leftType, rightType)
+    : adapter.code === "type.if-branch-results-disagree"
+    ? ifParticipants(diagnostic, leftType, rightType)
+    : undefined;
   const leftPath = leftObserved ? longestDerivationPath(diagnostic, leftObserved) : [];
   const rightPath = rightObserved ? longestDerivationPath(diagnostic, rightObserved) : [];
   const leftOrigin = leftPath[0] ?? leftObserved;
@@ -170,14 +188,11 @@ function renderNeutralTypeCollision(
   );
   const availableWidth = terminalWidth();
   const subject = callSlot?.subject ?? adapter.subject(diagnostic, source);
-  const participants = adapter.code === "type.match-arm-results-disagree"
-    ? matchParticipants(diagnostic, leftType, rightType)
-    : undefined;
   if (detailed) {
     const collisionLines = participants && source
       ? [
         `  type error: ${subject} can't be both:`,
-        ...participantEquationLines(participants, source).map((line) =>
+        ...participantEquationLines(diagnostic, participants, source).map((line) =>
           line.spans.map((item) => item.text).join("")
         ),
       ]
@@ -251,7 +266,7 @@ function compactCollisionDocument(
   const lines: Line[] = [header];
   if (participants && source) {
     lines.push(documentLine(span(`  type error: ${subject} can't be both:`, "error")));
-    lines.push(...participantEquationLines(participants, source));
+    lines.push(...participantEquationLines(diagnostic, participants, source));
   } else if (collisionExcerpt) {
     lines.push(documentLine(span("  "), ...collisionExcerpt.source.spans));
     lines.push(documentLine(
@@ -317,7 +332,97 @@ function matchParticipants(
     : undefined;
 }
 
+function pipeParticipants(
+  diagnostic: AuditableDiagnostic,
+  neededType: string,
+  producedType: string,
+): CollisionParticipants | undefined {
+  const typedClaims = diagnostic.support.entries.filter((entry): entry is ClaimEntry =>
+    entry.kind === "claim" && entry.claim.kind === "has-type" && entry.origin.kind === "source"
+  );
+  const claimForSubject = (subject: string | undefined, type: string) =>
+    subject
+      ? typedClaims.find((claim) =>
+        claim.claim.kind === "has-type" && claim.claim.subject === subject &&
+        claimContainsType(diagnostic, claim.claim.type, type)
+      )
+      : undefined;
+  const pipedValue = claimForSubject("piped value", producedType);
+  const produced = claimForSubject(
+    diagnostic.failure.violation.kind === "contradicted"
+      ? diagnostic.failure.violation.origins?.right
+      : undefined,
+    producedType,
+  ) ?? pipedValue;
+  const direct = diagnostic.failure.violation.kind === "contradicted" &&
+    isDirectPipeInputConflict(diagnostic.failure.violation.conflictPath);
+  const callee = claimForSubject(diagnostic.failure.frame.subject, neededType);
+  const result = typedClaims.find((claim) =>
+    claim.claim.kind === "has-type" &&
+    /(?:call|block|match|callback) result$/.test(claim.claim.subject) &&
+    claimContainsType(diagnostic, claim.claim.type, neededType)
+  );
+  const needed = direct ? callee : result ?? claimForSubject(
+    diagnostic.failure.violation.kind === "contradicted"
+      ? diagnostic.failure.violation.origins?.left
+      : undefined,
+    neededType,
+  ) ?? callee;
+  return produced && needed
+    ? {
+      left: { claim: produced, type: producedType },
+      right: { claim: needed, type: neededType },
+    }
+    : undefined;
+}
+
+function ifParticipants(
+  diagnostic: AuditableDiagnostic,
+  thenType: string,
+  elseType: string,
+): CollisionParticipants | undefined {
+  const typedClaims = diagnostic.support.entries.filter((entry): entry is ClaimEntry =>
+    entry.kind === "claim" && entry.claim.kind === "has-type" && entry.origin.kind === "source"
+  );
+  const thenBranch = typedClaims.find((claim) =>
+    claim.claim.kind === "has-type" && claim.claim.subject === "then branch result"
+  );
+  const elseBranch = typedClaims.find((claim) =>
+    claim.claim.kind === "has-type" && claim.claim.subject === "else branch result"
+  );
+  return thenBranch && elseBranch
+    ? {
+      left: { claim: thenBranch, type: thenType },
+      right: { claim: elseBranch, type: elseType },
+    }
+    : undefined;
+}
+
+function claimContainsType(
+  diagnostic: AuditableDiagnostic,
+  typeId: string,
+  renderedType: string,
+  seen = new Set<string>(),
+): boolean {
+  if (seen.has(typeId)) return false;
+  seen.add(typeId);
+  const snapshot = diagnostic.support.types.find((candidate) => candidate.id === typeId);
+  if (!snapshot) return false;
+  if (typeSnapshotRendered(diagnostic, snapshot.id) === renderedType) return true;
+  const children = snapshot.shape.kind === "function"
+    ? [...snapshot.shape.params, snapshot.shape.result]
+    : snapshot.shape.kind === "tuple"
+    ? snapshot.shape.items
+    : snapshot.shape.kind === "struct"
+    ? snapshot.shape.fields.map((field) => field.type)
+    : snapshot.shape.kind === "named"
+    ? snapshot.shape.args
+    : [];
+  return children.some((child) => claimContainsType(diagnostic, child, renderedType, seen));
+}
+
 function participantEquationLines(
+  diagnostic: AuditableDiagnostic,
   participants: CollisionParticipants,
   source: string,
 ): Line[] {
@@ -338,7 +443,25 @@ function participantEquationLines(
       span(participant.type, "type"),
     );
   };
-  return [row(participants.left, left), row(participants.right, right)];
+  const lines: Line[] = [];
+  for (
+    const [participant, view] of [
+      [participants.left, left],
+      [participants.right, right],
+    ] as const
+  ) {
+    lines.push(row(participant, view));
+    const participantOrigin = participant.claim.origin;
+    const note = participantOrigin.kind === "source"
+      ? diagnostic.support.entries.find((entry): entry is Extract<SupportEntry, { kind: "note" }> =>
+        entry.kind === "note" && entry.origin.kind === "source" &&
+        entry.origin.span.start === participantOrigin.span.start &&
+        entry.origin.span.end === participantOrigin.span.end
+      )
+      : undefined;
+    if (note) lines.push(documentLine(span(`    ${note.message}`, "hint")));
+  }
+  return lines;
 }
 
 type ParticipantSource = { gutter: string; code: string };

@@ -532,7 +532,7 @@ Deno.test("v4 GPU annotations check inference but do not provide overload eviden
     pathToFileUri(wrongPath),
     new Map([[wrongPath, helper("value: Bool")]]),
   );
-  assertEquals(wrong[0].diagnostics[0].code, "type.mismatch");
+  assertEquals(wrong[0].diagnostics[0].code, "type.call-argument-mismatch");
 });
 
 Deno.test("v4 annotations cannot rescue an unanchored reachable specialization", async () => {

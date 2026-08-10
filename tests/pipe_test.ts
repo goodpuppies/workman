@@ -1,5 +1,6 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, compileLibraryVirtual } from "../src/compiler.ts";
+import { formatDiagnostic, FrontendDiagnosticError } from "../src/diagnostics.ts";
 
 Deno.test("basic pipe to function", async () => {
   await checkSource(`
@@ -93,9 +94,7 @@ Deno.test("pipe member chains continue through HM-typed primitive results", asyn
 });
 
 Deno.test("pipe task error mismatch points at both origin slots", async () => {
-  let error: Error | undefined;
-  try {
-    await checkSource(`
+  const source = `
       let scanAll: Void -> Task<Void, Js.Error> = () => {
         void :> Task.succeed
       };
@@ -105,19 +104,21 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
         :> Task.andThen((n) => {
           scanAll()
         });
-    `);
-  } catch (caught) {
-    error = caught as Error;
-  }
-  if (!error) throw new Error("expected checkSource to reject");
-  assertStringIncludes(
-    error.message,
-    "InferPipe.StepInput: pipe output matches next function input",
+    `;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
   );
-  assertStringIncludes(error.message, "context: Task.andThen callback result");
-  assertStringIncludes(error.message, "expected: Js.Error");
-  assertStringIncludes(error.message, "actual:   String");
-  assertStringIncludes(error.message, "source: scanAll call result");
+  const rendered = formatDiagnostic(error.diagnostic, "task-pipe.wm", source);
+  assertStringIncludes(
+    rendered,
+    "type error: pipe sides can't be both:",
+  );
+  assertStringIncludes(rendered, "let bad = {..}");
+  assertStringIncludes(rendered, ": String");
+  assertStringIncludes(rendered, ": Js.Error");
+  assertStringIncludes(rendered, "let annotation: Js.Error");
+  assertStringIncludes(rendered, "Err call result: String");
 });
 
 async function importGenerated(source: string): Promise<Record<string, unknown>> {

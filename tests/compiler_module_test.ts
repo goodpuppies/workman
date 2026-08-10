@@ -53,7 +53,6 @@ let bad = Runtime.run(.{x=0}, render);`;
   assertStringIncludes(rendered, "runtime.wm:1:");
   assertStringIncludes(rendered, "Option<T>");
   assertStringIncludes(rendered, "Coord");
-  assertEquals(rendered.includes("│"), false);
 });
 
 Deno.test("imports are declaration-ordered and not hoisted", async () => {

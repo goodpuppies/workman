@@ -173,6 +173,7 @@ export type BasisOperatorDescriptor = Readonly<{
   spelling: string;
   kind: BasisOperatorKind;
   runtimeName: string;
+  directRuntimeName?: string;
 }>;
 
 export const BASIS_OPERATORS: readonly BasisOperatorDescriptor[] = Object.freeze([
@@ -188,13 +189,14 @@ export const BASIS_OPERATORS: readonly BasisOperatorDescriptor[] = Object.freeze
   [">=", "number-order", "__wm_op_gte"],
   ["==", "equality", "__wm_op_eq"],
   ["!=", "equality", "__wm_op_ne"],
-  ["&&", "boolean", "__wm_op_and"],
-  ["||", "boolean", "__wm_op_or"],
-].map(([spelling, kind, runtimeName]) =>
+  ["&&", "boolean", "__wm_op_and", "__wm_op_and_d2"],
+  ["||", "boolean", "__wm_op_or", "__wm_op_or_d2"],
+].map(([spelling, kind, runtimeName, directRuntimeName]) =>
   Object.freeze({
     spelling,
     kind,
     runtimeName,
+    ...(directRuntimeName ? { directRuntimeName } : {}),
   } as BasisOperatorDescriptor)
 ));
 

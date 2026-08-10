@@ -25,7 +25,7 @@ Deno.test("rejects Workman ADT values passed to JS FFI calls", async () => {
         };
       `),
     Error,
-    "expected: Js.Value",
+    "left: Js.Value",
   );
 });
 

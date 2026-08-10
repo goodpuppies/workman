@@ -62,7 +62,7 @@ Deno.test("constructor arity is checked in expressions and patterns", async () =
   await assertRejects(
     () => checkSource("type Pair = | Pair<Number, Number>; let bad = Pair(1);"),
     Error,
-    "type mismatch",
+    "type collision",
   );
   await assertRejects(
     () =>

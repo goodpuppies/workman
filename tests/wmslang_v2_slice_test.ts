@@ -596,7 +596,7 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
         let fragment = Gpu.fragment(shade(wrong));
       `),
     Error,
-    "type mismatch",
+    "type collision",
   );
 
   await assertRejects(

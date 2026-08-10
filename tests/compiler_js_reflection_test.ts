@@ -487,7 +487,7 @@ Deno.test("foreign JS type identity is keyed by reflected source, not local name
       `from "./a.wm" import * as A; from "./b.wm" import * as B; let bad = B.use(A.id(Panic("x")));`,
     ],
   ]);
-  await assertRejects(() => checkVirtual("/test/main.wm", distinct), Error, "type mismatch");
+  await assertRejects(() => checkVirtual("/test/main.wm", distinct), Error, "type collision");
 });
 
 Deno.test("delays foreign method reflection until downstream HM constrains the receiver", async () => {

@@ -436,7 +436,14 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
 Deno.test("[module update B303/G9] emitted runtime defines every manifest runtime name", async () => {
   const compiled = await compile("let main = () => { print(1) };");
 
-  const missingOperators = [...BASIS_OPERATORS, ...BASIS_UNARY_OPERATORS]
+  const cataloguedOperators = [...BASIS_OPERATORS, ...BASIS_UNARY_OPERATORS]
+    .flatMap((operator) => [
+      { spelling: operator.spelling, runtimeName: operator.runtimeName },
+      ...(operator.directRuntimeName
+        ? [{ spelling: operator.spelling, runtimeName: operator.directRuntimeName }]
+        : []),
+    ]);
+  const missingOperators = cataloguedOperators
     .filter((operator) => !compiled.includes(`const ${operator.runtimeName} =`))
     .map((operator) => `${operator.spelling} -> ${operator.runtimeName}`);
   assertEquals(missingOperators, []);
@@ -451,9 +458,7 @@ Deno.test("[module update B303/G9] emitted runtime defines every manifest runtim
   // hand-written definition can survive alongside the manifest-derived ones.
   const emittedOperators = [...compiled.matchAll(/const (__wm_op_[A-Za-z0-9_]+) =/g)]
     .map((match) => match[1]);
-  const declared = new Set(
-    [...BASIS_OPERATORS, ...BASIS_UNARY_OPERATORS].map((operator) => operator.runtimeName),
-  );
+  const declared = new Set(cataloguedOperators.map((operator) => operator.runtimeName));
   assertEquals(emittedOperators.filter((name) => !declared.has(name)), []);
 });
 

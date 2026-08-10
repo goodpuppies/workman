@@ -262,11 +262,11 @@ Deno.test("reflects JSR module imports", async () => {
 
 Deno.test("reflects bare npm modules through node_modules declarations", async () => {
   const result = await checkSource(`
-    from js.module("typescript") import { createSourceFile };
-    let file = createSourceFile("example.ts", "", 99);
+    from js.module("peggy") import { generate };
+    let parser = generate("start = \\"x\\"");
   `);
 
-  expectBinding(result.env, "file", { type: "Result<SourceFile, Js.Error>", vars: 0 });
+  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
 });
 
 Deno.test("enables nodeModulesDir and installs npm imports when needed", async () => {

@@ -317,8 +317,20 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         },
       );
       t = inferExpr(expr.thenExpr, context);
+      const thenSource = sourceForTypedExpr(
+        expr.thenExpr,
+        t,
+        provenance,
+        "then branch result",
+      );
       recordExpectedExprType(facts, expr.elseExpr, t);
       const elseType = inferExpr(expr.elseExpr, context);
+      const elseSource = sourceForTypedExpr(
+        expr.elseExpr,
+        elseType,
+        provenance,
+        "else branch result",
+      );
       recordExpectedExprType(facts, expr.thenExpr, elseType);
       constrainAt(
         t,
@@ -334,12 +346,15 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         },
         {
           premise: {
+            code: "type.if-branch-results-disagree",
             rule: "InferIf.BranchesSameType",
             role: "if branches have the same type",
             subject: "if expression",
             leftRole: "then branch",
             rightRole: "else branch",
           },
+          sources: { left: thenSource, right: elseSource },
+          primarySource: "right",
         },
       );
       break;

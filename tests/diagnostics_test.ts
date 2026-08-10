@@ -230,12 +230,12 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   const rendered = formatDiagnostic(error.diagnostic, "Main.wm", source);
   assertStringIncludes(rendered, "Error: TYPE CHECKER[type.pipe-input-mismatch]");
   assertStringIncludes(rendered, "Main.wm");
-  assertStringIncludes(rendered, "This expression produces:");
-  assertStringIncludes(rendered, "    String");
-  assertStringIncludes(rendered, '2| let bad = "x" :> render;');
-  assertStringIncludes(rendered, "But this pipeline step needs:");
-  assertStringIncludes(rendered, "    Number");
-  assertStringIncludes(rendered, "`render` takes a `Number` as its first argument.");
+  assertStringIncludes(rendered, "type error: pipe sides can't be both:");
+  assertStringIncludes(rendered, "let bad = {..}");
+  assertStringIncludes(rendered, ": String");
+  assertStringIncludes(rendered, 'let bad = "x" :> {..}');
+  assertStringIncludes(rendered, ": Number");
+  assertStringIncludes(rendered, "-- Origins");
 });
 
 Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
@@ -271,15 +271,15 @@ let bad = input
   );
 
   const rendered = formatDiagnostic(error.diagnostic, "test.wm", source);
-  assertStringIncludes(rendered, "This expression produces:");
-  assertStringIncludes(rendered, "    Void");
+  assertStringIncludes(rendered, "type error: pipe sides can't be both:");
+  assertStringIncludes(rendered, ": Void");
+  assertStringIncludes(rendered, ": Js.Error");
   assertStringIncludes(rendered, "6|     e;");
   assertStringIncludes(
     rendered,
     "this trailing `;` makes the block result Void",
   );
-  assertStringIncludes(rendered, "But this pipeline step needs:");
-  assertStringIncludes(rendered, "    Js.Error");
+  assertStringIncludes(rendered, "let annotation: Js.Error");
 });
 
 Deno.test("recursive result mismatch explains accidental match function", async () => {
@@ -383,14 +383,28 @@ let update = match(event, model) => {
 });
 
 Deno.test("if branch mismatch records an if branch premise", async () => {
+  const source = `let bad = if (true) {
+  true
+} else {
+  "x"
+};`;
   const error = await assertRejects(
-    () => checkSource('let bad = if (true) { 1 } else { "x" };'),
+    () => checkSource(source),
     FrontendDiagnosticError,
   );
 
+  assertEquals(error.diagnostic.code, "type.if-branch-results-disagree");
   assertEquals(error.diagnostic.failure.frame.rule, "InferIf.BranchesSameType");
   assertEquals(error.diagnostic.failure.premise.role, "if branches have the same type");
   assertEquals(constraintRoles(error.diagnostic), ["then branch", "else branch"]);
+  const rendered = formatDiagnostic(error.diagnostic, "if.wm", source);
+  assertStringIncludes(rendered, "type error: if branches can't be both:");
+  assertStringIncludes(rendered, "1| let bad = if (true) {..}: Bool");
+  assertStringIncludes(rendered, "3| } else {..}");
+  assertStringIncludes(rendered, ": String");
+  assertStringIncludes(rendered, "expression: Bool");
+  assertStringIncludes(rendered, "expression: String");
+  assertStringIncludes(rendered, "-- Origins");
 });
 
 Deno.test("binary operand mismatch records an operator premise", async () => {

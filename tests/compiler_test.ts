@@ -494,7 +494,7 @@ Deno.test("typed lambda parameters reject incompatible calls", async () => {
   await assertRejects(
     () => checkSource('let inc = (x: Number) => { x + 1 }; let bad = inc("no");'),
     Error,
-    "type mismatch",
+    "type collision",
   );
 });
 

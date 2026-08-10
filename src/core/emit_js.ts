@@ -921,9 +921,11 @@ function emitPrimitiveOperatorApp(
     // argument before the call. Keep that behavior for JavaScript's normally
     // short-circuiting operators while still avoiding tuple allocation.
     case "&&":
-      return `__wm_op_and_d2(${left}, ${right})`;
     case "||":
-      return `__wm_op_or_d2(${left}, ${right})`;
+      if (!operator.directRuntimeName) {
+        throw new Error(`basis operator ${operator.spelling} has no direct runtime name`);
+      }
+      return `${operator.directRuntimeName}(${left}, ${right})`;
   }
 }
 

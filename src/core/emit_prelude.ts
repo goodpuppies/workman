@@ -349,15 +349,32 @@ const UNARY_OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
   "!": "(x) => !x",
 });
 
+const DIRECT_OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  "&&": "(a, b) => a && b",
+  "||": "(a, b) => a || b",
+});
+
 function emitBasisOperators(): string[] {
   return [
     ...definitionsFor(BASIS_OPERATORS, OPERATOR_BODIES, "BASIS_OPERATORS"),
     ...definitionsFor(BASIS_UNARY_OPERATORS, UNARY_OPERATOR_BODIES, "BASIS_UNARY_OPERATORS"),
     // Direct eager entry points let statically known boolean applications avoid
     // their argument tuple without adopting JavaScript's short-circuit semantics.
-    "const __wm_op_and_d2 = (a, b) => a && b;",
-    "const __wm_op_or_d2 = (a, b) => a || b;",
+    ...directDefinitionsFor(BASIS_OPERATORS),
   ];
+}
+
+function directDefinitionsFor(operators: readonly BasisOperatorDescriptor[]): string[] {
+  return operators.flatMap((operator) => {
+    if (!operator.directRuntimeName) return [];
+    const body = DIRECT_OPERATOR_BODIES[operator.spelling];
+    if (!body) {
+      throw new Error(
+        `basis operator ${operator.spelling} has no direct runtime implementation`,
+      );
+    }
+    return [`const ${operator.directRuntimeName} = ${body};`];
+  });
 }
 
 function definitionsFor(
