@@ -812,10 +812,12 @@ function renderCompactExcerpt(
   const lineIndex = Math.max(0, Math.min(sourceSpan.line - 1, starts.length - 1));
   const lineStart = starts[lineIndex];
   const lineEnd = source.indexOf("\n", lineStart);
-  const line = lineEnd === -1 ? source.slice(lineStart) : source.slice(lineStart, lineEnd);
+  const originalLine = lineEnd === -1 ? source.slice(lineStart) : source.slice(lineStart, lineEnd);
   const gutter = `${sourceSpan.line}| `;
   const location = `${relativeFile(filePath)}:${sourceSpan.line}:${sourceSpan.col + 1}`;
-  const underlineOffset = Math.max(0, sourceSpan.start - lineStart);
+  const compacted = compactLeadingIndent(originalLine, sourceSpan.start - lineStart);
+  const line = compacted.line;
+  const underlineOffset = compacted.offset;
   const underlineWidth = Math.max(
     1,
     Math.min(
@@ -830,6 +832,17 @@ function renderCompactExcerpt(
     source: documentLine(span(gutter, "secondary"), span(`${line}  ${location}`)),
     underlinePrefix,
     underline,
+  };
+}
+
+function compactLeadingIndent(line: string, offset: number): { line: string; offset: number } {
+  const leading = /^[ \t]*/.exec(line)?.[0].length ?? 0;
+  if (leading <= 8) return { line, offset: Math.max(0, offset) };
+  const compactIndent = "  ";
+  const removed = leading - compactIndent.length;
+  return {
+    line: compactIndent + line.slice(leading),
+    offset: Math.max(compactIndent.length, offset - removed),
   };
 }
 

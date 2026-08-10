@@ -407,6 +407,22 @@ Deno.test("if branch mismatch records an if branch premise", async () => {
   assertStringIncludes(rendered, "-- Origins");
 });
 
+Deno.test("compact collision excerpts collapse excessive indentation", async () => {
+  const source = `let inc = (x: Number) => { x + 1 };
+let main = () => {
+                    inc("no")
+};`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "indent.wm", source);
+  assertStringIncludes(rendered, '3|   inc("no")');
+  assertEquals(rendered.includes('3|                     inc("no")'), false);
+  assertStringIncludes(rendered, "indent.wm:3:21");
+});
+
 Deno.test("binary operand mismatch records an operator premise", async () => {
   const error = await assertRejects(
     () => checkSource('let bad = 1 + "x";'),
