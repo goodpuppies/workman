@@ -658,8 +658,8 @@ let result = 40 :> makeTransform 1 (value) => { value + 1 };
 -- Equivalent to: ((makeTransform(1))((value) => { value + 1 }))(40)
 ```
 
-This rule enables compact carrier continuations such as `task :> Monad.lift Task (value) => { ... }`.
-See [Inline lifted continuations](./advancedsyntax.md#inline-lifted-task-continuations) for the
+This rule enables compact carrier continuations such as `task :> Monad.via Task (value) => { ... }`.
+See [Inline Task continuations with `via`](./advancedsyntax.md#inline-task-continuations-with-via) for the
 full expansion into `Task.andThen`.
 
 ---

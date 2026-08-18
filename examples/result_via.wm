@@ -4,10 +4,10 @@
 
 type Result<T, E> = Ok<T> | Err<E>;
 
-record LiftCarrier<A, B> = { liftFn: A -> B };
+record ViaCarrier<A, B> = { fn: A -> B };
 
 record ResultCarrier<A, B, E> = {
-  liftFn: (A -> Result<B, E>) -> Result<A, E> -> Result<B, E>,
+  fn: (A -> Result<B, E>) -> Result<A, E> -> Result<B, E>,
   andThen: (Result<A, E>, A -> Result<B, E>) -> Result<B, E>,
   map: (Result<A, E>, A -> B) -> Result<B, E>
 };
@@ -19,9 +19,9 @@ let andThen = (result, f) => {
   }
 };
 
-// create Result structure with a lifting function
+// Create a Result structure with a carrier function adapter.
 let Var(Result) = .{
-  liftFn = (f) => {
+  fn = (f) => {
     (result) => {
       result :> andThen(f)
     }
@@ -35,24 +35,24 @@ let Var(Result) = .{
   andThen = andThen,
 };
 
-// the monadic lift function
-// arg1 a Carrier structure that has a lifting functiion
-// arg2 a lambda function to be lifted
-let lift = (x) => {
+// Create/call a function via a carrier's `fn` function.
+// arg1 a Carrier structure that has an `fn` function
+// arg2 a lambda function to adapt
+let via = (x) => {
   (f) => {
-    x.liftFn(f)
+    x.fn(f)
   }
 };
 
-// Wrap the print function in a lift such that it can print a Result<String,E>
-let printOk = lift Result (value) => {
+// Adapt print via Result so that it can print a Result<String,E>.
+let printOk = via Result (value) => {
   print(value);
   Ok(void)
 };
 
 let calculate = (input) => {
-  // notice the curried application here "(lift Result)((number..."
-  let requirePositive = lift Result (number) => {
+  // Notice the curried application here: "(via Result)((number...".
+  let requirePositive = via Result (number) => {
     if (number > 0) {
       Ok(number)
     } else {
@@ -60,11 +60,11 @@ let calculate = (input) => {
     }
   };
 
-  let double = lift Result (number) => {
+  let double = via Result (number) => {
     Ok(number * 2)
   };
 
-  let divide100By = lift Result (number) => {
+  let divide100By = via Result (number) => {
     if (number == 0) {
       Err("cannot divide by zero")
     } else {

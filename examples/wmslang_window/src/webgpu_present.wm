@@ -23,7 +23,7 @@ from js.global import type {
 };
 from js.global("Deno") import type { UnsafeWindowSurface };
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 record FragmentRenderer = {
   device: GPUDevice,
@@ -95,7 +95,7 @@ let buildRenderer = (
   fragment: Gpu.Fragment
 ) => {
   let wgsl = Gpu.wgsl(fragment);
-  let assemble = lift Result (format, module) => {
+  let assemble = via Result (format, module) => {
     configureContext(context, device, format)
       :> Result.andThen((_) => {
         createPipeline(
@@ -107,7 +107,7 @@ let buildRenderer = (
         )
       })
       :> Result.andThen((pipeline) => {
-        let finish = lift Result (uniformUsage, copyDestinationUsage) => {
+        let finish = via Result (uniformUsage, copyDestinationUsage) => {
           let byteLength = Gpu.uniformByteLength(fragment);
           let bindingCount = Gpu.bindingCount(fragment);
           if (bindingCount <= 0) {
@@ -164,8 +164,8 @@ let createFragmentRenderer = (
   surface: UnsafeWindowSurface,
   fragment: Gpu.Fragment
 ) => {
-  let withDevice = lift Task (device) => {
-    let withContext = lift Result (context) => {
+  let withDevice = via Task (device) => {
+    let withContext = via Result (context) => {
       buildRenderer(device, context, fragment)
     };
     surface.getContext("webgpu")
@@ -303,9 +303,9 @@ let createFrameBindGroup = (renderer: FragmentRenderer, fragment: Gpu.Fragment) 
 };
 
 let renderFragment = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
-  let encode = lift Result (texture, encoder, frameBindGroup) => {
-    let withView = lift Result (view) => {
-      let withPass = lift Result (pass) => {
+  let encode = via Result (texture, encoder, frameBindGroup) => {
+    let withView = via Result (view) => {
+      let withPass = via Result (pass) => {
         setPipeline(pass, renderer.pipeline)
           :> Result.andThen((_) => {
             match(frameBindGroup) {
@@ -321,7 +321,7 @@ let renderFragment = (renderer: FragmentRenderer, fragment: Gpu.Fragment) => {
     };
     createView(texture) :> withView
   };
-  let send = lift Result (command, queue) => { submit(queue, command) };
+  let send = via Result (command, queue) => { submit(queue, command) };
   uploadEnvironment(renderer, fragment) :> Result.andThen((_) => {
     let command = Result|
       currentTexture(renderer.context),
@@ -352,7 +352,7 @@ let createOffscreenFragmentRenderer = (
       Gpu.vertexEntryPoint(fragment),
       Gpu.fragmentEntryPoint(fragment)
     ) :> Result.andThen((pipeline) => {
-      let finish = lift Result (uniformUsage, copyDestinationUsage) => {
+      let finish = via Result (uniformUsage, copyDestinationUsage) => {
         let byteLength = Gpu.uniformByteLength(fragment);
         if (Gpu.bindingCount(fragment) <= 0) {
           Ok(.{
@@ -414,7 +414,7 @@ let renderFragmentTo = (
   target: Gpu.RenderTarget2D
 ) => {
   let device: GPUDevice = renderer.device;
-  let encode = lift Result (view, encoder, frameBindGroup) => {
+  let encode = via Result (view, encoder, frameBindGroup) => {
     beginOffscreenPass(encoder, view) :> Result.andThen((pass) => {
       setPipeline(pass, renderer.pipeline)
         :> Result.andThen((_) => {
@@ -445,7 +445,7 @@ let renderFragmentTo = (
           fragment
         )
       | :> encode;
-      let send = lift Result (ready, queue) => { submit(queue, ready) };
+      let send = via Result (ready, queue) => { submit(queue, ready) };
       Result|command, deviceQueue(device)| :> send
     })
   })

@@ -51,6 +51,7 @@ export function inferDecl(
   exports: Env,
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
+  publish = true,
 ) {
   const { env, strEnv, typeEnv, adts, facts } = context;
   if (decl.kind === "ImportDecl") return;
@@ -58,8 +59,9 @@ export function inferDecl(
     addJsImport(env, typeEnv, strEnv, decl, facts);
     return;
   }
+  const exported = publish && (decl.kind === "ForeignTypeDecl" || decl.exported);
   if (decl.kind === "ForeignTypeDecl") {
-    addForeignType(decl, strEnv, typeEnv, typeExports, exportableTypeIds, facts);
+    addForeignType(decl, strEnv, typeEnv, typeExports, exportableTypeIds, facts, exported);
     return;
   }
   if (decl.kind === "RecordDecl") {
@@ -72,6 +74,7 @@ export function inferDecl(
       typeExports,
       exportableTypeIds,
       facts,
+      exported,
     );
     return;
   }
@@ -86,10 +89,11 @@ export function inferDecl(
       adts,
       exportableTypeIds,
       facts,
+      exported,
     );
     return;
   }
-  inferLetDecl(decl, context, exports, exportableTypeIds);
+  inferLetDecl(decl, context, exports, exportableTypeIds, exported);
 }
 
 function addForeignType(
@@ -99,6 +103,7 @@ function addForeignType(
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
   facts: TypeFacts,
+  exported: boolean,
 ) {
   const key = decl.foreignKey ?? `name:${decl.name}`;
   const info = foreignTypeInfo(canonicalForeignTypeName(decl.name, key), key);
@@ -106,8 +111,10 @@ function addForeignType(
   const path = parseLongId(decl.name);
   if (isQualified(path)) bindLongType(strEnv, path, info);
   else bindType(staticEnv(strEnv, typeEnv), decl.name, info);
-  typeExports.set(decl.name, info);
-  exportableTypeIds.add(info.id);
+  if (exported) {
+    typeExports.set(decl.name, info);
+    exportableTypeIds.add(info.id);
+  }
   recordTypeDeclarationFact(facts, decl, info);
 }
 
@@ -140,6 +147,7 @@ function inferRecordDecl(
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
   facts: import("./type_facts.ts").TypeFacts,
+  exported: boolean,
 ) {
   rejectDuplicates(decl.params, "type parameter");
   rejectDuplicates(decl.fields.map((field) => field.name), "record field");
@@ -147,7 +155,7 @@ function inferRecordDecl(
   recordTypeDeclarationFact(facts, decl, info);
   registerTypeInfo(typeEnv, info);
   bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
-  if (decl.exported) typeExports.set(decl.name, info);
+  if (exported) typeExports.set(decl.name, info);
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
   decl.params.forEach((name, parameterIndex) =>
     recordTypeVariableDeclarationFact(
@@ -175,7 +183,7 @@ function inferRecordDecl(
     if (v.tag !== "var") throw new Error("invalid record type parameter");
     return v.id;
   });
-  if (decl.exported) {
+  if (exported) {
     exportableTypeIds.add(info.id);
     assertExportableRecord(info, exportableTypeIds);
   }
@@ -193,7 +201,7 @@ function inferRecordDecl(
     general: constructor,
     origin: originForScheme(decl.name, constructor),
   });
-  if (decl.exported) {
+  if (exported) {
     exports.set(decl.name, constructor);
   }
 }
@@ -208,15 +216,16 @@ function inferTypeDecl(
   adts: Map<number, TypeDeclInfo>,
   exportableTypeIds: Set<number>,
   facts: import("./type_facts.ts").TypeFacts,
+  exported: boolean,
 ) {
   rejectDuplicates(decl.params, "type parameter");
   const info = freshTypeInfo(decl.name, decl.params.length);
   recordTypeDeclarationFact(facts, decl, info);
   registerTypeInfo(typeEnv, info);
   bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
-  if (decl.exported) typeExports.set(decl.name, info);
+  if (exported) typeExports.set(decl.name, info);
   if (decl.alias) {
-    inferAliasDecl(decl, info, typeEnv, strEnv, exportableTypeIds, facts);
+    inferAliasDecl(decl, info, typeEnv, strEnv, exportableTypeIds, facts, exported);
     return;
   }
   rejectDuplicates(decl.ctors.map((c) => c.name), "constructor");
@@ -236,7 +245,7 @@ function inferTypeDecl(
     if (v.tag !== "var") throw new Error("invalid datatype type parameter");
     return v.id;
   });
-  if (decl.exported) exportableTypeIds.add(info.id);
+  if (exported) exportableTypeIds.add(info.id);
   const ctorTypes: Ty[][] = [];
   for (const c of decl.ctors) {
     const args = c.args.map((x) =>
@@ -251,7 +260,7 @@ function inferTypeDecl(
       })
     );
     ctorTypes.push(args);
-    if (decl.exported) {
+    if (exported) {
       args.forEach((arg) =>
         assertExportableType(arg, exportableTypeIds, `exported type ${decl.name}`)
       );
@@ -268,7 +277,7 @@ function inferTypeDecl(
       instantiated: scheme.type,
       general: scheme,
     });
-    if (decl.exported) exports.set(c.name, scheme);
+    if (exported) exports.set(c.name, scheme);
   }
   adts.set(info.id, { ...decl, type: info, paramTypeIds, ctorTypes });
 }
@@ -280,6 +289,7 @@ function inferAliasDecl(
   strEnv: import("./environment.ts").StrEnv,
   exportableTypeIds: Set<number>,
   facts: import("./type_facts.ts").TypeFacts,
+  exported: boolean,
 ) {
   if (!decl.alias) return;
   if (referencesTypeName(decl.alias, decl.name, new Set(decl.params))) {
@@ -309,7 +319,7 @@ function inferAliasDecl(
     if (v.tag !== "var") throw new Error("invalid type alias parameter");
     return v.id;
   });
-  if (decl.exported) {
+  if (exported) {
     exportableTypeIds.add(info.id);
     assertExportableType(info.alias, exportableTypeIds, `exported type ${decl.name}`);
   }
@@ -320,15 +330,16 @@ function inferLetDecl(
   context: InferContext,
   exports: Env,
   exportableTypeIds: Set<number>,
+  exported: boolean,
 ) {
   const binders = decl.bindings.flatMap((b) => patternBinders(b.pattern));
   rejectDuplicates(binders, "binding");
   const annotationVars: TypeVarScope = new Map();
   if (!decl.recursive) {
-    inferNonRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars);
+    inferNonRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars, exported);
     return;
   }
-  inferRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars);
+  inferRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars, exported);
 }
 
 function inferNonRecursiveLet(
@@ -337,6 +348,7 @@ function inferNonRecursiveLet(
   exports: Env,
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
+  exported: boolean,
 ) {
   const { env, facts, warnings, diagnostics, provenance } = context;
   const base = new Map(env);
@@ -381,7 +393,7 @@ function inferNonRecursiveLet(
           origin: originForScheme(name, scheme),
         });
       }
-      if (decl.exported) {
+      if (exported) {
         assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
         exports.set(name, scheme);
       }
@@ -395,6 +407,7 @@ function inferRecursiveLet(
   exports: Env,
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
+  exported: boolean,
 ) {
   const { env, strEnv, typeEnv, types, facts, provenance } = context;
   const base = new Map(env);
@@ -486,7 +499,7 @@ function inferRecursiveLet(
       general: scheme,
       origin: originForScheme(name, scheme),
     });
-    if (decl.exported) {
+    if (exported) {
       assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
       exports.set(name, scheme);
     }

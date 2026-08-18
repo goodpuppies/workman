@@ -36,8 +36,8 @@ Start with small examples, then inspect larger interop code.
 ### Carrier-oriented error flow
 
 - [`docs/carriers.md`](../../docs/carriers.md) — required reading. It explains
-  carrier lifting, `Result|...|`/`Task|...|`, primitive `Result` coercion, and the
-  `Monad.lift` pattern.
+  carrier adaptation via `Monad.via`, `Result|...|`/`Task|...|`, primitive `Result` coercion, and the
+  `Monad.via` pattern.
 - [`std/result.wm`](../../std/result.wm) — the concrete `map`, `andThen`, `mapErr`,
   and tuple-combination operations used by carrier-oriented code.
 - [`std/task.wm`](../../std/task.wm) — the asynchronous carrier surface.
@@ -48,7 +48,7 @@ The design comparison is:
 Go:       call -> inspect err -> return/continue
 Elm:      value |> andThen (...) |> andThen (...)
 Workman:  wrap head input in Result/Task
-          -> lift transformations into that carrier
+          -> create transformations via that carrier
           -> compose a result-position pipeline
           -> match(Carrier|procedureA, procedureB|) at computation boundaries
 ```
@@ -57,15 +57,15 @@ Safe FFI calls return `Result`; Promise-returning calls return `Task`. Carrier
 composition keeps the explicit error information without nesting a `match` or
 `andThen` around every routine transformation. Explicit `andThen` remains useful
 for genuinely dependent control flow and is the mechanism under the sugar. This is
-not a niche convenience: the procedure/lift/pipeline/group pattern determines the
+not a niche convenience: the procedure/via/pipeline/group pattern determines the
 shape of most FFI-heavy Workman code, particularly the Raylib examples.
 
 A typical top-level procedure therefore looks like:
 
 ```wm
 let procedure = (input) => {
-  let stepA = lift Result (value) => { ... };
-  let stepB = lift Result (value) => { ... };
+  let stepA = via Result (value) => { ... };
+  let stepB = via Result (value) => { ... };
 
   Ok(input)
     :> stepA
@@ -98,7 +98,7 @@ match(Result|procedureA(), procedureB()|) {
   boundary, safe FFI, `Result`, `Task`, Deno file access, and JS arrays.
 - [`examples/github_repos.wm`](../../examples/github_repos.wm) — safe HTTP/JSON
   interop, `Result`/`Task` pipelines, JS arrays, and carrier conversion.
-- [`examples/task_lift.wm`](../../examples/task_lift.wm) — several equivalent
+- [`examples/task_via.wm`](../../examples/task_via.wm) — several equivalent
   carrier-composition styles for asynchronous Deno operations.
 
 ### Larger multi-file/Raylib code

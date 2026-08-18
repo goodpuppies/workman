@@ -78,7 +78,7 @@ Deno.test("explicit calls ignore whitespace and newlines before parentheses", as
     let spaced = URL.new (specifier, base);
     let newline = URL.new
     (specifier, base);
-    let lifted = Monad.lift Result (value) => { Ok(value) };
+    let viaResult = Monad.via Result (value) => { Ok(value) };
   `);
 
   expectBinding(result.env, "adjacent", { type: "URL", vars: 0 });
@@ -681,8 +681,8 @@ Deno.test("reflects nested local JS module namespace receiver calls", async () =
 Deno.test("reflects JS namespace functions as values", async () => {
   const result = await checkSource(`
     from js.global("Math") import * as Math;
-    let liftR = Monad.lift Result;
-    let sin = liftR Math.sin;
+    let viaR = Monad.via Result;
+    let sin = viaR Math.sin;
     let wave = Ok(1) :> sin;
   `);
 

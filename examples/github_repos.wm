@@ -1,7 +1,7 @@
 from js.global import { encodeURIComponent, fetch };
 from js.global("Deno") import { args: Js.Array<String> };
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 record Repo = {
   name: String, 
@@ -26,8 +26,8 @@ let api = {
     "&per_page=" ++ Text.of(perPage)
 };
 
-let fetchJson = lift Task (url) => {
-  let checkStatus = lift Task (response) => {
+let fetchJson = via Task (url) => {
+  let checkStatus = via Task (response) => {
     if (response :> .ok :> Result.withDefault(false)) {
       response :> Task.succeed
     } else {
@@ -37,10 +37,10 @@ let fetchJson = lift Task (url) => {
       ("GitHub returned " ++ status) :> Task.fail
     }
   };
-  let readJson = lift Task (response) => {
+  let readJson = via Task (response) => {
     response :> .json() :> Task.mapErr((_) => { "could not read JSON" })
   };
-  let assertJson = lift Task (body) => {
+  let assertJson = via Task (body) => {
     body
       :> Json.assert
       :> Result.mapErr((_) => { "unexpected JSON shape" })

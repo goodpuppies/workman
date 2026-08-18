@@ -14,7 +14,7 @@ as `succeed`, `map`, and `andThen`. These docs call it a **carrier record**.
 Bare `Result` selects that record when used as a value:
 
 ```wm
-Monad.lift Result transform
+Monad.via Result transform
 ```
 
 Not every type with operations is a monad. A `Number` module might expose
@@ -31,8 +31,8 @@ The main Workman pattern is not to write `Result.andThen` after every expression
 It is:
 
 1. start a procedure with its head input already inside one shared carrier;
-2. define or select transformations lifted into that carrier;
-3. compose those lifted transformations as a pipeline in result position;
+2. define or select transformations created via that carrier;
+3. compose those transformations as a pipeline in result position;
 4. group procedure results with `Carrier|...|` and `match` where concrete control
    flow or effect coordination is required.
 
@@ -42,10 +42,10 @@ a top-level Workman function that returns a carrier.
 ## Procedure shape
 
 ```wm
-let lift = Monad.lift;
+let via = Monad.via;
 
 let calculate = (input) => {
-  let requirePositive = lift Result (number) => {
+  let requirePositive = via Result (number) => {
     if (number > 0) {
       Ok(number)
     } else {
@@ -53,11 +53,11 @@ let calculate = (input) => {
     }
   };
 
-  let double = lift Result (number) => {
+  let double = via Result (number) => {
     Ok(number * 2)
   };
 
-  let divide100By = lift Result (number) => {
+  let divide100By = via Result (number) => {
     if (number == 0) {
       Err("cannot divide by zero")
     } else {
@@ -75,22 +75,22 @@ let calculate = (input) => {
 The procedure has three recognizable parts:
 
 - `Ok(input)` establishes the carrier at the head of the pipeline;
-- local functions describe transformations and are lifted into `Result`;
+- local functions describe transformations created via `Result`;
 - the final expression is the transformation pipeline and remains a `Result`.
 
 For `Task`, `Task.succeed(value)` can establish a pure head value. A Deno/JS call
 that already returns a `Task` can be used directly:
 
 ```wm
-let lift = Monad.lift;
+let via = Monad.via;
 
 let readTitle = (path) => {
-  let readFile = lift Task (filePath) => {
+  let readFile = via Task (filePath) => {
     readTextFile(filePath)
       :> Task.mapErr((_) => { "could not read " ++ filePath })
   };
 
-  let titlePrefix = lift Task (text) => {
+  let titlePrefix = via Task (text) => {
     text
       :> .slice(0, 9)
       :> Result.mapErr((_) => { "could not slice title" })
@@ -103,24 +103,23 @@ let readTitle = (path) => {
 };
 ```
 
-`lift Task` resembles an `async` procedure boundary, but it is ordinary Workman
+`via Task` resembles an `async` procedure boundary, but it is ordinary Workman
 currying and carrier operations rather than a keyword or hidden control flow.
 
-## Lift at definition or call site
+## Use `via` at definition or call site
 
-Lift a transformation at its definition when it belongs to the procedure's shared
-carrier:
+Use `via` at a transformation's definition when it belongs to the procedure's shared carrier:
 
 ```wm
-let floorR = lift Result jsFloor;
+let floorR = via Result jsFloor;
 let rounded = value :> floorR;
 ```
 
-Keep a reusable function carrier-generic and lift it where used when that is more
+Keep a reusable function carrier-generic and apply `via` where it is used when that is more
 appropriate:
 
 ```wm
-let rounded = lift Result jsFloor(value);
+let rounded = via Result jsFloor(value);
 ```
 
 The Raylib examples use this call-site form heavily because reflected FFI values
@@ -143,21 +142,21 @@ type AppError =
 The basic solution is to map each transformation's error at the end:
 
 ```wm
-let readBody = Monad.lift Task (response) => {
+let readBody = Monad.via Task (response) => {
   response
     :> .json()
     :> Task.mapErr(JavaScriptFailure)
 };
 ```
 
-`Monad.liftError` combines that final `mapErr` with `lift`:
+`Monad.viaError` combines that final `mapErr` with `via`:
 
 ```wm
-let readBody = Monad.liftError Task JavaScriptFailure (response) => {
+let readBody = Monad.viaError Task JavaScriptFailure (response) => {
   response :> .json()
 };
 
-let requireValue = Monad.liftError Task ValidationFailure (value) => {
+let requireValue = Monad.viaError Task ValidationFailure (value) => {
   if (value == "") {
     Task.fail("value was empty")
   } else {
@@ -166,7 +165,7 @@ let requireValue = Monad.liftError Task ValidationFailure (value) => {
 };
 ```
 
-Use plain `Monad.lift` when the transformation already returns the pipeline's
+Use plain `Monad.via` when the transformation already returns the pipeline's
 error type.
 
 ## Group procedures at computation boundaries
@@ -196,13 +195,13 @@ operations into one `Result` before matching.
 
 Concrete references:
 
-- [`examples/result_lift.wm`](../examples/result_lift.wm) shows a complete `Result`
+- [`examples/result_via.wm`](../examples/result_via.wm) shows a complete `Result`
   procedure pipeline followed by `match(Result|...|)`;
-- [`examples/task_lift.wm`](../examples/task_lift.wm) contrasts nested
-  `Task.andThen` with lifted procedure pipelines;
+- [`examples/task_via.wm`](../examples/task_via.wm) contrasts nested
+  `Task.andThen` with procedure pipelines created via `Task`;
 - [`examples/raylib/main.wm`](../examples/raylib/main.wm) and
   [`examples/raylib/orbital_run/main.wm`](../examples/raylib/orbital_run/main.wm)
-  use lifted FFI transformations and carrier grouping throughout rendering and
+  use carrier-aware FFI transformations and carrier grouping throughout rendering and
   lifecycle control flow.
 
 ## Where `andThen` still belongs
@@ -210,26 +209,29 @@ Concrete references:
 `andThen` remains useful when the next operation depends on a successful value and
 the control flow is clearer as an explicit continuation—for example, a conditional
 network step, a dynamically selected procedure, or conversion between carriers.
-It is also the mechanism underneath `lift` and `Carrier|...|`.
+It is also the mechanism underneath `via` and `Carrier|...|`.
 
 The distinction is about code shape:
 
-- routine procedure transformations: lift and pipeline;
+- routine procedure transformations: via and pipeline;
 - combine independent or staged procedure results: `Carrier|...|`;
 - perform carrier-dependent branching: `match(Carrier|...|)`;
 - write an explicit dependent continuation when needed: `andThen`.
 
-## How `lift` works
+## How `via` works
 
-`Monad.lift` is essentially:
+`Monad.via` is essentially:
 
 ```wm
-let lift = (carrier) => {
+let via = (carrier) => {
   (f) => {
     carrier.fn(f)
   }
 };
 ```
+
+In short, `Monad.via M f` creates the carrier-aware callable form of `f` via
+`M`'s `fn` function.
 
 A carrier structure supplies an `fn` adapter shaped like:
 
@@ -241,7 +243,7 @@ let fn = (f) => {
 };
 ```
 
-Lifting therefore changes how a function accepts its input: it consumes a value
+`via` changes how a function accepts its input: it consumes a value
 already inside the carrier, applies the function only after success, and preserves
 the carrier through the result.
 
@@ -266,14 +268,14 @@ pair   : Result<(Number, String), E>
 triple : Result<(Number, String, Bool), E>
 ```
 
-This is useful when a lifted function expects one tuple argument:
+This is useful when a function created with `via` expects one tuple argument:
 
 ```wm
-let liftR = (f) => {
-  Monad.lift Result f
+let viaR = (f) => {
+  Monad.via Result f
 };
 
-let fade = liftR Raylib.H.Fade;
+let fade = viaR Raylib.H.Fade;
 let accent = fade(Result|Ok(baseAccent), pulse|);
 ```
 
@@ -443,15 +445,15 @@ Result.map(Ok(4), (value) => {
 
 This coercion is only for primitive operators. Ordinary functions still keep their declared argument
 types. For example, a JS function such as `Math.floor` still receives `Result<Number, Js.Error>`
-unless it is lifted:
+unless it is adapted with `via`:
 
 ```wm
 from js.global("Math") import { floor as jsFloor };
 
-let liftR = (f) => {
-  Monad.lift Result f
+let viaR = (f) => {
+  Monad.via Result f
 };
 
-let floor = liftR jsFloor;
+let floor = viaR jsFloor;
 let rounded = floor(Ok(4.8));
 ```

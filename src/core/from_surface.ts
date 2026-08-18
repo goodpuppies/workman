@@ -677,7 +677,7 @@ function desugarPipe(
 
   if (right.kind === "Call" && right.args.length > 0 && right.callee.kind === "Call") {
     // A nested application produces a function. Apply the piped value to that
-    // result: task :> lift Task callback -> (lift Task callback)(task).
+    // result: task :> via Task callback -> (via Task callback)(task).
     return {
       kind: "CoreApp",
       callee: coreExprFromSurface(right, context),

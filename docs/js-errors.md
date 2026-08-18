@@ -216,7 +216,7 @@ matchable `Js.Error` as evidence.
 The normal Workman structure remains:
 
 1. receive or create a `Result<_, Js.Error>`/`Task<_, Js.Error>` head value;
-2. lift procedure transformations into the shared carrier;
+2. create procedure transformations via the shared carrier;
 3. keep a carrier pipeline in result position;
 4. group procedures with `Result|...|` or `Task|...|`;
 5. match a `Result` at a synchronous control-flow boundary, or inspect a Task error
@@ -224,7 +224,7 @@ The normal Workman structure remains:
 
 ```wm
 let load = (path) => {
-  let decode = lift Task (text) => {
+  let decode = via Task (text) => {
     JSON.parse(text)
       :> Task.fromResult
   };
@@ -246,7 +246,7 @@ Task|load("a.json"), load("b.json")|
   })
 ```
 
-See [Carrier-oriented procedure design](./carriers.md) for lifting and carrier
+See [Carrier-oriented procedure design](./carriers.md) for `via` and carrier
 grouping, and [Async and Task](./async.md) for Task evaluation details.
 
 ## Choosing an error policy

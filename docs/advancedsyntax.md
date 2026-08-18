@@ -2,7 +2,7 @@
 
 This document records unusual but useful syntax you may encounter in Workman code.
 
-## Inline lifted Task continuations
+## Inline Task continuations with `via`
 
 Start with an ordinary `Task.andThen` continuation. The callback runs after `wait(duration)`
 succeeds, ignores its successful `Void` value, and returns the next Task:
@@ -16,17 +16,17 @@ wait(duration)
   })
 ```
 
-`Monad.lift` is defined as:
+`Monad.via` is defined as:
 
 ```wm
-let lift = (carrier) => {
+let via = (carrier) => {
   (f) => {
     carrier.fn(f)
   }
 };
 ```
 
-`Monad.lift` factors out that `andThen` shape. The Task carrier supplies an `fn` adapter equivalent
+`Monad.via` factors out that `andThen` shape. The Task carrier supplies an `fn` adapter equivalent
 to:
 
 ```wm
@@ -37,11 +37,11 @@ let fn = (transform) => {
 };
 ```
 
-Therefore `lift Task transform` produces a function that accepts an existing Task and continues it
-with `transform`. Give that lifted function a name and the original code becomes:
+Therefore `via Task transform` produces a function that accepts an existing Task and continues it
+with `transform`. Give that resulting function a name and the original code becomes:
 
 ```wm
-let afterWait = lift Task (_) => {
+let afterWait = via Task (_) => {
   spinner.succeed(finished)
     :> Result.map((_) => { void })
     :> Task.fromResult
@@ -62,7 +62,7 @@ x :> someCurried thing
 ```
 
 Here `someCurried` is a metavariable for an expression that is already partially applied, not the
-name of a variable holding a function. In the Task example, `lift Task` is that expression: `lift`
+name of a variable holding a function. In the Task example, `via Task` is that expression: `via`
 receives `Task`, returns a function that receives the continuation, and that application returns the
 function that receives the piped Task.
 
@@ -78,7 +78,7 @@ produced function in call position:
 
 ```wm
 wait(duration)
-  :> lift Task (_) => {
+  :> via Task (_) => {
     spinner.succeed(finished)
       :> Result.map((_) => { void })
       :> Task.fromResult
@@ -90,7 +90,7 @@ now written:
 
 ```wm
 wait(duration)
-  :> lift Task (_) => {
+  :> via Task (_) => {
     spinner.succeed(finished)
       :> Result.map((_) => { void })
       :> Task.fromResult
@@ -104,7 +104,7 @@ This is the final form used by [`examples/node-gotchi.wm`](../examples/node-gotc
 
 ```wm
 wait(duration)
-  :> lift Task => {
+  :> via Task => {
     spinner.succeed(finished)
       :> Result.map((_) => { void })
       :> Task.fromResult
@@ -115,21 +115,21 @@ The progression is:
 
 ```wm
 task :> Task.andThen((_) => { nextTask })
-task :> (lift Task)((_) => { nextTask })
+task :> (via Task)((_) => { nextTask })
 -- x :> someCurried thing == (someCurried thing)(x)
-task :> lift Task (_) => { nextTask }
-task :> lift Task => { nextTask }  -- only when the Task succeeds with Void
+task :> via Task (_) => { nextTask }
+task :> via Task => { nextTask }  -- only when the Task succeeds with Void
 ```
 
 The last form is not special Task or `await` syntax. It emerges from ordinary application,
-currying, `Monad.lift`, the bare `Void` lambda, and the pipe rule for a right-hand expression that
+currying, `Monad.via`, the bare `Void` lambda, and the pipe rule for a right-hand expression that
 produces a function.
 
 If the successful value is needed, keep an ordinary parameter:
 
 ```wm
 fetchUser()
-  :> lift Task (user) => {
+  :> via Task (user) => {
     user.name :> Task.succeed
   }
 ```
@@ -149,11 +149,11 @@ block, and the block must return another `Task`.
 For completeness, the compact `Void` form parenthesizes and reduces as follows:
 
 ```wm
-wait(duration) :> lift Task => { nextTask }
+wait(duration) :> via Task => { nextTask }
 
-wait(duration) :> ((lift Task)(() => { nextTask }))
+wait(duration) :> ((via Task)(() => { nextTask }))
 
-((lift Task)(() => { nextTask }))(wait(duration))
+((via Task)(() => { nextTask }))(wait(duration))
 
 Task.andThen(wait(duration), () => { nextTask })
 ```

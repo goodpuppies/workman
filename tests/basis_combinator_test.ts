@@ -186,24 +186,24 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
   );
 });
 
-Deno.test("Monad.lift works over structural fn records", async () => {
+Deno.test("Monad.via works over structural fn records", async () => {
   const result = await checkSource(`
     record TaskLike = { fn: (Void -> Number) -> Number };
     let task: TaskLike = .{ fn = (f) => { f() } };
-    let value = Monad.lift task () => { 42 };
+    let value = Monad.via task () => { 42 };
   `);
 
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
-  assertEquals(result.structure.strEnv.get("Monad")?.valEnv.get("lift")?.imported, true);
+  assertEquals(result.structure.strEnv.get("Monad")?.valEnv.get("via")?.imported, true);
 });
 
-Deno.test("Monad.lift composes over Task.fn", async () => {
+Deno.test("Monad.via composes over Task.fn", async () => {
   const result = await checkSource(`
     record User = { login: String, name: String };
-    let fetchUser = Monad.lift Task (login) => {
+    let fetchUser = Monad.via Task (login) => {
       .{ login = login, name = login ++ " Lovelace" } :> Task.succeed
     };
-    let getDisplayName = Monad.lift Task (user) => {
+    let getDisplayName = Monad.via Task (user) => {
       user.name :> Task.succeed
     };
     let greeting = "Ada" :> Task.succeed :> fetchUser :> getDisplayName;
@@ -220,10 +220,10 @@ Deno.test("Monad.lift composes over Task.fn", async () => {
   expectBinding(result.env, "greeting", { type: "Task<String, 'a>", vars: 0 });
 });
 
-Deno.test("Monad.lift composes over Result.fn", async () => {
+Deno.test("Monad.via composes over Result.fn", async () => {
   const result = await checkSource(`
-    let liftR = Monad.lift Result;
-    let keepNumber = liftR (n) => {
+    let viaR = Monad.via Result;
+    let keepNumber = viaR (n) => {
       Ok(n)
     };
     let value = Ok(1) :> keepNumber;
@@ -236,19 +236,19 @@ Deno.test("Monad.lift composes over Result.fn", async () => {
   expectBinding(result.env, "value", { type: "Result<Number, 'a>", vars: 0 });
 });
 
-Deno.test("carrier liftError injects native errors into one application error", async () => {
+Deno.test("carrier viaError injects native errors into one application error", async () => {
   const result = await checkSource(`
     type AppError = JsFailure<Js.Error> | DomainFailure<String>;
 
-    let takePrefix = Monad.liftError Task JsFailure (text) => {
+    let takePrefix = Monad.viaError Task JsFailure (text) => {
       text :> .slice(0, 3) :> Task.fromResult
     };
-    let requirePrefix = Monad.liftError Task DomainFailure (text) => {
+    let requirePrefix = Monad.viaError Task DomainFailure (text) => {
       if (text == "") { Task.fail("empty") } else { Task.succeed(text) }
     };
     let task = Task.succeed("hello") :> takePrefix :> requirePrefix;
 
-    let requirePositive = Monad.liftError Result DomainFailure (number) => {
+    let requirePositive = Monad.viaError Result DomainFailure (number) => {
       if (number > 0) { Ok(number) } else { Err("not positive") }
     };
     let result = Ok(1) :> requirePositive;
@@ -258,15 +258,15 @@ Deno.test("carrier liftError injects native errors into one application error", 
   expectBinding(result.env, "result", { type: "Result<Number, AppError>", vars: 0 });
 });
 
-Deno.test("carrier records instantiate independently across liftError uses", async () => {
+Deno.test("carrier records instantiate independently across viaError uses", async () => {
   const result = await checkSource(`
     type FetchError = | JavaScriptFailure<Js.Error>;
     type NameError = | ValidationFailure<String>;
 
-    let fetch = Monad.liftError Task.carrier JavaScriptFailure (input) => {
+    let fetch = Monad.viaError Task.carrier JavaScriptFailure (input) => {
       input :> .slice(0, 1) :> Task.fromResult
     };
-    let validate = Monad.liftError Task ValidationFailure (input) => {
+    let validate = Monad.viaError Task ValidationFailure (input) => {
       if (input == "") {
         Task.fail("empty")
       } else {
@@ -282,7 +282,7 @@ Deno.test("carrier records instantiate independently across liftError uses", asy
   expectBinding(result.env, "validated", { type: "Task<String, NameError>", vars: 0 });
 });
 
-Deno.test("carrier liftError evaluates the injected error", async () => {
+Deno.test("carrier viaError evaluates the injected error", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -290,10 +290,10 @@ Deno.test("carrier liftError evaluates the injected error", async () => {
     `
       type AppError = | DomainFailure<String>;
 
-      let rejectTask = Monad.liftError Task DomainFailure (value) => {
+      let rejectTask = Monad.viaError Task DomainFailure (value) => {
         Task.fail("bad task " ++ value)
       };
-      let rejectResult = Monad.liftError Result DomainFailure (value) => {
+      let rejectResult = Monad.viaError Result DomainFailure (value) => {
         Err("bad result " ++ value)
       };
 
@@ -325,8 +325,8 @@ Deno.test("carrier liftError evaluates the injected error", async () => {
 
 Deno.test("Result carrier coercion infers over primitive operators", async () => {
   const result = await checkSource(`
-    let liftR = Monad.lift Result;
-    let keepNumber = liftR (n) => {
+    let viaR = Monad.via Result;
+    let keepNumber = viaR (n) => {
       Ok(n)
     };
     let sum = Ok(2) + 3;
@@ -334,7 +334,7 @@ Deno.test("Result carrier coercion infers over primitive operators", async () =>
     let quotient = Ok(8) / Ok(2);
     let negated = -Ok(4);
     let inverted = !Ok(false);
-    let liftedCall = keepNumber((Ok(9) - 1) / 2);
+    let viaCall = keepNumber((Ok(9) - 1) / 2);
   `);
 
   expectBinding(result.env, "sum", { type: "Result<Number, 'a>", vars: 0 });
@@ -342,7 +342,7 @@ Deno.test("Result carrier coercion infers over primitive operators", async () =>
   expectBinding(result.env, "quotient", { type: "Result<Number, 'a>", vars: 0 });
   expectBinding(result.env, "negated", { type: "Result<Number, 'a>", vars: 0 });
   expectBinding(result.env, "inverted", { type: "Result<Bool, 'a>", vars: 0 });
-  expectBinding(result.env, "liftedCall", { type: "Result<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "viaCall", { type: "Result<Number, 'a>", vars: 0 });
 });
 
 Deno.test("explicit carrier tuple lift infers over Result", async () => {
@@ -422,8 +422,8 @@ Deno.test("Result carrier coercion evaluates through primitive operators", async
   await Deno.writeTextFile(
     input,
     `
-      let liftR = Monad.lift Result;
-      let keepNumber = liftR (n) => {
+      let viaR = Monad.via Result;
+      let keepNumber = viaR (n) => {
         Ok(n)
       };
 
@@ -618,7 +618,7 @@ Deno.test("Task.race settles with the first eager task handle", async () => {
 
 Deno.test("lifted Task tuple syntax sequences task values into one tuple task", async () => {
   const result = await checkSource(`
-    let render = Monad.lift Task (text, title) => {
+    let render = Monad.via Task (text, title) => {
       Task.succeed(text ++ "/" ++ title)
     };
     let text = Task.succeed("README.md");
@@ -641,15 +641,15 @@ Deno.test("lifted Task tuple syntax evaluates through Task.andThen and Task.map"
   await Deno.writeTextFile(
     input,
     `
-      let readFile = Monad.lift Task (path) => {
+      let readFile = Monad.via Task (path) => {
         Task.succeed("text:" ++ path)
       };
 
-      let titlePrefix = Monad.lift Task (text) => {
+      let titlePrefix = Monad.via Task (text) => {
         Task.succeed("title:" ++ text)
       };
 
-      let render = Monad.lift Task (text, title) => {
+      let render = Monad.via Task (text, title) => {
         Task.succeed(text ++ "/" ++ title)
       };
 
@@ -671,7 +671,7 @@ Deno.test("lifted Task tuple syntax evaluates through Task.andThen and Task.map"
   assertEquals(output.stdout, "text:README.md/title:text:README.md\n");
 });
 
-Deno.test("Task.fn evaluates lifted fect-style composition", async () => {
+Deno.test("Task.fn evaluates via-style composition", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -679,11 +679,11 @@ Deno.test("Task.fn evaluates lifted fect-style composition", async () => {
     `
       record User = { login: String, name: String };
 
-      let fetchUser = Monad.lift Task (login) => {
+      let fetchUser = Monad.via Task (login) => {
         .{ login = login, name = login ++ " Lovelace" } :> Task.succeed
       };
 
-      let getDisplayName = Monad.lift Task (user) => {
+      let getDisplayName = Monad.via Task (user) => {
         user.name :> Task.succeed
       };
 
@@ -714,11 +714,11 @@ Deno.test("Task.fn composes real async JS tasks", async () => {
     `
       from js.global("Deno") import { readTextFile };
 
-      let readFile = Monad.lift Task (path) => {
+      let readFile = Monad.via Task (path) => {
         readTextFile(path) :> Task.mapErr((_) => { "could not read " ++ path })
       };
 
-      let titlePrefix = Monad.lift Task (text) => {
+      let titlePrefix = Monad.via Task (text) => {
         text
           :> .slice(0, 9)
           :> Result.mapErr((_) => { "could not slice title" })

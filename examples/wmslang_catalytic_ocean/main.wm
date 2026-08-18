@@ -354,7 +354,7 @@ let displayFragmentFor = (inputs: DisplayInputs) => { Gpu.fragment(displayShade(
 let makeFeedbackTexture = (renderer: FragmentRenderer, textureWidth: Number, textureHeight: Number) => {
   createFeedbackTexture2D(renderer, textureWidth, textureHeight)
     :> Result.andThen((physical) => {
-    let assemble = Monad.lift Result (sampled, target) => {
+    let assemble = Monad.via Result (sampled, target) => {
       let texture: FeedbackTexture = .{ physical = physical, sampled = sampled, target = target };
       Ok(texture)
     };
@@ -363,7 +363,7 @@ let makeFeedbackTexture = (renderer: FragmentRenderer, textureWidth: Number, tex
 };
 
 let makeFeedbackPair = (renderer: FragmentRenderer, textureWidth: Number, textureHeight: Number) => {
-  let assemble = Monad.lift Result (read, write) => {
+  let assemble = Monad.via Result (read, write) => {
     let pair: FeedbackPair = .{ read = read, write = write };
     Ok(pair)
   };
@@ -621,7 +621,7 @@ let runWindow = (native: NativeRuntime) => {
   createFragmentRenderer(nativeSurface(native), bootstrapFragment)
     :> Task.mapErr(HostFailure)
     :> Task.andThen((bootstrap) => {
-    let collect = Monad.lift Result (
+    let collect = Monad.via Result (
       signalPair,
       programPair,
       historyPair,

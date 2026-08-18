@@ -17,6 +17,7 @@ import {
   type InferResult,
   type InitialImport,
 } from "./infer.ts";
+import { cloneTypeEnv } from "./types.ts";
 import { parseCompilerModule } from "./compiler_frontend.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
@@ -194,7 +195,7 @@ function withStandardValueIds(
       name,
       withStandardValueIds(nested, modulePath, prefix ? `${prefix}.${name}` : name),
     ])),
-    new Map(environment.tyEnv),
+    cloneTypeEnv(environment.tyEnv),
     new Map([...environment.valEnv].map(([name, scheme]) => {
       const qualified = prefix ? `${prefix}.${name}` : name;
       return [name, { ...scheme, valueId: standardValueId(modulePath, qualified) }];

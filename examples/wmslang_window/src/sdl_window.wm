@@ -8,7 +8,7 @@ from js.global("Deno") import {
 from js.global("Deno.UnsafePointer") import { of as pointerOf };
 from "./webgpu_present.wm" import { presentSurface };
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 type NativeError =
   | NativeSdlError<Js.Error>
@@ -84,12 +84,12 @@ let loadSdl = () => {
 };
 
 let pointerFromBuffer = (label, buffer) => {
-  let require = lift Result (ptr) => { expectSome(label, ptr) };
+  let require = via Result (ptr) => { expectSome(label, ptr) };
   pointerOf(buffer) :> denoResult :> require
 };
 
 let linuxSurface = (system, width, height, view) => {
-  let create = lift Result (windowHandle, displayHandle) => {
+  let create = via Result (windowHandle, displayHandle) => {
     UnsafeWindowSurface.new(JSON{
       system: system,
       windowHandle: windowHandle,
@@ -98,7 +98,7 @@ let linuxSurface = (system, width, height, view) => {
       height: height
     }) :> denoResult
   };
-  let handles = lift Result (displayOpt, windowOpt) => {
+  let handles = via Result (displayOpt, windowOpt) => {
     create(Result|
       expectSome("missing native window handle", windowOpt),
       expectSome("missing native display handle", displayOpt)
@@ -108,36 +108,36 @@ let linuxSurface = (system, width, height, view) => {
 };
 
 let createSurface = (sdl, window, width, height) => {
-  let select = lift Result (view, subsystem) => {
+  let select = via Result (view, subsystem) => {
     match(subsystem) {
       2 => { linuxSurface("x11", width, height, view) },
       6 => { linuxSurface("wayland", width, height, view) },
       _ => { Err(NativeMessage("the SDL window is neither X11 nor Wayland")) }
     }
   };
-  let inspect = lift Result (infoPtr) => {
-    let withView = lift Result (view) => {
+  let inspect = via Result (infoPtr) => {
+    let withView = via Result (view) => {
       let subsystem = view.getUint32(4) :> denoResult;
       select(Result|Ok(view), subsystem|)
     };
     UnsafePointerView.new(infoPtr) :> denoResult :> withView
   };
-  let populate = lift Result (infoPtr) => {
+  let populate = via Result (infoPtr) => {
     Result|
       sdl.symbols.SDL_GetVersion(Some(infoPtr)) :> sdlResult,
       sdl.symbols.SDL_GetWindowWMInfo(window, Some(infoPtr)) :> sdlResult
         :> Result.andThen((code) => { expectOne("SDL_GetWindowWMInfo failed", code) })
     | :> Result.andThen((_) => { inspect(Ok(infoPtr)) })
   };
-  let withPointer = lift Result (buffer) => {
+  let withPointer = via Result (buffer) => {
     pointerFromBuffer("SDL_SysWMInfo pointer was null", buffer) :> populate
   };
   Uint8Array.new(519) :> denoResult :> withPointer
 };
 
 let createEventState = () => {
-  let withPointer = lift Result (buffer) => {
-    let withView = lift Result (eventPtr) => {
+  let withPointer = via Result (buffer) => {
+    let withView = via Result (eventPtr) => {
       UnsafePointerView.new(eventPtr) :> denoResult
         :> Result.map((eventView) => { (eventPtr, eventView) })
     };
@@ -147,7 +147,7 @@ let createEventState = () => {
 };
 
 let pollEvent = (sdl, eventPtr, eventView) => {
-  let status = lift Result (value) => {
+  let status = via Result (value) => {
     if (value == 1) {
       eventView.getUint32(0) :> denoResult
         :> Result.andThen((kind) => {
@@ -185,13 +185,13 @@ let pollEvent = (sdl, eventPtr, eventView) => {
 };
 
 let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) => {
-  let initialize = lift Result (sdl) => {
+  let initialize = via Result (sdl) => {
     sdl.symbols.SDL_Init(sdlInitVideo) :> sdlResult
       :> Result.andThen((code) => { expectZero("SDL_Init failed", code) })
       :> Result.map((_) => { sdl })
   };
-  let openWindow = lift Result (sdl) => {
-    let create = lift Result (title) => {
+  let openWindow = via Result (sdl) => {
+    let create = via Result (title) => {
       sdl.symbols.SDL_CreateWindow(
         Some(title), sdlWindowposCentered, sdlWindowposCentered,
         width, height, windowFlags
@@ -203,11 +203,11 @@ let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) 
     };
     windowTitle() :> denoResult :> create
   };
-  let attachSurface = lift Result (sdl, window) => {
+  let attachSurface = via Result (sdl, window) => {
     createSurface(sdl, window, width, height)
       :> Result.map((surface) => { (sdl, window, surface) })
   };
-  let attachEvents = lift Result (sdl, window, surface) => {
+  let attachEvents = via Result (sdl, window, surface) => {
     createEventState() :> Result.map((eventPtr, eventView) => {
       .{
         surface,

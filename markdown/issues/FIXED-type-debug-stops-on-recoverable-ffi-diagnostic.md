@@ -33,16 +33,16 @@ from js.module("three/webgpu") import { Mesh };
 from js.module("three/webgpu") import type { Material };
 from js.module("./three_helpers.ts") import { boxGeometry };
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 let rec buildMeshes = (material: Material, remaining: Number) => {
   if (remaining <= 0) {
     Ok(void)
   } else {
-    let continue = lift Result (mesh) => {
+    let continue = via Result (mesh) => {
       buildMeshes(material, remaining - 1)
     };
-    let create = lift Result (geometry) => {
+    let create = via Result (geometry) => {
       Mesh.new(geometry, material) :> continue
     };
     boxGeometry(1, 1, 1) :> create

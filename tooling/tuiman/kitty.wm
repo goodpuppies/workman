@@ -232,14 +232,14 @@ let pngUrl = (url) => {
 };
 
 let loadPng = (url, alt) => {
-  let inspectStatus = Monad.liftError Task ImageJsFailure (response) => {
+  let inspectStatus = Monad.viaError Task ImageJsFailure (response) => {
     Result|response.ok, response.status|
       :> Result.map((ok, status) => {
         (response, ok, status)
       })
       :> Task.fromResult
   };
-  let requireOk = Monad.lift Task (response, ok, status) => {
+  let requireOk = Monad.via Task (response, ok, status) => {
     if (ok) {
       Task.succeed(response)
     } else {
@@ -250,10 +250,10 @@ let loadPng = (url, alt) => {
         })
     }
   };
-  let readBytes = Monad.liftError Task ImageJsFailure (response) => {
+  let readBytes = Monad.viaError Task ImageJsFailure (response) => {
     response :> .arrayBuffer()
   };
-  let decodePng = Monad.lift Task (bytes) => {
+  let decodePng = Monad.via Task (bytes) => {
     Buffer.from(bytes)
       :> Result.mapErr(ImageJsFailure)
       :> Task.fromResult

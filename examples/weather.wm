@@ -29,7 +29,7 @@ from js.global("JSON") import {
 } as JSON;
 from js.global("Math") import { max as mathMax };
 
-let lift = Monad.lift;
+let via = Monad.via;
 let cacheFile = ".weather-cache.json";
 let cacheTtlMs = 10 * 60 * 1000;
 
@@ -122,32 +122,32 @@ let pad3 = (n) => {
 
 -- Fetch, validate the response, and assert the wire shape once at the boundary.
 let getWeather = (city) => {
-  let encodeCity = Monad.liftError Task JavaScriptFailure (name) => {
+  let encodeCity = Monad.viaError Task JavaScriptFailure (name) => {
     name
       :> encodeURIComponent
       :> Result.map((encoded) => { ("https://wttr.in/" ++ encoded ++ "?format=j1") })
       :> Task.fromResult
   };
-  let request = Monad.liftError Task JavaScriptFailure (url) => {
+  let request = Monad.viaError Task JavaScriptFailure (url) => {
     fetch(url)
       :> Task.map((response) => { (url, response) })
   };
-  let inspectStatus = Monad.liftError Task JavaScriptFailure (url, response) => {
+  let inspectStatus = Monad.viaError Task JavaScriptFailure (url, response) => {
     Result|response.ok, response.status|
       :> Result.map((ok, status) => { (url, response, ok, status) })
       :> Task.fromResult
   };
-  let requireOk = Monad.liftError Task WeatherFailure (url, response, ok, status) => {
+  let requireOk = Monad.viaError Task WeatherFailure (url, response, ok, status) => {
     if (ok) {
       Task.succeed(response)
     } else {
       Task.fail("HTTP " ++ Text.of(status) ++ " fetching " ++ url)
     }
   };
-  let readBody = Monad.liftError Task JavaScriptFailure (response) => {
+  let readBody = Monad.viaError Task JavaScriptFailure (response) => {
     response :> .json()
   };
-  let assertBody = Monad.liftError Task JavaScriptFailure (body) => {
+  let assertBody = Monad.viaError Task JavaScriptFailure (body) => {
     let data: Result<WttrResponse, Js.Error> = body :> Json.assert;
     data :> Task.fromResult
   };
@@ -161,7 +161,7 @@ let getWeather = (city) => {
 };
 
 let loadCache = () => {
-  let parseCache = lift Task (text) => {
+  let parseCache = via Task (text) => {
     let cache: Result<Js.Dict<CacheEntry>, Js.Error> = JSON.parse(text)
       :> Result.andThen((raw) => {
         raw :> Json.assert
@@ -177,11 +177,11 @@ let loadCache = () => {
 };
 
 let saveCache = (cache) => {
-  let encodeCache = lift Task (value) => {
+  let encodeCache = via Task (value) => {
     JSON.stringify(value)
       :> Task.fromResult
   };
-  let writeCache = lift Task (text) => {
+  let writeCache = via Task (text) => {
     writeTextFile(cacheFile, text)
   };
   Task.succeed(cache)
@@ -277,11 +277,11 @@ let cityReport = (cache, now, refresh, scale, city) => {
     "\nFailed to get weather for \"" ++ city ++ "\": " ++
       describeError(err)
   };
-  let renderTask = lift Task (data) => {
+  let renderTask = via Task (data) => {
     renderReport(data, scale, city)
       :> Task.fromResult
   };
-  let cacheData = lift Task (data) => {
+  let cacheData = via Task (data) => {
     Dict.set(cache, key, .{ fetchedAt = now, data = data });
     Task.succeed(data)
   };

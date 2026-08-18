@@ -81,7 +81,7 @@ Promise-returning JavaScript APIs become `Task<_, Js.Error>`. See [Async and Tas
 the current Task model, including parallel collection with `Task.collectList`.
 
 Primitive operators can flow through safe JS `Result` values, and `Result|...|` can collect several
-`Result` arguments for a lifted multi-argument function. See
+`Result` arguments for a multi-argument function created with `via`. See
 [Carrier Coercion and Tuple Lifts](./carriers.md).
 
 ## Unsafe Imports

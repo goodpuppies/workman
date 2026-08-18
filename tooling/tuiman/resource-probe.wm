@@ -1,6 +1,6 @@
 from "./resource.wm" import * as Resource;
 
-let double = Monad.lift Resource (value) => {
+let double = Monad.via Resource (value) => {
   Resource.Ready(value * 2)
 };
 

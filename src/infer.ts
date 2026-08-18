@@ -15,7 +15,9 @@ import {
   containsUnsolvedJsBoundary,
   type Env,
   knownTypeIds,
+  knownTypeInfos,
   prune,
+  registerTypeInfo,
   type Scheme,
   show,
   type Ty,
@@ -268,7 +270,12 @@ function inferModuleCore(
   // Executable form of the normative nested-`local` translation: imports modify only the working
   // environment, while each body declaration modifies both working and public environments.
   // Thus imported/basis bindings are in scope but cannot enter the returned environment.
-  const publicEnvironment = staticEnv(new Map(), typeExports, exports);
+  // As in SML's basis, keep generated type-name support separate from the
+  // source-visible type-constructor environment. Exported values can mention
+  // a nominal type without implicitly exporting a spelling for that type.
+  const publicTypeEnv = new Map(typeExports);
+  for (const info of knownTypeInfos(typeEnv)) registerTypeInfo(publicTypeEnv, info);
+  const publicEnvironment = staticEnv(new Map(), publicTypeEnv, exports);
   const exportedStructure: StructureEnv = {
     ...publicEnvironment,
     adts: exportedAdts(adts, typeExports),

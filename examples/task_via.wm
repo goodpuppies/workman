@@ -1,13 +1,13 @@
--- Compare ordinary Elm-style Task threading with lifted Task functions.
+-- Compare ordinary Elm-style Task threading with functions created via Task.
 --
 -- The async edge here is real JavaScript: Deno.readTextFile returns a Promise,
 -- which wm-mini reflects as Task<String, Js.Error>.
 
 from js.global("Deno") import { readTextFile };
 
-let lift = Monad.lift; -- alias from std
+let via = Monad.via; -- alias from std
 --looks like
---let lift = (x) => { 
+--let via = (x) => { 
 --    (f) => {
 --        x.fn(f) -- means (#fn x)(f)
 --    }
@@ -28,28 +28,28 @@ let titlePrefixManual = (text) => {
 --#endregion
 
 --#region "colored"
-let readFile = lift Task (path) => {
+let readFile = via Task (path) => {
   readTextFile(path)
     :> Task.mapErr((_) => { "could not read " ++ path })
 };
 
-let titlePrefix = lift Task (text) => {
+let titlePrefix = via Task (text) => {
   text
     :> .slice(0, 9)
     :> Result.mapErr((_) => { "could not slice title" })
     :> Task.fromResult
 };
 
-let label = lift Task (title) => {
-  ("lifted: " ++ title) :> Task.succeed
+let label = via Task (title) => {
+  ("via: " ++ title) :> Task.succeed
 };
 
-let summarize = lift Task (text, title) => {
+let summarize = via Task (text, title) => {
   let source = text
     :> .slice(0, 9)
     :> Result.withDefault("unknown");
 
-  ("lifted sugar: " ++ title ++ " from " ++ source) :> Task.succeed
+  ("via tuple sugar: " ++ title ++ " from " ++ source) :> Task.succeed
 };
 --#endregion
 
@@ -67,8 +67,8 @@ let elmStyle = (path) => {
     })
 };
 
-let liftedStyle = (path) => {
-  -- These lets name Task handles, not awaited values. The lifted functions
+let viaStyle = (path) => {
+  -- These lets name Task handles, not awaited values. Functions created via Task
   -- make each step consume the previous Task directly, so the shape is closer
   -- to do-notation, Rust ?, or let% style code than nested Task.andThen.
   -- despite this theres no magic going on, just simple vanilla sml currying
@@ -80,9 +80,9 @@ let liftedStyle = (path) => {
   labeled
 };
 
-let liftedSugarStyle = (path) => {
+let viaTupleStyle = (path) => {
   -- `|...|` turns multiple Task handles into one Task containing a tuple,
-  -- which lines up with `lift Task (text, title) => ...`.
+  -- which lines up with `via Task (text, title) => ...`.
   let path = Task.succeed(path);
   let text = readFile(path);
   let title = titlePrefix(text);
@@ -93,8 +93,8 @@ let liftedSugarStyle = (path) => {
 --let main = () => {
 --  [
 --    elmStyle("README.md"),
---    liftedStyle("README.md"),
---    liftedSugarStyle("README.md"),
+--    viaStyle("README.md"),
+--    viaTupleStyle("README.md"),
 --  ]
 --    :> Task.collectList
 --    :> Task.map((lines) => {

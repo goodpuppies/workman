@@ -28,6 +28,52 @@ Deno.test("named import allows a type and constructor to share one local spellin
   await checkVirtual("/test/main.wm", virtualFs);
 });
 
+Deno.test("transitive imports preserve hidden nominal type-name support", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/token.wm",
+      "record Token = { tag: Number }; let token = (tag) => { .{ tag } };",
+    ],
+    [
+      "/test/lexer.wm",
+      'from "./token.wm" import { token }; let lex = (source) => { [token(0)] };',
+    ],
+    [
+      "/test/main.wm",
+      'from "./lexer.wm" import { lex }; let tokens = lex("");',
+    ],
+  ]);
+
+  const results = await checkVirtual("/test/main.wm", virtualFs);
+  const main = results.get("/test/main.wm");
+  if (!main) throw new Error("missing main result");
+  assertEquals(main.exportedStructure.valEnv.has("tokens"), true);
+  assertEquals(main.exportedStructure.tyEnv.has("Token"), false);
+});
+
+Deno.test("block declarations do not undergo module export checks", async () => {
+  const virtualFs = new Map<string, string>([
+    [
+      "/test/token.wm",
+      "record Token = { tag: Number }; let token = (tag) => { .{ tag } };",
+    ],
+    [
+      "/test/lexer.wm",
+      'from "./token.wm" import { token }; let lex = (source) => { [token(0)] };',
+    ],
+    [
+      "/test/main.wm",
+      'from "./lexer.wm" import { lex }; let main = () => { let tokens = lex(""); print("ok") };',
+    ],
+  ]);
+
+  const results = await checkVirtual("/test/main.wm", virtualFs);
+  const main = results.get("/test/main.wm");
+  if (!main) throw new Error("missing main result");
+  assertEquals(main.exportedStructure.valEnv.has("main"), true);
+  assertEquals(main.exportedStructure.valEnv.has("tokens"), false);
+});
+
 Deno.test("named imports can replace basis option type and constructors together", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "type Option<T> = None | Some<T>;"],

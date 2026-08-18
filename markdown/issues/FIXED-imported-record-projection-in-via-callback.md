@@ -1,4 +1,4 @@
-# Issue: Imported Record Projection Falls Through to FFI in Lifted Callbacks
+# Issue: Imported Record Projection Falls Through to FFI in `via` Callbacks
 
 Status: fixed
 
@@ -17,14 +17,14 @@ readQuit : Result<Game, E> -> Result<Bool, E>
 
 Unknown fields are still rewritten and diagnosed as unresolved JS FFI access, so this does not turn
 annotations or imported record names into JavaScript casts. Regression coverage verifies both the
-lifted imported nested projection and that `game.missing` continues to fail as an FFI obligation.
+imported nested projection inside a `via` callback and that `game.missing` continues to fail as an FFI obligation.
 The fix has also been validated in the `wmthree` game project.
 
 Discovered while moving the `wmthree` FPS state into a pure Workman module.
 
 ## Summary
 
-An unannotated parameter introduced inside `Monad.lift Result` does not currently recover an
+An unannotated parameter introduced inside `Monad.via Result` does not currently recover an
 imported Workman record type from its later carrier use. A nested field projection on that parameter
 is left as an unresolved JavaScript FFI property path instead of being solved as an ordinary Workman
 record projection.
@@ -58,9 +58,9 @@ Consumer:
 ```wm
 from "./game.wm" import { Controls, Game, initialGame };
 
-let lift = Monad.lift;
+let via = Monad.via;
 
-let readQuit = lift Result (game) => {
+let readQuit = via Result (game) => {
   Ok(game.controls.quit)
 };
 
@@ -72,7 +72,7 @@ application of `readQuit` establishes the carrier value as `Result<Game, E>`.
 
 ## Expected Behavior
 
-The lifted function should infer equivalently to:
+The function built with `via` should infer equivalently to:
 
 ```txt
 readQuit : Result<Game, E> -> Result<Bool, E>
@@ -91,25 +91,25 @@ It should never enter JS FFI resolution.
 
 ### Local records work
 
-Defining `Controls` and `Game` in the consumer module allows the unannotated lifted form to infer.
+Defining `Controls` and `Game` in the consumer module allows the unannotated `via` form to infer.
 
 ```wm
 record Controls = { quit: Bool };
 record Game = { controls: Controls };
 
-let readQuit = Monad.lift Result (game) => {
+let readQuit = Monad.via Result (game) => {
   Ok(game.controls.quit)
 };
 ```
 
 ### An explicit imported parameter type works
 
-Importing both record declarations and annotating the lifted parameter resolves the projection:
+Importing both record declarations and annotating the `via` parameter resolves the projection:
 
 ```wm
 from "./game.wm" import { Controls, Game };
 
-let readQuit = Monad.lift Result (game: Game) => {
+let readQuit = Monad.via Result (game: Game) => {
   Ok(game.controls.quit)
 };
 ```
@@ -156,7 +156,7 @@ Consumer:
 ```wm
 from "./game.wm" import { initialGame, shouldQuit, cameraX, cameraZ };
 
-let advance = Monad.lift Result (game) => {
+let advance = Monad.via Result (game) => {
   if (shouldQuit(game)) {
     Ok(FrameDone(game))
   } else {
@@ -168,17 +168,17 @@ let advance = Monad.lift Result (game) => {
 This workaround has useful module-design properties:
 
 - callers do not depend on nested record representation
-- the lifted callback remains annotation-free
+- the `via` callback remains annotation-free
 - no unresolved property access reaches FFI inference
 
-Importing every nested record type and annotating the lifted parameter is also a valid workaround
+Importing every nested record type and annotating the `via` parameter is also a valid workaround
 when direct field access is desirable.
 
 ## Likely Boundary
 
 The failure appears to involve the interaction of three mechanisms:
 
-1. `Monad.lift Result` initially gives its callback a generic carried value.
+1. `Monad.via Result` initially gives its callback a generic carried value.
 2. Record projection inference does not select the imported `Game` record from the later
    `readQuit(Ok(initialGame()))` constraint.
 3. The unresolved dotted access shares syntax and inference machinery with JS receiver access, so
@@ -192,9 +192,9 @@ FFI obligations to become generic values.
 
 Add focused tests for:
 
-1. An imported one-level record projection inside an unannotated lifted callback.
+1. An imported one-level record projection inside an unannotated `via` callback.
 2. An imported nested record projection with all record declarations imported.
-3. The same nested projection with the lifted function constrained only by later carrier use.
+3. The same nested projection with the `via` function constrained only by later carrier use.
 4. A direct annotated nested projection with and without the nested record declaration imported.
 5. A genuine unresolved JS property access in the same shape, confirming it remains an FFI
    obligation and still fails when no static JS evidence exists.
@@ -205,4 +205,4 @@ Add focused tests for:
 - Falling back to `Js.Object` or `Js.Value` when record inference misses.
 - Automatically importing every declaration from another module without an explicit module-policy
   decision.
-- Special-casing `Monad.lift` by surface spelling rather than fixing the underlying inference flow.
+- Special-casing `Monad.via` by surface spelling rather than fixing the underlying inference flow.

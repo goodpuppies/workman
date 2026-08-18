@@ -1,6 +1,14 @@
 import type { LongId } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
-import type { Env as ValEnv, Scheme, TypeEnv as TyEnv, TypeInfo } from "../types.ts";
+import {
+  cloneTypeEnv,
+  type Env as ValEnv,
+  knownTypeInfos,
+  registerTypeInfo,
+  type Scheme,
+  type TypeEnv as TyEnv,
+  type TypeInfo,
+} from "../types.ts";
 
 /** The SML static environment product implemented by Workman. */
 export type StaticEnv = {
@@ -27,7 +35,7 @@ export function snapshotStaticEnv(environment: StaticEnv): StaticEnv {
       name,
       snapshotStaticEnv(nested),
     ])),
-    new Map(environment.tyEnv),
+    cloneTypeEnv(environment.tyEnv),
     new Map(environment.valEnv),
   );
 }
@@ -36,13 +44,14 @@ export function snapshotStaticEnv(environment: StaticEnv): StaticEnv {
 export function modifyStaticEnv(left: StaticEnv, right: StaticEnv): void {
   modifyMap(left.strEnv, right.strEnv);
   modifyMap(left.tyEnv, right.tyEnv);
+  for (const info of knownTypeInfos(right.tyEnv)) registerTypeInfo(left.tyEnv, info);
   modifyMap(left.valEnv, right.valEnv);
 }
 
 export function modifiedStaticEnv(left: StaticEnv, right: StaticEnv): StaticEnv {
   const result = staticEnv(
     new Map(left.strEnv),
-    new Map(left.tyEnv),
+    cloneTypeEnv(left.tyEnv),
     new Map(left.valEnv),
   );
   modifyStaticEnv(result, right);

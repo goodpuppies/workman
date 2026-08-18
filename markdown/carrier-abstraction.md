@@ -62,8 +62,8 @@ A carrier module exports an ordinary `carrier` record. Using its namespace in
 value position selects that record:
 
 ```wm
-Monad.lift Result transform
-Monad.lift Task transform
+Monad.via Result transform
+Monad.via Task transform
 Traverse.with Result (items, transform)
 ```
 
@@ -126,7 +126,7 @@ a lambda therefore lets later occurrences specialize independently:
 
 ```wm
 let resultStage = (transform) => {
-  Monad.lift Result transform
+  Monad.via Result transform
 };
 
 let incremented = resultStage(increment)(Ok(1));
@@ -194,7 +194,7 @@ record StagedCarrier<Stage> = {
 
 let resultStagedCarrier = .{
   stage = (transform) => {
-    Monad.lift Result transform
+    Monad.via Result transform
   },
 };
 
@@ -251,16 +251,16 @@ More layers can be added with another staged function. This is preferable to a
 general transformer or constructor-composition framework while the program only
 uses a small, known stack.
 
-Error injection follows the same design. `Monad.liftError` accepts a carrier,
+Error injection follows the same design. `Monad.viaError` accepts a carrier,
 an ordinary error constructor, and a transformation:
 
 ```wm
-let fetchUser = Monad.liftError Task JavaScriptFailure fetchUserProcedure;
-let validate = Monad.liftError Task ValidationFailure validateProcedure;
+let fetchUser = Monad.viaError Task JavaScriptFailure fetchUserProcedure;
+let validate = Monad.viaError Task ValidationFailure validateProcedure;
 ```
 
 The constructors may originate from the application error ADT, while the
-generic lifting operation remains ordinary record passing and currying.
+generic `via` operation remains ordinary record passing and currying.
 
 ## Use one operation slot per incompatible use
 

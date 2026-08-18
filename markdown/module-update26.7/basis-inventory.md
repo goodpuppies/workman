@@ -238,7 +238,7 @@ Types: none.
 Values:
 
 ```text
-Carrier lift liftError
+Carrier lift viaError
 ```
 
 Types:

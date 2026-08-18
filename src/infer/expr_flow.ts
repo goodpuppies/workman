@@ -190,6 +190,7 @@ export function inferBlock(
         new Map(),
         new Map(),
         knownTypeIds(localTypes),
+        false,
       )
       : inferExpr(s, deriveInferContext(context, { env: local, typeEnv: localTypes }))
   );

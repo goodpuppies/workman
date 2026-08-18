@@ -105,8 +105,8 @@ let bad = run(.{ x=0, y=0 }, update);`;
 Deno.test("call mismatch prefers use-site argument over callee definition", async () => {
   const source = `
 from js.global("Math") import { sin as msin };
-let liftR = Monad.lift Result;
-let sin = liftR msin;
+let viaR = Monad.via Result;
+let sin = viaR msin;
 let uw = match(res) => { Ok(i) => { i }, Err(_) => { Panic("bad") } };
 let main = () => {
   let time = Ok(1.5) :> uw;
@@ -125,6 +125,34 @@ let main = () => {
   const expectedStart = source.indexOf("sin(time * 2)");
   assertEquals(primary.span.start, expectedStart);
   assertEquals(primary.span.end, expectedStart + "sin(time * 2)".length);
+});
+
+Deno.test("call mismatch preserves the nested HM constraint origin through generalization", async () => {
+  const source = `let printList = (list) => {
+  let rec listPrinter = (l, i) => {
+    (match(l) {
+      Cons(x, rest) => { x },
+      Nil => { "no" },
+    }) :> print
+  };
+  listPrinter(list, 0)
+};
+
+let tokens: List<Number> = [];
+let bad = printList(tokens);`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const literalStart = source.indexOf('"no"');
+  const stringOrigin = error.diagnostic.support.entries.find((entry) =>
+    entry.kind === "claim" && entry.claim.kind === "has-type" &&
+    entry.origin.kind === "source" && entry.origin.span.start === literalStart
+  );
+  assertEquals(stringOrigin?.kind, "claim");
+  const rendered = formatDiagnostic(error.diagnostic, "nested-origin.wm", source);
+  assertStringIncludes(rendered, 'Nil => { "no" }');
 });
 
 Deno.test("carrier tuple mismatch points at offending item", async () => {

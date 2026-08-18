@@ -28,7 +28,7 @@ from js.global("GPUBufferUsage") import * as GPUBufferUsage;
 from js.global("GPUMapMode") import * as GPUMapMode;
 from js.global("GPUShaderStage") import * as GPUShaderStage;
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 let width = 8;
 let height = 8;
@@ -48,8 +48,8 @@ let getDevice = () => {
 };
 
 let encodeCommands = (device, pipeline, bindGroup, output, staging) => {
-  let withEncoder = lift Result (encoder) => {
-    let withPass = lift Result (pass) => {
+  let withEncoder = via Result (encoder) => {
+    let withPass = via Result (pass) => {
       setPipeline(pass, pipeline)
         :> Result.andThen((_) => { setBindGroup(pass, bindGroup) })
         :> Result.andThen((_) => { dispatchOneWorkgroup(pass) })
@@ -69,7 +69,7 @@ let submit = (device, commandBuffer) => {
 };
 
 let buildAndDispatch = (device) => {
-  let withConstants = lift Result (
+  let withConstants = via Result (
     storageUsage,
     copySourceUsage,
     copyDestinationUsage,
@@ -77,13 +77,13 @@ let buildAndDispatch = (device) => {
     mapReadMode,
     computeVisibility
   ) => {
-    let withOutput = lift Result (output) => {
-      let withStaging = lift Result (staging) => {
-        let withLayout = lift Result (bindGroupLayout) => {
-          let withPipelineLayout = lift Result (pipelineLayout) => {
-            let withModule = lift Result (shaderModule) => {
-              let withPipeline = lift Result (pipeline) => {
-                let withBindGroup = lift Result (bindGroup) => {
+    let withOutput = via Result (output) => {
+      let withStaging = via Result (staging) => {
+        let withLayout = via Result (bindGroupLayout) => {
+          let withPipelineLayout = via Result (pipelineLayout) => {
+            let withModule = via Result (shaderModule) => {
+              let withPipeline = via Result (pipeline) => {
+                let withBindGroup = via Result (bindGroup) => {
                   encodeCommands(device, pipeline, bindGroup, output, staging)
                     :> Result.andThen((commandBuffer) => {
                       submit(device, commandBuffer)
@@ -140,8 +140,8 @@ let buildAndDispatch = (device) => {
   | :> withConstants
 };
 
-let readBack = lift Task (staging, mapReadUsage) => {
-  let inspect = lift Task (_) => {
+let readBack = via Task (staging, mapReadUsage) => {
+  let inspect = via Task (_) => {
     readFirstUint32(staging) :> Result.map((value) => {
       print("WebGPU wrote " ++ Text.of(value) ++ " into the first pixel");
       void
@@ -152,7 +152,7 @@ let readBack = lift Task (staging, mapReadUsage) => {
 };
 
 let main = () => {
-  let prepare = lift Task (device) => {
+  let prepare = via Task (device) => {
     buildAndDispatch(device) :> Task.fromResult
   };
 

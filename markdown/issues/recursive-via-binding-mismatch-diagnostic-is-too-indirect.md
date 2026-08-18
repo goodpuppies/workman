@@ -1,10 +1,10 @@
-# Issue: Recursive Lifted Binding Mismatch Diagnostic Is Too Indirect
+# Issue: Recursive `via` Binding Mismatch Diagnostic Is Too Indirect
 
 Status: open
 
 ## Summary
 
-A wrong argument passed to a recursive lifted function produces a large type-mismatch diagnostic
+A wrong argument passed to a recursive function built with `via` produces a large type-mismatch diagnostic
 at the function's entire definition. The actual mistake is a small recursive call inside the body,
 but that call is not identified as the primary source.
 
@@ -15,8 +15,8 @@ The diagnostic is technically correct, but too indirect and verbose to make the 
 ```workman
 record State = { n: Number };
 
-let rec loop = Monad.lift Task (state: State) => {
-  let continue = Monad.lift Task (_) => {
+let rec loop = Monad.via Task (state: State) => {
+  let continue = Monad.via Task (_) => {
     state :> loop
   };
 
@@ -24,7 +24,7 @@ let rec loop = Monad.lift Task (state: State) => {
 };
 ```
 
-`Monad.lift Task` makes `loop` consume a `Task<State, E>`. The recursive call instead pipes the
+`Monad.via Task` makes `loop` consume a `Task<State, E>`. The recursive call instead pipes the
 plain `State` value into it. The fix is:
 
 ```workman
@@ -73,8 +73,8 @@ trace unless explicitly requested through a debugging command.
 The relevant shape was:
 
 ```workman
-let rec petLoop = Monad.lift Task (state) => {
-  let continue = Monad.lift Task (action) => {
+let rec petLoop = Monad.via Task (state) => {
+  let continue = Monad.via Task (action) => {
     doAction(action, state)
       :> petLoop
   };

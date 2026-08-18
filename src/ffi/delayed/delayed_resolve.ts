@@ -103,7 +103,7 @@ function resolveDelayedExpr(
       }
       // Resolve arguments before the callee. A nested reflected call can solve the type
       // variable that selects a first-class reflected function in the callee, as in:
-      // `lift Result console.log(lift Result chalk.magenta(value))`.
+      // `via Result console.log(via Result chalk.magenta(value))`.
       const args = expr.args.map((arg) =>
         resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
       );

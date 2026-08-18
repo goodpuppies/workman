@@ -51,10 +51,10 @@ Deno.test("compiles factorial and ADT match", async () => {
 
 Deno.test("emits standard-library values from Workman modules", async () => {
   const js = await compile(`
-    let lifted = Monad.lift Result (number) => {
+    let viaResult = Monad.via Result (number) => {
       Ok(number + 1)
     };
-    let value = Ok(1) :> lifted;
+    let value = Ok(1) :> viaResult;
   `);
 
   assertStringIncludes(js, "let __wm_std_Monad");

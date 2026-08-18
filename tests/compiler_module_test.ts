@@ -252,7 +252,7 @@ Deno.test("staged FFI reinference rebuilds shared monotypes with consumer nomina
   await checkVirtual("/test/main.wm", virtualFs);
 });
 
-Deno.test("infers imported record projections in lifted callbacks", async () => {
+Deno.test("infers imported record projections in via callbacks", async () => {
   const virtualFs = new Map<string, string>([
     [
       "/test/game.wm",
@@ -266,8 +266,8 @@ Deno.test("infers imported record projections in lifted callbacks", async () => 
       "/test/main.wm",
       `
         from "./game.wm" import { Controls, Game, initialGame };
-        let lift = Monad.lift;
-        let readQuit = lift Result (game) => { Ok(game.controls.quit) };
+        let via = Monad.via;
+        let readQuit = via Result (game) => { Ok(game.controls.quit) };
         let value = readQuit(Ok(initialGame()));
       `,
     ],
@@ -285,8 +285,8 @@ Deno.test("infers imported record projections in lifted callbacks", async () => 
     "/test/main.wm",
     `
       from "./game.wm" import { Controls, Game, initialGame };
-      let lift = Monad.lift;
-      let readMissing = lift Result (game) => { Ok(game.missing) };
+      let via = Monad.via;
+      let readMissing = via Result (game) => { Ok(game.missing) };
       let value = readMissing(Ok(initialGame()));
     `,
   );

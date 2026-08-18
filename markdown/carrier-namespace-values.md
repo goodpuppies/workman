@@ -17,8 +17,8 @@ from "./task.wm" import * as Task;
 these two expressions should be equivalent:
 
 ```wm
-Monad.liftError Task JavaScriptFailure procedure
-Monad.liftError Task.carrier JavaScriptFailure procedure
+Monad.viaError Task JavaScriptFailure procedure
+Monad.viaError Task.carrier JavaScriptFailure procedure
 ```
 
 The short form is namespace-value resolution sugar. It does not turn the whole
@@ -33,7 +33,7 @@ as `fn` and `fnError`. Requiring every use to say `Task.carrier` is honest but
 slightly noisy:
 
 ```wm
-let request = Monad.liftError Task.carrier JavaScriptFailure (url) => {
+let request = Monad.viaError Task.carrier JavaScriptFailure (url) => {
   fetch(url)
 };
 ```
@@ -41,7 +41,7 @@ let request = Monad.liftError Task.carrier JavaScriptFailure (url) => {
 Using the namespace directly is readable:
 
 ```wm
-let request = Monad.liftError Task JavaScriptFailure (url) => {
+let request = Monad.viaError Task JavaScriptFailure (url) => {
   fetch(url)
 };
 ```
@@ -80,7 +80,7 @@ signature CARRIER = sig
 end
 
 functor MakeLiftError (Carrier : CARRIER) = struct
-  fun liftError inject procedure wrapped =
+  fun viaError inject procedure wrapped =
     Carrier.bind (
       wrapped,
       fn value => Carrier.mapError (procedure value, inject)
@@ -95,7 +95,7 @@ abstraction is in the module language. The functor receives a structure while
 preserving its type-constructor member and the independent type schemes of its
 operations.
 
-That machinery solves a broader problem than Workman has here. Carrier lifting
+That machinery solves a broader problem than Workman has here. Carrier adaptation with `via`
 does not need to:
 
 - pass the complete `Task` structure at runtime;
@@ -121,7 +121,7 @@ let carrier = .{
 and an ordinary function consumes it:
 
 ```wm
-let liftError = (domain) => {
+let viaError = (domain) => {
   (inject) => {
     (procedure) => {
       domain.fnError(inject)(procedure)
@@ -141,11 +141,11 @@ normally associated with richer abstraction mechanisms. The semantic object
 being passed remains the authored record:
 
 ```wm
-Monad.liftError Task JavaScriptFailure procedure
+Monad.viaError Task JavaScriptFailure procedure
 
 -- resolves as
 
-Monad.liftError Task.carrier JavaScriptFailure procedure
+Monad.viaError Task.carrier JavaScriptFailure procedure
 ```
 
 This split is intentional:
@@ -168,8 +168,8 @@ of `Task.carrier`, including an occurrence reached through bare `Task`, receives
 a fresh instantiation:
 
 ```wm
-let fetchUser = Monad.liftError Task JavaScriptFailure fetchUserProcedure;
-let validateName = Monad.liftError Task ValidationFailure validateNameProcedure;
+let fetchUser = Monad.viaError Task JavaScriptFailure fetchUserProcedure;
+let validateName = Monad.viaError Task ValidationFailure validateNameProcedure;
 ```
 
 `fetchUser` and `validateName` may have different input, output, native-error,
@@ -197,7 +197,7 @@ let unrelatedUses = (domain) => {
 
 The carrier-record design deliberately does not make that valid. If Workman
 develops a concrete need for this shape, it should motivate a separate design
-for first-class polymorphic structures or polymorphic fields. Carrier lifting
+for first-class polymorphic structures or polymorphic fields. Carrier adaptation with `via`
 does not require those features preemptively.
 
 ## Alternatives not chosen
@@ -210,7 +210,7 @@ Synthetic basis values such as the current partial `Task` and `Result` records
 were not chosen because every new generic operation requires the compiler and
 runtime to be taught another special field.
 
-Carrier-specific helpers such as only `Task.liftError` and `Result.liftError`
+Carrier-specific helpers such as only `Task.viaError` and `Result.viaError`
 were not chosen because their behavior is one generic record operation and
 should have one definition in `std/monad.wm`.
 
@@ -262,18 +262,18 @@ The compiler does not choose the fields, manufacture the record, or infer that
 a module is a carrier from its other exports. The module author explicitly opts
 into namespace-value use by exporting `carrier`.
 
-## Generic lifting
+## Generic `via`
 
-`Monad.lift` and `Monad.liftError` remain ordinary curried Workman functions:
+`Monad.via` and `Monad.viaError` remain ordinary curried Workman functions:
 
 ```wm
-let lift = (domain) => {
+let via = (domain) => {
   (f) => {
     domain.fn(f)
   }
 };
 
-let liftError = (domain) => {
+let viaError = (domain) => {
   (inject) => {
     (f) => {
       domain.fnError(inject)(f)
@@ -282,11 +282,11 @@ let liftError = (domain) => {
 };
 ```
 
-The three arguments to `liftError` are therefore:
+The three arguments to `viaError` are therefore:
 
 1. the carrier dictionary;
 2. the error injection function, usually an ADT constructor;
-3. the procedure being lifted.
+3. the procedure being adapted.
 
 For example:
 
@@ -295,11 +295,11 @@ type WeatherError =
   | JavaScriptFailure<Js.Error>
   | WeatherFailure<String>;
 
-let request = Monad.liftError Task JavaScriptFailure (url) => {
+let request = Monad.viaError Task JavaScriptFailure (url) => {
   fetch(url)
 };
 
-let requireOk = Monad.liftError Task WeatherFailure (response) => {
+let requireOk = Monad.viaError Task WeatherFailure (response) => {
   if (response.ok) {
     Task.succeed(response)
   } else {
@@ -399,7 +399,7 @@ ordinary runtime emission. The intended boundary is:
 - genuine runtime primitives remain in the basis;
 - derived operations are written in Workman under `std/`;
 - standard module namespaces are emitted from those Workman declarations;
-- `Task.carrier`, `Result.carrier`, and `Monad.liftError` have no duplicated
+- `Task.carrier`, `Result.carrier`, and `Monad.viaError` have no duplicated
   JavaScript implementation.
 
 Promise-backed task primitives such as `Task.succeed`, `Task.andThen`, and
@@ -416,13 +416,13 @@ primitives should be ordinary standard-library Workman code.
    refers to `Name.carrier`, not the complete namespace object.
 4. Emit standard Workman modules through the normal module pipeline.
 5. Add explicit `carrier` records to `std/task.wm` and `std/result.wm`.
-6. Define generic `liftError` in `std/monad.wm`.
+6. Define generic `viaError` in `std/monad.wm`.
 7. Remove the synthetic first-class `Task` and `Result` record values from the
    basis type environment.
 8. Remove the corresponding derived-operation copies from the JavaScript
    runtime prelude.
-9. Migrate carrier examples and documentation to `Monad.lift Task` and
-   `Monad.liftError Task Constructor`.
+9. Migrate carrier examples and documentation to `Monad.via Task` and
+   `Monad.viaError Task Constructor`.
 
 The namespace and standard-library runtime changes landed together, so inferred
 standard values and emitted standard values now come from the same Workman
@@ -432,10 +432,10 @@ declarations.
 
 Focused tests should establish:
 
-- `Monad.lift Task f` resolves and runs as `Monad.lift Task.carrier f`;
-- `Monad.liftError Task Inject f` resolves and runs as the explicit form;
+- `Monad.via Task f` resolves and runs as `Monad.via Task.carrier f`;
+- `Monad.viaError Task Inject f` resolves and runs as the explicit form;
 - separate namespace occurrences instantiate the carrier record independently;
-- the members inside one lifted pipeline remain type-correlated;
+- the members inside one `via` pipeline remain type-correlated;
 - explicit `Task.carrier` remains valid;
 - a Workman namespace without `carrier` produces the focused diagnostic;
 - a JavaScript namespace is not redirected to `.carrier`;

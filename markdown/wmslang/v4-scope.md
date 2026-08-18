@@ -265,7 +265,7 @@ instances.
 
 Workman's existing automatic carrier behavior for operators is specifically the
 [primitive `Result` coercion](../../docs/carriers.md#primitive-result-coercion). It is not general
-implicit `Monad.lift`, and V4 does not make arbitrary carriers automatically participate in syntax.
+implicit `Monad.via`, and V4 does not make arbitrary carriers automatically participate in syntax.
 
 The semantic ordering is:
 

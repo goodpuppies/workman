@@ -90,11 +90,11 @@ Deno.test("supports inferred variadic JS imports as polymorphic unary functions"
   expectBinding(result.env, "main", { type: "Void -> Result<Void, Js.Error>", vars: 0 });
 });
 
-Deno.test("uses lift context to select a variadic reflected function value", async () => {
+Deno.test("uses via context to select a variadic reflected function value", async () => {
   const result = await checkSource(`
     from js.global("console") import * as console;
     let input: Result<String, Js.Error> = Ok("hello");
-    let output = Monad.lift Result console.log(input);
+    let output = Monad.via Result console.log(input);
   `);
 
   expectBinding(result.env, "output", {
@@ -108,8 +108,8 @@ Deno.test("resolves nested reflected results before selecting a variadic functio
     from js.global("console") import * as console;
     from js.module("npm:chalk") import * as chalk;
     from js.module("npm:figlet") import * as figlet;
-    let output = Monad.lift Result console.log(
-      Monad.lift Result chalk.default.magenta(
+    let output = Monad.via Result console.log(
+      Monad.via Result chalk.default.magenta(
         figlet.textSync("Node-Gotchi", JSON{ horizontalLayout: "full" })
       )
     );
@@ -136,7 +136,7 @@ Deno.test("expression ascriptions constrain JSON assertions before a pipe", asyn
           }
         ])
       };
-      let parseAnswer = Monad.lift Task (raw) => {
+      let parseAnswer = Monad.via Task (raw) => {
         record PetNameAnswer = { petName: String };
         Json.assert(raw): Result<PetNameAnswer, Js.Error>
           :> Result.map((value) => { value.petName })
@@ -161,7 +161,7 @@ Deno.test("rejects an unconstrained variadic reflected function value", async ()
   for (
     const expression of [
       "console.log",
-      "Monad.lift Result console.log",
+      "Monad.via Result console.log",
     ]
   ) {
     await assertRejects(

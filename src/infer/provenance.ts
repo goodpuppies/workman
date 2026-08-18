@@ -423,10 +423,12 @@ export function rememberProvenance(
 ): UnifyBind {
   return (variable, target, path, targetSide) => {
     const current = provenance.get(variable.id) ?? { origins: [] };
-    const origin = sourceAt(sources?.[targetSide], path) ?? originAsConstraint(reason);
+    const targetSource = sources?.[targetSide];
+    const source = sourceAtPath(targetSource, path);
+    const origin = sourceAt(targetSource, path) ?? originAsConstraint(reason);
     provenance.set(variable.id, {
       origins: dedupeOrigins([...current.origins, reason]),
-      commitment: { type: target, origin, source: sources?.[targetSide] },
+      commitment: { type: target, origin, source },
     });
   };
 }
@@ -773,6 +775,15 @@ function sourceAt(source: TypeSource | undefined, path: DiffPath): ConstraintOri
   const origin = originForSource(current) ?? last;
   const note = current?.notes?.[0]?.message ?? lastNote;
   return origin && note ? { ...origin, note } : origin;
+}
+
+function sourceAtPath(source: TypeSource | undefined, path: DiffPath): TypeSource | undefined {
+  let current = source;
+  for (const segment of path) {
+    if (!current) break;
+    current = childSource(current, segment);
+  }
+  return current;
 }
 
 function primaryOriginForSource(

@@ -1584,7 +1584,7 @@ __wm_define_module(
   [],
   async () => {
 const Carrier_6834 = (__record_args) => ({ fn: __record_args[0], fnError: __record_args[1], succeed: __record_args[2], map: __record_args[3], map2: __record_args[4], andThen: __record_args[5] });
-const lift_6837 = (__arg) => {
+const via_6837 = (__arg) => {
 if (true) {
 const domain_6835 = __arg;
 return (__arg) => {
@@ -1597,7 +1597,7 @@ __wm_fail("Match", "pattern match failure in function");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-const liftError_6841 = (__arg) => {
+const viaError_6841 = (__arg) => {
 if (true) {
 const domain_6838 = __arg;
 return (__arg) => {
@@ -1616,7 +1616,7 @@ __wm_fail("Match", "pattern match failure in function");
 }
 __wm_fail("Match", "pattern match failure in function");
 };
-return { "Carrier": Carrier_6834, "lift": lift_6837, "liftError": liftError_6841 };
+return { "Carrier": Carrier_6834, "via": via_6837, "viaError": viaError_6841 };
   },
   (value) => { __wm_std_Monad = value; },
 );

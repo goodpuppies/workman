@@ -438,13 +438,13 @@ Deno.test("repeated projections preserve one accumulated structural record requi
 Deno.test("record function fields compose with whitespace curried calls", async () => {
   const result = await checkSource(`
     record Task = { fn: (Void -> Number) -> Number };
-    let lift = (x) => {
+    let via = (x) => {
       (f) => {
         x.fn(f)
       }
     };
     let task: Task = .{ fn = (f) => { f() } };
-    let value = lift task () => { 42 };
+    let value = via task () => { 42 };
   `);
 
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
@@ -453,16 +453,16 @@ Deno.test("record function fields compose with whitespace curried calls", async 
 Deno.test("ambiguous function fields select the first identity without collapsing their row", async () => {
   const result = await checkSource(`
     record TaskLike = { fn: (Void -> Number) -> Number };
-    let lift = (x) => {
+    let via = (x) => {
       (f) => {
         x.fn(f)
       }
     };
     let task: TaskLike = .{ fn = (f) => { f() } };
-    let value = lift task () => { 42 };
+    let value = via task () => { 42 };
   `);
 
-  expectBinding(result.env, "lift", { type: "{ fn: 'a -> 'b } -> 'a -> 'b", vars: 2 });
+  expectBinding(result.env, "via", { type: "{ fn: 'a -> 'b } -> 'a -> 'b", vars: 2 });
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
   assertEquals(
     result.diagnostics.some((diagnostic) => diagnostic.code === "record.ambiguous-projection"),

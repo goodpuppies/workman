@@ -19,7 +19,7 @@ The inferred type is correctly:
 Task<Option<GPUAdapter>, Js.Error>
 ```
 
-However, destructuring that `Option` inside `Task.andThen` or `Monad.lift Task` does not preserve
+However, destructuring that `Option` inside `Task.andThen` or `Monad.via Task` does not preserve
 the `GPUAdapter` foreign receiver reference on the callback binding. Consequently this ordinary
 continuation remains unresolved:
 
@@ -37,7 +37,7 @@ The delayed FFI diagnostic reports `adapter.requestDevice()` with a type-variabl
 than the reflected `GPUAdapter` receiver.
 
 The same underlying weakness appears when nominal receiver values are threaded through several
-carrier-lifted helper functions: the eventual concrete foreign reference does not always propagate
+carrier-aware helper functions built with `via`: the eventual concrete foreign reference does not always propagate
 back into an earlier generic helper's receiver obligation.
 
 ## Expected behavior
@@ -58,6 +58,6 @@ safety model documented in `docs/js-errors.md`.
 ## Regression coverage
 
 Add a focused inference test for the snippet above, followed by a carrier-heavy test that creates a
-buffer from the resulting device and passes it through a lifted `Result` continuation. The direct
+buffer from the resulting device and passes it through a `Result` continuation built with `via`. The direct
 WebGPU example should then be simplified by deleting bridge functions rather than changing its
 semantics.

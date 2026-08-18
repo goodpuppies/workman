@@ -24,13 +24,13 @@ record Carrier<
   andThen: (AndThenCarrier, AndThenTransform) -> AndThenResult,
 };
 
-let lift = (domain) => {
+let via = (domain) => {
   (f) => {
     domain.fn(f)
   }
 };
 
-let liftError = (domain) => {
+let viaError = (domain) => {
   (inject) => {
     (f) => {
       domain.fnError(inject)(f)

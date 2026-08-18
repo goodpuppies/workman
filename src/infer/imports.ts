@@ -1,7 +1,9 @@
 import type { ImportClause } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import {
+  cloneTypeEnv,
   type Env,
+  knownTypeInfos,
   registerTypeInfo,
   type Scheme,
   type TypeDeclInfo,
@@ -79,7 +81,7 @@ export function addImport(
 }
 
 function registerStaticTypes(typeEnv: TypeEnv, environment: StaticEnv): void {
-  for (const info of environment.tyEnv.values()) registerTypeInfo(typeEnv, info);
+  for (const info of knownTypeInfos(environment.tyEnv)) registerTypeInfo(typeEnv, info);
   for (const nested of environment.strEnv.values()) registerStaticTypes(typeEnv, nested);
 }
 
@@ -94,7 +96,7 @@ function importedStaticEnv(
         importedStaticEnv(nested, options),
       ]),
     ),
-    new Map(environment.tyEnv),
+    cloneTypeEnv(environment.tyEnv),
     new Map(
       [...environment.valEnv].map(([name, scheme]) => [
         name,

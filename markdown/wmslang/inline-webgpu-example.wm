@@ -26,7 +26,7 @@ from js.module("../../examples/webgpu_device.ts") import {
 from js.global("GPUBufferUsage") import * as GPUBufferUsage;
 from js.global("GPUMapMode") import * as GPUMapMode;
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 let width = 8;
 let height = 8;
@@ -57,19 +57,19 @@ let makeProgram = (rawOutput) => {
 };
 
 let buildAndDispatch = (device) => {
-  let withUsages = lift Result (storage, copySource, copyDestination, mapRead, mapMode) => {
-    let withOutput = lift Result (rawOutput) => {
+  let withUsages = via Result (storage, copySource, copyDestination, mapRead, mapMode) => {
+    let withOutput = via Result (rawOutput) => {
       let (program, typedOutput) = makeProgram(rawOutput);
-      let withStaging = lift Result (staging) => {
-        let withModule = lift Result (shaderModule) => {
-          let withPipeline = lift Result (pipeline) => {
+      let withStaging = via Result (staging) => {
+        let withModule = via Result (shaderModule) => {
+          let withPipeline = via Result (pipeline) => {
             -- Reflection gives the binding for the captured typed buffer. There is no
             -- hand-maintained WGSL binding declaration or lookup by source-level string.
             let binding = Gpu.binding(program, typedOutput);
-            let withLayout = lift Result (bindGroupLayout) => {
-              let withBindGroup = lift Result (bindGroup) => {
-                let withEncoder = lift Result (encoder) => {
-                  let withPass = lift Result (pass) => {
+            let withLayout = via Result (bindGroupLayout) => {
+              let withBindGroup = via Result (bindGroup) => {
+                let withEncoder = via Result (encoder) => {
+                  let withPass = via Result (pass) => {
                     setPipeline(pass, pipeline)
                       :> Result.andThen((_) => { setBindGroup(pass, bindGroup) })
                       :> Result.andThen((_) => { dispatchOneWorkgroup(pass) })
@@ -124,8 +124,8 @@ let buildAndDispatch = (device) => {
   | :> withUsages
 };
 
-let readBack = lift Task (staging, mapMode) => {
-  let inspect = lift Task (_) => {
+let readBack = via Task (staging, mapMode) => {
+  let inspect = via Task (_) => {
     readFirstUint32(staging)
       :> Result.map((value) => {
         print("wmslang wrote " ++ Text.of(value) ++ " into the first pixel");
@@ -137,7 +137,7 @@ let readBack = lift Task (staging, mapMode) => {
 };
 
 let main = () => {
-  let prepare = lift Task (device) => { buildAndDispatch(device) :> Task.fromResult };
+  let prepare = via Task (device) => { buildAndDispatch(device) :> Task.fromResult };
   getWebGpuDevice()
     :> prepare
     :> readBack

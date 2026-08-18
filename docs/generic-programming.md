@@ -4,10 +4,10 @@ This guide assumes you have already written a carrier-oriented procedure using
 `Result` or `Task`. If that pattern is unfamiliar, start with
 [Carrier-oriented procedure design](./carriers.md).
 
-The first generic function most Workman programs encounter is `Monad.lift`:
+The first generic function most Workman programs encounter is `Monad.via`:
 
 ```wm
-let requirePositive = Monad.lift Result (number) => {
+let requirePositive = Monad.via Result (number) => {
   if (number > 0) {
     Ok(number)
   } else {
@@ -19,11 +19,11 @@ Ok(input)
   :> requirePositive
 ```
 
-`lift` is generic over the carrier. The same function can lift a transformation
-into `Task`:
+`via` is generic over the carrier. The same function can create a carrier-aware
+transformation through `Task`:
 
 ```wm
-let fetchBody = Monad.lift Task (request) => {
+let fetchBody = Monad.via Task (request) => {
   fetch(request)
 };
 
@@ -81,23 +81,23 @@ or necessary for composing values that follow the monad pattern.
 Using a module namespace in value position selects its carrier record:
 
 ```wm
-Monad.lift Result transform
-Monad.lift Task transform
+Monad.via Result transform
+Monad.via Task transform
 ```
 
 These are shorthand for:
 
 ```wm
-Monad.lift Result.carrier transform
-Monad.lift Task.carrier transform
+Monad.via Result.carrier transform
+Monad.via Task.carrier transform
 ```
 
-There is no hidden typeclass lookup. `lift` receives a normal Workman value.
+There is no hidden typeclass lookup. `via` receives a normal Workman value.
 
 Its essential shape is:
 
 ```wm
-let lift = (carrier) => {
+let via = (carrier) => {
   (transform) => {
     carrier.fn(transform)
   }
@@ -117,21 +117,21 @@ type WeatherError =
   | WeatherFailure<String>;
 ```
 
-The basic solution is `Monad.lift` followed by `mapErr` at the end of the
+The basic solution is `Monad.via` followed by `mapErr` at the end of the
 transformation:
 
 ```wm
-let decode = Monad.lift Task (response) => {
+let decode = Monad.via Task (response) => {
   response
     :> .json()
     :> Task.mapErr(JavaScriptFailure)
 };
 ```
 
-`Monad.liftError` is exactly shorthand for that:
+`Monad.viaError` is exactly shorthand for that:
 
 ```wm
-let decode = Monad.liftError Task JavaScriptFailure (response) => {
+let decode = Monad.viaError Task JavaScriptFailure (response) => {
   response :> .json()
 };
 ```
@@ -139,13 +139,13 @@ let decode = Monad.liftError Task JavaScriptFailure (response) => {
 Another transformation can map its `String` error into the same ADT:
 
 ```wm
-let requireOk = Monad.liftError Task WeatherFailure (response) => {
+let requireOk = Monad.viaError Task WeatherFailure (response) => {
   checkResponse(response)
 };
 ```
 
-Both lifted transformations now return `WeatherError` and can be composed in one
-pipeline. Use plain `Monad.lift` when the transformation already returns the
+Both carrier-aware transformations now return `WeatherError` and can be composed in one
+pipeline. Use plain `Monad.via` when the transformation already returns the
 pipeline's error type.
 
 ## Generic algorithms and required operations
@@ -366,7 +366,7 @@ occurrences:
 
 ```wm
 let resultLift = (transform) => {
-  Monad.lift Result transform
+  Monad.via Result transform
 };
 
 let incremented = resultLift(increment)(Ok(1));
@@ -456,7 +456,7 @@ A local generic helper can also keep the varying carrier as an argument:
 let consumeCarriers = (numberCarrier, textCarrier) => {
   let stage = (transform) => {
     (carrier) => {
-      Monad.lift carrier transform
+      Monad.via carrier transform
     }
   };
 
@@ -484,8 +484,8 @@ When code starts repeating a composition pattern:
 
 For carrier-oriented procedures specifically:
 
-- use `Monad.lift` to lift a transformation into the shared carrier;
-- use `Monad.liftError` when the transformation's native error must enter a
+- use `Monad.via` to create a transformation through the shared carrier's `fn`;
+- use `Monad.viaError` when the transformation's native error must enter a
   shared error ADT;
 - use `Traverse.with` for sequentially applying a carrier-producing
   transformation to a list;
@@ -499,7 +499,7 @@ programs.
 
 ## Complete examples
 
-- [`examples/weather.wm`](../examples/weather.wm) uses `Task`, lifted
+- [`examples/weather.wm`](../examples/weather.wm) uses `Task`, carrier-aware
   transformations, and a shared application error type.
 - [`examples/traverse_carrier/main.wm`](../examples/traverse_carrier/main.wm)
   uses one generic traversal with `Result` and `Task`.

@@ -9,7 +9,7 @@ from js.module("node:timers/promises") import {
   setTimeout as wait:Number -> Task<Void, Js.Error>
 };
 
-let lift = Monad.lift;
+let via = Monad.via;
 
 let try = match(result) => {
   Ok(value) => { value },
@@ -163,7 +163,7 @@ let getPetName = => {
       default: "BiteSize"
     }])
   };
-  let parseAnswer = lift Task (raw) => {
+  let parseAnswer = via Task (raw) => {
     record PetNameAnswer = { petName: String };
     Json.assert(raw): Result<PetNameAnswer, Js.Error>
       :> Result.map((answer) => { answer.petName })
@@ -183,13 +183,13 @@ let getAction = => {
       choices: JSON["Feed", "Play", "Sleep", "Do Nothing", "Quit"]
     }])
   };
-  let parseAnswer = lift Task (raw) => {
+  let parseAnswer = via Task (raw) => {
     record ActionAnswer = { action: String };
     Json.assert(raw): Result<ActionAnswer, Js.Error>
       :> Result.map((answer) => { answer.action })
       :> Task.fromResult
   };
-  let parseAction = lift Task (answer) => {
+  let parseAction = via Task (answer) => {
     Task.succeed(match(answer) {
       "Feed" => { Feed },
       "Play" => { Play },
@@ -205,7 +205,7 @@ let getAction = => {
     :> parseAction
 };
 
-let createPet = lift Task (name) => {
+let createPet = via Task (name) => {
   Task.succeed
     .{name = name
     , hunger = 50
@@ -221,7 +221,7 @@ let spinwait = (starting) => { (finished) => { (duration) => {
     :> .start()
     :> try;
   wait(duration)
-    :> lift Task => {
+    :> via Task => {
       spinner.succeed(finished)
         :> Result.map((_) => { void })
         :> Task.fromResult
@@ -234,7 +234,7 @@ let feed = (state) => {
     "Yum! That was delicious." 
     1500 
     
-    :> lift Task => {
+    :> via Task => {
       Task.succeed
         .{
           ..state,
@@ -250,7 +250,7 @@ let play = (state) => {
     "So much fun!"
     1500
   
-    :> lift Task => {
+    :> via Task => {
       Task.succeed
         .{name = state.name
         , hunger = state.hunger + 10
@@ -267,7 +267,7 @@ let sleep = (state) => {
     "Zzz... Well rested!"
     2500
   
-    :> lift Task => {
+    :> via Task => {
       Task.succeed
         .{name = state.name
         , hunger = state.hunger + 15
@@ -283,7 +283,7 @@ let doNothing = (state) => {
     :> try
     :> log;
   wait(1500)
-    :> lift Task => {
+    :> via Task => {
       Task.succeed state
     }
 };
@@ -319,21 +319,21 @@ let gameOver = (state) => {
     :> log;
 };
 
-let rec petLoop = lift Task (state) => {
+let rec petLoop = via Task (state) => {
   if (isAlive(state)) {
     console.clear();
     printStatus(state);
 
-    let continue = lift Task (action) => {
+    let continue = via Task (action) => {
       match(action) {
         Quit => { quit() },
         _ => {
 
           doAction(action, state)
-            :> lift Task (actedState) => {
+            :> via Task (actedState) => {
               let nextState = tick(actedState);
               wait(1000)
-                :> lift Task => {
+                :> via Task => {
                   Task.succeed nextState
                 }
             }
@@ -353,8 +353,8 @@ let rec petLoop = lift Task (state) => {
 let main = => {
   console.clear();
   figlet.textSync("Node-Gotchi", JSON{ horizontalLayout: "full" })
-    :> lift Result chalk.default.magenta()
-    :> lift Result console.log();
+    :> via Result chalk.default.magenta()
+    :> via Result console.log();
   chalk.default.gray("A terminal virtual pet written in Workman\n")
     :> try
     :> log;
