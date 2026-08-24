@@ -1,0 +1,41 @@
+from "./lexer.wm" import { lex };
+from "./token.wm" import * as Token;
+from js.global("Deno") import { readTextFileSync };
+
+let printTokenType = (tok) => {
+  match(tok.kind) {
+    Token.LowerIdentifierToken => { "ident" },
+    Token.UnknownToken => { "symbol" },
+    Token.EndOfFileToken => { "eof" }
+  }
+};
+
+let getTokText = (t:Token.Token, source) => {
+  source 
+    :> .slice(t.span.startPos.index, t.span.endPos.index)
+    :> Result.withDefault("")
+};
+
+let printToks = (list, sourceText) => {
+
+  let rec listPrinter = (l) => {
+    match(l) {
+      [] => { void },
+      [tok, ..rest] => {
+        printTokenType(tok) :> print;
+        // print token content
+        getTokText(tok, sourceText) :> print;
+        listPrinter(rest)
+      }
+    }
+  };
+  listPrinter(list)
+};
+
+let main = () => {
+  let source = readTextFileSync("tooling/frontend-v3/example.wm") :> Result.debug();
+
+  printToks(source :> lex, source);
+
+  print(source)
+};

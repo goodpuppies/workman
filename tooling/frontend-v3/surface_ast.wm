@@ -1,0 +1,211 @@
+from "./mark.wm" import { Mark, MarkId, Marked, Slot, SourceSpan };
+from "./token.wm" import { LexicalMark, Token, TokenKind };
+
+type NodeId = | NodeId<Number>;
+type DelimiterId = | DelimiterId<Number>;
+
+type SurfaceSort =
+  | TypeSort
+  | PatternSort
+  | ExpressionSort
+  | DeclarationSort;
+
+type SyntaxProblem =
+  | MissingToken<TokenKind>
+  | MissingPhrase<SurfaceSort>
+  | UnexpectedTokens
+  | UnassembledFragments;
+
+type SyntaxRecovery =
+  | InsertedToken<TokenKind>
+  | InsertedHole<SurfaceSort>
+  | RetainedErrorIsland
+  | RetainedUnassembledFragments;
+
+type SyntaxMark = Mark<SyntaxProblem, SyntaxRecovery>;
+type SurfaceMark = LexicalSurfaceMark<LexicalMark> | SyntaxSurfaceMark<SyntaxMark>;
+
+record Node = {
+  id: NodeId,
+  span: SourceSpan,
+};
+
+record Delimited<T> = {
+  id: DelimiterId,
+  open: Slot<Token>,
+  content: T,
+  close: Slot<Token>,
+};
+
+record Separated<T> = {
+  items: List<T>,
+  separators: List<Slot<Token>>,
+  trailingSeparator: Option<Slot<Token>>,
+};
+
+record JoinedItem<T> = {
+  joiner: Slot<Token>,
+  item: T,
+};
+
+record Joined<T> = {
+  first: T,
+  rest: List<JoinedItem<T>>,
+};
+
+-- Revised Definition LongX = StrId* x X, with every authored dot retained.
+record LongIdentifier = {
+  qualifiers: List<Token>,
+  dots: List<Slot<Token>>,
+  base: Token,
+};
+
+record Hole = {
+  node: Node,
+  mark: Option<MarkId>,
+  question: Slot<Token>,
+};
+
+record ErrorIsland = {
+  mark: MarkId,
+  tokens: List<Token>,
+  span: SourceSpan,
+};
+
+record TypeArguments<T> = {
+  angles: Delimited<Separated<T>>,
+};
+
+record TypeParameters = {
+  angles: Delimited<Separated<Token>>,
+};
+
+record SpreadTail<T> = {
+  spread: Slot<Token>,
+  value: T,
+};
+
+record Labelled<T> = {
+  node: Node,
+  label: Token,
+  equalsOrColon: Option<Slot<Token>>,
+  value: Option<T>,
+};
+
+type CallSite<E> =
+  | WhitespaceArgument<E>
+  | ParenthesizedArguments<Delimited<Separated<E>>>;
+
+record MatchRule<P, E> = {
+  node: Node,
+  pattern: P,
+  arrow: Slot<Token>,
+  body: E,
+};
+
+record TypeAnnotation<T> = {
+  colon: Slot<Token>,
+  value: T,
+};
+
+record Binding<P, E, T> = {
+  node: Node,
+  pattern: P,
+  annotation: Option<TypeAnnotation<T>>,
+  equals: Slot<Token>,
+  value: E,
+};
+
+record TypeBinding<T> = {
+  node: Node,
+  name: Token,
+  parameters: Option<TypeParameters>,
+  equals: Slot<Token>,
+  leadingPipe: Option<Token>,
+  members: Separated<T>,
+};
+
+type BlockPhrase<D, E> = DeclarationPhrase<D> | ExpressionPhrase<E>;
+
+record BlockItem<D, E> = {
+  node: Node,
+  phrase: BlockPhrase<D, E>,
+  terminator: Slot<Token>,
+};
+
+record BlockBody<D, E> = {
+  items: List<BlockItem<D, E>>,
+  result: Option<E>,
+};
+
+record Block<D, E> = {
+  node: Node,
+  braces: Delimited<BlockBody<D, E>>,
+};
+
+record ListBody<T> = {
+  items: Separated<T>,
+  tail: Option<SpreadTail<T>>,
+};
+
+record TopPhrase<D, E> = {
+  node: Node,
+  phrase: BlockPhrase<D, E>,
+  terminator: Slot<Token>,
+};
+
+-- The four mutually recursive phrase families follow SML Ty, Pat, Exp, and Dec.
+-- Constructors below describe authored Workman syntax; elaboration decides identity and meaning.
+type SurfaceType =
+  | TypeVariable<Node, Token>
+  | TypeName<Node, LongIdentifier, Option<TypeArguments<SurfaceType>>>
+  | TypeTuple<Node, Delimited<Separated<SurfaceType>>>
+  | TypeFunction<Node, SurfaceType, Slot<Token>, SurfaceType>
+  | TypeParenthesized<Node, Delimited<SurfaceType>>
+  | TypeHole<Hole>
+  | TypeMarked<Marked<SurfaceType>>
+  | TypeError<Node, ErrorIsland>
+and SurfacePattern =
+  | PatternWildcard<Node, Token>
+  | PatternName<Node, LongIdentifier>
+  | PatternExplicitBinder<Node, Token, Delimited<Token>>
+  | PatternLiteral<Node, Token>
+  | PatternApplication<Node, LongIdentifier, Delimited<Separated<SurfacePattern>>>
+  | PatternTuple<Node, Delimited<Separated<SurfacePattern>>>
+  | PatternList<Node, Delimited<ListBody<SurfacePattern>>>
+  | PatternRecord<Node, Token, Delimited<Separated<Labelled<SurfacePattern>>>>
+  | PatternTyped<Node, SurfacePattern, TypeAnnotation<SurfaceType>>
+  | PatternParenthesized<Node, Delimited<SurfacePattern>>
+  | PatternHole<Hole>
+  | PatternMarked<Marked<SurfacePattern>>
+  | PatternError<Node, ErrorIsland>
+and SurfaceExpr =
+  | ExprLiteral<Node, Token>
+  | ExprName<Node, LongIdentifier>
+  | ExprTuple<Node, Delimited<Separated<SurfaceExpr>>>
+  | ExprList<Node, Delimited<ListBody<SurfaceExpr>>>
+  | ExprRecord<Node, Option<LongIdentifier>, Token, Delimited<Separated<Labelled<SurfaceExpr>>>>
+  | ExprParenthesized<Node, Delimited<SurfaceExpr>>
+  | ExprApply<Node, SurfaceExpr, CallSite<SurfaceExpr>>
+  | ExprLambda<Node, Option<Delimited<Separated<SurfacePattern>>>, Slot<Token>, SurfaceExpr>
+  | ExprIf<Node, Token, Delimited<SurfaceExpr>, Block<SurfaceDecl, SurfaceExpr>, Slot<Token>, Block<SurfaceDecl, SurfaceExpr>>
+  | ExprMatch<Node, Token, Delimited<Separated<SurfaceExpr>>, Delimited<Separated<MatchRule<SurfacePattern, SurfaceExpr>>>>
+  | ExprBlock<Block<SurfaceDecl, SurfaceExpr>>
+  | ExprTyped<Node, SurfaceExpr, TypeAnnotation<SurfaceType>>
+  | ExprInfix<Node, SurfaceExpr, Token, SurfaceExpr>
+  | ExprPrefix<Node, Token, SurfaceExpr>
+  | ExprHole<Hole>
+  | ExprMarked<Marked<SurfaceExpr>>
+  | ExprError<Node, ErrorIsland>
+and SurfaceDecl =
+  | DeclValue<Node, Token, Option<Token>, Joined<Binding<SurfacePattern, SurfaceExpr, SurfaceType>>>
+  | DeclType<Node, Token, Joined<TypeBinding<SurfaceType>>>
+  | DeclMarked<Marked<SurfaceDecl>>
+  | DeclError<Node, ErrorIsland>;
+
+record SurfaceProgram = {
+  node: Node,
+  phrases: List<TopPhrase<SurfaceDecl, SurfaceExpr>>,
+  eof: Token,
+  marks: List<SurfaceMark>,
+};
