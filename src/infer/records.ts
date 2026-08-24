@@ -254,7 +254,7 @@ function inferRecordField(
     return { type: found.type, record: info };
   }
   if (target.tag === "var") {
-    const nominal = selectedFieldRecord(typeEnv, field, occurrence);
+    const nominal = selectedFieldRecord(typeEnv, field);
     if (nominal) {
       if (nominal.nominalReceiver) {
         constrainRecord(
@@ -279,7 +279,10 @@ function inferRecordField(
           "structural field",
         );
       }
-      return { type: nominal.type, record: nominal.info };
+      return {
+        type: nominal.type,
+        record: nominal.nominalReceiver ? nominal.info : undefined,
+      };
     }
     const result = fresh();
     constrainRecord(
@@ -332,12 +335,6 @@ function constrainRecord(
 function selectedFieldRecord(
   typeEnv: TypeEnv,
   field: string,
-  occurrence?: {
-    expression: Extract<Expr, { kind: "Var" }>;
-    facts: TypeFacts;
-    warnings: string[];
-    diagnostics: FrontendDiagnostic[];
-  },
 ): { record: NamedTy; type: Ty; info: TypeInfo; nominalReceiver: boolean } | undefined {
   const candidates = findRecordTypes(typeEnv, [field], "contains");
   if (candidates.length === 0) return undefined;
@@ -348,20 +345,8 @@ function selectedFieldRecord(
   if (candidates.length === 1 && prune(declaredType).tag !== "fn") {
     return { record, type: declaredType, info, nominalReceiver: true };
   }
-  if (candidates.length > 1 && occurrence) {
-    const candidateNames = candidates.map((candidate) => candidate.name).join(", ");
-    const message = `ambiguous record projection ${field}; using first record type ${info.name}. ` +
-      `Candidates: ${candidateNames}. ` +
-      `Hint: annotate the receiver, binding, or parameter with the intended record type.`;
-    occurrence.warnings.push(message);
-    occurrence.diagnostics.push(
-      warningDiagnostic(
-        message,
-        occurrence.expression.node,
-        "record.ambiguous-projection",
-      ),
-    );
-  }
+  // A shared label is a structural requirement, not a request to guess one nominal owner.
+  // Later constraints may still settle the receiver to any record containing this field.
   const type = sharedNonFunctionFieldType(typeEnv, field) ?? fresh();
   return { record, type, info, nominalReceiver: false };
 }

@@ -1,13 +1,6 @@
--- trig.wm
--- Pure sine and cosine. Range-reduce to [-pi, pi], then evaluate the Taylor
--- series in nested (Horner) form. Good to ~1e-5 over the full circle, which is
--- far more than a ship heading needs.
-
 let pi = 3.141592653589793;
 let twoPi = 6.283185307179586;
 
--- Truncate toward zero (the JS `% 1` trick), then correct to a true floor so
--- negative inputs behave.
 let truncate = (x: Number) => {
   x - (x % 1)
 };
@@ -53,7 +46,6 @@ let cos = (x: Number) => {
   cosReduced(reduce(x))
 };
 
--- Radians to degrees, for the raylib draw calls that take an angle.
 let degrees = (radians: Number) => {
   radians * 180 / pi
 };

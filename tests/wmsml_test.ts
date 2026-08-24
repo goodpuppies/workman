@@ -235,11 +235,21 @@ Deno.test("wmsml equality rejects function types", async () => {
     "does not admit equality",
   );
 
+  await checkSource(
+    `
+      val same = fn (x, y) => x = y
+      val numberEqual = same (1, 1)
+      val textEqual = same ("left", "right")
+    `,
+    { surface: "wmsml" },
+  );
+
   await assertRejects(
     () =>
       checkSource(
         `
           val same = fn (x, y) => x = y
+          val bad = same (fn x => x, fn y => y)
         `,
         { surface: "wmsml" },
       ),

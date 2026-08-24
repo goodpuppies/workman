@@ -1,0 +1,7 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "raylib": "https://raw.githubusercontent.com/mommysgoodpuppy/raylib_ts_bindings_deno/refs/heads/main/mod.ts",
+    "@denosaurs/byte-type": "https://raw.githubusercontent.com/mommysgoodpuppy/byte_type_C/main/mod.ts"
+  }
+}

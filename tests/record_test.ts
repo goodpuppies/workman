@@ -396,7 +396,7 @@ Deno.test("record literals reject missing and extra fields against the nominal t
   );
 });
 
-Deno.test("ambiguous record projection chooses the first identity and warns for an annotation", async () => {
+Deno.test("shared record labels remain structural without choosing a nominal owner", async () => {
   const result = await checkSource(`
     record Point = { x: Number };
     record Offset = { x: Number };
@@ -410,12 +410,22 @@ Deno.test("ambiguous record projection chooses the first identity and warns for 
   expectBinding(result.env, "getX", { type: "{ x: Number } -> Number", vars: 0 });
   expectBinding(result.env, "px", { type: "Number", vars: 0 });
   expectBinding(result.env, "ox", { type: "Number", vars: 0 });
-  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
-    "record.ambiguous-projection",
-  ]);
-  assertStringIncludes(result.warnings[0], "using first record type Point");
-  assertStringIncludes(result.warnings[0], "Candidates: Point, Offset");
-  assertStringIncludes(result.warnings[0], "annotate the receiver, binding, or parameter");
+  assertEquals(result.diagnostics, []);
+  assertEquals(result.warnings, []);
+});
+
+Deno.test("nominal record parameter annotations resolve shared field identities", async () => {
+  const result = await checkSource(`
+    record Point = { x: Number };
+    record Offset = { x: Number };
+    let getPointX = (value: Point) => { value.x };
+    let getOffsetX = (value: Offset) => { value.x };
+  `);
+
+  expectBinding(result.env, "getPointX", { type: "Point -> Number", vars: 0 });
+  expectBinding(result.env, "getOffsetX", { type: "Offset -> Number", vars: 0 });
+  assertEquals(result.diagnostics, []);
+  assertEquals(result.facts.recordProjections.size, 2);
 });
 
 Deno.test("repeated projections preserve one accumulated structural record requirement", async () => {
@@ -464,8 +474,5 @@ Deno.test("ambiguous function fields select the first identity without collapsin
 
   expectBinding(result.env, "via", { type: "{ fn: 'a -> 'b } -> 'a -> 'b", vars: 2 });
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
-  assertEquals(
-    result.diagnostics.some((diagnostic) => diagnostic.code === "record.ambiguous-projection"),
-    true,
-  );
+  assertEquals(result.diagnostics, []);
 });

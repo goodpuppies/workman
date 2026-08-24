@@ -20,6 +20,7 @@
     "frontend-v2:build": "deno run -A scripts/build_frontend_v2.ts",
     "frontend-v2:grammar-report": "deno run --allow-read --allow-env scripts/frontend_v2_generation_report.ts src/grammar.peggy",
     "frontend-v2:generate-recognizer": "deno run --allow-read --allow-write scripts/generate_frontend_v2_recognizer.ts src/grammar.peggy tooling/frontend-v2/generated",
+    "frontend-v2:update-semantic-golden": "deno run --allow-read --allow-write scripts/update_frontend_v2_semantic_golden.ts",
     "frontend-v2:format": "deno run --allow-read --allow-write --allow-env scripts/frontend_v2_format.ts",
     "wmslang:builtins": "deno run -A scripts/generate_wmslang_builtin_catalog.ts",
     "wmslang:builtins:check": "deno run -A scripts/generate_wmslang_builtin_catalog.ts --check",

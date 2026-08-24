@@ -10,6 +10,7 @@ import {
   tuple,
   type Ty,
   typeFromAst,
+  typeInfoById,
   type TypeVarScope,
   unify,
 } from "../types.ts";
@@ -81,6 +82,32 @@ export function inferLambdaTy(
           subject: "lambda parameter",
           leftRole: "parameter",
           rightRole: "hint",
+        },
+      });
+    }
+  });
+  // Nominal record annotations are ordinary static type constraints. Make that identity
+  // available while checking the body so a projection resolves to the annotated record field,
+  // rather than degrading to an ownerless structural row. This is deliberately narrower than
+  // using annotations as evidence for JS reflection or GPU overload selection.
+  annotations.forEach((annotated, index) => {
+    if (!annotated) return;
+    const target = prune(annotated);
+    if (
+      dialect.domain !== "gpu" && target?.tag === "named" &&
+      typeInfoById(typeEnv, target.id)?.recordFields
+    ) {
+      constrainAt(params[index], annotated, expr.params[index], undefined, [], provenance, {
+        message: "nominal record parameter annotation",
+        node: expr.params[index].node,
+        span: expr.params[index].node?.span,
+      }, {
+        premise: {
+          rule: "InferAnnotation.NominalRecordParameter",
+          role: "record parameter matches its annotation",
+          subject: "parameter annotation",
+          leftRole: "parameter",
+          rightRole: "annotation",
         },
       });
     }

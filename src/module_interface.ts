@@ -2117,15 +2117,6 @@ export function semanticRenameAt(
   const selection = semanticOccurrenceSelectionAt(moduleInterface, offset);
   if (!selection || selection.targets.some(({ kind }) => kind === "module")) return;
   const { primary, targets: selectedTargets, localAlias } = selection;
-  if (
-    selectedTargets.some(({ kind }) => kind === "field") &&
-    moduleInterface.diagnostics.some((diagnostic) =>
-      diagnostic.code === "record.ambiguous-projection" &&
-      diagnostic.primary.kind === "source" &&
-      spansOverlap(diagnostic.primary.span, primary.span)
-    )
-  ) return;
-
   if (localAlias) {
     const occurrences = moduleInterface.occurrences
       .filter((occurrence) =>
@@ -2290,10 +2281,6 @@ function sameSemanticTarget(
   right: SemanticOccurrenceTarget,
 ): boolean {
   return left.kind === right.kind && left.id === right.id;
-}
-
-function spansOverlap(left: SourceSpan, right: SourceSpan): boolean {
-  return left.start < right.end && right.start < left.end;
 }
 
 export type SemanticSourceLocation = Readonly<{

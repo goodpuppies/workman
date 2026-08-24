@@ -356,13 +356,8 @@ Deno.test("[module update G21a] overlapping project snapshots isolate every sema
   assertStrictEquals(testInterface.projectSnapshotId, tests.snapshot.id);
   assertNotStrictEquals(appInterface.generation, testInterface.generation);
   assertNotStrictEquals(appInterface.diagnostics, testInterface.diagnostics);
-  assertNotStrictEquals(appInterface.diagnostics[0], testInterface.diagnostics[0]);
-  assertEquals(appInterface.diagnostics.map((item) => item.code), [
-    "record.ambiguous-projection",
-  ]);
-  assertEquals(testInterface.diagnostics.map((item) => item.code), [
-    "record.ambiguous-projection",
-  ]);
+  assertEquals(appInterface.diagnostics, []);
+  assertEquals(testInterface.diagnostics, []);
   assertNotStrictEquals(appInterface.occurrences, testInterface.occurrences);
   assertNotStrictEquals(appInterface.scopes, testInterface.scopes);
   assertNotStrictEquals(appInterface.typedNodes, testInterface.typedNodes);

@@ -49,10 +49,11 @@ test "$before" = "$after"
 `deno task publish` is the one-command release preparation path. It runs `deno task generate`, then
 builds and packages the VS Code extension; it does not upload or publish anything externally.
 
-The semantic golden is a reviewed test expectation, not a generated release artifact. Update it
-explicitly with `scripts/update_frontend_v2_semantic_golden.ts` only after reviewing an intentional
-semantic or span change. The tree-sitter editor checkout is also excluded because it is a separate
-git submodule with its own generation and release lifecycle.
+The repository-wide `generate` task refreshes the semantic golden after every generated Workman
+source and the fixed-point frontend artifact are up to date. Review the resulting golden diff when
+a semantic/span change or a new `.wm` corpus file is intentional. To refresh only this derived
+state, run `deno task frontend-v2:update-semantic-golden`. The tree-sitter editor checkout remains
+excluded because it is a separate git submodule with its own generation and release lifecycle.
 
 Finish with focused parser tests, the repository type-check, and the full test suite:
 
