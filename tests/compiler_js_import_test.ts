@@ -743,6 +743,19 @@ Deno.test("orders generated receiver imports after local record types", async ()
   await checkFile(input);
 });
 
+Deno.test("orders built-in receiver imports before an earlier value use", async () => {
+  const result = await checkSource(`
+    let textLength = (text) => {
+      text :> .length :> Result.withDefault(0)
+    };
+    record Position = { index: Number };
+    let measured = textLength("abc");
+  `);
+
+  expectBinding(result.env, "textLength", { type: "String -> Number", vars: 0 });
+  expectBinding(result.env, "measured", { type: "Number", vars: 0 });
+});
+
 Deno.test("supports inferred callable root JS globals", async () => {
   const result = await checkSource(`
     from js.global import { fetch };

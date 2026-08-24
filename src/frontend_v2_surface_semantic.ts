@@ -42,6 +42,7 @@ type Context = {
   source: string;
   nextNodeId: number;
   nextLiftId: number;
+  nextTypeGroupId: number;
 };
 
 /**
@@ -55,7 +56,7 @@ export function surfaceProgramToModule(
   program: FrontendV2SurfaceProgram,
   source: string,
 ): FrontendV2SurfaceModuleProjection {
-  const context: Context = { source, nextNodeId: 0, nextLiftId: 0 };
+  const context: Context = { source, nextNodeId: 0, nextLiftId: 0, nextTypeGroupId: 0 };
   const diagnostics: FrontendV2SemanticAdapterDiagnostic[] = [];
   const decls: Decl[] = [];
   const [phrasesValue, programSpan] = fields(program.root, "ProgramNode");
@@ -65,7 +66,9 @@ export function surfaceProgramToModule(
     try {
       const [item] = fields(phraseValue, "TopPhraseNode");
       const itemVariant = variant(item);
-      if (isDeclNode(itemVariant.name)) {
+      if (itemVariant.name === "TypeDeclarationGroupNode") {
+        decls.push(...projectTypeDeclGroup(itemVariant, context));
+      } else if (isDeclNode(itemVariant.name)) {
         decls.push(projectDecl(itemVariant, context));
       } else {
         const expression = projectExpr(itemVariant, context);
@@ -231,8 +234,36 @@ function projectRecordDecl(node: WmVariant, context: Context): Decl {
 
 function projectTypeDecl(node: WmVariant, context: Context): Decl {
   const [, nameToken, parametersValue, , bodyNode] = fields(node, "TypeDeclarationNode");
+  return projectTypeBindingParts(node, nameToken, parametersValue, bodyNode, context);
+}
+
+function projectTypeDeclGroup(node: WmVariant, context: Context): Decl[] {
+  const [bindingsValue] = fields(node, "TypeDeclarationGroupNode");
+  const bindings = list(bindingsValue);
+  const mutualGroup = context.nextTypeGroupId++;
+  return bindings.map((value) => {
+    const binding = variant(value, "TypeBindingNode");
+    const [nameToken, parametersValue, , bodyNode] = fields(binding);
+    const declaration = projectTypeBindingParts(
+      bindings.length === 1 ? node : binding,
+      nameToken,
+      parametersValue,
+      bodyNode,
+      context,
+    );
+    return bindings.length === 1 ? declaration : { ...declaration, mutualGroup };
+  });
+}
+
+function projectTypeBindingParts(
+  node: WmVariant,
+  nameToken: unknown,
+  parametersValue: unknown,
+  bodyNode: unknown,
+  context: Context,
+): Extract<Decl, { kind: "TypeDecl" }> {
   const parametersNode = option(parametersValue);
-  const [leadingPipeValue, membersValue] = fields(bodyNode, "TypeDeclarationBodyNode");
+  const [leadingPipeValue, membersValue] = fields(variant(bodyNode), "TypeDeclarationBodyNode");
   const hasLeadingPipe = option(leadingPipeValue) !== undefined;
   const members = list(membersValue).map((member) => projectType(variant(member), context));
   const isAlias = !hasLeadingPipe && members.length === 1;
@@ -1047,11 +1078,15 @@ function projectBlockParts(
     firstItemSpan ??= spanOf(item);
     lastItemSpan = spanOf(item);
     const valueNode = variant(value);
-    items.push(
-      isDeclNode(valueNode.name)
-        ? projectDecl(valueNode, context)
-        : projectExpr(valueNode, context),
-    );
+    if (valueNode.name === "TypeDeclarationGroupNode") {
+      items.push(...projectTypeDeclGroup(valueNode, context));
+    } else {
+      items.push(
+        isDeclNode(valueNode.name)
+          ? projectDecl(valueNode, context)
+          : projectExpr(valueNode, context),
+      );
+    }
     finalTerminator = surfaceTokenSpan(terminator, context);
   }
   const resultNode = option(resultValue);
@@ -1091,6 +1126,14 @@ function projectBlockParts(
 }
 
 function projectLiteralExpr(text: string, located: { node: AstNode }): Expr {
+  if (text === "?") {
+    return {
+      kind: "Panic",
+      hole: true,
+      message: { kind: "String", value: "typed hole" },
+      ...located,
+    };
+  }
   if (text === "true" || text === "false") {
     return { kind: "Bool", value: text === "true", ...located };
   }
@@ -1237,6 +1280,7 @@ function isDeclNode(name: string): boolean {
     name === "LetDeclarationNode" ||
     name === "RecordDeclarationNode" ||
     name === "TypeDeclarationNode" ||
+    name === "TypeDeclarationGroupNode" ||
     name === "JavaScriptImportDeclarationNode";
 }
 

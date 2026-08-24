@@ -113,6 +113,18 @@ Deno.test("warns for partial constructor argument coverage in closed sums", asyn
   assertStringIncludes(result.warnings.join("\n"), "non-exhaustive match");
 });
 
+Deno.test("describes an open constructor payload as missing a wildcard pattern", async () => {
+  const result = await checkSource(
+    'let value = Some("-"); let bad = match(value) => { Some("-") => { 1 }, None => { 0 } };',
+  );
+
+  assertStringIncludes(
+    result.warnings.join("\n"),
+    "Some is missing a wildcard pattern",
+  );
+  assertEquals(result.warnings.join("\n").includes("(_)"), false);
+});
+
 Deno.test("accepts exhaustive boolean matches without wildcard", async () => {
   await checkSource("let flag = true; let ok = match(flag) => { true => { 1 }, false => { 0 } };");
 });

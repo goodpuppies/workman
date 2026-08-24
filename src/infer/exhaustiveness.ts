@@ -48,9 +48,12 @@ export function checkExhaustive(
   // Report first missing case with path
   const first = missing[0];
   if (first.path.length > 0) {
-    // Path shows nested constructor context, missing shows what's not covered
-    // e.g., path=["Cons"], missing="Nil" => "in Cons, missing: Nil" (single-element list)
     const context = first.path.join(" → ");
+    if (first.missing === "_") {
+      return `non-exhaustive match: ${context} is missing a wildcard pattern`;
+    }
+    // A concrete nested witness remains useful for closed payload domains.
+    // For example, path=["Some"], missing="false" means Some(false) is uncovered.
     return `non-exhaustive match: in ${context}, missing: ${first.missing}`;
   }
   return `non-exhaustive match: missing ${first.missing}`;

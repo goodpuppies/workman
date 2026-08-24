@@ -15,6 +15,7 @@ import { type FrontendV2Surface, loadFrontendV2Surface } from "../frontend_v2_su
 import type { ProjectSnapshot } from "../module_interface.ts";
 import { runtime } from "../io.ts";
 import { ModuleGraphDiagnosticError } from "../module_graph.ts";
+import { ParseError } from "../parser.ts";
 import { WmslangNumericDiagnosticError } from "../wmslang/v2_loader.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
@@ -100,6 +101,17 @@ async function validationResultsForFailure(
   entryPath: string,
   sourceOverrides: Map<string, string>,
 ): Promise<ValidationResult[]> {
+  if (error instanceof ParseError && error.filePath) {
+    const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
+    const diagnosticPath = canonicalPath(error.filePath, sourceOverrides);
+    const diagnosticUri = pathToFileUri(diagnosticPath);
+    const source = error.source || await sourceForPath(diagnosticPath, sourceOverrides);
+    const result = {
+      uri: diagnosticUri,
+      diagnostics: errorDiagnostics(error, source, diagnosticUri),
+    };
+    return diagnosticUri === entryUri ? [result] : [{ uri: entryUri, diagnostics: [] }, result];
+  }
   if (error instanceof ModuleAnalysisError) {
     const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
     const diagnosticUri = pathToFileUri(error.path);

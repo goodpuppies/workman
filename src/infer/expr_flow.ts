@@ -1,4 +1,4 @@
-import type { Expr, Param } from "../ast.ts";
+import type { Decl, Expr, Param } from "../ast.ts";
 import { diagnosticError, warningDiagnostic } from "../diagnostics.ts";
 import {
   cloneTypeEnv,
@@ -19,7 +19,7 @@ import {
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
 import { deriveInferContext, type InferContext } from "./context.ts";
-import { inferDecl } from "./decl.ts";
+import { inferDecl, predeclareTypeGroup } from "./decl.ts";
 import { assertEqualityType } from "./equality.ts";
 import { checkExhaustive, mentionsLocalType } from "./exhaustiveness.ts";
 import { warnRedundantMatchArms } from "./decl_helpers.ts";
@@ -182,18 +182,28 @@ export function inferBlock(
   const local = new Map(env);
   const localTypes = cloneTypeEnv(typeEnv);
   const outerTypeIds = knownTypeIds(typeEnv);
-  expr.items.forEach((s) =>
-    isDecl(s)
-      ? inferDecl(
-        s,
-        deriveInferContext(context, { env: local, typeEnv: localTypes }),
-        new Map(),
-        new Map(),
-        knownTypeIds(localTypes),
-        false,
-      )
-      : inferExpr(s, deriveInferContext(context, { env: local, typeEnv: localTypes }))
-  );
+  const localContext = deriveInferContext(context, { env: local, typeEnv: localTypes });
+  const predeclaredGroups = new Set<number>();
+  expr.items.forEach((s) => {
+    if (!isDecl(s)) {
+      inferExpr(s, localContext);
+      return;
+    }
+    if (
+      s.kind === "TypeDecl" && s.mutualGroup !== undefined &&
+      !predeclaredGroups.has(s.mutualGroup)
+    ) {
+      const group = expr.items.filter((
+        candidate,
+      ): candidate is Extract<Decl, { kind: "TypeDecl" }> =>
+        isDecl(candidate) && candidate.kind === "TypeDecl" &&
+        candidate.mutualGroup === s.mutualGroup
+      );
+      predeclareTypeGroup(group, localContext);
+      predeclaredGroups.add(s.mutualGroup);
+    }
+    inferDecl(s, localContext, new Map(), new Map(), knownTypeIds(localTypes), false);
+  });
   const result = inferExpr(
     expr.result,
     deriveInferContext(context, { env: local, typeEnv: localTypes }),

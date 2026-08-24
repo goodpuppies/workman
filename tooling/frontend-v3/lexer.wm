@@ -351,8 +351,10 @@ let lex = (source) => {
       "}" => {
         (Token.PunctuationToken(Token.RightBrace), pos, txt) :> makeTokSimpleSymbol
       },
-
-      Var(x) => {print(`whats this "${x}"`);?}
+      Var(x) => {
+        print(`whats this "${x}"`);
+        ?
+      }
     };
     readResult
   };

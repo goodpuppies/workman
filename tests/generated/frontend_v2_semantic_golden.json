@@ -6,7 +6,7 @@
     "std/map.wm": "0b354ab7ddb9db77bf0560bee4775805b97d5f6ac720919c41fb806a6d98f563",
     "std/monad.wm": "72704441ae9b768fe8fbeaf9cfde73464a72ce2b3ac7d48cf3d8401a0bb5a71d",
     "std/option.wm": "c71f7f9f561adef73850c52fb86927f63d69557b318ee892105201c9872a8e3c",
-    "std/result.wm": "4ed5a48e10a91de172ba5e30e9be6ab04fae9e3da31dd1ab052aa7ec932688f3",
+    "std/result.wm": "7a542a4b07fc6b6dd21c4cbed1f856556bfcab87cc5fd81aa3ec1fa6c4ac8315",
     "std/task.wm": "a10f5ba9a33e589b8c0c22f2e4f53a2f53a93e302751a513a549c7edbbbc5ddb",
     "std/traverse.wm": "401e7bfb9a1c6137b4e9ab2958fd2813077450939f8a6164dff20564bf123859",
     "examples/aoc_depths.wm": "fe9b3b71496f73f029cfd935c17d19f475a2579a727457f2089eff60da31ab97",

@@ -23,6 +23,7 @@ import { moduleNodeForPath } from "./module_graph.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, watchReplChanges } from "./repl.ts";
+import { watchFile } from "./watch.ts";
 import { formatFrontendV2Source } from "./frontend_v2_formatter.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 
@@ -31,6 +32,7 @@ const commands = new Set([
   "compile",
   "compile-library",
   "run",
+  "watch",
   "repl",
   "err",
   "fmt",
@@ -200,6 +202,8 @@ export async function main(args: string[]): Promise<number> {
       return await compileLibraryCommand(commandArgs);
     case "run":
       return await runCommand(commandArgs);
+    case "watch":
+      return await watchCommand(commandArgs);
     case "repl":
       return await replCommand(commandArgs);
     case "err":
@@ -271,6 +275,16 @@ async function runCommand(args: string[]): Promise<number> {
   const [input] = inputArgs;
   if (!input) return missingInput("run");
   return (await runFile(input, { args: programArgs })).code;
+}
+
+async function watchCommand(args: string[]): Promise<number> {
+  const separator = args.indexOf("--");
+  const inputArgs = separator === -1 ? args : args.slice(0, separator);
+  const programArgs = separator === -1 ? [] : args.slice(separator + 1);
+  const [input] = inputArgs;
+  if (!input) return missingInput("watch");
+  await watchFile(input, { args: programArgs, onError: reportError });
+  return 0;
 }
 
 async function replCommand(args: string[]): Promise<number> {
@@ -474,6 +488,7 @@ commands:
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
   run <file.wm> [-- args...]    compile and execute with Deno
+  watch <file.wm> [-- args...]  run again when any module in its graph changes
   repl [--v2] <file.wm>         watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   fmt [--stdout] [--fix] <file.wm>
@@ -491,6 +506,7 @@ compat:
 examples:
   wm check examples/factorial.wm
   wm run examples/factorial.wm
+  wm watch examples/factorial.wm
   wm compile examples/factorial.wm out.mjs
   wm compile-library tooling/frontend-v2/compiler_frontend.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2

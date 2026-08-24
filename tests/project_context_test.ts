@@ -120,6 +120,55 @@ Deno.test("[module update A613/A615] reverse discovery stops at the closest head
   ]);
 });
 
+Deno.test("an uncertified closest-head import falls back to a detached document context", async () => {
+  const files = new Map<string, string>([
+    [
+      "/ws/main.wm",
+      'from "./lexer.wm" import { lex }; let main = () => { lex("") };',
+    ],
+    ["/ws/lexer.wm", "let lex = (source) => { missing };"],
+  ]);
+  const discovery = await discoveryIndex(files);
+  const registry = new ProjectContextRegistry(discovery);
+  let headedAnalyses = 0;
+  const analyzeHead = (head: string) => {
+    headedAnalyses++;
+    return analyzeRecoveredVirtual(head, files);
+  };
+  const analyzeDetached = (path: string) => analyzeDetachedVirtual(path, files);
+
+  const lexer = await registry.openDocument(
+    "/ws/lexer.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+
+  assertEquals(lexer.reason, "detached");
+  assertEquals(lexer.snapshot.kind, "detached");
+  assertEquals(
+    [...lexer.snapshot.interfaces.values()].some(({ path }) => path === "/ws/lexer.wm"),
+    true,
+  );
+  assertEquals(registry.activeSnapshots().length, 1);
+
+  registry.invalidatePaths(["/ws/lexer.wm"]);
+  assertEquals(registry.activeSnapshots().length, 0);
+  await registry.openDocument(
+    "/ws/lexer.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  await registry.openDocument(
+    "/ws/main.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  assertEquals(headedAnalyses, 2);
+});
+
 Deno.test("reverse discovery prefers a directory-local head at equal import distance", async () => {
   const files = new Map<string, string>([
     [

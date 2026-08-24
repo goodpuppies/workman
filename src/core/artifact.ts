@@ -107,7 +107,7 @@ export function coreProgramFromAnalysis(
       ),
       materializedGpuArtifacts: elaboration?.materializedGpuArtifacts,
       nominalFacts,
-    });
+    }, { path: node.path, source: node.source });
     let importIndex = 0;
     for (const decl of module.decls) {
       if (decl.kind !== "CoreImport") continue;
@@ -166,7 +166,7 @@ export function coreProgramFromModule(
     gpuOnlyBindings,
     selectedFragmentCalls: fragmentSelections.selectedCalls,
     nominalFacts,
-  });
+  }, { path: source, source });
   const constructors = nominalFacts.constructors.map(coreConstructorInfo);
   return {
     entry: id,

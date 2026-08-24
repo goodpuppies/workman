@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import { inferModule } from "../src/infer.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
@@ -51,12 +51,14 @@ Deno.test("Result and Option combinators infer generically", async () => {
           :> Task.map(Js.Array.fromList)
       });
     let allResults = Js.Array.fromList([Ok(1), Ok(2)]) :> Result.all;
+    let debugged: Number = Err("domain failure") :> Result.debug;
     let genericResults = Traverse.with Result ([1, 2], (n) => { Ok(n * 2) });
     let genericTasks = Traverse.with Task ([1, 2], (n) => { Task.succeed(n * 2) });
   `);
   expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "chained", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "fallback", { type: "Number", vars: 0 });
+  expectBinding(result.env, "debugged", { type: "Number", vars: 0 });
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
   expectBinding(result.env, "listMapped", { type: "List<Number>", vars: 0 });
@@ -105,6 +107,38 @@ Deno.test("Result and Option combinators infer generically", async () => {
   assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("all")?.imported, true);
   assertEquals(result.structure.strEnv.get("Result")?.valEnv.get("all")?.basis ?? false, false);
   assertEquals(result.structure.strEnv.get("Traverse")?.valEnv.get("with")?.imported, true);
+});
+
+Deno.test("Result.debug unwraps JavaScript error messages before panicking", async () => {
+  const dir = await Deno.makeTempDir();
+  const cases = [
+    {
+      name: "message",
+      error: 'Js.Error("could not decode response")',
+      expected: "Panic: could not decode response",
+    },
+    {
+      name: "unknown",
+      error: "Js.Unknown",
+      expected: "Panic: unknown JavaScript error",
+    },
+    {
+      name: "string",
+      error: '"domain failure"',
+      expected: "Panic: domain failure",
+    },
+  ];
+  for (const testCase of cases) {
+    const input = `${dir}/${testCase.name}.wm`;
+    await Deno.writeTextFile(
+      input,
+      `let main = () => { Err(${testCase.error}) :> Result.debug };`,
+    );
+    const result = await runCli(["run", input]);
+    assertEquals(result.code, 1);
+    assertStringIncludes(result.stderr, testCase.expected);
+    assertEquals(result.stderr.includes("Panic: fail"), false);
+  }
 });
 
 Deno.test("Traverse.with sequences through a standard carrier and stops on failure", async () => {

@@ -1,5 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { completionAt } from "../src/lsp/completion.ts";
+import { ProjectIndex } from "../src/lsp/project_index.ts";
+import { SemanticService } from "../src/lsp/semantic_service.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 
 Deno.test("ordinary completion returns lexical values with semantic type detail", async () => {
@@ -163,6 +165,46 @@ Deno.test("ordinary completion lists project and basis namespace members", async
     "Number",
   );
   assertEquals(gpuItems.some(({ label }) => label === "fragment"), true);
+});
+
+Deno.test("namespace completion falls back when a broken head drops the imported document", async () => {
+  const dir = await Deno.makeTempDir();
+  const token = `${dir}/token.wm`;
+  const lexer = `${dir}/lexer.wm`;
+  const main = `${dir}/main.wm`;
+  const tokenSource = "type TokenKind = | First | Second;";
+  const lexerSource = 'from "./token.wm" import * as Token; let lex = () => { Token. };';
+  const mainSource = 'from "./lexer.wm" import { lex }; let main = () => { lex() };';
+  await Promise.all([
+    Deno.writeTextFile(token, tokenSource),
+    Deno.writeTextFile(lexer, lexerSource),
+    Deno.writeTextFile(main, mainSource),
+  ]);
+  const overrides = new Map([
+    [token, tokenSource],
+    [lexer, lexerSource],
+    [main, mainSource],
+  ]);
+  const index = new ProjectIndex();
+  index.rememberWorkspaceRoots({
+    workspaceFolders: [{ uri: pathToFileUri(dir), name: "test" }],
+  });
+  await index.initialize(overrides);
+  const service = new SemanticService(index.discovery, {
+    sourceOverrides: () => overrides,
+    frontendOptions: () => ({}),
+  });
+  const offset = lexerSource.indexOf("Token.") + "Token.".length;
+
+  const items = await completionAt(
+    pathToFileUri(lexer),
+    positionAt(lexerSource, offset),
+    overrides,
+    {},
+    service,
+  );
+
+  assertEquals(items.map(({ label }) => label), ["First", "Second", "TokenKind"]);
 });
 
 Deno.test("ordinary completion uses nominal receiver identity for record fields", async () => {

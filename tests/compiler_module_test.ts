@@ -293,7 +293,7 @@ Deno.test("infers imported record projections in via callbacks", async () => {
   await assertRejects(
     () => checkVirtual("/test/main.wm", virtualFs),
     Error,
-    "cannot resolve JS FFI property missing for receiver type Game",
+    "record Game has no field missing; available fields: controls",
   );
 });
 

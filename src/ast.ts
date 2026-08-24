@@ -100,6 +100,8 @@ export type Decl =
     ctors: CtorDecl[];
     alias?: TypeExpr;
     hasLeadingPipe?: boolean;
+    /** Declarations written in one `type ... and ...` group share this parse-local identity. */
+    mutualGroup?: number;
   }>;
 
 export type ImportClause =
@@ -179,7 +181,7 @@ export type Expr =
   | Located<{ kind: "Call"; callee: Expr; args: Expr[] }>
   | Located<{ kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }>
   | Located<{ kind: "Match"; value: Expr; arms: MatchArm[] }>
-  | Located<{ kind: "Panic"; message: Expr }>
+  | Located<{ kind: "Panic"; message: Expr; hole?: boolean }>
   | Located<{ kind: "Block"; items: (Decl | Expr)[]; result: Expr }>
   | Located<{ kind: "Ascribed"; value: Expr; annotation: TypeExpr }>
   | Located<{ kind: "Binary"; op: string; left: Expr; right: Expr }>

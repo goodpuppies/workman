@@ -1,0 +1,28 @@
+-- rng.wm
+-- A pure, deterministic PRNG (Park-Miller "MINSTD").
+--
+-- `Math.random()` would be impure and would drag Result handling into the
+-- simulation core. Instead the generator is a plain number threaded by hand:
+-- `next` returns a fresh generator, `unit` reads a [0, 1) sample from it.
+-- Same seed, same wave layout, every run.
+
+record Seed = { value: Number };
+
+-- 16807 * (largest seed < 2^31) stays under 2^53, so the modulo is exact in
+-- JavaScript's float number type.
+let next = (r: Seed) => {
+  Seed((r.value * 16807) % 2147483647)
+};
+
+let unit = (r: Seed) => {
+  r.value / 2147483647
+};
+
+let between = (r: Seed, lo: Number, hi: Number) => {
+  lo + unit(r) * (hi - lo)
+};
+
+-- A coin flip, for "which edge does this rock enter from".
+let flip = (r: Seed) => {
+  unit(r) < 0.5
+};

@@ -14,7 +14,7 @@ Deno.test("Text.of infers as a polymorphic text helper", async () => {
   expectBinding(result.env, "boolText", { type: "String", vars: 0 });
 });
 
-Deno.test("Text.of evaluates through JS toString with fallback", async () => {
+Deno.test("Text.of renders Workman values", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -31,7 +31,7 @@ Deno.test("Text.of evaluates through JS toString with fallback", async () => {
 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "42\n?\n");
+  assertEquals(result.stdout, "42\nvoid\n");
 });
 
 async function runCli(args: string[]) {

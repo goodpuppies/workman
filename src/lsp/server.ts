@@ -8,6 +8,7 @@ import { type ContentChange, DocumentStore } from "./documents.ts";
 import { completionAt } from "./completion.ts";
 import { documentSymbols } from "./document_symbols.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
+import { foldingRanges } from "./folding_ranges.ts";
 import { hoverAt } from "./hover.ts";
 import { type InitializeParams, ProjectIndex } from "./project_index.ts";
 import { projectStatusForUri } from "./project_status.ts";
@@ -162,6 +163,7 @@ async function handleMessage(message: RpcMessage) {
         documentHighlightProvider: true,
         renameProvider: { prepareProvider: true },
         documentSymbolProvider: true,
+        foldingRangeProvider: true,
         workspaceSymbolProvider: true,
         completionProvider: { triggerCharacters: ["."] },
         signatureHelpProvider: {
@@ -370,6 +372,14 @@ async function handleMessage(message: RpcMessage) {
         frontendOptions,
         semanticService,
       ),
+    );
+    return;
+  }
+  if (message.method === "textDocument/foldingRange") {
+    const params = message.params as { textDocument: { uri: string } };
+    await respond(
+      message.id,
+      await foldingRanges(params.textDocument.uri, documents.sourceOverrides()),
     );
     return;
   }

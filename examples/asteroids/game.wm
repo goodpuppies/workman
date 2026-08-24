@@ -1,0 +1,441 @@
+-- game.wm
+-- Asteroids, the pure core. Zero FFI lives here: a frame is
+-- `stepGame : (Game, Input, Number) -> Game`, so the entire game is a value you
+-- could step in a test and assert on. main.wm is the only module that knows
+-- raylib exists.
+--
+-- The C original keeps fixed-size arrays with `active` flags and mutates them
+-- in place. Here entities are just lists, and "destroyed" means "not in the
+-- list the next frame" -- no flags, no holes, no compaction.
+--
+-- vec.wm is imported flat because vectors are the vocabulary of nearly every
+-- line below; trig and rng are qualified because `sin`, `next` and `between`
+-- say much less on their own.
+
+from "./vec.wm" import { Vec2, zero, add, sub, scale, length, withinSq };
+from "./trig.wm" import * as Trig;
+from "./rng.wm" import * as Rng;
+
+-- ---- world constants ------------------------------------------------------
+
+let screenW = 800;
+let screenH = 600;
+let center = Vec2(400, 300);
+
+let shipSize = 20;
+let shipRotationSpeed = 3.5;
+let shipThrust = 220;
+let shipRadius = 12;
+let maxShipSpeed = 380;
+-- The C version applies `powf(0.60, dt)` of drag per frame. Without an FFI
+-- `pow` we use its first-order form, 1 - ln(1/0.6)*dt; at 60 Hz the two agree
+-- to five decimals and the difference is invisible in the hand.
+let dragRate = 0.5108;
+
+let bulletSpeed = 520;
+let bulletLifetime = 1.1;
+let bulletRadius = 2;
+let fireCooldown = 0.25;
+
+let asteroidSpeedMin = 40;
+let asteroidSpeedMax = 110;
+let splitCount = 2;
+
+let startingLives = 3;
+let startingAsteroids = 4;
+let invulnerabilityTime = 2;
+let respawnDelay = 1.5;
+
+-- ---- entities -------------------------------------------------------------
+
+-- A rock's size is a sum type rather than an int index into two parallel
+-- tables, so `radiusOf` and `scoreOf` are total by construction and adding a
+-- fourth size would be a compile error everywhere it matters.
+type AsteroidSize = Large | Medium | Small;
+
+type Status = Playing | GameOver;
+
+record Ship = { pos: Vec2, vel: Vec2, rotation: Number, alive: Bool, invuln: Number };
+record Bullet = { pos: Vec2, vel: Vec2, life: Number };
+record Asteroid = { pos: Vec2, vel: Vec2, size: AsteroidSize, rotation: Number, spin: Number };
+
+record Game = {
+  ship: Ship,
+  bullets: List<Bullet>,
+  asteroids: List<Asteroid>,
+  score: Number,
+  lives: Number,
+  wave: Number,
+  cooldown: Number,
+  respawn: Number,
+  status: Status,
+  rng: Rng.Seed,
+  t: Number
+};
+
+-- Everything the frame needs from the keyboard, as plain pure data. `turn` is
+-- -1, 0 or 1 so the core never learns what a key code is.
+record Input = { turn: Number, thrust: Bool, fire: Bool, restart: Bool };
+
+let radiusOf = match(size) => {
+  Large => { 40 },
+  Medium => { 22 },
+  Small => { 12 },
+};
+
+let scoreOf = match(size) => {
+  Large => { 20 },
+  Medium => { 50 },
+  Small => { 100 },
+};
+
+let smallerThan = match(size) => {
+  Large => { Some(Medium) },
+  Medium => { Some(Small) },
+  Small => { None },
+};
+
+-- ---- small pure helpers ---------------------------------------------------
+
+let maxf = (a: Number, b: Number) => {
+  if (a > b) { a } else { b }
+};
+
+let fmod = (a: Number, m: Number) => {
+  let r = a % m;
+  if (r < 0) { r + m } else { r }
+};
+
+-- Toroidal screen wrap, the defining move of the genre.
+let wrap = (p: Vec2) => {
+  Vec2(fmod(p.x, screenW), fmod(p.y, screenH))
+};
+
+let onScreen = (p: Vec2) => {
+  p.x >= 0 && p.x <= screenW && p.y >= 0 && p.y <= screenH
+};
+
+-- Heading 0 points up the screen, and y grows downward, hence the negated cos.
+let facing = (rotation: Number) => {
+  Vec2(Trig.sin(rotation), 0 - Trig.cos(rotation))
+};
+
+-- ---- spawning -------------------------------------------------------------
+
+-- Every spawn takes a Seed and hands back the advanced one, so randomness is
+-- an explicit part of the data flow instead of an ambient effect.
+let spawnAsteroid = (pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
+  let ra = Rng.next(r);
+  let rb = Rng.next(ra);
+  let rc = Rng.next(rb);
+  let rd = Rng.next(rc);
+  let angle = Rng.between(ra, 0, Trig.twoPi);
+  let speed = Rng.between(rb, asteroidSpeedMin, asteroidSpeedMax);
+  let rock = Asteroid(
+    pos,
+    Vec2(Trig.cos(angle) * speed, Trig.sin(angle) * speed),
+    size,
+    Rng.between(rc, 0, Trig.twoPi),
+    Rng.between(rd, -2, 2)
+  );
+  (rock, Rng.next(rd))
+};
+
+let rec spawnFragments = (n: Number, pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
+  match(n) {
+    0 => { ([], r) },
+    _ => {
+      let (rock, r1) = spawnAsteroid(pos, size, r);
+      let (rest, r2) = spawnFragments(n - 1, pos, size, r1);
+      ([rock, ..rest], r2)
+    },
+  }
+};
+
+-- A destroyed rock becomes two of the next size down, or nothing at all.
+let shatter = (a: Asteroid, r: Rng.Seed) => {
+  match(smallerThan(a.size)) {
+    Some(smaller) => { spawnFragments(splitCount, a.pos, smaller, r) },
+    None => { ([], r) },
+  }
+};
+
+-- New rocks always enter from an edge, never on top of the player.
+let edgePosition = (r: Rng.Seed) => {
+  let ra = Rng.next(r);
+  let rb = Rng.next(ra);
+  let rc = Rng.next(rb);
+  let along = Rng.flip(rb);
+  let pos =
+    if (Rng.flip(ra)) {
+      Vec2(if (along) { 0 } else { screenW }, Rng.between(rc, 0, screenH))
+    } else {
+      Vec2(Rng.between(rc, 0, screenW), if (along) { 0 } else { screenH })
+    };
+  (pos, Rng.next(rc))
+};
+
+let rec spawnWave = (n: Number, r: Rng.Seed) => {
+  match(n) {
+    0 => { ([], r) },
+    _ => {
+      let (pos, r1) = edgePosition(r);
+      let (rock, r2) = spawnAsteroid(pos, Large, r1);
+      let (rest, r3) = spawnWave(n - 1, r2);
+      ([rock, ..rest], r3)
+    },
+  }
+};
+
+let freshShip = Ship(center, zero, 0, true, invulnerabilityTime);
+
+let newGame = (r: Rng.Seed) => {
+  let (asteroids, r1) = spawnWave(startingAsteroids, r);
+  .{
+    ship = freshShip,
+    bullets = [],
+    asteroids = asteroids,
+    score = 0,
+    lives = startingLives,
+    wave = 1,
+    cooldown = 0,
+    respawn = 0,
+    status = Playing,
+    rng = r1,
+    t = 0
+  }
+};
+
+-- ---- per-entity stepping --------------------------------------------------
+
+let stepShip = (s: Ship, input: Input, dt: Number) => {
+  let rotation = s.rotation + input.turn * shipRotationSpeed * dt;
+  let pushed =
+    if (input.thrust) {
+      add(s.vel, scale(facing(rotation), shipThrust * dt))
+    } else {
+      s.vel
+    };
+  let speed = length(pushed);
+  let capped =
+    if (speed > maxShipSpeed) { scale(pushed, maxShipSpeed / speed) } else { pushed };
+  let vel = scale(capped, maxf(1 - dragRate * dt, 0));
+  .{
+    ..s,
+    pos = wrap(add(s.pos, scale(vel, dt))),
+    vel = vel,
+    rotation = rotation,
+    invuln = maxf(s.invuln - dt, 0)
+  }
+};
+
+let stepBullet = (b: Bullet, dt: Number) => {
+  Bullet(add(b.pos, scale(b.vel, dt)), b.vel, b.life - dt)
+};
+
+-- Bullets do not wrap: running off the edge is how a miss ends.
+let bulletLives = (b: Bullet) => {
+  b.life > 0 && onScreen(b.pos)
+};
+
+let stepAsteroid = (a: Asteroid, dt: Number) => {
+  Asteroid(
+    wrap(add(a.pos, scale(a.vel, dt))),
+    a.vel,
+    a.size,
+    a.rotation + a.spin * dt,
+    a.spin
+  )
+};
+
+let fireFrom = (s: Ship) => {
+  let dir = facing(s.rotation);
+  Bullet(add(s.pos, scale(dir, shipSize)), scale(dir, bulletSpeed), bulletLifetime)
+};
+
+-- ---- collisions -----------------------------------------------------------
+
+-- Remove the first bullet overlapping `target`, if any. `Some(rest)` is the
+-- bullet list minus the one that struck, `None` means the rock survives -- so
+-- one call answers both "was it hit" and "which bullet is spent".
+let rec takeHit = match(bullets, target, radius) => {
+  ([], _, _) => { None },
+  ([b, ..rest], _, _) => {
+    if (withinSq(b.pos, target, radius + bulletRadius)) {
+      Some(rest)
+    } else {
+      match(takeHit(rest, target, radius)) {
+        Some(remaining) => { Some([b, ..remaining]) },
+        None => { None },
+      }
+    }
+  },
+};
+
+-- Field names deliberately differ from Game's: two records sharing a field
+-- name make every projection of it ambiguous to the checker.
+record Impact = {
+  rocks: List<Asteroid>,
+  shots: List<Bullet>,
+  gained: Number,
+  seed: Rng.Seed
+};
+
+-- One pass down the rock list, threading the surviving bullets and the seed.
+-- Fragments are spawned into the same result, so a large rock and the two
+-- mediums it becomes are settled in a single traversal.
+let rec resolveHits = match(asteroids, bullets, r) => {
+  ([], _, _) => { Impact([], bullets, 0, r) },
+  ([a, ..rest], _, _) => {
+    match(takeHit(bullets, a.pos, radiusOf(a.size))) {
+      None => {
+        let tail = resolveHits(rest, bullets, r);
+        Impact([a, ..tail.rocks], tail.shots, tail.gained, tail.seed)
+      },
+      Some(remaining) => {
+        let (fragments, r1) = shatter(a, r);
+        let tail = resolveHits(rest, remaining, r1);
+        Impact(
+          List.append(fragments, tail.rocks),
+          tail.shots,
+          tail.gained + scoreOf(a.size),
+          tail.seed
+        )
+      },
+    }
+  },
+};
+
+let hitsShip = (s: Ship, a: Asteroid) => {
+  withinSq(s.pos, a.pos, shipRadius + radiusOf(a.size))
+};
+
+let strikesShip = (s: Ship, asteroids: List<Asteroid>) => {
+  s.alive && s.invuln <= 0 && List.any(asteroids, (a) => { hitsShip(s, a) })
+};
+
+-- ---- the frame step -------------------------------------------------------
+
+let stepPlaying = (g: Game, input: Input, dt: Number) => {
+  -- While the respawn timer runs the ship is off the board entirely; when it
+  -- expires a fresh one appears at the centre, invulnerable for a moment.
+  let waiting = g.respawn > 0;
+  let respawn = maxf(g.respawn - dt, 0);
+  let ship =
+    if (waiting) {
+      if (respawn <= 0) { freshShip } else { g.ship }
+    } else {
+      stepShip(g.ship, input, dt)
+    };
+
+  let shooting = input.fire && ship.alive && !waiting && g.cooldown <= 0;
+  let fired = if (shooting) { [fireFrom(ship), ..g.bullets] } else { g.bullets };
+  let cooldown = if (shooting) { fireCooldown } else { maxf(g.cooldown - dt, 0) };
+
+  let bullets = List.filter(List.map(fired, (b) => { stepBullet(b, dt) }), bulletLives);
+  let drifted = List.map(g.asteroids, (a) => { stepAsteroid(a, dt) });
+  let impact = resolveHits(drifted, bullets, g.rng);
+
+  -- A rock that reaches the ship costs a life, and the last life ends the run.
+  let struck = strikesShip(ship, impact.rocks);
+  let lives = if (struck) { g.lives - 1 } else { g.lives };
+  let status = if (struck && lives <= 0) { GameOver } else { Playing };
+  let hitShip = if (struck) { .{ ..ship, alive = false } } else { ship };
+  let respawnAfter = if (struck && lives > 0) { respawnDelay } else { respawn };
+
+  -- Clearing the field advances the wave, and each wave is one rock larger.
+  let advancing = List.length(impact.rocks) == 0 && status == Playing;
+  let (asteroids, rng) =
+    if (advancing) {
+      spawnWave(startingAsteroids + g.wave, impact.seed)
+    } else {
+      (impact.rocks, impact.seed)
+    };
+
+  .{
+    ..g,
+    ship = hitShip,
+    bullets = impact.shots,
+    asteroids = asteroids,
+    score = g.score + impact.gained,
+    lives = lives,
+    wave = if (advancing) { g.wave + 1 } else { g.wave },
+    cooldown = cooldown,
+    respawn = respawnAfter,
+    status = status,
+    rng = rng,
+    t = g.t + dt
+  }
+};
+
+let stepGame = (g: Game, input: Input, dt: Number) => {
+  match(g.status) {
+    Playing => { stepPlaying(g, input, dt) },
+    GameOver => {
+      if (input.restart) { newGame(g.rng) } else { .{ ..g, t = g.t + dt } }
+    },
+  }
+};
+
+-- ---- what is on screen ----------------------------------------------------
+--
+-- The core says what the frame contains; main.wm says what that looks like in
+-- pixels. `Shape` is the whole vocabulary between them, so the renderer is one
+-- `match` over a single list -- the same shape tuiman's `Element`/`render`
+-- boundary takes. Nothing here mentions a colour or a line width, and an
+-- absent ship is an empty list rather than a branch downstream.
+
+-- Emphasis, not colour: the palette belongs to the boundary.
+type Tone = Loud | Plain | Faint;
+
+type Shape =
+  | Hull<Vec2, Vec2, Vec2>
+  | Rock<Vec2, AsteroidSize, Number>
+  | Shot<Vec2>
+  -- text, baseline y, text size, tone
+  | Readout<String, Number, Number, Tone>
+  | Banner<String, Number, Number, Tone>;
+
+-- Blink while invulnerable, exactly as the C version does off GetTime().
+let shipVisible = (s: Ship, t: Number) => {
+  s.alive && (s.invuln <= 0 || (Trig.floorReal(t * 10) % 2 != 0))
+};
+
+let hullOf = (s: Ship) => {
+  let corner = (offset) => { add(s.pos, scale(facing(s.rotation + offset), shipSize)) };
+  Hull(corner(0), corner(2.5), corner(0 - 2.5))
+};
+
+let shipShapes = (g: Game) => {
+  if (shipVisible(g.ship, g.t)) { [hullOf(g.ship)] } else { [] }
+};
+
+let readouts = (g: Game) => {
+  [ Readout(`SCORE ${g.score}`, 10, 20, Plain)
+  , Readout(`LIVES ${g.lives}`, 34, 20, Plain)
+  , Readout(`WAVE ${g.wave}`, 58, 20, Plain)
+  ]
+};
+
+let banners = (g: Game) => {
+  match(g.status) {
+    Playing => { [] },
+    GameOver => {
+      [ Banner("GAME OVER", screenH / 2 - 40, 40, Loud)
+      , Banner("Press ENTER to restart", screenH / 2 + 10, 20, Plain)
+      , Banner(`final score ${g.score}`, screenH / 2 + 44, 20, Faint)
+      ]
+    },
+  }
+};
+
+-- Draw order is list order.
+let scene = (g: Game) => {
+  List.collectWith([], List.append, [
+    shipShapes(g),
+    List.map(g.asteroids, (a: Asteroid) => { Rock(a.pos, a.size, a.rotation) }),
+    List.map(g.bullets, (b: Bullet) => { Shot(b.pos) }),
+    readouts(g),
+    banners(g)
+  ])
+};

@@ -113,7 +113,16 @@ export type CoreExpr =
   | { kind: "CoreApp"; callee: CoreExpr; arg: CoreExpr; node?: AstNode }
   | { kind: "CoreIf"; cond: CoreExpr; thenExpr: CoreExpr; elseExpr: CoreExpr; node?: AstNode }
   | { kind: "CoreMatch"; value: CoreExpr; arms: CoreMatchArm[]; node?: AstNode }
-  | { kind: "CorePanic"; message: CoreExpr; node?: AstNode }
+  | {
+    kind: "CorePanic";
+    message: CoreExpr;
+    hole?: {
+      path: string;
+      lineText: string;
+      expectedType: string;
+    };
+    node?: AstNode;
+  }
   | { kind: "CoreBlock"; items: (CoreDecl | CoreExpr)[]; result: CoreExpr; node?: AstNode };
 
 export type CoreRecordExprItem =
@@ -141,7 +150,13 @@ export type CorePattern =
   | { kind: "CorePString"; value: string; node?: AstNode }
   | { kind: "CorePBool"; value: boolean; node?: AstNode }
   | { kind: "CorePVoid"; node?: AstNode }
-  | { kind: "CorePPinned"; name: string; bindingId?: BindingId; node?: AstNode }
+  | {
+    kind: "CorePPinned";
+    name: string;
+    bindingId?: BindingId;
+    rootBindingId?: BindingId | StructureId;
+    node?: AstNode;
+  }
   | { kind: "CorePTuple"; items: CorePattern[]; node?: AstNode }
   | { kind: "CorePRecord"; fields: CoreRecordPatternField[]; node?: AstNode }
   | { kind: "CorePCtor"; name: string; ctorId?: CtorId; payload?: CorePattern; node?: AstNode };

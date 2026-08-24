@@ -62,6 +62,11 @@ The tracked artifact is also the stage-0 compiler for this command: frontend-v2 
 its own WM sources, then replaces the artifact only if the self-hosted output changes. Restore the
 tracked artifact before rebuilding if it is absent.
 
+Type declarations may form simultaneous SML-style groups with `and`. The Surface tree retains a
+`TypeDeclarationGroupNode`, individual `TypeBindingNode` values, and the authored `and` tokens;
+semantic projection flattens the group into declarations sharing one mutual-group identity so
+elaboration can install every type name before checking any right-hand side.
+
 The frontend ABI will expose JavaScript-native DTO values deliberately:
 
 - WM records already cross this boundary as plain JavaScript objects;

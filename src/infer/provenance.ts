@@ -233,7 +233,7 @@ export function constrainAt(
       const useSourcePathOrigins = options.primarySource !== undefined;
       const leftOrigin = attemptedOrigin ??
         (useSourcePathOrigins ? sourceAt(options.sources?.left, error.path) : undefined);
-      const rightOrigin = commitment?.origin ??
+      const rightOrigin = commitmentOriginWithDownstream(commitment, provenance) ??
         (useSourcePathOrigins ? sourceAt(options.sources?.right, error.path) : undefined);
       const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
         ? primaryOriginForSource(options.sources?.[options.primarySource], error.path)
@@ -919,6 +919,23 @@ function commitmentOriginForType(
     return type.instance ? commitmentOriginForType(type.instance, provenance, seen) : undefined;
   }
   return undefined;
+}
+
+function commitmentOriginWithDownstream(
+  commitment: TypeCommitment | undefined,
+  provenance: TypeProvenance | undefined,
+): ConstraintOrigin | undefined {
+  if (!commitment) return;
+  const downstream = provenance
+    ? commitmentOriginForType(commitment.type, provenance)
+    : undefined;
+  if (!commitment.origin) return downstream;
+  return downstream
+    ? {
+      ...commitment.origin,
+      derivedFrom: [...(commitment.origin.derivedFrom ?? []), downstream],
+    }
+    : commitment.origin;
 }
 
 function originAsConstraint(origin: EvidenceOrigin): ConstraintOrigin {

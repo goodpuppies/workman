@@ -47,6 +47,47 @@ Deno.test("call mismatch produces an auditable diagnostic artifact", async () =>
   );
 });
 
+Deno.test("parameter annotation mismatch uses the authored collision renderer", async () => {
+  const source = `let consumeText = (thing) => { thing == "text" };
+let useKind = (kind: Number) => { consumeText(kind) };`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnostic(error.diagnostic, "case.wm", source);
+  assertStringIncludes(rendered, "type error: parameter thing can't be both:");
+  assertStringIncludes(rendered, "annotation requires: Number");
+  assertStringIncludes(rendered, "parameter thing inferred as: String");
+  assertStringIncludes(rendered, "case.wm:1:");
+  assertStringIncludes(rendered, "case.wm:2:");
+  assertEquals(rendered.includes("collision:"), false);
+  assertEquals(rendered.includes("typetrace:"), false);
+});
+
+Deno.test("call arity mismatch retains callee and argument locations", async () => {
+  const source = `let takes = (a: Number, b: String, c: Bool, d: Number) => { void };
+let f = (x: Number) => {
+  takes(
+    x "text",
+    true,
+    1
+  )
+};`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  const rendered = formatDiagnosticInspection(error.diagnostic, "case.wm", source);
+  assertStringIncludes(rendered, "takes expects 4 arguments but got 3");
+  assertStringIncludes(rendered, "4 parameters declared here");
+  assertStringIncludes(rendered, "3 arguments supplied here");
+  assertStringIncludes(rendered, "case.wm:1:14");
+  assertStringIncludes(rendered, "case.wm:4:5");
+  assertEquals(rendered.includes("no source path was retained"), false);
+});
+
 Deno.test("HM call collision renders neutral origins and both provenance paths", async () => {
   const source = `record Coord = { x: Number, y: Number };
 type Step<State> = | Continue<State>;
@@ -433,6 +474,29 @@ Deno.test("if branch mismatch records an if branch premise", async () => {
   assertStringIncludes(rendered, "expression: Bool");
   assertStringIncludes(rendered, "expression: String");
   assertStringIncludes(rendered, "-- Origins");
+});
+
+Deno.test("if mismatch traces a recursive match result to its concrete empty arm", async () => {
+  const source = `let rec loop = (flag) => {
+  if (flag) {
+    match(flag) {
+      true => { loop(false) },
+      false => {}
+    }
+  } else {
+    [1]
+  }
+};`;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
+  );
+
+  assertEquals(error.diagnostic.code, "type.if-branch-results-disagree");
+  const rendered = formatDiagnostic(error.diagnostic, "recursive-if.wm", source);
+  assertStringIncludes(rendered, "empty block result: Void");
+  assertStringIncludes(rendered, "5|       false => {}");
+  assertEquals(rendered.includes("Void — loop call result"), false);
 });
 
 Deno.test("compact collision excerpts collapse excessive indentation", async () => {

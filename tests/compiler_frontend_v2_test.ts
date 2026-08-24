@@ -42,6 +42,19 @@ Deno.test("compiler v2 mode typechecks simple calls", async () => {
   expectBinding(result.env, "printed", { type: "Void", vars: 0 });
 });
 
+Deno.test("compiler v2 treats question marks as contextually typed holes", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = "let answer: Number = ?;";
+  const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+  assertEquals(await formatFrontendV2Source(source), source);
+  assertStringIncludes(
+    await compile(source, { frontend: "v2", frontendV2ModuleUrl }),
+    '__wm_fail("TypedHole", "error[type.typed-hole <source>:1:21]: typed hole; expected type: Number',
+  );
+});
+
 Deno.test("compiler v2 mode projects basic arithmetic with precedence", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
   const source = [
@@ -56,6 +69,18 @@ Deno.test("compiler v2 mode projects basic arithmetic with precedence", async ()
   expectBinding(result.env, "precedence", { type: "Number", vars: 0 });
   expectBinding(result.env, "grouped", { type: "Number", vars: 0 });
   expectBinding(result.env, "negative", { type: "Number", vars: 0 });
+});
+
+Deno.test("compiler v2 preserves and elaborates mutual type declaration groups", async () => {
+  const frontendV2ModuleUrl = await buildFrontendV2();
+  const source = "type Even = EvenZero | EvenSucc<Odd> and Odd = | OddSucc<Even>;\n" +
+    "let value = EvenSucc(OddSucc(EvenZero));";
+  const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
+
+  expectBinding(result.env, "EvenSucc", { type: "Odd -> Even", vars: 0 });
+  expectBinding(result.env, "OddSucc", { type: "Even -> Odd", vars: 0 });
+  expectBinding(result.env, "value", { type: "Even", vars: 0 });
+  assertEquals(await formatFrontendV2Source(source), source);
 });
 
 Deno.test("compiler v2 supports typed JavaScript-style string interpolation", async () => {

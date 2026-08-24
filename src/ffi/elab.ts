@@ -11,8 +11,8 @@ import { recordFieldNamesInDecls } from "./record_fields.ts";
 import {
   type FfiBinding,
   type FfiElaboration,
-  generatedImportInsertionIndex,
   generatedReceiverJsImports,
+  insertGeneratedFfiImports,
 } from "./shared.ts";
 
 export type FfiElaborationOptions = {
@@ -79,12 +79,7 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
       decl.kind === "JsImportDecl" ? generatedJsImports(decl, bindings, selected) : [decl]
     ),
   ];
-  const insertionIndex = generatedImportInsertionIndex(baseDecls);
-  const decls = [
-    ...baseDecls.slice(0, insertionIndex),
-    ...receiverImports,
-    ...baseDecls.slice(insertionIndex),
-  ];
+  const decls = insertGeneratedFfiImports(baseDecls, receiverImports);
   return {
     module: { ...module, decls },
     bindings,

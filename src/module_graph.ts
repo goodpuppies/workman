@@ -16,6 +16,7 @@ export type VirtualFileSystem = Map<string, string>;
 export type ModuleGraphOptions = CompilerFrontendOptions & {
   sourceOverrides?: Map<string, string>;
   virtualFs?: VirtualFileSystem;
+  /** Recover independent semicolon-terminated top-level phrases instead of rejecting the graph. */
   syntaxRecovery?: boolean;
   /**
    * Called as each module finishes parsing. Imports are followed depth-first,
@@ -264,7 +265,10 @@ function normalizeInputPath(input: string): string {
   }
 }
 
-async function resolveEntryPath(input: string, options: ModuleGraphOptions): Promise<ResolvedModule> {
+async function resolveEntryPath(
+  input: string,
+  options: ModuleGraphOptions,
+): Promise<ResolvedModule> {
   const normalized = normalizeInputPath(input);
   const virtualPath = findVirtualPath(input, options);
   if (virtualPath) return { id: moduleId(virtualPath), path: virtualPath };

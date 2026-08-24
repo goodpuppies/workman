@@ -1,4 +1,5 @@
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
+import { jsModuleMemberDefinition } from "../ffi/reflect/host.ts";
 import {
   type ModuleInterface,
   type ModuleSemanticOccurrence,
@@ -30,8 +31,40 @@ export async function definitionAt(
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(source));
   const occurrence = occurrenceAt(moduleInterface, offset);
   if (!occurrence) return null;
+  const jsDefinition = await jsDefinitionLocation(
+    moduleInterface,
+    occurrence,
+    sourceOverrides,
+  );
+  if (jsDefinition) return jsDefinition;
   const definition = semanticDefinitionsForTarget(project, occurrence.target)[0];
   return definition ? await location(definition.path, definition.span, sourceOverrides) : null;
+}
+
+async function jsDefinitionLocation(
+  moduleInterface: ModuleInterface,
+  occurrence: ModuleSemanticOccurrence,
+  sourceOverrides: Map<string, string>,
+): Promise<LspLocation | null> {
+  if (occurrence.target.kind !== "value") return null;
+  for (const imported of moduleInterface.ffiFacts.imports) {
+    if (imported.target.kind !== "module") continue;
+    const binding = imported.bindings.find(({ id }) => id === occurrence.target.id);
+    if (!binding) continue;
+    const definition = jsModuleMemberDefinition(
+      imported.target.specifier,
+      binding.sourceName,
+      moduleInterface.path,
+    );
+    return definition
+      ? await location(
+        definition.path,
+        { line: 1, col: 0, start: definition.start, end: definition.end },
+        sourceOverrides,
+      )
+      : null;
+  }
+  return null;
 }
 
 export async function referencesAt(

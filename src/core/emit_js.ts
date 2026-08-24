@@ -48,6 +48,8 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   ];
   return target === "repl"
     ? [...emitRuntimePrelude(), "try {", ...body, emitReplRuntimeCatch()].join("\n")
+    : target === "executable"
+    ? [...emitRuntimePrelude(), "try {", ...body, emitExecutableRuntimeCatch()].join("\n")
     : [...emitRuntimePrelude(), ...body].join("\n");
 }
 
@@ -359,6 +361,17 @@ function emitReplRuntimeCatch(): string {
     .replace(/\\s+/g, " ").slice(0, 300);
   console.error("runtime[" + __wm_repl_error_name + "]: " + __wm_repl_error_message);
   Deno.exitCode = 1;
+}`;
+}
+
+function emitExecutableRuntimeCatch(): string {
+  return `} catch (__wm_runtime_error) {
+  if (!(__wm_runtime_error instanceof Error) || __wm_runtime_error.name !== "TypedHole") {
+    throw __wm_runtime_error;
+  }
+  console.error(__wm_runtime_error.message);
+  if (globalThis.Deno) Deno.exitCode = 1;
+  else throw __wm_runtime_error;
 }`;
 }
 
@@ -879,12 +892,23 @@ function emitExpr(expr: CoreExpr): string {
         emitArmBody(expr.arms, "__v", "non-exhaustive match", literalTupleArity(expr.value))
       }\n})(${emitExpr(expr.value)})`;
     case "CorePanic":
-      return `__wm_fail("Panic", ${emitExpr(expr.message)})`;
+      return expr.hole
+        ? `__wm_fail("TypedHole", ${JSON.stringify(typedHoleRuntimeMessage(expr))})`
+        : `__wm_fail("Panic", ${emitExpr(expr.message)})`;
     case "CoreBlock":
       return `(() => {\n${expr.items.map(emitBlockItem).join("\n")}\nreturn ${
         emitExpr(expr.result)
       };\n})()`;
   }
+}
+
+function typedHoleRuntimeMessage(expr: Extract<CoreExpr, { kind: "CorePanic" }>): string {
+  const hole = expr.hole!;
+  const line = expr.node?.span.line ?? 1;
+  const col = expr.node?.span.col ?? 0;
+  const gutter = `${line}| `;
+  return `error[type.typed-hole ${hole.path}:${line}:${col}]: typed hole; expected type: ${hole.expectedType}\n` +
+    `${gutter}${hole.lineText}\n${" ".repeat(gutter.length + col)}^`;
 }
 
 function emitPrimitiveOperatorApp(
@@ -1275,7 +1299,7 @@ function patternChecks(
     case "CorePVoid":
       return [`${value} === undefined`];
     case "CorePPinned":
-      return [`__wm_eq(${value}, ${valueRefName(pattern.name, pattern.bindingId)})`];
+      return [`__wm_eq(${value}, ${pinnedPatternValueRef(pattern)})`];
     case "CorePTuple": {
       const items = pattern.items.flatMap((item, index) =>
         patternChecks(item, `${value}[${index}]`)
@@ -1355,6 +1379,17 @@ function dynamicExportLocalRef(item: CoreDynamicExport, localName: string): stri
 
 function valueRefName(name: string, bindingId: BindingId | StructureId | undefined): string {
   return bindingId === undefined ? id(name) : bindingName(name, bindingId);
+}
+
+function pinnedPatternValueRef(pattern: Extract<CorePattern, { kind: "CorePPinned" }>): string {
+  const path = parseLongId(pattern.name);
+  if (path.qualifiers.length === 0) return valueRefName(path.id, pattern.bindingId);
+
+  const [root, ...fields] = [...path.qualifiers, path.id];
+  return fields.reduce(
+    (value, field) => `${value}.${id(field)}`,
+    valueRefName(root, pattern.rootBindingId ?? pattern.bindingId),
+  );
 }
 
 function patternBindingName(pattern: Extract<CorePattern, { kind: "CorePVar" }>): string {

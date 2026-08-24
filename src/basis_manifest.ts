@@ -235,6 +235,7 @@ export type BasisValueDescriptor = Readonly<{
 export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "print", profiles, runtimeName: "print" },
   { exportName: "Text.of", profiles, runtimeName: "Text.of" },
+  { exportName: "Debug.errorMessage", profiles: defaultOnly, runtimeName: "Debug.errorMessage" },
   { exportName: "Js.Array.toList", profiles: defaultOnly, runtimeName: "Js.Array.toList" },
   { exportName: "Js.Array.fromList", profiles: defaultOnly, runtimeName: "Js.Array.fromList" },
   { exportName: "Json.assert", profiles: defaultOnly, runtimeName: "Json.assert" },

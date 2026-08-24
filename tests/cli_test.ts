@@ -21,6 +21,7 @@ Deno.test("cli prints help with command and flag variants", async () => {
     assertEquals(result.code, 0);
     assertEquals(result.stderr, "");
     assertStringIncludes(result.stdout, "commands:");
+    assertStringIncludes(result.stdout, "watch <file.wm> [-- args...]");
     assertStringIncludes(result.stdout, "repl [--v2] <file.wm>");
     assertStringIncludes(
       result.stdout,

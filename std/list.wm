@@ -95,3 +95,21 @@ let rec all = match(items, predicate) => {
 let collectWith = (empty, combine, items) => {
   foldRight(items, empty, combine)
 };
+
+
+
+let rec joinRaw = match(items) => {
+  [] => { "" },
+  ([head, ..[]]) => { `${head}` },
+  ([head, ..rest]) => {
+    `${head}` ++ ", " ++ joinRaw(rest)
+  }
+};
+
+let toString = (items) => {
+  "[" ++ joinRaw(items) ++ "]"
+};
+
+let toStringRender = (items, render) => {
+  toString(map(items, render))
+};

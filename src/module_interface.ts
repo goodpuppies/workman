@@ -1966,7 +1966,9 @@ function argumentUsesParameterName(argument: Expr, parameter: string): boolean {
 }
 
 function semanticExpressionLabel(expression: Expr): string {
-  return expression.kind === "Var" ? expression.sourceName ?? expression.name : expression.kind;
+  if (expression.kind === "Var") return expression.sourceName ?? expression.name;
+  if (expression.kind === "Panic" && expression.hole) return "?";
+  return expression.kind;
 }
 
 function semanticPatternLabel(pattern: Pattern): string {

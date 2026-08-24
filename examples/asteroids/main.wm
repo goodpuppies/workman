@@ -1,0 +1,215 @@
+-- main.wm
+-- Asteroids -- the impure boundary: input, rendering, and the frame loop.
+--
+-- Every frame is the same three steps:
+--   1. read the keyboard   (FFI -> Result)
+--   2. `stepGame`           (pure: Game -> Game, all of the actual game)
+--   3. render               (FFI -> Result)
+--
+-- Nothing here decides anything about the game. `game.wm` already answers what
+-- the frame contains, as a `List<Shape>`, so this module is one `match` from
+-- that vocabulary to raylib calls plus the palette it is drawn in -- the same
+-- boundary tuiman puts between `Element` and `render`. The renderer never
+-- branches on game state: a ship blinking through its invulnerability frames
+-- is simply absent from the list.
+--
+-- run it with:  deno task start
+
+from js.module("raylib") import * as Raylib;
+
+from "./trig.wm" import { floorReal, degrees };
+from "./rng.wm" import * as Rng;
+from "./game.wm" import {
+  Game, Input, Shape, Hull, Rock, Shot, Readout, Banner,
+  Tone, Loud, Plain, Faint, AsteroidSize, Large, Medium, Small,
+  newGame, stepGame, radiusOf, scene, screenW, screenH
+};
+
+let via = Monad.via;
+-- `Monad.viaError Result` on its own would be monomorphic under the value
+-- restriction; the lambda generalizes it, so each site reads
+-- `viaError <ErrorConstructor> (args) => { ... }`.
+let viaError = (inject) => { Monad.viaError Result inject };
+
+type AppError =
+  | RaylibError<Js.Error>
+  | RenderError<Js.Error>;
+
+record Color = { r: Number, g: Number, b: Number, a: Number };
+
+let raylibpath = "./libraylib.so";
+let title = "Asteroids - Workman";
+let seed = Rng.Seed(20260823);
+
+-- raylib key codes.
+let keySpace = 32;
+let keyRight = 262;
+let keyLeft  = 263;
+let keyUp    = 265;
+let keyEnter = 257;
+let keyW = 87;
+let keyA = 65;
+let keyD = 68;
+
+-- ---- presentation ---------------------------------------------------------
+
+let black  = Color(0,   0,   0,   255);
+let white  = Color(255, 255, 255, 255);
+let gray   = Color(130, 130, 130, 255);
+let yellow = Color(253, 249, 0,   255);
+let red    = Color(230, 41,  55,  255);
+let dim    = Color(90,  96,  110, 255);
+
+let toneColor = match(tone) => {
+  Loud => { red },
+  Plain => { white },
+  Faint => { dim },
+};
+
+-- Bigger rocks get more sides, so the three sizes read differently at a glance
+-- even though they are all just outlines.
+let sidesOf = match(size) => {
+  Large => { 9 },
+  Medium => { 7 },
+  Small => { 6 },
+};
+
+let shotRadius = 2;
+let hudMargin = 10;
+let outlineWidth = 1.5;
+
+-- ---- input ----------------------------------------------------------------
+
+let bit = (b: Bool) => {
+  if (b) { 1 } else { 0 }
+};
+
+-- Arrows and WASD are alternatives for the same action. `||` flows through
+-- Result on its own, so this needs no lifting of its own.
+let eitherDown = (k1: Number, k2: Number) => {
+  Raylib.IsKeyDown(k1) || Raylib.IsKeyDown(k2)
+};
+
+-- An opposed pair of keys read as one -1 / 0 / +1 axis.
+let axis = (positive: Number, negative: Number, altPositive: Number, altNegative: Number) => {
+  Result|eitherDown(positive, altPositive), eitherDown(negative, altNegative)|
+    :> Result.map((forward, back) => { bit(forward) - bit(back) })
+};
+
+-- One carrier group at the boundary, mapped straight through `Input`'s ordered
+-- constructor -- the group's tuple is already the record's field order, so no
+-- intermediate lambda is needed. No key code ever reaches game.wm.
+let readInput = () => {
+  Result|
+    axis(keyRight, keyLeft, keyD, keyA),
+    eitherDown(keyUp, keyW),
+    Raylib.IsKeyDown(keySpace),
+    Raylib.IsKeyPressed(keyEnter)
+  | :> Result.map(Input)
+};
+
+-- ---- drawing --------------------------------------------------------------
+
+-- The one place the game's vocabulary becomes pixels. Constructor patterns
+-- bind the payloads directly, so there is not a single field projection here.
+let draw = match(shape) => {
+  Hull(nose, left, right) => {
+    Raylib.H.DrawTriangleLines(nose, left, right, white)
+  },
+  Rock(at, size, rotation) => {
+    Raylib.H.DrawPolyLinesEx(
+      at, sidesOf(size), radiusOf(size), degrees(rotation), outlineWidth, gray
+    )
+  },
+  Shot(at) => {
+    Raylib.H.DrawCircleV(at, shotRadius, yellow)
+  },
+  Readout(text, y, textSize, tone) => {
+    Raylib.H.DrawText(text, hudMargin, y, textSize, toneColor(tone))
+  },
+  -- `MeasureText` is a Result, and arithmetic flows through it, so the x stays
+  -- a carrier right up to the call and the whole draw is lifted once.
+  Banner(text, y, textSize, tone) => {
+    let width = Raylib.H.MeasureText(text, textSize);
+    let centerX = ((screenW - width) / 2) :> Result.map(floorReal);
+    via Result Raylib.H.DrawText Result|
+      Ok(text), centerX, Ok(y), Ok(textSize), Ok(toneColor(tone))
+    |
+  },
+};
+
+let render = (g: Game) => {
+  Result|
+    Raylib.BeginDrawing(),
+    Raylib.H.ClearBackground(black),
+    scene(g) :> Result.traverse(draw),
+    Raylib.DrawFPS(screenW - 90, hudMargin),
+    Raylib.EndDrawing()
+  |
+};
+
+-- ---- frame loop -----------------------------------------------------------
+
+-- `Ok(void)` establishes the carrier at the head, then the frame is two
+-- transformations in a pipeline: read the world, advance and draw it.
+let frame = (g: Game) => {
+  let read = viaError RenderError () => {
+    Result|Raylib.GetFrameTime(), readInput()|
+  };
+  let step = viaError RenderError (dt, input) => {
+    let stepped = stepGame(g, input, dt);
+    render(stepped) :> Result.map( (_) => { stepped })
+  };
+
+  Ok(void)
+    :> read
+    :> step
+};
+
+let rec loop = (g: Game) => {
+  let closing = viaError RenderError () => {
+    Raylib.WindowShouldClose()
+  };
+  let continue = via Result (isClosing) => {
+    if (isClosing) {
+      Ok(void)
+    } else {
+      frame(g) :> via Result loop
+    }
+  };
+
+  Ok(void)
+    :> closing
+    :> continue
+};
+
+-- ---- lifecycle ------------------------------------------------------------
+
+let startup = viaError RaylibError () => {
+  Result|
+    Raylib.loadRaylib(raylibpath),
+    Raylib.H.InitWindow(screenW, screenH, title),
+    Raylib.SetTargetFPS(60)
+  |
+};
+
+let shutdown = viaError RaylibError () => {
+  Result|
+    Raylib.CloseWindow(),
+    Raylib.unloadRaylib()
+  |
+};
+
+-- The window has to be closed even when the run failed, so the two results are
+-- grouped rather than chained.
+let main = () => {
+  match(Ok(void) :> startup) {
+    Ok(_) => {
+      match(Result|loop(newGame(seed)), Ok(void) :> shutdown|) {
+        Ok(_) => {},
+        Err(e) => { print(e) },
+      }
+    },
+    Err(e) => { print(e) },
+  }
+};

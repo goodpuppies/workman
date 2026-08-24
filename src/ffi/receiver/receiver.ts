@@ -218,6 +218,7 @@ export function objectReceiverProperty(
   selected: Set<string>,
   objectAccess: Map<string, ObjectAccess>,
   recordFields: Set<string> = new Set(),
+  node?: Expr["node"],
 ): Expr | undefined {
   const parts = exprName.split(".");
   if (parts.length < 2) return undefined;
@@ -240,6 +241,7 @@ export function objectReceiverProperty(
       kind: "FfiGet",
       receiver: { kind: "Var", name: baseName },
       path,
+      node,
     };
   }
   const surfaceName = `__dynamic.${path.join(".")}`;

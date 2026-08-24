@@ -323,6 +323,7 @@ function resolveDelayedFfiGet(
     if (deepRecordProperty) return deepRecordProperty;
     return { ...expr, receiver };
   }
+  rejectMissingRecordField(receiverType, expr.path, expr.node);
   if (options.dynamicFallback === false) {
     return { ...expr, receiver };
   }
@@ -347,6 +348,25 @@ function resolveDelayedFfiGet(
     ffi.foreignTypeRefs,
     result,
     selected,
+  );
+}
+
+function rejectMissingRecordField(
+  receiverType: Ty,
+  path: string[],
+  node: Expr["node"],
+): void {
+  const target = prune(receiverType);
+  if (target.tag !== "named" || !target.recordFields || path.length === 0) return;
+  const requested = path[0];
+  if (target.recordFields.some((field) => field.name === requested)) return;
+  const available = target.recordFields.map((field) => field.name).join(", ") || "(none)";
+  throw diagnosticError(
+    new Error(
+      `record ${target.name} has no field ${requested}; available fields: ${available}`,
+    ),
+    node,
+    "record.unknown-field",
   );
 }
 

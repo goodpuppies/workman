@@ -10,7 +10,7 @@ from "./generated/surface_types.wm" import {
   TupleExpressionNode, GroupedExpressionNode,
   ListExpressionNode, ListPatternNode, TuplePatternNode,
   MatchExpressionNode, MatchFunctionNode, MatchArmNode,
-  TypeDeclarationNode, TypeDeclarationBodyNode, TypeParametersNode,
+  TypeDeclarationNode, TypeDeclarationGroupNode, TypeBindingNode, TypeDeclarationBodyNode, TypeParametersNode,
   NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode,
   TypeArgumentsNode, LongNameNode, LiteralExpressionNode,
@@ -341,6 +341,20 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
           renderToken(typeToken) ++ " " ++ renderToken(nameToken) ++ paramsText ++
           " " ++ renderSurfaceValue(equalsToken, materializeMarks) ++ " " ++ bodyText
         )
+      },
+      _ => { None },
+    }
+  },
+  (TypeDeclarationGroupNode(bindings, andTokens, span), Var(depth), Var(materializeMarks)) => {
+    match(renderNodes(bindings, " and ", "", depth, materializeMarks)) {
+      Some(text) => { Some("type " ++ text) },
+      None => { None },
+    }
+  },
+  (TypeBindingNode(nameToken, params, equalsToken, body, span), Var(depth), Var(materializeMarks)) => {
+    match((renderOptionalNode(params, depth, materializeMarks), renderSurfaceNodeAt(body, depth, materializeMarks))) {
+      (Some(paramsText), Some(bodyText)) => {
+        Some(renderToken(nameToken) ++ paramsText ++ " " ++ renderSurfaceValue(equalsToken, materializeMarks) ++ " " ++ bodyText)
       },
       _ => { None },
     }

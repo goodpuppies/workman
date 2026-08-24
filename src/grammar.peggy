@@ -258,7 +258,11 @@ RecordFieldDeclList = first:RecordFieldDecl rest:(_ "," _ f:RecordFieldDecl { re
 RecordFieldDecl = name:FieldName _ ":" _ type:TypeExpr { return at({ name, type }, location()); }
 
 TypeDecl
-  = "type" __ name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody
+  = "type" __ first:TypeBinding rest:(_ "and" __ binding:TypeBinding { return binding; })*
+    { return { first, rest }; }
+
+TypeBinding
+  = name:Constructor params:TypeParams? _ "=" _ body:TypeDeclBody
     {
       return at({
         kind: "TypeDecl",
@@ -396,7 +400,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / InterpolatedString / String / Bool / Void / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
+  = Float / Int / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
@@ -607,7 +611,7 @@ Name = Constructor / Identifier
 MemberName = name:$([a-zA-Z_] IdentPart*) { return name; }
 FieldName = !Keyword name:MemberName { return name; }
 LongName = first:Name rest:("." n:MemberName { return n; })* { return longId(first, rest); }
-LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* { return longId(first, rest); }
+LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* !"." { return longId(first, rest); }
 IdentPart = [a-zA-Z0-9_]
 Keyword = ("from" / "import" / "as" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
 __ = (Whitespace / Comment)+

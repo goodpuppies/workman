@@ -87,6 +87,14 @@ let answer = 1 + 1;
 Running `wm repl answer.wm` displays `answer = 2 : Number`. A bare top-level expression is bound to
 `it`, following the SML top-level convention.
 
+To run a normal program on every save, use `wm watch <file.wm>`. Workman watches the complete
+reachable module graph and refreshes that set after every change, so editing a direct or transitive
+`.wm` dependency restarts the program too:
+
+```sh
+wm watch app.wm -- arg1 arg2
+```
+
 The installer writes a small launcher into `~/.local/bin` on Unix-like systems, or `~/.deno/bin` on
 Windows. On Unix it also adds the launcher directory to `PATH` for Bash, Zsh, and Fish. You can
 override the launcher directory with `--bin-dir`:

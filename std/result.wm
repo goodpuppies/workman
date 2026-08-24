@@ -63,6 +63,11 @@ let withDefault = match(result, fallback) => {
   (Err(_), fallback) => { fallback }
 };
 
+let debug = match(result) => {
+  Ok(value) => { value },
+  Err(error) => { Panic(Debug.errorMessage(error)) }
+};
+
 let map3 = match(a, b, c, f) => {
   (Ok(av), Ok(bv), Ok(cv), f) => { Ok(f(av, bv, cv)) },
   (Err(error), _, _, _) => { Err(error) },

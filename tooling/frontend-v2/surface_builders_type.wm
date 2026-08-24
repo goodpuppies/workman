@@ -2,7 +2,7 @@ from "./generated/surface_types.wm" import {
   Span, SurfaceToken, AuthoredValue, LongNameNode, TypeParametersNode, TypeArgumentsNode,
   NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode, TypeAnnotationNode,
-  TypeDeclarationBodyNode,
+  TypeDeclarationBodyNode, TypeDeclarationGroupNode, TypeBindingNode,
   TypeDeclarationNode
 };
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
@@ -187,11 +187,9 @@ let buildTypeDeclBody = (value: ParseValue, span: Span) => {
   }
 };
 
-let buildTypeDecl = (value: ParseValue, span: Span) => {
+let buildTypeBinding = (value: ParseValue, span: Span) => {
   match(value) {
     SequenceParseValue([
-      TokenParseValue(typeToken),
-      EmptyParseValue,
       TokenParseValue(nameToken),
       paramsValue,
       EmptyParseValue,
@@ -204,12 +202,27 @@ let buildTypeDecl = (value: ParseValue, span: Span) => {
         None => { None },
       };
       NodeParseValue(
-        TypeDeclarationNode(
-          typeToken,
+        TypeBindingNode(
           nameToken,
           params,
           surfaceValue(equalsToken),
           body,
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("TypeBinding", value, span) },
+  }
+};
+
+let buildTypeDecl = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match(collectNodes(value)) {
+    [first, ..rest] => {
+      NodeParseValue(
+        TypeDeclarationGroupNode(
+          [first, ..rest],
+          tokens :> List.filter((value: SurfaceToken) => { value.text == "and" }),
           span,
         )
       )

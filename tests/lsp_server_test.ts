@@ -38,6 +38,7 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
       documentHighlightProvider: true,
       renameProvider: { prepareProvider: true },
       documentSymbolProvider: true,
+      foldingRangeProvider: true,
       workspaceSymbolProvider: true,
       completionProvider: { triggerCharacters: ["."] },
       signatureHelpProvider: {
@@ -438,6 +439,40 @@ Deno.test("lsp server returns standard full semantic tokens", async () => {
   };
   assertEquals(result.data.slice(0, 5), [0, 4, "identity".length, 7, 1]);
   assertEquals(result.data.length, 25);
+});
+
+Deno.test("lsp server returns region and syntax folds", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const uri = pathToFileUri(main);
+  const source = [
+    "//#region outer",
+    "let first = () => {",
+    "  1",
+    "};",
+    "--#REGION inner",
+    "let second = 2;",
+    "--#endregion",
+    "//#ENDREGION",
+  ].join("\n");
+  await Deno.writeTextFile(main, source);
+  const messages = await runLsp([
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/foldingRange",
+      params: { textDocument: { uri } },
+    },
+    { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  assertEquals(messages.find((message) => message.id === 2)?.result, [
+    { startLine: 0, endLine: 7, kind: "region" },
+    { startLine: 1, endLine: 3 },
+    { startLine: 4, endLine: 6, kind: "region" },
+  ]);
 });
 
 Deno.test("lsp server returns symbols from active projects only", async () => {

@@ -71,6 +71,7 @@ export function rewriteExprCalls(
           selected,
           objectAccess,
           activeRecordFields,
+          expr.node,
         );
         if (objectProperty) {
           return objectProperty.kind === "FfiGet"
@@ -170,7 +171,14 @@ export function rewriteExprCalls(
       );
       const property = reflectedReceiverProperty(expr.name, bindings, selected, refs);
       return functionValue ?? delayedFunctionValue ?? property ??
-        objectReceiverProperty(expr.name, bindings, selected, objectAccess, activeRecordFields) ??
+        objectReceiverProperty(
+          expr.name,
+          bindings,
+          selected,
+          objectAccess,
+          activeRecordFields,
+          expr.node,
+        ) ??
         expr;
     }
     case "Call": {

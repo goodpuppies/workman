@@ -20,6 +20,8 @@ export type RunOptions = CompileOptions & {
   args?: string[];
   stdout?: "inherit" | "piped";
   stderr?: "inherit" | "piped";
+  /** Stop the spawned program when the signal is aborted. */
+  signal?: AbortSignal;
   /** Force compile progress on or off; defaults to on when stderr is a TTY. */
   progress?: boolean;
 };
@@ -76,7 +78,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
     progress.finish();
-    const command = new Deno.Command(Deno.execPath(), {
+    const child = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "-A",
@@ -87,8 +89,22 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       stdin: "inherit",
       stdout: options.stdout ?? "inherit",
       stderr: options.stderr ?? "inherit",
-    });
-    return await command.output();
+    }).spawn();
+    const stop = () => {
+      try {
+        child.kill();
+      } catch (error) {
+        // The child may have exited between the abort and kill calls.
+        if (!(error instanceof Deno.errors.NotFound)) throw error;
+      }
+    };
+    options.signal?.addEventListener("abort", stop, { once: true });
+    if (options.signal?.aborted) stop();
+    try {
+      return await child.output();
+    } finally {
+      options.signal?.removeEventListener("abort", stop);
+    }
   } finally {
     progress.finish();
     await temporaryDirectory.cleanup();

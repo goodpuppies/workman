@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { DocumentStore } from "../src/lsp/documents.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
+import { definitionAt } from "../src/lsp/symbols.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri, type ValidationResult } from "../src/lsp/validation.ts";
 
@@ -215,6 +216,20 @@ Deno.test("lsp validation reports imported module errors on the imported file", 
   assertEquals(await diagnosticsForPath(results, main), []);
   const libDiagnostics = await diagnosticsForPath(results, lib);
   assertEquals(libDiagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });
+});
+
+Deno.test("lsp validation reports imported parse errors on the imported file", async () => {
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/lib.wm`;
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(lib, "let value = )");
+  await Deno.writeTextFile(main, 'from "./lib.wm" import { value }; let main = () => { value };');
+
+  const results = await validateUri(pathToFileUri(main), new Map());
+  assertEquals(await diagnosticsForPath(results, main), []);
+  const libDiagnostics = await diagnosticsForPath(results, lib);
+  assertEquals(libDiagnostics?.map((diagnostic) => diagnostic.code), ["parse.syntax-error"]);
   assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });
 });
 
@@ -479,6 +494,40 @@ Deno.test("lsp validation resolves JS modules from the checked file project", as
     main,
   );
   assertEquals(diagnostics, []);
+});
+
+Deno.test("go to definition follows reflected JS import-map re-exports", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${dir}/deno.json`,
+      JSON.stringify({ imports: { "mapped-library": "./library.ts" } }),
+    );
+    const librarySource = "export function loadThing(): number { return 1; }\n";
+    await Deno.writeTextFile(`${dir}/library.ts`, librarySource);
+    await Deno.writeTextFile(
+      `${dir}/bridge.ts`,
+      'export { loadThing } from "mapped-library";\n',
+    );
+    const main = `${dir}/main.wm`;
+    const source =
+      'from js.module("./bridge.ts") import * as Library; let value = Library.loadThing();';
+    await Deno.writeTextFile(main, source);
+
+    const offset = source.lastIndexOf("loadThing") + 2;
+    const definition = await definitionAt(
+      pathToFileUri(main),
+      { line: 0, character: offset },
+      new Map(),
+    );
+
+    assertEquals(definition, {
+      uri: pathToFileUri(`${dir}/library.ts`),
+      range: charRange(librarySource, "loadThing"),
+    });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("lsp validation reports unknown named imports on the import specifier", async () => {

@@ -1,0 +1,60 @@
+-- vec.wm
+-- A tiny pure 2D vector module. No FFI, no Result, no mutation: the whole
+-- simulation core is built out of this and trig.wm, so it can be reasoned
+-- about (and tested) without a window ever being opened.
+--
+-- Every record declaration also gives you an ordered constructor, and for a
+-- two-field vector that positional form is the clearer one -- `Vec2(x, y)`
+-- rather than `.{ x = ..., y = ... }` on every line of algebra.
+
+record Vec2 = { x: Number, y: Number };
+
+let zero = Vec2(0, 0);
+
+let add = (a: Vec2, b: Vec2) => {
+  Vec2(a.x + b.x, a.y + b.y)
+};
+
+let sub = (a: Vec2, b: Vec2) => {
+  Vec2(a.x - b.x, a.y - b.y)
+};
+
+let scale = (v: Vec2, s: Number) => {
+  Vec2(v.x * s, v.y * s)
+};
+
+let lengthSq = (v: Vec2) => {
+  v.x * v.x + v.y * v.y
+};
+
+-- Square root by Newton's method: x_{n+1} = (x_n + value / x_n) / 2. The pure
+-- core has no math FFI, so it grows its own; 20 steps is ample at these
+-- magnitudes.
+let rec sqrtIter = (value: Number, guess: Number, steps: Number) => {
+  match(steps) {
+    0 => { guess },
+    _ => { sqrtIter(value, (guess + value / guess) / 2, steps - 1) },
+  }
+};
+
+let sqrt = (value: Number) => {
+  if (value <= 0) {
+    0
+  } else {
+    sqrtIter(value, value, 20)
+  }
+};
+
+let length = (v: Vec2) => {
+  sqrt(lengthSq(v))
+};
+
+let normalize = (v: Vec2) => {
+  let len = length(v);
+  if (len <= 0) { zero } else { scale(v, 1 / len) }
+};
+
+-- Circle-vs-circle overlap without ever taking a square root.
+let withinSq = (a: Vec2, b: Vec2, radius: Number) => {
+  lengthSq(sub(a, b)) < radius * radius
+};

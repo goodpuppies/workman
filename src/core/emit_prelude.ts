@@ -195,7 +195,7 @@ export function emitRuntimePrelude(): string[] {
     "const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true);",
     `const __wm_text_of = (value) => {
   try {
-    return value.toString();
+    return __wm_show(value);
   } catch (_error) {
     return "?";
   }
@@ -256,6 +256,17 @@ export function emitRuntimePrelude(): string[] {
 };`,
     `const Text = {
   of: __wm_text_of,
+};`,
+    `const __wm_debug_error_message = (error) => {
+  if (typeof error === "string") return error;
+  if (error instanceof globalThis.Error) return String(error.message);
+  if (error?.ctor === ${basisCtorId("Js.Error")}) return String(error.args[0]);
+  if (error?.ctor === ${basisCtorId("Js.Unknown")}) return "unknown JavaScript error";
+  if (error === null) return "null";
+  return __wm_show(error, new WeakSet(), true);
+};`,
+    `const Debug = {
+  errorMessage: __wm_debug_error_message,
 };`,
     `const __wm_basis_Option = {
   None: __wm_basis_None,

@@ -1,6 +1,6 @@
-import type { Expr, ImportClause, Module } from "./ast.ts";
+import type { Decl, Expr, ImportClause, Module } from "./ast.ts";
 import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
-import { inferDecl } from "./infer/decl.ts";
+import { inferDecl, predeclareTypeGroup } from "./infer/decl.ts";
 import { hostTypingDialect, type InferContext } from "./infer/context.ts";
 import { addAdts, addImport } from "./infer/imports.ts";
 import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
@@ -200,6 +200,7 @@ function inferModuleCore(
   }
   const initialStructure = snapshotStaticEnv(staticEnv(strEnv, typeEnv, env));
 
+  const predeclaredTypeGroups = new Set<number>();
   for (const [declIndex, decl] of module.decls.entries()) {
     if (decl.kind === "ImportDecl") {
       try {
@@ -229,6 +230,23 @@ function inferModuleCore(
     }
 
     try {
+      if (
+        decl.kind === "TypeDecl" && decl.mutualGroup !== undefined &&
+        !predeclaredTypeGroups.has(decl.mutualGroup)
+      ) {
+        const group = module.decls.filter((candidate): candidate is Extract<Decl, { kind: "TypeDecl" }> =>
+          candidate.kind === "TypeDecl" && candidate.mutualGroup === decl.mutualGroup
+        );
+        predeclareTypeGroup(group, context);
+        for (const member of group) {
+          if (!member.exported) continue;
+          const info = typeEnv.get(member.name);
+          if (!info) throw new Error(`missing predeclared type ${member.name}`);
+          typeExports.set(member.name, info);
+          exportableTypeIds.add(info.id);
+        }
+        predeclaredTypeGroups.add(decl.mutualGroup);
+      }
       inferDecl(
         decl,
         context,

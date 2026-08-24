@@ -107,6 +107,26 @@ Deno.test("matches payload-free constructors by singleton identity", async () =>
   assertStringIncludes(js, "=== Ident_ctor_");
 });
 
+Deno.test("emits qualified pinned patterns through their namespace binding", async () => {
+  const js = await compileLibraryVirtual(
+    "/test/main.wm",
+    new Map([
+      ["/test/character.wm", "let classSpace = 1;"],
+      [
+        "/test/main.wm",
+        'from "./character.wm" import * as Char; ' +
+        "let isSpace = (value) => { match(value) { Char.classSpace => { true }, _ => { false } } }; " +
+        "let yes = isSpace(1); let no = isSpace(2);",
+      ],
+    ]),
+  );
+  const module = await import(`data:text/javascript;base64,${btoa(js)}`);
+
+  assertEquals(module.yes, true);
+  assertEquals(module.no, false);
+  assertEquals(js.includes("Char.classSpace_"), false);
+});
+
 Deno.test("compiles a final semicolon-discarded Void self call as iteration", async () => {
   const js = await compile(`
     let rec loop = (n) => {
@@ -186,8 +206,11 @@ Deno.test("supports multiline string literals", async () => {
   assertStringIncludes(js, JSON.stringify("first\nsecond\nthird ` quoted"));
 });
 
-Deno.test("interpolated strings convert primitive values to text", async () => {
-  const source = 'let text = `number=${42}, bool=${true}, text=${"ok"}`;';
+Deno.test("interpolated strings convert Workman values to text", async () => {
+  const source = `
+    type TokenKind = End | Var<String>;
+    let text = \`number=\${42}, bool=\${true}, text=\${"ok"}, end=\${End}, var=\${Var("x")}\`;
+  `;
   const result = await checkSource(source);
   const js = await compileLibraryVirtual(
     "/test/library.wm",
@@ -196,7 +219,7 @@ Deno.test("interpolated strings convert primitive values to text", async () => {
   const module = await import(`data:text/javascript;base64,${btoa(js)}`);
 
   expectBinding(result.env, "text", { type: "String", vars: 0 });
-  assertEquals(module.text, "number=42, bool=true, text=ok");
+  assertEquals(module.text, "number=42, bool=true, text=ok, end=End, var=Var(x)");
 });
 
 Deno.test("interpolated value conversion is available without the default prelude", async () => {
@@ -323,6 +346,31 @@ Deno.test("primitive parameter annotations discharge deferred equality checks", 
     type: "(String, String) -> Bool",
     vars: 0,
   });
+});
+
+Deno.test("equality requirements generalize and are checked at each use", async () => {
+  const result = await checkSource(`
+    let same = (left, right) => { left == right };
+    let sameNumber = same(1, 1);
+    let sameString = same("left", "right");
+  `);
+
+  expectBinding(result.env, "same", {
+    type: "('a, 'a) -> Bool",
+    vars: 1,
+  });
+  expectBinding(result.env, "sameNumber", { type: "Bool", vars: 0 });
+  expectBinding(result.env, "sameString", { type: "Bool", vars: 0 });
+
+  await assertRejects(
+    () =>
+      checkSource(`
+        let same = (left, right) => { left == right };
+        let bad = same((x) => { x }, (x) => { x });
+      `),
+    Error,
+    "does not admit equality",
+  );
 });
 
 Deno.test("supports underscore-prefixed binders in let tuple patterns", async () => {

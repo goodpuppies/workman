@@ -94,7 +94,8 @@ let short = "hello\nworld";
 ```
 
 Backtick strings can span multiple lines and use JavaScript-style `${...}` interpolation.
-Interpolation converts primitive values such as numbers and booleans to text:
+Interpolation renders Workman values as text, including numbers, booleans, records, tuples,
+lists, and algebraic datatype constructors:
 
 ```workman
 let page = `first line
@@ -104,6 +105,7 @@ third line`;
 let withTick = `use \` to include a backtick`;
 let greeting = `Hello, ${name}!`;
 let score = `score: ${42}, complete: ${true}`;
+let token = `token: ${Some("name")}`; -- token: Some(name)
 let escaped = `write \${name} to show it literally`;
 ```
 
@@ -280,6 +282,17 @@ type Token =
   | Number<Number>
   | Ident<String>;
 ```
+
+Mutually recursive types are declared in one group with `and`. Every name in the group is visible
+in every constructor payload:
+
+```workman
+type Even = EvenZero | EvenSucc<Odd>
+and Odd = | OddSucc<Even>;
+```
+
+As with an ordinary declaration, a single-constructor variant needs a leading `|`; without it the
+right-hand side is a type alias.
 
 ### Using Constructors
 
@@ -851,7 +864,7 @@ The following are intentionally not part of current `wm-mini` frontend scope:
 - infection/effect features
 - full record and list feature set
 - custom fixity declarations and advanced operator definitions
-- panic/typed-hole runtime semantics
+- custom panic/runtime recovery semantics beyond the basic `Panic` and typed-hole behavior
 
 Some sections below describe intended Workman syntax or older/full Workman design ideas. When a
 feature is not implemented in current `wm-mini`, it is marked with a **Not supported yet** note.
@@ -905,12 +918,10 @@ type Container<T> = Empty | Full<T>;
 
 #### Type Holes (`?`)
 
-**Not supported yet in current `wm-mini`.** Use `Panic("todo")` as the current escape hatch when an
-expression must typecheck in any context.
-
 Use `?` as a placeholder for values you haven't implemented yet. Based on
 [Hazel's typed holes](https://hazel.org/), this lets you write incomplete programs that still
-typecheck(but workman has no defined runtime support):
+typecheck(but workman has no defined runtime support): Hover the `?` in an editor using the Workman language server to see the type required at
+that position:
 
 ```workman
 -- Hole expression: placeholder for unimplemented value
@@ -932,6 +943,9 @@ Type holes are especially useful for:
 - FFI bindings where the implementation is provided by the runtime
 - Stubbing out functions during incremental development
 - Letting the typechecker tell you what type is expected
+
+A hole compiles so the rest of the program remains available to tooling. Evaluating a path that
+reaches one fails at runtime with `typed hole`.
 
 ### 8. Match Is an Expression
 
@@ -1038,7 +1052,6 @@ These features are not supported yet or are only partially supported:
 
 - **Full SML modules/functors/signatures:** files are the current module boundary.
 - **Opaque type declarations:** `type Handle;` is planned/design syntax, not current syntax.
-- **Typed holes:** `?` is not implemented. Use `Panic("todo")` for temporary unreachable values.
 - **Match guards:** `pattern when cond => ...` is listed as intended syntax, but guards are not
   implemented.
 - **Character literals:** use strings for now; `'a'` is not implemented.

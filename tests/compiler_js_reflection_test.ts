@@ -9,6 +9,33 @@ import { inferModulePartial } from "../src/infer.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
 
+Deno.test("reflects relative JS modules whose dependencies use a Deno import map", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${directory}/deno.json`,
+      JSON.stringify({ imports: { "mapped-types": "./mapped_types.ts" } }),
+    );
+    await Deno.writeTextFile(
+      `${directory}/mapped_types.ts`,
+      "export type Wrapped = { value: number };\n",
+    );
+    await Deno.writeTextFile(
+      `${directory}/bridge.ts`,
+      'import type { Wrapped } from "mapped-types";\n' +
+        "export function wrapped(): Wrapped { return { value: 1 }; }\n",
+    );
+
+    await checkSource(
+      'from js.module("./bridge.ts") import { wrapped }; let value = wrapped();',
+      {},
+      `${directory}/main.wm`,
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("unresolved JS FFI property results cannot escape as generic values", async () => {
   await assertRejects(
     () =>
@@ -395,6 +422,27 @@ Deno.test("delayed reflection marks FFI facts as resolved", async () => {
       origin: fact.origin?.source,
     })),
     [{ path: "method", status: "resolved", origin: "reflected-ffi" }],
+  );
+});
+
+Deno.test("unresolved FFI helpers carry monomorphic obligations, not polymorphic schemes", async () => {
+  const module = await parse(`
+    let property = (receiver) => {
+      receiver :> .length
+    };
+  `);
+  const prepared = prepareFfiElaboration(module);
+  const partial = inferModulePartial(prepared.module);
+  const property = partial.env.get("property");
+  if (!property) throw new Error("missing property binding");
+
+  assertEquals(property.vars, []);
+  assertEquals(
+    [...partial.facts.ffi.values()].map((fact) => ({
+      path: fact.path.join("."),
+      status: fact.status,
+    })),
+    [{ path: "length", status: "unresolved" }],
   );
 });
 

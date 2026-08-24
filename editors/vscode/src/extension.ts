@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   commands,
+  type CancellationToken,
   type ExtensionContext,
   MarkdownString,
   StatusBarAlignment,
@@ -16,7 +17,7 @@ import {
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import { Trace } from "vscode-jsonrpc";
+import { type MessageSignature, Trace } from "vscode-jsonrpc";
 import {
   denoServerConfig,
   nodeServerConfig,
@@ -24,6 +25,29 @@ import {
 } from "./server_options";
 
 let client: LanguageClient | undefined;
+
+class WorkmanLanguageClient extends LanguageClient {
+  override handleFailedRequest<T>(
+    type: MessageSignature,
+    token: CancellationToken | undefined,
+    error: unknown,
+    defaultValue: T,
+    _showNotification = true,
+    throwOnCancel = false,
+  ): T {
+    // Source-analysis failures are published separately as file diagnostics.
+    // Keep feature-request failures in the output channel instead of showing a
+    // popup for every hover, inlay, token, or completion request VS Code retries.
+    return super.handleFailedRequest(
+      type,
+      token,
+      error,
+      defaultValue,
+      false,
+      throwOnCancel,
+    );
+  }
+}
 
 type ProjectStatusResult = {
   selected: {
@@ -169,7 +193,7 @@ export async function activate(context: ExtensionContext) {
       traceOutputChannel: outputChannel,
     };
 
-    client = new LanguageClient(
+    client = new WorkmanLanguageClient(
       "workman",
       "Workman",
       serverOptions,

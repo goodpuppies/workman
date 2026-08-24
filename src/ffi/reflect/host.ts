@@ -18,6 +18,10 @@ const denoTypesReference = `/// <reference path="${denoTypesFile}" />\n`;
 let denoTypesCache: string | undefined;
 const sourceFileCache = new Map<string, ts.SourceFile>();
 const denoModuleGraphs = new Map<string, DenoModuleGraph>();
+// Each reflection pass only builds graphs for its own roots, while the incremental
+// TypeScript program can retain modules loaded by earlier passes.
+const knownDenoModules = new Map<string, DenoInfoModule>();
+const graphedImporters = new Set<string>();
 const fileExistsCache = new Map<string, boolean>();
 const readFileCache = new Map<string, string | undefined>();
 const directoryExistsCache = new Map<string, boolean>();
@@ -30,6 +34,11 @@ const preparedReflections = new Map<string, PreparedReflection>();
 let reflectionProfileSink: ((event: JsReflectionProfileEvent) => void) | undefined;
 
 export type JsReflectionSource = { key: string; source: string };
+export type JsDefinitionLocation = {
+  path: string;
+  start: number;
+  end: number;
+};
 export type JsReflectionRequest = {
   label: string;
   source: string;
@@ -103,6 +112,44 @@ export function jsModuleSource(specifier: string): JsReflectionSource {
       JSON.stringify(specifier)
     };`,
   };
+}
+
+export function jsModuleMemberDefinition(
+  specifier: string,
+  memberName: string,
+  basePath: string,
+): JsDefinitionLocation | undefined {
+  const previous = setActiveJsReflectionBasePath(basePath);
+  try {
+    const target = jsModuleSource(specifier);
+    return reflectSource(
+      `${target.key}.${memberName}:definition`,
+      `${target.source}\nconst __wm_member = __wm_target[${JSON.stringify(memberName)}];`,
+      (checker, sourceRoot) => {
+        const targetExpression = findVariable(sourceRoot, "__wm_target")?.initializer ??
+          findDeclaredValue(sourceRoot, "__wm_target");
+        let symbol = targetExpression
+          ? checker.getTypeAtLocation(targetExpression).getProperty(memberName)
+          : undefined;
+        if (!symbol) return undefined;
+        if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+        const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
+        if (!declaration) return undefined;
+        const sourceFile = declaration.getSourceFile();
+        const path = localDefinitionPath(sourceFile.fileName);
+        if (!path) return undefined;
+        const name = (declaration as ts.NamedDeclaration).name;
+        const selection = name && !ts.isComputedPropertyName(name) ? name : declaration;
+        return {
+          path,
+          start: selection.getStart(sourceFile),
+          end: selection.getEnd(),
+        };
+      },
+    );
+  } finally {
+    setActiveJsReflectionBasePath(previous);
+  }
 }
 
 export function reflectSource<T>(
@@ -385,11 +432,18 @@ function moduleResolutionCache(): ts.ModuleResolutionCache {
   return cache;
 }
 
+type DenoInfoDependency = {
+  specifier: string;
+  code?: { specifier?: string; error?: string };
+  type?: { specifier?: string; error?: string };
+};
+
 type DenoInfoModule = {
   specifier: string;
   local?: string;
   mediaType?: string;
   error?: string;
+  dependencies?: DenoInfoDependency[];
 };
 
 type DenoInfo = {
@@ -415,7 +469,7 @@ type DenoModuleGraph = {
 function denoReflectionGraphs(source: string): DenoModuleGraph[] {
   const specifiers = [...source.matchAll(/\bimport\s+\*\s+as\s+\w+\s+from\s+["']([^"']+)["']/g)]
     .map((match) => match[1])
-    .filter(needsDenoModuleResolution);
+    .filter((specifier) => needsDenoModuleResolution(specifier) || isRelativeSpecifier(specifier));
   const unique = [...new Set(specifiers)];
   const reflectedFile = reflectionFileName(source);
   const cwd = activeReflectionBasePath
@@ -451,6 +505,9 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
     (mustResolveWithDeno(specifier) || specifier.startsWith("npm:"))
   ) {
     throw new Error(`cannot resolve JS import ${specifier} for reflection: ${failedRoot.error}`);
+  }
+  for (const module of parsed.modules ?? []) {
+    knownDenoModules.set(module.specifier, module);
   }
   const graph = {
     originalSpecifier: specifier,
@@ -565,7 +622,9 @@ function denoResolvedModule(
     ).resolvedModule;
   }
   return {
-    resolvedFileName: module.specifier,
+    resolvedFileName: module.specifier.startsWith("file://")
+      ? module.local ?? module.specifier
+      : module.specifier,
     extension: tsExtensionForModule(module),
     isExternalLibraryImport: true,
   };
@@ -612,6 +671,60 @@ function resolveDenoSpecifier(
     const redirected = graph.redirects.get(candidate) ?? candidate;
     if (graph.modules.has(redirected)) return redirected;
   }
+  const importer = denoModuleForFileName(graphs, containingFile);
+  const fromImporter = dependencyTarget(importer, moduleName);
+  const direct = graphModuleFor(graphs, fromImporter);
+  if (direct !== undefined) return direct;
+
+  if (fromImporter !== undefined && knownDenoModules.has(fromImporter)) return fromImporter;
+
+  const importerPath = isUrl(containingFile) ? fileUrlToPath(containingFile) : containingFile;
+  if (importerPath !== undefined && !graphedImporters.has(importerPath)) {
+    graphedImporters.add(importerPath);
+    if (existsSync(importerPath)) {
+      denoModuleGraph(importerPath, dirname(importerPath));
+      const learned = dependencyTarget(
+        denoModuleForFileName([], containingFile),
+        moduleName,
+      );
+      if (learned !== undefined && knownDenoModules.has(learned)) return learned;
+    }
+  }
+  return undefined;
+}
+
+function fileUrlToPath(value: string): string | undefined {
+  if (!value.startsWith("file://")) return undefined;
+  try {
+    return decodeURIComponent(new URL(value).pathname);
+  } catch {
+    return undefined;
+  }
+}
+
+function localDefinitionPath(fileName: string): string | undefined {
+  if (fileName.startsWith("file://")) return fileUrlToPath(fileName);
+  if (!isUrl(fileName)) return fileName;
+  return denoModuleForFileName([], fileName)?.local;
+}
+
+function dependencyTarget(
+  module: DenoInfoModule | undefined,
+  moduleName: string,
+): string | undefined {
+  const dependency = module?.dependencies?.find((entry) => entry.specifier === moduleName);
+  return dependency?.code?.specifier ?? dependency?.type?.specifier;
+}
+
+function graphModuleFor(
+  graphs: DenoModuleGraph[],
+  specifier: string | undefined,
+): string | undefined {
+  if (specifier === undefined) return undefined;
+  for (const graph of graphs) {
+    const redirected = graph.redirects.get(specifier) ?? specifier;
+    if (graph.modules.has(redirected)) return redirected;
+  }
   return undefined;
 }
 
@@ -619,12 +732,29 @@ function denoModuleForFileName(
   graphs: DenoModuleGraph[],
   fileName: string,
 ): DenoInfoModule | undefined {
+  const candidates = isUrl(fileName) ? [fileName] : [fileName, pathAsFileUrl(fileName)];
   for (const graph of graphs) {
-    const redirected = graph.redirects.get(fileName) ?? fileName;
-    const module = graph.modules.get(redirected);
+    for (const candidate of candidates) {
+      if (candidate === undefined) continue;
+      const redirected = graph.redirects.get(candidate) ?? candidate;
+      const module = graph.modules.get(redirected);
+      if (module) return module;
+    }
+  }
+  for (const candidate of candidates) {
+    if (candidate === undefined) continue;
+    const module = knownDenoModules.get(candidate);
     if (module) return module;
   }
   return undefined;
+}
+
+function pathAsFileUrl(value: string): string | undefined {
+  try {
+    return new URL(`file://${value.startsWith("/") ? "" : "/"}${value.replace(/\\/g, "/")}`).href;
+  } catch {
+    return undefined;
+  }
 }
 
 function tsExtensionForModule(module: DenoInfoModule): ts.Extension {

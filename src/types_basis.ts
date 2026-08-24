@@ -77,6 +77,15 @@ export function baseEnv(
     basis: true,
   });
   if (options.includeAlgebraicBasis !== false) {
+    const debugError = fresh() as Extract<Ty, { tag: "var" }>;
+    env.set("Debug.errorMessage", {
+      vars: [debugError.id],
+      type: fn([debugError], StringTy),
+      status: "value",
+      basis: true,
+    });
+  }
+  if (options.includeAlgebraicBasis !== false) {
     addBasisConstructors(env, pervasiveSources, typeEnv);
     addBasisValues(env, typeEnv);
     addGpuBasisValues(env, typeEnv);

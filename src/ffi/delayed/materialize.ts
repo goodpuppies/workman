@@ -59,7 +59,7 @@ export function materializeReceiverProperty(
     { kind: "JsReceiver", path },
     variants,
     true,
-    undefined,
+    original.node,
   );
   const bindingVariants = bindings.get(surfaceName)?.variants ?? [];
   const expectedFunction = contextualFunctionType(original, result);
@@ -209,7 +209,7 @@ export function materializeReceiverCall(
     { kind: "JsReceiver", path },
     variants,
     true,
-    undefined,
+    original.node,
   );
   const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], args, argTypes);
   if (!variant) {

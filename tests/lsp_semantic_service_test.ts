@@ -1,7 +1,8 @@
 import { assertEquals, assertNotStrictEquals, assertStrictEquals } from "@std/assert";
 import { SemanticService } from "../src/lsp/semantic_service.ts";
 import { ProjectIndex } from "../src/lsp/project_index.ts";
-import { pathToFileUri } from "../src/lsp/uri.ts";
+import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
+import { validateUri } from "../src/lsp/validation.ts";
 
 Deno.test("semantic service reuses closest-head snapshots and isolates overlapping projects", async () => {
   const dir = await Deno.makeTempDir();
@@ -73,5 +74,71 @@ Deno.test("semantic service keeps strict diagnostics beside recovered current in
   assertStrictEquals(
     (await service.documentContext(pathToFileUri(path)))?.project,
     context?.project,
+  );
+});
+
+Deno.test("semantic service keeps an imported parse failure on its source module", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const lib = `${dir}/lib.wm`;
+  await Deno.writeTextFile(
+    main,
+    'from "./lib.wm" import { value }; let main = () => { value };',
+  );
+  await Deno.writeTextFile(lib, "let value = )");
+  const index = new ProjectIndex();
+  index.rememberWorkspaceRoots({ workspaceFolders: [{ uri: pathToFileUri(dir) }] });
+  const overrides = new Map<string, string>();
+  await index.initialize(overrides);
+  const service = new SemanticService(index.discovery, {
+    sourceOverrides: () => overrides,
+    frontendOptions: () => ({}),
+  });
+
+  const results = await validateUri(pathToFileUri(main), overrides, {}, {
+    semanticService: service,
+  });
+  const byPath = new Map(results.map((result) => [fileUriToPath(result.uri), result.diagnostics]));
+
+  assertEquals(byPath.get(main), []);
+  assertEquals(byPath.get(lib)?.map((diagnostic) => diagnostic.code), ["parse.syntax-error"]);
+  assertEquals(byPath.get(lib)?.[0].range.start, { line: 0, character: 12 });
+});
+
+Deno.test("editing a dependency dropped by recovery invalidates its stale headed diagnostic", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const lib = `${dir}/lib.wm`;
+  const mainSource = 'from "./lib.wm" import { value }; let main = () => { value };';
+  const broken = "let value = Token.;";
+  const fixed = "let value = 1 + true;";
+  await Deno.writeTextFile(main, mainSource);
+  await Deno.writeTextFile(lib, broken);
+  const index = new ProjectIndex();
+  index.rememberWorkspaceRoots({ workspaceFolders: [{ uri: pathToFileUri(dir) }] });
+  const overrides = new Map<string, string>();
+  await index.initialize(overrides);
+  const service = new SemanticService(index.discovery, {
+    sourceOverrides: () => overrides,
+    frontendOptions: () => ({}),
+  });
+
+  const before = await validateUri(pathToFileUri(main), overrides, {}, {
+    semanticService: service,
+  });
+  assertEquals(
+    before.flatMap(({ diagnostics }) => diagnostics.map(({ code }) => code)),
+    ["parse.syntax-error"],
+  );
+
+  overrides.set(lib, fixed);
+  await service.invalidatePaths([lib]);
+  const after = await validateUri(pathToFileUri(main), overrides, {}, {
+    semanticService: service,
+  });
+
+  assertEquals(
+    after.flatMap(({ diagnostics }) => diagnostics.map(({ code }) => code)),
+    ["type.mismatch"],
   );
 });

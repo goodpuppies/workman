@@ -88,7 +88,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 132,
+    classified: 133,
     missing: [],
     unknown: [],
     duplicates: [],
@@ -360,6 +360,17 @@ Deno.test("frontend-v2 reports a farthest generated failure for rejected syntax"
     rule: "LetPattern",
   });
   assertEquals(surfaceParser.parseSurfaceFailure("let x = 1;").name, "None");
+});
+
+Deno.test("frontend-v2 distinguishes qualified pinned values from constructors in patterns", () => {
+  const pinned =
+    "let f = (x) => { match(x, x) { (Value, Char.classSpace) => { void } } };";
+  const constructor =
+    "let f = (x) => { match(x) { Token.Token(value) => { value } } };";
+
+  assertEquals(surfaceParser.parseSurfaceProgram(pinned).name, "Some");
+  assertEquals(surfaceParser.parseSurfaceFailure(pinned).name, "None");
+  assertEquals(surfaceParser.parseSurfaceProgram(constructor).name, "Some");
 });
 
 Deno.test("frontend-v2 does not repair a missing expression as an empty block", () => {

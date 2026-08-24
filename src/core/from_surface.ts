@@ -13,6 +13,7 @@ import type {
   RecordFieldDecl,
   RecordPatternField,
 } from "../ast.ts";
+import { pathOf } from "../ast.ts";
 import type { InferResult } from "../infer.ts";
 import { basisCtorId } from "../basis.ts";
 import { type BindingFacts, resolveModuleBindingFacts } from "../binding_facts.ts";
@@ -30,7 +31,7 @@ import {
 } from "../ids.ts";
 import type { MaterializedGpuArtifacts } from "../gpu_artifact.ts";
 import { moduleId } from "../module_id.ts";
-import { prune, type Ty, type TypeEnv, typeInfoByName } from "../types.ts";
+import { prune, show, type Ty, type TypeEnv, typeInfoByName } from "../types.ts";
 import type {
   CoreBinding,
   CoreCtorDecl,
@@ -58,6 +59,8 @@ type CoreLoweringContext = {
   materializedGpuArtifacts: MaterializedGpuArtifacts;
   gpuSemanticIds: ReadonlyMap<Expr, CompilerSemanticId>;
   nominalFacts?: NominalFacts;
+  sourcePath: string;
+  source: string;
 };
 
 export type CoreGpuHostBoundary = {
@@ -75,6 +78,7 @@ export function coreFromSurface(
   bindings?: BindingFacts,
   ids?: CompilerIdAllocator,
   gpuBoundary?: CoreGpuHostBoundary,
+  sourceContext: { path: string; source: string } = { path: "<source>", source: "" },
 ): CoreModule {
   let resolvedBindings = bindings;
   let resolvedIds = ids;
@@ -119,6 +123,8 @@ export function coreFromSurface(
         ),
       ),
       nominalFacts: resolvedNominalFacts,
+      sourcePath: sourceContext.path,
+      source: sourceContext.source,
     }
     : undefined;
   return {
@@ -397,6 +403,15 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       return {
         kind: "CorePanic",
         message: coreExprFromSurface(expr.message, context),
+        ...(expr.hole
+          ? {
+            hole: {
+              path: context?.sourcePath ?? "<source>",
+              lineText: context?.source.split(/\r?\n/)[(expr.node?.span.line ?? 1) - 1] ?? "",
+              expectedType: context?.types.get(expr) ? show(context.types.get(expr)!) : "unknown",
+            },
+          }
+          : {}),
         node: expr.node,
       };
     case "Block":
@@ -529,6 +544,7 @@ function corePatternFromSurface(
       return { kind: "CorePVoid", node: pattern.node };
     case "PPinned": {
       const id = context?.bindings?.references.get(pattern);
+      const structureId = context?.bindings?.structureReferences.get(pattern);
       if (id !== undefined && context?.gpuOnlyBindings.has(id)) {
         throw diagnosticError(
           new Error(gpuOnlyHostReferenceMessage(pattern.name)),
@@ -540,6 +556,7 @@ function corePatternFromSurface(
         kind: "CorePPinned",
         name: pattern.name,
         bindingId: id,
+        rootBindingId: pathOf(pattern).qualifiers.length > 0 ? structureId ?? id : undefined,
         node: pattern.node,
       };
     }

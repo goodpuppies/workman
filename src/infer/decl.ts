@@ -96,6 +96,47 @@ export function inferDecl(
   inferLetDecl(decl, context, exports, exportableTypeIds, exported);
 }
 
+/** Install every name in one simultaneous type group before elaborating any RHS. */
+export function predeclareTypeGroup(
+  declarations: readonly Extract<Decl, { kind: "TypeDecl" }>[],
+  context: InferContext,
+) {
+  rejectDuplicates(declarations.map((declaration) => declaration.name), "type declaration");
+  rejectMutualAliasCycles(declarations);
+  for (const declaration of declarations) {
+    rejectDuplicates(declaration.params, "type parameter");
+    const info = freshTypeInfo(declaration.name, declaration.params.length);
+    registerTypeInfo(context.typeEnv, info);
+    bindType(staticEnv(context.strEnv, context.typeEnv, context.env), declaration.name, info);
+  }
+}
+
+function rejectMutualAliasCycles(
+  declarations: readonly Extract<Decl, { kind: "TypeDecl" }>[],
+) {
+  const aliases = new Map(
+    declarations.filter((declaration) => declaration.alias).map((declaration) => [
+      declaration.name,
+      declaration,
+    ] as const),
+  );
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (name: string) => {
+    if (visiting.has(name)) throw new Error(`cyclic type alias ${name}`);
+    if (visited.has(name)) return;
+    const declaration = aliases.get(name);
+    if (!declaration?.alias) return;
+    visiting.add(name);
+    for (const target of aliases.keys()) {
+      if (referencesTypeName(declaration.alias, target, new Set(declaration.params))) visit(target);
+    }
+    visiting.delete(name);
+    visited.add(name);
+  };
+  for (const name of aliases.keys()) visit(name);
+}
+
 function addForeignType(
   decl: Extract<Decl, { kind: "ForeignTypeDecl" }>,
   strEnv: StrEnv,
@@ -219,10 +260,15 @@ function inferTypeDecl(
   exported: boolean,
 ) {
   rejectDuplicates(decl.params, "type parameter");
-  const info = freshTypeInfo(decl.name, decl.params.length);
+  const info = decl.mutualGroup === undefined
+    ? freshTypeInfo(decl.name, decl.params.length)
+    : typeEnv.get(decl.name);
+  if (!info) throw new Error(`missing predeclared type ${decl.name}`);
   recordTypeDeclarationFact(facts, decl, info);
-  registerTypeInfo(typeEnv, info);
-  bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
+  if (decl.mutualGroup === undefined) {
+    registerTypeInfo(typeEnv, info);
+    bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
+  }
   if (exported) typeExports.set(decl.name, info);
   if (decl.alias) {
     inferAliasDecl(decl, info, typeEnv, strEnv, exportableTypeIds, facts, exported);

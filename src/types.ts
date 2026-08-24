@@ -495,14 +495,9 @@ export function ftvEnv(env: Env): Set<number> {
 
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
-  // JS boundary obligations are tied to one unresolved foreign interaction. GPU constraints are
-  // verification callbacks only; compiler-owned GPU operation obligations live in sidecar facts
-  // and must remain ordinarily generalizable for per-use shader specialization.
+  // JS boundary obligations are tied to one unresolved foreign interaction. GPU and equality
+  // constraints are verification callbacks which are copied to each fresh instantiation.
   const boundary = jsConstrainedVarIds(type);
-  const equality = equalityConstrainedVarIds(type);
-  if (equality.size > 0) {
-    throw new Error("type variable does not admit equality");
-  }
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
   return { vars, type, constraints: [] };
 }
@@ -522,25 +517,6 @@ function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
     for (const field of t.fields) jsConstrainedVarIds(field.type, acc);
   } else if (t.tag === "named") {
     for (const arg of t.args) jsConstrainedVarIds(arg, acc);
-  }
-  return acc;
-}
-
-function equalityConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
-  const t = prune(type);
-  if (t.tag === "var") {
-    if (t.equalityConstraint) acc.add(t.id);
-    return acc;
-  }
-  if (t.tag === "fn") {
-    for (const param of t.params) equalityConstrainedVarIds(param, acc);
-    equalityConstrainedVarIds(t.result, acc);
-  } else if (t.tag === "tuple") {
-    for (const item of t.items) equalityConstrainedVarIds(item, acc);
-  } else if (t.tag === "struct") {
-    for (const field of t.fields) equalityConstrainedVarIds(field.type, acc);
-  } else if (t.tag === "named") {
-    for (const arg of t.args) equalityConstrainedVarIds(arg, acc);
   }
   return acc;
 }

@@ -8,7 +8,7 @@ import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
 import { generatedJsImports } from "../imports.ts";
 import { recordFieldNamesInDecls } from "../record_fields.ts";
-import { generatedForeignDeclsForRefs, generatedImportInsertionIndex } from "./bindings.ts";
+import { generatedForeignDeclsForRefs } from "./bindings.ts";
 import {
   materializeReceiverCall,
   materializeReceiverProperty,
@@ -41,6 +41,7 @@ import {
   type FfiElaboration,
   fn,
   generatedReceiverJsImports,
+  insertGeneratedFfiImports,
   isDecl,
   name,
 } from "../shared.ts";
@@ -134,14 +135,11 @@ function resolveDelayedFfiElaborationInner(
     ...recoveredImports,
     ...receiverImports,
   ];
-  const prefixLength = generatedImportInsertionIndex(rewrittenModule.decls);
   const leadingGeneratedDecls = [...foreignDecls, ...deepRecordDecls];
   const finalDecls = imports.length || foreignDecls.length || deepRecordDecls.length
     ? [
       ...leadingGeneratedDecls,
-      ...rewrittenModule.decls.slice(0, prefixLength),
-      ...imports,
-      ...rewrittenModule.decls.slice(prefixLength),
+      ...insertGeneratedFfiImports(rewrittenModule.decls, imports),
     ]
     : rewrittenModule.decls;
   return {

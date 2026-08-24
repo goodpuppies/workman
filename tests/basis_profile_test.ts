@@ -390,6 +390,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "map2",
           "carrier",
           "withDefault",
+          "debug",
           "map3",
           "map4",
           "traverse",

@@ -217,15 +217,24 @@ export class ProjectContextRegistry {
       const key = contextKey("headed", head, configurationKey);
       const existing = this.#active.get(key);
       if (existing) {
-        existing.lastUsed = ++this.#clock;
-        if (rememberDocument) this.#documents.set(documentKey, existing.key);
-        return Object.freeze({ snapshot: existing.snapshot, reason: "closest-head" });
+        if (existing.paths.has(file)) {
+          existing.lastUsed = ++this.#clock;
+          if (rememberDocument) this.#documents.set(documentKey, existing.key);
+          return Object.freeze({ snapshot: existing.snapshot, reason: "closest-head" });
+        }
+      } else {
+        const snapshot = await analyzeHead(head, configurationKey);
+        const context = activeContext(key, configurationKey, snapshot, ++this.#clock);
+        this.#active.set(key, context);
+        if (context.paths.has(file)) {
+          if (rememberDocument) this.#documents.set(documentKey, key);
+          return Object.freeze({ snapshot, reason: "closest-head" });
+        }
       }
-      const snapshot = await analyzeHead(head, configurationKey);
-      const context = activeContext(key, configurationKey, snapshot, ++this.#clock);
-      this.#active.set(key, context);
-      if (rememberDocument) this.#documents.set(documentKey, key);
-      return Object.freeze({ snapshot, reason: "closest-head" });
+      // Syntax discovery can still find a reverse importer after recovered semantic analysis has
+      // rejected that import and removed its target from the certified project snapshot. The
+      // document must then get its own recovered context instead of being assigned a project that
+      // cannot answer semantic queries for it.
     }
 
     const key = contextKey("detached", file, configurationKey);
@@ -257,10 +266,19 @@ export class ProjectContextRegistry {
   /** Drop every snapshot whose forward closure contains a changed source path. */
   invalidatePaths(paths: Iterable<string>): void {
     const changed = new Set([...paths].map(canonicalPath));
+    const affectedHeads = new Set(
+      [...changed].flatMap((path) => this.discovery.headsFor(path).map(canonicalPath)),
+    );
     const invalidKeys = new Set<string>();
     for (const context of [...this.#active.values(), ...this.#detached.values()]) {
       if ([...changed].some((path) => context.paths.has(path))) {
         invalidKeys.add(context.key);
+      }
+    }
+    for (const [key] of this.#active) {
+      const descriptor = parseContextKey(key);
+      if (descriptor?.kind === "headed" && affectedHeads.has(descriptor.path)) {
+        invalidKeys.add(key);
       }
     }
     for (const [documentKey, contextKey] of this.#documents) {

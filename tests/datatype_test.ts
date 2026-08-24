@@ -58,6 +58,39 @@ Deno.test("polymorphic datatype constructors generalize over type parameters", a
   expectBinding(result.env, "some_string", { type: "Option<String>", vars: 0 });
 });
 
+Deno.test("mutually recursive type declarations see every type in their group", async () => {
+  const result = await checkSource(`
+    type Even = EvenZero | EvenSucc<Odd>
+    and Odd = | OddSucc<Even>;
+    let value = EvenSucc(OddSucc(EvenZero));
+  `);
+
+  expectBinding(result.env, "EvenSucc", { type: "Odd -> Even", vars: 0 });
+  expectBinding(result.env, "OddSucc", { type: "Even -> Odd", vars: 0 });
+  expectBinding(result.env, "value", { type: "Even", vars: 0 });
+});
+
+Deno.test("mutually recursive aliases are rejected", async () => {
+  await assertRejects(
+    () => checkSource("type Left = Right and Right = Left;"),
+    Error,
+    "cyclic type alias",
+  );
+});
+
+Deno.test("mutually recursive type groups work in local declaration sequences", async () => {
+  const result = await checkSource(`
+    let make = () => {
+      type Even = EvenZero | EvenSucc<Odd>
+      and Odd = | OddSucc<Even>;
+      let local = EvenSucc(OddSucc(EvenZero));
+      true
+    };
+  `);
+
+  expectBinding(result.env, "make", { type: "Void -> Bool", vars: 0 });
+});
+
 Deno.test("constructor arity is checked in expressions and patterns", async () => {
   await assertRejects(
     () => checkSource("type Pair = | Pair<Number, Number>; let bad = Pair(1);"),

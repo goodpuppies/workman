@@ -34,6 +34,11 @@ type CollisionAdapter = {
 
 const collisionAdapters: CollisionAdapter[] = [
   {
+    code: "type.mismatch",
+    equation: "leaf",
+    subject: annotationMismatchSubject,
+  },
+  {
     code: "type.call-argument-mismatch",
     equation: "leaf",
     subject: collisionSubject,
@@ -72,6 +77,7 @@ export const neutralTypeCollisionProfile: AuthoredDiagnosticProfile = {
 type CollisionRendering = { text: string; document: Document };
 type CollisionParticipant = { claim: ClaimEntry; type: string };
 type CollisionParticipants = { left: CollisionParticipant; right: CollisionParticipant };
+type CallArityMismatch = { expected: number; actual: number };
 
 function renderNeutralTypeCollision(
   diagnostic: AuditableDiagnostic,
@@ -110,6 +116,9 @@ function renderNeutralTypeCollision(
     : rightType;
   const leftOriginType = leftLeaf ?? leftType;
   const rightOriginType = rightLeaf ?? rightType;
+  const arityMismatch = adapter.code === "type.call-argument-mismatch"
+    ? callArityMismatch(diagnostic)
+    : undefined;
   const leftObserved = observed.find((claim) =>
     claim.claim.kind === "has-type" &&
     typeSnapshotRendered(diagnostic, claim.claim.type) === leftLeaf
@@ -129,6 +138,9 @@ function renderNeutralTypeCollision(
   const rightPath = rightObserved ? longestDerivationPath(diagnostic, rightObserved) : [];
   const leftOrigin = leftPath[0] ?? leftObserved;
   const rightOrigin = rightPath[0] ?? rightObserved;
+  const annotationSlot = adapter.code === "type.mismatch"
+    ? annotationMismatchSlot(diagnostic)
+    : undefined;
   // Usually the two provenance paths already explain the equation cleanly. When one side was
   // imported without source provenance, expose the structural callback slot that would otherwise
   // be hidden inside the raw unification path.
@@ -140,11 +152,18 @@ function renderNeutralTypeCollision(
       )
     ? callCollisionSlot(diagnostic, source)
     : undefined;
-  const leftDisplayOrigin = leftOrigin ?? callSlot?.calleeClaim;
-  const leftOriginLabel = !leftOrigin ? callSlot?.calleeLabel : undefined;
-  const rightOriginLabel = callSlot && rightPath.length > 1
-    ? parameterUseLabel(rightPath.at(-1))
+  const leftDisplayOrigin = annotationSlot?.annotation ?? leftOrigin ?? callSlot?.calleeClaim;
+  const leftOriginLabel = annotationSlot
+    ? "annotation requires"
+    : !leftOrigin
+    ? callSlot?.calleeLabel
     : undefined;
+  const rightDisplayOrigin = annotationSlot?.parameter ?? rightOrigin ?? callSlot?.argumentClaim;
+  const rightOriginLabel = annotationSlot
+    ? `${annotationSlot.parameterName} inferred as`
+    : rightOrigin
+    ? callSlot && rightPath.length > 1 ? parameterUseLabel(rightPath.at(-1)) : undefined
+    : callSlot?.argumentLabel;
   const collisionSpan = diagnostic.primary.kind === "source" ? diagnostic.primary.span : undefined;
   const primaryDocument = diagnostic.primary.kind === "source"
     ? sourceDocument(diagnostic, diagnostic.primary, filePath, source)
@@ -164,7 +183,7 @@ function renderNeutralTypeCollision(
     leftOriginType,
     leftDisplayOrigin,
     rightOriginType,
-    rightOrigin,
+    rightDisplayOrigin,
     source,
     filePath,
     detailed,
@@ -174,9 +193,9 @@ function renderNeutralTypeCollision(
   const provenanceColumns = detailed
     ? provenancePathColumns(
       leftOriginType,
-      leftPath,
+      leftPath.length > 0 ? leftPath : leftDisplayOrigin ? [leftDisplayOrigin] : [],
       rightOriginType,
-      rightPath,
+      rightPath.length > 0 ? rightPath : rightDisplayOrigin ? [rightDisplayOrigin] : [],
       diagnostic,
       filePath,
       source,
@@ -189,7 +208,16 @@ function renderNeutralTypeCollision(
   const availableWidth = terminalWidth();
   const subject = callSlot?.subject ?? adapter.subject(diagnostic, source);
   if (detailed) {
-    const collisionLines = participants && source
+    const collisionLines = arityMismatch
+      ? [
+        `  type error: ${subject} expects ${arityMismatch.expected} arguments but got ${arityMismatch.actual}`,
+        "",
+        `  expected: ${leftType}`,
+        `  received: ${rightType}`,
+        "",
+        ...(collisionExcerpt ? collisionExcerpt.map((line) => `  ${line}`) : []),
+      ]
+      : participants && source
       ? [
         `  type error: ${subject} can't be both:`,
         ...participantEquationLines(diagnostic, participants, source).map((line) =>
@@ -233,13 +261,14 @@ function renderNeutralTypeCollision(
     rightOriginType,
     originColumns,
     leftDisplayOrigin,
-    rightOrigin,
+    rightDisplayOrigin,
     source,
     filePath,
     participants,
     leftOriginLabel,
     rightOriginLabel,
     availableWidth,
+    arityMismatch,
   );
   return { text: `${plainText(document)}\n`, document };
 }
@@ -262,9 +291,32 @@ function compactCollisionDocument(
   leftOriginLabel?: string,
   rightOriginLabel?: string,
   availableWidth = 120,
+  arityMismatch?: CallArityMismatch,
 ): Document {
   const lines: Line[] = [header];
-  if (participants && source) {
+  if (arityMismatch) {
+    if (collisionExcerpt) {
+      lines.push(collisionExcerpt.source);
+      lines.push(documentLine(
+        span(collisionExcerpt.underlinePrefix),
+        span(
+          `${collisionExcerpt.underline} type error: ${subject} expects ${arityMismatch.expected} arguments but got ${arityMismatch.actual}`,
+          "error",
+        ),
+      ));
+    } else {
+      lines.push(documentLine(
+        span(
+          `  type error: ${subject} expects ${arityMismatch.expected} arguments but got ${arityMismatch.actual}`,
+          "error",
+        ),
+      ));
+    }
+    lines.push(
+      documentLine(span("  expected: ", "secondary"), span(leftType, "type")),
+      documentLine(span("  received: ", "secondary"), span(rightType, "type")),
+    );
+  } else if (participants && source) {
     lines.push(documentLine(span(`  type error: ${subject} can't be both:`, "error")));
     lines.push(...participantEquationLines(diagnostic, participants, source));
   } else if (collisionExcerpt) {
@@ -276,7 +328,9 @@ function compactCollisionDocument(
   } else {
     lines.push(documentLine(span(`  type error: ${subject} can't be both:`, "error")));
   }
-  if (!participants || !source) lines.push(typeBulletLine(leftType), typeBulletLine(rightType));
+  if (!arityMismatch && (!participants || !source)) {
+    lines.push(typeBulletLine(leftType), typeBulletLine(rightType));
+  }
   const leftCell = compactOriginCell(
     diagnostic,
     leftOriginType,
@@ -574,10 +628,59 @@ function collisionSubject(
   return diagnostic.failure.frame.subject || "call";
 }
 
+function annotationMismatchSubject(
+  diagnostic: AuditableDiagnostic,
+  source: string | undefined,
+): string {
+  const slot = annotationMismatchSlot(diagnostic);
+  if (slot) return slot.parameterName;
+  return collisionSubject(diagnostic, source);
+}
+
+type AnnotationMismatchSlot = {
+  annotation: ClaimEntry;
+  parameter: ClaimEntry;
+  parameterName: string;
+};
+
+function annotationMismatchSlot(
+  diagnostic: AuditableDiagnostic,
+): AnnotationMismatchSlot | undefined {
+  if (diagnostic.failure.frame.rule !== "InferAnnotation.ParameterMatchesAnnotation") {
+    return undefined;
+  }
+  const annotation = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
+    entry.kind === "claim" && entry.claim.kind === "fact" &&
+    entry.claim.text === "parameter annotation" && entry.origin.kind === "source"
+  );
+  const primaryStart = diagnostic.primary.kind === "source"
+    ? diagnostic.primary.span.start
+    : Number.POSITIVE_INFINITY;
+  const parameter = diagnostic.support.entries
+    .filter((entry): entry is ClaimEntry =>
+      entry.kind === "claim" && entry.claim.kind === "has-type" &&
+      entry.claim.subject.startsWith("parameter ") && entry.origin.kind === "source" &&
+      entry.origin.span.start <= primaryStart
+    )
+    .sort((left, right) =>
+      left.origin.kind === "source" && right.origin.kind === "source"
+        ? right.origin.span.start - left.origin.span.start
+        : 0
+    )[0];
+  if (!annotation || !parameter || parameter.claim.kind !== "has-type") return undefined;
+  return {
+    annotation,
+    parameter,
+    parameterName: parameter.claim.subject,
+  };
+}
+
 type CallCollisionSlot = {
   subject: string;
   calleeClaim?: ClaimEntry;
   calleeLabel?: string;
+  argumentClaim?: ClaimEntry;
+  argumentLabel?: string;
 };
 
 function callCollisionSlot(
@@ -587,9 +690,55 @@ function callCollisionSlot(
   const path = diagnostic.failure.violation.kind === "contradicted"
     ? diagnostic.failure.violation.conflictPath
     : [];
+  const baseSubject = collisionSubject(diagnostic, source);
+  const calleeClaim = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
+    entry.kind === "claim" && entry.claim.kind === "fact" &&
+    entry.claim.text.startsWith("callee ")
+  );
+  const argumentClaim = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
+    entry.kind === "claim" && entry.claim.kind === "fact" &&
+    entry.claim.text === "call argument"
+  );
+  const calleeName = calleeClaim?.claim.kind === "fact"
+    ? /^callee ([^:]+):/.exec(calleeClaim.claim.text)?.[1]
+    : undefined;
+  const arityMismatch = callArityMismatch(diagnostic);
+  const parameterGroup = arityMismatch
+    ? groupedCallClaims(
+      diagnostic,
+      "parameter",
+      diagnostic.failure.violation.kind === "contradicted"
+        ? diagnostic.failure.violation.observed.left
+        : undefined,
+    )
+    : undefined;
+  const argumentGroup = arityMismatch
+    ? groupedCallClaims(
+      diagnostic,
+      "argument",
+      diagnostic.failure.violation.kind === "contradicted"
+        ? diagnostic.failure.violation.observed.right
+        : undefined,
+    )
+    : undefined;
   const outerArgument = path[0]?.kind === "tuple-item" ? path[0].index : undefined;
   const fnParameterAt = path.findIndex((segment) => segment.kind === "fn-param");
-  if (outerArgument === undefined || fnParameterAt < 0) return undefined;
+  if (outerArgument === undefined || fnParameterAt < 0) {
+    if (!calleeClaim && !argumentClaim) return undefined;
+    return {
+      subject: calleeName ?? baseSubject,
+      calleeClaim: parameterGroup ?? calleeClaim,
+      calleeLabel: parameterGroup
+        ? `${arityMismatch?.expected} parameters declared here`
+        : calleeName
+        ? `${calleeName} signature`
+        : "callee signature",
+      argumentClaim: argumentGroup ?? argumentClaim,
+      argumentLabel: arityMismatch
+        ? `${arityMismatch.actual} arguments supplied here`
+        : "arguments supplied here",
+    };
+  }
 
   // Workman represents a multi-parameter callback as one packed tuple parameter.
   // The tuple item following fn-param therefore names the source-level parameter.
@@ -599,20 +748,59 @@ function callCollisionSlot(
     : path[fnParameterAt].kind === "fn-param"
     ? path[fnParameterAt].index
     : 0;
-  const baseSubject = collisionSubject(diagnostic, source);
-  const calleeClaim = diagnostic.support.entries.find((entry): entry is ClaimEntry =>
-    entry.kind === "claim" && entry.claim.kind === "fact" &&
-    entry.claim.text.startsWith("callee ")
-  );
-  const calleeName = calleeClaim?.claim.kind === "fact"
-    ? /^callee ([^:]+):/.exec(calleeClaim.claim.text)?.[1]
-    : undefined;
   return {
     subject: `${baseSubject} parameter ${parameterIndex + 1}`,
     calleeClaim,
     calleeLabel: calleeName
       ? `${calleeName} callback parameter ${parameterIndex + 1}`
       : `argument ${outerArgument + 1} callback parameter ${parameterIndex + 1}`,
+    argumentClaim,
+    argumentLabel: "arguments supplied here",
+  };
+}
+
+function callArityMismatch(diagnostic: AuditableDiagnostic): CallArityMismatch | undefined {
+  if (diagnostic.failure.violation.kind !== "contradicted") return undefined;
+  const snapshot = (id: string) =>
+    diagnostic.support.types.find((candidate) => candidate.id === id)?.shape;
+  const left = snapshot(diagnostic.failure.violation.observed.left);
+  const right = snapshot(diagnostic.failure.violation.observed.right);
+  if (left?.kind !== "tuple" || right?.kind !== "tuple") return undefined;
+  if (left.items.length === right.items.length) return undefined;
+  return { expected: left.items.length, actual: right.items.length };
+}
+
+function groupedCallClaims(
+  diagnostic: AuditableDiagnostic,
+  kind: "parameter" | "argument",
+  type: string | undefined,
+): ClaimEntry | undefined {
+  if (!type) return undefined;
+  const claims = diagnostic.support.entries
+    .filter((entry): entry is ClaimEntry =>
+      entry.kind === "claim" && entry.claim.kind === "has-type" &&
+      entry.claim.subject.startsWith(`${kind} `) && entry.origin.kind === "source"
+    )
+    .sort((left, right) =>
+      left.origin.kind === "source" && right.origin.kind === "source"
+        ? left.origin.span.start - right.origin.span.start
+        : 0
+    );
+  const first = claims[0];
+  const last = claims.at(-1);
+  if (!first || !last || first.origin.kind !== "source" || last.origin.kind !== "source") {
+    return undefined;
+  }
+  if (first.origin.filePath !== last.origin.filePath) return undefined;
+  return {
+    kind: "claim",
+    id: `grouped-${kind}s`,
+    claim: { kind: "has-type", subject: `${kind}s`, type },
+    origin: {
+      kind: "source",
+      filePath: first.origin.filePath,
+      span: { ...first.origin.span, end: last.origin.span.end },
+    },
   };
 }
 
