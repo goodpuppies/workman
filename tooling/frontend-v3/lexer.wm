@@ -151,20 +151,6 @@ let lex = (source) => {
     ),
     span.endPos)
   };
-  let makeTokSimpleMated = (tokkind, pos, txt, mate) => {
-    let span = makeSpan(pos, tokkind, txt);
-    let (tok, nextPos) = (Token.Token(
-      tokkind,
-      span,
-      mate,
-      []
-    ),
-    span.endPos);
-    .{  
-      tokens = [tok],
-      newPosition = nextPos
-    }
-  };
   let makeTokSimpleSymbol = (tokkind, pos, txt) => {
     let (tok, nextPos) = makeToken(
       tokkind,
@@ -198,14 +184,16 @@ let lex = (source) => {
   //Single-pass mating: fold one freshly-read token into acc, pushing openers
   //onto `stack` as (tokenIndex, group), and on closers popping the top entry
   //and cross-linking both tokens' mateIdx. Pure: the stack is just a list.
+  //The new token's index is simply acc's current length.
   //TODO mismatched-group and stray closers should become LexicalMarks here
   //instead of passing through silently.
-  let mateStep = (tok, acc, stack, count) => {
+  let mateStep = (tok, acc, stack) => {
+    let idx = List.length(acc);
 
     //acc is newest-first; the token that received index i lives at acc slot
-    //(count - 1 - i), where count is how many tokens existed after it.
-    let accSlot = (idx, count) => {
-      count - 1 - idx
+    //(total - 1 - i), where total is how many tokens exist after the append.
+    let accSlot = (i, total) => {
+      total - 1 - i
     };
 
     match(Token.pairRole(tok.kind)) {
@@ -213,17 +201,17 @@ let lex = (source) => {
         ([tok, ..acc], stack)
       },
       Some(Token.PairRole(group, Token.Open)) => {
-        ([tok, ..acc], [(count, group), ..stack])
+        ([tok, ..acc], [(idx, group), ..stack])
       },
       Some(Token.PairRole(group, Token.Close)) => {
         match(stack) {
           [(Var(openIdx), Var(openGroup)), ..restStack] => {
             if (openGroup == group) {
               let closer = .{..tok, mateIdx = Token.Mate(openIdx)};
-              let slot = accSlot(openIdx, count + 1);
+              let slot = accSlot(openIdx, idx + 1);
               let acc2 = match(List.at(acc, slot)) {
                 Some(opener) => {
-                  replaceAt(acc, slot, .{..opener, mateIdx = Token.Mate(count)})
+                  replaceAt(acc, slot, .{..opener, mateIdx = Token.Mate(idx)})
                 },
                 None => {
                   acc
@@ -289,6 +277,9 @@ let lex = (source) => {
               newPosition = endPos
             }
           },
+          Some(">") => {
+            (Token.PunctuationToken(Token.ThinArrow), pos, txt) :> makeTokSimpleSymbol
+          },
           _ => {
             (Token.OperatorToken(Token.Subtract), pos, txt) :> makeTokSimpleSymbol
           }
@@ -341,12 +332,26 @@ let lex = (source) => {
           }
         }
       },
+      ":" => {
+        match (peek(pos.index + 1)) {
+          Some(">") => {
+            (Token.PunctuationToken(Token.FatArrow), pos, txt) :> makeTokSimpleSymbol
+          },
+          _ => {  
+            (Token.PunctuationToken(Token.Colon), pos, txt) :> makeTokSimpleSymbol
+          }
+        }
+      },
       ";" => {
         (Token.PunctuationToken(Token.Semicolon), pos, txt) :> makeTokSimpleSymbol
       },
       "{" => {
         (Token.PunctuationToken(Token.LeftBrace), pos, txt) :> makeTokSimpleSymbol
       },
+      "}" => {
+        (Token.PunctuationToken(Token.RightBrace), pos, txt) :> makeTokSimpleSymbol
+      },
+
 
       Var(x) => {print(`whats this ${x}`);?}
     };
@@ -382,7 +387,11 @@ let lex = (source) => {
   };
   //#endregion
 
-  let rec loop = (pos, m, acc, stack, count) => {
+  //Only the open-bracket stack is mate-specific state; acc stays a plain arg.
+  //The token index used for mates is derived inside mateStep from acc length,
+  //since every token is appended to acc exactly once.
+
+  let rec loop = (pos, m, acc, stack) => {
     if (pos.index < length) {
 
       let pos = skipWhitespace(pos);
@@ -394,36 +403,29 @@ let lex = (source) => {
       if (pos.index >= length) {Panic("todo")} else {};
       match(class) {
         Char.classSpace => {
-          loop(bumpPos(pos), Default, acc, stack, count)
+          Panic("todo");
+          loop(bumpPos(pos), Default, acc, stack)
         },
         Char.classLetter => {
           let res = readFromLetter(pos);
           match(res.tokens) {
             [tok] => {
-              let (acc2, stack2) = mateStep(tok, acc, stack, count);
-              loop(
-                res.newPosition,
-                Default,
-                acc2,
-                stack2,
-                count + List.length(res.tokens)
-              )
+              let (acc2, stack2) = mateStep(tok, acc, stack);
+              loop(res.newPosition, Default, acc2, stack2)
             },
             _ => {
               loop(
                 res.newPosition,
                 Default,
                 List.append(List.reverse(res.tokens), acc),
-                stack,
-                count + List.length(res.tokens)
+                stack
               )
             }
           }
         },
         Char.classDigit => {
-          loop(bumpPos(pos), Default, [
-            ?, ..acc
-          ], stack, count)
+          Panic("todo");
+          loop(bumpPos(pos), Default, [?, ..acc], stack)
         },
         Char.classStringDelimiter => {?},
         Char.classSymbol => {
@@ -432,14 +434,8 @@ let lex = (source) => {
           --print(`tokens:\n${List.toStringRender(res.tokens, ttToString)}`);
           match(res.tokens) {
             [tok] => {
-              let (acc2, stack2) = mateStep(tok, acc, stack, count);
-              loop(
-                res.newPosition,
-                Default,
-                acc2,
-                stack2,
-                count + List.length(res.tokens)
-              )
+              let (acc2, stack2) = mateStep(tok, acc, stack);
+              loop(res.newPosition, Default, acc2, stack2)
             },
             //comment batches carry no pairs today; pass through
             _ => {
@@ -447,8 +443,7 @@ let lex = (source) => {
                 res.newPosition,
                 Default,
                 List.append(List.reverse(res.tokens), acc),
-                stack,
-                count + List.length(res.tokens)
+                stack
               )
             }
           }
@@ -486,5 +481,5 @@ let lex = (source) => {
     }
   };
 
-  loop(Source.Position(0,0,0), Default, [], [], 0)
+  loop(Source.Position(0, 0, 0), Default, [], [])
 };
