@@ -165,69 +165,69 @@ let lex = (source) => {
 
   //#region mate bookkeeping (single-pass delimiter pairing)
 
-
-
-  let rec replaceAt = (list, n, tok) => {
-    if (n <= 0) {
-      match(list) {
-        [_, ..rest] => {[tok, ..rest]},
-        _ => {[tok]}
-      }
-    } else {
-      match(list) {
-        [head, ..rest] => {[head, ..replaceAt(rest, n - 1, tok)]},
-        _ => {[]}
-      }
-    }
-  };
-
-  //Single-pass mating: fold one freshly-read token into acc, pushing openers
-  //onto `stack` as (tokenIndex, group), and on closers popping the top entry
-  //and cross-linking both tokens' mateIdx. Pure: the stack is just a list.
-  //The new token's index is simply acc's current length.
+  //Forward pass mating: openers push (index, group) onto the stack; closers
+  //pop it, learn their opener immediately, and record the pair for later.
+  //No rewriting of acc happens here - openers get their Mate stamped at EOF,
+  //in the same walk that reverses acc into source order.
   //TODO mismatched-group and stray closers should become LexicalMarks here
   //instead of passing through silently.
-  let mateStep = (tok, acc, stack) => {
-    let idx = List.length(acc);
-
-    //acc is newest-first; the token that received index i lives at acc slot
-    //(total - 1 - i), where total is how many tokens exist after the append.
-    let accSlot = (i, total) => {
-      total - 1 - i
-    };
-
+  let mateStep = (tok, idx, stack, pairs) => {
     match(Token.pairRole(tok.kind)) {
       None => {
-        ([tok, ..acc], stack)
+        (tok, stack, pairs)
       },
       Some(Token.PairRole(group, Token.Open)) => {
-        ([tok, ..acc], [(idx, group), ..stack])
+        (tok, [(idx, group), ..stack], pairs)
       },
       Some(Token.PairRole(group, Token.Close)) => {
         match(stack) {
           [(Var(openIdx), Var(openGroup)), ..restStack] => {
             if (openGroup == group) {
-              let closer = .{..tok, mateIdx = Token.Mate(openIdx)};
-              let slot = accSlot(openIdx, idx + 1);
-              let acc2 = match(List.at(acc, slot)) {
-                Some(opener) => {
-                  replaceAt(acc, slot, .{..opener, mateIdx = Token.Mate(idx)})
-                },
-                None => {
-                  acc
-                }
-              };
-              ([closer, ..acc2], restStack)
+              //closer knows its opener right away; opener waits for EOF
+              (.{..tok, mateIdx = Token.Mate(openIdx)}, restStack, [(openIdx, idx), ..pairs])
             } else {
               //mismatched group: TODO LexicalMark
-              ([tok, ..acc], stack)
+              (tok, stack, pairs)
             }
           },
           [] => {
             //stray closer: TODO LexicalMark
-            ([tok, ..acc], stack)
+            (tok, stack, pairs)
           }
         }
+      }
+    }
+  };
+
+  let rec findCloseFor = (pairs, openIdx) => {
+    match(pairs) {
+      [] => {None},
+      [(Var(o), Var(c)), ..rest] => {
+        if (o == openIdx) {
+          Some(c)
+        } else {
+          findCloseFor(rest, openIdx)
+        }
+      }
+    }
+  };
+
+  //Final walk: reverse acc (newest-first) into source order, stamping every
+  //opener with its closer's index from `pairs`. Replaces plain List.reverse.
+  let rec reverseAndStamp = (items, i, pairs, out) => {
+    match(items) {
+      [] => {out},
+      [tok, ..rest] => {
+        let tok2 = match(Token.pairRole(tok.kind)) {
+          Some(Token.PairRole(_, Token.Open)) => {
+            match(findCloseFor(pairs, i)) {
+              Some(closeIdx) => {.{..tok, mateIdx = Token.Mate(closeIdx)}},
+              None => {tok} //unclosed opener: TODO LexicalMark
+            }
+          },
+          _ => {tok}
+        };
+        reverseAndStamp(rest, i - 1, pairs, [tok2, ..out])
       }
     }
   };
@@ -335,7 +335,7 @@ let lex = (source) => {
       ":" => {
         match (peek(pos.index + 1)) {
           Some(">") => {
-            (Token.PunctuationToken(Token.FatArrow), pos, txt) :> makeTokSimpleSymbol
+            (Token.PunctuationToken(Token.PipeForward), pos, txt) :> makeTokSimpleSymbol
           },
           _ => {  
             (Token.PunctuationToken(Token.Colon), pos, txt) :> makeTokSimpleSymbol
@@ -352,8 +352,7 @@ let lex = (source) => {
         (Token.PunctuationToken(Token.RightBrace), pos, txt) :> makeTokSimpleSymbol
       },
 
-
-      Var(x) => {print(`whats this ${x}`);?}
+      Var(x) => {print(`whats this "${x}"`);?}
     };
     readResult
   };
@@ -391,7 +390,14 @@ let lex = (source) => {
   //The token index used for mates is derived inside mateStep from acc length,
   //since every token is appended to acc exactly once.
 
-  let rec loop = (pos, m, acc, stack) => {
+  //Mating state: the open-bracket stack plus recorded (openIdx, closeIdx)
+  //pairs waiting to be stamped during the final reverse at EOF.
+  record Mates = {
+    stack: List<(Number, Token.PairGroup)>,
+    pairs: List<(Number, Number)>,
+  };
+
+  let rec loop = (pos, m, acc, mt: Mates) => {
     if (pos.index < length) {
 
       let pos = skipWhitespace(pos);
@@ -404,28 +410,34 @@ let lex = (source) => {
       match(class) {
         Char.classSpace => {
           Panic("todo");
-          loop(bumpPos(pos), Default, acc, stack)
+          loop(bumpPos(pos), Default, acc, mt)
         },
         Char.classLetter => {
           let res = readFromLetter(pos);
           match(res.tokens) {
             [tok] => {
-              let (acc2, stack2) = mateStep(tok, acc, stack);
-              loop(res.newPosition, Default, acc2, stack2)
+              let (tok2, stack2, pairs2) =
+                mateStep(tok, List.length(acc), mt.stack, mt.pairs);
+              loop(
+                res.newPosition,
+                Default,
+                [tok2, ..acc],
+                .{stack = stack2, pairs = pairs2}
+              )
             },
             _ => {
               loop(
                 res.newPosition,
                 Default,
                 List.append(List.reverse(res.tokens), acc),
-                stack
+                mt
               )
             }
           }
         },
         Char.classDigit => {
           Panic("todo");
-          loop(bumpPos(pos), Default, [?, ..acc], stack)
+          loop(bumpPos(pos), Default, [?, ..acc], mt)
         },
         Char.classStringDelimiter => {?},
         Char.classSymbol => {
@@ -434,8 +446,14 @@ let lex = (source) => {
           --print(`tokens:\n${List.toStringRender(res.tokens, ttToString)}`);
           match(res.tokens) {
             [tok] => {
-              let (acc2, stack2) = mateStep(tok, acc, stack);
-              loop(res.newPosition, Default, acc2, stack2)
+              let (tok2, stack2, pairs2) =
+                mateStep(tok, List.length(acc), mt.stack, mt.pairs);
+              loop(
+                res.newPosition,
+                Default,
+                [tok2, ..acc],
+                .{stack = stack2, pairs = pairs2}
+              )
             },
             //comment batches carry no pairs today; pass through
             _ => {
@@ -443,7 +461,7 @@ let lex = (source) => {
                 res.newPosition,
                 Default,
                 List.append(List.reverse(res.tokens), acc),
-                stack
+                mt
               )
             }
           }
@@ -455,31 +473,36 @@ let lex = (source) => {
       }
     } else {
       //eof
-      //TODO: leftover `stack` entries are unclosed delimiters -> LexicalMarks
+      //TODO: leftover `mt.stack` entries are unclosed delimiters -> LexicalMarks
       match(?) {
         Ident => {
-          List.reverse([
-            Token.Token(
-              Token.EndOfFileToken,
-              ?,
-              Token.NoMate,
-              []
-            ),
-            Token.Token(
-              Token.LowerIdentifierToken,
-              ?,
-              Token.NoMate,
-              []
-            ),
-            ..acc
-          ])
+          reverseAndStamp(
+            [
+              Token.Token(
+                Token.EndOfFileToken,
+                ?,
+                Token.NoMate,
+                []
+              ),
+              Token.Token(
+                Token.LowerIdentifierToken,
+                ?,
+                Token.NoMate,
+                []
+              ),
+              ..acc
+            ],
+            List.length(acc) + 1,
+            mt.pairs,
+            []
+          )
         },
         Default => {
-          List.reverse([?, ..acc])
+          reverseAndStamp([?, ..acc], List.length(acc), mt.pairs, [])
         },
       }
     }
   };
 
-  loop(Source.Position(0, 0, 0), Default, [], [])
+  loop(Source.Position(0, 0, 0), Default, [], .{stack = [], pairs = []})
 };
