@@ -2,40 +2,52 @@ from "./lexer.wm" import { lex };
 from "./token.wm" import * as Token;
 from js.global("Deno") import { readTextFileSync };
 
-let printTokenType = (tok) => {
-  match(tok.kind) {
-    Token.LowerIdentifierToken => { "ident" },
-    Token.UnknownToken => { "symbol" },
-    Token.EndOfFileToken => { "eof" }
-  }
-};
-
-let getTokText = (t:Token.Token, source) => {
+let getTokText = (t: Token.Token, source) => {
   source 
     :> .slice(t.span.startPos.index, t.span.endPos.index)
-    :> Result.withDefault("")
+    :> Result.debug
 };
 
-let printToks = (list, sourceText) => {
+let printToken = (tok: Token.Token, source) => {
+  let text = getTokText(tok, source);
+  
+  // Extract line and col for easy debugging
+  let line = tok.span.startPos.line;
+  let col = tok.span.startPos.col;
+  
+  // Format the output. Wrapping the text in single quotes helps visualize 
+  // whitespace or empty strings (like the EOF token).
+  print(`[Ln ${line}, Col ${col}] ${tok.kind} -> '${text}'`);
+};
 
+
+let printToks = (list, sourceText) => {
   let rec listPrinter = (l) => {
     match(l) {
       [] => { void },
       [tok, ..rest] => {
-        printTokenType(tok) :> print;
-        // print token content
-        getTokText(tok, sourceText) :> print;
+        printToken(tok, sourceText);
         listPrinter(rest)
       }
     }
   };
-  listPrinter(list)
+  
+  print("=== TOKEN STREAM ===");
+  listPrinter(list);
+  print("====================");
 };
 
 let main = () => {
-  let source = readTextFileSync("tooling/frontend-v3/example.wm") :> Result.debug();
+  // Read the source file
+  let source = readTextFileSync("tooling/frontend-v3/example.wm") :> Result.debug;
 
-  printToks(source :> lex, source);
+  // Lex the source into a token list
+  let tokens = lex(source);
 
-  print(source)
+  // Print the tokens
+  printToks(tokens, source);
+
+  // Print the raw source text at the end for comparison
+  --print("\n--- Raw Source ---");
+  --print(source)
 };

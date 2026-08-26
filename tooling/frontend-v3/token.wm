@@ -44,6 +44,7 @@ type Punctuation =
   | LeftParen        -- `(`
   | RightParen       -- `)`
   | LeftBrace        -- `{`
+  | DotLeftBrace     -- `.{`
   | RightBrace       -- `}`
   | LeftBracket      -- `[`
   | RightBracket     -- `]`
@@ -118,12 +119,15 @@ let oneWideKinds = [
   OperatorToken(Add),
   OperatorToken(Multiply),
   OperatorToken(Remainder),
-  OperatorToken(BooleanNot)
+  OperatorToken(BooleanNot),
+  OperatorToken(Divide),
+  OperatorToken(Subtract)
 ];
 
 -- Token metadata: kinds whose lexemes always span exactly two characters.
 let twoWideKinds = [
   PunctuationToken(DoubleDot),    -- ..
+  PunctuationToken(DotLeftBrace), -- .{
   PunctuationToken(FatArrow),     -- =>
   PunctuationToken(ThinArrow),    -- ->
   PunctuationToken(PipeForward),  -- |>

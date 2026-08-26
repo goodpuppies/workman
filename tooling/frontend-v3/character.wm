@@ -5,7 +5,7 @@ from js.global("String.prototype.charCodeAt") import unsafe {
 let classSpace = 1;
 let classLetter = 2;
 let classDigit = 3;
-let classStringDelimiter = 4;
+let classStrQuo = 4;
 let classSymbol = 5;
 let classOther = 6;
 

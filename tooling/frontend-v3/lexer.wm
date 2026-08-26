@@ -1,7 +1,6 @@
 from "./character.wm" import * as Char;
 from "./token.wm" import * as Token;
 from "./source.wm" import * as Source;
-from "../../std/list.wm" import * as List;
 
 type Mode = Default | Ident;
 
@@ -32,14 +31,23 @@ let lex = (source) => {
   let length = textLength(source);
   if (length ==0) {?} else {};
 
-  let peek = (index) => {
+  let peekByOne = (index) => {
     //peek the index to get the character
-    let lenght = length;
-    if (index < 0 || index >= lenght) {
+    if (index < 0 || index >= length) {
       None
     } else {
       Some(source 
         :> .slice(index, index + 1) 
+        :> Result.debug
+      )
+    }
+  };
+  let peekBy = (index, amount) => {
+    if (index<0 || index >= length) {
+      None
+    } else {
+      Some(source
+        :> .slice(index, index + amount)
         :> Result.debug
       )
     }
@@ -59,11 +67,11 @@ let lex = (source) => {
   //Generic pure reader: consume characters from `pos` while `keepGoing(ch, pos)`
   //holds, stopping *before* the first character that fails (or at EOF).
   //Returns (text, endPos).
-  let rec readTillEnd = (pos, keepGoing) => {
-    match(peek(pos.index)) {
+  let rec readTillEnd = (pos, keepGoing, kinds) => {
+    match(peekByOne(pos.index)) {
       Some(ch) => {
-        if (keepGoing(ch, pos)) {
-          let (rest, endPos) = readTillEnd(advancePosition(pos, ch), keepGoing);
+        if (keepGoing(ch, pos, kinds)) {
+          let (rest, endPos) = readTillEnd(advancePosition(pos, ch), keepGoing, kinds);
           (ch ++ rest, endPos)
         } else {
           ("", pos)
@@ -77,17 +85,21 @@ let lex = (source) => {
   };
 
   //A word character: letter (which includes `_`, see asciiClasses) or digit.
-  let isWordChar = (ch, pos) => {
+
+  let isKind = (ch, pos, kinds) => {
     let cls = Char.classify(Char.codeAt(source, pos.index));
-    cls == Char.classLetter || cls == Char.classDigit
+    //TODO std add List.contains
+    List.any(kinds, (c) => { c == cls })
   };
+  let wordKinds = [Char.classLetter, Char.classDigit];
+  
 
   //Advance exactly n characters, threading line/col through each one.
   let rec advanceN = (pos, n) => {
     if (n <= 0) {
       pos
     } else {
-      let ch = match(peek(pos.index)) {
+      let ch = match(peekByOne(pos.index)) {
         Some(c) => {c},
         None => {""}
       };
@@ -113,16 +125,21 @@ let lex = (source) => {
           Token.LineComment => {
             //read until end of line; EOF terminates too
             let (commentText, endPos) =
-              readTillEnd(pos, (ch, p) => {ch != "\n"});
+              //TODO JANK
+              readTillEnd(pos, (ch, p, _) => {ch != "\n"}, None);
             --print(`line comment: ${commentText}`);
             endPos
           },
           Token.LowerIdentifierToken => {
-            let (_, endPos) = readTillEnd(pos, isWordChar);
+            let (_, endPos) = readTillEnd(pos, isKind, wordKinds);
             endPos
           },
           Token.UpperIdentifierToken => {
-            let (_, endPos) = readTillEnd(pos, isWordChar);
+            let (_, endPos) = readTillEnd(pos, isKind, wordKinds);
+            endPos
+          },
+          Token.IntegerToken => {
+            let (_, endPos) = readTillEnd(pos, isKind, [Char.classDigit]);
             endPos
           },
           Var(x) => {Panic(`missing read to end for type ${x}`)}
@@ -252,12 +269,16 @@ let lex = (source) => {
   };
 
   let printPos = (pos) =>{
-    print (peek(pos.index))
+    let x = peekBy(pos.index, 1);
+    match(x) {
+      Some(x) => {print x},
+      _ => {print "eof i think"}
+    }
   };
 
   let readFromSymbol = (pos):ReadResult => {
     --printPos(pos);
-    let txt = match(peek(pos.index)) {
+    let txt = match(peekByOne(pos.index)) {
       Some(x) => {x},
       None => {
         //#TODO we should not have to check this earlier ascii check knows something here
@@ -268,7 +289,7 @@ let lex = (source) => {
 
     let readResult = match(txt) {
       "-" => {
-        match(peek(pos.index + 1)) {
+        match(peekByOne(pos.index + 1)) {
           Some("-") => {
             let (cStartTok, afterpos) = makeToken(Token.CommentStartToken, pos, txt);
             let (lineCommentTok, endPos) = makeToken(Token.LineComment, afterpos, txt);
@@ -286,7 +307,7 @@ let lex = (source) => {
         }
       },
       "/" => {
-        match(peek(pos.index + 1)) {
+        match(peekByOne(pos.index + 1)) {
           Some("/") => {
             let (cStartTok, afterpos) = makeToken(Token.CommentStartToken, pos, txt);
             let (lineCommentTok, endPos) = makeToken(Token.LineComment, afterpos, txt);
@@ -310,7 +331,7 @@ let lex = (source) => {
         (Token.PunctuationToken(Token.Comma), pos, txt) :> makeTokSimpleSymbol
       },
       "=" => {
-        match (peek(pos.index + 1)) {
+        match (peekByOne(pos.index + 1)) {
           Some(">") => {
             (Token.PunctuationToken(Token.FatArrow), pos, txt) :> makeTokSimpleSymbol
           },
@@ -323,7 +344,7 @@ let lex = (source) => {
         }
       },
       "|" => {
-        match (peek(pos.index + 1)) {
+        match (peekByOne(pos.index + 1)) {
           Some("|") => {
             (Token.OperatorToken(Token.BooleanOr), pos, txt) :> makeTokSimpleSymbol
           },
@@ -333,7 +354,7 @@ let lex = (source) => {
         }
       },
       ":" => {
-        match (peek(pos.index + 1)) {
+        match (peekByOne(pos.index + 1)) {
           Some(">") => {
             (Token.PunctuationToken(Token.PipeForward), pos, txt) :> makeTokSimpleSymbol
           },
@@ -351,6 +372,28 @@ let lex = (source) => {
       "}" => {
         (Token.PunctuationToken(Token.RightBrace), pos, txt) :> makeTokSimpleSymbol
       },
+      "(" => {
+        (Token.PunctuationToken(Token.LeftParen),pos,txt ):>makeTokSimpleSymbol
+      },
+      ")" => {
+        (Token.PunctuationToken(Token.RightParen),pos,txt ):>makeTokSimpleSymbol
+      },
+      "." => {
+        match (peekByOne(pos.index + 1)) {
+          Some("{") => {
+            (Token.PunctuationToken(Token.DotLeftBrace),pos,txt):>makeTokSimpleSymbol
+          },
+          Some(".") => {
+            (Token.PunctuationToken(Token.DoubleDot),pos,txt):>makeTokSimpleSymbol
+          },
+          _ => {
+            (Token.PunctuationToken(Token.Dot),pos,txt):>makeTokSimpleSymbol
+          }
+        }
+      },
+      "*"=> {
+        (Token.OperatorToken(Token.Multiply)) :> makeTokSimpleSymbol
+      },
       Var(x) => {
         print(`whats this "${x}"`);
         ?
@@ -360,7 +403,7 @@ let lex = (source) => {
   };
 
   let readFromLetter = (pos): ReadResult => {
-    let (word, endPos) = readTillEnd(pos, isWordChar);
+    let (word, endPos) = readTillEnd(pos, isKind, wordKinds);
     let firstCode = Char.codeAt(word, 0);
     //A-Z starts an upper (constructor/type) identifier, anything else lower
     let kind = if (Char.isUpperCode(firstCode)) {
@@ -374,9 +417,83 @@ let lex = (source) => {
       newPosition = endPos
     }
   };
+  
+  let readFromDigit = (pos):ReadResult => {
+    let (number, endPos) = 
+      readTillEnd(pos, isKind, [Char.classDigit]);
+    let (tok, _) = makeToken(Token.IntegerToken, pos, number);
+    .{
+      tokens = [tok],
+      newPosition = endPos
+    }
+  };
+    
+  let readFromStringLit = (pos): ReadResult => {
+    // 1. Get the starting quote character (usually `"`)
+    let quoteCh = match(peekByOne(pos.index)) {
+      Some(c) => { c },
+      None => { ? } // Fallback, though we shouldn't hit this
+    };
 
+    let posAfterQuote = advancePosition(pos, quoteCh);
+
+    // 2. Recursively read characters until we find the unescaped closing quote
+    let rec readBody = (currPos, isEscaping, accText) => {
+      match(peekByOne(currPos.index)) {
+        Some(ch) => {
+          if (isEscaping) {
+            // The previous char was '\', so consume this one unconditionally
+            readBody(advancePosition(currPos, ch), false, accText ++ ch)
+          } else {
+            if (ch == "\\") {
+              // Found a backslash, enter escape mode for the next character
+              readBody(advancePosition(currPos, ch), true, accText ++ ch)
+            } else {
+              if (ch == quoteCh) {
+                // Found the closing quote!
+                let endPos = advancePosition(currPos, ch);
+                (accText ++ ch, endPos)
+              } else {
+                // Normal character inside the string
+                readBody(advancePosition(currPos, ch), false, accText ++ ch)
+              }
+            }
+          }
+        },
+        None => {
+          // Reached EOF before the string was closed
+          (accText, currPos)
+        }
+      }
+    };
+
+    // Start reading the body after the initial quote. 
+    // `accText` starts with the opening quote.
+    let (fullText, endPos) = readBody(posAfterQuote, false, quoteCh);
+
+    // 3. Create the span and token manually (so we don't crash in kindReadToEnd)
+    let span: Source.Span = .{
+      startPos = pos,
+      endPos = endPos
+    };
+
+    let tok = Token.Token(
+      Token.QuotedStringToken, // NOTE: Change this if your variant is named differently (e.g. StringLiteralToken)
+      span,
+      Token.NoMate,
+      []
+    );
+
+    .{
+      tokens = [tok],
+      newPosition = endPos
+    }
+  };
+  
+  
+  
   let readCharToEnd = (startPosition: Source.Position) => {
-    let p = peek(startPosition.index);
+    let p = peekByOne(startPosition.index);
     match (p) {
       Some(ch) => {
 
@@ -399,108 +516,84 @@ let lex = (source) => {
     pairs: List<(Number, Number)>,
   };
 
-  let rec loop = (pos, m, acc, mt: Mates) => {
+  let rec loop = (pos, m, acc, mates: Mates) => {
     if (pos.index < length) {
-
       let pos = skipWhitespace(pos);
+      --printPos(pos);
       let class = Char.classify(Char.codeAt(source, pos.index));
       let bumpPos = (p) => {
         .{..p, index= p.index +1}
       };
-
-      if (pos.index >= length) {Panic("todo")} else {};
-      match(class) {
-        Char.classSpace => {
-          Panic("todo");
-          loop(bumpPos(pos), Default, acc, mt)
-        },
-        Char.classLetter => {
-          let res = readFromLetter(pos);
-          match(res.tokens) {
-            [tok] => {
-              let (tok2, stack2, pairs2) =
-                mateStep(tok, List.length(acc), mt.stack, mt.pairs);
-              loop(
-                res.newPosition,
-                Default,
-                [tok2, ..acc],
-                .{stack = stack2, pairs = pairs2}
-              )
-            },
-            _ => {
-              loop(
-                res.newPosition,
-                Default,
-                List.append(List.reverse(res.tokens), acc),
-                mt
-              )
-            }
+      
+      let someAbstract = (res) => {
+        match(res.tokens) {
+          [tok] => {
+            let (tok2, stack2, pairs2) =
+              mateStep(tok, List.length(acc), mates.stack, mates.pairs);
+            loop(
+              res.newPosition,
+              Default,
+              [tok2, ..acc],
+              .{stack = stack2, pairs = pairs2}
+            )
+          },
+          _ => {
+            //comment batches carry no pairs yet pass them trough
+            loop(
+              res.newPosition,
+              Default,
+              List.append(List.reverse(res.tokens), acc),
+              mates
+            )
           }
-        },
-        Char.classDigit => {
-          Panic("todo");
-          loop(bumpPos(pos), Default, [?, ..acc], mt)
-        },
-        Char.classStringDelimiter => {?},
-        Char.classSymbol => {
-          let res = readFromSymbol(pos);
-          --let ttToString = (tok) => {`${tok.kind}`};
-          --print(`tokens:\n${List.toStringRender(res.tokens, ttToString)}`);
-          match(res.tokens) {
-            [tok] => {
-              let (tok2, stack2, pairs2) =
-                mateStep(tok, List.length(acc), mt.stack, mt.pairs);
-              loop(
-                res.newPosition,
-                Default,
-                [tok2, ..acc],
-                .{stack = stack2, pairs = pairs2}
-              )
-            },
-            //comment batches carry no pairs today; pass through
-            _ => {
-              loop(
-                res.newPosition,
-                Default,
-                List.append(List.reverse(res.tokens), acc),
-                mt
-              )
-            }
-          }
-        },
-        Char.classOther => {?},
-        _ => {
-          Panic("unreachable")
+        }
+      };
+        
+      //did skipping whitespace go to eof?
+      if (pos.index >= length) {
+        loop(pos, Default, acc, mates)
+      } else {
+        match(class) {
+          Char.classSpace  => {Panic("todoSpace")},
+          Char.classLetter => {readFromLetter(pos) :> someAbstract},
+          Char.classDigit  => {readFromDigit(pos) :> someAbstract},
+          Char.classStrQuo => {readFromStringLit(pos) :> someAbstract},
+          Char.classSymbol => {readFromSymbol(pos) :> someAbstract},
+          Char.classOther  => {?},
+          _                => {Panic("unreachable")}
         }
       }
     } else {
       //eof
+      let eofSpan = Source.Span(pos,pos);
+      let eofToken = Token.Token(
+        Token.EndOfFileToken,
+        eofSpan,
+        Token.NoMate,
+        []
+      );
       //TODO: leftover `mt.stack` entries are unclosed delimiters -> LexicalMarks
-      match(?) {
+      match(m) {
         Ident => {
+          let fakeIndent = Token.Token(
+            Token.LowerIdentifierToken,
+            eofSpan,
+            Token.NoMate,
+            []
+          );
           reverseAndStamp(
-            [
-              Token.Token(
-                Token.EndOfFileToken,
-                ?,
-                Token.NoMate,
-                []
-              ),
-              Token.Token(
-                Token.LowerIdentifierToken,
-                ?,
-                Token.NoMate,
-                []
-              ),
-              ..acc
-            ],
+            [eofToken,fakeIndent,..acc],
             List.length(acc) + 1,
-            mt.pairs,
+            mates.pairs,
             []
           )
         },
         Default => {
-          reverseAndStamp([?, ..acc], List.length(acc), mt.pairs, [])
+          reverseAndStamp(
+            [eofToken, ..acc],
+            List.length(acc),
+            mates.pairs, []
+          )
         },
       }
     }
