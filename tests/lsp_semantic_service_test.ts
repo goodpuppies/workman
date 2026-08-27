@@ -77,6 +77,50 @@ Deno.test("semantic service keeps strict diagnostics beside recovered current in
   );
 });
 
+Deno.test("semantic service retries an unfinished empty match arm with a synthetic hole", async () => {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/note.wm`;
+  const source = "let choose = match(true) { true => { 1 }, false => {  } }; " +
+    "let identity = (item) => { item };";
+  await Deno.writeTextFile(path, source);
+  const index = new ProjectIndex();
+  const overrides = new Map([[path, source]]);
+  await index.refreshFile(path, overrides);
+  const service = new SemanticService(index.discovery, {
+    sourceOverrides: () => overrides,
+    frontendOptions: () => ({}),
+  });
+
+  const context = await service.documentContext(pathToFileUri(path));
+
+  assertEquals(context?.recovered, true);
+  assertEquals(context?.moduleInterface.occurrences.some(({ name }) => name === "identity"), true);
+  assertEquals(context?.recoveryHoles, [{
+    id: source.indexOf("  }") + 1,
+    anchor: source.indexOf("  }") + 1,
+    diagnosticCode: "type.match-arm-results-disagree",
+  }]);
+  assertEquals(
+    service.strictFailure(context!.project) instanceof Error,
+    true,
+  );
+
+  const edited = source.replace("identity", "identity2");
+  overrides.set(path, edited);
+  await service.invalidatePaths([path]);
+  const editedContext = await service.documentContext(pathToFileUri(path));
+  assertEquals(
+    (service.strictFailure(editedContext!.project) as Error).message.includes(
+      "editor analysis inserted `?`",
+    ),
+    true,
+  );
+  assertEquals(
+    editedContext?.moduleInterface.occurrences.some(({ name }) => name === "identity2"),
+    true,
+  );
+});
+
 Deno.test("semantic service keeps an imported parse failure on its source module", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;

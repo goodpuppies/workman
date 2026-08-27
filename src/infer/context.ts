@@ -43,6 +43,7 @@ export type InferContext = {
   diagnostics: FrontendDiagnostic[];
   provenance: TypeProvenance;
   dialect: TypingDialect;
+  recover: boolean;
 };
 
 export function deriveInferContext(

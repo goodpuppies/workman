@@ -69,14 +69,17 @@ export function rememberSchemeSourceDocument(
 ): void {
   const existing = schemeSources.get(scheme);
   if (!existing) return;
+  // Derived origins carry spans from this unit too, so stamp the whole chain: an unstamped
+  // derived origin later renders its span against the importing file's source.
+  const stamp = (origin: ConstraintOrigin): ConstraintOrigin => {
+    const derivedFrom = origin.derivedFrom?.map(stamp);
+    return origin.filePath !== undefined
+      ? (derivedFrom ? { ...origin, derivedFrom } : origin)
+      : { ...origin, filePath, source, ...(derivedFrom ? { derivedFrom } : {}) };
+  };
   schemeSources.set(
     scheme,
-    mapSourceOrigins(
-      existing,
-      (origin) => ({ ...origin, filePath, source }),
-      new WeakMap(),
-      { filePath, source },
-    ),
+    mapSourceOrigins(existing, stamp, new WeakMap(), { filePath, source }),
   );
 }
 

@@ -1,0 +1,21 @@
+-- Demo error: two deeply nested generic types that agree at every level except one.
+--
+--   expected  X<Y<X<Y<X<Y<X<Y<X<Y<Number>>>>>>>>>>
+--   actual    X<Y<Z<Y<X<Y<X<Y<X<Y<Number>>>>>>>>>>
+--                 ^ the only difference, five levels down
+--
+-- Run `wm run examples/deep_generic_mismatch.wm`, then resize the terminal to watch the
+-- diagnostic reflow: long type strings wrap on words, and the file location moves to its
+-- own line once it no longer fits beside the source excerpt.
+
+type X<T> = | MkX<T>;
+type Y<T> = | MkY<T>;
+type Z<T> = | MkZ<T>;
+
+let actual = MkX(MkY(MkZ(MkY(MkX(MkY(MkX(MkY(MkX(MkY(0))))))))));
+
+let expects = (value: X<Y<X<Y<X<Y<X<Y<X<Y<Number>>>>>>>>>>) => { value };
+
+let bad = expects(actual);
+
+bad;

@@ -110,7 +110,9 @@ export function coreProgramFromAnalysis(
     }, { path: node.path, source: node.source });
     let importIndex = 0;
     for (const decl of module.decls) {
-      if (decl.kind !== "CoreImport") continue;
+      // A carrier namespace is compiler-injected and already carries its target;
+      // only authored imports line up with the graph's import edges.
+      if (decl.kind !== "CoreImport" || decl.carrierAlias) continue;
       decl.target = node.imports[importIndex++]?.target;
     }
     const moduleConstructors = nominalFacts.constructors

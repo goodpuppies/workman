@@ -70,10 +70,26 @@ export type TypeProvenanceNote = {
 export type Env = Map<string, Scheme>;
 export type TypeEnv = Map<string, TypeInfo>;
 export type RecordFieldInfo = { name: string; type: Ty };
+/**
+ * Registration that lets a nominal type carry primitive operators.
+ *
+ * A module registers its declared type as a carrier by exporting `carrier`
+ * together with top-level `succeed`, `map`, and `map2`. `succeed`'s result type
+ * names the carrier and its parameter locates the payload, so a generic carrier
+ * (`Result<a, e>`) reports the payload's argument index while a monomorphic one
+ * (`Vec2` over `Number`) reports the fixed payload type instead.
+ */
+export type CarrierInfo = {
+  /** Declaring module, or undefined for the basis carrier reached as a bare value. */
+  modulePath?: string;
+  payloadIndex?: number;
+  payloadType?: Ty;
+};
 export type TypeInfo = {
   id: number;
   name: string;
   arity: number;
+  carrier?: CarrierInfo;
   basis?: boolean;
   basisConstructors?: string[];
   foreign?: boolean;

@@ -2,16 +2,25 @@ record Vec2 = { x: Number, y: Number };
 
 let zero = Vec2(0, 0);
 
-let add = (a: Vec2, b: Vec2) => {
-  Vec2(a.x + b.x, a.y + b.y)
+// Registering Vec2 as a carrier: `succeed` broadcasts a scalar across the lanes
+// and `map2` combines them componentwise, which is all a lifted operator needs.
+// Vec2 has no `andThen`, so it gets operators without `via` or `Vec2|...|`.
+let succeed = (s: Number) => {
+  Vec2(s, s)
 };
 
-let sub = (a: Vec2, b: Vec2) => {
-  Vec2(a.x - b.x, a.y - b.y)
+let map = (v: Vec2, f) => {
+  Vec2(f(v.x), f(v.y))
 };
 
-let scale = (v: Vec2, s: Number) => {
-  Vec2(v.x * s, v.y * s)
+let map2 = (a: Vec2, b: Vec2, f) => {
+  Vec2(f(a.x, b.x), f(a.y, b.y))
+};
+
+let carrier = .{
+  succeed = succeed,
+  map = map,
+  map2 = map2,
 };
 
 let lengthSq = (v: Vec2) => {
@@ -39,9 +48,9 @@ let length = (v: Vec2) => {
 
 let normalize = (v: Vec2) => {
   let len = length(v);
-  if (len <= 0) { zero } else { scale(v, 1 / len) }
+  if (len <= 0) { zero } else { Vec2(v.x / len, v.y / len) }
 };
 
 let withinSq = (a: Vec2, b: Vec2, radius: Number) => {
-  lengthSq(sub(a, b)) < radius * radius
+  lengthSq(Vec2(a.x - b.x, a.y - b.y)) < radius * radius
 };

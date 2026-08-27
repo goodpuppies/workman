@@ -1,19 +1,27 @@
 import { dirname, resolve } from "node:path";
 import { loadModuleGraph } from "./module_graph.ts";
 import { runFile, type RunOptions } from "./run.ts";
+import { terminalWidth } from "../tooling/tuiman/document.ts";
 
 export type WatchOptions = Omit<RunOptions, "signal"> & {
   signal?: AbortSignal;
   onError?: (error: unknown) => void;
 };
 
-const WATCH_REFRESH_DIVIDER =
-  "-------------------------------- wm watch refresh --------------------------------\n";
+export function watchRefreshDivider(width = terminalWidth(80)): string {
+  const label = " wm watch refresh ";
+  const columns = Math.max(1, Math.floor(width));
+  if (columns <= label.length) return `${label.trim().slice(0, columns)}\n`;
+  const rules = columns - label.length;
+  const left = Math.floor(rules / 2);
+  return `${"-".repeat(left)}${label}${"-".repeat(rules - left)}\n`;
+}
 
 /** Compile and run an entrypoint again whenever a module in its reachable graph changes. */
 export async function watchFile(input: string, options: WatchOptions = {}): Promise<void> {
   const inputPath = resolve(input);
   let watchedPaths = new Set([inputPath]);
+  clearWatchTerminal();
 
   while (!options.signal?.aborted) {
     try {
@@ -111,6 +119,11 @@ function reportWatchError(error: unknown, options: WatchOptions): void {
 }
 
 function refreshWatchTerminal(): void {
-  const clear = Deno.stdout.isTerminal() ? "\x1b[2J\x1b[H" : "";
-  Deno.stdout.writeSync(new TextEncoder().encode(clear + WATCH_REFRESH_DIVIDER));
+  clearWatchTerminal();
+  Deno.stdout.writeSync(new TextEncoder().encode(watchRefreshDivider()));
+}
+
+function clearWatchTerminal(): void {
+  if (!Deno.stdout.isTerminal()) return;
+  Deno.stdout.writeSync(new TextEncoder().encode("\x1b[2J\x1b[H"));
 }

@@ -181,7 +181,12 @@ export type Expr =
   | Located<{ kind: "Call"; callee: Expr; args: Expr[] }>
   | Located<{ kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }>
   | Located<{ kind: "Match"; value: Expr; arms: MatchArm[] }>
-  | Located<{ kind: "Panic"; message: Expr; hole?: boolean }>
+  | Located<{
+    kind: "Panic";
+    message: Expr;
+    hole?: boolean;
+    recoveryHole?: { id: number; anchor: number; diagnosticCode: string };
+  }>
   | Located<{ kind: "Block"; items: (Decl | Expr)[]; result: Expr }>
   | Located<{ kind: "Ascribed"; value: Expr; annotation: TypeExpr }>
   | Located<{ kind: "Binary"; op: string; left: Expr; right: Expr }>

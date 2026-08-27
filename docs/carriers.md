@@ -364,11 +364,12 @@ Result|Ok(1), Ok(2)|
 Task|taskA, taskB|
 ```
 
-## Primitive `Result` coercion
+## Primitive carrier coercion
 
 Primitive carrier coercion is another convenience used inside carrier-oriented
-procedures. It lets primitive operators work through `Result`; it is not general
-operator overloading.
+procedures. It lets primitive operators work through a carrier; it is not general
+operator overloading. The operator's meaning never changes - `+` stays primitive
+`+` on the payload - the carrier only decides how the operation is threaded.
 
 Primitive operators can flow through `Result`.
 
@@ -457,3 +458,114 @@ let viaR = (f) => {
 let floor = viaR jsFloor;
 let rounded = floor(Ok(4.8));
 ```
+
+## Registering another carrier
+
+The coercion rule is not specific to `Result`. `Task` lifts the same way:
+
+```wm
+(Task.succeed(2) + 3) :> Task.map(print)
+```
+
+Tasks are eager handles, so the arithmetic controls when the successful values
+are threaded, not when the underlying work starts.
+
+Any type can register. The rule needs a type that holds a payload, a way to
+inject a pure operand, and a way to combine two carriers. A module supplies
+those by exporting `succeed`, `map`, and `map2` together with a `carrier`
+record, which registers the type `succeed` returns:
+
+```wm
+record Vec2 = { x: Number, y: Number };
+
+let succeed = (s: Number) => {
+  Vec2(s, s)
+};
+
+let map = (v: Vec2, f) => {
+  Vec2(f(v.x), f(v.y))
+};
+
+let map2 = (a: Vec2, b: Vec2, f) => {
+  Vec2(f(a.x, b.x), f(a.y, b.y))
+};
+
+let carrier = .{
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+};
+```
+
+Operators then lift over `Vec2` the same way they lift over `Result`:
+
+```wm
+let pos = Vec2(10, 10);
+let vel = Vec2(1, 0.5);
+
+let stepped = pos + vel * dt;
+```
+
+`vel * dt` wraps the pure `dt` with `succeed`, so a scalar broadcasts across the
+lanes; there is no separate broadcast rule.
+
+[`examples/carrier_operators/`](../examples/carrier_operators/) runs every
+carrier side by side, and [`examples/asteroids/vec.wm`](../examples/asteroids/vec.wm)
+registers the `Vec2` used throughout
+[`examples/asteroids/game.wm`](../examples/asteroids/game.wm).
+
+### Operators, not `via`
+
+`Monad.Carrier` bundles `fn` and `andThen` alongside `succeed`/`map`/`map2`.
+`Vec2` has neither, and cannot: `andThen` means "if this succeeded, feed the
+value to the next step", and a fixed-size vector has no success to check and
+nothing to short-circuit. So a `Vec2` carrier uses `Monad.Applicative`, and gets
+operators without `via Vec2 f` or `Vec2|...|`.
+
+`Carrier|...|` needs `andThen` for a further reason: it builds a tuple, so the
+payload type changes as it goes. `Result|Ok(1), Ok("a")|` is
+`Result<(Number, String), E>`. The equivalent for `Vec2` would be a vector whose
+lanes each hold a tuple.
+
+### What lifts and what does not
+
+`Vec2` is monomorphic: its payload is always `Number`, in and out. Nothing
+restricts which operators may lift; unification decides:
+
+- `a + b`, `a - b`, `a * 3`, `2 * a`, `-a` all lift, because the operator answers
+  in `Number`;
+- `a < b` does not, because `<` answers in `Bool`, which is not `Vec2`'s payload.
+  The error points at the comparison.
+
+A generic carrier has a payload argument to replace, so its operators may answer
+in a different payload type than they consumed. `Ok(1) < Ok(2)` is
+`Result<Bool, E>`, and a user carrier behaves the same way:
+
+```wm
+record Pair<T> = { left: T, right: T };
+```
+
+```txt
+Pair(1, 2) < Pair(10, 20)          : Pair<Bool>
+Pair("x", "y") ++ Pair("1", "2")   : Pair<String>
+```
+
+Reductions stay ordinary functions. `lengthSq` sums the lanes and `withinSq`
+compares a distance, so neither is expressible as a lifted operator; both read
+better named anyway.
+
+### One carrier at a time
+
+The lowering peels exactly one layer. Both operands must agree on the carrier,
+and every carrier argument that is not the payload - `Result`'s error type, for
+instance - is unified across the two operands. Unwrap the outer carrier with
+`via` or `Carrier|...|` first.
+
+Two carriers whose payloads still disagree report that mismatch:
+`Ok(1) + Task.succeed(2)` is `operator + mixes carriers Result and Task`, while
+`Result<Vec2, E> + Vec2` reports `Number` against `Vec2`, because the operator is
+checked against the peeled payloads before the carriers are compared.
+
+A module's own declarations do not see its carrier, since registration completes
+with the module. A carrier module writes its payload arithmetic by hand and hands
+the operators to its consumers.

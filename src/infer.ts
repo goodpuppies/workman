@@ -187,6 +187,7 @@ function inferModuleCore(
     diagnostics,
     provenance,
     dialect: hostTypingDialect,
+    recover,
   };
   warnWideTuples(module, warnings, diagnostics);
 
@@ -234,7 +235,9 @@ function inferModuleCore(
         decl.kind === "TypeDecl" && decl.mutualGroup !== undefined &&
         !predeclaredTypeGroups.has(decl.mutualGroup)
       ) {
-        const group = module.decls.filter((candidate): candidate is Extract<Decl, { kind: "TypeDecl" }> =>
+        const group = module.decls.filter((
+          candidate,
+        ): candidate is Extract<Decl, { kind: "TypeDecl" }> =>
           candidate.kind === "TypeDecl" && candidate.mutualGroup === decl.mutualGroup
         );
         predeclareTypeGroup(group, context);

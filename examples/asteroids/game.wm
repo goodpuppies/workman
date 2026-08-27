@@ -1,4 +1,4 @@
-from "./vec.wm" import { Vec2, zero, add, sub, scale, length, withinSq };
+from "./vec.wm" import { Vec2, zero, length, withinSq };
 from "./trig.wm" import * as Trig;
 from "./rng.wm" import * as Rng;
 
@@ -174,17 +174,17 @@ let stepShip = (s: Ship, input: Input, dt: Number) => {
   let rotation = s.rotation + input.turn * shipRotationSpeed * dt;
   let pushed =
     if (input.thrust) {
-      add(s.vel, scale(facing(rotation), shipThrust * dt))
+      s.vel + facing(rotation) * (shipThrust * dt)
     } else {
       s.vel
     };
   let speed = length(pushed);
   let capped =
-    if (speed > maxShipSpeed) { scale(pushed, maxShipSpeed / speed) } else { pushed };
-  let vel = scale(capped, maxf(1 - dragRate * dt, 0));
+    if (speed > maxShipSpeed) { pushed * (maxShipSpeed / speed) } else { pushed };
+  let vel = capped * maxf(1 - dragRate * dt, 0);
   .{
     ..s,
-    pos = wrap(add(s.pos, scale(vel, dt))),
+    pos = wrap(s.pos + vel * dt),
     vel = vel,
     rotation = rotation,
     invuln = maxf(s.invuln - dt, 0)
@@ -192,7 +192,7 @@ let stepShip = (s: Ship, input: Input, dt: Number) => {
 };
 
 let stepBullet = (b: Bullet, dt: Number) => {
-  Bullet(add(b.pos, scale(b.vel, dt)), b.vel, b.life - dt)
+  Bullet(b.pos + b.vel * dt, b.vel, b.life - dt)
 };
 
 let bulletLives = (b: Bullet) => {
@@ -201,7 +201,7 @@ let bulletLives = (b: Bullet) => {
 
 let stepAsteroid = (a: Asteroid, dt: Number) => {
   Asteroid(
-    wrap(add(a.pos, scale(a.vel, dt))),
+    wrap(a.pos + a.vel * dt),
     a.vel,
     a.size,
     a.rotation + a.spin * dt,
@@ -211,7 +211,7 @@ let stepAsteroid = (a: Asteroid, dt: Number) => {
 
 let fireFrom = (s: Ship) => {
   let dir = facing(s.rotation);
-  Bullet(add(s.pos, scale(dir, shipSize)), scale(dir, bulletSpeed), bulletLifetime)
+  Bullet(s.pos + dir * shipSize, dir * bulletSpeed, bulletLifetime)
 };
 
 let takeHit = (bullets, target, radius) => {
@@ -350,7 +350,7 @@ let shipVisible = (s: Ship, t: Number) => {
 };
 
 let hullOf = (s: Ship) => {
-  let corner = (offset) => { add(s.pos, scale(facing(s.rotation + offset), shipSize)) };
+  let corner = (offset) => { s.pos + facing(s.rotation + offset) * shipSize };
   Hull(corner(0), corner(2.5), corner(0 - 2.5))
 };
 

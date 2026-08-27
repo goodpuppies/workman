@@ -17,6 +17,7 @@ import {
   type InferStep,
 } from "./infer.ts";
 import { rememberExportedSourceDocument } from "./infer/imports.ts";
+import { registerModuleCarrier } from "./infer/carriers.ts";
 import {
   loadModuleGraph,
   type ModuleGraph,
@@ -616,6 +617,7 @@ async function analyzeRecoveredSnapshot(
     const recovered = inferModuleRecovered(node.module, imports, inferOptions);
     node.module = recovered.module;
     rememberExportedSourceDocument(recovered.result, node.path, node.source);
+    registerModuleCarrier(recovered.result, node.path);
     results.set(id, recovered.result);
   }
   return buildPartialProjectSnapshot(graph, results, {

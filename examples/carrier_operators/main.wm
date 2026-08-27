@@ -1,0 +1,110 @@
+-- Primitive operators lifted through carriers.
+--
+-- The rule is the same for every carrier: peel one layer, type-check the
+-- operator against the payload, wrap the answer back up. The operator's meaning
+-- never changes -- `+` stays primitive `+` on the payload -- so this is
+-- operator lifting, not operator overloading. `Matrix * Matrix` as matmul is
+-- not expressible here, and neither is a dot product; both leave the payload.
+--
+-- Run with: wm run examples/carrier_operators/main.wm
+
+from "./vec2.wm" import { Vec2, dot };
+from "./pair.wm" import { Pair };
+
+let header = (title) => {
+  print("");
+  print(title)
+};
+
+--#region basis carriers
+-- Result is a carrier the basis binds directly. A pure operand is injected with
+-- Ok, and the two operands must agree on the error type.
+let resultExamples = () => {
+  header("Result");
+  print(Ok(2) + 3);
+  print(3 * Ok(4));
+  print(Ok(8) / Ok(2));
+  print(-Ok(4));
+  print(!Ok(false));
+
+  -- An Err short-circuits: map2 evaluates left to right and keeps the first one.
+  print(Err("no width") * Ok(3))
+};
+
+-- Task lifts the same way. These are eager handles, so the arithmetic describes
+-- when the successful values are threaded, not when the work starts.
+let taskExamples = () => {
+  header("Task");
+  (Task.succeed(2) + 3)
+    :> Task.map(print)
+};
+--#endregion
+
+--#region a monomorphic user carrier
+-- Vec2 carries Number, so every lifted operator must answer in Number.
+let vecExamples = () => {
+  header("Vec2");
+  let a = Vec2(1, 2);
+  let b = Vec2(3, 4);
+
+  print(a + b);
+  print(a - b);
+  print(-a);
+
+  -- `3` is pure, so it is injected with Vec2's succeed, which broadcasts. There
+  -- is no separate broadcast rule; scalar operands fall out of the pure-operand
+  -- rule Result already used.
+  print(a * 3);
+  print(2 * a);
+
+  -- The shape this is all for: integrate a position by a velocity and a step.
+  let pos = Vec2(10, 10);
+  let vel = Vec2(1, 0.5);
+  print(pos + vel * 0.5);
+
+  -- A reduction cannot be an operator, because its answer is not a Vec2.
+  print(dot(a, b))
+};
+--#endregion
+
+--#region a generic user carrier
+-- Pair<T> has a payload argument, so an operator may change the payload type.
+-- Comparing two Pair<Number> gives a Pair<Bool>, the way comparing two
+-- Result<Number, E> gives a Result<Bool, E>.
+let pairExamples = () => {
+  header("Pair");
+  let a = Pair(1, 2);
+  let b = Pair(10, 20);
+
+  print(a + b);
+  print(a * 3);
+  print(a < b);
+  print(Pair("x", "y") ++ Pair("1", "2"))
+};
+--#endregion
+
+--#region what does not lift
+-- Each of these is a type error. Uncomment one to see the diagnostic.
+--
+--   Vec2(1, 2) < Vec2(3, 4)
+--     `<` answers in Bool, and Vec2 carries Number. Vec2 is monomorphic, so
+--     there is no payload argument to replace. The error names the payload:
+--     'Vec2 carries "Number"'.
+--
+--   Ok(Vec2(1, 2)) + Vec2(3, 4)
+--     The lowering peels exactly one layer, and both operands must agree on the
+--     carrier. Unwrap the outer one with `via` or `Carrier|...|` first.
+--
+--   Ok(1) + Task.succeed(2)
+--     Same rule across two basis carriers.
+--
+--   Monad.via Vec2.carrier (someFunction)
+--     `via` is built on `fn`, which is built on `andThen`. Vec2 has neither.
+--#endregion
+
+let main = () => {
+  resultExamples();
+  vecExamples();
+  pairExamples();
+  taskExamples()
+};

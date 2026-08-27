@@ -505,9 +505,14 @@ function emitModuleDefinition(
       target === "repl"
     ? emitReplModuleBody(artifact, program).join("\n")
     : emitModuleBody(artifact, program).join("\n");
-  const dependencies = artifact.imports.map((edge) =>
-    JSON.stringify(program.modules.get(edge.target)!.emitName)
+  // A carrier an operator lowered against need not have been imported by the
+  // authored module, so its namespace binding contributes a dependency too.
+  const carrierTargets = artifact.module.decls.flatMap((decl) =>
+    decl.kind === "CoreImport" && decl.carrierAlias && decl.target ? [decl.target] : []
   );
+  const dependencies = [
+    ...new Set([...artifact.imports.map((edge) => edge.target), ...carrierTargets]),
+  ].map((target) => JSON.stringify(program.modules.get(target)!.emitName));
   return `let ${id(artifact.emitName)};
 __wm_define_module(
   ${JSON.stringify(artifact.emitName)},

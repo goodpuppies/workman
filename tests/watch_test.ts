@@ -1,6 +1,13 @@
-import { assertStringIncludes } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
+import { watchRefreshDivider } from "../src/watch.ts";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
+
+Deno.test("watch refresh divider respects narrow terminals", () => {
+  const divider = watchRefreshDivider(32);
+  assertEquals(divider.length, 33);
+  assertStringIncludes(divider, "wm watch refresh");
+});
 
 Deno.test("watch survives parse errors and refreshes its transitive module graph", async () => {
   const directory = await Deno.makeTempDir();

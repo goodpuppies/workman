@@ -31,6 +31,7 @@ import {
 } from "../ids.ts";
 import type { MaterializedGpuArtifacts } from "../gpu_artifact.ts";
 import { moduleId } from "../module_id.ts";
+import { carrierInfo } from "../infer/carriers.ts";
 import { prune, show, type Ty, type TypeEnv, typeInfoByName } from "../types.ts";
 import type {
   CoreBinding,
@@ -61,6 +62,8 @@ type CoreLoweringContext = {
   nominalFacts?: NominalFacts;
   sourcePath: string;
   source: string;
+  /** Declaring module path to local alias, for each user carrier an operator reached. */
+  carrierModules: Map<string, string>;
 };
 
 export type CoreGpuHostBoundary = {
@@ -125,16 +128,36 @@ export function coreFromSurface(
       nominalFacts: resolvedNominalFacts,
       sourcePath: sourceContext.path,
       source: sourceContext.source,
+      carrierModules: new Map<string, string>(),
     }
     : undefined;
+  const decls = module.decls.flatMap((decl) => {
+    const lowered = coreDeclFromSurface(decl, context);
+    return lowered ? [lowered] : [];
+  });
   return {
     kind: "CoreModule",
-    decls: module.decls.flatMap((decl) => {
-      const lowered = coreDeclFromSurface(decl, context);
-      return lowered ? [lowered] : [];
-    }),
+    decls: [...carrierImportDecls(context), ...decls],
     node: module.node,
   };
+}
+
+/**
+ * Bind a namespace for every user carrier an operator in this module reached.
+ *
+ * A lifted operator names its carrier's `map2` and `succeed`, and the module
+ * using the operator need not have imported them, so the reference is bound
+ * here rather than assumed to exist.
+ */
+function carrierImportDecls(context?: CoreLoweringContext): CoreDecl[] {
+  if (!context) return [];
+  return [...context.carrierModules].map(([path, alias]) => ({
+    kind: "CoreImport" as const,
+    path,
+    clause: { kind: "Namespace" as const, alias },
+    target: moduleId(path),
+    carrierAlias: true as const,
+  }));
 }
 
 function coreDeclFromSurface(
@@ -437,11 +460,11 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
     case "Ascribed":
       return coreExprFromSurface(expr.value, context);
     case "Binary":
-      if (
-        context && isResultCarrier(context.types.get(expr.left), context.typeEnv) ||
-        context && isResultCarrier(context.types.get(expr.right), context.typeEnv)
-      ) {
-        return resultLiftedBinary(expr, context);
+      {
+        const binaryCarrier = context &&
+          (loweringCarrier(context.types.get(expr.left), context) ??
+            loweringCarrier(context.types.get(expr.right), context));
+        if (binaryCarrier) return carrierLiftedBinary(expr, binaryCarrier, context!);
       }
       return {
         kind: "CoreApp",
@@ -457,8 +480,9 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
         node: expr.node,
       };
     case "Unary":
-      if (context && isResultCarrier(context.types.get(expr.value), context.typeEnv)) {
-        return resultLiftedUnary(expr, context);
+      {
+        const unaryCarrier = context && loweringCarrier(context.types.get(expr.value), context);
+        if (unaryCarrier) return carrierLiftedUnary(expr, unaryCarrier, context!);
       }
       return {
         kind: "CoreApp",
@@ -730,18 +754,44 @@ function desugarPipe(
   }
 }
 
-function resultLiftedBinary(
+/**
+ * How one lifted operator reaches its carrier's members.
+ *
+ * `Result` is bound as a bare value by the basis, so it is named directly. A
+ * user carrier is reached through a namespace bound for its declaring module.
+ */
+type LoweringCarrier = { namespace: string };
+
+function loweringCarrier(
+  type: Ty | undefined,
+  context: CoreLoweringContext,
+): LoweringCarrier | undefined {
+  if (!type) return undefined;
+  const info = carrierInfo(type, context.typeEnv);
+  if (!info) return undefined;
+  const modulePath = info.carrier?.modulePath;
+  if (!modulePath) return { namespace: info.name };
+  let alias = context.carrierModules.get(modulePath);
+  if (!alias) {
+    alias = `__wm_carrier_${context.carrierModules.size}`;
+    context.carrierModules.set(modulePath, alias);
+  }
+  return { namespace: alias };
+}
+
+function carrierLiftedBinary(
   expr: Extract<Expr, { kind: "Binary" }>,
+  carrier: LoweringCarrier,
   context: CoreLoweringContext,
 ): CoreExpr {
   return {
     kind: "CoreApp",
-    callee: desugarDottedVar("Result.map2", expr.node),
+    callee: desugarDottedVar(`${carrier.namespace}.map2`, expr.node),
     arg: {
       kind: "CoreTuple",
       items: [
-        resultCarrierExpr(expr.left, context),
-        resultCarrierExpr(expr.right, context),
+        carrierOperandExpr(expr.left, carrier, context),
+        carrierOperandExpr(expr.right, carrier, context),
         binaryOperatorFn(expr.op, expr.node, context),
       ],
       node: expr.node,
@@ -750,13 +800,14 @@ function resultLiftedBinary(
   };
 }
 
-function resultLiftedUnary(
+function carrierLiftedUnary(
   expr: Extract<Expr, { kind: "Unary" }>,
+  carrier: LoweringCarrier,
   context: CoreLoweringContext,
 ): CoreExpr {
   return {
     kind: "CoreApp",
-    callee: desugarDottedVar("Result.map", expr.node),
+    callee: desugarDottedVar(`${carrier.namespace}.map`, expr.node),
     arg: {
       kind: "CoreTuple",
       items: [
@@ -769,17 +820,30 @@ function resultLiftedUnary(
   };
 }
 
-function resultCarrierExpr(expr: Expr, context: CoreLoweringContext): CoreExpr {
+/** Inject a pure operand into the carrier; `Result` keeps its `Ok` constructor. */
+function carrierOperandExpr(
+  expr: Expr,
+  carrier: LoweringCarrier,
+  context: CoreLoweringContext,
+): CoreExpr {
   const value = coreExprFromSurface(expr, context);
-  if (isResultCarrier(context.types.get(expr), context.typeEnv)) return value;
+  if (carrierInfo(context.types.get(expr), context.typeEnv)) return value;
+  if (carrier.namespace === "Result") {
+    return {
+      kind: "CoreApp",
+      callee: {
+        kind: "CoreVar",
+        name: "Ok",
+        ctorId: basisCtorId("Ok") as CtorId,
+        node: expr.node,
+      },
+      arg: value,
+      node: expr.node,
+    };
+  }
   return {
     kind: "CoreApp",
-    callee: {
-      kind: "CoreVar",
-      name: "Ok",
-      ctorId: basisCtorId("Ok") as CtorId,
-      node: expr.node,
-    },
+    callee: desugarDottedVar(`${carrier.namespace}.succeed`, expr.node),
     arg: value,
     node: expr.node,
   };
@@ -845,13 +909,6 @@ function unaryOperatorFn(
     }],
     node,
   };
-}
-
-function isResultCarrier(type: Ty | undefined, typeEnv: TypeEnv): boolean {
-  if (!type) return false;
-  const resolved = prune(type);
-  const result = typeInfoByName(typeEnv, "Result");
-  return !!result && resolved.tag === "named" && resolved.id === result.id;
 }
 
 function desugarDottedVar(

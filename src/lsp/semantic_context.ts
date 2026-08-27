@@ -11,6 +11,7 @@ export type SemanticDocumentContext = Readonly<{
   moduleInterface: ModuleInterface;
   source: string;
   recovered: boolean;
+  recoveryHoles: readonly Readonly<{ id: number; anchor: number; diagnosticCode: string }>[];
 }>;
 
 /** Resolve one document to the compiler-owned current project/interface artifact. */
@@ -41,7 +42,7 @@ export async function semanticDocumentContext(
   const source = await semanticSourceForPath(moduleInterface.path, sourceOverrides);
   return source === undefined
     ? null
-    : Object.freeze({ project, moduleInterface, source, recovered });
+    : Object.freeze({ project, moduleInterface, source, recovered, recoveryHoles: [] });
 }
 
 export async function semanticSourceForPath(

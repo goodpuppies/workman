@@ -1,0 +1,22 @@
+-- A generic carrier: Pair<T> has a payload argument to replace, so its
+-- operators may answer in a different payload type than they consumed.
+
+record Pair<T> = { left: T, right: T };
+
+let succeed = (value) => {
+  Pair(value, value)
+};
+
+let map = (p, f) => {
+  Pair(f(p.left), f(p.right))
+};
+
+let map2 = (a, b, f) => {
+  Pair(f(a.left, b.left), f(a.right, b.right))
+};
+
+let carrier = .{
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+};

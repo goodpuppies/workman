@@ -65,7 +65,10 @@ let withDefault = match(result, fallback) => {
 
 let debug = match(result) => {
   Ok(value) => { value },
-  Err(error) => { Panic(Debug.errorMessage(error)) }
+  Err(error) => { 
+    print(Debug.errorMessage(error));
+    ?
+  }
 };
 
 let map3 = match(a, b, c, f) => {

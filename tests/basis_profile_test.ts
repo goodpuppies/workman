@@ -375,8 +375,8 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       },
       {
         alias: "Monad",
-        values: ["Carrier", "via", "viaError"],
-        types: ["Carrier"],
+        values: ["Carrier", "Applicative", "via", "viaError"],
+        types: ["Carrier", "Applicative"],
       },
       {
         alias: "Result",

@@ -108,6 +108,27 @@ Deno.test("ordinary type inlays expose only compiler-certified recovered binders
   assertEquals(hints.map(({ label }) => label), [": 'a", ": 'a"]);
 });
 
+Deno.test("empty mismatched match arm becomes a recovery-only hole without hiding later types", async () => {
+  const path = "/test/main.wm";
+  const source = "let choose = match(true) { true => { 1 }, false => {  } }; " +
+    "let identity = (item) => { item };";
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+    {},
+    { typeHints: true, parameterHints: false, recoveryHoles: true },
+  );
+
+  assertEquals(hints.map(({ label }) => label), [": Number", "?", ": 'a", ": 'a"]);
+  const hole = hints.find((hint) => hint.label === "?");
+  assertEquals(hole?.position.character, source.indexOf("  }") + 2);
+  if (!hole || hole.data.kind !== "workman.structural") throw new Error("missing recovery hole");
+  assertEquals(hole.data.repairClass, "recoveryOnly");
+  assertEquals(hole.data.order, source.indexOf("  }") + 2);
+  assertEquals(hole.data.code, "type.match-arm-results-disagree");
+});
+
 Deno.test("direct function inlays respect authored annotations and empty parameters", async () => {
   const path = "/test/main.wm";
   const source = "let annotated = (value: Number): Number => { value }; " +

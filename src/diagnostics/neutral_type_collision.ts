@@ -20,11 +20,14 @@ import {
   line as documentLine,
   plainDocument,
   plainText,
+  type SemanticRole,
   span,
+  type Span,
   terminalWidth,
 } from "../../tooling/tuiman/document.ts";
 
 type ClaimEntry = Extract<SupportEntry, { kind: "claim" }>;
+const TINY_TERMINAL_WIDTH = 80;
 
 type CollisionAdapter = {
   code: string;
@@ -141,9 +144,9 @@ function renderNeutralTypeCollision(
   const annotationSlot = adapter.code === "type.mismatch"
     ? annotationMismatchSlot(diagnostic)
     : undefined;
-  // Usually the two provenance paths already explain the equation cleanly. When one side was
-  // imported without source provenance, expose the structural callback slot that would otherwise
-  // be hidden inside the raw unification path.
+  // Usually the two provenance paths already explain the equation cleanly. When one side comes
+  // from another unit, expose the structural callback slot that names the colliding parameter
+  // and would otherwise be hidden inside the raw unification path.
   const callSlot = adapter.code === "type.call-argument-mismatch" &&
       (
         !leftOrigin || !rightOrigin ||
@@ -152,17 +155,26 @@ function renderNeutralTypeCollision(
       )
     ? callCollisionSlot(diagnostic, source)
     : undefined;
-  const leftDisplayOrigin = annotationSlot?.annotation ?? leftOrigin ?? callSlot?.calleeClaim;
+  // Shape collisions (tuple arity, say) fail before either side is pinned to an observed claim.
+  // The participants already name both sides of the equation, so origin cells reuse them rather
+  // than degrading to a bare type.
+  const leftParticipant = participantClaimFor(participants, leftType);
+  const rightParticipant = participantClaimFor(participants, rightType, leftParticipant);
+  const leftDisplayOrigin = annotationSlot?.annotation ?? leftOrigin ?? leftParticipant ??
+    callSlot?.calleeClaim;
   const leftOriginLabel = annotationSlot
     ? "annotation requires"
-    : !leftOrigin
+    : !leftOrigin && !leftParticipant
     ? callSlot?.calleeLabel
     : undefined;
-  const rightDisplayOrigin = annotationSlot?.parameter ?? rightOrigin ?? callSlot?.argumentClaim;
+  const rightDisplayOrigin = annotationSlot?.parameter ?? rightOrigin ?? rightParticipant ??
+    callSlot?.argumentClaim;
   const rightOriginLabel = annotationSlot
     ? `${annotationSlot.parameterName} inferred as`
     : rightOrigin
     ? callSlot && rightPath.length > 1 ? parameterUseLabel(rightPath.at(-1)) : undefined
+    : rightParticipant
+    ? undefined
     : callSlot?.argumentLabel;
   const collisionSpan = diagnostic.primary.kind === "source" ? diagnostic.primary.span : undefined;
   const primaryDocument = diagnostic.primary.kind === "source"
@@ -170,12 +182,18 @@ function renderNeutralTypeCollision(
     : undefined;
   const collisionSource = primaryDocument?.source;
   const collisionFilePath = primaryDocument?.filePath;
-  const compactCollisionExcerpt = collisionSource && collisionSpan && !detailed
-    ? renderCompactExcerpt(collisionSource, collisionSpan, collisionFilePath)
+  const availableWidth = terminalWidth();
+  // The primary span belongs to whichever unit recorded it; skip the excerpt when it is not ours.
+  const excerptSpan = collisionSource !== undefined && collisionSpan !== undefined &&
+      spanWithinSource(collisionSource, collisionSpan)
+    ? collisionSpan
     : undefined;
-  const collisionExcerpt = collisionSource && collisionSpan
+  const compactCollisionExcerpt = collisionSource && excerptSpan && !detailed
+    ? renderCompactExcerpt(collisionSource, excerptSpan, collisionFilePath, availableWidth - 2)
+    : undefined;
+  const collisionExcerpt = collisionSource && excerptSpan
     ? detailed
-      ? renderContextExcerpt(collisionSource, collisionSpan).split("\n")
+      ? renderContextExcerpt(collisionSource, excerptSpan).split("\n")
       : compactCollisionExcerpt?.lines
     : undefined;
   const originColumns = collisionOriginColumns(
@@ -205,7 +223,6 @@ function renderNeutralTypeCollision(
     originColumns,
     ...(provenanceColumns ? [provenanceColumns] : []),
   );
-  const availableWidth = terminalWidth();
   const subject = callSlot?.subject ?? adapter.subject(diagnostic, source);
   if (detailed) {
     const collisionLines = arityMismatch
@@ -220,7 +237,7 @@ function renderNeutralTypeCollision(
       : participants && source
       ? [
         `  type error: ${subject} can't be both:`,
-        ...participantEquationLines(diagnostic, participants, source).map((line) =>
+        ...participantEquationLines(diagnostic, participants, source, availableWidth).map((line) =>
           line.spans.map((item) => item.text).join("")
         ),
       ]
@@ -294,15 +311,19 @@ function compactCollisionDocument(
   arityMismatch?: CallArityMismatch,
 ): Document {
   const lines: Line[] = [header];
+  const tiny = availableWidth <= TINY_TERMINAL_WIDTH;
   if (arityMismatch) {
     if (collisionExcerpt) {
+      if (collisionExcerpt.location) lines.push(collisionExcerpt.location);
       lines.push(collisionExcerpt.source);
-      lines.push(documentLine(
-        span(collisionExcerpt.underlinePrefix),
-        span(
-          `${collisionExcerpt.underline} type error: ${subject} expects ${arityMismatch.expected} arguments but got ${arityMismatch.actual}`,
+      lines.push(...underlineAnnotationLines(
+        collisionExcerpt,
+        [span(
+          `type error: ${subject} expects ${arityMismatch.expected} arguments but got ${arityMismatch.actual}`,
           "error",
-        ),
+        )],
+        availableWidth,
+        { underlineRole: "error" },
       ));
     } else {
       lines.push(documentLine(
@@ -317,13 +338,20 @@ function compactCollisionDocument(
       documentLine(span("  received: ", "secondary"), span(rightType, "type")),
     );
   } else if (participants && source) {
-    lines.push(documentLine(span(`  type error: ${subject} can't be both:`, "error")));
-    lines.push(...participantEquationLines(diagnostic, participants, source));
+    lines.push(
+      documentLine(span(`${tiny ? "" : "  "}type error: ${subject} can't be both:`, "error")),
+    );
+    lines.push(...participantEquationLines(diagnostic, participants, source, availableWidth));
   } else if (collisionExcerpt) {
+    if (collisionExcerpt.location) {
+      lines.push(documentLine(span("  "), ...collisionExcerpt.location.spans));
+    }
     lines.push(documentLine(span("  "), ...collisionExcerpt.source.spans));
-    lines.push(documentLine(
-      span(`  ${collisionExcerpt.underlinePrefix}`),
-      span(`${collisionExcerpt.underline} type error: ${subject} can't be both:`, "error"),
+    lines.push(...underlineAnnotationLines(
+      collisionExcerpt,
+      [span(`type error: ${subject} can't be both:`, "error")],
+      availableWidth,
+      { indent: "  ", underlineRole: "error" },
     ));
   } else {
     lines.push(documentLine(span(`  type error: ${subject} can't be both:`, "error")));
@@ -331,32 +359,71 @@ function compactCollisionDocument(
   if (!arityMismatch && (!participants || !source)) {
     lines.push(typeBulletLine(leftType), typeBulletLine(rightType));
   }
-  const leftCell = compactOriginCell(
+  let leftCell = compactOriginCell(
     diagnostic,
     leftOriginType,
     leftOrigin,
     source,
     filePath,
     leftOriginLabel,
+    availableWidth,
   );
-  const rightCell = compactOriginCell(
+  let rightCell = compactOriginCell(
     diagnostic,
     rightOriginType,
     rightOrigin,
     source,
     filePath,
     rightOriginLabel,
+    availableWidth,
   );
+  if (leftCell.length > 2 || rightCell.length > 2) {
+    leftCell = compactOriginCell(
+      diagnostic,
+      leftOriginType,
+      leftOrigin,
+      source,
+      filePath,
+      leftOriginLabel,
+      availableWidth,
+      true,
+    );
+    rightCell = compactOriginCell(
+      diagnostic,
+      rightOriginType,
+      rightOrigin,
+      source,
+      filePath,
+      rightOriginLabel,
+      availableWidth,
+      true,
+    );
+  }
   const sideBySide = renderCompactDocumentColumns(leftCell, rightCell);
-  const fitsSideBySide = Math.max(...sideBySide.map(lineWidth), 1) <= availableWidth;
+  const fitsSideBySide = !tiny && Math.max(...sideBySide.map(lineWidth), 1) <= availableWidth;
   lines.push(documentLine(
     span(compactSectionHeader("Origins", originColumns, availableWidth), "header"),
   ));
-  lines.push(...(fitsSideBySide ? sideBySide : renderStackedDocumentCells(leftCell, rightCell)));
+  lines.push(
+    ...(
+      fitsSideBySide ? sideBySide : renderStackedDocumentCells(leftCell, rightCell, !tiny)
+    ),
+  );
   lines.push(documentLine(
     span(`- use wm err ${relativeFile(filePath)} to see a more detailed error`, "hint"),
   ));
   return { lines };
+}
+
+/** Participants are ordered per adapter, so pick the side by its rendered type, not by position. */
+function participantClaimFor(
+  participants: CollisionParticipants | undefined,
+  type: string,
+  exclude?: ClaimEntry,
+): ClaimEntry | undefined {
+  if (!participants) return undefined;
+  return [participants.left, participants.right]
+    .find((participant) => participant.type === type && participant.claim !== exclude)?.claim;
 }
 
 function matchParticipants(
@@ -479,9 +546,25 @@ function participantEquationLines(
   diagnostic: AuditableDiagnostic,
   participants: CollisionParticipants,
   source: string,
+  availableWidth: number,
 ): Line[] {
-  const left = participantSource(participants.left.claim, source);
-  const right = participantSource(participants.right.claim, source);
+  const tiny = availableWidth <= TINY_TERMINAL_WIDTH;
+  const normalizeParticipant = (view: ParticipantSource): ParticipantSource => {
+    const gutter = tiny ? view.gutter.trimEnd() : view.gutter;
+    const code = tiny ? view.code.trimStart() : view.code;
+    return { gutter, code };
+  };
+  const rawLeft = normalizeParticipant(participantSource(participants.left.claim, source));
+  const rawRight = normalizeParticipant(participantSource(participants.right.claim, source));
+  const typeWidth = Math.max(participants.left.type.length, participants.right.type.length);
+  const gutterWidth = Math.max(rawLeft.gutter.length, rawRight.gutter.length);
+  const separatorWidth = tiny ? 1 : 2;
+  const sourceBudget = Math.max(
+    4,
+    availableWidth - (tiny ? 0 : 2) - gutterWidth - separatorWidth - typeWidth,
+  );
+  const left = { ...rawLeft, code: clipStart(rawLeft.code, sourceBudget) };
+  const right = { ...rawRight, code: clipStart(rawRight.code, sourceBudget) };
   const width = Math.max(
     left.gutter.length + left.code.length,
     right.gutter.length + right.code.length,
@@ -489,11 +572,11 @@ function participantEquationLines(
   const row = (participant: CollisionParticipant, view: ParticipantSource): Line => {
     const padding = " ".repeat(width - view.gutter.length - view.code.length);
     return documentLine(
-      span("  "),
+      span(tiny ? "" : "  "),
       span(view.gutter, "secondary"),
       span(view.code),
       span(padding),
-      span(": ", "secondary"),
+      span(tiny ? ":" : ": ", "secondary"),
       span(participant.type, "type"),
     );
   };
@@ -539,6 +622,32 @@ function typeBulletLine(type: string): Line {
   return documentLine(span("  - "), span(type, "type"));
 }
 
+/**
+ * A caret line and whatever it points at. When the two cannot share the width, the caret grows a
+ * ┌── connector and the annotation drops to its own line rather than wrapping mid-word.
+ */
+function underlineAnnotationLines(
+  excerpt: CompactExcerpt,
+  annotation: Span[],
+  width: number | undefined,
+  options: { indent?: string; underlineRole?: SemanticRole; forceMultiline?: boolean } = {},
+): Line[] {
+  const indent = options.indent ?? "";
+  const inline = documentLine(
+    span(`${indent}${excerpt.underlinePrefix}`),
+    span(`${excerpt.underline} `, options.underlineRole),
+    ...annotation,
+  );
+  if (!options.forceMultiline && (width === undefined || lineWidth(inline) <= width)) {
+    return [inline];
+  }
+  const connector = `┌${"─".repeat(Math.max(0, excerpt.underlinePrefix.length - 1))}`;
+  return [
+    documentLine(span(`${indent}${connector}${excerpt.underline}`, options.underlineRole)),
+    documentLine(span(indent), ...annotation),
+  ];
+}
+
 function compactOriginCell(
   diagnostic: AuditableDiagnostic,
   type: string,
@@ -546,22 +655,37 @@ function compactOriginCell(
   source: string | undefined,
   filePath: string | undefined,
   labelOverride?: string,
+  availableWidth?: number,
+  forceMultiline = false,
 ): Line[] {
   const document = claim?.origin.kind === "source"
     ? sourceDocument(diagnostic, claim.origin, filePath, source)
     : undefined;
   const claimSource = document?.source;
+  const contentWidth = availableWidth === undefined
+    ? undefined
+    : availableWidth - (availableWidth <= TINY_TERMINAL_WIDTH ? 0 : 2);
   const label = labelOverride ?? (claim ? claimSubject(claim, claimSource) : undefined);
-  if (!claimSource || claim?.origin.kind !== "source") {
+  if (
+    !claimSource || claim?.origin.kind !== "source" ||
+    !spanWithinSource(claimSource, claim.origin.span)
+  ) {
     return [documentLine(span(label ? `${label}: ` : "", "secondary"), span(type, "type"))];
   }
-  const excerpt = renderCompactExcerpt(claimSource, claim.origin.span, document?.filePath);
+  const excerpt = renderCompactExcerpt(
+    claimSource,
+    claim.origin.span,
+    document?.filePath,
+    contentWidth,
+  );
   return [
+    ...(excerpt.location ? [excerpt.location] : []),
     excerpt.source,
-    documentLine(
-      span(excerpt.underlinePrefix),
-      span(`${excerpt.underline}${label ? ` ${label}: ` : " "}`, "secondary"),
-      span(type, "type"),
+    ...underlineAnnotationLines(
+      excerpt,
+      [span(label ? `${label}: ` : "", "secondary"), span(type, "type")],
+      contentWidth,
+      { underlineRole: "secondary", forceMultiline },
     ),
   ];
 }
@@ -583,8 +707,8 @@ function renderCompactDocumentColumns(left: Line[], right: Line[]): Line[] {
   });
 }
 
-function renderStackedDocumentCells(left: Line[], right: Line[]): Line[] {
-  return [...left, ...right].map((item) => documentLine(span("  "), ...item.spans));
+function renderStackedDocumentCells(left: Line[], right: Line[], indent = true): Line[] {
+  return [...left, ...right].map((item) => documentLine(span(indent ? "  " : ""), ...item.spans));
 }
 
 function lineWidth(line: Line): number {
@@ -861,8 +985,9 @@ function collisionOriginColumns(
     if (detailed) return [heading, ...(excerpt ? ["", ...excerpt] : [])];
     if (!excerpt) return [subject ? `${subject}: ${type}` : type];
     return [
-      excerpt[0],
-      `${excerpt[1]}${subject ? ` ${subject}: ${type}` : ` ${type}`}`,
+      ...excerpt.slice(0, -2),
+      excerpt.at(-2) ?? "",
+      `${excerpt.at(-1) ?? ""}${subject ? ` ${subject}: ${type}` : ` ${type}`}`,
     ];
   };
   return [column(leftType, left, leftLabel), column(rightType, right, rightLabel)];
@@ -986,38 +1111,99 @@ function relativeFile(filePath: string | undefined): string {
 
 type CompactExcerpt = {
   lines: string[];
+  /** Present when the file location did not fit beside the code and moved to its own line. */
+  location: Line | undefined;
   source: Line;
   underlinePrefix: string;
   underline: string;
 };
 
+/**
+ * Spans only render against the unit they were recorded in. A span that lands outside this source
+ * belongs to another file, and excerpting it here would emit an empty line under a huge indent.
+ */
+function spanWithinSource(source: string, sourceSpan: SourceSpan): boolean {
+  if (sourceSpan.start < 0 || sourceSpan.start > source.length) return false;
+  const starts = lineStarts(source);
+  const lineIndex = sourceSpan.line - 1;
+  if (lineIndex < 0 || lineIndex >= starts.length) return false;
+  const lineStart = starts[lineIndex];
+  const lineEnd = source.indexOf("\n", lineStart);
+  return sourceSpan.start >= lineStart &&
+    sourceSpan.start <= (lineEnd === -1 ? source.length : lineEnd);
+}
+
 function renderCompactExcerpt(
   source: string,
   sourceSpan: SourceSpan,
   filePath: string | undefined,
+  availableWidth?: number,
 ): CompactExcerpt {
   const starts = lineStarts(source);
   const lineIndex = Math.max(0, Math.min(sourceSpan.line - 1, starts.length - 1));
   const lineStart = starts[lineIndex];
   const lineEnd = source.indexOf("\n", lineStart);
   const originalLine = lineEnd === -1 ? source.slice(lineStart) : source.slice(lineStart, lineEnd);
-  const gutter = `${sourceSpan.line}| `;
+  const tiny = availableWidth !== undefined && availableWidth <= TINY_TERMINAL_WIDTH;
+  const gutter = `${sourceSpan.line}|${tiny ? "" : " "}`;
   const location = `${relativeFile(filePath)}:${sourceSpan.line}:${sourceSpan.col + 1}`;
-  const compacted = compactLeadingIndent(originalLine, sourceSpan.start - lineStart);
-  const line = compacted.line;
-  const underlineOffset = compacted.offset;
-  const underlineWidth = Math.max(
+  const leading = tiny ? /^[ \t]*/.exec(originalLine)?.[0].length ?? 0 : 0;
+  const compacted = tiny
+    ? {
+      line: originalLine.slice(leading),
+      offset: Math.max(0, sourceSpan.start - lineStart - leading),
+    }
+    : compactLeadingIndent(originalLine, sourceSpan.start - lineStart);
+  let line = compacted.line;
+  let underlineOffset = compacted.offset;
+  let underlineWidth = Math.max(
     1,
     Math.min(
       Math.max(sourceSpan.end, sourceSpan.start + 1),
       lineEnd === -1 ? source.length : lineEnd,
     ) - sourceSpan.start,
   );
+  // A location wedged onto the code line is what wraps first on a narrow terminal, and a wrapped
+  // "draw.wm:264\n:3" reads as garbage. Once the pair no longer leaves room for a useful excerpt,
+  // the location takes its own line above the code instead.
+  const minimumCode = tiny ? 8 : 12;
+  const hoistLocation = availableWidth !== undefined &&
+    gutter.length + minimumCode + 2 + location.length > availableWidth;
+  const codeBudget = availableWidth === undefined
+    ? undefined
+    : Math.max(
+      minimumCode,
+      availableWidth - gutter.length - (hoistLocation ? 0 : location.length + 2),
+    );
+  if (codeBudget !== undefined && line.length > codeBudget) {
+    const context = tiny ? 0 : 3;
+    const marker = "..";
+    const start = Math.max(0, Math.min(underlineOffset - context, line.length - codeBudget));
+    const leadingMarker = start > 0 ? marker : "";
+    const roomAfterLeading = Math.max(1, codeBudget - leadingMarker.length);
+    const needsTrailingMarker = start + roomAfterLeading < line.length;
+    const sourceWidth = Math.max(1, roomAfterLeading - (needsTrailingMarker ? marker.length : 0));
+    const end = Math.min(line.length, start + sourceWidth);
+    const trailingMarker = end < line.length ? marker : "";
+    line = `${leadingMarker}${line.slice(start, end)}${trailingMarker}`;
+    underlineOffset = Math.max(
+      leadingMarker.length,
+      underlineOffset - start + leadingMarker.length,
+    );
+    underlineWidth = Math.min(underlineWidth, Math.max(1, line.length - underlineOffset));
+  }
   const underlinePrefix = " ".repeat(gutter.length + underlineOffset);
   const underline = "^".repeat(underlineWidth);
   return {
-    lines: [`${gutter}${line}  ${location}`, `${underlinePrefix}${underline}`],
-    source: documentLine(span(gutter, "secondary"), span(`${line}  ${location}`)),
+    lines: [
+      ...(hoistLocation ? [location] : []),
+      hoistLocation ? `${gutter}${line}` : `${gutter}${line}  ${location}`,
+      `${underlinePrefix}${underline}`,
+    ],
+    location: hoistLocation ? documentLine(span(location, "secondary")) : undefined,
+    source: hoistLocation
+      ? documentLine(span(gutter, "secondary"), span(line))
+      : documentLine(span(gutter, "secondary"), span(`${line}  ${location}`)),
     underlinePrefix,
     underline,
   };
@@ -1037,6 +1223,12 @@ function compactLeadingIndent(line: string, offset: number): { line: string; off
 function clip(text: string, width: number): string {
   if (text.length <= width) return text;
   return `${text.slice(0, Math.max(0, width - 1))}…`;
+}
+
+function clipStart(text: string, width: number): string {
+  if (text.length <= width) return text;
+  if (width <= 2) return text.slice(-width);
+  return `..${text.slice(-(width - 2))}`;
 }
 
 function renderTypeBullet(type: string): string {

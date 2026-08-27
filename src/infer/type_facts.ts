@@ -40,6 +40,15 @@ export type TypeFacts = {
   recordFields: Map<RecordExprField | RecordPatternField, RecordFieldFact>;
   recordProjections: Map<Extract<Expr, { kind: "Var" }>, RecordProjectionFact[]>;
   ffi: Map<number, FfiFact>;
+  recoveryHoles: RecoveryHoleFact[];
+};
+
+export type RecoveryHoleFact = {
+  id: number;
+  expression: Expr;
+  anchor: number;
+  expected: Ty;
+  diagnosticCode: string;
 };
 
 export type GpuOperationShape = "f32" | "f32x2" | "f32x3" | "f32x4";
@@ -67,7 +76,7 @@ export type GpuOperationObligation = {
 };
 
 export type PrimitiveCarrierPlan = {
-  carrier: "Result";
+  carrier: string;
   occurrence: Expr;
   error: Ty;
   operands: ("wrapped" | "pure")[];
@@ -177,6 +186,7 @@ export function createTypeFacts(): TypeFacts {
     recordFields: new Map(),
     recordProjections: new Map(),
     ffi: new Map(),
+    recoveryHoles: [],
   };
 }
 

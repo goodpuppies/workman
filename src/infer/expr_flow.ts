@@ -34,6 +34,7 @@ import {
   type TypeSource,
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
+import { carrierContext, type CarrierPeel, peelCarrier, rewrapCarrier } from "./carriers.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
 import {
@@ -78,42 +79,80 @@ export function inferMatch(
       type: snapshotType(armType),
       derivedFrom: undefined,
     };
-    constrainAt(
-      result,
-      armType,
-      arm.body,
-      undefined,
-      [],
-      provenance,
-      {
-        message: "match arm result",
-        node: arm.body.node,
-        span: arm.body.node?.span,
-      },
-      {
-        premise: {
-          code: "type.match-arm-results-disagree",
-          rule: "InferMatch.ArmsSameType",
-          role: "match arm result agrees with previous arms",
-          subject: "match arm result",
-          leftRole: "match result",
-          rightRole: "arm result",
+    try {
+      constrainAt(
+        result,
+        armType,
+        arm.body,
+        undefined,
+        [],
+        provenance,
+        {
+          message: "match arm result",
+          node: arm.body.node,
+          span: arm.body.node?.span,
         },
-        sources: {
-          left: {
-            origin: {
-              message: "match result established by previous arms",
-              node: expr.node,
-              span: expr.node?.span,
-            },
-            type: result,
-            provenance,
-            related: previousArmSources,
+        {
+          premise: {
+            code: "type.match-arm-results-disagree",
+            rule: "InferMatch.ArmsSameType",
+            role: "match arm result agrees with previous arms",
+            subject: "match arm result",
+            leftRole: "match result",
+            rightRole: "arm result",
           },
-          right: armSource,
+          sources: {
+            left: {
+              origin: {
+                message: "match result established by previous arms",
+                node: expr.node,
+                span: expr.node?.span,
+              },
+              type: result,
+              provenance,
+              related: previousArmSources,
+            },
+            right: armSource,
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      if (!context.recover || !isEmptyBlock(arm.body)) throw error;
+      const diagnostic = diagnosticError(error, arm.body.node).diagnostic;
+      if (diagnostic.code !== "type.match-arm-results-disagree") throw error;
+      diagnostics.push(diagnostic);
+      const emptyBlock = arm.body;
+      const anchor = Math.max(
+        emptyBlock.node?.span.start ?? 0,
+        (emptyBlock.node?.span.end ?? 1) - 1,
+      );
+      const point = {
+        line: emptyBlock.result.node?.span.line ?? emptyBlock.node?.span.line ?? 1,
+        col: emptyBlock.result.node?.span.col ?? emptyBlock.node?.span.col ?? 0,
+        start: anchor,
+        end: anchor,
+      };
+      const recoveryHole = {
+        id: emptyBlock.result.node?.id ?? emptyBlock.node?.id ?? -1,
+        anchor,
+        diagnosticCode: diagnostic.code,
+      };
+      const synthetic: Expr = {
+        kind: "Panic",
+        hole: true,
+        recoveryHole,
+        message: {
+          kind: "String",
+          value: "inferred recovery hole",
+          node: { id: recoveryHole.id, span: point },
+        },
+        node: { id: recoveryHole.id, span: point },
+      };
+      arm.body = synthetic;
+      recordExpectedExprType(facts, synthetic, result);
+      const holeType = inferExpr(synthetic, deriveInferContext(context, { env: local }));
+      constrainAt(result, holeType, synthetic, undefined, [], provenance);
+    }
     previousArmSources.push(participant);
   }
   const armPatterns = expr.arms.map((arm) => arm.pattern);
@@ -124,6 +163,11 @@ export function inferMatch(
     diagnostics.push(warningDiagnostic(exhaustiveWarning, expr.node, "pattern.non-exhaustive"));
   }
   return result;
+}
+
+function isEmptyBlock(expr: Expr): expr is Extract<Expr, { kind: "Block" }> {
+  return expr.kind === "Block" && expr.items.length === 0 && expr.result.kind === "Void" &&
+    expr.result.implicitStatement === undefined;
 }
 
 function snapshotType(type: Ty, variables = new Map<number, Ty>()): Ty {
@@ -243,10 +287,10 @@ export function inferBinary(
   });
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
-  const leftCarrier = resultParts(left, typeEnv);
-  const rightCarrier = resultParts(right, typeEnv);
-  const leftOperand = leftCarrier?.value ?? left;
-  const rightOperand = rightCarrier?.value ?? right;
+  const leftCarrier = peelCarrier(left, typeEnv);
+  const rightCarrier = peelCarrier(right, typeEnv);
+  const leftOperand = leftCarrier?.payload ?? left;
+  const rightOperand = rightCarrier?.payload ?? right;
   const dialectResult = context.dialect.inferBinary?.(
     expr,
     leftOperand,
@@ -320,48 +364,106 @@ export function inferBinary(
 function wrapBinaryCarrierResult(
   expr: Extract<Expr, { kind: "Binary" }>,
   result: Ty,
-  leftCarrier: { value: Ty; error: Ty } | undefined,
-  rightCarrier: { value: Ty; error: Ty } | undefined,
+  leftCarrier: CarrierPeel | undefined,
+  rightCarrier: CarrierPeel | undefined,
   typeEnv: TypeEnv,
   facts: TypeFacts,
   provenance: TypeProvenance,
 ): Ty {
   if (!leftCarrier && !rightCarrier) return result;
   if (leftCarrier && rightCarrier) {
+    if (leftCarrier.info.id !== rightCarrier.info.id) {
+      throw diagnosticError(
+        new Error(
+          `operator ${expr.op} mixes carriers ${leftCarrier.info.name} and ${rightCarrier.info.name}; a lifted operator peels one carrier, so unwrap the outer one first`,
+        ),
+        expr.node,
+      );
+    }
+    constrainCarrierContext(expr, leftCarrier, rightCarrier, provenance);
+  }
+  const carrier = leftCarrier ?? rightCarrier;
+  if (!carrier) return result;
+  if (carrier.registration.payloadIndex === undefined) {
+    // A monomorphic carrier has no payload argument to replace, so the operator
+    // has to answer in the payload type the carrier declared.
     constrainAt(
-      leftCarrier.error,
-      rightCarrier.error,
+      result,
+      carrier.registration.payloadType!,
       expr,
       undefined,
       [],
       provenance,
       {
-        message: "Result operator error carrier",
+        message: `${carrier.info.name} carrier payload`,
+        node: expr.node,
+        span: expr.node?.span,
+        primary: true,
+      },
+      {
+        premise: {
+          rule: "InferBinary.CarrierPayload",
+          role: `operator answers in ${carrier.info.name}'s payload type`,
+          subject: `operator ${expr.op}`,
+          leftRole: "operator result",
+          rightRole: "carrier payload",
+        },
+        sources: {
+          right: {
+            origin: {
+              message:
+                `${carrier.info.name} carries ${quoteType(carrier.registration.payloadType!)}`,
+            },
+          },
+        },
+      },
+    );
+  }
+  recordPrimitiveCarrierFact(facts, {
+    carrier: carrier.info.name,
+    occurrence: expr,
+    error: carrierContext(carrier)[0] ?? result,
+    operands: [leftCarrier ? "wrapped" : "pure", rightCarrier ? "wrapped" : "pure"],
+    payloadResult: result,
+  });
+  return rewrapCarrier(carrier, result);
+}
+
+/** Unify every carrier argument that is not the payload, such as `Result`'s error. */
+function constrainCarrierContext(
+  expr: Expr,
+  left: CarrierPeel,
+  right: CarrierPeel,
+  provenance: TypeProvenance,
+): void {
+  const leftContext = carrierContext(left);
+  const rightContext = carrierContext(right);
+  leftContext.forEach((item, index) => {
+    const other = rightContext[index];
+    if (!other) return;
+    constrainAt(
+      item,
+      other,
+      expr,
+      undefined,
+      [],
+      provenance,
+      {
+        message: `${left.info.name} operator carrier argument`,
         node: expr.node,
         span: expr.node?.span,
       },
       {
         premise: {
-          rule: "InferBinary.ResultCarrierError",
-          role: "Result operator operands use the same error type",
-          subject: `operator ${expr.op}`,
-          leftRole: "left error",
-          rightRole: "right error",
+          rule: "InferBinary.CarrierArgument",
+          role: `${left.info.name} operator operands agree outside the payload`,
+          subject: `operator ${(expr as Extract<Expr, { kind: "Binary" }>).op}`,
+          leftRole: "left argument",
+          rightRole: "right argument",
         },
       },
     );
-  }
-  const carrier = leftCarrier ?? rightCarrier;
-  const resultInfo = typeInfoByName(typeEnv, "Result");
-  if (!carrier || !resultInfo) return result;
-  recordPrimitiveCarrierFact(facts, {
-    carrier: "Result",
-    occurrence: expr,
-    error: carrier.error,
-    operands: [leftCarrier ? "wrapped" : "pure", rightCarrier ? "wrapped" : "pure"],
-    payloadResult: result,
   });
-  return named(resultInfo, [result, carrier.error]);
 }
 
 function binaryContext(

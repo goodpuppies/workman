@@ -18,6 +18,8 @@ export type CoreDecl =
     clause: ImportClause;
     target?: ModuleId;
     structureId?: StructureId;
+    /** Compiler-injected namespace for a carrier an operator lowered against. */
+    carrierAlias?: boolean;
     node?: AstNode;
   }
   | {

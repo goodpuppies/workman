@@ -480,7 +480,7 @@ async function handleMessage(message: RpcMessage) {
 
 async function inlayHints(params: InlayHintParams) {
   const uri = params.textDocument.uri;
-  const ordinary = typeInlaysEnabled || parameterInlaysEnabled
+  const ordinary = typeInlaysEnabled || parameterInlaysEnabled || structuralInlaysEnabled
     ? await semanticInlayHints(
       uri,
       params.range,
@@ -489,6 +489,7 @@ async function inlayHints(params: InlayHintParams) {
       {
         typeHints: typeInlaysEnabled,
         parameterHints: parameterInlaysEnabled,
+        recoveryHoles: structuralInlaysEnabled,
       },
       semanticService,
     )

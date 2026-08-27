@@ -24,6 +24,25 @@ record Carrier<
   andThen: (AndThenCarrier, AndThenTransform) -> AndThenResult,
 };
 
+// The subset a lifted operator needs: inject a pure operand, and combine two
+// carriers componentwise. A type with no lawful andThen -- a fixed-size vector,
+// say -- can register this without pretending to be a monad.
+record Applicative<
+  SucceedArg,
+  SucceedResult,
+  MapCarrier,
+  MapTransform,
+  MapResult,
+  Map2Left,
+  Map2Right,
+  Map2Combine,
+  Map2Result,
+> = {
+  succeed: SucceedArg -> SucceedResult,
+  map: (MapCarrier, MapTransform) -> MapResult,
+  map2: (Map2Left, Map2Right, Map2Combine) -> Map2Result,
+};
+
 let via = (domain) => {
   (f) => {
     domain.fn(f)

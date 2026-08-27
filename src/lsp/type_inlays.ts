@@ -29,10 +29,29 @@ export type ParameterNameInlayHint = {
   data: Readonly<{ kind: "workman.parameter-name" }>;
 };
 
-export type WorkmanSemanticInlayHint = InferredTypeInlayHint | ParameterNameInlayHint;
+export type RecoveryHoleInlayHint = {
+  position: LspPosition;
+  label: "?";
+  kind?: never;
+  tooltip: string;
+  data: Readonly<{
+    kind: "workman.structural";
+    recoveryId: number;
+    repairClass: "recoveryOnly";
+    pairId: 0;
+    order: number;
+    code: string;
+  }>;
+};
+
+export type WorkmanSemanticInlayHint =
+  | InferredTypeInlayHint
+  | ParameterNameInlayHint
+  | RecoveryHoleInlayHint;
 export type SemanticInlayOptions = Readonly<{
   typeHints?: boolean;
   parameterHints?: boolean;
+  recoveryHoles?: boolean;
 }>;
 
 const MAX_TYPE_INLAY_LABEL_LENGTH = 60;
@@ -95,10 +114,30 @@ export async function semanticInlayHints(
           data: Object.freeze({ kind: "workman.parameter-name" as const }),
         };
       });
-  return [...inferred, ...parameters].sort((left, right) =>
+  const recoveryHoles: RecoveryHoleInlayHint[] = inlayOptions.recoveryHoles === true
+    ? [...context.moduleInterface.recoveryHoles, ...context.recoveryHoles]
+      .filter((hole) => hole.anchor >= start && hole.anchor <= end)
+      .map((hole) => {
+        const position = offsetToLineColFromStarts(hole.anchor, starts);
+        return {
+          position: { line: position.line - 1, character: position.col },
+          label: "?",
+          tooltip: "Virtual Workman syntax: inferred hole for an unfinished expression",
+          data: Object.freeze({
+            kind: "workman.structural" as const,
+            recoveryId: hole.id,
+            repairClass: "recoveryOnly" as const,
+            pairId: 0 as const,
+            order: hole.anchor,
+            code: hole.diagnosticCode,
+          }),
+        };
+      })
+    : [];
+  return [...inferred, ...parameters, ...recoveryHoles].sort((left, right) =>
     left.position.line - right.position.line ||
     left.position.character - right.position.character ||
-    left.kind - right.kind
+    (left.kind ?? 0) - (right.kind ?? 0)
   );
 }
 

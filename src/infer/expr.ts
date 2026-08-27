@@ -38,6 +38,7 @@ import {
   jsPromiseFfiCallValue,
 } from "./expr_js_members.ts";
 import { inferBinary, inferBlock, inferMatch, inferPipe } from "./expr_flow.ts";
+import { type CarrierPeel, peelCarrier, rewrapCarrier } from "./carriers.ts";
 import {
   originForScheme,
   recordConsumedFfiUse,
@@ -365,6 +366,13 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       );
       break;
     case "Panic": {
+      if (expr.recoveryHole) {
+        facts.recoveryHoles.push({
+          ...expr.recoveryHole,
+          expression: expr,
+          expected: facts.expectedExpressions.get(expr) ?? fresh(),
+        });
+      }
       recordExpectedExprType(facts, expr.message, StringTy);
       const panicMessage = inferExpr(expr.message, context);
       constrainAt(
@@ -466,7 +474,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         });
         constrainAt(
           NumberTy,
-          carrier?.value ?? value,
+          carrier?.payload ?? value,
           expr.value,
           undefined,
           [],
@@ -488,14 +496,14 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
             sources: {
               right: sourceForTypedExpr(
                 expr.value,
-                carrier?.value ?? value,
+                carrier?.payload ?? value,
                 provenance,
                 "unary - operand",
               ),
             },
           },
         );
-        t = carrier ? wrapResult(NumberTy, carrier.error, typeEnv) : NumberTy;
+        t = carrier ? rewrapCarrier(carrier, NumberTy) : NumberTy;
       } else {
         recordExpectedExprType(facts, expr.value, BoolTy);
         const value = inferExpr(expr.value, context);
@@ -507,7 +515,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
         });
         constrainAt(
           BoolTy,
-          carrier?.value ?? value,
+          carrier?.payload ?? value,
           expr.value,
           undefined,
           [],
@@ -529,14 +537,14 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
             sources: {
               right: sourceForTypedExpr(
                 expr.value,
-                carrier?.value ?? value,
+                carrier?.payload ?? value,
                 provenance,
                 "unary ! operand",
               ),
             },
           },
         );
-        t = carrier ? wrapResult(BoolTy, carrier.error, typeEnv) : BoolTy;
+        t = carrier ? rewrapCarrier(carrier, BoolTy) : BoolTy;
       }
       break;
     case "Pipe":
@@ -567,14 +575,6 @@ function ffiBindingCallType(
   return named(carrier, [value, named(jsError)]);
 }
 
-function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {
-  const resolved = prune(type);
-  const result = typeInfoByName(typeEnv, "Result");
-  if (!result || resolved.tag !== "named" || resolved.id !== result.id) return undefined;
-  return { value: resolved.args[0], error: resolved.args[1] };
-}
-
-function wrapResult(value: Ty, error: Ty, typeEnv: TypeEnv): Ty {
-  const result = typeInfoByName(typeEnv, "Result");
-  return result ? named(result, [value, error]) : value;
+function resultParts(type: Ty, typeEnv: TypeEnv): CarrierPeel | undefined {
+  return peelCarrier(type, typeEnv);
 }

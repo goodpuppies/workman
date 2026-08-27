@@ -138,7 +138,7 @@ export type SemanticOccurrenceType = Readonly<{
 }>;
 
 export type SemanticCarrierOperation = Readonly<{
-  carrier: "Result";
+  carrier: string;
   span: SourceSpan;
   operands: readonly ("wrapped" | "pure")[];
   errorType: SemanticTypeId;
@@ -490,6 +490,7 @@ export type ModuleInterface = Readonly<{
   expectedTypes: readonly SemanticExpectedType[];
   inferredTypeHints: readonly SemanticInferredTypeHint[];
   parameterHints: readonly SemanticParameterHint[];
+  recoveryHoles: readonly SemanticRecoveryHole[];
   callableDefinitions: readonly SemanticCallableDefinition[];
   callSites: readonly SemanticCallSite[];
   semanticTokens: readonly SemanticTokenFact[];
@@ -497,6 +498,12 @@ export type ModuleInterface = Readonly<{
   semanticTypes: readonly SemanticType[];
   diagnostics: readonly FrontendDiagnostic[];
   completeness: ModuleCompleteness;
+}>;
+
+export type SemanticRecoveryHole = Readonly<{
+  id: number;
+  anchor: number;
+  diagnosticCode: string;
 }>;
 
 export type ProjectSnapshot = Readonly<{
@@ -599,6 +606,13 @@ export function buildProjectSnapshot(
       moduleBindings,
       callableParameters,
     );
+    const recoveryHoles = Object.freeze(result.facts.recoveryHoles.map((hole) =>
+      Object.freeze({
+        id: hole.id,
+        anchor: hole.anchor,
+        diagnosticCode: hole.diagnosticCode,
+      })
+    ));
     const callableDefinitions = semanticCallableDefinitions(
       moduleBindings,
       callableParameters,
@@ -660,6 +674,7 @@ export function buildProjectSnapshot(
         expectedTypes,
         inferredTypeHints,
         parameterHints,
+        recoveryHoles,
         callableDefinitions,
         callSites,
         semanticTokens,

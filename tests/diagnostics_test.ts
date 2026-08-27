@@ -9,6 +9,31 @@ import {
   FrontendDiagnosticError,
   renderDiagnosticSummary,
 } from "../src/diagnostics.ts";
+import { line, span, wrapDocument } from "../tooling/tuiman/document.ts";
+
+Deno.test("terminal diagnostic documents flow to narrow widths without losing roles", () => {
+  const wrapped = wrapDocument(
+    { lines: [line(span("123456", "header"), span("abcdef", "type"))] },
+    8,
+  );
+  assertEquals(wrapped.lines.map((item) => item.spans.map((part) => part.text).join("")), [
+    "123456ab",
+    "cdef",
+  ]);
+  assertEquals(wrapped.lines[1].spans[0].role, "type");
+});
+
+Deno.test("terminal diagnostic documents wrap on words and keep their indentation", () => {
+  const wrapped = wrapDocument(
+    { lines: [line(span("  type error: ", "error"), span("render can't be both", "type"))] },
+    20,
+  );
+  assertEquals(wrapped.lines.map((item) => item.spans.map((part) => part.text).join("")), [
+    "  type error: render",
+    "can't be both",
+  ]);
+  assertEquals(wrapped.lines[0].spans.at(-1)?.role, "type");
+});
 
 Deno.test("call mismatch produces an auditable diagnostic artifact", async () => {
   const error = await assertRejects(
