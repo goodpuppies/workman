@@ -1,0 +1,33 @@
+-- Turning errors into text.
+--
+-- Workman has no typeclasses, so an error type describes itself through an
+-- ordinary function the caller supplies. That keeps rendering out of the
+-- procedures that produce the errors, and lets a program compose the
+-- descriptions of the libraries it uses.
+
+-- The one rendering every Workman program needs: JavaScript's two failure
+-- shapes as text. See `docs/js-errors.md` for how a thrown value becomes one
+-- of these.
+let message = match(error) => {
+  Js.Error(text) => { text },
+  Js.Unknown => { "unknown JavaScript error" },
+};
+
+-- Print a failed procedure's description and produce Void, so a `main` can end
+-- on the pipeline instead of an unwrapping `match`.
+let report = (result, describe) => {
+  match(result) {
+    Ok(_) => { void },
+    Err(error) => { print(describe(error)) },
+  }
+};
+
+-- Unwrap or stop with a described failure. This is the honest version of the
+-- `try` helper in `docs/jsffi.md`, which panics with a fixed string and throws
+-- the error away.
+let orPanic = (result, describe) => {
+  match(result) {
+    Ok(value) => { value },
+    Err(error) => { Panic(describe(error)) },
+  }
+};

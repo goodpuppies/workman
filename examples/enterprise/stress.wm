@@ -1,0 +1,59 @@
+-- Exercises the paths `hello.wm` never reaches: a buffer far too small, a
+-- payload that bypasses it entirely, and enough lines to drain repeatedly.
+
+from "./writev.wm" import * as Writer;
+from "./error.wm" import * as Error;
+from js.global("Deno") import unsafe { exit: Number -> Void } as Runtime;
+from js.global import { Uint8Array };
+from js.global import unsafe { String as textOf: Number -> String };
+
+type AppError =
+  | AllocationFailed<Js.Error>
+  | WriteFailed<Writer.IoError>;
+
+let rec repeated = (text, n) => {
+  if (n <= 0) { "" } else { text ++ repeated(text, n - 1) }
+};
+
+let rec lines = (writer, i, n) => {
+  if (i >= n) {
+    Ok(writer)
+  } else {
+    match(Writer.print(writer, `line ${textOf(i)}\n`)) {
+      Ok(next) => { lines(next, i + 1, n) },
+      Err(error) => { Err(error) },
+    }
+  }
+};
+
+let main = () => {
+  let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
+
+  let attach    = viaWriter (buffer) => { Writer.stdout(buffer) };
+  let buffered  = viaWriter (writer) => { Writer.print(writer, "abc") };
+  let oversized = viaWriter (writer) => { Writer.print(writer, repeated("x", 200)) };
+  let many      = viaWriter (writer) => { lines(writer, 0, 5000) };
+  let drained   = viaWriter (writer) => { Writer.flush(writer) };
+
+  (match({Result|
+    Uint8Array.new(64) :> Result.mapErr(AllocationFailed)
+      :> attach
+      :> buffered
+      :> oversized
+      :> many
+      :> drained,
+    Writer.close() :> Result.mapErr(WriteFailed)
+  |}) {
+    Ok(_) => { 0 },
+    Err(error) => {
+      let reason = match(error) {
+        AllocationFailed(js) => { `could not allocate: ${Error.message(js)}` },
+        WriteFailed(io) => { `write failed: ${Writer.describe(io)}` },
+      };
+
+      Writer.line(Writer.stderrFd, `stress: ${reason}\n`) :> Result.withDefault(void);
+
+      1
+    },
+  }):>  Runtime.exit
+};

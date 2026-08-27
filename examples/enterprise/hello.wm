@@ -1,0 +1,36 @@
+from "./writev.wm" import * as Writer;
+from "./error.wm" import * as Error;
+from js.global("Deno") import unsafe { exit: Number -> Void } as Runtime;
+from js.global import { Uint8Array };
+
+type AppError =
+  | AllocationFailed<Js.Error>
+  | WriteFailed<Writer.IoError>;
+
+let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
+
+let main = () => {
+  let getWriter = viaWriter (buffer) => { Writer.stdout(buffer) };
+  let write     = viaWriter (writer) => { Writer.print(writer, "hello\n") };
+  let flush     = viaWriter (writer) => { Writer.flush(writer) };
+
+  (match({Result|
+    Uint8Array.new(4096) :> Result.mapErr(AllocationFailed)
+      :> getWriter
+      :> write
+      :> flush,
+    Writer.close() :> Result.mapErr(WriteFailed)
+  |}) {
+    Ok(_) => { 0 },
+    Err(error) => {
+      let reason = match(error) {
+        AllocationFailed(js) => { `could not allocate: ${Error.message(js)}` },
+        WriteFailed(io) => { `write failed: ${Writer.describe(io)}` },
+      };
+      Writer.line(Writer.stderrFd, `hello: ${reason}\n`)
+        //stderr is gone too, we void
+        :> Result.withDefault(void);
+      1
+    }
+  }) :> Runtime.exit
+};
