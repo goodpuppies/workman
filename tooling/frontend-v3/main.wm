@@ -1,6 +1,8 @@
 from "./lexer.wm" import { lex };
 from "./token.wm" import * as Token;
 from js.global("Deno") import { readTextFileSync };
+from js.module("jsr:@std/fs/walk") import { walkSync };
+from js.global("Array") import { from as arrayFrom };
 
 let getTokText = (t: Token.Token, source) => {
   source 
@@ -37,17 +39,42 @@ let printToks = (list, sourceText) => {
   print("====================");
 };
 
+
+
+type FileProcessorSync = (String, String) -> Void;
+
+let processFilesSync = (
+  dir: String,
+  postfix: String,
+  fn: FileProcessorSync,
+): Void => {
+  let iterator = walkSync(dir, JSON{ exts: JSON[postfix], includeDirs: false })
+    :> Result.debug;
+  let entryArray = arrayFrom(iterator) :> Result.debug;
+
+  let rec step = (index) => {
+    match(entryArray :> .at(index) :> Result.debug) {
+      None => { void },
+      Some(entry) => {
+        let path = entry.path :> Result.debug;
+        let content = readTextFileSync(path) :> Result.debug;
+        fn(content, path);
+        step(index + 1)
+      }
+    }
+  };
+
+  step(0);
+};
+
+let lex_all = () => {
+  processFilesSync(".", ".wm", (source, path) => {
+    print(`lexing ${path}`);
+    let _tokens = lex(source);
+    void
+  })
+};
+
 let main = () => {
-  // Read the source file
-  let source = readTextFileSync("tooling/frontend-v3/example.wm") :> Result.debug;
-
-  // Lex the source into a token list
-  let tokens = lex(source);
-
-  // Print the tokens
-  printToks(tokens, source);
-
-  // Print the raw source text at the end for comparison
-  --print("\n--- Raw Source ---");
-  --print(source)
+  lex_all()
 };

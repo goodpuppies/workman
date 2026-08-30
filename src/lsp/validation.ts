@@ -22,6 +22,7 @@ import { type LspRange, peggyLocationRange, spanRange, startRange } from "./rang
 import { semanticSourceForPath } from "./semantic_context.ts";
 import type { SemanticService } from "./semantic_service.ts";
 import { surfaceRecoveryDiagnostics } from "./surface_recovery.ts";
+import { resultDebugDiagnostics, unusedDiagnostics } from "./unused_diagnostics.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type ValidationResult = {
@@ -36,6 +37,7 @@ export type LspDiagnostic = {
   source: "wm-mini";
   message: string;
   relatedInformation?: LspRelatedInformation[];
+  tags?: readonly (1 | 2)[];
 };
 
 export type LspRelatedInformation = {
@@ -179,6 +181,8 @@ async function validationResultsForProject(
           source,
           diagnosticUri,
         ),
+        ...unusedDiagnostics(moduleInterface, source),
+        ...resultDebugDiagnostics(moduleInterface, source),
         ...(gpuWarning && gpuWarning.path === moduleInterface.path ? [gpuWarning.diagnostic] : []),
       ],
     };

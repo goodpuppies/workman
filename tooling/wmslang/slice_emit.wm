@@ -231,7 +231,11 @@ let rec emitEnvironmentFields = match(items, context, output) => {
       rest,
       context,
       if (field.kind == "uniform") {
-        output ++ "  " ++ typeName(field.typeId, context) ++ " " ++
+        let gpuType = findType(context.types, field.typeId);
+        let fieldType = if (gpuType.kind == "bool") { "int" } else {
+          typeName(field.typeId, context)
+        };
+        output ++ "  " ++ fieldType ++ " " ++
           uniformFieldName(field.declaredIndex) ++ ";\n"
       } else {
         output
@@ -520,7 +524,9 @@ let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitC
         context.input.root.environmentId,
         operation.index
       );
-      "wm_uniforms." ++ uniformFieldName(field.declaredIndex)
+      let access = "wm_uniforms." ++ uniformFieldName(field.declaredIndex);
+      let gpuType = findType(context.types, field.typeId);
+      if (gpuType.kind == "bool") { "(" ++ access ++ " != 0)" } else { access }
     },
     "resource" => {
       let field = findEnvironmentField(

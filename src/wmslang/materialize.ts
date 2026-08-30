@@ -199,7 +199,8 @@ function materializedUniformLayout(
     const representation = uniformRepresentation(target, shaderTypes);
     const expectedByteLength = representation.includes("x") ? Number(representation.at(-1)) * 4 : 4;
     if (
-      actual.index !== source.declaredIndex || actual.representation !== representation ||
+      actual.index !== source.declaredIndex ||
+      actual.representation !== reflectedUniformRepresentation(representation) ||
       actual.byteLength !== expectedByteLength
     ) {
       throw reflectionMismatch(
@@ -292,6 +293,7 @@ function uniformRepresentation(
   type: ReturnType<WmslangSliceCompiler["compileGpuSlice"]>["shaderTypes"][number],
   shaderTypes: ReturnType<WmslangSliceCompiler["compileGpuSlice"]>["shaderTypes"],
 ): VisualShaderUniformRepresentation {
+  if (type.kind === "bool") return "bool32";
   if (type.kind === "f32" || type.kind === "i32") return type.kind;
   if (type.kind === "vector" && type.items.length >= 2 && type.items.length <= 4) {
     const scalar = shaderTypes.find((item) => item.id === type.items[0]);
@@ -304,6 +306,12 @@ function uniformRepresentation(
   );
 }
 
+function reflectedUniformRepresentation(
+  representation: VisualShaderUniformRepresentation,
+): Exclude<VisualShaderUniformRepresentation, "bool32"> {
+  return representation === "bool32" ? "i32" : representation;
+}
+
 async function artifactDigest(
   wgsl: string,
   uniformLayout: VisualShaderUniformLayoutV2 | undefined,
@@ -312,16 +320,21 @@ async function artifactDigest(
 ): Promise<string> {
   const root = input.functions.find((item) => item.id === input.root.functionId);
   if (!root) throw new Error("selected GPU root is missing while computing artifact identity");
+  const environment = input.environments.find((item) => item.id === input.root.environmentId);
+  const environmentSpan = environment
+    ? input.spans.find((item) => item.id === environment.spanId)
+    : undefined;
   const identityManifest = JSON.stringify({
     wgsl,
     sourcePath: input.sourcePath,
     rootName: root.name,
-    environment: uniformLayout
+    environment: environment
       ? {
-        recordName: uniformLayout.recordName,
-        binding: uniformLayout.binding,
-        byteLength: uniformLayout.byteLength,
-        fields: uniformLayout.fields,
+        modulePath: environmentSpan?.path ?? input.sourcePath,
+        recordId: environment.recordId,
+        typeNameId: environment.typeNameId,
+        recordName: environment.name,
+        uniformLayout: uniformLayout ?? null,
       }
       : null,
     resources: resourceLayout ?? null,

@@ -22,6 +22,7 @@ export type InitializerInventory = Readonly<{
 const stateBindings: Readonly<Record<string, string>> = Object.freeze({
   nextNodeId: "nextNodeId",
   nextLiftId: "nextLiftId",
+  nextAnonymousMatchId: "nextAnonymousMatchId",
 });
 
 export function inventoryInitializer(grammar: WorkmanGrammarIr): InitializerInventory {

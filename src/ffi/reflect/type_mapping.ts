@@ -632,7 +632,7 @@ function arrayElementType(
   position: "param" | "result",
 ): TypeExpr | undefined {
   if (checker.isArrayType(type)) {
-    return typeExprFromArrayElement(checker, restElementType(checker, type));
+    return typeExprFromArrayElement(checker, restElementType(checker, type), position);
   }
   if (position !== "param") return undefined;
   const text = checker.typeToString(type);
@@ -642,7 +642,11 @@ function arrayElementType(
   ) {
     return undefined;
   }
-  return typeExprFromArrayElement(checker, checker.getIndexTypeOfType(type, ts.IndexKind.Number));
+  return typeExprFromArrayElement(
+    checker,
+    checker.getIndexTypeOfType(type, ts.IndexKind.Number),
+    "param",
+  );
 }
 
 function promiseElementType(
@@ -673,12 +677,13 @@ function isNumericTypedArrayName(name: string): boolean {
 function typeExprFromArrayElement(
   checker: ts.TypeChecker,
   type: ts.Type | undefined,
+  position: "param" | "result",
 ): TypeExpr {
   if (!type) return name("Js.Value");
   if (type.flags & ts.TypeFlags.TypeParameter) {
     return name("Js.Value");
   }
-  return typeExprFromTsType(checker, type, "param") ?? name("Js.Value");
+  return typeExprFromTsType(checker, type, position) ?? name("Js.Value");
 }
 
 function isTsType(checker: ts.TypeChecker, type: ts.Type, expected: string): boolean {

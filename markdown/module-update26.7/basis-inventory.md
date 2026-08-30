@@ -152,7 +152,7 @@ Json.assert
 
 ```text
 Task.fromResult Task.succeed Task.fail Task.map Task.map2 Task.race
-Task.andThen Task.mapErr Task.recover Task.all Task.collectList Task.traverse
+Task.andThen Task.mapErr Task.recover Task.orElse Task.all Task.collectList Task.traverse
 ```
 
 The source module also defines `Task.fn`, `Task.fnError`, `Task.carrier`, `Task.collectList`, and

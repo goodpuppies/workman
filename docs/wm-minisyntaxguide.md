@@ -480,7 +480,27 @@ let isZero = match(n) => {
 
 ### First-Class Match
 
-A first-class match is syntactic sugar for a function:
+A match can be written directly as an anonymous function and used in a pipeline:
+
+```workman
+let value = option :> match {
+  Some(x) => { x },
+  None => { 0 }
+} :> transform;
+```
+
+It can also be bound like any other function:
+
+```workman
+let unwrap = match {
+  Some(x) => { x },
+  None => { 0 }
+};
+
+let value = option :> unwrap;
+```
+
+The named-parameter match form is syntactic sugar for a regular function:
 
 ```workman
 -- First-class match (sugar)

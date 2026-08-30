@@ -355,16 +355,17 @@ class SliceNormalizer {
         "the shader factory argument must infer one nominal record environment type",
       );
     }
-    if (!info.recordFields || record.moduleId !== this.node.id) {
+    if (!info.recordFields) {
       throw this.error(
         "gpu.type.unsupported",
         factory.parameter.pattern,
-        "the v2 shader environment must use a nominal record declared beside the shader factory",
+        "the shader factory argument must use a nominal record environment",
       );
     }
     if (record.declaration.params.length !== 0 || environmentType.args.length !== 0) {
-      throw this.error(
+      throw new GpuSliceNormalizationError(
         "gpu.type.unsupported",
+        record.modulePath,
         record.declaration,
         "generic shader environment records are outside the initial v2 slice",
       );
@@ -379,12 +380,12 @@ class SliceNormalizer {
       } catch (_error) {
         throw this.error(
           "gpu.type.unsupported",
-          record.declaration,
-          `shader environment field ${field.name} must be a numeric uniform, Gpu.SampledTexture2D, or Gpu.Sampler`,
+          factory.parameter.pattern,
+          `shader environment field ${field.name} must be a numeric or Bool uniform, Gpu.SampledTexture2D, or Gpu.Sampler`,
         );
       }
       const normalizedType = this.types[typeId];
-      const supported = normalizedType.kind === "number" ||
+      const supported = normalizedType.kind === "number" || normalizedType.kind === "bool" ||
         (normalizedType.kind === "tuple" && normalizedType.items.length >= 2 &&
           normalizedType.items.length <= 4 &&
           normalizedType.items.every((item) => this.types[item]?.kind === "number")) ||
@@ -392,8 +393,8 @@ class SliceNormalizer {
       if (!supported) {
         throw this.error(
           "gpu.type.unsupported",
-          record.declaration,
-          `shader environment field ${field.name} must be a numeric uniform, Gpu.SampledTexture2D, or Gpu.Sampler`,
+          factory.parameter.pattern,
+          `shader environment field ${field.name} must be a numeric or Bool uniform, Gpu.SampledTexture2D, or Gpu.Sampler`,
         );
       }
       const kind: GpuSliceEnvironmentFieldDto["kind"] = normalizedType.kind === "sampled-texture-2d"
@@ -414,7 +415,7 @@ class SliceNormalizer {
         kind,
         binding: kind === "uniform" ? 0 : (hasUniforms ? 1 : 0) + resourceIndex++,
         typeId,
-        spanId: this.span(record.declaration),
+        spanId: this.span(record.declaration, record.modulePath),
       };
       this.environmentFields.push(row);
       this.#environmentFieldsByName.set(row.name, row);
@@ -428,7 +429,7 @@ class SliceNormalizer {
       name: record.name,
       bindingId,
       fieldIds: this.environmentFields.map((field) => field.id),
-      spanId: this.span(record.declaration),
+      spanId: this.span(record.declaration, record.modulePath),
     });
   }
 
@@ -1609,15 +1610,15 @@ class SliceNormalizer {
     return this.result.facts.expressions.get(expression)?.origin?.semanticId;
   }
 
-  span(value: { node?: { span: SourceSpan } }): number {
+  span(value: { node?: { span: SourceSpan } }, path = this.path): number {
     const source = value.node?.span;
     if (!source) return -1;
-    const key = `${source.start}:${source.end}`;
+    const key = `${path}:${source.start}:${source.end}`;
     const existing = this.#spansByKey.get(key);
     if (existing !== undefined) return existing;
     const id = this.spans.length;
     this.#spansByKey.set(key, id);
-    this.spans.push({ id, path: this.path, ...source });
+    this.spans.push({ id, path, ...source });
     return id;
   }
 

@@ -38,6 +38,7 @@ const memberCache = new Map<string, JsMemberType | undefined>();
 const namespaceCache = new Map<string, JsMemberType[]>();
 const refTypeCache = new Map<string, TypeExpr | undefined>();
 const refMemberPathCache = new Map<string, boolean>();
+const refMemberTypeTextCache = new Map<string, string | undefined>();
 const deepCallCache = new Map<string, DeepReflection | undefined>();
 
 export type DeepReflection = {
@@ -490,6 +491,31 @@ export function jsRefHasMemberPath(ref: JsTypeRef, path: string[]): boolean {
   return reflected;
 }
 
+export function jsRefMemberTypeText(ref: JsTypeRef, path: string[]): string | undefined {
+  const key = `${ref.key}:member-type-text:${path.join(".")}`;
+  if (refMemberTypeTextCache.has(key)) return refMemberTypeTextCache.get(key);
+  const reflected = reflectSource(
+    key,
+    ref.source,
+    (checker, sourceFile) => {
+      const value = findVariable(sourceFile, ref.expr)?.initializer ??
+        findDeclaredValue(sourceFile, ref.expr);
+      if (!value) return undefined;
+      let type = checker.getTypeAtLocation(value);
+      for (const segment of path) {
+        const symbol = type.getProperty(segment);
+        if (!symbol) return undefined;
+        const next = typeOfSymbol(checker, symbol);
+        if (!next) return undefined;
+        type = next;
+      }
+      return checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+    },
+  );
+  refMemberTypeTextCache.set(key, reflected);
+  return reflected;
+}
+
 export function jsRefTypeExpr(ref: JsTypeRef): TypeExpr | undefined {
   if (ref.type) return ref.type;
   const key = `${ref.key}:type`;
@@ -589,9 +615,13 @@ function jsRefCallTarget(
       ? functionArgExpr(index, arg)
       : `__wm_arg_${index}`
   );
-  const argSources = args
-    .filter((arg): arg is Extract<JsCallArgHint, { kind: "ref" }> => arg.kind === "ref")
-    .map((arg) => arg.ref.source)
+  const reflectedArgs = args
+    .map((arg, index) => arg.kind === "ref" ? { arg, index } : undefined)
+    .filter((item): item is { arg: Extract<JsCallArgHint, { kind: "ref" }>; index: number } =>
+      !!item
+    );
+  const argSources = reflectedArgs
+    .map(({ arg, index }) => hygienicArgSource(arg.ref.source, index))
     .join("\n");
   const argDecls = args
     .flatMap((arg, index) => {
@@ -604,7 +634,11 @@ function jsRefCallTarget(
           };`,
         ];
       }
-      if (arg.kind === "ref") return [`declare const __wm_arg_${index}: typeof ${arg.ref.expr};`];
+      if (arg.kind === "ref") {
+        return [
+          `declare const __wm_arg_${index}: typeof ${hygienicArgExpr(arg.ref.expr, index)};`,
+        ];
+      }
       return [];
     })
     .filter((line) => line.length > 0)
@@ -627,23 +661,70 @@ function jsRefCallTarget(
         typeRefFromTsType,
         key,
       );
+      const callSource =
+        `${ref.source}\n${argSources}\n${argDecls}\nconst __wm_call_result = ${callExpr};`;
       return {
         name,
         type,
         variants: [{
           type,
           callbackParamRefs,
-          resultRef: returnTypeRef(
-            `${key}:return`,
-            `${ref.source}\n${argSources}\n${argDecls}\nconst __wm_call_result = ${callExpr};`,
-            "typeof __wm_call_result",
-          ),
+          resultRef: callResultTypeRef(checker, call, type, `${key}:return`, callSource),
         }],
       };
     },
   );
   memberCache.set(key, reflected);
   return reflected;
+}
+
+function hygienicArgSource(source: string, index: number): string {
+  return source.replace(
+    /\b__wm_[A-Za-z0-9_$]+\b/g,
+    (identifier) => hygienicArgIdentifier(identifier, index),
+  );
+}
+
+function hygienicArgExpr(expr: string, index: number): string {
+  return expr.replace(
+    /\b__wm_[A-Za-z0-9_$]+\b/g,
+    (identifier) => hygienicArgIdentifier(identifier, index),
+  );
+}
+
+function hygienicArgIdentifier(identifier: string, index: number): string {
+  return `${identifier}_nested_${index}`;
+}
+
+function callResultTypeRef(
+  checker: ts.TypeChecker,
+  call: ts.CallExpression,
+  callType: TypeExpr,
+  key: string,
+  source: string,
+): JsTypeRef {
+  const resultType = callType.kind === "TFn" ? callType.result : callType;
+  const ref = returnTypeRef(key, source, "typeof __wm_call_result");
+  if (
+    resultType.kind !== "TName" || resultType.name !== "Js.Array" ||
+    resultType.args.length !== 1
+  ) return ref;
+  const element = resultType.args[0];
+  if (element.kind !== "TName" || element.args.length !== 0 || element.name.startsWith("Js.")) {
+    return ref;
+  }
+  const actualResult = checker.getTypeAtLocation(call);
+  const actualElement = checker.getIndexTypeOfType(actualResult, ts.IndexKind.Number);
+  if (!actualElement || nominalObjectTypeName(checker, actualElement) !== element.name) return ref;
+  const elementKey = `${key}:element`;
+  const elementRef = typeRefFromSource(
+    elementKey,
+    source,
+    "typeof __wm_call_result[number]",
+  );
+  elementRef.type = element;
+  ref.nestedTypeRefs = [elementRef];
+  return ref;
 }
 
 function deepTypeExprFromTsType(

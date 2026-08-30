@@ -249,6 +249,7 @@ export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
     "andThen",
     "mapErr",
     "recover",
+    "orElse",
     "all",
   ].map((name) => ({
     exportName: `Task.${name}`,

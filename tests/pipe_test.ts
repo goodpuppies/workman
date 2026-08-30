@@ -18,6 +18,35 @@ Deno.test("chained pipe operators", async () => {
   `);
 });
 
+Deno.test("anonymous match functions compose within pipelines", async () => {
+  const source = `
+    type Option<t> = None | Some<t>;
+    let increment = (value) => { value + 1 };
+    let some = Some(41) :> match {
+      Some(value) => { value },
+      None => { 0 },
+    } :> increment;
+    let none = None :> match {
+      Some(value) => { value },
+      None => { 0 },
+    } :> increment;
+    let unwrap = match {
+      Some(value) => { value },
+      None => { 0 },
+    };
+    let bound = Some(9) :> unwrap :> increment;
+  `;
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([["/test/library.wm", source]]),
+  );
+  const module = await importGenerated(js);
+
+  assertEquals(module.some, 42);
+  assertEquals(module.none, 1);
+  assertEquals(module.bound, 10);
+});
+
 Deno.test("pipe with multi-argument function", async () => {
   await checkSource(`
     let add = (x, y) => { x + y };

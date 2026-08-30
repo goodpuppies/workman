@@ -1,6 +1,7 @@
 {
   let nextNodeId = 0;
   let nextLiftId = 0;
+  let nextAnonymousMatchId = 0;
   function span(loc) {
     return {
       line: loc.start.line,
@@ -109,6 +110,15 @@
   function matchExpr(values, arms, loc) {
     const value = values.length === 1 ? values[0] : tupleExpr(values, loc);
     return at({ kind: "Match", value, arms }, loc);
+  }
+  function anonymousMatchFn(arms, loc) {
+    // `$` is valid in generated JavaScript identifiers but cannot be authored in
+    // Workman identifiers, so this parameter cannot capture a user binding.
+    const name = `$wm_match_${nextAnonymousMatchId++}`;
+    const param = at({ pattern: at({ kind: "PVar", name }, loc) }, loc);
+    const value = at({ kind: "Var", name }, loc);
+    const body = at({ kind: "Match", value, arms }, loc);
+    return at({ kind: "Lambda", params: [param], directives: [], body }, loc);
   }
   function liftedParam(name, loc) {
     return at({ pattern: at({ kind: "PVar", name }, loc) }, loc);
@@ -309,6 +319,10 @@ MatchFn
       return at({ kind: "Lambda", params, directives: [], body: at({ kind: "Match", value, arms }, location()) }, location());
     }
 
+AnonymousMatchFn
+  = "match" _ "{" _ arms:MatchArmList _ "}"
+    { return anonymousMatchFn(arms, location()); }
+
 MatchFnParams = first:Identifier rest:(_ "," _ n:Identifier { return n; })* _ ","? { return [first, ...rest]; }
 
 MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { return [first, ...rest]; }
@@ -400,7 +414,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / v:LongName { return longNode("Var", v, {}, location()); }
+  = Float / Int / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / AnonymousMatchFn / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }

@@ -2,12 +2,19 @@ import type { Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
-import { prune, solveFfi, typeFromAst } from "../../types.ts";
+import { freshTypeInfo, prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
-import { inferredType, knownTyToTypeExpr, typeExprKey } from "./receiver_models.ts";
+import {
+  foreignReceiver,
+  foreignTypeRefLookup,
+  inferredType,
+  knownTyToTypeExpr,
+  typeExprKey,
+} from "./receiver_models.ts";
 import {
   addVariants,
+  callArgHint,
   type FfiBinding,
   type FfiElaboration,
   ffiOverloadMessage,
@@ -20,6 +27,7 @@ import {
 import {
   jsGlobalTypeRef,
   type JsMemberType,
+  jsRefCall,
   jsRefDeepCall,
   type JsTypeRef,
 } from "../reflect/types.ts";
@@ -269,6 +277,7 @@ export function materializeBindingCall(
       original.node,
     );
   }
+  variant = specializeReflectedBindingCall(binding, variant, args, ffi, result, options);
   variant = specializeDeepBindingCall(binding, variant, args, ffi);
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
@@ -313,8 +322,66 @@ export function solveBindingCallType(
   addResolvedArrayLikeVariants(binding, argTypes, ffi.bindings);
   let variant = selectVariant(binding.variants, args, argTypes);
   if (!variant) return;
+  variant = specializeReflectedBindingCall(binding, variant, args, ffi, result);
   variant = specializeDeepBindingCall(binding, variant, args, ffi);
   solveReflectedFfiValue(original, variant, result);
+}
+
+function specializeReflectedBindingCall(
+  binding: FfiBinding,
+  variant: FfiVariant,
+  args: Expr[],
+  ffi: FfiElaboration,
+  result: InferResult,
+  options?: ResolveOptions,
+): FfiVariant {
+  if (!variant.callRef || variant.deep) return variant;
+  const foreignRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options?.foreignTypeRefs);
+  const hints = args.map((arg) => {
+    const inferred = inferredType(result, arg);
+    const foreign = inferred ? foreignReceiver(inferred, foreignRefs) : undefined;
+    if (foreign) return { kind: "ref" as const, ref: foreign.ref, type: foreign.type };
+    const known = inferred ? knownTyToTypeExpr(inferred) : undefined;
+    if (known?.kind === "TName" && known.args.length === 0) {
+      const ref = foreignRefs.get(known.name);
+      if (ref) return { kind: "ref" as const, ref, type: known };
+    }
+    return callArgHint(arg);
+  });
+  if (!hints.some((hint) => hint.kind === "ref")) return variant;
+  const reflected = jsRefCall(variant.callRef, hints);
+  const concrete = reflected ? memberVariants(reflected)[0] : undefined;
+  if (!concrete) return variant;
+  const type = concrete.type;
+  const existing = findVariantByType(binding, variant.fallible ? fallibleTypeKey(type) : type);
+  if (existing) return existing;
+  rememberVariantForeignTypeRefs([concrete], ffi.foreignTypeRefs);
+  rememberMaterializedForeignTypes(concrete.resultRef, result);
+  addVariants(
+    ffi.bindings,
+    binding.surfaceName,
+    variant.memberName,
+    variant.target,
+    [{
+      ...concrete,
+      callRef: variant.callRef,
+    }],
+    variant.fallible,
+    variant.node,
+  );
+  return binding.variants.at(-1) ?? variant;
+}
+
+function rememberMaterializedForeignTypes(ref: JsTypeRef | undefined, result: InferResult): void {
+  for (const nested of ref?.nestedTypeRefs ?? []) {
+    const type = nested.type;
+    if (type?.kind !== "TName" || type.args.length !== 0 || result.typeEnv.has(type.name)) continue;
+    result.typeEnv.set(type.name, {
+      ...freshTypeInfo(type.name, 0),
+      foreign: true,
+      foreignKey: nested.key,
+    });
+  }
 }
 
 function specializeDeepBindingCall(
@@ -634,6 +701,9 @@ function rememberVariantForeignTypeRefs(
     if (variant.receiverType) rememberForeignTypeNames(variant.receiverType, foreignTypeRefs);
     if (variant.resultRef?.type) {
       rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs, variant.resultRef);
+    }
+    for (const ref of variant.resultRef?.nestedTypeRefs ?? []) {
+      if (ref.type) rememberForeignTypeNames(ref.type, foreignTypeRefs, ref);
     }
     for (const callback of variant.callbackParamRefs ?? []) {
       for (const ref of callback.params) {

@@ -396,7 +396,7 @@ Deno.test("record literals reject missing and extra fields against the nominal t
   );
 });
 
-Deno.test("shared record labels remain structural without choosing a nominal owner", async () => {
+Deno.test("ambiguous record projection chooses the first identity and warns for an annotation", async () => {
   const result = await checkSource(`
     record Point = { x: Number };
     record Offset = { x: Number };
@@ -410,8 +410,31 @@ Deno.test("shared record labels remain structural without choosing a nominal own
   expectBinding(result.env, "getX", { type: "{ x: Number } -> Number", vars: 0 });
   expectBinding(result.env, "px", { type: "Number", vars: 0 });
   expectBinding(result.env, "ox", { type: "Number", vars: 0 });
+  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
+    "record.ambiguous-projection",
+  ]);
+  assertStringIncludes(result.warnings[0], "using first record type Point");
+  assertStringIncludes(result.warnings[0], "Candidates: Point, Offset");
+  assertStringIncludes(result.warnings[0], "annotate the receiver, binding, or parameter");
+});
+
+Deno.test("an earlier field projection structurally disambiguates a shared field", async () => {
+  const result = await checkSource(`
+    record Point = { x: Number };
+    record Offset = { x: Number, y: Number };
+    let getOffsetX = (value) => {
+      let y = value.y;
+      value.x
+    };
+  `);
+
+  expectBinding(result.env, "getOffsetX", { type: "Offset -> Number", vars: 0 });
   assertEquals(result.diagnostics, []);
-  assertEquals(result.warnings, []);
+  assertEquals(result.facts.recordProjections.size, 2);
+  assertEquals(
+    [...result.facts.recordProjections.values()].flat().map(({ record }) => record.name),
+    ["Offset", "Offset"],
+  );
 });
 
 Deno.test("nominal record parameter annotations resolve shared field identities", async () => {
@@ -426,6 +449,10 @@ Deno.test("nominal record parameter annotations resolve shared field identities"
   expectBinding(result.env, "getOffsetX", { type: "Offset -> Number", vars: 0 });
   assertEquals(result.diagnostics, []);
   assertEquals(result.facts.recordProjections.size, 2);
+  assertEquals(
+    [...result.facts.recordProjections.values()].flat().map(({ record }) => record.name),
+    ["Point", "Offset"],
+  );
 });
 
 Deno.test("repeated projections preserve one accumulated structural record requirement", async () => {
@@ -474,5 +501,9 @@ Deno.test("ambiguous function fields select the first identity without collapsin
 
   expectBinding(result.env, "via", { type: "{ fn: 'a -> 'b } -> 'a -> 'b", vars: 2 });
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
-  assertEquals(result.diagnostics, []);
+  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
+    "record.ambiguous-projection",
+  ]);
+  assertStringIncludes(result.warnings[0], "using first record type TaskLike");
+  assertStringIncludes(result.warnings[0], "Candidates: TaskLike, Carrier");
 });

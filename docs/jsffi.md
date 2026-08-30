@@ -39,16 +39,21 @@ Import JS types only:
 from js.global import type { Request, Response };
 ```
 
-Type-only JS imports create foreign Workman types. They are useful when a callback or function
-parameter is a browser, Deno, or Node object:
+Type-only JS imports create nominal foreign Workman types. They are useful in trusted boundary
+declarations and in ordinary HM signatures once program flow already establishes that foreign type:
 
 ```wm
 from js.global import type { Request };
-
-let getMethod = (req: Request) => {
-  req.method
+from js.module("./request_bridge.ts") import {
+  methodOf: Request -> String,
 };
+
+let method = methodOf(Panic("request")) :> Result.debug;
 ```
+
+Writing `req: Request` on an otherwise unresolved callback does not itself give the FFI resolver a
+`Request` receiver. The annotation checks the inferred callback type; it does not create foreign
+evidence.
 
 ## Safe Calls and `Result`
 
@@ -107,16 +112,21 @@ from js.global("console") import unsafe {
 } as console;
 ```
 
-## Note on type annotations and ffi
+## Type annotations do not direct FFI reflection
 
-It may seem practical to add `: Type` literally everywhere typescript/rust style. Currently though
-in workman I would recommend avoiding it especially in ffi code.
+An ordinary Workman `: Type` annotation checks the type inferred by HM. It does not select a
+TypeScript overload, attach foreign reflection information, refine `Js.Object`/`Js.Value`, or change
+the result of a reflected call.
 
-- `: Type` is not an assertion, if a ffi thing cant be figured out an annotation wont help, for
-  json/objects use json assert. For other situations more explicit and simple code could help, you
-  can also manually type imports as escape hatch.
-- often using `: Type` in ffi heavy code will cause more errors or even errors that dissapear once
-  the annotations are removed.
+If FFI code only works after adding a receiver or result annotation, that normally indicates lost
+reflection information or another compiler bug. The annotation must remain erasable.
+
+`Json.assert` is different: it explicitly checks a genuinely dynamic value against an expected
+Workman shape. An annotation may state that expected shape around the assertion, but annotations do
+not become casts elsewhere.
+
+A manually typed JS import is also different. It declares the trusted foreign boundary signature;
+it is not an annotation on an inferred Workman value.
 
 ## Manual Types
 
@@ -129,12 +139,21 @@ from js.global import {
 };
 ```
 
-This is the escape hatch for APIs where TypeScript reflection is currently too broad, too
-overloaded, or not visible from the active runtime declarations.
+This is the escape hatch when the concrete TypeScript call remains ambiguous, its selected type
+cannot be represented honestly in Workman, or the declaration is not visible to reflection.
+
+Overloaded or generic by itself is not a reason for a manual signature. When the call arguments are
+known, Workman asks TypeScript to select and instantiate the concrete call. For example, a reflected
+`IterableIterator<Entry>` passed to `Array.from` should automatically produce
+`Result<Js.Array<Entry>, Js.Error>`.
 
 Manual types are trusted declarations about the JS shape. Safe manual imports still return
 `Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
 explicitly want a direct JS call.
+
+`unsafe` changes error handling, not reflection precision. Do not add it to fix inference. During
+exploration, keep the safe import and use `Result.debug` if aborting on failure is acceptable; later
+replace that with a match or ordinary `Result`/`Task` handling.
 
 ## Shims Keep The Boundary Workman-Shaped
 
@@ -159,6 +178,11 @@ shape which Workman cannot map, the FFI access remains unresolved and must be ma
 adapted with a shim. Replacing known structure with an opaque value would erase evidence that
 Workman's type inference cannot recover; use an assertion to turn an intentionally dynamic value
 back into a checked Workman shape.
+
+When reflection fails, diagnostics distinguish a missing JavaScript member from an existing member
+whose TypeScript signature Workman cannot represent. The latter diagnostic includes the reflected
+signature where possible. A simple compatible TS signature that nevertheless fails to flow through
+Workman is an implementation bug, not evidence that the API needs a shim or manual typing.
 
 ## Deno APIs
 
@@ -460,8 +484,8 @@ let content = match(body.content) {
 ## Current Limitations
 
 - Some root globals still need manual types.
-- Some Promise-heavy APIs still benefit from explicit record or `Js.Object` annotations at the JS
-  boundary.
+- Some Promise-heavy APIs still need a more precise reflected/manual boundary or an explicit
+  `Json.assert`; ordinary annotations are not a workaround.
 - Optional arguments may still require `Some(value)` for APIs where reflection exposes an
   `Option<T>` parameter.
 - `JSON{}` and `JSON[]` are currently the clearest way to pass object/array-shaped JS data.

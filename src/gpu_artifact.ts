@@ -15,7 +15,8 @@ export type VisualShaderUniformRepresentation =
   | "i32"
   | "i32x2"
   | "i32x3"
-  | "i32x4";
+  | "i32x4"
+  | "bool32";
 
 export type VisualShaderUniformFieldV2 = {
   name: string;

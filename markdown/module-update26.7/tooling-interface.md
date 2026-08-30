@@ -502,8 +502,10 @@ field declarations, literal fields, pattern fields, and projections selected by 
 selects the first declaration-order candidate identity, records its `FieldId`, and emits
 `record.ambiguous-projection` asking for an annotation. This deterministic occurrence target does
 not coerce the receiver to that nominal record: its type remains the structural row requirement
-until an annotation makes a nominal choice semantic. Only a label with no nominal candidates lacks a
-nominal target; the compiler does not invent a parallel global-label identity.
+until an annotation or earlier, uniquely identifying field evidence makes a nominal choice semantic.
+Only a label with no nominal candidates lacks a nominal target; the compiler does not invent a
+parallel global-label identity. Definitions, references, and highlights may use the deterministic
+first identity, while rename refuses any target participating in such an ambiguous projection.
 
 Module-alias qualifier occurrences cover value expressions, constructor and pinned patterns, and
 type expressions. Type elaboration carries the exact resolved namespace `StaticEnv` into its

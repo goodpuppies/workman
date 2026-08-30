@@ -1,4 +1,4 @@
-import type { Decl, Expr } from "../../ast.ts";
+import type { Decl, Expr, Pattern } from "../../ast.ts";
 import type { JsTypeRef } from "../reflect/types.ts";
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver.ts";
 import { type FfiBinding, isDecl } from "../shared.ts";
@@ -84,6 +84,9 @@ export function rewriteMatchArms(
   return expr.arms.map((arm) => {
     const localRefs = new Map(refs);
     const localObjectAccess = new Map(objectAccess);
+    for (const binder of patternBinders(arm.pattern)) {
+      localObjectAccess.set(binder, { kind: "unresolved" });
+    }
     return {
       ...arm,
       body: rewriteExpr(
@@ -96,4 +99,26 @@ export function rewriteMatchArms(
       ),
     };
   });
+}
+
+function patternBinders(pattern: Pattern): string[] {
+  switch (pattern.kind) {
+    case "PVar":
+      return [pattern.name];
+    case "PTuple":
+      return pattern.items.flatMap(patternBinders);
+    case "PRecord":
+      return pattern.fields.flatMap((field) => patternBinders(field.pattern));
+    case "PCtor":
+      return pattern.args.flatMap(patternBinders);
+    case "PAscribed":
+      return patternBinders(pattern.pattern);
+    case "PWildcard":
+    case "PInt":
+    case "PString":
+    case "PBool":
+    case "PVoid":
+    case "PPinned":
+      return [];
+  }
 }

@@ -42,6 +42,7 @@ type Context = {
   source: string;
   nextNodeId: number;
   nextLiftId: number;
+  nextAnonymousMatchId: number;
   nextTypeGroupId: number;
 };
 
@@ -56,7 +57,13 @@ export function surfaceProgramToModule(
   program: FrontendV2SurfaceProgram,
   source: string,
 ): FrontendV2SurfaceModuleProjection {
-  const context: Context = { source, nextNodeId: 0, nextLiftId: 0, nextTypeGroupId: 0 };
+  const context: Context = {
+    source,
+    nextNodeId: 0,
+    nextLiftId: 0,
+    nextAnonymousMatchId: 0,
+    nextTypeGroupId: 0,
+  };
   const diagnostics: FrontendV2SemanticAdapterDiagnostic[] = [];
   const decls: Decl[] = [];
   const [phrasesValue, programSpan] = fields(program.root, "ProgramNode");
@@ -830,6 +837,27 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         body: {
           kind: "Match",
           value,
+          arms: projectMatchArms(armsValue, context),
+          node: nodeFor(context, spanOf(node)),
+        },
+        ...located,
+      };
+    }
+    case "AnonymousMatchFunctionNode": {
+      const [, , armsValue] = fields(node);
+      const name = `$wm_match_${context.nextAnonymousMatchId++}`;
+      const paramNode = nodeFor(context, spanOf(node));
+      const valueNode = nodeFor(context, spanOf(node));
+      return {
+        kind: "Lambda",
+        params: [{
+          pattern: { kind: "PVar", name, node: paramNode },
+          node: paramNode,
+        }],
+        directives: [],
+        body: {
+          kind: "Match",
+          value: { kind: "Var", name, node: valueNode },
           arms: projectMatchArms(armsValue, context),
           node: nodeFor(context, spanOf(node)),
         },

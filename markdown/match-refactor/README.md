@@ -4,6 +4,9 @@ Status: exploratory. This version chooses a small SML-compatible design over
 first-class matcher values, coverage types, matcher lists, or runtime
 composition protocols.
 
+Implementation note: `match { literal arms }` and its use as an ordinary function in pipelines are
+implemented. Named-arm and arm-group expansion in §2 remains exploratory.
+
 ## Decision summary
 
 - `pattern => body` is an ordinary SML-style pattern lambda.

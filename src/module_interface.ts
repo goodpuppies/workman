@@ -2132,6 +2132,7 @@ export function semanticRenameAt(
   const selection = semanticOccurrenceSelectionAt(moduleInterface, offset);
   if (!selection || selection.targets.some(({ kind }) => kind === "module")) return;
   const { primary, targets: selectedTargets, localAlias } = selection;
+  if (hasAmbiguousProjectionTarget(project, selectedTargets)) return;
   if (localAlias) {
     const occurrences = moduleInterface.occurrences
       .filter((occurrence) =>
@@ -2170,6 +2171,29 @@ export function semanticRenameAt(
     selection: primary.span,
     occurrences: freezeDistinctProjectOccurrences(occurrences),
   });
+}
+
+function hasAmbiguousProjectionTarget(
+  project: ProjectSnapshot,
+  targets: readonly SemanticOccurrenceTarget[],
+): boolean {
+  return [...project.interfaces.values()].some((moduleInterface) =>
+    moduleInterface.diagnostics.some((diagnostic) => {
+      if (
+        diagnostic.code !== "record.ambiguous-projection" || diagnostic.primary.kind !== "source"
+      ) {
+        return false;
+      }
+      const span = diagnostic.primary.span;
+      return moduleInterface.occurrences.some((occurrence) =>
+        occurrence.role === "reference" &&
+        occurrence.target.kind === "field" &&
+        span.start <= occurrence.span.start &&
+        occurrence.span.end <= span.end &&
+        targets.some((target) => sameSemanticTarget(target, occurrence.target))
+      );
+    })
+  );
 }
 
 /** Select identity-correct read/write highlights within one module interface. */

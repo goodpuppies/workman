@@ -62,6 +62,7 @@ Task.race    : Task<a, e> -> Task<a, e> -> Task<a, e>
 Task.andThen : Task<a, e> -> (a -> Task<b, e>) -> Task<b, e>
 Task.mapErr  : Task<a, e> -> (e -> f) -> Task<a, f>
 Task.recover : Task<a, e> -> (e -> a) -> Task<a, e>
+Task.orElse  : Task<a, e> -> (e -> Task<a, f>) -> Task<a, f>
 
 Task.collectList : List<Task<a, e>> -> Task<List<a>, e>
 Task.traverse    : List<a> -> (a -> Task<b, e>) -> Task<List<b>, e>
@@ -290,7 +291,7 @@ Workman keeps async failure in the type:
 fetch(url) : Task<Response, Js.Error>
 ```
 
-You then use `Task.map`, `Task.andThen`, `Task.mapErr`, or `Task.recover`.
+You then use `Task.map`, `Task.andThen`, `Task.mapErr`, `Task.recover`, or `Task.orElse`.
 
 ## Difference From JavaScript
 

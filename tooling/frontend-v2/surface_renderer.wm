@@ -9,7 +9,7 @@ from "./generated/surface_types.wm" import {
   IfExpressionNode,
   TupleExpressionNode, GroupedExpressionNode,
   ListExpressionNode, ListPatternNode, TuplePatternNode,
-  MatchExpressionNode, MatchFunctionNode, MatchArmNode,
+  MatchExpressionNode, MatchFunctionNode, AnonymousMatchFunctionNode, MatchArmNode,
   TypeDeclarationNode, TypeDeclarationGroupNode, TypeBindingNode, TypeDeclarationBodyNode, TypeParametersNode,
   NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode,
@@ -274,6 +274,26 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
           renderToken(matchToken) ++ renderSurfaceValue(open, materializeMarks) ++
           joinTokens(names, ", ", "") ++ renderSurfaceValue(close, materializeMarks) ++
           " " ++ renderSurfaceValue(arrow, materializeMarks) ++ " " ++ renderSurfaceValue(openBrace, materializeMarks) ++
+          "\n" ++ armIndent ++ armsText ++ "\n" ++ closeIndent ++
+          renderSurfaceValue(closeBrace, materializeMarks)
+        )
+      },
+      None => { None },
+    }
+  },
+  (AnonymousMatchFunctionNode(
+    matchToken,
+    openBrace,
+    arms,
+    closeBrace,
+    span,
+  ), Var(depth), Var(materializeMarks)) => {
+    let armIndent = indentation(depth + 1, "");
+    let closeIndent = indentation(depth, "");
+    match(renderNodes(arms, ",\n" ++ armIndent, "", depth + 1, materializeMarks)) {
+      Some(armsText) => {
+        Some(
+          renderToken(matchToken) ++ " " ++ renderSurfaceValue(openBrace, materializeMarks) ++
           "\n" ++ armIndent ++ armsText ++ "\n" ++ closeIndent ++
           renderSurfaceValue(closeBrace, materializeMarks)
         )

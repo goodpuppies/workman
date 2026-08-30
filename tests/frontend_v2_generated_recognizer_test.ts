@@ -88,7 +88,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 133,
+    classified: 134,
     missing: [],
     unknown: [],
     duplicates: [],
@@ -112,6 +112,7 @@ Deno.test("frontend-v2 lowers supported semantics from the generated Surface tre
     "record Point<t> = { x: t, y: t };",
     "let shader = () => { @gpu; 1 };",
     "let choose = match(left, right) => { (true, x) => { x }, (_, y) => { y }, };",
+    "let choose = value :> match { true => { 1 }, false => { 0 }, } :> next;",
     'from js.global import unsafe { Date };\nfrom js.module("pkg") import type { Item: Js.Value };',
     'from js.worker("./worker.ts") import * as Worker;',
     "let taskPair = |first, second|;\nlet resultPair = Result |first, second|;",
@@ -363,10 +364,8 @@ Deno.test("frontend-v2 reports a farthest generated failure for rejected syntax"
 });
 
 Deno.test("frontend-v2 distinguishes qualified pinned values from constructors in patterns", () => {
-  const pinned =
-    "let f = (x) => { match(x, x) { (Value, Char.classSpace) => { void } } };";
-  const constructor =
-    "let f = (x) => { match(x) { Token.Token(value) => { value } } };";
+  const pinned = "let f = (x) => { match(x, x) { (Value, Char.classSpace) => { void } } };";
+  const constructor = "let f = (x) => { match(x) { Token.Token(value) => { value } } };";
 
   assertEquals(surfaceParser.parseSurfaceProgram(pinned).name, "Some");
   assertEquals(surfaceParser.parseSurfaceFailure(pinned).name, "None");
@@ -649,6 +648,25 @@ Deno.test("frontend-v2 formats parenthesized lambda sequences", async () => {
 Deno.test("frontend-v2 formats lightweight chained curried lambdas", async () => {
   const source = "let add3=(a)=>(b)=>(c)=>{a+b+c};";
   const expected = "let add3 = (a) => (b) => (c) => {\n  a + b + c\n};";
+  const first = surfaceParser.formatSurfaceSource(source);
+  assertEquals(first.name, "Some");
+  assertEquals(first.args[0], expected);
+  await parse(expected);
+  const second = surfaceParser.formatSurfaceSource(expected);
+  assertEquals(second.name, "Some");
+  assertEquals(second.args[0], expected);
+});
+
+Deno.test("frontend-v2 formats anonymous match functions in pipelines", async () => {
+  const source = "let result=value:>match{Some(x)=>{x},None=>{0}}:>next;";
+  const expected = "let result = value :> match {\n" +
+    "  Some(x) => {\n" +
+    "    x\n" +
+    "  },\n" +
+    "  None => {\n" +
+    "    0\n" +
+    "  }\n" +
+    "} :> next;";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
   assertEquals(first.args[0], expected);

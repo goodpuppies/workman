@@ -4,74 +4,110 @@ from "./source.wm" import * as Source;
 
 type Mode = Default | Ident;
 
-let try = match(in) => {
-  Ok(x) => {x},
-  Err(e) => {Panic("f")}
-};
-
-let textLength = (text) => {
-  text :> .length :> try
-};
-
-type Char = String;
-
 type ReadValue =
   | StringVal<String>
   | NumVal<Number>
-  | CharVal<Char>;
-
+  | CharVal<Char.Char>;
 
 record ReadResult = {
   tokens: List<Token.Token>,
   newPosition: Source.Position
 };
 
-
 let lex = (source) => {
-  let length = textLength(source);
-  if (length ==0) {?} else {};
-
-  let peekByOne = (index) => {
-    //peek the index to get the character
-    if (index < 0 || index >= length) {
-      None
-    } else {
-      Some(source 
-        :> .slice(index, index + 1) 
-        :> Result.debug
-      )
-    }
-  };
-  let peekBy = (index, amount) => {
-    if (index<0 || index >= length) {
-      None
-    } else {
-      Some(source
-        :> .slice(index, index + amount)
-        :> Result.debug
-      )
+  let length = source :> .length :> match{
+    Ok(n) => {n},
+    Err(_) => { 
+      ? // something seriously gone wrong
     }
   };
 
   //#region helpers
-  //advance position based on character
-  let advancePosition = (pos, ch) => {
-    let next: Source.Position = .{
+
+  let peekByOne = (index) => {
+    let peekBy = (index, amount) => {
+      if (index<0 || index >= length) {
+        None
+      } else {
+        Some(
+          // TODO fail emits ""
+          source :> .slice(index, index + amount)
+          :> match {
+            Ok(str) => {str},
+            Err(_) => {Panic("unreachable")}
+          }
+        )
+      }
+    };
+    //peek the index to get the character
+    peekBy(index, 1)
+  };
+
+  let bumpIndexPos = (pos, ch) => {
+    //advance index by one, bump line and col
+    .{
       index = pos.index + 1,
       line = if (ch == "\n") {pos.line + 1} else {pos.line},
       col = if (ch == "\n") {1} else {pos.col + 1}
-    };
-    next
+    }
   };
 
-  //Generic pure reader: consume characters from `pos` while `keepGoing(ch, pos)`
-  //holds, stopping *before* the first character that fails (or at EOF).
-  //Returns (text, endPos).
+  let rec skipWhitespace = (pos) => {
+    if (pos.index < length) {
+      let chNum = Char.codeAt(source, pos.index);
+      if (chNum == 32 || chNum == 10 || chNum == 13 || chNum == 9) {
+        let next: Source.Position = .{
+          index = pos.index + 1,
+          line = if (chNum == 10) {pos.line + 1} else {pos.line},
+          col = if (chNum == 10) {1} else {pos.col + 1}
+        };
+        skipWhitespace(next)
+      } else {
+        pos
+      }
+    } else {
+      pos
+    }
+  };
+
+  //A word character: letter (which includes `_`, see asciiClasses) or digit.
+  let wordKinds = [Char.classLetter, Char.classDigit];
+  let isKind = (pos, kinds) => {
+    let cls = Char.classify(Char.codeAt(source, pos.index));
+    //TODO std add List.contains
+    List.any(kinds, (c) => { c == cls })
+  };
+
+  let rec advanceN = (pos, n) => {
+    //Advance exactly n characters, threading line/col through each one.
+    if (n <= 0) {
+      pos
+    } else {
+      let ch = match(peekByOne(pos.index)) {
+        Some(c) => {c},
+        None => {""}
+      };
+      advanceN(bumpIndexPos(pos, ch), n - 1)
+    }
+  };
+
+  let widthToN = match(width) => {
+    Token.OneWide => {1},
+    Token.TwoWide => {2}
+  };
+
+  //#endregion
+
+  //#region token makers
+
   let rec readTillEnd = (pos, keepGoing) => {
+    //Generic pure reader: consume characters from `pos` while `keepGoing(ch, pos)`
+    //holds, stopping *before* the first character that fails (or at EOF).
+    //Returns (text, endPos).
     match(peekByOne(pos.index)) {
       Some(ch) => {
         if (keepGoing(ch, pos)) {
-          let (rest, endPos) = readTillEnd(advancePosition(pos, ch), keepGoing);
+          let (rest, endPos) = readTillEnd(bumpIndexPos(pos, ch), keepGoing);
           (ch ++ rest, endPos)
         } else {
           ("", pos)
@@ -84,68 +120,41 @@ let lex = (source) => {
     }
   };
 
-  //A word character: letter (which includes `_`, see asciiClasses) or digit.
-
-  let isKind = (ch, pos, kinds) => {
-    let cls = Char.classify(Char.codeAt(source, pos.index));
-    //TODO std add List.contains
-    List.any(kinds, (c) => { c == cls })
-  };
-  let wordKinds = [Char.classLetter, Char.classDigit];
-  
-
-  //Advance exactly n characters, threading line/col through each one.
-  let rec advanceN = (pos, n) => {
-    if (n <= 0) {
-      pos
-    } else {
-      let ch = match(peekByOne(pos.index)) {
-        Some(c) => {c},
-        None => {""}
-      };
-      advanceN(advancePosition(pos, ch), n - 1)
-    }
-  };
-
-  let widthToN = match(width) => {
-    Token.OneWide => {1},
-    Token.TwoWide => {2}
-  };
-
-  let kindReadToEnd = (pos, kind, thing) => {
-    match(Token.fixedWidth(kind)) {
-      Some(width) => {
-        advanceN(pos, widthToN(width))
-      },
-      None => {
-        match(kind) {
-          Token.CommentStartToken => {
-            advancePosition(advancePosition(pos, thing), "-")
-          },
-          Token.LineComment => {
-            //read until end of line; EOF terminates too
-            let (commentText, endPos) =
-              readTillEnd(pos, (ch, _) => {ch != "\n"});
-            endPos
-          },
-          Token.LowerIdentifierToken => {
-            let (_, endPos) = readTillEnd(pos, (ch, p) => {isKind(ch, p, wordKinds)});
-            endPos
-          },
-          Token.UpperIdentifierToken => {
-            let (_, endPos) = readTillEnd(pos, (ch, p) => {isKind(ch, p, wordKinds)});
-            endPos
-          },
-          Token.IntegerToken => {
-            let (_, endPos) = readTillEnd(pos, (ch, p) => {isKind(ch, p, [Char.classDigit])});
-            endPos
-          },
-          Var(x) => {Panic(`missing read to end for type ${x}`)}
+  let makeSpan = (pos, kind:Token.TokenKind, txt): Source.Span => {
+    let kindReadToEnd = (pos, kind, thing) => {
+      match(Token.fixedWidth(kind)) {
+        Some(width) => {
+          advanceN(pos, widthToN(width))
+        },
+        None => {
+          match(kind) {
+            Token.CommentStartToken => {
+              bumpIndexPos(bumpIndexPos(pos, thing), "-")
+            },
+            Token.LineComment => {
+              //read until end of line; EOF terminates too
+              let (_commentText, endPos) =
+                readTillEnd(pos, (ch, _) => {ch != "\n"});
+              endPos
+            },
+            Token.LowerIdentifierToken => {
+              let (_, endPos) = readTillEnd(pos, (_, p) => {isKind(p, wordKinds)});
+              endPos
+            },
+            Token.UpperIdentifierToken => {
+              let (_, endPos) = readTillEnd(pos, (_, p) => {isKind(p, wordKinds)});
+              endPos
+            },
+            Token.IntegerToken => {
+              let (_, endPos) = readTillEnd(pos, (_, p) => {isKind(p, [Char.classDigit])});
+              endPos
+            },
+            Var(x) => {Panic(`missing read to end for type ${x}`)}
+          }
         }
       }
-    }
-  };
-  let makeSpan = (pos, kind:Token.TokenKind, txt): Source.Span => {
+    };
+
     --print(`print start pos from make span: ${pos}`);
     --pri nt("printing kind: ", kind);
     let endPose = kindReadToEnd(pos, kind, txt);
@@ -156,7 +165,7 @@ let lex = (source) => {
     }
   };
 
-  let makeToken = (tt:Token.TokenKind, pos, txt):(Token.Token, Source.Position) => {
+  let makeToken = (tt:Token.TokenKind, pos, txt) => {
     let span = makeSpan(pos, tt, txt);
     (Token.Token(
       tt,
@@ -166,6 +175,7 @@ let lex = (source) => {
     ),
     span.endPos)
   };
+  
   let makeTokSimpleSymbol = (tokkind, pos, txt) => {
     let (tok, nextPos) = makeToken(
       tokkind,
@@ -177,8 +187,20 @@ let lex = (source) => {
       newPosition = nextPos
     }
   };
+  //#endregion
 
   //#region mate bookkeeping (single-pass delimiter pairing)
+
+  //Mating state: the open-bracket stack plus recorded (openIdx, closeIdx)
+  //pairs waiting to be stamped during the final reverse at EOF.
+  record Mates = {
+    stack: List<(Number, Token.PairGroup)>,
+    pairs: List<(Number, Number)>,
+  };
+
+  //Only the open-bracket stack is mate-specific state; acc stays a plain arg.
+  //The token index used for mates is derived inside mateStep from acc length,
+  //since every token is appended to acc exactly once.
 
   //Forward pass mating: openers push (index, group) onto the stack; closers
   //pop it, learn their opener immediately, and record the pair for later.
@@ -248,33 +270,9 @@ let lex = (source) => {
   };
   //#endregion
 
-  let rec skipWhitespace = (pos: Source.Position) => {
-    if (pos.index < length) {
-      let chNum = Char.codeAt(source, pos.index);
-      if (chNum == 32 || chNum == 10 || chNum == 13 || chNum == 9) {
-        let next: Source.Position = .{
-          index = pos.index + 1,
-          line = if (chNum == 10) {pos.line + 1} else {pos.line},
-          col = if (chNum == 10) {1} else {pos.col + 1}
-        };
-        skipWhitespace(next)
-      } else {
-        pos
-      }
-    } else {
-      pos
-    }
-  };
+  //#region read starting from a kind
 
-  let printPos = (pos) =>{
-    let x = peekBy(pos.index, 1);
-    match(x) {
-      Some(x) => {print x},
-      _ => {print "eof i think"}
-    }
-  };
-
-  let readFromSymbol = (pos):ReadResult => {
+  let readFromSymbol = (pos) => {
     --printPos(pos);
     let txt = match(peekByOne(pos.index)) {
       Some(x) => {x},
@@ -400,8 +398,8 @@ let lex = (source) => {
     readResult
   };
 
-  let readFromLetter = (pos): ReadResult => {
-    let (word, endPos) = readTillEnd(pos, (ch, p) => {isKind(ch, p, wordKinds)});
+  let readFromLetter = (pos) => {
+    let (word, endPos) = readTillEnd(pos, (_, p) => {isKind(p, wordKinds)});
     let firstCode = Char.codeAt(word, 0);
     //A-Z starts an upper (constructor/type) identifier, anything else lower
     let kind = if (Char.isUpperCode(firstCode)) {
@@ -416,9 +414,9 @@ let lex = (source) => {
     }
   };
   
-  let readFromDigit = (pos):ReadResult => {
+  let readFromDigit = (pos) => {
     let (number, endPos) = 
-      readTillEnd(pos, (ch, p) => {isKind(ch, p, [Char.classDigit])} );
+      readTillEnd(pos, (_, p) => {isKind(p, [Char.classDigit])} );
     let (tok, _) = makeToken(Token.IntegerToken, pos, number);
     .{
       tokens = [tok],
@@ -426,14 +424,14 @@ let lex = (source) => {
     }
   };
     
-  let readFromStringLit = (pos): ReadResult => {
+  let readFromStringLit = (pos) => {
     // 1. Get the starting quote character (usually `"`)
     let quoteCh = match(peekByOne(pos.index)) {
       Some(c) => { c },
       None => { ? } // Fallback, though we shouldn't hit this
     };
 
-    let posAfterQuote = advancePosition(pos, quoteCh);
+    let posAfterQuote = bumpIndexPos(pos, quoteCh);
 
     // 2. Recursively read characters until we find the unescaped closing quote
     let rec readBody = (currPos, isEscaping, accText) => {
@@ -441,19 +439,19 @@ let lex = (source) => {
         Some(ch) => {
           if (isEscaping) {
             // The previous char was '\', so consume this one unconditionally
-            readBody(advancePosition(currPos, ch), false, accText ++ ch)
+            readBody(bumpIndexPos(currPos, ch), false, accText ++ ch)
           } else {
             if (ch == "\\") {
               // Found a backslash, enter escape mode for the next character
-              readBody(advancePosition(currPos, ch), true, accText ++ ch)
+              readBody(bumpIndexPos(currPos, ch), true, accText ++ ch)
             } else {
               if (ch == quoteCh) {
                 // Found the closing quote!
-                let endPos = advancePosition(currPos, ch);
+                let endPos = bumpIndexPos(currPos, ch);
                 (accText ++ ch, endPos)
               } else {
                 // Normal character inside the string
-                readBody(advancePosition(currPos, ch), false, accText ++ ch)
+                readBody(bumpIndexPos(currPos, ch), false, accText ++ ch)
               }
             }
           }
@@ -467,7 +465,7 @@ let lex = (source) => {
 
     // Start reading the body after the initial quote. 
     // `accText` starts with the opening quote.
-    let (fullText, endPos) = readBody(posAfterQuote, false, quoteCh);
+    let (_fullText, endPos) = readBody(posAfterQuote, false, quoteCh);
 
     // 3. Create the span and token manually (so we don't crash in kindReadToEnd)
     let span: Source.Span = .{
@@ -487,41 +485,14 @@ let lex = (source) => {
       newPosition = endPos
     }
   };
-  
-  
-  
-  let readCharToEnd = (startPosition: Source.Position) => {
-    let p = peekByOne(startPosition.index);
-    match (p) {
-      Some(ch) => {
 
-      },
-      None => {
-        Panic("fuck ")
-      }
-    }
-  };
   //#endregion
-
-  //Only the open-bracket stack is mate-specific state; acc stays a plain arg.
-  //The token index used for mates is derived inside mateStep from acc length,
-  //since every token is appended to acc exactly once.
-
-  //Mating state: the open-bracket stack plus recorded (openIdx, closeIdx)
-  //pairs waiting to be stamped during the final reverse at EOF.
-  record Mates = {
-    stack: List<(Number, Token.PairGroup)>,
-    pairs: List<(Number, Number)>,
-  };
 
   let rec loop = (pos, m, acc, mates: Mates) => {
     if (pos.index < length) {
       let pos = skipWhitespace(pos);
       --printPos(pos);
       let class = Char.classify(Char.codeAt(source, pos.index));
-      let bumpPos = (p) => {
-        .{..p, index= p.index +1}
-      };
       
       let someAbstract = (res) => {
         match(res.tokens) {
@@ -561,7 +532,7 @@ let lex = (source) => {
           _                => {Panic("unreachable")}
         }
       }
-    } else {
+    } else { 
       //eof
       let eofSpan = Source.Span(pos,pos);
       let eofToken = Token.Token(
@@ -596,6 +567,12 @@ let lex = (source) => {
       }
     }
   };
-
-  loop(Source.Position(0, 0, 0), Default, [], .{stack = [], pairs = []})
+  
+  if (length == 0) {
+    //file is emtpy no need to parse, not an error
+    ?
+  } else {
+    //start lexing
+    loop(Source.Position(0, 0, 0), Default, [], .{stack = [], pairs = []})
+  }
 };

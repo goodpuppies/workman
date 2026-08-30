@@ -427,6 +427,71 @@ Deno.test("multiple fragment roots materialize independently while equal roots d
   assertEquals(shared.core.shaderArtifacts.size, 1);
 });
 
+Deno.test("boolean uniforms use a reflected i32 slot and pack host Bool values", async () => {
+  const source = `
+    record Uniforms = { enabled: Bool };
+    let shade = (uniforms: Uniforms) => {
+      (_coord) => {
+        @gpu;
+        if (uniforms.enabled) {
+          (1.0, 0.0, 0.0, 1.0)
+        } else {
+          (0.0, 0.0, 0.0, 1.0)
+        }
+      }
+    };
+    let enabled: Uniforms = .{ enabled = true };
+    let disabled: Uniforms = .{ enabled = false };
+    let first = Gpu.fragment(shade(enabled));
+    let second = Gpu.fragment(shade(disabled));
+    let main = () => {
+      print(Gpu.uniformBytes(first));
+      print(Gpu.uniformBytes(second))
+    };
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  const hostJavaScript = emitCoreProgram(compiled.core);
+
+  assertEquals(artifact.uniformLayout, {
+    recordName: "Uniforms",
+    binding: 0,
+    byteLength: 16,
+    fields: [{
+      name: "enabled",
+      declaredIndex: 0,
+      representation: "bool32",
+      offset: 0,
+      byteLength: 4,
+    }],
+  });
+  assertStringIncludes(artifact.wgsl, "i32");
+  assertStringIncludes(hostJavaScript, 'field.representation === "bool32"');
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/main.mjs`;
+  await Deno.writeTextFile(path, hostJavaScript);
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    assertEquals(
+      new TextDecoder().decode(output.stdout),
+      "[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n" +
+        "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n",
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("signed integer uniform packing rejects host values outside i32 range", async () => {
   const source = `
     record Uniforms = { count: Number };

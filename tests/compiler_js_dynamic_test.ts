@@ -585,6 +585,55 @@ Deno.test("Array.from works with explicit typed array element annotations", asyn
   expectBinding(result.env, "makeHex", { type: "Void -> String", vars: 0 });
 });
 
+Deno.test("Array.from monomorphizes a reflected iterable without a typed shim", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_iterable.ts") import { makeIterator };
+    from js.global("Array") import { from as arrayFrom };
+
+    let iterator = makeIterator() :> Result.debug;
+    let entries = arrayFrom(iterator);
+    let paths = entries :> Result.debug;
+    let first = paths :> .at(0) :> Result.debug;
+    let path = match(first) {
+      Some(entry) => { entry.path :> Result.debug },
+      None => { "" }
+    };
+  `);
+
+  expectBinding(result.env, "iterator", { type: "IterableIterator", vars: 0 });
+  expectBinding(result.env, "entries", {
+    type: "Result<Js.Array<FfiEntry>, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "path", { type: "String", vars: 0 });
+});
+
+Deno.test("match-bound Workman record fields do not become JS FFI projections", async () => {
+  const result = await checkSource(`
+    record Binding = { definitionExprId: Number };
+    let field = match(value) => {
+      Some(item) => { item.definitionExprId },
+      None => { 0 }
+    };
+    let answer = field(Some(Binding{ definitionExprId = 42 }));
+  `);
+
+  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+});
+
+Deno.test("existing JS members with unsupported reflected signatures say so", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.module("./tests/fixtures/ffi_iterable.ts") import { makeIterator };
+        let iterator = makeIterator() :> Result.debug;
+        let next = iterator.next();
+      `),
+    Error,
+    "IteratorResult<FfiEntry, any>",
+  );
+});
+
 Deno.test("JSON literals reject ordinary ML values at the JS boundary", async () => {
   await assertRejects(
     () =>

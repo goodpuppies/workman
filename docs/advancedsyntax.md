@@ -157,3 +157,37 @@ wait(duration) :> ((via Task)(() => { nextTask }))
 
 Task.andThen(wait(duration), () => { nextTask })
 ```
+
+## Anonymous matches in pipelines
+
+`match { ... }` is an anonymous one-argument function, so it can appear directly as a pipeline
+stage and the result can continue through later stages:
+
+```wm
+thing
+  :> match {
+    Some(value) => { value },
+    None => { 0 },
+  }
+  :> func
+```
+
+This is ordinary function composition. It is equivalent to:
+
+```wm
+(match(thing) {
+  Some(value) => { value },
+  None => { 0 },
+}) :> func
+```
+
+The anonymous form can also be bound or passed as a function value:
+
+```wm
+let unwrap = match {
+  Some(value) => { value },
+  None => { 0 },
+};
+
+thing :> unwrap :> func
+```

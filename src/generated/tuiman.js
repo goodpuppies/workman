@@ -308,6 +308,9 @@ const __wm_basis_Task = {
   recover: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === -4 ? __wm_basis_Ok(fn(result.args[0])) : result
   ),
+  orElse: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === -4 ? fn(result.args[0]) : result
+  ),
   all: (tasks) => Promise.all(tasks).then((results) => {
     const values = [];
     for (const result of results) {
@@ -532,13 +535,17 @@ const __wm_bind_shader_artifact = (artifact, environment) => {
   const view = buffer ? new DataView(buffer) : undefined;
   for (const field of layout?.fields ?? []) {
     const value = environment[field.name];
+    const boolean = field.representation === "bool32";
     const width = field.representation.includes("x") ? Number(field.representation.at(-1)) : 1;
     const values = width === 1 ? [value] : value;
-    if (!Array.isArray(values) || values.length !== width || values.some((item) => typeof item !== "number")) {
+    const valueType = boolean ? "boolean" : "number";
+    if (!Array.isArray(values) || values.length !== width || values.some((item) => typeof item !== valueType)) {
       throw new Error("shader environment field " + field.name + " does not match " + field.representation);
     }
     for (let lane = 0; lane < width; lane += 1) {
-      if (field.representation.startsWith("i32")) {
+      if (boolean) {
+        view.setInt32(field.offset + lane * 4, values[lane] ? 1 : 0, true);
+      } else if (field.representation.startsWith("i32")) {
         const laneValue = values[lane];
         if (!Number.isInteger(laneValue) || laneValue < -2147483648 || laneValue > 2147483647) {
           throw new Error("shader environment field " + field.name + " is outside signed i32 range");
@@ -2366,7 +2373,7 @@ const Map = __wm_std_Map;
 const Option = { "None": __wm_basis_Option["None"], "Some": __wm_basis_Option["Some"], "map": __wm_std_Option["map"], "andThen": __wm_std_Option["andThen"], "withDefault": __wm_std_Option["withDefault"], "map2": __wm_std_Option["map2"], "traverse": __wm_std_Option["traverse"], "collectList": __wm_std_Option["collectList"] };
 const Monad = __wm_std_Monad;
 const Result = { "Ok": __wm_basis_Result["Ok"], "Err": __wm_basis_Result["Err"], "succeed": __wm_std_Result["succeed"], "map": __wm_std_Result["map"], "andThen": __wm_std_Result["andThen"], "toBool": __wm_std_Result["toBool"], "fn": __wm_std_Result["fn"], "mapErr": __wm_std_Result["mapErr"], "fnError": __wm_std_Result["fnError"], "map2": __wm_std_Result["map2"], "carrier": __wm_std_Result["carrier"], "withDefault": __wm_std_Result["withDefault"], "debug": __wm_std_Result["debug"], "map3": __wm_std_Result["map3"], "map4": __wm_std_Result["map4"], "reverseAcc": __wm_std_Result["reverseAcc"], "reverse": __wm_std_Result["reverse"], "traverseAcc": __wm_std_Result["traverseAcc"], "traverse": __wm_std_Result["traverse"], "all": __wm_std_Result["all"], "collectList": __wm_std_Result["collectList"] };
-const Task = { "fromResult": __wm_basis_Task["fromResult"], "succeed": __wm_basis_Task["succeed"], "fail": __wm_basis_Task["fail"], "map": __wm_basis_Task["map"], "map2": __wm_basis_Task["map2"], "race": __wm_basis_Task["race"], "andThen": __wm_basis_Task["andThen"], "mapErr": __wm_basis_Task["mapErr"], "recover": __wm_basis_Task["recover"], "all": __wm_basis_Task["all"], "fn": __wm_std_Task["fn"], "fnError": __wm_std_Task["fnError"], "carrier": __wm_std_Task["carrier"], "collectList": __wm_std_Task["collectList"], "traverse": __wm_std_Task["traverse"] };
+const Task = { "fromResult": __wm_basis_Task["fromResult"], "succeed": __wm_basis_Task["succeed"], "fail": __wm_basis_Task["fail"], "map": __wm_basis_Task["map"], "map2": __wm_basis_Task["map2"], "race": __wm_basis_Task["race"], "andThen": __wm_basis_Task["andThen"], "mapErr": __wm_basis_Task["mapErr"], "recover": __wm_basis_Task["recover"], "orElse": __wm_basis_Task["orElse"], "all": __wm_basis_Task["all"], "fn": __wm_std_Task["fn"], "fnError": __wm_std_Task["fnError"], "carrier": __wm_std_Task["carrier"], "collectList": __wm_std_Task["collectList"], "traverse": __wm_std_Task["traverse"] };
 const Traverse = __wm_std_Traverse;
 await __wm_request_module("__wm_module_2");
 const __wm_library_export_0 = __wm_module_2["Span"];

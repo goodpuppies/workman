@@ -37,6 +37,9 @@ Deno.test("Result and Option combinators infer generically", async () => {
     });
     let task = Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
       :> Task.andThen((n) => { Task.succeed(n + 1) });
+    let retriedTask = Task.fail("bad") :> Task.orElse((error) => {
+      if (error == "bad") { Task.succeed(4) } else { Task.fail(5) }
+    });
     let pairedTask = Task.map2(Task.succeed(1), Task.succeed(2), (a, b) => { a + b });
     let racedTask = Task.race(Task.succeed(1), Task.succeed(2));
     let collectedTasks = [Task.succeed(1), Task.succeed(2), Task.succeed(3)] :> Task.collectList;
@@ -75,6 +78,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
     vars: 0,
   });
   expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
+  expectBinding(result.env, "retriedTask", { type: "Task<Number, Number>", vars: 0 });
   expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>", vars: 0 });
   expectBinding(result.env, "racedTask", { type: "Task<Number, 'a>", vars: 0 });
   expectBinding(result.env, "collectedTasks", { type: "Task<List<Number>, 'a>", vars: 0 });
@@ -109,36 +113,20 @@ Deno.test("Result and Option combinators infer generically", async () => {
   assertEquals(result.structure.strEnv.get("Traverse")?.valEnv.get("with")?.imported, true);
 });
 
-Deno.test("Result.debug unwraps JavaScript error messages before panicking", async () => {
+Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const dir = await Deno.makeTempDir();
-  const cases = [
-    {
-      name: "message",
-      error: 'Js.Error("could not decode response")',
-      expected: "Panic: could not decode response",
-    },
-    {
-      name: "unknown",
-      error: "Js.Unknown",
-      expected: "Panic: unknown JavaScript error",
-    },
-    {
-      name: "string",
-      error: '"domain failure"',
-      expected: "Panic: domain failure",
-    },
-  ];
-  for (const testCase of cases) {
-    const input = `${dir}/${testCase.name}.wm`;
-    await Deno.writeTextFile(
-      input,
-      `let main = () => { Err(${testCase.error}) :> Result.debug };`,
-    );
-    const result = await runCli(["run", input]);
-    assertEquals(result.code, 1);
-    assertStringIncludes(result.stderr, testCase.expected);
-    assertEquals(result.stderr.includes("Panic: fail"), false);
-  }
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    'let main = () => { Err(Js.Error("could not decode response")) :> Result.debug };',
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 1);
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:70:4]");
+  assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
+  assertEquals(result.stderr.includes("Panic:"), false);
 });
 
 Deno.test("Traverse.with sequences through a standard carrier and stops on failure", async () => {
@@ -736,6 +724,33 @@ Deno.test("Task.fn evaluates via-style composition", async () => {
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "Ada Lovelace\n");
+});
+
+Deno.test("Task.orElse runs an effectful error continuation and changes the error type", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => {
+        Task.fail("original")
+          :> Task.orElse((error) => {
+            print(error);
+            Task.fail(42)
+          })
+          :> Task.recover((error) => {
+            print(error);
+            void
+          })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "original\n42\n");
 });
 
 Deno.test("Task.fn composes real async JS tasks", async () => {

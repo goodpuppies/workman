@@ -125,6 +125,9 @@ function collectReflectedForeignTypeRefs(
           variant.resultRef,
         );
       }
+      for (const ref of variant.resultRef?.nestedTypeRefs ?? []) {
+        if (ref.type) collectForeignTypeNames(ref.type, foreignTypeRefs, localTypes, ref);
+      }
       for (const callback of variant.callbackParamRefs ?? []) {
         for (const ref of callback.params) {
           if (ref.type) collectForeignTypeNames(ref.type, foreignTypeRefs, localTypes, ref);

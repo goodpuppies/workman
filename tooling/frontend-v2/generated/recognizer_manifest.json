@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "grammarHash": "e229671a9f698fe9a83cde98c7e5757ce91ac2fd2484ca7881c86eacd0dc6b52",
+  "grammarHash": "7df5f1c7d683dc56d521679b882f50d1d68dec40fc7f5dc2c15fd44bab264994",
   "grammarPath": "src/grammar.peggy",
-  "ruleCount": 133,
+  "ruleCount": 134,
   "recoveryAnnotations": [
     {
       "rule": "TopPhrase",
@@ -104,6 +104,24 @@
     },
     {
       "rule": "MatchFn",
+      "after": "authored opening brace or construct body",
+      "token": "}",
+      "synchronizeAt": [
+        ";",
+        ",",
+        "}"
+      ]
+    },
+    {
+      "rule": "AnonymousMatchFn",
+      "after": "authored construct discriminator",
+      "token": "{",
+      "synchronizeAt": [
+        "}"
+      ]
+    },
+    {
+      "rule": "AnonymousMatchFn",
       "after": "authored opening brace or construct body",
       "token": "}",
       "synchronizeAt": [

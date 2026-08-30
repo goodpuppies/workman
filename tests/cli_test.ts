@@ -47,6 +47,105 @@ Deno.test("cli rejects more than one problems entrypoint", async () => {
   assertEquals(result.stderr, "usage: wm problems [entrypoint.wm]\n");
 });
 
+Deno.test("cli todo and what list typed holes across the module graph", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${directory}/lib.wm`,
+      `-- TODO implement renderer
+let render: Number -> String = ?;
+let label = "TODO is not a comment";
+let template = \`// TODO is also not a comment\`;`,
+    );
+    await Deno.writeTextFile(
+      `${directory}/main.wm`,
+      `from "./lib.wm" import { render };
+// TODO choose an algorithm
+let calculate = (): Number => {
+  ?
+};
+let main = () => { Ok(render(calculate())) :> Result.debug :> print };`,
+    );
+
+    const todo = await runCli(["todo", "main.wm"], directory);
+    const what = await runCli(["what", "main.wm"], directory);
+
+    assertEquals(todo.code, 0);
+    assertEquals(todo.stderr, "");
+    assertEquals(what, todo);
+    assertEquals(
+      todo.stdout,
+      `--- lib.wm ---
+
+lib.wm:2:32: ? expected Number -> String
+2 | let render: Number -> String = ?;
+                                   ^
+
+lib.wm:1:4: TODO comment
+1 | -- TODO implement renderer
+       ^^^^
+
+--- main.wm ---
+
+main.wm:6:54: warning[lint.result-debug]: Result.debug aborts on Err; handle the Result explicitly when possible.
+6 | let main = () => { Ok(render(calculate())) :> Result.debug :> print };
+                                                         ^^^^^
+
+main.wm:4:3: ? expected Number
+4 |   ?
+      ^
+
+main.wm:2:4: TODO comment
+2 | // TODO choose an algorithm
+       ^^^^
+`,
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("cli todo reports when a project has no typed holes", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${directory}/main.wm`, "let main = () => { void };");
+
+    const result = await runCli(["todo", "main.wm"], directory);
+
+    assertEquals(result, {
+      code: 0,
+      stdout: "no errors, warnings, typed holes, or TODO comments found\n",
+      stderr: "",
+    });
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("cli todo keeps errors and comments visible in a broken project", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${directory}/main.wm`,
+      `// TODO repair the value
+let bad: Number = true;`,
+    );
+
+    const result = await runCli(["todo", "main.wm"], directory);
+
+    assertEquals(result.code, 0);
+    assertEquals(result.stderr, "");
+    assertStringIncludes(result.stdout, "main.wm:2:19: error[type.mismatch]");
+    assertStringIncludes(result.stdout, "main.wm:1:4: TODO comment");
+    assertEquals(
+      result.stdout.indexOf("error[type.mismatch]") < result.stdout.indexOf("TODO comment"),
+      true,
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("cli refuses to start the problems TUI without a terminal", async () => {
   const directory = await Deno.makeTempDir();
   try {

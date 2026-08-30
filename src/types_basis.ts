@@ -427,6 +427,16 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.recover", [a, e], fn([tuple([task(a, e), fn([e], a)])], task(a, e)));
   }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    const f = fresh("f") as Extract<Ty, { tag: "var" }>;
+    basisFn(
+      "Task.orElse",
+      [a, e, f],
+      fn([tuple([task(a, e), fn([e], task(a, f))])], task(a, f)),
+    );
+  }
   if (jsArray) {
     const a = fresh("a") as Extract<Ty, { tag: "var" }>;
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;

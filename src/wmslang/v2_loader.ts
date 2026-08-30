@@ -1551,12 +1551,12 @@ export function validateGpuSliceElaborationInput(
     }
     declaredIndices.add(field.declaredIndex as number);
     const type = typesById.get(field.typeId as number)!;
-    const numeric = type.kind === "number" ||
+    const uniform = type.kind === "number" || type.kind === "bool" ||
       (type.kind === "tuple" && (type.items as number[]).length >= 2 &&
         (type.items as number[]).length <= 4 &&
         (type.items as number[]).every((id) => typesById.get(id)?.kind === "number"));
     const kindMatches = field.kind === "uniform"
-      ? numeric && field.binding === 0
+      ? uniform && field.binding === 0
       : field.kind === "sampled-texture-2d"
       ? type.kind === "sampled-texture-2d"
       : type.kind === "sampler";

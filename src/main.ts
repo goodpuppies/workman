@@ -38,6 +38,8 @@ const commands = new Set([
   "fmt",
   "lsp",
   "problems",
+  "todo",
+  "what",
   "type-debug",
   "help",
   "version",
@@ -214,6 +216,9 @@ export async function main(args: string[]): Promise<number> {
       return await lspCommand(commandArgs);
     case "problems":
       return await problemsCommand(commandArgs);
+    case "todo":
+    case "what":
+      return await todoCommand(commandArgs, command);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
     case "version":
@@ -471,6 +476,16 @@ async function problemsCommand(args: string[]): Promise<number> {
   return await problemsCommand(args);
 }
 
+async function todoCommand(args: string[], command: "todo" | "what"): Promise<number> {
+  if (args.length !== 1) {
+    console.error(`usage: wm ${command} <input.wm>`);
+    return 2;
+  }
+  const { collectTodos, formatTodos } = await import("./todo.ts");
+  console.log(formatTodos(await collectTodos(args[0])));
+  return 0;
+}
+
 function version(): void {
   console.log(`🗿 workman ${VERSION}`);
 }
@@ -496,6 +511,8 @@ commands:
   lsp                           run the Workman language server over stdio
   problems [entrypoint.wm]      browse LSP diagnostics in a Workman TUI
                                 defaults to ./main.wm, or the only .wm file here
+  todo <file.wm>                list errors, warnings, typed ? holes, and TODO comments
+  what <file.wm>                alias for todo
   type-debug <file.wm>           print staged typechecker state on failure
   help                          show this help (-h, --help)
   version                       show the version (-v, -V, --version)

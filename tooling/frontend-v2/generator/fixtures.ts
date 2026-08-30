@@ -26,6 +26,10 @@ export const recognizerSmokeFixtures: readonly ParityFixture[] = Object.freeze([
     name: "pipe and tuple application",
     source: "let result = source :> transform(1, 2) :> finish;",
   },
+  {
+    name: "anonymous match pipeline",
+    source: "let result = value :> match { true => { 1 }, false => { 0 } } :> finish;",
+  },
   { name: "records and lists", source: "let value = .{ ..base, items = [head, ..tail] };" },
   { name: "carrier lift", source: "let combined = Result|left, right|;" },
 ]);

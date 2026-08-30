@@ -314,6 +314,9 @@ export function emitRuntimePrelude(): string[] {
   recover: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === ${basisCtorId("Err")} ? __wm_basis_Ok(fn(result.args[0])) : result
   ),
+  orElse: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === ${basisCtorId("Err")} ? fn(result.args[0]) : result
+  ),
   all: (tasks) => Promise.all(tasks).then((results) => {
     const values = [];
     for (const result of results) {

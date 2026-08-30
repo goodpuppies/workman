@@ -29,7 +29,8 @@ from "./surface_builders_record_pattern.wm" import {
   buildRecordPattern, buildRecordPatternField
 };
 from "./surface_builders_match.wm" import {
-  buildMatchArm, buildMatchExpr, buildMatchFnParams, buildMatchFn
+  buildMatchArm, buildMatchExpr, buildMatchFnParams, buildMatchFn,
+  buildAnonymousMatchFn
 };
 from "./surface_builders_decl.wm" import {
   buildLetBinding, buildLetDecl, buildRecordFieldDecl, buildRecordDecl,
@@ -132,6 +133,7 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "MatchExpr" => { buildMatchExpr(value, span) },
             "MatchFnParams" => { buildMatchFnParams(value, span) },
             "MatchFn" => { buildMatchFn(value, span) },
+            "AnonymousMatchFn" => { buildAnonymousMatchFn(value, span) },
             "BlockSeqItem" => { buildBlockSeqItem(value, span) },
             "BlockSeqBody" => { buildBlockSeqBody(value, span) },
             "ParenSeqItem" => { buildParenSeqItem(value, span) },

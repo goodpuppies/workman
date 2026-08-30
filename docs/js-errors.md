@@ -153,6 +153,16 @@ readTextFile(path)
   })
 ```
 
+Use `Task.orElse` when recovery itself is asynchronous or should preserve failure:
+
+```wm
+readTextFile(path)
+  :> Task.orElse((error) => {
+    logFailure(error)
+      :> Task.andThen((_) => { Task.fail(error) })
+  })
+```
+
 The FFI guarantee covers throws and rejections from the safe JavaScript operation.
 Do not use `Panic` inside Task callbacks as an error mechanism; a Workman invariant
 failure is not application-level `Js.Error` handling.

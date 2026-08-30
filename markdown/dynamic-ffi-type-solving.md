@@ -55,6 +55,18 @@ imports and exports preserve these types across modules
 
 Neither system should replace the other.
 
+## Annotations Are Verification, Not Solver Input
+
+An ordinary Workman annotation is checked by HM after inference. The FFI resolver must not use it to
+choose a TypeScript overload, recover a receiver ref, refine a dynamic value, or decide what a JS
+call returns. Otherwise an annotation would behave like a cast and annotation erasure could change
+program meaning.
+
+This is separate from a manually typed JS import, which is a trusted declaration of the foreign
+boundary itself. It is also separate from `Json.assert`, whose operation explicitly checks a
+dynamic value against an expected Workman shape. An annotation can state the expected result of an
+assertion; it does not make arbitrary FFI values satisfy that type.
+
 The issue with the current pre-HM FFI elaboration is order. When the pass first sees:
 
 ```wm
@@ -68,10 +80,12 @@ Workman constraints such as:
 Some(h) => { h(req) }
 ```
 
-If FFI elaboration happens too early, it must either:
+If FFI elaboration happens too early, two tempting responses are both wrong:
 
-- require a manual `req: Request` annotation, or
-- fall back to dynamic property access, losing TypeScript precision.
+- requiring `req: Request` would make an annotation participate in solving;
+- falling back to dynamic property access would discard TypeScript precision.
+
+The operation must remain delayed until HM supplies real receiver evidence.
 
 ## Separation Principle
 
@@ -90,6 +104,26 @@ FFI resolver:
 
 TypeScript should not understand the Workman program. HM should not understand JavaScript property
 semantics.
+
+## TS Refs Are Boundary Evidence, Not A Threaded Shadow Type
+
+The compiler necessarily keeps `JsTypeRef` values: without them it could not ask TypeScript about an
+imported value, nominal foreign type, selected call result, or contextual callback parameter. The
+constraint is narrower and more important: refs must not form an expression-side shadow type system
+which attempts to follow values through arbitrary Workman control and data flow.
+
+Refs may be attached to declarations and individual reflected operations. HM foreign types may also
+carry stable nominal keys whose side table points to a TS ref. At the next explicit JS operation, the
+resolver can recover the ref from that inferred HM type and ask TypeScript a local question. Inline
+callback parameters may temporarily receive the refs supplied by the TS signature which introduces
+them. These are bounded translations at the HM/TS boundary.
+
+What should not return is the older machinery which separately remembered expression results and
+special-cased identity-preserving lets, pipes, `Result` unwrap helpers, and match arms. Apart from its
+size, that machinery made reflection depend on source shape: two HM-equivalent helper definitions
+could preserve different foreign evidence merely because the FFI walker recognized one AST form.
+If normal program flow knows a type, HM should carry it. If HM has reduced it to a genuinely dynamic
+type, a hidden ref must not silently restore precision later.
 
 ## Foreign Types
 
@@ -260,6 +294,21 @@ This is important because JavaScript APIs commonly encode meaning in:
 - overloaded functions
 - callbacks with contextual parameter types
 - optional arguments
+
+The same call-specific rule applies to ordinary imported bindings, not only receiver methods. Once
+HM knows that an argument is a nominal foreign type, the resolver should recover its stored TS ref
+and ask TypeScript to resolve the concrete call. Declaration-level overload variants are fallback
+seeds; they must not force a broad `Js.Value` result when TypeScript can instantiate a unique result.
+
+For example, `Array.from` applied to a reflected `IterableIterator<Entry>` should be reflected as
+`Entry[]` and mapped to `Js.Array<Entry>`. The array element also needs its own exact TS ref so later
+`.path` access can be reflected from `Entry`. This does not require propagating refs through
+arbitrary Workman expressions: HM carries the nominal foreign identity, and the foreign-type table
+maps that identity back to its TS ref at the next explicit FFI operation.
+
+If TypeScript cannot select one call, or selects a signature Workman cannot represent, leave the
+obligation unresolved and explain which condition occurred. Do not silently choose an overload,
+use an annotation as a tie-breaker, or collapse a known static result into `Js.Value`.
 
 ## Direct Reflection Still Works
 
@@ -548,11 +597,11 @@ That assertion makes `payload.repository`, `payload.pusher`, and `payload.commit
 It does not make later annotations on dynamic receiver results into casts; those should still be
 rejected unless there is another explicit assertion at that boundary.
 
-The exact implementation of `Json.assert` is future work. Since Workman is ML-shaped and does not
-have magic generic type application, the validator may need to be generated, derived, or supplied as
-an ordinary value-level function. The important rule is that it validates the whole expected shape at
-the dynamic boundary. It should not encourage interleaving lots of `Json.expectString`-style
-property checks through normal FP code.
+`Json.assert` consumes the expected HM shape at this explicit operation and validates the whole
+value at the dynamic boundary. This is the narrow place where expected shape participates in the
+conversion; it must not leak into ordinary annotation-directed FFI solving. Whole-shape validation
+should remain preferable to interleaving lots of `Json.expectString`-style property checks through
+normal FP code.
 
 ## Implementation Checklist
 

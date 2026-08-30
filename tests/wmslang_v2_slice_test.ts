@@ -583,6 +583,34 @@ Deno.test("schema v2 lowers one curried nominal-record environment to uniforms",
   assertEquals(output.slangSource.includes("wm_uniforms.wm_u_1"), true);
 });
 
+Deno.test("schema v5 accepts a concrete imported nominal environment schema", async () => {
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([
+      ["/test/uniforms.wm", "record Inputs = { time: Number };"],
+      [
+        "/test/main.wm",
+        `
+          from "./uniforms.wm" import { Inputs };
+          let shade = (inputs: Inputs) => {
+            (_coord) => { @gpu; (sin(inputs.time), 0.0, 0.0, 1.0) }
+          };
+          let fragment = Gpu.fragment(shade(Inputs(0.0)));
+        `,
+      ],
+    ]),
+  );
+  const input = normalizeGpuSliceProgram(analysis);
+  validateGpuSliceElaborationInput(input);
+
+  assertEquals(input.environments.map(({ name }) => name), ["Inputs"]);
+  assertEquals(input.environmentFields.map(({ name }) => name), ["time"]);
+  assertEquals(input.spans[input.environments[0].spanId].path, "/test/uniforms.wm");
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.slangSource.includes("float wm_u_0;"), true);
+});
+
 Deno.test("schema v2 keeps the curried environment boundary closed", async () => {
   await assertRejects(
     () =>
@@ -632,22 +660,24 @@ Deno.test("schema v2 keeps the curried environment boundary closed", async () =>
     "instead of capturing it",
   );
 
-  await assertRejects(
-    () =>
-      analysisFor(`
-        record Uniforms = { enabled: Bool };
-        let shade = (uniforms: Uniforms) => {
-          (_coord) => {
-            @gpu;
-            if (uniforms.enabled) { (1.0, 0.0, 0.0, 1.0) } else { (0.0, 0.0, 0.0, 1.0) }
-          }
-        };
-        let current: Uniforms = .{ enabled = true };
-        let fragment = Gpu.fragment(shade(current));
+  const boolInput = normalizeGpuSliceProgram(
+    await analysisFor(`
+      record Uniforms = { enabled: Bool };
+      let shade = (uniforms: Uniforms) => {
+        (_coord) => {
+          @gpu;
+          if (uniforms.enabled) { (1.0, 0.0, 0.0, 1.0) } else { (0.0, 0.0, 0.0, 1.0) }
+        }
+      };
+      let current: Uniforms = .{ enabled = true };
+      let fragment = Gpu.fragment(shade(current));
     `),
-    GpuSliceNormalizationError,
-    "must be a numeric uniform, Gpu.SampledTexture2D, or Gpu.Sampler",
   );
+  validateGpuSliceElaborationInput(boolInput);
+  const boolOutput = (await realSliceCompiler()).compileGpuSlice(boolInput);
+  assertEquals(boolOutput.diagnostics, []);
+  assertEquals(boolOutput.slangSource.includes("int wm_u_0;"), true);
+  assertEquals(boolOutput.slangSource.includes("(wm_uniforms.wm_u_0 != 0)"), true);
 });
 
 Deno.test("schema v2 vector rules do not leak into host code or resize widths", async () => {

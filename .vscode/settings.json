@@ -6,5 +6,9 @@
     "**/.DS_Store": true,
     "**/Thumbs.db": true
   },
-  "explorerExclude.backup": {}
+  "explorerExclude.backup": {},
+  "files.watcherExclude": {
+    "**/target/**": true
+  },
+  "explorerExcludeManager.backup": {}
 }

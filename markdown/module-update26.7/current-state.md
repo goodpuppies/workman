@@ -224,8 +224,10 @@ and common causes.
   A projection with multiple nominal record candidates deterministically selects the first field
   identity and emits `record.ambiguous-projection`, asking for a receiver/binding/parameter
   annotation. The unannotated receiver keeps its structural row constraint; selecting an occurrence
-  target does not silently cast it to the first nominal record. A field with no nominal candidate
-  remains structural and has no fictional nominal target. Value, constructor, and nominal-field
+  target does not silently cast it to the first nominal record. An annotation, or earlier projection
+  evidence that leaves one compatible record candidate, resolves the field without that warning. A
+  field with no nominal candidate remains structural and has no fictional nominal target. Value,
+  constructor, and nominal-field
   occurrences carry references into an immutable, protocol-neutral semantic type arena. The arena
   preserves generalized-versus-instantiated use, quantified-variable counts, structural type shape,
   and stable nominal `TypeNameId` when available; mutable inference `Ty` objects do not escape

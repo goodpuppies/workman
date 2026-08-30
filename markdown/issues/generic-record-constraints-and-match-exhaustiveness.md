@@ -203,6 +203,44 @@ set        : (Box<K, V>, K, V) -> Box<K, V>
 no warning. The false positive appears when the ADT pattern is one column of a larger tuple/match
 function.
 
+### Second sighting: FFI-shaped code, 2026-08-26
+
+The same false positive appeared while writing `examples/enterprise/writev.wm`, in three functions
+that have nothing to do with generics — the offending columns are ordinary binders beside a
+complete `List` match:
+
+```workman
+let rec drain = match(chunks, lib, fd) => {
+  ([], _, _) => { Ok(void) },
+  ([head, ..tail], lib, fd) => { ... },
+};
+```
+
+```text
+non-exhaustive match: in Cons, missing: .{ symbols = _, close = _ }
+```
+
+The requested "missing" pattern is a record shape for the `lib` **binder**, not for the scrutinised
+list. Two sibling functions warned as `Nil is missing a wildcard pattern` and `Cons is missing a
+wildcard pattern` for the same reason. This confirms Issue B is not specific to ADT payloads or to
+generic code: a plain variable pattern in any tuple column is not being treated as irrefutable.
+
+The workaround is to reduce to a single scrutinee, which removes the warnings without changing
+behavior:
+
+```workman
+let rec drain = (chunks, lib, fd) => {
+  match(chunks) {
+    [] => { Ok(void) },
+    [head, ..tail] => { ... },
+  }
+};
+```
+
+Worth noting for the fix: inserting a `_ => { Panic("unreachable") }` arm would also silence these,
+and that is what a user is likely to do. It is the wrong outcome — the matches are already
+exhaustive, so the panic arm is dead code that permanently hides any future genuine gap.
+
 ### Why the matches are exhaustive
 
 For `insertTree`:

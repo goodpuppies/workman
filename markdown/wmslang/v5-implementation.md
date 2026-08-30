@@ -121,6 +121,11 @@ Numeric environment fields are no longer assumed to be floats. Connected GPU evi
 `i32` or `f32` scalar/vector layout. Slang reflection remains authoritative for offsets and total
 constant-buffer size.
 
+`Bool` environment fields use an explicit host-shareable `i32` ABI slot. The host packer writes
+`false`/`true` as `0`/`1`, while generated Slang converts the integer field back to `bool` at each
+shader read. Concrete non-generic nominal environment records may be imported; their defining
+module path and nominal identity remain part of the artifact fingerprint.
+
 The generated host packer writes signed fields with `DataView.setInt32`, checks the signed range,
 and continues to use `setFloat32` for float fields. Unused numeric fields remain errors rather than
 being silently defaulted.
@@ -154,7 +159,7 @@ runtime identities remain opaque.
 One outer nominal record remains the host-to-GPU boundary. Normalization partitions its declared
 fields into:
 
-- a constant-buffer schema for copyable numeric fields; and
+- a constant-buffer schema for copyable numeric and `Bool` fields; and
 - a resource schema for sampled textures and samplers.
 
 Declaration identity and order remain stable. Uniforms occupy binding `0` when present. Resources

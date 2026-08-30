@@ -2,6 +2,8 @@ from js.global("String.prototype.charCodeAt") import unsafe {
   call as charCodeAt: (String, Number) -> Number
 };
 
+type Char = String;
+
 let classSpace = 1;
 let classLetter = 2;
 let classDigit = 3;
