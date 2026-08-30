@@ -49,13 +49,18 @@ export function nodeServerConfig<TTransport>(
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
 ): ServerModuleConfig<TTransport> {
+  const packagedFrontendV2ModulePath = frontendV2ModulePath ?? path.join(
+    path.dirname(module),
+    "generated",
+    "frontend_v2_parser.js",
+  );
   return {
     module,
     transport,
     options: {
       cwd: workspaceFolder ?? path.dirname(module),
       env: serverEnvironment(
-        frontendV2ModulePath,
+        packagedFrontendV2ModulePath,
         baseEnv,
         workspaceFolder,
       ),

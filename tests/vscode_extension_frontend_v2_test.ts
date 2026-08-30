@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { denoServerConfig, nodeServerConfig } from "../editors/vscode/src/server_options.ts";
 
 const repoRoot = resolve(import.meta.dirname!, "..");
@@ -90,6 +90,10 @@ Deno.test("VS Code extension can launch a packaged language server", () => {
   assertEquals(config.options.cwd, "/workspace");
   assertEquals(config.options.env.KEEP, "yes");
   assertEquals(config.options.env.WORKMAN_FRONTEND, undefined);
+  assertEquals(
+    config.options.env.WORKMAN_FRONTEND_V2_MODULE,
+    join("/extension/server", "generated", "frontend_v2_parser.js"),
+  );
 });
 
 Deno.test("VS Code build packages the generated frontend beside the bundled server", async () => {
