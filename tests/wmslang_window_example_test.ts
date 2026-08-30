@@ -1,9 +1,10 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { compileFile } from "../src/compiler.ts";
 
 Deno.test("SDL window example keeps the complete WebGPU presentation path in Workman", async () => {
   const javaScript = await compileFile(
-    new URL("../examples/wmslang_window/src/main.wm", import.meta.url).pathname,
+    fileURLToPath(new URL("../examples/wmslang_window/src/main.wm", import.meta.url)),
   );
 
   assertStringIncludes(javaScript, '__wm_js_member("navigator" + "." + "gpu")');
@@ -26,7 +27,7 @@ Deno.test("SDL window example keeps the complete WebGPU presentation path in Wor
 
 Deno.test("SDL feedback example compiles explicit resize and texture retirement", async () => {
   const javaScript = await compileFile(
-    new URL("../examples/wmslang_feedback_window/main.wm", import.meta.url).pathname,
+    fileURLToPath(new URL("../examples/wmslang_feedback_window/main.wm", import.meta.url)),
   );
 
   assertStringIncludes(javaScript, "__wm_gpu_texture_2d");

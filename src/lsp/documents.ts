@@ -1,6 +1,5 @@
-import { normalize, resolve } from "node:path";
 import { runtime } from "../io.ts";
-import { fileUriToPath } from "./uri.ts";
+import { canonicalFilePath, fileUriToPath } from "./uri.ts";
 
 export type TextDocument = {
   uri: string;
@@ -54,9 +53,9 @@ export class DocumentStore {
   version(uri: string): number | undefined {
     const direct = this.#documents.get(uri)?.version;
     if (direct !== undefined) return direct;
-    const path = normalize(resolve(fileUriToPath(uri)));
+    const path = canonicalFilePath(fileUriToPath(uri));
     for (const doc of this.#documents.values()) {
-      if (normalize(resolve(doc.path)) === path) return doc.version;
+      if (canonicalFilePath(doc.path) === path) return doc.version;
       try {
         if (runtime.realPathSync(doc.path) === path) return doc.version;
       } catch {
@@ -73,7 +72,7 @@ export class DocumentStore {
   sourceOverrides(): Map<string, string> {
     const overrides = new Map<string, string>();
     for (const doc of this.#documents.values()) {
-      const path = normalize(resolve(doc.path));
+      const path = canonicalFilePath(doc.path);
       overrides.set(path, doc.text);
       try {
         overrides.set(runtime.realPathSync(path), doc.text);

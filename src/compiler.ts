@@ -1,5 +1,6 @@
 import type { CtorDecl, Expr, Module, Pattern } from "./ast.ts";
 import { basename, dirname, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type CoreProgram, coreProgramFromAnalysis } from "./core/artifact.ts";
 import { emitCoreProgram } from "./core/emit_js.ts";
 import { coreFromSurface } from "./core/from_surface.ts";
@@ -462,7 +463,7 @@ async function compileDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
     identity: await defaultWmslangCompilerIdentity(),
     build: () =>
       compileLibraryFile(
-        new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+        fileURLToPath(new URL("../tooling/wmslang/compiler.wm", import.meta.url)),
       ),
   });
 }

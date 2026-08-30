@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 
-const installer = new URL("../scripts/install.ts", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const installer = fileURLToPath(new URL("../scripts/install.ts", import.meta.url));
 
 Deno.test("installer creates a cwd-independent wm launcher", async () => {
   const binDir = await Deno.makeTempDir();

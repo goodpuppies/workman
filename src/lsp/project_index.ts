@@ -1,4 +1,4 @@
-import { normalize, resolve } from "node:path";
+import { normalize, posix, resolve } from "node:path";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { runtime } from "../io.ts";
 import { resolveModuleImportPath } from "../module_graph.ts";
@@ -23,12 +23,12 @@ export class ProjectIndex {
     if (!params) return;
     for (const folder of params.workspaceFolders ?? []) this.#rememberWorkspaceRoot(folder.uri);
     if (params.rootUri) this.#rememberWorkspaceRoot(params.rootUri);
-    else if (params.rootPath) this.#roots.add(normalize(resolve(params.rootPath)));
+    else if (params.rootPath) this.#roots.add(canonicalPath(params.rootPath));
   }
 
   #rememberWorkspaceRoot(uri: string) {
     if (!uri.startsWith("file://")) return;
-    this.#roots.add(normalize(resolve(fileUriToPath(uri))));
+    this.#roots.add(canonicalPath(fileUriToPath(uri)));
   }
 
   async initialize(
@@ -88,7 +88,7 @@ export class ProjectIndex {
     sourceOverrides: Map<string, string>,
     options: CompilerFrontendOptions = {},
   ) {
-    const normalized = normalize(resolve(path));
+    const normalized = canonicalPath(path);
     const discovery = await directDiscovery(normalized, sourceOverrides, options);
     if (discovery.source === undefined) {
       this.discovery.remove(normalized);
@@ -112,7 +112,7 @@ export class ProjectIndex {
   }
 
   #ensureDocumentContext(path: string): void {
-    const file = normalize(resolve(path));
+    const file = canonicalPath(path);
     const existing = this.#documentContexts.get(file);
     if (existing && this.#contexts.get(existing)?.has(file)) return;
     const covering = [...this.#contexts].find(([, paths]) => paths.has(file));
@@ -190,7 +190,14 @@ function affectedContextUris(
 }
 
 function uriPath(uri: string): string {
-  return normalize(resolve(fileUriToPath(uri)));
+  return canonicalPath(fileUriToPath(uri));
+}
+
+function canonicalPath(path: string): string {
+  if (runtime.platform === "win32" && path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) {
+    return posix.normalize(path);
+  }
+  return normalize(resolve(path));
 }
 
 async function collectWmFiles(root: string): Promise<string[]> {

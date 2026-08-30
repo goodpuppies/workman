@@ -2,7 +2,8 @@ import { assertEquals } from "@std/assert";
 import { checkSource } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
 
-const cli = new URL("../src/main.ts", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("persistent Map infers generic key and value types", async () => {
   const result = await checkSource(`

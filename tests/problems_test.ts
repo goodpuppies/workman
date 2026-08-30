@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import {
   collectProblems,
   collectSnapshot,
@@ -81,7 +82,7 @@ Deno.test("problems session disposes synchronously without awaiting shutdown", a
 });
 
 Deno.test("problems TUI wraps diagnostic text to the terminal width", async () => {
-  const probe = new URL("../tooling/problems/wrap-probe.wm", import.meta.url).pathname;
+  const probe = fileURLToPath(new URL("../tooling/problems/wrap-probe.wm", import.meta.url));
   const result = await runFile(probe, { stdout: "piped", stderr: "piped", progress: false });
 
   assertEquals(result.code, 0);
@@ -96,7 +97,7 @@ Deno.test("problems TUI wraps diagnostic text to the terminal width", async () =
 });
 
 Deno.test("problems TUI decodes clicks and wheel input in Workman", async () => {
-  const probe = new URL("../tooling/tuiman/mouse-probe.wm", import.meta.url).pathname;
+  const probe = fileURLToPath(new URL("../tooling/tuiman/mouse-probe.wm", import.meta.url));
   const result = await runFile(probe, { stdout: "piped", stderr: "piped", progress: false });
 
   assertEquals(result.code, 0);
@@ -105,7 +106,7 @@ Deno.test("problems TUI decodes clicks and wheel input in Workman", async () => 
 });
 
 Deno.test("problems TUI toggles severity filters in Workman", async () => {
-  const probe = new URL("../tooling/problems/filter-probe.wm", import.meta.url).pathname;
+  const probe = fileURLToPath(new URL("../tooling/problems/filter-probe.wm", import.meta.url));
   const result = await runFile(probe, { stdout: "piped", stderr: "piped", progress: false });
 
   assertEquals(result.code, 0);

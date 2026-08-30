@@ -1,5 +1,5 @@
 import { assertEquals, assertNotStrictEquals, assertStrictEquals } from "@std/assert";
-import { dirname, normalize, posix } from "node:path";
+import { posix } from "node:path";
 import { analyzeDetachedVirtual, analyzeRecoveredVirtual } from "../src/compiler.ts";
 import { ProjectContextRegistry, ReverseImportDiscoveryIndex } from "../src/project_context.ts";
 import {
@@ -407,7 +407,7 @@ async function discoveryIndex(
   const index = new ReverseImportDiscoveryIndex();
   for (const [path, source] of files) {
     await index.update(path, source, (referrer, specifier) => {
-      const resolved = normalize(posix.join(dirname(referrer), specifier));
+      const resolved = posix.normalize(posix.join(posix.dirname(referrer), specifier));
       return files.has(resolved) ? resolved : undefined;
     });
   }

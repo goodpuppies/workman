@@ -3,7 +3,8 @@ import { evaluateReplFile, topLevelPhraseRanges } from "../src/repl.ts";
 import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 
-const cli = new URL("../src/main.ts", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("cli prints help with no arguments", async () => {
   const result = await runCli([]);

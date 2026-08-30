@@ -4,7 +4,8 @@ import { inferModule } from "../src/infer.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
 
-const cli = new URL("../src/main.ts", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("Result and Option combinators infer generically", async () => {
   const result = await checkSource(`

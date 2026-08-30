@@ -1,4 +1,3 @@
-import { normalize, resolve } from "node:path";
 import { analyzeFile, elaborateProjectGpuSemantics, ModuleAnalysisError } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import {
@@ -23,7 +22,7 @@ import { semanticSourceForPath } from "./semantic_context.ts";
 import type { SemanticService } from "./semantic_service.ts";
 import { surfaceRecoveryDiagnostics } from "./surface_recovery.ts";
 import { resultDebugDiagnostics, unusedDiagnostics } from "./unused_diagnostics.ts";
-import { fileUriToPath, pathToFileUri } from "./uri.ts";
+import { canonicalFilePath, fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type ValidationResult = {
   uri: string;
@@ -63,7 +62,7 @@ export async function validateUri(
   options: CompilerFrontendOptions = {},
   validationOptions: ValidationOptions = {},
 ): Promise<ValidationResult[]> {
-  const entryPath = normalize(resolve(fileUriToPath(uri)));
+  const entryPath = canonicalFilePath(fileUriToPath(uri));
   const serviceContext = validationOptions.semanticService
     ? await validationOptions.semanticService.documentContext(uri, false)
     : null;

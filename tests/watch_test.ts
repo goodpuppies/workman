@@ -1,7 +1,8 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { watchRefreshDivider } from "../src/watch.ts";
 
-const cli = new URL("../src/main.ts", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("watch refresh divider respects narrow terminals", () => {
   const divider = watchRefreshDivider(32);

@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { analyzeVirtual, elaborateProjectGpuSemantics } from "../src/compiler.ts";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
@@ -35,10 +36,12 @@ Deno.test({
     assertEquals(Object.isFrozen(semanticSlice?.elaboration), true);
     assertEquals(Object.isFrozen(semanticSlice?.elaboration.occurrences), true);
 
-    const example = new URL(
-      "../examples/wmslang_window/src/main.wm",
-      import.meta.url,
-    ).pathname;
+    const example = fileURLToPath(
+      new URL(
+        "../examples/wmslang_window/src/main.wm",
+        import.meta.url,
+      ),
+    );
     const exampleSource = await Deno.readTextFile(example);
     const uri = pathToFileUri(example);
     const hover = await hoverAt(

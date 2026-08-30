@@ -1,4 +1,5 @@
 import type { Module } from "../src/ast.ts";
+import { fileURLToPath } from "node:url";
 import { normalizeFrontendSemanticAstWithSpans } from "../src/frontend_v2_compare.ts";
 
 type FrontendV2SemanticGolden = Readonly<{
@@ -19,9 +20,9 @@ if (parsed.schemaVersion !== 1 || typeof parsed.files !== "object") {
 export const frontendV2SemanticGolden = Object.freeze(parsed);
 
 export function repositoryWmPath(path: string): string {
-  const root = new URL("../", import.meta.url).pathname;
+  const root = fileURLToPath(new URL("../", import.meta.url));
   if (!path.startsWith(root)) throw new Error(`path is outside repository: ${path}`);
-  return path.slice(root.length);
+  return path.slice(root.length).replaceAll("\\", "/");
 }
 
 export async function hashFrontendSemanticWithSpans(module: Module): Promise<string> {

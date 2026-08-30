@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { analyzeVirtual, compileLibraryFile } from "../src/compiler.ts";
 import {
   loadWmslangSliceCompiler,
@@ -259,7 +260,7 @@ Deno.test("schema v2 round-trips through the real Workman wmslang ABI", async ()
     ),
   );
   const compilerSource = await compileLibraryFile(
-    new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+    fileURLToPath(new URL("../tooling/wmslang/compiler.wm", import.meta.url)),
   );
   const compiler = await loadGeneratedSliceCompiler(compilerSource);
 
@@ -1357,7 +1358,7 @@ async function acceptanceBlock(name: string): Promise<string> {
 async function realSliceCompiler() {
   return await loadGeneratedSliceCompiler(
     await compileLibraryFile(
-      new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+      fileURLToPath(new URL("../tooling/wmslang/compiler.wm", import.meta.url)),
     ),
   );
 }

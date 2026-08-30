@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { emitRecognizer } from "../scripts/generate_frontend_v2_recognizer.ts";
 import { parseWorkmanGrammar } from "../scripts/frontend_v2_grammar_ir.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
@@ -747,7 +748,7 @@ async function* wmFiles(root: URL): AsyncGenerator<string> {
     if (entry.isDirectory) {
       yield* wmFiles(entryUrl);
     } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      yield entryUrl.pathname;
+      yield fileURLToPath(entryUrl);
     }
   }
 }

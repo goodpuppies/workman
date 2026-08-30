@@ -1,6 +1,7 @@
 /// <reference types="@webgpu/types" />
 
 import { assertEquals } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { coreFile, coreVirtual } from "../src/compiler.ts";
 import type { VisualShaderArtifactV1, VisualShaderDescriptorV1 } from "../src/gpu_artifact.ts";
 import { renderVisualShaderV1 } from "../src/wmslang/webgpu_render.ts";
@@ -119,7 +120,9 @@ Deno.test({
   name: "visual-v5 executes sampled-texture update and display passes with ping-pong feedback",
   ignore: webGpuUnavailable,
   async fn() {
-    const path = new URL("../examples/wmslang_feedback_window/main.wm", import.meta.url).pathname;
+    const path = fileURLToPath(
+      new URL("../examples/wmslang_feedback_window/main.wm", import.meta.url),
+    );
     const compiled = await coreFile(path);
     const artifacts = [...compiled.core.shaderArtifacts.values()];
     const update = artifacts.find((artifact) =>
@@ -307,7 +310,7 @@ async function compileAcceptanceArtifact(name: string): Promise<VisualShaderDesc
 }
 
 async function compileExampleArtifact(name: string): Promise<VisualShaderArtifactV1> {
-  const path = new URL(`../examples/wmslang_window/src/${name}`, import.meta.url).pathname;
+  const path = fileURLToPath(new URL(`../examples/wmslang_window/src/${name}`, import.meta.url));
   const compiled = await coreFile(path);
   const artifacts = [...compiled.core.shaderArtifacts.values()];
   assertEquals(artifacts.length, 1);

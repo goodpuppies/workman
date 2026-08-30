@@ -1,7 +1,6 @@
-import { normalize, resolve } from "node:path";
 import type { ProjectSnapshot } from "../module_interface.ts";
 import type { SemanticService } from "./semantic_service.ts";
-import { fileUriToPath } from "./uri.ts";
+import { canonicalFilePath, fileUriToPath } from "./uri.ts";
 
 /**
  * Project-context status for one document, derived entirely from compiler facts.
@@ -63,5 +62,5 @@ function headPath(snapshot: ProjectSnapshot): string {
 }
 
 function canonical(path: string): string {
-  return normalize(resolve(path));
+  return canonicalFilePath(path);
 }

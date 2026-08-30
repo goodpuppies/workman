@@ -2,6 +2,7 @@ import ts from "typescript-api";
 import { dirname, extname, join, normalize } from "node:path";
 import { isBuiltin } from "node:module";
 import { existsSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { runtime } from "../../io.ts";
 
 const compilerOptions: ts.CompilerOptions = {
@@ -570,21 +571,7 @@ let nodeTypesPath: string | undefined;
 
 function nodeTypesReferencePath(): string {
   if (nodeTypesPath) return nodeTypesPath;
-  const output = runtime.runSync(denoCliPath(), [
-    "info",
-    "--json",
-    "npm:@types/node/index.d.ts",
-  ]);
-  if (!output.success) {
-    const message = output.stderr.trim();
-    throw new Error(`cannot resolve Node type declarations${message ? `: ${message}` : ""}`);
-  }
-  const parsed = JSON.parse(output.stdout) as DenoInfo;
-  const nodeTypes = Object.values(parsed.npmPackages ?? {}).find((pkg) =>
-    pkg.name === "@types/node"
-  );
-  if (!nodeTypes) throw new Error("cannot locate @types/node in Deno's npm cache");
-  nodeTypesPath = join(nodeTypes.localPath, "index.d.ts");
+  nodeTypesPath = fileURLToPath(import.meta.resolve("npm:@types/node/index.d.ts"));
   return nodeTypesPath;
 }
 
@@ -678,7 +665,7 @@ function resolveDenoSpecifier(
 
   if (fromImporter !== undefined && knownDenoModules.has(fromImporter)) return fromImporter;
 
-  const importerPath = isUrl(containingFile) ? fileUrlToPath(containingFile) : containingFile;
+  const importerPath = isUrl(containingFile) ? pathFromFileUrl(containingFile) : containingFile;
   if (importerPath !== undefined && !graphedImporters.has(importerPath)) {
     graphedImporters.add(importerPath);
     if (existsSync(importerPath)) {
@@ -693,17 +680,17 @@ function resolveDenoSpecifier(
   return undefined;
 }
 
-function fileUrlToPath(value: string): string | undefined {
+function pathFromFileUrl(value: string): string | undefined {
   if (!value.startsWith("file://")) return undefined;
   try {
-    return decodeURIComponent(new URL(value).pathname);
+    return fileURLToPath(value);
   } catch {
     return undefined;
   }
 }
 
 function localDefinitionPath(fileName: string): string | undefined {
-  if (fileName.startsWith("file://")) return fileUrlToPath(fileName);
+  if (fileName.startsWith("file://")) return pathFromFileUrl(fileName);
   if (!isUrl(fileName)) return fileName;
   return denoModuleForFileName([], fileName)?.local;
 }

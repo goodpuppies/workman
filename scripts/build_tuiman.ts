@@ -1,6 +1,7 @@
 import { compileLibraryFile } from "../src/compiler.ts";
+import { fileURLToPath } from "node:url";
 
-const source = new URL("../tooling/tuiman/diagnostic.wm", import.meta.url).pathname;
+const source = fileURLToPath(new URL("../tooling/tuiman/diagnostic.wm", import.meta.url));
 const output = new URL("../src/generated/tuiman.js", import.meta.url);
 
 const generated = [

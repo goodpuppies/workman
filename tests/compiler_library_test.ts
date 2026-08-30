@@ -1,7 +1,10 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { compileLibraryFile, compileLibraryVirtual, compileVirtual } from "../src/compiler.ts";
 
-const fixture = new URL("../tooling/frontend-v2/library_fixture.wm", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const fixture = fileURLToPath(
+  new URL("../tooling/frontend-v2/library_fixture.wm", import.meta.url),
+);
 
 Deno.test("library emission exports entry bindings and does not invoke main", async () => {
   const virtualFs = new Map<string, string>([

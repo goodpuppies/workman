@@ -14,7 +14,8 @@ import {
 } from "../src/wmslang/loader.ts";
 import { normalizeGpuModule, normalizeGpuProgramH0 } from "../src/wmslang/normalize.ts";
 
-const compilerFixture = new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const compilerFixture = fileURLToPath(new URL("../tooling/wmslang/compiler.wm", import.meta.url));
 
 Deno.test("H0 normalization produces stable binding, type, expression, and span tables", async () => {
   const input = await h0Input();

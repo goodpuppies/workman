@@ -1,9 +1,12 @@
 import { compileLibraryFile } from "../src/compiler.ts";
+import { fileURLToPath } from "node:url";
 
-const source = new URL(
-  "../tooling/frontend-v2/compiler_frontend.wm",
-  import.meta.url,
-).pathname;
+const source = fileURLToPath(
+  new URL(
+    "../tooling/frontend-v2/compiler_frontend.wm",
+    import.meta.url,
+  ),
+);
 const output = new URL("../src/generated/frontend_v2_parser.js", import.meta.url);
 
 const current = await Deno.readTextFile(output).catch((error) => {

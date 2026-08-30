@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import {
   hashGrammarIr,
   inventoryGrammar,
@@ -350,7 +351,7 @@ async function* wmFiles(root: URL): AsyncGenerator<string> {
     if (entry.isDirectory) {
       yield* wmFiles(entryUrl);
     } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      yield entryUrl.pathname;
+      yield fileURLToPath(entryUrl);
     }
   }
 }

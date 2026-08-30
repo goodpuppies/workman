@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 
-const cli = new URL("../src/main.ts", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("cli run calls typed JS namespace imports", async () => {
   const dir = await Deno.makeTempDir();

@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   checkSource,
   checkVirtual,
@@ -11,7 +11,7 @@ import { formatDiagnostic, FrontendDiagnosticError } from "../src/diagnostics.ts
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("compiles file imports as implicit structures", async () => {
-  const js = await compileFile(new URL("../examples/use_math.wm", import.meta.url).pathname);
+  const js = await compileFile(fileURLToPath(new URL("../examples/use_math.wm", import.meta.url)));
   assertStringIncludes(js, "const Math_");
   assertStringIncludes(js, ".add");
   assertStringIncludes(js, ".Just");

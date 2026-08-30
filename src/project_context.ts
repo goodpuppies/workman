@@ -1,4 +1,5 @@
-import { dirname, normalize, relative, resolve, sep } from "node:path";
+import { dirname, normalize, posix, relative, resolve, sep } from "node:path";
+import { runtime } from "./io.ts";
 import type { ProjectSnapshot } from "./module_interface.ts";
 import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./lsp/import_scan.ts";
 
@@ -372,5 +373,8 @@ function headDirectoryDistance(start: string, head: string): number {
 }
 
 function canonicalPath(path: string): string {
+  if (runtime.platform === "win32" && path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) {
+    return posix.normalize(path);
+  }
   return normalize(resolve(path));
 }

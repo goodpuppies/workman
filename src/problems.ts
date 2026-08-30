@@ -1,5 +1,5 @@
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runProblems } from "./generated/problems_tui.js";
 import type { ProjectStatusResult } from "./lsp/project_status.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./lsp/rpc.ts";
@@ -319,7 +319,7 @@ function flatten(publications: Map<string, unknown[]>, root: string): Problem[] 
         typeof item.message !== "string" || typeof range?.start?.line !== "number" ||
         typeof range.start.character !== "number"
       ) return [];
-      const absolute = new URL(uri).pathname;
+      const absolute = fileURLToPath(uri);
       return [{
         path: displayPath(absolute, root),
         line: range.start.line + 1,

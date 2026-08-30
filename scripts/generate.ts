@@ -1,4 +1,4 @@
-const ROOT = new URL("../", import.meta.url).pathname;
+const ROOT = new URL("../", import.meta.url);
 const FRONTEND_V2_ARTIFACT = new URL(
   "../src/generated/frontend_v2_parser.js",
   import.meta.url,
@@ -9,6 +9,8 @@ await runTask("generate-assets");
 await runTask("frontend-v2:generate-recognizer");
 await convergeFrontendV2();
 await runTask("wmslang:builtins");
+await runTask("frontend-v2:build-library");
+await runTask("wmslang:build");
 await runTask("tuiman:build"); // has to be in order
 await runTask("problems:build");
 await runTask("frontend-v2:update-semantic-golden");

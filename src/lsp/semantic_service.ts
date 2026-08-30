@@ -1,4 +1,4 @@
-import { normalize, resolve } from "node:path";
+import { normalize, posix, resolve } from "node:path";
 import {
   analyzeDetachedFile,
   analyzeFile,
@@ -9,6 +9,7 @@ import {
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { FrontendDiagnosticError, genericDiagnostic } from "../diagnostics.ts";
 import { resolveCompilerFrontend } from "../frontend_mode.ts";
+import { runtime } from "../io.ts";
 import type { ModuleInterface, ProjectSnapshot } from "../module_interface.ts";
 import { ProjectContextRegistry, type ReverseImportDiscoveryIndex } from "../project_context.ts";
 import { fileUriToPath } from "./uri.ts";
@@ -310,5 +311,8 @@ function configurationKey(options: CompilerFrontendOptions): string {
 }
 
 function canonicalPath(path: string): string {
+  if (runtime.platform === "win32" && path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) {
+    return posix.normalize(path);
+  }
   return normalize(resolve(path));
 }

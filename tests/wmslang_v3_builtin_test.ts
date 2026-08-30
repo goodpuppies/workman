@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { analyzeFile, analyzeVirtual, compileLibraryFile } from "../src/compiler.ts";
 import {
   WMSLANG_BUILTIN_BLOCKERS,
@@ -25,7 +26,7 @@ import { validateUri } from "../src/lsp/validation.ts";
 
 Deno.test("v3 builtin catalog identity is pinned to its Slang-generated source", async () => {
   const source = await Deno.readFile(
-    new URL("../research/slang/docs/stdlib-doc.md", import.meta.url),
+    new URL("../tooling/wmslang/stdlib-doc.md", import.meta.url),
   );
   const digest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", source.slice().buffer),
@@ -106,10 +107,12 @@ Deno.test("v3 resolves exact Slang builtins through Workman IR and pinned WGSL",
 });
 
 Deno.test("v3 warped-noise acceptance probe reaches pinned WGSL", async () => {
-  const shaderPath = new URL(
-    "../examples/wmslang_window/src/warped_noise_shader.wm",
-    import.meta.url,
-  ).pathname;
+  const shaderPath = fileURLToPath(
+    new URL(
+      "../examples/wmslang_window/src/warped_noise_shader.wm",
+      import.meta.url,
+    ),
+  );
   const analysis = await analyzeFile(shaderPath);
   const output = (await realSliceCompiler()).compileGpuSlice(analysis.gpuInput);
   const builtinNames = new Set(
@@ -138,10 +141,12 @@ Deno.test("v3 warped-noise acceptance probe reaches pinned WGSL", async () => {
 });
 
 Deno.test("v3 raymarcher acceptance probe reaches pinned WGSL", async () => {
-  const shaderPath = new URL(
-    "../examples/wmslang_window/src/raymarch_shader.wm",
-    import.meta.url,
-  ).pathname;
+  const shaderPath = fileURLToPath(
+    new URL(
+      "../examples/wmslang_window/src/raymarch_shader.wm",
+      import.meta.url,
+    ),
+  );
   const analysis = await analyzeFile(shaderPath);
   const output = (await realSliceCompiler()).compileGpuSlice(analysis.gpuInput);
   const builtinNames = new Set(
@@ -825,7 +830,7 @@ let compilerPromise: Promise<WmslangSliceCompiler> | undefined;
 async function realSliceCompiler(): Promise<WmslangSliceCompiler> {
   return await (compilerPromise ??= (async () => {
     const source = await compileLibraryFile(
-      new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+      fileURLToPath(new URL("../tooling/wmslang/compiler.wm", import.meta.url)),
     );
     return await loadWmslangSliceCompiler(
       `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}#${crypto.randomUUID()}`,
