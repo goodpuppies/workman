@@ -41,6 +41,12 @@ await Promise.all([
 
 const typescriptLib = path.join(extensionRoot, "node_modules", "@typescript", "old", "lib");
 const serverDirectory = path.join(extensionRoot, "server");
+const generatedDirectory = path.join(serverDirectory, "generated");
+await fs.mkdir(generatedDirectory, { recursive: true });
+await fs.copyFile(
+  path.join(repositoryRoot, "src", "generated", "frontend_v2_parser.js"),
+  path.join(generatedDirectory, "frontend_v2_parser.js"),
+);
 const libraryFiles = (await fs.readdir(typescriptLib)).filter((name) =>
   name.startsWith("lib.") && name.endsWith(".d.ts")
 );
