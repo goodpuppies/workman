@@ -1,4 +1,5 @@
 import type { Pattern } from "../ast.ts";
+import { parseLongId } from "../ast.ts";
 import {
   instantiateRecordFields,
   prune,
@@ -7,6 +8,7 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   typeFromAst,
+  typeInfoById,
 } from "../types.ts";
 
 export interface MissingCase {
@@ -20,8 +22,15 @@ export function checkExhaustive(
   typeEnv: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
 ): string | undefined {
-  const missing = findMissingCases(patterns.map((pattern) => [pattern]), [valueType], typeEnv, adts, []);
+  const missing = findMissingCases(
+    patterns.map((pattern) => [pattern]),
+    [valueType],
+    typeEnv,
+    adts,
+    [],
+  );
   if (missing.length === 0) return undefined;
+  if (isShallowConstructorComplete(patterns, valueType, adts)) return undefined;
 
   const scrutinee = prune(valueType);
   if (scrutinee.tag === "named") {
@@ -39,12 +48,64 @@ export function checkExhaustive(
   // Report first missing case with path
   const first = missing[0];
   if (first.path.length > 0) {
-    // Path shows nested constructor context, missing shows what's not covered
-    // e.g., path=["Cons"], missing="Nil" => "in Cons, missing: Nil" (single-element list)
     const context = first.path.join(" → ");
+    if (first.missing === "_") {
+      return `non-exhaustive match: ${context} is missing a wildcard pattern`;
+    }
+    // A concrete nested witness remains useful for closed payload domains.
+    // For example, path=["Some"], missing="false" means Some(false) is uncovered.
     return `non-exhaustive match: in ${context}, missing: ${first.missing}`;
   }
   return `non-exhaustive match: missing ${first.missing}`;
+}
+
+// The full witness finder above descends into constructor payloads, but its
+// early default-row shortcut can lose constructor-specific rows in a later
+// tuple column. This conservative second proof handles the common matrix where
+// every constructor payload is already irrefutable. It never suppresses a
+// warning for a literal or nested refutable payload.
+function isShallowConstructorComplete(
+  patterns: Pattern[],
+  valueType: Ty,
+  adts: Map<number, TypeDeclInfo>,
+): boolean {
+  const target = prune(valueType);
+  const rows = target.tag === "tuple"
+    ? patterns
+      .filter((pattern): pattern is Extract<Pattern, { kind: "PTuple" }> =>
+        pattern.kind === "PTuple" && pattern.items.length === target.items.length
+      )
+      .map((pattern) => pattern.items)
+    : patterns.map((pattern) => [pattern]);
+  const types = target.tag === "tuple" ? target.items : [target];
+  if (rows.length === 0) return false;
+  return shallowColumnsComplete(rows, types, adts);
+}
+
+function shallowColumnsComplete(
+  rows: Pattern[][],
+  types: Ty[],
+  adts: Map<number, TypeDeclInfo>,
+): boolean {
+  rows = rows.map((row) => row.length === 0 ? row : [withoutConstraint(row[0]), ...row.slice(1)]);
+  if (types.length === 0) return rows.length > 0;
+  const [headType, ...tailTypes] = types;
+  if (rows.every((row) => isIrrefutable(row[0]))) {
+    return shallowColumnsComplete(rows.map((row) => row.slice(1)), tailTypes, adts);
+  }
+  const head = prune(headType);
+  if (head.tag !== "named") return false;
+  const info = adts.get(head.id);
+  if (!info) return false;
+  return info.ctors.every((ctor) => {
+    const selected = rows.filter((row) => {
+      const pattern = row[0];
+      if (isIrrefutable(pattern)) return true;
+      return pattern.kind === "PCtor" && constructorPatternMatches(pattern.name, ctor.name) &&
+        pattern.args.every(isIrrefutable);
+    }).map((row) => row.slice(1));
+    return selected.length > 0 && shallowColumnsComplete(selected, tailTypes, adts);
+  });
 }
 
 export function isVectorExhaustive(
@@ -63,6 +124,7 @@ function findMissingCases(
   adts: Map<number, TypeDeclInfo>,
   path: string[],
 ): MissingCase[] {
+  rows = rows.map((row) => row.length === 0 ? row : [withoutConstraint(row[0]), ...row.slice(1)]);
   if (types.length === 0) return rows.length > 0 ? [] : [{ path: [...path], missing: "_" }];
 
   const [headType, ...tailTypes] = types;
@@ -118,7 +180,8 @@ function findMissingCases(
   }
 
   if (head.tag === "named") {
-    const record = [...typeEnv.values()].find((info) => info.id === head.id && info.recordFields);
+    const candidate = typeInfoById(typeEnv, head.id);
+    const record = candidate?.recordFields ? candidate : undefined;
     if (record?.recordFields) {
       const fields = instantiateRecordFields(record, head.args);
       const recordRows = rows
@@ -133,7 +196,10 @@ function findMissingCases(
           ...row.slice(1),
         ]);
       if (recordRows.length === 0) {
-        return [{ path: [...path], missing: `.{ ${fields.map((f) => `${f.name} = _`).join(", ")} }` }];
+        return [{
+          path: [...path],
+          missing: `.{ ${fields.map((f) => `${f.name} = _`).join(", ")} }`,
+        }];
       }
       return findMissingCases(
         recordRows,
@@ -164,10 +230,16 @@ function findMissingCases(
         missing.push({ path: [...path], missing: ctorPattern });
       } else {
         const ctorTypes = constructorArgTypes(info, ctor, head, typeEnv);
-        const ctorMissing = findMissingCases(ctorRows, [...ctorTypes, ...tailTypes], typeEnv, adts, [
-          ...path,
-          ctor.name,
-        ]);
+        const ctorMissing = findMissingCases(
+          ctorRows,
+          [...ctorTypes, ...tailTypes],
+          typeEnv,
+          adts,
+          [
+            ...path,
+            ctor.name,
+          ],
+        );
         missing.push(...ctorMissing);
       }
     }
@@ -190,21 +262,28 @@ export function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
   return false;
 }
 
-function baseName(name: string): string {
-  return name.split(".").at(-1)!;
-}
-
+/**
+ * A constructor pattern may be written qualified (`Lib.Some`) or unqualified
+ * (`Some`) for the same constructor. Both denote the same value identifier, so
+ * exhaustiveness compares the Definition's base identifier of the long
+ * identifier against the constructor's own name.
+ */
 function constructorPatternMatches(patternName: string, ctorName: string): boolean {
-  return patternName === ctorName || baseName(patternName) === ctorName;
+  return patternName === ctorName || parseLongId(patternName).id === ctorName;
 }
 
 function isIrrefutable(pattern: Pattern): boolean {
+  pattern = withoutConstraint(pattern);
   if (pattern.kind === "PWildcard" || pattern.kind === "PVar") return true;
   if (pattern.kind === "PTuple") return pattern.items.every(isIrrefutable);
   if (pattern.kind === "PRecord") {
     return pattern.fields.every((field) => isIrrefutable(field.pattern));
   }
   return false;
+}
+
+function withoutConstraint(pattern: Pattern): Pattern {
+  return pattern.kind === "PAscribed" ? withoutConstraint(pattern.pattern) : pattern;
 }
 
 function constructorArgTypes(

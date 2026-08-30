@@ -78,7 +78,7 @@ needed for a basic but honest beta.
 - [x] Add a `wm-mini.restartLanguageServer` command.
 - [x] Add settings for server trace/debug logging.
 - [x] Prefer running the local Deno source during development.
-- [x] Decide later whether packaged releases bundle compiled server binaries or require Deno.
+- [x] Package one portable Node-hosted server bundle and use Deno only for optional FFI reflection.
 
 ## First Beta Feature Set
 
@@ -143,5 +143,5 @@ Hover is allowed in the first beta only if the span work makes it cheap and smal
 - [ ] No package manager integration.
 - [ ] No semantic token pipeline unless TextMate highlighting is clearly insufficient.
 - [ ] No completion until the frontend has a small symbol query API.
-- [ ] No go-to-definition until declarations and references have stable spans.
+- [x] Go-to-definition was added after declarations and references gained stable spans.
 - [ ] No attempt to match the full Workman or workmangr LSP feature set.

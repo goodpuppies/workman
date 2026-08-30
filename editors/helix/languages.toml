@@ -1,0 +1,17 @@
+[language-server.workman-lsp]
+command = "wm"
+args = ["lsp"]
+
+[[language]]
+name = "workman"
+scope = "source.workman"
+injection-regex = "workman"
+file-types = ["wm"]
+comment-tokens = ["--", "//"]
+indent = { tab-width = 2, unit = "  " }
+grammar = "workman"
+language-servers = ["workman-lsp"]
+
+[[grammar]]
+name = "workman"
+source = { git = "https://github.com/goodpuppies/tree-sitter-workman", rev = "65f3e4b1a7b0332b08e3de2aacfa5c83b294e1a2" }

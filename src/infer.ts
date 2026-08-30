@@ -1,18 +1,23 @@
-import type { Expr, ImportClause, Module } from "./ast.ts";
+import type { Decl, Expr, ImportClause, Module } from "./ast.ts";
 import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
-import { inferDecl } from "./infer/decl.ts";
+import { inferDecl, predeclareTypeGroup } from "./infer/decl.ts";
+import { hostTypingDialect, type InferContext } from "./infer/context.ts";
 import { addAdts, addImport } from "./infer/imports.ts";
 import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
 import { snapshotEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 import { createTypeFacts, type TypeFacts } from "./infer/type_facts.ts";
 import type { TypeProvenance } from "./infer/provenance.ts";
+import { warnWideTuples } from "./infer/wide_tuples.ts";
+import { snapshotStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
+import { basisProfile, type InitialBasis, initialBasis } from "./initial_basis.ts";
+import type { SourceSpan } from "./source.ts";
 import {
-  baseAdts,
-  baseEnv,
-  baseTypeEnv,
   containsUnsolvedJsBoundary,
   type Env,
+  knownTypeIds,
+  knownTypeInfos,
   prune,
+  registerTypeInfo,
   type Scheme,
   show,
   type Ty,
@@ -20,11 +25,13 @@ import {
   type TypeEnv,
 } from "./types.ts";
 
-export type StructureEnv = { values: Env; types: TypeEnv; adts: Map<number, TypeDeclInfo> };
+export type StructureEnv = StaticEnv & { adts: Map<number, TypeDeclInfo> };
 
 export type InferResult = {
+  basis: InitialBasis;
   structure: StructureEnv;
   exportedStructure: StructureEnv;
+  initialStructure: StaticEnv;
   env: Env;
   exports: Env;
   typeEnv: TypeEnv;
@@ -34,13 +41,23 @@ export type InferResult = {
   adts: Map<number, TypeDeclInfo>;
   warnings: string[];
   diagnostics: FrontendDiagnostic[];
+  elaboration: InferElaboration;
+  steps: InferStep[];
 };
+
+export type InferElaboration = Readonly<{
+  complete: boolean;
+  declarationPrefix: number;
+  failure?: "import" | "declaration" | "final";
+  recoveryBoundaries: readonly Readonly<Pick<SourceSpan, "start" | "end">>[];
+}>;
 
 export { describeEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 export type InferStep = { declIndex: number; env: Map<string, TypeSnapshot> };
 
 export type InferModuleOptions = {
   initialImports?: InitialImport[];
+  initialBasis?: InitialBasis;
 };
 
 export type InitialImport = {
@@ -49,12 +66,17 @@ export type InitialImport = {
   standard?: boolean;
 };
 
+export type RecoveredInferResult = Readonly<{
+  module: Module;
+  result: InferResult;
+}>;
+
 export function inferModule(
   module: Module,
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleWithSteps(module, imports, options).result;
+  return inferModuleCore(module, imports, false, options, true).result;
 }
 
 export function inferModulePartial(
@@ -62,7 +84,7 @@ export function inferModulePartial(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleCore(module, imports, true, options).result;
+  return inferModuleCore(module, imports, true, options, false).result;
 }
 
 export function inferModuleWithSteps(
@@ -70,7 +92,59 @@ export function inferModuleWithSteps(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): { result: InferResult; steps: InferStep[] } {
-  return inferModuleCore(module, imports, false, options);
+  return inferModuleCore(module, imports, false, options, true);
+}
+
+/**
+ * Continue after independently recoverable top-level failures.
+ *
+ * Each retry starts from the initial basis and re-elaborates only declarations that have already
+ * been certified. This is the static counterpart of SML's transactional top-level phrase rule.
+ */
+export function inferModuleRecovered(
+  module: Module,
+  imports = new Map<string, InferResult>(),
+  options: InferModuleOptions = {},
+): RecoveredInferResult {
+  let decls = [...module.decls];
+  const diagnostics: FrontendDiagnostic[] = [];
+  const recoveryBoundaries: { start: number; end: number }[] = [];
+  let firstFailure: "import" | "declaration" | undefined;
+
+  while (true) {
+    const candidate: Module = { ...module, decls };
+    const result = inferModulePartial(candidate, imports, options);
+    const failure = result.elaboration.failure;
+    if (failure !== "import" && failure !== "declaration") {
+      if (diagnostics.length > 0) {
+        result.diagnostics = [...diagnostics, ...result.diagnostics];
+        result.elaboration = Object.freeze({
+          complete: false,
+          declarationPrefix: decls.length,
+          failure: firstFailure,
+          recoveryBoundaries: Object.freeze([
+            ...recoveryBoundaries,
+            ...result.elaboration.recoveryBoundaries,
+          ]),
+        });
+      }
+      return Object.freeze({ module: candidate, result });
+    }
+
+    const failedIndex = result.elaboration.declarationPrefix;
+    const failed = decls[failedIndex];
+    if (!failed) return Object.freeze({ module: candidate, result });
+    const diagnostic = result.diagnostics.findLast((item) => item.severity === "error");
+    if (diagnostic) diagnostics.push(diagnostic);
+    if (failed.node) {
+      recoveryBoundaries.push({
+        start: failed.node.span.start,
+        end: failed.node.span.end,
+      });
+    }
+    firstFailure ??= failure;
+    decls = decls.filter((_, index) => index !== failedIndex);
+  }
 }
 
 function inferModuleCore(
@@ -78,68 +152,126 @@ function inferModuleCore(
   imports: Map<string, InferResult>,
   recover: boolean,
   options: InferModuleOptions,
+  captureSteps: boolean,
 ): { result: InferResult; steps: InferStep[] } {
   const includePrelude = module.prelude !== "none";
-  const typeEnv = baseTypeEnv({ includeAlgebraicBasis: includePrelude });
-  const env = baseEnv(typeEnv, { includeAlgebraicBasis: includePrelude });
+  const basisArtifact = options.initialBasis ?? initialBasis(basisProfile(includePrelude));
+  if (basisArtifact.profile.name !== basisProfile(includePrelude).name) {
+    throw new Error(
+      `initial basis profile ${basisArtifact.profile.name} does not match module profile ${
+        basisProfile(includePrelude).name
+      }`,
+    );
+  }
+  const basis = basisArtifact.instantiate();
+  const { strEnv, tyEnv: typeEnv, valEnv: env } = basis.environment;
   const exports: Env = new Map();
   const typeExports: TypeEnv = new Map();
-  const adts = baseAdts(typeEnv);
-  const exportableTypeIds = new Set([...typeEnv.values()].map((info) => info.id));
+  const adts = basis.adts;
+  const exportableTypeIds = knownTypeIds(typeEnv);
   const types = new Map<Expr, Ty>();
   const facts = createTypeFacts();
   const warnings: string[] = [];
   const diagnostics: FrontendDiagnostic[] = [];
   const steps: InferStep[] = [];
   const provenance: TypeProvenance = new Map();
+  const context: InferContext = {
+    env,
+    strEnv,
+    operators: basis.operators,
+    typeEnv,
+    adts,
+    types,
+    facts,
+    warnings,
+    diagnostics,
+    provenance,
+    dialect: hostTypingDialect,
+    recover,
+  };
+  warnWideTuples(module, warnings, diagnostics);
 
   for (const initialImport of includePrelude ? options.initialImports ?? [] : []) {
     addImport(env, typeEnv, initialImport.clause, initialImport.result, {
       standardLibrary: initialImport.standard,
+      strEnv,
     });
     addAdts(adts, initialImport.result.exportedStructure.adts);
-    addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.types);
+    addExportableTypes(exportableTypeIds, initialImport.result.exportedStructure.tyEnv);
   }
+  const initialStructure = snapshotStaticEnv(staticEnv(strEnv, typeEnv, env));
 
+  const predeclaredTypeGroups = new Set<number>();
   for (const [declIndex, decl] of module.decls.entries()) {
     if (decl.kind === "ImportDecl") {
       try {
         const imported = imports.get(decl.path);
         if (!imported) throw new Error(`unknown import ${decl.path}`);
-        addImport(env, typeEnv, decl.clause, imported);
+        const importedStructure = addImport(env, typeEnv, decl.clause, imported, {
+          strEnv,
+        });
+        if (importedStructure) facts.structureImports.set(decl, importedStructure);
         addAdts(adts, imported.exportedStructure.adts);
-        addExportableTypes(exportableTypeIds, imported.exportedStructure.types);
+        addExportableTypes(exportableTypeIds, imported.exportedStructure.tyEnv);
       } catch (error) {
         const diagnostic = diagnosticError(error, decl.node);
         if (!recover) throw diagnostic;
-        diagnostics.push(diagnostic.diagnostic);
-        break;
+        return partialPrefixResult(
+          module,
+          imports,
+          options,
+          captureSteps,
+          declIndex,
+          "import",
+          diagnostic.diagnostic,
+          decl.node?.span,
+        );
       }
       continue;
     }
 
     try {
+      if (
+        decl.kind === "TypeDecl" && decl.mutualGroup !== undefined &&
+        !predeclaredTypeGroups.has(decl.mutualGroup)
+      ) {
+        const group = module.decls.filter((
+          candidate,
+        ): candidate is Extract<Decl, { kind: "TypeDecl" }> =>
+          candidate.kind === "TypeDecl" && candidate.mutualGroup === decl.mutualGroup
+        );
+        predeclareTypeGroup(group, context);
+        for (const member of group) {
+          if (!member.exported) continue;
+          const info = typeEnv.get(member.name);
+          if (!info) throw new Error(`missing predeclared type ${member.name}`);
+          typeExports.set(member.name, info);
+          exportableTypeIds.add(info.id);
+        }
+        predeclaredTypeGroups.add(decl.mutualGroup);
+      }
       inferDecl(
         decl,
-        env,
+        context,
         exports,
-        typeEnv,
         typeExports,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
         exportableTypeIds,
-        provenance,
       );
     } catch (error) {
       const diagnostic = diagnosticError(error, decl.node);
       if (!recover) throw diagnostic;
-      diagnostics.push(diagnostic.diagnostic);
-      break;
+      return partialPrefixResult(
+        module,
+        imports,
+        options,
+        captureSteps,
+        declIndex,
+        "declaration",
+        diagnostic.diagnostic,
+        decl.node?.span,
+      );
     }
-    steps.push({ declIndex, env: snapshotEnv(env) });
+    if (captureSteps) steps.push({ declIndex, env: snapshotEnv(env) });
   }
 
   try {
@@ -151,16 +283,30 @@ function inferModuleCore(
     if (!recover) throw diagnostic;
     diagnostics.push(diagnostic.diagnostic);
   }
-  const structure: StructureEnv = { values: env, types: typeEnv, adts };
+  const complete = diagnostics.every((diagnostic) => diagnostic.severity !== "error");
+  const recoveryBoundaries = complete || !module.node
+    ? []
+    : [{ start: module.node.span.start, end: module.node.span.end }];
+  const structure: StructureEnv = { ...staticEnv(strEnv, typeEnv, env), adts };
+  // Executable form of the normative nested-`local` translation: imports modify only the working
+  // environment, while each body declaration modifies both working and public environments.
+  // Thus imported/basis bindings are in scope but cannot enter the returned environment.
+  // As in SML's basis, keep generated type-name support separate from the
+  // source-visible type-constructor environment. Exported values can mention
+  // a nominal type without implicitly exporting a spelling for that type.
+  const publicTypeEnv = new Map(typeExports);
+  for (const info of knownTypeInfos(typeEnv)) registerTypeInfo(publicTypeEnv, info);
+  const publicEnvironment = staticEnv(new Map(), publicTypeEnv, exports);
   const exportedStructure: StructureEnv = {
-    values: exports,
-    types: typeExports,
+    ...publicEnvironment,
     adts: exportedAdts(adts, typeExports),
   };
   return {
     result: {
+      basis: basisArtifact,
       structure,
       exportedStructure,
+      initialStructure,
       env,
       exports,
       typeEnv,
@@ -170,9 +316,48 @@ function inferModuleCore(
       adts,
       warnings,
       diagnostics,
+      elaboration: Object.freeze({
+        complete,
+        declarationPrefix: module.decls.length,
+        failure: complete ? undefined : "final",
+        recoveryBoundaries: Object.freeze(recoveryBoundaries),
+      }),
+      steps,
     },
     steps,
   };
+}
+
+function partialPrefixResult(
+  module: Module,
+  imports: Map<string, InferResult>,
+  options: InferModuleOptions,
+  captureSteps: boolean,
+  declarationPrefix: number,
+  failure: "import" | "declaration",
+  diagnostic: FrontendDiagnostic,
+  boundary: SourceSpan | undefined,
+): { result: InferResult; steps: InferStep[] } {
+  // Inference types are mutable. Re-elaborating the accepted prefix is the conservative
+  // transaction boundary: constraints or facts produced while attempting the failed declaration
+  // cannot leak into the interface for preceding declarations.
+  const prefix: Module = {
+    ...module,
+    decls: module.decls.slice(0, declarationPrefix),
+  };
+  const clean = inferModuleCore(prefix, imports, true, options, captureSteps);
+  clean.result.diagnostics = [...clean.result.diagnostics, diagnostic];
+  const recoveryBoundaries = [
+    ...clean.result.elaboration.recoveryBoundaries,
+    ...(boundary ? [{ start: boundary.start, end: boundary.end }] : []),
+  ];
+  clean.result.elaboration = Object.freeze({
+    complete: false,
+    declarationPrefix,
+    failure,
+    recoveryBoundaries: Object.freeze(recoveryBoundaries),
+  });
+  return clean;
 }
 
 function assertNoConsumedUnresolvedFfi(facts: TypeFacts) {
@@ -212,13 +397,13 @@ function assertNoTopLevelUnsolvedJsBoundary(env: Env) {
   if (leaking.length === 0) return;
   const [name, scheme] = leaking[0];
   const remaining = leaking.length > 1
-    ? `; ${leaking.length - 1} more binding(s) also have unsolved JS boundary types`
+    ? `; ${leaking.length - 1} more binding(s) also cannot be generalized across JS FFI boundaries`
     : "";
   throw diagnosticError(
     new Error(
-      `unsolved JS boundary type in ${name}: ${
+      `cannot generalize JS FFI boundary in ${name}: ${
         showSchemeType(scheme)
-      }; a broad Js.Value JS parameter leaves this type undetermined and no call site determines it; annotate it with the concrete JS shape${remaining}`,
+      }; the parameter type is still unknown, so the compiler cannot determine a safe FFI specialization; call this helper with a concrete JS-compatible value or annotate its parameter${remaining}`,
     ),
     scheme.node,
   );

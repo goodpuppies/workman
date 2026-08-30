@@ -1,140 +1,137 @@
 import type { ImportClause } from "../ast.ts";
-import { basisCtorNamesForType } from "../basis.ts";
 import { diagnosticError } from "../diagnostics.ts";
-import type { Env, Scheme, TypeDeclInfo, TypeEnv } from "../types.ts";
+import {
+  cloneTypeEnv,
+  type Env,
+  knownTypeInfos,
+  registerTypeInfo,
+  type Scheme,
+  type TypeDeclInfo,
+  type TypeEnv,
+} from "../types.ts";
 import type { InferResult } from "../infer.ts";
+import { inheritSchemeSource, rememberSchemeSourceDocument } from "./provenance.ts";
+import {
+  bindStructure,
+  modifyStaticEnv,
+  projectStaticEnv,
+  type StaticEnv,
+  staticEnv,
+  type StrEnv,
+} from "./environment.ts";
 
 export function addImport(
   env: Env,
   typeEnv: TypeEnv,
   clause: ImportClause,
   imported: InferResult,
-  options: { standardLibrary?: boolean } = {},
-) {
+  options: {
+    standardLibrary?: boolean;
+    strEnv?: StrEnv;
+  } = {},
+): StaticEnv | undefined {
+  registerStaticTypes(typeEnv, imported.exportedStructure);
   if (clause.kind === "Namespace") {
-    addQualifiedImport(env, clause.alias, imported.exportedStructure.values, clause, options);
-    addQualifiedTypes(typeEnv, clause.alias, imported.exportedStructure.types, clause);
-    return;
+    const importedEnvironment = importedStaticEnv(imported.exportedStructure, options);
+    bindStructure(
+      staticEnv(options.strEnv ?? new Map(), typeEnv, env),
+      clause.alias,
+      importedEnvironment,
+    );
+    return importedEnvironment;
   }
   if (clause.kind === "All") {
-    addAllImports(
-      env,
-      typeEnv,
-      imported.exportedStructure.values,
-      imported.exportedStructure.types,
-      clause,
-      options,
+    modifyStaticEnv(
+      staticEnv(options.strEnv ?? new Map(), typeEnv, env),
+      importedStaticEnv(imported.exportedStructure, options),
     );
-    return;
+    return undefined;
   }
   const values = new Set<string>();
   const types = new Set<string>();
+  const structures = new Set<string>();
+  const target = staticEnv(options.strEnv ?? new Map(), typeEnv, env);
   for (const spec of clause.specs) {
     const local = spec.alias ?? spec.name;
-    const value = imported.exportedStructure.values.get(spec.name);
-    const type = imported.exportedStructure.types.get(spec.name);
-    if (!value && !type) {
+    const projected = projectStaticEnv(imported.exportedStructure, spec.name, local);
+    if (!projected) {
       throw diagnosticError(new Error(`unknown import ${spec.name}`), spec.node);
     }
-    if (value) {
-      if (values.has(local) || isUserValue(env, local)) {
+    if (projected.valEnv.size > 0) {
+      if (values.has(local)) {
         throw diagnosticError(new Error(`duplicate value import ${local}`), spec.node);
       }
       values.add(local);
-      env.set(local, importedScheme(value, options));
     }
-    if (type) {
-      if (types.has(local) || isUserType(typeEnv, local)) {
+    if (projected.tyEnv.size > 0) {
+      if (types.has(local)) {
         throw diagnosticError(new Error(`duplicate type import ${local}`), spec.node);
       }
       types.add(local);
-      if (typeEnv.get(local)?.basis) removeBasisConstructors(env, local);
-      typeEnv.set(local, type);
     }
+    if (projected.strEnv.size > 0) {
+      if (structures.has(local)) {
+        throw diagnosticError(new Error(`duplicate structure import ${local}`), spec.node);
+      }
+      structures.add(local);
+    }
+    modifyStaticEnv(target, importedStaticEnv(projected, options));
   }
+  return undefined;
+}
+
+function registerStaticTypes(typeEnv: TypeEnv, environment: StaticEnv): void {
+  for (const info of knownTypeInfos(environment.tyEnv)) registerTypeInfo(typeEnv, info);
+  for (const nested of environment.strEnv.values()) registerStaticTypes(typeEnv, nested);
+}
+
+function importedStaticEnv(
+  environment: StaticEnv,
+  options: { standardLibrary?: boolean },
+): StaticEnv {
+  return staticEnv(
+    new Map(
+      [...environment.strEnv].map(([name, nested]) => [
+        name,
+        importedStaticEnv(nested, options),
+      ]),
+    ),
+    cloneTypeEnv(environment.tyEnv),
+    new Map(
+      [...environment.valEnv].map(([name, scheme]) => [
+        name,
+        importedScheme(scheme, options),
+      ]),
+    ),
+  );
 }
 
 export function addAdts(adts: Map<number, TypeDeclInfo>, imported: Map<number, TypeDeclInfo>) {
   for (const [id, info] of imported) adts.set(id, info);
 }
 
-function addQualifiedImport(
-  env: Env,
-  alias: string,
-  imported: Env,
-  clause: ImportClause,
-  options: { standardLibrary?: boolean },
-) {
-  for (const [name, scheme] of imported) {
-    const local = `${alias}.${name}`;
-    if (isUserValue(env, local)) {
-      throw diagnosticError(new Error(`duplicate value import ${local}`), clause.node);
+/** Attach the owning source unit before this public environment crosses an import boundary. */
+export function rememberExportedSourceDocument(
+  result: InferResult,
+  filePath: string,
+  source: string,
+): void {
+  const visit = (environment: StaticEnv) => {
+    for (const scheme of environment.valEnv.values()) {
+      rememberSchemeSourceDocument(scheme, filePath, source);
     }
-    env.set(local, importedScheme(scheme, options));
-  }
-}
-
-function addQualifiedTypes(
-  typeEnv: TypeEnv,
-  alias: string,
-  imported: TypeEnv,
-  clause: ImportClause,
-) {
-  for (const [name, info] of imported) {
-    const local = `${alias}.${name}`;
-    if (isUserType(typeEnv, local)) {
-      throw diagnosticError(new Error(`duplicate type import ${local}`), clause.node);
-    }
-    typeEnv.set(local, info);
-  }
-}
-
-function addAllImports(
-  env: Env,
-  typeEnv: TypeEnv,
-  values: Env,
-  types: TypeEnv,
-  clause: ImportClause,
-  options: { standardLibrary?: boolean },
-) {
-  for (const name of values.keys()) {
-    if (isUserValue(env, name)) {
-      throw diagnosticError(new Error(`duplicate value import ${name}`), clause.node);
-    }
-  }
-  for (const name of types.keys()) {
-    if (isUserType(typeEnv, name)) {
-      throw diagnosticError(new Error(`duplicate type import ${name}`), clause.node);
-    }
-  }
-  for (const [name, scheme] of values) env.set(name, importedScheme(scheme, options));
-  for (const [name, info] of types) {
-    if (typeEnv.get(name)?.basis) removeBasisConstructors(env, name);
-    typeEnv.set(name, info);
-  }
-}
-
-function isUserValue(env: Env, name: string): boolean {
-  const existing = env.get(name);
-  return !!existing && !existing.basis;
+    for (const nested of environment.strEnv.values()) visit(nested);
+  };
+  visit(result.exportedStructure);
 }
 
 function importedScheme(scheme: Scheme, options: { standardLibrary?: boolean } = {}): Scheme {
   if (scheme.imported && (!options.standardLibrary || scheme.standardLibrary)) return scheme;
-  return {
+  const imported = {
     ...scheme,
     imported: true,
     standardLibrary: options.standardLibrary || scheme.standardLibrary,
   };
-}
-
-function isUserType(typeEnv: TypeEnv, name: string): boolean {
-  const existing = typeEnv.get(name);
-  return !!existing && !existing.basis;
-}
-
-function removeBasisConstructors(env: Env, typeName: string) {
-  for (const name of basisCtorNamesForType(typeName)) {
-    if (env.get(name)?.basis) env.delete(name);
-  }
+  inheritSchemeSource(scheme, imported);
+  return imported;
 }

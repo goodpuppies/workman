@@ -1,0 +1,318 @@
+from "../tuiman/command.wm" import * as Command;
+from "../tuiman/draw.wm" import * as Draw;
+from "../tuiman/event.wm" import * as Event;
+from "../tuiman/geometry.wm" import * as Geometry;
+from "../tuiman/runtime.wm" import * as Runtime;
+-- The backend runs in this process and pushes snapshots through this module, so
+-- the TUI waits to be woken rather than polling for changes.
+from js.module("#problems-client") import {
+  nextSnapshot: Number -> Task<Js.Value, Js.Error>,
+};
+
+record Problem = {
+  path: String,
+  line: Number,
+  column: Number,
+  severity: Number,
+  code: String,
+  message: String,
+};
+
+-- Which project head owns the entrypoint, as reported by `workman/projectStatus`.
+-- The VS Code status bar shows the same facts; head selection should be just as
+-- observable from the terminal.
+record Head = {
+  kind: String,
+  path: String,
+  moduleCount: Number,
+  recovered: Bool,
+};
+
+record Snapshot = {
+  revision: Number,
+  head: Head,
+  problems: Js.Array<Problem>,
+};
+
+record Frame<Memory> = {
+  output: String,
+  memory: Memory,
+};
+
+record Model = {
+  problems: List<Problem>,
+  selected: Number,
+  top: Number,
+  expanded: Bool,
+  listRows: Number,
+  errors: Bool,
+  warnings: Bool,
+  infos: Bool,
+  hints: Bool,
+  revision: Number,
+  head: Head,
+};
+
+-- Title, project head, separator. The list starts below them, so mouse rows and
+-- layout share one constant.
+let headerRows = 3;
+
+let severityEnabled = (severity, model) => {
+  if (severity == 1) { model.errors } else {
+    if (severity == 2) { model.warnings } else {
+      if (severity == 3) { model.infos } else { model.hints }
+    }
+  }
+};
+
+let filteredProblems = (model) => {
+  List.filter(model.problems, (problem) => { severityEnabled(problem.severity, model) })
+};
+
+let count = (model) => { List.length(filteredProblems(model)) };
+let totalCount = (model) => { List.length(model.problems) };
+
+let changed = (model, errors, warnings, infos, hints) => {
+  .{ ..model, selected = 0, top = 0, expanded = false, errors, warnings, infos, hints }
+};
+
+let toggleSeverity = (severity, model) => {
+  if (severity == 1) {
+    changed(model, !model.errors, model.warnings, model.infos, model.hints)
+  } else {
+    if (severity == 2) {
+      changed(model, model.errors, !model.warnings, model.infos, model.hints)
+    } else {
+      if (severity == 3) {
+        changed(model, model.errors, model.warnings, !model.infos, model.hints)
+      } else {
+        changed(model, model.errors, model.warnings, model.infos, !model.hints)
+      }
+    }
+  }
+};
+
+let move = (delta, model) => {
+  let last = Geometry.nonNegative(count(model) - 1);
+  let selected = Geometry.clamp(0, last, model.selected + delta);
+  let top = if (selected < model.top) {
+    selected
+  } else {
+    if (selected >= model.top + model.listRows) {
+      Geometry.nonNegative(selected - model.listRows + 1)
+    } else {
+      model.top
+    }
+  };
+  .{ ..model, selected, top }
+};
+
+let selectAt = (row, model) => {
+  let index = model.top + row - headerRows;
+  if (index < 0 || index >= count(model)) {
+    model
+  } else {
+    .{
+      ..model,
+      selected = index,
+      expanded = if (index == model.selected) { !model.expanded } else { false },
+    }
+  }
+};
+
+let update = match(event, model) => {
+  (Event.CtrlC, _) => { Command.Quit },
+  (Event.Escape, _) => { Command.Quit },
+  (Event.Character("q"), _) => { Command.Quit },
+  (Event.Character("e"), _) => { Command.Continue(toggleSeverity(1, model)) },
+  (Event.Character("w"), _) => { Command.Continue(toggleSeverity(2, model)) },
+  (Event.Character("i"), _) => { Command.Continue(toggleSeverity(3, model)) },
+  (Event.Character("h"), _) => { Command.Continue(toggleSeverity(4, model)) },
+  (Event.Character("a"), _) => {
+    Command.Continue(changed(model, true, true, true, true))
+  },
+  (Event.Up, _) => { Command.Continue(move(-1, model)) },
+  (Event.Character("k"), _) => { Command.Continue(move(-1, model)) },
+  (Event.WheelUp, _) => { Command.Continue(move(-3, model)) },
+  (Event.Down, _) => { Command.Continue(move(1, model)) },
+  (Event.Character("j"), _) => { Command.Continue(move(1, model)) },
+  (Event.WheelDown, _) => { Command.Continue(move(3, model)) },
+  (Event.PageUp, _) => { Command.Continue(move(-model.listRows, model)) },
+  (Event.PageDown, _) => { Command.Continue(move(model.listRows, model)) },
+  (Event.Enter, _) => {
+    Command.Continue(.{ ..model, expanded = !model.expanded })
+  },
+  (Event.MouseDown(_, row), _) => { Command.Continue(selectAt(row, model)) },
+  _ => { Command.Continue(model) },
+};
+
+let severity = (value) => {
+  if (value == 1) { "error" } else {
+    if (value == 2) { "warning" } else {
+      if (value == 3) { "info" } else { "hint" }
+    }
+  }
+};
+
+let summary = (problem) => {
+  let description = if (problem.code == "") {
+    problem.message
+  } else {
+    `[${problem.code}] ${problem.message}`
+  };
+  `${severity(problem.severity)} ${problem.path}:${Text.of(problem.line)}:${Text.of(problem.column)} ${description}`
+};
+
+let rec visibleRows = match(problems, skip, remaining, selected, index) => {
+  (_, _, 0, _, _) => { [] },
+  ([], _, _, _, _) => { [] },
+  ([_head, ..tail], skip, remaining, selected, index) => {
+    if (skip > 0) {
+      visibleRows(tail, skip - 1, remaining, selected, index + 1)
+    } else {
+      match(problems) {
+        [head, ..rest] => {
+          let marker = if (index == selected) { "›" } else { " " };
+          [`${marker} ${summary(head)}`, ..visibleRows(rest, 0, remaining - 1, selected, index + 1)]
+        },
+        [] => { [] },
+      }
+    }
+  },
+};
+
+let selectedProblem = (model) => { List.at(filteredProblems(model), model.selected) };
+
+let filterState = (label, enabled) => {
+  if (enabled) { `${label}:on` } else { `${label}:off` }
+};
+
+let moduleLabel = (modules) => {
+  if (modules == 1) { "1 module" } else { `${Text.of(modules)} modules` }
+};
+
+let headLine = (head) => {
+  let warning = if (head.recovered) { "  ⚠ recovered facts" } else { "" };
+  if (head.kind == "") {
+    " analyzing project…"
+  } else {
+    if (head.kind == "headed") {
+      ` head ${head.path}  ${moduleLabel(head.moduleCount)}${warning}`
+    } else {
+      ` detached ${head.path}  no main head selects this file${warning}`
+    }
+  }
+};
+
+let detailText = (model) => {
+  match(selectedProblem(model)) {
+    None => { "No problems found." },
+    Some(problem) => {
+      if (model.expanded) {
+        `${problem.path}:${Text.of(problem.line)}:${Text.of(problem.column)}\n${severity(problem.severity)} [${problem.code}]\n${problem.message}`
+      } else {
+        "Enter or click the selected problem to expand"
+      }
+    },
+  }
+};
+
+-- An expanded diagnostic gets as many rows as its wrapped text needs, up to half
+-- the body; the collapsed hint is one row.
+let detailHeight = (expanded, wanted, bodyHeight) => {
+  let cap = Geometry.nonNegative(bodyHeight - headerRows - 1);
+  if (expanded) {
+    Geometry.clamp(0, Geometry.clamp(0, cap, Geometry.percentOf(bodyHeight, 50)), wanted)
+  } else {
+    Geometry.clamp(0, cap, 1)
+  }
+};
+
+let render = (_, model, size) => {
+  let (body, footer) = Geometry.reserveBottom(Geometry.screen(size), 1);
+  let detail = Draw.wrap(detailText(model), body.width);
+  let detailRows = detailHeight(model.expanded, List.length(detail), body.height);
+  let listRows = Geometry.nonNegative(body.height - detailRows - headerRows);
+  let listArea = Geometry.rect(0, headerRows, body.width, listRows);
+  let problems = filteredProblems(model);
+  let rows = visibleRows(problems, model.top, listRows, model.selected, 0);
+  let output = Draw.beginFrame ++
+    Draw.fill(body, " ", Draw.plain) ++
+    Draw.text(
+      Geometry.rect(0, 0, body.width, 1),
+      ` Workman problems  ${Text.of(count(model))}/${Text.of(totalCount(model))}  ${filterState("E", model.errors)} ${filterState("W", model.warnings)} ${filterState("I", model.infos)} ${filterState("H", model.hints)}`,
+      Draw.accent,
+    ) ++
+    Draw.text(Geometry.rect(0, 1, body.width, 1), headLine(model.head), Draw.muted) ++
+    Draw.text(Geometry.rect(0, 2, body.width, 1), "─" :> .repeat(body.width) :> Result.withDefault(""), Draw.separator) ++
+    Draw.lines(listArea, rows, Draw.plain) ++
+    Draw.lines(
+      Geometry.rect(0, headerRows + listRows, body.width, detailRows),
+      detail,
+      Draw.muted,
+    ) ++
+    Draw.fill(footer, " ", Draw.status) ++
+    Draw.text(footer, " ↑/↓ wheel move  Enter/click expand  e/w/i/h filter  a all  q quit ", Draw.status) ++
+    Draw.endFrame;
+  -- Scrolling and paging follow the live terminal, not the height guessed at start.
+  Frame(output, .{ ..model, listRows })
+};
+
+let decodeSnapshot = (value) => {
+  let decoded: Result<Snapshot, Js.Error> = value :> Json.assert;
+  decoded
+};
+
+-- Ask for whatever comes after what is on screen. The task stays parked until
+-- the backend publishes, so an idle project costs nothing.
+let awaitSnapshot = (revision) => {
+  nextSnapshot(revision)
+    :> Task.andThen((value) => { decodeSnapshot(value) :> Task.fromResult })
+    :> Task.map((snapshot) => {
+      (model) => {
+        if (snapshot.revision <= model.revision) {
+          model
+        } else {
+          .{
+            ..model,
+            problems = Js.Array.toList(snapshot.problems),
+            selected = 0,
+            top = 0,
+            expanded = false,
+            revision = snapshot.revision,
+            head = snapshot.head,
+          }
+        }
+      }
+    })
+    :> Task.recover((_) => { (model) => { model } })
+};
+
+-- Start empty at revision 0; the backend's first publish arrives as revision 1
+-- and fills the display in. Each settled snapshot asks for the one after it.
+let runProblems = () => {
+  let initial = Model(
+    [],
+    0,
+    0,
+    false,
+    10,
+    true,
+    true,
+    true,
+    true,
+    0,
+    Head("", "", 0, false),
+  );
+  Runtime.runRetainedManaged(
+    initial,
+    [awaitSnapshot(0)],
+    (model) => { Command.Spawn(model, awaitSnapshot(model.revision)) },
+    update,
+    render,
+  )
+};
+
+let main = () => {
+  runProblems()
+};

@@ -1,0 +1,434 @@
+-- Minimal reusable Workman TUI runtime. Application state remains immutable:
+-- every input callback returns the next model, which is captured by the next
+-- one-shot callback.
+
+from "./ansi.wm" import * as Ansi;
+from "./command.wm" import *;
+from "./event.wm" import * as Event;
+from "./geometry.wm" import * as Geometry;
+from js.module("node:tty") import type { ReadStream, WriteStream };
+from js.module("node:events") import { once as onceEvent };
+from js.global("process") import {
+  stdin: ReadStream,
+  stdout: WriteStream,
+  exit: Number -> Void,
+};
+from js.global("Reflect") import {
+  get: (Js.Value, String) -> Option<Js.Value>,
+} as Reflect;
+from js.global import {
+  String as toString: Js.Value -> String,
+};
+
+let errorText = match(error) => {
+  Js.Error(message) => { message },
+  Js.Unknown => { "unknown JavaScript error" },
+};
+
+let propertyNumber = (target, name, fallback) => {
+  match(Reflect.get(target, name)) {
+    Err(_) => { fallback },
+    Ok(None) => { fallback },
+    Ok(Some(raw)) => {
+      let decoded: Result<Number, Js.Error> = raw :> Json.assert;
+      decoded :> Result.withDefault(fallback)
+    },
+  }
+};
+
+let terminalSize = (output, cellWidth, cellHeight) => {
+  Geometry.Size(
+    propertyNumber(output, "columns", 80),
+    propertyNumber(output, "rows", 24),
+    cellWidth,
+    cellHeight,
+  )
+};
+
+let write = (output, value) => {
+  output.write(value)
+};
+
+let restore = (input, output, status) => {
+  let _ = input.setRawMode(false);
+  let _ = input.pause();
+  let _ = write(output, Ansi.leave);
+  match(exit(status)) {
+    Ok(_) => { void },
+    Err(_) => { void },
+  }
+};
+
+let draw = (output, render, previous, running) => {
+  let (model, cellWidth, cellHeight) = running;
+  let size = terminalSize(output, cellWidth, cellHeight);
+  write(
+    output,
+    render(
+      previous,
+      model,
+      size,
+    ),
+  ) :> Result.map((_) => { (model, size) })
+};
+
+let rec listen = (input, output, update, render, running, previous) => {
+  match(input.once("data", (chunk) => {
+    match(toString(chunk)) {
+      Err(_) => {
+        restore(input, output, 1)
+      },
+      Ok(raw) => {
+        match(applyEvents(update, Event.decodeMany(raw), running)) {
+          Quit => {
+            restore(input, output, 0)
+          },
+          Continue(next) => {
+            match(draw(output, render, previous, next)) {
+              Err(_) => { restore(input, output, 1) },
+              Ok(snapshot) => {
+                listen(input, output, update, render, next, Some(snapshot))
+              },
+            }
+          },
+          Await(pendingRunning, task) => {
+            match(draw(output, render, previous, pendingRunning)) {
+              Err(_) => { restore(input, output, 1) },
+              Ok(pendingSnapshot) => {
+                let _ = task
+                  :> Task.map((nextRunning) => {
+                    match(draw(
+                      output,
+                      render,
+                      Some(pendingSnapshot),
+                      nextRunning,
+                    )) {
+                      Err(_) => { restore(input, output, 1) },
+                      Ok(snapshot) => {
+                        listen(
+                          input,
+                          output,
+                          update,
+                          render,
+                          nextRunning,
+                          Some(snapshot),
+                        )
+                      },
+                    }
+                  })
+                  :> Task.recover((_) => {
+                    restore(input, output, 1)
+                  });
+                void
+              },
+            }
+          },
+          Spawn(_pending, _task) => {
+            restore(input, output, 1)
+          },
+          SpawnMany(_pending, _tasks) => {
+            restore(input, output, 1)
+          },
+        }
+      },
+    }
+  })) {
+    Ok(_) => { void },
+    Err(_) => { restore(input, output, 1) },
+  }
+};
+
+let run = (initial, update, render) => {
+  match(stdin) {
+    Err(error) => {
+      print("terminal unavailable: " ++ errorText(error))
+    },
+    Ok(input) => {
+      match(stdout) {
+        Err(error) => {
+          print("terminal output unavailable: " ++ errorText(error))
+        },
+        Ok(output) => {
+          match(input.setRawMode(true)) {
+            Err(error) => {
+              print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
+            },
+            Ok(_) => {
+              let initialRunning = (initial, 1, 2);
+              let initialSize = terminalSize(output, 1, 2);
+              let _ = input.resume();
+              match(write(
+                output,
+                Ansi.enter ++ Ansi.queryCellSize ++
+                  render(None, initial, initialSize),
+              )) {
+                Err(_) => { restore(input, output, 1) },
+                Ok(_) => {
+                  listen(
+                    input,
+                    output,
+                    update,
+                    render,
+                    initialRunning,
+                    Some((initial, initialSize)),
+                  )
+                },
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+};
+
+let drawRetained = (output, render, memory, running) => {
+  let (model, cellWidth, cellHeight) = running;
+  let size = terminalSize(output, cellWidth, cellHeight);
+  let frame = render(memory, model, size);
+  write(output, frame.output) :> Result.map((_) => { frame.memory })
+};
+
+let inputEvents = (input) => {
+  onceEvent(input, "data")
+    :> Task.andThen((values) => {
+      match(Js.Array.toList(values)) {
+        [] => { Task.succeed([]) },
+        [chunk, .._] => {
+          toString(chunk)
+            :> Task.fromResult
+            :> Task.map(Event.decodeMany)
+        },
+      }
+    })
+};
+
+let rec waitRetained = (
+  input,
+  output,
+  update,
+  render,
+  running,
+  memory,
+  pending,
+  nextId,
+  inputTask,
+  settle,
+) => {
+  let _ = nextWake(inputTask, pending)
+    :> Task.map((wake) => {
+      match(wake) {
+        InputWake(events) => {
+          match(applyConcurrent(update, events, running)) {
+            AppliedQuit => {
+              restore(input, output, 0)
+            },
+            Applied(next, tasks) => {
+              match(drawRetained(output, render, Some(memory), next)) {
+                Err(_) => { restore(input, output, 1) },
+                Ok(nextMemory) => {
+                  let queued = enqueue(tasks, pending, nextId);
+                  let (nextPending, followingId) = queued;
+                  waitRetained(
+                    input,
+                    output,
+                    update,
+                    render,
+                    next,
+                    nextMemory,
+                    nextPending,
+                    followingId,
+                    inputEvents(input),
+                    settle,
+                  )
+                },
+              }
+            },
+          }
+        },
+        TaskWake(id, patch) => {
+          let (model, cellWidth, cellHeight) = running;
+          match(settleStep(settle(patch(model)))) {
+            SettledQuit => {
+              restore(input, output, 0)
+            },
+            Settled(nextModel, tasks) => {
+              let next = (nextModel, cellWidth, cellHeight);
+              match(drawRetained(output, render, Some(memory), next)) {
+                Err(_) => { restore(input, output, 1) },
+                Ok(nextMemory) => {
+                  let remaining = removePending(id, pending);
+                  let queued = enqueue(tasks, remaining, nextId);
+                  let (nextPending, followingId) = queued;
+                  waitRetained(
+                    input,
+                    output,
+                    update,
+                    render,
+                    next,
+                    nextMemory,
+                    nextPending,
+                    followingId,
+                    inputTask,
+                    settle,
+                  )
+                },
+              }
+            },
+          }
+        },
+      }
+    })
+    :> Task.recover((_) => {
+      restore(input, output, 1)
+    });
+  void
+};
+
+let rec listenRetained = (input, output, update, render, running, memory) => {
+  match(input.once("data", (chunk) => {
+    match(toString(chunk)) {
+      Err(_) => {
+        restore(input, output, 1)
+      },
+      Ok(raw) => {
+        match(applyEvents(update, Event.decodeMany(raw), running)) {
+          Quit => {
+            restore(input, output, 0)
+          },
+          Continue(next) => {
+            match(drawRetained(output, render, Some(memory), next)) {
+              Err(_) => { restore(input, output, 1) },
+              Ok(nextMemory) => {
+                listenRetained(
+                  input,
+                  output,
+                  update,
+                  render,
+                  next,
+                  nextMemory,
+                )
+              },
+            }
+          },
+          Await(pendingRunning, task) => {
+            match(drawRetained(
+              output,
+              render,
+              Some(memory),
+              pendingRunning,
+            )) {
+              Err(_) => { restore(input, output, 1) },
+              Ok(pendingMemory) => {
+                let _ = task
+                  :> Task.map((nextRunning) => {
+                    match(drawRetained(
+                      output,
+                      render,
+                      Some(pendingMemory),
+                      nextRunning,
+                    )) {
+                      Err(_) => { restore(input, output, 1) },
+                      Ok(nextMemory) => {
+                        listenRetained(
+                          input,
+                          output,
+                          update,
+                          render,
+                          nextRunning,
+                          nextMemory,
+                        )
+                      },
+                    }
+                  })
+                  :> Task.recover((_) => {
+                    restore(input, output, 1)
+                  });
+                void
+              },
+            }
+          },
+          Spawn(_pending, _task) => {
+            restore(input, output, 1)
+          },
+          SpawnMany(_pending, _tasks) => {
+            restore(input, output, 1)
+          },
+        }
+      },
+    }
+  })) {
+    Ok(_) => { void },
+    Err(_) => { restore(input, output, 1) },
+  }
+};
+
+let runRetainedManaged = (
+  initial,
+  initialTasks,
+  settle,
+  update,
+  render,
+) => {
+  match(stdin) {
+    Err(error) => {
+      print("terminal unavailable: " ++ errorText(error))
+    },
+    Ok(input) => {
+      match(stdout) {
+        Err(error) => {
+          print("terminal output unavailable: " ++ errorText(error))
+        },
+        Ok(output) => {
+          match(input.setRawMode(true)) {
+            Err(error) => {
+              print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
+            },
+            Ok(_) => {
+              let initialRunning = (initial, 1, 2);
+              let initialSize = terminalSize(output, 1, 2);
+              let initialFrame = render(None, initial, initialSize);
+              let _ = input.resume();
+              match(write(
+                output,
+                Ansi.enter ++ Ansi.queryCellSize ++ initialFrame.output,
+              )) {
+                Err(_) => { restore(input, output, 1) },
+                Ok(_) => {
+                  let queued = enqueue(initialTasks, [], 0);
+                  let (pending, nextId) = queued;
+                  waitRetained(
+                    input,
+                    output,
+                    update,
+                    render,
+                    initialRunning,
+                    initialFrame.memory,
+                    pending,
+                    nextId,
+                    inputEvents(input),
+                    settle,
+                  )
+                },
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+};
+
+let runRetainedWith = (initial, initialTasks, update, render) => {
+  runRetainedManaged(
+    initial,
+    initialTasks,
+    (state) => { Continue(state) },
+    update,
+    render,
+  )
+};
+
+let runRetained = (initial, update, render) => {
+  runRetainedWith(initial, [], update, render)
+};

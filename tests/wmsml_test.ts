@@ -71,7 +71,7 @@ Deno.test("wmsml accepts SML-style lowercase type constructors", async () => {
       "get",
       "wmsml",
     ),
-    { type: "(option<Number>) => Number", vars: 0 },
+    { type: "option<Number> -> Number", vars: 0 },
   );
 });
 
@@ -117,7 +117,7 @@ Deno.test("wmsml pattern identifiers are constructor-sensitive through the datat
       "f",
       "wmsml",
     ),
-    { type: "(color) => Number", vars: 0 },
+    { type: "color -> Number", vars: 0 },
   );
 });
 
@@ -152,7 +152,7 @@ Deno.test("wmsml constructor status is retained across later pattern elaboration
       "describe",
       "wmsml",
     ),
-    { type: "(token) => String", vars: 0 },
+    { type: "token -> String", vars: 0 },
   );
 });
 
@@ -218,7 +218,7 @@ Deno.test("wmsml val rec can overwrite constructor identifier status", async () 
       "choose",
       "wmsml",
     ),
-    { type: "('a) => Number", vars: 1 },
+    { type: "'a -> Number", vars: 1 },
   );
 });
 
@@ -235,11 +235,21 @@ Deno.test("wmsml equality rejects function types", async () => {
     "does not admit equality",
   );
 
+  await checkSource(
+    `
+      val same = fn (x, y) => x = y
+      val numberEqual = same (1, 1)
+      val textEqual = same ("left", "right")
+    `,
+    { surface: "wmsml" },
+  );
+
   await assertRejects(
     () =>
       checkSource(
         `
           val same = fn (x, y) => x = y
+          val bad = same (fn x => x, fn y => y)
         `,
         { surface: "wmsml" },
       ),

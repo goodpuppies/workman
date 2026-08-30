@@ -1,11 +1,34 @@
 import { basisCtorId, basisCtorJsName, basisTypes } from "../basis.ts";
+import {
+  BASIS_OPERATORS,
+  BASIS_UNARY_OPERATORS,
+  type BasisOperatorDescriptor,
+} from "../basis_manifest.ts";
 
 export function emitRuntimePrelude(): string[] {
   return [
     '"use strict";',
-    "const __wm_tuple_tag = Symbol('wm.tuple');",
-    "const __wm_tuple = (...items) => Object.assign(items, { [__wm_tuple_tag]: true });",
-    "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_tuple_tag] === true;",
+    // The tag marks Js.Array, not tuples. Tagging every tuple forced V8 to
+    // allocate a properties backing store alongside each one, which measured as
+    // ~9% of parse time; Js.Array values are far rarer and only cross the FFI
+    // boundary. A missing-symbol load is nearly free because V8 caches the
+    // negative lookup on the array's map, so the check stays cheap.
+    "const __wm_js_array_tag = Symbol('wm.jsArray');",
+    "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true;",
+    `const __wm_js_array_mark = (value) => {
+  if (globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true) {
+    // Defined rather than assigned so the mark is non-enumerable and stays
+    // invisible to structural comparison of arrays handed back to JavaScript.
+    // A foreign array may be frozen or sealed; an unmarked one is only ever
+    // mistaken for a tuple, so failing to mark is not worth throwing over.
+    try {
+      globalThis.Object.defineProperty(value, __wm_js_array_tag, { value: true });
+    } catch {
+      // ignore
+    }
+  }
+  return value;
+};`,
     `const __wm_js_global = (path) => path.split(".").reduce((value, key) => value?.[key], globalThis);`,
     `const __wm_js_should_bind = (value) =>
   typeof value === "function" && !/^class\\s/.test(Function.prototype.toString.call(value));`,
@@ -14,16 +37,31 @@ export function emitRuntimePrelude(): string[] {
   const key = parts.pop();
   const owner = parts.length === 0 ? globalThis : __wm_js_global(parts.join("."));
   const value = owner?.[key];
-  return __wm_js_should_bind(value) ? value.bind(owner) : value;
+  return __wm_js_should_bind(value) ? value.bind(owner) : __wm_js_array_mark(value);
 };`,
     `const __wm_js_member_obj = (owner, key) => {
   const value = owner?.[key];
-  return __wm_js_should_bind(value) ? value.bind(owner) : value;
+  return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
 };`,
-    `const __wm_js_receiver_member = (path) => (receiver, ...args) => {
-  const owner = path.slice(0, -1).reduce((value, key) => value?.[key], receiver);
-  const value = owner?.[path[path.length - 1]];
-  return typeof value === "function" ? value.apply(owner, args) : value;
+    `const __wm_js_receiver_member = (path) => {
+  // The path is fixed when the binding is created, so resolve it once here
+  // instead of slicing and reducing on every call.
+  const key = path[path.length - 1];
+  if (path.length === 1) {
+    return (receiver, ...args) => {
+      const value = receiver?.[key];
+      if (typeof value === "function") return value.apply(receiver, args);
+      return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
+    };
+  }
+  const ownerPath = path.slice(0, -1);
+  return (receiver, ...args) => {
+    let owner = receiver;
+    for (let index = 0; index < ownerPath.length; index++) owner = owner?.[ownerPath[index]];
+    const value = owner?.[key];
+    if (typeof value === "function") return value.apply(owner, args);
+    return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
+  };
 };`,
     `const __wm_js_construct = (path) => (...args) => new (__wm_js_global(path))(...args);`,
     `const __wm_js_call = (fn, arg) => __wm_is_tuple(arg) ? fn(...arg) : fn(arg);`,
@@ -31,22 +69,41 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? undefined : value?.ctor === -2 ? value.args[0] : value;`,
     `const __wm_js_to_workman = (value, converter) => {
   if (converter === "option") return __wm_js_option_wrap(value);
+  if (typeof converter === "object" && converter.kind === "tuple") {
+    if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript tuple array");
+    return converter.items.map((item, index) => __wm_js_to_workman(value[index], item));
+  }
+  if (typeof converter === "object" && converter.kind === "array") {
+    if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript array");
+    return __wm_js_array_mark(value.map((item) => __wm_js_to_workman(item, converter.item)));
+  }
   if (typeof converter === "object" && converter.kind === "fn") {
     return (...args) => __wm_js_to_workman(
       value(...args.map((arg, index) => __wm_js_to_js(arg, converter.params[index] ?? "id"))),
       converter.result,
     );
   }
-  return value;
+  // The "id" converter hands back a raw JavaScript value; an array arriving
+  // this way has to be marked or it would read as a tuple. Guarded inline
+  // because this runs on every FFI return, and almost none are arrays.
+  return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
 };`,
     `const __wm_js_to_js = (value, converter) => {
   if (converter === "option") return __wm_js_option_unwrap(value);
+  if (typeof converter === "object" && converter.kind === "tuple") {
+    if (!__wm_is_tuple(value)) throw new TypeError("expected Workman tuple");
+    return converter.items.map((item, index) => __wm_js_to_js(value[index], item));
+  }
+  if (typeof converter === "object" && converter.kind === "array") {
+    if (!globalThis.Array.isArray(value)) throw new TypeError("expected Workman Js.Array");
+    return value.map((item) => __wm_js_to_js(item, converter.item));
+  }
   if (typeof converter === "object" && converter.kind === "fn") {
     return (...args) => {
       const converted = args.map((arg, index) => __wm_js_to_workman(arg, converter.params[index] ?? "id"));
       const expected = converter.params.length;
       const limited = converted.slice(0, expected);
-      const workmanArg = limited.length === 0 ? undefined : limited.length === 1 ? limited[0] : __wm_tuple(...limited);
+      const workmanArg = limited.length === 0 ? undefined : limited.length === 1 ? limited[0] : limited;
       return __wm_js_to_js(
         value(workmanArg),
         converter.result,
@@ -56,8 +113,19 @@ export function emitRuntimePrelude(): string[] {
   return value;
 };`,
     `const __wm_js_apply = (fn, arg, converters, resultConverter, fallible) => {
-  const raw = converters.length === 0 ? [] : converters.length === 1 ? [arg] : (__wm_is_tuple(arg) ? Array.from(arg) : [arg]);
-  const args = raw.map((value, index) => __wm_js_to_js(value, converters[index] ?? "id"));
+  // Convert in place; the extra map allocated a second array on every call.
+  const arity = converters.length;
+  let args;
+  if (arity === 0) {
+    args = [];
+  } else if (arity === 1) {
+    args = [__wm_js_to_js(arg, converters[0] ?? "id")];
+  } else {
+    args = __wm_is_tuple(arg) ? Array.from(arg) : [arg];
+    for (let index = 0; index < args.length; index++) {
+      args[index] = __wm_js_to_js(args[index], converters[index] ?? "id");
+    }
+  }
   if (fallible === "task") {
     return __wm_js_task_from_thunk(() => fn(...args), resultConverter);
   }
@@ -96,10 +164,10 @@ export function emitRuntimePrelude(): string[] {
     key === bk[index] && __wm_eq(a[key], b[key])
   );
 };`,
-    `const __wm_show = (value, seen = new WeakSet()) => {
+    `const __wm_show = (value, seen = new WeakSet(), quoteStrings = false) => {
   if (value === undefined) return "void";
   if (value === null) return "null";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return quoteStrings ? JSON.stringify(value) : value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (typeof value === "function") return "<function>";
   if (typeof value !== "object") return String(value);
@@ -107,26 +175,27 @@ export function emitRuntimePrelude(): string[] {
   seen.add(value);
   let shown;
   if (__wm_is_tuple(value)) {
-    shown = "(" + value.map((item) => __wm_show(item, seen)).join(", ") + ")";
+    shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + ")";
   } else if ("ctor" in value) {
     shown = value.args.length === 0
       ? value.name
       : value.name + "(" + value.args.map((item) => {
-        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen)).join(", ");
-        return __wm_show(item, seen);
+        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen, quoteStrings)).join(", ");
+        return __wm_show(item, seen, quoteStrings);
       }).join(", ") + ")";
   } else if (globalThis.Array.isArray(value)) {
-    shown = "[" + value.map((item) => __wm_show(item, seen)).join(", ") + "]";
+    shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
   } else {
-    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen)).join(", ") + " }";
+    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen, quoteStrings)).join(", ") + " }";
   }
   seen.delete(value);
   return shown;
 };`,
     "const print = (value) => console.log(__wm_show(value));",
+    "const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true);",
     `const __wm_text_of = (value) => {
   try {
-    return value.toString();
+    return __wm_show(value);
   } catch (_error) {
     return "?";
   }
@@ -155,10 +224,17 @@ export function emitRuntimePrelude(): string[] {
   get: ([dict, key]) => __wm_js_option_wrap(Object.hasOwn(dict, key) ? dict[key] : undefined),
   set: ([dict, key, value]) => { dict[key] = value; },
 };`,
+    `const Table = {
+  empty: () => new globalThis.Map(),
+  get: ([table, key]) => __wm_js_option_wrap(table.get(key)),
+  set: ([table, key, value]) => { table.set(key, value); },
+  getAt: ([table, key]) => __wm_js_option_wrap(table.get(key)),
+  setAt: ([table, key, value]) => { table.set(key, value); },
+};`,
     `const __wm_array_to_list = (items) => {
   let list = __wm_basis_Nil;
   for (let index = items.length - 1; index >= 0; index--) {
-    list = __wm_basis_Cons(__wm_tuple(items[index], list));
+    list = __wm_basis_Cons([items[index], list]);
   }
   return list;
 };`,
@@ -170,7 +246,7 @@ export function emitRuntimePrelude(): string[] {
     items.push(head);
     cursor = tail;
   }
-  return items;
+  return __wm_js_array_mark(items);
 };`,
     `const Js = {
   Array: {
@@ -178,123 +254,37 @@ export function emitRuntimePrelude(): string[] {
     fromList: __wm_list_to_array,
   },
 };`,
-    `const Monad = {
-  lift: (x) => (f) => x.fn(f),
+    `const Text = {
+  of: __wm_text_of,
 };`,
-    `const List = {
-  map: ([items, fn]) => {
-    const mapped = [];
-    let cursor = items;
-    while (cursor?.ctor === ${basisCtorId("Cons")}) {
-      const [item, rest] = cursor.args[0];
-      mapped.push(fn(item));
-      cursor = rest;
-    }
-    return __wm_array_to_list(mapped);
-  },
-  foldRight: ([items, initial, fn]) => {
-    const values = [];
-    let cursor = items;
-    while (cursor?.ctor === ${basisCtorId("Cons")}) {
-      const [item, rest] = cursor.args[0];
-      values.push(item);
-      cursor = rest;
-    }
-    let acc = initial;
-    for (let index = values.length - 1; index >= 0; index--) {
-      acc = fn(__wm_tuple(values[index], acc));
-    }
-    return acc;
-  },
-  collectWith: ([empty, combine, items]) => List.foldRight(__wm_tuple(items, empty, combine)),
+    `const __wm_debug_error_message = (error) => {
+  if (typeof error === "string") return error;
+  if (error instanceof globalThis.Error) return String(error.message);
+  if (error?.ctor === ${basisCtorId("Js.Error")}) return String(error.args[0]);
+  if (error?.ctor === ${basisCtorId("Js.Unknown")}) return "unknown JavaScript error";
+  if (error === null) return "null";
+  return __wm_show(error, new WeakSet(), true);
 };`,
-    `const __wm_result_mapN = (args) => {
-  const fn = args[args.length - 1];
-  const values = [];
-  for (const result of args.slice(0, -1)) {
-    if (result.ctor !== ${basisCtorId("Ok")}) return result;
-    values.push(result.args[0]);
-  }
-  return __wm_basis_Ok(fn(__wm_tuple(...values)));
+    `const Debug = {
+  errorMessage: __wm_debug_error_message,
 };`,
-    `const Result = {
-  fn: (fn) => (result) => Result.andThen(__wm_tuple(result, fn)),
-  map: ([result, fn]) => result.ctor === ${
-      basisCtorId("Ok")
-    } ? __wm_basis_Ok(fn(result.args[0])) : result,
-  map2: __wm_result_mapN,
-  map3: __wm_result_mapN,
-  map4: __wm_result_mapN,
-  andThen: ([result, fn]) => result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result,
-  mapErr: ([result, fn]) => result.ctor === ${
-      basisCtorId("Err")
-    } ? __wm_basis_Err(fn(result.args[0])) : result,
-  textOf: __wm_text_of,
-  withDefault: ([result, fallback]) => result.ctor === ${
-      basisCtorId("Ok")
-    } ? result.args[0] : fallback,
-  all: (results) => {
-    const values = [];
-    for (const result of results) {
-      if (result.ctor !== ${basisCtorId("Ok")}) return result;
-      values.push(result.args[0]);
-    }
-    return __wm_basis_Ok(values);
-  },
-  collectList: (results) => {
-    const values = [];
-    let cursor = results;
-    while (cursor?.ctor === ${basisCtorId("Cons")}) {
-      const [result, rest] = cursor.args[0];
-      if (result.ctor !== ${basisCtorId("Ok")}) return result;
-      values.push(result.args[0]);
-      cursor = rest;
-    }
-    return __wm_basis_Ok(__wm_array_to_list(values));
-  },
-  traverse: ([items, fn]) => {
-    const values = [];
-    let cursor = items;
-    while (cursor?.ctor === ${basisCtorId("Cons")}) {
-      const [item, rest] = cursor.args[0];
-      const result = fn(item);
-      if (result.ctor !== ${basisCtorId("Ok")}) return result;
-      values.push(result.args[0]);
-      cursor = rest;
-    }
-    return __wm_basis_Ok(__wm_array_to_list(values));
-  },
+    `const __wm_basis_Option = {
+  None: __wm_basis_None,
+  Some: __wm_basis_Some,
 };`,
-    `const Option = {
-  map: ([option, fn]) => option.ctor === ${
-      basisCtorId("Some")
-    } ? __wm_basis_Some(fn(option.args[0])) : option,
-  andThen: ([option, fn]) => option.ctor === ${basisCtorId("Some")} ? fn(option.args[0]) : option,
-  withDefault: ([option, fallback]) => option.ctor === ${
-      basisCtorId("Some")
-    } ? option.args[0] : fallback,
-  map2: ([left, right, fn]) => left.ctor === ${basisCtorId("Some")} && right.ctor === ${
-      basisCtorId("Some")
-    } ? __wm_basis_Some(fn(__wm_tuple(left.args[0], right.args[0]))) : __wm_basis_None,
-  collectList: (options) => {
-    const values = [];
-    let cursor = options;
-    while (cursor?.ctor === ${basisCtorId("Cons")}) {
-      const [option, rest] = cursor.args[0];
-      if (option.ctor !== ${basisCtorId("Some")}) return __wm_basis_None;
-      values.push(option.args[0]);
-      cursor = rest;
-    }
-    return __wm_basis_Some(__wm_array_to_list(values));
-  },
-  traverse: ([items, fn]) => Option.collectList(List.map(__wm_tuple(items, fn))),
+    `const __wm_basis_List = {
+  Nil: __wm_basis_Nil,
+  Cons: __wm_basis_Cons,
+};`,
+    `const __wm_basis_Result = {
+  Ok: __wm_basis_Ok,
+  Err: __wm_basis_Err,
 };`,
     `const __wm_error_message = (error) => {
   if (error && typeof error === "object" && "message" in error) return String(error.message);
   return String(error);
 };`,
-    `const Task = {
-  fn: (fn) => (task) => Task.andThen(__wm_tuple(task, fn)),
+    `const __wm_basis_Task = {
   fromResult: (result) => Promise.resolve(result),
   succeed: (value) => Promise.resolve(__wm_basis_Ok(value)),
   fail: (error) => Promise.resolve(__wm_basis_Err(error)),
@@ -309,8 +299,12 @@ export function emitRuntimePrelude(): string[] {
     const right = results[1];
     if (left.ctor !== ${basisCtorId("Ok")}) return left;
     if (right.ctor !== ${basisCtorId("Ok")}) return right;
-    return __wm_basis_Ok(fn(__wm_tuple(left.args[0], right.args[0])));
+    return __wm_basis_Ok(fn([left.args[0], right.args[0]]));
   }),
+  race: ([leftTask, rightTask]) => Promise.race([
+    Promise.resolve(leftTask),
+    Promise.resolve(rightTask),
+  ]),
   andThen: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === ${basisCtorId("Ok")} ? fn(result.args[0]) : result
   ),
@@ -320,6 +314,9 @@ export function emitRuntimePrelude(): string[] {
   recover: ([task, fn]) => Promise.resolve(task).then((result) =>
     result.ctor === ${basisCtorId("Err")} ? __wm_basis_Ok(fn(result.args[0])) : result
   ),
+  orElse: ([task, fn]) => Promise.resolve(task).then((result) =>
+    result.ctor === ${basisCtorId("Err")} ? fn(result.args[0]) : result
+  ),
   all: (tasks) => Promise.all(tasks).then((results) => {
     const values = [];
     for (const result of results) {
@@ -328,46 +325,89 @@ export function emitRuntimePrelude(): string[] {
     }
     return __wm_basis_Ok(values);
   }),
-  collectList: (tasks) => Promise.all(__wm_list_to_array(tasks)).then((results) => {
-    const values = [];
-    for (const result of results) {
-      if (result.ctor !== ${basisCtorId("Ok")}) return result;
-      values.push(result.args[0]);
-    }
-    return __wm_basis_Ok(__wm_array_to_list(values));
-  }),
-  traverse: ([items, fn]) => {
-    const values = [];
-    const loop = (cursor) => {
-      if (cursor?.ctor !== ${
-      basisCtorId("Cons")
-    }) return Promise.resolve(__wm_basis_Ok(__wm_array_to_list(values)));
-      const [item, rest] = cursor.args[0];
-      return Promise.resolve(fn(item)).then((result) => {
-        if (result.ctor !== ${basisCtorId("Ok")}) return result;
-        values.push(result.args[0]);
-        return loop(rest);
-      });
-    }
-    return loop(items);
-  },
 };`,
-    "const __wm_op_concat = ([a, b]) => a + b;",
-    "const __wm_op_add = ([a, b]) => a + b;",
-    "const __wm_op_sub = (x) => __wm_is_tuple(x) ? x[0] - x[1] : -x;",
-    "const __wm_op_mul = ([a, b]) => a * b;",
-    "const __wm_op_div = ([a, b]) => a / b;",
-    "const __wm_op_mod = ([a, b]) => a % b;",
-    "const __wm_op_eq = ([a, b]) => __wm_eq(a, b);",
-    "const __wm_op_ne = ([a, b]) => !__wm_eq(a, b);",
-    "const __wm_op_lt = ([a, b]) => a < b;",
-    "const __wm_op_lte = ([a, b]) => a <= b;",
-    "const __wm_op_gt = ([a, b]) => a > b;",
-    "const __wm_op_gte = ([a, b]) => a >= b;",
-    "const __wm_op_and = ([a, b]) => a && b;",
-    "const __wm_op_or = ([a, b]) => a || b;",
-    "const __wm_op_not = (x) => !x;",
+    ...emitBasisOperators(),
   ];
+}
+
+/**
+ * Implementations of the fixed operator catalog, keyed by the manifest's spelling.
+ *
+ * `B303`/`G9`: the dynamic artifact is built from the same description as the static
+ * one. The runtime *name* of each operator comes from `BASIS_OPERATORS`, so a manifest
+ * change cannot leave the static basis advertising a runtime value nothing defines.
+ * Only the JavaScript body lives here.
+ */
+const OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  "++": "([a, b]) => a + b",
+  "+": "([a, b]) => a + b",
+  "-": "(x) => __wm_is_tuple(x) ? x[0] - x[1] : -x",
+  "*": "([a, b]) => a * b",
+  "/": "([a, b]) => a / b",
+  "%": "([a, b]) => a % b",
+  "==": "([a, b]) => __wm_eq(a, b)",
+  "!=": "([a, b]) => !__wm_eq(a, b)",
+  "<": "([a, b]) => a < b",
+  "<=": "([a, b]) => a <= b",
+  ">": "([a, b]) => a > b",
+  ">=": "([a, b]) => a >= b",
+  "&&": "([a, b]) => a && b",
+  "||": "([a, b]) => a || b",
+});
+
+/**
+ * Unary operator implementations, keyed by spelling like the binary bodies above.
+ *
+ * Unary minus has no entry: it shares the binary `-` descriptor, whose implementation
+ * already distinguishes the tuple and scalar cases.
+ */
+const UNARY_OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  "!": "(x) => !x",
+});
+
+const DIRECT_OPERATOR_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  "&&": "(a, b) => a && b",
+  "||": "(a, b) => a || b",
+});
+
+function emitBasisOperators(): string[] {
+  return [
+    ...definitionsFor(BASIS_OPERATORS, OPERATOR_BODIES, "BASIS_OPERATORS"),
+    ...definitionsFor(BASIS_UNARY_OPERATORS, UNARY_OPERATOR_BODIES, "BASIS_UNARY_OPERATORS"),
+    // Direct eager entry points let statically known boolean applications avoid
+    // their argument tuple without adopting JavaScript's short-circuit semantics.
+    ...directDefinitionsFor(BASIS_OPERATORS),
+  ];
+}
+
+function directDefinitionsFor(operators: readonly BasisOperatorDescriptor[]): string[] {
+  return operators.flatMap((operator) => {
+    if (!operator.directRuntimeName) return [];
+    const body = DIRECT_OPERATOR_BODIES[operator.spelling];
+    if (!body) {
+      throw new Error(
+        `basis operator ${operator.spelling} has no direct runtime implementation`,
+      );
+    }
+    return [`const ${operator.directRuntimeName} = ${body};`];
+  });
+}
+
+function definitionsFor(
+  operators: readonly BasisOperatorDescriptor[],
+  bodies: Readonly<Record<string, string>>,
+  catalog: string,
+): string[] {
+  return operators.map((operator) => {
+    const body = bodies[operator.spelling];
+    if (!body) {
+      throw new Error(
+        `basis operator ${operator.spelling} has no runtime implementation; ` +
+          `every ${catalog} entry needs one so static and dynamic profiles correspond`,
+      );
+    }
+    return `const ${operator.runtimeName} = ${body};`;
+  });
 }
 
 function emitBasisConstructors(): string[] {

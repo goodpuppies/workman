@@ -10,10 +10,18 @@ export type ServerProcessConfig<TTransport> = {
   };
 };
 
+export type ServerModuleConfig<TTransport> = {
+  module: string;
+  transport: TTransport;
+  options: {
+    cwd: string;
+    env: Record<string, string | undefined>;
+  };
+};
+
 export function denoServerConfig<TTransport>(
   command: string,
   serverPath: string,
-  frontendMode: string,
   frontendV2ModulePath: string | undefined,
   transport: TTransport,
   baseEnv: Record<string, string | undefined>,
@@ -25,40 +33,42 @@ export function denoServerConfig<TTransport>(
     transport,
     options: {
       cwd: path.dirname(path.dirname(path.dirname(serverPath))),
-      env: serverEnvironment(frontendMode, frontendV2ModulePath, baseEnv, workspaceFolder),
+      env: serverEnvironment(
+        frontendV2ModulePath,
+        baseEnv,
+        workspaceFolder,
+      ),
     },
   };
 }
 
-export function compiledServerConfig<TTransport>(
-  command: string,
-  frontendMode: string,
+export function nodeServerConfig<TTransport>(
+  module: string,
   frontendV2ModulePath: string | undefined,
   transport: TTransport,
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
-): ServerProcessConfig<TTransport> {
+): ServerModuleConfig<TTransport> {
   return {
-    command,
-    args: [],
+    module,
     transport,
     options: {
-      cwd: workspaceFolder ?? path.dirname(command),
-      env: serverEnvironment(frontendMode, frontendV2ModulePath, baseEnv, workspaceFolder),
+      cwd: workspaceFolder ?? path.dirname(module),
+      env: serverEnvironment(
+        frontendV2ModulePath,
+        baseEnv,
+        workspaceFolder,
+      ),
     },
   };
 }
 
 function serverEnvironment(
-  frontendMode: string,
   frontendV2ModulePath: string | undefined,
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
 ): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = {
-    ...baseEnv,
-    WORKMAN_FRONTEND: frontendMode,
-  };
+  const env: Record<string, string | undefined> = { ...baseEnv };
   if (frontendV2ModulePath) {
     env.WORKMAN_FRONTEND_V2_MODULE = resolveConfiguredPath(
       frontendV2ModulePath,

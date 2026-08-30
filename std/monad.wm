@@ -1,7 +1,58 @@
-record LiftFn<A, B> = { fn: (A) => B };
+record Carrier<
+  FnArg,
+  FnResult,
+  ErrorArg,
+  ErrorResult,
+  SucceedArg,
+  SucceedResult,
+  MapCarrier,
+  MapTransform,
+  MapResult,
+  Map2Left,
+  Map2Right,
+  Map2Combine,
+  Map2Result,
+  AndThenCarrier,
+  AndThenTransform,
+  AndThenResult,
+> = {
+  fn: FnArg -> FnResult,
+  fnError: ErrorArg -> ErrorResult,
+  succeed: SucceedArg -> SucceedResult,
+  map: (MapCarrier, MapTransform) -> MapResult,
+  map2: (Map2Left, Map2Right, Map2Combine) -> Map2Result,
+  andThen: (AndThenCarrier, AndThenTransform) -> AndThenResult,
+};
 
-let lift = (x) => { 
+// The subset a lifted operator needs: inject a pure operand, and combine two
+// carriers componentwise. A type with no lawful andThen -- a fixed-size vector,
+// say -- can register this without pretending to be a monad.
+record Applicative<
+  SucceedArg,
+  SucceedResult,
+  MapCarrier,
+  MapTransform,
+  MapResult,
+  Map2Left,
+  Map2Right,
+  Map2Combine,
+  Map2Result,
+> = {
+  succeed: SucceedArg -> SucceedResult,
+  map: (MapCarrier, MapTransform) -> MapResult,
+  map2: (Map2Left, Map2Right, Map2Combine) -> Map2Result,
+};
+
+let via = (domain) => {
+  (f) => {
+    domain.fn(f)
+  }
+};
+
+let viaError = (domain) => {
+  (inject) => {
     (f) => {
-        x.fn(f) -- means (#fn x)(f) like sml
+      domain.fnError(inject)(f)
     }
+  }
 };

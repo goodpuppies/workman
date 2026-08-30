@@ -1,0 +1,239 @@
+from "./mark.wm" import * as Mark;
+from "./source.wm" import * as Source;
+from "../../std/list.wm" import * as List;
+
+-- Lossless lexical layer for the handwritten Surface AST.
+-- Token categories are closed. Authored spelling always lives in `text`.
+
+-- The kind of non-code content that can appear between tokens.
+-- Trivia is recorded so tooling (formatting, LSP, lossless round-trips)
+-- can reproduce the source exactly.
+type TriviaKind =
+  | HorizontalWhitespace  -- spaces and tabs on one line
+  | LineBreak             -- a newline (possibly with surrounding CRs)
+  | DashLineComment       -- `--` line comment
+  | SlashLineComment;     -- `//` line comment
+
+-- One piece of trivia: what it is, its exact spelling, and where it sits.
+record Trivia = {
+  kind: TriviaKind,
+  text: String,
+  span: Source.Span,
+};
+
+-- Reserved words that carry structural meaning in the grammar.
+type Keyword =
+  | FromKeyword      -- `from`   - module import path prefix
+  | ImportKeyword    -- `import`
+  | AsKeyword        -- `as`     - import renaming / namespace alias
+  | UnsafeKeyword    -- `unsafe` - FFI escape hatch block
+  | LetKeyword       -- `let`
+  | RecKeyword       -- `rec`    - recursive binding
+  | AndKeyword       -- `and`    - mutually recursive bindings
+  | TypeKeyword      -- `type`
+  | RecordKeyword    -- `record`
+  | IfKeyword        -- `if`
+  | ElseKeyword      -- `else`
+  | MatchKeyword     -- `match`
+  | TrueKeyword      -- `true`
+  | FalseKeyword     -- `false`
+  | VoidKeyword;     -- `void`   - unit-ish value
+
+-- Bracketing/separating symbols that structure the syntax but do not compute.
+type Punctuation =
+  | LeftParen        -- `(`
+  | RightParen       -- `)`
+  | LeftBrace        -- `{`
+  | DotLeftBrace     -- `.{`
+  | RightBrace       -- `}`
+  | LeftBracket      -- `[`
+  | RightBracket     -- `]`
+  | LessThan         -- `<`   - also closes type applications
+  | GreaterThan      -- `>`
+  | Comma            -- `,`
+  | Semicolon        -- `;`
+  | Colon            -- `:`   - type ascription / record fields
+  | Dot              -- `.`   - qualified names, receiver access
+  | DoubleDot        -- `..`  - spread / rest patterns
+  | AtSign           -- `@`   - attributes/directives
+  | Equals           -- `=`   - definition, not comparison
+  | FatArrow         -- `=>`  - functions / match arms
+  | ThinArrow        -- `->`  - function types
+  | Pipe             -- `|`   - variant/pattern alternatives
+  | PipeForward;     -- `:>`  - pipe into call
+
+-- Symbols that combine values; each has fixed precedence in the parser.
+type Operator =
+  | BooleanOr        -- `||`
+  | BooleanAnd       -- `&&`
+  | Equal            -- `==`
+  | NotEqual         -- `!=`
+  | LessOrEqual      -- `<=`
+  | GreaterOrEqual   -- `>=`
+  | Add              -- `+`
+  | Subtract         -- `-`
+  | Multiply         -- `*`
+  | Divide           -- `/`
+  | Remainder        -- `%`
+  | Concatenate      -- `++`
+  | BooleanNot;      -- `!`
+
+-- The closed set of token categories the lexer emits.
+type TokenKind =
+  | KeywordToken<Keyword>             -- reserved word, e.g. `let`, `match`
+  | PunctuationToken<Punctuation>     -- structural symbol, e.g. `(`, `=>`
+  | OperatorToken<Operator>           -- computing symbol, e.g. `+`, `==`
+  | CommentStartToken                 -- the `--` or `//` opener of a comment
+  | LineComment                       -- full `-- text` / `// text` trivia run
+  | LowerIdentifierToken              -- lowercase-starting name: `lex`, `foo_bar`
+  | UpperIdentifierToken              -- uppercase-starting name: `Result`, `List`
+  | IntegerToken                      -- integer literal: `42`
+  | FloatToken                        -- decimal literal: `3.14`
+  | QuotedStringToken                 -- `"..."` string literal
+  | MultilineStringStartToken         -- opening backtick of a multiline string
+  | MultilineStringTextToken          -- raw text chunk inside a multiline string
+  | InterpolationStartToken           -- `${` inside an interpolated string
+  | InterpolationEndToken             -- closing `}` of an interpolation
+  | MultilineStringEndToken           -- closing backtick of a multiline string
+  | UnknownToken                      -- anything unrecognizable (kept for recovery)
+  | EndOfFileToken;                   -- synthetic EOF sentinel
+
+-- Token metadata: kinds whose lexemes always span exactly one character.
+-- (Subtract/Divide are absent: they may start comments.)
+let oneWideKinds = [
+  PunctuationToken(LeftParen),
+  PunctuationToken(RightParen),
+  PunctuationToken(LeftBrace),
+  PunctuationToken(RightBrace),
+  PunctuationToken(LeftBracket),
+  PunctuationToken(RightBracket),
+  PunctuationToken(LessThan),
+  PunctuationToken(GreaterThan),
+  PunctuationToken(Comma),
+  PunctuationToken(Semicolon),
+  PunctuationToken(Colon),
+  PunctuationToken(Dot),
+  PunctuationToken(AtSign),
+  PunctuationToken(Equals),
+  PunctuationToken(Pipe),
+  OperatorToken(Add),
+  OperatorToken(Multiply),
+  OperatorToken(Remainder),
+  OperatorToken(BooleanNot),
+  OperatorToken(Divide),
+  OperatorToken(Subtract)
+];
+
+-- Token metadata: kinds whose lexemes always span exactly two characters.
+let twoWideKinds = [
+  PunctuationToken(DoubleDot),    -- ..
+  PunctuationToken(DotLeftBrace), -- .{
+  PunctuationToken(FatArrow),     -- =>
+  PunctuationToken(ThinArrow),    -- ->
+  PunctuationToken(PipeForward),  -- |>
+  OperatorToken(BooleanOr),       -- ||
+  OperatorToken(BooleanAnd),      -- &&
+  OperatorToken(Equal),           -- ==
+  OperatorToken(NotEqual),        -- !=
+  OperatorToken(LessOrEqual),     -- <=
+  OperatorToken(GreaterOrEqual),  -- >=
+  OperatorToken(Concatenate)      -- ++
+];
+
+type FixedWidth = | OneWide|TwoWide;
+
+-- How many characters this token kind's lexeme always occupies:
+-- Some(1) or Some(2) for fixed-width symbols, None for variable-width
+-- kinds (identifiers, literals, comments) that must be read to their end.
+let fixedWidth = (kind) => {
+  if (List.any(oneWideKinds, (k) => {k == kind})) {
+    Some(OneWide)
+  } else {
+    if (List.any(twoWideKinds, (k) => {k == kind})) {
+      Some(TwoWide)
+    } else {
+      None
+    }
+  }
+};
+
+-- Delimiter families that must pair up: every opener expects a closer from
+-- the same group (and vice versa).
+type PairGroup =
+  | ParenGroup     -- ( )
+  | BraceGroup     -- { }   (also closes record literals `.{`)
+  | BracketGroup;  -- [ ]
+
+-- Whether a kind opens or closes its group.
+type PairSide =
+  | Open
+  | Close;
+
+-- The pairing role of a token kind: its group and side.
+type PairRole =
+  | PairRole<PairGroup, PairSide>;
+
+-- Token metadata: which delimiter family a kind belongs to and on which
+-- side. None for everything that does not participate in pairing.
+let rec pairRole = match(kind) => {
+  PunctuationToken(LeftParen)    => {Some(PairRole(ParenGroup, Open))},
+  PunctuationToken(RightParen)   => {Some(PairRole(ParenGroup, Close))},
+  PunctuationToken(LeftBrace)    => {Some(PairRole(BraceGroup, Open))},
+  PunctuationToken(RightBrace)   => {Some(PairRole(BraceGroup, Close))},
+  PunctuationToken(LeftBracket)  => {Some(PairRole(BracketGroup, Open))},
+  PunctuationToken(RightBracket) => {Some(PairRole(BracketGroup, Close))},
+  InterpolationStartToken        => {Some(PairRole(BraceGroup, Open))},  -- ${ ... }
+  InterpolationEndToken          => {Some(PairRole(BraceGroup, Close))}, -- } of ${ ... }
+  _                              => {None}
+};
+
+-- What went wrong during lexing. Recorded, never thrown, so the parser can
+-- keep going and report everything at once.
+type LexicalProblem =
+  | InvalidSourceUnit            -- input is not even parseable as a unit
+  | UnknownCharacter             -- character outside the language's alphabet
+  | MalformedNumber              -- e.g. `1.2.3`, dangling `.`
+  | InvalidEscape                -- bad `\x` sequence in a string
+  | UnterminatedQuotedString     -- no closing `"`
+  | UnterminatedMultilineString  -- no closing backtick
+  | UnterminatedInterpolation;   -- no closing `}` after `${`
+
+-- Which delimiter was expected to end a lexeme; used by recovery to guess
+-- where a malformed token should have stopped.
+type LexemeTerminator =
+  | QuoteTerminator               -- expected `"`
+  | BacktickTerminator            -- expected a backtick
+  | InterpolationBraceTerminator; -- expected `}`
+
+-- How the lexer repairs around a problem while preserving as much of the
+-- original text as possible.
+type LexicalRecovery =
+  | RetainedUnknownToken                        -- keep the junk as UnknownToken
+  | RetainedMalformedToken<TokenKind>           -- keep a damaged token of this kind
+  | AssumedLexemeTerminator<LexemeTerminator>   -- pretend a missing closer existed
+  | SplitMalformedToken;                        -- cut one bad token into several
+
+-- A (problem, recovery) pair attached to the token(s) it affects. This is how
+-- errors ride along with tokens instead of aborting the lex.
+type LexicalMark = Mark.Mark<LexicalProblem, LexicalRecovery>;
+
+-- Pairing index for delimiters that must match up: every open bracket records
+-- the index of its closer and vice versa (filled in a later pass). NoMate
+-- means the token has no mate - most tokens don't.
+type Mate = Mate<Number> | NoMate;
+
+-- The base token: what it is, exactly where it came from, its delimiter
+-- pairing info, and any lexical problems attached to it.
+record Token = {
+  kind: TokenKind,
+  span: Source.Span,
+  mateIdx: Mate,
+  marks: List<LexicalMark>,
+};
+
+-- The full result of lexing a source file: all tokens plus all marks,
+-- ready for the parser.
+record LexicalDocument = {
+  tokens: List<Token>,
+  marks: List<LexicalMark>,
+};

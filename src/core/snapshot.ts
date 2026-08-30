@@ -16,6 +16,9 @@ function showDecl(decl: CoreDecl): string {
       if (decl.target.kind === "JsGlobal") {
         return `import js.global(${JSON.stringify(decl.target.path)})`;
       }
+      if (decl.target.kind === "JsMeta") {
+        return "import js.meta";
+      }
       if (decl.target.kind === "JsModule") {
         return `import js.module(${JSON.stringify(decl.target.specifier)})`;
       }
@@ -52,6 +55,12 @@ function showCtor(ctor: { id?: number; name: string }): string {
 }
 
 function showType(type: TypeExpr): string {
+  const functionDomain = (params: TypeExpr[]): string => {
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${params.map(showType).join(", ")})`;
+    const rendered = showType(params[0]);
+    return params[0].kind === "TFn" ? `(${rendered})` : rendered;
+  };
   switch (type.kind) {
     case "TName":
       return type.args.length ? `${type.name}<${type.args.map(showType).join(", ")}>` : type.name;
@@ -60,7 +69,7 @@ function showType(type: TypeExpr): string {
     case "TTuple":
       return `(${type.items.map(showType).join(", ")})`;
     case "TFn":
-      return `(${type.params.map(showType).join(", ")}) => ${showType(type.result)}`;
+      return `${functionDomain(type.params)} -> ${showType(type.result)}`;
   }
 }
 
@@ -75,6 +84,10 @@ function showExpr(expr: CoreExpr): string {
       return String(expr.value);
     case "CoreVoid":
       return "void";
+    case "CoreShaderRef":
+      return expr.environment
+        ? `shader-ref(${expr.artifactId}, ${showExpr(expr.environment)})`
+        : `shader-ref(${expr.artifactId})`;
     case "CoreVar":
       return showCtorRef(expr.name, expr.ctorId);
     case "CoreTuple":

@@ -1,10 +1,12 @@
-import type { Expr, Param } from "../ast.ts";
-import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import type { Decl, Expr, Param } from "../ast.ts";
+import { diagnosticError, warningDiagnostic } from "../diagnostics.ts";
 import {
+  cloneTypeEnv,
   type Env,
   fn,
   fresh,
   instantiate,
+  knownTypeIds,
   named,
   prune,
   quoteType,
@@ -13,9 +15,11 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
+  typeInfoByName,
 } from "../types.ts";
 import { isDecl } from "./ast_utils.ts";
-import { inferDecl } from "./decl.ts";
+import { deriveInferContext, type InferContext } from "./context.ts";
+import { inferDecl, predeclareTypeGroup } from "./decl.ts";
 import { assertEqualityType } from "./equality.ts";
 import { checkExhaustive, mentionsLocalType } from "./exhaustiveness.ts";
 import { warnRedundantMatchArms } from "./decl_helpers.ts";
@@ -27,76 +31,129 @@ import {
   sourceForTypedExpr,
   tupleSource,
   type TypeProvenance,
+  type TypeSource,
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
+import { carrierContext, type CarrierPeel, peelCarrier, rewrapCarrier } from "./carriers.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
-import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_facts.ts";
+import {
+  recordConsumedFfiUse,
+  recordExpectedExprType,
+  recordExprFact,
+  recordPrimitiveCarrierFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function inferMatch(
   expr: Extract<Expr, { kind: "Match" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
-  const valueType = inferExpr(
-    expr.value,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const { env, typeEnv, strEnv, adts, facts, warnings, diagnostics, provenance } = context;
+  const valueType = inferExpr(expr.value, context);
   recordConsumedFfiUse(facts, valueType, {
     kind: "match",
     message:
       "cannot match unresolved JS FFI result before FFI reflection resolves the member access",
   });
   const result = fresh();
+  const previousArmSources: TypeSource[] = [];
   for (const arm of expr.arms) {
     const local = new Map(env);
-    inferPattern(arm.pattern, valueType, local, typeEnv, adts, new Set(), facts);
-    const armType = inferExpr(
-      arm.body,
+    inferPattern(
+      arm.pattern,
+      valueType,
       local,
       typeEnv,
+      strEnv,
       adts,
-      types,
+      new Set(),
       facts,
-      warnings,
-      diagnostics,
       provenance,
     );
-    constrainAt(
-      result,
-      armType,
-      arm.body,
-      undefined,
-      [],
-      provenance,
-      {
-        message: "match arm result",
-        node: arm.body.node,
-        span: arm.body.node?.span,
-      },
-      {
-        premise: {
-          rule: "InferMatch.ArmsSameType",
-          role: "match arm result agrees with previous arms",
-          subject: "match arm result",
-          leftRole: "match result",
-          rightRole: "arm result",
+    recordExpectedExprType(facts, arm.body, result);
+    const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
+    const armSource = sourceForTypedExpr(arm.body, armType, provenance, "match arm result");
+    const participant: TypeSource = {
+      ...sourceForTypedExpr(arm.body, armType, provenance, "earlier match arm"),
+      type: snapshotType(armType),
+      derivedFrom: undefined,
+    };
+    try {
+      constrainAt(
+        result,
+        armType,
+        arm.body,
+        undefined,
+        [],
+        provenance,
+        {
+          message: "match arm result",
+          node: arm.body.node,
+          span: arm.body.node?.span,
         },
-      },
-    );
+        {
+          premise: {
+            code: "type.match-arm-results-disagree",
+            rule: "InferMatch.ArmsSameType",
+            role: "match arm result agrees with previous arms",
+            subject: "match arm result",
+            leftRole: "match result",
+            rightRole: "arm result",
+          },
+          sources: {
+            left: {
+              origin: {
+                message: "match result established by previous arms",
+                node: expr.node,
+                span: expr.node?.span,
+              },
+              type: result,
+              provenance,
+              related: previousArmSources,
+            },
+            right: armSource,
+          },
+        },
+      );
+    } catch (error) {
+      if (!context.recover || !isEmptyBlock(arm.body)) throw error;
+      const diagnostic = diagnosticError(error, arm.body.node).diagnostic;
+      if (diagnostic.code !== "type.match-arm-results-disagree") throw error;
+      diagnostics.push(diagnostic);
+      const emptyBlock = arm.body;
+      const anchor = Math.max(
+        emptyBlock.node?.span.start ?? 0,
+        (emptyBlock.node?.span.end ?? 1) - 1,
+      );
+      const point = {
+        line: emptyBlock.result.node?.span.line ?? emptyBlock.node?.span.line ?? 1,
+        col: emptyBlock.result.node?.span.col ?? emptyBlock.node?.span.col ?? 0,
+        start: anchor,
+        end: anchor,
+      };
+      const recoveryHole = {
+        id: emptyBlock.result.node?.id ?? emptyBlock.node?.id ?? -1,
+        anchor,
+        diagnosticCode: diagnostic.code,
+      };
+      const synthetic: Expr = {
+        kind: "Panic",
+        hole: true,
+        recoveryHole,
+        message: {
+          kind: "String",
+          value: "inferred recovery hole",
+          node: { id: recoveryHole.id, span: point },
+        },
+        node: { id: recoveryHole.id, span: point },
+      };
+      arm.body = synthetic;
+      recordExpectedExprType(facts, synthetic, result);
+      const holeType = inferExpr(synthetic, deriveInferContext(context, { env: local }));
+      constrainAt(result, holeType, synthetic, undefined, [], provenance);
+    }
+    previousArmSources.push(participant);
   }
   const armPatterns = expr.arms.map((arm) => arm.pattern);
   warnRedundantMatchArms(armPatterns, valueType, typeEnv, adts, warnings, diagnostics);
@@ -108,58 +165,92 @@ export function inferMatch(
   return result;
 }
 
+function isEmptyBlock(expr: Expr): expr is Extract<Expr, { kind: "Block" }> {
+  return expr.kind === "Block" && expr.items.length === 0 && expr.result.kind === "Void" &&
+    expr.result.implicitStatement === undefined;
+}
+
+function snapshotType(type: Ty, variables = new Map<number, Ty>()): Ty {
+  const resolved = prune(type);
+  switch (resolved.tag) {
+    case "var": {
+      const existing = variables.get(resolved.id);
+      if (existing) return existing;
+      const variable: Ty = { tag: "var", id: resolved.id, name: resolved.name };
+      variables.set(resolved.id, variable);
+      return variable;
+    }
+    case "prim":
+      return resolved;
+    case "ffi":
+      return {
+        ...resolved,
+        receiver: resolved.receiver ? snapshotType(resolved.receiver, variables) : undefined,
+        args: resolved.args.map((arg) => snapshotType(arg, variables)),
+        instance: resolved.instance ? snapshotType(resolved.instance, variables) : undefined,
+        constraints: resolved.constraints?.map((item) => snapshotType(item, variables)),
+      };
+    case "fn":
+      return {
+        tag: "fn",
+        params: resolved.params.map((param) => snapshotType(param, variables)),
+        result: snapshotType(resolved.result, variables),
+      };
+    case "tuple":
+      return { tag: "tuple", items: resolved.items.map((item) => snapshotType(item, variables)) };
+    case "struct":
+      return {
+        tag: "struct",
+        fields: resolved.fields.map((field) => ({
+          name: field.name,
+          type: snapshotType(field.type, variables),
+        })),
+      };
+    case "named":
+      return {
+        ...resolved,
+        args: resolved.args.map((arg) => snapshotType(arg, variables)),
+        recordFields: resolved.recordFields?.map((field) => ({
+          name: field.name,
+          type: snapshotType(field.type, variables),
+        })),
+      };
+  }
+}
+
 export function inferBlock(
   expr: Extract<Expr, { kind: "Block" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
+  const { env, typeEnv } = context;
   const local = new Map(env);
-  const localTypes = new Map(typeEnv);
-  const outerTypeIds = new Set([...typeEnv.values()].map((info) => info.id));
-  expr.items.forEach((s) =>
-    isDecl(s)
-      ? inferDecl(
-        s,
-        local,
-        new Map(),
-        localTypes,
-        new Map(),
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        new Set([...localTypes.values()].map((info) => info.id)),
-        provenance,
-      )
-      : inferExpr(
-        s,
-        local,
-        localTypes,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      )
-  );
+  const localTypes = cloneTypeEnv(typeEnv);
+  const outerTypeIds = knownTypeIds(typeEnv);
+  const localContext = deriveInferContext(context, { env: local, typeEnv: localTypes });
+  const predeclaredGroups = new Set<number>();
+  expr.items.forEach((s) => {
+    if (!isDecl(s)) {
+      inferExpr(s, localContext);
+      return;
+    }
+    if (
+      s.kind === "TypeDecl" && s.mutualGroup !== undefined &&
+      !predeclaredGroups.has(s.mutualGroup)
+    ) {
+      const group = expr.items.filter((
+        candidate,
+      ): candidate is Extract<Decl, { kind: "TypeDecl" }> =>
+        isDecl(candidate) && candidate.kind === "TypeDecl" &&
+        candidate.mutualGroup === s.mutualGroup
+      );
+      predeclareTypeGroup(group, localContext);
+      predeclaredGroups.add(s.mutualGroup);
+    }
+    inferDecl(s, localContext, new Map(), new Map(), knownTypeIds(localTypes), false);
+  });
   const result = inferExpr(
     expr.result,
-    local,
-    localTypes,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
+    deriveInferContext(context, { env: local, typeEnv: localTypes }),
   );
   if (mentionsLocalType(result, outerTypeIds)) throw new Error("local type escapes scope");
   return result;
@@ -167,40 +258,23 @@ export function inferBlock(
 
 export function inferBinary(
   expr: Extract<Expr, { kind: "Binary" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
+  const { typeEnv, adts, facts, provenance } = context;
   const result = fresh();
-  const op: Scheme | undefined = env.get(expr.op);
+  const op: Scheme | undefined = context.operators.get(expr.op);
   if (!op) throw new Error(`unknown operator ${expr.op}`);
-  const left = inferExpr(
-    expr.left,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
-  const right = inferExpr(
-    expr.right,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const operatorType = instantiate(op);
+  const operatorFn = prune(operatorType);
+  if (operatorFn.tag === "fn" && operatorFn.params.length === 1) {
+    const operands = prune(operatorFn.params[0]);
+    if (operands.tag === "tuple" && operands.items.length === 2) {
+      recordExpectedExprType(facts, expr.left, operands.items[0]);
+      recordExpectedExprType(facts, expr.right, operands.items[1]);
+    }
+  }
+  const left = inferExpr(expr.left, context);
+  const right = inferExpr(expr.right, context);
   recordConsumedFfiUse(facts, left, {
     kind: "operator",
     message:
@@ -213,15 +287,31 @@ export function inferBinary(
   });
   rejectEscapedUnresolvedFfi(expr.left, left, typeEnv);
   rejectEscapedUnresolvedFfi(expr.right, right, typeEnv);
+  const leftCarrier = peelCarrier(left, typeEnv);
+  const rightCarrier = peelCarrier(right, typeEnv);
+  const leftOperand = leftCarrier?.payload ?? left;
+  const rightOperand = rightCarrier?.payload ?? right;
+  const dialectResult = context.dialect.inferBinary?.(
+    expr,
+    leftOperand,
+    rightOperand,
+    context,
+  );
+  if (dialectResult) {
+    return wrapBinaryCarrierResult(
+      expr,
+      dialectResult,
+      leftCarrier,
+      rightCarrier,
+      typeEnv,
+      facts,
+      provenance,
+    );
+  }
   if (expr.op === "++") {
     rejectUnresolvedFfiResultOperand(expr.left, left, typeEnv);
     rejectUnresolvedFfiResultOperand(expr.right, right, typeEnv);
   }
-  const operatorType = instantiate(op);
-  const leftCarrier = resultParts(left, typeEnv);
-  const rightCarrier = resultParts(right, typeEnv);
-  const leftOperand = leftCarrier?.value ?? left;
-  const rightOperand = rightCarrier?.value ?? right;
   const actual = fn([tuple([leftOperand, rightOperand])], result);
   constrainAt(
     operatorType,
@@ -260,35 +350,120 @@ export function inferBinary(
     },
   );
   if (expr.op === "==" || expr.op === "!=") assertEqualityType(leftOperand, typeEnv, adts);
+  return wrapBinaryCarrierResult(
+    expr,
+    result,
+    leftCarrier,
+    rightCarrier,
+    typeEnv,
+    facts,
+    provenance,
+  );
+}
+
+function wrapBinaryCarrierResult(
+  expr: Extract<Expr, { kind: "Binary" }>,
+  result: Ty,
+  leftCarrier: CarrierPeel | undefined,
+  rightCarrier: CarrierPeel | undefined,
+  typeEnv: TypeEnv,
+  facts: TypeFacts,
+  provenance: TypeProvenance,
+): Ty {
   if (!leftCarrier && !rightCarrier) return result;
   if (leftCarrier && rightCarrier) {
+    if (leftCarrier.info.id !== rightCarrier.info.id) {
+      throw diagnosticError(
+        new Error(
+          `operator ${expr.op} mixes carriers ${leftCarrier.info.name} and ${rightCarrier.info.name}; a lifted operator peels one carrier, so unwrap the outer one first`,
+        ),
+        expr.node,
+      );
+    }
+    constrainCarrierContext(expr, leftCarrier, rightCarrier, provenance);
+  }
+  const carrier = leftCarrier ?? rightCarrier;
+  if (!carrier) return result;
+  if (carrier.registration.payloadIndex === undefined) {
+    // A monomorphic carrier has no payload argument to replace, so the operator
+    // has to answer in the payload type the carrier declared.
     constrainAt(
-      leftCarrier.error,
-      rightCarrier.error,
+      result,
+      carrier.registration.payloadType!,
       expr,
       undefined,
       [],
       provenance,
       {
-        message: "Result operator error carrier",
+        message: `${carrier.info.name} carrier payload`,
+        node: expr.node,
+        span: expr.node?.span,
+        primary: true,
+      },
+      {
+        premise: {
+          rule: "InferBinary.CarrierPayload",
+          role: `operator answers in ${carrier.info.name}'s payload type`,
+          subject: `operator ${expr.op}`,
+          leftRole: "operator result",
+          rightRole: "carrier payload",
+        },
+        sources: {
+          right: {
+            origin: {
+              message:
+                `${carrier.info.name} carries ${quoteType(carrier.registration.payloadType!)}`,
+            },
+          },
+        },
+      },
+    );
+  }
+  recordPrimitiveCarrierFact(facts, {
+    carrier: carrier.info.name,
+    occurrence: expr,
+    error: carrierContext(carrier)[0] ?? result,
+    operands: [leftCarrier ? "wrapped" : "pure", rightCarrier ? "wrapped" : "pure"],
+    payloadResult: result,
+  });
+  return rewrapCarrier(carrier, result);
+}
+
+/** Unify every carrier argument that is not the payload, such as `Result`'s error. */
+function constrainCarrierContext(
+  expr: Expr,
+  left: CarrierPeel,
+  right: CarrierPeel,
+  provenance: TypeProvenance,
+): void {
+  const leftContext = carrierContext(left);
+  const rightContext = carrierContext(right);
+  leftContext.forEach((item, index) => {
+    const other = rightContext[index];
+    if (!other) return;
+    constrainAt(
+      item,
+      other,
+      expr,
+      undefined,
+      [],
+      provenance,
+      {
+        message: `${left.info.name} operator carrier argument`,
         node: expr.node,
         span: expr.node?.span,
       },
       {
         premise: {
-          rule: "InferBinary.ResultCarrierError",
-          role: "Result operator operands use the same error type",
-          subject: `operator ${expr.op}`,
-          leftRole: "left error",
-          rightRole: "right error",
+          rule: "InferBinary.CarrierArgument",
+          role: `${left.info.name} operator operands agree outside the payload`,
+          subject: `operator ${(expr as Extract<Expr, { kind: "Binary" }>).op}`,
+          leftRole: "left argument",
+          rightRole: "right argument",
         },
       },
     );
-  }
-  const carrier = leftCarrier ?? rightCarrier;
-  const resultInfo = typeEnv.get("Result");
-  if (!carrier || !resultInfo) return result;
-  return named(resultInfo, [result, carrier.error]);
+  });
 }
 
 function binaryContext(
@@ -339,7 +514,7 @@ function resultValueType(type: Ty, typeEnv: TypeEnv): Ty | undefined {
 
 function resultParts(type: Ty, typeEnv: TypeEnv): { value: Ty; error: Ty } | undefined {
   const resolved = prune(type);
-  const result = typeEnv.get("Result");
+  const result = typeInfoByName(typeEnv, "Result");
   if (!result || resolved.tag !== "named" || resolved.id !== result.id) return undefined;
   return { value: resolved.args[0], error: resolved.args[1] };
 }
@@ -359,36 +534,32 @@ export function inferParam(
   param: Param,
   env: Env,
   typeEnv: TypeEnv,
+  strEnv: import("./environment.ts").StrEnv,
   adts: Map<number, TypeDeclInfo>,
   binders: Set<string>,
   facts: TypeFacts,
+  provenance: TypeProvenance,
 ): Ty {
   const expected = fresh();
-  return inferPattern(param.pattern, expected, env, typeEnv, adts, binders, facts);
+  return inferPattern(
+    param.pattern,
+    expected,
+    env,
+    typeEnv,
+    strEnv,
+    adts,
+    binders,
+    facts,
+    provenance,
+  );
 }
 
 export function inferPipe(
   expr: Extract<Expr, { kind: "Pipe" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
-  const leftType = inferExpr(
-    expr.left,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const { facts, provenance } = context;
+  const leftType = inferExpr(expr.left, context);
   recordConsumedFfiUse(facts, leftType, {
     kind: "pipe",
     message:
@@ -396,21 +567,39 @@ export function inferPipe(
   });
   const right = expr.right;
 
-  if (right.kind === "Call") {
-    const calleeType = inferExpr(
-      right.callee,
-      env,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
+  if (right.kind === "Call" && isComputedPipeCall(right)) {
+    const calleeType = inferExpr(right, context);
+    const result = constrainPipe(
+      expr,
+      calleeType,
+      leftType,
       provenance,
+      right,
+      [expr.left],
+      [leftType],
     );
-    const argTypes = right.args.map((a) =>
-      inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
-    );
+    recordExprFact(facts, right, {
+      subject: "expr",
+      instantiated: fn([leftType], result),
+    });
+    return result;
+  }
+
+  if (right.kind === "Call") {
+    const calleeType = inferExpr(right.callee, context);
+    const expectedInput = prune(calleeType);
+    if (expectedInput.tag === "fn" && expectedInput.params.length === 1) {
+      const expectedArgs = prune(expectedInput.params[0]);
+      if (
+        expectedArgs.tag === "tuple" &&
+        expectedArgs.items.length === right.args.length + 1
+      ) {
+        right.args.forEach((arg, index) =>
+          recordExpectedExprType(facts, arg, expectedArgs.items[index + 1])
+        );
+      }
+    }
+    const argTypes = right.args.map((a) => inferExpr(a, context));
     const allArgs = [leftType, ...argTypes];
     const argType = callArg(allArgs);
     const result = constrainPipe(
@@ -429,17 +618,7 @@ export function inferPipe(
     return result;
   }
 
-  const calleeType = inferExpr(
-    right,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const calleeType = inferExpr(right, context);
   const result = constrainPipe(
     expr,
     calleeType,
@@ -454,6 +633,10 @@ export function inferPipe(
     instantiated: fn([leftType], result),
   });
   return result;
+}
+
+function isComputedPipeCall(expr: Extract<Expr, { kind: "Call" }>): boolean {
+  return expr.args.length > 0 && expr.callee.kind === "Call";
 }
 
 function constrainPipe(
@@ -485,6 +668,7 @@ function constrainPipe(
     },
     {
       premise: {
+        code: "type.pipe-input-mismatch",
         rule: "InferPipe.StepInput",
         role: "pipe output matches next function input",
         subject: callee.kind === "Var" ? callee.name : "pipe",

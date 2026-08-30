@@ -8,6 +8,7 @@ import {
   jsGlobalMemberValueRef,
   jsGlobalNamespaceRef,
   jsGlobalRootNamespaceRef,
+  jsGlobalTargetInfo,
   jsGlobalTypeRef,
   jsGlobalValueMember,
   jsGlobalValueRef,
@@ -27,8 +28,13 @@ export function collectFfiDecl(
   importedTypeRefs: Map<string, JsTypeRef>,
   decl: Extract<Decl, { kind: "JsImportDecl" }>,
 ) {
+  assertReflectedGlobalTarget(decl);
   if (decl.typeOnly) {
     collectFfiTypeDecl(importedTypeRefs, decl);
+    return;
+  }
+  if (decl.target.kind === "JsMeta") {
+    collectMetaFfiDecl(bindings, decl);
     return;
   }
   if (decl.target.kind === "JsWorker") {
@@ -120,6 +126,79 @@ export function collectFfiDecl(
       spec.node,
     );
   }
+}
+
+function assertReflectedGlobalTarget(
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+): void {
+  if (decl.target.kind !== "JsGlobal") return;
+  const needsReflection = decl.clause.kind === "Namespace" ||
+    decl.typeOnly ||
+    decl.clause.specs.some((spec) =>
+      !spec.type || (spec.type.kind === "TVar" && spec.type.name === "_deep_")
+    );
+  if (!needsReflection) return;
+  const info = jsGlobalTargetInfo(decl.target.path);
+  if (info.exists) return;
+  const suggestion = info.suggestion
+    ? `; JavaScript global names are case-sensitive; did you mean "${info.suggestion}"?`
+    : "";
+  throw diagnosticError(
+    new Error(`cannot resolve JS global "${decl.target.path}"${suggestion}`),
+    decl.target.node ?? decl.node,
+    "ffi.unknown-global",
+  );
+}
+
+function collectMetaFfiDecl(
+  bindings: Map<string, FfiBinding>,
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+) {
+  const members = metaMembers();
+  if (decl.clause.kind === "Namespace") {
+    for (const member of members) {
+      addVariants(
+        bindings,
+        `${decl.clause.alias}.${member.name}`,
+        member.name,
+        decl.target,
+        memberVariants(member),
+        false,
+        decl.node,
+      );
+    }
+    return;
+  }
+  for (const spec of decl.clause.specs) {
+    const member = members.find((item) => item.name === spec.name) ??
+      (spec.type ? { name: spec.name, type: spec.type } : undefined);
+    if (!member) continue;
+    const localName = spec.alias ?? spec.name;
+    const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
+    addVariants(
+      bindings,
+      surfaceName,
+      spec.name,
+      decl.target,
+      memberVariants(spec.type ? { ...member, type: spec.type } : member),
+      false,
+      spec.node,
+    );
+  }
+}
+
+function metaMembers(): JsMemberType[] {
+  const string: TypeExpr = { kind: "TName", name: "String", args: [] };
+  return [
+    { name: "url", type: string },
+    { name: "filename", type: { kind: "TName", name: "Option", args: [string] } },
+    { name: "dirname", type: { kind: "TName", name: "Option", args: [string] } },
+    { name: "main", type: { kind: "TName", name: "Bool", args: [] } },
+    {
+      name: "resolve",
+      type: { kind: "TFn", params: [string], result: string },
+    },
+  ];
 }
 
 function collectWorkerFfiDecl(
@@ -304,6 +383,7 @@ export function generatedJsImports(
           .map((variant) => ({
             name: variant.memberName,
             alias: variant.internalName,
+            sourceName: `${decl.clause.alias}.${variant.memberName}`,
             type: variant.type,
             fallible: variant.fallible,
             node: variant.node,
@@ -373,6 +453,7 @@ export function generatedJsImports(
           ...spec,
           name: variant.memberName,
           alias: variant.internalName,
+          sourceName: spec.sourceName ?? spec.alias ?? spec.name,
           type: variant.type,
           fallible: variant.fallible,
         })),
@@ -382,14 +463,38 @@ export function generatedJsImports(
   });
 }
 
-export function generatedTypeAliases(importedTypeRefs: Map<string, JsTypeRef>): Decl[] {
+export function generatedTypeAliases(
+  importedTypeRefs: Map<string, JsTypeRef>,
+  sourceDeclarations: readonly Decl[] = [],
+): Decl[] {
   return [...importedTypeRefs]
     .filter(([typeName]) => isForeignTypeDeclName(typeName))
-    .map(([typeName, ref]) => ({
-      kind: "ForeignTypeDecl" as const,
-      name: typeName,
-      foreignKey: ref.key,
-    }));
+    .map(([typeName, ref]) => {
+      const source = sourceForeignTypeSpec(sourceDeclarations, typeName);
+      return {
+        kind: "ForeignTypeDecl" as const,
+        name: typeName,
+        foreignKey: ref.key,
+        node: source?.node,
+      };
+    });
+}
+
+function sourceForeignTypeSpec(
+  declarations: readonly Decl[],
+  localName: string,
+): JsImportSpec | undefined {
+  for (const declaration of declarations) {
+    if (
+      declaration.kind !== "JsImportDecl" || !declaration.typeOnly ||
+      declaration.clause.kind !== "Named"
+    ) continue;
+    const spec = declaration.clause.specs.find((candidate) =>
+      (candidate.alias ?? candidate.name) === localName
+    );
+    if (spec) return spec;
+  }
+  return undefined;
 }
 
 export function isForeignTypeDeclName(name: string): boolean {
@@ -402,12 +507,17 @@ function namedJsImportDecl(
   node: Extract<Decl, { kind: "JsImportDecl" }>["clause"]["node"],
   options: { preserveAlias?: boolean } = {},
 ): Extract<Decl, { kind: "JsImportDecl" }> {
+  const preserveAlias = options.preserveAlias && decl.clause.kind === "Named";
   return {
     ...decl,
+    sourceClause: decl.sourceClause ??
+      (!preserveAlias && decl.clause.kind === "Named" && decl.clause.alias
+        ? decl.clause
+        : undefined),
     clause: {
       kind: "Named",
       specs,
-      alias: options.preserveAlias && decl.clause.kind === "Named" ? decl.clause.alias : undefined,
+      alias: preserveAlias ? decl.clause.alias : undefined,
       unsafe: decl.clause.unsafe,
       node,
     },
@@ -417,6 +527,7 @@ function namedJsImportDecl(
 function jsTargetMembers(target: JsTarget) {
   if (target.kind === "JsGlobalRoot") return [];
   if (target.kind === "JsGlobal") return jsGlobalMembers(target.path);
+  if (target.kind === "JsMeta") return metaMembers();
   if (target.kind === "JsModule") return jsModuleMembers(target.specifier);
   if (target.kind === "JsWorker") return workerMembers();
   return [];
@@ -438,6 +549,7 @@ function jsTargetNamespaceRef(target: JsTarget): JsTypeRef | undefined {
 function jsTargetMember(target: JsTarget, name: string): JsMemberType | undefined {
   if (target.kind === "JsGlobalRoot") return undefined;
   if (target.kind === "JsGlobal") return jsGlobalMember(target.path, name);
+  if (target.kind === "JsMeta") return metaMembers().find((member) => member.name === name);
   if (target.kind === "JsModule") return jsModuleMember(target.specifier, name);
   if (target.kind === "JsWorker") return workerMembers().find((member) => member.name === name);
   return undefined;

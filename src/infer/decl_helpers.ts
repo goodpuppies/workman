@@ -1,4 +1,5 @@
 import type { Decl, Expr, Pattern, TypeExpr } from "../ast.ts";
+import { pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import type { Ty, TypeDeclInfo, TypeEnv } from "../types.ts";
 import { isVectorExhaustive } from "./exhaustiveness.ts";
@@ -33,8 +34,11 @@ export function hasUnguardedRecursiveRef(
   guarded = false,
 ): boolean {
   switch (expr.kind) {
-    case "Var":
-      return !guarded && names.has(expr.name.split(".")[0]);
+    case "Var": {
+      // A qualified reference is recursive only through its leading identifier.
+      const path = pathOf(expr);
+      return !guarded && names.has(path.qualifiers[0] ?? path.id);
+    }
     case "Tuple":
       return expr.items.some((item) => hasUnguardedRecursiveRef(item, names, guarded));
     case "Record":
@@ -66,6 +70,8 @@ export function hasUnguardedRecursiveRef(
       return hasUnguardedRecursiveRef(expr.message, names, guarded);
     case "Block":
       return hasUnguardedRecursiveBlockRef(expr, names, guarded);
+    case "Ascribed":
+      return hasUnguardedRecursiveRef(expr.value, names, guarded);
     case "Binary":
       return hasUnguardedRecursiveRef(expr.left, names, guarded) ||
         hasUnguardedRecursiveRef(expr.right, names, guarded);
@@ -134,6 +140,8 @@ function patternBindingNames(pattern: Pattern): string[] {
       return pattern.fields.flatMap((field) => patternBindingNames(field.pattern));
     case "PCtor":
       return pattern.args.flatMap(patternBindingNames);
+    case "PAscribed":
+      return patternBindingNames(pattern.pattern);
     default:
       return [];
   }

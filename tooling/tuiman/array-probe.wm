@@ -1,0 +1,33 @@
+from js.module("node:buffer") import { Buffer };
+
+let main = () => {
+  match(Buffer.alloc(4)) {
+    Err(_) => { print("f") },
+    Ok(dest) => {
+      match(Buffer.from("ab")) {
+        Err(_) => { print("f") },
+        Ok(a) => {
+          match(Buffer.from("cd")) {
+            Err(_) => { print("f") },
+            Ok(b) => {
+              match(a :> .copy(dest, 0)) {
+                Err(_) => { print("copy a fail") },
+                Ok(n) => {
+                  match(b :> .copy(dest, 2)) {
+                    Err(_) => { print("copy b fail") },
+                    Ok(m) => {
+                      match(dest :> .toString("utf8")) {
+                        Err(_) => { print("str fail") },
+                        Ok(s) => { print("ok=" ++ s ++ " n=" ++ Text.of(n) ++ " m=" ++ Text.of(m)) },
+                      }
+                    },
+                  }
+                },
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+};

@@ -1,6 +1,9 @@
-import { dirname, normalize, resolve } from "node:path";
+import { normalize, resolve } from "node:path";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
-import { loadModuleGraph } from "../module_graph.ts";
+import { runtime } from "../io.ts";
+import { resolveModuleImportPath } from "../module_graph.ts";
+import { ReverseImportDiscoveryIndex } from "../project_context.ts";
+import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./import_scan.ts";
 import { fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type InitializeParams = {
@@ -10,9 +13,11 @@ export type InitializeParams = {
 };
 
 export class ProjectIndex {
+  readonly discovery = new ReverseImportDiscoveryIndex();
   #roots = new Set<string>();
   #dependencies = new Map<string, Set<string>>();
-  #dependents = new Map<string, Set<string>>();
+  #contexts = new Map<string, Set<string>>();
+  #documentContexts = new Map<string, string>();
 
   rememberWorkspaceRoots(params: InitializeParams | undefined) {
     if (!params) return;
@@ -29,12 +34,10 @@ export class ProjectIndex {
   async initialize(
     sourceOverrides: Map<string, string>,
     options: CompilerFrontendOptions = {},
-  ) {
-    for (const root of this.#roots) {
-      for await (const path of walkWmFiles(root)) {
-        await this.refreshFile(path, sourceOverrides, options);
-      }
-    }
+  ): Promise<number> {
+    const paths = new Set((await Promise.all([...this.#roots].map(collectWmFiles))).flat());
+    await Promise.all([...paths].map((path) => this.refreshFile(path, sourceOverrides, options)));
+    return paths.size;
   }
 
   async affectedUrisForChange(
@@ -43,8 +46,11 @@ export class ProjectIndex {
     options: CompilerFrontendOptions = {},
   ): Promise<string[]> {
     const path = uriPath(uri);
+    const previous = cloneContexts(this.#contexts);
     await this.refreshFile(path, sourceOverrides, options);
-    return this.#affectedUris(path);
+    this.#ensureDocumentContext(path);
+    this.#recomputeContexts();
+    return affectedContextUris([path], previous, this.#contexts);
   }
 
   async affectedUrisForWatchedFiles(
@@ -53,16 +59,28 @@ export class ProjectIndex {
     options: CompilerFrontendOptions = {},
   ): Promise<string[]> {
     const changed = uris.map(uriPath);
+    const previous = cloneContexts(this.#contexts);
     for (const path of changed) await this.refreshFile(path, sourceOverrides, options);
-    const affected = new Set<string>();
-    for (const path of changed) {
-      for (const uri of this.#affectedUris(path)) affected.add(uri);
-    }
-    return [...affected].sort();
+    this.#recomputeContexts();
+    return affectedContextUris(changed, previous, this.#contexts);
   }
 
   fallbackUri(uri: string): string {
-    return pathToFileUri(uriPath(uri));
+    const path = uriPath(uri);
+    return pathToFileUri(this.#documentContexts.get(path) ?? path);
+  }
+
+  forgetOpenFile(uri: string): void {
+    const path = uriPath(uri);
+    const context = this.#documentContexts.get(path);
+    this.#documentContexts.delete(path);
+    if (!context) return;
+    const affected = [...this.#documentContexts]
+      .filter(([, selected]) => selected === context)
+      .map(([document]) => document);
+    for (const document of affected) this.#documentContexts.delete(document);
+    this.#contexts.delete(context);
+    for (const document of affected) this.#ensureDocumentContext(document);
   }
 
   async refreshFile(
@@ -71,68 +89,129 @@ export class ProjectIndex {
     options: CompilerFrontendOptions = {},
   ) {
     const normalized = normalize(resolve(path));
-    const previousDeps = this.#dependencies.get(normalized) ?? new Set<string>();
-    for (const dep of previousDeps) this.#dependents.get(dep)?.delete(normalized);
-
-    const deps = await directDependencies(normalized, sourceOverrides, options);
-    this.#dependencies.set(normalized, deps);
-    for (const dep of deps) {
-      const parents = this.#dependents.get(dep) ?? new Set<string>();
-      parents.add(normalized);
-      this.#dependents.set(dep, parents);
+    const discovery = await directDiscovery(normalized, sourceOverrides, options);
+    if (discovery.source === undefined) {
+      this.discovery.remove(normalized);
+    } else {
+      await this.discovery.update(
+        normalized,
+        discovery.source,
+        async (referrer, specifier) => {
+          try {
+            return await resolveModuleImportPath(referrer, specifier, {
+              ...options,
+              sourceOverrides,
+            });
+          } catch {
+            return undefined;
+          }
+        },
+      );
     }
+    this.#dependencies.set(normalized, discovery.dependencies);
   }
 
-  #affectedUris(path: string): string[] {
-    const start = normalize(resolve(path));
-    const affected = new Set<string>([start]);
-    const work = [start];
-    while (work.length > 0) {
-      const current = work.pop()!;
-      for (const parent of this.#dependents.get(current) ?? []) {
-        if (affected.has(parent)) continue;
-        affected.add(parent);
-        work.push(parent);
+  #ensureDocumentContext(path: string): void {
+    const file = normalize(resolve(path));
+    const existing = this.#documentContexts.get(file);
+    if (existing && this.#contexts.get(existing)?.has(file)) return;
+    const covering = [...this.#contexts].find(([, paths]) => paths.has(file));
+    if (covering) {
+      this.#documentContexts.set(file, covering[0]);
+      return;
+    }
+    const root = this.discovery.closestHead(file) ?? file;
+    this.#contexts.set(root, this.#forwardClosure(root));
+    this.#documentContexts.set(file, root);
+  }
+
+  #forwardClosure(root: string): Set<string> {
+    const reachable = new Set([root]);
+    const pending = [root];
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      for (const dependency of this.#dependencies.get(current) ?? []) {
+        if (reachable.has(dependency)) continue;
+        reachable.add(dependency);
+        pending.push(dependency);
       }
     }
-    return [...affected].sort().map(pathToFileUri);
+    return reachable;
+  }
+
+  #recomputeContexts(): void {
+    for (const root of this.#contexts.keys()) {
+      this.#contexts.set(root, this.#forwardClosure(root));
+    }
   }
 }
 
-async function directDependencies(
+async function directDiscovery(
   path: string,
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
-): Promise<Set<string>> {
+): Promise<{ source?: string; dependencies: Set<string>; main: boolean }> {
   try {
-    const graph = await loadModuleGraph(path, { ...options, sourceOverrides });
-    const node = graph.nodes.get(graph.entry);
-    return new Set(node?.imports.map((edge) => edge.path) ?? []);
+    const source = sourceOverrides.get(path) ?? await runtime.readTextFile(path);
+    const dependencies = new Set<string>();
+    for (const specifier of directWorkmanImportSpecifiers(source)) {
+      try {
+        dependencies.add(
+          await resolveModuleImportPath(path, specifier, { ...options, sourceOverrides }),
+        );
+      } catch {
+        // Missing imports are reported by validation; the index remains usable.
+      }
+    }
+    return { source, dependencies, main: hasTopLevelMainBinding(source) };
   } catch {
-    return new Set();
+    return { source: undefined, dependencies: new Set(), main: false };
   }
+}
+
+function cloneContexts(
+  contexts: ReadonlyMap<string, ReadonlySet<string>>,
+): Map<string, Set<string>> {
+  return new Map([...contexts].map(([root, paths]) => [root, new Set(paths)]));
+}
+
+function affectedContextUris(
+  changed: readonly string[],
+  previous: ReadonlyMap<string, ReadonlySet<string>>,
+  current: ReadonlyMap<string, ReadonlySet<string>>,
+): string[] {
+  const roots = new Set([...previous.keys(), ...current.keys()]);
+  return [...roots]
+    .filter((root) =>
+      changed.some((path) => previous.get(root)?.has(path) || current.get(root)?.has(path))
+    )
+    .sort()
+    .map(pathToFileUri);
 }
 
 function uriPath(uri: string): string {
   return normalize(resolve(fileUriToPath(uri)));
 }
 
-async function* walkWmFiles(root: string): AsyncGenerator<string> {
-  let entries: Deno.DirEntry[];
+async function collectWmFiles(root: string): Promise<string[]> {
+  let entries;
   try {
-    entries = [];
-    for await (const entry of Deno.readDir(root)) entries.push(entry);
+    entries = await runtime.readDirectory(root);
   } catch {
-    return;
+    return [];
   }
+  const files: string[] = [];
+  const directories: string[] = [];
   for (const entry of entries) {
     if (entry.name === "node_modules" || entry.name === ".git") continue;
     if (entry.name.startsWith(".") && entry.isDirectory) continue;
     const path = normalize(resolve(root, entry.name));
     if (entry.isDirectory) {
-      yield* walkWmFiles(path);
+      directories.push(path);
     } else if (entry.isFile && path.endsWith(".wm")) {
-      yield path;
+      files.push(path);
     }
   }
+  const descendants = await Promise.all(directories.map(collectWmFiles));
+  return files.concat(...descendants);
 }

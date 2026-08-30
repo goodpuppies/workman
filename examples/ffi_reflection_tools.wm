@@ -4,7 +4,7 @@
 from js.global import unsafe { URL };
 from js.global import type { Request };
 
-export record RequestSummary = {
+record RequestSummary = {
   method: String,
   host: String,
   query: String,
@@ -26,7 +26,7 @@ let orOptionalString = (value, fallback) => {
   }
 };
 
-export let requestSummary = (req: Request) => {
+let requestSummary = (req: Request) => {
   let method = orString(req.method, "?");
   let urlText = orString(req.url, "https://invalid.local/?q=missing");
   let url = URL.new(urlText);

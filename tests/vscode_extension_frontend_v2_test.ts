@@ -1,14 +1,43 @@
 import { assertEquals } from "@std/assert";
-import {
-  compiledServerConfig,
-  denoServerConfig,
-} from "../editors/vscode/src/server_options.ts";
+import { resolve } from "node:path";
+import { denoServerConfig, nodeServerConfig } from "../editors/vscode/src/server_options.ts";
 
-Deno.test("VS Code extension server config passes frontend v2 mode and artifact path", () => {
+const repoRoot = resolve(import.meta.dirname!, "..");
+
+Deno.test("VS Code bracket colors do not split arrow and pipe operators", async () => {
+  const configuration = JSON.parse(
+    await Deno.readTextFile(
+      resolve(repoRoot, "editors/vscode/language-configuration.json"),
+    ),
+  );
+
+  assertEquals(
+    configuration.brackets.some(([open, close]: string[]) => open === "<" && close === ">"),
+    false,
+  );
+  assertEquals(
+    configuration.autoClosingPairs.some(
+      ([open, close]: string[]) => open === "<" && close === ">",
+    ),
+    true,
+  );
+});
+
+Deno.test("VS Code grammar scopes lowercase let bindings as constants", async () => {
+  const grammar = JSON.parse(
+    await Deno.readTextFile(
+      resolve(repoRoot, "editors/vscode/syntaxes/wm.tmLanguage.json"),
+    ),
+  );
+  const binding = grammar.repository.bindings.patterns[0];
+
+  assertEquals(binding.captures["3"].name, "variable.other.constant.workman");
+});
+
+Deno.test("VS Code extension server config passes the generated frontend artifact path", () => {
   const config = denoServerConfig(
     "deno",
     "/repo/src/lsp/server.ts",
-    "v2",
     "tooling/frontend-v2/frontend-v2.generated.mjs",
     "stdio",
     { KEEP: "yes" },
@@ -26,41 +55,39 @@ Deno.test("VS Code extension server config passes frontend v2 mode and artifact 
   assertEquals(config.transport, "stdio");
   assertEquals(config.options.cwd, "/repo");
   assertEquals(config.options.env.KEEP, "yes");
-  assertEquals(config.options.env.WORKMAN_FRONTEND, "v2");
+  assertEquals(config.options.env.WORKMAN_FRONTEND, undefined);
   assertEquals(
     config.options.env.WORKMAN_FRONTEND_V2_MODULE,
-    "/repo/tooling/frontend-v2/frontend-v2.generated.mjs",
+    resolve("/repo", "tooling/frontend-v2/frontend-v2.generated.mjs"),
   );
 });
 
-Deno.test("VS Code extension server config omits frontend v2 artifact env when unset", () => {
+Deno.test("VS Code extension server config omits the generated artifact env when unset", () => {
   const config = denoServerConfig(
     "deno",
     "/repo/src/lsp/server.ts",
-    "v1",
     undefined,
     "stdio",
     {},
     "/repo",
   );
 
-  assertEquals(config.options.env.WORKMAN_FRONTEND, "v1");
+  assertEquals(config.options.env.WORKMAN_FRONTEND, undefined);
   assertEquals(config.options.env.WORKMAN_FRONTEND_V2_MODULE, undefined);
 });
 
 Deno.test("VS Code extension can launch a packaged language server", () => {
-  const config = compiledServerConfig(
-    "/extension/bin/workman-lsp",
-    "v1",
+  const config = nodeServerConfig(
+    "/extension/server/workman-lsp.mjs",
     undefined,
     "stdio",
     { KEEP: "yes" },
     "/workspace",
   );
 
-  assertEquals(config.command, "/extension/bin/workman-lsp");
-  assertEquals(config.args, []);
+  assertEquals(config.module, "/extension/server/workman-lsp.mjs");
+  assertEquals(config.transport, "stdio");
   assertEquals(config.options.cwd, "/workspace");
   assertEquals(config.options.env.KEEP, "yes");
-  assertEquals(config.options.env.WORKMAN_FRONTEND, "v1");
+  assertEquals(config.options.env.WORKMAN_FRONTEND, undefined);
 });

@@ -9,27 +9,27 @@ Deno.test("typechecks AoC-style depth analysis fixture", async () => {
   const result = await checkSource(source);
 
   expectBinding(result.env, "map", {
-    type: "((('a) => 'b, List<'a>)) => List<'b>",
+    type: "('a -> 'b, List<'a>) -> List<'b>",
     vars: 2,
   });
   expectBinding(result.env, "filter", {
-    type: "((('a) => Bool, List<'a>)) => List<'a>",
+    type: "('a -> Bool, List<'a>) -> List<'a>",
     vars: 1,
   });
   expectBinding(result.env, "fold", {
-    type: "(((('a, 'b)) => 'a, 'a, List<'b>)) => 'a",
+    type: "(('a, 'b) -> 'a, 'a, List<'b>) -> 'a",
     vars: 2,
   });
   expectBinding(result.env, "windowSums", {
-    type: "(List<Number>) => List<Number>",
+    type: "List<Number> -> List<Number>",
     vars: 0,
   });
   expectBinding(result.env, "countIncreases", {
-    type: "(List<Number>) => Number",
+    type: "List<Number> -> Number",
     vars: 0,
   });
   expectBinding(result.env, "countWindowIncreases", {
-    type: "(List<Number>) => Number",
+    type: "List<Number> -> Number",
     vars: 0,
   });
   expectBinding(result.env, "sampleDepths", {
@@ -61,7 +61,7 @@ Deno.test("typechecks explicit-cons AoC day 1 example", async () => {
   const result = await checkSource(source);
 
   expectBinding(result.env, "count_window_increases", {
-    type: "(List<Number>) => Number",
+    type: "List<Number> -> Number",
     vars: 0,
   });
 });
@@ -91,15 +91,15 @@ Deno.test("typechecks wmsml overlap for polymorphic list helpers", async () => {
   );
 
   expectBinding(result.env, "map", {
-    type: "((('a) => 'b, list<'a>)) => list<'b>",
+    type: "('a -> 'b, list<'a>) -> list<'b>",
     vars: 2,
   });
   expectBinding(result.env, "fold", {
-    type: "(((('a, 'b)) => 'a, 'a, list<'b>)) => 'a",
+    type: "(('a, 'b) -> 'a, 'a, list<'b>) -> 'a",
     vars: 2,
   });
   expectBinding(result.env, "windowSums", {
-    type: "(list<Number>) => list<Number>",
+    type: "list<Number> -> list<Number>",
     vars: 0,
   });
 });

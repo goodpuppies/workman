@@ -1,0 +1,196 @@
+from "./generated/surface_types.wm" import {
+  SurfaceToken, SurfaceValue, SurfaceNode,
+  AuthoredValue, MarkedValue,
+  ImportDeclarationNode, ImportNamespaceClauseNode, ImportAllClauseNode,
+  ImportNamedClauseNode, ImportSpecificationNode, ImportAliasNode,
+  JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
+  JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
+  JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode,
+  JavaScriptImportClauseNode, JavaScriptNamedClauseNode,
+  JavaScriptImportSpecificationNode
+};
+
+let renderImportToken = (value: SurfaceToken) => { value.text };
+
+let renderImportSurfaceValue = match(value, materializeMarks) => {
+  (AuthoredValue(token), Var(materializeMarks)) => { token.text },
+  (MarkedValue(mark, fallback), true) => { fallback.text },
+  (MarkedValue(mark, fallback), false) => { "" },
+};
+
+let rec renderImportNodes = match(
+  nodes,
+  separator,
+  output,
+  depth,
+  materializeMarks,
+  renderNode,
+) => {
+  ([], Var(separator), Var(output), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(output)
+  },
+  ([node, ..rest], Var(separator), Var(output), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(node, depth, materializeMarks)) {
+      Some(text) => {
+        let next = if (output == "") { text } else { output ++ separator ++ text };
+        renderImportNodes(rest, separator, next, depth, materializeMarks, renderNode)
+      },
+      None => { None },
+    }
+  },
+};
+
+let renderOptionalImportNode = match(value, depth, materializeMarks, renderNode) => {
+  (Some(node), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    renderNode(node, depth, materializeMarks)
+  },
+  (None, Var(depth), Var(materializeMarks), Var(renderNode)) => { Some("") },
+};
+
+let renderImportNode = match(node, depth, materializeMarks, renderNode) => {
+  (ImportDeclarationNode(fromToken, path, importToken, clause, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((renderNode(path, depth, materializeMarks), renderNode(clause, depth, materializeMarks))) {
+      (Some(pathText), Some(clauseText)) => {
+        Some(
+          renderImportToken(fromToken) ++ " " ++ pathText ++ " " ++
+          renderImportToken(importToken) ++ " " ++ clauseText
+        )
+      },
+      _ => { None },
+    }
+  },
+  (ImportNamespaceClauseNode(star, asToken, alias, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(
+      renderImportToken(star) ++ " " ++ renderImportToken(asToken) ++
+      " " ++ renderImportToken(alias)
+    )
+  },
+  (ImportAllClauseNode(star, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(renderImportToken(star))
+  },
+  (ImportNamedClauseNode(open, specifications, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderImportNodes(specifications, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(text) => {
+        if (text == "") {
+          Some(renderImportToken(open) ++ renderImportSurfaceValue(close, materializeMarks))
+        } else {
+          Some(
+            renderImportToken(open) ++ " " ++ text ++ " " ++
+            renderImportSurfaceValue(close, materializeMarks)
+          )
+        }
+      },
+      None => { None },
+    }
+  },
+  (ImportSpecificationNode(name, alias, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderOptionalImportNode(alias, depth, materializeMarks, renderNode)) {
+      Some(aliasText) => {
+        if (aliasText == "") {
+          Some(renderImportToken(name))
+        } else {
+          Some(renderImportToken(name) ++ " " ++ aliasText)
+        }
+      },
+      None => { None },
+    }
+  },
+  (ImportAliasNode(asToken, alias, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(renderImportToken(asToken) ++ " " ++ renderImportToken(alias))
+  },
+  (JavaScriptImportDeclarationNode(
+    fromToken,
+    target,
+    importToken,
+    typeOnly,
+    clause,
+    span,
+  ), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((renderNode(target, depth, materializeMarks), renderNode(clause, depth, materializeMarks))) {
+      (Some(targetText), Some(clauseText)) => {
+        let typeText = match(typeOnly) {
+          Some(token) => { renderImportToken(token) ++ " " },
+          None => { "" },
+        };
+        Some(
+          renderImportToken(fromToken) ++ " " ++ targetText ++ " " ++
+          renderImportToken(importToken) ++ " " ++ typeText ++ clauseText
+        )
+      },
+      _ => { None },
+    }
+  },
+  (JavaScriptGlobalTargetNode(target, open, path, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(
+      renderImportToken(target) ++ renderImportSurfaceValue(open, materializeMarks) ++
+      renderImportToken(path) ++ renderImportSurfaceValue(close, materializeMarks)
+    )
+  },
+  (JavaScriptGlobalRootTargetNode(target, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(renderImportToken(target))
+  },
+  (JavaScriptMetaTargetNode(target, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(renderImportToken(target))
+  },
+  (JavaScriptModuleTargetNode(target, open, specifier, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(
+      renderImportToken(target) ++ renderImportSurfaceValue(open, materializeMarks) ++
+      renderImportToken(specifier) ++ renderImportSurfaceValue(close, materializeMarks)
+    )
+  },
+  (JavaScriptWorkerTargetNode(target, open, specifier, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(
+      renderImportToken(target) ++ renderImportSurfaceValue(open, materializeMarks) ++
+      renderImportToken(specifier) ++ renderImportSurfaceValue(close, materializeMarks)
+    )
+  },
+  (JavaScriptImportClauseNode(unsafeToken, clause, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(clause, depth, materializeMarks)) {
+      Some(clauseText) => {
+        match(unsafeToken) {
+          Some(token) => { Some(renderImportToken(token) ++ " " ++ clauseText) },
+          None => { Some(clauseText) },
+        }
+      },
+      None => { None },
+    }
+  },
+  (JavaScriptNamedClauseNode(open, specifications, close, alias, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((
+      renderImportNodes(specifications, ", ", "", depth, materializeMarks, renderNode),
+      renderOptionalImportNode(alias, depth, materializeMarks, renderNode)
+    )) {
+      (Some(specificationsText), Some(aliasText)) => {
+        let body = if (specificationsText == "") {
+          renderImportToken(open) ++ renderImportSurfaceValue(close, materializeMarks)
+        } else {
+          renderImportToken(open) ++ " " ++ specificationsText ++ " " ++
+          renderImportSurfaceValue(close, materializeMarks)
+        };
+        if (aliasText == "") { Some(body) } else { Some(body ++ " " ++ aliasText) }
+      },
+      _ => { None },
+    }
+  },
+  (JavaScriptImportSpecificationNode(name, alias, annotation, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match((
+      renderOptionalImportNode(alias, depth, materializeMarks, renderNode),
+      renderOptionalImportNode(annotation, depth, materializeMarks, renderNode)
+    )) {
+      (Some(aliasText), Some(annotationText)) => {
+        let withAlias = if (aliasText == "") {
+          renderImportToken(name)
+        } else {
+          renderImportToken(name) ++ " " ++ aliasText
+        };
+        if (annotationText == "") {
+          Some(withAlias)
+        } else {
+          Some(withAlias ++ ": " ++ annotationText)
+        }
+      },
+      _ => { None },
+    }
+  },
+  _ => { None },
+};

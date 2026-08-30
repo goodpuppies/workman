@@ -1,6 +1,6 @@
-import type { Decl, Expr } from "../ast.ts";
-import { basisCtorNamesForType } from "../basis.ts";
-import { diagnosticError, type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import type { Decl } from "../ast.ts";
+import { isQualified, parseLongId } from "../ast.ts";
+import { warningDiagnostic } from "../diagnostics.ts";
 import {
   type Env,
   fn,
@@ -9,6 +9,7 @@ import {
   generalize,
   named,
   prune,
+  registerTypeInfo,
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
@@ -16,6 +17,8 @@ import {
   type TypeVarScope,
 } from "../types.ts";
 import { hasUnguardedRecursiveRef, referencesTypeName, rejectDuplicates } from "./decl_helpers.ts";
+import { deriveInferContext, type InferContext } from "./context.ts";
+import { bindLongType, bindType, bindValue, staticEnv, type StrEnv } from "./environment.ts";
 import {
   constrainBinding,
   generalizeBinding,
@@ -26,75 +29,134 @@ import { inferExpr } from "./expr.ts";
 import { addJsImport } from "./js_imports.ts";
 import { assertExportableRecord, assertExportableType } from "./module_exports.ts";
 import { patternBinders, showPattern } from "./patterns.ts";
-import { constrainAt, provenanceFor, type TypeProvenance } from "./provenance.ts";
+import { constrainAt, rememberSchemeSource } from "./provenance.ts";
 import { callArg } from "./shared.ts";
 import {
   originForScheme,
   recordBindingFact,
+  recordExpectedExprType,
   recordPatternFact,
+  recordPatternType,
+  recordTypeDeclarationFact,
+  recordTypeExpressionFact,
+  recordTypeReferenceFact,
+  recordTypeVariableDeclarationFact,
+  recordTypeVariableFact,
   type TypeFacts,
 } from "./type_facts.ts";
 
 export function inferDecl(
   decl: Decl,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
   typeExports: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
-  provenance: TypeProvenance,
+  publish = true,
 ) {
+  const { env, strEnv, typeEnv, adts, facts } = context;
   if (decl.kind === "ImportDecl") return;
   if (decl.kind === "JsImportDecl") {
-    addJsImport(env, typeEnv, decl);
+    addJsImport(env, typeEnv, strEnv, decl, facts);
     return;
   }
+  const exported = publish && (decl.kind === "ForeignTypeDecl" || decl.exported);
   if (decl.kind === "ForeignTypeDecl") {
-    addForeignType(decl, typeEnv, typeExports, exportableTypeIds);
+    addForeignType(decl, strEnv, typeEnv, typeExports, exportableTypeIds, facts, exported);
     return;
   }
   if (decl.kind === "RecordDecl") {
-    inferRecordDecl(decl, env, typeEnv, typeExports, exportableTypeIds);
+    inferRecordDecl(
+      decl,
+      env,
+      exports,
+      typeEnv,
+      strEnv,
+      typeExports,
+      exportableTypeIds,
+      facts,
+      exported,
+    );
     return;
   }
   if (decl.kind === "TypeDecl") {
-    inferTypeDecl(decl, env, exports, typeEnv, typeExports, adts, exportableTypeIds);
+    inferTypeDecl(
+      decl,
+      env,
+      exports,
+      typeEnv,
+      strEnv,
+      typeExports,
+      adts,
+      exportableTypeIds,
+      facts,
+      exported,
+    );
     return;
   }
-  inferLetDecl(
-    decl,
-    env,
-    exports,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    exportableTypeIds,
-    provenance,
+  inferLetDecl(decl, context, exports, exportableTypeIds, exported);
+}
+
+/** Install every name in one simultaneous type group before elaborating any RHS. */
+export function predeclareTypeGroup(
+  declarations: readonly Extract<Decl, { kind: "TypeDecl" }>[],
+  context: InferContext,
+) {
+  rejectDuplicates(declarations.map((declaration) => declaration.name), "type declaration");
+  rejectMutualAliasCycles(declarations);
+  for (const declaration of declarations) {
+    rejectDuplicates(declaration.params, "type parameter");
+    const info = freshTypeInfo(declaration.name, declaration.params.length);
+    registerTypeInfo(context.typeEnv, info);
+    bindType(staticEnv(context.strEnv, context.typeEnv, context.env), declaration.name, info);
+  }
+}
+
+function rejectMutualAliasCycles(
+  declarations: readonly Extract<Decl, { kind: "TypeDecl" }>[],
+) {
+  const aliases = new Map(
+    declarations.filter((declaration) => declaration.alias).map((declaration) => [
+      declaration.name,
+      declaration,
+    ] as const),
   );
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (name: string) => {
+    if (visiting.has(name)) throw new Error(`cyclic type alias ${name}`);
+    if (visited.has(name)) return;
+    const declaration = aliases.get(name);
+    if (!declaration?.alias) return;
+    visiting.add(name);
+    for (const target of aliases.keys()) {
+      if (referencesTypeName(declaration.alias, target, new Set(declaration.params))) visit(target);
+    }
+    visiting.delete(name);
+    visited.add(name);
+  };
+  for (const name of aliases.keys()) visit(name);
 }
 
 function addForeignType(
   decl: Extract<Decl, { kind: "ForeignTypeDecl" }>,
+  strEnv: StrEnv,
   typeEnv: TypeEnv,
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
+  facts: TypeFacts,
+  exported: boolean,
 ) {
-  const existing = typeEnv.get(decl.name);
-  if (existing && !existing.basis) throw new Error(`duplicate type declaration ${decl.name}`);
-  if (existing?.basis) throw new Error(`cannot shadow basis type ${decl.name} with foreign type`);
   const key = decl.foreignKey ?? `name:${decl.name}`;
   const info = foreignTypeInfo(canonicalForeignTypeName(decl.name, key), key);
-  typeEnv.set(decl.name, info);
-  typeExports.set(decl.name, info);
-  exportableTypeIds.add(info.id);
+  registerTypeInfo(typeEnv, info);
+  const path = parseLongId(decl.name);
+  if (isQualified(path)) bindLongType(strEnv, path, info);
+  else bindType(staticEnv(strEnv, typeEnv), decl.name, info);
+  if (exported) {
+    typeExports.set(decl.name, info);
+    exportableTypeIds.add(info.id);
+  }
+  recordTypeDeclarationFact(facts, decl, info);
 }
 
 const foreignTypes = new Map<string, ReturnType<typeof freshTypeInfo>>();
@@ -120,31 +182,68 @@ function canonicalForeignTypeName(name: string, key: string): string {
 function inferRecordDecl(
   decl: Extract<Decl, { kind: "RecordDecl" }>,
   env: Env,
+  exports: Env,
   typeEnv: TypeEnv,
+  strEnv: import("./environment.ts").StrEnv,
   typeExports: TypeEnv,
   exportableTypeIds: Set<number>,
+  facts: import("./type_facts.ts").TypeFacts,
+  exported: boolean,
 ) {
-  const existing = typeEnv.get(decl.name);
-  if (existing && !existing.basis) throw new Error(`duplicate type declaration ${decl.name}`);
-  if (existing?.basis) removeBasisConstructors(env, decl.name);
   rejectDuplicates(decl.params, "type parameter");
   rejectDuplicates(decl.fields.map((field) => field.name), "record field");
   const info = freshTypeInfo(decl.name, decl.params.length);
-  typeEnv.set(decl.name, info);
-  if (decl.exported) typeExports.set(decl.name, info);
+  recordTypeDeclarationFact(facts, decl, info);
+  registerTypeInfo(typeEnv, info);
+  bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
+  if (exported) typeExports.set(decl.name, info);
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
+  decl.params.forEach((name, parameterIndex) =>
+    recordTypeVariableDeclarationFact(
+      facts,
+      decl,
+      parameterIndex,
+      name,
+      vars.get(name)!,
+    )
+  );
   info.recordFields = decl.fields.map((field) => ({
     name: field.name,
-    type: typeFromAst(field.type, typeEnv, vars, { allowFreeVars: false }),
+    type: typeFromAst(field.type, typeEnv, vars, {
+      allowFreeVars: false,
+      strEnv,
+      onResolveName: (expression, resolved, qualifier) =>
+        recordTypeReferenceFact(facts, expression, resolved, qualifier),
+      onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+      onResolveVariable: (expression, type) =>
+        recordTypeVariableFact(facts, expression, type, decl.node),
+    }),
   }));
   info.recordParams = decl.params.map((p) => {
     const v = prune(vars.get(p)!);
     if (v.tag !== "var") throw new Error("invalid record type parameter");
     return v.id;
   });
-  if (decl.exported) {
+  if (exported) {
     exportableTypeIds.add(info.id);
     assertExportableRecord(info, exportableTypeIds);
+  }
+  const result = named(info, decl.params.map((param) => vars.get(param)!));
+  const constructorType = fn([callArg(info.recordFields.map((field) => field.type))], result);
+  const constructor = {
+    ...generalize(env, constructorType),
+    status: "record-constructor" as const,
+    node: decl.node,
+  };
+  bindValue(staticEnv(strEnv, typeEnv, env), decl.name, constructor);
+  recordBindingFact(facts, decl.name, {
+    subject: "binding",
+    instantiated: constructor.type,
+    general: constructor,
+    origin: originForScheme(decl.name, constructor),
+  });
+  if (exported) {
+    exports.set(decl.name, constructor);
   }
 }
 
@@ -153,71 +252,120 @@ function inferTypeDecl(
   env: Env,
   exports: Env,
   typeEnv: TypeEnv,
+  strEnv: import("./environment.ts").StrEnv,
   typeExports: TypeEnv,
   adts: Map<number, TypeDeclInfo>,
   exportableTypeIds: Set<number>,
+  facts: import("./type_facts.ts").TypeFacts,
+  exported: boolean,
 ) {
-  const existing = typeEnv.get(decl.name);
-  if (existing && !existing.basis) throw new Error(`duplicate type declaration ${decl.name}`);
-  if (existing?.basis) removeBasisConstructors(env, decl.name);
   rejectDuplicates(decl.params, "type parameter");
-  const info = freshTypeInfo(decl.name, decl.params.length);
-  typeEnv.set(decl.name, info);
-  if (decl.exported) typeExports.set(decl.name, info);
+  const info = decl.mutualGroup === undefined
+    ? freshTypeInfo(decl.name, decl.params.length)
+    : typeEnv.get(decl.name);
+  if (!info) throw new Error(`missing predeclared type ${decl.name}`);
+  recordTypeDeclarationFact(facts, decl, info);
+  if (decl.mutualGroup === undefined) {
+    registerTypeInfo(typeEnv, info);
+    bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
+  }
+  if (exported) typeExports.set(decl.name, info);
   if (decl.alias) {
-    inferAliasDecl(decl, info, typeEnv, exportableTypeIds);
+    inferAliasDecl(decl, info, typeEnv, strEnv, exportableTypeIds, facts, exported);
     return;
   }
   rejectDuplicates(decl.ctors.map((c) => c.name), "constructor");
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
+  decl.params.forEach((name, parameterIndex) =>
+    recordTypeVariableDeclarationFact(
+      facts,
+      decl,
+      parameterIndex,
+      name,
+      vars.get(name)!,
+    )
+  );
   const result = named(info, decl.params.map((p) => vars.get(p)!));
   const paramTypeIds = decl.params.map((p) => {
     const v = prune(vars.get(p)!);
     if (v.tag !== "var") throw new Error("invalid datatype type parameter");
     return v.id;
   });
-  if (decl.exported) exportableTypeIds.add(info.id);
+  if (exported) exportableTypeIds.add(info.id);
   const ctorTypes: Ty[][] = [];
   for (const c of decl.ctors) {
-    const args = c.args.map((x) => typeFromAst(x, typeEnv, vars, { allowFreeVars: false }));
+    const args = c.args.map((x) =>
+      typeFromAst(x, typeEnv, vars, {
+        allowFreeVars: false,
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, decl.node),
+      })
+    );
     ctorTypes.push(args);
-    if (decl.exported) {
+    if (exported) {
       args.forEach((arg) =>
         assertExportableType(arg, exportableTypeIds, `exported type ${decl.name}`)
       );
     }
     const t = args.length === 0 ? result : fn([callArg(args)], result);
-    const scheme = { ...generalize(env, t), status: "constructor" as const };
-    env.set(c.name, scheme);
-    if (decl.exported) exports.set(c.name, scheme);
+    const scheme = {
+      ...generalize(env, t),
+      status: "constructor" as const,
+      constructorDecl: c,
+    };
+    bindValue(staticEnv(strEnv, typeEnv, env), c.name, scheme);
+    recordBindingFact(facts, c.name, {
+      subject: "constructor",
+      instantiated: scheme.type,
+      general: scheme,
+    });
+    if (exported) exports.set(c.name, scheme);
   }
   adts.set(info.id, { ...decl, type: info, paramTypeIds, ctorTypes });
-}
-
-function removeBasisConstructors(env: Env, typeName: string) {
-  for (const name of basisCtorNamesForType(typeName)) {
-    if (env.get(name)?.basis) env.delete(name);
-  }
 }
 
 function inferAliasDecl(
   decl: Extract<Decl, { kind: "TypeDecl" }>,
   info: TypeDeclInfo["type"],
   typeEnv: TypeEnv,
+  strEnv: import("./environment.ts").StrEnv,
   exportableTypeIds: Set<number>,
+  facts: import("./type_facts.ts").TypeFacts,
+  exported: boolean,
 ) {
   if (!decl.alias) return;
   if (referencesTypeName(decl.alias, decl.name, new Set(decl.params))) {
     throw new Error(`cyclic type alias ${decl.name}`);
   }
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
-  info.alias = typeFromAst(decl.alias, typeEnv, vars, { allowFreeVars: false });
+  decl.params.forEach((name, parameterIndex) =>
+    recordTypeVariableDeclarationFact(
+      facts,
+      decl,
+      parameterIndex,
+      name,
+      vars.get(name)!,
+    )
+  );
+  info.alias = typeFromAst(decl.alias, typeEnv, vars, {
+    allowFreeVars: false,
+    strEnv,
+    onResolveName: (expression, resolved, qualifier) =>
+      recordTypeReferenceFact(facts, expression, resolved, qualifier),
+    onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+    onResolveVariable: (expression, type) =>
+      recordTypeVariableFact(facts, expression, type, decl.node),
+  });
   info.aliasParams = decl.params.map((p) => {
     const v = prune(vars.get(p)!);
     if (v.tag !== "var") throw new Error("invalid type alias parameter");
     return v.id;
   });
-  if (decl.exported) {
+  if (exported) {
     exportableTypeIds.add(info.id);
     assertExportableType(info.alias, exportableTypeIds, `exported type ${decl.name}`);
   }
@@ -225,79 +373,37 @@ function inferAliasDecl(
 
 function inferLetDecl(
   decl: Extract<Decl, { kind: "LetDecl" }>,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
-  provenance: TypeProvenance,
+  exported: boolean,
 ) {
-  rejectDuplicates(decl.bindings.flatMap((b) => patternBinders(b.pattern)), "binding");
+  const binders = decl.bindings.flatMap((b) => patternBinders(b.pattern));
+  rejectDuplicates(binders, "binding");
   const annotationVars: TypeVarScope = new Map();
   if (!decl.recursive) {
-    inferNonRecursiveLet(
-      decl,
-      env,
-      exports,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
-      exportableTypeIds,
-      annotationVars,
-      provenance,
-    );
+    inferNonRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars, exported);
     return;
   }
-  inferRecursiveLet(
-    decl,
-    env,
-    exports,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    exportableTypeIds,
-    annotationVars,
-    provenance,
-  );
+  inferRecursiveLet(decl, context, exports, exportableTypeIds, annotationVars, exported);
 }
 
 function inferNonRecursiveLet(
   decl: Extract<Decl, { kind: "LetDecl" }>,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
-  provenance: TypeProvenance,
+  exported: boolean,
 ) {
+  const { env, facts, warnings, diagnostics, provenance } = context;
   const base = new Map(env);
   const inferred = decl.bindings.map((b) =>
     inferBinding(
       b,
-      base,
-      typeEnv,
-      adts,
-      types,
-      facts,
-      warnings,
-      diagnostics,
+      deriveInferContext(context, { env: base }),
       annotationVars,
-      provenance,
+      decl.node,
     )
   );
   inferred.forEach((result, i) => {
@@ -317,20 +423,23 @@ function inferNonRecursiveLet(
         provenance,
       );
       scheme.node = decl.bindings[i].node;
-      env.set(name, scheme);
+      rememberSchemeSource(scheme, decl.bindings[i].value, type, provenance);
+      bindValue(staticEnv(context.strEnv, context.typeEnv, env), name, scheme);
       recordBindingFact(facts, name, {
         subject: "binding",
         instantiated: scheme.type,
         general: scheme,
         origin: originForScheme(name, scheme),
       });
-      recordPatternFact(facts, decl.bindings[i].pattern, {
-        subject: "pattern",
-        instantiated: type,
-        general: scheme,
-        origin: originForScheme(name, scheme),
-      });
-      if (decl.exported) {
+      if (decl.bindings[i].pattern.kind === "PVar") {
+        recordPatternFact(facts, decl.bindings[i].pattern, {
+          subject: "pattern",
+          instantiated: type,
+          general: scheme,
+          origin: originForScheme(name, scheme),
+        });
+      }
+      if (exported) {
         assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
         exports.set(name, scheme);
       }
@@ -340,18 +449,13 @@ function inferNonRecursiveLet(
 
 function inferRecursiveLet(
   decl: Extract<Decl, { kind: "LetDecl" }>,
-  env: Env,
+  context: InferContext,
   exports: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
   exportableTypeIds: Set<number>,
   annotationVars: TypeVarScope,
-  provenance: TypeProvenance,
+  exported: boolean,
 ) {
+  const { env, strEnv, typeEnv, types, facts, provenance } = context;
   const base = new Map(env);
   for (const b of decl.bindings) {
     if (b.pattern.kind !== "PVar") throw new Error("recursive bindings must bind one name");
@@ -363,38 +467,41 @@ function inferRecursiveLet(
     }
   }
   const placeholders = decl.bindings.map(() => fresh());
-  decl.bindings.forEach((b, i) =>
-    env.set((b.pattern as { name: string }).name, {
+  decl.bindings.forEach((b, i) => {
+    recordPatternType(facts, b.pattern, placeholders[i]);
+    bindValue(staticEnv(strEnv, typeEnv, env), (b.pattern as { name: string }).name, {
       vars: [],
       type: placeholders[i],
       status: "value",
-    })
-  );
+    });
+  });
   decl.bindings.forEach((b, i) => {
     const name = (b.pattern as { name: string }).name;
+    const annotation = b.annotation
+      ? typeFromAst(b.annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, decl.node),
+      })
+      : undefined;
+    if (annotation) recordExpectedExprType(facts, b.value, annotation);
     constrainBinding(
       name,
       placeholders[i],
-      inferExpr(
-        b.value,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      ),
+      inferExpr(b.value, context),
       b.value,
       b.pattern.node,
       types,
+      facts,
       provenance,
     );
-    if (b.annotation) {
+    if (annotation) {
       constrainAt(
         placeholders[i],
-        typeFromAst(b.annotation, typeEnv, annotationVars),
+        annotation,
         b.value,
         undefined,
         [],
@@ -423,8 +530,9 @@ function inferRecursiveLet(
       provenance,
     );
     scheme.node = b.node;
+    rememberSchemeSource(scheme, b.value, placeholders[i], provenance);
     const name = (b.pattern as { name: string }).name;
-    env.set(name, scheme);
+    bindValue(staticEnv(strEnv, typeEnv, env), name, scheme);
     recordBindingFact(facts, name, {
       subject: "binding",
       instantiated: scheme.type,
@@ -437,7 +545,7 @@ function inferRecursiveLet(
       general: scheme,
       origin: originForScheme(name, scheme),
     });
-    if (decl.exported) {
+    if (exported) {
       assertExportableType(scheme.type, exportableTypeIds, `exported value ${name}`);
       exports.set(name, scheme);
     }

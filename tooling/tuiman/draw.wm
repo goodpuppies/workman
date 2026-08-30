@@ -1,0 +1,282 @@
+-- Immediate ANSI drawing commands. Widgets return strings and the runtime
+-- writes one complete frame, following btop's batched-output approach.
+
+from "./ansi.wm" import * as Ansi;
+from "./geometry.wm" import * as Geometry;
+from "./theme.wm" import * as Theme;
+
+record Style = {
+  foreground: Option<Theme.Color>,
+  background: Option<Theme.Color>,
+  bold: Bool,
+  dim: Bool,
+  reverse: Bool,
+};
+
+record BoxEdges = {
+  topLeft: String,
+  topRight: String,
+  bottomLeft: String,
+  bottomRight: String,
+};
+
+-- Semantic UI roles follow Helix's Adwaita Dark mappings.
+let plain = Style(
+  Some(Theme.light4),
+  Some(Theme.libadwaitaDark),
+  false,
+  false,
+  false,
+);
+let accent = Style(
+  Some(Theme.light7),
+  Some(Theme.libadwaitaDark),
+  true,
+  false,
+  false,
+);
+let muted = Style(
+  Some(Theme.dark1),
+  Some(Theme.libadwaitaDark),
+  false,
+  false,
+  false,
+);
+let selected = Style(
+  Some(Theme.light4),
+  Some(Theme.libadwaitaDarkAlt),
+  true,
+  false,
+  false,
+);
+let status = Style(
+  Some(Theme.light4),
+  Some(Theme.libadwaitaDarkAlt),
+  false,
+  false,
+  false,
+);
+let separator = Style(
+  Some(Theme.splitAndBorders),
+  Some(Theme.libadwaitaDark),
+  false,
+  false,
+  false,
+);
+
+let repeat = (text, count) => {
+  if (count <= 0) {
+    ""
+  } else {
+    text :> .repeat(count) :> Result.withDefault("")
+  }
+};
+
+let replace = (text, needle, replacement) => {
+  text :> .replaceAll(needle, replacement) :> Result.withDefault(text)
+};
+
+-- Terminal content is untrusted (post text, handles, server errors). Keep
+-- control sequences and embedded line motion out of drawing commands.
+let safeText = (value) => {
+  value
+    :> replace(Ansi.esc, "")
+    :> replace("\n", " ")
+    :> replace("\t", " ")
+};
+
+let truncate = (text, width) => {
+  if (width <= 0) {
+    ""
+  } else {
+    match(safeText(text) :> .slice(0, width)) {
+      Ok(value) => { value },
+      Err(_) => { "" },
+    }
+  }
+};
+
+let widthOf = (value) => {
+  value :> .length :> Result.withDefault(0)
+};
+
+-- A word wider than the line has no break opportunity, so split it by force
+-- rather than letting `truncate` drop the tail.
+let rec chunk = (word, width) => {
+  if (width <= 0 || widthOf(word) <= width) {
+    [word]
+  } else {
+    let head = word :> .slice(0, width) :> Result.withDefault(word);
+    let tail = word :> .slice(width) :> Result.withDefault("");
+    [head, ..chunk(tail, width)]
+  }
+};
+
+let rec chunkAll = match(words, width) => {
+  ([], _) => { [] },
+  ([word, ..rest], width) => {
+    List.append(chunk(word, width), chunkAll(rest, width))
+  },
+};
+
+let rec pack = (words, width, current, rows) => {
+  match(words) {
+    [] => {
+      if (current == "") { rows } else { List.append(rows, [current]) }
+    },
+    [word, ..rest] => {
+      if (current == "") {
+        pack(rest, width, word, rows)
+      } else {
+        let joined = `${current} ${word}`;
+        if (widthOf(joined) <= width) {
+          pack(rest, width, joined, rows)
+        } else {
+          pack(rest, width, word, List.append(rows, [current]))
+        }
+      }
+    },
+  }
+};
+
+let words = (value) => {
+  value :> .split(" ") :> Result.map(Js.Array.toList) :> Result.withDefault([])
+};
+
+let wrapLine = (value, width) => {
+  if (width <= 0) {
+    []
+  } else {
+    let rows = pack(chunkAll(words(safeText(value)), width), width, "", []);
+    if (List.length(rows) == 0) { [""] } else { rows }
+  }
+};
+
+let rec wrapAll = match(values, width) => {
+  ([], _) => { [] },
+  ([line, ..rest], width) => {
+    List.append(wrapLine(line, width), wrapAll(rest, width))
+  },
+};
+
+-- Diagnostics are written for editors, not for an 80-column budget. Wrapping
+-- to the live terminal width keeps a long message readable at any size, and
+-- hard newlines in the source text stay as breaks.
+let wrap = (value: String, width) => {
+  wrapAll(value :> .split("\n") :> Result.map(Js.Array.toList) :> Result.withDefault([]), width)
+};
+
+let styleCode = (style) => {
+  let fg = match(style.foreground) {
+    Some(color) => { Ansi.foregroundRgb(color.red, color.green, color.blue) },
+    None => { "" },
+  };
+  let bg = match(style.background) {
+    Some(color) => { Ansi.backgroundRgb(color.red, color.green, color.blue) },
+    None => { "" },
+  };
+  let weight = if (style.bold) { Ansi.bold } else { "" };
+  let faint = if (style.dim) { Ansi.dim } else { "" };
+  let inversion = if (style.reverse) { Ansi.reverse } else { "" };
+  Ansi.reset ++ fg ++ bg ++ weight ++ faint ++ inversion
+};
+
+let at = (x, y, text, style) => {
+  if (x < 0 || y < 0 || text == "") {
+    ""
+  } else {
+    Ansi.cursorTo(y + 1, x + 1) ++ styleCode(style) ++ text
+  }
+};
+
+let text = (area, value, style) => {
+  at(area.x, area.y, truncate(value, area.width), style)
+};
+
+let fill = (area, symbol, style) => {
+  let rec rows = (remaining, y) => {
+    if (remaining <= 0) {
+      ""
+    } else {
+      at(area.x, y, repeat(symbol, area.width), style) ++ rows(remaining - 1, y + 1)
+    }
+  };
+  rows(area.height, area.y)
+};
+
+let boxWithEdges = (area, title, active, edges: BoxEdges) => {
+  if (area.width < 2 || area.height < 2) {
+    ""
+  } else {
+    let borderStyle = if (active) { accent } else { separator };
+    let inside = area.width - 2;
+    let titleText = if (title == "") {
+      ""
+    } else {
+      truncate(" " ++ title ++ " ", inside)
+    };
+    let remainingTop = inside - (titleText :> .length :> Result.withDefault(0));
+    let top = edges.topLeft ++ titleText ++
+      repeat("─", remainingTop) ++ edges.topRight;
+    let bottom = edges.bottomLeft ++ repeat("─", inside) ++ edges.bottomRight;
+    let rec sides = (remaining, y) => {
+      if (remaining <= 0) {
+        ""
+      } else {
+        at(area.x, y, "│", borderStyle) ++
+          at(area.x + area.width - 1, y, "│", borderStyle) ++
+          sides(remaining - 1, y + 1)
+      }
+    };
+    at(area.x, area.y, top, borderStyle) ++
+      sides(area.height - 2, area.y + 1) ++
+      at(area.x, area.y + area.height - 1, bottom, borderStyle)
+  }
+};
+
+let box = (area, title, active) => {
+  boxWithEdges(
+    area,
+    title,
+    active,
+    BoxEdges("┌", "┐", "└", "┘"),
+  )
+};
+
+-- Timeline cards share boundaries. Both neighbors draw the same junction
+-- shape, so an incremental redraw cannot temporarily restore square corners.
+let timelineBox = (area, active, joinedTop, joinedBottom) => {
+  boxWithEdges(
+    area,
+    "",
+    active,
+    BoxEdges(
+      if (joinedTop) { "├" } else { "┌" },
+      if (joinedTop) { "┤" } else { "┐" },
+      if (joinedBottom) { "├" } else { "└" },
+      if (joinedBottom) { "┤" } else { "┘" },
+    ),
+  )
+};
+
+let rec lines = match(area, values, style) => {
+  (_, [], _) => { "" },
+  (_, _, _) => {
+    if (area.height <= 0) {
+      ""
+    } else {
+      match(values) {
+        [] => { "" },
+        [head, ..tail] => {
+          text(Geometry.rect(area.x, area.y, area.width, 1), head, style) ++
+            lines(Geometry.rect(area.x, area.y + 1, area.width, area.height - 1), tail, style)
+        },
+      }
+    }
+  },
+};
+
+-- Clear after selecting the theme background so uncovered cells are painted
+-- consistently instead of inheriting the terminal profile's background.
+let beginFrame = Ansi.home ++ Ansi.reset ++ styleCode(plain) ++ Ansi.clear;
+let endFrame = Ansi.reset;

@@ -1,0 +1,150 @@
+from "./generated/surface_types.wm" import {
+  Span, SurfaceToken, AuthoredValue, LetBindingNode, LetDeclarationNode,
+  RecordDeclarationNode, RecordFieldDeclarationNode,
+  TopPhraseNode, ProgramNode
+};
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
+from "./surface_builder_support.wm" import {
+  reverseInto, collectNodes, collectTokens, firstTokenWithText, firstNode,
+  surfaceValue
+};
+
+let buildLetBinding = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(pattern),
+      EmptyParseValue,
+      OptionalParseValue(annotationValue),
+      EmptyParseValue,
+      TokenParseValue(equalsToken),
+      EmptyParseValue,
+      NodeParseValue(expression),
+    ]) => {
+      let annotation = match(annotationValue) {
+        Some(NodeParseValue(node)) => { Some(node) },
+        _ => { None },
+      };
+      NodeParseValue(
+        LetBindingNode(
+          pattern,
+          annotation,
+          surfaceValue(equalsToken),
+          expression,
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("LetBinding", value, span) },
+  }
+};
+
+let buildLetDecl = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((firstTokenWithText(tokens, "let"), collectNodes(value))) {
+    (Some(letToken), [firstBinding, ..restBindings]) => {
+      NodeParseValue(
+        LetDeclarationNode(
+          letToken,
+          firstTokenWithText(tokens, "rec"),
+          [firstBinding, ..restBindings],
+          tokens :> List.filter((value: SurfaceToken) => { value.text == "and" }),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("LetDecl", value, span) },
+  }
+};
+
+let buildRecordFieldDecl = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(name),
+      EmptyParseValue,
+      TokenParseValue(colon),
+      EmptyParseValue,
+      NodeParseValue(typeNode),
+    ]) => {
+      NodeParseValue(
+        RecordFieldDeclarationNode(name, surfaceValue(colon), typeNode, span)
+      )
+    },
+    _ => { RuleParseValue("RecordFieldDecl", value, span) },
+  }
+};
+
+let buildRecordDecl = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(recordToken),
+      EmptyParseValue,
+      TokenParseValue(name),
+      paramsValue,
+      EmptyParseValue,
+      TokenParseValue(equalsToken),
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      fieldsValue,
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      let params = firstNode(paramsValue);
+      NodeParseValue(
+        RecordDeclarationNode(
+          recordToken,
+          name,
+          params,
+          surfaceValue(equalsToken),
+          surfaceValue(open),
+          collectNodes(fieldsValue),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("RecordDecl", value, span) },
+  }
+};
+
+let buildTopPhrase = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(index, SequenceParseValue([
+      NodeParseValue(node),
+      EmptyParseValue,
+      TokenParseValue(semi),
+    ])) => {
+      NodeParseValue(TopPhraseNode(node, surfaceValue(semi), span))
+    },
+    _ => { RuleParseValue("TopPhrase", value, span) },
+  }
+};
+
+let rec collectTopPhrasesInto = match(entries, reversed) => {
+  ([], Var(reversed)) => { Some(reverseInto(reversed, [])) },
+  ([
+    SequenceParseValue([EmptyParseValue, NodeParseValue(node)]),
+    ..rest
+  ], Var(reversed)) => {
+    collectTopPhrasesInto(rest, [node, ..reversed])
+  },
+  (_, Var(reversed)) => { None },
+};
+
+let buildProgram = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      EmptyParseValue,
+      EmptyParseValue,
+      RepeatedParseValue(entries),
+      EmptyParseValue,
+      EmptyParseValue,
+    ]) => {
+      match(collectTopPhrasesInto(entries, [])) {
+        Some(nodes) => { NodeParseValue(ProgramNode(nodes, span)) },
+        None => { RuleParseValue("Start", value, span) },
+      }
+    },
+    _ => { RuleParseValue("Start", value, span) },
+  }
+};

@@ -1,19 +1,18 @@
 import type { Binding, Decl, Expr } from "../ast.ts";
+import type { AstNode } from "../source.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import {
   type Env,
   generalize,
   prune,
-  quoteType,
   type Scheme,
   show,
   type Ty,
-  type TypeDeclInfo,
-  type TypeEnv,
   typeFromAst,
   type TypeVarScope,
 } from "../types.ts";
 import { resultExpr } from "./ast_utils.ts";
+import type { InferContext } from "./context.ts";
 import {
   findAccidentalMatchFnInFunction,
   hasTrailingStatementLikeResult,
@@ -29,7 +28,13 @@ import {
   type TypeProvenance,
 } from "./provenance.ts";
 import { inferRecordExpr } from "./records.ts";
-import { recordConsumedFfiUse, type TypeFacts } from "./type_facts.ts";
+import {
+  recordConsumedFfiUse,
+  recordExpectedExprType,
+  recordTypeExpressionFact,
+  recordTypeReferenceFact,
+  recordTypeVariableFact,
+} from "./type_facts.ts";
 
 export function generalizeBinding(env: Env, type: Ty, value: Expr): Scheme {
   if (containsUnresolvedFfi(type) || containsFfiBoundary(value, env)) {
@@ -88,6 +93,8 @@ function containsFfiBoundary(expr: Expr, env: Env): boolean {
           ? item.bindings.some((binding) => containsFfiBoundary(binding.value, env))
           : !isTypeOnlyDecl(item) && containsFfiBoundary(item, env)
       ) || containsFfiBoundary(expr.result, env);
+    case "Ascribed":
+      return containsFfiBoundary(expr.value, env);
     case "Binary":
       return containsFfiBoundary(expr.left, env) || containsFfiBoundary(expr.right, env);
     case "Unary":
@@ -120,6 +127,8 @@ function isNonExpansive(expr: Expr, env: Env): boolean {
     case "Lambda":
     case "Panic":
       return true;
+    case "Ascribed":
+      return isNonExpansive(expr.value, env);
     case "Tuple":
       return expr.items.every((item) => isNonExpansive(item, env));
     case "Record":
@@ -136,7 +145,9 @@ function isNonExpansive(expr: Expr, env: Env): boolean {
 }
 
 function isConstructorExpr(expr: Expr, env: Env): boolean {
-  return expr.kind === "Var" && env.get(expr.name)?.status === "constructor";
+  if (expr.kind !== "Var") return false;
+  const status = env.get(expr.name)?.status;
+  return status === "constructor" || status === "record-constructor";
 }
 
 export function withSchemeProvenance(
@@ -150,19 +161,24 @@ export function withSchemeProvenance(
 
 export function inferBinding(
   b: Binding,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: import("../diagnostics.ts").FrontendDiagnostic[],
+  context: InferContext,
   annotationVars: TypeVarScope,
-  provenance: TypeProvenance,
+  typeVariableRegion?: AstNode,
 ): { bound: Map<string, Ty>; refutable: boolean } {
+  const { env, typeEnv, strEnv, adts, facts, warnings, diagnostics, provenance } = context;
   try {
-    const annotated = b.annotation ? typeFromAst(b.annotation, typeEnv, annotationVars) : undefined;
+    const annotated = b.annotation
+      ? typeFromAst(b.annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, typeVariableRegion),
+      })
+      : undefined;
     const inferRecordValue = (value: Expr, expected?: Ty): Ty => {
+      if (expected) recordExpectedExprType(facts, value, expected);
       if (expected && value.kind === "Record") {
         return inferRecordExpr(
           value,
@@ -171,20 +187,13 @@ export function inferBinding(
           expected,
           warnings,
           diagnostics,
+          facts,
+          strEnv,
         );
       }
-      return inferExpr(
-        value,
-        env,
-        typeEnv,
-        adts,
-        types,
-        facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+      return inferExpr(value, context);
     };
+    if (annotated) recordExpectedExprType(facts, b.value, annotated);
     const t = annotated && b.value.kind === "Record"
       ? inferRecordExpr(
         b.value,
@@ -193,24 +202,16 @@ export function inferBinding(
         annotated,
         warnings,
         diagnostics,
-      )
-      : inferExpr(
-        b.value,
-        env,
-        typeEnv,
-        adts,
-        types,
         facts,
-        warnings,
-        diagnostics,
-        provenance,
-      );
+        strEnv,
+      )
+      : inferExpr(b.value, context);
     recordConsumedFfiUse(facts, t, {
       kind: "binding",
       message:
         "cannot bind unresolved JS FFI result before FFI reflection resolves the member access",
     });
-    if (annotated && dynamicFfiWithoutJsonAssert(b.value, env, types)) {
+    if (annotated && dynamicFfiWithoutJsonAssert(b.value, env, facts)) {
       throw new Error(
         "type annotations cannot cast dynamic JS/JSON values; use Json.assert for an explicit dynamic shape assertion",
       );
@@ -231,7 +232,7 @@ export function inferBinding(
       });
     }
     const bound = new Map<string, Ty>();
-    inferBindingPattern(b.pattern, t, env, typeEnv, bound, undefined, facts);
+    inferBindingPattern(b.pattern, t, env, typeEnv, strEnv, bound, undefined, facts);
     const refutable = !isVectorExhaustive([[b.pattern]], [t], typeEnv, adts);
     return { bound, refutable };
   } catch (error) {
@@ -262,7 +263,11 @@ function hasUnresolvedFfi(type: Ty | undefined, seen = new Set<Ty>()): boolean {
   }
 }
 
-function dynamicFfiWithoutJsonAssert(expr: Expr, env: Env, types: Map<Expr, Ty>): boolean {
+function dynamicFfiWithoutJsonAssert(
+  expr: Expr,
+  env: Env,
+  facts: InferContext["facts"],
+): boolean {
   let hasDynamicFfi = false;
   let hasJsonAssert = false;
   const visit = (node: Expr) => {
@@ -290,11 +295,11 @@ function dynamicFfiWithoutJsonAssert(expr: Expr, env: Env, types: Map<Expr, Ty>)
         node.fields.forEach((field) => visit(field.value));
         return;
       case "FfiGet":
-        if (hasUnresolvedFfi(types.get(node))) hasDynamicFfi = true;
+        if (hasUnresolvedFfi(facts.expressions.get(node)?.instantiated)) hasDynamicFfi = true;
         visit(node.receiver);
         return;
       case "FfiCall":
-        if (hasUnresolvedFfi(types.get(node))) hasDynamicFfi = true;
+        if (hasUnresolvedFfi(facts.expressions.get(node)?.instantiated)) hasDynamicFfi = true;
         visit(node.receiver);
         node.args.forEach(visit);
         return;
@@ -358,6 +363,7 @@ export function constrainBinding(
   value: Expr,
   bindingNode: Binding["pattern"]["node"],
   types: Map<Expr, Ty>,
+  facts: InferContext["facts"],
   provenance: TypeProvenance,
 ) {
   const expectedFn = prune(expected);
@@ -390,6 +396,7 @@ export function constrainBinding(
       );
       const evidence = recursiveResultEvidence(name, value, expectedFn.result, types);
       const bodyResult = resultExpr(value.body);
+      recordExpectedExprType(facts, bodyResult, expectedFn.result);
       const accidentalMatchFn = findAccidentalMatchFnInFunction(value.body);
       const trailingStatementLikeResult = hasTrailingStatementLikeResult(value.body);
       const listElementVsListHint = recursiveListElementVsListHint(
@@ -457,6 +464,7 @@ export function constrainBinding(
         undefined,
         {
           premise: {
+            code: "type.recursive-result-mismatch",
             rule: "InferRecursive.ResultAgreement",
             role: "recursive binding result matches inferred body",
             subject: name,
@@ -468,6 +476,7 @@ export function constrainBinding(
       return;
     }
   }
+  recordExpectedExprType(facts, resultExpr(value), expected);
   constrainAt(expected, actual, resultExpr(value), undefined, [], provenance, {
     message: "binding value",
     node: value.node,

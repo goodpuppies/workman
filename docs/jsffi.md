@@ -39,16 +39,21 @@ Import JS types only:
 from js.global import type { Request, Response };
 ```
 
-Type-only JS imports create foreign Workman types. They are useful when a callback or function
-parameter is a browser, Deno, or Node object:
+Type-only JS imports create nominal foreign Workman types. They are useful in trusted boundary
+declarations and in ordinary HM signatures once program flow already establishes that foreign type:
 
 ```wm
 from js.global import type { Request };
-
-let getMethod = (req: Request) => {
-  req.method
+from js.module("./request_bridge.ts") import {
+  methodOf: Request -> String,
 };
+
+let method = methodOf(Panic("request")) :> Result.debug;
 ```
+
+Writing `req: Request` on an otherwise unresolved callback does not itself give the FFI resolver a
+`Request` receiver. The annotation checks the inferred callback type; it does not create foreign
+evidence.
 
 ## Safe Calls and `Result`
 
@@ -73,16 +78,15 @@ let value = match(rounded) {
 
 This is intentionally explicit: JS can throw, so Workman does not pretend the call is pure or total.
 
-`Js.Error` is a normal matchable Workman datatype with `Js.Error(message)` and
-`Js.Unknown` constructors. See [JavaScript error handling](./js-errors.md) for
-normalization rules, synchronous and Task examples, and preserving JS failures in
-application error types.
+`Js.Error` is a normal matchable Workman datatype with `Js.Error(message)` and `Js.Unknown`
+constructors. See [JavaScript error handling](./js-errors.md) for normalization rules, synchronous
+and Task examples, and preserving JS failures in application error types.
 
 Promise-returning JavaScript APIs become `Task<_, Js.Error>`. See [Async and Task](./async.md) for
 the current Task model, including parallel collection with `Task.collectList`.
 
 Primitive operators can flow through safe JS `Result` values, and `Result|...|` can collect several
-`Result` arguments for a lifted multi-argument function. See
+`Result` arguments for a multi-argument function created with `via`. See
 [Carrier Coercion and Tuple Lifts](./carriers.md).
 
 ## Unsafe Imports
@@ -104,19 +108,25 @@ Manual typed unsafe imports are also supported:
 
 ```wm
 from js.global("console") import unsafe {
-  log: (String, Number) => Void
+  log: (String, Number) -> Void
 } as console;
 ```
 
-## Note on type annotations and ffi
+## Type annotations do not direct FFI reflection
 
-It may seem practical to add `: Type` literally everywhere typescript/rust style.
-Currently though in workman I would recommend avoiding it especially in ffi code.
-- `: Type` is not an assertion, if a ffi thing cant be figured out an annotation wont help, 
-for json/objects use json assert. For other situations more explicit and simple code could help,
-you can also manually type imports as escape hatch.
-- often using `: Type` in ffi heavy code will cause more errors 
-or even errors that dissapear once the annotations are removed.
+An ordinary Workman `: Type` annotation checks the type inferred by HM. It does not select a
+TypeScript overload, attach foreign reflection information, refine `Js.Object`/`Js.Value`, or change
+the result of a reflected call.
+
+If FFI code only works after adding a receiver or result annotation, that normally indicates lost
+reflection information or another compiler bug. The annotation must remain erasable.
+
+`Json.assert` is different: it explicitly checks a genuinely dynamic value against an expected
+Workman shape. An annotation may state that expected shape around the assertion, but annotations do
+not become casts elsewhere.
+
+A manually typed JS import is also different. It declares the trusted foreign boundary signature;
+it is not an annotation on an inferred Workman value.
 
 ## Manual Types
 
@@ -124,17 +134,55 @@ When reflection cannot infer a useful type, write the JS type manually:
 
 ```wm
 from js.global import {
-  fetch: (String) => Js.Promise<Js.Object>,
-  encodeURIComponent: (String) => String,
+  fetch: String -> Js.Promise<Js.Object>,
+  encodeURIComponent: String -> String,
 };
 ```
 
-This is the escape hatch for APIs where TypeScript reflection is currently too broad, too
-overloaded, or not visible from the active runtime declarations.
+This is the escape hatch when the concrete TypeScript call remains ambiguous, its selected type
+cannot be represented honestly in Workman, or the declaration is not visible to reflection.
+
+Overloaded or generic by itself is not a reason for a manual signature. When the call arguments are
+known, Workman asks TypeScript to select and instantiate the concrete call. For example, a reflected
+`IterableIterator<Entry>` passed to `Array.from` should automatically produce
+`Result<Js.Array<Entry>, Js.Error>`.
 
 Manual types are trusted declarations about the JS shape. Safe manual imports still return
 `Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
 explicitly want a direct JS call.
+
+`unsafe` changes error handling, not reflection precision. Do not add it to fix inference. During
+exploration, keep the safe import and use `Result.debug` if aborting on failure is acceptable; later
+replace that with a match or ordinary `Result`/`Task` handling.
+
+## Shims Keep The Boundary Workman-Shaped
+
+Reflection covers foreign APIs that map cleanly into Workman. When an API does not map cleanly, that
+does not automatically mean Workman should gain the host language's corresponding feature. In
+particular, a reflection failure is not by itself a reason to add foreign subtyping or reproduce a
+library's complete object model.
+
+Use a small TypeScript shim when the foreign interaction model is fundamentally incompatible with
+Workman. The shim should translate that model into the values and operations the program needs, with
+an interface that remains natural in functional Workman code. TypeScript checks the foreign side;
+Workman checks the interface it receives.
+
+This is an intentional part of the FFI design rather than a loss of type safety. Foreign values can
+remain nominal and opaque while the operations crossing the boundary remain fully typed. Host-only
+concepts stay in the shim instead of leaking into ordinary Workman programs or driving expansion of
+the language.
+
+`Js.Object` and `Js.Value` are reserved for genuinely dynamic declarations or an explicitly chosen
+dynamic boundary. They are not fallback types for failed reflection. If TypeScript declares a static
+shape which Workman cannot map, the FFI access remains unresolved and must be made explicit or
+adapted with a shim. Replacing known structure with an opaque value would erase evidence that
+Workman's type inference cannot recover; use an assertion to turn an intentionally dynamic value
+back into a checked Workman shape.
+
+When reflection fails, diagnostics distinguish a missing JavaScript member from an existing member
+whose TypeScript signature Workman cannot represent. The latter diagnostic includes the reflected
+signature where possible. A simple compatible TS signature that nevertheless fails to flow through
+Workman is an implementation bug, not evidence that the API needs a shim or manual typing.
 
 ## Deno APIs
 
@@ -177,6 +225,31 @@ or directly:
 ```sh
 deno run --allow-read --allow-write --allow-run --allow-env --allow-net src/main.ts run examples/server.wm
 ```
+
+## Module Metadata
+
+JavaScript's lexical `import.meta` object is available through `js.meta`:
+
+```wm
+from js.global import unsafe { URL };
+from js.meta import { url, main, filename, dirname, resolve };
+
+let assetPath = URL.new("./assets/data.txt", url) :> .pathname;
+```
+
+`url` is emitted as a direct access to the generated ES module's literal `import.meta.url`. It is
+not rewritten to the original Workman source path. The built-in metadata members have these types:
+
+```txt
+url      : String
+main     : Bool
+filename : Option<String>
+dirname  : Option<String>
+resolve  : String -> String
+```
+
+Because these are lexical module values rather than calls across an arbitrary JavaScript boundary,
+they are imported directly rather than wrapped in `Result`.
 
 ## Node APIs
 
@@ -243,7 +316,7 @@ If reflection cannot discover the type, add a manual type:
 
 ```wm
 from js.module("./helpers.js") import {
-  shout: (String) => String
+  shout: String -> String
 };
 ```
 
@@ -411,8 +484,8 @@ let content = match(body.content) {
 ## Current Limitations
 
 - Some root globals still need manual types.
-- Some Promise-heavy APIs still benefit from explicit record or `Js.Object` annotations at the JS
-  boundary.
+- Some Promise-heavy APIs still need a more precise reflected/manual boundary or an explicit
+  `Json.assert`; ordinary annotations are not a workaround.
 - Optional arguments may still require `Some(value)` for APIs where reflection exposes an
   `Option<T>` parameter.
 - `JSON{}` and `JSON[]` are currently the clearest way to pass object/array-shaped JS data.

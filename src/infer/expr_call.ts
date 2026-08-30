@@ -1,8 +1,6 @@
 import type { Expr } from "../ast.ts";
-import type { FrontendDiagnostic } from "../diagnostics.ts";
 import {
   addJsConstraint,
-  type Env,
   fn,
   fresh,
   instantiateRecordFields,
@@ -13,51 +11,46 @@ import {
   show,
   tuple,
   type Ty,
-  type TypeDeclInfo,
   type TypeEnv,
+  typeInfoByName,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
 import {
   constrainAt,
+  type EvidenceOrigin,
+  fnSource,
   sourceForTypedExpr,
   tupleSource,
-  type EvidenceOrigin,
   type TypeProvenance,
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
+import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
-import { recordConsumedFfiUse, recordExprFact, type TypeFacts } from "./type_facts.ts";
+import { recordConsumedFfiUse, recordExpectedExprType, recordExprFact } from "./type_facts.ts";
 
 export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
 ): Ty {
+  const { env, typeEnv, types, facts, provenance } = context;
   const result = fresh();
   const isPrintCall = expr.callee.kind === "Var" && expr.callee.name === "print";
-  const callee = inferExpr(
-    expr.callee,
-    env,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
-  );
+  const callee = inferExpr(expr.callee, context);
   const calleeProvenance = expr.callee.kind === "Var"
     ? (env.get(expr.callee.name)?.provenance ?? [])
     : [];
-  const argTypes = expr.args.map((a) =>
-    inferExpr(a, env, typeEnv, adts, types, facts, warnings, diagnostics, provenance)
-  );
+  const calleeFn = prune(callee);
+  if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
+    const expectedArg = prune(calleeFn.params[0]);
+    if (expr.args.length === 1) {
+      recordExpectedExprType(facts, expr.args[0], expectedArg);
+    } else if (expectedArg.tag === "tuple" && expectedArg.items.length === expr.args.length) {
+      expr.args.forEach((arg, index) =>
+        recordExpectedExprType(facts, arg, expectedArg.items[index])
+      );
+    }
+  }
+  const argTypes = expr.args.map((a) => inferExpr(a, context));
   for (const argType of argTypes) {
     recordConsumedFfiUse(facts, argType, {
       kind: "call",
@@ -66,7 +59,6 @@ export function inferCall(
     });
   }
   const arg = callArg(argTypes);
-  const calleeFn = prune(callee);
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
     const argExpr = expr.args.length === 1 ? expr.args[0] : expr;
     const calleeRelated = callCalleeRelated(expr.callee, calleeFn);
@@ -88,14 +80,19 @@ export function inferCall(
         instantiated: fn([arg], calleeFn.result),
       });
     }
-    const argumentSources = expr.args.length > 1
-      ? {
-        primarySource: "right" as const,
-        sources: {
-          right: callArgSource(expr.args, argTypes, provenance),
-        },
-      }
-      : {};
+    const calleeSource = sourceForTypedExpr(
+      expr.callee,
+      callee,
+      provenance,
+      expr.callee.kind === "Var" ? expr.callee.name : "callee",
+    );
+    const argumentSources = {
+      primarySource: "right" as const,
+      sources: {
+        left: calleeSource.fnParams?.[0],
+        right: callArgSource(expr.args, argTypes, provenance),
+      },
+    };
     constrainAt(
       expectedArg,
       actualArg,
@@ -115,6 +112,7 @@ export function inferCall(
       {
         ...argumentSources,
         premise: {
+          code: "type.call-argument-mismatch",
           rule: "InferCall.Argument",
           role: "argument matches parameter",
           subject: "call argument",
@@ -125,15 +123,31 @@ export function inferCall(
     );
     if (isPrintCall) assertPrintable(arg);
     if (isJsImport) assertJsCompatible(arg, typeEnv);
-    constrainAt(result, calleeFn.result, expr, undefined, [], undefined, undefined, {
-      premise: {
-        rule: "InferCall.Result",
-        role: "call result matches callee result",
-        subject: "call result",
-        leftRole: "call result",
-        rightRole: "callee result",
+    constrainAt(
+      result,
+      calleeFn.result,
+      expr,
+      undefined,
+      [],
+      provenance,
+      {
+        message: "call result",
+        node: expr.node,
+        span: expr.node?.span,
       },
-    });
+      {
+        premise: {
+          rule: "InferCall.Result",
+          role: "call result matches callee result",
+          subject: "call result",
+          leftRole: "call result",
+          rightRole: "callee result",
+        },
+        sources: {
+          right: calleeSource.fnResult ?? calleeSource,
+        },
+      },
+    );
   } else {
     const callDepth =
       maxCallDepth([...callCalleeRelated(expr.callee, callee), ...calleeProvenance]) + 1;
@@ -154,6 +168,15 @@ export function inferCall(
         callDepth,
       },
       {
+        sources: {
+          left: sourceForTypedExpr(
+            expr.callee,
+            callee,
+            provenance,
+            expr.callee.kind === "Var" ? expr.callee.name : "callee",
+          ),
+          right: fnSource([callArgSource(expr.args, argTypes, provenance)]),
+        },
         premise: {
           rule: "InferCall.CalleeCallable",
           role: "callee is callable",
@@ -181,8 +204,8 @@ function callArgSource(
 }
 
 export function ffiGetResultTy(typeEnv: TypeEnv, value: Ty): Ty {
-  const result = typeEnv.get("Result");
-  const jsError = typeEnv.get("Js.Error");
+  const result = typeInfoByName(typeEnv, "Result");
+  const jsError = typeInfoByName(typeEnv, "Js.Error");
   if (!result || !jsError) throw new Error("unknown FFI result basis type");
   return named(result, [value, named(jsError)]);
 }
@@ -206,12 +229,12 @@ function jsImportActualArg(
     return expectedType;
   }
   if (isJsObjectType(expectedType, typeEnv) && isJsObjectLikeType(actualType, typeEnv)) {
-    const jsObject = typeEnv.get("Js.Object");
+    const jsObject = typeInfoByName(typeEnv, "Js.Object");
     if (!jsObject) throw new Error("unknown type Js.Object");
     return named(jsObject);
   }
   if (isJsObjectType(expectedType, typeEnv) && isJsValueType(actualType, typeEnv)) {
-    const jsObject = typeEnv.get("Js.Object");
+    const jsObject = typeInfoByName(typeEnv, "Js.Object");
     if (!jsObject) throw new Error("unknown type Js.Object");
     return named(jsObject);
   }
@@ -223,7 +246,7 @@ function jsImportActualArg(
     (isJsObjectLikeType(actualType, typeEnv) || isJsPrimitiveType(actualType) ||
       actualType.tag === "fn")
   ) {
-    const jsValue = typeEnv.get("Js.Value");
+    const jsValue = typeInfoByName(typeEnv, "Js.Value");
     if (!jsValue) throw new Error("unknown type Js.Value");
     return named(jsValue);
   }
@@ -273,7 +296,7 @@ function jsImportActualArg(
 
 function isForeignObjectType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && Boolean(t.foreign || typeEnv.get(t.name)?.foreign);
+  return t.tag === "named" && Boolean(t.foreign || typeInfoByName(typeEnv, t.name)?.foreign);
 }
 
 function isJsObjectLikeType(type: Ty, typeEnv: TypeEnv): boolean {
@@ -285,37 +308,37 @@ function isJsObjectLikeType(type: Ty, typeEnv: TypeEnv): boolean {
 
 function isJsObjectType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && t.id === typeEnv.get("Js.Object")?.id;
+  return t.tag === "named" && t.id === typeInfoByName(typeEnv, "Js.Object")?.id;
 }
 
 function isJsValueType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && t.id === typeEnv.get("Js.Value")?.id;
+  return t.tag === "named" && t.id === typeInfoByName(typeEnv, "Js.Value")?.id;
 }
 
 function isJsArrayType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && t.id === typeEnv.get("Js.Array")?.id;
+  return t.tag === "named" && t.id === typeInfoByName(typeEnv, "Js.Array")?.id;
 }
 
 function isJsDictType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && t.id === typeEnv.get("Js.Dict")?.id;
+  return t.tag === "named" && t.id === typeInfoByName(typeEnv, "Js.Dict")?.id;
 }
 
 function isJsPromiseType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && t.id === typeEnv.get("Js.Promise")?.id;
+  return t.tag === "named" && t.id === typeInfoByName(typeEnv, "Js.Promise")?.id;
 }
 
 function isTaskType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && t.id === typeEnv.get("Task")?.id;
+  return t.tag === "named" && t.id === typeInfoByName(typeEnv, "Task")?.id;
 }
 
 function isRecordType(type: Ty, typeEnv: TypeEnv): boolean {
   const t = prune(type);
-  return t.tag === "named" && Boolean(typeEnv.get(t.name)?.recordFields);
+  return t.tag === "named" && Boolean(typeInfoByName(typeEnv, t.name)?.recordFields);
 }
 
 function isJsPrimitiveType(type: Ty): boolean {
@@ -368,14 +391,14 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
         assertJsCompatible(t.args[1], typeEnv);
         return;
       }
-      const record = typeEnv.get(t.name);
+      const record = typeInfoByName(typeEnv, t.name);
       if (record?.recordFields) {
         for (const field of instantiateRecordFields(record, t.args)) {
           assertJsCompatible(field.type, typeEnv);
         }
         return;
       }
-      if (t.foreign || typeEnv.get(t.name)?.foreign) return;
+      if (t.foreign || typeInfoByName(typeEnv, t.name)?.foreign) return;
       if (t.name === "Option" && t.args.length === 1) {
         assertJsCompatible(t.args[0], typeEnv);
         return;

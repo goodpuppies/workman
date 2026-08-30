@@ -1,5 +1,8 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import { dirname, extname, join, normalize } from "node:path";
+import { isBuiltin } from "node:module";
+import { existsSync, writeFileSync } from "node:fs";
+import { runtime } from "../../io.ts";
 
 const compilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -11,13 +14,72 @@ const compilerOptions: ts.CompilerOptions = {
 };
 
 const denoTypesFile = "/__wm_deno_types.d.ts";
+const denoTypesReference = `/// <reference path="${denoTypesFile}" />\n`;
 let denoTypesCache: string | undefined;
 const sourceFileCache = new Map<string, ts.SourceFile>();
 const denoModuleGraphs = new Map<string, DenoModuleGraph>();
+// Each reflection pass only builds graphs for its own roots, while the incremental
+// TypeScript program can retain modules loaded by earlier passes.
+const knownDenoModules = new Map<string, DenoInfoModule>();
+const graphedImporters = new Set<string>();
+const fileExistsCache = new Map<string, boolean>();
+const readFileCache = new Map<string, string | undefined>();
+const directoryExistsCache = new Map<string, boolean>();
+const directoriesCache = new Map<string, string[]>();
+const realPathCache = new Map<string, string>();
+const moduleResolutionCaches = new Map<string, ts.ModuleResolutionCache>();
 let previousProgram: ts.Program | undefined;
 let activeReflectionBasePath: string | undefined;
+const preparedReflections = new Map<string, PreparedReflection>();
+let reflectionProfileSink: ((event: JsReflectionProfileEvent) => void) | undefined;
 
 export type JsReflectionSource = { key: string; source: string };
+export type JsDefinitionLocation = {
+  path: string;
+  start: number;
+  end: number;
+};
+export type JsReflectionRequest = {
+  label: string;
+  source: string;
+  sharedSource?: string;
+};
+
+type PreparedReflection = {
+  checker: ts.TypeChecker;
+  root: ts.Node;
+};
+
+export type JsReflectionProfileEvent =
+  | {
+    kind: "batch";
+    labels: string[];
+    rootDetails: { fileName: string; requests: number; sourceBytes: number }[];
+    requests: number;
+    roots: number;
+    sourceBytes: number;
+    programFiles: number;
+    programSourceBytes: number;
+    largestProgramFiles: { fileName: string; sourceBytes: number }[];
+    graphMs: number;
+    programMs: number;
+    checkerMs: number;
+    indexMs: number;
+    totalMs: number;
+  }
+  | {
+    kind: "read";
+    label: string;
+    cacheHit: boolean;
+    prepareMs: number;
+    readMs: number;
+  };
+
+export function setJsReflectionProfileSink(
+  sink: ((event: JsReflectionProfileEvent) => void) | undefined,
+): void {
+  reflectionProfileSink = sink;
+}
 
 export function setActiveJsReflectionBasePath(path: string | undefined): string | undefined {
   const previous = activeReflectionBasePath;
@@ -26,13 +88,10 @@ export function setActiveJsReflectionBasePath(path: string | undefined): string 
 }
 
 export function jsGlobalSource(path: string): JsReflectionSource {
-  if (path === "Deno" || path.startsWith("Deno.")) {
-    return {
-      key: `global:${path}`,
-      source: `/// <reference path="${denoTypesFile}" />\nconst __wm_target = ${path};`,
-    };
-  }
-  return { key: `global:${path}`, source: `const __wm_target = ${path};` };
+  return {
+    key: `global:${path}`,
+    source: `${denoTypesReference}const __wm_target = ${path};`,
+  };
 }
 
 export function jsModuleSource(specifier: string): JsReflectionSource {
@@ -44,13 +103,53 @@ export function jsModuleSource(specifier: string): JsReflectionSource {
     : undefined;
   const sourcePrefix = fileName ? `// @wm-reflect-file ${JSON.stringify(fileName)}\n` : "";
   const keySuffix = fileName ? `@${normalize(fileName)}` : "";
+  const nodeTypesReference = isBuiltin(specifier)
+    ? `/// <reference path="${nodeTypesReferencePath()}" />\n`
+    : "";
   return {
     key: `module:${specifier}${keySuffix}`,
-    source:
-      `${sourcePrefix}/// <reference path="${nodeTypesReferencePath()}" />\nimport * as __wm_target from ${
-        JSON.stringify(specifier)
-      };`,
+    source: `${sourcePrefix}${nodeTypesReference}import * as __wm_target from ${
+      JSON.stringify(specifier)
+    };`,
   };
+}
+
+export function jsModuleMemberDefinition(
+  specifier: string,
+  memberName: string,
+  basePath: string,
+): JsDefinitionLocation | undefined {
+  const previous = setActiveJsReflectionBasePath(basePath);
+  try {
+    const target = jsModuleSource(specifier);
+    return reflectSource(
+      `${target.key}.${memberName}:definition`,
+      `${target.source}\nconst __wm_member = __wm_target[${JSON.stringify(memberName)}];`,
+      (checker, sourceRoot) => {
+        const targetExpression = findVariable(sourceRoot, "__wm_target")?.initializer ??
+          findDeclaredValue(sourceRoot, "__wm_target");
+        let symbol = targetExpression
+          ? checker.getTypeAtLocation(targetExpression).getProperty(memberName)
+          : undefined;
+        if (!symbol) return undefined;
+        if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+        const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
+        if (!declaration) return undefined;
+        const sourceFile = declaration.getSourceFile();
+        const path = localDefinitionPath(sourceFile.fileName);
+        if (!path) return undefined;
+        const name = (declaration as ts.NamedDeclaration).name;
+        const selection = name && !ts.isComputedPropertyName(name) ? name : declaration;
+        return {
+          path,
+          start: selection.getStart(sourceFile),
+          end: selection.getEnd(),
+        };
+      },
+    );
+  } finally {
+    setActiveJsReflectionBasePath(previous);
+  }
 }
 
 export function reflectSource<T>(
@@ -58,20 +157,50 @@ export function reflectSource<T>(
   source: string,
   read: (
     checker: ts.TypeChecker,
-    sourceFile: ts.SourceFile,
+    sourceRoot: ts.Node,
   ) => T,
 ): T {
-  const fileName = reflectionFileName(source) ??
-    join(Deno.cwd(), `__wm_js_reflect_${sanitize(label)}.ts`);
-  const extraFiles = source.includes(denoTypesFile)
+  const key = reflectionRequestKey(label, source);
+  const cacheHit = preparedReflections.has(key);
+  const prepareStarted = reflectionProfileSink ? performance.now() : 0;
+  prepareReflectionSources([{ label, source }]);
+  const prepareMs = reflectionProfileSink ? performance.now() - prepareStarted : 0;
+  const prepared = preparedReflections.get(key);
+  if (!prepared) throw new Error(`cannot reflect JS target ${label}`);
+  const readStarted = reflectionProfileSink ? performance.now() : 0;
+  const result = read(prepared.checker, prepared.root);
+  reflectionProfileSink?.({
+    kind: "read",
+    label,
+    cacheHit,
+    prepareMs,
+    readMs: performance.now() - readStarted,
+  });
+  return result;
+}
+
+export function prepareReflectionSources(requests: JsReflectionRequest[]): void {
+  const missing = requests.filter(({ label, source }) =>
+    !preparedReflections.has(reflectionRequestKey(label, source))
+  );
+  if (missing.length === 0) return;
+
+  const totalStarted = reflectionProfileSink ? performance.now() : 0;
+  const roots = reflectionBatchRoots(missing);
+  const sources = [...roots.values()].map((root) => root.source);
+  const extraFiles = sources.some((source) => source.includes(denoTypesFile))
     ? new Map([[denoTypesFile, denoTypesSource()]])
     : new Map<string, string>();
-  const denoGraphs = denoReflectionGraphs(source);
+  const graphStarted = reflectionProfileSink ? performance.now() : 0;
+  const denoGraphs = sources.flatMap(denoReflectionGraphs);
+  const graphMs = reflectionProfileSink ? performance.now() - graphStarted : 0;
   const host = ts.createCompilerHost(compilerOptions);
+  cacheHostFileSystem(host);
   const originalGetSourceFile = host.getSourceFile;
   host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => {
-    if (normalize(name) === normalize(fileName)) {
-      return cachedSourceFile(name, source, languageVersion);
+    const virtualSource = roots.get(normalize(name)) ?? roots.get(name);
+    if (virtualSource !== undefined) {
+      return cachedSourceFile(name, virtualSource.source, languageVersion);
     }
     const extraSource = extraFiles.get(name);
     if (extraSource !== undefined) return cachedSourceFile(name, extraSource, languageVersion);
@@ -93,21 +222,228 @@ export function reflectSource<T>(
     return loaded;
   };
   host.resolveModuleNames = (moduleNames, containingFile) =>
-    moduleNames.map((moduleName) =>
-      denoResolvedModule(denoGraphs, moduleName, containingFile) ??
-        ts.resolveModuleName(moduleName, containingFile, compilerOptions, host).resolvedModule
+    moduleNames.map((moduleName) => {
+      const resolveModule = () =>
+        denoResolvedModule(denoGraphs, moduleName, containingFile) ??
+          ts.resolveModuleName(
+            moduleName,
+            containingFile,
+            compilerOptions,
+            host,
+            moduleResolutionCache(),
+          ).resolvedModule;
+      let resolved = resolveModule();
+      if (!resolved && isNpmGraphImport(denoGraphs, moduleName)) {
+        const projectDirectory = enableNodeModulesDir(containingFile);
+        if (projectDirectory) {
+          const installed = runtime.runSync(denoCliPath(), ["install"], {
+            cwd: projectDirectory,
+          });
+          if (!installed.success) {
+            const detail = installed.stderr.trim();
+            throw new Error(
+              `enabled nodeModulesDir for npm import ${moduleName}, but deno install failed${
+                detail ? `: ${detail}` : ""
+              }`,
+            );
+          }
+          clearModuleResolutionCaches();
+          resolved = resolveModule();
+        }
+        if (!resolved) {
+          throw new Error(
+            `cannot resolve npm package "${moduleName}" for JS import; ensure it is listed in deno.json, set "nodeModulesDir": "auto", and run deno install`,
+          );
+        }
+      }
+      return resolved;
+    });
+  const programStarted = reflectionProfileSink ? performance.now() : 0;
+  const program = ts.createProgram(
+    [...roots.keys()],
+    compilerOptions,
+    host,
+    previousProgram,
+  );
+  const programMs = reflectionProfileSink ? performance.now() - programStarted : 0;
+  const unresolvedImport = program.getSemanticDiagnostics().find((diagnostic) =>
+    diagnostic.code === 2307
+  );
+  if (unresolvedImport) {
+    throw new Error(
+      `cannot resolve JS import for reflection: ${
+        ts.flattenDiagnosticMessageText(unresolvedImport.messageText, "\n")
+      }`,
     );
-  const program = ts.createProgram([fileName], compilerOptions, host, previousProgram);
+  }
   previousProgram = program;
-  const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) throw new Error(`cannot reflect JS target ${label}`);
-  return read(program.getTypeChecker(), sourceFile);
+  const checkerStarted = reflectionProfileSink ? performance.now() : 0;
+  const checker = program.getTypeChecker();
+  const checkerMs = reflectionProfileSink ? performance.now() - checkerStarted : 0;
+  const programSources = reflectionProfileSink ? program.getSourceFiles() : [];
+  const indexStarted = reflectionProfileSink ? performance.now() : 0;
+  for (const [fileName, root] of roots) {
+    const sourceFile = program.getSourceFile(fileName);
+    if (!sourceFile) throw new Error(`cannot reflect JS target ${root.requests[0].label}`);
+    const blocks = sourceFile.statements.filter(ts.isBlock);
+    for (const [index, request] of root.requests.entries()) {
+      const key = reflectionRequestKey(request.label, request.source);
+      const queryRoot =
+        request.sharedSource === undefined || request.sharedSource === request.source
+          ? sourceFile
+          : blocks[index];
+      if (!queryRoot) throw new Error(`cannot locate reflected JS target ${request.label}`);
+      preparedReflections.set(key, { checker, root: queryRoot });
+    }
+  }
+  reflectionProfileSink?.({
+    kind: "batch",
+    labels: missing.map((request) => request.label),
+    rootDetails: [...roots].map(([fileName, root]) => ({
+      fileName,
+      requests: root.requests.length,
+      sourceBytes: root.source.length,
+    })),
+    requests: missing.length,
+    roots: roots.size,
+    sourceBytes: sources.reduce((total, source) => total + source.length, 0),
+    programFiles: programSources.length,
+    programSourceBytes: programSources.reduce((total, source) => total + source.text.length, 0),
+    largestProgramFiles: programSources
+      .map((source) => ({ fileName: source.fileName, sourceBytes: source.text.length }))
+      .sort((left, right) => right.sourceBytes - left.sourceBytes)
+      .slice(0, 20),
+    graphMs,
+    programMs,
+    checkerMs,
+    indexMs: performance.now() - indexStarted,
+    totalMs: performance.now() - totalStarted,
+  });
 }
+
+type ReflectionBatchRoot = {
+  source: string;
+  requests: JsReflectionRequest[];
+};
+
+function reflectionBatchRoots(requests: JsReflectionRequest[]): Map<string, ReflectionBatchRoot> {
+  const groups = new Map<string, JsReflectionRequest[]>();
+  for (const request of requests) {
+    const group = request.sharedSource === undefined
+      ? reflectionRequestKey(request.label, request.source)
+      : request.sharedSource;
+    const grouped = groups.get(group) ?? [];
+    grouped.push(request);
+    groups.set(group, grouped);
+  }
+
+  const roots = new Map<string, ReflectionBatchRoot>();
+  for (const grouped of groups.values()) {
+    const first = grouped[0];
+    const sharedSource = first.sharedSource;
+    if (
+      sharedSource !== undefined &&
+      grouped.some((request) => !request.source.startsWith(sharedSource))
+    ) {
+      throw new Error(`invalid shared JS reflection source for ${first.label}`);
+    }
+    // A block gives each probe its usual private declaration names while all
+    // probes in the group share one module import/global target and checker.
+    const source = sharedSource === undefined
+      ? `${first.source}\nexport {};\n`
+      : `${sharedSource}\n${
+        grouped.map((request) => {
+          const suffix = request.source.slice(sharedSource.length);
+          return request.source === sharedSource ? "{}" : `{${suffix}\n}`;
+        }).join("\n")
+      }\nexport {};\n`;
+    const fileName = uniqueReflectionFileName(first.label, first.source, roots);
+    roots.set(fileName, { source, requests: grouped });
+  }
+  return roots;
+}
+
+function reflectionRequestKey(label: string, source: string): string {
+  return `${label}\0${source}`;
+}
+
+function uniqueReflectionFileName(
+  label: string,
+  source: string,
+  currentRoots: Map<string, ReflectionBatchRoot>,
+): string {
+  const reflected = reflectionFileName(source);
+  const directory = reflected ? dirname(reflected) : runtime.cwd();
+  const stem = sanitize(label).slice(0, 120) || "target";
+  let fileName = normalize(reflected ?? join(directory, `__wm_js_reflect_${stem}.ts`));
+  let suffix = 2;
+  while (currentRoots.has(fileName)) {
+    fileName = normalize(join(directory, `__wm_js_reflect_${stem}_${suffix}.ts`));
+    suffix += 1;
+  }
+  return fileName;
+}
+
+function cacheHostFileSystem(host: ts.CompilerHost): void {
+  const fileExists = host.fileExists.bind(host);
+  host.fileExists = (path) => memo(fileExistsCache, normalize(path), () => fileExists(path));
+
+  const readFile = host.readFile.bind(host);
+  host.readFile = (path) => memo(readFileCache, normalize(path), () => readFile(path));
+
+  if (host.directoryExists) {
+    const directoryExists = host.directoryExists.bind(host);
+    host.directoryExists = (path) =>
+      memo(directoryExistsCache, normalize(path), () => directoryExists(path));
+  }
+
+  if (host.getDirectories) {
+    const getDirectories = host.getDirectories.bind(host);
+    host.getDirectories = (path) =>
+      memo(directoriesCache, normalize(path), () => getDirectories(path));
+  }
+
+  if (host.realpath) {
+    const realpath = host.realpath.bind(host);
+    host.realpath = (path) => memo(realPathCache, normalize(path), () => realpath(path));
+  }
+}
+
+function memo<K, V>(cache: Map<K, V>, key: K, load: () => V): V {
+  if (cache.has(key)) return cache.get(key)!;
+  const value = load();
+  cache.set(key, value);
+  return value;
+}
+
+function moduleResolutionCache(): ts.ModuleResolutionCache {
+  const currentDirectory = runtime.cwd();
+  let cache = moduleResolutionCaches.get(currentDirectory);
+  if (!cache) {
+    cache = ts.createModuleResolutionCache(
+      currentDirectory,
+      ts.sys.useCaseSensitiveFileNames
+        ? (fileName) => fileName
+        : (fileName) => fileName.toLowerCase(),
+      compilerOptions,
+    );
+    moduleResolutionCaches.set(currentDirectory, cache);
+  }
+  return cache;
+}
+
+type DenoInfoDependency = {
+  specifier: string;
+  code?: { specifier?: string; error?: string };
+  type?: { specifier?: string; error?: string };
+};
 
 type DenoInfoModule = {
   specifier: string;
   local?: string;
   mediaType?: string;
+  error?: string;
+  dependencies?: DenoInfoDependency[];
 };
 
 type DenoInfo = {
@@ -127,19 +463,20 @@ type DenoModuleGraph = {
   entrySpecifier?: string;
   redirects: Map<string, string>;
   modules: Map<string, DenoInfoModule>;
+  npmPackages: Map<string, DenoInfoNpmPackage>;
 };
 
 function denoReflectionGraphs(source: string): DenoModuleGraph[] {
   const specifiers = [...source.matchAll(/\bimport\s+\*\s+as\s+\w+\s+from\s+["']([^"']+)["']/g)]
     .map((match) => match[1])
-    .filter(needsDenoModuleResolution);
+    .filter((specifier) => needsDenoModuleResolution(specifier) || isRelativeSpecifier(specifier));
   const unique = [...new Set(specifiers)];
   const reflectedFile = reflectionFileName(source);
   const cwd = activeReflectionBasePath
     ? dirname(activeReflectionBasePath)
     : reflectedFile
     ? dirname(reflectedFile)
-    : Deno.cwd();
+    : runtime.cwd();
   return unique.flatMap((specifier) => {
     const graph = denoModuleGraph(specifier, cwd);
     return graph ? [graph] : [];
@@ -150,44 +487,99 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
   const cacheKey = `${cwd}\0${specifier}`;
   const cached = denoModuleGraphs.get(cacheKey);
   if (cached) return cached;
-  const output = new Deno.Command(denoCliPath(), {
-    args: ["info", "--json", specifier],
-    cwd,
-    stdout: "piped",
-    stderr: "piped",
-  }).outputSync();
+  const output = runtime.runSync(denoCliPath(), ["info", "--json", specifier], { cwd });
   if (!output.success) {
-    const message = new TextDecoder().decode(output.stderr).trim();
+    const message = output.stderr.trim();
     if (!mustResolveWithDeno(specifier)) return undefined;
     throw new Error(
       `cannot resolve JS import ${specifier} for reflection${message ? `: ${message}` : ""}`,
     );
   }
-  const parsed = JSON.parse(new TextDecoder().decode(output.stdout)) as DenoInfo;
+  const parsed = JSON.parse(output.stdout) as DenoInfo;
+  const failedRoot = (parsed.modules ?? []).find((module) =>
+    module.error &&
+    (module.specifier === specifier || parsed.roots?.includes(module.specifier))
+  );
+  if (
+    failedRoot?.error &&
+    (mustResolveWithDeno(specifier) || specifier.startsWith("npm:"))
+  ) {
+    throw new Error(`cannot resolve JS import ${specifier} for reflection: ${failedRoot.error}`);
+  }
+  for (const module of parsed.modules ?? []) {
+    knownDenoModules.set(module.specifier, module);
+  }
   const graph = {
     originalSpecifier: specifier,
     entrySpecifier: parsed.roots?.[0],
     redirects: new Map(Object.entries(parsed.redirects ?? {})),
     modules: new Map((parsed.modules ?? []).map((module) => [module.specifier, module])),
+    npmPackages: new Map(Object.entries(parsed.npmPackages ?? {})),
   };
   denoModuleGraphs.set(cacheKey, graph);
   return graph;
+}
+
+function isNpmGraphImport(graphs: DenoModuleGraph[], moduleName: string): boolean {
+  return graphs.some((graph) =>
+    graph.originalSpecifier === moduleName &&
+    graph.npmPackages.size > 0 &&
+    (graph.entrySpecifier?.startsWith("npm:") ?? false)
+  );
+}
+
+function enableNodeModulesDir(containingFile: string): string | undefined {
+  let directory = dirname(containingFile);
+  while (true) {
+    const configPath = join(directory, "deno.json");
+    if (existsSync(configPath)) {
+      const source = runtime.readTextFileSync(configPath);
+      const config = JSON.parse(source) as Record<string, unknown>;
+      if ("nodeModulesDir" in config) return undefined;
+      const newline = source.includes("\r\n") ? "\r\n" : "\n";
+      const indent = source.match(/^[ \t]+(?=")/m)?.[0] ?? "  ";
+      const openingBrace = source.indexOf("{");
+      const closingBrace = source.lastIndexOf("}");
+      const empty = source.slice(openingBrace + 1, closingBrace).trim() === "";
+      const updated = empty
+        ? source.slice(0, openingBrace + 1) +
+          `${newline}${indent}"nodeModulesDir": "auto"${newline}` +
+          source.slice(closingBrace)
+        : source.slice(0, openingBrace + 1) +
+          `${newline}${indent}"nodeModulesDir": "auto",` +
+          source.slice(openingBrace + 1);
+      writeFileSync(configPath, updated);
+      return directory;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
+
+function clearModuleResolutionCaches(): void {
+  fileExistsCache.clear();
+  readFileCache.clear();
+  directoryExistsCache.clear();
+  directoriesCache.clear();
+  realPathCache.clear();
+  moduleResolutionCaches.clear();
 }
 
 let nodeTypesPath: string | undefined;
 
 function nodeTypesReferencePath(): string {
   if (nodeTypesPath) return nodeTypesPath;
-  const output = new Deno.Command(denoCliPath(), {
-    args: ["info", "--json", "npm:@types/node/index.d.ts"],
-    stdout: "piped",
-    stderr: "piped",
-  }).outputSync();
+  const output = runtime.runSync(denoCliPath(), [
+    "info",
+    "--json",
+    "npm:@types/node/index.d.ts",
+  ]);
   if (!output.success) {
-    const message = new TextDecoder().decode(output.stderr).trim();
+    const message = output.stderr.trim();
     throw new Error(`cannot resolve Node type declarations${message ? `: ${message}` : ""}`);
   }
-  const parsed = JSON.parse(new TextDecoder().decode(output.stdout)) as DenoInfo;
+  const parsed = JSON.parse(output.stdout) as DenoInfo;
   const nodeTypes = Object.values(parsed.npmPackages ?? {}).find((pkg) =>
     pkg.name === "@types/node"
   );
@@ -200,7 +592,7 @@ function denoSourceForFileName(graphs: DenoModuleGraph[], fileName: string): str
   const module = denoModuleForFileName(graphs, fileName);
   if (!module?.local) return undefined;
   try {
-    return Deno.readTextFileSync(module.local);
+    return runtime.readTextFileSync(module.local);
   } catch {
     return undefined;
   }
@@ -215,14 +607,53 @@ function denoResolvedModule(
   if (!specifier) return undefined;
   const module = denoModuleForFileName(graphs, specifier);
   // `deno info` represents npm packages as a graph node without a local source
-  // file. Let TypeScript's normal resolver handle those so it can follow their
-  // package metadata and declaration files in node_modules.
-  if (!module?.local) return undefined;
+  // file. Resolve those from Deno's package cache so direct `npm:` imports do
+  // not degrade to an untyped namespace when no node_modules tree is present.
+  if (!module?.local) {
+    if (!moduleName.startsWith("npm:")) return undefined;
+    const packagePath = npmPackagePathForSpecifier(graphs, specifier);
+    if (!packagePath) return undefined;
+    return ts.resolveModuleName(
+      packagePath,
+      containingFile,
+      compilerOptions,
+      ts.sys,
+      moduleResolutionCache(),
+    ).resolvedModule;
+  }
   return {
-    resolvedFileName: module.specifier,
+    resolvedFileName: module.specifier.startsWith("file://")
+      ? module.local ?? module.specifier
+      : module.specifier,
     extension: tsExtensionForModule(module),
     isExternalLibraryImport: true,
   };
+}
+
+function npmPackagePathForSpecifier(
+  graphs: DenoModuleGraph[],
+  specifier: string,
+): string | undefined {
+  const packageName = npmPackageName(specifier);
+  if (!packageName) return undefined;
+  for (const graph of graphs) {
+    const pkg = [...graph.npmPackages.values()].find((candidate) => candidate.name === packageName);
+    if (pkg) return pkg.localPath;
+  }
+  return undefined;
+}
+
+function npmPackageName(specifier: string): string | undefined {
+  if (!specifier.startsWith("npm:")) return undefined;
+  const value = specifier.slice("npm:".length).replace(/^\/+/, "");
+  if (value.startsWith("@")) {
+    const slash = value.indexOf("/");
+    if (slash < 0) return undefined;
+    const version = value.indexOf("@", slash);
+    return version < 0 ? value : value.slice(0, version);
+  }
+  const version = value.indexOf("@");
+  return version < 0 ? value : value.slice(0, version);
 }
 
 function resolveDenoSpecifier(
@@ -240,6 +671,60 @@ function resolveDenoSpecifier(
     const redirected = graph.redirects.get(candidate) ?? candidate;
     if (graph.modules.has(redirected)) return redirected;
   }
+  const importer = denoModuleForFileName(graphs, containingFile);
+  const fromImporter = dependencyTarget(importer, moduleName);
+  const direct = graphModuleFor(graphs, fromImporter);
+  if (direct !== undefined) return direct;
+
+  if (fromImporter !== undefined && knownDenoModules.has(fromImporter)) return fromImporter;
+
+  const importerPath = isUrl(containingFile) ? fileUrlToPath(containingFile) : containingFile;
+  if (importerPath !== undefined && !graphedImporters.has(importerPath)) {
+    graphedImporters.add(importerPath);
+    if (existsSync(importerPath)) {
+      denoModuleGraph(importerPath, dirname(importerPath));
+      const learned = dependencyTarget(
+        denoModuleForFileName([], containingFile),
+        moduleName,
+      );
+      if (learned !== undefined && knownDenoModules.has(learned)) return learned;
+    }
+  }
+  return undefined;
+}
+
+function fileUrlToPath(value: string): string | undefined {
+  if (!value.startsWith("file://")) return undefined;
+  try {
+    return decodeURIComponent(new URL(value).pathname);
+  } catch {
+    return undefined;
+  }
+}
+
+function localDefinitionPath(fileName: string): string | undefined {
+  if (fileName.startsWith("file://")) return fileUrlToPath(fileName);
+  if (!isUrl(fileName)) return fileName;
+  return denoModuleForFileName([], fileName)?.local;
+}
+
+function dependencyTarget(
+  module: DenoInfoModule | undefined,
+  moduleName: string,
+): string | undefined {
+  const dependency = module?.dependencies?.find((entry) => entry.specifier === moduleName);
+  return dependency?.code?.specifier ?? dependency?.type?.specifier;
+}
+
+function graphModuleFor(
+  graphs: DenoModuleGraph[],
+  specifier: string | undefined,
+): string | undefined {
+  if (specifier === undefined) return undefined;
+  for (const graph of graphs) {
+    const redirected = graph.redirects.get(specifier) ?? specifier;
+    if (graph.modules.has(redirected)) return redirected;
+  }
   return undefined;
 }
 
@@ -247,12 +732,29 @@ function denoModuleForFileName(
   graphs: DenoModuleGraph[],
   fileName: string,
 ): DenoInfoModule | undefined {
+  const candidates = isUrl(fileName) ? [fileName] : [fileName, pathAsFileUrl(fileName)];
   for (const graph of graphs) {
-    const redirected = graph.redirects.get(fileName) ?? fileName;
-    const module = graph.modules.get(redirected);
+    for (const candidate of candidates) {
+      if (candidate === undefined) continue;
+      const redirected = graph.redirects.get(candidate) ?? candidate;
+      const module = graph.modules.get(redirected);
+      if (module) return module;
+    }
+  }
+  for (const candidate of candidates) {
+    if (candidate === undefined) continue;
+    const module = knownDenoModules.get(candidate);
     if (module) return module;
   }
   return undefined;
+}
+
+function pathAsFileUrl(value: string): string | undefined {
+  try {
+    return new URL(`file://${value.startsWith("/") ? "" : "/"}${value.replace(/\\/g, "/")}`).href;
+  } catch {
+    return undefined;
+  }
 }
 
 function tsExtensionForModule(module: DenoInfoModule): ts.Extension {
@@ -267,7 +769,8 @@ function tsExtensionForModule(module: DenoInfoModule): ts.Extension {
 }
 
 function needsDenoModuleResolution(specifier: string): boolean {
-  return mustResolveWithDeno(specifier) || isBareDenoSpecifier(specifier);
+  return mustResolveWithDeno(specifier) || specifier.startsWith("npm:") ||
+    isBareDenoSpecifier(specifier);
 }
 
 function mustResolveWithDeno(specifier: string): boolean {
@@ -293,21 +796,23 @@ function isUrl(value: string): boolean {
 
 function denoTypesSource(): string {
   if (denoTypesCache !== undefined) return denoTypesCache;
-  const output = new Deno.Command(denoCliPath(), {
-    args: ["types"],
-    stdout: "piped",
-    stderr: "piped",
-  }).outputSync();
+  const output = runtime.runSync(denoCliPath(), ["types"]);
   if (!output.success) {
-    const message = new TextDecoder().decode(output.stderr).trim();
+    const message = output.stderr.trim();
     throw new Error(`cannot load Deno type declarations${message ? `: ${message}` : ""}`);
   }
-  denoTypesCache = new TextDecoder().decode(output.stdout);
+  denoTypesCache = `${output.stdout}
+declare namespace Deno {
+  interface UnsafeWindowSurface {
+    getContext(contextId: "webgpu", options?: any): GPUCanvasContext | null;
+  }
+}
+`;
   return denoTypesCache;
 }
 
 function denoCliPath(): string {
-  return Deno.env.get("WORKMAN_DENO_PATH")?.trim() || Deno.execPath();
+  return runtime.env("WORKMAN_DENO_PATH")?.trim() || "deno";
 }
 
 function cachedSourceFile(
@@ -346,23 +851,23 @@ function sourceFileCacheKey(
 }
 
 export function findVariable(
-  sourceFile: ts.SourceFile,
+  root: ts.Node,
   name: string,
 ): ts.VariableDeclaration | undefined {
   let found: ts.VariableDeclaration | undefined;
   const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === name) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
       found = node;
       return;
     }
     ts.forEachChild(node, visit);
   };
-  visit(sourceFile);
+  visit(root);
   return found;
 }
 
 export function findDeclaredValue(
-  sourceFile: ts.SourceFile,
+  root: ts.Node,
   name: string,
 ): ts.Identifier | undefined {
   let found: ts.Identifier | undefined;
@@ -373,15 +878,15 @@ export function findDeclaredValue(
     }
     ts.forEachChild(node, visit);
   };
-  visit(sourceFile);
+  visit(root);
   return found;
 }
 
 export function findCallInitializer(
-  sourceFile: ts.SourceFile,
+  root: ts.Node,
   name: string,
 ): ts.CallExpression | undefined {
-  const initializer = findVariable(sourceFile, name)?.initializer;
+  const initializer = findVariable(root, name)?.initializer;
   return initializer && ts.isCallExpression(initializer) ? initializer : undefined;
 }
 

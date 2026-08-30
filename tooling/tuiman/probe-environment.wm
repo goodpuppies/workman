@@ -1,0 +1,9 @@
+record Item = {
+  text: String,
+};
+
+record Environment = {
+  label: String,
+  count: Number,
+  items: List<Item>,
+};

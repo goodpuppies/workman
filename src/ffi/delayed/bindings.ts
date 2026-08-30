@@ -1,8 +1,6 @@
 import type { Decl } from "../../ast.ts";
 import { isForeignTypeDeclName } from "../imports.ts";
 import type { JsTypeRef } from "../reflect/types.ts";
-export { generatedImportInsertionIndex } from "../shared.ts";
-
 export function generatedForeignDeclsForRefs(
   decls: Decl[],
   foreignTypeRefs: Map<string, JsTypeRef>,

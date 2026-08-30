@@ -2,12 +2,19 @@ import type { Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
-import { prune, solveFfi, typeFromAst } from "../../types.ts";
+import { freshTypeInfo, prune, solveFfi, typeFromAst } from "../../types.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
-import { inferredType, knownTyToTypeExpr, typeExprKey } from "./receiver_models.ts";
+import {
+  foreignReceiver,
+  foreignTypeRefLookup,
+  inferredType,
+  knownTyToTypeExpr,
+  typeExprKey,
+} from "./receiver_models.ts";
 import {
   addVariants,
+  callArgHint,
   type FfiBinding,
   type FfiElaboration,
   ffiOverloadMessage,
@@ -20,6 +27,7 @@ import {
 import {
   jsGlobalTypeRef,
   type JsMemberType,
+  jsRefCall,
   jsRefDeepCall,
   type JsTypeRef,
 } from "../reflect/types.ts";
@@ -59,9 +67,57 @@ export function materializeReceiverProperty(
     { kind: "JsReceiver", path },
     variants,
     true,
-    undefined,
+    original.node,
   );
-  const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], []);
+  const bindingVariants = bindings.get(surfaceName)?.variants ?? [];
+  const expectedFunction = contextualFunctionType(original, result);
+  if (expectedFunction) {
+    const argTypes = expectedFunction.params.map(knownTyToTypeExpr);
+    const args = expectedFunction.params.map((_, index) => ({
+      kind: "Var" as const,
+      name: `__wm_js_arg_${index}`,
+    }));
+    const variant = selectVariant(bindingVariants, args, argTypes);
+    if (!variant || variant.type.kind !== "TFn") {
+      throw diagnosticError(
+        new Error(ffiOverloadMessage(path.join("."), bindingVariants, args)),
+        original.node,
+      );
+    }
+    const variantType = variant.type;
+    const contextualType: TypeExpr = {
+      ...variantType,
+      params: argTypes.map((type, index) => type ?? variantType.params[index]),
+    };
+    solveReflectedFfiFunctionValue(original, variant, contextualType, result);
+    selected.add(variant.internalName);
+    return {
+      kind: "Lambda",
+      params: args.map((arg, index) => ({
+        pattern: { kind: "PVar", name: arg.name },
+        annotation: argTypes[index],
+      })),
+      directives: [],
+      body: {
+        kind: "Call",
+        callee: { kind: "Var", name: variant.internalName },
+        args: [receiver, ...args],
+      },
+      node: original.node,
+    };
+  }
+  if (
+    bindingVariants.length > 1 &&
+    bindingVariants.every((variant) => variant.type.kind === "TFn")
+  ) {
+    throw diagnosticError(
+      new Error(
+        `cannot determine JS FFI overload for ${path.join(".")} as a first-class function`,
+      ),
+      original.node,
+    );
+  }
+  const variant = selectVariant(bindingVariants, []);
   if (!variant) return { kind: "FfiGet", receiver, path };
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
@@ -71,6 +127,58 @@ export function materializeReceiverProperty(
     args: [receiver],
     node: original.node,
   };
+}
+
+function contextualFunctionType(
+  original: Expr,
+  result: InferResult,
+) {
+  const inferred = inferredType(result, original);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  if (placeholder?.tag !== "ffi") return undefined;
+  return placeholder.constraints
+    ?.map(prune)
+    .find((constraint): constraint is Extract<typeof constraint, { tag: "fn" }> =>
+      constraint.tag === "fn" && constraint.params.every(isConcreteContextType)
+    );
+}
+
+function isConcreteContextType(type: ReturnType<typeof prune>): boolean {
+  const target = prune(type);
+  switch (target.tag) {
+    case "var":
+    case "ffi":
+    case "struct":
+      return false;
+    case "prim":
+      return true;
+    case "fn":
+      return target.params.every(isConcreteContextType) && isConcreteContextType(target.result);
+    case "tuple":
+      return target.items.every(isConcreteContextType);
+    case "named":
+      return target.args.every(isConcreteContextType);
+  }
+}
+
+function solveReflectedFfiFunctionValue(
+  original: Expr,
+  variant: FfiVariant,
+  contextualType: TypeExpr,
+  result: InferResult,
+): void {
+  const inferred = inferredType(result, original);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  if (placeholder?.tag !== "ffi") return;
+  const materializedType = materializeReflectedType(contextualType, result);
+  if (!materializedType) return;
+  solveFfi(placeholder, materializedType);
+  resolveFfiFact(result.facts, placeholder.id, materializedType);
+  recordExprFact(result.facts, original, {
+    subject: "ffi-reflected",
+    instantiated: inferred,
+    origin: { source: "reflected-ffi", name: variant.internalName },
+  });
 }
 
 export function materializeReceiverCall(
@@ -109,7 +217,7 @@ export function materializeReceiverCall(
     { kind: "JsReceiver", path },
     variants,
     true,
-    undefined,
+    original.node,
   );
   const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], args, argTypes);
   if (!variant) {
@@ -169,12 +277,18 @@ export function materializeBindingCall(
       original.node,
     );
   }
+  variant = specializeReflectedBindingCall(binding, variant, args, ffi, result, options);
   variant = specializeDeepBindingCall(binding, variant, args, ffi);
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
   return {
     kind: "Call",
-    callee: { kind: "Var", name: variant.internalName },
+    callee: {
+      kind: "Var",
+      name: variant.internalName,
+      sourceName: original.name,
+      node: original.node,
+    },
     args: args.map((arg, index) =>
       resolveDelayedCallArg(
         arg,
@@ -208,8 +322,66 @@ export function solveBindingCallType(
   addResolvedArrayLikeVariants(binding, argTypes, ffi.bindings);
   let variant = selectVariant(binding.variants, args, argTypes);
   if (!variant) return;
+  variant = specializeReflectedBindingCall(binding, variant, args, ffi, result);
   variant = specializeDeepBindingCall(binding, variant, args, ffi);
   solveReflectedFfiValue(original, variant, result);
+}
+
+function specializeReflectedBindingCall(
+  binding: FfiBinding,
+  variant: FfiVariant,
+  args: Expr[],
+  ffi: FfiElaboration,
+  result: InferResult,
+  options?: ResolveOptions,
+): FfiVariant {
+  if (!variant.callRef || variant.deep) return variant;
+  const foreignRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options?.foreignTypeRefs);
+  const hints = args.map((arg) => {
+    const inferred = inferredType(result, arg);
+    const foreign = inferred ? foreignReceiver(inferred, foreignRefs) : undefined;
+    if (foreign) return { kind: "ref" as const, ref: foreign.ref, type: foreign.type };
+    const known = inferred ? knownTyToTypeExpr(inferred) : undefined;
+    if (known?.kind === "TName" && known.args.length === 0) {
+      const ref = foreignRefs.get(known.name);
+      if (ref) return { kind: "ref" as const, ref, type: known };
+    }
+    return callArgHint(arg);
+  });
+  if (!hints.some((hint) => hint.kind === "ref")) return variant;
+  const reflected = jsRefCall(variant.callRef, hints);
+  const concrete = reflected ? memberVariants(reflected)[0] : undefined;
+  if (!concrete) return variant;
+  const type = concrete.type;
+  const existing = findVariantByType(binding, variant.fallible ? fallibleTypeKey(type) : type);
+  if (existing) return existing;
+  rememberVariantForeignTypeRefs([concrete], ffi.foreignTypeRefs);
+  rememberMaterializedForeignTypes(concrete.resultRef, result);
+  addVariants(
+    ffi.bindings,
+    binding.surfaceName,
+    variant.memberName,
+    variant.target,
+    [{
+      ...concrete,
+      callRef: variant.callRef,
+    }],
+    variant.fallible,
+    variant.node,
+  );
+  return binding.variants.at(-1) ?? variant;
+}
+
+function rememberMaterializedForeignTypes(ref: JsTypeRef | undefined, result: InferResult): void {
+  for (const nested of ref?.nestedTypeRefs ?? []) {
+    const type = nested.type;
+    if (type?.kind !== "TName" || type.args.length !== 0 || result.typeEnv.has(type.name)) continue;
+    result.typeEnv.set(type.name, {
+      ...freshTypeInfo(type.name, 0),
+      foreign: true,
+      foreignKey: nested.key,
+    });
+  }
 }
 
 function specializeDeepBindingCall(
@@ -480,7 +652,10 @@ function materializeReflectedType(
   result: InferResult,
 ) {
   try {
-    return typeFromAst(reflected, result.typeEnv, new Map(), { allowFreeVars: false });
+    return typeFromAst(reflected, result.typeEnv, new Map(), {
+      allowFreeVars: false,
+      strEnv: result.structure.strEnv,
+    });
   } catch {
     return undefined;
   }
@@ -524,7 +699,12 @@ function rememberVariantForeignTypeRefs(
   for (const variant of variants) {
     rememberForeignTypeNames(variant.type, foreignTypeRefs);
     if (variant.receiverType) rememberForeignTypeNames(variant.receiverType, foreignTypeRefs);
-    if (variant.resultRef?.type) rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs);
+    if (variant.resultRef?.type) {
+      rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs, variant.resultRef);
+    }
+    for (const ref of variant.resultRef?.nestedTypeRefs ?? []) {
+      if (ref.type) rememberForeignTypeNames(ref.type, foreignTypeRefs, ref);
+    }
     for (const callback of variant.callbackParamRefs ?? []) {
       for (const ref of callback.params) {
         if (ref.type) rememberForeignTypeNames(ref.type, foreignTypeRefs, ref);
@@ -542,7 +722,7 @@ function rememberForeignTypeNames(
     case "TName":
       if (type.args.length === 0 && isReflectedForeignTypeName(type.name)) {
         const typeRef = ref ?? jsGlobalTypeRef(type.name);
-        foreignTypeRefs.set(type.name, typeRef);
+        if (ref || !foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
       }
       for (const arg of type.args) rememberForeignTypeNames(arg, foreignTypeRefs);

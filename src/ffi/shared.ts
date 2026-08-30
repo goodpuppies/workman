@@ -10,6 +10,7 @@ export type FfiElaboration = {
   module: Module;
   bindings: Map<string, FfiBinding>;
   foreignTypeRefs: Map<string, JsTypeRef>;
+  valueRefs?: Map<string, JsTypeRef>;
   selected: Set<string>;
   sourceJsImports?: Extract<Decl, { kind: "JsImportDecl" }>[];
   deepRecords?: Map<string, Extract<Decl, { kind: "RecordDecl" }>>;
@@ -128,17 +129,67 @@ export function generatedReceiverJsImports(
   }));
 }
 
-export function generatedImportInsertionIndex(decls: Decl[]): number {
-  let lastTypeDecl = -1;
-  for (let index = 0; index < decls.length; index++) {
-    const kind = decls[index].kind;
-    if (kind === "ForeignTypeDecl" || kind === "RecordDecl" || kind === "TypeDecl") {
-      lastTypeDecl = index;
-    }
-  }
-  if (lastTypeDecl !== -1) return lastTypeDecl + 1;
+/**
+ * Insert compiler-generated FFI imports after the local types their signatures mention, while
+ * keeping built-in-only helpers before the first value declaration that can use them.
+ */
+export function insertGeneratedFfiImports(decls: Decl[], imports: Decl[]): Decl[] {
+  if (imports.length === 0) return decls;
   const firstLet = decls.findIndex((decl) => decl.kind === "LetDecl");
-  return firstLet === -1 ? decls.length : firstLet;
+  const baseline = firstLet === -1 ? decls.length : firstLet;
+  const localTypeDeclarations = new Map<string, number>();
+  decls.forEach((decl, index) => {
+    if (
+      decl.kind === "ForeignTypeDecl" || decl.kind === "RecordDecl" || decl.kind === "TypeDecl"
+    ) {
+      localTypeDeclarations.set(decl.name, index);
+    }
+  });
+  const scheduled = new Map<number, Decl[]>();
+  for (const generated of atomicGeneratedImports(imports)) {
+    let boundary = baseline;
+    if (generated.kind === "JsImportDecl" && generated.clause.kind === "Named") {
+      for (const spec of generated.clause.specs) {
+        for (const name of typeNames(spec.type)) {
+          const declaration = localTypeDeclarations.get(name);
+          if (declaration !== undefined) boundary = Math.max(boundary, declaration + 1);
+        }
+      }
+    }
+    const bucket = scheduled.get(boundary) ?? [];
+    bucket.push(generated);
+    scheduled.set(boundary, bucket);
+  }
+  const output: Decl[] = [];
+  for (let index = 0; index <= decls.length; index++) {
+    output.push(...(scheduled.get(index) ?? []));
+    if (index < decls.length) output.push(decls[index]);
+  }
+  return output;
+}
+
+function atomicGeneratedImports(imports: Decl[]): Decl[] {
+  return imports.flatMap((decl) => {
+    if (decl.kind !== "JsImportDecl" || decl.clause.kind !== "Named") return [decl];
+    return decl.clause.specs.map((spec) => ({
+      ...decl,
+      clause: { ...decl.clause, specs: [spec] },
+    }));
+  });
+}
+
+function typeNames(type: TypeExpr | undefined): string[] {
+  if (!type) return [];
+  switch (type.kind) {
+    case "TName":
+      return [type.name, ...type.args.flatMap(typeNames)];
+    case "TTuple":
+      return type.items.flatMap(typeNames);
+    case "TFn":
+      return [...type.params, type.result].flatMap(typeNames);
+    case "TVar":
+      return [];
+  }
 }
 
 export function memberVariants(
@@ -378,6 +429,7 @@ const builtInTypeNames = new Set([
 ]);
 
 function literalType(expr: Expr): string | undefined {
+  if (expr.kind === "Ascribed") return literalType(expr.value);
   switch (expr.kind) {
     case "Int":
     case "Float":

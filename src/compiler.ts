@@ -1,10 +1,6 @@
-import type { ImportClause, Module } from "./ast.ts";
+import type { CtorDecl, Expr, Module, Pattern } from "./ast.ts";
 import { basename, dirname, relative } from "node:path";
-import {
-  type CoreProgram,
-  coreProgramFromAnalysis,
-  coreProgramFromModule,
-} from "./core/artifact.ts";
+import { type CoreProgram, coreProgramFromAnalysis } from "./core/artifact.ts";
 import { emitCoreProgram } from "./core/emit_js.ts";
 import { coreFromSurface } from "./core/from_surface.ts";
 import {
@@ -15,29 +11,65 @@ import { prepareFfiElaboration } from "./ffi/elab.ts";
 import {
   inferModule,
   inferModulePartial,
+  inferModuleRecovered,
   inferModuleWithSteps,
   type InferResult,
   type InferStep,
 } from "./infer.ts";
+import { rememberExportedSourceDocument } from "./infer/imports.ts";
+import { registerModuleCarrier } from "./infer/carriers.ts";
 import {
   loadModuleGraph,
   type ModuleGraph,
   type ModuleGraphOptions,
-  type ModuleNode,
   type VirtualFileSystem,
 } from "./module_graph.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
+import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import {
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
-  FrontendDiagnosticError,
   genericDiagnostic,
-  renderDiagnosticSummary,
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
-import { standardInferOptions } from "./standard_library.ts";
-import { assertCompilerFrontendMode } from "./frontend_mode.ts";
+import { standardInferOptions, standardRuntimeGraph } from "./standard_library.ts";
+import { assertCompilerFrontendMode, resolveCompilerFrontend } from "./frontend_mode.ts";
+import {
+  analyzeModuleGraph,
+  assertNoPartialDiagnostics,
+  StagedAnalysisError,
+} from "./staged_analysis.ts";
+import {
+  buildCoreProgramAnalysis,
+  buildPartialProjectSnapshot,
+  buildProgramAnalysis,
+  type CoreProgramAnalysis,
+  currentSourceCompletionFacts,
+  type ProgramAnalysis,
+} from "./program_analysis.ts";
+import {
+  immutableCopy,
+  type ProjectSnapshot,
+  type ProjectSnapshotContext,
+  type SemanticGpuElaboratedSlice,
+  type SemanticGpuElaboration,
+} from "./module_interface.ts";
+import { type GpuFragmentSelectionFacts, resolveGpuFragmentSelections } from "./gpu_selection.ts";
+import type { BindingFacts } from "./binding_facts.ts";
+import { resolveProgramBindingFacts } from "./binding_facts.ts";
+import { type NominalFacts, resolveProgramNominalFacts } from "./nominal_facts.ts";
+import type { GpuSliceElaborationInput } from "./wmslang/v2_dto.ts";
+import type { ResolvedPatternFacts } from "./pattern_facts.ts";
+import type { RecursionFacts } from "./recursion_facts.ts";
+import { CompilerIdAllocator } from "./ids.ts";
+import { loadDefaultWmslangSlangBackend } from "./wmslang/slang_backend.ts";
+import { materializeGpuSliceArtifacts } from "./wmslang/materialize.ts";
+import { WmslangNumericDiagnosticError, type WmslangSliceCompiler } from "./wmslang/v2_loader.ts";
+import {
+  defaultWmslangCompilerIdentity,
+  loadCachedWmslangCompiler,
+} from "./wmslang/compiler_cache.ts";
 
 export type CompileOptions = ModuleGraphOptions;
 export type CompileArtifact = {
@@ -60,14 +92,54 @@ export async function compile(
     resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     filePath,
   );
-  return emitCoreProgram(coreProgramFromModule(ast, result));
+  const path = filePath ?? "<source>";
+  const id = moduleId(path);
+  const graph: ModuleGraph = {
+    entry: id,
+    order: [id],
+    nodes: new Map([[id, {
+      id,
+      path,
+      source,
+      module: ast,
+      imports: [],
+      emitName: "Main",
+    }]]),
+  };
+  const results = new Map([[id, result]]);
+  const ids = new CompilerIdAllocator();
+  const bindings = resolveProgramBindingFacts(graph, ids);
+  const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
+  const fragmentSelections = resolveGpuFragmentSelections([{
+    moduleId: id,
+    path,
+    module: ast,
+    result,
+    bindings: bindings.get(id)!,
+  }]);
+  return emitCoreProgram(
+    await coreProgramWithStandardRuntime({
+      graph,
+      results,
+      ids,
+      bindings,
+      nominalFacts,
+      elaboration: { bindings, ids, nominalFacts, fragmentSelections },
+    }),
+  );
 }
 
 export type CheckSourceOptions = CompilerFrontendOptions;
 export type CoreSourceResult = { module: ReturnType<typeof coreFromSurface>; result: InferResult };
 export type CoreFileResult = {
   graph: ModuleGraph;
-  results: Map<string, InferResult>;
+  results: ModuleMap<InferResult>;
+  bindings: ModuleMap<BindingFacts>;
+  nominalFacts: NominalFacts;
+  patternFacts: ResolvedPatternFacts;
+  recursionFacts: RecursionFacts;
+  fragmentSelections: GpuFragmentSelectionFacts;
+  gpuInput: GpuSliceElaborationInput;
   core: CoreProgram;
 };
 
@@ -147,8 +219,10 @@ export async function compileFileArtifacts(
 export async function compileFileArtifactsFromCore(
   compiled: CoreFileResult,
   options: CompileOptions = {},
+  entryTarget: "executable" | "repl" = "executable",
 ): Promise<CompileArtifact[]> {
-  const entry = compiled.graph.entry;
+  const entryId = compiled.graph.entry;
+  const entry = compiled.graph.nodes.get(entryId)!.path;
   const outputNames = new Map<string, string>([[entry, "main.mjs"]]);
   const usedNames = new Set(["main.mjs"]);
   const artifacts: CompileArtifact[] = [];
@@ -167,6 +241,7 @@ export async function compileFileArtifactsFromCore(
     artifacts.push({
       path: outputNames.get(path)!,
       code: emitCoreProgram(core, {
+        target: path === entry ? entryTarget : "executable",
         workerSpecifiers: relativeWorkerSpecifiers(outputNames.get(path)!, outputNames),
       }),
       kind,
@@ -177,6 +252,13 @@ export async function compileFileArtifactsFromCore(
   return artifacts;
 }
 
+export async function compileReplFileArtifacts(
+  input: string,
+  options: CompileOptions = {},
+): Promise<CompileArtifact[]> {
+  return await compileFileArtifactsFromCore(await coreFile(input, options), options, "repl");
+}
+
 export async function compileLibraryFile(
   input: string,
   options: CompileOptions = {},
@@ -185,15 +267,204 @@ export async function compileLibraryFile(
 }
 
 export async function checkFile(input: string): Promise<Map<string, InferResult>> {
-  return (await analyzeFile(input)).results;
+  const analysis = await analyzeFile(input);
+  return resultsBySourcePath(analysis.graph, analysis.results);
 }
 
 export async function coreFile(
   input: string,
   options: ModuleGraphOptions = {},
 ): Promise<CoreFileResult> {
-  const { graph, results } = await analyzeFile(input, options);
-  return { graph, results, core: coreProgramFromAnalysis(graph, results) };
+  const analysis = await analyzeCoreFile(input, options);
+  return await coreResultFromAnalysis(analysis, options);
+}
+
+async function coreResultFromAnalysis(
+  analysis: CoreProgramAnalysis,
+  options: ModuleGraphOptions = {},
+): Promise<CoreFileResult> {
+  options.onStage?.("build core");
+  const materializedGpuArtifacts = analysis.gpuInput.root.functionId === -1
+    ? undefined
+    : await materializeGpuSliceArtifacts(
+      analysis,
+      await loadDefaultWmslangCompiler(),
+      await loadDefaultWmslangSlangBackend(),
+    );
+  const core = await coreProgramWithStandardRuntime({
+    graph: analysis.graph,
+    results: analysis.results,
+    ids: analysis.ids,
+    bindings: analysis.bindings,
+    nominalFacts: analysis.nominalFacts,
+    elaboration: { ...analysis, materializedGpuArtifacts },
+  });
+  return {
+    graph: analysis.graph,
+    results: analysis.results,
+    bindings: analysis.bindings,
+    nominalFacts: analysis.nominalFacts,
+    patternFacts: analysis.patternFacts,
+    recursionFacts: analysis.recursionFacts,
+    fragmentSelections: analysis.fragmentSelections,
+    gpuInput: analysis.gpuInput,
+    core,
+  };
+}
+
+async function coreProgramWithStandardRuntime(input: {
+  graph: ModuleGraph;
+  results: ModuleMap<InferResult>;
+  ids: CompilerIdAllocator;
+  bindings: ModuleMap<BindingFacts>;
+  nominalFacts: NominalFacts;
+  elaboration?: Parameters<typeof coreProgramFromAnalysis>[2];
+}): Promise<CoreProgram> {
+  if ([...input.graph.nodes.values()].every((node) => node.module.prelude === "none")) {
+    return coreProgramFromAnalysis(input.graph, input.results, {
+      ...input.elaboration,
+      bindings: input.bindings,
+      ids: input.ids,
+      nominalFacts: input.nominalFacts,
+    });
+  }
+  const standard = await standardRuntimeGraph();
+  const standardBindings = resolveProgramBindingFacts(standard.graph, input.ids);
+  const standardNominalFacts = resolveProgramNominalFacts(
+    standard.graph,
+    standard.results,
+    input.ids,
+  );
+  const nominalFacts = mergeStandardNominalFacts(
+    input.nominalFacts,
+    standardNominalFacts,
+    input.results,
+  );
+  const userCore = coreProgramFromAnalysis(input.graph, input.results, {
+    ...input.elaboration,
+    bindings: input.bindings,
+    ids: input.ids,
+    nominalFacts,
+  });
+  const standardCore = coreProgramFromAnalysis(standard.graph, standard.results, {
+    bindings: standardBindings,
+    ids: input.ids,
+    nominalFacts,
+    gpuOnlyBindings: new Set(),
+  });
+  return {
+    ...userCore,
+    order: [...standard.graph.order, ...userCore.order],
+    modules: new Map([...standardCore.modules, ...userCore.modules]),
+    constructors: [...standardCore.constructors, ...userCore.constructors],
+    nominalFacts,
+    standardNamespaces: standard.namespaces.map((namespace) => ({
+      ...namespace,
+      basisName: namespace.hostMembers.length > 0
+        ? `__wm_basis_${namespace.publicName}`
+        : undefined,
+      basisMembers: namespace.hostMembers,
+    })),
+  };
+}
+
+function mergeStandardNominalFacts(
+  user: NominalFacts,
+  standard: NominalFacts,
+  userResults: ModuleMap<InferResult>,
+): NominalFacts {
+  const constructorReferences = new Map<Expr | Pattern, import("./ids.ts").CtorId>([
+    ...standard.constructorReferences,
+    ...user.constructorReferences,
+  ]);
+  const importedConstructor = (declaration: CtorDecl | undefined) =>
+    declaration === undefined ? undefined : standard.constructorDeclarations.get(declaration);
+  for (const result of userResults.values()) {
+    for (const [expression, fact] of result.facts.expressions) {
+      const id = importedConstructor(fact.general?.constructorDecl);
+      if (fact.subject === "constructor" && id !== undefined) {
+        constructorReferences.set(expression, id);
+      }
+    }
+    for (const [pattern, fact] of result.facts.patterns) {
+      const id = importedConstructor(fact.general?.constructorDecl);
+      if (fact.subject === "constructor" && id !== undefined) {
+        constructorReferences.set(pattern, id);
+      }
+    }
+  }
+  return {
+    types: [...user.types, ...standard.types],
+    records: [...user.records, ...standard.records],
+    fields: [...user.fields, ...standard.fields],
+    constructors: [...user.constructors, ...standard.constructors],
+    typeDeclarations: new Map([...user.typeDeclarations, ...standard.typeDeclarations]),
+    recordDeclarations: new Map([...user.recordDeclarations, ...standard.recordDeclarations]),
+    fieldDeclarations: new Map([...user.fieldDeclarations, ...standard.fieldDeclarations]),
+    constructorDeclarations: new Map([
+      ...user.constructorDeclarations,
+      ...standard.constructorDeclarations,
+    ]),
+    inferenceTypeIds: new Map([...user.inferenceTypeIds, ...standard.inferenceTypeIds]),
+    recordTypeIds: new Map([...user.recordTypeIds, ...standard.recordTypeIds]),
+    fieldIds: new Map([...user.fieldIds, ...standard.fieldIds]),
+    constructorReferences,
+  };
+}
+
+let defaultWmslangCompiler: Promise<WmslangSliceCompiler> | undefined;
+
+function loadDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
+  return defaultWmslangCompiler ??= compileDefaultWmslangCompiler();
+}
+
+/**
+ * Elaborate the normalized GPU programs owned by one immutable project snapshot.
+ *
+ * Tooling consumes this artifact instead of reaching back into ProgramAnalysis, binding maps, or
+ * mutable inference state. The snapshot and interface generation tokens make stale results
+ * detectable when this query eventually moves behind an incremental scheduler.
+ */
+export async function elaborateProjectGpuSemantics(
+  project: ProjectSnapshot,
+): Promise<SemanticGpuElaboration> {
+  const compiler = await loadDefaultWmslangCompiler();
+  const modules = new Map<ModuleId, readonly SemanticGpuElaboratedSlice[]>();
+  for (const [moduleId, moduleInterface] of project.interfaces) {
+    if (moduleInterface.gpuFacts.slices.length === 0) continue;
+    const slices = moduleInterface.gpuFacts.slices.map((slice) => {
+      const input = structuredClone(slice.input) as GpuSliceElaborationInput;
+      try {
+        return Object.freeze({
+          rootId: slice.rootId,
+          selectorIds: slice.selectorIds,
+          input: slice.input,
+          elaboration: immutableCopy(compiler.elaborateGpuSliceTypes(input)),
+        });
+      } catch (error) {
+        if (error instanceof WmslangNumericDiagnosticError) {
+          throw error.withLanguageServiceInput(input);
+        }
+        throw error;
+      }
+    });
+    modules.set(moduleId, Object.freeze(slices));
+  }
+  return Object.freeze({
+    projectSnapshotId: project.id,
+    generation: project.generation,
+    modules: Object.freeze(modules),
+  });
+}
+
+async function compileDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
+  return await loadCachedWmslangCompiler({
+    identity: await defaultWmslangCompilerIdentity(),
+    build: () =>
+      compileLibraryFile(
+        new URL("../tooling/wmslang/compiler.wm", import.meta.url).pathname,
+      ),
+  });
 }
 
 function workerTargets(core: CoreProgram): string[] {
@@ -237,178 +508,125 @@ function relativeWorkerSpecifiers(
 export async function analyzeFile(
   input: string,
   options: ModuleGraphOptions = {},
-): Promise<{ graph: ModuleGraph; results: Map<string, InferResult> }> {
+): Promise<ProgramAnalysis> {
+  return await analyzeStrictSnapshot(input, options, {});
+}
+
+/** Strict analysis for an uncovered document without promoting it to a headed project. */
+export async function analyzeStrictDetachedFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<ProgramAnalysis> {
+  return await analyzeStrictSnapshot(input, options, { kind: "detached" });
+}
+
+async function analyzeStrictSnapshot(
+  input: string,
+  options: ModuleGraphOptions,
+  context: ProjectSnapshotContext,
+): Promise<ProgramAnalysis> {
+  return await analyzeStrict(
+    input,
+    options,
+    (graph, results) => buildProgramAnalysis(graph, results, context),
+  );
+}
+
+async function analyzeCoreFile(
+  input: string,
+  options: ModuleGraphOptions,
+): Promise<CoreProgramAnalysis> {
+  return await analyzeStrict(input, options, buildCoreProgramAnalysis);
+}
+
+async function analyzeStrict<T>(
+  input: string,
+  options: ModuleGraphOptions,
+  build: (graph: ModuleGraph, results: ModuleMap<InferResult>) => T,
+): Promise<T> {
   assertCompilerFrontendMode(options.frontend);
+  options.onStage?.("load modules");
   const graph = await loadModuleGraph(input, options);
-  const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
-  for (const node of graph.nodes.values()) {
-    node.module = resolveLocalJsModuleSpecifiers(node.module, node.path);
-    const prepared = prepareFfiElaboration(node.module, {
-      filePath: node.path,
-      importedRecordFields: importedRecordFields(node, graph),
-    });
-    ffi.set(node.path, prepared);
+  try {
+    options.onStage?.("analyze");
+    const total = graph.nodes.size;
+    const cleared = new Map<string, Set<string>>();
+    return build(
+      graph,
+      await analyzeModuleGraph(graph, {
+        onEvent: ({ phase, node }) => {
+          if (!options.onAnalysisProgress) return;
+          const seen = cleared.get(phase) ?? new Set<string>();
+          seen.add(node.path);
+          cleared.set(phase, seen);
+          options.onAnalysisProgress(seen.size, total, phase);
+        },
+      }),
+    );
+  } catch (error) {
+    if (error instanceof StagedAnalysisError) {
+      throw new ModuleAnalysisError(
+        error.node.path,
+        error.node.source,
+        error.originalError,
+        error.phase.startsWith("resolve delayed FFI") ? delayedFfiDiagnostics(error.result) : [],
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Produce the compiler-owned semantic snapshot for the current source, retaining independently
+ * recoverable top-level phrases and never substituting last-known-good analysis.
+ */
+export async function analyzeRecoveredFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<ProjectSnapshot> {
+  return await analyzeRecoveredSnapshot(input, options, "headed");
+}
+
+/** Analyze one uncovered document without claiming that it is a main-bearing project head. */
+export async function analyzeDetachedFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<ProjectSnapshot> {
+  return await analyzeRecoveredSnapshot(input, options, "detached");
+}
+
+async function analyzeRecoveredSnapshot(
+  input: string,
+  options: ModuleGraphOptions,
+  kind: ProjectSnapshot["kind"],
+): Promise<ProjectSnapshot> {
+  assertCompilerFrontendMode(options.frontend);
+  const graph = await loadModuleGraph(input, { ...options, syntaxRecovery: true });
+  const completionFacts = currentSourceCompletionFacts(graph);
+  const inferOptions = await standardInferOptions();
+  const results = new Map<ModuleId, InferResult>();
+  for (const id of graph.order) {
+    const node = graph.nodes.get(id)!;
+    const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
     node.module = prepared.module;
-  }
-  const results = new Map<string, InferResult>();
-  const firstResults = new Map<string, InferResult>();
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
     const imports = new Map<string, InferResult>();
     for (const edge of node.imports) {
-      imports.set(edge.specifier, firstResults.get(edge.path)!);
+      const imported = results.get(edge.target);
+      if (imported) imports.set(edge.specifier, imported);
     }
-    try {
-      firstResults.set(
-        path,
-        assertNoPartialDiagnostics(
-          inferModulePartial(node.module, imports, await standardInferOptions()),
-        ),
-      );
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
+    const recovered = inferModuleRecovered(node.module, imports, inferOptions);
+    node.module = recovered.module;
+    rememberExportedSourceDocument(recovered.result, node.path, node.source);
+    registerModuleCarrier(recovered.result, node.path);
+    results.set(id, recovered.result);
   }
-  const contextualResults = new Map<string, InferResult>();
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    try {
-      const contextual = contextualizeDelayedCallbacks(ffi.get(path)!, firstResults.get(path)!);
-      ffi.set(path, contextual);
-      node.module = contextual.module;
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, contextualResults.get(edge.path)!);
-    }
-    try {
-      contextualResults.set(
-        path,
-        assertNoPartialDiagnostics(
-          inferModulePartial(node.module, imports, await standardInferOptions()),
-        ),
-      );
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  const foreignTypeRefs = new Map(
-    [...ffi.values()].flatMap((item) =>
-      [...item.foreignTypeRefs.values()].map((ref) => [ref.key, ref])
-    ),
-  );
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    try {
-      const prepared = ffi.get(path)!;
-      const contextualResult = contextualResults.get(path)!;
-      const resolved = resolveDelayedFfiElaboration(prepared, contextualResult, {
-        foreignTypeRefs,
-        dynamicFallback: false,
-      });
-      ffi.set(path, resolved);
-      node.module = resolved.module;
-    } catch (error) {
-      throw new ModuleAnalysisError(
-        path,
-        node.source,
-        error,
-        delayedFfiDiagnostics(contextualResults.get(path)),
-      );
-    }
-  }
-  const postResolveResults = new Map<string, InferResult>();
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, postResolveResults.get(edge.path)!);
-    }
-    try {
-      postResolveResults.set(
-        path,
-        assertNoPartialDiagnostics(
-          inferModulePartial(node.module, imports, await standardInferOptions()),
-        ),
-      );
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    try {
-      const prepared = ffi.get(path)!;
-      const postResolveResult = postResolveResults.get(path)!;
-      const resolved = resolveDelayedFfiElaboration(prepared, postResolveResult, {
-        foreignTypeRefs,
-      });
-      ffi.set(path, resolved);
-      node.module = resolved.module;
-    } catch (error) {
-      throw new ModuleAnalysisError(
-        path,
-        node.source,
-        error,
-        delayedFfiDiagnostics(postResolveResults.get(path)),
-      );
-    }
-  }
-  for (const path of graph.order) {
-    const node = graph.nodes.get(path)!;
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      imports.set(edge.specifier, results.get(edge.path)!);
-    }
-    try {
-      results.set(path, inferModule(node.module, imports, await standardInferOptions()));
-    } catch (error) {
-      throw new ModuleAnalysisError(path, node.source, error);
-    }
-  }
-  return { graph, results };
-}
-
-function importedRecordFields(
-  node: ModuleNode,
-  graph: ModuleGraph,
-): Set<string> {
-  const fields = new Set<string>();
-  for (const edge of node.imports) {
-    const imported = graph.nodes.get(edge.path);
-    if (!imported) continue;
-    for (const decl of imported.module.decls) {
-      if (decl.kind !== "RecordDecl" || !importsRecord(edge.clause, decl.name)) continue;
-      for (const field of decl.fields) fields.add(field.name);
-    }
-  }
-  return fields;
-}
-
-function importsRecord(clause: ImportClause, name: string): boolean {
-  return clause.kind === "All" || clause.kind === "Namespace" ||
-    clause.specs.some((spec) => spec.name === name);
-}
-
-function assertNoPartialDiagnostics(result: InferResult): InferResult {
-  const diagnostic = result.diagnostics.find((item) =>
-    item.severity === "error" && !isDelayedFfiPartialDiagnostic(renderDiagnosticSummary(item))
-  );
-  if (diagnostic) throw new FrontendDiagnosticError(diagnostic);
-  return result;
-}
-
-function isDelayedFfiPartialDiagnostic(message: string): boolean {
-  return message.startsWith("cannot solve unresolved JS FFI type ") ||
-    message.startsWith("unresolved JS FFI obligation in ") ||
-    message.startsWith("unresolved JS FFI type in ") ||
-    message.startsWith("unsolved JS boundary type in ") ||
-    message.includes("?ffi#");
+  return buildPartialProjectSnapshot(graph, results, {
+    kind,
+    configuration: {
+      frontend: resolveCompilerFrontend(options.frontend, options.surface),
+      surface: options.surface ?? "workman",
+    },
+  }, { completionFacts });
 }
 
 async function checkPreparedModuleWithoutImports(
@@ -519,7 +737,8 @@ export async function checkVirtual(
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<Map<string, InferResult>> {
-  return (await analyzeVirtual(entryPath, virtualFs, options)).results;
+  const analysis = await analyzeVirtual(entryPath, virtualFs, options);
+  return resultsBySourcePath(analysis.graph, analysis.results);
 }
 
 export async function coreVirtual(
@@ -527,14 +746,37 @@ export async function coreVirtual(
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<CoreFileResult> {
-  const { graph, results } = await analyzeVirtual(entryPath, virtualFs, options);
-  return { graph, results, core: coreProgramFromAnalysis(graph, results) };
+  const analysis = await analyzeVirtual(entryPath, virtualFs, options);
+  return await coreResultFromAnalysis(analysis);
 }
 
-export async function analyzeVirtual(
+export function analyzeVirtual(
   entryPath: string,
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
-): Promise<{ graph: ModuleGraph; results: Map<string, InferResult> }> {
+): Promise<ProgramAnalysis> {
   return analyzeFile(entryPath, { ...options, virtualFs });
+}
+
+export function analyzeRecoveredVirtual(
+  entryPath: string,
+  virtualFs: VirtualFileSystem,
+  options: Omit<CompileOptions, "virtualFs"> = {},
+): Promise<ProjectSnapshot> {
+  return analyzeRecoveredFile(entryPath, { ...options, virtualFs });
+}
+
+export function analyzeDetachedVirtual(
+  entryPath: string,
+  virtualFs: VirtualFileSystem,
+  options: Omit<CompileOptions, "virtualFs"> = {},
+): Promise<ProjectSnapshot> {
+  return analyzeDetachedFile(entryPath, { ...options, virtualFs });
+}
+
+function resultsBySourcePath(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+): Map<string, InferResult> {
+  return new Map(graph.order.map((id) => [graph.nodes.get(id)!.path, results.get(id)!]));
 }

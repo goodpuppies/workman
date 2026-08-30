@@ -1,0 +1,12 @@
+type SourceOffset = | SourceOffset<Number>;
+
+record Position = {
+  index: Number,
+  line: Number,
+  col: Number
+};
+
+record Span = {
+  startPos:Position,
+  endPos:Position
+};

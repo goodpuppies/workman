@@ -1,41 +1,48 @@
-# Frontend v2 bootstrap
+# Frontend v2
 
-This package contains the WM-native tolerant structural frontend. Phase 0 proved the model; Phase B
-added the generated lexer ABI; Phase C is replacing the initial special case with reusable recovery
-and rendering foundations. Its maintained modules are:
+This package contains the generated WM-native Workman parser and formatter. The earlier handwritten
+structural bootstrap, flat DTO boundary, and recovery-only parser suite have been removed; generated
+Surface parsing is the compiler, formatter, and LSP authority.
 
-- `types.wm`: lossless token, structural fallback, recovery mark, and virtual artifact types;
-- `lexer.wm`: lossless current-grammar tokenization, UTF-16 spans, and line maps;
-- `dto.wm`: conversion from internal WM lists and ADTs to schema-versioned lexical/structural
-  JavaScript data;
-- `semantic_dto.wm`: schema-versioned semantic projection DTOs over the structural document;
-- `frontend.wm`: the stable generated-library entry module;
-- `parser.wm`: top-level structural dispatch and opaque declaration recovery;
-- `parser_support.wm`: immutable parser state, canonical marks/artifacts, paired recovery IDs, and
-  progress accounting;
-- `parser_let.wm`, `parser_expr.wm`, and `parser_pattern.wm`: shallow tolerant let bindings and
-  reusable expression/pattern tail boundaries;
-- `parser_delimiter.wm`: ordered missing-closer recovery for incomplete expressions;
-- `parser_import.wm`: shallow required-slot and clause recovery for Workman and JavaScript imports;
-- `parser_type.wm`: shallow required-slot and delimiter recovery for type and record declarations;
-- `parser_lambda.wm`, `parser_if.wm`, and `parser_match.wm`: shallow block, lambda, branch,
-  match-arm, and ordered-token recovery;
-- `renderer.wm`: concrete/virtual rendering and bidirectional piece maps;
-- `structural.wm`: the stable WM facade over parsing and rendering;
-- `self_check.wm`: executable assertions and preview output.
+The versioned Peggy-AST boundary, generated layout, action classification rules, and generator
+contracts are specified in [`generator/README.md`](generator/README.md).
 
-Run the proof from the repository root:
+Parser changes and recovery from a broken stage-0 artifact are documented in
+[`bootstrap.md`](bootstrap.md). Frontend v2 self-hosts from its tracked generated artifact; there is
+no supported v1 Workman parser fallback.
+
+Exercise the generated frontend directly:
 
 ```sh
-deno task wm check tooling/frontend-v2/self_check.wm
-deno task wm run tooling/frontend-v2/self_check.wm
+deno task wm fmt path/to/program.wm
+deno task wm fmt --fix path/to/incomplete-program.wm
+deno task wm fmt --stdout examples/exercises/math.wm
+deno task frontend-v2:format path/to/program.wm
+deno task frontend-v2:format --fix path/to/incomplete-program.wm
+deno task frontend-v2:format --stdout examples/exercises/math.wm
 ```
 
-The expected final preview line is:
+Formatting is in place by default. Plain formatting canonicalizes authored whitespace while
+omitting marked fallbacks; `--fix` additionally materializes committed missing `;`, `{`, and `}`.
+The maintained handwritten WM modules are the small generated-capture runtime, Surface builders and
+renderer, and the four-export `compiler_frontend.wm` boundary. Grammar-specific types, dispatch, and
+schema modules live under `generated/` and are reproducible from `src/grammar.peggy`.
 
-```text
-let thing =<virtual:?><virtual:;>
+## Performance profiling
+
+Run a timing-only corpus pass with:
+
+```sh
+deno task profile:frontend-v2
 ```
+
+Generate a V8 CPU profile, Markdown hot-function report, and interactive SVG flamegraph with:
+
+```sh
+deno task profile:frontend-v2:cpu
+```
+
+The harness accepts `surface`, `failure`, or `format` followed by an iteration count.
 
 ## Importable library emission
 
@@ -45,13 +52,20 @@ Build the importable frontend library with:
 deno task frontend-v2:build
 ```
 
-This writes the ignored, reproducible artifact `tooling/frontend-v2/frontend-v2.generated.mjs`. The
-generated ES module exports the schema-versioned `lexRoundTrip(source)`, `parseStructural(source)`,
-and `projectSemantic(source)` boundaries and does not invoke `main`. Bindings imported by the entry
-file stay internal. Tests rebuild the artifact in a temporary directory and import it exclusively
-through `src/frontend_v2_loader.ts`. `src/frontend_v2_diagnostics.ts` projects canonical recovery
-marks into wm-mini's shared auditable diagnostic model; it does not define a parallel parser-only
-diagnostic format.
+This reproducibly writes the tracked runtime asset `src/generated/frontend_v2_parser.js`. The
+generated ES module exports `parseSurfaceProgram`, `parseSurfaceFailure`, `formatSurfaceSource`, and
+`formatSurfaceSourceFix`; compiler, LSP, and `wm fmt` consume that same artifact. The earlier
+`lexRoundTrip`, `parseStructural`, and `projectSemantic` DTO experiment is no longer part of the
+live runtime ABI.
+
+The tracked artifact is also the stage-0 compiler for this command: frontend-v2 parses and compiles
+its own WM sources, then replaces the artifact only if the self-hosted output changes. Restore the
+tracked artifact before rebuilding if it is absent.
+
+Type declarations may form simultaneous SML-style groups with `and`. The Surface tree retains a
+`TypeDeclarationGroupNode`, individual `TypeBindingNode` values, and the authored `and` tokens;
+semantic projection flattens the group into declarations sharing one mutual-group identity so
+elaboration can install every type name before checking any right-hand side.
 
 The frontend ABI will expose JavaScript-native DTO values deliberately:
 

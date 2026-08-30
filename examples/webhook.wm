@@ -16,8 +16,8 @@ from js.global("crypto.subtle") import unsafe {
 } as subtle;
 from js.global("Deno") import { serve };
 from js.global("JSON") import unsafe {
-  parse: (String) => Js.Object,
-  stringify: (Js.Value) => String,
+  parse: String -> Js.Object,
+  stringify: Js.Value -> String,
 } as JSON;
 from js.global("console") import { error, log };
 

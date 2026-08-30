@@ -1,6 +1,9 @@
 import type { Expr } from "../../ast.ts";
-import { jsRefCallMember, type JsTypeRef } from "../reflect/types.ts";
+import { diagnosticError } from "../../diagnostics.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
+import { jsRefCallMember, jsRefHasMemberPath, type JsTypeRef } from "../reflect/types.ts";
 import {
+  delayedReflectedReceiverFunctionValue,
   type ObjectAccess,
   objectReceiverCall,
   objectReceiverProperty,
@@ -51,6 +54,7 @@ export function rewriteExprCalls(
   switch (expr.kind) {
     case "FfiGet": {
       if (expr.receiver.kind === "Var") {
+        assertModuleNamespaceMember(expr.receiver.name, expr.path, refs, expr.node);
         const reflected = reflectedReceiverProperty(
           `${expr.receiver.name}.${expr.path.join(".")}`,
           bindings,
@@ -67,6 +71,7 @@ export function rewriteExprCalls(
           selected,
           objectAccess,
           activeRecordFields,
+          expr.node,
         );
         if (objectProperty) {
           return objectProperty.kind === "FfiGet"
@@ -85,6 +90,7 @@ export function rewriteExprCalls(
     }
     case "FfiCall": {
       if (expr.receiver.kind === "Var") {
+        assertModuleNamespaceMember(expr.receiver.name, expr.path, refs, expr.node);
         const reflected = reflectedReceiverCallCandidate(
           `${expr.receiver.name}.${expr.path.join(".")}`,
           expr.args,
@@ -156,14 +162,28 @@ export function rewriteExprCalls(
       };
     }
     case "Var": {
+      assertDottedModuleNamespaceMember(expr.name, refs, expr.node);
       const functionValue = reflectedReceiverFunctionValue(expr.name, bindings, selected, refs);
+      const delayedFunctionValue = delayedReflectedReceiverFunctionValue(
+        expr.name,
+        refs,
+        expr.node,
+      );
       const property = reflectedReceiverProperty(expr.name, bindings, selected, refs);
-      return functionValue ?? property ??
-        objectReceiverProperty(expr.name, bindings, selected, objectAccess, activeRecordFields) ??
+      return functionValue ?? delayedFunctionValue ?? property ??
+        objectReceiverProperty(
+          expr.name,
+          bindings,
+          selected,
+          objectAccess,
+          activeRecordFields,
+          expr.node,
+        ) ??
         expr;
     }
     case "Call": {
       if (expr.callee.kind === "Var") {
+        assertDottedModuleNamespaceMember(expr.callee.name, refs, expr.node);
         const reflectedFunction = reflectedFunctionCallCandidate(
           expr.callee.name,
           expr.args,
@@ -294,6 +314,7 @@ export function rewriteExprCalls(
         args: expr.args.map((arg) => rewrite(arg)),
       };
     case "Lambda": {
+      if (!hostFfiDescendsInto(expr)) return expr;
       const localObjectAccess = new Map(objectAccess);
       rememberObjectParams(expr.params, localObjectAccess, importedTypeRefs);
       rememberUnannotatedParams(expr.params, localObjectAccess);
@@ -348,6 +369,8 @@ export function rewriteExprCalls(
         rewriteDeclCalls,
         rewriteExprCalls,
       );
+    case "Ascribed":
+      return { ...expr, value: rewrite(expr.value) };
     case "Binary":
       return {
         ...expr,
@@ -368,6 +391,36 @@ export function rewriteExprCalls(
     default:
       return expr;
   }
+}
+
+function assertDottedModuleNamespaceMember(
+  name: string,
+  refs: Map<string, JsTypeRef>,
+  node: Expr["node"],
+): void {
+  const parts = name.split(".");
+  if (parts.length < 2) return;
+  assertModuleNamespaceMember(parts[0], parts.slice(1), refs, node);
+}
+
+function assertModuleNamespaceMember(
+  receiverName: string,
+  path: string[],
+  refs: Map<string, JsTypeRef>,
+  node: Expr["node"],
+): void {
+  const ref = refs.get(receiverName);
+  const specifier = ref?.moduleNamespaceSpecifier;
+  const member = path[0];
+  if (!ref || !specifier || !member || jsRefHasMemberPath(ref, [member])) return;
+  const suggestion = jsRefHasMemberPath(ref, ["default", member])
+    ? `; use ${receiverName}.default.${path.join(".")} to access the default export`
+    : "";
+  throw diagnosticError(
+    new Error(`JS module namespace ${specifier} has no export ${member}${suggestion}`),
+    node,
+    "ffi.unknown-module-member",
+  );
 }
 
 function commonBindingEffect(variants: FfiVariant[]): "Result" | "Task" | undefined {

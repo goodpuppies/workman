@@ -1,0 +1,226 @@
+-- Fine-grained reactive computations without ambient mutation.
+--
+-- A Reactive value is a reader-like carrier over the immutable application
+-- model which also accumulates the signal keys actually read. Mounted effects
+-- retain those dependencies and are rerun only when a transition reports an
+-- intersecting changed key.
+
+record Signal<Model, Key, Value> = {
+  key: Key,
+  select: Model -> Value,
+};
+
+record Observed<Key, Value> = {
+  value: Value,
+  dependencies: List<Key>,
+};
+
+record Reactive<Model, Key, Value> = {
+  run: Model -> Observed<Key, Value>,
+};
+
+record Emission<Output> = {
+  commands: List<Output>,
+  cleanup: List<Output>,
+};
+
+record Effect<Model, Key, Output> = {
+  id: String,
+  formula: Reactive<Model, Key, Emission<Output>>,
+};
+
+record MountedEffect<Model, Key, Output> = {
+  effect: Effect<Model, Key, Output>,
+  dependencies: List<Key>,
+  cleanup: List<Output>,
+};
+
+record Graph<Model, Key, Output> = {
+  model: Model,
+  effects: List<MountedEffect<Model, Key, Output>>,
+};
+
+record Transition<Model, Key> = {
+  model: Model,
+  changed: List<Key>,
+};
+
+record Frame<Model, Key, Output> = {
+  graph: Graph<Model, Key, Output>,
+  output: List<Output>,
+};
+
+let signal = (key, select) => {
+  Signal(key, select)
+};
+
+let read = (source) => {
+  Reactive((model) => {
+    Observed(source.select(model), [source.key])
+  })
+};
+
+let succeed = (value) => {
+  Reactive((_) => {
+    Observed(value, [])
+  })
+};
+
+let map = (reactive, transform) => {
+  Reactive((model) => {
+    let observed = reactive.run(model);
+    Observed(
+      transform(observed.value),
+      observed.dependencies,
+    )
+  })
+};
+
+let map2 = (left, right, combine) => {
+  Reactive((model) => {
+    let leftObserved = left.run(model);
+    let rightObserved = right.run(model);
+    Observed(
+      combine(leftObserved.value, rightObserved.value),
+      List.append(
+        leftObserved.dependencies,
+        rightObserved.dependencies,
+      ),
+    )
+  })
+};
+
+let andThen = (reactive, transform) => {
+  Reactive((model) => {
+    let first = reactive.run(model);
+    let next = transform(first.value);
+    let second = next.run(model);
+    Observed(
+      second.value,
+      List.append(first.dependencies, second.dependencies),
+    )
+  })
+};
+
+let fn = (transform) => {
+  (reactive) => {
+    reactive :> andThen(transform)
+  }
+};
+
+let fnError = (_) => {
+  (transform) => {
+    fn(transform)
+  }
+};
+
+let carrier = .{
+  fn = fn,
+  fnError = fnError,
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+  andThen = andThen,
+};
+
+let effect = (id, formula) => {
+  Effect(id, formula)
+};
+
+let emit = (commands, cleanup) => {
+  Emission(commands, cleanup)
+};
+
+let commands = (output) => {
+  Emission(output, [])
+};
+
+let rec containsKey = match(key, keys, sameKey) => {
+  (_, [], _) => { false },
+  (_, [candidate, ..tail], _) => {
+    if (sameKey(key, candidate)) {
+      true
+    } else {
+      containsKey(key, tail, sameKey)
+    }
+  },
+};
+
+let rec intersects = match(left, right, sameKey) => {
+  ([], _, _) => { false },
+  ([key, ..tail], _, _) => {
+    if (containsKey(key, right, sameKey)) {
+      true
+    } else {
+      intersects(tail, right, sameKey)
+    }
+  },
+};
+
+let rec mountEffects = match(model, effects) => {
+  (_, []) => { ([], []) },
+  (_, [current, ..tail]) => {
+    let observed = current.formula.run(model);
+    let (mountedTail, outputTail) = mountEffects(model, tail);
+    (
+      [
+        MountedEffect(
+          current,
+          observed.dependencies,
+          observed.value.cleanup,
+        ),
+        ..mountedTail
+      ],
+      List.append(observed.value.commands, outputTail),
+    )
+  },
+};
+
+let mount = (model, effects) => {
+  let (mounted, output) = mountEffects(model, effects);
+  Frame(Graph(model, mounted), output)
+};
+
+let rec flushEffects = match(model, changed, effects, sameKey) => {
+  (_, _, [], _) => { ([], []) },
+  (_, _, [mounted, ..tail], _) => {
+    let rerun = intersects(mounted.dependencies, changed, sameKey);
+    let observed = if (rerun) {
+      Some(mounted.effect.formula.run(model))
+    } else {
+      None
+    };
+    let nextMounted = match(observed) {
+      Some(value) => {
+        MountedEffect(
+          mounted.effect,
+          value.dependencies,
+          value.value.cleanup,
+        )
+      },
+      None => { mounted },
+    };
+    let currentOutput = match(observed) {
+      Some(value) => {
+        List.append(mounted.cleanup, value.value.commands)
+      },
+      None => { [] },
+    };
+    let (mountedTail, outputTail) =
+      flushEffects(model, changed, tail, sameKey);
+    (
+      [nextMounted, ..mountedTail],
+      List.append(currentOutput, outputTail),
+    )
+  },
+};
+
+let flush = (graph, transition, sameKey) => {
+  let (effects, output) = flushEffects(
+    transition.model,
+    transition.changed,
+    graph.effects,
+    sameKey,
+  );
+  Frame(Graph(transition.model, effects), output)
+};

@@ -1,0 +1,85 @@
+-- Interactive library demo: arrows/j/k move, Tab changes focus, q quits.
+
+from "./draw.wm" import * as Draw;
+from "./command.wm" import * as Command;
+from "./event.wm" import * as Event;
+from "./geometry.wm" import * as Geometry;
+from "./runtime.wm" import * as Runtime;
+
+type Focus = Navigation | Content;
+
+record Model = {
+  focus: Focus,
+  selected: Number,
+};
+
+let initial = Model(Navigation, 0);
+
+let itemCount = 5;
+
+let move = (delta, model) => {
+  let next = Geometry.clamp(0, itemCount - 1, model.selected + delta);
+  Model(model.focus, next)
+};
+
+let toggleFocus = match(focus) => {
+  Navigation => { Content },
+  Content => { Navigation },
+};
+
+let update = match(key, model) => {
+  (Event.CtrlC, _) => { Command.Quit },
+  (Event.Character("q"), _) => { Command.Quit },
+  (Event.Tab, _) => { Command.Continue(Model(toggleFocus(model.focus), model.selected)) },
+  (Event.ShiftTab, _) => { Command.Continue(Model(toggleFocus(model.focus), model.selected)) },
+  (Event.Up, _) => { Command.Continue(move(-1, model)) },
+  (Event.Character("k"), _) => { Command.Continue(move(-1, model)) },
+  (Event.Down, _) => { Command.Continue(move(1, model)) },
+  (Event.Character("j"), _) => { Command.Continue(move(1, model)) },
+  _ => { Command.Continue(model) },
+};
+
+let navRows = (selected) => {
+  [
+    if (selected == 0) { "› Timeline" } else { "  Timeline" },
+    if (selected == 1) { "› Profile" } else { "  Profile" },
+    if (selected == 2) { "› Search" } else { "  Search" },
+    if (selected == 3) { "› Thread" } else { "  Thread" },
+    if (selected == 4) { "› Notifications" } else { "  Notifications" },
+  ]
+};
+
+let contentRows = (selected) => {
+  match(selected) {
+    0 => { ["Timeline", "", "The AppView feed will live here."] },
+    1 => { ["Profile", "", "Authenticated account summary."] },
+    2 => { ["Search", "", "Direct app.bsky.feed.searchPosts results."] },
+    3 => { ["Thread", "", "Recursive thread view and reply navigation."] },
+    _ => { ["Notifications", "", "A later authenticated XRPC slice."] },
+  }
+};
+
+let render = (_, model, size) => {
+  let (body, footer) = Geometry.reserveBottom(Geometry.screen(size), 1);
+  let leftWidth = Geometry.clamp(18, 32, Geometry.percentOf(body.width, 28));
+  let (navigation, content) = Geometry.splitColumns(body, leftWidth, 1);
+  let navInner = Geometry.inset(navigation, 1);
+  let contentInner = Geometry.inset(content, 1);
+  let navFocused = match(model.focus) {
+    Navigation => { true },
+    Content => { false },
+  };
+  let contentFocused = !navFocused;
+  Draw.beginFrame ++
+    Draw.box(navigation, "atview", navFocused) ++
+    Draw.lines(navInner, navRows(model.selected), Draw.plain) ++
+    Draw.box(content, "AppView", contentFocused) ++
+    Draw.lines(contentInner, contentRows(model.selected), Draw.plain) ++
+    Draw.fill(footer, " ", Draw.status) ++
+    Draw.text(footer, " ↑/↓ or j/k move   Tab focus   q quit ", Draw.status) ++
+    Draw.endFrame
+};
+
+let main = () => {
+  Runtime.run(initial, update, render)
+};

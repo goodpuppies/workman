@@ -1,0 +1,35 @@
+-- Reduction for the `local type escapes scope` failure seen when a Task
+-- completion starts the generic callback-driven terminal runtime.
+
+from "./draw.wm" import * as Draw;
+from "./command.wm" import * as Command;
+from "./event.wm" import * as Event;
+from "./geometry.wm" import * as Geometry;
+from "./runtime.wm" import * as Runtime;
+
+record ProbeModel = {
+  count: Number,
+};
+
+let update = match(key, model) => {
+  (Event.Character("q"), _) => { Command.Quit },
+  (Event.CtrlC, _) => { Command.Quit },
+  _ => { Command.Continue(ProbeModel(model.count + 1)) },
+};
+
+let render = (_, model, size) => {
+  Draw.beginFrame ++ Draw.text(
+    Geometry.rect(0, 0, size.width, 1),
+    "events " ++ Text.of(model.count) ++ " — q quits",
+    Draw.plain,
+  )
+};
+
+let start = (model: ProbeModel) => {
+  Runtime.run(model, update, render)
+};
+
+let main = () => {
+  Task.succeed(ProbeModel(0))
+    :> Task.map(start)
+};

@@ -75,7 +75,7 @@ Expr = FnExpr / CaseExpr / IfExpr / Binary
 
 FnExpr
   = "fn" __ p:Pattern _ "=>" _ body:Expr
-    { return { kind: "Lambda", params: [{ pattern: p }], body }; }
+    { return { kind: "Lambda", params: [{ pattern: p }], directives: [], body }; }
 
 CaseExpr
   = "case" __ value:Expr __ "of" __ arms:CaseArmList

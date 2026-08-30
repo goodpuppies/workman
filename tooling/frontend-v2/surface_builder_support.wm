@@ -1,0 +1,164 @@
+from "./generated/surface_types.wm" import {
+  SurfaceToken, SurfaceValue, AuthoredValue, MarkedValue
+};
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
+
+from js.global("String.prototype.slice") import unsafe {
+  call as sliceString: (String, Number, Number) -> String
+};
+
+let slice = (source: String, start: Number, end: Number) => {
+  sliceString(source, start, end)
+};
+
+let token = (source: String, start: Number, end: Number, kind: String) => {
+  let value: SurfaceToken = .{
+    kind = kind,
+    text = slice(source, start, end),
+    span = .{ start = start, end = end },
+    leadingComments = [],
+    recoveryId = None,
+  };
+  value
+};
+
+let recoveryToken = (
+  expectedText: String,
+  anchor: Number,
+  recoveryId: Number,
+) => {
+  let value: SurfaceToken = .{
+    kind = "Missing",
+    text = expectedText,
+    span = .{ start = anchor, end = anchor },
+    leadingComments = [],
+    recoveryId = Some(recoveryId),
+  };
+  value
+};
+
+let surfaceValue = (value: SurfaceToken): SurfaceValue<SurfaceToken> => {
+  match(value.recoveryId) {
+    Some(recoveryId) => { MarkedValue(recoveryId, value) },
+    None => { AuthoredValue(value) },
+  }
+};
+
+let rec reverseInto = match(items, output) => {
+  ([], Var(output)) => { output },
+  ([head, ..rest], Var(output)) => { reverseInto(rest, [head, ..output]) },
+};
+
+let rec firstSyntaxInList = match(values) => {
+  [] => { None },
+  [value, ..rest] => {
+    match(firstSyntax(value)) {
+      Some(found) => { Some(found) },
+      None => { firstSyntaxInList(rest) },
+    }
+  },
+}
+and firstSyntax = match(value) => {
+  NodeParseValue(node) => { Some(NodeParseValue(node)) },
+  NodeListParseValue(nodes) => { Some(NodeListParseValue(nodes)) },
+  TokenListParseValue(tokens) => { Some(TokenListParseValue(tokens)) },
+  TokenParseValue(value) => { Some(TokenParseValue(value)) },
+  SequenceParseValue(values) => { firstSyntaxInList(values) },
+  ChoiceParseValue(index, inner) => { firstSyntax(inner) },
+  OptionalParseValue(Some(inner)) => { firstSyntax(inner) },
+  OptionalParseValue(None) => { None },
+  RepeatedParseValue(values) => { firstSyntaxInList(values) },
+  RuleParseValue(name, inner, span) => { None },
+  EmptyParseValue => { None },
+}
+and collectNodesInto = match(value, reversed) => {
+  (NodeParseValue(node), Var(reversed)) => { [node, ..reversed] },
+  (NodeListParseValue(nodes), Var(reversed)) => { prependReversed(nodes, reversed) },
+  (TokenListParseValue(tokens), Var(reversed)) => { reversed },
+  (SequenceParseValue(values), Var(reversed)) => { collectNodeListInto(values, reversed) },
+  (ChoiceParseValue(index, inner), Var(reversed)) => { collectNodesInto(inner, reversed) },
+  (OptionalParseValue(Some(inner)), Var(reversed)) => { collectNodesInto(inner, reversed) },
+  (OptionalParseValue(None), Var(reversed)) => { reversed },
+  (RepeatedParseValue(values), Var(reversed)) => { collectNodeListInto(values, reversed) },
+  (RuleParseValue(name, inner, span), Var(reversed)) => { reversed },
+  (_, Var(reversed)) => { reversed },
+}
+and collectNodeListInto = match(values, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([value, ..rest], Var(reversed)) => {
+    collectNodeListInto(rest, collectNodesInto(value, reversed))
+  },
+}
+and prependReversed = match(values, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([value, ..rest], Var(reversed)) => { prependReversed(rest, [value, ..reversed]) },
+}
+and collectTokensInto = match(value, reversed) => {
+  (TokenParseValue(value), Var(reversed)) => { [value, ..reversed] },
+  (NodeParseValue(node), Var(reversed)) => { reversed },
+  (NodeListParseValue(nodes), Var(reversed)) => { reversed },
+  (TokenListParseValue(tokens), Var(reversed)) => { prependTokensReversed(tokens, reversed) },
+  (SequenceParseValue(values), Var(reversed)) => { collectTokenListInto(values, reversed) },
+  (ChoiceParseValue(index, inner), Var(reversed)) => { collectTokensInto(inner, reversed) },
+  (OptionalParseValue(Some(inner)), Var(reversed)) => { collectTokensInto(inner, reversed) },
+  (OptionalParseValue(None), Var(reversed)) => { reversed },
+  (RepeatedParseValue(values), Var(reversed)) => { collectTokenListInto(values, reversed) },
+  (RuleParseValue(name, inner, span), Var(reversed)) => { reversed },
+  (EmptyParseValue, Var(reversed)) => { reversed },
+}
+and collectTokenListInto = match(values, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([value, ..rest], Var(reversed)) => {
+    collectTokenListInto(rest, collectTokensInto(value, reversed))
+  },
+}
+and prependTokensReversed = match(values, reversed) => {
+  ([], Var(reversed)) => { reversed },
+  ([value, ..rest], Var(reversed)) => {
+    prependTokensReversed(rest, [value, ..reversed])
+  },
+};
+
+let collectNodes = (value: ParseValue) => {
+  reverseInto(collectNodesInto(value, []), [])
+};
+
+let collectTokens = (value: ParseValue) => {
+  reverseInto(collectTokensInto(value, []), [])
+};
+
+let rec tokensWithout = match(tokens, excluded, output) => {
+  ([], Var(excluded), Var(output)) => { reverseInto(output, []) },
+  ([value, ..rest], Var(excluded), Var(output)) => {
+    if (value.text == excluded) {
+      tokensWithout(rest, excluded, output)
+    } else {
+      tokensWithout(rest, excluded, [value, ..output])
+    }
+  },
+};
+
+let rec firstTokenWithText = match(tokens, text) => {
+  ([], Var(text)) => { None },
+  ([value, ..rest], Var(text)) => {
+    if (value.text == text) { Some(value) } else { firstTokenWithText(rest, text) }
+  },
+};
+
+let rec lastTokenWithText = match(tokens, text, found) => {
+  ([], Var(text), Var(found)) => { found },
+  ([value, ..rest], Var(text), Var(found)) => {
+    if (value.text == text) {
+      lastTokenWithText(rest, text, Some(value))
+    } else {
+      lastTokenWithText(rest, text, found)
+    }
+  },
+};
+
+let firstNode = (value: ParseValue) => {
+  match(collectNodes(value)) {
+    [node, ..rest] => { Some(node) },
+    [] => { None },
+  }
+};

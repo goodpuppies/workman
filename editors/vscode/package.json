@@ -2,7 +2,7 @@
   "name": "workman",
   "displayName": "Workman",
   "description": "Language support for Workman",
-  "version": "0.0.2",
+  "version": "0.2.13",
   "publisher": "goodpuppies",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
     "url": "https://github.com/goodpuppies/workman.git"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages"
@@ -79,22 +79,17 @@
           "default": "deno",
           "description": "Deno executable used to launch the Workman language server."
         },
-        "workman.frontendMode": {
-          "scope": "window",
-          "type": "string",
-          "enum": [
-            "v1",
-            "v2",
-            "compare"
-          ],
-          "default": "v1",
-          "description": "Compiler frontend mode used by the Workman language server. v2 is currently a subset-limited migration mode."
-        },
         "workman.frontendV2ModulePath": {
           "scope": "window",
           "type": "string",
           "default": "",
-          "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the server checkout default tooling/frontend-v2/frontend-v2.generated.mjs."
+          "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the packaged src/generated/frontend_v2_parser.js asset."
+        },
+        "workman.structuralInlayHints.enabled": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "description": "Show frontend-v2 virtual syntax as structural inlay hints. This is independent of future inferred-type inlays. Restart the language server after changing it."
         },
         "workman.trace.server": {
           "scope": "window",
@@ -111,17 +106,19 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "vscode:prepublish": "npm run build",
+    "compile": "node ./node_modules/typescript/bin/tsc -p ./ --noEmit",
+    "build": "npm run compile && node ./scripts/build.mjs",
     "watch": "tsc -watch -p ./",
-    "package": "deno run --allow-read --allow-write --allow-run ../../scripts/package_vscode_extension.ts"
-  },
-  "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "package": "node ./scripts/package.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.90.0",
-    "typescript": "^5.0.0"
+    "@types/vscode": "^1.91.0",
+    "esbuild": "^0.25.0",
+    "peggy": "^5.1.0",
+    "typescript": "^7.0.2",
+    "typescript-api": "npm:@typescript/typescript6@^6.0.2",
+    "vscode-languageclient": "^10.1.0"
   }
 }

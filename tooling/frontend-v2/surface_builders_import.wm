@@ -1,0 +1,325 @@
+from "./generated/surface_types.wm" import {
+  Span, AuthoredValue,
+  ImportDeclarationNode, ImportNamespaceClauseNode, ImportAllClauseNode,
+  ImportNamedClauseNode, ImportSpecificationNode, ImportAliasNode,
+  LiteralExpressionNode,
+  JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
+  JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
+  JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode,
+  JavaScriptImportClauseNode, JavaScriptNamedClauseNode,
+  JavaScriptImportSpecificationNode
+};
+from "./surface_parse_value.wm" import {
+  ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue,
+  OptionalParseValue, NodeParseValue, RuleParseValue
+};
+from "./surface_builder_support.wm" import {
+  collectNodes, collectTokens, firstTokenWithText, lastTokenWithText, firstNode,
+  surfaceValue
+};
+
+let buildImportAlias = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((firstTokenWithText(tokens, "as"), tokens)) {
+    (Some(asToken), [asValue, alias]) => {
+      Some(ImportAliasNode(asToken, alias, span))
+    },
+    _ => { None },
+  }
+};
+
+let buildImportClause = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "*"),
+        firstTokenWithText(tokens, "as"),
+        lastTokenWithText(tokens, "*", None)
+      )) {
+        (Some(star), Some(asToken), Some(lastStar)) => {
+          match(tokens) {
+            [starValue, asValue, alias] => {
+              NodeParseValue(ImportNamespaceClauseNode(star, asToken, alias, span))
+            },
+            _ => { RuleParseValue("ImportClause", value, span) },
+          }
+        },
+        _ => { RuleParseValue("ImportClause", value, span) },
+      }
+    },
+    ChoiceParseValue(1, TokenParseValue(star)) => {
+      NodeParseValue(ImportAllClauseNode(star, span))
+    },
+    ChoiceParseValue(2, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "{"),
+        lastTokenWithText(tokens, "}", None)
+      )) {
+        (Some(open), Some(close)) => {
+          NodeParseValue(
+            ImportNamedClauseNode(open, collectNodes(inner), surfaceValue(close), span)
+          )
+        },
+        _ => { RuleParseValue("ImportClause", value, span) },
+      }
+    },
+    _ => { RuleParseValue("ImportClause", value, span) },
+  }
+};
+
+let buildImportSpec = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([TokenParseValue(name), OptionalParseValue(aliasValue)]) => {
+      let alias = match(aliasValue) {
+        Some(inner) => { buildImportAlias(inner, span) },
+        None => { None },
+      };
+      NodeParseValue(ImportSpecificationNode(name, alias, span))
+    },
+    _ => { RuleParseValue("ImportSpec", value, span) },
+  }
+};
+
+let buildImportDecl = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(fromToken),
+      EmptyParseValue,
+      TokenParseValue(path),
+      EmptyParseValue,
+      TokenParseValue(importToken),
+      EmptyParseValue,
+      NodeParseValue(clause),
+    ]) => {
+      NodeParseValue(
+        ImportDeclarationNode(
+          fromToken,
+          LiteralExpressionNode(path, span),
+          importToken,
+          clause,
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("ImportDecl", value, span) },
+  }
+};
+
+let buildJsTarget = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "js.global"),
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(target), Some(open), Some(close)) => {
+          match(tokens) {
+            [targetValue, openValue, path, closeValue] => {
+              NodeParseValue(
+                JavaScriptGlobalTargetNode(
+                  target,
+                  surfaceValue(open),
+                  path,
+                  surfaceValue(close),
+                  span,
+                )
+              )
+            },
+            _ => { RuleParseValue("JsTarget", value, span) },
+          }
+        },
+        _ => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(1, inner) => {
+      match(firstTokenWithText(collectTokens(inner), "js.global")) {
+        Some(target) => {
+          NodeParseValue(JavaScriptGlobalRootTargetNode(target, span))
+        },
+        None => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(2, inner) => {
+      match(firstTokenWithText(collectTokens(inner), "js.meta")) {
+        Some(target) => { NodeParseValue(JavaScriptMetaTargetNode(target, span)) },
+        None => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(3, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "js.module"),
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(target), Some(open), Some(close)) => {
+          match(tokens) {
+            [targetValue, openValue, specifier, closeValue] => {
+              NodeParseValue(
+                JavaScriptModuleTargetNode(
+                  target,
+                  surfaceValue(open),
+                  specifier,
+                  surfaceValue(close),
+                  span,
+                )
+              )
+            },
+            _ => { RuleParseValue("JsTarget", value, span) },
+          }
+        },
+        _ => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(4, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "js.worker"),
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(target), Some(open), Some(close)) => {
+          match(tokens) {
+            [targetValue, openValue, specifier, closeValue] => {
+              NodeParseValue(
+                JavaScriptWorkerTargetNode(
+                  target,
+                  surfaceValue(open),
+                  specifier,
+                  surfaceValue(close),
+                  span,
+                )
+              )
+            },
+            _ => { RuleParseValue("JsTarget", value, span) },
+          }
+        },
+        _ => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    _ => { RuleParseValue("JsTarget", value, span) },
+  }
+};
+
+let buildJsImportClauseBody = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, inner) => {
+      let tokens = collectTokens(inner);
+      match(tokens) {
+        [star, asToken, alias] => {
+          NodeParseValue(ImportNamespaceClauseNode(star, asToken, alias, span))
+        },
+        _ => { RuleParseValue("JsImportClauseBody", value, span) },
+      }
+    },
+    ChoiceParseValue(1, SequenceParseValue([
+      TokenParseValue(open),
+      EmptyParseValue,
+      specsValue,
+      EmptyParseValue,
+      TokenParseValue(close),
+      OptionalParseValue(aliasValue),
+    ])) => {
+      let inner = SequenceParseValue([
+        TokenParseValue(open),
+        specsValue,
+        TokenParseValue(close),
+      ]);
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "{"),
+        lastTokenWithText(tokens, "}", None)
+      )) {
+        (Some(openToken), Some(closeToken)) => {
+          let alias = match(aliasValue) {
+            Some(aliasInner) => { buildImportAlias(aliasInner, span) },
+            None => { None },
+          };
+          NodeParseValue(
+            JavaScriptNamedClauseNode(
+              openToken,
+              collectNodes(inner),
+              surfaceValue(closeToken),
+              alias,
+              span,
+            )
+          )
+        },
+        _ => { RuleParseValue("JsImportClauseBody", value, span) },
+      }
+    },
+    _ => { RuleParseValue("JsImportClauseBody", value, span) },
+  }
+};
+
+let buildJsImportClause = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      OptionalParseValue(unsafeValue),
+      NodeParseValue(clause),
+    ]) => {
+      let unsafeToken = match(unsafeValue) {
+        Some(inner) => { firstTokenWithText(collectTokens(inner), "unsafe") },
+        None => { None },
+      };
+      NodeParseValue(JavaScriptImportClauseNode(unsafeToken, clause, span))
+    },
+    _ => { RuleParseValue("JsImportClause", value, span) },
+  }
+};
+
+let buildJsImportSpec = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(name),
+      OptionalParseValue(aliasValue),
+      OptionalParseValue(typeValue),
+    ]) => {
+      let alias = match(aliasValue) {
+        Some(inner) => { buildImportAlias(inner, span) },
+        None => { None },
+      };
+      let annotation = match(typeValue) {
+        Some(inner) => { firstNode(inner) },
+        None => { None },
+      };
+      NodeParseValue(JavaScriptImportSpecificationNode(name, alias, annotation, span))
+    },
+    _ => { RuleParseValue("JsImportSpec", value, span) },
+  }
+};
+
+let buildJsImportDecl = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(fromToken),
+      EmptyParseValue,
+      NodeParseValue(target),
+      EmptyParseValue,
+      TokenParseValue(importToken),
+      EmptyParseValue,
+      OptionalParseValue(typeOnlyValue),
+      NodeParseValue(clause),
+    ]) => {
+      let typeOnly = match(typeOnlyValue) {
+        Some(inner) => { firstTokenWithText(collectTokens(inner), "type") },
+        None => { None },
+      };
+      NodeParseValue(
+        JavaScriptImportDeclarationNode(
+          fromToken,
+          target,
+          importToken,
+          typeOnly,
+          clause,
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("JsImportDecl", value, span) },
+  }
+};

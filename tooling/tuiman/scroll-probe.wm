@@ -1,0 +1,22 @@
+from "./scroll.wm" import * as Scroll;
+
+let expect = (actual: Number, wanted: Number, label) => {
+  if (actual == wanted) {
+    void
+  } else {
+    print(label ++ ": expected " ++ Text.of(wanted) ++
+      ", got " ++ Text.of(actual))
+  }
+};
+
+let main = () => {
+  expect(Scroll.approach(0, 12), 6, "forward easing");
+  expect(Scroll.approach(6, 12), 9, "forward continuation");
+  expect(Scroll.approach(12, 3), 7, "interrupted reverse easing");
+  expect(Scroll.approach(1, 0), 0, "unit arrival");
+  expect(Scroll.offsetOf([6, 5, 9], 2, 0), 9, "shared-border offset");
+  let viewport = Scroll.locate([6, 5, 9], 7);
+  expect(viewport.start, 1, "partial viewport start");
+  expect(viewport.inset, 2, "partial viewport inset");
+  print("smooth scroll probe: ok")
+};

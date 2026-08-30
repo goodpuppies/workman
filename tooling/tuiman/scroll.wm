@@ -1,0 +1,71 @@
+-- Immutable row-based scrolling primitives.  Applications own the animation
+-- clock; this module owns easing and translating a content offset into a
+-- partially clipped list viewport.
+
+from js.global("Math") import {
+  floor: Number -> Number,
+};
+
+record Viewport = {
+  start: Number,
+  inset: Number,
+};
+
+let halfUp = (amount) => {
+  floor((amount + 1) / 2) :> Result.withDefault(amount)
+};
+
+-- Ease halfway to the target on every frame.  Integer rows make the result
+-- deterministic and guarantee arrival without an epsilon comparison.
+let approach = (current, target) => {
+  let distance = target - current;
+  if (distance == 0) {
+    target
+  } else {
+    if (distance > 0) {
+      current + halfUp(distance)
+    } else {
+      current - halfUp(0 - distance)
+    }
+  }
+};
+
+let settled = (current: Number, target: Number) => {
+  current == target
+};
+
+-- Adjacent timeline cards share one border row, hence each complete card
+-- advances by height - 1 rows.
+let advance = (height) => {
+  if (height <= 1) { 1 } else { height - 1 }
+};
+
+let rec offsetOf = match(heights, count, offset) => {
+  (_, 0, _) => { offset },
+  ([], _, _) => { offset },
+  ([height, ..rest], _, _) => {
+    offsetOf(rest, count - 1, offset + advance(height))
+  },
+  _ => { offset },
+};
+
+let rec locateFrom = match(heights, offset, index) => {
+  ([], _, _) => { Viewport(index, 0) },
+  (_, _, _) => {
+    match(heights) {
+      [] => { Viewport(index, 0) },
+      [height, ..rest] => {
+        let rows = advance(height);
+        if (offset < rows) {
+          Viewport(index, offset)
+        } else {
+          locateFrom(rest, offset - rows, index + 1)
+        }
+      },
+    }
+  },
+};
+
+let locate = (heights, offset) => {
+  locateFrom(heights, if (offset < 0) { 0 } else { offset }, 0)
+};

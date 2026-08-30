@@ -58,9 +58,11 @@ Task.fail       : e -> Task<a, e>
 
 Task.map     : Task<a, e> -> (a -> b) -> Task<b, e>
 Task.map2    : Task<a, e> -> Task<b, e> -> ((a, b) -> c) -> Task<c, e>
+Task.race    : Task<a, e> -> Task<a, e> -> Task<a, e>
 Task.andThen : Task<a, e> -> (a -> Task<b, e>) -> Task<b, e>
 Task.mapErr  : Task<a, e> -> (e -> f) -> Task<a, f>
 Task.recover : Task<a, e> -> (e -> a) -> Task<a, e>
+Task.orElse  : Task<a, e> -> (e -> Task<a, f>) -> Task<a, f>
 
 Task.collectList : List<Task<a, e>> -> Task<List<a>, e>
 Task.traverse    : List<a> -> (a -> Task<b, e>) -> Task<List<b>, e>
@@ -74,6 +76,10 @@ fetchUser()
     user.name
   })
 ```
+
+`Task.race(left, right)` settles with whichever eager Task handle settles first. It does not cancel
+the other handle. Keeping and reusing the losing handle is useful for immutable event loops: a
+background completion can win without registering a second input listener.
 
 ## `collectList`
 
@@ -285,7 +291,7 @@ Workman keeps async failure in the type:
 fetch(url) : Task<Response, Js.Error>
 ```
 
-You then use `Task.map`, `Task.andThen`, `Task.mapErr`, or `Task.recover`.
+You then use `Task.map`, `Task.andThen`, `Task.mapErr`, `Task.recover`, or `Task.orElse`.
 
 ## Difference From JavaScript
 

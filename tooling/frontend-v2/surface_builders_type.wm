@@ -1,0 +1,232 @@
+from "./generated/surface_types.wm" import {
+  Span, SurfaceToken, AuthoredValue, LongNameNode, TypeParametersNode, TypeArgumentsNode,
+  NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
+  GroupedTypeNode, TupleTypeNode, TypeAnnotationNode,
+  TypeDeclarationBodyNode, TypeDeclarationGroupNode, TypeBindingNode,
+  TypeDeclarationNode
+};
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
+from "./surface_builder_support.wm" import {
+  reverseInto, collectNodes, collectTokens, tokensWithout, firstTokenWithText,
+  lastTokenWithText, firstNode, surfaceValue
+};
+
+let buildTypeAnn = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(colon),
+      EmptyParseValue,
+      NodeParseValue(annotation),
+    ]) => {
+      NodeParseValue(TypeAnnotationNode(surfaceValue(colon), annotation, span))
+    },
+    _ => { RuleParseValue("TypeAnn", value, span) },
+  }
+};
+
+let buildFnType = (value: ParseValue, span: Span) => {
+  match(firstNode(value)) {
+    Some(node) => { NodeParseValue(node) },
+    None => { RuleParseValue("FnType", value, span) },
+  }
+};
+
+let buildFunctionType = (value: ParseValue, span: Span) => {
+  match((collectNodes(value), firstTokenWithText(collectTokens(value), "->"))) {
+    ([domain, result], Some(arrow)) => {
+      NodeParseValue(FunctionTypeNode(domain, surfaceValue(arrow), result, span))
+    },
+    _ => { RuleParseValue("FunctionType", value, span) },
+  }
+};
+
+let buildFnTypeDomain = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(open), Some(close)) => {
+          NodeParseValue(
+            FunctionTypeDomainNode(
+              Some(surfaceValue(open)),
+              collectNodes(inner),
+              Some(surfaceValue(close)),
+              span,
+            )
+          )
+        },
+        _ => { RuleParseValue("FnTypeDomain", value, span) },
+      }
+    },
+    ChoiceParseValue(1, inner) => {
+      match(firstNode(inner)) {
+        Some(node) => {
+          NodeParseValue(FunctionTypeDomainNode(None, [node], None, span))
+        },
+        None => { RuleParseValue("FnTypeDomain", value, span) },
+      }
+    },
+    _ => { RuleParseValue("FnTypeDomain", value, span) },
+  }
+};
+
+let buildGroupedFunctionType = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "("),
+    firstNode(value),
+    lastTokenWithText(tokens, ")", None)
+  )) {
+    (Some(open), Some(inner), Some(close)) => {
+      NodeParseValue(
+        GroupedTypeNode(
+          surfaceValue(open),
+          inner,
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("GroupedFunctionType", value, span) },
+  }
+};
+
+let buildLongName = (value: ParseValue, span: Span) => {
+  let parts = tokensWithout(collectTokens(value), ".", []);
+  NodeParseValue(LongNameNode(parts, [], span))
+};
+
+let buildTypeParams = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((firstTokenWithText(tokens, "<"), lastTokenWithText(tokens, ">", None))) {
+    (Some(open), Some(close)) => {
+      let withoutOpen = tokensWithout(tokens, "<", []);
+      let withoutClose = tokensWithout(withoutOpen, ">", []);
+      let withoutCommas = tokensWithout(withoutClose, ",", []);
+      NodeParseValue(TypeParametersNode(open, withoutCommas, surfaceValue(close), span))
+    },
+    _ => { RuleParseValue("TypeParams", value, span) },
+  }
+};
+
+let buildTypeAtom = (value: ParseValue, span: Span) => {
+  let nodes = collectNodes(value);
+  let tokens = collectTokens(value);
+  match(nodes) {
+    [LongNameNode(parts, separators, nameSpan), ..arguments] => {
+      match((firstTokenWithText(tokens, "<"), lastTokenWithText(tokens, ">", None))) {
+        (Some(open), Some(close)) => {
+          let args = TypeArgumentsNode(open, arguments, surfaceValue(close), span);
+          NodeParseValue(
+            NamedTypeNode(LongNameNode(parts, separators, nameSpan), Some(args), span)
+          )
+        },
+        _ => {
+          NodeParseValue(
+            NamedTypeNode(LongNameNode(parts, separators, nameSpan), None, span)
+          )
+        },
+      }
+    },
+    [] => {
+      match(tokens) {
+        [name] => { NodeParseValue(TypeVariableNode(name, span)) },
+        _ => { RuleParseValue("TypeAtom", value, span) },
+      }
+    },
+    [only] => {
+      match((firstTokenWithText(tokens, "("), firstTokenWithText(tokens, ","))) {
+        (Some(open), Some(comma)) => {
+          match(lastTokenWithText(tokens, ")", None)) {
+            Some(close) => {
+              NodeParseValue(TupleTypeNode(surfaceValue(open), [only], surfaceValue(close), span))
+            },
+            None => { NodeParseValue(only) },
+          }
+        },
+        _ => { NodeParseValue(only) },
+      }
+    },
+    _ => {
+      match((firstTokenWithText(tokens, "("), lastTokenWithText(tokens, ")", None))) {
+        (Some(open), Some(close)) => {
+          NodeParseValue(TupleTypeNode(surfaceValue(open), nodes, surfaceValue(close), span))
+        },
+        _ => { RuleParseValue("TypeAtom", value, span) },
+      }
+    },
+  }
+};
+
+let buildTypeDeclBody = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      OptionalParseValue(leadingValue),
+      firstValue,
+      RepeatedParseValue(restValues),
+    ]) => {
+      let leading = match(leadingValue) {
+        Some(inner) => { firstTokenWithText(collectTokens(inner), "|") },
+        None => { None },
+      };
+      let separators = collectTokens(RepeatedParseValue(restValues))
+        :> List.filter((value: SurfaceToken) => { value.text == "|" });
+      NodeParseValue(
+        TypeDeclarationBodyNode(
+          leading,
+          collectNodes(SequenceParseValue([firstValue, RepeatedParseValue(restValues)])),
+          separators,
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("TypeDeclBody", value, span) },
+  }
+};
+
+let buildTypeBinding = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(nameToken),
+      paramsValue,
+      EmptyParseValue,
+      TokenParseValue(equalsToken),
+      EmptyParseValue,
+      NodeParseValue(body),
+    ]) => {
+      let params = match(firstNode(paramsValue)) {
+        Some(node) => { Some(node) },
+        None => { None },
+      };
+      NodeParseValue(
+        TypeBindingNode(
+          nameToken,
+          params,
+          surfaceValue(equalsToken),
+          body,
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("TypeBinding", value, span) },
+  }
+};
+
+let buildTypeDecl = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match(collectNodes(value)) {
+    [first, ..rest] => {
+      NodeParseValue(
+        TypeDeclarationGroupNode(
+          [first, ..rest],
+          tokens :> List.filter((value: SurfaceToken) => { value.text == "and" }),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("TypeDecl", value, span) },
+  }
+};

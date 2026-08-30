@@ -1,0 +1,12 @@
+(comment) @comment
+(string) @string
+(char) @constant.character
+(float) @constant.numeric.float
+(integer) @constant.numeric.integer
+(boolean) @constant.builtin.boolean
+(void) @constant.builtin
+(keyword) @keyword
+(constructor) @type
+(identifier) @variable
+(operator) @operator
+(punctuation) @punctuation.delimiter

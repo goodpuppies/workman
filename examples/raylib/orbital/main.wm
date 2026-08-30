@@ -9,7 +9,7 @@
 -- run from the repo root:
 --   deno run -A src/main.ts run examples/raylib/orbital/main.wm
 
-from js.module("../raylib_ts_bindings_deno/raylib_bindings.ts") import * as Raylib;
+from js.module("raylib") import * as Raylib;
 
 from "./vec.wm" import { Vec2 };
 from "./color.wm" import { Color, hsv, withAlpha, floorI };

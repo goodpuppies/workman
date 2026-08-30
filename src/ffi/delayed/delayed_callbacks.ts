@@ -1,5 +1,7 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
+import { collectExprs } from "../../type_debug_collect.ts";
 import { prune } from "../../types.ts";
 import {
   ffiCallPromiseElement,
@@ -26,9 +28,10 @@ export function contextualizeDelayedCallbacks(
   ffi: FfiElaboration,
   result: InferResult,
 ): FfiElaboration {
+  const annotationCount = callbackAnnotationCount(ffi.module);
   const arities = namedLambdaArities(ffi.module.decls);
   const contexts = collectNamedCallbackContexts(ffi.module.decls, result, arities, ffi.bindings);
-  return {
+  const contextual = {
     ...ffi,
     module: {
       ...ffi.module,
@@ -37,6 +40,16 @@ export function contextualizeDelayedCallbacks(
       ),
     },
   };
+  return callbackAnnotationCount(contextual.module) === annotationCount ? ffi : contextual;
+}
+
+function callbackAnnotationCount(module: FfiElaboration["module"]): number {
+  let count = 0;
+  for (const expr of collectExprs(module)) {
+    if (expr.kind !== "Lambda") continue;
+    count += expr.params.filter((param) => param.annotation !== undefined).length;
+  }
+  return count;
 }
 
 function collectNamedCallbackContexts(
@@ -74,6 +87,7 @@ function collectNamedCallbackContexts(
         expr.fields.forEach((field) => visitExpr(field.value));
         return;
       case "Lambda":
+        if (!hostFfiDescendsInto(expr)) return;
         visitExpr(expr.body);
         return;
       case "If":
@@ -94,6 +108,9 @@ function collectNamedCallbackContexts(
           else visitExpr(item);
         }
         visitExpr(expr.result);
+        return;
+      case "Ascribed":
+        visitExpr(expr.value);
         return;
       case "Binary":
         visitExpr(expr.left);
@@ -152,6 +169,7 @@ function callbackParamTypesForFfiBindingCall(
             params: Array.from({ length: arities.get(arg.name)! }, () => ({
               pattern: { kind: "PWildcard" as const },
             })),
+            directives: [],
             body: arg,
           }
           : arg
@@ -272,6 +290,7 @@ function contextualizeDecl(
     bindings: decl.bindings.map((binding) => {
       const value = contextualizeExpr(binding.value, result, arities, new Map(), bindings);
       if (binding.pattern.kind !== "PVar" || binding.value.kind !== "Lambda") return binding;
+      if (!hostFfiDescendsInto(binding.value)) return binding;
       const params = contexts.get(binding.pattern.name);
       if (!params) return { ...binding, value };
       return {
@@ -381,6 +400,7 @@ function contextualizeExpr(
         ),
       };
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return expr;
       return {
         ...expr,
         body: contextualizeExpr(expr.body, result, arities, new Map(localTypes), bindings),
@@ -420,6 +440,11 @@ function contextualizeExpr(
         result: contextualizeExpr(expr.result, result, arities, blockTypes, bindings),
       };
     }
+    case "Ascribed":
+      return {
+        ...expr,
+        value: contextualizeExpr(expr.value, result, arities, localTypes, bindings),
+      };
     case "Binary":
       return {
         ...expr,
@@ -455,6 +480,7 @@ function contextualizeCallbackArg(
   localTypes: Map<string, TypeExpr>,
   bindings: FfiElaboration["bindings"],
 ): Expr {
+  if (arg.kind === "Lambda" && !hostFfiDescendsInto(arg)) return arg;
   if (arg.kind !== "Lambda" || !params) {
     return contextualizeExpr(arg, result, arities, localTypes, bindings);
   }

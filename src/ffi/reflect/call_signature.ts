@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import type { TypeExpr } from "../../ast.ts";
 import { type JsCallArgHint } from "./type_refs.ts";
 import { typeExprFromTsType } from "./type_mapping.ts";
@@ -11,7 +11,7 @@ export function functionTypeFromCall(
   call: ts.CallExpression,
   signature: ts.Signature,
   args: JsCallArgHint[],
-): TypeExpr {
+): TypeExpr | undefined {
   const signatureParams = signature.getParameters();
   const declaration = signature.getDeclaration();
   const params = call.arguments.map((arg, index) => {
@@ -21,20 +21,48 @@ export function functionTypeFromCall(
     if (args[index]?.kind === "string") return name("String");
     if (args[index]?.kind === "number") return name("Number");
     if (args[index]?.kind === "ref") {
-      return args[index].type ?? typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??
-          name("Js.Value");
+      return args[index].type ??
+        typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??
+        name("Js.Value");
     }
-    const symbolType = signatureParams[index]
-      ? typeOfSymbol(checker, signatureParams[index])
+    const lastParameterIndex = signatureParams.length - 1;
+    const hasRestParameter = lastParameterIndex >= 0 &&
+      !!declaration?.parameters[lastParameterIndex]?.dotDotDotToken;
+    const signatureParamIndex = hasRestParameter && index > lastParameterIndex
+      ? lastParameterIndex
+      : index;
+    const symbolType = signatureParams[signatureParamIndex]
+      ? typeOfSymbol(checker, signatureParams[signatureParamIndex])
       : undefined;
-    const mapped = symbolType
-      ? typeExprFromTsType(checker, symbolType, "param") ?? name("Js.Value")
+    const reflectedParamType = symbolType
+      ? suppliedParameterType(checker, symbolType, declaration, signatureParamIndex, index)
+      : undefined;
+    const mapped = reflectedParamType
+      ? typeExprFromTsType(checker, reflectedParamType, "param") ?? name("Js.Value")
       : name("Js.Value");
     return stripSuppliedOptionalParam(mapped, declaration, index);
   });
-  const result = typeExprFromTsType(checker, checker.getTypeAtLocation(call)) ??
-    name("Js.Value");
+  const result = typeExprFromTsType(checker, checker.getTypeAtLocation(call));
+  if (!result) return undefined;
   return fn(params, result);
+}
+
+function suppliedParameterType(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  declaration: ts.SignatureDeclaration | undefined,
+  declarationIndex: number,
+  argumentIndex: number,
+): ts.Type {
+  const parameter = declaration?.parameters[declarationIndex];
+  if (!parameter?.dotDotDotToken) return type;
+  const ref = type as ts.TypeReference;
+  const target = ref.target as (ts.TupleType & ts.ObjectType) | undefined;
+  if (target && target.objectFlags & ts.ObjectFlags.Tuple) {
+    const elements = checker.getTypeArguments(ref);
+    return elements[argumentIndex - declarationIndex] ?? type;
+  }
+  return checker.getIndexTypeOfType(type, ts.IndexKind.Number) ?? type;
 }
 
 function syntheticCallbackTypeFromArg(
@@ -70,7 +98,10 @@ function stripSuppliedOptionalParam(
   return type.args[0];
 }
 
-export function functionArgExpr(index: number, hint: Extract<JsCallArgHint, { kind: "function" }>): string {
+export function functionArgExpr(
+  index: number,
+  hint: Extract<JsCallArgHint, { kind: "function" }>,
+): string {
   const params = Array.from(
     { length: hint.arity },
     (_, paramIndex) =>

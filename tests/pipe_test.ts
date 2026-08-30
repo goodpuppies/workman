@@ -1,5 +1,6 @@
-import { assertStringIncludes } from "@std/assert";
-import { checkSource } from "../src/compiler.ts";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import { checkSource, compileLibraryVirtual } from "../src/compiler.ts";
+import { formatDiagnostic, FrontendDiagnosticError } from "../src/diagnostics.ts";
 
 Deno.test("basic pipe to function", async () => {
   await checkSource(`
@@ -17,6 +18,35 @@ Deno.test("chained pipe operators", async () => {
   `);
 });
 
+Deno.test("anonymous match functions compose within pipelines", async () => {
+  const source = `
+    type Option<t> = None | Some<t>;
+    let increment = (value) => { value + 1 };
+    let some = Some(41) :> match {
+      Some(value) => { value },
+      None => { 0 },
+    } :> increment;
+    let none = None :> match {
+      Some(value) => { value },
+      None => { 0 },
+    } :> increment;
+    let unwrap = match {
+      Some(value) => { value },
+      None => { 0 },
+    };
+    let bound = Some(9) :> unwrap :> increment;
+  `;
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([["/test/library.wm", source]]),
+  );
+  const module = await importGenerated(js);
+
+  assertEquals(module.some, 42);
+  assertEquals(module.none, 1);
+  assertEquals(module.bound, 10);
+});
+
 Deno.test("pipe with multi-argument function", async () => {
   await checkSource(`
     let add = (x, y) => { x + y };
@@ -29,6 +59,35 @@ Deno.test("pipe with tuple for multiple arguments", async () => {
     let add = (x, y) => { x + y };
     let result = (10, 5) :> add;
   `);
+});
+
+Deno.test("pipe applies to functions produced by nested applications", async () => {
+  const source = `
+    let makeTransform = (offset) => {
+      (transform) => {
+        (value) => {
+          transform(value + offset)
+        }
+      }
+    };
+
+    let withoutPlaceholder = 40 :> makeTransform 1 (value) => { value + 1 };
+    let withPlaceholder = 40 :> makeTransform 1 (value) => { value + 1 }();
+
+    let add = (left, right) => { left + right };
+    let ordinaryPipe = 10 :> add(5);
+  `;
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([
+      ["/test/library.wm", source],
+    ]),
+  );
+  const module = await importGenerated(js);
+
+  assertEquals(module.withoutPlaceholder, 42);
+  assertEquals(module.withPlaceholder, 42);
+  assertEquals(module.ordinaryPipe, 15);
 });
 
 Deno.test("pipe preserves FFI receiver reflection in inline functions", async () => {
@@ -64,10 +123,8 @@ Deno.test("pipe member chains continue through HM-typed primitive results", asyn
 });
 
 Deno.test("pipe task error mismatch points at both origin slots", async () => {
-  let error: Error | undefined;
-  try {
-    await checkSource(`
-      let scanAll: () => Task<Void, Js.Error> = () => {
+  const source = `
+      let scanAll: Void -> Task<Void, Js.Error> = () => {
         void :> Task.succeed
       };
       let left: Result<Number, String> = Err("cli");
@@ -76,17 +133,30 @@ Deno.test("pipe task error mismatch points at both origin slots", async () => {
         :> Task.andThen((n) => {
           scanAll()
         });
-    `);
-  } catch (caught) {
-    error = caught as Error;
-  }
-  if (!error) throw new Error("expected checkSource to reject");
-  assertStringIncludes(
-    error.message,
-    "InferPipe.StepInput: pipe output matches next function input",
+    `;
+  const error = await assertRejects(
+    () => checkSource(source),
+    FrontendDiagnosticError,
   );
-  assertStringIncludes(error.message, "context: Task.andThen callback result");
-  assertStringIncludes(error.message, "expected: Js.Error");
-  assertStringIncludes(error.message, "actual:   String");
-  assertStringIncludes(error.message, "source: callback result");
+  const rendered = formatDiagnostic(error.diagnostic, "task-pipe.wm", source);
+  assertStringIncludes(
+    rendered,
+    "type error: pipe sides can't be both:",
+  );
+  assertStringIncludes(rendered, "let bad = {..}");
+  assertStringIncludes(rendered, ": String");
+  assertStringIncludes(rendered, ": Js.Error");
+  assertStringIncludes(rendered, "let annotation: Js.Error");
+  assertStringIncludes(rendered, "Err call result: String");
 });
+
+async function importGenerated(source: string): Promise<Record<string, unknown>> {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/pipe.mjs`;
+  await Deno.writeTextFile(path, source);
+  try {
+    return await import(`${new URL(`file://${path}`).href}?cache=${crypto.randomUUID()}`);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}

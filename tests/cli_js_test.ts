@@ -8,7 +8,7 @@ Deno.test("cli run calls typed JS namespace imports", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("console") import unsafe { log: (String, Number) => Void } as console;
+      from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
       let main = () => {
         console.log("answer", 42)
       };
@@ -51,6 +51,80 @@ Deno.test("cli run calls inferred JS imports", async () => {
 
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "2\n4\n3\n");
+  assertEquals(result.stderr, "");
+});
+
+Deno.test("cli run converts reflected TypeScript tuple results and parameters", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/tuple.ts`,
+    `
+      export function makePair(): [number, string] { return [42, "answer"]; }
+      export function showPair(pair: [number, string]): string {
+        return pair[1] + ":" + pair[0];
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./tuple.ts") import { makePair, showPair };
+      let main = () => {
+        makePair()
+          :> Result.andThen((number, text) => { showPair((number, text)) })
+          :> Result.map((shown) => { print(shown) })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0, result.stderr);
+  assertEquals(result.stdout, "answer:42\n");
+  assertEquals(result.stderr, "");
+});
+
+Deno.test("cli run converts reflected tuples nested in JS arrays", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/tuple_array.ts`,
+    `
+      export function makeRows(): Array<[number, string]> {
+        return [[42, "answer"], [7, "lucky"]];
+      }
+      export function showRows(rows: Array<[number, string]>): string {
+        return rows.map(([number, text]) => text + ":" + number).join(",");
+      }
+    `,
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("./tuple_array.ts") import { makeRows, showRows };
+      let main = () => {
+        makeRows()
+          :> Result.andThen((rows) => {
+            match(Js.Array.toList(rows)) {
+              [(Var(firstNumber), Var(firstText)), (Var(secondNumber), Var(secondText))] => {
+                showRows(Js.Array.fromList([
+                  (firstNumber, firstText),
+                  (secondNumber, secondText)
+                ]))
+              },
+              _ => { Panic("unexpected rows") }
+            }
+          })
+          :> Result.map((shown) => { print(shown) })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0, result.stderr);
+  assertEquals(result.stdout, "answer:42,lucky:7\n");
   assertEquals(result.stderr, "");
 });
 
@@ -102,8 +176,8 @@ Deno.test("cli run passes JSON arrays as one JS argument", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("Array") import unsafe { isArray: (Js.Value) => Bool } as Array;
-      from js.global("JSON") import unsafe { stringify: (Js.Value) => String } as JSON;
+      from js.global("Array") import unsafe { isArray: Js.Value -> Bool } as Array;
+      from js.global("JSON") import unsafe { stringify: Js.Value -> String } as JSON;
       let main = () => {
         print(Array.isArray(JSON[1, 2]));
         print(JSON.stringify(JSON{
@@ -130,8 +204,8 @@ Deno.test("cli run wraps and unwraps JS nullish Option values", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.global("JSON") import unsafe { parse: (String) => Option<Js.Value> } as JSON;
-      from js.global("Object") import unsafe { is: (Option<Js.Value>, Js.Value) => Bool } as Object;
+      from js.global("JSON") import unsafe { parse: String -> Option<Js.Value> } as JSON;
+      from js.global("Object") import unsafe { is: (Option<Js.Value>, Js.Value) -> Bool } as Object;
       let main = () => {
         let none = JSON.parse("null");
         let some = JSON.parse("{\\"ok\\":true}");
@@ -182,7 +256,7 @@ Deno.test("cli run grants generated JS permissions for reflected child process i
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "0\n");
+  assertEquals(result.stdout, "Some(0)\n");
   assertEquals(result.stderr, "");
 });
 
@@ -240,7 +314,7 @@ Deno.test("cli run normalizes JS throws into matchable Js.Error values", async (
   await Deno.writeTextFile(
     input,
     `
-      from js.global import { eval as jsEval: (String) => Js.Value };
+      from js.global import { eval as jsEval: String -> Js.Value };
       let main = () => {
         print(match(jsEval("throw 'boom'")) {
           Ok(_) => { "ok" },
@@ -289,6 +363,33 @@ Deno.test("cli run constructs reflected JS globals and reads properties", async 
 
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "/a\n");
+  assertEquals(result.stderr, "");
+});
+
+Deno.test("cli run exposes literal lexical import.meta values", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.global import unsafe { URL };
+      from js.meta import { url, main as isMain, resolve };
+      let main = () => {
+        let assetPath = URL.new("./asset.txt", url) :> .pathname;
+        print(url :> .endsWith("/main.mjs") :> Result.withDefault(false));
+        print(assetPath :> Result.map((path) => {
+          path :> .endsWith("/asset.txt") :> Result.withDefault(false)
+        }) :> Result.withDefault(false));
+        print(isMain);
+        print(resolve("./asset.txt") :> .endsWith("/asset.txt") :> Result.withDefault(false))
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0, result.stderr);
+  assertEquals(result.stdout, "true\ntrue\ntrue\ntrue\n");
   assertEquals(result.stderr, "");
 });
 

@@ -1,0 +1,48 @@
+from js.module("jsr:@img/png@0.1.6") import {
+  decodePNG: Js.Value -> Task<Js.Object, Js.Error>,
+};
+from js.module("node:buffer") import { Buffer };
+from js.global("Uint8Array") import * as Uint8Array;
+
+record Header = {
+  width: Number,
+  height: Number,
+};
+
+record Decoded = {
+  header: Header,
+  body: Js.Value,
+};
+
+let main = () => {
+  let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  match(Buffer.from(base64, "base64")) {
+    Err(_) => { Task.succeed(void) },
+    Ok(buffer) => {
+      match(Uint8Array.from(buffer)) {
+        Err(_) => { Task.succeed(void) },
+        Ok(input) => {
+          decodePNG(input)
+            :> Task.andThen((raw) => {
+              let decoded: Result<Decoded, Js.Error> = raw :> Json.assert;
+              decoded :> Task.fromResult
+            })
+            :> Task.andThen((decoded) => {
+              Buffer.from(decoded.body) :> Task.fromResult :> Task.map((body) => {
+                let length = body :> .length :> Result.withDefault(0);
+                print(`decoded ${Text.of(decoded.header.width)}x${Text.of(decoded.header.height)} bytes=${Text.of(length)}`)
+              })
+            })
+            :> Task.recover((error) => {
+              let message = match(error) {
+                Js.Error(text) => { text },
+                Js.Unknown => { "unknown" },
+              };
+              print(`decode failed: ${message}`);
+              void
+            })
+        },
+      }
+    },
+  }
+};

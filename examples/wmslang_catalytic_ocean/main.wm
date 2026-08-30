@@ -1,0 +1,717 @@
+from "../wmslang_window/src/sdl_window.wm" import {
+  NativeRuntime, NativeError, QuitEvent, MouseEvent, IgnoredEvent, NoEvent,
+  ResizeEvent,
+  startResizableNative, nativeSurface, pollNative, resizeNative, delayNative,
+  presentNative, closeNative
+};
+from "../wmslang_window/src/webgpu_present.wm" import {
+  FragmentRenderer, OffscreenFragmentRenderer,
+  createFragmentRenderer, createSiblingFragmentRenderer,
+  createFeedbackTexture2D, createNearestSampler, createLinearSampler,
+  createOffscreenFragmentRenderer, renderFragment, renderFragmentTo,
+  destroyOffscreenFragmentRenderer, destroyFragmentRenderer
+};
+
+type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
+
+record SignalInputs = {
+  frame: Number,
+  signalResolution: (Number, Number),
+  interventionFrames: Number,
+  interventionX: Number,
+  interventionY: Number,
+  signalPrevious: Gpu.SampledTexture2D,
+  signalGenome: Gpu.SampledTexture2D,
+  signalHistory: Gpu.SampledTexture2D,
+  signalLinearSampler: Gpu.Sampler
+};
+
+record ProgramInputs = {
+  programFrame: Number,
+  programResolution: (Number, Number),
+  programInterventionFrames: Number,
+  programPreviousSignal: Gpu.SampledTexture2D,
+  programNextSignal: Gpu.SampledTexture2D,
+  programPrevious: Gpu.SampledTexture2D,
+  programHistory: Gpu.SampledTexture2D,
+  programLinearSampler: Gpu.Sampler
+};
+
+record HistoryInputs = {
+  historyFrame: Number,
+  historySignal: Gpu.SampledTexture2D,
+  historyPrevious: Gpu.SampledTexture2D
+};
+
+record DisplayInputs = {
+  displayResolution: (Number, Number),
+  displayImage: Gpu.SampledTexture2D,
+  displayGenome: Gpu.SampledTexture2D,
+  displayNearestSampler: Gpu.Sampler,
+  displayLinearSampler: Gpu.Sampler
+};
+
+record FeedbackTexture = {
+  physical: Gpu.Texture2D,
+  sampled: Gpu.SampledTexture2D,
+  target: Gpu.RenderTarget2D
+};
+
+record FeedbackPair = {
+  read: FeedbackTexture,
+  write: FeedbackTexture
+};
+
+record FrameState = {
+  quit: Bool,
+  frame: Number,
+  width: Number,
+  height: Number,
+  simulationWidth: Number,
+  simulationHeight: Number,
+  interventionFrames: Number,
+  interventionX: Number,
+  interventionY: Number,
+  pendingResize: Option<(Number, Number)>,
+  signalPair: FeedbackPair,
+  programPair: FeedbackPair,
+  historyPair: FeedbackPair
+};
+
+type PollStep = PollAgain<FrameState> | PollDone<FrameState>;
+
+let width = 960;
+let height = 640;
+let simulationWidth = 480;
+let simulationHeight = 320;
+let generationsPerFrame = 8;
+
+let bootstrapShade = (_coord) => {
+  @gpu;
+  (0.0, 0.0, 0.0, 1.0)
+};
+
+-- Every point applies the same closed binary interaction. Heritable values
+-- change phase, coupling, and local transport, but never select an opcode.
+let signalShade = (inputs: SignalInputs) => {
+  (coord) => {
+    @gpu;
+    let uv = coord / inputs.signalResolution;
+    let old: (Number, Number, Number, Number) =
+      inputs.signalPrevious.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let catalyst: (Number, Number, Number, Number) =
+      inputs.signalGenome.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let learned: (Number, Number, Number, Number) =
+      inputs.signalHistory.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let angle = catalyst.x * 6.2831853;
+    -- The causal light cone never reaches beyond one and a half texels.
+    let radius = 0.75 + catalyst.z * 0.75;
+    let offset = (
+      cos(angle) * radius / inputs.signalResolution.x,
+      sin(angle) * radius / inputs.signalResolution.y
+    );
+    let crossOffset = (-offset.y, offset.x);
+    let ahead = inputs.signalPrevious.Sample(inputs.signalLinearSampler, uv + offset);
+    let behind = inputs.signalPrevious.Sample(inputs.signalLinearSampler, uv - offset);
+    let across = inputs.signalPrevious.Sample(inputs.signalLinearSampler, uv + crossOffset);
+    let incomingX = ahead.x * 0.5 + behind.x * 0.3 + across.x * 0.2;
+    let incomingY = ahead.y * 0.5 + behind.y * 0.3 + across.y * 0.2;
+    let rotatedX = incomingX * cos(angle) - incomingY * sin(angle);
+    let rotatedY = incomingX * sin(angle) + incomingY * cos(angle);
+    -- Complex multiplication is the sole nonlinear primitive. Because its
+    -- result has the same shape as its inputs, adjacent catalysts compose.
+    let productX = old.x * rotatedX - old.y * rotatedY;
+    let productY = old.x * rotatedY + old.y * rotatedX;
+    let coupling = 0.08 + catalyst.y * 0.72;
+    let gain = 0.88 + catalyst.y * 0.94;
+    let expectedVariation = learned.z + learned.w;
+    let dormancy = 1.0 / (1.0 + expectedVariation * 40.0);
+    let resourceDrive = old.z * (0.01 + dormancy * 0.25);
+    let rawX = rotatedX * gain + productX * coupling + cos(angle) * resourceDrive;
+    let rawY = rotatedY * gain + productY * coupling + sin(angle) * resourceDrive;
+
+    let intervention = if (inputs.interventionFrames > 0.0) {
+      sin(
+        coord.x * 0.071 + coord.y * 0.113 +
+        inputs.interventionX * 0.31 + inputs.interventionY * 0.17 +
+        inputs.frame * 0.37
+      ) * 0.24
+    } else { 0.0 };
+    let proposedX = clamp(rawX, -1.0, 1.0);
+    let proposedY = clamp(rawY, -1.0, 1.0);
+    let demand = abs(proposedX - old.x) + abs(proposedY - old.y);
+
+    -- Free resource diffuses by a symmetric local stencil. Bound resource is
+    -- released slowly. Apart from clamp-edge effects, their sum is conserved.
+    let northResource = inputs.signalPrevious.Sample(
+      inputs.signalLinearSampler,
+      uv + (0.0, -1.0 / inputs.signalResolution.y)
+    );
+    let southResource = inputs.signalPrevious.Sample(
+      inputs.signalLinearSampler,
+      uv + (0.0, 1.0 / inputs.signalResolution.y)
+    );
+    let westResource = inputs.signalPrevious.Sample(
+      inputs.signalLinearSampler,
+      uv + (-1.0 / inputs.signalResolution.x, 0.0)
+    );
+    let eastResource = inputs.signalPrevious.Sample(
+      inputs.signalLinearSampler,
+      uv + (1.0 / inputs.signalResolution.x, 0.0)
+    );
+    let diffusedFree =
+      old.z * 0.5 +
+      (northResource.z + southResource.z + westResource.z + eastResource.z) * 0.125;
+    let released = old.w * 0.012;
+    let available = diffusedFree + released;
+    let desiredSpend = demand * (0.012 + catalyst.w * 0.028);
+    let spend = min(available, desiredSpend);
+    let permission = spend / (0.0001 + desiredSpend);
+    let metabolizedX = old.x + (proposedX - old.x) * permission;
+    let metabolizedY = old.y + (proposedY - old.y) * permission;
+    -- Mouse motion is an authored external intervention, so its injected
+    -- energy is not allowed to disappear behind the autonomous resource gate.
+    let nextX = clamp(metabolizedX + intervention, -1.0, 1.0);
+    let nextY = clamp(metabolizedY - intervention, -1.0, 1.0);
+    let nextFree = max(0.0, available - spend);
+    let nextBound = max(0.0, old.w - released + spend);
+
+    if (inputs.frame == 0.0) {
+      let seed = frac(sin(coord.x * 12.9898 + coord.y * 78.233) * 43758.5453);
+      let broad = sin(coord.x * 0.023) * sin(coord.y * 0.017);
+      let resource = 0.38 + broad * 0.12 + seed * 0.08;
+      ((seed - 0.5) * 0.16 + broad * 0.08, broad * 0.12, resource, 0.0)
+    } else {
+      (nextX, nextY, nextFree, nextBound)
+    }
+  }
+};
+
+-- Catalysts do not compete or reproduce. Each persistent catalyst changes its
+-- own parameters in response to locally observed structured novelty.
+let programShade = (inputs: ProgramInputs) => {
+  (coord) => {
+    @gpu;
+    let uv = coord / inputs.programResolution;
+    let current = inputs.programPrevious.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let previousResult = inputs.programPreviousSignal.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let result = inputs.programNextSignal.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let history = inputs.programHistory.Load((Gpu.i32(coord.x), Gpu.i32(coord.y), 0));
+    let frameSalt = inputs.programFrame * 0.019;
+    let random0 = frac(sin(coord.x * 19.19 + coord.y * 73.73 + frameSalt) * 43758.5453);
+    let random1 = frac(sin(coord.x * 41.17 - coord.y * 11.31 + frameSalt * 1.7) * 15731.743);
+    let random2 = frac(sin(coord.x * 7.91 + coord.y * 97.13 + frameSalt * 2.3) * 31337.1337);
+    let north = inputs.programNextSignal.Sample(
+      inputs.programLinearSampler,
+      uv + (0.0, -1.0 / inputs.programResolution.y)
+    );
+    let south = inputs.programNextSignal.Sample(
+      inputs.programLinearSampler,
+      uv + (0.0, 1.0 / inputs.programResolution.y)
+    );
+    let west = inputs.programNextSignal.Sample(
+      inputs.programLinearSampler,
+      uv + (-1.0 / inputs.programResolution.x, 0.0)
+    );
+    let east = inputs.programNextSignal.Sample(
+      inputs.programLinearSampler,
+      uv + (1.0 / inputs.programResolution.x, 0.0)
+    );
+    let temporalChange =
+      abs(result.x - previousResult.x) + abs(result.y - previousResult.y);
+    let spatialVariation =
+      abs(north.x - south.x) + abs(north.y - south.y) +
+      abs(west.x - east.x) + abs(west.y - east.y);
+    let surprise = temporalChange / (0.015 + temporalChange);
+    let coherence = 1.0 / (1.0 + spatialVariation * 0.85);
+    let archiveDistance =
+      abs(result.x - history.x) + abs(result.y - history.y);
+    let expectedDistance = history.z + history.w;
+    let excess = max(0.0, archiveDistance - expectedDistance * 1.6);
+    let archiveSurprise = excess / (0.02 + excess);
+    -- A stable cycle teaches the archive its mean and expected deviation, so
+    -- repeated motion stops counting as novelty even when it changes each frame.
+    let novelty = archiveSurprise * surprise * coherence;
+    let search = (1.0 - novelty) * 0.0014;
+    let drift0 = sin(
+      coord.x * 0.017 + coord.y * 0.009 + inputs.programFrame * 0.031
+    ) * search;
+    let drift1 = sin(
+      coord.x * 0.012 + coord.y * 0.021 - inputs.programFrame * 0.029
+    ) * search;
+    let drift2 = sin(
+      coord.x * 0.006 - coord.y * 0.019 + inputs.programFrame * 0.023
+    ) * search;
+    let drift3 = sin(
+      coord.x * 0.013 + coord.y * 0.015 - inputs.programFrame * 0.027
+    ) * search;
+    let interventionScale = if (inputs.programInterventionFrames > 0.0) {
+      0.035
+    } else { 0.0 };
+    let external0 = sin(
+      coord.x * 0.021 + coord.y * 0.008 + inputs.programFrame * 0.19
+    ) * interventionScale;
+    let external1 = sin(
+      coord.x * 0.011 - coord.y * 0.024 + inputs.programFrame * 0.23
+    ) * interventionScale;
+    let external2 = sin(
+      coord.x * 0.028 + coord.y * 0.014 - inputs.programFrame * 0.17
+    ) * interventionScale;
+    let external3 = sin(
+      coord.x * 0.016 - coord.y * 0.018 - inputs.programFrame * 0.21
+    ) * interventionScale;
+    -- Novelty is a local control signal, not a reproductive score. Familiar
+    -- behavior explores smoothly; departures from learned dynamics hold.
+    let evolved = (
+      frac(current.x + drift0 + external0 + 1.0),
+      frac(current.y + drift1 + external1 + 1.0),
+      frac(current.z + drift2 + external2 + 1.0),
+      frac(current.w + drift3 + external3 + 1.0)
+    );
+
+    if (inputs.programFrame == 0.0) {
+      -- Smooth variation makes adjacent transformations initially compatible;
+      -- no ancestral province corresponds to a predefined behavior.
+      let gene0 = frac(0.5 + sin(coord.x * 0.013) * 0.22 + random0 * 0.08);
+      let gene1 = frac(0.5 + sin(coord.y * 0.017) * 0.24 + random1 * 0.08);
+      let gene2 = frac(0.5 + sin((coord.x + coord.y) * 0.009) * 0.2 + random2 * 0.08);
+      (gene0, gene1, gene2, 0.15 + random0 * 0.35)
+    } else { evolved }
+  }
+};
+
+-- A slow learned baseline makes novelty historical rather than a synonym for
+-- one-frame motion. RG stores the mean and BA stores expected absolute error.
+let historyShade = (inputs: HistoryInputs) => {
+  (coord) => {
+    @gpu;
+    let location = (Gpu.i32(coord.x), Gpu.i32(coord.y), 0);
+    let signal = inputs.historySignal.Load(location);
+    let old = inputs.historyPrevious.Load(location);
+    if (inputs.historyFrame == 0.0) {
+      (signal.x, signal.y, 0.04, 0.04)
+    } else {
+      let nextMeanX = old.x * 0.992 + signal.x * 0.008;
+      let nextMeanY = old.y * 0.992 + signal.y * 0.008;
+      let errorX = abs(signal.x - old.x);
+      let errorY = abs(signal.y - old.y);
+      let nextErrorX = old.z * 0.992 + errorX * 0.008;
+      let nextErrorY = old.w * 0.992 + errorY * 0.008;
+      (nextMeanX, nextMeanY, nextErrorX, nextErrorY)
+    }
+  }
+};
+
+let displayShade = (inputs: DisplayInputs) => {
+  (coord) => {
+    @gpu;
+    let uv = coord / inputs.displayResolution;
+    let sidebar = uv.x > 0.75;
+    let panelY = frac(uv.y * 4.0);
+    let simUv = if (sidebar) {
+      ((uv.x - 0.75) * 4.0, panelY)
+    } else {
+      (uv.x / 0.75, (uv.y - 0.125) / 0.75)
+    };
+    let signal = inputs.displayImage.Sample(inputs.displayLinearSampler, simUv);
+    let program = inputs.displayGenome.Sample(inputs.displayNearestSampler, simUv);
+    if (sidebar) {
+      let band = floor(uv.y * 4.0);
+      let lane = if (band == 0.0) { program.x } else {
+        if (band == 1.0) { program.y } else {
+          if (band == 2.0) { program.z } else { program.w }
+        }
+      };
+      (
+        0.08 + lane * 0.9,
+        0.12 + program.y * 0.65,
+        0.12 + (1.0 - lane) * 0.78,
+        1.0
+      )
+    } else {
+      if (uv.y < 0.125 || uv.y > 0.875) {
+        (0.005, 0.008, 0.012, 1.0)
+      } else {
+        let freeGlow = sqrt(max(0.0, signal.z));
+        let boundGlow = sqrt(max(0.0, signal.w));
+        (
+          clamp(0.04 + signal.x * 0.5 + boundGlow * 0.32, 0.0, 1.0),
+          clamp(0.06 + signal.y * 0.45 + freeGlow * 0.42, 0.0, 1.0),
+          clamp(0.1 - signal.x * 0.2 - signal.y * 0.15 + freeGlow * 0.5, 0.0, 1.0),
+          1.0
+        )
+      }
+    }
+  }
+};
+
+let bootstrapFragment = Gpu.fragment(bootstrapShade);
+let signalFragmentFor = (inputs: SignalInputs) => { Gpu.fragment(signalShade(inputs)) };
+let programFragmentFor = (inputs: ProgramInputs) => { Gpu.fragment(programShade(inputs)) };
+let historyFragmentFor = (inputs: HistoryInputs) => { Gpu.fragment(historyShade(inputs)) };
+let displayFragmentFor = (inputs: DisplayInputs) => { Gpu.fragment(displayShade(inputs)) };
+
+let makeFeedbackTexture = (renderer: FragmentRenderer, textureWidth: Number, textureHeight: Number) => {
+  createFeedbackTexture2D(renderer, textureWidth, textureHeight)
+    :> Result.andThen((physical) => {
+    let assemble = Monad.via Result (sampled, target) => {
+      let texture: FeedbackTexture = .{ physical = physical, sampled = sampled, target = target };
+      Ok(texture)
+    };
+    Result| Gpu.sampledTexture2D(physical), Gpu.renderTarget2D(physical) | :> assemble
+  })
+};
+
+let makeFeedbackPair = (renderer: FragmentRenderer, textureWidth: Number, textureHeight: Number) => {
+  let assemble = Monad.via Result (read, write) => {
+    let pair: FeedbackPair = .{ read = read, write = write };
+    Ok(pair)
+  };
+  Result|
+    makeFeedbackTexture(renderer, textureWidth, textureHeight),
+    makeFeedbackTexture(renderer, textureWidth, textureHeight)
+  | :> assemble
+};
+
+let swap = (pair: FeedbackPair) => {
+  let next: FeedbackPair = .{ read = pair.write, write = pair.read };
+  next
+};
+
+let signalFragment = (state: FrameState, linearSampler: Gpu.Sampler) => {
+  let inputs: SignalInputs = .{
+    frame = state.frame + 0.0,
+    signalResolution = (state.simulationWidth, state.simulationHeight),
+    interventionFrames = state.interventionFrames + 0.0,
+    interventionX = state.interventionX + 0.0,
+    interventionY = state.interventionY + 0.0,
+    signalPrevious = state.signalPair.read.sampled,
+    signalGenome = state.programPair.read.sampled,
+    signalHistory = state.historyPair.read.sampled,
+    signalLinearSampler = linearSampler
+  };
+  signalFragmentFor(inputs)
+};
+
+let programFragment = (state: FrameState, linearSampler: Gpu.Sampler) => {
+  let inputs: ProgramInputs = .{
+    programFrame = state.frame + 0.0,
+    programResolution = (state.simulationWidth, state.simulationHeight),
+    programInterventionFrames = state.interventionFrames + 0.0,
+    programPreviousSignal = state.signalPair.read.sampled,
+    programNextSignal = state.signalPair.write.sampled,
+    programPrevious = state.programPair.read.sampled,
+    programHistory = state.historyPair.read.sampled,
+    programLinearSampler = linearSampler
+  };
+  programFragmentFor(inputs)
+};
+
+let historyFragment = (state: FrameState) => {
+  let inputs: HistoryInputs = .{
+    historyFrame = state.frame + 0.0,
+    historySignal = state.signalPair.write.sampled,
+    historyPrevious = state.historyPair.read.sampled
+  };
+  historyFragmentFor(inputs)
+};
+
+let displayFragment = (state: FrameState, nearestSampler: Gpu.Sampler, linearSampler: Gpu.Sampler) => {
+  let inputs: DisplayInputs = .{
+    displayResolution = (state.width, state.height),
+    displayImage = state.signalPair.read.sampled,
+    displayGenome = state.programPair.read.sampled,
+    displayNearestSampler = nearestSampler,
+    displayLinearSampler = linearSampler
+  };
+  displayFragmentFor(inputs)
+};
+
+let clampMouse = (delta: Number) => {
+  if (delta < -12) { -12 } else { if (delta > 12) { 12 } else { delta } }
+};
+
+let applyNativeEvent = (state: FrameState, event) => {
+  match(event) {
+    QuitEvent => {
+      let next: FrameState = .{ ..state, quit = true };
+      PollDone(next)
+    },
+    MouseEvent(dx, dy) => {
+      let next: FrameState = .{
+        ..state,
+        interventionFrames = generationsPerFrame * 12,
+        interventionX = clampMouse(dx),
+        interventionY = clampMouse(dy)
+      };
+      PollAgain(next)
+    },
+    ResizeEvent(nextWidth, nextHeight) => {
+      if (nextWidth <= 0 || nextHeight <= 0) { PollAgain(state) } else {
+        let next: FrameState = .{
+          ..state,
+          pendingResize = Some((nextWidth, nextHeight))
+        };
+        PollAgain(next)
+      }
+    },
+    IgnoredEvent => { PollAgain(state) },
+    NoEvent => { PollDone(state) }
+  }
+};
+
+let rec drainEvents = (native: NativeRuntime, state: FrameState, remaining: Number) => {
+  if (remaining <= 0) { Ok(state) } else {
+    match(pollNative(native)) {
+      Err(error) => { Err(NativeFailure(error)) },
+      Ok(event) => {
+        match(applyNativeEvent(state, event)) {
+          PollDone(done) => { Ok(done) },
+          PollAgain(next) => { drainEvents(native, next, remaining - 1) }
+        }
+      }
+    }
+  }
+};
+
+let destroyPair = (pair: FeedbackPair) => {
+  Result|
+    Gpu.destroyTexture2D(pair.read.physical),
+    Gpu.destroyTexture2D(pair.write.physical)
+  | :> Result.map((_) => { void })
+};
+
+let resizeFrame = (native: NativeRuntime, state: FrameState, nextWidth: Number, nextHeight: Number) => {
+  resizeNative(native, nextWidth, nextHeight)
+    :> Result.mapErr(NativeFailure)
+    :> Result.map((_) => {
+      let resized: FrameState = .{
+        ..state,
+        width = nextWidth,
+        height = nextHeight,
+        pendingResize = None
+      };
+      resized
+    })
+};
+
+-- Presentation is not the simulation clock. Several strictly local generations
+-- run before each displayed frame, preserving the same light cone per generation
+-- while making long-run evolution observable at human timescales.
+let rec advanceGenerations = (
+  signalRenderer: OffscreenFragmentRenderer,
+  programRenderer: OffscreenFragmentRenderer,
+  historyRenderer: OffscreenFragmentRenderer,
+  linearSampler: Gpu.Sampler,
+  state: FrameState,
+  remaining: Number
+) => {
+  if (remaining <= 0) {
+    Ok(state)
+  } else {
+    let signal = signalFragment(state, linearSampler);
+    let program = programFragment(state, linearSampler);
+    let history = historyFragment(state);
+    Result|
+      renderFragmentTo(signalRenderer, signal, state.signalPair.write.target)
+        :> Result.mapErr(HostFailure),
+      renderFragmentTo(programRenderer, program, state.programPair.write.target)
+        :> Result.mapErr(HostFailure),
+      renderFragmentTo(historyRenderer, history, state.historyPair.write.target)
+        :> Result.mapErr(HostFailure)
+    | :> Result.andThen((_) => {
+      let next: FrameState = .{
+        ..state,
+        frame = state.frame + 1,
+        interventionFrames = if (state.interventionFrames > 0) {
+          state.interventionFrames - 1
+        } else { 0 },
+        signalPair = swap(state.signalPair),
+        programPair = swap(state.programPair),
+        historyPair = swap(state.historyPair)
+      };
+      advanceGenerations(
+        signalRenderer,
+        programRenderer,
+        historyRenderer,
+        linearSampler,
+        next,
+        remaining - 1
+      )
+    })
+  }
+};
+
+let rec frameLoop = (
+  native: NativeRuntime,
+  displayRenderer: FragmentRenderer,
+  signalRenderer: OffscreenFragmentRenderer,
+  programRenderer: OffscreenFragmentRenderer,
+  historyRenderer: OffscreenFragmentRenderer,
+  nearestSampler: Gpu.Sampler,
+  linearSampler: Gpu.Sampler,
+  state: FrameState
+) => {
+  match(drainEvents(native, state, 256)) {
+    Err(error) => { Task.fromResult(Err(error)) },
+    Ok(inputState) => {
+      if (inputState.quit) { Task.succeed(inputState) } else {
+        match(inputState.pendingResize) {
+          Some(size) => {
+            let (nextWidth, nextHeight) = size;
+            resizeFrame(native, inputState, nextWidth, nextHeight)
+              :> Task.fromResult
+              :> Task.andThen((resized) => {
+                frameLoop(native, displayRenderer, signalRenderer, programRenderer, historyRenderer,
+                  nearestSampler, linearSampler, resized)
+              })
+          },
+          None => {
+            match(advanceGenerations(
+              signalRenderer,
+              programRenderer,
+              historyRenderer,
+              linearSampler,
+              inputState,
+              generationsPerFrame
+            )) {
+              Err(error) => { Task.fromResult(Err(error)) },
+              Ok(advanced) => {
+                let display = displayFragment(advanced, nearestSampler, linearSampler);
+                Result|
+                  renderFragment(displayRenderer, display) :> Result.mapErr(HostFailure),
+                  presentNative(native) :> Result.mapErr(NativeFailure),
+                  delayNative(native, 0) :> Result.mapErr(NativeFailure)
+                | :> Task.fromResult :> Task.andThen((_) => {
+                  frameLoop(native, displayRenderer, signalRenderer, programRenderer, historyRenderer,
+                    nearestSampler, linearSampler, advanced)
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let cleanupWindow = (
+  native: NativeRuntime,
+  displayRenderer: FragmentRenderer,
+  signalRenderer: OffscreenFragmentRenderer,
+  programRenderer: OffscreenFragmentRenderer,
+  historyRenderer: OffscreenFragmentRenderer,
+  signalPair: FeedbackPair,
+  programPair: FeedbackPair,
+  historyPair: FeedbackPair
+) => {
+  Result|
+    destroyOffscreenFragmentRenderer(signalRenderer) :> Result.mapErr(HostFailure),
+    destroyOffscreenFragmentRenderer(programRenderer) :> Result.mapErr(HostFailure),
+    destroyOffscreenFragmentRenderer(historyRenderer) :> Result.mapErr(HostFailure),
+    destroyPair(signalPair) :> Result.mapErr(HostFailure),
+    destroyPair(programPair) :> Result.mapErr(HostFailure),
+    destroyPair(historyPair) :> Result.mapErr(HostFailure),
+    destroyFragmentRenderer(displayRenderer) :> Result.mapErr(HostFailure),
+    closeNative(native) :> Result.mapErr(NativeFailure)
+  |
+};
+
+let runWindow = (native: NativeRuntime) => {
+  createFragmentRenderer(nativeSurface(native), bootstrapFragment)
+    :> Task.mapErr(HostFailure)
+    :> Task.andThen((bootstrap) => {
+    let collect = Monad.via Result (
+      signalPair,
+      programPair,
+      historyPair,
+      nearestSampler,
+      linearSampler
+    ) => {
+      Ok((signalPair, programPair, historyPair, nearestSampler, linearSampler))
+    };
+    let resources = Result|
+      makeFeedbackPair(bootstrap, simulationWidth, simulationHeight),
+      makeFeedbackPair(bootstrap, simulationWidth, simulationHeight),
+      makeFeedbackPair(bootstrap, simulationWidth, simulationHeight),
+      createNearestSampler(bootstrap),
+      createLinearSampler(bootstrap)
+    | :> collect;
+    match(resources) {
+      Err(error) => {
+        let _renderer = destroyFragmentRenderer(bootstrap);
+        let _closed = closeNative(native);
+        Task.succeed(print(HostFailure(error)))
+      },
+      Ok(values) => {
+        let (signalPair, programPair, historyPair, nearestSampler, linearSampler) = values;
+        let initial: FrameState = .{
+          quit = false,
+          frame = 0,
+          width = width,
+          height = height,
+          simulationWidth = simulationWidth,
+          simulationHeight = simulationHeight,
+          interventionFrames = 0,
+          interventionX = 0,
+          interventionY = 0,
+          pendingResize = None,
+          signalPair = signalPair,
+          programPair = programPair,
+          historyPair = historyPair
+        };
+        let renderers = Result|
+          createSiblingFragmentRenderer(bootstrap,
+            displayFragment(initial, nearestSampler, linearSampler)),
+          createOffscreenFragmentRenderer(bootstrap,
+            signalFragment(initial, linearSampler)),
+          createOffscreenFragmentRenderer(bootstrap,
+            programFragment(initial, linearSampler)),
+          createOffscreenFragmentRenderer(bootstrap,
+            historyFragment(initial))
+        |;
+        match(renderers) {
+          Err(error) => {
+            let _signals = destroyPair(signalPair);
+            let _programs = destroyPair(programPair);
+            let _history = destroyPair(historyPair);
+            let _renderer = destroyFragmentRenderer(bootstrap);
+            let _closed = closeNative(native);
+            Task.succeed(print(HostFailure(error)))
+          },
+          Ok(rendererValues) => {
+            let (displayRenderer, signalRenderer, programRenderer, historyRenderer) = rendererValues;
+            frameLoop(native, displayRenderer, signalRenderer, programRenderer, historyRenderer,
+              nearestSampler, linearSampler, initial)
+              :> Task.map((_) => {
+                match(cleanupWindow(native, displayRenderer, signalRenderer, programRenderer,
+                  historyRenderer, signalPair, programPair, historyPair)) {
+                  Ok(_) => { void },
+                  Err(error) => { print(error) }
+                }
+              })
+              :> Task.recover((error) => {
+                let _reported = print(error);
+                match(cleanupWindow(native, displayRenderer, signalRenderer, programRenderer,
+                  historyRenderer, signalPair, programPair, historyPair)) {
+                  Ok(_) => { void },
+                  Err(cleanupError) => { print(cleanupError) }
+                }
+              })
+          }
+        }
+      }
+    }
+  }) :> Task.recover((error) => {
+    let _closed = closeNative(native);
+    print(error)
+  })
+};
+
+let main = () => {
+  startResizableNative(width, height)
+    :> Result.mapErr(NativeFailure)
+    :> Task.fromResult
+    :> Task.andThen(runWindow)
+    :> Task.recover((error) => { print(error) })
+};

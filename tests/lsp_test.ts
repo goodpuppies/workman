@@ -1,8 +1,38 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { DocumentStore } from "../src/lsp/documents.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
+import { definitionAt } from "../src/lsp/symbols.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 import { validateUri, type ValidationResult } from "../src/lsp/validation.ts";
+
+Deno.test("rpc decoding preserves fragments and reports malformed requests", () => {
+  const valid = encodeMessage({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "example",
+    params: { text: "λ" },
+  });
+  const split = Math.floor(valid.length / 2);
+  const first = decodeMessages(valid.slice(0, split));
+  assertEquals(first.messages, []);
+  assertEquals(first.errors, []);
+  const completed = decodeMessages(concatBytes(first.rest, valid.slice(split)));
+  assertEquals(completed.messages.map(({ id, method }) => ({ id, method })), [{
+    id: 1,
+    method: "example",
+  }]);
+
+  const decoded = decodeMessages(
+    concatBytes(
+      framedText("{"),
+      framedText('{"jsonrpc":"2.0","id":7,"method":42}'),
+    ),
+  );
+  assertEquals(decoded.errors, [
+    { id: null, code: -32700, message: "parse error" },
+    { id: 7, code: -32600, message: "invalid request" },
+  ]);
+});
 
 Deno.test("document store exposes source overrides for open files", async () => {
   const dir = await Deno.makeTempDir();
@@ -19,6 +49,58 @@ Deno.test("document store exposes source overrides for open files", async () => 
 
   docs.close(uri);
   assertEquals(docs.sourceOverrides().size, 0);
+});
+
+Deno.test("document store applies incremental changes in order with UTF-16 positions", async () => {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/main.wm`;
+  const uri = pathToFileUri(path);
+  const docs = new DocumentStore();
+
+  docs.open(uri, 'let face = "😀";\r\nlet value = 1;', 1);
+  docs.change(uri, [
+    {
+      range: {
+        start: { line: 0, character: 12 },
+        end: { line: 0, character: 14 },
+      },
+      text: "λ",
+    },
+    {
+      range: {
+        start: { line: 1, character: 4 },
+        end: { line: 1, character: 9 },
+      },
+      text: "answer",
+    },
+    {
+      range: {
+        start: { line: 1, character: 13 },
+        end: { line: 1, character: 14 },
+      },
+      text: "42",
+    },
+  ], 2);
+
+  assertEquals(docs.get(uri)?.text, 'let face = "λ";\r\nlet answer = 42;');
+  assertEquals(docs.version(uri), 2);
+});
+
+Deno.test("document store accepts a full change after incremental changes", async () => {
+  const dir = await Deno.makeTempDir();
+  const uri = pathToFileUri(`${dir}/main.wm`);
+  const docs = new DocumentStore();
+
+  docs.open(uri, "let value = 1;", 1);
+  docs.change(uri, [{
+    range: {
+      start: { line: 0, character: 12 },
+      end: { line: 0, character: 13 },
+    },
+    text: "2",
+  }, { text: "let final = 3;" }], 2);
+
+  assertEquals(docs.get(uri)?.text, "let final = 3;");
 });
 
 Deno.test("lsp validation returns diagnostics for unsaved files and clears them", async () => {
@@ -38,6 +120,57 @@ Deno.test("lsp validation returns diagnostics for unsaved files and clears them"
   docs.change(uri, 'let x: String = "ok";', 2);
   const fixed = await validateUri(uri, docs.sourceOverrides());
   assertEquals(await diagnosticsForPath(fixed, main), []);
+});
+
+Deno.test("lsp validation warns when GPU hover types cannot be elaborated", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = "let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) }; " +
+    "let fragment = Gpu.fragment(shade);";
+  await Deno.writeTextFile(main, source);
+
+  const diagnostics = await diagnosticsForPath(
+    await validateUri(pathToFileUri(main), new Map(), {}, {
+      gpuTypeElaborator: () => Promise.reject(new Error("test elaborator failure")),
+    }),
+    main,
+  );
+
+  assertEquals(diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
+    ["gpu.type.unresolved", 2],
+  ]);
+  assertEquals(diagnostics?.[0].range, charRange(source, "Gpu.fragment(shade)"));
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "GPU type elaboration is unresolved",
+    "test elaborator failure",
+    'Hover inside this shader will show "unresolved GPU type"',
+  ]);
+});
+
+Deno.test("lsp validation publishes source-local GPU ownership errors", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const source = "let outside = (x) => { x }; " +
+    "let shade = (coord) => { @gpu; let (x, _y) = coord; (outside(x), 0.0, 0.0, 1.0) }; " +
+    "let fragment = Gpu.fragment(shade);";
+  await Deno.writeTextFile(main, source);
+
+  const diagnostics = await diagnosticsForPath(
+    await validateUri(pathToFileUri(main), new Map()),
+    main,
+  );
+
+  assertEquals(diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.severity]), [
+    ["gpu.function.unsupported", 1],
+  ]);
+  const callStart = source.lastIndexOf("outside");
+  assertEquals(diagnostics?.[0].range, {
+    start: { line: 0, character: callStart },
+    end: { line: 0, character: callStart + "outside".length },
+  });
+  assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
+    "outside the selected lexical GPU island",
+  ]);
 });
 
 Deno.test("lsp validation locates unsaved parse errors", async () => {
@@ -86,6 +219,20 @@ Deno.test("lsp validation reports imported module errors on the imported file", 
   assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });
 });
 
+Deno.test("lsp validation reports imported parse errors on the imported file", async () => {
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/lib.wm`;
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(lib, "let value = )");
+  await Deno.writeTextFile(main, 'from "./lib.wm" import { value }; let main = () => { value };');
+
+  const results = await validateUri(pathToFileUri(main), new Map());
+  assertEquals(await diagnosticsForPath(results, main), []);
+  const libDiagnostics = await diagnosticsForPath(results, lib);
+  assertEquals(libDiagnostics?.map((diagnostic) => diagnostic.code), ["parse.syntax-error"]);
+  assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });
+});
+
 Deno.test("lsp validation localizes recursive binding return mismatches", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;
@@ -105,20 +252,22 @@ let rec sumList = (list, val) => {
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.recursive-result-mismatch",
+  ]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
     "`sumList` is recursive",
     "Recursive calls produce:",
     "Number",
     "But the body produces:",
-    "(Int_list) => Number",
+    "Int_list -> Number",
     "This looks like an accidental match-function expression.",
   ]);
   assertEquals(diagnostics?.[0].range.start, { line: 6, character: 22 });
   assertEquals(diagnostics?.[0].range.end, { line: 6, character: 42 });
   assertEquals(
     diagnostics?.[0].relatedInformation?.[0].message,
-    "body: (Int_list) => Number",
+    "body: Int_list -> Number",
   );
   assertEquals(diagnostics?.[0].relatedInformation?.[0].location.range.start, {
     line: 4,
@@ -178,14 +327,17 @@ let bad = sumList(Cons(1, Empty));
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
-    "error[type.mismatch",
-    "collision:",
-    "  expected: (Int_list, Number)",
-    "  actual:   Int_list",
-    "rule: InferCall.Argument",
-    "support:",
+    "type error: inner(list) can't be both:\n  - (Int_list, Number)\n  - Int_list",
+    "(Int_list, Number)",
+    "Int_list",
+    "-- Origins ",
+    "call argument: (Int_list, Number)",
+    "Cons: Int_list",
+    "│",
   ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 10,
@@ -221,7 +373,9 @@ let rec sumList = (list) => {
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 16,
     character: 2,
@@ -264,7 +418,9 @@ let rec sumList = (list) => {
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), [
+    "type.call-argument-mismatch",
+  ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 12,
     character: 2,
@@ -338,6 +494,40 @@ Deno.test("lsp validation resolves JS modules from the checked file project", as
     main,
   );
   assertEquals(diagnostics, []);
+});
+
+Deno.test("go to definition follows reflected JS import-map re-exports", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${dir}/deno.json`,
+      JSON.stringify({ imports: { "mapped-library": "./library.ts" } }),
+    );
+    const librarySource = "export function loadThing(): number { return 1; }\n";
+    await Deno.writeTextFile(`${dir}/library.ts`, librarySource);
+    await Deno.writeTextFile(
+      `${dir}/bridge.ts`,
+      'export { loadThing } from "mapped-library";\n',
+    );
+    const main = `${dir}/main.wm`;
+    const source =
+      'from js.module("./bridge.ts") import * as Library; let value = Library.loadThing();';
+    await Deno.writeTextFile(main, source);
+
+    const offset = source.lastIndexOf("loadThing") + 2;
+    const definition = await definitionAt(
+      pathToFileUri(main),
+      { line: 0, character: offset },
+      new Map(),
+    );
+
+    assertEquals(definition, {
+      uri: pathToFileUri(`${dir}/library.ts`),
+      range: charRange(librarySource, "loadThing"),
+    });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("lsp validation reports unknown named imports on the import specifier", async () => {
@@ -420,4 +610,15 @@ function charRange(source: string, text: string) {
     start: { line: 0, character: start },
     end: { line: 0, character: start + text.length },
   };
+}
+
+function framedText(body: string): Uint8Array {
+  return new TextEncoder().encode(`Content-Length: ${body.length}\r\n\r\n${body}`);
+}
+
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+  const bytes = new Uint8Array(left.length + right.length);
+  bytes.set(left);
+  bytes.set(right, left.length);
+  return bytes;
 }

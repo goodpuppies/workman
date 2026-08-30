@@ -1,4 +1,5 @@
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 export { contextualizeDelayedCallbacks } from "./delayed_callbacks.ts";
 import { resolveDelayedDecl } from "./delayed_resolve.ts";
 import { diagnosticError } from "../../diagnostics.ts";
@@ -6,7 +7,8 @@ import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";
 import { generatedJsImports } from "../imports.ts";
-import { generatedForeignDeclsForRefs, generatedImportInsertionIndex } from "./bindings.ts";
+import { recordFieldNamesInDecls } from "../record_fields.ts";
+import { generatedForeignDeclsForRefs } from "./bindings.ts";
 import {
   materializeReceiverCall,
   materializeReceiverProperty,
@@ -39,6 +41,7 @@ import {
   type FfiElaboration,
   fn,
   generatedReceiverJsImports,
+  insertGeneratedFfiImports,
   isDecl,
   name,
 } from "../shared.ts";
@@ -57,7 +60,7 @@ export function resolveDelayedFfiElaboration(
   result: InferResult,
   options: ResolveOptions = {},
 ): FfiElaboration {
-  const previousRecordFields = setActiveRecordFields(recordFieldNames(ffi.module.decls));
+  const previousRecordFields = setActiveRecordFields(recordFieldNamesInDecls(ffi.module.decls));
   const previousFfiSolve = setActiveFfiSolve((original, internalName) => {
     const variant = [...ffi.bindings.values()]
       .flatMap((binding) => binding.variants)
@@ -79,7 +82,7 @@ function resolveDelayedFfiElaborationInner(
 ): FfiElaboration {
   solveDelayedBindingTypes(ffi.module.decls, ffi, result);
   const selected = new Set<string>();
-  const valueRefs = new Map<string, JsTypeRef>();
+  const valueRefs = new Map<string, JsTypeRef>(ffi.valueRefs);
   const decls: Decl[] = [];
   for (const decl of ffi.module.decls) {
     const resolved = resolveDelayedDecl(decl, ffi, result, selected, options, valueRefs);
@@ -96,7 +99,9 @@ function resolveDelayedFfiElaborationInner(
     const generated = decl.kind === "JsImportDecl"
       ? generatedJsImports(decl, ffi.bindings, importsToGenerate)
       : [decl];
-    return generated.flatMap((item) => filterUnreferencedGeneratedImport(item, referencedGenerated));
+    return generated.flatMap((item) =>
+      filterUnreferencedGeneratedImport(item, referencedGenerated)
+    );
   });
   const recoveredImports = missingGeneratedImports(
     rewrittenDecls,
@@ -130,14 +135,11 @@ function resolveDelayedFfiElaborationInner(
     ...recoveredImports,
     ...receiverImports,
   ];
-  const prefixLength = generatedImportInsertionIndex(rewrittenModule.decls);
   const leadingGeneratedDecls = [...foreignDecls, ...deepRecordDecls];
   const finalDecls = imports.length || foreignDecls.length || deepRecordDecls.length
     ? [
       ...leadingGeneratedDecls,
-      ...rewrittenModule.decls.slice(0, prefixLength),
-      ...imports,
-      ...rewrittenModule.decls.slice(prefixLength),
+      ...insertGeneratedFfiImports(rewrittenModule.decls, imports),
     ]
     : rewrittenModule.decls;
   return {
@@ -255,6 +257,7 @@ function collectGeneratedValueRefsInExpr(expr: Expr, refs: Set<string>): void {
       expr.fields.forEach((field) => collectGeneratedValueRefsInExpr(field.value, refs));
       return;
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return;
       collectGeneratedValueRefsInExpr(expr.body, refs);
       return;
     case "If":
@@ -275,6 +278,9 @@ function collectGeneratedValueRefsInExpr(expr: Expr, refs: Set<string>): void {
         else collectGeneratedValueRefsInExpr(item, refs);
       }
       collectGeneratedValueRefsInExpr(expr.result, refs);
+      return;
+    case "Ascribed":
+      collectGeneratedValueRefsInExpr(expr.value, refs);
       return;
     case "Binary":
       collectGeneratedValueRefsInExpr(expr.left, refs);
@@ -351,6 +357,7 @@ function solveDelayedBindingTypesInExpr(
       expr.fields.forEach((field) => solveDelayedBindingTypesInExpr(field.value, ffi, result));
       return;
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return;
       solveDelayedBindingTypesInExpr(expr.body, ffi, result);
       return;
     case "If":
@@ -372,6 +379,9 @@ function solveDelayedBindingTypesInExpr(
       }
       solveDelayedBindingTypesInExpr(expr.result, ffi, result);
       return;
+    case "Ascribed":
+      solveDelayedBindingTypesInExpr(expr.value, ffi, result);
+      return;
     case "Binary":
       solveDelayedBindingTypesInExpr(expr.left, ffi, result);
       solveDelayedBindingTypesInExpr(expr.right, ffi, result);
@@ -391,13 +401,4 @@ function solveDelayedBindingTypesInExpr(
     case "Var":
       return;
   }
-}
-
-function recordFieldNames(decls: Decl[]): Set<string> {
-  const fields = new Set<string>();
-  for (const decl of decls) {
-    if (decl.kind !== "RecordDecl") continue;
-    for (const field of decl.fields) fields.add(field.name);
-  }
-  return fields;
 }

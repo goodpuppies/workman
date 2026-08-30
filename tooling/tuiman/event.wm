@@ -1,0 +1,279 @@
+-- Decode complete terminal input chunks into application-facing keys.
+-- Incremental CSI framing and lone-Escape timing are the next layer.
+
+from "./ansi.wm" import * as Ansi;
+from js.global("String") import {
+  fromCharCode: Number -> String,
+};
+
+type Key =
+  | Character<String>
+  | Up
+  | Down
+  | Left
+  | Right
+  | Enter
+  | Escape
+  | Backspace
+  | Tab
+  | ShiftTab
+  | PageUp
+  | PageDown
+  | WheelUp
+  | WheelDown
+  | MouseDown<Number, Number>
+  | Home
+  | End
+  | CellSize<Number, Number>
+  | CtrlC
+  | Unknown<String>;
+
+type NumberPrefix =
+  | NumberPrefix<Number, List<String>>
+  | InvalidNumberPrefix;
+
+let controlC = fromCharCode(3) :> Result.withDefault("");
+let carriageReturn = fromCharCode(13) :> Result.withDefault("");
+let backspace = fromCharCode(127) :> Result.withDefault("");
+let escape = Ansi.esc;
+
+let drop = (text, count) => {
+  text :> .slice(count) :> Result.withDefault("")
+};
+
+let first = (text) => {
+  text :> .slice(0, 1) :> Result.withDefault("")
+};
+
+-- Workman follows its JS-oriented String model and intentionally has no
+-- separate SML Char type. Terminal syntax is still much clearer as a list of
+-- one-character strings because list-prefix patterns can consume CSI/SS3
+-- sequences directly.
+let rec characters = (raw) => {
+  if (raw == "") {
+    []
+  } else {
+    [first(raw), ..characters(drop(raw, 1))]
+  }
+};
+
+let digit = match(character) => {
+  "0" => { Some(0) },
+  "1" => { Some(1) },
+  "2" => { Some(2) },
+  "3" => { Some(3) },
+  "4" => { Some(4) },
+  "5" => { Some(5) },
+  "6" => { Some(6) },
+  "7" => { Some(7) },
+  "8" => { Some(8) },
+  "9" => { Some(9) },
+  _ => { None },
+};
+
+-- Zero is a legitimate field value in SGR mouse reports (button 0 is the left
+-- button), so this accepts it and callers that need a positive number check the
+-- decoded value themselves.
+let rec numberUntil = (
+  input,
+  delimiter: String,
+  value,
+  seen,
+) => {
+  match(input) {
+    [] => { InvalidNumberPrefix },
+    [character, ..rest] => {
+      if (character == delimiter) {
+        if (seen) {
+          NumberPrefix(value, rest)
+        } else {
+          InvalidNumberPrefix
+        }
+      } else {
+        match(digit(character)) {
+          None => { InvalidNumberPrefix },
+          Some(next) => {
+            numberUntil(rest, delimiter, value * 10 + next, true)
+          },
+        }
+      }
+    },
+  }
+};
+
+let rec positiveUntilMouseEnd = (input, value, seen) => {
+  match(input) {
+    [] => { InvalidNumberPrefix },
+    [character, ..rest] => {
+      if (character == "M" || character == "m") {
+        if (seen && value > 0) {
+          NumberPrefix(value, rest)
+        } else {
+          InvalidNumberPrefix
+        }
+      } else {
+        match(digit(character)) {
+          None => { InvalidNumberPrefix },
+          Some(next) => {
+            positiveUntilMouseEnd(rest, value * 10 + next, true)
+          },
+        }
+      }
+    },
+  }
+};
+
+let cellSizePrefix = match(input) => {
+  [escape, "[", "6", ";", ..rest] => {
+    match(numberUntil(rest, ";", 0, false)) {
+      InvalidNumberPrefix => { None },
+      NumberPrefix(height, afterHeight) => {
+        match(numberUntil(afterHeight, "t", 0, false)) {
+          InvalidNumberPrefix => { None },
+          NumberPrefix(width, afterWidth) => {
+            -- A reported cell of zero width or height is nonsense and would
+            -- divide image layout by zero, so it is rejected here rather than
+            -- by the shared number parser.
+            if (width > 0 && height > 0) {
+              Some((CellSize(width, height), afterWidth))
+            } else {
+              None
+            }
+          },
+        }
+      },
+    }
+  },
+  _ => { None },
+};
+
+let mousePrefix = match(input) => {
+  [escape, "[", "<", ..rest] => {
+    match(numberUntil(rest, ";", 0, false)) {
+      InvalidNumberPrefix => { None },
+      NumberPrefix(button, afterButton) => {
+        match(numberUntil(afterButton, ";", 0, false)) {
+          InvalidNumberPrefix => { None },
+          NumberPrefix(column, afterColumn) => {
+            match(positiveUntilMouseEnd(afterColumn, 0, false)) {
+              InvalidNumberPrefix => { None },
+              NumberPrefix(row, afterRow) => {
+                if (button == 64) {
+                  Some((WheelUp, afterRow))
+                } else {
+                  if (button == 65) {
+                    Some((WheelDown, afterRow))
+                  } else {
+                    -- SGR reports are one-based; the library speaks in
+                    -- zero-based cell coordinates like the rest of geometry.
+                    if (button == 0 && column > 0) {
+                      Some((MouseDown(column - 1, row - 1), afterRow))
+                    } else {
+                      Some((Unknown("mouse"), afterRow))
+                    }
+                  }
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+  },
+  _ => { None },
+};
+
+let decodeCharacter = match(character) => {
+  "\n" => { Enter },
+  "\t" => { Tab },
+  carriageReturn => { Enter },
+  controlC => { CtrlC },
+  backspace => { Backspace },
+  escape => { Escape },
+  _ => { Character(character) },
+};
+
+-- One stream read may contain several keys. List-prefix patterns consume known
+-- multi-character sequences, leaving the unmatched tail for the same recursive
+-- decoder. Fragment buffering and grapheme segmentation remain separate
+-- concerns rather than being hidden behind a host shim.
+let rec decodeCharacters = (input) => {
+  match(cellSizePrefix(input)) {
+    Some(found) => {
+      let (report, rest) = found;
+      [report, ..decodeCharacters(rest)]
+    },
+    None => {
+      match(mousePrefix(input)) {
+        Some(found) => {
+          let (event, rest) = found;
+          [event, ..decodeCharacters(rest)]
+        },
+        None => {
+          match(input) {
+        [] => { [] },
+        [escape, "[", "A", ..rest] => {
+          [Up, ..decodeCharacters(rest)]
+        },
+        [escape, "O", "A", ..rest] => {
+          [Up, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "B", ..rest] => {
+          [Down, ..decodeCharacters(rest)]
+        },
+        [escape, "O", "B", ..rest] => {
+          [Down, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "C", ..rest] => {
+          [Right, ..decodeCharacters(rest)]
+        },
+        [escape, "O", "C", ..rest] => {
+          [Right, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "D", ..rest] => {
+          [Left, ..decodeCharacters(rest)]
+        },
+        [escape, "O", "D", ..rest] => {
+          [Left, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "Z", ..rest] => {
+          [ShiftTab, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "5", "~", ..rest] => {
+          [PageUp, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "6", "~", ..rest] => {
+          [PageDown, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "H", ..rest] => {
+          [Home, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "1", "~", ..rest] => {
+          [Home, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "F", ..rest] => {
+          [End, ..decodeCharacters(rest)]
+        },
+        [escape, "[", "4", "~", ..rest] => {
+          [End, ..decodeCharacters(rest)]
+        },
+        [character, ..rest] => {
+          [decodeCharacter(character), ..decodeCharacters(rest)]
+        },
+          }
+        },
+      }
+    },
+  }
+};
+
+let decodeMany = (raw) => {
+  decodeCharacters(characters(raw))
+};
+
+let decode = (raw) => {
+  match(decodeMany(raw)) {
+    [key] => { key },
+    _ => { Unknown(raw) },
+  }
+};

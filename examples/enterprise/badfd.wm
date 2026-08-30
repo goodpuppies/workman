@@ -1,0 +1,39 @@
+from "./writev.wm" import * as Writer;
+from "./error.wm" import * as Error;
+from "./process.wm" import * as Process;
+from js.global import { Uint8Array };
+
+
+type AppError =
+  | AllocationFailed<Js.Error>
+  | WriteFailed<Writer.IoError>;
+
+let main = () => {
+  let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
+
+  let attach  = viaWriter (buffer) => { Writer.file(99, buffer) };
+  let greet   = viaWriter (writer) => { Writer.print(writer, "nope\n") };
+  let drained = viaWriter (writer) => { Writer.flush(writer) };
+
+  let status = match({Result|
+    Uint8Array.new(64) :> Result.mapErr(AllocationFailed)
+      :> attach
+      :> greet
+      :> drained,
+    Writer.close() :> Result.mapErr(WriteFailed)
+  |}) {
+    Ok(_) => { Process.success },
+    Err(error) => {
+      let reason = match(error) {
+        AllocationFailed(js) => { `could not allocate: ${Error.message(js)}` },
+        WriteFailed(io) => { `write failed: ${Writer.describe(io)}` },
+      };
+
+      Writer.line(Writer.stderrFd, `badfd: ${reason}\n`) :> Result.withDefault(void);
+
+      Process.failure
+    },
+  };
+
+  Process.exit(status)
+};

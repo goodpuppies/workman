@@ -6,7 +6,7 @@ from js.global import type { Request };
 record Route = {
   method: String,
   path: String,
-  handler: (Request) => Js.Object
+  handler: Request -> Js.Object
 };
 
 let get = (path, handler) => {

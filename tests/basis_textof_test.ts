@@ -4,25 +4,25 @@ import { expectBinding } from "./type_helpers.ts";
 
 const cli = new URL("../src/main.ts", import.meta.url).pathname;
 
-Deno.test("Result.textOf infers as a polymorphic text helper", async () => {
+Deno.test("Text.of infers as a polymorphic text helper", async () => {
   const result = await checkSource(`
-    let numberText = Result.textOf(42);
-    let boolText = Result.textOf(true);
+    let numberText = Text.of(42);
+    let boolText = Text.of(true);
   `);
 
   expectBinding(result.env, "numberText", { type: "String", vars: 0 });
   expectBinding(result.env, "boolText", { type: "String", vars: 0 });
 });
 
-Deno.test("Result.textOf evaluates through JS toString with fallback", async () => {
+Deno.test("Text.of renders Workman values", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
     input,
     `
       let main = () => {
-        print(Result.textOf(42));
-        print(Result.textOf(void))
+        print(Text.of(42));
+        print(Text.of(void))
       };
     `,
   );
@@ -31,7 +31,7 @@ Deno.test("Result.textOf evaluates through JS toString with fallback", async () 
 
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
-  assertEquals(result.stdout, "42\n?\n");
+  assertEquals(result.stdout, "42\nvoid\n");
 });
 
 async function runCli(args: string[]) {

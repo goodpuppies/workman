@@ -1,10 +1,12 @@
-import type { Pattern } from "../ast.ts";
+import type { LongId, Pattern } from "../ast.ts";
+import { parseLongId } from "../ast.ts";
 import {
   BoolTy,
   type Env,
   fresh,
   instantiate,
   instantiateRecordFields,
+  knownTypeInfos,
   named,
   NumberTy,
   prune,
@@ -14,11 +16,20 @@ import {
   type TypeDeclInfo,
   type TypeEnv,
   type TypeInfo,
+  typeInfoById,
   VoidTy,
 } from "../types.ts";
-import { constrainAt } from "./provenance.ts";
+import { constrainAt, type TypeProvenance } from "./provenance.ts";
 import { expandCallArg } from "./shared.ts";
-import { originForScheme, recordPatternFact, type TypeFacts } from "./type_facts.ts";
+import { lookupLongValue, type StrEnv } from "./environment.ts";
+import {
+  originForScheme,
+  recordPatternFact,
+  recordPatternType,
+  recordRecordFieldFact,
+  type TypeFacts,
+} from "./type_facts.ts";
+import { elaborateConstraint } from "./constraints.ts";
 
 export function showPattern(pattern: Pattern): string {
   switch (pattern.kind) {
@@ -46,6 +57,8 @@ export function showPattern(pattern: Pattern): string {
       return pattern.args.length
         ? `${pattern.name}(${pattern.args.map(showPattern).join(", ")})`
         : pattern.name;
+    case "PAscribed":
+      return `(${showPattern(pattern.pattern)} : type)`;
   }
 }
 
@@ -54,17 +67,25 @@ export function inferPattern(
   expected: Ty,
   env: Env,
   typeEnv: TypeEnv,
+  strEnv: StrEnv,
   adts: Map<number, TypeDeclInfo>,
   binders = new Set<string>(),
   facts?: TypeFacts,
+  provenance?: TypeProvenance,
 ): Ty {
+  if (facts) recordPatternType(facts, p, expected);
   switch (p.kind) {
     case "PWildcard":
       return expected;
     case "PVar":
       if (binders.has(p.name)) throw new Error(`duplicate pattern binder ${p.name}`);
       binders.add(p.name);
-      env.set(p.name, { vars: [], type: expected, status: "value" });
+      env.set(p.name, {
+        vars: [],
+        type: expected,
+        status: "value",
+        preserveStructuralRows: true,
+      });
       if (facts) {
         recordPatternFact(facts, p, {
           subject: "pattern",
@@ -74,10 +95,17 @@ export function inferPattern(
       }
       return expected;
     case "PPinned": {
-      const scheme = env.get(p.name);
+      const scheme = lookupPatternValue(env, strEnv, p.name, p.path);
       if (!scheme) throw new Error(`unknown pinned pattern ${p.name}`);
       const pinned = instantiate(scheme);
-      constrainPattern(expected, pinned, p, "InferPattern.Pinned", "pinned pattern matches value");
+      constrainPattern(
+        expected,
+        pinned,
+        p,
+        "InferPattern.Pinned",
+        "pinned pattern matches value",
+        provenance,
+      );
       if (facts) {
         recordPatternFact(facts, p, {
           subject: "pattern",
@@ -89,7 +117,14 @@ export function inferPattern(
       return expected;
     }
     case "PInt":
-      constrainPattern(expected, NumberTy, p, "InferPattern.Int", "integer pattern matches Number");
+      constrainPattern(
+        expected,
+        NumberTy,
+        p,
+        "InferPattern.Int",
+        "integer pattern matches Number",
+        provenance,
+      );
       return expected;
     case "PString":
       constrainPattern(
@@ -98,13 +133,28 @@ export function inferPattern(
         p,
         "InferPattern.String",
         "string pattern matches String",
+        provenance,
       );
       return expected;
     case "PBool":
-      constrainPattern(expected, BoolTy, p, "InferPattern.Bool", "boolean pattern matches Bool");
+      constrainPattern(
+        expected,
+        BoolTy,
+        p,
+        "InferPattern.Bool",
+        "boolean pattern matches Bool",
+        provenance,
+      );
       return expected;
     case "PVoid":
-      constrainPattern(expected, VoidTy, p, "InferPattern.Void", "void pattern matches Void");
+      constrainPattern(
+        expected,
+        VoidTy,
+        p,
+        "InferPattern.Void",
+        "void pattern matches Void",
+        provenance,
+      );
       return expected;
     case "PTuple": {
       const items = p.items.map(() => fresh());
@@ -114,8 +164,11 @@ export function inferPattern(
         p,
         "InferPattern.Tuple",
         "tuple pattern matches tuple",
+        provenance,
       );
-      p.items.forEach((x, i) => inferPattern(x, items[i], env, typeEnv, adts, binders, facts));
+      p.items.forEach((x, i) =>
+        inferPattern(x, items[i], env, typeEnv, strEnv, adts, binders, facts, provenance)
+      );
       return expected;
     }
     case "PRecord": {
@@ -127,17 +180,29 @@ export function inferPattern(
         p,
         "InferPattern.Record",
         "record pattern matches record type",
+        provenance,
       );
       const fields = instantiateRecordFields(record.info, record.type.args);
       for (const field of p.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
         if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
-        inferPattern(field.pattern, expectedField.type, env, typeEnv, adts, binders, facts);
+        if (facts) recordRecordFieldFact(facts, field, record.info, expectedField.type);
+        inferPattern(
+          field.pattern,
+          expectedField.type,
+          env,
+          typeEnv,
+          strEnv,
+          adts,
+          binders,
+          facts,
+          provenance,
+        );
       }
       return expected;
     }
     case "PCtor": {
-      const scheme = env.get(p.name);
+      const scheme = lookupPatternValue(env, strEnv, p.name, p.path);
       if (!scheme) throw new Error(`unknown constructor ${p.name}`);
       if (scheme.status !== "constructor") throw new Error(`${p.name} is not a constructor`);
       const ctor = instantiate(scheme);
@@ -160,8 +225,11 @@ export function inferPattern(
           p,
           "InferPattern.ConstructorResult",
           "constructor pattern result matches scrutinee",
+          provenance,
         );
-        p.args.forEach((x, i) => inferPattern(x, args[i], env, typeEnv, adts, binders, facts));
+        p.args.forEach((x, i) =>
+          inferPattern(x, args[i], env, typeEnv, strEnv, adts, binders, facts, provenance)
+        );
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
         constrainPattern(
@@ -170,8 +238,32 @@ export function inferPattern(
           p,
           "InferPattern.NullaryConstructor",
           "nullary constructor pattern matches scrutinee",
+          provenance,
         );
       }
+      return expected;
+    }
+    case "PAscribed": {
+      const annotation = elaborateConstraint(p.annotation, { typeEnv, strEnv, facts }, p.node);
+      constrainPattern(
+        expected,
+        annotation,
+        p,
+        "InferConstraint.Pattern",
+        "pattern matches written type constraint",
+        provenance,
+      );
+      inferPattern(
+        p.pattern,
+        annotation,
+        env,
+        typeEnv,
+        strEnv,
+        adts,
+        binders,
+        facts,
+        provenance,
+      );
       return expected;
     }
   }
@@ -182,10 +274,12 @@ export function inferBindingPattern(
   expected: Ty,
   env: Env,
   typeEnv: TypeEnv,
+  strEnv: StrEnv,
   out: Map<string, Ty>,
   binders = new Set<string>(),
   facts?: TypeFacts,
 ) {
+  if (facts) recordPatternType(facts, pattern, expected);
   switch (pattern.kind) {
     case "PVar":
       if (binders.has(pattern.name)) throw new Error(`duplicate pattern binder ${pattern.name}`);
@@ -247,7 +341,7 @@ export function inferBindingPattern(
         "tuple let pattern matches tuple",
       );
       pattern.items.forEach((item, i) =>
-        inferBindingPattern(item, items[i], env, typeEnv, out, binders, facts)
+        inferBindingPattern(item, items[i], env, typeEnv, strEnv, out, binders, facts)
       );
       return;
     }
@@ -269,12 +363,22 @@ export function inferBindingPattern(
       for (const field of pattern.fields) {
         const expectedField = fields.find((item) => item.name === field.name);
         if (!expectedField) throw new Error(`${record.info.name} has no field ${field.name}`);
-        inferBindingPattern(field.pattern, expectedField.type, env, typeEnv, out, binders, facts);
+        if (facts) recordRecordFieldFact(facts, field, record.info, expectedField.type);
+        inferBindingPattern(
+          field.pattern,
+          expectedField.type,
+          env,
+          typeEnv,
+          strEnv,
+          out,
+          binders,
+          facts,
+        );
       }
       return;
     }
     case "PCtor": {
-      const scheme = env.get(pattern.name);
+      const scheme = lookupPatternValue(env, strEnv, pattern.name, pattern.path);
       if (!scheme) throw new Error(`unknown constructor ${pattern.name}`);
       if (scheme.status !== "constructor") {
         throw new Error(`${pattern.name} is not a constructor`);
@@ -301,7 +405,7 @@ export function inferBindingPattern(
           "constructor let pattern result matches value",
         );
         pattern.args.forEach((item, i) =>
-          inferBindingPattern(item, args[i], env, typeEnv, out, binders, facts)
+          inferBindingPattern(item, args[i], env, typeEnv, strEnv, out, binders, facts)
         );
       } else {
         if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
@@ -315,9 +419,40 @@ export function inferBindingPattern(
       }
       return;
     }
+    case "PAscribed": {
+      const annotation = elaborateConstraint(
+        pattern.annotation,
+        { typeEnv, strEnv, facts },
+        pattern.node,
+      );
+      constrainPattern(
+        expected,
+        annotation,
+        pattern,
+        "InferBindingConstraint.Pattern",
+        "binding pattern matches written type constraint",
+      );
+      inferBindingPattern(
+        pattern.pattern,
+        annotation,
+        env,
+        typeEnv,
+        strEnv,
+        out,
+        binders,
+        facts,
+      );
+      return;
+    }
     default:
       throw new Error("unsupported let pattern");
   }
+}
+
+function lookupPatternValue(env: Env, strEnv: StrEnv, name: string, path?: LongId) {
+  const resolved = path ?? parseLongId(name);
+  const qualifier = resolved.qualifiers[0];
+  return qualifier && strEnv.has(qualifier) ? lookupLongValue(strEnv, resolved) : env.get(name);
 }
 
 function constrainPattern(
@@ -326,8 +461,9 @@ function constrainPattern(
   pattern: Pattern,
   rule: string,
   role: string,
+  provenance?: TypeProvenance,
 ) {
-  constrainAt(left, right, pattern, undefined, [], undefined, {
+  constrainAt(left, right, pattern, undefined, [], provenance, {
     message: showPattern(pattern),
     node: pattern.node,
     span: pattern.node?.span,
@@ -352,6 +488,8 @@ export function patternBinders(pattern: Pattern): string[] {
       return pattern.fields.flatMap((field) => patternBinders(field.pattern));
     case "PCtor":
       return pattern.args.flatMap(patternBinders);
+    case "PAscribed":
+      return patternBinders(pattern.pattern);
     default:
       return [];
   }
@@ -364,7 +502,7 @@ function recordPatternTarget(
 ): { info: TypeInfo; type: Extract<Ty, { tag: "named" }> } {
   const target = prune(expected);
   if (target.tag === "named") {
-    const info = [...typeEnv.values()].find((candidate) => candidate.id === target.id);
+    const info = typeInfoById(typeEnv, target.id);
     if (!info?.recordFields) throw new Error(`${target.name} is not a record type`);
     return { info, type: target };
   }
@@ -383,7 +521,7 @@ function recordPatternTarget(
 }
 
 function findRecordTypes(typeEnv: TypeEnv, names: string[]): TypeInfo[] {
-  return [...typeEnv.values()].filter((info) => {
+  return knownTypeInfos(typeEnv).filter((info) => {
     if (!info.recordFields) return false;
     const fields = info.recordFields.map((field) => field.name);
     return names.every((name) => fields.includes(name));

@@ -1,0 +1,24 @@
+from js.module("node:buffer") import { Buffer };
+from js.module("node:zlib") import { inflateSync };
+
+-- Manual multi-IDAT concat via alloc+copy
+let main = () => {
+  match(Buffer.alloc(6)) {
+    Err(_) => { print("fail") },
+    Ok(dest) => {
+      match(Buffer.from("ab")) {
+        Err(_) => { print("f") },
+        Ok(a) => {
+          match(Buffer.from("cdef")) {
+            Err(_) => { print("f") },
+            Ok(b) => {
+              let _ = a :> .copy(dest, 0);
+              let _ = b :> .copy(dest, 2);
+              print(dest :> .toString("utf8") :> Result.withDefault("?"))
+            },
+          }
+        },
+      }
+    },
+  }
+};

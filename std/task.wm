@@ -1,5 +1,44 @@
+from "./monad.wm" import { Carrier };
+
 let fn = (f) => {
   (task) => {
     task :> Task.andThen(f)
+  }
+};
+
+let fnError = (inject) => {
+  (f) => {
+    fn((value) => {
+      f(value) :> Task.mapErr(inject)
+    })
+  }
+};
+
+let carrier = .{
+  fn = fn,
+  fnError = fnError,
+  succeed = (value) => { Task.succeed(value) },
+  map = (task, f) => { Task.map(task, f) },
+  map2 = (left, right, combine) => { Task.map2(left, right, combine) },
+  andThen = (task, f) => { Task.andThen(task, f) },
+};
+
+let collectList = (tasks) => {
+  tasks
+    :> Js.Array.fromList
+    :> Task.all
+    :> Task.map(Js.Array.toList)
+};
+
+let rec traverse = match(items, f) => {
+  ([], _) => { Task.succeed([]) },
+  ([item, ..rest], f) => {
+    f(item)
+      :> Task.andThen((value) => {
+        traverse(rest, f)
+          :> Task.map((values) => {
+            [value, ..values]
+          })
+      })
   }
 };

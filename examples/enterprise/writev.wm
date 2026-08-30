@@ -1,0 +1,328 @@
+-- A Zig-0.16-shaped buffered stdout writer for Workman.
+--
+-- The bytes are handed to Linux via libc `writev(2)`, with the
+-- `struct iovec[]` assembled by hand:
+--
+--   struct iovec {
+--       void   *iov_base;  -- +0, 8 bytes
+--       size_t  iov_len;   -- +8, 8 bytes
+--   };
+--
+-- A BigUint64Array *is* that array of structs on 64-bit little-endian Linux:
+-- element 2*i is iov_base, element 2*i+1 is iov_len.
+--
+-- Workman has no mutable bindings, so the writer's cursor is threaded as a
+-- value: `print` and `flush` return the next `Writer` instead of mutating one.
+-- The 4096 bytes behind it are still a shared JS-owned Uint8Array, which keeps
+-- the userspace buffering a real buffer rather than a rope of strings -- but it
+-- also means writers are sequential, not persistent. A `Writer` that a later
+-- `print` or `flush` has superseded must not be reused.
+
+from "./error.wm" import * as Error;
+
+from js.global import { TextEncoder, Uint8Array };
+from js.global("BigUint64Array") import { from as bigUint64ArrayFrom };
+from js.global import type { Uint8Array };
+from js.global import unsafe {
+  BigInt: Number -> Js.Value,
+  Number as numberOf: Js.Value -> Number,
+  String as textOf: Number -> String,
+};
+from js.global("BigInt") import unsafe {
+  asIntN: (Number, Js.Value) -> Js.Value,
+} as Big;
+from js.global("Deno") import { dlopen: _deep_ };
+from js.global("Deno") import type { PointerObject };
+from js.global("Deno") import { UnsafePointerView };
+from js.global("Deno.UnsafePointer") import {
+  of: Uint8Array -> Option<PointerObject>,
+  value: PointerObject -> Js.Value,
+} as Ptr;
+
+let via = Monad.via;
+
+type IoError =
+  | JsError<Js.Error>
+  | NullPointer
+  | Errno<Number>
+  | NoProgress;
+
+-- What one writev call accomplished.
+type WriteStep =
+  | Retry
+  | Wrote<Number>;
+
+let describe = match(error) => {
+  JsError(js) => { "javascript call failed: " ++ Error.message(js) },
+  NullPointer => { "could not take the address of a buffer" },
+  Errno(code) => { "writev failed with errno " ++ textOf(code) },
+  NoProgress => { "writev accepted no bytes" },
+};
+
+-- One iovec's worth of data: the bytes plus their length, resolved once so
+-- the drain loop stays arithmetic instead of re-crossing the JS boundary.
+record Chunk = { bytes: Uint8Array, len: Number };
+
+record Writer = { fd: Number, buf: Uint8Array, cap: Number, end: Number };
+
+let viaJs = (f) => { Monad.viaError Result JsError f };
+let jsResult = (value) => { value :> Result.mapErr(JsError) };
+
+-- `writev` returns ssize_t. Deno's `isize` result type is declared
+-- `number | bigint`, which FFI reflection cannot map yet, so the return is
+-- taken as a pointer-sized value instead: same 64 bits, no truncation.
+let libc = dlopen("libc.so.6", JSON{
+  writev: JSON{ parameters: JSON["i32", "buffer", "i32"], result: "pointer" },
+  __errno_location: JSON{ parameters: JSON[], result: "pointer" }
+}) :> jsResult;
+
+let encoder = TextEncoder.new() :> jsResult;
+
+let eintr = 4;
+let eagain = 11;
+
+let chunkOf = (bytes) => {
+  bytes.length
+    :> jsResult
+    :> Result.map((len) => { Chunk(bytes, len) })
+};
+
+let addressOf = (bytes) => {
+  Ptr.of(bytes)
+    :> jsResult
+    :> via Result (found) => {
+      match(found) {
+        Some(pointer) => { Ptr.value(pointer) :> jsResult },
+        None => { Err(NullPointer) },
+      }
+    }
+};
+
+-- One chunk's two iovec slots, in memory order.
+let slotsFor = (chunk) => {
+  addressOf(chunk.bytes)
+    :> Result.map((address) => { [address, BigInt(chunk.len)] })
+};
+
+-- The whole `struct iovec[]`. A BigUint64Array *is* that array of structs on
+-- 64-bit little-endian Linux, so building the slots as a list and handing them
+-- to `BigUint64Array.from` needs no index arithmetic at all.
+let iovecFor = (chunks) => {
+  Result.traverse(chunks, slotsFor)
+    :> Result.map((slots) => { List.foldRight(slots, [], List.append) })
+    :> Result.map(Js.Array.fromList)
+    :> Result.andThen((slots) => { bigUint64ArrayFrom(slots) :> jsResult })
+};
+
+-- ssize_t came back through a pointer-shaped return: null is 0, and anything
+-- else is an unsigned 64-bit address that has to be reinterpreted as signed.
+-- `BigInt.asIntN` must do that before the value reaches `Number`, because
+-- rounding -1 (2^64 - 1) to a double would land it exactly on 2^64 and read
+-- back as 0.
+let signedValue = via Result (returned) => {
+  match(returned) {
+    None => { Result.succeed(0) },
+    Some(object) => {
+      -- `writev`'s pointer-shaped return reflects as `Js.Object`, not as
+      -- `PointerObject`. It really is one at runtime, so assert it back.
+      let pointer: Result<PointerObject, Js.Error> = Json.assert(object);
+
+      pointer
+        :> jsResult
+        :> Result.andThen((p) => { Ptr.value(p) :> jsResult })
+        :> Result.map((value) => { numberOf(Big.asIntN(64, value)) })
+    },
+  }
+};
+
+-- libc reports failure as -1 and leaves the reason in errno, so the return
+-- value alone says nothing about what went wrong.
+let errnoOf = (lib) => {
+  lib.symbols.__errno_location()
+    :> jsResult
+    :> via Result (found) => {
+      match(found) {
+        None => { Err(NullPointer) },
+        Some(location) => {
+          UnsafePointerView.new(location)
+            :> jsResult
+            :> Result.andThen((view) => { view.getInt32(0) :> jsResult })
+        },
+      }
+    }
+};
+
+-- Drop the chunks the kernel fully consumed, returning what is left and how
+-- far into its new head the write stopped. Pure: no bytes are touched.
+let rec remaining = (chunks, written) => {
+  match(chunks) {
+    [] => { ([], 0) },
+    [head, ..tail] => {
+      if (written >= head.len) {
+        remaining(tail, written - head.len)
+      } else {
+        (chunks, written)
+      }
+    },
+  }
+};
+
+-- Trim the straddling head chunk to the bytes the kernel did not take, so a
+-- partial write resumes exactly where it stopped.
+let advance = (chunks, written) => {
+  let (pending, offset) = remaining(chunks, written);
+
+  match(pending) {
+    [] => { Result.succeed(pending) },
+    [head, ..tail] => {
+      if (offset == 0) {
+        Result.succeed(pending)
+      } else {
+        let raw = head.bytes;
+
+        raw.subarray(offset)
+          :> jsResult
+          :> Result.andThen(chunkOf)
+          :> Result.map((rest) => { [rest, ..tail] })
+      }
+    },
+  }
+};
+
+-- Keep calling writev until every chunk has left userspace.
+let rec drain = (chunks, lib, fd) => {
+  match(chunks) {
+    [] => { Result.succeed(void) },
+    [head, ..tail] => {
+      let pending = [head, ..tail];
+      let count = List.length(pending);
+
+      let submit = viaJs (iov) => { lib.symbols.writev(fd, Some(iov), count) };
+
+      -- A signal or a would-block is not a failure: reissue the same vector.
+      -- Every pending chunk is non-empty, so a zero-byte write instead made no
+      -- progress, and reissuing that would spin forever.
+      let classify = via Result (written) => {
+        if (written < 0) {
+          errnoOf(lib) :> Result.andThen((code) => {
+            if (code == eintr) {
+              Ok(Retry)
+            } else {
+              if (code == eagain) { Ok(Retry) } else { Err(Errno(code)) }
+            }
+          })
+        } else {
+          if (written == 0) { Err(NoProgress) } else { Ok(Wrote(written)) }
+        }
+      };
+
+      let continued = via Result (step) => {
+        match(step) {
+          Retry => { drain(pending, lib, fd) },
+          Wrote(written) => {
+            advance(pending, written)
+              :> Result.andThen((rest) => { drain(rest, lib, fd) })
+          },
+        }
+      };
+
+      iovecFor(pending)
+        :> submit
+        :> signedValue
+        :> classify
+        :> continued
+    },
+  }
+};
+
+let writevAll = (chunks, fd) => {
+  -- A zero-length iovec makes writev return 0, which is indistinguishable from
+  -- a stalled write. Drop them before the loop can mistake one for the other.
+  let pending = List.filter(chunks, (chunk) => { chunk.len > 0 });
+
+  libc :> Result.andThen((lib) => { drain(pending, lib, fd) })
+};
+
+-- `std.Io.File.stdout().writer(&buf)`: a file descriptor plus a caller-owned
+-- buffer. The capacity is read off the buffer, so the two cannot disagree.
+let file = (fd, buf) => {
+  buf.length
+    :> jsResult
+    :> Result.map((cap) => { Writer(fd, buf, cap, 0) })
+};
+
+let stdoutFd = 1;
+let stderrFd = 2;
+
+let stdout = (buf) => { file(stdoutFd, buf) };
+let stderr = (buf) => { file(stderrFd, buf) };
+
+-- Release the dynamic library handle. Nothing buffered is flushed by this.
+let close = () => {
+  libc :> Result.andThen((lib) => { lib.close() :> jsResult })
+};
+
+let buffered = (writer: Writer) => { writer.end };
+
+let emptied = (writer: Writer) => { .{ ..writer, end = 0 } };
+
+let pendingChunk = (writer: Writer) => {
+  let raw = writer.buf;
+
+  raw.subarray(0, writer.end)
+    :> jsResult
+    :> Result.andThen(chunkOf)
+};
+
+-- Append to the userspace buffer. A chunk that cannot fit joins whatever is
+-- already buffered in a single vectored write instead of being split.
+let writeChunk = (writer: Writer, chunk) => {
+  let raw = writer.buf;
+
+  if (chunk.len <= writer.cap - writer.end) {
+    raw.set(chunk.bytes, writer.end)
+      :> jsResult
+      :> Result.map((_) => { .{ ..writer, end = writer.end + chunk.len } })
+  } else {
+    if (writer.end == 0) {
+      writevAll([chunk], writer.fd) :> Result.map((_) => { emptied(writer) })
+    } else {
+      pendingChunk(writer)
+        :> Result.andThen((held) => { writevAll([held, chunk], writer.fd) })
+        :> Result.map((_) => { emptied(writer) })
+    }
+  }
+};
+
+let encoded = (text) => {
+  let encode = viaJs (enc) => { enc.encode(text) };
+
+  encoder
+    :> encode
+    :> Result.andThen(chunkOf)
+};
+
+-- Pipe-shaped: `writer :> Writer.print("hello\n")`.
+let print = (writer: Writer, text) => {
+  encoded(text)
+    :> Result.andThen((chunk) => { writeChunk(writer, chunk) })
+};
+
+-- Write straight to a descriptor with no userspace buffer behind it.
+-- Diagnostics must not sit in a buffer that a failing program never flushes,
+-- and must not depend on a writer that may be the thing that failed.
+let line = (fd, text) => {
+  encoded(text)
+    :> Result.andThen((chunk) => { writevAll([chunk], fd) })
+};
+
+-- The explicit drain. Nothing reaches fd 1 until this runs.
+let flush = (writer: Writer) => {
+  if (writer.end == 0) {
+    Result.succeed(writer)
+  } else {
+    pendingChunk(writer)
+      :> Result.andThen((held) => { writevAll([held], writer.fd) })
+      :> Result.map((_) => { emptied(writer) })
+  }
+};

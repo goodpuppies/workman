@@ -17,6 +17,6 @@ jobs:
       - name: Verify generated assets
         run: |
           deno task generate-assets
-          test -z "$(git status --porcelain -- src/generated/assets.ts)"
+          test -z "$(git status --porcelain -- src/generated)"
       - name: Publish package
         run: deno publish

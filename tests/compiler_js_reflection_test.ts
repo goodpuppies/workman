@@ -1,13 +1,40 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { checkSource, checkVirtual } from "../src/compiler.ts";
+import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
 import {
   contextualizeDelayedCallbacks,
   resolveDelayedFfiElaboration,
 } from "../src/ffi/delayed/delayed.ts";
 import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { inferModulePartial } from "../src/infer.ts";
-import { parse } from "../src/parser.ts";
+import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
+
+Deno.test("reflects relative JS modules whose dependencies use a Deno import map", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${directory}/deno.json`,
+      JSON.stringify({ imports: { "mapped-types": "./mapped_types.ts" } }),
+    );
+    await Deno.writeTextFile(
+      `${directory}/mapped_types.ts`,
+      "export type Wrapped = { value: number };\n",
+    );
+    await Deno.writeTextFile(
+      `${directory}/bridge.ts`,
+      'import type { Wrapped } from "mapped-types";\n' +
+        "export function wrapped(): Wrapped { return { value: 1 }; }\n",
+    );
+
+    await checkSource(
+      'from js.module("./bridge.ts") import { wrapped }; let value = wrapped();',
+      {},
+      `${directory}/main.wm`,
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
 
 Deno.test("unresolved JS FFI property results cannot escape as generic values", async () => {
   await assertRejects(
@@ -73,7 +100,7 @@ Deno.test("record fields on unannotated params are not preempted by unresolved J
   `);
 
   expectBinding(result.env, "formatCommit", {
-    type: "((Commit, 'a, 'b)) => String",
+    type: "(Commit, 'a, 'b) -> String",
     vars: 2,
   });
 });
@@ -87,7 +114,93 @@ Deno.test("supports inferred variadic JS imports as polymorphic unary functions"
     };
   `);
 
-  expectBinding(result.env, "main", { type: "(Void) => Result<Void, Js.Error>", vars: 0 });
+  expectBinding(result.env, "main", { type: "Void -> Result<Void, Js.Error>", vars: 0 });
+});
+
+Deno.test("uses via context to select a variadic reflected function value", async () => {
+  const result = await checkSource(`
+    from js.global("console") import * as console;
+    let input: Result<String, Js.Error> = Ok("hello");
+    let output = Monad.via Result console.log(input);
+  `);
+
+  expectBinding(result.env, "output", {
+    type: "Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("resolves nested reflected results before selecting a variadic function value", async () => {
+  const result = await checkSource(`
+    from js.global("console") import * as console;
+    from js.module("npm:chalk") import * as chalk;
+    from js.module("npm:figlet") import * as figlet;
+    let output = Monad.via Result console.log(
+      Monad.via Result chalk.default.magenta(
+        figlet.textSync("Node-Gotchi", JSON{ horizontalLayout: "full" })
+      )
+    );
+  `);
+
+  expectBinding(result.env, "output", {
+    type: "Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("expression ascriptions constrain JSON assertions before a pipe", async () => {
+  const source = `
+    from js.module("npm:inquirer") import * as inquirer;
+
+    let getPetName = () => {
+      let inquiry = () => {
+        inquirer.default.prompt(JSON[
+          JSON{
+            "type": "input",
+            name: "petName",
+            message: "What would you like to name your pet?",
+            default: "BiteSize",
+          }
+        ])
+      };
+      let parseAnswer = Monad.via Task (raw) => {
+        record PetNameAnswer = { petName: String };
+        Json.assert(raw): Result<PetNameAnswer, Js.Error>
+          :> Result.map((value) => { value.petName })
+          :> Task.fromResult
+      };
+
+      inquiry() :> parseAnswer
+    };
+  `;
+  const result = await checkSource(source);
+
+  expectBinding(result.env, "getPetName", {
+    type: "Void -> Task<String, Js.Error>",
+    vars: 0,
+  });
+
+  const js = await compile(source);
+  new Function(`return async () => {\n${js}\n};`);
+});
+
+Deno.test("rejects an unconstrained variadic reflected function value", async () => {
+  for (
+    const expression of [
+      "console.log",
+      "Monad.via Result console.log",
+    ]
+  ) {
+    await assertRejects(
+      () =>
+        checkSource(`
+        from js.global("console") import * as console;
+        let log = ${expression};
+      `),
+      Error,
+      "cannot determine JS FFI overload for log as a first-class function",
+    );
+  }
 });
 
 Deno.test("supports inferred JS module imports", async () => {
@@ -97,6 +210,26 @@ Deno.test("supports inferred JS module imports", async () => {
   `);
 
   expectBinding(result.env, "hash", { type: "Result<Hash, Js.Error>", vars: 0 });
+});
+
+Deno.test("preserves nominal receivers returned through polymorphic this", async () => {
+  const result = await checkSource(`
+    from js.module("npm:ora") import * as ora;
+
+    let try = match(result) => {
+      Ok(value) => { value },
+      Err(_) => { Panic("ffi") },
+    };
+
+    let spinner = ora.default("Loading") :> try :> .start() :> try;
+    let finished = spinner.succeed("Done");
+  `);
+
+  expectBinding(result.env, "spinner", { type: "Ora", vars: 0 });
+  expectBinding(result.env, "finished", {
+    type: "Result<Ora, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("maps reflected JS nullish returns to basis Option", async () => {
@@ -110,8 +243,24 @@ Deno.test("maps reflected JS nullish returns to basis Option", async () => {
     };
   `);
 
-  expectBinding(result.env, "found", { type: "Result<Option<Js.Value>, Js.Error>", vars: 0 });
+  expectBinding(result.env, "found", { type: "Result<Option<Element>, Js.Error>", vars: 0 });
   expectBinding(result.env, "isMissing", { type: "Bool", vars: 0 });
+});
+
+Deno.test("reflects the UnsafeWindowSurface webgpu discriminator precisely", async () => {
+  const result = await checkSource(`
+    from js.global("Deno") import type { UnsafeWindowSurface };
+    from js.global import type { GPUCanvasContext };
+
+    let context = (surface: UnsafeWindowSurface) => {
+      surface.getContext("webgpu")
+    };
+  `);
+
+  expectBinding(result.env, "context", {
+    type: "UnsafeWindowSurface -> Result<Option<GPUCanvasContext>, Js.Error>",
+    vars: 0,
+  });
 });
 
 Deno.test("resolves reflected JS optional arities before HM", async () => {
@@ -145,6 +294,21 @@ Deno.test("reflects global value constructors through new member", async () => {
 
   expectBinding(result.env, "url", { type: "Result<URL, Js.Error>", vars: 0 });
   expectBinding(result.env, "response", { type: "Result<Response, Js.Error>", vars: 0 });
+});
+
+Deno.test("reflects Deno WebGPU globals", async () => {
+  const result = await checkSource(`
+    from js.global("navigator.gpu") import { requestAdapter };
+    from js.global("GPUBufferUsage") import * as GPUBufferUsage;
+    let adapter = requestAdapter();
+    let storage = GPUBufferUsage.STORAGE;
+  `);
+
+  expectBinding(result.env, "adapter", {
+    type: "Task<Option<GPUAdapter>, Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "storage", { type: "Result<Number, Js.Error>", vars: 0 });
 });
 
 Deno.test("reflects constructor-valued Deno members through new member", async () => {
@@ -181,7 +345,7 @@ Deno.test("reflects constructor-valued Deno members through new member", async (
   });
   expectBinding(result.env, "readNumber", { type: "Result<Number, Js.Error>", vars: 0 });
   expectBinding(result.env, "present", {
-    type: "(UnsafeWindowSurface) => Result<Void, Js.Error>",
+    type: "UnsafeWindowSurface -> Result<Void, Js.Error>",
     vars: 0,
   });
 });
@@ -202,7 +366,7 @@ Deno.test("reflects callback parameter object refs before HM", async () => {
     });
   `);
 
-  expectBinding(result.env, "server", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "server", { type: "Result<HttpServer, Js.Error>", vars: 0 });
 });
 
 Deno.test("reflects dynamic properties from annotated Js.Object values", async () => {
@@ -213,7 +377,7 @@ Deno.test("reflects dynamic properties from annotated Js.Object values", async (
   `);
 
   expectBinding(result.env, "methodOf", {
-    type: "(Js.Object) => Result<Js.Value, Js.Error>",
+    type: "Js.Object -> Result<Js.Value, Js.Error>",
     vars: 0,
   });
 });
@@ -229,7 +393,7 @@ Deno.test("reflects properties from type-only JS imports before HM", async () =>
     };
   `);
 
-  expectBinding(result.env, "methodOf", { type: "(Request) => Bool", vars: 0 });
+  expectBinding(result.env, "methodOf", { type: "Request -> Bool", vars: 0 });
 });
 
 Deno.test("delayed reflection marks FFI facts as resolved", async () => {
@@ -261,10 +425,31 @@ Deno.test("delayed reflection marks FFI facts as resolved", async () => {
   );
 });
 
+Deno.test("unresolved FFI helpers carry monomorphic obligations, not polymorphic schemes", async () => {
+  const module = await parse(`
+    let property = (receiver) => {
+      receiver :> .length
+    };
+  `);
+  const prepared = prepareFfiElaboration(module);
+  const partial = inferModulePartial(prepared.module);
+  const property = partial.env.get("property");
+  if (!property) throw new Error("missing property binding");
+
+  assertEquals(property.vars, []);
+  assertEquals(
+    [...partial.facts.ffi.values()].map((fact) => ({
+      path: fact.path.join("."),
+      status: fact.status,
+    })),
+    [{ path: "length", status: "unresolved" }],
+  );
+});
+
 Deno.test("delays foreign property reflection until HM constrains the receiver", async () => {
   const result = await checkSource(`
     from js.global import type { Request };
-    let useRequest = (h: (Request) => Js.Object, req: Request) => {
+    let useRequest = (h: Request -> Js.Object, req: Request) => {
       let method = match(req.method) {
         Ok(value) => { value },
         Err(_) => { "" },
@@ -275,7 +460,7 @@ Deno.test("delays foreign property reflection until HM constrains the receiver",
   `);
 
   expectBinding(result.env, "useRequest", {
-    type: "(((Request) => Js.Object, Request)) => Js.Object",
+    type: "(Request -> Js.Object, Request) -> Js.Object",
     vars: 0,
   });
 });
@@ -302,7 +487,7 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
       `
         from js.global import type { Request };
         from js.global("Deno") import unsafe {
-          serve: ((Request) => Bool) => Js.Object
+          serve: (Request -> Bool) -> Js.Object
         };
         from "./http.wm" import { dispatch };
         let server = serve(dispatch());
@@ -314,7 +499,7 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
   const http = results.get("/test/http.wm");
   if (!http) throw new Error("missing http result");
   expectBinding(http.env, "dispatch", {
-    type: "(Void) => (Request) => Bool",
+    type: "Void -> Request -> Bool",
     vars: 0,
   });
 });
@@ -350,7 +535,7 @@ Deno.test("foreign JS type identity is keyed by reflected source, not local name
       `from "./a.wm" import * as A; from "./b.wm" import * as B; let bad = B.use(A.id(Panic("x")));`,
     ],
   ]);
-  await assertRejects(() => checkVirtual("/test/main.wm", distinct), Error, "type mismatch");
+  await assertRejects(() => checkVirtual("/test/main.wm", distinct), Error, "type collision");
 });
 
 Deno.test("delays foreign method reflection until downstream HM constrains the receiver", async () => {
@@ -370,7 +555,7 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
       `
         from js.global import type { Response };
         from "./http.wm" import { cloneResponse };
-        let useResponse = (handler: (Response) => Result<Response, Js.Error>) => {
+        let useResponse = (handler: Response -> Result<Response, Js.Error>) => {
           handler(Panic("response"))
         };
         let server = useResponse(cloneResponse());
@@ -382,7 +567,7 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
   const http = results.get("/test/http.wm");
   if (!http) throw new Error("missing http result");
   expectBinding(http.env, "cloneResponse", {
-    type: "(Void) => (Response) => Result<Response, Js.Error>",
+    type: "Void -> Response -> Result<Response, Js.Error>",
     vars: 0,
   });
 });
@@ -405,7 +590,7 @@ Deno.test("reflected FFI method placeholders solve before parent receiver calls"
       })
     };
 
-    let use = (handler: (Request) => Task<String, Js.Error>, req: Request) => {
+    let use = (handler: Request -> Task<String, Js.Error>, req: Request) => {
       handler(req)
     };
 
@@ -413,11 +598,11 @@ Deno.test("reflected FFI method placeholders solve before parent receiver calls"
   `);
 
   expectBinding(result.env, "handle", {
-    type: "(Request) => Task<String, Js.Error>",
+    type: "Request -> Task<String, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "use", {
-    type: "(((Request) => Task<String, Js.Error>, Request)) => Task<String, Js.Error>",
+    type: "(Request -> Task<String, Js.Error>, Request) -> Task<String, Js.Error>",
     vars: 0,
   });
 });
@@ -426,7 +611,7 @@ Deno.test("FFI-involved handlers stay monomorphic across downstream callback con
   const result = await checkSource(`
     from js.global import type { Request };
     from js.global("Deno") import unsafe {
-      serve: (Js.Value, (Request, Js.Value) => Task<String, Js.Error>) => Js.Value
+      serve: (Js.Value, (Request, Js.Value) -> Task<String, Js.Error>) -> Js.Value
     };
 
     let try = (result) => {
@@ -447,7 +632,7 @@ Deno.test("FFI-involved handlers stay monomorphic across downstream callback con
   `);
 
   expectBinding(result.env, "handler", {
-    type: "((Request, Js.Value)) => Task<String, Js.Error>",
+    type: "(Request, Js.Value) -> Task<String, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "server", { type: "Js.Value", vars: 0 });
@@ -481,7 +666,7 @@ Deno.test("recursive FFI receiver helpers stay monomorphic across downstream con
   `);
 
   expectBinding(result.env, "readLoop", {
-    type: "((UnsafePointerView, Number)) => Result<Number, Js.Error>",
+    type: "(UnsafePointerView, Number) -> Result<Number, Js.Error>",
     vars: 0,
   });
   expectBinding(result.env, "value", { type: "Result<Number, Js.Error>", vars: 0 });
@@ -506,7 +691,7 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
       `
         from js.global import type { EventTarget };
         from "./events.wm" import { listen };
-        let use = (handler: (EventTarget) => Result<Void, Js.Error>) => {
+        let use = (handler: EventTarget -> Result<Void, Js.Error>) => {
           handler(Panic("target"))
         };
         let installed = use(listen());
@@ -518,7 +703,7 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
   const events = results.get("/test/events.wm");
   if (!events) throw new Error("missing events result");
   expectBinding(events.env, "listen", {
-    type: "(Void) => (EventTarget) => Result<Void, Js.Error>",
+    type: "Void -> EventTarget -> Result<Void, Js.Error>",
     vars: 0,
   });
 });
@@ -554,6 +739,113 @@ Deno.test("reflected constructors return imported nominal foreign types", async 
   });
 });
 
+Deno.test("reflects fixed TypeScript tuples from functions and foreign members", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import { makePair };
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type {
+      TupleForeign, TupleHandle
+    };
+
+    let pair = makePair();
+    let create = (foreign: TupleForeign) => {
+      foreign.create()
+    };
+  `);
+
+  expectBinding(result.env, "pair", {
+    type: "Result<(Number, String), Js.Error>",
+    vars: 0,
+  });
+  expectBinding(result.env, "create", {
+    type: "TupleForeign -> Result<(Number, TupleHandle), Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("preserves unsupported named tuple aliases in reflected parameters", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import { acceptHandle };
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleHandle };
+
+    let accept = (handle: TupleHandle) => {
+      acceptHandle(handle)
+    };
+  `);
+
+  expectBinding(result.env, "accept", {
+    type: "TupleHandle -> Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("anonymous structural foreign results use the explicit Js.Object fallback", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleForeign };
+
+    let structural = (foreign: TupleForeign) => {
+      foreign.unsupportedObject()
+    };
+  `);
+
+  expectBinding(result.env, "structural", {
+    type: "TupleForeign -> Result<Js.Object, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("broad object parameters do not collapse nominal foreign arguments to Js.Object", async () => {
+  const result = await checkSource(`
+    from js.global("Object") import { assign };
+    from js.global import type { Request };
+
+    let update = (value) => {
+      let _ = assign(value, JSON{ touched: true });
+      value.clone()
+    };
+    let use = (request: Request) => { update(request) };
+  `);
+
+  expectBinding(result.env, "update", {
+    type: "Request -> Result<Request, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("call-specific reflection maps each supplied rest argument to its element type", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type {
+      TupleForeign
+    };
+
+    let add = (foreign: TupleForeign, value: Number) => {
+      foreign.add(value)
+    };
+  `);
+
+  expectBinding(result.env, "add", {
+    type: "(TupleForeign, Number) -> Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("extra arguments do not inherit the final non-rest parameter type", async () => {
+  const result = await checkSource(`
+    from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type {
+      TupleForeign
+    };
+    from js.global import type { Request };
+
+    let call = (foreign: TupleForeign, value: Number, extra: Request) => {
+      foreign.fixed(value, extra)
+    };
+  `);
+
+  expectBinding(result.env, "call", {
+    type: "(TupleForeign, Number, Request) -> Result<Void, Js.Error>",
+    vars: 0,
+  });
+});
+
 Deno.test("unannotated helper receivers keep delayed FFI obligations", async () => {
   const source = `
     from js.global import unsafe { TextEncoder };
@@ -579,5 +871,5 @@ Deno.test("unannotated helper receivers keep delayed FFI obligations", async () 
   const results = await checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
   const result = results.get("/test/main.wm")!;
 
-  expectBinding(result.env, "makeBytes", { type: "(Void) => Uint8Array", vars: 0 });
+  expectBinding(result.env, "makeBytes", { type: "Void -> Uint8Array", vars: 0 });
 });

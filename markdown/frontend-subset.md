@@ -36,7 +36,7 @@ Supported top-level declarations:
 - `from js.global("Math") import { max, floor };`
 - `from js.global("Math") import * as Math;`
 - `from js.global("Math") import { max as jsmax };`
-- `from js.global("console") import { log: (String, Number) => Void } as console;`
+- `from js.global("console") import { log: (String, Number) -> Void } as console;`
 - `from js.module("node:crypto") import { createHash };`
 - Reflected JS imports return `Result<T, Js.Error>`; manual typed JS imports are raw boundaries.
 - `let pattern = expr;`

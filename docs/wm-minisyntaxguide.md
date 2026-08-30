@@ -93,7 +93,9 @@ Double-quoted strings are single-line:
 let short = "hello\nworld";
 ```
 
-Backtick strings can span multiple lines. They do not interpolate expressions:
+Backtick strings can span multiple lines and use JavaScript-style `${...}` interpolation.
+Interpolation renders Workman values as text, including numbers, booleans, records, tuples,
+lists, and algebraic datatype constructors:
 
 ```workman
 let page = `first line
@@ -101,7 +103,14 @@ second line
 third line`;
 
 let withTick = `use \` to include a backtick`;
+let greeting = `Hello, ${name}!`;
+let score = `score: ${42}, complete: ${true}`;
+let token = `token: ${Some("name")}`; -- token: Some(name)
+let escaped = `write \${name} to show it literally`;
 ```
+
+The same conversion is available explicitly as `Text.of(value)`. Ordinary `++` remains strict
+string concatenation and does not convert its operands.
 
 ### Tuple Destructuring
 
@@ -274,6 +283,17 @@ type Token =
   | Ident<String>;
 ```
 
+Mutually recursive types are declared in one group with `and`. Every name in the group is visible
+in every constructor payload:
+
+```workman
+type Even = EvenZero | EvenSucc<Odd>
+and Odd = | OddSucc<Even>;
+```
+
+As with an ordinary declaration, a single-constructor variant needs a leading `|`; without it the
+right-hand side is a type alias.
+
 ### Using Constructors
 
 Constructors are called like functions:
@@ -312,6 +332,36 @@ let p = .{ x = 10, y = 20 };
 -- With explicit type annotation
 let p: Point = .{ x = 10, y = 20 };
 ```
+
+### Ordered Constructors
+
+Every record declaration also introduces an ordinary constructor function. Its arguments follow
+field declaration order:
+
+```workman
+record Point = { x: Number, y: Number };
+
+let p = Point(10, 20);
+```
+
+For a polymorphic record, the constructor is polymorphic in the same way as the record:
+
+```workman
+record Pair<A, B> = { first: A, second: B };
+
+let pair = Pair(1, "one");
+```
+
+Because the constructor is an ordinary function, it composes with carrier operations without any
+record-specific carrier behavior:
+
+```workman
+Result|xResult, yResult|
+  :> Result.map(Point)
+```
+
+This has type `Result<Point, E>`. Use an explicit record literal when values do not follow
+declaration order or when naming the fields is clearer.
 
 ### Field Punning
 
@@ -357,6 +407,9 @@ let p = .{ x = 10, y = 20 };
 let xVal = p.x;  -- 10
 ```
 
+See [Generic programming](./generic-programming.md) for using records in place of traits,
+interfaces, and other capability abstractions.
+
 ---
 
 ## Pattern Matching
@@ -370,6 +423,12 @@ let describe = match(n) => {
   0 => { "zero" },
   1 => { "one" },
   _ => { "many" }
+};
+
+-- Match several subjects directly; no extra tuple parentheses are needed
+match(status, ready) {
+  (Ok, true) => { "go" },
+  _ => { "wait" }
 };
 ```
 
@@ -421,7 +480,27 @@ let isZero = match(n) => {
 
 ### First-Class Match
 
-A first-class match is syntactic sugar for a function:
+A match can be written directly as an anonymous function and used in a pipeline:
+
+```workman
+let value = option :> match {
+  Some(x) => { x },
+  None => { 0 }
+} :> transform;
+```
+
+It can also be bound like any other function:
+
+```workman
+let unwrap = match {
+  Some(x) => { x },
+  None => { 0 }
+};
+
+let value = option :> unwrap;
+```
+
+The named-parameter match form is syntactic sugar for a regular function:
 
 ```workman
 -- First-class match (sugar)
@@ -598,6 +677,24 @@ let result = 42 :> double :> add(10) :> print;
 -- Equivalent to: print(add(double(42), 10))
 ```
 
+When the right side is a nested application that produces a function, the pipe calls that produced
+function with the piped value:
+
+```workman
+let makeTransform = (offset) => {
+  (transform) => {
+    (value) => { transform(value + offset) }
+  }
+};
+
+let result = 40 :> makeTransform 1 (value) => { value + 1 };
+-- Equivalent to: ((makeTransform(1))((value) => { value + 1 }))(40)
+```
+
+This rule enables compact carrier continuations such as `task :> Monad.via Task (value) => { ... }`.
+See [Inline Task continuations with `via`](./advancedsyntax.md#inline-task-continuations-with-via) for the
+full expansion into `Task.andThen`.
+
 ---
 
 ## Lists
@@ -669,7 +766,7 @@ from js.global("Math") import { max as jsmax, floor };
 from js.global("Math") import * as Math;
 
 -- Manual type annotations are available when needed
-from js.global("console") import { log: (String, Number) => Void } as console;
+from js.global("console") import { log: (String, Number) -> Void } as console;
 
 -- Import types
 from "./option.wm" import { Option, Some, None };
@@ -770,6 +867,14 @@ let makePoint = (x: Number, y: Number) => { .{ x, y } };
 
 -- Annotate record parameters for clarity
 let pointX = (p: Point) => { p.x };
+
+-- Equivalent function return annotations
+let first: Void -> Bool = () => { true };
+let second = (): Bool => { true };
+let third = () => { true }: Bool;
+
+-- Annotation positions can be combined when they agree
+let checked: Void -> Bool = (): Bool => { true }: Bool;
 ```
 
 ### 8. Out of Scope (for now)
@@ -779,7 +884,7 @@ The following are intentionally not part of current `wm-mini` frontend scope:
 - infection/effect features
 - full record and list feature set
 - custom fixity declarations and advanced operator definitions
-- panic/typed-hole runtime semantics
+- custom panic/runtime recovery semantics beyond the basic `Panic` and typed-hole behavior
 
 Some sections below describe intended Workman syntax or older/full Workman design ideas. When a
 feature is not implemented in current `wm-mini`, it is marked with a **Not supported yet** note.
@@ -803,19 +908,19 @@ type Usize;
 
 #### Function Type Annotations
 
-**Partially supported.** Parameter annotations are supported. Full binding-level function
-annotations and return annotations in the examples below are not supported yet.
+Function types use `->`; lambda and match arrows remain `=>`. The type arrow associates to the
+right, and a higher-order domain is grouped explicitly, as in `(A -> B) -> C`.
 
 Annotate function bindings with their full signature:
 
 ```workman
--- Function type annotation: (params) => ReturnType
-let zig_gpa_init: (Void) => GpaHandle = ?;
-let zig_gpa_deinit: (Ptr<GpaHandle, s>) => Void = ?;
+-- Function type annotation: Domain -> ReturnType
+let zig_gpa_init: Void -> GpaHandle = ?;
+let zig_gpa_deinit: Ptr<GpaHandle, s> -> Void = ?;
 
 -- Multiple parameters
-let zig_gpa_create: (Ptr<GpaHandle, s>, t) => Ptr<t, s> = ?;
-let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) => Slice<t, s> = ?;
+let zig_gpa_create: (Ptr<GpaHandle, s>, t) -> Ptr<t, s> = ?;
+let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) -> Slice<t, s> = ?;
 ```
 
 #### Lowercase vs Uppercase in Types
@@ -825,7 +930,7 @@ let zig_gpa_alloc: (Ptr<GpaHandle, s>, t, Usize) => Slice<t, s> = ?;
 
 ```workman
 -- 't' and 's' are type variables (generic parameters)
-let zig_gpa_create: (Ptr<GpaHandle, s>, t) => Ptr<t, s> = ?;
+let zig_gpa_create: (Ptr<GpaHandle, s>, t) -> Ptr<t, s> = ?;
 
 -- 'T' would refer to a specific type constructor named T
 type Container<T> = Empty | Full<T>;
@@ -833,20 +938,18 @@ type Container<T> = Empty | Full<T>;
 
 #### Type Holes (`?`)
 
-**Not supported yet in current `wm-mini`.** Use `Panic("todo")` as the current escape hatch when an
-expression must typecheck in any context.
-
 Use `?` as a placeholder for values you haven't implemented yet. Based on
 [Hazel's typed holes](https://hazel.org/), this lets you write incomplete programs that still
-typecheck(but workman has no defined runtime support):
+typecheck(but workman has no defined runtime support): Hover the `?` in an editor using the Workman language server to see the type required at
+that position:
 
 ```workman
 -- Hole expression: placeholder for unimplemented value
-let zig_gpa_init: (Void) => GpaHandle = ?;
-let zig_free: (Ptr<t, s>) => () = ?;
+let zig_gpa_init: Void -> GpaHandle = ?;
+let zig_free: Ptr<t, s> -> Void = ?;
 
 -- Useful during development
-let todoFunction: (Number) => String = ?;
+let todoFunction: Number -> String = ?;
 
 -- The typechecker infers what type the hole must be
 let calculate = (x: Number): Number => {
@@ -860,6 +963,9 @@ Type holes are especially useful for:
 - FFI bindings where the implementation is provided by the runtime
 - Stubbing out functions during incremental development
 - Letting the typechecker tell you what type is expected
+
+A hole compiles so the rest of the program remains available to tooling. Evaluating a path that
+reaches one fails at runtime with `typed hole`.
 
 ### 8. Match Is an Expression
 
@@ -906,27 +1012,28 @@ let wrong = "Hello" + " World";  -- This is arithmetic!
 
 -- ✅ Use ++
 let right = "Hello" ++ " " ++ "World";
+
+-- Prefer interpolation when assembling a string from several pieces
+let clearer = `Hello ${name}, welcome to ${place}`;
 ```
 
-### 11. Type Assertions Use `as`
+### 11. Type Constraints Use `:`
 
-**Not supported yet in current `wm-mini`.** Prefer annotations on `let` bindings or lambda
-parameters for now.
-
-Use `as` to ask the typechecker to verify that an expression already has a specific type:
+Use `:` to require an expression or pattern to have a specific type:
 
 ```workman
-let x = someValue as Number;
-let result = compute() as Option<String>;
+let x = (someValue : Number);
+let result = compute() : Option<String>;
 
--- Useful for disambiguating polymorphic expressions
-let empty = [] as List<Number>;
+match(result) {
+  (Some(value) : Option<String>) => { value },
+  None => { "" },
+}
 ```
 
-`as` is not a runtime cast. It must not allow unsafe conversions such as `number as String`, and it
-must not be used to turn dynamic JS/JSON data into a Workman record or primitive. Dynamic data needs
-an explicit runtime validation function that returns a typed value, such as a future whole-shape
-JSON assertion.
+This is a compile-time equality constraint, not a runtime cast or conversion. It cannot turn dynamic
+JS/JSON data into a Workman record or primitive; use an explicit runtime validator such as
+`Json.assert` for dynamic data.
 
 ### 12. Panic for Unrecoverable Errors
 
@@ -965,10 +1072,6 @@ These features are not supported yet or are only partially supported:
 
 - **Full SML modules/functors/signatures:** files are the current module boundary.
 - **Opaque type declarations:** `type Handle;` is planned/design syntax, not current syntax.
-- **Typed holes:** `?` is not implemented. Use `Panic("todo")` for temporary unreachable values.
-- **Binding-level function annotations:** annotate parameters or simple `let` bindings for now;
-  `let f: (...) => T = ...` is not generally implemented.
-- **Return type annotations on lambdas:** `let f = (x): T => { ... }` is not implemented.
 - **Match guards:** `pattern when cond => ...` is listed as intended syntax, but guards are not
   implemented.
 - **Character literals:** use strings for now; `'a'` is not implemented.
@@ -978,7 +1081,6 @@ These features are not supported yet or are only partially supported:
 - **Exceptions:** use `Result`, `Option`, and `Panic`; general exception handling is not
   implemented.
 - **Async/await syntax:** JS promises are used through FFI methods like `.then(...)`.
-- **String interpolation:** backtick strings are multiline only; they do not interpolate.
 - **Custom operators/fixity:** fixed built-in operators only.
 - **Automatic JS record/object conversion:** use `JSON{}` and `JSON[]` for current JS object/array
   literals.

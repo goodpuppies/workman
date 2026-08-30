@@ -53,6 +53,9 @@ export function collectExprs(module: Module): Expr[] {
         }
         visitExpr(expr.result);
         break;
+      case "Ascribed":
+        visitExpr(expr.value);
+        break;
       case "Binary":
         visitExpr(expr.left);
         visitExpr(expr.right);
@@ -136,6 +139,9 @@ export function collectPatterns(module: Module): Pattern[] {
         }
         visitExpr(expr.result);
         break;
+      case "Ascribed":
+        visitExpr(expr.value);
+        break;
       case "Binary":
         visitExpr(expr.left);
         visitExpr(expr.right);
@@ -167,6 +173,9 @@ export function collectPatterns(module: Module): Pattern[] {
         break;
       case "PCtor":
         pattern.args.forEach(visitPattern);
+        break;
+      case "PAscribed":
+        visitPattern(pattern.pattern);
         break;
       case "PWildcard":
       case "PVar":

@@ -1,5 +1,6 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { fn, name } from "../shared.ts";
 import { type JsCallArgHint } from "../reflect/types.ts";
 import {
@@ -96,6 +97,7 @@ function jsFunctionParamTypes(type: Extract<ReturnType<typeof prune>, { tag: "fn
 
 function callbackReturnType(expr: Expr, result: InferResult): TypeExpr | undefined {
   if (expr.kind === "Lambda") {
+    if (!hostFfiDescendsInto(expr)) return undefined;
     const bodyType = inferredType(result, expr.body);
     return bodyType ? knownTyToTypeExpr(bodyType) : undefined;
   }

@@ -38,7 +38,7 @@ recursion threading an immutable world — and raylib only appears at the edge.
   `Ok((Var(a), Var(b), ...))` is equally nice.
 
 - **Ambient std namespaces.** `List.map`, `Result.map`, `Result.mapErr`,
-  `Result.textOf`, `Monad.lift` are all in scope without imports. `Result.textOf`
+  `Text.of`, `Monad.via` are all in scope without imports. `Text.of`
   for stringifying any value into HUD text was handy.
 
 - **Structural FFI mapping for records.** A Workman `record Color = { r, g, b, a }`

@@ -149,7 +149,7 @@
           "captures": {
             "1": { "name": "storage.type.workman" },
             "2": { "name": "storage.modifier.recursive.workman" },
-            "3": { "name": "entity.name.function.workman" },
+            "3": { "name": "variable.other.constant.workman" },
             "4": { "name": "entity.name.type.constructor.workman" },
             "5": { "name": "variable.language.wildcard.workman" }
           }

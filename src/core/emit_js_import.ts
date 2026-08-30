@@ -6,6 +6,8 @@ import { emitJsIdentifier as id } from "./emit_name.ts";
 type CoreJsImport = Extract<CoreDecl, { kind: "CoreJsImport" }>;
 
 type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
+  kind: "meta";
+} | {
   kind: "module";
   name: string;
   setup: string;
@@ -46,14 +48,19 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
   if (decl.clause.kind === "Namespace") {
     return [
       ...prefix,
-      `const ${id(decl.clause.alias)} = ${jsNamespaceRef(target)};`,
+      `const ${
+        boundName(
+          decl.clause.alias,
+          decl.bindingIds?.[0],
+        )
+      } = ${jsNamespaceRef(target)};`,
     ];
   }
   const alias = decl.clause.alias;
   if (alias) {
     return [
       ...prefix,
-      `const ${id(alias)} = { ${
+      `const ${boundName(alias, decl.structureId)} = { ${
         decl.clause.specs.map((spec) =>
           `${id(spec.alias ?? spec.name)}: ${
             jsImportWrapper(
@@ -67,12 +74,17 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
   }
   return [
     ...prefix,
-    ...decl.clause.specs.map((spec) =>
-      `const ${id(spec.alias ?? spec.name)} = ${
+    ...decl.clause.specs.map((spec, index) =>
+      `const ${boundName(spec.alias ?? spec.name, decl.bindingIds?.[index])} = ${
         jsImportWrapper(jsMemberRef(target, JSON.stringify(spec.name)), spec)
       };`
     ),
   ];
+}
+
+function boundName(name: string, bindingId: number | undefined): string {
+  const emitted = id(name);
+  return bindingId === undefined ? emitted : `${emitted}_${bindingId}`;
 }
 
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
@@ -86,19 +98,37 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
       }
       return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(__wm_js_error(error)); } })()`;
     }
-    return memberRef;
+    const converter = jsValueConverter(spec.type);
+    return converter === "id"
+      ? memberRef
+      : `__wm_js_to_workman(${memberRef}, ${JSON.stringify(converter)})`;
   }
-  return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${
-    JSON.stringify(jsParamConverters(spec.type))
-  }, ${JSON.stringify(jsResultConverter(spec.type, !!spec.fallible))}, ${
-    JSON.stringify(spec.fallible ? jsFallibleMode(spec.type) : false)
-  })`;
+  const params = jsParamConverters(spec.type);
+  const result = jsResultConverter(spec.type, !!spec.fallible);
+  if (!spec.fallible && params.every((converter) => converter === "id") && result === "id") {
+    const direct = `__wm_js_direct_${jsImportTemp++}`;
+    const call = params.length === 0
+      ? `${direct}()`
+      : params.length === 1
+      ? `${direct}(__arg)`
+      : `${direct}(...__arg)`;
+    return `(() => { const ${direct} = ${memberRef}; return (__arg) => ${call}; })()`;
+  }
+  return `(__arg) => __wm_js_apply(${memberRef}, __arg, ${JSON.stringify(params)}, ${
+    JSON.stringify(result)
+  }, ${JSON.stringify(spec.fallible ? jsFallibleMode(spec.type) : false)})`;
 }
 
 type JsConverter = "id" | "option" | {
   kind: "fn";
   params: JsConverter[];
   result: JsConverter;
+} | {
+  kind: "tuple";
+  items: JsConverter[];
+} | {
+  kind: "array";
+  item: JsConverter;
 };
 
 function jsParamConverters(type: TypeExpr | undefined): JsConverter[] {
@@ -118,6 +148,13 @@ function jsValueConverter(type: TypeExpr | undefined): JsConverter {
 
 function jsConverter(type: TypeExpr): JsConverter {
   if (type.kind === "TName" && type.name === "Option") return "option";
+  if (type.kind === "TName" && type.name === "Js.Array" && type.args.length === 1) {
+    const item = jsConverter(type.args[0]);
+    return item === "id" ? "id" : { kind: "array", item };
+  }
+  if (type.kind === "TTuple") {
+    return { kind: "tuple", items: type.items.map(jsConverter) };
+  }
   if (type.kind === "TFn") {
     return {
       kind: "fn",
@@ -149,6 +186,7 @@ function fallibleOkType(type: TypeExpr): TypeExpr | undefined {
 function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
   if (target.kind === "JsGlobalRoot") return { kind: "global", path: "" };
   if (target.kind === "JsGlobal") return { kind: "global", path: target.path };
+  if (target.kind === "JsMeta") return { kind: "meta" };
   if (target.kind === "JsModule") {
     const name = `__wm_js_module_${jsImportTemp++}`;
     return {
@@ -192,6 +230,7 @@ function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
 }
 
 function jsMemberRef(target: JsTargetRef, member: string): string {
+  if (target.kind === "meta") return `import.meta[${member}]`;
   if (target.kind === "global") {
     if (target.path.length === 0) return `__wm_js_member(${member})`;
     if (member === JSON.stringify(target.path)) {
@@ -211,6 +250,7 @@ function jsMemberRef(target: JsTargetRef, member: string): string {
 }
 
 function jsNamespaceRef(target: JsTargetRef): string {
+  if (target.kind === "meta") return "import.meta";
   if (target.kind === "module") return target.name;
   if (target.kind === "worker") return target.name;
   if (target.kind === "global") {

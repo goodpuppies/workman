@@ -1,0 +1,90 @@
+%YAML 1.2
+---
+name: Workman
+scope: source.workman
+version: 2
+file_extensions:
+  - wm
+
+variables:
+  identifier: '[A-Za-z_][A-Za-z0-9_]*'
+
+contexts:
+  main:
+    - match: '--.*$|//.*$'
+      scope: comment.line.workman
+    - match: '"'
+      scope: punctuation.definition.string.begin.workman
+      push: double-quoted-string
+    - match: '`'
+      scope: punctuation.definition.string.begin.workman
+      push: backtick-string
+    - match: '''([^''\\]|\\.)'''
+      scope: constant.character.workman
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.workman
+    - match: '\bvoid\b'
+      scope: constant.language.void.workman
+    - match: '(?<![A-Za-z0-9_])-?\b[0-9]+\.[0-9]+\b(?![A-Za-z0-9_])'
+      scope: constant.numeric.float.workman
+    - match: '(?<![A-Za-z0-9_])-?\b[0-9]+\b(?![A-Za-z0-9_])'
+      scope: constant.numeric.integer.workman
+    - match: '\b(from|import|export|as)\b'
+      scope: keyword.control.import.workman
+    - match: '\b(if|else|match|when)\b'
+      scope: keyword.control.conditional.workman
+    - match: '\b(let|rec|and|type|record|carrier|unsafe|mut)\b'
+      scope: keyword.declaration.workman
+    - match: '\b(infix|infixl|infixr|prefix|infectious|domain|op|policy|annotate)\b'
+      scope: keyword.other.workman
+    - match: '\b(Int|String|Bool|Void|Float)\b'
+      scope: support.type.builtin.workman
+    - match: '\b(Panic|Var|JSON)\b'
+      scope: support.function.builtin.workman
+    - match: '\b[A-Z][A-Za-z0-9_]*\b'
+      scope: entity.name.type.workman
+    - match: '\b[a-z_][A-Za-z0-9_]*(?=\s*\()'
+      scope: entity.name.function.workman
+    - match: '(=>|->|:>|\.\.|<=|>=|==|!=|&&|\|\||\+\+|\*\*|[+*/%!?=|<>:-])'
+      scope: keyword.operator.workman
+    - match: '[{}()\[\],;.]'
+      scope: punctuation.workman
+
+  double-quoted-string:
+    - meta_scope: string.quoted.double.workman
+    - match: '\\.'
+      scope: constant.character.escape.workman
+    - match: '"'
+      scope: punctuation.definition.string.end.workman
+      pop: true
+
+  backtick-string:
+    - meta_scope: string.quoted.other.workman
+    - match: '\\.'
+      scope: constant.character.escape.workman
+    - match: '\$\{'
+      scope: punctuation.section.interpolation.begin.workman
+      push: interpolation
+    - match: '`'
+      scope: punctuation.definition.string.end.workman
+      pop: true
+
+  interpolation:
+    - clear_scopes: 1
+    - meta_scope: meta.interpolation.workman
+    - match: '\}'
+      scope: punctuation.section.interpolation.end.workman
+      pop: true
+    - match: '\{'
+      scope: punctuation.section.block.begin.workman
+      push: interpolation-braces
+    - include: main
+
+  interpolation-braces:
+    - match: '\}'
+      scope: punctuation.section.block.end.workman
+      pop: true
+    - match: '\{'
+      scope: punctuation.section.block.begin.workman
+      push: interpolation-braces
+    - include: main

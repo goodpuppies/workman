@@ -1,24 +1,103 @@
 import * as fs from "fs";
 import * as path from "path";
-import { commands, type ExtensionContext, window, workspace } from "vscode";
+import {
+  commands,
+  type CancellationToken,
+  type ExtensionContext,
+  MarkdownString,
+  StatusBarAlignment,
+  type TextEditor,
+  Uri,
+  window,
+  workspace,
+} from "vscode";
 import {
   LanguageClient,
   type LanguageClientOptions,
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import { Trace } from "vscode-jsonrpc";
+import { type MessageSignature, Trace } from "vscode-jsonrpc";
 import {
-  compiledServerConfig,
   denoServerConfig,
+  nodeServerConfig,
   resolveConfiguredPath,
 } from "./server_options";
 
 let client: LanguageClient | undefined;
 
+class WorkmanLanguageClient extends LanguageClient {
+  override handleFailedRequest<T>(
+    type: MessageSignature,
+    token: CancellationToken | undefined,
+    error: unknown,
+    defaultValue: T,
+    _showNotification = true,
+    throwOnCancel = false,
+  ): T {
+    // Source-analysis failures are published separately as file diagnostics.
+    // Keep feature-request failures in the output channel instead of showing a
+    // popup for every hover, inlay, token, or completion request VS Code retries.
+    return super.handleFailedRequest(
+      type,
+      token,
+      error,
+      defaultValue,
+      false,
+      throwOnCancel,
+    );
+  }
+}
+
+type ProjectStatusResult = {
+  selected: {
+    kind: "headed" | "detached";
+    headPath: string;
+    moduleCount: number;
+    recovered: boolean;
+  } | null;
+  activeHeads: {
+    kind: "headed" | "detached";
+    headPath: string;
+    moduleCount: number;
+    containsDocument: boolean;
+  }[];
+};
+
 export async function activate(context: ExtensionContext) {
-  const outputChannel = window.createOutputChannel("Workman Language Server");
+  const outputChannel = window.createOutputChannel("Workman Language Server", {
+    log: true,
+  });
   context.subscriptions.push(outputChannel);
+
+  // Displays which project head owns the active file, so head selection and
+  // stability (one `main` head plus its reachable graph) are observable in real use.
+  const projectStatusItems = [createProjectStatusItem(90)];
+  context.subscriptions.push(...projectStatusItems);
+
+  const updateProjectStatus = async (editor: TextEditor | undefined) => {
+    if (
+      !editor || editor.document.languageId !== "wm" || !client ||
+      !client.isRunning()
+    ) {
+      projectStatusItems.forEach((item) => item.hide());
+      return;
+    }
+    try {
+      const status = await client.sendRequest<ProjectStatusResult>(
+        "workman/projectStatus",
+        { textDocument: { uri: editor.document.uri.toString() } },
+      );
+      renderProjectStatus(projectStatusItems, status, context);
+    } catch {
+      projectStatusItems.forEach((item) => item.hide());
+    }
+  };
+  context.subscriptions.push(
+    window.onDidChangeActiveTextEditor((editor) =>
+      void updateProjectStatus(editor)
+    ),
+  );
 
   const start = async () => {
     const server = resolveServer(context);
@@ -32,54 +111,59 @@ export async function activate(context: ExtensionContext) {
 
     const denoPath =
       workspace.getConfiguration("workman").get<string>("denoPath") || "deno";
-    const frontendMode =
-      workspace.getConfiguration("workman").get<string>("frontendMode") || "v1";
     const frontendV2ModulePath = workspace.getConfiguration("workman").get<
       string
     >(
       "frontendV2ModulePath",
     )?.trim();
-    const serverEnvironment = { ...process.env, WORKMAN_DENO_PATH: denoPath };
-    outputChannel.appendLine(`Starting Workman language server: ${server.path}`);
-    const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const serverOptions: ServerOptions = {
-      run: server.kind === "source"
-        ? denoServerConfig(
-          denoPath,
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        )
-        : compiledServerConfig(
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        ),
-      debug: server.kind === "source"
-        ? denoServerConfig(
-          denoPath,
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        )
-        : compiledServerConfig(
-          server.path,
-          frontendMode,
-          frontendV2ModulePath,
-          TransportKind.stdio,
-          serverEnvironment,
-          workspaceFolder,
-        ),
+    const structuralInlays = workspace.getConfiguration("workman").get<boolean>(
+      "structuralInlayHints.enabled",
+      true,
+    );
+    const serverEnvironment = {
+      ...process.env,
+      WORKMAN_DENO_PATH: denoPath,
+      WORKMAN_STRUCTURAL_INLAYS: String(structuralInlays),
     };
+    outputChannel.appendLine(
+      `Starting Workman language server: ${server.path}`,
+    );
+    const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const serverOptions: ServerOptions = server.kind === "source"
+      ? {
+        run: denoServerConfig(
+          denoPath,
+          server.path,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+        debug: denoServerConfig(
+          denoPath,
+          server.path,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+      }
+      : {
+        run: nodeServerConfig(
+          server.path,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+        debug: nodeServerConfig(
+          server.path,
+          frontendV2ModulePath,
+          TransportKind.stdio,
+          serverEnvironment,
+          workspaceFolder,
+        ),
+      };
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "wm" }],
       synchronize: {
@@ -91,6 +175,8 @@ export async function activate(context: ExtensionContext) {
             `[workman-client] diagnostics uri=${uri.toString()} count=${diagnostics.length}`,
           );
           next(uri, diagnostics);
+          // Revalidation may have changed which project owns the active file.
+          void updateProjectStatus(window.activeTextEditor);
         },
         provideHover: async (document, position, token, next) => {
           const hover = await next(document, position, token);
@@ -107,7 +193,7 @@ export async function activate(context: ExtensionContext) {
       traceOutputChannel: outputChannel,
     };
 
-    client = new LanguageClient(
+    client = new WorkmanLanguageClient(
       "workman",
       "Workman",
       serverOptions,
@@ -116,6 +202,7 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(client);
     await client.start();
     await client.setTrace(traceSetting());
+    void updateProjectStatus(window.activeTextEditor);
   };
 
   context.subscriptions.push(
@@ -136,7 +223,7 @@ export async function deactivate(): Promise<void> {
   await client?.stop();
 }
 
-type Server = { kind: "source" | "compiled"; path: string };
+type Server = { kind: "source" | "node"; path: string };
 
 function resolveServer(context: ExtensionContext): Server | undefined {
   const configured = workspace.getConfiguration("workman").get<string>(
@@ -159,18 +246,77 @@ function resolveServer(context: ExtensionContext): Server | undefined {
   );
   if (source) return { kind: "source", path: source };
 
-  const compiled = path.join(
+  const bundled = path.join(
     context.extensionPath,
-    "bin",
-    compiledServerName(),
+    "server",
+    "workman-lsp.mjs",
   );
-  return fs.existsSync(compiled) ? { kind: "compiled", path: compiled } : undefined;
+  return fs.existsSync(bundled) ? { kind: "node", path: bundled } : undefined;
 }
 
-function compiledServerName(): string {
-  const target = `${process.platform}-${process.arch}`;
-  const extension = process.platform === "win32" ? ".exe" : "";
-  return `workman-lsp-${target}${extension}`;
+function createProjectStatusItem(priority: number) {
+  const item = window.createStatusBarItem(StatusBarAlignment.Left, priority);
+  item.name = "Workman Project";
+  return item;
+}
+
+function renderProjectStatus(
+  items: ReturnType<typeof window.createStatusBarItem>[],
+  status: ProjectStatusResult,
+  context: ExtensionContext,
+): void {
+  const selected = status.selected;
+  if (!selected) {
+    items.forEach((item) => item.hide());
+    return;
+  }
+  const heads = [
+    { ...selected, containsDocument: true },
+    ...status.activeHeads.filter((head) => head.headPath !== selected.headPath),
+  ];
+  while (items.length < heads.length) {
+    const item = createProjectStatusItem(90 - items.length);
+    items.push(item);
+    context.subscriptions.push(item);
+  }
+
+  heads.forEach((head, index) => {
+    const item = items[index];
+    const displayPath = projectDisplayPath(head.headPath);
+    item.text = head.kind === "headed"
+      ? `${index === 0 ? "$(symbol-structure) WM: " : ""}${displayPath}` +
+        `${index === 0 && selected.recovered ? " ⚠" : ""}`
+      : `${index === 0 ? "$(symbol-structure) WM: " : ""}detached`;
+    const tooltip = new MarkdownString();
+    tooltip.appendMarkdown(
+      head.kind === "headed"
+        ? `**Project head:** \`${displayPath}\`\n\n${head.moduleCount} module(s)`
+        : `**Detached document:** \`${displayPath}\` (no \`main\` head selects this file)`,
+    );
+    if (index === 0 && selected.recovered) {
+      tooltip.appendMarkdown(
+        "\n\n⚠ strict analysis failed; showing recovered facts",
+      );
+    }
+    if (head.containsDocument && index > 0) {
+      tooltip.appendMarkdown("\n\nAlso contains the active file");
+    }
+    item.tooltip = tooltip;
+    item.command = {
+      command: "vscode.open",
+      title: "Open Workman project head",
+      arguments: [Uri.file(head.headPath)],
+    };
+    item.show();
+  });
+  items.slice(heads.length).forEach((item) => item.hide());
+}
+
+function projectDisplayPath(headPath: string): string {
+  const folder = workspace.getWorkspaceFolder(Uri.file(headPath));
+  return folder
+    ? path.relative(folder.uri.fsPath, headPath) || path.basename(headPath)
+    : headPath;
 }
 
 function traceSetting(): Trace {

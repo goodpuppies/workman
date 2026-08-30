@@ -1,5 +1,6 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { prune, type Ty } from "../../types.ts";
 import type { FfiElaboration } from "../shared.ts";
 import { fn, memberVariants, name, nameArgs, tvar } from "../shared.ts";
@@ -160,7 +161,9 @@ export function promiseCallbackResultType(
   result: InferResult,
 ): Ty | undefined {
   if (!arg) return undefined;
-  if (arg.kind === "Lambda") return inferredType(result, arg.body);
+  if (arg.kind === "Lambda") {
+    return hostFfiDescendsInto(arg) ? inferredType(result, arg.body) : undefined;
+  }
   const type = inferredType(result, arg);
   const target = type ? prune(type) : undefined;
   return target?.tag === "fn" && target.params.length === 1 ? target.result : undefined;

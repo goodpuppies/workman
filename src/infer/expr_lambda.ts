@@ -1,48 +1,74 @@
-import type { Expr, Param } from "../ast.ts";
-import { diagnosticError, type FrontendDiagnostic } from "../diagnostics.ts";
+import type { Expr } from "../ast.ts";
+import { diagnosticError } from "../diagnostics.ts";
+import { isGpuLambda } from "../directives.ts";
 import {
-  BoolTy,
-  type Env,
+  addGpuConstraint,
   fn,
-  fresh,
-  NumberTy,
   prune,
   quoteType,
-  StringTy,
+  substituteTypeVars,
   tuple,
   type Ty,
-  type TypeDeclInfo,
-  type TypeEnv,
   typeFromAst,
+  typeInfoById,
   type TypeVarScope,
+  unify,
 } from "../types.ts";
 import { inferExpr } from "./expr.ts";
+import { deriveInferContext, type InferContext, type TypingDialect } from "./context.ts";
+import { gpuTypingDialect } from "./gpu_dialect.ts";
 import { inferParam } from "./expr_flow.ts";
-import { ffiCallbackParamHints } from "./expr_js_members.ts";
-import { inferPattern, patternBinders } from "./patterns.ts";
-import { constrainAt, type TypeProvenance } from "./provenance.ts";
+import { patternBinders } from "./patterns.ts";
+import { constrainAt } from "./provenance.ts";
 import { callArg } from "./shared.ts";
-import { type TypeFacts } from "./type_facts.ts";
+import {
+  recordExpectedExprType,
+  recordTypeExpressionFact,
+  recordTypeReferenceFact,
+  recordTypeVariableFact,
+  type TypeFacts,
+} from "./type_facts.ts";
 
 export function inferLambdaTy(
   expr: Extract<Expr, { kind: "Lambda" }>,
-  env: Env,
-  typeEnv: TypeEnv,
-  adts: Map<number, TypeDeclInfo>,
-  types: Map<Expr, Ty>,
-  facts: TypeFacts,
-  warnings: string[],
-  diagnostics: FrontendDiagnostic[],
-  provenance: TypeProvenance,
+  context: InferContext,
   paramHints?: Ty[],
 ): Ty {
+  const { env, typeEnv, strEnv, adts, types, facts, provenance } = context;
   const local = new Map(env);
   const annotationVars: TypeVarScope = new Map();
   const binders = new Set<string>();
   const annotations = expr.params.map((param) =>
-    param.annotation ? typeFromAst(param.annotation, typeEnv, annotationVars) : undefined
+    param.annotation
+      ? typeFromAst(param.annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, expr.node),
+      })
+      : undefined
   );
-  const params = expr.params.map((p) => inferParam(p, local, typeEnv, adts, binders, facts));
+  const returnAnnotations = [
+    expr.returnAnnotation,
+    expr.trailingReturnAnnotation,
+  ].filter((annotation): annotation is NonNullable<typeof annotation> => !!annotation)
+    .map((annotation) => ({
+      ast: annotation,
+      type: typeFromAst(annotation, typeEnv, annotationVars, {
+        strEnv,
+        onResolveName: (expression, resolved, qualifier) =>
+          recordTypeReferenceFact(facts, expression, resolved, qualifier),
+        onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
+        onResolveVariable: (expression, type) =>
+          recordTypeVariableFact(facts, expression, type, expr.node),
+      }),
+    }));
+  const dialect = lambdaTypingDialect(expr, context.dialect);
+  const params = expr.params.map((p) =>
+    inferParam(p, local, typeEnv, strEnv, adts, binders, facts, provenance)
+  );
   paramHints?.forEach((hint, index) => {
     if (index < params.length) {
       constrainAt(params[index], hint, expr.params[index], undefined, [], provenance, {
@@ -60,16 +86,40 @@ export function inferLambdaTy(
       });
     }
   });
+  // Nominal record annotations are ordinary static type constraints. Make that identity
+  // available while checking the body so a projection resolves to the annotated record field,
+  // rather than degrading to an ownerless structural row. This is deliberately narrower than
+  // using annotations as evidence for JS reflection or GPU overload selection.
+  annotations.forEach((annotated, index) => {
+    if (!annotated) return;
+    const target = prune(annotated);
+    if (
+      dialect.domain !== "gpu" && target?.tag === "named" &&
+      typeInfoById(typeEnv, target.id)?.recordFields
+    ) {
+      constrainAt(params[index], annotated, expr.params[index], undefined, [], provenance, {
+        message: "nominal record parameter annotation",
+        node: expr.params[index].node,
+        span: expr.params[index].node?.span,
+      }, {
+        premise: {
+          rule: "InferAnnotation.NominalRecordParameter",
+          role: "record parameter matches its annotation",
+          subject: "parameter annotation",
+          leftRole: "parameter",
+          rightRole: "annotation",
+        },
+      });
+    }
+  });
+  const expectedBody = returnAnnotations.at(-1)?.type;
+  if (expectedBody) recordExpectedExprType(facts, expr.body, expectedBody);
   const body = inferExpr(
     expr.body,
-    local,
-    typeEnv,
-    adts,
-    types,
-    facts,
-    warnings,
-    diagnostics,
-    provenance,
+    deriveInferContext(context, {
+      env: local,
+      dialect,
+    }),
   );
   const signatureParams = [...params];
   expr.params.forEach((param, index) => {
@@ -90,8 +140,14 @@ export function inferLambdaTy(
         param.node,
       );
     }
+    // GPU annotations are verification only. Check a fresh copy so an annotation can
+    // reject an inferred shader type, but cannot bind a pending GPU shape, select an
+    // overload, or otherwise make an annotation-erased shader fail.
+    const checkedParam = dialect.domain === "gpu"
+      ? substituteTypeVars(params[index], new Map())
+      : params[index];
     constrainAt(
-      params[index],
+      checkedParam,
       annotated,
       param,
       () => `type mismatch ${quoteType(annotated)}, got ${quoteType(params[index])}`,
@@ -112,18 +168,71 @@ export function inferLambdaTy(
         },
       },
     );
-    signatureParams[index] = annotated;
+    if (dialect.domain === "gpu") deferGpuAnnotationCheck(params[index], annotated);
+    if (dialect.domain !== "gpu") signatureParams[index] = annotated;
   });
   const replacements = new Map<number, Ty>();
   params.forEach((param, index) => {
     collectParamReplacements(param, signatureParams[index], replacements);
   });
+  let signatureBody = replaceParamOccurrences(body, replacements);
+  for (const annotation of returnAnnotations) {
+    constrainAt(
+      body,
+      annotation.type,
+      expr,
+      () => `type mismatch ${quoteType(annotation.type)}, got ${quoteType(body)}`,
+      [],
+      provenance,
+      {
+        message: "return annotation",
+        node: annotation.ast.node,
+        span: annotation.ast.node?.span,
+      },
+      {
+        premise: {
+          rule: "InferAnnotation.ReturnMatchesAnnotation",
+          role: "lambda body matches return annotation",
+          subject: "return annotation",
+          leftRole: "body",
+          rightRole: "annotation",
+        },
+      },
+    );
+    if (dialect.domain !== "gpu") {
+      signatureBody = replaceParamOccurrences(annotation.type, replacements);
+    }
+  }
   const t = fn(
     [callArg(signatureParams)],
-    replaceParamOccurrences(body, replacements),
+    signatureBody,
   );
   types.set(expr, t);
   return t;
+}
+
+function deferGpuAnnotationCheck(inferred: Ty, annotated: Ty): void {
+  const target = prune(inferred);
+  const expected = prune(annotated);
+  if (target.tag === "var") {
+    addGpuConstraint(target, (bound) => {
+      unify(substituteTypeVars(bound, new Map()), substituteTypeVars(expected, new Map()));
+    });
+    return;
+  }
+  if (
+    target.tag === "tuple" && expected.tag === "tuple" &&
+    target.items.length === expected.items.length
+  ) {
+    target.items.forEach((item, index) => deferGpuAnnotationCheck(item, expected.items[index]));
+  }
+}
+
+export function lambdaTypingDialect(
+  lambda: Extract<Expr, { kind: "Lambda" }>,
+  parent: TypingDialect,
+): TypingDialect {
+  return isGpuLambda(lambda) ? gpuTypingDialect : parent;
 }
 
 function ffiReceiverObligationForParam(

@@ -1,3 +1,10 @@
 *.dll
+*.so
+*.so.*
 node_modules/
 research/
+tooling/frontend-v2/frontend-v2.generated.mjs
+tooling/wmslang/wmslang.generated.mjs
+profiles/
+benchmarks/
+*.wm-mini*

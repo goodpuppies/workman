@@ -1,0 +1,24 @@
+from "./generated/surface_types.wm" import { SurfaceProgram };
+from "./compiled_probe_runtime.wm" import { CompiledParseFailure };
+from "./surface_parser_frontend.wm" import {
+  parseSurfaceProgram as parseSurfaceProgramInternal,
+  parseSurfaceFailure as parseSurfaceFailureInternal,
+  formatSurfaceSource as formatSurfaceSourceInternal,
+  formatSurfaceSourceFix as formatSurfaceSourceFixInternal
+};
+
+let parseSurfaceProgram = (source: String): Option<SurfaceProgram> => {
+  parseSurfaceProgramInternal(source)
+};
+
+let parseSurfaceFailure = (source: String): Option<CompiledParseFailure> => {
+  parseSurfaceFailureInternal(source)
+};
+
+let formatSurfaceSource = (source: String): Option<String> => {
+  formatSurfaceSourceInternal(source)
+};
+
+let formatSurfaceSourceFix = (source: String): Option<String> => {
+  formatSurfaceSourceFixInternal(source)
+};

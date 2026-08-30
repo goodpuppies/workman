@@ -1,11 +1,6 @@
-import {
-  contextualizeDelayedCallbacks,
-  resolveDelayedFfiElaboration,
-} from "../src/ffi/delayed/delayed.ts";
-import { prepareFfiElaboration } from "../src/ffi/elab.ts";
-import { inferModule, inferModulePartial, type InferResult } from "../src/infer.ts";
+import { buildProgramAnalysis } from "../src/program_analysis.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
-import { standardInferOptions } from "../src/standard_library.ts";
+import { analyzeModuleGraph } from "../src/staged_analysis.ts";
 import { show } from "../src/types.ts";
 
 type Options = {
@@ -46,69 +41,14 @@ async function profileTypecheck(
   const totalStart = performance.now();
 
   const graph = await timed(phases, "load module graph", () => loadModuleGraph(input));
-  const inferOptions = await timed(phases, "load standard library", () => standardInferOptions());
-
-  const ffi = new Map<string, ReturnType<typeof prepareFfiElaboration>>();
-  await timed(phases, "prepare FFI elaboration", () => {
-    for (const node of graph.nodes.values()) {
-      const prepared = prepareFfiElaboration(node.module);
-      ffi.set(node.path, prepared);
-      node.module = prepared.module;
-    }
+  const stageTotals = new Map<string, number>();
+  const results = await analyzeModuleGraph(graph, {
+    onTiming: ({ phase, milliseconds }) => {
+      stageTotals.set(phase, (stageTotals.get(phase) ?? 0) + milliseconds);
+    },
   });
-
-  const firstResults = new Map<string, InferResult>();
-  await timed(phases, "partial inference", () => {
-    for (const path of graph.order) {
-      const node = graph.nodes.get(path)!;
-      firstResults.set(
-        path,
-        inferModulePartial(node.module, importsFor(node.imports, firstResults), inferOptions),
-      );
-    }
-  });
-
-  await timed(phases, "contextualize delayed callbacks", () => {
-    for (const path of graph.order) {
-      const contextual = contextualizeDelayedCallbacks(ffi.get(path)!, firstResults.get(path)!);
-      ffi.set(path, contextual);
-      graph.nodes.get(path)!.module = contextual.module;
-    }
-  });
-
-  const contextualResults = new Map<string, InferResult>();
-  await timed(phases, "contextual inference", () => {
-    for (const path of graph.order) {
-      const node = graph.nodes.get(path)!;
-      contextualResults.set(
-        path,
-        inferModulePartial(node.module, importsFor(node.imports, contextualResults), inferOptions),
-      );
-    }
-  });
-
-  const foreignTypeRefs = new Map(
-    [...ffi.values()].flatMap((item) =>
-      [...item.foreignTypeRefs.values()].map((ref) => [ref.key, ref] as const)
-    ),
-  );
-  await timed(phases, "resolve delayed FFI", () => {
-    for (const path of graph.order) {
-      const node = graph.nodes.get(path)!;
-      const resolved = resolveDelayedFfiElaboration(ffi.get(path)!, contextualResults.get(path)!, {
-        foreignTypeRefs,
-      });
-      node.module = resolved.module;
-    }
-  });
-
-  const results = new Map<string, InferResult>();
-  await timed(phases, "final inference", () => {
-    for (const path of graph.order) {
-      const node = graph.nodes.get(path)!;
-      results.set(path, inferModule(node.module, importsFor(node.imports, results), inferOptions));
-    }
-  });
+  for (const [name, ms] of stageTotals) phases.push({ name, ms });
+  await timed(phases, "build program analysis", () => buildProgramAnalysis(graph, results));
 
   if (summaryBinding) {
     const entry = results.get(graph.entry);
@@ -122,15 +62,6 @@ async function profileTypecheck(
     totalMs: performance.now() - totalStart,
     phases,
   };
-}
-
-function importsFor(
-  imports: { specifier: string; path: string }[],
-  results: Map<string, InferResult>,
-): Map<string, InferResult> {
-  const out = new Map<string, InferResult>();
-  for (const edge of imports) out.set(edge.specifier, results.get(edge.path)!);
-  return out;
 }
 
 async function timed<T>(

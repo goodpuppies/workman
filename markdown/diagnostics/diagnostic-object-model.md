@@ -2,7 +2,9 @@
 
 This document defines the data model for auditable diagnostics in `wm-mini`.
 
-For one fully worked example, see `markdown/diagnostics/diagnostic-single-error-example.md`.
+For one fully worked example, see `markdown/diagnostics/diagnostic-single-error-example.md`. For the
+deferred proposal to make diagnostic support a slice of a shared program-level semantic graph, see
+[`program-evidence-graph-unification.md`](../program-evidence-graph-unification.md).
 
 Core thesis:
 

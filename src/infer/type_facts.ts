@@ -1,11 +1,86 @@
-import type { Expr, Pattern } from "../ast.ts";
-import { prune, type Scheme, type Ty } from "../types.ts";
+import type {
+  Decl,
+  Expr,
+  JsImportSpec,
+  Pattern,
+  RecordExprField,
+  RecordPatternField,
+  TypeExpr,
+} from "../ast.ts";
+import { isQualified, parseLongId } from "../ast.ts";
+import type { AstNode } from "../source.ts";
+import { basisStructureId, type CompilerSemanticId } from "../compiler_semantics.ts";
+import type { StructureSemanticId, ValueId } from "../ids.ts";
+import type { GpuOperatorId, OperatorExpr } from "../gpu_operators.ts";
+import { prune, type Scheme, type Ty, type TypeInfo } from "../types.ts";
+import type { StaticEnv } from "./environment.ts";
 
 export type TypeFacts = {
   expressions: Map<Expr, TypeFact>;
+  expectedExpressions: Map<Expr, Ty>;
+  namespaceValues: Map<Expr, string>;
   patterns: Map<Pattern, TypeFact>;
+  patternTypes: Map<Pattern, Ty>;
+  operators: Map<OperatorExpr, GpuOperatorId>;
+  gpuBuiltins: Map<Extract<Expr, { kind: "Call" }>, string>;
+  gpuResourceCalls: Map<Extract<Expr, { kind: "Call" }>, GpuResourceCallFact>;
+  gpuOperations: Map<Expr, GpuOperationObligation>;
+  primitiveCarriers: Map<Expr, PrimitiveCarrierPlan>;
   bindings: Map<string, TypeFact[]>;
+  typeDeclarations: Map<
+    Extract<Decl, { kind: "TypeDecl" | "RecordDecl" | "ForeignTypeDecl" }>,
+    TypeInfo
+  >;
+  typeReferences: Map<Extract<TypeExpr, { kind: "TName" }>, TypeReferenceFact>;
+  typeExpressions: Map<TypeExpr, Ty>;
+  typeVariables: Map<TypeExpr, TypeVariableFact>;
+  typeVariableDeclarations: TypeVariableDeclarationFact[];
+  structureImports: Map<Extract<Decl, { kind: "ImportDecl" }>, StaticEnv>;
+  jsImportSchemes: Map<Extract<Decl, { kind: "JsImportDecl" }> | JsImportSpec, Scheme>;
+  recordFields: Map<RecordExprField | RecordPatternField, RecordFieldFact>;
+  recordProjections: Map<Extract<Expr, { kind: "Var" }>, RecordProjectionFact[]>;
   ffi: Map<number, FfiFact>;
+  recoveryHoles: RecoveryHoleFact[];
+};
+
+export type RecoveryHoleFact = {
+  id: number;
+  expression: Expr;
+  anchor: number;
+  expected: Ty;
+  diagnosticCode: string;
+};
+
+export type GpuOperationShape = "f32" | "f32x2" | "f32x3" | "f32x4";
+
+export type GpuResourceCallFact = {
+  operation: "sample" | "load";
+  receiverName: string;
+  receiverType: Ty;
+};
+
+export type GpuOperationRow = {
+  id: number;
+  args: GpuOperationShape[];
+  result: GpuOperationShape;
+};
+
+export type GpuOperationObligation = {
+  kind: "builtin" | "operator" | "projection";
+  identity: string;
+  occurrence: Expr;
+  args: Ty[];
+  result: Ty;
+  rows: GpuOperationRow[];
+  determiningArgs: number[];
+};
+
+export type PrimitiveCarrierPlan = {
+  carrier: string;
+  occurrence: Expr;
+  error: Ty;
+  operands: ("wrapped" | "pure")[];
+  payloadResult: Ty;
 };
 
 export type TypeFact = {
@@ -14,6 +89,36 @@ export type TypeFact = {
   subject: TypeFactSubject;
   origin?: TypeFactOrigin;
   notes?: TypeFactNote[];
+};
+
+export type RecordProjectionFact = {
+  name: string;
+  partIndex: number;
+  record: TypeInfo;
+  type: Ty;
+};
+
+export type RecordFieldFact = {
+  record: TypeInfo;
+  type: Ty;
+};
+
+export type TypeReferenceFact = {
+  info: TypeInfo;
+  qualifier?: Readonly<{ name: string; environment: StaticEnv }>;
+};
+
+export type TypeVariableFact = {
+  type: Ty;
+  region: AstNode;
+};
+
+export type TypeVariableDeclarationFact = {
+  name: string;
+  type: Ty;
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>;
+  parameterIndex: number;
+  region: AstNode;
 };
 
 export type TypeFactSubject =
@@ -28,6 +133,9 @@ export type TypeFactSubject =
 export type TypeFactOrigin = {
   name?: string;
   source: "local" | "import" | "basis" | "js-import" | "reflected-ffi" | "synthetic";
+  semanticId?: CompilerSemanticId;
+  valueId?: ValueId;
+  structureId?: StructureSemanticId;
 };
 
 export type TypeFactNote = {
@@ -58,10 +166,143 @@ export type FfiConsumedUse = {
 export function createTypeFacts(): TypeFacts {
   return {
     expressions: new Map(),
+    expectedExpressions: new Map(),
+    namespaceValues: new Map(),
     patterns: new Map(),
+    patternTypes: new Map(),
+    operators: new Map(),
+    gpuBuiltins: new Map(),
+    gpuResourceCalls: new Map(),
+    gpuOperations: new Map(),
+    primitiveCarriers: new Map(),
     bindings: new Map(),
+    typeDeclarations: new Map(),
+    typeReferences: new Map(),
+    typeExpressions: new Map(),
+    typeVariables: new Map(),
+    typeVariableDeclarations: [],
+    structureImports: new Map(),
+    jsImportSchemes: new Map(),
+    recordFields: new Map(),
+    recordProjections: new Map(),
     ffi: new Map(),
+    recoveryHoles: [],
   };
+}
+
+export function recordPrimitiveCarrierFact(
+  facts: TypeFacts,
+  plan: PrimitiveCarrierPlan,
+): void {
+  facts.primitiveCarriers.set(plan.occurrence, plan);
+}
+
+export function recordGpuOperationFact(
+  facts: TypeFacts,
+  obligation: GpuOperationObligation,
+): void {
+  facts.gpuOperations.set(obligation.occurrence, obligation);
+}
+
+export function recordGpuBuiltinFact(
+  facts: TypeFacts,
+  expression: Extract<Expr, { kind: "Call" }>,
+  name: string,
+): void {
+  facts.gpuBuiltins.set(expression, name);
+}
+
+export function recordGpuResourceCallFact(
+  facts: TypeFacts,
+  expression: Extract<Expr, { kind: "Call" }>,
+  fact: GpuResourceCallFact,
+): void {
+  facts.gpuResourceCalls.set(expression, fact);
+}
+
+export function recordOperatorFact(
+  facts: TypeFacts,
+  expression: OperatorExpr,
+  operatorId: GpuOperatorId,
+) {
+  facts.operators.set(expression, operatorId);
+}
+
+export function recordPatternType(facts: TypeFacts, pattern: Pattern, type: Ty) {
+  facts.patternTypes.set(pattern, type);
+}
+
+export function recordTypeDeclarationFact(
+  facts: TypeFacts,
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" | "ForeignTypeDecl" }>,
+  info: TypeInfo,
+) {
+  facts.typeDeclarations.set(declaration, info);
+}
+
+export function recordTypeReferenceFact(
+  facts: TypeFacts,
+  expression: Extract<TypeExpr, { kind: "TName" }>,
+  info: TypeInfo,
+  qualifier?: Readonly<{ name: string; environment: StaticEnv }>,
+) {
+  facts.typeReferences.set(expression, { info, qualifier });
+}
+
+export function recordTypeExpressionFact(
+  facts: TypeFacts,
+  expression: TypeExpr,
+  type: Ty,
+) {
+  facts.typeExpressions.set(expression, type);
+}
+
+export function recordTypeVariableFact(
+  facts: TypeFacts,
+  expression: TypeExpr,
+  type: Ty,
+  region: AstNode | undefined,
+) {
+  if (region) facts.typeVariables.set(expression, { type, region });
+}
+
+export function recordTypeVariableDeclarationFact(
+  facts: TypeFacts,
+  declaration: Extract<Decl, { kind: "TypeDecl" | "RecordDecl" }>,
+  parameterIndex: number,
+  name: string,
+  type: Ty,
+) {
+  if (!declaration.node) return;
+  facts.typeVariableDeclarations.push({
+    name,
+    type,
+    declaration,
+    parameterIndex,
+    region: declaration.node,
+  });
+}
+
+export function recordRecordFieldFact(
+  facts: TypeFacts,
+  field: RecordExprField | RecordPatternField,
+  record: TypeInfo,
+  type: Ty,
+) {
+  facts.recordFields.set(field, { record, type });
+}
+
+export function recordRecordProjectionFact(
+  facts: TypeFacts,
+  expression: Extract<Expr, { kind: "Var" }>,
+  fact: RecordProjectionFact,
+) {
+  const existing = facts.recordProjections.get(expression) ?? [];
+  if (
+    existing.some((item) => item.partIndex === fact.partIndex && item.record.id === fact.record.id)
+  ) return;
+  existing.push(fact);
+  facts.recordProjections.set(expression, existing);
 }
 
 export function recordExprFact(
@@ -70,6 +311,11 @@ export function recordExprFact(
   fact: Partial<TypeFact> & Pick<TypeFact, "subject">,
 ) {
   facts.expressions.set(expr, mergeFact(facts.expressions.get(expr), fact));
+}
+
+/** Record a type required by the static semantics at an expression site. */
+export function recordExpectedExprType(facts: TypeFacts, expr: Expr, type: Ty) {
+  facts.expectedExpressions.set(expr, type);
 }
 
 export function recordPatternFact(
@@ -122,8 +368,16 @@ export function recordConsumedFfiUse(
 }
 
 export function originForScheme(name: string, scheme: Scheme): TypeFactOrigin {
+  // `name` is the occurrence spelling; a qualified basis member such as
+  // `Option.map` owns its structure through the leading structure identifier.
+  const path = parseLongId(name);
   return {
     name,
+    semanticId: scheme.semanticId,
+    valueId: scheme.valueId,
+    structureId: scheme.valueId && isQualified(path)
+      ? basisStructureId(path.qualifiers[0])
+      : undefined,
     source: scheme.jsImport
       ? "js-import"
       : scheme.basis

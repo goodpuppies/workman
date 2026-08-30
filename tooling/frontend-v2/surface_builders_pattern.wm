@@ -1,0 +1,461 @@
+from "./generated/surface_types.wm" import {
+  Span, SurfaceToken, AuthoredValue, WildcardPatternNode, LiteralPatternNode,
+  VariablePatternNode, ExplicitVariablePatternNode, PinnedPatternNode,
+  ConstructorPatternNode, LongNameNode, TypedPatternNode, GroupedPatternNode,
+  TypeAnnotationNode,
+  ParameterNode, ParametersNode, LambdaExpressionNode, TuplePatternNode,
+  ListPatternNode,
+  BlockItemNode, BlockBodyNode, BlockExpressionNode,
+  ParenthesizedSequenceNode
+};
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, RuleParseValue };
+from "./surface_builder_support.wm" import {
+  collectNodes, collectTokens, firstTokenWithText, lastTokenWithText,
+  firstSyntax, firstNode, surfaceValue
+};
+from "./surface_builders_expr.wm" import { splitLastNode };
+
+let buildPatternLike = (
+  name: String,
+  value: ParseValue,
+  span: Span,
+  allowLiterals: Bool,
+) => {
+  let tokens = collectTokens(value);
+  let nodes = collectNodes(value);
+  match((
+    firstTokenWithText(tokens, "("),
+    lastTokenWithText(tokens, ")", None),
+    nodes
+  )) {
+    (
+      Some(open),
+      Some(close),
+      [pattern, TypeAnnotationNode(colon, annotation, annotationSpan)],
+    ) => {
+      NodeParseValue(
+        GroupedPatternNode(
+          surfaceValue(open),
+          TypedPatternNode(pattern, colon, annotation, span),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => {
+      match((
+        firstTokenWithText(tokens, "("),
+        firstTokenWithText(tokens, ","),
+        lastTokenWithText(tokens, ")", None),
+        nodes
+      )) {
+        (Some(open), Some(comma), Some(close), Var(items)) => {
+          NodeParseValue(
+            TuplePatternNode(
+              surfaceValue(open),
+              items,
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+        (Some(open), None, Some(close), [grouped]) => {
+          NodeParseValue(
+            GroupedPatternNode(surfaceValue(open), grouped, surfaceValue(close), span)
+          )
+        },
+        (_, _, _, Var(nodes)) => {
+          match(nodes) {
+        [LongNameNode(parts, separators, nameSpan), ..arguments] => {
+          let nameNode = LongNameNode(parts, separators, nameSpan);
+          match((
+            firstTokenWithText(tokens, "("),
+            lastTokenWithText(tokens, ")", None)
+          )) {
+            (Some(open), Some(close)) => {
+              NodeParseValue(
+                ConstructorPatternNode(
+                  nameNode,
+                  Some(
+                    TuplePatternNode(
+                      surfaceValue(open),
+                      arguments,
+                      surfaceValue(close),
+                      span,
+                    )
+                  ),
+                  span,
+                )
+              )
+            },
+            _ => {
+              match(parts) {
+                [first, ..rest] => {
+                  if (first.kind == "Constructor") {
+                    NodeParseValue(ConstructorPatternNode(nameNode, None, span))
+                  } else {
+                    NodeParseValue(PinnedPatternNode(nameNode, span))
+                  }
+                },
+                [] => { RuleParseValue(name, value, span) },
+              }
+            },
+          }
+        },
+        [node] => { NodeParseValue(node) },
+        [] => {
+          match(firstTokenWithText(tokens, "Var")) {
+            Some(varToken) => {
+              match((
+                firstTokenWithText(tokens, "("),
+                tokens
+                  :> List.filter((token: SurfaceToken) => {
+                    token.kind == "Identifier" || token.kind == "Name"
+                  }),
+                lastTokenWithText(tokens, ")", None)
+              )) {
+                (Some(open), [variable], Some(close)) => {
+                  NodeParseValue(
+                    ExplicitVariablePatternNode(
+                      varToken,
+                      surfaceValue(open),
+                      variable,
+                      surfaceValue(close),
+                      span,
+                    )
+                  )
+                },
+                _ => { RuleParseValue(name, value, span) },
+              }
+            },
+            None => {
+              match(firstSyntax(value)) {
+                Some(TokenParseValue(token)) => {
+                  if (token.text == "_") {
+                    NodeParseValue(WildcardPatternNode(token, span))
+                  } else {
+                    if (
+                      allowLiterals && (
+                        token.text == "void" || token.text == "true" ||
+                        token.text == "false" || token.kind == "Int" ||
+                        token.kind == "String"
+                      )
+                    ) {
+                      NodeParseValue(LiteralPatternNode(token, span))
+                    } else {
+                      NodeParseValue(VariablePatternNode(token, span))
+                    }
+                  }
+                },
+                _ => { RuleParseValue(name, value, span) },
+              }
+            },
+          }
+        },
+        _ => { RuleParseValue(name, value, span) },
+          }
+        },
+      }
+    },
+  }
+};
+
+let buildLetPattern = (value: ParseValue, span: Span) => {
+  buildPatternLike("LetPattern", value, span, true)
+};
+
+let buildParamPattern = (value: ParseValue, span: Span) => {
+  buildPatternLike("ParamPattern", value, span, false)
+};
+
+let buildParam = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(pattern),
+      OptionalParseValue(annotationValue),
+    ]) => {
+      let annotation = match(annotationValue) {
+        Some(NodeParseValue(node)) => { Some(node) },
+        _ => { None },
+      };
+      NodeParseValue(ParameterNode(pattern, annotation, span))
+    },
+    _ => { RuleParseValue("Param", value, span) },
+  }
+};
+
+let buildParamList = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((firstTokenWithText(tokens, "("), lastTokenWithText(tokens, ")", None))) {
+    (Some(open), Some(close)) => {
+      NodeParseValue(
+        ParametersNode(
+          surfaceValue(open),
+          collectNodes(value),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("ParamList", value, span) },
+  }
+};
+
+let optionalNodeFromValue = match(value) => {
+  Some(NodeParseValue(node)) => { Some(node) },
+  _ => { None },
+};
+
+let validatedOptionalNode = match(value) => {
+  None => { Some(None) },
+  Some(NodeParseValue(node)) => { Some(Some(node)) },
+  Some(other) => { None },
+};
+
+let buildLambda = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(index, SequenceParseValue([
+      NodeParseValue(parameters),
+      OptionalParseValue(returnValue),
+      EmptyParseValue,
+      TokenParseValue(arrow),
+      EmptyParseValue,
+      NodeParseValue(body),
+      OptionalParseValue(trailingValue),
+    ])) => {
+      NodeParseValue(
+        LambdaExpressionNode(
+          Some(parameters),
+          optionalNodeFromValue(returnValue),
+          surfaceValue(arrow),
+          body,
+          optionalNodeFromValue(trailingValue),
+          span,
+        )
+      )
+    },
+    ChoiceParseValue(index, SequenceParseValue([
+      OptionalParseValue(returnValue),
+      EmptyParseValue,
+      TokenParseValue(arrow),
+      EmptyParseValue,
+      NodeParseValue(body),
+      OptionalParseValue(trailingValue),
+    ])) => {
+      NodeParseValue(
+        LambdaExpressionNode(
+          None,
+          optionalNodeFromValue(returnValue),
+          surfaceValue(arrow),
+          body,
+          optionalNodeFromValue(trailingValue),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("Lambda", value, span) },
+  }
+};
+
+let buildPatternAtom = (name: String, value: ParseValue, span: Span) => {
+  buildPatternLike(name, value, span, true)
+};
+
+let buildPattern = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(pattern),
+      OptionalParseValue(annotationValue),
+    ]) => {
+      match(annotationValue) {
+        Some(annotationParseValue) => {
+          match(firstNode(annotationParseValue)) {
+            Some(TypeAnnotationNode(colon, annotation, annotationSpan)) => {
+              NodeParseValue(
+                TypedPatternNode(pattern, colon, annotation, span)
+              )
+            },
+            _ => { RuleParseValue("Pattern", value, span) },
+          }
+        },
+        None => { NodeParseValue(pattern) },
+      }
+    },
+    _ => { RuleParseValue("Pattern", value, span) },
+  }
+};
+
+let buildListPattern = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  let nodes = collectNodes(value);
+  match((
+    firstTokenWithText(tokens, "["),
+    lastTokenWithText(tokens, "]", None)
+  )) {
+    (Some(open), Some(close)) => {
+      match(firstTokenWithText(tokens, "..")) {
+        Some(spread) => {
+          match(splitLastNode(nodes, [])) {
+            Some((Var(items), Var(tail))) => {
+              NodeParseValue(
+                ListPatternNode(
+                  surfaceValue(open),
+                  items,
+                  Some(tail),
+                  surfaceValue(close),
+                  span,
+                )
+              )
+            },
+            None => { RuleParseValue("ListPattern", value, span) },
+          }
+        },
+        None => {
+          NodeParseValue(
+            ListPatternNode(
+              surfaceValue(open),
+              nodes,
+              None,
+              surfaceValue(close),
+              span,
+            )
+          )
+        },
+      }
+    },
+    _ => { RuleParseValue("ListPattern", value, span) },
+  }
+};
+
+let buildBlockSeqItem = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(index, SequenceParseValue([
+      NodeParseValue(item),
+      EmptyParseValue,
+      TokenParseValue(terminator),
+      EmptyParseValue,
+    ])) => {
+      NodeParseValue(BlockItemNode(item, surfaceValue(terminator), span))
+    },
+    _ => { RuleParseValue("BlockSeqItem", value, span) },
+  }
+};
+
+let buildBlockSeqBody = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      RepeatedParseValue(entries),
+      OptionalParseValue(resultValue),
+    ]) => {
+      match(validatedOptionalNode(resultValue)) {
+        Some(result) => {
+          NodeParseValue(
+            BlockBodyNode(
+              collectNodes(RepeatedParseValue(entries)),
+              result,
+              span,
+            )
+          )
+        },
+        None => { RuleParseValue("BlockSeqBody", value, span) },
+      }
+    },
+    _ => { RuleParseValue("BlockSeqBody", value, span) },
+  }
+};
+
+let buildParenSeqItem = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(item),
+      EmptyParseValue,
+      TokenParseValue(terminator),
+      EmptyParseValue,
+    ]) => {
+      NodeParseValue(BlockItemNode(item, surfaceValue(terminator), span))
+    },
+    _ => { RuleParseValue("ParenSeqItem", value, span) },
+  }
+};
+
+let buildParenSeqBody = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      RepeatedParseValue(entries),
+      OptionalParseValue(resultValue),
+    ]) => {
+      match(validatedOptionalNode(resultValue)) {
+        Some(result) => {
+          NodeParseValue(
+            BlockBodyNode(
+              collectNodes(RepeatedParseValue(entries)),
+              result,
+              span,
+            )
+          )
+        },
+        None => { RuleParseValue("ParenSeqBody", value, span) },
+      }
+    },
+    _ => { RuleParseValue("ParenSeqBody", value, span) },
+  }
+};
+
+let buildParenSeq = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "("),
+    firstNode(value),
+    lastTokenWithText(tokens, ")", None)
+  )) {
+    (
+      Some(open),
+      Some(BlockBodyNode(items, result, bodySpan)),
+      Some(close)
+    ) => {
+      NodeParseValue(
+        ParenthesizedSequenceNode(
+          surfaceValue(open),
+          items,
+          result,
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("ParenSeq", value, span) },
+  }
+};
+
+let rec appendSurfaceNodes = match(front, back) => {
+  ([], Var(back)) => { back },
+  ([head, ..rest], Var(back)) => {
+    [head, ..appendSurfaceNodes(rest, back)]
+  },
+};
+
+let buildBlockLike = (name: String, value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((
+    firstTokenWithText(tokens, "{"),
+    splitLastNode(collectNodes(value), []),
+    lastTokenWithText(tokens, "}", None)
+  )) {
+    (
+      Some(open),
+      Some((Var(directives), BlockBodyNode(items, result, bodySpan))),
+      Some(close)
+    ) => {
+      NodeParseValue(
+        BlockExpressionNode(
+          surfaceValue(open),
+          appendSurfaceNodes(directives, items),
+          result,
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue(name, value, span) },
+  }
+};

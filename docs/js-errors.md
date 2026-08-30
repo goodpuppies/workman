@@ -41,7 +41,7 @@ value before wrapping:
 
 ```wm
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
+  parse: String -> Js.Object,
 } as JSON;
 
 let parsed = JSON.parse("{}");
@@ -89,7 +89,7 @@ readable message.
 
 ```wm
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
+  parse: String -> Js.Object,
 } as JSON;
 
 let parseConfig = (text) => {
@@ -153,6 +153,16 @@ readTextFile(path)
   })
 ```
 
+Use `Task.orElse` when recovery itself is asynchronous or should preserve failure:
+
+```wm
+readTextFile(path)
+  :> Task.orElse((error) => {
+    logFailure(error)
+      :> Task.andThen((_) => { Task.fail(error) })
+  })
+```
+
 The FFI guarantee covers throws and rejections from the safe JavaScript operation.
 Do not use `Panic` inside Task callbacks as an error mechanism; a Workman invariant
 failure is not application-level `Js.Error` handling.
@@ -166,7 +176,7 @@ string or `_`.
 ```wm
 from js.global("Deno") import { readTextFile };
 from js.global("JSON") import {
-  parse: (String) => Js.Object,
+  parse: String -> Js.Object,
 } as JSON;
 
 type AppError =
@@ -216,7 +226,7 @@ matchable `Js.Error` as evidence.
 The normal Workman structure remains:
 
 1. receive or create a `Result<_, Js.Error>`/`Task<_, Js.Error>` head value;
-2. lift procedure transformations into the shared carrier;
+2. create procedure transformations via the shared carrier;
 3. keep a carrier pipeline in result position;
 4. group procedures with `Result|...|` or `Task|...|`;
 5. match a `Result` at a synchronous control-flow boundary, or inspect a Task error
@@ -224,7 +234,7 @@ The normal Workman structure remains:
 
 ```wm
 let load = (path) => {
-  let decode = lift Task (text) => {
+  let decode = via Task (text) => {
     JSON.parse(text)
       :> Task.fromResult
   };
@@ -246,7 +256,7 @@ Task|load("a.json"), load("b.json")|
   })
 ```
 
-See [Carrier-oriented procedure design](./carriers.md) for lifting and carrier
+See [Carrier-oriented procedure design](./carriers.md) for `via` and carrier
 grouping, and [Async and Task](./async.md) for Task evaluation details.
 
 ## Choosing an error policy

@@ -1,0 +1,18 @@
+from "./app.wm" import { Problem, Head, Model, count, toggleSeverity };
+
+let problems = [
+  Problem("main.wm", 1, 1, 1, "error", "error"),
+  Problem("main.wm", 2, 1, 2, "warning", "warning"),
+  Problem("main.wm", 3, 1, 3, "info", "info"),
+  Problem("main.wm", 4, 1, 4, "hint", "hint"),
+];
+
+let main = () => {
+  let head = Head("headed", "main.wm", 1, false);
+  let initial = Model(problems, 0, 0, false, 10, true, true, true, true, 0, head);
+  let noWarnings = toggleSeverity(2, initial);
+  let warningsAgain = toggleSeverity(2, noWarnings);
+  print(
+    `${Text.of(count(initial))},${Text.of(count(noWarnings))},${Text.of(count(warningsAgain))}`,
+  )
+};

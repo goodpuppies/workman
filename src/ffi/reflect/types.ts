@@ -1,5 +1,6 @@
-import ts from "typescript";
+import ts from "typescript-api";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
+import { diagnosticError } from "../../diagnostics.ts";
 import {
   callbackParamRefsFromCall,
   dedupeVariants,
@@ -14,8 +15,11 @@ import {
   findVariable,
   jsGlobalSource,
   jsModuleSource,
+  type JsReflectionRequest,
   type JsReflectionSource,
+  prepareReflectionSources,
   reflectSource,
+  setActiveJsReflectionBasePath,
   typeOfSymbol,
 } from "./host.ts";
 import type {
@@ -33,12 +37,101 @@ import { fn, name, varType } from "../type_expr.ts";
 const memberCache = new Map<string, JsMemberType | undefined>();
 const namespaceCache = new Map<string, JsMemberType[]>();
 const refTypeCache = new Map<string, TypeExpr | undefined>();
+const refMemberPathCache = new Map<string, boolean>();
+const refMemberTypeTextCache = new Map<string, string | undefined>();
 const deepCallCache = new Map<string, DeepReflection | undefined>();
 
 export type DeepReflection = {
   type: TypeExpr;
   records: Extract<Decl, { kind: "RecordDecl" }>[];
 };
+
+export function prepareInitialJsImportReflection(
+  modules: Array<{
+    filePath: string;
+    decls: Extract<Decl, { kind: "JsImportDecl" }>[];
+  }>,
+): void {
+  try {
+    prepareReflectionSources(initialJsImportReflectionRequests(modules));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const declarations = modules.flatMap((module) => module.decls);
+    const declaration = declarations.find((decl) =>
+      decl.target.kind === "JsModule" && message.includes(decl.target.specifier)
+    ) ?? declarations.find((decl) =>
+      decl.target.kind === "JsModule"
+    );
+    throw diagnosticError(error, declaration?.node, "ffi.import-resolution");
+  }
+}
+
+export function initialJsImportReflectionRequests(
+  modules: Array<{
+    filePath: string;
+    decls: Extract<Decl, { kind: "JsImportDecl" }>[];
+  }>,
+): JsReflectionRequest[] {
+  const requests = modules.flatMap(({ filePath, decls }) => {
+    const previous = setActiveJsReflectionBasePath(filePath);
+    try {
+      return decls.flatMap(initialJsImportDeclReflectionRequests);
+    } finally {
+      setActiveJsReflectionBasePath(previous);
+    }
+  });
+  return requests;
+}
+
+function initialJsImportDeclReflectionRequests(
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+): JsReflectionRequest[] {
+  if (decl.typeOnly || decl.target.kind === "JsMeta" || decl.target.kind === "JsWorker") return [];
+  const target = reflectionTarget(decl.target);
+  if (decl.clause.kind === "Namespace") {
+    return target
+      ? [{ label: target.key, source: target.source, sharedSource: target.source }]
+      : [];
+  }
+  const requests: JsReflectionRequest[] = [];
+  for (const spec of decl.clause.specs) {
+    const deep = spec.type?.kind === "TVar" && spec.type.name === "_deep_";
+    if (spec.type && !deep) continue;
+    if (decl.target.kind === "JsGlobalRoot") {
+      const ref = jsGlobalValueRef(spec.name);
+      const sharedSource = jsGlobalSource(spec.name).source;
+      requests.push(
+        { label: `${ref.key}.new`, source: ref.source, sharedSource },
+        { label: `${ref.key}:call`, source: ref.source, sharedSource },
+      );
+      continue;
+    }
+    if (!target) continue;
+    const ref = jsTargetMemberValueRef(target, spec.name);
+    requests.push(
+      { label: `${ref.key}.new`, source: ref.source, sharedSource: target.source },
+      targetMemberReflectionRequest(target, spec.name),
+    );
+  }
+  return requests;
+}
+
+function reflectionTarget(target: Extract<Decl, { kind: "JsImportDecl" }>["target"]) {
+  if (target.kind === "JsGlobal") return jsGlobalSource(target.path);
+  if (target.kind === "JsModule") return jsModuleSource(target.specifier);
+  return undefined;
+}
+
+function targetMemberReflectionRequest(
+  target: JsReflectionSource,
+  name: string,
+): JsReflectionRequest {
+  return {
+    label: `${target.key}.${name}`,
+    source: `${target.source}\nconst __wm_member = ${propertyPath("__wm_target", [name])};`,
+    sharedSource: target.source,
+  };
+}
 
 export function jsGlobalMembers(path: string): JsMemberType[] {
   const target = jsGlobalSource(path);
@@ -48,13 +141,26 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
     target.key,
     target.source,
     (checker, sourceFile) => {
-      const target = findVariable(sourceFile, "__wm_target")?.initializer ??
+      const targetExpression = findVariable(sourceFile, "__wm_target")?.initializer ??
         findDeclaredValue(sourceFile, "__wm_target");
-      if (!target) return [];
+      if (!targetExpression) return [];
       const members: JsMemberType[] = [];
-      for (const symbol of checker.getTypeAtLocation(target).getProperties()) {
+      for (const symbol of checker.getTypeAtLocation(targetExpression).getProperties()) {
         const type = typeOfSymbol(checker, symbol);
-        const mapped = type ? jsMemberTypeFromTsType(checker, type) : undefined;
+        const memberName = symbol.getName();
+        const access = propertyPath("__wm_target", [memberName]);
+        const mapped = type
+          ? jsMemberTypeFromTsType(
+            checker,
+            type,
+            (index) =>
+              returnTypeRef(
+                `${target.key}.${memberName}:return:${index}`,
+                target.source,
+                `ReturnType<typeof ${access}>`,
+              ),
+          )
+          : undefined;
         if (mapped?.type.kind === "TFn") members.push({ name: symbol.getName(), ...mapped });
       }
       return members;
@@ -62,6 +168,30 @@ export function jsGlobalMembers(path: string): JsMemberType[] {
   );
   namespaceCache.set(target.key, reflected);
   return reflected;
+}
+
+export function jsGlobalTargetInfo(
+  path: string,
+): { exists: boolean; suggestion?: string } {
+  const target = jsGlobalSource(path);
+  return reflectSource(
+    `${target.key}:target-info`,
+    target.source,
+    (checker, sourceFile) => {
+      const expression = findVariable(sourceFile, "__wm_target")?.initializer;
+      if (!expression) return { exists: false };
+      const symbol = ts.isPropertyAccessExpression(expression)
+        ? checker.getSymbolAtLocation(expression.name)
+        : checker.getSymbolAtLocation(expression);
+      if (symbol) return { exists: true };
+      const root = leftmostIdentifier(expression);
+      if (!root) return { exists: false };
+      const suggestion = checker.getSymbolsInScope(root, ts.SymbolFlags.Value)
+        .map((candidate) => candidate.getName())
+        .find((name) => name !== root.text && name.toLowerCase() === root.text.toLowerCase());
+      return suggestion ? { exists: false, suggestion } : { exists: false };
+    },
+  );
 }
 
 export function jsGlobalMember(path: string, name: string): JsMemberType | undefined {
@@ -76,13 +206,26 @@ export function jsModuleMembers(specifier: string): JsMemberType[] {
     target.key,
     target.source,
     (checker, sourceFile) => {
-      const target = findVariable(sourceFile, "__wm_target")?.initializer ??
+      const targetExpression = findVariable(sourceFile, "__wm_target")?.initializer ??
         findDeclaredValue(sourceFile, "__wm_target");
-      if (!target) return [];
+      if (!targetExpression) return [];
       const members: JsMemberType[] = [];
-      for (const symbol of checker.getTypeAtLocation(target).getProperties()) {
+      for (const symbol of checker.getTypeAtLocation(targetExpression).getProperties()) {
         const type = typeOfSymbol(checker, symbol);
-        const mapped = type ? jsMemberTypeFromTsType(checker, type) : undefined;
+        const memberName = symbol.getName();
+        const access = propertyPath("__wm_target", [memberName]);
+        const mapped = type
+          ? jsMemberTypeFromTsType(
+            checker,
+            type,
+            (index) =>
+              returnTypeRef(
+                `${target.key}.${memberName}:return:${index}`,
+                target.source,
+                `ReturnType<typeof ${access}>`,
+              ),
+          )
+          : undefined;
         if (mapped?.type.kind === "TFn") members.push({ name: symbol.getName(), ...mapped });
       }
       return members;
@@ -97,17 +240,19 @@ export function jsModuleMember(specifier: string, name: string): JsMemberType | 
 }
 
 export function jsGlobalValueRef(name: string): JsTypeRef {
+  const target = jsGlobalSource(name);
   return {
     key: `global-value:${name}`,
-    source: `const __wm_ref_${sanitize(name)} = ${name};`,
+    source: `${target.source}\nconst __wm_ref_${sanitize(name)} = ${name};`,
     expr: `__wm_ref_${sanitize(name)}`,
   };
 }
 
 export function jsGlobalRootNamespaceRef(): JsTypeRef {
+  const target = jsGlobalSource("globalThis");
   return {
     key: "global:namespace",
-    source: "const __wm_target = globalThis;",
+    source: target.source,
     expr: "__wm_target",
     type: name("Js.Object"),
   };
@@ -130,6 +275,7 @@ export function jsModuleNamespaceRef(specifier: string): JsTypeRef {
     source: target.source,
     expr: "__wm_target",
     type: name("Js.Object"),
+    moduleNamespaceSpecifier: specifier,
   };
 }
 
@@ -144,11 +290,17 @@ export function jsTypeExprValueRef(key: string, type: TypeExpr): JsTypeRef {
 }
 
 export function jsGlobalMemberValueRef(path: string, name: string): JsTypeRef {
-  return jsTargetMemberValueRef(jsGlobalSource(path), name);
+  return {
+    ...jsTargetMemberValueRef(jsGlobalSource(path), name),
+    constructorTypeRef: jsGlobalMemberTypeRef(path, name),
+  };
 }
 
 export function jsModuleMemberValueRef(specifier: string, name: string): JsTypeRef {
-  return jsTargetMemberValueRef(jsModuleSource(specifier), name);
+  return {
+    ...jsTargetMemberValueRef(jsModuleSource(specifier), name),
+    constructorTypeRef: jsModuleTypeRef(specifier, name),
+  };
 }
 
 function jsTargetMemberValueRef(target: JsReflectionSource, name: string): JsTypeRef {
@@ -159,6 +311,12 @@ function jsTargetMemberValueRef(target: JsReflectionSource, name: string): JsTyp
     source: `${target.source}\nconst ${refName} = ${propertyPath("__wm_target", [name])};`,
     expr: refName,
   };
+}
+
+function leftmostIdentifier(expression: ts.Expression): ts.Identifier | undefined {
+  let current = expression;
+  while (ts.isPropertyAccessExpression(current)) current = current.expression;
+  return ts.isIdentifier(current) ? current : undefined;
 }
 
 export function jsGlobalValueMember(name: string): JsMemberType | undefined {
@@ -291,7 +449,8 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
           ),
       );
       if (mapped) return { name: path.at(-1)!, ...mapped };
-      const type = typeExprFromTsType(checker, propertyType) ?? name("Js.Value");
+      const type = typeExprFromTsType(checker, propertyType);
+      if (!type) return undefined;
       return {
         name: path.at(-1)!,
         type,
@@ -303,6 +462,57 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
     },
   );
   memberCache.set(key, reflected);
+  return reflected;
+}
+
+export function jsRefHasMemberPath(ref: JsTypeRef, path: string[]): boolean {
+  const key = `${ref.key}:has-member:${path.join(".")}`;
+  const cached = refMemberPathCache.get(key);
+  if (cached !== undefined) return cached;
+  const reflected = reflectSource(
+    key,
+    ref.source,
+    (checker, sourceFile) => {
+      const value = findVariable(sourceFile, ref.expr)?.initializer ??
+        findDeclaredValue(sourceFile, ref.expr);
+      if (!value) return false;
+      let type = checker.getTypeAtLocation(value);
+      for (const segment of path) {
+        const symbol = type.getProperty(segment);
+        if (!symbol) return false;
+        const next = typeOfSymbol(checker, symbol);
+        if (!next) return false;
+        type = next;
+      }
+      return true;
+    },
+  );
+  refMemberPathCache.set(key, reflected);
+  return reflected;
+}
+
+export function jsRefMemberTypeText(ref: JsTypeRef, path: string[]): string | undefined {
+  const key = `${ref.key}:member-type-text:${path.join(".")}`;
+  if (refMemberTypeTextCache.has(key)) return refMemberTypeTextCache.get(key);
+  const reflected = reflectSource(
+    key,
+    ref.source,
+    (checker, sourceFile) => {
+      const value = findVariable(sourceFile, ref.expr)?.initializer ??
+        findDeclaredValue(sourceFile, ref.expr);
+      if (!value) return undefined;
+      let type = checker.getTypeAtLocation(value);
+      for (const segment of path) {
+        const symbol = type.getProperty(segment);
+        if (!symbol) return undefined;
+        const next = typeOfSymbol(checker, symbol);
+        if (!next) return undefined;
+        type = next;
+      }
+      return checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+    },
+  );
+  refMemberTypeTextCache.set(key, reflected);
   return reflected;
 }
 
@@ -405,9 +615,13 @@ function jsRefCallTarget(
       ? functionArgExpr(index, arg)
       : `__wm_arg_${index}`
   );
-  const argSources = args
-    .filter((arg): arg is Extract<JsCallArgHint, { kind: "ref" }> => arg.kind === "ref")
-    .map((arg) => arg.ref.source)
+  const reflectedArgs = args
+    .map((arg, index) => arg.kind === "ref" ? { arg, index } : undefined)
+    .filter((item): item is { arg: Extract<JsCallArgHint, { kind: "ref" }>; index: number } =>
+      !!item
+    );
+  const argSources = reflectedArgs
+    .map(({ arg, index }) => hygienicArgSource(arg.ref.source, index))
     .join("\n");
   const argDecls = args
     .flatMap((arg, index) => {
@@ -420,7 +634,11 @@ function jsRefCallTarget(
           };`,
         ];
       }
-      if (arg.kind === "ref") return [`declare const __wm_arg_${index}: typeof ${arg.ref.expr};`];
+      if (arg.kind === "ref") {
+        return [
+          `declare const __wm_arg_${index}: typeof ${hygienicArgExpr(arg.ref.expr, index)};`,
+        ];
+      }
       return [];
     })
     .filter((line) => line.length > 0)
@@ -435,6 +653,7 @@ function jsRefCallTarget(
       const signature = checker.getResolvedSignature(call);
       if (!signature) return undefined;
       const type = functionTypeFromCall(checker, call, signature, args);
+      if (!type) return undefined;
       const callbackParamRefs = callbackParamRefsFromCall(
         checker,
         call,
@@ -442,23 +661,70 @@ function jsRefCallTarget(
         typeRefFromTsType,
         key,
       );
+      const callSource =
+        `${ref.source}\n${argSources}\n${argDecls}\nconst __wm_call_result = ${callExpr};`;
       return {
         name,
         type,
         variants: [{
           type,
           callbackParamRefs,
-          resultRef: returnTypeRef(
-            `${key}:return`,
-            `${ref.source}\n${argSources}\n${argDecls}\nconst __wm_call_result = ${callExpr};`,
-            "typeof __wm_call_result",
-          ),
+          resultRef: callResultTypeRef(checker, call, type, `${key}:return`, callSource),
         }],
       };
     },
   );
   memberCache.set(key, reflected);
   return reflected;
+}
+
+function hygienicArgSource(source: string, index: number): string {
+  return source.replace(
+    /\b__wm_[A-Za-z0-9_$]+\b/g,
+    (identifier) => hygienicArgIdentifier(identifier, index),
+  );
+}
+
+function hygienicArgExpr(expr: string, index: number): string {
+  return expr.replace(
+    /\b__wm_[A-Za-z0-9_$]+\b/g,
+    (identifier) => hygienicArgIdentifier(identifier, index),
+  );
+}
+
+function hygienicArgIdentifier(identifier: string, index: number): string {
+  return `${identifier}_nested_${index}`;
+}
+
+function callResultTypeRef(
+  checker: ts.TypeChecker,
+  call: ts.CallExpression,
+  callType: TypeExpr,
+  key: string,
+  source: string,
+): JsTypeRef {
+  const resultType = callType.kind === "TFn" ? callType.result : callType;
+  const ref = returnTypeRef(key, source, "typeof __wm_call_result");
+  if (
+    resultType.kind !== "TName" || resultType.name !== "Js.Array" ||
+    resultType.args.length !== 1
+  ) return ref;
+  const element = resultType.args[0];
+  if (element.kind !== "TName" || element.args.length !== 0 || element.name.startsWith("Js.")) {
+    return ref;
+  }
+  const actualResult = checker.getTypeAtLocation(call);
+  const actualElement = checker.getIndexTypeOfType(actualResult, ts.IndexKind.Number);
+  if (!actualElement || nominalObjectTypeName(checker, actualElement) !== element.name) return ref;
+  const elementKey = `${key}:element`;
+  const elementRef = typeRefFromSource(
+    elementKey,
+    source,
+    "typeof __wm_call_result[number]",
+  );
+  elementRef.type = element;
+  ref.nestedTypeRefs = [elementRef];
+  return ref;
 }
 
 function deepTypeExprFromTsType(
@@ -538,12 +804,12 @@ function tsLiteralExprFromWorkman(expr: Expr): string | undefined {
     case "JsonArray":
       return `(${`[${expr.items.map(tsLiteralExprFromWorkman).join(", ")}]`} as const)`;
     case "JsonObject":
-      return `(${
-        `{${expr.fields.map((field) => {
+      return `(${`{${
+        expr.fields.map((field) => {
           const value = tsLiteralExprFromWorkman(field.value);
           return value === undefined ? undefined : `${JSON.stringify(field.key)}: ${value}`;
-        }).join(", ")}}`
-      } as const)`;
+        }).join(", ")
+      }}`} as const)`;
     case "Record": {
       const fields = expr.fields.map((field) => {
         if (field.kind !== "Field") return undefined;
@@ -553,6 +819,8 @@ function tsLiteralExprFromWorkman(expr: Expr): string | undefined {
       if (fields.some((field) => field === undefined)) return undefined;
       return `({${fields.join(", ")}} as const)`;
     }
+    case "Ascribed":
+      return tsLiteralExprFromWorkman(expr.value);
     default:
       return undefined;
   }
@@ -646,6 +914,7 @@ function constructReturnRef(
 }
 
 function canonicalConstructorTypeRef(ref: JsTypeRef): JsTypeRef | undefined {
+  if (ref.constructorTypeRef) return ref.constructorTypeRef;
   if (ref.key.startsWith("global-value:")) {
     const name = ref.key.slice("global-value:".length);
     return jsGlobalTypeRef(name);

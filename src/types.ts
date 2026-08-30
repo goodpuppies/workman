@@ -1,9 +1,21 @@
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
+import { isQualified, pathOf } from "./ast.ts";
+import type { CompilerSemanticId } from "./compiler_semantics.ts";
+import type { ValueId } from "./ids.ts";
 import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
+import { resolveLongType, type StaticEnv, type StrEnv } from "./infer/environment.ts";
 
 export type Ty =
-  | { tag: "var"; id: number; name?: string; instance?: Ty; jsConstraint?: (t: Ty) => void }
+  | {
+    tag: "var";
+    id: number;
+    name?: string;
+    instance?: Ty;
+    jsConstraint?: (t: Ty) => void;
+    gpuConstraint?: (t: Ty) => void;
+    equalityConstraint?: (t: Ty) => void;
+  }
   | {
     tag: "ffi";
     id: number;
@@ -33,7 +45,7 @@ export type Ty =
   };
 
 export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
-export type IdentifierStatus = "value" | "constructor";
+export type IdentifierStatus = "value" | "constructor" | "record-constructor";
 export type Scheme = {
   vars: number[];
   type: Ty;
@@ -44,7 +56,11 @@ export type Scheme = {
   jsImport?: boolean;
   imported?: boolean;
   standardLibrary?: boolean;
+  semanticId?: CompilerSemanticId;
+  valueId?: ValueId;
+  constructorDecl?: CtorDecl;
   node?: AstNode;
+  preserveStructuralRows?: boolean;
 };
 export type TypeProvenanceNote = {
   message: string;
@@ -54,10 +70,26 @@ export type TypeProvenanceNote = {
 export type Env = Map<string, Scheme>;
 export type TypeEnv = Map<string, TypeInfo>;
 export type RecordFieldInfo = { name: string; type: Ty };
+/**
+ * Registration that lets a nominal type carry primitive operators.
+ *
+ * A module registers its declared type as a carrier by exporting `carrier`
+ * together with top-level `succeed`, `map`, and `map2`. `succeed`'s result type
+ * names the carrier and its parameter locates the payload, so a generic carrier
+ * (`Result<a, e>`) reports the payload's argument index while a monomorphic one
+ * (`Vec2` over `Number`) reports the fixed payload type instead.
+ */
+export type CarrierInfo = {
+  /** Declaring module, or undefined for the basis carrier reached as a bare value. */
+  modulePath?: string;
+  payloadIndex?: number;
+  payloadType?: Ty;
+};
 export type TypeInfo = {
   id: number;
   name: string;
   arity: number;
+  carrier?: CarrierInfo;
   basis?: boolean;
   basisConstructors?: string[];
   foreign?: boolean;
@@ -81,6 +113,49 @@ export type TypeVarScope = Map<string, Ty>;
 let nextVar = 0;
 let nextFfi = 0;
 let nextType = 0;
+const typeRegistries = new WeakMap<TypeEnv, Map<number, TypeInfo>>();
+
+export function registerTypeInfo(typeEnv: TypeEnv, info: TypeInfo): void {
+  let registry = typeRegistries.get(typeEnv);
+  if (!registry) {
+    registry = new Map([...typeEnv.values()].map((existing) => [existing.id, existing]));
+    typeRegistries.set(typeEnv, registry);
+  }
+  registry.set(info.id, info);
+}
+
+export function typeInfoById(typeEnv: TypeEnv, id: number): TypeInfo | undefined {
+  return typeRegistries.get(typeEnv)?.get(id) ??
+    [...typeEnv.values()].find((info) => info.id === id);
+}
+
+/** Resolve compiler metadata by its canonical name without implying source-level visibility. */
+export function typeInfoByName(typeEnv: TypeEnv, name: string): TypeInfo | undefined {
+  return typeEnv.get(name) ??
+    [...(typeRegistries.get(typeEnv)?.values() ?? [])].find((info) => info.name === name);
+}
+
+export function knownTypeIds(typeEnv: TypeEnv): Set<number> {
+  return new Set([
+    ...[...typeEnv.values()].map((info) => info.id),
+    ...(typeRegistries.get(typeEnv)?.keys() ?? []),
+  ]);
+}
+
+/** Every type known in this environment, including structurally qualified types. */
+export function knownTypeInfos(typeEnv: TypeEnv): TypeInfo[] {
+  const infos = new Map<number, TypeInfo>();
+  for (const info of typeEnv.values()) infos.set(info.id, info);
+  for (const info of typeRegistries.get(typeEnv)?.values() ?? []) infos.set(info.id, info);
+  return [...infos.values()];
+}
+
+export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
+  const cloned = new Map(typeEnv);
+  const registry = typeRegistries.get(typeEnv);
+  if (registry) typeRegistries.set(cloned, new Map(registry));
+  return cloned;
+}
 
 export const prim = (name: string): Ty => ({ tag: "prim", name });
 export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
@@ -181,6 +256,14 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
       if (b.tag === "var") addJsConstraint(b, a.jsConstraint);
       else a.jsConstraint(b);
     }
+    if (a.gpuConstraint) {
+      if (b.tag === "var") addGpuConstraint(b, a.gpuConstraint);
+      else a.gpuConstraint(b);
+    }
+    if (a.equalityConstraint) {
+      if (b.tag === "var") addEqualityConstraint(b, a.equalityConstraint);
+      else a.equalityConstraint(b);
+    }
     onBind?.(a, b, path, "right");
     return;
   }
@@ -189,6 +272,12 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     b.instance = a;
     if (b.jsConstraint) {
       b.jsConstraint(a);
+    }
+    if (b.gpuConstraint) {
+      b.gpuConstraint(a);
+    }
+    if (b.equalityConstraint) {
+      b.equalityConstraint(a);
     }
     onBind?.(b, a, path, "left");
     return;
@@ -319,6 +408,36 @@ export function addJsConstraint(target: Ty, check: (t: Ty) => void): void {
     : check;
 }
 
+export function addGpuConstraint(target: Ty, check: (t: Ty) => void): void {
+  const t = prune(target);
+  if (t.tag !== "var") {
+    check(t);
+    return;
+  }
+  const previous = t.gpuConstraint;
+  t.gpuConstraint = previous
+    ? (bound) => {
+      previous(bound);
+      check(bound);
+    }
+    : check;
+}
+
+export function addEqualityConstraint(target: Ty, check: (t: Ty) => void): void {
+  const t = prune(target);
+  if (t.tag !== "var") {
+    check(t);
+    return;
+  }
+  const previous = t.equalityConstraint;
+  t.equalityConstraint = previous
+    ? (bound) => {
+      previous(bound);
+      check(bound);
+    }
+    : check;
+}
+
 export function solveFfi(ffi: Ty, target: Ty): void {
   const placeholder = prune(ffi);
   if (placeholder.tag !== "ffi") {
@@ -392,8 +511,8 @@ export function ftvEnv(env: Env): Set<number> {
 
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
-  // Variables constrained by a broad Js.Value JS boundary stay monomorphic: the program's
-  // ordinary call sites must determine one concrete JS shape for them.
+  // JS boundary obligations are tied to one unresolved foreign interaction. GPU and equality
+  // constraints are verification callbacks which are copied to each fresh instantiation.
   const boundary = jsConstrainedVarIds(type);
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
   return { vars, type, constraints: [] };
@@ -431,6 +550,8 @@ export function instantiate(scheme: Scheme): Ty {
       const mapped = map.get(t.id);
       if (!mapped) return t;
       if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
+      if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
+      if (t.equalityConstraint) addEqualityConstraint(mapped, t.equalityConstraint);
       return mapped;
     }
     if (t.tag === "ffi") {
@@ -439,6 +560,10 @@ export function instantiate(scheme: Scheme): Ty {
     if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
     if (t.tag === "tuple") return tuple(t.items.map(go));
     if (t.tag === "struct") {
+      // Structural requirements are open, mutable rows during inference.
+      // Repeated uses of one monomorphic receiver must accumulate fields on
+      // the same row; polymorphic occurrences still need independent rows.
+      if (scheme.preserveStructuralRows && scheme.vars.length === 0) return t;
       return structural(t.fields.map((field) => ({ ...field, type: go(field.type) })));
     }
     if (t.tag === "named") return { ...t, args: t.args.map(go) };
@@ -449,6 +574,15 @@ export function instantiate(scheme: Scheme): Ty {
 
 export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
   const freshen = new Map<number, Ty>();
+  return freshenTypeVars(template, subst, freshen);
+}
+
+/** Clone a type graph while sharing one freshening map across every owned occurrence. */
+export function freshenTypeVars(
+  template: Ty,
+  subst: Map<number, Ty>,
+  freshen: Map<number, Ty>,
+): Ty {
   const go = (t: Ty): Ty => {
     t = prune(t);
     if (t.tag === "var") {
@@ -503,9 +637,23 @@ export function typeFromAst(
   expr: TypeExpr,
   typeEnv: TypeEnv,
   vars: TypeVarScope = new Map(),
-  options: { allowFreeVars?: boolean } = {},
+  options: {
+    allowFreeVars?: boolean;
+    strEnv?: StrEnv;
+    onResolveName?: (
+      expression: Extract<TypeExpr, { kind: "TName" }>,
+      info: TypeInfo,
+      qualifier?: Readonly<{ name: string; environment: StaticEnv }>,
+    ) => void;
+    onResolveVariable?: (expression: TypeExpr, type: Ty) => void;
+    onResolveType?: (expression: TypeExpr, type: Ty) => void;
+  } = {},
 ): Ty {
   const allowFreeVars = options.allowFreeVars ?? true;
+  const resolved = (type: Ty): Ty => {
+    options.onResolveType?.(expr, type);
+    return type;
+  };
   const instantiateAlias = (template: Ty, params: number[], args: Ty[]): Ty => {
     const subst = new Map<number, Ty>();
     params.forEach((id, i) => subst.set(id, args[i]));
@@ -514,35 +662,57 @@ export function typeFromAst(
 
   if (expr.kind === "TVar") {
     const existing = vars.get(expr.name);
-    if (existing) return existing;
+    if (existing) {
+      options.onResolveVariable?.(expr, existing);
+      return resolved(existing);
+    }
     if (!allowFreeVars) throw new Error(`unbound type variable ${expr.name}`);
     const created = fresh(expr.name);
     vars.set(expr.name, created);
-    return created;
+    options.onResolveVariable?.(expr, created);
+    return resolved(created);
   }
   if (expr.kind === "TTuple") {
-    return tuple(expr.items.map((x) => typeFromAst(x, typeEnv, vars, options)));
+    return resolved(tuple(expr.items.map((x) => typeFromAst(x, typeEnv, vars, options))));
   }
   if (expr.kind === "TFn") {
-    return fn(
+    return resolved(fn(
       [callArg(expr.params.map((x) => typeFromAst(x, typeEnv, vars, options)))],
       typeFromAst(expr.result, typeEnv, vars, options),
-    );
+    ));
   }
-  if (expr.args.length === 0 && vars.has(expr.name)) return vars.get(expr.name)!;
-  const info = typeEnv.get(expr.name);
+  if (expr.args.length === 0 && vars.has(expr.name)) {
+    const variable = vars.get(expr.name)!;
+    options.onResolveVariable?.(expr, variable);
+    return resolved(variable);
+  }
+  const path = pathOf(expr);
+  const qualified = isQualified(path) && options.strEnv
+    ? resolveLongType(options.strEnv, path)
+    : undefined;
+  const info = qualified?.info ?? typeEnv.get(expr.name);
   if (!info) throw new Error(`unknown type ${expr.name}`);
   if (info.arity !== expr.args.length) {
     throw new Error(`${expr.name} expects ${info.arity} type arguments`);
   }
+  options.onResolveName?.(
+    expr,
+    info,
+    qualified
+      ? Object.freeze({
+        name: path.qualifiers[0],
+        environment: qualified.root,
+      })
+      : undefined,
+  );
   if (info.alias) {
     const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
-    return instantiateAlias(info.alias, info.aliasParams ?? [], args);
+    return resolved(instantiateAlias(info.alias, info.aliasParams ?? [], args));
   }
   if (expr.args.length === 0 && ["Number", "Bool", "String", "Void"].includes(expr.name)) {
-    return prim(expr.name);
+    return resolved(prim(expr.name));
   }
-  return named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options)));
+  return resolved(named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options))));
 }
 
 export function show(t: Ty): string {
@@ -550,13 +720,20 @@ export function show(t: Ty): string {
   let n = 0;
   const nameOf = (id: number) =>
     names.get(id) ?? (names.set(id, `'${String.fromCharCode(97 + n++)}`), names.get(id)!);
+  const functionDomain = (params: Ty[]): string => {
+    if (params.length === 0) return "Void";
+    if (params.length > 1) return `(${params.map(go).join(", ")})`;
+    const param = prune(params[0]);
+    const rendered = go(param);
+    return param.tag === "fn" ? `(${rendered})` : rendered;
+  };
   const go = (x: Ty): string => {
     x = prune(x);
     if (x.tag === "var") return x.name ?? nameOf(x.id);
     if (x.tag === "ffi") return `?ffi#${x.id}:${x.binding ?? x.path.join(".")}`;
     if (x.tag === "prim") return x.name;
     if (x.tag === "tuple") return `(${x.items.map(go).join(", ")})`;
-    if (x.tag === "fn") return `(${x.params.map(go).join(", ")}) => ${go(x.result)}`;
+    if (x.tag === "fn") return `${functionDomain(x.params)} -> ${go(x.result)}`;
     if (x.tag === "struct") {
       return `{ ${x.fields.map((field) => `${field.name}: ${go(field.type)}`).join(", ")} }`;
     }

@@ -1,0 +1,254 @@
+-- Focused SDL2 -> Deno.UnsafeWindowSurface boundary, adapted from wmthree.
+
+from js.global import { Uint8Array };
+from js.global("Reflect") import { set as reflectSet };
+from js.global("Deno") import {
+  dlopen: _deep_, UnsafePointerView, UnsafeWindowSurface
+};
+from js.global("Deno.UnsafePointer") import { of as pointerOf };
+from "./webgpu_present.wm" import { presentSurface };
+
+let via = Monad.via;
+
+type NativeError =
+  | NativeSdlError<Js.Error>
+  | NativeDenoError<Js.Error>
+  | NativeMessage<String>;
+
+type NativeEvent =
+  | QuitEvent
+  | MouseEvent<Number, Number>
+  | ResizeEvent<Number, Number>
+  | IgnoredEvent
+  | NoEvent;
+type NativeSurface = UnsafeWindowSurface;
+
+record NativeRuntime = {
+  surface: NativeSurface,
+  poll: Void -> Result<NativeEvent, NativeError>,
+  resize: (Number, Number) -> Result<Void, NativeError>,
+  delay: Number -> Result<Void, NativeError>,
+  close: Void -> Result<Void, NativeError>
+};
+
+let sdlInitVideo = 32;
+let sdlWindowShown = 4;
+let sdlWindowposCentered = 805240832;
+let sdlQuit = 256;
+let sdlMousemotion = 1024;
+let sdlWindowevent = 512;
+let sdlWindoweventSizeChanged = 6;
+
+let denoResult = (value) => { value :> Result.mapErr(NativeDenoError) };
+let sdlResult = (value) => { value :> Result.mapErr(NativeSdlError) };
+
+let expectSome = (label, value) => {
+  match(value) {
+    Some(v) => { Ok(v) },
+    None => { Err(NativeMessage(label)) }
+  }
+};
+
+let expectZero = (label, value) => {
+  if (value == 0) { Ok(void) } else { Err(NativeMessage(label)) }
+};
+
+let expectOne = (label, value) => {
+  if (value == 1) { Ok(void) } else { Err(NativeMessage(label)) }
+};
+
+let windowTitle = () => {
+  Uint8Array.new(JSON[
+    119, 109, 115, 108, 97, 110, 103, 32,
+    118, 50, 32, 45, 32,
+    87, 111, 114, 107, 109, 97, 110, 32,
+    77, 97, 110, 100, 101, 108, 98, 114, 111, 116, 0
+  ])
+};
+
+let loadSdl = () => {
+  dlopen("./examples/wmslang_window/SDL2.so", JSON{
+    SDL_Init: JSON{ parameters: JSON["u32"], result: "i32" },
+    SDL_Quit: JSON{ parameters: JSON[], result: "void" },
+    SDL_CreateWindow: JSON{
+      parameters: JSON["buffer", "i32", "i32", "i32", "i32", "u32"],
+      result: "pointer"
+    },
+    SDL_DestroyWindow: JSON{ parameters: JSON["pointer"], result: "void" },
+    SDL_GetWindowWMInfo: JSON{ parameters: JSON["pointer", "pointer"], result: "i32" },
+    SDL_GetVersion: JSON{ parameters: JSON["pointer"], result: "void" },
+    SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" },
+    SDL_SetRelativeMouseMode: JSON{ parameters: JSON["i32"], result: "i32" },
+    SDL_Delay: JSON{ parameters: JSON["u32"], result: "void" }
+  }) :> Result.mapErr(NativeSdlError)
+};
+
+let pointerFromBuffer = (label, buffer) => {
+  let require = via Result (ptr) => { expectSome(label, ptr) };
+  pointerOf(buffer) :> denoResult :> require
+};
+
+let linuxSurface = (system, width, height, view) => {
+  let create = via Result (windowHandle, displayHandle) => {
+    UnsafeWindowSurface.new(JSON{
+      system: system,
+      windowHandle: windowHandle,
+      displayHandle: displayHandle,
+      width: width,
+      height: height
+    }) :> denoResult
+  };
+  let handles = via Result (displayOpt, windowOpt) => {
+    create(Result|
+      expectSome("missing native window handle", windowOpt),
+      expectSome("missing native display handle", displayOpt)
+    |)
+  };
+  handles(Result|view.getPointer(8) :> denoResult, view.getPointer(16) :> denoResult|)
+};
+
+let createSurface = (sdl, window, width, height) => {
+  let select = via Result (view, subsystem) => {
+    match(subsystem) {
+      2 => { linuxSurface("x11", width, height, view) },
+      6 => { linuxSurface("wayland", width, height, view) },
+      _ => { Err(NativeMessage("the SDL window is neither X11 nor Wayland")) }
+    }
+  };
+  let inspect = via Result (infoPtr) => {
+    let withView = via Result (view) => {
+      let subsystem = view.getUint32(4) :> denoResult;
+      select(Result|Ok(view), subsystem|)
+    };
+    UnsafePointerView.new(infoPtr) :> denoResult :> withView
+  };
+  let populate = via Result (infoPtr) => {
+    Result|
+      sdl.symbols.SDL_GetVersion(Some(infoPtr)) :> sdlResult,
+      sdl.symbols.SDL_GetWindowWMInfo(window, Some(infoPtr)) :> sdlResult
+        :> Result.andThen((code) => { expectOne("SDL_GetWindowWMInfo failed", code) })
+    | :> Result.andThen((_) => { inspect(Ok(infoPtr)) })
+  };
+  let withPointer = via Result (buffer) => {
+    pointerFromBuffer("SDL_SysWMInfo pointer was null", buffer) :> populate
+  };
+  Uint8Array.new(519) :> denoResult :> withPointer
+};
+
+let createEventState = () => {
+  let withPointer = via Result (buffer) => {
+    let withView = via Result (eventPtr) => {
+      UnsafePointerView.new(eventPtr) :> denoResult
+        :> Result.map((eventView) => { (eventPtr, eventView) })
+    };
+    pointerFromBuffer("SDL_Event pointer was null", buffer) :> withView
+  };
+  Uint8Array.new(56) :> denoResult :> withPointer
+};
+
+let pollEvent = (sdl, eventPtr, eventView) => {
+  let status = via Result (value) => {
+    if (value == 1) {
+      eventView.getUint32(0) :> denoResult
+        :> Result.andThen((kind) => {
+          if (kind == sdlQuit) {
+            Ok(QuitEvent)
+          } else {
+            if (kind == sdlWindowevent) {
+              eventView.getUint8(12) :> denoResult :> Result.andThen((windowEvent) => {
+                if (windowEvent == sdlWindoweventSizeChanged) {
+                  Result|
+                    eventView.getInt32(16) :> denoResult,
+                    eventView.getInt32(20) :> denoResult
+                  | :> Result.map((width, height) => { ResizeEvent(width, height) })
+                } else {
+                  Ok(IgnoredEvent)
+                }
+              })
+            } else {
+              if (kind == sdlMousemotion) {
+              Result|
+                eventView.getInt32(28) :> denoResult,
+                eventView.getInt32(32) :> denoResult
+              | :> Result.map((dx, dy) => { MouseEvent(dx, dy) })
+              } else {
+                Ok(IgnoredEvent)
+              }
+            }
+          }
+        })
+    } else {
+      Ok(NoEvent)
+    }
+  };
+  sdl.symbols.SDL_PollEvent(Some(eventPtr)) :> sdlResult :> status
+};
+
+let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) => {
+  let initialize = via Result (sdl) => {
+    sdl.symbols.SDL_Init(sdlInitVideo) :> sdlResult
+      :> Result.andThen((code) => { expectZero("SDL_Init failed", code) })
+      :> Result.map((_) => { sdl })
+  };
+  let openWindow = via Result (sdl) => {
+    let create = via Result (title) => {
+      sdl.symbols.SDL_CreateWindow(
+        Some(title), sdlWindowposCentered, sdlWindowposCentered,
+        width, height, windowFlags
+      ) :> sdlResult :> Result.andThen((window) => {
+        sdl.symbols.SDL_SetRelativeMouseMode(1) :> sdlResult
+          :> Result.andThen((code) => { expectZero("SDL_SetRelativeMouseMode failed", code) })
+          :> Result.map((_) => { (sdl, window) })
+      })
+    };
+    windowTitle() :> denoResult :> create
+  };
+  let attachSurface = via Result (sdl, window) => {
+    createSurface(sdl, window, width, height)
+      :> Result.map((surface) => { (sdl, window, surface) })
+  };
+  let attachEvents = via Result (sdl, window, surface) => {
+    createEventState() :> Result.map((eventPtr, eventView) => {
+      .{
+        surface,
+        poll = (_) => { pollEvent(sdl, eventPtr, eventView) },
+        resize = (nextWidth, nextHeight) => {
+          Result|
+            reflectSet(surface, "width", nextWidth) :> denoResult,
+            reflectSet(surface, "height", nextHeight) :> denoResult
+          | :> Result.map((_) => { void })
+        },
+        delay = (milliseconds) => {
+          sdl.symbols.SDL_Delay(milliseconds) :> sdlResult
+        },
+        close = (_) => {
+          Result|
+            sdl.symbols.SDL_DestroyWindow(window) :> sdlResult,
+            sdl.symbols.SDL_Quit() :> sdlResult
+          | :> Result.map((_) => { void })
+        }
+      }
+    })
+  };
+  loadSdl() :> initialize :> openWindow :> attachSurface :> attachEvents
+};
+
+let startNative = (width: Number, height: Number) => {
+  startNativeWithFlags(width, height, sdlWindowShown)
+};
+let startResizableNative = (width: Number, height: Number) => {
+  startNativeWithFlags(width, height, sdlWindowShown + 32)
+};
+
+let nativeSurface = (runtime: NativeRuntime) => { runtime.surface };
+let pollNative = (runtime: NativeRuntime) => { runtime.poll(void) };
+let resizeNative = (runtime: NativeRuntime, width: Number, height: Number) => {
+  runtime.resize(width, height)
+};
+let delayNative = (runtime: NativeRuntime, milliseconds: Number) => {
+  runtime.delay(milliseconds)
+};
+let presentNative = (runtime: NativeRuntime) => {
+  presentSurface(runtime.surface) :> Result.mapErr(NativeDenoError)
+};
+let closeNative = (runtime: NativeRuntime) => { runtime.close(void) };

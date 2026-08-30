@@ -1,0 +1,51 @@
+from "./generated/surface_types.wm" import {
+  Span, ApplyExpressionNode, AscribedExpressionNode, TypeAnnotationNode
+};
+from "./surface_parse_value.wm" import {
+  ParseValue, SequenceParseValue, OptionalParseValue, RepeatedParseValue,
+  NodeParseValue, RuleParseValue
+};
+from "./surface_builder_support.wm" import { firstNode };
+
+let rec foldPostfixItems = match(items, callee, span) => {
+  ([], Var(callee), Var(span)) => { Some(callee) },
+  ([value, ..rest], Var(callee), Var(span)) => {
+    match(firstNode(value)) {
+      Some(arguments) => {
+        foldPostfixItems(rest, ApplyExpressionNode(callee, arguments, span), span)
+      },
+      None => { None },
+    }
+  },
+};
+
+let buildPostfix = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      NodeParseValue(head),
+      RepeatedParseValue(items),
+      OptionalParseValue(annotationValue),
+    ]) => {
+      match(foldPostfixItems(items, head, span)) {
+        Some(node) => {
+          match(annotationValue) {
+            Some(annotationParseValue) => {
+              match(firstNode(annotationParseValue)) {
+                Some(TypeAnnotationNode(colon, annotation, annotationSpan)) => {
+                  NodeParseValue(
+                    AscribedExpressionNode(node, colon, annotation, span)
+                  )
+                },
+                _ => { RuleParseValue("Postfix", value, span) },
+              }
+            },
+            None => { NodeParseValue(node) },
+            _ => { RuleParseValue("Postfix", value, span) },
+          }
+        },
+        None => { RuleParseValue("Postfix", value, span) },
+      }
+    },
+    _ => { RuleParseValue("Postfix", value, span) },
+  }
+};

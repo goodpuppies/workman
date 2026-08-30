@@ -1,0 +1,387 @@
+from "./vec.wm" import { Vec2, zero, length, withinSq };
+from "./trig.wm" import * as Trig;
+from "./rng.wm" import * as Rng;
+
+let screenW = 800;
+let screenH = 600;
+let center = Vec2(400, 300);
+
+let shipSize = 20;
+let shipRotationSpeed = 3.5;
+let shipThrust = 220;
+let shipRadius = 12;
+let maxShipSpeed = 380;
+let dragRate = 0.5108;
+
+let bulletSpeed = 520;
+let bulletLifetime = 1.1;
+let bulletRadius = 2;
+let fireCooldown = 0.25;
+
+let asteroidSpeedMin = 40;
+let asteroidSpeedMax = 110;
+let splitCount = 2;
+
+let startingLives = 3;
+let startingAsteroids = 4;
+let invulnerabilityTime = 2;
+let respawnDelay = 1.5;
+
+type AsteroidSize = Large | Medium | Small;
+
+type Status = Playing | GameOver;
+
+record Ship = { pos: Vec2, vel: Vec2, rotation: Number, alive: Bool, invuln: Number };
+record Bullet = { pos: Vec2, vel: Vec2, life: Number };
+record Asteroid = { pos: Vec2, vel: Vec2, size: AsteroidSize, rotation: Number, spin: Number };
+
+record Game = {
+  ship: Ship,
+  bullets: List<Bullet>,
+  asteroids: List<Asteroid>,
+  score: Number,
+  lives: Number,
+  wave: Number,
+  cooldown: Number,
+  respawn: Number,
+  status: Status,
+  rng: Rng.Seed,
+  t: Number
+};
+
+record Input = { turn: Number, thrust: Bool, fire: Bool, restart: Bool };
+
+let radiusOf = match(size) => {
+  Large => { 40 },
+  Medium => { 22 },
+  Small => { 12 },
+};
+
+let scoreOf = match(size) => {
+  Large => { 20 },
+  Medium => { 50 },
+  Small => { 100 },
+};
+
+let smallerThan = match(size) => {
+  Large => { Some(Medium) },
+  Medium => { Some(Small) },
+  Small => { None },
+};
+
+let maxf = (a: Number, b: Number) => {
+  if (a > b) { a } else { b }
+};
+
+let fmod = (a: Number, m: Number) => {
+  let r = a % m;
+  if (r < 0) { r + m } else { r }
+};
+
+let wrap = (p: Vec2) => {
+  Vec2(fmod(p.x, screenW), fmod(p.y, screenH))
+};
+
+let onScreen = (p: Vec2) => {
+  p.x >= 0 && p.x <= screenW && p.y >= 0 && p.y <= screenH
+};
+
+let facing = (rotation: Number) => {
+  Vec2(Trig.sin(rotation), 0 - Trig.cos(rotation))
+};
+
+let spawnAsteroid = (pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
+  let ra = Rng.next(r);
+  let rb = Rng.next(ra);
+  let rc = Rng.next(rb);
+  let rd = Rng.next(rc);
+  let angle = Rng.between(ra, 0, Trig.twoPi);
+  let speed = Rng.between(rb, asteroidSpeedMin, asteroidSpeedMax);
+  let rock = Asteroid(
+    pos,
+    Vec2(Trig.cos(angle) * speed, Trig.sin(angle) * speed),
+    size,
+    Rng.between(rc, 0, Trig.twoPi),
+    Rng.between(rd, -2, 2)
+  );
+  (rock, Rng.next(rd))
+};
+
+let rec spawnFragments = (n: Number, pos: Vec2, size: AsteroidSize, r: Rng.Seed) => {
+  match(n) {
+    0 => { ([], r) },
+    _ => {
+      let (rock, r1) = spawnAsteroid(pos, size, r);
+      let (rest, r2) = spawnFragments(n - 1, pos, size, r1);
+      ([rock, ..rest], r2)
+    },
+  }
+};
+
+let shatter = (a: Asteroid, r: Rng.Seed) => {
+  match(smallerThan(a.size)) {
+    Some(smaller) => { spawnFragments(splitCount, a.pos, smaller, r) },
+    None => { ([], r) },
+  }
+};
+
+let edgePosition = (r: Rng.Seed) => {
+  let ra = Rng.next(r);
+  let rb = Rng.next(ra);
+  let rc = Rng.next(rb);
+  let along = Rng.flip(rb);
+  let pos =
+    if (Rng.flip(ra)) {
+      Vec2(if (along) { 0 } else { screenW }, Rng.between(rc, 0, screenH))
+    } else {
+      Vec2(Rng.between(rc, 0, screenW), if (along) { 0 } else { screenH })
+    };
+  (pos, Rng.next(rc))
+};
+
+let rec spawnWave = (n: Number, r: Rng.Seed) => {
+  match(n) {
+    0 => { ([], r) },
+    _ => {
+      let (pos, r1) = edgePosition(r);
+      let (rock, r2) = spawnAsteroid(pos, Large, r1);
+      let (rest, r3) = spawnWave(n - 1, r2);
+      ([rock, ..rest], r3)
+    },
+  }
+};
+
+let freshShip = Ship(center, zero, 0, true, invulnerabilityTime);
+
+let newGame = (r: Rng.Seed) => {
+  let (asteroids, r1) = spawnWave(startingAsteroids, r);
+  .{
+    ship = freshShip,
+    bullets = [],
+    asteroids = asteroids,
+    score = 0,
+    lives = startingLives,
+    wave = 1,
+    cooldown = 0,
+    respawn = 0,
+    status = Playing,
+    rng = r1,
+    t = 0
+  }
+};
+
+let stepShip = (s: Ship, input: Input, dt: Number) => {
+  let rotation = s.rotation + input.turn * shipRotationSpeed * dt;
+  let pushed =
+    if (input.thrust) {
+      s.vel + facing(rotation) * (shipThrust * dt)
+    } else {
+      s.vel
+    };
+  let speed = length(pushed);
+  let capped =
+    if (speed > maxShipSpeed) { pushed * (maxShipSpeed / speed) } else { pushed };
+  let vel = capped * maxf(1 - dragRate * dt, 0);
+  .{
+    ..s,
+    pos = wrap(s.pos + vel * dt),
+    vel = vel,
+    rotation = rotation,
+    invuln = maxf(s.invuln - dt, 0)
+  }
+};
+
+let stepBullet = (b: Bullet, dt: Number) => {
+  Bullet(b.pos + b.vel * dt, b.vel, b.life - dt)
+};
+
+let bulletLives = (b: Bullet) => {
+  b.life > 0 && onScreen(b.pos)
+};
+
+let stepAsteroid = (a: Asteroid, dt: Number) => {
+  Asteroid(
+    wrap(a.pos + a.vel * dt),
+    a.vel,
+    a.size,
+    a.rotation + a.spin * dt,
+    a.spin
+  )
+};
+
+let fireFrom = (s: Ship) => {
+  let dir = facing(s.rotation);
+  Bullet(s.pos + dir * shipSize, dir * bulletSpeed, bulletLifetime)
+};
+
+let takeHit = (bullets, target, radius) => {
+  let rec find = (remaining, before) => {
+    match(remaining) {
+      [] => { None },
+      [b, ..rest] => {
+        if (withinSq(b.pos, target, radius + bulletRadius)) {
+          Some(List.foldLeft(before, rest, (result, earlier) => {
+            [earlier, ..result]
+          }))
+        } else {
+          find(rest, [b, ..before])
+        }
+      },
+    }
+  };
+  find(bullets, [])
+};
+
+record Impact = {
+  rocks: List<Asteroid>,
+  shots: List<Bullet>,
+  gained: Number,
+  seed: Rng.Seed
+};
+
+let resolveHits = (asteroids, bullets, r) => {
+  let rec resolve = (remainingRocks, remainingShots, seed, gained, rocksBefore) => {
+    match(remainingRocks) {
+      [] => {
+        Impact(List.reverse(rocksBefore), remainingShots, gained, seed)
+      },
+      [a, ..rest] => {
+        match(takeHit(remainingShots, a.pos, radiusOf(a.size))) {
+          None => {
+            resolve(rest, remainingShots, seed, gained, [a, ..rocksBefore])
+          },
+          Some(shotsAfterHit) => {
+            let (fragments, nextSeed) = shatter(a, seed);
+            let rocksWithFragments =
+              List.foldLeft(fragments, rocksBefore, (result, fragment) => {
+                [fragment, ..result]
+              });
+            resolve(
+              rest,
+              shotsAfterHit,
+              nextSeed,
+              gained + scoreOf(a.size),
+              rocksWithFragments
+            )
+          },
+        }
+      },
+    }
+  };
+  resolve(asteroids, bullets, r, 0, [])
+};
+
+let hitsShip = (s: Ship, a: Asteroid) => {
+  withinSq(s.pos, a.pos, shipRadius + radiusOf(a.size))
+};
+
+let strikesShip = (s: Ship, asteroids: List<Asteroid>) => {
+  s.alive && s.invuln <= 0 && List.any(asteroids, (a) => { hitsShip(s, a) })
+};
+
+let stepPlaying = (g: Game, input: Input, dt: Number) => {
+  let waiting = g.respawn > 0;
+  let respawn = maxf(g.respawn - dt, 0);
+  let ship =
+    if (waiting) {
+      if (respawn <= 0) { freshShip } else { g.ship }
+    } else {
+      stepShip(g.ship, input, dt)
+    };
+
+  let shooting = input.fire && ship.alive && !waiting && g.cooldown <= 0;
+  let fired = if (shooting) { [fireFrom(ship), ..g.bullets] } else { g.bullets };
+  let cooldown = if (shooting) { fireCooldown } else { maxf(g.cooldown - dt, 0) };
+
+  let bullets = List.filter(List.map(fired, (b) => { stepBullet(b, dt) }), bulletLives);
+  let drifted = List.map(g.asteroids, (a) => { stepAsteroid(a, dt) });
+  let impact = resolveHits(drifted, bullets, g.rng);
+
+  let struck = strikesShip(ship, impact.rocks);
+  let lives = if (struck) { g.lives - 1 } else { g.lives };
+  let status = if (struck && lives <= 0) { GameOver } else { Playing };
+  let hitShip = if (struck) { .{ ..ship, alive = false } } else { ship };
+  let respawnAfter = if (struck && lives > 0) { respawnDelay } else { respawn };
+
+  let advancing = List.length(impact.rocks) == 0 && status == Playing;
+  let (asteroids, rng) =
+    if (advancing) {
+      spawnWave(startingAsteroids + g.wave, impact.seed)
+    } else {
+      (impact.rocks, impact.seed)
+    };
+
+  .{
+    ..g,
+    ship = hitShip,
+    bullets = impact.shots,
+    asteroids = asteroids,
+    score = g.score + impact.gained,
+    lives = lives,
+    wave = if (advancing) { g.wave + 1 } else { g.wave },
+    cooldown = cooldown,
+    respawn = respawnAfter,
+    status = status,
+    rng = rng,
+    t = g.t + dt
+  }
+};
+
+let stepGame = (g: Game, input: Input, dt: Number) => {
+  match(g.status) {
+    Playing => { stepPlaying(g, input, dt) },
+    GameOver => {
+      if (input.restart) { newGame(g.rng) } else { .{ ..g, t = g.t + dt } }
+    },
+  }
+};
+
+type Tone = Loud | Plain | Faint;
+
+type Shape =
+  | Hull<Vec2, Vec2, Vec2>
+  | Rock<Vec2, AsteroidSize, Number>
+  | Shot<Vec2>
+  | Readout<String, Number, Number, Tone>
+  | Banner<String, Number, Number, Tone>;
+
+let shipVisible = (s: Ship, t: Number) => {
+  s.alive && (s.invuln <= 0 || (Trig.floorReal(t * 10) % 2 != 0))
+};
+
+let hullOf = (s: Ship) => {
+  let corner = (offset) => { s.pos + facing(s.rotation + offset) * shipSize };
+  Hull(corner(0), corner(2.5), corner(0 - 2.5))
+};
+
+let shipShapes = (g: Game) => {
+  if (shipVisible(g.ship, g.t)) { [hullOf(g.ship)] } else { [] }
+};
+
+let readouts = (g: Game) => {
+  [ Readout(`SCORE ${g.score}`, 10, 20, Plain)
+  , Readout(`LIVES ${g.lives}`, 34, 20, Plain)
+  , Readout(`WAVE ${g.wave}`, 58, 20, Plain)
+  ]
+};
+
+let banners = (g: Game) => {
+  match(g.status) {
+    Playing => { [] },
+    GameOver => {
+      [ Banner("GAME OVER", screenH / 2 - 40, 40, Loud),
+        Banner("Press ENTER to restart", screenH / 2 + 10, 20, Plain),
+        Banner(`final score ${g.score}`, screenH / 2 + 44, 20, Faint)]
+    },
+  }
+};
+
+let scene = (g: Game) => {
+  List.collectWith([], List.append, [
+    shipShapes(g),
+    List.map(g.asteroids, (a: Asteroid) => { Rock(a.pos, a.size, a.rotation) }),
+    List.map(g.bullets, (b: Bullet) => { Shot(b.pos) }),
+    readouts(g),
+    banners(g)
+  ])
+};

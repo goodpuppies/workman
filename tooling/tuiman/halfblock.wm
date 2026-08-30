@@ -1,0 +1,104 @@
+from "./ansi.wm" import * as Ansi;
+from "./geometry.wm" import * as Geometry;
+from "./kitty.wm" import { Image, Scale, Fit, Fill };
+from "./png.wm" import * as Png;
+from "./theme.wm" import * as Theme;
+from js.global("Math") import { floor };
+
+let down = (value) => {
+  floor(value) :> Result.withDefault(0)
+};
+
+let blend = (value, alpha, background) => {
+  down((value * alpha + background * (255 - alpha)) / 255)
+};
+
+let pixel = (pixels, x, y) => {
+  let safeX = Geometry.clamp(0, pixels.width - 1, down(x));
+  let safeY = Geometry.clamp(0, pixels.height - 1, down(y));
+  let (red, green, blue, alpha) = Png.rgba(pixels, safeX, safeY);
+  (
+    blend(red, alpha, Theme.libadwaitaDark.red),
+    blend(green, alpha, Theme.libadwaitaDark.green),
+    blend(blue, alpha, Theme.libadwaitaDark.blue),
+  )
+};
+
+let mapping = (area: Geometry.Rect, mode: Scale, pixels: Png.Pixels) => {
+  match(mode) {
+  Fit => {
+    let scale = if (area.width / pixels.width < (area.height * 2) / pixels.height) {
+      area.width / pixels.width
+    } else {
+      (area.height * 2) / pixels.height
+    };
+    let columns = Geometry.clamp(1, area.width, down(pixels.width * scale));
+    let rows = Geometry.clamp(1, area.height, down((pixels.height * scale + 1) / 2));
+    (down((area.width - columns) / 2), down((area.height - rows) / 2), columns, rows, 0, 0, pixels.width, pixels.height)
+  },
+  Fill => {
+    let targetRatio = area.width / (area.height * 2);
+    let imageRatio = pixels.width / pixels.height;
+    if (imageRatio > targetRatio) {
+      let sourceWidth = down(pixels.height * targetRatio);
+      (0, 0, area.width, area.height, down((pixels.width - sourceWidth) / 2), 0, sourceWidth, pixels.height)
+    } else {
+      let sourceHeight = down(pixels.width / targetRatio);
+      (0, 0, area.width, area.height, 0, down((pixels.height - sourceHeight) / 2), pixels.width, sourceHeight)
+    }
+  },
+  }
+};
+
+let cell = (pixels, sourceX, sourceY, sourceWidth, sourceHeight, columns, rows, x, y) => {
+  let px = sourceX + (x + 0.5) * sourceWidth / columns;
+  let pyTop = sourceY + (y * 2 + 0.5) * sourceHeight / (rows * 2);
+  let pyBottom = sourceY + (y * 2 + 1.5) * sourceHeight / (rows * 2);
+  let (tr, tg, tb) = pixel(pixels, px, pyTop);
+  let (br, bg, bb) = pixel(pixels, px, pyBottom);
+  Ansi.foregroundRgb(tr, tg, tb) ++ Ansi.backgroundRgb(br, bg, bb) ++ "▀"
+};
+
+let rec rowCells = (pixels, sourceX, sourceY, sourceWidth, sourceHeight, columns, rows, x, y) => {
+  if (x >= columns) {
+    ""
+  } else {
+    cell(pixels, sourceX, sourceY, sourceWidth, sourceHeight, columns, rows, x, y) ++
+      rowCells(pixels, sourceX, sourceY, sourceWidth, sourceHeight, columns, rows, x + 1, y)
+  }
+};
+
+let rec rows = (area, pixels, offsetX, offsetY, columns, count, sourceX, sourceY, sourceWidth, sourceHeight, y) => {
+  if (y >= count) {
+    ""
+  } else {
+    Ansi.cursorTo(area.y + offsetY + y + 1, area.x + offsetX + 1) ++
+      rowCells(pixels, sourceX, sourceY, sourceWidth, sourceHeight, columns, count, 0, y) ++
+      rows(area, pixels, offsetX, offsetY, columns, count, sourceX, sourceY, sourceWidth, sourceHeight, y + 1)
+  }
+};
+
+let renderPixels = (area: Geometry.Rect, mode: Scale, pixels: Png.Pixels) => {
+  if (area.width <= 0 || area.height <= 0 || pixels.width <= 0 || pixels.height <= 0) {
+    ""
+  } else {
+    let (offsetX, offsetY, columns, count, sourceX, sourceY, sourceWidth, sourceHeight) = mapping(area, mode, pixels);
+    rows(area, pixels, offsetX, offsetY, columns, count, sourceX, sourceY, sourceWidth, sourceHeight, 0) ++ Ansi.reset
+  }
+};
+
+let render = (area: Geometry.Rect, mode: Scale, image: Image) => {
+  match(image.pixels) {
+    Some(pixels) => { renderPixels(area, mode, pixels) },
+    None => {
+      if (image.base64 == "") {
+        ""
+      } else {
+        match(Png.decode(image.base64)) {
+          Err(_) => { "" },
+          Ok(pixels) => { renderPixels(area, mode, pixels) },
+        }
+      }
+    },
+  }
+};

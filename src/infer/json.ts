@@ -1,9 +1,16 @@
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
-import { named, prune, quoteType, type Ty, type TypeEnv } from "../types.ts";
+import {
+  named,
+  prune,
+  quoteType,
+  typeInfoByName,
+  type Ty,
+  type TypeEnv,
+} from "../types.ts";
 
 export function jsonValueTy(typeEnv: TypeEnv): Ty {
-  const info = typeEnv.get("Js.Value");
+  const info = typeInfoByName(typeEnv, "Js.Value");
   if (!info) throw new Error("unknown type Js.Value");
   return named(info);
 }
@@ -17,14 +24,14 @@ export function assertJsonCompatible(type: Ty, typeEnv: TypeEnv, expr: Expr) {
 }
 
 function isJsValueTy(type: Ty, typeEnv: TypeEnv): boolean {
-  const jsValue = typeEnv.get("Js.Value");
+  const jsValue = typeInfoByName(typeEnv, "Js.Value");
   return !!jsValue && type.tag === "named" && type.id === jsValue.id;
 }
 
 function isJsObjectLikeTy(type: Ty, typeEnv: TypeEnv): boolean {
-  const jsObject = typeEnv.get("Js.Object");
-  const jsDict = typeEnv.get("Js.Dict");
+  const jsObject = typeInfoByName(typeEnv, "Js.Object");
+  const jsDict = typeInfoByName(typeEnv, "Js.Dict");
   return type.tag === "named" &&
     (type.id === jsObject?.id || type.id === jsDict?.id ||
-      Boolean(type.foreign || typeEnv.get(type.name)?.foreign));
+      Boolean(type.foreign || typeInfoByName(typeEnv, type.name)?.foreign));
 }

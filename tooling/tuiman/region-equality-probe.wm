@@ -1,0 +1,14 @@
+-- Regression probe: an explicitly annotated primitive equality procedure must
+-- establish its parameter type before the equality-admissibility check.
+
+let sameText = (left: String, right: String) => {
+  left == right
+};
+
+let main = () => {
+  if (sameText("region", "region")) {
+    print("region equality ok")
+  } else {
+    print("region equality failed")
+  }
+};

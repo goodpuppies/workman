@@ -1,9 +1,12 @@
+import { BASIS_TYPES } from "./basis_manifest.ts";
 import type { TypeExpr } from "./ast.ts";
 
 export type BasisCtorDecl = {
   name: string;
   id: number;
   args: TypeExpr[];
+  /** The manifest-declared runtime name; never recomputed from `name`. */
+  runtimeName: string;
 };
 
 export type BasisTypeDecl = {
@@ -12,43 +15,20 @@ export type BasisTypeDecl = {
   ctors: BasisCtorDecl[];
 };
 
-const param = (name: string): TypeExpr => ({ kind: "TName", name, args: [] });
-
-export const basisTypes: BasisTypeDecl[] = [
-  {
-    name: "Option",
-    params: ["T"],
-    ctors: [
-      { name: "None", id: -1, args: [] },
-      { name: "Some", id: -2, args: [param("T")] },
-    ],
-  },
-  {
-    name: "Result",
-    params: ["T", "E"],
-    ctors: [
-      { name: "Ok", id: -3, args: [param("T")] },
-      { name: "Err", id: -4, args: [param("E")] },
-    ],
-  },
-  //export type List<T> = Nil | Cons<T, List<T>>;
-  {
-    name: "List",
-    params: ["T"],
-    ctors: [
-      { name: "Nil", id: -5, args: [] },
-      { name: "Cons", id: -6, args: [param("T"), { kind: "TName", name: "List", args: [param("T")] }] },
-    ],
-  },
-  {
-    name: "Js.Error",
-    params: [],
-    ctors: [
-      { name: "Js.Error", id: -7, args: [{ kind: "TName", name: "String", args: [] }] },
-      { name: "Js.Unknown", id: -8, args: [] },
-    ],
-  },
-];
+export const basisTypes: BasisTypeDecl[] = BASIS_TYPES.flatMap((type) =>
+  type.constructors
+    ? [{
+      name: type.name,
+      params: [...(type.argLabels ?? [])],
+      ctors: type.constructors.map((ctor) => ({
+        name: ctor.name,
+        id: ctor.id,
+        args: [...ctor.args],
+        runtimeName: ctor.runtimeName,
+      })),
+    }]
+    : []
+);
 
 export function basisCtorId(name: string): number | undefined {
   for (const type of basisTypes) {
@@ -61,7 +41,7 @@ export function basisCtorId(name: string): number | undefined {
 export function basisCtorJsName(id: number): string | undefined {
   for (const type of basisTypes) {
     const ctor = type.ctors.find((item) => item.id === id);
-    if (ctor) return `__wm_basis_${ctor.name.replaceAll(".", "_")}`;
+    if (ctor) return ctor.runtimeName;
   }
   return undefined;
 }

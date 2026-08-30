@@ -1,0 +1,6 @@
+[submodule "editors/tree-sitter-workman"]
+	path = editors/tree-sitter-workman
+	url = https://github.com/goodpuppies/tree-sitter-workman.git
+[submodule "editors/zed-workman"]
+	path = editors/zed-workman
+	url = https://github.com/goodpuppies/zed-workman.git

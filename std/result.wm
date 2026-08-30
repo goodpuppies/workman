@@ -1,3 +1,9 @@
+from "./monad.wm" import { Carrier };
+
+let succeed = (value) => {
+  Ok(value)
+};
+
 let map = match(result, f) => {
   (Ok(value), f) => { Ok(f(value)) },
   (Err(error), _) => { Err(error) }
@@ -6,6 +12,16 @@ let map = match(result, f) => {
 let andThen = match(result, f) => {
   (Ok(value), f) => { f(value) },
   (Err(error), _) => { Err(error) }
+};
+
+let toBool = match(r) => {
+  Ok(v) => {
+    match(v) {
+      true => {true},
+      false => {false}
+    }
+  },
+  Err(_) => {false}
 };
 
 let fn = (f) => {
@@ -19,15 +35,40 @@ let mapErr = match(result, f) => {
   (Err(error), f) => { Err(f(error)) }
 };
 
-let withDefault = match(result, fallback) => {
-  (Ok(value), _) => { value },
-  (Err(_), fallback) => { fallback }
+let fnError = (inject) => {
+  (f) => {
+    fn((value) => {
+      f(value) :> mapErr(inject)
+    })
+  }
 };
 
 let map2 = match(a, b, f) => {
   (Ok(left), Ok(right), f) => { Ok(f(left, right)) },
   (Err(error), _, _) => { Err(error) },
   (_, Err(error), _) => { Err(error) }
+};
+
+let carrier = .{
+  fn = fn,
+  fnError = fnError,
+  succeed = succeed,
+  map = map,
+  map2 = map2,
+  andThen = andThen,
+};
+
+let withDefault = match(result, fallback) => {
+  (Ok(value), _) => { value },
+  (Err(_), fallback) => { fallback }
+};
+
+let debug = match(result) => {
+  Ok(value) => { value },
+  Err(error) => { 
+    print(Debug.errorMessage(error));
+    ?
+  }
 };
 
 let map3 = match(a, b, c, f) => {
@@ -45,19 +86,31 @@ let map4 = match(a, b, c, d, f) => {
   (_, _, _, Err(error), _) => { Err(error) }
 };
 
-let rec traverse = match(items, f) => {
-  (Nil, _) => { Ok(Nil) },
-  (Cons(item, rest), f) => {
+let rec reverseAcc = match(items, acc) => {
+  ([], acc) => { acc },
+  ([head, ..rest], acc) => {
+    reverseAcc(rest, [head, ..acc])
+  }
+};
+
+let reverse = (items) => {
+  reverseAcc(items, [])
+};
+
+let rec traverseAcc = match(items, f, acc) => {
+  ([], _, acc) => { Ok(reverse(acc)) },
+  ([item, ..rest], f, acc) => {
     match(f(item)) {
       Err(error) => { Err(error) },
       Ok(value) => {
-        match(traverse(rest, f)) {
-          Err(error) => { Err(error) },
-          Ok(values) => { Ok(Cons(value, values)) }
-        }
+        traverseAcc(rest, f, [value, ..acc])
       }
     }
   }
+};
+
+let traverse = (items, f) => {
+  traverseAcc(items, f, [])
 };
 
 let all = (items) => {

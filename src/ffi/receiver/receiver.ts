@@ -175,6 +175,7 @@ export function reflectedReceiverFunctionValue(
     params: params.map((param) => ({
       pattern: { kind: "PVar", name: param },
     })),
+    directives: [],
     body: {
       kind: "Call",
       callee: { kind: "Var", name: variant.internalName },
@@ -186,12 +187,38 @@ export function reflectedReceiverFunctionValue(
   };
 }
 
+export function delayedReflectedReceiverFunctionValue(
+  name: string,
+  refs: Map<string, JsTypeRef>,
+  node?: Expr["node"],
+): Expr | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const baseName = parts[0];
+  const ref = refs.get(baseName);
+  if (!ref || isJsPromiseRef(ref)) return undefined;
+  const path = parts.slice(1);
+  const member = jsRefMember(ref, path);
+  if (!member) return undefined;
+  const variants = memberVariants(member);
+  if (variants.length < 2 || variants.some((variant) => variant.type.kind !== "TFn")) {
+    return undefined;
+  }
+  return {
+    kind: "FfiGet",
+    receiver: { kind: "Var", name: baseName },
+    path,
+    node,
+  };
+}
+
 export function objectReceiverProperty(
   exprName: string,
   bindings: Map<string, FfiBinding>,
   selected: Set<string>,
   objectAccess: Map<string, ObjectAccess>,
   recordFields: Set<string> = new Set(),
+  node?: Expr["node"],
 ): Expr | undefined {
   const parts = exprName.split(".");
   if (parts.length < 2) return undefined;
@@ -214,6 +241,7 @@ export function objectReceiverProperty(
       kind: "FfiGet",
       receiver: { kind: "Var", name: baseName },
       path,
+      node,
     };
   }
   const surfaceName = `__dynamic.${path.join(".")}`;

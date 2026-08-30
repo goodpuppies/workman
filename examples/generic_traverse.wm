@@ -1,0 +1,23 @@
+let resultTraverse = (items, transform) => {
+  Traverse.with Result (items, transform)
+};
+
+let taskTraverse = (items, transform) => {
+  Traverse.with Task (items, transform)
+};
+
+let parseNumber = (text) => {
+  if (text == "one") { Ok(1) } else { Err("not a number") }
+};
+
+let requirePositive = (number) => {
+  if (number > 0) { Ok(number) } else { Err("not positive") }
+};
+
+let parsed: Result<List<Number>, String> = resultTraverse(["one", "one"], parseNumber);
+let positive: Result<List<Number>, String> = resultTraverse([1, 2, 3], requirePositive);
+let rejected: Result<List<Number>, String> = resultTraverse(["one", "two"], parseNumber);
+
+let completed: Task<List<Number>, String> = taskTraverse([1, 2, 3], (number) => {
+  Task.succeed(number + 1)
+});

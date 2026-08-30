@@ -1,0 +1,215 @@
+-- A Workman port of GLML's raymarch.glml acceptance shader.
+-- Mouse motion rotates the camera; time animates the signed-distance field.
+
+from "./sdl_window.wm" import {
+  NativeRuntime, NativeError, QuitEvent, MouseEvent, ResizeEvent, IgnoredEvent, NoEvent,
+  startNative, nativeSurface, pollNative, delayNative, presentNative, closeNative
+};
+from "./webgpu_present.wm" import {
+  FragmentRenderer,
+  createFragmentRenderer, renderFragment, destroyFragmentRenderer
+};
+
+type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
+type MarchResult = Miss | Hit<Number>;
+
+record RaymarchUniforms = {
+  resolution: (Number, Number),
+  time: Number,
+  cameraRotation: (Number, Number)
+};
+
+record RaymarchFrame = {
+  quit: Bool,
+  resolution: (Number, Number),
+  time: Number,
+  cameraRotation: (Number, Number)
+};
+
+type PollStep = PollAgain<RaymarchFrame> | PollDone<RaymarchFrame>;
+
+let raymarchShade = (uniforms: RaymarchUniforms) => {
+  (coord) => {
+    @gpu;
+
+    let rotate = (p, angle) => {
+      let sine = sin(angle);
+      let cosine = cos(angle);
+      (p.x * cosine - p.y * sine, p.x * sine + p.y * cosine)
+    };
+
+    let smoothMin = (a, b) => {
+      let radius = 0.1;
+      let blend = clamp(0.5 + 0.5 * (b - a) / radius, 0.0, 1.0);
+      lerp(b, a, blend) - radius * blend * (1.0 - blend)
+    };
+
+    let palette = (amount) => {
+      let configuration = (0.3, 0.416, 0.557);
+      cos((configuration + amount) * 6.28318) * 0.5 + 0.5
+    };
+
+    let torusDistance = (p, radii) => {
+      let radial = (length((p.x, p.z)) - radii.x, p.y);
+      length(radial) - radii.y
+    };
+
+    let sceneDistance = (p, time) => {
+      let angle = time * 0.002;
+      let xy = rotate((p.x, p.y), angle);
+      let aroundZ = (xy.x, xy.y, p.z);
+      let yz = rotate((aroundZ.y, aroundZ.z), angle);
+      let rotated = (aroundZ.x, yz.x, yz.y);
+      smoothMin(
+        torusDistance(rotated, (1.0, 0.3)),
+        torusDistance(p, (2.0, 0.5))
+      )
+    };
+
+    let rec march = (origin, direction, time, distance, steps) => {
+      if (steps > 80 || distance > 100.0) {
+        Miss
+      } else {
+        let stepDistance = sceneDistance(origin + direction * distance, time);
+        let adaptiveEpsilon = 0.001 + Gpu.f32(steps) * 0.000001;
+        if (stepDistance < adaptiveEpsilon) {
+          Hit(distance)
+        } else {
+          march(origin, direction, time, distance + stepDistance, steps + 1)
+        }
+      }
+    };
+
+    let minimumResolution = min(uniforms.resolution.x, uniforms.resolution.y);
+    let uv = (coord * 2.0 - uniforms.resolution) / minimumResolution;
+    let initialOrigin = (0.0, 0.0, -6.0);
+    let initialDirection = normalize((uv.x, uv.y, 1.0));
+    let pitch = uniforms.cameraRotation.y;
+    let yaw = uniforms.cameraRotation.x;
+    let originYZ = rotate((initialOrigin.y, initialOrigin.z), pitch);
+    let directionYZ = rotate((initialDirection.y, initialDirection.z), pitch);
+    let pitchedOrigin = (initialOrigin.x, originYZ.x, originYZ.y);
+    let pitchedDirection = (initialDirection.x, directionYZ.x, directionYZ.y);
+    let originXZ = rotate((pitchedOrigin.x, pitchedOrigin.z), yaw);
+    let directionXZ = rotate((pitchedDirection.x, pitchedDirection.z), yaw);
+    let origin = (originXZ.x, pitchedOrigin.y, originXZ.y);
+    let direction = (directionXZ.x, pitchedDirection.y, directionXZ.y);
+    let color = match(march(origin, direction, uniforms.time, 0.0, 0)) {
+      Miss => { (0.025, 0.035, 0.06) },
+      Hit(distance) => { palette(distance * 0.3 + uniforms.time * 0.0002) }
+    };
+    let vignette = smoothstep(1.4, 0.15, length(uv));
+    let finalColor = color * (0.35 + vignette * 0.65);
+    (finalColor.x, finalColor.y, finalColor.z, 1.0)
+  }
+};
+
+let fragmentFor = (state: RaymarchFrame) => {
+  let uniforms: RaymarchUniforms = .{
+    resolution = state.resolution,
+    time = state.time,
+    cameraRotation = state.cameraRotation
+  };
+  Gpu.fragment(raymarchShade(uniforms))
+};
+
+let initialState: RaymarchFrame = .{
+  quit = false,
+  resolution = (960.0, 640.0),
+  time = 0.0,
+  cameraRotation = (0.0, 0.0)
+};
+
+let applyNativeEvent = (state: RaymarchFrame, event) => {
+  match(event) {
+    QuitEvent => {
+      let next: RaymarchFrame = .{ ..state, quit = true };
+      PollDone(next)
+    },
+    MouseEvent(dx, dy) => {
+      let (yaw, pitch) = state.cameraRotation;
+      let next: RaymarchFrame = .{
+        ..state,
+        cameraRotation = (yaw + dx * 0.005, pitch + dy * 0.005)
+      };
+      PollAgain(next)
+    },
+    ResizeEvent(_width, _height) => { PollAgain(state) },
+    IgnoredEvent => { PollAgain(state) },
+    NoEvent => { PollDone(state) }
+  }
+};
+
+let rec drainEvents = (
+  native: NativeRuntime,
+  state: RaymarchFrame,
+  remaining: Number
+) => {
+  if (remaining <= 0) {
+    Ok(state)
+  } else {
+    match(pollNative(native)) {
+      Err(error) => { Err(NativeFailure(error)) },
+      Ok(event) => {
+        match(applyNativeEvent(state, event)) {
+          PollDone(done) => { Ok(done) },
+          PollAgain(next) => { drainEvents(native, next, remaining - 1) }
+        }
+      }
+    }
+  }
+};
+
+let rec frameLoop = (
+  native: NativeRuntime,
+  renderer: FragmentRenderer,
+  state: RaymarchFrame
+) => {
+  match(drainEvents(native, state, 256)) {
+    Err(error) => { Err(error) },
+    Ok(inputState) => {
+      if (inputState.quit) {
+        Ok(void)
+      } else {
+        let nextState: RaymarchFrame = .{
+          ..inputState,
+          time = inputState.time + 16.0
+        };
+        let fragment = fragmentFor(nextState);
+        Result|
+          renderFragment(renderer, fragment) :> Result.mapErr(HostFailure),
+          presentNative(native) :> Result.mapErr(NativeFailure),
+          delayNative(native, 16) :> Result.mapErr(NativeFailure)
+        | :> Result.andThen((_) => { frameLoop(native, renderer, nextState) })
+      }
+    }
+  }
+};
+
+let runWindow = (native: NativeRuntime) => {
+  createFragmentRenderer(nativeSurface(native), fragmentFor(initialState))
+    :> Task.map((renderer) => {
+      let rendered = frameLoop(native, renderer, initialState);
+      let cleanup = Result|
+        destroyFragmentRenderer(renderer) :> Result.mapErr(HostFailure),
+        closeNative(native) :> Result.mapErr(NativeFailure)
+      |;
+      match(Result|rendered, cleanup|) {
+        Ok(_) => { void },
+        Err(error) => { print(error) }
+      }
+    })
+    :> Task.mapErr(HostFailure)
+    :> Task.recover((error) => {
+      let _closed = closeNative(native);
+      print(error)
+    })
+};
+
+let main = () => {
+  startNative(960, 640)
+    :> Result.mapErr(NativeFailure)
+    :> Task.fromResult
+    :> Task.andThen(runWindow)
+    :> Task.recover((error) => { print(error) })
+};

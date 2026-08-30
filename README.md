@@ -21,6 +21,8 @@ To install the wm cli simply run
 ```
 deno install -g -A --name wm jsr:@goodpuppies/workman
 ```
+for fresher versions, you can add the argument
+`--min-dep-age=0`
 
 ## Language Features
 
@@ -45,6 +47,21 @@ Besides just fp Workman also has:
 
 is available for [vscode](https://marketplace.visualstudio.com/items?itemName=goodpuppies.workman)
 
+Install the Workman CLI with Deno:
+
+```sh
+deno install -g -A --name wm jsr:@goodpuppies/workman
+```
+
+Editors can start the language server over stdio with `wm lsp`. Editor-specific
+configuration lives under [`editors`](./editors/README.md).
+
+Use `wm problems entrypoint.wm` for a terminal diagnostics list in editors without a problems
+panel. The viewer is written in Workman and gets its snapshot from an independent LSP process.
+Press `e`, `w`, `i`, or `h` to toggle error, warning, information, or hint diagnostics; `a` restores
+all severities. It watches the entrypoint directory recursively and refreshes when `.wm` files are
+saved.
+
 ## Documentation
 
 * To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/wm-minisyntaxguide.md). It is short and the best way to learn the language
@@ -58,6 +75,24 @@ For local development, the repository installer remains available:
 ```sh
 deno task install
 wm run examples/factorial.wm
+```
+
+For a live top-level evaluation loop, use `wm repl <file.wm>`. The file is evaluated immediately and
+again whenever it is saved; unlike `wm run`, it does not require a `main` function:
+
+```workman
+let answer = 1 + 1;
+```
+
+Running `wm repl answer.wm` displays `answer = 2 : Number`. A bare top-level expression is bound to
+`it`, following the SML top-level convention.
+
+To run a normal program on every save, use `wm watch <file.wm>`. Workman watches the complete
+reachable module graph and refreshes that set after every change, so editing a direct or transitive
+`.wm` dependency restarts the program too:
+
+```sh
+wm watch app.wm -- arg1 arg2
 ```
 
 The installer writes a small launcher into `~/.local/bin` on Unix-like systems, or `~/.deno/bin` on

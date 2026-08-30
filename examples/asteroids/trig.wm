@@ -1,0 +1,51 @@
+let pi = 3.141592653589793;
+let twoPi = 6.283185307179586;
+
+let truncate = (x: Number) => {
+  x - (x % 1)
+};
+
+let floorReal = (x: Number) => {
+  let t = truncate(x);
+  if (t > x) { t - 1 } else { t }
+};
+
+let round = (x: Number) => {
+  floorReal(x + 0.5)
+};
+
+let reduce = (x: Number) => {
+  x - round(x / twoPi) * twoPi
+};
+
+let sinReduced = (x: Number) => {
+  let x2 = x * x;
+  x * (1 - x2 / 6 *
+      (1 - x2 / 20 *
+      (1 - x2 / 42 *
+      (1 - x2 / 72 *
+      (1 - x2 / 110 *
+      (1 - x2 / 156))))))
+};
+
+let cosReduced = (x: Number) => {
+  let x2 = x * x;
+  1 - x2 / 2 *
+      (1 - x2 / 12 *
+      (1 - x2 / 30 *
+      (1 - x2 / 56 *
+      (1 - x2 / 90 *
+      (1 - x2 / 132)))))
+};
+
+let sin = (x: Number) => {
+  sinReduced(reduce(x))
+};
+
+let cos = (x: Number) => {
+  cosReduced(reduce(x))
+};
+
+let degrees = (radians: Number) => {
+  radians * 180 / pi
+};

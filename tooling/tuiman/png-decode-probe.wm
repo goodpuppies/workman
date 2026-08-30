@@ -1,0 +1,46 @@
+from js.module("node:buffer") import { Buffer };
+from js.module("node:zlib") import { inflateSync };
+
+let main = () => {
+  let b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  match(Buffer.from(b64, "base64")) {
+    Err(_) => { print("fail") },
+    Ok(buf) => {
+      match(Result|
+        buf :> .length,
+        buf :> .readUInt32BE(16),
+        buf :> .readUInt32BE(20),
+        buf :> .readUInt8(24),
+        buf :> .readUInt8(25)
+      |) {
+        Err(_) => { print("meta fail") },
+        Ok(meta) => {
+          let (end, w, h, bitDepth, colorType) = meta;
+          print("wh=" ++ Text.of(w) ++ "x" ++ Text.of(h) ++ " ct=" ++ Text.of(colorType));
+          match(buf :> .readUInt32BE(33)) {
+            Err(_) => { print("len fail") },
+            Ok(idatLen) => {
+              match(buf :> .subarray(41, 41 + idatLen)) {
+                Err(_) => { print("sub fail") },
+                Ok(idat) => {
+                  match(inflateSync(idat)) {
+                    Err(_) => { print("inflate fail") },
+                    Ok(raw) => {
+                      match(Result|raw :> .length, raw :> .readUInt8(0), raw :> .readUInt8(1)|) {
+                        Err(_) => { print("pix fail") },
+                        Ok(pix) => {
+                          let (n, f, r) = pix;
+                          print("raw=" ++ Text.of(n) ++ " f=" ++ Text.of(f) ++ " r=" ++ Text.of(r))
+                        },
+                      }
+                    },
+                  }
+                },
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+};

@@ -1,0 +1,102 @@
+import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
+import { dirname, resolve } from "node:path";
+import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
+import { maskSourceRange, topLevelPhraseRanges } from "./top_level_phrases.ts";
+import { createTemporaryDirectory } from "./temporary_directory.ts";
+
+export { topLevelPhraseRanges } from "./top_level_phrases.ts";
+
+export type ReplEvaluation = {
+  code: number;
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  staticErrors?: unknown[];
+};
+
+export async function evaluateReplFile(
+  input: string,
+  options: CompileOptions = {},
+): Promise<ReplEvaluation> {
+  const inputPath = await Deno.realPath(resolve(input));
+  const source = await Deno.readTextFile(inputPath);
+  try {
+    const artifacts = await compileReplFileArtifacts(inputPath, options);
+    return await executeReplArtifacts(inputPath, artifacts);
+  } catch (fullError) {
+    let successfulArtifacts: Awaited<ReturnType<typeof compileReplFileArtifacts>> | undefined;
+    const staticErrors: unknown[] = [];
+    let committedSource = source;
+    let attemptedPhrase = false;
+    for (const { start, end } of topLevelPhraseRanges(source)) {
+      attemptedPhrase = true;
+      try {
+        successfulArtifacts = await compileReplFileArtifacts(
+          inputPath,
+          withEntrySource(options, inputPath, committedSource.slice(0, end)),
+        );
+      } catch (error) {
+        staticErrors.push(error);
+        committedSource = maskSourceRange(committedSource, start, end);
+      }
+    }
+    if (!attemptedPhrase) staticErrors.push(fullError);
+    const prior = successfulArtifacts
+      ? await executeReplArtifacts(inputPath, successfulArtifacts)
+      : emptyEvaluation();
+    return { ...prior, code: 1, staticErrors };
+  }
+}
+
+async function executeReplArtifacts(
+  inputPath: string,
+  artifacts: Awaited<ReturnType<typeof compileReplFileArtifacts>>,
+): Promise<ReplEvaluation> {
+  const temporaryDirectory = await createTemporaryDirectory({
+    dir: dirname(inputPath),
+    prefix: ".wm-mini-repl-",
+  });
+  const dir = temporaryDirectory.path;
+  try {
+    const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
+    if (!entry) throw new Error("compiler produced no REPL artifact");
+    for (const artifact of artifacts) {
+      await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
+    }
+    return await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", ...runtimeFlagsForJavaScript(entry.code), `${dir}/${entry.path}`],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+  } finally {
+    await temporaryDirectory.cleanup();
+  }
+}
+
+function withEntrySource(
+  options: CompileOptions,
+  inputPath: string,
+  source: string,
+): CompileOptions {
+  return {
+    ...options,
+    sourceOverrides: new Map([...(options.sourceOverrides ?? []), [inputPath, source]]),
+  };
+}
+
+function emptyEvaluation(): ReplEvaluation {
+  return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+}
+
+export async function* watchReplChanges(input: string): AsyncGenerator<void> {
+  const inputPath = resolve(input);
+  yield;
+  const watcher = Deno.watchFs(dirname(inputPath));
+  try {
+    for await (const event of watcher) {
+      if (!event.paths.some((path) => resolve(path) === inputPath)) continue;
+      yield;
+    }
+  } finally {
+    watcher.close();
+  }
+}

@@ -6,67 +6,171 @@ import {
   coreFile,
   ModuleAnalysisError,
 } from "./compiler.ts";
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
-  formatDiagnostic,
+  formatDiagnosticDocument,
   formatDiagnosticError,
   formatDiagnosticInspection,
   formatError,
+  formatReplDiagnostic,
+  formatReplError,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
 } from "./diagnostics.ts";
+import { type Document, renderDocument } from "../tooling/tuiman/document.ts";
 import { ParseError } from "./parser.ts";
+import { moduleNodeForPath } from "./module_graph.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
+import { evaluateReplFile, watchReplChanges } from "./repl.ts";
+import { watchFile } from "./watch.ts";
+import { formatFrontendV2Source } from "./frontend_v2_formatter.ts";
+import denoConfig from "../deno.json" with { type: "json" };
 
 const commands = new Set([
   "check",
   "compile",
   "compile-library",
   "run",
+  "watch",
+  "repl",
   "err",
+  "fmt",
+  "lsp",
+  "problems",
+  "todo",
+  "what",
   "type-debug",
   "help",
+  "version",
 ]);
+const VERSION = denoConfig.version;
 
 export async function runCli(args: string[]): Promise<number> {
   return await main(args).catch((error) => {
-    if (error instanceof ParseError) {
-      console.error(formatError(error.message, error.filePath, error.source, error.span));
-    } else if (error instanceof ModuleAnalysisError) {
-      if (error.originalError instanceof ParseError) {
-        console.error(
-          formatError(
-            error.originalError.message,
-            error.originalError.filePath || error.path,
-            error.originalError.source,
-            error.originalError.span,
-          ),
-        );
-      } else if (error.originalError instanceof FrontendDiagnosticError) {
-        console.error(formatDiagnosticError(error.originalError, error.path, error.source));
-        for (const diagnostic of error.diagnostics) {
-          console.error(formatDiagnostic(diagnostic, error.path, error.source));
-        }
-      } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
-        console.error(formatBundleError(error.originalError, error.path, error.source));
-      } else {
-        console.error(formatError(error.message, error.path, error.source, undefined));
-        for (const diagnostic of error.diagnostics) {
-          console.error(formatDiagnostic(diagnostic, error.path, error.source));
-        }
-      }
-    } else if (error instanceof RunEntrypointError) {
-      console.error(formatDiagnosticError(error, error.path, error.source));
-    } else if (error instanceof FrontendDiagnosticError) {
-      console.error(formatDiagnosticError(error, undefined, undefined));
-    } else if (error instanceof FrontendDiagnosticBundleError) {
-      console.error(formatBundleError(error, undefined, undefined));
-    } else {
-      console.error(error instanceof Error ? error.message : String(error));
-    }
+    reportError(error);
     return 1;
   });
+}
+
+function reportError(error: unknown): void {
+  if (error instanceof ParseError) {
+    console.error(formatError(error.message, error.filePath, error.source, error.span));
+  } else if (error instanceof ModuleAnalysisError) {
+    if (error.originalError instanceof ParseError) {
+      console.error(
+        formatError(
+          error.originalError.message,
+          error.originalError.filePath || error.path,
+          error.originalError.source,
+          error.originalError.span,
+        ),
+      );
+    } else if (error.originalError instanceof FrontendDiagnosticError) {
+      printDiagnostic(
+        formatDiagnosticDocument(error.originalError.diagnostic, error.path, error.source),
+      );
+      for (const diagnostic of error.diagnostics) {
+        printDiagnostic(formatDiagnosticDocument(diagnostic, error.path, error.source));
+      }
+    } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
+      printDiagnosticBundle(error.originalError, error.path, error.source);
+    } else {
+      console.error(formatError(error.message, error.path, error.source, undefined));
+      for (const diagnostic of error.diagnostics) {
+        printDiagnostic(formatDiagnosticDocument(diagnostic, error.path, error.source));
+      }
+    }
+  } else if (error instanceof RunEntrypointError) {
+    let rendered = formatDiagnosticError(error, error.path, error.source).trimEnd();
+    if (error.suggestedEntrypoints.length > 0) {
+      const cwd = resolve(Deno.cwd());
+      const paths = error.suggestedEntrypoints.map((path) => {
+        const display = relative(cwd, path);
+        return `    ${display.startsWith("..") ? path : display}`;
+      });
+      rendered +=
+        `\n\nDid you mean one of these entrypoint files? They contain a \`main\` function:\n\n${
+          paths.join("\n")
+        }`;
+    }
+    console.error(rendered);
+  } else if (error instanceof FrontendDiagnosticError) {
+    printDiagnostic(formatDiagnosticDocument(error.diagnostic, undefined, undefined));
+  } else if (error instanceof FrontendDiagnosticBundleError) {
+    printDiagnosticBundle(error, undefined, undefined);
+  } else {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function printDiagnostic(document: Document): void {
+  console.error(renderDocument(document, Deno.stderr.isTerminal() && !Deno.noColor));
+}
+
+function printDiagnosticBundle(
+  error: FrontendDiagnosticBundleError,
+  filePath: string | undefined,
+  source: string | undefined,
+): void {
+  if (error.primary instanceof FrontendDiagnosticError) {
+    printDiagnostic(formatDiagnosticDocument(error.primary.diagnostic, filePath, source));
+  } else {
+    console.error(formatError(error.message, filePath, source, undefined).trimEnd());
+  }
+  for (const diagnostic of error.diagnostics) {
+    printDiagnostic(formatDiagnosticDocument(diagnostic, filePath, source));
+  }
+}
+
+function reportReplError(error: unknown): void {
+  if (error instanceof ParseError) {
+    console.error(formatReplError(error.message, error.filePath, error.source, error.span));
+  } else if (error instanceof ModuleAnalysisError) {
+    if (error.originalError instanceof ParseError) {
+      console.error(
+        formatReplError(
+          error.originalError.message,
+          error.originalError.filePath || error.path,
+          error.originalError.source,
+          error.originalError.span,
+        ),
+      );
+    } else if (error.originalError instanceof FrontendDiagnosticError) {
+      console.error(formatReplDiagnostic(error.originalError.diagnostic, error.path, error.source));
+      for (const diagnostic of error.diagnostics) {
+        console.error(formatReplDiagnostic(diagnostic, error.path, error.source));
+      }
+    } else if (error.originalError instanceof FrontendDiagnosticBundleError) {
+      if (error.originalError.primary instanceof FrontendDiagnosticError) {
+        console.error(
+          formatReplDiagnostic(error.originalError.primary.diagnostic, error.path, error.source),
+        );
+      } else {
+        console.error(
+          formatReplError(error.originalError.message, error.path, error.source, undefined),
+        );
+      }
+      for (const diagnostic of error.originalError.diagnostics) {
+        console.error(formatReplDiagnostic(diagnostic, error.path, error.source));
+      }
+    } else {
+      console.error(formatReplError(error.message, error.path, error.source, undefined));
+    }
+  } else if (error instanceof FrontendDiagnosticError) {
+    console.error(formatReplDiagnostic(error.diagnostic, undefined, undefined));
+  } else if (error instanceof FrontendDiagnosticBundleError) {
+    if (error.primary instanceof FrontendDiagnosticError) {
+      console.error(formatReplDiagnostic(error.primary.diagnostic, undefined, undefined));
+    } else {
+      console.error(formatReplError(error.message, undefined, undefined, undefined));
+    }
+    for (const diagnostic of error.diagnostics) {
+      console.error(formatReplDiagnostic(diagnostic, undefined, undefined));
+    }
+  } else {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
 }
 
 if (import.meta.main) {
@@ -79,7 +183,16 @@ export async function main(args: string[]): Promise<number> {
     usage();
     return 0;
   }
-  const command = commands.has(head ?? "") ? head : "compile";
+  if (head === "--version" || head === "-V" || head === "-v") {
+    version();
+    return 0;
+  }
+  if (!commands.has(head) && !head.endsWith(".wm")) {
+    console.error(`unknown command: ${head}`);
+    console.error("try: wm --help");
+    return 2;
+  }
+  const command = commands.has(head) ? head : "compile";
   const commandArgs = command === head ? rest : args;
 
   switch (command) {
@@ -91,10 +204,26 @@ export async function main(args: string[]): Promise<number> {
       return await compileLibraryCommand(commandArgs);
     case "run":
       return await runCommand(commandArgs);
+    case "watch":
+      return await watchCommand(commandArgs);
+    case "repl":
+      return await replCommand(commandArgs);
     case "err":
       return await errCommand(commandArgs);
+    case "fmt":
+      return await fmtCommand(commandArgs);
+    case "lsp":
+      return await lspCommand(commandArgs);
+    case "problems":
+      return await problemsCommand(commandArgs);
+    case "todo":
+    case "what":
+      return await todoCommand(commandArgs, command);
     case "type-debug":
       return await typeDebugCommand(commandArgs);
+    case "version":
+      version();
+      return 0;
     case "help":
     default:
       usage();
@@ -106,11 +235,12 @@ async function checkCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("check");
   const analysis = await analyzeFile(input);
-  for (const path of analysis.graph.order) {
-    const result = analysis.results.get(path);
-    const source = analysis.graph.nodes.get(path)?.source ?? "";
+  for (const id of analysis.graph.order) {
+    const node = analysis.graph.nodes.get(id);
+    const result = analysis.results.get(id);
+    const source = node?.source ?? "";
     for (const diagnostic of result?.diagnostics ?? []) {
-      console.error(formatDiagnostic(diagnostic, path, source));
+      printDiagnostic(formatDiagnosticDocument(diagnostic, node?.path ?? "<module>", source));
     }
   }
   console.log("ok");
@@ -152,6 +282,49 @@ async function runCommand(args: string[]): Promise<number> {
   return (await runFile(input, { args: programArgs })).code;
 }
 
+async function watchCommand(args: string[]): Promise<number> {
+  const separator = args.indexOf("--");
+  const inputArgs = separator === -1 ? args : args.slice(0, separator);
+  const programArgs = separator === -1 ? [] : args.slice(separator + 1);
+  const [input] = inputArgs;
+  if (!input) return missingInput("watch");
+  await watchFile(input, { args: programArgs, onError: reportError });
+  return 0;
+}
+
+async function replCommand(args: string[]): Promise<number> {
+  const { input, options } = parseReplArguments(args);
+  if (!input) return missingInput("repl");
+  for await (const _ of watchReplChanges(input)) {
+    try {
+      const result = await evaluateReplFile(input, options);
+      clearReplOutput();
+      await Deno.stdout.write(result.stdout);
+      await Deno.stderr.write(result.stderr);
+      for (const error of result.staticErrors ?? []) reportReplError(error);
+    } catch (error) {
+      clearReplOutput();
+      reportReplError(error);
+    }
+  }
+  return 0;
+}
+
+export function parseReplArguments(args: string[]): {
+  input: string | undefined;
+  options: { frontend?: "v2" };
+} {
+  const v2 = args.includes("--v2");
+  return {
+    input: args.find((arg) => arg !== "--v2"),
+    options: v2 ? { frontend: "v2" } : {},
+  };
+}
+
+function clearReplOutput(): void {
+  if (Deno.stdout.isTerminal()) console.log("\x1b[2J\x1b[H");
+}
+
 async function errCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("err");
@@ -160,8 +333,9 @@ async function errCommand(args: string[]): Promise<number> {
   let foundError = false;
   try {
     const compiled = await coreFile(input);
-    for (const [path, result] of compiled.results) {
-      const source = compiled.graph.nodes.get(path)?.source ?? "";
+    for (const [id, result] of compiled.results) {
+      const path = compiled.graph.nodes.get(id)?.path ?? "<module>";
+      const source = compiled.graph.nodes.get(id)?.source ?? "";
       for (const diagnostic of result.diagnostics) {
         inspections.push(formatDiagnosticInspection(diagnostic, path, source));
         foundError ||= diagnostic.severity === "error";
@@ -195,6 +369,33 @@ async function errCommand(args: string[]): Promise<number> {
   console.error("\n--- compiler state ---\n");
   console.error(await typeDebugFile(input));
   return foundError ? 1 : 0;
+}
+
+async function fmtCommand(args: string[]): Promise<number> {
+  const stdout = args.includes("--stdout");
+  const fix = args.includes("--fix");
+  const supported = new Set(["--stdout", "--fix"]);
+  const unsupported = args.filter((arg) => arg.startsWith("-") && !supported.has(arg));
+  if (unsupported.length > 0) {
+    console.error(`unknown fmt option: ${unsupported[0]}`);
+    console.error("usage: wm fmt [--stdout] [--fix] <input.wm>");
+    return 2;
+  }
+  const inputs = args.filter((arg) => !supported.has(arg));
+  if (inputs.length !== 1) {
+    console.error("usage: wm fmt [--stdout] [--fix] <input.wm>");
+    console.error("try: wm --help");
+    return 2;
+  }
+  const [input] = inputs;
+  const source = await Deno.readTextFile(input);
+  const formatted = await formatFrontendV2Source(source, input, fix);
+  if (stdout) {
+    await Deno.stdout.write(new TextEncoder().encode(formatted));
+  } else {
+    if (formatted !== source) await Deno.writeTextFile(input, formatted);
+  }
+  return 0;
 }
 
 function collectErrorInspections(
@@ -254,28 +455,43 @@ async function typeDebugCommand(args: string[]): Promise<number> {
   return 0;
 }
 
-function formatBundleError(
-  error: FrontendDiagnosticBundleError,
-  filePath: string | undefined,
-  source: string | undefined,
-): string {
-  const primary = error.primary instanceof FrontendDiagnosticError
-    ? formatDiagnosticError(error.primary, filePath, source)
-    : formatError(error.message, filePath, source, undefined);
-  const additional = error.diagnostics.map((diagnostic) =>
-    formatDiagnostic(diagnostic, filePath, source)
-  );
-  return [primary, ...additional].join("");
-}
-
 function missingInput(command: string): number {
   console.error(`usage: wm ${command} <input.wm>`);
   console.error(`try: wm --help`);
   return 2;
 }
 
-function usage() {
-  console.log(`wm-mini - Workman subset compiler and runner
+async function lspCommand(args: string[]): Promise<number> {
+  if (args.length > 0) {
+    console.error("usage: wm lsp");
+    return 2;
+  }
+  const { runServer } = await import("./lsp/server.ts");
+  await runServer();
+  return 0;
+}
+
+async function problemsCommand(args: string[]): Promise<number> {
+  const { problemsCommand } = await import("./problems.ts");
+  return await problemsCommand(args);
+}
+
+async function todoCommand(args: string[], command: "todo" | "what"): Promise<number> {
+  if (args.length !== 1) {
+    console.error(`usage: wm ${command} <input.wm>`);
+    return 2;
+  }
+  const { collectTodos, formatTodos } = await import("./todo.ts");
+  console.log(formatTodos(await collectTodos(args[0])));
+  return 0;
+}
+
+function version(): void {
+  console.log(`🗿 workman ${VERSION}`);
+}
+
+function usage(): void {
+  console.log(`🗿 workman ${VERSION} - compiler and runner
 
 usage:
   wm <command> [args]
@@ -287,9 +503,19 @@ commands:
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
   run <file.wm> [-- args...]    compile and execute with Deno
+  watch <file.wm> [-- args...]  run again when any module in its graph changes
+  repl [--v2] <file.wm>         watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
+  fmt [--stdout] [--fix] <file.wm>
+                                format in place; --fix inserts marked ;, {, and }
+  lsp                           run the Workman language server over stdio
+  problems [entrypoint.wm]      browse LSP diagnostics in a Workman TUI
+                                defaults to ./main.wm, or the only .wm file here
+  todo <file.wm>                list errors, warnings, typed ? holes, and TODO comments
+  what <file.wm>                alias for todo
   type-debug <file.wm>           print staged typechecker state on failure
-  help                          show this help
+  help                          show this help (-h, --help)
+  version                       show the version (-v, -V, --version)
 
 compat:
   wm <file.wm> [out.js]         same as wm compile <file.wm> [out.js]
@@ -297,9 +523,12 @@ compat:
 examples:
   wm check examples/factorial.wm
   wm run examples/factorial.wm
+  wm watch examples/factorial.wm
   wm compile examples/factorial.wm out.mjs
-  wm compile-library tooling/frontend-v2/library_fixture.wm frontend-v2.mjs
+  wm compile-library tooling/frontend-v2/compiler_frontend.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
+  wm repl --v2 scratch.wm
+  wm fmt scratch.wm
 
 notes:
   JS FFI uses Deno under the hood. Runtime permissions come from the wm launcher.`);

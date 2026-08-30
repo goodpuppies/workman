@@ -1,7 +1,9 @@
-import type { Decl, Expr, TypeExpr } from "../../ast.ts";
+import { type Decl, type Expr, parseLongId, type TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
-import { prune, show, type Ty } from "../../types.ts";
+import { hostFfiDescendsInto } from "../../region_traversal.ts";
+import { fresh, prune, show, solveFfi, type Ty } from "../../types.ts";
+import { resolveFfiFact } from "../../infer/type_facts.ts";
 import {
   materializeBindingCall,
   materializeReceiverCall,
@@ -40,7 +42,9 @@ import {
   type JsCallArgHint,
   jsRefCallMember,
   jsRefDeepCall,
+  jsRefHasMemberPath,
   jsRefMember,
+  jsRefMemberTypeText,
   jsRefTypeExpr,
   jsTypeExprValueRef,
   type JsTypeRef,
@@ -100,12 +104,16 @@ function resolveDelayedExpr(
         );
         if (directArrayLike) return directArrayLike;
       }
+      // Resolve arguments before the callee. A nested reflected call can solve the type
+      // variable that selects a first-class reflected function in the callee, as in:
+      // `via Result console.log(via Result chalk.magenta(value))`.
+      const args = expr.args.map((arg) =>
+        resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
+      );
       return {
         ...expr,
         callee: resolveDelayedExpr(expr.callee, ffi, result, selected, options, valueRefs),
-        args: expr.args.map((arg) =>
-          resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
-        ),
+        args,
       };
     case "Tuple":
       return {
@@ -138,6 +146,7 @@ function resolveDelayedExpr(
         ),
       };
     case "Lambda":
+      if (!hostFfiDescendsInto(expr)) return expr;
       return {
         ...expr,
         body: resolveDelayedExpr(expr.body, ffi, result, selected, options, new Map(valueRefs)),
@@ -177,6 +186,11 @@ function resolveDelayedExpr(
         result: resolveDelayedExpr(expr.result, ffi, result, selected, options, localValueRefs),
       };
     }
+    case "Ascribed":
+      return {
+        ...expr,
+        value: resolveDelayedExpr(expr.value, ffi, result, selected, options, valueRefs),
+      };
     case "Binary":
       return {
         ...expr,
@@ -312,6 +326,9 @@ function resolveDelayedFfiGet(
     if (deepRecordProperty) return deepRecordProperty;
     return { ...expr, receiver };
   }
+  const recordProperty = resolvedRecordProperty(expr, receiver, receiverType, result);
+  if (recordProperty) return recordProperty;
+  rejectMissingRecordField(receiverType, expr.path, expr.node);
   if (options.dynamicFallback === false) {
     return { ...expr, receiver };
   }
@@ -336,6 +353,48 @@ function resolveDelayedFfiGet(
     ffi.foreignTypeRefs,
     result,
     selected,
+  );
+}
+
+function resolvedRecordProperty(
+  expr: Extract<Expr, { kind: "FfiGet" }>,
+  receiver: Expr,
+  receiverType: Ty,
+  result: InferResult,
+): Expr | undefined {
+  if (receiver.kind !== "Var") return undefined;
+  const target = prune(receiverType);
+  if (target.tag !== "struct" && (target.tag !== "named" || !target.recordFields)) {
+    return undefined;
+  }
+  const member = recordPathMemberTy(target, expr.path);
+  if (!member) return undefined;
+  const inferred = inferredType(result, expr);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  if (placeholder?.tag === "ffi") {
+    solveFfi(placeholder, member);
+    resolveFfiFact(result.facts, placeholder.id, member, { source: "synthetic" });
+  }
+  const name = `${receiver.name}.${expr.path.join(".")}`;
+  return { kind: "Var", name, path: parseLongId(name), node: expr.node };
+}
+
+function rejectMissingRecordField(
+  receiverType: Ty,
+  path: string[],
+  node: Expr["node"],
+): void {
+  const target = prune(receiverType);
+  if (target.tag !== "named" || !target.recordFields || path.length === 0) return;
+  const requested = path[0];
+  if (target.recordFields.some((field) => field.name === requested)) return;
+  const available = target.recordFields.map((field) => field.name).join(", ") || "(none)";
+  throw diagnosticError(
+    new Error(
+      `record ${target.name} has no field ${requested}; available fields: ${available}`,
+    ),
+    node,
+    "record.unknown-field",
   );
 }
 
@@ -375,9 +434,22 @@ function resolveDelayedFfiCall(
         resolveDelayedExpr,
       );
     }
+    const memberExists = jsRefHasMemberPath(foreign.ref, expr.path);
+    const reflectedType = memberExists ? jsRefMemberTypeText(foreign.ref, expr.path) : undefined;
     throw diagnosticError(
-      new Error(`cannot resolve JS FFI method ${expr.path.join(".")} on ${foreign.ref.key}`),
+      new Error(
+        memberExists
+          ? `JS member ${
+            expr.path.join(".")
+          } exists on ${foreign.ref.key}, but Workman cannot represent its reflected TypeScript call signature${
+            reflectedType ? ` ${reflectedType}` : ""
+          }; this is an unsupported FFI type shape rather than a missing JavaScript member`
+          : `cannot resolve JS FFI method ${
+            expr.path.join(".")
+          } on ${foreign.ref.key}; the JavaScript member does not exist`,
+      ),
       expr.node,
+      memberExists ? "ffi.unsupported-reflected-member" : "ffi.unknown-member",
     );
   }
   const array = jsArrayReceiver(receiverType);
@@ -747,6 +819,30 @@ function recordPathMember(
     current = found.type;
   }
   return knownTyToTypeExpr(current);
+}
+
+function recordPathMemberTy(
+  type: Ty,
+  path: string[],
+): Ty | undefined {
+  let current: Ty = type;
+  for (const part of path) {
+    const target = prune(current);
+    const fields = target.tag === "struct"
+      ? target.fields
+      : target.tag === "named"
+      ? target.recordFields
+      : undefined;
+    if (!fields) return undefined;
+    let found = fields.find((field) => field.name === part);
+    if (!found && target.tag === "struct") {
+      found = { name: part, type: fresh() };
+      target.fields.push(found);
+    }
+    if (!found) return undefined;
+    current = found.type;
+  }
+  return current;
 }
 
 function unwrapCarrierTypeExpr(type: TypeExpr | undefined): TypeExpr | undefined {

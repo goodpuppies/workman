@@ -1,0 +1,201 @@
+from "./generated/surface_types.wm" import { Span };
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
+from "./surface_builder_support.wm" import {
+  token, collectNodes, firstNode, firstSyntax
+};
+from "./generated/surface_rule_metadata.wm" import {
+  isTriviaRule, isTokenRule, isListRule, isTransparentRule
+};
+from "./surface_builders_type.wm" import {
+  buildTypeAnn, buildFnType, buildFunctionType, buildFnTypeDomain, buildGroupedFunctionType,
+  buildLongName, buildTypeParams, buildTypeAtom,
+  buildTypeDeclBody, buildTypeBinding, buildTypeDecl
+};
+from "./surface_builders_expr.wm" import {
+  buildPrimary, buildExplicitCall, buildSpaceCall, buildUnary,
+  buildPipeMember, buildPipe, buildCarrierLift, buildLiftTuple,
+  buildJsonObjectField, buildJsonExpr, buildRecordExprField, buildRecordExpr,
+  buildNamedRecordExpr,
+  buildBinaryFold, buildIf,
+  buildTupleOrGroup, buildListExpr
+};
+from "./surface_builders_postfix.wm" import { buildPostfix };
+from "./surface_builders_pattern.wm" import {
+  buildLetPattern, buildParamPattern, buildParam, buildParamList, buildLambda,
+  buildPattern, buildPatternAtom, buildListPattern, buildBlockSeqItem, buildBlockSeqBody,
+  buildParenSeqItem, buildParenSeqBody, buildParenSeq, buildBlockLike
+};
+from "./surface_builders_record_pattern.wm" import {
+  buildRecordPattern, buildRecordPatternField
+};
+from "./surface_builders_match.wm" import {
+  buildMatchArm, buildMatchExpr, buildMatchFnParams, buildMatchFn,
+  buildAnonymousMatchFn
+};
+from "./surface_builders_decl.wm" import {
+  buildLetBinding, buildLetDecl, buildRecordFieldDecl, buildRecordDecl,
+  buildTopPhrase, buildProgram
+};
+from "./surface_builders_import.wm" import {
+  buildImportClause, buildImportSpec, buildImportDecl,
+  buildJsTarget, buildJsImportClauseBody, buildJsImportClause,
+  buildJsImportSpec, buildJsImportDecl
+};
+from "./surface_builders_misc.wm" import {
+  buildDirective, buildPanic, buildInterpolatedStringText,
+  buildStringInterpolation, buildInterpolatedString
+};
+
+let buildTokenRuleValue = (
+  value: ParseValue,
+  source: String,
+  span: Span,
+  name: String,
+) => {
+  match(value) {
+    TokenParseValue(found) => {
+      match(found.recoveryId) {
+        Some(_) => { value },
+        None => { TokenParseValue(token(source, span.start, span.end, name)) },
+      }
+    },
+    _ => { TokenParseValue(token(source, span.start, span.end, name)) },
+  }
+};
+
+let buildRuleValue = (name: String, value: ParseValue, span: Span, source: String) => {
+  if (isTriviaRule(name)) {
+    EmptyParseValue
+  } else {
+    if (isTokenRule(name)) {
+      buildTokenRuleValue(value, source, span, name)
+    } else {
+      if (isListRule(name)) {
+        NodeListParseValue(collectNodes(value))
+      } else {
+        if (isTransparentRule(name)) {
+          match(firstNode(value)) {
+            Some(node) => { NodeParseValue(node) },
+            None => {
+              match(firstSyntax(value)) {
+                Some(found) => { found },
+                None => { RuleParseValue(name, value, span) },
+              }
+            },
+          }
+        } else {
+          match(name) {
+            "Start" => { buildProgram(value, span) },
+            "TopPhrase" => { buildTopPhrase(value, span) },
+            "ImportClause" => { buildImportClause(value, span) },
+            "ImportSpec" => { buildImportSpec(value, span) },
+            "ImportDecl" => { buildImportDecl(value, span) },
+            "JsTarget" => { buildJsTarget(value, span) },
+            "JsImportClauseBody" => { buildJsImportClauseBody(value, span) },
+            "JsImportClause" => { buildJsImportClause(value, span) },
+            "JsImportSpec" => { buildJsImportSpec(value, span) },
+            "JsImportDecl" => { buildJsImportDecl(value, span) },
+            "Directive" => { buildDirective(value, span) },
+            "LongName" => { buildLongName(value, span) },
+            "LongConstructor" => { buildLongName(value, span) },
+            "TypeParams" => { buildTypeParams(value, span) },
+            "TypeAtom" => { buildTypeAtom(value, span) },
+            "TypeDeclBody" => { buildTypeDeclBody(value, span) },
+            "TypeDecl" => { buildTypeDecl(value, span) },
+            "TypeBinding" => { buildTypeBinding(value, span) },
+            "TypeAnn" => { buildTypeAnn(value, span) },
+            "RecordFieldDecl" => { buildRecordFieldDecl(value, span) },
+            "RecordDecl" => { buildRecordDecl(value, span) },
+            "Primary" => { buildPrimary(value, span) },
+            "LetPattern" => { buildLetPattern(value, span) },
+            "LetCtorPattern" => { buildPatternAtom(name, value, span) },
+            "ParamPattern" => { buildParamPattern(value, span) },
+            "RecordPattern" => { buildRecordPattern(name, value, span) },
+            "RecordLetPattern" => { buildRecordPattern(name, value, span) },
+            "RecordParamPattern" => { buildRecordPattern(name, value, span) },
+            "RecordPatternField" => { buildRecordPatternField(name, value, span) },
+            "RecordLetPatternField" => { buildRecordPatternField(name, value, span) },
+            "RecordParamPatternField" => { buildRecordPatternField(name, value, span) },
+            "ListLetPattern" => { buildListPattern(value, span) },
+            "ListParamPattern" => { buildListPattern(value, span) },
+            "CtorPattern" => { buildPatternAtom(name, value, span) },
+            "Param" => { buildParam(value, span) },
+            "ParamList" => { buildParamList(value, span) },
+            "Lambda" => { buildLambda(value, span) },
+            "IfExpr" => { buildIf(value, span) },
+            "TupleOrGroup" => { buildTupleOrGroup(value, span) },
+            "ListExpr" => { buildListExpr(value, span) },
+            "Pattern" => { buildPattern(value, span) },
+            "PatternCore" => { buildPatternAtom(name, value, span) },
+            "ListPatternItem" => { buildPatternAtom(name, value, span) },
+            "ListPattern" => { buildListPattern(value, span) },
+            "MatchArm" => { buildMatchArm(value, span) },
+            "MatchExpr" => { buildMatchExpr(value, span) },
+            "MatchFnParams" => { buildMatchFnParams(value, span) },
+            "MatchFn" => { buildMatchFn(value, span) },
+            "AnonymousMatchFn" => { buildAnonymousMatchFn(value, span) },
+            "BlockSeqItem" => { buildBlockSeqItem(value, span) },
+            "BlockSeqBody" => { buildBlockSeqBody(value, span) },
+            "ParenSeqItem" => { buildParenSeqItem(value, span) },
+            "ParenSeqBody" => { buildParenSeqBody(value, span) },
+            "ParenSeq" => { buildParenSeq(value, span) },
+            "Block" => { buildBlockLike(name, value, span) },
+            "LambdaBlock" => { buildBlockLike(name, value, span) },
+            "LetBinding" => { buildLetBinding(value, span) },
+            "LetDecl" => { buildLetDecl(value, span) },
+            "ExplicitCall" => { buildExplicitCall(value, span) },
+            "SpaceCall" => { buildSpaceCall(value, span) },
+            "FnType" => {
+              buildFnType(value, span)
+            },
+            "FunctionType" => { buildFunctionType(value, span) },
+            "FnTypeDomain" => { buildFnTypeDomain(value, span) },
+            "GroupedFunctionType" => { buildGroupedFunctionType(value, span) },
+            "Unary" => {
+              buildUnary(value, span)
+            },
+            "Or" => {
+              buildBinaryFold(name, value, span)
+            },
+            "And" => {
+              buildBinaryFold(name, value, span)
+            },
+            "Equality" => {
+              buildBinaryFold(name, value, span)
+            },
+            "Compare" => {
+              buildBinaryFold(name, value, span)
+            },
+            "Add" => {
+              buildBinaryFold(name, value, span)
+            },
+            "Mul" => {
+              buildBinaryFold(name, value, span)
+            },
+            "Pipe" => {
+              buildPipe(value, span)
+            },
+            "PipeMember" => { buildPipeMember(value, span) },
+            "CarrierLiftTupleExpr" => { buildCarrierLift(value, span) },
+            "LiftTupleExpr" => { buildLiftTuple(value, span) },
+            "PanicExpr" => { buildPanic(value, span) },
+            "InterpolatedStringText" => { buildInterpolatedStringText(source, span) },
+            "StringInterpolation" => { buildStringInterpolation(value, span) },
+            "InterpolatedString" => { buildInterpolatedString(value, span) },
+            "JsonObjectField" => { buildJsonObjectField(value, span) },
+            "JsonExpr" => { buildJsonExpr(value, span) },
+            "RecordExprField" => { buildRecordExprField(value, span) },
+            "RecordExpr" => { buildRecordExpr(value, span) },
+            "NamedRecordExpr" => { buildNamedRecordExpr(value, span) },
+            "Postfix" => {
+              buildPostfix(value, span)
+            },
+            Var(other) => {
+              RuleParseValue(other, value, span)
+            },
+          }
+        }
+      }
+    }
+  }
+};

@@ -1,0 +1,23 @@
+from "./event.wm" import * as Event;
+from "./ansi.wm" import * as Ansi;
+
+let show = match(event) => {
+  Event.MouseDown(column, row) => {
+    `click ${Text.of(column)},${Text.of(row)}`
+  },
+  Event.WheelUp => { "up" },
+  Event.WheelDown => { "down" },
+  _ => { "other" },
+};
+
+let main = () => {
+  Event.decodeMany(
+    Ansi.esc ++ "[<0;12;7M" ++ Ansi.esc ++ "[<64;12;7M" ++
+      Ansi.esc ++ "[<65;12;7M",
+  )
+    :> List.map(show)
+    :> List.foldLeft("", (text, item) => {
+      if (text == "") { item } else { text ++ "\n" ++ item }
+    })
+    :> print
+};
