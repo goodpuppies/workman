@@ -22,7 +22,7 @@ import { ParseError } from "./parser.ts";
 import { moduleNodeForPath } from "./module_graph.ts";
 import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
-import { evaluateReplFile, watchReplChanges } from "./repl.ts";
+import { evaluateReplFile, runInteractiveRepl, watchReplChanges } from "./repl.ts";
 import { watchFile } from "./watch.ts";
 import { formatFrontendV2Source } from "./frontend_v2_formatter.ts";
 import denoConfig from "../deno.json" with { type: "json" };
@@ -294,7 +294,10 @@ async function watchCommand(args: string[]): Promise<number> {
 
 async function replCommand(args: string[]): Promise<number> {
   const { input, options } = parseReplArguments(args);
-  if (!input) return missingInput("repl");
+  if (!input) {
+    await runInteractiveRepl({ ...options, onError: reportReplError });
+    return 0;
+  }
   for await (const _ of watchReplChanges(input)) {
     try {
       const result = await evaluateReplFile(input, options);
@@ -502,9 +505,10 @@ commands:
   compile <file.wm> [out.js]    emit JavaScript
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
+  repl [--v2] [file.wm]         interactive session, or watch and evaluate
+                                top-level bindings in <file.wm>
   run <file.wm> [-- args...]    compile and execute with Deno
   watch <file.wm> [-- args...]  run again when any module in its graph changes
-  repl [--v2] <file.wm>         watch and evaluate top-level bindings
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   fmt [--stdout] [--fix] <file.wm>
                                 format in place; --fix inserts marked ;, {, and }
@@ -524,10 +528,10 @@ examples:
   wm check examples/factorial.wm
   wm run examples/factorial.wm
   wm watch examples/factorial.wm
-  wm compile examples/factorial.wm out.mjs
+  wm repl                       start an interactive session
+  wm repl --v2 scratch.wm
   wm compile-library tooling/frontend-v2/compiler_frontend.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
-  wm repl --v2 scratch.wm
   wm fmt scratch.wm
 
 notes:

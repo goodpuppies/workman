@@ -1,5 +1,10 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { evaluateReplFile, topLevelPhraseRanges } from "../src/repl.ts";
+import {
+  evaluateReplFile,
+  runInteractiveRepl,
+  topLevelPhraseRanges,
+} from "../src/repl.ts";
+import { topLevelPhraseEnd } from "../src/top_level_phrases.ts";
 import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 
@@ -23,7 +28,7 @@ Deno.test("cli prints help with command and flag variants", async () => {
     assertEquals(result.stderr, "");
     assertStringIncludes(result.stdout, "commands:");
     assertStringIncludes(result.stdout, "watch <file.wm> [-- args...]");
-    assertStringIncludes(result.stdout, "repl [--v2] <file.wm>");
+    assertStringIncludes(result.stdout, "repl [--v2] [file.wm]");
     assertStringIncludes(
       result.stdout,
       "lsp                           run the Workman language server",
@@ -952,3 +957,79 @@ async function runCliWithStdin(args: string[], input: string) {
     stderr: new TextDecoder().decode(result.stderr),
   };
 }
+
+Deno.test("interactive repl evaluates phrases, prints prompts, and keeps the basis after failures", async () => {
+  const script = [
+    "1 + 2;",
+    "let x = 40;",
+    "x + 2;",
+    "let bad = ;",
+    "x + 3;",
+  ].join("\n");
+  const input = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(`${script}\n`));
+      controller.close();
+    },
+  });
+  const output = new TextEncoder();
+  const stdoutChunks: Uint8Array[] = [];
+  const errors: unknown[] = [];
+  const originalStdout = Deno.stdout.write;
+  Deno.stdout.write = (chunk: Uint8Array): Promise<number> => {
+    stdoutChunks.push(chunk.slice());
+    return Promise.resolve(chunk.length);
+  };
+  try {
+    await runInteractiveRepl({ input, onError: (error) => errors.push(error) });
+  } finally {
+    Deno.stdout.write = originalStdout;
+  }
+  const stdout = stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
+  assertEquals(stdout, [
+    `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n`,
+    "- ",
+    "it = 3 : Number\n",
+    "- ",
+    "x = 40 : Number\n",
+    "- ",
+    "it = 42 : Number\n",
+    "- ",
+    "- ",
+    "it = 43 : Number\n",
+    "- ",
+  ].join(""));
+  assertEquals(errors.length, 1);
+});
+
+Deno.test("interactive repl carries partial phrases across reads and supports multi-phrase lines", async () => {
+  const input = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("let first =\n"));
+      controller.enqueue(new TextEncoder().encode("7; let second = first + 1;\n"));
+      controller.close();
+    },
+  });
+  const stdoutChunks: Uint8Array[] = [];
+  const originalStdout = Deno.stdout.write;
+  Deno.stdout.write = (chunk: Uint8Array): Promise<number> => {
+    stdoutChunks.push(chunk.slice());
+    return Promise.resolve(chunk.length);
+  };
+  try {
+    await runInteractiveRepl({ input });
+  } finally {
+    Deno.stdout.write = originalStdout;
+  }
+  const stdout = stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
+  assertStringIncludes(stdout, "first = 7 : Number");
+  assertStringIncludes(stdout, "second = 8 : Number");
+});
+
+Deno.test("repl phrase end ignores quoted and commented semicolons", () => {
+  assertEquals(topLevelPhraseEnd("let x = 1;"), 10);
+  assertEquals(topLevelPhraseEnd("let x = 1; let y ="), undefined);
+  assertEquals(topLevelPhraseEnd("let x = 1; -- trailing ; comment\n"), 10);
+  assertEquals(topLevelPhraseEnd('let x = "a;b";'), 14);
+  assertEquals(topLevelPhraseEnd('let x = "open'), undefined);
+});
