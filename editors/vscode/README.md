@@ -2,9 +2,11 @@
 
 Small VS Code client for Workman. The Marketplace package includes one portable JavaScript language
 server bundle that runs on VS Code's built-in Node runtime, so the same small VSIX supports Linux,
-Windows, and macOS on every architecture supported by VS Code. When a Workman checkout is open, the
-extension deliberately prefers its Deno source server so frontend and LSP changes are picked up by
-running `Workman: Restart Language Server`.
+Windows, and macOS on every architecture supported by VS Code. By default the extension prefers the
+system `wm lsp` command: it probes `wm` from PATH and uses it whenever the command launches and exits
+cleanly. On development machines `wm` itself runs the Workman checkout, so `wm lsp` already serves
+frontend and LSP changes after `Workman: Restart Language Server`. When the probe fails, the
+extension falls back to the packaged server bundle.
 
 The packaged server does not need Deno for ordinary Workman files. JavaScript/TypeScript FFI
 reflection still uses the `deno` executable configured by `workman.denoPath` (default: `deno`).
@@ -23,7 +25,7 @@ falling back from `tsc` 7 during builds.
 - Document symbols for the Outline and Go to Symbol views.
 - Automatic cleanup and dependent revalidation when `.wm` files are deleted, renamed, or moved.
 
-The server is launched with `--allow-read --allow-env --allow-run`. Environment access is needed
+The `wm lsp` server runs under `deno run -A` via the `wm` launcher. Environment access is needed
 because the language server uses TypeScript's compiler API for JS FFI type reflection. Run access is
 needed when reflecting the Deno global namespace, which mounts `deno types` as the source of Deno's
 own declarations.
@@ -52,16 +54,20 @@ binary; the current bundle is about 1.8 MiB including TypeScript's standard-libr
 for FFI reflection. Upload that file through the
 [Visual Studio Marketplace publisher portal](https://marketplace.visualstudio.com/manage/publishers/).
 
-By default the extension looks for `src/lsp/server.ts` in the open workspace. If you install the
-extension once and edit `.wm` files from another workspace, set:
+By default the extension probes `wm lsp` from PATH and falls back to the bundled server. To force a
+specific server, set `workman.serverPath` to a `wm` launcher executable/script (launched as
+`wm lsp`; usually just a script running `deno run -A main.ts`) or a compiled JavaScript server
+bundle:
 
 ```json
 {
-  "workman.serverPath": "/absolute/path/to/workman/src/lsp/server.ts"
+  "workman.serverPath": "/absolute/path/to/wm"
 }
 ```
 
-Then updates to the Workman checkout usually only need `Workman: Restart Language Server`.
+There is no source-checkout mode: on development machines `wm` runs the checkout, so point
+`workman.serverPath` at `wm` itself when the launcher is not on PATH. Then updates to the Workman
+checkout usually only need `Workman: Restart Language Server`.
 
 ## Generated frontend
 
@@ -72,8 +78,8 @@ extension package. To reproduce it from the Workman sources:
 deno task frontend-v2:build
 ```
 
-By default the server loads `src/generated/frontend_v2_parser.js` from the checkout that contains
-`src/lsp/server.ts`. To point at another generated artifact, set:
+By default the server loads `src/generated/frontend_v2_parser.js` from the checkout or package that
+provides the running server. To point at another generated artifact, set:
 
 ```json
 {

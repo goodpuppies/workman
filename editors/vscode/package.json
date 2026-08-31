@@ -2,7 +2,7 @@
   "name": "workman",
   "displayName": "Workman",
   "description": "Language support for Workman",
-  "version": "0.2.15",
+  "version": "0.2.19",
   "publisher": "goodpuppies",
   "license": "MIT",
   "repository": {
@@ -71,19 +71,18 @@
           "scope": "window",
           "type": "string",
           "default": "",
-          "description": "Absolute path, or workspace-relative path, to Workman src/lsp/server.ts. Empty means auto-detect from the current workspace or this extension checkout."
+          "description": "Path to a Workman language server: a compiled JavaScript server bundle, or a `wm` launcher executable/script (usually a script running `deno run -A main.ts`). Empty auto-detects `wm lsp` from PATH and falls back to the bundled server."
         },
         "workman.denoPath": {
           "scope": "window",
           "type": "string",
-          "default": "deno",
-          "description": "Deno executable used to launch the Workman language server."
+          "description": "Deno executable the language server uses for JavaScript/TypeScript FFI reflection (WORKMAN_DENO_PATH)."
         },
         "workman.frontendV2ModulePath": {
           "scope": "window",
           "type": "string",
           "default": "",
-          "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the packaged src/generated/frontend_v2_parser.js asset."
+          "description": "Optional absolute path, workspace-relative path, or file URL to the generated frontend-v2 ES module. Empty uses the parser packaged beside the language server."
         },
         "workman.structuralInlayHints.enabled": {
           "scope": "window",

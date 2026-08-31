@@ -29,7 +29,7 @@ export type RecoveredCompilerModule = Readonly<{
   importRecoveryBoundaries: readonly Readonly<{ start: number; end: number }>[];
 }>;
 
-const defaultFrontendV2ModuleUrl = new URL(
+export const defaultFrontendV2ModuleUrl = new URL(
   "./generated/frontend_v2_parser.js",
   import.meta.url,
 );

@@ -1,0 +1,67 @@
+-- Root actor: start PostMan, create a child actor, then send it a typed message.
+
+from js.worker("./counter.wm") import { url } as CounterWorker;
+from "../lib/types.wm" import { ActorError, ActorRef, ActorSpec };
+from "../lib/postman.wm" import * as PostMan;
+from "./counter.wm" import {
+  AddPayload,
+  CounterProtocol,
+  ResetPayload,
+  add,
+  double,
+  reset,
+};
+
+type RootProtocol = | RootProtocol;
+
+let counterSpec: ActorSpec<CounterProtocol> = .{
+  name = "counter",
+  url = CounterWorker.url,
+  protocol = CounterProtocol,
+};
+
+let lift = Monad.lift;
+
+let createCounter = lift Task (_) => {
+  PostMan.create(counterSpec)
+};
+
+-- Each posting step returns the actor reference so the next lifted step can keep using it.
+let addTwo = lift Task (counter) => {
+  PostMan.post(counter, add, .{ amount = 2 })
+    :> Result.map((_) => { counter })
+    :> Task.fromResult
+};
+
+let askDouble = lift Task (counter) => {
+  PostMan.ask(counter, double, 21)
+    :> Task.map((value) => {
+      let valueText = value :> .toString() :> Result.withDefault("?");
+      print("typed callback returned " ++ valueText);
+      counter
+    })
+};
+
+let resetCounter = lift Task (counter) => {
+  PostMan.post(counter, reset, .{ hard = true })
+    :> Result.map((_) => { counter })
+    :> Task.fromResult
+};
+
+let stopRoot = lift Task (_) => {
+  PostMan.stop() :> Task.fromResult
+};
+
+let main = () => {
+  let started = PostMan.start() :> Task.fromResult;
+  let counter = createCounter(started);
+  let counter = addTwo(counter);
+  let counter = askDouble(counter);
+  let counter = resetCounter(counter);
+
+  stopRoot(counter)
+    :> Task.recover((error) => {
+      print(error);
+      void
+    })
+};

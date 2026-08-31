@@ -1,0 +1,498 @@
+-- Actor-side API. Actor modules do not interact with Worker or event APIs directly.
+
+from "./types.wm" import {
+  ActorError,
+  ActorRef,
+  ActorSpec,
+  Codec,
+  CreatedEnvelope,
+  DecodeFailed,
+  DeliveryEnvelope,
+  EnvelopeHeader,
+  Message,
+  ReplyDeliveryEnvelope,
+  Request,
+  RequestDeliveryEnvelope,
+  RequestTimedOut,
+  TransportFailed,
+  UnknownMessage,
+};
+from js.global import { Promise, addEventListener, clearTimeout, close, setTimeout };
+from js.global import { postMessage as postToSystem: (Js.Value) => Void };
+from js.global("Reflect") import { deleteProperty, get };
+from js.global("crypto") import { randomUUID: () => String };
+
+record Context = {
+  send: (Js.Value) => Result<Void, ActorError>,
+};
+
+-- A descriptor and handler are type-checked together before their payload type is erased.
+record Route = {
+  install: () => Void,
+};
+
+let unboxJsonValue = (raw) => {
+  let boxed: Result<Js.Object, Js.Error> = raw :> Json.assert;
+  boxed
+    :> Result.mapErr((_) => { "invalid boxed JSON value" })
+    :> Result.andThen((boxed) => {
+      get(boxed, "value")
+        :> Result.mapErr((_) => { "invalid boxed JSON value" })
+    })
+};
+
+let jsonNumber: Codec<Number> = .{
+  encode = (value) => {
+    JSON{ value: value }
+  },
+  decode = (raw) => {
+    unboxJsonValue(raw) :> Result.andThen((value) => {
+      let decoded: Result<Number, Js.Error> = value :> Json.assert;
+      decoded :> Result.mapErr((_) => { "invalid boxed JSON number" })
+    })
+  },
+};
+
+let jsonBool: Codec<Bool> = .{
+  encode = (value) => {
+    JSON{ value: value }
+  },
+  decode = (raw) => {
+    unboxJsonValue(raw) :> Result.andThen((value) => {
+      let decoded: Result<Bool, Js.Error> = value :> Json.assert;
+      decoded :> Result.mapErr((_) => { "invalid boxed JSON bool" })
+    })
+  },
+};
+
+let jsonString: Codec<String> = .{
+  encode = (value) => {
+    JSON{ value: value }
+  },
+  decode = (raw) => {
+    unboxJsonValue(raw) :> Result.andThen((value) => {
+      let decoded: Result<String, Js.Error> = value :> Json.assert;
+      decoded :> Result.mapErr((_) => { "invalid boxed JSON string" })
+    })
+  },
+};
+
+let jsonUnit: Codec<Void> = .{
+  encode = (_) => {
+    JSON{}
+  },
+  decode = (_) => {
+    Ok(void)
+  },
+};
+
+let request: (
+  String,
+  Codec<payload>,
+  Codec<reply>,
+) => Request<payload, reply, protocol> = (tag, payloadCodec, replyCodec) => {
+  let .{ encode = encodePayload, decode = decodePayload }: Codec<payload> = payloadCodec;
+  let .{ encode = encodeReply, decode = decodeReply }: Codec<reply> = replyCodec;
+  .{
+    tag = tag,
+    encode = encodePayload,
+    decode = decodePayload,
+    encodeReply = encodeReply,
+    decodeReply = decodeReply,
+  }
+};
+
+-- Construct the common JSON-backed descriptor. Its Message annotation supplies the concrete
+-- payload and protocol types; Json.assert checks the payload again at the receiving boundary.
+let jsonMessage: (
+  String,
+  (payload) => Js.Value,
+) => Message<payload, protocol> = (tag, encode) => {
+  .{
+    tag = tag,
+    encode = encode,
+    decode = (value) => {
+      let decoded: Result<payload, Js.Error> = value :> Json.assert;
+      decoded :> Result.mapErr((_) => { "invalid " ++ tag ++ " payload" })
+    },
+  }
+};
+
+let unitMessage: (String) => Message<Void, protocol> = (tag) => {
+  .{
+    tag = tag,
+    encode = (_) => {
+      JSON{}
+    },
+    decode = (_) => {
+      Ok(void)
+    },
+  }
+};
+
+let jsonRequest: (
+  String,
+  (payload) => Js.Value,
+  (reply) => Js.Value,
+) => Request<payload, reply, protocol> = (tag, encode, encodeReply) => {
+  .{
+    tag = tag,
+    encode = encode,
+    decode = (value) => {
+      let decoded: Result<payload, Js.Error> = value :> Json.assert;
+      decoded :> Result.mapErr((_) => { "invalid " ++ tag ++ " request payload" })
+    },
+    encodeReply = encodeReply,
+    decodeReply = (value) => {
+      let decoded: Result<reply, Js.Error> = value :> Json.assert;
+      decoded :> Result.mapErr((_) => { "invalid " ++ tag ++ " reply payload" })
+    },
+  }
+};
+
+let pending: Js.Dict<(Js.Value) => Void> = Dict.empty();
+let pendingReplies: Js.Dict<(Js.Value) => Void> = Dict.empty();
+let handlers: Js.Dict<(String, Js.Value) => Result<Void, ActorError>> = Dict.empty();
+let requestHandlers: Js.Dict<(String, String, Js.Value) => Void> = Dict.empty();
+
+let sendToSystem = (envelope: Js.Value) => {
+  postToSystem(envelope) :> Result.mapErr(TransportFailed)
+};
+
+let worker: Context = .{
+  send = sendToSystem,
+};
+
+let decodeHeader = (value) => {
+  let decoded: Result<EnvelopeHeader, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid system envelope") })
+};
+
+let decodeDelivery = (value) => {
+  let decoded: Result<DeliveryEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid delivery envelope") })
+};
+
+let decodeCreated = (value) => {
+  let decoded: Result<CreatedEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid create response") })
+};
+
+let decodeRequestDelivery = (value) => {
+  let decoded: Result<RequestDeliveryEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid request delivery") })
+};
+
+let decodeReplyDelivery = (value) => {
+  let decoded: Result<ReplyDeliveryEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid reply delivery") })
+};
+
+let resolveCreated = (value) => {
+  decodeCreated(value) :> Result.map((created) => {
+    let .{ requestId }: CreatedEnvelope = created;
+    match(Dict.get(pending, requestId)) {
+      Some(resolve) => {
+        resolve(value);
+        deleteProperty(pending, requestId);
+        void
+      },
+      None => { void },
+    }
+  })
+};
+
+let resolveReply = (value) => {
+  decodeReplyDelivery(value) :> Result.map((reply) => {
+    let .{ requestId }: ReplyDeliveryEnvelope = reply;
+    match(Dict.get(pendingReplies, requestId)) {
+      Some(resolve) => {
+        resolve(value);
+        deleteProperty(pendingReplies, requestId);
+        void
+      },
+      None => { void },
+    }
+  })
+};
+
+let dispatchDelivery = (value) => {
+  decodeDelivery(value) :> Result.andThen((delivery) => {
+    let .{ sender, tag, payload }: DeliveryEnvelope = delivery;
+    match(Dict.get(handlers, tag)) {
+      Some(handle) => { handle(sender, payload) },
+      None => { Err(UnknownMessage(tag)) },
+    }
+  })
+};
+
+let dispatchRequest = (value) => {
+  decodeRequestDelivery(value) :> Result.andThen((request) => {
+    let .{ sender, tag, requestId, payload }: RequestDeliveryEnvelope = request;
+    match(Dict.get(requestHandlers, tag)) {
+      Some(handle) => {
+        handle(sender, requestId, payload);
+        Ok(void)
+      },
+      None => { Err(UnknownMessage(tag)) },
+    }
+  })
+};
+
+let dispatchSystemEvent = (event) => {
+  get(event, "data")
+    :> Result.mapErr(TransportFailed)
+    :> Result.andThen((value) => {
+      decodeHeader(value) :> Result.andThen((header) => {
+        let .{ kind }: EnvelopeHeader = header;
+        if (kind == "created") {
+          resolveCreated(value)
+        } else {
+          if (kind == "reply") {
+            resolveReply(value)
+          } else {
+            if (kind == "request") {
+              dispatchRequest(value)
+            } else {
+              if (kind == "deliver") {
+                dispatchDelivery(value)
+              } else {
+                Ok(void)
+              }
+            }
+          }
+        }
+      })
+    })
+};
+
+-- Register one typed entry in this actor's API. The descriptor owns the wire decoder, so raw
+-- `Js.Value` never reaches actor logic. `sender` is the trusted address stamped by PostalService.
+let on = (
+  message: Message<payload, protocol>,
+  handle: (payload, String) => Void,
+) => {
+  let .{ tag, decode }: Message<payload, protocol> = message;
+  Dict.set(handlers, tag, (sender, value) => {
+    decode(value)
+      :> Result.mapErr(DecodeFailed)
+      :> Result.map((payload) => {
+        handle(payload, sender);
+        void
+      })
+  });
+  void
+};
+
+let route = (
+  message: Message<payload, protocol>,
+  handle: (payload, String) => Void,
+) => {
+  .{
+    install = () => {
+      on(message, handle)
+    },
+  }
+};
+
+let onRequest = (
+  request: Request<payload, reply, protocol>,
+  handle: (payload, String) => Task<reply, ActorError>,
+) => {
+  let .{ tag, decode, encodeReply }: Request<payload, reply, protocol> = request;
+  Dict.set(requestHandlers, tag, (sender, requestId, value) => {
+    decode(value)
+      :> Result.mapErr(DecodeFailed)
+      :> Task.fromResult
+      :> Task.andThen((payload) => {
+        handle(payload, sender)
+      })
+      :> Task.andThen((reply) => {
+        sendToSystem(JSON{
+          kind: "reply",
+          to: sender,
+          requestId: requestId,
+          payload: encodeReply(reply),
+        }) :> Task.fromResult
+      })
+      :> Task.recover((error) => {
+        print(error);
+        void
+      });
+    void
+  });
+  void
+};
+
+let replyTaskRoute = (
+  request: Request<payload, reply, protocol>,
+  handle: (payload, String) => Task<reply, ActorError>,
+) => {
+  .{
+    install = () => {
+      onRequest(request, handle)
+    },
+  }
+};
+
+let replyRoute = (
+  request: Request<payload, reply, protocol>,
+  handle: (payload, String) => reply,
+) => {
+  replyTaskRoute(request, (payload, sender) => {
+    handle(payload, sender) :> Task.succeed
+  })
+};
+
+-- StageForge's `new PostMan(state, api)` becomes typed `PostMan.on` declarations followed by
+-- one startup call. Actor modules never install browser event listeners themselves.
+let start = () => {
+  addEventListener("message", (event) => {
+    dispatchSystemEvent(event)
+      :> Result.mapErr((error) => {
+        print(error);
+        error
+      })
+      :> Result.withDefault(void)
+  }) :> Result.mapErr(TransportFailed)
+};
+
+let serve = (routes: List<Route>) => {
+  routes :> List.map((route) => {
+    let .{ install }: Route = route;
+    install()
+  });
+  start()
+};
+
+let postWith = (
+  context: Context,
+  actor: ActorRef<protocol>,
+  message: Message<payload, protocol>,
+  payload: payload,
+) => {
+  let .{ send }: Context = context;
+  let .{ address }: ActorRef<protocol> = actor;
+  let .{ tag, encode }: Message<payload, protocol> = message;
+  let body = encode(payload);
+  send(JSON{
+    kind: "post",
+    to: address,
+    tag: tag,
+    payload: body,
+  })
+};
+
+-- Normal actor-facing convenience procedure.
+let post = (
+  actor: ActorRef<protocol>,
+  message: Message<payload, protocol>,
+  payload: payload,
+) => {
+  postWith(worker, actor, message, payload)
+};
+
+let waitForCreated = (requestId) => {
+  Promise.new((resolve, _) => {
+    Dict.set(pending, requestId, resolve)
+  })
+};
+
+let waitForReply = (requestId) => {
+  Promise.new((resolve, reject) => {
+    let timeout = setTimeout(() => {
+      deleteProperty(pendingReplies, requestId);
+      reject()
+    }, 9000) :> Result.withDefault(0);
+    Dict.set(pendingReplies, requestId, (value) => {
+      clearTimeout(Some(timeout));
+      resolve(value)
+    })
+  })
+};
+
+-- Monomorphic correlation/transport core. Typed reply decoding stays in `ask`.
+let askRaw = (address, tag, body) => {
+  randomUUID()
+    :> Result.mapErr(TransportFailed)
+    :> Task.fromResult
+    :> Task.andThen((requestId) => {
+      let waiting = waitForReply(requestId) :> Task.mapErr((_) => {
+        RequestTimedOut(requestId)
+      });
+      sendToSystem(JSON{
+        kind: "request",
+        to: address,
+        tag: tag,
+        requestId: requestId,
+        payload: body,
+      })
+        :> Result.mapErr((error) => {
+          deleteProperty(pendingReplies, requestId);
+          error
+        })
+        :> Task.fromResult
+        :> Task.andThen((_) => { waiting })
+    })
+    :> Task.andThen((value) => {
+      decodeReplyDelivery(value) :> Task.fromResult
+    })
+};
+
+let ask = (
+  actor: ActorRef<protocol>,
+  request: Request<payload, reply, protocol>,
+  payload: payload,
+) => {
+  let .{ address }: ActorRef<protocol> = actor;
+  let .{ tag, encode, decodeReply }: Request<payload, reply, protocol> = request;
+  askRaw(address, tag, encode(payload))
+    :> Task.andThen((delivery) => {
+      let .{ sender, payload }: ReplyDeliveryEnvelope = delivery;
+      if (sender == address) {
+        decodeReply(payload)
+          :> Result.mapErr(DecodeFailed)
+          :> Task.fromResult
+      } else {
+        Err(DecodeFailed("reply sender did not match requested actor")) :> Task.fromResult
+      }
+    })
+};
+
+-- Monomorphic async/FFI core. Keeping protocol construction outside this procedure preserves
+-- polymorphism for the public `create` function across module boundaries.
+let createAddress = (name, url) => {
+  randomUUID()
+    :> Result.mapErr(TransportFailed)
+    :> Task.fromResult
+    :> Task.andThen((requestId) => {
+      let waiting = waitForCreated(requestId) :> Task.mapErr(TransportFailed);
+      sendToSystem(JSON{
+        kind: "create",
+        requestId: requestId,
+        name: name,
+        url: url,
+      })
+        :> Task.fromResult
+        :> Task.andThen((_) => { waiting })
+    })
+    :> Task.andThen((value) => {
+      decodeCreated(value)
+        :> Result.map((created) => {
+          let .{ address }: CreatedEnvelope = created;
+          address
+        })
+        :> Task.fromResult
+    })
+};
+
+let create = (spec: ActorSpec<protocol>) => {
+  let .{ name, url, protocol }: ActorSpec<protocol> = spec;
+  createAddress(name, url) :> Task.map((address) => {
+    .{ address = address, protocol = protocol }
+  })
+};
+
+let stop = () => {
+  close() :> Result.mapErr(TransportFailed)
+};

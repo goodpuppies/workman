@@ -1,0 +1,111 @@
+-- Public typed actor handles and message descriptors.
+
+type ActorError =
+  | TransportFailed<Js.Error>
+  | DecodeFailed<String>
+  | RequestTimedOut<String>
+  | UnknownMessage<String>
+  | UnknownActor<String>;
+
+-- Runtime envelope after the system has validated the dynamic worker payload.
+record PostEnvelope = {
+  kind: String,
+  to: String,
+  tag: String,
+  payload: Js.Value,
+};
+
+record DeliveryEnvelope = {
+  kind: String,
+  sender: String,
+  tag: String,
+  payload: Js.Value,
+};
+
+record RequestEnvelope = {
+  kind: String,
+  to: String,
+  tag: String,
+  requestId: String,
+  payload: Js.Value,
+};
+
+record RequestDeliveryEnvelope = {
+  kind: String,
+  sender: String,
+  tag: String,
+  requestId: String,
+  payload: Js.Value,
+};
+
+record ReplyEnvelope = {
+  kind: String,
+  to: String,
+  requestId: String,
+  payload: Js.Value,
+};
+
+record ReplyDeliveryEnvelope = {
+  kind: String,
+  sender: String,
+  requestId: String,
+  payload: Js.Value,
+};
+
+record CreateEnvelope = {
+  kind: String,
+  requestId: String,
+  name: String,
+  url: String,
+};
+
+record CreatedEnvelope = {
+  kind: String,
+  requestId: String,
+  address: String,
+};
+
+record InitEnvelope = {
+  kind: String,
+  address: String,
+  parent: String,
+};
+
+record EnvelopeHeader = {
+  kind: String,
+};
+
+-- `protocol` is a type index represented by a zero-data protocol witness at runtime.
+record ActorRef<protocol> = {
+  address: String,
+  protocol: protocol,
+};
+
+-- Fire-and-forget message descriptor.
+record Message<payload, protocol> = {
+  tag: String,
+  encode: (payload) => Js.Value,
+  decode: (Js.Value) => Result<payload, String>,
+};
+
+record Codec<value> = {
+  encode: (value) => Js.Value,
+  decode: (Js.Value) => Result<value, String>,
+};
+
+-- Request/reply descriptor. The reply decoder is explicit because Workman does not derive
+-- response types from a TypeScript-style object of handler functions.
+record Request<payload, reply, protocol> = {
+  tag: String,
+  encode: (payload) => Js.Value,
+  decode: (Js.Value) => Result<payload, String>,
+  encodeReply: (reply) => Js.Value,
+  decodeReply: (Js.Value) => Result<reply, String>,
+};
+
+-- A statically typed description of a worker that the system can create.
+record ActorSpec<protocol> = {
+  name: String,
+  url: String,
+  protocol: protocol,
+};

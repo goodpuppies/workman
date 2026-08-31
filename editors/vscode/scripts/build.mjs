@@ -9,6 +9,8 @@ const nodePaths = [path.join(extensionRoot, "node_modules")];
 await Promise.all([
   fs.rm(path.join(extensionRoot, "out"), { recursive: true, force: true }),
   fs.rm(path.join(extensionRoot, "server"), { recursive: true, force: true }),
+  fs.rm(path.join(extensionRoot, "generated"), { recursive: true, force: true }),
+  fs.rm(path.join(extensionRoot, "tooling"), { recursive: true, force: true }),
 ]);
 
 await Promise.all([
@@ -42,11 +44,22 @@ await Promise.all([
 const typescriptLib = path.join(extensionRoot, "node_modules", "@typescript", "old", "lib");
 const serverDirectory = path.join(extensionRoot, "server");
 const generatedDirectory = path.join(serverDirectory, "generated");
-await fs.mkdir(generatedDirectory, { recursive: true });
-await fs.copyFile(
-  path.join(repositoryRoot, "src", "generated", "frontend_v2_parser.js"),
-  path.join(generatedDirectory, "frontend_v2_parser.js"),
-);
+const wmslangDirectory = path.join(extensionRoot, "tooling", "wmslang");
+await Promise.all([
+  fs.mkdir(generatedDirectory, { recursive: true }),
+  fs.mkdir(wmslangDirectory, { recursive: true }),
+]);
+await Promise.all([
+  fs.copyFile(
+    path.join(repositoryRoot, "src", "generated", "frontend_v2_parser.js"),
+    path.join(generatedDirectory, "frontend_v2_parser.js"),
+  ),
+  fs.writeFile(path.join(generatedDirectory, "package.json"), '{"type":"module"}\n'),
+  fs.copyFile(
+    path.join(repositoryRoot, "tooling", "wmslang", "wmslang.generated.mjs"),
+    path.join(wmslangDirectory, "wmslang.generated.mjs"),
+  ),
+]);
 const libraryFiles = (await fs.readdir(typescriptLib)).filter((name) =>
   name.startsWith("lib.") && name.endsWith(".d.ts")
 );
