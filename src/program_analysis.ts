@@ -1,4 +1,5 @@
 import { type BindingFacts, resolveProgramBindingFacts } from "./binding_facts.ts";
+import type { Expr, Pattern } from "./ast.ts";
 import type { InferResult } from "./infer.ts";
 import { CompilerIdAllocator } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
@@ -23,7 +24,9 @@ import {
   type ProjectSnapshot,
   type ProjectSnapshotContext,
   semanticCompletionFacts,
+  type SemanticResolvedDefinition,
 } from "./module_interface.ts";
+import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
 
 export type CoreProgramAnalysis = {
   graph: ModuleGraph;
@@ -176,6 +179,11 @@ export function buildPartialProjectSnapshot(
     gpuSelections: fragmentSelections,
     gpuSlices,
     completionFacts: semanticFacts.completionFacts,
+    resolvedDefinitions: certifiedRecoveredDefinitions(
+      semanticFacts.resolvedDefinitions,
+      results,
+      certified,
+    ),
   });
 }
 
@@ -190,6 +198,161 @@ export function currentSourceCompletionFacts(
       semanticCompletionFacts(graph.nodes.get(id)!.module, bindings.get(id)!),
     ]),
   );
+}
+
+/**
+ * Resolve authored references before semantic recovery removes rejected declarations.
+ *
+ * These direct source locations are candidates only. `buildPartialProjectSnapshot` retains a
+ * candidate when its reference lies in a rejected declaration and its target survived the
+ * transactional recovery boundary.
+ */
+export function currentSourceResolvedDefinitions(
+  graph: ModuleGraph,
+): ReadonlyMap<ModuleId, readonly SemanticResolvedDefinition[]> {
+  const bindings = resolveProgramBindingFacts(graph, new CompilerIdAllocator());
+  const valueDefinitions = new Map<BindingId, Readonly<{ moduleId: ModuleId; span: SourceSpan }>>();
+  const structureDefinitions = new Map<
+    number,
+    Readonly<{ moduleId: ModuleId; span: SourceSpan }>
+  >();
+
+  for (const moduleId of graph.order) {
+    const node = graph.nodes.get(moduleId)!;
+    const facts = bindings.get(moduleId)!;
+    for (const [pattern, id] of facts.binders) {
+      if (pattern.kind !== "PVar" || !pattern.node) continue;
+      const span = identifierSpan(node.source, pattern.node, pattern.name, "first");
+      if (span) valueDefinitions.set(id, Object.freeze({ moduleId, span: Object.freeze(span) }));
+    }
+    for (const [declaration, id] of facts.recordConstructors) {
+      if (!declaration.node) continue;
+      const span = identifierSpan(node.source, declaration.node, declaration.name, "first");
+      if (span) valueDefinitions.set(id, Object.freeze({ moduleId, span: Object.freeze(span) }));
+    }
+    for (const [declaration, id] of facts.structureBinders) {
+      const edge = node.imports.find((candidate) => candidate.clause === declaration.clause);
+      const target = edge && graph.nodes.get(edge.target);
+      if (!edge || !target) continue;
+      structureDefinitions.set(
+        id,
+        Object.freeze({
+          moduleId: edge.target,
+          span: Object.freeze(moduleSourceSpan(target.source)),
+        }),
+      );
+    }
+  }
+
+  return new Map(graph.order.map((moduleId) => {
+    const node = graph.nodes.get(moduleId)!;
+    const facts = bindings.get(moduleId)!;
+    const definitions: SemanticResolvedDefinition[] = [];
+    for (const [reference, id] of facts.references) {
+      if (reference.kind !== "Var" || !reference.node) continue;
+      const target = valueDefinitions.get(id);
+      const name = reference.name.split(".").at(-1);
+      const span = name && identifierSpan(node.source, reference.node, name, "last");
+      if (target && span) definitions.push(resolvedDefinition(span, target));
+    }
+    for (const [reference, id] of facts.structureReferences) {
+      if (!reference.node) continue;
+      const target = structureDefinitions.get(id);
+      const name = referenceName(reference).split(".")[0];
+      const span = name && identifierSpan(node.source, reference.node, name, "first");
+      if (target && span) definitions.push(resolvedDefinition(span, target));
+    }
+    return [moduleId, Object.freeze(definitions)] as const;
+  }));
+}
+
+function certifiedRecoveredDefinitions(
+  candidates: ReadonlyMap<ModuleId, readonly SemanticResolvedDefinition[]> | undefined,
+  results: ModuleMap<InferResult>,
+  certified: ModuleGraph,
+): ReadonlyMap<ModuleId, readonly SemanticResolvedDefinition[]> | undefined {
+  if (!candidates) return undefined;
+  const acceptedModules = new Set(certified.order);
+  const acceptedDefinitions = certifiedDefinitionSpans(certified);
+  return new Map([...candidates].map(([moduleId, definitions]) => {
+    const boundaries = results.get(moduleId)?.elaboration.recoveryBoundaries ?? [];
+    const retained = definitions.filter((definition) =>
+      boundaries.some((boundary) => contains(boundary, definition.span)) &&
+      acceptedModules.has(definition.target.moduleId) &&
+      (isModuleSpan(certified, definition.target.moduleId, definition.target.span) ||
+        acceptedDefinitions.get(definition.target.moduleId)?.has(
+            spanKey(definition.target.span),
+          ) ===
+          true)
+    );
+    return [moduleId, Object.freeze(retained)] as const;
+  }));
+}
+
+function certifiedDefinitionSpans(
+  certified: ModuleGraph,
+): ReadonlyMap<ModuleId, ReadonlySet<string>> {
+  const bindings = resolveProgramBindingFacts(certified, new CompilerIdAllocator());
+  const definitions = new Map<ModuleId, Set<string>>();
+  for (const moduleId of certified.order) {
+    const node = certified.nodes.get(moduleId)!;
+    const facts = bindings.get(moduleId)!;
+    const moduleDefinitions = new Set<string>();
+    definitions.set(moduleId, moduleDefinitions);
+    for (const pattern of facts.binders.keys()) {
+      if (pattern.kind !== "PVar" || !pattern.node) continue;
+      const span = identifierSpan(node.source, pattern.node, pattern.name, "first");
+      if (span) moduleDefinitions.add(spanKey(span));
+    }
+    for (const declaration of facts.recordConstructors.keys()) {
+      if (!declaration.node) continue;
+      const span = identifierSpan(node.source, declaration.node, declaration.name, "first");
+      if (span) moduleDefinitions.add(spanKey(span));
+    }
+  }
+  return definitions;
+}
+
+function isModuleSpan(graph: ModuleGraph, moduleId: ModuleId, span: SourceSpan): boolean {
+  const source = graph.nodes.get(moduleId)?.source;
+  return source !== undefined && span.start === 0 && span.end === source.length;
+}
+
+function spanKey(span: SourceSpan): string {
+  return `${span.start}:${span.end}`;
+}
+
+function resolvedDefinition(
+  span: SourceSpan,
+  target: Readonly<{ moduleId: ModuleId; span: SourceSpan }>,
+): SemanticResolvedDefinition {
+  return Object.freeze({ span: Object.freeze(span), target });
+}
+
+function contains(container: Pick<SourceSpan, "start" | "end">, item: SourceSpan): boolean {
+  return container.start <= item.start && item.end <= container.end;
+}
+
+function referenceName(reference: Expr | Pattern): string {
+  return "name" in reference && typeof reference.name === "string" ? reference.name : "";
+}
+
+function moduleSourceSpan(source: string): SourceSpan {
+  return { line: 1, col: 0, start: 0, end: source.length };
+}
+
+function identifierSpan(
+  source: string,
+  node: AstNode,
+  name: string,
+  occurrence: "first" | "last",
+): SourceSpan | undefined {
+  const text = source.slice(node.span.start, node.span.end);
+  const relative = occurrence === "first" ? text.indexOf(name) : text.lastIndexOf(name);
+  if (relative < 0) return undefined;
+  const start = node.span.start + relative;
+  const position = offsetToLineCol(source, start);
+  return { line: position.line, col: position.col, start, end: start + name.length };
 }
 
 function certifiedPrefixGraph(

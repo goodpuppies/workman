@@ -47,6 +47,7 @@ import {
   buildProgramAnalysis,
   type CoreProgramAnalysis,
   currentSourceCompletionFacts,
+  currentSourceResolvedDefinitions,
   type ProgramAnalysis,
 } from "./program_analysis.ts";
 import {
@@ -604,6 +605,7 @@ async function analyzeRecoveredSnapshot(
   assertCompilerFrontendMode(options.frontend);
   const graph = await loadModuleGraph(input, { ...options, syntaxRecovery: true });
   const completionFacts = currentSourceCompletionFacts(graph);
+  const resolvedDefinitions = currentSourceResolvedDefinitions(graph);
   const inferOptions = await standardInferOptions();
   const results = new Map<ModuleId, InferResult>();
   for (const id of graph.order) {
@@ -627,7 +629,7 @@ async function analyzeRecoveredSnapshot(
       frontend: resolveCompilerFrontend(options.frontend, options.surface),
       surface: options.surface ?? "workman",
     },
-  }, { completionFacts });
+  }, { completionFacts, resolvedDefinitions });
 }
 
 async function checkPreparedModuleWithoutImports(

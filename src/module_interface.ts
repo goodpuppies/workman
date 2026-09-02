@@ -275,6 +275,15 @@ export type SemanticParameterHint = Readonly<{
   span: SourceSpan;
 }>;
 
+/** A name-resolution fact retained inside a declaration rejected by type elaboration. */
+export type SemanticResolvedDefinition = Readonly<{
+  span: SourceSpan;
+  target: Readonly<{
+    moduleId: ModuleId;
+    span: SourceSpan;
+  }>;
+}>;
+
 export type SemanticCallableDefinition = Readonly<{
   name: string;
   target: BindingId;
@@ -490,6 +499,7 @@ export type ModuleInterface = Readonly<{
   expectedTypes: readonly SemanticExpectedType[];
   inferredTypeHints: readonly SemanticInferredTypeHint[];
   parameterHints: readonly SemanticParameterHint[];
+  resolvedDefinitions: readonly SemanticResolvedDefinition[];
   recoveryHoles: readonly SemanticRecoveryHole[];
   callableDefinitions: readonly SemanticCallableDefinition[];
   callSites: readonly SemanticCallSite[];
@@ -530,6 +540,7 @@ export type ProjectSemanticFacts = Readonly<{
   gpuSelections?: GpuFragmentSelectionFacts;
   gpuSlices?: readonly NormalizedGpuSlice[];
   completionFacts?: ReadonlyMap<ModuleId, SemanticCompletionFacts>;
+  resolvedDefinitions?: ReadonlyMap<ModuleId, readonly SemanticResolvedDefinition[]>;
 }>;
 
 export function buildProjectSnapshot(
@@ -606,6 +617,7 @@ export function buildProjectSnapshot(
       moduleBindings,
       callableParameters,
     );
+    const resolvedDefinitions = semanticFacts.resolvedDefinitions?.get(id) ?? Object.freeze([]);
     const recoveryHoles = Object.freeze(result.facts.recoveryHoles.map((hole) =>
       Object.freeze({
         id: hole.id,
@@ -674,6 +686,7 @@ export function buildProjectSnapshot(
         expectedTypes,
         inferredTypeHints,
         parameterHints,
+        resolvedDefinitions,
         recoveryHoles,
         callableDefinitions,
         callSites,
@@ -2381,7 +2394,21 @@ export function semanticDefinitionsAt(
   const moduleInterface = project.interfaces.get(moduleId);
   if (!moduleInterface) return [];
   const occurrence = semanticOccurrenceAt(moduleInterface, offset);
-  return occurrence ? semanticDefinitionsForTarget(project, occurrence.target) : [];
+  if (occurrence) return semanticDefinitionsForTarget(project, occurrence.target);
+  const recovered = moduleInterface.resolvedDefinitions
+    .filter((fact) => fact.span.start <= offset && offset < fact.span.end)
+    .sort((left, right) =>
+      (left.span.end - left.span.start) - (right.span.end - right.span.start)
+    )[0];
+  if (!recovered) return [];
+  const target = project.interfaces.get(recovered.target.moduleId);
+  return target
+    ? [Object.freeze({
+      moduleId: recovered.target.moduleId,
+      path: target.path,
+      span: recovered.target.span,
+    })]
+    : [];
 }
 
 /** Resolve the nominal declarations named by the selected occurrence's compiler-owned type. */

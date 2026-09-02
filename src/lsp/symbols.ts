@@ -3,6 +3,7 @@ import { jsModuleMemberDefinition } from "../ffi/reflect/host.ts";
 import {
   type ModuleInterface,
   type ModuleSemanticOccurrence,
+  semanticDefinitionsAt,
   semanticDefinitionsForTarget,
   semanticDocumentHighlightsAt,
   semanticOccurrenceAt,
@@ -30,7 +31,10 @@ export async function definitionAt(
   const { project, moduleInterface, source } = context;
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(source));
   const occurrence = occurrenceAt(moduleInterface, offset);
-  if (!occurrence) return null;
+  if (!occurrence) {
+    const definition = semanticDefinitionsAt(project, moduleInterface.moduleId, offset)[0];
+    return definition ? await location(definition.path, definition.span, sourceOverrides) : null;
+  }
   const jsDefinition = await jsDefinitionLocation(
     moduleInterface,
     occurrence,

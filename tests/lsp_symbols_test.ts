@@ -424,6 +424,36 @@ Deno.test("lsp definitions use compiler-certified facts after a failed phrase", 
   });
 });
 
+Deno.test("lsp definition retains a certified imported target inside a type-rejected phrase", async () => {
+  const dir = await Deno.makeTempDir();
+  const libraryPath = `${dir}/runtime.wm`;
+  const mainPath = `${dir}/main.wm`;
+  const librarySource = "let run = (initial, render) => { render(initial) };";
+  const mainSource = `
+    from "./runtime.wm" import * as Runtime;
+    record First = { value: Number };
+    record Second = { value: Number };
+    let render = (value: First) => { value.value };
+    let display = (value: Second) => { Runtime.run(value, render) };
+  `;
+  await Deno.writeTextFile(libraryPath, librarySource);
+  await Deno.writeTextFile(mainPath, mainSource);
+
+  const definition = await definitionAt(
+    pathToFileUri(mainPath),
+    positionOf(mainSource, "run(value"),
+    new Map(),
+  );
+
+  assertEquals(definition, {
+    uri: pathToFileUri(libraryPath),
+    range: {
+      start: { line: 0, character: librarySource.indexOf("run =") },
+      end: { line: 0, character: librarySource.indexOf("run =") + "run".length },
+    },
+  });
+});
+
 Deno.test("lsp definitions do not invent a fallback binding for failed phrases", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
