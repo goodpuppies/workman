@@ -387,9 +387,33 @@ let lex = (source) => {
           }
         }
       },
+      "["=> {
+        (Token.PunctuationToken(Token.LeftBracket),pos,txt):>makeTokSimpleSymbol
+      },
+       "]"=> {
+        (Token.PunctuationToken(Token.RightBracket),pos,txt):>makeTokSimpleSymbol
+      },
       "*"=> {
         (Token.OperatorToken(Token.Multiply),pos,txt) :> makeTokSimpleSymbol
       },
+      "+"=> {
+        (Token.OperatorToken(Token.Add),pos,txt) :> makeTokSimpleSymbol
+      },
+      "@"=> {
+        (Token.PunctuationToken(Token.AtSign),pos,txt) :> makeTokSimpleSymbol
+      },
+      "!" => {
+        match (peekByOne(pos.index + 1)) {
+          Some("=") => {
+            (Token.OperatorToken(Token.NotEqual), pos, txt) :> makeTokSimpleSymbol
+          },
+          _ => {  
+            (Token.OperatorToken(Token.BooleanNot), pos, txt) :> makeTokSimpleSymbol
+          }
+        }
+      },
+      
+      
       Var(x) => {
         print(`whats this "${x}"`);
         ?

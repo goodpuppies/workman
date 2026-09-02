@@ -40,13 +40,10 @@ let printToks = (list, sourceText) => {
 };
 
 
-
-type FileProcessorSync = (String, String) -> Void;
-
 let processFilesSync = (
-  dir: String,
-  postfix: String,
-  fn: FileProcessorSync,
+  dir,
+  postfix,
+  fn,
 ): Void => {
   let iterator = walkSync(dir, JSON{ exts: JSON[postfix], includeDirs: false })
     :> Result.debug;
