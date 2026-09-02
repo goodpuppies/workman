@@ -288,8 +288,23 @@ async function watchCommand(args: string[]): Promise<number> {
   const programArgs = separator === -1 ? [] : args.slice(separator + 1);
   const [input] = inputArgs;
   if (!input) return missingInput("watch");
-  await watchFile(input, { args: programArgs, onError: reportError });
-  return 0;
+  const controller = new AbortController();
+  let interrupted = false;
+  const onInterrupt = () => {
+    interrupted = true;
+    controller.abort();
+  };
+  Deno.addSignalListener("SIGINT", onInterrupt);
+  try {
+    await watchFile(input, {
+      args: programArgs,
+      onError: reportError,
+      signal: controller.signal,
+    });
+    return interrupted ? 130 : 0;
+  } finally {
+    Deno.removeSignalListener("SIGINT", onInterrupt);
+  }
 }
 
 async function replCommand(args: string[]): Promise<number> {

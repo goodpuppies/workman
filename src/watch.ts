@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { loadModuleGraph } from "./module_graph.ts";
 import { runFile, type RunOptions } from "./run.ts";
 import { terminalWidth } from "../tooling/tuiman/document.ts";
+import { stdin } from "node:process";
 
 export type WatchOptions = Omit<RunOptions, "signal"> & {
   signal?: AbortSignal;
@@ -48,16 +49,20 @@ export async function watchFile(input: string, options: WatchOptions = {}): Prom
     try {
       const running = runFile(inputPath, { ...options, signal: runController.signal });
       const first = await Promise.race([
-        running.then(() => "run" as const),
-        changed.then(() => "change" as const),
+        running.then((result) => ({ kind: "run" as const, result })),
+        changed.then(() => ({ kind: "change" as const })),
       ]);
-      if (first === "change") {
+      if (first.kind === "change") {
         runController.abort();
         await running.catch((error) => {
           if (!options.signal?.aborted) reportWatchError(error, options);
         });
       } else {
-        await changed;
+        if (first.result.code === 0) {
+          await changed;
+        } else if (await waitForChangeOrRawInterrupt(changed, options.signal) === "interrupt") {
+          return;
+        }
       }
     } catch (error) {
       if (!options.signal?.aborted) {
@@ -71,6 +76,43 @@ export async function watchFile(input: string, options: WatchOptions = {}): Prom
       options.signal?.removeEventListener("abort", stopRun);
     }
     if (!options.signal?.aborted) refreshWatchTerminal();
+  }
+}
+
+/**
+ * A crashed child TUI can leave Windows console input in raw mode. In that state
+ * Ctrl+C arrives as byte 3 instead of SIGINT, so listen for it only while no child
+ * owns stdin and the watcher is waiting after a failed run.
+ */
+async function waitForChangeOrRawInterrupt(
+  changed: Promise<void>,
+  signal?: AbortSignal,
+): Promise<"change" | "interrupt"> {
+  if (!Deno.stdin.isTerminal()) {
+    await changed;
+    return "change";
+  }
+
+  let finishInterrupt: (() => void) | undefined;
+  const interrupted = new Promise<"interrupt">((resolveInterrupt) => {
+    const onData = (chunk: Uint8Array) => {
+      if (chunk.includes(3)) resolveInterrupt("interrupt");
+    };
+    const onAbort = () => resolveInterrupt("interrupt");
+    finishInterrupt = () => {
+      stdin.off("data", onData);
+      signal?.removeEventListener("abort", onAbort);
+      stdin.pause();
+    };
+    stdin.on("data", onData);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    stdin.resume();
+  });
+
+  try {
+    return await Promise.race([changed.then(() => "change" as const), interrupted]);
+  } finally {
+    finishInterrupt?.();
   }
 }
 

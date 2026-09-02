@@ -114,6 +114,41 @@ Deno.test("watch executes until reaching a typed hole and resumes after replacem
   }
 });
 
+Deno.test("watch exits on SIGINT while waiting after an error", async () => {
+  const directory = await Deno.makeTempDir();
+  const input = `${directory}/main.wm`;
+  await Deno.writeTextFile(input, "let main = () => { ); }; ");
+
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", cli, "watch", input],
+    stdout: "null",
+    stderr: "piped",
+  }).spawn();
+  const statusPromise = child.status;
+  const errorReader = child.stderr.getReader();
+  let exited = false;
+  try {
+    await readUntil(errorReader, new TextDecoder(), "", "parse.syntax-error");
+    child.kill("SIGINT");
+    const status = await statusWithTimeout(statusPromise, 5_000);
+    exited = true;
+    // Windows reports a programmatically delivered console interrupt as exit 1,
+    // while an interactive SIGINT handled by the CLI returns the conventional 130.
+    assertEquals(status.success, false);
+  } finally {
+    errorReader.releaseLock();
+    if (!exited) {
+      try {
+        child.kill();
+      } catch (error) {
+        if (!(error instanceof Deno.errors.NotFound) && !(error instanceof TypeError)) throw error;
+      }
+    }
+    await statusPromise;
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 async function readUntil(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   decoder: TextDecoder,
@@ -146,6 +181,23 @@ async function readWithTimeout(
           () => reject(new Error(`timed out waiting for ${JSON.stringify(expected)}`)),
           timeout,
         );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function statusWithTimeout(
+  status: Promise<Deno.CommandStatus>,
+  timeout: number,
+): Promise<Deno.CommandStatus> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      status,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timed out waiting for watch to exit")), timeout);
       }),
     ]);
   } finally {

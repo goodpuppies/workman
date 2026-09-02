@@ -1,9 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import {
-  evaluateReplFile,
-  runInteractiveRepl,
-  topLevelPhraseRanges,
-} from "../src/repl.ts";
+import { evaluateReplFile, runInteractiveRepl, topLevelPhraseRanges } from "../src/repl.ts";
 import { topLevelPhraseEnd } from "../src/top_level_phrases.ts";
 import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
@@ -874,6 +870,30 @@ Deno.test("cli run points stack overflows at the non-tail Workman call", async (
   assertEquals(result.stderr.includes("main.mjs"), false);
 });
 
+Deno.test("cli run explains stack overflow in the runtime value formatter", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let rec build = (n, items) => {
+        if (n == 0) { items } else { build(n - 1, [n, ..items]) }
+      };
+      let main = () => { print(build(50000, [])) };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 1);
+  assertStringIncludes(
+    result.stderr,
+    "error[runtime.stack-overflow]: displaying a Workman value exhausted the JavaScript call stack",
+  );
+  assertStringIncludes(result.stderr, "The value passed to `print` is nested too deeply");
+  assertEquals(result.stderr.includes("main.mjs"), false);
+});
+
 Deno.test("cli run computes the length of a deep list without growing the JS stack", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
@@ -1046,19 +1066,22 @@ Deno.test("interactive repl evaluates phrases, prints prompts, and keeps the bas
     Deno.stdout.write = originalStdout;
   }
   const stdout = stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
-  assertEquals(stdout, [
-    `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n`,
-    "- ",
-    "it = 3 : Number\n",
-    "- ",
-    "x = 40 : Number\n",
-    "- ",
-    "it = 42 : Number\n",
-    "- ",
-    "- ",
-    "it = 43 : Number\n",
-    "- ",
-  ].join(""));
+  assertEquals(
+    stdout,
+    [
+      `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n`,
+      "- ",
+      "it = 3 : Number\n",
+      "- ",
+      "x = 40 : Number\n",
+      "- ",
+      "it = 42 : Number\n",
+      "- ",
+      "- ",
+      "it = 43 : Number\n",
+      "- ",
+    ].join(""),
+  );
   assertEquals(errors.length, 1);
 });
 

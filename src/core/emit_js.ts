@@ -28,8 +28,8 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   const entry = program.modules.get(program.entry)!;
   directFns = collectProgramDirectFns(program);
   const target = options.target ?? "executable";
-  const stackOverflowSites = emitStackOverflowSites(program);
   const standardIds = new Set(program.standardNamespaces?.map((item) => item.id) ?? []);
+  const stackOverflowSites = emitStackOverflowSites(program, target === "executable");
   const body = [
     ...emitShaderArtifactTable(program),
     ...emitModuleRuntime(),
@@ -57,33 +57,13 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
     : [...emitRuntimePrelude(), ...body].join("\n");
 }
 
-function emitStackOverflowSites(program: CoreProgram): string {
+function emitStackOverflowSites(program: CoreProgram, terminateOnUnhandled: boolean): string {
   const sites: Record<string, string> = {};
   const frames: Record<string, string> = {};
   for (const moduleId of program.order) {
     const artifact = program.modules.get(moduleId)!;
     for (const decl of artifact.module.decls) {
-      collectFunctionFrameSites(decl, artifact, frames);
-      if (decl.kind !== "CoreLet" || !decl.recursive) continue;
-      for (const binding of decl.bindings) {
-        if (binding.pattern.kind !== "CorePVar" || binding.pattern.bindingId === undefined) {
-          continue;
-        }
-        const call = firstNonTailSelfCall(binding.value, binding.pattern.bindingId, false);
-        if (!call?.node) continue;
-        const { line, col, start, end } = call.node.span;
-        const lineText = artifact.source.split(/\r?\n/)[line - 1] ?? "";
-        const width = Math.max(1, Math.min(end - start, Math.max(1, lineText.length - col)));
-        const gutter = `${line}| `;
-        const message =
-          `error[runtime.stack-overflow ${artifact.path}:${line}:${col}]: non-tail recursion exhausted the JavaScript call stack\n\n` +
-          `${gutter}${lineText}\n${" ".repeat(gutter.length + col)}${"^".repeat(width)}\n\n` +
-          `\`${binding.pattern.name}\` calls itself outside tail position.\n` +
-          "Rewrite it using an accumulator so the compiler can emit a loop.";
-        sites[patternBindingName(binding.pattern)] = message;
-        const direct = directFns.get(binding.pattern.bindingId);
-        if (direct) sites[direct.name] = message;
-      }
+      collectFunctionFrameSites(decl, artifact, frames, sites);
     }
   }
   return `const __wm_stack_overflow_sites = ${JSON.stringify(sites)};
@@ -106,15 +86,30 @@ const __wm_report_stack_overflow = (error) => {
       }
     }
     const repeated = [...counts].sort((left, right) => right[1] - left[1])[0];
-    if (!repeated) return false;
-    console.error(__wm_stack_function_sites[repeated[0]]);
+    if (repeated) {
+      console.error(__wm_stack_function_sites[repeated[0]]);
+    } else if (/\\bat __wm_show\\b/.test(stack)) {
+      console.error(
+        "error[runtime.stack-overflow]: displaying a Workman value exhausted the JavaScript call stack\\n\\n" +
+        "The value passed to \`print\` is nested too deeply for the runtime formatter.\\n" +
+        "Print a summary, count, or bounded portion of the value instead."
+      );
+    } else {
+      console.error(
+        "error[runtime.stack-overflow]: Workman execution exhausted the JavaScript call stack\\n\\n" +
+        "No repeating source-level Workman function could be identified in the available stack frames."
+      );
+    }
   }
   if (globalThis.Deno) Deno.exitCode = 1;
   return true;
 };
 if (typeof globalThis.addEventListener === "function") {
   globalThis.addEventListener("unhandledrejection", (event) => {
-    if (__wm_report_stack_overflow(event.reason)) event.preventDefault();
+    if (__wm_report_stack_overflow(event.reason)) {
+      event.preventDefault();
+      ${terminateOnUnhandled ? "if (globalThis.Deno) Deno.exit(1);" : ""}
+    }
   });
 }`;
 }
@@ -123,10 +118,29 @@ function collectFunctionFrameSites(
   decl: CoreDecl,
   artifact: CoreModuleArtifact,
   frames: Record<string, string>,
+  nonTailSites: Record<string, string>,
 ): void {
   if (decl.kind !== "CoreLet") return;
   for (const binding of decl.bindings) {
     if (binding.pattern.kind === "CorePVar" && binding.pattern.bindingId !== undefined) {
+      if (decl.recursive) {
+        const call = firstNonTailSelfCall(binding.value, binding.pattern.bindingId, false);
+        if (call?.node) {
+          const { line, col, start, end } = call.node.span;
+          const lineText = artifact.source.split(/\r?\n/)[line - 1] ?? "";
+          const width = Math.max(1, Math.min(end - start, Math.max(1, lineText.length - col)));
+          const gutter = `${line}| `;
+          const message =
+            `error[runtime.stack-overflow ${artifact.path}:${line}:${col}]: non-tail recursion exhausted the JavaScript call stack\n\n` +
+            `${gutter}${lineText}\n${" ".repeat(gutter.length + col)}${"^".repeat(width)}\n\n` +
+            `\`${binding.pattern.name}\` calls itself outside tail position.\n` +
+            "Work remains after this call returns, so it cannot be lowered to a loop.\n" +
+            "Rewrite it using an accumulator so the compiler can emit a loop.";
+          nonTailSites[patternBindingName(binding.pattern)] = message;
+          const direct = directFns.get(binding.pattern.bindingId);
+          if (direct) nonTailSites[direct.name] = message;
+        }
+      }
       if (binding.value.kind === "CoreFn") {
         const node = binding.node ?? binding.value.node;
         if (node) {
@@ -143,7 +157,7 @@ function collectFunctionFrameSites(
           if (direct) frames[direct.name] = message;
         }
       }
-      collectFunctionFramesInExpr(binding.value, artifact, frames);
+      collectFunctionFramesInExpr(binding.value, artifact, frames, nonTailSites);
     }
   }
 }
@@ -152,35 +166,44 @@ function collectFunctionFramesInExpr(
   expr: CoreExpr,
   artifact: CoreModuleArtifact,
   frames: Record<string, string>,
+  nonTailSites: Record<string, string>,
 ): void {
   if (expr.kind === "CoreFn") {
-    for (const arm of expr.arms) collectFunctionFramesInExpr(arm.body, artifact, frames);
+    for (const arm of expr.arms) {
+      collectFunctionFramesInExpr(arm.body, artifact, frames, nonTailSites);
+    }
   } else if (expr.kind === "CoreTuple" || expr.kind === "CoreJsonArray") {
-    for (const item of expr.items) collectFunctionFramesInExpr(item, artifact, frames);
+    for (const item of expr.items) {
+      collectFunctionFramesInExpr(item, artifact, frames, nonTailSites);
+    }
   } else if (expr.kind === "CoreRecord" || expr.kind === "CoreJsonObject") {
-    for (const field of expr.fields) collectFunctionFramesInExpr(field.value, artifact, frames);
+    for (const field of expr.fields) {
+      collectFunctionFramesInExpr(field.value, artifact, frames, nonTailSites);
+    }
   } else if (expr.kind === "CoreRecordAccess") {
-    collectFunctionFramesInExpr(expr.record, artifact, frames);
+    collectFunctionFramesInExpr(expr.record, artifact, frames, nonTailSites);
   } else if (expr.kind === "CoreApp") {
-    collectFunctionFramesInExpr(expr.callee, artifact, frames);
-    collectFunctionFramesInExpr(expr.arg, artifact, frames);
+    collectFunctionFramesInExpr(expr.callee, artifact, frames, nonTailSites);
+    collectFunctionFramesInExpr(expr.arg, artifact, frames, nonTailSites);
   } else if (expr.kind === "CoreIf") {
-    collectFunctionFramesInExpr(expr.cond, artifact, frames);
-    collectFunctionFramesInExpr(expr.thenExpr, artifact, frames);
-    collectFunctionFramesInExpr(expr.elseExpr, artifact, frames);
+    collectFunctionFramesInExpr(expr.cond, artifact, frames, nonTailSites);
+    collectFunctionFramesInExpr(expr.thenExpr, artifact, frames, nonTailSites);
+    collectFunctionFramesInExpr(expr.elseExpr, artifact, frames, nonTailSites);
   } else if (expr.kind === "CoreMatch") {
-    collectFunctionFramesInExpr(expr.value, artifact, frames);
-    for (const arm of expr.arms) collectFunctionFramesInExpr(arm.body, artifact, frames);
+    collectFunctionFramesInExpr(expr.value, artifact, frames, nonTailSites);
+    for (const arm of expr.arms) {
+      collectFunctionFramesInExpr(arm.body, artifact, frames, nonTailSites);
+    }
   } else if (expr.kind === "CorePanic") {
-    collectFunctionFramesInExpr(expr.message, artifact, frames);
+    collectFunctionFramesInExpr(expr.message, artifact, frames, nonTailSites);
   } else if (expr.kind === "CoreBlock") {
     for (const item of expr.items) {
-      if (isDecl(item)) collectFunctionFrameSites(item, artifact, frames);
-      else collectFunctionFramesInExpr(item, artifact, frames);
+      if (isDecl(item)) collectFunctionFrameSites(item, artifact, frames, nonTailSites);
+      else collectFunctionFramesInExpr(item, artifact, frames, nonTailSites);
     }
-    collectFunctionFramesInExpr(expr.result, artifact, frames);
+    collectFunctionFramesInExpr(expr.result, artifact, frames, nonTailSites);
   } else if (expr.kind === "CoreShaderRef" && expr.environment) {
-    collectFunctionFramesInExpr(expr.environment, artifact, frames);
+    collectFunctionFramesInExpr(expr.environment, artifact, frames, nonTailSites);
   }
 }
 
@@ -560,7 +583,8 @@ function emitReplRuntimeCatch(): string {
 function emitExecutableRuntimeCatch(): string {
   return `} catch (__wm_runtime_error) {
   if (__wm_report_stack_overflow(__wm_runtime_error)) {
-    if (!globalThis.Deno) throw __wm_runtime_error;
+    if (globalThis.Deno) Deno.exit(1);
+    else throw __wm_runtime_error;
   } else if (!(__wm_runtime_error instanceof Error) || __wm_runtime_error.name !== "TypedHole") {
     throw __wm_runtime_error;
   } else {

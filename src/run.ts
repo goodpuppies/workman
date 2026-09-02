@@ -100,14 +100,39 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     };
     options.signal?.addEventListener("abort", stop, { once: true });
     if (options.signal?.aborted) stop();
+    let completedCleanly = false;
     try {
-      return await child.output();
+      const result = await child.output();
+      completedCleanly = result.success;
+      return result;
     } finally {
       options.signal?.removeEventListener("abort", stop);
+      if (!completedCleanly) restoreParentTerminal();
     }
   } finally {
     progress.finish();
     await temporaryDirectory.cleanup();
+  }
+}
+
+/** Recover console state when a child TUI terminates before running its own cleanup. */
+function restoreParentTerminal(): void {
+  if (!Deno.stdin.isTerminal()) return;
+  try {
+    // Force a console-mode write even when Deno's parent-side bookkeeping still
+    // believes the handle is cooked; a child process may have changed the shared
+    // Windows console mode behind its back.
+    Deno.stdin.setRaw(true);
+    Deno.stdin.setRaw(false);
+  } catch {
+    // The input handle may have closed with the child; there is nothing left to restore.
+  }
+  if (Deno.stdout.isTerminal()) {
+    // Reset attributes/mouse mode/cursor/alternate screen. Repeating these after a
+    // child already cleaned up is harmless.
+    Deno.stdout.writeSync(
+      new TextEncoder().encode("\x1b[0m\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l"),
+    );
   }
 }
 

@@ -162,6 +162,23 @@ Deno.test("does not mistake a shadowed call for direct self recursion", async ()
   assertEquals(outer.includes(": while (true)"), false);
 });
 
+Deno.test("records precise non-tail recursion diagnostics for nested functions", async () => {
+  const js = await compile(`
+    let sum = (count) => {
+      let rec loop = (remaining) => {
+        if (remaining == 0) { 0 } else { 1 + loop(remaining - 1) }
+      };
+      loop(count)
+    };
+  `);
+
+  assertStringIncludes(js, "non-tail recursion exhausted the JavaScript call stack");
+  assertStringIncludes(js, "`loop` calls itself outside tail position.");
+  assertStringIncludes(js, "Work remains after this call returns");
+  assertStringIncludes(js, "loop(remaining - 1)");
+  assertStringIncludes(js, "if (globalThis.Deno) Deno.exit(1);");
+});
+
 Deno.test("rejects type errors", async () => {
   await assertRejects(
     () => checkSource("let nope = 1 + true;"),
