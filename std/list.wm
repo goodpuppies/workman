@@ -3,9 +3,12 @@ let rec map = match(items, f) => {
   ([head, ..rest], f) => { [f(head), ..map(rest, f)] }
 };
 
-let rec length = match(items) => {
-  [] => { 0 },
-  [_, ..rest] => { 1 + length(rest) }
+let length = (items) => {
+  let rec loop = match(remaining, count) => {
+    ([], count) => { count },
+    ([_, ..rest], count) => { loop(rest, count + 1) }
+  };
+  loop(items, 0)
 };
 
 let rec append = match(left, right) => {

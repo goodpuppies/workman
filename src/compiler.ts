@@ -67,7 +67,11 @@ import type { RecursionFacts } from "./recursion_facts.ts";
 import { CompilerIdAllocator } from "./ids.ts";
 import { loadDefaultWmslangSlangBackend } from "./wmslang/slang_backend.ts";
 import { materializeGpuSliceArtifacts } from "./wmslang/materialize.ts";
-import { WmslangNumericDiagnosticError, type WmslangSliceCompiler } from "./wmslang/v2_loader.ts";
+import {
+  loadWmslangSliceCompiler,
+  WmslangNumericDiagnosticError,
+  type WmslangSliceCompiler,
+} from "./wmslang/v2_loader.ts";
 import {
   defaultWmslangCompilerIdentity,
   loadCachedWmslangCompiler,
@@ -460,6 +464,11 @@ export async function elaborateProjectGpuSemantics(
 }
 
 async function compileDefaultWmslangCompiler(): Promise<WmslangSliceCompiler> {
+  if (typeof Deno === "undefined") {
+    return await loadWmslangSliceCompiler(
+      new URL("../tooling/wmslang/wmslang.generated.mjs", import.meta.url),
+    );
+  }
   return await loadCachedWmslangCompiler({
     identity: await defaultWmslangCompilerIdentity(),
     build: () =>

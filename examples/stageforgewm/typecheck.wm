@@ -1,0 +1,32 @@
+-- Positive compile-time fixture for the public posting surface.
+
+from "./lib/types.wm" import { ActorError, ActorRef };
+from "./lib/postman.wm" import * as PostMan;
+from "./actors/counter.wm" import {
+  CounterProtocol,
+  AddPayload,
+  ResetPayload,
+  add,
+  double,
+  reset,
+};
+
+let counter: ActorRef<CounterProtocol> = .{
+  address = "counter@example",
+  protocol = CounterProtocol,
+};
+let payload: AddPayload = .{ amount = 2 };
+let resetPayload: ResetPayload = .{ hard = true };
+
+let addPosted = PostMan.post(counter, add, payload);
+let resetPosted = PostMan.post(counter, reset, resetPayload);
+let doubleAsked: Task<Number, ActorError> = PostMan.ask(counter, double, 21);
+let asyncDoubleRoute = PostMan.replyTaskRoute(double, (request, _) => {
+  (request * 2) :> Task.succeed
+});
+
+-- Both are rejected if uncommented:
+-- let wrongPayload = PostMan.post(counter, add, false);
+-- let wrongRequestPayload = PostMan.ask(counter, double, resetPayload);
+-- let wrongReply = PostMan.replyRoute(double, (_, _) => { resetPayload });
+-- let wrongProtocol = PostMan.post(otherActor, add, payload);

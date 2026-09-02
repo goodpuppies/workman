@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import * as path from "node:path";
 
 export type ServerProcessConfig<TTransport> = {
@@ -7,6 +8,7 @@ export type ServerProcessConfig<TTransport> = {
   options: {
     cwd: string;
     env: Record<string, string | undefined>;
+    shell: boolean;
   };
 };
 
@@ -19,25 +21,30 @@ export type ServerModuleConfig<TTransport> = {
   };
 };
 
-export function denoServerConfig<TTransport>(
+/**
+ * Launch a `wm` launcher (usually a script wrapping `deno run -A main.ts`) in
+ * language-server mode. Windows launchers are .bat/.cmd scripts, so they need a
+ * shell; other platforms exec the script's shebang directly.
+ */
+export function wmServerConfig<TTransport>(
   command: string,
-  serverPath: string,
   frontendV2ModulePath: string | undefined,
   transport: TTransport,
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
 ): ServerProcessConfig<TTransport> {
   return {
-    command,
-    args: ["run", "--allow-read", "--allow-env", "--allow-run", serverPath],
+    command: shellCommand(command),
+    args: ["lsp"],
     transport,
     options: {
-      cwd: path.dirname(path.dirname(path.dirname(serverPath))),
+      cwd: workspaceFolder ?? path.dirname(command),
       env: serverEnvironment(
         frontendV2ModulePath,
         baseEnv,
         workspaceFolder,
       ),
+      shell: process.platform === "win32",
     },
   };
 }
@@ -49,23 +56,62 @@ export function nodeServerConfig<TTransport>(
   baseEnv: Record<string, string | undefined>,
   workspaceFolder?: string,
 ): ServerModuleConfig<TTransport> {
-  const packagedFrontendV2ModulePath = frontendV2ModulePath ?? path.join(
-    path.dirname(module),
-    "generated",
-    "frontend_v2_parser.js",
-  );
   return {
     module,
     transport,
     options: {
       cwd: workspaceFolder ?? path.dirname(module),
       env: serverEnvironment(
-        packagedFrontendV2ModulePath,
+        frontendV2ModulePath,
         baseEnv,
         workspaceFolder,
       ),
     },
   };
+}
+
+export const SERVER_PROBE_TIMEOUT_MS = 15_000;
+
+export async function probeServerCommand(
+  command: string,
+  args: string[],
+  options: { cwd?: string; timeoutMs?: number } = {},
+): Promise<boolean> {
+  // Executor form, not Promise.withResolvers: VS Code's extension host is
+  // Node 20, which predates withResolvers.
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    let child: ChildProcess;
+    try {
+      child = spawn(shellCommand(command), args, {
+        cwd: options.cwd,
+        stdio: ["pipe", "ignore", "ignore"],
+        shell: process.platform === "win32",
+      });
+    } catch {
+      resolve(false);
+      return;
+    }
+    const timer: NodeJS.Timeout = setTimeout(() => {
+      child.kill();
+      finish(false);
+    }, options.timeoutMs ?? SERVER_PROBE_TIMEOUT_MS);
+    child.once("error", () => finish(false));
+    child.once("exit", (code) => finish(code === 0));
+    child.stdin?.once("error", () => {});
+    child.stdin?.end();
+  });
+}
+
+function shellCommand(command: string): string {
+  if (process.platform === "win32" && /\s/.test(command)) return `"${command}"`;
+  return command;
 }
 
 function serverEnvironment(

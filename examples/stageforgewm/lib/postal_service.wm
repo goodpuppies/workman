@@ -1,0 +1,161 @@
+-- Main-thread actor system. This is the only module that owns physical Worker values.
+
+from "./types.wm" import {
+  ActorError,
+  ActorSpec,
+  CreateEnvelope,
+  DecodeFailed,
+  EnvelopeHeader,
+  PostEnvelope,
+  ReplyEnvelope,
+  RequestEnvelope,
+  TransportFailed,
+  UnknownActor,
+};
+from js.global import { Worker };
+from js.global("Reflect") import { get };
+from js.global("crypto") import { randomUUID: () => String };
+
+let actors: Js.Dict<Worker> = Dict.empty();
+
+let decodeHeader = (value) => {
+  let decoded: Result<EnvelopeHeader, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid actor envelope") })
+};
+
+let decodePost = (value) => {
+  let decoded: Result<PostEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid post envelope") })
+};
+
+let decodeCreate = (value) => {
+  let decoded: Result<CreateEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid create envelope") })
+};
+
+let decodeRequest = (value) => {
+  let decoded: Result<RequestEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid request envelope") })
+};
+
+let decodeReply = (value) => {
+  let decoded: Result<ReplyEnvelope, Js.Error> = value :> Json.assert;
+  decoded :> Result.mapErr((_) => { DecodeFailed("invalid reply envelope") })
+};
+
+let sendTo = (address: String, envelope: Js.Value) => {
+  match(Dict.get(actors, address)) {
+    Some(worker) => {
+      worker.postMessage(envelope) :> Result.mapErr(TransportFailed)
+    },
+    None => {
+      Err(UnknownActor(address))
+    },
+  }
+};
+
+let forwardPost = (source, post) => {
+  let .{ to, tag, payload }: PostEnvelope = post;
+  sendTo(to, JSON{
+    kind: "deliver",
+    sender: source,
+    tag: tag,
+    payload: payload,
+  })
+};
+
+let forwardRequest = (source, request) => {
+  let .{ to, tag, requestId, payload }: RequestEnvelope = request;
+  sendTo(to, JSON{
+    kind: "request",
+    sender: source,
+    tag: tag,
+    requestId: requestId,
+    payload: payload,
+  })
+};
+
+let forwardReply = (source, reply) => {
+  let .{ to, requestId, payload }: ReplyEnvelope = reply;
+  sendTo(to, JSON{
+    kind: "reply",
+    sender: source,
+    requestId: requestId,
+    payload: payload,
+  })
+};
+
+let rec attach = (address, worker) => {
+  worker.addEventListener("message", (event) => {
+    get(event, "data")
+      :> Result.mapErr(TransportFailed)
+      :> Result.andThen((value) => {
+        decodeHeader(value) :> Result.andThen((header) => {
+          let .{ kind }: EnvelopeHeader = header;
+          if (kind == "post") {
+            decodePost(value) :> Result.andThen((post) => {
+              forwardPost(address, post)
+            })
+          } else {
+            if (kind == "request") {
+              decodeRequest(value) :> Result.andThen((request) => {
+                forwardRequest(address, request)
+              })
+            } else {
+              if (kind == "reply") {
+                decodeReply(value) :> Result.andThen((reply) => {
+                  forwardReply(address, reply)
+                })
+              } else {
+                if (kind == "create") {
+                  decodeCreate(value) :> Result.andThen((create) => {
+                    let .{ requestId, name, url }: CreateEnvelope = create;
+                    spawn(name, url, address) :> Result.andThen((childAddress) => {
+                      sendTo(address, JSON{
+                        kind: "created",
+                        requestId: requestId,
+                        address: childAddress,
+                      })
+                    })
+                  })
+                } else {
+                  Ok(void)
+                }
+              }
+            }
+          }
+        })
+      })
+      :> Result.mapErr((error) => {
+        print(error);
+        error
+      })
+      :> Result.withDefault(void)
+  }) :> Result.mapErr(TransportFailed)
+}
+
+and spawn = (name, url, parent) => {
+  randomUUID()
+    :> Result.mapErr(TransportFailed)
+    :> Result.andThen((id) => {
+      let address = name ++ "@" ++ id;
+      Worker.new(url, JSON{ "type": "module", name: name })
+        :> Result.mapErr(TransportFailed)
+        :> Result.andThen((worker) => {
+          Dict.set(actors, address, worker);
+          attach(address, worker) :> Result.andThen((_) => {
+            worker.postMessage(JSON{
+              kind: "init",
+              address: address,
+              parent: parent,
+            }) :> Result.mapErr(TransportFailed)
+          }) :> Result.map((_) => { address })
+        })
+    })
+};
+
+-- Bootstrap only: create the first actor. Later actors are created through PostMan.create.
+let start = (root: ActorSpec<protocol>) => {
+  let .{ name, url }: ActorSpec<protocol> = root;
+  spawn(name, url, "SYSTEM") :> Result.map((_) => { void })
+};

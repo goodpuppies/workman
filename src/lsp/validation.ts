@@ -1,5 +1,8 @@
 import { analyzeFile, elaborateProjectGpuSemantics, ModuleAnalysisError } from "../compiler.ts";
-import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
+import {
+  type CompilerFrontendOptions,
+  defaultFrontendV2ModuleUrl,
+} from "../compiler_frontend.ts";
 import {
   classifyDiagnostic,
   diagnosticNotes,
@@ -258,11 +261,6 @@ async function unresolvedGpuTypeWarning(
     };
   }
 }
-
-const defaultFrontendV2ModuleUrl = new URL(
-  "../generated/frontend_v2_parser.js",
-  import.meta.url,
-);
 
 function structuralDiagnosticsFor(
   frontend: Pick<FrontendV2Surface, "parseSurfaceProgram"> | undefined,

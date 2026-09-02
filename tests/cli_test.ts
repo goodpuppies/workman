@@ -837,6 +837,66 @@ Deno.test("cli run executes deep direct tail recursion without growing the JS st
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run points stack overflows at the non-tail Workman call", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let rec build = (n, items) => {
+        if (n == 0) { items } else { build(n - 1, [n, ..items]) }
+      };
+      let rec count = match(items) => {
+        [] => { 0 },
+        [_, ..rest] => { 1 + count(rest) }
+      };
+      let main = () => {
+        print(count(build(50000, [])));
+        void
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 1);
+  assertEquals(result.stdout, "");
+  assertStringIncludes(
+    result.stderr,
+    `error[runtime.stack-overflow ${input}:7:29]: non-tail recursion exhausted the JavaScript call stack`,
+  );
+  assertStringIncludes(result.stderr, "[_, ..rest] => { 1 + count(rest) }");
+  assertStringIncludes(result.stderr, "`count` calls itself outside tail position.");
+  assertStringIncludes(
+    result.stderr,
+    "Rewrite it using an accumulator so the compiler can emit a loop.",
+  );
+  assertEquals(result.stderr.includes("main.mjs"), false);
+});
+
+Deno.test("cli run computes the length of a deep list without growing the JS stack", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let rec build = (n, items) => {
+        if (n == 0) { items } else { build(n - 1, [n, ..items]) }
+      };
+      let main = () => {
+        print(List.length(build(50000, [])));
+        void
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "50000\n");
+  assertEquals(result.stderr, "");
+});
+
 Deno.test("cli run supports star import without alias", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;

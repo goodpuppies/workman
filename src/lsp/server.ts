@@ -1,7 +1,10 @@
 import { pathToFileURL } from "node:url";
 import { once } from "node:events";
 import process from "node:process";
-import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
+import {
+  type CompilerFrontendOptions,
+  defaultFrontendV2ModuleUrl,
+} from "../compiler_frontend.ts";
 import { loadFrontendV2Surface } from "../frontend_v2_surface_loader.ts";
 import { runtime } from "../io.ts";
 import { type ContentChange, DocumentStore } from "./documents.ts";
@@ -812,8 +815,7 @@ function applyInitializationOptions(
 export function frontendV2ModuleUrl(
   options: CompilerFrontendOptions,
 ): string | URL {
-  return options.frontendV2ModuleUrl ??
-    new URL("../generated/frontend_v2_parser.js", import.meta.url);
+  return options.frontendV2ModuleUrl ?? defaultFrontendV2ModuleUrl;
 }
 
 function pathToFileUrl(path: string): URL | string {

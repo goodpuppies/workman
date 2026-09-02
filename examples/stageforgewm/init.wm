@@ -1,0 +1,21 @@
+-- Bootstrap only. PostalService hides all physical Worker and routing details.
+
+from js.worker("./actors/root.wm") import { url } as RootWorker;
+from "./lib/types.wm" import { ActorSpec };
+from "./lib/postal_service.wm" import * as PostalService;
+from "./actors/root.wm" import { RootProtocol };
+
+let root: ActorSpec<RootProtocol> = .{
+  name = "root",
+  url = RootWorker.url,
+  protocol = RootProtocol,
+};
+
+let main = () => {
+  PostalService.start(root)
+    :> Result.mapErr((error) => {
+      print(error);
+      error
+    })
+    :> Result.withDefault(void)
+};

@@ -1,0 +1,78 @@
+-- Child actor and its public protocol. Callers import descriptors from this same worker file.
+
+from "../lib/postman.wm" import * as PostMan;
+from "../lib/types.wm" import { ActorError, Message, Request };
+
+type CounterProtocol = | CounterProtocol;
+
+//#region protos
+record AddPayload = {
+  amount: Number,
+};
+let add: Message<AddPayload, CounterProtocol> = PostMan.jsonMessage(
+  "counter/add",
+  (payload) => {
+    JSON{ amount: payload.amount }
+  },
+);
+
+record ResetPayload = {
+  hard: Bool,
+};
+let reset: Message<ResetPayload, CounterProtocol> = PostMan.jsonMessage(
+  "counter/reset",
+  (payload) => {
+    JSON{ hard: payload.hard }
+  },
+);
+
+let double: Request<Number, Number, CounterProtocol> = PostMan.request(
+  "counter/double",
+  PostMan.jsonNumber,
+  PostMan.jsonNumber,
+);
+//#endregion
+
+record CounterApi = {
+  add: (AddPayload, String) => Void,
+  double: (Number, String) => Number,
+  reset: (ResetPayload, String) => Void,
+};
+let api = .{
+
+  add = (payload, sender) => {
+    let amountText = payload.amount :> .toString() :> Result.withDefault("?");
+    print("child actor added " ++ amountText ++ " from " ++ sender)
+  },
+  double = (payload, _) => {
+    payload * 2
+  },
+  reset = (payload, sender) => {
+    if (payload.hard) {
+      print("child actor received typed reset from " ++ sender);
+    } else {};
+    PostMan.stop() :> Result.withDefault(void)
+  }
+};
+
+let serve = (api) => {
+  let .{
+    add = handleAdd,
+    double = handleDouble,
+    reset = handleReset,
+  } = api;
+  PostMan.serve([
+    PostMan.route(add, handleAdd),
+    PostMan.replyRoute(double, handleDouble),
+    PostMan.route(reset, handleReset),
+  ])
+};
+
+let main = () => {
+  serve(api)
+    :> Result.mapErr((error) => {
+      print(error);
+      error
+    })
+    :> Result.withDefault(void)
+};

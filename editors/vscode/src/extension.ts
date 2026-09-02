@@ -5,6 +5,7 @@ import {
   type CancellationToken,
   type ExtensionContext,
   MarkdownString,
+  type OutputChannel,
   StatusBarAlignment,
   type TextEditor,
   Uri,
@@ -19,9 +20,10 @@ import {
 } from "vscode-languageclient/node";
 import { type MessageSignature, Trace } from "vscode-jsonrpc";
 import {
-  denoServerConfig,
   nodeServerConfig,
+  probeServerCommand,
   resolveConfiguredPath,
+  wmServerConfig,
 } from "./server_options";
 
 let client: LanguageClient | undefined;
@@ -100,10 +102,10 @@ export async function activate(context: ExtensionContext) {
   );
 
   const start = async () => {
-    const server = resolveServer(context);
+    const server = await resolveServer(context, outputChannel);
     if (!server) {
       const message =
-        "Workman language server is unavailable. Reinstall the extension or set workman.serverPath to your Workman src/lsp/server.ts checkout.";
+        "Workman language server is unavailable. Install the `wm` CLI on PATH, reinstall the extension, or set workman.serverPath to a Workman language server bundle or `wm` launcher.";
       outputChannel.appendLine(message);
       window.showErrorMessage(message);
       return;
@@ -126,21 +128,19 @@ export async function activate(context: ExtensionContext) {
       WORKMAN_STRUCTURAL_INLAYS: String(structuralInlays),
     };
     outputChannel.appendLine(
-      `Starting Workman language server: ${server.path}`,
+      `Starting Workman language server (${server.kind}): ${server.path}`,
     );
     const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const serverOptions: ServerOptions = server.kind === "source"
+    const serverOptions: ServerOptions = server.kind === "wm"
       ? {
-        run: denoServerConfig(
-          denoPath,
+        run: wmServerConfig(
           server.path,
           frontendV2ModulePath,
           TransportKind.stdio,
           serverEnvironment,
           workspaceFolder,
         ),
-        debug: denoServerConfig(
-          denoPath,
+        debug: wmServerConfig(
           server.path,
           frontendV2ModulePath,
           TransportKind.stdio,
@@ -223,29 +223,44 @@ export async function deactivate(): Promise<void> {
   await client?.stop();
 }
 
-type Server = { kind: "source" | "node"; path: string };
+type Server = { kind: "wm" | "node"; path: string };
 
-function resolveServer(context: ExtensionContext): Server | undefined {
+/**
+ * Resolution order:
+ * 1. `workman.serverPath`, when it exists — a JavaScript server bundle or a
+ *    `wm` launcher script/binary.
+ * 2. `wm lsp` from PATH, when the command launches and exits cleanly.
+ * 3. The server bundle packaged inside the extension.
+ *
+ * There is deliberately no source-checkout mode: on development machines `wm`
+ * itself runs the checkout, so `wm lsp` already serves the freshest sources.
+ */
+async function resolveServer(
+  context: ExtensionContext,
+  outputChannel: OutputChannel,
+): Promise<Server | undefined> {
   const configured = workspace.getConfiguration("workman").get<string>(
     "serverPath",
   )?.trim();
-  const sourceCandidates = [
-    configured
-      ? resolveConfiguredPath(
-        configured,
-        workspace.workspaceFolders?.[0]?.uri.fsPath,
-      )
-      : undefined,
-    ...workspace.workspaceFolders?.map((folder) =>
-      path.join(folder.uri.fsPath, "src", "lsp", "server.ts")
-    ) ?? [],
-    path.resolve(context.extensionPath, "..", "..", "src", "lsp", "server.ts"),
-  ];
-  const source = sourceCandidates.find((candidate): candidate is string =>
-    !!candidate && fs.existsSync(candidate)
+  if (configured) {
+    const resolved = resolveConfiguredPath(
+      configured,
+      workspace.workspaceFolders?.[0]?.uri.fsPath,
+    );
+    if (fs.existsSync(resolved)) {
+      return /\.(?:mjs|cjs|js)$/i.test(resolved)
+        ? { kind: "node", path: resolved }
+        : { kind: "wm", path: resolved };
+    }
+    outputChannel.appendLine(`workman.serverPath does not exist: ${resolved}`);
+  }
+  const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (await probeServerCommand("wm", ["lsp"], { cwd: workspaceFolder })) {
+    return { kind: "wm", path: "wm" };
+  }
+  outputChannel.appendLine(
+    "wm lsp probe failed; falling back to the bundled language server",
   );
-  if (source) return { kind: "source", path: source };
-
   const bundled = path.join(
     context.extensionPath,
     "server",
@@ -253,6 +268,7 @@ function resolveServer(context: ExtensionContext): Server | undefined {
   );
   return fs.existsSync(bundled) ? { kind: "node", path: bundled } : undefined;
 }
+
 
 function createProjectStatusItem(priority: number) {
   const item = window.createStatusBarItem(StatusBarAlignment.Left, priority);

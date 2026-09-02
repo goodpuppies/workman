@@ -13,10 +13,11 @@ export function pathToFileUri(path: string): string {
 
 export function fileUriToPath(uri: string): string {
   const url = new URL(uri);
-  if (runtime.platform === "win32" && !/^\/[A-Za-z]:\//.test(url.pathname)) {
-    return decodeURIComponent(url.pathname);
+  const pathname = decodeURIComponent(url.pathname);
+  if (runtime.platform === "win32" && !/^\/[A-Za-z]:\//.test(pathname)) {
+    return pathname;
   }
-  return fileURLToPath(uri);
+  return fileURLToPath(url);
 }
 
 function isPosixVirtualPath(path: string): boolean {
