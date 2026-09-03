@@ -66,7 +66,7 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_construct = (path) => (...args) => new (__wm_js_global(path))(...args);`,
     `const __wm_js_call = (fn, arg) => __wm_is_tuple(arg) ? fn(...arg) : fn(arg);`,
     `const __wm_js_option_wrap = (value) => value == null ? __wm_basis_None : __wm_basis_Some(value);`,
-    `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? undefined : value?.ctor === -2 ? value.args[0] : value;`,
+    `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? null : value?.ctor === -2 ? value.args[0] : value;`,
     `const __wm_js_to_workman = (value, converter) => {
   if (converter === "option") return __wm_js_option_wrap(value);
   if (typeof converter === "object" && converter.kind === "tuple") {

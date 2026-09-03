@@ -3,6 +3,9 @@ import type { Expr } from "./ast.ts";
 /** The only runtime-visible data in a completed visual-v1 fragment. */
 export type VisualShaderDescriptorV1 = {
   wgsl: string;
+  glsl?: string;
+  hlsl?: string;
+  metal?: string;
   vertexEntry: "wm_vertex";
   fragmentEntry: "wm_fragment";
 };

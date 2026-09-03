@@ -50,6 +50,7 @@
     "examples/raylib/orbital/rng.wm": "c552a4cc3d55f340b124247f80c61b8b322bf9158915958aff773ab699c36af7",
     "examples/raylib/orbital/sim.wm": "6aa9d097ed4936135dcbb9f50168168fc71ec91abca55ac180b659a0a871290a",
     "examples/raylib/orbital/vec.wm": "2bb05b30bb01d0315fb167fd15bfaa3a77258e5bda940f4954454a8ade35c88f",
+    "examples/raylib/wmslang_shader/main.wm": "8f500c4fc0fc7dd94977f987ec1dadbd84444bd54b4f621254cf729ecf962f1e",
     "examples/result_via.wm": "a4fb12f4c99664d5994926655227712a9bfe380c44dd8a333971145b8a114b31",
     "examples/server.wm": "dc64423c3daebdf790e2ea832fa454296a41b5f140433c27fe65df911aec9bb7",
     "examples/stageforgewm/actors/counter.wm": null,

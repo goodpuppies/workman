@@ -453,6 +453,16 @@ let fixed = value :> .toFixed(0);
 If reflection exposes an optional value as `Option<T>` in a specific API, use `Some(value)` or
 `None` for that API. Prefer the plain supplied form when it typechecks.
 
+When a binding takes a nullable native pointer (for example a C string where `null` selects a
+default), reflection may expose it opaquely instead of as `Option`. Assert the contract at the
+import site with `as`, then pass `None` (which arrives as `null`) or `Some(value)`:
+
+```wm
+from js.module("raylib") import {
+  loadShader as load: (Option<String>, Option<String>) -> Js.Value
+};
+```
+
 ## Common Patterns
 
 Panic on JS errors in a small script:

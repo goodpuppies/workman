@@ -9,6 +9,7 @@ const gpuTypes = [
   "RenderTarget2D",
   "SampledTexture2D",
   "Sampler",
+  "ShaderTarget",
   "Texture2D",
   "Uniform",
 ] as const;
@@ -36,6 +37,7 @@ const gpuFunctions = [
   "validateRenderTarget",
   "vertexEntryPoint",
   "wgsl",
+  "shaderSource",
   "withValue",
 ] as const;
 

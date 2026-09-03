@@ -216,6 +216,9 @@ Deno.test("host Core consumes only a completed opaque fragment artifact", async 
   const artifact: VisualShaderArtifactV1 = {
     id: `wms-v1-${"0".repeat(64)}`,
     wgsl: "@fragment fn wm_fragment() -> @location(0) vec4f { return vec4f(); }",
+    glsl: "void main() { gl_Position = vec4(0.0); }",
+    hlsl: "float4 wm_vertex() : SV_Position { return float4(0.0); }",
+    metal: "vertex float4 wm_vertex() { return float4(0.0); }",
     vertexEntry: "wm_vertex",
     fragmentEntry: "wm_fragment",
   };

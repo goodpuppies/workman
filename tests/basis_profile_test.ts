@@ -34,6 +34,7 @@ const gpuTypes = [
   "Gpu.SampledTexture2D",
   "Gpu.RenderTarget2D",
   "Gpu.Sampler",
+  "Gpu.ShaderTarget",
 ];
 
 const fixedOperators = [

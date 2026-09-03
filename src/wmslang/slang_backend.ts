@@ -1,5 +1,5 @@
 import createSlangModule from "./vendor/slang-wasm.js";
-import type { MainModule } from "./vendor/slang-wasm.d.ts";
+import type { GlobalSession, MainModule } from "./vendor/slang-wasm.d.ts";
 import { formatResolvedGpuDiagnostic, type WmslangResolvedDiagnostic } from "./diagnostics.ts";
 
 export const WMSLANG_SLANG_VERSION = "2026.13.1" as const;
@@ -19,8 +19,15 @@ export const WMSLANG_FRAGMENT_ENTRY = "wm_fragment" as const;
 const SLANG_STAGE_VERTEX = 1;
 const SLANG_STAGE_FRAGMENT = 5;
 
+export const WMSLANG_SHADER_TARGETS = ["wgsl", "glsl", "hlsl", "metal"] as const;
+
+export type WmslangShaderTarget = (typeof WMSLANG_SHADER_TARGETS)[number];
+
 export type WmslangBackendArtifact = {
   wgsl: string;
+  glsl?: string;
+  hlsl?: string;
+  metal?: string;
   vertexEntry: typeof WMSLANG_VERTEX_ENTRY;
   fragmentEntry: typeof WMSLANG_FRAGMENT_ENTRY;
   slangVersion: string;
@@ -73,6 +80,8 @@ export class WmslangBackendError extends Error {
 }
 
 export class WmslangSlangBackend {
+  private globalSession: GlobalSession | null | undefined;
+
   private constructor(private readonly slang: MainModule) {}
 
   static async load(wasmUrl?: URL) {
@@ -86,7 +95,10 @@ export class WmslangSlangBackend {
     return this.slang.getVersionString();
   }
 
-  compile(slangSource: string): WmslangBackendArtifact {
+  compile(
+    slangSource: string,
+    targets: readonly WmslangShaderTarget[] = ["wgsl"],
+  ): WmslangBackendArtifact {
     if (slangSource.length === 0) {
       throw new WmslangBackendError(
         "cannot compile an empty wmslang module",
@@ -94,27 +106,111 @@ export class WmslangSlangBackend {
         "generated Slang source is empty",
       );
     }
-
-    const globalSession = this.slang.createGlobalSession();
-    if (!globalSession) throw this.compilerError("create global session", slangSource);
-    const wgslTarget = this.slang.getCompileTargets().find(
-      (target: { name: string; value: number }) => target.name === "WGSL",
-    )?.value;
-    if (wgslTarget === undefined) {
-      globalSession.delete();
-      throw new WmslangBackendError(
-        "the bundled Slang compiler has no WGSL target",
-        slangSource,
-        `Slang ${this.version} did not report WGSL in getCompileTargets()`,
+    const requested = ["wgsl" as const, ...targets.filter((target) => target !== "wgsl")];
+    const targetValues = this.resolveTargetValues(slangSource);
+    const globalSession = this.requireGlobalSession(slangSource);
+    const linked = new Map<WmslangShaderTarget, { code: string; layout: unknown }>();
+    for (const target of requested) {
+      linked.set(
+        target,
+        this.linkTarget(globalSession, slangSource, target.toUpperCase(), targetValues[target]),
       );
     }
-
-    const session = globalSession.createSession(wgslTarget);
-    if (!session) {
-      globalSession.delete();
-      throw this.compilerError("create WGSL session", slangSource);
+    const wgsl = linked.get("wgsl")!.code;
+    const reflectedLayout = this.validateReflection(linked.get("wgsl")!.layout, slangSource);
+    if (!wgsl.includes(`fn ${WMSLANG_VERTEX_ENTRY}`) || !wgsl.includes("@vertex")) {
+      throw new WmslangBackendError(
+        "Slang emitted WGSL without the fixed vertex entry",
+        slangSource,
+        "whole-program WGSL is missing @vertex wm_vertex",
+      );
     }
+    if (!wgsl.includes(`fn ${WMSLANG_FRAGMENT_ENTRY}`) || !wgsl.includes("@fragment")) {
+      throw new WmslangBackendError(
+        "Slang emitted WGSL without the fixed fragment entry",
+        slangSource,
+        "whole-program WGSL is missing @fragment wm_fragment",
+      );
+    }
+    const glsl = linked.get("glsl")?.code;
+    if (glsl !== undefined && (!glsl.includes("void main()") || !glsl.includes("gl_Position"))) {
+      throw new WmslangBackendError(
+        "Slang emitted GLSL without the fixed vertex entry",
+        slangSource,
+        "whole-program GLSL is missing the vertex main assigning gl_Position",
+      );
+    }
+    const hlsl = linked.get("hlsl")?.code;
+    if (
+      hlsl !== undefined &&
+      (!hlsl.includes(WMSLANG_VERTEX_ENTRY) || !hlsl.includes(WMSLANG_FRAGMENT_ENTRY))
+    ) {
+      throw new WmslangBackendError(
+        "Slang emitted HLSL without the fixed entries",
+        slangSource,
+        "whole-program HLSL is missing wm_vertex or wm_fragment",
+      );
+    }
+    const metal = linked.get("metal")?.code;
+    if (
+      metal !== undefined &&
+      (!metal.includes(WMSLANG_VERTEX_ENTRY) || !metal.includes(WMSLANG_FRAGMENT_ENTRY))
+    ) {
+      throw new WmslangBackendError(
+        "Slang emitted Metal without the fixed entries",
+        slangSource,
+        "whole-program Metal is missing wm_vertex or wm_fragment",
+      );
+    }
+    return {
+      wgsl,
+      ...(glsl !== undefined ? { glsl } : {}),
+      ...(hlsl !== undefined ? { hlsl } : {}),
+      ...(metal !== undefined ? { metal } : {}),
+      vertexEntry: WMSLANG_VERTEX_ENTRY,
+      fragmentEntry: WMSLANG_FRAGMENT_ENTRY,
+      slangVersion: this.version,
+      ...reflectedLayout,
+    };
+  }
 
+  private resolveTargetValues(
+    slangSource: string,
+  ): Record<WmslangShaderTarget, number> {
+    const reported = this.slang.getCompileTargets() as { name: string; value: number }[];
+    const values = {} as Record<WmslangShaderTarget, number>;
+    for (const target of WMSLANG_SHADER_TARGETS) {
+      const match = reported.find((candidate) => candidate.name === target.toUpperCase());
+      if (match === undefined) {
+        throw new WmslangBackendError(
+          `the bundled Slang compiler has no ${target.toUpperCase()} target`,
+          slangSource,
+          `Slang ${this.version} did not report ${target.toUpperCase()} in getCompileTargets()`,
+        );
+      }
+      values[target] = match.value;
+    }
+    return values;
+  }
+
+  private requireGlobalSession(slangSource: string): GlobalSession {
+    this.globalSession ??= this.slang.createGlobalSession();
+    if (!this.globalSession) {
+      throw this.compilerError("create global session", slangSource);
+    }
+    return this.globalSession;
+  }
+
+  private linkTarget(
+    globalSession: GlobalSession,
+    slangSource: string,
+    label: string,
+    targetValue: number,
+  ): { code: string; layout: unknown } {
+    const session = globalSession.createSession(targetValue);
+    if (!session) {
+      throw this.compilerError(`create ${label} session`, slangSource);
+    }
     try {
       const module = session.loadModuleFromSource(
         slangSource,
@@ -129,41 +225,15 @@ export class WmslangSlangBackend {
         SLANG_STAGE_FRAGMENT,
       );
       if (!fragment) throw this.compilerError("check generated fragment entry", slangSource);
-
       const composite = session.createCompositeComponentType([module, vertex, fragment]);
       if (!composite) throw this.compilerError("create generated program", slangSource);
       const linked = composite.link();
       if (!linked) throw this.compilerError("link generated program", slangSource);
-      const wgsl = linked.getTargetCode(0);
-      if (!wgsl) throw this.compilerError("emit whole-program WGSL", slangSource);
-      const reflectedLayout = this.validateReflection(
-        linked.getLayout(0)?.toJsonObject(),
-        slangSource,
-      );
-      if (!wgsl.includes(`fn ${WMSLANG_VERTEX_ENTRY}`) || !wgsl.includes("@vertex")) {
-        throw new WmslangBackendError(
-          "Slang emitted WGSL without the fixed vertex entry",
-          slangSource,
-          "whole-program WGSL is missing @vertex wm_vertex",
-        );
-      }
-      if (!wgsl.includes(`fn ${WMSLANG_FRAGMENT_ENTRY}`) || !wgsl.includes("@fragment")) {
-        throw new WmslangBackendError(
-          "Slang emitted WGSL without the fixed fragment entry",
-          slangSource,
-          "whole-program WGSL is missing @fragment wm_fragment",
-        );
-      }
-      return {
-        wgsl,
-        vertexEntry: WMSLANG_VERTEX_ENTRY,
-        fragmentEntry: WMSLANG_FRAGMENT_ENTRY,
-        slangVersion: this.version,
-        ...reflectedLayout,
-      };
+      const code = linked.getTargetCode(0);
+      if (!code) throw this.compilerError(`emit whole-program ${label}`, slangSource);
+      return { code, layout: linked.getLayout(0)?.toJsonObject() };
     } finally {
       session.delete();
-      globalSession.delete();
     }
   }
 

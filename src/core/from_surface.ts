@@ -294,6 +294,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       if (semanticId) {
         if (
           semanticId === GPU_SEMANTIC_IDS.wgsl ||
+          semanticId === GPU_SEMANTIC_IDS.shaderSource ||
           semanticId === GPU_SEMANTIC_IDS.vertexEntryPoint ||
           semanticId === GPU_SEMANTIC_IDS.fragmentEntryPoint ||
           semanticId === GPU_SEMANTIC_IDS.artifactIdentity ||

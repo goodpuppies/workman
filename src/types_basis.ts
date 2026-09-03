@@ -149,6 +149,7 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
   const sampledTextureInfo = typeInfoByName(typeEnv, "Gpu.SampledTexture2D");
   const renderTargetInfo = typeInfoByName(typeEnv, "Gpu.RenderTarget2D");
   const samplerInfo = typeInfoByName(typeEnv, "Gpu.Sampler");
+  const shaderTargetInfo = typeInfoByName(typeEnv, "Gpu.ShaderTarget");
   const jsArrayInfo = typeInfoByName(typeEnv, "Js.Array");
   const jsObjectInfo = typeInfoByName(typeEnv, "Js.Object");
   const jsErrorInfo = typeInfoByName(typeEnv, "Js.Error");
@@ -156,8 +157,8 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
   const optionInfo = typeInfoByName(typeEnv, "Option");
   if (
     !colorInfo || !fragmentInfo || !uniformInfo || !textureInfo || !sampledTextureInfo ||
-    !renderTargetInfo || !samplerInfo || !jsArrayInfo || !jsObjectInfo || !jsErrorInfo ||
-    !resultInfo || !optionInfo
+    !renderTargetInfo || !samplerInfo || !shaderTargetInfo || !jsArrayInfo || !jsObjectInfo ||
+    !jsErrorInfo || !resultInfo || !optionInfo
   ) {
     throw new Error("missing compiler-owned Gpu basis types");
   }
@@ -229,8 +230,13 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
       fn([tuple([uniform, value])], uniform),
     );
   }
-
   basisFn("Gpu.wgsl", GPU_SEMANTIC_IDS.wgsl, [], fn([fragment], StringTy));
+  basisFn(
+    "Gpu.shaderSource",
+    GPU_SEMANTIC_IDS.shaderSource,
+    [],
+    fn([tuple([fragment, named(shaderTargetInfo)])], StringTy),
+  );
   basisFn(
     "Gpu.vertexEntryPoint",
     GPU_SEMANTIC_IDS.vertexEntryPoint,

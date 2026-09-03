@@ -199,6 +199,38 @@ Deno.test("cli run passes JSON arrays as one JS argument", async () => {
   assertEquals(result.stderr, "");
 });
 
+Deno.test("cli run marshals None to null for nullable FFI parameters", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  const fixture = new URL("./fixtures/ffi_nullable_string.ts", import.meta.url).pathname;
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module(${JSON.stringify(fixture)}) import { loadLocalShader as load: (Option<String>, Option<String>) -> Bool, wasNull, wasUndefined };
+      let show = (result) => {
+        match(result) {
+          Ok(value) => { print(value) },
+          Err(_) => { print("check failed") }
+        }
+      };
+      let main = () => {
+        match(load(None, Some("fs"))) {
+          Ok(_) => {
+            show(wasNull());
+            show(wasUndefined())
+          },
+          Err(_) => { print("load failed") }
+        }
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "true\nfalse\n");
+  assertEquals(result.stderr, "");
+});
 Deno.test("cli run wraps and unwraps JS nullish Option values", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

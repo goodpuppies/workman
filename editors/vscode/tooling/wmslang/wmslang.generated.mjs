@@ -52,7 +52,7 @@ const __wm_js_receiver_member = (path) => {
 const __wm_js_construct = (path) => (...args) => new (__wm_js_global(path))(...args);
 const __wm_js_call = (fn, arg) => __wm_is_tuple(arg) ? fn(...arg) : fn(arg);
 const __wm_js_option_wrap = (value) => value == null ? __wm_basis_None : __wm_basis_Some(value);
-const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? undefined : value?.ctor === -2 ? value.args[0] : value;
+const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? null : value?.ctor === -2 ? value.args[0] : value;
 const __wm_js_to_workman = (value, converter) => {
   if (converter === "option") return __wm_js_option_wrap(value);
   if (typeof converter === "object" && converter.kind === "tuple") {
@@ -195,6 +195,10 @@ const __wm_basis_Nil = Object.freeze({ ctor: -5, name: "Nil", args: [] });
 const __wm_basis_Cons = (__payload) => ({ ctor: -6, name: "Cons", args: [__payload] });
 const __wm_basis_Js_Error = (__payload) => ({ ctor: -7, name: "Js.Error", args: [__payload] });
 const __wm_basis_Js_Unknown = Object.freeze({ ctor: -8, name: "Js.Unknown", args: [] });
+const __wm_basis_Gpu_ShaderTarget_WGSL = Object.freeze({ ctor: -9, name: "Gpu.ShaderTarget.WGSL", args: [] });
+const __wm_basis_Gpu_ShaderTarget_GLSL = Object.freeze({ ctor: -10, name: "Gpu.ShaderTarget.GLSL", args: [] });
+const __wm_basis_Gpu_ShaderTarget_HLSL = Object.freeze({ ctor: -11, name: "Gpu.ShaderTarget.HLSL", args: [] });
+const __wm_basis_Gpu_ShaderTarget_METAL = Object.freeze({ ctor: -12, name: "Gpu.ShaderTarget.METAL", args: [] });
 const __wm_js_error = (error) => {
   try {
     if (error instanceof Error) return __wm_basis_Js_Error(String(error.message));
@@ -344,6 +348,7 @@ const __wm_deep_freeze_shader_artifact = (value) => {
   return value;
 };
 const __wm_gpu_wgsl = (artifact) => artifact.wgsl;
+const __wm_gpu_shader_source = (args) => { const [artifact, target] = args; const required = (value, label) => { if (typeof value !== "string") throw new Error("shader source for " + label + " was not materialized for this fragment"); return value; }; if (target === __wm_basis_Gpu_ShaderTarget_WGSL) return artifact.wgsl; if (target === __wm_basis_Gpu_ShaderTarget_GLSL) return required(artifact.glsl, "GLSL"); if (target === __wm_basis_Gpu_ShaderTarget_HLSL) return required(artifact.hlsl, "HLSL"); if (target === __wm_basis_Gpu_ShaderTarget_METAL) return required(artifact.metal, "Metal"); throw new Error("unknown shader target"); };
 const __wm_gpu_vertex_entry_point = (artifact) => artifact.vertexEntry;
 const __wm_gpu_fragment_entry_point = (artifact) => artifact.fragmentEntry;
 const __wm_shader_artifact_identities = new WeakMap();
@@ -484,7 +489,7 @@ const __wm_gpu_bind_group_entries = (args) => __wm_gpu_result(() => {
   if (artifact.uniformLayout) {
     if (!uniformBuffer) throw new Error("shader requires a uniform buffer");
     entries.push({ binding: artifact.uniformLayout.binding, resource: { buffer: uniformBuffer } });
-  } else if (uniformBuffer !== undefined) {
+  } else if (uniformBuffer != null) {
     throw new Error("shader without uniforms received a uniform buffer");
   }
   const expected = artifact.resourceLayout?.bindings ?? [];

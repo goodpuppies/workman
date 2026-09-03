@@ -293,12 +293,12 @@ Deno.test("cli lists valid members after incomplete js namespaces", async () => 
     {
       source: "let value = Gpu.;",
       expected:
-        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
+        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, ShaderTarget, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
     },
     {
       source: "let value: Gpu. = void;",
       expected:
-        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
+        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, ShaderTarget, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
     },
   ];
 

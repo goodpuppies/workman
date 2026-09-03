@@ -9,7 +9,13 @@ import type {
 } from "../gpu_artifact.ts";
 import type { GpuSliceDiagnosticDto } from "./v2_dto.ts";
 import { WmslangNumericDiagnosticError, type WmslangSliceCompiler } from "./v2_loader.ts";
-import { WmslangBackendError, type WmslangSlangBackend } from "./slang_backend.ts";
+import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
+import {
+  WmslangBackendError,
+  type WmslangBackendArtifact,
+  type WmslangShaderTarget,
+  type WmslangSlangBackend,
+} from "./slang_backend.ts";
 import {
   formatResolvedGpuDiagnostic,
   resolveGpuSliceDiagnostic,
@@ -41,16 +47,32 @@ export async function materializeGpuSliceArtifacts(
     GpuFragmentSelectorFact["call"],
     VisualShaderArtifactV1
   >();
+  const targets = requestedExtraShaderTargets(analysis);
   for (const slice of analysis.gpuSlices) {
     const artifact = await materializeGpuSliceArtifact(
       slice.input,
       slice.selectors,
       compiler,
       backend,
+      targets,
     );
     for (const selector of slice.selectors) artifacts.set(selector.call, artifact);
   }
   return artifacts;
+}
+
+const EXTRA_SHADER_TARGETS = ["glsl", "hlsl", "metal"] as const satisfies
+  readonly WmslangShaderTarget[];
+
+function requestedExtraShaderTargets(analysis: CoreProgramAnalysis): WmslangShaderTarget[] {
+  for (const result of analysis.results.values()) {
+    for (const fact of result.facts.expressions.values()) {
+      if (fact.origin?.semanticId === GPU_SEMANTIC_IDS.shaderSource) {
+        return [...EXTRA_SHADER_TARGETS];
+      }
+    }
+  }
+  return [];
 }
 
 async function materializeGpuSliceArtifact(
@@ -58,6 +80,7 @@ async function materializeGpuSliceArtifact(
   selectors: GpuFragmentSelectorFact[],
   compiler: WmslangSliceCompiler,
   backend: WmslangSlangBackend,
+  targets: readonly WmslangShaderTarget[],
 ): Promise<VisualShaderArtifactV1> {
   const primarySelector = selectors[0];
   if (!primarySelector) throw new Error("selected GPU slice has no selector");
@@ -74,13 +97,13 @@ async function materializeGpuSliceArtifact(
   if (lowered.diagnostics.length !== 0) {
     throw new WmslangSemanticError(lowered.diagnostics, input.spans);
   }
-  let compiled: ReturnType<WmslangSlangBackend["compile"]>;
+  let compiled: WmslangBackendArtifact;
   let layouts: {
     uniformLayout?: VisualShaderUniformLayoutV2;
     resourceLayout?: VisualShaderResourceLayoutV5;
   };
   try {
-    compiled = backend.compile(lowered.slangSource);
+    compiled = backend.compile(lowered.slangSource, ["wgsl", ...targets]);
     layouts = {
       ...materializedUniformLayout(
         input,
@@ -112,14 +135,20 @@ async function materializeGpuSliceArtifact(
       resolveGpuSliceDiagnostic(diagnostic, input.spans),
     );
   }
+  const sources = {
+    wgsl: compiled.wgsl,
+    ...(compiled.glsl !== undefined ? { glsl: compiled.glsl } : {}),
+    ...(compiled.hlsl !== undefined ? { hlsl: compiled.hlsl } : {}),
+    ...(compiled.metal !== undefined ? { metal: compiled.metal } : {}),
+  };
   const artifact: VisualShaderArtifactV1 = {
     id: `wms-v1-${await artifactDigest(
-      compiled.wgsl,
+      sources,
       layouts.uniformLayout,
       layouts.resourceLayout,
       input,
     )}`,
-    wgsl: compiled.wgsl,
+    ...sources,
     vertexEntry: compiled.vertexEntry,
     fragmentEntry: compiled.fragmentEntry,
     ...layouts,
@@ -313,7 +342,7 @@ function reflectedUniformRepresentation(
 }
 
 async function artifactDigest(
-  wgsl: string,
+  compiled: Pick<WmslangBackendArtifact, "wgsl" | "glsl" | "hlsl" | "metal">,
   uniformLayout: VisualShaderUniformLayoutV2 | undefined,
   resourceLayout: VisualShaderResourceLayoutV5 | undefined,
   input: ProgramAnalysis["gpuInput"],
@@ -325,7 +354,7 @@ async function artifactDigest(
     ? input.spans.find((item) => item.id === environment.spanId)
     : undefined;
   const identityManifest = JSON.stringify({
-    wgsl,
+    sources: compiled,
     sourcePath: input.sourcePath,
     rootName: root.name,
     environment: environment

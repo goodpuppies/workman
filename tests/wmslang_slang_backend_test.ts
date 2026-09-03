@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { analyzeVirtual, compileVirtual, coreVirtual } from "../src/compiler.ts";
+import { analyzeVirtual, checkSource, compileVirtual, coreVirtual } from "../src/compiler.ts";
 import { emitCoreProgram } from "../src/core/emit_js.ts";
+import { FrontendDiagnosticError } from "../src/diagnostics.ts";
 import {
   loadDefaultWmslangSlangBackend,
   WmslangBackendError,
@@ -8,6 +9,7 @@ import {
 } from "../src/wmslang/slang_backend.ts";
 import { materializeGpuSliceArtifacts } from "../src/wmslang/materialize.ts";
 import type { WmslangSliceCompiler } from "../src/wmslang/v2_loader.ts";
+import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("bundled Slang compiles the generated Mandelbrot module to whole-program WGSL", async () => {
   const compiled = await coreVirtual(
@@ -695,6 +697,86 @@ Deno.test("completed fragment accessors execute through the minimal host descrip
   } finally {
     await Deno.remove(directory, { recursive: true });
   }
+});
+
+Deno.test("Gpu.shaderSource exposes whole-program GLSL, HLSL, and Metal alongside WGSL", async () => {
+  const source = `
+    let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) };
+    let fragment = Gpu.fragment(shade);
+    let main = () => {
+      print(Gpu.wgsl(fragment) == Gpu.shaderSource(fragment, Gpu.ShaderTarget.WGSL));
+      print(Gpu.shaderSource(fragment, Gpu.ShaderTarget.GLSL));
+      print(Gpu.shaderSource(fragment, Gpu.ShaderTarget.HLSL));
+      print(Gpu.shaderSource(fragment, Gpu.ShaderTarget.METAL))
+    };
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertEquals(artifact.vertexEntry, "wm_vertex");
+  assertEquals(artifact.fragmentEntry, "wm_fragment");
+  assertEquals(typeof artifact.glsl, "string");
+  assertEquals(typeof artifact.hlsl, "string");
+  assertEquals(typeof artifact.metal, "string");
+  assertStringIncludes(artifact.wgsl, "@fragment");
+  assertStringIncludes(artifact.glsl!, "void main()");
+  assertStringIncludes(artifact.glsl!, "gl_Position");
+  assertStringIncludes(artifact.hlsl!, "wm_vertex");
+  assertStringIncludes(artifact.hlsl!, "wm_fragment");
+  assertStringIncludes(artifact.metal!, "wm_vertex");
+  assertStringIncludes(artifact.metal!, "wm_fragment");
+  const hostJavaScript = emitCoreProgram(compiled.core);
+  assertStringIncludes(hostJavaScript, "__wm_gpu_shader_source");
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/main.mjs`;
+  await Deno.writeTextFile(path, hostJavaScript);
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    const stdout = new TextDecoder().decode(output.stdout);
+    assertEquals(stdout.startsWith("true\n#version 460"), true);
+    assertStringIncludes(stdout, '[shader("vertex")]');
+    assertStringIncludes(stdout, "[[vertex]]");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("Gpu.ShaderTarget is a matchable basis datatype", async () => {
+  const result = await checkSource(`
+    let describe = (target: Gpu.ShaderTarget) => {
+      match(target) {
+        Gpu.ShaderTarget.WGSL => { "wgsl" },
+        Gpu.ShaderTarget.GLSL => { "glsl" },
+        Gpu.ShaderTarget.HLSL => { "hlsl" },
+        Gpu.ShaderTarget.METAL => { "metal" },
+      }
+    };
+  `);
+
+  expectBinding(result.env, "describe", { type: "Gpu.ShaderTarget -> String", vars: 0 });
+  assertEquals(result.warnings, []);
+});
+
+Deno.test("Gpu.shaderSource rejects a non-target second argument", async () => {
+  const error = await assertRejects(
+    () =>
+      checkSource(`
+        let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) };
+        let fragment = Gpu.fragment(shade);
+        let bad = Gpu.shaderSource(fragment, "glsl");
+      `),
+    FrontendDiagnosticError,
+  );
+  assertStringIncludes(error.message, "Gpu.ShaderTarget");
 });
 
 async function acceptanceBlock(name: string): Promise<string> {

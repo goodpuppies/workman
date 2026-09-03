@@ -159,6 +159,19 @@ export const BASIS_TYPES = Object.freeze(
       equality: "never",
     },
     { name: "Gpu.Sampler", typeNameId: -21, arity: 0, profiles, equality: "never" },
+    {
+      name: "Gpu.ShaderTarget",
+      typeNameId: -23,
+      arity: 0,
+      profiles,
+      equality: "structural",
+      constructors: [
+        ctor("Gpu.ShaderTarget.WGSL", -9, []),
+        ctor("Gpu.ShaderTarget.GLSL", -10, []),
+        ctor("Gpu.ShaderTarget.HLSL", -11, []),
+        ctor("Gpu.ShaderTarget.METAL", -12, []),
+      ],
+    },
   ] satisfies readonly BasisTypeDescriptor[],
 );
 
@@ -277,6 +290,7 @@ export const GPU_INTRINSIC_ENTRIES = [
   ["read", "gpu.read", undefined],
   ["withValue", "gpu.with-value", undefined],
   ["wgsl", "gpu.wgsl", "__wm_gpu_wgsl"],
+  ["shaderSource", "gpu.shader-source", "__wm_gpu_shader_source"],
   ["vertexEntryPoint", "gpu.vertex-entry-point", "__wm_gpu_vertex_entry_point"],
   ["fragmentEntryPoint", "gpu.fragment-entry-point", "__wm_gpu_fragment_entry_point"],
   ["artifactIdentity", "gpu.artifact-identity", "__wm_gpu_artifact_identity"],

@@ -3,7 +3,7 @@ import type { TypeExpr } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
 import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artifact.ts";
 import type { BindingId, StructureId } from "./ids.ts";
-import { basisCtorJsName } from "../basis.ts";
+import { basisCtorId, basisCtorJsName } from "../basis.ts";
 import {
   basisIntrinsicDescriptor,
   basisIntrinsicDescriptorBySemanticId,
@@ -317,9 +317,21 @@ function emitStandardNamespaces(program: CoreProgram): string[] {
 }
 
 function emitShaderArtifactTable(program: CoreProgram): string[] {
+  const shaderTargetCtor = (name: "WGSL" | "GLSL" | "HLSL" | "METAL"): string => {
+    const jsName = basisCtorJsName(basisCtorId(`Gpu.ShaderTarget.${name}`) ?? -1);
+    if (!jsName) throw new Error(`missing compiler-owned shader target ${name}`);
+    return jsName;
+  };
+  const wgslTarget = shaderTargetCtor("WGSL");
+  const glslTarget = shaderTargetCtor("GLSL");
+  const hlslTarget = shaderTargetCtor("HLSL");
+  const metalTarget = shaderTargetCtor("METAL");
   const entries = [...program.shaderArtifacts].map(([artifactId, artifact]) => {
     const descriptor = {
       wgsl: artifact.wgsl,
+      glsl: artifact.glsl ?? null,
+      hlsl: artifact.hlsl ?? null,
+      metal: artifact.metal ?? null,
       vertexEntry: artifact.vertexEntry,
       fragmentEntry: artifact.fragmentEntry,
       uniformLayout: artifact.uniformLayout ?? null,
@@ -336,6 +348,7 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
     "  return value;",
     "};",
     "const __wm_gpu_wgsl = (artifact) => artifact.wgsl;",
+    `const __wm_gpu_shader_source = (args) => { const [artifact, target] = args; const required = (value, label) => { if (typeof value !== "string") throw new Error("shader source for " + label + " was not materialized for this fragment"); return value; }; if (target === ${wgslTarget}) return artifact.wgsl; if (target === ${glslTarget}) return required(artifact.glsl, "GLSL"); if (target === ${hlslTarget}) return required(artifact.hlsl, "HLSL"); if (target === ${metalTarget}) return required(artifact.metal, "Metal"); throw new Error("unknown shader target"); };`,
     "const __wm_gpu_vertex_entry_point = (artifact) => artifact.vertexEntry;",
     "const __wm_gpu_fragment_entry_point = (artifact) => artifact.fragmentEntry;",
     "const __wm_shader_artifact_identities = new WeakMap();",
@@ -476,7 +489,7 @@ const __wm_gpu_bind_group_entries = (args) => __wm_gpu_result(() => {
   if (artifact.uniformLayout) {
     if (!uniformBuffer) throw new Error("shader requires a uniform buffer");
     entries.push({ binding: artifact.uniformLayout.binding, resource: { buffer: uniformBuffer } });
-  } else if (uniformBuffer !== undefined) {
+  } else if (uniformBuffer != null) {
     throw new Error("shader without uniforms received a uniform buffer");
   }
   const expected = artifact.resourceLayout?.bindings ?? [];
