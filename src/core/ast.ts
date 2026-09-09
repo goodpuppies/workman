@@ -111,7 +111,13 @@ export type CoreExpr =
   }
   | { kind: "CoreJsonObject"; fields: CoreJsonObjectField[]; node?: AstNode }
   | { kind: "CoreJsonArray"; items: CoreExpr[]; node?: AstNode }
-  | { kind: "CoreFn"; arms: CoreMatchArm[]; node?: AstNode }
+  | {
+    kind: "CoreFn";
+    arms: CoreMatchArm[];
+    /** Authored function directives retained for backend selection and validation. */
+    directives?: readonly string[];
+    node?: AstNode;
+  }
   | { kind: "CoreApp"; callee: CoreExpr; arg: CoreExpr; node?: AstNode }
   | { kind: "CoreIf"; cond: CoreExpr; thenExpr: CoreExpr; elseExpr: CoreExpr; node?: AstNode }
   | { kind: "CoreMatch"; value: CoreExpr; arms: CoreMatchArm[]; node?: AstNode }

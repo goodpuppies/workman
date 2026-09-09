@@ -699,6 +699,150 @@ Deno.test("completed fragment accessors execute through the minimal host descrip
   }
 });
 
+Deno.test("Gpu.slang exposes the reusable callable module without stage wrappers", async () => {
+  const source = `
+    let shade = (_coord) => { @gpu; (1.0, 0.25, 0.0, 1.0) };
+    let fragment = Gpu.fragment(shade);
+    let main = () => {
+      print(Gpu.callableName(fragment));
+      print(Gpu.slang(fragment))
+    };
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertEquals(artifact.callableName, "wm_f_0");
+  assertStringIncludes(
+    artifact.slang,
+    `export __extern_cpp float4 ${artifact.callableName}(float2`,
+  );
+  assertEquals(artifact.slang.includes('[shader("vertex")]'), false);
+  assertEquals(artifact.slang.includes('[shader("fragment")]'), false);
+  assertEquals(artifact.slang.includes("wm_vertex"), false);
+  assertEquals(artifact.slang.includes("wm_fragment"), false);
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/main.mjs`;
+  await Deno.writeTextFile(path, emitCoreProgram(compiled.core));
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    const stdout = new TextDecoder().decode(output.stdout);
+    assertStringIncludes(stdout, `${artifact.callableName}\n`);
+    assertStringIncludes(stdout, `float4 ${artifact.callableName}(float2`);
+    assertEquals(stdout.includes("wm_fragment"), false);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("reusable Slang leaves uniform transport to its adapter", async () => {
+  const source = `
+    record Inputs = { gain: Number, enabled: Bool };
+    let shade = (inputs: Inputs) => {
+      (coord) => {
+        @gpu;
+        if (inputs.enabled) {
+          (coord.x * inputs.gain, 0.0, 0.0, 1.0)
+        } else {
+          (0.0, 0.0, 0.0, 1.0)
+        }
+      }
+    };
+    let current: Inputs = .{ gain = 0.5, enabled = true };
+    let fragment = Gpu.fragment(shade(current));
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertStringIncludes(artifact.slang, "WM_UNIFORM_0");
+  assertStringIncludes(artifact.slang, "WM_UNIFORM_1");
+  assertStringIncludes(artifact.slang, "__extern_cpp float WM_UNIFORM_0();");
+  assertStringIncludes(artifact.slang, "__extern_cpp bool WM_UNIFORM_1();");
+  assertEquals(artifact.slang.includes("ConstantBuffer"), false);
+  assertEquals(artifact.slang.includes("wm_uniforms"), false);
+  assertEquals(artifact.slang.includes("WM_UNIFORM_1 != 0"), false);
+
+  // The existing WebGPU program remains an adapter with its own concrete ABI.
+  assertStringIncludes(artifact.wgsl, "@group(0)");
+  assertStringIncludes(artifact.wgsl, "@binding(0)");
+});
+
+Deno.test("Gpu.glsl uses Slang to emit an exported reusable callable", async () => {
+  const source = `
+    let shade = (coord) => {
+      @gpu;
+      let helper = (value) => { value * 2.0 };
+      (helper(coord.x), coord.y, 0.25, 1.0)
+    };
+    let fragment = Gpu.fragment(shade);
+    let main = () => { print(Gpu.glsl(fragment)) };
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertEquals(artifact.callableName, "wm_f_0");
+  assertEquals(typeof artifact.glslModule, "string");
+  assertStringIncludes(artifact.glslModule!, "vec4 wm_f_0(vec2");
+  assertEquals(artifact.glslModule!.includes("#version"), false);
+  assertEquals(artifact.glslModule!.includes("void main()"), false);
+  assertEquals(artifact.glslModule!.includes("wm_fragment"), false);
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/main.mjs`;
+  await Deno.writeTextFile(path, emitCoreProgram(compiled.core));
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    assertStringIncludes(new TextDecoder().decode(output.stdout), "vec4 wm_f_0(vec2");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
+Deno.test("reusable GLSL keeps uniform ABI calls for a library adapter", async () => {
+  const source = `
+    record Inputs = { gain: Number, enabled: Bool };
+    let shade = (inputs: Inputs) => {
+      (coord) => {
+        @gpu;
+        if (inputs.enabled) {
+          (coord.x * inputs.gain, 0.0, 0.0, 1.0)
+        } else {
+          (0.0, 0.0, 0.0, 1.0)
+        }
+      }
+    };
+    let current: Inputs = .{ gain = 0.5, enabled = true };
+    let fragment = Gpu.fragment(shade(current));
+    let output = Gpu.glsl(fragment);
+  `;
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertStringIncludes(artifact.glslModule!, "WM_UNIFORM_0()");
+  assertStringIncludes(artifact.glslModule!, "WM_UNIFORM_1()");
+  assertEquals(/^float\s+WM_UNIFORM_0\(\);$/m.test(artifact.glslModule!), false);
+});
+
 Deno.test("Gpu.shaderSource exposes whole-program GLSL, HLSL, and Metal alongside WGSL", async () => {
   const source = `
     let shade = (_coord) => { @gpu; (1.0, 0.0, 0.0, 1.0) };
@@ -777,6 +921,91 @@ Deno.test("Gpu.shaderSource rejects a non-target second argument", async () => {
     FrontendDiagnosticError,
   );
   assertStringIncludes(error.message, "Gpu.ShaderTarget");
+});
+
+Deno.test("two reachable ADTs with Bool and tuple payloads compile to one module", async () => {
+  const source = `
+    type Hit = Miss | Struck<(Number, Bool)>;
+    type Mode = Flat | Shaded<(Bool, Number)>;
+    let shade = (coord) => {
+      @gpu;
+      let pickMode = (x) => {
+        if (x > 32.0) { Shaded((true, x)) } else { Flat }
+      };
+      let (x, y) = coord;
+      let d = (x - 32.0) * (x - 32.0) + (y - 32.0) * (y - 32.0);
+      let hit = if (d < 100.0) { Struck(d, true) } else { Miss };
+      let mode = pickMode(x);
+      let base = match(hit) {
+        Miss => { (0.0, 0.0, 0.0, 1.0) },
+        Struck(dist, near) => {
+          if (near) { (dist / 100.0, 0.2, 0.4, 1.0) } else { (0.1, 0.1, 0.1, 1.0) }
+        }
+      };
+      match(mode) {
+        Flat => { base },
+        Shaded(lit, depth) => {
+          if (lit) { base + (depth / 1000.0, 0.0, 0.0, 0.0) } else { (0.0, 0.0, 0.0, 1.0) }
+        }
+      }
+    };
+    let fragment = Gpu.fragment(shade);
+  `;
+  const compiled = await coreVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertEquals(artifact.vertexEntry, "wm_vertex");
+  assertEquals(artifact.fragmentEntry, "wm_fragment");
+  assertStringIncludes(artifact.wgsl, "fn wm_fragment");
+  assertStringIncludes(artifact.wgsl, "tag");
+});
+Deno.test("helpers return heterogeneous product tuples for multi-value shader results", async () => {
+  const source = `
+    let shade = (coord) => {
+      @gpu;
+      let trace = (uv) => {
+        let (x, y) = uv;
+        (x * x + y * y, x > y)
+      };
+      let result = trace(coord);
+      let (d, greater) = result;
+      if (greater) { (d / 4096.0, 0.3, 0.6, 1.0) } else { (0.1, 0.1, 0.2, 1.0) }
+    };
+    let fragment = Gpu.fragment(shade);
+  `;
+  const compiled = await coreVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertStringIncludes(artifact.wgsl, "fn wm_fragment");
+  assertStringIncludes(artifact.wgsl, "wm_i_0");
+});
+Deno.test("shared helpers with mixed uniform-driven representations retry per call site", async () => {
+  const source = `
+    record MixUniforms = {
+      count: Number,
+      level: Number
+    };
+    let shade = (uniforms: MixUniforms) => {
+      (coord) => {
+        @gpu;
+        let twice = (value) => { value + value };
+        let whole = twice(uniforms.count);
+        let frac = twice(uniforms.level);
+        let amount = if (uniforms.count > 0) { Gpu.f32(whole) / 100.0 } else { 0.0 };
+        let glow = uniforms.level + 0.5;
+        (amount, frac, glow, 1.0)
+      }
+    };
+    let fragmentFor = (uniforms: MixUniforms) => { Gpu.fragment(shade(uniforms)) };
+    let uniforms: MixUniforms = .{ count = 3, level = 0.5 };
+    let fragment = fragmentFor(uniforms);
+  `;
+  // Both calls seed unknown (variable arguments), so they share one instance
+  // whose merged i32/f32 evidence conflicts; materialization must pin `twice`
+  // to per-call-site instances and retry rather than surfacing the conflict.
+  const compiled = await coreVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
+  const artifact = [...compiled.core.shaderArtifacts.values()][0];
+  assertEquals(artifact.vertexEntry, "wm_vertex");
+  assertEquals(artifact.fragmentEntry, "wm_fragment");
+  assertStringIncludes(artifact.wgsl, "fn wm_fragment");
 });
 
 async function acceptanceBlock(name: string): Promise<string> {

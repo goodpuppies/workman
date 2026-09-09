@@ -210,17 +210,22 @@ state—to recover a type that HM itself has lost.
 
 ## Dynamic Receivers
 
-Dynamic `Js.Object` receiver calls currently exist as an escape hatch for code like:
+Dynamic `Js.Object` receiver calls currently exist as an escape hatch when no concrete reflected
+receiver is known:
 
 ```wm
 object :> .method(arg)
 object :> .property
 ```
 
-when no concrete reflected receiver is known. This solves a real ergonomic problem, but the current
-model is risky because dynamic calls can manufacture fresh generic-looking result types. That is too
-close to the old fake-cast problem: the compiler appears to know something precise even though it
-only knows "some JS happened".
+The leading pipe is required for a local JavaScript receiver. Dotted expressions such as
+`object.method(arg)` remain ordinary Workman structure/record syntax and are not reinterpreted as
+FFI calls. This keeps the FFI boundary explicit and prevents type annotations from changing whether
+a dotted expression is treated as JavaScript member access.
+
+This solves a real ergonomic problem, but the current model is risky because dynamic calls can
+manufacture fresh generic-looking result types. That is too close to the old fake-cast problem: the
+compiler appears to know something precise even though it only knows "some JS happened".
 
 Refactor direction:
 

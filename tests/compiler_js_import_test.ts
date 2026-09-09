@@ -366,7 +366,7 @@ Deno.test("resolves import-map aliases during delayed reflection independent of 
       from js.module("sf-local") import { Service };
       let app = match(Service.new()) {
         Ok(service) => {
-          service.create("worker.mjs")
+          service :> .create("worker.mjs")
         },
         Err(error) => {
           Task.fail(error)

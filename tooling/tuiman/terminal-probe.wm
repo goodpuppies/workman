@@ -23,12 +23,12 @@ let errorText = match(error) => {
 };
 
 let write = (output, text) => {
-  output.write(text)
+  output :> .write(text)
 };
 
 let restore = (input, output, status) => {
-  let _ = input.setRawMode(false);
-  let _ = input.pause();
+  let _ = input :> .setRawMode(false);
+  let _ = input :> .pause();
   let _ = write(output, Ansi.leave);
   match(exit(status)) {
     Ok(_) => { void },
@@ -39,7 +39,7 @@ let restore = (input, output, status) => {
 let fromCtrlC = fromCharCode(3) :> Result.withDefault("");
 
 let rec listen = (input, output, count) => {
-  match(input.once("data", (chunk) => {
+  match(input :> .once("data", (chunk) => {
     match(toString(chunk)) {
       Err(error) => {
         let _ = write(output, Ansi.cursorTo(4, 2) ++ "decode failed: " ++ errorText(error));
@@ -76,12 +76,12 @@ let main = () => {
           print("terminal output unavailable: " ++ errorText(error))
         },
         Ok(output) => {
-          match(input.setRawMode(true)) {
+          match(input :> .setRawMode(true)) {
             Err(error) => {
               print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
             },
             Ok(_) => {
-              let _ = input.resume();
+              let _ = input :> .resume();
               let _ = write(output,
                 Ansi.enter ++
                 Ansi.cursorTo(2, 2) ++ Ansi.bold ++ "Workman terminal probe" ++ Ansi.reset ++

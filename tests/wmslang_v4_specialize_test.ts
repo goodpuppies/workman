@@ -180,9 +180,9 @@ Deno.test("v4 specialization freshens one helper body for scalar and vector seed
     templates: new Map([[1, root], [2, twice]]),
   });
   assertEquals(instances.map((instance) => instance.seedKey), [
-    "1<>",
-    "2<Number>",
-    "2<(Number,Number,Number)>",
+    "1<>[]",
+    "2<Number>[?]",
+    "2<(Number,Number,Number)>[?]",
   ]);
   assertEquals(canonicalGpuType(instances[0].occurrenceTypes.get(scalarCall)!), "Number");
   assertEquals(
@@ -296,8 +296,8 @@ Deno.test("v4 seed keys deduplicate fresh call-result variables", () => {
     templates: new Map([[1, root], [2, twice]]),
   });
   assertEquals(instances.map((instance) => instance.seedKey), [
-    "1<>",
-    "2<(Number,Number,Number)>",
+    "1<>[]",
+    "2<(Number,Number,Number)>[?]",
   ]);
   assertEquals(
     canonicalGpuType(instances[0].occurrenceTypes.get(firstCall)!),
@@ -364,6 +364,151 @@ Deno.test("v4 specialization IDs are independent of call discovery order", () =>
     }));
   };
   assertEquals(specialize(["scalar", "vector"]), specialize(["vector", "scalar"]));
+});
+Deno.test("v4 specialization keys instances by syntactic argument seeds", () => {
+  const x = fresh();
+  const sum = fresh();
+  const add = expression("Binary");
+  const twice: GpuFunctionTemplate = {
+    bindingId: 2,
+    name: "twice",
+    params: [x],
+    result: sum,
+    occurrenceTypes: new Map([[add, sum]]),
+    operations: [{
+      kind: "operator",
+      identity: "gpu.operator.add",
+      occurrence: add,
+      args: [x, x],
+      result: sum,
+      rows: arithmeticRows,
+      determiningArgs: [0, 1],
+    }],
+    calls: [],
+  };
+  const intCall = {
+    kind: "Call",
+    args: [{ kind: "Int", value: 2 }],
+  } as Extract<Expr, { kind: "Call" }>;
+  const floatCall = {
+    kind: "Call",
+    args: [{ kind: "Float", value: 2 }],
+  } as Extract<Expr, { kind: "Call" }>;
+  const intResult = fresh();
+  const floatResult = fresh();
+  const root: GpuFunctionTemplate = {
+    bindingId: 1,
+    name: "root",
+    params: [],
+    result: NumberTy,
+    occurrenceTypes: new Map([[intCall, intResult], [floatCall, floatResult]]),
+    operations: [],
+    calls: [
+      {
+        occurrence: intCall,
+        targetBindingId: 2,
+        args: [NumberTy],
+        result: intResult,
+        staticFunctionArgs: [undefined],
+      },
+      {
+        occurrence: floatCall,
+        targetBindingId: 2,
+        args: [NumberTy],
+        result: floatResult,
+        staticFunctionArgs: [undefined],
+      },
+    ],
+  };
+  const instances = specializeGpuTemplates({
+    rootBindingId: 1,
+    rootArgs: [],
+    rootResult: NumberTy,
+    templates: new Map([[1, root], [2, twice]]),
+  });
+  assertEquals(instances.map((instance) => instance.seedKey), [
+    "1<>[]",
+    "2<Number>[i32]",
+    "2<Number>[f32]",
+  ]);
+});
+
+Deno.test("v4 pinned bindings specialize per call site", () => {
+  const x = fresh();
+  const sum = fresh();
+  const add = expression("Binary");
+  const twice: GpuFunctionTemplate = {
+    bindingId: 2,
+    name: "twice",
+    params: [x],
+    result: sum,
+    occurrenceTypes: new Map([[add, sum]]),
+    operations: [{
+      kind: "operator",
+      identity: "gpu.operator.add",
+      occurrence: add,
+      args: [x, x],
+      result: sum,
+      rows: arithmeticRows,
+      determiningArgs: [0, 1],
+    }],
+    calls: [],
+  };
+  const firstCall = {
+    kind: "Call",
+    args: [{ kind: "Int", value: 2 }],
+    node: { id: 7 },
+  } as Extract<Expr, { kind: "Call" }>;
+  const secondCall = {
+    kind: "Call",
+    args: [{ kind: "Int", value: 2 }],
+    node: { id: 9 },
+  } as Extract<Expr, { kind: "Call" }>;
+  const firstResult = fresh();
+  const secondResult = fresh();
+  const root: GpuFunctionTemplate = {
+    bindingId: 1,
+    name: "root",
+    params: [],
+    result: NumberTy,
+    occurrenceTypes: new Map([[firstCall, firstResult], [secondCall, secondResult]]),
+    operations: [],
+    calls: [
+      {
+        occurrence: firstCall,
+        targetBindingId: 2,
+        args: [NumberTy],
+        result: firstResult,
+        staticFunctionArgs: [undefined],
+      },
+      {
+        occurrence: secondCall,
+        targetBindingId: 2,
+        args: [NumberTy],
+        result: secondResult,
+        staticFunctionArgs: [undefined],
+      },
+    ],
+  };
+  const shared = specializeGpuTemplates({
+    rootBindingId: 1,
+    rootArgs: [],
+    rootResult: NumberTy,
+    templates: new Map([[1, root], [2, twice]]),
+  });
+  assertEquals(shared.map((instance) => instance.seedKey), ["1<>[]", "2<Number>[i32]"]);
+  const split = specializeGpuTemplates({
+    rootBindingId: 1,
+    rootArgs: [],
+    rootResult: NumberTy,
+    templates: new Map([[1, root], [2, twice]]),
+    pinnedPerSite: new Set([2]),
+  });
+  assertEquals(split.map((instance) => instance.seedKey), [
+    "1<>[]",
+    "2<Number>[i32]@0:7",
+    "2<Number>[i32]@0:9",
+  ]);
 });
 
 Deno.test("v4 rejects polymorphic recursion instead of creating another seed", () => {

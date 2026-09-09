@@ -247,7 +247,19 @@ function inferRecordField(
 ): { type: Ty; record?: TypeInfo } {
   const target = prune(base);
   if (target.tag === "named") {
-    const info = recordInfo(target, typeEnv);
+    const info = typeInfoById(typeEnv, target.id);
+    if (!info?.recordFields) {
+      if (occurrence && (info?.foreign || target.name === "Js.Object")) {
+        const path = pathOf(occurrence.expression);
+        const parts = [...path.qualifiers, path.id];
+        const fieldIndex = parts.lastIndexOf(field);
+        const receiver = parts.slice(0, fieldIndex).join(".");
+        throw new Error(
+          `${target.name} is a JavaScript value; use ${receiver} :> .${field} for member access`,
+        );
+      }
+      throw new Error(`${target.name} is not a record type`);
+    }
     const fields = instantiateRecordFields(info, target.args);
     const found = fields.find((item) => item.name === field);
     if (!found) throw new Error(`${target.name} has no field ${field}`);

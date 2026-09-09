@@ -162,27 +162,26 @@ export function rewriteExprCalls(
       };
     }
     case "Var": {
-      assertDottedModuleNamespaceMember(expr.name, refs, expr.node);
-      const functionValue = reflectedReceiverFunctionValue(expr.name, bindings, selected, refs);
-      const delayedFunctionValue = delayedReflectedReceiverFunctionValue(
-        expr.name,
-        refs,
-        expr.node,
-      );
-      const property = reflectedReceiverProperty(expr.name, bindings, selected, refs);
-      return functionValue ?? delayedFunctionValue ?? property ??
-        objectReceiverProperty(
+      if (isLocalDottedReceiver(expr.name, objectAccess)) {
+        rejectReflectedLocalDot(expr.name, refs, expr.node);
+      } else {
+        assertDottedModuleNamespaceMember(expr.name, refs, expr.node);
+        const functionValue = reflectedReceiverFunctionValue(expr.name, bindings, selected, refs);
+        const delayedFunctionValue = delayedReflectedReceiverFunctionValue(
           expr.name,
-          bindings,
-          selected,
-          objectAccess,
-          activeRecordFields,
+          refs,
           expr.node,
-        ) ??
-        expr;
+        );
+        const property = reflectedReceiverProperty(expr.name, bindings, selected, refs);
+        return functionValue ?? delayedFunctionValue ?? property ?? expr;
+      }
+      return expr;
     }
     case "Call": {
       if (expr.callee.kind === "Var") {
+        if (isLocalDottedReceiver(expr.callee.name, objectAccess)) {
+          rejectReflectedLocalDot(expr.callee.name, refs, expr.node);
+        }
         assertDottedModuleNamespaceMember(expr.callee.name, refs, expr.node);
         const reflectedFunction = reflectedFunctionCallCandidate(
           expr.callee.name,
@@ -217,14 +216,16 @@ export function rewriteExprCalls(
             node: expr.node,
           };
         }
-        const receiver = reflectedReceiverCallCandidate(
-          expr.callee.name,
-          expr.args,
-          bindings,
-          selected,
-          refs,
-          jsRefCallMember,
-        );
+        const receiver = isLocalDottedReceiver(expr.callee.name, objectAccess)
+          ? undefined
+          : reflectedReceiverCallCandidate(
+            expr.callee.name,
+            expr.args,
+            bindings,
+            selected,
+            refs,
+            jsRefCallMember,
+          );
         if (receiver) {
           return {
             ...expr,
@@ -240,43 +241,6 @@ export function rewriteExprCalls(
             ),
           };
         }
-        const objectReceiver = isDottedRecordFieldReceiver(expr.callee.name)
-          ? undefined
-          : objectReceiverCall(
-            expr.callee.name,
-            expr.args,
-            bindings,
-            selected,
-            objectAccess,
-            jsRefCallMember,
-          );
-        if (objectReceiver) {
-          if ("variant" in objectReceiver) {
-            return {
-              ...expr,
-              callee: objectReceiver.callee,
-              args: rewriteArgsWithVariant(
-                objectReceiver.args,
-                objectReceiver.variant,
-                bindings,
-                selected,
-                refs,
-                objectAccess,
-                importedTypeRefs,
-              ),
-            };
-          }
-          if (objectReceiver.kind === "FfiCall") {
-            return {
-              ...objectReceiver,
-              node: objectReceiver.node ?? expr.node,
-              args: objectReceiver.args.map((arg) => rewrite(arg)),
-            };
-          }
-          return objectReceiver;
-        }
-        const unresolved = unresolvedDottedCall(expr);
-        if (unresolved) return unresolved;
       }
       const args = expr.args.map((arg) => rewrite(arg));
       const callee = rewrite(expr.callee);
@@ -440,17 +404,30 @@ function isDottedRecordFieldReceiver(name: string): boolean {
   return Boolean(parts && activeRecordFields.has(parts.path[0]));
 }
 
-function unresolvedDottedCall(expr: Extract<Expr, { kind: "Call" }>): Expr | undefined {
-  if (expr.callee.kind !== "Var") return undefined;
-  const parts = unresolvedDottedParts(expr.callee.name);
-  if (!parts || activeRecordFields.has(parts.path[0])) return undefined;
-  return {
-    kind: "FfiCall",
-    receiver: { kind: "Var", name: parts.base },
-    path: parts.path,
-    args: expr.args.map((arg) => arg),
-    node: expr.node,
-  };
+function isLocalDottedReceiver(
+  name: string,
+  objectAccess: Map<string, ObjectAccess>,
+): boolean {
+  const separator = name.indexOf(".");
+  return separator > 0 && objectAccess.has(name.slice(0, separator));
+}
+
+function rejectReflectedLocalDot(
+  name: string,
+  refs: Map<string, JsTypeRef>,
+  node: Expr["node"],
+): void {
+  const separator = name.indexOf(".");
+  const receiver = name.slice(0, separator);
+  if (!refs.has(receiver)) return;
+  const path = name.slice(separator + 1);
+  throw diagnosticError(
+    new Error(
+      `local JavaScript receiver ${receiver} must use ${receiver} :> .${path} for member access`,
+    ),
+    node,
+    "ffi.local-member-pipe-required",
+  );
 }
 
 function unresolvedDottedParts(name: string): { base: string; path: string[] } | undefined {

@@ -6,8 +6,41 @@ import type {
 } from "../infer/type_facts.ts";
 import { freshenTypeVars, NumberTy, prune, show, tuple, type Ty, unify } from "../types.ts";
 
+/**
+ * Syntactic representation seed for one call argument, used only in GPU
+ * specialization keys. Integral and decimal literals seed `i32`/`f32`;
+ * tuples seed positionally; everything else is unknown (`?`). This never
+ * touches HM types: it merely lets `twice(2)` and `twice(2.0)` key
+ * differently despite sharing one host `Number` type. Unknown seeds share
+ * optimistically; a genuine mixed-representation conflict triggers the
+ * pin-to-per-site retry in materialization.
+ */
+export function gpuCallArgSeed(expr: Expr | undefined): string {
+  if (!expr) return "?";
+  switch (expr.kind) {
+    case "Int":
+      return "i32";
+    case "Float":
+      return "f32";
+    case "Tuple": {
+      const items = expr.items.map(gpuCallArgSeed);
+      // An all-unknown tuple says nothing beyond the HM type the argKey
+      // already carries; collapse it so tuple-expression and variable
+      // arguments with identical types share instances.
+      return items.every((item) => item === "?") ? "?" : `(${items.join(",")})`;
+    }
+    case "Unary":
+      return expr.op === "-" ? gpuCallArgSeed(expr.value) : "?";
+    case "Ascribed":
+      return gpuCallArgSeed(expr.value);
+    default:
+      return "?";
+  }
+}
+
 export type GpuTemplateCall = {
-  occurrence: Extract<Expr, { kind: "Call" }>;
+  /** Semantic application occurrence; surface pipes are CoreApp before this stage. */
+  occurrence: Expr;
   targetBindingId?: number;
   targetFunctionParam?: number;
   args: Ty[];
@@ -69,11 +102,26 @@ export function specializeGpuTemplates(input: {
   rootResult: Ty;
   templates: ReadonlyMap<number, GpuFunctionTemplate>;
   freshenCallSites?: boolean;
+  pinnedPerSite?: ReadonlySet<number>;
 }): GpuFunctionSpecialization[] {
-  const state = new SpecializationState(input.templates, input.freshenCallSites ?? false);
-  const root = state.instantiate(input.rootBindingId, input.rootArgs, input.rootResult, [], [], "");
+  const state = new SpecializationState(
+    input.templates,
+    input.freshenCallSites ?? false,
+    input.pinnedPerSite ?? EMPTY_PINNED,
+  );
+  const root = state.instantiate(
+    input.rootBindingId,
+    input.rootArgs,
+    input.rootResult,
+    [],
+    [],
+    input.rootArgs.map(() => "?"),
+    "",
+  );
   return canonicalizeInstanceOrder(root, state.instances);
 }
+
+const EMPTY_PINNED: ReadonlySet<number> = new Set();
 
 function canonicalizeInstanceOrder(
   root: GpuFunctionSpecialization,
@@ -127,6 +175,7 @@ class SpecializationState {
   constructor(
     readonly templates: ReadonlyMap<number, GpuFunctionTemplate>,
     readonly freshenCallSites: boolean,
+    readonly pinnedPerSite: ReadonlySet<number> = EMPTY_PINNED,
   ) {}
 
   instantiate(
@@ -135,6 +184,7 @@ class SpecializationState {
     requestedResult: Ty,
     stack: number[],
     requestedStaticFunctions: (number | undefined)[],
+    argSeeds: readonly string[],
     callSiteKey: string,
   ): GpuFunctionSpecialization {
     const template = this.templates.get(bindingId);
@@ -187,7 +237,19 @@ class SpecializationState {
       unify(active.result, requestedResult);
       return active;
     }
-    const seedKey = `${bindingId}<${argKey}>${this.freshenCallSites ? `@${callSiteKey}` : ""}`;
+    // Dedup key is (binding, canonical arg types, syntactic rep seeds),
+    // mirroring GLML's (name, concrete_ty) spec map adapted to host HM's
+    // single Number type: `twice(2)` and `twice(2.0)` share HM types but seed
+    // differently and must not share an instance. Unknown seeds share
+    // optimistically; a genuine mixed-representation conflict triggers the
+    // pin-to-per-site retry in materialization. Pinned bindings keep the old
+    // per-call-site key. Per-site ownership stays in `callTargets`, keyed by
+    // occurrence, not instance.
+    const seedSegment = requestedArgs.map((_, index) => argSeeds[index] ?? "?").join(",");
+    const seedKey = `${bindingId}<${argKey}>[${seedSegment}]${
+      this.pinnedPerSite.has(bindingId) ? `@${callSiteKey}` : ""
+    }`;
+
     const existing = this.#bySeed.get(seedKey);
     if (existing) {
       unify(existing.result, requestedResult);
@@ -333,6 +395,9 @@ class SpecializationState {
           call.result,
           [...stack, bindingId],
           call.source.staticFunctionArgs,
+          call.source.occurrence.kind === "Call"
+            ? call.source.occurrence.args?.map(gpuCallArgSeed) ?? []
+            : [],
           `${instance.id}:${call.source.occurrence.node?.id ?? "call"}`,
         );
         call.target = target;

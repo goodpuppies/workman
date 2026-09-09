@@ -29,7 +29,11 @@ from "./types.wm" import {
 };
 from "./slice_layout.wm" import { buildSliceLayouts };
 from "./slice_lower.wm" import { lowerSliceProgram };
-from "./slice_emit.wm" import { emitSliceSlang };
+from "./slice_emit.wm" import {
+  emitSliceCallableName,
+  emitSliceSlang,
+  emitSliceSlangModule
+};
 from "./slice_numeric.wm" import {
   NumericEvidence,
   expressionRepresentation,
@@ -1123,6 +1127,27 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
     layouts.adtLayouts,
     layouts.adtFields
   );
+  let slangModule = match(state.diagnostics) {
+    [] => {
+      emitSliceSlangModule(
+        elaboratedInput,
+        layouts.adtLayouts,
+        layouts.adtFields,
+        lowered.functions,
+        lowered.locals,
+        lowered.atoms,
+        lowered.operations,
+        lowered.statements,
+        lowered.blocks,
+        lowered.cases
+      )
+    },
+    _ => { "" }
+  };
+  let callableName = match(state.diagnostics) {
+    [] => { emitSliceCallableName(elaboratedInput) },
+    _ => { "" }
+  };
   let slangSource = match(state.diagnostics) {
     [] => {
       emitSliceSlang(
@@ -1159,6 +1184,8 @@ let compileSliceProgram = (input: GpuSliceElaborationInputDto) => {
     loweredStatements = lowered.statements,
     loweredBlocks = lowered.blocks,
     loweredCases = lowered.cases,
+    slangModule = slangModule,
+    callableName = callableName,
     slangSource = slangSource,
     diagnostics = state.diagnostics :> reverseInto([]) :> Js.Array.fromList,
   };

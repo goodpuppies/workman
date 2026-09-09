@@ -328,6 +328,9 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
   const metalTarget = shaderTargetCtor("METAL");
   const entries = [...program.shaderArtifacts].map(([artifactId, artifact]) => {
     const descriptor = {
+      slang: artifact.slang,
+      callableName: artifact.callableName,
+      glslModule: artifact.glslModule ?? null,
       wgsl: artifact.wgsl,
       glsl: artifact.glsl ?? null,
       hlsl: artifact.hlsl ?? null,
@@ -347,6 +350,9 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
     "  }",
     "  return value;",
     "};",
+    "const __wm_gpu_slang = (artifact) => artifact.slang;",
+    'const __wm_gpu_glsl = (artifact) => { if (typeof artifact.glslModule !== "string") throw new Error("reusable GLSL was not materialized for this fragment"); return artifact.glslModule; };',
+    "const __wm_gpu_callable_name = (artifact) => artifact.callableName;",
     "const __wm_gpu_wgsl = (artifact) => artifact.wgsl;",
     `const __wm_gpu_shader_source = (args) => { const [artifact, target] = args; const required = (value, label) => { if (typeof value !== "string") throw new Error("shader source for " + label + " was not materialized for this fragment"); return value; }; if (target === ${wgslTarget}) return artifact.wgsl; if (target === ${glslTarget}) return required(artifact.glsl, "GLSL"); if (target === ${hlslTarget}) return required(artifact.hlsl, "HLSL"); if (target === ${metalTarget}) return required(artifact.metal, "Metal"); throw new Error("unknown shader target"); };`,
     "const __wm_gpu_vertex_entry_point = (artifact) => artifact.vertexEntry;",

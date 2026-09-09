@@ -2,9 +2,12 @@ import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { coreFile, coreSource, coreVirtual } from "../src/compiler.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { coreFromSurface } from "../src/core/from_surface.ts";
+import { elaborateSharedCore } from "../src/core/elaboration.ts";
 import { showCore } from "../src/core/snapshot.ts";
 import { parseWmsml } from "../src/parser.ts";
 import { moduleId } from "../src/module_id.ts";
+import { inferModule } from "../src/infer.ts";
+import { standardInferOptions } from "../src/standard_library.ts";
 
 Deno.test("core lowers Workman multi-argument call to one tuple argument", async () => {
   const module = await parse(`
@@ -53,6 +56,53 @@ Deno.test("core preserves SML application as single argument application", async
   const module = await parseWmsml("val value = add (1, 2);");
 
   assertEquals(showCore(coreFromSurface(module)), "let value = app(add, (1, 2))");
+});
+
+Deno.test("shared Core owns pipes and anonymous match functions before backend lowering", async () => {
+  const source = `
+    type Direction = Left | Right;
+    let lr = (_uv) => { Left };
+    let add = (value, extra) => { value + extra };
+    let shade = (uv) => {
+      @gpu;
+      let uvr = uv :> lr :> match {
+        Left => { 0.0 },
+        Right => { 2.0 }
+      };
+      let shifted = uvr :> add(1.0);
+      Gpu.color((shifted, 0.0, 0.0, 1.0))
+    };
+    let fragment = Gpu.fragment(shade);
+  `;
+  const module = await parse(source);
+  const analysis = inferModule(module, new Map(), await standardInferOptions());
+  const elaborated = elaborateSharedCore(module, analysis);
+  const core = elaborated.module;
+  const snapshot = showCore(core);
+
+  assertStringIncludes(
+    snapshot,
+    "let uvr = app(fn { $wm_match_0 => match $wm_match_0 { Left#0 => 0 | Right#1 => 2 } }, app(lr, uv))",
+  );
+  assertStringIncludes(snapshot, "let shifted = app(add, (uvr, 1))");
+
+  const shade = core.decls[3];
+  if (shade?.kind !== "CoreLet") throw new Error("missing shared Core shade binding");
+  const shadeFn = shade.bindings[0]?.value;
+  if (shadeFn?.kind !== "CoreFn") throw new Error("shared Core erased the shader function");
+  assertEquals(shadeFn.directives, ["gpu"]);
+
+  const fragment = core.decls[4];
+  if (fragment?.kind !== "CoreLet") throw new Error("missing shared Core fragment binding");
+  const fragmentCall = fragment.bindings[0]?.value;
+  if (fragmentCall?.kind !== "CoreApp" || fragmentCall.callee.kind !== "CoreVar") {
+    throw new Error("shared Core materialized the fragment before backend lowering");
+  }
+  assertEquals(fragmentCall.callee.semanticId, "gpu.fragment");
+  assertEquals(
+    elaborated.facts.expressions.get(fragmentCall.callee.node!.id)?.semanticId,
+    "gpu.fragment",
+  );
 });
 
 Deno.test("core lowers constructor declarations and patterns to unary tuple payloads", async () => {

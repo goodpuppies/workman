@@ -642,6 +642,8 @@ record GpuSliceCompilationOutputDto = {
   loweredStatements: Js.Array<GpuSliceLoweredStatementDto>,
   loweredBlocks: Js.Array<GpuSliceLoweredBlockDto>,
   loweredCases: Js.Array<GpuSliceLoweredCaseDto>,
+  slangModule: String,
+  callableName: String,
   slangSource: String,
   diagnostics: Js.Array<GpuSliceDiagnosticDto>,
 };

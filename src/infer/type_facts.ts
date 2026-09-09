@@ -22,7 +22,7 @@ export type TypeFacts = {
   patterns: Map<Pattern, TypeFact>;
   patternTypes: Map<Pattern, Ty>;
   operators: Map<OperatorExpr, GpuOperatorId>;
-  gpuBuiltins: Map<Extract<Expr, { kind: "Call" }>, string>;
+  gpuBuiltins: Map<Expr, string>;
   gpuResourceCalls: Map<Extract<Expr, { kind: "Call" }>, GpuResourceCallFact>;
   gpuOperations: Map<Expr, GpuOperationObligation>;
   primitiveCarriers: Map<Expr, PrimitiveCarrierPlan>;
@@ -206,7 +206,7 @@ export function recordGpuOperationFact(
 
 export function recordGpuBuiltinFact(
   facts: TypeFacts,
-  expression: Extract<Expr, { kind: "Call" }>,
+  expression: Expr,
   name: string,
 ): void {
   facts.gpuBuiltins.set(expression, name);

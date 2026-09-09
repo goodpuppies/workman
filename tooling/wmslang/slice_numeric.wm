@@ -22,6 +22,10 @@ record NumericContext = {
   blocks: List<GpuSliceBlockDto>,
   functions: List<GpuSliceFunctionDto>,
   environmentFields: List<GpuSliceEnvironmentFieldDto>,
+  exprNodes: Map.Map<Number, Number>,
+  patternNodes: Map.Map<Number, Number>,
+  patternByBinding: Map.Map<Number, Number>,
+  lanes: Map.Map<Number, List<Number>>,
 };
 
 record NumericEvidence = {
@@ -68,15 +72,43 @@ let numericType = (typeId, context: NumericContext) => {
   }
 };
 
-let expressionNode = (expression: GpuSliceExprDto, context: NumericContext) => {
+let computeExpressionNode = (expression: GpuSliceExprDto, context: NumericContext) => {
   if (numericType(expression.typeId, context)) { expression.id } else { -1 }
 };
 
-let patternNode = (pattern: GpuSlicePatternDto, context: NumericContext) => {
+let expressionNode = (expression: GpuSliceExprDto, context: NumericContext) => {
+  match(Map.get(context.exprNodes, expression.id)) {
+    Some(node) => { node },
+    None => { computeExpressionNode(expression, context) }
+  }
+};
+
+let computePatternNode = (pattern: GpuSlicePatternDto, context: NumericContext) => {
   if (numericType(pattern.typeId, context)) {
     context.expressionOffset + pattern.id
   } else {
     -1
+  }
+};
+
+let patternNode = (pattern: GpuSlicePatternDto, context: NumericContext) => {
+  match(Map.get(context.patternNodes, pattern.id)) {
+    Some(node) => { node },
+    None => { computePatternNode(pattern, context) }
+  }
+};
+
+let boundPatternNode = (context: NumericContext, bindingId, ownerFunctionId) => {
+  match(Map.get(context.patternByBinding, bindingId * 1000000 + ownerFunctionId)) {
+    Some(node) => { node },
+    None => { -1 }
+  }
+};
+
+let lookupLanes = (context: NumericContext, expressionId) => {
+  match(Map.get(context.lanes, expressionId)) {
+    Some(lanes) => { lanes },
+    None => { [] }
   }
 };
 
@@ -225,6 +257,217 @@ let rec findEnvironmentField = match(fields, declaredIndex) => {
     }
   }
 };
+let rec laneContains = match(ids, id) => {
+  ([], Var(_id)) => { false },
+  ([Var(head), ..rest], Var(id)) => {
+    if (numberEqual(head, id)) { true } else { laneContains(rest, id) }
+  }
+};
+
+let rec childLaneNodes = match(ids, exprNodes) => {
+  ([], Var(_exprNodes)) => { [] },
+  ([Var(id), ..rest], Var(exprNodes)) => {
+    let node = match(Map.get(exprNodes, id)) { Some(n) => { n }, None => { -1 } };
+    [node, ..childLaneNodes(rest, exprNodes)]
+  }
+};
+
+let lookupMemoLanes = (memo, expressionId) => {
+  match(Map.get(memo, expressionId)) { Some(lanes) => { lanes }, None => { [] } }
+};
+
+let rec patternLaneNodes = match(ids, context) => {
+  ([], Var(_context)) => { [] },
+  ([Var(id), ..rest], Var(context)) => {
+    let child = findPattern(context.patterns, id);
+    [patternNode(child, context), ..patternLaneNodes(rest, context)]
+  }
+};
+
+let rec mergeLanePairs = match(left, right, representations, changed) => {
+  ([], [], Var(representations), Var(changed)) => { (representations, changed) },
+  ([Var(a), ..restA], [Var(b), ..restB], Var(representations), Var(changed)) => {
+    let (next, pairChanged) = mergeGroup([a, b], representations);
+    mergeLanePairs(restA, restB, next, changed || pairChanged)
+  },
+  (_, _, Var(representations), Var(changed)) => { (representations, changed) }
+};
+
+let rec findLetForPattern = match(lets, patternId) => {
+  ([], Var(_patternId)) => { None },
+  ([Var(binding), ..rest], Var(patternId)) => {
+    if (numberEqual(binding.patternId, patternId)) {
+      Some(binding)
+    } else {
+      findLetForPattern(rest, patternId)
+    }
+  }
+};
+
+let rec laneForMemo = (expressionId, context, exprNodes, memo, visited, depth) => {
+  match(Map.get(memo, expressionId)) {
+    Some(_lanes) => { memo },
+    None => {
+      if (numberEqual(depth, 0)) {
+        Map.set(memo, expressionId, [])
+      } else {
+        if (laneContains(visited, expressionId)) {
+          Map.set(memo, expressionId, [])
+        } else {
+          laneForUncached(expressionId, context, exprNodes, memo, [expressionId, ..visited], depth - 1)
+        }
+      }
+    }
+  }
+}
+and laneForUncached = (expressionId, context, exprNodes, memo, visited, depth) => {
+  let expression = findExpression(context.expressions, expressionId);
+  if (expression.kind == "tuple") {
+    Map.set(memo, expressionId, childLaneNodes(Js.Array.toList(expression.children), exprNodes))
+  } else {
+    if (expression.kind == "if") {
+      match(Js.Array.toList(expression.children)) {
+        [Var(_cond), Var(thenId), Var(elseId)] => {
+          let afterThen = laneForMemo(thenId, context, exprNodes, memo, visited, depth);
+          let afterElse = laneForMemo(elseId, context, exprNodes, afterThen, visited, depth);
+          Map.set(afterElse, expressionId, lookupMemoLanes(afterElse, thenId))
+        },
+        _ => { Map.set(memo, expressionId, []) }
+      }
+    } else {
+      if (expression.kind == "block") {
+        let block = findBlock(context.blocks, expression.id);
+        let afterResult = laneForMemo(block.resultExprId, context, exprNodes, memo, visited, depth);
+        Map.set(afterResult, expressionId, lookupMemoLanes(afterResult, block.resultExprId))
+      } else {
+        if (expression.kind == "call") {
+          let target = findFunction(context.functions, expression.functionId);
+          let body = findExpression(context.expressions, target.bodyExprId);
+          let afterBody = laneForMemo(body.id, context, exprNodes, memo, visited, depth);
+          Map.set(afterBody, expressionId, lookupMemoLanes(afterBody, body.id))
+        } else {
+          if (expression.kind == "var") {
+            match(
+              findPatternByBinding(
+                context.patterns,
+                expression.bindingId,
+                expression.ownerFunctionId
+              )
+            ) {
+              Some(pattern) => {
+                match(findLetForPattern(context.lets, pattern.id)) {
+                  Some(binding) => {
+                    let afterValue = laneForMemo(
+                      binding.valueExprId,
+                      context,
+                      exprNodes,
+                      memo,
+                      visited,
+                      depth
+                    );
+                    Map.set(afterValue, expressionId, lookupMemoLanes(afterValue, binding.valueExprId))
+                  },
+                  None => { Map.set(memo, expressionId, []) }
+                }
+              },
+              None => { Map.set(memo, expressionId, []) }
+            }
+          } else {
+            if (expression.kind == "copy") {
+              match(Js.Array.toList(expression.children)) {
+                [Var(childId)] => {
+                  let afterChild = laneForMemo(childId, context, exprNodes, memo, visited, depth);
+                  Map.set(afterChild, expressionId, lookupMemoLanes(afterChild, childId))
+                },
+                _ => { Map.set(memo, expressionId, []) }
+              }
+            } else {
+              Map.set(memo, expressionId, [])
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let rec foldExprNodes = match(items, context, nodes) => {
+  ([], Var(_context), Var(nodes)) => { nodes },
+  ([Var(expression), ..rest], Var(context), Var(nodes)) => {
+    foldExprNodes(
+      rest,
+      context,
+      Map.set(nodes, expression.id, computeExpressionNode(expression, context))
+    )
+  }
+};
+
+let rec foldPatternNodes = match(items, context, nodes) => {
+  ([], Var(_context), Var(nodes)) => { nodes },
+  ([Var(pattern), ..rest], Var(context), Var(nodes)) => {
+    foldPatternNodes(
+      rest,
+      context,
+      Map.set(nodes, pattern.id, computePatternNode(pattern, context))
+    )
+  }
+};
+
+let rec foldPatternBindings = match(items, context, bound) => {
+  ([], Var(_context), Var(bound)) => { bound },
+  ([Var(pattern), ..rest], Var(context), Var(bound)) => {
+    if (pattern.bindingId < 0) {
+      foldPatternBindings(rest, context, bound)
+    } else {
+      let key = pattern.bindingId * 1000000 + pattern.ownerFunctionId;
+      match(Map.get(bound, key)) {
+        Some(_node) => { foldPatternBindings(rest, context, bound) },
+        None => {
+          foldPatternBindings(
+            rest,
+            context,
+            Map.set(bound, key, computePatternNode(pattern, context))
+          )
+        }
+      }
+    }
+  }
+};
+
+let rec buildAllLanes = match(items, context, exprNodes, memo) => {
+  ([], Var(_context), Var(_exprNodes), Var(memo)) => { memo },
+  ([Var(expression), ..rest], Var(context), Var(exprNodes), Var(memo)) => {
+    buildAllLanes(
+      rest,
+      context,
+      exprNodes,
+      laneForMemo(expression.id, context, exprNodes, memo, [], 256)
+    )
+  }
+};
+
+let buildNumericCaches = (context: NumericContext) => {
+  let exprNodes = foldExprNodes(context.expressions, context, Map.empty(Map.numberCompare));
+  let patternNodes = foldPatternNodes(context.patterns, context, Map.empty(Map.numberCompare));
+  let patternByBinding = foldPatternBindings(
+    context.patterns,
+    context,
+    Map.empty(Map.numberCompare)
+  );
+  let lanes = buildAllLanes(
+    context.expressions,
+    context,
+    exprNodes,
+    Map.empty(Map.numberCompare)
+  );
+  .{
+    ..context,
+    exprNodes = exprNodes,
+    patternNodes = patternNodes,
+    patternByBinding = patternByBinding,
+    lanes = lanes,
+  }
+};
 
 let rec numericChildNodes = match(children, context, nodes) => {
   ([], Var(context), Var(nodes)) => { nodes },
@@ -251,67 +494,104 @@ let rec mergeArguments = match(argumentIds, paramIds, context, representations, 
     let argument = findExpression(context.expressions, argumentId);
     let param = findParam(context.params, paramId);
     let pattern = findPattern(context.patterns, param.patternId);
-    let (next, pairChanged) = mergeGroup(
-      [expressionNode(argument, context), patternNode(pattern, context)],
-      representations
-    );
+    let (next, pairChanged) = if (pattern.kind == "tuple") {
+      let (withSingle, singleChanged) = mergeGroup(
+        [expressionNode(argument, context), patternNode(pattern, context)],
+        representations
+      );
+      let (merged, lanesChanged) = mergeLanePairs(
+        patternLaneNodes(Js.Array.toList(pattern.children), context),
+        lookupLanes(context, argument.id),
+        withSingle,
+        false
+      );
+      (merged, singleChanged || lanesChanged)
+    } else {
+      mergeGroup(
+        [expressionNode(argument, context), patternNode(pattern, context)],
+        representations
+      )
+    };
     mergeArguments(argumentRest, paramRest, context, next, changed || pairChanged)
   }
 };
 
 let applyExpression = (expression: GpuSliceExprDto, context: NumericContext, representations) => {
   if (expression.kind == "var") {
-    match(
-      findPatternByBinding(
-        context.patterns,
-        expression.bindingId,
-        expression.ownerFunctionId
-      )
-    ) {
-      Some(pattern) => {
-        mergeGroup([expressionNode(expression, context), patternNode(pattern, context)], representations)
-      },
-      None => { (representations, false) }
-    }
+    mergeGroup(
+      [
+        expressionNode(expression, context),
+        boundPatternNode(context, expression.bindingId, expression.ownerFunctionId),
+      ],
+      representations
+    )
   } else {
     if (expression.kind == "uniform") {
       let field = findEnvironmentField(context.environmentFields, expression.index);
       mergeGroup([expressionNode(expression, context), fieldNode(field, context)], representations)
     } else {
-      if (
-        expression.kind == "project" || expression.kind == "copy" ||
-        expression.kind == "tuple" || expression.kind == "binary" ||
-        expression.kind == "unary" || expression.kind == "builtin"
-      ) {
-        mergeGroup(ownAndChildren(expression, context), representations)
+      if (expression.kind == "tuple") {
+        if (numberEqual(expressionNode(expression, context), -1)) {
+          (representations, false)
+        } else {
+          mergeGroup(ownAndChildren(expression, context), representations)
+        }
       } else {
-        if (expression.kind == "if") {
+        if (
+          expression.kind == "project" || expression.kind == "copy" ||
+          expression.kind == "binary" ||
+          expression.kind == "unary" || expression.kind == "builtin"
+        ) {
           mergeGroup(ownAndChildren(expression, context), representations)
         } else {
-          if (expression.kind == "block") {
-            let block = findBlock(context.blocks, expression.id);
-            let result = findExpression(context.expressions, block.resultExprId);
-            mergeGroup(
-              [expressionNode(expression, context), expressionNode(result, context)],
+          if (expression.kind == "if") {
+            let (withOwn, ownChanged) = mergeGroup(
+              ownAndChildren(expression, context),
               representations
-            )
+            );
+            let own = expressionNode(expression, context);
+            if (numberEqual(own, -1)) {
+              match(Js.Array.toList(expression.children)) {
+                [Var(_cond), Var(thenId), Var(elseId)] => {
+                  let (merged, pairChanged) = mergeLanePairs(
+                    lookupLanes(context, thenId),
+                    lookupLanes(context, elseId),
+                    withOwn,
+                    false
+                  );
+                  (merged, ownChanged || pairChanged)
+                },
+                _ => { (withOwn, ownChanged) }
+              }
+            } else {
+              (withOwn, ownChanged)
+            }
           } else {
-            if (expression.kind == "call") {
-              let target = findFunction(context.functions, expression.functionId);
-              let body = findExpression(context.expressions, target.bodyExprId);
-              let (withResult, resultChanged) = mergeGroup(
-                [expressionNode(expression, context), expressionNode(body, context)],
+            if (expression.kind == "block") {
+              let block = findBlock(context.blocks, expression.id);
+              let result = findExpression(context.expressions, block.resultExprId);
+              mergeGroup(
+                [expressionNode(expression, context), expressionNode(result, context)],
                 representations
-              );
-              mergeArguments(
-                Js.Array.toList(expression.children),
-                Js.Array.toList(target.paramIds),
-                context,
-                withResult,
-                resultChanged
               )
             } else {
-              (representations, false)
+              if (expression.kind == "call") {
+                let target = findFunction(context.functions, expression.functionId);
+                let body = findExpression(context.expressions, target.bodyExprId);
+                let (withResult, resultChanged) = mergeGroup(
+                  [expressionNode(expression, context), expressionNode(body, context)],
+                  representations
+                );
+                mergeArguments(
+                  Js.Array.toList(expression.children),
+                  Js.Array.toList(target.paramIds),
+                  context,
+                  withResult,
+                  resultChanged
+                )
+              } else {
+                (representations, false)
+              }
             }
           }
         }
@@ -333,7 +613,10 @@ let rec patternSweep = match(patterns, context, representations, changed) => {
   ([Var(pattern), ..rest], Var(context), Var(representations), Var(changed)) => {
     let childNodes = pattern.children :> Js.Array.toList :> mapPatternNodes(context, []);
     let own = patternNode(pattern, context);
-    let nodes = if (own < 0) { childNodes } else { [own, ..childNodes] };
+    -- Vector patterns share one representation across lanes. Product
+    -- patterns carry independent lane representations; merging children
+    -- would equate unrelated scalars.
+    let nodes = if (numberEqual(own, -1)) { [] } else { [own, ..childNodes] };
     let (next, itemChanged) = if (pattern.kind == "tuple") {
       mergeGroup(nodes, representations)
     } else {
@@ -356,10 +639,24 @@ let rec letSweep = match(lets, context, representations, changed) => {
   ([Var(binding), ..rest], Var(context), Var(representations), Var(changed)) => {
     let pattern = findPattern(context.patterns, binding.patternId);
     let value = findExpression(context.expressions, binding.valueExprId);
-    let (next, itemChanged) = mergeGroup(
-      [patternNode(pattern, context), expressionNode(value, context)],
-      representations
-    );
+    let (next, itemChanged) = if (pattern.kind == "tuple") {
+      let (withSingle, singleChanged) = mergeGroup(
+        [patternNode(pattern, context), expressionNode(value, context)],
+        representations
+      );
+      let (merged, lanesChanged) = mergeLanePairs(
+        patternLaneNodes(Js.Array.toList(pattern.children), context),
+        lookupLanes(context, value.id),
+        withSingle,
+        false
+      );
+      (merged, singleChanged || lanesChanged)
+    } else {
+      mergeGroup(
+        [patternNode(pattern, context), expressionNode(value, context)],
+        representations
+      )
+    };
     letSweep(rest, context, next, changed || itemChanged)
   }
 };
@@ -525,12 +822,17 @@ let solveSliceNumericRepresentations = (input: GpuSliceElaborationInputDto) => {
     blocks = Js.Array.toList(input.blocks),
     functions = Js.Array.toList(input.functions),
     environmentFields = Js.Array.toList(input.environmentFields),
+    exprNodes = Map.empty(Map.numberCompare),
+    patternNodes = Map.empty(Map.numberCompare),
+    patternByBinding = Map.empty(Map.numberCompare),
+    lanes = Map.empty(Map.numberCompare),
   };
-  let seeded = seedExpressions(expressions, context, Map.empty(Map.numberCompare));
-  let solved = solveFixedPoint(context, seedFragmentAbi(input, context, seeded));
-  ensureExpressionsResolved(expressions, context, solved);
-  ensurePatternsResolved(patterns, context, solved);
-  ensureFieldsResolved(context.environmentFields, context, solved);
+  let cached = buildNumericCaches(context);
+  let seeded = seedExpressions(expressions, cached, Map.empty(Map.numberCompare));
+  let solved = solveFixedPoint(cached, seedFragmentAbi(input, cached, seeded));
+  ensureExpressionsResolved(expressions, cached, solved);
+  ensurePatternsResolved(patterns, cached, solved);
+  ensureFieldsResolved(cached.environmentFields, cached, solved);
   solved
 };
 

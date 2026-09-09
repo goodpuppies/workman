@@ -63,7 +63,7 @@ Deno.test("HM inference rejects unelaborated reflected JS imports", async () => 
   assertThrows(
     () => inferModule(module),
     Error,
-    "Js.Object is not a record type",
+    "Js.Object is a JavaScript value; use Math :> .sqrt for member access",
   );
 });
 
@@ -101,7 +101,7 @@ Deno.test("FFI elaboration reflects callback parameter refs", async () => {
     from js.global("Deno") import { serve };
     from js.global import { Response };
     let server = serve((req, info) => {
-      let path = match(req.url) {
+      let path = match(req :> .url) {
         Ok(value) => { value },
         Err(_) => { "/" },
       };
@@ -128,7 +128,7 @@ Deno.test("FFI elaboration reflects callback parameter refs", async () => {
 Deno.test("FFI elaboration rewrites annotated Js.Object property reads", async () => {
   const module = await parse(`
     let read = (req: Js.Object) => {
-      req.method
+      req :> .method
     };
   `);
 
@@ -148,7 +148,7 @@ Deno.test("FFI elaboration rewrites annotated Js.Object property reads", async (
 Deno.test("FFI elaboration rewrites annotated primitive receiver methods", async () => {
   const module = await parse(`
     let hex = (byte: Number) => {
-      byte.toString(16)
+      byte :> .toString(16)
     };
   `);
 
@@ -169,7 +169,7 @@ Deno.test("FFI elaboration preserves type-only JS refs for property reads", asyn
   const module = await parse(`
     from js.global import type { Request };
     let read = (req: Request) => {
-      req.method
+      req :> .method
     };
   `);
 

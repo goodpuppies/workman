@@ -347,6 +347,9 @@ const __wm_deep_freeze_shader_artifact = (value) => {
   }
   return value;
 };
+const __wm_gpu_slang = (artifact) => artifact.slang;
+const __wm_gpu_glsl = (artifact) => { if (typeof artifact.glslModule !== "string") throw new Error("reusable GLSL was not materialized for this fragment"); return artifact.glslModule; };
+const __wm_gpu_callable_name = (artifact) => artifact.callableName;
 const __wm_gpu_wgsl = (artifact) => artifact.wgsl;
 const __wm_gpu_shader_source = (args) => { const [artifact, target] = args; const required = (value, label) => { if (typeof value !== "string") throw new Error("shader source for " + label + " was not materialized for this fragment"); return value; }; if (target === __wm_basis_Gpu_ShaderTarget_WGSL) return artifact.wgsl; if (target === __wm_basis_Gpu_ShaderTarget_GLSL) return required(artifact.glsl, "GLSL"); if (target === __wm_basis_Gpu_ShaderTarget_HLSL) return required(artifact.hlsl, "HLSL"); if (target === __wm_basis_Gpu_ShaderTarget_METAL) return required(artifact.metal, "Metal"); throw new Error("unknown shader target"); };
 const __wm_gpu_vertex_entry_point = (artifact) => artifact.vertexEntry;

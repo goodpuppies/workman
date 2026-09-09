@@ -269,8 +269,14 @@ Deno.test("frontend-v2 generated Surface semantics match the repository golden",
     assertEquals(rootChecked > 0, true, `${rootName} corpus is empty`);
   }
   assertEquals(
-    rejected,
-    ["examples/exercises/tree.wm"],
+    rejected.sort(),
+    [
+      "examples/exercises/tree.wm",
+      "examples/stageforgewm/actors/counter.wm",
+      "examples/stageforgewm/lib/postal_service.wm",
+      "examples/stageforgewm/lib/postman.wm",
+      "examples/stageforgewm/lib/types.wm",
+    ],
   );
   assertEquals(checked.sort(), Object.keys(frontendV2SemanticGolden.files).sort());
 });

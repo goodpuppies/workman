@@ -27,10 +27,13 @@ import {
   type SemanticResolvedDefinition,
 } from "./module_interface.ts";
 import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
+import { elaborateSharedCore, type SharedCoreModule } from "./core/elaboration.ts";
 
 export type CoreProgramAnalysis = {
   graph: ModuleGraph;
   results: ModuleMap<InferResult>;
+  /** Backend-neutral Core; host, shader, and native lowering fork after this boundary. */
+  sharedCore: ModuleMap<SharedCoreModule>;
   bindings: ModuleMap<BindingFacts>;
   nominalFacts: NominalFacts;
   patternFacts: ResolvedPatternFacts;
@@ -56,6 +59,23 @@ export function buildCoreProgramAnalysis(
   const ids = new CompilerIdAllocator();
   const bindings = resolveProgramBindingFacts(graph, ids);
   const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
+  const sharedCore = new Map(
+    graph.order.map((id) => {
+      const node = graph.nodes.get(id)!;
+      const result = results.get(id)!;
+      return [
+        id,
+        elaborateSharedCore(
+          node.module,
+          result,
+          bindings.get(id),
+          ids,
+          nominalFacts,
+          { path: node.path, source: node.source },
+        ),
+      ] as const;
+    }),
+  );
   const patternFacts = resolveProgramPatternFacts(graph, results, bindings, nominalFacts, ids);
   const recursionFacts = resolveProgramRecursionFacts(graph, bindings, ids);
   const gpuOnlyBindings = gpuOnlyBindingIds(graph.order.map((id) => ({
@@ -72,6 +92,7 @@ export function buildCoreProgramAnalysis(
   const gpuAnalysis = {
     graph,
     results,
+    sharedCore,
     bindings,
     nominalFacts,
     patternFacts,
@@ -95,6 +116,7 @@ export function buildCoreProgramAnalysis(
   return {
     graph,
     results,
+    sharedCore,
     bindings,
     nominalFacts,
     patternFacts,
@@ -163,9 +185,26 @@ export function buildPartialProjectSnapshot(
   })));
   let gpuSlices: NormalizedGpuSlice[] | undefined;
   try {
+    const sharedCore = new Map(
+      certified.order.map((id) => {
+        const node = certified.nodes.get(id)!;
+        return [
+          id,
+          elaborateSharedCore(
+            node.module,
+            results.get(id)!,
+            bindings.get(id),
+            ids,
+            nominalFacts,
+            { path: node.path, source: node.source },
+          ),
+        ] as const;
+      }),
+    );
     gpuSlices = normalizeGpuSlicePrograms({
       graph: certified,
       results,
+      sharedCore,
       bindings,
       nominalFacts,
       patternFacts,

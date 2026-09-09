@@ -655,7 +655,10 @@ function h0Input(): Promise<GpuElaborationInput> {
 
 async function gpuInput(source: string): Promise<GpuElaborationInput> {
   const module = await parse(source);
-  const result = inferModule(module, new Map(), await standardInferOptions());
+  // H0 research-fixture entry: preserve the legacy homogeneous vector default
+  // (unresolved tuple items unify to Number during inference).
+  const options = { ...(await standardInferOptions()), legacyGpuVectorTuples: true };
+  const result = inferModule(module, new Map(), options);
   const bindings = resolveModuleBindingFacts(module, new CompilerIdAllocator());
   return normalizeGpuModule(module, result, bindings, "/test/main.wm");
 }

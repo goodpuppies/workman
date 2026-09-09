@@ -174,6 +174,40 @@ export class WmslangSlangBackend {
     };
   }
 
+  /** Compile exported, non-entry-point declarations as a reusable target module. */
+  compileModule(slangSource: string, target: WmslangShaderTarget): string {
+    if (slangSource.length === 0) {
+      throw new WmslangBackendError(
+        "cannot compile an empty reusable wmslang module",
+        slangSource,
+        "generated reusable Slang source is empty",
+      );
+    }
+    const targetValue = this.resolveTargetValues(slangSource)[target];
+    const globalSession = this.requireGlobalSession(slangSource);
+    const session = globalSession.createSession(targetValue);
+    if (!session) {
+      throw this.compilerError(`create reusable ${target.toUpperCase()} session`, slangSource);
+    }
+    try {
+      const module = session.loadModuleFromSource(
+        slangSource,
+        "wmslang_reusable_v1",
+        "/wmslang-reusable-v1.slang",
+      );
+      if (!module) throw this.compilerError("load reusable generated module", slangSource);
+      const linked = module.link();
+      if (!linked) throw this.compilerError("link reusable generated module", slangSource);
+      const code = linked.getTargetCode(0);
+      if (!code) {
+        throw this.compilerError(`emit reusable ${target.toUpperCase()} module`, slangSource);
+      }
+      return target === "glsl" ? reusableGlslBody(code) : code;
+    } finally {
+      session.delete();
+    }
+  }
+
   private resolveTargetValues(
     slangSource: string,
   ): Record<WmslangShaderTarget, number> {
@@ -310,6 +344,26 @@ export class WmslangSlangBackend {
       diagnostic,
     );
   }
+}
+
+/**
+ * Slang's GLSL target emits a complete Vulkan-flavoured translation unit.
+ * A reusable module is embedded below its consumer's own version/preamble, so
+ * discard only compiler-owned top-level scaffolding and ABI hook prototypes.
+ */
+function reusableGlslBody(code: string): string {
+  return code.split("\n").filter((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#version ") || trimmed.startsWith("#line ")) return false;
+    if (trimmed === "layout(column_major) uniform;") return false;
+    if (trimmed === "layout(column_major) buffer;") return false;
+    if (
+      /^[A-Za-z_][A-Za-z0-9_]*(?:<[^>]+>)?\s+WM_(?:UNIFORM|RESOURCE)_\d+\(\);$/.test(
+        trimmed,
+      )
+    ) return false;
+    return true;
+  }).join("\n").trimStart();
 }
 
 function reflectedResourceLayout(

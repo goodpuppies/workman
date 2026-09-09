@@ -275,7 +275,7 @@ Deno.test("cli run grants generated JS permissions for reflected child process i
         let proc = spawn(${JSON.stringify(Deno.execPath())}, JSON["--version"]);
         match(proc) {
           Ok(p) => {
-            p.on("close", (code) => {
+            p :> .on("close", (code) => {
               print(code);
             });
             void

@@ -125,11 +125,11 @@ Deno.test("compiler-only GPU aliases remain compile-time-only across modules", a
 
 Deno.test("host FFI traversal treats only @gpu lambda subtrees as opaque", async () => {
   const module = await parse(`
-    let host = (uv) => { uv.x };
+    let host = (uv) => { uv :> .x };
     let shader = (uv) => { @gpu; uv.x };
     let mixed = (uv) => {
       let shaderInner = (point) => { @gpu; point.y };
-      (uv.x, shaderInner)
+      (uv :> .x, shaderInner)
     };
   `);
   const ffi = prepareFfiElaboration(module);

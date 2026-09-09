@@ -516,6 +516,8 @@ export type GpuSliceCompilationOutput = {
   loweredStatements: GpuSliceLoweredStatementDto[];
   loweredBlocks: GpuSliceLoweredBlockDto[];
   loweredCases: GpuSliceLoweredCaseDto[];
+  slangModule: string;
+  callableName: string;
   slangSource: string;
   diagnostics: GpuSliceDiagnosticDto[];
 };

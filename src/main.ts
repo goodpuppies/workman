@@ -480,8 +480,8 @@ function missingInput(command: string): number {
 }
 
 async function lspCommand(args: string[]): Promise<number> {
-  if (args.length > 0) {
-    console.error("usage: wm lsp");
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--stdio")) {
+    console.error("usage: wm lsp [--stdio]");
     return 2;
   }
   const { runServer } = await import("./lsp/server.ts");

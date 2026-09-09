@@ -58,6 +58,13 @@ export type InferStep = { declIndex: number; env: Map<string, TypeSnapshot> };
 export type InferModuleOptions = {
   initialImports?: InitialImport[];
   initialBasis?: InitialBasis;
+  /**
+   * Restore pre-products HM behavior: inferGpuTuple unifies unresolved tuple
+   * items to Number and claims the homogeneous vector type. The product
+   * pipeline (Gpu.fragment) leaves this off so heterogeneous multi-value
+   * returns survive inference; only the H0 research-fixture entry opts in.
+   */
+  legacyGpuVectorTuples?: boolean;
 };
 
 export type InitialImport = {
@@ -188,6 +195,7 @@ function inferModuleCore(
     provenance,
     dialect: hostTypingDialect,
     recover,
+    legacyGpuVectorTuples: options.legacyGpuVectorTuples === true,
   };
   warnWideTuples(module, warnings, diagnostics);
 

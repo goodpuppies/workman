@@ -42,7 +42,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
     () =>
       checkSource(`
         let format = (item) => {
-          "message: " ++ item.message
+          "message: " ++ (item :> .message)
         };
       `),
     Error,
@@ -53,7 +53,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
     () =>
       checkSource(`
         let format = (item) => {
-          let message = item.message;
+          let message = item :> .message;
           "message: " ++ message
         };
       `),
@@ -67,7 +67,7 @@ Deno.test("unresolved JS FFI results cannot be hidden by match or discard", asyn
     () =>
       checkSource(`
         let f = (x) => {
-          match(x.foo()) {
+          match(x :> .foo()) {
             Ok(_) => { Ok(void) },
             Err(e) => { Err(e) }
           }
@@ -81,7 +81,7 @@ Deno.test("unresolved JS FFI results cannot be hidden by match or discard", asyn
     () =>
       checkSource(`
         let f = (x) => {
-          let _ = x.foo();
+          let _ = x :> .foo();
           Ok(void)
         };
       `),
@@ -223,7 +223,7 @@ Deno.test("preserves nominal receivers returned through polymorphic this", async
     };
 
     let spinner = ora.default("Loading") :> try :> .start() :> try;
-    let finished = spinner.succeed("Done");
+    let finished = spinner :> .succeed("Done");
   `);
 
   expectBinding(result.env, "spinner", { type: "Ora", vars: 0 });
@@ -254,7 +254,7 @@ Deno.test("reflects the UnsafeWindowSurface webgpu discriminator precisely", asy
     from js.global import type { GPUCanvasContext };
 
     let context = (surface: UnsafeWindowSurface) => {
-      surface.getContext("webgpu")
+      surface :> .getContext("webgpu")
     };
   `);
 
@@ -325,15 +325,15 @@ Deno.test("reflects constructor-valued Deno members through new member", async (
     };
     let view = UnsafePointerView.new(Panic("ptr"));
     let readPointer = match(view) {
-      Ok(v) => { v.getPointer(8) },
+      Ok(v) => { v :> .getPointer(8) },
       Err(e) => { Err(e) },
     };
     let readNumber = match(view) {
-      Ok(v) => { v.getUint32(4) },
+      Ok(v) => { v :> .getUint32(4) },
       Err(e) => { Err(e) },
     };
     let present = (surface: UnsafeWindowSurface) => {
-      surface.present()
+      surface :> .present()
     };
   `);
 
@@ -356,7 +356,7 @@ Deno.test("reflects callback parameter object refs before HM", async () => {
     from js.global("Deno") import { serve };
     from js.global import { Response };
     let server = serve((req, info) => {
-      let url = match(req.url) {
+      let url = match(req :> .url) {
         Ok(value) => { value },
         Err(_) => { "/" },
       };
@@ -373,7 +373,7 @@ Deno.test("reflects callback parameter object refs before HM", async () => {
 Deno.test("reflects dynamic properties from annotated Js.Object values", async () => {
   const result = await checkSource(`
     let methodOf = (req: Js.Object) => {
-      req.method
+      req :> .method
     };
   `);
 
@@ -387,7 +387,7 @@ Deno.test("reflects properties from type-only JS imports before HM", async () =>
   const result = await checkSource(`
     from js.global import type { Request };
     let methodOf = (req: Request) => {
-      match(req.method) {
+      match(req :> .method) {
         Ok(value) => { value == "GET" },
         Err(_) => { false },
       }
@@ -402,7 +402,7 @@ Deno.test("delayed reflection marks FFI facts as resolved", async () => {
     from js.global import type { Request };
     let methodOf = (req) => {
       let typed: Request = req;
-      let method = req.method;
+      let method = req :> .method;
       method
     };
   `);
@@ -451,7 +451,7 @@ Deno.test("delays foreign property reflection until HM constrains the receiver",
   const result = await checkSource(`
     from js.global import type { Request };
     let useRequest = (h: Request -> Js.Object, req: Request) => {
-      let method = match(req.method) {
+      let method = match(req :> .method) {
         Ok(value) => { value },
         Err(_) => { "" },
       };
@@ -474,7 +474,7 @@ Deno.test("delays foreign property reflection until downstream HM constrains the
         from js.global import type { Request };
         let dispatch = () => {
           (req) => {
-            let method = match(req.method) {
+            let method = match(req :> .method) {
               Ok(value) => { value },
               Err(_) => { "" },
             };
@@ -546,7 +546,7 @@ Deno.test("delays foreign method reflection until downstream HM constrains the r
       `
         let cloneResponse = () => {
           (res) => {
-            res.clone()
+            res :> .clone()
           }
         };
       `,
@@ -654,7 +654,7 @@ Deno.test("recursive FFI receiver helpers stay monomorphic across downstream con
       match(limit) {
         0 => { Ok(0) },
         _ => {
-          match(view.getUint32(0) :> Result.mapErr((e) => { e })) {
+          match(view :> .getUint32(0) :> Result.mapErr((e) => { e })) {
             Ok(value) => { readLoop(view, limit - 1) },
             Err(e) => { Err(e) }
           }
@@ -680,8 +680,8 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
       `
         let listen = () => {
           (target) => {
-            target.addEventListener("click", (evt) => {
-              let isTrusted = evt.isTrusted;
+            target :> .addEventListener("click", (evt) => {
+              let isTrusted = evt :> .isTrusted;
             })
           }
         };
@@ -709,6 +709,47 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
   });
 });
 
+Deno.test("local JavaScript receivers require pipe-member syntax regardless of annotations", async () => {
+  for (const annotation of ["", ": WorkerType"]) {
+    await assertRejects(
+      () =>
+        checkSource(`
+          from js.global import { Worker };
+          from js.global import type { Worker as WorkerType };
+          let main = () => {
+            let worker${annotation} = Worker.new("worker.js", JSON{ "type": "module" })
+              :> Result.debug;
+            worker.postMessage("hello")
+          };
+        `),
+      Error,
+      "Worker is a JavaScript value; use worker :> .postMessage for member access",
+    );
+  }
+
+  await checkSource(`
+    from js.global import { Worker };
+    let main = () => {
+      let worker = Worker.new("worker.js", JSON{ "type": "module" }) :> Result.debug;
+      worker :> .postMessage("hello")
+    };
+  `);
+
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global import { EventTarget };
+        let target = EventTarget.new() :> Result.debug;
+        let installed = target :> .addEventListener("click", (event) => {
+          let trusted = event.isTrusted;
+          void
+        });
+      `),
+    Error,
+    "local JavaScript receiver event must use event :> .isTrusted for member access",
+  );
+});
+
 Deno.test("reflected JS overload sets are not bare HM values", async () => {
   await assertRejects(
     () =>
@@ -730,7 +771,7 @@ Deno.test("reflected constructors return imported nominal foreign types", async 
       method: "POST"
     });
 
-    let contentType = request.headers.get("content-type");
+    let contentType = request :> .headers.get("content-type");
   `);
 
   expectBinding(result.env, "request", { type: "Request", vars: 0 });
@@ -749,7 +790,7 @@ Deno.test("reflects fixed TypeScript tuples from functions and foreign members",
 
     let pair = makePair();
     let create = (foreign: TupleForeign) => {
-      foreign.create()
+      foreign :> .create()
     };
   `);
 
@@ -784,7 +825,7 @@ Deno.test("anonymous structural foreign results use the explicit Js.Object fallb
     from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import type { TupleForeign };
 
     let structural = (foreign: TupleForeign) => {
-      foreign.unsupportedObject()
+      foreign :> .unsupportedObject()
     };
   `);
 
@@ -801,7 +842,7 @@ Deno.test("broad object parameters do not collapse nominal foreign arguments to 
 
     let update = (value) => {
       let _ = assign(value, JSON{ touched: true });
-      value.clone()
+      value :> .clone()
     };
     let use = (request: Request) => { update(request) };
   `);
@@ -819,7 +860,7 @@ Deno.test("call-specific reflection maps each supplied rest argument to its elem
     };
 
     let add = (foreign: TupleForeign, value: Number) => {
-      foreign.add(value)
+      foreign :> .add(value)
     };
   `);
 
@@ -837,7 +878,7 @@ Deno.test("extra arguments do not inherit the final non-rest parameter type", as
     from js.global import type { Request };
 
     let call = (foreign: TupleForeign, value: Number, extra: Request) => {
-      foreign.fixed(value, extra)
+      foreign :> .fixed(value, extra)
     };
   `);
 

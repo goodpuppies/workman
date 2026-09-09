@@ -75,7 +75,7 @@ Deno.test("lsp server publishes diagnostics for didOpen", async () => {
   assertEquals(params?.diagnostics.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
 });
 
-Deno.test("wm lsp runs the stdio language server through the public CLI", async () => {
+Deno.test("wm lsp --stdio runs the language server through the public CLI", async () => {
   const messages = await runLsp(
     [
       { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -83,7 +83,7 @@ Deno.test("wm lsp runs the stdio language server through the public CLI", async 
       { jsonrpc: "2.0", method: "exit", params: null },
     ],
     {},
-    ["run", "-A", "src/cli.ts", "lsp"],
+    ["run", "-A", "src/cli.ts", "lsp", "--stdio"],
   );
 
   assertEquals(

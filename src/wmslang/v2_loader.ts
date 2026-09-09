@@ -276,6 +276,8 @@ export function validateGpuSliceCompilationOutput(value: unknown): GpuSliceCompi
   validateGpuSliceLayouts(output, shaderProgram);
   validateGpuSliceIr(output, shaderProgram);
   validateGpuSliceLowering(output, shaderProgram);
+  string(output.slangModule, "GPU slice generated reusable Slang module");
+  string(output.callableName, "GPU slice generated callable name");
   string(output.slangSource, "GPU slice generated Slang source");
   const diagnostics = records(output.diagnostics, "GPU slice diagnostics");
   const spanIds = new Set(program.spans.map((span) => span.id));
@@ -296,8 +298,20 @@ export function validateGpuSliceCompilationOutput(value: unknown): GpuSliceCompi
   if (diagnostics.length === 0 && (output.slangSource as string).length === 0) {
     throw new Error("successful GPU slice output has no generated Slang source");
   }
+  if (
+    diagnostics.length === 0 &&
+    ((output.slangModule as string).length === 0 || (output.callableName as string).length === 0)
+  ) {
+    throw new Error("successful GPU slice output has no reusable Slang callable");
+  }
   if (diagnostics.length !== 0 && output.slangSource !== "") {
     throw new Error("failed GPU slice output must not contain generated Slang source");
+  }
+  if (
+    diagnostics.length !== 0 &&
+    (output.slangModule !== "" || output.callableName !== "")
+  ) {
+    throw new Error("failed GPU slice output must not contain a reusable Slang callable");
   }
   return output as GpuSliceCompilationOutput;
 }
@@ -1117,9 +1131,21 @@ function validateGpuSliceLowering(
         const field = fieldsById.get(operation.fieldId as number)!;
         if (
           field.layoutId !== operation.layoutId ||
-          field.constructorId !== operation.constructorId ||
-          field.typeId !== operation.typeId
+          field.constructorId !== operation.constructorId
         ) throw new Error("GPU slice lowered payload uses the wrong ADT field");
+        if ((operation.index as number) < 0) {
+          if (field.typeId !== operation.typeId) {
+            throw new Error("GPU slice lowered payload uses the wrong ADT field");
+          }
+        } else {
+          const lanes = sourceTypes.get(field.typeId as number)?.items as unknown;
+          if (
+            !Array.isArray(lanes) || (operation.index as number) >= lanes.length ||
+            lanes[operation.index as number] !== operation.typeId
+          ) {
+            throw new Error("GPU slice lowered payload lane selects the wrong component type");
+          }
+        }
       } else if (operation.fieldId !== -1) {
         throw new Error("GPU slice lowered construct operation has a fieldId");
       }
@@ -1150,6 +1176,10 @@ function validateGpuSliceLowering(
     if (operation.kind === "project") {
       if ((operation.index as number) < 0 || (operation.args as number[]).length !== 1) {
         throw new Error("GPU slice lowered projection has an invalid index or arity");
+      }
+    } else if (operation.kind === "payload" && (operation.index as number) >= 0) {
+      if ((operation.args as number[]).length !== 1) {
+        throw new Error("GPU slice lowered payload lane has the wrong arity");
       }
     } else if (operation.kind === "uniform") {
       const source = program.expressions.find((item) => item.id === operation.sourceExprId);
@@ -1573,7 +1603,6 @@ export function validateGpuSliceElaborationInput(
     }
   }
 
-  if (adts.length > 1) throw new Error("GPU slice contains more than one ADT");
   for (const adt of adts) {
     integer(adt.typeNameId, "GPU slice ADT typeNameId");
     string(adt.name, "GPU slice ADT name");
@@ -1598,8 +1627,8 @@ export function validateGpuSliceElaborationInput(
     if (constructor.payloadTypeId !== -1) {
       reference(typeIds, constructor.payloadTypeId, "GPU slice constructor payloadTypeId");
       const payload = types.find((type) => type.id === constructor.payloadTypeId);
-      if (payload?.kind !== "number") {
-        throw new Error("GPU slice constructor payload must be semantic Number");
+      if (payload?.kind !== "number" && payload?.kind !== "bool" && payload?.kind !== "tuple") {
+        throw new Error("GPU slice constructor payload must be Number, Bool, or tuple");
       }
     }
     spanReference(spanIds, constructor.spanId, "GPU slice constructor spanId");

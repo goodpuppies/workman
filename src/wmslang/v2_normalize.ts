@@ -1,6 +1,8 @@
-import type { Binding, CtorDecl, Decl, Expr, Pattern } from "../ast.ts";
+import type { Binding, CtorDecl, Decl, Expr, Pattern, TypeExpr } from "../ast.ts";
 import type { BindingFacts } from "../binding_facts.ts";
 import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
+import type { CoreDecl, CoreExpr } from "../core/ast.ts";
+import type { SharedCoreModule } from "../core/elaboration.ts";
 import type {
   GpuFragmentRootFact,
   GpuFragmentSelectionFacts,
@@ -11,7 +13,11 @@ import type { CtorId } from "../ids.ts";
 import type { ModuleGraph, ModuleNode } from "../module_graph.ts";
 import type { ModuleMap } from "../module_id.ts";
 import type { NominalConstructorFact, NominalFacts, NominalTypeFact } from "../nominal_facts.ts";
-import type { ResolvedPatternFact, ResolvedPatternFacts } from "../pattern_facts.ts";
+import type {
+  ResolvedMatchArmFact,
+  ResolvedPatternFact,
+  ResolvedPatternFacts,
+} from "../pattern_facts.ts";
 import type { RecursionFacts } from "../recursion_facts.ts";
 import type { SourceSpan } from "../source.ts";
 import { instantiateRecordFields, prune, type Ty, typeInfoById } from "../types.ts";
@@ -48,6 +54,7 @@ type CallExpr = Extract<Expr, { kind: "Call" }>;
 export type GpuSliceAnalysis = {
   graph: ModuleGraph;
   results: ModuleMap<InferResult>;
+  sharedCore: ModuleMap<SharedCoreModule>;
   bindings: ModuleMap<BindingFacts>;
   nominalFacts: NominalFacts;
   patternFacts: ResolvedPatternFacts;
@@ -87,7 +94,12 @@ export class GpuSliceNormalizationError extends Error {
   }
 }
 
-export function normalizeGpuSliceProgram(analysis: GpuSliceAnalysis): GpuSliceElaborationInput {
+const EMPTY_PINNED_SLICE: ReadonlySet<number> = new Set();
+
+export function normalizeGpuSliceProgram(
+  analysis: GpuSliceAnalysis,
+  pinnedPerSite: ReadonlySet<number> = EMPTY_PINNED_SLICE,
+): GpuSliceElaborationInput {
   const selections = analysis.fragmentSelections;
   if (selections.selectors.length === 0) {
     return emptyInput(analysis.graph.nodes.get(analysis.graph.entry)!.path);
@@ -100,10 +112,13 @@ export function normalizeGpuSliceProgram(analysis: GpuSliceAnalysis): GpuSliceEl
       "wmslang v1 accepts exactly one Gpu.fragment selection per program",
     );
   }
-  return new SliceNormalizer(analysis).normalize();
+  return new SliceNormalizer(analysis, pinnedPerSite).normalize();
 }
 
-export function normalizeGpuSlicePrograms(analysis: GpuSliceAnalysis): NormalizedGpuSlice[] {
+export function normalizeGpuSlicePrograms(
+  analysis: GpuSliceAnalysis,
+  pinnedPerSite: ReadonlySet<number> = EMPTY_PINNED_SLICE,
+): NormalizedGpuSlice[] {
   const selections = analysis.fragmentSelections;
   return selections.roots.map((root) => {
     const selector = root.selectors[0];
@@ -119,7 +134,7 @@ export function normalizeGpuSlicePrograms(analysis: GpuSliceAnalysis): Normalize
     return {
       root,
       selectors: [...root.selectors],
-      input: normalizeGpuSliceProgram({ ...analysis, fragmentSelections: narrowed }),
+      input: normalizeGpuSliceProgram({ ...analysis, fragmentSelections: narrowed }, pinnedPerSite),
     };
   });
 }
@@ -156,6 +171,7 @@ type FunctionSite = {
   bindingId: number;
   name: string;
   lambda: LambdaExpr;
+  core: Extract<CoreExpr, { kind: "CoreFn" }>;
   binding?: Binding;
 };
 
@@ -166,6 +182,7 @@ class SliceNormalizer {
   readonly node: ModuleNode;
   readonly result: InferResult;
   readonly bindings: BindingFacts;
+  readonly shared: SharedCoreModule;
 
   readonly functions: GpuSliceFunctionDto[] = [];
   readonly environments: GpuSliceEnvironmentDto[] = [];
@@ -191,6 +208,10 @@ class SliceNormalizer {
   readonly #topLevelLambdas = new Map<number, { binding: Binding; lambda: LambdaExpr }>();
   readonly #localLambdas = new Map<number, { binding: Binding; lambda: LambdaExpr }>();
   readonly #inlineLambdaBindings = new Map<LambdaExpr, number>();
+  readonly #lambdasByNodeId = new Map<number, LambdaExpr>();
+  readonly #expressionsByNodeId = new Map<number, Expr>();
+  readonly #bindingsByNodeId = new Map<number, Binding>();
+  readonly #coreFunctionsByNodeId = new Map<number, Extract<CoreExpr, { kind: "CoreFn" }>>();
   readonly #valueBindingOwner = new Map<number, number>();
   readonly #typesByKey = new Map<string, number>();
   readonly #patternsById = new Map<string, GpuSlicePatternDto>();
@@ -211,7 +232,10 @@ class SliceNormalizer {
   #nextSyntheticBindingId = 0;
   #nextInlineBindingId = -2;
 
-  constructor(readonly analysis: GpuSliceAnalysis) {
+  constructor(
+    readonly analysis: GpuSliceAnalysis,
+    readonly pinnedPerSite: ReadonlySet<number> = EMPTY_PINNED_SLICE,
+  ) {
     this.root = analysis.fragmentSelections.roots[0];
     this.selector = analysis.fragmentSelections.selectors[0];
     this.path = this.root.path;
@@ -226,7 +250,25 @@ class SliceNormalizer {
       this.root.moduleId,
       "selected root binding facts",
     );
-    this.#nextSyntheticBindingId = Math.max(-1, ...this.bindings.local) + 1;
+    this.shared = required(
+      analysis.sharedCore,
+      this.root.moduleId,
+      "selected root shared Core",
+    );
+    walkCoreModule(this.shared.module, (expression) => {
+      if (expression.kind === "CoreFn" && expression.node?.id !== undefined) {
+        this.#coreFunctionsByNodeId.set(expression.node.id, expression);
+      }
+    });
+    // Synthetic per-instance bindings join a program-wide set consumed with
+    // source bindings from every module, so they must clear the global
+    // high-water mark. A per-module max collides with later modules' source
+    // ids as soon as the fragment selection lives in its own module.
+    let maxBindingId = -1;
+    for (const facts of analysis.bindings.values()) {
+      for (const id of facts.local) maxBindingId = Math.max(maxBindingId, id);
+    }
+    this.#nextSyntheticBindingId = maxBindingId + 1;
     if (this.selector.moduleId !== this.root.moduleId) {
       throw new GpuSliceNormalizationError(
         "gpu.fragment.cross-module",
@@ -294,6 +336,9 @@ class SliceNormalizer {
       if (declaration.kind !== "LetDecl") continue;
       for (const binding of declaration.bindings) {
         if (binding.pattern.kind !== "PVar" || binding.value.kind !== "Lambda") continue;
+        if (binding.value.node?.id !== undefined) {
+          this.#lambdasByNodeId.set(binding.value.node.id, binding.value);
+        }
         const id = this.bindings.binders.get(binding.pattern);
         if (id !== undefined) this.#topLevelLambdas.set(id, { binding, lambda: binding.value });
       }
@@ -301,9 +346,16 @@ class SliceNormalizer {
   }
 
   indexLocalLambdas(): void {
-    this.walk(this.root.lambda.body, (_expression, declaration) => {
+    this.walk(this.root.lambda.body, (expression, declaration) => {
+      if (expression.node?.id !== undefined) {
+        this.#expressionsByNodeId.set(expression.node.id, expression);
+      }
+      if (expression.kind === "Lambda" && expression.node?.id !== undefined) {
+        this.#lambdasByNodeId.set(expression.node.id, expression);
+      }
       if (declaration?.kind !== "LetDecl") return;
       for (const binding of declaration.bindings) {
+        if (binding.node?.id !== undefined) this.#bindingsByNodeId.set(binding.node.id, binding);
         if (binding.pattern.kind !== "PVar" || binding.value.kind !== "Lambda") continue;
         const id = this.bindings.binders.get(binding.pattern);
         if (id !== undefined) this.#localLambdas.set(id, { binding, lambda: binding.value });
@@ -442,30 +494,35 @@ class SliceNormalizer {
         ? this.root.binding.pattern.name
         : "fragment",
       lambda: this.root.lambda,
+      core: this.coreFunction(this.root.lambda),
       binding: this.root.binding,
     });
     for (let index = 0; index < this.#functionSites.length; index++) {
-      this.walk(this.#functionSites[index].lambda.body, (expression) => {
-        if (expression.kind !== "Call") return;
-        const candidates = [expression.callee, ...expression.args];
+      walkCoreExpr(this.#functionSites[index].core.arms[0].body, (expression) => {
+        if (expression.kind !== "CoreApp") return;
+        const candidates = [expression.callee, ...coreApplicationArguments(expression.arg)];
         for (const candidate of candidates) {
-          if (candidate.kind === "Lambda") {
-            if (this.#inlineLambdaBindings.has(candidate)) continue;
+          if (candidate.kind === "CoreFn") {
+            const lambda = candidate.node?.id === undefined
+              ? undefined
+              : this.#lambdasByNodeId.get(candidate.node.id);
+            if (!lambda || this.#inlineLambdaBindings.has(lambda)) continue;
             const bindingId = this.#nextInlineBindingId--;
-            this.#inlineLambdaBindings.set(candidate, bindingId);
+            this.#inlineLambdaBindings.set(lambda, bindingId);
             this.registerFunction({
               id: this.#functionSites.length,
               bindingId,
               name: "lambda",
-              lambda: candidate,
+              lambda,
+              core: candidate,
             });
             continue;
           }
-          if (candidate.kind !== "Var") continue;
-          if (candidate === expression.callee) {
-            if (this.semanticId(candidate) || this.constructorId(candidate) !== -1) continue;
+          if (candidate.kind !== "CoreVar") continue;
+          if (candidate === expression.callee && (candidate.semanticId || candidate.ctorId)) {
+            continue;
           }
-          const bindingId = this.bindings.references.get(candidate);
+          const bindingId = candidate.bindingId;
           if (bindingId === undefined || this.#functionByBinding.has(bindingId)) continue;
           const helper = this.#localLambdas.get(bindingId);
           if (!helper) continue;
@@ -474,6 +531,7 @@ class SliceNormalizer {
             bindingId,
             name: helper.binding.pattern.kind === "PVar" ? helper.binding.pattern.name : "helper",
             lambda: helper.lambda,
+            core: this.coreFunction(helper.lambda),
             binding: helper.binding,
           });
         }
@@ -504,6 +562,7 @@ class SliceNormalizer {
         rootResult: selectedType.result,
         templates,
         freshenCallSites: true,
+        pinnedPerSite: this.pinnedPerSite,
       });
     } catch (error) {
       if (!(error instanceof GpuSpecializationError)) throw error;
@@ -590,41 +649,50 @@ class SliceNormalizer {
             }
           }
         }
-        if (expression.kind !== "Call" || expression.callee.kind !== "Var") return;
-        const targetBindingId = this.bindings.references.get(expression.callee);
-        if (targetBindingId === undefined) return;
-        const directTarget = this.#functionByBinding.has(targetBindingId)
-          ? targetBindingId
-          : undefined;
-        const targetFunctionParam = functionParamBindings.get(targetBindingId);
-        if (directTarget === undefined && targetFunctionParam === undefined) return;
-        const result = requiredObject(
-          this.result.types.get(expression),
-          "missing GPU call result type",
-        );
-        calls.push({
-          occurrence: expression,
-          targetBindingId: directTarget,
-          targetFunctionParam,
-          args: expression.args.map((argument) =>
-            requiredObject(this.result.types.get(argument), "missing GPU call argument type")
-          ),
-          result,
-          staticFunctionArgs: expression.args.map((argument) => {
-            if (argument.kind === "Lambda") return this.#inlineLambdaBindings.get(argument);
-            if (argument.kind !== "Var") return undefined;
-            const bindingId = this.bindings.references.get(argument);
-            return bindingId !== undefined && this.#localLambdas.has(bindingId)
-              ? bindingId
-              : undefined;
-          }),
-        });
       },
       (pattern) => {
         const fact = this.analysis.patternFacts.byPattern.get(pattern);
         if (fact) occurrenceTypes.set(pattern, fact.type);
       },
     );
+    walkCoreExpr(site.core.arms[0].body, (expression) => {
+      if (expression.kind !== "CoreApp") return;
+      const calleeBindingId = expression.callee.kind === "CoreVar"
+        ? expression.callee.bindingId
+        : expression.callee.kind === "CoreFn"
+        ? this.inlineCoreFunctionBinding(expression.callee)
+        : undefined;
+      if (calleeBindingId === undefined) return;
+      const directTarget = this.#functionByBinding.has(calleeBindingId)
+        ? calleeBindingId
+        : undefined;
+      const targetFunctionParam = functionParamBindings.get(calleeBindingId);
+      if (directTarget === undefined && targetFunctionParam === undefined) return;
+      const occurrence = expression.node?.id === undefined
+        ? undefined
+        : this.#expressionsByNodeId.get(expression.node.id);
+      if (!occurrence) {
+        throw this.error(
+          "gpu.function.unsupported",
+          site.lambda,
+          "shared Core application has no source occurrence",
+        );
+      }
+      const arity = directTarget !== undefined
+        ? requiredObject(this.#functionByBinding.get(directTarget), "missing GPU call target")
+          .lambda
+          .params.length
+        : this.functionParameterArity(site, targetFunctionParam!);
+      const args = coreApplicationArguments(expression.arg, arity);
+      calls.push({
+        occurrence,
+        targetBindingId: directTarget,
+        targetFunctionParam,
+        args: args.map((argument) => this.coreType(argument, "GPU call argument")),
+        result: this.coreType(expression, "GPU call result"),
+        staticFunctionArgs: args.map((argument) => this.staticCoreFunctionBinding(argument)),
+      });
+    }, false);
     return {
       bindingId: site.bindingId,
       name: site.name,
@@ -639,7 +707,48 @@ class SliceNormalizer {
 
   registerFunction(site: FunctionSite): void {
     this.#functionSites.push(site);
-    if (site.bindingId >= 0) this.#functionByBinding.set(site.bindingId, site);
+    this.#functionByBinding.set(site.bindingId, site);
+  }
+
+  coreFunction(lambda: LambdaExpr): Extract<CoreExpr, { kind: "CoreFn" }> {
+    const id = lambda.node?.id;
+    const core = id === undefined ? undefined : this.#coreFunctionsByNodeId.get(id);
+    if (!core) {
+      throw this.error(
+        "gpu.function.unsupported",
+        lambda,
+        "selected GPU function is missing from shared Core elaboration",
+      );
+    }
+    return core;
+  }
+
+  inlineCoreFunctionBinding(
+    expression: Extract<CoreExpr, { kind: "CoreFn" }>,
+  ): number | undefined {
+    const lambda = expression.node?.id === undefined
+      ? undefined
+      : this.#lambdasByNodeId.get(expression.node.id);
+    return lambda ? this.#inlineLambdaBindings.get(lambda) : undefined;
+  }
+
+  staticCoreFunctionBinding(expression: CoreExpr): number | undefined {
+    if (expression.kind === "CoreFn") return this.inlineCoreFunctionBinding(expression);
+    if (expression.kind !== "CoreVar" || expression.bindingId === undefined) return undefined;
+    return this.#localLambdas.has(expression.bindingId) ? expression.bindingId : undefined;
+  }
+
+  functionParameterArity(site: FunctionSite, index: number): number {
+    const parameter = site.lambda.params[index];
+    const fact = parameter && this.analysis.patternFacts.byParam.get(parameter);
+    const type = fact ? prune(fact.type) : undefined;
+    return type?.tag === "fn" ? type.params.length : 1;
+  }
+
+  coreType(expression: CoreExpr, label: string): Ty {
+    const id = expression.node?.id;
+    const type = id === undefined ? undefined : this.shared.facts.expressions.get(id)?.type;
+    return requiredObject(type, `missing ${label} type`);
   }
 
   collectOwnedBindings(): void {
@@ -840,7 +949,7 @@ class SliceNormalizer {
     );
     let bodyExprId: number;
     try {
-      bodyExprId = this.expr(site.lambda.body);
+      bodyExprId = this.coreExpr(site.core.arms[0].body);
     } finally {
       this.#currentFunctionId = previousFunctionId;
       this.#currentTemplateId = previousTemplateId;
@@ -888,6 +997,528 @@ class SliceNormalizer {
         spanId: this.span(sourceGroup.declaration),
       });
     }
+  }
+
+  coreExpr(expression: CoreExpr): number {
+    const id = this.expressions.length;
+    this.expressions.push(undefined as unknown as GpuSliceExprDto);
+    let row: GpuSliceExprRow;
+    switch (expression.kind) {
+      case "CoreInt": {
+        const source = this.sourceExpr(expression);
+        if (
+          !Number.isSafeInteger(expression.value) || expression.value < -2_147_483_648 ||
+          (expression.value > 2_147_483_647 &&
+            !(expression.value === 2_147_483_648 && source &&
+              this.#minimumI32MagnitudeLiterals.has(source)))
+        ) {
+          throw this.coreError(
+            "gpu.numeric.range",
+            expression,
+            `GPU integer literal ${expression.value} is outside signed i32 range`,
+          );
+        }
+        row = baseExpr("number", { numberValue: expression.value, numberKind: "i32" });
+        break;
+      }
+      case "CoreFloat":
+        row = baseExpr("number", { numberValue: expression.value, numberKind: "f32" });
+        break;
+      case "CoreBool":
+        row = baseExpr("bool", { boolValue: expression.value });
+        break;
+      case "CoreVoid":
+        row = baseExpr("void");
+        break;
+      case "CoreVar":
+        row = this.coreVarExpr(expression);
+        break;
+      case "CoreTuple":
+        row = baseExpr("tuple", {
+          children: expression.items.map((item) => this.coreExpr(item)),
+        });
+        break;
+      case "CoreRecordAccess":
+        row = this.coreProjectionExpr(expression);
+        break;
+      case "CoreApp":
+        row = this.coreAppExpr(expression, id);
+        break;
+      case "CoreIf":
+        row = baseExpr("if", {
+          children: [
+            this.coreExpr(expression.cond),
+            this.coreExpr(expression.thenExpr),
+            this.coreExpr(expression.elseExpr),
+          ],
+        });
+        break;
+      case "CoreMatch": {
+        const valueExprId = this.coreExpr(expression.value);
+        const armIds = expression.arms.map((arm, index) => {
+          const fact = this.coreMatchArmFact(arm);
+          const patternId = this.addPattern(fact.patternId, "match");
+          const bodyExprId = this.coreExpr(arm.body);
+          const armId = this.matchArms.length;
+          this.matchArms.push({
+            id: armId,
+            patternId,
+            bodyExprId,
+            declaredIndex: index,
+            spanId: this.span(arm),
+          });
+          return armId;
+        });
+        this.matches.push({ expressionId: id, valueExprId, armIds });
+        row = baseExpr("match", {
+          children: [
+            valueExprId,
+            ...armIds.map((armId) => this.matchArms[armId].bodyExprId),
+          ],
+        });
+        break;
+      }
+      case "CoreBlock":
+        row = this.coreBlockExpr(expression, id);
+        break;
+      default:
+        throw this.coreError(
+          "gpu.expression.unsupported",
+          expression,
+          `${expression.kind} is outside the current shader Core slice`,
+        );
+    }
+    const type = this.typeForCoreExpr(expression);
+    if (!type) {
+      throw this.coreError(
+        "gpu.type.unsupported",
+        expression,
+        "missing inferred Core expression type",
+      );
+    }
+    this.expressions[id] = {
+      id,
+      typeId: row.kind === "uniform"
+        ? requiredObject(
+          this.environmentFields.find((field) => field.declaredIndex === row.index),
+          `missing shader environment field ${row.index}`,
+        ).typeId
+        : this.type(type),
+      spanId: this.span(expression),
+      ownerFunctionId: this.#currentFunctionId,
+      ...row,
+    };
+    return id;
+  }
+
+  coreVarExpr(expression: Extract<CoreExpr, { kind: "CoreVar" }>): GpuSliceExprRow {
+    if (expression.ctorId !== undefined) {
+      const constructor = this.addConstructor(expression.ctorId);
+      if (constructor.payloadTypeId >= 0) {
+        throw this.coreError(
+          "gpu.expression.unsupported",
+          expression,
+          "a payload constructor must be called directly",
+        );
+      }
+      return baseExpr("constructor", { constructorId: expression.ctorId });
+    }
+    const bindingId = expression.bindingId;
+    if (bindingId === undefined) {
+      throw this.coreError(
+        "gpu.capture.illegal",
+        expression,
+        `unresolved GPU value ${expression.name}`,
+      );
+    }
+    if (this.#functionByBinding.has(bindingId) || this.#localLambdas.has(bindingId)) {
+      throw this.coreError(
+        "gpu.function.unsupported",
+        expression,
+        "GPU-local functions may appear only as direct callees and may not escape as values",
+      );
+    }
+    if (this.#topLevelLambdas.has(bindingId)) {
+      throw this.coreError(
+        "gpu.function.unsupported",
+        expression,
+        "top-level helpers are outside the selected lexical GPU island; declare the helper inside the @gpu root",
+      );
+    }
+    if (this.#valueBindingOwner.get(bindingId) !== this.#currentTemplateId) {
+      throw this.coreError(
+        "gpu.capture.illegal",
+        expression,
+        `GPU-local functions must receive ${expression.name} as a parameter instead of capturing it`,
+      );
+    }
+    return baseExpr("var", { bindingId });
+  }
+
+  coreProjectionExpr(
+    expression: Extract<CoreExpr, { kind: "CoreRecordAccess" }>,
+  ): GpuSliceExprRow {
+    const path = coreProjectionPath(expression);
+    if (!path || path.root.bindingId === undefined) {
+      throw this.coreError(
+        "gpu.expression.unsupported",
+        expression,
+        "shader projection requires one resolved Core binding",
+      );
+    }
+    if (path.root.bindingId === this.#environmentBindingId) {
+      const field = this.#environmentFieldsByName.get(path.fields[0]);
+      if (!field) {
+        throw this.coreError(
+          "gpu.expression.unsupported",
+          expression,
+          `shader environment has no field ${path.fields[0]}`,
+        );
+      }
+      if (path.fields.length === 1) {
+        if (field.kind !== "uniform") this.#usedResourceFieldIndexes.add(field.declaredIndex);
+        return baseExpr(field.kind === "uniform" ? "uniform" : "resource", {
+          index: field.declaredIndex,
+        });
+      }
+      const lane = vectorLane(path.fields[1]);
+      const fieldType = this.types[field.typeId];
+      if (
+        path.fields.length !== 2 || lane === undefined || fieldType.kind !== "tuple" ||
+        lane >= fieldType.items.length ||
+        fieldType.items.some((item) => this.types[item]?.kind !== "number")
+      ) {
+        throw this.coreError(
+          "gpu.expression.unsupported",
+          expression,
+          `shader environment projection ${path.fields.join(".")} is not a valid vector lane`,
+        );
+      }
+      const childId = this.expressions.length;
+      this.expressions.push({
+        id: childId,
+        typeId: field.typeId,
+        spanId: this.span(expression),
+        ownerFunctionId: this.#currentFunctionId,
+        ...baseExpr("uniform", { index: field.declaredIndex }),
+      });
+      return baseExpr("project", { index: lane, children: [childId] });
+    }
+    const lane = path.fields.length === 1 ? vectorLane(path.fields[0]) : undefined;
+    const binding = this.analysis.patternFacts.patterns.find((fact) =>
+      fact.bindingId === path.root.bindingId
+    );
+    const receiver = binding
+      ? prune(this.typeForPattern(binding.pattern, binding.type))
+      : undefined;
+    if (
+      lane === undefined || !receiver || receiver.tag !== "tuple" ||
+      lane >= receiver.items.length || receiver.items.length < 2 || receiver.items.length > 4 ||
+      receiver.items.some((item) => {
+        const type = prune(item);
+        return type.tag !== "prim" || type.name !== "Number";
+      })
+    ) {
+      throw this.coreError(
+        "gpu.expression.unsupported",
+        expression,
+        `GPU projection ${path.fields.join(".")} is not a supported vector projection`,
+      );
+    }
+    const childId = this.expressions.length;
+    this.expressions.push({
+      id: childId,
+      typeId: this.type(receiver),
+      spanId: this.span(expression),
+      ownerFunctionId: this.#currentFunctionId,
+      ...baseExpr("var", { bindingId: path.root.bindingId }),
+    });
+    return baseExpr("project", { index: lane, children: [childId] });
+  }
+
+  coreAppExpr(
+    expression: Extract<CoreExpr, { kind: "CoreApp" }>,
+    expressionId: number,
+  ): GpuSliceExprRow {
+    const fact = this.coreFact(expression);
+    if (fact?.operatorId) {
+      const args = expression.arg.kind === "CoreTuple" ? expression.arg.items : [expression.arg];
+      if (
+        fact.operatorId === "gpu.operator.negate" && args[0]?.kind === "CoreInt" &&
+        args[0].value === 2_147_483_648
+      ) {
+        const source = this.sourceExpr(args[0]);
+        if (source) this.#minimumI32MagnitudeLiterals.add(source);
+      }
+      return baseExpr(args.length === 2 ? "binary" : "unary", {
+        operatorId: fact.operatorId,
+        children: args.map((argument) => this.coreExpr(argument)),
+      });
+    }
+    if (fact?.gpuResourceCall) return this.coreResourceCallExpr(expression, fact.gpuResourceCall);
+    if (fact?.gpuBuiltin) {
+      const args = coreAuthoredCallArguments(expression);
+      if (
+        [...args, expression].some((item) => {
+          const type = this.typeForCoreExpr(item);
+          return type !== undefined && containsUnresolvedType(type);
+        })
+      ) {
+        throw this.coreError(
+          "gpu.builtin.ambiguous",
+          expression,
+          `Slang builtin ${fact.gpuBuiltin} remains unresolved because no reachable GPU use determines its scalar/vector shape`,
+        );
+      }
+      return baseExpr("builtin", {
+        builtinName: fact.gpuBuiltin,
+        children: args.map((argument) => this.coreExpr(argument)),
+      });
+    }
+    const semanticId = expression.callee.kind === "CoreVar"
+      ? expression.callee.semanticId
+      : undefined;
+    if (semanticId) {
+      const args = coreAuthoredCallArguments(expression);
+      if (semanticId === GPU_SEMANTIC_IDS.i32 || semanticId === GPU_SEMANTIC_IDS.f32) {
+        if (args.length !== 1) {
+          throw this.coreError(
+            "gpu.expression.unsupported",
+            expression,
+            `${semanticId} requires exactly one numeric argument`,
+          );
+        }
+        return baseExpr("convert", {
+          semanticId,
+          children: [this.coreExpr(args[0])],
+        });
+      }
+      if (semanticId !== GPU_SEMANTIC_IDS.color) {
+        throw this.coreError(
+          "gpu.expression.unsupported",
+          expression,
+          `${semanticId} is not callable inside the static shader slice`,
+        );
+      }
+      return baseExpr("copy", {
+        children: args.map((argument) => this.coreExpr(argument)),
+      });
+    }
+    if (expression.callee.kind === "CoreVar" && expression.callee.ctorId !== undefined) {
+      return this.coreConstructorCallExpr(expression, expression.callee.ctorId);
+    }
+    const occurrence = this.sourceExpr(expression);
+    if (!occurrence) {
+      throw this.coreError(
+        "gpu.function.unsupported",
+        expression,
+        "shared Core application has no source occurrence",
+      );
+    }
+    return this.coreApplicationExpr(expression, occurrence, expressionId);
+  }
+
+  coreResourceCallExpr(
+    expression: Extract<CoreExpr, { kind: "CoreApp" }>,
+    resourceCall: NonNullable<ReturnType<SliceNormalizer["coreFact"]>>["gpuResourceCall"],
+  ): GpuSliceExprRow {
+    if (!resourceCall) throw new Error("missing GPU resource call fact");
+    const parts = resourceCall.receiverName.split(".");
+    const path = expression.callee.kind === "CoreRecordAccess"
+      ? coreProjectionPath(expression.callee)
+      : undefined;
+    const field = parts.length === 2 && path?.root.bindingId === this.#environmentBindingId
+      ? this.#environmentFieldsByName.get(parts[1])
+      : undefined;
+    if (!field || field.kind !== "sampled-texture-2d") {
+      throw this.coreError(
+        "gpu.expression.unsupported",
+        expression,
+        "sampled texture calls require a Gpu.SampledTexture2D field from the current shader environment",
+      );
+    }
+    this.#usedResourceFieldIndexes.add(field.declaredIndex);
+    const receiverId = this.expressions.length;
+    this.expressions.push({
+      id: receiverId,
+      typeId: field.typeId,
+      spanId: this.span(expression.callee),
+      ownerFunctionId: this.#currentFunctionId,
+      ...baseExpr("resource", { index: field.declaredIndex }),
+    });
+    return baseExpr("resource-call", {
+      resourceOperation: resourceCall.operation,
+      children: [
+        receiverId,
+        ...coreAuthoredCallArguments(expression).map((argument) => this.coreExpr(argument)),
+      ],
+    });
+  }
+
+  coreConstructorCallExpr(
+    expression: Extract<CoreExpr, { kind: "CoreApp" }>,
+    constructorId: CtorId,
+  ): GpuSliceExprRow {
+    const constructor = this.addConstructor(constructorId);
+    const args = coreAuthoredCallArguments(expression);
+    const children = args.map((argument) => this.coreExpr(argument));
+    const payload = constructor.payloadTypeId < 0
+      ? undefined
+      : this.types[constructor.payloadTypeId];
+    const arity = !payload ? 0 : payload.kind === "tuple" ? payload.items.length : 1;
+    if (payload?.kind === "tuple" && children.length === 1) {
+      const packed = this.expressions[children[0]];
+      const packedType = this.types[packed.typeId];
+      if (packedType.kind !== "tuple" || packedType.items.length !== arity) {
+        throw this.coreError(
+          "gpu.adt.unsupported",
+          expression,
+          "wmslang constructor calls must pass one value per declared payload component",
+        );
+      }
+      return baseExpr("constructor", { constructorId, children });
+    }
+    if (children.length !== arity) {
+      throw this.coreError(
+        "gpu.adt.unsupported",
+        expression,
+        "wmslang constructor calls must pass one value per declared payload component",
+      );
+    }
+    if (payload?.kind === "tuple") {
+      const packedId = this.expressions.length;
+      this.expressions.push({
+        id: packedId,
+        typeId: constructor.payloadTypeId,
+        spanId: this.span(expression),
+        ownerFunctionId: this.#currentFunctionId,
+        ...baseExpr("tuple", { children }),
+      });
+      return baseExpr("constructor", { constructorId, children: [packedId] });
+    }
+    return baseExpr("constructor", { constructorId, children });
+  }
+
+  coreBlockExpr(
+    expression: Extract<CoreExpr, { kind: "CoreBlock" }>,
+    expressionId: number,
+  ): GpuSliceExprRow {
+    const itemIds: number[] = [];
+    expression.items.forEach((item, declaredIndex) => {
+      if (
+        item.kind === "CoreLet" &&
+        item.bindings.every((binding) =>
+          binding.value.kind === "CoreFn" && binding.pattern.kind === "CorePVar" &&
+          binding.pattern.bindingId !== undefined &&
+          this.#localLambdas.has(binding.pattern.bindingId)
+        )
+      ) return;
+      if (isCoreExpression(item)) {
+        const childId = this.coreExpr(item);
+        const itemId = this.blockItems.length;
+        this.blockItems.push({
+          id: itemId,
+          blockExprId: expressionId,
+          declaredIndex,
+          kind: "expression",
+          expressionId: childId,
+          letId: -1,
+          spanId: this.span(item),
+        });
+        itemIds.push(itemId);
+        return;
+      }
+      if (item.kind !== "CoreLet" || item.recursive || item.bindings.length !== 1) {
+        throw this.coreError(
+          "gpu.expression.unsupported",
+          expression,
+          "shader blocks accept one non-recursive immutable binding per let declaration",
+        );
+      }
+      const binding = item.bindings[0];
+      const source = binding.node?.id === undefined
+        ? undefined
+        : this.#bindingsByNodeId.get(binding.node.id);
+      const fact = source && this.analysis.patternFacts.byBinding.get(source);
+      if (!fact) {
+        throw this.coreError(
+          "gpu.pattern.unsupported",
+          expression,
+          "Core let binding is missing resolved pattern facts",
+        );
+      }
+      const patternId = this.addPattern(fact.patternId, "let");
+      const valueExprId = this.coreExpr(binding.value);
+      const letId = this.lets.length;
+      this.lets.push({
+        id: letId,
+        patternId,
+        valueExprId,
+        declaredIndex: fact.declaredIndex,
+        spanId: this.span(binding),
+      });
+      const itemId = this.blockItems.length;
+      this.blockItems.push({
+        id: itemId,
+        blockExprId: expressionId,
+        declaredIndex,
+        kind: "let",
+        expressionId: -1,
+        letId,
+        spanId: this.span(item),
+      });
+      itemIds.push(itemId);
+    });
+    const resultExprId = this.coreExpr(expression.result);
+    this.blocks.push({ expressionId, itemIds, resultExprId });
+    const children = itemIds.map((itemId) => {
+      const item = this.blockItems[itemId];
+      return item.kind === "expression"
+        ? item.expressionId
+        : requiredObject(this.lets[item.letId], "missing Core let row").valueExprId;
+    });
+    return baseExpr("block", { children: [...children, resultExprId] });
+  }
+
+  coreFact(expression: CoreExpr) {
+    return expression.node?.id === undefined
+      ? undefined
+      : this.shared.facts.expressions.get(expression.node.id);
+  }
+
+  sourceExpr(expression: CoreExpr): Expr | undefined {
+    return expression.node?.id === undefined
+      ? undefined
+      : this.#expressionsByNodeId.get(expression.node.id);
+  }
+
+  typeForCoreExpr(expression: CoreExpr): Ty | undefined {
+    const source = this.sourceExpr(expression);
+    return (source ? this.#currentSpecialization?.occurrenceTypes.get(source) : undefined) ??
+      this.coreFact(expression)?.type;
+  }
+
+  coreMatchArmFact(
+    arm: import("../core/ast.ts").CoreMatchArm,
+  ): ResolvedMatchArmFact {
+    const id = arm.node?.id;
+    const fact = id === undefined
+      ? undefined
+      : [...this.analysis.patternFacts.byMatchArm].find(([source]) => source.node?.id === id)?.[1];
+    return requiredObject(fact, "missing resolved Core match-arm fact");
+  }
+
+  coreError(
+    code: GpuSliceNormalizationError["code"],
+    expression: CoreExpr,
+    message: string,
+  ): GpuSliceNormalizationError {
+    return new GpuSliceNormalizationError(
+      code,
+      this.path,
+      this.sourceExpr(expression) ?? this.root.lambda,
+      message,
+    );
   }
 
   expr(expression: Expr): number {
@@ -1255,12 +1886,41 @@ class SliceNormalizer {
     if (constructorId >= 0) {
       const constructor = this.addConstructor(constructorId as CtorId);
       const children = expression.args.map((argument) => this.expr(argument));
-      if ((constructor.payloadTypeId < 0 ? 0 : 1) !== children.length) {
+      const payload = constructor.payloadTypeId < 0
+        ? undefined
+        : this.types[constructor.payloadTypeId];
+      const arity = !payload ? 0 : payload.kind === "tuple" ? payload.items.length : 1;
+      if (payload?.kind === "tuple" && children.length === 1) {
+        // Grouped form `Hit((a, b))`: the single argument already carries the
+        // payload tuple; reuse it directly when its width matches.
+        const packed = this.expressions[children[0]];
+        const packedType = this.types[packed.typeId];
+        if (packedType.kind !== "tuple" || packedType.items.length !== arity) {
+          throw this.error(
+            "gpu.adt.unsupported",
+            expression,
+            "wmslang constructor calls must pass one value per declared payload component",
+          );
+        }
+        return baseExpr("constructor", { constructorId, children });
+      }
+      if (children.length !== arity) {
         throw this.error(
           "gpu.adt.unsupported",
           expression,
-          "v1 constructors are nullary or carry one Number payload",
+          "wmslang constructor calls must pass one value per declared payload component",
         );
+      }
+      if (payload?.kind === "tuple") {
+        const packedId = this.expressions.length;
+        this.expressions.push({
+          id: packedId,
+          typeId: constructor.payloadTypeId,
+          spanId: this.span(expression),
+          ownerFunctionId: this.#currentFunctionId,
+          ...baseExpr("tuple", { children }),
+        });
+        return baseExpr("constructor", { constructorId, children: [packedId] });
       }
       return baseExpr("constructor", { constructorId, children });
     }
@@ -1314,6 +1974,67 @@ class SliceNormalizer {
     });
   }
 
+  coreApplicationExpr(
+    application: Extract<CoreExpr, { kind: "CoreApp" }>,
+    occurrence: Expr,
+    expressionId: number,
+  ): GpuSliceExprRow {
+    const bindingId = application.callee.kind === "CoreVar"
+      ? application.callee.bindingId
+      : application.callee.kind === "CoreFn"
+      ? this.inlineCoreFunctionBinding(application.callee)
+      : undefined;
+    const targetFunctionId = this.#currentSpecialization?.callTargets.get(occurrence);
+    if (targetFunctionId === undefined || bindingId === undefined) {
+      const topLevel = bindingId === undefined ? undefined : this.#topLevelLambdas.get(bindingId);
+      throw this.error(
+        "gpu.function.unsupported",
+        this.sourceExpr(application.callee) ?? occurrence,
+        topLevel
+          ? "top-level helpers are outside the selected lexical GPU island; declare the helper inside the @gpu root"
+          : "GPU calls require a first-order helper declared inside the selected @gpu root",
+      );
+    }
+    const targetSpecialization = requiredObject(
+      this.#specializationById.get(targetFunctionId),
+      "missing target specialization",
+    );
+    const targetSite = requiredObject(
+      this.#functionSites.find((site) =>
+        site.bindingId === targetSpecialization.template.bindingId
+      ),
+      "missing shared Core function site",
+    );
+    const args = coreApplicationArguments(application.arg, targetSite.lambda.params.length);
+    const recursion = this.analysis.recursionFacts.byExpression.get(occurrence);
+    if (recursion) {
+      const groupId = requiredObject(
+        this.#recursionGroupByFunctionId.get(targetFunctionId),
+        "missing cloned recursion group",
+      );
+      this.recursiveReferences.push({
+        expressionId,
+        groupId,
+        targetFunctionId,
+        relation: recursion.relation,
+        invocation: recursion.invocation,
+        spanId: this.span(occurrence),
+      });
+    }
+    return baseExpr("call", {
+      bindingId: requiredObject(
+        this.#functionBindingById.get(targetFunctionId),
+        "missing specialized call binding",
+      ),
+      functionId: targetFunctionId,
+      children: args.flatMap((argument, index) =>
+        targetSpecialization.staticFunctionParams[index] === undefined
+          ? [this.coreExpr(argument)]
+          : []
+      ),
+    });
+  }
+
   blockExpr(
     expression: Extract<Expr, { kind: "Block" }>,
     expressionId: number,
@@ -1321,9 +2042,11 @@ class SliceNormalizer {
     const itemIds: number[] = [];
     expression.items.forEach((item, declaredIndex) => {
       if (isLocalFunctionDeclaration(item, this.bindings, this.#localLambdas)) return;
-      const itemId = this.blockItems.length;
       if (!isDecl(item)) {
+        // Normalize first: the value may contain nested blocks whose items
+        // must take their ids before this outer item.
         const childId = this.expr(item);
+        const itemId = this.blockItems.length;
         this.blockItems.push({
           id: itemId,
           blockExprId: expressionId,
@@ -1358,6 +2081,7 @@ class SliceNormalizer {
         declaredIndex: fact.declaredIndex,
         spanId: this.span(binding),
       });
+      const itemId = this.blockItems.length;
       this.blockItems.push({
         id: itemId,
         blockExprId: expressionId,
@@ -1439,7 +2163,6 @@ class SliceNormalizer {
         )
       );
       if (
-        children.length <= 1 &&
         children.every((child) => child.kind === "wildcard" || child.kind === "binding")
       ) return "constructor";
     }
@@ -1527,10 +2250,7 @@ class SliceNormalizer {
       throw this.adtError(fact.declaration, "v1 ADTs must be declared beside the selected root");
     }
     if (fact.declaration.params.length !== 0 || fact.declaration.alias) {
-      throw this.adtError(fact.declaration, "v1 accepts one non-generic variant ADT");
-    }
-    if (this.adts.length !== 0) {
-      throw this.adtError(fact.declaration, "v1 accepts only one reachable ADT declaration");
+      throw this.adtError(fact.declaration, "wmslang accepts only non-generic variant ADTs");
     }
     const constructors = this.analysis.nominalFacts.constructors.filter((item) =>
       item.typeNameId === fact.id
@@ -1565,16 +2285,21 @@ class SliceNormalizer {
   addConstructorFact(fact: NominalConstructorFact): GpuSliceConstructorDto {
     const existing = this.#constructorsById.get(fact.id);
     if (existing) return existing;
+    // Mirror host inference (expandCallArg): one tuple argument expands to its
+    // items, so `Hit<Number, Bool>` and `Hit<(Number, Bool)>` share one arity.
+    const expanded = fact.declaration.args.length === 1 &&
+        fact.declaration.args[0].kind === "TTuple"
+      ? fact.declaration.args[0].items
+      : fact.declaration.args;
+    const items = expanded.map((item) => this.payloadType(item, fact.declaration));
     let payloadTypeId = -1;
-    if (fact.declaration.args.length > 1) {
-      throw this.adtError(fact.declaration, "v1 constructors carry at most one Number payload");
-    }
-    if (fact.declaration.args.length === 1) {
-      const payload = fact.declaration.args[0];
-      if (payload.kind !== "TName" || payload.name !== "Number" || payload.args.length !== 0) {
-        throw this.adtError(fact.declaration, "v1 constructor payloads must be Number");
-      }
-      payloadTypeId = this.internType("number", () => baseType("number"));
+    if (items.length === 1) {
+      payloadTypeId = items[0];
+    } else if (items.length > 1) {
+      payloadTypeId = this.internType(`tuple:${items.join(",")}`, () => ({
+        ...baseType("tuple"),
+        items,
+      }));
     }
     const row: GpuSliceConstructorDto = {
       id: fact.id,
@@ -1587,6 +2312,25 @@ class SliceNormalizer {
     this.#constructorsById.set(row.id, row);
     this.constructors.push(row);
     return row;
+  }
+
+  payloadType(syntax: TypeExpr, owner: Decl | CtorDecl): number {
+    if (syntax.kind === "TName" && syntax.args.length === 0) {
+      if (syntax.name === "Number") return this.internType("number", () => baseType("number"));
+      if (syntax.name === "Bool") return this.internType("bool", () => baseType("bool"));
+    }
+    if (syntax.kind === "TTuple" && syntax.items.length >= 1) {
+      const items = syntax.items.map((item) => this.payloadType(item, owner));
+      if (items.length === 1) return items[0];
+      return this.internType(`tuple:${items.join(",")}`, () => ({
+        ...baseType("tuple"),
+        items,
+      }));
+    }
+    throw this.adtError(
+      owner,
+      "wmslang constructor payloads must be Number, Bool, or tuples of payload types",
+    );
   }
 
   internType(key: string, create: () => Omit<GpuSliceTypeDto, "id">): number {
@@ -1902,6 +2646,118 @@ function isLocalFunctionDeclaration(
   if (binding.pattern.kind !== "PVar" || binding.value.kind !== "Lambda") return false;
   const bindingId = bindings.binders.get(binding.pattern);
   return bindingId !== undefined && localLambdas.has(bindingId);
+}
+
+function coreApplicationArguments(argument: CoreExpr, arity?: number): CoreExpr[] {
+  if (arity === 0 && argument.kind === "CoreVoid") return [];
+  return arity !== 1 && argument.kind === "CoreTuple" ? argument.items : [argument];
+}
+
+function coreAuthoredCallArguments(
+  application: Extract<CoreExpr, { kind: "CoreApp" }>,
+): CoreExpr[] {
+  const sourceArity = application.node?.id === application.arg.node?.id &&
+      application.arg.kind === "CoreTuple"
+    ? application.arg.items.length
+    : 1;
+  return coreApplicationArguments(application.arg, sourceArity);
+}
+
+function coreProjectionPath(
+  expression: Extract<CoreExpr, { kind: "CoreRecordAccess" }>,
+): { root: Extract<CoreExpr, { kind: "CoreVar" }>; fields: string[] } | undefined {
+  const fields: string[] = [];
+  let current: CoreExpr = expression;
+  while (current.kind === "CoreRecordAccess") {
+    fields.unshift(current.field);
+    current = current.record;
+  }
+  return current.kind === "CoreVar" ? { root: current, fields } : undefined;
+}
+
+function vectorLane(field: string): number | undefined {
+  return ({ x: 0, y: 1, z: 2, w: 3 } as const)[field as "x" | "y" | "z" | "w"];
+}
+
+function walkCoreModule(
+  module: SharedCoreModule["module"],
+  visit: (expression: CoreExpr) => void,
+): void {
+  for (const declaration of module.decls) {
+    if (declaration.kind !== "CoreLet") continue;
+    declaration.bindings.forEach((binding) => walkCoreExpr(binding.value, visit));
+  }
+}
+
+function walkCoreExpr(
+  expression: CoreExpr,
+  visit: (expression: CoreExpr) => void,
+  descendFunctions = true,
+): void {
+  visit(expression);
+  switch (expression.kind) {
+    case "CoreTuple":
+    case "CoreJsonArray":
+      expression.items.forEach((item) => walkCoreExpr(item, visit, descendFunctions));
+      return;
+    case "CoreRecord":
+      expression.fields.forEach((field) => walkCoreExpr(field.value, visit, descendFunctions));
+      return;
+    case "CoreRecordAccess":
+      walkCoreExpr(expression.record, visit, descendFunctions);
+      return;
+    case "CoreJsonObject":
+      expression.fields.forEach((field) => walkCoreExpr(field.value, visit, descendFunctions));
+      return;
+    case "CoreShaderRef":
+      if (expression.environment) walkCoreExpr(expression.environment, visit, descendFunctions);
+      return;
+    case "CoreFn":
+      if (descendFunctions) {
+        expression.arms.forEach((arm) => walkCoreExpr(arm.body, visit, descendFunctions));
+      }
+      return;
+    case "CoreApp":
+      walkCoreExpr(expression.callee, visit, descendFunctions);
+      walkCoreExpr(expression.arg, visit, descendFunctions);
+      return;
+    case "CoreIf":
+      walkCoreExpr(expression.cond, visit, descendFunctions);
+      walkCoreExpr(expression.thenExpr, visit, descendFunctions);
+      walkCoreExpr(expression.elseExpr, visit, descendFunctions);
+      return;
+    case "CoreMatch":
+      walkCoreExpr(expression.value, visit, descendFunctions);
+      expression.arms.forEach((arm) => walkCoreExpr(arm.body, visit, descendFunctions));
+      return;
+    case "CorePanic":
+      walkCoreExpr(expression.message, visit, descendFunctions);
+      return;
+    case "CoreBlock":
+      expression.items.forEach((item) => {
+        if (item.kind === "CoreLet") {
+          item.bindings.forEach((binding) => {
+            if (descendFunctions || binding.value.kind !== "CoreFn") {
+              walkCoreExpr(binding.value, visit, descendFunctions);
+            }
+          });
+        } else if (isCoreExpression(item)) {
+          walkCoreExpr(item, visit, descendFunctions);
+        }
+      });
+      walkCoreExpr(expression.result, visit, descendFunctions);
+      return;
+    default:
+      return;
+  }
+}
+
+function isCoreExpression(value: CoreDecl | CoreExpr): value is CoreExpr {
+  if (value.kind !== "CoreRecord") {
+    return value.kind !== "CoreImport" && value.kind !== "CoreJsImport" &&
+      value.kind !== "CoreLet" && value.kind !== "CoreType";
+  }
+  return value.fields.every((field) => "kind" in field);
 }
 
 function isDecl(value: Decl | Expr): value is Decl {

@@ -4,7 +4,6 @@ import type {
   Decl,
   Expr,
   JsonObjectField,
-  Located,
   MatchArm,
   Module,
   Param,
@@ -32,6 +31,7 @@ import {
 import type { MaterializedGpuArtifacts } from "../gpu_artifact.ts";
 import { moduleId } from "../module_id.ts";
 import { carrierInfo } from "../infer/carriers.ts";
+import { pipeInvocationPlan } from "../pipe_elaboration.ts";
 import { prune, show, type Ty, type TypeEnv, typeInfoByName } from "../types.ts";
 import type {
   CoreBinding,
@@ -48,6 +48,7 @@ import type {
 } from "./ast.ts";
 
 type CoreLoweringContext = {
+  target: "shared" | "host";
   types: Map<Expr, Ty>;
   namespaceValues: ReadonlyMap<Expr, string>;
   typeEnv: TypeEnv;
@@ -109,6 +110,7 @@ export function coreFromSurface(
   }
   const context = analysis || resolvedBindings || resolvedBoundary || resolvedNominalFacts
     ? {
+      target: "host" as const,
       types: analysis?.types ?? new Map<Expr, Ty>(),
       namespaceValues: analysis?.facts.namespaceValues ?? new Map<Expr, string>(),
       typeEnv: analysis?.typeEnv ?? new Map(),
@@ -131,13 +133,62 @@ export function coreFromSurface(
       carrierModules: new Map<string, string>(),
     }
     : undefined;
+  return lowerCoreModule(module, context);
+}
+
+/**
+ * Elaborate surface Workman into the backend-neutral Core shared by host,
+ * shader, and future native backends.
+ *
+ * Unlike {@link coreFromSurface}, this stage does not erase GPU declarations,
+ * materialize shader references, or introduce host carrier machinery. Backend
+ * policy belongs in a later lowering from this shared representation.
+ */
+export function sharedCoreFromSurface(
+  module: Module,
+  analysis: InferResult,
+  bindings?: BindingFacts,
+  ids?: CompilerIdAllocator,
+  nominalFacts?: NominalFacts,
+  sourceContext: { path: string; source: string } = { path: "<source>", source: "" },
+): CoreModule {
+  const resolvedIds = ids ?? new CompilerIdAllocator();
+  const resolvedBindings = bindings ?? resolveModuleBindingFacts(module, resolvedIds);
+  const resolvedNominalFacts = nominalFacts ??
+    resolveModuleNominalFacts(module, analysis, resolvedIds);
+  const context: CoreLoweringContext = {
+    target: "shared",
+    types: analysis.types,
+    namespaceValues: analysis.facts.namespaceValues,
+    typeEnv: analysis.typeEnv,
+    bindings: resolvedBindings,
+    ids: resolvedIds,
+    gpuOnlyBindings: new Set(),
+    gpuOnlyTypeNames: new Set(),
+    selectedFragmentCalls: new Set(),
+    fragmentEnvironmentArguments: new Map(),
+    materializedGpuArtifacts: new Map(),
+    gpuSemanticIds: new Map(
+      [...analysis.facts.expressions].flatMap(([expr, fact]) =>
+        fact.origin?.semanticId ? [[expr, fact.origin.semanticId] as const] : []
+      ),
+    ),
+    nominalFacts: resolvedNominalFacts,
+    sourcePath: sourceContext.path,
+    source: sourceContext.source,
+    carrierModules: new Map(),
+  };
+  return lowerCoreModule(module, context);
+}
+
+function lowerCoreModule(module: Module, context?: CoreLoweringContext): CoreModule {
   const decls = module.decls.flatMap((decl) => {
     const lowered = coreDeclFromSurface(decl, context);
     return lowered ? [lowered] : [];
   });
   return {
     kind: "CoreModule",
-    decls: [...carrierImportDecls(context), ...decls],
+    decls: [...(context?.target === "shared" ? [] : carrierImportDecls(context)), ...decls],
     node: module.node,
   };
 }
@@ -197,7 +248,7 @@ function coreDeclFromSurface(
       };
     case "LetDecl": {
       const bindings = decl.bindings
-        .filter((binding) => !isGpuOnlyBinding(binding, context))
+        .filter((binding) => context?.target === "shared" || !isGpuOnlyBinding(binding, context))
         .map((binding) => coreBindingFromSurface(binding, context));
       if (bindings.length === 0) return undefined;
       return {
@@ -210,7 +261,7 @@ function coreDeclFromSurface(
     }
     case "TypeDecl":
       if (
-        context?.gpuOnlyTypeNames.has(
+        context?.target !== "shared" && context?.gpuOnlyTypeNames.has(
           context.nominalFacts?.typeDeclarations.get(decl) as TypeNameId,
         )
       ) return undefined;
@@ -292,7 +343,13 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       }
       const semanticId = context?.gpuSemanticIds.get(expr);
       if (semanticId) {
+        if (context?.target === "shared") {
+          return { kind: "CoreVar", name: expr.name, semanticId, node: expr.node };
+        }
         if (
+          semanticId === GPU_SEMANTIC_IDS.slang ||
+          semanticId === GPU_SEMANTIC_IDS.glsl ||
+          semanticId === GPU_SEMANTIC_IDS.callableName ||
           semanticId === GPU_SEMANTIC_IDS.wgsl ||
           semanticId === GPU_SEMANTIC_IDS.shaderSource ||
           semanticId === GPU_SEMANTIC_IDS.vertexEntryPoint ||
@@ -372,13 +429,19 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
     case "FfiBindingCall":
       throw new Error("unresolved FFI binding call reached Core elaboration");
     case "Lambda":
-      if (expr.directives.some((directive) => directive.name === "gpu")) {
+      if (
+        context?.target !== "shared" &&
+        expr.directives.some((directive) => directive.name === "gpu")
+      ) {
         throw new Error(
           "GPU-only lambda reached host Core lowering before artifact materialization",
         );
       }
       return {
         kind: "CoreFn",
+        ...(expr.directives.length > 0
+          ? { directives: expr.directives.map((directive) => directive.name) }
+          : {}),
         arms: [{
           pattern: coreLambdaParam(expr.params, context),
           body: coreExprFromSurface(expr.body, context),
@@ -462,7 +525,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       return coreExprFromSurface(expr.value, context);
     case "Binary":
       {
-        const binaryCarrier = context &&
+        const binaryCarrier = context && context.target !== "shared" &&
           (loweringCarrier(context.types.get(expr.left), context) ??
             loweringCarrier(context.types.get(expr.right), context));
         if (binaryCarrier) return carrierLiftedBinary(expr, binaryCarrier, context!);
@@ -482,7 +545,8 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       };
     case "Unary":
       {
-        const unaryCarrier = context && loweringCarrier(context.types.get(expr.value), context);
+        const unaryCarrier = context && context.target !== "shared" &&
+          loweringCarrier(context.types.get(expr.value), context);
         if (unaryCarrier) return carrierLiftedUnary(expr, unaryCarrier, context!);
       }
       return {
@@ -492,7 +556,7 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
         node: expr.node,
       };
     case "Pipe":
-      return desugarPipe(expr, context);
+      return corePipeFromSurface(expr, context);
   }
 }
 
@@ -570,7 +634,9 @@ function corePatternFromSurface(
     case "PPinned": {
       const id = context?.bindings?.references.get(pattern);
       const structureId = context?.bindings?.structureReferences.get(pattern);
-      if (id !== undefined && context?.gpuOnlyBindings.has(id)) {
+      if (
+        context?.target !== "shared" && id !== undefined && context?.gpuOnlyBindings.has(id)
+      ) {
         throw diagnosticError(
           new Error(gpuOnlyHostReferenceMessage(pattern.name)),
           pattern.node,
@@ -710,49 +776,17 @@ function coreCtorPatternPayload(
   };
 }
 
-function desugarPipe(
-  pipe: Located<{ kind: "Pipe"; left: Expr; right: Expr }>,
+function corePipeFromSurface(
+  pipe: Extract<Expr, { kind: "Pipe" }>,
   context?: CoreLoweringContext,
 ): CoreExpr {
-  const left = coreExprFromSurface(pipe.left, context);
-  const right = pipe.right;
-
-  if (right.kind === "Call" && right.args.length > 0 && right.callee.kind === "Call") {
-    // A nested application produces a function. Apply the piped value to that
-    // result: task :> via Task callback -> (via Task callback)(task).
-    return {
-      kind: "CoreApp",
-      callee: coreExprFromSurface(right, context),
-      arg: left,
-      node: pipe.node,
-    };
-  } else if (right.kind === "Call") {
-    // e.g., 10 :> add(5) -> add(10, 5)
-    const callee = coreExprFromSurface(right.callee, context);
-    const args = [pipe.left, ...right.args];
-    return {
-      kind: "CoreApp",
-      callee,
-      arg: coreCallArg(args, pipe.node, context),
-      node: pipe.node,
-    };
-  } else if (right.kind === "Var") {
-    // e.g., 42 :> double -> double(42)
-    return {
-      kind: "CoreApp",
-      callee: coreExprFromSurface(right, context),
-      arg: left,
-      node: pipe.node,
-    };
-  } else {
-    // For other cases, treat right as a function and call it with left
-    return {
-      kind: "CoreApp",
-      callee: coreExprFromSurface(right, context),
-      arg: left,
-      node: pipe.node,
-    };
-  }
+  const invocation = pipeInvocationPlan(pipe);
+  return {
+    kind: "CoreApp",
+    callee: coreExprFromSurface(invocation.callee, context),
+    arg: coreCallArg([...invocation.args], pipe.node, context),
+    node: pipe.node,
+  };
 }
 
 /**

@@ -115,7 +115,7 @@ Deno.test("constrained dynamic receiver calls materialize with inferred result t
     };
 
     let pollOnce = (sdl, eventPtr) => {
-      match(sdl.symbols.SDL_PollEvent(eventPtr)) {
+      match(sdl :> .symbols.SDL_PollEvent(eventPtr)) {
         Ok(1) => { true },
         Ok(_) => { false },
         Err(_) => { false }
@@ -151,7 +151,7 @@ Deno.test("deep reflected generic calls expose concrete result members", async (
       SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
     });
     let use = match(lib) {
-      Ok(sdl) => { sdl.symbols.SDL_PollEvent(Panic("ptr")) },
+      Ok(sdl) => { sdl :> .symbols.SDL_PollEvent(Panic("ptr")) },
       Err(e) => { Err(e) }
     };
   `;
@@ -177,7 +177,7 @@ Deno.test("deep reflected receiver arity errors point at the source call", async
           SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
         });
         let use = match(lib) {
-          Ok(sdl) => { sdl.symbols.SDL_PollEvent() :> Result.map(expectNumber) },
+          Ok(sdl) => { sdl :> .symbols.SDL_PollEvent() :> Result.map(expectNumber) },
           Err(e) => { Err(e) }
         };
       `),
@@ -608,7 +608,7 @@ Deno.test("Array.from monomorphizes a reflected iterable without a typed shim", 
     let paths = entries :> Result.debug;
     let first = paths :> .at(0) :> Result.debug;
     let path = match(first) {
-      Some(entry) => { entry.path :> Result.debug },
+      Some(entry) => { entry :> .path :> Result.debug },
       None => { "" }
     };
   `);
@@ -640,7 +640,7 @@ Deno.test("existing JS members with unsupported reflected signatures say so", as
       checkSource(`
         from js.module("./tests/fixtures/ffi_iterable.ts") import { makeIterator };
         let iterator = makeIterator() :> Result.debug;
-        let next = iterator.next();
+        let next = iterator :> .next();
       `),
     Error,
     "IteratorResult<FfiEntry, any>",

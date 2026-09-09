@@ -31,6 +31,7 @@ record SliceEmitContext = {
   blocks: List<GpuSliceLoweredBlockDto>,
   cases: List<GpuSliceLoweredCaseDto>,
   recursiveFunctionId: Number,
+  portable: Bool,
 };
 
 let text = (value) => { Text.of(value) };
@@ -265,7 +266,7 @@ let rec emitResourceDeclarations = match(items, context, output) => {
 };
 
 let emitEnvironmentDeclaration = (context: SliceEmitContext) => {
-  if (numberEqual(context.input.root.environmentId, -1)) {
+  if (context.portable || numberEqual(context.input.root.environmentId, -1)) {
     ""
   } else {
     let fields: List<GpuSliceEnvironmentFieldDto> = context.environmentFields;
@@ -277,6 +278,26 @@ let emitEnvironmentDeclaration = (context: SliceEmitContext) => {
       ""
     };
     uniformDeclaration ++ emitResourceDeclarations(fields, context, "")
+  }
+};
+
+let rec emitPortableEnvironmentAccessors = match(items, context, output) => {
+  ([], Var(_context), Var(output)) => { output },
+  ([Var(field), ..rest], Var(context), Var(output)) => {
+    let belongsToRoot = numberEqual(field.environmentId, context.input.root.environmentId);
+    let next = if (!belongsToRoot) {
+      output
+    } else {
+      let name = if (field.kind == "uniform") {
+        "WM_UNIFORM_" ++ text(field.declaredIndex)
+      } else {
+        "WM_RESOURCE_" ++ text(field.binding)
+      };
+      output ++ "#ifndef " ++ name ++ "\n" ++
+        "__extern_cpp " ++ typeName(field.typeId, context) ++ " " ++ name ++ "();\n" ++
+        "#endif\n"
+    };
+    emitPortableEnvironmentAccessors(rest, context, next)
   }
 };
 
@@ -339,6 +360,43 @@ let rec emitTupleDeclarations = match(types, context, output) => {
     emitTupleDeclarations(rest, context, next)
   }
 };
+let rec zeroArgs = match(items, context, index, output) => {
+  ([], Var(_context), Var(_index), Var(output)) => { output },
+  ([Var(typeId), ..rest], Var(context), Var(index), Var(output)) => {
+    let next = if (numberEqual(index, 0)) {
+      zeroValue(typeId, context)
+    } else {
+      output ++ ", " ++ zeroValue(typeId, context)
+    };
+    zeroArgs(rest, context, index + 1, next)
+  }
+}
+
+and zeroValue = (typeId, context: SliceEmitContext) => {
+  let gpuType = findType(context.types, typeId);
+  if (gpuType.kind == "f32") {
+    "float(0)"
+  } else {
+    if (gpuType.kind == "i32") {
+      "int(0)"
+    } else {
+      if (gpuType.kind == "bool") {
+        "false"
+      } else {
+        if (gpuType.kind == "vector") {
+          vectorName(gpuType, context) ++ "(0)"
+        } else {
+          if (gpuType.kind == "tuple") {
+            tupleFactoryName(typeId) ++ "(" ++
+              zeroArgs(Js.Array.toList(gpuType.items), context, 0, "") ++ ")"
+          } else {
+            Panic("nested ADT payloads are outside the wmslang slice")
+          }
+        }
+      }
+    }
+  }
+};
 
 let rec emitLayoutFields = match(fieldIds, context, output) => {
   ([], Var(context), Var(output)) => { output },
@@ -352,14 +410,26 @@ let rec emitLayoutFields = match(fieldIds, context, output) => {
   }
 };
 
-let rec emitConstructorFieldAssignments = match(fields, constructorId, payloadName, output) => {
-  ([], Var(constructorId), Var(payloadName), Var(output)) => { output },
-  ([Var(field), ..rest], Var(constructorId), Var(payloadName), Var(output)) => {
-    let value = if (numberEqual(field.constructorId, constructorId)) { payloadName } else { "float(0)" };
+let rec fieldsForEmit = match(fieldIds, context) => {
+  ([], Var(_context)) => { [] },
+  ([Var(fieldId), ..rest], Var(context)) => {
+    [findField(context.fields, fieldId), ..fieldsForEmit(rest, context)]
+  }
+};
+
+let rec emitConstructorFieldAssignments = match(fields, constructorId, payloadName, context, output) => {
+  ([], Var(_constructorId), Var(_payloadName), Var(_context), Var(output)) => { output },
+  ([Var(field), ..rest], Var(constructorId), Var(payloadName), Var(context), Var(output)) => {
+    let value = if (numberEqual(field.constructorId, constructorId)) {
+      payloadName
+    } else {
+      zeroValue(field.typeId, context)
+    };
     emitConstructorFieldAssignments(
       rest,
       constructorId,
       payloadName,
+      context,
       output ++ "  value." ++ payloadFieldName(field.id) ++ " = " ++ value ++ ";\n"
     )
   }
@@ -375,11 +445,15 @@ let emitConstructorDeclaration = (
   } else {
     typeName(constructor.payloadTypeId, context) ++ " payload"
   };
-  let payloadName = if (numberEqual(constructor.payloadTypeId, -1)) { "float(0)" } else { "payload" };
+  let payloadName = if (numberEqual(constructor.payloadTypeId, -1)) {
+    "float(0)"
+  } else {
+    "payload"
+  };
   layoutName(layout.id) ++ " " ++ constructorName(constructor.id) ++ "(" ++ parameter ++ ") {\n" ++
     "  " ++ layoutName(layout.id) ++ " value;\n" ++
     "  value.tag = " ++ text(constructor.tag) ++ ";\n" ++
-    emitConstructorFieldAssignments(context.fields, constructor.id, payloadName, "") ++
+    emitConstructorFieldAssignments(fieldsForEmit(Js.Array.toList(layout.fieldIds), context), constructor.id, payloadName, context, "") ++
     "  return value;\n}\n\n"
 };
 
@@ -475,6 +549,21 @@ let emitResourceCall = (operation, args, context: SliceEmitContext) => {
   }
 };
 
+let emitPayload = (operation, args, context: SliceEmitContext) => {
+  let base = emitArgs(args, context, "") ++ "." ++ payloadFieldName(operation.fieldId);
+  if (operation.index < 0) {
+    base
+  } else {
+    let field = findField(context.fields, operation.fieldId);
+    let fieldType = findType(context.types, field.typeId);
+    base ++ (if (fieldType.kind == "vector") {
+      "." ++ vectorLaneName(operation.index)
+    } else {
+      "." ++ tupleFieldName(operation.index)
+    })
+  }
+};
+
 let emitProjection = (operation, args, context: SliceEmitContext) => {
   match(args) {
     [Var(atomId)] => {
@@ -524,9 +613,17 @@ let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitC
         context.input.root.environmentId,
         operation.index
       );
-      let access = "wm_uniforms." ++ uniformFieldName(field.declaredIndex);
+      let access = if (context.portable) {
+        "WM_UNIFORM_" ++ text(field.declaredIndex) ++ "()"
+      } else {
+        "wm_uniforms." ++ uniformFieldName(field.declaredIndex)
+      };
       let gpuType = findType(context.types, field.typeId);
-      if (gpuType.kind == "bool") { "(" ++ access ++ " != 0)" } else { access }
+      if (gpuType.kind == "bool" && !context.portable) {
+        "(" ++ access ++ " != 0)"
+      } else {
+        access
+      }
     },
     "resource" => {
       let field = findEnvironmentField(
@@ -534,7 +631,11 @@ let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitC
         context.input.root.environmentId,
         operation.index
       );
-      resourceFieldName(field.binding)
+      if (context.portable) {
+        "WM_RESOURCE_" ++ text(field.binding) ++ "()"
+      } else {
+        resourceFieldName(field.binding)
+      }
     },
     "resource-call" => { emitResourceCall(operation, args, context) },
     "copy" => { emitArgs(args, context, "") },
@@ -558,7 +659,7 @@ let emitOperation = (operation: GpuSliceLoweredOperationDto, context: SliceEmitC
     "construct" => {
       constructorName(operation.constructorId) ++ "(" ++ emitArgs(args, context, "") ++ ")"
     },
-    "payload" => { emitArgs(args, context, "") ++ "." ++ payloadFieldName(operation.fieldId) },
+    "payload" => { emitPayload(operation, args, context) },
     "binary" => { emitOperatorOperation(operation, args, context) },
     "unary" => { emitOperatorOperation(operation, args, context) },
     _ => { Panic("unsupported Slang-emission operation") }
@@ -690,6 +791,7 @@ let emitFunction = (fn: GpuSliceLoweredFunctionDto, context: SliceEmitContext) =
   let functionContext: SliceEmitContext = .{
     ..context,
     recursiveFunctionId = if (fn.recursive) { fn.functionId } else { -1 },
+    portable = context.portable,
   };
   let resultType = findType(context.types, source.resultTypeId);
   let recursivePrefix = if (fn.recursive) {
@@ -712,7 +814,14 @@ let emitFunction = (fn: GpuSliceLoweredFunctionDto, context: SliceEmitContext) =
   } else {
     ""
   };
-  typeName(source.resultTypeId, context) ++ " " ++ functionName(fn.functionId) ++ "(" ++
+  let linkage = if (
+    context.portable && numberEqual(fn.functionId, context.input.root.functionId)
+  ) {
+    "export __extern_cpp "
+  } else {
+    ""
+  };
+  linkage ++ typeName(source.resultTypeId, context) ++ " " ++ functionName(fn.functionId) ++ "(" ++
     emitFunctionParams(Js.Array.toList(fn.physicalParamLocalIds), context, "") ++ ") {\n" ++
     recursivePrefix ++ emitBlock(fn.bodyBlockId, "  ", functionContext) ++ recursiveSuffix ++
     "}\n\n"
@@ -747,6 +856,47 @@ let emitWrappers = (context: SliceEmitContext) => {
   }
 };
 
+let emitSliceSlangModule = (
+  input: GpuSliceElaborationInputDto,
+  layouts,
+  fields,
+  functions,
+  locals,
+  atoms,
+  operations,
+  statements,
+  blocks,
+  cases
+) => {
+  let context: SliceEmitContext = .{
+    input = input,
+    environmentFields = Js.Array.toList(input.environmentFields),
+    types = Js.Array.toList(input.types),
+    constructors = Js.Array.toList(input.constructors),
+    layouts = Js.Array.toList(layouts),
+    fields = Js.Array.toList(fields),
+    functions = Js.Array.toList(functions),
+    locals = Js.Array.toList(locals),
+    atoms = Js.Array.toList(atoms),
+    operations = Js.Array.toList(operations),
+    statements = Js.Array.toList(statements),
+    blocks = Js.Array.toList(blocks),
+    cases = Js.Array.toList(cases),
+    recursiveFunctionId = -1,
+    portable = true,
+  };
+  "// Generated by wmslang visual v2.\n\n" ++
+    emitPortableEnvironmentAccessors(context.environmentFields, context, "") ++
+    emitTupleDeclarations(context.types, context, "") ++
+    emitLayoutDeclarations(context.layouts, context, "") ++
+    emitEnvironmentDeclaration(context) ++
+    emitFunctions(context.functions, context, "")
+};
+
+let emitSliceCallableName = (input: GpuSliceElaborationInputDto) => {
+  functionName(input.root.functionId)
+};
+
 let emitSliceSlang = (
   input: GpuSliceElaborationInputDto,
   layouts,
@@ -774,6 +924,7 @@ let emitSliceSlang = (
     blocks = Js.Array.toList(blocks),
     cases = Js.Array.toList(cases),
     recursiveFunctionId = -1,
+    portable = false,
   };
   "// Generated by wmslang visual v2.\n\n" ++
     emitTupleDeclarations(context.types, context, "") ++

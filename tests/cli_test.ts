@@ -33,12 +33,12 @@ Deno.test("cli prints help with command and flag variants", async () => {
   }
 });
 
-Deno.test("cli rejects arguments to the stdio language server", async () => {
+Deno.test("cli rejects unknown arguments to the stdio language server", async () => {
   const result = await runCli(["lsp", "unexpected"]);
 
   assertEquals(result.code, 2);
   assertEquals(result.stdout, "");
-  assertEquals(result.stderr, "usage: wm lsp\n");
+  assertEquals(result.stderr, "usage: wm lsp [--stdio]\n");
 });
 
 Deno.test("cli rejects more than one problems entrypoint", async () => {
@@ -293,12 +293,12 @@ Deno.test("cli lists valid members after incomplete js namespaces", async () => 
     {
       source: "let value = Gpu.;",
       expected:
-        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, ShaderTarget, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
+        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, ShaderTarget, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, callableName, color',
     },
     {
       source: "let value: Gpu. = void;",
       expected:
-        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, ShaderTarget, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, color',
+        'Expected a GPU member after "Gpu."; available types: Color, Fragment, RenderTarget2D, SampledTexture2D, Sampler, ShaderTarget, Texture2D, Uniform; available functions: artifactIdentity, bindGroupEntries, bindingCount, callableName, color',
     },
   ];
 

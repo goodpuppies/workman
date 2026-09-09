@@ -624,7 +624,125 @@ and bindMatchPayload = (
         result
       }
     },
-    _ => { Panic("v1 constructor pattern has multiple payload children") }
+    [Var(firstChildPatternId), ..restChildPatternIds] => {
+      bindMatchPayloadLanes(
+        [firstChildPatternId, ..restChildPatternIds],
+        pattern,
+        scrutineeAtomId,
+        owner,
+        scope,
+        context,
+        state,
+        0,
+        []
+      )
+    }
+  }
+}
+
+and bindMatchPayloadLanes = match(
+  childPatternIds,
+  pattern,
+  scrutineeAtomId,
+  owner,
+  scope,
+  context,
+  state,
+  index,
+  reversedStatements
+) => {
+  (
+    [],
+    Var(_pattern),
+    Var(_scrutineeAtomId),
+    Var(_owner),
+    Var(scope),
+    Var(_context),
+    Var(state),
+    Var(_index),
+    Var(reversedStatements)
+  ) => {
+    let result: LowerBindResult = .{
+      statementIds = reverseInto(reversedStatements, []),
+      scope = scope,
+      state = state,
+    };
+    result
+  },
+  (
+    [Var(childPatternId), ..rest],
+    Var(pattern),
+    Var(scrutineeAtomId),
+    Var(owner),
+    Var(scope),
+    Var(context),
+    Var(state),
+    Var(index),
+    Var(reversedStatements)
+  ) => {
+    let child = findPattern(context.patterns, childPatternId);
+    if (child.kind == "wildcard") {
+      bindMatchPayloadLanes(
+        rest,
+        pattern,
+        scrutineeAtomId,
+        owner,
+        scope,
+        context,
+        state,
+        index + 1,
+        reversedStatements
+      )
+    } else {
+      let field = findFieldForConstructor(context.fields, pattern.constructorId);
+      let operation: GpuSliceLoweredOperationDto = .{
+        ..baseOperation(owner, "payload", state),
+        typeId = child.typeId,
+        constructorId = pattern.constructorId,
+        layoutId = field.layoutId,
+        fieldId = field.id,
+        index = index,
+        args = Js.Array.fromList([scrutineeAtomId]),
+      };
+      let (operationId, afterOperation) = pushOperation(operation, state);
+      let (localId, afterLocal) = freshLocal(
+        owner.functionId,
+        "binding",
+        child.typeId,
+        child.bindingId,
+        false,
+        child.spanId,
+        afterOperation
+      );
+      let statement: GpuSliceLoweredStatementDto = .{
+        ..baseStatement(
+          owner.functionId,
+          "let",
+          owner.sourceExprId,
+          child.spanId,
+          afterLocal
+        ),
+        localId = localId,
+        operationId = operationId,
+        reason = "binding",
+      };
+      let (statementId, afterStatement) = pushStatement(statement, afterLocal);
+      let nextScope: LowerScope = .{
+        ..scope,
+        bindings = Map.set(scope.bindings, child.bindingId, localId),
+      };
+      bindMatchPayloadLanes(
+        rest,
+        pattern,
+        scrutineeAtomId,
+        owner,
+        nextScope,
+        context,
+        afterStatement,
+        index + 1,
+        [statementId, ..reversedStatements]
+      )
+    }
   }
 };
 

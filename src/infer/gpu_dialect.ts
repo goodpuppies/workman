@@ -28,6 +28,7 @@ import {
 } from "../wmslang/builtin_catalog.generated.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import { lookupLongValue } from "./environment.ts";
+import type { InvocationPlan } from "../pipe_elaboration.ts";
 
 export const gpuTypingDialect: TypingDialect = {
   domain: "gpu",
@@ -35,7 +36,6 @@ export const gpuTypingDialect: TypingDialect = {
   inferProjection: inferGpuProjection,
   inferTuple: inferGpuTuple,
   inferBinary: inferGpuBinary,
-  inferCall: inferGpuBuiltinCall,
 };
 
 const builtinOverloadsByName = Map.groupBy(WMSLANG_BUILTIN_OVERLOADS, (overload) => overload.name);
@@ -70,10 +70,19 @@ function inferGpuTuple(
   context: InferContext,
 ): Ty | undefined {
   if (items.length < 2 || items.length > 4) return undefined;
-  const numeric = items.every((item) => {
-    const target = prune(item);
-    return isNumber(target) || target.tag === "var";
-  });
+  // Product-pipeline default: claim the homogeneous-numeric vector only when
+  // every component is already concrete. An unresolved component may later
+  // become a nested tuple or Bool (multi-value shader returns); constraining
+  // it to Number here would collapse genuinely heterogeneous products. The
+  // shader representation layer still maps fully numeric specializations to
+  // vectors. The H0 research-fixture entry opts back into legacy forcing via
+  // InferModuleOptions.legacyGpuVectorTuples.
+  const numeric = context.legacyGpuVectorTuples
+    ? items.every((item) => {
+      const target = prune(item);
+      return isNumber(target) || target.tag === "var";
+    })
+    : items.every((item) => isNumber(prune(item)));
   if (!numeric) return undefined;
   items.forEach((item, index) => {
     constrainAt(item, NumberTy, expr.items[index], undefined, [], context.provenance, {
@@ -176,39 +185,40 @@ function inferGpuBinary(
   return result;
 }
 
-function inferGpuBuiltinCall(
-  expr: Extract<Expr, { kind: "Call" }>,
+export function inferGpuInvocation(
+  invocation: InvocationPlan,
   context: InferContext,
 ): Ty | undefined {
-  const resource = inferGpuResourceCall(expr, context);
+  const expr = invocation.occurrence;
+  const resource = expr.kind === "Call" ? inferGpuResourceCall(expr, context) : undefined;
   if (resource) return resource;
   if (
-    expr.callee.kind !== "Var" ||
-    context.env.has(expr.callee.name) ||
-    lookupLongValue(context.strEnv, pathOf(expr.callee)) !== undefined
+    invocation.callee.kind !== "Var" ||
+    context.env.has(invocation.callee.name) ||
+    lookupLongValue(context.strEnv, pathOf(invocation.callee)) !== undefined
   ) return undefined;
-  const overloads = builtinOverloadsByName.get(expr.callee.name);
+  const overloads = builtinOverloadsByName.get(invocation.callee.name);
   if (!overloads) {
-    const blocker = builtinBlockersByName.get(expr.callee.name);
+    const blocker = builtinBlockersByName.get(invocation.callee.name);
     if (blocker) {
       throw diagnosticError(
         new Error(ineligibleBuiltinMessage(blocker)),
-        expr.callee.node ?? expr.node,
+        invocation.callee.node ?? expr.node,
         "gpu.builtin.ineligible",
       );
     }
-    const suggestion = nearestBuiltin(expr.callee.name);
+    const suggestion = nearestBuiltin(invocation.callee.name);
     throw diagnosticError(
       new Error(
-        `unresolved GPU call ${expr.callee.name}${
+        `unresolved GPU call ${invocation.callee.name}${
           suggestion ? `; did you mean Slang builtin ${suggestion}?` : ""
         }`,
       ),
-      expr.callee.node ?? expr.node,
+      invocation.callee.node ?? expr.node,
       "gpu.builtin.unresolved",
     );
   }
-  const args = expr.args.map((argument) => inferExpr(argument, context));
+  const args = invocation.args.map((argument) => inferExpr(argument, context));
   const candidates = overloads.filter((overload) => overload.params.length === args.length);
   const compatible = candidates.filter((overload) =>
     overload.params.every((expected, index) => compatibleBuiltinShape(args[index], expected))
@@ -216,7 +226,7 @@ function inferGpuBuiltinCall(
   if (compatible.length === 0) {
     throw diagnosticError(
       new Error(
-        `Slang builtin ${expr.callee.name} has no exact overload for (${
+        `Slang builtin ${invocation.callee.name} has no exact overload for (${
           args.map(showBuiltinShape).join(", ")
         })`,
       ),
@@ -231,10 +241,10 @@ function inferGpuBuiltinCall(
     result: hmBuiltinShape(candidate.result),
   })));
   applyFiniteOperationSkeleton(expr, args, result, rows, context);
-  recordGpuBuiltinFact(context.facts, expr, expr.callee.name);
+  recordGpuBuiltinFact(context.facts, expr, invocation.callee.name);
   recordGpuOperationFact(context.facts, {
     kind: "builtin",
-    identity: expr.callee.name,
+    identity: invocation.callee.name,
     occurrence: expr,
     args,
     result,

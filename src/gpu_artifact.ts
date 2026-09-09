@@ -2,6 +2,12 @@ import type { Expr } from "./ast.ts";
 
 /** The only runtime-visible data in a completed visual-v1 fragment. */
 export type VisualShaderDescriptorV1 = {
+  /** Reusable Slang declarations without any stage entry-point wrappers. */
+  slang: string;
+  /** Generated Slang function implementing the selected Workman shader. */
+  callableName: string;
+  /** Reusable GLSL declarations emitted from `slang` without stage wrappers. */
+  glslModule?: string;
   wgsl: string;
   glsl?: string;
   hlsl?: string;

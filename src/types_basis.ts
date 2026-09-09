@@ -230,6 +230,14 @@ function addGpuBasisValues(env: Env, typeEnv: TypeEnv) {
       fn([tuple([uniform, value])], uniform),
     );
   }
+  basisFn("Gpu.slang", GPU_SEMANTIC_IDS.slang, [], fn([fragment], StringTy));
+  basisFn("Gpu.glsl", GPU_SEMANTIC_IDS.glsl, [], fn([fragment], StringTy));
+  basisFn(
+    "Gpu.callableName",
+    GPU_SEMANTIC_IDS.callableName,
+    [],
+    fn([fragment], StringTy),
+  );
   basisFn("Gpu.wgsl", GPU_SEMANTIC_IDS.wgsl, [], fn([fragment], StringTy));
   basisFn(
     "Gpu.shaderSource",

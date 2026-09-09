@@ -22,6 +22,9 @@ not expose a shader AST.
 Gpu.color              : ((Number, Number, Number, Number)) => Gpu.Color
 Gpu.fragment           : (((Number, Number)) => Gpu.Color) => Gpu.Fragment
 
+Gpu.slang              : (Gpu.Fragment) => String
+Gpu.glsl               : (Gpu.Fragment) => String
+Gpu.callableName       : (Gpu.Fragment) => String
 Gpu.wgsl               : (Gpu.Fragment) => String
 Gpu.vertexEntryPoint   : (Gpu.Fragment) => String
 Gpu.fragmentEntryPoint : (Gpu.Fragment) => String
@@ -30,6 +33,15 @@ Gpu.fragmentEntryPoint : (Gpu.Fragment) => String
 `Gpu.color` is GPU-only. `Gpu.fragment` is a compile-time-recognized host constructor which selects
 exactly one inline or directly bound `@gpu` lambda. The accessors operate on the completed artifact
 embedded in generated JavaScript.
+
+`Gpu.slang` returns reusable generated Slang declarations without vertex or fragment stage wrappers.
+The callable is a Slang `export __extern_cpp`, which keeps it alive during module-only target
+emission and preserves its name. `Gpu.glsl` asks Slang to emit the same exported module as
+embeddable GLSL. `Gpu.callableName` returns the selected root's stable generated symbol. In these
+reusable forms captured uniform and resource reads are deliberately left as function-like
+`WM_UNIFORM_<index>()` and `WM_RESOURCE_<binding>()` preprocessor inputs; a library chooses the
+expressions behind those names. The existing WebGPU artifact remains a separate adapter and
+continues to own its reflected binding layout and fixed fullscreen entry points.
 
 The root receives one two-component tuple. It is not a curried or two-parameter function. The
 generated wrapper supplies raw fragment coordinates and expects `Gpu.Color` on every result path.

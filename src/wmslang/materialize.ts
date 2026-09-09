@@ -7,12 +7,12 @@ import type {
   VisualShaderUniformLayoutV2,
   VisualShaderUniformRepresentation,
 } from "../gpu_artifact.ts";
-import type { GpuSliceDiagnosticDto } from "./v2_dto.ts";
+import type { GpuSliceCompilationOutput, GpuSliceDiagnosticDto } from "./v2_dto.ts";
 import { WmslangNumericDiagnosticError, type WmslangSliceCompiler } from "./v2_loader.ts";
 import { GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
 import {
-  WmslangBackendError,
   type WmslangBackendArtifact,
+  WmslangBackendError,
   type WmslangShaderTarget,
   type WmslangSlangBackend,
 } from "./slang_backend.ts";
@@ -21,6 +21,7 @@ import {
   resolveGpuSliceDiagnostic,
   type WmslangResolvedDiagnostic,
 } from "./diagnostics.ts";
+import { normalizeGpuSlicePrograms } from "./v2_normalize.ts";
 
 export class WmslangSemanticError extends Error {
   readonly sourceDiagnostics: WmslangResolvedDiagnostic[];
@@ -43,26 +44,80 @@ export async function materializeGpuSliceArtifacts(
   compiler: WmslangSliceCompiler,
   backend: WmslangSlangBackend,
 ): Promise<MaterializedGpuArtifacts> {
-  const artifacts = new Map<
-    GpuFragmentSelectorFact["call"],
-    VisualShaderArtifactV1
-  >();
-  const targets = requestedExtraShaderTargets(analysis);
-  for (const slice of analysis.gpuSlices) {
-    const artifact = await materializeGpuSliceArtifact(
-      slice.input,
-      slice.selectors,
-      compiler,
-      backend,
-      targets,
-    );
-    for (const selector of slice.selectors) artifacts.set(selector.call, artifact);
+  // Optimistic sharing can merge conflicting representation evidence when one
+  // helper serves two rep contexts under one host type (e.g. `twice(2)` and
+  // `twice(2.0)` through unknown-seed call sites). On a numeric conflict
+  // inside a shared instance, pin the implicated bindings to per-call-site
+  // instances and re-normalize. Pins only grow, template bindings are finite,
+  // and a conflict with nothing new to pin rethrows the original error, so
+  // this terminates; genuine single-site errors never pay for a retry.
+  const pinned = new Set<number>();
+  for (;;) {
+    const slices = pinned.size === 0
+      ? analysis.gpuSlices
+      : normalizeGpuSlicePrograms(analysis, pinned);
+    try {
+      const artifacts = new Map<
+        GpuFragmentSelectorFact["call"],
+        VisualShaderArtifactV1
+      >();
+      const targets = requestedExtraShaderTargets(analysis);
+      const reusableGlsl = requestsReusableGlsl(analysis);
+      for (const slice of slices) {
+        const artifact = await materializeGpuSliceArtifact(
+          slice.input,
+          slice.selectors,
+          compiler,
+          backend,
+          targets,
+          reusableGlsl,
+        );
+        for (const selector of slice.selectors) artifacts.set(selector.call, artifact);
+      }
+      return artifacts;
+    } catch (error) {
+      if (!(error instanceof WmslangSemanticError)) throw error;
+      const fresh = sharedConflictPins(error.diagnostics, slices);
+      const grown = fresh.filter((binding) => !pinned.has(binding));
+      if (grown.length === 0) throw error;
+      for (const binding of grown) pinned.add(binding);
+    }
   }
-  return artifacts;
 }
 
-const EXTRA_SHADER_TARGETS = ["glsl", "hlsl", "metal"] as const satisfies
-  readonly WmslangShaderTarget[];
+/**
+ * Template bindings that currently serve multiple call sites. Conflict
+ * spans name representation *evidence*, not merge points, so they cannot
+ * identify the shared instance; instead, any numeric conflict retries with
+ * every multi-call binding pinned to per-call-site instances (the previous
+ * behavior). Splitting is always safe, single-call programs rethrow
+ * immediately with no wasted solve, and pins only grow, so this terminates.
+ */
+function sharedConflictPins(
+  diagnostics: GpuSliceDiagnosticDto[],
+  slices: readonly { input: ProgramAnalysis["gpuInput"] }[],
+): number[] {
+  if (!diagnostics.some((diagnostic) => diagnostic.code === "gpu.numeric.conflict")) return [];
+  const implicated = new Set<number>();
+  for (const { input } of slices) {
+    const calls = new Map<number, number>();
+    for (const expression of input.expressions) {
+      if (expression.kind !== "call") continue;
+      const target = input.functions.find((fn) => fn.id === expression.functionId);
+      if (target) calls.set(target.sourceBindingId, (calls.get(target.sourceBindingId) ?? 0) + 1);
+    }
+    for (const [binding, count] of calls) {
+      if (count > 1) implicated.add(binding);
+    }
+  }
+  return [...implicated];
+}
+
+const EXTRA_SHADER_TARGETS = [
+  "glsl",
+  "hlsl",
+  "metal",
+] as const satisfies readonly WmslangShaderTarget[];
 
 function requestedExtraShaderTargets(analysis: CoreProgramAnalysis): WmslangShaderTarget[] {
   for (const result of analysis.results.values()) {
@@ -75,17 +130,27 @@ function requestedExtraShaderTargets(analysis: CoreProgramAnalysis): WmslangShad
   return [];
 }
 
+function requestsReusableGlsl(analysis: CoreProgramAnalysis): boolean {
+  for (const result of analysis.results.values()) {
+    for (const fact of result.facts.expressions.values()) {
+      if (fact.origin?.semanticId === GPU_SEMANTIC_IDS.glsl) return true;
+    }
+  }
+  return false;
+}
+
 async function materializeGpuSliceArtifact(
   input: ProgramAnalysis["gpuInput"],
   selectors: GpuFragmentSelectorFact[],
   compiler: WmslangSliceCompiler,
   backend: WmslangSlangBackend,
   targets: readonly WmslangShaderTarget[],
+  reusableGlsl: boolean,
 ): Promise<VisualShaderArtifactV1> {
   const primarySelector = selectors[0];
   if (!primarySelector) throw new Error("selected GPU slice has no selector");
 
-  let lowered: ReturnType<WmslangSliceCompiler["compileGpuSlice"]>;
+  let lowered: GpuSliceCompilationOutput;
   try {
     lowered = compiler.compileGpuSlice(input);
   } catch (error) {
@@ -98,12 +163,14 @@ async function materializeGpuSliceArtifact(
     throw new WmslangSemanticError(lowered.diagnostics, input.spans);
   }
   let compiled: WmslangBackendArtifact;
+  let glslModule: string | undefined;
   let layouts: {
     uniformLayout?: VisualShaderUniformLayoutV2;
     resourceLayout?: VisualShaderResourceLayoutV5;
   };
   try {
     compiled = backend.compile(lowered.slangSource, ["wgsl", ...targets]);
+    glslModule = reusableGlsl ? backend.compileModule(lowered.slangModule, "glsl") : undefined;
     layouts = {
       ...materializedUniformLayout(
         input,
@@ -148,6 +215,9 @@ async function materializeGpuSliceArtifact(
       layouts.resourceLayout,
       input,
     )}`,
+    slang: lowered.slangModule,
+    callableName: lowered.callableName,
+    ...(glslModule !== undefined ? { glslModule } : {}),
     ...sources,
     vertexEntry: compiled.vertexEntry,
     fragmentEntry: compiled.fragmentEntry,

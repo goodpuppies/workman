@@ -509,6 +509,81 @@ Deno.test("schema v2 lowers GLML-style vector arithmetic and scalar broadcasts",
   );
 });
 
+Deno.test("shared Core lowers every pipe form before the WMSLang backend", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      type Direction = Left | Right;
+      let shade = (uv) => {
+        @gpu;
+        let classify = (_value) => { Left };
+        let add = (value, extra) => { value + extra };
+        let direction = uv :> classify;
+        let amount = direction :> match {
+          Left => { 0.0 },
+          Right => { 2.0 }
+        };
+        let shifted = amount :> add(1.0);
+        Gpu.color((shifted, 0.0, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  validateGpuSliceElaborationInput(input);
+
+  assertEquals(input.functions.map((fn) => fn.name).sort(), [
+    "add",
+    "classify",
+    "lambda",
+    "shade",
+  ]);
+  assertEquals(
+    input.expressions.filter((expression) => expression.kind === "call").length,
+    3,
+  );
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.slangSource.includes("wm_fragment"), true);
+});
+
+Deno.test("GPU builtin overloads consume the shared pipe invocation plan", async () => {
+  const input = normalizeGpuSliceProgram(
+    await analysisFor(`
+      let shade = (uv) => {
+        @gpu;
+        let unit = uv :> normalize;
+        Gpu.color((unit.x, unit.y, 0.0, 1.0))
+      };
+      let fragment = Gpu.fragment(shade);
+    `),
+  );
+  validateGpuSliceElaborationInput(input);
+
+  const builtin = input.expressions.find((expression) => expression.kind === "builtin");
+  assertEquals(builtin?.builtinName, "normalize");
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.slangSource.includes("normalize("), true);
+});
+
+Deno.test("shared Core shader diagnostics retain authored expression spans", async () => {
+  const source = `
+    let shade = (_coord) => {
+      @gpu;
+      let value = Panic("shader hole");
+      Gpu.color((value, 0.0, 0.0, 1.0))
+    };
+    let fragment = Gpu.fragment(shade);
+  `;
+  const error = await assertRejects(
+    () => analysisFor(source),
+    GpuSliceNormalizationError,
+    "CorePanic is outside the current shader Core slice",
+  );
+  assertEquals(error.code, "gpu.expression.unsupported");
+  const span = error.subject?.node?.span;
+  assertEquals(span ? source.slice(span.start, span.end) : "", 'Panic("shader hole")');
+});
+
 Deno.test("schema v2 tuple destructuring preserves vector lane order", async () => {
   const input = normalizeGpuSliceProgram(
     await analysisFor(`

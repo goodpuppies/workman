@@ -46,12 +46,12 @@ let terminalSize = (output, cellWidth, cellHeight) => {
 };
 
 let write = (output, value) => {
-  output.write(value)
+  output :> .write(value)
 };
 
 let restore = (input, output, status) => {
-  let _ = input.setRawMode(false);
-  let _ = input.pause();
+  let _ = input :> .setRawMode(false);
+  let _ = input :> .pause();
   let _ = write(output, Ansi.leave);
   match(exit(status)) {
     Ok(_) => { void },
@@ -73,7 +73,7 @@ let draw = (output, render, previous, running) => {
 };
 
 let rec listen = (input, output, update, render, running, previous) => {
-  match(input.once("data", (chunk) => {
+  match(input :> .once("data", (chunk) => {
     match(toString(chunk)) {
       Err(_) => {
         restore(input, output, 1)
@@ -149,14 +149,14 @@ let run = (initial, update, render) => {
           print("terminal output unavailable: " ++ errorText(error))
         },
         Ok(output) => {
-          match(input.setRawMode(true)) {
+          match(input :> .setRawMode(true)) {
             Err(error) => {
               print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
             },
             Ok(_) => {
               let initialRunning = (initial, 1, 2);
               let initialSize = terminalSize(output, 1, 2);
-              let _ = input.resume();
+              let _ = input :> .resume();
               match(write(
                 output,
                 Ansi.enter ++ Ansi.queryCellSize ++
@@ -286,7 +286,7 @@ let rec waitRetained = (
 };
 
 let rec listenRetained = (input, output, update, render, running, memory) => {
-  match(input.once("data", (chunk) => {
+  match(input :> .once("data", (chunk) => {
     match(toString(chunk)) {
       Err(_) => {
         restore(input, output, 1)
@@ -380,7 +380,7 @@ let runRetainedManaged = (
           print("terminal output unavailable: " ++ errorText(error))
         },
         Ok(output) => {
-          match(input.setRawMode(true)) {
+          match(input :> .setRawMode(true)) {
             Err(error) => {
               print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
             },
@@ -388,7 +388,7 @@ let runRetainedManaged = (
               let initialRunning = (initial, 1, 2);
               let initialSize = terminalSize(output, 1, 2);
               let initialFrame = render(None, initial, initialSize);
-              let _ = input.resume();
+              let _ = input :> .resume();
               match(write(
                 output,
                 Ansi.enter ++ Ansi.queryCellSize ++ initialFrame.output,

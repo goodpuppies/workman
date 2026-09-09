@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { fileURLToPath } from "node:url";
-import { compileFile } from "../src/compiler.ts";
+import { checkFile, compileFile, coreFile } from "../src/compiler.ts";
 
 Deno.test("SDL window example keeps the complete WebGPU presentation path in Workman", async () => {
   const javaScript = await compileFile(
@@ -38,4 +38,41 @@ Deno.test("SDL feedback example compiles explicit resize and texture retirement"
   assertStringIncludes(javaScript, '__wm_js_member("Reflect" + "." + "set")');
   assertStringIncludes(javaScript, "resizeFrame");
   assertStringIncludes(javaScript, "frameLoop");
+});
+
+Deno.test("jelly raymarcher port typechecks heterogeneous multi-value shader flow", async () => {
+  const results = await checkFile(
+    fileURLToPath(new URL("../examples/wmslang_window/src/jelly_shader.wm", import.meta.url)),
+  );
+  const main = results.get("examples/wmslang_window/src/jelly_shader.wm") ??
+    results.get(
+      fileURLToPath(new URL("../examples/wmslang_window/src/jelly_shader.wm", import.meta.url)),
+    );
+  if (!main) throw new Error("missing jelly shader analysis");
+  assertEquals(main.warnings, []);
+  assertEquals(
+    [...main.env.keys()].filter((name) =>
+      ["jellyShade", "fragmentForUniforms"].includes(name)
+    ).length,
+    2,
+  );
+});
+
+Deno.test("jelly host module drives the imported fragment without GPU-only leakage", async () => {
+  const path = fileURLToPath(
+    new URL("../examples/wmslang_window/src/jelly_main.wm", import.meta.url),
+  );
+  const results = await checkFile(path);
+  const main = results.get("examples/wmslang_window/src/jelly_main.wm") ??
+    results.get(path);
+  if (!main) throw new Error("missing jelly host analysis");
+  assertEquals(main.warnings, []);
+  // Full compile: the fragment selection lives in the shader module while
+  // host code lives here. Synthetic per-instance bindings must clear every
+  // module's ids, or host functions get misflagged as GPU-only.
+  const compiled = await coreFile(path);
+  const artifacts = [...compiled.core.shaderArtifacts.values()];
+  assertEquals(artifacts.length, 1);
+  assertEquals(artifacts[0].vertexEntry, "wm_vertex");
+  assertEquals(artifacts[0].fragmentEntry, "wm_fragment");
 });

@@ -31,6 +31,22 @@ Deno.test("compiler Gpu basis carries closed semantic identity", async () => {
 
   assertEquals(semanticIds.includes(GPU_SEMANTIC_IDS.color), true);
   assertEquals(semanticIds.includes(GPU_SEMANTIC_IDS.fragment), true);
+  const shared = analysis.sharedCore.get(moduleId("/test/main.wm"));
+  assertEquals(
+    shared?.module.decls.some((decl) =>
+      decl.kind === "CoreLet" &&
+      decl.bindings.some((binding) =>
+        binding.value.kind === "CoreFn" && binding.value.directives?.includes("gpu")
+      )
+    ),
+    true,
+  );
+  assertEquals(
+    [...(shared?.facts.expressions.values() ?? [])].some((fact) =>
+      fact.semanticId === GPU_SEMANTIC_IDS.fragment
+    ),
+    true,
+  );
   assertEquals(result.typeEnv.has("Gpu.Color"), false);
   assertEquals(result.structure.strEnv.get("Gpu")?.tyEnv.has("Color"), true);
   assertEquals(result.structure.strEnv.get("Gpu")?.tyEnv.has("Fragment"), true);
@@ -215,6 +231,8 @@ Deno.test("host Core consumes only a completed opaque fragment artifact", async 
   );
   const artifact: VisualShaderArtifactV1 = {
     id: `wms-v1-${"0".repeat(64)}`,
+    slang: "float4 wm_f_0(float2 coord) { return float4(1, 0, 0, 1); }",
+    callableName: "wm_f_0",
     wgsl: "@fragment fn wm_fragment() -> @location(0) vec4f { return vec4f(); }",
     glsl: "void main() { gl_Position = vec4(0.0); }",
     hlsl: "float4 wm_vertex() : SV_Position { return float4(0.0); }",

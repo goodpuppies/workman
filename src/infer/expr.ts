@@ -49,6 +49,8 @@ import {
 } from "./type_facts.ts";
 import { gpuOperatorId } from "../gpu_operators.ts";
 import { elaborateConstraint } from "./constraints.ts";
+import { callInvocationPlan } from "../pipe_elaboration.ts";
+import { inferDomainInvocation } from "./invocation.ts";
 
 export function inferExpr(expr: Expr, context: InferContext): Ty {
   try {
@@ -291,7 +293,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
       );
       break;
     case "Call":
-      t = context.dialect.inferCall?.(expr, context) ?? inferCall(expr, context);
+      t = inferDomainInvocation(callInvocationPlan(expr), context) ?? inferCall(expr, context);
       break;
     case "If":
       recordExpectedExprType(facts, expr.cond, BoolTy);

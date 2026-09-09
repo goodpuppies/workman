@@ -1,6 +1,6 @@
 import type { Expr } from "../ast.ts";
 import type { FrontendDiagnostic } from "../diagnostics.ts";
-import type { Env, Ty, TypeDeclInfo, TypeEnv } from "../types.ts";
+import type { Env, Scheme, Ty, TypeDeclInfo, TypeEnv } from "../types.ts";
 import type { TypeProvenance } from "./provenance.ts";
 import type { TypeFacts } from "./type_facts.ts";
 import type { StrEnv } from "./environment.ts";
@@ -26,7 +26,6 @@ export type TypingDialect = {
     items: Ty[],
     context: InferContext,
   ): Ty | undefined;
-  inferCall?(expr: Extract<Expr, { kind: "Call" }>, context: InferContext): Ty | undefined;
 };
 
 export const hostTypingDialect: TypingDialect = { domain: "host" };
@@ -34,7 +33,7 @@ export const hostTypingDialect: TypingDialect = { domain: "host" };
 export type InferContext = {
   env: Env;
   strEnv: StrEnv;
-  operators: ReadonlyMap<string, import("../types.ts").Scheme>;
+  operators: ReadonlyMap<string, Scheme>;
   typeEnv: TypeEnv;
   adts: Map<number, TypeDeclInfo>;
   types: Map<Expr, Ty>;
@@ -44,6 +43,7 @@ export type InferContext = {
   provenance: TypeProvenance;
   dialect: TypingDialect;
   recover: boolean;
+  legacyGpuVectorTuples: boolean;
 };
 
 export function deriveInferContext(

@@ -37,6 +37,8 @@ import { callArg } from "./shared.ts";
 import { carrierContext, type CarrierPeel, peelCarrier, rewrapCarrier } from "./carriers.ts";
 import { inferExpr } from "./expr.ts";
 import { callArity } from "./expr_call.ts";
+import { pipeInvocationPlan } from "../pipe_elaboration.ts";
+import { inferDomainInvocation } from "./invocation.ts";
 import {
   recordConsumedFfiUse,
   recordExpectedExprType,
@@ -558,6 +560,10 @@ export function inferPipe(
   expr: Extract<Expr, { kind: "Pipe" }>,
   context: InferContext,
 ): Ty {
+  const invocation = pipeInvocationPlan(expr);
+  const domainResult = inferDomainInvocation(invocation, context);
+  if (domainResult !== undefined) return domainResult;
+
   const { facts, provenance } = context;
   const leftType = inferExpr(expr.left, context);
   recordConsumedFfiUse(facts, leftType, {
@@ -567,7 +573,7 @@ export function inferPipe(
   });
   const right = expr.right;
 
-  if (right.kind === "Call" && isComputedPipeCall(right)) {
+  if (invocation.mode === "pipe-curried-stage") {
     const calleeType = inferExpr(right, context);
     const result = constrainPipe(
       expr,
@@ -585,7 +591,7 @@ export function inferPipe(
     return result;
   }
 
-  if (right.kind === "Call") {
+  if (invocation.mode === "pipe-insert" && right.kind === "Call") {
     const calleeType = inferExpr(right.callee, context);
     const expectedInput = prune(calleeType);
     if (expectedInput.tag === "fn" && expectedInput.params.length === 1) {
@@ -633,10 +639,6 @@ export function inferPipe(
     instantiated: fn([leftType], result),
   });
   return result;
-}
-
-function isComputedPipeCall(expr: Extract<Expr, { kind: "Call" }>): boolean {
-  return expr.args.length > 0 && expr.callee.kind === "Call";
 }
 
 function constrainPipe(

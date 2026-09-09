@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkSource, compileLibraryVirtual } from "../src/compiler.ts";
+import { checkSource, compileLibraryVirtual, compileVirtual } from "../src/compiler.ts";
 import { formatDiagnostic, FrontendDiagnosticError } from "../src/diagnostics.ts";
 
 Deno.test("basic pipe to function", async () => {
@@ -54,6 +54,42 @@ Deno.test("pipe with multi-argument function", async () => {
   `);
 });
 
+Deno.test("pipe evaluates its input before inserted call arguments", async () => {
+  const source = `
+    let mark = (label, value) => {
+      print(label);
+      value
+    };
+    let combine = (left, right) => {
+      print("call");
+      left + right
+    };
+    let main = () => {
+      let result = mark("input", 10) :> combine(mark("argument", 5));
+      print(result)
+    };
+  `;
+  const javaScript = await compileVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/pipe-order.mjs`;
+  await Deno.writeTextFile(path, javaScript);
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    assertEquals(new TextDecoder().decode(output.stdout), "input\nargument\ncall\n15\n");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("pipe with tuple for multiple arguments", async () => {
   await checkSource(`
     let add = (x, y) => { x + y };
@@ -92,7 +128,7 @@ Deno.test("pipe applies to functions produced by nested applications", async () 
 
 Deno.test("pipe preserves FFI receiver reflection in inline functions", async () => {
   await checkSource(`
-    let text = 16 :> ((byte: Number) => { byte.toString(16) });
+    let text = 16 :> ((byte: Number) => { byte :> .toString(16) });
   `);
 });
 
