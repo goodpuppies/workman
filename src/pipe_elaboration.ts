@@ -28,7 +28,10 @@ export function pipeInvocationPlan(
   expression: Extract<Expr, { kind: "Pipe" }>,
 ): InvocationPlan {
   const stage = expression.right;
-  if (stage.kind === "Call" && stage.args.length > 0 && stage.callee.kind === "Call") {
+  if (
+    stage.kind === "Call" &&
+    (stage.applicationStyle === "space" || stage.grouped === true)
+  ) {
     return {
       occurrence: expression,
       callee: stage,

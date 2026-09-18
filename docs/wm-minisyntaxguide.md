@@ -677,8 +677,24 @@ let result = 42 :> double :> add(10) :> print;
 -- Equivalent to: print(add(double(42), 10))
 ```
 
-When the right side is a nested application that produces a function, the pipe calls that produced
-function with the piped value:
+When the right side uses space application to produce a function, the pipe calls that produced
+function with the piped value. This is distinct from the parenthesized UFCS form above:
+
+```workman
+let result = input :> f argument;
+-- Equivalent to: (f(argument))(input)
+
+let result = input :> f(argument);
+-- Equivalent to: f(input, argument)
+
+let result = input :> f (argument);
+-- Also equivalent to: f(input, argument); whitespace before `(` is only layout
+
+let result = input :> (f(makeArgument value));
+-- Equivalent to: (f(makeArgument(value)))(input)
+```
+
+The space application may itself be nested:
 
 ```workman
 let makeTransform = (offset) => {

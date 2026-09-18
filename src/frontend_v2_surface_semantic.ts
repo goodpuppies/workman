@@ -617,7 +617,8 @@ function projectExpr(node: WmVariant, context: Context): Expr {
     }
     case "GroupedExpressionNode": {
       const [, inner] = fields(node);
-      return projectExpr(variant(inner), context);
+      const expression = projectExpr(variant(inner), context);
+      return expression.kind === "Call" ? { ...expression, grouped: true } : expression;
     }
     case "ApplyExpressionNode": {
       const [calleeNode, argumentNode] = fields(node);
@@ -629,6 +630,7 @@ function projectExpr(node: WmVariant, context: Context): Expr {
           kind: "Call",
           callee,
           args: list(argsValue).map((arg) => projectExpr(variant(arg), context)),
+          applicationStyle: "explicit",
           ...located,
         };
       }
@@ -637,6 +639,7 @@ function projectExpr(node: WmVariant, context: Context): Expr {
           kind: "Call",
           callee,
           args: [projectExpr(variant(fields(argument)[0]), context)],
+          applicationStyle: "space",
           ...located,
         };
       }

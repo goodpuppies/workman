@@ -126,6 +126,49 @@ Deno.test("pipe applies to functions produced by nested applications", async () 
   assertEquals(module.ordinaryPipe, 15);
 });
 
+Deno.test("pipe applies to a function produced by one space application", async () => {
+  const source = `
+    let adapt = (transform) => {
+      (value) => { transform(value) }
+    };
+    let increment = (value) => { value + 1 };
+
+    let result = 41 :> adapt increment;
+  `;
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([["/test/library.wm", source]]),
+  );
+  const module = await importGenerated(js);
+
+  assertEquals(module.result, 42);
+});
+
+Deno.test("parenthesized pipe stages suppress UFCS insertion explicitly", async () => {
+  const source = `
+    let adapt = (transform) => {
+      (value) => { transform(value) }
+    };
+    let makeIncrement = (amount) => {
+      (value) => { value + amount }
+    };
+
+    let add = (left, right) => { left + right };
+
+    let computed = 40 :> (adapt(makeIncrement 2));
+    let inserted = 40 :> add
+      (2);
+  `;
+  const js = await compileLibraryVirtual(
+    "/test/library.wm",
+    new Map([["/test/library.wm", source]]),
+  );
+  const module = await importGenerated(js);
+
+  assertEquals(module.computed, 42);
+  assertEquals(module.inserted, 42);
+});
+
 Deno.test("pipe preserves FFI receiver reflection in inline functions", async () => {
   await checkSource(`
     let text = 16 :> ((byte: Number) => { byte :> .toString(16) });

@@ -178,7 +178,15 @@ export type Expr =
     returnAnnotation?: TypeExpr;
     trailingReturnAnnotation?: TypeExpr;
   }>
-  | Located<{ kind: "Call"; callee: Expr; args: Expr[] }>
+  | Located<{
+    kind: "Call";
+    callee: Expr;
+    args: Expr[];
+    /** Authored application syntax, retained for pipe elaboration. */
+    applicationStyle?: "explicit" | "space";
+    /** The complete call was parenthesized, making it an explicit pipe-stage value. */
+    grouped?: true;
+  }>
   | Located<{ kind: "If"; cond: Expr; thenExpr: Expr; elseExpr: Expr }>
   | Located<{ kind: "Match"; value: Expr; arms: MatchArm[] }>
   | Located<{

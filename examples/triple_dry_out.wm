@@ -1,0 +1,41 @@
+-- The triple "DRY out" pattern using only ordinary Workman functions.
+
+let through = (value, transform) => {
+  transform(value)
+};
+
+-- A tupled function needs both arguments at once.
+let tagTupled = (label, value) => {
+  (label, value)
+};
+
+-- Explicit currying lets the label be supplied before the value.
+let tag = (label) => (value) =>  {
+  (label, value)
+};
+
+let message = "hello";
+
+-- The value's role is repeated by a forwarding lambda.
+let naive = through(message, (value) => {
+  tagTupled("notice", value)
+});
+
+-- Currying exposes the eta-reduction, but this still has all three roles.
+let curriedButRepeated = through(message, (value) => {
+  tag("notice")(value)
+});
+
+-- Eta-reduction removes the forwarding parameter and use together: 3 -> 1.
+let etaReduced = through(message, tag("notice"));
+
+-- The pipe keeps one occurrence and makes its direction through the adapter clear.
+let dried = message :> through(tag("notice"));
+
+let main = () => {
+  print(naive);
+  print(curriedButRepeated);
+  print(etaReduced);
+  print(dried);
+  void
+};
