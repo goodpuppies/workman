@@ -19,8 +19,17 @@ let carrier = .{
   fnError = fnError,
   succeed = (value) => { Task.succeed(value) },
   map = (task, f) => { Task.map(task, f) },
+  mapErr = (task, f) => { Task.mapErr(task, f) },
   map2 = (left, right, combine) => { Task.map2(left, right, combine) },
   andThen = (task, f) => { Task.andThen(task, f) },
+};
+
+let fromCallback = (handle, register) => {
+  Task.new((finish) => {
+    register((event) => {
+      handle(event) :> finish
+    })
+  })
 };
 
 let collectList = (tasks) => {

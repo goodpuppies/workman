@@ -17,6 +17,9 @@ let with = (.{ succeed, map, andThen }: Carrier<
   itemEffect,
   output -> listEffect,
   listEffect,
+  mapErrCarrier,
+  mapErrTransform,
+  mapErrResult,
 >) => {
   let rec traverse = match(items, transform) => {
     ([], _) => {

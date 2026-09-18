@@ -456,6 +456,13 @@ function addTaskValues(env: Env, typeEnv: TypeEnv) {
     const e = fresh("e") as Extract<Ty, { tag: "var" }>;
     basisFn("Task.all", [a, e], fn([named(jsArray, [task(a, e)])], task(named(jsArray, [a]), e)));
   }
+  {
+    const a = fresh("a") as Extract<Ty, { tag: "var" }>;
+    const e = fresh("e") as Extract<Ty, { tag: "var" }>;
+    const complete = fn([named(result, [a, e])], VoidTy);
+    const register = fn([complete], named(result, [VoidTy, e]));
+    basisFn("Task.new", [a, e], fn([register], task(a, e)));
+  }
 }
 
 let basisTypeEnvCache: Map<string, TypeInfo> | undefined;

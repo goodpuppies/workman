@@ -54,6 +54,7 @@ let carrier = .{
   fnError = fnError,
   succeed = succeed,
   map = map,
+  mapErr = mapErr,
   map2 = map2,
   andThen = andThen,
 };

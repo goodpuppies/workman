@@ -285,6 +285,10 @@ export function emitRuntimePrelude(): string[] {
   return String(error);
 };`,
     `const __wm_basis_Task = {
+  new: (register) => new Promise((complete) => {
+    const registered = register(complete);
+    if (registered.ctor !== ${basisCtorId("Ok")}) complete(registered);
+  }),
   fromResult: (result) => Promise.resolve(result),
   succeed: (value) => Promise.resolve(__wm_basis_Ok(value)),
   fail: (error) => Promise.resolve(__wm_basis_Err(error)),

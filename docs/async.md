@@ -13,6 +13,12 @@ Ok(value) : Result<a, e>
 Err(error) : Result<a, e>
 ```
 
+Callback-driven APIs can create a Task directly:
+
+```workman
+Task.new : ((Result<a, e> -> Void) -> Result<Void, e>) -> Task<a, e>
+```
+
 At runtime, a Task is represented by a JavaScript `Promise<Result<a, e>>`. Workman code does not
 `await` it directly. Instead, the generated program awaits the `main` task boundary and Task
 combinators compose the promise-backed value.
@@ -52,6 +58,8 @@ The setup loop is sequential, but the async operations overlap.
 The current Task basis surface is:
 
 ```workman
+Task.new       : ((Result<a, e> -> Void) -> Result<Void, e>) -> Task<a, e>
+Task.fromCallback : (a -> Result<b, e>) -> ((a -> Void) -> Result<Void, e>) -> Task<b, e>
 Task.fromResult : Result<a, e> -> Task<a, e>
 Task.succeed    : a -> Task<a, e>
 Task.fail       : e -> Task<a, e>
@@ -67,6 +75,43 @@ Task.orElse  : Task<a, e> -> (e -> Task<a, f>) -> Task<a, f>
 Task.collectList : List<Task<a, e>> -> Task<List<a>, e>
 Task.traverse    : List<a> -> (a -> Task<b, e>) -> Task<List<b>, e>
 ```
+
+## Callback-driven tasks
+
+`Task.fromCallback` is the normal adapter for a callback registration API. The
+event handler returns an ordinary `Result`; the library turns its first returned
+result into the Task result. The registration function also returns a `Result`,
+so an immediate setup failure completes the Task with that error.
+
+```workman
+let nextMessage = (worker) => {
+  let onMessage = (event) => {
+    event :> decodeMessage
+  };
+
+  onMessage
+    :> Task.fromCallback(
+      worker :> .addEventListener("message")
+    )
+};
+```
+
+The receiver call is contextually partial here. HM determines that one handler
+argument remains, and JS reflection selects a single compatible method overload.
+If the remaining arity or overload is ambiguous, the FFI boundary reports an
+error instead of choosing a registration shape implicitly.
+
+`Task.new` is the lower-level primitive underneath `Task.fromCallback`. It
+exposes the completion function directly for callback APIs that cannot be
+described by the ordinary handler-and-registration shape.
+
+The first call to `complete`, or an `Err` returned by registration before a
+completion, settles the Task. Later completions are ignored. Returning `Ok(void)`
+means registration succeeded and the Task remains pending until `complete` is
+called.
+
+`Task.new` does not add cancellation. It follows the existing eager Task model:
+dropping the handle or losing a `Task.race` does not unregister the callback.
 
 The pipe style is usually easier to read:
 

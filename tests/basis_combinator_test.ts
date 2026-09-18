@@ -38,6 +38,10 @@ Deno.test("Result and Option combinators infer generically", async () => {
     });
     let task = Err("bad") :> Task.fromResult :> Task.recover((_) => { 2 })
       :> Task.andThen((n) => { Task.succeed(n + 1) });
+    let constructed = Task.new((complete) => {
+      complete(Ok(7));
+      Ok(void)
+    });
     let retriedTask = Task.fail("bad") :> Task.orElse((error) => {
       if (error == "bad") { Task.succeed(4) } else { Task.fail(5) }
     });
@@ -79,6 +83,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
     vars: 0,
   });
   expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
+  expectBinding(result.env, "constructed", { type: "Task<Number, 'a>", vars: 0 });
   expectBinding(result.env, "retriedTask", { type: "Task<Number, Number>", vars: 0 });
   expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>", vars: 0 });
   expectBinding(result.env, "racedTask", { type: "Task<Number, 'a>", vars: 0 });
@@ -125,7 +130,7 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:70:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:71:4]");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });
@@ -209,15 +214,17 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
   );
 });
 
-Deno.test("Monad.via works over structural fn records", async () => {
-  const result = await checkSource(`
-    record TaskLike = { fn: (Void -> Number) -> Number };
-    let task: TaskLike = .{ fn = (f) => { f() } };
-    let value = Monad.via task () => { 42 };
-  `);
-
-  expectBinding(result.env, "value", { type: "Number", vars: 0 });
-  assertEquals(result.structure.strEnv.get("Monad")?.valEnv.get("via")?.imported, true);
+Deno.test("Monad.via rejects unrelated nominal records with a compatible fn field", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        record TaskLike = { fn: (Void -> Number) -> Number };
+        let task: TaskLike = .{ fn = (f) => { f() } };
+        let value = Monad.via task () => { 42 };
+      `),
+    Error,
+    "type collision",
+  );
 });
 
 Deno.test("Monad.via composes over Task.fn", async () => {
@@ -279,6 +286,27 @@ Deno.test("carrier viaError injects native errors into one application error", a
 
   expectBinding(result.env, "task", { type: "Task<String, AppError>", vars: 0 });
   expectBinding(result.env, "result", { type: "Result<Number, AppError>", vars: 0 });
+});
+
+Deno.test("Monad map adapters compose through explicit carrier namespaces", async () => {
+  const result = await checkSource(`
+    type AppError = | DomainFailure<String>;
+
+    let taskValue = Task.succeed(1)
+      :> Monad.map Task (number) => { number + 1 };
+    let taskFailure: Task<Number, AppError> = Task.fail("bad")
+      :> Monad.mapErr Task DomainFailure;
+
+    let resultValue = Ok("hello")
+      :> Monad.map Result (text) => { text ++ "!" };
+    let resultFailure: Result<Number, AppError> = Err("bad")
+      :> Monad.mapErr Result DomainFailure;
+  `);
+
+  expectBinding(result.env, "taskValue", { type: "Task<Number, 'a>", vars: 0 });
+  expectBinding(result.env, "taskFailure", { type: "Task<Number, AppError>", vars: 0 });
+  expectBinding(result.env, "resultValue", { type: "Result<String, 'a>", vars: 0 });
+  expectBinding(result.env, "resultFailure", { type: "Result<Number, AppError>", vars: 0 });
 });
 
 Deno.test("carrier records instantiate independently across viaError uses", async () => {
@@ -637,6 +665,91 @@ Deno.test("Task.race settles with the first eager task handle", async () => {
   assertEquals(result.stderr, "");
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "left\n");
+});
+
+Deno.test("Task.new completes from a typed Result callback", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => {
+        Task.new((complete) => {
+          complete(Ok("reply"));
+          Ok(void)
+        })
+          :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "reply\n");
+});
+
+Deno.test("Task.new preserves typed setup and completion errors", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let printFailure = (task) => {
+        task :> Task.recover((error) => {
+          print(error);
+          void
+        })
+      };
+
+      let main = () => {
+        let setupFailure = Task.new((_) => {
+          Err("setup failed")
+        });
+        let completionFailure = Task.new((complete) => {
+          complete(Err("event failed"));
+          Ok(void)
+        });
+
+        Task|
+          printFailure(setupFailure),
+          printFailure(completionFailure)
+        | :> Task.map((_) => { void })
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "setup failed\nevent failed\n");
+});
+
+Deno.test("Task.fromCallback turns a Result-returning handler into a Task", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let main = () => {
+        Task.fromCallback(
+          (value) => { Ok(value + 1) },
+          (handler) => {
+            handler(41);
+            Ok(void)
+          }
+        ) :> Task.map(print)
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "42\n");
 });
 
 Deno.test("lifted Task tuple syntax sequences task values into one tuple task", async () => {

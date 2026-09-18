@@ -116,6 +116,7 @@ Deno.test("[module update T130/T133] current default constructors and low-level 
       "recover",
       "orElse",
       "all",
+      "new",
     ],
   );
   assertEquals(
@@ -377,7 +378,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       },
       {
         alias: "Monad",
-        values: ["Carrier", "Applicative", "via", "viaError"],
+        values: ["Carrier", "Applicative", "via", "viaError", "map", "mapErr"],
         types: ["Carrier", "Applicative"],
       },
       {
@@ -421,9 +422,11 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "recover",
           "orElse",
           "all",
+          "new",
           "fn",
           "fnError",
           "carrier",
+          "fromCallback",
           "collectList",
           "traverse",
         ],

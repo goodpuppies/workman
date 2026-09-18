@@ -253,6 +253,7 @@ export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "Js.Array.fromList", profiles: defaultOnly, runtimeName: "Js.Array.fromList" },
   { exportName: "Json.assert", profiles: defaultOnly, runtimeName: "Json.assert" },
   ...[
+    "new",
     "fromResult",
     "succeed",
     "fail",

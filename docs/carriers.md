@@ -168,6 +168,31 @@ let requireValue = Monad.viaError Task ValidationFailure (value) => {
 Use plain `Monad.via` when the transformation already returns the pipeline's
 error type.
 
+## Map existing carrier values
+
+`Monad.map` and `Monad.mapErr` are curried, carrier-generic forms of the ordinary
+mapping operations. They are convenient as computed pipeline stages:
+
+```wm
+task
+  :> Monad.mapErr Task ActorCallFailure
+  :> Monad.map Task print
+```
+
+`map` applies a pure transformation to a successful value. Use `via` instead when
+the transformation starts another effect and therefore returns another value in
+the carrier.
+
+`mapErr` changes the error of an existing carrier value. `viaError` instead
+declares how the native error returned by an effectful transformation enters the
+shared procedure error type:
+
+```wm
+let fetchBody = Monad.viaError Task JavaScriptFailure (request) => {
+  fetch(request)
+};
+```
+
 ## Group procedures at computation boundaries
 
 `Carrier|...|` combines several carrier-producing procedures. Match the combined
@@ -213,7 +238,9 @@ It is also the mechanism underneath `via` and `Carrier|...|`.
 
 The distinction is about code shape:
 
-- routine procedure transformations: via and pipeline;
+- pure transformations of existing carrier values: `Monad.map`;
+- routine effectful procedure transformations: `via` and pipeline;
+- translate an existing carrier error: `Monad.mapErr`;
 - combine independent or staged procedure results: `Carrier|...|`;
 - perform carrier-dependent branching: `match(Carrier|...|)`;
 - write an explicit dependent continuation when needed: `andThen`.

@@ -15,6 +15,9 @@ record Carrier<
   AndThenCarrier,
   AndThenTransform,
   AndThenResult,
+  MapErrCarrier,
+  MapErrTransform,
+  MapErrResult,
 > = {
   fn: FnArg -> FnResult,
   fnError: ErrorArg -> ErrorResult,
@@ -22,6 +25,7 @@ record Carrier<
   map: (MapCarrier, MapTransform) -> MapResult,
   map2: (Map2Left, Map2Right, Map2Combine) -> Map2Result,
   andThen: (AndThenCarrier, AndThenTransform) -> AndThenResult,
+  mapErr: (MapErrCarrier, MapErrTransform) -> MapErrResult,
 };
 
 // The subset a lifted operator needs: inject a pure operand, and combine two
@@ -53,6 +57,22 @@ let viaError = (domain) => {
   (inject) => {
     (f) => {
       domain.fnError(inject)(f)
+    }
+  }
+};
+
+let map = (domain) => {
+  (transform) => {
+    (wrapped) => {
+      domain.map(wrapped, transform)
+    }
+  }
+};
+
+let mapErr = (domain) => {
+  (transform) => {
+    (wrapped) => {
+      domain.mapErr(wrapped, transform)
     }
   }
 };
