@@ -1504,7 +1504,9 @@ class SliceNormalizer {
     const id = arm.node?.id;
     const fact = id === undefined
       ? undefined
-      : [...this.analysis.patternFacts.byMatchArm].find(([source]) => source.node?.id === id)?.[1];
+      : [...this.analysis.patternFacts.byMatchArm].find(([source, candidate]) =>
+        candidate.path === this.path && source.node?.id === id
+      )?.[1];
     return requiredObject(fact, "missing resolved Core match-arm fact");
   }
 

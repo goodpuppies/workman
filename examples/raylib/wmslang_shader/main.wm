@@ -1,0 +1,167 @@
+-- wmslang_shader/main.wm
+--
+-- A wmslang fragment shader running inside raylib: the Mandelbrot acceptance
+-- shader is compiled to whole-program GLSL at build time, adapted to a
+-- raylib-compatible `#version 330` fragment stage, and loaded with raylib's
+-- default vertex shader.
+--
+-- run from the repo root:
+--   deno run -A src/main.ts run examples/raylib/wmslang_shader/main.wm
+--
+-- Close the window or press ESC to exit.
+
+from js.module("raylib") import * as Raylib;
+from js.module("./glsl_stage.ts") import {
+  fragmentStage,
+  loadFragmentShader,
+  beginShader,
+  endShader,
+  unloadShader
+};
+
+type AppError =
+  | RaylibError<Js.Error>
+  | RenderError<Js.Error>
+  | ShaderError<Js.Error>;
+
+let raylibpath = "./examples/raylib/libraylib.so";
+let screenW = 960;
+let screenH = 540;
+record Color = { r: Number, g: Number, b: Number, a: Number };
+let title = "wmslang mandelbrot in raylib";
+let hint = "Gpu.shaderSource(GLSL) -> raylib fragment shader - ESC to exit";
+
+let white = .{ r = 255, g = 255, b = 255, a = 255 };
+let black = .{ r = 12, g = 14, b = 22, a = 255 };
+let hudColor = .{ r = 232, g = 234, b = 244, a = 255 };
+
+-- Verbatim from markdown/wmslang/v1-acceptance.md (`static_mandelbrot.wm`):
+-- the shader accepted by the compiler's own Slang backend test, so this
+-- example tracks a source known to compile through the whole pipeline.
+type Escape = Inside | Escaped<Number>;
+
+let mandelbrotShade = (coord) => {
+  @gpu;
+
+  let rec escapeIterations = (cx, cy, zx, zy, remaining) => {
+    if (remaining <= 0) {
+      Inside
+    } else {
+      let magnitudeSquared = zx * zx + zy * zy;
+
+      if (magnitudeSquared > 4.0) {
+        Escaped(remaining)
+      } else {
+        let nextX = zx * zx - zy * zy + cx;
+        let nextY = 2.0 * zx * zy + cy;
+        escapeIterations(cx, cy, nextX, nextY, remaining - 1)
+      }
+    }
+  };
+
+  let (x, y) = coord;
+  let cx = (2.0 * x - 64.0) / 48.0 - 0.5;
+  let cy = (2.0 * y - 64.0) / 48.0;
+  let escape = escapeIterations(cx, cy, 0.0, 0.0, 96);
+
+  match(escape) {
+    Inside => {
+      (0.0, 0.0, 0.0, 1.0)
+    },
+    Escaped(remaining) => {
+      let amount = remaining / 96.0;
+      (amount, 0.25 * amount, 1.0 - amount, 1.0)
+    }
+  }
+};
+
+let mandelbrotFragment = Gpu.fragment(mandelbrotShade);
+
+-- Compile-time GLSL string -> 330 fragment stage -> raylib shader handle.
+let loadShader = () => {
+  let whole = Gpu.shaderSource(mandelbrotFragment, Gpu.ShaderTarget.GLSL);
+  match(fragmentStage(whole) :> Result.mapErr(ShaderError)) {
+    Ok(staged) => {
+      loadFragmentShader(staged) :> Result.mapErr(ShaderError)
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+-- One frame: the fullscreen rectangle runs under the wmslang shader; the HUD
+-- draws after endShader so it stays unshaded.
+let drawFrame = (shader) => {
+  match(
+    Result|
+      Raylib.BeginDrawing(),
+      Raylib.H.ClearBackground(black),
+      beginShader(shader),
+      Raylib.H.DrawRectangle(0, 0, screenW, screenH, white),
+      endShader(),
+      Raylib.H.DrawText(title, 16, 16, 22, hudColor),
+      Raylib.H.DrawText(hint, 16, 44, 16, hudColor),
+      Raylib.DrawFPS(16, screenH - 28),
+      Raylib.EndDrawing()
+    | :> Result.mapErr(RenderError)
+  ) {
+    Ok(_) => { Ok(void) },
+    Err(e) => { Err(e) }
+  }
+};
+
+let rec loop = (shader) => {
+  match(Raylib.WindowShouldClose() :> Result.mapErr(RenderError)) {
+    Ok(true) => {
+      Ok(void)
+    },
+    Ok(false) => {
+      match(drawFrame(shader)) {
+        Ok(_) => { loop(shader) },
+        Err(e) => { Err(e) }
+      }
+    },
+    Err(e) => { Err(e) }
+  }
+};
+
+let main = () => {
+  match(
+    Result|
+      Raylib.loadRaylib(raylibpath),
+      Raylib.H.InitWindow(screenW, screenH, title),
+      Raylib.SetTargetFPS(60)
+    | :> Result.mapErr(RaylibError)
+  ) {
+    Ok(_) => {
+      match(loadShader()) {
+        Ok(shader) => {
+          let result = loop(shader);
+
+          let cleanup =
+            Result|
+              unloadShader(shader),
+              Raylib.CloseWindow(),
+              Raylib.unloadRaylib()
+            | :> Result.mapErr(RaylibError);
+
+          match(Result|result, cleanup|) {
+            Ok(_) => {},
+            Err(e) => { print(e) }
+          }
+        },
+        Err(e) => {
+          match(
+            Result|
+              Raylib.CloseWindow(),
+              Raylib.unloadRaylib()
+            | :> Result.mapErr(RaylibError)
+          ) {
+            Ok(_) => { print(e) },
+            Err(_) => { print(e) }
+          }
+        }
+      }
+    },
+    Err(e) => { print(e) }
+  }
+};

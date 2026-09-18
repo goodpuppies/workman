@@ -1,0 +1,252 @@
+-- The wmslang side of the "glass jelly cubes" raymarcher port
+-- (examples/raylib/jelly_shader/original.txt, Mirco Muller, GPLv3).
+--
+-- This module owns everything GPU: the `JellyUniforms` environment record,
+-- the `Surface` material ADT, the `jellyShade` factory with its lexical GPU
+-- helpers, and the `Gpu.fragment` selection. Host code (window, loop,
+-- presentation) lives in `./jelly_main.wm` and imports only the opaque
+-- fragment plus the nominal uniforms record; no shader helper, island, or
+-- selection crosses the module boundary.
+--
+-- Adaptations for the current wmslang slice:
+-- - `mat2` rotations become the `rotate` vec2 helper (no matrix representation);
+-- - `inout` hit state and the `isInside` global thread through explicit
+--   values: `scene` yields `(distance, Surface)`, march threads the pair,
+--   and the hit point is recomputed from origin and direction wherever it is
+--   needed, so no point is threaded at all;
+-- - `for` march/occlusion loops become direct self-tail `rec` helpers;
+-- - multi-lane swizzles are spelled with single-lane projections;
+-- - `mix`/`fract` use the pinned Slang spellings `lerp`/`frac`;
+-- - `iChannel0` texture detail becomes procedural value noise, so the
+--   environment carries only resolution and time;
+-- - WebGPU coordinates start top-left, so y is mirrored to the original's
+--   bottom-left fragCoord convention.
+--
+-- Run from the wm-mini repository root:
+--   deno run -A src/main.ts run examples/wmslang_window/src/jelly_main.wm
+record JellyUniforms = {
+  resolution: (Number, Number),
+  time: Number
+};
+
+type Surface = Ground | Wall | Jelly;
+
+let jellyShade = (uniforms: JellyUniforms) => {
+  (coord) => {
+    @gpu;
+
+    let rotate = (p, angle) => {
+      let sine = sin(angle);
+      let cosine = cos(angle);
+      (p.x * cosine - p.y * sine, p.x * sine + p.y * cosine)
+    };
+
+    let hash2 = (p) => {
+      frac(sin(dot(p, (127.1, 311.7))) * 43758.5453)
+    };
+
+    let vnoise = (p) => {
+      let cell = floor(p);
+      let local = frac(p);
+      let blend = local * local * (3.0 - 2.0 * local);
+      let bottom = lerp(hash2(cell), hash2((cell.x + 1.0, cell.y)), blend.x);
+      let top = lerp(hash2((cell.x, cell.y + 1.0)), hash2((cell.x + 1.0, cell.y + 1.0)), blend.x);
+      lerp(bottom, top, blend.y)
+    };
+
+    let detailNoise = (uv) => {
+      let low = vnoise(uv);
+      let high = vnoise(uv * 2.0 + (13.7, 7.3));
+      low + high
+    };
+
+    let softMin = (d1, d2) => {
+      let stiffness = 0.5;
+      let blend = clamp(0.5 + 0.5 * (d2 - d1) / stiffness, 0.0, 1.0);
+      lerp(d2, d1, blend) - blend * stiffness * (1.0 - blend)
+    };
+
+    let boxDistance = (p, size, radius) => {
+      let delta = abs(p) - size;
+      let outside = length(max(delta, (0.0, 0.0, 0.0)));
+      min(max(delta.x, max(delta.y, delta.z)), 0.0) + outside - radius
+    };
+
+    -- Signed distance plus hit surface.
+    let scene = (p, time, inside) => {
+      let ground = p.y + 1.0;
+      let wall = p.z + 1.0;
+      let boxShifted = (p.x, p.y - 0.4, p.z - 0.2);
+      -- The original's r2d takes degrees; wmslang rotates in radians. Each
+      -- stage rotates the output of the previous one, so the second stage
+      -- reads the already-rotated z lane.
+      let boxSpinA = rotate((boxShifted.x, boxShifted.z), radians(14.0 * time));
+      let boxSpinB = rotate((boxShifted.y, boxSpinA.y), radians(26.0 * time));
+      let boxP = (boxSpinA.x, boxSpinB.x, boxSpinB.y);
+      let pulse = 0.75 + 0.1 * (0.5 + 0.5 * cos(4.0 * time + 9.0 * boxP.y));
+      let box = boxDistance(boxP, (0.6, 0.6, 0.6), 0.05);
+      let ballShifted = p - (2.5 * cos(1.25 * time), 0.75, 0.2);
+      let ballSpinA = rotate((ballShifted.x, ballShifted.z), radians(0.0 - 60.0 * time));
+      let ballSpinB = rotate((ballShifted.y, ballSpinA.y), radians(0.0 - 90.0 * time));
+      let ballP = (ballSpinA.x, ballSpinB.x, ballSpinB.y);
+      let ball = boxDistance(ballP, (0.4, 0.4, 0.4), 0.05);
+      let merged = if (inside) {
+        0.0 - softMin(box, ball)
+      } else {
+        softMin(box, ball)
+      };
+      let d = min(ground, min(wall, merged));
+      if (d == ground) {
+        (d, Ground)
+      } else {
+        if (d == wall) {
+          (d, Wall)
+        } else {
+          (d, Jelly)
+        }
+      }
+    };
+
+    let rec march = (origin, direction, time, inside, distance, surface, steps) => {
+      if (steps >= 48) {
+        (distance, surface)
+      } else {
+        let probe = origin + direction * distance;
+        let (t, nextSurface) = scene(probe, time, inside);
+        if (abs(t) < 0.00001 * (1.0 + 0.125 * t)) {
+          (distance, nextSurface)
+        } else {
+          march(origin, direction, time, inside, distance + t * 0.75, nextSurface, steps + 1)
+        }
+      }
+    };
+
+    -- The initial surface is dead: steps starts at 0, so the loop always
+    -- evaluates the scene at least once before anything reads the surface.
+    let marchStart = (origin, direction, time, inside) => {
+      march(origin, direction, time, inside, 0.0, Ground, 0)
+    };
+
+    let normalAt = (p, time, inside) => {
+      let (d0, _) = scene(p, time, inside);
+      let (dx, _) = scene(p + (0.001, 0.0, 0.0), time, inside);
+      let (dy, _) = scene(p + (0.0, 0.001, 0.0), time, inside);
+      let (dz, _) = scene(p + (0.0, 0.0, 0.001), time, inside);
+      normalize((dx - d0, dy - d0, dz - d0))
+    };
+    let shadow = (p, lightPosition, n, lightDirection, time) => {
+      let lightDistance = distance(lightPosition, p);
+      let (wallDistance, _) = marchStart(p + n * 0.01, lightDirection, time, false);
+      if (lightDistance < wallDistance) { 1.0 } else { 0.1 }
+    };
+
+    let rec occlude = (p, n, stepSize, iterations, strength, a, amount, time) => {
+      if (a > iterations) {
+        1.0 - amount * strength
+      } else {
+        let dist = Gpu.f32(a) * stepSize;
+        let (d, _) = scene(p + n * dist, time, false);
+        occlude(p, n, stepSize, iterations, strength, a + 1, amount + max(0.0, (dist - d) / dist), time)
+      }
+    };
+
+    let shadeOne = (rayOrigin, rayDirection, d, n, surface, time, light) => {
+      let (lightPosition, lightColor, lightIntensity) = light;
+      let p = rayOrigin + rayDirection * d;
+      let lightDistance = distance(p, lightPosition);
+      let lightDirection = normalize(lightPosition - p);
+      let attenuation = 5.0 / (lightDistance * lightDistance);
+      let material = match(surface) {
+        Ground => {
+          let bands = cos(5.0 * p.x) * sin(5.0 * p.z + 5.0 * time);
+          let bandMix = smoothstep(0.4, 0.6, bands);
+          lerp((0.0, 0.0, 0.0), (0.5, 0.5, 0.5), (bandMix, bandMix, bandMix))
+        },
+        Wall => {
+          let stripes = sin(25.0 * p.y + 12.0 * time);
+          let stripeMix = smoothstep(0.0, 0.9, stripes);
+          lerp((0.0, 0.0, 0.0), (0.5, 0.5, 0.5), (stripeMix, stripeMix, stripeMix))
+        },
+        Jelly => { (0.9, 0.5, 0.2) }
+      };
+      let shadowed = shadow(p, lightPosition, n, lightDirection, time);
+      let diffuse = max(0.0, dot(n, lightDirection));
+      let halfVector = normalize(lightDirection - rayDirection);
+      let detail = match(surface) {
+        Ground => { detailNoise((p.x * 0.5, p.z * 0.5 + time * 0.5)) },
+        Wall => { detailNoise((p.x * 0.5, p.y * 0.5 + time * 0.5)) },
+        Jelly => { 1.0 }
+      };
+      let shininess = 100.0 * detail;
+      let specular = pow(max(0.0, dot(n, halfVector)), shininess);
+      let ambient = (0.05, 0.05, 0.05);
+      let occlusion = occlude(p, n, 0.1, 8, 0.1, 1, 0.0, time);
+      occlusion * attenuation * shadowed *
+        (ambient + diffuse * lightColor * lightIntensity * material + specular * (1.0, 1.0, 1.0))
+    };
+
+    let shadeAll = (rayOrigin, rayDirection, d, n, surface, time) => {
+      let colA = shadeOne(rayOrigin, rayDirection, d, n, surface, time, ((2.0, 1.0, 2.0), (0.9, 0.8, 0.7), 3.0));
+      let colB = shadeOne(rayOrigin, rayDirection, d, n, surface, time, ((0.7, 3.0, 0.0), (0.2, 0.2, 0.9), 6.0));
+      let colC = shadeOne(rayOrigin, rayDirection, d, n, surface, time, ((0.0 - 2.0, 2.0, 0.5), (0.9, 0.3, 0.2), 3.0));
+      colA + colB + colC
+    };
+
+    let camera = (uv, rayOrigin, aim, zoom) => {
+      let forward = normalize(aim - rayOrigin);
+      let worldUp = (0.0, 1.0, 0.0);
+      let right = normalize(cross(worldUp, forward));
+      let up = normalize(cross(forward, right));
+      let center = rayOrigin + forward * zoom;
+      normalize(center + right * uv.x + up * uv.y - rayOrigin)
+    };
+
+    let time = uniforms.time * 0.001;
+    let uvRaw = coord / uniforms.resolution;
+    let squashed = uvRaw * 2.0 - 1.0;
+    -- WebGPU coordinates start at the top-left while the original's fragCoord
+    -- starts at the bottom-left; mirror y to keep the scene upright.
+    let upright = (squashed.x, 0.0 - squashed.y);
+    let stretched = (upright.x * uniforms.resolution.x / uniforms.resolution.y, upright.y);
+    let uv = stretched * (1.0 + 0.25 * length(stretched));
+    let rayOrigin = (cos(time), 1.0 + 0.125 * (0.5 + 0.5 * cos(5.0 * time)), 2.5);
+    let rayDirection = camera(uv, rayOrigin, (0.0, 0.0, 0.0), 1.7);
+    let (firstDistance, firstSurface) = marchStart(rayOrigin, rayDirection, time, false);
+    let firstP = rayOrigin + rayDirection * firstDistance;
+    let firstNormal = normalAt(firstP, time, false);
+    let dim = match(firstSurface) {
+      Jelly => { 0.025 },
+      Ground => { 1.0 },
+      Wall => { 1.0 }
+    };
+    let direct = dim * shadeAll(rayOrigin, rayDirection, firstDistance, firstNormal, firstSurface, time);
+    let color = match(firstSurface) {
+      Jelly => {
+        let wobble = vnoise((firstP.x * 0.125, firstP.y * 0.125));
+        let refractedNormal = normalize(firstNormal + (wobble, wobble, wobble));
+        let innerOrigin = firstP - refractedNormal * 0.05;
+        let innerDirection = normalize(refract(rayDirection, refractedNormal, 0.7));
+        let (innerDistance, innerSurface) = marchStart(innerOrigin, innerDirection, time, true);
+        let innerP = innerOrigin + innerDirection * innerDistance;
+        let innerNormal = normalAt(innerP, time, true);
+        let inner = shadeAll(innerOrigin, innerDirection, innerDistance, innerNormal, innerSurface, time);
+        let outerOrigin = innerP - innerNormal * 0.01;
+        let outerDirection = normalize(refract(innerDirection, innerNormal, 0.7));
+        let (outerDistance, outerSurface) = marchStart(outerOrigin, outerDirection, time, false);
+        let outerP = outerOrigin + outerDirection * outerDistance;
+        let outerNormal = normalAt(outerP, time, false);
+        direct + inner + shadeAll(outerOrigin, outerDirection, outerDistance, outerNormal, outerSurface, time)
+      },
+      Ground => { direct },
+      Wall => { direct }
+    };
+    let mapped = color / (1.0 + color);
+    let framed = mapped * (1.0 - 0.5 * length(uvRaw * 2.0 - 1.0));
+    let gamma = 1.0 / 2.2;
+    (pow(framed.x, gamma), pow(framed.y, gamma), pow(framed.z, gamma), 1.0)
+  }
+};
+
+let fragmentForUniforms = (uniforms: JellyUniforms) => {
+  Gpu.fragment(jellyShade(uniforms))
+};

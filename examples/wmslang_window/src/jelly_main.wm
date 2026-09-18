@@ -1,0 +1,145 @@
+-- Host side of the "glass jelly cubes" raymarcher port: window setup,
+-- native event loop, per-frame uniform construction, and WebGPU presentation.
+-- The shader (environment record, material ADT, shade factory, and the
+-- `Gpu.fragment` selection) lives in `./jelly_shader.wm`; this module imports
+-- only the opaque fragment constructor and the nominal uniforms record.
+--
+-- Run from the wm-mini repository root:
+--   deno run -A src/main.ts run examples/wmslang_window/src/jelly_main.wm
+
+from "./sdl_window.wm" import {
+  NativeRuntime, NativeError, QuitEvent, MouseEvent, ResizeEvent, IgnoredEvent, NoEvent,
+  startNative, nativeSurface, pollNative, delayNative, presentNative, closeNative
+};
+from "./webgpu_present.wm" import {
+  FragmentRenderer,
+  createFragmentRenderer, renderFragment, destroyFragmentRenderer
+};
+from "./jelly_shader.wm" import {
+  JellyUniforms, fragmentForUniforms
+};
+
+type AppError = NativeFailure<NativeError> | HostFailure<Js.Error>;
+
+record JellyFrame = {
+  quit: Bool,
+  resolution: (Number, Number),
+  time: Number
+};
+
+type PollStep = PollAgain<JellyFrame> | PollDone<JellyFrame>;
+
+let initialState: JellyFrame = .{
+  quit = false,
+  resolution = (960.0, 640.0),
+  time = 0.0
+};
+
+let uniformsFrom = (state: JellyFrame) => {
+  let uniforms: JellyUniforms = .{
+    resolution = state.resolution,
+    time = state.time
+  };
+  uniforms
+};
+
+let applyNativeEvent = (state: JellyFrame, event) => {
+  match(event) {
+    QuitEvent => {
+      let next: JellyFrame = .{ ..state, quit = true };
+      PollDone(next)
+    },
+    MouseEvent(_dx, _dy) => { PollAgain(state) },
+    ResizeEvent(_width, _height) => { PollAgain(state) },
+    IgnoredEvent => { PollAgain(state) },
+    NoEvent => { PollDone(state) }
+  }
+};
+
+let rec drainEvents = (
+  native: NativeRuntime,
+  state: JellyFrame,
+  remaining: Number
+) => {
+  if (remaining <= 0) {
+    Ok(state)
+  } else {
+    match(pollNative(native)) {
+      Err(error) => { Err(NativeFailure(error)) },
+      Ok(event) => {
+        match(applyNativeEvent(state, event)) {
+          PollDone(done) => { Ok(done) },
+          PollAgain(next) => { drainEvents(native, next, remaining - 1) }
+        }
+      }
+    }
+  }
+};
+
+let rec frameLoop = (
+  native: NativeRuntime,
+  renderer: FragmentRenderer,
+  state: JellyFrame
+) => {
+  -- Each frame crosses one Task (Promise) boundary so the recursive step runs
+  -- on a fresh microtask stack. Chaining frames with synchronous
+  -- Result.andThen instead accumulates one stack frame per frame and exhausts
+  -- the JavaScript call stack after a few thousand frames.
+  match(drainEvents(native, state, 256)) {
+    Err(error) => { Task.succeed(Err(error)) },
+    Ok(inputState) => {
+      if (inputState.quit) {
+        Task.succeed(Ok(void))
+      } else {
+        let nextState: JellyFrame = .{
+          ..inputState,
+          time = inputState.time + 16.0
+        };
+        let fragment = fragmentForUniforms(uniformsFrom(nextState));
+        Task.succeed(
+          Result|
+            renderFragment(renderer, fragment) :> Result.mapErr(HostFailure),
+            presentNative(native) :> Result.mapErr(NativeFailure),
+            delayNative(native, 16) :> Result.mapErr(NativeFailure)
+          |
+        )
+        :> Task.andThen((step) => {
+          match(step) {
+            Err(e) => { Task.succeed(Err(e)) },
+            Ok(_) => { frameLoop(native, renderer, nextState) }
+          }
+        })
+      }
+    }
+  }
+};
+
+let runWindow = (native: NativeRuntime) => {
+  createFragmentRenderer(nativeSurface(native), fragmentForUniforms(uniformsFrom(initialState)))
+    :> Task.andThen((renderer) => {
+      frameLoop(native, renderer, initialState)
+        :> Task.map((rendered) => {
+          let cleanup = Result|
+            destroyFragmentRenderer(renderer) :> Result.mapErr(HostFailure),
+            closeNative(native) :> Result.mapErr(NativeFailure)
+          |;
+          match(Result|rendered, cleanup|) {
+            Ok(_) => { void },
+            Err(error) => { print(error) }
+          }
+        })
+    })
+    :> Task.mapErr(HostFailure)
+    :> Task.recover((error) => {
+      let _closed = closeNative(native);
+      print(error)
+    })
+};
+
+let main = () => {
+  startNative(960, 640)
+    :> Result.mapErr(NativeFailure)
+    :> Task.fromResult
+    :> Task.andThen(runWindow)
+    :> Task.recover((error) => { print(error) })
+};
