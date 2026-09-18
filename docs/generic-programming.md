@@ -61,7 +61,7 @@ If one step returns `Err`, the later transformations are skipped. If it returns
 work.
 
 To implement that pattern, `Result` and `Task` define operations such as `fn`,
-`fnError`, `succeed`, `map`, `map2`, and `andThen`. Each module exports them in
+`fnError`, `succeed`, `map`, `mapErr`, `map2`, and `andThen`. Each module exports them in
 a record like this:
 
 ```wm
@@ -70,6 +70,7 @@ let carrier = .{
   fnError = fnError,
   succeed = succeed,
   map = map,
+  mapErr = mapErr,
   map2 = map2,
   andThen = andThen,
 };
@@ -359,6 +360,153 @@ let memoryUsers = userLibraryWith(memoryStore);
 The input record supplies the required behavior. The returned record is the
 configured library. Both remain normal Workman values.
 
+## Interpreting a function-record factory
+
+A library sometimes needs to give one record of functions more than one
+meaning. For example, the functions may run an implementation directly in one
+setting, but forward their arguments through a worker or another transport in
+another setting.
+
+This can be expressed without functors, first-class polymorphism, generated
+call wrappers, or a special language concept for the library being built. Put
+the concrete functions in an ordinary record factory and parameterize the
+factory by an interpretation mode:
+
+```wm
+record CounterFunctions<Log, Add> = {
+  LOG: Log,
+  ADD: Add,
+};
+
+let functions = (mode) => {
+  let define = (name, implementation) => {
+    Function.define(mode, name, implementation)
+  };
+
+  .{
+    LOG = define("LOG", (context, state, _, message) => {
+      print(context.id ++ ": " ++ message);
+      "logged"
+    }),
+    ADD = define("ADD", (_, state, next, input) => {
+      let (left, right) = input;
+      next(.{ ..state, calls = state.calls + 1 });
+      left + right
+    }),
+  }
+};
+```
+
+`Function.define` gives an implementation one of two meanings:
+
+- in `Direct` mode it returns the directly callable function and installs an
+  erased entry in a dispatch table;
+- in `Forward` mode it returns a function of the same inferred type which sends
+  the call through a link.
+
+The same factory can therefore install an implementation:
+
+```wm
+let installed = functions(Function.Direct(
+  context,
+  currentState,
+  next,
+  table,
+));
+```
+
+and construct its forwarding view:
+
+```wm
+let counter = functions(Function.Forward(link));
+
+counter.LOG("starting");
+counter.ADD(5, 3);
+```
+
+The forwarded values are still ordinary functions. Code consuming `counter`
+does not use a proxy, request constructor, generated client call, or special
+actor syntax.
+
+### Why the local `define` works
+
+The small eta-expanded binding inside `functions` is essential:
+
+```wm
+let define = (name, implementation) => {
+  Function.define(mode, name, implementation)
+};
+```
+
+The surrounding invocation of `functions` fixes the mode, context, and state.
+The local function binding can still be generalized independently in the input
+and output types that do not occur in that surrounding environment. Each use
+of `define` therefore receives fresh method-specific types:
+
+```text
+LOG : String -> Task<String, String>
+ADD : (Number, Number) -> Task<Number, String>
+```
+
+This is ordinary rank-1 let-polymorphism. It does not make a function parameter
+or record field polymorphic. Passing `define` into another function and trying
+to use that received parameter at several unrelated types would encounter the
+usual limitation described below.
+
+The pattern can be summarized as an **interpreted function-record factory**:
+
+1. The outer factory captures the state shared by every operation.
+2. A local let-bound constructor remains polymorphic in the parts that vary per
+   operation.
+3. Each constructor use contributes one differently typed field.
+4. The selected interpretation changes how those fields execute, while branch
+   unification keeps their public function types identical.
+
+### Relationship to other generic techniques
+
+This resembles several established techniques without being exactly the same
+as any one of them:
+
+- With ordinary record passing, a generic consumer receives a record of
+  operations it requires. Here, a factory *produces* a concrete heterogeneous
+  record while a mode changes the meaning of every produced field.
+- In a tagless-final encoding, a program is written against an algebra and can
+  be evaluated by different interpreters. Here, the described object is itself
+  a record of callable functions, and the small `define` operation interprets
+  each field as that record is constructed.
+- A Standard ML functor configures one module from another module. This
+  pattern performs similar configuration with ordinary inferred values and
+  functions; it does not require module signatures or functor application.
+
+The distinction is useful because the pattern remains possible in an ordinary
+HM language. A direct translation using local `fun` bindings has been compiled
+with MLton: Standard ML inferred the heterogeneous result record and the same
+polymorphic `define` shape without higher-rank types.
+
+### Transport constraints and future derivation
+
+The inference pattern itself is independent of serialization. A forwarding
+interpretation nevertheless needs evidence that every transported input and
+output has a wire representation. Conceptually, its constructor has qualified
+input and output variables:
+
+```text
+define :
+  (JsonLike<input>, JsonLike<output>) =>
+  ... -> input -> Task<output, String>
+```
+
+Such constraints preserve the precise types of fields while rejecting values
+such as functions or native handles at a JSON boundary. Context and state need
+no such constraint because they remain on the implementing side.
+
+A future typed macro or derivation feature can supply the operation name and
+wire evidence after inference. That can remove the repeated declaration and
+`ADD = define("ADD", ...)` spelling while leaving calls such as
+`counter.ADD(5, 3)` as normal function calls. The technique is consequently
+useful beyond actors: workers, RPC, persistent command logs, test interpreters,
+and capability tables can all interpret function records this way.
+
 ## Reusing a generic function at different types
 
 Let-bound functions and records can be used at different types at separate
@@ -505,3 +653,6 @@ programs.
   uses one generic traversal with `Result` and `Task`.
 - [`examples/carrier_flattening.wm`](../examples/carrier_flattening.wm) contains
   more involved record and nested-carrier examples.
+- Stageforgeman's historical `prior-experiments/interpreted_functions` prototype
+  constructs the same heterogeneous function records in direct and forwarding
+  modes.
