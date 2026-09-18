@@ -1,0 +1,22 @@
+-- Minimal main thread: spawn `worker.wm`, print its reply, then exit.
+-- `js.worker` compiles the `.wm` file into the worker URL; the ordinary
+-- `Worker` FFI owns the physical worker. Terminating after the first reply
+-- lets `wm run` exit instead of idling on the live worker.
+
+from js.worker("./worker.wm") import { url } as WorkerArtifact;
+from js.global import { Worker };
+from js.global("Reflect") import { get };
+
+let main = () => {
+  let worker = Worker.new(WorkerArtifact.url, JSON{ "type": "module" }):>Result.debug;
+  worker:>.addEventListener("message", (event) => {
+    get(event, "data")
+      :> Result.map((data) => {
+        print("main received reply");
+        print(data);
+        worker :> .terminate() :> Result.debug
+      })
+      :> Result.debug
+  }) :> Result.debug;
+  worker :> .postMessage("Hello Worker!") :> Result.debug
+};

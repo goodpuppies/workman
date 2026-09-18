@@ -1,0 +1,38 @@
+-- Flattened worker: listen for one message, log it, and reply. Same behavior
+-- as `worker.wm`, shaped as carrier procedures per docs/carriers.md: each step
+-- consumes the `Result` carrier, so the handler is a single pipeline instead
+-- of nested `Result.map` continuations.
+
+from js.global import { addEventListener };
+from js.global import { postMessage };
+from js.global("Reflect") import { get };
+
+let via = Monad.via;
+
+-- Shared transformation: lift the reflected event payload into the carrier.
+let dataOf = via Result (event) => {
+  get(event, "data")
+};
+
+let main = () => {
+  -- Local transformations of the reply procedure (carrier: Result).
+  let logMessage = via Result (data) => {
+    print("worker received message");
+    print(data);
+    Ok(void)
+  };
+
+  let sendReply = via Result (_) => {
+    postMessage("Hello World! I received your message.");
+    Ok(void)
+  };
+
+  -- Procedure pipeline: extract data, log it, reply. Failure at any step
+  addEventListener("message", (event) => {
+    Ok(event)
+      :> dataOf
+      :> logMessage
+      :> sendReply
+      :> Result.withDefault(void)
+  })
+};

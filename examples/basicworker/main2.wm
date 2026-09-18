@@ -1,0 +1,58 @@
+-- Flattened main thread: same behavior as `main.wm`, shaped as carrier
+-- procedures per docs/carriers.md. Each procedure starts with its head input
+-- already inside the `Result` carrier, names its transformations via `Result`,
+-- and ends in the transformation pipeline. Terminating after the first reply
+-- still lets `wm run` exit.
+
+from js.worker("./worker2.wm") import { url } as WorkerArtifact;
+from js.global import { Worker };
+from js.global("Reflect") import { get };
+from js.global import { addEventListener, setTimeout };
+
+let via = Monad.via;
+
+-- Shared transformation: lift the reflected event payload into the carrier.
+let dataOf = (event) => {
+  get(event, "data")
+};
+
+let showReply = via Result (data) => {
+  print("main received reply");
+  print(data);
+  Ok(void)
+};
+
+let startSession = via Task (worker) => {
+
+  let eventHandler = (event) => {
+
+    let handleEvent =
+      event
+        :> dataOf
+        :> showReply;
+
+    Result|
+      handleEvent,
+      worker :> .terminate()
+    |
+  };
+
+  let createSession = via Task => {
+    eventHandler
+      :> Task.fromCallback
+        (worker :> .addEventListener("message"))
+  };
+
+  worker
+    :> .postMessage("Hello Worker!")
+    :> Task.fromResult
+    :> createSession
+};
+
+-- Procedure: spawn the module worker and hand it to the session.
+let main ==> {
+
+  Worker.new(WorkerArtifact.url, JSON{ "type": "module" })
+    :> Task.fromResult
+    :> startSession
+};

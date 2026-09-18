@@ -1,0 +1,19 @@
+-- Minimal worker: listen for one message, log it, and reply.
+-- Runs as its own `.wm` worker entrypoint; `main` installs the listener.
+
+from js.global import { addEventListener };
+from js.global import { postMessage };
+from js.global("Reflect") import { get };
+
+let main = () => {
+  addEventListener("message", (event) => {
+    get(event, "data")
+      :> Result.map((data) => {
+        print("worker received message");
+        print(data);
+        postMessage("Hello World! I received your message.")
+          :> Result.debug
+      })
+      :> Result.debug
+  }) :> Result.debug
+};
