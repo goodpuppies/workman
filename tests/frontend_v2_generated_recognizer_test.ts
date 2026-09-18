@@ -272,10 +272,6 @@ Deno.test("frontend-v2 generated Surface semantics match the repository golden",
     rejected.sort(),
     [
       "examples/exercises/tree.wm",
-      "examples/stageforgewm/actors/counter.wm",
-      "examples/stageforgewm/lib/postal_service.wm",
-      "examples/stageforgewm/lib/postman.wm",
-      "examples/stageforgewm/lib/types.wm",
     ],
   );
   assertEquals(checked.sort(), Object.keys(frontendV2SemanticGolden.files).sort());
