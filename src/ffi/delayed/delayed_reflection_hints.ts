@@ -55,14 +55,16 @@ export function jsTypedArrayMember(
 
 export function callArgHintForReflection(expr: Expr, result: InferResult): JsCallArgHint {
   if (expr.kind === "Var") {
-    const scheme = result.env.get(expr.name);
-    const target = scheme ? prune(scheme.type) : undefined;
+    const occurrenceType = inferredType(result, expr);
+    const scheme = occurrenceType ? undefined : result.env.get(expr.name);
+    const candidate = occurrenceType ?? scheme?.type;
+    const target = candidate ? prune(candidate) : undefined;
     if (target?.tag === "fn") {
       return {
         kind: "function",
         arity: jsFunctionArity(target),
         paramTypes: jsFunctionParamTypes(target),
-        resultType: knownTyToTypeExpr(target.result),
+        resultType: concreteReflectionHint(target.result),
       };
     }
   }
@@ -79,6 +81,52 @@ export function callArgHintForReflection(expr: Expr, result: InferResult): JsCal
   };
 }
 
+/** Arguments which HM says remain after a contextually partial FFI call. */
+export function contextualFfiCallArgHints(expr: Expr, result: InferResult): JsCallArgHint[] {
+  const expected = contextualFfiFunctionConstraint(expr, result);
+  return expected ? functionDomain(expected).map(callArgHintForType) : [];
+}
+
+export function contextualFfiFunctionConstraint(
+  expr: Expr,
+  result: InferResult,
+): Extract<ReturnType<typeof prune>, { tag: "fn" }> | undefined {
+  const inferred = inferredType(result, expr);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  if (placeholder?.tag !== "ffi") return undefined;
+  const functions = (placeholder.constraints ?? [])
+    .map(prune)
+    .filter((constraint): constraint is Extract<typeof constraint, { tag: "fn" }> =>
+      constraint.tag === "fn"
+    );
+  if (functions.length === 0) return undefined;
+  const arities = new Set(functions.map((constraint) => functionDomain(constraint).length));
+  return arities.size === 1 ? functions[0] : undefined;
+}
+
+export function contextualFfiFunctionArity(expr: Expr, result: InferResult): number | undefined {
+  const expected = contextualFfiFunctionConstraint(expr, result);
+  return expected ? functionDomain(expected).length : undefined;
+}
+
+function functionDomain(type: Extract<ReturnType<typeof prune>, { tag: "fn" }>): Ty[] {
+  if (type.params.length !== 1) return type.params;
+  const domain = prune(type.params[0]);
+  if (domain.tag === "prim" && domain.name === "Void") return [];
+  return domain.tag === "tuple" ? domain.items : [domain];
+}
+
+function callArgHintForType(type: Ty): JsCallArgHint {
+  const target = prune(type);
+  if (target.tag !== "fn") return { kind: "unknown" };
+  return {
+    kind: "function",
+    arity: jsFunctionArity(target),
+    paramTypes: jsFunctionParamTypes(target),
+    resultType: concreteReflectionHint(target.result),
+  };
+}
+
 function jsFunctionArity(type: Extract<ReturnType<typeof prune>, { tag: "fn" }>): number {
   if (type.params.length !== 1) return type.params.length;
   const param = prune(type.params[0]);
@@ -86,13 +134,28 @@ function jsFunctionArity(type: Extract<ReturnType<typeof prune>, { tag: "fn" }>)
 }
 
 function jsFunctionParamTypes(type: Extract<ReturnType<typeof prune>, { tag: "fn" }>): TypeExpr[] {
-  if (type.params.length !== 1) {
-    return type.params.map(knownTyToTypeExpr).filter((param): param is TypeExpr => !!param);
+  const first = type.params.length === 1 ? prune(type.params[0]) : undefined;
+  const params = first?.tag === "tuple" ? first.items : type.params;
+  const reflected = params.map(concreteReflectionHint);
+  return reflected.every((item): item is TypeExpr => !!item) ? reflected : [];
+}
+
+function concreteReflectionHint(type: Ty): TypeExpr | undefined {
+  const reflected = knownTyToTypeExpr(type);
+  return reflected && !containsTypeVariable(reflected) ? reflected : undefined;
+}
+
+function containsTypeVariable(type: TypeExpr): boolean {
+  switch (type.kind) {
+    case "TVar":
+      return true;
+    case "TName":
+      return type.args.some(containsTypeVariable);
+    case "TTuple":
+      return type.items.some(containsTypeVariable);
+    case "TFn":
+      return type.params.some(containsTypeVariable) || containsTypeVariable(type.result);
   }
-  const param = prune(type.params[0]);
-  return param.tag === "tuple"
-    ? param.items.map(knownTyToTypeExpr).filter((item): item is TypeExpr => !!item)
-    : type.params.map(knownTyToTypeExpr).filter((item): item is TypeExpr => !!item);
 }
 
 function callbackReturnType(expr: Expr, result: InferResult): TypeExpr | undefined {

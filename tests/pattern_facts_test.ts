@@ -90,7 +90,8 @@ Deno.test("host patterns over compiler standard-library records retain field evi
         Number, Number, Number, Number,
         Number, Number, Number, Number,
         Number, Number, Number, Number,
-        Number, Number, Number, Number
+        Number, Number, Number, Number,
+        Number, Number, Number
       >) => { fn };`,
     ]]),
   );

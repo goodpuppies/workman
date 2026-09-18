@@ -12,7 +12,7 @@ let main = () => {
   let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
 
   let attach  = viaWriter (buffer) => { Writer.file(99, buffer) };
-  let greet   = viaWriter (writer) => { Writer.print(writer, "nope\n") };
+  let greet   = viaWriter (Writer.print "nope\n");
   let drained = viaWriter (writer) => { Writer.flush(writer) };
 
   let status = match({Result|

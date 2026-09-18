@@ -1,4 +1,4 @@
-import { type Decl, type Expr, parseLongId, type TypeExpr } from "../../ast.ts";
+import { type Decl, type Expr, parseLongId, pathOf, type TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
@@ -52,10 +52,17 @@ import {
 import { typeExprKey as reflectTypeExprKey } from "../reflect/ts_type_expr.ts";
 import {
   callArgHintForReflection,
+  contextualFfiCallArgHints,
   jsTypedArrayMember,
   receiverTypeThroughObligations,
 } from "./delayed_reflection_hints.ts";
-import { addVariants, type FfiBinding, type FfiVariant, selectVariant } from "../shared.ts";
+import {
+  addVariants,
+  type FfiBinding,
+  type FfiVariant,
+  memberVariants,
+  selectVariant,
+} from "../shared.ts";
 
 export function resolveDelayedDecl(
   decl: Decl,
@@ -92,6 +99,7 @@ function resolveDelayedExpr(
       return resolveDelayedFfiBindingCall(expr, ffi, result, selected, options, valueRefs);
     case "Call":
       if (expr.callee.kind === "Var") {
+        rejectLegacyDeepDottedCall(expr, ffi, result);
         const deep = resolveDeepReflectedCall(expr, ffi, result, selected, valueRefs);
         if (deep) return deep;
         const directArrayLike = resolveDirectArrayLikeCall(
@@ -211,6 +219,32 @@ function resolveDelayedExpr(
     default:
       return expr;
   }
+}
+
+function rejectLegacyDeepDottedCall(
+  expr: Extract<Expr, { kind: "Call" }>,
+  ffi: FfiElaboration,
+  result: InferResult,
+): void {
+  if (expr.callee.kind !== "Var") return;
+  // A nominal record function can share its label with a reflected member.
+  // Inference has already selected the record owner, so this is an ordinary
+  // Workman projection rather than legacy JavaScript dotted syntax.
+  if (result.facts.recordProjections.has(expr.callee)) return;
+  const path = pathOf(expr.callee);
+  const root = path.qualifiers[0];
+  if (!root || !/^[a-z_]/.test(root)) return;
+  const memberPath = [...path.qualifiers.slice(1), path.id];
+  const match = uniqueDeepRecordMember(ffi, memberPath);
+  if (!match || match.member.kind !== "TFn") return;
+  const receiver = path.qualifiers.join(".");
+  throw diagnosticError(
+    new Error(
+      `legacy dotted JavaScript method access ${receiver}.${path.id} is no longer supported; use ${receiver} :> .${path.id}`,
+    ),
+    expr.callee.node,
+    "ffi.local-member-pipe-required",
+  );
 }
 
 function resolveDelayedFfiBindingCall(
@@ -413,7 +447,7 @@ function resolveDelayedFfiCall(
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
   if (foreign) {
-    const callMember = jsRefCallMember(foreign.ref, expr.path, expr.args.map(callArgHint));
+    const callMember = reflectedFfiCallMember(foreign.ref, expr, result);
     const member = callMember ?? jsRefMember(foreign.ref, expr.path);
     if (member) {
       return materializeReceiverCall(
@@ -458,13 +492,7 @@ function resolveDelayedFfiCall(
     : undefined;
   const arrayMember = array
     ? jsTypedArrayMember(array, expr, result) ??
-      (arrayRef
-        ? jsRefCallMember(
-          arrayRef,
-          expr.path,
-          expr.args.map((arg) => callArgHintForReflection(arg, result)),
-        )
-        : undefined)
+      (arrayRef ? reflectedFfiCallMember(arrayRef, expr, result) : undefined)
     : undefined;
   if (array && arrayMember) {
     return materializeReceiverCall(
@@ -504,11 +532,7 @@ function resolveDelayedFfiCall(
     ? jsTypeExprValueRef(`promise:${reflectTypeExprKey(promise.type)}`, promise.type)
     : undefined;
   const promiseReflectedMember = promiseSyntheticRef
-    ? jsRefCallMember(
-      promiseSyntheticRef,
-      expr.path,
-      expr.args.map((arg) => callArgHintForReflection(arg, result)),
-    )
+    ? reflectedFfiCallMember(promiseSyntheticRef, expr, result)
     : undefined;
   // Prefer the local promise model: it keeps Workman-side element types (records, Js.Dict)
   // that cannot round-trip through TS reflection. Callback param refs still come from the
@@ -544,11 +568,7 @@ function resolveDelayedFfiCall(
   if (expressionRef) {
     const promiseRef = jsPromiseReceiverTypeExpr(jsRefTypeExpr(expressionRef));
     const promiseRefMember = promiseRef
-      ? jsRefCallMember(
-        expressionRef,
-        expr.path,
-        expr.args.map((arg) => callArgHintForReflection(arg, result)),
-      )
+      ? reflectedFfiCallMember(expressionRef, expr, result)
       : undefined;
     if (promiseRef && promiseRefMember) {
       return materializeReceiverCall(
@@ -567,7 +587,7 @@ function resolveDelayedFfiCall(
         resolveDelayedExpr,
       );
     }
-    const callMember = jsRefCallMember(expressionRef, expr.path, expr.args.map(callArgHint));
+    const callMember = reflectedFfiCallMember(expressionRef, expr, result);
     const member = callMember ?? jsRefMember(expressionRef, expr.path);
     if (member) {
       return materializeReceiverCall(
@@ -659,6 +679,51 @@ function resolveDelayedFfiCall(
     valueRefs,
     resolveDelayedExpr,
   );
+}
+
+function reflectedFfiCallMember(
+  ref: JsTypeRef,
+  expr: Extract<Expr, { kind: "FfiCall" }>,
+  result: InferResult,
+) {
+  const supplied = expr.args.map((arg) => callArgHintForReflection(arg, result));
+  const missing = contextualFfiCallArgHints(expr, result);
+  if (missing.length > 0) {
+    const declared = jsRefMember(ref, expr.path);
+    const totalArity = supplied.length + missing.length;
+    if (declared) {
+      const arities = [
+        ...new Set(
+          memberVariants(declared).flatMap((variant) =>
+            variant.type.kind === "TFn" ? [variant.type.params.length] : []
+          ),
+        ),
+      ].sort((left, right) => left - right);
+      if (!arities.includes(totalArity)) {
+        throw diagnosticError(
+          new Error(
+            `cannot partially apply JS FFI method ${
+              expr.path.join(".")
+            }: HM requires ${missing.length} remaining arguments after ${supplied.length} supplied; available total arities: ${
+              arities.join(", ")
+            }`,
+          ),
+          expr.node,
+        );
+      }
+      const partial = jsRefCallMember(ref, expr.path, [...supplied, ...missing]);
+      if (!partial) {
+        throw diagnosticError(
+          new Error(
+            `cannot determine a monomorphic JS FFI overload for partial ${expr.path.join(".")}`,
+          ),
+          expr.node,
+        );
+      }
+      return partial;
+    }
+  }
+  return jsRefCallMember(ref, expr.path, supplied);
 }
 
 function dynamicCallResultType(type: Ty | undefined): TypeExpr {

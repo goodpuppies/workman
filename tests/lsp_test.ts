@@ -453,7 +453,7 @@ let bad = floor(1, 2);
     await validateUri(pathToFileUri(main), new Map()),
     main,
   );
-  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["error", "ffi.unresolved"]);
+  assertEquals(diagnostics?.map((diagnostic) => diagnostic.code), ["error"]);
   assertDiagnosticMessageIncludes(diagnostics?.[0].message, [
     "cannot determine JS FFI overload for floor with 2 arguments; available arities: 1",
   ]);

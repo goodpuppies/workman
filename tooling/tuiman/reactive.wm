@@ -114,11 +114,16 @@ let fnError = (_) => {
   }
 };
 
+let mapErr = (reactive, _) => {
+  reactive
+};
+
 let carrier = .{
   fn = fn,
   fnError = fnError,
   succeed = succeed,
   map = map,
+  mapErr = mapErr,
   map2 = map2,
   andThen = andThen,
 };

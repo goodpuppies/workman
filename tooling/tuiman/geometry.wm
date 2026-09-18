@@ -39,11 +39,11 @@ let rect = (x, y, width, height) => {
   Rect(x, y, nonNegative(width), nonNegative(height))
 };
 
-let screen = (size) => {
+let screen = (size: Size) => {
   rect(0, 0, size.width, size.height)
 };
 
-let inset = (area, amount) => {
+let inset = (area: Rect, amount) => {
   rect(
     area.x + amount,
     area.y + amount,
@@ -52,7 +52,7 @@ let inset = (area, amount) => {
   )
 };
 
-let reserveBottom = (area, rows) => {
+let reserveBottom = (area: Rect, rows) => {
   let reserved = clamp(0, area.height, rows);
   (
     rect(area.x, area.y, area.width, area.height - reserved),
@@ -60,7 +60,7 @@ let reserveBottom = (area, rows) => {
   )
 };
 
-let splitColumns = (area, requestedLeft, gap) => {
+let splitColumns = (area: Rect, requestedLeft, gap) => {
   let actualGap = clamp(0, area.width, gap);
   let leftWidth = clamp(0, area.width - actualGap, requestedLeft);
   (
@@ -74,7 +74,7 @@ let splitColumns = (area, requestedLeft, gap) => {
   )
 };
 
-let splitRows = (area, requestedTop, gap) => {
+let splitRows = (area: Rect, requestedTop, gap) => {
   let actualGap = clamp(0, area.height, gap);
   let topHeight = clamp(0, area.height - actualGap, requestedTop);
   (
@@ -115,7 +115,7 @@ let aspectColumns = (
   }
 };
 
-let contains = (area, x, y) => {
+let contains = (area: Rect, x, y) => {
   x >= area.x &&
     y >= area.y &&
     x < area.x + area.width &&

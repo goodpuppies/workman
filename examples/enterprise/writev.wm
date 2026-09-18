@@ -82,7 +82,7 @@ let eintr = 4;
 let eagain = 11;
 
 let chunkOf = (bytes) => {
-  bytes.length
+  bytes :> .length
     :> jsResult
     :> Result.map((len) => { Chunk(bytes, len) })
 };
@@ -138,7 +138,8 @@ let signedValue = via Result (returned) => {
 -- libc reports failure as -1 and leaves the reason in errno, so the return
 -- value alone says nothing about what went wrong.
 let errnoOf = (lib) => {
-  lib.symbols.__errno_location()
+  lib.symbols
+    :> .__errno_location()
     :> jsResult
     :> via Result (found) => {
       match(found) {
@@ -146,7 +147,7 @@ let errnoOf = (lib) => {
         Some(location) => {
           UnsafePointerView.new(location)
             :> jsResult
-            :> Result.andThen((view) => { view.getInt32(0) :> jsResult })
+            :> Result.andThen((view) => { view :> .getInt32(0) :> jsResult })
         },
       }
     }
@@ -180,7 +181,8 @@ let advance = (chunks, written) => {
       } else {
         let raw = head.bytes;
 
-        raw.subarray(offset)
+        raw
+          :> .subarray(offset)
           :> jsResult
           :> Result.andThen(chunkOf)
           :> Result.map((rest) => { [rest, ..tail] })
@@ -197,7 +199,9 @@ let rec drain = (chunks, lib, fd) => {
       let pending = [head, ..tail];
       let count = List.length(pending);
 
-      let submit = viaJs (iov) => { lib.symbols.writev(fd, Some(iov), count) };
+      let submit = viaJs (iov) => {
+        lib.symbols :> .writev(fd, Some(iov), count)
+      };
 
       -- A signal or a would-block is not a failure: reissue the same vector.
       -- Every pending chunk is non-empty, so a zero-byte write instead made no
@@ -246,7 +250,8 @@ let writevAll = (chunks, fd) => {
 -- `std.Io.File.stdout().writer(&buf)`: a file descriptor plus a caller-owned
 -- buffer. The capacity is read off the buffer, so the two cannot disagree.
 let file = (fd, buf) => {
-  buf.length
+  buf
+    :>.length
     :> jsResult
     :> Result.map((cap) => { Writer(fd, buf, cap, 0) })
 };
@@ -259,7 +264,7 @@ let stderr = (buf) => { file(stderrFd, buf) };
 
 -- Release the dynamic library handle. Nothing buffered is flushed by this.
 let close = () => {
-  libc :> Result.andThen((lib) => { lib.close() :> jsResult })
+  libc :> Result.andThen((lib) => { lib :> .close() :> jsResult })
 };
 
 let buffered = (writer: Writer) => { writer.end };
@@ -269,7 +274,8 @@ let emptied = (writer: Writer) => { .{ ..writer, end = 0 } };
 let pendingChunk = (writer: Writer) => {
   let raw = writer.buf;
 
-  raw.subarray(0, writer.end)
+  raw
+    :>.subarray(0, writer.end)
     :> jsResult
     :> Result.andThen(chunkOf)
 };
@@ -280,7 +286,8 @@ let writeChunk = (writer: Writer, chunk) => {
   let raw = writer.buf;
 
   if (chunk.len <= writer.cap - writer.end) {
-    raw.set(chunk.bytes, writer.end)
+    raw
+      :>.set(chunk.bytes, writer.end)
       :> jsResult
       :> Result.map((_) => { .{ ..writer, end = writer.end + chunk.len } })
   } else {
@@ -295,15 +302,15 @@ let writeChunk = (writer: Writer, chunk) => {
 };
 
 let encoded = (text) => {
-  let encode = viaJs (enc) => { enc.encode(text) };
+  let encode = viaJs (enc) => { enc :> .encode(text) };
 
   encoder
     :> encode
     :> Result.andThen(chunkOf)
 };
 
--- Pipe-shaped: `writer :> Writer.print("hello\n")`.
-let print = (writer: Writer, text) => {
+-- Pipe-shaped: `writer :> Writer.print "hello\n"`.
+let print = (text:String) => (writer: Writer) => {
   encoded(text)
     :> Result.andThen((chunk) => { writeChunk(writer, chunk) })
 };

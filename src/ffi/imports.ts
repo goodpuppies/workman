@@ -92,8 +92,14 @@ export function collectFfiDecl(
     }
     const deep = isDeepImportSpec(spec);
     const reflected = !spec.type || deep;
+    const allowUnsafeTypeVariables = decl.clause.unsafe && !!spec.type && !deep;
     if (spec.type && !deep) {
-      rejectUnimportedManualForeignTypes(spec.type, importedTypeRefs, spec.node);
+      rejectUnimportedManualForeignTypes(
+        spec.type,
+        importedTypeRefs,
+        spec.node,
+        allowUnsafeTypeVariables,
+      );
     }
     const localName = spec.alias ?? spec.name;
     const surfaceName = decl.clause.alias ? `${decl.clause.alias}.${localName}` : localName;
@@ -124,6 +130,7 @@ export function collectFfiDecl(
       memberVariants(member).map((variant) => ({ ...variant, callRef: ref, deep })),
       !decl.clause.unsafe,
       spec.node,
+      allowUnsafeTypeVariables,
     );
   }
 }
@@ -252,8 +259,9 @@ function rejectUnimportedManualForeignTypes(
   type: TypeExpr,
   importedTypeRefs: Map<string, JsTypeRef>,
   node: JsImportSpec["node"],
+  allowTypeVariables = false,
 ) {
-  const name = firstUnimportedManualForeignType(type, importedTypeRefs);
+  const name = firstUnimportedManualForeignType(type, importedTypeRefs, allowTypeVariables);
   if (!name) return;
   throw diagnosticError(
     new Error(`JS FFI import uses type ${name}; FFI signatures must be explicit`),
@@ -264,6 +272,7 @@ function rejectUnimportedManualForeignTypes(
 function firstUnimportedManualForeignType(
   type: TypeExpr,
   importedTypeRefs: Map<string, JsTypeRef>,
+  allowTypeVariables = false,
 ): string | undefined {
   switch (type.kind) {
     case "TName":
@@ -275,22 +284,31 @@ function firstUnimportedManualForeignType(
       ) {
         return type.name;
       }
-      return firstUnimportedManualForeignTypeIn(type.args, importedTypeRefs);
+      return firstUnimportedManualForeignTypeIn(type.args, importedTypeRefs, allowTypeVariables);
     case "TTuple":
-      return firstUnimportedManualForeignTypeIn(type.items, importedTypeRefs);
+      return firstUnimportedManualForeignTypeIn(type.items, importedTypeRefs, allowTypeVariables);
     case "TFn":
-      return firstUnimportedManualForeignTypeIn([...type.params, type.result], importedTypeRefs);
+      return firstUnimportedManualForeignTypeIn(
+        [...type.params, type.result],
+        importedTypeRefs,
+        allowTypeVariables,
+      );
     case "TVar":
-      return type.name;
+      return allowTypeVariables ? undefined : type.name;
   }
 }
 
 function firstUnimportedManualForeignTypeIn(
   types: TypeExpr[],
   importedTypeRefs: Map<string, JsTypeRef>,
+  allowTypeVariables = false,
 ): string | undefined {
   for (const type of types) {
-    const name = firstUnimportedManualForeignType(type, importedTypeRefs);
+    const name = firstUnimportedManualForeignType(
+      type,
+      importedTypeRefs,
+      allowTypeVariables,
+    );
     if (name) return name;
   }
   return undefined;

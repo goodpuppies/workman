@@ -45,7 +45,8 @@ let rec listLength = match(items, length) => {
 let rec findType = match(items, id) => {
   ([], Var(id)) => { Panic("missing numeric semantic type") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
+    let exact: GpuSliceTypeDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findType(rest, id) }
   }
 };
 
@@ -201,11 +202,12 @@ let mergeGroup = (nodes, representations) => {
 let rec findPatternByBinding = match(patterns, bindingId, ownerFunctionId) => {
   ([], Var(bindingId), Var(ownerFunctionId)) => { None },
   ([Var(pattern), ..rest], Var(bindingId), Var(ownerFunctionId)) => {
+    let exact: GpuSlicePatternDto = pattern;
     if (
-      numberEqual(pattern.bindingId, bindingId) &&
-      numberEqual(pattern.ownerFunctionId, ownerFunctionId)
+      numberEqual(exact.bindingId, bindingId) &&
+      numberEqual(exact.ownerFunctionId, ownerFunctionId)
     ) {
-      Some(pattern)
+      Some(exact)
     } else {
       findPatternByBinding(rest, bindingId, ownerFunctionId)
     }
@@ -215,43 +217,53 @@ let rec findPatternByBinding = match(patterns, bindingId, ownerFunctionId) => {
 let rec findParam = match(params, id) => {
   ([], Var(id)) => { Panic("missing numeric function parameter") },
   ([Var(param), ..rest], Var(id)) => {
-    if (numberEqual(param.id, id)) { param } else { findParam(rest, id) }
+    let exact: GpuSliceParamDto = param;
+    if (numberEqual(exact.id, id)) { exact } else { findParam(rest, id) }
   }
 };
 
 let rec findPattern = match(patterns, id) => {
   ([], Var(id)) => { Panic("missing numeric pattern") },
   ([Var(pattern), ..rest], Var(id)) => {
-    if (numberEqual(pattern.id, id)) { pattern } else { findPattern(rest, id) }
+    let exact: GpuSlicePatternDto = pattern;
+    if (numberEqual(exact.id, id)) { exact } else { findPattern(rest, id) }
   }
 };
 
 let rec findFunction = match(functions, id) => {
   ([], Var(id)) => { Panic("missing numeric function") },
   ([Var(fn), ..rest], Var(id)) => {
-    if (numberEqual(fn.id, id)) { fn } else { findFunction(rest, id) }
+    let exact: GpuSliceFunctionDto = fn;
+    if (numberEqual(exact.id, id)) { exact } else { findFunction(rest, id) }
   }
 };
 
 let rec findExpression = match(expressions, id) => {
   ([], Var(id)) => { Panic("missing numeric expression") },
   ([Var(expression), ..rest], Var(id)) => {
-    if (numberEqual(expression.id, id)) { expression } else { findExpression(rest, id) }
+    let exact: GpuSliceExprDto = expression;
+    if (numberEqual(exact.id, id)) { exact } else { findExpression(rest, id) }
   }
 };
 
 let rec findBlock = match(blocks, expressionId) => {
   ([], Var(expressionId)) => { Panic("missing numeric block") },
   ([Var(block), ..rest], Var(expressionId)) => {
-    if (numberEqual(block.expressionId, expressionId)) { block } else { findBlock(rest, expressionId) }
+    let exact: GpuSliceBlockDto = block;
+    if (numberEqual(exact.expressionId, expressionId)) {
+      exact
+    } else {
+      findBlock(rest, expressionId)
+    }
   }
 };
 
 let rec findEnvironmentField = match(fields, declaredIndex) => {
   ([], Var(declaredIndex)) => { Panic("missing numeric environment field") },
   ([Var(field), ..rest], Var(declaredIndex)) => {
-    if (numberEqual(field.declaredIndex, declaredIndex)) {
-      field
+    let exact: GpuSliceEnvironmentFieldDto = field;
+    if (numberEqual(exact.declaredIndex, declaredIndex)) {
+      exact
     } else {
       findEnvironmentField(rest, declaredIndex)
     }
@@ -279,8 +291,9 @@ let lookupMemoLanes = (memo, expressionId) => {
 let rec patternLaneNodes = match(ids, context) => {
   ([], Var(_context)) => { [] },
   ([Var(id), ..rest], Var(context)) => {
-    let child = findPattern(context.patterns, id);
-    [patternNode(child, context), ..patternLaneNodes(rest, context)]
+    let exactContext: NumericContext = context;
+    let child = findPattern(exactContext.patterns, id);
+    [patternNode(child, exactContext), ..patternLaneNodes(rest, exactContext)]
   }
 };
 
@@ -296,15 +309,23 @@ let rec mergeLanePairs = match(left, right, representations, changed) => {
 let rec findLetForPattern = match(lets, patternId) => {
   ([], Var(_patternId)) => { None },
   ([Var(binding), ..rest], Var(patternId)) => {
-    if (numberEqual(binding.patternId, patternId)) {
-      Some(binding)
+    let exact: GpuSliceLetDto = binding;
+    if (numberEqual(exact.patternId, patternId)) {
+      Some(exact)
     } else {
       findLetForPattern(rest, patternId)
     }
   }
 };
 
-let rec laneForMemo = (expressionId, context, exprNodes, memo, visited, depth) => {
+let rec laneForMemo = (
+  expressionId,
+  context: NumericContext,
+  exprNodes,
+  memo,
+  visited,
+  depth
+) => {
   match(Map.get(memo, expressionId)) {
     Some(_lanes) => { memo },
     None => {
@@ -320,7 +341,14 @@ let rec laneForMemo = (expressionId, context, exprNodes, memo, visited, depth) =
     }
   }
 }
-and laneForUncached = (expressionId, context, exprNodes, memo, visited, depth) => {
+and laneForUncached = (
+  expressionId,
+  context: NumericContext,
+  exprNodes,
+  memo,
+  visited,
+  depth
+) => {
   let expression = findExpression(context.expressions, expressionId);
   if (expression.kind == "tuple") {
     Map.set(memo, expressionId, childLaneNodes(Js.Array.toList(expression.children), exprNodes))
@@ -394,10 +422,16 @@ and laneForUncached = (expressionId, context, exprNodes, memo, visited, depth) =
 let rec foldExprNodes = match(items, context, nodes) => {
   ([], Var(_context), Var(nodes)) => { nodes },
   ([Var(expression), ..rest], Var(context), Var(nodes)) => {
+    let exactExpression: GpuSliceExprDto = expression;
+    let exactContext: NumericContext = context;
     foldExprNodes(
       rest,
-      context,
-      Map.set(nodes, expression.id, computeExpressionNode(expression, context))
+      exactContext,
+      Map.set(
+        nodes,
+        exactExpression.id,
+        computeExpressionNode(exactExpression, exactContext)
+      )
     )
   }
 };
@@ -405,10 +439,12 @@ let rec foldExprNodes = match(items, context, nodes) => {
 let rec foldPatternNodes = match(items, context, nodes) => {
   ([], Var(_context), Var(nodes)) => { nodes },
   ([Var(pattern), ..rest], Var(context), Var(nodes)) => {
+    let exactPattern: GpuSlicePatternDto = pattern;
+    let exactContext: NumericContext = context;
     foldPatternNodes(
       rest,
-      context,
-      Map.set(nodes, pattern.id, computePatternNode(pattern, context))
+      exactContext,
+      Map.set(nodes, exactPattern.id, computePatternNode(exactPattern, exactContext))
     )
   }
 };
@@ -416,17 +452,19 @@ let rec foldPatternNodes = match(items, context, nodes) => {
 let rec foldPatternBindings = match(items, context, bound) => {
   ([], Var(_context), Var(bound)) => { bound },
   ([Var(pattern), ..rest], Var(context), Var(bound)) => {
-    if (pattern.bindingId < 0) {
-      foldPatternBindings(rest, context, bound)
+    let exactPattern: GpuSlicePatternDto = pattern;
+    let exactContext: NumericContext = context;
+    if (exactPattern.bindingId < 0) {
+      foldPatternBindings(rest, exactContext, bound)
     } else {
-      let key = pattern.bindingId * 1000000 + pattern.ownerFunctionId;
+      let key = exactPattern.bindingId * 1000000 + exactPattern.ownerFunctionId;
       match(Map.get(bound, key)) {
-        Some(_node) => { foldPatternBindings(rest, context, bound) },
+        Some(_node) => { foldPatternBindings(rest, exactContext, bound) },
         None => {
           foldPatternBindings(
             rest,
-            context,
-            Map.set(bound, key, computePatternNode(pattern, context))
+            exactContext,
+            Map.set(bound, key, computePatternNode(exactPattern, exactContext))
           )
         }
       }
@@ -437,11 +475,13 @@ let rec foldPatternBindings = match(items, context, bound) => {
 let rec buildAllLanes = match(items, context, exprNodes, memo) => {
   ([], Var(_context), Var(_exprNodes), Var(memo)) => { memo },
   ([Var(expression), ..rest], Var(context), Var(exprNodes), Var(memo)) => {
+    let exactExpression: GpuSliceExprDto = expression;
+    let exactContext: NumericContext = context;
     buildAllLanes(
       rest,
-      context,
+      exactContext,
       exprNodes,
-      laneForMemo(expression.id, context, exprNodes, memo, [], 256)
+      laneForMemo(exactExpression.id, exactContext, exprNodes, memo, [], 256)
     )
   }
 };
@@ -472,9 +512,14 @@ let buildNumericCaches = (context: NumericContext) => {
 let rec numericChildNodes = match(children, context, nodes) => {
   ([], Var(context), Var(nodes)) => { nodes },
   ([Var(childId), ..rest], Var(context), Var(nodes)) => {
-    let child = findExpression(context.expressions, childId);
-    let node = expressionNode(child, context);
-    numericChildNodes(rest, context, if (node < 0) { nodes } else { [node, ..nodes] })
+    let exactContext: NumericContext = context;
+    let child = findExpression(exactContext.expressions, childId);
+    let node = expressionNode(child, exactContext);
+    numericChildNodes(
+      rest,
+      exactContext,
+      if (node < 0) { nodes } else { [node, ..nodes] }
+    )
   }
 };
 
@@ -491,28 +536,29 @@ let rec mergeArguments = match(argumentIds, paramIds, context, representations, 
     [Var(argumentId), ..argumentRest], [Var(paramId), ..paramRest], Var(context),
     Var(representations), Var(changed)
   ) => {
-    let argument = findExpression(context.expressions, argumentId);
-    let param = findParam(context.params, paramId);
-    let pattern = findPattern(context.patterns, param.patternId);
+    let exactContext: NumericContext = context;
+    let argument = findExpression(exactContext.expressions, argumentId);
+    let param = findParam(exactContext.params, paramId);
+    let pattern = findPattern(exactContext.patterns, param.patternId);
     let (next, pairChanged) = if (pattern.kind == "tuple") {
       let (withSingle, singleChanged) = mergeGroup(
-        [expressionNode(argument, context), patternNode(pattern, context)],
+        [expressionNode(argument, exactContext), patternNode(pattern, exactContext)],
         representations
       );
       let (merged, lanesChanged) = mergeLanePairs(
-        patternLaneNodes(Js.Array.toList(pattern.children), context),
-        lookupLanes(context, argument.id),
+        patternLaneNodes(Js.Array.toList(pattern.children), exactContext),
+        lookupLanes(exactContext, argument.id),
         withSingle,
         false
       );
       (merged, singleChanged || lanesChanged)
     } else {
       mergeGroup(
-        [expressionNode(argument, context), patternNode(pattern, context)],
+        [expressionNode(argument, exactContext), patternNode(pattern, exactContext)],
         representations
       )
     };
-    mergeArguments(argumentRest, paramRest, context, next, changed || pairChanged)
+    mergeArguments(argumentRest, paramRest, exactContext, next, changed || pairChanged)
   }
 };
 
@@ -603,104 +649,121 @@ let applyExpression = (expression: GpuSliceExprDto, context: NumericContext, rep
 let rec expressionSweep = match(expressions, context, representations, changed) => {
   ([], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
   ([Var(expression), ..rest], Var(context), Var(representations), Var(changed)) => {
-    let (next, itemChanged) = applyExpression(expression, context, representations);
-    expressionSweep(rest, context, next, changed || itemChanged)
+    let exactExpression: GpuSliceExprDto = expression;
+    let exactContext: NumericContext = context;
+    let (next, itemChanged) = applyExpression(
+      exactExpression,
+      exactContext,
+      representations
+    );
+    expressionSweep(rest, exactContext, next, changed || itemChanged)
   }
 };
 
 let rec patternSweep = match(patterns, context, representations, changed) => {
   ([], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
   ([Var(pattern), ..rest], Var(context), Var(representations), Var(changed)) => {
-    let childNodes = pattern.children :> Js.Array.toList :> mapPatternNodes(context, []);
-    let own = patternNode(pattern, context);
+    let exactPattern: GpuSlicePatternDto = pattern;
+    let exactContext: NumericContext = context;
+    let childNodes = exactPattern.children :> Js.Array.toList :> mapPatternNodes(exactContext, []);
+    let own = patternNode(exactPattern, exactContext);
     -- Vector patterns share one representation across lanes. Product
     -- patterns carry independent lane representations; merging children
     -- would equate unrelated scalars.
     let nodes = if (numberEqual(own, -1)) { [] } else { [own, ..childNodes] };
-    let (next, itemChanged) = if (pattern.kind == "tuple") {
+    let (next, itemChanged) = if (exactPattern.kind == "tuple") {
       mergeGroup(nodes, representations)
     } else {
       (representations, false)
     };
-    patternSweep(rest, context, next, changed || itemChanged)
+    patternSweep(rest, exactContext, next, changed || itemChanged)
   }
 }
 and mapPatternNodes = match(ids, context, nodes) => {
   ([], Var(context), Var(nodes)) => { nodes },
   ([Var(id), ..rest], Var(context), Var(nodes)) => {
-    let pattern = findPattern(context.patterns, id);
-    let node = patternNode(pattern, context);
-    mapPatternNodes(rest, context, if (node < 0) { nodes } else { [node, ..nodes] })
+    let exactContext: NumericContext = context;
+    let pattern = findPattern(exactContext.patterns, id);
+    let node = patternNode(pattern, exactContext);
+    mapPatternNodes(rest, exactContext, if (node < 0) { nodes } else { [node, ..nodes] })
   }
 };
 
 let rec letSweep = match(lets, context, representations, changed) => {
   ([], Var(context), Var(representations), Var(changed)) => { (representations, changed) },
   ([Var(binding), ..rest], Var(context), Var(representations), Var(changed)) => {
-    let pattern = findPattern(context.patterns, binding.patternId);
-    let value = findExpression(context.expressions, binding.valueExprId);
+    let exactBinding: GpuSliceLetDto = binding;
+    let exactContext: NumericContext = context;
+    let pattern = findPattern(exactContext.patterns, exactBinding.patternId);
+    let value = findExpression(exactContext.expressions, exactBinding.valueExprId);
     let (next, itemChanged) = if (pattern.kind == "tuple") {
       let (withSingle, singleChanged) = mergeGroup(
-        [patternNode(pattern, context), expressionNode(value, context)],
+        [patternNode(pattern, exactContext), expressionNode(value, exactContext)],
         representations
       );
       let (merged, lanesChanged) = mergeLanePairs(
-        patternLaneNodes(Js.Array.toList(pattern.children), context),
-        lookupLanes(context, value.id),
+        patternLaneNodes(Js.Array.toList(pattern.children), exactContext),
+        lookupLanes(exactContext, value.id),
         withSingle,
         false
       );
       (merged, singleChanged || lanesChanged)
     } else {
       mergeGroup(
-        [patternNode(pattern, context), expressionNode(value, context)],
+        [patternNode(pattern, exactContext), expressionNode(value, exactContext)],
         representations
       )
     };
-    letSweep(rest, context, next, changed || itemChanged)
+    letSweep(rest, exactContext, next, changed || itemChanged)
   }
 };
 
 let rec seedExpressions = match(expressions, context, representations) => {
   ([], Var(context), Var(representations)) => { representations },
   ([Var(expression), ..rest], Var(context), Var(representations)) => {
-    let explicit = if (expression.semanticId == "gpu.i32") {
+    let exactExpression: GpuSliceExprDto = expression;
+    let exactContext: NumericContext = context;
+    let explicit = if (exactExpression.semanticId == "gpu.i32") {
       "i32"
     } else {
-      if (expression.semanticId == "gpu.f32") { "f32" } else { expression.numberKind }
+      if (exactExpression.semanticId == "gpu.f32") {
+        "f32"
+      } else {
+        exactExpression.numberKind
+      }
     };
     let (next, _changed) = setRepresentation(
       representations,
-      expressionNode(expression, context),
+      expressionNode(exactExpression, exactContext),
       explicit,
-      expression.spanId
+      exactExpression.spanId
     );
-    let withResourceResult = if (expression.kind == "resource-call") {
+    let withResourceResult = if (exactExpression.kind == "resource-call") {
       let (updated, _resourceChanged) = setRepresentation(
         next,
-        expressionNode(expression, context),
+        expressionNode(exactExpression, exactContext),
         "f32",
-        expression.spanId
+        exactExpression.spanId
       );
       updated
     } else {
       next
     };
-    let withResourceCoordinate = if (expression.kind == "resource-call") {
-      let coordinateId = match(Js.Array.toList(expression.children)) {
+    let withResourceCoordinate = if (exactExpression.kind == "resource-call") {
+      let coordinateId = match(Js.Array.toList(exactExpression.children)) {
         [_texture, _sampler, id] => { id },
         [_texture, id] => { id },
         _ => { Panic("GPU resource call has invalid coordinate arity") }
       };
-      let coordinate = findExpression(context.expressions, coordinateId);
-      let coordinateRepresentation = if (expression.resourceOperation == "load") {
+      let coordinate = findExpression(exactContext.expressions, coordinateId);
+      let coordinateRepresentation = if (exactExpression.resourceOperation == "load") {
         "i32"
       } else {
         "f32"
       };
       let (updated, _coordinateChanged) = setRepresentation(
         withResourceResult,
-        expressionNode(coordinate, context),
+        expressionNode(coordinate, exactContext),
         coordinateRepresentation,
         coordinate.spanId
       );
@@ -708,7 +771,7 @@ let rec seedExpressions = match(expressions, context, representations) => {
     } else {
       withResourceResult
     };
-    seedExpressions(rest, context, withResourceCoordinate)
+    seedExpressions(rest, exactContext, withResourceCoordinate)
   }
 };
 
@@ -736,7 +799,7 @@ let seedFragmentAbi = (input: GpuSliceElaborationInputDto, context: NumericConte
   withResult
 };
 
-let rec solveFixedPoint = (context, representations) => {
+let rec solveFixedPoint = (context: NumericContext, representations) => {
   let (afterExpressions, expressionChanged) = expressionSweep(
     context.expressions,
     context,

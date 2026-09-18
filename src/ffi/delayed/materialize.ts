@@ -3,6 +3,7 @@ import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
 import { freshTypeInfo, prune, solveFfi, typeFromAst } from "../../types.ts";
+import { TypeMismatchError } from "../../type_diff.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
 import {
@@ -31,6 +32,7 @@ import {
   jsRefDeepCall,
   type JsTypeRef,
 } from "../reflect/types.ts";
+import { contextualFfiFunctionArity } from "./delayed_reflection_hints.ts";
 
 type ResolveExpr = (
   expr: Expr,
@@ -172,13 +174,45 @@ function solveReflectedFfiFunctionValue(
   if (placeholder?.tag !== "ffi") return;
   const materializedType = materializeReflectedType(contextualType, result);
   if (!materializedType) return;
-  solveFfi(placeholder, materializedType);
+  try {
+    solveFfi(placeholder, materializedType);
+  } catch (error) {
+    throwForeignDottedProjectionDiagnostic(error, result);
+  }
   resolveFfiFact(result.facts, placeholder.id, materializedType);
   recordExprFact(result.facts, original, {
     subject: "ffi-reflected",
     instantiated: inferred,
     origin: { source: "reflected-ffi", name: variant.internalName },
   });
+}
+
+function throwForeignDottedProjectionDiagnostic(error: unknown, result: InferResult): never {
+  if (error instanceof TypeMismatchError) {
+    const left = prune(error.left);
+    const right = prune(error.right);
+    const foreign = left.tag === "named" && left.foreign
+      ? left
+      : right.tag === "named" && right.foreign
+      ? right
+      : undefined;
+    const structural = left.tag === "struct" ? left : right.tag === "struct" ? right : undefined;
+    if (foreign && structural) {
+      const projection = result.facts.dottedProjections.find((fact) =>
+        prune(fact.receiverType) === structural
+      );
+      if (projection) {
+        throw diagnosticError(
+          new Error(
+            `${foreign.name} is a JavaScript value; use ${projection.receiver} :> .${projection.field} for member access`,
+          ),
+          projection.expression.node,
+          "ffi.local-member-pipe-required",
+        );
+      }
+    }
+  }
+  throw error;
 }
 
 export function materializeReceiverCall(
@@ -219,11 +253,72 @@ export function materializeReceiverCall(
     true,
     original.node,
   );
-  const variant = selectVariant(ffi.bindings.get(surfaceName)?.variants ?? [], args, argTypes);
+  const bindingVariants = ffi.bindings.get(surfaceName)?.variants ?? [];
+  const contextualArity = contextualFfiFunctionArity(original, result);
+  const hasSaturatedVariant = bindingVariants.some((candidate) =>
+    receiverVisibleArity(candidate) === args.length
+  );
+  const partialArity = !hasSaturatedVariant && contextualArity && contextualArity > 0
+    ? contextualArity
+    : undefined;
+  const partialArgs = partialArity
+    ? Array.from({ length: partialArity }, (_, index) => ({
+      kind: "Var" as const,
+      name: `__wm_partial_arg_${index}`,
+    }))
+    : [];
+  const selectionArgs = [...args, ...partialArgs];
+  const selectionArgTypes = [...argTypes, ...partialArgs.map(() => undefined)];
+  const partialCandidates = partialArity
+    ? bindingVariants.filter((candidate) =>
+      receiverVisibleArity(candidate) === selectionArgs.length
+    )
+    : [];
+  if (partialArity && partialCandidates.length !== 1) {
+    throw diagnosticError(
+      new Error(
+        `cannot determine one JS FFI overload for partial ${
+          path.join(".")
+        } with ${args.length} supplied and ${partialArity} remaining arguments`,
+      ),
+      original.node,
+    );
+  }
+  const variant = partialCandidates[0] ??
+    selectVariant(bindingVariants, selectionArgs, selectionArgTypes);
   if (!variant) {
     throw diagnosticError(
       new Error(receiverOverloadMessage(path.join("."), variants, args.length)),
       original.node,
+    );
+  }
+  if (partialArity) {
+    if (variant.type.kind !== "TFn") {
+      throw diagnosticError(
+        new Error(`cannot partially apply non-function JS FFI member ${path.join(".")}`),
+        original.node,
+      );
+    }
+    const remainingType: TypeExpr = {
+      kind: "TFn",
+      params: variant.type.params.slice(args.length),
+      result: variant.type.result,
+    };
+    solveReflectedFfiFunctionValue(original, variant, remainingType, result);
+    selected.add(variant.internalName);
+    return materializePartialReceiverCall(
+      original,
+      receiver,
+      args,
+      receiverType,
+      variant,
+      partialArgs,
+      ffi,
+      result,
+      selected,
+      options,
+      valueRefs,
+      resolveExpr,
     );
   }
   solveReflectedFfiValue(original, variant, result);
@@ -247,6 +342,77 @@ export function materializeReceiverCall(
         )
       ),
     ],
+    node: original.node,
+  };
+}
+
+function materializePartialReceiverCall(
+  original: Extract<Expr, { kind: "FfiCall" }>,
+  receiver: Expr,
+  args: Expr[],
+  receiverType: TypeExpr,
+  variant: FfiVariant,
+  partialArgs: Extract<Expr, { kind: "Var" }>[],
+  ffi: FfiElaboration,
+  result: InferResult,
+  selected: Set<string>,
+  options: ResolveOptions,
+  valueRefs: Map<string, JsTypeRef>,
+  resolveExpr: ResolveExpr,
+): Expr {
+  if (variant.type.kind !== "TFn") return original;
+  const inferred = inferredType(result, original);
+  const placeholder = inferred ? prune(inferred) : undefined;
+  const suffix = placeholder?.tag === "ffi" ? placeholder.id : 0;
+  const captureNames = [
+    `__wm_partial_receiver_${suffix}`,
+    ...args.map((_, index) => `__wm_partial_supplied_${suffix}_${index}`),
+  ];
+  const captureTypes = [receiverType, ...variant.type.params.slice(0, args.length)];
+  const captured = captureNames.map((name) => ({ kind: "Var" as const, name }));
+  const resolvedArgs = args.map((arg, index) =>
+    resolveDelayedCallArg(
+      arg,
+      index,
+      variant,
+      ffi,
+      result,
+      selected,
+      options,
+      valueRefs,
+      resolveExpr,
+    )
+  );
+  const missingTypes = variant.type.params.slice(args.length);
+  const boundCall: Expr = {
+    kind: "Call",
+    callee: { kind: "Var", name: variant.internalName },
+    args: [...captured, ...partialArgs],
+    node: original.node,
+  };
+  const partial: Expr = {
+    kind: "Lambda",
+    params: partialArgs.map((arg, index) => ({
+      pattern: { kind: "PVar", name: arg.name },
+      annotation: missingTypes[index],
+    })),
+    directives: [],
+    body: boundCall,
+    node: original.node,
+  };
+  return {
+    kind: "Call",
+    callee: {
+      kind: "Lambda",
+      params: captured.map((arg, index) => ({
+        pattern: { kind: "PVar", name: arg.name },
+        annotation: captureTypes[index],
+      })),
+      directives: [],
+      body: partial,
+      node: original.node,
+    },
+    args: [receiver, ...resolvedArgs],
     node: original.node,
   };
 }
@@ -638,7 +804,11 @@ export function solveReflectedFfiValue(
   if (!reflected) return;
   const materializedType = materializeReflectedType(reflected, result);
   if (!materializedType) return;
-  solveFfi(placeholder, materializedType);
+  try {
+    solveFfi(placeholder, materializedType);
+  } catch (error) {
+    throwForeignDottedProjectionDiagnostic(error, result);
+  }
   resolveFfiFact(result.facts, placeholder.id, materializedType);
   recordExprFact(result.facts, original, {
     subject: "ffi-reflected",

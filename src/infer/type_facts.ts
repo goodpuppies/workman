@@ -39,6 +39,7 @@ export type TypeFacts = {
   jsImportSchemes: Map<Extract<Decl, { kind: "JsImportDecl" }> | JsImportSpec, Scheme>;
   recordFields: Map<RecordExprField | RecordPatternField, RecordFieldFact>;
   recordProjections: Map<Extract<Expr, { kind: "Var" }>, RecordProjectionFact[]>;
+  dottedProjections: DottedProjectionFact[];
   ffi: Map<number, FfiFact>;
   recoveryHoles: RecoveryHoleFact[];
 };
@@ -96,6 +97,13 @@ export type RecordProjectionFact = {
   partIndex: number;
   record: TypeInfo;
   type: Ty;
+};
+
+export type DottedProjectionFact = {
+  expression: Extract<Expr, { kind: "Var" }>;
+  receiver: string;
+  field: string;
+  receiverType: Ty;
 };
 
 export type RecordFieldFact = {
@@ -185,6 +193,7 @@ export function createTypeFacts(): TypeFacts {
     jsImportSchemes: new Map(),
     recordFields: new Map(),
     recordProjections: new Map(),
+    dottedProjections: [],
     ffi: new Map(),
     recoveryHoles: [],
   };
@@ -303,6 +312,19 @@ export function recordRecordProjectionFact(
   ) return;
   existing.push(fact);
   facts.recordProjections.set(expression, existing);
+}
+
+export function recordDottedProjectionFact(
+  facts: TypeFacts,
+  fact: DottedProjectionFact,
+) {
+  if (
+    facts.dottedProjections.some((item) =>
+      item.expression === fact.expression && item.receiver === fact.receiver &&
+      item.field === fact.field
+    )
+  ) return;
+  facts.dottedProjections.push(fact);
 }
 
 export function recordExprFact(

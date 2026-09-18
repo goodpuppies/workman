@@ -402,23 +402,33 @@ Deno.test("ambiguous record projection chooses the first identity and warns for 
     record Offset = { x: Number };
     let getX = (value) => { value.x };
     let point: Point = .{ x = 1 };
-    let offset: Offset = .{ x = 2 };
     let px = getX(point);
-    let ox = getX(offset);
   `);
 
-  expectBinding(result.env, "getX", { type: "{ x: Number } -> Number", vars: 0 });
+  expectBinding(result.env, "getX", { type: "Point -> Number", vars: 0 });
   expectBinding(result.env, "px", { type: "Number", vars: 0 });
-  expectBinding(result.env, "ox", { type: "Number", vars: 0 });
   assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
     "record.ambiguous-projection",
   ]);
   assertStringIncludes(result.warnings[0], "using first record type Point");
   assertStringIncludes(result.warnings[0], "Candidates: Point, Offset");
   assertStringIncludes(result.warnings[0], "annotate the receiver, binding, or parameter");
+
+  await assertRejects(
+    () =>
+      checkSource(`
+        record Point = { x: Number };
+        record Offset = { x: Number };
+        let getX = (value) => { value.x };
+        let offset: Offset = .{ x = 2 };
+        let ox = getX(offset);
+      `),
+    Error,
+    "type collision",
+  );
 });
 
-Deno.test("an earlier field projection structurally disambiguates a shared field", async () => {
+Deno.test("a unique field projection nominally disambiguates a later shared field", async () => {
   const result = await checkSource(`
     record Point = { x: Number };
     record Offset = { x: Number, y: Number };
@@ -455,7 +465,7 @@ Deno.test("nominal record parameter annotations resolve shared field identities"
   );
 });
 
-Deno.test("repeated projections preserve one accumulated structural record requirement", async () => {
+Deno.test("repeated projections preserve the selected nominal record", async () => {
   const result = await checkSource(`
     record PairOps<A, B> = {
       first: A -> B,
@@ -467,8 +477,8 @@ Deno.test("repeated projections preserve one accumulated structural record requi
   `);
 
   expectBinding(result.env, "useBoth", {
-    type: "({ second: 'a -> 'b, first: 'c -> 'a }, 'c) -> 'b",
-    vars: 3,
+    type: "(PairOps<'a, 'b>, 'a) -> 'a",
+    vars: 2,
   });
 });
 
@@ -487,7 +497,7 @@ Deno.test("record function fields compose with whitespace curried calls", async 
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
 });
 
-Deno.test("ambiguous function fields select the first identity without collapsing their row", async () => {
+Deno.test("ambiguous function fields select and constrain the first nominal identity", async () => {
   const result = await checkSource(`
     record TaskLike = { fn: (Void -> Number) -> Number };
     let via = (x) => {
@@ -499,11 +509,52 @@ Deno.test("ambiguous function fields select the first identity without collapsin
     let value = via task () => { 42 };
   `);
 
-  expectBinding(result.env, "via", { type: "{ fn: 'a -> 'b } -> 'a -> 'b", vars: 2 });
+  expectBinding(result.env, "via", {
+    type: "TaskLike -> (Void -> Number) -> Number",
+    vars: 0,
+  });
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
   assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
     "record.ambiguous-projection",
   ]);
   assertStringIncludes(result.warnings[0], "using first record type TaskLike");
   assertStringIncludes(result.warnings[0], "Candidates: TaskLike, Carrier");
+});
+
+Deno.test("nominal projection results cannot acquire fields from another record", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        record HasX = { x: Void -> Number };
+        record HasY = { y: Void -> String };
+        let passX = (value) => {
+          let xf = value.x;
+          value
+        };
+        let onlyX: HasX = .{ x = () => { 1 } };
+        let claimed = passX(onlyX);
+        let result: String = claimed.y();
+      `),
+    Error,
+    "HasX has no field y",
+  );
+});
+
+Deno.test("unknown dotted fields cannot escape as structural nominal casts", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        let retainMystery = (value) => {
+          let _ = value.mystery;
+          value
+        };
+        record A = { mystery: Number, onlyA: String };
+        record B = { mystery: Number, onlyB: Void -> Number };
+        let a: A = .{ mystery = 1, onlyA = "a" };
+        let forged: B = retainMystery(a);
+        let boom = forged.onlyB(void);
+      `),
+    Error,
+    "unknown record field mystery",
+  );
 });

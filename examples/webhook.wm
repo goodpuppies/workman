@@ -228,7 +228,7 @@ let runSimulation = () => {
         log("[Simulation] Server responded with:", res);
         setTimeout(() => {
           log("Shutting down server...");
-          ac.abort();
+          ac :> .abort();
         }, 100);
         void
       })

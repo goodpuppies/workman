@@ -34,11 +34,6 @@ record Snapshot = {
   problems: Js.Array<Problem>,
 };
 
-record Frame<Memory> = {
-  output: String,
-  memory: Memory,
-};
-
 record Model = {
   problems: List<Problem>,
   selected: Number,
@@ -65,12 +60,12 @@ let severityEnabled = (severity, model) => {
   }
 };
 
-let filteredProblems = (model) => {
+let filteredProblems = (model: Model) => {
   List.filter(model.problems, (problem) => { severityEnabled(problem.severity, model) })
 };
 
 let count = (model) => { List.length(filteredProblems(model)) };
-let totalCount = (model) => { List.length(model.problems) };
+let totalCount = (model: Model) => { List.length(model.problems) };
 
 let changed = (model, errors, warnings, infos, hints) => {
   .{ ..model, selected = 0, top = 0, expanded = false, errors, warnings, infos, hints }
@@ -255,7 +250,7 @@ let render = (_, model, size) => {
     Draw.text(footer, " ↑/↓ wheel move  Enter/click expand  e/w/i/h filter  a all  q quit ", Draw.status) ++
     Draw.endFrame;
   -- Scrolling and paging follow the live terminal, not the height guessed at start.
-  Frame(output, .{ ..model, listRows })
+  Runtime.Frame(output, .{ ..model, listRows })
 };
 
 let decodeSnapshot = (value) => {
@@ -268,8 +263,8 @@ let decodeSnapshot = (value) => {
 let awaitSnapshot = (revision) => {
   nextSnapshot(revision)
     :> Task.andThen((value) => { decodeSnapshot(value) :> Task.fromResult })
-    :> Task.map((snapshot) => {
-      (model) => {
+    :> Task.map((snapshot: Snapshot) => {
+      (model: Model) => {
         if (snapshot.revision <= model.revision) {
           model
         } else {
@@ -307,7 +302,7 @@ let runProblems = () => {
   Runtime.runRetainedManaged(
     initial,
     [awaitSnapshot(0)],
-    (model) => { Command.Spawn(model, awaitSnapshot(model.revision)) },
+    (model: Model) => { Command.Spawn(model, awaitSnapshot(model.revision)) },
     update,
     render,
   )

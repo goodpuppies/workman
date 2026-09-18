@@ -51,10 +51,11 @@ export function addVariants(
   }[],
   fallible: boolean,
   node?: JsImportSpec["node"],
+  allowTypeVariables = false,
 ) {
   const binding = bindings.get(surfaceName) ?? { surfaceName, variants: [] };
   for (const variant of dedupeVariantSpecs(variants)) {
-    rejectFfiTypeVariables(variant.type, surfaceName);
+    if (!allowTypeVariables) rejectFfiTypeVariables(variant.type, surfaceName);
     const index = binding.variants.length;
     binding.variants.push({
       internalName: ffiInternalName(surfaceName, memberName, index),

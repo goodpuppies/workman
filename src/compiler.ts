@@ -31,6 +31,7 @@ import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import {
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
+  FrontendDiagnosticError,
   genericDiagnostic,
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
@@ -580,7 +581,10 @@ async function analyzeStrict<T>(
         error.node.path,
         error.node.source,
         error.originalError,
-        error.phase.startsWith("resolve delayed FFI") ? delayedFfiDiagnostics(error.result) : [],
+        error.phase.startsWith("resolve delayed FFI") &&
+          !(error.originalError instanceof FrontendDiagnosticError)
+          ? delayedFfiDiagnostics(error.result)
+          : [],
       );
     }
     throw error;

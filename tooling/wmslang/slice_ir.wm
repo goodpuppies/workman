@@ -110,64 +110,81 @@ let rec unique = (items: List<Number>, seen: List<Number>) => {
 let rec findExpression = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 expression") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findExpression(rest, id) }
+    let exact: GpuSliceExprDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findExpression(rest, id) }
   }
 };
 
 let rec findBlock = match(items, expressionId) => {
   ([], Var(expressionId)) => { Panic("missing schema-v2 block") },
   ([Var(item), ..rest], Var(expressionId)) => {
-    if (numberEqual(item.expressionId, expressionId)) { item } else { findBlock(rest, expressionId) }
+    let exact: GpuSliceBlockDto = item;
+    if (numberEqual(exact.expressionId, expressionId)) {
+      exact
+    } else {
+      findBlock(rest, expressionId)
+    }
   }
 };
 
 let rec findBlockItem = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 block item") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findBlockItem(rest, id) }
+    let exact: GpuSliceBlockItemDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findBlockItem(rest, id) }
   }
 };
 
 let rec findLet = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 let") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findLet(rest, id) }
+    let exact: GpuSliceLetDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findLet(rest, id) }
   }
 };
 
 let rec findMatch = match(items, expressionId) => {
   ([], Var(expressionId)) => { Panic("missing schema-v2 match") },
   ([Var(item), ..rest], Var(expressionId)) => {
-    if (numberEqual(item.expressionId, expressionId)) { item } else { findMatch(rest, expressionId) }
+    let exact: GpuSliceMatchDto = item;
+    if (numberEqual(exact.expressionId, expressionId)) {
+      exact
+    } else {
+      findMatch(rest, expressionId)
+    }
   }
 };
 
 let rec findMatchArm = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 match arm") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findMatchArm(rest, id) }
+    let exact: GpuSliceMatchArmDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findMatchArm(rest, id) }
   }
 };
 
 let rec findPattern = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 pattern") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findPattern(rest, id) }
+    let exact: GpuSlicePatternDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findPattern(rest, id) }
   }
 };
 
 let rec findType = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 type") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
+    let exact: GpuSliceTypeDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findType(rest, id) }
   }
 };
 
 let rec findExpressionOccurrence = match(items, sourceId) => {
   ([], Var(sourceId)) => { Panic("missing schema-v2 expression type occurrence") },
   ([Var(item), ..rest], Var(sourceId)) => {
-    if (item.kind == "expression" && numberEqual(item.sourceId, sourceId)) {
-      item
+    let exact: GpuSliceOccurrenceTypeDto = item;
+    if (exact.kind == "expression" && numberEqual(exact.sourceId, sourceId)) {
+      exact
     } else {
       findExpressionOccurrence(rest, sourceId)
     }
@@ -202,9 +219,10 @@ let shaderBuiltinTypeName = (source: GpuSliceExprDto, context: SliceContext) => 
 let rec builtinParamsMatch = match(expected, sourceIds, context) => {
   ([], [], Var(context)) => { true },
   ([Var(expectedType), ..expectedRest], [Var(sourceId), ..sourceRest], Var(context)) => {
-    let source = findExpression(context.expressions, sourceId);
-    expectedType == shaderBuiltinTypeName(source, context) &&
-      builtinParamsMatch(expectedRest, sourceRest, context)
+    let exactContext: SliceContext = context;
+    let source = findExpression(exactContext.expressions, sourceId);
+    expectedType == shaderBuiltinTypeName(source, exactContext) &&
+      builtinParamsMatch(expectedRest, sourceRest, exactContext)
   },
   (_, _, Var(context)) => { false }
 };
@@ -214,18 +232,21 @@ let rec selectBuiltinOverload = match(overloads, source, context) => {
     Panic("no exact pinned Slang builtin overload survived Workman GPU elaboration")
   },
   ([Var(overload), ..rest], Var(source), Var(context)) => {
+    let exactOverload: GpuSliceBuiltinOverloadDto = overload;
+    let exactSource: GpuSliceExprDto = source;
+    let exactContext: SliceContext = context;
     if (
-      overload.name == source.builtinName &&
-      overload.result == shaderBuiltinTypeName(source, context) &&
+      exactOverload.name == exactSource.builtinName &&
+      exactOverload.result == shaderBuiltinTypeName(exactSource, exactContext) &&
       builtinParamsMatch(
-        Js.Array.toList(overload.params),
-        Js.Array.toList(source.children),
-        context
+        Js.Array.toList(exactOverload.params),
+        Js.Array.toList(exactSource.children),
+        exactContext
       )
     ) {
-      overload.id
+      exactOverload.id
     } else {
-      selectBuiltinOverload(rest, source, context)
+      selectBuiltinOverload(rest, exactSource, exactContext)
     }
   }
 };
@@ -233,14 +254,20 @@ let rec selectBuiltinOverload = match(overloads, source, context) => {
 let rec collectBuiltinSelections = match(expressions, context, selections) => {
   ([], Var(context), Var(selections)) => { reverseInto(selections, []) },
   ([Var(expression), ..rest], Var(context), Var(selections)) => {
-    if (expression.kind == "builtin") {
+    let exactExpression: GpuSliceExprDto = expression;
+    let exactContext: SliceContext = context;
+    if (exactExpression.kind == "builtin") {
       let selection: GpuSliceBuiltinSelectionDto = .{
-        expressionId = expression.id,
-        overloadId = selectBuiltinOverload(context.builtinOverloads, expression, context),
+        expressionId = exactExpression.id,
+        overloadId = selectBuiltinOverload(
+          exactContext.builtinOverloads,
+          exactExpression,
+          exactContext
+        ),
       };
-      collectBuiltinSelections(rest, context, [selection, ..selections])
+      collectBuiltinSelections(rest, exactContext, [selection, ..selections])
     } else {
-      collectBuiltinSelections(rest, context, selections)
+      collectBuiltinSelections(rest, exactContext, selections)
     }
   }
 };
@@ -344,16 +371,17 @@ let rec elaborateSliceTypes = match(sourceTypes, allTypes, shaderTypes, evidence
   (
     [Var(source), ..rest], Var(allTypes), Var(shaderTypes), Var(evidence)
   ) => {
-    let shaderKind = shaderTypeKind(source, allTypes);
+    let exactSource: GpuSliceTypeDto = source;
+    let shaderKind = shaderTypeKind(exactSource, allTypes);
     let shaderType: GpuSliceTypeDto = .{
-      ..source,
+      ..exactSource,
       kind = shaderKind,
     };
     let typeEvidence: GpuSliceTypeEvidenceDto = .{
-      typeId = source.id,
-      semanticKind = source.kind,
+      typeId = exactSource.id,
+      semanticKind = exactSource.kind,
       shaderKind = shaderKind,
-      reason = shaderTypeReason(source.kind, shaderKind),
+      reason = shaderTypeReason(exactSource.kind, shaderKind),
     };
     elaborateSliceTypes(
       rest,
@@ -371,19 +399,20 @@ let rec addExpressionOccurrences = match(
   (
     [Var(expression), ..rest], Var(representations), Var(typeOffset), Var(types), Var(occurrences)
   ) => {
-    let concreteRepresentation = expressionRepresentation(representations, expression.id);
+    let exactExpression: GpuSliceExprDto = expression;
+    let concreteRepresentation = expressionRepresentation(representations, exactExpression.id);
     let occurrence: GpuSliceOccurrenceTypeDto = .{
       kind = "expression",
-      sourceId = expression.id,
-      typeId = expression.typeId,
+      sourceId = exactExpression.id,
+      typeId = exactExpression.typeId,
       shaderTypeId = concreteShaderTypeId(
-        expression.typeId,
+        exactExpression.typeId,
         concreteRepresentation,
         typeOffset,
         types
       ),
-      spanId = expression.spanId,
-      representationEvidence = expression.numberKind,
+      spanId = exactExpression.spanId,
+      representationEvidence = exactExpression.numberKind,
       representation = concreteRepresentation,
     };
     addExpressionOccurrences(rest, representations, typeOffset, types, [occurrence, ..occurrences])
@@ -400,22 +429,23 @@ let rec addPatternOccurrences = match(
     [Var(pattern), ..rest], Var(expressionCount), Var(representations), Var(typeOffset), Var(types),
     Var(occurrences)
   ) => {
+    let exactPattern: GpuSlicePatternDto = pattern;
     let concreteRepresentation = patternRepresentation(
       representations,
       expressionCount,
-      pattern.id
+      exactPattern.id
     );
     let occurrence: GpuSliceOccurrenceTypeDto = .{
       kind = "pattern",
-      sourceId = pattern.id,
-      typeId = pattern.typeId,
+      sourceId = exactPattern.id,
+      typeId = exactPattern.typeId,
       shaderTypeId = concreteShaderTypeId(
-        pattern.typeId,
+        exactPattern.typeId,
         concreteRepresentation,
         typeOffset,
         types
       ),
-      spanId = pattern.spanId,
+      spanId = exactPattern.spanId,
       representationEvidence = "",
       representation = concreteRepresentation,
     };
@@ -433,12 +463,13 @@ let rec addPatternOccurrences = match(
 let rec addFunctionOccurrences = match(functions, occurrences) => {
   ([], Var(occurrences)) => { occurrences },
   ([Var(fn), ..rest], Var(occurrences)) => {
+    let exactFunction: GpuSliceFunctionDto = fn;
     let occurrence: GpuSliceOccurrenceTypeDto = .{
       kind = "function",
-      sourceId = fn.id,
-      typeId = fn.typeId,
-      shaderTypeId = fn.typeId,
-      spanId = fn.spanId,
+      sourceId = exactFunction.id,
+      typeId = exactFunction.typeId,
+      shaderTypeId = exactFunction.typeId,
+      spanId = exactFunction.spanId,
       representationEvidence = "",
       representation = "",
     };
@@ -508,14 +539,16 @@ let elaborateSliceProgramTypes = (input: GpuSliceElaborationInputDto) => {
 let rec findAdt = match(items, typeNameId) => {
   ([], Var(typeNameId)) => { Panic("missing schema-v2 ADT") },
   ([Var(item), ..rest], Var(typeNameId)) => {
-    if (numberEqual(item.typeNameId, typeNameId)) { item } else { findAdt(rest, typeNameId) }
+    let exact: GpuSliceAdtDto = item;
+    if (numberEqual(exact.typeNameId, typeNameId)) { exact } else { findAdt(rest, typeNameId) }
   }
 };
 
 let rec findFunction = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 function") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findFunction(rest, id) }
+    let exact: GpuSliceFunctionDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findFunction(rest, id) }
   }
 };
 
@@ -607,12 +640,13 @@ let nonExhaustiveDiagnostic = (source: GpuSliceExprDto) => {
 let rec constructorPatterns = match(armIds, context, constructors, valid) => {
   ([], Var(context), Var(constructors), Var(valid)) => { (constructors, valid) },
   ([Var(armId), ..rest], Var(context), Var(constructors), Var(valid)) => {
-    let arm = findMatchArm(context.matchArms, armId);
-    let pattern = findPattern(context.patterns, arm.patternId);
+    let exactContext: SliceContext = context;
+    let arm = findMatchArm(exactContext.matchArms, armId);
+    let pattern = findPattern(exactContext.patterns, arm.patternId);
     if (pattern.kind == "constructor") {
-      constructorPatterns(rest, context, [pattern.constructorId, ..constructors], valid)
+      constructorPatterns(rest, exactContext, [pattern.constructorId, ..constructors], valid)
     } else {
-      constructorPatterns(rest, context, constructors, false)
+      constructorPatterns(rest, exactContext, constructors, false)
     }
   }
 };
@@ -808,12 +842,13 @@ and buildMatchArms = match(
     Var(state),
     Var(reversed)
   ) => {
-    let sourceArm = findMatchArm(context.matchArms, sourceArmId);
+    let exactContext: SliceContext = context;
+    let sourceArm = findMatchArm(exactContext.matchArms, sourceArmId);
     let (bodyIr, afterBody) = buildExpression(
       sourceArm.bodyExprId,
       functionId,
       tailPosition,
-      context,
+      exactContext,
       state
     );
     let arm: GpuSliceIrMatchArmDto = .{
@@ -832,7 +867,7 @@ and buildMatchArms = match(
       rest,
       functionId,
       tailPosition,
-      context,
+      exactContext,
       afterArm,
       [arm.id, ..reversed]
     )
@@ -843,8 +878,8 @@ and buildBlock = (
   source: GpuSliceExprDto,
   functionId: Number,
   tailPosition: Bool,
-  context,
-  state
+  context: SliceContext,
+  state: SliceIrState
 ) => {
   let row = findBlock(context.blocks, source.id);
   let (builtItems, afterItems) = buildBlockValues(
@@ -882,34 +917,35 @@ and buildBlockValues = match(
     (reverseInto(reversed, []), state)
   },
   ([Var(itemId), ..rest], Var(functionId), Var(context), Var(state), Var(reversed)) => {
-    let item = findBlockItem(context.blockItems, itemId);
+    let exactContext: SliceContext = context;
+    let item = findBlockItem(exactContext.blockItems, itemId);
     if (item.kind == "let") {
-      let letRow = findLet(context.lets, item.letId);
+      let letRow = findLet(exactContext.lets, item.letId);
       let (valueIr, afterValue) = buildExpression(
         letRow.valueExprId,
         functionId,
         false,
-        context,
+        exactContext,
         state
       );
       let built: BuiltBlockItem = .{
         itemId = item.id,
         valueExprId = valueIr,
       };
-      buildBlockValues(rest, functionId, context, afterValue, [built, ..reversed])
+      buildBlockValues(rest, functionId, exactContext, afterValue, [built, ..reversed])
     } else {
       let (valueIr, afterValue) = buildExpression(
         item.expressionId,
         functionId,
         false,
-        context,
+        exactContext,
         state
       );
       let built: BuiltBlockItem = .{
         itemId = item.id,
         valueExprId = valueIr,
       };
-      buildBlockValues(rest, functionId, context, afterValue, [built, ..reversed])
+      buildBlockValues(rest, functionId, exactContext, afterValue, [built, ..reversed])
     }
   }
 }
@@ -933,29 +969,39 @@ and buildBlockWrappers = match(
     Var(context),
     Var(state)
   ) => {
-    let item = findBlockItem(context.blockItems, built.itemId);
+    let exactBuilt: BuiltBlockItem = built;
+    let exactSource: GpuSliceExprDto = source;
+    let exactContext: SliceContext = context;
+    let item = findBlockItem(exactContext.blockItems, exactBuilt.itemId);
     if (item.kind == "let") {
-      let letRow = findLet(context.lets, item.letId);
+      let letRow = findLet(exactContext.lets, item.letId);
       let expression: GpuSliceIrExprDto = .{
-        ..baseIrExpression(state, source, functionId, "let"),
+        ..baseIrExpression(state, exactSource, functionId, "let"),
         spanId = item.spanId,
         bindingId = -1,
         patternId = letRow.patternId,
         targetFunctionId = -1,
-        children = Js.Array.fromList([built.valueExprId, bodyIr]),
+        children = Js.Array.fromList([exactBuilt.valueExprId, bodyIr]),
       };
       let (letIr, afterLet) = addExpression(expression, state);
-      buildBlockWrappers(rest, source, functionId, letIr, context, afterLet)
+      buildBlockWrappers(rest, exactSource, functionId, letIr, exactContext, afterLet)
     } else {
       let expression: GpuSliceIrExprDto = .{
-        ..baseIrExpression(state, source, functionId, "sequence"),
+        ..baseIrExpression(state, exactSource, functionId, "sequence"),
         spanId = item.spanId,
         bindingId = -1,
         targetFunctionId = -1,
-        children = Js.Array.fromList([built.valueExprId, bodyIr]),
+        children = Js.Array.fromList([exactBuilt.valueExprId, bodyIr]),
       };
       let (sequenceIr, afterSequence) = addExpression(expression, state);
-      buildBlockWrappers(rest, source, functionId, sequenceIr, context, afterSequence)
+      buildBlockWrappers(
+        rest,
+        exactSource,
+        functionId,
+        sequenceIr,
+        exactContext,
+        afterSequence
+      )
     }
   }
 };
@@ -967,30 +1013,39 @@ let rec buildFunctions = match(
 ) => {
   ([], Var(context), Var(state)) => { state },
   ([Var(fn), ..rest], Var(context), Var(state)) => {
-    let (bodyIr, afterBody) = buildExpression(fn.bodyExprId, fn.id, true, context, state);
+    let exactFunction: GpuSliceFunctionDto = fn;
+    let exactContext: SliceContext = context;
+    let (bodyIr, afterBody) = buildExpression(
+      exactFunction.bodyExprId,
+      exactFunction.id,
+      true,
+      exactContext,
+      state
+    );
     let irFunction: GpuSliceIrFunctionDto = .{
-      functionId = fn.id,
-      bindingId = fn.bindingId,
-      name = fn.name,
-      paramIds = fn.paramIds,
-      resultTypeId = fn.resultTypeId,
+      functionId = exactFunction.id,
+      bindingId = exactFunction.bindingId,
+      name = exactFunction.name,
+      paramIds = exactFunction.paramIds,
+      resultTypeId = exactFunction.resultTypeId,
       bodyExprId = bodyIr,
-      recursionGroupId = fn.recursionGroupId,
-      spanId = fn.spanId,
+      recursionGroupId = exactFunction.recursionGroupId,
+      spanId = exactFunction.spanId,
     };
     let afterFunction: SliceIrState = .{
       ..afterBody,
       functions = [irFunction, ..afterBody.functions],
     };
-    buildFunctions(rest, context, afterFunction)
+    buildFunctions(rest, exactContext, afterFunction)
   }
 };
 
 let rec findOccurrence = match(items, kind, sourceId) => {
   ([], Var(kind), Var(sourceId)) => { Panic("missing concrete GPU occurrence type") },
   ([Var(item), ..rest], Var(kind), Var(sourceId)) => {
-    if (item.kind == kind && numberEqual(item.sourceId, sourceId)) {
-      item
+    let exact: GpuSliceOccurrenceTypeDto = item;
+    if (exact.kind == kind && numberEqual(exact.sourceId, sourceId)) {
+      exact
     } else {
       findOccurrence(rest, kind, sourceId)
     }
@@ -1000,9 +1055,10 @@ let rec findOccurrence = match(items, kind, sourceId) => {
 let rec concretizeExpressions = match(expressions, occurrences, output) => {
   ([], Var(occurrences), Var(output)) => { reverseInto(output, []) },
   ([Var(expression), ..rest], Var(occurrences), Var(output)) => {
-    let occurrence = findOccurrence(occurrences, "expression", expression.id);
+    let exactExpression: GpuSliceExprDto = expression;
+    let occurrence = findOccurrence(occurrences, "expression", exactExpression.id);
     let concrete: GpuSliceExprDto = .{
-      ..expression,
+      ..exactExpression,
       typeId = occurrence.shaderTypeId,
     };
     concretizeExpressions(rest, occurrences, [concrete, ..output])
@@ -1012,9 +1068,10 @@ let rec concretizeExpressions = match(expressions, occurrences, output) => {
 let rec concretizePatterns = match(patterns, occurrences, output) => {
   ([], Var(occurrences), Var(output)) => { reverseInto(output, []) },
   ([Var(pattern), ..rest], Var(occurrences), Var(output)) => {
-    let occurrence = findOccurrence(occurrences, "pattern", pattern.id);
+    let exactPattern: GpuSlicePatternDto = pattern;
+    let occurrence = findOccurrence(occurrences, "pattern", exactPattern.id);
     let concrete: GpuSlicePatternDto = .{
-      ..pattern,
+      ..exactPattern,
       typeId = occurrence.shaderTypeId,
     };
     concretizePatterns(rest, occurrences, [concrete, ..output])
@@ -1024,9 +1081,10 @@ let rec concretizePatterns = match(patterns, occurrences, output) => {
 let rec concretizeParams = match(params, patterns, output) => {
   ([], Var(patterns), Var(output)) => { reverseInto(output, []) },
   ([Var(param), ..rest], Var(patterns), Var(output)) => {
-    let pattern = findPattern(patterns, param.patternId);
+    let exactParam: GpuSliceParamDto = param;
+    let pattern = findPattern(patterns, exactParam.patternId);
     let concrete: GpuSliceParamDto = .{
-      ..param,
+      ..exactParam,
       typeId = pattern.typeId,
     };
     concretizeParams(rest, patterns, [concrete, ..output])
@@ -1036,9 +1094,10 @@ let rec concretizeParams = match(params, patterns, output) => {
 let rec concretizeFunctions = match(functions, expressions, output) => {
   ([], Var(expressions), Var(output)) => { reverseInto(output, []) },
   ([Var(fn), ..rest], Var(expressions), Var(output)) => {
-    let body = findExpression(expressions, fn.bodyExprId);
+    let exactFunction: GpuSliceFunctionDto = fn;
+    let body = findExpression(expressions, exactFunction.bodyExprId);
     let concrete: GpuSliceFunctionDto = .{
-      ..fn,
+      ..exactFunction,
       resultTypeId = body.typeId,
     };
     concretizeFunctions(rest, expressions, [concrete, ..output])
@@ -1048,8 +1107,9 @@ let rec concretizeFunctions = match(functions, expressions, output) => {
 let rec uniformShaderTypeId = match(expressions, occurrences, index, fallback) => {
   ([], Var(occurrences), Var(index), Var(fallback)) => { fallback },
   ([Var(expression), ..rest], Var(occurrences), Var(index), Var(fallback)) => {
-    if (expression.kind == "uniform" && numberEqual(expression.index, index)) {
-      let occurrence = findOccurrence(occurrences, "expression", expression.id);
+    let exactExpression: GpuSliceExprDto = expression;
+    if (exactExpression.kind == "uniform" && numberEqual(exactExpression.index, index)) {
+      let occurrence = findOccurrence(occurrences, "expression", exactExpression.id);
       occurrence.shaderTypeId
     } else {
       uniformShaderTypeId(rest, occurrences, index, fallback)
@@ -1060,9 +1120,15 @@ let rec uniformShaderTypeId = match(expressions, occurrences, index, fallback) =
 let rec concretizeEnvironmentFields = match(fields, expressions, occurrences, output) => {
   ([], Var(expressions), Var(occurrences), Var(output)) => { reverseInto(output, []) },
   ([Var(field), ..rest], Var(expressions), Var(occurrences), Var(output)) => {
+    let exactField: GpuSliceEnvironmentFieldDto = field;
     let concrete: GpuSliceEnvironmentFieldDto = .{
-      ..field,
-      typeId = uniformShaderTypeId(expressions, occurrences, field.declaredIndex, field.typeId),
+      ..exactField,
+      typeId = uniformShaderTypeId(
+        expressions,
+        occurrences,
+        exactField.declaredIndex,
+        exactField.typeId
+      ),
     };
     concretizeEnvironmentFields(rest, expressions, occurrences, [concrete, ..output])
   }

@@ -80,64 +80,73 @@ let initialLowerState = () => {
 let rec findIrFunction = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 IR function") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.functionId, id)) { item } else { findIrFunction(rest, id) }
+    let exact: GpuSliceIrFunctionDto = item;
+    if (numberEqual(exact.functionId, id)) { exact } else { findIrFunction(rest, id) }
   }
 };
 
 let rec findIrExpression = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 IR expression") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findIrExpression(rest, id) }
+    let exact: GpuSliceIrExprDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findIrExpression(rest, id) }
   }
 };
 
 let rec findIrMatchArm = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 IR match arm") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findIrMatchArm(rest, id) }
+    let exact: GpuSliceIrMatchArmDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findIrMatchArm(rest, id) }
   }
 };
 
 let rec findLoweredAtom = match(items, id) => {
   ([], Var(id)) => { Panic("missing lowered atom") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findLoweredAtom(rest, id) }
+    let exact: GpuSliceLoweredAtomDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findLoweredAtom(rest, id) }
   }
 };
 
 let rec findParam = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 parameter") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findParam(rest, id) }
+    let exact: GpuSliceParamDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findParam(rest, id) }
   }
 };
 
 let rec findPattern = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 pattern") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findPattern(rest, id) }
+    let exact: GpuSlicePatternDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findPattern(rest, id) }
   }
 };
 
 let rec findConstructor = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 constructor") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findConstructor(rest, id) }
+    let exact: GpuSliceConstructorDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findConstructor(rest, id) }
   }
 };
 
 let rec findLayoutForType = match(items, typeId) => {
   ([], Var(typeId)) => { Panic("missing schema-v2 ADT layout") },
   ([Var(item), ..rest], Var(typeId)) => {
-    if (numberEqual(item.typeId, typeId)) { item } else { findLayoutForType(rest, typeId) }
+    let exact: GpuSliceAdtLayoutDto = item;
+    if (numberEqual(exact.typeId, typeId)) { exact } else { findLayoutForType(rest, typeId) }
   }
 };
 
 let rec findLayoutForConstructor = match(layouts, fields, constructorId) => {
   ([], Var(fields), Var(constructorId)) => { Panic("missing constructor ADT layout") },
   ([Var(layout), ..rest], Var(fields), Var(constructorId)) => {
-    if (layoutContainsConstructor(Js.Array.toList(layout.fieldIds), fields, constructorId)) {
-      layout
+    let exact: GpuSliceAdtLayoutDto = layout;
+    if (layoutContainsConstructor(Js.Array.toList(exact.fieldIds), fields, constructorId)) {
+      exact
     } else {
       findLayoutForConstructor(rest, fields, constructorId)
     }
@@ -159,15 +168,17 @@ and layoutContainsConstructor = match(fieldIds, fields, constructorId) => {
 and findField = match(items, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 ADT field") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findField(rest, id) }
+    let exact: GpuSliceAdtFieldDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findField(rest, id) }
   }
 };
 
 let rec findFieldForConstructor = match(items, constructorId) => {
   ([], Var(constructorId)) => { Panic("missing constructor payload field") },
   ([Var(item), ..rest], Var(constructorId)) => {
-    if (numberEqual(item.constructorId, constructorId)) {
-      item
+    let exact: GpuSliceAdtFieldDto = item;
+    if (numberEqual(exact.constructorId, constructorId)) {
+      exact
     } else {
       findFieldForConstructor(rest, constructorId)
     }

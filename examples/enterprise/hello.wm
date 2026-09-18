@@ -9,18 +9,16 @@ type AppError =
 
 let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
 
-let main = () => {
-  let getWriter = viaWriter (buffer) => { Writer.stdout(buffer) };
-  let write     = viaWriter (writer) => { Writer.print(writer, "hello\n") };
-  let flush     = viaWriter (writer) => { Writer.flush(writer) };
-
-  (match({Result|
-    Uint8Array.new(4096) :> Result.mapErr(AllocationFailed)
-      :> getWriter
-      :> write
-      :> flush,
-    Writer.close() :> Result.mapErr(WriteFailed)
-  |}) {
+let main ==> {
+  Result|
+    Uint8Array.new(4096)
+      :> Result.mapErr(AllocationFailed)
+      :> viaWriter Writer.stdout
+      :> (viaWriter (Writer.print "hello\n"))
+      :> viaWriter Writer.flush,
+    Writer.close()
+      :> Result.mapErr(WriteFailed)
+  | :> match {
     Ok(_) => { 0 },
     Err(error) => {
       let reason = match(error) {
@@ -32,5 +30,5 @@ let main = () => {
         :> Result.withDefault(void);
       1
     }
-  }) :> Runtime.exit
+  } :> Runtime.exit
 };

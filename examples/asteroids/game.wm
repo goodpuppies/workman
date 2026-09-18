@@ -219,12 +219,13 @@ let takeHit = (bullets, target, radius) => {
     match(remaining) {
       [] => { None },
       [b, ..rest] => {
-        if (withinSq(b.pos, target, radius + bulletRadius)) {
+        let bullet: Bullet = b;
+        if (withinSq(bullet.pos, target, radius + bulletRadius)) {
           Some(List.foldLeft(before, rest, (result, earlier) => {
             [earlier, ..result]
           }))
         } else {
-          find(rest, [b, ..before])
+          find(rest, [bullet, ..before])
         }
       },
     }
@@ -246,12 +247,13 @@ let resolveHits = (asteroids, bullets, r) => {
         Impact(List.reverse(rocksBefore), remainingShots, gained, seed)
       },
       [a, ..rest] => {
-        match(takeHit(remainingShots, a.pos, radiusOf(a.size))) {
+        let asteroid: Asteroid = a;
+        match(takeHit(remainingShots, asteroid.pos, radiusOf(asteroid.size))) {
           None => {
-            resolve(rest, remainingShots, seed, gained, [a, ..rocksBefore])
+            resolve(rest, remainingShots, seed, gained, [asteroid, ..rocksBefore])
           },
           Some(shotsAfterHit) => {
-            let (fragments, nextSeed) = shatter(a, seed);
+            let (fragments, nextSeed) = shatter(asteroid, seed);
             let rocksWithFragments =
               List.foldLeft(fragments, rocksBefore, (result, fragment) => {
                 [fragment, ..result]
@@ -260,7 +262,7 @@ let resolveHits = (asteroids, bullets, r) => {
               rest,
               shotsAfterHit,
               nextSeed,
-              gained + scoreOf(a.size),
+              gained + scoreOf(asteroid.size),
               rocksWithFragments
             )
           },

@@ -467,7 +467,7 @@ let lib = dlopen("SDL2", JSON{
 });
 
 let createSurface = (sdl, title) => {
-  sdl.symbols.SDL_CreateWindow(title, 1)
+  sdl :> .symbols.SDL_CreateWindow(title, 1)
 };
 `;
   await Deno.writeTextFile(main, source);

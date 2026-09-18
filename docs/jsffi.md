@@ -151,9 +151,25 @@ Manual types are trusted declarations about the JS shape. Safe manual imports st
 `Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
 explicitly want a direct JS call.
 
-`unsafe` changes error handling, not reflection precision. Do not add it to fix inference. During
-exploration, keep the safe import and use `Result.debug` if aborting on failure is acceptable; later
-replace that with a match or ordinary `Result`/`Task` handling.
+An unsafe manual import may also quantify lowercase type variables. This is the lowest-level form
+of representation promise and should normally be hidden behind a typed library abstraction:
+
+```wm
+from js.global import unsafe {
+  structuredClone as erase: value -> Js.Value,
+  structuredClone as restore: Js.Value -> value,
+};
+```
+
+Safe manual imports still reject free type variables because a `Result` wrapper cannot make an
+uncheckable polymorphic foreign claim safe. Undeclared nominal foreign types must also be imported
+or declared explicitly in both modes.
+
+For reflected imports, `unsafe` changes error handling, not reflection precision. Do not add it to
+fix inference. The polymorphic case above is different because its entire handwritten signature is
+an explicit trusted representation claim. During ordinary exploration, keep the safe import and use
+`Result.debug` if aborting on failure is acceptable; later replace that with a match or ordinary
+`Result`/`Task` handling.
 
 ## Shims Keep The Boundary Workman-Shaped
 

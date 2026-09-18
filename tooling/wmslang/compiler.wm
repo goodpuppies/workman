@@ -1,4 +1,5 @@
 from "./types.wm" import {
+  GpuBindingDto,
   GpuExprDto,
   GpuFunctionDto,
   GpuParamDto,
@@ -155,8 +156,9 @@ let capabilityDiagnostic = (expression: GpuExprDto) => {
 let rec reachableBodyIds = match(functions, reachable, bodyIds) => {
   ([], reachable, bodyIds) => { bodyIds },
   ([fn, ..rest], reachable, bodyIds) => {
-    if (Map.has(reachable, fn.id)) {
-      reachableBodyIds(rest, reachable, [fn.bodyExprId, ..bodyIds])
+    let exact: GpuFunctionDto = fn;
+    if (Map.has(reachable, exact.id)) {
+      reachableBodyIds(rest, reachable, [exact.bodyExprId, ..bodyIds])
     } else {
       reachableBodyIds(rest, reachable, bodyIds)
     }
@@ -208,10 +210,11 @@ let duplicateFunctionDiagnostic = (fn: GpuFunctionDto) => {
 let rec registerFunctions = match(functions, registry, diagnostics) => {
   ([], registry, diagnostics) => { (registry, diagnostics) },
   ([fn, ..rest], registry, diagnostics) => {
-    if (Map.has(registry, fn.id)) {
-      registerFunctions(rest, registry, [duplicateFunctionDiagnostic(fn), ..diagnostics])
+    let exact: GpuFunctionDto = fn;
+    if (Map.has(registry, exact.id)) {
+      registerFunctions(rest, registry, [duplicateFunctionDiagnostic(exact), ..diagnostics])
     } else {
-      registerFunctions(rest, Map.set(registry, fn.id, fn), diagnostics)
+      registerFunctions(rest, Map.set(registry, exact.id, exact), diagnostics)
     }
   }
 };
@@ -219,10 +222,11 @@ let rec registerFunctions = match(functions, registry, diagnostics) => {
 let rec indexFunctionBindings = match(functions, registry) => {
   ([], registry) => { registry },
   ([fn, ..rest], registry) => {
-    if (fn.bindingId < 0) {
+    let exact: GpuFunctionDto = fn;
+    if (exact.bindingId < 0) {
       indexFunctionBindings(rest, registry)
     } else {
-      indexFunctionBindings(rest, Map.set(registry, fn.bindingId, fn.id))
+      indexFunctionBindings(rest, Map.set(registry, exact.bindingId, exact.id))
     }
   }
 };
@@ -361,14 +365,16 @@ let rec solveReachableFunctions = match(
 let rec indexBindings = match(bindings, registry) => {
   ([], registry) => { registry },
   ([binding, ..rest], registry) => {
-    indexBindings(rest, Map.set(registry, binding.id, binding))
+    let exact: GpuBindingDto = binding;
+    indexBindings(rest, Map.set(registry, exact.id, exact))
   }
 };
 
 let rec bindParams = match(params, bound) => {
   ([], bound) => { bound },
   ([param, ..rest], bound) => {
-    bindParams(rest, Map.set(bound, param.bindingId, true))
+    let exact: GpuParamDto = param;
+    bindParams(rest, Map.set(bound, exact.bindingId, true))
   }
 };
 
@@ -382,13 +388,14 @@ let rec collectLocalBindings = match(pending, expressionRegistry, visited, bound
       match(Map.get(expressionRegistry, expressionId)) {
         None => { collectLocalBindings(rest, expressionRegistry, nextVisited, bound) },
         Some(expression) => {
-          let nextBound = if (expression.kind == "let" && expression.bindingId >= 0) {
-            Map.set(bound, expression.bindingId, true)
+          let exact: GpuExprDto = expression;
+          let nextBound = if (exact.kind == "let" && exact.bindingId >= 0) {
+            Map.set(bound, exact.bindingId, true)
           } else {
             bound
           };
           collectLocalBindings(
-            prependAll(Js.Array.toList(expression.children), rest),
+            prependAll(Js.Array.toList(exact.children), rest),
             expressionRegistry,
             nextVisited,
             nextBound
@@ -486,7 +493,8 @@ and constantExpressions = match(
 let reifiableCaptureType = (typeRegistry, typeId) => {
   match(Map.get(typeRegistry, typeId)) {
     Some(gpuType) => {
-      gpuType.kind == "number" || gpuType.kind == "bool" || gpuType.kind == "vector"
+      let exact: GpuTypeDto = gpuType;
+      exact.kind == "number" || exact.kind == "bool" || exact.kind == "vector"
     },
     None => { false }
   }
@@ -509,9 +517,10 @@ let captureCategory = (
       if (reifiableCaptureType(typeRegistry, typeId)) {
         match(Map.get(bindingRegistry, bindingId)) {
           Some(binding) => {
+            let exactBinding: GpuBindingDto = binding;
             if (
-              binding.definitionExprId >= 0 && constantExpression(
-                binding.definitionExprId,
+              exactBinding.definitionExprId >= 0 && constantExpression(
+                exactBinding.definitionExprId,
                 expressionRegistry,
                 bindingRegistry,
                 Map.empty(Map.numberCompare),
@@ -567,21 +576,26 @@ let rec collectFunctionCaptures = match(
           )
         },
         Some(expression) => {
-          let captureTypeId = match(Map.get(bindingRegistry, expression.bindingId)) {
-            Some(binding) => { binding.typeId },
-            None => { expression.typeId }
+          let exactExpression: GpuExprDto = expression;
+          let captureTypeId = match(Map.get(bindingRegistry, exactExpression.bindingId)) {
+            Some(binding) => {
+              let exactBinding: GpuBindingDto = binding;
+              exactBinding.typeId
+            },
+            None => { exactExpression.typeId }
           };
           let nextCaptures = if (
-            expression.kind == "var" && expression.bindingId >= 0 &&
-            !Map.has(bound, expression.bindingId) && !Map.has(captures, expression.bindingId)
+            exactExpression.kind == "var" && exactExpression.bindingId >= 0 &&
+            !Map.has(bound, exactExpression.bindingId) &&
+            !Map.has(captures, exactExpression.bindingId)
           ) {
             let capture: GpuCaptureDto = .{
               regionId = regionId,
-              bindingId = expression.bindingId,
+              bindingId = exactExpression.bindingId,
               typeId = captureTypeId,
-              spanId = expression.spanId,
+              spanId = exactExpression.spanId,
               category = captureCategory(
-                expression.bindingId,
+                exactExpression.bindingId,
                 captureTypeId,
                 reachable,
                 bindingFunctions,
@@ -590,12 +604,12 @@ let rec collectFunctionCaptures = match(
                 typeRegistry
               ),
             };
-            Map.set(captures, expression.bindingId, capture)
+            Map.set(captures, exactExpression.bindingId, capture)
           } else {
             captures
           };
           collectFunctionCaptures(
-            prependAll(Js.Array.toList(expression.children), rest),
+            prependAll(Js.Array.toList(exactExpression.children), rest),
             regionId,
             reachable,
             bound,
@@ -737,8 +751,9 @@ let illegalCaptureDiagnostic = (capture: GpuCaptureDto) => {
 let rec captureDiagnostics = match(captures, diagnostics) => {
   ([], diagnostics) => { diagnostics },
   ([capture, ..rest], diagnostics) => {
-    if (capture.category == "illegal") {
-      captureDiagnostics(rest, [illegalCaptureDiagnostic(capture), ..diagnostics])
+    let exact: GpuCaptureDto = capture;
+    if (exact.category == "illegal") {
+      captureDiagnostics(rest, [illegalCaptureDiagnostic(exact), ..diagnostics])
     } else {
       captureDiagnostics(rest, diagnostics)
     }
@@ -748,14 +763,16 @@ let rec captureDiagnostics = match(captures, diagnostics) => {
 let rec indexExpressions = match(expressions, registry) => {
   ([], registry) => { registry },
   ([expression, ..rest], registry) => {
-    indexExpressions(rest, Map.set(registry, expression.id, expression))
+    let exact: GpuExprDto = expression;
+    indexExpressions(rest, Map.set(registry, exact.id, exact))
   }
 };
 
 let rec indexTypes = match(types, registry) => {
   ([], registry) => { registry },
   ([gpuType, ..rest], registry) => {
-    indexTypes(rest, Map.set(registry, gpuType.id, gpuType))
+    let exact: GpuTypeDto = gpuType;
+    indexTypes(rest, Map.set(registry, exact.id, exact))
   }
 };
 
@@ -806,8 +823,9 @@ let rec setRepresentations = match(typeIds, representation, registry, changed) =
 let rec seedRepresentations = match(types, registry) => {
   ([], registry) => { registry },
   ([gpuType, ..rest], registry) => {
-    if (gpuType.representation == "f32" || gpuType.representation == "i32") {
-      seedRepresentations(rest, Map.set(registry, gpuType.id, gpuType.representation))
+    let exact: GpuTypeDto = gpuType;
+    if (exact.representation == "f32" || exact.representation == "i32") {
+      seedRepresentations(rest, Map.set(registry, exact.id, exact.representation))
     } else {
       seedRepresentations(rest, registry)
     }
@@ -818,7 +836,10 @@ let rec childTypeIds = match(childIds, expressionRegistry, typeIds) => {
   ([], expressionRegistry, typeIds) => { typeIds },
   ([childId, ..rest], expressionRegistry, typeIds) => {
     match(Map.get(expressionRegistry, childId)) {
-      Some(child) => { childTypeIds(rest, expressionRegistry, [child.typeId, ..typeIds]) },
+      Some(child) => {
+        let exact: GpuExprDto = child;
+        childTypeIds(rest, expressionRegistry, [exact.typeId, ..typeIds])
+      },
       None => { childTypeIds(rest, expressionRegistry, typeIds) }
     }
   }
@@ -829,17 +850,18 @@ let rec numericTypeIds = match(typeIds, typeRegistry, numericIds) => {
   ([typeId, ..rest], typeRegistry, numericIds) => {
     match(Map.get(typeRegistry, typeId)) {
       Some(gpuType) => {
-        if (gpuType.kind == "vector") {
+        let exact: GpuTypeDto = gpuType;
+        if (exact.kind == "vector") {
           numericTypeIds(
             rest,
             typeRegistry,
             [
               typeId,
-              ..numericTypeIds(Js.Array.toList(gpuType.items), typeRegistry, numericIds)
+              ..numericTypeIds(Js.Array.toList(exact.items), typeRegistry, numericIds)
             ]
           )
         } else {
-          if (gpuType.kind == "number") {
+          if (exact.kind == "number") {
             numericTypeIds(rest, typeRegistry, [typeId, ..numericIds])
           } else {
             numericTypeIds(rest, typeRegistry, numericIds)
@@ -855,14 +877,17 @@ let rec lastChildTypeId = match(childIds, expressionRegistry, lastTypeId) => {
   ([], expressionRegistry, lastTypeId) => { lastTypeId },
   ([childId, ..rest], expressionRegistry, lastTypeId) => {
     let nextTypeId = match(Map.get(expressionRegistry, childId)) {
-      Some(child) => { child.typeId },
+      Some(child) => {
+        let exact: GpuExprDto = child;
+        exact.typeId
+      },
       None => { lastTypeId }
     };
     lastChildTypeId(rest, expressionRegistry, nextTypeId)
   }
 };
 
-let constraintTypeIds = (expression, expressionRegistry, typeRegistry) => {
+let constraintTypeIds = (expression: GpuExprDto, expressionRegistry, typeRegistry) => {
   if (expression.kind == "binary") {
     numericTypeIds(
       [
@@ -876,7 +901,8 @@ let constraintTypeIds = (expression, expressionRegistry, typeRegistry) => {
     if (expression.kind == "tuple") {
       match(Map.get(typeRegistry, expression.typeId)) {
         Some(gpuType) => {
-          if (gpuType.kind == "vector") {
+          let exact: GpuTypeDto = gpuType;
+          if (exact.kind == "vector") {
             numericTypeIds(
               [
                 expression.typeId,
@@ -948,10 +974,12 @@ let rec applyArgumentConstraints = match(
     [argumentId, ..restArguments], [param, ..restParams], expressionRegistry,
     typeRegistry, registry, changed
   ) => {
+    let exactParam: GpuParamDto = param;
     match(Map.get(expressionRegistry, argumentId)) {
       Some(argument) => {
+        let exactArgument: GpuExprDto = argument;
         let typeIds = numericTypeIds(
-          [argument.typeId, param.typeId],
+          [exactArgument.typeId, exactParam.typeId],
           typeRegistry,
           []
         );
@@ -980,7 +1008,7 @@ let rec applyArgumentConstraints = match(
 };
 
 let applyCallConstraint = (
-  expression,
+  expression: GpuExprDto,
   expressionRegistry,
   typeRegistry,
   functionRegistry,
@@ -991,12 +1019,14 @@ let applyCallConstraint = (
     [calleeId, ..argumentIds] => {
       match(Map.get(expressionRegistry, calleeId)) {
         Some(callee) => {
-          match(Map.get(bindingFunctions, callee.bindingId)) {
+          let exactCallee: GpuExprDto = callee;
+          match(Map.get(bindingFunctions, exactCallee.bindingId)) {
             Some(functionId) => {
               match(Map.get(functionRegistry, functionId)) {
                 Some(fn) => {
+                  let exactFunction: GpuFunctionDto = fn;
                   let resultIds = numericTypeIds(
-                    [expression.typeId, fn.resultTypeId],
+                    [expression.typeId, exactFunction.resultTypeId],
                     typeRegistry,
                     []
                   );
@@ -1006,7 +1036,7 @@ let applyCallConstraint = (
                   );
                   applyArgumentConstraints(
                     argumentIds,
-                    Js.Array.toList(fn.params),
+                    Js.Array.toList(exactFunction.params),
                     expressionRegistry,
                     typeRegistry,
                     resultRegistry,
@@ -1027,7 +1057,7 @@ let applyCallConstraint = (
 };
 
 let applyNumericConstraint = (
-  expression,
+  expression: GpuExprDto,
   expressionRegistry,
   typeRegistry,
   functionRegistry,
@@ -1066,8 +1096,9 @@ let rec numericSweep = match(
     [expression, ..rest], expressionRegistry, typeRegistry, functionRegistry,
     bindingFunctions, registry, changed
   ) => {
+    let exactExpression: GpuExprDto = expression;
     let (nextRegistry, expressionChanged) = applyNumericConstraint(
-      expression,
+      exactExpression,
       expressionRegistry,
       typeRegistry,
       functionRegistry,
@@ -1131,11 +1162,12 @@ let rec collectExpressionItems = match(
       let nextVisited = Map.set(visited, expressionId, true);
       match(Map.get(expressionRegistry, expressionId)) {
         Some(expression) => {
+          let exact: GpuExprDto = expression;
           collectExpressionItems(
-            prependAll(Js.Array.toList(expression.children), rest),
+            prependAll(Js.Array.toList(exact.children), rest),
             expressionRegistry,
             nextVisited,
-            [expression, ..expressions]
+            [exact, ..expressions]
           )
         },
         None => { collectExpressionItems(rest, expressionRegistry, nextVisited, expressions) }
@@ -1147,7 +1179,8 @@ let rec collectExpressionItems = match(
 let concreteRepresentation = (typeRegistry, representations, typeId) => {
   match(Map.get(typeRegistry, typeId)) {
     Some(gpuType) => {
-      if (gpuType.kind == "number" || gpuType.kind == "vector") {
+      let exact: GpuTypeDto = gpuType;
+      if (exact.kind == "number" || exact.kind == "vector") {
         let representation = representationOf(representations, typeId);
         if (representation == "") { "i32" } else { representation }
       } else {
@@ -1172,8 +1205,9 @@ let rec seedParamRepresentations = match(
   ([], representations, typeRegistry, registry) => { registry },
   (params, [], typeRegistry, registry) => { registry },
   ([param, ..restParams], [representation, ..restRepresentations], typeRegistry, registry) => {
+    let exact: GpuParamDto = param;
     let (nextRegistry, _changed) = setTypeRepresentation(
-      param.typeId,
+      exact.typeId,
       representation,
       typeRegistry,
       registry
@@ -1195,11 +1229,12 @@ let rec functionParamRepresentations = match(
 ) => {
   ([], typeRegistry, representations, output) => { reverseInto(output, []) },
   ([param, ..rest], typeRegistry, representations, output) => {
+    let exact: GpuParamDto = param;
     functionParamRepresentations(
       rest,
       typeRegistry,
       representations,
-      [concreteRepresentation(typeRegistry, representations, param.typeId), ..output]
+      [concreteRepresentation(typeRegistry, representations, exact.typeId), ..output]
     )
   }
 };
@@ -1217,7 +1252,8 @@ let rec callArgumentRepresentations = match(
   ([argumentId, ..rest], expressionRegistry, typeRegistry, representations, output) => {
     let representation = match(Map.get(expressionRegistry, argumentId)) {
       Some(argument) => {
-        concreteRepresentation(typeRegistry, representations, argument.typeId)
+        let exact: GpuExprDto = argument;
+        concreteRepresentation(typeRegistry, representations, exact.typeId)
       },
       None => { "" }
     };
@@ -1251,8 +1287,9 @@ let rec mergeArgumentRepresentations = match(
   ) => {
     match(Map.get(expressionRegistry, argumentId)) {
       Some(argument) => {
+        let exact: GpuExprDto = argument;
         let (nextRegistry, itemChanged) = setTypeRepresentation(
-          argument.typeId,
+          exact.typeId,
           representation,
           typeRegistry,
           registry
@@ -1509,17 +1546,18 @@ let rec findSpecialization = (
   match(entries) {
     [] => { None },
     [entry, ..rest] => {
+      let exact: SpecializationRegistryEntry = entry;
       let sameResult =
-        (entry.resultRepresentation == "" && resultRepresentation == "") ||
-        (entry.resultRepresentation == "i32" && resultRepresentation == "i32") ||
-        (entry.resultRepresentation == "f32" && resultRepresentation == "f32");
+        (exact.resultRepresentation == "" && resultRepresentation == "") ||
+        (exact.resultRepresentation == "i32" && resultRepresentation == "i32") ||
+        (exact.resultRepresentation == "f32" && resultRepresentation == "f32");
       if (
         sameResult && representationsEqual(
-          Js.Array.toList(entry.paramRepresentations),
+          Js.Array.toList(exact.paramRepresentations),
           paramRepresentations
         )
       ) {
-        Some(entry.specializationId)
+        Some(exact.specializationId)
       } else {
         findSpecialization(rest, paramRepresentations, resultRepresentation)
       }
@@ -1548,10 +1586,11 @@ let rec addTypeIds = match(typeIds, typeSet) => {
 let rec collectInstanceTypeIds = match(expressions, typeRegistry, typeSet) => {
   ([], typeRegistry, typeSet) => { typeSet },
   ([expression, ..rest], typeRegistry, typeSet) => {
+    let exact: GpuExprDto = expression;
     collectInstanceTypeIds(
       rest,
       typeRegistry,
-      addTypeIds(numericTypeIds([expression.typeId], typeRegistry, []), typeSet)
+      addTypeIds(numericTypeIds([exact.typeId], typeRegistry, []), typeSet)
     )
   }
 };
@@ -1559,10 +1598,11 @@ let rec collectInstanceTypeIds = match(expressions, typeRegistry, typeSet) => {
 let rec addParamTypeIds = match(params, typeRegistry, typeSet) => {
   ([], typeRegistry, typeSet) => { typeSet },
   ([param, ..rest], typeRegistry, typeSet) => {
+    let exact: GpuParamDto = param;
     addParamTypeIds(
       rest,
       typeRegistry,
-      addTypeIds(numericTypeIds([param.typeId], typeRegistry, []), typeSet)
+      addTypeIds(numericTypeIds([exact.typeId], typeRegistry, []), typeSet)
     )
   }
 };
@@ -1641,7 +1681,7 @@ let withSpecializationDiagnostic = (state, diagnostic: GpuDiagnosticDto) => {
   }
 };
 
-let mutualRecursionDiagnostic = (expression) => {
+let mutualRecursionDiagnostic = (expression: GpuExprDto) => {
   let diagnostic: GpuDiagnosticDto = .{
     code = "gpu.mutual-recursion",
     message = "mutually recursive GPU functions are not supported by the current specialization pass",
@@ -1705,7 +1745,7 @@ let rec materializeSpecialization = (
         name = specializationName(fn, paramRepresentations, resultRepresentation),
         paramTypeIds = fn.params
           :> Js.Array.toList
-          :> List.map((param) => { param.typeId })
+          :> List.map((param: GpuParamDto) => { param.typeId })
           :> Js.Array.fromList,
         resultTypeId = fn.resultTypeId,
         paramRepresentations = Js.Array.fromList(paramRepresentations),
@@ -1767,12 +1807,15 @@ and materializeSpecializedCalls = match(
     [expression, ..rest], fn, callerSpecializationId, representations, active,
     state, functionRegistry, expressionRegistry, bindingFunctions, typeRegistry, typeItems
   ) => {
-    if (expression.kind == "call") {
-      match(Js.Array.toList(expression.children)) {
+    let exactExpression: GpuExprDto = expression;
+    let exactFunction: GpuFunctionDto = fn;
+    if (exactExpression.kind == "call") {
+      match(Js.Array.toList(exactExpression.children)) {
         [calleeId, ..argumentIds] => {
           match(Map.get(expressionRegistry, calleeId)) {
             Some(callee) => {
-              match(Map.get(bindingFunctions, callee.bindingId)) {
+              let exactCallee: GpuExprDto = callee;
+              match(Map.get(bindingFunctions, exactCallee.bindingId)) {
                 Some(functionId) => {
                   match(Map.get(functionRegistry, functionId)) {
                     Some(rawCalleeFn) => {
@@ -1788,16 +1831,16 @@ and materializeSpecializedCalls = match(
                       let callResultRepresentation = concreteRepresentation(
                         typeRegistry,
                         representations,
-                        expression.typeId
+                        exactExpression.typeId
                       );
                       let (afterTarget, targetSpecializationId) = match(activeTarget) {
                         Some(targetId) => {
-                          let nextState = if (calleeFn.id == fn.id) {
+                          let nextState = if (calleeFn.id == exactFunction.id) {
                             state
                           } else {
                             withSpecializationDiagnostic(
                               state,
-                              mutualRecursionDiagnostic(expression)
+                              mutualRecursionDiagnostic(exactExpression)
                             )
                           };
                           (nextState, targetId)
@@ -1819,12 +1862,12 @@ and materializeSpecializedCalls = match(
                       };
                       let call: GpuSpecializedCallDto = .{
                         callerSpecializationId = callerSpecializationId,
-                        expressionId = expression.id,
+                        expressionId = exactExpression.id,
                         targetSpecializationId = targetSpecializationId,
                       };
                       materializeSpecializedCalls(
                         rest,
-                        fn,
+                        exactFunction,
                         callerSpecializationId,
                         representations,
                         active,
@@ -1838,7 +1881,7 @@ and materializeSpecializedCalls = match(
                     },
                     None => {
                       materializeSpecializedCalls(
-                        rest, fn, callerSpecializationId, representations, active, state,
+                        rest, exactFunction, callerSpecializationId, representations, active, state,
                         functionRegistry, expressionRegistry, bindingFunctions, typeRegistry,
                         typeItems
                       )
@@ -1847,7 +1890,7 @@ and materializeSpecializedCalls = match(
                 },
                 None => {
                   materializeSpecializedCalls(
-                    rest, fn, callerSpecializationId, representations, active, state,
+                    rest, exactFunction, callerSpecializationId, representations, active, state,
                     functionRegistry, expressionRegistry, bindingFunctions, typeRegistry, typeItems
                   )
                 }
@@ -1855,7 +1898,7 @@ and materializeSpecializedCalls = match(
             },
             None => {
               materializeSpecializedCalls(
-                rest, fn, callerSpecializationId, representations, active, state,
+                rest, exactFunction, callerSpecializationId, representations, active, state,
                 functionRegistry, expressionRegistry, bindingFunctions, typeRegistry, typeItems
               )
             }
@@ -1863,14 +1906,14 @@ and materializeSpecializedCalls = match(
         },
         [] => {
           materializeSpecializedCalls(
-            rest, fn, callerSpecializationId, representations, active, state,
+            rest, exactFunction, callerSpecializationId, representations, active, state,
             functionRegistry, expressionRegistry, bindingFunctions, typeRegistry, typeItems
           )
         }
       }
     } else {
       materializeSpecializedCalls(
-        rest, fn, callerSpecializationId, representations, active, state,
+        rest, exactFunction, callerSpecializationId, representations, active, state,
         functionRegistry, expressionRegistry, bindingFunctions, typeRegistry, typeItems
       )
     }
@@ -1960,7 +2003,8 @@ let initialIrBuildState = () => {
 let rec indexRepresentationFacts = match(facts, registry) => {
   ([], registry) => { registry },
   ([fact, ..rest], registry) => {
-    indexRepresentationFacts(rest, Map.set(registry, fact.typeId, fact.representation))
+    let exact: GpuRepresentationFactDto = fact;
+    indexRepresentationFacts(rest, Map.set(registry, exact.typeId, exact.representation))
   }
 };
 
@@ -2244,13 +2288,14 @@ let mergeConsensusRepresentation = (previous, next) => {
 let rec addConsensusFacts = match(facts, consensus) => {
   ([], consensus) => { consensus },
   ([fact, ..rest], consensus) => {
-    let previous = representationOf(consensus, fact.typeId);
+    let exact: GpuRepresentationFactDto = fact;
+    let previous = representationOf(consensus, exact.typeId);
     addConsensusFacts(
       rest,
       Map.set(
         consensus,
-        fact.typeId,
-        mergeConsensusRepresentation(previous, fact.representation)
+        exact.typeId,
+        mergeConsensusRepresentation(previous, exact.representation)
       )
     )
   }
@@ -2259,9 +2304,10 @@ let rec addConsensusFacts = match(facts, consensus) => {
 let rec specializationConsensus = match(specializations, consensus) => {
   ([], consensus) => { consensus },
   ([specialization, ..rest], consensus) => {
+    let exact: GpuSpecializationDto = specialization;
     specializationConsensus(
       rest,
-      addConsensusFacts(Js.Array.toList(specialization.typeFacts), consensus)
+      addConsensusFacts(Js.Array.toList(exact.typeFacts), consensus)
     )
   }
 };

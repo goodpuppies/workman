@@ -104,7 +104,10 @@ let linuxSurface = (system, width, height, view) => {
       expectSome("missing native display handle", displayOpt)
     |)
   };
-  handles(Result|view.getPointer(8) :> denoResult, view.getPointer(16) :> denoResult|)
+  handles(Result|
+    view :> .getPointer(8) :> denoResult,
+    view :> .getPointer(16) :> denoResult
+  |)
 };
 
 let createSurface = (sdl, window, width, height) => {
@@ -117,15 +120,15 @@ let createSurface = (sdl, window, width, height) => {
   };
   let inspect = via Result (infoPtr) => {
     let withView = via Result (view) => {
-      let subsystem = view.getUint32(4) :> denoResult;
+      let subsystem = view :> .getUint32(4) :> denoResult;
       select(Result|Ok(view), subsystem|)
     };
     UnsafePointerView.new(infoPtr) :> denoResult :> withView
   };
   let populate = via Result (infoPtr) => {
     Result|
-      sdl.symbols.SDL_GetVersion(Some(infoPtr)) :> sdlResult,
-      sdl.symbols.SDL_GetWindowWMInfo(window, Some(infoPtr)) :> sdlResult
+      sdl :> .symbols.SDL_GetVersion(Some(infoPtr)) :> sdlResult,
+      sdl :> .symbols.SDL_GetWindowWMInfo(window, Some(infoPtr)) :> sdlResult
         :> Result.andThen((code) => { expectOne("SDL_GetWindowWMInfo failed", code) })
     | :> Result.andThen((_) => { inspect(Ok(infoPtr)) })
   };
@@ -149,17 +152,17 @@ let createEventState = () => {
 let pollEvent = (sdl, eventPtr, eventView) => {
   let status = via Result (value) => {
     if (value == 1) {
-      eventView.getUint32(0) :> denoResult
+      eventView :> .getUint32(0) :> denoResult
         :> Result.andThen((kind) => {
           if (kind == sdlQuit) {
             Ok(QuitEvent)
           } else {
             if (kind == sdlWindowevent) {
-              eventView.getUint8(12) :> denoResult :> Result.andThen((windowEvent) => {
+              eventView :> .getUint8(12) :> denoResult :> Result.andThen((windowEvent) => {
                 if (windowEvent == sdlWindoweventSizeChanged) {
                   Result|
-                    eventView.getInt32(16) :> denoResult,
-                    eventView.getInt32(20) :> denoResult
+                    eventView :> .getInt32(16) :> denoResult,
+                    eventView :> .getInt32(20) :> denoResult
                   | :> Result.map((width, height) => { ResizeEvent(width, height) })
                 } else {
                   Ok(IgnoredEvent)
@@ -168,8 +171,8 @@ let pollEvent = (sdl, eventPtr, eventView) => {
             } else {
               if (kind == sdlMousemotion) {
               Result|
-                eventView.getInt32(28) :> denoResult,
-                eventView.getInt32(32) :> denoResult
+                eventView :> .getInt32(28) :> denoResult,
+                eventView :> .getInt32(32) :> denoResult
               | :> Result.map((dx, dy) => { MouseEvent(dx, dy) })
               } else {
                 Ok(IgnoredEvent)
@@ -181,22 +184,22 @@ let pollEvent = (sdl, eventPtr, eventView) => {
       Ok(NoEvent)
     }
   };
-  sdl.symbols.SDL_PollEvent(Some(eventPtr)) :> sdlResult :> status
+  sdl :> .symbols.SDL_PollEvent(Some(eventPtr)) :> sdlResult :> status
 };
 
 let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) => {
   let initialize = via Result (sdl) => {
-    sdl.symbols.SDL_Init(sdlInitVideo) :> sdlResult
+    sdl :> .symbols.SDL_Init(sdlInitVideo) :> sdlResult
       :> Result.andThen((code) => { expectZero("SDL_Init failed", code) })
       :> Result.map((_) => { sdl })
   };
   let openWindow = via Result (sdl) => {
     let create = via Result (title) => {
-      sdl.symbols.SDL_CreateWindow(
+      sdl :> .symbols.SDL_CreateWindow(
         Some(title), sdlWindowposCentered, sdlWindowposCentered,
         width, height, windowFlags
       ) :> sdlResult :> Result.andThen((window) => {
-        sdl.symbols.SDL_SetRelativeMouseMode(1) :> sdlResult
+        sdl :> .symbols.SDL_SetRelativeMouseMode(1) :> sdlResult
           :> Result.andThen((code) => { expectZero("SDL_SetRelativeMouseMode failed", code) })
           :> Result.map((_) => { (sdl, window) })
       })
@@ -219,12 +222,12 @@ let startNativeWithFlags = (width: Number, height: Number, windowFlags: Number) 
           | :> Result.map((_) => { void })
         },
         delay = (milliseconds) => {
-          sdl.symbols.SDL_Delay(milliseconds) :> sdlResult
+          sdl :> .symbols.SDL_Delay(milliseconds) :> sdlResult
         },
         close = (_) => {
           Result|
-            sdl.symbols.SDL_DestroyWindow(window) :> sdlResult,
-            sdl.symbols.SDL_Quit() :> sdlResult
+            sdl :> .symbols.SDL_DestroyWindow(window) :> sdlResult,
+            sdl :> .symbols.SDL_Quit() :> sdlResult
           | :> Result.map((_) => { void })
         }
       }

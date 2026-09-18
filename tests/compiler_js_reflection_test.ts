@@ -709,6 +709,66 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
   });
 });
 
+Deno.test("local higher-order callbacks retain their inferred Void result at the FFI boundary", async () => {
+  const result = await checkSource(`
+    from js.global import { EventTarget };
+
+    let main = () => {
+      let target = EventTarget.new() :> Result.debug;
+      Task.fromCallback(
+        (_) => { Ok("handled") },
+        (handler) => {
+          target :> .addEventListener("click", handler)
+        }
+      )
+    };
+  `);
+
+  expectBinding(result.env, "main", {
+    type: "Void -> Task<String, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("contextually partial receiver calls become bound functions", async () => {
+  const result = await checkSource(`
+    from js.global import { EventTarget };
+
+    let main = () => {
+      let target = EventTarget.new() :> Result.debug;
+      let handle = (_) => { Ok("handled") };
+      handle
+        :> Task.fromCallback(
+          target :> .addEventListener("click")
+        )
+    };
+  `);
+
+  expectBinding(result.env, "main", {
+    type: "Void -> Task<String, Js.Error>",
+    vars: 0,
+  });
+});
+
+Deno.test("partial receiver calls reject an impossible remaining arity", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global import { EventTarget };
+
+        let consume = (register) => {
+          register((_) => { void }, void, void)
+        };
+        let main = () => {
+          let target = EventTarget.new() :> Result.debug;
+          consume(target :> .addEventListener("click"))
+        };
+      `),
+    Error,
+    "HM requires 3 remaining arguments after 1 supplied",
+  );
+});
+
 Deno.test("local JavaScript receivers require pipe-member syntax regardless of annotations", async () => {
   for (const annotation of ["", ": WorkerType"]) {
     await assertRejects(
@@ -746,7 +806,47 @@ Deno.test("local JavaScript receivers require pipe-member syntax regardless of a
         });
       `),
     Error,
-    "local JavaScript receiver event must use event :> .isTrusted for member access",
+    "unknown record field isTrusted; no nominal record type declares it. For JavaScript member access, use event :> .isTrusted",
+  );
+});
+
+Deno.test("delayed nominal receivers diagnose legacy dotted method access", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global import { TextEncoder };
+
+        let mapError = (value) => {
+          value :> Result.mapErr((error) => { error })
+        };
+        let encoder = TextEncoder.new() :> mapError;
+        let encoded = (text) => {
+          encoder :> Result.andThen((enc) => { enc.encode(text) })
+        };
+      `),
+    Error,
+    "unknown record field encode; no nominal record type declares it. For JavaScript member access, use enc :> .encode",
+  );
+});
+
+Deno.test("deep reflected receivers diagnose legacy dotted method access", async () => {
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("Deno") import { dlopen: _deep_ };
+
+        let library = dlopen("libc.so.6", JSON{
+          __errno_location: JSON{ parameters: JSON[], result: "pointer" }
+        });
+        let errno = (opened) => {
+          opened :> Result.andThen((lib) => {
+            lib.symbols.__errno_location()
+          })
+        };
+        let value = errno(library);
+      `),
+    Error,
+    "unknown record field symbols; no nominal record type declares it. For JavaScript member access, use lib :> .symbols",
   );
 });
 

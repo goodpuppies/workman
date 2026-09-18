@@ -111,6 +111,40 @@ Deno.test("rejects generic handwritten JS FFI signatures", async () => {
     Error,
     "FFI signatures must be explicit",
   );
+
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global import {
+          structuredClone as restore: Js.Value -> value
+        };
+      `),
+    Error,
+    "FFI signatures must be explicit",
+  );
+});
+
+Deno.test("unsafe manual JS imports may explicitly quantify type variables", async () => {
+  const result = await checkSource(`
+    from js.global import unsafe {
+      structuredClone as erase: value -> Js.Value,
+      structuredClone as restore: Js.Value -> value,
+    };
+
+    let toWire = erase;
+    let fromWire = restore;
+    let roundTrip = (value) => {
+      value :> toWire :> fromWire
+    };
+    let nothing: Void = roundTrip(void);
+    let answer: Number = roundTrip(42);
+  `);
+
+  expectBinding(result.env, "erase", { type: "value -> Js.Value", vars: 1 });
+  expectBinding(result.env, "restore", { type: "Js.Value -> value", vars: 1 });
+  expectBinding(result.env, "roundTrip", { type: "'a -> 'b", vars: 2 });
+  expectBinding(result.env, "nothing", { type: "Void", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
 });
 
 Deno.test("supports inferred JS named and namespace imports", async () => {

@@ -10,7 +10,6 @@ import {
   named,
   prune,
   show,
-  structural,
   type Ty,
   type TypeEnv,
   type TypeInfo,
@@ -19,6 +18,7 @@ import {
 import { constrainAt } from "./provenance.ts";
 import { resolveLongType, resolveLongValue, type StrEnv } from "./environment.ts";
 import {
+  recordDottedProjectionFact,
   recordRecordFieldFact,
   recordRecordProjectionFact,
   recordTypeExpressionFact,
@@ -81,8 +81,17 @@ export function inferDottedVar(
   };
   const field = path.id;
   try {
+    const receiverType = inferDottedVar(receiver, env, typeEnv, strEnv, occurrence);
+    if (occurrence) {
+      recordDottedProjectionFact(occurrence.facts, {
+        expression: occurrence.expression,
+        receiver: longIdSpelling(receiver),
+        field,
+        receiverType,
+      });
+    }
     const resolved = inferRecordField(
-      inferDottedVar(receiver, env, typeEnv, strEnv, occurrence),
+      receiverType,
       field,
       typeEnv,
       occurrence,
@@ -268,46 +277,33 @@ function inferRecordField(
   if (target.tag === "var") {
     const nominal = selectedFieldRecord(typeEnv, field, occurrence);
     if (nominal) {
-      if (nominal.nominalReceiver) {
-        constrainRecord(
-          target,
-          nominal.record,
-          undefined,
-          "InferRecord.ProjectNominal",
-          "receiver matches record containing projected field",
-          field,
-          "receiver",
-          "record",
-        );
-      } else {
-        constrainRecord(
-          target,
-          structural([{ name: field, type: nominal.type }]),
-          undefined,
-          "InferRecord.ProjectAmbiguous",
-          "receiver retains a structural field requirement until an annotation selects a record",
-          field,
-          "receiver",
-          "structural field",
-        );
-      }
+      constrainRecord(
+        target,
+        nominal.record,
+        undefined,
+        "InferRecord.ProjectNominal",
+        "receiver matches record containing projected field",
+        field,
+        "receiver",
+        "record",
+      );
       return {
         type: nominal.type,
         record: nominal.info,
       };
     }
-    const result = fresh();
-    constrainRecord(
-      target,
-      structural([{ name: field, type: result }]),
-      undefined,
-      "InferRecord.ProjectStructural",
-      "receiver has projected structural field",
-      field,
-      "receiver",
-      "structural field",
+    const receiver = occurrence
+      ? (() => {
+        const path = pathOf(occurrence.expression);
+        const parts = [...path.qualifiers, path.id];
+        const fieldIndex = parts.lastIndexOf(field);
+        return parts.slice(0, fieldIndex).join(".");
+      })()
+      : "value";
+    throw new Error(
+      `unknown record field ${field}; no nominal record type declares it. ` +
+        `For JavaScript member access, use ${receiver} :> .${field}`,
     );
-    return { type: result };
   }
   if (target.tag === "struct") {
     const found = target.fields.find((item) => item.name === field);
@@ -353,16 +349,13 @@ function selectedFieldRecord(
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
   },
-): { record: NamedTy; type: Ty; info: TypeInfo; nominalReceiver: boolean } | undefined {
+): { record: NamedTy; type: Ty; info: TypeInfo } | undefined {
   const candidates = findRecordTypes(typeEnv, [field], "contains");
   if (candidates.length === 0) return undefined;
   const info = candidates[0];
   const record = freshRecord(info);
   const declaredType =
     instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
-  if (candidates.length === 1 && prune(declaredType).tag !== "fn") {
-    return { record, type: declaredType, info, nominalReceiver: true };
-  }
   if (candidates.length > 1 && occurrence) {
     const candidateNames = candidates.map((candidate) => candidate.name).join(", ");
     const message = `ambiguous record projection ${field}; using first record type ${info.name}. ` +
@@ -377,22 +370,7 @@ function selectedFieldRecord(
       ),
     );
   }
-  // Selecting an identity for tooling does not nominally constrain the receiver. It remains a
-  // structural requirement and can still be accepted by any compatible record value.
-  const type = sharedNonFunctionFieldType(typeEnv, field) ?? fresh();
-  return { record, type, info, nominalReceiver: false };
-}
-
-function sharedNonFunctionFieldType(typeEnv: TypeEnv, field: string): Ty | undefined {
-  const candidates = findRecordTypes(typeEnv, [field], "contains");
-  if (candidates.length < 2) return undefined;
-  const types = candidates.map((info) => {
-    const record = freshRecord(info);
-    return instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
-  });
-  if (types.some((type) => prune(type).tag === "fn")) return undefined;
-  const shape = show(types[0]);
-  return types.every((type) => show(type) === shape) ? types[0] : undefined;
+  return { record, type: declaredType, info };
 }
 
 function expectedRecord(expected: Ty | undefined, typeEnv: TypeEnv): NamedTy | undefined {

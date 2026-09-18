@@ -1,9 +1,11 @@
 from "./types.wm" import {
+  GpuSliceAdtDto,
   GpuSliceAdtFieldDto,
   GpuSliceAdtLayoutDto,
   GpuSliceConstructorDto,
   GpuSliceElaborationInputDto,
   GpuSliceEnvironmentFieldDto,
+  GpuSliceFunctionDto,
   GpuSliceLoweredAtomDto,
   GpuSliceLoweredBlockDto,
   GpuSliceLoweredCaseDto,
@@ -68,7 +70,8 @@ let vectorLaneName = (index: Number) => {
 let rec findType = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission type") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findType(rest, id) }
+    let exact: GpuSliceTypeDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findType(rest, id) }
   }
 };
 
@@ -84,8 +87,12 @@ let vectorName = (gpuType: GpuSliceTypeDto, context: SliceEmitContext) => {
 let rec findEnvironmentField = match(items, environmentId, index) => {
   ([], Var(_environmentId), Var(_index)) => { Panic("missing Slang-emission environment field") },
   ([Var(item), ..rest], Var(environmentId), Var(index)) => {
-    if (numberEqual(item.environmentId, environmentId) && numberEqual(item.declaredIndex, index)) {
-      item
+    let exact: GpuSliceEnvironmentFieldDto = item;
+    if (
+      numberEqual(exact.environmentId, environmentId) &&
+      numberEqual(exact.declaredIndex, index)
+    ) {
+      exact
     } else {
       findEnvironmentField(rest, environmentId, index)
     }
@@ -95,91 +102,108 @@ let rec findEnvironmentField = match(items, environmentId, index) => {
 let rec findLayout = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission ADT layout") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findLayout(rest, id) }
+    let exact: GpuSliceAdtLayoutDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findLayout(rest, id) }
   }
 };
 
 let rec findLayoutByType = match(items, typeId) => {
   ([], Var(typeId)) => { Panic("missing Slang-emission ADT type layout") },
   ([Var(item), ..rest], Var(typeId)) => {
-    if (numberEqual(item.typeId, typeId)) { item } else { findLayoutByType(rest, typeId) }
+    let exact: GpuSliceAdtLayoutDto = item;
+    if (numberEqual(exact.typeId, typeId)) { exact } else { findLayoutByType(rest, typeId) }
   }
 };
 
 let rec findField = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission ADT field") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findField(rest, id) }
+    let exact: GpuSliceAdtFieldDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findField(rest, id) }
   }
 };
 
 let rec findConstructor = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission constructor") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findConstructor(rest, id) }
+    let exact: GpuSliceConstructorDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findConstructor(rest, id) }
   }
 };
 
 let rec findLocal = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission local") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findLocal(rest, id) }
+    let exact: GpuSliceLoweredLocalDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findLocal(rest, id) }
   }
 };
 
 let rec findAtom = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission atom") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findAtom(rest, id) }
+    let exact: GpuSliceLoweredAtomDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findAtom(rest, id) }
   }
 };
 
 let rec findOperation = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission operation") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findOperation(rest, id) }
+    let exact: GpuSliceLoweredOperationDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findOperation(rest, id) }
   }
 };
 
 let rec findStatement = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission statement") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findStatement(rest, id) }
+    let exact: GpuSliceLoweredStatementDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findStatement(rest, id) }
   }
 };
 
 let rec findBlock = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission block") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findBlock(rest, id) }
+    let exact: GpuSliceLoweredBlockDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findBlock(rest, id) }
   }
 };
 
 let rec findCase = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission case") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.id, id)) { item } else { findCase(rest, id) }
+    let exact: GpuSliceLoweredCaseDto = item;
+    if (numberEqual(exact.id, id)) { exact } else { findCase(rest, id) }
   }
 };
 
 let rec findFunction = match(items, id) => {
   ([], Var(id)) => { Panic("missing Slang-emission function") },
   ([Var(item), ..rest], Var(id)) => {
-    if (numberEqual(item.functionId, id)) { item } else { findFunction(rest, id) }
+    let exact: GpuSliceLoweredFunctionDto = item;
+    if (numberEqual(exact.functionId, id)) { exact } else { findFunction(rest, id) }
   }
 };
 
 let rec findAdtForEmit = match(items, typeNameId) => {
   ([], Var(typeNameId)) => { Panic("missing Slang-emission ADT") },
   ([Var(item), ..rest], Var(typeNameId)) => {
-    if (numberEqual(item.typeNameId, typeNameId)) { item } else { findAdtForEmit(rest, typeNameId) }
+    let exact: GpuSliceAdtDto = item;
+    if (numberEqual(exact.typeNameId, typeNameId)) {
+      exact
+    } else {
+      findAdtForEmit(rest, typeNameId)
+    }
   }
 };
 
 let rec findSourceFunction = match(items, functionId) => {
   ([], Var(functionId)) => { Panic("missing Slang-emission source function") },
   ([Var(item), ..rest], Var(functionId)) => {
-    if (numberEqual(item.id, functionId)) { item } else { findSourceFunction(rest, functionId) }
+    let exact: GpuSliceFunctionDto = item;
+    if (numberEqual(exact.id, functionId)) { exact } else { findSourceFunction(rest, functionId) }
   }
 };
 
@@ -228,16 +252,18 @@ let typeName = (typeId, context: SliceEmitContext) => {
 let rec emitEnvironmentFields = match(items, context, output) => {
   ([], Var(_context), Var(output)) => { output },
   ([Var(field), ..rest], Var(context), Var(output)) => {
+    let exactField: GpuSliceEnvironmentFieldDto = field;
+    let exactContext: SliceEmitContext = context;
     emitEnvironmentFields(
       rest,
-      context,
-      if (field.kind == "uniform") {
-        let gpuType = findType(context.types, field.typeId);
+      exactContext,
+      if (exactField.kind == "uniform") {
+        let gpuType = findType(exactContext.types, exactField.typeId);
         let fieldType = if (gpuType.kind == "bool") { "int" } else {
-          typeName(field.typeId, context)
+          typeName(exactField.typeId, exactContext)
         };
         output ++ "  " ++ fieldType ++ " " ++
-          uniformFieldName(field.declaredIndex) ++ ";\n"
+          uniformFieldName(exactField.declaredIndex) ++ ";\n"
       } else {
         output
       }
@@ -248,20 +274,24 @@ let rec emitEnvironmentFields = match(items, context, output) => {
 let rec hasUniformField = match(items) => {
   [] => { false },
   [Var(field), ..rest] => {
-    if (field.kind == "uniform") { true } else { hasUniformField(rest) }
+    let exact: GpuSliceEnvironmentFieldDto = field;
+    if (exact.kind == "uniform") { true } else { hasUniformField(rest) }
   }
 };
 
 let rec emitResourceDeclarations = match(items, context, output) => {
   ([], Var(_context), Var(output)) => { output },
   ([Var(field), ..rest], Var(context), Var(output)) => {
-    let next = if (field.kind == "uniform") {
+    let exactField: GpuSliceEnvironmentFieldDto = field;
+    let exactContext: SliceEmitContext = context;
+    let next = if (exactField.kind == "uniform") {
       output
     } else {
-      output ++ "[[vk::binding(" ++ text(field.binding) ++ ", 0)]]\n" ++
-        typeName(field.typeId, context) ++ " " ++ resourceFieldName(field.binding) ++ ";\n\n"
+      output ++ "[[vk::binding(" ++ text(exactField.binding) ++ ", 0)]]\n" ++
+        typeName(exactField.typeId, exactContext) ++ " " ++
+        resourceFieldName(exactField.binding) ++ ";\n\n"
     };
-    emitResourceDeclarations(rest, context, next)
+    emitResourceDeclarations(rest, exactContext, next)
   }
 };
 
@@ -284,20 +314,25 @@ let emitEnvironmentDeclaration = (context: SliceEmitContext) => {
 let rec emitPortableEnvironmentAccessors = match(items, context, output) => {
   ([], Var(_context), Var(output)) => { output },
   ([Var(field), ..rest], Var(context), Var(output)) => {
-    let belongsToRoot = numberEqual(field.environmentId, context.input.root.environmentId);
+    let exactField: GpuSliceEnvironmentFieldDto = field;
+    let exactContext: SliceEmitContext = context;
+    let belongsToRoot = numberEqual(
+      exactField.environmentId,
+      exactContext.input.root.environmentId
+    );
     let next = if (!belongsToRoot) {
       output
     } else {
-      let name = if (field.kind == "uniform") {
-        "WM_UNIFORM_" ++ text(field.declaredIndex)
+      let name = if (exactField.kind == "uniform") {
+        "WM_UNIFORM_" ++ text(exactField.declaredIndex)
       } else {
-        "WM_RESOURCE_" ++ text(field.binding)
+        "WM_RESOURCE_" ++ text(exactField.binding)
       };
       output ++ "#ifndef " ++ name ++ "\n" ++
-        "__extern_cpp " ++ typeName(field.typeId, context) ++ " " ++ name ++ "();\n" ++
+        "__extern_cpp " ++ typeName(exactField.typeId, exactContext) ++ " " ++ name ++ "();\n" ++
         "#endif\n"
     };
-    emitPortableEnvironmentAccessors(rest, context, next)
+    emitPortableEnvironmentAccessors(rest, exactContext, next)
   }
 };
 
@@ -352,12 +387,14 @@ let emitTupleDeclaration = (gpuType: GpuSliceTypeDto, context: SliceEmitContext)
 let rec emitTupleDeclarations = match(types, context, output) => {
   ([], Var(context), Var(output)) => { output },
   ([Var(gpuType), ..rest], Var(context), Var(output)) => {
-    let next = if (gpuType.kind == "tuple") {
-      output ++ emitTupleDeclaration(gpuType, context)
+    let exactType: GpuSliceTypeDto = gpuType;
+    let exactContext: SliceEmitContext = context;
+    let next = if (exactType.kind == "tuple") {
+      output ++ emitTupleDeclaration(exactType, exactContext)
     } else {
       output
     };
-    emitTupleDeclarations(rest, context, next)
+    emitTupleDeclarations(rest, exactContext, next)
   }
 };
 let rec zeroArgs = match(items, context, index, output) => {
@@ -401,11 +438,13 @@ and zeroValue = (typeId, context: SliceEmitContext) => {
 let rec emitLayoutFields = match(fieldIds, context, output) => {
   ([], Var(context), Var(output)) => { output },
   ([Var(fieldId), ..rest], Var(context), Var(output)) => {
-    let field = findField(context.fields, fieldId);
+    let exactContext: SliceEmitContext = context;
+    let field = findField(exactContext.fields, fieldId);
     emitLayoutFields(
       rest,
-      context,
-      output ++ "  " ++ typeName(field.typeId, context) ++ " " ++ payloadFieldName(field.id) ++ ";\n"
+      exactContext,
+      output ++ "  " ++ typeName(field.typeId, exactContext) ++ " " ++
+        payloadFieldName(field.id) ++ ";\n"
     )
   }
 };
@@ -413,24 +452,27 @@ let rec emitLayoutFields = match(fieldIds, context, output) => {
 let rec fieldsForEmit = match(fieldIds, context) => {
   ([], Var(_context)) => { [] },
   ([Var(fieldId), ..rest], Var(context)) => {
-    [findField(context.fields, fieldId), ..fieldsForEmit(rest, context)]
+    let exactContext: SliceEmitContext = context;
+    [findField(exactContext.fields, fieldId), ..fieldsForEmit(rest, exactContext)]
   }
 };
 
 let rec emitConstructorFieldAssignments = match(fields, constructorId, payloadName, context, output) => {
   ([], Var(_constructorId), Var(_payloadName), Var(_context), Var(output)) => { output },
   ([Var(field), ..rest], Var(constructorId), Var(payloadName), Var(context), Var(output)) => {
-    let value = if (numberEqual(field.constructorId, constructorId)) {
+    let exactField: GpuSliceAdtFieldDto = field;
+    let exactContext: SliceEmitContext = context;
+    let value = if (numberEqual(exactField.constructorId, constructorId)) {
       payloadName
     } else {
-      zeroValue(field.typeId, context)
+      zeroValue(exactField.typeId, exactContext)
     };
     emitConstructorFieldAssignments(
       rest,
       constructorId,
       payloadName,
-      context,
-      output ++ "  value." ++ payloadFieldName(field.id) ++ " = " ++ value ++ ";\n"
+      exactContext,
+      output ++ "  value." ++ payloadFieldName(exactField.id) ++ " = " ++ value ++ ";\n"
     )
   }
 };
@@ -460,12 +502,14 @@ let emitConstructorDeclaration = (
 let rec emitLayoutConstructors = match(constructorIds, layout, context, output) => {
   ([], Var(layout), Var(context), Var(output)) => { output },
   ([Var(constructorId), ..rest], Var(layout), Var(context), Var(output)) => {
-    let constructor = findConstructor(context.constructors, constructorId);
+    let exactLayout: GpuSliceAdtLayoutDto = layout;
+    let exactContext: SliceEmitContext = context;
+    let constructor = findConstructor(exactContext.constructors, constructorId);
     emitLayoutConstructors(
       rest,
-      layout,
-      context,
-      output ++ emitConstructorDeclaration(constructor, layout, context)
+      exactLayout,
+      exactContext,
+      output ++ emitConstructorDeclaration(constructor, exactLayout, exactContext)
     )
   }
 };
@@ -480,7 +524,13 @@ let emitLayoutDeclaration = (layout: GpuSliceAdtLayoutDto, context: SliceEmitCon
 let rec emitLayoutDeclarations = match(layouts, context, output) => {
   ([], Var(context), Var(output)) => { output },
   ([Var(layout), ..rest], Var(context), Var(output)) => {
-    emitLayoutDeclarations(rest, context, output ++ emitLayoutDeclaration(layout, context))
+    let exactLayout: GpuSliceAdtLayoutDto = layout;
+    let exactContext: SliceEmitContext = context;
+    emitLayoutDeclarations(
+      rest,
+      exactContext,
+      output ++ emitLayoutDeclaration(exactLayout, exactContext)
+    )
   }
 };
 

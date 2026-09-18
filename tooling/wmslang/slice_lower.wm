@@ -105,8 +105,8 @@ let rec lowerLetValue = (
 ) => {
   match(Js.Array.toList(expression.children)) {
     [valueExpressionId, bodyExpressionId] => {
-      let value = lower(valueExpressionId, scope, context, state);
-      let bound = bindPattern(
+      let value: LowerValueResult = lower(valueExpressionId, scope, context, state);
+      let bound: LowerBindResult = bindPattern(
         expression.patternId,
         value.atomId,
         expression,
@@ -114,7 +114,7 @@ let rec lowerLetValue = (
         context,
         value.state
       );
-      let body = lower(bodyExpressionId, bound.scope, context, bound.state);
+      let body: LowerValueResult = lower(bodyExpressionId, bound.scope, context, bound.state);
       let result: LowerValueResult = .{
         statementIds = append(
           value.statementIds,
@@ -138,8 +138,8 @@ and lowerSequenceValue = (
 ) => {
   match(Js.Array.toList(expression.children)) {
     [discardedExpressionId, bodyExpressionId] => {
-      let discarded = lower(discardedExpressionId, scope, context, state);
-      let body = lower(bodyExpressionId, scope, context, discarded.state);
+      let discarded: LowerValueResult = lower(discardedExpressionId, scope, context, state);
+      let body: LowerValueResult = lower(bodyExpressionId, scope, context, discarded.state);
       let result: LowerValueResult = .{
         statementIds = append(discarded.statementIds, body.statementIds),
         atomId = body.atomId,
@@ -334,7 +334,7 @@ let lowerIfValue = (
 ) => {
   match(Js.Array.toList(expression.children)) {
     [conditionExpressionId, thenExpressionId, elseExpressionId] => {
-      let condition = lower(conditionExpressionId, scope, context, state);
+      let condition: LowerValueResult = lower(conditionExpressionId, scope, context, state);
       let (joinLocalId, afterJoin) = freshLocal(
         expression.functionId,
         "join",
@@ -344,7 +344,7 @@ let lowerIfValue = (
         expression.spanId,
         condition.state
       );
-      let thenValue = lower(thenExpressionId, scope, context, afterJoin);
+      let thenValue: LowerValueResult = lower(thenExpressionId, scope, context, afterJoin);
       let (thenAssignId, afterThenAssign) = assignJoin(
         expression,
         joinLocalId,
@@ -356,7 +356,12 @@ let lowerIfValue = (
         append(thenValue.statementIds, [thenAssignId]),
         afterThenAssign
       );
-      let elseValue = lower(elseExpressionId, scope, context, afterThenBlock);
+      let elseValue: LowerValueResult = lower(
+        elseExpressionId,
+        scope,
+        context,
+        afterThenBlock
+      );
       let (elseAssignId, afterElseAssign) = assignJoin(
         expression,
         joinLocalId,
@@ -411,9 +416,15 @@ let rec lowerMatchValue = (
 ) => {
   match(Js.Array.toList(expression.children)) {
     [scrutineeExpressionId] => {
-      let scrutinee = lower(scrutineeExpressionId, scope, context, state);
-      let scrutineeExpression = findIrExpression(context.expressions, scrutineeExpressionId);
-      let layout = findLayoutForType(context.layouts, scrutineeExpression.typeId);
+      let scrutinee: LowerValueResult = lower(scrutineeExpressionId, scope, context, state);
+      let scrutineeExpression: GpuSliceIrExprDto = findIrExpression(
+        context.expressions,
+        scrutineeExpressionId
+      );
+      let layout: GpuSliceAdtLayoutDto = findLayoutForType(
+        context.layouts,
+        scrutineeExpression.typeId
+      );
       let (joinLocalId, afterJoin) = freshLocal(
         expression.functionId,
         "join",
@@ -423,7 +434,7 @@ let rec lowerMatchValue = (
         expression.spanId,
         scrutinee.state
       );
-      let cases = lowerMatchValueCases(
+      let cases: LowerCasesResult = lowerMatchValueCases(
         lower,
         Js.Array.toList(expression.armIds),
         expression,
@@ -507,10 +518,13 @@ and lowerMatchValueCases = match(
     Var(state),
     Var(reversedCases)
   ) => {
-    let arm = findIrMatchArm(context.matchArms, armId);
-    let pattern = findPattern(context.patterns, arm.patternId);
-    let constructor = findConstructor(context.constructors, pattern.constructorId);
-    let bound = bindMatchPayload(
+    let arm: GpuSliceIrMatchArmDto = findIrMatchArm(context.matchArms, armId);
+    let pattern: GpuSlicePatternDto = findPattern(context.patterns, arm.patternId);
+    let constructor: GpuSliceConstructorDto = findConstructor(
+      context.constructors,
+      pattern.constructorId
+    );
+    let bound: LowerBindResult = bindMatchPayload(
       pattern,
       scrutineeAtomId,
       expression,
@@ -518,7 +532,7 @@ and lowerMatchValueCases = match(
       context,
       state
     );
-    let body = lower(arm.bodyExprId, bound.scope, context, bound.state);
+    let body: LowerValueResult = lower(arm.bodyExprId, bound.scope, context, bound.state);
     let (assignId, afterAssign) = assignJoin(
       expression,
       joinLocalId,
@@ -989,13 +1003,14 @@ let rec lowerTail = (
 ) => {
   let expression = findIrExpression(context.expressions, expressionId);
   if (expression.kind == "tail-call") {
-    lowerTailCall(expression, scope, context, state)
+    let tail: LowerTailResult = lowerTailCall(expression, scope, context, state);
+    tail
   } else {
     if (expression.kind == "let") {
       match(Js.Array.toList(expression.children)) {
         [valueExpressionId, bodyExpressionId] => {
-          let value = lowerValue(valueExpressionId, scope, context, state);
-          let bound = bindPattern(
+          let value: LowerValueResult = lowerValue(valueExpressionId, scope, context, state);
+          let bound: LowerBindResult = bindPattern(
             expression.patternId,
             value.atomId,
             expression,
@@ -1003,7 +1018,12 @@ let rec lowerTail = (
             context,
             value.state
           );
-          let body = lowerTail(bodyExpressionId, bound.scope, context, bound.state);
+          let body: LowerTailResult = lowerTail(
+            bodyExpressionId,
+            bound.scope,
+            context,
+            bound.state
+          );
           let result: LowerTailResult = .{
             statementIds = append(
               value.statementIds,
@@ -1019,8 +1039,18 @@ let rec lowerTail = (
       if (expression.kind == "sequence") {
         match(Js.Array.toList(expression.children)) {
           [discardedExpressionId, bodyExpressionId] => {
-            let discarded = lowerValue(discardedExpressionId, scope, context, state);
-            let body = lowerTail(bodyExpressionId, scope, context, discarded.state);
+            let discarded: LowerValueResult = lowerValue(
+              discardedExpressionId,
+              scope,
+              context,
+              state
+            );
+            let body: LowerTailResult = lowerTail(
+              bodyExpressionId,
+              scope,
+              context,
+              discarded.state
+            );
             let result: LowerTailResult = .{
               statementIds = append(discarded.statementIds, body.statementIds),
               state = body.state,
@@ -1031,12 +1061,14 @@ let rec lowerTail = (
         }
       } else {
         if (expression.kind == "if") {
-          lowerTailIf(expression, scope, context, state)
+          let tail: LowerTailResult = lowerTailIf(expression, scope, context, state);
+          tail
         } else {
           if (expression.kind == "match") {
-            lowerTailMatch(expression, scope, context, state)
+            let tail: LowerTailResult = lowerTailMatch(expression, scope, context, state);
+            tail
           } else {
-            let value = lowerValue(expressionId, scope, context, state);
+            let value: LowerValueResult = lowerValue(expressionId, scope, context, state);
             let (returnId, afterReturn) = returnStatement(expression, value.atomId, value.state);
             let result: LowerTailResult = .{
               statementIds = append(value.statementIds, [returnId]),
@@ -1058,14 +1090,19 @@ and lowerTailIf = (
 ) => {
   match(Js.Array.toList(expression.children)) {
     [conditionExpressionId, thenExpressionId, elseExpressionId] => {
-      let condition = lowerValue(conditionExpressionId, scope, context, state);
-      let thenTail = lowerTail(thenExpressionId, scope, context, condition.state);
+      let condition: LowerValueResult = lowerValue(conditionExpressionId, scope, context, state);
+      let thenTail: LowerTailResult = lowerTail(
+        thenExpressionId,
+        scope,
+        context,
+        condition.state
+      );
       let (thenBlockId, afterThen) = pushBlock(
         expression.functionId,
         thenTail.statementIds,
         thenTail.state
       );
-      let elseTail = lowerTail(elseExpressionId, scope, context, afterThen);
+      let elseTail: LowerTailResult = lowerTail(elseExpressionId, scope, context, afterThen);
       let (elseBlockId, afterElse) = pushBlock(
         expression.functionId,
         elseTail.statementIds,
@@ -1102,10 +1139,21 @@ and lowerTailMatch = (
 ) => {
   match(Js.Array.toList(expression.children)) {
     [scrutineeExpressionId] => {
-      let scrutinee = lowerValue(scrutineeExpressionId, scope, context, state);
-      let scrutineeExpression = findIrExpression(context.expressions, scrutineeExpressionId);
-      let layout = findLayoutForType(context.layouts, scrutineeExpression.typeId);
-      let cases = lowerTailMatchCases(
+      let scrutinee: LowerValueResult = lowerValue(
+        scrutineeExpressionId,
+        scope,
+        context,
+        state
+      );
+      let scrutineeExpression: GpuSliceIrExprDto = findIrExpression(
+        context.expressions,
+        scrutineeExpressionId
+      );
+      let layout: GpuSliceAdtLayoutDto = findLayoutForType(
+        context.layouts,
+        scrutineeExpression.typeId
+      );
+      let cases: LowerCasesResult = lowerTailMatchCases(
         Js.Array.toList(expression.armIds),
         expression,
         scrutinee.atomId,
@@ -1214,7 +1262,7 @@ and lowerTailCall = (
   context: SliceLowerContext,
   state: SliceLowerState
 ) => {
-  let children = lowerChildren(
+  let children: LowerChildrenResult = lowerChildren(
     Js.Array.toList(expression.children),
     scope,
     context,
@@ -1222,7 +1270,7 @@ and lowerTailCall = (
     [],
     []
   );
-  let nextValues = materializeTailNext(
+  let nextValues: LowerChildrenResult = materializeTailNext(
     children.atomIds,
     expression,
     children.state,

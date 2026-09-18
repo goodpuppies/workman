@@ -31,8 +31,9 @@ let rec findAdtType = match(types, typeNameId) => {
 let rec findConstructor = match(constructors, id) => {
   ([], Var(id)) => { Panic("missing schema-v2 constructor") },
   ([Var(constructor), ..rest], Var(id)) => {
-    if (numberEqual(constructor.id, id)) {
-      constructor
+    let exact: GpuSliceConstructorDto = constructor;
+    if (numberEqual(exact.id, id)) {
+      exact
     } else {
       findConstructor(rest, id)
     }
@@ -65,7 +66,7 @@ let rec fieldsForConstructors = match(
     Var(reversedIds),
     Var(reversedFields)
   ) => {
-    let constructor = findConstructor(constructors, constructorId);
+    let constructor: GpuSliceConstructorDto = findConstructor(constructors, constructorId);
     if (constructor.payloadTypeId < 0) {
       fieldsForConstructors(
         rest,

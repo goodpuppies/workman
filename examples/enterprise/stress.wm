@@ -19,7 +19,7 @@ let rec lines = (writer, i, n) => {
   if (i >= n) {
     Ok(writer)
   } else {
-    match(Writer.print(writer, `line ${textOf(i)}\n`)) {
+    match(writer :> Writer.print `line ${textOf(i)}\n`) {
       Ok(next) => { lines(next, i + 1, n) },
       Err(error) => { Err(error) },
     }
@@ -30,8 +30,8 @@ let main = () => {
   let viaWriter = (f) => { Monad.viaError Result WriteFailed f };
 
   let attach    = viaWriter (buffer) => { Writer.stdout(buffer) };
-  let buffered  = viaWriter (writer) => { Writer.print(writer, "abc") };
-  let oversized = viaWriter (writer) => { Writer.print(writer, repeated("x", 200)) };
+  let buffered  = viaWriter (Writer.print "abc");
+  let oversized = viaWriter (Writer.print (repeated("x", 200)));
   let many      = viaWriter (writer) => { lines(writer, 0, 5000) };
   let drained   = viaWriter (writer) => { Writer.flush(writer) };
 

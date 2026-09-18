@@ -20,6 +20,13 @@ from js.global import {
   String as toString: Js.Value -> String,
 };
 
+-- Shared retained-render result. Renderers construct this nominal record so
+-- the runtime can project output and memory without an ambiguous structural row.
+record Frame<Memory> = {
+  output: String,
+  memory: Memory,
+};
+
 let errorText = match(error) => {
   Js.Error(message) => { message },
   Js.Unknown => { "unknown JavaScript error" },

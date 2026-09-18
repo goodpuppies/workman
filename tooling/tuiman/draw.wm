@@ -189,11 +189,11 @@ let at = (x, y, text, style) => {
   }
 };
 
-let text = (area, value, style) => {
+let text = (area: Geometry.Rect, value, style) => {
   at(area.x, area.y, truncate(value, area.width), style)
 };
 
-let fill = (area, symbol, style) => {
+let fill = (area: Geometry.Rect, symbol, style) => {
   let rec rows = (remaining, y) => {
     if (remaining <= 0) {
       ""
@@ -204,7 +204,7 @@ let fill = (area, symbol, style) => {
   rows(area.height, area.y)
 };
 
-let boxWithEdges = (area, title, active, edges: BoxEdges) => {
+let boxWithEdges = (area: Geometry.Rect, title, active, edges: BoxEdges) => {
   if (area.width < 2 || area.height < 2) {
     ""
   } else {
@@ -234,7 +234,7 @@ let boxWithEdges = (area, title, active, edges: BoxEdges) => {
   }
 };
 
-let box = (area, title, active) => {
+let box = (area: Geometry.Rect, title, active) => {
   boxWithEdges(
     area,
     title,
@@ -245,7 +245,7 @@ let box = (area, title, active) => {
 
 -- Timeline cards share boundaries. Both neighbors draw the same junction
 -- shape, so an incremental redraw cannot temporarily restore square corners.
-let timelineBox = (area, active, joinedTop, joinedBottom) => {
+let timelineBox = (area: Geometry.Rect, active, joinedTop, joinedBottom) => {
   boxWithEdges(
     area,
     "",
@@ -262,14 +262,24 @@ let timelineBox = (area, active, joinedTop, joinedBottom) => {
 let rec lines = match(area, values, style) => {
   (_, [], _) => { "" },
   (_, _, _) => {
-    if (area.height <= 0) {
+    let lineArea: Geometry.Rect = area;
+    if (lineArea.height <= 0) {
       ""
     } else {
       match(values) {
         [] => { "" },
         [head, ..tail] => {
-          text(Geometry.rect(area.x, area.y, area.width, 1), head, style) ++
-            lines(Geometry.rect(area.x, area.y + 1, area.width, area.height - 1), tail, style)
+          text(Geometry.rect(lineArea.x, lineArea.y, lineArea.width, 1), head, style) ++
+            lines(
+              Geometry.rect(
+                lineArea.x,
+                lineArea.y + 1,
+                lineArea.width,
+                lineArea.height - 1,
+              ),
+              tail,
+              style,
+            )
         },
       }
     }
