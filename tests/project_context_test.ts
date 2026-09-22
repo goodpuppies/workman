@@ -88,15 +88,16 @@ Deno.test("[module update A612-A615] open documents activate only uncovered clos
   assertStrictEquals(sharedAgain.snapshot, application.snapshot);
   assertEquals(discovery.closestHeadQueries, 2);
 
-  const detached = await registry.openDocument(
+  const standalone = await registry.openDocument(
     "/ws/isolated.wm",
     configuration,
     analyzeHead,
     analyzeDetached,
   );
-  assertEquals(detached.reason, "detached");
-  assertEquals(detached.snapshot.kind, "detached");
-  assertEquals(registry.activeSnapshots().length, 2);
+  assertEquals(standalone.reason, "self-head");
+  assertEquals(standalone.snapshot.kind, "headed");
+  assertEquals(standalone.snapshot.head, moduleId("/ws/isolated.wm"));
+  assertEquals(registry.activeSnapshots().length, 3);
   assertEquals(discovery.closestHeadQueries, 3);
 });
 
@@ -118,6 +119,33 @@ Deno.test("[module update A613/A615] reverse discovery stops at the closest head
     "/ws/lib/test.wm",
     "/ws/outer.wm",
   ]);
+});
+
+Deno.test("reverse discovery falls back from explicit main to main.wm by filename", async () => {
+  const withoutExplicitMain = new Map<string, string>([
+    ["/ws/main.wm", 'from "./lib/value.wm" import { value }; let shown = value;'],
+    ["/ws/lib/value.wm", "let value = 1;"],
+  ]);
+  const filenameDiscovery = await discoveryIndex(withoutExplicitMain);
+  assertEquals(filenameDiscovery.headsFor("/ws/lib/value.wm"), ["/ws/main.wm"]);
+  const registry = new ProjectContextRegistry(filenameDiscovery);
+  const selected = await registry.openDocument(
+    "/ws/lib/value.wm",
+    configuration,
+    (head) => analyzeRecoveredVirtual(head, withoutExplicitMain),
+    (path) => analyzeDetachedVirtual(path, withoutExplicitMain),
+  );
+  assertEquals(selected.reason, "closest-head");
+  assertEquals(selected.snapshot.head, moduleId("/ws/main.wm"));
+  assertEquals(selected.snapshot.kind, "headed");
+
+  const withExplicitMain = new Map(withoutExplicitMain);
+  withExplicitMain.set(
+    "/ws/run.wm",
+    'from "./main.wm" import { shown }; let main = () => { shown };',
+  );
+  const explicitDiscovery = await discoveryIndex(withExplicitMain);
+  assertEquals(explicitDiscovery.headsFor("/ws/lib/value.wm"), ["/ws/run.wm"]);
 });
 
 Deno.test("an uncertified closest-head import falls back to a detached document context", async () => {
@@ -241,14 +269,15 @@ Deno.test("[module update A612] changed closures invalidate and closed contexts 
     analyzeHead,
     analyzeDetached,
   );
-  const detached = await registry.openDocument(
+  const standalone = await registry.openDocument(
     "/ws/note.wm",
     configuration,
     analyzeHead,
     analyzeDetached,
   );
-  assertEquals(headedAnalyses, 1);
-  assertEquals(detachedAnalyses, 1);
+  assertEquals(standalone.reason, "self-head");
+  assertEquals(headedAnalyses, 2);
+  assertEquals(detachedAnalyses, 0);
   assertEquals(registry.openSnapshots().length, 2);
 
   registry.invalidatePaths(["/ws/lib.wm"]);
@@ -259,11 +288,14 @@ Deno.test("[module update A612] changed closures invalidate and closed contexts 
     analyzeDetached,
   );
   assertNotStrictEquals(refreshed.snapshot, first.snapshot);
-  assertEquals(headedAnalyses, 2);
-  assertStrictEquals(registry.openSnapshots()[1], detached.snapshot);
+  assertEquals(headedAnalyses, 3);
+  assertEquals(
+    registry.openSnapshots().some((snapshot) => snapshot === standalone.snapshot),
+    true,
+  );
 
   registry.forgetDocument("/ws/note.wm", configuration);
-  assertEquals(registry.openSnapshots().some((snapshot) => snapshot === detached.snapshot), false);
+  assertEquals(registry.openSnapshots().some((snapshot) => snapshot === standalone.snapshot), false);
 });
 
 Deno.test("closing a project's anchor reselects its remaining open documents", async () => {

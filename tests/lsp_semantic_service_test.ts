@@ -2,6 +2,7 @@ import { assertEquals, assertNotStrictEquals, assertStrictEquals } from "@std/as
 import { SemanticService } from "../src/lsp/semantic_service.ts";
 import { ProjectIndex } from "../src/lsp/project_index.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
+import { moduleId } from "../src/module_id.ts";
 import { validateUri } from "../src/lsp/validation.ts";
 
 Deno.test("semantic service reuses closest-head snapshots and isolates overlapping projects", async () => {
@@ -66,7 +67,8 @@ Deno.test("semantic service keeps strict diagnostics beside recovered current in
 
   const context = await service.documentContext(pathToFileUri(path));
 
-  assertEquals(context?.project.kind, "detached");
+  assertEquals(context?.project.kind, "headed");
+  assertEquals(context?.project.head, moduleId(path));
   assertEquals(context?.recovered, true);
   assertEquals(context?.moduleInterface.occurrences.some(({ name }) => name === "good"), true);
   assertEquals(context?.moduleInterface.occurrences.some(({ name }) => name === "bad"), false);

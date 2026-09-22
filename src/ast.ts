@@ -138,6 +138,12 @@ export type CtorDecl = Located<{ name: string; args: TypeExpr[] }>;
 export type RecordFieldDecl = Located<{ name: string; type: TypeExpr }>;
 export type Param = Located<{ pattern: Pattern; annotation?: TypeExpr }>;
 export type Directive = Located<{ name: string }>;
+export type CaptureName = Located<{ name: string }>;
+export type CaptureClause = Located<{
+  names: string[];
+  /** Authored name nodes retained by the live Surface frontend for semantic navigation. */
+  entries?: CaptureName[];
+}>;
 
 export type Expr =
   | Located<{ kind: "Int"; value: number }>
@@ -175,6 +181,11 @@ export type Expr =
     params: Param[];
     directives: Directive[];
     body: Expr;
+    /**
+     * An authored, complete contract for the lexical bindings captured by this lambda.
+     * Absence means infer captures; an authored empty clause (`||`) requires no captures.
+     */
+    captureClause?: CaptureClause;
     returnAnnotation?: TypeExpr;
     trailingReturnAnnotation?: TypeExpr;
   }>

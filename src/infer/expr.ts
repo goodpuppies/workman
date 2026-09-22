@@ -52,15 +52,15 @@ import { elaborateConstraint } from "./constraints.ts";
 import { callInvocationPlan } from "../pipe_elaboration.ts";
 import { inferDomainInvocation } from "./invocation.ts";
 
-export function inferExpr(expr: Expr, context: InferContext): Ty {
+export function inferExpr(expr: Expr, context: InferContext, expected?: Ty): Ty {
   try {
-    return inferExprInner(expr, context);
+    return inferExprInner(expr, context, expected);
   } catch (error) {
     throw diagnosticError(error, expr.node);
   }
 }
 
-function inferExprInner(expr: Expr, context: InferContext): Ty {
+function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
   const { env, typeEnv, types, facts, warnings, diagnostics, provenance } = context;
   let t: Ty;
   switch (expr.kind) {
@@ -106,7 +106,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
             facts,
             warnings,
             diagnostics,
-          });
+          }, expected);
         break;
       }
       t = instantiate(scheme);
@@ -429,7 +429,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
             context.strEnv,
           );
         }
-        return inferExpr(value, context);
+        return inferExpr(value, context, expected);
       };
       t = expr.value.kind === "Record"
         ? inferRecordExpr(
@@ -442,7 +442,7 @@ function inferExprInner(expr: Expr, context: InferContext): Ty {
           facts,
           context.strEnv,
         )
-        : inferExpr(expr.value, context);
+        : inferExpr(expr.value, context, annotation);
       constrainAt(t, annotation, expr, undefined, [], provenance, {
         message: "expression type constraint",
         node: expr.node,

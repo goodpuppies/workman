@@ -43,5 +43,5 @@ function isParseNodeMetadata(value: object): boolean {
   return typeof candidate.id === "number" &&
     typeof candidate.span === "object" &&
     candidate.span !== null &&
-    keys.every((key) => key === "id" || key === "span");
+    keys.every((key) => key === "id" || key === "span" || key === "lambdaArrow");
 }

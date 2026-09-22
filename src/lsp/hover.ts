@@ -50,6 +50,14 @@ function semanticHoverAt(
   offset: number,
   moduleInterface: ModuleInterface,
 ): LspHover | null {
+  const occurrences = semanticOccurrencesAt(moduleInterface, offset);
+  const captureNames = occurrences.flatMap((occurrence) =>
+    occurrence.target.kind === "value"
+      ? moduleInterface.closureCaptures
+        .filter((capture) => capture.target.id === occurrence.target.id)
+        .map((capture) => capture.names)
+      : []
+  )[0];
   const ffiCall = moduleInterface.ffiFacts.calls
     .filter((call) => contains(call.span, offset))
     .sort((left, right) => spanWidth(left.span) - spanWidth(right.span))[0];
@@ -63,15 +71,17 @@ function semanticHoverAt(
     );
   }
   const typed = semanticTypedNodeAt(moduleInterface, offset);
-  if (typed) return typedNodeHover(typed, moduleInterface);
+  if (typed) return typedNodeHover(typed, moduleInterface, captureNames);
 
-  for (const occurrence of semanticOccurrencesAt(moduleInterface, offset)) {
+  for (const occurrence of occurrences) {
     if (occurrence.inferredType) {
       return semanticTypeHover(
         occurrence.name,
         occurrence.inferredType,
         undefined,
         moduleInterface,
+        false,
+        captureNames,
       );
     }
     if (occurrence.target.kind === "type") return hoverCode(`type ${occurrence.name}`);
@@ -82,6 +92,7 @@ function semanticHoverAt(
 function typedNodeHover(
   node: SemanticTypedNode,
   moduleInterface: ModuleInterface,
+  captureNames?: readonly string[],
 ): LspHover {
   return semanticTypeHover(
     node.label,
@@ -89,6 +100,7 @@ function typedNodeHover(
     node.generalType,
     moduleInterface,
     node.presentation === "generated-ffi-receiver",
+    captureNames,
   );
 }
 
@@ -98,14 +110,20 @@ function semanticTypeHover(
   generalType: SemanticOccurrenceType | undefined,
   moduleInterface: ModuleInterface,
   dropReceiver = false,
+  captureNames?: readonly string[],
 ): LspHover {
   const instantiated = renderSemanticType(moduleInterface, type.id, dropReceiver);
   const general = generalType
     ? renderSemanticType(moduleInterface, generalType.id, dropReceiver)
     : undefined;
+  const captures = captureNames
+    ? captureNames.length > 0 ? `|${captureNames.join(", ")}|` : "||"
+    : undefined;
   return general && general !== instantiated
-    ? hoverCode(`${label}\ntype: ${instantiated}\ngeneral: ${general}`)
-    : hoverCode(`${label}: ${instantiated}`);
+    ? hoverCode(
+      `${label}\ntype: ${instantiated}\ngeneral: ${general}${captures ? `\ncaptures: ${captures}` : ""}`,
+    )
+    : hoverCode(`${label}: ${instantiated}${captures ? ` ${captures}` : ""}`);
 }
 
 type GpuHoverSliceContext =

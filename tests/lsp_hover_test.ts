@@ -420,7 +420,7 @@ let server = serve(JSON{}, handler);
   await Deno.writeTextFile(main, source);
 
   const uri = pathToFileUri(main);
-  const expected = "```wm\nhandler: ('a, 'b) -> 'c\n```";
+  const expected = "```wm\nhandler: ('a, 'b) -> 'c |try|\n```";
   const definition = await hoverAt(uri, positionOf(source, "handler ="), new Map());
   const use = await hoverAt(uri, positionOf(source, "handler);"), new Map());
 

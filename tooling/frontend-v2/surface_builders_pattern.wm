@@ -3,12 +3,12 @@ from "./generated/surface_types.wm" import {
   VariablePatternNode, ExplicitVariablePatternNode, PinnedPatternNode,
   ConstructorPatternNode, LongNameNode, TypedPatternNode, GroupedPatternNode,
   TypeAnnotationNode,
-  ParameterNode, ParametersNode, LambdaExpressionNode, TuplePatternNode,
+  ParameterNode, ParametersNode, CaptureClauseNode, LambdaExpressionNode, TuplePatternNode,
   ListPatternNode,
   BlockItemNode, BlockBodyNode, BlockExpressionNode,
   ParenthesizedSequenceNode
 };
-from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, RuleParseValue };
+from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, TokenListParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, RuleParseValue };
 from "./surface_builder_support.wm" import {
   collectNodes, collectTokens, firstTokenWithText, lastTokenWithText,
   firstSyntax, firstNode, surfaceValue
@@ -212,11 +212,31 @@ let validatedOptionalNode = match(value) => {
   Some(other) => { None },
 };
 
+let buildCaptureList = (value: ParseValue, span: Span) => {
+  TokenListParseValue(collectTokens(value))
+};
+
+let buildCaptureClause = (value: ParseValue, span: Span) => {
+  let tokens = collectTokens(value);
+  match((firstTokenWithText(tokens, "|"), lastTokenWithText(tokens, "|", None))) {
+    (Some(open), Some(close)) => {
+      let names = tokens :> List.filter((token: SurfaceToken) => {
+        token.kind == "Identifier"
+      });
+      NodeParseValue(
+        CaptureClauseNode(surfaceValue(open), names, surfaceValue(close), span)
+      )
+    },
+    _ => { RuleParseValue("CaptureClause", value, span) },
+  }
+};
+
 let buildLambda = (value: ParseValue, span: Span) => {
   match(value) {
     ChoiceParseValue(index, SequenceParseValue([
       NodeParseValue(parameters),
       OptionalParseValue(returnValue),
+      OptionalParseValue(captureValue),
       EmptyParseValue,
       TokenParseValue(arrow),
       EmptyParseValue,
@@ -227,6 +247,7 @@ let buildLambda = (value: ParseValue, span: Span) => {
         LambdaExpressionNode(
           Some(parameters),
           optionalNodeFromValue(returnValue),
+          optionalNodeFromValue(captureValue),
           surfaceValue(arrow),
           body,
           optionalNodeFromValue(trailingValue),
@@ -236,6 +257,7 @@ let buildLambda = (value: ParseValue, span: Span) => {
     },
     ChoiceParseValue(index, SequenceParseValue([
       OptionalParseValue(returnValue),
+      OptionalParseValue(captureValue),
       EmptyParseValue,
       TokenParseValue(arrow),
       EmptyParseValue,
@@ -246,6 +268,7 @@ let buildLambda = (value: ParseValue, span: Span) => {
         LambdaExpressionNode(
           None,
           optionalNodeFromValue(returnValue),
+          optionalNodeFromValue(captureValue),
           surfaceValue(arrow),
           body,
           optionalNodeFromValue(trailingValue),

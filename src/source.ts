@@ -11,6 +11,8 @@ export type NodeId = number;
 export type AstNode = {
   id: NodeId;
   span: SourceSpan;
+  /** Syntax projection metadata used for lambda-head capture inlays. */
+  lambdaArrow?: number;
 };
 
 export type LineCol = {

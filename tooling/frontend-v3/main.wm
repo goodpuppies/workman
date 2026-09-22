@@ -45,15 +45,17 @@ let processFilesSync = (
   postfix,
   fn,
 ): Void => {
-  let iterator = walkSync(dir, JSON{ exts: JSON[postfix], includeDirs: false })
+  let iterator = 
+    walkSync(dir, JSON{ exts: JSON[postfix], includeDirs: false })
     :> Result.debug;
+    
   let entryArray = arrayFrom(iterator) :> Result.debug;
 
   let rec step = (index) => {
     match(entryArray :> .at(index) :> Result.debug) {
       None => { void },
       Some(entry) => {
-        let path = entry.path :> Result.debug;
+        let path = entry :> .path :> Result.debug;
         let content = readTextFileSync(path) :> Result.debug;
         fn(content, path);
         step(index + 1)
@@ -65,7 +67,7 @@ let processFilesSync = (
 };
 
 let lex_all = () => {
-  processFilesSync(".", ".wm", (source, path) => {
+  processFilesSync("./examples", ".wm", (source, path) => {
     print(`lexing ${path}`);
     let _tokens = lex(source);
     void
@@ -73,5 +75,6 @@ let lex_all = () => {
 };
 
 let main = () => {
-  lex_all()
+  lex_all();
+  print "done"
 };

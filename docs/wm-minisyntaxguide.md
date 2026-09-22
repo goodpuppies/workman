@@ -38,13 +38,16 @@ Both styles are valid:
 
 ## Entry Point
 
-**No top-level function calls allowed.** Create a `main` function:
+Running a file first initializes its imported modules and then evaluates its top-level declarations
+in order. A discarded top-level binding is enough for a small script:
 
 ```workman
--- error: Top-level call
-print("hello");
+let _ = print("hello");
+```
 
--- Create a main function instead
+If the file exports a `main` function, `wm run` calls it after initialization:
+
+```workman
 let main = () => {
   print("hello")
 };
@@ -892,6 +895,25 @@ let third = () => { true }: Bool;
 -- Annotation positions can be combined when they agree
 let checked: Void -> Bool = (): Bool => { true }: Bool;
 ```
+
+### Explicit closure captures
+
+A lambda may declare the complete set of enclosing lexical bindings that it captures. The clause
+appears after the parameters and optional result annotation, immediately before `=>`:
+
+```workman
+let makeAdder = (x: Number) => {
+  (y: Number): Number |x| => { x + y }
+};
+
+let constant = (): Number || => { 1 };
+```
+
+An authored capture clause is a contract. Using an unlisted lexical binding is an error, `||`
+requires a captureless lambda, and listing an unused binding produces a warning. When the clause is
+omitted, captures remain inferred and the language server displays a `|name, ...|` inlay before the
+lambda arrow. Workman module `let` values are part of the generated module environment and therefore
+participate in capture clauses; imported and basis-owned values remain external dependencies.
 
 ### 8. Out of Scope (for now)
 

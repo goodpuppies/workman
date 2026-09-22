@@ -50,7 +50,10 @@ export function inferCall(
       );
     }
   }
-  const argTypes = expr.args.map((a) => inferExpr(a, context));
+  const expectedArgs = calleeFn.tag === "fn" && calleeFn.params.length === 1
+    ? contextualCallArguments(calleeFn.params[0], expr.args.length)
+    : [];
+  const argTypes = expr.args.map((arg, index) => inferExpr(arg, context, expectedArgs[index]));
   for (const argType of argTypes) {
     recordConsumedFfiUse(facts, argType, {
       kind: "call",
@@ -188,6 +191,12 @@ export function inferCall(
     );
   }
   return result;
+}
+
+function contextualCallArguments(parameter: Ty, argumentCount: number): (Ty | undefined)[] {
+  if (argumentCount === 1) return [parameter];
+  const target = prune(parameter);
+  return target.tag === "tuple" && target.items.length === argumentCount ? target.items : [];
 }
 
 function callArgSource(

@@ -29,6 +29,16 @@ export type ParameterNameInlayHint = {
   data: Readonly<{ kind: "workman.parameter-name" }>;
 };
 
+export type CaptureInlayHint = {
+  position: LspPosition;
+  label: string;
+  kind: 1;
+  tooltip: Readonly<{ kind: "markdown"; value: string }>;
+  paddingLeft: false;
+  paddingRight: true;
+  data: Readonly<{ kind: "workman.inferred-captures"; category: "capture" }>;
+};
+
 export type RecoveryHoleInlayHint = {
   position: LspPosition;
   label: "?";
@@ -46,6 +56,7 @@ export type RecoveryHoleInlayHint = {
 
 export type WorkmanSemanticInlayHint =
   | InferredTypeInlayHint
+  | CaptureInlayHint
   | ParameterNameInlayHint
   | RecoveryHoleInlayHint;
 export type SemanticInlayOptions = Readonly<{
@@ -55,6 +66,8 @@ export type SemanticInlayOptions = Readonly<{
 }>;
 
 const MAX_TYPE_INLAY_LABEL_LENGTH = 60;
+const MAX_LAMBDA_RESULT_INLAY_LABEL_LENGTH = 24;
+const MAX_CAPTURE_INLAY_LABEL_LENGTH = 24;
 
 /** Standard, editor-neutral inferred-type inlays from compiler-owned module-interface facts. */
 export async function semanticInlayHints(
@@ -79,8 +92,11 @@ export async function semanticInlayHints(
         if (typeId === undefined) return [];
         const position = offsetToLineColFromStarts(hint.span.end, starts);
         const full = renderSemanticType(context.moduleInterface, typeId);
-        const compact = truncateTypeInlay(
+        const compact = truncateInlay(
           `: ${renderSemanticTypeCompact(context.moduleInterface, typeId)}`,
+          hint.kind === "result"
+            ? MAX_LAMBDA_RESULT_INLAY_LABEL_LENGTH
+            : MAX_TYPE_INLAY_LABEL_LENGTH,
         );
         return [{
           position: { line: position.line - 1, character: position.col },
@@ -114,6 +130,29 @@ export async function semanticInlayHints(
           data: Object.freeze({ kind: "workman.parameter-name" as const }),
         };
       });
+  const captures: WorkmanSemanticInlayHint[] = inlayOptions.typeHints === false
+    ? []
+    : context.moduleInterface.captureHints
+      .filter((hint) => hint.anchor >= start && hint.anchor <= end)
+      .map((hint) => {
+        const position = offsetToLineColFromStarts(hint.anchor, starts);
+        const names = hint.names.join(", ");
+        return {
+          position: { line: position.line - 1, character: position.col },
+          label: truncateInlay(`|${names}|`, MAX_CAPTURE_INLAY_LABEL_LENGTH),
+          kind: 1 as const,
+          tooltip: Object.freeze({
+            kind: "markdown" as const,
+            value: `\`\`\`workman\n|${names}|\n\`\`\`\n\nInferred lexical capture contract.`,
+          }),
+          paddingLeft: false as const,
+          paddingRight: true as const,
+          data: Object.freeze({
+            kind: "workman.inferred-captures" as const,
+            category: "capture" as const,
+          }),
+        };
+      });
   const recoveryHoles: RecoveryHoleInlayHint[] = inlayOptions.recoveryHoles === true
     ? [...context.moduleInterface.recoveryHoles, ...context.recoveryHoles]
       .filter((hole) => hole.anchor >= start && hole.anchor <= end)
@@ -134,7 +173,7 @@ export async function semanticInlayHints(
         };
       })
     : [];
-  return [...inferred, ...parameters, ...recoveryHoles].sort((left, right) =>
+  return [...inferred, ...captures, ...parameters, ...recoveryHoles].sort((left, right) =>
     left.position.line - right.position.line ||
     left.position.character - right.position.character ||
     (left.kind ?? 0) - (right.kind ?? 0)
@@ -150,9 +189,9 @@ function inferredHintTypeId(
   return shape?.kind === "function" ? shape.result : undefined;
 }
 
-function truncateTypeInlay(label: string): string {
-  if (label.length <= MAX_TYPE_INLAY_LABEL_LENGTH) return label;
-  return `${label.slice(0, MAX_TYPE_INLAY_LABEL_LENGTH - 3).trimEnd()}...`;
+function truncateInlay(label: string, maximumLength: number): string {
+  if (label.length <= maximumLength) return label;
+  return `${label.slice(0, maximumLength - 3).trimEnd()}...`;
 }
 
 function positionOffset(position: LspPosition, starts: number[], sourceLength: number): number {

@@ -1218,7 +1218,7 @@ function emitArityRaisedRecursiveBinding(
   const params = items.map((item, index) =>
     item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${index}`
   );
-  const body = hasDirectSelfTailCall(arm.body, binding.bindingId)
+  const body = hasSelfTailCall(arm.body, binding.bindingId)
     ? (() => {
       const label = `__wm_tail_${tailLoopTemp++}`;
       return `${label}: while (true) {\n${
@@ -1238,7 +1238,7 @@ function emitArityRaisedRecursiveBinding(
 function emitRecursiveBindingValue(expr: CoreExpr, bindingId: BindingId | undefined): string {
   if (
     expr.kind !== "CoreFn" || bindingId === undefined ||
-    !expr.arms.some((arm) => hasDirectSelfTailCall(arm.body, bindingId))
+    !expr.arms.some((arm) => hasSelfTailCall(arm.body, bindingId))
   ) {
     return emitExpr(expr);
   }
@@ -1254,24 +1254,44 @@ function emitRecursiveBindingValue(expr: CoreExpr, bindingId: BindingId | undefi
   }\n}\n}`;
 }
 
-function hasDirectSelfTailCall(expr: CoreExpr, bindingId: BindingId): boolean {
+type TailHelper = Extract<CoreExpr, { kind: "CoreFn" }>;
+type TailHelpers = ReadonlyMap<BindingId, TailHelper>;
+
+function hasSelfTailCall(
+  expr: CoreExpr,
+  bindingId: BindingId,
+  tailHelpers: TailHelpers = new Map(),
+  visitingHelpers: ReadonlySet<BindingId> = new Set(),
+): boolean {
   if (
     expr.kind === "CoreApp" && expr.callee.kind === "CoreVar" &&
     expr.callee.bindingId === bindingId
   ) {
     return true;
   }
+  if (expr.kind === "CoreApp" && expr.callee.kind === "CoreVar") {
+    const helperId = expr.callee.bindingId as BindingId | undefined;
+    const helper = helperId === undefined ? undefined : tailHelpers.get(helperId);
+    if (helper && helperId !== undefined && !visitingHelpers.has(helperId)) {
+      const visiting = new Set(visitingHelpers);
+      visiting.add(helperId);
+      return helper.arms.some((arm) => hasSelfTailCall(arm.body, bindingId, tailHelpers, visiting));
+    }
+  }
   if (expr.kind === "CoreIf") {
-    return hasDirectSelfTailCall(expr.thenExpr, bindingId) ||
-      hasDirectSelfTailCall(expr.elseExpr, bindingId);
+    return hasSelfTailCall(expr.thenExpr, bindingId, tailHelpers, visitingHelpers) ||
+      hasSelfTailCall(expr.elseExpr, bindingId, tailHelpers, visitingHelpers);
   }
   if (expr.kind === "CoreMatch") {
-    return expr.arms.some((arm) => hasDirectSelfTailCall(arm.body, bindingId));
+    return expr.arms.some((arm) =>
+      hasSelfTailCall(arm.body, bindingId, tailHelpers, visitingHelpers)
+    );
   }
   if (expr.kind === "CoreBlock") {
-    return hasDirectSelfTailCall(expr.result, bindingId) ||
+    const helpers = tailHelpersInBlock(expr, tailHelpers);
+    return hasSelfTailCall(expr.result, bindingId, helpers, visitingHelpers) ||
       !!finalDiscardedExpr(expr) &&
-        hasDirectSelfTailCall(finalDiscardedExpr(expr)!, bindingId);
+        hasSelfTailCall(finalDiscardedExpr(expr)!, bindingId, helpers, visitingHelpers);
   }
   return false;
 }
@@ -1281,6 +1301,8 @@ function emitTailExpr(
   bindingId: BindingId,
   label: string,
   tailParams?: readonly string[],
+  tailHelpers: TailHelpers = new Map(),
+  expandingHelpers: ReadonlySet<BindingId> = new Set(),
 ): string {
   if (
     expr.kind === "CoreApp" && expr.callee.kind === "CoreVar" &&
@@ -1305,10 +1327,51 @@ function emitTailExpr(
     }
     return `__arg = ${emitExpr(expr.arg)};\ncontinue ${label};`;
   }
+  if (expr.kind === "CoreApp" && expr.callee.kind === "CoreVar") {
+    const helperId = expr.callee.bindingId as BindingId | undefined;
+    const helper = helperId === undefined ? undefined : tailHelpers.get(helperId);
+    if (
+      helper && helperId !== undefined && !expandingHelpers.has(helperId) &&
+      helper.arms.some((arm) => hasSelfTailCall(arm.body, bindingId, tailHelpers))
+    ) {
+      const value = `__wm_tail_helper_arg_${tailValueTemp++}`;
+      const expanding = new Set(expandingHelpers);
+      expanding.add(helperId);
+      return `{\nconst ${value} = ${emitExpr(expr.arg)};\n${
+        emitTailArmBody(
+          helper.arms,
+          value,
+          "pattern match failure in function",
+          bindingId,
+          label,
+          tailParams,
+          literalTupleArity(expr.arg),
+          tailHelpers,
+          expanding,
+        )
+      }\n}`;
+    }
+  }
   if (expr.kind === "CoreIf") {
     return `if (${emitExpr(expr.cond)}) {\n${
-      emitTailExpr(expr.thenExpr, bindingId, label, tailParams)
-    }\n} else {\n${emitTailExpr(expr.elseExpr, bindingId, label, tailParams)}\n}`;
+      emitTailExpr(
+        expr.thenExpr,
+        bindingId,
+        label,
+        tailParams,
+        tailHelpers,
+        expandingHelpers,
+      )
+    }\n} else {\n${
+      emitTailExpr(
+        expr.elseExpr,
+        bindingId,
+        label,
+        tailParams,
+        tailHelpers,
+        expandingHelpers,
+      )
+    }\n}`;
   }
   if (expr.kind === "CoreMatch") {
     if (canScalarizeTupleMatch(expr)) {
@@ -1324,6 +1387,8 @@ function emitTailExpr(
           bindingId,
           label,
           tailParams,
+          tailHelpers,
+          expandingHelpers,
         )
       }\n}`;
     }
@@ -1337,21 +1402,50 @@ function emitTailExpr(
         label,
         tailParams,
         literalTupleArity(expr.value),
+        tailHelpers,
+        expandingHelpers,
       )
     }\n}`;
   }
   if (expr.kind === "CoreBlock") {
+    const helpers = tailHelpersInBlock(expr, tailHelpers);
     const discardedTail = finalDiscardedExpr(expr);
-    if (discardedTail && hasDirectSelfTailCall(discardedTail, bindingId)) {
+    if (discardedTail && hasSelfTailCall(discardedTail, bindingId, helpers)) {
       return `{\n${expr.items.slice(0, -1).map(emitBlockItem).join("\n")}\n${
-        emitTailExpr(discardedTail, bindingId, label, tailParams)
+        emitTailExpr(
+          discardedTail,
+          bindingId,
+          label,
+          tailParams,
+          helpers,
+          expandingHelpers,
+        )
       }\n}`;
     }
     return `{\n${expr.items.map(emitBlockItem).join("\n")}\n${
-      emitTailExpr(expr.result, bindingId, label, tailParams)
+      emitTailExpr(expr.result, bindingId, label, tailParams, helpers, expandingHelpers)
     }\n}`;
   }
   return `return ${emitExpr(expr)};`;
+}
+
+function tailHelpersInBlock(
+  block: Extract<CoreExpr, { kind: "CoreBlock" }>,
+  inherited: TailHelpers,
+): TailHelpers {
+  let helpers: Map<BindingId, TailHelper> | undefined;
+  for (const item of block.items) {
+    if (item.kind !== "CoreLet" || item.recursive) continue;
+    for (const binding of item.bindings) {
+      if (
+        binding.pattern.kind !== "CorePVar" || binding.pattern.bindingId === undefined ||
+        binding.value.kind !== "CoreFn"
+      ) continue;
+      helpers ??= new Map(inherited);
+      helpers.set(binding.pattern.bindingId, binding.value);
+    }
+  }
+  return helpers ?? inherited;
 }
 
 function finalDiscardedExpr(expr: Extract<CoreExpr, { kind: "CoreBlock" }>): CoreExpr | undefined {
@@ -1368,12 +1462,21 @@ function emitTailArmBody(
   label: string,
   tailParams?: readonly string[],
   knownTupleArity?: number,
+  tailHelpers: TailHelpers = new Map(),
+  expandingHelpers: ReadonlySet<BindingId> = new Set(),
 ): string {
   const body = arms.map((arm) => {
     const checks = patternChecks(arm.pattern, value, knownTupleArity);
     const binds = emitPatternBind(arm.pattern, value);
     return `if (${checks.length ? checks.join(" && ") : "true"}) {\n${binds.join("\n")}\n${
-      emitTailExpr(arm.body, bindingId, label, tailParams)
+      emitTailExpr(
+        arm.body,
+        bindingId,
+        label,
+        tailParams,
+        tailHelpers,
+        expandingHelpers,
+      )
     }\n}`;
   });
   return `${body.join(" else ")}\n__wm_fail("Match", ${JSON.stringify(message)});`;
@@ -1486,12 +1589,14 @@ function emitScalarTupleTailArmBody(
   bindingId: BindingId,
   label: string,
   tailParams?: readonly string[],
+  tailHelpers: TailHelpers = new Map(),
+  expandingHelpers: ReadonlySet<BindingId> = new Set(),
 ): string {
   return emitScalarTupleArmBody(
     arms,
     values,
     message,
-    (body) => emitTailExpr(body, bindingId, label, tailParams),
+    (body) => emitTailExpr(body, bindingId, label, tailParams, tailHelpers, expandingHelpers),
   );
 }
 

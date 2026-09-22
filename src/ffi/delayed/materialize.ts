@@ -2,7 +2,7 @@ import type { Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
-import { freshTypeInfo, prune, solveFfi, typeFromAst } from "../../types.ts";
+import { freshTypeInfo, prune, show, solveFfi, type Ty, typeFromAst } from "../../types.ts";
 import { TypeMismatchError } from "../../type_diff.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
@@ -177,7 +177,7 @@ function solveReflectedFfiFunctionValue(
   try {
     solveFfi(placeholder, materializedType);
   } catch (error) {
-    throwForeignDottedProjectionDiagnostic(error, result);
+    throwReflectedSolveDiagnostic(error, result, original, placeholder);
   }
   resolveFfiFact(result.facts, placeholder.id, materializedType);
   recordExprFact(result.facts, original, {
@@ -185,6 +185,77 @@ function solveReflectedFfiFunctionValue(
     instantiated: inferred,
     origin: { source: "reflected-ffi", name: variant.internalName },
   });
+}
+
+function throwReflectedSolveDiagnostic(
+  error: unknown,
+  result: InferResult,
+  original: Expr,
+  placeholder: Ty,
+): never {
+  if (error instanceof TypeMismatchError) {
+    const unwrap = resultUnwrapMismatch(error.left, error.right);
+    if (unwrap) {
+      const consumed = result.facts.ffi.get(placeholder.tag === "ffi" ? placeholder.id : -1)?.consumed
+        ?.kind;
+      const carrier = unwrap.result.tag === "named" ? unwrap.result.name : "Result";
+      const guidance = carrier === "Task"
+        ? "via Task, Task.map/andThen/mapErr, or Task.fromResult at a boundary"
+        : "via Result, Result.map/andThen, Result.withDefault, or match Ok(_) / Err(_)";
+      throw diagnosticError(
+        new Error(
+          `cannot use ${describeFfiOriginal(original)} directly as ${show(unwrap.plain)}: it returns ${
+            show(unwrap.result)
+          }; unwrap the ${carrier} first (${guidance})${
+            consumed ? ` before using it ${consumedUsePhrase(consumed)}` : ""
+          }`,
+        ),
+        original.node,
+        "ffi.result-unwrap-required",
+      );
+    }
+    throwForeignDottedProjectionDiagnostic(error, result);
+  }
+  throw error;
+}
+
+function resultUnwrapMismatch(left: Ty, right: Ty): { result: Ty; plain: Ty } | undefined {
+  const l = prune(left);
+  const r = prune(right);
+  if (isResultOrTask(l) && !isResultOrTask(r)) return { result: l, plain: r };
+  if (isResultOrTask(r) && !isResultOrTask(l)) return { result: r, plain: l };
+  return undefined;
+}
+
+function isResultOrTask(type: Ty): boolean {
+  const target = prune(type);
+  return target.tag === "named" && (target.name === "Result" || target.name === "Task") &&
+    target.args.length === 2;
+}
+
+function describeFfiOriginal(original: Expr): string {
+  if (original.kind === "FfiGet" || original.kind === "FfiCall") {
+    const receiver = original.receiver.kind === "Var" ? `${original.receiver.name}:>.` : "JS.";
+    const call = original.kind === "FfiCall" ? "()" : "";
+    return `${receiver}${original.path.join(".")}${call}`;
+  }
+  if (original.kind === "FfiBindingCall") return `JS call ${original.name}`;
+  return "JS member access";
+}
+
+function consumedUsePhrase(kind: "match" | "binding" | "operator" | "pipe" | "call"): string {
+  switch (kind) {
+    case "operator":
+      return "as an operator operand";
+    case "call":
+      return "as a call argument";
+    case "binding":
+      return "in a let binding";
+    case "match":
+      return "in a match";
+    case "pipe":
+      return "in a pipe";
+  }
 }
 
 function throwForeignDottedProjectionDiagnostic(error: unknown, result: InferResult): never {
@@ -807,7 +878,7 @@ export function solveReflectedFfiValue(
   try {
     solveFfi(placeholder, materializedType);
   } catch (error) {
-    throwForeignDottedProjectionDiagnostic(error, result);
+    throwReflectedSolveDiagnostic(error, result, original, placeholder);
   }
   resolveFfiFact(result.facts, placeholder.id, materializedType);
   recordExprFact(result.facts, original, {

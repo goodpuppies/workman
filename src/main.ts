@@ -6,10 +6,9 @@ import {
   coreFile,
   ModuleAnalysisError,
 } from "./compiler.ts";
-import { dirname, relative, resolve } from "node:path";
+import { dirname } from "node:path";
 import {
   formatDiagnosticDocument,
-  formatDiagnosticError,
   formatDiagnosticInspection,
   formatError,
   formatReplDiagnostic,
@@ -20,7 +19,7 @@ import {
 import { type Document, renderDocument } from "../tooling/tuiman/document.ts";
 import { ParseError } from "./parser.ts";
 import { moduleNodeForPath } from "./module_graph.ts";
-import { runEntrypointDiagnostic, RunEntrypointError, runFile } from "./run.ts";
+import { runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, runInteractiveRepl, watchReplChanges } from "./repl.ts";
 import { watchFile } from "./watch.ts";
@@ -81,20 +80,6 @@ function reportError(error: unknown): void {
         printDiagnostic(formatDiagnosticDocument(diagnostic, error.path, error.source));
       }
     }
-  } else if (error instanceof RunEntrypointError) {
-    let rendered = formatDiagnosticError(error, error.path, error.source).trimEnd();
-    if (error.suggestedEntrypoints.length > 0) {
-      const cwd = resolve(Deno.cwd());
-      const paths = error.suggestedEntrypoints.map((path) => {
-        const display = relative(cwd, path);
-        return `    ${display.startsWith("..") ? path : display}`;
-      });
-      rendered +=
-        `\n\nDid you mean one of these entrypoint files? They contain a \`main\` function:\n\n${
-          paths.join("\n")
-        }`;
-    }
-    console.error(rendered);
   } else if (error instanceof FrontendDiagnosticError) {
     printDiagnostic(formatDiagnosticDocument(error.diagnostic, undefined, undefined));
   } else if (error instanceof FrontendDiagnosticBundleError) {
@@ -358,12 +343,6 @@ async function errCommand(args: string[]): Promise<number> {
         inspections.push(formatDiagnosticInspection(diagnostic, path, source));
         foundError ||= diagnostic.severity === "error";
       }
-    }
-    const entryDiagnostic = runEntrypointDiagnostic(compiled);
-    if (entryDiagnostic) {
-      const entry = compiled.core.modules.get(compiled.core.entry)!;
-      inspections.push(formatDiagnosticInspection(entryDiagnostic, entry.path, entry.source));
-      foundError = true;
     }
   } catch (error) {
     foundError = true;

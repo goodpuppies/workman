@@ -1032,12 +1032,16 @@ function projectListExpr(
 }
 
 function projectLambda(node: WmVariant, context: Context): Expr {
-  const [parametersValue, returnValue, , bodyNode, trailingValue] = fields(
-    node,
-    "LambdaExpressionNode",
-  );
+  const lambdaFields = fields(node, "LambdaExpressionNode");
+  // Keep the checked-in stage-0 frontend able to compile the next self-hosted stage after the
+  // Surface product grows. The old product has no capture-clause option.
+  const [parametersValue, returnValue, captureValue, arrowValue, bodyNode, trailingValue] =
+    lambdaFields.length === 6
+      ? [lambdaFields[0], lambdaFields[1], undefined, ...lambdaFields.slice(2, 5)]
+      : lambdaFields.slice(0, 6);
   const parametersNode = option(parametersValue);
   const returnNode = option(returnValue);
+  const captureNode = captureValue === undefined ? undefined : option(captureValue);
   const trailingNode = option(trailingValue);
   const bodyVariant = variant(bodyNode);
   const projectedBody = bodyVariant.name === "BlockExpressionNode"
@@ -1048,12 +1052,29 @@ function projectLambda(node: WmVariant, context: Context): Expr {
     params: parametersNode ? projectParameters(variant(parametersNode), context) : [],
     directives: projectedBody.directives,
     body: projectedBody.body,
+    ...(captureNode ? { captureClause: projectCaptureClause(variant(captureNode), context) } : {}),
     ...(returnNode
       ? { returnAnnotation: projectLambdaAnnotation(variant(returnNode), context) }
       : {}),
     ...(trailingNode
       ? { trailingReturnAnnotation: projectLambdaAnnotation(variant(trailingNode), context) }
       : {}),
+    node: {
+      ...nodeFor(context, spanOf(node)),
+      lambdaArrow: surfaceTokenSpan(arrowValue, context).start,
+    },
+  };
+}
+
+function projectCaptureClause(node: WmVariant, context: Context) {
+  const [, namesValue] = fields(node, "CaptureClauseNode");
+  const tokens = list(namesValue);
+  return {
+    names: tokens.map(tokenText),
+    entries: tokens.map((token) => ({
+      name: tokenText(token),
+      node: nodeFor(context, tokenSpan(token)),
+    })),
     node: nodeFor(context, spanOf(node)),
   };
 }

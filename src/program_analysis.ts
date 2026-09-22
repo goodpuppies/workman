@@ -28,6 +28,7 @@ import {
 } from "./module_interface.ts";
 import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
 import { elaborateSharedCore, type SharedCoreModule } from "./core/elaboration.ts";
+import { assertCaptureContracts } from "./closure_captures.ts";
 
 export type CoreProgramAnalysis = {
   graph: ModuleGraph;
@@ -58,6 +59,7 @@ export function buildCoreProgramAnalysis(
 ): CoreProgramAnalysis {
   const ids = new CompilerIdAllocator();
   const bindings = resolveProgramBindingFacts(graph, ids);
+  assertCaptureContracts(bindings.values());
   const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
   const sharedCore = new Map(
     graph.order.map((id) => {

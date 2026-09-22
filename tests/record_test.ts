@@ -447,6 +447,37 @@ Deno.test("a unique field projection nominally disambiguates a later shared fiel
   );
 });
 
+Deno.test("call parameter types discard incompatible nominal projection owners", async () => {
+  const result = await checkSource(`
+    record Trivia = { kind: String };
+    record Token = { kind: Number };
+    let acceptKind = (kind: Number) => { kind };
+    let readKind = (token) => { acceptKind(token.kind) };
+  `);
+
+  expectBinding(result.env, "readKind", { type: "Token -> Number", vars: 0 });
+  assertEquals(result.diagnostics, []);
+  assertEquals(
+    [...result.facts.recordProjections.values()].flat().map(({ record }) => record.name),
+    ["Token"],
+  );
+});
+
+Deno.test("call parameter types retain warnings for compatible nominal projection owners", async () => {
+  const result = await checkSource(`
+    record Point = { x: Number };
+    record Offset = { x: Number };
+    let acceptX = (x: Number) => { x };
+    let readX = (value) => { acceptX(value.x) };
+  `);
+
+  expectBinding(result.env, "readX", { type: "Point -> Number", vars: 0 });
+  assertEquals(result.diagnostics.map((diagnostic) => diagnostic.code), [
+    "record.ambiguous-projection",
+  ]);
+  assertStringIncludes(result.warnings[0], "Candidates: Point, Offset");
+});
+
 Deno.test("nominal record parameter annotations resolve shared field identities", async () => {
   const result = await checkSource(`
     record Point = { x: Number };

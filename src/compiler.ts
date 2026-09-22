@@ -61,6 +61,7 @@ import {
 import { type GpuFragmentSelectionFacts, resolveGpuFragmentSelections } from "./gpu_selection.ts";
 import type { BindingFacts } from "./binding_facts.ts";
 import { resolveProgramBindingFacts } from "./binding_facts.ts";
+import { assertCaptureContracts } from "./closure_captures.ts";
 import { type NominalFacts, resolveProgramNominalFacts } from "./nominal_facts.ts";
 import type { GpuSliceElaborationInput } from "./wmslang/v2_dto.ts";
 import type { ResolvedPatternFacts } from "./pattern_facts.ts";
@@ -116,6 +117,7 @@ export async function compile(
   const results = new Map([[id, result]]);
   const ids = new CompilerIdAllocator();
   const bindings = resolveProgramBindingFacts(graph, ids);
+  assertCaptureContracts(bindings.values());
   const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
   const fragmentSelections = resolveGpuFragmentSelections([{
     moduleId: id,

@@ -241,9 +241,10 @@ let scene = union(
 
 ### Current restriction
 
-The selected factory and GPU body must be in one module. Shader helpers must be lexically inside the
-selected root. A top-level helper is rejected even in the same file, and imported helper bodies are
-outside the selected lexical GPU island. The one ADT must also be declared beside the root.
+The factory and its returned GPU body must be in one module, although `Gpu.fragment` may select that
+factory from an importing host module. Shader helpers must be lexically inside the selected root. A
+top-level helper is rejected even in the same file, and imported helper bodies are outside the
+selected lexical GPU island. The one ADT must also be declared beside the root.
 
 This prevents an ordinary shader library from exposing reusable noise, SDF, palette, transform, or
 material functions.
@@ -487,4 +488,3 @@ This umbrella issue is complete when:
 - Making host effects or JS FFI executable on the GPU.
 - Treating every Slang builtin or target feature as automatically available in Workman.
 - Blocking functional-language progress on compute, storage-resource, or authored-stage design.
-

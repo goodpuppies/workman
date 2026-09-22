@@ -329,30 +329,42 @@ MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { 
 MatchArm = pattern:Pattern _ "=>" _ body:Block { return at({ pattern, body }, location()); }
 
 Lambda
-  = params:ParamList returnAnnotation:LambdaReturnAnnotation? _ "=>" _ parsed:LambdaBody
+  = params:ParamList returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
     trailingReturnAnnotation:LambdaReturnAnnotation? {
       return at({
         kind: "Lambda",
         params,
         directives: parsed.directives,
         body: parsed.body,
+        captureClause: captureClause ?? undefined,
         returnAnnotation: returnAnnotation ?? undefined,
         trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
       }, location());
     }
-  / returnAnnotation:LambdaReturnAnnotation? _ "=>" _ parsed:LambdaBody
+  / returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
     trailingReturnAnnotation:LambdaReturnAnnotation? {
       return at({
         kind: "Lambda",
         params: [],
         directives: parsed.directives,
         body: parsed.body,
+        captureClause: captureClause ?? undefined,
         returnAnnotation: returnAnnotation ?? undefined,
         trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
       }, location());
     }
 
 LambdaReturnAnnotation = _ ":" _ type:TypeExpr { return type; }
+
+CaptureClause
+  = _ "|" _ names:CaptureList? _ "|" {
+      return at({ names: names ?? [] }, location());
+    }
+
+CaptureList
+  = first:Identifier rest:(_ "," _ name:Identifier { return name; })* _ ","? {
+      return [first, ...rest];
+    }
 
 LambdaBody
   = LambdaBlock

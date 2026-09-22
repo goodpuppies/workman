@@ -14,6 +14,7 @@ import {
   type TypeEnv,
   type TypeInfo,
   typeInfoById,
+  unify,
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
 import { resolveLongType, resolveLongValue, type StrEnv } from "./environment.ts";
@@ -51,6 +52,7 @@ export function inferDottedVar(
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
   },
+  expected?: Ty,
 ): Ty {
   const name = longIdSpelling(path);
   const scheme = env.get(name);
@@ -60,7 +62,8 @@ export function inferDottedVar(
     const segments = path.qualifiers.length + 1;
     const firstFieldIndex = segments - structured.remaining.length;
     return structured.remaining.reduce((type, field, index) => {
-      const resolved = inferRecordField(type, field, typeEnv, occurrence);
+      const fieldExpected = index === structured.remaining.length - 1 ? expected : undefined;
+      const resolved = inferRecordField(type, field, typeEnv, occurrence, fieldExpected);
       if (resolved.record && occurrence) {
         recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
           name: field,
@@ -95,6 +98,7 @@ export function inferDottedVar(
       field,
       typeEnv,
       occurrence,
+      expected,
     );
     if (resolved.record && occurrence) {
       recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
@@ -253,6 +257,7 @@ function inferRecordField(
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
   },
+  expected?: Ty,
 ): { type: Ty; record?: TypeInfo } {
   const target = prune(base);
   if (target.tag === "named") {
@@ -275,7 +280,7 @@ function inferRecordField(
     return { type: found.type, record: info };
   }
   if (target.tag === "var") {
-    const nominal = selectedFieldRecord(typeEnv, field, occurrence);
+    const nominal = selectedFieldRecord(typeEnv, field, occurrence, expected);
     if (nominal) {
       constrainRecord(
         target,
@@ -349,16 +354,28 @@ function selectedFieldRecord(
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
   },
+  expected?: Ty,
 ): { record: NamedTy; type: Ty; info: TypeInfo } | undefined {
   const candidates = findRecordTypes(typeEnv, [field], "contains");
   if (candidates.length === 0) return undefined;
-  const info = candidates[0];
-  const record = freshRecord(info);
-  const declaredType =
-    instantiateRecordFields(info, record.args).find((item) => item.name === field)!.type;
-  if (candidates.length > 1 && occurrence) {
-    const candidateNames = candidates.map((candidate) => candidate.name).join(", ");
-    const message = `ambiguous record projection ${field}; using first record type ${info.name}. ` +
+  const instantiated = candidates.map((info) => {
+    const record = freshRecord(info);
+    const type = instantiateRecordFields(info, record.args).find((item) =>
+      item.name === field
+    )!.type;
+    return { record, type, info };
+  });
+  const compatible = expected
+    ? instantiated.filter((candidate) => canUnifyWithoutCommit(candidate.type, expected))
+    : instantiated;
+  // When the context rejects every owner, retain the old first-owner behavior so
+  // the enclosing constraint reports the useful type mismatch at its call site.
+  const viable = compatible.length > 0 ? compatible : instantiated;
+  const selected = viable[0];
+  if (viable.length > 1 && occurrence) {
+    const candidateNames = viable.map((candidate) => candidate.info.name).join(", ");
+    const message =
+      `ambiguous record projection ${field}; using first record type ${selected.info.name}. ` +
       `Candidates: ${candidateNames}. ` +
       `Hint: annotate the receiver, binding, or parameter with the intended record type.`;
     occurrence.warnings.push(message);
@@ -370,7 +387,83 @@ function selectedFieldRecord(
       ),
     );
   }
-  return { record, type: declaredType, info };
+  return selected;
+}
+
+function canUnifyWithoutCommit(left: Ty, right: Ty): boolean {
+  const copies = new Map<Ty, Ty>();
+  try {
+    unify(copyType(left, copies), copyType(right, copies));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Clone a type graph so candidate probing cannot bind live inference variables. */
+function copyType(type: Ty, copies: Map<Ty, Ty>): Ty {
+  const existing = copies.get(type);
+  if (existing) return existing;
+  switch (type.tag) {
+    case "var": {
+      const copy: Extract<Ty, { tag: "var" }> = {
+        tag: "var",
+        id: type.id,
+        name: type.name,
+      };
+      copies.set(type, copy);
+      if (type.instance) copy.instance = copyType(type.instance, copies);
+      return copy;
+    }
+    case "ffi": {
+      const copy: Ty = {
+        ...type,
+        receiver: undefined,
+        args: [],
+        instance: undefined,
+        constraints: undefined,
+      };
+      copies.set(type, copy);
+      copy.receiver = type.receiver ? copyType(type.receiver, copies) : undefined;
+      copy.args = type.args.map((item) => copyType(item, copies));
+      copy.instance = type.instance ? copyType(type.instance, copies) : undefined;
+      copy.constraints = type.constraints?.map((item) => copyType(item, copies));
+      return copy;
+    }
+    case "prim": {
+      const copy: Ty = { ...type };
+      copies.set(type, copy);
+      return copy;
+    }
+    case "fn": {
+      const copy: Ty = { tag: "fn", params: [], result: { tag: "prim", name: "" } };
+      copies.set(type, copy);
+      copy.params = type.params.map((item) => copyType(item, copies));
+      copy.result = copyType(type.result, copies);
+      return copy;
+    }
+    case "tuple": {
+      const copy: Ty = { tag: "tuple", items: [] };
+      copies.set(type, copy);
+      copy.items = type.items.map((item) => copyType(item, copies));
+      return copy;
+    }
+    case "struct": {
+      const copy: Ty = { tag: "struct", fields: [] };
+      copies.set(type, copy);
+      copy.fields = type.fields.map(({ name, type: fieldType }) => ({
+        name,
+        type: copyType(fieldType, copies),
+      }));
+      return copy;
+    }
+    case "named": {
+      const copy: Ty = { ...type, args: [] };
+      copies.set(type, copy);
+      copy.args = type.args.map((item) => copyType(item, copies));
+      return copy;
+    }
+  }
 }
 
 function expectedRecord(expected: Ty | undefined, typeEnv: TypeEnv): NamedTy | undefined {

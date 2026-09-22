@@ -1,8 +1,19 @@
-import type { CtorDecl, Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
+import type {
+  CaptureName,
+  CtorDecl,
+  Decl,
+  Expr,
+  ImportClause,
+  JsImportSpec,
+  Module,
+  Pattern,
+} from "./ast.ts";
 import type { BindingId, CompilerIdAllocator, StructureId } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
 import type { AstNode } from "./source.ts";
+import type { FrontendDiagnostic } from "./diagnostics.ts";
+import { analyzeClosureCaptures, type LexicalCapture } from "./closure_captures.ts";
 
 export type BindingScopeSnapshot = Readonly<{
   values: ReadonlyMap<string, BindingId>;
@@ -31,6 +42,11 @@ export type BindingFacts = {
   /** Authored qualifier retained when lowering replaces the executable expression spelling. */
   sourceStructureReferences: Map<Expr, StructureId>;
   local: Set<BindingId>;
+  /** Bindings owned by module scope, retained separately from block/lambda-local identities. */
+  topLevel: Set<BindingId>;
+  closureCaptures: Map<Extract<Expr, { kind: "Lambda" }>, readonly LexicalCapture[]>;
+  captureDiagnostics: FrontendDiagnostic[];
+  captureReferences: Map<CaptureName, BindingId>;
   exports: Map<string, BindingId>;
   typeExports: Map<string, TypeScopeDeclaration>;
   constructorExports: Map<string, CtorDecl>;
@@ -82,6 +98,10 @@ export function resolveModuleBindingFacts(
     structureReferences: new Map(),
     sourceStructureReferences: new Map(),
     local: new Set(),
+    topLevel: new Set(),
+    closureCaptures: new Map(),
+    captureDiagnostics: [],
+    captureReferences: new Map(),
     exports: new Map(),
     typeExports: new Map(),
     constructorExports: new Map(),
@@ -106,6 +126,9 @@ export function resolveModuleBindingFacts(
     env = resolveDecl(decl, env, facts, ids, true);
     recordCheckpoint(facts, module.node, decl.node?.span.end, env);
   }
+  const captures = analyzeClosureCaptures(module, facts);
+  facts.closureCaptures = captures.captures;
+  facts.captureDiagnostics = captures.diagnostics;
   return facts;
 }
 
@@ -237,6 +260,7 @@ function resolveDecl(
       const id = ids.binding();
       facts.jsImportBinders.set(decl, id);
       facts.local.add(id);
+      if (topLevel) facts.topLevel.add(id);
       next.values.set(decl.clause.alias, id);
       return next;
     }
@@ -246,6 +270,7 @@ function resolveDecl(
       const id = ids.binding();
       facts.jsImportBinders.set(spec, id);
       facts.local.add(id);
+      if (topLevel) facts.topLevel.add(id);
       if (spec.sourceName) {
         const sourceId = existingJsImportBinding(facts, spec, sourceName);
         if (sourceId !== undefined) facts.jsImportSourceBindings.set(id, sourceId);
@@ -258,6 +283,7 @@ function resolveDecl(
         const id = ids.binding();
         facts.jsImportBinders.set(spec, id);
         facts.local.add(id);
+        if (topLevel) facts.topLevel.add(id);
         sourceValues.set(spec.alias ?? spec.name, id);
       }
       for (const spec of decl.clause.specs) {
@@ -299,6 +325,7 @@ function resolveDecl(
     const id = ids.binding();
     facts.recordConstructors.set(decl, id);
     facts.local.add(id);
+    if (topLevel) facts.topLevel.add(id);
     const next = cloneBindingEnv(env);
     next.values.set(decl.name, id);
     next.types.set(decl.name, decl);
@@ -316,6 +343,7 @@ function resolveDecl(
     }
     for (const binding of decl.bindings) resolveExpr(binding.value, recursive, facts, ids);
     publishExports(decl, facts);
+    if (topLevel) addTopLevelPatternBinders(decl, facts);
     return recursive;
   }
   for (const binding of decl.bindings) {
@@ -327,7 +355,20 @@ function resolveDecl(
     addPatternBinders(binding.pattern, next.values, facts, ids);
   }
   publishExports(decl, facts);
+  if (topLevel) addTopLevelPatternBinders(decl, facts);
   return next;
+}
+
+function addTopLevelPatternBinders(
+  decl: Extract<Decl, { kind: "LetDecl" }>,
+  facts: BindingFacts,
+): void {
+  for (const binding of decl.bindings) {
+    for (const pattern of binderPatterns(binding.pattern)) {
+      const id = facts.binders.get(pattern);
+      if (id !== undefined) facts.topLevel.add(id);
+    }
+  }
 }
 
 function publishExports(decl: Extract<Decl, { kind: "LetDecl" }>, facts: BindingFacts): void {

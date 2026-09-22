@@ -2,18 +2,10 @@ import {
   compileFileArtifactsFromCore,
   type CompileOptions,
   coreFile,
-  type CoreFileResult,
 } from "./compiler.ts";
-import {
-  type FrontendDiagnostic,
-  FrontendDiagnosticError,
-  missingEntrypointDiagnostic,
-} from "./diagnostics.ts";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { createProgressReporter } from "./progress.ts";
-import { ReverseImportDiscoveryIndex } from "./project_context.ts";
-import { resolveModuleImportPath } from "./module_graph.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 
 export type RunOptions = CompileOptions & {
@@ -31,25 +23,6 @@ export type RunResult = {
   stdout: Uint8Array;
   stderr: Uint8Array;
 };
-
-export class RunEntrypointError extends FrontendDiagnosticError {
-  constructor(
-    diagnostic: FrontendDiagnostic,
-    readonly path: string,
-    readonly source: string,
-    readonly suggestedEntrypoints: readonly string[] = [],
-  ) {
-    super(diagnostic);
-    this.name = "RunEntrypointError";
-  }
-}
-
-export function runEntrypointDiagnostic(compiled: CoreFileResult): FrontendDiagnostic | undefined {
-  const entry = compiled.core.modules.get(compiled.core.entry)!;
-  return entry.dynamicExports.some((item) => item.name === "main")
-    ? undefined
-    : missingEntrypointDiagnostic();
-}
 
 export async function runFile(input: string, options: RunOptions = {}): Promise<RunResult> {
   const inputPath = await Deno.realPath(resolve(input));
@@ -69,7 +42,6 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       onModuleParsed: (loaded) => progress.step(loaded, 0, `${loaded} modules`),
       onAnalysisProgress: (done, total, phase) => progress.step(done, total, phase),
     });
-    await assertEntrypoint(compiled);
     progress.stage("emit javascript");
     const artifacts = await compileFileArtifactsFromCore(compiled, options);
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
@@ -134,42 +106,4 @@ function restoreParentTerminal(): void {
       new TextEncoder().encode("\x1b[0m\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l"),
     );
   }
-}
-
-async function assertEntrypoint(compiled: CoreFileResult): Promise<void> {
-  const entry = compiled.core.modules.get(compiled.core.entry)!;
-  const diagnostic = runEntrypointDiagnostic(compiled);
-  if (!diagnostic) return;
-  const suggestedEntrypoints = await discoverEntrypoints(entry.path);
-  throw new RunEntrypointError(diagnostic, entry.path, entry.source, suggestedEntrypoints);
-}
-
-async function discoverEntrypoints(inputPath: string): Promise<string[]> {
-  const cwd = resolve(Deno.cwd());
-  const root = relative(cwd, inputPath).startsWith("..") ? dirname(inputPath) : cwd;
-  const files = await collectWorkmanFiles(root);
-  const discovery = new ReverseImportDiscoveryIndex();
-  await Promise.all(files.map(async (path) => {
-    const source = await Deno.readTextFile(path);
-    await discovery.update(path, source, async (referrer, specifier) => {
-      try {
-        return await resolveModuleImportPath(referrer, specifier);
-      } catch {
-        return undefined;
-      }
-    });
-  }));
-  return [...discovery.headsFor(inputPath)];
-}
-
-async function collectWorkmanFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  for await (const entry of Deno.readDir(root)) {
-    if (entry.name === "node_modules" || entry.name === ".git") continue;
-    if (entry.isDirectory && entry.name.startsWith(".")) continue;
-    const path = resolve(root, entry.name);
-    if (entry.isDirectory) files.push(...await collectWorkmanFiles(path));
-    else if (entry.isFile && entry.name.endsWith(".wm")) files.push(path);
-  }
-  return files;
 }

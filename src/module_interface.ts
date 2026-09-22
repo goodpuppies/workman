@@ -498,6 +498,8 @@ export type ModuleInterface = Readonly<{
   completionFacts: SemanticCompletionFacts;
   expectedTypes: readonly SemanticExpectedType[];
   inferredTypeHints: readonly SemanticInferredTypeHint[];
+  captureHints: readonly SemanticCaptureHint[];
+  closureCaptures: readonly SemanticClosureCapture[];
   parameterHints: readonly SemanticParameterHint[];
   resolvedDefinitions: readonly SemanticResolvedDefinition[];
   recoveryHoles: readonly SemanticRecoveryHole[];
@@ -514,6 +516,16 @@ export type SemanticRecoveryHole = Readonly<{
   id: number;
   anchor: number;
   diagnosticCode: string;
+}>;
+
+export type SemanticCaptureHint = Readonly<{
+  anchor: number;
+  names: readonly string[];
+}>;
+
+export type SemanticClosureCapture = Readonly<{
+  target: Readonly<{ kind: "value"; id: ValueId }>;
+  names: readonly string[];
 }>;
 
 export type ProjectSnapshot = Readonly<{
@@ -612,6 +624,21 @@ export function buildProjectSnapshot(
       result,
       typedNodes,
     );
+    const captureHints = Object.freeze(
+      [...moduleBindings.closureCaptures]
+        .filter(([lambda, captures]) =>
+          lambda.captureClause === undefined &&
+          lambda.node?.lambdaArrow !== undefined &&
+          captures.length > 0
+        )
+        .map(([lambda, captures]) =>
+          Object.freeze({
+            anchor: lambda.node!.lambdaArrow!,
+            names: Object.freeze(captures.map((capture) => capture.name)),
+          })
+        ),
+    );
+    const closureCaptures = semanticClosureCaptures(node.module, moduleBindings);
     const parameterHints = semanticParameterHints(
       result,
       moduleBindings,
@@ -685,6 +712,8 @@ export function buildProjectSnapshot(
         completionFacts,
         expectedTypes,
         inferredTypeHints,
+        captureHints,
+        closureCaptures,
         parameterHints,
         resolvedDefinitions,
         recoveryHoles,
@@ -697,6 +726,7 @@ export function buildProjectSnapshot(
           ...(node.syntaxDiagnostics ?? []),
           ...(node.importDiagnostics ?? []),
           ...result.diagnostics,
+          ...moduleBindings.captureDiagnostics,
         ]),
         // Reaching this builder means strict parsing, graph loading, staged FFI preparation, and
         // final host inference completed. Warnings do not make those facts partial. The first
@@ -809,6 +839,95 @@ function topLevelPatternBinders(
     return pattern.fields.flatMap((field) => topLevelPatternBinders(field.pattern));
   }
   return [];
+}
+
+function semanticClosureCaptures(
+  module: Module,
+  bindings: BindingFacts,
+): readonly SemanticClosureCapture[] {
+  const output: SemanticClosureCapture[] = [];
+  const visitDecl = (declaration: Decl): void => {
+    if (declaration.kind !== "LetDecl") return;
+    for (const binding of declaration.bindings) {
+      const lambda = directLambda(binding.value);
+      if (binding.pattern.kind === "PVar" && lambda) {
+        const id = bindings.binders.get(binding.pattern);
+        const inferred = bindings.closureCaptures.get(lambda) ?? [];
+        if (id !== undefined && (lambda.captureClause !== undefined || inferred.length > 0)) {
+          output.push(Object.freeze({
+            target: Object.freeze({ kind: "value", id }),
+            names: Object.freeze(
+              lambda.captureClause?.names.slice() ?? inferred.map((capture) => capture.name),
+            ),
+          }));
+        }
+      }
+      visitExpr(binding.value);
+    }
+  };
+  const visitExpr = (expression: Expr): void => {
+    switch (expression.kind) {
+      case "Lambda":
+        visitExpr(expression.body);
+        return;
+      case "Block":
+        expression.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
+        visitExpr(expression.result);
+        return;
+      case "Tuple":
+      case "JsonArray":
+        expression.items.forEach(visitExpr);
+        return;
+      case "Record":
+      case "JsonObject":
+        expression.fields.forEach((field) => visitExpr(field.value));
+        return;
+      case "FfiGet":
+        visitExpr(expression.receiver);
+        return;
+      case "FfiCall":
+        visitExpr(expression.receiver);
+        expression.args.forEach(visitExpr);
+        return;
+      case "FfiBindingCall":
+        expression.args.forEach(visitExpr);
+        return;
+      case "Call":
+        visitExpr(expression.callee);
+        expression.args.forEach(visitExpr);
+        return;
+      case "If":
+        visitExpr(expression.cond);
+        visitExpr(expression.thenExpr);
+        visitExpr(expression.elseExpr);
+        return;
+      case "Match":
+        visitExpr(expression.value);
+        expression.arms.forEach((arm) => visitExpr(arm.body));
+        return;
+      case "Panic":
+        visitExpr(expression.message);
+        return;
+      case "Ascribed":
+        visitExpr(expression.value);
+        return;
+      case "Binary":
+      case "Pipe":
+        visitExpr(expression.left);
+        visitExpr(expression.right);
+        return;
+      case "Unary":
+        visitExpr(expression.value);
+        return;
+    }
+  };
+  module.decls.forEach(visitDecl);
+  return Object.freeze(output);
+}
+
+function directLambda(expression: Expr): Extract<Expr, { kind: "Lambda" }> | undefined {
+  if (expression.kind === "Lambda") return expression;
+  return expression.kind === "Ascribed" ? directLambda(expression.value) : undefined;
 }
 
 type SemanticTypeSource = Readonly<{
@@ -4015,6 +4134,20 @@ function semanticOccurrences(
       source,
       qualified ? "last" : "first",
       semanticOccurrenceType(typeArena, fact?.instantiated ?? type),
+    );
+  }
+  for (const [reference, id] of bindings.captureReferences) {
+    const target = { kind: "value" as const, id };
+    const targetType = targetTypes.get(semanticTargetKey(target));
+    addSemanticOccurrence(
+      occurrences,
+      reference.name,
+      "reference",
+      target,
+      reference.node,
+      source,
+      "first",
+      semanticOccurrenceType(typeArena, targetType?.type, targetType?.scheme),
     );
   }
   for (const [expression, fact] of result.facts.expressions) {

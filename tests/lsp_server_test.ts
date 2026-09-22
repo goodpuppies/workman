@@ -1509,7 +1509,7 @@ Deno.test("workman/projectStatus reports the selected head and active projects",
   );
 });
 
-Deno.test("workman/projectStatus reports a detached context for a headless file", async () => {
+Deno.test("workman/projectStatus promotes a headless file to its own headed project", async () => {
   const dir = await Deno.makeTempDir();
   const lonePath = `${dir}/lone.wm`;
   await Deno.writeTextFile(lonePath, "let value = 1;");
@@ -1541,7 +1541,7 @@ Deno.test("workman/projectStatus reports a detached context for a headless file"
   const status = messages.find((message) => message.id === 2)?.result as {
     selected: { kind: string; headPath: string; moduleCount: number };
   };
-  assertEquals(status.selected.kind, "detached");
+  assertEquals(status.selected.kind, "headed");
   assertEquals(fileUriToPath(pathToFileUri(status.selected.headPath)), lonePath);
   assertEquals(status.selected.moduleCount, 1);
 });

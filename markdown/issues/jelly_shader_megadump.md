@@ -99,9 +99,10 @@ combinator choice was wrong. This will bite again.
 GPU-called helpers must be lexically inside the selected `@gpu` root
 (`gpu.function.unsupported` otherwise). Every shader copy-pastes its
 noise/SDF helpers per root; no shader library is possible. The
-jelly/host split works only because *nothing GPU* crosses the boundary
-(opaque fragment + nominal uniforms). `v2_normalize.ts` still rejects
-cross-module factories (`gpu.fragment.cross-module`).
+jelly/host split works because *nothing in the GPU call graph* crosses the
+boundary (only the opaque fragment and nominal uniforms do). A host module
+may select an imported factory, but the factory, returned `@gpu` body, and
+GPU-local helpers must still be owned by one shader module.
 
 ### [OPEN] No records in shader bodies
 Only tuples/ADTs/scalars. SDF hit structs, material params, ray bundles

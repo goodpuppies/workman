@@ -1,13 +1,11 @@
 import type { AuditableDiagnostic } from "../diagnostic_writer.ts";
 import { type EnhancedDiagnosticRenderOptions, renderHeaderLine } from "./rendering.ts";
 import { neutralTypeCollisionProfile } from "./neutral_type_collision.ts";
-import { missingEntrypointProfile } from "./missing_entrypoint.ts";
 import { type AuthoredDiagnosticProfile, profileMatches } from "./profile.ts";
 import { recursiveResultAgreementProfile } from "./recursive_result_agreement.ts";
 import { type Document, line, span } from "../../tooling/tuiman/document.ts";
 
 const authoredDiagnosticProfiles: AuthoredDiagnosticProfile[] = [
-  missingEntrypointProfile,
   neutralTypeCollisionProfile,
   recursiveResultAgreementProfile,
 ];

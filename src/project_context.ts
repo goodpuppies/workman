@@ -1,4 +1,4 @@
-import { dirname, normalize, posix, relative, resolve, sep } from "node:path";
+import { basename, dirname, normalize, posix, relative, resolve, sep } from "node:path";
 import { runtime } from "./io.ts";
 import type { ProjectSnapshot } from "./module_interface.ts";
 import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./lsp/import_scan.ts";
@@ -16,6 +16,7 @@ export class ReverseImportDiscoveryIndex {
   #dependencies = new Map<string, Set<string>>();
   #dependents = new Map<string, Set<string>>();
   #heads = new Set<string>();
+  #namedHeads = new Set<string>();
   #closestHeadQueries = 0;
 
   get closestHeadQueries(): number {
@@ -40,6 +41,8 @@ export class ReverseImportDiscoveryIndex {
     }
     if (hasTopLevelMainBinding(source)) this.#heads.add(file);
     else this.#heads.delete(file);
+    if (basename(file).toLowerCase() === "main.wm") this.#namedHeads.add(file);
+    else this.#namedHeads.delete(file);
   }
 
   remove(path: string): void {
@@ -49,6 +52,7 @@ export class ReverseImportDiscoveryIndex {
     }
     this.#dependencies.delete(file);
     this.#heads.delete(file);
+    this.#namedHeads.delete(file);
   }
 
   /**
@@ -61,21 +65,24 @@ export class ReverseImportDiscoveryIndex {
   }
 
   /**
-   * Return every main-bearing reverse importer, ordered by import distance. Directory proximity
-   * and canonical path provide the same deterministic tie breaks as closestHead.
+   * Return every main-bearing reverse importer, ordered by import distance. If the reverse graph
+   * has no explicit `main`, filename-based `main.wm` heads provide the same deterministic fallback.
    */
   headsFor(path: string): readonly string[] {
     const start = canonicalPath(path);
     const visited = new Set([start]);
     let frontier = [start];
     const heads: string[] = [];
+    const namedHeads: string[] = [];
     while (frontier.length > 0) {
-      heads.push(
-        ...frontier.filter((candidate) => this.#heads.has(candidate)).sort(
+      const sortHeads = (candidates: string[]) => candidates.sort(
           (left, right) =>
             headDirectoryDistance(start, left) - headDirectoryDistance(start, right) ||
             left.localeCompare(right),
-        ),
+      );
+      heads.push(...sortHeads(frontier.filter((candidate) => this.#heads.has(candidate))));
+      namedHeads.push(
+        ...sortHeads(frontier.filter((candidate) => this.#namedHeads.has(candidate))),
       );
       const next = new Set<string>();
       for (const current of frontier) {
@@ -87,7 +94,7 @@ export class ReverseImportDiscoveryIndex {
       }
       frontier = [...next];
     }
-    return heads;
+    return heads.length > 0 ? heads : namedHeads;
   }
 
   dependenciesOf(path: string): ReadonlySet<string> {
@@ -97,7 +104,7 @@ export class ReverseImportDiscoveryIndex {
 
 export type ProjectContextSelection = Readonly<{
   snapshot: ProjectSnapshot;
-  reason: "active-reachable" | "closest-head" | "detached";
+  reason: "active-reachable" | "closest-head" | "self-head" | "detached";
 }>;
 
 export type AnalyzeProjectHead = (
@@ -236,6 +243,21 @@ export class ProjectContextRegistry {
       // rejected that import and removed its target from the certified project snapshot. The
       // document must then get its own recovered context instead of being assigned a project that
       // cannot answer semantic queries for it.
+    }
+
+    if (head === undefined) {
+      const key = contextKey("headed", file, configurationKey);
+      const existing = this.#active.get(key);
+      if (existing) {
+        existing.lastUsed = ++this.#clock;
+        if (rememberDocument) this.#documents.set(documentKey, key);
+        return Object.freeze({ snapshot: existing.snapshot, reason: "self-head" });
+      }
+      const snapshot = await analyzeHead(file, configurationKey);
+      const context = activeContext(key, configurationKey, snapshot, ++this.#clock);
+      this.#active.set(key, context);
+      if (rememberDocument) this.#documents.set(documentKey, key);
+      return Object.freeze({ snapshot, reason: "self-head" });
     }
 
     const key = contextKey("detached", file, configurationKey);

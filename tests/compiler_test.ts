@@ -94,6 +94,20 @@ Deno.test("arity raises local recursive tuple functions", async () => {
   assertEquals(js.includes("__arg = __wm_tuple"), false);
 });
 
+Deno.test("tail-compiles recursion forwarded through a local helper", async () => {
+  const js = await compile(`
+    let rec loop = (remaining, acc) => {
+      let step = (next) => { loop(next, acc + 1) };
+      if (remaining == 0) { acc } else { step(remaining - 1) }
+    };
+    let main = () => { print(loop(100000, 0)) };
+  `);
+
+  assertStringIncludes(js, ": while (true)");
+  assertStringIncludes(js, "continue __wm_tail_");
+  assertEquals(js.includes("return step_"), false);
+});
+
 Deno.test("matches payload-free constructors by singleton identity", async () => {
   const js = await compile(`
     type Mode = Default | Ident;

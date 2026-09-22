@@ -69,8 +69,13 @@ The reachable graph from a project head is acyclic; a cycle is a compile-time er
 complete ordered import-edge path. Evaluation initializes dependencies before their importer,
 once per `ModuleId`, visiting outgoing edges depth-first in source order. A failed initialization
 is remembered and rethrown; effects performed before the failure are retained, and importers
-never start. Invoking an exported `main` is target-specific behavior after successful entry
-initialization, not part of module initialization.
+never start. Executable targets invoke an exported `main` after successful entry initialization
+when one exists; otherwise successful entry initialization is the complete program.
+
+Tooling chooses project heads in this order: the nearest reverse importer declaring `main`; when
+that reverse graph has no such declaration, the nearest reverse importer named `main.wm`; and when
+neither exists, the current file itself. Explicit `main` declarations therefore retain priority,
+while declaration-driven scripts and libraries still receive complete project analysis.
 
 ## Initial basis
 

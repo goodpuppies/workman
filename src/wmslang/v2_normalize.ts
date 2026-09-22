@@ -72,7 +72,6 @@ export class GpuSliceNormalizationError extends Error {
   constructor(
     readonly code:
       | "gpu.fragment.count"
-      | "gpu.fragment.cross-module"
       | "gpu.function.unsupported"
       | "gpu.capture.illegal"
       | "gpu.type.unsupported"
@@ -181,6 +180,7 @@ class SliceNormalizer {
   readonly path: string;
   readonly node: ModuleNode;
   readonly result: InferResult;
+  readonly selectorResult: InferResult;
   readonly bindings: BindingFacts;
   readonly shared: SharedCoreModule;
 
@@ -210,6 +210,7 @@ class SliceNormalizer {
   readonly #inlineLambdaBindings = new Map<LambdaExpr, number>();
   readonly #lambdasByNodeId = new Map<number, LambdaExpr>();
   readonly #expressionsByNodeId = new Map<number, Expr>();
+  readonly #declarationsByNodeId = new Map<number, Decl>();
   readonly #bindingsByNodeId = new Map<number, Binding>();
   readonly #coreFunctionsByNodeId = new Map<number, Extract<CoreExpr, { kind: "CoreFn" }>>();
   readonly #valueBindingOwner = new Map<number, number>();
@@ -245,6 +246,11 @@ class SliceNormalizer {
       this.root.moduleId,
       "selected root inference result",
     );
+    this.selectorResult = required(
+      analysis.results,
+      this.selector.moduleId,
+      "fragment selector inference result",
+    );
     this.bindings = required(
       analysis.bindings,
       this.root.moduleId,
@@ -269,14 +275,6 @@ class SliceNormalizer {
       for (const id of facts.local) maxBindingId = Math.max(maxBindingId, id);
     }
     this.#nextSyntheticBindingId = maxBindingId + 1;
-    if (this.selector.moduleId !== this.root.moduleId) {
-      throw new GpuSliceNormalizationError(
-        "gpu.fragment.cross-module",
-        this.selector.path,
-        this.selector.call,
-        "wmslang v1 requires the fragment selection and selected root in one module",
-      );
-    }
   }
 
   normalize(): GpuSliceElaborationInput {
@@ -296,7 +294,7 @@ class SliceNormalizer {
       builtinCatalog: builtinCatalog(),
       root: {
         functionId: 0,
-        selectorSpanId: this.span(this.selector.call),
+        selectorSpanId: this.span(this.selector.call, this.selector.path),
         environmentId: this.environments.length === 0 ? -1 : 0,
       },
       environments: this.environments,
@@ -353,6 +351,9 @@ class SliceNormalizer {
       if (expression.kind === "Lambda" && expression.node?.id !== undefined) {
         this.#lambdasByNodeId.set(expression.node.id, expression);
       }
+      if (declaration?.node?.id !== undefined) {
+        this.#declarationsByNodeId.set(declaration.node.id, declaration);
+      }
       if (declaration?.kind !== "LetDecl") return;
       for (const binding of declaration.bindings) {
         if (binding.node?.id !== undefined) this.#bindingsByNodeId.set(binding.node.id, binding);
@@ -366,14 +367,6 @@ class SliceNormalizer {
   addEnvironment(): void {
     const factory = this.root.factory;
     if (!factory) return;
-    if (factory.path !== this.path) {
-      throw new GpuSliceNormalizationError(
-        "gpu.fragment.cross-module",
-        factory.path,
-        factory.lambda,
-        "the v2 shader factory and its GPU body must be declared in one module",
-      );
-    }
     if (factory.parameter.pattern.kind !== "PVar") {
       throw this.error(
         "gpu.pattern.unsupported",
@@ -383,7 +376,7 @@ class SliceNormalizer {
     }
     const bindingId = this.bindings.binders.get(factory.parameter.pattern);
     const appliedEnvironment = this.selector.environmentArgument
-      ? this.result.types.get(this.selector.environmentArgument)
+      ? this.selectorResult.types.get(this.selector.environmentArgument)
       : undefined;
     const parameterFact = this.analysis.patternFacts.byParam.get(factory.parameter);
     const environmentSource = appliedEnvironment ?? parameterFact?.type;
@@ -544,7 +537,7 @@ class SliceNormalizer {
     for (const site of this.#functionSites) {
       templates.set(site.bindingId, this.functionTemplate(site));
     }
-    const selected = this.result.types.get(this.selector.argument);
+    const selected = this.selectorResult.types.get(this.selector.argument);
     const selectedType = selected ? prune(selected) : undefined;
     if (!selectedType || selectedType.tag !== "fn" || selectedType.params.length !== 1) {
       throw this.error(
@@ -1428,11 +1421,30 @@ class SliceNormalizer {
         itemIds.push(itemId);
         return;
       }
-      if (item.kind !== "CoreLet" || item.recursive || item.bindings.length !== 1) {
-        throw this.coreError(
+      if (item.kind !== "CoreLet") {
+        const message = item.kind === "CoreType"
+          ? `shader-local type declaration ${item.name} is unsupported; declare it at module scope beside the shader factory`
+          : item.kind === "CoreRecord"
+          ? `shader-local record declaration ${item.name} is unsupported; declare it at module scope beside the shader factory`
+          : "imports are not supported inside shader blocks";
+        throw this.coreDeclarationError(
           "gpu.expression.unsupported",
-          expression,
-          "shader blocks accept one non-recursive immutable binding per let declaration",
+          item,
+          message,
+        );
+      }
+      if (item.recursive) {
+        throw this.coreDeclarationError(
+          "gpu.expression.unsupported",
+          item,
+          "shader-local recursive values are unsupported; only local function declarations may use let rec",
+        );
+      }
+      if (item.bindings.length !== 1) {
+        throw this.coreDeclarationError(
+          "gpu.expression.unsupported",
+          item,
+          "shader let declarations must bind exactly one immutable value",
         );
       }
       const binding = item.bindings[0];
@@ -1521,6 +1533,16 @@ class SliceNormalizer {
       this.sourceExpr(expression) ?? this.root.lambda,
       message,
     );
+  }
+
+  coreDeclarationError(
+    code: GpuSliceNormalizationError["code"],
+    declaration: CoreDecl,
+    message: string,
+  ): GpuSliceNormalizationError {
+    const id = declaration.node?.id;
+    const source = id === undefined ? undefined : this.#declarationsByNodeId.get(id);
+    return new GpuSliceNormalizationError(code, this.path, source ?? this.root.lambda, message);
   }
 
   expr(expression: Expr): number {

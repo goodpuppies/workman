@@ -4,7 +4,7 @@ from "./generated/surface_types.wm" import {
   ProgramNode, TopPhraseNode,
   LetDeclarationNode, LetBindingNode,
   PinnedPatternNode, ConstructorPatternNode,
-  LambdaExpressionNode, ParametersNode, ParameterNode,
+  LambdaExpressionNode, ParametersNode, ParameterNode, CaptureClauseNode,
   BlockExpressionNode, BlockBodyNode, BlockItemNode,
   IfExpressionNode,
   TupleExpressionNode, GroupedExpressionNode,
@@ -133,6 +133,7 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
   (LambdaExpressionNode(
     parameters,
     returnAnnotation,
+    captureClause,
     arrow,
     body,
     trailingReturnAnnotation,
@@ -141,16 +142,19 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
     match((
       renderOptionalNode(parameters, depth, materializeMarks),
       renderOptionalNode(returnAnnotation, depth, materializeMarks),
+      renderOptionalNode(captureClause, depth, materializeMarks),
       renderSurfaceNodeAt(body, depth, materializeMarks),
       renderOptionalNode(trailingReturnAnnotation, depth, materializeMarks)
     )) {
       (
         Some(parametersText),
         Some(returnText),
+        Some(captureText),
         Some(bodyText),
         Some(trailingText)
       ) => {
         let before = if (returnText == "") { "" } else { ": " ++ returnText };
+        let captures = if (captureText == "") { "" } else { " " ++ captureText };
         let after = if (trailingText == "") { "" } else { ": " ++ trailingText };
         let bodySeparator = match(body) {
           BlockExpressionNode(MarkedValue(mark, fallback), items, result, close, bodySpan) => {
@@ -159,12 +163,19 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
           _ => { " " },
         };
         Some(
-          parametersText ++ before ++ " " ++ renderSurfaceValue(arrow, materializeMarks) ++
+          parametersText ++ before ++ captures ++ " " ++ renderSurfaceValue(arrow, materializeMarks) ++
           bodySeparator ++ bodyText ++ after
         )
       },
       _ => { None },
     }
+  },
+  (CaptureClauseNode(open, names, close, span), Var(depth), Var(materializeMarks)) => {
+    Some(
+      renderSurfaceValue(open, materializeMarks) ++
+      joinTokens(names, ", ", "") ++
+      renderSurfaceValue(close, materializeMarks)
+    )
   },
   (ParametersNode(open, parameters, close, span), Var(depth), Var(materializeMarks)) => {
     match(renderNodes(parameters, ", ", "", depth, materializeMarks)) {

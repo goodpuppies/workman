@@ -541,25 +541,23 @@ Deno.test("cli run compiles and executes a wm file", async () => {
   assertEquals(result.stdout, "42\n");
 });
 
-Deno.test("cli run explains when the entry module has no main function", async () => {
+Deno.test("cli run accepts declaration-driven entry modules without main", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/hello.wm`;
-  await Deno.writeTextFile(input, 'let greeting = "hello";');
+  await Deno.writeTextFile(input, 'let _ = print("hello");');
 
   const result = await runCli(["run", input]);
 
-  assertEquals(result.code, 1);
-  assertEquals(result.stdout, "");
-  assertStringIncludes(result.stderr, "Error: RUNNER[run.missing-entrypoint]");
-  assertStringIncludes(result.stderr, "has no `main` function");
-  assertStringIncludes(result.stderr, "let main = () => {};");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "hello\n");
+  assertEquals(result.stderr, "");
 });
 
-Deno.test("cli run suggests every importing entrypoint with main", async () => {
+Deno.test("cli run executes the selected file instead of redirecting to importing mains", async () => {
   const dir = await Deno.makeTempDir();
   try {
     const library = `${dir}/library.wm`;
-    await Deno.writeTextFile(library, "let answer = 42;");
+    await Deno.writeTextFile(library, 'let _ = print("library");');
     await Deno.writeTextFile(
       `${dir}/main.wm`,
       'from "./library.wm" import * as Library; let main = () => {};',
@@ -571,32 +569,24 @@ Deno.test("cli run suggests every importing entrypoint with main", async () => {
 
     const result = await runCli(["run", library]);
 
-    assertEquals(result.code, 1);
-    assertStringIncludes(result.stderr, "Did you mean one of these entrypoint files?");
-    assertStringIncludes(result.stderr, `${dir}/main.wm`);
-    assertStringIncludes(result.stderr, `${dir}/test.wm`);
+    assertEquals(result.code, 0);
+    assertEquals(result.stdout, "library\n");
+    assertEquals(result.stderr, "");
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
 });
 
-Deno.test("cli err prints the authored and low-level missing-entrypoint diagnostic", async () => {
+Deno.test("cli err accepts a module without main as a valid runnable entry", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/hello.wm`;
   await Deno.writeTextFile(input, 'let greeting = "hello";');
 
   const result = await runCli(["err", input]);
 
-  assertEquals(result.code, 1);
+  assertEquals(result.code, 0);
   assertEquals(result.stdout, "");
-  assertStringIncludes(result.stderr, "-- error 1");
-  assertStringIncludes(result.stderr, "* authored diagnostic:");
-  assertStringIncludes(result.stderr, "let main = () => {};");
-  assertStringIncludes(result.stderr, "* low-level diagnostic:");
-  assertStringIncludes(result.stderr, "rule: Run.EntryPoint");
-  assertStringIncludes(result.stderr, "* compiler trace:");
-  assertStringIncludes(result.stderr, "-- error 1 end");
-  assertStringIncludes(result.stderr, "--- compiler state ---");
+  assertEquals(result.stderr, "err: no compiler or runner errors found\n");
 });
 
 Deno.test("cli compile command keeps js-out path", async () => {
@@ -830,6 +820,30 @@ Deno.test("cli run executes deep direct tail recursion without growing the JS st
 
   assertEquals(result.code, 0);
   assertEquals(result.stdout, "5000050000\n");
+  assertEquals(result.stderr, "");
+});
+
+Deno.test("cli run executes deep tail recursion forwarded through a local helper", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `
+      let rec count = (remaining, acc) => {
+        let step = (next) => { count(next, acc + 1) };
+        if (remaining == 0) { acc } else { step(remaining - 1) }
+      };
+      let main = () => {
+        print(count(100000, 0));
+        void
+      };
+    `,
+  );
+
+  const result = await runCli(["run", input]);
+
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "100000\n");
   assertEquals(result.stderr, "");
 });
 

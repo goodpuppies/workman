@@ -584,6 +584,29 @@ Deno.test("shared Core shader diagnostics retain authored expression spans", asy
   assertEquals(span ? source.slice(span.start, span.end) : "", 'Panic("shader hole")');
 });
 
+Deno.test("shader-local type declarations point to the unsupported declaration", async () => {
+  const source = `
+    let shade = (_coord) => {
+      @gpu;
+      type Direction = Left | Right;
+      let direction = Left;
+      match(direction) {
+        Left => { (1.0, 0.0, 0.0, 1.0) },
+        Right => { (0.0, 0.0, 1.0, 1.0) }
+      }
+    };
+    let fragment = Gpu.fragment(shade);
+  `;
+  const error = await assertRejects(
+    () => analysisFor(source),
+    GpuSliceNormalizationError,
+    "shader-local type declaration Direction is unsupported; declare it at module scope beside the shader factory",
+  );
+  assertEquals(error.code, "gpu.expression.unsupported");
+  const span = error.subject?.node?.span;
+  assertEquals(span ? source.slice(span.start, span.end) : "", "type Direction = Left | Right");
+});
+
 Deno.test("schema v2 tuple destructuring preserves vector lane order", async () => {
   const input = normalizeGpuSliceProgram(
     await analysisFor(`
@@ -685,6 +708,42 @@ Deno.test("schema v5 accepts a concrete imported nominal environment schema", as
   const output = (await realSliceCompiler()).compileGpuSlice(input);
   assertEquals(output.diagnostics, []);
   assertEquals(output.slangSource.includes("float wm_u_0;"), true);
+});
+
+Deno.test("schema v2 selects an imported shader factory from the host module", async () => {
+  const analysis = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([
+      [
+        "/test/shader.wm",
+        `
+          record Inputs = { time: Number };
+          let shade = (inputs: Inputs) => {
+            (_coord) => { @gpu; (sin(inputs.time), 0.0, 0.0, 1.0) }
+          };
+        `,
+      ],
+      [
+        "/test/main.wm",
+        `
+          from "./shader.wm" import { Inputs, shade };
+          let inputs: Inputs = .{ time = 0.5 };
+          let fragment = Gpu.fragment(shade(inputs));
+        `,
+      ],
+    ]),
+  );
+  const input = normalizeGpuSliceProgram(analysis);
+  validateGpuSliceElaborationInput(input);
+
+  assertEquals(input.sourcePath, "/test/shader.wm");
+  assertEquals(input.spans[input.root.selectorSpanId].path, "/test/main.wm");
+  assertEquals(input.environments.map(({ name }) => name), ["Inputs"]);
+  assertEquals(input.environmentFields.map(({ name }) => name), ["time"]);
+  assertEquals(input.functions.map(({ name }) => name), ["fragment"]);
+  const output = (await realSliceCompiler()).compileGpuSlice(input);
+  assertEquals(output.diagnostics, []);
+  assertEquals(output.slangSource.includes("wm_uniforms.wm_u_0"), true);
 });
 
 Deno.test("schema v2 keeps the curried environment boundary closed", async () => {

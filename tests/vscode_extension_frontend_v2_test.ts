@@ -38,6 +38,17 @@ Deno.test("VS Code grammar scopes lowercase let bindings as constants", async ()
   assertEquals(binding.captures["3"].name, "variable.other.constant.workman");
 });
 
+Deno.test("VS Code leaves Workman inlay line length to the language server", async () => {
+  const manifest = JSON.parse(
+    await Deno.readTextFile(resolve(repoRoot, "editors/vscode/package.json")),
+  );
+
+  assertEquals(
+    manifest.contributes.configurationDefaults["[wm]"]["editor.inlayHints.maximumLength"],
+    0,
+  );
+});
+
 Deno.test("VS Code extension wm server config launches `wm lsp` with the frontend artifact env", () => {
   const config = wmServerConfig(
     "/bin/wm",

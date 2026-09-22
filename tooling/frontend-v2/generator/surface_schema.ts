@@ -53,7 +53,8 @@ const constructors: readonly string[] = Object.freeze([
   "MatchFunctionNode<SurfaceToken, SurfaceValue<SurfaceToken>, List<SurfaceToken>, SurfaceValue<SurfaceToken>, SurfaceValue<SurfaceToken>, SurfaceValue<SurfaceToken>, List<SurfaceNode>, SurfaceValue<SurfaceToken>, Span>",
   "AnonymousMatchFunctionNode<SurfaceToken, SurfaceValue<SurfaceToken>, List<SurfaceNode>, SurfaceValue<SurfaceToken>, Span>",
   "MatchArmNode<SurfaceNode, SurfaceValue<SurfaceToken>, SurfaceNode, Span>",
-  "LambdaExpressionNode<Option<SurfaceNode>, Option<SurfaceNode>, SurfaceValue<SurfaceToken>, SurfaceNode, Option<SurfaceNode>, Span>",
+  "LambdaExpressionNode<Option<SurfaceNode>, Option<SurfaceNode>, Option<SurfaceNode>, SurfaceValue<SurfaceToken>, SurfaceNode, Option<SurfaceNode>, Span>",
+  "CaptureClauseNode<SurfaceValue<SurfaceToken>, List<SurfaceToken>, SurfaceValue<SurfaceToken>, Span>",
   "ParametersNode<SurfaceValue<SurfaceToken>, List<SurfaceNode>, SurfaceValue<SurfaceToken>, Span>",
   "ParameterNode<SurfaceNode, Option<SurfaceNode>, Span>",
   "DirectiveNode<SurfaceToken, SurfaceToken, SurfaceValue<SurfaceToken>, Span>",
@@ -188,6 +189,8 @@ const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = 
   ]),
   custom: Object.freeze([
     "MatchFnParams",
+    "CaptureClause",
+    "CaptureList",
   ]),
   list: Object.freeze([
     "ImportSpecList",
@@ -298,6 +301,7 @@ export const surfaceBuilderPlan: Readonly<Record<string, readonly string[]>> = O
   AnonymousMatchFn: ["AnonymousMatchFunctionNode"],
   MatchArm: ["MatchArmNode"],
   Lambda: ["LambdaExpressionNode"],
+  CaptureClause: ["CaptureClauseNode"],
   LambdaBlock: ["BlockExpressionNode"],
   Directive: ["DirectiveNode"],
   Or: ["BinaryExpressionNode"],

@@ -125,6 +125,56 @@ Deno.test("curried environment is reflection-checked and packed into a bound fra
   }
 });
 
+Deno.test("an imported shader factory materializes at a host-module selection", async () => {
+  const compiled = await coreVirtual(
+    "/test/main.wm",
+    new Map([
+      [
+        "/test/shader.wm",
+        `
+          record Uniforms = { time: Number };
+          let shade = (uniforms: Uniforms) => {
+            (_coord) => { @gpu; (uniforms.time, 0.0, 0.0, 1.0) }
+          };
+        `,
+      ],
+      [
+        "/test/main.wm",
+        `
+          from "./shader.wm" import { Uniforms, shade };
+          let uniforms: Uniforms = .{ time = 0.5 };
+          let fragment = Gpu.fragment(shade(uniforms));
+          let main = () => { print(Gpu.uniformByteLength(fragment)) };
+        `,
+      ],
+    ]),
+  );
+  const artifacts = [...compiled.core.shaderArtifacts.values()];
+  const hostJavaScript = emitCoreProgram(compiled.core);
+
+  assertEquals(artifacts.length, 1);
+  assertEquals(artifacts[0].uniformLayout?.recordName, "Uniforms");
+  assertStringIncludes(artifacts[0].wgsl, "wm_uniforms_0.wm_u_0_0");
+  assertStringIncludes(hostJavaScript, "__wm_bind_shader_artifact");
+  assertEquals(hostJavaScript.includes("const shade"), false);
+
+  const directory = await Deno.makeTempDir();
+  const path = `${directory}/main.mjs`;
+  await Deno.writeTextFile(path, hostJavaScript);
+  try {
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0);
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    assertEquals(new TextDecoder().decode(output.stdout), "16\n");
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("signed integer uniforms are reflected and packed without float coercion", async () => {
   const source = `
     record Uniforms = { count: Number, offset: (Number, Number) };

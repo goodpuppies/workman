@@ -10,7 +10,7 @@
     "url": "https://github.com/goodpuppies/workman.git"
   },
   "engines": {
-    "vscode": "^1.91.0"
+    "vscode": "^1.94.0"
   },
   "categories": [
     "Programming Languages"
@@ -27,6 +27,11 @@
     "onLanguage:wm"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "[wm]": {
+        "editor.inlayHints.maximumLength": 0
+      }
+    },
     "commands": [
       {
         "command": "workman.restartLanguageServer",

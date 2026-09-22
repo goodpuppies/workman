@@ -76,7 +76,8 @@ type Operator =
   | Divide           -- `/`
   | Remainder        -- `%`
   | Concatenate      -- `++`
-  | BooleanNot;      -- `!`
+  | BooleanNot       -- `!`
+  | Hole;            -- `?`
 
 -- The closed set of token categories the lexer emits.
 type TokenKind =
@@ -121,7 +122,8 @@ let oneWideKinds = [
   OperatorToken(Remainder),
   OperatorToken(BooleanNot),
   OperatorToken(Divide),
-  OperatorToken(Subtract)
+  OperatorToken(Subtract),
+  OperatorToken(Hole),
 ];
 
 -- Token metadata: kinds whose lexemes always span exactly two characters.

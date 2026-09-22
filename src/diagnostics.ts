@@ -108,45 +108,6 @@ export function genericDiagnostic(
   };
 }
 
-export function missingEntrypointDiagnostic(): FrontendDiagnostic {
-  const writer = createDiagnosticWriter();
-  const origin: SourceAnchor = { kind: "generated", label: "entry module" };
-  const frame = {
-    id: writer.nextId("f"),
-    rule: "Run.EntryPoint",
-    subject: "entry module",
-    anchor: origin,
-    path: ["Run", "EntryPoint"],
-  };
-  const premise = {
-    id: writer.nextId("p"),
-    role: "a main function is declared",
-    predicate: { kind: "present" as const, subject: "main", syntaxCategory: "function" },
-    origin,
-  };
-  const claimId = writer.nextId("cl");
-  writer.add({
-    kind: "claim",
-    id: claimId,
-    claim: { kind: "fact", subject: "entry module", text: "no top-level binding named `main`" },
-    origin,
-  });
-  return {
-    id: writer.nextId("d"),
-    code: "run.missing-entrypoint",
-    severity: "error",
-    primary: origin,
-    failure: {
-      frame,
-      premise,
-      violation: { kind: "missing", observedBoundary: "end of entry module" },
-    },
-    support: writer.buildSupport([claimId]),
-    repairs: [],
-    dependsOn: [],
-  };
-}
-
 export function typeMismatchDiagnostic(
   left: import("./types.ts").Ty,
   right: import("./types.ts").Ty,

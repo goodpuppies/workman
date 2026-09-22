@@ -21,7 +21,7 @@ from "./surface_builders_expr.wm" import {
 };
 from "./surface_builders_postfix.wm" import { buildPostfix };
 from "./surface_builders_pattern.wm" import {
-  buildLetPattern, buildParamPattern, buildParam, buildParamList, buildLambda,
+  buildLetPattern, buildParamPattern, buildParam, buildParamList, buildCaptureList, buildCaptureClause, buildLambda,
   buildPattern, buildPatternAtom, buildListPattern, buildBlockSeqItem, buildBlockSeqBody,
   buildParenSeqItem, buildParenSeqBody, buildParenSeq, buildBlockLike
 };
@@ -121,6 +121,8 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "CtorPattern" => { buildPatternAtom(name, value, span) },
             "Param" => { buildParam(value, span) },
             "ParamList" => { buildParamList(value, span) },
+            "CaptureList" => { buildCaptureList(value, span) },
+            "CaptureClause" => { buildCaptureClause(value, span) },
             "Lambda" => { buildLambda(value, span) },
             "IfExpr" => { buildIf(value, span) },
             "TupleOrGroup" => { buildTupleOrGroup(value, span) },

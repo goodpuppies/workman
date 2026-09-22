@@ -121,13 +121,20 @@ export function resolveGpuFragmentSelections(
 
       let root = rootsByLambda.get(resolved.lambda);
       if (!root) {
+        // A factory's returned lambda is not a separately bound definition, so
+        // `resolved.site` is intentionally absent. Its source provenance still
+        // belongs to the factory module, even when Gpu.fragment is called from
+        // an importing host module.
+        const rootPath = resolved.site?.path ?? factoryApplication?.factory.path ?? input.path;
+        const rootModuleId = resolved.site?.moduleId ?? factoryApplication?.factory.moduleId ??
+          input.moduleId;
         const bindingId = resolved.site && resolved.site.binding.pattern.kind === "PVar"
           ? resolved.site.bindings.binders.get(resolved.site.binding.pattern)
           : undefined;
         root = {
           id: roots.length as GpuRootId,
-          path: resolved.site?.path ?? input.path,
-          moduleId: resolved.site?.moduleId ?? input.moduleId,
+          path: rootPath,
+          moduleId: rootModuleId,
           lambda: resolved.lambda,
           binding: resolved.site?.binding,
           bindingId,
