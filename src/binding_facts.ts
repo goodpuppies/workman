@@ -256,6 +256,25 @@ function resolveDecl(
   }
   if (decl.kind === "JsImportDecl") {
     const next = cloneBindingEnv(env);
+    if (decl.clause.kind === "Namespace" && decl.clause.specs) {
+      const aliasId = ids.binding();
+      facts.jsImportBinders.set(decl, aliasId);
+      facts.local.add(aliasId);
+      if (topLevel) facts.topLevel.add(aliasId);
+      next.values.set(decl.clause.alias, aliasId);
+      const values = new Map<string, BindingId>();
+      for (const spec of decl.clause.specs) {
+        const id = ids.binding();
+        facts.jsImportBinders.set(spec, id);
+        facts.local.add(id);
+        if (topLevel) facts.topLevel.add(id);
+        values.set(spec.name, id);
+      }
+      const structureId = ids.structure();
+      facts.jsStructureBinders.set(decl, structureId);
+      next.structures.set(decl.clause.alias, { id: structureId, values });
+      return next;
+    }
     if (decl.clause.kind === "Namespace") {
       const id = ids.binding();
       facts.jsImportBinders.set(decl, id);

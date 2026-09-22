@@ -1,0 +1,10 @@
+from c.header("examples/c_ffi/fixtures/vec3.h", lib: "./examples/c_ffi/fixtures/libvec3.so") import unsafe {
+  v2dot,
+};
+
+let a = .{ x = 1.0, y = 2.0 };
+let b = .{ x = 3.0, y = 4.0 };
+
+let main = () => {
+  print(v2dot(a, b))
+};

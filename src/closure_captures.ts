@@ -300,7 +300,7 @@ function validateCaptureContracts(
         diagnostics.push(genericDiagnostic(
           "error",
           "capture.nonlocal",
-          `\`${name}\` is an imported or basis dependency, not a Workman-owned closure capture`,
+          `\`${name}\` is a static constructor or external dependency, not a Workman-owned closure capture`,
           diagnosticNode,
         ));
         continue;
@@ -332,6 +332,7 @@ function validateCaptureContracts(
 
 function isWorkmanCaptureBinding(id: BindingId, facts: BindingFacts): boolean {
   return facts.local.has(id) &&
+    ![...facts.recordConstructors.values()].includes(id) &&
     !facts.jsImportSourceBindings.has(id) &&
     ![...facts.jsImportBinders.values()].includes(id);
 }

@@ -93,7 +93,7 @@ export function collectFfiDecl(
     const deep = isDeepImportSpec(spec);
     const reflected = !spec.type || deep;
     const allowUnsafeTypeVariables = decl.clause.unsafe && !!spec.type && !deep;
-    if (spec.type && !deep) {
+    if (spec.type && !deep && !isCTarget(decl.target)) {
       rejectUnimportedManualForeignTypes(
         spec.type,
         importedTypeRefs,
@@ -585,4 +585,8 @@ function jsTargetMemberConstructorTarget(target: JsTarget, name: string): JsTarg
     };
   }
   return { ...target, kind: "JsConstructor", path: name };
+}
+
+function isCTarget(target: JsTarget): boolean {
+  return target.kind === "CHeader" || target.kind === "CLib";
 }

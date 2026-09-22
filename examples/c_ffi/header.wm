@@ -1,0 +1,7 @@
+from c.header("stdio.h") import unsafe {
+  puts,
+};
+
+let main = () => {
+  puts("hello from stdio.h");
+};

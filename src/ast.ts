@@ -116,9 +116,19 @@ export type JsTarget =
   | Located<{ kind: "JsModule"; specifier: string }>
   | Located<{ kind: "JsWorker"; specifier: string }>
   | Located<{ kind: "JsReceiver"; path: string[] }>
-  | Located<{ kind: "JsConstructor"; path: string }>;
+  | Located<{ kind: "JsConstructor"; path: string }>
+  | Located<{ kind: "CHeader"; header: string; lib?: string }>
+  | Located<{ kind: "CLib"; name: string }>;
 export type JsImportClause =
-  | Located<{ kind: "Namespace"; alias: string; unsafe?: boolean }>
+  | Located<
+    {
+      kind: "Namespace";
+      alias: string;
+      unsafe?: boolean;
+      specs?: JsImportSpec[];
+      typeNames?: string[];
+    }
+  >
   | Located<{ kind: "Named"; specs: JsImportSpec[]; alias?: string; unsafe?: boolean }>;
 export type JsImportSpec = Located<{
   name: string;

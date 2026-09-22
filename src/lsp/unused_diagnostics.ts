@@ -28,7 +28,10 @@ export function unusedDiagnostics(
 ): LspDiagnostic[] {
   if (moduleInterface.completeness.occurrences !== "complete") return [];
 
-  const imports = importCandidates(moduleInterface);
+  const imports = [
+    ...importCandidates(moduleInterface),
+    ...ffiImportCandidates(moduleInterface),
+  ];
   const importSpans = new Set(imports.map((candidate) => spanKey(candidate.span)));
   const candidates = [
     ...localCandidates(moduleInterface).filter((candidate) =>
@@ -48,6 +51,29 @@ export function unusedDiagnostics(
       message: candidate.message,
       tags: [1],
     }));
+}
+
+function ffiImportCandidates(moduleInterface: ModuleInterface): UnusedCandidate[] {
+  return moduleInterface.ffiFacts.imports.flatMap((imported) => {
+    if (!imported.structureAlias) return [];
+    const occurrence = moduleInterface.occurrences.find((candidate) =>
+      candidate.role === "import-alias" &&
+      candidate.target.kind === "structure" &&
+      candidate.target.id === imported.structureAlias!.id
+    );
+    if (!occurrence) return [];
+    const namespaceValue = imported.bindings.find((binding) =>
+      binding.localName === imported.structureAlias!.name
+    );
+    return [importCandidate(
+      occurrence.name,
+      occurrence.span,
+      [
+        occurrence.target,
+        ...(namespaceValue ? [{ kind: "value" as const, id: namespaceValue.id }] : []),
+      ],
+    )];
+  });
 }
 
 /** Warn whenever the standard Result.debug escape hatch is referenced. */

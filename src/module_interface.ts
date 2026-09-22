@@ -392,7 +392,9 @@ export type SemanticJsTarget =
   | Readonly<{ kind: "module"; specifier: string }>
   | Readonly<{ kind: "worker"; specifier: string }>
   | Readonly<{ kind: "receiver"; path: readonly string[] }>
-  | Readonly<{ kind: "constructor"; path: string }>;
+  | Readonly<{ kind: "constructor"; path: string }>
+  | Readonly<{ kind: "c-header"; header: string; lib?: string }>
+  | Readonly<{ kind: "c-lib"; name: string }>;
 
 export type SemanticJsImport = Readonly<{
   span: SourceSpan;
@@ -1053,7 +1055,11 @@ function semanticFfiFacts(
         target: semanticJsTarget(declaration.target),
         unsafe: clause.unsafe ?? false,
         typeOnly: declaration.typeOnly ?? false,
-        structureAlias: clause.kind === "Named" && clause.alias && structureId !== undefined
+        structureAlias: structureId === undefined
+          ? undefined
+          : clause.kind === "Namespace"
+          ? Object.freeze({ name: clause.alias, id: structureId })
+          : clause.alias
           ? Object.freeze({ name: clause.alias, id: structureId })
           : undefined,
         bindings: Object.freeze(importedBindings),
@@ -1141,6 +1147,14 @@ function semanticJsTarget(
       return Object.freeze({ kind: "receiver", path: Object.freeze([...target.path]) });
     case "JsConstructor":
       return Object.freeze({ kind: "constructor", path: target.path });
+    case "CHeader":
+      return Object.freeze({
+        kind: "c-header",
+        header: target.header,
+        ...(target.lib ? { lib: target.lib } : {}),
+      });
+    case "CLib":
+      return Object.freeze({ kind: "c-lib", name: target.name });
   }
 }
 
@@ -4092,10 +4106,11 @@ function semanticOccurrences(
   }
   for (const [declaration, id] of bindings.jsStructureBinders) {
     const clause = declaration.sourceClause ?? declaration.clause;
-    if (clause.kind !== "Named" || !clause.alias) continue;
+    const alias = clause.alias;
+    if (!alias) continue;
     addSemanticOccurrence(
       occurrences,
-      clause.alias,
+      alias,
       "import-alias",
       { kind: "structure", id },
       clause.node ?? declaration.node,

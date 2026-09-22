@@ -15,6 +15,8 @@ const constructors: readonly string[] = Object.freeze([
   "JavaScriptMetaTargetNode<SurfaceToken, Span>",
   "JavaScriptModuleTargetNode<SurfaceToken, SurfaceValue<SurfaceToken>, SurfaceToken, SurfaceValue<SurfaceToken>, Span>",
   "JavaScriptWorkerTargetNode<SurfaceToken, SurfaceValue<SurfaceToken>, SurfaceToken, SurfaceValue<SurfaceToken>, Span>",
+  "CHeaderTargetNode<SurfaceValue<SurfaceToken>, Option<SurfaceValue<SurfaceToken>>, Span>",
+  "CLibTargetNode<SurfaceValue<SurfaceToken>, Span>",
   "JavaScriptImportClauseNode<Option<SurfaceToken>, SurfaceNode, Span>",
   "JavaScriptNamedClauseNode<SurfaceToken, List<SurfaceNode>, SurfaceValue<SurfaceToken>, Option<SurfaceNode>, Span>",
   "JavaScriptImportSpecificationNode<SurfaceToken, Option<SurfaceNode>, Option<SurfaceNode>, Span>",
@@ -263,6 +265,8 @@ export const surfaceBuilderPlan: Readonly<Record<string, readonly string[]>> = O
     "JavaScriptMetaTargetNode",
     "JavaScriptModuleTargetNode",
     "JavaScriptWorkerTargetNode",
+    "CHeaderTargetNode",
+    "CLibTargetNode",
   ],
   JsImportClause: ["JavaScriptImportClauseNode"],
   JsImportClauseBody: [

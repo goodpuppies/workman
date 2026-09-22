@@ -18,7 +18,14 @@ import {
 } from "../types.ts";
 import { hasUnguardedRecursiveRef, referencesTypeName, rejectDuplicates } from "./decl_helpers.ts";
 import { deriveInferContext, type InferContext } from "./context.ts";
-import { bindLongType, bindType, bindValue, staticEnv, type StrEnv } from "./environment.ts";
+import {
+  bindLongType,
+  bindType,
+  bindValue,
+  insertQualified,
+  staticEnv,
+  type StrEnv,
+} from "./environment.ts";
 import {
   constrainBinding,
   generalizeBinding,
@@ -115,10 +122,12 @@ function rejectMutualAliasCycles(
   declarations: readonly Extract<Decl, { kind: "TypeDecl" }>[],
 ) {
   const aliases = new Map(
-    declarations.filter((declaration) => declaration.alias).map((declaration) => [
-      declaration.name,
-      declaration,
-    ] as const),
+    declarations.filter((declaration) => declaration.alias).map((declaration) =>
+      [
+        declaration.name,
+        declaration,
+      ] as const
+    ),
   );
   const visiting = new Set<string>();
   const visited = new Set<string>();
@@ -195,8 +204,16 @@ function inferRecordDecl(
   const info = freshTypeInfo(decl.name, decl.params.length);
   recordTypeDeclarationFact(facts, decl, info);
   registerTypeInfo(typeEnv, info);
-  bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
-  if (exported) typeExports.set(decl.name, info);
+  const path = parseLongId(decl.name);
+  const qualified = isQualified(path);
+  if (qualified) {
+    // Dotted names (`Raylib.Vector2`) bind into the namespace structure so
+    // the type and its constructor stay inaccessible unqualified.
+    bindLongType(strEnv, path, info);
+  } else {
+    bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
+  }
+  if (exported && !qualified) typeExports.set(decl.name, info);
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
   decl.params.forEach((name, parameterIndex) =>
     recordTypeVariableDeclarationFact(
@@ -235,14 +252,19 @@ function inferRecordDecl(
     status: "record-constructor" as const,
     node: decl.node,
   };
-  bindValue(staticEnv(strEnv, typeEnv, env), decl.name, constructor);
+  const valueEnvironment = staticEnv(strEnv, typeEnv, env);
+  if (qualified) {
+    insertQualified(strEnv, path, (structure, member) => bindValue(structure, member, constructor));
+  } else {
+    bindValue(valueEnvironment, decl.name, constructor);
+  }
   recordBindingFact(facts, decl.name, {
     subject: "binding",
     instantiated: constructor.type,
     general: constructor,
     origin: originForScheme(decl.name, constructor),
   });
-  if (exported) {
+  if (exported && !qualified) {
     exports.set(decl.name, constructor);
   }
 }

@@ -914,6 +914,8 @@ requires a captureless lambda, and listing an unused binding produces a warning.
 omitted, captures remain inferred and the language server displays a `|name, ...|` inlay before the
 lambda arrow. Workman module `let` values are part of the generated module environment and therefore
 participate in capture clauses; imported and basis-owned values remain external dependencies.
+Nominal constructors, including ordered record constructors synthesized for C struct types, are
+statically resolved and do not enter a closure's captured environment.
 
 ### 8. Out of Scope (for now)
 

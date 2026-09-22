@@ -67,6 +67,98 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_call = (fn, arg) => __wm_is_tuple(arg) ? fn(...arg) : fn(arg);`,
     `const __wm_js_option_wrap = (value) => value == null ? __wm_basis_None : __wm_basis_Some(value);`,
     `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? null : value?.ctor === -2 ? value.args[0] : value;`,
+    `const __wm_c_text_encoder = new globalThis.TextEncoder();
+const __wm_c_string_to_cstr = (value) => {
+  const bytes = __wm_c_text_encoder.encode(String(value) + "\\0");
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  __wm_c_cstr_cache[__wm_c_cstr_index] = buffer;
+  __wm_c_cstr_index = (__wm_c_cstr_index + 1) % 256;
+  return globalThis.Deno.UnsafePointer.of(buffer);
+};
+const __wm_c_cstr_cache = new globalThis.Array(256);
+let __wm_c_cstr_index = 0;
+const __wm_c_codecs = {};
+const __wm_c_keepalive = [];
+const __wm_c_byte_type_url = "file:///home/ellie/git/byte_type_C/mod.ts";
+let __wm_c_byte_type_promise;
+const __wm_c_bt_async = () => {
+  __wm_c_byte_type_promise ??= import(__wm_c_byte_type_url);
+  return __wm_c_byte_type_promise;
+};
+const __wm_c_setup_codec = async (descriptor) => {
+  const bt = await __wm_c_bt_async();
+  const fields = {};
+  for (const field of descriptor.fields) fields[field.name] = bt[field.codec];
+  const codec = bt.createSizedStruct(fields);
+  __wm_c_codecs[descriptor.name] = {
+    codec,
+    size: descriptor.size,
+    fieldNames: descriptor.fields.map((field) => field.name),
+  };
+};
+const __wm_c_struct_new = (name, args) => {
+  const entry = __wm_c_codecs[name];
+  if (args.length === 1 && globalThis.Array.isArray(args[0]) && entry.fieldNames.length > 1) {
+    args = args[0];
+  }
+  const value = {};
+  entry.fieldNames.forEach((field, index) => { value[field] = args[index]; });
+  const buffer = new ArrayBuffer(entry.size);
+  entry.codec.write(value, new DataView(buffer));
+  __wm_c_keepalive.push(buffer);
+  return globalThis.Deno.UnsafePointer.of(buffer);
+};
+const __wm_c_struct_get = (name, pointer, field) => {
+  const entry = __wm_c_codecs[name];
+  const view = new globalThis.Deno.UnsafePointerView(pointer);
+  const dataView = new DataView(view.getArrayBuffer(entry.size));
+  return entry.codec.read(dataView)[field];
+};
+const __wm_c_call = (symbol, args, converters, resultConverter) => {
+  if (args.length === 1 && globalThis.Array.isArray(args[0]) && converters.length > 1) {
+    args = args[0];
+  }
+  const converted = args.map((arg, index) => {
+    const converter = converters[index];
+    switch (converter) {
+      case "string-to-cstr": return __wm_c_string_to_cstr(arg);
+      case "option-string-to-cstr": {
+        const unwrapped = __wm_js_option_unwrap(arg);
+        return unwrapped === null ? null : __wm_c_string_to_cstr(unwrapped);
+      }
+      case "option-unwrap": return __wm_js_option_unwrap(arg);
+      case "number-to-bigint": return globalThis.BigInt(globalThis.Math.trunc(arg));
+      default: {
+        if (typeof converter === "object" && converter.kind === "struct-by-value") {
+          return __wm_c_struct_to_buffer(converter.name, arg);
+        }
+        return arg;
+      }
+    }
+  });
+  const result = symbol(...converted);
+  switch (resultConverter) {
+    case "cstr-to-string": {
+      return result == null
+        ? __wm_basis_None
+        : __wm_basis_Some(new globalThis.Deno.UnsafePointerView(result).getCString());
+    }
+    case "option-wrap": return __wm_js_option_wrap(result);
+    default: {
+      if (typeof resultConverter === "object" && resultConverter.kind === "struct-read") {
+        return __wm_c_codecs[resultConverter.name].codec.read(new DataView(result));
+      }
+      return result;
+    }
+  }
+};
+const __wm_c_struct_to_buffer = (name, value) => {
+  const entry = __wm_c_codecs[name];
+  const buffer = new ArrayBuffer(entry.size);
+  entry.codec.write(value, new DataView(buffer));
+  __wm_c_keepalive.push(buffer);
+  return buffer;
+};`,
     `const __wm_js_to_workman = (value, converter) => {
   if (converter === "option") return __wm_js_option_wrap(value);
   if (typeof converter === "object" && converter.kind === "tuple") {

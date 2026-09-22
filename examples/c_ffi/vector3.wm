@@ -1,0 +1,13 @@
+from c.header("examples/c_ffi/fixtures/vec3.h", lib: "./examples/c_ffi/fixtures/libvec3.so") import unsafe {
+  dot3,
+};
+from c.header("examples/c_ffi/fixtures/vec3.h") import type { Vector3 };
+
+let main = () => {
+  let a = newVector3(1, 2, 3);
+  let b = newVector3(4, 5, 6);
+  let ax = getVector3_x(a);
+  let d = dot3(Some(a), Some(b));
+  print(ax);
+  print(d);
+};

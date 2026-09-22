@@ -52,6 +52,19 @@ Deno.test("lsp suppresses underscore-prefixed unused imports", async () => {
   assertEquals(await compactDiagnostics(main), []);
 });
 
+Deno.test("lsp recognizes qualified uses of a C namespace import", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  const root = Deno.cwd();
+  await Deno.writeTextFile(
+    main,
+    `from c.header("${root}/examples/c_ffi/fixtures/vec3.h", lib: "${root}/examples/c_ffi/fixtures/libvec3.so") import unsafe * as C;
+     let main = () => { C.v2dot(C.V2(1.0, 2.0), C.V2(3.0, 4.0)) };`,
+  );
+
+  assertEquals(await compactDiagnostics(main), []);
+});
+
 Deno.test("lsp does not warn for unused public nominal APIs", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;

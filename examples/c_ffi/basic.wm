@@ -1,0 +1,7 @@
+from c.lib("libc") import unsafe {
+  printf: String -> Number,
+};
+
+let main = () => {
+  printf("hello from C\n");
+};

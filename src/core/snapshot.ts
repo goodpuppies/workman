@@ -28,7 +28,13 @@ function showDecl(decl: CoreDecl): string {
       if (decl.target.kind === "JsConstructor") {
         return `import js.constructor(${JSON.stringify(decl.target.path)})`;
       }
-      return `import js.receiver(${decl.target.path.join(".")})`;
+      if (decl.target.kind === "JsReceiver") {
+        return `import js.receiver(${decl.target.path.join(".")})`;
+      }
+      if (decl.target.kind === "CHeader") {
+        return `import c.header(${JSON.stringify(decl.target.header)})`;
+      }
+      return `import c.lib(${JSON.stringify(decl.target.name)})`;
     case "CoreLet": {
       const head = `let${decl.recursive ? " rec" : ""}`;
       return `${head} ${

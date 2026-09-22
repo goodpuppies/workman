@@ -191,7 +191,7 @@ function modifyMap<K, V>(left: Map<K, V>, right: ReadonlyMap<K, V>): void {
   for (const [key, value] of right) left.set(key, value);
 }
 
-function insertQualified(
+export function insertQualified(
   strEnv: StrEnv,
   path: LongId,
   insert: (environment: StaticEnv, member: string) => void,

@@ -49,7 +49,7 @@ Deno.test("compiles factorial and ADT match", async () => {
   assertStringIncludes(js, "non-exhaustive match");
 });
 
-Deno.test("emits standard-library values from Workman modules", async () => {
+Deno.test("emits only reachable standard-library modules", async () => {
   const js = await compile(`
     let viaResult = Monad.via Result (number) => {
       Ok(number + 1)
@@ -59,7 +59,11 @@ Deno.test("emits standard-library values from Workman modules", async () => {
 
   assertStringIncludes(js, "let __wm_std_Monad");
   assertStringIncludes(js, "let __wm_std_Result");
-  assertStringIncludes(js, "let __wm_std_Traverse");
+  assertEquals(js.includes("let __wm_std_List"), false);
+  assertEquals(js.includes("let __wm_std_Map"), false);
+  assertEquals(js.includes("let __wm_std_Option"), false);
+  assertEquals(js.includes("let __wm_std_Task"), false);
+  assertEquals(js.includes("let __wm_std_Traverse"), false);
   assertStringIncludes(js, "const Text = {");
   assertStringIncludes(js, '"map": __wm_std_Result["map"]');
   assertEquals(js.includes("...__wm_basis_Result"), false);

@@ -408,6 +408,10 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
         return;
       }
       if (t.foreign || typeInfoByName(typeEnv, t.name)?.foreign) return;
+      if (t.name === "Ptr" && t.args.length === 1) {
+        assertJsCompatible(t.args[0], typeEnv);
+        return;
+      }
       if (t.name === "Option" && t.args.length === 1) {
         assertJsCompatible(t.args[0], typeEnv);
         return;

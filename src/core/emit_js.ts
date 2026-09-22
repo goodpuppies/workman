@@ -3,6 +3,7 @@ import type { TypeExpr } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
 import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artifact.ts";
 import type { BindingId, StructureId } from "./ids.ts";
+import type { ModuleId } from "../module_id.ts";
 import { basisCtorId, basisCtorJsName } from "../basis.ts";
 import {
   basisIntrinsicDescriptor,
@@ -12,7 +13,13 @@ import {
 } from "../basis_manifest.ts";
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
-import { emitJsImportDecl, resetJsImportEmitter, setWorkerSpecifiers } from "./emit_js_import.ts";
+import {
+  emitJsImportDecl,
+  resetJsImportEmitter,
+  setCNamespaceMemberUsage,
+  setNamespaceRecordCtors,
+  setWorkerSpecifiers,
+} from "./emit_js_import.ts";
 import { emitJsIdentifier as id } from "./emit_name.ts";
 
 export type CoreEmitTarget = "executable" | "library" | "repl";
@@ -29,17 +36,25 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   directFns = collectProgramDirectFns(program);
   const target = options.target ?? "executable";
   const standardIds = new Set(program.standardNamespaces?.map((item) => item.id) ?? []);
-  const stackOverflowSites = emitStackOverflowSites(program, target === "executable");
+  const requiredStandardIds = collectRequiredStandardModules(program, standardIds);
+  const emittedOrder = program.order.filter((moduleId) =>
+    !standardIds.has(moduleId) || requiredStandardIds.has(moduleId)
+  );
+  const stackOverflowSites = emitStackOverflowSites(
+    program,
+    emittedOrder,
+    target === "executable",
+  );
   const body = [
     ...emitShaderArtifactTable(program),
     ...emitModuleRuntime(),
-    ...program.order.map((moduleId) =>
+    ...emittedOrder.map((moduleId) =>
       emitModuleDefinition(program.modules.get(moduleId)!, program, target)
     ),
-    ...program.order
+    ...emittedOrder
       .filter((moduleId) => moduleId !== program.entry && standardIds.has(moduleId))
       .map((moduleId) => emitModuleRequest(program.modules.get(moduleId)!)),
-    ...emitStandardNamespaces(program),
+    ...emitStandardNamespaces(program, requiredStandardIds),
     emitModuleRequest(entry),
     target === "library"
       ? emitLibraryExports(entry)
@@ -57,17 +72,38 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
     : [...emitRuntimePrelude(), ...body].join("\n");
 }
 
-function emitStackOverflowSites(program: CoreProgram, terminateOnUnhandled: boolean): string {
+function emitStackOverflowSites(
+  program: CoreProgram,
+  emittedOrder: readonly ModuleId[],
+  terminateOnUnhandled: boolean,
+): string {
   const sites: Record<string, string> = {};
   const frames: Record<string, string> = {};
-  for (const moduleId of program.order) {
+  for (const moduleId of emittedOrder) {
     const artifact = program.modules.get(moduleId)!;
     for (const decl of artifact.module.decls) {
       collectFunctionFrameSites(decl, artifact, frames, sites);
     }
   }
-  return `const __wm_stack_overflow_sites = ${JSON.stringify(sites)};
-const __wm_stack_function_sites = ${JSON.stringify(frames)};
+  const messages: string[] = [];
+  const messageIndexes = new Map<string, number>();
+  const compact = (entries: Record<string, string>): Record<string, number> =>
+    Object.fromEntries(
+      Object.entries(entries).map(([name, message]) => {
+        let index = messageIndexes.get(message);
+        if (index === undefined) {
+          index = messages.length;
+          messages.push(message);
+          messageIndexes.set(message, index);
+        }
+        return [name, index];
+      }),
+    );
+  const compactSites = compact(sites);
+  const compactFrames = compact(frames);
+  return `const __wm_stack_messages = ${JSON.stringify(messages)};
+const __wm_stack_overflow_sites = ${JSON.stringify(compactSites)};
+const __wm_stack_function_sites = ${JSON.stringify(compactFrames)};
 if (typeof Error.stackTraceLimit === "number") Error.stackTraceLimit = Math.max(Error.stackTraceLimit, 100);
 const __wm_report_stack_overflow = (error) => {
   if (!(error instanceof RangeError) || !/Maximum call stack size exceeded/i.test(error.message)) return false;
@@ -75,7 +111,7 @@ const __wm_report_stack_overflow = (error) => {
   const site = Object.entries(__wm_stack_overflow_sites)
     .find(([name]) => stack.split("\\n").some((line) => line.trimStart().startsWith("at " + name + " ") || line.trimStart().startsWith("at " + name + "(")));
   if (site) {
-    console.error(site[1]);
+    console.error(__wm_stack_messages[site[1]]);
   } else {
     const counts = new Map();
     for (const line of stack.split("\\n")) {
@@ -87,7 +123,7 @@ const __wm_report_stack_overflow = (error) => {
     }
     const repeated = [...counts].sort((left, right) => right[1] - left[1])[0];
     if (repeated) {
-      console.error(__wm_stack_function_sites[repeated[0]]);
+      console.error(__wm_stack_messages[__wm_stack_function_sites[repeated[0]]]);
     } else if (/\\bat __wm_show\\b/.test(stack)) {
       console.error(
         "error[runtime.stack-overflow]: displaying a Workman value exhausted the JavaScript call stack\\n\\n" +
@@ -112,6 +148,109 @@ if (typeof globalThis.addEventListener === "function") {
     }
   });
 }`;
+}
+
+function collectRequiredStandardModules(
+  program: CoreProgram,
+  standardIds: ReadonlySet<ModuleId>,
+): Set<ModuleId> {
+  const namespaceIds = new Map(
+    (program.standardNamespaces ?? []).map((namespace) => [namespace.publicName, namespace.id]),
+  );
+  const required = new Set<ModuleId>();
+  const requireId = (id: ModuleId | undefined) => {
+    if (id !== undefined && standardIds.has(id)) required.add(id);
+  };
+  const visitPattern = (pattern: CorePattern): void => {
+    if (pattern.kind === "CorePPinned") {
+      requireId(namespaceIds.get(pattern.name.split(".")[0]));
+    } else if (pattern.kind === "CorePTuple") {
+      pattern.items.forEach(visitPattern);
+    } else if (pattern.kind === "CorePRecord") {
+      pattern.fields.forEach((field) => visitPattern(field.pattern));
+    } else if (pattern.kind === "CorePCtor" && pattern.payload) {
+      visitPattern(pattern.payload);
+    }
+  };
+  const visitDecl = (decl: CoreDecl): void => {
+    if (decl.kind === "CoreImport") {
+      requireId(decl.target);
+    } else if (decl.kind === "CoreLet") {
+      for (const binding of decl.bindings) {
+        visitPattern(binding.pattern);
+        visitExpr(binding.value);
+      }
+    }
+  };
+  const visitExpr = (expr: CoreExpr): void => {
+    switch (expr.kind) {
+      case "CoreVar":
+        requireId(namespaceIds.get(expr.name));
+        return;
+      case "CoreTuple":
+      case "CoreJsonArray":
+        expr.items.forEach(visitExpr);
+        return;
+      case "CoreRecord":
+        expr.fields.forEach((field) => visitExpr(field.value));
+        return;
+      case "CoreJsonObject":
+        expr.fields.forEach((field) => visitExpr(field.value));
+        return;
+      case "CoreRecordAccess":
+        visitExpr(expr.record);
+        return;
+      case "CoreFn":
+        expr.arms.forEach((arm) => {
+          visitPattern(arm.pattern);
+          visitExpr(arm.body);
+        });
+        return;
+      case "CoreApp":
+        visitExpr(expr.callee);
+        visitExpr(expr.arg);
+        return;
+      case "CoreIf":
+        visitExpr(expr.cond);
+        visitExpr(expr.thenExpr);
+        visitExpr(expr.elseExpr);
+        return;
+      case "CoreMatch":
+        visitExpr(expr.value);
+        expr.arms.forEach((arm) => {
+          visitPattern(arm.pattern);
+          visitExpr(arm.body);
+        });
+        return;
+      case "CorePanic":
+        visitExpr(expr.message);
+        return;
+      case "CoreBlock":
+        expr.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
+        visitExpr(expr.result);
+        return;
+      case "CoreShaderRef":
+        if (expr.environment) visitExpr(expr.environment);
+        return;
+      default:
+        return;
+    }
+  };
+
+  for (const moduleId of program.order) {
+    if (standardIds.has(moduleId)) continue;
+    program.modules.get(moduleId)?.module.decls.forEach(visitDecl);
+  }
+  const scanned = new Set<ModuleId>();
+  while (true) {
+    const next = [...required].find((moduleId) => !scanned.has(moduleId));
+    if (next === undefined) break;
+    scanned.add(next);
+    const artifact = program.modules.get(next);
+    artifact?.imports.forEach((edge) => requireId(edge.target));
+    artifact?.module.decls.forEach(visitDecl);
+  }
+  return required;
 }
 
 function collectFunctionFrameSites(
@@ -301,8 +440,13 @@ function emitModuleRuntime(): string[] {
   ];
 }
 
-function emitStandardNamespaces(program: CoreProgram): string[] {
-  return (program.standardNamespaces ?? []).map((namespace) => {
+function emitStandardNamespaces(
+  program: CoreProgram,
+  requiredStandardIds: ReadonlySet<ModuleId>,
+): string[] {
+  return (program.standardNamespaces ?? []).filter((namespace) =>
+    requiredStandardIds.has(namespace.id)
+  ).map((namespace) => {
     if (!namespace.basisName) {
       return `const ${id(namespace.publicName)} = ${id(namespace.emitName)};`;
     }
@@ -317,6 +461,7 @@ function emitStandardNamespaces(program: CoreProgram): string[] {
 }
 
 function emitShaderArtifactTable(program: CoreProgram): string[] {
+  if (program.shaderArtifacts.size === 0) return [];
   const shaderTargetCtor = (name: "WGSL" | "GLSL" | "HLSL" | "METAL"): string => {
     const jsName = basisCtorJsName(basisCtorId(`Gpu.ShaderTarget.${name}`) ?? -1);
     if (!jsName) throw new Error(`missing compiler-owned shader target ${name}`);
@@ -616,6 +761,9 @@ function emitExecutableRuntimeCatch(): string {
 
 function emitReplModuleBody(entry: CoreModuleArtifact, program: CoreProgram): string[] {
   const emittedAliases = new Set<string>();
+  namespaceRecordCtors = collectNamespaceRecordCtors(entry.module.decls);
+  setNamespaceRecordCtors(namespaceRecordCtors);
+  setCNamespaceMemberUsage(collectCNamespaceMemberUsage(entry.module.decls));
   return entry.module.decls.flatMap((decl, declIndex) =>
     decl.kind === "CoreImport" ? emitImportAliases(decl, entry, program, emittedAliases) : [
       ...emitDecl(decl),
@@ -780,11 +928,162 @@ function emitModuleRequest(artifact: CoreModuleArtifact): string {
 
 function emitModuleBody(artifact: CoreModuleArtifact, program: CoreProgram): string[] {
   const emittedAliases = new Set<string>();
+  namespaceRecordCtors = collectNamespaceRecordCtors(artifact.module.decls);
+  setNamespaceRecordCtors(namespaceRecordCtors);
+  setCNamespaceMemberUsage(collectCNamespaceMemberUsage(artifact.module.decls));
   return artifact.module.decls.flatMap((decl) =>
     decl.kind === "CoreImport"
       ? emitImportAliases(decl, artifact, program, emittedAliases)
       : emitDecl(decl)
   );
+}
+
+/**
+ * C headers can expose hundreds of declarations through `unsafe * as Ns`.
+ * Keep reflection/typechecking exhaustive, but only materialize runtime
+ * wrappers for members reached by the emitted Core program. If the namespace
+ * itself is used as a value, retain the complete object conservatively.
+ */
+function collectCNamespaceMemberUsage(
+  decls: CoreDecl[],
+): Map<number, ReadonlySet<string> | null> {
+  const usage = new Map<number, Set<string> | null>();
+  const referenceToStructure = new Map<number, number>();
+  for (const decl of decls) {
+    if (
+      decl.kind !== "CoreJsImport" || decl.target.kind !== "CHeader" ||
+      decl.clause.kind !== "Namespace" || decl.structureId === undefined
+    ) continue;
+    usage.set(decl.structureId, new Set());
+    referenceToStructure.set(decl.structureId, decl.structureId);
+    const valueId = decl.bindingIds?.[0];
+    if (valueId !== undefined) referenceToStructure.set(valueId, decl.structureId);
+  }
+
+  const markAll = (reference: number | undefined) => {
+    if (reference === undefined) return;
+    const structure = referenceToStructure.get(reference);
+    if (structure !== undefined) usage.set(structure, null);
+  };
+  const markMember = (reference: number | undefined, member: string): boolean => {
+    if (reference === undefined) return false;
+    const structure = referenceToStructure.get(reference);
+    if (structure === undefined) return false;
+    usage.get(structure)?.add(member);
+    return true;
+  };
+  const namespaceAccess = (
+    expr: CoreExpr,
+  ): { reference: number | undefined; member: string } | undefined => {
+    if (expr.kind !== "CoreRecordAccess") return undefined;
+    let current: CoreExpr = expr;
+    let member = expr.field;
+    while (current.kind === "CoreRecordAccess") {
+      member = current.field;
+      current = current.record;
+    }
+    return current.kind === "CoreVar" && referenceToStructure.has(current.bindingId ?? -1)
+      ? { reference: current.bindingId, member }
+      : undefined;
+  };
+  const visitPattern = (pattern: CorePattern): void => {
+    if (pattern.kind === "CorePPinned") {
+      const parts = pattern.name.split(".");
+      if (parts.length > 1 && markMember(pattern.rootBindingId, parts[1])) return;
+      markAll(pattern.rootBindingId ?? pattern.bindingId);
+    } else if (pattern.kind === "CorePTuple") {
+      pattern.items.forEach(visitPattern);
+    } else if (pattern.kind === "CorePRecord") {
+      pattern.fields.forEach((field) => visitPattern(field.pattern));
+    } else if (pattern.kind === "CorePCtor" && pattern.payload) {
+      visitPattern(pattern.payload);
+    }
+  };
+  const visitDecl = (decl: CoreDecl): void => {
+    if (decl.kind !== "CoreLet") return;
+    for (const binding of decl.bindings) {
+      visitPattern(binding.pattern);
+      visitExpr(binding.value);
+    }
+  };
+  const visitExpr = (expr: CoreExpr): void => {
+    const access = namespaceAccess(expr);
+    if (access && markMember(access.reference, access.member)) return;
+    switch (expr.kind) {
+      case "CoreVar":
+        markAll(expr.bindingId);
+        return;
+      case "CoreTuple":
+      case "CoreJsonArray":
+        expr.items.forEach(visitExpr);
+        return;
+      case "CoreRecord":
+        expr.fields.forEach((field) => visitExpr(field.value));
+        return;
+      case "CoreJsonObject":
+        expr.fields.forEach((field) => visitExpr(field.value));
+        return;
+      case "CoreRecordAccess":
+        visitExpr(expr.record);
+        return;
+      case "CoreFn":
+        expr.arms.forEach((arm) => {
+          visitPattern(arm.pattern);
+          visitExpr(arm.body);
+        });
+        return;
+      case "CoreApp":
+        visitExpr(expr.callee);
+        visitExpr(expr.arg);
+        return;
+      case "CoreIf":
+        visitExpr(expr.cond);
+        visitExpr(expr.thenExpr);
+        visitExpr(expr.elseExpr);
+        return;
+      case "CoreMatch":
+        visitExpr(expr.value);
+        expr.arms.forEach((arm) => {
+          visitPattern(arm.pattern);
+          visitExpr(arm.body);
+        });
+        return;
+      case "CorePanic":
+        visitExpr(expr.message);
+        return;
+      case "CoreBlock":
+        expr.items.forEach((item) => isDecl(item) ? visitDecl(item) : visitExpr(item));
+        visitExpr(expr.result);
+        return;
+      case "CoreShaderRef":
+        if (expr.environment) visitExpr(expr.environment);
+        return;
+      default:
+        return;
+    }
+  };
+
+  decls.forEach(visitDecl);
+  return usage;
+}
+
+function collectNamespaceRecordCtors(
+  decls: CoreDecl[],
+): Map<string, { member: string; ref: string }[]> {
+  const ctors = new Map<string, { member: string; ref: string }[]>();
+  for (const decl of decls) {
+    if (decl.kind !== "CoreRecord" || !decl.name.includes(".")) continue;
+    const dot = decl.name.indexOf(".");
+    const alias = decl.name.slice(0, dot);
+    const member = decl.name.slice(dot + 1);
+    const entries = ctors.get(alias) ?? [];
+    entries.push({
+      member,
+      ref: valueRefName(decl.name, decl.constructorBindingId),
+    });
+    ctors.set(alias, entries);
+  }
+  return ctors;
 }
 
 function emitImportAliases(
@@ -867,6 +1166,12 @@ function emitImportedValueAlias(
 type DirectFn = { name: string; arity: number; owner: string; exportKey: string };
 
 let directFns = new Map<BindingId | StructureId, DirectFn>();
+
+/**
+ * Qualified record constructors (`Raylib.Vector2`), per namespace alias: the
+ * namespace runtime object must expose them as members.
+ */
+let namespaceRecordCtors = new Map<string, { member: string; ref: string }[]>();
 
 function arityRaiseCandidate(
   binding: { pattern: CorePattern; value: CoreExpr },
@@ -1748,7 +2053,8 @@ function patternBindingName(pattern: Extract<CorePattern, { kind: "CorePVar" }>)
 }
 
 function bindingName(name: string, bindingId: BindingId | StructureId): string {
-  return `${id(name)}_${bindingId}`;
+  // Qualified bindings (`Raylib.Vector2`) are flat consts at runtime.
+  return `${id(name.replaceAll(".", "_"))}_${bindingId}`;
 }
 
 function ctorRefName(name: string, ctorId: CoreDynamicExport["ctorId"]): string {

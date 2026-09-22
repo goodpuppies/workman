@@ -1,0 +1,8 @@
+from c.header("examples/c_ffi/fixtures/vec3.h") import type { Vector3 };
+from c.header("examples/c_ffi/fixtures/vec3.h") import unsafe {
+  V2_LIMIT,
+};
+
+let main = () => {
+  print(V2_LIMIT);
+};

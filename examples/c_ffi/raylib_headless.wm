@@ -1,0 +1,13 @@
+from c.header("/home/ellie/git/raylib_ts_bindings_deno/submodules/raylib/src/raylib.h", lib: "./examples/raylib/libraylib.so") import unsafe {
+  GetScreenWidth,
+  SetTargetFPS,
+  IsKeyDown,
+};
+
+let main = () => {
+  SetTargetFPS(60);
+  let width = GetScreenWidth();
+  let escapeDown = IsKeyDown(65);
+  print(width);
+  print(escapeDown);
+};

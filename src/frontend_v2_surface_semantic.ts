@@ -168,6 +168,20 @@ function projectJavaScriptTarget(node: WmVariant, context: Context): JsTarget {
       const [, , specifierToken] = fields(node);
       return { kind: "JsWorker", specifier: jsonString(specifierToken), ...located };
     }
+    case "CHeaderTargetNode": {
+      const [headerValue, libValue] = fields(node, "CHeaderTargetNode");
+      const lib = option(libValue);
+      return {
+        kind: "CHeader",
+        header: jsonString(surfaceValueToken(headerValue)),
+        ...(lib ? { lib: jsonString(surfaceValueToken(lib)) } : {}),
+        ...located,
+      };
+    }
+    case "CLibTargetNode": {
+      const [nameValue] = fields(node, "CLibTargetNode");
+      return { kind: "CLib", name: jsonString(surfaceValueToken(nameValue)), ...located };
+    }
     default:
       throw unsupported("JavaScript target", node);
   }
@@ -1291,6 +1305,17 @@ function jsonString(value: unknown): string {
 
 function tokenSpan(value: unknown): SourceSpan {
   return sourceSpan(record(value, "SurfaceToken").span);
+}
+
+function surfaceValueToken(value: unknown): unknown {
+  const carrier = variant(value);
+  const token = carrier.name === "AuthoredValue"
+    ? carrier.args[0]
+    : carrier.name === "MarkedValue" && Array.isArray(carrier.args[0])
+    ? carrier.args[0][1]
+    : undefined;
+  if (!token) throw new Error(`frontend-v2 expected SurfaceValue token, got ${carrier.name}`);
+  return token;
 }
 
 function surfaceTokenSpan(value: unknown, context: Context): SourceSpan {

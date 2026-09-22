@@ -1,0 +1,15 @@
+from c.header("/home/ellie/git/raylib_ts_bindings_deno/submodules/raylib/src/raylib.h", lib: "./examples/raylib/libraylib.so") import unsafe {
+  InitWindow,
+  CloseWindow,
+  SetTargetFPS,
+  IsKeyDown,
+};
+
+let main = () => {
+  InitWindow(320, 240, "wm c ffi");
+  SetTargetFPS(60);
+  let escape = IsKeyDown(65);
+  CloseWindow();
+  print(escape);
+  print("window ok");
+};

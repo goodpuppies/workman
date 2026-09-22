@@ -7,7 +7,8 @@ from "./generated/surface_types.wm" import {
   JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
   JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode,
   JavaScriptImportClauseNode, JavaScriptNamedClauseNode,
-  JavaScriptImportSpecificationNode
+  JavaScriptImportSpecificationNode,
+  CHeaderTargetNode, CLibTargetNode
 };
 from "./surface_parse_value.wm" import {
   ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue,
@@ -194,6 +195,47 @@ let buildJsTarget = (value: ParseValue, span: Span) => {
                   span,
                 )
               )
+            },
+            _ => { RuleParseValue("JsTarget", value, span) },
+          }
+        },
+        _ => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(5, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "c.header"),
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(target), Some(open), Some(close)) => {
+          match(tokens) {
+            [targetValue, openValue, header, closeValue] => {
+              NodeParseValue(CHeaderTargetNode(surfaceValue(header), None, span))
+            },
+            [targetValue, openValue, header, commaValue, libToken, assignValue, lib, closeValue] => {
+              NodeParseValue(
+                CHeaderTargetNode(surfaceValue(header), Some(surfaceValue(lib)), span)
+              )
+            },
+            _ => { RuleParseValue("JsTarget", value, span) },
+          }
+        },
+        _ => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(6, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "c.lib"),
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(target), Some(open), Some(close)) => {
+          match(tokens) {
+            [targetValue, openValue, name, closeValue] => {
+              NodeParseValue(CLibTargetNode(surfaceValue(name), span))
             },
             _ => { RuleParseValue("JsTarget", value, span) },
           }

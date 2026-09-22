@@ -5,6 +5,8 @@ import {
   resolveDelayedFfiElaboration,
 } from "./ffi/delayed/delayed.ts";
 import { prepareFfiElaboration } from "./ffi/elab.ts";
+import { type FfiElaboration } from "./ffi/shared.ts";
+import { prepareCImports } from "./ffi/c/prepare.ts";
 import { prepareInitialJsImportReflection } from "./ffi/reflect/types.ts";
 import { inferModule, inferModulePartial, type InferResult } from "./infer.ts";
 import { rememberExportedSourceDocument } from "./infer/imports.ts";
@@ -95,9 +97,10 @@ export async function analyzeModuleGraph(
     });
   }
 
-  const ffi = new Map<ModuleId, ReturnType<typeof prepareFfiElaboration>>();
+  const ffi = new Map<ModuleId, FfiElaboration>();
   for (const node of graph.nodes.values()) {
-    await run("prepare FFI", node, undefined, () => {
+    await run("prepare FFI", node, undefined, async () => {
+      node.module = await prepareCImports(node.module);
       const prepared = prepareFfiElaboration(node.module, {
         filePath: node.path,
         importedRecordFields: importedRecordFields(node, graph),

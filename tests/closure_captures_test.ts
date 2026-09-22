@@ -73,6 +73,28 @@ Deno.test("module let values may be captured explicitly", async () => {
   assertEquals(facts.captureDiagnostics, []);
 });
 
+Deno.test("ordered record constructors are static and do not enter capture contracts", async () => {
+  const module = await parseCompilerModule(
+    [
+      "record Vector2 = { x: Number, y: Number };",
+      "let make = () || => { Raylib.Vector2(1, 2) };",
+    ].join("\n"),
+    { frontend: "v2" },
+  );
+  const record = module.decls[0];
+  if (record.kind !== "RecordDecl") throw new Error("expected generated record declaration");
+  // C namespace imports synthesize a module-local record declaration with this dotted name.
+  record.name = "Raylib.Vector2";
+
+  const facts = resolveModuleBindingFacts(module, new CompilerIdAllocator());
+
+  assertEquals(
+    [...facts.closureCaptures.values()].map((captures) => captures.map(({ name }) => name)),
+    [[]],
+  );
+  assertEquals(facts.captureDiagnostics, []);
+});
+
 Deno.test("omitted capture clauses produce lambda-head inlays", async () => {
   const path = "/test/main.wm";
   const source = "let make = (x: Number) => { (y: Number) => { x + y } };";

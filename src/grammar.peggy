@@ -215,6 +215,10 @@ JsTarget
     { return at({ kind: "JsModule", specifier: specifier.value }, location()); }
   / "js.worker" _ "(" _ specifier:String _ ")"
     { return at({ kind: "JsWorker", specifier: specifier.value }, location()); }
+  / "c.header" _ "(" _ header:String _ lib:(_ "," _ "lib" _ ":" _ l:String { return l.value; })? _ ")"
+    { return at({ kind: "CHeader", header: header.value, lib }, location()); }
+  / "c.lib" _ "(" _ name:String _ ")"
+    { return at({ kind: "CLib", name: name.value }, location()); }
 
 JsImportClause
   = unsafe:("unsafe" __)? clause:JsImportClauseBody

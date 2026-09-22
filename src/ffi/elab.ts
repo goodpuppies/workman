@@ -1,4 +1,4 @@
-import type { Decl, Module, TypeExpr } from "../ast.ts";
+import type { Decl, JsTarget, Module, TypeExpr } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import type { JsTypeRef } from "./reflect/types.ts";
 import { jsGlobalTypeRef } from "./reflect/types.ts";
@@ -43,10 +43,12 @@ function prepareFfiElaborationInner(module: Module): FfiElaboration {
   const localTypes = localTypeNames(module);
   for (const decl of module.decls) {
     if (decl.kind !== "JsImportDecl" || !decl.typeOnly) continue;
+    if (isCTarget(decl.target)) continue;
     collectFfiDeclAtImport(bindings, importedRefs, importedTypeRefs, decl);
   }
   for (const decl of module.decls) {
     if (decl.kind !== "JsImportDecl" || decl.typeOnly) continue;
+    if (isCTarget(decl.target)) continue;
     collectFfiDeclAtImport(bindings, importedRefs, importedTypeRefs, decl);
   }
   collectReflectedForeignTypeRefs(bindings, importedTypeRefs, localTypes);
@@ -199,4 +201,8 @@ function localTypeNames(module: Module): Set<string> {
     }
   }
   return names;
+}
+
+function isCTarget(target: JsTarget): boolean {
+  return target.kind === "CHeader" || target.kind === "CLib";
 }
