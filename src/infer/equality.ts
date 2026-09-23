@@ -9,7 +9,7 @@ import {
   type TypeEnv,
   typeInfoById,
 } from "../types.ts";
-import { basisPrimitiveAdmitsEquality } from "../basis_manifest.ts";
+import { basisPrimitiveAdmitsEquality, basisTypeDescriptor } from "../basis_manifest.ts";
 
 export function assertEqualityType(
   type: Ty,
@@ -48,6 +48,10 @@ function requireEquality(
     return;
   }
   if (resolved.tag === "named") {
+    const basis = basisTypeDescriptor(resolved.name);
+    if (basis?.equality === "always") return;
+    if (basis?.equality === "never") rejectEquality(resolved);
+
     const key = `${resolved.id}<${resolved.args.map((arg) => quoteType(arg)).join(",")}>`;
     if (seen.has(key)) return;
     seen.add(key);

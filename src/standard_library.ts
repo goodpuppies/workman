@@ -3,6 +3,7 @@ import type { ImportClause, Module } from "./ast.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import { posix } from "node:path";
 import {
+  binarySource,
   listSource,
   mapSource,
   monadSource,
@@ -37,6 +38,11 @@ export type LoadedStandardModule = StandardModule & {
 };
 
 const standardModules: StandardModule[] = [
+  {
+    path: "std/binary.wm",
+    source: binarySource,
+    clauses: [{ kind: "Namespace", alias: "Binary" }],
+  },
   {
     path: "std/list.wm",
     source: listSource,

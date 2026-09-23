@@ -1,0 +1,252 @@
+type Error =
+  | Bounds<Number, Number, Number>
+  | UnterminatedAscii<Number>;
+
+record Cursor<Bytes> = {
+  bytes: Bytes,
+  offset: Number
+};
+
+let bounds = (offset, width, available) => {
+  Err(Bounds(offset, width, available))
+};
+
+let take = (bytes, offset: Number, width: Number) => {
+  let available = Word8VectorSlice.length(bytes);
+  if (
+    offset >= 0 && offset % 1 == 0 &&
+    width >= 0 && width % 1 == 0 &&
+    offset <= available && width <= available - offset
+  ) {
+    Ok(Word8VectorSlice.subslice(bytes, offset, Some(width)))
+  } else {
+    bounds(offset, width, available)
+  }
+};
+
+let u8 = (bytes, offset) => {
+  match(take(bytes, offset, 1)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(Word8VectorSlice.sub(part, 0)) }
+  }
+};
+
+let u16le = (bytes, offset) => {
+  match(take(bytes, offset, PackWord16Little.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(PackWord16Little.subSlice(part, 0)) }
+  }
+};
+
+let u16be = (bytes, offset) => {
+  match(take(bytes, offset, PackWord16Big.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(PackWord16Big.subSlice(part, 0)) }
+  }
+};
+
+let u32le = (bytes, offset) => {
+  match(take(bytes, offset, PackWord32Little.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(PackWord32Little.subSlice(part, 0)) }
+  }
+};
+
+let u32be = (bytes, offset) => {
+  match(take(bytes, offset, PackWord32Big.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(PackWord32Big.subSlice(part, 0)) }
+  }
+};
+
+let u64le = (bytes, offset) => {
+  match(take(bytes, offset, PackWord64Little.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(PackWord64Little.subSlice(part, 0)) }
+  }
+};
+
+let u64be = (bytes, offset) => {
+  match(take(bytes, offset, PackWord64Big.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(PackWord64Big.subSlice(part, 0)) }
+  }
+};
+
+let f32le = (bytes, offset) => {
+  match(take(bytes, offset, PackReal32Little.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(Float32.toNumber(PackReal32Little.subSlice(part, 0))) }
+  }
+};
+
+let f32be = (bytes, offset) => {
+  match(take(bytes, offset, PackReal32Big.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(Float32.toNumber(PackReal32Big.subSlice(part, 0))) }
+  }
+};
+
+let f64le = (bytes, offset) => {
+  match(take(bytes, offset, PackReal64Little.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(Float64.toNumber(PackReal64Little.subSlice(part, 0))) }
+  }
+};
+
+let f64be = (bytes, offset) => {
+  match(take(bytes, offset, PackReal64Big.bytesPerElem)) {
+    Err(error) => { Err(error) },
+    Ok(part) => { Ok(Float64.toNumber(PackReal64Big.subSlice(part, 0))) }
+  }
+};
+
+let asciiZ = (bytes, offset) => {
+  let available = Word8VectorSlice.length(bytes);
+  let rec find = (index) => {
+    if (index >= available) {
+      Err(UnterminatedAscii(offset))
+    } else {
+      if (Word8.toNumber(Word8VectorSlice.sub(bytes, index)) == 0) {
+        match(take(bytes, offset, index - offset)) {
+          Err(error) => { Err(error) },
+          Ok(part) => { Ok(Byte.bytesToString(Word8VectorSlice.vector(part))) }
+        }
+      } else {
+        find(index + 1)
+      }
+    }
+  };
+  if (offset >= 0 && offset % 1 == 0 && offset < available) {
+    find(offset)
+  } else {
+    bounds(offset, 1, available)
+  }
+};
+
+let cursor = (bytes) => {
+  Cursor{ bytes = bytes, offset = 0 }
+};
+
+let cursorAt = (bytes, offset) => {
+  if (
+    offset >= 0 && offset % 1 == 0 &&
+    offset <= Word8VectorSlice.length(bytes)
+  ) {
+    Ok(Cursor{ bytes = bytes, offset = offset })
+  } else {
+    bounds(offset, 0, Word8VectorSlice.length(bytes))
+  }
+};
+
+let position = (cursor: Cursor<bytes>) => { cursor.offset };
+
+let remaining = (cursor: Cursor<bytes>) => {
+  Word8VectorSlice.length(cursor.bytes) - cursor.offset
+};
+
+let skip = (cursor: Cursor<bytes>, width: Number) => {
+  match(take(cursor.bytes, cursor.offset, width)) {
+    Err(error) => { Err(error) },
+    Ok(_) => { Ok(Cursor{ bytes = cursor.bytes, offset = cursor.offset + width }) }
+  }
+};
+
+let readU8 = (cursor: Cursor<bytes>) => {
+  match(u8(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 1 }))
+    }
+  }
+};
+
+let readU16le = (cursor: Cursor<bytes>) => {
+  match(u16le(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 2 }))
+    }
+  }
+};
+
+let readU16be = (cursor: Cursor<bytes>) => {
+  match(u16be(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 2 }))
+    }
+  }
+};
+
+let readU32le = (cursor: Cursor<bytes>) => {
+  match(u32le(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 4 }))
+    }
+  }
+};
+
+let readU32be = (cursor: Cursor<bytes>) => {
+  match(u32be(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 4 }))
+    }
+  }
+};
+
+let readU64le = (cursor: Cursor<bytes>) => {
+  match(u64le(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 8 }))
+    }
+  }
+};
+
+let readU64be = (cursor: Cursor<bytes>) => {
+  match(u64be(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 8 }))
+    }
+  }
+};
+
+let readF32le = (cursor: Cursor<bytes>) => {
+  match(f32le(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 4 }))
+    }
+  }
+};
+
+let readF32be = (cursor: Cursor<bytes>) => {
+  match(f32be(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 4 }))
+    }
+  }
+};
+
+let readF64le = (cursor: Cursor<bytes>) => {
+  match(f64le(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 8 }))
+    }
+  }
+};
+
+let readF64be = (cursor: Cursor<bytes>) => {
+  match(f64be(cursor.bytes, cursor.offset)) {
+    Err(error) => { Err(error) },
+    Ok(value) => {
+      Ok((value, Cursor{ bytes = cursor.bytes, offset = cursor.offset + 8 }))
+    }
+  }
+};

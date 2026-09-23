@@ -172,6 +172,26 @@ export const BASIS_TYPES = Object.freeze(
         ctor("Gpu.ShaderTarget.METAL", -12, []),
       ],
     },
+    { name: "Word8.word", typeNameId: -24, arity: 0, profiles, equality: "always" },
+    { name: "Word16.word", typeNameId: -25, arity: 0, profiles, equality: "always" },
+    { name: "Word32.word", typeNameId: -26, arity: 0, profiles, equality: "always" },
+    { name: "Word64.word", typeNameId: -27, arity: 0, profiles, equality: "always" },
+    {
+      name: "Word8Vector.vector",
+      typeNameId: -28,
+      arity: 0,
+      profiles,
+      equality: "always",
+    },
+    {
+      name: "Word8VectorSlice.slice",
+      typeNameId: -29,
+      arity: 0,
+      profiles,
+      equality: "never",
+    },
+    { name: "Float32.real", typeNameId: -30, arity: 0, profiles, equality: "never" },
+    { name: "Float64.real", typeNameId: -31, arity: 0, profiles, equality: "never" },
   ] satisfies readonly BasisTypeDescriptor[],
 );
 
@@ -279,6 +299,105 @@ export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
     exportName: `Table.${name}`,
     profiles: defaultOnly,
     runtimeName: `Table.${name}`,
+  })),
+  ...["Word8", "Word16", "Word32", "Word64"].flatMap((structure) =>
+    [
+      "wordSize",
+      "fromNumber",
+      "toNumber",
+      "andb",
+      "orb",
+      "xorb",
+      "notb",
+      "shiftLeft",
+      "shiftRight",
+      "shiftRightArithmetic",
+      "add",
+      "sub",
+      "mul",
+      "div",
+      "mod",
+    ].map((name) => ({
+      exportName: `${structure}.${name}`,
+      profiles: defaultOnly,
+      runtimeName: `${structure}.${name}`,
+    }))
+  ),
+  ...[
+    "empty",
+    "fromList",
+    "length",
+    "sub",
+    "get",
+    "update",
+    "concat",
+    "tabulate",
+    "mapi",
+    "unfoldN",
+    "toList",
+  ].map((name) => ({
+    exportName: `Word8Vector.${name}`,
+    profiles: defaultOnly,
+    runtimeName: `Word8Vector.${name}`,
+  })),
+  ...[
+    "full",
+    "slice",
+    "subslice",
+    "base",
+    "length",
+    "isEmpty",
+    "sub",
+    "get",
+    "vector",
+    "concat",
+  ].map((name) => ({
+    exportName: `Word8VectorSlice.${name}`,
+    profiles: defaultOnly,
+    runtimeName: `Word8VectorSlice.${name}`,
+  })),
+  ...["readFile", "readSlice", "writeFile"].map((name) => ({
+    exportName: `Bytes.${name}`,
+    profiles: defaultOnly,
+    runtimeName: `Bytes.${name}`,
+  })),
+  ...[
+    "PackWord16Little",
+    "PackWord16Big",
+    "PackWord32Little",
+    "PackWord32Big",
+    "PackWord64Little",
+    "PackWord64Big",
+  ].flatMap((structure) =>
+    ["bytesPerElem", "isBigEndian", "subVec", "subSlice", "pack"].map((name) => ({
+      exportName: `${structure}.${name}`,
+      profiles: defaultOnly,
+      runtimeName: `${structure}.${name}`,
+    }))
+  ),
+  ...["Float32", "Float64"].flatMap((structure) =>
+    ["fromNumber", "toNumber", "add", "sub", "mul", "div", "neg"].map((name) => ({
+      exportName: `${structure}.${name}`,
+      profiles: defaultOnly,
+      runtimeName: `${structure}.${name}`,
+    }))
+  ),
+  ...[
+    "PackReal32Little",
+    "PackReal32Big",
+    "PackReal64Little",
+    "PackReal64Big",
+  ].flatMap((structure) =>
+    ["bytesPerElem", "isBigEndian", "subVec", "subSlice", "pack"].map((name) => ({
+      exportName: `${structure}.${name}`,
+      profiles: defaultOnly,
+      runtimeName: `${structure}.${name}`,
+    }))
+  ),
+  ...["bytesToString", "stringToBytes"].map((name) => ({
+    exportName: `Byte.${name}`,
+    profiles: defaultOnly,
+    runtimeName: `Byte.${name}`,
   })),
 ]);
 

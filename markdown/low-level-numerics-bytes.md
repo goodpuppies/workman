@@ -14,7 +14,16 @@ These facilities serve C ABI values, game-engine buffers, and binary asset parsi
 those clients owns their semantics. The semantic model comes from Standard ML; the JavaScript
 backend supplies efficient representations.
 
-This document is a design proposal, not an assertion that the described interface is implemented.
+This document is the design target. The first implementation slice now includes nominal
+`Word8.word`, `Word16.word`, `Word32.word`, and `Word64.word` types with modular arithmetic and
+logical operations, plus immutable `Word8Vector.vector` values with `fromList`, `tabulate`, `mapi`,
+`unfoldN`, `concat`, persistent `update`, and observation operations. Immutable
+`Word8VectorSlice.slice` views provide shared bounded ranges and explicit freezing back to vectors.
+`PackWord*` and `PackReal*` provide endian-aware immutable reads and single-value encoding;
+`Bytes` provides immutable file input/range input/output; and the source-level `Binary` module adds
+checked byte-offset reads, immutable cursors, and NUL-terminated byte-string decoding. Streaming
+`BinIO`, compact numeric vectors, exact signed integers, and native output buffers remain planned
+rather than implemented.
 
 ## Sources and evidence
 

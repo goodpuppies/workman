@@ -14,6 +14,8 @@ export function emitRuntimePrelude(): string[] {
     // boundary. A missing-symbol load is nearly free because V8 caches the
     // negative lookup on the array's map, so the check stays cheap.
     "const __wm_js_array_tag = Symbol('wm.jsArray');",
+    "const __wm_word8_vector_data = Symbol('wm.Word8Vector.data');",
+    "const __wm_word8_vector_slice_data = Symbol('wm.Word8VectorSlice.data');",
     "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true;",
     `const __wm_js_array_mark = (value) => {
   if (globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true) {
@@ -242,6 +244,15 @@ const __wm_c_struct_to_buffer = (name, value) => {
 };`,
     `const __wm_eq = (a, b) => {
   if (a === b) return true;
+  const aBytes = a?.[__wm_word8_vector_data];
+  const bBytes = b?.[__wm_word8_vector_data];
+  if (aBytes !== undefined || bBytes !== undefined) {
+    return aBytes !== undefined && bBytes !== undefined && aBytes.length === bBytes.length &&
+      aBytes.every((item, index) => item === bBytes[index]);
+  }
+  if (a?.[__wm_word8_vector_slice_data] !== undefined || b?.[__wm_word8_vector_slice_data] !== undefined) {
+    return false;
+  }
   if (globalThis.Array.isArray(a) || globalThis.Array.isArray(b)) {
     return globalThis.Array.isArray(a) && globalThis.Array.isArray(b) && a.length === b.length &&
       a.every((item, index) => __wm_eq(item, b[index]));
@@ -261,12 +272,20 @@ const __wm_c_struct_to_buffer = (name, value) => {
   if (value === null) return "null";
   if (typeof value === "string") return quoteStrings ? JSON.stringify(value) : value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "bigint") return String(value);
   if (typeof value === "function") return "<function>";
   if (typeof value !== "object") return String(value);
   if (seen.has(value)) return "<cycle>";
   seen.add(value);
   let shown;
-  if (__wm_is_tuple(value)) {
+  if (value[__wm_word8_vector_data] !== undefined) {
+    shown = "Word8Vector[" + globalThis.Array.from(value[__wm_word8_vector_data]).join(", ") + "]";
+  } else if (value[__wm_word8_vector_slice_data] !== undefined) {
+    const slice = value[__wm_word8_vector_slice_data];
+    shown = "Word8VectorSlice[" + globalThis.Array.from(
+      __wm_word8_vector_bytes(slice.vector).subarray(slice.offset, slice.offset + slice.length),
+    ).join(", ") + "]";
+  } else if (__wm_is_tuple(value)) {
     shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + ")";
   } else if ("ctor" in value) {
     shown = value.args.length === 0
@@ -340,6 +359,422 @@ const __wm_c_struct_to_buffer = (name, value) => {
   }
   return __wm_js_array_mark(items);
 };`,
+    `const __wm_word_length = (value, label = "length") => {
+  if (!globalThis.Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
+    return __wm_fail("Size", label + " must be an integer between 0 and 4294967295");
+  }
+  return value;
+};
+const __wm_nonnegative_safe_integer = (value, label) => {
+  if (!globalThis.Number.isSafeInteger(value) || value < 0) {
+    return __wm_fail("Domain", label + " must be a non-negative safe integer");
+  }
+  return value;
+};
+const __wm_word_shift = (value) => {
+  if (!globalThis.Number.isSafeInteger(value) || value < 0) {
+    return __wm_fail("Domain", "shift count must be a non-negative integer");
+  }
+  return value;
+};
+const __wm_word_from_number = (value, normalize, name) => {
+  if (!globalThis.Number.isSafeInteger(value)) {
+    return __wm_fail("Domain", name + ".fromNumber expects a safe integer");
+  }
+  return normalize(value);
+};
+const __wm_small_word = (bits) => {
+  const normalize = bits === 32 ? (value) => value >>> 0 : (value) => value & ((1 << bits) - 1);
+  const mask = bits === 32 ? 0xffffffff : (1 << bits) - 1;
+  const signBit = bits === 32 ? 0x80000000 : 1 << (bits - 1);
+  const arithmetic = (value, count) => {
+    count = __wm_word_shift(count);
+    if (count >= bits) return (value & signBit) === 0 ? 0 : normalize(mask);
+    const signed = bits === 32 ? value | 0 : (value << (32 - bits)) >> (32 - bits);
+    return normalize(signed >> count);
+  };
+  return {
+    wordSize: bits,
+    fromNumber: (value) => __wm_word_from_number(value, normalize, "Word" + bits),
+    toNumber: (value) => value,
+    andb: ([left, right]) => normalize(left & right),
+    orb: ([left, right]) => normalize(left | right),
+    xorb: ([left, right]) => normalize(left ^ right),
+    notb: (value) => normalize(~value),
+    shiftLeft: ([value, count]) => {
+      count = __wm_word_shift(count);
+      return count >= bits ? 0 : normalize(value << count);
+    },
+    shiftRight: ([value, count]) => {
+      count = __wm_word_shift(count);
+      return count >= bits ? 0 : normalize(value >>> count);
+    },
+    shiftRightArithmetic: ([value, count]) => arithmetic(value, count),
+    add: ([left, right]) => normalize(left + right),
+    sub: ([left, right]) => normalize(left - right),
+    mul: ([left, right]) => normalize(bits === 32 ? globalThis.Math.imul(left, right) : left * right),
+    div: ([left, right]) => right === 0
+      ? __wm_fail("Div", "word division by zero")
+      : normalize(globalThis.Math.floor(left / right)),
+    mod: ([left, right]) => right === 0
+      ? __wm_fail("Div", "word remainder by zero")
+      : normalize(left % right),
+  };
+};
+const Word8 = __wm_small_word(8);
+const Word16 = __wm_small_word(16);
+const Word32 = __wm_small_word(32);
+const __wm_word64_mask = (1n << 64n) - 1n;
+const __wm_word64_normalize = (value) => globalThis.BigInt.asUintN(64, value);
+const __wm_word64_from_number = (value) => {
+  if (!globalThis.Number.isSafeInteger(value)) {
+    return __wm_fail("Domain", "Word64.fromNumber expects a safe integer");
+  }
+  return __wm_word64_normalize(globalThis.BigInt(value));
+};
+const Word64 = {
+  wordSize: 64,
+  fromNumber: __wm_word64_from_number,
+  toNumber: (value) => value > globalThis.BigInt(globalThis.Number.MAX_SAFE_INTEGER)
+    ? __wm_fail("Overflow", "Word64 value is not exactly representable as Number")
+    : globalThis.Number(value),
+  andb: ([left, right]) => left & right,
+  orb: ([left, right]) => left | right,
+  xorb: ([left, right]) => left ^ right,
+  notb: (value) => __wm_word64_normalize(~value),
+  shiftLeft: ([value, count]) => {
+    count = __wm_word_shift(count);
+    return count >= 64 ? 0n : __wm_word64_normalize(value << globalThis.BigInt(count));
+  },
+  shiftRight: ([value, count]) => {
+    count = __wm_word_shift(count);
+    return count >= 64 ? 0n : value >> globalThis.BigInt(count);
+  },
+  shiftRightArithmetic: ([value, count]) => {
+    count = __wm_word_shift(count);
+    const signed = globalThis.BigInt.asIntN(64, value);
+    return count >= 64
+      ? (signed < 0n ? __wm_word64_mask : 0n)
+      : __wm_word64_normalize(signed >> globalThis.BigInt(count));
+  },
+  add: ([left, right]) => __wm_word64_normalize(left + right),
+  sub: ([left, right]) => __wm_word64_normalize(left - right),
+  mul: ([left, right]) => __wm_word64_normalize(left * right),
+  div: ([left, right]) => right === 0n
+    ? __wm_fail("Div", "word division by zero")
+    : left / right,
+  mod: ([left, right]) => right === 0n
+    ? __wm_fail("Div", "word remainder by zero")
+    : left % right,
+};
+const __wm_float = (normalize) => ({
+  fromNumber: (value) => normalize(value),
+  toNumber: (value) => value,
+  add: ([left, right]) => normalize(left + right),
+  sub: ([left, right]) => normalize(left - right),
+  mul: ([left, right]) => normalize(left * right),
+  div: ([left, right]) => normalize(left / right),
+  neg: (value) => normalize(-value),
+});
+const Float32 = __wm_float((value) => globalThis.Math.fround(value));
+const Float64 = __wm_float((value) => value);
+const __wm_word8_vector_wrap = (bytes) => globalThis.Object.freeze({
+  [__wm_word8_vector_data]: bytes,
+});
+const __wm_word8_vector_bytes = (vector) => {
+  const bytes = vector?.[__wm_word8_vector_data];
+  if (!(bytes instanceof globalThis.Uint8Array)) {
+    return __wm_fail("TypeError", "expected Word8Vector.vector");
+  }
+  return bytes;
+};
+const __wm_word8_vector_index = (bytes, index) => {
+  if (!globalThis.Number.isSafeInteger(index) || index < 0 || index >= bytes.length) {
+    return __wm_fail("Subscript", "Word8Vector index out of bounds");
+  }
+  return index;
+};
+const __wm_word8_vector_empty = __wm_word8_vector_wrap(new globalThis.Uint8Array(0));
+const Word8Vector = {
+  empty: __wm_word8_vector_empty,
+  fromList: (list) => __wm_word8_vector_wrap(
+    globalThis.Uint8Array.from(__wm_list_to_array(list)),
+  ),
+  length: (vector) => __wm_word8_vector_bytes(vector).length,
+  sub: ([vector, index]) => {
+    const bytes = __wm_word8_vector_bytes(vector);
+    return bytes[__wm_word8_vector_index(bytes, index)];
+  },
+  get: ([vector, index]) => {
+    const bytes = __wm_word8_vector_bytes(vector);
+    return globalThis.Number.isSafeInteger(index) && index >= 0 && index < bytes.length
+      ? __wm_basis_Some(bytes[index])
+      : __wm_basis_None;
+  },
+  update: ([vector, index, value]) => {
+    const bytes = __wm_word8_vector_bytes(vector).slice();
+    bytes[__wm_word8_vector_index(bytes, index)] = value;
+    return __wm_word8_vector_wrap(bytes);
+  },
+  concat: (list) => {
+    const vectors = __wm_list_to_array(list);
+    let length = 0;
+    for (const vector of vectors) length += __wm_word8_vector_bytes(vector).length;
+    const output = new globalThis.Uint8Array(__wm_word_length(length));
+    let offset = 0;
+    for (const vector of vectors) {
+      const bytes = __wm_word8_vector_bytes(vector);
+      output.set(bytes, offset);
+      offset += bytes.length;
+    }
+    return output.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(output);
+  },
+  tabulate: ([length, generate]) => {
+    const output = new globalThis.Uint8Array(__wm_word_length(length));
+    for (let index = 0; index < output.length; index++) output[index] = generate(index);
+    return output.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(output);
+  },
+  mapi: ([vector, map]) => {
+    const bytes = __wm_word8_vector_bytes(vector);
+    const output = new globalThis.Uint8Array(bytes.length);
+    for (let index = 0; index < bytes.length; index++) output[index] = map([index, bytes[index]]);
+    return output.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(output);
+  },
+  unfoldN: ([length, initial, step]) => {
+    const output = new globalThis.Uint8Array(__wm_word_length(length));
+    let state = initial;
+    for (let index = 0; index < output.length; index++) {
+      const next = step(state);
+      output[index] = next[0];
+      state = next[1];
+    }
+    return [output.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(output), state];
+  },
+  toList: (vector) => __wm_array_to_list(__wm_word8_vector_bytes(vector)),
+};
+const __wm_word8_vector_slice_wrap = (vector, offset, length) => globalThis.Object.freeze({
+  [__wm_word8_vector_slice_data]: globalThis.Object.freeze({ vector, offset, length }),
+});
+const __wm_word8_vector_slice_parts = (slice) => {
+  const parts = slice?.[__wm_word8_vector_slice_data];
+  if (parts === undefined) return __wm_fail("TypeError", "expected Word8VectorSlice.slice");
+  return parts;
+};
+const __wm_word8_vector_slice_range = (available, start, lengthOption) => {
+  if (!globalThis.Number.isSafeInteger(start) || start < 0 || start > available) {
+    return __wm_fail("Subscript", "Word8VectorSlice start out of bounds");
+  }
+  const unwrapped = __wm_js_option_unwrap(lengthOption);
+  const length = unwrapped === null ? available - start : unwrapped;
+  if (!globalThis.Number.isSafeInteger(length) || length < 0 || length > available - start) {
+    return __wm_fail("Subscript", "Word8VectorSlice length out of bounds");
+  }
+  return [start, length];
+};
+const Word8VectorSlice = {
+  full: (vector) => __wm_word8_vector_slice_wrap(
+    vector,
+    0,
+    __wm_word8_vector_bytes(vector).length,
+  ),
+  slice: ([vector, start, lengthOption]) => {
+    const bytes = __wm_word8_vector_bytes(vector);
+    const [relative, length] = __wm_word8_vector_slice_range(bytes.length, start, lengthOption);
+    return __wm_word8_vector_slice_wrap(vector, relative, length);
+  },
+  subslice: ([slice, start, lengthOption]) => {
+    const parts = __wm_word8_vector_slice_parts(slice);
+    const [relative, length] = __wm_word8_vector_slice_range(
+      parts.length,
+      start,
+      lengthOption,
+    );
+    return __wm_word8_vector_slice_wrap(parts.vector, parts.offset + relative, length);
+  },
+  base: (slice) => {
+    const parts = __wm_word8_vector_slice_parts(slice);
+    return [parts.vector, parts.offset, parts.length];
+  },
+  length: (slice) => __wm_word8_vector_slice_parts(slice).length,
+  isEmpty: (slice) => __wm_word8_vector_slice_parts(slice).length === 0,
+  sub: ([slice, index]) => {
+    const parts = __wm_word8_vector_slice_parts(slice);
+    const relative = __wm_word8_vector_index({ length: parts.length }, index);
+    return __wm_word8_vector_bytes(parts.vector)[parts.offset + relative];
+  },
+  get: ([slice, index]) => {
+    const parts = __wm_word8_vector_slice_parts(slice);
+    return globalThis.Number.isSafeInteger(index) && index >= 0 && index < parts.length
+      ? __wm_basis_Some(__wm_word8_vector_bytes(parts.vector)[parts.offset + index])
+      : __wm_basis_None;
+  },
+  vector: (slice) => {
+    const parts = __wm_word8_vector_slice_parts(slice);
+    const bytes = __wm_word8_vector_bytes(parts.vector);
+    if (parts.offset === 0 && parts.length === bytes.length) return parts.vector;
+    if (parts.length === 0) return __wm_word8_vector_empty;
+    return __wm_word8_vector_wrap(bytes.slice(parts.offset, parts.offset + parts.length));
+  },
+  concat: (list) => {
+    const slices = __wm_list_to_array(list);
+    let length = 0;
+    for (const slice of slices) length += __wm_word8_vector_slice_parts(slice).length;
+    const output = new globalThis.Uint8Array(__wm_word_length(length));
+    let offset = 0;
+    for (const slice of slices) {
+      const parts = __wm_word8_vector_slice_parts(slice);
+      const bytes = __wm_word8_vector_bytes(parts.vector);
+      output.set(bytes.subarray(parts.offset, parts.offset + parts.length), offset);
+      offset += parts.length;
+    }
+    return output.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(output);
+  },
+};
+const __wm_bytes_task = async (operation) => {
+  try {
+    return __wm_basis_Ok(await operation());
+  } catch (error) {
+    return __wm_basis_Err(__wm_js_error(error));
+  }
+};
+const Bytes = {
+  readFile: (path) => __wm_bytes_task(async () => {
+    const bytes = await globalThis.Deno.readFile(path);
+    return bytes.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(bytes);
+  }),
+  readSlice: ([path, offset, length]) => __wm_bytes_task(async () => {
+    __wm_nonnegative_safe_integer(offset, "offset");
+    __wm_word_length(length);
+    const file = await globalThis.Deno.open(path, { read: true });
+    try {
+      await file.seek(offset, globalThis.Deno.SeekMode.Start);
+      const bytes = new globalThis.Uint8Array(length);
+      let filled = 0;
+      while (filled < length) {
+        const count = await file.read(bytes.subarray(filled));
+        if (count === null) {
+          return __wm_fail(
+            "UnexpectedEof",
+            "short binary slice at " + offset + ": " + filled + "/" + length,
+          );
+        }
+        filled += count;
+      }
+      return bytes.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(bytes);
+    } finally {
+      file.close();
+    }
+  }),
+  writeFile: ([path, vector]) => __wm_bytes_task(async () => {
+    await globalThis.Deno.writeFile(path, __wm_word8_vector_bytes(vector));
+    return undefined;
+  }),
+};
+const __wm_pack_word_location = (input, index, width, sliceExpected) => {
+  if (!globalThis.Number.isSafeInteger(index) || index < 0) {
+    return __wm_fail("Subscript", "PackWord element index out of bounds");
+  }
+  let vector;
+  let baseOffset;
+  let available;
+  if (sliceExpected) {
+    const parts = __wm_word8_vector_slice_parts(input);
+    vector = parts.vector;
+    baseOffset = parts.offset;
+    available = parts.length;
+  } else {
+    vector = input;
+    baseOffset = 0;
+    available = __wm_word8_vector_bytes(vector).length;
+  }
+  const relative = index * width;
+  if (!globalThis.Number.isSafeInteger(relative) || relative + width > available) {
+    return __wm_fail("Subscript", "PackWord element index out of bounds");
+  }
+  return [__wm_word8_vector_bytes(vector), baseOffset + relative];
+};
+const __wm_pack_word = (bits, isBigEndian) => {
+  const width = bits / 8;
+  const littleEndian = !isBigEndian;
+  const read = (input, index, sliceExpected) => {
+    const [bytes, offset] = __wm_pack_word_location(input, index, width, sliceExpected);
+    const view = new globalThis.DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (bits === 16) return view.getUint16(offset, littleEndian);
+    if (bits === 32) return view.getUint32(offset, littleEndian);
+    return view.getBigUint64(offset, littleEndian);
+  };
+  return {
+    bytesPerElem: width,
+    isBigEndian,
+    subVec: ([vector, index]) => read(vector, index, false),
+    subSlice: ([slice, index]) => read(slice, index, true),
+    pack: (value) => {
+      const bytes = new globalThis.Uint8Array(width);
+      const view = new globalThis.DataView(bytes.buffer);
+      if (bits === 16) view.setUint16(0, value, littleEndian);
+      else if (bits === 32) view.setUint32(0, value, littleEndian);
+      else view.setBigUint64(0, value, littleEndian);
+      return __wm_word8_vector_wrap(bytes);
+    },
+  };
+};
+const PackWord16Little = __wm_pack_word(16, false);
+const PackWord16Big = __wm_pack_word(16, true);
+const PackWord32Little = __wm_pack_word(32, false);
+const PackWord32Big = __wm_pack_word(32, true);
+const PackWord64Little = __wm_pack_word(64, false);
+const PackWord64Big = __wm_pack_word(64, true);
+const __wm_pack_real = (bits, isBigEndian) => {
+  const width = bits / 8;
+  const littleEndian = !isBigEndian;
+  const read = (input, index, sliceExpected) => {
+    const [bytes, offset] = __wm_pack_word_location(input, index, width, sliceExpected);
+    const view = new globalThis.DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return bits === 32
+      ? view.getFloat32(offset, littleEndian)
+      : view.getFloat64(offset, littleEndian);
+  };
+  return {
+    bytesPerElem: width,
+    isBigEndian,
+    subVec: ([vector, index]) => read(vector, index, false),
+    subSlice: ([slice, index]) => read(slice, index, true),
+    pack: (value) => {
+      const bytes = new globalThis.Uint8Array(width);
+      const view = new globalThis.DataView(bytes.buffer);
+      if (bits === 32) view.setFloat32(0, value, littleEndian);
+      else view.setFloat64(0, value, littleEndian);
+      return __wm_word8_vector_wrap(bytes);
+    },
+  };
+};
+const PackReal32Little = __wm_pack_real(32, false);
+const PackReal32Big = __wm_pack_real(32, true);
+const PackReal64Little = __wm_pack_real(64, false);
+const PackReal64Big = __wm_pack_real(64, true);
+const Byte = {
+  bytesToString: (vector) => {
+    const bytes = __wm_word8_vector_bytes(vector);
+    const chunks = [];
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      chunks.push(globalThis.String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+    }
+    return chunks.join("");
+  },
+  stringToBytes: (value) => {
+    const bytes = new globalThis.Uint8Array(value.length);
+    for (let index = 0; index < value.length; index++) {
+      const code = value.charCodeAt(index);
+      if (code > 255) {
+        return __wm_fail("Domain", "Byte.stringToBytes requires characters in the byte range");
+      }
+      bytes[index] = code;
+    }
+    return bytes.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(bytes);
+  },
+};
+`,
     `const Js = {
   Array: {
     toList: __wm_array_to_list,

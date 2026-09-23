@@ -564,6 +564,14 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
   });
   addTaskValues(env, typeEnv);
   addJsArrayValues(env, typeEnv);
+  addWordValues(env, typeEnv);
+  addWord8VectorValues(env, typeEnv);
+  addWord8VectorSliceValues(env, typeEnv);
+  addBytesValues(env, typeEnv);
+  addPackWordValues(env, typeEnv);
+  addFloatValues(env, typeEnv);
+  addPackRealValues(env, typeEnv);
+  addByteValues(env, typeEnv);
   const option = typeInfoByName(typeEnv, "Option");
   const jsDict = typeInfoByName(typeEnv, "Js.Dict");
   if (option && jsDict) {
@@ -625,6 +633,242 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
     env.set("Table.setAt", {
       vars: [tableSetAt.id],
       type: fn([tuple([named(jsTable, [tableSetAt]), NumberTy, tableSetAt])], VoidTy),
+      status: "value",
+      basis: true,
+    });
+  }
+}
+
+function addWordValues(env: Env, typeEnv: TypeEnv) {
+  for (const structure of ["Word8", "Word16", "Word32", "Word64"]) {
+    const info = typeInfoByName(typeEnv, `${structure}.word`);
+    if (!info) throw new Error(`missing compiler-owned ${structure}.word basis type`);
+    const word = named(info);
+    const basisValue = (name: string, type: Ty) => {
+      env.set(`${structure}.${name}`, {
+        vars: [],
+        type,
+        status: "value",
+        basis: true,
+      });
+    };
+    basisValue("wordSize", NumberTy);
+    basisValue("fromNumber", fn([NumberTy], word));
+    basisValue("toNumber", fn([word], NumberTy));
+    for (const name of ["andb", "orb", "xorb", "add", "sub", "mul", "div", "mod"]) {
+      basisValue(name, fn([tuple([word, word])], word));
+    }
+    basisValue("notb", fn([word], word));
+    for (const name of ["shiftLeft", "shiftRight", "shiftRightArithmetic"]) {
+      basisValue(name, fn([tuple([word, NumberTy])], word));
+    }
+  }
+}
+
+function addWord8VectorValues(env: Env, typeEnv: TypeEnv) {
+  const wordInfo = typeInfoByName(typeEnv, "Word8.word");
+  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.vector");
+  const listInfo = typeInfoByName(typeEnv, "List");
+  const optionInfo = typeInfoByName(typeEnv, "Option");
+  if (!wordInfo || !vectorInfo || !listInfo || !optionInfo) {
+    throw new Error("missing compiler-owned Word8Vector basis types");
+  }
+  const word = named(wordInfo);
+  const vector = named(vectorInfo);
+  const list = (item: Ty) => named(listInfo, [item]);
+  const option = (item: Ty) => named(optionInfo, [item]);
+  const basisValue = (
+    name: string,
+    vars: Extract<Ty, { tag: "var" }>[],
+    type: Ty,
+  ) => {
+    env.set(`Word8Vector.${name}`, {
+      vars: vars.map((item) => item.id),
+      type,
+      status: "value",
+      basis: true,
+    });
+  };
+
+  basisValue("empty", [], vector);
+  basisValue("fromList", [], fn([list(word)], vector));
+  basisValue("length", [], fn([vector], NumberTy));
+  basisValue("sub", [], fn([tuple([vector, NumberTy])], word));
+  basisValue("get", [], fn([tuple([vector, NumberTy])], option(word)));
+  basisValue("update", [], fn([tuple([vector, NumberTy, word])], vector));
+  basisValue("concat", [], fn([list(vector)], vector));
+  basisValue("tabulate", [], fn([tuple([NumberTy, fn([NumberTy], word)])], vector));
+  basisValue(
+    "mapi",
+    [],
+    fn([tuple([vector, fn([tuple([NumberTy, word])], word)])], vector),
+  );
+  {
+    const state = fresh("state") as Extract<Ty, { tag: "var" }>;
+    basisValue(
+      "unfoldN",
+      [state],
+      fn(
+        [tuple([NumberTy, state, fn([state], tuple([word, state]))])],
+        tuple([vector, state]),
+      ),
+    );
+  }
+  basisValue("toList", [], fn([vector], list(word)));
+}
+
+function addWord8VectorSliceValues(env: Env, typeEnv: TypeEnv) {
+  const wordInfo = typeInfoByName(typeEnv, "Word8.word");
+  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.vector");
+  const sliceInfo = typeInfoByName(typeEnv, "Word8VectorSlice.slice");
+  const listInfo = typeInfoByName(typeEnv, "List");
+  const optionInfo = typeInfoByName(typeEnv, "Option");
+  if (!wordInfo || !vectorInfo || !sliceInfo || !listInfo || !optionInfo) {
+    throw new Error("missing compiler-owned Word8VectorSlice basis types");
+  }
+  const word = named(wordInfo);
+  const vector = named(vectorInfo);
+  const slice = named(sliceInfo);
+  const list = (item: Ty) => named(listInfo, [item]);
+  const option = (item: Ty) => named(optionInfo, [item]);
+  const basisValue = (name: string, type: Ty) => {
+    env.set(`Word8VectorSlice.${name}`, {
+      vars: [],
+      type,
+      status: "value",
+      basis: true,
+    });
+  };
+
+  basisValue("full", fn([vector], slice));
+  basisValue("slice", fn([tuple([vector, NumberTy, option(NumberTy)])], slice));
+  basisValue("subslice", fn([tuple([slice, NumberTy, option(NumberTy)])], slice));
+  basisValue("base", fn([slice], tuple([vector, NumberTy, NumberTy])));
+  basisValue("length", fn([slice], NumberTy));
+  basisValue("isEmpty", fn([slice], BoolTy));
+  basisValue("sub", fn([tuple([slice, NumberTy])], word));
+  basisValue("get", fn([tuple([slice, NumberTy])], option(word)));
+  basisValue("vector", fn([slice], vector));
+  basisValue("concat", fn([list(slice)], vector));
+}
+
+function addBytesValues(env: Env, typeEnv: TypeEnv) {
+  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.vector");
+  const taskInfo = typeInfoByName(typeEnv, "Task");
+  const jsErrorInfo = typeInfoByName(typeEnv, "Js.Error");
+  if (!vectorInfo || !taskInfo || !jsErrorInfo) {
+    throw new Error("missing compiler-owned Bytes basis types");
+  }
+  const vector = named(vectorInfo);
+  const error = named(jsErrorInfo);
+  const task = (value: Ty) => named(taskInfo, [value, error]);
+  const basisValue = (name: string, type: Ty) => {
+    env.set(`Bytes.${name}`, {
+      vars: [],
+      type,
+      status: "value",
+      basis: true,
+    });
+  };
+
+  basisValue("readFile", fn([StringTy], task(vector)));
+  basisValue("readSlice", fn([tuple([StringTy, NumberTy, NumberTy])], task(vector)));
+  basisValue("writeFile", fn([tuple([StringTy, vector])], task(VoidTy)));
+}
+
+function addPackWordValues(env: Env, typeEnv: TypeEnv) {
+  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.vector");
+  const sliceInfo = typeInfoByName(typeEnv, "Word8VectorSlice.slice");
+  if (!vectorInfo || !sliceInfo) throw new Error("missing compiler-owned PackWord byte types");
+  const vector = named(vectorInfo);
+  const slice = named(sliceInfo);
+  for (const width of [16, 32, 64]) {
+    const wordInfo = typeInfoByName(typeEnv, `Word${width}.word`);
+    if (!wordInfo) throw new Error(`missing compiler-owned Word${width}.word basis type`);
+    const word = named(wordInfo);
+    for (const endian of ["Little", "Big"]) {
+      const structure = `PackWord${width}${endian}`;
+      const basisValue = (name: string, type: Ty) => {
+        env.set(`${structure}.${name}`, {
+          vars: [],
+          type,
+          status: "value",
+          basis: true,
+        });
+      };
+      basisValue("bytesPerElem", NumberTy);
+      basisValue("isBigEndian", BoolTy);
+      basisValue("subVec", fn([tuple([vector, NumberTy])], word));
+      basisValue("subSlice", fn([tuple([slice, NumberTy])], word));
+      basisValue("pack", fn([word], vector));
+    }
+  }
+}
+
+function addFloatValues(env: Env, typeEnv: TypeEnv) {
+  for (const structure of ["Float32", "Float64"]) {
+    const info = typeInfoByName(typeEnv, `${structure}.real`);
+    if (!info) throw new Error(`missing compiler-owned ${structure}.real basis type`);
+    const real = named(info);
+    const basisValue = (name: string, type: Ty) => {
+      env.set(`${structure}.${name}`, {
+        vars: [],
+        type,
+        status: "value",
+        basis: true,
+      });
+    };
+    basisValue("fromNumber", fn([NumberTy], real));
+    basisValue("toNumber", fn([real], NumberTy));
+    for (const name of ["add", "sub", "mul", "div"]) {
+      basisValue(name, fn([tuple([real, real])], real));
+    }
+    basisValue("neg", fn([real], real));
+  }
+}
+
+function addPackRealValues(env: Env, typeEnv: TypeEnv) {
+  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.vector");
+  const sliceInfo = typeInfoByName(typeEnv, "Word8VectorSlice.slice");
+  if (!vectorInfo || !sliceInfo) throw new Error("missing compiler-owned PackReal byte types");
+  const vector = named(vectorInfo);
+  const slice = named(sliceInfo);
+  for (const width of [32, 64]) {
+    const realInfo = typeInfoByName(typeEnv, `Float${width}.real`);
+    if (!realInfo) throw new Error(`missing compiler-owned Float${width}.real basis type`);
+    const real = named(realInfo);
+    for (const endian of ["Little", "Big"]) {
+      const structure = `PackReal${width}${endian}`;
+      const basisValue = (name: string, type: Ty) => {
+        env.set(`${structure}.${name}`, {
+          vars: [],
+          type,
+          status: "value",
+          basis: true,
+        });
+      };
+      basisValue("bytesPerElem", NumberTy);
+      basisValue("isBigEndian", BoolTy);
+      basisValue("subVec", fn([tuple([vector, NumberTy])], real));
+      basisValue("subSlice", fn([tuple([slice, NumberTy])], real));
+      basisValue("pack", fn([real], vector));
+    }
+  }
+}
+
+function addByteValues(env: Env, typeEnv: TypeEnv) {
+  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.vector");
+  if (!vectorInfo) throw new Error("missing compiler-owned Byte basis types");
+  const vector = named(vectorInfo);
+  for (
+    const [name, type] of [
+      ["bytesToString", fn([vector], StringTy)],
+      ["stringToBytes", fn([StringTy], vector)],
+    ] as const
+  ) {
+    env.set(`Byte.${name}`, {
+      vars: [],
+      type,
       status: "value",
       basis: true,
     });

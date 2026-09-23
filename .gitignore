@@ -8,3 +8,5 @@ tooling/wmslang/wmslang.generated.mjs
 profiles/
 benchmarks/
 *.wm-mini*
+*.wm-cache*
+_scratch/

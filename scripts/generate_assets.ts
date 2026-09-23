@@ -6,6 +6,7 @@ type Asset = {
 };
 
 const assets: Asset[] = [
+  { name: "binarySource", url: new URL("../std/binary.wm", import.meta.url) },
   { name: "listSource", url: new URL("../std/list.wm", import.meta.url) },
   { name: "mapSource", url: new URL("../std/map.wm", import.meta.url) },
   { name: "monadSource", url: new URL("../std/monad.wm", import.meta.url) },
