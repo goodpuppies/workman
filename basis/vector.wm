@@ -1,0 +1,145 @@
+from "./basis.wm" import * as Basis;
+from "./general.wm" import { Less, Equal, Greater };
+from js.module("./js/vector.js") import unsafe {
+  fromArray: Js.Array<a> -> Vector.Vector<a>,
+  toArray: Vector.Vector<a> -> Js.Array<a>,
+  length as primLength: Vector.Vector<a> -> Number,
+  uncheckedSub: (Vector.Vector<a>, Number) -> a,
+  uncheckedUpdate: (Vector.Vector<a>, Number, a) -> Vector.Vector<a>,
+  tabulate as primTabulate: (Number, Number -> a) -> Vector.Vector<a>,
+  concatArray: Js.Array<Vector.Vector<a>> -> Vector.Vector<a>
+};
+
+// Basis `VECTOR`. Functions that raise `Subscript` in the spec return `Result<T, Basis.Error>`;
+// `Size` panics. Arguments come data-first so pipes work.
+
+let maxLen = 4294967295;
+
+let fromList = (items) => { fromArray(Js.Array.fromList(items)) };
+
+let tabulate = (count, generate) => { primTabulate(count, generate) };
+
+let length = (vector) => { primLength(vector) };
+
+let sub = (vector, index: Number) => {
+  if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
+    Ok(uncheckedSub(vector, index))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let update = (vector, index: Number, value) => {
+  if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
+    Ok(uncheckedUpdate(vector, index, value))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let concat = (vectors) => { concatArray(Js.Array.fromList(vectors)) };
+
+let appi = (vector, f) => {
+  let count = primLength(vector);
+  let rec loop = (index) => {
+    if (index < count) {
+      f(index, uncheckedSub(vector, index));
+      loop(index + 1)
+    } else {
+      void
+    }
+  };
+  loop(0)
+};
+
+let app = (vector, f) => { appi(vector, (_, item) => { f(item) }) };
+
+let mapi = (vector, f) => {
+  primTabulate(primLength(vector), (index) => { f(index, uncheckedSub(vector, index)) })
+};
+
+let map = (vector, f) => {
+  primTabulate(primLength(vector), (index) => { f(uncheckedSub(vector, index)) })
+};
+
+let foldli = (vector, initial, f) => {
+  let count = primLength(vector);
+  let rec loop = (index, accumulator) => {
+    if (index < count) {
+      loop(index + 1, f(index, uncheckedSub(vector, index), accumulator))
+    } else {
+      accumulator
+    }
+  };
+  loop(0, initial)
+};
+
+let foldri = (vector, initial, f) => {
+  let rec loop = (index, accumulator) => {
+    if (index >= 0) {
+      loop(index - 1, f(index, uncheckedSub(vector, index), accumulator))
+    } else {
+      accumulator
+    }
+  };
+  loop(primLength(vector) - 1, initial)
+};
+
+let foldl = (vector, initial, f) => {
+  foldli(vector, initial, (_, item, accumulator) => { f(item, accumulator) })
+};
+
+let foldr = (vector, initial, f) => {
+  foldri(vector, initial, (_, item, accumulator) => { f(item, accumulator) })
+};
+
+let findi = (vector, predicate) => {
+  let count = primLength(vector);
+  let rec loop = (index) => {
+    if (index < count) {
+      let item = uncheckedSub(vector, index);
+      if (predicate(index, item)) { Some((index, item)) } else { loop(index + 1) }
+    } else {
+      None
+    }
+  };
+  loop(0)
+};
+
+let find = (vector, predicate) => {
+  match(findi(vector, (_, item) => { predicate(item) })) {
+    Some(found) => {
+      let (_, item) = found;
+      Some(item)
+    },
+    None => { None }
+  }
+};
+
+let exists = (vector, predicate) => {
+  match(findi(vector, (_, item) => { predicate(item) })) {
+    Some(_) => { true },
+    None => { false }
+  }
+};
+
+let all = (vector, predicate) => {
+  !exists(vector, (item) => { !predicate(item) })
+};
+
+let collate = (left, right, compare) => {
+  let leftCount = primLength(left);
+  let rightCount = primLength(right);
+  let rec loop = (index) => {
+    if (index >= leftCount || index >= rightCount) {
+      if (index < rightCount) { Less } else { if (index < leftCount) { Greater } else { Equal } }
+    } else {
+      match(compare(uncheckedSub(left, index), uncheckedSub(right, index))) {
+        Equal => { loop(index + 1) },
+        Less => { Less },
+        Greater => { Greater }
+      }
+    }
+  };
+  loop(0)
+};

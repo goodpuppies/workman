@@ -15,10 +15,10 @@ those clients owns their semantics. The semantic model comes from Standard ML; t
 backend supplies efficient representations.
 
 This document is the design target. The first implementation slice now includes nominal
-`Word8.word`, `Word16.word`, `Word32.word`, and `Word64.word` types with modular arithmetic and
-logical operations, plus immutable `Word8Vector.vector` values with `fromList`, `tabulate`, `mapi`,
+`Word8.Word`, `Word16.Word`, `Word32.Word`, and `Word64.Word` types with modular arithmetic and
+logical operations, plus immutable `Word8Vector.Vector` values with `fromList`, `tabulate`, `mapi`,
 `unfoldN`, `concat`, persistent `update`, and observation operations. Immutable
-`Word8VectorSlice.slice` views provide shared bounded ranges and explicit freezing back to vectors.
+`Word8VectorSlice.Slice` views provide shared bounded ranges and explicit freezing back to vectors.
 `PackWord*` and `PackReal*` provide endian-aware immutable reads and single-value encoding;
 `Bytes` provides immutable file input/range input/output; and the source-level `Binary` module adds
 checked byte-offset reads, immutable cursors, and NUL-terminated byte-string decoding. Streaming
@@ -155,10 +155,10 @@ the exact SML surface spelling.
 The C FFI can present convenient aliases where a header demands them:
 
 ```text
-U8     = Word8.word
-U16    = Word16.word
-U32    = Word32.word
-U64    = Word64.word
+U8     = Word8.Word
+U16    = Word16.Word
+U32    = Word32.Word
+U64    = Word64.Word
 I8     = Int8.int
 I16    = Int16.int
 I32    = Int32.int
@@ -195,9 +195,9 @@ Using `bigint` for exact 64-bit values removes the existing pointer-shaped worka
 The SML Basis model distinguishes the important semantic axes:
 
 ```text
-Word8Vector.vector       immutable compact byte sequence
+Word8Vector.Vector       immutable compact byte sequence
 Word8Array.array         mutable compact byte sequence
-Word8VectorSlice.slice   immutable shared view
+Word8VectorSlice.Slice   immutable shared view
 Word8ArraySlice.slice    mutable shared view
 ```
 
@@ -214,8 +214,8 @@ first implementation. Start with `Word8Vector` and `Word8VectorSlice`. In partic
 Workman may initially provide these ergonomic aliases:
 
 ```text
-Bytes     = Word8Vector.vector
-ByteSlice = Word8VectorSlice.slice
+Bytes     = Word8Vector.Vector
+ByteSlice = Word8VectorSlice.Slice
 ```
 
 The aliases must not introduce additional runtime representations.
@@ -226,13 +226,14 @@ The aliases must not introduce additional runtime representations.
 Word8Vector.empty    : Word8Vector
 Word8Vector.fromList : List<Word8> -> Word8Vector
 Word8Vector.length   : Word8Vector -> Number
-Word8Vector.sub      : (Word8Vector, Number) -> Word8
-Word8Vector.get      : (Word8Vector, Number) -> Option<Word8>
-Word8Vector.update   : (Word8Vector, Number, Word8) -> Word8Vector
+Word8Vector.sub      : (Word8Vector, Number) -> Result<Word8, Basis.Error>
+Word8Vector.update   : (Word8Vector, Number, Word8) -> Result<Word8Vector, Basis.Error>
 Word8Vector.concat   : List<Word8Vector> -> Word8Vector
 ```
 
-`update` returns a new vector as in SML. It is not the primitive used for bulk construction.
+`update` returns a new vector as in SML. It is not the primitive used for bulk construction. An
+index out of range gives `Err(Basis.Subscript)`, as do `Word8VectorSlice.sub`, `slice`, `subslice`
+and the `Pack*` reads (`basis-update/decisions.md`, BD14).
 
 ### Deferred Basis array interface
 
@@ -336,8 +337,8 @@ The first file operation can be a narrow Workman extension:
 Bytes.readFile : String -> Task<Word8Vector, IoError>
 ```
 
-The eventual SML-shaped home is `BinIO`, whose element is `Word8.word` and whose vector is
-`Word8Vector.vector`. Streaming and seekable input should use exact `Position`, not `Number`.
+The eventual SML-shaped home is `BinIO`, whose element is `Word8.Word` and whose vector is
+`Word8Vector.Vector`. Streaming and seekable input should use exact `Position`, not `Number`.
 
 C interop rules:
 

@@ -1,3 +1,6 @@
+from "../basis/basis.wm" import * as Basis;
+from "../basis/general.wm" import { Less, Equal, Greater };
+
 let rec map = match(items, f) => {
   ([], _) => { [] },
   ([head, ..rest], f) => { [f(head), ..map(rest, f)] }
@@ -115,4 +118,111 @@ let toString = (items) => {
 
 let toStringRender = (items, render) => {
   toString(map(items, render))
+};
+
+// Basis `LIST` functions with no existing Workman name. Existing names cover `@` (`append`), `nth`
+// (`at`), `take`, `drop`, `rev` (`reverse`), `foldl`/`foldr` (`foldLeft`/`foldRight`) and `exists`
+// (`any`). Arguments come data-first so pipes work.
+
+let null = match(items) => {
+  [] => { true },
+  _ => { false }
+};
+
+let hd = match(items) => {
+  [head, .._] => { Ok(head) },
+  [] => { Err(Basis.Empty) }
+};
+
+let tl = match(items) => {
+  [_, ..rest] => { Ok(rest) },
+  [] => { Err(Basis.Empty) }
+};
+
+let rec last = match(items) => {
+  [] => { Err(Basis.Empty) },
+  [item] => { Ok(item) },
+  [_, ..rest] => { last(rest) }
+};
+
+let getItem = match(items) => {
+  [head, ..rest] => { Some((head, rest)) },
+  [] => { None }
+};
+
+let rec revAppend = match(left, right) => {
+  ([], right) => { right },
+  ([head, ..rest], right) => { revAppend(rest, [head, ..right]) }
+};
+
+let concat = (lists) => {
+  foldRight(lists, [], (items, joined) => { append(items, joined) })
+};
+
+let rec app = match(items, f) => {
+  ([], _) => { void },
+  ([head, ..rest], f) => {
+    f(head);
+    app(rest, f)
+  }
+};
+
+let mapPartial = (items, f) => {
+  let rec loop = match(remaining, kept) => {
+    ([], kept) => { reverse(kept) },
+    ([head, ..rest], kept) => {
+      match(f(head)) {
+        Some(value) => { loop(rest, [value, ..kept]) },
+        None => { loop(rest, kept) }
+      }
+    }
+  };
+  loop(items, [])
+};
+
+let rec find = match(items, predicate) => {
+  ([], _) => { None },
+  ([head, ..rest], predicate) => {
+    if (predicate(head)) { Some(head) } else { find(rest, predicate) }
+  }
+};
+
+let partition = (items, predicate) => {
+  let rec loop = match(remaining, accepted, rejected) => {
+    ([], accepted, rejected) => { (reverse(accepted), reverse(rejected)) },
+    ([head, ..rest], accepted, rejected) => {
+      if (predicate(head)) {
+        loop(rest, [head, ..accepted], rejected)
+      } else {
+        loop(rest, accepted, [head, ..rejected])
+      }
+    }
+  };
+  loop(items, [], [])
+};
+
+let tabulate = (count: Number, f) => {
+  if (count < 0 || count % 1 != 0) {
+    Panic("Size: List.tabulate count must be a non-negative integer")
+  } else {
+    let rec loop = match(index, built) => {
+      (index, built) => {
+        if (index < 0) { built } else { loop(index - 1, [f(index), ..built]) }
+      }
+    };
+    loop(count - 1, [])
+  }
+};
+
+let rec collate = match(left, right, compare) => {
+  ([], [], _) => { Equal },
+  ([], _, _) => { Less },
+  (_, [], _) => { Greater },
+  ([a, ..restA], [b, ..restB], compare) => {
+    match(compare(a, b)) {
+      Equal => { collate(restA, restB, compare) },
+      Less => { Less },
+      Greater => { Greater }
+    }
+  }
 };

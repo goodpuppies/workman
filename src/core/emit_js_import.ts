@@ -2,7 +2,7 @@ import type { JsImportSpec, TypeExpr } from "../ast.ts";
 import { cExtractionFor, CODEC_LIB_PREFIX } from "../ffi/c/prepare.ts";
 import { type CCodecDescriptor, validateCodecDescriptor } from "../ffi/c/byte_type.ts";
 import type { ExtractedStruct, ExtractedTypeDesc } from "../ffi/c/extract.ts";
-import { runtimeJsModuleSpecifier } from "../js_module_specifier.ts";
+import { LIBRARY_JS_SCHEME, runtimeJsModuleSpecifier } from "../js_module_specifier.ts";
 import type { CoreDecl } from "./ast.ts";
 import { emitJsIdentifier as id } from "./emit_name.ts";
 
@@ -33,9 +33,20 @@ type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
 
 let jsImportTemp = 0;
 let workerSpecifiers = new Map<string, string>();
+/** JS modules already imported in the module body being emitted, by specifier. */
+let moduleImportNames = new Map<string, string>();
+/** Library JS files used by the program, by `wm-library:` specifier, with their constant's name. */
+let libraryJsNames = new Map<string, string>();
+
+/** Start a new module body, whose scope holds none of the previous body's module imports. */
+export function resetModuleImportNames(): void {
+  moduleImportNames = new Map();
+}
 
 export function resetJsImportEmitter(): void {
   jsImportTemp = 0;
+  moduleImportNames = new Map();
+  libraryJsNames = new Map();
   namespaceRecordCtors = new Map();
   cNamespaceMemberUsage = new Map();
 }
@@ -74,8 +85,8 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
     return emitCImportDecl(decl);
   }
   const target = jsTargetRef(decl.target);
-  const prefix: string[] = target.kind === "module" || target.kind === "moduleConstructor" ||
-      target.kind === "worker"
+  const prefix: string[] = (target.kind === "module" || target.kind === "moduleConstructor" ||
+      target.kind === "worker") && target.setup
     ? [target.setup]
     : [];
   if (decl.clause.kind === "Namespace") {
@@ -792,19 +803,50 @@ function fallibleOkType(type: TypeExpr): TypeExpr | undefined {
   return undefined;
 }
 
+/**
+ * Bind a JS module once per module body. The setup is empty when an earlier import in the same body
+ * already bound it. A library file (`wm-library:`) is imported through its program-level constant.
+ */
+function jsModuleImport(specifier: string): { name: string; setup: string } {
+  const existing = moduleImportNames.get(specifier);
+  if (existing) return { name: existing, setup: "" };
+  const name = `__wm_js_module_${jsImportTemp++}`;
+  moduleImportNames.set(specifier, name);
+  return {
+    name,
+    setup: `const ${name} = await import(${
+      specifier.startsWith(LIBRARY_JS_SCHEME)
+        ? libraryJsName(specifier)
+        : JSON.stringify(runtimeJsModuleSpecifier(specifier))
+    });`,
+  };
+}
+
+function libraryJsName(specifier: string): string {
+  let name = libraryJsNames.get(specifier);
+  if (!name) {
+    name = `__wm_library_js_${libraryJsNames.size}`;
+    libraryJsNames.set(specifier, name);
+  }
+  return name;
+}
+
+/**
+ * Program-level declarations of the library JS files imported by the module bodies emitted so far,
+ * each inlined once as a `data:` URL however many library modules share it.
+ */
+export function emitLibraryJsSources(): string[] {
+  return [...libraryJsNames].map(([specifier, name]) =>
+    `const ${name} = ${JSON.stringify(runtimeJsModuleSpecifier(specifier))};`
+  );
+}
+
 function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
   if (target.kind === "JsGlobalRoot") return { kind: "global", path: "" };
   if (target.kind === "JsGlobal") return { kind: "global", path: target.path };
   if (target.kind === "JsMeta") return { kind: "meta" };
   if (target.kind === "JsModule") {
-    const name = `__wm_js_module_${jsImportTemp++}`;
-    return {
-      kind: "module",
-      name,
-      setup: `const ${name} = await import(${
-        JSON.stringify(runtimeJsModuleSpecifier(target.specifier))
-      });`,
-    };
+    return { kind: "module", ...jsModuleImport(target.specifier) };
   }
   if (target.kind === "JsWorker") {
     const name = `__wm_js_worker_${jsImportTemp++}`;
@@ -823,14 +865,12 @@ function jsTargetRef(target: CoreJsImport["target"]): JsTargetRef {
   if (target.kind === "JsConstructor") {
     const moduleCtor = parseModuleConstructorPath(target.path);
     if (moduleCtor) {
-      const name = `__wm_js_module_${jsImportTemp++}`;
+      const { name, setup } = jsModuleImport(moduleCtor.specifier);
       return {
         kind: "moduleConstructor",
         moduleName: name,
         memberName: moduleCtor.memberName,
-        setup: `const ${name} = await import(${
-          JSON.stringify(runtimeJsModuleSpecifier(moduleCtor.specifier))
-        });`,
+        setup,
       };
     }
     return { kind: "constructor", path: target.path };

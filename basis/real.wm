@@ -1,0 +1,144 @@
+from "./basis.wm" import * as Basis;
+from "./general.wm" import { Less, Equal, Greater };
+from js.global("Math") import unsafe {
+  abs as primAbs: Number -> Number,
+  floor as primFloor: Number -> Number,
+  ceil as primCeil: Number -> Number,
+  trunc as primTrunc: Number -> Number,
+  pow as primPow: (Number, Number) -> Number
+};
+from js.global("Number") import unsafe {
+  MAX_VALUE: Number,
+  MIN_VALUE: Number,
+  isFinite as primIsFinite: Number -> Bool,
+  isNaN as primIsNaN: Number -> Bool
+};
+from js.module("./js/real.js") import unsafe {
+  signBit as primSignBit: Number -> Bool,
+  copySign as primCopySign: (Number, Number) -> Number,
+  toManExp as primToManExp: Number -> (Number, Number),
+  fromManExp as primFromManExp: (Number, Number) -> Number,
+  nextAfter as primNextAfter: (Number, Number) -> Number,
+  isNormal as primIsNormal: Number -> Bool,
+  roundHalfEven: Number -> Number
+};
+
+// Basis `REAL` over `Number`, the JavaScript double, so `Real.real` is `Number`. Left out until
+// their dependencies exist: the conversions through `StringCvt` and `IEEEReal` (`fmt`, `toString`,
+// `scan`, `fromString`, `toDecimal`, `fromDecimal`, `toInt`, `class`, `compareReal`), the
+// `LargeInt`/`LargeReal` conversions, the operators, which are `Number`'s own, and `fromInt`, which
+// would be the identity since `int` is also `Number`. `floor`,
+// `ceil`, `trunc` and `round` return `Err(Basis.Domain)` on NaN and panic with `Overflow` on an
+// infinity. Arguments come data-first.
+
+// The spec's anonymous records `{man, exp}` and `{whole, frac}`, named because Workman records are
+// nominal.
+record ManExp = { man: Number, exp: Number };
+record Split = { whole: Number, frac: Number };
+
+let radix = 2;
+let precision = 53;
+let maxFinite = MAX_VALUE;
+let minPos = MIN_VALUE;
+let minNormalPos = primPow(2, -1022);
+let posInf = 1 / 0;
+let negInf = -1 / 0;
+
+let rem = (x: Number, y: Number) => { x % y };
+
+let abs = primAbs;
+
+let isNan = primIsNaN;
+
+let isFinite = primIsFinite;
+
+let isNormal = primIsNormal;
+
+let min = (x: Number, y: Number) => {
+  if (primIsNaN(x)) { y } else { if (primIsNaN(y)) { x } else { if (y < x) { y } else { x } } }
+};
+
+let max = (x: Number, y: Number) => {
+  if (primIsNaN(x)) { y } else { if (primIsNaN(y)) { x } else { if (y > x) { y } else { x } } }
+};
+
+let sign = (x: Number) => {
+  if (primIsNaN(x)) {
+    Err(Basis.Domain)
+  } else {
+    Ok(if (x < 0) { -1 } else { if (x > 0) { 1 } else { 0 } })
+  }
+};
+
+let signBit = primSignBit;
+
+let sameSign = (x: Number, y: Number) => { primSignBit(x) == primSignBit(y) };
+
+let copySign = primCopySign;
+
+let compare = (x: Number, y: Number) => {
+  if (primIsNaN(x) || primIsNaN(y)) {
+    Err(Basis.Unordered)
+  } else {
+    Ok(if (x < y) { Less } else { if (x > y) { Greater } else { Equal } })
+  }
+};
+
+let unordered = (x: Number, y: Number) => { primIsNaN(x) || primIsNaN(y) };
+
+let toManExp = (x: Number) => {
+  let (man, exp) = primToManExp(x);
+  .{ man = man, exp = exp }
+};
+
+let fromManExp = (parts: ManExp) => { primFromManExp(parts.man, parts.exp) };
+
+let split = (x: Number) => {
+  let whole = if (primIsFinite(x)) { primTrunc(x) } else { x };
+  let frac = if (primIsFinite(x)) { x - whole } else { if (primIsNaN(x)) { x } else { primCopySign(0, x) } };
+  .{ whole = whole, frac = primCopySign(frac, x) }
+};
+
+let realMod = (x: Number) => {
+  let parts: Split = split(x);
+  parts.frac
+};
+
+let nextAfter = primNextAfter;
+
+let checkFloat = (x: Number) => {
+  if (primIsNaN(x)) {
+    Panic("Div: Real.checkFloat of NaN")
+  } else {
+    if (primIsFinite(x)) { x } else { Panic("Overflow: Real.checkFloat of an infinity") }
+  }
+};
+
+let realFloor = primFloor;
+let realCeil = primCeil;
+let realTrunc = primTrunc;
+let realRound = roundHalfEven;
+
+let floor = (x: Number) => {
+  if (primIsNaN(x)) { Err(Basis.Domain) } else {
+    if (primIsFinite(x)) { Ok(primFloor(x)) } else { Panic("Overflow: Real.floor of an infinity") }
+  }
+};
+
+let ceil = (x: Number) => {
+  if (primIsNaN(x)) { Err(Basis.Domain) } else {
+    if (primIsFinite(x)) { Ok(primCeil(x)) } else { Panic("Overflow: Real.ceil of an infinity") }
+  }
+};
+
+let trunc = (x: Number) => {
+  if (primIsNaN(x)) { Err(Basis.Domain) } else {
+    if (primIsFinite(x)) { Ok(primTrunc(x)) } else { Panic("Overflow: Real.trunc of an infinity") }
+  }
+};
+
+let round = (x: Number) => {
+  if (primIsNaN(x)) { Err(Basis.Domain) } else {
+    if (primIsFinite(x)) { Ok(roundHalfEven(x)) } else { Panic("Overflow: Real.round of an infinity") }
+  }
+};

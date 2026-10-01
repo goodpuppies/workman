@@ -1,0 +1,178 @@
+from "./basis.wm" import * as Basis;
+from "./general.wm" import { Less, Equal, Greater };
+from js.module("./js/vector.js") import unsafe {
+  length as vectorLength: Vector.Vector<a> -> Number,
+  uncheckedSub: (Vector.Vector<a>, Number) -> a,
+  uncheckedSlice: (Vector.Vector<a>, Number, Number) -> VectorSlice.Slice<a>,
+  sliceBase: VectorSlice.Slice<a> -> (Vector.Vector<a>, Number, Number),
+  sliceToVector: VectorSlice.Slice<a> -> Vector.Vector<a>,
+  sliceConcatArray: Js.Array<VectorSlice.Slice<a>> -> Vector.Vector<a>,
+  tabulate as vectorTabulate: (Number, Number -> a) -> Vector.Vector<a>
+};
+
+// Basis `VECTOR_SLICE`. Functions that raise `Subscript` in the spec, including `slice` and
+// `subslice` with an out-of-range start or length, return `Result<T, Basis.Error>`. Arguments come
+// data-first so pipes work.
+
+let length = (slice) => {
+  let (_, _, count) = sliceBase(slice);
+  count
+};
+
+let sub = (slice, index: Number) => {
+  let (vector, offset, count) = sliceBase(slice);
+  if (index >= 0 && index % 1 == 0 && index < count) {
+    Ok(uncheckedSub(vector, offset + index))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let full = (vector) => { uncheckedSlice(vector, 0, vectorLength(vector)) };
+
+let slice = (vector, start: Number, count: Option<Number>) => {
+  let available = vectorLength(vector);
+  let resolved = match(count) {
+    Some(requested) => { requested },
+    None => { available - start }
+  };
+  if (
+    start >= 0 && start % 1 == 0 && start <= available &&
+    resolved >= 0 && resolved % 1 == 0 && resolved <= available - start
+  ) {
+    Ok(uncheckedSlice(vector, start, resolved))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let subslice = (parent, start: Number, count: Option<Number>) => {
+  let (vector, offset, available) = sliceBase(parent);
+  let resolved = match(count) {
+    Some(requested) => { requested },
+    None => { available - start }
+  };
+  if (
+    start >= 0 && start % 1 == 0 && start <= available &&
+    resolved >= 0 && resolved % 1 == 0 && resolved <= available - start
+  ) {
+    Ok(uncheckedSlice(vector, offset + start, resolved))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let base = (slice) => { sliceBase(slice) };
+
+let vector = (slice) => { sliceToVector(slice) };
+
+let concat = (slices) => { sliceConcatArray(Js.Array.fromList(slices)) };
+
+let isEmpty = (slice) => { length(slice) == 0 };
+
+let getItem = (slice) => {
+  let (vector, offset, count) = sliceBase(slice);
+  if (count == 0) {
+    None
+  } else {
+    Some((uncheckedSub(vector, offset), uncheckedSlice(vector, offset + 1, count - 1)))
+  }
+};
+
+let foldli = (slice, initial, f) => {
+  let (vector, offset, count) = sliceBase(slice);
+  let rec loop = (index, accumulator) => {
+    if (index < count) {
+      loop(index + 1, f(index, uncheckedSub(vector, offset + index), accumulator))
+    } else {
+      accumulator
+    }
+  };
+  loop(0, initial)
+};
+
+let foldri = (slice, initial, f) => {
+  let (vector, offset, count) = sliceBase(slice);
+  let rec loop = (index, accumulator) => {
+    if (index >= 0) {
+      loop(index - 1, f(index, uncheckedSub(vector, offset + index), accumulator))
+    } else {
+      accumulator
+    }
+  };
+  loop(count - 1, initial)
+};
+
+let foldl = (slice, initial, f) => {
+  foldli(slice, initial, (_, item, accumulator) => { f(item, accumulator) })
+};
+
+let foldr = (slice, initial, f) => {
+  foldri(slice, initial, (_, item, accumulator) => { f(item, accumulator) })
+};
+
+let appi = (slice, f) => {
+  foldli(slice, void, (index, item, _) => { f(index, item) })
+};
+
+let app = (slice, f) => { appi(slice, (_, item) => { f(item) }) };
+
+let mapi = (slice, f) => {
+  let (vector, offset, count) = sliceBase(slice);
+  vectorTabulate(count, (index) => { f(index, uncheckedSub(vector, offset + index)) })
+};
+
+let map = (slice, f) => { mapi(slice, (_, item) => { f(item) }) };
+
+let findi = (slice, predicate) => {
+  let (vector, offset, count) = sliceBase(slice);
+  let rec loop = (index) => {
+    if (index < count) {
+      let item = uncheckedSub(vector, offset + index);
+      if (predicate(index, item)) { Some((index, item)) } else { loop(index + 1) }
+    } else {
+      None
+    }
+  };
+  loop(0)
+};
+
+let find = (slice, predicate) => {
+  match(findi(slice, (_, item) => { predicate(item) })) {
+    Some(found) => {
+      let (_, item) = found;
+      Some(item)
+    },
+    None => { None }
+  }
+};
+
+let exists = (slice, predicate) => {
+  match(findi(slice, (_, item) => { predicate(item) })) {
+    Some(_) => { true },
+    None => { false }
+  }
+};
+
+let all = (slice, predicate) => {
+  !exists(slice, (item) => { !predicate(item) })
+};
+
+let collate = (left, right, compare) => {
+  let (leftVector, leftOffset, leftCount) = sliceBase(left);
+  let (rightVector, rightOffset, rightCount) = sliceBase(right);
+  let rec loop = (index) => {
+    if (index >= leftCount || index >= rightCount) {
+      if (index < rightCount) { Less } else { if (index < leftCount) { Greater } else { Equal } }
+    } else {
+      let leftItem = uncheckedSub(leftVector, leftOffset + index);
+      let rightItem = uncheckedSub(rightVector, rightOffset + index);
+      match(compare(leftItem, rightItem)) {
+        Equal => { loop(index + 1) },
+        Less => { Less },
+        Greater => { Greater }
+      }
+    }
+  };
+  loop(0)
+};

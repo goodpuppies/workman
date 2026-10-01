@@ -1,0 +1,13 @@
+// The expected-outcome exceptions of the Basis Library as one datatype. A Basis function that
+// raises one of these returns `Result<T, Basis.Error>` in Workman (`markdown/basis-design.md`,
+// Basis exceptions). `Overflow`, `Div` and `Size` panic instead and have no constructor here.
+// `Io` and `SysErr` join when the Basis IO structures do.
+type Error =
+  | Empty
+  | Subscript
+  | Chr
+  | Domain
+  | Option
+  | UnequalLengths
+  | Unordered
+  | Fail<String>;

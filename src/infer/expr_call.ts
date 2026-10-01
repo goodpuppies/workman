@@ -24,6 +24,7 @@ import {
   type TypeProvenance,
 } from "./provenance.ts";
 import { callArg } from "./shared.ts";
+import { basisTypeIsHostOwned } from "../basis_manifest.ts";
 import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
 import { recordConsumedFfiUse, recordExpectedExprType, recordExprFact } from "./type_facts.ts";
@@ -125,7 +126,11 @@ export function inferCall(
       },
     );
     if (isPrintCall) assertPrintable(arg);
-    if (isJsImport) assertJsCompatible(arg, typeEnv);
+    // A declared unsafe import's signature is itself the trusted representation claim, so its
+    // arguments are not checked against what reflection could represent.
+    if (isJsImport && !env.get((expr.callee as { name: string }).name)?.declaredJsImport) {
+      assertJsCompatible(arg, typeEnv);
+    }
     constrainAt(
       result,
       calleeFn.result,
@@ -408,6 +413,7 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
         return;
       }
       if (t.foreign || typeInfoByName(typeEnv, t.name)?.foreign) return;
+      if (basisTypeIsHostOwned(t.name) && t.id === typeInfoByName(typeEnv, t.name)?.id) return;
       if (t.name === "Ptr" && t.args.length === 1) {
         assertJsCompatible(t.args[0], typeEnv);
         return;

@@ -15,7 +15,9 @@ import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
 import {
   emitJsImportDecl,
+  emitLibraryJsSources,
   resetJsImportEmitter,
+  resetModuleImportNames,
   setCNamespaceMemberUsage,
   setNamespaceRecordCtors,
   setWorkerSpecifiers,
@@ -45,12 +47,14 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
     emittedOrder,
     target === "executable",
   );
+  const moduleDefinitions = emittedOrder.map((moduleId) =>
+    emitModuleDefinition(program.modules.get(moduleId)!, program, target)
+  );
   const body = [
     ...emitShaderArtifactTable(program),
     ...emitModuleRuntime(),
-    ...emittedOrder.map((moduleId) =>
-      emitModuleDefinition(program.modules.get(moduleId)!, program, target)
-    ),
+    ...emitLibraryJsSources(),
+    ...moduleDefinitions,
     ...emittedOrder
       .filter((moduleId) => moduleId !== program.entry && standardIds.has(moduleId))
       .map((moduleId) => emitModuleRequest(program.modules.get(moduleId)!)),
@@ -761,6 +765,7 @@ function emitExecutableRuntimeCatch(): string {
 
 function emitReplModuleBody(entry: CoreModuleArtifact, program: CoreProgram): string[] {
   const emittedAliases = new Set<string>();
+  resetModuleImportNames();
   namespaceRecordCtors = collectNamespaceRecordCtors(entry.module.decls);
   setNamespaceRecordCtors(namespaceRecordCtors);
   setCNamespaceMemberUsage(collectCNamespaceMemberUsage(entry.module.decls));
@@ -928,6 +933,7 @@ function emitModuleRequest(artifact: CoreModuleArtifact): string {
 
 function emitModuleBody(artifact: CoreModuleArtifact, program: CoreProgram): string[] {
   const emittedAliases = new Set<string>();
+  resetModuleImportNames();
   namespaceRecordCtors = collectNamespaceRecordCtors(artifact.module.decls);
   setNamespaceRecordCtors(namespaceRecordCtors);
   setCNamespaceMemberUsage(collectCNamespaceMemberUsage(artifact.module.decls));
@@ -1388,6 +1394,9 @@ function emitExpr(expr: CoreExpr): string {
       if (expr.bindingId === undefined && expr.ctorId !== undefined) {
         const basisName = basisCtorJsName(expr.ctorId);
         if (basisName) return basisName;
+        // A qualified constructor without a local binding is reached through its namespace, whose
+        // exports carry source names (`Binary.Bounds`), exactly like a qualified value.
+        if (expr.name.includes(".")) return id(expr.name);
         return ctorRefName(expr.name, expr.ctorId);
       }
       return primitiveName(expr.name, expr.semanticId) ?? valueRefName(expr.name, expr.bindingId);

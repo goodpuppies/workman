@@ -54,6 +54,8 @@ export type Scheme = {
   basis?: boolean;
   provenance?: TypeProvenanceNote[];
   jsImport?: boolean;
+  /** A JS import whose type is its manual declaration (`isDeclaredUnsafeImportSpec`). */
+  declaredJsImport?: boolean;
   imported?: boolean;
   standardLibrary?: boolean;
   semanticId?: CompilerSemanticId;

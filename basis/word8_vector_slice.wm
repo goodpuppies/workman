@@ -1,0 +1,64 @@
+from "./basis.wm" import * as Basis;
+from js.module("./js/byte_vector.js") import unsafe {
+  length as vectorLength: Word8Vector.Vector -> Number,
+  sliceFull: Word8Vector.Vector -> Word8VectorSlice.Slice,
+  sliceVector: (Word8Vector.Vector, Number, Number) -> Word8VectorSlice.Slice,
+  sliceSubslice: (Word8VectorSlice.Slice, Number, Number) -> Word8VectorSlice.Slice,
+  sliceBase: Word8VectorSlice.Slice -> (Word8Vector.Vector, Number, Number),
+  sliceLength: Word8VectorSlice.Slice -> Number,
+  sliceSub: (Word8VectorSlice.Slice, Number) -> Word8.Word,
+  sliceToVector: Word8VectorSlice.Slice -> Word8Vector.Vector,
+  sliceConcatArray: Js.Array<Word8VectorSlice.Slice> -> Word8Vector.Vector
+};
+
+let full = sliceFull;
+
+let slice = (vector, start: Number, length: Option<Number>) => {
+  let available = vectorLength(vector);
+  let resolved = match(length) {
+    Some(count) => { count },
+    None => { available - start }
+  };
+  if (
+    start >= 0 && start % 1 == 0 && start <= available &&
+    resolved >= 0 && resolved % 1 == 0 && resolved <= available - start
+  ) {
+    Ok(sliceVector(vector, start, resolved))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let subslice = (bytes, start: Number, length: Option<Number>) => {
+  let available = sliceLength(bytes);
+  let resolved = match(length) {
+    Some(count) => { count },
+    None => { available - start }
+  };
+  if (
+    start >= 0 && start % 1 == 0 && start <= available &&
+    resolved >= 0 && resolved % 1 == 0 && resolved <= available - start
+  ) {
+    Ok(sliceSubslice(bytes, start, resolved))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let base = sliceBase;
+
+let length = sliceLength;
+
+let isEmpty = (bytes) => { sliceLength(bytes) == 0 };
+
+let sub = (bytes, index: Number) => {
+  if (index >= 0 && index % 1 == 0 && index < sliceLength(bytes)) {
+    Ok(sliceSub(bytes, index))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let vector = sliceToVector;
+
+let concat = (slices) => { sliceConcatArray(Js.Array.fromList(slices)) };

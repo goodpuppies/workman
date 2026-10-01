@@ -1,15 +1,118 @@
 from "./monad.wm" import { Carrier };
+from js.module("./js/task.js") import unsafe {
+  resolve as primResolve: result -> task,
+  onSettled as primThen: (task, result -> next) -> settled,
+  both as primBoth: (left, right, leftResult -> rightResult -> next) -> settled,
+  settleAll as primSettleAll: tasks -> settled,
+  race as primRace: (task, task) -> task,
+  promise as primPromise: ((result -> Void) -> Void) -> task
+};
+
+// The primitives above are typed with free type variables: they are raw representation promises.
+// Each binding below states the real type of the operation it implements.
+
+let fromResult: Result<a, e> -> Task<a, e> = (result) => { primResolve(result) };
+
+let succeed: a -> Task<a, e> = (value) => { primResolve(Ok(value)) };
+
+let fail: e -> Task<a, e> = (error) => { primResolve(Err(error)) };
+
+let map: (Task<a, e>, a -> b) -> Task<b, e> = (task, f) => {
+  primThen(task, (result) => {
+    match(result) {
+      Ok(value) => { Ok(f(value)) },
+      Err(error) => { Err(error) }
+    }
+  })
+};
+
+let map2: (Task<a, e>, Task<b, e>, (a, b) -> c) -> Task<c, e> = (left, right, combine) => {
+  primBoth(left, right, (leftResult) => {
+    (rightResult) => {
+      match(leftResult, rightResult) {
+        (Ok(leftValue), Ok(rightValue)) => { Ok(combine(leftValue, rightValue)) },
+        (Err(error), _) => { Err(error) },
+        (_, Err(error)) => { Err(error) }
+      }
+    }
+  })
+};
+
+let race: (Task<a, e>, Task<a, e>) -> Task<a, e> = (left, right) => { primRace(left, right) };
+
+let andThen: (Task<a, e>, a -> Task<b, e>) -> Task<b, e> = (task, f) => {
+  primThen(task, (result) => {
+    match(result) {
+      Ok(value) => { f(value) },
+      Err(error) => { fail(error) }
+    }
+  })
+};
+
+let mapErr: (Task<a, e>, e -> f) -> Task<a, f> = (task, f) => {
+  primThen(task, (result) => {
+    match(result) {
+      Ok(value) => { Ok(value) },
+      Err(error) => { Err(f(error)) }
+    }
+  })
+};
+
+let recover: (Task<a, e>, e -> a) -> Task<a, e> = (task, f) => {
+  primThen(task, (result) => {
+    match(result) {
+      Ok(value) => { Ok(value) },
+      Err(error) => { Ok(f(error)) }
+    }
+  })
+};
+
+let orElse: (Task<a, e>, e -> Task<a, f>) -> Task<a, f> = (task, f) => {
+  primThen(task, (result) => {
+    match(result) {
+      Ok(value) => { succeed(value) },
+      Err(error) => { f(error) }
+    }
+  })
+};
+
+let all: Js.Array<Task<a, e>> -> Task<Js.Array<a>, e> = (tasks) => {
+  let rec firstErrOrValues = match(results, values) => {
+    ([], values) => { Ok(values) },
+    ([Ok(value), ..rest], values) => { firstErrOrValues(rest, [value, ..values]) },
+    ([Err(error), .._], _) => { Err(error) }
+  };
+  let rec reverseOnto = match(items, reversed) => {
+    ([], reversed) => { reversed },
+    ([item, ..rest], reversed) => { reverseOnto(rest, [item, ..reversed]) }
+  };
+  primThen(primSettleAll(tasks), (results) => {
+    match(firstErrOrValues(Js.Array.toList(results), [])) {
+      Ok(values) => { Ok(Js.Array.fromList(reverseOnto(values, []))) },
+      Err(error) => { Err(error) }
+    }
+  })
+};
+
+let new: ((Result<a, e> -> Void) -> Result<Void, e>) -> Task<a, e> = (register) => {
+  primPromise((complete) => {
+    match(register(complete)) {
+      Ok(_) => { void },
+      Err(error) => { complete(Err(error)) }
+    }
+  })
+};
 
 let fn = (f) => {
   (task) => {
-    task :> Task.andThen(f)
+    task :> andThen(f)
   }
 };
 
 let fnError = (inject) => {
   (f) => {
     fn((value) => {
-      f(value) :> Task.mapErr(inject)
+      f(value) :> mapErr(inject)
     })
   }
 };
@@ -17,15 +120,15 @@ let fnError = (inject) => {
 let carrier = .{
   fn = fn,
   fnError = fnError,
-  succeed = (value) => { Task.succeed(value) },
-  map = (task, f) => { Task.map(task, f) },
-  mapErr = (task, f) => { Task.mapErr(task, f) },
-  map2 = (left, right, combine) => { Task.map2(left, right, combine) },
-  andThen = (task, f) => { Task.andThen(task, f) },
+  succeed = (value) => { succeed(value) },
+  map = (task, f) => { map(task, f) },
+  mapErr = (task, f) => { mapErr(task, f) },
+  map2 = (left, right, combine) => { map2(left, right, combine) },
+  andThen = (task, f) => { andThen(task, f) },
 };
 
 let fromCallback = (handle, register) => {
-  Task.new((finish) => {
+  new((finish) => {
     register((event) => {
       handle(event) :> finish
     })
@@ -35,17 +138,17 @@ let fromCallback = (handle, register) => {
 let collectList = (tasks) => {
   tasks
     :> Js.Array.fromList
-    :> Task.all
-    :> Task.map(Js.Array.toList)
+    :> all
+    :> map(Js.Array.toList)
 };
 
 let rec traverse = match(items, f) => {
-  ([], _) => { Task.succeed([]) },
+  ([], _) => { succeed([]) },
   ([item, ..rest], f) => {
     f(item)
-      :> Task.andThen((value) => {
+      :> andThen((value) => {
         traverse(rest, f)
-          :> Task.map((values) => {
+          :> map((values) => {
             [value, ..values]
           })
       })

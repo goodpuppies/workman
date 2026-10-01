@@ -1,0 +1,30 @@
+from "./basis.wm" import * as Basis;
+from js.module("./js/byte_vector.js") import unsafe {
+  length as vectorLength: Word8Vector.Vector -> Number,
+  sliceLength: Word8VectorSlice.Slice -> Number,
+  packSubVec as primSubVec: (String, Bool, Word8Vector.Vector, Number) -> Word16.Word,
+  packSubSlice as primSubSlice: (String, Bool, Word8VectorSlice.Slice, Number) -> Word16.Word,
+  pack as primPack: (String, Bool, Word16.Word) -> Word8Vector.Vector
+};
+
+let bytesPerElem = 2;
+
+let isBigEndian = false;
+
+let subVec = (vector, index: Number) => {
+  if (index >= 0 && index % 1 == 0 && (index + 1) * 2 <= vectorLength(vector)) {
+    Ok(primSubVec("word16", false, vector, index))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let subSlice = (slice, index: Number) => {
+  if (index >= 0 && index % 1 == 0 && (index + 1) * 2 <= sliceLength(slice)) {
+    Ok(primSubSlice("word16", false, slice, index))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let pack = (value) => { primPack("word16", false, value) };

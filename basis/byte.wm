@@ -1,0 +1,8 @@
+from js.module("./js/byte_vector.js") import unsafe {
+  bytesToString as primBytesToString: Word8Vector.Vector -> String,
+  stringToBytes as primStringToBytes: String -> Word8Vector.Vector
+};
+
+let bytesToString = primBytesToString;
+
+let stringToBytes = primStringToBytes;

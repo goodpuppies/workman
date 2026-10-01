@@ -1,0 +1,17 @@
+from js.module("./js/float.js") import unsafe {
+  float32Round as primFromNumber: Number -> Float32.Real,
+  float32Round as primToNumber: Float32.Real -> Number,
+  float32Add: (Float32.Real, Float32.Real) -> Float32.Real,
+  float32Sub: (Float32.Real, Float32.Real) -> Float32.Real,
+  float32Mul: (Float32.Real, Float32.Real) -> Float32.Real,
+  float32Div: (Float32.Real, Float32.Real) -> Float32.Real,
+  float32Neg: Float32.Real -> Float32.Real
+};
+
+let fromNumber = primFromNumber;
+let toNumber = primToNumber;
+let add = float32Add;
+let sub = float32Sub;
+let mul = float32Mul;
+let div = float32Div;
+let neg = float32Neg;

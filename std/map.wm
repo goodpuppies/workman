@@ -1,11 +1,11 @@
-type Ordering = Less | Equal | Greater;
+from "../basis/general.wm" import { Order, Less, Equal, Greater };
 
 type MapTree<K, V> =
   | MapEmpty
   | MapNode<Number, K, V, MapTree<K, V>, MapTree<K, V>>;
 
 type Map<K, V> =
-  | MapValue<(K, K) -> Ordering, MapTree<K, V>>;
+  | MapValue<(K, K) -> Order, MapTree<K, V>>;
 
 let numberCompare = (left, right) => {
   if (left < right) {

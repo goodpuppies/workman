@@ -76,7 +76,8 @@ function containsFfiBoundary(expr: Expr, env: Env): boolean {
     case "Lambda":
       return containsFfiBoundary(expr.body, env);
     case "Call":
-      return (expr.callee.kind === "Var" && env.get(expr.callee.name)?.jsImport === true) ||
+      return (expr.callee.kind === "Var" && env.get(expr.callee.name)?.jsImport === true &&
+        env.get(expr.callee.name)?.declaredJsImport !== true) ||
         containsFfiBoundary(expr.callee, env) ||
         expr.args.some((arg) => containsFfiBoundary(arg, env));
     case "If":

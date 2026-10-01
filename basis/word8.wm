@@ -1,0 +1,32 @@
+from js.module("./js/word.js") import unsafe {
+  word8FromNumber: Number -> Word8.Word,
+  smallWordToNumber as primToNumber: Word8.Word -> Number,
+  word8Notb: Word8.Word -> Word8.Word,
+  word8Andb: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Orb: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Xorb: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Add: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Sub: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Mul: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Div: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8Mod: (Word8.Word, Word8.Word) -> Word8.Word,
+  word8ShiftLeft: (Word8.Word, Number) -> Word8.Word,
+  word8ShiftRight: (Word8.Word, Number) -> Word8.Word,
+  word8ShiftRightArithmetic: (Word8.Word, Number) -> Word8.Word
+};
+
+let wordSize = 8;
+let fromNumber = word8FromNumber;
+let toNumber = primToNumber;
+let andb = word8Andb;
+let orb = word8Orb;
+let xorb = word8Xorb;
+let notb = word8Notb;
+let shiftLeft = word8ShiftLeft;
+let shiftRight = word8ShiftRight;
+let shiftRightArithmetic = word8ShiftRightArithmetic;
+let add = word8Add;
+let sub = word8Sub;
+let mul = word8Mul;
+let div = word8Div;
+let mod = word8Mod;

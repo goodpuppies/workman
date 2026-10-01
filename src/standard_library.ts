@@ -1,84 +1,28 @@
-import { prepareFfiElaboration } from "./ffi/elab.ts";
 import type { ImportClause, Module } from "./ast.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import { posix } from "node:path";
-import {
-  binarySource,
-  listSource,
-  mapSource,
-  monadSource,
-  optionSource,
-  resultSource,
-  taskSource,
-  traverseSource,
-} from "./generated/assets.ts";
-import {
-  inferModule,
-  type InferModuleOptions,
-  type InferResult,
-  type InitialImport,
-} from "./infer.ts";
+import { libraryJsSources, librarySources } from "./generated/assets.ts";
+import type { InferModuleOptions, InferResult, InitialImport } from "./infer.ts";
+import { analyzeModuleGraph } from "./staged_analysis.ts";
 import { cloneTypeEnv } from "./types.ts";
 import { parseCompilerModule } from "./compiler_frontend.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
 import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
 import { modifiedStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
 import { standardValueId } from "./compiler_semantics.ts";
+import { LIBRARY_JS_SCHEME, resolveLibraryJsModuleSpecifiers } from "./js_module_specifier.ts";
 
-type StandardModule = {
+export type StandardModule = {
   path: string;
   source: string;
+  alias: string;
   clauses: ImportClause[];
+  module: Module;
 };
 
 export type LoadedStandardModule = StandardModule & {
-  alias: string;
-  module: Module;
   result: InferResult;
 };
-
-const standardModules: StandardModule[] = [
-  {
-    path: "std/binary.wm",
-    source: binarySource,
-    clauses: [{ kind: "Namespace", alias: "Binary" }],
-  },
-  {
-    path: "std/list.wm",
-    source: listSource,
-    clauses: [{ kind: "Namespace", alias: "List" }],
-  },
-  {
-    path: "std/map.wm",
-    source: mapSource,
-    clauses: [{ kind: "Namespace", alias: "Map" }],
-  },
-  {
-    path: "std/option.wm",
-    source: optionSource,
-    clauses: [{ kind: "Namespace", alias: "Option" }],
-  },
-  {
-    path: "std/monad.wm",
-    source: monadSource,
-    clauses: [{ kind: "Namespace", alias: "Monad" }],
-  },
-  {
-    path: "std/result.wm",
-    source: resultSource,
-    clauses: [{ kind: "Namespace", alias: "Result" }],
-  },
-  {
-    path: "std/task.wm",
-    source: taskSource,
-    clauses: [{ kind: "Namespace", alias: "Task" }],
-  },
-  {
-    path: "std/traverse.wm",
-    source: traverseSource,
-    clauses: [{ kind: "Namespace", alias: "Traverse" }],
-  },
-];
 
 let standardLibraryPromise: Promise<InitialImport[]> | undefined;
 let standardModulesPromise: Promise<LoadedStandardModule[]> | undefined;
@@ -122,32 +66,11 @@ export async function standardRuntimeGraph(): Promise<{
   }[];
 }> {
   const modules = await loadStandardModules();
+  const graph = libraryGraph(modules);
   const ids = new Map(modules.map((module) => [module.path, moduleId(module.path)]));
   const hostStructures = initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv;
   return {
-    graph: {
-      entry: ids.get(modules.at(-1)?.path ?? "") ?? moduleId("std/monad.wm"),
-      order: modules.map((module) => ids.get(module.path)!),
-      nodes: new Map(modules.map((module) => [ids.get(module.path)!, {
-        id: ids.get(module.path)!,
-        path: module.path,
-        source: module.source,
-        module: module.module,
-        imports: module.module.decls.flatMap((decl) =>
-          decl.kind === "ImportDecl"
-            ? [{
-              referrer: ids.get(module.path)!,
-              specifier: decl.path,
-              specifierNode: decl.pathNode ?? decl.node,
-              target: ids.get(standardImportPath(module.path, decl.path))!,
-              path: standardImportPath(module.path, decl.path),
-              clause: decl.clause,
-            }]
-            : []
-        ),
-        emitName: `__wm_std_${module.alias}`,
-      }])),
-    },
+    graph,
     results: new Map(modules.map((module) => [ids.get(module.path)!, module.result])),
     namespaces: modules.map((module) => ({
       id: ids.get(module.path)!,
@@ -161,18 +84,105 @@ export async function standardRuntimeGraph(): Promise<{
   };
 }
 
-async function loadStandardModulesUncached(): Promise<LoadedStandardModule[]> {
-  const loaded: LoadedStandardModule[] = [];
-  const results = new Map<string, InferResult>();
-  for (const module of standardModules) {
-    const inferred = await inferStandardModule(module, results);
-    const item = composeInitialStructure(inferred);
-    loaded.push(item);
-    results.set(item.path, item.result);
+/**
+ * Add the library modules to a program graph as ordinary nodes, so whole-program analysis
+ * (bindings, nominal facts, patterns, elaboration) sees library declarations exactly as it sees a
+ * user import. Programs whose modules all opt out of the prelude are returned unchanged.
+ *
+ * Library modules are placed after the program's modules. Emitted module definitions are
+ * requested explicitly and do not depend on this order; what it decides is identity allocation,
+ * so the program's binding, type and constructor ids do not shift when the library changes.
+ */
+export async function withStandardLibrary(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
+  if ([...graph.nodes.values()].every((node) => node.module.prelude === "none")) {
+    return { graph, results };
   }
-  return loaded;
+  const standard = await standardRuntimeGraph();
+  if (graph.order.some((id) => standard.graph.nodes.has(id))) return { graph, results };
+  return {
+    graph: {
+      entry: graph.entry,
+      order: [...graph.order, ...standard.graph.order],
+      nodes: new Map([...standard.graph.nodes, ...graph.nodes]),
+    },
+    results: new Map([...standard.results, ...results]),
+  };
 }
 
+/** The program's own modules: `graph` and `results` without the nodes `withStandardLibrary` added. */
+export async function withoutStandardLibrary(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
+  const library = (await standardRuntimeGraph()).graph.nodes;
+  if (!graph.order.some((id) => library.has(id))) return { graph, results };
+  const order = graph.order.filter((id) => !library.has(id));
+  return {
+    graph: {
+      entry: graph.entry,
+      order,
+      nodes: new Map(order.map((id) => [id, graph.nodes.get(id)!])),
+    },
+    results: new Map(order.flatMap((id) => results.has(id) ? [[id, results.get(id)!]] : [])),
+  };
+}
+
+/**
+ * Infer the library through the same staged pipeline as a program, so library modules get the FFI
+ * elaboration their JavaScript primitive imports need. Library modules see the initial basis and
+ * their own imports, never the library's initial imports.
+ */
+async function loadStandardModulesUncached(): Promise<LoadedStandardModule[]> {
+  const modules = await discoverStandardModules();
+  const graph = libraryGraph(modules);
+  const results = await analyzeModuleGraph(graph, { inferOptions: {} });
+  return modules.map((module) => {
+    const id = moduleId(module.path);
+    return composeInitialStructure({
+      ...module,
+      module: graph.nodes.get(id)!.module,
+      result: results.get(id)!,
+    });
+  });
+}
+
+/** Module graph of the library alone, in import order. Each call builds fresh nodes. */
+function libraryGraph(modules: readonly StandardModule[]): ModuleGraph {
+  const ids = new Map(modules.map((module) => [module.path, moduleId(module.path)]));
+  return {
+    entry: ids.get(modules.at(-1)?.path ?? "") ?? moduleId("std/monad.wm"),
+    order: modules.map((module) => ids.get(module.path)!),
+    nodes: new Map(modules.map((module) => [ids.get(module.path)!, {
+      id: ids.get(module.path)!,
+      path: module.path,
+      source: module.source,
+      module: module.module,
+      imports: module.module.decls.flatMap((decl) =>
+        decl.kind === "ImportDecl"
+          ? [{
+            referrer: ids.get(module.path)!,
+            specifier: decl.path,
+            specifierNode: decl.pathNode ?? decl.node,
+            target: ids.get(standardImportPath(module.path, decl.path))!,
+            path: standardImportPath(module.path, decl.path),
+            clause: decl.clause,
+          }]
+          : []
+      ),
+      emitName: `__wm_std_${module.alias}`,
+    }])),
+  };
+}
+
+/**
+ * Overlay a library module's exports on the initial-basis structure of the same name. That
+ * structure holds only layer-0 material qualified by the library's namespace: compiler-owned types
+ * (`Word8.Word`, `Word8Vector.Vector`) and the pervasive constructors (`List.Cons`, `Option.Some`,
+ * `Result.Ok`). No library value is defined in TypeScript any more.
+ */
 function composeInitialStructure(module: LoadedStandardModule): LoadedStandardModule {
   const source = withStandardValueIds(module.result.exportedStructure, module.path);
   const host = initialBasis(BASIS_PROFILES.default)
@@ -209,30 +219,89 @@ function withStandardValueIds(
   );
 }
 
-async function inferStandardModule(
-  module: StandardModule,
-  loaded: Map<string, InferResult>,
-): Promise<LoadedStandardModule> {
-  const parsed = await parseCompilerModule(module.source, {}, module.path);
-  const prepared = prepareFfiElaboration(parsed).module;
-  const clause = module.clauses.find((item) => item.kind === "Namespace");
-  if (!clause || clause.kind !== "Namespace") {
-    throw new Error(`standard module ${module.path} has no namespace alias`);
+/**
+ * Namespace alias of a library module, derived from its snake_case file name:
+ * `std/list.wm` defines `List` and `basis/word8_vector.wm` defines `Word8Vector`.
+ */
+export function libraryModuleAlias(path: string): string {
+  return posix.basename(path, ".wm")
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+}
+
+/**
+ * Parse library sources (by default the generated library) and order the modules so that imports
+ * come first. Exported so tests can supply sources without regenerating assets.
+ */
+export async function discoverStandardModules(
+  sources: Readonly<Record<string, string>> = librarySources,
+  jsSources: Readonly<Record<string, string>> = libraryJsSources,
+): Promise<StandardModule[]> {
+  const modules = await Promise.all(
+    Object.entries(sources).map(async ([path, source]): Promise<StandardModule> => {
+      const alias = libraryModuleAlias(path);
+      const parsed = await parseCompilerModule(source, {}, path);
+      return {
+        path,
+        source,
+        alias,
+        clauses: [{ kind: "Namespace", alias }],
+        module: resolveLibraryJsModuleSpecifiers(parsed, path),
+      };
+    }),
+  );
+  const byAlias = new Map<string, string>();
+  for (const module of modules) {
+    const existing = byAlias.get(module.alias);
+    if (existing) {
+      throw new Error(
+        `library modules ${existing} and ${module.path} both define namespace ${module.alias}`,
+      );
+    }
+    byAlias.set(module.alias, module.path);
+    for (const decl of module.module.decls) {
+      if (decl.kind !== "JsImportDecl" || decl.target.kind !== "JsModule") continue;
+      const { specifier } = decl.target;
+      if (!specifier.startsWith(LIBRARY_JS_SCHEME)) continue;
+      const path = specifier.slice(LIBRARY_JS_SCHEME.length);
+      if (!(path in jsSources)) {
+        throw new Error(`library module ${module.path} imports missing JavaScript file ${path}`);
+      }
+    }
   }
-  return {
-    ...module,
-    alias: clause.alias,
-    module: prepared,
-    result: inferModule(
-      prepared,
-      new Map(prepared.decls.flatMap((decl) => {
-        if (decl.kind !== "ImportDecl") return [];
-        const result = loaded.get(standardImportPath(module.path, decl.path));
-        if (!result) throw new Error(`standard import ${decl.path} must precede ${module.path}`);
-        return [[decl.path, result] as const];
-      })),
-    ),
+  return orderByImports(modules);
+}
+
+/**
+ * Depth-first topological order over library imports. Modules are visited in path order, so the
+ * result is deterministic and independent of how the sources were enumerated.
+ */
+function orderByImports(modules: StandardModule[]): StandardModule[] {
+  const byPath = new Map(modules.map((module) => [module.path, module]));
+  const state = new Map<string, "visiting" | "done">();
+  const ordered: StandardModule[] = [];
+  const visit = (module: StandardModule, chain: string[]) => {
+    const current = state.get(module.path);
+    if (current === "done") return;
+    if (current === "visiting") {
+      throw new Error(`library import cycle: ${[...chain, module.path].join(" -> ")}`);
+    }
+    state.set(module.path, "visiting");
+    for (const decl of module.module.decls) {
+      if (decl.kind !== "ImportDecl") continue;
+      const target = standardImportPath(module.path, decl.path);
+      const imported = byPath.get(target);
+      if (!imported) {
+        throw new Error(`library module ${module.path} imports missing library module ${target}`);
+      }
+      visit(imported, [...chain, module.path]);
+    }
+    state.set(module.path, "done");
+    ordered.push(module);
   };
+  for (const path of [...byPath.keys()].sort()) visit(byPath.get(path)!, []);
+  return ordered;
 }
 
 function standardImportPath(from: string, specifier: string): string {

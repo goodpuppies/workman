@@ -1,80 +1,32 @@
-import type { TypeExpr } from "./ast.ts";
+import {
+  type BasisIntrinsicDescriptor,
+  type BasisTypeDescriptor,
+  type BasisValueDescriptor,
+  ctor,
+  defaultOnly,
+  param,
+  profiles,
+} from "./basis_descriptor.ts";
+import { JS_HOST_TYPES, JS_HOST_VALUES } from "./host/js_manifest.ts";
+import {
+  BASIS_INTRINSICS,
+  GPU_INTRINSIC_ENTRIES,
+  GPU_TARGET_TYPES,
+} from "./wmslang/target_manifest.ts";
 
-export type BasisProfileName = "kernel" | "default";
-export type BasisEquality = "always" | "structural" | "never";
-
-export type BasisConstructorDescriptor = Readonly<{
-  name: string;
-  id: number;
-  args: readonly TypeExpr[];
-  runtimeName: string;
-}>;
-
-export type BasisTypeDescriptor = Readonly<{
-  name: string;
-  typeNameId: number;
-  arity: number;
-  profiles: readonly BasisProfileName[];
-  equality: BasisEquality;
-  argLabels?: readonly string[];
-  constructors?: readonly BasisConstructorDescriptor[];
-}>;
-
-const param = (name: string): TypeExpr => ({ kind: "TName", name, args: [] });
-const profiles = Object.freeze(["kernel", "default"] as const);
-const defaultOnly = Object.freeze(["default"] as const);
-const ctor = (
-  name: string,
-  id: number,
-  args: TypeExpr[],
-): BasisConstructorDescriptor =>
-  Object.freeze({
-    name,
-    id,
-    args: Object.freeze(args),
-    runtimeName: `__wm_basis_${name.replaceAll(".", "_")}`,
-  });
+export * from "./basis_descriptor.ts";
+export { BASIS_INTRINSICS, GPU_INTRINSIC_ENTRIES };
 
 /**
- * Compiler-owned basis type inventory. Static identity, profile membership, equality,
- * constructor identity, and runtime constructor names all originate here.
+ * Layer-0 types: the Definition's initial basis plus Workman's compiler-owned additions (`Result`,
+ * `Task`, and the host-owned layer-1 types whose equality and printing the compiler implements).
  */
-export const BASIS_TYPES = Object.freeze(
+const LAYER0_TYPES = Object.freeze(
   [
     { name: "Number", typeNameId: -1, arity: 0, profiles, equality: "always" },
     { name: "Bool", typeNameId: -2, arity: 0, profiles, equality: "always" },
     { name: "String", typeNameId: -3, arity: 0, profiles, equality: "always" },
     { name: "Void", typeNameId: -4, arity: 0, profiles, equality: "always" },
-    { name: "Js.Value", typeNameId: -5, arity: 0, profiles, equality: "never" },
-    { name: "Js.Object", typeNameId: -6, arity: 0, profiles, equality: "never" },
-    {
-      name: "Js.Array",
-      typeNameId: -7,
-      arity: 1,
-      profiles,
-      equality: "never",
-      argLabels: ["element"],
-    },
-    { name: "Js.ArrayLike", typeNameId: -8, arity: 0, profiles, equality: "never" },
-    {
-      name: "Js.Dict",
-      typeNameId: -9,
-      arity: 1,
-      profiles,
-      equality: "never",
-      argLabels: ["value"],
-    },
-    {
-      // Map-backed sibling of Js.Dict for large, hot, string-keyed caches.
-      // Deliberately not JS-interop compatible: it never crosses the FFI
-      // boundary, which is what frees it from Js.Dict's plain-object contract.
-      name: "Js.Table",
-      typeNameId: -22,
-      arity: 1,
-      profiles,
-      equality: "never",
-      argLabels: ["value"],
-    },
     {
       name: "Option",
       typeNameId: -10,
@@ -115,17 +67,6 @@ export const BASIS_TYPES = Object.freeze(
       ],
     },
     {
-      name: "Js.Error",
-      typeNameId: -13,
-      arity: 0,
-      profiles: defaultOnly,
-      equality: "structural",
-      constructors: [
-        ctor("Js.Error", -7, [{ kind: "TName", name: "String", args: [] }]),
-        ctor("Js.Unknown", -8, []),
-      ],
-    },
-    {
       name: "Task",
       typeNameId: -14,
       arity: 2,
@@ -133,67 +74,101 @@ export const BASIS_TYPES = Object.freeze(
       equality: "never",
       argLabels: ["value", "error"],
     },
-    { name: "Gpu.Color", typeNameId: -15, arity: 0, profiles, equality: "never" },
-    { name: "Gpu.Fragment", typeNameId: -16, arity: 0, profiles, equality: "never" },
     {
-      name: "Gpu.Uniform",
-      typeNameId: -17,
-      arity: 1,
-      profiles,
-      equality: "never",
-      argLabels: ["value"],
-    },
-    { name: "Gpu.Texture2D", typeNameId: -18, arity: 0, profiles, equality: "never" },
-    {
-      name: "Gpu.SampledTexture2D",
-      typeNameId: -19,
+      name: "Word8.Word",
+      typeNameId: -24,
       arity: 0,
       profiles,
-      equality: "never",
+      equality: "always",
+      hostOwned: true,
     },
     {
-      name: "Gpu.RenderTarget2D",
-      typeNameId: -20,
+      name: "Word16.Word",
+      typeNameId: -25,
       arity: 0,
       profiles,
-      equality: "never",
+      equality: "always",
+      hostOwned: true,
     },
-    { name: "Gpu.Sampler", typeNameId: -21, arity: 0, profiles, equality: "never" },
     {
-      name: "Gpu.ShaderTarget",
-      typeNameId: -23,
+      name: "Word32.Word",
+      typeNameId: -26,
       arity: 0,
       profiles,
-      equality: "structural",
-      constructors: [
-        ctor("Gpu.ShaderTarget.WGSL", -9, []),
-        ctor("Gpu.ShaderTarget.GLSL", -10, []),
-        ctor("Gpu.ShaderTarget.HLSL", -11, []),
-        ctor("Gpu.ShaderTarget.METAL", -12, []),
-      ],
+      equality: "always",
+      hostOwned: true,
     },
-    { name: "Word8.word", typeNameId: -24, arity: 0, profiles, equality: "always" },
-    { name: "Word16.word", typeNameId: -25, arity: 0, profiles, equality: "always" },
-    { name: "Word32.word", typeNameId: -26, arity: 0, profiles, equality: "always" },
-    { name: "Word64.word", typeNameId: -27, arity: 0, profiles, equality: "always" },
     {
-      name: "Word8Vector.vector",
+      name: "Word64.Word",
+      typeNameId: -27,
+      arity: 0,
+      profiles,
+      equality: "always",
+      hostOwned: true,
+    },
+    {
+      name: "Word8Vector.Vector",
       typeNameId: -28,
       arity: 0,
       profiles,
       equality: "always",
+      hostOwned: true,
     },
     {
-      name: "Word8VectorSlice.slice",
+      name: "Word8VectorSlice.Slice",
       typeNameId: -29,
       arity: 0,
       profiles,
       equality: "never",
+      hostOwned: true,
     },
-    { name: "Float32.real", typeNameId: -30, arity: 0, profiles, equality: "never" },
-    { name: "Float64.real", typeNameId: -31, arity: 0, profiles, equality: "never" },
+    {
+      name: "Float32.Real",
+      typeNameId: -30,
+      arity: 0,
+      profiles,
+      equality: "never",
+      hostOwned: true,
+    },
+    {
+      name: "Float64.Real",
+      typeNameId: -31,
+      arity: 0,
+      profiles,
+      equality: "never",
+      hostOwned: true,
+    },
+    {
+      name: "Vector.Vector",
+      typeNameId: -32,
+      arity: 1,
+      profiles,
+      equality: "arguments",
+      hostOwned: true,
+      argLabels: ["T"],
+    },
+    {
+      name: "VectorSlice.Slice",
+      typeNameId: -33,
+      arity: 1,
+      profiles,
+      equality: "never",
+      hostOwned: true,
+      argLabels: ["T"],
+    },
   ] satisfies readonly BasisTypeDescriptor[],
 );
+
+/**
+ * Compiler-owned basis type inventory: layer 0, the JS host layer and the wmslang target layer.
+ * Static identity, profile membership, equality, constructor identity, and runtime constructor
+ * names all originate in these descriptors.
+ */
+export const BASIS_TYPES: readonly BasisTypeDescriptor[] = Object.freeze([
+  ...LAYER0_TYPES,
+  ...JS_HOST_TYPES,
+  ...GPU_TARGET_TYPES,
+]);
 
 export type BasisOperatorKind =
   | "number"
@@ -252,194 +227,20 @@ export function basisUnaryOperatorDescriptor(
   return BASIS_UNARY_OPERATORS.find((descriptor) => descriptor.spelling === spelling);
 }
 
-export type BasisIntrinsicDescriptor = Readonly<{
-  exportName: string;
-  semanticId: `gpu.${string}`;
-  runtimeName?: string;
-}>;
-
-export type BasisValueDescriptor = Readonly<{
-  exportName: string;
-  profiles: readonly BasisProfileName[];
-  runtimeName: string;
-}>;
-
 /** Host values which are neither datatype constructors nor compiler intrinsics. */
+/** Layer-0 values implemented by the compiler, followed by the JS host's. */
 export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "print", profiles, runtimeName: "print" },
   { exportName: "Text.of", profiles, runtimeName: "Text.of" },
-  { exportName: "Debug.errorMessage", profiles: defaultOnly, runtimeName: "Debug.errorMessage" },
-  { exportName: "Js.Array.toList", profiles: defaultOnly, runtimeName: "Js.Array.toList" },
-  { exportName: "Js.Array.fromList", profiles: defaultOnly, runtimeName: "Js.Array.fromList" },
-  { exportName: "Json.assert", profiles: defaultOnly, runtimeName: "Json.assert" },
-  ...[
-    "new",
-    "fromResult",
-    "succeed",
-    "fail",
-    "map",
-    "map2",
-    "race",
-    "andThen",
-    "mapErr",
-    "recover",
-    "orElse",
-    "all",
-  ].map((name) => ({
-    exportName: `Task.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `__wm_basis_Task.${name}`,
-  })),
-  ...["empty", "get", "set"].map((name) => ({
-    exportName: `Dict.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `Dict.${name}`,
-  })),
-  ...["empty", "get", "set", "getAt", "setAt"].map((name) => ({
-    exportName: `Table.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `Table.${name}`,
-  })),
-  ...["Word8", "Word16", "Word32", "Word64"].flatMap((structure) =>
-    [
-      "wordSize",
-      "fromNumber",
-      "toNumber",
-      "andb",
-      "orb",
-      "xorb",
-      "notb",
-      "shiftLeft",
-      "shiftRight",
-      "shiftRightArithmetic",
-      "add",
-      "sub",
-      "mul",
-      "div",
-      "mod",
-    ].map((name) => ({
-      exportName: `${structure}.${name}`,
-      profiles: defaultOnly,
-      runtimeName: `${structure}.${name}`,
-    }))
-  ),
-  ...[
-    "empty",
-    "fromList",
-    "length",
-    "sub",
-    "get",
-    "update",
-    "concat",
-    "tabulate",
-    "mapi",
-    "unfoldN",
-    "toList",
-  ].map((name) => ({
-    exportName: `Word8Vector.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `Word8Vector.${name}`,
-  })),
-  ...[
-    "full",
-    "slice",
-    "subslice",
-    "base",
-    "length",
-    "isEmpty",
-    "sub",
-    "get",
-    "vector",
-    "concat",
-  ].map((name) => ({
-    exportName: `Word8VectorSlice.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `Word8VectorSlice.${name}`,
-  })),
-  ...["readFile", "readSlice", "writeFile"].map((name) => ({
-    exportName: `Bytes.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `Bytes.${name}`,
-  })),
-  ...[
-    "PackWord16Little",
-    "PackWord16Big",
-    "PackWord32Little",
-    "PackWord32Big",
-    "PackWord64Little",
-    "PackWord64Big",
-  ].flatMap((structure) =>
-    ["bytesPerElem", "isBigEndian", "subVec", "subSlice", "pack"].map((name) => ({
-      exportName: `${structure}.${name}`,
-      profiles: defaultOnly,
-      runtimeName: `${structure}.${name}`,
-    }))
-  ),
-  ...["Float32", "Float64"].flatMap((structure) =>
-    ["fromNumber", "toNumber", "add", "sub", "mul", "div", "neg"].map((name) => ({
-      exportName: `${structure}.${name}`,
-      profiles: defaultOnly,
-      runtimeName: `${structure}.${name}`,
-    }))
-  ),
-  ...[
-    "PackReal32Little",
-    "PackReal32Big",
-    "PackReal64Little",
-    "PackReal64Big",
-  ].flatMap((structure) =>
-    ["bytesPerElem", "isBigEndian", "subVec", "subSlice", "pack"].map((name) => ({
-      exportName: `${structure}.${name}`,
-      profiles: defaultOnly,
-      runtimeName: `${structure}.${name}`,
-    }))
-  ),
-  ...["bytesToString", "stringToBytes"].map((name) => ({
-    exportName: `Byte.${name}`,
-    profiles: defaultOnly,
-    runtimeName: `Byte.${name}`,
-  })),
+  ...JS_HOST_VALUES,
 ]);
-
-export const GPU_INTRINSIC_ENTRIES = [
-  ["color", "gpu.color", undefined],
-  ["fragment", "gpu.fragment", undefined],
-  ["i32", "gpu.i32", undefined],
-  ["f32", "gpu.f32", undefined],
-  ["uniform", "gpu.uniform", undefined],
-  ["read", "gpu.read", undefined],
-  ["withValue", "gpu.with-value", undefined],
-  ["slang", "gpu.slang", "__wm_gpu_slang"],
-  ["glsl", "gpu.glsl", "__wm_gpu_glsl"],
-  ["callableName", "gpu.callable-name", "__wm_gpu_callable_name"],
-  ["wgsl", "gpu.wgsl", "__wm_gpu_wgsl"],
-  ["shaderSource", "gpu.shader-source", "__wm_gpu_shader_source"],
-  ["vertexEntryPoint", "gpu.vertex-entry-point", "__wm_gpu_vertex_entry_point"],
-  ["fragmentEntryPoint", "gpu.fragment-entry-point", "__wm_gpu_fragment_entry_point"],
-  ["artifactIdentity", "gpu.artifact-identity", "__wm_gpu_artifact_identity"],
-  ["uniformBinding", "gpu.uniform-binding", "__wm_gpu_uniform_binding"],
-  ["uniformByteLength", "gpu.uniform-byte-length", "__wm_gpu_uniform_byte_length"],
-  ["uniformBytes", "gpu.uniform-bytes", "__wm_gpu_uniform_bytes"],
-  ["texture2D", "gpu.texture-2d", "__wm_gpu_texture_2d"],
-  ["sampledTexture2D", "gpu.sampled-texture-2d", "__wm_gpu_sampled_texture_2d"],
-  ["renderTarget2D", "gpu.render-target-2d", "__wm_gpu_render_target_2d"],
-  ["nearestSampler", "gpu.nearest-sampler", "__wm_gpu_nearest_sampler"],
-  ["linearSampler", "gpu.linear-sampler", "__wm_gpu_linear_sampler"],
-  ["destroyTexture2D", "gpu.destroy-texture-2d", "__wm_gpu_destroy_texture_2d"],
-  ["bindGroupEntries", "gpu.bind-group-entries", "__wm_gpu_bind_group_entries"],
-  ["bindingCount", "gpu.binding-count", "__wm_gpu_binding_count"],
-  ["renderTargetView", "gpu.render-target-view", "__wm_gpu_render_target_view"],
-  ["validateRenderTarget", "gpu.validate-render-target", "__wm_gpu_validate_render_target"],
-] as const;
-
-export const BASIS_INTRINSICS: readonly BasisIntrinsicDescriptor[] = Object.freeze(
-  GPU_INTRINSIC_ENTRIES.map(([name, semanticId, runtimeName]) =>
-    Object.freeze({ exportName: `Gpu.${name}`, semanticId, runtimeName })
-  ),
-);
 
 export function basisTypeDescriptor(name: string): BasisTypeDescriptor | undefined {
   return BASIS_TYPES.find((descriptor) => descriptor.name === name);
+}
+
+export function basisTypeIsHostOwned(name: string): boolean {
+  return basisTypeDescriptor(name)?.hostOwned === true;
 }
 
 export function basisPrimitiveAdmitsEquality(name: string): boolean {

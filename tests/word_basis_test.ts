@@ -7,7 +7,7 @@ Deno.test("exact word and Word8Vector basis members have nominal types", async (
     let byte = Word8.fromNumber(260);
     let wide = Word64.fromNumber(42);
     let bytes = Word8Vector.fromList([byte, Word8.fromNumber(7)]);
-    let maybeByte = Word8Vector.get(bytes, 1);
+    let maybeByte = Word8Vector.sub(bytes, 1);
     let generated = Word8Vector.tabulate(3, (index) => {
       Word8.fromNumber(index * 2)
     });
@@ -18,13 +18,13 @@ Deno.test("exact word and Word8Vector basis members have nominal types", async (
     );
   `);
 
-  expectBinding(result.env, "byte", { type: "Word8.word", vars: 0 });
-  expectBinding(result.env, "wide", { type: "Word64.word", vars: 0 });
-  expectBinding(result.env, "bytes", { type: "Word8Vector.vector", vars: 0 });
-  expectBinding(result.env, "maybeByte", { type: "Option<Word8.word>", vars: 0 });
-  expectBinding(result.env, "generated", { type: "Word8Vector.vector", vars: 0 });
-  expectBinding(result.env, "unfolded", { type: "Word8Vector.vector", vars: 0 });
-  expectBinding(result.env, "finalState", { type: "Word8.word", vars: 0 });
+  expectBinding(result.env, "byte", { type: "Word8.Word", vars: 0 });
+  expectBinding(result.env, "wide", { type: "Word64.Word", vars: 0 });
+  expectBinding(result.env, "bytes", { type: "Word8Vector.Vector", vars: 0 });
+  expectBinding(result.env, "maybeByte", { type: "Result<Word8.Word, Error>", vars: 0 });
+  expectBinding(result.env, "generated", { type: "Word8Vector.Vector", vars: 0 });
+  expectBinding(result.env, "unfolded", { type: "Word8Vector.Vector", vars: 0 });
+  expectBinding(result.env, "finalState", { type: "Word8.Word", vars: 0 });
 });
 
 Deno.test("word arithmetic is modular and shifts respect the declared width", async () => {
@@ -48,7 +48,7 @@ Deno.test("Word8Vector bulk construction is immutable and state-threaded", async
         Word8.fromNumber(2),
         Word8.fromNumber(3),
       ]);
-      let changed = Word8Vector.update(original, 1, Word8.fromNumber(9));
+      let changed = Result.debug(Word8Vector.update(original, 1, Word8.fromNumber(9)));
       let mapped = Word8Vector.mapi(original, (index, byte) => {
         Word8.add(byte, Word8.fromNumber(index))
       });
@@ -67,7 +67,8 @@ Deno.test("Word8Vector bulk construction is immutable and state-threaded", async
         Word8.fromNumber(2),
         Word8.fromNumber(3),
       ]));
-      print(Word8Vector.get(original, 99))
+      print(Word8Vector.sub(original, 99));
+      print(Word8Vector.update(original, 3, Word8.fromNumber(0)))
     };
   `);
 
@@ -78,30 +79,31 @@ Deno.test("Word8Vector bulk construction is immutable and state-threaded", async
     "Word8Vector[5, 7, 9, 11]",
     "13",
     "true",
-    "None",
+    "Err(Subscript)",
+    "Err(Subscript)",
   ]);
 });
 
 Deno.test("Word8VectorSlice creates bounded zero-copy views and freezes explicitly", async () => {
   const result = await checkSource(`
     let bytes = Word8Vector.tabulate(6, (index) => { Word8.fromNumber(index + 10) });
-    let middle = Word8VectorSlice.slice(bytes, 1, Some(4));
-    let tail = Word8VectorSlice.subslice(middle, 2, None);
+    let middle = Result.debug(Word8VectorSlice.slice(bytes, 1, Some(4)));
+    let tail = Result.debug(Word8VectorSlice.subslice(middle, 2, None));
     let frozen = Word8VectorSlice.vector(tail);
     let (base, offset, length) = Word8VectorSlice.base(tail);
   `);
-  expectBinding(result.env, "middle", { type: "Word8VectorSlice.slice", vars: 0 });
-  expectBinding(result.env, "tail", { type: "Word8VectorSlice.slice", vars: 0 });
-  expectBinding(result.env, "frozen", { type: "Word8Vector.vector", vars: 0 });
-  expectBinding(result.env, "base", { type: "Word8Vector.vector", vars: 0 });
+  expectBinding(result.env, "middle", { type: "Word8VectorSlice.Slice", vars: 0 });
+  expectBinding(result.env, "tail", { type: "Word8VectorSlice.Slice", vars: 0 });
+  expectBinding(result.env, "frozen", { type: "Word8Vector.Vector", vars: 0 });
+  expectBinding(result.env, "base", { type: "Word8Vector.Vector", vars: 0 });
   expectBinding(result.env, "offset", { type: "Number", vars: 0 });
   expectBinding(result.env, "length", { type: "Number", vars: 0 });
 
   const output = await run(`
     let main = () => {
       let bytes = Word8Vector.tabulate(6, (index) => { Word8.fromNumber(index + 10) });
-      let middle = Word8VectorSlice.slice(bytes, 1, Some(4));
-      let tail = Word8VectorSlice.subslice(middle, 2, None);
+      let middle = Result.debug(Word8VectorSlice.slice(bytes, 1, Some(4)));
+      let tail = Result.debug(Word8VectorSlice.subslice(middle, 2, None));
       let (base, offset, length) = Word8VectorSlice.base(tail);
       print(middle);
       print(tail);
@@ -109,8 +111,9 @@ Deno.test("Word8VectorSlice creates bounded zero-copy views and freezes explicit
       print(base == bytes);
       print(offset);
       print(length);
-      print(Word8VectorSlice.get(tail, 2));
-      print(Word8VectorSlice.concat([tail, Word8VectorSlice.slice(bytes, 0, Some(1))]))
+      print((Word8VectorSlice.sub(tail, 1), Word8VectorSlice.sub(tail, 2)));
+      print((Word8VectorSlice.slice(bytes, 7, None), Word8VectorSlice.subslice(tail, 1, Some(2))));
+      print(Word8VectorSlice.concat([tail, Result.debug(Word8VectorSlice.slice(bytes, 0, Some(1)))]))
     };
   `);
   assertEquals(output, [
@@ -120,7 +123,8 @@ Deno.test("Word8VectorSlice creates bounded zero-copy views and freezes explicit
     "true",
     "3",
     "2",
-    "None",
+    "(Ok(14), Err(Subscript))",
+    "(Err(Subscript), Err(Subscript))",
     "Word8Vector[13, 14, 10]",
   ]);
 });
@@ -146,14 +150,14 @@ Deno.test("PackWord modules decode vectors and slices in both byte orders", asyn
     ]);
     let little16 = PackWord16Little.subVec(bytes, 0);
     let big32 = PackWord32Big.subVec(bytes, 0);
-    let slice = Word8VectorSlice.slice(bytes, 2, Some(4));
+    let slice = Result.debug(Word8VectorSlice.slice(bytes, 2, Some(4)));
     let little32 = PackWord32Little.subSlice(slice, 0);
     let wide = PackWord64Big.subVec(bytes, 0);
   `);
-  expectBinding(result.env, "little16", { type: "Word16.word", vars: 0 });
-  expectBinding(result.env, "big32", { type: "Word32.word", vars: 0 });
-  expectBinding(result.env, "little32", { type: "Word32.word", vars: 0 });
-  expectBinding(result.env, "wide", { type: "Word64.word", vars: 0 });
+  expectBinding(result.env, "little16", { type: "Result<Word16.Word, Error>", vars: 0 });
+  expectBinding(result.env, "big32", { type: "Result<Word32.Word, Error>", vars: 0 });
+  expectBinding(result.env, "little32", { type: "Result<Word32.Word, Error>", vars: 0 });
+  expectBinding(result.env, "wide", { type: "Result<Word64.Word, Error>", vars: 0 });
 
   const output = await run(`
     let main = () => {
@@ -161,11 +165,12 @@ Deno.test("PackWord modules decode vectors and slices in both byte orders", asyn
         Word8.fromNumber(1), Word8.fromNumber(2), Word8.fromNumber(3), Word8.fromNumber(4),
         Word8.fromNumber(5), Word8.fromNumber(6), Word8.fromNumber(7), Word8.fromNumber(8),
       ]);
-      let slice = Word8VectorSlice.slice(bytes, 2, Some(4));
-      print(Word16.toNumber(PackWord16Little.subVec(bytes, 0)));
-      print(Word32.toNumber(PackWord32Big.subVec(bytes, 0)));
-      print(Word32.toNumber(PackWord32Little.subSlice(slice, 0)));
+      let slice = Result.debug(Word8VectorSlice.slice(bytes, 2, Some(4)));
+      print(Word16.toNumber(Result.debug(PackWord16Little.subVec(bytes, 0))));
+      print(Word32.toNumber(Result.debug(PackWord32Big.subVec(bytes, 0))));
+      print(Word32.toNumber(Result.debug(PackWord32Little.subSlice(slice, 0))));
       print(PackWord64Big.subVec(bytes, 0));
+      print((PackWord32Big.subVec(bytes, 2), PackWord32Little.subSlice(slice, 1)));
       print(PackWord32Little.pack(Word32.fromNumber(305419896)))
     };
   `);
@@ -173,7 +178,8 @@ Deno.test("PackWord modules decode vectors and slices in both byte orders", asyn
     "513",
     "16909060",
     "100992003",
-    "72623859790382856",
+    "Ok(72623859790382856)",
+    "(Err(Subscript), Err(Subscript))",
     "Word8Vector[120, 86, 52, 18]",
   ]);
 });
@@ -215,16 +221,16 @@ Deno.test("Binary provides checked byte-offset reads and immutable cursor advanc
     let stepped = Binary.readU16le(cursor);
     let invalid = Binary.u32le(slice, 2);
   `);
-  expectBinding(result.env, "direct", { type: "Result<Word32.word, Error>", vars: 0 });
+  expectBinding(result.env, "direct", { type: "Result<Word32.Word, Error>", vars: 0 });
   expectBinding(result.env, "cursor", {
-    type: "Cursor<Word8VectorSlice.slice>",
+    type: "Cursor<Word8VectorSlice.Slice>",
     vars: 0,
   });
   expectBinding(result.env, "stepped", {
-    type: "Result<(Word16.word, Cursor<Word8VectorSlice.slice>), Error>",
+    type: "Result<(Word16.Word, Cursor<Word8VectorSlice.Slice>), Error>",
     vars: 0,
   });
-  expectBinding(result.env, "invalid", { type: "Result<Word32.word, Error>", vars: 0 });
+  expectBinding(result.env, "invalid", { type: "Result<Word32.Word, Error>", vars: 0 });
 
   const output = await run(`
     let main = () => {
@@ -248,13 +254,13 @@ Deno.test("PackReal preserves explicit float precision while Binary exposes nume
   const result = await checkSource(`
     let real = Float32.fromNumber(1.5);
     let encoded = PackReal32Little.pack(real);
-    let decoded = PackReal32Little.subVec(encoded, 0);
+    let decoded = Result.debug(PackReal32Little.subVec(encoded, 0));
     let number = Float32.toNumber(decoded);
     let binary = Binary.f32le(Word8VectorSlice.full(encoded), 0);
   `);
-  expectBinding(result.env, "real", { type: "Float32.real", vars: 0 });
-  expectBinding(result.env, "encoded", { type: "Word8Vector.vector", vars: 0 });
-  expectBinding(result.env, "decoded", { type: "Float32.real", vars: 0 });
+  expectBinding(result.env, "real", { type: "Float32.Real", vars: 0 });
+  expectBinding(result.env, "encoded", { type: "Word8Vector.Vector", vars: 0 });
+  expectBinding(result.env, "decoded", { type: "Float32.Real", vars: 0 });
   expectBinding(result.env, "number", { type: "Number", vars: 0 });
   expectBinding(result.env, "binary", { type: "Result<Number, Error>", vars: 0 });
 
@@ -286,7 +292,7 @@ Deno.test("Byte conversion and Binary.asciiZ replace the host string shim", asyn
     ]);
     let parsed = Binary.asciiZ(Word8VectorSlice.full(terminated), 0);
   `);
-  expectBinding(result.env, "encoded", { type: "Word8Vector.vector", vars: 0 });
+  expectBinding(result.env, "encoded", { type: "Word8Vector.Vector", vars: 0 });
   expectBinding(result.env, "decoded", { type: "String", vars: 0 });
   expectBinding(result.env, "parsed", { type: "Result<String, Error>", vars: 0 });
 
@@ -298,7 +304,7 @@ Deno.test("Byte conversion and Binary.asciiZ replace the host string shim", asyn
       ]);
       let slice = Word8VectorSlice.full(bytes);
       print(Binary.asciiZ(slice, 2));
-      print(Binary.asciiZ(Word8VectorSlice.slice(bytes, 0, Some(5)), 2))
+      print(Binary.asciiZ(Result.debug(Word8VectorSlice.slice(bytes, 0, Some(5))), 2))
     };
   `);
   assertEquals(output, ["Ok(wander)", "Err(UnterminatedAscii(2))"]);

@@ -1,3 +1,5 @@
+from "../basis/basis.wm" import * as Basis;
+
 let map = match(option, f) => {
   (Some(value), f) => { Some(f(value)) },
   (None, _) => { None }
@@ -36,4 +38,39 @@ let rec traverse = match(items, f) => {
 
 let collectList = (items) => {
   traverse(items, (item) => { item })
+};
+
+// Basis `OPTION` functions with no existing Workman name. `getOpt` is `withDefault` and
+// `mapPartial` is `andThen`. Arguments come data-first so pipes work.
+
+let isSome = match(option) => {
+  Some(_) => { true },
+  None => { false }
+};
+
+let valOf = match(option) => {
+  Some(value) => { Ok(value) },
+  None => { Err(Basis.Option) }
+};
+
+let filter = (value, predicate) => {
+  if (predicate(value)) { Some(value) } else { None }
+};
+
+let join = match(option) => {
+  Some(inner) => { inner },
+  None => { None }
+};
+
+let app = match(option, f) => {
+  (Some(value), f) => { f(value) },
+  (None, _) => { void }
+};
+
+let compose = (f, g) => {
+  (value) => { map(g(value), f) }
+};
+
+let composePartial = (f, g) => {
+  (value) => { andThen(g(value), f) }
 };

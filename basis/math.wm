@@ -1,0 +1,39 @@
+// Basis `MATH` over `Number`, the JavaScript double. Each function is the matching `Math` member:
+// out-of-domain arguments give NaN and never raise, as the spec says.
+from js.global("Math") import unsafe {
+  PI: Number,
+  E: Number,
+  sqrt as primSqrt: Number -> Number,
+  sin as primSin: Number -> Number,
+  cos as primCos: Number -> Number,
+  tan as primTan: Number -> Number,
+  asin as primAsin: Number -> Number,
+  acos as primAcos: Number -> Number,
+  atan as primAtan: Number -> Number,
+  atan2 as primAtan2: (Number, Number) -> Number,
+  exp as primExp: Number -> Number,
+  pow as primPow: (Number, Number) -> Number,
+  log as primLog: Number -> Number,
+  log10 as primLog10: Number -> Number,
+  sinh as primSinh: Number -> Number,
+  cosh as primCosh: Number -> Number,
+  tanh as primTanh: Number -> Number
+};
+
+let pi = PI;
+let e = E;
+let sqrt = primSqrt;
+let sin = primSin;
+let cos = primCos;
+let tan = primTan;
+let asin = primAsin;
+let acos = primAcos;
+let atan = primAtan;
+let atan2 = primAtan2;
+let exp = primExp;
+let pow = primPow;
+let ln = primLog;
+let log10 = primLog10;
+let sinh = primSinh;
+let cosh = primCosh;
+let tanh = primTanh;

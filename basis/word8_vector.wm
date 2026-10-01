@@ -1,0 +1,46 @@
+from "./basis.wm" import * as Basis;
+from js.module("./js/byte_vector.js") import unsafe {
+  empty as primEmpty: Word8Vector.Vector,
+  fromArray: Js.Array<Word8.Word> -> Word8Vector.Vector,
+  toArray: Word8Vector.Vector -> Js.Array<Word8.Word>,
+  length as primLength: Word8Vector.Vector -> Number,
+  sub as primSub: (Word8Vector.Vector, Number) -> Word8.Word,
+  update as primUpdate: (Word8Vector.Vector, Number, Word8.Word) -> Word8Vector.Vector,
+  concatArray: Js.Array<Word8Vector.Vector> -> Word8Vector.Vector,
+  tabulate as primTabulate: (Number, Number -> Word8.Word) -> Word8Vector.Vector,
+  unfoldN as primUnfoldN: (Number, state, state -> (Word8.Word, state)) -> (Word8Vector.Vector, state)
+};
+
+let empty = primEmpty;
+
+let fromList = (bytes) => { fromArray(Js.Array.fromList(bytes)) };
+
+let toList = (vector) => { Js.Array.toList(toArray(vector)) };
+
+let length = (vector) => { primLength(vector) };
+
+let sub = (vector, index: Number) => {
+  if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
+    Ok(primSub(vector, index))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let update = (vector, index: Number, value) => {
+  if (index >= 0 && index % 1 == 0 && index < primLength(vector)) {
+    Ok(primUpdate(vector, index, value))
+  } else {
+    Err(Basis.Subscript)
+  }
+};
+
+let concat = (vectors) => { concatArray(Js.Array.fromList(vectors)) };
+
+let tabulate = (count, generate) => { primTabulate(count, generate) };
+
+let mapi = (vector, transform) => {
+  primTabulate(primLength(vector), (index) => { transform(index, primSub(vector, index)) })
+};
+
+let unfoldN = (count, initial, step) => { primUnfoldN(count, initial, step) };

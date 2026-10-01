@@ -2,6 +2,7 @@ import type { Decl } from "../ast.ts";
 import type { Env, TypeEnv } from "../types.ts";
 import { generalize, typeFromAst } from "../types.ts";
 import { rejectDuplicates } from "./decl_helpers.ts";
+import { isDeclaredUnsafeImportSpec } from "../ffi/imports.ts";
 import { bindStructure, bindValue, staticEnv, type StrEnv } from "./environment.ts";
 import { recordTypeExpressionFact, recordTypeReferenceFact, type TypeFacts } from "./type_facts.ts";
 
@@ -75,7 +76,12 @@ export function addJsImport(
         recordTypeReferenceFact(facts, expression, resolved, qualifier),
       onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
     });
-    const scheme = { ...generalize(env, type), status: "value" as const, jsImport: true };
+    const scheme = {
+      ...generalize(env, type),
+      status: "value" as const,
+      jsImport: true,
+      ...(isDeclaredUnsafeImportSpec(decl, spec) ? { declaredJsImport: true } : {}),
+    };
     bindValue(targetEnv, name, scheme);
     facts.jsImportSchemes.set(spec, scheme);
   }

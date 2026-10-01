@@ -17,7 +17,16 @@ Deno.test("program analysis assigns shared type, record, constructor, and basis 
     `,
     ]]),
   );
-  const facts = analysis.nominalFacts;
+  // Library modules are ordinary program modules in the combined graph; scope to this module.
+  const own = <T extends { modulePath: string }>(items: T[]) =>
+    items.filter((item) => item.modulePath === "/test/main.wm");
+  const facts = {
+    ...analysis.nominalFacts,
+    types: own(analysis.nominalFacts.types),
+    records: own(analysis.nominalFacts.records),
+    fields: own(analysis.nominalFacts.fields),
+    constructors: own(analysis.nominalFacts.constructors),
+  };
 
   assertEquals(facts.types.map((fact) => [fact.name, fact.id, fact.kind]), [
     ["Choice", 0, "adt"],

@@ -1,0 +1,13 @@
+from js.global("Math") import unsafe { floor as primFloor: Number -> Number };
+
+// Flooring division and modulo, SML's `div` and `mod` on `int`, for `Number`. `%` is JavaScript's
+// truncating remainder (`Real.rem`); these round toward negative infinity instead, so
+// `mod(0 - 7, 3)` is 2. A zero divisor panics with `Div` (`markdown/basis-design.md`).
+
+let div = (x: Number, y: Number) => {
+  if (y == 0) { Panic("Div: Number.div by zero") } else { primFloor(x / y) }
+};
+
+let mod = (x: Number, y: Number) => {
+  if (y == 0) { Panic("Div: Number.mod by zero") } else { x - y * primFloor(x / y) }
+};

@@ -1,0 +1,32 @@
+from js.module("./js/word.js") import unsafe {
+  word64FromNumber: Number -> Word64.Word,
+  word64ToNumber as primToNumber: Word64.Word -> Number,
+  word64Notb: Word64.Word -> Word64.Word,
+  word64Andb: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Orb: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Xorb: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Add: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Sub: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Mul: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Div: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64Mod: (Word64.Word, Word64.Word) -> Word64.Word,
+  word64ShiftLeft: (Word64.Word, Number) -> Word64.Word,
+  word64ShiftRight: (Word64.Word, Number) -> Word64.Word,
+  word64ShiftRightArithmetic: (Word64.Word, Number) -> Word64.Word
+};
+
+let wordSize = 64;
+let fromNumber = word64FromNumber;
+let toNumber = primToNumber;
+let andb = word64Andb;
+let orb = word64Orb;
+let xorb = word64Xorb;
+let notb = word64Notb;
+let shiftLeft = word64ShiftLeft;
+let shiftRight = word64ShiftRight;
+let shiftRightArithmetic = word64ShiftRightArithmetic;
+let add = word64Add;
+let sub = word64Sub;
+let mul = word64Mul;
+let div = word64Div;
+let mod = word64Mod;

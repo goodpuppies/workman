@@ -1,4 +1,4 @@
-import type { CtorDecl, Expr, Module, Pattern } from "./ast.ts";
+import type { Module } from "./ast.ts";
 import { basename, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type CoreProgram, coreProgramFromAnalysis } from "./core/artifact.ts";
@@ -35,7 +35,12 @@ import {
   genericDiagnostic,
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
-import { standardInferOptions, standardRuntimeGraph } from "./standard_library.ts";
+import {
+  standardInferOptions,
+  standardRuntimeGraph,
+  withoutStandardLibrary,
+  withStandardLibrary,
+} from "./standard_library.ts";
 import { assertCompilerFrontendMode, resolveCompilerFrontend } from "./frontend_mode.ts";
 import {
   analyzeModuleGraph,
@@ -114,11 +119,11 @@ export async function compile(
       emitName: "Main",
     }]]),
   };
-  const results = new Map([[id, result]]);
+  const program = await withStandardLibrary(graph, new Map([[id, result]]));
   const ids = new CompilerIdAllocator();
-  const bindings = resolveProgramBindingFacts(graph, ids);
+  const bindings = resolveProgramBindingFacts(program.graph, ids);
   assertCaptureContracts(bindings.values());
-  const nominalFacts = resolveProgramNominalFacts(graph, results, ids);
+  const nominalFacts = resolveProgramNominalFacts(program.graph, program.results, ids);
   const fragmentSelections = resolveGpuFragmentSelections([{
     moduleId: id,
     path,
@@ -128,11 +133,8 @@ export async function compile(
   }]);
   return emitCoreProgram(
     await coreProgramWithStandardRuntime({
-      graph,
-      results,
-      ids,
-      bindings,
-      nominalFacts,
+      graph: program.graph,
+      results: program.results,
       elaboration: { bindings, ids, nominalFacts, fragmentSelections },
     }),
   );
@@ -303,14 +305,14 @@ async function coreResultFromAnalysis(
   const core = await coreProgramWithStandardRuntime({
     graph: analysis.graph,
     results: analysis.results,
-    ids: analysis.ids,
-    bindings: analysis.bindings,
-    nominalFacts: analysis.nominalFacts,
     elaboration: { ...analysis, materializedGpuArtifacts },
   });
+  // Consumers of a core result (diagnostics, workers, GPU normalization) are about the program's
+  // own modules; library modules are part of `core` and the facts, not of the program graph.
+  const program = await withoutStandardLibrary(analysis.graph, analysis.results);
   return {
-    graph: analysis.graph,
-    results: analysis.results,
+    graph: program.graph,
+    results: program.results,
     bindings: analysis.bindings,
     nominalFacts: analysis.nominalFacts,
     patternFacts: analysis.patternFacts,
@@ -321,52 +323,21 @@ async function coreResultFromAnalysis(
   };
 }
 
+/**
+ * Build Core for a graph that already contains the library modules (see `withStandardLibrary`).
+ * Library modules are ordinary nodes here; the only library-specific output is the namespace
+ * description the emitter uses to bind `List`, `Result`, … for program code.
+ */
 async function coreProgramWithStandardRuntime(input: {
   graph: ModuleGraph;
   results: ModuleMap<InferResult>;
-  ids: CompilerIdAllocator;
-  bindings: ModuleMap<BindingFacts>;
-  nominalFacts: NominalFacts;
   elaboration?: Parameters<typeof coreProgramFromAnalysis>[2];
 }): Promise<CoreProgram> {
-  if ([...input.graph.nodes.values()].every((node) => node.module.prelude === "none")) {
-    return coreProgramFromAnalysis(input.graph, input.results, {
-      ...input.elaboration,
-      bindings: input.bindings,
-      ids: input.ids,
-      nominalFacts: input.nominalFacts,
-    });
-  }
+  const core = coreProgramFromAnalysis(input.graph, input.results, input.elaboration);
   const standard = await standardRuntimeGraph();
-  const standardBindings = resolveProgramBindingFacts(standard.graph, input.ids);
-  const standardNominalFacts = resolveProgramNominalFacts(
-    standard.graph,
-    standard.results,
-    input.ids,
-  );
-  const nominalFacts = mergeStandardNominalFacts(
-    input.nominalFacts,
-    standardNominalFacts,
-    input.results,
-  );
-  const userCore = coreProgramFromAnalysis(input.graph, input.results, {
-    ...input.elaboration,
-    bindings: input.bindings,
-    ids: input.ids,
-    nominalFacts,
-  });
-  const standardCore = coreProgramFromAnalysis(standard.graph, standard.results, {
-    bindings: standardBindings,
-    ids: input.ids,
-    nominalFacts,
-    gpuOnlyBindings: new Set(),
-  });
+  if (!input.graph.order.some((id) => standard.graph.nodes.has(id))) return core;
   return {
-    ...userCore,
-    order: [...standard.graph.order, ...userCore.order],
-    modules: new Map([...standardCore.modules, ...userCore.modules]),
-    constructors: [...standardCore.constructors, ...userCore.constructors],
-    nominalFacts,
+    ...core,
     standardNamespaces: standard.namespaces.map((namespace) => ({
       ...namespace,
       basisName: namespace.hostMembers.length > 0
@@ -374,50 +345,6 @@ async function coreProgramWithStandardRuntime(input: {
         : undefined,
       basisMembers: namespace.hostMembers,
     })),
-  };
-}
-
-function mergeStandardNominalFacts(
-  user: NominalFacts,
-  standard: NominalFacts,
-  userResults: ModuleMap<InferResult>,
-): NominalFacts {
-  const constructorReferences = new Map<Expr | Pattern, import("./ids.ts").CtorId>([
-    ...standard.constructorReferences,
-    ...user.constructorReferences,
-  ]);
-  const importedConstructor = (declaration: CtorDecl | undefined) =>
-    declaration === undefined ? undefined : standard.constructorDeclarations.get(declaration);
-  for (const result of userResults.values()) {
-    for (const [expression, fact] of result.facts.expressions) {
-      const id = importedConstructor(fact.general?.constructorDecl);
-      if (fact.subject === "constructor" && id !== undefined) {
-        constructorReferences.set(expression, id);
-      }
-    }
-    for (const [pattern, fact] of result.facts.patterns) {
-      const id = importedConstructor(fact.general?.constructorDecl);
-      if (fact.subject === "constructor" && id !== undefined) {
-        constructorReferences.set(pattern, id);
-      }
-    }
-  }
-  return {
-    types: [...user.types, ...standard.types],
-    records: [...user.records, ...standard.records],
-    fields: [...user.fields, ...standard.fields],
-    constructors: [...user.constructors, ...standard.constructors],
-    typeDeclarations: new Map([...user.typeDeclarations, ...standard.typeDeclarations]),
-    recordDeclarations: new Map([...user.recordDeclarations, ...standard.recordDeclarations]),
-    fieldDeclarations: new Map([...user.fieldDeclarations, ...standard.fieldDeclarations]),
-    constructorDeclarations: new Map([
-      ...user.constructorDeclarations,
-      ...standard.constructorDeclarations,
-    ]),
-    inferenceTypeIds: new Map([...user.inferenceTypeIds, ...standard.inferenceTypeIds]),
-    recordTypeIds: new Map([...user.recordTypeIds, ...standard.recordTypeIds]),
-    fieldIds: new Map([...user.fieldIds, ...standard.fieldIds]),
-    constructorReferences,
   };
 }
 
@@ -546,11 +473,14 @@ async function analyzeStrictSnapshot(
   );
 }
 
+/** Strict analysis for code generation: the program graph plus the library modules, analyzed once. */
 async function analyzeCoreFile(
   input: string,
   options: ModuleGraphOptions,
 ): Promise<CoreProgramAnalysis> {
-  return await analyzeStrict(input, options, buildCoreProgramAnalysis);
+  const program = await analyzeStrict(input, options, (graph, results) => ({ graph, results }));
+  const combined = await withStandardLibrary(program.graph, program.results);
+  return buildCoreProgramAnalysis(combined.graph, combined.results);
 }
 
 async function analyzeStrict<T>(
@@ -764,7 +694,7 @@ export async function coreVirtual(
   virtualFs: VirtualFileSystem,
   options: Omit<CompileOptions, "virtualFs"> = {},
 ): Promise<CoreFileResult> {
-  const analysis = await analyzeVirtual(entryPath, virtualFs, options);
+  const analysis = await analyzeCoreFile(entryPath, { ...options, virtualFs });
   return await coreResultFromAnalysis(analysis);
 }
 

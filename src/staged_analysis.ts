@@ -8,7 +8,12 @@ import { prepareFfiElaboration } from "./ffi/elab.ts";
 import { type FfiElaboration } from "./ffi/shared.ts";
 import { prepareCImports } from "./ffi/c/prepare.ts";
 import { prepareInitialJsImportReflection } from "./ffi/reflect/types.ts";
-import { inferModule, inferModulePartial, type InferResult } from "./infer.ts";
+import {
+  inferModule,
+  type InferModuleOptions,
+  inferModulePartial,
+  type InferResult,
+} from "./infer.ts";
 import { rememberExportedSourceDocument } from "./infer/imports.ts";
 import { registerModuleCarrier } from "./infer/carriers.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
@@ -35,6 +40,8 @@ export type StagedAnalysisEvent = {
 };
 
 export type StagedAnalysisOptions = {
+  /** Inference options for every module. Defaults to the standard library's initial imports. */
+  inferOptions?: InferModuleOptions;
   onEvent?: (event: StagedAnalysisEvent) => void;
   onTiming?: (event: StagedAnalysisTimingEvent) => void;
 };
@@ -112,7 +119,7 @@ export async function analyzeModuleGraph(
   }
 
   const standardLibraryStarted = performance.now();
-  const inferOptions = await standardInferOptions();
+  const inferOptions = options.inferOptions ?? await standardInferOptions();
   options.onTiming?.({
     phase: "load standard library",
     milliseconds: performance.now() - standardLibraryStarted,

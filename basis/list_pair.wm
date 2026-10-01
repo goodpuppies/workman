@@ -1,0 +1,113 @@
+from "./basis.wm" import * as Basis;
+
+// Basis `LIST_PAIR`. The plain functions ignore the excess of the longer list; the `Eq` functions
+// return `Err(Basis.UnequalLengths)` instead. Arguments come data-first so pipes work, and fold
+// functions take `(a, b, accumulator)` as in the spec.
+
+let rec zip = match(left, right) => {
+  ([a, ..restA], [b, ..restB]) => { [(a, b), ..zip(restA, restB)] },
+  (_, _) => { [] }
+};
+
+let rec zipEq = match(left, right) => {
+  ([], []) => { Ok([]) },
+  ([a, ..restA], [b, ..restB]) => {
+    match(zipEq(restA, restB)) {
+      Ok(rest) => { Ok([(a, b), ..rest]) },
+      Err(error) => { Err(error) }
+    }
+  },
+  (_, _) => { Err(Basis.UnequalLengths) }
+};
+
+let rec unzip = match(pairs) => {
+  [] => { ([], []) },
+  [pair, ..rest] => {
+    let (a, b) = pair;
+    let (lefts, rights) = unzip(rest);
+    ([a, ..lefts], [b, ..rights])
+  }
+};
+
+let rec app = match(left, right, f) => {
+  ([a, ..restA], [b, ..restB], f) => {
+    f(a, b);
+    app(restA, restB, f)
+  },
+  (_, _, _) => { void }
+};
+
+let rec appEq = match(left, right, f) => {
+  ([], [], _) => { Ok(void) },
+  ([a, ..restA], [b, ..restB], f) => {
+    f(a, b);
+    appEq(restA, restB, f)
+  },
+  (_, _, _) => { Err(Basis.UnequalLengths) }
+};
+
+let rec map = match(left, right, f) => {
+  ([a, ..restA], [b, ..restB], f) => {
+    let head = f(a, b);
+    [head, ..map(restA, restB, f)]
+  },
+  (_, _, _) => { [] }
+};
+
+let rec mapEq = match(left, right, f) => {
+  ([], [], _) => { Ok([]) },
+  ([a, ..restA], [b, ..restB], f) => {
+    let head = f(a, b);
+    match(mapEq(restA, restB, f)) {
+      Ok(rest) => { Ok([head, ..rest]) },
+      Err(error) => { Err(error) }
+    }
+  },
+  (_, _, _) => { Err(Basis.UnequalLengths) }
+};
+
+let rec foldl = match(left, right, initial, f) => {
+  ([a, ..restA], [b, ..restB], initial, f) => { foldl(restA, restB, f(a, b, initial), f) },
+  (_, _, initial, _) => { initial }
+};
+
+let rec foldr = match(left, right, initial, f) => {
+  ([a, ..restA], [b, ..restB], initial, f) => { f(a, b, foldr(restA, restB, initial, f)) },
+  (_, _, initial, _) => { initial }
+};
+
+let rec foldlEq = match(left, right, initial, f) => {
+  ([], [], initial, _) => { Ok(initial) },
+  ([a, ..restA], [b, ..restB], initial, f) => { foldlEq(restA, restB, f(a, b, initial), f) },
+  (_, _, _, _) => { Err(Basis.UnequalLengths) }
+};
+
+let rec all = match(left, right, predicate) => {
+  ([a, ..restA], [b, ..restB], predicate) => {
+    if (predicate(a, b)) { all(restA, restB, predicate) } else { false }
+  },
+  (_, _, _) => { true }
+};
+
+let rec exists = match(left, right, predicate) => {
+  ([a, ..restA], [b, ..restB], predicate) => {
+    if (predicate(a, b)) { true } else { exists(restA, restB, predicate) }
+  },
+  (_, _, _) => { false }
+};
+
+let rec allEq = match(left, right, predicate) => {
+  ([], [], _) => { true },
+  ([a, ..restA], [b, ..restB], predicate) => {
+    if (predicate(a, b)) { allEq(restA, restB, predicate) } else { false }
+  },
+  (_, _, _) => { false }
+};
+
+let foldrEq = (left, right, initial, f) => {
+  if (allEq(left, right, (_, _) => { true })) {
+    Ok(foldr(left, right, initial, f))
+  } else {
+    Err(Basis.UnequalLengths)
+  }
+};

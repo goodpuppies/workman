@@ -1,3 +1,19 @@
+from "../basis/byte.wm" import * as Byte;
+from "../basis/float32.wm" import * as Float32;
+from "../basis/float64.wm" import * as Float64;
+from "../basis/pack_real32_big.wm" import * as PackReal32Big;
+from "../basis/pack_real32_little.wm" import * as PackReal32Little;
+from "../basis/pack_real64_big.wm" import * as PackReal64Big;
+from "../basis/pack_real64_little.wm" import * as PackReal64Little;
+from "../basis/pack_word16_big.wm" import * as PackWord16Big;
+from "../basis/pack_word16_little.wm" import * as PackWord16Little;
+from "../basis/pack_word32_big.wm" import * as PackWord32Big;
+from "../basis/pack_word32_little.wm" import * as PackWord32Little;
+from "../basis/pack_word64_big.wm" import * as PackWord64Big;
+from "../basis/pack_word64_little.wm" import * as PackWord64Little;
+from "../basis/word8.wm" import * as Word8;
+from "../basis/word8_vector_slice.wm" import * as Word8VectorSlice;
+
 type Error =
   | Bounds<Number, Number, Number>
   | UnterminatedAscii<Number>;
@@ -12,92 +28,95 @@ let bounds = (offset, width, available) => {
 };
 
 let take = (bytes, offset: Number, width: Number) => {
-  let available = Word8VectorSlice.length(bytes);
-  if (
-    offset >= 0 && offset % 1 == 0 &&
-    width >= 0 && width % 1 == 0 &&
-    offset <= available && width <= available - offset
-  ) {
-    Ok(Word8VectorSlice.subslice(bytes, offset, Some(width)))
-  } else {
-    bounds(offset, width, available)
+  match(Word8VectorSlice.subslice(bytes, offset, Some(width))) {
+    Ok(part) => { Ok(part) },
+    Err(_) => { bounds(offset, width, Word8VectorSlice.length(bytes)) }
+  }
+};
+
+// Read element 0 of a part returned by `take`. The part is exactly one element wide, so the read
+// can't fail; its `Result` is mapped to `Bounds` only to keep the error type.
+let readFirst = (read, part, offset, convert) => {
+  match(read(part, 0)) {
+    Ok(value) => { Ok(convert(value)) },
+    Err(_) => { bounds(offset, Word8VectorSlice.length(part), Word8VectorSlice.length(part)) }
   }
 };
 
 let u8 = (bytes, offset) => {
   match(take(bytes, offset, 1)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(Word8VectorSlice.sub(part, 0)) }
+    Ok(part) => { readFirst(Word8VectorSlice.sub, part, offset, (byte) => { byte }) }
   }
 };
 
 let u16le = (bytes, offset) => {
   match(take(bytes, offset, PackWord16Little.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(PackWord16Little.subSlice(part, 0)) }
+    Ok(part) => { readFirst(PackWord16Little.subSlice, part, offset, (word) => { word }) }
   }
 };
 
 let u16be = (bytes, offset) => {
   match(take(bytes, offset, PackWord16Big.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(PackWord16Big.subSlice(part, 0)) }
+    Ok(part) => { readFirst(PackWord16Big.subSlice, part, offset, (word) => { word }) }
   }
 };
 
 let u32le = (bytes, offset) => {
   match(take(bytes, offset, PackWord32Little.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(PackWord32Little.subSlice(part, 0)) }
+    Ok(part) => { readFirst(PackWord32Little.subSlice, part, offset, (word) => { word }) }
   }
 };
 
 let u32be = (bytes, offset) => {
   match(take(bytes, offset, PackWord32Big.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(PackWord32Big.subSlice(part, 0)) }
+    Ok(part) => { readFirst(PackWord32Big.subSlice, part, offset, (word) => { word }) }
   }
 };
 
 let u64le = (bytes, offset) => {
   match(take(bytes, offset, PackWord64Little.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(PackWord64Little.subSlice(part, 0)) }
+    Ok(part) => { readFirst(PackWord64Little.subSlice, part, offset, (word) => { word }) }
   }
 };
 
 let u64be = (bytes, offset) => {
   match(take(bytes, offset, PackWord64Big.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(PackWord64Big.subSlice(part, 0)) }
+    Ok(part) => { readFirst(PackWord64Big.subSlice, part, offset, (word) => { word }) }
   }
 };
 
 let f32le = (bytes, offset) => {
   match(take(bytes, offset, PackReal32Little.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(Float32.toNumber(PackReal32Little.subSlice(part, 0))) }
+    Ok(part) => { readFirst(PackReal32Little.subSlice, part, offset, Float32.toNumber) }
   }
 };
 
 let f32be = (bytes, offset) => {
   match(take(bytes, offset, PackReal32Big.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(Float32.toNumber(PackReal32Big.subSlice(part, 0))) }
+    Ok(part) => { readFirst(PackReal32Big.subSlice, part, offset, Float32.toNumber) }
   }
 };
 
 let f64le = (bytes, offset) => {
   match(take(bytes, offset, PackReal64Little.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(Float64.toNumber(PackReal64Little.subSlice(part, 0))) }
+    Ok(part) => { readFirst(PackReal64Little.subSlice, part, offset, Float64.toNumber) }
   }
 };
 
 let f64be = (bytes, offset) => {
   match(take(bytes, offset, PackReal64Big.bytesPerElem)) {
     Err(error) => { Err(error) },
-    Ok(part) => { Ok(Float64.toNumber(PackReal64Big.subSlice(part, 0))) }
+    Ok(part) => { readFirst(PackReal64Big.subSlice, part, offset, Float64.toNumber) }
   }
 };
 
@@ -107,13 +126,18 @@ let asciiZ = (bytes, offset) => {
     if (index >= available) {
       Err(UnterminatedAscii(offset))
     } else {
-      if (Word8.toNumber(Word8VectorSlice.sub(bytes, index)) == 0) {
-        match(take(bytes, offset, index - offset)) {
-          Err(error) => { Err(error) },
-          Ok(part) => { Ok(Byte.bytesToString(Word8VectorSlice.vector(part))) }
-        }
-      } else {
-        find(index + 1)
+      match(Word8VectorSlice.sub(bytes, index)) {
+        Ok(byte) => {
+          if (Word8.toNumber(byte) == 0) {
+            match(take(bytes, offset, index - offset)) {
+              Err(error) => { Err(error) },
+              Ok(part) => { Ok(Byte.bytesToString(Word8VectorSlice.vector(part))) }
+            }
+          } else {
+            find(index + 1)
+          }
+        },
+        Err(_) => { Err(UnterminatedAscii(offset)) }
       }
     }
   };

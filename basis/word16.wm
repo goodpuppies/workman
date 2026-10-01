@@ -1,0 +1,32 @@
+from js.module("./js/word.js") import unsafe {
+  word16FromNumber: Number -> Word16.Word,
+  smallWordToNumber as primToNumber: Word16.Word -> Number,
+  word16Notb: Word16.Word -> Word16.Word,
+  word16Andb: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Orb: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Xorb: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Add: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Sub: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Mul: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Div: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16Mod: (Word16.Word, Word16.Word) -> Word16.Word,
+  word16ShiftLeft: (Word16.Word, Number) -> Word16.Word,
+  word16ShiftRight: (Word16.Word, Number) -> Word16.Word,
+  word16ShiftRightArithmetic: (Word16.Word, Number) -> Word16.Word
+};
+
+let wordSize = 16;
+let fromNumber = word16FromNumber;
+let toNumber = primToNumber;
+let andb = word16Andb;
+let orb = word16Orb;
+let xorb = word16Xorb;
+let notb = word16Notb;
+let shiftLeft = word16ShiftLeft;
+let shiftRight = word16ShiftRight;
+let shiftRightArithmetic = word16ShiftRightArithmetic;
+let add = word16Add;
+let sub = word16Sub;
+let mul = word16Mul;
+let div = word16Div;
+let mod = word16Mod;

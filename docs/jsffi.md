@@ -161,6 +161,11 @@ from js.global import unsafe {
 };
 ```
 
+An unsafe import with a manual type is an ordinary typed binding, unless the type mentions
+`Js.Value` or `Js.Object` or the clause has an alias (`} as console`). Functions that call it
+generalize like any other function, so a typed wrapper over a polymorphic primitive stays
+polymorphic. `std/task.wm` is built this way.
+
 Safe manual imports still reject free type variables because a `Result` wrapper cannot make an
 uncheckable polymorphic foreign claim safe. Undeclared nominal foreign types must also be imported
 or declared explicitly in both modes.

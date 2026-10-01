@@ -51,6 +51,10 @@ function requireEquality(
     const basis = basisTypeDescriptor(resolved.name);
     if (basis?.equality === "always") return;
     if (basis?.equality === "never") rejectEquality(resolved);
+    if (basis?.equality === "arguments") {
+      resolved.args.forEach((arg) => requireEquality(arg, typeEnv, adts, seen));
+      return;
+    }
 
     const key = `${resolved.id}<${resolved.args.map((arg) => quoteType(arg)).join(",")}>`;
     if (seen.has(key)) return;
