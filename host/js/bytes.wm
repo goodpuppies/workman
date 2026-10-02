@@ -1,0 +1,23 @@
+from js.module("./js/bytes.js") import unsafe {
+  readFile as primReadFile: (String, a -> r, String -> r, r) -> task,
+  readSlice as primReadSlice: (String, Number, Number, a -> r, String -> r, r) -> task,
+  writeFile as primWriteFile: (String, Word8Vector.Vector, a -> r, String -> r, r) -> task
+};
+
+// Binary file IO for Deno. Import it with `from js.host("bytes") import * as Bytes;`. Basis IO is
+// deferred (BD10); this stays `Task`-shaped until it lands.
+
+// The primitives are typed with free type variables because they return raw promises. Each binding
+// below states the real type of the operation.
+
+let readFile: String -> Task<Word8Vector.Vector, Js.Error> = (path) => {
+  primReadFile(path, Ok, (message) => { Err(Js.Error(message)) }, Err(Js.Unknown))
+};
+
+let readSlice: (String, Number, Number) -> Task<Word8Vector.Vector, Js.Error> = (path, offset, length) => {
+  primReadSlice(path, offset, length, Ok, (message) => { Err(Js.Error(message)) }, Err(Js.Unknown))
+};
+
+let writeFile: (String, Word8Vector.Vector) -> Task<Void, Js.Error> = (path, vector) => {
+  primWriteFile(path, vector, Ok, (message) => { Err(Js.Error(message)) }, Err(Js.Unknown))
+};

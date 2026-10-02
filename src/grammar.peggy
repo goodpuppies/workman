@@ -219,6 +219,8 @@ JsTarget
     { return at({ kind: "CHeader", header: header.value, lib }, location()); }
   / "c.lib" _ "(" _ name:String _ ")"
     { return at({ kind: "CLib", name: name.value }, location()); }
+  / "js.host" _ "(" _ name:String _ ")"
+    { return at({ kind: "JsHost", name: name.value }, location()); }
 
 JsImportClause
   = unsafe:("unsafe" __)? clause:JsImportClauseBody

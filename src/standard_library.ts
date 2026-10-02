@@ -41,11 +41,30 @@ export async function standardInferOptions(): Promise<InferModuleOptions> {
 async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
   const out: InitialImport[] = [];
   for (const module of await loadStandardModules()) {
+    if (!isAutoOpened(module.path)) continue;
     for (const clause of module.clauses) {
       out.push({ clause, result: module.result, standard: true });
     }
   }
   return out;
+}
+
+/**
+ * Host helper modules (`host/js/`) are never opened implicitly: a program reaches one through an
+ * explicit `js.host` import edge (BD17). Layer 1 and layer 2 modules are opened as namespaces.
+ */
+function isAutoOpened(path: string): boolean {
+  return !path.startsWith("host/");
+}
+
+/**
+ * Results of the library modules by module id, for import edges that name a library module
+ * (`js.host`) from a graph that does not contain it.
+ */
+export async function libraryImportResults(): Promise<ModuleMap<InferResult>> {
+  return new Map(
+    (await loadStandardModules()).map((module) => [moduleId(module.path), module.result]),
+  );
 }
 
 export function loadStandardModules(): Promise<LoadedStandardModule[]> {
@@ -60,6 +79,8 @@ export async function standardRuntimeGraph(): Promise<{
     id: ModuleId;
     path: string;
     publicName: string;
+    /** Reached only through an explicit import edge, never bound as a global namespace. */
+    importOnly: boolean;
     emitName: string;
     hostMembers: string[];
     sourceMembers: string[];
@@ -76,6 +97,7 @@ export async function standardRuntimeGraph(): Promise<{
       id: ids.get(module.path)!,
       path: module.path,
       publicName: module.alias,
+      importOnly: !isAutoOpened(module.path),
       emitName: `__wm_std_${module.alias}`,
       hostMembers: [...(hostStructures.get(module.alias)?.valEnv.keys() ?? [])]
         .filter((name) => !module.result.exports.has(name)),
@@ -91,24 +113,47 @@ export async function standardRuntimeGraph(): Promise<{
  *
  * Library modules are placed after the program's modules. Emitted module definitions are
  * requested explicitly and do not depend on this order; what it decides is identity allocation,
- * so the program's binding, type and constructor ids do not shift when the library changes.
+ * so the program's binding, type and constructor ids do not shift when the library changes. The
+ * exception is a library module the program imports explicitly (`js.host`): it and its own imports
+ * come first, since whole-program passes visit a module's imports before the module.
  */
 export async function withStandardLibrary(
   graph: ModuleGraph,
   results: ModuleMap<InferResult>,
 ): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
-  if ([...graph.nodes.values()].every((node) => node.module.prelude === "none")) {
-    return { graph, results };
-  }
-  const standard = await standardRuntimeGraph();
-  if (graph.order.some((id) => standard.graph.nodes.has(id))) return { graph, results };
+  if (!usesStandardLibrary(graph)) return { graph, results };
+  return mergeLibraryGraph(graph, results, await standardRuntimeGraph());
+}
+
+function usesStandardLibrary(graph: ModuleGraph): boolean {
+  return ![...graph.nodes.values()].every((node) => node.module.prelude === "none");
+}
+
+/** The synchronous half of `withStandardLibrary`, for callers that already hold the library. */
+export function mergeLibraryGraph(
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+  library: { graph: ModuleGraph; results: ModuleMap<InferResult> },
+): { graph: ModuleGraph; results: ModuleMap<InferResult> } {
+  if (!usesStandardLibrary(graph)) return { graph, results };
+  if (graph.order.some((id) => library.graph.nodes.has(id))) return { graph, results };
+  const imported = new Set<ModuleId>();
+  const visit = (id: ModuleId) => {
+    const node = library.graph.nodes.get(id);
+    if (!node || imported.has(id)) return;
+    imported.add(id);
+    node.imports.forEach((edge) => visit(edge.target));
+  };
+  for (const node of graph.nodes.values()) node.imports.forEach((edge) => visit(edge.target));
+  const first = library.graph.order.filter((id) => imported.has(id));
+  const rest = library.graph.order.filter((id) => !imported.has(id));
   return {
     graph: {
       entry: graph.entry,
-      order: [...graph.order, ...standard.graph.order],
-      nodes: new Map([...standard.graph.nodes, ...graph.nodes]),
+      order: [...first, ...graph.order, ...rest],
+      nodes: new Map([...library.graph.nodes, ...graph.nodes]),
     },
-    results: new Map([...standard.results, ...results]),
+    results: new Map([...library.results, ...results]),
   };
 }
 

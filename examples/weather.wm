@@ -28,6 +28,7 @@ from js.global("JSON") import {
   stringify: Js.Value -> String,
 } as JSON;
 from js.global("Math") import { max as mathMax };
+from js.host("dict") import * as Dict;
 
 let via = Monad.via;
 let cacheFile = ".weather-cache.json";

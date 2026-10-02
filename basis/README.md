@@ -27,3 +27,14 @@ plain JavaScript values. Conversions to `List` and `Option`, and `Result` wrappi
 `.wm` module.
 
 Layer 2, Workman's own standard library, lives in [`../std/`](../std/) and follows the same rules.
+The JavaScript host helper modules live in [`../host/js/`](../host/js/), also with the same rules,
+but are never opened implicitly: programs import them with `from js.host("table")` (BD17).
+
+A layer-1 module names `Js.*` only in the signatures of its primitive imports, never in its function
+bodies, so porting to another target means replacing the primitive imports and nothing else. A
+conformance test checks this.
+
+Primitive signatures should avoid `Option` and callback parameters on hot paths. `Option` in an
+`unsafe` signature is still converted to and from nullable values, and a callback parameter gets an
+FFI adapter on every call. `host/js/table.wm` shows the pattern: return the raw value and test it
+with a second primitive.

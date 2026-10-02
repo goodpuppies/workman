@@ -27,8 +27,6 @@ const itemsOf = (vector) => vector[vectorData];
 
 export const fromArray = (items) => wrap(Array.from(items));
 
-export const toArray = (vector) => Array.from(itemsOf(vector));
-
 export const length = (vector) => itemsOf(vector).length;
 
 export const uncheckedSub = (vector, index) => itemsOf(vector)[index];
@@ -73,4 +71,12 @@ export const sliceConcatArray = (slices) => {
   });
   checkedLength(items.length);
   return wrap(items);
+};
+
+// A JavaScript array that the Workman side fills from a list with `push`, so the modules don't
+// depend on the compiler's list representation or on `Js.Array.fromList` (BD17).
+export const newArray = () => [];
+
+export const push = (array, item) => {
+  array.push(item);
 };

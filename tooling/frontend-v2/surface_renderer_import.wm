@@ -5,7 +5,7 @@ from "./generated/surface_types.wm" import {
   ImportNamedClauseNode, ImportSpecificationNode, ImportAliasNode,
   JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
   JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
-  JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode,
+  JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode, JavaScriptHostTargetNode,
   JavaScriptImportClauseNode, JavaScriptNamedClauseNode,
   JavaScriptImportSpecificationNode
 };
@@ -142,6 +142,12 @@ let renderImportNode = match(node, depth, materializeMarks, renderNode) => {
     Some(
       renderImportToken(target) ++ renderImportSurfaceValue(open, materializeMarks) ++
       renderImportToken(specifier) ++ renderImportSurfaceValue(close, materializeMarks)
+    )
+  },
+  (JavaScriptHostTargetNode(target, open, name, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some(
+      renderImportToken(target) ++ renderImportSurfaceValue(open, materializeMarks) ++
+      renderImportToken(name) ++ renderImportSurfaceValue(close, materializeMarks)
     )
   },
   (JavaScriptImportClauseNode(unsafeToken, clause, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {

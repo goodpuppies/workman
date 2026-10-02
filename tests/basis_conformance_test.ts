@@ -3,6 +3,8 @@
 // `Result<T, Basis.Error>` (`markdown/basis-design.md`, Basis exceptions).
 import { assertEquals } from "@std/assert";
 import { fileURLToPath } from "node:url";
+import { librarySources } from "../src/generated/assets.ts";
+import { parseCompilerModule } from "../src/compiler_frontend.ts";
 
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
@@ -292,4 +294,19 @@ Deno.test("Number.div and Number.mod floor like SML's div and mod", async () => 
     ]),
     ["(3, -4, 2, -2, -1)"],
   );
+});
+
+Deno.test("layer 1 names Js.* only in the signatures of its primitive imports (BD17)", async () => {
+  const leaks: string[] = [];
+  for (const [path, source] of Object.entries(librarySources)) {
+    if (!path.startsWith("basis/")) continue;
+    const module = await parseCompilerModule(source, {}, path);
+    for (const decl of module.decls) {
+      if (decl.kind === "JsImportDecl") continue;
+      const names = JSON.stringify(decl, (key, value) => key === "node" ? undefined : value)
+        .match(/"Js\.[A-Za-z.]+"/g) ?? [];
+      leaks.push(...names.map((name) => `${path}: ${name}`));
+    }
+  }
+  assertEquals(leaks, []);
 });

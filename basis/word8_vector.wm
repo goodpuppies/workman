@@ -2,20 +2,39 @@ from "./basis.wm" import * as Basis;
 from js.module("./js/byte_vector.js") import unsafe {
   empty as primEmpty: Word8Vector.Vector,
   fromArray: Js.Array<Word8.Word> -> Word8Vector.Vector,
-  toArray: Word8Vector.Vector -> Js.Array<Word8.Word>,
   length as primLength: Word8Vector.Vector -> Number,
   sub as primSub: (Word8Vector.Vector, Number) -> Word8.Word,
   update as primUpdate: (Word8Vector.Vector, Number, Word8.Word) -> Word8Vector.Vector,
   concatArray: Js.Array<Word8Vector.Vector> -> Word8Vector.Vector,
   tabulate as primTabulate: (Number, Number -> Word8.Word) -> Word8Vector.Vector,
-  unfoldN as primUnfoldN: (Number, state, state -> (Word8.Word, state)) -> (Word8Vector.Vector, state)
+  unfoldN as primUnfoldN: (Number, state, state -> (Word8.Word, state)) -> (Word8Vector.Vector, state),
+  newArray: Void -> Js.Array<a>,
+  push: (Js.Array<a>, a) -> Void
 };
 
 let empty = primEmpty;
 
-let fromList = (bytes) => { fromArray(Js.Array.fromList(bytes)) };
+let fromList = (bytes) => {
+  let array = newArray();
+  let rec fill = (rest) => {
+    match(rest) {
+      [item, ..tail] => {
+        push(array, item);
+        fill(tail)
+      },
+      [] => { void }
+    }
+  };
+  fill(bytes);
+  fromArray(array)
+};
 
-let toList = (vector) => { Js.Array.toList(toArray(vector)) };
+let toList = (vector) => {
+  let rec loop = (index, accumulator) => {
+    if (index < 0) { accumulator } else { loop(index - 1, [primSub(vector, index), ..accumulator]) }
+  };
+  loop(primLength(vector) - 1, [])
+};
 
 let length = (vector) => { primLength(vector) };
 
@@ -35,7 +54,20 @@ let update = (vector, index: Number, value) => {
   }
 };
 
-let concat = (vectors) => { concatArray(Js.Array.fromList(vectors)) };
+let concat = (vectors) => {
+  let array = newArray();
+  let rec fill = (rest) => {
+    match(rest) {
+      [item, ..tail] => {
+        push(array, item);
+        fill(tail)
+      },
+      [] => { void }
+    }
+  };
+  fill(vectors);
+  concatArray(array)
+};
 
 let tabulate = (count, generate) => { primTabulate(count, generate) };
 

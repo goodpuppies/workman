@@ -7,7 +7,9 @@ from js.module("./js/vector.js") import unsafe {
   sliceBase: VectorSlice.Slice<a> -> (Vector.Vector<a>, Number, Number),
   sliceToVector: VectorSlice.Slice<a> -> Vector.Vector<a>,
   sliceConcatArray: Js.Array<VectorSlice.Slice<a>> -> Vector.Vector<a>,
-  tabulate as vectorTabulate: (Number, Number -> a) -> Vector.Vector<a>
+  tabulate as vectorTabulate: (Number, Number -> a) -> Vector.Vector<a>,
+  newArray: Void -> Js.Array<a>,
+  push: (Js.Array<a>, a) -> Void
 };
 
 // Basis `VECTOR_SLICE`. Functions that raise `Subscript` in the spec, including `slice` and
@@ -66,7 +68,20 @@ let base = (slice) => { sliceBase(slice) };
 
 let vector = (slice) => { sliceToVector(slice) };
 
-let concat = (slices) => { sliceConcatArray(Js.Array.fromList(slices)) };
+let concat = (slices) => {
+  let array = newArray();
+  let rec fill = (rest) => {
+    match(rest) {
+      [item, ..tail] => {
+        push(array, item);
+        fill(tail)
+      },
+      [] => { void }
+    }
+  };
+  fill(slices);
+  sliceConcatArray(array)
+};
 
 let isEmpty = (slice) => { length(slice) == 0 };
 

@@ -4685,8 +4685,9 @@ function reverseDependencies(graph: ModuleGraph): ModuleMap<ModuleId[]> {
   for (const id of graph.order) reverse.set(id, []);
   for (const id of graph.order) {
     for (const edge of graph.nodes.get(id)!.imports) {
-      const dependents = reverse.get(edge.target)!;
-      if (!dependents.includes(id)) dependents.push(id);
+      // A `js.host` edge targets a library module, which is not a project module.
+      const dependents = reverse.get(edge.target);
+      if (dependents && !dependents.includes(id)) dependents.push(id);
     }
   }
   return reverse;

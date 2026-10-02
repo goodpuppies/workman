@@ -235,3 +235,33 @@ one concept has one name (principle 2). This is a breaking change for code match
 The constructors stay qualified (`General.Less`) for now. The Basis opens `order` at top level, but
 which names Workman opens unqualified is still the open "top-level unqualified values" question in
 `basis-design.md`.
+
+## BD17. The JS host layer: compiler-owned FFI vocabulary, imported helpers
+
+**Status:** decided (2026-10-02). Replaces the "layer 3 always requires an explicit import" rule in
+`basis-design.md`.
+
+Layer 3 splits in two:
+
+- **FFI vocabulary stays in layer 0 for the default profile.** `Js.Value`, `Js.Object`, `Js.Array`,
+  `Js.ArrayLike`, `Js.Dict`, `Js.Table`, `Js.Error`/`Js.Unknown`, `Js.Array.toList`/`fromList`
+  and `Json.assert` stay compiler-owned and always in scope when targeting JavaScript. The compiler
+  itself writes these names into the types of JS imports (`Task<T, Js.Error>`, `Js.Array<T>`), and
+  `Json.assert` is a typing intrinsic, so an import for them would be ceremony. The conversions
+  stay with `Js.Array` because they depend on its runtime tag. The kernel profile (wmslang) gets
+  none of them.
+- **Host helpers are library modules behind `js.host`.** `Dict`, `Table`, `Bytes` and `Debug` are
+  `.wm` modules in `host/js/` over JavaScript files in `host/js/js/`, like layer 1 and 2. They are
+  never auto-opened. A program imports one by name:
+
+  ```workman
+  from js.host("table") import * as Table;
+  from js.host("dict") import { get, set };
+  ```
+
+  `js.host("name")` is an ordinary module import of `host/js/name.wm`: the module is a real graph
+  edge, so its values and constructors get ordinary binding identities. Library modules reach host
+  modules with a relative import instead.
+
+Portability is enforced inside the library, where it matters: a `basis/` module may name `Js.*`
+only in the signatures of its primitive imports, never in its function bodies.

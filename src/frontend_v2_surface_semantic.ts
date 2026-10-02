@@ -26,6 +26,7 @@ import {
   type WmVariant,
 } from "./frontend_v2_surface_loader.ts";
 import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
+import { JS_HOST_IMPORT_PREFIX } from "./host_modules.ts";
 
 export type FrontendV2SemanticAdapterDiagnostic = {
   code: "frontend-v2.unsupported-decl" | "frontend-v2.recovered-decl";
@@ -140,6 +141,12 @@ function projectJavaScriptImport(node: WmVariant, context: Context): Decl {
     node,
     "JavaScriptImportDeclarationNode",
   );
+  if (variant(targetNode).name === "JavaScriptHostTargetNode") {
+    if (option(typeOnlyValue) !== undefined) {
+      throw new Error("js.host imports a Workman module; `import type` does not apply");
+    }
+    return projectJavaScriptHostImport(node, variant(targetNode), variant(clauseNode), context);
+  }
   return {
     kind: "JsImportDecl",
     target: projectJavaScriptTarget(variant(targetNode), context),
@@ -185,6 +192,44 @@ function projectJavaScriptTarget(node: WmVariant, context: Context): JsTarget {
     default:
       throw unsupported("JavaScript target", node);
   }
+}
+
+/**
+ * `from js.host("table") import …` names a host helper module (BD17). It is an ordinary Workman
+ * module import, so it projects to an `ImportDecl` and its clause must be a Workman import clause:
+ * no `unsafe`, no type annotations and no clause alias.
+ */
+function projectJavaScriptHostImport(
+  node: WmVariant,
+  target: WmVariant,
+  clauseNode: WmVariant,
+  context: Context,
+): Decl {
+  const [, , nameToken] = fields(target, "JavaScriptHostTargetNode");
+  const clause = projectJavaScriptClause(clauseNode, context);
+  if (clause.unsafe) throw new Error("js.host imports a Workman module; drop `unsafe`");
+  if (clause.kind === "Named" && (clause.alias || clause.specs.some((spec) => spec.type))) {
+    throw new Error(
+      "js.host imports a Workman module; its names are already typed and cannot be aliased as a group",
+    );
+  }
+  return {
+    kind: "ImportDecl",
+    path: JS_HOST_IMPORT_PREFIX + jsonString(nameToken),
+    pathNode: nodeFor(context, tokenSpan(nameToken)),
+    clause: clause.kind === "Namespace"
+      ? { kind: "Namespace", alias: clause.alias, node: clause.node }
+      : {
+        kind: "Named",
+        specs: (clause.specs ?? []).map((spec) => ({
+          name: spec.name,
+          ...(spec.alias ? { alias: spec.alias } : {}),
+          node: spec.node,
+        })),
+        node: clause.node,
+      },
+    node: nodeFor(context, spanOf(node)),
+  };
 }
 
 function projectJavaScriptClause(node: WmVariant, context: Context): JsImportClause {

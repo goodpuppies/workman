@@ -5,7 +5,7 @@ from "./generated/surface_types.wm" import {
   LiteralExpressionNode,
   JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
   JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
-  JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode,
+  JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode, JavaScriptHostTargetNode,
   JavaScriptImportClauseNode, JavaScriptNamedClauseNode,
   JavaScriptImportSpecificationNode,
   CHeaderTargetNode, CLibTargetNode
@@ -236,6 +236,32 @@ let buildJsTarget = (value: ParseValue, span: Span) => {
           match(tokens) {
             [targetValue, openValue, name, closeValue] => {
               NodeParseValue(CLibTargetNode(surfaceValue(name), span))
+            },
+            _ => { RuleParseValue("JsTarget", value, span) },
+          }
+        },
+        _ => { RuleParseValue("JsTarget", value, span) },
+      }
+    },
+    ChoiceParseValue(7, inner) => {
+      let tokens = collectTokens(inner);
+      match((
+        firstTokenWithText(tokens, "js.host"),
+        firstTokenWithText(tokens, "("),
+        lastTokenWithText(tokens, ")", None)
+      )) {
+        (Some(target), Some(open), Some(close)) => {
+          match(tokens) {
+            [targetValue, openValue, name, closeValue] => {
+              NodeParseValue(
+                JavaScriptHostTargetNode(
+                  target,
+                  surfaceValue(open),
+                  name,
+                  surfaceValue(close),
+                  span,
+                )
+              )
             },
             _ => { RuleParseValue("JsTarget", value, span) },
           }

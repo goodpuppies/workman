@@ -1,0 +1,33 @@
+from js.module("./js/table.js") import unsafe {
+  empty as primEmpty: Void -> Js.Table<v>,
+  lookup as primGet: (Js.Table<v>, String) -> v,
+  lookup as primGetAt: (Js.Table<v>, Number) -> v,
+  present: v -> Bool,
+  set as primSet: (Js.Table<v>, String, v) -> Void,
+  set as primSetAt: (Js.Table<v>, Number, v) -> Void
+};
+
+// A mutable, `Map`-backed table for large, hot, string-keyed caches. Import it with
+// `from js.host("table") import * as Table;`. `getAt` and `setAt` take number keys, which hash far
+// cheaper than freshly built strings.
+
+// `primGet` is typed as returning a value, but gives `undefined` for a missing key; `present`
+// checks before the value escapes.
+
+let empty: Void -> Js.Table<v> = () => { primEmpty() };
+
+let get: (Js.Table<v>, String) -> Option<v> = (table, key) => {
+  let value = primGet(table, key);
+  if (present(value)) { Some(value) } else { None }
+};
+
+let set: (Js.Table<v>, String, v) -> Void = (table, key, value) => { primSet(table, key, value) };
+
+let getAt: (Js.Table<v>, Number) -> Option<v> = (table, key) => {
+  let value = primGetAt(table, key);
+  if (present(value)) { Some(value) } else { None }
+};
+
+let setAt: (Js.Table<v>, Number, v) -> Void = (table, key, value) => {
+  primSetAt(table, key, value)
+};

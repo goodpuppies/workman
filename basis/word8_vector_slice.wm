@@ -8,7 +8,9 @@ from js.module("./js/byte_vector.js") import unsafe {
   sliceLength: Word8VectorSlice.Slice -> Number,
   sliceSub: (Word8VectorSlice.Slice, Number) -> Word8.Word,
   sliceToVector: Word8VectorSlice.Slice -> Word8Vector.Vector,
-  sliceConcatArray: Js.Array<Word8VectorSlice.Slice> -> Word8Vector.Vector
+  sliceConcatArray: Js.Array<Word8VectorSlice.Slice> -> Word8Vector.Vector,
+  newArray: Void -> Js.Array<a>,
+  push: (Js.Array<a>, a) -> Void
 };
 
 let full = sliceFull;
@@ -61,4 +63,17 @@ let sub = (bytes, index: Number) => {
 
 let vector = sliceToVector;
 
-let concat = (slices) => { sliceConcatArray(Js.Array.fromList(slices)) };
+let concat = (slices) => {
+  let array = newArray();
+  let rec fill = (rest) => {
+    match(rest) {
+      [item, ..tail] => {
+        push(array, item);
+        fill(tail)
+      },
+      [] => { void }
+    }
+  };
+  fill(slices);
+  sliceConcatArray(array)
+};

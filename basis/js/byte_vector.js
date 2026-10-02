@@ -46,8 +46,6 @@ const vectorOf = (bytes) => bytes.length === 0 ? empty : wrap(bytes);
 
 export const fromArray = (items) => vectorOf(Uint8Array.from(items));
 
-export const toArray = (vector) => Array.from(bytesOf(vector));
-
 export const length = (vector) => bytesOf(vector).length;
 
 export const sub = (vector, index) => {
@@ -243,4 +241,12 @@ export const stringToBytes = (value) => {
     bytes[index] = code;
   }
   return vectorOf(bytes);
+};
+
+// A JavaScript array that the Workman side fills from a list with `push`, so the modules don't
+// depend on the compiler's list representation or on `Js.Array.fromList` (BD17).
+export const newArray = () => [];
+
+export const push = (array, item) => {
+  array.push(item);
 };

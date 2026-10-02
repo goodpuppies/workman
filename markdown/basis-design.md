@@ -34,7 +34,7 @@ SML's basis, with Workman's own library built on top and host bindings kept sepa
 | **0. Initial basis** | Primitive types, constructors, equality, operators, top-level values | Compiler, plus a small primitive kernel per target | Yes |
 | **1. SML Basis subset** | Basis Library structures: `Option`, `List`, `Word8Vector`, `PackWord32Little`, … | `.wm` over layer 0, plus per-target primitives | Yes |
 | **2. Workman std** | What the Basis lacks: `Result`, `Task`, carriers, `Map`, `Traverse`, `Binary`, bootstrap helpers | Pure `.wm` over layer 1 | Automatically |
-| **3. Host layers** | `Js.*`, `Json`, `Dict`, `Table`, `Gpu.*`, C imports | Target-specific | No |
+| **3. Host layers** | `Js.*`, `Json`, `Gpu.*` and C imports (compiler-owned); `host/js/` helper modules behind `js.host` | Target-specific | No |
 
 ### Layer 0: the initial basis
 
@@ -111,9 +111,13 @@ Rules:
 ### Layer 3: host layers
 
 Bindings that belong to one target by nature: `Js.Value`, `Js.Object`, `Js.Array`, `Json.assert`,
-`Dict`, `Table`, `Debug.errorMessage`, the `Gpu.*` types and intrinsics, and C imports. They are
-never auto-imported into portable code. Their rules are in `ffi-principles.md` and the wmslang and
-C FFI documents.
+`Dict`, `Table`, `Debug.errorMessage`, the `Gpu.*` types and intrinsics, and C imports. Their rules
+are in `ffi-principles.md` and the wmslang and C FFI documents.
+
+For JavaScript the layer splits in two (BD17). The FFI vocabulary (`Js.*` types, `Js.Array`
+conversions, `Json.assert`) is compiler-owned and in scope whenever the target is JavaScript, since
+the compiler writes those names into the types of JS imports. Helper modules (`Dict`, `Table`,
+`Bytes`, `Debug`) live in `host/js/` and are imported explicitly with `from js.host("table")`.
 
 ## Basis exceptions
 
@@ -171,8 +175,8 @@ is added.
   namespaces without an import. Only the values the Basis opens at top level are unqualified
   (`print`, `map`, `hd`, `not`, …), plus Workman's pervasive constructors (`Some`, `None`, `Ok`,
   `Err`). The exact list is an open decision.
-- **Layer 2 structures are available as namespaces** in the same way. Layer 3 always requires an
-  explicit import.
+- **Layer 2 structures are available as namespaces** in the same way. Layer 3 helper modules require
+  an explicit `js.host` import; the JS FFI vocabulary does not (BD17).
 - **The `kernel` and `default` basis profiles are replaced by the layers.** The kernel profile
   becomes "layer 0 only", which remains useful for tests and for wmslang.
 
@@ -222,10 +226,10 @@ Where each current item lives today and where it should end up.
 | `Word8Vector`, `Word8VectorSlice` | manifest, `types_basis.ts` | 1 | Same. `get`, `toList`, `unfoldN` are not Basis |
 | `PackWordN*`, `PackRealN*`, `Byte` | `types_basis.ts` | 1 | Same |
 | `Float32.Real`, `Float64.Real` | manifest | 1 | Align with the optional `Real32`/`Real64`. `Real64.real` is `Number` |
-| `Bytes.readFile/readSlice/writeFile` | `types_basis.ts` | 2 | Stays `Task`-shaped while Basis IO is deferred |
-| `Js.Value/Object/Array/ArrayLike/Error`, `Js.Array.toList/fromList` | manifest | 3 | JS host layer |
-| `Json.assert`, `Dict.*`, `Table.*`, `Js.Dict`, `Js.Table` | manifest | 3 | JS host layer |
-| `Debug.errorMessage` | manifest | 3 | JS host layer |
+| `Bytes.readFile/readSlice/writeFile` | `host/js/bytes.wm` | 3 | Done (F3): `js.host("bytes")`. Stays `Task`-shaped while Basis IO is deferred |
+| `Js.Value/Object/Array/ArrayLike/Dict/Table/Error`, `Js.Array.toList/fromList`, `Json.assert` | manifest | 3 | Stays compiler-owned, default profile only (BD17) |
+| `Dict.*`, `Table.*` | `host/js/dict.wm`, `table.wm` | 3 | Done (F3): `js.host("dict")`, `js.host("table")` |
+| `Debug.errorMessage` | `host/js/debug.wm` | 3 | Done (F3): `js.host("debug")` |
 | `Gpu.*` types and intrinsics | manifest, `types_basis.ts` | 3 | wmslang target layer |
 | `std/list.wm`, `std/option.wm` | std | 1 + 2 | Basis functions to layer 1; genuine Workman additions to layer 2 or removed |
 | `std/result.wm`, `task.wm`, `monad.wm`, `traverse.wm`, `map.wm`, `binary.wm` | std | 2 | Load through the ordinary module path |

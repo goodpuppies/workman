@@ -2,12 +2,13 @@ from "./basis.wm" import * as Basis;
 from "./general.wm" import { Less, Equal, Greater };
 from js.module("./js/vector.js") import unsafe {
   fromArray: Js.Array<a> -> Vector.Vector<a>,
-  toArray: Vector.Vector<a> -> Js.Array<a>,
   length as primLength: Vector.Vector<a> -> Number,
   uncheckedSub: (Vector.Vector<a>, Number) -> a,
   uncheckedUpdate: (Vector.Vector<a>, Number, a) -> Vector.Vector<a>,
   tabulate as primTabulate: (Number, Number -> a) -> Vector.Vector<a>,
-  concatArray: Js.Array<Vector.Vector<a>> -> Vector.Vector<a>
+  concatArray: Js.Array<Vector.Vector<a>> -> Vector.Vector<a>,
+  newArray: Void -> Js.Array<a>,
+  push: (Js.Array<a>, a) -> Void
 };
 
 // Basis `VECTOR`. Functions that raise `Subscript` in the spec return `Result<T, Basis.Error>`;
@@ -15,7 +16,20 @@ from js.module("./js/vector.js") import unsafe {
 
 let maxLen = 4294967295;
 
-let fromList = (items) => { fromArray(Js.Array.fromList(items)) };
+let fromList = (items) => {
+  let array = newArray();
+  let rec fill = (rest) => {
+    match(rest) {
+      [item, ..tail] => {
+        push(array, item);
+        fill(tail)
+      },
+      [] => { void }
+    }
+  };
+  fill(items);
+  fromArray(array)
+};
 
 let tabulate = (count, generate) => { primTabulate(count, generate) };
 
@@ -37,7 +51,20 @@ let update = (vector, index: Number, value) => {
   }
 };
 
-let concat = (vectors) => { concatArray(Js.Array.fromList(vectors)) };
+let concat = (vectors) => {
+  let array = newArray();
+  let rec fill = (rest) => {
+    match(rest) {
+      [item, ..tail] => {
+        push(array, item);
+        fill(tail)
+      },
+      [] => { void }
+    }
+  };
+  fill(vectors);
+  concatArray(array)
+};
 
 let appi = (vector, f) => {
   let count = primLength(vector);

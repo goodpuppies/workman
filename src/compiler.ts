@@ -23,8 +23,10 @@ import {
   loadModuleGraph,
   type ModuleGraph,
   type ModuleGraphOptions,
+  type ModuleImportEdge,
   type VirtualFileSystem,
 } from "./module_graph.ts";
+import { jsHostImportName, jsHostModulePath } from "./host_modules.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
@@ -36,6 +38,8 @@ import {
 } from "./diagnostics.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import {
+  libraryImportResults,
+  mergeLibraryGraph,
   standardInferOptions,
   standardRuntimeGraph,
   withoutStandardLibrary,
@@ -54,6 +58,7 @@ import {
   type CoreProgramAnalysis,
   currentSourceCompletionFacts,
   currentSourceResolvedDefinitions,
+  type ExtendGraph,
   type ProgramAnalysis,
 } from "./program_analysis.ts";
 import {
@@ -115,7 +120,7 @@ export async function compile(
       path,
       source,
       module: ast,
-      imports: [],
+      imports: (await sourceImports(ast, id)).edges,
       emitName: "Main",
     }]]),
   };
@@ -210,10 +215,8 @@ export async function checkSourceSteps(
     resolveLocalJsModuleSpecifiers(await parseCompilerModule(source, options, filePath), filePath),
     { filePath },
   ).module;
-  if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
-    throw new Error("source strings with imports require checkFile");
-  }
-  return inferModuleWithSteps(module, new Map(), await standardInferOptions()).steps;
+  const { results: imports } = await sourceImports(module);
+  return inferModuleWithSteps(module, imports, await standardInferOptions()).steps;
 }
 
 export async function compileFile(input: string, options: CompileOptions = {}): Promise<string> {
@@ -466,11 +469,18 @@ async function analyzeStrictSnapshot(
   options: ModuleGraphOptions,
   context: ProjectSnapshotContext,
 ): Promise<ProgramAnalysis> {
+  const extend = await libraryExtension();
   return await analyzeStrict(
     input,
     options,
-    (graph, results) => buildProgramAnalysis(graph, results, context),
+    (graph, results) => buildProgramAnalysis(graph, results, context, extend),
   );
+}
+
+/** Extends a program graph with the library modules, for facts the tooling snapshot relies on. */
+async function libraryExtension(): Promise<ExtendGraph> {
+  const library = await standardRuntimeGraph();
+  return (graph, results) => mergeLibraryGraph(graph, results, library);
 }
 
 /** Strict analysis for code generation: the program graph plus the library modules, analyzed once. */
@@ -552,6 +562,7 @@ async function analyzeRecoveredSnapshot(
   const completionFacts = currentSourceCompletionFacts(graph);
   const resolvedDefinitions = currentSourceResolvedDefinitions(graph);
   const inferOptions = await standardInferOptions();
+  const library = await libraryImportResults();
   const results = new Map<ModuleId, InferResult>();
   for (const id of graph.order) {
     const node = graph.nodes.get(id)!;
@@ -559,7 +570,7 @@ async function analyzeRecoveredSnapshot(
     node.module = prepared.module;
     const imports = new Map<string, InferResult>();
     for (const edge of node.imports) {
-      const imported = results.get(edge.target);
+      const imported = results.get(edge.target) ?? library.get(edge.target);
       if (imported) imports.set(edge.specifier, imported);
     }
     const recovered = inferModuleRecovered(node.module, imports, inferOptions);
@@ -568,28 +579,34 @@ async function analyzeRecoveredSnapshot(
     registerModuleCarrier(recovered.result, node.path);
     results.set(id, recovered.result);
   }
-  return buildPartialProjectSnapshot(graph, results, {
-    kind,
-    configuration: {
-      frontend: resolveCompilerFrontend(options.frontend, options.surface),
-      surface: options.surface ?? "workman",
+  return buildPartialProjectSnapshot(
+    graph,
+    results,
+    {
+      kind,
+      configuration: {
+        frontend: resolveCompilerFrontend(options.frontend, options.surface),
+        surface: options.surface ?? "workman",
+      },
     },
-  }, { completionFacts, resolvedDefinitions });
+    { completionFacts, resolvedDefinitions },
+    await libraryExtension(),
+  );
 }
 
 async function checkPreparedModuleWithoutImports(
   module: Module,
   filePath?: string,
 ): Promise<{ module: Module; result: InferResult }> {
-  assertNoSourceImports(module);
+  const { results: imports } = await sourceImports(module);
   const prepared = prepareFfiElaboration(module, { filePath });
   const inferOptions = await standardInferOptions();
   const first = assertNoPartialDiagnostics(
-    inferModulePartial(prepared.module, new Map(), inferOptions),
+    inferModulePartial(prepared.module, imports, inferOptions),
   );
   const contextual = contextualizeDelayedCallbacks(prepared, first);
   const contextualResult = assertNoPartialDiagnostics(
-    inferModulePartial(contextual.module, new Map(), inferOptions),
+    inferModulePartial(contextual.module, imports, inferOptions),
   );
   const foreignTypeRefs = new Map(
     [...contextual.foreignTypeRefs.values()].map((ref) => [ref.key, ref]),
@@ -604,14 +621,14 @@ async function checkPreparedModuleWithoutImports(
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
   }
   const postResolveResult = assertNoPartialDiagnostics(
-    inferModulePartial(resolved.module, new Map(), inferOptions),
+    inferModulePartial(resolved.module, imports, inferOptions),
   );
   const finalResolved = resolveDelayedFfiElaboration(resolved, postResolveResult, {
     foreignTypeRefs,
   });
   return {
     module: finalResolved.module,
-    result: await inferModuleWithoutImports(finalResolved.module),
+    result: inferModule(finalResolved.module, imports, inferOptions),
   };
 }
 
@@ -651,15 +668,36 @@ function containsUnresolvedFfi(type: Ty): boolean {
   return false;
 }
 
-async function inferModuleWithoutImports(module: Module): Promise<InferResult> {
-  assertNoSourceImports(module);
-  return inferModule(module, new Map(), await standardInferOptions());
-}
-
-function assertNoSourceImports(module: Module): void {
-  if (module.decls.some((decl) => decl.kind === "ImportDecl")) {
-    throw new Error("source strings with imports require checkFile");
+/**
+ * Imports of a module compiled from a source string. Only `js.host` imports are allowed, since
+ * they name library modules rather than files; anything else needs `checkFile`.
+ */
+async function sourceImports(
+  module: Module,
+  referrer: ModuleId = moduleId("<source>"),
+): Promise<{ results: Map<string, InferResult>; edges: ModuleImportEdge[] }> {
+  const declarations = module.decls.filter((decl) => decl.kind === "ImportDecl");
+  if (declarations.length === 0) return { results: new Map(), edges: [] };
+  const library = await libraryImportResults();
+  const results = new Map<string, InferResult>();
+  const edges: ModuleImportEdge[] = [];
+  for (const decl of declarations) {
+    const name = jsHostImportName(decl.path);
+    if (name === undefined) throw new Error("source strings with imports require checkFile");
+    const path = jsHostModulePath(name);
+    const result = library.get(moduleId(path));
+    if (!result) throw new Error(`unknown host module js.host(${JSON.stringify(name)})`);
+    results.set(decl.path, result);
+    edges.push({
+      referrer,
+      specifier: decl.path,
+      specifierNode: decl.pathNode ?? decl.node,
+      target: moduleId(path),
+      path,
+      clause: decl.clause,
+    });
   }
+  return { results, edges };
 }
 
 export async function compileVirtual(

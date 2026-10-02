@@ -159,7 +159,9 @@ function collectRequiredStandardModules(
   standardIds: ReadonlySet<ModuleId>,
 ): Set<ModuleId> {
   const namespaceIds = new Map(
-    (program.standardNamespaces ?? []).map((namespace) => [namespace.publicName, namespace.id]),
+    (program.standardNamespaces ?? [])
+      .filter((namespace) => !namespace.importOnly)
+      .map((namespace) => [namespace.publicName, namespace.id]),
   );
   const required = new Set<ModuleId>();
   const requireId = (id: ModuleId | undefined) => {
@@ -449,7 +451,7 @@ function emitStandardNamespaces(
   requiredStandardIds: ReadonlySet<ModuleId>,
 ): string[] {
   return (program.standardNamespaces ?? []).filter((namespace) =>
-    requiredStandardIds.has(namespace.id)
+    !namespace.importOnly && requiredStandardIds.has(namespace.id)
   ).map((namespace) => {
     if (!namespace.basisName) {
       return `const ${id(namespace.publicName)} = ${id(namespace.emitName)};`;

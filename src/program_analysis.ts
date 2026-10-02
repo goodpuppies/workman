@@ -132,15 +132,28 @@ export function buildCoreProgramAnalysis(
   };
 }
 
+/** A program graph extended with the library modules it uses (`mergeLibraryGraph`). */
+export type ExtendGraph = (
+  graph: ModuleGraph,
+  results: ModuleMap<InferResult>,
+) => { graph: ModuleGraph; results: ModuleMap<InferResult> };
+
+/**
+ * Facts are resolved over the program plus its library modules (`extend`), as for compilation, so
+ * library declarations such as std constructors have identities. The project snapshot, `graph`
+ * and `results` describe the program's own modules.
+ */
 export function buildProgramAnalysis(
   graph: ModuleGraph,
   results: ModuleMap<InferResult>,
   context: ProjectSnapshotContext = {},
+  extend?: ExtendGraph,
 ): ProgramAnalysis {
-  const analysis = buildCoreProgramAnalysis(graph, results);
+  const extended = extend ? extend(graph, results) : { graph, results };
+  const analysis = buildCoreProgramAnalysis(extended.graph, extended.results);
   const projectSnapshot = buildProjectSnapshot(
     graph,
-    results,
+    extended.results,
     analysis.bindings,
     analysis.nominalFacts,
     context,
@@ -148,6 +161,8 @@ export function buildProgramAnalysis(
   );
   return {
     ...analysis,
+    graph,
+    results,
     projectSnapshot,
     interfaces: projectSnapshot.interfaces,
   };
@@ -165,19 +180,24 @@ export function buildPartialProjectSnapshot(
   results: ModuleMap<InferResult>,
   context: ProjectSnapshotContext = {},
   semanticFacts: ProjectSemanticFacts = {},
+  extend?: ExtendGraph,
 ): ProjectSnapshot {
   const certified = certifiedPrefixGraph(graph, results);
+  // Facts cover the library modules too (see `buildProgramAnalysis`); the snapshot does not.
+  const extended = extend ? extend(certified, results) : { graph: certified, results };
+  const factsGraph = extended.graph;
+  const factsResults = extended.results;
   const ids = new CompilerIdAllocator();
-  const bindings = resolveProgramBindingFacts(certified, ids);
-  const nominalFacts = resolveProgramNominalFacts(certified, results, ids);
+  const bindings = resolveProgramBindingFacts(factsGraph, ids);
+  const nominalFacts = resolveProgramNominalFacts(factsGraph, factsResults, ids);
   const patternFacts = resolveProgramPatternFacts(
-    certified,
-    results,
+    factsGraph,
+    factsResults,
     bindings,
     nominalFacts,
     ids,
   );
-  const recursionFacts = resolveProgramRecursionFacts(certified, bindings, ids);
+  const recursionFacts = resolveProgramRecursionFacts(factsGraph, bindings, ids);
   const fragmentSelections = resolveGpuFragmentSelections(certified.order.map((id) => ({
     moduleId: id,
     path: certified.nodes.get(id)!.path,
@@ -216,7 +236,7 @@ export function buildPartialProjectSnapshot(
   } catch {
     // Selection/root facts remain useful for unresolved tooling even when normalization fails.
   }
-  return buildProjectSnapshot(certified, results, bindings, nominalFacts, context, {
+  return buildProjectSnapshot(certified, factsResults, bindings, nominalFacts, context, {
     gpuSelections: fragmentSelections,
     gpuSlices,
     completionFacts: semanticFacts.completionFacts,

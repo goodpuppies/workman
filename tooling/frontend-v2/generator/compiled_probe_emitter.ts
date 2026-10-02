@@ -55,6 +55,7 @@ function emitDispatch(
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
     'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, compiledRuleMemoSlot, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
     ...modules.map((_, index) => `from "./${moduleName(index)}" import * as Probe${index};`),
+    'from js.host("table") import * as Table;',
     "",
     "let strictCompiledRules = {",
     "  let rules = Table.empty();",

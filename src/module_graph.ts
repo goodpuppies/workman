@@ -10,6 +10,8 @@ import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
 import { runtime } from "./io.ts";
 import { type ModuleId, moduleId } from "./module_id.ts";
 import type { AstNode } from "./source.ts";
+import { jsHostImportName, jsHostModulePath } from "./host_modules.ts";
+import { librarySources } from "./generated/assets.ts";
 
 export type VirtualFileSystem = Map<string, string>;
 
@@ -158,6 +160,35 @@ async function visitModule(id: ModuleId, ctx: LoadContext) {
         source,
         error,
       );
+    }
+    const hostName = jsHostImportName(decl.path);
+    if (hostName !== undefined) {
+      const hostPath = jsHostModulePath(hostName);
+      if (!(hostPath in librarySources)) {
+        const error = diagnosticError(
+          new Error(`unknown host module js.host(${JSON.stringify(hostName)})`),
+          decl.pathNode ?? decl.node,
+          "module.resolve-import",
+        );
+        if (ctx.options.syntaxRecovery) {
+          importDiagnostics.push(error.diagnostic);
+          addImportRecoveryBoundary(importRecoveryBoundaries, decl);
+          failedImports.add(decl);
+          continue;
+        }
+        throw new ModuleGraphDiagnosticError(path, source, error);
+      }
+      // A library module: the edge names it, but its node joins the graph only when the library
+      // is merged in (`mergeLibraryGraph`), since the library is analyzed once per process.
+      imports.push({
+        referrer: id,
+        specifier: decl.path,
+        specifierNode: decl.pathNode ?? decl.node,
+        target: moduleId(hostPath),
+        path: hostPath,
+        clause: decl.clause,
+      });
+      continue;
     }
     let child: ResolvedModule;
     try {

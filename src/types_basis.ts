@@ -77,15 +77,6 @@ export function baseEnv(
     basis: true,
   });
   if (options.includeAlgebraicBasis !== false) {
-    const debugError = fresh() as Extract<Ty, { tag: "var" }>;
-    env.set("Debug.errorMessage", {
-      vars: [debugError.id],
-      type: fn([debugError], StringTy),
-      status: "value",
-      basis: true,
-    });
-  }
-  if (options.includeAlgebraicBasis !== false) {
     addBasisConstructors(env, pervasiveSources, typeEnv);
     addBasisValues(env, typeEnv);
     addGpuBasisValues(env, typeEnv);
@@ -472,96 +463,6 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
     basis: true,
   });
   addJsArrayValues(env, typeEnv);
-  addBytesValues(env, typeEnv);
-  const option = typeInfoByName(typeEnv, "Option");
-  const jsDict = typeInfoByName(typeEnv, "Js.Dict");
-  if (option && jsDict) {
-    const emptyValue = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Dict.empty", {
-      vars: [emptyValue.id],
-      type: fn([VoidTy], named(jsDict, [emptyValue])),
-      status: "value",
-      basis: true,
-    });
-    const getValue = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Dict.get", {
-      vars: [getValue.id],
-      type: fn([tuple([named(jsDict, [getValue]), StringTy])], named(option, [getValue])),
-      status: "value",
-      basis: true,
-    });
-    const setValue = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Dict.set", {
-      vars: [setValue.id],
-      type: fn([tuple([named(jsDict, [setValue]), StringTy, setValue])], VoidTy),
-      status: "value",
-      basis: true,
-    });
-  }
-  const jsTable = typeInfoByName(typeEnv, "Js.Table");
-  if (option && jsTable) {
-    const tableEmpty = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Table.empty", {
-      vars: [tableEmpty.id],
-      type: fn([VoidTy], named(jsTable, [tableEmpty])),
-      status: "value",
-      basis: true,
-    });
-    const tableGet = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Table.get", {
-      vars: [tableGet.id],
-      type: fn([tuple([named(jsTable, [tableGet]), StringTy])], named(option, [tableGet])),
-      status: "value",
-      basis: true,
-    });
-    const tableSet = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Table.set", {
-      vars: [tableSet.id],
-      type: fn([tuple([named(jsTable, [tableSet]), StringTy, tableSet])], VoidTy),
-      status: "value",
-      basis: true,
-    });
-    // Number-keyed accessors: integer keys hash far cheaper than freshly built
-    // strings, which never have a cached hash.
-    const tableGetAt = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Table.getAt", {
-      vars: [tableGetAt.id],
-      type: fn([tuple([named(jsTable, [tableGetAt]), NumberTy])], named(option, [tableGetAt])),
-      status: "value",
-      basis: true,
-    });
-    const tableSetAt = fresh("value") as Extract<Ty, { tag: "var" }>;
-    env.set("Table.setAt", {
-      vars: [tableSetAt.id],
-      type: fn([tuple([named(jsTable, [tableSetAt]), NumberTy, tableSetAt])], VoidTy),
-      status: "value",
-      basis: true,
-    });
-  }
-}
-
-function addBytesValues(env: Env, typeEnv: TypeEnv) {
-  const vectorInfo = typeInfoByName(typeEnv, "Word8Vector.Vector");
-  const taskInfo = typeInfoByName(typeEnv, "Task");
-  const jsErrorInfo = typeInfoByName(typeEnv, "Js.Error");
-  if (!vectorInfo || !taskInfo || !jsErrorInfo) {
-    throw new Error("missing compiler-owned Bytes basis types");
-  }
-  const vector = named(vectorInfo);
-  const error = named(jsErrorInfo);
-  const task = (value: Ty) => named(taskInfo, [value, error]);
-  const basisValue = (name: string, type: Ty) => {
-    env.set(`Bytes.${name}`, {
-      vars: [],
-      type,
-      status: "value",
-      basis: true,
-    });
-  };
-
-  basisValue("readFile", fn([StringTy], task(vector)));
-  basisValue("readSlice", fn([tuple([StringTy, NumberTy, NumberTy])], task(vector)));
-  basisValue("writeFile", fn([tuple([StringTy, vector])], task(VoidTy)));
 }
 
 function addJsArrayValues(env: Env, typeEnv: TypeEnv) {

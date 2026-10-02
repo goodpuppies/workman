@@ -191,6 +191,8 @@ Deno.test("Bytes reads immutable whole files and ranges and writes vectors", asy
   await Deno.writeFile(input, new Uint8Array([9, 8, 7, 6, 5]));
   try {
     const lines = await run(`
+      from js.host("bytes") import * as Bytes;
+
       let main = () => {
         Bytes.readFile(${JSON.stringify(input)})
           :> Task.andThen((whole) => {

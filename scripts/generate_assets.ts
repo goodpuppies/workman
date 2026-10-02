@@ -5,7 +5,7 @@ import peggy from "peggy";
  * `js/` subdirectory holds the JavaScript primitives those modules import. Every file is discovered,
  * so adding a library module or primitive file never requires editing this script.
  */
-const libraryDirectories = ["basis", "std"];
+const libraryDirectories = ["basis", "std", "host/js"];
 
 const repositoryUrl = new URL("../", import.meta.url);
 const outputUrl = new URL("../src/generated/assets.ts", import.meta.url);

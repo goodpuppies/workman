@@ -348,18 +348,6 @@ const __wm_c_struct_to_buffer = (name, value) => {
     ? __wm_basis_Err(__wm_js_error(new Error("Json.assert failed")))
     : __wm_basis_Ok(value),
 };`,
-    `const Dict = {
-  empty: () => ({}),
-  get: ([dict, key]) => __wm_js_option_wrap(Object.hasOwn(dict, key) ? dict[key] : undefined),
-  set: ([dict, key, value]) => { dict[key] = value; },
-};`,
-    `const Table = {
-  empty: () => new globalThis.Map(),
-  get: ([table, key]) => __wm_js_option_wrap(table.get(key)),
-  set: ([table, key, value]) => { table.set(key, value); },
-  getAt: ([table, key]) => __wm_js_option_wrap(table.get(key)),
-  setAt: ([table, key, value]) => { table.set(key, value); },
-};`,
     `const __wm_array_to_list = (items) => {
   let list = __wm_basis_Nil;
   for (let index = items.length - 1; index >= 0; index--) {
@@ -377,70 +365,13 @@ const __wm_c_struct_to_buffer = (name, value) => {
   }
   return __wm_js_array_mark(items);
 };`,
-    `const __wm_word_length = (value, label = "length") => {
-  if (!globalThis.Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
-    return __wm_fail("Size", label + " must be an integer between 0 and 4294967295");
-  }
-  return value;
-};
-const __wm_nonnegative_safe_integer = (value, label) => {
-  if (!globalThis.Number.isSafeInteger(value) || value < 0) {
-    return __wm_fail("Domain", label + " must be a non-negative safe integer");
-  }
-  return value;
-};
-const __wm_word8_vector_wrap = (bytes) => globalThis.Object.freeze({
-  [__wm_word8_vector_data]: bytes,
-});
-const __wm_word8_vector_bytes = (vector) => {
+    `const __wm_word8_vector_bytes = (vector) => {
   const bytes = vector?.[__wm_word8_vector_data];
   if (!(bytes instanceof globalThis.Uint8Array)) {
     return __wm_fail("TypeError", "expected Word8Vector.Vector");
   }
   return bytes;
-};
-const __wm_word8_vector_empty = __wm_word8_vector_wrap(new globalThis.Uint8Array(0));
-const __wm_bytes_task = async (operation) => {
-  try {
-    return __wm_basis_Ok(await operation());
-  } catch (error) {
-    return __wm_basis_Err(__wm_js_error(error));
-  }
-};
-const Bytes = {
-  readFile: (path) => __wm_bytes_task(async () => {
-    const bytes = await globalThis.Deno.readFile(path);
-    return bytes.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(bytes);
-  }),
-  readSlice: ([path, offset, length]) => __wm_bytes_task(async () => {
-    __wm_nonnegative_safe_integer(offset, "offset");
-    __wm_word_length(length);
-    const file = await globalThis.Deno.open(path, { read: true });
-    try {
-      await file.seek(offset, globalThis.Deno.SeekMode.Start);
-      const bytes = new globalThis.Uint8Array(length);
-      let filled = 0;
-      while (filled < length) {
-        const count = await file.read(bytes.subarray(filled));
-        if (count === null) {
-          return __wm_fail(
-            "UnexpectedEof",
-            "short binary slice at " + offset + ": " + filled + "/" + length,
-          );
-        }
-        filled += count;
-      }
-      return bytes.length === 0 ? __wm_word8_vector_empty : __wm_word8_vector_wrap(bytes);
-    } finally {
-      file.close();
-    }
-  }),
-  writeFile: ([path, vector]) => __wm_bytes_task(async () => {
-    await globalThis.Deno.writeFile(path, __wm_word8_vector_bytes(vector));
-    return undefined;
-  }),
-};
-`,
+};`,
     `const Js = {
   Array: {
     toList: __wm_array_to_list,
@@ -449,17 +380,6 @@ const Bytes = {
 };`,
     `const Text = {
   of: __wm_text_of,
-};`,
-    `const __wm_debug_error_message = (error) => {
-  if (typeof error === "string") return error;
-  if (error instanceof globalThis.Error) return String(error.message);
-  if (error?.ctor === ${basisCtorId("Js.Error")}) return String(error.args[0]);
-  if (error?.ctor === ${basisCtorId("Js.Unknown")}) return "unknown JavaScript error";
-  if (error === null) return "null";
-  return __wm_show(error, new WeakSet(), true);
-};`,
-    `const Debug = {
-  errorMessage: __wm_debug_error_message,
 };`,
     `const __wm_basis_Option = {
   None: __wm_basis_None,

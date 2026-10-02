@@ -5,6 +5,7 @@ from "./generated/compiled_probe_types.wm" import {
 from js.global("String.prototype.charCodeAt") import unsafe {
   call as charCodeAt: (String, Number) -> Number
 };
+from js.host("table") import * as Table;
 
 type CompiledCapture =
   | EmptyCompiledCapture

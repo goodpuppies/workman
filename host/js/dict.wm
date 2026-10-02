@@ -1,0 +1,21 @@
+from js.module("./js/dict.js") import unsafe {
+  empty as primEmpty: Void -> Js.Dict<v>,
+  lookup as primGet: (Js.Dict<v>, String) -> v,
+  present: v -> Bool,
+  set as primSet: (Js.Dict<v>, String, v) -> Void
+};
+
+// A mutable string-keyed map over a plain JavaScript object, which JavaScript code can read
+// directly. Import it with `from js.host("dict") import * as Dict;`.
+
+// `primGet` is typed as returning a value, but gives `undefined` for a missing key; `present`
+// checks before the value escapes.
+
+let empty: Void -> Js.Dict<v> = () => { primEmpty() };
+
+let get: (Js.Dict<v>, String) -> Option<v> = (dict, key) => {
+  let value = primGet(dict, key);
+  if (present(value)) { Some(value) } else { None }
+};
+
+let set: (Js.Dict<v>, String, v) -> Void = (dict, key, value) => { primSet(dict, key, value) };

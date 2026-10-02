@@ -61,6 +61,8 @@ export type CoreProgram = {
     id: ModuleId;
     path: string;
     publicName: string;
+    /** A host helper module (BD17): emitted when imported, never bound as a global namespace. */
+    importOnly?: boolean;
     emitName: string;
     basisName?: string;
     basisMembers: string[];

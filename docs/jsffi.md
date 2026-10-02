@@ -55,6 +55,23 @@ Writing `req: Request` on an otherwise unresolved callback does not itself give 
 `Request` receiver. The annotation checks the inferred callback type; it does not create foreign
 evidence.
 
+Import a host helper module by name:
+
+```wm
+from js.host("table") import * as Table;
+from js.host("dict") import { get, set };
+```
+
+`js.host` names a Workman module that ships with the compiler, not a JavaScript file, so its clause
+is an ordinary Workman import clause: no `unsafe` and no type annotations. The modules are
+`dict` (`Js.Dict` maps over plain objects), `table` (`Js.Table` maps over `Map`, for hot caches),
+`bytes` (binary file IO through Deno) and `debug` (`Debug.errorMessage`). They are never in scope
+without the import.
+
+The FFI vocabulary needs no import whenever the target is JavaScript: the `Js.*` types,
+`Js.Array.toList`/`fromList` and `Json.assert`. The compiler writes those names into the types of
+JS imports itself (`Task<T, Js.Error>`, `Js.Array<T>`).
+
 ## Safe Calls and `Result`
 
 Reflected JS imports are safe by default. A safe JS call returns:

@@ -59,10 +59,8 @@ Deno.test("[module update T130] current no-prelude static interface is explicit"
   const { tyEnv: typeEnv, valEnv: env } = basis.environment;
 
   assertEquals([...typeEnv.keys()], primitiveTypes);
-  assertEquals(
-    [...basis.environment.strEnv.get("Js")!.tyEnv.keys()],
-    jsTypes.map((name) => name.slice("Js.".length)),
-  );
+  // The JS FFI vocabulary is default-profile only (BD17).
+  assertEquals(basis.environment.strEnv.get("Js"), undefined);
   assertEquals(
     [...basis.environment.strEnv.get("Gpu")!.tyEnv.keys()],
     gpuTypes.map((name) => name.slice("Gpu.".length)),
@@ -80,6 +78,11 @@ Deno.test("[module update T130/T132] current default low-level basis type interf
     ["List", 1],
     ["Task", 2],
   ]);
+  assertEquals(
+    [...initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv.get("Js")!.tyEnv
+      .keys()],
+    [...jsTypes.map((name) => name.slice("Js.".length)), "Error"],
+  );
 });
 
 Deno.test("[module update T130/T133] current default constructors and low-level members are explicit", () => {
@@ -108,11 +111,10 @@ Deno.test("[module update T130/T133] current default constructors and low-level 
     [...basis.environment.strEnv.get("Js")!.strEnv.get("Array")!.valEnv.keys()],
     ["toList", "fromList"],
   );
-  assertEquals([...basis.environment.strEnv.get("Dict")!.valEnv.keys()], [
-    "empty",
-    "get",
-    "set",
-  ]);
+  // Host helpers are `host/js/` library modules behind `js.host` imports (BD17).
+  for (const name of ["Dict", "Table", "Bytes", "Debug"]) {
+    assertEquals(basis.environment.strEnv.get(name), undefined);
+  }
   assertEquals([...basis.operators.keys()], fixedOperators);
 });
 
@@ -621,6 +623,11 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
         types: ["Slice"],
       },
+      // Host helper modules (BD17): loaded with the library, opened only by `js.host` imports.
+      { alias: "Bytes", values: ["readFile", "readSlice", "writeFile"], types: [] },
+      { alias: "Debug", values: ["errorMessage"], types: [] },
+      { alias: "Dict", values: ["empty", "get", "set"], types: [] },
+      { alias: "Table", values: ["empty", "get", "set", "getAt", "setAt"], types: [] },
       {
         alias: "Binary",
         values: [

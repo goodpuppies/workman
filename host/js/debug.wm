@@ -1,0 +1,9 @@
+from js.module("./js/debug.js") import unsafe {
+  describe: (e, e -> String) -> String
+};
+
+// Import with `from js.host("debug") import * as Debug;`.
+
+// A readable message for any error value: a string as is, a JavaScript error or `Js.Error` by its
+// message, and anything else as `Text.of` prints it.
+let errorMessage = (error) => { describe(error, Text.of) };

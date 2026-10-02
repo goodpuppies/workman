@@ -1,4 +1,5 @@
 from "./monad.wm" import { Carrier };
+from "../host/js/debug.wm" import * as Debug;
 
 let succeed = (value) => {
   Ok(value)

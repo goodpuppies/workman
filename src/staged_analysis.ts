@@ -19,7 +19,7 @@ import { registerModuleCarrier } from "./infer/carriers.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import type { ModuleGraph, ModuleNode } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
-import { standardInferOptions } from "./standard_library.ts";
+import { libraryImportResults, standardInferOptions } from "./standard_library.ts";
 import { collectExprs } from "./type_debug_collect.ts";
 
 export type StagedAnalysisPhase =
@@ -103,6 +103,10 @@ export async function analyzeModuleGraph(
       );
     });
   }
+
+  const external = await externalImportResults(graph);
+  const importsFor = (node: ModuleNode, results: ModuleMap<InferResult>) =>
+    importResults(node, results, external);
 
   const ffi = new Map<ModuleId, FfiElaboration>();
   for (const node of graph.nodes.values()) {
@@ -313,10 +317,22 @@ export function assertNoPartialDiagnostics(result: InferResult): InferResult {
   return result;
 }
 
-function importsFor(node: ModuleNode, results: ModuleMap<InferResult>): Map<string, InferResult> {
+/** Results for import edges that leave the graph: library modules named by `js.host`. */
+async function externalImportResults(graph: ModuleGraph): Promise<ModuleMap<InferResult>> {
+  const leaves = [...graph.nodes.values()].some((node) =>
+    node.imports.some((edge) => !graph.nodes.has(edge.target))
+  );
+  return leaves ? await libraryImportResults() : new Map();
+}
+
+function importResults(
+  node: ModuleNode,
+  results: ModuleMap<InferResult>,
+  external: ModuleMap<InferResult>,
+): Map<string, InferResult> {
   const imports = new Map<string, InferResult>();
   for (const edge of node.imports) {
-    const result = results.get(edge.target);
+    const result = results.get(edge.target) ?? external.get(edge.target);
     if (result) imports.set(edge.specifier, result);
   }
   return imports;

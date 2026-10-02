@@ -43,15 +43,24 @@ Library modules become ordinary modules in the program's module graph.
       placed after the program's modules, so program ids don't shift when the library changes.
       Emission doesn't depend on this order, because std modules are requested explicitly before
       the entry.
-- [ ] **B2b** Do the same for the tooling analysis (`analyzeFile`, `analyzeRecoveredFile`, the
-      project snapshot), which still sees library modules only as initial imports. This changes
-      project snapshots and interfaces, so it needs its own pass over the LSP tests.
+- [x] **B2b** The tooling analysis (`analyzeFile`, `analyzeRecoveredFile`) resolves its facts over
+      the program plus the library modules (`ExtendGraph` in `program_analysis.ts`,
+      `mergeLibraryGraph`), as compilation does, while the project snapshot, interfaces, `graph`
+      and `results` still describe only the program's modules. This fixed a crash in the language
+      service: any file matching a std constructor (`Binary.Bounds`) failed with "missing
+      constructor ID for PCtor". Regression test in `tests/library_discovery_test.ts`.
 - [x] **B3** Remove the separate standard core program in `src/compiler.ts` and
       `mergeStandardNominalFacts`, including its constructor-reference patching.
       `standardRuntimeGraph` remains as the provider of library graph nodes and of the namespace
       descriptions the emitter uses.
-- [ ] **B4** Reduce `standardValueId` to the ordinary value identity of a module declaration, and
-      update tooling that looks up std values by special identity.
+- [ ] **B4** Proposed to drop. A std value's identity (`standard-value:std/option.wm:map`) is an
+      initial-environment identity, the same kind as `basis-value:print`. Program modules reach
+      library namespaces through the initial basis, not through import edges, as SML's Basis
+      structures are in the initial environment rather than imported. A `BindingId` would need
+      the library namespaces to become implicit import edges of every program module. The string
+      form is also stable across analyses, which the language service relies on
+      (`tests/module_interface_test.ts`). The one path-keyed lookup, `Result.debug` in
+      `src/lsp/unused_diagnostics.ts`, is stable because library paths are.
 - [x] **B5** Close `issues/FIXED-std-namespace-adt-constructors-unusable.md`. The pattern case was fixed
       by B2. The expression case also needed an emitter fix: a qualified constructor with no local
       binding is emitted through its namespace export (`Binary.Bounds`), like a qualified value.
@@ -201,11 +210,32 @@ Existing Workman names are kept (BD9).
 **Gate:** every layer-1 structure listed as *Adopt* in `basis-design.md` exists with conformance
 tests.
 
-## Stage F: host layers behind imports
+## Stage F: the JS host layer (BD17)
 
-- [ ] **F1** Move `Js.*`, `Json`, `Dict`, `Table` and `Debug` bindings into `host/js/` modules that
-      require an explicit import in portable code, with a migration for existing programs.
-- [ ] **F2** Add JS-backed bootstrap helpers under `host/js/`. Portable helpers go in `std/`.
+- [x] **F1** Keep the FFI vocabulary (`Js.*` types, `Js.Array.toList`/`fromList`, `Json.assert`)
+      compiler-owned for the default profile, and take the `Js.*` types out of the kernel profile.
+- [x] **F2** Add the `js.host("name")` import target to the grammar, both frontends and the
+      module graph. It lowers to an ordinary import edge to `host/js/name.wm`.
+- [x] **F3** Move `Dict`, `Table`, `Bytes` and `Debug` into import-only `host/js/` modules over
+      `host/js/js/*.js`, remove their TypeScript types and prelude code, and migrate the users
+      (frontend-v2's probe runtime and its dispatch generator, `std/result.wm`, tests).
+- [x] **F4** Remove `Js.Array.toList`/`fromList` from `basis/` function bodies: build lists and
+      arrays in Workman through each module's own primitives. Add a conformance test that `basis/`
+      names `Js.*` only in primitive signatures.
+
+Notes from doing it:
+
+- `js.host` projects to an `ImportDecl` with a `js.host:` path (`src/host_modules.ts`). The module
+  graph turns it into an edge to the library module without a node; analyses fall back to the
+  loaded library results for such edges, and `mergeLibraryGraph` puts explicitly imported library
+  modules first so whole-program passes see imports before importers. Source-string compilation
+  accepts `js.host` imports too.
+- Frontend-v2 was rebuilt in two fixed-point rounds: first to recognize `js.host`, then with the
+  probe runtime and generated dispatch importing `Table`.
+- Host primitives avoid callback parameters, which cost the parser about 40% when tried (see
+  `../issues/manual-unsafe-imports-take-the-delayed-ffi-path.md`). Parse time is unchanged.
+- The tracked tuiman and problems artifacts were not regenerated. They embed the old prelude and
+  still work.
 
 ## Risks
 

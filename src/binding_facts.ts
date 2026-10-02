@@ -76,9 +76,11 @@ export function resolveProgramBindingFacts(
   const results = new Map<ModuleId, BindingFacts>();
   for (const id of graph.order) {
     const node = graph.nodes.get(id)!;
+    // A `js.host` edge names a library module, which is absent unless the library is merged in;
+    // its names then stay unresolved here, as initial-environment names are.
     const imports = node.imports.map((edge) => ({
       clause: edge.clause,
-      facts: results.get(edge.target)!,
+      facts: results.get(edge.target),
     }));
     results.set(id, resolveModuleBindingFacts(node.module, ids, imports));
   }
@@ -88,7 +90,7 @@ export function resolveProgramBindingFacts(
 export function resolveModuleBindingFacts(
   module: Module,
   ids: CompilerIdAllocator,
-  imports: { clause: ImportClause; facts: BindingFacts }[] = [],
+  imports: { clause: ImportClause; facts: BindingFacts | undefined }[] = [],
 ): BindingFacts {
   const facts: BindingFacts = {
     binders: new Map(),
@@ -119,7 +121,9 @@ export function resolveModuleBindingFacts(
     recordScope(facts, decl.node, env);
     if (decl.kind === "ImportDecl") {
       const imported = imports[importIndex++];
-      if (imported) env = addImport(env, decl, imported.clause, imported.facts, facts, ids);
+      if (imported?.facts) {
+        env = addImport(env, decl, imported.clause, imported.facts, facts, ids);
+      }
       recordCheckpoint(facts, module.node, decl.node?.span.end, env);
       continue;
     }

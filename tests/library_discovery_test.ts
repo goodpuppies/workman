@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { discoverStandardModules, libraryModuleAlias } from "../src/standard_library.ts";
 import { librarySources } from "../src/generated/assets.ts";
+import { analyzeFile, analyzeRecoveredFile } from "../src/compiler.ts";
 
 Deno.test("library module aliases come from snake_case file names", () => {
   assertEquals(libraryModuleAlias("std/list.wm"), "List");
@@ -84,10 +85,17 @@ Deno.test("library JavaScript imports resolve to embedded library files", async 
 
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
-async function runProgram(source: string, command = "run") {
+async function runProgram(
+  source: string,
+  command = "run",
+  siblings: Record<string, string> = {},
+) {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(input, source);
+  for (const [name, text] of Object.entries(siblings)) {
+    await Deno.writeTextFile(`${dir}/${name}`, text);
+  }
   const output = await new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", cli, command, input],
     stdout: "piped",
@@ -145,9 +153,11 @@ Deno.test("basis structures are library modules over inlined JavaScript primitiv
     ...js.matchAll(/const __wm_library_js_\d+ = "data:text\/javascript,([^"]{0,120})/g),
   ]
     .map((match) => decodeURIComponent(match[1].replace(/%[0-9A-F]?$/, "")));
-  assertEquals(inlined.length, 2);
+  // `Result.debug` reaches `host/js/debug.wm` through an ordinary library import.
+  assertEquals(inlined.length, 3);
   assertEquals(inlined.some((text) => text.includes("byte structures")), true);
   assertEquals(inlined.some((text) => text.includes("basis/word8.wm")), true);
+  assertEquals(inlined.some((text) => text.includes("host/js/debug.wm")), true);
   assertEquals(js.includes('await import("data:'), false);
   assertEquals(js.includes("const Word8Vector = {"), false);
   // `sub` calls the primitive directly with spread arguments.
@@ -208,4 +218,86 @@ Deno.test("Task operations defined in std/task.wm keep their behavior", async ()
   `);
   assertEquals(result.stderr, "");
   assertEquals(result.stdout, "Cons(7, Cons(70, Nil))\n");
+});
+
+Deno.test("tooling analysis resolves std constructors in patterns", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `let s = Word8VectorSlice.full(Word8Vector.fromList([Word8.fromNumber(1)]));
+let main = () => {
+  match(Binary.u32le(s, 1)) {
+    Err(Binary.Bounds(offset, width, available)) => { print((offset, width, available)) },
+    _ => { print("other") }
+  }
+};
+`,
+  );
+  // Facts cover the library, but the snapshot still describes only the program's module.
+  const strict = await analyzeFile(input);
+  assertEquals(strict.interfaces.size, 1);
+  assertEquals(strict.graph.order.length, 1);
+  const recovered = await analyzeRecoveredFile(input);
+  assertEquals(recovered.interfaces.size, 1);
+});
+
+Deno.test("js.host imports host helper modules by name (BD17)", async () => {
+  const cache = `from js.host("table") import * as Table;
+let remember = (key, value) => {
+  let table = Table.empty();
+  Table.set(table, key, value);
+  Table.get(table, key)
+};
+`;
+  const result = await runProgram(
+    `from "./cache.wm" import { remember };
+from js.host("dict") import { empty, get, set };
+from js.host("debug") import * as Debug;
+
+let main = () => {
+  print(remember("a", 1));
+  let dict = empty();
+  set(dict, "x", "hello");
+  print((get(dict, "x"), get(dict, "y")));
+  print(Debug.errorMessage(Js.Error("boom")));
+};
+`,
+    "run",
+    { "cache.wm": cache },
+  );
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "Some(1)\n(Some(hello), None)\nboom\n");
+});
+
+Deno.test("host helper modules are never opened without a js.host import", async () => {
+  const result = await runProgram(`let main = () => { print(Table.empty()) };\n`, "check");
+  assertEquals(result.code === 0, false);
+  const unknown = await runProgram(
+    `from js.host("nope") import * as Nope;\nlet main = () => { print(1) };\n`,
+    "check",
+  );
+  assertEquals(unknown.code === 0, false);
+  assertEquals(unknown.stderr.includes(`unknown host module js.host("nope")`), true);
+});
+
+Deno.test("tooling analysis follows js.host edges without listing library modules", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    input,
+    `from js.host("table") import * as Table;
+let main = () => {
+  let table = Table.empty();
+  Table.set(table, "a", 1);
+  print(Table.get(table, "a"))
+};
+`,
+  );
+  const strict = await analyzeFile(input);
+  assertEquals(strict.interfaces.size, 1);
+  assertEquals(strict.graph.order.length, 1);
+  const recovered = await analyzeRecoveredFile(input);
+  assertEquals(recovered.interfaces.size, 1);
 });

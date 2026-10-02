@@ -82,6 +82,17 @@ only FFI is such imports needs one inference pass.
 
 Fix 1 is preferred.
 
+## Callback parameters are adapted on every call
+
+Found during stage F. A callback parameter in an `unsafe` signature (`(Js.Table<v>, String, v -> r,
+r) -> r`) gets an `{ kind: "fn" }` converter, so the import is emitted through `__wm_js_apply`
+instead of as a direct call, and every call wraps the callback in an adapter that maps, slices and
+re-packs its arguments. A first `host/js/table.wm` written that way made the self-hosted parser
+about 40% slower (23 s to 32 s over the profile corpus); the shipped version avoids callbacks. The
+adapter exists to mark raw JavaScript arrays passed to the callback, so it can be dropped only for
+one-parameter callbacks whose parameter cannot be a raw array. `Vector.tabulate` and the other
+callback-taking basis primitives pay this cost per element today.
+
 ## Related
 
 - Library parsing, not inference, is the larger part of library load time: about 320 of 445 ms,

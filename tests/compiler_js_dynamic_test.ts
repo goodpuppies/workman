@@ -473,6 +473,7 @@ Deno.test("Js.Dict supports typed string-key access through Dict.get and Dict.se
       parse: String -> Js.Object,
       stringify: Js.Value -> String,
     } as JSON;
+    from js.host("dict") import * as Dict;
     record CacheEntry = { fetchedAt: Number, city: String };
     let try = (result) => {
       match(result) {
