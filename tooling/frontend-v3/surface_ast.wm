@@ -53,7 +53,7 @@ record Joined<T> = {
   rest: List<JoinedItem<T>>,
 };
 
--- Revised Definition LongX = StrId* x X, with every authored dot retained.
+// Revised Definition LongX = StrId* x X, with every authored dot retained.
 record LongIdentifier = {
   qualifiers: List<Token>,
   dots: List<Slot<Token>>,
@@ -154,8 +154,8 @@ record TopPhrase<D, E> = {
   terminator: Slot<Token>,
 };
 
--- The four mutually recursive phrase families follow SML Ty, Pat, Exp, and Dec.
--- Constructors below describe authored Workman syntax; elaboration decides identity and meaning.
+// The four mutually recursive phrase families follow SML Ty, Pat, Exp, and Dec.
+// Constructors below describe authored Workman syntax; elaboration decides identity and meaning.
 type SurfaceType =
   | TypeVariable<Node, Token>
   | TypeName<Node, LongIdentifier, Option<TypeArguments<SurfaceType>>>

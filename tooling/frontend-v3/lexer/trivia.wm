@@ -1,0 +1,94 @@
+from "../character.wm" import * as Char;
+from "../source.wm" import * as Source;
+from "../token.wm" import * as Token;
+from "../mark.wm" import * as Mark;
+from "./util.wm" import * as Util;
+
+record ReadResult = {
+  trivia: List<Token.Trivia>,
+  newPosition: Source.Position,
+  marks: List<Token.LexicalMark>,
+};
+
+let read = (reader, pos, markId) => {
+  let isLineBreak = (code) => {code == 10 || code == 13};
+  let rec loop = (pos, trivia, marks, nextId) => {
+    let code = Char.codeAt(reader.source, pos.index);
+    let pairEnd = Util.advance(reader, pos, 2);
+    let pair = Util.textBetween(reader, pos, pairEnd);
+    let kind = match(pair) {
+      "--" => {Some(Token.DashLineComment)},
+      "//" => {Some(Token.SlashLineComment)},
+      "/*" => {Some(Token.BlockComment)},
+      // Other pairs are trivia only when their first character is whitespace.
+      _ => {
+        if (Char.classify(code) == Char.classSpace) {
+          Some(if (isLineBreak(code)) {Token.LineBreak} else {Token.HorizontalWhitespace})
+        } else {None}
+      }
+    };
+    match(kind) {
+      None => {ReadResult(List.reverse(trivia), pos, List.reverse(marks))},
+      Some(kind) => {
+        let commentEnd = (start) => {
+          Util.readEnd(reader, start, (_, current) => {
+            !isLineBreak(Char.codeAt(reader.source, current.index))
+          })
+        };
+        let (endPos, itemMarks) = match(kind) {
+          Token.LineBreak => {
+            (Util.advance(reader, pos, if (code == 13 && Char.codeAt(reader.source, pos.index + 1) == 10) {2} else {1}), [])
+          },
+          Token.HorizontalWhitespace => {
+            (Util.readEnd(reader, pos, (_, current) => {
+              let code = Char.codeAt(reader.source, current.index);
+              Char.classify(code) == Char.classSpace && !isLineBreak(code)
+            }), [])
+          },
+          Token.DashLineComment => {(commentEnd(pos), [])},
+          Token.SlashLineComment => {(commentEnd(pos), [])},
+          Token.BlockComment => {
+            let rec scan = (current, openers) => {
+              if (current.index >= reader.length) {(current, openers)} else {
+                let next = Util.advance(reader, current, 2);
+                match(Util.textBetween(reader, current, next)) {
+                  "/*" => {scan(next, [current, ..openers])},
+                  "*/" => {
+                    match(openers) {
+                      // One opener ends this comment; multiple openers close only the innermost.
+                      [_] => {(next, [])},
+                      [_, ..rest] => {scan(next, rest)},
+                      [] => {Panic("unreachable")} // Scanning ends when the outermost opener closes.
+                    }
+                  },
+                  // Every pair except comment brackets is ordinary comment content.
+                  _ => {scan(Util.advance(reader, current, 1), openers)}
+                }
+              }
+            };
+            let (endPos, openers) = scan(pairEnd, [pos]);
+            let rec markOpeners = (openers, id, out) => {
+              match(openers) {
+                [] => {List.reverse(out)},
+                [start, ..rest] => {
+                  let mark = Mark.Mark(
+                    Mark.MarkId(id), Token.UnterminatedBlockComment,
+                    Mark.RecoveredWith(Token.RetainedMalformedTrivia(Token.BlockComment)),
+                    Mark.SourceOffset(start.index),
+                    Mark.SourceSpan(Mark.SourceOffset(start.index), Mark.SourceOffset(endPos.index)),
+                    None
+                  );
+                  markOpeners(rest, id + 1, [mark, ..out])
+                }
+              }
+            };
+            (endPos, markOpeners(List.reverse(openers), nextId, []))
+          }
+        };
+        let item = Token.Trivia(kind, Util.textBetween(reader, pos, endPos), Source.Span(pos, endPos), itemMarks);
+        loop(endPos, [item, ..trivia], List.append(List.reverse(itemMarks), marks), nextId + List.length(itemMarks))
+      }
+    }
+  };
+  loop(pos, [], [], markId)
+};

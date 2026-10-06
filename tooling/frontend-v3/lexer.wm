@@ -2,180 +2,92 @@ from "./character.wm" import * as Char;
 from "./token.wm" import * as Token;
 from "./source.wm" import * as Source;
 from "./lexer/read.wm" import * as Read;
+from "./lexer/string.wm" import * as StringRead;
+from "./lexer/trivia.wm" import * as Trivia;
+from "./lexer/pair.wm" import * as Pair;
 from "./lexer/util.wm" import * as Util;
 
-type Mode = Default | Ident;
+type Mode = Code | Template | Interpolation<Number>;
 
 let lex = (source) => {
   let reader = Util.create(source);
-  let length = reader.length;
-
-  //#region mate bookkeeping (single-pass delimiter pairing)
-
-  //Mating state: the open-bracket stack plus recorded (openIdx, closeIdx)
-  //pairs waiting to be stamped during the final reverse at EOF.
-  record Mates = {
-    stack: List<(Number, Token.PairGroup)>,
-    pairs: List<(Number, Number)>,
-  };
-
-  //Only the open-bracket stack is mate-specific state; acc stays a plain arg.
-  //The token index used for mates is derived inside mateStep from acc length,
-  //since every token is appended to acc exactly once.
-
-  //Forward pass mating: openers push (index, group) onto the stack; closers
-  //pop it, learn their opener immediately, and record the pair for later.
-  //No rewriting of acc happens here - openers get their Mate stamped at EOF,
-  //in the same walk that reverses acc into source order.
-  //TODO mismatched-group and stray closers should become LexicalMarks here
-  //instead of passing through silently.
-  let mateStep = (tok, idx, stack, pairs) => {
-    match(Token.pairRole(tok.kind)) {
-      None => {
-        (tok, stack, pairs)
-      },
-      Some(Token.PairRole(group, Token.Open)) => {
-        (tok, [(idx, group), ..stack], pairs)
-      },
-      Some(Token.PairRole(group, Token.Close)) => {
-        match(stack) {
-          [(Var(openIdx), Var(openGroup)), ..restStack] => {
-            if (openGroup == group) {
-              //closer knows its opener right away; opener waits for EOF
-              (.{..tok, mateIdx = Token.Mate(openIdx)}, restStack, [(openIdx, idx), ..pairs])
-            } else {
-              //mismatched group: TODO LexicalMark
-              (tok, stack, pairs)
+  let rec loop = (pos, state: Pair.State, modes) => {
+    let eof = (pos, trivia) => {
+      Pair.finish(reader, state, Token.Token(Token.EndOfFileToken,
+        Source.Span(pos, pos), Token.NoMate, [], trivia))
+    };
+    let codeStep = (depth, rest) => {
+      let trivia = Trivia.read(reader, pos, 0);
+      let pos = trivia.newPosition;
+      if (pos.index >= reader.length) {eof(pos, trivia.trivia)} else {
+        let res = match(Char.classify(Char.codeAt(source, pos.index))) {
+          Char.classLetter => {Read.readFromLetter(reader, pos)},
+          Char.classDigit => {Read.readFromDigit(reader, pos, 0)},
+          Char.classStrQuo => {
+            match(Char.codeAt(source, pos.index)) {
+              34 => {StringRead.readQuoted(reader, pos, 34, Token.QuotedStringToken)},
+              39 => {StringRead.readQuoted(reader, pos, 39, Token.CharacterToken)},
+              96 => {Read.singleToken(Token.MultilineStringStartToken, pos, Util.advance(reader, pos, 1), [])},
+              // The quote class consists only of double quote, apostrophe, and backtick.
+              _ => {Panic("unreachable")}
             }
           },
-          [] => {
-            //stray closer: TODO LexicalMark
-            (tok, stack, pairs)
-          }
-        }
-      }
-    }
-  };
-
-  let rec findCloseFor = (pairs, openIdx) => {
-    match(pairs) {
-      [] => {None},
-      [(Var(o), Var(c)), ..rest] => {
-        if (o == openIdx) {
-          Some(c)
-        } else {
-          findCloseFor(rest, openIdx)
-        }
-      }
-    }
-  };
-
-  //Final walk: reverse acc (newest-first) into source order, stamping every
-  //opener with its closer's index from `pairs`. Replaces plain List.reverse.
-  let rec reverseAndStamp = (items, i, pairs, out) => {
-    match(items) {
-      [] => {out},
-      [tok, ..rest] => {
-        let tok2 = match(Token.pairRole(tok.kind)) {
-          Some(Token.PairRole(_, Token.Open)) => {
-            match(findCloseFor(pairs, i)) {
-              Some(closeIdx) => {.{..tok, mateIdx = Token.Mate(closeIdx)}},
-              None => {tok} //unclosed opener: TODO LexicalMark
-            }
-          },
-          _ => {tok}
+          Char.classSymbol => {Read.readFromSymbol(reader, pos, 0)},
+          Char.classOther => {Read.readUnknown(reader, pos, 0)},
+          Char.classSpace => {Panic("unreachable")}, // Trivia consumes all whitespace first.
+          // classify returns only the six character classes handled above.
+          _ => {Panic("unreachable")}
         };
-        reverseAndStamp(rest, i - 1, pairs, [tok2, ..out])
-      }
-    }
-  };
-  //#endregion
-
-  let rec loop = (pos, m, acc, mates: Mates) => {
-    if (pos.index < length) {
-      let pos = Util.skipWhitespace(reader, pos);
-      
-      let class = Char.classify(Char.codeAt(source, pos.index));
-      --Util.printPos(reader, pos);
-      let someAbstract = (res: Read.ReadResult) => {
-        match(res.tokens) {
-          [tok] => {
-            let (tok2, stack2, pairs2) =
-              mateStep(tok, List.length(acc), mates.stack, mates.pairs);
-            loop(
-              res.newPosition,
-              Default,
-              [tok2, ..acc],
-              .{stack = stack2, pairs = pairs2}
-            )
+        let adjustDepth = (delta) => {
+          match(depth) {
+            None => {modes},
+            Some(value) => {[Interpolation(value + delta), ..rest]}
+          }
+        };
+        let (kind, modes) = match(res.token.kind) {
+          Token.MultilineStringStartToken => {(res.token.kind, [Template, ..modes])},
+          Token.PunctuationToken(Token.LeftBrace) => {(res.token.kind, adjustDepth(1))},
+          Token.PunctuationToken(Token.DotLeftBrace) => {(res.token.kind, adjustDepth(1))},
+          Token.PunctuationToken(Token.RightBrace) => {
+            match(depth) {
+              Some(0) => {(Token.InterpolationEndToken, rest)},
+              Some(value) => {(res.token.kind, adjustDepth(-1))},
+              None => {(res.token.kind, modes)}
+            }
           },
-          _ => {
-            //comment batches carry no pairs yet pass them trough
-            loop(
-              res.newPosition,
-              Default,
-              List.append(List.reverse(res.tokens), acc),
-              mates
-            )
+          // All other code tokens leave the current interpolation's brace depth unchanged.
+          _ => {(res.token.kind, modes)}
+        };
+        let token = Token.Token { ..res.token, kind = kind, leadingTrivia = trivia.trivia };
+        loop(res.newPosition, Pair.append(state, token), modes)
+      }
+    };
+    match(modes) {
+      [Code] => {codeStep(None, [])},
+      [Interpolation(depth), ..rest] => {codeStep(Some(depth), rest)},
+      [Template, ..rest] => {
+        if (pos.index >= reader.length) {eof(pos, [])} else {
+          let code = Char.codeAt(source, pos.index);
+          if (code == 96) {
+            let endPos = Util.advance(reader, pos, 1);
+            let res = Read.singleToken(Token.MultilineStringEndToken, pos, endPos, []);
+            loop(endPos, Pair.append(state, res.token), rest)
+          } else {
+            if (code == 36 && Char.codeAt(source, pos.index + 1) == 123) {
+              let endPos = Util.advance(reader, pos, 2);
+              let res = Read.singleToken(Token.InterpolationStartToken, pos, endPos, []);
+              loop(endPos, Pair.append(state, res.token), [Interpolation(0), ..modes])
+            } else {
+              let res = StringRead.readChunk(reader, pos);
+              loop(res.newPosition, Pair.append(state, res.token), modes)
+            }
           }
         }
-      };
-        
-      //did skipping whitespace go to eof?
-      if (pos.index >= length) {
-        loop(pos, Default, acc, mates)
-      } else {
-        match(class) {
-          Char.classSpace  => {Panic("todoSpace")},
-          Char.classLetter => {Read.readFromLetter(reader, pos) :> someAbstract},
-          Char.classDigit  => {Read.readFromDigit(reader, pos) :> someAbstract},
-          Char.classStrQuo => {Read.readFromStringLit(reader, pos) :> someAbstract},
-          Char.classSymbol => {Read.readFromSymbol(reader, pos) :> someAbstract},
-          Char.classOther  => {Util.printPos(reader, pos);?},
-          _                => {Panic("unreachable")}
-        }
-      }
-    } else { 
-      //eof
-      let eofSpan = Source.Span(pos,pos);
-      let eofToken = Token.Token(
-        Token.EndOfFileToken,
-        eofSpan,
-        Token.NoMate,
-        []
-      );
-      //TODO: leftover `mt.stack` entries are unclosed delimiters -> LexicalMarks
-      match(m) {
-        Ident => {
-          let fakeIndent = Token.Token(
-            Token.LowerIdentifierToken,
-            eofSpan,
-            Token.NoMate,
-            []
-          );
-          reverseAndStamp(
-            [eofToken,fakeIndent,..acc],
-            List.length(acc) + 1,
-            mates.pairs,
-            []
-          )
-        },
-        Default => {
-          reverseAndStamp(
-            [eofToken, ..acc],
-            List.length(acc),
-            mates.pairs, []
-          )
-        },
-      }
+      },
+      // Code is the single base frame; entering literals never removes that frame.
+      [] => {Panic("unreachable")},
+      [Code, ..rest] => {Panic("unreachable")}
     }
   };
-  
-  if (length == 0) {
-    //file is emtpy no need to parse, not an error
-    ?
-  } else {
-    //start lexing
-    loop(Source.Position(0, 0, 0), Default, [], .{stack = [], pairs = []})
-  }
+  loop(Source.Position(0, 0, 0), Pair.State([], [], 0), [Code])
 };

@@ -4,6 +4,7 @@
 node_modules/
 research/
 tooling/frontend-v2/frontend-v2.generated.mjs
+tooling/frontend-v3/explorer/dist/
 tooling/c-header-extractor/dist/
 tooling/wmslang/wmslang.generated.mjs
 profiles/

@@ -1,0 +1,31 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #11151c; color: #d8e1eb; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header { min-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 24px; border-bottom: 1px solid #303c4c; }
+header strong { color: #9ae2ce; font-size: 20px; }
+header span { margin-left: 16px; color: #99a9bd; }
+output { font-size: 13px; white-space: pre-wrap; }
+output.error { color: #ffb2a6; }
+main { display: grid; grid-template-columns: 1fr 1fr 1fr; height: calc(100dvh - 70px); }
+section { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid #303c4c; }
+h2 { font-size: 14px; margin: 0; padding: 16px; border-bottom: 1px solid #303c4c; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+h2 span { font-size: 12px; font-weight: normal; color: #99a9bd; }
+textarea { flex: 1; min-height: 220px; resize: none; border: 0; padding: 20px; background: #141b25; color: #e0e8f1; font: 14px/1.7 ui-monospace, monospace; tab-size: 2; }
+textarea:focus { outline: 2px solid #5aa890; outline-offset: -2px; }
+p { font-size: 12px; color: #99a9bd; padding: 0 16px; }
+nav { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid #303c4c; }
+button { font: inherit; cursor: pointer; color: inherit; background: #1e2a38; border: 1px solid #3e5065; border-radius: 5px; padding: 6px 10px; }
+button:hover, button[aria-pressed="true"] { background: #29443f; border-color: #75c8af; }
+button:focus-visible, summary:focus-visible { outline: 2px solid #9ae2ce; outline-offset: 2px; }
+#items { overflow: auto; padding: 8px; }
+.item { display: block; width: 100%; text-align: left; margin-bottom: 6px; background: #161f2a; }
+.item.selected { border-color: #9ae2ce; background: #29443f; }
+.item.damaged { border-left: 3px solid #ffb2a6; }
+.item strong { font-size: 13px; font-weight: 500; }
+.item small { display: block; color: #99a9bd; margin-top: 4px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+#inspector { padding: 16px; overflow: auto; font: 12px/1.6 ui-monospace, monospace; }
+#spelling { margin: 0; padding: 16px; color: #9ae2ce; border-bottom: 1px solid #303c4c; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+details { margin: 4px 0 4px 12px; }
+summary { cursor: pointer; overflow-wrap: anywhere; }
+.leaf { margin-left: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } section { min-height: 300px; max-height: 600px; } header { align-items: flex-start; flex-direction: column; } }

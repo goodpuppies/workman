@@ -1,4 +1,4 @@
--- @no-prelude
+// @no-prelude
 
 // This file defines the complete Result pattern itself. The directive above
 
@@ -84,6 +84,7 @@ let main = () => {
     printOk(calculate(10)),
     printOk(calculate(-2))
   |) {
+    // Successful combined results have already printed; their values need no further action.
     Ok(_) => { void },
     Err(error) => { print(error) }
   }

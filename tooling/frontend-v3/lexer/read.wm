@@ -1,219 +1,164 @@
 from "../character.wm" import * as Char;
 from "../token.wm" import * as Token;
 from "../source.wm" import * as Source;
+from "../mark.wm" import * as Mark;
 from "./util.wm" import * as Util;
 
 record ReadResult = {
-  tokens: List<Token.Token>,
+  token: Token.Token,
   newPosition: Source.Position,
 };
 
-let wordKinds = [Char.classLetter, Char.classDigit];
-
-let isKind = (reader: Util.Reader, pos, kinds) => {
-  let cls = Char.classify(Char.codeAt(reader.source, pos.index));
-  List.any(kinds, (candidate) => {candidate == cls})
+let singleToken = (kind, pos, endPos, marks) => {
+  ReadResult(Token.Token(kind, Source.Span(pos, endPos), Token.NoMate, marks, []), endPos)
 };
 
-let widthToNumber = match(width) => {
-  Token.OneWide => {1},
-  Token.TwoWide => {2}
-};
-
-let makeSpan = (reader: Util.Reader, pos, kind: Token.TokenKind, text): Source.Span => {
-  let endPos = match(Token.fixedWidth(kind)) {
-    Some(width) => {Util.advance(reader, pos, widthToNumber(width))},
-    None => {
-      match(kind) {
-        Token.CommentStartToken => {Util.bumpPosition(Util.bumpPosition(pos, text), "-")},
-        Token.LineComment => {
-          let (_, endPos) = Util.readWhile(reader, pos, (ch, _) => {ch != "\n"});
-          endPos
-        },
-        Token.LowerIdentifierToken => {
-          let (_, endPos) = Util.readWhile(
-            reader,
-            pos,
-            (_, current) => {isKind(reader, current, wordKinds)}
-          );
-          endPos
-        },
-        Token.UpperIdentifierToken => {
-          let (_, endPos) = Util.readWhile(
-            reader,
-            pos,
-            (_, current) => {isKind(reader, current, wordKinds)}
-          );
-          endPos
-        },
-        Token.IntegerToken => {
-          let (_, endPos) = Util.readWhile(
-            reader,
-            pos,
-            (_, current) => {isKind(reader, current, [Char.classDigit])}
-          );
-          endPos
-        },
-        Var(missing) => {Panic(`missing span reader for token kind ${missing}`)}
-      }
-    }
-  };
-  .{startPos = pos, endPos = endPos}
-};
-
-let makeToken = (reader: Util.Reader, kind: Token.TokenKind, pos, text) => {
-  let span = makeSpan(reader, pos, kind, text);
-  (
-    Token.Token(kind, span, Token.NoMate, []),
-    span.endPos
+// Readers retain damaged spelling; marks describe what was assumed or retained.
+let lexicalMark = (id, problem, recovery, anchor, span) => {
+  Mark.Mark(
+    Mark.MarkId(id), problem, Mark.RecoveredWith(recovery),
+    Mark.SourceOffset(anchor),
+    Mark.SourceSpan(Mark.SourceOffset(span.startPos.index), Mark.SourceOffset(span.endPos.index)),
+    None
   )
 };
 
-let simpleToken = (reader: Util.Reader, kind, pos, text): ReadResult => {
-  let (token, nextPos) = makeToken(reader, kind, pos, text);
-  .{tokens = [token], newPosition = nextPos}
+//#region lexeme readers
+
+let readUnknown = (reader, pos, markId) => {
+  // Keep a UTF-16 surrogate pair together as one unknown character.
+  let first = Char.codeAt(reader.source, pos.index);
+  let second = Char.codeAt(reader.source, pos.index + 1);
+  let surrogatePair = first >= 55296 && first <= 56319 && second >= 56320 && second <= 57343;
+  let endPos = Util.advance(reader, pos, if (surrogatePair) {2} else {1});
+  let span = Source.Span(pos, endPos);
+  let mark = lexicalMark(markId, Token.UnknownCharacter, Token.RetainedUnknownToken, pos.index, span);
+  singleToken(Token.UnknownToken, pos, endPos, [mark])
 };
 
-let readFromSymbol = (reader: Util.Reader, pos): ReadResult => {
-  let text = match(Util.peekByOne(reader, pos.index)) {
-    Some(value) => {value},
-    None => {Panic("symbol reader reached end of source")}
+let readFromSymbol = (reader, pos, markId) => {
+  // Longest fixed symbol first. Its spelling determines its width exactly once.
+  let symbolKind = match(text) => {
+    "(" => {Some(Token.PunctuationToken(Token.LeftParen))},
+    ")" => {Some(Token.PunctuationToken(Token.RightParen))},
+    "{" => {Some(Token.PunctuationToken(Token.LeftBrace))},
+    "}" => {Some(Token.PunctuationToken(Token.RightBrace))},
+    "[" => {Some(Token.PunctuationToken(Token.LeftBracket))},
+    "]" => {Some(Token.PunctuationToken(Token.RightBracket))},
+    "<" => {Some(Token.PunctuationToken(Token.LessThan))},
+    ">" => {Some(Token.PunctuationToken(Token.GreaterThan))},
+    "," => {Some(Token.PunctuationToken(Token.Comma))},
+    ";" => {Some(Token.PunctuationToken(Token.Semicolon))},
+    ":" => {Some(Token.PunctuationToken(Token.Colon))},
+    "." => {Some(Token.PunctuationToken(Token.Dot))},
+    ".." => {Some(Token.PunctuationToken(Token.DoubleDot))},
+    ".{" => {Some(Token.PunctuationToken(Token.DotLeftBrace))},
+    "@" => {Some(Token.PunctuationToken(Token.AtSign))},
+    "=" => {Some(Token.PunctuationToken(Token.Equals))},
+    "=>" => {Some(Token.PunctuationToken(Token.FatArrow))},
+    "->" => {Some(Token.PunctuationToken(Token.ThinArrow))},
+    "|" => {Some(Token.PunctuationToken(Token.Pipe))},
+    ":>" => {Some(Token.PunctuationToken(Token.PipeForward))},
+    "||" => {Some(Token.OperatorToken(Token.BooleanOr))},
+    "&&" => {Some(Token.OperatorToken(Token.BooleanAnd))},
+    "==" => {Some(Token.OperatorToken(Token.Equal))},
+    "!=" => {Some(Token.OperatorToken(Token.NotEqual))},
+    "<=" => {Some(Token.OperatorToken(Token.LessOrEqual))},
+    ">=" => {Some(Token.OperatorToken(Token.GreaterOrEqual))},
+    "+" => {Some(Token.OperatorToken(Token.Add))},
+    "-" => {Some(Token.OperatorToken(Token.Subtract))},
+    "*" => {Some(Token.OperatorToken(Token.Multiply))},
+    "/" => {Some(Token.OperatorToken(Token.Divide))},
+    "%" => {Some(Token.OperatorToken(Token.Remainder))},
+    "++" => {Some(Token.OperatorToken(Token.Concatenate))},
+    "!" => {Some(Token.OperatorToken(Token.BooleanNot))},
+    "?" => {Some(Token.OperatorToken(Token.Hole))},
+    // A spelling outside this complete fixed-symbol table is not a fixed symbol.
+    _ => {None}
   };
-  match(text) {
-    "-" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some("-") => {
-          let (startToken, afterStart) = makeToken(reader, Token.CommentStartToken, pos, text);
-          let (commentToken, endPos) = makeToken(reader, Token.LineComment, afterStart, text);
-          .{tokens = [startToken, commentToken], newPosition = endPos}
-        },
-        Some(">") => {simpleToken(reader, Token.PunctuationToken(Token.ThinArrow), pos, text)},
-        _ => {simpleToken(reader, Token.OperatorToken(Token.Subtract), pos, text)}
+
+  let twoEnd = Util.advance(reader, pos, 2);
+  match(symbolKind(Util.textBetween(reader, pos, twoEnd))) {
+    Some(kind) => {singleToken(kind, pos, twoEnd, [])},
+    None => {
+      let oneEnd = Util.advance(reader, pos, 1);
+      match(symbolKind(Util.textBetween(reader, pos, oneEnd))) {
+        Some(kind) => {singleToken(kind, pos, oneEnd, [])},
+        None => {readUnknown(reader, pos, markId)}
       }
-    },
-    "/" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some("/") => {
-          let (startToken, afterStart) = makeToken(reader, Token.CommentStartToken, pos, text);
-          let (commentToken, endPos) = makeToken(reader, Token.LineComment, afterStart, text);
-          .{tokens = [startToken, commentToken], newPosition = endPos}
-        },
-        _ => {simpleToken(reader, Token.OperatorToken(Token.Divide), pos, text)}
-      }
-    },
-    "<" => {simpleToken(reader, Token.PunctuationToken(Token.LessThan), pos, text)},
-    ">" => {simpleToken(reader, Token.PunctuationToken(Token.GreaterThan), pos, text)},
-    "," => {simpleToken(reader, Token.PunctuationToken(Token.Comma), pos, text)},
-    "=" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some(">") => {simpleToken(reader, Token.PunctuationToken(Token.FatArrow), pos, text)},
-        Some("=") => {simpleToken(reader, Token.OperatorToken(Token.Equal), pos, text)},
-        _ => {simpleToken(reader, Token.PunctuationToken(Token.Equals), pos, text)}
-      }
-    },
-    "|" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some("|") => {simpleToken(reader, Token.OperatorToken(Token.BooleanOr), pos, text)},
-        _ => {simpleToken(reader, Token.PunctuationToken(Token.Pipe), pos, text)}
-      }
-    },
-    ":" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some(">") => {simpleToken(reader, Token.PunctuationToken(Token.PipeForward), pos, text)},
-        _ => {simpleToken(reader, Token.PunctuationToken(Token.Colon), pos, text)}
-      }
-    },
-    ";" => {simpleToken(reader, Token.PunctuationToken(Token.Semicolon), pos, text)},
-    "{" => {simpleToken(reader, Token.PunctuationToken(Token.LeftBrace), pos, text)},
-    "}" => {simpleToken(reader, Token.PunctuationToken(Token.RightBrace), pos, text)},
-    "(" => {simpleToken(reader, Token.PunctuationToken(Token.LeftParen), pos, text)},
-    ")" => {simpleToken(reader, Token.PunctuationToken(Token.RightParen), pos, text)},
-    "." => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some("{") => {simpleToken(reader, Token.PunctuationToken(Token.DotLeftBrace), pos, text)},
-        Some(".") => {simpleToken(reader, Token.PunctuationToken(Token.DoubleDot), pos, text)},
-        _ => {simpleToken(reader, Token.PunctuationToken(Token.Dot), pos, text)}
-      }
-    },
-    "[" => {simpleToken(reader, Token.PunctuationToken(Token.LeftBracket), pos, text)},
-    "]" => {simpleToken(reader, Token.PunctuationToken(Token.RightBracket), pos, text)},
-    "*" => {simpleToken(reader, Token.OperatorToken(Token.Multiply), pos, text)},
-    "+" => {simpleToken(reader, Token.OperatorToken(Token.Add), pos, text)},
-    "@" => {simpleToken(reader, Token.PunctuationToken(Token.AtSign), pos, text)},
-    "!" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some("=") => {simpleToken(reader, Token.OperatorToken(Token.NotEqual), pos, text)},
-        _ => {simpleToken(reader, Token.OperatorToken(Token.BooleanNot), pos, text)}
-      }
-    },
-    "%" => {simpleToken(reader, Token.OperatorToken(Token.Remainder), pos, text)},
-    "&" => {
-      match(Util.peekByOne(reader, pos.index + 1)) {
-        Some("&") => {simpleToken(reader, Token.OperatorToken(Token.BooleanAnd), pos, text)},
-        _ => {?}
-      }
-    },
-    "?" => {simpleToken(reader, Token.OperatorToken(Token.Hole), pos, text)},
-    Var(unknown) => {
-      print(`whats this "${unknown}"`);
-      ?
     }
   }
 };
 
-let readFromLetter = (reader: Util.Reader, pos): ReadResult => {
-  let (word, endPos) = Util.readWhile(
-    reader,
-    pos,
-    (_, current) => {isKind(reader, current, wordKinds)}
-  );
-  let kind = if (Char.isUpperCode(Char.codeAt(word, 0))) {
+let isWordCode = (code) => {
+  let class = Char.classify(code);
+  // Apostrophes continue a word; at a word boundary they still open a character literal.
+  class == Char.classLetter || class == Char.classDigit || code == 39
+};
+
+let readFromLetter = (reader, pos) => {
+  let isUpperCode = (code) => {code >= 65 && code <= 90};
+  let endPos = Util.readEnd(reader, pos, (_, current) => {
+    isWordCode(Char.codeAt(reader.source, current.index))
+  });
+  let kind = if (isUpperCode(Char.codeAt(reader.source, pos.index))) {
     Token.UpperIdentifierToken
-  } else {
-    Token.LowerIdentifierToken
-  };
-  let (token, _) = makeToken(reader, kind, pos, word);
-  .{tokens = [token], newPosition = endPos}
+  } else {Token.LowerIdentifierToken};
+  singleToken(kind, pos, endPos, [])
 };
 
-let readFromDigit = (reader: Util.Reader, pos): ReadResult => {
-  let (number, endPos) = Util.readWhile(
-    reader,
-    pos,
-    (_, current) => {isKind(reader, current, [Char.classDigit])}
-  );
-  let (token, _) = makeToken(reader, Token.IntegerToken, pos, number);
-  .{tokens = [token], newPosition = endPos}
-};
-
-let readFromStringLit = (reader: Util.Reader, pos): ReadResult => {
-  let quote = match(Util.peekByOne(reader, pos.index)) {
-    Some(value) => {value},
-    None => {?}
+let readFromDigit = (reader, pos, markId) => {
+  let digitsEnd = (start, hex) => {
+    Util.readEnd(reader, start, (_, current) => {
+      let code = Char.codeAt(reader.source, current.index);
+      Char.classify(code) == Char.classDigit ||
+        (hex && ((code >= 65 && code <= 70) || (code >= 97 && code <= 102)))
+    })
   };
-  let afterQuote = Util.bumpPosition(pos, quote);
-  let rec readBody = (current, escaping, text) => {
-    match(Util.peekByOne(reader, current.index)) {
-      Some(ch) => {
-        if (escaping) {
-          readBody(Util.bumpPosition(current, ch), false, text ++ ch)
-        } else {
-          if (ch == "\\") {
-            readBody(Util.bumpPosition(current, ch), true, text ++ ch)
-          } else {
-            if (ch == quote) {
-              (text ++ ch, Util.bumpPosition(current, ch))
-            } else {
-              readBody(Util.bumpPosition(current, ch), false, text ++ ch)
-            }
-          }
-        }
-      },
-      None => {(text, current)}
+  let basedNumber = (kind, prefixWidth, hex) => {
+    let start = Util.advance(reader, pos, prefixWidth);
+    let endPos = digitsEnd(start, hex);
+    (kind, endPos, if (endPos.index == start.index) {Some(start.index)} else {None})
+  };
+  let (kind, numberEnd, missingDigits) = match(Util.textBetween(reader, pos, Util.advance(reader, pos, 2))) {
+    "0x" => {basedNumber(Token.IntegerToken, 2, true)},
+    "0w" => {
+      let hex = Char.codeAt(reader.source, pos.index + 2) == 120;
+      basedNumber(Token.WordToken, if (hex) {3} else {2}, hex)
+    },
+    // Every other digit-starting spelling begins with a decimal significand.
+    _ => {
+      let wholeEnd = digitsEnd(pos, false);
+      let fraction = Char.codeAt(reader.source, wholeEnd.index) == 46 &&
+        Char.classify(Char.codeAt(reader.source, wholeEnd.index + 1)) == Char.classDigit;
+      let endPos = if (fraction) {digitsEnd(Util.advance(reader, wholeEnd, 1), false)} else {wholeEnd};
+      let exponent = Char.codeAt(reader.source, endPos.index);
+      if (exponent == 101 || exponent == 69) {
+        let start = Util.advance(reader, endPos, 1);
+        let sign = Char.codeAt(reader.source, start.index);
+        let start = if (sign == 43 || sign == 45) {Util.advance(reader, start, 1)} else {start};
+        let endPos = digitsEnd(start, false);
+        (Token.FloatToken, endPos, if (endPos.index == start.index) {Some(start.index)} else {None})
+      } else {
+        (if (fraction) {Token.FloatToken} else {Token.IntegerToken}, endPos, None)
+      }
     }
   };
-  let (_, endPos) = readBody(afterQuote, false, quote);
-  let span: Source.Span = .{startPos = pos, endPos = endPos};
-  let token = Token.Token(Token.QuotedStringToken, span, Token.NoMate, []);
-  .{tokens = [token], newPosition = endPos}
+  let endPos = Util.readEnd(reader, numberEnd, (_, current) => {
+    isWordCode(Char.codeAt(reader.source, current.index))
+  });
+  let badAt = match(missingDigits) {
+    Some(index) => {Some(index)},
+    None => {if (endPos.index == numberEnd.index) {None} else {Some(numberEnd.index)}}
+  };
+  let marks = match(badAt) {
+    None => {[]},
+    Some(index) => {[lexicalMark(
+      markId, Token.MalformedNumber, Token.RetainedMalformedToken(kind), index,
+      Source.Span(pos, endPos)
+    )]}
+  };
+  singleToken(kind, pos, endPos, marks)
 };
+
+//#endregion

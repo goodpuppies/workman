@@ -1,5 +1,5 @@
--- Phase-independent marking kernel.
--- A phase supplies closed `Problem` and `Recovery` types.
+// Phase-independent marking kernel.
+// A phase supplies closed `Problem` and `Recovery` types.
 
 type SourceOffset = | SourceOffset<Number>;
 
@@ -23,7 +23,7 @@ record Mark<Problem, Recovery> = {
   causedBy: Option<MarkId>,
 };
 
--- Marks around existing structure and marks for absent slots use the same identity.
--- Their phase-specific recovery interpretation is deliberately not defined here.
+// Marks around existing structure and marks for absent slots use the same identity.
+// Their phase-specific recovery interpretation is deliberately not defined here.
 type Marked<T> = | MarkedValue<MarkId, T>;
 type Slot<T> = AuthoredSlot<T> | MissingSlot<MarkId, T>;

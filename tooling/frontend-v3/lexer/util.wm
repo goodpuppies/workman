@@ -1,51 +1,48 @@
 from "../character.wm" import * as Char;
 from "../source.wm" import * as Source;
 
--- Immutable source context shared by lexer dispatch and individual lexeme readers.
+// Immutable source context shared by lexer dispatch and individual lexeme readers.
 record Reader = {
   source: String,
   length: Number,
 };
 
-let peekByOne = (reader: Reader, index) => {
+let peekByOne = (reader, index) => {
   if (index < 0 || index >= reader.length) {
     None
   } else {
     Some(
       reader.source :> .slice(index, index + 1)
-      :> match {
-        Ok(value) => {value},
-        Err(_) => {Panic("could not slice lexer source")}
-      }
+      :> Result.debug
     )
   }
 };
 
-let debugChar = (ch) => {
-  let code = Char.codeAt(ch, 0);
-  if (code == 10) {
-    "\\n"
-  } else {
-    if (code == 13) {
-      "\\r"
+let printPos = (reader, pos) => {
+  let debugChar = (ch) => {
+    let code = Char.codeAt(ch, 0);
+    if (code == 10) {
+      "\\n"
     } else {
-      if (code == 9) {
-        "\\t"
+      if (code == 13) {
+        "\\r"
       } else {
-        ch
+        if (code == 9) {
+          "\\t"
+        } else {
+          ch
+        }
       }
     }
-  }
-};
+  };
 
-let printPos = (reader: Reader, pos) => {
   let rec debugPreview = (index, remaining) => {
     if (remaining <= 0 || index >= reader.length) {
       ""
     } else {
       match(peekByOne(reader, index)) {
         Some(ch) => {debugChar(ch) ++ debugPreview(index + 1, remaining - 1)},
-        None => {""}
+        None => {Panic("unreachable")} // The bounds check above guarantees a source unit.
       }
     }
   };
@@ -69,64 +66,45 @@ let printPos = (reader: Reader, pos) => {
 
 
 let create = (source) => {
-  let length = source :> .length :> match {
-    Ok(value) => {value},
-    Err(_) => {Panic("could not read source length")}
-  };
+  let length = source :> .length :> Result.debug;
   Reader(source, length)
 };
 
 
-let bumpPosition = (pos, ch) => {
-  .{
-    index = pos.index + 1,
-    line = if (ch == "\n") {pos.line + 1} else {pos.line},
-    col = if (ch == "\n") {1} else {pos.col + 1}
+// Positions use UTF-16 offsets and zero-based lines/columns, matching editor buffers.
+let bumpPosition = (reader, pos, ch) => {
+  let code = Char.codeAt(ch, 0);
+  let crlf = code == 10 && pos.index > 0 && Char.codeAt(reader.source, pos.index - 1) == 13;
+  let newline = code == 13 || code == 10;
+  Source.Position(
+    pos.index + 1,
+    if (newline && !crlf) {pos.line + 1} else {pos.line},
+    if (newline) {0} else {pos.col + 1}
+  )
+};
+
+let rec advance = (reader, pos, amount) => {
+  match(peekByOne(reader, pos.index)) {
+    Some(ch) => {
+      if (amount > 0) {
+        advance(reader, bumpPosition(reader, pos, ch), amount - 1)
+      } else {pos}
+    },
+    None => {pos}
   }
 };
 
-let rec skipWhitespace = (reader: Reader, pos) => {
-  if (pos.index < reader.length) {
-    let code = Char.codeAt(reader.source, pos.index);
-    if (code == 32 || code == 10 || code == 13 || code == 9) {
-      let next: Source.Position = .{
-        index = pos.index + 1,
-        line = if (code == 10) {pos.line + 1} else {pos.line},
-        col = if (code == 10) {1} else {pos.col + 1}
-      };
-      skipWhitespace(reader, next)
-    } else {
-      pos
-    }
-  } else {
-    pos
-  }
-};
-
-let rec advance = (reader: Reader, pos, amount) => {
-  if (amount <= 0) {
-    pos
-  } else {
-    let ch = match(peekByOne(reader, pos.index)) {
-      Some(value) => {value},
-      None => {""}
-    };
-    advance(reader, bumpPosition(pos, ch), amount - 1)
-  }
-};
-
-let rec readWhile = (reader: Reader, pos, keepGoing) => {
+let rec readEnd = (reader, pos, keepGoing) => {
   match(peekByOne(reader, pos.index)) {
     Some(ch) => {
       if (keepGoing(ch, pos)) {
-        let (rest, endPos) = readWhile(reader, bumpPosition(pos, ch), keepGoing);
-        (ch ++ rest, endPos)
-      } else {
-        printPos(reader, pos);
-        ?;
-        ("", pos)
-      }
+        readEnd(reader, bumpPosition(reader, pos, ch), keepGoing)
+      } else {pos}
     },
-    None => {("", pos)}
+    None => {pos}
   }
+};
+
+let textBetween = (reader, start, end) => {
+  reader.source :> .slice(start.index, end.index) :> Result.debug
 };

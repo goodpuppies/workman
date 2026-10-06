@@ -11,20 +11,20 @@ let classStrQuo = 4;
 let classSymbol = 5;
 let classOther = 6;
 
--- One entry for each ASCII code point. Underscore belongs to the identifier
--- class; quotes are separate because they switch the lexer into string modes.
+// One entry for each ASCII code point. Underscore belongs to the identifier
+// class; quotes are separate because they switch the lexer into string modes.
 let asciiClasses =
-  "666666666" ++                 -- 0-8: control characters
+  "666666666" ++                 // 0-8: control characters
   "11111" ++
-  "666666666666666666" ++         -- 14-31: control characters
-  "1" ++                          -- 32: space
-  "546555655555555" ++            -- 33-47: punctuation
-  "3333333333" ++                 -- 48-57: 0-9
-  "5555555" ++                    -- 58-64: punctuation
-  "22222222222222222222222222" ++ -- 65-90: A-Z
-  "555624" ++                     -- 91-96: [\\]^_`
-  "22222222222222222222222222" ++ -- 97-122: a-z
-  "55566";                        -- 123-127: {|}~, DEL
+  "666666666666666666" ++         // 14-31: control characters
+  "1" ++                          // 32: space
+  "546555455555555" ++            // 33-47: punctuation, including character quote
+  "3333333333" ++                 // 48-57: 0-9
+  "5555555" ++                    // 58-64: punctuation
+  "22222222222222222222222222" ++ // 65-90: A-Z
+  "555624" ++                     // 91-96: [\\]^_`
+  "22222222222222222222222222" ++ // 97-122: a-z
+  "55566";                        // 123-127: {|}~, DEL
 
 let codeAt = (text, index) => {
   charCodeAt(text, index)
@@ -36,13 +36,4 @@ let classify = (code) => {
   } else {
     classOther
   }
-};
-
---ASCII letter case checks (A-Z: 65-90, a-z: 97-122)
-let isUpperCode = (code) => {
-  code >= 65 && code <= 90
-};
-
-let isLowerCode = (code) => {
-  code >= 97 && code <= 122
 };

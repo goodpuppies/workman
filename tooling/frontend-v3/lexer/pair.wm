@@ -1,0 +1,161 @@
+from "../token.wm" import * as Token;
+from "../mark.wm" import * as Mark;
+from "./util.wm" import * as Util;
+
+record State = {
+  tokens: List<Token.Token>,
+  stack: List<(Number, Token.PairGroup)>,
+  index: Number,
+};
+
+let append = (state: State, tok) => {
+  // Ordinary punctuation pairs only matching stack tops. It remains authored syntax;
+  // the parser decides which missing structural slots are justified.
+  let mateStep = (tok, index, stack) => {
+    match(Token.pairRole(tok.kind)) {
+      Some(Token.PairRole(group, Token.Open)) => {(tok, [(index, group), ..stack])},
+      Some(Token.PairRole(group, Token.Close)) => {
+        if (group == Token.TemplateGroup || group == Token.InterpolationGroup) {
+          // A lexical mode boundary closes its own opener even when inner code
+          // contains unpaired brackets. Those authored brackets stay marked.
+          let rec closeMode = (stack) => {
+            match(stack) {
+              [(Var(openIndex), Var(openGroup)), ..rest] => {
+                if (openGroup == group) {
+                  (Token.Token { ..tok, mateIdx = Token.Mate(openIndex) }, rest)
+                } else {
+                  if (openGroup == Token.TemplateGroup || openGroup == Token.InterpolationGroup) {
+                    Panic("unreachable") // Modes must close in the order they were entered.
+                  } else {closeMode(rest)}
+                }
+              },
+              [] => {Panic("unreachable")} // Every mode closer is emitted from its open mode.
+            }
+          };
+          closeMode(stack)
+        } else {
+          match(stack) {
+            [(Var(openIndex), Var(openGroup)), ..rest] => {
+              if (openGroup == group) {
+                (Token.Token { ..tok, mateIdx = Token.Mate(openIndex) }, rest)
+              } else {(tok, stack)}
+            },
+            [] => {(tok, stack)}
+          }
+        }
+      },
+      None => {(tok, stack)}
+    }
+  };
+
+  let (tok, stack) = mateStep(tok, state.index, state.stack);
+  State([tok, ..state.tokens], stack, state.index + 1)
+};
+
+let finish = (reader: Util.Reader, state: State, eof) => {
+  // Pairing is complete before marks acquire final document-local IDs.
+  // Reader IDs are provisional and independent marks have no causal references.
+  // Matched intervals are nested. Walking backwards lets us stamp openers
+  // from a closing-token stack, without searching a table for every opener.
+  let rec reverseAndStamp = (tokens, index, pendingPairs, out) => {
+    match(tokens) {
+      [] => {
+        match(pendingPairs) {
+          [] => {out},
+          // Nonempty pending pairs would mean a recorded closer never reached its opener.
+          _ => {Panic("unreachable")}
+        }
+      },
+      [tok, ..rest] => {
+        let (tok, pendingPairs) = match(Token.pairRole(tok.kind), tok.mateIdx, pendingPairs) {
+          // All delimiter families and pending stacks use the closer's recorded opener.
+          (Some(Token.PairRole(_, Token.Close)), Token.Mate(openIndex), _) => {
+            if (openIndex < index) {
+              (tok, [(openIndex, index), ..pendingPairs])
+            } else {Panic("unreachable")} // Forward pairing only records earlier openers.
+          },
+          // The pending interval identifies its opener regardless of delimiter family.
+          (Some(Token.PairRole(_, Token.Open)), Token.NoMate, [(Var(openIndex), Var(closeIndex)), ..tail]) => {
+            if (openIndex == index) {
+              (Token.Token { ..tok, mateIdx = Token.Mate(closeIndex) }, tail)
+            } else {
+              // Unmatched openers may be visited first; a higher pending index would already be visited.
+              if (openIndex < index) {(tok, pendingPairs)} else {Panic("unreachable")}
+            }
+          },
+          // Openers of every family remain unpaired when no closer is pending.
+          (Some(Token.PairRole(_, Token.Open)), Token.NoMate, []) => {(tok, pendingPairs)},
+          // Unpaired closers and non-delimiters leave any pending intervals unchanged.
+          (Some(Token.PairRole(_, Token.Close)), Token.NoMate, _) => {(tok, pendingPairs)},
+          (None, Token.NoMate, _) => {(tok, pendingPairs)},
+          // Only closers receive mates during the forward pass.
+          // Paired openers and non-delimiters cannot occur in the forward result.
+          (Some(Token.PairRole(group, Token.Open)), Token.Mate(openIndex), _) => {Panic("unreachable")},
+          (None, Token.Mate(openIndex), _) => {Panic("unreachable")}
+        };
+        reverseAndStamp(rest, index - 1, pendingPairs, [tok, ..out])
+      }
+    }
+  };
+
+  let tokens = reverseAndStamp([eof, ..state.tokens], state.index, [], []);
+  let rec stampMarks = (marks, id, out, all) => {
+    match(marks) {
+      [] => {(List.reverse(out), id, all)},
+      [mark, ..rest] => {
+        match(mark.causedBy) {
+          None => {
+            let mark = Mark.Mark { ..mark, id = Mark.MarkId(id) };
+            stampMarks(rest, id + 1, [mark, ..out], [mark, ..all])
+          },
+          // No lexer reader creates causal links; introducing them requires ID remapping here.
+          Some(_) => {Panic("unreachable")}
+        }
+      }
+    }
+  };
+  let rec loop = (tokens, id, out, all) => {
+    match(tokens) {
+      [] => {Token.LexicalDocument(List.reverse(out), List.reverse(all))},
+      [token, ..rest] => {
+        let rec stampTrivia = (trivia, id, out, all) => {
+          match(trivia) {
+            [] => {(List.reverse(out), id, all)},
+            [item, ..rest] => {
+              let item: Token.Trivia = item;
+              let (marks, id, all) = stampMarks(item.marks, id, [], all);
+              stampTrivia(rest, id, [Token.Trivia { ..item, marks = marks }, ..out], all)
+            }
+          }
+        };
+        let (trivia, id, all) = stampTrivia(token.leadingTrivia, id, [], all);
+        let marks = match(Token.pairRole(token.kind), token.mateIdx) {
+          (Some(Token.PairRole(group, side)), Token.NoMate) => {
+            let (problem, endIndex) = match(token.kind) {
+              Token.MultilineStringStartToken => {(Token.UnterminatedMultilineString, reader.length)},
+              Token.InterpolationStartToken => {(Token.UnterminatedInterpolation, reader.length)},
+              // Other unpaired delimiters are ordinary authored punctuation, not open lexer modes.
+              _ => {(Token.UnmatchedDelimiter(group, side), token.span.endPos.index)}
+            };
+            [Mark.Mark(
+              Mark.MarkId(id), problem,
+              Mark.RecoveredWith(Token.RetainedUnpairedDelimiter),
+              Mark.SourceOffset(token.span.startPos.index),
+              Mark.SourceSpan(
+                Mark.SourceOffset(token.span.startPos.index), Mark.SourceOffset(endIndex)
+              ), None
+            ), ..token.marks]
+          },
+          // Paired delimiters and non-delimiters need no missing-pair mark.
+          (Some(Token.PairRole(group, side)), Token.Mate(index)) => {token.marks},
+          (None, Token.NoMate) => {token.marks},
+          // Non-delimiters cannot have mates assigned by pairing.
+          (None, Token.Mate(index)) => {Panic("unreachable")}
+        };
+        let (marks, id, all) = stampMarks(marks, id, [], all);
+        loop(rest, id, [Token.Token { ..token, marks = marks, leadingTrivia = trivia }, ..out], all)
+      }
+    }
+  };
+  loop(tokens, 0, [], [])
+};
