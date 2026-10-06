@@ -33,10 +33,9 @@ import {
   type TypeProvenance,
   type TypeSource,
 } from "./provenance.ts";
-import { callArg } from "./shared.ts";
 import { carrierContext, type CarrierPeel, peelCarrier, rewrapCarrier } from "./carriers.ts";
 import { inferExpr } from "./expr.ts";
-import { callArity } from "./expr_call.ts";
+import { inferApplication } from "./expr_call.ts";
 import { pipeInvocationPlan } from "../pipe_elaboration.ts";
 import { inferDomainInvocation } from "./invocation.ts";
 import {
@@ -413,8 +412,9 @@ function wrapBinaryCarrierResult(
         sources: {
           right: {
             origin: {
-              message:
-                `${carrier.info.name} carries ${quoteType(carrier.registration.payloadType!)}`,
+              message: `${carrier.info.name} carries ${
+                quoteType(carrier.registration.payloadType!)
+              }`,
             },
           },
         },
@@ -561,160 +561,5 @@ export function inferPipe(
   context: InferContext,
 ): Ty {
   const invocation = pipeInvocationPlan(expr);
-  const domainResult = inferDomainInvocation(invocation, context);
-  if (domainResult !== undefined) return domainResult;
-
-  const { facts, provenance } = context;
-  const leftType = inferExpr(expr.left, context);
-  recordConsumedFfiUse(facts, leftType, {
-    kind: "pipe",
-    message:
-      "cannot pipe unresolved JS FFI result before FFI reflection resolves the member access",
-  });
-  const right = expr.right;
-
-  if (invocation.mode === "pipe-curried-stage") {
-    const calleeType = inferExpr(right, context);
-    const result = constrainPipe(
-      expr,
-      calleeType,
-      leftType,
-      provenance,
-      right,
-      [expr.left],
-      [leftType],
-    );
-    recordExprFact(facts, right, {
-      subject: "expr",
-      instantiated: fn([leftType], result),
-    });
-    return result;
-  }
-
-  if (invocation.mode === "pipe-insert" && right.kind === "Call") {
-    const calleeType = inferExpr(right.callee, context);
-    const expectedInput = prune(calleeType);
-    if (expectedInput.tag === "fn" && expectedInput.params.length === 1) {
-      const expectedArgs = prune(expectedInput.params[0]);
-      if (
-        expectedArgs.tag === "tuple" &&
-        expectedArgs.items.length === right.args.length + 1
-      ) {
-        right.args.forEach((arg, index) =>
-          recordExpectedExprType(facts, arg, expectedArgs.items[index + 1])
-        );
-      }
-    }
-    const argTypes = right.args.map((a) => inferExpr(a, context));
-    const allArgs = [leftType, ...argTypes];
-    const argType = callArg(allArgs);
-    const result = constrainPipe(
-      expr,
-      calleeType,
-      argType,
-      provenance,
-      right.callee,
-      [expr.left, ...right.args],
-      [leftType, ...argTypes],
-    );
-    recordExprFact(facts, right.callee, {
-      subject: "expr",
-      instantiated: fn([argType], result),
-    });
-    return result;
-  }
-
-  const calleeType = inferExpr(right, context);
-  const result = constrainPipe(
-    expr,
-    calleeType,
-    leftType,
-    provenance,
-    right,
-    [expr.left],
-    [leftType],
-  );
-  recordExprFact(facts, right, {
-    subject: "expr",
-    instantiated: fn([leftType], result),
-  });
-  return result;
-}
-
-function constrainPipe(
-  expr: Extract<Expr, { kind: "Pipe" }>,
-  calleeType: Ty,
-  argType: Ty,
-  provenance: TypeProvenance,
-  callee: Expr,
-  argExprs: Expr[],
-  argTypes: Ty[],
-): Ty {
-  const result = fresh();
-  const expected = fn([argType], result);
-  constrainAt(
-    calleeType,
-    expected,
-    expr,
-    undefined,
-    [],
-    provenance,
-    {
-      message: callee.kind === "Var" ? `${callee.name} pipe` : "pipe",
-      node: expr.node,
-      span: expr.node?.span,
-      primary: true,
-      expectedCallTupleShape: callArity(argType),
-      actualCallTupleShape: callArity(argType),
-      callDepth: 0,
-    },
-    {
-      premise: {
-        code: "type.pipe-input-mismatch",
-        rule: "InferPipe.StepInput",
-        role: "pipe output matches next function input",
-        subject: callee.kind === "Var" ? callee.name : "pipe",
-        leftRole: "callee",
-        rightRole: "pipe function",
-      },
-      sources: {
-        left: sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
-        right: fnSource(
-          [callArgSource(argExprs, argTypes, provenance)],
-          sourceForExpr(expr, "pipe result"),
-        ),
-      },
-      context: (path) => pipeContext(callee, path),
-    },
-  );
-  return result;
-}
-
-function callArgSource(args: Expr[], types: Ty[], provenance: TypeProvenance) {
-  if (args.length === 1) return sourceForTypedExpr(args[0], types[0], provenance, "piped value");
-  return tupleSource(
-    args.map((arg, index) =>
-      sourceForTypedExpr(
-        arg,
-        types[index],
-        provenance,
-        index === 0 ? "piped value" : `argument ${index}`,
-      )
-    ),
-  );
-}
-
-function pipeContext(callee: Expr, path: import("../type_diff.ts").DiffPath): string | undefined {
-  const name = callee.kind === "Var" ? callee.name : "pipe";
-  const param = path[0];
-  if (!param || param.kind !== "fn-param" || param.index !== 0) return name;
-  const tupleItem = path[1];
-  const afterTuple = tupleItem?.kind === "tuple-item" ? path.slice(2) : path.slice(1);
-  const source = tupleItem?.kind === "tuple-item" && tupleItem.index > 0
-    ? `argument ${tupleItem.index}`
-    : "piped value";
-  if (afterTuple.some((segment) => segment.kind === "fn-result")) {
-    return `${name} callback result`;
-  }
-  return `${name} ${source}`;
+  return inferDomainInvocation(invocation, context) ?? inferApplication(invocation, context);
 }

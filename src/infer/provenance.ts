@@ -822,8 +822,22 @@ function originForSource(source: TypeSource | undefined): ConstraintOrigin | und
   const derivedFrom = (source.derivedFrom ?? [])
     .map((derived) => originForSource(inheritSourceDocument(source, derived)))
     .filter((item): item is ConstraintOrigin => !!item);
+  // A deferred projection can commit after a lambda's source shape was captured.
+  // Read that commitment when constructing the collision, not only at capture time.
+  const committed = source.type && source.provenance
+    ? commitmentOriginForType(source.type, source.provenance)
+    : undefined;
+  if (
+    committed && containsProjectionOrigin(committed) && (committed.message !== origin?.message ||
+      committed.span?.start !== origin?.span?.start)
+  ) derivedFrom.push(committed);
   if (!origin) return derivedFrom[0];
   return derivedFrom.length > 0 ? { ...origin, derivedFrom } : origin;
+}
+
+function containsProjectionOrigin(origin: ConstraintOrigin): boolean {
+  return origin.message.startsWith("record projection ") ||
+    (origin.derivedFrom ?? []).some(containsProjectionOrigin);
 }
 
 function childSource(source: TypeSource, segment: DiffPathSegment): TypeSource | undefined {
@@ -929,9 +943,7 @@ function commitmentOriginWithDownstream(
   provenance: TypeProvenance | undefined,
 ): ConstraintOrigin | undefined {
   if (!commitment) return;
-  const downstream = provenance
-    ? commitmentOriginForType(commitment.type, provenance)
-    : undefined;
+  const downstream = provenance ? commitmentOriginForType(commitment.type, provenance) : undefined;
   if (!commitment.origin) return downstream;
   return downstream
     ? {

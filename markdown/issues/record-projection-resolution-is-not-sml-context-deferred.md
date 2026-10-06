@@ -1,6 +1,9 @@
 # Issue: Record Projection Resolution Is Eager Instead of SML Context-Deferred
 
-Status: open
+Status: open; historical proposal, partially implemented. The current behavior and annotation
+policy are tracked in [the current-state issue](nominal-projection-context-needs-honest-elaboration.md).
+The proposed removal of all early annotation disambiguation below is not an accepted requirement:
+annotations may legitimately select an owner when ordinary constraints leave multiple possibilities.
 
 Written on 2026-09-28 while deciding how the inference-order issues should be fixed. The decision:
 inference order follows SML, so SML semantics are preserved. This issue supersedes the approach
@@ -148,3 +151,19 @@ type error: first([B("x", 1)]) can't be both:
 - An annotation of `List<A>` with a body that constructs `B` still reports a mismatch.
 - Close `lambda-parameter-annotation-does-not-provide-equality-evidence.md` with a regression test
   for its reproduction, since it already passes.
+
+## Current implementation (2026-10-06)
+
+Calls and pipes share application inference, and receiver obligations wait for ordinary
+constraints through a top-level declaration. The atview callback clash and pakman branch
+clash are fixed. Pakman's resolve function infers the same type with its Option<LockEntry>
+parameter annotation present or removed.
+
+Unresolved labels retain the compatibility first-owner default and warning. Bare nominal
+parameter annotations remain valid disambiguation when the computation genuinely permits
+several owners; they must not override an incompatible identity determined by the computation.
+The complete no-default proposal above remains a separate language-policy decision, not a
+requirement for the current fixes.
+
+See [the current-state issue](nominal-projection-context-needs-honest-elaboration.md) for
+implementation boundaries, validation and the SML/Grain comparison.

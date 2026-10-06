@@ -279,6 +279,17 @@ Deno.test("local value and Workman namespace alias occupy separate namespaces", 
   await checkVirtual("/test/main.wm", virtualFs);
 });
 
+Deno.test("Workman namespace calls survive a same-named local JS receiver", async () => {
+  const virtualFs = new Map<string, string>([
+    ["/test/lib.wm", "let value = 1; let add = (x) => { x + value };"],
+    [
+      "/test/main.wm",
+      'from "./lib.wm" import * as lib; let lib = "hello"; let x = lib.add(lib.value);',
+    ],
+  ]);
+  await checkVirtual("/test/main.wm", virtualFs);
+});
+
 Deno.test("file elaboration exports declarations by default", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "let hidden = 1; type Box<T> = | Box<T>; let shown = Box(hidden);"],

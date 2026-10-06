@@ -7,6 +7,7 @@ import {
   compile,
   compileVirtual,
 } from "../src/compiler.ts";
+import { show } from "../src/types.ts";
 import { expectBinding, expectStepBinding, expectStepMissing } from "./type_helpers.ts";
 
 Deno.test("nominal records infer construction and field access", async () => {
@@ -412,7 +413,7 @@ Deno.test("ambiguous record projection chooses the first identity and warns for 
   ]);
   assertStringIncludes(result.warnings[0], "using first record type Point");
   assertStringIncludes(result.warnings[0], "Candidates: Point, Offset");
-  assertStringIncludes(result.warnings[0], "annotate the receiver, binding, or parameter");
+  assertStringIncludes(result.warnings[0], "provide a constructor or use");
 
   await assertRejects(
     () =>
@@ -588,4 +589,39 @@ Deno.test("unknown dotted fields cannot escape as structural nominal casts", asy
     Error,
     "unknown record field mystery",
   );
+});
+
+Deno.test("ordinary branch constraints resolve nominal projections with annotations erased", async () => {
+  for (const annotation of ["", ": Option<LockEntry>"]) {
+    const result = await checkSource(`
+record Candidate = { version: String, published: String };
+record LockEntry = { name: String, version: String };
+let keep = (locked${annotation}, version) => {
+  match(locked) {
+    Some(entry) => {
+      if (entry.version == version) { Task.succeed(entry) }
+      else { Task.fail("different") :> Task.map((_) => { LockEntry("n", version) }) }
+    },
+    None => { Task.succeed(LockEntry("n", version)) },
+  }
+};`);
+    assertEquals(result.diagnostics, []);
+    assertEquals(result.warnings.some((message) => message.includes("ambiguous record")), false);
+    assertStringIncludes(show(result.env.get("keep")!.type), "Option<LockEntry>");
+  }
+});
+
+Deno.test("pending projections do not escape generalization or lose generic record arguments", async () => {
+  const result = await checkSource(`
+record First<T> = { value: T };
+record Second<T> = { value: T };
+let get = (item) => { item.value };
+let n: Number = get(First(1));
+let s: String = get(First("hi"));
+let use = (items) => {
+  let read = (item) => { item.value };
+  let values = List.map(items, read);
+  (values, Second("evidence"))
+};`);
+  assertEquals(result.env.get("get")!.vars.length, 1);
 });

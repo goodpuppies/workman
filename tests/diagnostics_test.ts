@@ -332,6 +332,29 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   assertStringIncludes(rendered, "-- Origins");
 });
 
+Deno.test("pipe mismatch explains a separately bound nominal callback's projection", async () => {
+  const source = `record ProfileCore = { did: String, handle: String };
+record ActorCore = { did: String, handle: String };
+type Actor = | Actor<String, String>;
+let input: Result<ActorCore, Js.Error> = Err(Js.Unknown);
+let toActor = (core) => { Actor(core.did, core.handle) };
+let bad = input :> Result.map(toActor);`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  assertEquals(error.diagnostic.code, "type.pipe-input-mismatch");
+  for (
+    const rendered of [
+      formatDiagnostic(error.diagnostic, "projection.wm", source),
+      formatDiagnosticInspection(error.diagnostic, "projection.wm", source),
+    ]
+  ) {
+    assertStringIncludes(rendered, "core.did");
+    assertStringIncludes(rendered, "ambiguous record projection did");
+    assertStringIncludes(rendered, "ProfileCore, ActorCore");
+    assertStringIncludes(rendered, "ActorCore");
+  }
+  await checkSource(source.replace("(core) =>", "(core: ActorCore) =>"));
+});
+
 Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
   const source = 'let inc = (x: Number) => { x + 1 };\nlet bad = inc("no");';
   const error = await assertRejects(

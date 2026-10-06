@@ -1,4 +1,5 @@
 import { assertEquals, assertNotStrictEquals, assertStrictEquals } from "@std/assert";
+import { hoverAt } from "../src/lsp/hover.ts";
 import { SemanticService } from "../src/lsp/semantic_service.ts";
 import { ProjectIndex } from "../src/lsp/project_index.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
@@ -187,4 +188,35 @@ Deno.test("editing a dependency dropped by recovery invalidates its stale headed
     after.flatMap(({ diagnostics }) => diagnostics.map(({ code }) => code)),
     ["type.mismatch"],
   );
+});
+
+Deno.test("unannotated hover leaves live snapshots intact and refreshes after edits", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = `${dir}/main.wm`;
+    const uri = pathToFileUri(path);
+    const overrides = new Map([[path, "let id: Number -> Number = (x) => { x };"]]);
+    const index = new ProjectIndex();
+    await index.refreshFile(path, overrides);
+    const service = new SemanticService(index.discovery, {
+      sourceOverrides: () => overrides,
+      frontendOptions: () => ({}),
+    });
+    const before = await service.documentContext(uri);
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const hover = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
+      assertEquals(
+        hover?.contents.value,
+        "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```",
+      );
+      assertStrictEquals((await service.documentContext(uri))?.project, before?.project);
+    }
+    overrides.set(path, "let id: Number -> Number = (x) => { x + 1 };");
+    await service.invalidatePaths([path]);
+    const after = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
+    assertEquals(after?.contents.value, "```wm\nid: Number -> Number\n```");
+    assertNotStrictEquals((await service.documentContext(uri))?.project, before?.project);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });

@@ -32,7 +32,7 @@ import {
 export function inferLambdaTy(
   expr: Extract<Expr, { kind: "Lambda" }>,
   context: InferContext,
-  paramHints?: Ty[],
+  paramHints?: (Ty | undefined)[],
 ): Ty {
   const { env, typeEnv, strEnv, adts, types, facts, provenance } = context;
   const local = new Map(env);
@@ -70,7 +70,7 @@ export function inferLambdaTy(
     inferParam(p, local, typeEnv, strEnv, adts, binders, facts, provenance)
   );
   paramHints?.forEach((hint, index) => {
-    if (index < params.length) {
+    if (hint && index < params.length) {
       constrainAt(params[index], hint, expr.params[index], undefined, [], provenance, {
         message: "parameter hint",
         node: expr.params[index].node,
@@ -146,30 +146,37 @@ export function inferLambdaTy(
     const checkedParam = dialect.domain === "gpu"
       ? substituteTypeVars(params[index], new Map())
       : params[index];
-    constrainAt(
-      checkedParam,
-      annotated,
-      param,
-      () => `type mismatch ${quoteType(annotated)}, got ${quoteType(params[index])}`,
-      [],
-      provenance,
-      {
-        message: "parameter annotation",
-        node: param.node,
-        span: param.node?.span,
-      },
-      {
-        premise: {
-          rule: "InferAnnotation.ParameterMatchesAnnotation",
-          role: "parameter matches annotation",
-          subject: "parameter annotation",
-          leftRole: "parameter",
-          rightRole: "annotation",
+    const checkAnnotation = () => {
+      constrainAt(
+        checkedParam,
+        annotated,
+        param,
+        () => `type mismatch ${quoteType(annotated)}, got ${quoteType(params[index])}`,
+        [],
+        provenance,
+        {
+          message: "parameter annotation",
+          node: param.node,
+          span: param.node?.span,
         },
-      },
-    );
+        {
+          premise: {
+            rule: "InferAnnotation.ParameterMatchesAnnotation",
+            role: "parameter matches annotation",
+            subject: "parameter annotation",
+            leftRole: "parameter",
+            rightRole: "annotation",
+          },
+        },
+      );
+    };
+    if (dialect.domain !== "gpu" && context.pendingProjections?.length) {
+      (context.pendingAnnotationChecks ??= []).push(checkAnnotation);
+    } else {
+      checkAnnotation();
+      if (dialect.domain !== "gpu") signatureParams[index] = annotated;
+    }
     if (dialect.domain === "gpu") deferGpuAnnotationCheck(params[index], annotated);
-    if (dialect.domain !== "gpu") signatureParams[index] = annotated;
   });
   const replacements = new Map<number, Ty>();
   params.forEach((param, index) => {
@@ -402,4 +409,31 @@ function replaceParamOccurrences(type: Ty, replacements: Map<number, Ty>): Ty {
     };
   }
   return resolved;
+}
+
+// Context narrows nominal projections; foreign reflection and GPU overloads retain
+// their own rules for whether an annotation supplies usable representation evidence.
+export function contextualLambdaParams(
+  expr: Extract<Expr, { kind: "Lambda" }>,
+  expected: Ty | undefined,
+  context: InferContext,
+): (Ty | undefined)[] | undefined {
+  if (
+    !expected || context.dialect.domain === "gpu" ||
+    lambdaTypingDialect(expr, context.dialect).domain === "gpu"
+  ) return undefined;
+  const target = prune(expected);
+  if (target.tag !== "fn" || target.params.length !== 1) return undefined;
+  const input = prune(target.params[0]);
+  const items = expr.params.length === 1
+    ? [target.params[0]]
+    : input.tag === "tuple" && input.items.length === expr.params.length
+    ? input.items
+    : [];
+  return items.map((item) => {
+    const type = prune(item);
+    return type.tag === "named" && typeInfoById(context.typeEnv, type.id)?.recordFields
+      ? item
+      : undefined;
+  });
 }

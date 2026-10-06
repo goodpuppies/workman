@@ -19,6 +19,18 @@ import { rewriteDeclCalls } from "./rewrite_decl.ts";
 import { type FfiBinding, type FfiVariant, refsForCallbackArg } from "../shared.ts";
 
 let activeRecordFields = new Set<string>();
+let activeWorkmanNamespaces = new Set<string>();
+
+export function setActiveWorkmanNamespaces(names: Set<string>): Set<string> {
+  const previous = activeWorkmanNamespaces;
+  activeWorkmanNamespaces = names;
+  return previous;
+}
+
+function isWorkmanQualifiedName(name: string): boolean {
+  const separator = name.indexOf(".");
+  return separator > 0 && activeWorkmanNamespaces.has(name.slice(0, separator));
+}
 
 export function setActiveRecordFields(fields: Set<string>): Set<string> {
   const previous = activeRecordFields;
@@ -183,6 +195,9 @@ export function rewriteExprCalls(
       };
     }
     case "Var": {
+      // Structure and value namespaces are independent. A local receiver with the same
+      // spelling must not turn authored Workman qualification into JavaScript access.
+      if (isWorkmanQualifiedName(expr.name)) return expr;
       const member = localDottedMember(expr.name, objectAccess);
       if (member) {
         return rewrite({
@@ -206,6 +221,9 @@ export function rewriteExprCalls(
     }
     case "Call": {
       if (expr.callee.kind === "Var") {
+        if (isWorkmanQualifiedName(expr.callee.name)) {
+          return { ...expr, args: expr.args.map(rewrite) };
+        }
         const member = localDottedMember(expr.callee.name, objectAccess);
         if (member) {
           return rewrite({

@@ -157,3 +157,13 @@ They should eventually be replaced by explicitly foreign delayed-member obligati
   promising arbitrary structural record interfaces.
 - Consider constrained nominal polymorphism later if real programs need types such as
   `HasField<R, fn, F> => R -> F`. This is not part of the current record model.
+
+## Contextual application workaround
+
+Calls and pipes now share application inference. Earlier arguments constrain the
+signature before later inline callbacks are checked, allowing a known nominal input
+to resolve callback record projections without an annotation. This improves the common
+case. Remaining receiver obligations wait through the enclosing top-level declaration;
+unresolved labels then retain the first-owner fallback and warning. See the detailed
+[open elaboration issue](issues/nominal-projection-context-needs-honest-elaboration.md)
+for the limitations and proposed replacement.

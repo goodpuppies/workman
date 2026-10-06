@@ -15,6 +15,9 @@ export type Ty =
     jsConstraint?: (t: Ty) => void;
     gpuConstraint?: (t: Ty) => void;
     equalityConstraint?: (t: Ty) => void;
+    projectionConstraint?: (t: Ty) => void;
+    projectionOwners?: Set<number>;
+    pendingProjection?: () => boolean;
   }
   | {
     tag: "ffi";
@@ -63,6 +66,7 @@ export type Scheme = {
   constructorDecl?: CtorDecl;
   node?: AstNode;
   preserveStructuralRows?: boolean;
+  finalizeGeneralization?: () => void;
 };
 export type TypeProvenanceNote = {
   message: string;
@@ -254,6 +258,16 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
   if (a === b) return;
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
+    if (b.tag === "var" && a.projectionOwners) {
+      b.projectionOwners = b.projectionOwners
+        ? new Set([...b.projectionOwners].filter((id) => a.projectionOwners!.has(id)))
+        : a.projectionOwners;
+    }
+    if (b.tag === "var" && a.pendingProjection) {
+      const previous = b.pendingProjection;
+      const pending = a.pendingProjection;
+      b.pendingProjection = () => !!previous?.() || !!pending();
+    }
     a.instance = b;
     if (a.jsConstraint) {
       if (b.tag === "var") addJsConstraint(b, a.jsConstraint);
@@ -267,6 +281,7 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
       if (b.tag === "var") addEqualityConstraint(b, a.equalityConstraint);
       else a.equalityConstraint(b);
     }
+    if (a.projectionConstraint) addProjectionConstraint(b, a.projectionConstraint);
     onBind?.(a, b, path, "right");
     return;
   }
@@ -282,6 +297,7 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     if (b.equalityConstraint) {
       b.equalityConstraint(a);
     }
+    if (b.projectionConstraint) addProjectionConstraint(a, b.projectionConstraint);
     onBind?.(b, a, path, "left");
     return;
   }
@@ -441,6 +457,21 @@ export function addEqualityConstraint(target: Ty, check: (t: Ty) => void): void 
     : check;
 }
 
+export function addProjectionConstraint(target: Ty, check: (t: Ty) => void): void {
+  const t = prune(target);
+  if (t.tag !== "var") {
+    check(t);
+    return;
+  }
+  const previous = t.projectionConstraint;
+  t.projectionConstraint = previous
+    ? (bound) => {
+      previous(bound);
+      check(bound);
+    }
+    : check;
+}
+
 export function solveFfi(ffi: Ty, target: Ty): void {
   const placeholder = prune(ffi);
   if (placeholder.tag !== "ffi") {
@@ -518,13 +549,37 @@ export function generalize(env: Env, type: Ty): Scheme {
   // constraints are verification callbacks which are copied to each fresh instantiation.
   const boundary = jsConstrainedVarIds(type);
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
-  return { vars, type, constraints: [] };
+  const scheme: Scheme = { vars, type, constraints: [] };
+  if (hasPendingProjection(type)) {
+    const capturedEnv = new Map(env);
+    scheme.finalizeGeneralization = () => {
+      const blocked = jsConstrainedVarIds(type);
+      const capturedVars = ftvEnv(capturedEnv);
+      scheme.vars.splice(
+        0,
+        scheme.vars.length,
+        ...[...ftv(type)].filter((id) => !capturedVars.has(id) && !blocked.has(id)),
+      );
+      scheme.finalizeGeneralization = undefined;
+    };
+  }
+  return scheme;
+}
+
+function hasPendingProjection(type: Ty): boolean {
+  const t = prune(type);
+  if (t.tag === "var") return !!t.projectionConstraint || !!t.pendingProjection?.();
+  if (t.tag === "fn") return t.params.some(hasPendingProjection) || hasPendingProjection(t.result);
+  if (t.tag === "tuple") return t.items.some(hasPendingProjection);
+  if (t.tag === "named") return t.args.some(hasPendingProjection);
+  if (t.tag === "struct") return t.fields.some((field) => hasPendingProjection(field.type));
+  return false;
 }
 
 function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
   const t = prune(type);
   if (t.tag === "var") {
-    if (t.jsConstraint) acc.add(t.id);
+    if (t.jsConstraint || t.projectionConstraint || t.pendingProjection?.()) acc.add(t.id);
     return acc;
   }
   if (t.tag === "fn") {

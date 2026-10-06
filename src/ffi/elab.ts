@@ -6,7 +6,11 @@ import { setActiveJsReflectionBasePath } from "./reflect/host.ts";
 import { collectFfiDecl, generatedJsImports, generatedTypeAliases } from "./imports.ts";
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver/receiver.ts";
 import { rewriteDeclCalls } from "./receiver/rewrite_decl.ts";
-import { rewriteExprCalls, setActiveRecordFields } from "./receiver/rewrite_expr.ts";
+import {
+  rewriteExprCalls,
+  setActiveRecordFields,
+  setActiveWorkmanNamespaces,
+} from "./receiver/rewrite_expr.ts";
 import { recordFieldNamesInDecls } from "./record_fields.ts";
 import {
   type FfiBinding,
@@ -27,12 +31,20 @@ export function prepareFfiElaboration(
   const previousRecordFields = setActiveRecordFields(
     recordFieldNamesInDecls(module.decls, options.importedRecordFields),
   );
+  const previousNamespaces = setActiveWorkmanNamespaces(
+    new Set(
+      module.decls.flatMap((decl) =>
+        decl.kind === "ImportDecl" && decl.clause.kind === "Namespace" ? [decl.clause.alias] : []
+      ),
+    ),
+  );
   const previousReflectionBasePath = setActiveJsReflectionBasePath(options.filePath);
   try {
     return prepareFfiElaborationInner(module);
   } finally {
     setActiveJsReflectionBasePath(previousReflectionBasePath);
     setActiveRecordFields(previousRecordFields);
+    setActiveWorkmanNamespaces(previousNamespaces);
   }
 }
 

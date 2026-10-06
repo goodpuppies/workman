@@ -29,7 +29,7 @@ import {
 } from "./provenance.ts";
 import { inferDottedVar, inferRecordExpr } from "./records.ts";
 import { ffiGetResultTy, inferCall } from "./expr_call.ts";
-import { inferLambdaTy } from "./expr_lambda.ts";
+import { contextualLambdaParams, inferLambdaTy } from "./expr_lambda.ts";
 import {
   ffiCallbackParamHints,
   jsArrayFfiCallValue,
@@ -110,6 +110,8 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
             facts,
             warnings,
             diagnostics,
+            provenance,
+            pendingProjections: context.pendingProjections ??= [],
           }, expected);
         break;
       }
@@ -294,6 +296,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       t = inferLambdaTy(
         expr,
         context,
+        contextualLambdaParams(expr, expected, context),
       );
       break;
     case "Call":

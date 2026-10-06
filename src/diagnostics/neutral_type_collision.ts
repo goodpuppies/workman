@@ -21,8 +21,8 @@ import {
   plainDocument,
   plainText,
   type SemanticRole,
-  span,
   type Span,
+  span,
   terminalWidth,
 } from "../../tooling/tuiman/document.ts";
 
@@ -258,6 +258,9 @@ function renderNeutralTypeCollision(
       sectionHeader("Origins", columnWidth, availableWidth),
       "",
       ...renderAdaptiveColumns(originColumns, columnWidth, availableWidth),
+      ...originNotes(diagnostic, [leftDisplayOrigin, rightDisplayOrigin]).map((note) =>
+        `  ${note}`
+      ),
       "",
       sectionHeader("Provenance", columnWidth, availableWidth),
       "",
@@ -409,10 +412,35 @@ function compactCollisionDocument(
       fitsSideBySide ? sideBySide : renderStackedDocumentCells(leftCell, rightCell, !tiny)
     ),
   );
+  lines.push(
+    ...originNotes(diagnostic, [leftOrigin, rightOrigin]).map((note) =>
+      documentLine(span(`  ${note}`, "hint"))
+    ),
+  );
   lines.push(documentLine(
     span(`- use wm err ${relativeFile(filePath)} to see a more detailed error`, "hint"),
   ));
   return { lines };
+}
+
+function originNotes(
+  diagnostic: AuditableDiagnostic,
+  claims: (ClaimEntry | undefined)[],
+): string[] {
+  return [
+    ...new Set(diagnostic.support.entries.flatMap((entry) => {
+      if (entry.kind !== "note" || entry.origin.kind !== "source") return [];
+      const anchor = entry.origin;
+      return claims.some((claim) =>
+          claim?.origin.kind === "source" &&
+          claim.origin.filePath === anchor.filePath &&
+          claim.origin.span.start === anchor.span.start &&
+          claim.origin.span.end === anchor.span.end
+        )
+        ? [entry.message]
+        : [];
+    })),
+  ];
 }
 
 /** Participants are ordered per adapter, so pick the side by its rendered type, not by position. */
@@ -1169,12 +1197,10 @@ function renderCompactExcerpt(
   const minimumCode = tiny ? 8 : 12;
   const hoistLocation = availableWidth !== undefined &&
     gutter.length + minimumCode + 2 + location.length > availableWidth;
-  const codeBudget = availableWidth === undefined
-    ? undefined
-    : Math.max(
-      minimumCode,
-      availableWidth - gutter.length - (hoistLocation ? 0 : location.length + 2),
-    );
+  const codeBudget = availableWidth === undefined ? undefined : Math.max(
+    minimumCode,
+    availableWidth - gutter.length - (hoistLocation ? 0 : location.length + 2),
+  );
   if (codeBudget !== undefined && line.length > codeBudget) {
     const context = tiny ? 0 : 3;
     const marker = "..";

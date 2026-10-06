@@ -1,3 +1,5 @@
+import { callInvocationPlan, type InvocationPlan } from "../pipe_elaboration.ts";
+import { FrontendDiagnosticError } from "../diagnostics.ts";
 import type { Expr } from "../ast.ts";
 import {
   addJsConstraint,
@@ -19,6 +21,7 @@ import {
   constrainAt,
   type EvidenceOrigin,
   fnSource,
+  sourceForExpr,
   sourceForTypedExpr,
   tupleSource,
   type TypeProvenance,
@@ -33,41 +36,121 @@ export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
   context: InferContext,
 ): Ty {
+  return inferApplication(callInvocationPlan(expr), context);
+}
+
+export function inferApplication(invocation: InvocationPlan, context: InferContext): Ty {
+  const expr = invocation.occurrence;
+  const calleeExpr = invocation.callee;
+  const args = [...invocation.args];
+  const isPipe = expr.kind === "Pipe";
   const { env, typeEnv, types, facts, provenance } = context;
   const result = fresh();
-  const isPrintCall = expr.callee.kind === "Var" && expr.callee.name === "print";
-  const callee = inferExpr(expr.callee, context);
-  const calleeProvenance = expr.callee.kind === "Var"
-    ? (env.get(expr.callee.name)?.provenance ?? [])
+  const isPrintCall = calleeExpr.kind === "Var" && calleeExpr.name === "print";
+  const callee = inferExpr(calleeExpr, context);
+  const calleeProvenance = calleeExpr.kind === "Var"
+    ? (env.get(calleeExpr.name)?.provenance ?? [])
     : [];
   const calleeFn = prune(callee);
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
     const expectedArg = prune(calleeFn.params[0]);
-    if (expr.args.length === 1) {
-      recordExpectedExprType(facts, expr.args[0], expectedArg);
-    } else if (expectedArg.tag === "tuple" && expectedArg.items.length === expr.args.length) {
-      expr.args.forEach((arg, index) =>
-        recordExpectedExprType(facts, arg, expectedArg.items[index])
-      );
+    if (args.length === 1) {
+      recordExpectedExprType(facts, args[0], expectedArg);
+    } else if (expectedArg.tag === "tuple" && expectedArg.items.length === args.length) {
+      args.forEach((arg, index) => recordExpectedExprType(facts, arg, expectedArg.items[index]));
     }
   }
   const expectedArgs = calleeFn.tag === "fn" && calleeFn.params.length === 1
-    ? contextualCallArguments(calleeFn.params[0], expr.args.length)
+    ? contextualCallArguments(calleeFn.params[0], args.length)
     : [];
-  const argTypes = expr.args.map((arg, index) => inferExpr(arg, context, expectedArgs[index]));
-  for (const argType of argTypes) {
-    recordConsumedFfiUse(facts, argType, {
-      kind: "call",
-      message:
-        "cannot pass unresolved JS FFI result as a call argument before FFI reflection resolves the member access",
+  const argTypes: Ty[] = [];
+  for (const [index, argument] of args.entries()) {
+    const argumentType = inferExpr(argument, context, expectedArgs[index]);
+    recordConsumedFfiUse(facts, argumentType, {
+      kind: isPipe && index === 0 ? "pipe" : "call",
+      message: isPipe && index === 0
+        ? "cannot pipe unresolved JS FFI result before FFI reflection resolves the member access"
+        : "cannot pass unresolved JS FFI result as a call argument before FFI reflection resolves the member access",
     });
+    argTypes.push(argumentType);
+    // Establish earlier arguments before checking later callbacks. The final
+    // whole-application constraint still owns the authored collision diagnostic.
+    if (index < args.length - 1 && expectedArgs[index]) {
+      const actual = calleeExpr.kind === "Var" && env.get(calleeExpr.name)?.jsImport
+        ? jsImportActualArg(expectedArgs[index]!, argumentType, typeEnv)
+        : argumentType;
+      const parameterSource = sourceForTypedExpr(calleeExpr, callee, provenance).fnParams?.[0];
+      const slotSource = parameterSource?.tupleItems?.[index] ?? parameterSource;
+      try {
+        constrainAt(expectedArgs[index]!, actual, argument, undefined, [], provenance, {
+          message: "call argument",
+          node: argument.node,
+          span: argument.node?.span,
+        }, {
+          sources: {
+            left: slotSource,
+            right: sourceForTypedExpr(argument, argumentType, provenance, "call argument"),
+          },
+        });
+      } catch (error) {
+        if (!(error instanceof FrontendDiagnosticError)) throw error;
+        const partial = [...argTypes, ...args.slice(index + 1).map(() => fresh())];
+        if (isPipe) {
+          return constrainPipe(
+            expr,
+            callee,
+            callArg(partial),
+            provenance,
+            calleeExpr,
+            args,
+            partial,
+          );
+        }
+        const calleeSource = sourceForTypedExpr(
+          calleeExpr,
+          callee,
+          provenance,
+          calleeExpr.kind === "Var" ? calleeExpr.name : "callee",
+        );
+        constrainAt(
+          calleeFn.tag === "fn" ? calleeFn.params[0] : callee,
+          callArg(partial),
+          expr,
+          undefined,
+          [],
+          provenance,
+          {
+            message: "call argument",
+            node: expr.node,
+            span: expr.node?.span,
+            primary: true,
+          },
+          {
+            primarySource: "right",
+            sources: {
+              left: calleeSource.fnParams?.[0],
+              right: callArgSource(args, partial, provenance),
+            },
+            premise: {
+              code: "type.call-argument-mismatch",
+              rule: "InferCall.Argument",
+              role: "argument matches parameter",
+              subject: "call argument",
+              leftRole: "parameter",
+              rightRole: "argument",
+            },
+          },
+        );
+        throw error;
+      }
+    }
   }
   const arg = callArg(argTypes);
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
-    const argExpr = expr.args.length === 1 ? expr.args[0] : expr;
-    const calleeRelated = callCalleeRelated(expr.callee, calleeFn);
+    const argExpr = args.length === 1 ? args[0] : expr;
+    const calleeRelated = callCalleeRelated(calleeExpr, calleeFn);
     const callDepth = maxCallDepth([...calleeRelated, ...calleeProvenance]) + 1;
-    const isJsImport = expr.callee.kind === "Var" && env.get(expr.callee.name)?.jsImport;
+    const isJsImport = calleeExpr.kind === "Var" && env.get(calleeExpr.name)?.jsImport;
     const expectedArg = calleeFn.params[0];
     let jsBoundaryVar = false;
     const actualArg = isJsImport
@@ -78,57 +161,61 @@ export function inferCall(
     if (jsBoundaryVar) {
       // The broad Js.Value signature is instantiated per call site: record the callee at this
       // call with the caller's own argument type so tooling shows the specialized signature.
-      types.set(expr.callee, fn([arg], calleeFn.result));
-      recordExprFact(facts, expr.callee, {
+      types.set(calleeExpr, fn([arg], calleeFn.result));
+      recordExprFact(facts, calleeExpr, {
         subject: "expr",
         instantiated: fn([arg], calleeFn.result),
       });
     }
     const calleeSource = sourceForTypedExpr(
-      expr.callee,
+      calleeExpr,
       callee,
       provenance,
-      expr.callee.kind === "Var" ? expr.callee.name : "callee",
+      calleeExpr.kind === "Var" ? calleeExpr.name : "callee",
     );
     const argumentSources = {
       primarySource: "right" as const,
       sources: {
         left: calleeSource.fnParams?.[0],
-        right: callArgSource(expr.args, argTypes, provenance),
+        right: callArgSource(args, argTypes, provenance),
       },
     };
-    constrainAt(
-      expectedArg,
-      actualArg,
-      argExpr,
-      undefined,
-      [...calleeRelated, ...calleeProvenance],
-      provenance,
-      {
-        message: "call argument",
-        node: expr.node,
-        span: expr.node?.span,
-        primary: true,
-        expectedCallTupleShape: callArity(calleeFn.params[0]),
-        actualCallTupleShape: callArity(arg),
-        callDepth,
-      },
-      {
-        ...argumentSources,
-        premise: {
-          code: "type.call-argument-mismatch",
-          rule: "InferCall.Argument",
-          role: "argument matches parameter",
-          subject: "call argument",
-          leftRole: "parameter",
-          rightRole: "argument",
+    if (isPipe) {
+      constrainPipe(expr, callee, actualArg, provenance, calleeExpr, args, argTypes);
+    } else {
+      constrainAt(
+        expectedArg,
+        actualArg,
+        argExpr,
+        undefined,
+        [...calleeRelated, ...calleeProvenance],
+        provenance,
+        {
+          message: "call argument",
+          node: expr.node,
+          span: expr.node?.span,
+          primary: true,
+          expectedCallTupleShape: callArity(calleeFn.params[0]),
+          actualCallTupleShape: callArity(arg),
+          callDepth,
         },
-      },
-    );
+        {
+          ...argumentSources,
+          premise: {
+            code: "type.call-argument-mismatch",
+            rule: "InferCall.Argument",
+            role: "argument matches parameter",
+            subject: "call argument",
+            leftRole: "parameter",
+            rightRole: "argument",
+          },
+        },
+      );
+    }
     if (isPrintCall) assertPrintable(arg);
     // A declared unsafe import's signature is itself the trusted representation claim, so its
     // arguments are not checked against what reflection could represent.
-    if (isJsImport && !env.get((expr.callee as { name: string }).name)?.declaredJsImport) {
+    if (isJsImport && !env.get((calleeExpr as { name: string }).name)?.declaredJsImport) {
       assertJsCompatible(arg, typeEnv);
     }
     constrainAt(
@@ -158,42 +245,53 @@ export function inferCall(
     );
   } else {
     const callDepth =
-      maxCallDepth([...callCalleeRelated(expr.callee, callee), ...calleeProvenance]) + 1;
-    constrainAt(
-      callee,
-      fn([arg], result),
-      expr,
-      undefined,
-      [...callCalleeRelated(expr.callee, callee), ...calleeProvenance],
-      provenance,
-      {
-        message: "call argument",
-        node: expr.node,
-        span: expr.node?.span,
-        primary: true,
-        expectedCallTupleShape: 1,
-        actualCallTupleShape: 1,
-        callDepth,
-      },
-      {
-        sources: {
-          left: sourceForTypedExpr(
-            expr.callee,
-            callee,
-            provenance,
-            expr.callee.kind === "Var" ? expr.callee.name : "callee",
-          ),
-          right: fnSource([callArgSource(expr.args, argTypes, provenance)]),
+      maxCallDepth([...callCalleeRelated(calleeExpr, callee), ...calleeProvenance]) + 1;
+    if (isPipe) {
+      constrainAt(
+        result,
+        constrainPipe(expr, callee, arg, provenance, calleeExpr, args, argTypes),
+        expr,
+      );
+    } else {
+      constrainAt(
+        callee,
+        fn([arg], result),
+        expr,
+        undefined,
+        [...callCalleeRelated(calleeExpr, callee), ...calleeProvenance],
+        provenance,
+        {
+          message: "call argument",
+          node: expr.node,
+          span: expr.node?.span,
+          primary: true,
+          expectedCallTupleShape: 1,
+          actualCallTupleShape: 1,
+          callDepth,
         },
-        premise: {
-          rule: "InferCall.CalleeCallable",
-          role: "callee is callable",
-          subject: "call callee",
-          leftRole: "callee",
-          rightRole: "function type",
+        {
+          sources: {
+            left: sourceForTypedExpr(
+              calleeExpr,
+              callee,
+              provenance,
+              calleeExpr.kind === "Var" ? calleeExpr.name : "callee",
+            ),
+            right: fnSource([callArgSource(args, argTypes, provenance)]),
+          },
+          premise: {
+            rule: "InferCall.CalleeCallable",
+            role: "callee is callable",
+            subject: "call callee",
+            leftRole: "callee",
+            rightRole: "function type",
+          },
         },
-      },
-    );
+      );
+    }
+  }
+  if (isPipe) {
+    recordExprFact(facts, calleeExpr, { subject: "expr", instantiated: fn([arg], result) });
   }
   return result;
 }
@@ -462,4 +560,82 @@ export function callCalleeRelated(callee: Expr, type: Ty): EvidenceOrigin[] {
     node: callee.node,
     span: callee.node.span,
   }];
+}
+
+function constrainPipe(
+  expr: Extract<Expr, { kind: "Pipe" }>,
+  calleeType: Ty,
+  argType: Ty,
+  provenance: TypeProvenance,
+  callee: Expr,
+  argExprs: Expr[],
+  argTypes: Ty[],
+): Ty {
+  const result = fresh();
+  const expected = fn([argType], result);
+  constrainAt(
+    calleeType,
+    expected,
+    expr,
+    undefined,
+    [],
+    provenance,
+    {
+      message: callee.kind === "Var" ? `${callee.name} pipe` : "pipe",
+      node: expr.node,
+      span: expr.node?.span,
+      primary: true,
+      expectedCallTupleShape: callArity(argType),
+      actualCallTupleShape: callArity(argType),
+      callDepth: 0,
+    },
+    {
+      premise: {
+        code: "type.pipe-input-mismatch",
+        rule: "InferPipe.StepInput",
+        role: "pipe output matches next function input",
+        subject: callee.kind === "Var" ? callee.name : "pipe",
+        leftRole: "callee",
+        rightRole: "pipe function",
+      },
+      sources: {
+        left: sourceForExpr(callee, callee.kind === "Var" ? callee.name : "callee"),
+        right: fnSource(
+          [pipeArgSource(argExprs, argTypes, provenance)],
+          sourceForExpr(expr, "pipe result"),
+        ),
+      },
+      context: (path) => pipeContext(callee, path),
+    },
+  );
+  return result;
+}
+
+function pipeArgSource(args: Expr[], types: Ty[], provenance: TypeProvenance) {
+  if (args.length === 1) return sourceForTypedExpr(args[0], types[0], provenance, "piped value");
+  return tupleSource(
+    args.map((arg, index) =>
+      sourceForTypedExpr(
+        arg,
+        types[index],
+        provenance,
+        index === 0 ? "piped value" : `argument ${index}`,
+      )
+    ),
+  );
+}
+
+function pipeContext(callee: Expr, path: import("../type_diff.ts").DiffPath): string | undefined {
+  const name = callee.kind === "Var" ? callee.name : "pipe";
+  const param = path[0];
+  if (!param || param.kind !== "fn-param" || param.index !== 0) return name;
+  const tupleItem = path[1];
+  const afterTuple = tupleItem?.kind === "tuple-item" ? path.slice(2) : path.slice(1);
+  const source = tupleItem?.kind === "tuple-item" && tupleItem.index > 0
+    ? `argument ${tupleItem.index}`
+    : "piped value";
+  if (afterTuple.some((segment) => segment.kind === "fn-result")) {
+    return `${name} callback result`;
+  }
+  return `${name} ${source}`;
 }

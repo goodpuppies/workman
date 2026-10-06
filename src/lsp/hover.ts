@@ -15,6 +15,7 @@ import type { GpuSliceOccurrenceTypeDto, GpuSliceShaderTypeDto } from "../wmslan
 import { semanticDocumentContext } from "./semantic_context.ts";
 import type { SemanticService } from "./semantic_service.ts";
 import { renderSemanticType } from "./hover_type_display.ts";
+import { unannotatedHoverType } from "./unannotated_hover.ts";
 
 export type LspHover = {
   contents: { kind: "markdown"; value: string };
@@ -43,7 +44,21 @@ export async function hoverAt(
   ) {
     return unresolvedGpuHover(offset, moduleInterface);
   }
-  return semanticHoverAt(offset, moduleInterface);
+  const hover = semanticHoverAt(offset, moduleInterface);
+  if (!hover) return null;
+  const unannotated = await unannotatedHoverType(
+    context,
+    offset,
+    service?.inputs.sourceOverrides() ?? sourceOverrides,
+    service?.inputs.frontendOptions() ?? options,
+  );
+  if (unannotated) {
+    hover.contents.value = hover.contents.value.replace(
+      /\n```$/,
+      `\nunannotated: ${unannotated}\n\`\`\``,
+    );
+  }
+  return hover;
 }
 
 function semanticHoverAt(
@@ -51,13 +66,14 @@ function semanticHoverAt(
   moduleInterface: ModuleInterface,
 ): LspHover | null {
   const occurrences = semanticOccurrencesAt(moduleInterface, offset);
-  const captureNames = occurrences.flatMap((occurrence) =>
-    occurrence.target.kind === "value"
-      ? moduleInterface.closureCaptures
-        .filter((capture) => capture.target.id === occurrence.target.id)
-        .map((capture) => capture.names)
-      : []
-  )[0];
+  const captureNames =
+    occurrences.flatMap((occurrence) =>
+      occurrence.target.kind === "value"
+        ? moduleInterface.closureCaptures
+          .filter((capture) => capture.target.id === occurrence.target.id)
+          .map((capture) => capture.names)
+        : []
+    )[0];
   const ffiCall = moduleInterface.ffiFacts.calls
     .filter((call) => contains(call.span, offset))
     .sort((left, right) => spanWidth(left.span) - spanWidth(right.span))[0];
@@ -121,7 +137,9 @@ function semanticTypeHover(
     : undefined;
   return general && general !== instantiated
     ? hoverCode(
-      `${label}\ntype: ${instantiated}\ngeneral: ${general}${captures ? `\ncaptures: ${captures}` : ""}`,
+      `${label}\ntype: ${instantiated}\ngeneral: ${general}${
+        captures ? `\ncaptures: ${captures}` : ""
+      }`,
     )
     : hoverCode(`${label}: ${instantiated}${captures ? ` ${captures}` : ""}`);
 }

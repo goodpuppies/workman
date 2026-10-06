@@ -33,6 +33,10 @@ headers/SDKs are still required where included by your header. See
 [C header reflection](markdown/c_ffi/reflection-extractor.md) for configuration
 and the [extractor's beta limits](tooling/c-header-extractor/README.md).
 
+JS members allow name-rooted dots (`response.ok`, `response.json()`). Members of
+computed expressions use explicit pipes (`"hello" :> .length`, `makeResponse() :> .ok`).
+Both use the same safe FFI inference; see [member access](markdown/js-member-access.md).
+
 ## Language Features
 
 An SML based core with all the fp goodies:

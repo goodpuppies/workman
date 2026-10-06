@@ -2,6 +2,7 @@ import type { Expr, LongId, RecordExprSpread, TypeExpr } from "../ast.ts";
 import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
 import {
+  addProjectionConstraint,
   type Env,
   fresh,
   instantiate,
@@ -16,7 +17,7 @@ import {
   typeInfoById,
   unify,
 } from "../types.ts";
-import { constrainAt } from "./provenance.ts";
+import { constrainAt, type TypeProvenance } from "./provenance.ts";
 import { resolveLongType, resolveLongValue, type StrEnv } from "./environment.ts";
 import {
   recordDottedProjectionFact,
@@ -51,6 +52,8 @@ export function inferDottedVar(
     facts: TypeFacts;
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
+    provenance?: TypeProvenance;
+    pendingProjections?: (() => void)[];
   },
   expected?: Ty,
 ): Ty {
@@ -256,6 +259,8 @@ function inferRecordField(
     facts: TypeFacts;
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
+    provenance?: TypeProvenance;
+    pendingProjections?: (() => void)[];
   },
   expected?: Ty,
 ): { type: Ty; record?: TypeInfo } {
@@ -280,17 +285,85 @@ function inferRecordField(
     return { type: found.type, record: info };
   }
   if (target.tag === "var") {
+    const owners = findRecordTypes(typeEnv, [field], "contains");
+    if (owners.length > 1 && occurrence?.pendingProjections) {
+      const ownerIds = new Set(owners.map((info) => info.id));
+      target.projectionOwners = target.projectionOwners
+        ? new Set([...target.projectionOwners].filter((id) => ownerIds.has(id)))
+        : ownerIds;
+      const result = fresh();
+      let resolved = false;
+      if (result.tag === "var") result.pendingProjection = () => !resolved;
+      addProjectionConstraint(target, (bound) => {
+        const projected = inferRecordField(bound, field, typeEnv, occurrence);
+        constrainAt(
+          result,
+          projected.type,
+          occurrence.expression,
+          undefined,
+          [],
+          occurrence.provenance,
+          {
+            message: `record projection ${field}`,
+            node: occurrence.expression.node,
+            span: occurrence.expression.node?.span,
+          },
+        );
+        resolved = true;
+        if (projected.record) {
+          const path = pathOf(occurrence.expression);
+          recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
+            name: field,
+            partIndex: [...path.qualifiers, path.id].lastIndexOf(field),
+            record: projected.record,
+            type: projected.type,
+          });
+        }
+      });
+      occurrence.pendingProjections.push(() => {
+        if (resolved) return;
+        // Compatibility fallback only after the body's ordinary constraints have run.
+        const receiver = prune(target);
+        const nominal = selectedFieldRecord(
+          typeEnv,
+          field,
+          occurrence,
+          prune(result),
+          receiver.tag === "var" ? receiver.projectionOwners : undefined,
+        );
+        if (!nominal) {
+          throw new Error(
+            `no nominal record satisfies the projected fields of ${occurrence.expression.name}`,
+          );
+        }
+        constrainRecord(
+          target,
+          nominal.record,
+          occurrence.expression,
+          "InferRecord.ProjectNominal",
+          "receiver matches record containing projected field",
+          field,
+          "receiver",
+          "record",
+          occurrence.provenance,
+          nominal.ambiguity,
+        );
+      });
+      return { type: result };
+    }
     const nominal = selectedFieldRecord(typeEnv, field, occurrence, expected);
     if (nominal) {
       constrainRecord(
         target,
         nominal.record,
-        undefined,
+        occurrence?.expression,
         "InferRecord.ProjectNominal",
         "receiver matches record containing projected field",
         field,
         "receiver",
         "record",
+        occurrence?.provenance,
+        nominal.ambiguity,
       );
       return {
         type: nominal.type,
@@ -329,12 +402,16 @@ function constrainRecord(
   subject: string,
   leftRole: string,
   rightRole: string,
+  provenance?: TypeProvenance,
+  note?: string,
 ) {
-  constrainAt(left, right, expr, undefined, [], undefined, {
-    message: subject,
+  const origin = {
+    message: rule === "InferRecord.ProjectNominal" ? `record projection ${subject}` : subject,
     node: expr?.node,
     span: expr?.node?.span,
-  }, {
+    note,
+  };
+  constrainAt(left, right, expr, undefined, [], provenance, origin, {
     premise: {
       rule,
       role,
@@ -342,6 +419,7 @@ function constrainRecord(
       leftRole,
       rightRole,
     },
+    sources: provenance ? { right: { origin } } : undefined,
   });
 }
 
@@ -355,8 +433,11 @@ function selectedFieldRecord(
     diagnostics: FrontendDiagnostic[];
   },
   expected?: Ty,
-): { record: NamedTy; type: Ty; info: TypeInfo } | undefined {
-  const candidates = findRecordTypes(typeEnv, [field], "contains");
+  owners?: Set<number>,
+): { record: NamedTy; type: Ty; info: TypeInfo; ambiguity?: string } | undefined {
+  const candidates = findRecordTypes(typeEnv, [field], "contains").filter((info) =>
+    !owners || owners.has(info.id)
+  );
   if (candidates.length === 0) return undefined;
   const instantiated = candidates.map((info) => {
     const record = freshRecord(info);
@@ -372,12 +453,13 @@ function selectedFieldRecord(
   // the enclosing constraint reports the useful type mismatch at its call site.
   const viable = compatible.length > 0 ? compatible : instantiated;
   const selected = viable[0];
+  let ambiguity: string | undefined;
   if (viable.length > 1 && occurrence) {
     const candidateNames = viable.map((candidate) => candidate.info.name).join(", ");
-    const message =
+    const message = ambiguity =
       `ambiguous record projection ${field}; using first record type ${selected.info.name}. ` +
       `Candidates: ${candidateNames}. ` +
-      `Hint: annotate the receiver, binding, or parameter with the intended record type.`;
+      `Hint: provide a constructor or use that determines the receiver's nominal identity.`;
     occurrence.warnings.push(message);
     occurrence.diagnostics.push(
       warningDiagnostic(
@@ -387,7 +469,7 @@ function selectedFieldRecord(
       ),
     );
   }
-  return selected;
+  return { ...selected, ambiguity };
 }
 
 function canUnifyWithoutCommit(left: Ty, right: Ty): boolean {

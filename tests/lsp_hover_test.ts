@@ -491,3 +491,74 @@ function positionOf(source: string, text: string) {
   const lines = prefix.split("\n");
   return { line: lines.length - 1, character: lines.at(-1)!.length };
 }
+
+Deno.test("annotated hover shows independently inferred types only when different", async () => {
+  const path = "/test/annotated-hover.wm";
+  const uri = pathToFileUri(path);
+  const cases = [
+    [
+      "let id: Number -> Number = (x) => { x };",
+      "id:",
+      "id: Number -> Number\nunannotated: 'a -> 'a",
+    ],
+    ["let id = (x: Number) => { x };", "id =", "id: Number -> Number\nunannotated: 'a -> 'a"],
+    ["let id = (x): Number => { x };", "id =", "id: Number -> Number\nunannotated: 'a -> 'a"],
+    ["let id = (x) => { x }: Number;", "id =", "id: Number -> Number\nunannotated: 'a -> 'a"],
+    [
+      "let id = ((x) => { x }): Number -> Number;",
+      "id =",
+      "id: Number -> Number\nunannotated: 'a -> 'a",
+    ],
+    ["let id = (x: Number) => { x };", "x: Number", "x: Number\nunannotated: 'a"],
+    ["let id = (x: Number) => { x };", "x }", "x: Number\nunannotated: 'a"],
+    ["let value: Number = 1;", "value:", "value: Number"],
+    ["let id: Number -> Number = (x) => { x + 1 };", "id:", "id: Number -> Number"],
+    [
+      "let id: /* nested /* : */ : */ Number -> Number = (x) => { x };",
+      "id:",
+      "id: Number -> Number\nunannotated: 'a -> 'a",
+    ],
+  ];
+  for (const [source, needle, expected] of cases) {
+    const hover = await hoverAt(uri, positionOf(source, needle), new Map([[path, source]]));
+    assertEquals(hover?.contents.value, `\`\`\`wm\n${expected}\n\`\`\``, source);
+  }
+});
+
+Deno.test("annotated hover follows references and preserves instantiated type", async () => {
+  const path = "/test/annotated-use.wm";
+  const source = "let id: Number -> Number = (x) => { x }; let result = id(1);";
+  const hover = await hoverAt(
+    pathToFileUri(path),
+    positionOf(source, "id(1)"),
+    new Map([[path, source]]),
+  );
+  assertEquals(hover?.contents.value, "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```");
+});
+
+Deno.test("annotated hover follows imported declarations in unsaved sources", async () => {
+  const path = "/test/annotated-import.wm";
+  const source = 'from "./identity.wm" import { id }; let result = id(1);';
+  const overrides = new Map([
+    [path, source],
+    ["/test/identity.wm", "let id: Number -> Number = (x) => { x };"],
+  ]);
+  const hover = await hoverAt(pathToFileUri(path), positionOf(source, "id(1)"), overrides);
+  assertEquals(hover?.contents.value, "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```");
+});
+
+Deno.test("annotated hover remains available when annotation erasure is ill-typed", async () => {
+  const path = "/test/annotation-required.wm";
+  const source = `
+record First = { value: Number };
+record Second = { value: String };
+let get = (r: Second) => { r.value };
+let result = get(.{ value = "hello" }: Second);
+`;
+  const hover = await hoverAt(
+    pathToFileUri(path),
+    positionOf(source, "get ="),
+    new Map([[path, source]]),
+  );
+  assertEquals(hover?.contents.value, "```wm\nget: Second -> String\n```");
+});

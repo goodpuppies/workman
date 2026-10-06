@@ -239,3 +239,64 @@ async function importGenerated(source: string): Promise<Record<string, unknown>>
     await Deno.remove(dir, { recursive: true });
   }
 }
+
+Deno.test("calls and pipes use input context to disambiguate inline nominal callbacks", async () => {
+  for (
+    const invocation of [
+      "Result.map(input, (core) => { Actor(core.did, core.handle) })",
+      "input :> Result.map((core) => { Actor(core.did, core.handle) })",
+    ]
+  ) {
+    const result = await checkSource(`
+record ProfileCore = { did: String, handle: String };
+record ActorCore = { did: String, handle: String };
+type Actor = | Actor<String, String>;
+let input: Result<ActorCore, Js.Error> = Err(Js.Unknown);
+let output: Result<Actor, Js.Error> = ${invocation};`);
+    assertEquals(
+      result.diagnostics.some((item) => item.code === "record.ambiguous-projection"),
+      false,
+    );
+  }
+});
+
+Deno.test("shared application inference preserves polymorphic reuse and nominal identity", async () => {
+  await checkSource(`
+record A<t> = { value: t };
+record B<t> = { value: t };
+let apply = (input, callback) => { callback(input) };
+let number: Number = apply(B(1), (item) => { item.value });
+let text: String = B("hi") :> apply((item) => { item.value });
+let identity = (x) => { x };
+let n: Number = identity(1);
+let s: String = "hi" :> identity;
+`);
+  for (
+    const invocation of [
+      "apply(B(1), (item: A<Number>) => { item.value })",
+      "B(1) :> apply((item: A<Number>) => { item.value })",
+    ]
+  ) {
+    await assertRejects(() =>
+      checkSource(`
+record A<t> = { value: t };
+record B<t> = { value: t };
+let apply = (input, callback) => { callback(input) };
+let bad = ${invocation};`), FrontendDiagnosticError);
+  }
+});
+
+Deno.test("early argument collisions retain authored call and pipe diagnostics", async () => {
+  for (
+    const [invocation, code] of [
+      ['combine("bad", 1)', "type.call-argument-mismatch"],
+      ['"bad" :> combine(1)', "type.pipe-input-mismatch"],
+    ]
+  ) {
+    const error = await assertRejects(() =>
+      checkSource(`
+let combine = (left: Number, right: Number) => { left + right };
+let bad = ${invocation};`), FrontendDiagnosticError);
+    assertEquals(error.diagnostic.code, code);
+  }
+});

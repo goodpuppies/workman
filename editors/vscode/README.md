@@ -29,7 +29,8 @@ falling back from `tsc` 7 during builds.
 - Syntax highlighting for character literals, primed identifiers, nested block comments, numeric
   exponents, Unicode escapes, and string gaps. Word selection includes trailing identifier primes.
 
-- Module-aware diagnostics and inferred-type hover, including unsaved Workman files.
+- Module-aware diagnostics and inferred-type hover, including unsaved Workman files. Annotated
+  bindings also show `unannotated:` when removing their annotations infers a different type.
 - Go to Definition/Ctrl+Click for local bindings, types, constructors, and named, wildcard, or
   namespace imports.
 - Find All References across the active module graph and other open Workman documents.
