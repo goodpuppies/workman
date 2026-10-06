@@ -325,6 +325,8 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       return { kind: "CoreInt", value: expr.value, node: expr.node };
     case "Float":
       return { kind: "CoreFloat", value: expr.value, node: expr.node };
+    // Character typing is complete; host Core stores the single scalar as text.
+    case "Char":
     case "String":
       return { kind: "CoreString", value: expr.value, node: expr.node };
     case "Bool":
@@ -625,6 +627,8 @@ function corePatternFromSurface(
       };
     case "PInt":
       return { kind: "CorePInt", value: pattern.value, node: pattern.node };
+    // Char and String keep distinct Surface types and share host equality checks.
+    case "PChar":
     case "PString":
       return { kind: "CorePString", value: pattern.value, node: pattern.node };
     case "PBool":

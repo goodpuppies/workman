@@ -5,86 +5,143 @@ scope: source.workman
 version: 2
 file_extensions:
   - wm
-
 variables:
-  identifier: '[A-Za-z_][A-Za-z0-9_]*'
-
+  identifier: '[A-Za-z_][A-Za-z0-9_'']*'
+  identifier_part: '[A-Za-z0-9_'']'
+  scalar_escape: \\(?:[abtnvfr"'\\]|\^[@-_]|[0-9]{3}|u(?![dD][89a-fA-F])[0-9a-fA-F]{4}|u\{(?!0*[dD][89a-fA-F][0-9a-fA-F]{2}\})(?:0[0-9a-fA-F]{5}|10[0-9a-fA-F]{4}|[0-9a-fA-F]{1,5})\})
 contexts:
   main:
-    - match: '--.*$|//.*$'
+    - match: --.*$|//.*$
       scope: comment.line.workman
+    - match: /\*
+      scope: punctuation.definition.comment.begin.workman
+      push: block-comment
     - match: '"'
       scope: punctuation.definition.string.begin.workman
       push: double-quoted-string
     - match: '`'
       scope: punctuation.definition.string.begin.workman
       push: backtick-string
-    - match: '''([^''\\]|\\.)'''
-      scope: constant.character.workman
-    - match: '\b(true|false)\b'
+    - match: (?<!{{identifier_part}})'
+      scope: punctuation.definition.character.begin.workman
+      push: character-before
+    - match: (?<!{{identifier_part}})(true|false)(?!{{identifier_part}})
       scope: constant.language.boolean.workman
-    - match: '\bvoid\b'
+    - match: (?<!{{identifier_part}})void(?!{{identifier_part}})
       scope: constant.language.void.workman
-    - match: '(?<![A-Za-z0-9_])-?\b[0-9]+\.[0-9]+\b(?![A-Za-z0-9_])'
+    - match: (?<!{{identifier_part}})-?[0-9]+(?:\.[0-9]+(?:[eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+)(?!{{identifier_part}})
       scope: constant.numeric.float.workman
-    - match: '(?<![A-Za-z0-9_])-?\b[0-9]+\b(?![A-Za-z0-9_])'
+    - match: (?<!{{identifier_part}})-?(?:0x[0-9a-fA-F]+|[0-9]+)(?!{{identifier_part}})
       scope: constant.numeric.integer.workman
-    - match: '\b(from|import|export|as)\b'
+    - match: (?<!{{identifier_part}})(from|import|export|as)(?!{{identifier_part}})
       scope: keyword.control.import.workman
-    - match: '\b(if|else|match|when)\b'
+    - match: (?<!{{identifier_part}})(if|else|match|when)(?!{{identifier_part}})
       scope: keyword.control.conditional.workman
-    - match: '\b(let|rec|and|type|record|carrier|unsafe|mut)\b'
+    - match: (?<!{{identifier_part}})(let|rec|and|type|record|carrier|unsafe|mut)(?!{{identifier_part}})
       scope: keyword.declaration.workman
-    - match: '\b(infix|infixl|infixr|prefix|infectious|domain|op|policy|annotate)\b'
+    - match: (?<!{{identifier_part}})(infix|infixl|infixr|prefix|infectious|domain|op|policy|annotate)(?!{{identifier_part}})
       scope: keyword.other.workman
-    - match: '\b(Int|String|Bool|Void|Float)\b'
+    - match: (?<!{{identifier_part}})(Number|Int|Char|String|Bool|Void|Float)(?!{{identifier_part}})
       scope: support.type.builtin.workman
-    - match: '\b(Panic|Var|JSON)\b'
+    - match: (?<!{{identifier_part}})(Panic|Var|JSON)(?!{{identifier_part}})
       scope: support.function.builtin.workman
-    - match: '\b[A-Z][A-Za-z0-9_]*\b'
+    - match: (?<!{{identifier_part}})[A-Z][A-Za-z0-9_']*(?!{{identifier_part}})
       scope: entity.name.type.workman
-    - match: '\b[a-z_][A-Za-z0-9_]*(?=\s*\()'
+    - match: (?<!{{identifier_part}})[a-z_][A-Za-z0-9_']*(?=\s*\()
       scope: entity.name.function.workman
-    - match: '(=>|->|:>|\.\.|<=|>=|==|!=|&&|\|\||\+\+|\*\*|[+*/%!?=|<>:-])'
+    - match: (=>|->|:>|\.\.|<=|>=|==|!=|&&|\|\||\+\+|\*\*|[+*/%!?=|<>:-])
       scope: keyword.operator.workman
     - match: '[{}()\[\],;.]'
       scope: punctuation.workman
-
+    - match: '{{identifier}}'
+      scope: variable.other.workman
   double-quoted-string:
     - meta_scope: string.quoted.double.workman
-    - match: '\\.'
+    - include: string-gap
+    - match: '{{scalar_escape}}'
       scope: constant.character.escape.workman
+    - match: \\.
+      scope: invalid.illegal.escape.workman
     - match: '"'
       scope: punctuation.definition.string.end.workman
       pop: true
-
   backtick-string:
     - meta_scope: string.quoted.other.workman
-    - match: '\\.'
+    - include: string-gap
+    - match: '{{scalar_escape}}'
       scope: constant.character.escape.workman
-    - match: '\$\{'
+    - match: \\[`$]
+      scope: constant.character.escape.workman
+    - match: \\.
+      scope: invalid.illegal.escape.workman
+    - match: \$\{
       scope: punctuation.section.interpolation.begin.workman
       push: interpolation
     - match: '`'
       scope: punctuation.definition.string.end.workman
       pop: true
-
   interpolation:
     - clear_scopes: 1
     - meta_scope: meta.interpolation.workman
-    - match: '\}'
+    - match: \}
       scope: punctuation.section.interpolation.end.workman
       pop: true
-    - match: '\{'
+    - match: \{
       scope: punctuation.section.block.begin.workman
       push: interpolation-braces
     - include: main
-
   interpolation-braces:
-    - match: '\}'
+    - match: \}
       scope: punctuation.section.block.end.workman
       pop: true
-    - match: '\{'
+    - match: \{
       scope: punctuation.section.block.begin.workman
       push: interpolation-braces
     - include: main
+  block-comment:
+    - meta_scope: comment.block.workman
+    - match: /\*
+      scope: punctuation.definition.comment.begin.workman
+      push: block-comment
+    - match: \*/
+      scope: punctuation.definition.comment.end.workman
+      pop: true
+  string-gap:
+    - match: \\(?=[ \t\r\n\v\f])
+      scope: constant.character.escape.workman
+      push: string-gap-body
+  string-gap-body:
+    - meta_scope: constant.character.escape.workman
+    - match: \\
+      pop: true
+    - match: '[^ \t\r\n\v\f]'
+      scope: invalid.illegal.string-gap.workman
+      pop: true
+  character-before:
+    - meta_scope: constant.character.workman
+    - include: string-gap
+    - match: '{{scalar_escape}}'
+      scope: constant.character.escape.workman
+      set: character-after
+    - match: '[^''\\\r\n]'
+      set: character-after
+    - match: ''''
+      scope: invalid.illegal.empty-character.workman
+      pop: true
+    - match: \\.
+      scope: invalid.illegal.escape.workman
+      set: character-after
+    - match: $
+      scope: invalid.illegal.unterminated-character.workman
+      pop: true
+  character-after:
+    - meta_scope: constant.character.workman
+    - include: string-gap
+    - match: ''''
+      scope: punctuation.definition.character.end.workman
+      pop: true
+    - match: '[^''\r\n]+'
+      scope: invalid.illegal.character-length.workman
+    - match: $
+      scope: invalid.illegal.unterminated-character.workman
+      pop: true

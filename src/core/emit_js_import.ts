@@ -4,7 +4,8 @@ import { type CCodecDescriptor, validateCodecDescriptor } from "../ffi/c/byte_ty
 import type { ExtractedStruct, ExtractedTypeDesc } from "../ffi/c/extract.ts";
 import { LIBRARY_JS_SCHEME, runtimeJsModuleSpecifier } from "../js_module_specifier.ts";
 import type { CoreDecl } from "./ast.ts";
-import { emitJsIdentifier as id } from "./emit_name.ts";
+import { emitJsIdentifier as id, emitJsPropertyKey } from "./emit_name.ts";
+import { byteTypeRuntimeUrl } from "../generated/byte_type_runtime.ts";
 
 type CoreJsImport = Extract<CoreDecl, { kind: "CoreJsImport" }>;
 
@@ -171,8 +172,6 @@ function emitCLibImportDecl(decl: CoreJsImport, libName: string): string[] {
 // authority; byte_type's own layout math is validated against them (compile
 // time) and mismatches fail the build.
 
-const BYTE_TYPE_URL = "file:///home/ellie/git/byte_type_C/mod.ts";
-
 function emitCCodecImportDecl(decl: CoreJsImport, header: string): string[] {
   const registry = cExtractionFor(header);
   if (!registry || decl.clause.kind !== "Named") {
@@ -238,7 +237,9 @@ function codecSetupLines(
   if (cached) return cached;
   validateCodecDescriptor(codecDescriptor(struct));
   const lines = [
-    `await __wm_c_setup_codec(${JSON.stringify(codecDescriptor(struct))});`,
+    `await __wm_c_setup_codec(${JSON.stringify(codecDescriptor(struct))}, await import(${
+      JSON.stringify(byteTypeRuntimeUrl)
+    }));`,
   ];
   codecSetupsEmitted.set(cacheKey, lines);
   return lines;
@@ -319,7 +320,7 @@ function emitCImportSpecs(
       wrappers.push(
         `const ${binding} = { ${
           struct.fields.map((field) =>
-            `${id(field.name)}: ${
+            `${emitJsPropertyKey(field.name)}: ${
               JSON.stringify((constant.fields as Record<string, unknown>)[field.name])
             }`
           ).join(", ")
@@ -396,7 +397,7 @@ function emitCNamespaceImport(
       members.push(
         `${id(spec.name)}: { ${
           struct.fields.map((field) =>
-            `${id(field.name)}: ${
+            `${emitJsPropertyKey(field.name)}: ${
               JSON.stringify((constant.fields as Record<string, unknown>)[field.name])
             }`
           ).join(", ")

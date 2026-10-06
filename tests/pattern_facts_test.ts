@@ -32,11 +32,19 @@ Deno.test("resolved pattern facts preserve all Workman grammar contexts and sema
       ],
     ]),
   );
-  const facts = analysis.patternFacts;
+  const facts = {
+    patterns: analysis.patternFacts.patterns.filter((fact) => fact.path === "/test/main.wm"),
+    params: analysis.patternFacts.params.filter((fact) => fact.path === "/test/main.wm"),
+    matchArms: analysis.patternFacts.matchArms.filter((fact) => fact.path === "/test/main.wm"),
+    lets: analysis.patternFacts.lets.filter((fact) => fact.path === "/test/main.wm"),
+  };
   const mainResult = analysis.results.get(moduleId("/test/main.wm"))!;
   const mainBindings = analysis.bindings.get(moduleId("/test/main.wm"))!;
 
-  assertEquals(facts.patterns.map((fact) => fact.id), range(facts.patterns.length));
+  assertEquals(
+    analysis.patternFacts.patterns.map((fact) => fact.id),
+    range(analysis.patternFacts.patterns.length),
+  );
   assertEquals(facts.params.map((fact) => fact.declaredIndex), [0]);
   assertEquals(facts.matchArms.map((fact) => fact.declaredIndex), [0, 1, 0, 1]);
   assertEquals(facts.lets.length, 7);
@@ -67,7 +75,9 @@ Deno.test("resolved pattern facts preserve all Workman grammar contexts and sema
 
   const constructors = facts.patterns.filter((fact) => fact.kind === "constructor");
   const constructorIds = new Map(
-    analysis.nominalFacts.constructors.map((constructor) => [constructor.name, constructor.id]),
+    analysis.nominalFacts.constructors
+      .filter((constructor) => constructor.modulePath === "/test/types.wm")
+      .map((constructor) => [constructor.name, constructor.id]),
   );
   assertEquals(
     constructors.map((fact) => [
@@ -95,11 +105,16 @@ Deno.test("host patterns over compiler standard-library records retain field evi
       >) => { fn };`,
     ]]),
   );
-  const record = analysis.patternFacts.patterns.find((fact) => fact.kind === "record")!;
+  const record = analysis.patternFacts.patterns.find((fact) =>
+    fact.path === "/test/main.wm" && fact.kind === "record"
+  )!;
 
   assertEquals(record.context, "parameter");
   assertEquals(record.fieldIndices, [0]);
-  assertEquals(record.recordId, undefined);
+  const carrier = analysis.nominalFacts.records.find((fact) =>
+    fact.modulePath === "std/monad.wm" && fact.name === "Carrier"
+  )!;
+  assertEquals(record.recordId, carrier.id);
   assertEquals(typeof record.recordInferenceTypeId, "number");
 });
 
@@ -130,7 +145,9 @@ Deno.test("destructuring lets retain constructor facts at the pattern root", asy
        };`,
     ]]),
   );
-  const constructors = analysis.patternFacts.patterns.filter((fact) => fact.kind === "constructor");
+  const constructors = analysis.patternFacts.patterns.filter((fact) =>
+    fact.path === "/test/main.wm" && fact.kind === "constructor"
+  );
 
   assertEquals(
     constructors.map((fact) => (fact.pattern as Extract<Pattern, { kind: "PCtor" }>).name),

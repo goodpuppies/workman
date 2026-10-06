@@ -42,6 +42,7 @@ import {
   mergeLibraryGraph,
   standardInferOptions,
   standardRuntimeGraph,
+  usesStandardLibrary,
   withoutStandardLibrary,
   withStandardLibrary,
 } from "./standard_library.ts";
@@ -49,6 +50,8 @@ import { assertCompilerFrontendMode, resolveCompilerFrontend } from "./frontend_
 import {
   analyzeModuleGraph,
   assertNoPartialDiagnostics,
+  externalImportResults,
+  requiresFfiStaging,
   StagedAnalysisError,
 } from "./staged_analysis.ts";
 import {
@@ -216,7 +219,12 @@ export async function checkSourceSteps(
     { filePath },
   ).module;
   const { results: imports } = await sourceImports(module);
-  return inferModuleWithSteps(module, imports, await standardInferOptions()).steps;
+  return inferModuleWithSteps(
+    module,
+    imports,
+    await standardInferOptions(module.prelude !== "none"),
+  )
+    .steps;
 }
 
 export async function compileFile(input: string, options: CompileOptions = {}): Promise<string> {
@@ -337,6 +345,7 @@ async function coreProgramWithStandardRuntime(input: {
   elaboration?: Parameters<typeof coreProgramFromAnalysis>[2];
 }): Promise<CoreProgram> {
   const core = coreProgramFromAnalysis(input.graph, input.results, input.elaboration);
+  if (!usesStandardLibrary(input.graph)) return core;
   const standard = await standardRuntimeGraph();
   if (!input.graph.order.some((id) => standard.graph.nodes.has(id))) return core;
   return {
@@ -469,16 +478,17 @@ async function analyzeStrictSnapshot(
   options: ModuleGraphOptions,
   context: ProjectSnapshotContext,
 ): Promise<ProgramAnalysis> {
-  const extend = await libraryExtension();
   return await analyzeStrict(
     input,
     options,
-    (graph, results) => buildProgramAnalysis(graph, results, context, extend),
+    async (graph, results) =>
+      buildProgramAnalysis(graph, results, context, await libraryExtension(graph)),
   );
 }
 
 /** Extends a program graph with the library modules, for facts the tooling snapshot relies on. */
-async function libraryExtension(): Promise<ExtendGraph> {
+async function libraryExtension(graph: ModuleGraph): Promise<ExtendGraph | undefined> {
+  if (!usesStandardLibrary(graph)) return undefined;
   const library = await standardRuntimeGraph();
   return (graph, results) => mergeLibraryGraph(graph, results, library);
 }
@@ -496,7 +506,7 @@ async function analyzeCoreFile(
 async function analyzeStrict<T>(
   input: string,
   options: ModuleGraphOptions,
-  build: (graph: ModuleGraph, results: ModuleMap<InferResult>) => T,
+  build: (graph: ModuleGraph, results: ModuleMap<InferResult>) => T | Promise<T>,
 ): Promise<T> {
   assertCompilerFrontendMode(options.frontend);
   options.onStage?.("load modules");
@@ -561,8 +571,8 @@ async function analyzeRecoveredSnapshot(
   const graph = await loadModuleGraph(input, { ...options, syntaxRecovery: true });
   const completionFacts = currentSourceCompletionFacts(graph);
   const resolvedDefinitions = currentSourceResolvedDefinitions(graph);
-  const inferOptions = await standardInferOptions();
-  const library = await libraryImportResults();
+  const inferOptions = await standardInferOptions(usesStandardLibrary(graph));
+  const library = await externalImportResults(graph);
   const results = new Map<ModuleId, InferResult>();
   for (const id of graph.order) {
     const node = graph.nodes.get(id)!;
@@ -590,7 +600,7 @@ async function analyzeRecoveredSnapshot(
       },
     },
     { completionFacts, resolvedDefinitions },
-    await libraryExtension(),
+    await libraryExtension(graph),
   );
 }
 
@@ -600,7 +610,10 @@ async function checkPreparedModuleWithoutImports(
 ): Promise<{ module: Module; result: InferResult }> {
   const { results: imports } = await sourceImports(module);
   const prepared = prepareFfiElaboration(module, { filePath });
-  const inferOptions = await standardInferOptions();
+  const inferOptions = await standardInferOptions(module.prelude !== "none");
+  if (!requiresFfiStaging(prepared)) {
+    return { module: prepared.module, result: inferModule(prepared.module, imports, inferOptions) };
+  }
   const first = assertNoPartialDiagnostics(
     inferModulePartial(prepared.module, imports, inferOptions),
   );

@@ -4,7 +4,7 @@ export type TopLevelPhraseRange = Readonly<{ start: number; end: number }>;
 export function topLevelPhraseRanges(source: string): TopLevelPhraseRange[] {
   const ranges: TopLevelPhraseRange[] = [];
   const stack: string[] = [];
-  let stringEnd: '"' | "`" | undefined;
+  let stringEnd: '"' | "`" | "'" | undefined;
   let escaped = false;
   let lineComment = false;
   for (let index = 0; index < source.length; index++) {
@@ -16,8 +16,12 @@ export function topLevelPhraseRanges(source: string): TopLevelPhraseRange[] {
     }
     if (stringEnd) {
       if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === stringEnd) stringEnd = undefined;
+      else if (char === "\\") {
+        let gapEnd = index + 1;
+        while (/[ \t\r\n\v\f]/.test(source[gapEnd] ?? "")) gapEnd++;
+        if (gapEnd > index + 1 && source[gapEnd] === "\\") index = gapEnd;
+        else escaped = true;
+      } else if (char === stringEnd) stringEnd = undefined;
       continue;
     }
     if ((char === "/" && next === "/") || (char === "-" && next === "-")) {
@@ -25,7 +29,11 @@ export function topLevelPhraseRanges(source: string): TopLevelPhraseRange[] {
       index += 1;
       continue;
     }
-    if (char === '"' || char === "`") {
+    // Apostrophes continue identifiers; only a word boundary opens a character literal.
+    if (
+      char === '"' || char === "`" ||
+      (char === "'" && !/[A-Za-z0-9_']/.test(source[index - 1] ?? ""))
+    ) {
       stringEnd = char;
       continue;
     }
@@ -53,7 +61,7 @@ export function topLevelPhraseEnd(source: string): number | undefined {
   const stack: string[] = [];
   let lastSemicolon: number | undefined;
   let lineComment = false;
-  let stringEnd: '"' | "`" | undefined;
+  let stringEnd: '"' | "`" | "'" | undefined;
   let escaped = false;
   for (let index = 0; index < source.length; index++) {
     const char = source[index];
@@ -64,8 +72,12 @@ export function topLevelPhraseEnd(source: string): number | undefined {
     }
     if (stringEnd) {
       if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === stringEnd) stringEnd = undefined;
+      else if (char === "\\") {
+        let gapEnd = index + 1;
+        while (/[ \t\r\n\v\f]/.test(source[gapEnd] ?? "")) gapEnd++;
+        if (gapEnd > index + 1 && source[gapEnd] === "\\") index = gapEnd;
+        else escaped = true;
+      } else if (char === stringEnd) stringEnd = undefined;
       continue;
     }
     if ((char === "/" && next === "/") || (char === "-" && next === "-")) {
@@ -73,7 +85,11 @@ export function topLevelPhraseEnd(source: string): number | undefined {
       index += 1;
       continue;
     }
-    if (char === '"' || char === "`") {
+    // Apostrophes continue identifiers; only a word boundary opens a character literal.
+    if (
+      char === '"' || char === "`" ||
+      (char === "'" && !/[A-Za-z0-9_']/.test(source[index - 1] ?? ""))
+    ) {
       stringEnd = char;
       continue;
     }

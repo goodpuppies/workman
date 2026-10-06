@@ -15,6 +15,7 @@ const primitiveTypes = [
   "Bool",
   "String",
   "Void",
+  "Char",
 ];
 
 const jsTypes = [

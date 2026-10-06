@@ -40,12 +40,18 @@ deno task generate
 
 This runs, in order:
 
+- `c-header:build` (six bundled native Aro targets; requires build-time Zig 0.16.0)
+- `byte-type:build` (standalone vendored C codec runtime)
 - `generate-assets`
 - `frontend-v2:generate-recognizer`
 - `frontend-v2:build`, repeated until the generated parser reaches a fixed point
   (up to 8 stages — it throws if it never converges)
 - `wmslang:builtins`
+- `frontend-v2:build-library`
+- `wmslang:build`
+- `tuiman:build`
 - `problems:build`
+- `frontend-v2:update-semantic-golden`
 
 It must finish with `generation complete`. If the frontend-v2 convergence loop
 errors out, that's a real problem with the grammar change — fix it before going
@@ -53,8 +59,15 @@ further, don't hand-edit the generated output.
 
 ## 4. Bump the version
 
-Edit `version` in `deno.json`. Patch bump for fixes, minor for new surface.
-This is the version JSR publishes, so it has to move for every release.
+Update `version` in `deno.json`, `editors/fresh/package.json`, and
+`editors/vscode/package.json`; keep the root and workspace package versions in
+`editors/vscode/package-lock.json` in sync. Patch bump for fixes, minor for new surface.
+The toolchain version is the version JSR publishes, so it has to move for every release.
+
+`deno task publish` runs generation and builds the local VSIX. It does not upload
+either package. CI validates the committed native assets with `deno task c-header:check`.
+Run it after changing versions so the generated package has the
+intended version.
 
 ## 5. Carve out a git stage ready for commit
 

@@ -95,12 +95,12 @@ function namedImportContext(
   const content = match[2];
   const segments = content.split(",");
   const current = segments.at(-1) ?? "";
-  const aliasPosition = /\bas\s+[A-Za-z_][A-Za-z0-9_]*\s*$/.test(current) ||
+  const aliasPosition = /\bas\s+[A-Za-z_][A-Za-z0-9_']*\s*$/.test(current) ||
     /\bas\s*$/.test(current);
-  const prefix = aliasPosition ? "" : current.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? "";
+  const prefix = aliasPosition ? "" : current.match(/[A-Za-z_][A-Za-z0-9_']*$/)?.[0] ?? "";
   const usedNames = new Set(
     segments.slice(0, -1).flatMap((segment) =>
-      segment.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)/)?.[1] ?? []
+      segment.match(/^\s*([A-Za-z_][A-Za-z0-9_']*)/)?.[1] ?? []
     ),
   );
   return Object.freeze({ specifier: match[1], prefix, usedNames, aliasPosition });

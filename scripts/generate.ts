@@ -5,6 +5,8 @@ const FRONTEND_V2_ARTIFACT = new URL(
 );
 const MAX_FRONTEND_V2_STAGES = 8;
 
+await runTask("c-header:build");
+await runTask("byte-type:build");
 await runTask("generate-assets");
 await runTask("frontend-v2:generate-recognizer");
 await convergeFrontendV2();

@@ -2,6 +2,7 @@ import type { LongId, Pattern } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
 import {
   BoolTy,
+  CharTy,
   type Env,
   fresh,
   instantiate,
@@ -39,6 +40,8 @@ export function showPattern(pattern: Pattern): string {
       return pattern.name;
     case "PInt":
       return String(pattern.value);
+    case "PChar":
+      return "'" + JSON.stringify(pattern.value).slice(1, -1).replaceAll("'", "\\'") + "'";
     case "PString":
       return JSON.stringify(pattern.value);
     case "PBool":
@@ -123,6 +126,16 @@ export function inferPattern(
         p,
         "InferPattern.Int",
         "integer pattern matches Number",
+        provenance,
+      );
+      return expected;
+    case "PChar":
+      constrainPattern(
+        expected,
+        CharTy,
+        p,
+        "InferPattern.Char",
+        "character pattern matches Char",
         provenance,
       );
       return expected;
@@ -302,6 +315,15 @@ export function inferBindingPattern(
         pattern,
         "InferBindingPattern.Int",
         "integer let pattern matches Number",
+      );
+      return;
+    case "PChar":
+      constrainPattern(
+        expected,
+        CharTy,
+        pattern,
+        "InferBindingPattern.Char",
+        "character let pattern matches Char",
       );
       return;
     case "PString":

@@ -56,6 +56,7 @@ export function findAccidentalMatchFnInFunction(
       return findAccidentalMatchFnInFunction(expr.value);
     case "Int":
     case "Float":
+    case "Char":
     case "String":
     case "Bool":
     case "Void":

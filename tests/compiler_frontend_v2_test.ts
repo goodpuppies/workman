@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { analyzeFile, checkSource, checkVirtual, compile } from "../src/compiler.ts";
+import {
+  analyzeFile,
+  checkSource,
+  checkVirtual,
+  compile,
+  compileLibraryVirtual,
+} from "../src/compiler.ts";
 import { formatFrontendV2Source } from "../src/frontend_v2_formatter.ts";
 import { moduleId } from "../src/module_id.ts";
 import { ParseError } from "../src/parser.ts";
@@ -331,3 +337,96 @@ Deno.test("compiler v2 mode lowers typed lambdas through a structurally missing 
 async function buildFrontendV2(): Promise<URL> {
   return new URL("../src/generated/frontend_v2_parser.js", import.meta.url);
 }
+
+Deno.test("compiler v2 backports hexadecimal integers and exponent notation", async () => {
+  const source = "/* SubsetML numeric spellings */\n" +
+    "let hex = 0xDEAD;\nlet negative = -0x2a;\nlet real = 3e-7;\nlet fraction = 3.32E+5;";
+  const result = await checkSource(source);
+  for (const name of ["hex", "negative", "real", "fraction"]) {
+    expectBinding(result.env, name, { type: "Number", vars: 0 });
+  }
+  const javaScript = await compile(source);
+  assertStringIncludes(javaScript, "57005");
+  assertStringIncludes(javaScript, "42");
+  assertStringIncludes(javaScript, "3e-7");
+  assertStringIncludes(javaScript, "332000");
+});
+
+Deno.test("compiler v2 supports distinct character expressions and patterns", async () => {
+  const source = String.raw`
+    let emoji: Char = '\u{1F600}';
+    let newline = '\n';
+    let same = emoji == '\u{1F600}';
+    let matched = match(emoji) { '\u{1F600}' => { true }, _ => { false } };
+    let 'a' = 'a';
+    let take = ('a') => { 'b' };
+    let taken = take('a');
+  `;
+  const checked = await checkSource(source);
+  expectBinding(checked.env, "emoji", { type: "Char", vars: 0 });
+  expectBinding(checked.env, "newline", { type: "Char", vars: 0 });
+  expectBinding(checked.env, "take", { type: "Char -> Char", vars: 0 });
+  const js = await compileLibraryVirtual("/chars.wm", new Map([["/chars.wm", source]]));
+  const module = await import(`data:text/javascript,${encodeURIComponent(js)}`);
+  assertEquals([module.emoji, module.newline, module.same, module.matched, module.taken], [
+    "😀",
+    "\n",
+    true,
+    true,
+    "b",
+  ]);
+  for (
+    const invalid of [
+      `let bad: String = 'a';`,
+      `let bad: Char = "a";`,
+      `let bad = 'a' == "a";`,
+      `let bad = match("a") { 'a' => { true }, _ => { false } };`,
+      `let 'a' = "a";`,
+    ]
+  ) {
+    await assertRejects(() => checkSource(invalid), Error, "type mismatch");
+  }
+});
+
+Deno.test("compiler v2 preserves primed names in locals, records, constructors and imports", async () => {
+  const files = new Map([
+    [
+      "/lib.wm",
+      String.raw`
+      type T' = | C'<Char>;
+      let value' = 'a';
+      let make' = C'('b');
+    `,
+    ],
+    [
+      "/main.wm",
+      String.raw`
+      from "./lib.wm" import * as Lib';
+      from "./lib.wm" import { value' as alias' };
+      let x' = alias';
+      let x'' = Lib'.value';
+      let x_prime = 'z';
+      let let' = 'l';
+      record Box' = { field': Char };
+      let box' = Box'{ field' = x' };
+      let projected = box'.field';
+      let picked = match(box') { .{ field' = Var(value') } => { value' } };
+      let ctor = match(Lib'.make') { Lib'.C'(value') => { value' } };
+      let pinned = match(x') { Lib'.value' => { true }, _ => { false } };
+    `,
+    ],
+  ]);
+  const js = await compileLibraryVirtual("/main.wm", files);
+  const module = await import(`data:text/javascript,${encodeURIComponent(js)}`);
+  assertEquals([
+    module["x'"],
+    module["x''"],
+    module.x_prime,
+    module["let'"],
+    module.projected,
+    module.picked,
+    module.ctor,
+    module.pinned,
+  ], ["a", "a", "z", "l", "a", "a", "b", true]);
+  assertEquals(module["box'"]["field'"], "a");
+});

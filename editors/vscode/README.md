@@ -11,12 +11,23 @@ extension falls back to the packaged server bundle.
 The packaged server does not need Deno for ordinary Workman files. JavaScript/TypeScript FFI
 reflection still uses the `deno` executable configured by `workman.denoPath` (default: `deno`).
 
+C header reflection automatically uses a packaged Aro binary on Linux, macOS,
+and Windows for x64 and ARM64. No Zig installation is required. The matching
+binary, resource headers and licenses are unpacked into a local cache on first use;
+system C headers/SDKs remain necessary. `WM_C_HEADER_EXTRACTOR` overrides the
+packaged executable; `WM_C_HEADER_BACKEND=zig` selects the previous system-Zig
+backend. See the [extractor docs](../../tooling/c-header-extractor/README.md) for
+cache configuration and beta limitations.
+
 Extension builds use the Go-native TypeScript 7 compiler. The bundled FFI reflector intentionally
 uses the separately named TypeScript 6 compatibility API because TypeScript 7.0 has no programmatic
 compiler API; migrate reflection when the new API arrives in TypeScript 7.1 rather than silently
 falling back from `tsc` 7 during builds.
 
 ## Language features
+
+- Syntax highlighting for character literals, primed identifiers, nested block comments, numeric
+  exponents, Unicode escapes, and string gaps. Word selection includes trailing identifier primes.
 
 - Module-aware diagnostics and inferred-type hover, including unsaved Workman files.
 - Go to Definition/Ctrl+Click for local bindings, types, constructors, and named, wildcard, or

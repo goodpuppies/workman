@@ -12,6 +12,8 @@
 // (`newVector3`) and one getter per numeric field (`getVector3_x`) — emitted
 // against byte_type-composed codecs (struct-codecs.md); nothing handwritten.
 
+import { statSync } from "node:fs";
+
 import type { Decl, JsImportSpec, JsTarget, Module, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostics.ts";
 import {
@@ -463,7 +465,7 @@ function resolveCLibrary(header: string): string | undefined {
 
 function existsSync(path: string): boolean {
   try {
-    return Deno.statSync(path).isFile;
+    return statSync(path).isFile();
   } catch {
     return false;
   }

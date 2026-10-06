@@ -295,6 +295,7 @@ function collectGeneratedValueRefsInExpr(expr: Expr, refs: Set<string>): void {
       return;
     case "Int":
     case "Float":
+    case "Char":
     case "String":
     case "Bool":
     case "Void":
@@ -395,6 +396,7 @@ function solveDelayedBindingTypesInExpr(
       return;
     case "Int":
     case "Float":
+    case "Char":
     case "String":
     case "Bool":
     case "Void":

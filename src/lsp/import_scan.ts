@@ -17,7 +17,7 @@ export function directWorkmanImportSpecifiers(source: string): string[] {
     }
 
     const char = source[i];
-    if (char === '"' || char === "`") {
+    if (char === '"' || char === "`" || char === "'") {
       i = scanString(source, i, char).end;
       continue;
     }
@@ -61,7 +61,7 @@ export function hasTopLevelMainBinding(source: string): boolean {
       continue;
     }
     const char = source[i];
-    if (char === '"' || char === "`") {
+    if (char === '"' || char === "`" || char === "'") {
       i = scanString(source, i, char).end;
       continue;
     }
@@ -133,7 +133,7 @@ function skipTrivia(source: string, start: number): number {
 function scanString(
   source: string,
   start: number,
-  delimiter: '"' | "`",
+  delimiter: '"' | "`" | "'",
 ): { end: number; value?: string } {
   let i = start + 1;
   let value = "";
@@ -161,5 +161,5 @@ function isIdentifierStart(char: string | undefined): boolean {
 }
 
 function isIdentifierPart(char: string | undefined): boolean {
-  return char !== undefined && /[A-Za-z0-9_]/.test(char);
+  return char !== undefined && /[A-Za-z0-9_']/.test(char);
 }

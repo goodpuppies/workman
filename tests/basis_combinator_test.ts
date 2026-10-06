@@ -130,7 +130,7 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:71:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:72:4]");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });

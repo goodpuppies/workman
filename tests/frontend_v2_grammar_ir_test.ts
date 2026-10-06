@@ -32,29 +32,29 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 136);
+  assertEquals(inventory.ruleCount, 144);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 241,
+    unclassified: 247,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 240,
-    any: 4,
-    choice: 53,
-    class: 18,
-    group: 10,
-    labeled: 327,
-    literal: 322,
-    oneOrMore: 6,
-    optional: 81,
-    ruleRef: 692,
+    action: 246,
+    any: 3,
+    choice: 63,
+    class: 40,
+    group: 15,
+    labeled: 340,
+    literal: 343,
+    oneOrMore: 10,
+    optional: 90,
+    ruleRef: 751,
     semanticAnd: 1,
-    sequence: 212,
-    simpleNot: 24,
-    text: 5,
-    zeroOrMore: 50,
+    sequence: 238,
+    simpleNot: 30,
+    text: 8,
+    zeroOrMore: 54,
   });
 });
 
@@ -67,13 +67,13 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "d71a9b736a5492934ea9814a80450bd60259c93a7339426329c21abf460ee0f5",
+    "affddec1a4fbd951b171771da9d5958d811e554209045f6569553f91b49181da",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 228);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 234);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [
@@ -102,6 +102,7 @@ Deno.test("frontend-v2 inventories every initializer helper as a named WM bounda
     { jsName: "nextAnonymousMatchId", wmName: "nextAnonymousMatchId", initialValue: 0 },
   ]);
   assertEquals(initializer.helpers.map((helper) => helper.jsName), [
+    "decodeLiteralBody",
     "span",
     "node",
     "at",

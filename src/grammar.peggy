@@ -2,6 +2,37 @@
   let nextNodeId = 0;
   let nextLiftId = 0;
   let nextAnonymousMatchId = 0;
+  function decodeLiteralBody(body) {
+    const simple = { a: "\x07", b: "\b", t: "\t", n: "\n", v: "\v", f: "\f", r: "\r",
+      '"': '"', "'": "'", "\\": "\\", "`": "`", "$": "$" };
+    let output = "";
+    for (let index = 0; index < body.length; index += 1) {
+      if (body[index] !== "\\") { output += body[index]; continue; }
+      index += 1;
+      const escaped = body[index];
+      if (Object.hasOwn(simple, escaped)) { output += simple[escaped]; }
+      else if (escaped === "^") {
+        index += 1;
+        output += String.fromCodePoint(body.charCodeAt(index) - 64);
+      } else if (/[0-9]/.test(escaped)) {
+        output += String.fromCodePoint(Number(body.slice(index, index + 3)));
+        index += 2;
+      } else if (escaped === "u") {
+        if (body[index + 1] === "{") {
+          const end = body.indexOf("}", index + 2);
+          output += String.fromCodePoint(Number.parseInt(body.slice(index + 2, end), 16));
+          index = end;
+        } else {
+          output += String.fromCodePoint(Number.parseInt(body.slice(index + 1, index + 5), 16));
+          index += 4;
+        }
+      } else if (/[ \t\r\n\v\f]/.test(escaped)) {
+        while (/[ \t\r\n\v\f]/.test(body[index])) index += 1;
+        if (body[index] !== "\\") throw new Error("invalid string gap");
+      } else { throw new Error("invalid string escape"); }
+    }
+    return output;
+  }
   function span(loc) {
     return {
       line: loc.start.line,
@@ -251,6 +282,7 @@ LetPattern
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
   / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
+  / c:Character { return at({ kind: "PChar", value: c.value }, location()); }
   / s:String { return at({ kind: "PString", value: s.value }, location()); }
   / RecordLetPattern
   / ListLetPattern
@@ -432,7 +464,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / AnonymousMatchFn / v:LongName { return longNode("Var", v, {}, location()); }
+  = Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / AnonymousMatchFn / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
@@ -507,6 +539,7 @@ PatternCore
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
   / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
+  / c:Character { return at({ kind: "PChar", value: c.value }, location()); }
   / s:String { return at({ kind: "PString", value: s.value }, location()); }
   / RecordPattern
   / ListPattern
@@ -522,6 +555,7 @@ Param = pattern:ParamPattern ann:TypeAnn? { return at({ pattern, annotation: ann
 ParamPattern
   = "(" _ pattern:ParamPattern _ annotation:TypeAnn _ ")"
     { return ascribedPattern(pattern, annotation, location()); }
+  / c:Character { return at({ kind: "PChar", value: c.value }, location()); }
   / Wildcard { return at({ kind: "PWildcard" }, location()); }
   / RecordParamPattern
   / ListParamPattern
@@ -603,8 +637,10 @@ TypeList = first:TypeExpr rest:(_ "," _ t:TypeExpr { return t; })* _ ","? { retu
 TypeParams = "<" _ first:TypeParam rest:(_ "," _ t:TypeParam { return t; })* _ ","? _ ">" { return [first, ...rest]; }
 TypeParam = name:(Identifier / Constructor) { return name; }
 
-Float = n:$("-"? [0-9]+ "." [0-9]+) !IdentPart { return at({ kind: "Float", value: Number(n) }, location()); }
-Int = n:$("-"? [0-9]+) !IdentPart { return at({ kind: "Int", value: Number(n) }, location()); }
+Float = n:$("-"? [0-9]+ ("." [0-9]+ ([eE] [+-]? [0-9]+)? / [eE] [+-]? [0-9]+)) !IdentPart { return at({ kind: "Float", value: Number(n) }, location()); }
+Int
+  = n:$("-"? "0x" [0-9a-fA-F]+) !IdentPart { return at({ kind: "Int", value: Number.parseInt(n) }, location()); }
+  / n:$("-"? [0-9]+) !IdentPart { return at({ kind: "Int", value: Number(n) }, location()); }
 String = MultilineString / QuotedString
 InterpolatedString
   = "`" InterpolatedStringText? StringInterpolation
@@ -612,27 +648,38 @@ InterpolatedString
 StringInterpolation = "${" _ Expr _ "}"
 InterpolatedStringText = InterpolatedChar+
 InterpolatedChar
-  = "\\n"
-  / "\\t"
+  = SharedEscape
   / "\\`"
   / "\\$"
-  / "\\\\"
-  / !("`" / "\\" / "${") .
+  / !("`" / "\\" / "${") LiteralScalar
 QuotedString = "\"" chars:QuotedChar* "\"" { return at({ kind: "String", value: chars.join("") }, location()); }
 MultilineString = "`" chars:MultilineChar* "`" { return at({ kind: "String", value: chars.join("") }, location()); }
 QuotedChar
-  = "\\n" { return "\n"; }
-  / "\\t" { return "\t"; }
-  / "\\\"" { return "\""; }
-  / "\\\\" { return "\\"; }
-  / !("\"" / "\\" / LineTerminator) c:. { return c; }
+  = SharedEscape
+  / !("\"" / "\\" / LineTerminator) c:LiteralScalar { return c; }
 MultilineChar
-  = "\\n" { return "\n"; }
-  / "\\t" { return "\t"; }
+  = SharedEscape
   / "\\`" { return "`"; }
   / "\\$" { return "$"; }
-  / "\\\\" { return "\\"; }
-  / !("`" / "\\" / "${") c:. { return c; }
+  / !("`" / "\\" / "${") c:LiteralScalar { return c; }
+SharedEscape = ScalarEscape / StringGap
+StringGap = "\\" [ \t\r\n\u000b\u000c]+ "\\" { return ""; }
+Character
+  = "'" StringGap* value:CharacterChar StringGap* "'" { return at({ kind: "Char", value }, location()); }
+CharacterChar = ScalarEscape / !("'" / "\\" / LineTerminator) c:LiteralScalar { return c; }
+ScalarEscape
+  = text:$("\\" (
+      [abtnvfr"'\\]
+    / "^" [\u0040-\u005f]
+    / [0-9] [0-9] [0-9]
+    / "u" !([dD] [89a-fA-F]) HexDigit HexDigit HexDigit HexDigit
+    / "u{" !("0"* [dD] [89a-fA-F] HexDigit HexDigit "}")
+        ("0" HexDigit HexDigit HexDigit HexDigit HexDigit
+        / "10" HexDigit HexDigit HexDigit HexDigit
+        / HexDigit HexDigit? HexDigit? HexDigit? HexDigit?) "}"
+  )) { return decodeLiteralBody(text); }
+HexDigit = [0-9a-fA-F]
+LiteralScalar = text:$([\uD800-\uDBFF] [\uDC00-\uDFFF] / ![\uD800-\uDFFF] .) { return text; }
 LineTerminator = "\r\n" / "\n" / "\r"
 Bool = v:("true" / "false") !IdentPart { return at({ kind: "Bool", value: v === "true" }, location()); }
 Void = "void" !IdentPart { return at({ kind: "Void" }, location()); }
@@ -644,10 +691,11 @@ MemberName = name:$([a-zA-Z_] IdentPart*) { return name; }
 FieldName = !Keyword name:MemberName { return name; }
 LongName = first:Name rest:("." n:MemberName { return n; })* { return longId(first, rest); }
 LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* !"." { return longId(first, rest); }
-IdentPart = [a-zA-Z0-9_]
+IdentPart = [a-zA-Z0-9_']
 Keyword = ("from" / "import" / "as" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
 __ = (Whitespace / Comment)+
 _ = (Whitespace / Comment)*
 Whitespace = [ \t\r\n]
-Comment = "--" [^\n]* / "//" [^\n]*
+Comment = "--" [^\r\n]* / "//" [^\r\n]* / BlockComment
+BlockComment = "/*" (BlockComment / !("/*" / "*/") .)* "*/"
 EOF = !.

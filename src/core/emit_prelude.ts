@@ -85,14 +85,7 @@ const __wm_c_cstr_cache = new globalThis.Array(256);
 let __wm_c_cstr_index = 0;
 const __wm_c_codecs = {};
 const __wm_c_keepalive = [];
-const __wm_c_byte_type_url = "file:///home/ellie/git/byte_type_C/mod.ts";
-let __wm_c_byte_type_promise;
-const __wm_c_bt_async = () => {
-  __wm_c_byte_type_promise ??= import(__wm_c_byte_type_url);
-  return __wm_c_byte_type_promise;
-};
-const __wm_c_setup_codec = async (descriptor) => {
-  const bt = await __wm_c_bt_async();
+const __wm_c_setup_codec = async (descriptor, bt) => {
   const fields = {};
   for (const field of descriptor.fields) fields[field.name] = bt[field.codec];
   const codec = bt.createSizedStruct(fields);

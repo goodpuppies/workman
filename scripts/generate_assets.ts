@@ -29,6 +29,14 @@ const output = [
   ...await sourceEntries(libraryJsPaths),
   "};",
   "",
+  "/** Zig template used for C header reflection, embedded for packaged compilers. */",
+  `export const cHeaderExtractorSource = ${
+    JSON.stringify(
+      (await Deno.readTextFile(new URL("../src/ffi/c/zig/c_header_extract.zig", import.meta.url)))
+        .replace(/\r\n?/g, "\n"),
+    )
+  };`,
+  "",
 ].join("\n");
 
 await Deno.mkdir(new URL("./", outputUrl), { recursive: true });

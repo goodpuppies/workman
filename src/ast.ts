@@ -158,6 +158,7 @@ export type CaptureClause = Located<{
 export type Expr =
   | Located<{ kind: "Int"; value: number }>
   | Located<{ kind: "Float"; value: number }>
+  | Located<{ kind: "Char"; value: string }>
   | Located<{ kind: "String"; value: string }>
   | Located<{ kind: "Bool"; value: boolean }>
   | Located<{ kind: "Void"; implicitStatement?: Expr; implicitTerminatorSpan?: SourceSpan }>
@@ -234,6 +235,7 @@ export type Pattern =
   | Located<{ kind: "PWildcard" }>
   | Located<{ kind: "PVar"; name: string }>
   | Located<{ kind: "PInt"; value: number }>
+  | Located<{ kind: "PChar"; value: string }>
   | Located<{ kind: "PString"; value: string }>
   | Located<{ kind: "PBool"; value: boolean }>
   | Located<{ kind: "PVoid" }>

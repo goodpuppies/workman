@@ -60,6 +60,7 @@ export type BindingFacts = {
 
 type ValueEnv = Map<string, BindingId>;
 type BindingEnv = {
+  snapshot?: BindingScopeSnapshot;
   values: ValueEnv;
   types: Map<string, TypeScopeDeclaration>;
   constructors: Map<string, CtorDecl>;
@@ -183,7 +184,9 @@ function cloneBindingEnv(env: BindingEnv): BindingEnv {
 }
 
 function snapshotBindingEnv(env: BindingEnv): BindingScopeSnapshot {
-  return Object.freeze({
+  // Environments are populated before traversal and replaced by clones when a binding
+  // changes. Nodes in the same lexical scope can therefore share one captured snapshot.
+  return env.snapshot ??= Object.freeze({
     values: new Map(env.values),
     structures: new Map([...env.structures].map(([name, structure]) => [name, structure.id])),
     types: new Map(env.types),

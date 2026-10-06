@@ -1,6 +1,8 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { emitRecognizer } from "../scripts/generate_frontend_v2_recognizer.ts";
+import { topLevelPhraseEnd, topLevelPhraseRanges } from "../src/top_level_phrases.ts";
+import { recognizeGrammar } from "../tooling/frontend-v2/generator/recognizer.ts";
 import { parseWorkmanGrammar } from "../scripts/frontend_v2_grammar_ir.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { decodeSurfaceProgram } from "../src/frontend_v2_surface_loader.ts";
@@ -89,7 +91,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 136,
+    classified: 144,
     missing: [],
     unknown: [],
     duplicates: [],
@@ -754,3 +756,169 @@ async function* wmFiles(root: URL): AsyncGenerator<string> {
     }
   }
 }
+
+Deno.test("frontend-v2 backports nested block comments and CR line-comment boundaries", async () => {
+  const expected = normalizeFrontendSemanticAst(await parse("let x = 1; let y = 2;"));
+  for (
+    const source of [
+      "/* SubsetML module */ let x = 1; /* outer /* nested */ still outer */ let y = 2; /* tail */",
+      "let/* separator */x = 1; let y = 2;",
+      "let x = 1;// comment\rlet y = 2;",
+      "let x = 1;-- comment\r\nlet y = 2;",
+      'let x = 1; /* quotes " and ` ${ are comment text */ let y = 2;',
+    ]
+  ) {
+    assertEquals(recognizeGrammar(grammar, source), true, source);
+    assertEquals(normalizeFrontendSemanticAst(await parse(source)), expected, source);
+  }
+  for (
+    const source of [
+      "/* unterminated",
+      "let x = 1; /* outer /* closed inner */",
+      "let x = 1; /* outer /* unclosed inner */",
+    ]
+  ) {
+    assertEquals(recognizeGrammar(grammar, source), false, source);
+    assertEquals(surfaceParser.parseSurfaceProgram(source).name, "None", source);
+  }
+});
+
+Deno.test("frontend-v2 projects hex integers and exponent reals", async () => {
+  for (
+    const [spelling, kind, value] of [
+      ["0x2a", "Int", 42],
+      ["0xDEAD", "Int", 57005],
+      ["0x1e3", "Int", 483],
+      ["3e-7", "Float", 3e-7],
+      ["3.32E+5", "Float", 332000],
+      ["3.14", "Float", 3.14],
+    ] as const
+  ) {
+    const source = `let x = ${spelling};`;
+    assertEquals(recognizeGrammar(grammar, source), true, spelling);
+    const module = await parse(source);
+    const declaration = module.decls[0];
+    if (declaration.kind !== "LetDecl") throw new Error("expected let declaration");
+    const expr = declaration.bindings[0].value;
+    assertEquals(expr.kind, kind, spelling);
+    if (expr.kind !== "Int" && expr.kind !== "Float") throw new Error("expected number");
+    assertEquals(expr.value, value, spelling);
+  }
+  const patterns = await parse("let choose = match(x) { -0x2a => { 0 }, 0xDEAD => { 1 }, }; ");
+  assertEquals(
+    normalizeFrontendSemanticAst(patterns),
+    normalizeFrontendSemanticAst(
+      await parse("let choose = match(x) { -42 => { 0 }, 57005 => { 1 }, };"),
+    ),
+  );
+  for (
+    const spelling of ["0x", "0X2a", "0x2ag", "42foo", "1e", "1e-", "1e+", "12e3foo", ".3", "4.E5"]
+  ) {
+    const source = `let x = ${spelling};`;
+    assertEquals(recognizeGrammar(grammar, source), false, spelling);
+    const recovered = decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(source));
+    // Existing committed brace completion may recover input rejected by strict recognition.
+    if (recovered) assertEquals(recovered.marks.length > 0, true, spelling);
+  }
+});
+
+Deno.test("frontend-v2 backports shared string escapes and gaps over Unicode scalars", async () => {
+  for (
+    const [body, expected] of [
+      [String.raw`\a\b\v\f\r\n\t`, "\x07\b\v\f\r\n\t"],
+      [String.raw`\^@\^A\^_`, "\x00\x01\x1f"],
+      [String.raw`\065\999\u0041\u{1F600}\u{10FFFF}`, "A\u03e7A😀\u{10FFFF}"],
+      [String.raw`\u{000041}\u{0FFFFF}`, "A\u{FFFFF}"],
+      [String.raw`\'\"\\`, "'\"\\"],
+      ["hello\\\r\n\t \\world", "helloworld"],
+      ["😀", "😀"],
+    ]
+  ) {
+    for (const delimiter of ['"', "`"]) {
+      const source = `let text = ${delimiter}${body}${delimiter};`;
+      assertEquals(recognizeGrammar(grammar, source), true, source);
+      const module = await parse(source);
+      const declaration = module.decls[0];
+      if (declaration.kind !== "LetDecl") throw new Error("expected let");
+      const value = declaration.bindings[0].value;
+      if (value.kind !== "String") throw new Error("expected string");
+      assertEquals(value.value, expected, source);
+    }
+  }
+  for (
+    const body of [
+      String.raw`\uD800`,
+      String.raw`\u{DFFF}`,
+      String.raw`\u{00D800}`,
+      String.raw`\u{110000}`,
+      String.raw`\u{1234567}`,
+      String.raw`\u{}`,
+      String.raw`\u123`,
+      String.raw`\12`,
+      String.raw`\^a`,
+      String.raw`\q`,
+      "bad\\ \nmissing gap closer",
+      "\ud800",
+      "\udfff",
+    ]
+  ) {
+    for (const delimiter of ['"', "`"]) {
+      const source = `let text = ${delimiter}${body}${delimiter};`;
+      assertEquals(recognizeGrammar(grammar, source), false, source);
+      const surface = decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(source));
+      if (surface) assertEquals(surface.marks.length > 0, true, source);
+    }
+  }
+});
+
+Deno.test("frontend-v2 character literals contain exactly one decoded scalar", async () => {
+  for (
+    const [body, expected] of [
+      ["a", "a"],
+      ["😀", "😀"],
+      [String.raw`\'`, "'"],
+      [String.raw`\n`, "\n"],
+      [String.raw`\065`, "A"],
+      [String.raw`\u0041`, "A"],
+      [String.raw`\u{1F600}`, "😀"],
+      [String.raw`\^A`, "\x01"],
+      ["\\ \n\\a\\\t\\", "a"],
+    ]
+  ) {
+    const source = `let c = '${body}';`;
+    assertEquals(recognizeGrammar(grammar, source), true, source);
+    const module = await parse(source);
+    const decl = module.decls[0];
+    if (decl.kind !== "LetDecl") throw new Error("expected let");
+    assertEquals(decl.bindings[0].value.kind, "Char");
+    if (decl.bindings[0].value.kind !== "Char") throw new Error("expected character");
+    assertEquals(decl.bindings[0].value.value, expected);
+  }
+  for (
+    const body of [
+      "",
+      "ab",
+      "é",
+      "\ud800",
+      String.raw`\uD800`,
+      String.raw`\u{110000}`,
+      String.raw`\q`,
+      "\\ \n\\",
+    ]
+  ) {
+    const source = `let c = '${body}';`;
+    assertEquals(recognizeGrammar(grammar, source), false, source);
+    const surface = decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(source));
+    if (surface) assertEquals(surface.marks.length > 0, true, source);
+  }
+  assertEquals(recognizeGrammar(grammar, "let c = 'unterminated;"), false);
+});
+
+Deno.test("character delimiters and primed names preserve top-level phrase boundaries", () => {
+  const source = "let x' = ';'; let y'' = '{'; let z = '\\'';";
+  assertEquals(topLevelPhraseRanges(source).length, 3);
+  assertEquals(topLevelPhraseEnd(source), source.length);
+  const withGap = "let c = '\\ \n\\a\\ \n\\'; let x' = 1;";
+  assertEquals(topLevelPhraseRanges(withGap).length, 2);
+  assertEquals(topLevelPhraseEnd(withGap), withGap.length);
+});

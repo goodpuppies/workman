@@ -16,6 +16,7 @@ jobs:
       - uses: denoland/setup-deno@v2
       - name: Verify generated assets
         run: |
+          deno task c-header:check
           deno task generate-assets
           test -z "$(git status --porcelain -- src/generated)"
       - name: Publish package

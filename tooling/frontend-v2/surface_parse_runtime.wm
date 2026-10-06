@@ -186,7 +186,7 @@ let parseCapture = (source: String) => {
 };
 
 let isFingerprintTrivia = (name: String) => {
-  name == "__" || name == "_" || name == "Whitespace" || name == "Comment" ||
+  name == "__" || name == "_" || name == "Whitespace" || name == "Comment" || name == "BlockComment" ||
   name == "EOF"
 };
 

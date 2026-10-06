@@ -1,14 +1,16 @@
 {
   "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/main/crates/fresh-editor/plugins/schemas/package.schema.json",
   "name": "workman",
-  "version": "0.1.1",
+  "version": "0.4.0",
   "description": "Workman language support",
   "type": "language",
   "license": "MIT",
   "fresh": {
     "grammar": {
       "file": "grammars/workman.sublime-syntax",
-      "extensions": ["wm"],
+      "extensions": [
+        "wm"
+      ],
       "shortName": "wm"
     },
     "language": {
@@ -19,7 +21,9 @@
     },
     "lsp": {
       "command": "wm",
-      "args": ["lsp"],
+      "args": [
+        "lsp"
+      ],
       "autoStart": true,
       "initializationOptions": {
         "structuralInlayHints": true

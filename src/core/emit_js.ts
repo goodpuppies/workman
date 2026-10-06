@@ -22,7 +22,7 @@ import {
   setNamespaceRecordCtors,
   setWorkerSpecifiers,
 } from "./emit_js_import.ts";
-import { emitJsIdentifier as id } from "./emit_name.ts";
+import { emitJsIdentifier as id, emitJsMember, emitJsPropertyKey } from "./emit_name.ts";
 
 export type CoreEmitTarget = "executable" | "library" | "repl";
 
@@ -467,7 +467,7 @@ function emitStandardNamespaces(
 }
 
 function emitShaderArtifactTable(program: CoreProgram): string[] {
-  if (program.shaderArtifacts.size === 0) return [];
+  if (program.shaderArtifacts.size === 0 && !needsGpuRuntime) return [];
   const shaderTargetCtor = (name: "WGSL" | "GLSL" | "HLSL" | "METAL"): string => {
     const jsName = basisCtorJsName(basisCtorId(`Gpu.ShaderTarget.${name}`) ?? -1);
     if (!jsName) throw new Error(`missing compiler-owned shader target ${name}`);
@@ -856,6 +856,7 @@ function replPatternBindings(pattern: CorePattern): CoreDynamicExport[] {
 }
 
 function resetEmitterState(): void {
+  needsGpuRuntime = false;
   bindingTemp = 0;
   tailLoopTemp = 0;
   tailValueTemp = 0;
@@ -876,7 +877,9 @@ function emitLibraryExports(entry: CoreModuleArtifact): string {
     `const __wm_library_export_${index} = ${id(entry.emitName)}[${JSON.stringify(item.name)}];`
   );
   const exports = publicExports.map((item, index) =>
-    `  __wm_library_export_${index} as ${id(item.name)}`
+    `  __wm_library_export_${index} as ${
+      item.name.includes("'") ? JSON.stringify(item.name) : id(item.name)
+    }`
   );
   return `${bindings.join("\n")}\nexport {\n${exports.join(",\n")}\n};`;
 }
@@ -1309,7 +1312,9 @@ function emitDecl(decl: CoreDecl): string[] {
       if (decl.fields.length === 1) return argument;
       return `${argument}[${index}]`;
     };
-    const fields = decl.fields.map((field, index) => `${id(field.name)}: ${fieldValue(index)}`);
+    const fields = decl.fields.map((field, index) =>
+      `${emitJsPropertyKey(field.name)}: ${fieldValue(index)}`
+    );
     return [
       `const ${valueRefName(decl.name, decl.constructorBindingId)} = (${argument}) => ({ ${
         fields.join(", ")
@@ -1410,11 +1415,11 @@ function emitExpr(expr: CoreExpr): string {
         expr.fields.map((field) =>
           field.kind === "CoreRecordSpread"
             ? `...${emitExpr(field.value)}`
-            : `${id(field.name)}: ${emitExpr(field.value)}`
+            : `${emitJsPropertyKey(field.name)}: ${emitExpr(field.value)}`
         ).join(", ")
       } }`;
     case "CoreRecordAccess":
-      return `${emitExpr(expr.record)}.${id(expr.field)}`;
+      return emitJsMember(emitExpr(expr.record), expr.field);
     case "CoreJsonObject":
       return `{ ${
         expr.fields.map((field) => `${JSON.stringify(field.key)}: ${emitExpr(field.value)}`).join(
@@ -1983,7 +1988,7 @@ function patternChecks(
         `${value} !== null`,
         `typeof ${value} === "object"`,
         ...pattern.fields.flatMap((field) =>
-          patternChecks(field.pattern, `${value}.${id(field.name)}`)
+          patternChecks(field.pattern, emitJsMember(value, field.name))
         ),
       ];
     case "CorePCtor": {
@@ -2023,7 +2028,7 @@ function emitPatternBind(pattern: CorePattern, value: string): string[] {
       return pattern.items.flatMap((item, index) => emitPatternBind(item, `${value}[${index}]`));
     case "CorePRecord":
       return pattern.fields.flatMap((field) =>
-        emitPatternBind(field.pattern, `${value}.${id(field.name)}`)
+        emitPatternBind(field.pattern, emitJsMember(value, field.name))
       );
     case "CorePCtor":
       return pattern.payload ? emitPatternBind(pattern.payload, `${value}.args[0]`) : [];
@@ -2052,7 +2057,7 @@ function pinnedPatternValueRef(pattern: Extract<CorePattern, { kind: "CorePPinne
 
   const [root, ...fields] = [...path.qualifiers, path.id];
   return fields.reduce(
-    (value, field) => `${value}.${id(field)}`,
+    emitJsMember,
     valueRefName(root, pattern.rootBindingId ?? pattern.bindingId),
   );
 }
@@ -2072,11 +2077,18 @@ function ctorRefName(name: string, ctorId: CoreDynamicExport["ctorId"]): string 
   return ctorId === undefined ? id(name) : `${id(name)}_ctor_${ctorId}`;
 }
 
+let needsGpuRuntime = false;
+
 function primitiveName(name: string, semanticId?: CompilerSemanticId): string | undefined {
   const operator = basisOperatorDescriptor(name);
   if (operator) return operator.runtimeName;
-  if (semanticId) return basisIntrinsicDescriptorBySemanticId(semanticId)?.runtimeName;
-  const intrinsic = basisIntrinsicDescriptor(name);
-  if (intrinsic?.runtimeName) return intrinsic.runtimeName;
+  const intrinsic = semanticId
+    ? basisIntrinsicDescriptorBySemanticId(semanticId)
+    : basisIntrinsicDescriptor(name);
+  if (intrinsic?.runtimeName) {
+    if (intrinsic.semanticId.startsWith("gpu.")) needsGpuRuntime = true;
+    return intrinsic.runtimeName;
+  }
+  if (semanticId) return undefined;
   return basisUnaryOperatorDescriptor(name)?.runtimeName;
 }

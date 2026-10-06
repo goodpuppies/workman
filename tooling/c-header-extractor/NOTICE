@@ -1,0 +1,19 @@
+Workman C header extractor
+
+Built against Aro shipped in Zig 0.16.0. Zig distribution license: LICENSE.
+Aro: Copyright (c) 2021 Veikka Tuominen; licenses/ARO-MIT.txt.
+https://github.com/Vexu/arocc
+
+Aro record_layout.zig is adapted from mahkoh/repr-c under MIT.
+Copyright (c) Julian Orth.
+https://github.com/mahkoh/repr-c/tree/master/repc/facade
+licenses/REPR-C-MIT.txt
+
+Aro identifier tables are adapted from dtolnay/unicode-ident and Unicode UAX #31.
+Copyright (c) David Tolnay; licenses/UNICODE-IDENT-MIT.txt.
+Unicode, Inc.: licenses/UNICODE.txt.
+https://github.com/dtolnay/unicode-ident
+https://www.unicode.org/reports/tr31/
+
+The include/ resource headers come from the same Zig/Aro distribution.
+Keep this notice, LICENSE, licenses/, and include/ beside the executable.

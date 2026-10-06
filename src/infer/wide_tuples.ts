@@ -165,6 +165,7 @@ function visitExpr(
       return;
     case "Int":
     case "Float":
+    case "Char":
     case "String":
     case "Bool":
     case "Void":
@@ -205,6 +206,7 @@ function visitPattern(
     case "PWildcard":
     case "PVar":
     case "PInt":
+    case "PChar":
     case "PString":
     case "PBool":
     case "PVoid":

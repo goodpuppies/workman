@@ -135,7 +135,7 @@ let buildPatternLike = (
                     NodeParseValue(WildcardPatternNode(token, span))
                   } else {
                     if (
-                      allowLiterals && (
+                      token.kind == "Character" || allowLiterals && (
                         token.text == "void" || token.text == "true" ||
                         token.text == "false" || token.kind == "Int" ||
                         token.kind == "String"

@@ -86,6 +86,7 @@ export function recordFieldNamesInDecls(
         return;
       case "Int":
       case "Float":
+      case "Char":
       case "String":
       case "Bool":
       case "Void":

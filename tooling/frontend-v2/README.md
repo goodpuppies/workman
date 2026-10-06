@@ -91,3 +91,33 @@ The frontend ABI will expose JavaScript-native DTO values deliberately:
   do check successfully and were used as the module/recursion references for this slice.
 - The self-check uses one unsafe `Deno.exit` import solely to make failed assertions produce a
   nonzero process status. No frontend behavior crosses that boundary.
+
+## Frontend v3 syntax backports
+
+The runtime parser now accepts nested `/* … */` block comments, hexadecimal integers
+(`0x2a`), and decimal reals with exponent notation (`3e-7`, `3.32E+5`). Hexadecimal
+prefixes are lowercase; digits and exponent markers accept either case. Exponent signs
+are optional. Numeric identifier suffixes and missing prefix/exponent digits are rejected.
+Line comments end at CR, LF, or CRLF. Unclosed block comments are rejected; v3's localized
+lexer marks for damaged comments have not been ported.
+
+These numeric spellings still elaborate to the compiler's existing `Number` type.
+Quoted strings and backticks also accept the shared SML escapes (`\a`, `\b`, `\v`,
+`\f`, `\r`, `\^A`, `\065`, `\u0041`), braced Unicode scalar escapes (`\u{1F600}`),
+and string gaps. Both quote characters can be escaped; backticks additionally allow
+escaped backticks and dollar signs. Raw text and Unicode escapes must denote scalars.
+Malformed escapes, unclosed gaps, and lone surrogates are rejected rather than recovered.
+
+Character literals (`'c'`, `'\n'`, `'😀'`) contain exactly one decoded Unicode
+scalar, allowing string gaps before or after it. They elaborate to the distinct
+equality type `Char`; the host runtime stores that scalar as a JavaScript string.
+Character constants work in expressions, match arms, let patterns, and parameters.
+Empty, multiple-scalar, malformed, and unterminated character literals are rejected.
+
+Identifiers may contain apostrophes after their initial letter or underscore
+(`x'`, `x''`, `Ctor'`, `Module.value'`). Apostrophes at a word boundary still
+introduce character literals. Primed keywords such as `let'` are identifiers.
+JavaScript emission encodes local names and preserves authored record/export keys.
+
+Word literals and the remaining SubsetML translation gaps need separate passes. SubsetML's
+generated `.wm` files are not yet expected to compile as a whole. Formatter work is deferred.

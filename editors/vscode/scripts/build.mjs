@@ -1,10 +1,19 @@
 import { build } from "esbuild";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript-api";
 
 const extensionRoot = path.resolve(import.meta.dirname, "..");
 const repositoryRoot = path.resolve(extensionRoot, "..", "..");
 const nodePaths = [path.join(extensionRoot, "node_modules")];
+const denoConfig = JSON.parse(await fs.readFile(path.join(repositoryRoot, "deno.json"), "utf8"));
+const localImports = Object.fromEntries(
+  Object.entries(denoConfig.imports).flatMap(([name, target]) =>
+    target.startsWith("file:") ? [[name, fileURLToPath(target)]] :
+    target.startsWith("./") ? [[name, path.resolve(repositoryRoot, target)]] : []
+  ),
+);
 
 await Promise.all([
   fs.rm(path.join(extensionRoot, "out"), { recursive: true, force: true }),
@@ -38,18 +47,39 @@ await Promise.all([
     },
     sourcemap: false,
     nodePaths,
+    alias: localImports,
+    plugins: [{
+      name: "native-extractor-assets",
+      setup(build) {
+        build.onResolve({filter: /generated\/c_header_extractor\/.*[.]js$/}, (args) => ({
+          path: `./generated/c_header_extractor/${path.basename(args.path)}`,
+          external: true,
+        }));
+      },
+    }],
   }),
 ]);
 
-const typescriptLib = path.join(extensionRoot, "node_modules", "@typescript", "old", "lib");
+const typescriptLib = path.dirname(ts.getDefaultLibFilePath({}));
 const serverDirectory = path.join(extensionRoot, "server");
 const generatedDirectory = path.join(serverDirectory, "generated");
 const wmslangDirectory = path.join(extensionRoot, "tooling", "wmslang");
+await fs.cp(
+  path.join(repositoryRoot, "src", "generated", "c_header_extractor"),
+  path.join(generatedDirectory, "c_header_extractor"),
+  {recursive: true},
+);
+const licensesDirectory = path.join(serverDirectory, "licenses");
 await Promise.all([
   fs.mkdir(generatedDirectory, { recursive: true }),
   fs.mkdir(wmslangDirectory, { recursive: true }),
+  fs.mkdir(licensesDirectory, { recursive: true }),
 ]);
 await Promise.all([
+  fs.copyFile(
+    path.join(repositoryRoot, "src", "vendor", "byte_type", "LICENSE"),
+    path.join(licensesDirectory, "byte_type-LICENSE"),
+  ),
   fs.copyFile(
     path.join(repositoryRoot, "src", "generated", "frontend_v2_parser.js"),
     path.join(generatedDirectory, "frontend_v2_parser.js"),
@@ -63,6 +93,9 @@ await Promise.all([
 const libraryFiles = (await fs.readdir(typescriptLib)).filter((name) =>
   name.startsWith("lib.") && name.endsWith(".d.ts")
 );
+if (libraryFiles.length === 0) {
+  throw new Error(`TypeScript standard-library declarations are missing from ${typescriptLib}`);
+}
 await Promise.all(
   libraryFiles.map((name) => fs.copyFile(path.join(typescriptLib, name), path.join(serverDirectory, name))),
 );

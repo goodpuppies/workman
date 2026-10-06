@@ -345,6 +345,7 @@ function ffiReceiverObligationForParam(
         return;
       case "Int":
       case "Float":
+      case "Char":
       case "String":
       case "Bool":
       case "Void":

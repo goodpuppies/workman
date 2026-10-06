@@ -22,6 +22,7 @@ export type ResolvedPatternKind =
   | "wildcard"
   | "binding"
   | "i32"
+  | "char"
   | "string"
   | "bool"
   | "void"
@@ -308,6 +309,9 @@ class PatternFactState {
       }
       case "PInt":
         fact = { ...base, kind: "i32", literal: pattern.value, children: [] };
+        break;
+      case "PChar":
+        fact = { ...base, kind: "char", literal: pattern.value, children: [] };
         break;
       case "PString":
         fact = { ...base, kind: "string", literal: pattern.value, children: [] };

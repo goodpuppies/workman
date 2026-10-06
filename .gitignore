@@ -4,9 +4,10 @@
 node_modules/
 research/
 tooling/frontend-v2/frontend-v2.generated.mjs
+tooling/c-header-extractor/dist/
 tooling/wmslang/wmslang.generated.mjs
 profiles/
 benchmarks/
 *.wm-mini*
-*.wm-cache*
+*.wm_cache*
 _scratch/

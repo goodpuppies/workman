@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "grammarHash": "43e230266cd2277ba3ca15d793ca63836039e588b45ebbe541e1f2ed02d64901",
+  "grammarHash": "affddec1a4fbd951b171771da9d5958d811e554209045f6569553f91b49181da",
   "grammarPath": "src/grammar.peggy",
-  "ruleCount": 136,
+  "ruleCount": 144,
   "recoveryAnnotations": [
     {
       "rule": "TopPhrase",
@@ -275,6 +275,7 @@
     "compiled_probe_rules_13.wm",
     "compiled_probe_rules_14.wm",
     "compiled_probe_rules_15.wm",
+    "compiled_probe_rules_16.wm",
     "compiled_probe_dispatch.wm"
   ]
 }

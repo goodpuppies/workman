@@ -33,3 +33,13 @@ Deno.test("[module update A613] discovery finds only top-level main binders", ()
   assertEquals(hasTopLevelMainBinding("let nested = () => { let main = 1; main };"), false);
   assertEquals(hasTopLevelMainBinding("-- let main = 1;\nlet value = 2;"), false);
 });
+
+Deno.test("discovery scanners distinguish primed words from character literals", () => {
+  assertEquals(hasTopLevelMainBinding("let main' = () => { 0 };"), false);
+  assertEquals(hasTopLevelMainBinding("let let' = 0;"), false);
+  assertEquals(hasTopLevelMainBinding("let c = '{'; let main = () => { '}' };"), true);
+  assertEquals(directWorkmanImportSpecifiers(`let c = '{'; from "./lib.wm" import * as Lib';`), [
+    "./lib.wm",
+  ]);
+  assertEquals(directWorkmanImportSpecifiers(`let from' = "./fake.wm"; import;`), []);
+});

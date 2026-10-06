@@ -69,6 +69,7 @@ export function collectExprs(module: Module): Expr[] {
         break;
       case "Int":
       case "Float":
+      case "Char":
       case "String":
       case "Bool":
       case "Void":
@@ -155,6 +156,7 @@ export function collectPatterns(module: Module): Pattern[] {
         break;
       case "Int":
       case "Float":
+      case "Char":
       case "String":
       case "Bool":
       case "Void":
@@ -180,6 +182,7 @@ export function collectPatterns(module: Module): Pattern[] {
       case "PWildcard":
       case "PVar":
       case "PInt":
+      case "PChar":
       case "PString":
       case "PBool":
       case "PVoid":

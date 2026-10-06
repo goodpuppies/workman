@@ -2,7 +2,8 @@
 
 This directory is a local [Fresh](https://github.com/sinelaw/fresh) language pack. It provides
 syntax highlighting for `.wm` files, two-space indentation, Workman comment settings, and Workman
-LSP integration.
+LSP integration. Highlighting includes character literals, primed identifiers, nested block
+comments, numeric exponents, Unicode escapes, and string gaps.
 
 ## Prerequisites
 
@@ -13,6 +14,11 @@ LSP integration.
   ```sh
   deno install -g -A --name wm jsr:@goodpuppies/workman
   ```
+
+C header reflection uses the native binaries bundled with the `wm` toolchain
+on Linux, macOS and Windows for x64/ARM64. Fresh needs no separate Zig installation.
+System C headers/SDKs are still needed; see the
+[extractor docs](../../tooling/c-header-extractor/README.md) for beta limitations.
 
 ## Install from this checkout
 
@@ -34,7 +40,7 @@ Workman monorepo:
 https://github.com/goodpuppies/workman#editors/fresh
 ```
 
-Fresh installs language packs under `~/.config/fresh/grammars/`.
+Fresh installs language packs under `~/.config/fresh/languages/packages/`.
 
 ## Configure the language server
 
@@ -52,5 +58,5 @@ options.
 
 - Confirm the launcher is visible to Fresh with `wm --version`.
 - Run `Show Warnings` from the command palette to find grammar-loading errors.
-- Run `fresh --show-paths` to display the active configuration and log paths.
+- Run `fresh --cmd config paths` to display the active configuration and log paths.
 - Inspect the Fresh LSP logs if highlighting works but language features do not.

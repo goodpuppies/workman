@@ -200,6 +200,7 @@ export const freshTypeInfo = (name: string, arity: number): TypeInfo => ({
 
 export const NumberTy = prim("Number");
 export const BoolTy = prim("Bool");
+export const CharTy = prim("Char");
 export const StringTy = prim("String");
 export const VoidTy = prim("Void");
 
@@ -711,7 +712,7 @@ export function typeFromAst(
     const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
     return resolved(instantiateAlias(info.alias, info.aliasParams ?? [], args));
   }
-  if (expr.args.length === 0 && ["Number", "Bool", "String", "Void"].includes(expr.name)) {
+  if (expr.args.length === 0 && ["Number", "Bool", "Char", "String", "Void"].includes(expr.name)) {
     return resolved(prim(expr.name));
   }
   return resolved(named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options))));

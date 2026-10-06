@@ -5,6 +5,7 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#characters" },
     { "include": "#imports" },
     { "include": "#declarations" },
     { "include": "#bindings" },
@@ -16,7 +17,8 @@
     { "include": "#types" },
     { "include": "#constants" },
     { "include": "#operators" },
-    { "include": "#punctuation" }
+    { "include": "#punctuation" },
+    { "include": "#identifiers" }
   ],
   "repository": {
     "comments": {
@@ -28,6 +30,14 @@
         {
           "name": "comment.line.double-slash.workman",
           "match": "//.*$"
+        },
+        {
+          "name": "comment.block.workman",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            { "include": "#block-comment" }
+          ]
         }
       ]
     },
@@ -38,10 +48,7 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            {
-              "name": "constant.character.escape.workman",
-              "match": "\\\\(?:[nt\"\\\\])"
-            },
+            { "include": "#scalar-escapes" },
             {
               "name": "invalid.illegal.escape.workman",
               "match": "\\\\."
@@ -53,9 +60,10 @@
           "begin": "`",
           "end": "`",
           "patterns": [
+            { "include": "#scalar-escapes" },
             {
               "name": "constant.character.escape.workman",
-              "match": "\\\\(?:[nt`\\\\])"
+              "match": "\\\\[`$]"
             },
             {
               "name": "invalid.illegal.escape.workman",
@@ -68,7 +76,7 @@
     "imports": {
       "patterns": [
         {
-          "begin": "\\b(from)\\b",
+          "begin": "(?<![A-Za-z0-9_'])(from)(?![A-Za-z0-9_'])",
           "beginCaptures": {
             "1": { "name": "keyword.control.import.from.workman" }
           },
@@ -79,19 +87,19 @@
             { "include": "#strings" },
             {
               "name": "keyword.control.import.workman",
-              "match": "\\b(import|as)\\b"
+              "match": "(?<![A-Za-z0-9_'])(import|as)(?![A-Za-z0-9_'])"
             },
             {
               "name": "storage.modifier.import.workman",
-              "match": "\\b(type|unsafe)\\b"
+              "match": "(?<![A-Za-z0-9_'])(type|unsafe)(?![A-Za-z0-9_'])"
             },
             {
               "name": "support.module.js-target.workman",
-              "match": "\\bjs\\.(?:global|module)\\b"
+              "match": "(?<![A-Za-z0-9_'])js\\.(?:global|module)(?![A-Za-z0-9_'])"
             },
             {
               "name": "variable.other.import.member.workman",
-              "match": "\\b[a-zA-Z_][A-Za-z0-9_]*\\b"
+              "match": "(?<![A-Za-z0-9_'])[a-zA-Z_][A-Za-z0-9_']*(?![A-Za-z0-9_'])"
             },
             { "include": "#types" },
             { "include": "#operators" },
@@ -103,7 +111,7 @@
     "declarations": {
       "patterns": [
         {
-          "begin": "\\b(type)\\s+([A-Z][A-Za-z0-9_]*)\\b",
+          "begin": "(?<![A-Za-z0-9_'])(type)\\s+([A-Z][A-Za-z0-9_']*)(?![A-Za-z0-9_'])",
           "beginCaptures": {
             "1": { "name": "storage.type.type.workman" },
             "2": { "name": "entity.name.type.alias.workman" }
@@ -125,7 +133,7 @@
           ]
         },
         {
-          "begin": "\\b(record)\\s+([A-Z][A-Za-z0-9_]*)\\b",
+          "begin": "(?<![A-Za-z0-9_'])(record)\\s+([A-Z][A-Za-z0-9_']*)(?![A-Za-z0-9_'])",
           "beginCaptures": {
             "1": { "name": "storage.type.type.workman" },
             "2": { "name": "entity.name.type.workman" }
@@ -145,7 +153,7 @@
     "bindings": {
       "patterns": [
         {
-          "match": "\\b(let)\\s+(?:(rec)\\s+)?(?:([a-z_][A-Za-z0-9_]*)|([A-Z][A-Za-z0-9_]*)|(_))\\b",
+          "match": "(?<![A-Za-z0-9_'])(let)\\s+(?:(rec)\\s+)?(?:([a-z_][A-Za-z0-9_']*)|([A-Z][A-Za-z0-9_']*)|(_))(?![A-Za-z0-9_'])",
           "captures": {
             "1": { "name": "storage.type.workman" },
             "2": { "name": "storage.modifier.recursive.workman" },
@@ -156,7 +164,7 @@
         },
         {
           "name": "storage.modifier.binding.workman",
-          "match": "\\band\\b"
+          "match": "(?<![A-Za-z0-9_'])and(?![A-Za-z0-9_'])"
         }
       ]
     },
@@ -164,7 +172,7 @@
       "patterns": [
         {
           "name": "support.type.json.workman",
-          "match": "\\bJSON\\b(?=\\s*[\\{\\[])"
+          "match": "(?<![A-Za-z0-9_'])JSON(?![A-Za-z0-9_'])(?=\\s*[\\{\\[])"
         }
       ]
     },
@@ -172,19 +180,19 @@
       "patterns": [
         {
           "name": "keyword.control.conditional.workman",
-          "match": "\\b(if|else|match)\\b"
+          "match": "(?<![A-Za-z0-9_'])(if|else|match)(?![A-Za-z0-9_'])"
         },
         {
           "name": "storage.type.workman",
-          "match": "\\b(let|type|record)\\b"
+          "match": "(?<![A-Za-z0-9_'])(let|type|record)(?![A-Za-z0-9_'])"
         },
         {
           "name": "storage.modifier.workman",
-          "match": "\\b(rec|and|unsafe)\\b"
+          "match": "(?<![A-Za-z0-9_'])(rec|and|unsafe)(?![A-Za-z0-9_'])"
         },
         {
           "name": "keyword.control.import.workman",
-          "match": "\\b(from|import|as)\\b"
+          "match": "(?<![A-Za-z0-9_'])(from|import|as)(?![A-Za-z0-9_'])"
         }
       ]
     },
@@ -192,15 +200,15 @@
       "patterns": [
         {
           "name": "support.function.panic.workman",
-          "match": "\\bPanic\\b(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_'])Panic(?![A-Za-z0-9_'])(?=\\s*\\()"
         },
         {
           "name": "support.function.pattern-var.workman",
-          "match": "\\bVar\\b(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_'])Var(?![A-Za-z0-9_'])(?=\\s*\\()"
         },
         {
           "name": "support.type.json.workman",
-          "match": "\\bJSON\\b"
+          "match": "(?<![A-Za-z0-9_'])JSON(?![A-Za-z0-9_'])"
         }
       ]
     },
@@ -208,11 +216,11 @@
       "patterns": [
         {
           "name": "entity.name.function.workman",
-          "match": "\\b[a-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_'])[a-z_][A-Za-z0-9_']*(?![A-Za-z0-9_'])(?=\\s*\\()"
         },
         {
           "name": "entity.name.function.constructor.workman",
-          "match": "\\b[A-Z][A-Za-z0-9_]*\\b(?=\\s*\\()"
+          "match": "(?<![A-Za-z0-9_'])[A-Z][A-Za-z0-9_']*(?![A-Za-z0-9_'])(?=\\s*\\()"
         }
       ]
     },
@@ -220,7 +228,7 @@
       "patterns": [
         {
           "name": "variable.object.property.workman",
-          "match": "(?<=\\.)\\b[a-zA-Z_][A-Za-z0-9_]*\\b"
+          "match": "(?<=\\.)(?<![A-Za-z0-9_'])[a-zA-Z_][A-Za-z0-9_']*(?![A-Za-z0-9_'])"
         }
       ]
     },
@@ -228,15 +236,15 @@
       "patterns": [
         {
           "name": "support.type.primitive.workman",
-          "match": "\\b(Int|String|Bool|Void|Float)\\b"
+          "match": "(?<![A-Za-z0-9_'])(Number|Int|Char|String|Bool|Void|Float)(?![A-Za-z0-9_'])"
         },
         {
           "name": "support.type.js.workman",
-          "match": "\\bJs\\.[A-Z][A-Za-z0-9_]*\\b"
+          "match": "(?<![A-Za-z0-9_'])Js\\.[A-Z][A-Za-z0-9_']*(?![A-Za-z0-9_'])"
         },
         {
           "name": "entity.name.type.workman",
-          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+          "match": "(?<![A-Za-z0-9_'])[A-Z][A-Za-z0-9_']*(?![A-Za-z0-9_'])"
         }
       ]
     },
@@ -244,23 +252,23 @@
       "patterns": [
         {
           "name": "constant.language.boolean.workman",
-          "match": "\\b(true|false)\\b"
+          "match": "(?<![A-Za-z0-9_'])(true|false)(?![A-Za-z0-9_'])"
         },
         {
           "name": "constant.language.void.workman",
-          "match": "\\bvoid\\b"
+          "match": "(?<![A-Za-z0-9_'])void(?![A-Za-z0-9_'])"
         },
         {
           "name": "constant.numeric.float.workman",
-          "match": "(?<![A-Za-z0-9_])-?\\b[0-9]+\\.[0-9]+\\b(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_'])-?[0-9]+(?:\\.[0-9]+(?:[eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+)(?![A-Za-z0-9_'])"
         },
         {
           "name": "constant.numeric.integer.workman",
-          "match": "(?<![A-Za-z0-9_])-?\\b[0-9]+\\b(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_'])-?(?:0x[0-9a-fA-F]+|[0-9]+)(?![A-Za-z0-9_'])"
         },
         {
           "name": "variable.language.wildcard.workman",
-          "match": "\\b_\\b"
+          "match": "(?<![A-Za-z0-9_'])_(?![A-Za-z0-9_'])"
         }
       ]
     },
@@ -345,6 +353,64 @@
             { "include": "#comments" },
             { "include": "#punctuation" }
           ]
+        }
+      ]
+    },
+    "block-comment": {
+      "name": "comment.block.workman",
+      "begin": "/\\*",
+      "end": "\\*/",
+      "patterns": [
+        { "include": "#block-comment" }
+      ]
+    },
+    "string-gap": {
+      "name": "constant.character.escape.workman",
+      "begin": "\\\\(?=[ \\t\\r\\n\\v\\f])",
+      "end": "\\\\",
+      "patterns": [
+        {
+          "name": "invalid.illegal.string-gap.workman",
+          "match": "[^ \\t\\r\\n\\v\\f]"
+        }
+      ]
+    },
+    "scalar-escapes": {
+      "patterns": [
+        { "include": "#string-gap" },
+        {
+          "name": "constant.character.escape.workman",
+          "match": "\\\\(?:[abtnvfr\"'\\\\]|\\^[@-_]|[0-9]{3}|u(?![dD][89a-fA-F])[0-9a-fA-F]{4}|u\\{(?!0*[dD][89a-fA-F][0-9a-fA-F]{2}\\})(?:0[0-9a-fA-F]{5}|10[0-9a-fA-F]{4}|[0-9a-fA-F]{1,5})\\})"
+        }
+      ]
+    },
+    "characters": {
+      "patterns": [
+        {
+          "name": "constant.character.workman",
+          "begin": "(?<![A-Za-z0-9_'])'",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.character.begin.workman" }
+          },
+          "end": "'|(?=$)",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.character.end.workman" }
+          },
+          "patterns": [
+            { "include": "#scalar-escapes" },
+            {
+              "name": "invalid.illegal.escape.workman",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.workman",
+          "match": "(?<![A-Za-z0-9_'])[a-z_][A-Za-z0-9_']*(?![A-Za-z0-9_'])"
         }
       ]
     }

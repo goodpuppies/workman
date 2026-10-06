@@ -232,6 +232,13 @@ const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = 
     "MultilineString",
     "InterpolatedChar",
     "QuotedChar",
+    "SharedEscape",
+    "ScalarEscape",
+    "StringGap",
+    "Character",
+    "CharacterChar",
+    "HexDigit",
+    "LiteralScalar",
     "MultilineChar",
     "LineTerminator",
     "Bool",
@@ -245,7 +252,7 @@ const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = 
     "IdentPart",
     "Keyword",
   ]),
-  trivia: Object.freeze(["__", "_", "Whitespace", "Comment"]),
+  trivia: Object.freeze(["__", "_", "Whitespace", "Comment", "BlockComment"]),
   boundary: Object.freeze(["EOF"]),
 });
 

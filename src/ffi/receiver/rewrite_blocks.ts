@@ -115,6 +115,7 @@ function patternBinders(pattern: Pattern): string[] {
       return patternBinders(pattern.pattern);
     case "PWildcard":
     case "PInt":
+    case "PChar":
     case "PString":
     case "PBool":
     case "PVoid":

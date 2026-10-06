@@ -435,6 +435,8 @@ function literalType(expr: Expr): string | undefined {
     case "Int":
     case "Float":
       return "Number";
+    case "Char":
+      return "Char";
     case "String":
       return "String";
     case "Bool":

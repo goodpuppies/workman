@@ -1504,6 +1504,7 @@ function semanticInferredTypeHints(
         return;
       case "Int":
       case "Float":
+      case "Char":
       case "String":
       case "Bool":
       case "Void":
@@ -1522,7 +1523,7 @@ function semanticInferredTypeHints(
 
 function obviousInferredType(expression: Expr): boolean {
   return expression.kind === "Int" || expression.kind === "Float" ||
-    expression.kind === "String" || expression.kind === "Bool" ||
+    expression.kind === "Char" || expression.kind === "String" || expression.kind === "Bool" ||
     expression.kind === "Void";
 }
 
@@ -1663,6 +1664,7 @@ function semanticCallableParameters(
           return;
         case "Int":
         case "Float":
+        case "Char":
         case "String":
         case "Bool":
         case "Void":
@@ -2027,6 +2029,7 @@ function semanticParameterTargets(
         return;
       case "Int":
       case "Float":
+      case "Char":
       case "String":
       case "Bool":
       case "Void":
@@ -2418,8 +2421,8 @@ function semanticOccurrenceSelectionAt(
 export function semanticRenameNameIsValid(plan: SemanticRenamePlan, name: string): boolean {
   if (workmanKeywords.has(name)) return false;
   return /^[A-Z]/.test(plan.placeholder)
-    ? /^[A-Z][A-Za-z0-9_]*$/.test(name)
-    : /^[a-z_][A-Za-z0-9_]*$/.test(name);
+    ? /^[A-Z][A-Za-z0-9_']*$/.test(name)
+    : /^[a-z_][A-Za-z0-9_']*$/.test(name);
 }
 
 const workmanKeywords = new Set([
@@ -3032,13 +3035,14 @@ function recoveredCallContext(
     } else if (char === "/" && next === "*") {
       blockComment = true;
       index++;
-    } else if (char === '"' || char === "'") quote = char;
-    else if (char === "(") stack.push(index);
+    } else if (char === '"' || (char === "'" && !/[A-Za-z0-9_']/.test(source[index - 1] ?? ""))) {
+      quote = char;
+    } else if (char === "(") stack.push(index);
     else if (char === ")") stack.pop();
   }
   for (const open of stack.reverse()) {
     const callee = source.slice(0, open)
-      .match(/([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*$/)?.[1];
+      .match(/([A-Za-z_][A-Za-z0-9_']*(?:\.[A-Za-z_][A-Za-z0-9_']*)*)\s*$/)?.[1];
     if (!callee) continue;
     return Object.freeze({
       callee,
@@ -3081,7 +3085,7 @@ function topLevelCommaCount(source: string, start: number, end: number): number 
     } else if (char === "/" && next === "*") {
       blockComment = true;
       index++;
-    } else if (char === '"' || char === "'") {
+    } else if (char === '"' || (char === "'" && !/[A-Za-z0-9_']/.test(source[index - 1] ?? ""))) {
       quote = char;
     } else if (char === "(" || char === "[" || char === "{") stack.push(char);
     else if (char === ")" || char === "]" || char === "}") stack.pop();
@@ -3577,12 +3581,12 @@ function completionContext(
   offset: number,
 ): Readonly<{ prefix: string; qualifier?: string; typePosition: boolean }> {
   const before = source.slice(0, Math.max(0, Math.min(offset, source.length)));
-  const prefix = before.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? "";
+  const prefix = before.match(/[A-Za-z_][A-Za-z0-9_']*$/)?.[0] ?? "";
   const prefixStart = before.length - prefix.length;
   const preceding = before.slice(0, prefixStart);
-  const qualifier = preceding.match(/([A-Za-z_][A-Za-z0-9_]*)\.\s*$/)?.[1];
+  const qualifier = preceding.match(/([A-Za-z_][A-Za-z0-9_']*)\.\s*$/)?.[1];
   const typePosition = qualifier === undefined &&
-    /(?::|<|\btype\s+[A-Z][A-Za-z0-9_]*\s*=)\s*$/.test(preceding);
+    /(?::|<|\btype\s+[A-Z][A-Za-z0-9_']*\s*=)\s*$/.test(preceding);
   return Object.freeze({ prefix, qualifier, typePosition });
 }
 
@@ -4653,7 +4657,8 @@ function typedNodeKindOrder(kind: SemanticTypedNode["kind"]): number {
 
 function isPattern(value: Expr | Pattern): value is Pattern {
   return value.kind === "PWildcard" || value.kind === "PVar" || value.kind === "PInt" ||
-    value.kind === "PString" || value.kind === "PBool" || value.kind === "PVoid" ||
+    value.kind === "PChar" || value.kind === "PString" || value.kind === "PBool" ||
+    value.kind === "PVoid" ||
     value.kind === "PPinned" || value.kind === "PTuple" || value.kind === "PRecord" ||
     value.kind === "PCtor";
 }

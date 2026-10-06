@@ -1,13 +1,16 @@
 {
   "nodeModulesDir": "auto",
   "name": "@goodpuppies/workman",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "license": "MIT",
   "exports": {
     ".": "./src/cli.ts"
   },
   "tasks": {
     "generate-assets": "deno run --allow-read --allow-write scripts/generate_assets.ts",
+    "byte-type:build": "deno run -A scripts/build_byte_type.ts",
+    "c-header:build": "deno run -A scripts/build_c_header_extractor.ts",
+    "c-header:check": "deno run --allow-read scripts/check_c_header_extractor.ts",
     "generate": "deno run -A scripts/generate.ts",
     "problems:build": "deno run -A scripts/build_problems_tui.ts",
     "tuiman:build": "deno run -A scripts/build_tuiman.ts",
@@ -38,7 +41,7 @@
     "#problems-client": "./src/problems_client.ts",
     "@webgpu/types": "npm:@webgpu/types@0.1.64",
     "@std/assert": "jsr:@std/assert@^1.0.17",
-    "byte_type": "file:///home/ellie/git/byte_type_C/mod.ts",
+    "byte_type": "./src/vendor/byte_type/mod.ts",
     "peggy": "npm:peggy@^5.0.6",
     "typescript": "npm:typescript@^7.0.2",
     "typescript-api": "npm:@typescript/typescript6@^6.0.2"

@@ -36,9 +36,15 @@ Deno.test("recursion facts preserve authored groups and resolved invocation kind
        };`,
     ]]),
   );
-  const facts = analysis.recursionFacts;
+  const facts = {
+    groups: analysis.recursionFacts.groups.filter((fact) => fact.path === "/test/main.wm"),
+    references: analysis.recursionFacts.references.filter((fact) => fact.path === "/test/main.wm"),
+  };
 
-  assertEquals(facts.groups.map((group) => group.id), range(facts.groups.length));
+  assertEquals(
+    analysis.recursionFacts.groups.map((group) => group.id),
+    range(analysis.recursionFacts.groups.length),
+  );
   assertEquals(
     facts.groups.map((group) =>
       group.members.map((member) =>
@@ -47,7 +53,10 @@ Deno.test("recursion facts preserve authored groups and resolved invocation kind
     ),
     [["even", "odd"], ["countdown"], ["pipeLoop"], ["shadowed"], ["asValue"], ["inner"]],
   );
-  assertEquals(facts.references.map((reference) => reference.id), range(facts.references.length));
+  assertEquals(
+    analysis.recursionFacts.references.map((reference) => reference.id),
+    range(analysis.recursionFacts.references.length),
+  );
   assertEquals(countBy(facts.references.map((reference) => reference.relation)), {
     mutual: 2,
     self: 4,

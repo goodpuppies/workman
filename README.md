@@ -24,6 +24,15 @@ deno install -g -A --name wm jsr:@goodpuppies/workman
 for fresher versions, you can add the argument
 `--min-dep-age=0`
 
+## C interoperability
+
+C header imports (`c.header`) use a bundled Aro extractor on Linux, macOS, and
+Windows for x64 and ARM64; users do not need Zig. The compiler and LSP unpack the
+matching binary with its resource headers and licenses on first use. System C
+headers/SDKs are still required where included by your header. See
+[C header reflection](markdown/c_ffi/reflection-extractor.md) for configuration
+and the [extractor's beta limits](tooling/c-header-extractor/README.md).
+
 ## Language Features
 
 An SML based core with all the fp goodies:

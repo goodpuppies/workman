@@ -40,7 +40,7 @@ export function syntaxFoldingRanges(source: string): LspFoldingRange[] {
   const delimiters: Delimiter[] = [];
   const ranges: LspFoldingRange[] = [];
   let line = 0;
-  let quoted = false;
+  let quoted: '"' | "'" | undefined;
   let multiline = false;
   let multilineStart = 0;
   let escaped = false;
@@ -52,7 +52,7 @@ export function syntaxFoldingRanges(source: string): LspFoldingRange[] {
     if (character === "\n") {
       line++;
       lineComment = false;
-      if (quoted) quoted = false;
+      if (quoted) quoted = undefined;
       escaped = false;
       continue;
     }
@@ -60,8 +60,16 @@ export function syntaxFoldingRanges(source: string): LspFoldingRange[] {
 
     if (quoted) {
       if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === '"') quoted = false;
+      else if (character === "\\") {
+        let gapEnd = index + 1;
+        while (/[ \t\r\n\v\f]/.test(source[gapEnd] ?? "")) gapEnd++;
+        if (gapEnd > index + 1 && source[gapEnd] === "\\") {
+          for (let gapIndex = index + 1; gapIndex < gapEnd; gapIndex++) {
+            if (source[gapIndex] === "\n") line++;
+          }
+          index = gapEnd;
+        } else escaped = true;
+      } else if (character === quoted) quoted = undefined;
       continue;
     }
     if (multiline) {
@@ -80,8 +88,11 @@ export function syntaxFoldingRanges(source: string): LspFoldingRange[] {
       index++;
       continue;
     }
-    if (character === '"') {
-      quoted = true;
+    if (
+      character === '"' ||
+      (character === "'" && !/[A-Za-z0-9_']/.test(source[index - 1] ?? ""))
+    ) {
+      quoted = character;
       continue;
     }
     if (character === "`") {

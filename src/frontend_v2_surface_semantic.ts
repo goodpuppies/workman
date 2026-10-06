@@ -165,29 +165,29 @@ function projectJavaScriptTarget(node: WmVariant, context: Context): JsTarget {
       return { kind: "JsMeta", ...located };
     case "JavaScriptGlobalTargetNode": {
       const [, , pathToken] = fields(node);
-      return { kind: "JsGlobal", path: jsonString(pathToken), ...located };
+      return { kind: "JsGlobal", path: stringTokenValue(pathToken), ...located };
     }
     case "JavaScriptModuleTargetNode": {
       const [, , specifierToken] = fields(node);
-      return { kind: "JsModule", specifier: jsonString(specifierToken), ...located };
+      return { kind: "JsModule", specifier: stringTokenValue(specifierToken), ...located };
     }
     case "JavaScriptWorkerTargetNode": {
       const [, , specifierToken] = fields(node);
-      return { kind: "JsWorker", specifier: jsonString(specifierToken), ...located };
+      return { kind: "JsWorker", specifier: stringTokenValue(specifierToken), ...located };
     }
     case "CHeaderTargetNode": {
       const [headerValue, libValue] = fields(node, "CHeaderTargetNode");
       const lib = option(libValue);
       return {
         kind: "CHeader",
-        header: jsonString(surfaceValueToken(headerValue)),
-        ...(lib ? { lib: jsonString(surfaceValueToken(lib)) } : {}),
+        header: stringTokenValue(surfaceValueToken(headerValue)),
+        ...(lib ? { lib: stringTokenValue(surfaceValueToken(lib)) } : {}),
         ...located,
       };
     }
     case "CLibTargetNode": {
       const [nameValue] = fields(node, "CLibTargetNode");
-      return { kind: "CLib", name: jsonString(surfaceValueToken(nameValue)), ...located };
+      return { kind: "CLib", name: stringTokenValue(surfaceValueToken(nameValue)), ...located };
     }
     default:
       throw unsupported("JavaScript target", node);
@@ -215,7 +215,7 @@ function projectJavaScriptHostImport(
   }
   return {
     kind: "ImportDecl",
-    path: JS_HOST_IMPORT_PREFIX + jsonString(nameToken),
+    path: JS_HOST_IMPORT_PREFIX + stringTokenValue(nameToken),
     pathNode: nodeFor(context, tokenSpan(nameToken)),
     clause: clause.kind === "Namespace"
       ? { kind: "Namespace", alias: clause.alias, node: clause.node }
@@ -367,7 +367,7 @@ function projectImport(node: WmVariant, context: Context): Decl {
   const pathText = tokenText(pathToken);
   let path: string;
   try {
-    path = JSON.parse(pathText) as string;
+    path = decodeStringLiteral(pathText);
   } catch {
     throw new Error(`frontend-v2 cannot decode import path ${JSON.stringify(pathText)}`);
   }
@@ -510,13 +510,11 @@ function projectPattern(
     }
     case "ListPatternNode": {
       const [, itemsValue, tailValue] = fields(node);
-      const items = list(itemsValue).map((item) =>
-        projectListPatternElement(variant(item), context, flavor)
-      );
+      const items = list(itemsValue).map((item) => projectPattern(variant(item), context, flavor));
       const tailNode = option(tailValue);
       return projectListPattern(
         items,
-        tailNode ? projectListPatternElement(variant(tailNode), context, flavor) : undefined,
+        tailNode ? projectPattern(variant(tailNode), context, flavor) : undefined,
         context,
         spanOf(node),
       );
@@ -548,41 +546,15 @@ function projectPattern(
   }
 }
 
-function projectListPatternElement(
-  node: WmVariant,
-  context: Context,
-  flavor: PatternFlavor,
-): Pattern {
-  if (flavor === "general" && node.name === "WildcardPatternNode") {
-    return {
-      kind: "PVar",
-      name: "_",
-      node: nodeFor(context, spanOf(node)),
-    };
-  }
-  return projectPattern(node, context, flavor);
-}
-
 function projectPatternArguments(node: WmVariant, context: Context): Pattern[] {
   if (node.name === "TuplePatternNode") {
     const [, itemsValue] = fields(node);
-    return list(itemsValue).map((item) => projectDirectCtorPattern(variant(item), context));
+    return list(itemsValue).map((item) => projectPattern(variant(item), context));
   }
   if (node.name === "GroupedPatternNode") {
-    return [projectDirectCtorPattern(variant(fields(node)[1]), context)];
+    return [projectPattern(variant(fields(node)[1]), context)];
   }
-  return [projectDirectCtorPattern(node, context)];
-}
-
-function projectDirectCtorPattern(node: WmVariant, context: Context): Pattern {
-  if (node.name === "WildcardPatternNode") {
-    return {
-      kind: "PVar",
-      name: "_",
-      node: nodeFor(context, spanOf(node)),
-    };
-  }
-  return projectPattern(node, context);
+  return [projectPattern(node, context)];
 }
 
 function projectLiteralPattern(
@@ -593,10 +565,13 @@ function projectLiteralPattern(
     return { kind: "PBool", value: text === "true", ...located };
   }
   if (text === "void") return { kind: "PVoid", ...located };
+  if (text.startsWith("'")) {
+    return { kind: "PChar", value: decodeLiteralBody(text.slice(1, -1)), ...located };
+  }
   if (text.startsWith('"') || text.startsWith("`")) {
     return { kind: "PString", value: decodeStringLiteral(text), ...located };
   }
-  return { kind: "PInt", value: Number(text), ...located };
+  return { kind: "PInt", value: decodeNumericLiteral(text), ...located };
 }
 
 function projectTypeAnnotation(node: WmVariant, context: Context): TypeExpr {
@@ -805,7 +780,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
           const [keyToken, , valueNode] = fields(field);
           const authoredKey = tokenText(keyToken);
           return {
-            key: authoredKey.startsWith('"') ? JSON.parse(authoredKey) as string : authoredKey,
+            key: authoredKey.startsWith('"') || authoredKey.startsWith("`")
+              ? decodeStringLiteral(authoredKey)
+              : authoredKey,
             value: projectExpr(variant(valueNode), context),
             node: nodeFor(context, spanOf(field)),
           };
@@ -1249,12 +1226,23 @@ function projectLiteralExpr(text: string, located: { node: AstNode }): Expr {
     return { kind: "Bool", value: text === "true", ...located };
   }
   if (text === "void" || text === "()") return { kind: "Void", ...located };
+  if (text.startsWith("'")) {
+    return { kind: "Char", value: decodeLiteralBody(text.slice(1, -1)), ...located };
+  }
   if (text.startsWith('"') || text.startsWith("`")) {
     return { kind: "String", value: decodeStringLiteral(text), ...located };
   }
-  return text.includes(".")
-    ? { kind: "Float", value: Number(text), ...located }
-    : { kind: "Int", value: Number(text), ...located };
+  // Hexadecimal digits may contain e/E without making the literal a real.
+  const isHex = /^-?0x/.test(text);
+  const isReal = !isHex && /[.eE]/.test(text);
+  return isReal
+    ? { kind: "Float", value: decodeNumericLiteral(text), ...located }
+    : { kind: "Int", value: decodeNumericLiteral(text), ...located };
+}
+
+function decodeNumericLiteral(text: string): number {
+  // Number rejects signed hexadecimal spellings; patterns retain their authored sign.
+  return /^-?0x/.test(text) ? Number.parseInt(text, 16) : Number(text);
 }
 
 function projectInterpolatedString(node: WmVariant, context: Context): Expr {
@@ -1267,7 +1255,7 @@ function projectInterpolatedString(node: WmVariant, context: Context): Expr {
       const [textValue] = fields(part);
       parts.push({
         kind: "String",
-        value: decodeMultilineText(tokenText(textValue)),
+        value: decodeLiteralBody(tokenText(textValue)),
         node: nodeFor(context, spanOf(part)),
       });
       continue;
@@ -1300,14 +1288,30 @@ function projectInterpolatedString(node: WmVariant, context: Context): Expr {
 }
 
 function decodeStringLiteral(text: string): string {
-  if (text.startsWith('"')) return JSON.parse(text) as string;
-  if (!text.startsWith("`") || !text.endsWith("`")) {
+  const delimiter = text[0];
+  if ((delimiter !== '"' && delimiter !== "`") || !text.endsWith(delimiter)) {
     throw new Error(`frontend-v2 cannot decode string literal ${JSON.stringify(text)}`);
   }
-  return decodeMultilineText(text.slice(1, -1));
+  return decodeLiteralBody(text.slice(1, -1));
 }
 
-function decodeMultilineText(body: string): string {
+// Only grammar-validated bodies reach this decoder: escapes have complete digits,
+// Unicode values are scalars, and string gaps have their closing backslash.
+function decodeLiteralBody(body: string): string {
+  const simple: Record<string, string> = {
+    a: "\x07",
+    b: "\b",
+    t: "\t",
+    n: "\n",
+    v: "\v",
+    f: "\f",
+    r: "\r",
+    '"': '"',
+    "'": "'",
+    "\\": "\\",
+    "`": "`",
+    "$": "$",
+  };
   let output = "";
   for (let index = 0; index < body.length; index += 1) {
     if (body[index] !== "\\") {
@@ -1316,16 +1320,29 @@ function decodeMultilineText(body: string): string {
     }
     index += 1;
     const escaped = body[index];
-    if (escaped === "n") output += "\n";
-    else if (escaped === "t") output += "\t";
-    else if (escaped === "`") output += "`";
-    else if (escaped === "$") output += "$";
-    else if (escaped === "\\") output += "\\";
-    else throw new Error(`frontend-v2 cannot decode multiline escape \\${escaped ?? ""}`);
+    if (Object.hasOwn(simple, escaped)) output += simple[escaped];
+    else if (escaped === "^") {
+      index += 1;
+      output += String.fromCodePoint(body.charCodeAt(index) - 64);
+    } else if (/[0-9]/.test(escaped)) {
+      output += String.fromCodePoint(Number(body.slice(index, index + 3)));
+      index += 2;
+    } else if (escaped === "u") {
+      if (body[index + 1] === "{") {
+        const end = body.indexOf("}", index + 2);
+        output += String.fromCodePoint(Number.parseInt(body.slice(index + 2, end), 16));
+        index = end;
+      } else {
+        output += String.fromCodePoint(Number.parseInt(body.slice(index + 1, index + 5), 16));
+        index += 4;
+      }
+    } else if (/[ \t\r\n\v\f]/.test(escaped)) {
+      while (/[ \t\r\n\v\f]/.test(body[index])) index += 1;
+      if (body[index] !== "\\") throw new Error("invalid string gap");
+    } else throw new Error("invalid string escape");
   }
   return output;
 }
-
 function projectLongName(node: WmVariant): { qualifiers: string[]; id: string } {
   const [partsValue] = fields(node, "LongNameNode");
   const parts = list(partsValue).map(tokenText);
@@ -1339,10 +1356,10 @@ function tokenText(value: unknown): string {
   return token.text;
 }
 
-function jsonString(value: unknown): string {
+function stringTokenValue(value: unknown): string {
   const text = tokenText(value);
   try {
-    return JSON.parse(text) as string;
+    return decodeStringLiteral(text);
   } catch {
     throw new Error(`frontend-v2 cannot decode string token ${JSON.stringify(text)}`);
   }

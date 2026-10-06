@@ -32,7 +32,8 @@ export function loadStandardLibrary(): Promise<InitialImport[]> {
   return standardLibraryPromise;
 }
 
-export async function standardInferOptions(): Promise<InferModuleOptions> {
+export async function standardInferOptions(includePrelude = true): Promise<InferModuleOptions> {
+  if (!includePrelude) return {};
   return {
     initialImports: await loadStandardLibrary(),
   };
@@ -125,7 +126,7 @@ export async function withStandardLibrary(
   return mergeLibraryGraph(graph, results, await standardRuntimeGraph());
 }
 
-function usesStandardLibrary(graph: ModuleGraph): boolean {
+export function usesStandardLibrary(graph: ModuleGraph): boolean {
   return ![...graph.nodes.values()].every((node) => node.module.prelude === "none");
 }
 
@@ -162,6 +163,7 @@ export async function withoutStandardLibrary(
   graph: ModuleGraph,
   results: ModuleMap<InferResult>,
 ): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
+  if (!usesStandardLibrary(graph)) return { graph, results };
   const library = (await standardRuntimeGraph()).graph.nodes;
   if (!graph.order.some((id) => library.has(id))) return { graph, results };
   const order = graph.order.filter((id) => !library.has(id));

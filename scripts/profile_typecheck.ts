@@ -2,6 +2,11 @@ import { buildProgramAnalysis } from "../src/program_analysis.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
 import { analyzeModuleGraph } from "../src/staged_analysis.ts";
 import { show } from "../src/types.ts";
+import {
+  mergeLibraryGraph,
+  standardRuntimeGraph,
+  usesStandardLibrary,
+} from "../src/standard_library.ts";
 
 type Options = {
   input: string;
@@ -48,7 +53,22 @@ async function profileTypecheck(
     },
   });
   for (const [name, ms] of stageTotals) phases.push({ name, ms });
-  await timed(phases, "build program analysis", () => buildProgramAnalysis(graph, results));
+  const library = await timed(
+    phases,
+    "prepare library graph",
+    () => usesStandardLibrary(graph) ? standardRuntimeGraph() : undefined,
+  );
+  await timed(
+    phases,
+    "build program analysis",
+    () =>
+      buildProgramAnalysis(
+        graph,
+        results,
+        {},
+        library ? (graph, results) => mergeLibraryGraph(graph, results, library) : undefined,
+      ),
+  );
 
   if (summaryBinding) {
     const entry = results.get(graph.entry);

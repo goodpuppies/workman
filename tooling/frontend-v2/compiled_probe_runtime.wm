@@ -39,7 +39,7 @@ let codeAt = (source: String, offset: Number) => {
 
 let failurePriority = (rule: String) => {
   if (
-    rule == "Whitespace" || rule == "Comment" || rule == "_" || rule == "__" ||
+    rule == "Whitespace" || rule == "Comment" || rule == "BlockComment" || rule == "_" || rule == "__" ||
     rule == "<choice>" || rule == "<lookahead>"
   ) {
     0

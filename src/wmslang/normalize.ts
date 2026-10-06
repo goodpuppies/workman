@@ -597,7 +597,7 @@ function exprCapability(
     input.result.env.get(expr.callee.name)?.jsImport
   ) return "host-ffi";
   if (
-    expr.kind === "String" || expr.kind === "JsonObject" || expr.kind === "JsonArray" ||
+    expr.kind === "Char" || expr.kind === "String" || expr.kind === "JsonObject" || expr.kind === "JsonArray" ||
     expr.kind === "Panic" || expr.kind === "Match" || expr.kind === "Record" ||
     expr.kind === "Pipe" || expr.kind === "Lambda"
   ) return "unsupported";

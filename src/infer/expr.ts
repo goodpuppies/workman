@@ -3,6 +3,7 @@ import { pathOf } from "../ast.ts";
 import { diagnosticError } from "../diagnostics.ts";
 import {
   BoolTy,
+  CharTy,
   fresh,
   freshFfi,
   instantiate,
@@ -67,6 +68,9 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
     case "Int":
     case "Float":
       t = NumberTy;
+      break;
+    case "Char":
+      t = CharTy;
       break;
     case "String":
       t = StringTy;

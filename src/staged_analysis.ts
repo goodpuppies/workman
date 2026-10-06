@@ -19,7 +19,11 @@ import { registerModuleCarrier } from "./infer/carriers.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import type { ModuleGraph, ModuleNode } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
-import { libraryImportResults, standardInferOptions } from "./standard_library.ts";
+import {
+  libraryImportResults,
+  standardInferOptions,
+  usesStandardLibrary,
+} from "./standard_library.ts";
 import { collectExprs } from "./type_debug_collect.ts";
 
 export type StagedAnalysisPhase =
@@ -123,22 +127,14 @@ export async function analyzeModuleGraph(
   }
 
   const standardLibraryStarted = performance.now();
-  const inferOptions = options.inferOptions ?? await standardInferOptions();
+  const inferOptions = options.inferOptions ??
+    await standardInferOptions(usesStandardLibrary(graph));
   options.onTiming?.({
     phase: "load standard library",
     milliseconds: performance.now() - standardLibraryStarted,
   });
 
-  const requiresFfiStaging =
-    [...ffi.values()].some((item) =>
-      item.bindings.size > 0 || item.foreignTypeRefs.size > 0 ||
-      (item.sourceJsImports?.length ?? 0) > 0
-    ) || [...graph.nodes.values()].some((node) =>
-      collectExprs(node.module).some((expr) =>
-        expr.kind === "FfiGet" || expr.kind === "FfiCall" || expr.kind === "FfiBindingCall"
-      )
-    );
-  if (!requiresFfiStaging) {
+  if (![...ffi.values()].some(requiresFfiStaging)) {
     const results = new Map<ModuleId, InferResult>();
     for (const id of graph.order) {
       const node = graph.nodes.get(id)!;
@@ -301,6 +297,12 @@ function moduleHasDelayedFfi(module: ModuleNode["module"]): boolean {
   );
 }
 
+/** Use the staged pipeline whenever preparation or receiver access leaves FFI work. */
+export function requiresFfiStaging(prepared: FfiElaboration): boolean {
+  return prepared.bindings.size > 0 || prepared.foreignTypeRefs.size > 0 ||
+    (prepared.sourceJsImports?.length ?? 0) > 0 || moduleHasDelayedFfi(prepared.module);
+}
+
 export function isDelayedFfiPartialDiagnostic(message: string): boolean {
   return message.startsWith("cannot solve unresolved JS FFI type ") ||
     message.startsWith("unresolved JS FFI obligation in ") ||
@@ -318,7 +320,7 @@ export function assertNoPartialDiagnostics(result: InferResult): InferResult {
 }
 
 /** Results for import edges that leave the graph: library modules named by `js.host`. */
-async function externalImportResults(graph: ModuleGraph): Promise<ModuleMap<InferResult>> {
+export async function externalImportResults(graph: ModuleGraph): Promise<ModuleMap<InferResult>> {
   const leaves = [...graph.nodes.values()].some((node) =>
     node.imports.some((edge) => !graph.nodes.has(edge.target))
   );

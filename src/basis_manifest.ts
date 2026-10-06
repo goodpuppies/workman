@@ -27,6 +27,7 @@ const LAYER0_TYPES = Object.freeze(
     { name: "Bool", typeNameId: -2, arity: 0, profiles, equality: "always" },
     { name: "String", typeNameId: -3, arity: 0, profiles, equality: "always" },
     { name: "Void", typeNameId: -4, arity: 0, profiles, equality: "always" },
+    { name: "Char", typeNameId: -34, arity: 0, profiles, equality: "always" },
     {
       name: "Option",
       typeNameId: -10,

@@ -7,6 +7,11 @@ signature.
 
 ## Pipeline
 
+The bundled Aro backend collects the same symbol list, parses the header at runtime,
+and reads target layouts from Aro. Its JSON goes through the same Workman mapping
+below. Native binaries and resource headers are bundled, with checksummed unpacking
+on first use. The legacy system-Zig path remains available for compatibility:
+
 1. Collect `c.header` imports from the module graph (declared symbols become
    the extractor's symbol list — same as workman-old's `{{SYMBOLS}}` template
    slot).
@@ -14,9 +19,10 @@ signature.
    gets the header include and the symbol list; the program does
    `@cImport(@cInclude(header))` and comptime `@typeInfo`/`@typeName` /
    `@offsetOf` over the symbols, writes one JSON document to stdout.
-3. `zig run` it (target triple from env, default `x86_64-linux-gnu`).
+3. `zig run` it (target triple from env; default `<host-arch>-linux-gnu` on
+   Linux, otherwise `native`).
 4. Cache the JSON keyed by (header path, target, include dirs, defines,
-   extractor source hash) next to the program or in a cache dir; workman-old's
+   extractor source hash, Zig version) next to the program or in a cache dir; workman-old's
    layout is a fine base.
 5. `c_header_provider.ts` equivalent loads the cache, maps JSON → Workman
    types and nominal foreign types, and registers them in the environment.
@@ -99,12 +105,37 @@ C pointer `Option<Ptr<T>>` uniformly, matching the backend's
 
 ## Environment knobs (workman-old parity)
 
-- `WM_C_HEADER_TARGET` — explicit target triple (default `x86_64-linux-gnu`).
+- `WM_ZIG_PATH` — Zig executable; otherwise `zig` is resolved from PATH.
+- `WM_C_HEADER_TARGET` — explicit target triple (default `<host-arch>-linux-gnu`
+  on Linux, otherwise `native`). The explicit Linux target uses Zig's bundled
+  libc rather than host CRT files. The Zig backend executes the reflected program,
+  so the selected target must run on the host for the Zig backend. The bundled
+  Aro backend reads target layouts without executing a target reflection program.
 - `WM_C_HEADER_INCLUDE_DIRS` — `;`-separated.
 - `WM_C_HEADER_DEFINES` — `;`-separated.
+- `WM_C_CACHE_DIR` — reflection cache directory (default `.wm_cache/c_headers`).
 - Dropped from v1: `WM_C_HEADER_USE_WINSDK` (Windows-only plumbing).
 
 ## Diagnostics
+
+C header reflection automatically uses the bundled Aro binary on Linux, macOS and
+Windows for x64/ARM64. The JSR toolchain and universal VSIX carry compressed binary
+assets, loaded only on first reflection and unpacked with resource headers and
+licenses into a checksummed cache. No Zig executable is invoked on this path.
+System C headers/SDKs are still needed for included platform headers. Linux x64
+has end-to-end runtime verification; other platforms are cross-built.
+
+See [bundled extractor details and beta limits](../../tooling/c-header-extractor/README.md).
+`WM_C_HEADER_EXTRACTOR` selects an explicit replacement. `WM_C_EXTRACTOR_CACHE_DIR`
+changes the native cache location. `WM_C_HEADER_BACKEND=zig` opts into the previous
+Zig 0.16.x backend, also used for unsupported host platforms. That backend embeds
+the template, translates C through Aro, and compiles a Zig reflection program.
+The bundled backend emits the same JSON directly from Aro's AST and target layouts.
+
+The executable version is checked once per path per compiler process. Missing
+or incompatible Zig produces an actionable C-header diagnostic. Reflection cache
+keys include the version and, for native extraction, the host target so layouts
+are not reused across Zig releases or host platforms.
 
 - Zig compile failure → surface the stderr with the generated extractor file
   path (workman-old's `zig_diagnostics.ts` is the reference for source-map

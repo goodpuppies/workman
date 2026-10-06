@@ -104,6 +104,7 @@ function containsFfiBoundary(expr: Expr, env: Env): boolean {
       return containsFfiBoundary(expr.left, env) || containsFfiBoundary(expr.right, env);
     case "Int":
     case "Float":
+    case "Char":
     case "String":
     case "Bool":
     case "Void":
@@ -121,6 +122,7 @@ function isNonExpansive(expr: Expr, env: Env): boolean {
   switch (expr.kind) {
     case "Int":
     case "Float":
+    case "Char":
     case "String":
     case "Bool":
     case "Void":
