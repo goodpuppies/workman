@@ -8,6 +8,7 @@ import {
 import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { inferModulePartial } from "../src/infer.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
+import { runFile } from "../src/run.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("reflects relative JS modules whose dependencies use a Deno import map", async () => {
@@ -680,8 +681,8 @@ Deno.test("delayed foreign methods provide callback parameter refs", async () =>
       `
         let listen = () => {
           (target) => {
-            target :> .addEventListener("click", (evt) => {
-              let isTrusted = evt :> .isTrusted;
+            target.addEventListener("click", (evt) => {
+              let isTrusted = evt.isTrusted;
             })
           }
         };
@@ -769,85 +770,59 @@ Deno.test("partial receiver calls reject an impossible remaining arity", async (
   );
 });
 
-Deno.test("local JavaScript receivers require pipe-member syntax regardless of annotations", async () => {
+Deno.test("named JavaScript receiver dots share pipe-member inference", async () => {
   for (const annotation of ["", ": WorkerType"]) {
-    await assertRejects(
-      () =>
-        checkSource(`
-          from js.global import { Worker };
-          from js.global import type { Worker as WorkerType };
-          let main = () => {
-            let worker${annotation} = Worker.new("worker.js", JSON{ "type": "module" })
-              :> Result.debug;
-            worker.postMessage("hello")
-          };
-        `),
-      Error,
-      "Worker is a JavaScript value; use worker :> .postMessage for member access",
-    );
+    for (const member of ["worker.postMessage", "worker :> .postMessage"]) {
+      const result = await checkSource(`
+        from js.global import { Worker };
+        from js.global import type { Worker as WorkerType };
+        let main = () => {
+          let worker${annotation} = Worker.new("worker.js", JSON{ "type": "module" }) :> Result.debug;
+          ${member}("hello")
+        };
+      `);
+      expectBinding(result.env, "main", { type: "Void -> Result<Void, Js.Error>", vars: 0 });
+    }
   }
+});
 
+Deno.test("callback JavaScript property dots share delayed receiver inference", async () => {
   await checkSource(`
-    from js.global import { Worker };
-    let main = () => {
-      let worker = Worker.new("worker.js", JSON{ "type": "module" }) :> Result.debug;
-      worker :> .postMessage("hello")
+    from js.global import { EventTarget };
+    let target = EventTarget.new() :> Result.debug;
+    let installed = target :> .addEventListener("click", (event) => {
+      let trusted = event.isTrusted;
+      void
+    });
+  `);
+});
+
+Deno.test("delayed nominal receivers accept named dotted method access", async () => {
+  const result = await checkSource(`
+    from js.global import { TextEncoder };
+    let mapError = (value) => { value :> Result.mapErr((error) => { error }) };
+    let encoder = TextEncoder.new() :> mapError;
+    let encoded = (text) => {
+      encoder :> Result.andThen((enc) => { enc.encode(text) })
     };
   `);
-
-  await assertRejects(
-    () =>
-      checkSource(`
-        from js.global import { EventTarget };
-        let target = EventTarget.new() :> Result.debug;
-        let installed = target :> .addEventListener("click", (event) => {
-          let trusted = event.isTrusted;
-          void
-        });
-      `),
-    Error,
-    "unknown record field isTrusted; no nominal record type declares it. For JavaScript member access, use event :> .isTrusted",
-  );
+  expectBinding(result.env, "encoded", {
+    type: "String -> Result<Uint8Array, Js.Error>",
+    vars: 0,
+  });
 });
 
-Deno.test("delayed nominal receivers diagnose legacy dotted method access", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
-        from js.global import { TextEncoder };
-
-        let mapError = (value) => {
-          value :> Result.mapErr((error) => { error })
-        };
-        let encoder = TextEncoder.new() :> mapError;
-        let encoded = (text) => {
-          encoder :> Result.andThen((enc) => { enc.encode(text) })
-        };
-      `),
-    Error,
-    "unknown record field encode; no nominal record type declares it. For JavaScript member access, use enc :> .encode",
-  );
-});
-
-Deno.test("deep reflected receivers diagnose legacy dotted method access", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
-        from js.global("Deno") import { dlopen: _deep_ };
-
-        let library = dlopen("libc.so.6", JSON{
-          __errno_location: JSON{ parameters: JSON[], result: "pointer" }
-        });
-        let errno = (opened) => {
-          opened :> Result.andThen((lib) => {
-            lib.symbols.__errno_location()
-          })
-        };
-        let value = errno(library);
-      `),
-    Error,
-    "unknown record field symbols; no nominal record type declares it. For JavaScript member access, use lib :> .symbols",
-  );
+Deno.test("deep reflected named receiver dots share pipe-member inference", async () => {
+  await checkSource(`
+    from js.global("Deno") import { dlopen: _deep_ };
+    let library = dlopen("libc.so.6", JSON{
+      __errno_location: JSON{ parameters: JSON[], result: "pointer" }
+    });
+    let errno = (opened) => {
+      opened :> Result.andThen((lib) => { lib.symbols.__errno_location() })
+    };
+    let value = errno(library);
+  `);
 });
 
 Deno.test("reflected JS overload sets are not bare HM values", async () => {
@@ -1047,4 +1022,74 @@ Deno.test("as-asserted nullable parameters accept None and Some", async () => {
     type: "Result<Bool, Js.Error>",
     vars: 0,
   });
+});
+
+Deno.test("named JS properties retain foreign types when nominal labels overlap", async () => {
+  const result = await checkSource(`
+    from js.global import { Response };
+    record Flag = { ok: Bool };
+    let response = Response.new("hello") :> Result.debug;
+    let dotted = response.ok;
+    let piped = response :> .ok;
+    let alias = response;
+    let aliased = alias.ok;
+    let items = Js.Array.fromList(["hello"]);
+    let size = items.length;
+    let text = "hello";
+    let length = text.length;
+  `);
+  for (const name of ["dotted", "piped", "aliased"]) {
+    expectBinding(result.env, name, { type: "Result<Bool, Js.Error>", vars: 0 });
+  }
+  expectBinding(result.env, "length", { type: "Result<Number, Js.Error>", vars: 0 });
+});
+
+Deno.test("computed receivers require explicit pipe-member syntax", async () => {
+  for (
+    const value of ['"hello".length', "(text).length", "make().length", "response.json().length"]
+  ) {
+    await assertRejects(() => parse(`let value = ${value};`));
+  }
+  const result = await checkSource('let length = "hello" :> .length;');
+  expectBinding(result.env, "length", { type: "Result<Number, Js.Error>", vars: 0 });
+});
+
+Deno.test("dotted JS calls preserve this and property getters retain safe errors", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${dir}/counter.ts`,
+      `
+      export class Counter {
+        constructor(public value: number) {}
+        bump(amount: number): number { this.value += amount; return this.value; }
+        get broken(): number { throw new Error("broken getter"); }
+      }
+    `,
+    );
+    await Deno.writeTextFile(
+      `${dir}/main.wm`,
+      `
+      from js.module("./counter.ts") import { Counter };
+      let main = () => {
+        let counter = Counter.new(2) :> Result.debug;
+        print(counter.bump(3) :> Result.debug);
+        print(counter.value :> Result.debug);
+        match(counter.broken) {
+          Err(_) => { print("caught") },
+          Ok(_) => { Panic("expected getter failure") }
+        }
+      };
+    `,
+    );
+    const result = await runFile(`${dir}/main.wm`, {
+      stdout: "piped",
+      stderr: "piped",
+      progress: false,
+    });
+    assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+    assertEquals(new TextDecoder().decode(result.stdout).trim(), "5\n5\ncaught");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });

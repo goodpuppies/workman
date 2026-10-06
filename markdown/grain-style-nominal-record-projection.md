@@ -126,20 +126,20 @@ intended uses.
 ## FFI boundary
 
 TypeScript and JavaScript member inference is a separate boundary. It uses the internal `ffi` type
-mechanism and the explicit JS member syntax. Grain-style record selection applies to Workman record
+mechanism and the shared JS member elaboration. Grain-style record selection applies to Workman record
 labels and must not turn an unresolved JavaScript member into an arbitrary Workman record label.
 
-Unknown dotted fields are rejected rather than represented as structural rows. JavaScript member
-access uses the explicit pipe-member syntax, including when the receiver's concrete foreign type is
-inferred later:
+JavaScript members support name-rooted dotted paths such as `response.ok` and
+`response.headers.get("content-type")`. Computed expression receivers remain
+explicit: `"hello" :> .length` and `makeResponse() :> .ok`. Both foreign spellings
+lower through the same `FfiGet`/`FfiCall` inference and reflection path.
 
-```wm
-value :> .field
-```
-
-This distinction is required for soundness. Allowing `value.field` to create an internal structural
-row could let a helper retain a value of one nominal record type and return it as an unrelated
-nominal record with a compatible projected field.
+Known foreign receivers must not be constrained to a Workman record merely because
+one of its labels matches. Unknown receivers still use the existing nominal-label
+selection when a Workman label is available; annotate ambiguous receivers. Unknown
+member labels may become delayed foreign obligations, never unrestricted structural
+rows. The structural-row escape described by the earlier migration remains rejected.
+See [JavaScript member access](js-member-access.md) for the syntax and implementation rule.
 
 The internal `struct` type and its remaining FFI-handling branches are not removed by this change.
 They should eventually be replaced by explicitly foreign delayed-member obligations.

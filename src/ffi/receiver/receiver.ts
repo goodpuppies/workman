@@ -25,7 +25,7 @@ import {
 export type ObjectAccess =
   | { kind: "ref"; ref: JsTypeRef; receiverType?: TypeExpr }
   | { kind: "dynamic" }
-  | { kind: "unresolved" };
+  | { kind: "unresolved"; foreign?: boolean };
 
 export type ReflectedReceiverCall = {
   callee: Expr;
@@ -236,7 +236,7 @@ export function objectReceiverProperty(
     );
   }
   if (access.kind === "unresolved") {
-    if (recordFields.has(path[0])) return undefined;
+    if (!access.foreign && recordFields.has(path[0])) return undefined;
     return {
       kind: "FfiGet",
       receiver: { kind: "Var", name: baseName },
@@ -443,8 +443,11 @@ export function rememberLetObjectAccess(
   for (const binding of decl.bindings) {
     if (binding.pattern.kind !== "PVar") continue;
     const access = objectAccessForType(binding.annotation, importedTypeRefs) ??
-      objectAccessForExpr(binding.value, bindings, importedTypeRefs);
+      objectAccessForExpr(binding.value, bindings, importedTypeRefs, objectAccess);
     if (access) objectAccess.set(binding.pattern.name, access);
+    else if (!binding.annotation && binding.value.kind !== "Record") {
+      objectAccess.set(binding.pattern.name, { kind: "unresolved" });
+    }
   }
 }
 
@@ -452,7 +455,35 @@ function objectAccessForExpr(
   expr: Expr,
   bindings: Map<string, FfiBinding>,
   importedTypeRefs: Map<string, JsTypeRef>,
+  localAccess?: Map<string, ObjectAccess>,
 ): ObjectAccess | undefined {
+  if (expr.kind === "Var") {
+    const access = localAccess?.get(expr.name);
+    return access && (access.kind !== "unresolved" || access.foreign)
+      ? { kind: "unresolved", foreign: true }
+      : undefined;
+  }
+  if (
+    expr.kind === "String" || expr.kind === "Int" || expr.kind === "Float" || expr.kind === "Bool"
+  ) {
+    return { kind: "unresolved", foreign: true };
+  }
+  if (
+    expr.kind === "Pipe" && expr.right.kind === "Var" &&
+    (expr.right.name === "Result.debug" || expr.right.name === "try")
+  ) {
+    const access = objectAccessForExpr(expr.left, bindings, importedTypeRefs, localAccess);
+    return access ? { kind: "unresolved", foreign: true } : undefined;
+  }
+  if (expr.kind === "Ascribed") return objectAccessForType(expr.annotation, importedTypeRefs);
+  if (expr.kind === "FfiBindingCall") {
+    const variants = bindings.get(expr.name)?.variants ?? [];
+    const access = variants.some((variant) =>
+      objectAccessForType(unwrapResult(callResultType(variant.type)), importedTypeRefs)
+    );
+    // Classify the surface access, but leave overload selection to HM context.
+    return access ? { kind: "unresolved", foreign: true } : undefined;
+  }
   if (expr.kind !== "Call" || expr.callee.kind !== "Var") return undefined;
   const calleeName = expr.callee.name;
   const variant = [...bindings.values()]

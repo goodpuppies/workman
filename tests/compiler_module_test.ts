@@ -293,7 +293,7 @@ Deno.test("infers imported record projections in via callbacks", async () => {
   await assertRejects(
     () => checkVirtual("/test/main.wm", virtualFs),
     Error,
-    "unknown record field missing",
+    "record Game has no field missing",
   );
 });
 

@@ -25,6 +25,7 @@ let buildPostfix = (value: ParseValue, span: Span) => {
       NodeParseValue(head),
       RepeatedParseValue(items),
       OptionalParseValue(annotationValue),
+      _,
     ]) => {
       match(foldPostfixItems(items, head, span)) {
         Some(node) => {

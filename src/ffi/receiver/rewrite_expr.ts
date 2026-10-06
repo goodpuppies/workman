@@ -41,6 +41,17 @@ function solveRewrittenFfi(original: Expr, callee: Expr) {
   if (callee.kind === "Var") activeFfiSolve?.(original, callee.name);
 }
 
+// Reflected lowering synthesizes its receiver argument. Retain the authored
+// receiver so editor occurrences keep their source location.
+function preserveReceiverArgs(args: Expr[], receiver: Expr): Expr[] {
+  return args.map((arg, index) =>
+    index === 0 && arg.kind === "Var" && receiver.kind === "Var" &&
+      arg.name === receiver.name
+      ? receiver
+      : arg
+  );
+}
+
 export function rewriteExprCalls(
   expr: Expr,
   bindings: Map<string, FfiBinding>,
@@ -63,7 +74,9 @@ export function rewriteExprCalls(
         );
         if (reflected) {
           if (reflected.kind === "Call") solveRewrittenFfi(expr, reflected.callee);
-          return reflected;
+          return reflected.kind === "Call"
+            ? { ...reflected, args: preserveReceiverArgs(reflected.args, expr.receiver) }
+            : reflected;
         }
         const objectProperty = objectReceiverProperty(
           `${expr.receiver.name}.${expr.path.join(".")}`,
@@ -80,7 +93,13 @@ export function rewriteExprCalls(
               receiver: expr.receiver,
               node: objectProperty.node ?? expr.node,
             }
-            : { ...objectProperty, node: objectProperty.node ?? expr.node };
+            : {
+              ...objectProperty,
+              ...(objectProperty.kind === "Call"
+                ? { args: preserveReceiverArgs(objectProperty.args, expr.receiver) }
+                : {}),
+              node: objectProperty.node ?? expr.node,
+            };
         }
       }
       return {
@@ -105,7 +124,7 @@ export function rewriteExprCalls(
             kind: "Call",
             callee: reflected.callee,
             args: rewriteArgsWithVariant(
-              reflected.args,
+              preserveReceiverArgs(reflected.args, expr.receiver),
               reflected.variant,
               bindings,
               selected,
@@ -116,7 +135,9 @@ export function rewriteExprCalls(
             node: expr.node,
           };
         }
-        const objectReceiver = isDottedRecordFieldReceiver(expr.receiver.name)
+        const access = objectAccess.get(expr.receiver.name.split(".")[0]);
+        const objectReceiver = isDottedRecordFieldReceiver(expr.receiver.name) &&
+            access?.kind === "unresolved" && !access.foreign
           ? undefined
           : objectReceiverCall(
             `${expr.receiver.name}.${expr.path.join(".")}`,
@@ -133,7 +154,7 @@ export function rewriteExprCalls(
               kind: "Call",
               callee: objectReceiver.callee,
               args: rewriteArgsWithVariant(
-                objectReceiver.args,
+                preserveReceiverArgs(objectReceiver.args, expr.receiver),
                 objectReceiver.variant,
                 bindings,
                 selected,
@@ -162,8 +183,14 @@ export function rewriteExprCalls(
       };
     }
     case "Var": {
-      if (isLocalDottedReceiver(expr.name, objectAccess)) {
-        rejectReflectedLocalDot(expr.name, refs, expr.node);
+      const member = localDottedMember(expr.name, objectAccess);
+      if (member) {
+        return rewrite({
+          kind: "FfiGet",
+          receiver: { kind: "Var", name: member.base, node: expr.node },
+          path: member.path,
+          node: expr.node,
+        });
       } else {
         assertDottedModuleNamespaceMember(expr.name, refs, expr.node);
         const functionValue = reflectedReceiverFunctionValue(expr.name, bindings, selected, refs);
@@ -179,8 +206,15 @@ export function rewriteExprCalls(
     }
     case "Call": {
       if (expr.callee.kind === "Var") {
-        if (isLocalDottedReceiver(expr.callee.name, objectAccess)) {
-          rejectReflectedLocalDot(expr.callee.name, refs, expr.node);
+        const member = localDottedMember(expr.callee.name, objectAccess);
+        if (member) {
+          return rewrite({
+            kind: "FfiCall",
+            receiver: { kind: "Var", name: member.base, node: expr.callee.node },
+            path: member.path,
+            args: expr.args,
+            node: expr.node,
+          });
         }
         assertDottedModuleNamespaceMember(expr.callee.name, refs, expr.node);
         const reflectedFunction = reflectedFunctionCallCandidate(
@@ -412,22 +446,20 @@ function isLocalDottedReceiver(
   return separator > 0 && objectAccess.has(name.slice(0, separator));
 }
 
-function rejectReflectedLocalDot(
+/** Name-rooted JS dots enter exactly the same path as explicit pipe members. */
+function localDottedMember(
   name: string,
-  refs: Map<string, JsTypeRef>,
-  node: Expr["node"],
-): void {
-  const separator = name.indexOf(".");
-  const receiver = name.slice(0, separator);
-  if (!refs.has(receiver)) return;
-  const path = name.slice(separator + 1);
-  throw diagnosticError(
-    new Error(
-      `local JavaScript receiver ${receiver} must use ${receiver} :> .${path} for member access`,
-    ),
-    node,
-    "ffi.local-member-pipe-required",
-  );
+  objectAccess: Map<string, ObjectAccess>,
+): { base: string; path: string[] } | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const access = objectAccess.get(parts[0]);
+  if (!access) return undefined; // Qualified module/import names keep their existing lookup.
+  if (access.kind === "unresolved") {
+    // Preserve nominal field-label inference for unknown Workman receivers.
+    if (!access.foreign && activeRecordFields.has(parts[1])) return undefined;
+  }
+  return { base: parts[0], path: parts.slice(1) };
 }
 
 function unresolvedDottedParts(name: string): { base: string; path: string[] } | undefined {

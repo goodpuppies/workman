@@ -438,7 +438,7 @@ let lib = dlopen("SDL2", JSON{
   SDL_PollEvent: JSON{ parameters: JSON["pointer"], result: "i32" }
 });
 let use = match(lib) {
-  Ok(sdl) => { sdl :> .symbols.SDL_PollEvent(Panic("ptr")) },
+  Ok(sdl) => { sdl.symbols.SDL_PollEvent(Panic("ptr")) },
   Err(e) => { Err(e) }
 };
 `;

@@ -6,6 +6,30 @@ import { signatureHelpAt } from "../src/lsp/signature_help.ts";
 import { definitionAt } from "../src/lsp/symbols.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 
+Deno.test("lsp definition and rename preserve named JS member receivers", async () => {
+  const path = "/test/js-member-receiver.wm";
+  const uri = pathToFileUri(path);
+  for (const annotation of ["", ": String"]) {
+    for (const member of ["length", "toUpperCase()"]) {
+      const source = `let text${annotation} = "hello"; let size = text.${member};`;
+      const overrides = new Map([[path, source]]);
+      const reference = source.lastIndexOf("text");
+      const position = { line: 0, character: reference + 1 };
+      const definition = await definitionAt(uri, position, overrides);
+      assertEquals(definition?.range, {
+        start: { line: 0, character: source.indexOf("text") },
+        end: { line: 0, character: source.indexOf("text") + 4 },
+      });
+      const rename = await renameAt(uri, position, "message", overrides);
+      assertEquals(rename?.changes[uri].length, 2);
+      for (const edit of rename?.changes[uri] ?? []) {
+        assertEquals(source.slice(edit.range.start.character, edit.range.end.character), "text");
+        assertEquals(edit.newText, "message");
+      }
+    }
+  }
+});
+
 Deno.test("lsp supports Char types and full primed identifier ranges", async () => {
   const path = "/test/primed.wm";
   const uri = pathToFileUri(path);

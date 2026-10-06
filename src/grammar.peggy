@@ -452,6 +452,7 @@ PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
 Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
   annotation:(_ value:TypeAnn { return value; })?
+  !("." MemberName)
   {
     const value = tail.reduce(
       (callee, item) => at({ kind: "Call", callee, args: item.args }, location()),
