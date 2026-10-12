@@ -1,0 +1,45 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_host.sml" import * as SubsetHost;
+from "./subset_io.sml" import * as SubsetIo;
+from "./subset_list.sml" import * as SubsetList;
+*/
+
+// Process arguments are host byte strings; exit accepts success/failure only.
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_host.wm" import * as SubsetHost;
+from "./subset_io.wm" import * as SubsetIo;
+from "./subset_list.wm" import * as SubsetList;
+
+let arguments = () => {
+  SubsetResult.andThen(
+    SubsetResult.mapError(SubsetHost.arguments(), (message) => { SubsetIo.HostError(message) }),
+    (values) => {
+      SubsetList.traverse(
+        values,
+        (value) => {
+          SubsetResult.map(SubsetIo.bytes(value), (bytes) => { value })
+        }
+      )
+    }
+  )
+};
+// Exit never returns, including in the portable type system.
+let exit = (success) => {
+  let void = SubsetHost.exit(success);
+  let rec unreachable = () => { unreachable() };
+  unreachable()
+};
+
+/* Invariant failure: report the byte-string message and a newline, then stop.
+   A failed validation/write must still terminate; panic cannot recover through Result. */
+let panic = (message: String) => {
+  match(SubsetResult.andThen(
+    SubsetIo.bytes(message),
+    (bytes) => { SubsetIo.writeStderr(SubsetList.append(bytes, ['\n'])) }
+  )) {
+    SubsetResult.Ok(void) => { exit(false) },
+    SubsetResult.Err(_) => { exit(false) }
+  }
+};

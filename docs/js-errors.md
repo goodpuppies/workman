@@ -35,21 +35,19 @@ Safe promise-returning FFI calls return:
 Task<Value, Js.Error>
 ```
 
-This applies to reflected imports, manually typed safe imports, receiver
-properties/methods, and constructors. A manual safe signature names the JavaScript
-value before wrapping:
+This applies to safe imports, which are always reflected, receiver
+properties/methods, and constructors. The reflected type is the JavaScript value,
+and the import wraps it:
 
 ```wm
-from js.global("JSON") import {
-  parse: String -> Js.Object,
-} as JSON;
+from js.global("JSON") import { parse } as JSON;
 
 let parsed = JSON.parse("{}");
--- parsed: Result<Js.Object, Js.Error>
+-- parsed: Result<Js.Value, Js.Error>
 ```
 
-If a manually supplied signature already returns `Result<_, _>` or `Task<_, _>`,
-the FFI does not add a second wrapper.
+Imports with a manual type are `unsafe` and are not wrapped (see
+[Manual Types](./jsffi.md#manual-types)).
 
 Promise-returning calls normalize both cases:
 
@@ -88,9 +86,7 @@ readable message.
 ## Match synchronous errors directly
 
 ```wm
-from js.global("JSON") import {
-  parse: String -> Js.Object,
-} as JSON;
+from js.global("JSON") import { parse } as JSON;
 
 let parseConfig = (text) => {
   match(JSON.parse(text)) {
@@ -175,9 +171,7 @@ string or `_`.
 
 ```wm
 from js.global("Deno") import { readTextFile };
-from js.global("JSON") import {
-  parse: String -> Js.Object,
-} as JSON;
+from js.global("JSON") import { parse } as JSON;
 
 type AppError =
   | FileReadFailed<String, Js.Error>
@@ -293,6 +287,9 @@ building the program and use wm-mini's auditable diagnostic model. Do not use
 - Safe FFI normalization does not turn arbitrary Workman `Panic` usage into a
   recommended runtime error channel.
 - `-- @no-prelude` omits `Js.Error` together with the other algebraic basis types.
+- Exceptions thrown inside Task callbacks (by `unsafe` imports, failed matches) are not normalized;
+  they reject the underlying promise and bypass `Task.recover`. See
+  [Exceptions inside Task callbacks](./async.md#exceptions-inside-task-callbacks).
 
 These limitations should be handled explicitly in application error types and
 messages rather than by assuming the original JavaScript object remains available.

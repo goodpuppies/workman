@@ -1,9 +1,7 @@
 -- Integer terminal geometry. Coordinates are zero-based inside the library;
 -- ANSI conversion happens only in the drawing layer.
 
-from js.global("Math") import {
-  floor: Number -> Number,
-};
+from js.global("Math") import { floor };
 
 record Size = {
   width: Number,

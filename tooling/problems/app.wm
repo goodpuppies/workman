@@ -5,9 +5,7 @@ from "../tuiman/geometry.wm" import * as Geometry;
 from "../tuiman/runtime.wm" import * as Runtime;
 -- The backend runs in this process and pushes snapshots through this module, so
 -- the TUI waits to be woken rather than polling for changes.
-from js.module("#problems-client") import {
-  nextSnapshot: Number -> Task<Js.Value, Js.Error>,
-};
+from js.module("#problems-client") import { nextSnapshotData as nextSnapshot };
 
 record Problem = {
   path: String,

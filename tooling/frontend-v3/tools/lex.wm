@@ -1,0 +1,54 @@
+from "../adapters/js/lexer.wm" import { lex };
+from "../src/lexer/token.wm" import * as Token;
+from js.global("Deno") import { readTextFileSync };
+from js.module("jsr:@std/fs/walk") import { walkSync };
+from js.global("Array") import { from as arrayFrom };
+
+// Debug entry point for inspecting a token stream.
+let printToks = (list, sourceText) => {
+  let rec listPrinter = (tokens) => {
+    match(tokens) {
+      [] => {void},
+      [tok, ..rest] => {
+        let printToken = (token: Token.Token) => {
+          let text = sourceText
+            :> .slice(token.span.startPos.index, token.span.endPos.index)
+            :> Result.debug;
+          let line = token.span.startPos.line;
+          let col = token.span.startPos.col;
+          print(`[Ln ${line}, Col ${col}] ${token.kind} -> '${text}'`);
+        };
+        printToken(tok);
+        listPrinter(rest)
+      }
+    }
+  };
+  print("=== TOKEN STREAM ===");
+  listPrinter(list);
+  print("====================");
+};
+
+let main = () => {
+  let processFilesSync = (dir, postfix, fn) => {
+    let iterator = walkSync(dir, JSON{ exts: JSON[postfix], includeDirs: false }) :> Result.debug;
+    let entryArray = arrayFrom(iterator) :> Result.debug;
+    let rec step = (index) => {
+      match(entryArray :> .at(index) :> Result.debug) {
+        None => {void},
+        Some(entry) => {
+          let path = entry :> .path :> Result.debug;
+          let content = readTextFileSync(path) :> Result.debug;
+          fn(content, path);
+          step(index + 1)
+        }
+      }
+    };
+    step(0)
+  };
+  processFilesSync("./examples", ".wm", (source, path) => {
+    print(`lexing ${path}`);
+    let _document = lex(source);
+    void
+  });
+  print "done"
+};

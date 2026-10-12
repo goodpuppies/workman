@@ -1,0 +1,26 @@
+from "./cursor.wm" import * as Cursor;
+
+// Reserved words from src/grammar.peggy. Exact ASCII spelling; no lexer keyword kind.
+let reservedUnits = [
+  [102, 114, 111, 109], // from
+  [105, 109, 112, 111, 114, 116], // import
+  [97, 115], // as
+  [108, 101, 116], // let
+  [114, 101, 99], // rec
+  [97, 110, 100], // and
+  [116, 121, 112, 101], // type
+  [114, 101, 99, 111, 114, 100], // record
+  [105, 102], // if
+  [101, 108, 115, 101], // else
+  [109, 97, 116, 99, 104], // match
+  [116, 114, 117, 101], // true
+  [102, 97, 108, 115, 101], // false
+  [118, 111, 105, 100], // void
+];
+let isReserved = (cursor) => {
+  let rec go = match {
+    [] => {false},
+    [units, ..rest] => {Cursor.isWord(cursor, units) || go(rest)}
+  };
+  go(reservedUnits)
+};

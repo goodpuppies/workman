@@ -1,0 +1,176 @@
+-- Packages as programs.
+--
+-- Every <name>/pak.wm in the package directories (PAKMAN_PKGS, colon-separated,
+-- default pak/paks beside the wm checkout) is a self-contained wm
+-- program; there is no index. A package's folder can also hold its patches
+-- and other files. pakman compiles each one on its own and talks to it through
+-- plan.wm's protocol, running it as a separate Deno process with only the
+-- permissions a command needs:
+--   describe   no permissions
+--   versions   network access to the hosts the package declared, nothing else
+--   make       no permissions: building the plan is pure, and Deno enforces it
+--   build      offline Bubblewrap host environment, invoked by store.wm
+
+from js.global("JSON") import { parse } as JSON;
+from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool };
+from "./model.wm" import { Target, Scope, Candidate, Package };
+from "./plan.wm" import *;
+from "./paths.wm" import { Paths };
+from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname };
+from "./text.wm" import { join, concatMap };
+from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, unique };
+
+let via = Monad.via;
+
+record PackageInfo = {
+  name: String,
+  description: String,
+  homepage: String,
+  license: String,
+  target: Target,
+  scope: Scope,      -- System installs under /, User under the home directory
+  channel: String,   -- the channel followed by default
+  minAgeDays: Number,
+  onlyLatest: Bool,  -- upstream offers only its newest build
+  hosts: List<String>,
+  program: String -- the compiled package program
+};
+
+-- pakman lives in <wm checkout>/tooling/pakman; packages default to a pak
+-- repository beside the wm checkout (~/git/wm-mini -> ~/git/pak/paks).
+let defaultPackageDir = () => { dirname(dirname(dirname(pakmanRoot()))) ++ "/pak/paks" };
+
+let packageDirs = () => {
+  envOr("PAKMAN_PKGS", defaultPackageDir())
+    :> .split(":")
+    :> Result.map(Js.Array.toList)
+    :> Result.withDefault([])
+    :> filterAll((dir) => { dir != "" })
+};
+
+-- Runs one protocol command and parses its JSON output.
+let call = (name, program, flags, command) => {
+  runCapture("deno", appendAll(["run", "--no-prompt", "--quiet", ..flags], [program, ..command]))
+    :> Task.mapErr((message) => { name ++ " " ++ join(command, " ") ++ " failed: " ++ message })
+    :> Task.andThen((output) => {
+      JSON.parse(output)
+        :> Result.mapErr((_) => { name ++ " " ++ join(command, " ") ++ " printed invalid JSON" })
+        :> Task.fromResult
+    })
+};
+
+let checkProtocol = (name, version) => {
+  if (version == protocol) {
+    Ok(void)
+  } else {
+    Err(name ++ " speaks protocol " ++ Text.of(version) ++ ", pakman speaks " ++ Text.of(protocol))
+  }
+};
+
+let shapeError = (name, command) => { (_) => { name ++ " " ++ command ++ " printed an unexpected shape" } };
+
+let describeProgram = (name, program) => {
+  let info: Task<InfoJson, String> = call(name, program, [], ["describe"])
+    :> Task.andThen((v) => { v :> Json.assert :> Result.mapErr(shapeError(name, "describe")) :> Task.fromResult });
+  info
+    :> Task.andThen((json) => {
+      let i: InfoJson = json;
+      checkProtocol(name, i.protocol)
+        :> Result.andThen((_) => { Result|decodeTarget(i.target), decodeScope(i.scope)| })
+        :> Result.andThen((target, scope) => {
+          if (i.name == name) {
+            Ok(.{
+              name,
+              description = i.description,
+              homepage = i.homepage,
+              license = i.license,
+              target,
+              scope,
+              channel = i.channel,
+              minAgeDays = i.minAgeDays,
+              onlyLatest = i.onlyLatest,
+              hosts = Js.Array.toList(i.hosts),
+              program
+            }: PackageInfo)
+          } else {
+            Err(name ++ ".wm describes a package called " ++ i.name)
+          }
+        })
+        :> Task.fromResult
+    })
+};
+
+let programFile = (dir, name) => { dir ++ "/" ++ name ++ "/pak.wm" };
+
+-- Every package name in the package directories, without compiling anything.
+let names = () => {
+  let inDir = (dir) => {
+    let isPackage = (name) => { exists(programFile(dir, name)) :> Task.map((found) => { if (found) { [name] } else { [] } }) };
+    listDir(dir)
+      :> via Task (entries) => { series(entries, isPackage) }
+      :> Task.map(concatAll)
+  };
+  series(packageDirs(), inDir)
+    :> Task.map((lists) => { unique(concatAll(lists)) })
+};
+
+-- "unknown package ogb, did you mean oscgoesbrrr?" for the packages holding the name's letters in order.
+let unknown = (name, known) => {
+  let matches = List.filter(known, (candidate) => { hasLetters(name, candidate) });
+  if (matches == []) {
+    "unknown package " ++ name
+  } else {
+    "unknown package " ++ name ++ ", did you mean " ++ join(matches, ", ") ++ "?"
+  }
+};
+
+-- The first directory holding <name>/pak.wm wins.
+let load = (paths: Paths, name) => {
+  let rec find = (dirs) => {
+    match(dirs) {
+      [] => { names() :> Task.andThen((known) => { Task.fail(unknown(name, known)) }) },
+      [dir, ..rest] => {
+        let file = programFile(dir, name);
+        exists(file) :> Task.andThen((found) => { if (found) { Task.succeed(file) } else { find(rest) } })
+      }
+    }
+  };
+  find(packageDirs())
+    :> Task.andThen((file) => { compileProgram(file, paths.state ++ "/programs/" ++ name ++ ".js") })
+    :> Task.andThen((program) => { describeProgram(name, program) })
+};
+
+let loadAll = (paths: Paths) => {
+  names() :> Task.andThen((all) => { series(all, (n) => { load(paths, n) }) })
+};
+
+-- Upstream candidates, newest first, already filtered by the package's own rules.
+let versions = (info: PackageInfo) => {
+  let net = match(info.hosts) {
+    [] => { [] },
+    Var(hosts) => { ["--allow-net=" ++ join(hosts, ",")] }
+  };
+  let candidates: Task<CandidatesJson, String> = call(info.name, info.program, ["--allow-env=GITHUB_TOKEN", ..net], ["versions"])
+    :> Task.andThen((v) => { v :> Json.assert :> Result.mapErr(shapeError(info.name, "versions")) :> Task.fromResult });
+  candidates
+    :> Task.andThen((json) => {
+      let c: CandidatesJson = json;
+      checkProtocol(info.name, c.protocol)
+        :> Result.map((_) => { c.candidates :> Js.Array.toList :> mapAll(decodeCandidate) })
+        :> Task.fromResult
+    })
+};
+
+-- The plan for one version. Runs with no permissions at all.
+let make = (info: PackageInfo, version, ref) => {
+  let plan: Task<PlanJson, String> = call(info.name, info.program, [], ["make", version, ref])
+    :> Task.andThen((v) => { v :> Json.assert :> Result.mapErr(shapeError(info.name, "make")) :> Task.fromResult });
+  plan
+    :> Task.andThen((json) => {
+      let p: PlanJson = json;
+      checkProtocol(info.name, p.protocol)
+        :> Result.andThen((_) => { decodePlan(p) })
+        :> Result.mapErr((message) => { info.name ++ ": " ++ message })
+        :> Task.fromResult
+    })
+};

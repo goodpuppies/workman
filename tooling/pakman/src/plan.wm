@@ -1,0 +1,220 @@
+-- The protocol between package programs and pakman.
+--
+-- A package program prints one JSON document per command. Encoders run in the
+-- package process, decoders in pakman; keeping both here means the two sides
+-- can't drift apart. Every document carries `protocol` so a stale compiled
+-- package is detected instead of misread.
+
+from "./model.wm" import *;
+from "./io.wm" import { jsonList };
+from "./refs.wm" import { parts };
+from "./fun.wm" import { mapAll };
+
+let protocol = 6;
+
+let targetName = match(target) => {
+  Host => { "host" },
+  Ps2 => { "ps2" }
+};
+
+let scopeName = match(scope) => {
+  System => { "system" },
+  User => { "user" }
+};
+
+let decodeScope = (name) => {
+  match(name) {
+    "system" => { Ok(System) },
+    "user" => { Ok(User) },
+    _ => { Err("unknown scope " ++ name) }
+  }
+};
+
+let modeName = match(mode) => {
+  Exec => { "exec" },
+  Data => { "data" }
+};
+
+-- `describe`: everything pakman needs to know without running any package code.
+let encodeInfo = (def: Definition) => {
+  JSON{
+    protocol: protocol,
+    name: def.name,
+    description: def.description,
+    homepage: def.homepage,
+    license: def.license,
+    target: targetName(def.target),
+    scope: scopeName(def.scope),
+    channel: def.policy.channel,
+    minAgeDays: def.policy.minAgeDays,
+    onlyLatest: def.policy.onlyLatest,
+    hosts: Js.Array.fromList(def.hosts)
+  }
+};
+
+-- `versions`: candidates newest first, already filtered by the package's own
+-- `accept` rule. pakman applies the minimum age itself, so no package can skip it.
+let encodeCandidates = (candidates: List<Candidate>) => {
+  let checksumJson = (c: Checksum) => { JSON{ url: c.url, sha256: c.sha256 } };
+  let candidateJson = (c: Candidate) => {
+    JSON{ version: c.version, published: c.published, channel: c.channel, checksums: jsonList(c.checksums, checksumJson), ref: c.ref }
+  };
+  JSON{ protocol: protocol, candidates: jsonList(candidates, candidateJson) }
+};
+
+-- References and text travel as a flat list of parts, one uniform shape:
+--   { kind: "lit" | "own" | "of" | "base", value, pkg }
+let refJson = match(ref) => {
+  Own(path) => { JSON{ kind: "own", value: path, pkg: "" } },
+  Of(name, path) => { JSON{ kind: "of", value: path, pkg: name } },
+  Base(path) => { JSON{ kind: "base", value: path, pkg: "" } }
+};
+
+let partJson = match(part) => {
+  Lit(text) => { JSON{ kind: "lit", value: text, pkg: "" } },
+  Ref(path) => { refJson(path) },
+  _ => { JSON{ kind: "lit", value: "", pkg: "" } }
+};
+
+let textJson = (text) => { jsonList(parts(text), partJson) };
+
+-- Install steps share one flat shape so the decoder can check them with a single record.
+let opJson = match(op) => {
+  Install(file, dest, mode) => {
+    JSON{ op: "install", path: dest, source: file, mode: modeName(mode), strip: 0, archive: JSON[], members: JSON[], parts: JSON[] }
+  },
+  Extract(unpack) => {
+    JSON{
+      op: "extract", path: unpack.dest, source: "", mode: "", strip: unpack.strip,
+      archive: Js.Array.fromList(unpack.archive), members: Js.Array.fromList(unpack.members), parts: JSON[]
+    }
+  },
+  Symlink(target, path) => {
+    JSON{ op: "symlink", path: path, source: "", mode: "", strip: 0, archive: JSON[], members: JSON[], parts: jsonList([target], refJson) }
+  },
+  WriteText(dest, contents, mode) => {
+    JSON{ op: "write", path: dest, source: "", mode: modeName(mode), strip: 0, archive: JSON[], members: JSON[], parts: textJson(contents) }
+  },
+  Build(id, tools) => {
+    JSON{ op: "build", path: "", source: id, mode: "", strip: 0, archive: Js.Array.fromList(tools), members: JSON[], parts: JSON[] }
+  },
+  MakeDir(path) => {
+    JSON{ op: "mkdir", path: path, source: "", mode: "", strip: 0, archive: JSON[], members: JSON[], parts: JSON[] }
+  }
+};
+
+-- `make <version>`: the plan pakman builds from.
+let encodePlan = (pkg: Package) => {
+  let sourceJson = (s: Source) => { JSON{ file: s.file, url: s.url } };
+  JSON{
+    protocol: protocol,
+    version: pkg.version,
+    sources: jsonList(pkg.sources, sourceJson),
+    install: jsonList(pkg.install, opJson),
+    requires: jsonList(pkg.requires, refJson)
+  }
+};
+
+-- Decoded shapes. Json.assert's target is fixed where it is called, so the
+-- asserts live in packages.wm next to each command.
+
+record InfoJson = {
+  protocol: Number,
+  name: String,
+  description: String,
+  homepage: String,
+  license: String,
+  target: String,
+  scope: String,
+  channel: String,
+  minAgeDays: Number,
+  onlyLatest: Bool,
+  hosts: Js.Array<String>
+};
+
+record CandidateJson = { version: String, published: String, channel: String, checksums: Js.Array<Checksum>, ref: String };
+record CandidatesJson = { protocol: Number, candidates: Js.Array<CandidateJson> };
+
+let decodeCandidate = (c: CandidateJson) => {
+  Candidate(c.version, c.published, c.channel, Js.Array.toList(c.checksums), c.ref)
+};
+
+record PartJson = { kind: String, value: String, pkg: String };
+
+record OpJson = {
+  op: String, path: String, source: String, mode: String, strip: Number,
+  archive: Js.Array<String>, members: Js.Array<String>, parts: Js.Array<PartJson>
+};
+
+record PlanJson = {
+  protocol: Number,
+  version: String,
+  sources: Js.Array<Source>,
+  install: Js.Array<OpJson>,
+  requires: Js.Array<PartJson>
+};
+
+let decodeTarget = (name) => {
+  match(name) {
+    "host" => { Ok(Host) },
+    "ps2" => { Ok(Ps2) },
+    _ => { Err("unknown target " ++ name) }
+  }
+};
+
+let decodeMode = (name) => {
+  match(name) {
+    "exec" => { Ok(Exec) },
+    "data" => { Ok(Data) },
+    _ => { Err("unknown file mode " ++ name) }
+  }
+};
+
+let decodeRef = (p: PartJson) => {
+  match(p.kind) {
+    "own" => { Ok(Own(p.value)) },
+    "of" => { Ok(Of(p.pkg, p.value)) },
+    "base" => { Ok(Base(p.value)) },
+    _ => { Err("expected a file reference, got " ++ p.kind) }
+  }
+};
+
+let decodePart = (p: PartJson) => {
+  match(p.kind) {
+    "lit" => { Ok(Lit(p.value)) },
+    _ => { decodeRef(p) :> Result.map(Ref) }
+  }
+};
+
+let decodeText = (items) => {
+  items :> Js.Array.toList :> mapAll(decodePart) :> Result.collectList :> Result.map(Cat)
+};
+
+let decodeSymlinkTarget = (items) => {
+  match(Js.Array.toList(items)) {
+    [only] => { decodeRef(only) },
+    _ => { Err("a symlink needs exactly one target") }
+  }
+};
+
+let decodeOp = (o: OpJson) => {
+  match(o.op) {
+    "install" => { decodeMode(o.mode) :> Result.map((mode) => { Install(o.source, o.path, mode) }) },
+    "extract" => { Ok(Extract(Unpack(Js.Array.toList(o.archive), Js.Array.toList(o.members), o.path, o.strip))) },
+    "symlink" => { decodeSymlinkTarget(o.parts) :> Result.map((target) => { Symlink(target, o.path) }) },
+    "write" => {
+      Result|decodeText(o.parts), decodeMode(o.mode)|
+        :> Result.map((contents, mode) => { WriteText(o.path, contents, mode) })
+    },
+    "mkdir" => { Ok(MakeDir(o.path)) },
+    "build" => { Ok(Build(o.source, Js.Array.toList(o.archive))) },
+    _ => { Err("unknown install step " ++ o.op) }
+  }
+};
+
+let decodePlan = (plan: PlanJson) => {
+  let install = plan.install :> Js.Array.toList :> mapAll(decodeOp) :> Result.collectList;
+  let requires = plan.requires :> Js.Array.toList :> mapAll(decodeRef) :> Result.collectList;
+  Result|install, requires|
+    :> Result.map((ops, refs) => { Package(plan.version, Js.Array.toList(plan.sources), ops, refs) })
+};

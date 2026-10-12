@@ -784,8 +784,8 @@ from "./math.wm" import *;
 from js.global("Math") import { max as jsmax, floor };
 from js.global("Math") import * as Math;
 
--- Manual type annotations are available when needed
-from js.global("console") import { log: (String, Number) -> Void } as console;
+-- Manual types are trusted claims, so they need `unsafe`
+from js.global("console") import unsafe { log: (String, Number) -> Void } as console;
 
 -- Import types
 from "./option.wm" import { Option, Some, None };

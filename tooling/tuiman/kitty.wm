@@ -8,10 +8,7 @@ from "./png-jsr.wm" import * as PngJsr;
 from "./terminal-cap.wm" import * as Cap;
 from js.global import { fetch };
 from js.module("node:buffer") import { Buffer };
-from js.global("Math") import {
-  ceil: Number -> Number,
-  floor: Number -> Number,
-};
+from js.global("Math") import { ceil, floor };
 
 -- The library owns its own image failure type so that image loading does not
 -- depend on any one application's error ADT. Applications map this into their

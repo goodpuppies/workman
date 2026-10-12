@@ -1,0 +1,384 @@
+-- Installation: generations of store trees installed into a root.
+--
+-- A generation lists the store entries installed into one root and every file
+-- they put there. Switching generations diffs the two file lists and only
+-- touches what changed. pakman never overwrites a file the current
+-- generation does not own, so pacman's files (or anyone else's) are safe.
+
+from js.global("JSON") import { parse } as JSON;
+from "./paths.wm" import { Paths, profileDirOf };
+from "./store.wm" import { StoreEntry };
+from "./text.wm" import { compare, join };
+from "./io.wm" import *;
+from "./apply.wm" import { apply, planJson, Plan, Placement };
+from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String };
+from "./fun.wm" import { ignore, unique, mapAll, filterAll, appendAll, concatAll };
+
+let via = Monad.via;
+
+record Installed = { name: String, version: String, path: String };
+
+-- path: relative to the root. source: the store file it links to. link: symlink target or "".
+record FileEntry = { path: String, source: String, link: String };
+
+record Generation = {
+  number: Number,
+  root: String,
+  packages: List<Installed>,
+  files: List<FileEntry>
+};
+
+-- On-disk shapes.
+record StoreFileJson = { path: String, link: String };
+record StoreUseJson = { pkg: String, path: String };
+record StoreManifestJson = {
+  name: String,
+  version: String,
+  hash: String,
+  depends: Js.Array<String>,
+  base: Js.Array<String>,
+  uses: Js.Array<StoreUseJson>,
+  files: Js.Array<StoreFileJson>
+};
+
+-- What an installed store entry contributes and needs, read from its manifest.
+record Manifest = {
+  owner: String,
+  files: List<FileEntry>,
+  depends: List<String>,
+  base: List<String>,
+  uses: List<StoreUseJson>
+};
+record GenerationJson = {
+  number: Number,
+  root: String,
+  packages: Js.Array<Installed>,
+  files: Js.Array<FileEntry>
+};
+
+-- Json.assert's target shape is fixed where it is called, so it cannot be
+-- wrapped in a generic helper; each reader calls it itself.
+let readJson = (path) => {
+  let parse = via Task (text) => {
+    JSON.parse(text) :> Result.mapErr((_) => { path ++ " is not valid JSON" }) :> Task.fromResult
+  };
+  readText(path)
+    :> parse
+};
+
+let shapeError = (path) => { (_) => { path ++ " has an unexpected shape" } };
+
+let profileDir = (paths: Paths, root) => { profileDirOf(paths.profiles, root) };
+
+let empty = (root) => { Generation(0, root, [], []) };
+
+-- ---------------------------------------------------------------------------
+-- Reading and writing generations
+
+let generationJson = (g: Generation) => {
+  let installedJson = (i: Installed) => {
+    JSON{ name: i.name, version: i.version, path: i.path }
+  };
+  let fileJson = (f: FileEntry) => {
+    JSON{ path: f.path, source: f.source, link: f.link }
+  };
+  JSON{
+    number: g.number,
+    root: g.root,
+    packages: jsonList(g.packages, installedJson),
+    files: jsonList(g.files, fileJson)
+  }
+};
+
+let fromGenerationJson = (g: GenerationJson) => {
+  Generation(g.number, g.root, Js.Array.toList(g.packages), Js.Array.toList(g.files))
+};
+
+let readGeneration = (paths: Paths, root, number) => {
+  let file = profileDir(paths, root) ++ "/" ++ Text.of(number) ++ ".json";
+  let assertGeneration = via Task (value) => {
+    let generation: Result<GenerationJson, String> = value
+      :> Json.assert
+      :> Result.mapErr(shapeError(file));
+    generation :> Task.fromResult
+  };
+  readJson(file)
+    :> assertGeneration
+    :> Task.map(fromGenerationJson)
+};
+
+let currentNumber = (paths: Paths, root) => {
+  readTextOr(profileDir(paths, root) ++ "/current", "0")
+    :> Task.map((text) => { parseIntOr(text, 0) })
+};
+
+let current = (paths: Paths, root) => {
+  let load = via Task (number) => {
+    if (number == 0) { Task.succeed(empty(root)) } else { readGeneration(paths, root, number) }
+  };
+  currentNumber(paths, root)
+    :> load
+};
+
+-- "12.json" -> Some(12)
+let generationNumber = (name) => {
+  let number = parseIntOr(name :> .replace(".json", "") :> Result.withDefault(""), 0 - 1);
+  if (number > 0) { Some(number) } else { None }
+};
+
+let generationNumbers = (names) => { names :> List.mapPartial(generationNumber) };
+
+-- Every generation number recorded for a root, oldest first.
+let generations = (paths: Paths, root) => {
+  listDir(profileDir(paths, root))
+    :> Task.map(generationNumbers)
+};
+
+let record = (paths: Paths, g: Generation) => {
+  let dir = profileDir(paths, g.root);
+  Task|
+    mkdirp(dir),
+    writeText(dir ++ "/" ++ Text.of(g.number) ++ ".json", prettyJson(generationJson(g)), 420)
+  | :> Task.map(ignore)
+};
+
+let setCurrent = (paths: Paths, root, number) => {
+  writeText(profileDir(paths, root) ++ "/current", Text.of(number) ++ "\n", 420)
+};
+
+-- ---------------------------------------------------------------------------
+-- File sets
+
+-- A store entry's manifest, written at build time.
+let readManifest = (entry: Installed) => {
+  let manifestFile = entry.path ++ ".json";
+  let toFileEntry = (f: StoreFileJson) => {
+    FileEntry(f.path, entry.path ++ "/" ++ f.path, f.link)
+  };
+  let toManifest = (m: StoreManifestJson) => {
+    Manifest(
+      entry.name,
+      m.files :> Js.Array.toList :> mapAll(toFileEntry),
+      Js.Array.toList(m.depends),
+      Js.Array.toList(m.base),
+      Js.Array.toList(m.uses)
+    )
+  };
+  let assertManifest = via Task (value) => {
+    let manifest: Result<StoreManifestJson, String> = value
+      :> Json.assert
+      :> Result.mapErr(shapeError(manifestFile));
+    manifest :> Task.fromResult
+  };
+  readJson(manifestFile)
+    :> assertManifest
+    :> Task.map(toManifest)
+};
+
+-- Each file tagged with the package that ships it.
+let ownedFiles = (m: Manifest) => { mapAll(m.files, (f) => { (m.owner, f) }) };
+
+-- Records one file's owner, failing if another package already ships that path.
+let claim = (owners, pkg, entry: FileEntry) => {
+  match(Map.get(owners, entry.path)) {
+    Some(owner) => {
+      let (other, _) = owner;
+      Err(entry.path ++ " is in both " ++ other ++ " and " ++ pkg)
+    },
+    None => { Ok(Map.set(owners, entry.path, (pkg, entry))) }
+  }
+};
+
+-- A direct tail call per file (not through Result.andThen), so it runs as a loop.
+let rec claimAll = (owners, items) => {
+  match(items) {
+    [] => { Ok(owners) },
+    [(Var(pkg), Var(entry)), ..rest] => {
+      match(claim(owners, pkg, entry)) {
+        Ok(next) => { claimAll(next, rest) },
+        Err(message) => { Err(message) }
+      }
+    }
+  }
+};
+
+let fileOf = (pair) => {
+  let (_, (_, file)) = pair;
+  file
+};
+
+-- The file list for a package set, sorted by path.
+let filesFor = (manifests: List<Manifest>) => {
+  claimAll(Map.empty(compare), concatAll(mapAll(manifests, ownedFiles)))
+    :> Result.map((owners) => { owners :> Map.toList :> mapAll(fileOf) })
+};
+
+-- ---------------------------------------------------------------------------
+-- Dependency checks
+--
+-- The edges come from each package's plan (see refs.wm): `depends` are other
+-- pakman packages, `uses` are specific files in them, `base` are host files.
+
+let installsFile = (manifests: List<Manifest>, owner, path) => {
+  List.any(manifests, (m: Manifest) => {
+    m.owner == owner && List.any(m.files, (f: FileEntry) => { f.path == path })
+  })
+};
+
+-- Problems that would leave a package in this set without something it needs.
+let problemsIn = (manifests: List<Manifest>) => {
+  let isInstalled = (name) => { List.any(manifests, (m: Manifest) => { m.owner == name }) };
+  let missingDepends = (m: Manifest) => {
+    m.depends
+      :> filterAll((name) => { !isInstalled(name) })
+      :> mapAll((name) => { m.owner ++ " needs " ++ name ++ ", which would not be installed" })
+  };
+  let missingUses = (m: Manifest) => {
+    m.uses
+      :> filterAll((u: StoreUseJson) => { isInstalled(u.pkg) && !installsFile(manifests, u.pkg, u.path) })
+      :> mapAll((u: StoreUseJson) => { m.owner ++ " uses " ++ u.path ++ ", which " ++ u.pkg ++ " does not install" })
+  };
+  concatAll(appendAll(mapAll(manifests, missingDepends), mapAll(manifests, missingUses)))
+};
+
+-- Base files the host lacks. PAKMAN_BASE=none skips the check.
+let missingBase = (manifests: List<Manifest>) => {
+  let required = unique(concatAll(mapAll(manifests, (m: Manifest) => { m.base })));
+  let check = (path) => { exists(path) :> Task.map((present) => { if (present) { [] } else { [path] } }) };
+  match(envOr("PAKMAN_BASE", "host")) {
+    "none" => { Task.succeed([]) },
+    _ => { series(required, check) :> Task.map(concatAll) }
+  }
+};
+
+-- The checked file list for a package set, or every reason it can't be installed.
+let planGeneration = (manifests: List<Manifest>) => {
+  let report = via Task (missing) => {
+    let baseProblems = mapAll(missing, (path) => { "the base system lacks " ++ path });
+    match(appendAll(problemsIn(manifests), baseProblems)) {
+      [] => { filesFor(manifests) :> Task.fromResult },
+      Var(problems) => { Task.fail("cannot switch generation:\n  " ++ join(problems, "\n  ")) }
+    }
+  };
+  missingBase(manifests)
+    :> report
+};
+
+let sameFile = (a: FileEntry, b: FileEntry) => {
+  a.source == b.source && a.link == b.link
+};
+
+let byPath = (files: List<FileEntry>) => {
+  let keyed = (f: FileEntry) => {
+    (f.path, f)
+  };
+  Map.fromList(compare, mapAll(files, keyed))
+};
+
+-- Curried: is this file new or different compared with `map`?
+let changedFrom = (map) => {
+  (f: FileEntry) => {
+    match(Map.get(map, f.path)) {
+      Some(other) => { !sameFile(f, other) },
+      None => { true }
+    }
+  }
+};
+
+-- ---------------------------------------------------------------------------
+-- Activation
+
+-- Runs a plan: in-process when the root is writable, otherwise as the applier
+-- program under PAKMAN_SUDO (default `sudo`), so only that step is privileged.
+let applyPlan = (paths: Paths, plan: Plan) => {
+  let counts = (List.length(plan.add), List.length(plan.remove));
+  let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".json";
+  let applier = paths.state ++ "/programs/_apply.js";
+  let elevate = via Task (program) => {
+    let sudo = envOr("PAKMAN_SUDO", "sudo") :> .split(" ") :> Result.map(Js.Array.toList) :> Result.withDefault(["sudo"]);
+    match(sudo) {
+      [cmd, ..flags] => {
+        runInteractive(cmd, appendAll(flags, [denoPath(), "run", "-A", "--quiet", program, planFile]))
+          :> Task.andThen((code) => {
+            if (code == 0) { Task.succeed(counts) } else { Task.fail("the applier exited with " ++ Text.of(code)) }
+          })
+      },
+      [] => { Task.fail("PAKMAN_SUDO is empty") }
+    }
+  };
+  let elevated = () => {
+    Task|mkdirp(paths.tmp), writeText(planFile, prettyJson(planJson(plan)), 420)|
+      :> via Task (_) => { compileProgram(pakmanRoot() ++ "/src/apply-main.wm", applier) }
+      :> elevate
+  };
+  let choose = via Task (writable) => { if (writable) { apply(plan) } else { elevated() } };
+  mkdirp(plan.root)
+    :> via Task => { canWrite(plan.root) }
+    :> choose
+};
+
+-- Moves `root` from the `before` file set to `after` and returns
+-- (files added, files removed). The applier checks ownership and conflicts.
+let activate = (paths: Paths, root, before: List<FileEntry>, after: List<FileEntry>) => {
+  let toPlacement = (f: FileEntry) => { Placement(f.path, f.source, f.link) };
+  let toRemove = filterAll(before, changedFrom(byPath(after)));
+  let toAdd = filterAll(after, changedFrom(byPath(before)));
+  -- A changed file is replaced, not removed: the applier replaces paths it owns.
+  let replaced = byPath(toAdd);
+  let removeOnly = filterAll(toRemove, (f: FileEntry) => { !Map.has(replaced, f.path) });
+  applyPlan(paths, Plan(root, mapAll(toAdd, toPlacement), mapAll(removeOnly, (f: FileEntry) => { f.path })))
+};
+
+let nextNumber = (numbers) => {
+  List.foldLeft(numbers, 0, (highest, n) => { if (n > highest) { n } else { highest } }) + 1
+};
+
+-- Creates and activates a new generation with this package set. The
+-- generation is recorded only after activation succeeds.
+let switchTo = (paths: Paths, root, packages: List<Installed>) => {
+  let activateNext = via Task (now: Generation, numbers, files) => {
+    let next = Generation(nextNumber(numbers), root, packages, files);
+    activate(paths, root, now.files, files)
+      :> Task.map((counts) => { (next, counts) })
+  };
+  let commit = via Task (next: Generation, counts) => {
+    Task|record(paths, next), setCurrent(paths, root, next.number)|
+      :> Task.map((_) => { (next, counts) })
+  };
+  let checkedFiles = via Task (manifests) => { planGeneration(manifests) };
+  Task|current(paths, root), generations(paths, root), series(packages, readManifest) :> checkedFiles|
+    :> activateNext
+    :> commit
+};
+
+-- Re-activates an existing generation (rollback or roll forward).
+let restore = (paths: Paths, root, number) => {
+  let switchFiles = via Task (now: Generation, goal: Generation) => {
+    activate(paths, root, now.files, goal.files)
+      :> Task.map((counts) => { (goal, counts) })
+  };
+  let commit = via Task (goal, counts) => {
+    setCurrent(paths, root, number)
+      :> Task.map((_) => { (goal, counts) })
+  };
+  Task|current(paths, root), readGeneration(paths, root, number)|
+    :> switchFiles
+    :> commit
+};
+
+-- ---------------------------------------------------------------------------
+-- Package sets
+
+let withPackage = (packages: List<Installed>, entry: StoreEntry) => {
+  let isOther = (p: Installed) => {
+    p.name != entry.name
+  };
+  appendAll(filterAll(packages, isOther), [Installed(entry.name, entry.version, entry.path)])
+};
+
+let withoutPackage = (packages: List<Installed>, name) => {
+  let isOther = (p: Installed) => {
+    p.name != name
+  };
+  filterAll(packages, isOther)
+};

@@ -1,0 +1,187 @@
+from "../../lib/subsetml/subset_list.wm" import * as BasisList;
+from "./character.wm" import * as Char;
+from "../source/source.wm" import * as Source;
+from "./token.wm" import * as Token;
+from "./reader.wm" import * as Reader;
+from "./read.wm" import * as Read;
+
+type EscapeValue = Scalar<Number> | Gap | Damaged;
+record EscapeResult = {
+  endPos: Source.Position,
+  value: EscapeValue,
+  marks: List<Token.LexicalMark>,
+};
+record BodyResult = {
+  endPos: Source.Position,
+  count: Number,
+  damaged: Bool,
+  marks: List<Token.LexicalMark>,
+};
+
+// Kept separate so readBody's literal/mode boundaries remain visible.
+let readEscape = (reader: Reader.Reader, pos: Source.Position, delimiter, kind) => {
+  let isScalar = (value) => {
+    value >= 0 && value <= 1114111 && !(value >= 55296 && value <= 57343)
+  };
+  let start = Reader.advance(reader, pos, 1);
+  let result = (endPos, value) => {
+    let marks = match(value) {
+      Scalar(_) => {[]}, // Any scalar is a valid decoded escape character.
+      Gap => {[]},
+      Damaged => {[Read.lexicalMark(
+        0, Token.InvalidEscape, Token.RetainedMalformedToken(kind), pos.index, Source.Span(pos, endPos)
+      )]}
+    };
+    EscapeResult(endPos, value, marks)
+  };
+  let digitValue = (code, base) => {
+    if (code >= 48 && code <= 57) {Some(code - 48)} else {
+      if (base == 16 && code >= 65 && code <= 70) {Some(code - 55)} else {
+        if (base == 16 && code >= 97 && code <= 102) {Some(code - 87)} else {None}
+      }
+    }
+  };
+  let rec digits = (current: Source.Position, base, remaining, value, count) => {
+    if (remaining == 0) {(current, value, count)} else {
+      let digit = match(Reader.peekByOne(reader, current.index)) {
+        Some(code) => {digitValue(code, base)},
+        None => {None} // EOF ends the available escape digits.
+      };
+      match(digit) {
+        Some(digit) => {digits(Reader.advance(reader, current, 1), base, remaining - 1, value * base + digit, count + 1)},
+        None => {(current, value, count)}
+      }
+    }
+  };
+  let fixed = (start, base, width) => {
+    let (endPos, value, count) = digits(start, base, width, 0, 0);
+    result(endPos, if (count == width && isScalar(value)) {Scalar(value)} else {Damaged})
+  };
+  match(Reader.peekByOne(reader, start.index)) {
+    None => {result(start, Damaged)}, // A trailing backslash has no escape body.
+    Some(code) => {
+      if (Char.classify(code) == Char.classSpace) {
+        let endPos = Reader.readEnd(reader, start, (code, _) => {
+          Char.classify(code) == Char.classSpace
+        });
+        if (Reader.isCode(reader, endPos.index, 92)) {
+          result(Reader.advance(reader, endPos, 1), Gap)
+        } else {result(endPos, Damaged)}
+      } else {
+        if (code >= 48 && code <= 57) {fixed(start, 10, 3)} else {
+          let endPos = Reader.advance(reader, start, 1);
+          match(code) {
+            97 => {result(endPos, Scalar(7))}, // a
+            98 => {result(endPos, Scalar(8))}, // b
+            116 => {result(endPos, Scalar(9))}, // t
+            110 => {result(endPos, Scalar(10))}, // n
+            118 => {result(endPos, Scalar(11))}, // v
+            102 => {result(endPos, Scalar(12))}, // f
+            114 => {result(endPos, Scalar(13))}, // r
+            34 => {result(endPos, Scalar(34))},
+            39 => {result(endPos, Scalar(39))},
+            92 => {result(endPos, Scalar(92))},
+            94 => {
+              match(Reader.peekByOne(reader, endPos.index)) {
+                Some(control) => {
+                  if (control >= 64 && control <= 95) {
+                    result(Reader.advance(reader, endPos, 1), Scalar(control - 64))
+                  } else {result(endPos, Damaged)}
+                },
+                None => {result(endPos, Damaged)} // The control escape ends before its required unit.
+              }
+            },
+            117 => {
+              if (Reader.isCode(reader, endPos.index, 123)) {
+                let start = Reader.advance(reader, endPos, 1);
+                let (boundedEnd, value, count) = digits(start, 16, 6, 0, 0);
+                let endPos = Reader.readEnd(reader, boundedEnd, (code, _) => {
+                  match(digitValue(code, 16)) {
+                    // Extra hex digits belong to this damaged escape, without overflowing its value.
+                    Some(_) => {true},
+                    None => {false}
+                  }
+                });
+                if (Reader.isCode(reader, endPos.index, 125)) {
+                  result(Reader.advance(reader, endPos, 1),
+                    if (count > 0 && endPos.index == boundedEnd.index && isScalar(value)) {Scalar(value)} else {Damaged})
+                } else {result(endPos, Damaged)}
+              } else {fixed(endPos, 16, 4)}
+            },
+            // Remaining characters are invalid except the template delimiter and dollar.
+            _ => {
+              if (delimiter == 96 && (code == 96 || code == 36)) {
+                result(endPos, Scalar(code))
+              } else {result(endPos, Damaged)}
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let readBody = (reader: Reader.Reader, start: Source.Position, delimiter, kind, lineBound) => {
+  let rec loop = (current: Source.Position, count, damaged, marks) => {
+    if (current.index >= reader.length) {
+      BodyResult(current, count, damaged, BasisList.reverse(marks))
+    } else {
+      let code = Reader.codeAt(reader, current.index);
+      let interpolation = delimiter == 96 && code == 36 && Reader.isCode(reader, current.index + 1, 123);
+      if (code == delimiter || interpolation ||
+        (lineBound && (code == 10 || code == 13))) {
+        BodyResult(current, count, damaged, BasisList.reverse(marks))
+      } else {
+        if (code == 92) {
+          let escape = readEscape(reader, current, delimiter, kind);
+          let (count, damaged) = match(escape.value) {
+            Scalar(_) => {(count + 1, damaged)}, // Each scalar counts once regardless of its value.
+            Gap => {(count, damaged)},
+            Damaged => {(count, true)}
+          };
+          loop(escape.endPos, count, damaged, BasisList.append(BasisList.reverse(escape.marks), marks))
+        } else {
+          let pair = code >= 55296 && code <= 56319 &&
+            Reader.matches(reader, current.index + 1, (second) => {second >= 56320 && second <= 57343});
+          let endPos = Reader.advance(reader, current, if (pair) {2} else {1});
+          let invalid = code >= 55296 && code <= 57343 && !pair;
+          let marks = if (invalid) {
+            [Read.lexicalMark(0, Token.InvalidUnicodeScalar, Token.RetainedMalformedToken(kind),
+              current.index, Source.Span(current, endPos)), ..marks]
+          } else {marks};
+          loop(endPos, count + 1, damaged || invalid, marks)
+        }
+      }
+    }
+  };
+  loop(start, 0, false, [])
+};
+
+//#region literal readers
+
+let readQuoted = (reader: Reader.Reader, pos: Source.Position, delimiter, kind) => {
+  let body = readBody(reader, Reader.advance(reader, pos, 1), delimiter, kind, true);
+  let closed = Reader.isCode(reader, body.endPos.index, delimiter);
+  let endPos = if (closed) {Reader.advance(reader, body.endPos, 1)} else {body.endPos};
+  let span = Source.Span(pos, endPos);
+  let marks = if (closed) {
+    if (delimiter == 39 && !body.damaged && body.count != 1) {
+      BasisList.append(body.marks, [Read.lexicalMark(0, Token.InvalidCharacterLength(body.count),
+        Token.RetainedMalformedToken(kind), pos.index, span)])
+    } else {body.marks}
+  } else {
+    let (problem, terminator) = if (delimiter == 39) {
+      (Token.UnterminatedCharacter, Token.CharacterTerminator)
+    } else {(Token.UnterminatedQuotedString, Token.QuoteTerminator)};
+    BasisList.append(body.marks, [Read.lexicalMark(0, problem,
+      Token.AssumedLexemeTerminator(terminator), endPos.index, span)])
+  };
+  Read.singleToken(kind, pos, endPos, marks)
+};
+
+let readChunk = (reader: Reader.Reader, pos: Source.Position) => {
+  let body = readBody(reader, pos, 96, Token.MultilineStringTextToken, false);
+  Read.singleToken(Token.MultilineStringTextToken, pos, body.endPos, body.marks)
+};
+
+//#endregion

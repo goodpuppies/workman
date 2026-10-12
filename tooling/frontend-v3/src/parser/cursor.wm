@@ -1,0 +1,84 @@
+from "../lexer/token.wm" import * as Token;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+
+// Precondition: document is Lexer.lex(source). Keep its EOF sentinel in the cursor.
+// Tokens and trivia remain the lexer's authored values; mates stay absolute indices.
+record Cursor = {
+  source: Text.Source,
+  remainingTokens: List<Token.Token>,
+  tokenIndex: Number,
+};
+
+type Step = TokenTaken<Token.Token, Cursor> | ReachedEnd<Token.Token>;
+
+let fromDocument = (source, document: Token.LexicalDocument) => {
+  Cursor(source, document.tokens, 0)
+};
+
+let current = (cursor: Cursor) => {
+  match(cursor.remainingTokens) {
+    [token, ..rest] => {token},
+    // Lexer documents contain EOF, and take never removes that final sentinel.
+    [] => {Panic("unreachable")}
+  }
+};
+
+let offset = (cursor: Cursor) => {
+  let token = current(cursor);
+  token.span.startPos.index
+};
+
+let isKind = (cursor: Cursor, expected) => {
+  let token = current(cursor);
+  token.kind == expected
+};
+
+// Exact identifier spelling, supplied as UTF-16 units. Grammar keywords are fixed
+// ASCII lists; checking them needs no host-string conversion or token reconstruction.
+// Prefixes, primed identifiers and quoted text must not match a keyword accidentally.
+let isWord = (cursor: Cursor, expectedUnits) => {
+  let token = current(cursor);
+  let matches = () => {
+    let finish = token.span.endPos.index;
+    let rec go = (index, remaining) => {
+      match(remaining) {
+        [] => {index == finish},
+        [expected, ..rest] => {
+          if (index >= finish) {false} else {
+            match(Text.peek(cursor.source, index)) {
+              Some(code) => {code == expected && go(index + 1, rest)},
+              // The lexer document's authored spans are within the supplied source.
+              None => {Panic("unreachable")}
+            }
+          }
+        }
+      }
+    };
+    go(token.span.startPos.index, expectedUnits)
+  };
+  match(token.kind) {
+    Token.LowerIdentifierToken => {matches()},
+    Token.UpperIdentifierToken => {matches()},
+    // Literals, symbols, template boundaries, unknown lexemes and EOF are not words.
+    _ => {false}
+  }
+};
+
+// Taking EOF is an explicit terminal result, not a successful non-advancing step.
+let take = (cursor: Cursor) => {
+  let token = current(cursor);
+  match(token.kind) {
+    Token.EndOfFileToken => {ReachedEnd(token)},
+    // Every other kind is an authored token, including damaged/unknown lexemes.
+    // This cursor does not classify grammatical validity or recover source damage.
+    _ => {
+      match(cursor.remainingTokens) {
+        [head, ..rest] => {
+          TokenTaken(head, Cursor { ..cursor, remainingTokens = rest, tokenIndex = cursor.tokenIndex + 1 })
+        },
+        // current has already established that this cursor is nonempty.
+        [] => {Panic("unreachable")}
+      }
+    }
+  }
+};

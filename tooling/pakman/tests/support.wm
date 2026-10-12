@@ -1,0 +1,39 @@
+-- Helpers shared by pakman's tests.
+
+from js.module("./support.ts") import * as Host;
+from "../src/io.wm" import { makeTempDir, removeTree, envOr, describe };
+
+-- Runs `body` in a new temporary directory, then removes the directory
+-- whether the body passed or not.
+let withTempDir = (body) => {
+  let cleanUp = (dir, outcome) => {
+    removeTree(dir) :> Task.andThen((_) => { Task.fromResult(outcome) })
+  };
+  makeTempDir(envOr("TMPDIR", "/tmp"), "pakman-test-")
+    :> Task.andThen((dir) => {
+      body(dir)
+        :> Task.map((value) => { Ok(value) })
+        :> Task.recover((error) => { Err(error) })
+        :> Task.andThen((outcome) => { cleanUp(dir, outcome) })
+    })
+};
+
+
+record Run = { code: Number, output: String };
+
+-- Runs `wm pakman` with the test packages. State (compiled package programs,
+-- the store) is shared between tests and kept between runs, so packages only
+-- compile once; each test uses its own root, which has its own lock.
+let pakman = (args: List<String>) => {
+  let state = envOr("TMPDIR", "/tmp") ++ "/pakman-test-state";
+  Host.pakman(state, Js.Array.fromList(args))
+    :> Task.mapErr(describe("wm pakman"))
+    :> Task.andThen((result) => {
+      match(Js.Array.toList(result)) {
+        [code, output] => { Task.succeed(Run(if (code == "0") { 0 } else { 1 }, output)) },
+        _ => { Task.fail("wm pakman: unexpected result") }
+      }
+    })
+};
+
+let readLink = (path) => { Host.readLink(path) :> Task.mapErr(describe("readlink " ++ path)) };

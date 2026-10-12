@@ -1,0 +1,28 @@
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serveWithBuild };
+from "../../../src/io.wm" import { mkdirp, writeText, runCapture, copyFile };
+
+let definition: Definition = .{
+  name = "hello-build", description = "fixture: package-controlled native build",
+  homepage = "", license = "MIT", target = Host, scope = System,
+  versions = () => { Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) },
+  hosts = [], policy = defaultPolicy,
+  make = (version, _) => { Package(version, [], [Build("native", ["/usr/bin/cc", "/usr/bin/sh"])], []) }
+};
+
+let build = (ctx: BuildContext) => {
+  let compile = Monad.via Task (_) => {
+    runCapture("/usr/bin/cc", [ctx.work ++ "/hello.c", "-o", ctx.work ++ "/hello"])
+  };
+  let check = Monad.via Task (_) => {
+    -- Children inherit the OS sandbox: writing to /usr and seeing host home fail.
+    runCapture("/usr/bin/sh", ["-c", "test ! -e /home/ellie/.ssh && ! touch /usr/pakman-escape && ./hello | grep -qx 'built by Workman'"])
+  };
+  let stage = Monad.via Task (_) => {
+    Task|mkdirp(ctx.out ++ "/usr/bin"), copyFile(ctx.work ++ "/hello", ctx.out ++ "/usr/bin/hello-build", 493)|
+      :> Task.map((_) => { void })
+  };
+  writeText(ctx.work ++ "/hello.c", "#include <stdio.h>\nint main(void) { puts(\"built by Workman\"); return 0; }\n", 420)
+    :> compile :> check :> stage
+};
+let main = () => { serveWithBuild(definition, build) };

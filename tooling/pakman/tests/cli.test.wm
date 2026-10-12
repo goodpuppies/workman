@@ -1,0 +1,120 @@
+-- End to end: `wm pakman` installing the test packages in tests/pkgs into
+-- throwaway roots, and refusing the broken ones.
+
+from "../../testman/test.wm" import *;
+from "../src/io.wm" import { readText, exists, mkdirp, writeText, runCapture };
+from "./support.wm" import { withTempDir, pakman, readLink, Run };
+
+let succeeds = (run: Run) => {
+  if (run.code == 0) { pass() } else { fail("wm pakman failed:\n" ++ run.output) }
+};
+
+-- Succeeds with the output of a command that should fail.
+let refuses = (run: Run) => {
+  if (run.code == 0) { fail("wm pakman should have failed:\n" ++ run.output) } else { Task.succeed(run.output) }
+};
+
+let install = (root, name) => { pakman(["install", "--root", root, name]) };
+
+let tests = [
+  test("a failed callback cannot activate its partial output", () => {
+    withTempDir((root) => {
+      install(root, "hello-build-fail")
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "intentional build failure") })
+        :> Task.andThen((_) => { exists(root ++ "/usr/bin/partial") })
+        :> Task.andThen((placed) => { assert(!placed, "partial build was installed") })
+    })
+  }),
+  test("package code compiles, checks and stages a native program offline", () => {
+    withTempDir((root) => {
+      install(root, "hello-build")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { runCapture(root ++ "/usr/bin/hello-build", []) })
+        :> Task.andThen((text) => { assertEqual(text, "built by Workman\n") })
+    })
+  }),
+  test("install places a package and the package it depends on", () => {
+    withTempDir((root) => {
+      install(root, "hello-app")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => {
+          Task|readText(root ++ "/usr/bin/hello-app"), readLink(root ++ "/usr/share/hello-app/greeting"),
+            readText(root ++ "/usr/share/hello-app/greeting")|
+        })
+        :> Task.andThen((script, link, greeting) => {
+          checks([
+            -- System packages refer to each other at their real paths, under /.
+            assertEqual(script, "#!/bin/sh\ncat /usr/share/hello-lib/greeting\n"),
+            assertEqual(link, "../hello-lib/greeting"),
+            assertEqual(greeting, "hello from hello-lib\n")
+          ])
+        })
+    })
+  }),
+  test("refuses a package that uses a file its dependency doesn't install", () => {
+    withTempDir((root) => {
+      install(root, "hello-broken")
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "which hello-lib does not install") })
+        :> Task.andThen((_) => { exists(root ++ "/usr/share/hello-broken") })
+        :> Task.andThen((placed) => { assert(!placed, "hello-broken was installed anyway") })
+    })
+  }),
+  test("an unknown package suggests the packages holding its letters in order", () => {
+    withTempDir((root) => {
+      install(root, "hlap")
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "unknown package hlap, did you mean hello-app?") })
+    })
+  }),
+  test("refuses a package that needs a host file that's missing", () => {
+    withTempDir((root) => {
+      install(root, "hello-needs-host")
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "/nonexistent/libnope.so.1") })
+    })
+  }),
+  test("refuses a download that doesn't match the checksum upstream publishes", () => {
+    withTempDir((root) => {
+      install(root, "hello-bad-checksum")
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "upstream publishes 0000") })
+    })
+  }),
+  test("refuses to overwrite a file it didn't install", () => {
+    withTempDir((root) => {
+      let theirs = root ++ "/usr/share/hello-lib/greeting";
+      Task|mkdirp(root ++ "/usr/share/hello-lib"), writeText(theirs, "mine\n", 420)|
+        :> Task.andThen((_) => { install(root, "hello-lib") })
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "exists and pakman did not install it") })
+        :> Task.andThen((_) => { readText(theirs) })
+        :> Task.andThen((text) => { assertEqual(text, "mine\n") })
+    })
+  }),
+  test("remove takes a package's files away", () => {
+    withTempDir((root) => {
+      install(root, "hello-lib")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { pakman(["remove", "--root", root, "hello-lib"]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { exists(root ++ "/usr/share/hello-lib") })
+        :> Task.andThen((left) => { assert(!left, "usr/share/hello-lib is still there") })
+    })
+  }),
+  test("rollback returns to the previous generation", () => {
+    withTempDir((root) => {
+      install(root, "hello-lib")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { install(root, "hello-app") })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { pakman(["rollback", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { Task|exists(root ++ "/usr/bin/hello-app"), exists(root ++ "/usr/share/hello-lib/greeting")| })
+        :> Task.andThen((app, lib) => {
+          checks([assert(!app, "hello-app survived the rollback"), assert(lib, "hello-lib was rolled back too")])
+        })
+    })
+  })
+];

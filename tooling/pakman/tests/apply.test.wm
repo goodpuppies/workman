@@ -1,0 +1,101 @@
+-- The applier, the only code that writes into an install root: what it places,
+-- what it records, and everything it refuses.
+
+from js.module("../src/host.ts") import * as Host;
+from "../../testman/test.wm" import *;
+from "../src/apply.wm" import { apply, isSafePath, Plan, Placement };
+from "../src/io.wm" import { writeText, readText, mkdirp, exists, readTextOr, describe };
+from "./support.wm" import { withTempDir };
+
+let readLink = (path) => { Host.readLink(path) :> Task.mapErr(describe("readlink " ++ path)) };
+
+-- A source file to install, and a plan placing it plus a link to it.
+let setUp = (dir) => {
+  let source = dir ++ "/source";
+  writeText(source, "from pakman\n", 420)
+    :> Task.map((_) => {
+      Plan(dir ++ "/root", [Placement("usr/share/demo/file", source, ""), Placement("usr/share/demo/link", "", "file")], [])
+    })
+};
+
+let ownedRecord = (dir) => { readTextOr(dir ++ "/root/var/lib/pakman/owned.json", "") };
+
+-- Applies a plan that should be refused, giving the refusal.
+let refused = (plan) => { assertFails(apply(plan)) };
+
+let tests = [
+  test("only relative paths without .. are safe", () => {
+    checks([
+      assert(isSafePath("usr/bin/zig"), "usr/bin/zig"),
+      assert(!isSafePath("/usr/bin/zig"), "absolute"),
+      assert(!isSafePath("usr/../etc/passwd"), ".."),
+      assert(!isSafePath("usr//bin"), "empty segment"),
+      assert(!isSafePath(""), "empty")
+    ])
+  }),
+  test("places files and links, and records them as its own", () => {
+    withTempDir((dir) => {
+      setUp(dir)
+        :> Task.andThen((plan) => { apply(plan) })
+        :> Task.andThen((counts) => { assertEqual(counts, (2, 0)) })
+        :> Task.andThen((_) => {
+          Task|readText(dir ++ "/root/usr/share/demo/file"), readLink(dir ++ "/root/usr/share/demo/link"), ownedRecord(dir)|
+        })
+        :> Task.andThen((text, link, owned) => {
+          checks([
+            assertEqual(text, "from pakman\n"),
+            assertEqual(link, "file"),
+            assertContains(owned, "usr/share/demo/file"),
+            assertContains(owned, "usr/share/demo/link")
+          ])
+        })
+    })
+  }),
+  test("refuses to overwrite a file it didn't install, and changes nothing", () => {
+    withTempDir((dir) => {
+      let theirs = dir ++ "/root/usr/share/demo/file";
+      Task|mkdirp(dir ++ "/root/usr/share/demo"), writeText(theirs, "someone else's\n", 420)|
+        :> Task.andThen((_) => { setUp(dir) })
+        :> Task.andThen(refused)
+        :> Task.andThen((message) => { assertContains(message, "exists and pakman did not install it") })
+        :> Task.andThen((_) => { Task|readText(theirs), exists(dir ++ "/root/usr/share/demo/link"), ownedRecord(dir)| })
+        :> Task.andThen((text, linked, owned) => {
+          checks([assertEqual(text, "someone else's\n"), assert(!linked, "the link was placed"), assertEqual(owned, "")])
+        })
+    })
+  }),
+  test("refuses paths pacman's database lists", () => {
+    withTempDir((dir) => {
+      let db = dir ++ "/root/var/lib/pacman/local/demo-1.0-1";
+      Task|mkdirp(db), writeText(db ++ "/files", "%FILES%\nusr/\nusr/share/\nusr/share/demo/file\n\n", 420)|
+        :> Task.andThen((_) => { setUp(dir) })
+        :> Task.andThen(refused)
+        :> Task.andThen((message) => { assertContains(message, "usr/share/demo/file (pacman: demo-1.0-1) belongs to pacman") })
+    })
+  }),
+  test("refuses to remove a path it didn't install", () => {
+    withTempDir((dir) => {
+      refused(Plan(dir ++ "/root", [], ["etc/fstab"]))
+        :> Task.andThen((message) => { assertContains(message, "which pakman did not install") })
+    })
+  }),
+  test("refuses unsafe paths", () => {
+    withTempDir((dir) => {
+      refused(Plan(dir ++ "/root", [Placement("../outside", dir ++ "/source", "")], []))
+        :> Task.andThen((message) => { assertContains(message, "unsafe path ../outside") })
+    })
+  }),
+  test("removes what it installed, and the directories left empty", () => {
+    withTempDir((dir) => {
+      let root = dir ++ "/root";
+      setUp(dir)
+        :> Task.andThen((plan) => { apply(plan) })
+        :> Task.andThen((_) => { apply(Plan(root, [], ["usr/share/demo/file", "usr/share/demo/link"])) })
+        :> Task.andThen((counts) => { assertEqual(counts, (0, 2)) })
+        :> Task.andThen((_) => { Task|exists(root ++ "/usr/share/demo"), ownedRecord(dir)| })
+        :> Task.andThen((left, owned) => {
+          checks([assert(!left, "usr/share/demo is still there"), assert(!contains(owned, "usr/share/demo"), "still recorded as owned")])
+        })
+    })
+  })
+];

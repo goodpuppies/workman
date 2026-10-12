@@ -320,6 +320,42 @@ Task<a, Js.Error>
 JavaScript can reject promises or throw while starting work. Both cases become `Err(Js.Error)` in
 the Task result.
 
+Promise-returning APIs come through reflection. A manual type can't describe one: manual types
+need `unsafe` and describe the raw JavaScript value, and a plain JavaScript promise is not a Task
+(a Task is a promise of a `Result`). See [Manual Types](./jsffi.md#manual-types).
+
+### Exceptions inside Task callbacks
+
+The conversion to `Err(Js.Error)` happens only at a safe FFI call. A JavaScript exception thrown
+inside a Task callback, for example by an `unsafe` import called in `Task.map`, or a failed pattern
+match, is not turned into an `Err`. It rejects the promise underneath the Task, and Task
+combinators do not see rejections: `Task.recover` and `Task.orElse` are skipped, and the program
+stops with an uncaught error.
+
+```workman
+from js.global("JSON") import unsafe { parse: String -> Number };
+
+-- Stops with "Uncaught (in promise) SyntaxError"; the recover never runs.
+Task.succeed("{{")
+  :> Task.map((text) => { parse(text) })
+  :> Task.recover((_) => { 0 })
+```
+
+Prefer safe imports, which return `Result`, inside callbacks. Code that must survive any failure
+from code it calls, such as a test runner, can call through `Promise.try`, which turns both a throw
+and a rejection into `Err(Js.Error)`. Reflection types what it resolves to as `Js.Value`; it is the
+callback's `Result`, which `Json.assert` states at the boundary:
+
+```workman
+from js.global("Promise") import { try as attempt };
+
+attempt((_) => { run() })   -- one argument: reflection reads the rest parameter as one value
+  :> Task.map((value) => {
+    let outcome: Result<Result<Void, String>, Js.Error> = value :> Json.assert;
+    outcome                 -- Ok(the task's own Result), or Err(Js.Error) if anything threw
+  })
+```
+
 `Js.Error` can be matched as `Js.Error(message)` or `Js.Unknown`; it is not opaque.
 See [JavaScript error handling](./js-errors.md) for the exact normalization and
 context-preserving patterns.

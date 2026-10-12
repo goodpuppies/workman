@@ -1,0 +1,189 @@
+-- The applier: the only code that changes files in an install root.
+--
+-- pakman computes a switch unprivileged (what to add, what to remove) and
+-- hands it to the applier as a plan. The applier runs in-process when the root
+-- is writable, and as its own program under sudo when it isn't (installing
+-- into /). It trusts nothing in the plan about ownership. Its rules:
+--
+--   - It only removes or replaces paths in its own record of what it
+--     installed, <root>/var/lib/pakman/owned.json. For / that record is
+--     root-owned, so nothing running as the user can widen what it deletes.
+--   - It never overwrites a file it doesn't own, and refuses any path pacman's
+--     database inside the root lists (<root>/var/lib/pacman/local).
+--   - Every path must be relative, without `..`.
+--   - It checks everything before changing anything.
+--
+-- Files are copied, not linked: installed files belong to whoever runs the
+-- applier (root for /), never to the user who built them.
+
+from js.global("JSON") import { parse } as JSON;
+from "./io.wm" import *;
+from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, ignore, unique };
+from "./text.wm" import { compare, join };
+
+let via = Monad.via;
+
+-- One file to put in place: `path` under the root, copied from `source`, or a
+-- symlink to `link` when that isn't "".
+record Placement = { path: String, source: String, link: String };
+
+record Plan = { root: String, add: List<Placement>, remove: List<String> };
+
+record PlanJson = { root: String, add: Js.Array<Placement>, remove: Js.Array<String> };
+record OwnedJson = { files: Js.Array<String> };
+
+let planJson = (plan: Plan) => {
+  let placementJson = (p: Placement) => { JSON{ path: p.path, source: p.source, link: p.link } };
+  JSON{ root: plan.root, add: jsonList(plan.add, placementJson), remove: Js.Array.fromList(plan.remove) }
+};
+
+let recordDir = (root) => { root ++ "/var/lib/pakman" };
+let recordFile = (root) => { recordDir(root) ++ "/owned.json" };
+
+let readOwned = (root) => {
+  let file = recordFile(root);
+  let parse = via Task (text) => {
+    let owned: Result<OwnedJson, String> = JSON.parse(text)
+      :> Result.mapErr((_) => { file ++ " is not valid JSON" })
+      :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { file ++ " has an unexpected shape" }) });
+    owned :> Result.map((o) => { Js.Array.toList(o.files) }) :> Task.fromResult
+  };
+  readTextOr(file, "{\"files\":[]}")
+    :> parse
+};
+
+let writeOwned = (root, files: List<String>) => {
+  Task|mkdirp(recordDir(root)), writeText(recordFile(root), prettyJson(JSON{ files: Js.Array.fromList(files) }), 420)|
+    :> Task.map(ignore)
+};
+
+let isSafePath = (path) => {
+  let parts = path :> .split("/") :> Result.map(Js.Array.toList) :> Result.withDefault([]);
+  path != ""
+    && !(path :> .startsWith("/") :> Result.withDefault(true))
+    && !List.any(parts, (part) => { part == ".." || part == "" })
+};
+
+-- ---------------------------------------------------------------------------
+-- Triggers
+--
+-- Caches the desktop reads, refreshed after a switch when files under their
+-- directory changed (what pacman does with hooks). A missing tool is skipped;
+-- a failing one is reported but doesn't undo the switch.
+
+record Command = { cmd: String, args: List<String> };
+
+-- `live` triggers act on the running system rather than on files in the root,
+-- so they only run when the root is /.
+record Trigger = { dir: String, live: Bool, commands: String -> List<Command> };
+
+let cacheTrigger = (dir, cmd, args) => { Trigger(dir, false, (root) => { [Command(cmd, args(root))] }) };
+
+-- For both scopes: system data lives in usr/share, a user's in .local/share.
+let triggersFor = (share) => {
+  [
+    cacheTrigger(share ++ "/applications/", "update-desktop-database", (root) => { ["-q", root ++ "/" ++ share ++ "/applications"] }),
+    cacheTrigger(share ++ "/mime/packages/", "update-mime-database", (root) => { [root ++ "/" ++ share ++ "/mime"] }),
+    cacheTrigger(share ++ "/icons/hicolor/", "gtk-update-icon-cache", (root) => { ["-q", "-t", "-f", root ++ "/" ++ share ++ "/icons/hicolor"] })
+  ]
+};
+
+-- What systemd's pacman hooks do for binfmt.d and udev rules.
+let systemTriggers = [
+  Trigger("usr/lib/binfmt.d/", true, (_) => { [Command("/usr/lib/systemd/systemd-binfmt", [])] }),
+  Trigger("usr/lib/udev/rules.d/", true, (_) => {
+    [
+      Command("udevadm", ["control", "--reload"]),
+      Command("udevadm", ["trigger", "-c", "change"]),
+      Command("udevadm", ["settle"])
+    ]
+  })
+];
+
+let triggers = concatAll([triggersFor("usr/share"), triggersFor(".local/share"), systemTriggers]);
+
+let runTriggers = (root, changed: List<String>) => {
+  let touches = (t: Trigger) => {
+    (root == "/" || !t.live)
+      && List.any(changed, (path) => { path :> .startsWith(t.dir) :> Result.withDefault(false) })
+  };
+  let runCommand = (c: Command) => {
+    runQuiet(c.cmd, c.args)
+      :> Task.map((code) => {
+        if (code != 0 && code != 127) { eprint("pakman: " ++ c.cmd ++ " exited with " ++ Text.of(code)) } else { void }
+      })
+  };
+  each(filterAll(triggers, touches), (t: Trigger) => { each(t.commands(root), runCommand) })
+};
+
+-- ---------------------------------------------------------------------------
+
+-- Applies a plan and returns (files added, files removed).
+let apply = (plan: Plan) => {
+  let root = plan.root;
+  let dest = (path) => { root ++ "/" ++ path };
+  let addPaths = mapAll(plan.add, (p: Placement) => { p.path });
+  let check = via Task (owned) => {
+    let ownedSet = Map.fromList(compare, mapAll(owned, (path) => { (path, void) }));
+    let isOwned = (path) => { Map.has(ownedSet, path) };
+    let fresh = filterAll(addPaths, (path) => { !isOwned(path) });
+    let unsafe = filterAll(appendAll(addPaths, plan.remove), (path) => { !isSafePath(path) });
+    let notOwned = filterAll(plan.remove, (path) => { !isOwned(path) });
+    let occupied = (path) => { exists(dest(path)) :> Task.map((taken) => { if (taken) { [dest(path)] } else { [] } }) };
+    let report = via Task (taken, pacman) => {
+      let problems = concatAll([
+        mapAll(unsafe, (path) => { "unsafe path " ++ path }),
+        mapAll(notOwned, (path) => { "asked to remove " ++ dest(path) ++ ", which pakman did not install" }),
+        mapAll(concatAll(taken), (path) => { path ++ " exists and pakman did not install it" }),
+        mapAll(pacman, (path) => { path ++ " belongs to pacman" })
+      ]);
+      match(problems) {
+        [] => { Task.succeed(owned) },
+        Var(found) => { Task.fail("refusing to change " ++ root ++ ":\n  " ++ join(found, "\n  ")) }
+      }
+    };
+    Task|series(fresh, occupied), pacmanOwned(root, fresh)|
+      :> report
+  };
+  let unlink = (path) => {
+    Task|removeFile(dest(path)), pruneEmptyDirs(dirname(dest(path)), root)| :> Task.map(ignore)
+  };
+  let place = (p: Placement) => {
+    let target = dest(p.path);
+    -- A function, not a Task: Tasks start when created, and this must wait for mkdirp.
+    let put = () => { if (p.link == "") { copyPreserving(p.source, target) } else { symlink(p.link, target) } };
+    Task|removeFile(target), mkdirp(dirname(target)), put()| :> Task.map(ignore)
+  };
+  -- The record first grows to include everything being added, so an
+  -- interrupted apply never leaves files the record doesn't know about.
+  let execute = via Task (owned) => {
+    let removed = Map.fromList(compare, mapAll(plan.remove, (path) => { (path, void) }));
+    let after = filterAll(unique(appendAll(owned, addPaths)), (path) => { !Map.has(removed, path) });
+    Task|
+      writeOwned(root, unique(appendAll(owned, addPaths))),
+      each(plan.remove, unlink),
+      each(plan.add, place),
+      writeOwned(root, after),
+      runTriggers(root, appendAll(addPaths, plan.remove))
+    |
+      :> Task.map((_) => { (List.length(plan.add), List.length(plan.remove)) })
+  };
+  readOwned(root)
+    :> check
+    :> execute
+};
+
+-- Applies a plan file (as written by `planJson`); the entry point under sudo.
+let applyFile = (file) => {
+  let decode = via Task (text) => {
+    let plan: Result<PlanJson, String> = JSON.parse(text)
+      :> Result.mapErr((_) => { file ++ " is not valid JSON" })
+      :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { file ++ " is not a plan" }) });
+    plan
+      :> Result.map((p) => { Plan(p.root, Js.Array.toList(p.add), Js.Array.toList(p.remove)) })
+      :> Task.fromResult
+  };
+  readText(file)
+    :> decode
+    :> via Task (plan) => { apply(plan) }
+};

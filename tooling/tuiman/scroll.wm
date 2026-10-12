@@ -2,9 +2,7 @@
 -- clock; this module owns easing and translating a content offset into a
 -- partially clipped list viewport.
 
-from js.global("Math") import {
-  floor: Number -> Number,
-};
+from js.global("Math") import { floor };
 
 record Viewport = {
   start: Number,

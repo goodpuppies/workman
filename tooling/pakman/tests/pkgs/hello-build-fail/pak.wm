@@ -1,0 +1,14 @@
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serveWithBuild };
+from "../../../src/io.wm" import { mkdirp, writeText };
+let definition: Definition = .{
+  name = "hello-build-fail", description = "fixture: interrupted build", homepage = "", license = "MIT",
+  target = Host, scope = System, hosts = [], policy = defaultPolicy,
+  versions = () => { Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) },
+  make = (version, _) => { Package(version, [], [Build("fail", [])], []) }
+};
+let build = (ctx: BuildContext) => {
+  Task|mkdirp(ctx.out ++ "/usr/bin"), writeText(ctx.out ++ "/usr/bin/partial", "partial", 420)|
+    :> Monad.via Task (_) => { Task.fail("intentional build failure") }
+};
+let main = () => { serveWithBuild(definition, build) };

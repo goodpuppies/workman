@@ -1,0 +1,121 @@
+/* @subsetml
+from "./subset_unicode.sml" import * as SubsetUnicode;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_char.sml" import * as SubsetChar;
+*/
+
+// Strict UTF-16 byte codecs. Endianness is explicit; BOMs are ordinary scalars.
+
+from "./subset_unicode.wm" import * as SubsetUnicode;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_char.wm" import * as SubsetChar;
+
+type Endian = LittleEndian | BigEndian;
+
+let unitCodes = (unitCode, order) => {
+  let (high, low) = SubsetUnicode.split(unitCode, 256);
+  match(order) {
+    LittleEndian => { [low, high] },
+    BigEndian => { [high, low] }
+  }
+};
+let encodeOne = (code, order, index) => {
+  if (SubsetUnicode.isScalar(code)) {
+    let codes = if (code < 65536) { unitCodes(code, order) } else {
+      let (high, low) = SubsetUnicode.split(code - 65536, 1024);
+      SubsetList.append(unitCodes(55296 + high, order), unitCodes(56320 + low, order))
+    };
+    SubsetUnicode.encodeCodes(codes, index)
+  } else {
+    SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.scalarError(code), index))
+  }
+};
+
+let encode = (scalars, order) => {
+  let rec go = match {
+    ([], Var(index), Var(acc)) => { SubsetResult.Ok(SubsetList.reverse(acc)) },
+    ([code, ..rest], Var(index), Var(acc)) => {
+      match(encodeOne(code, order, index)) {
+        SubsetResult.Err(error) => { SubsetResult.Err(error) },
+        SubsetResult.Ok(bytes) => { go(rest, index + 1, SubsetList.reverseAppend(bytes, acc)) }
+      }
+    }
+  };
+  go(scalars, 0, [])
+};
+
+let readUnit = (bytes, order, offset) => {
+  match(bytes) {
+    [] => {
+      SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.Truncated, offset))
+    },
+    [c] => {
+      SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.OddLength, offset))
+    },
+    [a, b, ..rest] => {
+      match(SubsetChar.toCode(a)) {
+        SubsetResult.Err(error) => {
+          SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset))
+        },
+        SubsetResult.Ok(first) => {
+          match(SubsetChar.toCode(b)) {
+            SubsetResult.Err(error) => {
+              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset + 1))
+            },
+            SubsetResult.Ok(second) => {
+              SubsetResult.Ok(
+                match(order) {
+                  LittleEndian => { first + second * 256 },
+                  BigEndian => { first * 256 + second }
+                },
+                rest
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let decodeOne = (bytes, order, offset) => {
+  SubsetResult.andThen(
+    readUnit(bytes, order, offset),
+    (first, rest) => {
+      if (if (first >= 55296) { first <= 56319 } else { false }) {
+        SubsetResult.andThen(
+          readUnit(rest, order, offset + 2),
+          (second, tail) => {
+            if (if (second >= 56320) { second <= 57343 } else { false }) {
+              SubsetResult.Ok(65536 + (first - 55296) * 1024 + second - 56320, tail, 4)
+            } else {
+              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset + 2))
+            }
+          }
+        )
+      } else {
+        if (if (first >= 56320) { first <= 57343 } else { false }) {
+          SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset))
+        } else { SubsetResult.Ok(first, rest, 2) }
+      }
+    }
+  )
+};
+
+let decode = (bytes, order) => {
+  let rec go = match {
+    ([], Var(offset), Var(acc)) => { SubsetResult.Ok(SubsetList.reverse(acc)) },
+    (Var(input), Var(offset), Var(acc)) => {
+      match(decodeOne(input, order, offset)) {
+        SubsetResult.Err(error) => { SubsetResult.Err(error) },
+        SubsetResult.Ok(decoded) => {
+          let (code, rest, consumed) = decoded;
+          go(rest, offset + consumed, [code, ..acc])
+        }
+      }
+    }
+  };
+  go(bytes, 0, [])
+};

@@ -1,0 +1,27 @@
+from "../src/lexer/lexer.wm" import * as Lexer;
+from "../adapters/portable/document.wm" import * as Document;
+from "../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../lib/subsetml/subset_utf16.wm" import * as Utf16;
+from "../lib/subsetml/subset_io.wm" import * as Io;
+from "../lib/subsetml/subset_process.wm" import * as Process;
+from "../lib/subsetml/subset_string.wm" import * as Bytes;
+from "../lib/subsetml/subset_result.wm" import * as R;
+
+// Default files are strict UTF-8. --utf16le reads raw units, including lone surrogates.
+// BOMs are ordinary source units; neither path strips or normalizes input.
+let main = () => {
+  let args = match(Process.arguments()) { R.Ok(args) => {args}, R.Err(_) => {Panic("cannot read arguments")} };
+  let (raw, path) = match(args) {
+    [path] => {(false, path)},
+    ["--utf16le", path] => {(true, path)},
+    _ => {Panic("usage: native-lex [--utf16le] FILE")}
+  };
+  let bytes = match(Io.readFile(path)) { R.Ok(bytes) => {bytes}, R.Err(error) => {Panic(Io.errorText(error))} };
+  let source = match(if(raw) {Text.fromUtf16Bytes(bytes, Utf16.LittleEndian)} else {Text.fromUtf8(bytes)}) {
+    R.Ok(source) => {source}, R.Err(_) => {Panic("invalid source encoding")}
+  };
+  let output = Document.encode(Lexer.lex(source)) ++ "\n";
+  let data = match(Bytes.fromNative(output)) { R.Ok(data) => {data}, R.Err(_) => {Panic("invalid snapshot bytes")} };
+  match(Io.writeStdout(data)) { R.Ok(_) => {void}, R.Err(error) => {Panic(Io.errorText(error))} }
+};
+let _ = main();

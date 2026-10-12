@@ -1,0 +1,58 @@
+-- The JSON a package prints for `make`, read back by pakman.
+
+from js.global("JSON") import { parse } as JSON;
+from "../../testman/test.wm" import *;
+from "../src/model.wm" import *;
+from "../src/plan.wm" import { encodePlan, decodePlan, PlanJson };
+from "../src/io.wm" import { compactJson };
+
+-- Prints a package's plan, then reads the JSON back as pakman does.
+let throughJson = (pkg: Package) => {
+  let decoded: Result<PlanJson, String> = JSON.parse(compactJson(encodePlan(pkg)))
+    :> Result.mapErr((_) => { "invalid JSON" })
+    :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { "unexpected shape" }) });
+  decoded :> Result.andThen(decodePlan)
+};
+
+let everyStep = Package(
+  "1.0",
+  [source("app.deb", "https://example.org/app.deb"), source("icon.png", "https://example.org/icon.png")],
+  [
+    Extract(Unpack(["app.deb", "data.tar.xz"], ["opt", "usr/bin"], "", 0)),
+    extract("app.deb", "opt/app", 1),
+    Install("icon.png", "usr/share/icons/hicolor/128x128/apps/app.png", Data),
+    Symlink(Own("opt/app/app"), "usr/bin/app"),
+    Symlink(Of("hello-lib", "usr/share/hello-lib/greeting"), "usr/share/app/greeting"),
+    WriteText("opt/app/app.ini", lines(["[System]", "UserMode=1"]), Data),
+    WriteText("usr/bin/app-run", cat([lit("#!/bin/sh\nexec "), ref(Own("opt/app/app")), lit(" \"$@\"\n")]), Exec),
+    Build("compile", ["/usr/bin/cc"]),
+    MakeDir("var/lib/app")
+  ],
+  [Base("/usr/lib/libgtk-3.so.0"), Of("hello-lib", "usr/share/hello-lib/greeting")]
+);
+
+let tests = [
+  test("a plan survives printing and reading back", () => {
+    assertOk(throughJson(everyStep))
+      :> Task.andThen((back) => { assertEqual(compactJson(encodePlan(back)), compactJson(encodePlan(everyStep))) })
+  }),
+  test("sources and requirements come back unchanged", () => {
+    assertOk(throughJson(everyStep))
+      :> Task.andThen((back: Package) => {
+        checks([
+          assertEqual(back.version, "1.0"),
+          assertEqual(back.sources, everyStep.sources),
+          assertEqual(List.length(back.install), List.length(everyStep.install)),
+          assertEqual(List.length(back.requires), 2)
+        ])
+      })
+  }),
+  test("an unknown install step is refused", () => {
+    let json = "{\"protocol\":5,\"version\":\"1\",\"sources\":[],\"requires\":[],\"install\":[{\"op\":\"chmod\",\"path\":\"x\",\"source\":\"\",\"mode\":\"\",\"strip\":0,\"archive\":[],\"members\":[],\"parts\":[]}]}";
+    let decoded: Result<PlanJson, String> = JSON.parse(json)
+      :> Result.mapErr((_) => { "invalid JSON" })
+      :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { "unexpected shape" }) });
+    assertErr(decoded :> Result.andThen(decodePlan))
+      :> Task.andThen((message) => { assertContains(message, "unknown install step chmod") })
+  })
+];

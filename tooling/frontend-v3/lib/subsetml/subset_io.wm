@@ -1,0 +1,83 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_string.sml" import * as SubsetString;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_host.sml" import * as SubsetHost;
+*/
+
+// Whole-file byte I/O. Conversion and validation are ordinary source algorithms.
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_string.wm" import * as SubsetString;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_host.wm" import * as SubsetHost;
+
+type Error = HostError<String> | NonByte<Number> | InvalidPath;
+let bytes = (value) => {
+  SubsetResult.mapError(
+    SubsetString.fromNative(value),
+    match {
+      SubsetString.NonByte(offset) => { NonByte(offset) }
+    }
+  )
+};
+let native = (value) => {
+  SubsetResult.mapError(
+    SubsetString.toNative(value),
+    match {
+      SubsetString.NonByte(offset) => { NonByte(offset) }
+    }
+  )
+};
+let host = (result) => {
+  SubsetResult.mapError(result, (message) => { HostError(message) })
+};
+
+// Paths are byte strings interpreted by the host; NUL cannot name a file.
+let path = (value) => {
+  SubsetResult.andThen(
+    bytes(value),
+    (codes) => {
+      if (SubsetList.exists(codes, (c) => { c == '\u0000' })) { SubsetResult.Err(InvalidPath) } else { SubsetResult.Ok(value) }
+    }
+  )
+};
+let readFile = (file) => {
+  SubsetResult.andThen(
+    path(file),
+    (valid) => {
+      SubsetResult.andThen(host(SubsetHost.readFile(valid)), bytes)
+    }
+  )
+};
+// Filesystem identity, not lexical path cleanup. Validate both byte boundaries.
+let canonicalPath = (file) => {
+  SubsetResult.andThen(
+    path(file),
+    (valid) => {
+      SubsetResult.andThen(
+        host(SubsetHost.canonicalPath(valid)),
+        (resolved) => { SubsetResult.map(bytes(resolved), (_) => { resolved }) }
+      )
+    }
+  )
+};
+let writeFile = (data, file) => {
+  SubsetResult.andThen(
+    path(file),
+    (valid) => {
+      SubsetResult.andThen(native(data), (text) => { host(SubsetHost.writeFile(text, valid)) })
+    }
+  )
+};
+let writeStdout = (data) => {
+  SubsetResult.andThen(native(data), (text) => { host(SubsetHost.writeStdout(text)) })
+};
+let writeStderr = (data) => {
+  SubsetResult.andThen(native(data), (text) => { host(SubsetHost.writeStderr(text)) })
+};
+let errorText = match {
+  HostError(message) => { message },
+  NonByte(offset) => { "non-byte I/O value" },
+  InvalidPath => { "a file path cannot contain NUL" }
+};

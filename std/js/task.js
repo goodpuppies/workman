@@ -1,5 +1,7 @@
-// Primitives of `std/task.wm`. A `Task<A, E>` is a promise that resolves to a `Result<A, E>`, never
-// one that rejects. These functions only sequence promises; everything that inspects a `Result` is
+// Primitives of `std/task.wm`. A `Task<A, E>` is a promise that resolves to a `Result<A, E>`. Workman
+// code never rejects one, but a JavaScript exception thrown inside a callback does, and these
+// primitives pass that rejection on rather than catching it (see "Exceptions inside Task callbacks"
+// in docs/async.md). These functions only sequence promises; everything that inspects a `Result` is
 // written in Workman, so this file doesn't depend on how the compiler represents constructors.
 
 /** A settled task holding `value`, which is a `Result`. */

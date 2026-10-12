@@ -1,0 +1,50 @@
+from "../src/lexer/reader.wm" import * as Reader;
+from "../src/lexer/character.wm" import * as Char;
+from "../src/source/source.wm" import * as Source;
+from js.global("String") import unsafe { fromCharCode: Number -> String };
+
+// Debug-only source preview; the lexer does not import this module.
+let printPos = (reader: Reader.Reader, pos: Source.Position) => {
+  let debugChar = (code) => {
+    if (code == 10) {
+      "\\n"
+    } else {
+      if (code == 13) {
+        "\\r"
+      } else {
+        if (code == 9) {
+          "\\t"
+        } else {
+          fromCharCode(code)
+        }
+      }
+    }
+  };
+
+  let rec debugPreview = (index, remaining) => {
+    if (remaining <= 0 || index >= reader.length) {
+      ""
+    } else {
+      match(Reader.peekByOne(reader, index)) {
+        Some(ch) => {debugChar(ch) ++ debugPreview(index + 1, remaining - 1)},
+        None => {Panic("unreachable")} // The bounds check above guarantees a source unit.
+      }
+    }
+  };
+  let preview = debugPreview(pos.index, 32);
+  match(Reader.peekByOne(reader, pos.index)) {
+    Some(ch) => {
+      let code = ch;
+      let class = Char.classify(code);
+      print(
+        `[source] offset=${pos.index}/${reader.length} line=${pos.line} col=${pos.col} ` ++
+        `class=${class} code=${code} char="${debugChar(ch)}" next="${preview}"`
+      )
+    },
+    None => {
+      print(
+        `[source] offset=${pos.index}/${reader.length} line=${pos.line} col=${pos.col} <eof>`
+      )
+    }
+  }
+};

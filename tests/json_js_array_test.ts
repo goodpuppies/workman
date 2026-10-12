@@ -18,7 +18,7 @@ Deno.test("JSON literals accept Js.Array values whose elements are JSON-compatib
   console.log = (value) => output.push(String(value));
   try {
     const javaScript = await compile(`
-      from js.global("JSON") import { stringify: Js.Value -> String } as JSON;
+      from js.global("JSON") import { stringify } as JSON;
       let main = () => {
         match(JSON.stringify(JSON{ counts: Js.Array.fromList([1, 2]) })) {
           Ok(text) => { print(text) },

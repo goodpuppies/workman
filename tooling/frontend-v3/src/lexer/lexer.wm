@@ -1,0 +1,93 @@
+from "./character.wm" import * as Char;
+from "./token.wm" import * as Token;
+from "../source/source.wm" import * as Source;
+from "./read.wm" import * as Read;
+from "./string.wm" import * as StringRead;
+from "./trivia.wm" import * as Trivia;
+from "./pair.wm" import * as Pair;
+from "./reader.wm" import * as Reader;
+
+type Mode = Code | Template | Interpolation<Number>;
+
+let lex = (source) => {
+  let reader = Reader.create(source);
+  let rec loop = (pos, state: Pair.State, modes) => {
+    let eof = (pos, trivia) => {
+      Pair.finish(reader, state, Token.Token(Token.EndOfFileToken,
+        Source.Span(pos, pos), Token.NoMate, [], trivia))
+    };
+    let codeStep = (depth, rest) => {
+      let trivia = Trivia.read(reader, pos, 0);
+      let pos = trivia.newPosition;
+      if (pos.index >= reader.length) {eof(pos, trivia.trivia)} else {
+        let res = match(Char.classify(Reader.codeAt(reader, pos.index))) {
+          Char.classLetter => {Read.readFromLetter(reader, pos)},
+          Char.classDigit => {Read.readFromDigit(reader, pos, 0)},
+          Char.classStrQuo => {
+            match(Reader.codeAt(reader, pos.index)) {
+              34 => {StringRead.readQuoted(reader, pos, 34, Token.QuotedStringToken)},
+              39 => {StringRead.readQuoted(reader, pos, 39, Token.CharacterToken)},
+              96 => {Read.singleToken(Token.MultilineStringStartToken, pos, Reader.advance(reader, pos, 1), [])},
+              // The quote class consists only of double quote, apostrophe, and backtick.
+              _ => {Panic("unreachable")}
+            }
+          },
+          Char.classSymbol => {Read.readFromSymbol(reader, pos, 0)},
+          Char.classOther => {Read.readUnknown(reader, pos, 0)},
+          Char.classSpace => {Panic("unreachable")}, // Trivia consumes all whitespace first.
+          // classify returns only the six character classes handled above.
+          _ => {Panic("unreachable")}
+        };
+        let adjustDepth = (delta) => {
+          match(depth) {
+            None => {modes},
+            Some(value) => {[Interpolation(value + delta), ..rest]}
+          }
+        };
+        let (kind, modes) = match(res.token.kind) {
+          Token.MultilineStringStartToken => {(res.token.kind, [Template, ..modes])},
+          Token.PunctuationToken(Token.LeftBrace) => {(res.token.kind, adjustDepth(1))},
+          Token.PunctuationToken(Token.DotLeftBrace) => {(res.token.kind, adjustDepth(1))},
+          Token.PunctuationToken(Token.RightBrace) => {
+            match(depth) {
+              Some(0) => {(Token.InterpolationEndToken, rest)},
+              Some(value) => {(res.token.kind, adjustDepth(-1))},
+              None => {(res.token.kind, modes)}
+            }
+          },
+          // All other code tokens leave the current interpolation's brace depth unchanged.
+          _ => {(res.token.kind, modes)}
+        };
+        let token = Token.Token { ..res.token, kind = kind, leadingTrivia = trivia.trivia };
+        loop(res.newPosition, Pair.append(state, token), modes)
+      }
+    };
+    match(modes) {
+      [Code] => {codeStep(None, [])},
+      [Interpolation(depth), ..rest] => {codeStep(Some(depth), rest)},
+      [Template, ..rest] => {
+        if (pos.index >= reader.length) {eof(pos, [])} else {
+          let code = Reader.codeAt(reader, pos.index);
+          if (code == 96) {
+            let endPos = Reader.advance(reader, pos, 1);
+            let res = Read.singleToken(Token.MultilineStringEndToken, pos, endPos, []);
+            loop(endPos, Pair.append(state, res.token), rest)
+          } else {
+            if (code == 36 && Reader.isCode(reader, pos.index + 1, 123)) {
+              let endPos = Reader.advance(reader, pos, 2);
+              let res = Read.singleToken(Token.InterpolationStartToken, pos, endPos, []);
+              loop(endPos, Pair.append(state, res.token), [Interpolation(0), ..modes])
+            } else {
+              let res = StringRead.readChunk(reader, pos);
+              loop(res.newPosition, Pair.append(state, res.token), modes)
+            }
+          }
+        }
+      },
+      // Code is the single base frame; entering literals never removes that frame.
+      [] => {Panic("unreachable")},
+      [Code, ..rest] => {Panic("unreachable")}
+    }
+  };
+  loop(Source.Position(0, 0, 0), Pair.State([], [], 0), [Code])
+};

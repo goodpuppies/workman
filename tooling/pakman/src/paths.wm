@@ -1,0 +1,38 @@
+-- Where pakman keeps things.
+--
+-- v1 keeps all state under the user's home so nothing needs root until a
+-- generation is installed into a real prefix. PAKMAN_STATE overrides it.
+--
+-- Each install root is an environment with its own generations and its own
+-- lock, so `zig@0.14.1` in one root doesn't change the version in another.
+
+from "./io.wm" import { envOr };
+
+record Paths = {
+  home: String,     -- the root User-scope packages install into
+  state: String,
+  sources: String,  -- downloads, by sha256
+  store: String,    -- built DESTDIR trees, by input hash
+  tmp: String,
+  profiles: String, -- one directory per install root: generations and its lock
+  lockFile: String  -- the lock for the root these paths were made for
+};
+
+-- The directory for one install root under `profiles`.
+let profileDirOf = (profiles, root) => {
+  profiles ++ "/" ++ (root :> .replaceAll("/", "_") :> Result.withDefault(root))
+};
+
+let paths = (root) => {
+  let home = envOr("HOME", "/root");
+  let state = envOr("PAKMAN_STATE", envOr("XDG_STATE_HOME", home ++ "/.local/state") ++ "/pakman");
+  .{
+    home,
+    state,
+    sources = state ++ "/sources",
+    store = state ++ "/store",
+    tmp = state ++ "/tmp",
+    profiles = state ++ "/profiles",
+    lockFile = envOr("PAKMAN_LOCK", profileDirOf(state ++ "/profiles", root) ++ "/pakman.lock")
+  }: Paths
+};

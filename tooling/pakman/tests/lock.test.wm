@@ -1,0 +1,55 @@
+-- The lock file: ordering, writing and reading, and older files.
+
+from "../../testman/test.wm" import *;
+from "../src/lock.wm" import { LockEntry, LockedSource, upsert, find, read, write };
+from "../src/io.wm" import { writeText };
+from "./support.wm" import { withTempDir };
+
+let entry = (name, version) => {
+  LockEntry(name, version, "", "", [LockedSource("a.tar", "https://example.org/a.tar", "abc", true)])
+};
+
+let names = (entries) => { List.map(entries, (e: LockEntry) => { e.name }) };
+
+let tests = [
+  test("upsert keeps entries sorted by name", () => {
+    let entries = [] :> upsert(entry("zig", "1")) :> upsert(entry("aimp", "1")) :> upsert(entry("gale", "1"));
+    assertEqual(names(entries), ["aimp", "gale", "zig"])
+  }),
+  test("upsert replaces an entry with the same name", () => {
+    let entries = [entry("gale", "1"), entry("zig", "1")] :> upsert(entry("gale", "2"));
+    checks([
+      assertEqual(names(entries), ["gale", "zig"]),
+      assertEqual(find(entries, "gale") :> Option.map((e: LockEntry) => { e.version }), Some("2"))
+    ])
+  }),
+  test("a written lock reads back the same", () => {
+    withTempDir((dir) => {
+      let file = dir ++ "/sub/pakman.lock";
+      let entries = [entry("aimp", "6.0"), LockEntry("envision", "20260930.d2b5045", "main", "16830217070", [])];
+      write(file, entries)
+        :> Task.andThen((_) => { read(file) })
+        :> Task.andThen((back) => { assertEqual(back, entries) })
+    })
+  }),
+  test("a missing lock reads as empty", () => {
+    withTempDir((dir) => { read(dir ++ "/none.lock") :> Task.andThen((back) => { assertEqual(back, []) }) })
+  }),
+  test("entries written before refs existed read with an empty ref", () => {
+    withTempDir((dir) => {
+      let file = dir ++ "/pakman.lock";
+      let old = "{\"lockVersion\":2,\"packages\":[{\"name\":\"gale\",\"version\":\"1.23.0\",\"track\":\"\",\"sources\":[]}]}";
+      writeText(file, old, 420)
+        :> Task.andThen((_) => { read(file) })
+        :> Task.andThen((back) => { assertEqual(back, [LockEntry("gale", "1.23.0", "", "", [])]) })
+    })
+  }),
+  test("a lock in another format is refused", () => {
+    withTempDir((dir) => {
+      let file = dir ++ "/pakman.lock";
+      writeText(file, "{\"lockVersion\":1,\"packages\":[]}", 420)
+        :> Task.andThen((_) => { assertFails(read(file)) })
+        :> Task.andThen((message) => { assertContains(message, "lock format 1") })
+    })
+  })
+];

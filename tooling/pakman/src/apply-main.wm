@@ -1,0 +1,18 @@
+-- The applier as its own program, run under sudo when the install root isn't
+-- writable: `deno run -A apply-main.js <plan.json>`. See apply.wm.
+
+from "./apply.wm" import { applyFile };
+from "./io.wm" import { args, eprint, exit };
+from "./fun.wm" import { ignore };
+
+let main = () => {
+  let fail = (message) => { eprint("pakman: " ++ message); exit(1) };
+  match(args()) {
+    [file] => {
+      applyFile(file)
+        :> Task.map(ignore)
+        :> Task.recover(fail)
+    },
+    _ => { fail("usage: apply-main <plan.json>"); Task.succeed(void) }
+  }
+};

@@ -12,6 +12,65 @@ syntax may still require implementation; the note distinguishes both statuses.
 The [explorer](./explorer/README.md) exposes the current lexer's tokens, trivia,
 and marks with source selection, mate navigation, and a field inspector.
 
+## Layout
+
+```text
+src/
+  source/    source coordinates and shared recovery marks
+  lexer/     tokens, character classification, reader, lexeme readers and pairing
+  surface/   structural syntax types
+  parser/    immutable cursor/state and the first type-parser slice
+examples/    authored input samples
+tools/       debug and native file consumers, outside the frontend dependency graph
+adapters/    host-facing entry points; JS string conversion lives here
+lib/         generated SubsetML Basis snapshot, with license notices
+explorer/    React/Deno inspection client and transport boundary
+```
+
+The lexer entry is [`src/lexer/lexer.wm`](src/lexer/lexer.wm). Its source reader
+is [`src/lexer/reader.wm`](src/lexer/reader.wm), operating on the SubsetML Basis's lossless
+UTF-16 source index. The core entry accepts a `SubsetUtf16Source.Source`; the JS string entry
+lives in `adapters/js/lexer.wm`. Trivia spelling is a shared source view; the explorer reconstructs
+its displayed strings at the transport boundary. Debug source previews
+live in `tools/reader_debug.wm`, so printing is not a lexer dependency.
+
+The [structural editor reimplementation plan](structural-editor-plan.md) establishes
+the parser's intended model: canonical marked structure, formatted AST projection,
+and a source diff displayed as additive inlays, including missing whitespace. Its first
+milestone ports the diff and CLI preview machinery before rebuilding the parser.
+Read [worklist.md](worklist.md) for decided delete/refactor/keep actions and progress.
+The agent-started type parser is scheduled for removal; do not extend it.
+The [earlier parser design](parser-design.md) records existing implementation details
+and proposals superseded by that plan.
+The token cursor in `src/parser/cursor.wm` retains authored tokens and absolute mate indices,
+steps in constant time, and returns an explicit terminal result at EOF. The type-only entry
+in `src/parser/type.wm` produces `src/surface/ast.wm` values, preserving caller-owned
+boundaries and recording expectations for missing closers. Full-program parsing remains
+unimplemented; other damaged type forms return explicit failures pending recovery design.
+The [pattern audit](pattern-design.md) records the next slice's context distinctions and
+approved literal/record-opening representations.
+
+[Native portability](native-portability.md) records the current blockers and the next design
+choices. The [lowering plan](subsetml-lowering-plan.md) records the temporary source
+constraints, implementation sequence and future compiler-integrated lowering direction.
+The separate [SubsetML decision record](../../../SubsetML/docs/frontend-v3-native.md)
+contains the existing lowering agreements.
+
+## Basis snapshot
+
+Frontend algorithms remain WM-authored. `lib/subsetml/` is generated from the authoritative
+SubsetML `.sml` sources and includes their existing WM text-host adapter. Runtime use needs
+only this repository; a sibling checkout is required to refresh the snapshot:
+
+```sh
+deno run -A scripts/sync_frontend_v3_basis.ts ../SubsetML
+```
+
+The script runs from the repository root, selects the `SubsetUtf16Source`, `SubsetNatural` and `SubsetProcess` dependency closures,
+copies their original SML sources for future native builds, and records source/output hashes in `lib/subsetml/manifest.json`. Do not hand-edit those WM
+files. Native build integration must select the SubsetML native text adapter; a vendored JS
+adapter is not itself translated into a new host primitive.
+
 ## Code conventions
 
 - Prefer inference. Omit type annotations unless they are needed for inference,
@@ -21,6 +80,17 @@ and marks with source selection, mate navigation, and a field inspector.
   updates. The SubsetML translator needs the declared record layout to reconstruct the
   record without inferring the spread operand's type. Anonymous literals without spread
   remain allowed.
+- Distinct nominal record declarations must have distinct complete field-label sets,
+  including records in imported modules. Shared individual labels such as `node` or `span`
+  are allowed; identical sets are not. Use meaningful distinguishing labels, for example
+  `argumentAngles` versus `parameterAngles` for one-field wrappers. This temporary rule
+  accommodates SubsetML R2; future compiler-informed lowering can reconsider it without
+  making it a permanent WM restriction.
+- Record projections need a complete receiver type established within the helper
+  definition for SubsetML translation. Add a receiver parameter or binding type
+  constraint when other local constraints do not establish it; later callers cannot
+  resolve an already checked helper. This temporary portability rule is explained
+  in the [lowering plan](subsetml-lowering-plan.md).
 - Make a helper local to its sole caller. Nest it within the function that uses it
   so the dependency structure is visible. Keep it top-level when several functions
   use it, or when nesting would make the owning function massive.
@@ -162,3 +232,65 @@ Run the lexer regression tests with:
 ```sh
 deno test --allow-read --allow-write --allow-env --allow-run tests/frontend_v3_lexer_test.ts
 ```
+
+
+## Native lexer
+
+Build the WM-authored lexer with a built sibling SubsetML compiler and MLton:
+
+```sh
+python3 scripts/build_frontend_v3_native.py
+_scratch/frontend-v3-native/native-lex path/to/source.wm
+_scratch/frontend-v3-native/native-lex --utf16le path/to/raw-units.bin
+```
+
+Run these commands from the wm-mini root. `--subsetml PATH` selects another SubsetML
+checkout; `--output PATH` selects the disposable build directory. The build stages the source
+Basis checker declarations, discovers the entry's canonical import graph and selects the
+existing native adapters through the generated MLB. It also translates and MLton-typechecks
+`src/surface/ast.wm` and `src/parser/type.wm` through their independent dependency graphs, keeping parser-facing modules
+within the portable baseline. Authored WM remains the source of truth.
+
+Default input is strict UTF-8; malformed byte sequences fail before lexing. `--utf16le` reads
+raw little-endian 16-bit units, preserving lone surrogates and NUL; odd byte lengths fail.
+BOMs remain ordinary source units. Output is one ASCII JSON document: `[tokens, marks]`.
+Tokens contain kind, UTF-16 span/line/column, mate, attached marks and leading trivia;
+trivia includes exact UTF-16 units. Marks include identity, problem, recovery, anchor,
+affected span and causal identity. The portable encoder lives in
+`adapters/portable/document.wm`, separate from the lexer core.
+
+Compare complete WM/native documents, including damaged buffers and encoding failures:
+
+```sh
+deno run -A scripts/check_frontend_v3_native.ts
+```
+
+This builds once, compares raw-unit and UTF-8 paths, and checks the shared encoder against
+an independent JS normalization of the WM lexer result.
+
+
+The shared marking kernel uses `Slot<T, Expectation>`. Missing slots store a mark ID and
+expectation; they contain no authored value. The AST's `TokenSlot` distinguishes authored
+lexer tokens from expected kinds/keyword spellings. Missing-token recovery policies remain
+part of the [parser discussion](parser-design.md).
+
+## Type-parser slice
+
+Run the focused grammar, structural ownership and WM/native snapshot checks:
+
+```sh
+deno run -A scripts/check_frontend_v3_types.ts
+```
+
+The same `--subsetml` and `--output` options apply. To inspect a native snapshot directly:
+
+```sh
+python3 scripts/build_frontend_v3_native.py --type-driver
+_scratch/frontend-v3-native/native-type path/to/type-expression.txt
+```
+
+The driver also accepts `--utf16le`. It parses one complete type expression, rather than
+a WM program. Snapshots preserve authored slots, spans, identities, remaining tokens and
+lexical/syntax marks. Syntax marks follow lexical marks in creation order; lexical IDs stay
+unchanged. The codec reports unsupported schema variants explicitly if the slice is later
+extended to emit holes, marked phrases or error islands.

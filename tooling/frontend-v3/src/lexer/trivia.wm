@@ -1,0 +1,99 @@
+from "../../lib/subsetml/subset_list.wm" import * as BasisList;
+from "./character.wm" import * as Char;
+from "../source/source.wm" import * as Source;
+from "./token.wm" import * as Token;
+from "../source/mark.wm" import * as Mark;
+from "./reader.wm" import * as Reader;
+
+record ReadResult = {
+  trivia: List<Token.Trivia>,
+  newPosition: Source.Position,
+  marks: List<Token.LexicalMark>,
+};
+
+let read = (reader: Reader.Reader, pos: Source.Position, markId) => {
+  let isLineBreak = (code) => {code == 10 || code == 13};
+  let rec loop = (pos, trivia, marks, nextId) => {
+    let code = Reader.peekByOne(reader, pos.index);
+    let pairEnd = Reader.advance(reader, pos, 2);
+    let pair = Reader.unitsBetween(reader, pos, pairEnd);
+    let kind = match(pair) {
+      [45, 45] => {Some(Token.DashLineComment)},
+      [47, 47] => {Some(Token.SlashLineComment)},
+      [47, 42] => {Some(Token.BlockComment)},
+      // Other pairs are trivia only when their first character is whitespace.
+      _ => {
+        match(code) {
+          Some(value) => {
+            if (Char.classify(value) == Char.classSpace) {
+              Some(if (isLineBreak(value)) {Token.LineBreak} else {Token.HorizontalWhitespace})
+            } else {None} // A non-whitespace unit outside comment prefixes begins a token.
+          },
+          None => {None} // EOF owns any already-consumed trailing trivia.
+        }
+      }
+    };
+    match(kind) {
+      None => {ReadResult(BasisList.reverse(trivia), pos, BasisList.reverse(marks))},
+      Some(kind) => {
+        let commentEnd = (start) => {
+          Reader.readEnd(reader, start, (code, _) => {
+            !isLineBreak(code)
+          })
+        };
+        let (endPos, itemMarks) = match(kind) {
+          Token.LineBreak => {
+            (Reader.advance(reader, pos, if (Reader.isCode(reader, pos.index, 13) && Reader.isCode(reader, pos.index + 1, 10)) {2} else {1}), [])
+          },
+          Token.HorizontalWhitespace => {
+            (Reader.readEnd(reader, pos, (code, _) => {
+              Char.classify(code) == Char.classSpace && !isLineBreak(code)
+            }), [])
+          },
+          Token.DashLineComment => {(commentEnd(pos), [])},
+          Token.SlashLineComment => {(commentEnd(pos), [])},
+          Token.BlockComment => {
+            let rec scan = (current: Source.Position, openers) => {
+              if (current.index >= reader.length) {(current, openers)} else {
+                let next = Reader.advance(reader, current, 2);
+                match(Reader.unitsBetween(reader, current, next)) {
+                  [47, 42] => {scan(next, [current, ..openers])},
+                  [42, 47] => {
+                    match(openers) {
+                      // One opener ends this comment; multiple openers close only the innermost.
+                      [_] => {(next, [])},
+                      [_, ..rest] => {scan(next, rest)},
+                      [] => {Panic("unreachable")} // Scanning ends when the outermost opener closes.
+                    }
+                  },
+                  // Every pair except comment brackets is ordinary comment content.
+                  _ => {scan(Reader.advance(reader, current, 1), openers)}
+                }
+              }
+            };
+            let (endPos, openers) = scan(pairEnd, [pos]);
+            let rec markOpeners = (openers: List<Source.Position>, id, out) => {
+              match(openers) {
+                [] => {BasisList.reverse(out)},
+                [start, ..rest] => {
+                  let mark = Mark.Mark(
+                    Mark.MarkId(id), Token.UnterminatedBlockComment,
+                    Mark.RecoveredWith(Token.RetainedMalformedTrivia(Token.BlockComment)),
+                    Mark.SourceOffset(start.index),
+                    Mark.SourceSpan(Mark.SourceOffset(start.index), Mark.SourceOffset(endPos.index)),
+                    None
+                  );
+                  markOpeners(rest, id + 1, [mark, ..out])
+                }
+              }
+            };
+            (endPos, markOpeners(BasisList.reverse(openers), nextId, []))
+          }
+        };
+        let item = Token.Trivia(kind, Reader.textBetween(reader, pos, endPos), Source.Span(pos, endPos), itemMarks);
+        loop(endPos, [item, ..trivia], BasisList.append(BasisList.reverse(itemMarks), marks), nextId + BasisList.length(itemMarks))
+      }
+    }
+  };
+  loop(pos, [], [], markId)
+};

@@ -1,0 +1,163 @@
+from "./character.wm" import * as Char;
+from "./token.wm" import * as Token;
+from "../source/source.wm" import * as Source;
+from "../source/mark.wm" import * as Mark;
+from "./reader.wm" import * as Reader;
+
+record ReadResult = {
+  token: Token.Token,
+  newPosition: Source.Position,
+};
+
+let singleToken = (kind, pos, endPos, marks) => {
+  ReadResult(Token.Token(kind, Source.Span(pos, endPos), Token.NoMate, marks, []), endPos)
+};
+
+// Readers retain damaged spelling; marks describe what was assumed or retained.
+let lexicalMark = (id, problem, recovery, anchor, span: Source.Span) => {
+  Mark.Mark(
+    Mark.MarkId(id), problem, Mark.RecoveredWith(recovery),
+    Mark.SourceOffset(anchor),
+    Mark.SourceSpan(Mark.SourceOffset(span.startPos.index), Mark.SourceOffset(span.endPos.index)),
+    None
+  )
+};
+
+//#region lexeme readers
+
+let readUnknown = (reader: Reader.Reader, pos: Source.Position, markId) => {
+  // Keep a UTF-16 surrogate pair together as one unknown character.
+  let first = Reader.codeAt(reader, pos.index);
+  let surrogatePair = first >= 55296 && first <= 56319 &&
+    Reader.matches(reader, pos.index + 1, (code) => {code >= 56320 && code <= 57343});
+  let endPos = Reader.advance(reader, pos, if (surrogatePair) {2} else {1});
+  let span = Source.Span(pos, endPos);
+  let mark = lexicalMark(markId, Token.UnknownCharacter, Token.RetainedUnknownToken, pos.index, span);
+  singleToken(Token.UnknownToken, pos, endPos, [mark])
+};
+
+let readFromSymbol = (reader: Reader.Reader, pos: Source.Position, markId) => {
+  // Longest fixed symbol first. Its spelling determines its width exactly once.
+  let symbolKind = match(text) => {
+    [40] => {Some(Token.PunctuationToken(Token.LeftParen))},
+    [41] => {Some(Token.PunctuationToken(Token.RightParen))},
+    [123] => {Some(Token.PunctuationToken(Token.LeftBrace))},
+    [125] => {Some(Token.PunctuationToken(Token.RightBrace))},
+    [91] => {Some(Token.PunctuationToken(Token.LeftBracket))},
+    [93] => {Some(Token.PunctuationToken(Token.RightBracket))},
+    [60] => {Some(Token.PunctuationToken(Token.LessThan))},
+    [62] => {Some(Token.PunctuationToken(Token.GreaterThan))},
+    [44] => {Some(Token.PunctuationToken(Token.Comma))},
+    [59] => {Some(Token.PunctuationToken(Token.Semicolon))},
+    [58] => {Some(Token.PunctuationToken(Token.Colon))},
+    [46] => {Some(Token.PunctuationToken(Token.Dot))},
+    [46, 46] => {Some(Token.PunctuationToken(Token.DoubleDot))},
+    [46, 123] => {Some(Token.PunctuationToken(Token.DotLeftBrace))},
+    [64] => {Some(Token.PunctuationToken(Token.AtSign))},
+    [61] => {Some(Token.PunctuationToken(Token.Equals))},
+    [61, 62] => {Some(Token.PunctuationToken(Token.FatArrow))},
+    [45, 62] => {Some(Token.PunctuationToken(Token.ThinArrow))},
+    [124] => {Some(Token.PunctuationToken(Token.Pipe))},
+    [58, 62] => {Some(Token.PunctuationToken(Token.PipeForward))},
+    [124, 124] => {Some(Token.OperatorToken(Token.BooleanOr))},
+    [38, 38] => {Some(Token.OperatorToken(Token.BooleanAnd))},
+    [61, 61] => {Some(Token.OperatorToken(Token.Equal))},
+    [33, 61] => {Some(Token.OperatorToken(Token.NotEqual))},
+    [60, 61] => {Some(Token.OperatorToken(Token.LessOrEqual))},
+    [62, 61] => {Some(Token.OperatorToken(Token.GreaterOrEqual))},
+    [43] => {Some(Token.OperatorToken(Token.Add))},
+    [45] => {Some(Token.OperatorToken(Token.Subtract))},
+    [42] => {Some(Token.OperatorToken(Token.Multiply))},
+    [47] => {Some(Token.OperatorToken(Token.Divide))},
+    [37] => {Some(Token.OperatorToken(Token.Remainder))},
+    [43, 43] => {Some(Token.OperatorToken(Token.Concatenate))},
+    [33] => {Some(Token.OperatorToken(Token.BooleanNot))},
+    [63] => {Some(Token.OperatorToken(Token.Hole))},
+    // A spelling outside this complete fixed-symbol table is not a fixed symbol.
+    _ => {None}
+  };
+
+  let twoEnd = Reader.advance(reader, pos, 2);
+  match(symbolKind(Reader.unitsBetween(reader, pos, twoEnd))) {
+    Some(kind) => {singleToken(kind, pos, twoEnd, [])},
+    None => {
+      let oneEnd = Reader.advance(reader, pos, 1);
+      match(symbolKind(Reader.unitsBetween(reader, pos, oneEnd))) {
+        Some(kind) => {singleToken(kind, pos, oneEnd, [])},
+        None => {readUnknown(reader, pos, markId)}
+      }
+    }
+  }
+};
+
+let isWordCode = (code) => {
+  let class = Char.classify(code);
+  // Apostrophes continue a word; at a word boundary they still open a character literal.
+  class == Char.classLetter || class == Char.classDigit || code == 39
+};
+
+let readFromLetter = (reader: Reader.Reader, pos: Source.Position) => {
+  let isUpperCode = (code) => {code >= 65 && code <= 90};
+  let endPos = Reader.readEnd(reader, pos, (code, _) => {
+    isWordCode(code)
+  });
+  let kind = if (isUpperCode(Reader.codeAt(reader, pos.index))) {
+    Token.UpperIdentifierToken
+  } else {Token.LowerIdentifierToken};
+  singleToken(kind, pos, endPos, [])
+};
+
+let readFromDigit = (reader: Reader.Reader, pos: Source.Position, markId) => {
+  let digitsEnd = (start, hex) => {
+    Reader.readEnd(reader, start, (code, _) => {
+      Char.classify(code) == Char.classDigit ||
+        (hex && ((code >= 65 && code <= 70) || (code >= 97 && code <= 102)))
+    })
+  };
+  let basedNumber = (kind, prefixWidth, hex) => {
+    let start = Reader.advance(reader, pos, prefixWidth);
+    let endPos = digitsEnd(start, hex);
+    (kind, endPos, if (endPos.index == start.index) {Some(start.index)} else {None})
+  };
+  let (kind, numberEnd, missingDigits) = match(Reader.unitsBetween(reader, pos, Reader.advance(reader, pos, 2))) {
+    [48, 120] => {basedNumber(Token.IntegerToken, 2, true)},
+    [48, 119] => {
+      let hex = Reader.isCode(reader, pos.index + 2, 120);
+      basedNumber(Token.WordToken, if (hex) {3} else {2}, hex)
+    },
+    // Every other digit-starting spelling begins with a decimal significand.
+    _ => {
+      let wholeEnd = digitsEnd(pos, false);
+      let fraction = Reader.isCode(reader, wholeEnd.index, 46) &&
+        Reader.matches(reader, wholeEnd.index + 1, (code) => {Char.classify(code) == Char.classDigit});
+      let endPos = if (fraction) {digitsEnd(Reader.advance(reader, wholeEnd, 1), false)} else {wholeEnd};
+      let exponent = Reader.isCode(reader, endPos.index, 101) || Reader.isCode(reader, endPos.index, 69);
+      if (exponent) {
+        let start = Reader.advance(reader, endPos, 1);
+        let sign = Reader.isCode(reader, start.index, 43) || Reader.isCode(reader, start.index, 45);
+        let start = if (sign) {Reader.advance(reader, start, 1)} else {start};
+        let endPos = digitsEnd(start, false);
+        (Token.FloatToken, endPos, if (endPos.index == start.index) {Some(start.index)} else {None})
+      } else {
+        (if (fraction) {Token.FloatToken} else {Token.IntegerToken}, endPos, None)
+      }
+    }
+  };
+  let endPos = Reader.readEnd(reader, numberEnd, (code, _) => {
+    isWordCode(code)
+  });
+  let badAt = match(missingDigits) {
+    Some(index) => {Some(index)},
+    None => {if (endPos.index == numberEnd.index) {None} else {Some(numberEnd.index)}}
+  };
+  let marks = match(badAt) {
+    None => {[]},
+    Some(index) => {[lexicalMark(
+      markId, Token.MalformedNumber, Token.RetainedMalformedToken(kind), index,
+      Source.Span(pos, endPos)
+    )]}
+  };
+  singleToken(kind, pos, endPos, marks)
+};
+
+//#endregion

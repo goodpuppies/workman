@@ -1,0 +1,54 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_char.sml" import * as SubsetChar;
+*/
+
+// Shared source-only Unicode arithmetic and codec errors. No host numeric library.
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_char.wm" import * as SubsetChar;
+
+type Reason =
+  | InvalidScalar
+  | InvalidByte
+  | InvalidLeadingByte
+  | InvalidContinuation
+  | Truncated
+  | Overlong
+  | Surrogate
+  | OutOfRange
+  | OddLength
+  | UnpairedSurrogate;
+type Error = | Error<Reason, Number>;
+
+/* Internal arithmetic for nonnegative codes <= 1114111 and positive integral bases.
+   Fixed binary weights keep division bounded; fractional residue remains visible. */
+let split = (value: Number, base: Number) => {
+  let rec go = (weight, remaining, quotient) => {
+    if (weight < 1) { (quotient, remaining) } else {
+      let amount = base * weight;
+      if (remaining >= amount) { go(weight / 2, remaining - amount, quotient + weight) } else { go(weight / 2, remaining, quotient) }
+    }
+  };
+  go(1048576, value, 0)
+};
+
+let isScalar = (value: Number) => {
+  if (if (if (value >= 0) { value <= 1114111 } else { false }) { !(if (value >= 55296) { value <= 57343 } else { false }) } else { false }) {
+    let (whole, residue) = split(value, 1);
+    residue <= 0
+  } else { false }
+};
+
+let scalarError = (value) => {
+  if (if (value >= 55296) { value <= 57343 } else { false }) { Surrogate } else { if (value > 1114111) { OutOfRange } else { InvalidScalar } }
+};
+
+let encodeCodes = (codes, index) => {
+  SubsetResult.mapError(
+    SubsetList.traverse(codes, SubsetChar.fromCode),
+    (error) => { Error(InvalidByte, index) }
+  )
+};

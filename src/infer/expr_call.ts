@@ -112,18 +112,29 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
           provenance,
           calleeExpr.kind === "Var" ? calleeExpr.name : "callee",
         );
+        // Same evidence as the whole-application constraint below, so a callee whose type came
+        // from a call with missing arguments still blames that call.
+        const calleeRelated = calleeFn.tag === "fn" ? callCalleeRelated(calleeExpr, calleeFn) : [];
+        const partialArg = callArg(partial);
         constrainAt(
           calleeFn.tag === "fn" ? calleeFn.params[0] : callee,
-          callArg(partial),
+          partialArg,
           expr,
           undefined,
-          [],
+          [...calleeRelated, ...calleeProvenance],
           provenance,
           {
             message: "call argument",
             node: expr.node,
             span: expr.node?.span,
             primary: true,
+            ...(calleeFn.tag === "fn"
+              ? {
+                expectedCallTupleShape: callArity(calleeFn.params[0]),
+                actualCallTupleShape: callArity(partialArg),
+                callDepth: maxCallDepth([...calleeRelated, ...calleeProvenance]) + 1,
+              }
+              : {}),
           },
           {
             primarySource: "right",

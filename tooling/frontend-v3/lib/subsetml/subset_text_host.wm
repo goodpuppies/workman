@@ -1,0 +1,12 @@
+// Workman/JS implementation of the sole native-text primitive.
+// Raw host units are validated by SubsetString before entering portable byte storage.
+from js.global("String.prototype.charCodeAt") import unsafe {
+  call as charCodeAt: (String, Number) -> Number
+};
+let codes = (value: String) => {
+  let size = value :> .length :> Result.debug;
+  let rec go = (index, acc) => {
+    if (index < 0) { acc } else { go(index - 1, [charCodeAt(value, index), ..acc]) }
+  };
+  go(size - 1, [])
+};

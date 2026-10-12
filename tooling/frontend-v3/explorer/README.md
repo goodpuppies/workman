@@ -11,7 +11,7 @@ npm run dev
 
 Open http://127.0.0.1:5173. The React/Vite client proxies `/api/lex` to the local
 Deno server on port 5174. Server startup compiles and loads the current handwritten
-WM lexer; restart it after changing lexer code. Generated JavaScript stays on the
+WM lexer through `../adapters/js/lexer.wm`; restart it after changing lexer code. Generated JavaScript stays on the
 server, is loaded from a temporary file, and is deleted after loading.
 
 On this machine, the explorer is also served within the tailnet at
@@ -21,8 +21,10 @@ with `tailscale serve --https=8447 off`. Vite allows this specific hostname.
 
 The existing WM compiler and its import map are a bootstrap dependency, isolated
 in `bootstrap.ts`. Runtime lexing uses frontend-v3 alone, with no existing parser,
-LSP, compiler endpoint, or wmplayground service. All explorer sources and its
-package manifest live here. Browser execution can replace the server later.
+LSP, compiler endpoint, or wmplayground service. The adapter constructs the portable UTF-16 source once; the core lexer receives source units,
+and trivia retains shared source views. The transport bridge recovers displayed trivia strings
+from their spans in the request's original buffer, preserving lone surrogates and NULs.
+All explorer sources and its package manifest live here. Browser execution can replace the server later.
 
 The first stage exposes actual tokens, exact trivia, and localized marks. Select
 source or an item to inspect its span and fields; paired tokens offer mate navigation.

@@ -1,8 +1,6 @@
 -- ANSI/ECMA-48 terminal controls kept in Workman rather than a host shim.
 
-from js.global("String") import {
-  fromCharCode: Number -> String,
-};
+from js.global("String") import { fromCharCode };
 
 let esc = fromCharCode(27) :> Result.withDefault("");
 let csi = esc ++ "[";

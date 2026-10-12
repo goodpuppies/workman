@@ -1,0 +1,16 @@
+-- Optional conveniences; packages remain ordinary programs and choose their order.
+from "./model.wm" import *;
+from "./io.wm" import { runCapture, mkdirp, dirname, copyFile };
+
+let input = (ctx: BuildContext, name) => { ctx.inputs ++ "/" ++ name };
+let scratch = (ctx: BuildContext, name) => { ctx.work ++ "/" ++ name };
+let run = (command, args) => { runCapture(command, args) };
+let stage = (ctx: BuildContext, source, dest, mode: Mode) => {
+  let bits = match(mode) { Exec => { 493 }, Data => { 420 } };
+  Task|mkdirp(dirname(ctx.out ++ "/" ++ dest)), copyFile(source, ctx.out ++ "/" ++ dest, bits)|
+    :> Task.map((_) => { void })
+};
+-- patch must be included in Build's tools. Context drift fails instead of fuzzing.
+let patch = (directory, patchFile) => {
+  runCapture("/usr/bin/patch", ["--batch", "--forward", "--fuzz=0", "-p1", "-d", directory, "-i", patchFile])
+};

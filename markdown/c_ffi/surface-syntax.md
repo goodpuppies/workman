@@ -90,8 +90,10 @@ from c.header("raylib.h", lib: "raylib") import unsafe { InitWindow, CloseWindow
 from c.lib("libc") import unsafe { printf: (Ptr<Char>) -> I32 };
 ```
 
-- Missing `unsafe` on a C value import is a syntax-level diagnostic with a
-  hint ("C calls are process-unsafe; add unsafe").
+- Missing `unsafe` on a C value import (named or namespace, declared or
+  reflected) is a diagnostic: "C calls are process-unsafe; add unsafe". It is
+  raised in FFI preparation (`prepareCImports` in `src/ffi/c/prepare.ts`),
+  before inference; see `tests/c_import_unsafe_test.ts`.
 - Error codes stay ordinary values: if an API returns status codes, match on
   them like any other value. errno-style `Result` helpers belong in a std
   module, not the compiler.

@@ -1,0 +1,168 @@
+from "./cursor.wm" import * as Cursor;
+from "./state.wm" import * as State;
+from "./keyword.wm" import * as Keyword;
+from "../lexer/token.wm" import * as Token;
+from "../source/mark.wm" import * as Marks;
+from "../surface/ast.wm" import * as Surface;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+
+// A type-only entry. Other phrase categories and other recovery are not implemented here.
+// Every recursive call consumes a name/opener/arrow/comma before recurring.
+let rightParen = Token.PunctuationToken(Token.RightParen);
+let greaterThan = Token.PunctuationToken(Token.GreaterThan);
+let comma = Token.PunctuationToken(Token.Comma);
+let arrow = Token.PunctuationToken(Token.ThinArrow);
+
+let rec parseAt = (state: State.State, boundaries) => {
+  let start = Cursor.offset(state.cursor);
+  match(atom(state, boundaries)) {
+    State.Rejected(failure) => {State.Rejected(failure)},
+    State.Parsed(domain, next) => {
+      if (Cursor.isKind(next.cursor, arrow)) {
+        let (arrowToken, afterArrow) = State.consume(next);
+        match(parseAt(afterArrow, boundaries)) {
+          State.Rejected(failure) => {State.Rejected(failure)},
+          State.Parsed(result, afterResult) => {
+            let (node, finish) = State.node(afterResult, start);
+            State.Parsed(Surface.TypeFunction(node, domain, Marks.AuthoredSlot(arrowToken), result), finish)
+          }
+        }
+      } else {State.Parsed(domain, next)}
+    }
+  }
+}
+and atom = (state: State.State, boundaries) => {
+  let token = Cursor.current(state.cursor);
+  let start = token.span.startPos.index;
+  match(token.kind) {
+    Token.LowerIdentifierToken => {
+      if (Keyword.isReserved(state.cursor)) {State.reject(state, State.ExpectedType)} else {
+        let (authored, next) = State.consume(state);
+        let (node, finish) = State.node(next, start);
+        State.Parsed(Surface.TypeVariable(node, authored), finish)
+      }
+    },
+    Token.UpperIdentifierToken => {named(state, boundaries, start)},
+    Token.PunctuationToken(Token.LeftParen) => {parenthesized(state, boundaries, start)},
+    // All remaining token kinds cannot begin a type in the current WM grammar.
+    // Missing-type recovery has not been agreed, so this is an explicit rejection.
+    _ => {State.reject(state, State.ExpectedType)}
+  }
+}
+and named = (state: State.State, boundaries, start) => {
+  let (first, next) = State.consume(state);
+  let rec path = (base, state: State.State, qualifiersRev, dotsRev) => {
+    // Qualification has no whitespace production around its dot in current WM.
+    if (Cursor.isKind(state.cursor, Token.PunctuationToken(Token.Dot)) && Cursor.offset(state.cursor) == state.consumedEnd) {
+      let (dot, afterDot) = State.consume(state);
+      if (Cursor.isKind(afterDot.cursor, Token.UpperIdentifierToken) && Cursor.offset(afterDot.cursor) == afterDot.consumedEnd) {
+        let (part, afterPart) = State.consume(afterDot);
+        path(part, afterPart, [base, ..qualifiersRev], [Marks.AuthoredSlot(dot), ..dotsRev])
+      } else {State.reject(afterDot, State.ExpectedUpperName)}
+    } else {
+      State.Parsed(Surface.LongIdentifier(Lists.reverse(qualifiersRev), Lists.reverse(dotsRev), base), state)
+    }
+  };
+  match(path(first, next, [], [])) {
+    State.Rejected(failure) => {State.Rejected(failure)},
+    State.Parsed(name, afterName) => {
+      // Type arguments are attached directly to the constructor spelling.
+      if (Cursor.isKind(afterName.cursor, Token.PunctuationToken(Token.LessThan)) && Cursor.offset(afterName.cursor) == afterName.consumedEnd) {
+        let (open, afterOpen) = State.consume(afterName);
+        match(parseAt(afterOpen, [greaterThan, ..boundaries])) {
+          State.Rejected(failure) => {State.Rejected(failure)},
+          State.Parsed(firstArgument, afterFirst) => {
+            match(items(afterFirst, boundaries, greaterThan, [firstArgument], [])) {
+              State.Rejected(failure) => {State.Rejected(failure)},
+              State.Parsed(arguments, afterArguments) => {
+                match(State.close(afterArguments, greaterThan, boundaries)) {
+                  State.Rejected(failure) => {State.Rejected(failure)},
+                  State.Parsed(close, afterClose) => {
+                    let (delimited, afterDelimiter) = State.delimited(afterClose, Marks.AuthoredSlot(open), arguments, close);
+                    let (node, finish) = State.node(afterDelimiter, start);
+                    State.Parsed(Surface.TypeName(node, name, Some(Surface.TypeArguments(delimited))), finish)
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else {
+        let (node, finish) = State.node(afterName, start);
+        State.Parsed(Surface.TypeName(node, name, None), finish)
+      }
+    }
+  }
+}
+and parenthesized = (state: State.State, boundaries, start) => {
+  let (open, afterOpen) = State.consume(state);
+  match(parseAt(afterOpen, [rightParen, ..boundaries])) {
+    State.Rejected(failure) => {State.Rejected(failure)},
+    State.Parsed(first, afterFirst) => {
+      if (Cursor.isKind(afterFirst.cursor, comma)) {
+        match(items(afterFirst, boundaries, rightParen, [first], [])) {
+          State.Rejected(failure) => {State.Rejected(failure)},
+          State.Parsed(components, afterComponents) => {
+            match(State.close(afterComponents, rightParen, boundaries)) {
+              State.Rejected(failure) => {State.Rejected(failure)},
+              State.Parsed(close, afterClose) => {
+                let (delimited, afterDelimiter) = State.delimited(afterClose, Marks.AuthoredSlot(open), components, close);
+                let (node, finish) = State.node(afterDelimiter, start);
+                State.Parsed(Surface.TypeTuple(node, delimited), finish)
+              }
+            }
+          }
+        }
+      } else {
+        match(first) {
+          Surface.TypeFunction(_, _, _, _) => {
+            match(State.close(afterFirst, rightParen, boundaries)) {
+              State.Rejected(failure) => {State.Rejected(failure)},
+              State.Parsed(close, afterClose) => {
+                let (delimited, afterDelimiter) = State.delimited(afterClose, Marks.AuthoredSlot(open), first, close);
+                let (node, finish) = State.node(afterDelimiter, start);
+                State.Parsed(Surface.TypeParenthesized(node, delimited), finish)
+              }
+            }
+          },
+          // Without a comma, only a function type may be grouped. Current WM rejects
+          // (A), (), and extra grouping around a tuple or a grouped function alone.
+          _ => {State.reject(afterFirst, State.ExpectedTupleCommaOrArrow)}
+        }
+      }
+    }
+  }
+}
+and items = (state: State.State, boundaries, closer, itemsRev, separatorsRev) => {
+  if (Cursor.isKind(state.cursor, comma)) {
+    let (separator, afterComma) = State.consume(state);
+    if (Cursor.isKind(afterComma.cursor, closer) || State.atBoundary(afterComma, boundaries)) {
+      State.Parsed(Surface.Separated(Lists.reverse(itemsRev), Lists.reverse(separatorsRev), Some(Marks.AuthoredSlot(separator))), afterComma)
+    } else {
+      match(parseAt(afterComma, [closer, ..boundaries])) {
+        State.Rejected(failure) => {State.Rejected(failure)},
+        State.Parsed(item, afterItem) => {
+          items(afterItem, boundaries, closer, [item, ..itemsRev], [Marks.AuthoredSlot(separator), ..separatorsRev])
+        }
+      }
+    }
+  } else {
+    // A non-comma ends this nonempty list. The enclosing helper checks its closer;
+    // unexpected tokens are rejected there, without inventing a missing separator.
+    State.Parsed(Surface.Separated(Lists.reverse(itemsRev), Lists.reverse(separatorsRev), None), state)
+  }
+};
+
+// Prefix parsing leaves the remainder in the returned state. Caller-owned closers
+// can be supplied to parseAt when embedding this slice in a later phrase parser.
+let parse = (source, document) => {parseAt(State.fromDocument(source, document), [])};
+let parseComplete = (source, document) => {
+  match(parse(source, document)) {
+    State.Rejected(failure) => {State.Rejected(failure)},
+    State.Parsed(value, state) => {
+      if (Cursor.isKind(state.cursor, Token.EndOfFileToken)) {State.Parsed(value, state)} else {
+        State.reject(state, State.ExpectedEnd)
+      }
+    }
+  }
+};

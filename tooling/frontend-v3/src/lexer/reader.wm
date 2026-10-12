@@ -1,0 +1,69 @@
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_result.wm" import * as BasisResult;
+from "../source/source.wm" import * as Source;
+
+// Immutable UTF-16 source context. Host string conversion belongs to adapters.
+record Reader = {
+  source: Text.Source,
+  length: Number,
+};
+
+let create = (source) => {Reader(source, Text.length(source))};
+let peekByOne = (reader: Reader, index) => {Text.peek(reader.source, index)};
+
+let codeAt = (reader: Reader, index) => {
+  match(peekByOne(reader, index)) {
+    Some(code) => {code},
+    None => {Panic("unreachable")} // Callers establish an integral, in-bounds source position.
+  }
+};
+
+// Predicates used for optional lookahead: absence is not a matching source unit.
+let matches = (reader: Reader, index, predicate) => {
+  match(peekByOne(reader, index)) {
+    Some(code) => {predicate(code)},
+    None => {false}
+  }
+};
+let isCode = (reader: Reader, index, expected) => {matches(reader, index, (code) => {code == expected})};
+
+// Positions use UTF-16 offsets and zero-based lines/columns, matching editor buffers.
+let bumpPosition = (reader: Reader, pos: Source.Position, code) => {
+  let crlf = code == 10 && isCode(reader, pos.index - 1, 13);
+  let newline = code == 13 || code == 10;
+  Source.Position(
+    pos.index + 1,
+    if (newline && !crlf) {pos.line + 1} else {pos.line},
+    if (newline) {0} else {pos.col + 1}
+  )
+};
+
+let rec advance = (reader: Reader, pos: Source.Position, amount) => {
+  if (amount <= 0) {pos} else {
+    match(peekByOne(reader, pos.index)) {
+      Some(code) => {advance(reader, bumpPosition(reader, pos, code), amount - 1)},
+      None => {pos} // Advancing at EOF retains the EOF position.
+    }
+  }
+};
+
+let rec readEnd = (reader: Reader, pos: Source.Position, keepGoing) => {
+  match(peekByOne(reader, pos.index)) {
+    Some(code) => {
+      if (keepGoing(code, pos)) {
+        readEnd(reader, bumpPosition(reader, pos, code), keepGoing)
+      } else {pos}
+    },
+    None => {pos} // A run ends at EOF without inserting any source text.
+  }
+};
+
+let textBetween = (reader: Reader, start: Source.Position, end: Source.Position) => {
+  match(Text.slice(reader.source, start.index, end.index - start.index)) {
+    BasisResult.Ok(view) => {view},
+    BasisResult.Err(_) => {Panic("unreachable")} // Lexer positions are ordered integral boundaries.
+  }
+};
+
+// Fixed punctuation and prefixes need only one or two units, not host strings.
+let unitsBetween = (reader: Reader, start: Source.Position, end: Source.Position) => {Text.toUnits(textBetween(reader, start, end))};

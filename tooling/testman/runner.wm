@@ -1,0 +1,151 @@
+-- The test runner. `wm test` generates a small entry module that imports every
+-- test file and calls `runSuites` with them; the output follows `deno test`.
+
+from js.global("Deno") import unsafe { args: Js.Array<String>, exit: Number -> Void };
+from js.global("Deno.stdout") import unsafe { isTerminal: Void -> Bool };
+from js.global("Deno.env") import unsafe { has as hasEnv: String -> Bool };
+from js.global("performance") import unsafe { now as nowMs: Void -> Number };
+-- Calls a test, turning a throw (in the test function, or inside its task,
+-- which rejects the task's promise) into Err.
+from js.global("Promise") import { try as attempt };
+from "./test.wm" import { Test, contains };
+
+record Suite = { file: String, tests: List<Test> };
+
+record Outcome = { file: String, name: String, error: Option<String>, ms: Number };
+
+let suite = (file, tests) => { Suite(file, tests) };
+
+let colorful = isTerminal() && !hasEnv("NO_COLOR");
+
+-- Wraps text in an ANSI color when stdout is a terminal and NO_COLOR is unset.
+let paint = (code, text) => { if (colorful) { "\u001b[" ++ code ++ "m" ++ text ++ "\u001b[0m" } else { text } };
+
+let green = (text) => { paint("32", text) };
+let red = (text) => { paint("31", text) };
+let gray = (text) => { paint("90", text) };
+let bold = (text) => { paint("1", text) };
+
+let duration = (ms: Number) => {
+  let whole = ms :> .toFixed(0) :> Result.withDefault("?");
+  gray("(" ++ whole ++ "ms)")
+};
+
+let plural = (count, word) => {
+  Text.of(count) ++ " " ++ word ++ (if (count == 1) { "" } else { "s" })
+};
+
+-- `--filter text` keeps the tests whose name contains it.
+let rec filterOf = match(items) => {
+  ["--filter", text, .._] => { text },
+  [_, ..rest] => { filterOf(rest) },
+  [] => { "" }
+};
+
+let runTest = (file, t: Test) => {
+  let start = nowMs();
+  let finish = (error) => {
+    let outcome = Outcome(file, t.name, error, nowMs() - start);
+    let status = match(error) { None => { green("ok") }, Some(_) => { red("FAILED") } };
+    print(t.name ++ " ... " ++ status ++ " " ++ duration(outcome.ms));
+    outcome
+  };
+  let crashed = (error) => {
+    match(error) { Js.Error(message) => { "crashed: " ++ message }, Js.Unknown => { "crashed" } }
+  };
+  -- Promise.try resolves to what the test's task resolves to, its Result (a
+  -- Task is a promise of a Result), which reflection can only call Js.Value.
+  let errorOf = (value) => {
+    let result: Result<Result<Void, String>, Js.Error> = value :> Json.assert;
+    match(result) {
+      Ok(Ok(_)) => { None },
+      Ok(Err(message)) => { Some(message) },
+      Err(error) => { Some(crashed(error)) }
+    }
+  };
+  -- Reflection gives Promise.try's callback one argument (its rest parameter).
+  attempt((_) => { t.run() })
+    :> Task.map(errorOf)
+    :> Task.recover((error) => { Some(crashed(error)) })
+    :> Task.map(finish)
+};
+
+-- One test after another, so tests never race over shared state. `done` is
+-- newest first.
+let rec runAll = (file, tests: List<Test>, done: List<Outcome>) => {
+  match(tests) {
+    [] => { Task.succeed(done) },
+    [first, ..rest] => {
+      runTest(file, first)
+        :> Task.andThen((outcome) => { runAll(file, rest, [outcome, ..done]) })
+    }
+  }
+};
+
+let selected = (filter, s: Suite) => {
+  List.filter(s.tests, (t: Test) => { filter == "" || contains(t.name, filter) })
+};
+
+let rec runSuitesFrom = (filter, suites: List<Suite>, done: List<Outcome>) => {
+  match(suites) {
+    [] => { Task.succeed(List.reverse(done)) },
+    [first, ..rest] => {
+      match(selected(filter, first)) {
+        [] => { runSuitesFrom(filter, rest, done) },
+        Var(tests) => {
+          print(gray("running " ++ plural(List.length(tests), "test") ++ " from " ++ first.file));
+          runAll(first.file, tests, done)
+            :> Task.andThen((more) => { runSuitesFrom(filter, rest, more) })
+        }
+      }
+    }
+  }
+};
+
+let failureOf = (o: Outcome) => {
+  match(o.error) {
+    Some(message) => {
+      Some(bold(o.name) ++ " " ++ gray("=> " ++ o.file) ++ "\n" ++ red("error") ++ ": " ++ message)
+    },
+    None => { None }
+  }
+};
+
+-- Prints the summary and returns the number of failed tests.
+let report = (outcomes: List<Outcome>, ms) => {
+  let failures = List.mapPartial(outcomes, failureOf);
+  let failed = List.length(failures);
+  let passed = List.length(outcomes) - failed;
+  match(failures) {
+    [] => { void },
+    _ => {
+      print("\n" ++ red("ERRORS") ++ "\n");
+      List.map(failures, (f) => { print(f ++ "\n") });
+      void
+    }
+  };
+  let verdict = if (failed > 0) { red("FAILED") } else { green("ok") };
+  print("\n" ++ verdict ++ " | " ++ Text.of(passed) ++ " passed | " ++ Text.of(failed) ++ " failed"
+    ++ " " ++ duration(ms));
+  failed
+};
+
+-- The entry point the generated module calls. Exits 1 when a test failed, or
+-- when no test ran.
+let runSuites = (suites: List<Suite>) => {
+  let filter = filterOf(Js.Array.toList(args));
+  let start = nowMs();
+  let finish = (outcomes) => {
+    match(outcomes) {
+      [] => {
+        print(red("error") ++ ": no tests" ++ (if (filter == "") { "" } else { " match the filter " ++ Text.of(filter) }));
+        exit(1)
+      },
+      _ => {
+        if (report(outcomes, nowMs() - start) > 0) { exit(1) } else { void }
+      }
+    }
+  };
+  runSuitesFrom(filter, suites, [])
+    :> Task.map(finish)
+};

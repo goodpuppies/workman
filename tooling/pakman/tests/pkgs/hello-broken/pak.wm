@@ -1,0 +1,24 @@
+-- Test fixture: refers to a file hello-lib does not install.
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+
+let versions = () => { Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
+
+let make = (version, _) => {
+  Package(version, [], [Symlink(Of("hello-lib", "usr/share/hello-lib/missing"), "usr/share/hello-broken/link")], [])
+};
+
+let definition: Definition = .{
+  name = "hello-broken",
+  description = "fixture: dangling reference",
+  homepage = "",
+  license = "MIT",
+  target = Host,
+  scope = System,
+  versions,
+  hosts = [],
+  policy = defaultPolicy,
+  make
+};
+
+let main = () => { serve(definition) };

@@ -1,0 +1,92 @@
+-- pakman.lock: the versions and source hashes resolution chose.
+--
+-- Builds only ever read the lock, so they are reproducible until the next
+-- `pakman resolve`.
+
+from js.global("JSON") import { parse } as JSON;
+from "./io.wm" import { readTextOr, writeText, prettyJson, jsonList, mkdirp, dirname };
+from "./text.wm" import { before };
+from "./fun.wm" import { mapAll, ignore };
+from js.module("./host.ts") import unsafe { jsonTextOr: (Js.Value, String) -> String };
+
+-- `verified`: the hash matched a checksum upstream published, rather than
+-- only being recorded from the first download.
+record LockedSource = { file: String, url: String, sha256: String, verified: Bool };
+
+-- `track` is the selector the version came from: "" follows the package's
+-- default channel, a channel name follows that channel, anything else is an
+-- exact version pin that `update` leaves alone.
+-- `ref` is the candidate's ref, handed back to `make` on every build.
+record LockEntry = { name: String, version: String, track: String, ref: String, sources: List<LockedSource> };
+
+-- The on-disk shape, as JSON.parse produces it.
+-- `ref` is missing from entries written before refs existed.
+record LockedPackageJson = { name: String, version: String, track: String, ref: Js.Value, sources: Js.Array<LockedSource> };
+record LockFileJson = { lockVersion: Number, packages: Js.Array<LockedPackageJson> };
+
+let lockVersion = 2;
+
+let fromJson = (lock: LockFileJson) => {
+  let entry = (p: LockedPackageJson) => { LockEntry(p.name, p.version, p.track, jsonTextOr(p.ref, ""), Js.Array.toList(p.sources)) };
+  lock.packages
+    :> Js.Array.toList
+    :> mapAll(entry)
+};
+
+let toJson = (entries: List<LockEntry>) => {
+  let sourceJson = (s: LockedSource) => {
+    JSON{ file: s.file, url: s.url, sha256: s.sha256, verified: s.verified }
+  };
+  let entryJson = (e: LockEntry) => {
+    JSON{ name: e.name, version: e.version, track: e.track, ref: e.ref, sources: jsonList(e.sources, sourceJson) }
+  };
+  JSON{ lockVersion: lockVersion, packages: jsonList(entries, entryJson) }
+};
+
+let read = (path) => {
+  let checkVersion = (lock: LockFileJson) => {
+    if (lock.lockVersion == lockVersion) {
+      Ok(lock)
+    } else {
+      Err(path ++ " is lock format " ++ Text.of(lock.lockVersion) ++ ", pakman writes "
+        ++ Text.of(lockVersion) ++ "; delete it and run `pakman resolve`")
+    }
+  };
+  let parsed: Task<LockFileJson, String> = readTextOr(path, "{\"lockVersion\":2,\"packages\":[]}")
+    :> Task.andThen((text) => {
+      JSON.parse(text)
+        :> Result.mapErr((_) => { path ++ " is not valid JSON" })
+        :> Result.andThen((value) => {
+          value :> Json.assert :> Result.mapErr((_) => { path ++ " has an unexpected shape" })
+        })
+        :> Result.andThen(checkVersion)
+        :> Task.fromResult
+    });
+  parsed :> Task.map(fromJson)
+};
+
+let write = (path, entries) => {
+  Task|mkdirp(dirname(path)), writeText(path, prettyJson(toJson(entries)), 420)| :> Task.map(ignore)
+};
+
+let find = (entries: List<LockEntry>, name) => {
+  List.find(entries, (e: LockEntry) => { e.name == name })
+};
+
+-- Replaces (or adds) the entry for entry.name, keeping entries sorted by name.
+let rec upsert = (entries: List<LockEntry>, entry: LockEntry) => {
+  match(entries) {
+    [] => { [entry] },
+    [first, ..rest] => {
+      if (first.name == entry.name) {
+        [entry, ..rest]
+      } else {
+        if (before(entry.name, first.name)) { [entry, first, ..rest] } else { [first, ..upsert(rest, entry)] }
+      }
+    }
+  }
+};
+
+let versionOf = (entry: LockEntry) => { entry.version };
+
+let trackOf = (entry: LockEntry) => { entry.track };

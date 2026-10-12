@@ -1000,9 +1000,7 @@ Deno.test("cli run passes stdin through to the Workman program", async () => {
   await Deno.writeTextFile(
     input,
     `
-      from js.module("node:fs") import {
-        readFileSync: (Number, String) -> String
-      };
+      from js.module("node:fs") import { readFileSync };
 
       let main = () => {
         match(readFileSync(0, "utf8")) {

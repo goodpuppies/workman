@@ -1,0 +1,248 @@
+-- Resolution: pick a version upstream offers, and pin its sources' hashes.
+
+from "./model.wm" import { Candidate, Checksum, Source, Package };
+from "./packages.wm" import { PackageInfo, versions, make };
+from "./lock.wm" import { LockEntry, LockedSource, versionOf, trackOf };
+from "./fun.wm" import { keepIf, filterAll };
+from "./paths.wm" import { Paths };
+from "./io.wm" import *;
+
+let via = Monad.via;
+
+let daySeconds = 86400;
+
+-- PAKMAN_MIN_AGE_DAYS overrides every package's minimum age, like the
+-- PACMAN_MIN_AGE_DAYS gate does for pacman.
+let minAgeDays = (info: PackageInfo) => { parseIntOr(envOr("PAKMAN_MIN_AGE_DAYS", ""), info.minAgeDays) };
+
+let oldEnough = (days, now, candidate: Candidate) => {
+  let published = isoToSeconds(candidate.published);
+  published >= 0 && now - published >= days * daySeconds
+};
+
+-- How a version is chosen. Parsed from `pkg@<selector>` or the lock's `track`.
+type Selector =
+  | Default            -- newest in the package's default channel, age-gated
+  | Latest             -- newest in the default channel, past the age gate; pinned
+  | Channel<String>    -- newest in this channel; follows it on update
+  | Exact<String>;     -- this version; update leaves it alone
+
+-- "" and "default" mean Default; "latest" means Latest; a channel some candidate is in means Channel; anything else is a version.
+let parseSelector = (text, candidates: List<Candidate>) => {
+  if (text == "" || text == "default") {
+    Default
+  } else {
+    if (text == "latest") {
+      Latest
+    } else {
+      if (List.any(candidates, (c: Candidate) => { c.channel == text })) { Channel(text) } else { Exact(text) }
+    }
+  }
+};
+
+let trackFor = match(selector) => {
+  Default => { "" },
+  -- Pinned to whatever it picks; `resolve` records the version.
+  Latest => { "" },
+  Channel(name) => { name },
+  Exact(version) => { version }
+};
+
+-- The candidate a selector picks. Only automatic choices (Default) pass the
+-- age gate, which is applied here so no package can skip it; picking a channel
+-- or a version explicitly is the user's decision.
+--
+-- A package whose upstream offers only its newest build (`onlyLatest`) can't
+-- be gated by falling back to an older one. Instead the installed version is
+-- held until the newest is old enough, and a first install takes the newest.
+let choose = (info: PackageInfo, candidates: List<Candidate>, locked: Option<LockEntry>, selector) => {
+  let now = nowSeconds();
+  let days = minAgeDays(info);
+  let tooYoung = Err(info.name ++ ": nothing in channel " ++ info.channel
+    ++ " passes the minimum age of " ++ Text.of(days) ++ " days");
+  let heldOrNewest = (inChannel) => {
+    match((locked, inChannel)) {
+      (Some(entry), _) => { Ok(Candidate(versionOf(entry), "", info.channel, [], entry.ref)) },
+      (None, [newest, .._]) => { Ok(newest) },
+      (None, []) => { tooYoung }
+    }
+  };
+  match(selector) {
+    Default => {
+      let inChannel = filterAll(candidates, (c: Candidate) => { c.channel == info.channel });
+      match(List.find(inChannel, (c) => { oldEnough(days, now, c) })) {
+        Some(c) => { Ok(c) },
+        None => { if (info.onlyLatest) { heldOrNewest(inChannel) } else { tooYoung } }
+      }
+    },
+    Latest => {
+      candidates
+        :> List.find((c: Candidate) => { c.channel == info.channel })
+        :> Option.map(Ok)
+        :> Option.withDefault(Err(info.name ++ ": no candidate in channel " ++ info.channel))
+    },
+    Channel(name) => {
+      candidates
+        :> List.find((c: Candidate) => { c.channel == name })
+        :> Option.map(Ok)
+        :> Option.withDefault(Err(info.name ++ ": no candidate in channel " ++ name))
+    },
+    Exact(version) => {
+      candidates
+        :> List.find((c: Candidate) => { c.version == version })
+        :> Option.map(Ok)
+        :> Option.withDefault(Err(info.name ++ " has no version " ++ version
+          ++ " upstream (see `pakman versions " ++ info.name ++ "`)"))
+    }
+  }
+};
+
+-- Downloads a source into the content-addressed source cache and pins its
+-- hash, checking it against the checksum upstream published for its URL, if
+-- any. Curried so `pin` can hand it to `series`.
+let fetchSource = (paths: Paths, checksums: List<Checksum>) => {
+  (src: Source) => {
+    let partial = paths.tmp ++ "/" ++ src.file ++ ".download";
+    let published = List.find(checksums, (c: Checksum) => { c.url == src.url });
+    let check = via Task (sha) => {
+      match(published) {
+        Some(expected) => {
+          if (expected.sha256 == sha) {
+            Task.succeed((sha, true))
+          } else {
+            Task|removeFile(partial), Task.fail(src.url ++ ": sha256 is " ++ sha ++ ", upstream publishes " ++ expected.sha256)|
+              :> Task.map((_, result) => { result })
+          }
+        },
+        None => { Task.succeed((sha, false)) }
+      }
+    };
+    let store = via Task (sha, verified) => {
+      rename(partial, paths.sources ++ "/" ++ sha)
+        :> Task.map((_) => { LockedSource(src.file, src.url, sha, verified) })
+    };
+    Task|mkdirp(paths.tmp), mkdirp(paths.sources), download(src.url, partial), sha256File(partial)|
+      :> Task.map((_, _, _, sha) => { sha })
+      :> check
+      :> store
+  }
+};
+
+-- Upstream published checksums for this version, but none of the plan's
+-- downloads matched one: almost always `make` building the wrong URL.
+let requireSomeVerified = (info: PackageInfo, candidate: Candidate) => {
+  via Task (sources) => {
+    let anyVerified = List.any(sources, (s: LockedSource) => { s.verified });
+    match(candidate.checksums) {
+      [] => { Task.succeed(sources) },
+      _ => {
+        if (anyVerified) {
+          Task.succeed(sources)
+        } else {
+          Task.fail(info.name ++ " " ++ candidate.version
+            ++ ": upstream publishes checksums, but none matches a source URL in the plan")
+        }
+      }
+    }
+  }
+};
+
+-- Reuse pinned remote bytes, but resolve newly declared sources and re-read
+-- local patches/scripts even when their URL and the package version are unchanged.
+let refreshSources = (paths: Paths, pkg: Package, candidate: Candidate, previous: List<LockedSource>) => {
+  let resolveSource = (src: Source) => {
+    let local = src.url :> .startsWith("file://") :> Result.withDefault(false);
+    let published = List.find(candidate.checksums, (c: Checksum) => { c.url == src.url });
+    let reusable = (s: LockedSource) => {
+      let checksumMatches = published :> Option.map((c: Checksum) => { c.sha256 == s.sha256 }) :> Option.withDefault(true);
+      !local && s.file == src.file && s.url == src.url && checksumMatches
+    };
+    match(List.find(previous, reusable)) {
+      Some(locked) => {
+        let verified = match(published) { Some(_) => { true }, None => { locked.verified } };
+        Task.succeed(LockedSource(locked.file, locked.url, locked.sha256, verified))
+      },
+      None => { fetchSource(paths, candidate.checksums)(src) }
+    }
+  };
+  series(pkg.sources, resolveSource)
+};
+
+let pinUsing = (paths: Paths, info: PackageInfo, candidate: Candidate, track, previous: List<LockedSource>) => {
+  let fetchSources = via Task (pkg: Package) => {
+    refreshSources(paths, pkg, candidate, previous)
+  };
+  make(info, candidate.version, candidate.ref)
+    :> fetchSources
+    :> (requireSomeVerified(info, candidate))
+    :> Task.map((sources) => { LockEntry(info.name, candidate.version, track, candidate.ref, sources) })
+};
+
+let pin = (paths: Paths, info: PackageInfo, candidate: Candidate, track) => {
+  pinUsing(paths, info, candidate, track, [])
+};
+
+-- Says so when an `onlyLatest` package's newest build is younger than the gate.
+let noteGate = (info: PackageInfo, candidates: List<Candidate>, picked: Candidate) => {
+  let days = minAgeDays(info);
+  match(List.find(candidates, (c: Candidate) => { c.channel == info.channel })) {
+    Some(newest) => {
+      if (oldEnough(days, nowSeconds(), newest)) {
+        void
+      } else {
+        if (newest.version == picked.version) {
+          eprint("pakman: " ++ info.name ++ " " ++ newest.version ++ " is younger than " ++ Text.of(days)
+            ++ " days, but upstream offers nothing older")
+        } else {
+          eprint("pakman: holding " ++ info.name ++ " at " ++ picked.version ++ " until " ++ newest.version
+            ++ " is " ++ Text.of(days) ++ " days old")
+        }
+      }
+    },
+    None => { void }
+  }
+};
+
+-- `@latest` skips the age gate, so a version younger than it needs a yes.
+let confirmLatest = (info: PackageInfo, candidate: Candidate) => {
+  let days = minAgeDays(info);
+  if (oldEnough(days, nowSeconds(), candidate)) {
+    Ok(candidate)
+  } else {
+    eprint("pakman: warning: " ++ info.name ++ " " ++ candidate.version ++ " was published "
+      ++ candidate.published ++ ", younger than the minimum age of " ++ Text.of(days) ++ " days");
+    if (confirm("Install it anyway?")) { Ok(candidate) } else { Err(info.name ++ ": not installing " ++ candidate.version) }
+  }
+};
+
+-- Resolves a package. `requested` is the selector from the command line, if
+-- any; otherwise the locked entry's track is kept. An unchanged version keeps
+-- matching remote sources; local inputs are refreshed against the current plan.
+let resolve = (paths: Paths, info: PackageInfo, locked: Option<LockEntry>, requested: Option<String>) => {
+  let text = match(requested) {
+    Some(selector) => { selector },
+    None => { locked :> Option.map(trackOf) :> Option.withDefault("") }
+  };
+  let pick = via Task (candidates) => {
+    let selector = parseSelector(text, candidates);
+    choose(info, candidates, locked, selector)
+      :> Result.andThen((candidate: Candidate) => {
+        if (selector == Latest) { confirmLatest(info, candidate) } else { Ok(candidate) }
+      })
+      :> Result.map((candidate: Candidate) => {
+        if (selector == Default) { noteGate(info, candidates, candidate) } else { void };
+        if (selector == Latest) { (candidate, candidate.version) } else { (candidate, trackFor(selector)) }
+      })
+      :> Task.fromResult
+  };
+  let pinIfChanged = via Task (candidate: Candidate, track) => {
+    let unchanged = (entry: LockEntry) => { entry.version == candidate.version };
+    match(locked :> Option.andThen(keepIf(unchanged))) {
+      Some(entry) => { pinUsing(paths, info, candidate, track, entry.sources) },
+      None => { pin(paths, info, candidate, track) }
+    }
+  };
+  versions(info)
+    :> pick
+    :> pinIfChanged
+};

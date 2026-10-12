@@ -1,0 +1,19 @@
+let classSpace = 1;
+let classLetter = 2;
+let classDigit = 3;
+let classStrQuo = 4;
+let classSymbol = 5;
+let classOther = 6;
+
+// Preserve the original ASCII table. Non-ASCII source units are not word characters.
+let classify = (code) => {
+  if ((code >= 9 && code <= 13) || code == 32) {classSpace} else {
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code == 95) {classLetter} else {
+      if (code >= 48 && code <= 57) {classDigit} else {
+        if (code == 34 || code == 39 || code == 96) {classStrQuo} else {
+          if (code >= 33 && code <= 125 && code != 35 && code != 94) {classSymbol} else {classOther}
+        }
+      }
+    }
+  }
+};

@@ -295,7 +295,7 @@ LetPattern
 LetPatternList = first:LetPattern rest:(_ "," _ p:LetPattern { return p; })* _ ","? { return [first, ...rest]; }
 LetCtorPattern
   = name:Identifier { return at({ kind: "PVar", name }, location()); }
-  / !"Var" p:LetPattern { return p; }
+  / !("Var" !IdentPart) p:LetPattern { return p; }
 LetCtorPatternList = first:LetCtorPattern rest:(_ "," _ p:LetCtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 
 RecordDecl
@@ -568,10 +568,10 @@ PatternList = first:Pattern rest:(_ "," _ p:Pattern { return p; })* _ ","? { ret
 CtorPattern
   = RecordPattern
   / ListPattern
-  / !"Var" c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
-  / !"Var" c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
+  / !("Var" !IdentPart) c:LongConstructor _ "(" _ args:CtorPatternList? _ ")" { return longNode("PCtor", c, { args: args ?? [] }, location()); }
+  / !("Var" !IdentPart) c:LongConstructor { return longNode("PCtor", c, { args: [] }, location()); }
   / v:Identifier { return at({ kind: "PVar", name: v }, location()); }
-  / !"Var" p:Pattern { return p; }
+  / !("Var" !IdentPart) p:Pattern { return p; }
 CtorPatternList = first:CtorPattern rest:(_ "," _ p:CtorPattern { return p; })* _ ","? { return [first, ...rest]; }
 ArgList = first:Expr rest:(_ "," _ e:Expr { return e; })* _ ","? { return [first, ...rest]; }
 ListPattern
@@ -693,7 +693,7 @@ FieldName = !Keyword name:MemberName { return name; }
 LongName = first:Name rest:("." n:MemberName { return n; })* { return longId(first, rest); }
 LongConstructor = first:Constructor rest:("." n:Constructor { return n; })* !"." { return longId(first, rest); }
 IdentPart = [a-zA-Z0-9_']
-Keyword = ("from" / "import" / "as" / "let" / "rec" / "and" / "type" / "record" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
+Keyword = ("from" / "import" / "as" / "let" / "record" / "rec" / "and" / "type" / "if" / "else" / "match" / "true" / "false" / "void") !IdentPart
 __ = (Whitespace / Comment)+
 _ = (Whitespace / Comment)*
 Whitespace = [ \t\r\n]

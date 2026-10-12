@@ -50,6 +50,16 @@ export async function prepareCImports(module: Module): Promise<Module> {
   ) as Extract<Decl, { kind: "JsImportDecl" }>[];
   if (cDecls.length === 0) return module;
 
+  // C calls can misbehave at the process level, so every C value import is unsafe, with or without
+  // a declared type (surface-syntax.md). Type-only imports cross nothing and need no marker.
+  for (const decl of cDecls) {
+    if (decl.typeOnly || decl.clause.unsafe) continue;
+    throw diagnosticError(
+      new Error("C calls are process-unsafe; add unsafe (import unsafe { ... } or import unsafe * as ...)"),
+      declNode(decl),
+    );
+  }
+
   const symbolsByHeader = new Map<string, string[]>();
   for (const decl of cDecls) {
     if (decl.target.kind !== "CHeader") continue;

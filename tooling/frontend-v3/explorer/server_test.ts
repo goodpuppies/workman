@@ -5,11 +5,14 @@ import type { LexResponse } from "./model.ts";
 
 Deno.test("explorer transports v3 marks and distinguishes source faults from unfinished code", async () => {
   const handle = handler(await loadLexer());
-  const request = (source: string) => handle(new Request("http://localhost/api/lex", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source }),
-  }));
+  const request = (source: string) =>
+    handle(
+      new Request("http://localhost/api/lex", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source }),
+      }),
+    );
 
   const response = await request('{ "\\q" /*');
   assertEquals(response.status, 200);
@@ -17,13 +20,22 @@ Deno.test("explorer transports v3 marks and distinguishes source faults from unf
   if (!result.success) throw new Error(result.error.message);
   const { tokens, marks } = result.document;
   assertEquals(marks.map((mark) => mark.problem.name), [
-    "UnmatchedDelimiter", "InvalidEscape", "UnterminatedBlockComment",
+    "UnmatchedDelimiter",
+    "InvalidEscape",
+    "UnterminatedBlockComment",
   ]);
   const attached = tokens.flatMap((token) => [
-    ...token.leadingTrivia.flatMap((item) => item.marks), ...token.marks,
+    ...token.leadingTrivia.flatMap((item) => item.marks),
+    ...token.marks,
   ]);
   assertEquals(attached, marks);
   assertEquals(marks.map((mark) => mark.id.args[0]), [0, 1, 2]);
+
+  const rawTrivia = "/*\uD800\0\uDC00*/\r\n";
+  const rawResponse = await request(rawTrivia);
+  const raw = await rawResponse.json() as LexResponse;
+  if (!raw.success) throw new Error(raw.error.message);
+  assertEquals(raw.document.tokens[0].leadingTrivia.map((item) => item.text).join(""), rawTrivia);
 
   const large = await request("x ".repeat(10000));
   const document = await large.json() as LexResponse;
@@ -39,7 +51,8 @@ Deno.test("explorer transports v3 marks and distinguishes source faults from unf
   const damaged = await damagedTemplate.json() as LexResponse;
   if (!damaged.success) throw new Error(damaged.error.message);
   assertEquals(damaged.document.marks.map((mark) => mark.problem.name), [
-    "UnterminatedMultilineString", "InvalidCharacterLength",
+    "UnterminatedMultilineString",
+    "InvalidCharacterLength",
   ]);
 
   const pending = handler(() => {
@@ -47,9 +60,12 @@ Deno.test("explorer transports v3 marks and distinguishes source faults from unf
     error.name = "TypedHole";
     throw error;
   });
-  const unfinished = await pending(new Request("http://localhost/api/lex", {
-    method: "POST", body: JSON.stringify({ source: "x" }),
-  }));
+  const unfinished = await pending(
+    new Request("http://localhost/api/lex", {
+      method: "POST",
+      body: JSON.stringify({ source: "x" }),
+    }),
+  );
   assertEquals(unfinished.status, 422);
   const failed = await unfinished.json() as LexResponse;
   if (failed.success) throw new Error("Unfinished syntax must not produce a successful document");
@@ -62,10 +78,15 @@ Deno.test("explorer transports v3 marks and distinguishes source faults from unf
   assertEquals((await handle(new Request("http://localhost/api/lex"))).status, 405);
   assertEquals((await handle(new Request("http://localhost/missing"))).status, 404);
 
-  const broken = handler(() => { throw new Error("frontend invariant failed"); });
-  const internal = await broken(new Request("http://localhost/api/lex", {
-    method: "POST", body: JSON.stringify({ source: "x" }),
-  }));
+  const broken = handler(() => {
+    throw new Error("frontend invariant failed");
+  });
+  const internal = await broken(
+    new Request("http://localhost/api/lex", {
+      method: "POST",
+      body: JSON.stringify({ source: "x" }),
+    }),
+  );
   assertEquals(internal.status, 500);
   const error = await internal.json() as LexResponse;
   if (error.success) throw new Error("Internal failure must not produce a successful document");

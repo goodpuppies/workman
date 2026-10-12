@@ -37,6 +37,8 @@ const commands = new Set([
   "fmt",
   "lsp",
   "problems",
+  "pakman",
+  "test",
   "todo",
   "what",
   "type-debug",
@@ -201,6 +203,10 @@ export async function main(args: string[]): Promise<number> {
       return await lspCommand(commandArgs);
     case "problems":
       return await problemsCommand(commandArgs);
+    case "pakman":
+      return await pakmanCommand(commandArgs);
+    case "test":
+      return await testCommand(commandArgs);
     case "todo":
     case "what":
       return await todoCommand(commandArgs, command);
@@ -473,6 +479,16 @@ async function problemsCommand(args: string[]): Promise<number> {
   return await problemsCommand(args);
 }
 
+async function pakmanCommand(args: string[]): Promise<number> {
+  const { pakmanCommand } = await import("./pakman.ts");
+  return await pakmanCommand(args);
+}
+
+async function testCommand(args: string[]): Promise<number> {
+  const { testCommand } = await import("./test.ts");
+  return await testCommand(args);
+}
+
 async function todoCommand(args: string[], command: "todo" | "what"): Promise<number> {
   if (args.length !== 1) {
     console.error(`usage: wm ${command} <input.wm>`);
@@ -509,6 +525,8 @@ commands:
   lsp                           run the Workman language server over stdio
   problems [entrypoint.wm]      browse LSP diagnostics in a Workman TUI
                                 defaults to ./main.wm, or the only .wm file here
+  test [paths...] [--filter s]  run the tests in *.test.wm files (testman, a proposal)
+  pakman <command> [args]       the package manager (tooling/pakman); wm pakman help
   todo <file.wm>                list errors, warnings, typed ? holes, and TODO comments
   what <file.wm>                alias for todo
   type-debug <file.wm>           print staged typechecker state on failure

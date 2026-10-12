@@ -1,0 +1,248 @@
+from "../source/mark.wm" import * as Marks;
+from "../lexer/token.wm" import * as Tokens;
+
+type NodeId = | NodeId<Number>;
+type DelimiterId = | DelimiterId<Number>;
+
+type SurfaceSort =
+  | TypeSort
+  | PatternSort
+  | ExpressionSort
+  | DeclarationSort;
+
+// Keywords remain identifier tokens lexically; recovery must retain the expected spelling.
+// ExpectedKeyword is for grammar keywords, not an invented identifier name.
+type TokenExpectation =
+  | ExpectedTokenKind<Tokens.TokenKind>
+  | ExpectedKeyword<String>;
+
+type TokenSlot = Marks.Slot<Tokens.Token, TokenExpectation>;
+
+type SyntaxProblem =
+  | MissingToken<TokenExpectation>
+  | MissingPhrase<SurfaceSort>
+  | UnexpectedTokens
+  | UnassembledFragments;
+
+// InsertedToken describes a structural expectation, not a synthesized lexer Token.
+type SyntaxRecovery =
+  | InsertedToken<TokenExpectation>
+  | InsertedHole<SurfaceSort>
+  | RetainedErrorIsland
+  | RetainedUnassembledFragments;
+
+type SyntaxMark = Marks.Mark<SyntaxProblem, SyntaxRecovery>;
+type SurfaceMark = LexicalSurfaceMark<Tokens.LexicalMark> | SyntaxSurfaceMark<SyntaxMark>;
+
+record Node = {
+  id: NodeId,
+  span: Marks.SourceSpan,
+};
+
+record Delimited<T> = {
+  id: DelimiterId,
+  open: TokenSlot,
+  content: T,
+  close: TokenSlot,
+};
+
+// One compound lexer token and two separated tokens are different authored openings.
+// PlainRecordOpen is the brace after a named record's identifier; anonymous records
+// and record patterns use CompoundRecordOpen or SeparateRecordOpen instead.
+type RecordOpening =
+  | CompoundRecordOpen<Tokens.Token>
+  | SeparateRecordOpen<Tokens.Token, Tokens.Token>
+  | PlainRecordOpen<Tokens.Token>;
+
+record RecordDelimited<T> = {
+  id: DelimiterId,
+  recordOpening: RecordOpening,
+  content: T,
+  close: TokenSlot,
+};
+
+// Literal syntax retains spelling, not decoded values. Only integer patterns have
+// an optional authored sign; expression negation remains an ExprPrefix operation.
+// Multiline literal content is zero or more lexer text chunks, with both boundaries
+// retained. Interpolated expressions need their own reviewed template representation.
+type LiteralSyntax =
+  | SimpleLiteral<Tokens.Token>
+  | IntegerLiteral<Option<Tokens.Token>, Tokens.Token>
+  | MultilineLiteral<Delimited<List<Tokens.Token>>>;
+
+// The grammar production that recognized this spelling, not a resolved symbol.
+// Binding/reference distinctions depend on pattern context, not name capitalization.
+type PatternNameRole = BindingNameSyntax | ReferenceNameSyntax | ConstructorNameSyntax;
+
+record Separated<T> = {
+  items: List<T>,
+  separators: List<TokenSlot>,
+  trailingSeparator: Option<TokenSlot>,
+};
+
+record JoinedItem<T> = {
+  joiner: TokenSlot,
+  item: T,
+};
+
+record Joined<T> = {
+  first: T,
+  rest: List<JoinedItem<T>>,
+};
+
+// Revised Definition LongX = StrId* x X, with every authored dot retained.
+record LongIdentifier = {
+  qualifiers: List<Tokens.Token>,
+  dots: List<TokenSlot>,
+  base: Tokens.Token,
+};
+
+record Hole = {
+  node: Node,
+  mark: Option<Marks.MarkId>,
+  question: TokenSlot,
+};
+
+record ErrorIsland = {
+  mark: Marks.MarkId,
+  tokens: List<Tokens.Token>,
+  span: Marks.SourceSpan,
+};
+
+record TypeArguments<T> = {
+  argumentAngles: Delimited<Separated<T>>,
+};
+
+record TypeParameters = {
+  parameterAngles: Delimited<Separated<Tokens.Token>>,
+};
+
+record SpreadTail<T> = {
+  spread: TokenSlot,
+  value: T,
+};
+
+record Labelled<T> = {
+  node: Node,
+  label: Tokens.Token,
+  equalsOrColon: Option<TokenSlot>,
+  value: Option<T>,
+};
+
+type CallSite<E> =
+  | WhitespaceArgument<E>
+  | ParenthesizedArguments<Delimited<Separated<E>>>;
+
+record MatchRule<P, E> = {
+  node: Node,
+  pattern: P,
+  arrow: TokenSlot,
+  body: E,
+};
+
+record TypeAnnotation<T> = {
+  colon: TokenSlot,
+  value: T,
+};
+
+record Binding<P, E, T> = {
+  node: Node,
+  pattern: P,
+  annotation: Option<TypeAnnotation<T>>,
+  equals: TokenSlot,
+  value: E,
+};
+
+record TypeBinding<T> = {
+  node: Node,
+  name: Tokens.Token,
+  parameters: Option<TypeParameters>,
+  equals: TokenSlot,
+  leadingPipe: Option<Tokens.Token>,
+  members: Separated<T>,
+};
+
+type BlockPhrase<D, E> = DeclarationPhrase<D> | ExpressionPhrase<E>;
+
+record BlockItem<D, E> = {
+  node: Node,
+  blockPhrase: BlockPhrase<D, E>,
+  terminator: TokenSlot,
+};
+
+record BlockBody<D, E> = {
+  items: List<BlockItem<D, E>>,
+  result: Option<E>,
+};
+
+record Block<D, E> = {
+  node: Node,
+  braces: Delimited<BlockBody<D, E>>,
+};
+
+record ListBody<T> = {
+  items: Separated<T>,
+  tail: Option<SpreadTail<T>>,
+};
+
+record TopPhrase<D, E> = {
+  node: Node,
+  topPhrase: BlockPhrase<D, E>,
+  terminator: TokenSlot,
+};
+
+// The four mutually recursive phrase families follow SML Ty, Pat, Exp, and Dec.
+// Constructors below describe authored Workman syntax; elaboration decides identity and meaning.
+type SurfaceType =
+  | TypeVariable<Node, Tokens.Token>
+  | TypeName<Node, LongIdentifier, Option<TypeArguments<SurfaceType>>>
+  | TypeTuple<Node, Delimited<Separated<SurfaceType>>>
+  | TypeFunction<Node, SurfaceType, TokenSlot, SurfaceType>
+  | TypeParenthesized<Node, Delimited<SurfaceType>>
+  | TypeHole<Hole>
+  | TypeMarked<Marks.Marked<SurfaceType>>
+  | TypeError<Node, ErrorIsland>
+and SurfacePattern =
+  | PatternWildcard<Node, Tokens.Token>
+  | PatternName<Node, PatternNameRole, LongIdentifier>
+  | PatternExplicitBinder<Node, Tokens.Token, Delimited<Tokens.Token>>
+  | PatternLiteral<Node, LiteralSyntax>
+  | PatternApplication<Node, LongIdentifier, Delimited<Separated<SurfacePattern>>>
+  | PatternTuple<Node, Delimited<Separated<SurfacePattern>>>
+  | PatternList<Node, Delimited<ListBody<SurfacePattern>>>
+  | PatternRecord<Node, RecordDelimited<Separated<Labelled<SurfacePattern>>>>
+  | PatternTyped<Node, SurfacePattern, TypeAnnotation<SurfaceType>>
+  | PatternParenthesized<Node, Delimited<SurfacePattern>>
+  | PatternHole<Hole>
+  | PatternMarked<Marks.Marked<SurfacePattern>>
+  | PatternError<Node, ErrorIsland>
+and SurfaceExpr =
+  | ExprLiteral<Node, LiteralSyntax>
+  | ExprName<Node, LongIdentifier>
+  | ExprTuple<Node, Delimited<Separated<SurfaceExpr>>>
+  | ExprList<Node, Delimited<ListBody<SurfaceExpr>>>
+  | ExprRecord<Node, Option<LongIdentifier>, RecordDelimited<Separated<Labelled<SurfaceExpr>>>>
+  | ExprParenthesized<Node, Delimited<SurfaceExpr>>
+  | ExprApply<Node, SurfaceExpr, CallSite<SurfaceExpr>>
+  | ExprLambda<Node, Option<Delimited<Separated<SurfacePattern>>>, TokenSlot, SurfaceExpr>
+  | ExprIf<Node, Tokens.Token, Delimited<SurfaceExpr>, Block<SurfaceDecl, SurfaceExpr>, TokenSlot, Block<SurfaceDecl, SurfaceExpr>>
+  | ExprMatch<Node, Tokens.Token, Delimited<Separated<SurfaceExpr>>, Delimited<Separated<MatchRule<SurfacePattern, SurfaceExpr>>>>
+  | ExprBlock<Block<SurfaceDecl, SurfaceExpr>>
+  | ExprTyped<Node, SurfaceExpr, TypeAnnotation<SurfaceType>>
+  | ExprInfix<Node, SurfaceExpr, Tokens.Token, SurfaceExpr>
+  | ExprPrefix<Node, Tokens.Token, SurfaceExpr>
+  | ExprHole<Hole>
+  | ExprMarked<Marks.Marked<SurfaceExpr>>
+  | ExprError<Node, ErrorIsland>
+and SurfaceDecl =
+  | DeclValue<Node, Tokens.Token, Option<Tokens.Token>, Joined<Binding<SurfacePattern, SurfaceExpr, SurfaceType>>>
+  | DeclType<Node, Tokens.Token, Joined<TypeBinding<SurfaceType>>>
+  | DeclMarked<Marks.Marked<SurfaceDecl>>
+  | DeclError<Node, ErrorIsland>;
+
+record SurfaceProgram = {
+  node: Node,
+  phrases: List<TopPhrase<SurfaceDecl, SurfaceExpr>>,
+  eof: Tokens.Token,
+  marks: List<SurfaceMark>,
+};

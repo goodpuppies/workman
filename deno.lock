@@ -3,6 +3,8 @@
   "specifiers": {
     "jsr:@goodpuppies/logicalassert@0.1.2": "0.1.2",
     "jsr:@goodpuppies/stageforge@0.3": "0.3.0",
+    "jsr:@img/internal@~0.1.1": "0.1.1",
+    "jsr:@img/png@0.1.6": "0.1.6",
     "jsr:@mommysgoodpuppy/logchannel@0.1.0": "0.1.0",
     "jsr:@std/assert@^1.0.13": "1.0.19",
     "jsr:@std/assert@^1.0.17": "1.0.19",
@@ -37,6 +39,15 @@
       "dependencies": [
         "jsr:@goodpuppies/logicalassert",
         "jsr:@mommysgoodpuppy/logchannel"
+      ]
+    },
+    "@img/internal@0.1.1": {
+      "integrity": "3f3f58a02d959f913e4715ca1d33064858eb7c32935d351d6357d6bd48b57a70"
+    },
+    "@img/png@0.1.6": {
+      "integrity": "b24db019c96bb0e4fea6a2b1d01c5cc995a56cbc1fe7e40ff77224744e42e37c",
+      "dependencies": [
+        "jsr:@img/internal"
       ]
     },
     "@mommysgoodpuppy/logchannel@0.1.0": {

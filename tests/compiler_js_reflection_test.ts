@@ -990,9 +990,11 @@ Deno.test("unannotated helper receivers keep delayed FFI obligations", async () 
 
   expectBinding(result.env, "makeBytes", { type: "Void -> Uint8Array", vars: 0 });
 });
+// Asserting a nullable contract is a manual type, which is a trusted claim, so these imports are
+// unsafe and their calls are direct.
 Deno.test("nullable pointer parameters are asserted with as instead of inference", async () => {
   const result = await checkSource(`
-    from js.module("./tests/fixtures/ffi_nullable_string.ts") import {
+    from js.module("./tests/fixtures/ffi_nullable_string.ts") import unsafe {
       loadLocalShader as load: (Option<String>, Option<String>) -> Bool,
       loadShader as loadDeno: (Option<String>, Option<String>) -> Bool
     };
@@ -1001,25 +1003,25 @@ Deno.test("nullable pointer parameters are asserted with as instead of inference
   `);
 
   expectBinding(result.env, "go", {
-    type: "Option<String> -> Result<Bool, Js.Error>",
+    type: "Option<String> -> Bool",
     vars: 0,
   });
   expectBinding(result.env, "goDeno", {
-    type: "Option<String> -> Result<Bool, Js.Error>",
+    type: "Option<String> -> Bool",
     vars: 0,
   });
 });
 
 Deno.test("as-asserted nullable parameters accept None and Some", async () => {
   const result = await checkSource(`
-    from js.module("./tests/fixtures/ffi_nullable_string.ts") import {
+    from js.module("./tests/fixtures/ffi_nullable_string.ts") import unsafe {
       loadLocalShader as load: (Option<String>, Option<String>) -> Bool
     };
     let direct = load(None, Some("fs"));
   `);
 
   expectBinding(result.env, "direct", {
-    type: "Result<Bool, Js.Error>",
+    type: "Bool",
     vars: 0,
   });
 });

@@ -1,7 +1,7 @@
 import type { LexicalDocument, Mark, Token, Trivia, Variant } from "./model.ts";
 
 type RuntimeList<T> = Variant<[T, RuntimeList<T>]>;
-type RuntimeTrivia = Omit<Trivia, "marks"> & { marks: RuntimeList<Mark> };
+type RuntimeTrivia = Omit<Trivia, "marks" | "text"> & { text: unknown; marks: RuntimeList<Mark> };
 type RuntimeToken = Omit<Token, "marks" | "leadingTrivia"> & {
   marks: RuntimeList<Mark>;
   leadingTrivia: RuntimeList<RuntimeTrivia>;
@@ -21,12 +21,16 @@ function list<T>(value: RuntimeList<T>) {
   return out;
 }
 
-export function toDocument(value: RuntimeDocument): LexicalDocument {
+export function toDocument(value: RuntimeDocument, source: string): LexicalDocument {
   return {
     tokens: list(value.tokens).map((token) => ({
       ...token,
       marks: list(token.marks),
-      leadingTrivia: list(token.leadingTrivia).map((item) => ({ ...item, marks: list(item.marks) })),
+      leadingTrivia: list(token.leadingTrivia).map((item) => ({
+        ...item,
+        text: source.slice(item.span.startPos.index, item.span.endPos.index),
+        marks: list(item.marks),
+      })),
     })),
     marks: list(value.marks),
   };

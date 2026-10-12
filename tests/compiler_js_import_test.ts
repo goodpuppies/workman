@@ -32,20 +32,28 @@ Deno.test("unsafe primitive imports bypass the conversion runtime", async () => 
   assertEquals(binding.includes("__wm_js_apply"), false);
 });
 
-Deno.test("manual non-unsafe imports are fallible", async () => {
+Deno.test("safe imports cannot declare a manual type", async () => {
+  await assertRejects(
+    () => checkSource(`from js.global("JSON") import { parse: String -> Js.Object } as JSON;`),
+    Error,
+    "a safe JS import can't declare a type for parse",
+  );
+  await assertRejects(
+    () => checkSource(`from js.global("Deno") import { args: Js.Array<String> };`),
+    Error,
+    "make the import unsafe to trust the declared type",
+  );
+});
+
+Deno.test("safe reflected imports are fallible", async () => {
   const result = await checkSource(`
-    from js.global("JSON") import {
-      parse: String -> Js.Object,
-      stringify: Js.Value -> Result<String, Js.Error>,
-    } as JSON;
-    from js.global("Deno") import { args: Js.Array<String> };
+    from js.global("JSON") import { parse, stringify } as JSON;
     let parsed = JSON.parse("{}");
     let text = JSON.stringify(JSON{ ok: true });
   `);
 
-  expectBinding(result.env, "parsed", { type: "Result<Js.Object, Js.Error>", vars: 0 });
+  expectBinding(result.env, "parsed", { type: "Result<Js.Value, Js.Error>", vars: 0 });
   expectBinding(result.env, "text", { type: "Result<String, Js.Error>", vars: 0 });
-  expectBinding(result.env, "args", { type: "Result<Js.Array<String>, Js.Error>", vars: 0 });
 });
 
 Deno.test("imports lexical JavaScript module metadata directly", async () => {
@@ -120,7 +128,7 @@ Deno.test("rejects generic handwritten JS FFI signatures", async () => {
         };
       `),
     Error,
-    "FFI signatures must be explicit",
+    "a safe JS import can't declare a type for structuredClone",
   );
 });
 

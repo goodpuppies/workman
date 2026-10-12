@@ -62,6 +62,14 @@ export function nextSnapshot(revision: number): Promise<Snapshot> {
   return new Promise((resolve) => waiting.push(resolve));
 }
 
+/**
+ * `nextSnapshot` for the Workman TUI, as plain data: the TUI decodes it into its own `Snapshot`
+ * record with `Json.assert`, so reflection gives it `Js.Value` rather than this module's type.
+ */
+export function nextSnapshotData(revision: number): Promise<unknown> {
+  return nextSnapshot(revision);
+}
+
 /** Drop published state and waiters. Tests share this module; a run does not. */
 export function reset(): void {
   latest = initial;

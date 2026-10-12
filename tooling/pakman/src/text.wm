@@ -1,0 +1,21 @@
+-- Small string helpers missing from the basis.
+
+from js.module("./host.ts") import unsafe { compareText as compareRaw: (String, String) -> Number };
+from "./fun.wm" import { mapAll, concatAll };
+
+let join = (items, separator) => {
+  match(items) {
+    [] => { "" },
+    [first, ..rest] => { List.foldLeft(rest, first, (joined, item) => { joined ++ separator ++ item }) }
+  }
+};
+
+let concatMap = (items, f) => { concatAll(mapAll(items, f)) };
+
+
+
+-- String ordering for std Map keys.
+-- (The basis does not export Order's constructors, so borrow numberCompare's.)
+let compare = (left, right) => { Map.numberCompare(compareRaw(left, right), 0) };
+
+let before = (left, right) => { compareRaw(left, right) < 0 };

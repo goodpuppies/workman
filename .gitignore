@@ -12,3 +12,4 @@ benchmarks/
 *.wm-mini*
 *.wm_cache*
 _scratch/
+tooling/pakman/.build/

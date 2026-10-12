@@ -1,6 +1,7 @@
 from "./generated/surface_types.wm" import {
   SurfaceToken, AuthoredValue, MarkedValue,
-  RecordDeclarationNode, RecordFieldDeclarationNode
+  RecordDeclarationNode, RecordFieldDeclarationNode,
+  RecordPatternNode, RecordPatternFieldNode
 };
 
 let renderRecordToken = (value: SurfaceToken) => { value.text };
@@ -74,6 +75,30 @@ let renderRecordNode = match(node, depth, materializeMarks, renderNode) => {
         )
       },
       None => { None },
+    }
+  },
+  (RecordPatternNode(dot, open, fields, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderRecordNodes(fields, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(renderedFields) => {
+        let inner = if (renderedFields == "") { "" } else { " " ++ renderedFields ++ " " };
+        Some(
+          renderRecordToken(dot) ++ renderRecordSurfaceValue(open, materializeMarks) ++ inner ++
+          renderRecordSurfaceValue(close, materializeMarks)
+        )
+      },
+      None => { None },
+    }
+  },
+  -- The `=` before a field's pattern isn't kept in the node, so it is written here.
+  (RecordPatternFieldNode(name, pattern, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(pattern) {
+      Some(node) => {
+        match(renderNode(node, depth, materializeMarks)) {
+          Some(patternText) => { Some(renderRecordToken(name) ++ " = " ++ patternText) },
+          None => { None },
+        }
+      },
+      None => { Some(renderRecordToken(name)) },
     }
   },
   _ => { None },

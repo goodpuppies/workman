@@ -1,0 +1,16 @@
+$(SML_LIB)/basis/basis.mlb
+native/subset_text_host.sml
+subset_result.sml
+subset_list.sml
+subset_order.sml
+subset_char.sml
+subset_unicode.sml
+subset_utf8.sml
+subset_utf16.sml
+subset_utf16_source.sml
+subset_bytes.sml
+subset_string.sml
+subset_natural.sml
+native/subset_host.sml
+subset_io.sml
+subset_process.sml

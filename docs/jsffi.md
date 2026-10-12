@@ -33,6 +33,27 @@ Rename imports:
 from js.global("Math") import { max as jsmax };
 ```
 
+Import from a nested global object with a dotted path. Functions imported this way stay bound to
+their owner, so methods like `Deno.stdout.isTerminal` keep their `this`:
+
+```wm
+from js.global("Deno.env") import { get as getEnv };
+from js.global("Deno.stdout") import unsafe { isTerminal: Void -> Bool };
+```
+
+Import a value that is not a function. A safe value import is read once, when the module loads,
+and has type `Result<T, Js.Error>`; an unsafe one is the plain value:
+
+```wm
+from js.global import { navigator };                              -- navigator : Result<Navigator, Js.Error>
+from js.global("Deno") import unsafe { args: Js.Array<String> };  -- args : Js.Array<String>
+```
+
+Reflection does not yet find values that are members of a namespace object, such as `Math.PI`,
+`Deno.args` or `Deno.pid` ("unknown JS import"; see also
+`markdown/issues/global-type-reflection-misses-active-deno-declarations.md`). Until it does, import
+them `unsafe` with a manual type, as `Deno.args` above.
+
 Import JS types only:
 
 ```wm
@@ -44,11 +65,11 @@ declarations and in ordinary HM signatures once program flow already establishes
 
 ```wm
 from js.global import type { Request };
-from js.module("./request_bridge.ts") import {
+from js.module("./request_bridge.ts") import unsafe {
   methodOf: Request -> String,
 };
 
-let method = methodOf(Panic("request")) :> Result.debug;
+let method = methodOf(Panic("request"));
 ```
 
 Writing `req: Request` on an otherwise unresolved callback does not itself give the FFI resolver a
@@ -142,31 +163,41 @@ reflection information or another compiler bug. The annotation must remain erasa
 Workman shape. An annotation may state that expected shape around the assertion, but annotations do
 not become casts elsewhere.
 
+Currently the runtime check only rejects `null` and `undefined`; it does not yet verify fields,
+field types or variants, so a wrongly shaped value passes and fails later where it is used.
+Validate untrusted input yourself until the structural check exists.
+
 A manually typed JS import is also different. It declares the trusted foreign boundary signature;
 it is not an annotation on an inferred Workman value.
 
 ## Manual Types
 
-When reflection cannot infer a useful type, write the JS type manually:
+Safe imports are always reflected: Workman reads their types from TypeScript and wraps the result
+in `Result<_, Js.Error>` or `Task<_, Js.Error>`. Writing a type by hand is a trusted claim about
+the JavaScript side that Workman cannot check, so a manual type requires `unsafe`:
 
 ```wm
-from js.global import {
-  fetch: String -> Js.Promise<Js.Object>,
-  encodeURIComponent: String -> String,
-};
+from js.global import { encodeURIComponent };                      -- safe: reflected
+from js.global import unsafe { encodeURIComponent };               -- unsafe: reflected, no Result
+from js.global import unsafe { encodeURIComponent: String -> String };  -- unsafe: manual type
 ```
 
-This is the escape hatch when the concrete TypeScript call remains ambiguous, its selected type
-cannot be represented honestly in Workman, or the declaration is not visible to reflection.
+A safe import with a manual type (`import { encodeURIComponent: String -> String }`) is a compile
+error that names both fixes: drop the type, or add `unsafe`.
+
+An unsafe manual type is the escape hatch when the concrete TypeScript call remains ambiguous, its
+selected type cannot be represented honestly in Workman, or the declaration is not visible to
+reflection.
 
 Overloaded or generic by itself is not a reason for a manual signature. When the call arguments are
 known, Workman asks TypeScript to select and instantiate the concrete call. For example, a reflected
 `IterableIterator<Entry>` passed to `Array.from` should automatically produce
 `Result<Js.Array<Entry>, Js.Error>`.
 
-Manual types are trusted declarations about the JS shape. Safe manual imports still return
-`Result<_, Js.Error>` or `Task<_, Js.Error>` at the Workman boundary. Add `unsafe` only when you
-explicitly want a direct JS call.
+An unsafe manual type describes the raw JavaScript value. A `Task` is a promise of a `Result`, so
+a function returning an ordinary JavaScript promise cannot be given a `Task` type by hand: the
+promise resolves to the plain value, not to a `Result`. Promise-returning APIs come through
+reflection, which converts them into `Task<_, Js.Error>`.
 
 An unsafe manual import may also quantify lowercase type variables. This is the lowest-level form
 of representation promise and should normally be hidden behind a typed library abstraction:
@@ -181,17 +212,40 @@ from js.global import unsafe {
 An unsafe import with a manual type is an ordinary typed binding, unless the type mentions
 `Js.Value` or `Js.Object` or the clause has an alias (`} as console`). Functions that call it
 generalize like any other function, so a typed wrapper over a polymorphic primitive stays
-polymorphic. `std/task.wm` is built this way.
-
-Safe manual imports still reject free type variables because a `Result` wrapper cannot make an
-uncheckable polymorphic foreign claim safe. Undeclared nominal foreign types must also be imported
-or declared explicitly in both modes.
+polymorphic. `std/task.wm` is built this way. Undeclared nominal foreign types must be imported or
+declared explicitly.
 
 For reflected imports, `unsafe` changes error handling, not reflection precision. Do not add it to
 fix inference. The polymorphic case above is different because its entire handwritten signature is
 an explicit trusted representation claim. During ordinary exploration, keep the safe import and use
 `Result.debug` if aborting on failure is acceptable; later replace that with a match or ordinary
 `Result`/`Task` handling.
+
+### Values a reflected call returns as `Js.Value`
+
+When reflection cannot see a precise type, it uses `Js.Value`. A common case is a JavaScript
+function that calls back into Workman and returns what the callback returned. `Promise.try` calls a
+function and turns anything it throws into a rejection; testman uses it to run a test and catch a
+crash. Reflection types its result as `Js.Value`, because the callback's Workman type is not visible
+to TypeScript:
+
+```wm
+from js.global("Promise") import { try as attempt };
+
+-- attempt((_) => { run() }) : Task<Js.Value, Js.Error>
+-- The callback takes one argument: reflection reads Promise.try's rest parameter as one value.
+```
+
+The resolved value is whatever the callback's Task resolved to. A Task is a promise of a `Result`,
+so the value is that `Result`, and `Json.assert` states it at the boundary:
+
+```wm
+attempt((_) => { run() })
+  :> Task.map((value) => {
+    let outcome: Result<Result<Void, String>, Js.Error> = value :> Json.assert;
+    outcome
+  })
+```
 
 ## Shims Keep The Boundary Workman-Shaped
 
@@ -350,10 +404,11 @@ let main = () => {
 };
 ```
 
-If reflection cannot discover the type, add a manual type:
+If reflection cannot discover the type, import it `unsafe` with a manual type. The call is then
+direct, without a `Result`:
 
 ```wm
-from js.module("./helpers.js") import {
+from js.module("./helpers.js") import unsafe {
   shout: String -> String
 };
 ```
@@ -496,7 +551,7 @@ default), reflection may expose it opaquely instead of as `Option`. Assert the c
 import site with `as`, then pass `None` (which arrives as `null`) or `Some(value)`:
 
 ```wm
-from js.module("raylib") import {
+from js.module("raylib") import unsafe {
   loadShader as load: (Option<String>, Option<String>) -> Js.Value
 };
 ```

@@ -2,9 +2,7 @@
 
 from "./ansi.wm" import * as Ansi;
 from "./event.wm" import * as Event;
-from js.global("String") import {
-  fromCharCode: Number -> String,
-};
+from js.global("String") import { fromCharCode };
 
 let controlC = fromCharCode(3) :> Result.withDefault("");
 

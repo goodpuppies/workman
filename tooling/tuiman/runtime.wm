@@ -8,17 +8,12 @@ from "./event.wm" import * as Event;
 from "./geometry.wm" import * as Geometry;
 from js.module("node:tty") import type { ReadStream, WriteStream };
 from js.module("node:events") import { once as onceEvent };
-from js.global("process") import {
-  stdin: ReadStream,
-  stdout: WriteStream,
-  exit: Number -> Void,
-};
-from js.global("Reflect") import {
-  get: (Js.Value, String) -> Option<Js.Value>,
-} as Reflect;
-from js.global import {
-  String as toString: Js.Value -> String,
-};
+-- Reflection doesn't find process's members (values on a namespace object), so
+-- they're declared, which makes the import unsafe.
+from js.global("process") import unsafe { stdin: ReadStream, stdout: WriteStream, exit: Number -> Void };
+-- Declared to give the nullable result as an Option; only called on stream objects.
+from js.global("Reflect") import unsafe { get: (Js.Value, String) -> Option<Js.Value> } as Reflect;
+from js.global import { String as toString };
 
 -- Shared retained-render result. Renderers construct this nominal record so
 -- the runtime can project output and memory without an ambiguous structural row.
@@ -34,9 +29,8 @@ let errorText = match(error) => {
 
 let propertyNumber = (target, name, fallback) => {
   match(Reflect.get(target, name)) {
-    Err(_) => { fallback },
-    Ok(None) => { fallback },
-    Ok(Some(raw)) => {
+    None => { fallback },
+    Some(raw) => {
       let decoded: Result<Number, Js.Error> = raw :> Json.assert;
       decoded :> Result.withDefault(fallback)
     },
@@ -60,10 +54,7 @@ let restore = (input, output, status) => {
   let _ = input :> .setRawMode(false);
   let _ = input :> .pause();
   let _ = write(output, Ansi.leave);
-  match(exit(status)) {
-    Ok(_) => { void },
-    Err(_) => { void },
-  }
+  exit(status)
 };
 
 let draw = (output, render, previous, running) => {
@@ -146,43 +137,31 @@ let rec listen = (input, output, update, render, running, previous) => {
 };
 
 let run = (initial, update, render) => {
-  match(stdin) {
+  let input = stdin;
+  let output = stdout;
+  match(input :> .setRawMode(true)) {
     Err(error) => {
-      print("terminal unavailable: " ++ errorText(error))
+      print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
     },
-    Ok(input) => {
-      match(stdout) {
-        Err(error) => {
-          print("terminal output unavailable: " ++ errorText(error))
-        },
-        Ok(output) => {
-          match(input :> .setRawMode(true)) {
-            Err(error) => {
-              print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
-            },
-            Ok(_) => {
-              let initialRunning = (initial, 1, 2);
-              let initialSize = terminalSize(output, 1, 2);
-              let _ = input :> .resume();
-              match(write(
-                output,
-                Ansi.enter ++ Ansi.queryCellSize ++
-                  render(None, initial, initialSize),
-              )) {
-                Err(_) => { restore(input, output, 1) },
-                Ok(_) => {
-                  listen(
-                    input,
-                    output,
-                    update,
-                    render,
-                    initialRunning,
-                    Some((initial, initialSize)),
-                  )
-                },
-              }
-            },
-          }
+    Ok(_) => {
+      let initialRunning = (initial, 1, 2);
+      let initialSize = terminalSize(output, 1, 2);
+      let _ = input :> .resume();
+      match(write(
+        output,
+        Ansi.enter ++ Ansi.queryCellSize ++
+          render(None, initial, initialSize),
+      )) {
+        Err(_) => { restore(input, output, 1) },
+        Ok(_) => {
+          listen(
+            input,
+            output,
+            update,
+            render,
+            initialRunning,
+            Some((initial, initialSize)),
+          )
         },
       }
     },
@@ -377,49 +356,37 @@ let runRetainedManaged = (
   update,
   render,
 ) => {
-  match(stdin) {
+  let input = stdin;
+  let output = stdout;
+  match(input :> .setRawMode(true)) {
     Err(error) => {
-      print("terminal unavailable: " ++ errorText(error))
+      print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
     },
-    Ok(input) => {
-      match(stdout) {
-        Err(error) => {
-          print("terminal output unavailable: " ++ errorText(error))
-        },
-        Ok(output) => {
-          match(input :> .setRawMode(true)) {
-            Err(error) => {
-              print("could not enable raw mode (is stdin a terminal?): " ++ errorText(error))
-            },
-            Ok(_) => {
-              let initialRunning = (initial, 1, 2);
-              let initialSize = terminalSize(output, 1, 2);
-              let initialFrame = render(None, initial, initialSize);
-              let _ = input :> .resume();
-              match(write(
-                output,
-                Ansi.enter ++ Ansi.queryCellSize ++ initialFrame.output,
-              )) {
-                Err(_) => { restore(input, output, 1) },
-                Ok(_) => {
-                  let queued = enqueue(initialTasks, [], 0);
-                  let (pending, nextId) = queued;
-                  waitRetained(
-                    input,
-                    output,
-                    update,
-                    render,
-                    initialRunning,
-                    initialFrame.memory,
-                    pending,
-                    nextId,
-                    inputEvents(input),
-                    settle,
-                  )
-                },
-              }
-            },
-          }
+    Ok(_) => {
+      let initialRunning = (initial, 1, 2);
+      let initialSize = terminalSize(output, 1, 2);
+      let initialFrame = render(None, initial, initialSize);
+      let _ = input :> .resume();
+      match(write(
+        output,
+        Ansi.enter ++ Ansi.queryCellSize ++ initialFrame.output,
+      )) {
+        Err(_) => { restore(input, output, 1) },
+        Ok(_) => {
+          let queued = enqueue(initialTasks, [], 0);
+          let (pending, nextId) = queued;
+          waitRetained(
+            input,
+            output,
+            update,
+            render,
+            initialRunning,
+            initialFrame.memory,
+            pending,
+            nextId,
+            inputEvents(input),
+            settle,
+          )
         },
       }
     },

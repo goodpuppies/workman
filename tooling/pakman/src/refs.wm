@@ -1,0 +1,103 @@
+-- References: the dependency graph as plain data.
+--
+-- Every edge from a package to another package, or to the base system, is a
+-- PathRef somewhere in its plan. These functions find them by walking the
+-- plan, and render references to the absolute paths they have on the running system.
+
+from "./model.wm" import *;
+from "./fun.wm" import { unique, mapAll, filterAll, appendAll };
+from "./text.wm" import { concatMap, join };
+
+-- Text with nested Cats flattened into a list of Lit and Ref parts.
+let rec parts = (text) => {
+  match(text) {
+    Cat(items) => { concatMap(items, parts) },
+    _ => { [text] }
+  }
+};
+
+let refsInText = (text) => {
+  parts(text) :> List.mapPartial(match { Ref(path) => { Some(path) }, _ => { None } })
+};
+
+let refsInOp = (op) => {
+  match(op) {
+    Symlink(target, _) => { [target] },
+    WriteText(_, contents, _) => { refsInText(contents) },
+    _ => { [] }
+  }
+};
+
+-- Every reference a package makes: its explicit requirements plus those inside install steps.
+let refsOf = (pkg: Package) => {
+  appendAll(pkg.requires, concatMap(pkg.install, refsInOp))
+};
+
+-- The other pakman packages this one needs, by name.
+let dependencies = (pkg: Package) => {
+  refsOf(pkg) :> List.mapPartial(match { Of(name, _) => { Some(name) }, _ => { None } }) :> unique
+};
+
+-- Absolute paths the base system must provide.
+let baseFiles = (pkg: Package) => {
+  refsOf(pkg) :> List.mapPartial(match { Base(path) => { Some(path) }, _ => { None } }) :> unique
+};
+
+-- References to another package's file, as (package, path) pairs.
+let foreignFiles = (pkg: Package) => {
+  refsOf(pkg) :> List.mapPartial(match { Of(name, path) => { Some((name, path)) }, _ => { None } })
+};
+
+-- Where a reference points on the running system: under `base`, the scope
+-- root (/ or the home directory), whatever root the tree is being installed
+-- into right now.
+let under = (base, path) => { if (base == "/") { "/" ++ path } else { base ++ "/" ++ path } };
+
+let resolvePath = (base, ref) => {
+  match(ref) {
+    Own(path) => { under(base, path) },
+    Of(_, path) => { under(base, path) },
+    Base(path) => { path }
+  }
+};
+
+let render = (base, text) => {
+  let renderPart = (part) => {
+    match(part) {
+      Lit(literal) => { literal },
+      Ref(path) => { resolvePath(base, path) },
+      _ => { "" }
+    }
+  };
+  parts(text) :> mapAll(renderPart) :> join("")
+};
+
+let segments = (path) => {
+  path :> .split("/") :> Result.map(Js.Array.toList) :> Result.withDefault([]) :> filterAll((s) => { s != "" })
+};
+
+let rec dropCommon = (left, right) => {
+  match(left, right) {
+    ([a, ..restLeft], [b, ..restRight]) => {
+      if (a == b) { dropCommon(restLeft, restRight) } else { (left, right) }
+    },
+    _ => { (left, right) }
+  }
+};
+
+let relativePath = (linkPath, target) => {
+  let linkDir = List.reverse(List.drop(List.reverse(segments(linkPath)), 1));
+  let (up, down) = dropCommon(linkDir, segments(target));
+  appendAll(mapAll(up, (_) => { ".." }), down) :> join("/")
+};
+
+-- A symlink target for a link at `linkPath`. References to installed files
+-- become relative, so the tree also works inside another root (a test
+-- directory, a PS2 root filesystem being built on the PC).
+let symlinkTarget = (linkPath, ref) => {
+  match(ref) {
+    Base(path) => { path },
+    Own(path) => { relativePath(linkPath, path) },
+    Of(_, path) => { relativePath(linkPath, path) }
+  }
+};

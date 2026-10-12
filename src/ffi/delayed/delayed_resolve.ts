@@ -366,6 +366,15 @@ function resolveDelayedFfiGet(
   if (options.dynamicFallback === false) {
     return { ...expr, receiver };
   }
+  // Tuples, primitives and functions are Workman values, never JS objects, so a dotted name on
+  // one is a missing field rather than a JS lookup that failed.
+  const plain = prune(receiverType);
+  if (plain.tag === "tuple" || plain.tag === "prim" || plain.tag === "fn") {
+    throw diagnosticError(
+      new Error(`type ${show(receiverType)} has no field ${expr.path[0]}`),
+      expr.node,
+    );
+  }
   if (!isJsObjectTy(receiverType)) {
     throw diagnosticError(
       new Error(

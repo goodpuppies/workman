@@ -1,0 +1,164 @@
+-- The package model.
+--
+-- A Definition is what a package program serves (see package.wm). It has two halves:
+--   versions : finds upstream candidates (effectful, network)
+--   make     : turns one chosen version into a Package (pure)
+-- Resolution runs `versions`, applies the Policy, and pins the result in the
+-- lock. Everything after that works only from `make` and the lock.
+
+from "./text.wm" import { join };
+
+type Target = | Host | Ps2;
+
+-- Where a package's paths are rooted, and so whether installing it needs root.
+--   System: paths are relative to / (usr/bin/foo, opt/foo); installing uses sudo.
+--   User:   paths are relative to the user's home (.local/bin/foo); no root needed.
+type Scope = | System | User;
+
+-- File modes, kept as a closed set rather than raw octal.
+type Mode = | Exec | Data;
+
+-- An upstream file. `file` is the local name that install steps refer to.
+record Source = { file: String, url: String };
+
+-- A reference to an installed file. Paths are where the software expects to
+-- live, relative to the package's scope root: / for System (`usr/bin/foo`,
+-- `opt/foo/foo`), the home directory for User (`.local/bin/foo`). References are how dependencies are
+-- recorded: pakman collects them from a plan with an ordinary function, so
+-- nothing has to be tracked inside strings.
+type PathRef =
+  | Own<String>          -- a file this package installs
+  | Of<String, String>   -- a file another pakman package installs: package, path
+  | Base<String>;        -- an absolute path the base system must provide
+
+-- Text written into files, kept structured until pakman renders it, so the
+-- references inside it stay visible.
+type Text =
+  | Lit<String>
+  | Ref<PathRef>
+  | Cat<List<Text>>;
+
+-- What to unpack. `archive` is a source file followed by members to open in
+-- turn, for archives inside archives: ["gale.deb", "data.tar.gz"]. `members`
+-- selects paths inside the innermost archive ([] takes everything); `strip`
+-- drops leading path components, as tar's --strip-components does.
+record Unpack = { archive: List<String>, members: List<String>, dest: String, strip: Number };
+
+-- Install steps. Destinations are relative to the scope root: software is
+-- installed where upstream expects it, never relocated.
+type InstallOp =
+  | Install<String, String, Mode>   -- source file, destination, mode
+  | Extract<Unpack>
+  | Symlink<PathRef, String>        -- link target, link path
+  | WriteText<String, Text, Mode>   -- destination, contents, mode
+  | MakeDir<String>
+  | Build<String, List<String>>;   -- package callback ID, absolute host tool paths
+
+-- Build code owns its orchestration. Inputs are immutable; scratch and out
+-- are writable. Paths are stable inside the offline host sandbox.
+record BuildContext = { id: String, version: String, ref: String, inputs: String, work: String, out: String };
+
+-- A checksum upstream publishes for one download.
+record Checksum = { url: String, sha256: String };
+
+-- A version an upstream finder offers, newest first. `published` is ISO-8601.
+-- `channel` groups candidates ("stable", "nightly", "dev", ...); `checksums` are
+-- what upstream publishes for this version's downloads, verified at resolve.
+-- `ref` is anything else `make` needs to find this version's downloads that
+-- the version string doesn't say (a CI job id, an irregular file name), or "".
+-- pakman keeps it in the lock and hands it back to `make`.
+record Candidate = { version: String, published: String, channel: String, checksums: List<Checksum>, ref: String };
+
+record Policy = {
+  -- The channel followed by default; `pkg@<channel>` picks another.
+  channel: String,
+  -- Candidates younger than this are skipped when pakman chooses automatically
+  -- (matches the pacman/paru age gates). Explicit selections are not gated.
+  minAgeDays: Number,
+  -- Upstream only ever offers its newest build, so the age gate has nothing
+  -- older to fall back to. pakman then installs the newest build the first
+  -- time, and afterwards holds the installed one until a newer build is
+  -- `minAgeDays` old.
+  onlyLatest: Bool,
+  -- Extra acceptance rule, e.g. a license ceiling.
+  accept: String -> Bool
+};
+
+record Package = {
+  version: String,
+  sources: List<Source>,
+  install: List<InstallOp>,
+  -- Runtime needs that don't appear in any installed text, such as a library an
+  -- upstream binary loads: Base("/usr/lib/libfuse.so.2"), or Of(...) for another pakman package.
+  requires: List<PathRef>
+};
+
+record Definition = {
+  name: String,
+  description: String,
+  homepage: String,
+  license: String,
+  target: Target,
+  scope: Scope,
+  -- A function rather than a Task: Tasks start eagerly, and evaluating a
+  -- definition must never touch the network.
+  versions: Void -> Task<List<Candidate>, String>,
+  -- The only hosts `versions` may contact. pakman runs the finder with
+  -- network access to exactly these, and `make` with no permissions at all.
+  hosts: List<String>,
+  policy: Policy,
+  -- (version, ref) -> what to download and install
+  make: (String, String) -> Package
+};
+
+let defaultPolicy: Policy = .{ channel = "stable", minAgeDays = 3, onlyLatest = false, accept = (_) => { true } };
+
+let source = (file, url) => { Source(file, url) };
+
+-- Unpacks a whole archive source into `dest`.
+let extract = (file, dest, strip) => { Extract(Unpack([file], [], dest, strip)) };
+
+-- Unpacks selected members of an archive source into `dest`.
+let extractMembers = (file, members, dest, strip) => { Extract(Unpack([file], members, dest, strip)) };
+
+-- Lines of literal text, each ending in a newline.
+let lines = (items) => { Lit(join(items, "\n") ++ "\n") };
+
+-- Text helpers: `cat([ref(Own("bin/foo")), lit(" %U")])`.
+let lit = (text) => { Lit(text) };
+let ref = (path) => { Ref(path) };
+let cat = (parts) => { Cat(parts) };
+
+record DesktopEntry = {
+  title: String,
+  comment: String,
+  exec: Text,
+  icon: String,
+  categories: List<String>,
+  terminal: Bool
+};
+
+-- A freedesktop .desktop file's contents.
+let desktopText = (entry: DesktopEntry) => {
+  let terminal = if (entry.terminal) { "true" } else { "false" };
+  Cat([
+    lines(["[Desktop Entry]", "Type=Application", "Name=" ++ entry.title, "Comment=" ++ entry.comment]),
+    Lit("Exec="), entry.exec, Lit("\n"),
+    lines([
+      "Icon=" ++ entry.icon,
+      "Terminal=" ++ terminal,
+      "Categories=" ++ join(entry.categories, ";") ++ ";",
+      "StartupNotify=true"
+    ])
+  ])
+};
+
+-- A .desktop file for a System package: usr/share/applications/<id>.desktop.
+let desktopEntry = (id, entry: DesktopEntry) => {
+  WriteText("usr/share/applications/" ++ id ++ ".desktop", desktopText(entry), Data)
+};
+
+-- A .desktop file for a User package: .local/share/applications/<id>.desktop.
+let userDesktopEntry = (id, entry: DesktopEntry) => {
+  WriteText(".local/share/applications/" ++ id ++ ".desktop", desktopText(entry), Data)
+};

@@ -35,11 +35,13 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     await Deno.writeTextFile(
       path,
       await compileLibraryFile(
-        new URL("../tooling/frontend-v3/lexer.wm", import.meta.url).pathname,
+        new URL("../tooling/frontend-v3/adapters/js/lexer.wm", import.meta.url).pathname,
       ),
     );
-    const { lex } = await import(`file://${path}`) as {
+    const { lex, sourceUnits, lexUnits } = await import(`file://${path}`) as {
       lex: (source: string) => { tokens: Variant; marks: Variant };
+      sourceUnits: (source: unknown) => Variant;
+      lexUnits: (units: Variant) => Variant;
     };
     const read = (source: string) => {
       const document = lex(source);
@@ -69,8 +71,13 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
         );
         for (const item of trivia) {
           assertEquals(item.span.startPos.index, cursor);
-          assertEquals(item.text, source.slice(cursor, item.span.endPos.index));
-          reconstructed += item.text;
+          const units = list<number>(sourceUnits(item.text));
+          const expected = source.slice(cursor, item.span.endPos.index);
+          assertEquals(
+            units,
+            Array.from({ length: expected.length }, (_, i) => expected.charCodeAt(i)),
+          );
+          reconstructed += units.map((code) => String.fromCharCode(code)).join("");
           cursor = item.span.endPos.index;
         }
         assertEquals(token.span.startPos.index, cursor);
@@ -595,9 +602,75 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     }
     assertEquals(read(`"${"\\q".repeat(5000)}"`).marks.length, 5000);
 
+    const eof = list<Token>(lex(" ").tokens)[0];
+    const trivia = list<{ text: unknown }>(eof.leadingTrivia)[0];
+    const cons = sourceUnits(trivia.text);
+    const nil = (cons.args[0] as [number, Variant])[1];
+    // Preserve the compiler's constructor identity when building host-side input lists.
+    const runtimeList = (units: number[]): Variant =>
+      units.reduceRight<Variant>(
+        (tail, unit) => ({ ...cons, args: [[unit, tail]] }),
+        nil,
+      );
+    // The core entry consumes source units independently of JS string extraction.
+    for (
+      const source of [
+        "",
+        "\0",
+        "\r\n",
+        "0w",
+        "0wx",
+        "1e+",
+        '"\\',
+        '"\\^',
+        '"\\u{',
+        "`$",
+        "`a${",
+        "/*\uD800*/",
+        "\uD800",
+        "\uDC00",
+        "'😀'",
+        "`😀${x}`",
+        "x\0y",
+      ]
+    ) {
+      const units = Array.from({ length: source.length }, (_, index) => source.charCodeAt(index));
+      const result = lexUnits(runtimeList(units));
+      assertEquals(result.name, "Ok");
+      assertEquals(result.args[0], lex(source), source);
+      read(source);
+    }
+    const invalid = lexUnits(runtimeList([65, 65536]));
+    assertEquals(invalid.name, "Err");
+    assertEquals((invalid.args[0] as Variant).name, "InvalidUnit");
+    assertEquals((invalid.args[0] as Variant).args[0], 1);
+
     // Every prefix is a realistic intermediate editor buffer, including a dangling escape.
     const source = 'let x = "a\\q"; & [42] // comment\n"unfinished\\';
     for (let end = 0; end <= source.length; end++) read(source.slice(0, end));
+  } finally {
+    await Deno.remove(path);
+  }
+});
+
+Deno.test("portable character classification preserves the original ASCII contract", async () => {
+  const path = await Deno.makeTempFile({ suffix: ".mjs" });
+  try {
+    await Deno.writeTextFile(
+      path,
+      await compileLibraryFile(
+        new URL("../tooling/frontend-v3/src/lexer/character.wm", import.meta.url).pathname,
+      ),
+    );
+    const { classify } = await import(`file://${path}`) as { classify: (code: number) => number };
+    const table = "666666666" + "11111" + "666666666666666666" + "1" + "546555455555555" +
+      "3333333333" + "5555555" + "22222222222222222222222222" + "555624" +
+      "22222222222222222222222222" + "55566";
+    assertEquals(table.length, 128);
+    for (let code = 0; code < 128; code++) {
+      assertEquals(classify(code), Number(table[code]), `unit ${code}`);
+    }
+    for (const code of [128, 8364, 55296, 56320, 65535]) assertEquals(classify(code), 6);
   } finally {
     await Deno.remove(path);
   }

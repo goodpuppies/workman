@@ -1,0 +1,127 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_char.sml" import * as SubsetChar;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_order.sml" import * as SubsetOrder;
+*/
+
+// Byte sequences and immutable sequential readers; no native-string access.
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_char.wm" import * as SubsetChar;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_order.wm" import * as SubsetOrder;
+
+type Error = InvalidIndex | OutOfBounds | NonByte<Number>;
+type Reader = | Reader<List<Char>, Number>;
+
+let validate = (bytes) => {
+  let rec go = match {
+    ([], Var(index)) => { SubsetResult.Ok(bytes) },
+    ([c, ..rest], Var(index)) => {
+      match(SubsetChar.toCode(c)) {
+        SubsetResult.Err(error) => { SubsetResult.Err(NonByte(index)) },
+        SubsetResult.Ok(code) => { go(rest, index + 1) }
+      }
+    }
+  };
+  go(bytes, 0)
+};
+
+// Validate complete operands, then compare unsigned byte codes lexicographically.
+// Internal error adapter lets native strings retain their own error type.
+let compareWith = (left, right, nonByte) => {
+  let codes = (bytes) => {
+    let rec go = match {
+      ([], Var(offset), Var(acc)) => { SubsetResult.Ok(SubsetList.reverse(acc)) },
+      ([c, ..rest], Var(offset), Var(acc)) => {
+        match(SubsetChar.toCode(c)) {
+          SubsetResult.Err(error) => { SubsetResult.Err(nonByte(offset)) },
+          SubsetResult.Ok(code) => { go(rest, offset + 1, [code, ..acc]) }
+        }
+      }
+    };
+    go(bytes, 0, [])
+  };
+  let rec order = match {
+    ([], []) => { SubsetOrder.Equal },
+    ([], Var(rest)) => { SubsetOrder.Less },
+    (Var(rest), []) => { SubsetOrder.Greater },
+    ([(Var(a): Number), ..xs], [b, ..ys]) => {
+      if (a < b) { SubsetOrder.Less } else { if (a > b) { SubsetOrder.Greater } else { order(xs, ys) } }
+    }
+  };
+  SubsetResult.andThen(
+    codes(left),
+    (xs) => { SubsetResult.map(codes(right), (ys) => { order(xs, ys) }) }
+  )
+};
+
+let compare = (left, right) => { compareWith(left, right, (offset) => { NonByte(offset) }) };
+
+let length = (bytes) => { SubsetList.foldLeft(bytes, 0, (c, n) => { n + 1 }) };
+let trim = (bytes, predicate) => {
+  SubsetList.reverse(SubsetList.dropWhile(SubsetList.reverse(SubsetList.dropWhile(bytes, predicate)), predicate))
+};
+let fields = (bytes, delimiter) => {
+  let rec go = match {
+    ([], Var(field), Var(acc)) => { SubsetList.reverse([SubsetList.reverse(field), ..acc]) },
+    ([c, ..rest], Var(field), Var(acc)) => {
+      if (delimiter(c)) { go(rest, [], [SubsetList.reverse(field), ..acc]) } else { go(rest, [c, ..field], acc) }
+    }
+  };
+  go(bytes, [], [])
+};
+
+let reader = (bytes) => {
+  SubsetResult.map(validate(bytes), (valid) => { Reader(valid, 0) })
+};
+let position = match {
+  Reader(bytes, offset) => { offset }
+};
+let peek = match {
+  Reader([], offset) => { None },
+  Reader([c, ..rest], offset) => { Some(c) }
+};
+let next = match {
+  Reader([], offset) => { None },
+  Reader([c, ..rest], offset) => { Some(c, Reader(rest, offset + 1)) }
+};
+
+/* Bounds derived from the actual list avoid narrowing counts to scalar-code ranges.
+   Fractional indices are detected by countdown; NaN/infinity fail the bounds test. */
+let splitAt = (bytes, index: Number) => {
+  if (if (index >= 0) { index <= length(bytes) } else { false }) {
+    let rec go = (rest, remaining, acc) => {
+      if (remaining <= 0) {
+        if (remaining >= 0) { SubsetResult.Ok(SubsetList.reverse(acc), rest) } else { SubsetResult.Err(InvalidIndex) }
+      } else {
+        match(rest) {
+          [] => { SubsetResult.Err(OutOfBounds) },
+          [c, ..tail] => { go(tail, remaining - 1, [c, ..acc]) }
+        }
+      }
+    };
+    go(bytes, index, [])
+  } else { SubsetResult.Err(InvalidIndex) }
+};
+
+let at = (bytes, index) => {
+  SubsetResult.andThen(
+    splitAt(bytes, index),
+    (prefix, rest) => {
+      match(rest) {
+        [] => { SubsetResult.Err(OutOfBounds) },
+        [c, ..tail] => { SubsetResult.Ok(c) }
+      }
+    }
+  )
+};
+let slice = (bytes, start, count) => {
+  SubsetResult.andThen(
+    splitAt(bytes, start),
+    (prefix, rest) => {
+      SubsetResult.map(splitAt(rest, count), (selected, suffix) => { selected })
+    }
+  )
+};

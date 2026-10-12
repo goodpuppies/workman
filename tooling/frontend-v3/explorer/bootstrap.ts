@@ -5,7 +5,7 @@ import type { RuntimeDocument } from "./bridge.ts";
 export async function loadLexer() {
   const path = await Deno.makeTempFile({ suffix: ".mjs" });
   try {
-    const source = new URL("../lexer.wm", import.meta.url).pathname;
+    const source = new URL("../adapters/js/lexer.wm", import.meta.url).pathname;
     await Deno.writeTextFile(path, await compileLibraryFile(source));
     const { lex } = await import(new URL(`file://${path}`).href) as {
       lex: (source: string) => RuntimeDocument;

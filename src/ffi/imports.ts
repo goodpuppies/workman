@@ -91,6 +91,7 @@ export function collectFfiDecl(
       continue;
     }
     const deep = isDeepImportSpec(spec);
+    rejectSafeManualType(decl, spec, deep);
     const reflected = !spec.type || deep;
     const allowUnsafeTypeVariables = decl.clause.unsafe && !!spec.type && !deep;
     if (spec.type && !deep && !isCTarget(decl.target)) {
@@ -135,6 +136,27 @@ export function collectFfiDecl(
       allowUnsafeTypeVariables,
     );
   }
+}
+
+// A manual type is a trusted claim about the JavaScript side that Workman can't check, so only an
+// unsafe import may make one. Safe imports always take their type from reflection. C imports are
+// always unsafe; prepareCImports (ffi/c/prepare.ts) rejects them earlier otherwise.
+function rejectSafeManualType(
+  decl: Extract<Decl, { kind: "JsImportDecl" }>,
+  spec: JsImportSpec,
+  deep: boolean,
+) {
+  if (!spec.type || deep || decl.clause.kind !== "Named" || decl.clause.unsafe) return;
+  if (isCTarget(decl.target)) return;
+  const local = spec.alias ? `${spec.name} as ${spec.alias}` : spec.name;
+  throw diagnosticError(
+    new Error(
+      `a safe JS import can't declare a type for ${spec.name}: drop the type to use reflection ` +
+        `(import { ${local} }), or make the import unsafe to trust the declared type ` +
+        `(import unsafe { ${local}: ... })`,
+    ),
+    spec.node,
+  );
 }
 
 function assertReflectedGlobalTarget(

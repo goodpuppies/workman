@@ -1,0 +1,15 @@
+from "../../src/lexer/lexer.wm" import * as Lexer;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_result.wm" import * as BasisResult;
+
+// Host strings enter only here. Keep arbitrary UTF-16 units, including lone surrogates.
+let lex = (source: String) => {
+  match(Text.fromNativeUnits(source)) {
+    BasisResult.Ok(text) => {Lexer.lex(text)},
+    BasisResult.Err(_) => {Panic("unreachable")} // JS strings expose only valid 16-bit units.
+  }
+};
+
+// Explicit-unit entry for parity tests and editor buffers independent of host string storage.
+let lexUnits = (units) => {BasisResult.map(Text.fromUnits(units), Lexer.lex)};
+let sourceUnits = (view) => {Text.toUnits(view)};

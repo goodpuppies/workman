@@ -19,7 +19,7 @@ export function handler(lex: (source: string) => RuntimeDocument) {
     }
     const start = performance.now();
     try {
-      const document = toDocument(lex(body.source));
+      const document = toDocument(lex(body.source), body.source);
       return respond({ success: true, document, elapsed: performance.now() - start });
     } catch (error) {
       const unfinished = error instanceof Error && error.name === "TypedHole";

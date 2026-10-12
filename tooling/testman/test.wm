@@ -1,0 +1,91 @@
+-- testman: tests for Workman programs, run with `wm test`.
+--
+-- This is a proposal for the shape of a testing framework, not a settled
+-- design. A test file ends in `.test.wm` and exports `tests`, a list of
+-- `test(name, run)`. `run` returns a Task, so plain and asynchronous tests look
+-- the same; a test passes when its Task succeeds. Assertions are ordinary
+-- functions returning Tasks that fail with a readable message.
+
+-- `run` is a function, not a Task: Tasks start when created, and a test must
+-- only start when the runner gets to it.
+record Test = { name: String, run: Void -> Task<Void, String> };
+
+let test = (name, run) => { Test(name, run) };
+
+let show = (value) => { Text.of(value) };
+
+let pass = () => { Task.succeed(void) };
+
+let fail = (message) => { Task.fail(message) };
+
+let assert = (condition, message) => {
+  if (condition) { pass() } else { fail(message) }
+};
+
+-- Values are compared with `==`, which is structural.
+let assertEqual = (actual, expected) => {
+  if (actual == expected) {
+    pass()
+  } else {
+    fail("expected: " ++ show(expected) ++ "\n     got: " ++ show(actual))
+  }
+};
+
+let assertNotEqual = (actual, unexpected) => {
+  if (actual == unexpected) { fail("expected anything but: " ++ show(unexpected)) } else { pass() }
+};
+
+let contains = (text: String, part: String) => { text :> .includes(part) :> Result.withDefault(false) };
+
+let assertContains = (text: String, part: String) => {
+  if (contains(text, part)) {
+    pass()
+  } else {
+    fail("expected text containing: " ++ show(part) ++ "\n                     got: " ++ show(text))
+  }
+};
+
+-- The value inside Ok, so later steps can use it.
+let assertOk = (result) => {
+  match(result) {
+    Ok(value) => { Task.succeed(value) },
+    Err(error) => { fail("expected Ok, got Err: " ++ show(error)) }
+  }
+};
+
+-- The error inside Err.
+let assertErr = (result) => {
+  match(result) {
+    Ok(value) => { fail("expected Err, got Ok: " ++ show(value)) },
+    Err(error) => { Task.succeed(error) }
+  }
+};
+
+let assertSome = (option) => {
+  match(option) {
+    Some(value) => { Task.succeed(value) },
+    None => { fail("expected Some, got None") }
+  }
+};
+
+let assertNone = (option) => {
+  match(option) {
+    Some(value) => { fail("expected None, got Some: " ++ show(value)) },
+    None => { pass() }
+  }
+};
+
+-- Succeeds with the error of a task that should fail.
+let assertFails = (task) => {
+  task
+    :> Task.map((value) => { Err("expected the task to fail, it succeeded with: " ++ show(value)) })
+    :> Task.recover((error) => { Ok(error) })
+    :> Task.andThen((outcome) => { outcome :> Task.fromResult })
+};
+
+-- Several checks, reported by the first that fails. The checks are already
+-- running when this is called, which is fine for checks without effects.
+let rec checks = match(items) => {
+  [] => { pass() },
+  [first, ..rest] => { first :> Task.andThen((_) => { checks(rest) }) }
+};

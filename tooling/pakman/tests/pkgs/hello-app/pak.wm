@@ -1,0 +1,29 @@
+-- Test fixture: refers to hello-lib's file, which makes hello-lib a dependency.
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+
+let versions = () => { Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
+
+let greeting = Of("hello-lib", "usr/share/hello-lib/greeting");
+
+let make = (version, _) => {
+  Package(version, [], [
+    WriteText("usr/bin/hello-app", cat([lit("#!/bin/sh\ncat "), ref(greeting), lit("\n")]), Exec),
+    Symlink(greeting, "usr/share/hello-app/greeting")
+  ], [])
+};
+
+let definition: Definition = .{
+  name = "hello-app",
+  description = "fixture: uses hello-lib",
+  homepage = "",
+  license = "MIT",
+  target = Host,
+  scope = System,
+  versions,
+  hosts = [],
+  policy = defaultPolicy,
+  make
+};
+
+let main = () => { serve(definition) };

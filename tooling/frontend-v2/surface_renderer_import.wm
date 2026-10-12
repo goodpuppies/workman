@@ -6,6 +6,7 @@ from "./generated/surface_types.wm" import {
   JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
   JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
   JavaScriptModuleTargetNode, JavaScriptWorkerTargetNode, JavaScriptHostTargetNode,
+  CHeaderTargetNode, CLibTargetNode,
   JavaScriptImportClauseNode, JavaScriptNamedClauseNode,
   JavaScriptImportSpecificationNode
 };
@@ -149,6 +150,17 @@ let renderImportNode = match(node, depth, materializeMarks, renderNode) => {
       renderImportToken(target) ++ renderImportSurfaceValue(open, materializeMarks) ++
       renderImportToken(name) ++ renderImportSurfaceValue(close, materializeMarks)
     )
+  },
+  -- C targets keep only their strings, so the fixed text around them is written here.
+  (CHeaderTargetNode(header, lib, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    let libText = match(lib) {
+      Some(value) => { ", lib: " ++ renderImportSurfaceValue(value, materializeMarks) },
+      None => { "" },
+    };
+    Some("c.header(" ++ renderImportSurfaceValue(header, materializeMarks) ++ libText ++ ")")
+  },
+  (CLibTargetNode(name, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    Some("c.lib(" ++ renderImportSurfaceValue(name, materializeMarks) ++ ")")
   },
   (JavaScriptImportClauseNode(unsafeToken, clause, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
     match(renderNode(clause, depth, materializeMarks)) {

@@ -1,0 +1,38 @@
+-- References between packages: rendering them as paths, and symlink targets.
+
+from "../../testman/test.wm" import *;
+from "../src/model.wm" import { Own, Of, Base, Package, Symlink, WriteText, Data, lit, ref, cat };
+from "../src/refs.wm" import { render, relativePath, symlinkTarget, dependencies, baseFiles };
+
+let tests = [
+  test("references render absolute under the scope's root", () => {
+    checks([
+      assertEqual(render("/", ref(Own("opt/zig/zig"))), "/opt/zig/zig"),
+      assertEqual(render("/home/u", ref(Own(".local/bin/zig"))), "/home/u/.local/bin/zig"),
+      assertEqual(render("/", ref(Base("/usr/lib/libfuse.so.2"))), "/usr/lib/libfuse.so.2")
+    ])
+  }),
+  test("text mixes literals and references", () => {
+    assertEqual(render("/home/u", cat([lit("Exec="), ref(Own(".local/bin/x")), lit(" %U")])), "Exec=/home/u/.local/bin/x %U")
+  }),
+  test("symlinks between a package's files are relative", () => {
+    checks([
+      assertEqual(relativePath("usr/bin/zig", "opt/zig/zig"), "../../opt/zig/zig"),
+      assertEqual(relativePath(".local/bin/x", ".local/lib/x/x"), "../lib/x/x"),
+      assertEqual(symlinkTarget("usr/bin/vesktop", Own("opt/Vesktop/vesktop")), "../../opt/Vesktop/vesktop")
+    ])
+  }),
+  test("symlinks to host files stay absolute", () => {
+    assertEqual(symlinkTarget("usr/lib/x.so", Base("/usr/lib/libx.so.1")), "/usr/lib/libx.so.1")
+  }),
+  test("dependencies and base files come from the references in a package", () => {
+    let pkg = Package("1.0", [], [
+      Symlink(Of("hello-lib", "usr/share/hello-lib/greeting"), "usr/share/app/greeting"),
+      WriteText("usr/bin/app", cat([lit("run "), ref(Of("hello-lib", "usr/bin/x")), ref(Base("/usr/bin/sh"))]), Data)
+    ], [Base("/usr/lib/libgtk-3.so.0")]);
+    checks([
+      assertEqual(dependencies(pkg), ["hello-lib"]),
+      assertEqual(List.length(baseFiles(pkg)), 2)
+    ])
+  })
+];

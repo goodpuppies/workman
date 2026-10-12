@@ -1,0 +1,29 @@
+-- Test fixture: upstream "publishes" a checksum that the download doesn't match.
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+
+-- A data: URL keeps the test offline; the download is "hello\n".
+let url = "data:text/plain,hello%0A";
+
+let versions = () => {
+  Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [Checksum(url, "0000000000000000000000000000000000000000000000000000000000000000")], "")])
+};
+
+let make = (version, _) => {
+  Package(version, [source("LICENSE", url)], [Install("LICENSE", "usr/share/hello-bad-checksum/LICENSE", Data)], [])
+};
+
+let definition: Definition = .{
+  name = "hello-bad-checksum",
+  description = "fixture: wrong upstream checksum",
+  homepage = "",
+  license = "MIT",
+  target = Host,
+  scope = System,
+  versions,
+  hosts = [],
+  policy = defaultPolicy,
+  make
+};
+
+let main = () => { serve(definition) };

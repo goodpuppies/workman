@@ -2,9 +2,7 @@
 -- Incremental CSI framing and lone-Escape timing are the next layer.
 
 from "./ansi.wm" import * as Ansi;
-from js.global("String") import {
-  fromCharCode: Number -> String,
-};
+from js.global("String") import { fromCharCode };
 
 type Key =
   | Character<String>

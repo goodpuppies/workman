@@ -1,0 +1,152 @@
+from "../../src/lexer/token.wm" import * as Token;
+from "../../src/source/source.wm" import * as Source;
+from "../../src/source/mark.wm" import * as Mark;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_natural.wm" import * as Natural;
+from "../../lib/subsetml/subset_string.wm" import * as Bytes;
+from "../../lib/subsetml/subset_list.wm" import * as BasisList;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+
+// Stable ASCII JSON snapshot. Text is represented as exact UTF-16 units.
+// This is a tooling boundary, independent of either backend's runtime representation.
+let number = (value) => {
+  match(Natural.toString(value)) { R.Ok(text) => {text}, R.Err(_) => {Panic("invalid document index")} }
+};
+let array = (items) => { "[" ++ Bytes.concatWith(items, ",") ++ "]" };
+let tag = (name, args) => { array(["\"" ++ name ++ "\"", ..args]) };
+
+let triviaKind = match(value) => {
+  Token.HorizontalWhitespace => {tag("HorizontalWhitespace", [])},
+  Token.LineBreak => {tag("LineBreak", [])},
+  Token.DashLineComment => {tag("DashLineComment", [])},
+  Token.SlashLineComment => {tag("SlashLineComment", [])},
+  Token.BlockComment => {tag("BlockComment", [])},
+};
+
+let punctuation = match(value) => {
+  Token.LeftParen => {tag("LeftParen", [])},
+  Token.RightParen => {tag("RightParen", [])},
+  Token.LeftBrace => {tag("LeftBrace", [])},
+  Token.DotLeftBrace => {tag("DotLeftBrace", [])},
+  Token.RightBrace => {tag("RightBrace", [])},
+  Token.LeftBracket => {tag("LeftBracket", [])},
+  Token.RightBracket => {tag("RightBracket", [])},
+  Token.LessThan => {tag("LessThan", [])},
+  Token.GreaterThan => {tag("GreaterThan", [])},
+  Token.Comma => {tag("Comma", [])},
+  Token.Semicolon => {tag("Semicolon", [])},
+  Token.Colon => {tag("Colon", [])},
+  Token.Dot => {tag("Dot", [])},
+  Token.DoubleDot => {tag("DoubleDot", [])},
+  Token.AtSign => {tag("AtSign", [])},
+  Token.Equals => {tag("Equals", [])},
+  Token.FatArrow => {tag("FatArrow", [])},
+  Token.ThinArrow => {tag("ThinArrow", [])},
+  Token.Pipe => {tag("Pipe", [])},
+  Token.PipeForward => {tag("PipeForward", [])},
+};
+
+let operator = match(value) => {
+  Token.BooleanOr => {tag("BooleanOr", [])},
+  Token.BooleanAnd => {tag("BooleanAnd", [])},
+  Token.Equal => {tag("Equal", [])},
+  Token.NotEqual => {tag("NotEqual", [])},
+  Token.LessOrEqual => {tag("LessOrEqual", [])},
+  Token.GreaterOrEqual => {tag("GreaterOrEqual", [])},
+  Token.Add => {tag("Add", [])},
+  Token.Subtract => {tag("Subtract", [])},
+  Token.Multiply => {tag("Multiply", [])},
+  Token.Divide => {tag("Divide", [])},
+  Token.Remainder => {tag("Remainder", [])},
+  Token.Concatenate => {tag("Concatenate", [])},
+  Token.BooleanNot => {tag("BooleanNot", [])},
+  Token.Hole => {tag("Hole", [])},
+};
+
+let kind = match(value) => {
+  Token.PunctuationToken(a) => {tag("PunctuationToken", [punctuation(a)])},
+  Token.OperatorToken(a) => {tag("OperatorToken", [operator(a)])},
+  Token.LowerIdentifierToken => {tag("LowerIdentifierToken", [])},
+  Token.UpperIdentifierToken => {tag("UpperIdentifierToken", [])},
+  Token.IntegerToken => {tag("IntegerToken", [])},
+  Token.WordToken => {tag("WordToken", [])},
+  Token.FloatToken => {tag("FloatToken", [])},
+  Token.QuotedStringToken => {tag("QuotedStringToken", [])},
+  Token.CharacterToken => {tag("CharacterToken", [])},
+  Token.MultilineStringStartToken => {tag("MultilineStringStartToken", [])},
+  Token.MultilineStringTextToken => {tag("MultilineStringTextToken", [])},
+  Token.InterpolationStartToken => {tag("InterpolationStartToken", [])},
+  Token.InterpolationEndToken => {tag("InterpolationEndToken", [])},
+  Token.MultilineStringEndToken => {tag("MultilineStringEndToken", [])},
+  Token.UnknownToken => {tag("UnknownToken", [])},
+  Token.EndOfFileToken => {tag("EndOfFileToken", [])},
+};
+
+let group = match(value) => {
+  Token.ParenGroup => {tag("ParenGroup", [])},
+  Token.BraceGroup => {tag("BraceGroup", [])},
+  Token.BracketGroup => {tag("BracketGroup", [])},
+  Token.TemplateGroup => {tag("TemplateGroup", [])},
+  Token.InterpolationGroup => {tag("InterpolationGroup", [])},
+};
+
+let side = match(value) => {
+  Token.Open => {tag("Open", [])},
+  Token.Close => {tag("Close", [])},
+};
+
+let problem = match(value) => {
+  Token.InvalidSourceUnit => {tag("InvalidSourceUnit", [])},
+  Token.UnknownCharacter => {tag("UnknownCharacter", [])},
+  Token.MalformedNumber => {tag("MalformedNumber", [])},
+  Token.InvalidEscape => {tag("InvalidEscape", [])},
+  Token.UnterminatedQuotedString => {tag("UnterminatedQuotedString", [])},
+  Token.UnterminatedMultilineString => {tag("UnterminatedMultilineString", [])},
+  Token.UnterminatedBlockComment => {tag("UnterminatedBlockComment", [])},
+  Token.InvalidUnicodeScalar => {tag("InvalidUnicodeScalar", [])},
+  Token.InvalidCharacterLength(a) => {tag("InvalidCharacterLength", [number(a)])},
+  Token.UnterminatedCharacter => {tag("UnterminatedCharacter", [])},
+  Token.UnmatchedDelimiter(a, b) => {tag("UnmatchedDelimiter", [group(a), side(b)])},
+  Token.UnterminatedInterpolation => {tag("UnterminatedInterpolation", [])},
+};
+
+let terminator = match(value) => {
+  Token.QuoteTerminator => {tag("QuoteTerminator", [])},
+  Token.CharacterTerminator => {tag("CharacterTerminator", [])},
+  Token.BacktickTerminator => {tag("BacktickTerminator", [])},
+  Token.InterpolationBraceTerminator => {tag("InterpolationBraceTerminator", [])},
+};
+
+let recovery = match(value) => {
+  Token.RetainedUnknownToken => {tag("RetainedUnknownToken", [])},
+  Token.RetainedMalformedToken(a) => {tag("RetainedMalformedToken", [kind(a)])},
+  Token.RetainedMalformedTrivia(a) => {tag("RetainedMalformedTrivia", [triviaKind(a)])},
+  Token.RetainedUnpairedDelimiter => {tag("RetainedUnpairedDelimiter", [])},
+  Token.AssumedLexemeTerminator(a) => {tag("AssumedLexemeTerminator", [terminator(a)])},
+  Token.SplitMalformedToken => {tag("SplitMalformedToken", [])},
+};
+
+let position = (value: Source.Position) => { array([number(value.index), number(value.line), number(value.col)]) };
+let span = (value: Source.Span) => { array([position(value.startPos), position(value.endPos)]) };
+let offset = match(value) => { Mark.SourceOffset(n) => {number(n)} };
+let id = match(value) => { Mark.MarkId(n) => {number(n)} };
+let cause = match(value) => { None => {"null"}, Some(value) => {id(value)} };
+let status = match(value) => {
+  Mark.NotRecovered => {tag("NotRecovered", [])},
+  Mark.RecoveredWith(value) => {tag("RecoveredWith", [recovery(value)])}
+};
+let mark = (value: Token.LexicalMark) => {
+  array([id(value.id), problem(value.problem), status(value.recovery), offset(value.anchor),
+    array([offset(value.affectedSpan.start), offset(value.affectedSpan.end)]), cause(value.causedBy)])
+};
+let marks = (values) => {array(BasisList.map(values, mark))};
+let mate = match(value) => { Token.NoMate => {"null"}, Token.Mate(n) => {number(n)} };
+let trivia = (value: Token.Trivia) => {
+  array([triviaKind(value.kind), array(BasisList.map(Text.toUnits(value.text), number)), span(value.span), marks(value.marks)])
+};
+let token = (value: Token.Token) => {
+  array([kind(value.kind), span(value.span), mate(value.mateIdx), marks(value.marks), array(BasisList.map(value.leadingTrivia, trivia))])
+};
+let encode = (value: Token.LexicalDocument) => {
+  array([array(BasisList.map(value.tokens, token)), marks(value.marks)])
+};

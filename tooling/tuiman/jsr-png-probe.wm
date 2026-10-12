@@ -1,6 +1,4 @@
-from js.module("jsr:@img/png@0.1.6") import {
-  decodePNG: Js.Value -> Task<Js.Object, Js.Error>,
-};
+from js.module("jsr:@img/png@0.1.6") import { decodePNG };
 from js.module("node:buffer") import { Buffer };
 from js.global("Uint8Array") import * as Uint8Array;
 

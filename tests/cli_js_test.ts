@@ -206,7 +206,8 @@ Deno.test("cli run marshals None to null for nullable FFI parameters", async () 
   await Deno.writeTextFile(
     input,
     `
-      from js.module(${JSON.stringify(fixture)}) import { loadLocalShader as load: (Option<String>, Option<String>) -> Bool, wasNull, wasUndefined };
+      from js.module(${JSON.stringify(fixture)}) import unsafe { loadLocalShader as load: (Option<String>, Option<String>) -> Bool };
+      from js.module(${JSON.stringify(fixture)}) import { wasNull, wasUndefined };
       let show = (result) => {
         match(result) {
           Ok(value) => { print(value) },
@@ -214,13 +215,9 @@ Deno.test("cli run marshals None to null for nullable FFI parameters", async () 
         }
       };
       let main = () => {
-        match(load(None, Some("fs"))) {
-          Ok(_) => {
-            show(wasNull());
-            show(wasUndefined())
-          },
-          Err(_) => { print("load failed") }
-        }
+        load(None, Some("fs"));
+        show(wasNull());
+        show(wasUndefined())
       };
     `,
   );
@@ -347,7 +344,7 @@ Deno.test("cli run normalizes JS throws into matchable Js.Error values", async (
   await Deno.writeTextFile(
     input,
     `
-      from js.global import { eval as jsEval: String -> Js.Value };
+      from js.global import { eval as jsEval };
       let main = () => {
         print(match(jsEval("throw 'boom'")) {
           Ok(_) => { "ok" },

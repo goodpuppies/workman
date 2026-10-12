@@ -1,0 +1,49 @@
+-- testman's own assertions: each must pass and fail when it should.
+from "./test.wm" import *;
+
+-- Succeeds when `check` fails with a message containing `part`.
+let failsWith = (check, part) => {
+  assertFails(check) :> Task.andThen((message) => { assertContains(message, part) })
+};
+
+let tests = [
+  test("assertEqual passes on equal values, structurally", () => {
+    checks([assertEqual(1 + 1, 2), assertEqual([1, 2], [1, 2]), assertEqual(Some("a"), Some("a"))])
+  }),
+  test("assertEqual fails with both values", () => {
+    checks([failsWith(assertEqual(1, 2), "expected: 2"), failsWith(assertEqual(1, 2), "got: 1")])
+  }),
+  test("assertNotEqual", () => {
+    checks([assertNotEqual(1, 2), failsWith(assertNotEqual(1, 1), "anything but")])
+  }),
+  test("assert uses the given message", () => {
+    checks([assert(true, "unused"), failsWith(assert(false, "it was false"), "it was false")])
+  }),
+  test("assertContains", () => {
+    checks([assertContains("hello world", "lo w"), failsWith(assertContains("hello", "bye"), "containing")])
+  }),
+  test("assertOk gives the value, assertErr the error", () => {
+    let ok: Result<Number, String> = Ok(3);
+    let err: Result<Number, String> = Err("no");
+    checks([
+      assertOk(ok) :> Task.andThen((v) => { assertEqual(v, 3) }),
+      assertErr(err) :> Task.andThen((e) => { assertEqual(e, "no") }),
+      failsWith(assertOk(err), "expected Ok"),
+      failsWith(assertErr(ok), "expected Err")
+    ])
+  }),
+  test("assertSome and assertNone", () => {
+    checks([
+      assertSome(Some(1)) :> Task.andThen((v) => { assertEqual(v, 1) }),
+      assertNone(None),
+      failsWith(assertSome(None), "expected Some"),
+      failsWith(assertNone(Some(1)), "expected None")
+    ])
+  }),
+  test("assertFails fails when the task succeeds", () => {
+    failsWith(assertFails(Task.succeed(1)), "succeeded")
+  }),
+  test("checks stops at the first failure", () => {
+    failsWith(checks([pass(), fail("first"), fail("second")]), "first")
+  })
+];

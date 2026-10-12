@@ -1,0 +1,24 @@
+-- Test fixture: requires a host file that does not exist.
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+
+let versions = () => { Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
+
+let make = (version, _) => {
+  Package(version, [], [WriteText("usr/share/hello-needs-host/x", lit("x\n"), Data)], [Base("/nonexistent/libnope.so.1")])
+};
+
+let definition: Definition = .{
+  name = "hello-needs-host",
+  description = "fixture: missing base file",
+  homepage = "",
+  license = "MIT",
+  target = Host,
+  scope = System,
+  versions,
+  hosts = [],
+  policy = defaultPolicy,
+  make
+};
+
+let main = () => { serve(definition) };

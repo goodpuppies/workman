@@ -1,0 +1,124 @@
+-- Upstream version finders.
+
+from js.global("JSON") import { parse } as JSON;
+from "./io.wm" import { fetchText };
+from "./model.wm" import { Checksum };
+from js.module("./host.ts") import unsafe { jsonTextOr: (Js.Value, String) -> String };
+from js.module("./host.ts") import { headInfo };
+from "./io.wm" import { describe };
+from "./fun.wm" import { mapAll, filterAll };
+
+-- `digest` is "sha256:<hex>", or null on assets uploaded before GitHub computed digests.
+record GithubAsset = { name: String, browser_download_url: String, digest: Js.Value };
+
+record ReleaseAsset = { name: String, url: String, sha256: String };
+
+record GithubRelease = {
+  tag_name: String,
+  prerelease: Bool,
+  draft: Bool,
+  published_at: String,
+  assets: Js.Array<GithubAsset>
+};
+
+record Release = {
+  tag: String,
+  prerelease: Bool,
+  published: String,
+  assets: List<ReleaseAsset>
+};
+
+let via = Monad.via;
+
+let fetchJson = (url) => {
+  let parse = via Task (text) => {
+    JSON.parse(text)
+      :> Result.mapErr((_) => { "invalid JSON from " ++ url })
+      :> Task.fromResult
+  };
+  fetchText(url)
+    :> parse
+};
+
+let toAsset = (asset: GithubAsset) => {
+  let digest = jsonTextOr(asset.digest, "");
+  let sha256 = if (digest :> .startsWith("sha256:") :> Result.withDefault(false)) {
+    digest :> .slice(7) :> Result.withDefault("")
+  } else {
+    ""
+  };
+  ReleaseAsset(asset.name, asset.browser_download_url, sha256)
+};
+
+let toRelease = (r: GithubRelease) => {
+  Release(r.tag_name, r.prerelease, r.published_at, r.assets :> Js.Array.toList :> mapAll(toAsset))
+};
+
+let isPublished = (r: GithubRelease) => { !r.draft };
+
+let publishedReleases = (items) => {
+  items
+    :> Js.Array.toList
+    :> filterAll(isPublished)
+    :> mapAll(toRelease)
+};
+
+-- Published (non-draft) releases of `owner/repo`, newest first.
+let githubReleases = (repo) => {
+  let url = "https://api.github.com/repos/" ++ repo ++ "/releases?per_page=50";
+  let assertReleases = via Task (body) => {
+    let releases: Result<Js.Array<GithubRelease>, String> = body
+      :> Json.assert
+      :> Result.mapErr((_) => { "unexpected release JSON from " ++ url });
+    releases :> Task.fromResult
+  };
+  fetchJson(url)
+    :> assertReleases
+    :> Task.map(publishedReleases)
+};
+
+let hasAsset = (release: Release, name) => {
+  List.any(release.assets, (asset: ReleaseAsset) => { asset.name == name })
+};
+
+-- The checksums GitHub publishes for a release's assets.
+let releaseChecksums = (release: Release) => {
+  release.assets
+    :> filterAll((asset: ReleaseAsset) => { asset.sha256 != "" })
+    :> mapAll((asset: ReleaseAsset) => { Checksum(asset.url, asset.sha256) })
+};
+
+-- Where `url` finally redirects to, and its Last-Modified date ("" if unknown):
+-- for downloads whose version only shows in the redirect target.
+let redirectTarget = (url) => {
+  let pair = (parts) => {
+    match(Js.Array.toList(parts)) {
+      [final, modified] => { Ok((final, modified)) },
+      _ => { Err("HEAD " ++ url ++ ": unexpected response") }
+    }
+  };
+  headInfo(url)
+    :> Task.mapErr(describe("HEAD " ++ url))
+    :> Task.andThen((parts) => { pair(parts) :> Task.fromResult })
+};
+
+record GitlabCommit = { committed_date: String };
+record GitlabTag = { name: String, commit: GitlabCommit };
+
+record Tag = { name: String, published: String };
+
+-- Tags of a GitLab project (`group/name` on `host`), newest first, dated by
+-- their commit.
+let gitlabTags = (host, project) => {
+  let url = "https://" ++ host ++ "/api/v4/projects/" ++ (project :> .replaceAll("/", "%2F") :> Result.withDefault(project))
+    ++ "/repository/tags?per_page=50";
+  let assertTags = via Task (body) => {
+    let tags: Result<Js.Array<GitlabTag>, String> = body
+      :> Json.assert
+      :> Result.mapErr((_) => { "unexpected tag JSON from " ++ url });
+    tags :> Task.fromResult
+  };
+  fetchJson(url)
+    :> assertTags
+    :> Task.map((tags) => { tags :> Js.Array.toList :> mapAll((t: GitlabTag) => { Tag(t.name, t.commit.committed_date) }) })
+};

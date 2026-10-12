@@ -1,0 +1,225 @@
+-- Realization: build a locked package into an immutable store tree.
+--
+-- A store entry is <store>/<hash>-<name>-<version>/, a plain DESTDIR tree
+-- relative to /, plus <entry>.json beside it listing its
+-- files and dependencies. The hash covers everything that determines the
+-- tree: name, version, target, requirements, source hashes and
+-- install steps. It does not cover the machine that ran the build.
+
+from "./model.wm" import *;
+from "./packages.wm" import { PackageInfo, make };
+from "./plan.wm" import { targetName, scopeName, opJson, refJson };
+from "./refs.wm" import { render, symlinkTarget, dependencies, baseFiles, foreignFiles };
+from "./lock.wm" import { LockEntry, LockedSource };
+from "./paths.wm" import { Paths };
+from "./io.wm" import *;
+from "./fun.wm" import { ignore, mapAll, concatAll };
+
+let via = Monad.via;
+
+record StoreEntry = { name: String, version: String, path: String };
+
+let modeBits = match(mode) => {
+  Exec => { 493 }, -- 0755
+  Data => { 420 }  -- 0644
+};
+
+-- What the store hash covers.
+-- The scope root rendered references point into: / for System, the home
+-- directory for User. It is a build input, since rendered text contains it.
+let baseFor = (paths: Paths, def: PackageInfo) => {
+  match(def.scope) { System => { "/" }, User => { paths.home } }
+};
+
+let inputsJson = (base, def: PackageInfo, pkg: Package, sources: List<LockedSource>, builder, upstreamRef) => {
+  let sourceJson = (s: LockedSource) => { JSON{ file: s.file, sha256: s.sha256 } };
+  JSON{
+    name: def.name,
+    builder: builder,
+    upstreamRef: upstreamRef,
+    version: pkg.version,
+    target: targetName(def.target),
+    scope: scopeName(def.scope),
+    base: base,
+    requires: jsonList(pkg.requires, refJson),
+    sources: jsonList(sources, sourceJson),
+    install: jsonList(pkg.install, opJson)
+  }
+};
+
+-- The lock must describe exactly the sources `make` asks for; otherwise the
+-- definition changed since the last resolve.
+let checkLock = (def: PackageInfo, pkg: Package, entry: LockEntry) => {
+  let lockedFor = (src: Source) => {
+    List.find(entry.sources, (l: LockedSource) => { l.file == src.file && l.url == src.url })
+  };
+  let stale = Err(def.name ++ ": pakman.lock does not match the definition; run `pakman resolve "
+    ++ def.name ++ "`");
+  if (List.length(pkg.sources) != List.length(entry.sources)) {
+    stale
+  } else {
+    pkg.sources :> mapAll(lockedFor) :> Option.collectList :> match {
+      Some(sources) => { Ok(sources) },
+      None => { stale }
+    }
+  }
+};
+
+-- Makes sure a locked source is in the cache with the right contents,
+-- downloading it if it is missing. Cached files are re-hashed on every build,
+-- so a corrupted cache fails the build instead of reaching the store.
+let ensureSource = (paths: Paths, src: LockedSource) => {
+  let cached = paths.sources ++ "/" ++ src.sha256;
+  let partial = paths.tmp ++ "/" ++ src.sha256 ++ ".download";
+  let requireCachedHash = via Task (sha) => {
+    if (sha == src.sha256) {
+      Task.succeed(cached)
+    } else {
+      Task.fail(cached ++ " is corrupted (sha256 " ++ sha ++ "); delete it to download it again")
+    }
+  };
+  let keepDownload = via Task (sha) => {
+    if (sha == src.sha256) {
+      rename(partial, cached)
+    } else {
+      removeFile(partial)
+        :> via Task => { Task.fail(src.url ++ ": sha256 is " ++ sha ++ ", pakman.lock expects " ++ src.sha256) }
+    }
+  };
+  let downloadVerified = () => {
+    Task|mkdirp(paths.tmp), mkdirp(paths.sources), download(src.url, partial), sha256File(partial)|
+      :> Task.map((_, _, _, sha) => { sha })
+      :> keepDownload
+      :> Task.map((_) => { cached })
+  };
+  let useCacheOrDownload = via Task (present) => {
+    if (present) { sha256File(cached) :> requireCachedHash } else { downloadVerified() }
+  };
+  exists(cached)
+    :> useCacheOrDownload
+};
+
+-- One install step, writing into `out`. Curried so it can be handed to `each`.
+let runOp = (out, base, sourcePath, def: PackageInfo, entry: LockEntry, inputs, work) => {
+  (op) => {
+    let parent = (rel) => { mkdirp(dirname(out ++ "/" ++ rel)) };
+    match(op) {
+      Install(file, dest, mode) => {
+        Task|parent(dest), copyFile(sourcePath(file), out ++ "/" ++ dest, modeBits(mode))| :> Task.map(ignore)
+      },
+      Extract(unpack) => {
+        let chain = match(unpack.archive) {
+          [file, ..inner] => { [sourcePath(file), ..inner] },
+          [] => { [] }
+        };
+        extract(chain, unpack.members, out ++ "/" ++ unpack.dest, unpack.strip)
+      },
+      Symlink(target, path) => {
+        Task|parent(path), symlink(symlinkTarget(path, target), out ++ "/" ++ path)| :> Task.map(ignore)
+      },
+      WriteText(dest, contents, mode) => {
+        Task|parent(dest), writeText(out ++ "/" ++ dest, render(base, contents), modeBits(mode))| :> Task.map(ignore)
+      },
+      MakeDir(path) => { mkdirp(out ++ "/" ++ path) },
+      Build(id, tools) => { runBuild(def.program, id, entry.version, entry.ref, inputs, work, out, tools) }
+    }
+  }
+};
+
+-- The store entry's manifest: its files and the dependency edges found in its plan.
+let manifestJson = (def: PackageInfo, pkg: Package, hash, files: List<(String, String)>) => {
+  let fileJson = (path, target) => { JSON{ path: path, link: target } };
+  let foreignJson = (name, path) => { JSON{ pkg: name, path: path } };
+  JSON{
+    name: def.name,
+    version: pkg.version,
+    hash: hash,
+    depends: Js.Array.fromList(dependencies(pkg)),
+    base: Js.Array.fromList(baseFiles(pkg)),
+    uses: jsonList(foreignFiles(pkg), foreignJson),
+    files: jsonList(files, fileJson)
+  }
+};
+
+-- Builds into a temporary directory, then renames into the store, so a store
+-- path either exists completely or not at all.
+let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedSource>, entry: LockEntry, hash, storePath) => {
+  let sourcePath = (file) => {
+    sources
+      :> List.find((s: LockedSource) => { s.file == file })
+      :> Option.map((s: LockedSource) => { paths.sources ++ "/" ++ s.sha256 })
+      :> Option.withDefault(paths.sources ++ "/missing-" ++ file)
+  };
+  let populate = via Task (work) => {
+    let out = work ++ "/out";
+    let inputs = work ++ "/inputs";
+    let stage = (s: LockedSource) => {
+      stageBuildInput(sourcePath(s.file), inputs, s.file)
+    };
+    -- Only this step needs an earlier result (the file list); the rest run in order for their effects.
+    let finish = via Task (files) => {
+      Task|
+        writeText(storePath ++ ".json", prettyJson(manifestJson(def, pkg, hash, files)), 420),
+        freeze(out),
+        rename(out, storePath),
+        removeTree(work)
+      | :> Task.map(ignore)
+    };
+    let buildSources = if (List.any(pkg.install, match { Build(_, _) => { true }, _ => { false } })) { sources } else { [] };
+    Task|mkdirp(out), mkdirp(inputs), each(buildSources, stage),
+      each(pkg.install, runOp(out, baseFor(paths, def), sourcePath, def, entry, inputs, work)), walkEntries(out)|
+      :> Task.map((_, _, _, _, files) => { files })
+      :> finish
+      :> Task.map((_) => { Ok(void) })
+      :> Task.recover((message) => { Err(message) })
+      :> via Task (outcome) => {
+        match(outcome) {
+          Ok(_) => { Task.succeed(void) },
+          Err(message) => { removeTree(work) :> via Task (_) => { Task.fail(message) } }
+        }
+      }
+  };
+  makeTempDir(paths.tmp, def.name ++ "-")
+    :> populate
+};
+
+-- Realizes one plan against its lock entry. Curried so `realize` can pass it to Task.andThen.
+let realizePlan = (paths: Paths, def: PackageInfo, entry: LockEntry) => {
+  (pkg: Package) => {
+    let hashInputs = via Task (sources) => {
+      let tools = pkg.install :> List.mapPartial(match { Build(_, tools) => { Some(tools) }, _ => { None } }) :> concatAll;
+      let identity = if (List.length(List.filter(pkg.install, match { Build(_, _) => { true }, _ => { false } })) == 0) {
+        Task.succeed("")
+      } else { buildIdentity(def.program, tools) };
+      identity :> via Task (builder) => { sha256Text(compactJson(inputsJson(baseFor(paths, def), def, pkg, sources, builder, entry.ref))) }
+        :> Task.map((fullHash) => { (sources, fullHash :> .slice(0, 32) :> Result.withDefault(fullHash)) })
+    };
+    let locate = via Task (sources, hash) => {
+      let storePath = paths.store ++ "/" ++ hash ++ "-" ++ def.name ++ "-" ++ pkg.version;
+      exists(storePath) :> Task.map((built) => { (sources, hash, storePath, built) })
+    };
+    let buildIfMissing = via Task (sources, hash, storePath, built) => {
+      if (built) {
+        Task.succeed(storePath)
+      } else {
+        Task|
+          mkdirp(paths.store),
+          series(sources, (s) => { ensureSource(paths, s) }),
+          build(paths, def, pkg, sources, entry, hash, storePath)
+        | :> Task.map((_) => { storePath })
+      }
+    };
+    checkLock(def, pkg, entry)
+      :> Task.fromResult
+      :> hashInputs
+      :> locate
+      :> buildIfMissing
+      :> Task.map((storePath) => { StoreEntry(def.name, pkg.version, storePath) })
+  }
+};
+
+-- Realizes a locked package and returns its store entry. Already-built entries are reused.
+let realize = (paths: Paths, def: PackageInfo, entry: LockEntry) => {
+  make(def, entry.version, entry.ref)
+    :> Task.andThen(realizePlan(paths, def, entry))
+};

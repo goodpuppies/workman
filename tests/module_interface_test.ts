@@ -1172,8 +1172,8 @@ Deno.test("[module update A601/A608] public origins and definitions carry compil
 });
 
 Deno.test("[module update A608] JS imports use compiler binding identities in scopes and mappings", async () => {
-  const source = 'from js.global("Math") import { max as jsmax: (Number, Number) -> Number }; ' +
-    "let read = jsmax(1, 2);";
+  const source = 'from js.global("Math") import { floor as jsfloor }; ' +
+    "let read = jsfloor(1.5);";
   const analysis = await analyzeVirtual(
     "/test/main.wm",
     new Map([["/test/main.wm", source]]),
@@ -1181,21 +1181,21 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
   const id = moduleId("/test/main.wm");
   const main = analysis.interfaces.get(id)!;
   const imported = main.occurrences.find((item) =>
-    item.name === "jsmax" && item.role === "import-alias"
+    item.name === "jsfloor" && item.role === "import-alias"
   )!;
   const reference = main.occurrences.find((item) =>
-    item.name === "jsmax" && item.role === "reference"
+    item.name === "jsfloor" && item.role === "reference"
   )!;
 
   assertEquals(imported.target.kind, "value");
   assertStrictEquals(imported.target.id, reference.target.id);
   assertEquals(imported.declaration?.visibility, "private");
   assertStrictEquals(
-    semanticScopeAt(main, source.lastIndexOf("jsmax")).values.get("jsmax")?.id,
+    semanticScopeAt(main, source.lastIndexOf("jsfloor")).values.get("jsfloor")?.id,
     imported.target.id,
   );
   assertEquals(
-    semanticDefinitionsAt(analysis.projectSnapshot, id, source.lastIndexOf("jsmax"))[0]
+    semanticDefinitionsAt(analysis.projectSnapshot, id, source.lastIndexOf("jsfloor"))[0]
       .occurrence,
     imported,
   );
@@ -1217,12 +1217,12 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
       target: { kind: "global", path: "Math" },
       unsafe: false,
       typeOnly: false,
-      source: 'from js.global("Math") import { max as jsmax: (Number, Number) -> Number }',
+      source: 'from js.global("Math") import { floor as jsfloor }',
       bindings: [{
-        sourceName: "max",
-        localName: "jsmax",
+        sourceName: "floor",
+        localName: "jsfloor",
         fallible: true,
-        type: "(Number, Number) -> Result<Number, Js.Error>",
+        type: "Number -> Result<Number, Js.Error>",
       }],
     }],
   );
@@ -1238,8 +1238,8 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
       receiverElided: call.receiverElided,
     })),
     [{
-      label: "jsmax",
-      source: "jsmax",
+      label: "jsfloor",
+      source: "jsfloor",
       receiverElided: true,
     }],
   );

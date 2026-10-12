@@ -75,6 +75,13 @@ Press `e`, `w`, `i`, or `h` to toggle error, warning, information, or hint diagn
 all severities. It watches the entrypoint directory recursively and refreshes when `.wm` files are
 saved.
 
+`wm test` runs the tests in `*.test.wm` files, in the style of `deno test`. Its framework,
+[`tooling/testman`](tooling/testman/README.md), is a proposal and may be redesigned.
+
+`wm pakman` is a package manager written in Workman, where every package is a small program
+that acts as the version manager for one piece of software. See
+[`tooling/pakman`](tooling/pakman/README.md).
+
 ## Documentation
 
 * To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/wm-minisyntaxguide.md). It is short and the best way to learn the language
