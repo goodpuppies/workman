@@ -20,6 +20,8 @@ let everyStep = Package(
   [
     Extract(Unpack(["app.deb", "data.tar.xz"], ["opt", "usr/bin"], "", 0)),
     extract("app.deb", "opt/app", 1),
+    debPayload("app.deb"),
+    ExtractPayload(["outer.zip", "app.deb"], ["payload.tar.xz", "payload.tar.zst"], "opt/app"),
     Install("icon.png", "usr/share/icons/hicolor/128x128/apps/app.png", Data),
     Symlink(Own("opt/app/app"), "usr/bin/app"),
     Symlink(Of("hello-lib", "usr/share/hello-lib/greeting"), "usr/share/app/greeting"),

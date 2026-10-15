@@ -1,0 +1,61 @@
+-- Provider-neutral release rules on normalized metadata, without network access.
+from "../../testman/test.wm" import *;
+from "../src/finders.wm" import { Release, ReleaseAsset, matchText, releaseCandidates, stableReleases };
+from "../src/model.wm" import { Candidate };
+
+let asset = (name) => { ReleaseAsset(name, "https://custom.example/" ++ name, "digest-" ++ name) };
+let release = (tag, prerelease, assets) => { Release(tag, prerelease, "2020-01-01T00:00:00Z", assets) };
+let versions = (candidates) => { List.map(candidates, (c: Candidate) => { c.version }) };
+let releases = [
+  release("v2.0.0", false, [asset("app-2.0.0"), asset("helper")]),
+  release("v1.9.0", true, [asset("app-1.9.0"), asset("helper")]),
+  release("v1.8.0", false, [asset("helper")]),
+  release("continuous", false, [asset("app")])
+];
+let options = .{ ..stableReleases, assets = (version) => { ["app-" ++ version, "helper"] } };
+
+let tests = [
+  test("matchText returns a capture, a whole match, or None", () => {
+    checks([
+      assertEqual(matchText("^gui-v(\\d+\\.\\d+\\.\\d+)$")("gui-v1.2.3"), Some("1.2.3")),
+      assertEqual(matchText("^\\d+\\.\\d+\\.\\d+$")("1.2.3"), Some("1.2.3")),
+      assertEqual(matchText("^v(\\d+\\.\\d+\\.\\d+)$")("continuous"), None)
+    ])
+  }),
+  test("candidate rules require all named assets and reject prereleases and invalid tags", () => {
+    assertEqual(versions(releaseCandidates(options)(releases)), ["2.0.0"])
+  }),
+  test("normalized metadata from any provider preserves date, checksums and custom ref", () => {
+    let rules = .{ ..options, ref = (r, _) => { r.tag } };
+    match(releaseCandidates(rules)(releases)) {
+      [candidate] => { checks([
+        assertEqual(candidate.published, "2020-01-01T00:00:00Z"),
+        assertEqual(candidate.ref, "v2.0.0"),
+        assertEqual(candidate.channel, "stable"),
+        assertEqual(List.map(candidate.checksums, (c) => { c.url }), ["https://custom.example/app-2.0.0", "https://custom.example/helper"])
+      ]) },
+      _ => { fail("unexpected candidates") }
+    }
+  }),
+  test("custom tag rules, release predicates and channels compose independently", () => {
+    let rules = .{
+      ..stableReleases,
+      versionOf = matchText "^gui-v(\\d+\\.\\d+\\.\\d+)$",
+      accept = (r) => { r.prerelease },
+      channel = "nightly",
+      assets = (_) => { ["bundle"] }
+    };
+    match(releaseCandidates(rules)([release("gui-v1.2.3", true, [asset("bundle")]), release("v1.2.3", true, [asset("bundle")])])) {
+      [candidate] => { checks([assertEqual(candidate.version, "1.2.3"), assertEqual(candidate.channel, "nightly")]) },
+      _ => { fail("custom release rules were not honored") }
+    }
+  }),
+  test("release ordering and assets without digests retain their existing meaning", () => {
+    let unknown = ReleaseAsset("app", "https://custom.example/app", "");
+    let found = releaseCandidates(stableReleases)([release("v2.0.0", false, [unknown]), release("v1.0.0", false, [])]);
+    checks([
+      assertEqual(versions(found), ["2.0.0", "1.0.0"]),
+      assertEqual(List.map(found, (c: Candidate) => { List.length(c.checksums) }), [0, 0])
+    ])
+  })
+];

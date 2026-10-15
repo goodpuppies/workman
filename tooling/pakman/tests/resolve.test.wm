@@ -5,7 +5,7 @@ from "../../testman/test.wm" import *;
 from "../src/model.wm" import { Candidate, Host, System, Package, source, Checksum };
 from "../src/packages.wm" import { PackageInfo };
 from "../src/lock.wm" import { LockEntry, LockedSource };
-from "../src/resolve.wm" import { parseSelector, trackFor, choose, refreshSources, Default, Latest, Channel, Exact };
+from "../src/resolve.wm" import { parseSelector, trackFor, choose, chooseWithForce, refreshSources, Default, Latest, Channel, Exact };
 
 from "./support.wm" import { withTempDir };
 from "../src/paths.wm" import { paths };
@@ -95,10 +95,10 @@ let tests = [
   test("an empty selector or 'default' means the default channel", () => {
     checks([selects("", "default"), selects("default", "default")])
   }),
-  test("'latest' means the newest version, whatever its age", () => {
+  test("'latest' follows the age-gated default channel", () => {
     checks([
       selects("latest", "latest"),
-      assertEqual(picked(choose(info(false), [young("3.0", "stable")], None, Latest)), Ok("3.0"))
+      assertEqual(picked(choose(info(false), candidates, None, Latest)), Ok("2.0"))
     ])
   }),
   test("a selector naming a channel follows that channel", () => {
@@ -111,7 +111,7 @@ let tests = [
     checks([
       assertEqual(trackFor(Default), ""),
       assertEqual(trackFor(Channel("dev")), "dev"),
-      assertEqual(trackFor(Exact("1.0")), "1.0")
+      assertEqual(trackFor(Exact("1.0")), "")
     ])
   }),
   test("by default, the newest old-enough version in the default channel", () => {
@@ -121,17 +121,27 @@ let tests = [
     assertErr(choose(info(false), [young("3.0", "stable")], None, Default))
       :> Task.andThen((message) => { assertContains(message, "minimum age of 3 days") })
   }),
-  test("an exact version is not age-gated", () => {
-    assertEqual(picked(choose(info(false), candidates, None, Exact("3.0"))), Ok("3.0"))
+  test("an exact young version fails with an age explanation and force hint", () => {
+    assertErr(choose(info(false), candidates, None, Exact("3.0")))
+      :> Task.andThen((message) => { checks([
+        assertContains(message, "minimum age of 3 days"),
+        assertContains(message, "install --force demo@3.0")
+      ]) })
+  }),
+  test("an old exact version is allowed and force permits a young exact version", () => {
+    checks([
+      assertEqual(picked(choose(info(false), candidates, None, Exact("2.0"))), Ok("2.0")),
+      assertEqual(picked(chooseWithForce(info(false), candidates, None, Exact("3.0"), true)), Ok("3.0"))
+    ])
   }),
   test("an exact version upstream doesn't have is an error", () => {
     assertErr(choose(info(false), candidates, None, Exact("4.0")))
       :> Task.andThen((message) => { assertContains(message, "has no version 4.0") })
   }),
-  test("a channel picks its newest version, however young", () => {
+  test("a channel applies the same age gate as the default", () => {
     checks([
       assertEqual(picked(choose(info(false), candidates, None, Channel("dev"))), Ok("9.0")),
-      assertEqual(picked(choose(info(false), candidates, None, Channel("stable"))), Ok("3.0"))
+      assertEqual(picked(choose(info(false), candidates, None, Channel("stable"))), Ok("2.0"))
     ])
   }),
   test("only-latest upstream: a first install takes the newest, however young", () => {

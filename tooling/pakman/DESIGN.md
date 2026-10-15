@@ -14,7 +14,7 @@ and exactly how to install any of them. pakman manages those programs, which all
 
 ```sh
 wm run ~/git/pak/paks/zig/pak.wm -- versions      # every release and the current master, with checksums
-wm run ~/git/pak/paks/zig/pak.wm -- make 0.14.1 ""  # exactly how to install 0.14.1
+wm run ~/git/pak/paks/zig/pak.wm -- make 0.14.1 "<tarball URL from versions>"
 ```
 
 pakman adds what every version manager reimplements: policy (minimum age), a lock, a verified
@@ -24,7 +24,7 @@ package for zig replaces zvm in most cases:
 | zvm | pakman |
 |---|---|
 | `zvm ls --all` | `pakman versions zig` |
-| `zvm i 0.14.1` | `pakman install zig@0.14.1` (pinned; `update` leaves it) |
+| `zvm i 0.14.1` | `pakman install --pin zig@0.14.1` (explicitly pinned) |
 | `zvm i master` | `pakman install zig@dev` (follows master on `update`) |
 | `zvm use` | install into a root; switching is a generation, with rollback |
 | several versions | one root per environment, e.g. `--root ~/.local/share/pakman/envs/zig-0.14` |
@@ -182,7 +182,7 @@ touch the network. `make` returns a `Package` (see "Package model").
 
 `serve` (`src/package.wm`) answers three commands, each printing one JSON document. Encoders and
 decoders live together in `src/plan.wm` so the two sides can't drift; every document carries
-`protocol` (currently 5) so a stale compiled package is detected.
+`protocol` (currently 7) so a stale compiled package is detected.
 
 | command | prints |
 |---|---|
@@ -246,6 +246,7 @@ record Unpack = { archive: List<String>, members: List<String>, dest: String, st
 type InstallOp =
   | Install<String, String, Mode>   -- source file, destination, mode
   | Extract<Unpack>                 -- via bsdtar: any tar, .deb, .pkg.tar.zst, zip
+  | ExtractPayload<List<String>, List<String>, String> -- archive chain, allowed members, destination
   | Symlink<PathRef, String>        -- target, link path
   | WriteText<String, Text, Mode>   -- destination, contents, mode
   | MakeDir<String>;
@@ -283,6 +284,21 @@ Planned extensions, added when a package needs them:
 - options for variants (`make : Options -> Version -> Package`), the one thing Nix's `override`
   does clearly better (see `docs/nix-comparison/packages.md`)
 - a vendor step for language dependencies, whose output is hashed into the lock
+
+### Helpers compose at existing boundaries
+
+Release fetching stays separate from pure candidate selection. Provider adapters
+produce normalized `Release` metadata; `releaseCandidates` applies customizable
+tag, acceptance, required-asset, channel, and ref rules. `stableReleases` supplies
+common defaults and `matchText` handles common tag extraction. The GitHub adapter
+adds actual schema/digest/draft behavior rather than wrapping a hostname argument.
+Custom providers can use the same rule function without imitating GitHub JSON.
+
+`ExtractPayload` is a provider-independent archive operation: select exactly one
+allowed nested payload and unpack it. `debPayload` supplies the recognized Debian
+payload filenames, removing package-level compression/version logic. Application
+layout differences remain explicit package code. Protocol 7 encodes the operation;
+its archive choices participate in the normal plan/store identity.
 
 ## References and the dependency graph
 
@@ -323,12 +339,16 @@ candidate by selector:
 
 | selector | picks | on `update` |
 |---|---|---|
-| none, or `@default` | newest candidate in the package's default channel that passes the minimum age | moves to the newest |
-| `@<channel>` (e.g. `zig@dev`) | newest candidate in that channel | follows the channel |
-| `@<version>` (e.g. `zig@0.14.1`) | exactly that version | stays |
+| none, `@latest`, or `@default` | newest eligible candidate in the default channel (plain requests can retain a followed channel) | follows that channel |
+| `@<channel>` (e.g. `zig@dev`) | newest age-eligible candidate in that channel | follows the channel |
+| `@<version>` (e.g. `zig@0.14.1`) | exactly that version, or fails if too young | follows the default channel |
+| `install --pin pkg@<selector>` | the selected version | stays on that version |
 
-The lock records the selector as `track`, so `update` keeps following what was asked for. Only
-automatic choices pass the age gate; naming a channel or a version is the user's decision.
+Selection and tracking are separate. The lock's `track` stores a followed channel,
+`""` for the default, or an exact version only for a pin. Channel and exact version selections use the age gate unless an install has
+`--force`. An exact version that is too young fails with a force hint. Old exact tracks remain pins during
+update. Reinstalling without `--pin` releases a pin and resolves again; plain
+names retain followed channels. `build` remains lock-driven.
 
 If the pick differs from the locked version, pakman runs `make`, downloads every source into the
 content-addressed source cache (`<state>/sources/<sha256>`), and checks each download against the
@@ -414,8 +434,9 @@ The cost of this design: one active version per package per root.
   package's policy names its default channel; `pkg@<channel>` follows another one.
 - **Minimum age:** default 3 days per package (`defaultPolicy`), matching the pacman/paru age gates
   in `~/docs/package-security.md`, so automatic "latest" doesn't bypass them. `PAKMAN_MIN_AGE_DAYS`
-  overrides it for every package. Applied by pakman, never by the package, and only to automatic
-  choices.
+  overrides it for every package. Applied by pakman, never by the package, to all channel selections.
+  Only command-local `install --force` bypasses it for a new selection.
+  Updates retain already approved exact pins without reapplying the age gate.
 - **Upstreams with only one build:** some upstreams (aimp.ru) only ever serve their newest build,
   so there is nothing older for the gate to fall back to. Such a package sets `onlyLatest` in its
   policy. A first install then takes the newest build, with a note that it is younger than the
@@ -423,12 +444,22 @@ The cost of this design: one active version per package per root.
   age. The cached sources and the lock keep the held version buildable after upstream replaces it.
 - **Accept rule:** a package's own filter, applied in the package before candidates are printed,
   for things like Bitwig's license ceiling (6.0.x only).
-- **Pins:** `pkg@<version>` is an exact pin that `update` leaves alone.
+- **Pins:** `install --pin pkg@<version>` explicitly freezes a version.
+  A version selector without `--pin` only chooses this install's version.
+  `@latest` is an age-gated alias for `@default` and follows future releases.
 
 `pakman versions <pkg>` shows every candidate with its channel and date, which one is locked, which
 an automatic resolve would pick, which are too young, and which have no upstream checksum.
 `pakman update --root DIR` resolves every installed package again along its track, builds, and
 switches.
+
+### One-install age override
+
+`install --force` skips age filtering for requested packages only during that
+command. It changes neither tracking nor configuration. Dependencies and all
+verification/ownership checks retain their normal behavior. Other commands reject
+the flag. Reinstalling or updating without force may downgrade a still-young
+release to the newest eligible version, unless it was explicitly pinned.
 
 ## Machines and binary caches (planned)
 

@@ -18,8 +18,10 @@ and marks with source selection, mate navigation, and a field inspector.
 src/
   source/    source coordinates and shared recovery marks
   lexer/     tokens, character classification, reader, lexeme readers and pairing
-  surface/   structural syntax types
-  parser/    immutable cursor/state and the first type-parser slice
+  syntax/    neutral authored-token cursor and keyword lookup
+  surface/   canonical marked schema for the initial program slice
+  parser/    canonical assembly of the first binding/expression/lambda/block slice
+  editor/    full projection diff, additive inlays, ordered preview and inline labels
 examples/    authored input samples
 tools/       debug and native file consumers, outside the frontend dependency graph
 adapters/    host-facing entry points; JS string conversion lives here
@@ -39,16 +41,23 @@ the parser's intended model: canonical marked structure, formatted AST projectio
 and a source diff displayed as additive inlays, including missing whitespace. Its first
 milestone ports the diff and CLI preview machinery before rebuilding the parser.
 Read [worklist.md](worklist.md) for decided delete/refactor/keep actions and progress.
-The agent-started type parser is scheduled for removal; do not extend it.
-The [earlier parser design](parser-design.md) records existing implementation details
-and proposals superseded by that plan.
-The token cursor in `src/parser/cursor.wm` retains authored tokens and absolute mate indices,
-steps in constant time, and returns an explicit terminal result at EOF. The type-only entry
-in `src/parser/type.wm` produces `src/surface/ast.wm` values, preserving caller-owned
-boundaries and recording expectations for missing closers. Full-program parsing remains
-unimplemented; other damaged type forms return explicit failures pending recovery design.
-The [pattern audit](pattern-design.md) records the next slice's context distinctions and
-approved literal/record-opening representations.
+The agent-started type parser, its state/schema, codec, driver and checks were removed.
+The neutral token cursor and keyword lookup now live in `src/syntax/`.
+The [grammar audit](grammar-audit.md) preserves concrete language facts for the new
+canonical marked representation. The first program parser slice is implemented;
+complete WM coverage and production frontend replacement remain pending.
+
+The new `src/surface/ast.wm` describes the initial binding/expression/lambda/block slice.
+`src/editor/project.wm` formats its tree and records exact authored correspondence plus
+virtual mark ranges. `src/editor/view.wm` runs that projection through diff and preview,
+attributing structural insertions to syntax marks and delimiter IDs. Direct fixtures and
+actual parser-generated trees exercise this path. Richer language forms remain pending.
+`adapters/portable/surface_document.wm` encodes the complete currently exercised schema,
+including authored/virtual hole origin and damaged-versus-unimplemented fragment status.
+
+WM execution and completion of the frontend are the primary path. SubsetML/MLton
+remains a target, checked at useful checkpoints; compatibility blockers are recorded
+without stalling independent editor work.
 
 [Native portability](native-portability.md) records the current blockers and the next design
 choices. The [lowering plan](subsetml-lowering-plan.md) records the temporary source
@@ -234,6 +243,73 @@ deno test --allow-read --allow-write --allow-env --allow-run tests/frontend_v3_l
 ```
 
 
+## Inlay preview harness
+
+Inspect actual v3 parsing and the full editor path from the repository root:
+
+```sh
+deno run -A scripts/frontend_v3_editor.ts --marked tooling/frontend-v3/examples/structural-slice.wm
+deno run -A scripts/frontend_v3_editor.ts --projected tooling/frontend-v3/examples/structural-slice.wm
+deno run -A scripts/frontend_v3_editor.ts --json tooling/frontend-v3/examples/structural-slice.wm
+wm test tooling/frontend-v3/tests
+```
+
+The first slice handles plain name/wildcard bindings, simple literals/names/holes,
+groups/tuples, calls, simple lambdas and blocks. Other productions have explicit
+unimplemented-fragment status; they are preserved, not hidden as malformed source.
+No semantic compilation or production parser switch is exposed by this tool yet.
+
+The WM core in `src/editor/preview.wm` overlays ordered additions on unchanged authored
+source. It retains whitespace-only hints, preserves shared-anchor input order, rejects
+invalid anchors, and reports original UTF-16 positions and rendered spans. The JS adapter
+only bootstraps the WM module and transports its values.
+
+Run a supplied-insertion fixture from the repository root:
+
+```sh
+deno run -A scripts/frontend_v3_inlay_preview.ts --marked tooling/frontend-v3/examples/inlay-preview.json
+deno run -A scripts/frontend_v3_inlay_preview.ts --json tooling/frontend-v3/examples/inlay-preview.json
+deno run -A scripts/frontend_v3_inlay_preview.ts --marked tooling/frontend-v3/examples/projection-preview.json
+deno test --allow-read --allow-write --allow-env --allow-run tests/frontend_v3_preview_test.ts
+```
+
+Fixtures contain `source` and either `projected` text or an array of `{anchor, text, id?}`
+insertions. Projected text runs through the WM diff and additive-view pipeline. Anchors
+refer to the original buffer; IDs do not determine order. `--marked` surrounds each
+inserted label with `*`. Structured output includes exact UTF-16 units, so lone surrogates
+and whitespace can be inspected without relying on terminal appearance.
+
+The supplied JSON fixture tool is a renderer/diff harness, not parser output or a
+formatter; the editor CLI above is the actual parser pipeline. `src/editor/diff.wm`
+produces full Keep/Insert/Delete operations; the additive view omits deletions. Adjacent
+insertions are split at projected lexeme/trivia boundaries. It uses a bounded Myers
+search rather than Workmangr's full token-LCS matrix. Default edit-distance limit is 256;
+fixtures can set `limit` up to 4096. Exceeding it reports an explicit computation error.
+The core's `compareAnchored` entry accepts exact source correspondence so repeated tokens
+and opaque regions cannot match another authored occurrence; it searches each gap
+separately. The canonical View uses this path and attributes inserted syntax to mark/pair
+metadata. Supplied projection fixtures remain independent of parser construction.
+
+Raw CLI previews render labels literally, including newlines. Structured `hints` contain
+inline-safe labels: CRLF/LF become `[LF]`, lone CR becomes `[CR]`, explicit spaces/tabs
+survive, and both padding flags are false. Original line endings are preserved exactly.
+The diff/additive/preview closure translates through SubsetML and MLton-typechecks;
+native runtime parity remains a later checkpoint.
+
+Core behavior is also tested directly in WM with testman:
+
+```sh
+wm test tooling/frontend-v3/tests
+# Repository-local equivalent:
+deno run -A src/main.ts test tooling/frontend-v3/tests
+```
+
+New core parser/projector/diff tests should live in `.test.wm` suites here. TypeScript
+checks remain useful for JS transport and native parity. Testman currently runs on the
+WM/JS target; its Task/host runner is not part of the portable frontend dependency graph.
+Its generic equality limitation on some user-declared types is avoided by asserting
+primitive projections (UTF-16 unit lists, positions and IDs).
+
 ## Native lexer
 
 Build the WM-authored lexer with a built sibling SubsetML compiler and MLton:
@@ -247,9 +323,9 @@ _scratch/frontend-v3-native/native-lex --utf16le path/to/raw-units.bin
 Run these commands from the wm-mini root. `--subsetml PATH` selects another SubsetML
 checkout; `--output PATH` selects the disposable build directory. The build stages the source
 Basis checker declarations, discovers the entry's canonical import graph and selects the
-existing native adapters through the generated MLB. It also translates and MLton-typechecks
-`src/surface/ast.wm` and `src/parser/type.wm` through their independent dependency graphs, keeping parser-facing modules
-within the portable baseline. Authored WM remains the source of truth.
+existing native adapters through the generated MLB. The lexer build is independent of
+editor/parser modules. Its owned staged source directory is rebuilt to remove stale
+files from previous graphs. Authored WM remains the source of truth.
 
 Default input is strict UTF-8; malformed byte sequences fail before lexing. `--utf16le` reads
 raw little-endian 16-bit units, preserving lone surrogates and NUL; odd byte lengths fail.
@@ -269,28 +345,7 @@ This builds once, compares raw-unit and UTF-8 paths, and checks the shared encod
 an independent JS normalization of the WM lexer result.
 
 
-The shared marking kernel uses `Slot<T, Expectation>`. Missing slots store a mark ID and
-expectation; they contain no authored value. The AST's `TokenSlot` distinguishes authored
-lexer tokens from expected kinds/keyword spellings. Missing-token recovery policies remain
-part of the [parser discussion](parser-design.md).
-
-## Type-parser slice
-
-Run the focused grammar, structural ownership and WM/native snapshot checks:
-
-```sh
-deno run -A scripts/check_frontend_v3_types.ts
-```
-
-The same `--subsetml` and `--output` options apply. To inspect a native snapshot directly:
-
-```sh
-python3 scripts/build_frontend_v3_native.py --type-driver
-_scratch/frontend-v3-native/native-type path/to/type-expression.txt
-```
-
-The driver also accepts `--utf16le`. It parses one complete type expression, rather than
-a WM program. Snapshots preserve authored slots, spans, identities, remaining tokens and
-lexical/syntax marks. Syntax marks follow lexical marks in creation order; lexical IDs stay
-unchanged. The codec reports unsupported schema variants explicitly if the slice is later
-extended to emit holes, marked phrases or error islands.
+The shared marking kernel retains `Slot<T, Expectation>` and `Marked<T>` as neutral
+building blocks. The rebuilt canonical schema uses authored/missing structural slots;
+no old parser recovery policy is implied by these types. The new projector's WM tests
+pass, but its SubsetML generic inference blocker is recorded in native-portability.md.

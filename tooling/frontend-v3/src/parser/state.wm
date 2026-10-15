@@ -1,84 +1,100 @@
-from "./cursor.wm" import * as Cursor;
-from "../lexer/token.wm" import * as Token;
+from "../syntax/cursor.wm" import * as Cursor;
+from "../surface/ast.wm" import * as Ast;
 from "../source/mark.wm" import * as Marks;
-from "../surface/ast.wm" import * as Surface;
+from "../lexer/token.wm" import * as Token;
 from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "../../lib/subsetml/subset_result.wm" import * as R;
 
-// Whole-parse identities. Lexer IDs are already consecutive in the supplied document.
+// This is canonical assembly state, not the deleted recognizer's Parsed/Rejected API.
+// Missing structure does not consume tokens or extend authored source extent.
 record State = {
   cursor: Cursor.Cursor,
-  lexicalMarks: List<Token.LexicalMark>,
-  syntaxMarksRev: List<Surface.SyntaxMark>,
-  nextMarkId: Number,
-  nextNodeId: Number,
-  nextDelimiterId: Number,
-  consumedEnd: Number,
+  authoredEnd: Number,
+  nextNode: Number,
+  nextDelimiter: Number,
+  nextMark: Number,
+  syntaxRev: List<Ast.SyntaxMark>,
 };
-
-type Expected = ExpectedType | ExpectedUpperName | ExpectedCloser<Token.TokenKind>
-  | ExpectedTupleCommaOrArrow | ExpectedEnd;
-record Failure = {
-  expected: Expected,
-  stoppedState: State,
+record Boundary = {
+  closer: Token.Punctuation,
+  mateIndex: Option<Number>,
+  authoredOpen: Bool,
 };
-type Outcome<T> = Parsed<T, State> | Rejected<Failure>;
-
-let fromDocument = (source, document: Token.LexicalDocument) => {
-  State(Cursor.fromDocument(source, document), document.marks, [],
-    Lists.length(document.marks), 0, 0, 0)
+let initial = (source, document: Token.LexicalDocument) => {
+  State(Cursor.fromDocument(source, document), 0, 0, 0, Lists.length(document.marks), [])
 };
-let reject = (state, expected) => {Rejected(Failure(expected, state))};
-
-// Only grammatical helpers that have established a non-EOF token call consume.
 let consume = (state: State) => {
   match(Cursor.take(state.cursor)) {
+    Cursor.ReachedEnd(_) => {Panic("unreachable")}, // Assembly establishes non-EOF before consumption.
     Cursor.TokenTaken(token, cursor) => {
-      (token, State { ..state, cursor = cursor, consumedEnd = token.span.endPos.index })
-    },
-    Cursor.ReachedEnd(_) => {Panic("unreachable")}
+      (token, State { ..state, cursor = cursor, authoredEnd = token.span.endPos.index })
+    }
   }
 };
-let node = (state: State, start) => {
-  (Surface.Node(Surface.NodeId(state.nextNodeId),
-    Marks.SourceSpan(Marks.SourceOffset(start), Marks.SourceOffset(state.consumedEnd))),
-    State { ..state, nextNodeId = state.nextNodeId + 1 })
+let node = (state: State, start, end) => {
+  (Ast.Node(Ast.NodeId(state.nextNode), Marks.SourceSpan(Marks.SourceOffset(start), Marks.SourceOffset(end))),
+    State { ..state, nextNode = state.nextNode + 1 })
 };
-let delimited = (state: State, open, content, close) => {
-  (Surface.Delimited(Surface.DelimiterId(state.nextDelimiterId), open, content, close),
-    State { ..state, nextDelimiterId = state.nextDelimiterId + 1 })
+let extent = (state: State, start) => {node(state, start, if (state.authoredEnd < start) {start} else {state.authoredEnd})};
+let delimiter = (state: State, open, contents, close) => {
+  (Ast.Delimited(Ast.DelimiterId(state.nextDelimiter), open, contents, close),
+    State { ..state, nextDelimiter = state.nextDelimiter + 1 })
 };
-let rec owns = (boundaries, kind) => {
+let mark = (state: State, problem, recovery, anchor, start, end) => {
+  let id = Marks.MarkId(state.nextMark);
+  let value = Marks.Mark(id, problem, Marks.RecoveredWith(recovery), Marks.SourceOffset(anchor),
+    Marks.SourceSpan(Marks.SourceOffset(start), Marks.SourceOffset(end)), None);
+  (id, State { ..state, nextMark = state.nextMark + 1, syntaxRev = [value, ..state.syntaxRev] })
+};
+let missing = (state, expected, anchor) => {
+  let (id, next) = mark(state, Ast.MissingToken(expected), Ast.CompletedToken, anchor, anchor, anchor);
+  (Marks.MissingSlot(id, expected), next)
+};
+let punctuation = (state: State, expected) => {
+  if (Cursor.isKind(state.cursor, Token.PunctuationToken(expected))) {
+    let (token, next) = consume(state);
+    (Marks.AuthoredSlot(token), next)
+  } else {missing(state, Ast.ExpectedPunctuation(expected), Cursor.offset(state.cursor))}
+};
+let frame = (open: Token.Token, closer) => {
+  let mate = match(open.mateIdx) {Token.NoMate => {None}, Token.Mate(index) => {Some(index)}};
+  Boundary(closer, mate, true)
+};
+let virtualFrame = (closer) => {Boundary(closer, None, false)};
+let rec atBoundary = (state: State, boundaries) => {
   match(boundaries) {
     [] => {false},
-    [boundary, ..rest] => {boundary == kind || owns(rest, kind)}
+    [item, ..rest] => {
+      let boundary: Boundary = item;
+      let matches = match(boundary.mateIndex) {
+        Some(index) => {state.cursor.tokenIndex == index},
+        None => {Cursor.isKind(state.cursor, Token.PunctuationToken(boundary.closer))}
+      };
+      matches || atBoundary(state, rest)
+    }
   }
 };
-let atBoundary = (state: State, boundaries) => {
-  let token = Cursor.current(state.cursor);
-  token.kind == Token.EndOfFileToken || owns(boundaries, token.kind)
-};
-
-// Missing closers are the only recovery currently agreed. The caller's token is kept.
-let close = (state: State, expected, boundaries) => {
-  if (Cursor.isKind(state.cursor, expected)) {
+let close = (state: State, expected, owner: Boundary, enclosing) => {
+  let matches = match(owner.mateIndex) {
+    Some(index) => {state.cursor.tokenIndex == index},
+    None => {
+      if (owner.authoredOpen || atBoundary(state, enclosing)) {false} else {
+        let token = Cursor.current(state.cursor);
+        match(token.mateIdx) {Token.NoMate => {true}, Token.Mate(_) => {false}}
+      }
+    } // Only a virtual opener may own a free closer; never steal a caller's mate.
+  };
+  if (matches && Cursor.isKind(state.cursor, Token.PunctuationToken(expected))) {
     let (token, next) = consume(state);
-    Parsed(Marks.AuthoredSlot(token), next)
-  } else {
-    if (atBoundary(state, boundaries)) {
-      let offset = Cursor.offset(state.cursor);
-      let id = Marks.MarkId(state.nextMarkId);
-      let expectation = Surface.ExpectedTokenKind(expected);
-      let mark = Marks.Mark(id, Surface.MissingToken(expectation),
-        Marks.RecoveredWith(Surface.InsertedToken(expectation)), Marks.SourceOffset(offset),
-        Marks.SourceSpan(Marks.SourceOffset(offset), Marks.SourceOffset(offset)),
-        None); // No causal link has been established to any lexical damage.
-      Parsed(Marks.MissingSlot(id, expectation), State { ..state,
-        syntaxMarksRev = [mark, ..state.syntaxMarksRev], nextMarkId = state.nextMarkId + 1,
-        consumedEnd = offset })
-    } else {reject(state, ExpectedCloser(expected))}
-  }
+    (Marks.AuthoredSlot(token), next)
+  } else {missing(state, Ast.ExpectedPunctuation(expected), Cursor.offset(state.cursor))}
 };
-let marks = (state: State) => {
-  Lists.append(Lists.map(state.lexicalMarks, (mark) => {Surface.LexicalSurfaceMark(mark)}),
-    Lists.map(Lists.reverse(state.syntaxMarksRev), (mark) => {Surface.SyntaxSurfaceMark(mark)}))
+let retainCursor = (start: State, finish: State) => {
+  State { ..start, cursor = finish.cursor, authoredEnd = finish.authoredEnd }
+};
+let tokensBetween = (start: State, finish: State) => {
+  match(Lists.take(start.cursor.remainingTokens, finish.cursor.tokenIndex - start.cursor.tokenIndex)) {
+    R.Ok(tokens) => {tokens},
+    R.Err(_) => {Panic("unreachable")} // Both cursors are ordered views of one lexer document.
+  }
 };

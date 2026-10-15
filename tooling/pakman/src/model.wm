@@ -49,6 +49,7 @@ record Unpack = { archive: List<String>, members: List<String>, dest: String, st
 type InstallOp =
   | Install<String, String, Mode>   -- source file, destination, mode
   | Extract<Unpack>
+  | ExtractPayload<List<String>, List<String>, String> -- archive chain, allowed payload members, destination
   | Symlink<PathRef, String>        -- link target, link path
   | WriteText<String, Text, Mode>   -- destination, contents, mode
   | MakeDir<String>
@@ -72,8 +73,8 @@ record Candidate = { version: String, published: String, channel: String, checks
 record Policy = {
   -- The channel followed by default; `pkg@<channel>` picks another.
   channel: String,
-  -- Candidates younger than this are skipped when pakman chooses automatically
-  -- (matches the pacman/paru age gates). Explicit selections are not gated.
+  -- Young candidates are skipped for channel selection; exact requests fail.
+  -- install --force bypasses the gate for this command only.
   minAgeDays: Number,
   -- Upstream only ever offers its newest build, so the age gate has nothing
   -- older to fall back to. pakman then installs the newest build the first
@@ -120,6 +121,16 @@ let extract = (file, dest, strip) => { Extract(Unpack([file], [], dest, strip)) 
 
 -- Unpacks selected members of an archive source into `dest`.
 let extractMembers = (file, members, dest, strip) => { Extract(Unpack([file], members, dest, strip)) };
+
+-- Open exactly one matching member of an archive chain and unpack its payload.
+-- A missing or ambiguous member is an error, never a best-effort guess.
+let extractPayload = (file, choices, dest) => { ExtractPayload([file], choices, dest) };
+
+-- Debian binary payloads use these well-known compression variants. No control
+-- scripts are run; the manager handles the archive format, not version guesses.
+let debPayload = (file) => {
+  extractPayload(file, ["data.tar", "data.tar.gz", "data.tar.xz", "data.tar.zst", "data.tar.bz2", "data.tar.lzma"], "")
+};
 
 -- Lines of literal text, each ending in a newline.
 let lines = (items) => { Lit(join(items, "\n") ++ "\n") };

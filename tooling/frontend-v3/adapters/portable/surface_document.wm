@@ -1,0 +1,142 @@
+from "./document.wm" import * as Lexical;
+from "../../src/surface/ast.wm" import * as Ast;
+from "../../src/source/mark.wm" import * as Marks;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+
+// Complete ASCII snapshot for the currently exercised canonical schema. Source and
+// word spellings are exact UTF-16 units; holes, opaque regions and unsupported-feature
+// status are explicit. This codec does not decode literal values or project semantics.
+let array = Lexical.array;
+let tag = Lexical.tag;
+let number = Lexical.number;
+let span = (value: Marks.SourceSpan) => {array([Lexical.offset(value.start), Lexical.offset(value.end)])};
+let node = (value: Ast.Node) => {
+  let Ast.NodeId(id) = value.nodeId;
+  array([number(id), span(value.authoredSpan)])
+};
+let expectation = match {
+  Ast.ExpectedPunctuation(value) => {tag("ExpectedPunctuation", [Lexical.punctuation(value)])},
+  Ast.ExpectedWord(units) => {tag("ExpectedWord", [array(Lists.map(units, number))])}
+};
+let slot = match {
+  Marks.AuthoredSlot(value) => {tag("AuthoredSlot", [Lexical.token(value)])},
+  Marks.MissingSlot(id, expected) => {tag("MissingSlot", [Lexical.id(id), expectation(expected)])}
+};
+let problem = match {
+  Ast.MissingToken(expected) => {tag("MissingToken", [expectation(expected)])},
+  Ast.MissingExpression => {tag("MissingExpression", [])},
+  Ast.MissingBindingPattern => {tag("MissingBindingPattern", [])},
+  Ast.UnassembledSyntax => {tag("UnassembledSyntax", [])}
+};
+let recovery = match {
+  Ast.CompletedToken => {tag("CompletedToken", [])},
+  Ast.InsertedExpressionHole => {tag("InsertedExpressionHole", [])},
+  Ast.InsertedWildcardPattern => {tag("InsertedWildcardPattern", [])},
+  Ast.RetainedOpaqueSyntax => {tag("RetainedOpaqueSyntax", [])}
+};
+let syntaxMark = (value: Ast.SyntaxMark) => {
+  let status = match(value.recovery) {
+    Marks.NotRecovered => {tag("NotRecovered", [])},
+    Marks.RecoveredWith(value) => {tag("RecoveredWith", [recovery(value)])}
+  };
+  array([Lexical.id(value.id), problem(value.problem), status, Lexical.offset(value.anchor),
+    span(value.affectedSpan), Lexical.cause(value.causedBy)])
+};
+let feature = match {
+  Ast.TypeSyntax => {tag("TypeSyntax", [])},
+  Ast.PatternSyntax => {tag("PatternSyntax", [])},
+  Ast.DeclarationSyntax => {tag("DeclarationSyntax", [])},
+  Ast.ExpressionSyntax => {tag("ExpressionSyntax", [])}
+};
+let opaque = (value: Ast.Opaque) => {
+  let status = match(value.fragmentStatus) {
+    Ast.DamagedFragment(id) => {tag("DamagedFragment", [Lexical.id(id)])},
+    Ast.UnimplementedFragment(value) => {tag("UnimplementedFragment", [feature(value)])}
+  };
+  array([node(value.opaqueNode), array(Lists.map(value.tokenRun, Lexical.token)), status])
+};
+let role = match {
+  Ast.BindingName => {tag("BindingName", [])},
+  Ast.ReferenceName => {tag("ReferenceName", [])},
+  Ast.ConstructorName => {tag("ConstructorName", [])}
+};
+let pattern = match {
+  Ast.NamePattern(n, nameRole, token) => {tag("NamePattern", [node(n), role(nameRole), Lexical.token(token)])},
+  Ast.WildcardPattern(n, token) => {tag("WildcardPattern", [node(n), Lexical.token(token)])},
+  Ast.MissingPattern(n, mark) => {tag("MissingPattern", [node(n), Lexical.id(mark)])}
+};
+let items = (value, encode) => {
+  match(value) {
+    Ast.EmptyItems => {tag("EmptyItems", [])},
+    Ast.NonemptyItems(value) => {
+      let following = Lists.map(value.following, (item: Ast.SeparatedItem<a>) => {
+        array([slot(item.separator), encode(item.nextItem)])
+      });
+      let trailing = match(value.trailingComma) {
+        None => {"null"}, Some(value) => {Lexical.token(value)}
+      };
+      tag("NonemptyItems", [encode(value.firstItem), array(following), trailing])
+    }
+  }
+};
+let delimited = (value: Ast.Delimited<a>, encode) => {
+  let Ast.DelimiterId(id) = value.delimiterId;
+  array([number(id), slot(value.openSlot), encode(value.contents), slot(value.closeSlot)])
+};
+let rec expression = match {
+  Ast.NameExpr(n, token) => {tag("NameExpr", [node(n), Lexical.token(token)])},
+  Ast.LiteralExpr(n, token) => {tag("LiteralExpr", [node(n), Lexical.token(token)])},
+  Ast.HoleExpr(n, origin) => {
+    let value = match(origin) {
+      Ast.AuthoredHole(token) => {tag("AuthoredHole", [Lexical.token(token)])},
+      Ast.VirtualHole(mark) => {tag("VirtualHole", [Lexical.id(mark)])}
+    };
+    tag("HoleExpr", [node(n), value])
+  },
+  Ast.PrefixExpr(n, operator, value) => {tag("PrefixExpr", [node(n), Lexical.token(operator), expression(value)])},
+  Ast.InfixExpr(n, left, operator, right) => {tag("InfixExpr", [node(n), expression(left), Lexical.token(operator), expression(right)])},
+  Ast.GroupExpr(n, value) => {tag("GroupExpr", [node(n), delimited(value, expression)])},
+  Ast.TupleExpr(n, value) => {
+    tag("TupleExpr", [node(n), delimited(value, (tuple: Ast.TupleBody<Ast.Expr>) => {
+      array([expression(tuple.tupleFirst), slot(tuple.firstComma), items(tuple.tupleRest, expression)])
+    })])
+  },
+  Ast.CallExpr(n, target, value) => {tag("CallExpr", [node(n), expression(target), delimited(value, (value) => {items(value, expression)})])},
+  Ast.ListExpr(n, value) => {
+    tag("ListExpr", [node(n), delimited(value, (body: Ast.ListBody<Ast.Expr>) => {
+      let tail = match(body.spreadTail) {
+        None => {"null"},
+        Some(value) => {
+          let comma = match(value.beforeSpread) {None => {"null"}, Some(value) => {slot(value)}};
+          let trailing = match(value.trailingComma) {None => {"null"}, Some(value) => {Lexical.token(value)}};
+          array([comma, Lexical.token(value.spread), expression(value.tailValue), trailing])
+        }
+      };
+      array([items(body.listItems, expression), tail])
+    })])
+  },
+  Ast.LambdaExpr(n, params, arrow, body) => {
+    tag("LambdaExpr", [node(n), delimited(params, (value) => {items(value, pattern)}), slot(arrow), block(body)])
+  },
+  Ast.BlockExpr(body) => {tag("BlockExpr", [block(body)])},
+  Ast.OpaqueExpr(value) => {tag("OpaqueExpr", [opaque(value)])}
+}
+and binding = (value: Ast.Binding<Ast.Pattern, Ast.Expr>) => {
+  array([node(value.bindingNode), slot(value.letSlot), pattern(value.pattern), slot(value.equalsSlot), expression(value.value)])
+}
+and statement = match {
+  Ast.BindingStatement(value, terminator) => {tag("BindingStatement", [binding(value), slot(terminator)])},
+  Ast.ExpressionStatement(value, terminator) => {tag("ExpressionStatement", [expression(value), slot(terminator)])},
+  Ast.OpaqueStatement(value) => {tag("OpaqueStatement", [opaque(value)])}
+}
+and block = (value: Ast.Block<Ast.Statement, Ast.Expr>) => {
+  array([node(value.blockNode), delimited(value.braces, (body: Ast.BlockBody<Ast.Statement, Ast.Expr>) => {
+    let result = match(body.result) {None => {"null"}, Some(value) => {expression(value)}};
+    array([array(Lists.map(body.statements, statement)), result])
+  })])
+};
+let encode = (program: Ast.Program) => {
+  array([array(Lists.map(Text.toUnits(program.source), number)), array(Lists.map(program.phrases, statement)),
+    Lexical.token(program.eof), Lexical.marks(program.lexicalMarks), array(Lists.map(program.syntaxMarks, syntaxMark))])
+};

@@ -1,0 +1,86 @@
+from "../../testman/test.wm" import *;
+from "../src/parser/program.wm" import * as Parser;
+from "../src/surface/ast.wm" import * as Ast;
+from "../src/editor/view.wm" import * as View;
+from "../lib/subsetml/subset_utf16_source.wm" import * as TextSource;
+from "../lib/subsetml/subset_result.wm" import * as R;
+from "../lib/subsetml/subset_list.wm" import * as Lists;
+
+let source = (text: String) => {
+  match(TextSource.fromNativeUnits(text)) {
+    R.Ok(value) => {value}, R.Err(_) => {Panic("unreachable")} // Fixture strings expose UTF-16 units.
+  }
+};
+let projectedEquals = (original, expected) => {
+  let tree = Parser.parse(source(original));
+  match(View.render(tree, false, 256)) {
+    R.Err(_) => {fail("parser tree did not produce a valid editor view")},
+    R.Ok(view) => {assertEqual(TextSource.toUnits(view.projection.text), TextSource.toUnits(source(expected)))}
+  }
+};
+let tests = [
+  test("parser assembles bare-parameter lambda in its canonical shape", () => {
+    projectedEquals("let id=x=>x", "let id = (x) => { x };\n")
+  }),
+  test("parser fills missing expressions without consuming later declarations", () => {
+    checks([
+      projectedEquals("let x=", "let x = ?;\n"),
+      projectedEquals("let x=\nlet y=1", "let x = ?;\nlet y = 1;\n"),
+      projectedEquals("let\nlet y=1", "let _ = ?;\nlet y = 1;\n")
+    ])
+  }),
+  test("parameterless arrows and bare bodies get canonical delimiters", () => {
+    projectedEquals("let main= => print(thing)", "let main = () => { print(thing) };\n")
+  }),
+  test("paired groups do not donate their opener to an inner lambda", () => {
+    projectedEquals("let f=(x=>x)", "let f = ((x) => { x });\n")
+  }),
+  test("missing parameter closer is marked before an authored arrow", () => {
+    projectedEquals("let f=(x=>x", "let f = (x) => { x };\n")
+  }),
+  test("nested whitespace calls preserve the enclosing authored closer", () => {
+    projectedEquals("f(g x)", "f(g(x));\n")
+  }),
+  test("blocks retain statements and an optional final result", () => {
+    projectedEquals("let f=()=>{let x=1;x}", "let f = () => {\n  let x = 1;\n  x\n};\n")
+  }),
+  test("missing call arguments become holes while trailing commas remain optional", () => {
+    checks([projectedEquals("f(x,,y)", "f(x, ?, y);\n"), projectedEquals("f(x,)", "f(x,);\n")])
+  }),
+  test("unimplemented expression syntax stays explicit and keeps its terminator", () => {
+    checks([projectedEquals("let x=a:>f;", "let x = a:>f;\n"),
+      projectedEquals("let x=(f();x);", "let x = (f();x);\n")])
+  }),
+  test("unimplemented parameter annotations do not fabricate a replacement arrow", () => {
+    projectedEquals("let f=(x:Int)=>x;", "let f = (x:Int)=>x;\n")
+  }),
+  test("unimplemented binding patterns preserve the whole declaration", () => {
+    checks([projectedEquals("let rec f=x;", "let rec f=x;\n"), projectedEquals("let x:Int=1;", "let x:Int=1;\n")])
+  }),
+  test("literal whitespace arguments remain calls rather than extra statements", () => {
+    checks([projectedEquals("f true", "f(true);\n"), projectedEquals("f false", "f(false);\n"),
+      projectedEquals("f void", "f(void);\n")])
+  }),
+  test("virtual body opener can own a free authored closer without stealing its caller", () => {
+    checks([projectedEquals("let f=x=>x}", "let f = (x) => { x };\n"),
+      projectedEquals("let f=()=>{let g=x=>x}", "let f = () => {\n  let g = (x) => { x };\n};\n")])
+  }),
+  test("materialized canonical projections parse without new structural expectations", () => {
+    checks(Lists.map(["let id=x=>x", "f(g x)", "let x=", "let f=()=>{let x=1;x}", "(x,)"], (original) => {
+      let tree = Parser.parse(source(original));
+      match(View.render(tree, false, 256)) {
+        R.Err(_) => {fail("first editor view failed")},
+        R.Ok(first) => {
+          let materialized = Parser.parse(first.projection.text);
+          match(View.render(materialized, false, 256)) {
+            R.Err(_) => {fail("materialized editor view failed")},
+            R.Ok(second) => {
+              checks([assertEqual(TextSource.toUnits(first.projection.text), TextSource.toUnits(second.projection.text)),
+                assertEqual(Lists.length(materialized.syntaxMarks), 0)])
+            }
+          }
+        }
+      }
+    }))
+  })
+];

@@ -1,37 +1,31 @@
 # Native frontend plan
 
-Reset notice: the lexer and SubsetML compatibility baseline remains in force.
-Parser/AST checks and drivers described below are scheduled for removal by
-[worklist.md](worklist.md); their portability success does not approve their
-structural editor design.
+Priority: frontend completion and WM execution come first. SubsetML/MLton remains
+a target; record compatibility blockers and continue independent editor work.
 
-Status: frontend-v3 remains WM-authored. Its lexer translates through SubsetML,
-builds with MLton through the canonical entry graph and native adapter selection,
-and passes complete WM/native document parity checks. The native file driver accepts
-strict UTF-8 or raw UTF-16 units. The [lowering plan](subsetml-lowering-plan.md) records
-the implementation and validation. The first type-parser slice now also translates and
-native-typechecks; focused WM/native snapshots cover authored ownership and missing closers.
-[Parser design](parser-design.md) records that slice and remaining design questions.
-
-Generated `.sml` and build artifacts are disposable outputs. SubsetML itself remains
-authoritative in constrained SML. The surface AST native probe exposed the
-intentional R2 restriction on duplicate record label sets. The agreed temporary coding rule
-now gives `TypeArguments`/`TypeParameters` distinct labels, retaining their nominal identities.
-Embedded SML declarations have been removed, resolving `Delimited.open`. `BlockItem` and
-`TopPhrase` also have distinct labels. The complete AST translates and passes MLton type
-checking, and compiles under WM.
+Status: the lexer translates through SubsetML, builds with MLton, and passes complete
+WM/native document parity. Its file driver accepts strict UTF-8 or raw UTF-16 units.
+The speculative parser and surface schema have been removed; their former portability
+success does not constrain the new design. Follow [worklist.md](worklist.md).
 
 ## Boundaries
 
-`src/source/` owns shared positions and marks. `src/lexer/` owns token types and lexer
-algorithms. `src/surface/` owns the structural syntax representation. The cursor, state and
-type-parser slice live under `src/parser/`; they consume lexical documents without introducing another
-lexer's interpretation of damaged input.
+`src/source/` owns positions and the marking kernel. `src/lexer/` owns lexical types
+and algorithms. `src/syntax/` contains neutral cursor/keyword helpers. The new editor
+modules remain WM-authored; transport and presentation belong in adapters/tools.
+Generated SML and staged build artifacts are disposable. Native lexer builds remain
+independent of editor modules.
 
-`tools/` and `explorer/` consume the frontend. Deno directory walking, printing and web
-transport are not dependencies of the lexer entry. The debug preview was moved from
-`lexer/util.wm` into `tools/reader_debug.wm`; its EOF display and invariant panic retain
-their existing meanings. No lexical fallback or recovery rule changed in the reorganization.
+## Current editor checkpoint
+
+The WM diff/additive/preview closure translates and MLton-typechecks. The new canonical
+projector/View closure does not yet translate: SubsetML reports `argument of expr:
+expected Writer * 'a, found Writer * Expr`. Explicit types on recursive `expr` and
+`statement` parameters did not resolve it. WM compilation and the direct projector
+tests pass. Record this as a deferred compatibility blocker; continue canonical parser
+assembly on WM without splitting implementations or restoring the rejected schema.
+Investigate generic higher-order `items` specialization/recursive nominal types in a
+focused reproduction when native work resumes; the exact root cause is not established.
 
 ## Existing agreements
 
@@ -201,10 +195,9 @@ as SML by the native build. This is a source/translator audit, not a successful 
   Resolved built-in lowering is now implemented with an explicitly selected canonical runtime
   and private generated dependencies. Core `src/` uses no pipes, JS member access, JSON assertions or FFI imports. Those constructs
   remain in host/debug consumers, whose native treatment is a separate boundary.
-- `src/surface/ast.wm` now uses supported namespace imports. Its next native probe fails
-  past the intentional R2 duplicate-record-label restriction: the agreed coding convention
-  gives colliding nominal records distinct meaningful labels. Removing embedded SML
-  declarations resolved the preceding `open:` ambiguity. The full AST now native-typechecks.
+- A now-removed schema probe established namespace import support, distinct record
+  label-set conventions under R2, and the removal of embedded SML declarations to
+  resolve `open:` ambiguity. These are compatibility findings, not approved AST shapes.
 
 Minimal temporary probes confirmed: explicit named record punning translates; an unannotated
 standalone `pos.index` helper fails unresolved selector checking; a positional record constructor

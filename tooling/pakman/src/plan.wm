@@ -10,7 +10,7 @@ from "./io.wm" import { jsonList };
 from "./refs.wm" import { parts };
 from "./fun.wm" import { mapAll };
 
-let protocol = 6;
+let protocol = 7;
 
 let targetName = match(target) => {
   Host => { "host" },
@@ -88,6 +88,10 @@ let opJson = match(op) => {
       op: "extract", path: unpack.dest, source: "", mode: "", strip: unpack.strip,
       archive: Js.Array.fromList(unpack.archive), members: Js.Array.fromList(unpack.members), parts: JSON[]
     }
+  },
+  ExtractPayload(chain, choices, dest) => {
+    JSON{ op: "extract-payload", path: dest, source: "", mode: "", strip: 0,
+      archive: Js.Array.fromList(chain), members: Js.Array.fromList(choices), parts: JSON[] }
   },
   Symlink(target, path) => {
     JSON{ op: "symlink", path: path, source: "", mode: "", strip: 0, archive: JSON[], members: JSON[], parts: jsonList([target], refJson) }
@@ -201,6 +205,7 @@ let decodeOp = (o: OpJson) => {
   match(o.op) {
     "install" => { decodeMode(o.mode) :> Result.map((mode) => { Install(o.source, o.path, mode) }) },
     "extract" => { Ok(Extract(Unpack(Js.Array.toList(o.archive), Js.Array.toList(o.members), o.path, o.strip))) },
+    "extract-payload" => { Ok(ExtractPayload(Js.Array.toList(o.archive), Js.Array.toList(o.members), o.path)) },
     "symlink" => { decodeSymlinkTarget(o.parts) :> Result.map((target) => { Symlink(target, o.path) }) },
     "write" => {
       Result|decodeText(o.parts), decodeMode(o.mode)|

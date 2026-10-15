@@ -3,7 +3,7 @@
 from "./src/packages.wm" import * as Packages;
 from "./src/paths.wm" import { paths };
 from "./src/lock.wm" import * as Lock;
-from "./src/resolve.wm" import { resolve, choose, Default, minAgeDays, oldEnough };
+from "./src/resolve.wm" import { resolveWithOptions, choose, Default, minAgeDays, oldEnough };
 from "./src/packages.wm" import { versions };
 from "./src/model.wm" import { Candidate, System, User };
 from "./src/store.wm" import { realize };
@@ -22,7 +22,7 @@ let usage = join([
   "  versions <pkg>        what upstream offers, by channel, and which one pakman would pick",
   "  resolve [pkg...]      find upstream versions and pin them in pakman.lock (default: all)",
   "  build <pkg>           build the locked version for the root into the store",
-  "  install <pkg...>      build and install, with dependencies, into the root as a new generation",
+  "  install [--force] [--pin] <pkg...>      build and install, with dependencies, into the root as a new generation",
   "  remove <pkg...>       uninstall, as a new generation",
   "  update                resolve, build and reinstall everything installed",
   "  generations           list generations for the root",
@@ -32,21 +32,24 @@ let usage = join([
   "  user packages under your home directory (no root). Commands use those roots.",
   "  --user / --system      only the home directory / only /, for commands that act on roots",
   "  --root DIR             install into DIR instead (tests, building another system's root)",
-  "",
-  "  pkg@<version>         pin an exact version (update leaves it alone)",
-  "  pkg@latest            pin the newest in the default channel, asking first if it is younger than the age gate",
-  "  pkg@<channel>         follow a channel, e.g. zig@dev; update moves along it",
+  "  --force                install only: skip age filtering for requested packages during this install",
+  "  --pin                  install only: pin the selected version; update leaves it alone",
+  "  pkg@<version>         select this version now, then follow the default channel",
+  "  pkg@latest            follow the default channel, age-gated (same as @default)",
+  "  pkg@<channel>         follow a channel, e.g. zig@dev; installs and updates are age-gated",
   "  pkg@default           back to the package's default channel, age-gated"
 ], "\n");
 
 -- `only`: "" for both default roots, "user", "system", or "root" with `root` set.
-record Options = { positional: List<String>, only: String, root: String };
+record Options = { positional: List<String>, only: String, root: String, force: Bool, pinVersion: Bool };
 
 let rec parseArgs = (items, opts: Options) => {
   match(items) {
     [] => { Ok(.{ ..opts, positional = List.reverse(opts.positional) }) },
     ["--root", root, ..rest] => { parseArgs(rest, .{ ..opts, only = "root", root }) },
     ["--root"] => { Err("--root needs a directory") },
+    ["--pin", ..rest] => { parseArgs(rest, .{ ..opts, pinVersion = true }) },
+    ["--force", ..rest] => { parseArgs(rest, .{ ..opts, force = true }) },
     ["--user", ..rest] => { parseArgs(rest, .{ ..opts, only = "user" }) },
     ["--system", ..rest] => { parseArgs(rest, .{ ..opts, only = "system" }) },
     [arg, ..rest] => { parseArgs(rest, .{ ..opts, positional = [arg, ..opts.positional] }) }
@@ -113,7 +116,7 @@ let report = (generation: Install.Generation, counts) => {
 -- resolve
 
 let trackNote = (entry: Lock.LockEntry) => {
-  if (entry.track == "") { "" } else {
+  if (entry.track == "") { " (follows default)" } else {
     if (entry.track == entry.version) { " (pinned)" } else { " (follows " ++ entry.track ++ ")" }
   }
 };
@@ -130,28 +133,30 @@ let describeChange = (name, before, after: Lock.LockEntry) => {
 };
 
 -- One fold step: resolve a package and put its entry into the lock.
-let resolveInto = (p) => {
+let resolveInto = (p, force, pinVersion) => {
   (lock, request) => {
     let (info, selector) = request;
     let before = Lock.find(lock, info.name);
-    let record = (entry) => {
+    let recordEntry = (entry) => {
       print(describeChange(info.name, before, entry));
       Lock.upsert(lock, entry)
     };
-    resolve(p, info, before, selector)
-      :> Task.map(record)
+    resolveWithOptions(p, info, before, selector, force, pinVersion)
+      :> Task.map(recordEntry)
   }
 };
 
 -- Resolves (package, selector) requests one after another and saves the lock once at the end.
-let resolveAll = (p, packages) => {
+let resolveAllWithOptions = (p, packages, force, pinVersion) => {
   let save = via Task (lock) => {
     Lock.write(p.lockFile, lock) :> Task.map((_) => { lock })
   };
   Lock.read(p.lockFile)
-    :> via Task (lock) => { foldSeries(packages, lock, resolveInto(p)) }
+    :> via Task (lock) => { foldSeries(packages, lock, resolveInto(p, force, pinVersion)) }
     :> save
 };
+
+let resolveAll = (p, packages) => { resolveAllWithOptions(p, packages, false, false) };
 
 -- `resolve pkg[@selector]...` for one root.
 let resolveArgs = (p, root, args) => {
@@ -217,16 +222,25 @@ let rec withDependencies = (p, queue, found) => {
   }
 };
 
-let install = (p, root, args) => {
-  -- `pkg@selector` arguments update the lock first; plain names use what's locked.
-  let resolveExplicit = () => {
-    match(filterAll(args, (arg) => { let (_, selector) = splitRequest(arg); Option.isSome(selector) })) {
-      [] => { Task.succeed(void) },
-      Var(explicit) => {
-        requests(p, explicit)
-          :> via Task (wanted) => { resolveAll(p, wanted) }
-          :> Task.map(ignore)
-      }
+let installWithOptions = (p, root, args, force, pinVersion, refreshSelection) => {
+  -- Reinstalling makes a fresh selection and only pins when --pin is given.
+  -- Plain names keep a followed channel, but release an existing exact pin.
+  let resolveRequested = () => {
+    if (!refreshSelection) { Task.succeed(void) } else {
+      let select = (lock, request) => {
+        let (info, selector) = request;
+        let previous = Lock.find(lock, info.name);
+        let track = previous :> Option.map((entry: Lock.LockEntry) => {
+          if (entry.track == entry.version) { "" } else { entry.track }
+        }) :> Option.withDefault("");
+        (info, Some(selector :> Option.withDefault(track)))
+      };
+      requests(p, args)
+        :> via Task (wanted) => {
+          Lock.read(p.lockFile)
+            :> via Task (lock) => { resolveAllWithOptions(p, mapAll(wanted, (request) => { select(lock, request) }), force, pinVersion) }
+        }
+        :> Task.map(ignore)
     }
   };
   -- Dependencies must install into the same root as what needs them. The
@@ -253,7 +267,7 @@ let install = (p, root, args) => {
   let switchToNew = via Task (stored, generation) => {
     Install.switchTo(p, root, List.foldLeft(stored, generation.packages, Install.withPackage))
   };
-  resolveExplicit()
+  resolveRequested()
     :> via Task => { withDependencies(p, mapAll(args, nameOf), []) }
     :> sameRoot
     :> buildAll
@@ -261,6 +275,8 @@ let install = (p, root, args) => {
     :> switchToNew
     :> Task.map(report)
 };
+
+let install = (p, root, args) => { installWithOptions(p, root, args, false, false, true) };
 
 let remove = (p, root, names) => {
   let removeFrom = via Task (generation) => {
@@ -279,7 +295,7 @@ let update = (p, root) => {
   let installedNames = (generation) => { mapAll(generation.packages, (installed) => { installed.name }) };
   let refresh = via Task (generation) => {
     series(installedNames(generation), lookup(p))
-      :> via Task (infos) => { Task|resolveAll(p, following(infos)), install(p, root, installedNames(generation))| }
+      :> via Task (infos) => { Task|resolveAll(p, following(infos)), installWithOptions(p, root, installedNames(generation), false, false, false)| }
       :> Task.map((_) => { void })
   };
   Install.current(p, root)
@@ -301,7 +317,7 @@ let listVersions = (p, info: Packages.PackageInfo) => {
     let lockedVersion = locked :> Option.map(Lock.versionOf) :> Option.withDefault("");
     let pick = choose(info, candidates, locked, Default) :> Result.map((c: Candidate) => { c.version }) :> Result.withDefault("");
     let now = nowSeconds();
-    let gated = (c: Candidate) => { c.channel == info.channel && !oldEnough(minAgeDays(info), now, c) };
+    let gated = (c: Candidate) => { !oldEnough(minAgeDays(info), now, c) };
     let line = (c: Candidate) => {
       let notes = concatAll([
         if (c.version == lockedVersion) { ["locked" ++ (locked :> Option.map(trackNote) :> Option.withDefault(""))] } else { [] },
@@ -420,38 +436,47 @@ let run = (opts: Options) => {
   let home = homeDir();
   let p = paths("/");
   let done = (_) => { void };
-  match(opts.positional) {
-    ["list"] => { listPackages(opts, home) },
-    ["resolve"] => {
-      Packages.loadAll(p)
-        :> via Task (infos) => { perRoot(opts, mapAll(infos, (info: Packages.PackageInfo) => { info.name }), resolveArgs) }
-    },
-    ["resolve", ..args] => { perRoot(opts, args, resolveArgs) },
-    ["versions", name] => {
-      lookup(p)(name) :> via Task (info) => { listVersions(paths(rootOf(opts, home, info)), info) }
-    },
-    ["build", name] => {
-      lookup(p)(name)
-        :> via Task (info) => { buildFor(paths(rootOf(opts, home, info)))(info) }
-        :> Task.map((stored) => { print(stored.path) })
-    },
-    ["install", ..names] => { perRoot(opts, names, install) },
-    ["remove", ..names] => { perRoot(opts, names, remove) },
-    ["update"] => { eachRoot(opts, update) },
-    ["generations"] => { eachRoot(opts, (rp, root) => { print("== " ++ root); listGenerations(rp, root) }) },
-    ["rollback"] => {
-      match(defaultRoots(opts, home)) {
-        [root] => { rollback(paths(root), root) },
-        _ => { Task.fail("rollback acts on one root: add --user, --system or --root DIR") }
-      }
-    },
-    _ => { print(usage); Task.succeed(void) }
+  if ((opts.force || opts.pinVersion) && (match(opts.positional) { ["install", .._] => { false }, _ => { true } })) {
+    Task.fail(if (opts.force) { "--force is only supported by install" } else { "--pin is only supported by install" })
+  } else {
+    match(opts.positional) {
+      ["list"] => { listPackages(opts, home) },
+      ["resolve"] => {
+        Packages.loadAll(p)
+          :> via Task (infos) => { perRoot(opts, mapAll(infos, (info: Packages.PackageInfo) => { info.name }), resolveArgs) }
+      },
+      ["resolve", ..args] => { perRoot(opts, args, resolveArgs) },
+      ["versions", name] => {
+        lookup(p)(name) :> via Task (info) => { listVersions(paths(rootOf(opts, home, info)), info) }
+      },
+      ["build", name] => {
+        lookup(p)(name)
+          :> via Task (info) => { buildFor(paths(rootOf(opts, home, info)))(info) }
+          :> Task.map((stored) => { print(stored.path) })
+      },
+      ["install", ..names] => {
+        match(names) {
+          [] => { Task.fail("install needs at least one package") },
+          _ => { perRoot(opts, names, (rp, root, items) => { installWithOptions(rp, root, items, opts.force, opts.pinVersion, true) }) }
+        }
+      },
+      ["remove", ..names] => { perRoot(opts, names, remove) },
+      ["update"] => { eachRoot(opts, update) },
+      ["generations"] => { eachRoot(opts, (rp, root) => { print("== " ++ root); listGenerations(rp, root) }) },
+      ["rollback"] => {
+        match(defaultRoots(opts, home)) {
+          [root] => { rollback(paths(root), root) },
+          _ => { Task.fail("rollback acts on one root: add --user, --system or --root DIR") }
+        }
+      },
+      _ => { print(usage); Task.succeed(void) }
+    }
   }
 };
 
 let main = () => {
   let fail = (message) => { eprint("pakman: " ++ message); exit(1) };
-  match(parseArgs(args(), .{ positional = [], only = "", root = "" })) {
+  match(parseArgs(args(), .{ positional = [], only = "", root = "", force = false, pinVersion = false })) {
     Err(message) => { fail(message); Task.succeed(void) },
     Ok(opts) => { run(opts) :> Task.recover(fail) }
   }

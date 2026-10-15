@@ -23,9 +23,9 @@ let oldEnough = (days, now, candidate: Candidate) => {
 -- How a version is chosen. Parsed from `pkg@<selector>` or the lock's `track`.
 type Selector =
   | Default            -- newest in the package's default channel, age-gated
-  | Latest             -- newest in the default channel, past the age gate; pinned
+  | Latest             -- alias for the default channel, age-gated
   | Channel<String>    -- newest in this channel; follows it on update
-  | Exact<String>;     -- this version; update leaves it alone
+  | Exact<String>;     -- select this version now; pinning is a separate option
 
 -- "" and "default" mean Default; "latest" means Latest; a channel some candidate is in means Channel; anything else is a version.
 let parseSelector = (text, candidates: List<Candidate>) => {
@@ -42,59 +42,58 @@ let parseSelector = (text, candidates: List<Candidate>) => {
 
 let trackFor = match(selector) => {
   Default => { "" },
-  -- Pinned to whatever it picks; `resolve` records the version.
+  -- Latest follows the default channel, just like an omitted selector.
   Latest => { "" },
   Channel(name) => { name },
-  Exact(version) => { version }
+  Exact(_) => { "" }
 };
 
--- The candidate a selector picks. Only automatic choices (Default) pass the
--- age gate, which is applied here so no package can skip it; picking a channel
--- or a version explicitly is the user's decision.
---
--- A package whose upstream offers only its newest build (`onlyLatest`) can't
--- be gated by falling back to an older one. Instead the installed version is
--- held until the newest is old enough, and a first install takes the newest.
-let choose = (info: PackageInfo, candidates: List<Candidate>, locked: Option<LockEntry>, selector) => {
+-- All version selections apply the age policy unless this install is forced.
+-- --pin independently decides future tracking.
+let chooseWithForce = (info: PackageInfo, candidates: List<Candidate>, locked: Option<LockEntry>, selector, force: Bool) => {
   let now = nowSeconds();
   let days = minAgeDays(info);
-  let tooYoung = Err(info.name ++ ": nothing in channel " ++ info.channel
-    ++ " passes the minimum age of " ++ Text.of(days) ++ " days");
-  let heldOrNewest = (inChannel) => {
-    match((locked, inChannel)) {
-      (Some(entry), _) => { Ok(Candidate(versionOf(entry), "", info.channel, [], entry.ref)) },
-      (None, [newest, .._]) => { Ok(newest) },
-      (None, []) => { tooYoung }
+  let chooseChannel = (channel) => {
+    let inChannel = filterAll(candidates, (c: Candidate) => { c.channel == channel });
+    let eligible = (c) => { force || oldEnough(days, now, c) };
+    match(List.find(inChannel, eligible)) {
+      Some(c) => { Ok(c) },
+      None => {
+        if (info.onlyLatest) {
+          match((locked, inChannel)) {
+            (Some(entry), _) => { Ok(Candidate(versionOf(entry), "", channel, [], entry.ref)) },
+            (None, [newest, .._]) => { Ok(newest) },
+            _ => { Err(info.name ++ ": no candidate in channel " ++ channel) }
+          }
+        } else {
+          Err(info.name ++ ": nothing in channel " ++ channel
+            ++ " passes the minimum age of " ++ Text.of(days) ++ " days")
+        }
+      }
     }
   };
   match(selector) {
-    Default => {
-      let inChannel = filterAll(candidates, (c: Candidate) => { c.channel == info.channel });
-      match(List.find(inChannel, (c) => { oldEnough(days, now, c) })) {
-        Some(c) => { Ok(c) },
-        None => { if (info.onlyLatest) { heldOrNewest(inChannel) } else { tooYoung } }
-      }
-    },
-    Latest => {
-      candidates
-        :> List.find((c: Candidate) => { c.channel == info.channel })
-        :> Option.map(Ok)
-        :> Option.withDefault(Err(info.name ++ ": no candidate in channel " ++ info.channel))
-    },
-    Channel(name) => {
-      candidates
-        :> List.find((c: Candidate) => { c.channel == name })
-        :> Option.map(Ok)
-        :> Option.withDefault(Err(info.name ++ ": no candidate in channel " ++ name))
-    },
+    Default => { chooseChannel(info.channel) },
+    Latest => { chooseChannel(info.channel) },
+    Channel(name) => { chooseChannel(name) },
     Exact(version) => {
       candidates
         :> List.find((c: Candidate) => { c.version == version })
-        :> Option.map(Ok)
+        :> Option.map((candidate: Candidate) => {
+          if (force || oldEnough(days, now, candidate)) { Ok(candidate) } else {
+            Err(info.name ++ " " ++ version ++ " does not meet the minimum age of "
+              ++ Text.of(days) ++ " days (published " ++ candidate.published
+              ++ "); use `wm pakman install --force " ++ info.name ++ "@" ++ version ++ "` to install it anyway")
+          }
+        })
         :> Option.withDefault(Err(info.name ++ " has no version " ++ version
           ++ " upstream (see `pakman versions " ++ info.name ++ "`)"))
     }
   }
+};
+
+let choose = (info, candidates, locked, selector) => {
+  chooseWithForce(info, candidates, locked, selector, false)
 };
 
 -- Downloads a source into the content-addressed source cache and pins its
@@ -203,35 +202,35 @@ let noteGate = (info: PackageInfo, candidates: List<Candidate>, picked: Candidat
   }
 };
 
--- `@latest` skips the age gate, so a version younger than it needs a yes.
-let confirmLatest = (info: PackageInfo, candidate: Candidate) => {
-  let days = minAgeDays(info);
-  if (oldEnough(days, nowSeconds(), candidate)) {
-    Ok(candidate)
-  } else {
-    eprint("pakman: warning: " ++ info.name ++ " " ++ candidate.version ++ " was published "
-      ++ candidate.published ++ ", younger than the minimum age of " ++ Text.of(days) ++ " days");
-    if (confirm("Install it anyway?")) { Ok(candidate) } else { Err(info.name ++ ": not installing " ++ candidate.version) }
-  }
-};
-
 -- Resolves a package. `requested` is the selector from the command line, if
 -- any; otherwise the locked entry's track is kept. An unchanged version keeps
 -- matching remote sources; local inputs are refreshed against the current plan.
-let resolve = (paths: Paths, info: PackageInfo, locked: Option<LockEntry>, requested: Option<String>) => {
+let resolveWithOptions = (paths: Paths, info: PackageInfo, locked: Option<LockEntry>, requested: Option<String>, force: Bool, pinVersion: Bool) => {
   let text = match(requested) {
     Some(selector) => { selector },
     None => { locked :> Option.map(trackOf) :> Option.withDefault("") }
   };
   let pick = via Task (candidates) => {
     let selector = parseSelector(text, candidates);
-    choose(info, candidates, locked, selector)
+    -- Updating an already locked pin retains its approved version; it is
+    -- not a new request to install a young release.
+    let preservePin = !Option.isSome(requested) && (match(selector) { Exact(_) => { true }, _ => { false } });
+    chooseWithForce(info, candidates, locked, selector, force || preservePin)
       :> Result.andThen((candidate: Candidate) => {
-        if (selector == Latest) { confirmLatest(info, candidate) } else { Ok(candidate) }
+        -- Even onlyLatest's first-install exception cannot create a young
+        -- pin without an explicit force override.
+        if (pinVersion && !force && !oldEnough(minAgeDays(info), nowSeconds(), candidate)) {
+          Err(info.name ++ " " ++ candidate.version ++ " does not meet the minimum age of "
+            ++ Text.of(minAgeDays(info)) ++ " days; use `wm pakman install --force --pin "
+            ++ info.name ++ "@" ++ candidate.version ++ "` to pin it anyway")
+        } else { Ok(candidate) }
       })
       :> Result.map((candidate: Candidate) => {
-        if (selector == Default) { noteGate(info, candidates, candidate) } else { void };
-        if (selector == Latest) { (candidate, candidate.version) } else { (candidate, trackFor(selector)) }
+        if ((selector == Default || selector == Latest) && !force) { noteGate(info, candidates, candidate) } else { void };
+        -- A stored exact track is an existing pin. Preserve it when no new
+        -- selector was requested, including old locks created before --pin.
+        let track = if (pinVersion || preservePin) { candidate.version } else { trackFor(selector) };
+        (candidate, track)
       })
       :> Task.fromResult
   };
@@ -245,4 +244,13 @@ let resolve = (paths: Paths, info: PackageInfo, locked: Option<LockEntry>, reque
   versions(info)
     :> pick
     :> pinIfChanged
+};
+
+let resolveWithForce = (paths, info, locked, requested, force) => {
+  resolveWithOptions(paths, info, locked, requested, force, false)
+};
+
+-- Ordinary resolve/update commands always enforce their normal age policy.
+let resolve = (paths, info, locked, requested) => {
+  resolveWithForce(paths, info, locked, requested, false)
 };

@@ -1,0 +1,36 @@
+from "../../testman/test.wm" import *;
+from "../src/editor/hints.wm" import * as Hints;
+from "../src/editor/preview.wm" import * as Preview;
+from "../lib/subsetml/subset_utf16_source.wm" import * as Source;
+from "../lib/subsetml/subset_result.wm" import * as R;
+from "../lib/subsetml/subset_list.wm" import * as Lists;
+
+let source = (text: String) => {
+  match(Source.fromNativeUnits(text)) {
+    R.Ok(value) => {value},
+    R.Err(_) => {Panic("unreachable")} // Fixture strings expose UTF-16 units.
+  }
+};
+let labelsEqual = (actual, expected) => {
+  assertEqual(Source.toUnits(Hints.label(source(actual))), Source.toUnits(source(expected)))
+};
+let tests = [
+  test("inline labels retain missing spaces and tabs", () => {
+    checks([labelsEqual(" ", " "), labelsEqual("\t  ", "\t  ")])
+  }),
+  test("inline labels expose line breaks without creating editor lines", () => {
+    labelsEqual(" \r\n  \n\r", " [LF]  [LF][CR]")
+  }),
+  test("inline hints use original positions and explicit spacing without padding", () => {
+    match(Preview.render(source("x"),
+      [Preview.Insertion(8, 1, source("?")), Preview.Insertion(2, 1, source(";"))], false)) {
+      R.Err(_) => {fail("valid preview rejected")},
+      R.Ok(preview) => {
+        assertEqual(Lists.map(Hints.fromPreview(preview), (hint: Hints.InlineHint) => {
+          (hint.insertionId, hint.position.index, hint.position.line, hint.position.col,
+            Source.toUnits(hint.label), hint.paddingLeft, hint.paddingRight)
+        }), [(8, 1, 0, 1, [63], false, false), (2, 1, 0, 1, [59], false, false)])
+      }
+    }
+  })
+];

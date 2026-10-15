@@ -1,0 +1,77 @@
+from "../../testman/test.wm" import *;
+from "../src/editor/preview.wm" import * as Preview;
+from "../lib/subsetml/subset_utf16_source.wm" import * as Source;
+from "../lib/subsetml/subset_result.wm" import * as R;
+from "../lib/subsetml/subset_list.wm" import * as Lists;
+
+// Checked fixture builders. Tests call the portable core, not its JS transport.
+let source = (text: String) => {
+  match(Source.fromNativeUnits(text)) {
+    R.Ok(value) => {value},
+    R.Err(_) => {Panic("unreachable")} // Host strings consist of valid UTF-16 units.
+  }
+};
+let insertion = (id, anchor, label) => {Preview.Insertion(id, anchor, source(label))};
+let withPreview = (original, hints, marked, check) => {
+  match(Preview.render(source(original), hints, marked)) {
+    R.Ok(value) => {check(value)},
+    R.Err(_) => {fail("preview unexpectedly rejected fixture anchors")}
+  }
+};
+let renderedEquals = (value: Preview.Preview, expected) => {
+  // Compare primitive units; imported generic equality currently rejects some
+  // user-declared record/variant arguments (testman's documented limitation).
+  assertEqual(Source.toUnits(value.rendered), Source.toUnits(source(expected)))
+};
+
+let tests = [
+  test("missing spaces are inlays, including whitespace-only labels", () => {
+    withPreview("let x=1", [insertion(0, 7, ";"), insertion(1, 5, " "), insertion(2, 6, " ")], false,
+      (value: Preview.Preview) => {
+        checks([
+          renderedEquals(value, "let x = 1;"),
+          assertEqual(Lists.map(value.placements, (p: Preview.Placement) => {
+            (p.insertion.anchor, p.previewStart, p.previewEnd)
+          }), [(5, 5, 6), (6, 7, 8), (7, 9, 10)])
+        ])
+      })
+  }),
+  test("shared anchors retain structural order, independent of IDs", () => {
+    withPreview("let thing = ", [insertion(90, 12, "?"), insertion(2, 12, ";")], true,
+      (value: Preview.Preview) => {
+        checks([
+          renderedEquals(value, "let thing = *?**;*"),
+          assertEqual(Lists.map(value.placements, (p: Preview.Placement) => {p.insertion.insertionId}), [90, 2])
+        ])
+      })
+  }),
+  test("closing brace precedes match-arm comma at a shared anchor", () => {
+    withPreview("x", [insertion(0, 1, "}"), insertion(1, 1, ",")], true,
+      (value) => {renderedEquals(value, "x*}**,*")})
+  }),
+  test("authored broken text, comments and excess whitespace stay unchanged", () => {
+    let original = "@@broken  /* untouched */\r\n\tlet x=1\r";
+    withPreview(original, [], false, (value) => {renderedEquals(value, original)})
+  }),
+  test("positions refer to original CRLF, CR and LF lines", () => {
+    withPreview("a\r\nb\rc\nd", [insertion(0, 3, " "), insertion(1, 5, " "), insertion(2, 7, " ")], false,
+      (value: Preview.Preview) => {
+        checks([
+          renderedEquals(value, "a\r\n b\r c\n d"),
+          assertEqual(Lists.map(value.placements, (p: Preview.Placement) => {
+            (p.position.index, p.position.line, p.position.col)
+          }), [(3, 1, 0), (5, 2, 0), (7, 3, 0)])
+        ])
+      })
+  }),
+  test("empty source accepts ordered insertions at EOF", () => {
+    withPreview("", [insertion(0, 0, " "), insertion(1, 0, "?")], false,
+      (value) => {renderedEquals(value, " ?")})
+  }),
+  test("out-of-range anchors report the offending insertion", () => {
+    match(Preview.render(source("x"), [insertion(7, 2, "?")], false)) {
+      R.Ok(_) => {fail("out-of-range anchor was accepted")},
+      R.Err(Preview.InvalidAnchor(id, anchor)) => {assertEqual((id, anchor), (7, 2))}
+    }
+  })
+];

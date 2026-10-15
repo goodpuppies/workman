@@ -2,8 +2,8 @@
 
 from js.global("JSON") import { parse } as JSON;
 from "./io.wm" import { fetchText };
-from "./model.wm" import { Checksum };
-from js.module("./host.ts") import unsafe { jsonTextOr: (Js.Value, String) -> String };
+from "./model.wm" import { Checksum, Candidate };
+from js.module("./host.ts") import unsafe { jsonTextOr: (Js.Value, String) -> String, captures: (String, String) -> Js.Array<String> };
 from js.module("./host.ts") import { headInfo };
 from "./io.wm" import { describe };
 from "./fun.wm" import { mapAll, filterAll };
@@ -86,6 +86,47 @@ let releaseChecksums = (release: Release) => {
   release.assets
     :> filterAll((asset: ReleaseAsset) => { asset.sha256 != "" })
     :> mapAll((asset: ReleaseAsset) => { Checksum(asset.url, asset.sha256) })
+};
+
+-- Extract the first capture, or the whole match if the pattern has no group.
+-- This is a string operation, independent of a release provider.
+let matchText = (pattern) => (text) => {
+  match(captures(pattern, text) :> Js.Array.toList) {
+    [_, captured, .._] => { Some(captured) },
+    [whole] => { Some(whole) },
+    _ => { None }
+  }
+};
+
+record ReleaseOptions = {
+  versionOf: String -> Option<String>,
+  accept: Release -> Bool,
+  assets: String -> List<String>,
+  channel: String,
+  ref: (Release, String) -> String
+};
+
+-- Common release rules, independent of where the releases were fetched.
+-- Override fields with record spread; no network access happens here.
+let stableReleases: ReleaseOptions = .{
+  versionOf = matchText "^v(\\d+\\.\\d+\\.\\d+)$",
+  accept = (release: Release) => { !release.prerelease },
+  assets = (_) => { [] },
+  channel = "stable",
+  ref = (_, _) => { "" }
+};
+
+let releaseCandidates = (options: ReleaseOptions) => {
+  let candidate = (release: Release) => {
+    options.versionOf(release.tag)
+      :> Option.andThen((version) => {
+        let missingAsset = List.any(options.assets(version), (name) => { !hasAsset(release, name) });
+        if (options.accept(release) && !missingAsset) {
+          Some(Candidate(version, release.published, options.channel, releaseChecksums(release), options.ref(release, version)))
+        } else { None }
+      })
+  };
+  (releases: List<Release>) => { releases :> List.mapPartial(candidate) }
 };
 
 -- Where `url` finally redirects to, and its Last-Modified date ("" if unknown):

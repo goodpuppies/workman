@@ -1,0 +1,110 @@
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+from "../source/source.wm" import * as Source;
+from "../lexer/reader.wm" import * as Reader;
+
+// Ordered additions to an unchanged authored buffer. Diff generation is a separate
+// stage; explicit insertion fixtures are not parser output. Whitespace is ordinary
+// insertion content here, including whitespace-only labels.
+record Insertion = {
+  insertionId: Number,
+  anchor: Number,
+  content: Text.Source,
+};
+record Placement = {
+  insertion: Insertion,
+  position: Source.Position,
+  previewStart: Number,
+  previewEnd: Number,
+};
+record Preview = {
+  rendered: Text.Source,
+  placements: List<Placement>,
+};
+type Error = | InvalidAnchor<Number, Number>;
+
+// Stable bottom-up merge sort. Equal anchors keep input order, independent of IDs.
+let ordered = (insertions) => {
+  let rec merge = (left, right, acc) => {
+    match(left, right) {
+      ([], Var(rest)) => {Lists.reverseAppend(acc, rest)},
+      (Var(rest), []) => {Lists.reverseAppend(acc, rest)},
+      ([a, ..xs], [b, ..ys]) => {
+        let first: Insertion = a;
+        let second: Insertion = b;
+        if (first.anchor <= second.anchor) {
+          merge(xs, right, [a, ..acc])
+        } else {merge(left, ys, [b, ..acc])}
+      }
+    }
+  };
+  let rec round = (runs, acc) => {
+    match(runs) {
+      [] => {Lists.reverse(acc)},
+      [run] => {Lists.reverse([run, ..acc])},
+      [a, b, ..rest] => {round(rest, [merge(a, b, []), ..acc])}
+    }
+  };
+  let rec finish = match {
+    [] => {[]},
+    [run] => {run},
+    Var(runs) => {finish(round(runs, []))} // Two or more runs need another merge round.
+  };
+  finish(Lists.map(insertions, (insertion) => {[insertion]}))
+};
+
+let render = (source, insertions, markInserted: Bool) => {
+  // A bad host request is an explicit error, not a clamped position. Text.slice
+  // validates integral UTF-16 boundaries, including EOF and excluding NaN/infinity.
+  let rec validate = match {
+    [] => {R.Ok(void)},
+    [insertion, ..rest] => {
+      let item: Insertion = insertion;
+      match(Text.slice(source, item.anchor, 0)) {
+        R.Ok(_) => {validate(rest)},
+        R.Err(_) => {R.Err(InvalidAnchor(item.insertionId, item.anchor))}
+      }
+    }
+  };
+  match(validate(insertions)) {
+    R.Err(error) => {R.Err(error)},
+    R.Ok(_) => {
+      let reader = Reader.create(source);
+      let rec copy = (units, count, acc) => {
+        if (count == 0) {(units, acc)} else {
+          match(units) {
+            [code, ..rest] => {copy(rest, count - 1, [code, ..acc])},
+            [] => {Panic("unreachable")} // Valid sorted anchors are within the buffer.
+          }
+        }
+      };
+      let rec overlay = (remaining, units, pos: Source.Position, length, outputRev, placementsRev) => {
+        match(remaining) {
+          [] => {
+            // All output units came from checked Sources and ASCII marker units.
+            match(Text.fromUnits(Lists.reverseAppend(outputRev, units))) {
+              R.Ok(rendered) => {R.Ok(Preview(rendered, Lists.reverse(placementsRev)))},
+              R.Err(_) => {Panic("unreachable")}
+            }
+          },
+          [item, ..rest] => {
+            let insertion: Insertion = item;
+            let gap = insertion.anchor - pos.index;
+            let (afterGap, withGap) = copy(units, gap, outputRev);
+            let position = Reader.advance(reader, pos, gap);
+            let start = length + gap;
+            let content = Text.toUnits(insertion.content);
+            // CLI markers identify each insertion separately, including shared anchors.
+            let label = if (markInserted) {Lists.append([42, ..content], [42])} else {content};
+            let end = start + Lists.length(label);
+            let placement = Placement(insertion, position, start, end);
+            overlay(rest, afterGap, position, end,
+              Lists.reverseAppend(label, withGap), [placement, ..placementsRev])
+          }
+        }
+      };
+      overlay(ordered(insertions), Text.toUnits(source), Source.Position(0, 0, 0), 0, [], [])
+    }
+  }
+};

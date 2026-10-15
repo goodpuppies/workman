@@ -1,0 +1,21 @@
+from "../../src/parser/program.wm" import * as Parser;
+from "../../src/editor/view.wm" import * as View;
+from "../../src/editor/hints.wm" import * as Hints;
+from "../portable/surface_document.wm" import * as Snapshot;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+
+let parse = (source: String) => {
+  match(Text.fromNativeUnits(source)) {
+    R.Ok(text) => {Parser.parse(text)},
+    R.Err(_) => {Panic("unreachable")} // JS strings consist of 16-bit source units.
+  }
+};
+let inspect = (source: String, marked: Bool) => {
+  let document = parse(source);
+  View.render(document, marked, 256)
+};
+let snapshot = (source: String) => {Snapshot.encode(parse(source))};
+let units = Text.toUnits;
+let encode = Snapshot.encode;
+let inlineHints = Hints.fromPreview;

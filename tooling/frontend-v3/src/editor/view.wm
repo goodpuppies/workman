@@ -1,0 +1,61 @@
+from "../surface/ast.wm" import * as Ast;
+from "../source/mark.wm" import * as Marks;
+from "./project.wm" import * as Project;
+from "./diff.wm" import * as Diff;
+from "./inlays.wm" import * as Inlays;
+from "./preview.wm" import * as Preview;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+
+record AttributedAddition = {
+  addition: Inlays.Addition,
+  syntaxMark: Option<Marks.MarkId>,
+  delimiter: Option<Ast.DelimiterId>,
+};
+record View = {
+  document: Ast.Program,
+  projection: Project.Projection,
+  difference: Diff.Difference,
+  preview: Preview.Preview,
+  additions: List<AttributedAddition>,
+};
+type Error = ProjectionDiffError<Diff.Error> | InlayPreviewError<Preview.Error>;
+
+let render = (document: Ast.Program, marked, limit) => {
+  let projection = Project.render(document);
+  R.andThen(R.mapError(Diff.compareAnchored(document.source, projection.text,
+    projection.correspondence, limit), ProjectionDiffError), (difference) => {
+    let details = Inlays.details(difference);
+    let rec attribute = (remaining, virtuals, acc) => {
+      match(remaining) {
+        [] => {Lists.reverse(acc)},
+        [item, ..rest] => {
+          let addition: Inlays.Addition = item;
+          let rec skip = match {
+            [] => {[]}, // Layout additions have no structural mark.
+            [item, ..tail] => {
+              let span: Project.VirtualSpan = item;
+              if (span.projectedEnd <= addition.projectedStart) {skip(tail)} else {[span, ..tail]}
+            }
+          };
+          let candidates = skip(virtuals);
+          let (mark, pair) = match(candidates) {
+            [] => {(None, None)},
+            [item, ..tail] => {
+              let span: Project.VirtualSpan = item;
+              if (span.projectedStart <= addition.projectedStart && span.projectedEnd >= addition.projectedEnd) {
+                (Some(span.markId), span.delimiter)
+              } else {(None, None)} // This inserted label is emergent layout outside the mark range.
+            }
+          };
+          attribute(rest, candidates, [AttributedAddition(addition, mark, pair), ..acc])
+        }
+      }
+    };
+    let additions = attribute(details, projection.virtualSpans, []);
+    let insertions = Lists.map(details, (value: Inlays.Addition) => {value.insertion});
+    R.map(R.mapError(Preview.render(document.source, insertions, marked), InlayPreviewError), (preview) => {
+      View(document, projection, difference, preview, additions)
+    })
+  })
+};

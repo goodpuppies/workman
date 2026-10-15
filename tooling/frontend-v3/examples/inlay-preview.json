@@ -1,0 +1,8 @@
+{
+  "source": "let x=1",
+  "insertions": [
+    { "anchor": 5, "text": " " },
+    { "anchor": 6, "text": " " },
+    { "anchor": 7, "text": ";" }
+  ]
+}

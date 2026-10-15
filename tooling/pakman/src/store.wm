@@ -114,6 +114,13 @@ let runOp = (out, base, sourcePath, def: PackageInfo, entry: LockEntry, inputs, 
         };
         extract(chain, unpack.members, out ++ "/" ++ unpack.dest, unpack.strip)
       },
+      ExtractPayload(archives, choices, dest) => {
+        let chain = match(archives) {
+          [file, ..inner] => { [sourcePath(file), ..inner] },
+          [] => { [] }
+        };
+        extractPayload(chain, choices, out ++ "/" ++ dest)
+      },
       Symlink(target, path) => {
         Task|parent(path), symlink(symlinkTarget(path, target), out ++ "/" ++ path)| :> Task.map(ignore)
       },

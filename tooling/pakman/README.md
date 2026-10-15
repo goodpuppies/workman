@@ -17,7 +17,8 @@ wm pakman resolve [pkg...]              # find upstream versions, pin them in th
 wm pakman build t3-code                 # build the locked version into the store
 wm pakman install gale aimp             # system packages: installed into / (sudo for the copy only)
 wm pakman install zig                   # user packages: installed into your home, no root
-wm pakman install zig@0.14.1 --root DIR # an exact version in another root; `update` leaves it alone
+wm pakman install zig@0.14.1 --root DIR # this version now; subsequent updates follow the default
+wm pakman install --pin zig@0.14.1     # explicitly stay on this version
 wm pakman install zig@dev               # follow a channel; `update` moves along it
 wm pakman resolve zig@default           # back to the default channel, age-gated
 wm pakman remove t3-code
@@ -25,6 +26,31 @@ wm pakman update                        # every root: resolve, build and reinsta
 wm pakman generations
 wm pakman rollback --user               # or --system, or --root DIR
 ```
+
+Version selection, tracking, and age policy are separate:
+
+| command | installs | future `update` |
+|---|---|---|
+| `install foo` | newest eligible release in the default or previously followed channel | follows that channel |
+| `install foo@latest` / `foo@default` | newest eligible release in the default channel | follows the default channel |
+| `install foo@stable` | newest eligible stable release | follows stable |
+| `install foo@1.2.3` | exactly 1.2.3, or fails if too young | follows the default channel |
+| `install --pin foo@1.2.3` | exactly 1.2.3, or fails if too young | stays on 1.2.3 |
+| `install --force foo@latest` | newest release regardless of age | follows the default channel with the normal age gate |
+
+Every install resolves requested packages again. Reinstalling without `--pin`
+releases an existing pin; plain names retain a previously followed channel.
+`--pin` can also freeze a version selected by a channel or `@latest`. It does
+not bypass the age gate: young exact versions require `--force` too.
+Existing exact tracks in old locks remain pinned during `update`/plain `resolve`
+until an install or an explicit selector replaces them. No lock migration is needed.
+
+`--force` skips age filtering for requested packages during this install only.
+Dependencies retain their normal policy; checksums, host requirements, and
+ownership checks still apply. Both `--force` and `--pin` are install-only flags.
+An ordinary reinstall or update can downgrade a forced release while it is still
+too young. Use `--pin` explicitly if that release must remain installed.
+`build` consumes the existing lock without discovering new versions.
 
 `wm pakman` (`src/pakman.ts` in wm-mini) compiles `pakman.wm` into `.build/pakman.js` when one of
 its sources changed, then runs it like `wm run`, with the permissions the wm launcher has. Package
@@ -40,7 +66,8 @@ Each package is its own wm program. pakman compiles it separately (cached until 
 | `make <version> <ref>` | prints the plan: sources, install steps, base requirements | none |
 
 Everything else (policy, downloads, hashing, building, installing) happens in pakman. A package can
-be run by hand for debugging: `wm run ~/git/pak/paks/zig/pak.wm -- make <version> ""`.
+be run by hand for debugging: `wm run ~/git/pak/paks/zig/pak.wm -- make <version> "<ref from versions>"`.
+For Zig, that ref is the exact tarball URL published by the upstream index.
 
 Environment:
 
@@ -119,6 +146,62 @@ Each package declares a scope. `System` packages install where upstream lays the
 `/opt`), unedited; pakman builds unprivileged and only the final copy into `/` runs through `sudo`
 (`PAKMAN_SUDO` overrides). `User` packages install under your home directory (`~/.local/...`) with no
 root. Next to pacman, pakman never touches a file it didn't install or one pacman's database lists.
+
+## Composable package helpers
+
+Provider adapters and candidate rules are separate. `githubReleases(repo)` handles
+GitHub's API shape, draft filtering, and asset digests; it returns normalized
+`Release` records. `releaseCandidates(options)(releases)` is a pure function over
+those records, reusable with another provider's adapter or fixture data. No
+combined GitHub wrapper is needed just to compose a fetch with `Task.map`.
+
+```wm
+let versions = () => {
+  githubReleases(repo)
+    :> Task.map(releaseCandidates .{
+      ..stableReleases,
+      versionOf = matchText "^gui-v(\\d+\\.\\d+\\.\\d+)$",
+      assets = (version) => { [deb(version)] },
+      ref = (release, _) => { release.tag }
+    })
+};
+```
+
+This follows Workman's [explicit currying/eta-reduction pattern](../../docs/advancedsyntax.md#the-triple-dry-out-pattern).
+`releaseCandidates(options)` returns a pure list transformation. `Task.map` applies
+it to the successful fetched result; the pipe supplies the Task as its first
+argument. There is no forwarding `(releases) => ...` callback, single-use alias,
+or need to group a generic carrier expression. Mapping remains explicit at the
+asynchronous boundary. Use `Monad.via Task` for stages that return another Task,
+as Envision does when looking up each pipeline's jobs. Keep fetch calls inside
+`versions()` because Tasks are eager; configuring a selection function is pure.
+
+`stableReleases` defaults to non-prerelease `vX.Y.Z` tags, channel `stable`, no
+required assets, and an empty ref. Override `versionOf`, `accept`, `assets`,
+`channel`, or `ref` individually. All named assets must be present. Release order,
+publication date, and published asset checksums are preserved. Set asset rules
+explicitly for binary packages. `matchText(pattern)(text)` returns the first
+capture, the whole match for a pattern without captures, or `None`.
+
+For example, T3 supplies its own tag parser, requires its AppImage, accepts
+prereleases, and sets `nightly`. AppImageLauncher uses an asset predicate and
+carries the irregular asset name as its ref. These are ordinary callbacks;
+packages remain able to implement custom discovery directly.
+
+`extractPayload(file, allowedMembers, dest)` returns an install operation that
+opens exactly one named member and extracts the contained archive. Missing,
+unsupported, duplicate, or multiple matching members fail. The underlying
+`ExtractPayload(archiveChain, allowedMembers, dest)` also supports archive nesting.
+
+`debPayload(file)` composes this operation with Debian's known `data.tar`, gzip,
+xz, zstd, bzip2, and lzma payload names, installing at the system root. It only
+extracts the payload; it does not execute Debian scripts. Packages still describe
+necessary symlinks or other integration explicitly. This removes compression
+and version guesses without guessing application layouts.
+
+Protocol 7 adds the payload extraction operation. Old locks and store manifests
+remain readable; package programs recompile through the existing cache mechanism.
+Run extraction tests with `deno test -A tests/extract-host.test.ts`.
 
 ## Package-controlled builds
 

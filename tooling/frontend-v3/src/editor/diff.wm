@@ -1,0 +1,241 @@
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+
+// Full text diff, before the additive editor view removes deletion operations.
+// Coordinates always refer to the original two documents, never intermediate edits.
+type EditKind = Keep | Insert | Delete;
+record Edit = {
+  kind: EditKind,
+  originalStart: Number,
+  originalEnd: Number,
+  projectedStart: Number,
+  projectedEnd: Number,
+};
+record Difference = {
+  original: Text.Source,
+  projected: Text.Source,
+  edits: List<Edit>,
+};
+type Error = InvalidLimit | EditDistanceLimit<Number> | InvalidCorrespondence<Number>;
+record Correspondence = {
+  originalStart: Number,
+  originalEnd: Number,
+  projectedStart: Number,
+  projectedEnd: Number,
+};
+record Diagonal = {
+  diagonal: Number,
+  originalEnd: Number,
+};
+
+// Myers shortest-edit search. Trace memory depends on edit distance, not the product
+// of document lengths. A caller-supplied limit bounds the search on unrelated texts;
+// exceeding it is an explicit computation error, never a guessed successful diff.
+let compare = (original, projected, limit: Number) => {
+  let validLimit = limit <= 4096 && Lists.validCount(limit);
+  if (!validLimit) {R.Err(InvalidLimit)} else {
+    let originalLength = Text.length(original);
+    let projectedLength = Text.length(projected);
+    let code = (text, index) => {
+      match(Text.peek(text, index)) {
+        Some(unit) => {unit},
+        None => {Panic("unreachable")} // Search positions are checked against source length.
+      }
+    };
+    let rec prefix = (index) => {
+      if (index < originalLength && index < projectedLength) {
+        if (code(original, index) == code(projected, index)) {prefix(index + 1)} else {index}
+      } else {index}
+    };
+    let leading = prefix(0);
+    let rec suffix = (count) => {
+      if (count < originalLength - leading && count < projectedLength - leading) {
+        if (code(original, originalLength - count - 1) == code(projected, projectedLength - count - 1)) {
+          suffix(count + 1)
+        } else {count}
+      } else {count}
+    };
+    let trailing = suffix(0);
+    let n = originalLength - leading - trailing;
+    let m = projectedLength - leading - trailing;
+    let rec lookup = (layer, k) => {
+      match(layer) {
+        [] => {Panic("unreachable")}, // Only diagonals established by the prior layer are read.
+        [item, ..rest] => {
+          let entry: Diagonal = item;
+          if (entry.diagonal == k) {entry.originalEnd} else {lookup(rest, k)}
+        }
+      }
+    };
+    let choose = (previous, d, k) => {
+      if (k == 0 && d == 0) {(0, 0)} else {
+        let insertion = if (k == -d) {true} else {
+          if (k == d) {false} else {lookup(previous, k - 1) < lookup(previous, k + 1)}
+        };
+        let previousK = if (insertion) {k + 1} else {k - 1};
+        let previousX = lookup(previous, previousK);
+        (if (insertion) {previousX} else {previousX + 1}, previousK)
+      }
+    };
+    let rec snake = (x, y) => {
+      if (x < n && y < m) {
+        if (code(original, leading + x) == code(projected, leading + y)) {snake(x + 1, y + 1)} else {(x, y)}
+      } else {(x, y)}
+    };
+    let prepend = (kind, a, b, c, d, edits) => {
+      if (a == b && c == d) {edits} else {
+        let edit = Edit(kind, a, b, c, d);
+        match(edits) {
+          [] => {[edit]},
+          [next, ..rest] => {
+            let following: Edit = next;
+            if (following.kind == kind && b == following.originalStart && d == following.projectedStart) {
+              [Edit(kind, a, following.originalEnd, c, following.projectedEnd), ..rest]
+            } else {[edit, ..edits]}
+          }
+        }
+      }
+    };
+    let rec backtrack = (trace, d, x, y, edits) => {
+      if (d == 0) {
+        prepend(Keep, leading, leading + x, leading, leading + y, edits)
+      } else {
+        match(trace) {
+          [current, previous, ..rest] => {
+            let k = x - y;
+            let (_, previousK) = choose(previous, d, k);
+            let previousX = lookup(previous, previousK);
+            let previousY = previousX - previousK;
+            let insertion = previousK == k + 1;
+            let stepX = if (insertion) {previousX} else {previousX + 1};
+            let stepY = if (insertion) {previousY + 1} else {previousY};
+            let withSnake = prepend(Keep, leading + stepX, leading + x,
+              leading + stepY, leading + y, edits);
+            let withStep = prepend(if (insertion) {Insert} else {Delete},
+              leading + previousX, leading + stepX,
+              leading + previousY, leading + stepY, withSnake);
+            backtrack([previous, ..rest], d - 1, previousX, previousY, withStep)
+          },
+          _ => {Panic("unreachable")} // Trace contains one layer per completed search distance.
+        }
+      }
+    };
+    let rec search = (d, previous, trace) => {
+      if (d > limit) {R.Err(EditDistanceLimit(limit))} else {
+        // Walk the sorted previous frontier once per distance. Random linked-list
+        // lookup here would add an avoidable factor of edit distance to the search.
+        let rec diagonal = (k, remainingPrevious, layerRev) => {
+          let (startX, afterPrevious) = if (d == 0) {(0, [])} else {
+            match(remainingPrevious) {
+              [] => {Panic("unreachable")}, // Each new diagonal has a predecessor.
+              [left, ..rest] => {
+                let first: Diagonal = left;
+                if (k == -d) {(first.originalEnd, remainingPrevious)} else {
+                  if (k == d) {(first.originalEnd + 1, rest)} else {
+                    match(rest) {
+                      [] => {Panic("unreachable")}, // Interior diagonals have two predecessors.
+                      [right, ..tail] => {
+                        let second: Diagonal = right;
+                        (if (first.originalEnd < second.originalEnd) {second.originalEnd} else {first.originalEnd + 1}, rest)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          };
+          let (x, y) = snake(startX, startX - k);
+          let layer = [Diagonal(k, x), ..layerRev];
+          if (x >= n && y >= m) {
+            let tail = prepend(Keep, originalLength - trailing, originalLength,
+              projectedLength - trailing, projectedLength, []);
+            let middle = backtrack([layer, ..trace], d, n, m, tail);
+            R.Ok(Difference(original, projected, prepend(Keep, 0, leading, 0, leading, middle)))
+          } else {
+            if (k >= d) {search(d + 1, Lists.reverse(layer), [layer, ..trace])} else {diagonal(k + 2, afterPrevious, layer)}
+          }
+        };
+        diagonal(-d, previous, [])
+      }
+    };
+    search(0, [], [])
+  }
+};
+
+// Canonical projection knows where authored spelling was emitted. Those spans are
+// mandatory matches, preventing repeated tokens/opaque fragments from aligning to
+// a different construct. Search runs only in gaps; the limit applies to each gap.
+let compareAnchored = (original, projected, correspondences, limit) => {
+  // Numeric source units need element-wise equality: SML real lists are not eqtypes.
+  let rec sameUnits = (left: List<Number>, right) => {
+    match(left) {
+      [] => {Lists.isEmpty(right)},
+      [unit, ..rest] => {
+        match(right) {
+          [] => {false}, // The second span has fewer units.
+          [other, ..tail] => {if (unit == other) {sameUnits(rest, tail)} else {false}}
+        }
+      }
+    }
+  };
+  let rec validate = (remaining, originalEnd, projectedEnd, index) => {
+    match(remaining) {
+      [] => {R.Ok(void)},
+      [item, ..rest] => {
+        let anchor: Correspondence = item;
+        let count = anchor.originalEnd - anchor.originalStart;
+        if (anchor.originalStart < originalEnd || anchor.projectedStart < projectedEnd || count <= 0 ||
+            count != anchor.projectedEnd - anchor.projectedStart) {R.Err(InvalidCorrespondence(index))} else {
+          match(Text.slice(original, anchor.originalStart, count)) {
+            R.Err(_) => {R.Err(InvalidCorrespondence(index))},
+            R.Ok(left) => {
+              match(Text.slice(projected, anchor.projectedStart, count)) {
+                R.Err(_) => {R.Err(InvalidCorrespondence(index))},
+                R.Ok(right) => {
+                  if (sameUnits(Text.toUnits(left), Text.toUnits(right))) {
+                    validate(rest, anchor.originalEnd, anchor.projectedEnd, index + 1)
+                  } else {R.Err(InvalidCorrespondence(index))}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+  let gap = (a, b, c, d) => {
+    let slice = (source, start, end) => {
+      match(Text.slice(source, start, end - start)) {
+        R.Ok(value) => {value},
+        R.Err(_) => {Panic("unreachable")} // Correspondences have established ordered boundaries.
+      }
+    };
+    R.map(compare(slice(original, a, b), slice(projected, c, d), limit), (difference: Difference) => {
+      Lists.map(difference.edits, (edit: Edit) => {
+        Edit(edit.kind, a + edit.originalStart, a + edit.originalEnd,
+          c + edit.projectedStart, c + edit.projectedEnd)
+      })
+    })
+  };
+  let rec assemble = (remaining, a, c, editsRev) => {
+    match(remaining) {
+      [] => {
+        R.map(gap(a, Text.length(original), c, Text.length(projected)), (tail) => {
+          Difference(original, projected, Lists.reverse(Lists.reverseAppend(tail, editsRev)))
+        })
+      },
+      [item, ..rest] => {
+        let anchor: Correspondence = item;
+        R.andThen(gap(a, anchor.originalStart, c, anchor.projectedStart), (preceding) => {
+          let unchanged = Edit(Keep, anchor.originalStart, anchor.originalEnd,
+            anchor.projectedStart, anchor.projectedEnd);
+          assemble(rest, anchor.originalEnd, anchor.projectedEnd,
+            [unchanged, ..Lists.reverseAppend(preceding, editsRev)])
+        })
+      }
+    }
+  };
+  R.andThen(validate(correspondences, 0, 0, 0), (_) => {assemble(correspondences, 0, 0, [])})
+};
+

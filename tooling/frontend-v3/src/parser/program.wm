@@ -1,0 +1,580 @@
+from "./state.wm" import * as State;
+from "../syntax/cursor.wm" import * as Cursor;
+from "../syntax/keyword.wm" import * as Keyword;
+from "../syntax/operators.wm" import * as Operators;
+from "../surface/ast.wm" import * as Ast;
+from "../source/mark.wm" import * as Marks;
+from "../lexer/token.wm" import * as Token;
+from "../lexer/lexer.wm" import * as Lexer;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+
+let letWord = [108, 101, 116];
+let arrowKind = Token.PunctuationToken(Token.FatArrow);
+let rightParen = Token.PunctuationToken(Token.RightParen);
+let commaKind = Token.PunctuationToken(Token.Comma);
+let isLet = (state: State.State) => {Cursor.isWord(state.cursor, letWord)};
+let eof = (state: State.State) => {Cursor.isKind(state.cursor, Token.EndOfFileToken)};
+let kind = (state: State.State, value) => {Cursor.isKind(state.cursor, value)};
+let nameStart = (cursor) => {
+  let token = Cursor.current(cursor);
+  match(token.kind) {
+    Token.LowerIdentifierToken => {!Keyword.isReserved(cursor)},
+    Token.UpperIdentifierToken => {true},
+    _ => {false} // Only authored identifiers are name/wildcard patterns in this slice.
+  }
+};
+let advance = (cursor) => {
+  match(Cursor.take(cursor)) {
+    Cursor.TokenTaken(_, next) => {next},
+    Cursor.ReachedEnd(_) => {cursor} // Non-consuming lookahead terminates at EOF.
+  }
+};
+let rec commaBoundary = (boundaries) => {
+  match(boundaries) {
+    [] => {false},
+    [item, ..rest] => {
+      let boundary: State.Boundary = item;
+      if (boundary.authoredOpen) {boundary.closer == Token.RightParen || boundary.closer == Token.RightBracket} else {commaBoundary(rest)}
+    }
+  }
+};
+let rec listBoundary = (boundaries) => {
+  match(boundaries) {
+    [] => {false},
+    [item, ..rest] => {
+      let boundary: State.Boundary = item;
+      if (boundary.authoredOpen) {boundary.closer == Token.RightBracket} else {listBoundary(rest)}
+    }
+  }
+};
+let expressionBoundary = (state: State.State, boundaries) => {
+  eof(state) || isLet(state) || State.atBoundary(state, boundaries) ||
+    (commaBoundary(boundaries) && kind(state, commaKind)) || kind(state, Token.PunctuationToken(Token.Semicolon))
+    || (listBoundary(boundaries) && kind(state, Token.PunctuationToken(Token.DoubleDot)))
+};
+let leafNode = (state, token: Token.Token) => {State.node(state, token.span.startPos.index, token.span.endPos.index)};
+let expressionHole = (state: State.State) => {
+  let anchor = Cursor.offset(state.cursor);
+  let (mark, afterMark) = State.mark(state, Ast.MissingExpression, Ast.InsertedExpressionHole, anchor, anchor, anchor);
+  let (node, next) = State.node(afterMark, anchor, anchor);
+  (Ast.HoleExpr(node, Ast.VirtualHole(mark)), next)
+};
+let pattern = (state: State.State, parameter) => {
+  let token = Cursor.current(state.cursor);
+  if (nameStart(state.cursor) && !(parameter && token.kind == Token.UpperIdentifierToken)) {
+    let wildcard = Cursor.isWord(state.cursor, [95]);
+    let (token, afterToken) = State.consume(state);
+    let (node, next) = leafNode(afterToken, token);
+    (if (wildcard) {Ast.WildcardPattern(node, token)} else {Ast.NamePattern(node, if (token.kind == Token.UpperIdentifierToken) {Ast.ConstructorName} else {Ast.BindingName}, token)}, next)
+  } else {
+    let anchor = Cursor.offset(state.cursor);
+    let (mark, afterMark) = State.mark(state, Ast.MissingBindingPattern, Ast.InsertedWildcardPattern, anchor, anchor, anchor);
+    let (node, next) = State.node(afterMark, anchor, anchor);
+    (Ast.MissingPattern(node, mark), next)
+  }
+};
+
+// Lambda lookahead establishes commitment only. No nodes/marks or recovery modes.
+// A paired opener is decided by its actual mate, not an arrow inside its expression.
+type LambdaPrefix = NotLambda | BareParameters | AuthoredParameters;
+let lambdaPrefix = (state: State.State) => {
+  let rec afterNames = (cursor) => {
+    if (Cursor.isKind(cursor, arrowKind)) {true} else {
+      if (Cursor.isKind(cursor, rightParen)) {Cursor.isKind(advance(cursor), arrowKind)} else {
+        if (nameStart(cursor)) {
+          let next = advance(cursor);
+          if (Cursor.isKind(next, commaKind)) {afterNames(advance(next))} else {
+            Cursor.isKind(next, arrowKind) ||
+              (if (Cursor.isKind(next, rightParen)) {Cursor.isKind(advance(next), arrowKind)} else {false})
+          }
+        } else {false}
+      }
+    }
+  };
+  let current = Cursor.current(state.cursor);
+  if (current.kind == Token.PunctuationToken(Token.LeftParen)) {
+    let matched = match(current.mateIdx) {
+      Token.Mate(index) => {
+        let rec seek = (cursor: Cursor.Cursor) => {
+          if (cursor.tokenIndex == index) {Cursor.isKind(advance(cursor), arrowKind)} else {
+            if (Cursor.isKind(cursor, Token.EndOfFileToken)) {false} else {seek(advance(cursor))}
+          }
+        };
+        seek(state.cursor)
+      },
+      Token.NoMate => {afterNames(advance(state.cursor))}
+    };
+    if (matched) {AuthoredParameters} else {NotLambda}
+  } else {if (afterNames(state.cursor)) {BareParameters} else {NotLambda}}
+};
+
+// Preserve a contiguous run. Balanced authored scopes protect internal declarations;
+// an unclosed scope cannot swallow a later top-level let merely through lexical depth.
+let run = (start: State.State, boundaries, includeTerminator) => {
+  let first = Cursor.current(start.cursor);
+  let rec collect = (state: State.State, protectedUntil, firstToken) => {
+    let token = Cursor.current(state.cursor);
+    let terminator = token.kind == Token.PunctuationToken(Token.Semicolon) && state.cursor.tokenIndex > protectedUntil;
+    let declaration = isLet(state) && token.span.startPos.line > first.span.startPos.line && state.cursor.tokenIndex > protectedUntil;
+    if (!firstToken && (eof(state) || State.atBoundary(state, boundaries) || declaration || (terminator && !includeTerminator))) {state} else {
+      if (eof(state)) {state} else {
+        let protected = match(Token.pairRole(token.kind)) {
+          Some(role) => {
+            let Token.PairRole(_, side) = role;
+            match(side) {
+              Token.Close => {protectedUntil},
+              Token.Open => {
+                match(token.mateIdx) {
+                  Token.NoMate => {protectedUntil},
+                  Token.Mate(index) => {if (index > protectedUntil) {index} else {protectedUntil}}
+                }
+              }
+            }
+          },
+          None => {protectedUntil} // Ordinary tokens do not extend an authored lexical scope.
+        };
+        let (_, next) = State.consume(state);
+        if (token.kind == Token.PunctuationToken(Token.Semicolon) && state.cursor.tokenIndex > protectedUntil) {next} else {
+          collect(next, protected, false)
+        }
+      }
+    }
+  };
+  collect(start, start.cursor.tokenIndex - 1, true)
+};
+let fragment = (start: State.State, finish: State.State, feature) => {
+  let retained = State.retainCursor(start, finish);
+  let offset = Cursor.offset(start.cursor);
+  let (node, afterNode) = State.extent(retained, offset);
+  let (status, next) = match(feature) {
+    Some(value) => {(Ast.UnimplementedFragment(value), afterNode)},
+    None => {
+      let (id, next) = State.mark(afterNode, Ast.UnassembledSyntax, Ast.RetainedOpaqueSyntax,
+        offset, offset, finish.authoredEnd);
+      (Ast.DamagedFragment(id), next)
+    }
+  };
+  (Ast.Opaque(node, State.tokensBetween(start, finish), status), next)
+};
+let unsupportedStart = (state: State.State) => {
+  let token = Cursor.current(state.cursor);
+  match(token.kind) {
+    Token.MultilineStringStartToken => {Some(Ast.ExpressionSyntax)},
+    Token.PunctuationToken(Token.DotLeftBrace) => {Some(Ast.ExpressionSyntax)},
+    Token.LowerIdentifierToken => {if (Keyword.isReserved(state.cursor)) {Some(Ast.DeclarationSyntax)} else {None}},
+    _ => {None} // Other starts are implemented atoms or actual unassembled damage.
+  }
+};
+let unsupportedTail = (state: State.State) => {
+  let token = Cursor.current(state.cursor);
+  match(token.kind) {
+    Token.OperatorToken(Token.Hole) => {None},
+    Token.PunctuationToken(Token.Dot) => {Some(Ast.ExpressionSyntax)},
+    Token.PunctuationToken(Token.DotLeftBrace) => {Some(Ast.ExpressionSyntax)},
+    Token.PunctuationToken(Token.Colon) => {Some(Ast.TypeSyntax)},
+    Token.MultilineStringStartToken => {Some(Ast.ExpressionSyntax)},
+    Token.PunctuationToken(Token.PipeForward) => {Some(Ast.ExpressionSyntax)},
+    _ => {None} // Boundaries and supported call continuations do not conceal an implementation gap.
+  }
+};
+
+let rec expression = (state: State.State, boundaries) => {
+  if (expressionBoundary(state, boundaries)) {expressionHole(state)} else {
+    let (value, next) = match(lambdaPrefix(state)) {
+      NotLambda => {binary(state, boundaries, 1)},
+      BareParameters => {lambda(state, boundaries, false)},
+      AuthoredParameters => {lambda(state, boundaries, true)}
+    };
+    match(unsupportedTail(next)) {
+      None => {
+        if (expressionBoundary(next, boundaries)) {(value, next)} else {
+          let (opaque, finish) = fragment(state, run(next, boundaries, false), None);
+          (Ast.OpaqueExpr(opaque), finish)
+        }
+      },
+      Some(feature) => {
+        let finish = run(next, boundaries, false);
+        let (opaque, final) = fragment(state, finish, Some(feature));
+        (Ast.OpaqueExpr(opaque), final)
+      }
+    }
+  }
+}
+and binary = (state: State.State, boundaries, minimum) => {
+  let start = Cursor.offset(state.cursor);
+  let (first, afterFirst) = unary(state, boundaries);
+  let rec chain = (left, state: State.State) => {
+    let token = Cursor.current(state.cursor);
+    match(Operators.precedence(token.kind)) {
+      None => {(left, state)},
+      Some(precedence) => {
+        if (precedence < minimum) {(left, state)} else {
+          let (operator, afterOperator) = State.consume(state);
+          let (right, afterRight) = binary(afterOperator, boundaries, precedence + 1);
+          let (node, next) = State.extent(afterRight, start);
+          chain(Ast.InfixExpr(node, left, operator, right), next)
+        }
+      }
+    }
+  };
+  chain(first, afterFirst)
+}
+and unary = (state: State.State, boundaries) => {
+  let token = Cursor.current(state.cursor);
+  if (expressionBoundary(state, boundaries)) {expressionHole(state)} else {
+    if (Operators.prefix(token.kind)) {
+      let start = token.span.startPos.index;
+      let (operator, next) = State.consume(state);
+      let (value, afterValue) = unary(next, boundaries);
+      let (node, finish) = State.extent(afterValue, start);
+      (Ast.PrefixExpr(node, operator, value), finish)
+    } else {
+      match(lambdaPrefix(state)) {
+        NotLambda => {
+          match(Operators.precedence(token.kind)) {
+            None => {postfix(state, boundaries)},
+            Some(_) => {expressionHole(state)} // The operator witnesses a missing operand; its owner consumes it.
+          }
+        },
+        BareParameters => {groupedLambda(state, boundaries, false)},
+        AuthoredParameters => {groupedLambda(state, boundaries, true)}
+      }
+    }
+  }
+}
+and groupedLambda = (state: State.State, boundaries, hasOpen) => {
+  // A lambda synthesized in an operand category needs grouping, represented in
+  // actual slots rather than invented by the formatter or selected by type inference.
+  let start = Cursor.offset(state.cursor);
+  let (open, afterOpen) = State.missing(state, Ast.ExpectedPunctuation(Token.LeftParen), start);
+  let (value, afterValue) = lambda(afterOpen, boundaries, hasOpen);
+  let (close, afterClose) = State.close(afterValue, Token.RightParen, State.virtualFrame(Token.RightParen), boundaries);
+  let (delimited, afterDelimiter) = State.delimiter(afterClose, open, value, close);
+  let (node, finish) = State.extent(afterDelimiter, start);
+  (Ast.GroupExpr(node, delimited), finish)
+}
+and atom = (state: State.State, boundaries) => {
+  let token = Cursor.current(state.cursor);
+  let named = () => {
+    let (authored, afterToken) = State.consume(state);
+    let (node, next) = leafNode(afterToken, authored);
+    (Ast.NameExpr(node, authored), next)
+  };
+  let literal = () => {
+    let (authored, afterToken) = State.consume(state);
+    let (node, next) = leafNode(afterToken, authored);
+    (Ast.LiteralExpr(node, authored), next)
+  };
+  match(token.kind) {
+    Token.LowerIdentifierToken => {
+      if (Cursor.isWord(state.cursor, [116, 114, 117, 101]) || Cursor.isWord(state.cursor, [102, 97, 108, 115, 101]) ||
+          Cursor.isWord(state.cursor, [118, 111, 105, 100])) {literal()} else {
+        if (Keyword.isReserved(state.cursor)) {
+          let (opaque, next) = fragment(state, run(state, boundaries, false), Some(Ast.ExpressionSyntax));
+          (Ast.OpaqueExpr(opaque), next)
+        } else {named()}
+      }
+    },
+    Token.UpperIdentifierToken => {named()},
+    Token.IntegerToken => {literal()}, Token.WordToken => {literal()}, Token.FloatToken => {literal()},
+    Token.QuotedStringToken => {literal()}, Token.CharacterToken => {literal()},
+    Token.OperatorToken(Token.Hole) => {
+      let (authored, afterToken) = State.consume(state);
+      let (node, next) = leafNode(afterToken, authored);
+      (Ast.HoleExpr(node, Ast.AuthoredHole(authored)), next)
+    },
+    Token.PunctuationToken(Token.LeftParen) => {group(state, boundaries)},
+    Token.PunctuationToken(Token.LeftBrace) => {let (body, next) = block(state, boundaries); (Ast.BlockExpr(body), next)},
+    Token.PunctuationToken(Token.LeftBracket) => {listLiteral(state, boundaries)},
+    _ => {
+      let (opaque, next) = fragment(state, run(state, boundaries, false), unsupportedStart(state));
+      (Ast.OpaqueExpr(opaque), next)
+    } // Remaining unsupported starts or damaged tokens are preserved explicitly.
+  }
+}
+and postfix = (state: State.State, boundaries) => {
+  let (first, afterFirst) = atom(state, boundaries);
+  let start = Cursor.offset(state.cursor);
+  let rec calls = (target, state: State.State) => {
+    if (kind(state, Token.PunctuationToken(Token.LeftParen))) {
+      // A lambda in a whitespace argument owns its parameter opener itself.
+      match(lambdaPrefix(state)) {
+        AuthoredParameters => {spaceCall(target, state)},
+        NotLambda => {
+          let (open, afterOpen) = State.consume(state);
+          let owner = State.frame(open, Token.RightParen);
+          let (arguments, afterArguments) = arguments(afterOpen, [owner, ..boundaries]);
+          let (close, afterClose) = State.close(afterArguments, Token.RightParen, owner, boundaries);
+          let (delimited, afterDelimiter) = State.delimiter(afterClose, Marks.AuthoredSlot(open), arguments, close);
+          let (node, next) = State.extent(afterDelimiter, start);
+          calls(Ast.CallExpr(node, target, delimited), next)
+        },
+        BareParameters => {Panic("unreachable")} // A left-paren start cannot be a bare parameter prefix.
+      }
+    } else {
+      let token = Cursor.current(state.cursor);
+      let spaced = token.span.startPos.index > state.authoredEnd;
+      let begins = nameStart(state.cursor) || kind(state, Token.IntegerToken) || kind(state, Token.QuotedStringToken) ||
+        kind(state, Token.CharacterToken) || kind(state, Token.FloatToken) || kind(state, Token.OperatorToken(Token.Hole)) ||
+        kind(state, Token.WordToken) || kind(state, Token.PunctuationToken(Token.LeftBrace)) ||
+        kind(state, Token.PunctuationToken(Token.LeftBracket)) || kind(state, arrowKind) ||
+        Cursor.isWord(state.cursor, [116, 114, 117, 101]) || Cursor.isWord(state.cursor, [102, 97, 108, 115, 101]) ||
+        Cursor.isWord(state.cursor, [118, 111, 105, 100]);
+      if (spaced && begins && !expressionBoundary(state, boundaries)) {spaceCall(target, state)} else {(target, state)}
+    }
+  }
+  and spaceCall = (target, state: State.State) => {
+    let (open, afterOpen) = State.missing(state, Ast.ExpectedPunctuation(Token.LeftParen), Cursor.offset(state.cursor));
+    let (argument, afterArgument) = match(lambdaPrefix(afterOpen)) {
+      NotLambda => {atom(afterOpen, boundaries)},
+      BareParameters => {lambda(afterOpen, boundaries, false)},
+      AuthoredParameters => {lambda(afterOpen, boundaries, true)}
+    };
+    let owner = State.virtualFrame(Token.RightParen);
+    let (close, afterClose) = State.close(afterArgument, Token.RightParen, owner, boundaries);
+    let (delimited, afterDelimiter) = State.delimiter(afterClose, open,
+      Ast.NonemptyItems(Ast.Separated(argument, [], None)), close);
+    let (node, next) = State.extent(afterDelimiter, start);
+    calls(Ast.CallExpr(node, target, delimited), next)
+  };
+  calls(first, afterFirst)
+}
+and arguments = (state: State.State, boundaries) => {
+  if (State.atBoundary(state, boundaries) || eof(state)) {(Ast.EmptyItems, state)} else {
+    let (first, next) = expression(state, boundaries);
+    separated(next, boundaries, first, [])
+  }
+}
+and separated = (state: State.State, boundaries, first, followingRev) => {
+  if (kind(state, commaKind)) {
+    let (comma, afterComma) = State.consume(state);
+    if (State.atBoundary(afterComma, boundaries) || eof(afterComma)) {
+      (Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), Some(comma))), afterComma)
+    } else {
+      let (item, afterItem) = expression(afterComma, boundaries);
+      separated(afterItem, boundaries, first, [Ast.SeparatedItem(Marks.AuthoredSlot(comma), item), ..followingRev])
+    }
+  } else {(Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), None)), state)}
+}
+and group = (state: State.State, boundaries) => {
+  let start = Cursor.offset(state.cursor);
+  let (open, afterOpen) = State.consume(state);
+  let owner = State.frame(open, Token.RightParen);
+  let nested = [owner, ..boundaries];
+  let (first, afterFirst) = expression(afterOpen, nested);
+  if (kind(afterFirst, Token.PunctuationToken(Token.Semicolon))) {
+    // Parenthesized sequences are supported WM syntax, outside this initial slice.
+    // Preserve their whole authored container rather than inventing a missing closer.
+    let rec through = (state: State.State) => {
+      if (eof(state) || State.atBoundary(state, nested)) {state} else {
+        let (_, next) = State.consume(state);
+        through(next)
+      }
+    };
+    let stopped = through(afterFirst);
+    let finish = if (kind(stopped, rightParen) && !State.atBoundary(stopped, boundaries)) {
+      let (_, next) = State.consume(stopped); next
+    } else {stopped};
+    let (opaque, next) = fragment(state, finish, Some(Ast.ExpressionSyntax));
+    (Ast.OpaqueExpr(opaque), next)
+  } else {if (kind(afterFirst, commaKind)) {
+    let (comma, afterComma) = State.consume(afterFirst);
+    let (rest, afterRest) = arguments(afterComma, nested);
+    let (close, afterClose) = State.close(afterRest, Token.RightParen, owner, boundaries);
+    let (delimited, afterDelimiter) = State.delimiter(afterClose, Marks.AuthoredSlot(open),
+      Ast.TupleBody(first, Marks.AuthoredSlot(comma), rest), close);
+    let (node, next) = State.extent(afterDelimiter, start);
+    (Ast.TupleExpr(node, delimited), next)
+  } else {
+    let (close, afterClose) = State.close(afterFirst, Token.RightParen, owner, boundaries);
+    let (delimited, afterDelimiter) = State.delimiter(afterClose, Marks.AuthoredSlot(open), first, close);
+    let (node, next) = State.extent(afterDelimiter, start);
+    (Ast.GroupExpr(node, delimited), next)
+  }}
+}
+and listLiteral = (state: State.State, boundaries) => {
+  let start = Cursor.offset(state.cursor);
+  let (open, afterOpen) = State.consume(state);
+  let owner = State.frame(open, Token.RightBracket);
+  let nested = [owner, ..boundaries];
+  let spreadKind = Token.PunctuationToken(Token.DoubleDot);
+  let tail = (state: State.State, before, elements) => {
+    let (spread, afterSpread) = State.consume(state);
+    let (value, afterValue) = expression(afterSpread, nested);
+    let (trailing, next) = if (kind(afterValue, commaKind)) {
+      let (comma, next) = State.consume(afterValue); (Some(comma), next)
+    } else {(None, afterValue)};
+    (Ast.ListBody(elements, Some(Ast.SpreadTail(before, spread, value, trailing))), next)
+  };
+  let (contents, afterContents) = if (eof(afterOpen) || State.atBoundary(afterOpen, nested)) {
+    (Ast.ListBody(Ast.EmptyItems, None), afterOpen)
+  } else {
+    if (kind(afterOpen, spreadKind)) {tail(afterOpen, None, Ast.EmptyItems)} else {
+      let (first, afterFirst) = expression(afterOpen, nested);
+      let rec rest = (state: State.State, followingRev) => {
+        if (kind(state, spreadKind)) {
+          let (comma, next) = State.missing(state, Ast.ExpectedPunctuation(Token.Comma), Cursor.offset(state.cursor));
+          tail(next, Some(comma), Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), None)))
+        } else {if (kind(state, commaKind)) {
+          let (comma, afterComma) = State.consume(state);
+          if (kind(afterComma, spreadKind)) {
+            tail(afterComma, Some(Marks.AuthoredSlot(comma)),
+              Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), None)))
+          } else {
+            if (eof(afterComma) || State.atBoundary(afterComma, nested)) {
+              (Ast.ListBody(Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), Some(comma))), None), afterComma)
+            } else {
+              let (value, next) = expression(afterComma, nested);
+              rest(next, [Ast.SeparatedItem(Marks.AuthoredSlot(comma), value), ..followingRev])
+            }
+          }
+        } else {(Ast.ListBody(Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), None)), None), state)}}
+      };
+      rest(afterFirst, [])
+    }
+  };
+  let (close, afterClose) = State.close(afterContents, Token.RightBracket, owner, boundaries);
+  let (delimited, afterDelimiter) = State.delimiter(afterClose, Marks.AuthoredSlot(open), contents, close);
+  let (node, finish) = State.extent(afterDelimiter, start);
+  (Ast.ListExpr(node, delimited), finish)
+}
+and parameters = (state: State.State) => {
+  if (kind(state, arrowKind) || kind(state, rightParen)) {(Ast.EmptyItems, state)} else {
+    let (first, next) = pattern(state, true);
+    let rec rest = (state: State.State, followingRev) => {
+      if (kind(state, commaKind)) {
+        let (comma, afterComma) = State.consume(state);
+        if (kind(afterComma, arrowKind) || kind(afterComma, rightParen)) {
+          (Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), Some(comma))), afterComma)
+        } else {
+          let (item, next) = pattern(afterComma, true);
+          rest(next, [Ast.SeparatedItem(Marks.AuthoredSlot(comma), item), ..followingRev])
+        }
+      } else {(Ast.NonemptyItems(Ast.Separated(first, Lists.reverse(followingRev), None)), state)}
+    };
+    rest(next, [])
+  }
+}
+and lambda = (state: State.State, boundaries, hasOpen) => {
+  let start = Cursor.offset(state.cursor);
+  let (open, owner, afterOpen) = if (hasOpen) {
+    let (token, next) = State.consume(state);
+    (Marks.AuthoredSlot(token), State.frame(token, Token.RightParen), next)
+  } else {
+    let (slot, next) = State.missing(state, Ast.ExpectedPunctuation(Token.LeftParen), start);
+    (slot, State.virtualFrame(Token.RightParen), next)
+  };
+  let (params, afterParams) = parameters(afterOpen);
+  if (!kind(afterParams, rightParen) && !kind(afterParams, arrowKind)) {
+    let feature = if (kind(afterParams, Token.UpperIdentifierToken)) {None} else {Some(Ast.PatternSyntax)};
+    let (opaque, finish) = fragment(state, run(afterParams, boundaries, false), feature);
+    (Ast.OpaqueExpr(opaque), finish)
+  } else {
+  let (close, afterClose) = State.close(afterParams, Token.RightParen, owner, boundaries);
+  let (delimited, afterDelimiter) = State.delimiter(afterClose, open, params, close);
+  let (arrow, afterArrow) = State.punctuation(afterDelimiter, Token.FatArrow);
+  let (body, afterBody) = if (kind(afterArrow, Token.PunctuationToken(Token.LeftBrace))) {block(afterArrow, boundaries)} else {
+    let bodyStart = Cursor.offset(afterArrow.cursor);
+    let (bodyOpen, next) = State.missing(afterArrow, Ast.ExpectedPunctuation(Token.LeftBrace), bodyStart);
+    let bodyOwner = State.virtualFrame(Token.RightBrace);
+    let (value, afterValue) = expression(next, [bodyOwner, ..boundaries]);
+    let (bodyClose, afterClose) = State.close(afterValue, Token.RightBrace, bodyOwner, boundaries);
+    let (braces, afterBraces) = State.delimiter(afterClose, bodyOpen, Ast.BlockBody([], Some(value)), bodyClose);
+    let (node, finish) = State.extent(afterBraces, bodyStart);
+    (Ast.Block(node, braces), finish)
+  };
+  let (node, finish) = State.extent(afterBody, start);
+  (Ast.LambdaExpr(node, delimited, arrow, body), finish)
+  }
+}
+and binding = (state: State.State, boundaries) => {
+  let start = Cursor.offset(state.cursor);
+  let (keyword, afterKeyword) = State.consume(state);
+  let unsupported = Cursor.isWord(afterKeyword.cursor, [114, 101, 99]) ||
+    kind(afterKeyword, Token.PunctuationToken(Token.LeftBracket)) ||
+    kind(afterKeyword, Token.PunctuationToken(Token.DotLeftBrace)) ||
+    kind(afterKeyword, Token.PunctuationToken(Token.LeftParen));
+  if (unsupported) {
+    let (opaque, next) = fragment(state, run(afterKeyword, boundaries, true), Some(Ast.PatternSyntax));
+    (Ast.OpaqueStatement(opaque), next)
+  } else {
+    let (binder, afterBinder) = pattern(afterKeyword, false);
+    let unsupported = kind(afterBinder, Token.PunctuationToken(Token.Colon)) ||
+      kind(afterBinder, Token.PunctuationToken(Token.Dot)) || kind(afterBinder, Token.PunctuationToken(Token.LeftParen));
+    if (unsupported) {
+      let (opaque, next) = fragment(state, run(afterBinder, boundaries, true), Some(Ast.PatternSyntax));
+      (Ast.OpaqueStatement(opaque), next)
+    } else {
+      let (equals, afterEquals) = State.punctuation(afterBinder, Token.Equals);
+      let (value, afterValue) = expression(afterEquals, boundaries);
+      let (node, afterNode) = State.extent(afterValue, start);
+      let (semi, next) = State.punctuation(afterNode, Token.Semicolon);
+      (Ast.BindingStatement(Ast.Binding(node, Marks.AuthoredSlot(keyword), binder, equals, value), semi), next)
+    }
+  }
+}
+and block = (state: State.State, boundaries) => {
+  let start = Cursor.offset(state.cursor);
+  let (open, afterOpen) = State.consume(state);
+  let owner = State.frame(open, Token.RightBrace);
+  let nested = [owner, ..boundaries];
+  let rec body = (state: State.State, statementsRev) => {
+    if (eof(state) || State.atBoundary(state, nested)) {(Ast.BlockBody(Lists.reverse(statementsRev), None), state)} else {
+      if (isLet(state)) {
+        let (value, next) = binding(state, nested);
+        body(next, [value, ..statementsRev])
+      } else {
+        let (value, afterValue) = expression(state, nested);
+        if (kind(afterValue, Token.PunctuationToken(Token.Semicolon))) {
+          let (token, next) = State.consume(afterValue);
+          body(next, [Ast.ExpressionStatement(value, Marks.AuthoredSlot(token)), ..statementsRev])
+        } else {
+          if (eof(afterValue) || State.atBoundary(afterValue, nested)) {
+            (Ast.BlockBody(Lists.reverse(statementsRev), Some(value)), afterValue)
+          } else {
+            let (semi, next) = State.punctuation(afterValue, Token.Semicolon);
+            if (next.cursor.tokenIndex == state.cursor.tokenIndex) {
+              let (opaque, finish) = fragment(state, run(state, nested, true), None);
+              body(finish, [Ast.OpaqueStatement(opaque), ..statementsRev])
+            } else {body(next, [Ast.ExpressionStatement(value, semi), ..statementsRev])}
+          }
+        }
+      }
+    }
+  };
+  let (contents, afterBody) = body(afterOpen, []);
+  let (close, afterClose) = State.close(afterBody, Token.RightBrace, owner, boundaries);
+  let (braces, afterBraces) = State.delimiter(afterClose, Marks.AuthoredSlot(open), contents, close);
+  let (node, finish) = State.extent(afterBraces, start);
+  (Ast.Block(node, braces), finish)
+};
+
+let parseDocument = (source, lexical: Token.LexicalDocument) => {
+  let rec phrases = (state: State.State, acc) => {
+    if (eof(state)) {Ast.Program(source, Lists.reverse(acc), Cursor.current(state.cursor), lexical.marks, Lists.reverse(state.syntaxRev))} else {
+      if (isLet(state)) {
+        let (value, next) = binding(state, []);
+        phrases(next, [value, ..acc])
+      } else {
+        match(unsupportedStart(state)) {
+          Some(feature) => {
+            let (opaque, next) = fragment(state, run(state, [], true), Some(feature));
+            phrases(next, [Ast.OpaqueStatement(opaque), ..acc])
+          },
+          None => {
+            let (value, afterValue) = expression(state, []);
+            if (afterValue.cursor.tokenIndex == state.cursor.tokenIndex) {
+              let (opaque, next) = fragment(state, run(state, [], true), None);
+              phrases(next, [Ast.OpaqueStatement(opaque), ..acc])
+            } else {
+              let (semi, next) = State.punctuation(afterValue, Token.Semicolon);
+              phrases(next, [Ast.ExpressionStatement(value, semi), ..acc])
+            }
+          }
+        }
+      }
+    }
+  };
+  phrases(State.initial(source, lexical), [])
+};
+let parse = (source) => {parseDocument(source, Lexer.lex(source))};

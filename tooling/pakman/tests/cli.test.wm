@@ -17,6 +17,124 @@ let refuses = (run: Run) => {
 let install = (root, name) => { pakman(["install", "--root", root, name]) };
 
 let tests = [
+  test("--pin cannot use the onlyLatest first-install age exception", () => {
+    withTempDir((root) => {
+      pakman(["install", "--pin", "hello-only-latest@latest", "--root", root])
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "install --force --pin hello-only-latest@2.0") })
+        :> Task.andThen((_) => { exists(root ++ "/usr/share/hello-only-latest/version") })
+        :> Task.andThen((placed) => { assert(!placed, "young pin was installed") })
+    })
+  }),
+  test("a young exact version is refused, even with --pin, without changing the installed generation", () => {
+    withTempDir((root) => {
+      install(root, "hello-young@1.0")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { install(root, "hello-young@2.0") })
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { checks([
+          assertContains(output, "minimum age of 3 days"),
+          assertContains(output, "install --force hello-young@2.0")
+        ]) })
+        :> Task.andThen((_) => { pakman(["install", "--pin", "hello-young@2.0", "--root", root]) })
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "minimum age of 3 days") })
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+    })
+  }),
+  test("an explicit version follows updates unless --pin is given", () => {
+    withTempDir((root) => {
+      pakman(["install", "--force", "hello-young@2.0", "--root", root])
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { pakman(["update", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+    })
+  }),
+  test("--pin holds an explicit version on update; plain reinstall releases it and may downgrade", () => {
+    withTempDir((root) => {
+      pakman(["install", "--force", "--pin", "hello-young@2.0", "--root", root])
+        :> Task.andThen((run) => { checks([succeeds(run), assertContains(run.output, "2.0 (pinned)")]) })
+        :> Task.andThen((_) => { pakman(["update", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "2.0") })
+        :> Task.andThen((_) => { install(root, "hello-young") })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+    })
+  }),
+  test("latest and stable both select old-enough releases; force is temporary for either", () => {
+    withTempDir((root) => {
+      install(root, "hello-young@latest")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+        :> Task.andThen((_) => { pakman(["install", "--force", "hello-young@stable", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "2.0") })
+        :> Task.andThen((_) => { install(root, "hello-young@stable") })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+    })
+  }),
+  test("--pin is rejected outside install", () => {
+    pakman(["resolve", "--pin", "hello-young@2.0"])
+      :> Task.andThen(refuses)
+      :> Task.andThen((output) => { assertContains(output, "--pin is only supported by install") })
+  }),
+  test("force latest installs a young release and follows the default channel", () => {
+    withTempDir((root) => {
+      pakman(["install", "--force", "hello-young@latest", "--root", root])
+        :> Task.andThen((run) => { checks([succeeds(run), assertContains(run.output, "2.0 (follows default)")]) })
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "2.0") })
+    })
+  }),
+  test("force skips age filtering only for this install and preserves default tracking", () => {
+    withTempDir((root) => {
+      install(root, "hello-young")
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+        :> Task.andThen((_) => { pakman(["--force", "install", "hello-young", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "2.0") })
+        :> Task.andThen((_) => { pakman(["update", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { readText(root ++ "/usr/share/hello-young/version") })
+        :> Task.andThen((version) => { assertEqual(version, "1.0") })
+    })
+  }),
+  test("force is rejected outside install", () => {
+    pakman(["resolve", "--force", "hello-young"])
+      :> Task.andThen(refuses)
+      :> Task.andThen((output) => { assertContains(output, "--force is only supported by install") })
+  }),
+  test("force cannot bypass checksum verification", () => {
+    withTempDir((root) => {
+      pakman(["install", "--force", "hello-bad-checksum@latest", "--root", root])
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "upstream publishes 0000") })
+    })
+  }),
+  test("force cannot overwrite unowned files", () => {
+    withTempDir((root) => {
+      let theirs = root ++ "/usr/share/hello-young/version";
+      Task|mkdirp(root ++ "/usr/share/hello-young"), writeText(theirs, "mine", 420)|
+        :> Task.andThen((_) => { pakman(["install", "--force", "hello-young@latest", "--root", root]) })
+        :> Task.andThen(refuses)
+        :> Task.andThen((output) => { assertContains(output, "exists and pakman did not install it") })
+        :> Task.andThen((_) => { readText(theirs) })
+        :> Task.andThen((text) => { assertEqual(text, "mine") })
+    })
+  }),
   test("a failed callback cannot activate its partial output", () => {
     withTempDir((root) => {
       install(root, "hello-build-fail")

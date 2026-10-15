@@ -396,7 +396,8 @@ async function bsdtar(args: string[], stdoutTo?: string): Promise<void> {
  * `chain` is the archive file followed by members to open in turn, for archives
  * inside archives; `members` selects paths in the innermost one ([] = all).
  */
-export async function extract(chain: string[], members: string[], dest: string, strip: number): Promise<void> {
+export async function extract(chain: string[], members: string[], dest: string, strip: number, payloadChoices?: string[]): Promise<void> {
+  if (!chain.length) throw new Error("archive chain is empty");
   await Deno.mkdir(dest, { recursive: true });
   const temps: string[] = [];
   try {
@@ -405,6 +406,17 @@ export async function extract(chain: string[], members: string[], dest: string, 
       const temp = await Deno.makeTempFile({ prefix: "pakman-nested-" });
       temps.push(temp);
       await bsdtar(["-xOf", current, member], temp);
+      current = temp;
+    }
+    if (payloadChoices !== undefined) {
+      const listing = await runCapture("bsdtar", ["-tf", current]);
+      const matches = listing.split("\n").filter((name) => payloadChoices.includes(name));
+      if (matches.length !== 1) {
+        throw new Error(`expected exactly one payload member from [${payloadChoices.join(", ")}], found ${matches.length}`);
+      }
+      const temp = await Deno.makeTempFile({ prefix: "pakman-payload-" });
+      temps.push(temp);
+      await bsdtar(["-xOf", current, matches[0]], temp);
       current = temp;
     }
     await bsdtar(["-xf", current, "-C", dest, `--strip-components=${strip}`, "--no-same-owner", ...members]);

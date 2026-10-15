@@ -1,0 +1,16 @@
+-- Age-gate fixture: the future date stays young on every test run.
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+
+let versions = () => { Task.succeed([
+  Candidate("2.0", "2999-01-01T00:00:00Z", "stable", [], ""),
+  Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")
+]) };
+let make = (version, _) => {
+  Package(version, [], [WriteText("usr/share/hello-young/version", lit(version), Data)], [])
+};
+let definition: Definition = .{
+  name = "hello-young", description = "fixture: age gate", homepage = "", license = "MIT",
+  target = Host, scope = System, versions, hosts = [], policy = defaultPolicy, make
+};
+let main = () => { serve(definition) };

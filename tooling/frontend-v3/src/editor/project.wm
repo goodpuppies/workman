@@ -1,0 +1,227 @@
+from "../surface/ast.wm" import * as Ast;
+from "../source/mark.wm" import * as Marks;
+from "../lexer/token.wm" import * as Token;
+from "../syntax/spelling.wm" import * as Spelling;
+from "./diff.wm" import * as Diff;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+
+// Projected mark ranges are metadata. The diff still derives emergent whitespace.
+record VirtualSpan = {
+  markId: Marks.MarkId,
+  projectedStart: Number,
+  projectedEnd: Number,
+  delimiter: Option<Ast.DelimiterId>,
+};
+record Projection = {
+  text: Text.Source,
+  correspondence: List<Diff.Correspondence>,
+  virtualSpans: List<VirtualSpan>,
+};
+record Writer = {
+  unitsRev: List<Number>,
+  length: Number,
+  indent: Number,
+  atLineStart: Bool,
+  pendingSpace: Bool,
+  correspondenceRev: List<Diff.Correspondence>,
+  virtualRev: List<VirtualSpan>,
+};
+
+let render = (program: Ast.Program) => {
+  let rec repeat = (count, acc) => {if (count <= 0) {acc} else {repeat(count - 1, [32, ..acc])}};
+  let write = (state: Writer, units) => {
+    if (Lists.isEmpty(units)) {state} else {
+      let prefix = if (state.atLineStart) {repeat(state.indent, [])} else {
+        if (state.pendingSpace) {[32]} else {[]}
+      };
+      let last = Lists.foldLeft(units, 0, (unit, previous) => {unit});
+      Writer { ..state,
+        unitsRev = Lists.reverseAppend(units, Lists.reverseAppend(prefix, state.unitsRev)),
+        length = state.length + Lists.length(prefix) + Lists.length(units),
+        atLineStart = last == 10 || last == 13, pendingSpace = false }
+    }
+  };
+  let space = (state: Writer) => {Writer { ..state, pendingSpace = !state.atLineStart }};
+  let newline = (state: Writer) => {
+    if (state.atLineStart) {Writer { ..state, pendingSpace = false }} else {
+      Writer { ..state, unitsRev = [10, ..state.unitsRev], length = state.length + 1,
+        atLineStart = true, pendingSpace = false }
+    }
+  };
+  let raw = (state: Writer, start, end) => {
+    let units = match(Text.slice(program.source, start, end - start)) {
+      R.Ok(text) => {Text.toUnits(text)},
+      R.Err(_) => {Panic("unreachable")} // Authored tree spans refer to this program's source.
+    };
+    let next = write(state, units);
+    // Empty spans contribute no correspondence; compareAnchored requires real spelling.
+    if (start == end) {next} else {
+      Writer { ..next, correspondenceRev = [Diff.Correspondence(start, end,
+        next.length - Lists.length(units), next.length), ..next.correspondenceRev] }
+    }
+  };
+  let trivia = (state, items) => {
+    Lists.foldLeft(items, state, (item, state) => {
+      let value: Token.Trivia = item;
+      match(value.kind) {
+        Token.HorizontalWhitespace => {state}, // Canonical layout regenerates whitespace.
+        Token.LineBreak => {state},
+        Token.DashLineComment => {newline(raw(space(state), value.span.startPos.index, value.span.endPos.index))},
+        Token.SlashLineComment => {newline(raw(space(state), value.span.startPos.index, value.span.endPos.index))},
+        Token.BlockComment => {space(raw(space(state), value.span.startPos.index, value.span.endPos.index))}
+      }
+    })
+  };
+  let authored = (state, token: Token.Token) => {
+    raw(trivia(state, token.leadingTrivia), token.span.startPos.index, token.span.endPos.index)
+  };
+  let virtual = (state, id, units, pair) => {
+    let next = write(state, units);
+    Writer { ..next, virtualRev = [VirtualSpan(id, next.length - Lists.length(units), next.length, pair), ..next.virtualRev] }
+  };
+  let slot = (state, value, pair) => {
+    match(value) {
+      Marks.AuthoredSlot(token) => {authored(state, token)},
+      Marks.MissingSlot(id, expected) => {
+        let units = match(expected) {
+          Ast.ExpectedPunctuation(punctuation) => {Spelling.punctuation(punctuation)},
+          Ast.ExpectedWord(units) => {units}
+        };
+        virtual(state, id, units, pair)
+      }
+    }
+  };
+  let opaque = (state, fragment: Ast.Opaque) => {
+    match(fragment.tokenRun) {
+      [] => {Panic("unreachable")}, // Opaque regions contain at least one authored token.
+      [first, ..rest] => {
+        let token: Token.Token = first;
+        let finish = Lists.foldLeft(rest, token.span.endPos.index,
+          (item: Token.Token, end) => {item.span.endPos.index});
+        raw(trivia(state, token.leadingTrivia), token.span.startPos.index, finish)
+      }
+    }
+  };
+  let pattern = (state, value) => {
+    match(value) {
+      Ast.NamePattern(_, _, token) => {authored(state, token)},
+      Ast.WildcardPattern(_, token) => {authored(state, token)},
+      Ast.MissingPattern(_, mark) => {virtual(state, mark, [95], None)}
+    }
+  };
+  let items = (state, value, emit) => {
+    match(value) {
+      Ast.EmptyItems => {state},
+      Ast.NonemptyItems(separated) => {
+        let afterFirst = emit(state, separated.firstItem);
+        let afterRest = Lists.foldLeft(separated.following, afterFirst, (next: Ast.SeparatedItem<a>, state) => {
+          emit(space(slot(state, next.separator, None)), next.nextItem)
+        });
+        match(separated.trailingComma) {
+          None => {afterRest}, // No trailing comma is part of this authored list.
+          Some(token) => {authored(afterRest, token)}
+        }
+      }
+    }
+  };
+  let rec expr = (state: Writer, value: Ast.Expr) => {
+    match(value) {
+      Ast.NameExpr(_, token) => {authored(state, token)},
+      Ast.LiteralExpr(_, token) => {authored(state, token)},
+      Ast.HoleExpr(_, origin) => {
+        match(origin) {
+          Ast.AuthoredHole(token) => {authored(state, token)},
+          Ast.VirtualHole(mark) => {virtual(state, mark, [63], None)}
+        }
+      },
+      Ast.PrefixExpr(_, operator, value) => {expr(authored(state, operator), value)},
+      Ast.InfixExpr(_, left, operator, right) => {
+        expr(space(authored(space(expr(state, left)), operator)), right)
+      },
+      Ast.GroupExpr(_, delimited) => {
+        slot(expr(slot(state, delimited.openSlot, Some(delimited.delimiterId)), delimited.contents),
+          delimited.closeSlot, Some(delimited.delimiterId))
+      },
+      Ast.TupleExpr(_, delimited) => {
+        let tuple = delimited.contents;
+        let afterFirst = expr(slot(state, delimited.openSlot, Some(delimited.delimiterId)), tuple.tupleFirst);
+        let afterComma = slot(afterFirst, tuple.firstComma, None);
+        let afterRest = match(tuple.tupleRest) {
+          Ast.EmptyItems => {afterComma},
+          Ast.NonemptyItems(_) => {items(space(afterComma), tuple.tupleRest, expr)}
+        };
+        slot(afterRest, delimited.closeSlot, Some(delimited.delimiterId))
+      },
+      Ast.CallExpr(_, target, arguments) => {
+        slot(items(slot(expr(state, target), arguments.openSlot, Some(arguments.delimiterId)), arguments.contents, expr),
+          arguments.closeSlot, Some(arguments.delimiterId))
+      },
+      Ast.ListExpr(_, delimited) => {
+        let body = delimited.contents;
+        let afterItems = items(slot(state, delimited.openSlot, Some(delimited.delimiterId)), body.listItems, expr);
+        let afterTail = match(body.spreadTail) {
+          None => {afterItems}, // Ordinary finite lists have no spread tail.
+          Some(tail) => {
+            let afterComma = match(tail.beforeSpread) {
+              None => {afterItems}, // A spread-only list has no preceding element separator.
+              Some(comma) => {space(slot(afterItems, comma, None))}
+            };
+            let afterValue = expr(authored(afterComma, tail.spread), tail.tailValue);
+            match(tail.trailingComma) {None => {afterValue}, Some(comma) => {authored(afterValue, comma)}}
+          }
+        };
+        slot(afterTail, delimited.closeSlot, Some(delimited.delimiterId))
+      },
+      Ast.LambdaExpr(_, parameters, arrow, body) => {
+        let afterParameters = slot(items(slot(state, parameters.openSlot, Some(parameters.delimiterId)),
+          parameters.contents, pattern), parameters.closeSlot, Some(parameters.delimiterId));
+        block(space(slot(space(afterParameters), arrow, None)), body)
+      },
+      Ast.BlockExpr(body) => {block(state, body)},
+      Ast.OpaqueExpr(fragment) => {opaque(state, fragment)}
+    }
+  }
+  and statement = (state: Writer, value: Ast.Statement) => {
+    match(value) {
+      Ast.BindingStatement(binding, terminator) => {
+        let keyword = slot(state, binding.letSlot, None);
+        let binder = pattern(space(keyword), binding.pattern);
+        let equals = slot(space(binder), binding.equalsSlot, None);
+        slot(expr(space(equals), binding.value), terminator, None)
+      },
+      Ast.ExpressionStatement(value, terminator) => {slot(expr(state, value), terminator, None)},
+      Ast.OpaqueStatement(fragment) => {opaque(state, fragment)}
+    }
+  }
+  and block = (state: Writer, value: Ast.Block<Ast.Statement, Ast.Expr>) => {
+    let braces = value.braces;
+    let body = braces.contents;
+    let afterOpen = slot(state, braces.openSlot, Some(braces.delimiterId));
+    if (Lists.isEmpty(body.statements)) {
+      let afterResult = match(body.result) {
+        None => {afterOpen}, // An empty block has no invented result expression.
+        Some(value) => {space(expr(space(afterOpen), value))}
+      };
+      slot(afterResult, braces.closeSlot, Some(braces.delimiterId))
+    } else {
+      let indented = Writer { ..afterOpen, indent = afterOpen.indent + 2 };
+      let afterItems = Lists.foldLeft(body.statements, newline(indented), (item, state) => {
+        newline(statement(state, item))
+      });
+      let afterResult = match(body.result) {
+        None => {afterItems}, // Semicolon-ended bodies have no trailing expression.
+        Some(value) => {newline(expr(afterItems, value))}
+      };
+      slot(Writer { ..afterResult, indent = afterResult.indent - 2 }, braces.closeSlot, Some(braces.delimiterId))
+    }
+  };
+  let initial = Writer([], 0, 0, true, false, [], []);
+  let afterPhrases = Lists.foldLeft(program.phrases, initial, (phrase, state) => {newline(statement(state, phrase))});
+  let final = trivia(afterPhrases, program.eof.leadingTrivia);
+  match(Text.fromUnits(Lists.reverse(final.unitsRev))) {
+    R.Ok(text) => {Projection(text, Lists.reverse(final.correspondenceRev), Lists.reverse(final.virtualRev))},
+    R.Err(_) => {Panic("unreachable")} // Only checked source units and fixed ASCII spelling were written.
+  }
+};

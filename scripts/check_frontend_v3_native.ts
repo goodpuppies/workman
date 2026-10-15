@@ -29,10 +29,6 @@ let snapshot = (text) => {Document.encode(JsLexer.lex(text))};
 const module = join(output, "parity.mjs");
 await Deno.writeTextFile(module, await compileLibraryFile(bridge));
 const { lex, sourceUnits, snapshot } = await import(`file://${module}`);
-// Check the same authored schema under WM as well as the native build's AST closure.
-await compileLibraryFile(join(repository, "tooling/frontend-v3/src/surface/ast.wm"));
-await compileLibraryFile(join(repository, "tooling/frontend-v3/src/parser/type.wm"));
-
 type Variant = { name: string; args: any[] };
 function list(value: Variant): any[] {
   const result = [];

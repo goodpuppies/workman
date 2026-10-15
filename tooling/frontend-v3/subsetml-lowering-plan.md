@@ -1,9 +1,10 @@
 # Frontend-v3 → SubsetML lowering plan
 
-Reset notice: keep the lexer/Basis/lowering compatibility agreements here. Old parser
-checkpoints are historical evidence, not an implementation roadmap. Follow
-[worklist.md](worklist.md) and [structural-editor-plan.md](structural-editor-plan.md)
-for parser/editor work; the agent-started parser and its checks are scheduled for deletion.
+Priority: WM execution and completing frontend v3 are the main path. SubsetML/MLton
+remains an intended target, with checks at useful milestones. Record blockers; do not
+stall independent editor work or expand lowering machinery merely to finish a slice.
+The speculative parser/schema and their drivers/checks have been removed. Follow
+[worklist.md](worklist.md) and [structural-editor-plan.md](structural-editor-plan.md).
 
 Status: agreed implementation direction, 2026-10-11. This plan records decisions and remaining
 work. The portable lexer now translates and passes a disposable MLton smoke build;
@@ -357,87 +358,15 @@ No Basis API expansion was required; the snapshot now includes existing process/
 formatting modules. Parser design remains a separate discussion before implementation.
 
 
-### Surface/parser preparation
+### Compatibility findings from removed parser/schema probes
 
-The surface AST now uses namespace imports consistently with the portable core. Embedded
-SML declarations have been dropped from the WM translation profile by decision, resolving
-line-start `open:` without changing the authored field. The printer rejects declaration
-forms requiring embedding; supported expression compatibility forms remain. Compiler bootstrap
-works without embedding. Native AST translation now reaches the intentional R2 restriction:
-`TypeArguments<T>` and `TypeParameters` both used `{angles}`. The agreed temporary coding
-rule now gives them distinct meaningful labels and keeps their nominal identities; R2
-remains unchanged. The same audit found and distinguished the `BlockItem`/`TopPhrase`
-label sets. The complete surface AST now translates via the canonical entry graph and
-passes MLton type checking; it also compiles under WM. No lowering or Basis changes were needed. The [parser proposal](parser-design.md)
-records the representation audit, recovery questions and a proposed first type-parser slice.
-No parser behavior or new recovery policy is implemented by that proposal.
+The removed speculative schema established that namespace imports, the generic
+missing-slot kernel, and neutral token traversal can be translated. Distinct complete
+record-label sets are required by current SubsetML R2. Embedded SML declarations were
+removed from the WM profile, resolving the `open:` ambiguity. These findings and the
+existing source-level conventions remain useful; they do not approve an AST schema,
+closer-only recovery, or a parser implementation sequence.
 
-
-### Missing-slot representation
-
-Decision: a missing token slot stores its expectation and mark ID, not a synthetic zero-width
-lexer token. The phase-independent kernel now defines `Slot<T, Expectation>`; the AST defines
-`TokenSlot` with `TokenExpectation`. Expected kinds and exact grammar keywords are distinct,
-since keyword words are ordinary lexical identifiers. Syntax problem/recovery payloads share
-that expectation type. Position and cause remain in the referenced mark. This changes the
-schema only; no missing-token insertion or boundary policy is implemented yet.
-
-The default native build now checks the AST's independent canonical closure. Complete lexer
-parity still passes with the revised kernel, and WM checks the authored AST too. A disposable
-value-level probe preserves a missing keyword's mark ID/expectation under both runtimes;
-both checkers reject placing an authored `Token` in a missing `TokenSlot`. The remaining
-parser boundary/mark decisions are in the parser proposal.
-
-### Token cursor checkpoint
-
-`src/parser/cursor.wm` now supplies immutable constant-time token stepping, preserving
-authored tokens, trivia and absolute mate indices. EOF returns a terminal variant rather
-than a successful step. Exact-word lookahead compares UTF-16 source units without host
-string conversion and distinguishes keyword spelling from prefixes, primed identifiers,
-different capitalization and literals. The default native build checks this independent
-canonical closure alongside the AST. Focused WM/native value probes cover cursor stepping
-and word lookahead. No lowering machinery or Basis expansion was required.
-
-Missing closer recovery has been agreed for the first type slice: preserve caller-owned
-closers and record expectations at the current offset. It is not implemented by the cursor.
-The parser design records
-the current concrete type grammar; tuple domains use the existing `TypeTuple` within
-`TypeFunction`, consistent with SubsetML's single-argument arrows.
-
-### First type-parser slice
-
-`src/parser/type.wm` implements the current type-expression grammar with right-associated
-arrows, tuple domains, explicit grouping, names/qualification and nonempty type arguments.
-Prefix and complete entry points expose their limited scope. Shared immutable state allocates
-node/delimiter IDs and records the agreed missing `)`/`>` expectations at EOF or caller-owned
-boundaries. Other damaged forms are explicit failures; no general error-island or missing-type
-policy has been invented. Full-program parsing and type-parameter declarations remain pending.
-
-Mark ordering uses the proposed default after the optional question remained unanswered:
-preserve lexical IDs and append syntax marks in creation order. The default is open to review.
-No lexical/syntax causality is inferred from proximity. The native build checks the actual type
-entry graph; `--type-driver` also builds the slice's portable snapshot consumer. Focused checks
-compare complete WM/native snapshots, current-grammar acceptance and structural ownership.
-The slice required no new lowering machinery or Basis APIs.
-
-### Pattern representation preparation
-
-The grammar audit exposed single-token fields that could not retain negative integer
-patterns, multiline literal chunks or the distinction between `.{` and `. {`. The user
-approved extending the schema. `LiteralSyntax` now preserves an optional integer sign
-and multiline delimiters/chunks, and `RecordOpening`/`RecordDelimited` preserve compound,
-separate and named-record openings without synthetic tokens. The new record wrapper's
-label set follows the temporary SubsetML coding rule. Both pattern and expression nodes
-use the shared shapes; expression negation remains a prefix expression.
-
-The revised AST and type parser compile under WM and native-typecheck through the existing
-canonical build. No Basis or lowerer changes were needed. The [pattern audit](pattern-design.md)
-records grammar-context differences and agreed role/prefix-guard decisions before the
-pattern parser is implemented. It also caught and corrected type-parser adjacency: dotted
-type names and type-argument openings respect the current grammar's absence of whitespace
-productions. Focused WM/native checks pass for those rejection cases.
-
-The user chose explicit `PatternNameRole` tags for binding/reference/constructor-shaped
-grammar productions; these are not resolved symbols or type-based choices. The reference
-grammar's raw `Var` prefix guards are narrowed to the exact word, preserving the nested
-explicit-binder restriction while admitting `Variant`/`Variety` constructor spellings.
+Concrete grammar facts were moved to [grammar-audit.md](grammar-audit.md). New editor
+work follows the worklist and is verified on WM first. Native compatibility checks can
+be run independently of the working lexer baseline.

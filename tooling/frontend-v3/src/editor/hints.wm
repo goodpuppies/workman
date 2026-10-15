@@ -1,0 +1,40 @@
+from "./preview.wm" import * as Preview;
+from "../source/source.wm" import * as Source;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+
+record InlineHint = {
+  insertionId: Number,
+  position: Source.Position,
+  label: Text.Source,
+  paddingLeft: Bool,
+  paddingRight: Bool,
+};
+
+// Inline editor labels cannot create source lines. Keep raw insertion content in
+// Preview; display line breaks visibly, following Workmangr's [LF] convention.
+// CRLF is one [LF], lone CR is [CR]. Spaces/tabs and whitespace-only hints survive.
+let label = (content) => {
+  let rec render = (units, acc) => {
+    match(units) {
+      [] => {
+        match(Text.fromUnits(Lists.reverse(acc))) {
+          R.Ok(text) => {text},
+          R.Err(_) => {Panic("unreachable")} // Checked source units plus ASCII markers.
+        }
+      },
+      [13, 10, ..rest] => {render(rest, Lists.reverseAppend([91, 76, 70, 93], acc))},
+      [10, ..rest] => {render(rest, Lists.reverseAppend([91, 76, 70, 93], acc))},
+      [13, ..rest] => {render(rest, Lists.reverseAppend([91, 67, 82, 93], acc))},
+      [code, ..rest] => {render(rest, [code, ..acc])} // Other units preserve exact label spelling.
+    }
+  };
+  render(Text.toUnits(content), [])
+};
+let fromPreview = (preview: Preview.Preview) => {
+  Lists.map(preview.placements, (placement: Preview.Placement) => {
+    InlineHint(placement.insertion.insertionId, placement.position,
+      label(placement.insertion.content), false, false)
+  })
+};

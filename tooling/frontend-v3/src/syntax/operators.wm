@@ -1,0 +1,26 @@
+from "../lexer/token.wm" import * as Token;
+
+// Current WM grammar: left-associated fixed binary tiers. Unary !/- bind more
+// tightly; call and pipe forms bind above unary. No configurable SML fixity.
+let precedence = match {
+  Token.OperatorToken(Token.BooleanOr) => {Some(1)},
+  Token.OperatorToken(Token.BooleanAnd) => {Some(2)},
+  Token.OperatorToken(Token.Equal) => {Some(3)},
+  Token.OperatorToken(Token.NotEqual) => {Some(3)},
+  Token.PunctuationToken(Token.LessThan) => {Some(4)},
+  Token.PunctuationToken(Token.GreaterThan) => {Some(4)},
+  Token.OperatorToken(Token.LessOrEqual) => {Some(4)},
+  Token.OperatorToken(Token.GreaterOrEqual) => {Some(4)},
+  Token.OperatorToken(Token.Add) => {Some(5)},
+  Token.OperatorToken(Token.Subtract) => {Some(5)},
+  Token.OperatorToken(Token.Concatenate) => {Some(5)},
+  Token.OperatorToken(Token.Multiply) => {Some(6)},
+  Token.OperatorToken(Token.Divide) => {Some(6)},
+  Token.OperatorToken(Token.Remainder) => {Some(6)},
+  _ => {None} // Other token kinds have no binary operator role in WM.
+};
+let prefix = match {
+  Token.OperatorToken(Token.BooleanNot) => {true},
+  Token.OperatorToken(Token.Subtract) => {true},
+  _ => {false} // Remaining operators/tokens cannot introduce a unary expression.
+};

@@ -1,0 +1,53 @@
+from "../../testman/test.wm" import *;
+from "../src/parser/program.wm" import * as Parser;
+from "../src/editor/view.wm" import * as View;
+from "../lib/subsetml/subset_utf16_source.wm" import * as TextSource;
+from "../lib/subsetml/subset_result.wm" import * as R;
+from "../lib/subsetml/subset_list.wm" import * as Lists;
+
+let source = (text: String) => {
+  match(TextSource.fromNativeUnits(text)) {
+    R.Ok(value) => {value}, R.Err(_) => {Panic("unreachable")} // Fixture strings expose UTF-16 units.
+  }
+};
+let projectedEquals = (original, expected) => {
+  match(View.render(Parser.parse(source(original)), false, 256)) {
+    R.Err(_) => {fail("list view failed")},
+    R.Ok(value) => {assertEqual(TextSource.toUnits(value.projection.text), TextSource.toUnits(source(expected)))}
+  }
+};
+let tests = [
+  test("finite and nested list syntax retains separators and grouping", () => {
+    checks([projectedEquals("let x=[]", "let x = [];\n"),
+      projectedEquals("let x=[1,2,[3,4],]", "let x = [1, 2, [3, 4],];\n")])
+  }),
+  test("spread-only and prefixed tails remain explicit list syntax", () => {
+    checks([projectedEquals("let x=[..tail]", "let x = [..tail];\n"),
+      projectedEquals("let x=[a,b,..f tail,]", "let x = [a, b, ..f(tail),];\n")])
+  }),
+  test("spread evidence establishes a missing separator in the canonical list", () => {
+    projectedEquals("let x=[a ..tail]", "let x = [a, ..tail];\n")
+  }),
+  test("missing elements and tail values become virtual expression holes", () => {
+    checks([projectedEquals("let x=[a,,b]", "let x = [a, ?, b];\n"),
+      projectedEquals("let x=[..]", "let x = [..?];\n"),
+      projectedEquals("let x=[a,..]", "let x = [a, ..?];\n")])
+  }),
+  test("missing list closer preserves enclosing call and later declarations", () => {
+    checks([projectedEquals("f([a)", "f([a]);\n"),
+      projectedEquals("let x=[a,\nlet y=1", "let x = [a,];\nlet y = 1;\n")])
+  }),
+  test("lists are primary whitespace arguments", () => {
+    projectedEquals("f [a,b]", "f([a, b]);\n")
+  }),
+  test("materialized list projection reparses without new structural marks", () => {
+    let document = Parser.parse(source("let x=[a,,b,..]"));
+    match(View.render(document, false, 256)) {
+      R.Err(_) => {fail("list projection failed")},
+      R.Ok(value) => {
+        let materialized = Parser.parse(value.projection.text);
+        assertEqual(Lists.length(materialized.syntaxMarks), 0)
+      }
+    }
+  })
+];

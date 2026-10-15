@@ -1,0 +1,206 @@
+from "../../testman/test.wm" import *;
+from "../src/surface/ast.wm" import * as Ast;
+from "../src/source/mark.wm" import * as Marks;
+from "../src/lexer/lexer.wm" import * as Lexer;
+from "../src/lexer/token.wm" import * as Token;
+from "../src/editor/project.wm" import * as Project;
+from "../src/editor/diff.wm" import * as Diff;
+from "../src/editor/inlays.wm" import * as Inlays;
+from "../src/editor/preview.wm" import * as Preview;
+from "../src/editor/view.wm" import * as View;
+from "../adapters/portable/surface_document.wm" import * as Snapshot;
+from "../lib/subsetml/subset_utf16_source.wm" import * as TextSource;
+from "../lib/subsetml/subset_result.wm" import * as R;
+from "../lib/subsetml/subset_list.wm" import * as Lists;
+
+let source = (text: String) => {
+  match(TextSource.fromNativeUnits(text)) {
+    R.Ok(value) => {value},
+    R.Err(_) => {Panic("unreachable")} // Fixture strings consist of UTF-16 units.
+  }
+};
+let node = (id, start, end) => {
+  Ast.Node(Ast.NodeId(id), Marks.SourceSpan(Marks.SourceOffset(start), Marks.SourceOffset(end)))
+};
+let tokenAt = (document: Token.LexicalDocument, index) => {
+  match(Lists.at(document.tokens, index)) {
+    R.Ok(token) => {token},
+    R.Err(_) => {Panic("invalid fixture token index")}
+  }
+};
+let authored = (document, index) => {Marks.AuthoredSlot(tokenAt(document, index))};
+let missing = (id, punctuation) => {Marks.MissingSlot(Marks.MarkId(id), Ast.ExpectedPunctuation(punctuation))};
+let syntaxMark = (id, anchor, problem, recovery) => {
+  Marks.Mark(Marks.MarkId(id), problem, Marks.RecoveredWith(recovery), Marks.SourceOffset(anchor),
+    Marks.SourceSpan(Marks.SourceOffset(anchor), Marks.SourceOffset(anchor)), None)
+};
+let tokenMark = (id, anchor, punctuation) => {
+  syntaxMark(id, anchor, Ast.MissingToken(Ast.ExpectedPunctuation(punctuation)), Ast.CompletedToken)
+};
+let program = (text, doc: Token.LexicalDocument, phrases, marks) => {
+  Ast.Program(text, phrases, tokenAt(doc, Lists.length(doc.tokens) - 1), doc.marks, marks)
+};
+let projectedEquals = (tree, expected) => {
+  let projected = Project.render(tree);
+  assertEqual(TextSource.toUnits(projected.text), TextSource.toUnits(source(expected)))
+};
+let previewEquals = (tree: Ast.Program, expected) => {
+  let projected = Project.render(tree);
+  match(Diff.compareAnchored(tree.source, projected.text, projected.correspondence, 256)) {
+    R.Err(_) => {fail("projector produced invalid correspondence or excessive gap")},
+    R.Ok(difference) => {
+      match(Preview.render(tree.source, Inlays.additions(difference), false)) {
+        R.Err(_) => {fail("projection diff produced invalid insertion anchors")},
+        R.Ok(result) => {assertEqual(TextSource.toUnits(result.rendered), TextSource.toUnits(source(expected)))}
+      }
+    }
+  }
+};
+
+let tests = [
+  test("one lambda shape projects absent parameter/body delimiters and formatting", () => {
+    let text = source("let id=x=>x");
+    let doc = Lexer.lex(text);
+    let param = Ast.NamePattern(node(0, 7, 8), Ast.BindingName, tokenAt(doc, 3));
+    let params = Ast.Delimited(Ast.DelimiterId(0), missing(0, Token.LeftParen),
+      Ast.NonemptyItems(Ast.Separated(param, [], None)), missing(1, Token.RightParen));
+    let result = Ast.NameExpr(node(1, 10, 11), tokenAt(doc, 5));
+    let body = Ast.Block(node(2, 10, 11), Ast.Delimited(Ast.DelimiterId(1), missing(2, Token.LeftBrace),
+      Ast.BlockBody([], Some(result)), missing(3, Token.RightBrace)));
+    let lambda = Ast.LambdaExpr(node(3, 7, 11), params, authored(doc, 4), body);
+    let binding = Ast.Binding(node(4, 0, 11), authored(doc, 0),
+      Ast.NamePattern(node(5, 4, 6), Ast.BindingName, tokenAt(doc, 1)), authored(doc, 2), lambda);
+    let marks = [tokenMark(0, 7, Token.LeftParen), tokenMark(1, 8, Token.RightParen),
+      tokenMark(2, 10, Token.LeftBrace), tokenMark(3, 11, Token.RightBrace), tokenMark(4, 11, Token.Semicolon)];
+    let tree = program(text, doc, [Ast.BindingStatement(binding, missing(4, Token.Semicolon))], marks);
+    let projection = Project.render(tree);
+    let attributed = match(View.render(tree, false, 256)) {
+      R.Ok(value) => {
+        Lists.filterMap(value.additions, (item: View.AttributedAddition) => {
+          match(item.syntaxMark) {
+            None => {None}, // Emergent spaces/newlines have no syntax mark.
+            Some(mark) => {let Marks.MarkId(id) = mark; Some(id)}
+          }
+        })
+      },
+      R.Err(_) => {Panic("fixture view failed")}
+    };
+    checks([
+      projectedEquals(tree, "let id = (x) => { x };\n"),
+      previewEquals(tree, "let id = (x) => { x };\n"),
+      assertEqual(attributed, [0, 1, 2, 3, 4]),
+      assertEqual(Lists.map(projection.virtualSpans, (span: Project.VirtualSpan) => {
+        let Marks.MarkId(id) = span.markId;
+        let pair = match(span.delimiter) {
+          None => {-1}, Some(pair) => {let Ast.DelimiterId(value) = pair; value}
+        };
+        (id, pair)
+      }), [(0, 0), (1, 0), (2, 1), (3, 1), (4, -1)])
+    ])
+  }),
+  test("virtual and authored expression holes project alike but retain origin", () => {
+    let build = (spelling, virtual) => {
+      let text = source(spelling);
+      let doc = Lexer.lex(text);
+      let origin = if (virtual) {Ast.VirtualHole(Marks.MarkId(0))} else {Ast.AuthoredHole(tokenAt(doc, 3))};
+      let marks = if (virtual) {[syntaxMark(0, 6, Ast.MissingExpression, Ast.InsertedExpressionHole)]} else {[]};
+      let binding = Ast.Binding(node(0, 0, TextSource.length(text)), authored(doc, 0),
+        Ast.NamePattern(node(1, 4, 5), Ast.BindingName, tokenAt(doc, 1)), authored(doc, 2),
+        Ast.HoleExpr(node(2, 6, TextSource.length(text)), origin));
+      program(text, doc, [Ast.BindingStatement(binding, missing(1, Token.Semicolon))],
+        Lists.append(marks, [tokenMark(1, TextSource.length(text), Token.Semicolon)]))
+    };
+    let virtual = build("let x=", true);
+    let authored = build("let x=?", false);
+    let virtualProjection = Project.render(virtual);
+    let authoredProjection = Project.render(authored);
+    checks([projectedEquals(virtual, "let x = ?;\n"), projectedEquals(authored, "let x = ?;\n"),
+      assertContains(Snapshot.encode(virtual), "VirtualHole"),
+      assertContains(Snapshot.encode(authored), "AuthoredHole"),
+      assertEqual(Lists.length(virtualProjection.virtualSpans), 2),
+      assertEqual(Lists.length(authoredProjection.virtualSpans), 1)])
+  }),
+  test("authored comments and escaped literal spelling survive projection", () => {
+    let text = source("/* hi */let x=\"a\\n\"; // end\n");
+    let doc = Lexer.lex(text);
+    let binding = Ast.Binding(node(0, 8, 21), authored(doc, 0),
+      Ast.NamePattern(node(1, 12, 13), Ast.BindingName, tokenAt(doc, 1)), authored(doc, 2),
+      Ast.LiteralExpr(node(2, 14, 20), tokenAt(doc, 3)));
+    let tree = program(text, doc, [Ast.BindingStatement(binding, authored(doc, 4))], []);
+    checks([projectedEquals(tree, "/* hi */ let x = \"a\\n\";\n// end\n"),
+      previewEquals(tree, "/* hi */ let x = \"a\\n\"; \n// end\n")])
+  }),
+  test("a missing call closer retains its authored partner and lexical mark", () => {
+    let text = source("f(x");
+    let doc = Lexer.lex(text);
+    let arguments = Ast.Delimited(Ast.DelimiterId(0), authored(doc, 1),
+      Ast.NonemptyItems(Ast.Separated(Ast.NameExpr(node(0, 2, 3), tokenAt(doc, 2)), [], None)), missing(1, Token.RightParen));
+    let call = Ast.CallExpr(node(1, 0, 3), Ast.NameExpr(node(2, 0, 1), tokenAt(doc, 0)), arguments);
+    let tree = program(text, doc, [Ast.ExpressionStatement(call, missing(2, Token.Semicolon))],
+      [tokenMark(1, 3, Token.RightParen), tokenMark(2, 3, Token.Semicolon)]);
+    checks([projectedEquals(tree, "f(x);\n"), previewEquals(tree, "f(x);\n"),
+      assertEqual(Lists.length(tree.lexicalMarks), 1), assertEqual(Lists.length(tree.syntaxMarks), 2)])
+  }),
+  test("whitespace application uses canonical marked parentheses and retains authored space in inlays", () => {
+    let text = source("f x");
+    let doc = Lexer.lex(text);
+    let arguments = Ast.Delimited(Ast.DelimiterId(0), missing(0, Token.LeftParen),
+      Ast.NonemptyItems(Ast.Separated(Ast.NameExpr(node(0, 2, 3), tokenAt(doc, 1)), [], None)), missing(1, Token.RightParen));
+    let call = Ast.CallExpr(node(1, 0, 3), Ast.NameExpr(node(2, 0, 1), tokenAt(doc, 0)), arguments);
+    let tree = program(text, doc, [Ast.ExpressionStatement(call, missing(2, Token.Semicolon))],
+      [tokenMark(0, 2, Token.LeftParen), tokenMark(1, 3, Token.RightParen), tokenMark(2, 3, Token.Semicolon)]);
+    checks([projectedEquals(tree, "f(x);\n"), previewEquals(tree, "f (x);\n"), assertContains(Snapshot.encode(tree), "CallExpr")])
+  }),
+  test("block statements and final result generate indentation from structure", () => {
+    let text = source("{let x=1;x}");
+    let doc = Lexer.lex(text);
+    let binding = Ast.Binding(node(0, 1, 8), authored(doc, 1),
+      Ast.NamePattern(node(1, 5, 6), Ast.BindingName, tokenAt(doc, 2)), authored(doc, 3),
+      Ast.LiteralExpr(node(2, 7, 8), tokenAt(doc, 4)));
+    let body = Ast.BlockBody([Ast.BindingStatement(binding, authored(doc, 5))],
+      Some(Ast.NameExpr(node(3, 9, 10), tokenAt(doc, 6))));
+    let block = Ast.Block(node(4, 0, 11), Ast.Delimited(Ast.DelimiterId(0), authored(doc, 0), body, authored(doc, 7)));
+    let tree = program(text, doc, [Ast.ExpressionStatement(Ast.BlockExpr(block), missing(0, Token.Semicolon))],
+      [tokenMark(0, 11, Token.Semicolon)]);
+    checks([projectedEquals(tree, "{\n  let x = 1;\n  x\n};\n"),
+      previewEquals(tree, "{\n  let x = 1;\n  x\n};\n"), assertContains(Snapshot.encode(tree), "BlockExpr")])
+  }),
+  test("single-element tuples preserve their required comma", () => {
+    let text = source("(x,)");
+    let doc = Lexer.lex(text);
+    let body = Ast.TupleBody(Ast.NameExpr(node(0, 1, 2), tokenAt(doc, 1)), authored(doc, 2), Ast.EmptyItems);
+    let tuple = Ast.TupleExpr(node(1, 0, 4), Ast.Delimited(Ast.DelimiterId(0), authored(doc, 0), body, authored(doc, 3)));
+    let tree = program(text, doc, [Ast.ExpressionStatement(tuple, missing(0, Token.Semicolon))], [tokenMark(0, 4, Token.Semicolon)]);
+    checks([projectedEquals(tree, "(x,);\n"), previewEquals(tree, "(x,);\n"), assertContains(Snapshot.encode(tree), "TupleExpr")])
+  }),
+  test("opaque damaged fragments preserve internal spacing and comments exactly", () => {
+    let text = source("@@broken  /* keep */ abc");
+    let doc = Lexer.lex(text);
+    let tokens = match(Lists.take(doc.tokens, Lists.length(doc.tokens) - 1)) {
+      R.Ok(value) => {value}, R.Err(_) => {Panic("invalid fixture token run")}
+    };
+    let fragment = Ast.Opaque(node(0, 0, TextSource.length(text)), tokens, Ast.DamagedFragment(Marks.MarkId(0)));
+    let tree = program(text, doc, [Ast.OpaqueStatement(fragment)],
+      [syntaxMark(0, 0, Ast.UnassembledSyntax, Ast.RetainedOpaqueSyntax)]);
+    checks([projectedEquals(tree, "@@broken  /* keep */ abc\n"), previewEquals(tree, "@@broken  /* keep */ abc\n")])
+  }),
+  test("accepted but unimplemented syntax retains an explicit implementation-gap status", () => {
+    let text = source("type T=A;");
+    let doc = Lexer.lex(text);
+    let tokens = match(Lists.take(doc.tokens, Lists.length(doc.tokens) - 1)) {
+      R.Ok(value) => {value}, R.Err(_) => {Panic("invalid fixture token run")}
+    };
+    let fragment = Ast.Opaque(node(0, 0, TextSource.length(text)), tokens, Ast.UnimplementedFragment(Ast.TypeSyntax));
+    let tree = program(text, doc, [Ast.OpaqueStatement(fragment)], []);
+    checks([projectedEquals(tree, "type T=A;\n"), assertContains(Snapshot.encode(tree), "UnimplementedFragment"),
+      assertEqual(Lists.length(tree.syntaxMarks), 0)])
+  }),
+  test("unterminated comment trivia keeps lexical damage without fabricating source", () => {
+    let text = source("/*");
+    let doc = Lexer.lex(text);
+    let tree = program(text, doc, [], []);
+    let projection = Project.render(tree);
+    checks([projectedEquals(tree, "/*"), assertEqual(Lists.length(tree.lexicalMarks), 1),
+      assertEqual(Lists.length(projection.virtualSpans), 0)])
+  })
+];

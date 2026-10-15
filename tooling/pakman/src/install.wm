@@ -134,7 +134,7 @@ let generations = (paths: Paths, root) => {
     :> Task.map(generationNumbers)
 };
 
-let record = (paths: Paths, g: Generation) => {
+let recordGeneration = (paths: Paths, g: Generation) => {
   let dir = profileDir(paths, g.root);
   Task|
     mkdirp(dir),
@@ -342,7 +342,7 @@ let switchTo = (paths: Paths, root, packages: List<Installed>) => {
       :> Task.map((counts) => { (next, counts) })
   };
   let commit = via Task (next: Generation, counts) => {
-    Task|record(paths, next), setCurrent(paths, root, next.number)|
+    Task|recordGeneration(paths, next), setCurrent(paths, root, next.number)|
       :> Task.map((_) => { (next, counts) })
   };
   let checkedFiles = via Task (manifests) => { planGeneration(manifests) };

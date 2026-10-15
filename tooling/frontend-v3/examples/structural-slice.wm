@@ -1,0 +1,7 @@
+// Actual parser input; missing structure is shown by the editor CLI.
+let id=x=>x
+let main= => {
+  let missing=
+  let value=print(id "hello");
+  value
+}

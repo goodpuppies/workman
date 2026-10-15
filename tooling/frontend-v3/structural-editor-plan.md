@@ -78,12 +78,16 @@ that conversion. Keep formatting, structural fixes, and TODO acceptance distingu
 ## Current implementation and references
 
 V3 already has lossless UTF-16 source indexing, tokens/trivia, lexical marks, delimiter
-mates, an immutable cursor, authored/missing token slots, and a partial surface AST.
-The old type-parser slice recognizes current concrete syntax and recovers a few missing
-closers; most other damaged forms return `Rejected`. It is scheduled for deletion with
-its state, codec, driver, and checks. Salvage only neutral cursor/keyword primitives and
-grammar facts as specified by the worklist; do not extend the old parser.
-The lexer and verified native portability baseline need not be restarted.
+mates, a neutral immutable cursor, and the generic authored/missing slot kernel.
+The old type-parser slice, state, schema, codec, driver and checks have been deleted.
+Neutral cursor/keyword primitives live in `src/syntax/`; concrete grammar facts live in
+`grammar-audit.md`. No old recognizer API remains to constrain the editor parser.
+The lexer and verified native portability baseline are retained. Automatic text diff,
+source-correspondence alignment, additive inlays and the CLI preview harness are now
+implemented. The initial canonical schema/projector/View and complete current-schema
+codec are also implemented. The first canonical parser slice now drives the full editor
+view and CLI; remaining language coverage and semantic/consumer integration are pending.
+See the worklist for progress.
 
 Workmangr demonstrates the user experience, with several implementation generations:
 
@@ -227,9 +231,11 @@ a virtual `?` is authored. Canonical formatting should be idempotent under the c
 materialization policy. Additive preview equality to projection is required only when the
 full diff can be expressed entirely as additions.
 
-Keep portable frontend logic WM-authored within the existing SubsetML/native baseline;
-host transport, JSON handling, and terminal/browser presentation belong in adapters/tools.
-Validate exercised WM/native results through the existing build/check pipeline. Audit diff
+Frontend logic remains WM-authored; host transport, JSON handling, and terminal/browser
+presentation belong in adapters/tools. WM execution and completing/replacing the frontend
+are the main priority. SubsetML/MLton remains an intended target; use compatible core
+choices where practical, check native compatibility at useful checkpoints, and record
+blockers without stalling independent editor work. Validate WM behavior first. Audit diff
 complexity before using the old quadratic token LCS on every keystroke; first establish
 correctness, then measure representative editing buffers to select an appropriate approach.
 

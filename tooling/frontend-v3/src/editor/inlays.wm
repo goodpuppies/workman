@@ -1,0 +1,76 @@
+from "./diff.wm" import * as Diff;
+from "./preview.wm" import * as Preview;
+from "../lexer/lexer.wm" import * as Lexer;
+from "../lexer/token.wm" import * as Token;
+from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "../../lib/subsetml/subset_result.wm" import * as R;
+
+// Insertion-only view of a full diff. Projected lexeme/trivia boundaries split labels
+// so adjacent virtual tokens (? then ;, or } then ,) remain separate and ordered.
+// The canonical projector supplies source correspondence and virtual ranges to View.
+record Addition = {
+  insertion: Preview.Insertion,
+  projectedStart: Number,
+  projectedEnd: Number,
+};
+let details = (difference: Diff.Difference) => {
+  let projected = Lexer.lex(difference.projected);
+  let rec boundaries = (tokens, acc) => {
+    match(tokens) {
+      [] => {Lists.reverse(acc)},
+      [item, ..rest] => {
+        let token: Token.Token = item;
+        let withTrivia = Lists.foldLeft(token.leadingTrivia, acc, (item, spans) => {
+          let trivia: Token.Trivia = item;
+          [(trivia.span.startPos.index, trivia.span.endPos.index), ..spans]
+        });
+        let start = token.span.startPos.index;
+        let end = token.span.endPos.index;
+        boundaries(rest, if (start < end) {[(start, end), ..withTrivia]} else {withTrivia})
+      }
+    }
+  };
+  let rec skip = (spans, start: Number) => {
+    match(spans) {
+      [] => {[]}, // Only zero-length remaining projected text has no lexemes/trivia.
+      [(Var(a), Var(b)), ..rest] => {if (b <= start) {skip(rest, start)} else {spans}}
+    }
+  };
+  let rec split = (spans, start, end, anchor, nextId, acc) => {
+    if (start == end) {(spans, nextId, acc)} else {
+      match(skip(spans, start)) {
+        [] => {Panic("unreachable")}, // Lexer spans partition all nonempty projected text.
+        [(Var(a), Var(b)), ..rest] => {
+          let finish = if (b < end) {b} else {end};
+          let content = match(Text.slice(difference.projected, start, finish - start)) {
+            R.Ok(text) => {text},
+            R.Err(_) => {Panic("unreachable")} // Diff and lexer spans address this projection.
+          };
+          let insertion = Preview.Insertion(nextId, anchor, content);
+          split(if (finish == b) {rest} else {[(a, b), ..rest]}, finish, end,
+            anchor, nextId + 1, [Addition(insertion, start, finish), ..acc])
+        }
+      }
+    }
+  };
+  let rec collect = (edits, spans, nextId, acc) => {
+    match(edits) {
+      [] => {Lists.reverse(acc)},
+      [item, ..rest] => {
+        let edit: Diff.Edit = item;
+        match(edit.kind) {
+          Diff.Keep => {collect(rest, skip(spans, edit.projectedEnd), nextId, acc)},
+          Diff.Delete => {collect(rest, spans, nextId, acc)},
+          Diff.Insert => {
+            let (remaining, id, insertions) = split(spans, edit.projectedStart,
+              edit.projectedEnd, edit.originalStart, nextId, acc);
+            collect(rest, remaining, id, insertions)
+          }
+        }
+      }
+    }
+  };
+  collect(difference.edits, boundaries(projected.tokens, []), 0, [])
+};
+let additions = (difference) => {Lists.map(details(difference), (value: Addition) => {value.insertion})};

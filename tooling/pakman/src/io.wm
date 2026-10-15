@@ -93,6 +93,10 @@ let extract = (chain, members, dest, strip) => {
   Host.extract(Js.Array.fromList(chain), Js.Array.fromList(members), dest, strip)
     :> Task.mapErr(describe("extract into " ++ dest))
 };
+let extractPayload = (chain, choices, dest) => {
+  Host.extract(Js.Array.fromList(chain), Js.Array.fromList([]), dest, 0, Js.Array.fromList(choices))
+    :> Task.mapErr(describe("extract payload into " ++ dest))
+};
 let runCapture = (cmd, args) => {
   Host.runCapture(cmd, Js.Array.fromList(args)) :> Task.mapErr(describe(cmd))
 };

@@ -1,0 +1,190 @@
+from "../../testman/test.wm" import *;
+from "../src/editor/diff.wm" import * as Diff;
+from "../src/editor/inlays.wm" import * as Inlays;
+from "../src/editor/preview.wm" import * as Preview;
+from "../lib/subsetml/subset_utf16_source.wm" import * as Source;
+from "../lib/subsetml/subset_result.wm" import * as R;
+from "../lib/subsetml/subset_list.wm" import * as Lists;
+
+let source = (text: String) => {
+  match(Source.fromNativeUnits(text)) {
+    R.Ok(value) => {value},
+    R.Err(_) => {Panic("unreachable")} // Fixture strings expose UTF-16 units.
+  }
+};
+let withDiff = (original, projected, check) => {
+  match(Diff.compare(source(original), source(projected), 256)) {
+    R.Ok(value) => {check(value)},
+    R.Err(_) => {fail("fixture diff unexpectedly exceeded search limit")}
+  }
+};
+let sliceUnits = (text, start, end) => {
+  match(Source.slice(text, start, end - start)) {
+    R.Ok(value) => {Source.toUnits(value)},
+    R.Err(_) => {Panic("unreachable")} // Test spans come from the actual diff.
+  }
+};
+let kind = match {
+  Diff.Keep => {"keep"}, Diff.Insert => {"insert"}, Diff.Delete => {"delete"}
+};
+let description = (value: Diff.Difference) => {
+  Lists.map(value.edits, (edit: Diff.Edit) => {
+    (kind(edit.kind), edit.originalStart, edit.originalEnd, edit.projectedStart, edit.projectedEnd)
+  })
+};
+let reconstructs = (value: Diff.Difference) => {
+  let original = Lists.concat(Lists.map(value.edits, (edit: Diff.Edit) => {
+    match(edit.kind) {
+      Diff.Insert => {[]}, // Insert consumes no original units.
+      Diff.Keep => {sliceUnits(value.original, edit.originalStart, edit.originalEnd)},
+      Diff.Delete => {sliceUnits(value.original, edit.originalStart, edit.originalEnd)}
+    }
+  }));
+  let projected = Lists.concat(Lists.map(value.edits, (edit: Diff.Edit) => {
+    match(edit.kind) {
+      Diff.Delete => {[]}, // Delete consumes no projected units.
+      Diff.Keep => {sliceUnits(value.original, edit.originalStart, edit.originalEnd)},
+      Diff.Insert => {sliceUnits(value.projected, edit.projectedStart, edit.projectedEnd)}
+    }
+  }));
+  checks([assertEqual(original, Source.toUnits(value.original)), assertEqual(projected, Source.toUnits(value.projected))])
+};
+let previewEquals = (value: Diff.Difference, expected, marked) => {
+  match(Preview.render(value.original, Inlays.additions(value), marked)) {
+    R.Ok(preview) => {assertEqual(Source.toUnits(preview.rendered), Source.toUnits(source(expected)))},
+    R.Err(_) => {fail("diff produced invalid preview anchors")}
+  }
+};
+
+let tests = [
+  test("small exhaustive diffs reconstruct and have minimum edit cost", () => {
+    let rec words = (depth) => {
+      if (depth == 0) {[""]} else {
+        ["", ..Lists.concat(Lists.map(words(depth - 1), (word) => {[word ++ "a", word ++ "b", word ++ " "]}))]
+      }
+    };
+    // Independent recursive edit-distance oracle, limited to these tiny strings.
+    let rec distance = (left, right) => {
+      match(left) {
+        [] => {Lists.length(right)},
+        [a, ..xs] => {
+          match(right) {
+            [] => {Lists.length(left)},
+            [b, ..ys] => {
+              if (a == b) {distance(xs, ys)} else {
+                let deletion = distance(xs, right);
+                let insertion = distance(left, ys);
+                let best = if (deletion < insertion) {deletion} else {insertion};
+                1 + best
+              }
+            }
+          }
+        }
+      }
+    };
+    let corpus = words(3);
+    checks(Lists.concat(Lists.map(corpus, (original) => {
+      Lists.map(corpus, (projected) => {
+        withDiff(original, projected, (value: Diff.Difference) => {
+          let cost = Lists.foldLeft(value.edits, 0, (edit: Diff.Edit, total) => {
+            let changed = match(edit.kind) {
+              Diff.Keep => {0},
+              Diff.Insert => {edit.projectedEnd - edit.projectedStart},
+              Diff.Delete => {edit.originalEnd - edit.originalStart}
+            };
+            total + changed
+          });
+          checks([reconstructs(value), assertEqual(cost,
+            distance(Source.toUnits(value.original), Source.toUnits(value.projected)))])
+        })
+      })
+    })))
+  }),
+  test("projection diff derives spaces and a semicolon without supplied hints", () => {
+    withDiff("let x=1", "let x = 1;", (value: Diff.Difference) => {
+      checks([reconstructs(value), previewEquals(value, "let x* *=* *1*;*", true),
+        assertEqual(Lists.map(Inlays.additions(value), (item: Preview.Insertion) => {item.anchor}), [5, 6, 7])])
+    })
+  }),
+  test("holes and adjacent punctuation are separate ordered inlays", () => {
+    withDiff("let thing = ", "let thing = ?;", (value: Diff.Difference) => {
+      checks([reconstructs(value), previewEquals(value, "let thing = *?**;*", true),
+        assertEqual(Lists.length(Inlays.additions(value)), 2)])
+    })
+  }),
+  test("brace before comma order emerges from projected text", () => {
+    withDiff("x", "x},", (value) => {checks([reconstructs(value), previewEquals(value, "x*}**,*", true)])})
+  }),
+  test("full diff records whitespace removal while additive view preserves it", () => {
+    withDiff("let  x = 1;", "let x = 1;", (value: Diff.Difference) => {
+      checks([reconstructs(value), previewEquals(value, "let  x = 1;", false),
+        assertEqual(description(value), [("keep", 0, 4, 0, 4), ("delete", 4, 5, 4, 4), ("keep", 5, 11, 4, 10)])])
+    })
+  }),
+  test("replacement keeps both deletion and insertion evidence", () => {
+    withDiff("abc", "axc", (value: Diff.Difference) => {
+      checks([reconstructs(value),
+        assertEqual(description(value), [("keep", 0, 1, 0, 1), ("delete", 1, 2, 1, 1), ("insert", 2, 2, 1, 2), ("keep", 2, 3, 2, 3)])])
+    })
+  }),
+  test("empty, inserted, deleted and repeated text reconstruct exactly", () => {
+    checks(Lists.map([("", ""), ("", " ?;"), ("abc", ""), ("aba", "bab"), ("}}", "};}")], (pair) => {
+      let (original, projected) = pair;
+      withDiff(original, projected, reconstructs)
+    }))
+  }),
+  test("comments and indentation survive projection diff", () => {
+    withDiff("/* x */\r\nlet x=1", "/* x */\r\n  let x = 1;", (value) => {
+      checks([reconstructs(value), previewEquals(value, "/* x */\r\n  let x = 1;", false)])
+    })
+  }),
+  test("edit distance limit is explicit rather than a fabricated successful diff", () => {
+    match(Diff.compare(source("abc"), source("xyz"), 2)) {
+      R.Ok(_) => {fail("unrelated texts exceeded the allowed edit distance")},
+      R.Err(Diff.EditDistanceLimit(limit)) => {assertEqual(limit, 2)},
+      R.Err(Diff.InvalidLimit) => {fail("valid search limit rejected")},
+      R.Err(Diff.InvalidCorrespondence(_)) => {fail("unanchored diff reported correspondence damage")}
+    }
+  }),
+  test("negative limits are rejected", () => {
+    match(Diff.compare(source(""), source(""), -1)) {
+      R.Ok(_) => {fail("negative search limit accepted")},
+      R.Err(Diff.InvalidLimit) => {pass()},
+      R.Err(Diff.EditDistanceLimit(_)) => {fail("invalid limit classified as exhausted search")},
+      R.Err(Diff.InvalidCorrespondence(_)) => {fail("unanchored diff reported correspondence damage")}
+    }
+  }),
+  test("source correspondence pins repeated delimiters to their authored occurrence", () => {
+    let original = source("}");
+    let projected = source("}}");
+    match(Diff.compareAnchored(original, projected, [Diff.Correspondence(0, 1, 1, 2)], 256)) {
+      R.Ok(value) => {
+        checks([reconstructs(value), assertEqual(description(value),
+          [("insert", 0, 0, 0, 1), ("keep", 0, 1, 1, 2)]), previewEquals(value, "*}*}", true)])
+      },
+      R.Err(_) => {fail("valid correspondence rejected")}
+    }
+  }),
+  test("correspondence rejects changed spelling and crossing source spans", () => {
+    let rejects = (anchors, expectedIndex) => {
+      match(Diff.compareAnchored(source("aa"), source("ab"), anchors, 256)) {
+        R.Ok(_) => {fail("invalid correspondence accepted")},
+        R.Err(Diff.InvalidCorrespondence(index)) => {assertEqual(index, expectedIndex)},
+        R.Err(Diff.InvalidLimit) => {fail("valid limit rejected")},
+        R.Err(Diff.EditDistanceLimit(_)) => {fail("bad correspondence was used for diff search")}
+      }
+    };
+    checks([
+      rejects([Diff.Correspondence(1, 2, 1, 2)], 0),
+      rejects([Diff.Correspondence(1, 2, 0, 1), Diff.Correspondence(0, 1, 0, 1)], 1),
+      rejects([Diff.Correspondence(-1, 0, 0, 1)], 0)
+    ])
+  }),
+  test("anchored gaps bound search independently across a formatted document", () => {
+    match(Diff.compareAnchored(source("abc"), source(" a b c "),
+      [Diff.Correspondence(0, 1, 1, 2), Diff.Correspondence(1, 2, 3, 4), Diff.Correspondence(2, 3, 5, 6)], 1)) {
+      R.Ok(value) => {checks([reconstructs(value), previewEquals(value, " a b c ", false)])},
+      R.Err(_) => {fail("individual one-space gaps exhausted the search budget")}
+    }
+  })
+];
