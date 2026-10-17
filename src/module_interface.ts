@@ -7,7 +7,7 @@ import type {
 } from "./binding_facts.ts";
 import { basisCtorId } from "./basis.ts";
 import { basisStructureId } from "./compiler_semantics.ts";
-import type { FrontendDiagnostic } from "./diagnostics.ts";
+import type { FrontendDiagnostic } from "./diagnostic_model.ts";
 import { resolveCompilerFrontend } from "./frontend_mode.ts";
 import { discoverGpuRegions } from "./directives.ts";
 import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";

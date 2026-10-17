@@ -1,5 +1,5 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
-import { diagnosticError } from "../../diagnostics.ts";
+import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
 import { freshTypeInfo, prune, show, solveFfi, type Ty, typeFromAst } from "../../types.ts";

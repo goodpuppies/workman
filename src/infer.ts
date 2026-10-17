@@ -1,5 +1,5 @@
 import type { Decl, Expr, ImportClause, Module } from "./ast.ts";
-import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
+import { diagnosticError, type FrontendDiagnostic } from "./diagnostic_model.ts";
 import { inferDecl, predeclareTypeGroup } from "./infer/decl.ts";
 import { hostTypingDialect, type InferContext } from "./infer/context.ts";
 import { addAdts, addImport } from "./infer/imports.ts";

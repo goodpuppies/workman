@@ -1,5 +1,5 @@
 import type { ImportClause } from "../ast.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import {
   cloneTypeEnv,
   type Env,

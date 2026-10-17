@@ -2,7 +2,7 @@ import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 export { contextualizeDelayedCallbacks } from "./delayed_callbacks.ts";
 import { resolveDelayedDecl } from "./delayed_resolve.ts";
-import { diagnosticError } from "../../diagnostics.ts";
+import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { prune, show, type Ty } from "../../types.ts";
 import { rejectAnnotatedDynamicCallbacks } from "./annotations.ts";

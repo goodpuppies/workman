@@ -1,5 +1,5 @@
 import type { Decl, JsTarget, Module, TypeExpr } from "../ast.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import type { JsTypeRef } from "./reflect/types.ts";
 import { jsGlobalTypeRef } from "./reflect/types.ts";
 import { setActiveJsReflectionBasePath } from "./reflect/host.ts";

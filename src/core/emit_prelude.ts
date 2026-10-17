@@ -241,6 +241,9 @@ const __wm_c_struct_to_buffer = (name, value) => {
 };`,
     `const __wm_eq = (a, b) => {
   if (a === b) return true;
+  // Unequal primitive values cannot be structural containers. Reject them
+  // before probing vector symbols on primitive strings/numbers in hot comparisons.
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
   const aBytes = a?.[__wm_word8_vector_data];
   const bBytes = b?.[__wm_word8_vector_data];
   if (aBytes !== undefined || bBytes !== undefined) {
@@ -260,7 +263,6 @@ const __wm_c_struct_to_buffer = (name, value) => {
     return globalThis.Array.isArray(a) && globalThis.Array.isArray(b) && a.length === b.length &&
       a.every((item, index) => __wm_eq(item, b[index]));
   }
-  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
   if ("ctor" in a || "ctor" in b) {
     return a.ctor === b.ctor && __wm_eq(a.args, b.args);
   }

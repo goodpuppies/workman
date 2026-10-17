@@ -1,6 +1,6 @@
 import ts from "typescript-api";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
-import { diagnosticError } from "../../diagnostics.ts";
+import { diagnosticError } from "../../diagnostic_model.ts";
 import {
   callbackParamRefsFromCall,
   dedupeVariants,

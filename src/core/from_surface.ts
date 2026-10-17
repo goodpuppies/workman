@@ -16,7 +16,7 @@ import { pathOf } from "../ast.ts";
 import type { InferResult } from "../infer.ts";
 import { basisCtorId } from "../basis.ts";
 import { type BindingFacts, resolveModuleBindingFacts } from "../binding_facts.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import { gpuOnlyBindingIds } from "../gpu_host_boundary.ts";
 import { resolveGpuFragmentSelections } from "../gpu_selection.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";

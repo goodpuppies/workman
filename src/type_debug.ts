@@ -6,7 +6,12 @@ import {
   renderDiagnosticSummary,
 } from "./diagnostics.ts";
 import type { InferResult } from "./infer.ts";
-import { loadModuleGraph, type ModuleGraph, type ModuleNode } from "./module_graph.ts";
+import {
+  loadModuleGraph,
+  type ModuleGraph,
+  type ModuleGraphOptions,
+  type ModuleNode,
+} from "./module_graph.ts";
 import { sliceSource, type SourceSpan } from "./source.ts";
 import { analyzeModuleGraph, StagedAnalysisError } from "./staged_analysis.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
@@ -21,17 +26,29 @@ type DebugState = {
   result?: InferResult;
 };
 
-export async function typeDebugFile(input: string): Promise<string> {
+export async function typeDebugFile(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<string> {
   const state: DebugState = { phase: "load module graph" };
   try {
-    const graph = await loadModuleGraph(input);
+    options.onStage?.("load modules");
+    const graph = await loadModuleGraph(input, options);
     state.graph = graph;
+    options.onStage?.("analyze");
+    const completed = new Map<string, Set<string>>();
     const finalResults = await analyzeModuleGraph(graph, {
       onEvent: ({ phase, node, result }) => {
         state.phase = phase;
         state.path = node.path;
         state.node = node;
         state.result = result;
+        if (options.onAnalysisProgress) {
+          const seen = completed.get(phase) ?? new Set<string>();
+          seen.add(node.path);
+          completed.set(phase, seen);
+          options.onAnalysisProgress(seen.size, graph.nodes.size, phase);
+        }
       },
     });
 

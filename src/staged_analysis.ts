@@ -1,5 +1,5 @@
 import type { ImportClause } from "./ast.ts";
-import { FrontendDiagnosticError, renderDiagnosticSummary } from "./diagnostics.ts";
+import { FrontendDiagnosticError, renderDiagnosticSummary } from "./diagnostic_model.ts";
 import {
   contextualizeDelayedCallbacks,
   resolveDelayedFfiElaboration,

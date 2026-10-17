@@ -35,7 +35,7 @@ import {
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
   genericDiagnostic,
-} from "./diagnostics.ts";
+} from "./diagnostic_model.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import {
   libraryImportResults,
@@ -228,7 +228,9 @@ export async function checkSourceSteps(
 }
 
 export async function compileFile(input: string, options: CompileOptions = {}): Promise<string> {
-  return emitCoreProgram((await coreFile(input, options)).core);
+  const compiled = await coreFile(input, options);
+  options.onStage?.("emit javascript");
+  return emitCoreProgram(compiled.core);
 }
 
 export async function compileFileArtifacts(
@@ -260,6 +262,7 @@ export async function compileFileArtifactsFromCore(
       }
     }
     for (const worker of workerTargets(core)) await emitOne(worker, "worker");
+    options.onStage?.("emit javascript");
     artifacts.push({
       path: outputNames.get(path)!,
       code: emitCoreProgram(core, {
@@ -285,7 +288,9 @@ export async function compileLibraryFile(
   input: string,
   options: CompileOptions = {},
 ): Promise<string> {
-  return emitCoreProgram((await coreFile(input, options)).core, { target: "library" });
+  const compiled = await coreFile(input, options);
+  options.onStage?.("emit javascript");
+  return emitCoreProgram(compiled.core, { target: "library" });
 }
 
 export async function checkFile(input: string): Promise<Map<string, InferResult>> {

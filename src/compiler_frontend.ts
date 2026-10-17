@@ -1,5 +1,5 @@
 import type { Module } from "./ast.ts";
-import { type FrontendDiagnostic, genericDiagnostic } from "./diagnostics.ts";
+import { type FrontendDiagnostic, genericDiagnostic } from "./diagnostic_model.ts";
 import { loadFrontendV2Surface } from "./frontend_v2_surface_loader.ts";
 import { surfaceProgramToModule } from "./frontend_v2_surface_semantic.ts";
 import { type FrontendMode, resolveCompilerFrontend } from "./frontend_mode.ts";

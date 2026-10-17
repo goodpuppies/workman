@@ -24,6 +24,7 @@ import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, runInteractiveRepl, watchReplChanges } from "./repl.ts";
 import { watchFile } from "./watch.ts";
 import { formatFrontendV2Source } from "./frontend_v2_formatter.ts";
+import { withCompilerProgress } from "./progress.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 
 const commands = new Set([
@@ -225,7 +226,10 @@ export async function main(args: string[]): Promise<number> {
 async function checkCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("check");
-  const analysis = await analyzeFile(input);
+  const analysis = await withCompilerProgress(
+    (options) => analyzeFile(input, options),
+    ["load modules", "analyze"],
+  );
   for (const id of analysis.graph.order) {
     const node = analysis.graph.nodes.get(id);
     const result = analysis.results.get(id);
@@ -242,10 +246,10 @@ async function compileCommand(args: string[]): Promise<number> {
   const [input, output] = args;
   if (!input) return missingInput("compile");
   if (!output) {
-    console.log(await compileFile(input));
+    console.log(await withCompilerProgress((options) => compileFile(input, options)));
     return 0;
   }
-  const artifacts = await compileFileArtifacts(input);
+  const artifacts = await withCompilerProgress((options) => compileFileArtifacts(input, options));
   const outputDir = dirname(output);
   await Deno.mkdir(outputDir, { recursive: true });
   for (const artifact of artifacts) {
@@ -258,7 +262,7 @@ async function compileCommand(args: string[]): Promise<number> {
 async function compileLibraryCommand(args: string[]): Promise<number> {
   const [input, output] = args;
   if (!input) return missingInput("compile-library");
-  const js = await compileLibraryFile(input);
+  const js = await withCompilerProgress((options) => compileLibraryFile(input, options));
   if (output) await Deno.writeTextFile(output, js);
   else console.log(js);
   return 0;
@@ -341,7 +345,10 @@ async function errCommand(args: string[]): Promise<number> {
   const inspections: string[] = [];
   let foundError = false;
   try {
-    const compiled = await coreFile(input);
+    const compiled = await withCompilerProgress(
+      (options) => coreFile(input, options),
+      ["load modules", "analyze", "build core"],
+    );
     for (const [id, result] of compiled.results) {
       const path = compiled.graph.nodes.get(id)?.path ?? "<module>";
       const source = compiled.graph.nodes.get(id)?.source ?? "";
@@ -370,7 +377,7 @@ async function errCommand(args: string[]): Promise<number> {
     console.error(formatInspectionBlock(index + 1, inspection));
   }
   console.error("\n--- compiler state ---\n");
-  console.error(await typeDebugFile(input));
+  console.error(await debugWithProgress(input));
   return foundError ? 1 : 0;
 }
 
@@ -454,8 +461,15 @@ function inspectionDivider(label: string): string {
 async function typeDebugCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("type-debug");
-  console.log(await typeDebugFile(input));
+  console.log(await debugWithProgress(input));
   return 0;
+}
+
+function debugWithProgress(input: string): Promise<string> {
+  return withCompilerProgress(
+    (options) => typeDebugFile(input, options),
+    ["load modules", "analyze"],
+  );
 }
 
 function missingInput(command: string): number {
@@ -495,7 +509,11 @@ async function todoCommand(args: string[], command: "todo" | "what"): Promise<nu
     return 2;
   }
   const { collectTodos, formatTodos } = await import("./todo.ts");
-  console.log(formatTodos(await collectTodos(args[0])));
+  const todos = await withCompilerProgress((options) => {
+    options.onStage?.("analyze");
+    return collectTodos(args[0]);
+  }, ["analyze"]);
+  console.log(formatTodos(todos));
   return 0;
 }
 

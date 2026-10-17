@@ -1,5 +1,5 @@
 import type { Decl, Expr, Module, Pattern, TypeExpr } from "../ast.ts";
-import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostic_model.ts";
 import type { AstNode } from "../source.ts";
 
 const MAX_POSITIONAL_TUPLE_SIZE = 4;

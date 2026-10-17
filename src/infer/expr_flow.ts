@@ -1,5 +1,5 @@
 import type { Decl, Expr, Param } from "../ast.ts";
-import { diagnosticError, warningDiagnostic } from "../diagnostics.ts";
+import { diagnosticError, warningDiagnostic } from "../diagnostic_model.ts";
 import {
   cloneTypeEnv,
   type Env,

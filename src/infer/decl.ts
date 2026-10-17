@@ -1,6 +1,6 @@
 import type { Decl } from "../ast.ts";
 import { isQualified, parseLongId } from "../ast.ts";
-import { warningDiagnostic } from "../diagnostics.ts";
+import { warningDiagnostic } from "../diagnostic_model.ts";
 import {
   type Env,
   fn,

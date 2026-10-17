@@ -15,7 +15,7 @@
 import { statSync } from "node:fs";
 
 import type { Decl, JsImportSpec, JsTarget, Module, TypeExpr } from "../../ast.ts";
-import { diagnosticError } from "../../diagnostics.ts";
+import { diagnosticError } from "../../diagnostic_model.ts";
 import {
   extractCHeader,
   type ExtractedResult,

@@ -1,5 +1,5 @@
 import { type Decl, type Expr, parseLongId, pathOf, type TypeExpr } from "../../ast.ts";
-import { diagnosticError } from "../../diagnostics.ts";
+import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { fresh, prune, show, solveFfi, type Ty } from "../../types.ts";

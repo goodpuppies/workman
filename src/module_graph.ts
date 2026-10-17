@@ -6,7 +6,7 @@ import {
   parseCompilerModule,
   parseCompilerModuleRecovered,
 } from "./compiler_frontend.ts";
-import { diagnosticError, type FrontendDiagnostic } from "./diagnostics.ts";
+import { diagnosticError, type FrontendDiagnostic } from "./diagnostic_model.ts";
 import { runtime } from "./io.ts";
 import { type ModuleId, moduleId } from "./module_id.ts";
 import type { AstNode } from "./source.ts";

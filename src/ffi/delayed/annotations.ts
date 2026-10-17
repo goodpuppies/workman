@@ -1,5 +1,5 @@
 import type { Decl, Expr } from "../../ast.ts";
-import { diagnosticError } from "../../diagnostics.ts";
+import { diagnosticError } from "../../diagnostic_model.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { type FfiBinding, type FfiVariant, isDecl } from "../shared.ts";
 

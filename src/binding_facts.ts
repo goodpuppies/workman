@@ -12,7 +12,7 @@ import type { BindingId, CompilerIdAllocator, StructureId } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
 import type { AstNode } from "./source.ts";
-import type { FrontendDiagnostic } from "./diagnostics.ts";
+import type { FrontendDiagnostic } from "./diagnostic_model.ts";
 import { analyzeClosureCaptures, type LexicalCapture } from "./closure_captures.ts";
 
 export type BindingScopeSnapshot = Readonly<{

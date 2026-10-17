@@ -1,0 +1,398 @@
+{
+  "date": "2026-10-15",
+  "platform": "Linux x86_64",
+  "cpu": "AMD Ryzen 7 5800X3D",
+  "deno": "2.9.7",
+  "v8": "15.0.245.2-rusty",
+  "profiles": {
+    "baseline": {
+      "total_sampled_ms": 13048.893,
+      "samples": 12378,
+      "self_top20": [
+        {
+          "function": "(garbage collector)",
+          "line": 0,
+          "column": 0,
+          "milliseconds": 2016.749,
+          "percent": 15.455326363699971
+        },
+        {
+          "function": "__wm_eq",
+          "line": 226,
+          "column": 17,
+          "milliseconds": 1447.505,
+          "percent": 11.092933323922573
+        },
+        {
+          "function": "matchSequenceInto_205__wm_d6",
+          "line": 1128,
+          "column": 38,
+          "milliseconds": 1029.236,
+          "percent": 7.887534980936697
+        },
+        {
+          "function": "buildCompiledCapture_6121__wm_d3",
+          "line": 19989,
+          "column": 42,
+          "milliseconds": 975.422,
+          "percent": 7.47513218171074
+        },
+        {
+          "function": "matchChoiceAt_235__wm_d6",
+          "line": 1197,
+          "column": 34,
+          "milliseconds": 757.923,
+          "percent": 5.808331787225169
+        },
+        {
+          "function": "__wm_is_tuple",
+          "line": 7,
+          "column": 23,
+          "milliseconds": 656.12,
+          "percent": 5.0281659907855785
+        },
+        {
+          "function": "parseCompiledRule_5155__wm_d5",
+          "line": 15832,
+          "column": 39,
+          "milliseconds": 623.27,
+          "percent": 4.776420497892043
+        },
+        {
+          "function": "set",
+          "line": 12,
+          "column": 20,
+          "milliseconds": 485.714,
+          "percent": 3.722262110663334
+        },
+        {
+          "function": "lookup",
+          "line": 8,
+          "column": 23,
+          "milliseconds": 325.343,
+          "percent": 2.49326130576747
+        },
+        {
+          "function": "(idle)",
+          "line": 0,
+          "column": 0,
+          "milliseconds": 293.87,
+          "percent": 2.2520684321650886
+        },
+        {
+          "function": "__wm_basis_Cons",
+          "line": 315,
+          "column": 25,
+          "milliseconds": 284.833,
+          "percent": 2.1828135152920636
+        },
+        {
+          "function": "buildCompiledCaptureList_6120__wm_d4",
+          "line": 19948,
+          "column": 46,
+          "milliseconds": 241.184,
+          "percent": 1.8483100443846079
+        },
+        {
+          "function": "matchRepeatedInto_275__wm_d6",
+          "line": 1285,
+          "column": 38,
+          "milliseconds": 187.701,
+          "percent": 1.438443858800896
+        },
+        {
+          "function": "matchSequence_234__wm_d4",
+          "line": 1190,
+          "column": 34,
+          "milliseconds": 175.346,
+          "percent": 1.3437614976228252
+        },
+        {
+          "function": "matchCodes_80__wm_d5",
+          "line": 803,
+          "column": 30,
+          "milliseconds": 165.106,
+          "percent": 1.2652874079050231
+        },
+        {
+          "function": "matchChoice_264__wm_d4",
+          "line": 1259,
+          "column": 32,
+          "milliseconds": 142.942,
+          "percent": 1.0954339191837958
+        },
+        {
+          "function": "matchSyntaxAction_346__wm_d2",
+          "line": 1433,
+          "column": 38,
+          "milliseconds": 101.705,
+          "percent": 0.7794147748778383
+        },
+        {
+          "function": "matchLiteral_117__wm_d5",
+          "line": 903,
+          "column": 33,
+          "milliseconds": 87.859,
+          "percent": 0.6733061570816774
+        },
+        {
+          "function": "classContains_96__wm_d2",
+          "line": 850,
+          "column": 33,
+          "milliseconds": 85.882,
+          "percent": 0.6581554465961212
+        },
+        {
+          "function": "wrapCompiledRule_361__wm_d3",
+          "line": 1463,
+          "column": 37,
+          "milliseconds": 82.455,
+          "percent": 0.6318926823907591
+        }
+      ],
+      "raw_profile": "_scratch/v8-optimization/baseline.cpuprofile"
+    },
+    "primitive": {
+      "total_sampled_ms": 11022.463,
+      "samples": 10472,
+      "self_top20": [
+        {
+          "function": "(garbage collector)",
+          "line": 0,
+          "column": 0,
+          "milliseconds": 2078.284,
+          "percent": 18.85498731091227
+        },
+        {
+          "function": "buildCompiledCapture_6121__wm_d3",
+          "line": 19989,
+          "column": 42,
+          "milliseconds": 976.579,
+          "percent": 8.859898191538498
+        },
+        {
+          "function": "matchSequenceInto_205__wm_d6",
+          "line": 1128,
+          "column": 38,
+          "milliseconds": 760.981,
+          "percent": 6.903910677677031
+        },
+        {
+          "function": "__wm_is_tuple",
+          "line": 7,
+          "column": 23,
+          "milliseconds": 719.493,
+          "percent": 6.527515674128368
+        },
+        {
+          "function": "matchChoiceAt_235__wm_d6",
+          "line": 1197,
+          "column": 34,
+          "milliseconds": 679.778,
+          "percent": 6.1672060046833455
+        },
+        {
+          "function": "parseCompiledRule_5155__wm_d5",
+          "line": 15832,
+          "column": 39,
+          "milliseconds": 635.593,
+          "percent": 5.7663427856369305
+        },
+        {
+          "function": "set",
+          "line": 12,
+          "column": 20,
+          "milliseconds": 493.56,
+          "percent": 4.477765087530799
+        },
+        {
+          "function": "lookup",
+          "line": 8,
+          "column": 23,
+          "milliseconds": 344.251,
+          "percent": 3.1231767346372585
+        },
+        {
+          "function": "__wm_basis_Cons",
+          "line": 315,
+          "column": 25,
+          "milliseconds": 301.005,
+          "percent": 2.7308324827218744
+        },
+        {
+          "function": "buildCompiledCaptureList_6120__wm_d4",
+          "line": 19948,
+          "column": 46,
+          "milliseconds": 234.395,
+          "percent": 2.1265210869839164
+        },
+        {
+          "function": "matchRepeatedInto_275__wm_d6",
+          "line": 1285,
+          "column": 38,
+          "milliseconds": 226.694,
+          "percent": 2.056654669650513
+        },
+        {
+          "function": "matchSequence_234__wm_d4",
+          "line": 1190,
+          "column": 34,
+          "milliseconds": 175.902,
+          "percent": 1.5958502196832052
+        },
+        {
+          "function": "matchChoice_264__wm_d4",
+          "line": 1259,
+          "column": 32,
+          "milliseconds": 126.036,
+          "percent": 1.1434467958749328
+        },
+        {
+          "function": "wrapCompiledRule_361__wm_d3",
+          "line": 1463,
+          "column": 37,
+          "milliseconds": 115.214,
+          "percent": 1.0452654728802446
+        },
+        {
+          "function": "matchSyntaxAction_346__wm_d2",
+          "line": 1433,
+          "column": 38,
+          "milliseconds": 84.679,
+          "percent": 0.7682402744286826
+        },
+        {
+          "function": "CompiledProbeNoMatch_ctor_108",
+          "line": 640,
+          "column": 39,
+          "milliseconds": 83.666,
+          "percent": 0.7590499509955262
+        },
+        {
+          "function": "__wm_basis_Some",
+          "line": 311,
+          "column": 25,
+          "milliseconds": 81.643,
+          "percent": 0.7406965212765967
+        },
+        {
+          "function": "matchLiteral_117__wm_d5",
+          "line": 903,
+          "column": 33,
+          "milliseconds": 81.506,
+          "percent": 0.7394536048794176
+        },
+        {
+          "function": "",
+          "line": 15837,
+          "column": 138,
+          "milliseconds": 74.149,
+          "percent": 0.6727080871126535
+        },
+        {
+          "function": "CompiledProbeMatched_ctor_107",
+          "line": 639,
+          "column": 39,
+          "milliseconds": 70.648,
+          "percent": 0.6409456761161276
+        }
+      ],
+      "raw_profile": "_scratch/v8-optimization/primitive.cpuprofile"
+    }
+  },
+  "large_comparison": {
+    "versions": "deno 2.9.7 (stable, release, x86_64-unknown-linux-gnu)\nv8 15.0.245.2-rusty\ntypescript 6.0.3\n",
+    "cases": {
+      "baseline": {
+        "median_ms": 2879.0130799999997,
+        "samples_ms": [
+          2819.311611,
+          2941.1746649999995,
+          2879.0130799999997,
+          2955.0235570000004,
+          2771.6703559999996
+        ],
+        "verified_stdout": "{\"corpus\":[\"examples/factorial.wm\",\"std/list.wm\",\"tooling/frontend-v2/surface_parse_runtime.wm\",\"tooling/frontend-v2/generated/compiled_probe_dispatch.wm\",\"tooling/wmslang/compiler.wm\",\"tooling/wmslang/slice_emit.wm\",\"tooling/frontend-v3/src/parser/program.wm\"],\"digests\":[\"a913dfaa5a480ac07ddad9a90d1566efe6a8b7f22d54f3dee275e8d9b92e1c70\",\"b69fb0a2642cb1f85e5f60d94b0d38360757574a1542890dafb823f0b74328e9\",\"5e9d04faabcea53a2c847a367db48a6cf99a423aa5080bf894b3db5e1dcfdfbe\",\"f3a99d248b8b8a0d918223c670ffd206f3a107b09f811850b215d639996ab0dc\",\"8de0167d6c47eda557cd04532ef5ed4b46e592553040d8776e68c4e549316a9f\",\"2080137e062c0a9c41b49df6458b0bf9afd9e2c704d247baf0fe3b3f196997b4\",\"f2f92316d7ceab4a6e8db2e26243d1c12a1dcac51963a96465e6e66099d9bb32\"],\"checked\":14}\n"
+      },
+      "primitive": {
+        "median_ms": 2443.26116,
+        "samples_ms": [
+          2440.6191819999995,
+          2443.26116,
+          2466.6383889999997,
+          2372.7049129999996,
+          2488.581024
+        ],
+        "verified_stdout": "{\"corpus\":[\"examples/factorial.wm\",\"std/list.wm\",\"tooling/frontend-v2/surface_parse_runtime.wm\",\"tooling/frontend-v2/generated/compiled_probe_dispatch.wm\",\"tooling/wmslang/compiler.wm\",\"tooling/wmslang/slice_emit.wm\",\"tooling/frontend-v3/src/parser/program.wm\"],\"digests\":[\"a913dfaa5a480ac07ddad9a90d1566efe6a8b7f22d54f3dee275e8d9b92e1c70\",\"b69fb0a2642cb1f85e5f60d94b0d38360757574a1542890dafb823f0b74328e9\",\"5e9d04faabcea53a2c847a367db48a6cf99a423aa5080bf894b3db5e1dcfdfbe\",\"f3a99d248b8b8a0d918223c670ffd206f3a107b09f811850b215d639996ab0dc\",\"8de0167d6c47eda557cd04532ef5ed4b46e592553040d8776e68c4e549316a9f\",\"2080137e062c0a9c41b49df6458b0bf9afd9e2c704d247baf0fe3b3f196997b4\",\"f2f92316d7ceab4a6e8db2e26243d1c12a1dcac51963a96465e6e66099d9bb32\"],\"checked\":14}\n"
+      },
+      "constants": {
+        "median_ms": 2758.9444759999997,
+        "samples_ms": [
+          2764.9910100000006,
+          2766.6505769999994,
+          2720.4363460000004,
+          2669.460699,
+          2758.9444759999997
+        ],
+        "verified_stdout": "{\"corpus\":[\"examples/factorial.wm\",\"std/list.wm\",\"tooling/frontend-v2/surface_parse_runtime.wm\",\"tooling/frontend-v2/generated/compiled_probe_dispatch.wm\",\"tooling/wmslang/compiler.wm\",\"tooling/wmslang/slice_emit.wm\",\"tooling/frontend-v3/src/parser/program.wm\"],\"digests\":[\"a913dfaa5a480ac07ddad9a90d1566efe6a8b7f22d54f3dee275e8d9b92e1c70\",\"b69fb0a2642cb1f85e5f60d94b0d38360757574a1542890dafb823f0b74328e9\",\"5e9d04faabcea53a2c847a367db48a6cf99a423aa5080bf894b3db5e1dcfdfbe\",\"f3a99d248b8b8a0d918223c670ffd206f3a107b09f811850b215d639996ab0dc\",\"8de0167d6c47eda557cd04532ef5ed4b46e592553040d8776e68c4e549316a9f\",\"2080137e062c0a9c41b49df6458b0bf9afd9e2c704d247baf0fe3b3f196997b4\",\"f2f92316d7ceab4a6e8db2e26243d1c12a1dcac51963a96465e6e66099d9bb32\"],\"checked\":14}\n"
+      },
+      "combined": {
+        "median_ms": 2422.8773850000002,
+        "samples_ms": [
+          2387.9987409999994,
+          2449.3920490000005,
+          2422.8773850000002,
+          2443.7268250000006,
+          2347.706308
+        ],
+        "verified_stdout": "{\"corpus\":[\"examples/factorial.wm\",\"std/list.wm\",\"tooling/frontend-v2/surface_parse_runtime.wm\",\"tooling/frontend-v2/generated/compiled_probe_dispatch.wm\",\"tooling/wmslang/compiler.wm\",\"tooling/wmslang/slice_emit.wm\",\"tooling/frontend-v3/src/parser/program.wm\"],\"digests\":[\"a913dfaa5a480ac07ddad9a90d1566efe6a8b7f22d54f3dee275e8d9b92e1c70\",\"b69fb0a2642cb1f85e5f60d94b0d38360757574a1542890dafb823f0b74328e9\",\"5e9d04faabcea53a2c847a367db48a6cf99a423aa5080bf894b3db5e1dcfdfbe\",\"f3a99d248b8b8a0d918223c670ffd206f3a107b09f811850b215d639996ab0dc\",\"8de0167d6c47eda557cd04532ef5ed4b46e592553040d8776e68c4e549316a9f\",\"2080137e062c0a9c41b49df6458b0bf9afd9e2c704d247baf0fe3b3f196997b4\",\"f2f92316d7ceab4a6e8db2e26243d1c12a1dcac51963a96465e6e66099d9bb32\"],\"checked\":14}\n"
+      }
+    }
+  },
+  "artifact_sha256": {
+    "baseline": "d6ac96bc4c65b2ac80f84ab5119c09cb476b655447961dce5038a593deb26b50",
+    "primitive": "df1be8dc7891d3fab1031a41d6856123bc710a2b7c685123a45b3cfd185555b2",
+    "constants": "16005e58dd3e17f80677c9a510f482c99a7baaf9136063de579102235dbce4c3",
+    "combined": "e7b7641d2edc92b3564f1abd04080422166b59d8b132c9255c0a6e4e29235290"
+  },
+  "regenerated_artifact_matches_timed_candidate_except_comments": true,
+  "small_comparison": {
+    "versions": "deno 2.9.7 (stable, release, x86_64-unknown-linux-gnu)\nv8 15.0.245.2-rusty\ntypescript 6.0.3\n",
+    "cases": {
+      "baseline": {
+        "median_ms": 663.3038909999998,
+        "samples_ms": [
+          663.3038909999998,
+          648.1220330000001,
+          728.8441189999999,
+          722.156009,
+          626.2306859999999
+        ],
+        "verified_stdout": "{\"corpus\":[\"examples/factorial.wm\",\"std/list.wm\",\"tooling/frontend-v2/surface_parse_runtime.wm\"],\"digests\":[\"a913dfaa5a480ac07ddad9a90d1566efe6a8b7f22d54f3dee275e8d9b92e1c70\",\"b69fb0a2642cb1f85e5f60d94b0d38360757574a1542890dafb823f0b74328e9\",\"5e9d04faabcea53a2c847a367db48a6cf99a423aa5080bf894b3db5e1dcfdfbe\"],\"checked\":18}\n"
+      },
+      "current": {
+        "median_ms": 561.9752720000001,
+        "samples_ms": [
+          563.0675409999999,
+          545.2117310000001,
+          561.9752720000001,
+          549.566471,
+          562.720078
+        ],
+        "verified_stdout": "{\"corpus\":[\"examples/factorial.wm\",\"std/list.wm\",\"tooling/frontend-v2/surface_parse_runtime.wm\"],\"digests\":[\"a913dfaa5a480ac07ddad9a90d1566efe6a8b7f22d54f3dee275e8d9b92e1c70\",\"b69fb0a2642cb1f85e5f60d94b0d38360757574a1542890dafb823f0b74328e9\",\"5e9d04faabcea53a2c847a367db48a6cf99a423aa5080bf894b3db5e1dcfdfbe\"],\"checked\":18}\n"
+      }
+    }
+  },
+  "validation": {
+    "targeted_tests": {
+      "passed": 91,
+      "failed": 2,
+      "failures_reproduced_with_original_parser": [
+        "frontend-v2 lowers supported semantics from the generated Surface tree",
+        "frontend-v2 generated Surface semantics match the repository golden"
+      ]
+    },
+    "deno_task_check": "pass",
+    "differential_ast_diagnostic_format_fix_results": 36
+  }
+}

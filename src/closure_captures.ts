@@ -5,7 +5,7 @@ import {
   FrontendDiagnosticBundleError,
   genericDiagnostic,
   warningDiagnostic,
-} from "./diagnostics.ts";
+} from "./diagnostic_model.ts";
 import type { BindingId } from "./ids.ts";
 
 type Lambda = Extract<Expr, { kind: "Lambda" }>;

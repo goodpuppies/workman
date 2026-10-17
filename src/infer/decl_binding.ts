@@ -1,6 +1,6 @@
 import type { Binding, Decl, Expr } from "../ast.ts";
 import type { AstNode } from "../source.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import {
   type Env,
   generalize,

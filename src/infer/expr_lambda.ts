@@ -1,5 +1,5 @@
 import type { Expr } from "../ast.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import { isGpuLambda } from "../directives.ts";
 import {
   addGpuConstraint,

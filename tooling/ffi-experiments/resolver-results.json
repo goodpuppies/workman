@@ -1,0 +1,475 @@
+{
+  "measurement_date": "2026-10-15",
+  "follow_up_cpu_profile_date": "2026-10-17",
+  "comparison": {
+    "versions": "deno 2.9.7 (stable, release, x86_64-unknown-linux-gnu)\nv8 15.0.245.2-rusty\ntypescript 6.0.3\n",
+    "project": "/home/ellie/git/wmthree",
+    "entry": "src/scripts/play.wm",
+    "cases": {
+      "baseline": {
+        "samples": [
+          {
+            "command": [
+              "deno",
+              "run",
+              "--config=/home/ellie/git/wm-mini/deno.json",
+              "--import-map=/home/ellie/git/wm-mini/_scratch/ffi-resolution/baseline-import-map.json",
+              "-A",
+              "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+              "src/scripts/play.wm",
+              "--json=/home/ellie/git/wm-mini/_scratch/ffi-resolution/comparison/baseline-1.json"
+            ],
+            "wall_ms": 8583.091671000147,
+            "analysis_ms": 8385.826029,
+            "phases": {
+              "load module graph": 1616.84703,
+              "prepare JS reflection": 2818.669124,
+              "prepare FFI": 305.1825089999993,
+              "load standard library": 784.3038890000007,
+              "initial partial inference": 350.17760500000804,
+              "contextualize delayed callbacks": 10.52943999999934,
+              "contextual partial inference": 0.041969999996581464,
+              "resolve delayed FFI": 1473.7053780000042,
+              "post-resolution partial inference": 315.3563000000031,
+              "resolve delayed FFI (second pass)": 245.00313099999948,
+              "final inference": 455.83797500000856
+            },
+            "batches": 90,
+            "deno_info_count": 533,
+            "deno_info_ms": 2039.1350859999925,
+            "reflection_ms": 4686.657187000004,
+            "program_ms": 3746.823811,
+            "diagnostics_ms": 905.7930640000004,
+            "read_ms": 55.521255999999084
+          },
+          {
+            "command": [
+              "deno",
+              "run",
+              "--config=/home/ellie/git/wm-mini/deno.json",
+              "--import-map=/home/ellie/git/wm-mini/_scratch/ffi-resolution/baseline-import-map.json",
+              "-A",
+              "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+              "src/scripts/play.wm",
+              "--json=/home/ellie/git/wm-mini/_scratch/ffi-resolution/comparison/baseline-2.json"
+            ],
+            "wall_ms": 8656.802677996893,
+            "analysis_ms": 8441.028085999998,
+            "phases": {
+              "load module graph": 1703.904786,
+              "prepare JS reflection": 2831.974611,
+              "prepare FFI": 293.11663099999896,
+              "load standard library": 787.1319469999999,
+              "initial partial inference": 360.64797500000077,
+              "contextualize delayed callbacks": 9.745394999999007,
+              "contextual partial inference": 0.057210999996641476,
+              "resolve delayed FFI": 1518.7238690000013,
+              "post-resolution partial inference": 327.10477000000174,
+              "resolve delayed FFI (second pass)": 247.3486260000018,
+              "final inference": 351.5435290000005
+            },
+            "batches": 90,
+            "deno_info_count": 533,
+            "deno_info_ms": 2051.374402000005,
+            "reflection_ms": 4744.086102000003,
+            "program_ms": 3800.501279999999,
+            "diagnostics_ms": 910.9453630000016,
+            "read_ms": 56.1010420000066
+          },
+          {
+            "command": [
+              "deno",
+              "run",
+              "--config=/home/ellie/git/wm-mini/deno.json",
+              "--import-map=/home/ellie/git/wm-mini/_scratch/ffi-resolution/baseline-import-map.json",
+              "-A",
+              "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+              "src/scripts/play.wm",
+              "--json=/home/ellie/git/wm-mini/_scratch/ffi-resolution/comparison/baseline-3.json"
+            ],
+            "wall_ms": 8629.52530199982,
+            "analysis_ms": 8429.935246000001,
+            "phases": {
+              "load module graph": 1689.911982,
+              "prepare JS reflection": 2833.255112,
+              "prepare FFI": 297.54118500000095,
+              "load standard library": 790.5945780000002,
+              "initial partial inference": 365.51920600000267,
+              "contextualize delayed callbacks": 10.021711999999752,
+              "contextual partial inference": 0.046780999998190964,
+              "resolve delayed FFI": 1515.8759339999997,
+              "post-resolution partial inference": 325.6030630000032,
+              "resolve delayed FFI (second pass)": 248.04966999999942,
+              "final inference": 343.6253769999985
+            },
+            "batches": 90,
+            "deno_info_count": 533,
+            "deno_info_ms": 2061.8781869999975,
+            "reflection_ms": 4744.806516999995,
+            "program_ms": 3789.836791000006,
+            "diagnostics_ms": 922.313378999992,
+            "read_ms": 56.59229400000004
+          }
+        ],
+        "medians": {
+          "wall_ms": 8629.52530199982,
+          "analysis_ms": 8429.935246000001,
+          "deno_info_count": 533,
+          "deno_info_ms": 2051.374402000005,
+          "reflection_ms": 4744.086102000003,
+          "program_ms": 3789.836791000006,
+          "diagnostics_ms": 910.9453630000016,
+          "read_ms": 56.1010420000066
+        }
+      },
+      "candidate": {
+        "samples": [
+          {
+            "command": [
+              "deno",
+              "run",
+              "--config=/home/ellie/git/wm-mini/deno.json",
+              "-A",
+              "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+              "src/scripts/play.wm",
+              "--json=/home/ellie/git/wm-mini/_scratch/ffi-resolution/comparison/candidate-1.json"
+            ],
+            "wall_ms": 6059.451575998537,
+            "analysis_ms": 5863.950033,
+            "phases": {
+              "load module graph": 1710.3413639999999,
+              "prepare JS reflection": 732.7715110000004,
+              "prepare FFI": 258.4647770000006,
+              "load standard library": 768.6563939999996,
+              "initial partial inference": 359.80483300000105,
+              "contextualize delayed callbacks": 10.320537000000968,
+              "contextual partial inference": 0.05383499999970809,
+              "resolve delayed FFI": 1121.3765949999984,
+              "post-resolution partial inference": 329.0527400000037,
+              "resolve delayed FFI (second pass)": 214.16251999999986,
+              "final inference": 349.22379199999887
+            },
+            "batches": 90,
+            "deno_info_count": 4,
+            "deno_info_ms": 19.94017500000018,
+            "reflection_ms": 2174.4765529999995,
+            "program_ms": 1267.0590910000024,
+            "diagnostics_ms": 874.947750999997,
+            "read_ms": 59.359745999995084
+          },
+          {
+            "command": [
+              "deno",
+              "run",
+              "--config=/home/ellie/git/wm-mini/deno.json",
+              "-A",
+              "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+              "src/scripts/play.wm",
+              "--json=/home/ellie/git/wm-mini/_scratch/ffi-resolution/comparison/candidate-2.json"
+            ],
+            "wall_ms": 6030.795074999332,
+            "analysis_ms": 5841.737412,
+            "phases": {
+              "load module graph": 1699.060041,
+              "prepare JS reflection": 738.774805,
+              "prepare FFI": 254.98834100000067,
+              "load standard library": 780.3986030000001,
+              "initial partial inference": 357.588281999997,
+              "contextualize delayed callbacks": 10.122045000000526,
+              "contextual partial inference": 0.044043999999303196,
+              "resolve delayed FFI": 1108.5100009999983,
+              "post-resolution partial inference": 325.9942949999995,
+              "resolve delayed FFI (second pass)": 209.39466599999923,
+              "final inference": 347.4031840000016
+            },
+            "batches": 90,
+            "deno_info_count": 4,
+            "deno_info_ms": 20.436450000000832,
+            "reflection_ms": 2161.370984999998,
+            "program_ms": 1257.1313629999984,
+            "diagnostics_ms": 870.8487529999998,
+            "read_ms": 57.3479340000049
+          },
+          {
+            "command": [
+              "deno",
+              "run",
+              "--config=/home/ellie/git/wm-mini/deno.json",
+              "-A",
+              "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+              "src/scripts/play.wm",
+              "--json=/home/ellie/git/wm-mini/_scratch/ffi-resolution/comparison/candidate-3.json"
+            ],
+            "wall_ms": 6132.538749996456,
+            "analysis_ms": 5937.000314999999,
+            "phases": {
+              "load module graph": 1725.246563,
+              "prepare JS reflection": 745.392466,
+              "prepare FFI": 254.97826500000065,
+              "load standard library": 801.4374929999999,
+              "initial partial inference": 362.60604500000136,
+              "contextualize delayed callbacks": 10.018076000000292,
+              "contextual partial inference": 0.04644999999800348,
+              "resolve delayed FFI": 1134.1024340000017,
+              "post-resolution partial inference": 327.4430420000017,
+              "resolve delayed FFI (second pass)": 218.506094999997,
+              "final inference": 346.5720549999978
+            },
+            "batches": 90,
+            "deno_info_count": 4,
+            "deno_info_ms": 20.177563999999848,
+            "reflection_ms": 2201.5574060000004,
+            "program_ms": 1273.9518879999996,
+            "diagnostics_ms": 894.7136160000014,
+            "read_ms": 60.7523590000078
+          }
+        ],
+        "medians": {
+          "wall_ms": 6059.451575998537,
+          "analysis_ms": 5863.950033,
+          "deno_info_count": 4,
+          "deno_info_ms": 20.177563999999848,
+          "reflection_ms": 2174.4765529999995,
+          "program_ms": 1267.0590910000024,
+          "diagnostics_ms": 874.947750999997,
+          "read_ms": 59.359745999995084
+        }
+      }
+    }
+  },
+  "correctness": {
+    "schemes.json": {
+      "byte_identical": true,
+      "bytes": 252582,
+      "sha256": "d6e3078f3c666907216bf36b3ea541ec1d2090e5e4f794f8aab9b936c6b80bd5"
+    },
+    "js": {
+      "byte_identical": true,
+      "bytes": 835444,
+      "sha256": "97493d5b34ead0a0a5f2d1e6f5cc9e11c82bc8397d8195c8eeb04a9f62a6b98a"
+    }
+  },
+  "inputs_match_baseline_manifest": true,
+  "cpu_profile": {
+    "profile": "/tmp/wm-ffi-profiles-2026-10-17/play-resolver.cpuprofile",
+    "markdown": "/tmp/wm-ffi-profiles-2026-10-17/play-resolver.md",
+    "total_sampled_ms": 6830.24,
+    "self_top_20": [
+      {
+        "function": "(garbage collector)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 578.641,
+        "percent": 8.471752090702523
+      },
+      {
+        "function": "matchSequenceInto_205__wm_d6",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 1130,
+        "column": 38,
+        "milliseconds": 235.064,
+        "percent": 3.441518892454731
+      },
+      {
+        "function": "snapshotType",
+        "url": "file:///home/ellie/git/wm-mini/src/diagnostic_writer.ts",
+        "line": 220,
+        "column": 5,
+        "milliseconds": 182.574,
+        "percent": 2.6730246667759845
+      },
+      {
+        "function": "matchChoiceAt_235__wm_d6",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 1199,
+        "column": 34,
+        "milliseconds": 153.806,
+        "percent": 2.2518388812106163
+      },
+      {
+        "function": "tryParseJson",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 21179,
+        "column": 22,
+        "milliseconds": 134.879,
+        "percent": 1.9747329522827894
+      },
+      {
+        "function": "__wm_is_tuple",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 7,
+        "column": 23,
+        "milliseconds": 124.382,
+        "percent": 1.82104874792101
+      },
+      {
+        "function": "parseCompiledRule_5155__wm_d5",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 15834,
+        "column": 39,
+        "milliseconds": 122.752,
+        "percent": 1.7971842863501135
+      },
+      {
+        "function": "buildCompiledCapture_6121__wm_d3",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 19991,
+        "column": 42,
+        "milliseconds": 116.516,
+        "percent": 1.7058844198739722
+      },
+      {
+        "function": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 101.342,
+        "percent": 1.4837253156550867
+      },
+      {
+        "function": "set",
+        "url": "data:text/javascript,%2F%2F%20Primitives%20of%20%60host%2Fjs%2Ftable.wm%60.%20A%20%60Js.Table%60%20is%20a%20JavaScript%20%60Map%60%20with%20string%20or%20number%20keys.%0A%2F%2F%20%60lookup%60%20gives%20%60undefined%60%20for%20a%20missing%20key%20and%20%60present%60%20tells%20the%20two%20apart%2C%20so%20this%20file%0A%2F%2F%20doesn't%20depend%20on%20how%20the%20compiler%20represents%20%60Option%60.%20Neither%20takes%20a%20callback%3A%20a%20callback%0A%2F%2F%20parameter%20needs%20an%20FFI%20adapter%20on%20every%20call%2C%20and%20these%20are%20on%20the%20self-hosted%20parser's%20hot%20path.%0A%0Aexport%20const%20empty%20%3D%20()%20%3D%3E%20new%20Map()%3B%0A%0Aexport%20const%20lookup%20%3D%20(table%2C%20key)%20%3D%3E%20table.get(key)%3B%0A%0Aexport%20const%20present%20%3D%20(value)%20%3D%3E%20value%20!%3D%20null%3B%0A%0Aexport%20const%20set%20%3D%20(table%2C%20key%2C%20value)%20%3D%3E%20%7B%0A%20%20table.set(key%2C%20value)%3B%0A%7D%3B%0A",
+        "line": 12,
+        "column": 20,
+        "milliseconds": 99.784,
+        "percent": 1.4609149898100213
+      },
+      {
+        "function": "normalizeString",
+        "url": "ext:deno_node/path/_util.ts",
+        "line": 1,
+        "column": 714,
+        "milliseconds": 96.615,
+        "percent": 1.414518377099487
+      },
+      {
+        "function": "__wm_basis_Cons",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 317,
+        "column": 25,
+        "milliseconds": 77.248,
+        "percent": 1.130970507624915
+      },
+      {
+        "function": "lookup",
+        "url": "data:text/javascript,%2F%2F%20Primitives%20of%20%60host%2Fjs%2Ftable.wm%60.%20A%20%60Js.Table%60%20is%20a%20JavaScript%20%60Map%60%20with%20string%20or%20number%20keys.%0A%2F%2F%20%60lookup%60%20gives%20%60undefined%60%20for%20a%20missing%20key%20and%20%60present%60%20tells%20the%20two%20apart%2C%20so%20this%20file%0A%2F%2F%20doesn't%20depend%20on%20how%20the%20compiler%20represents%20%60Option%60.%20Neither%20takes%20a%20callback%3A%20a%20callback%0A%2F%2F%20parameter%20needs%20an%20FFI%20adapter%20on%20every%20call%2C%20and%20these%20are%20on%20the%20self-hosted%20parser's%20hot%20path.%0A%0Aexport%20const%20empty%20%3D%20()%20%3D%3E%20new%20Map()%3B%0A%0Aexport%20const%20lookup%20%3D%20(table%2C%20key)%20%3D%3E%20table.get(key)%3B%0A%0Aexport%20const%20present%20%3D%20(value)%20%3D%3E%20value%20!%3D%20null%3B%0A%0Aexport%20const%20set%20%3D%20(table%2C%20key%2C%20value)%20%3D%3E%20%7B%0A%20%20table.set(key%2C%20value)%3B%0A%7D%3B%0A",
+        "line": 8,
+        "column": 23,
+        "milliseconds": 73.989,
+        "percent": 1.083256225257092
+      },
+      {
+        "function": "inferExprInner",
+        "url": "file:///home/ellie/git/wm-mini/src/infer/expr.ts",
+        "line": 64,
+        "column": 10,
+        "milliseconds": 67.516,
+        "percent": 0.9884864953500901
+      },
+      {
+        "function": "",
+        "url": "file:///home/ellie/git/wm-mini/src/infer/provenance.ts",
+        "line": 459,
+        "column": 23,
+        "milliseconds": 64.759,
+        "percent": 0.9481218815151444
+      },
+      {
+        "function": "op_url_parse",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 63.876,
+        "percent": 0.9351940780997446
+      },
+      {
+        "function": "op_fs_read_file_sync",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 62.611,
+        "percent": 0.9166734990278526
+      },
+      {
+        "function": "wrapCompiledRule_361__wm_d3",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 1465,
+        "column": 37,
+        "milliseconds": 53.432,
+        "percent": 0.7822858347583687
+      },
+      {
+        "function": "pathComponents",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 8837,
+        "column": 24,
+        "milliseconds": 51.739,
+        "percent": 0.7574990044273701
+      },
+      {
+        "function": "memo",
+        "url": "file:///home/ellie/git/wm-mini/src/ffi/reflect/host.ts",
+        "line": 430,
+        "column": 10,
+        "milliseconds": 51.142,
+        "percent": 0.7487584623673545
+      }
+    ],
+    "selected_inclusive": [
+      {
+        "function": "prepareReflectionSources",
+        "url": "file:///home/ellie/git/wm-mini/src/ffi/reflect/host.ts",
+        "line": 191,
+        "column": 17,
+        "milliseconds": 2350.419,
+        "percent": 34.411953313499964
+      },
+      {
+        "function": "createProgram",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 127499,
+        "column": 23,
+        "milliseconds": 1361.623,
+        "percent": 19.935214575183302
+      },
+      {
+        "function": "getSemanticDiagnostics",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 128519,
+        "column": 34,
+        "milliseconds": 947.407,
+        "percent": 13.8707717444775
+      },
+      {
+        "function": "tryReuseStructureFromOldProgram",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 128166,
+        "column": 43,
+        "milliseconds": 273.446,
+        "percent": 4.003461078966478
+      },
+      {
+        "function": "tryParseJson",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 21179,
+        "column": 22,
+        "milliseconds": 134.879,
+        "percent": 1.9747329522827894
+      },
+      {
+        "function": "op_spawn_sync",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 34.952,
+        "percent": 0.511724331795076
+      }
+    ]
+  },
+  "validation": {
+    "typecheck": "deno task check passed",
+    "ffi_tests": "107 passed, 0 failed",
+    "known_limitation": "physics_lab.wm has unrelated manual safe imports requiring migration"
+  }
+}

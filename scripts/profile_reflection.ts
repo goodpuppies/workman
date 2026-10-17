@@ -3,32 +3,73 @@ import {
   setJsReflectionProfileSink,
 } from "../src/ffi/reflect/host.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
-import { analyzeModuleGraph } from "../src/staged_analysis.ts";
+import { analyzeModuleGraph, StagedAnalysisError } from "../src/staged_analysis.ts";
 import { isAbsolute, relative } from "node:path";
 
 const input = Deno.args[0] ?? "../wmthree/src/scripts/play.wm";
 const events: JsReflectionProfileEvent[] = [];
 const phases = new Map<string, number>();
 const phaseDetails: { phase: string; path: string; milliseconds: number }[] = [];
+const jsonPath = Deno.args.find((arg) => arg.startsWith("--json="))?.slice("--json=".length);
+let failure: unknown;
+let graphSummary: { modules: number; sourceCharacters: number; paths: string[] } | undefined;
 setJsReflectionProfileSink((event) => events.push(event));
 
 const started = performance.now();
 try {
+  const graphStarted = performance.now();
   const graph = await loadModuleGraph(input);
+  phases.set("load module graph", performance.now() - graphStarted);
+  graphSummary = {
+    modules: graph.nodes.size,
+    sourceCharacters: [...graph.nodes.values()].reduce((sum, node) => sum + node.source.length, 0),
+    paths: [...graph.nodes.values()].map((node) => node.path),
+  };
   await analyzeModuleGraph(graph, {
     onTiming: ({ phase, node, milliseconds }) => {
       phases.set(phase, (phases.get(phase) ?? 0) + milliseconds);
       phaseDetails.push({ phase, path: node?.path ?? "<standard library>", milliseconds });
     },
   });
+} catch (error) {
+  failure = error;
 } finally {
   setJsReflectionProfileSink(undefined);
+}
+
+if (jsonPath) {
+  await Deno.writeTextFile(
+    jsonPath,
+    JSON.stringify(
+      {
+        input,
+        completed: failure === undefined,
+        failure: failure === undefined ? undefined : {
+          message: failure instanceof Error ? failure.message : String(failure),
+          phase: failure instanceof StagedAnalysisError ? failure.phase : undefined,
+          path: failure instanceof StagedAnalysisError ? failure.node.path : undefined,
+        },
+        totalMs: performance.now() - started,
+        graph: graphSummary,
+        phases: Object.fromEntries(phases),
+        phaseDetails,
+        events,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+}
+if (failure !== undefined) {
+  console.error(failure instanceof Error ? failure.stack : String(failure));
+  Deno.exitCode = 1;
 }
 
 const batches = events.filter((event) => event.kind === "batch");
 const reads = events.filter((event) => event.kind === "read");
 const coldReads = reads.filter((event) => !event.cacheHit);
 const cachedReads = reads.filter((event) => event.cacheHit);
+const moduleGraphs = events.filter((event) => event.kind === "deno-info");
 
 console.log(`reflection profile: ${input}`);
 console.log(`total: ${ms(performance.now() - started)}`);
@@ -50,9 +91,19 @@ console.log(`  roots: ${sum(batches, (event) => event.roots)}`);
 console.log(`  source: ${sum(batches, (event) => event.sourceBytes)} bytes`);
 console.log(`  graph discovery: ${ms(sum(batches, (event) => event.graphMs))}`);
 console.log(`  createProgram: ${ms(sum(batches, (event) => event.programMs))}`);
+console.log(`  semantic diagnostics: ${ms(sum(batches, (event) => event.diagnosticsMs))}`);
 console.log(`  getTypeChecker: ${ms(sum(batches, (event) => event.checkerMs))}`);
 console.log(`  index roots: ${ms(sum(batches, (event) => event.indexMs))}`);
 console.log(`  total: ${ms(sum(batches, (event) => event.totalMs))}`);
+console.log("");
+console.log("Deno module-graph subprocesses (included in workspace times):");
+console.log(`  count: ${moduleGraphs.length}`);
+console.log(`  total: ${ms(sum(moduleGraphs, (event) => event.milliseconds))}`);
+for (
+  const event of [...moduleGraphs].sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 12)
+) {
+  console.log(`  ${ms(event.milliseconds)} ${event.success ? "ok" : "failed"} ${event.specifier}`);
+}
 const initialBatch = batches.find((event) => event.requests > 1);
 if (initialBatch) {
   console.log(

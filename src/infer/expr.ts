@@ -1,6 +1,6 @@
 import type { Expr } from "../ast.ts";
 import { pathOf } from "../ast.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import {
   BoolTy,
   CharTy,

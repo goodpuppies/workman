@@ -1,3 +1,5 @@
+import type { ModuleGraphOptions } from "./module_graph.ts";
+
 /**
  * Single-line compile progress for the CLI, in the style of `zig build`.
  *
@@ -37,6 +39,23 @@ export const RUN_STAGES = [
   "build core",
   "emit javascript",
 ] as const;
+
+/** Keep terminal progress scoped to compiler work, including failure cleanup. */
+export async function withCompilerProgress<T>(
+  work: (options: ModuleGraphOptions) => Promise<T>,
+  stages: readonly string[] = RUN_STAGES,
+): Promise<T> {
+  const progress = createProgressReporter({ stages });
+  try {
+    return await work({
+      onStage: (name) => progress.stage(name),
+      onModuleParsed: (loaded) => progress.step(loaded, 0, `${loaded} modules`),
+      onAnalysisProgress: (done, total, phase) => progress.step(done, total, phase),
+    });
+  } finally {
+    progress.finish();
+  }
+}
 
 export function createProgressReporter(
   options: { enabled?: boolean; stages?: readonly string[] } = {},
@@ -85,7 +104,9 @@ export function createProgressReporter(
     },
     step(current: number, total: number, stepDetail?: string) {
       if (done) return;
-      detail = total > 0 ? `${current}/${total}${stepDetail ? ` ${stepDetail}` : ""}` : stepDetail ?? "";
+      detail = total > 0
+        ? `${current}/${total}${stepDetail ? ` ${stepDetail}` : ""}`
+        : stepDetail ?? "";
       draw();
     },
     finish(summary?: string) {

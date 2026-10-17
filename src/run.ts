@@ -1,8 +1,4 @@
-import {
-  compileFileArtifactsFromCore,
-  type CompileOptions,
-  coreFile,
-} from "./compiler.ts";
+import { compileFileArtifactsFromCore, type CompileOptions, coreFile } from "./compiler.ts";
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { createProgressReporter } from "./progress.ts";
@@ -35,15 +31,15 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
   // Progress is drawn only while compiling; it is cleared before the program
   // takes over the terminal, so a TUI never inherits a partial line.
   const progress = createProgressReporter({ enabled: options.progress });
+  const compileOptions: CompileOptions = {
+    ...options,
+    onStage: (name) => progress.stage(name),
+    onModuleParsed: (loaded) => progress.step(loaded, 0, `${loaded} modules`),
+    onAnalysisProgress: (done, total, phase) => progress.step(done, total, phase),
+  };
   try {
-    const compiled = await coreFile(inputPath, {
-      ...options,
-      onStage: (name) => progress.stage(name),
-      onModuleParsed: (loaded) => progress.step(loaded, 0, `${loaded} modules`),
-      onAnalysisProgress: (done, total, phase) => progress.step(done, total, phase),
-    });
-    progress.stage("emit javascript");
-    const artifacts = await compileFileArtifactsFromCore(compiled, options);
+    const compiled = await coreFile(inputPath, compileOptions);
+    const artifacts = await compileFileArtifactsFromCore(compiled, compileOptions);
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no executable artifact");
     for (const artifact of artifacts) {

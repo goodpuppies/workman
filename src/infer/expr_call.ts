@@ -1,5 +1,5 @@
 import { callInvocationPlan, type InvocationPlan } from "../pipe_elaboration.ts";
-import { FrontendDiagnosticError } from "../diagnostics.ts";
+import { FrontendDiagnosticError } from "../diagnostic_model.ts";
 import type { Expr } from "../ast.ts";
 import {
   addJsConstraint,

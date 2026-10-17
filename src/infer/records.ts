@@ -1,6 +1,6 @@
 import type { Expr, LongId, RecordExprSpread, TypeExpr } from "../ast.ts";
 import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
-import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostics.ts";
+import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostic_model.ts";
 import {
   addProjectionConstraint,
   type Env,

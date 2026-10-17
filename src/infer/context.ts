@@ -1,5 +1,5 @@
 import type { Expr } from "../ast.ts";
-import type { FrontendDiagnostic } from "../diagnostics.ts";
+import type { FrontendDiagnostic } from "../diagnostic_model.ts";
 import type { Env, Scheme, Ty, TypeDeclInfo, TypeEnv } from "../types.ts";
 import type { TypeProvenance } from "./provenance.ts";
 import type { TypeFacts } from "./type_facts.ts";

@@ -2,7 +2,7 @@ import type { Decl } from "../ast.ts";
 import type { Env, TypeEnv } from "../types.ts";
 import { generalize, typeFromAst } from "../types.ts";
 import { rejectDuplicates } from "./decl_helpers.ts";
-import { isDeclaredUnsafeImportSpec } from "../ffi/imports.ts";
+import { isDeclaredUnsafeImportSpec } from "../ffi/import_policy.ts";
 import { bindStructure, bindValue, staticEnv, type StrEnv } from "./environment.ts";
 import { recordTypeExpressionFact, recordTypeReferenceFact, type TypeFacts } from "./type_facts.ts";
 

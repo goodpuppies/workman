@@ -1,5 +1,5 @@
 import type { Expr, Param, Pattern } from "../ast.ts";
-import { diagnosticError, FrontendDiagnosticError } from "../diagnostics.ts";
+import { diagnosticError, FrontendDiagnosticError } from "../diagnostic_model.ts";
 import {
   type ClaimId,
   createDiagnosticWriter,

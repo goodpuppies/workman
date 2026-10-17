@@ -1,0 +1,354 @@
+{
+  "date": "2026-10-15",
+  "compiler_head": "bbf73dce13ce094341bf39f9bc1707fa0d77a538",
+  "application_head": "037c03725467ed77b6e11fed0a40241a594f7c7a",
+  "working_trees_have_uncommitted_changes": true,
+  "deno": "deno 2.9.7 (stable, release, x86_64-unknown-linux-gnu)\nv8 15.0.245.2-rusty\ntypescript 6.0.3\n",
+  "typescript_api": "6.0.2",
+  "entry": "wmthree/src/scripts/play.wm",
+  "cwd": "/home/ellie/git/wmthree",
+  "graph": {
+    "modules": 28,
+    "source_characters": 207875,
+    "sha256_by_path": {
+      "src/engine/trig.wm": "44467f25c581a4a0508716f73b41e3f9f82bba0157740142b5067fd221c0134a",
+      "src/engine/space.wm": "0b672c99e827f144b194cabcadfa597b99df9124bafc5f7f215b445ef8ab22ff",
+      "src/engine/input.wm": "472d05000b934c282c64febefb334d7e2542c719d70dabad538c0ba79ce7b4f4",
+      "src/engine/scene.wm": "906aafedb60019fa3f989d621f80672b1b29f8d758cfc3cd848796e3787f46af",
+      "src/content/materials.wm": "d4184c3c98a79200121d93e848c09f90fb033d4f02d4164fa4816896a173fc04",
+      "src/content/levels/world.wm": "dc0e00c5f13960c689118dd7c503f4f3839693bb56bdf29abc62129b6156b096",
+      "src/content/levels/mech.wm": "e04fa4d7f3bac2f0b994d4448d0356d9350930ed70f4b84e2bd9ded541c36e8f",
+      "src/scripts/player_controller.wm": "7f4ba816068a397c078e803b2ea5b2f950a99ffd28cce58f926185f016a4a672",
+      "src/scripts/mech_controller.wm": "fe99e9173ee71217e228a5a17d053f3b83ee5e2fab4ca2295e1f1c775f779e33",
+      "src/scripts/interaction_controller.wm": "65ace78ffcc81f72163236086756143c192b90bf2b6f608ab1c46bae374d973a",
+      "src/scripts/catch_controller.wm": "85abcf814c8d3cdc2b082c2dd85ca4e99201ec94f3ab6dad294359afdf91f74c",
+      "src/scripts/bait_controller.wm": "2134197c73c7c43bc0205e38a0836bb1e30e86ff9d5b31608faeadb6dd3d0b1a",
+      "src/scripts/job_controller.wm": "766cab6e05fe5db0f5963d4ddab9be21e2d4eb11ccd514fc0b443a8e5170f3e4",
+      "src/scripts/maintenance_controller.wm": "4ab864b1e03bcc82022da3c67b7d9534b3f5d956d8b0e57f203751e22e63af72",
+      "src/scripts/migration_controller.wm": "103f1a3e16236af63ab9fc8c00e6a752d20bb0f96ae04bbfc06c3a206cc2811f",
+      "src/scripts/shift_controller.wm": "38bcfbd48b7217a9b9d6357d10e6d3d171b6e29f637c7be1b9f0de653c65080b",
+      "src/scripts/storage_controller.wm": "7f08944d7035d0fb6805cea05860030a6d2b19bcf670143ef3c0ac71f48e057c",
+      "src/scripts/washdown_controller.wm": "2e81a8e6e9a5cad7952b855a47e5ead9f7422db9ffa48bd7bd5fcf581e552c93",
+      "src/scripts/game.wm": "8ca5978b5d555108b38bfacfd405bddd2931ffa8aba3ded885074528bce6f9df",
+      "src/content/game_scene.wm": "1fb8b65ef09123b8fed1f5765ddf04b9711c4c4af3b8f356517b9425eda8a28c",
+      "src/content/interaction_signs.wm": "1e848f9ea60fbf6219642bb16952bbb1c40b4bd8e86af674ccc93dcfe1775d0d",
+      "src/content/presentation.wm": "26fe4079a9a30c220b188a0975f04f4377d4d0d172b17f052fe6b5ed3e42dbbf",
+      "src/engine/frame_limit.wm": "09454e0fe10b9347342963674a960c42074ed96a4a446bb3728d656e0e492871",
+      "src/engine/physics.wm": "62cecbcc21f280b720cd384bb138794b84a1cf7d5b02a7cbefdf745ccc519c71",
+      "src/engine/sdl_runtime.wm": "58cba096749f3e1f8282a1751f69d90d7b8ec6030ee74131ecc5e0f79d078c00",
+      "src/scripts/game_input.wm": "04d08178f4c5de1d7dff736e79522383f2e80ed5679a9fc1a4d106a29f284021",
+      "src/scripts/ambience_controller.wm": "d5e304531f670a6d6711d56ae42065bc889d801193627770c89889b5d606c9e7",
+      "src/scripts/play.wm": "1ba6b22f991cf3de5e43aa90ece1b642ab9f8773de5bbfe7670ddd0a4636f66f"
+    }
+  },
+  "initial_program": {
+    "requests": 81,
+    "roots": 13,
+    "programFiles": 666,
+    "programSourceBytes": 5491601
+  },
+  "unprofiled_runs": [
+    {
+      "run": 1,
+      "analysis_ms": 8606.461556,
+      "phases": {
+        "load module graph": 1584.593733,
+        "prepare JS reflection": 2801.530434,
+        "prepare FFI": 301.3864110000004,
+        "load standard library": 803.6868280000008,
+        "initial partial inference": 353.70706900000005,
+        "contextualize delayed callbacks": 10.269889000000148,
+        "contextual partial inference": 0.04223199999796634,
+        "resolve delayed FFI": 1620.8902609999996,
+        "post-resolution partial inference": 338.5782189999991,
+        "resolve delayed FFI (second pass)": 269.0358750000032,
+        "final inference": 512.2577000000001
+      },
+      "batches": 90,
+      "requests": 170,
+      "roots": 102,
+      "program_ms": 3817.0488070000038,
+      "diagnostics_ms": 984.7123589999992,
+      "reflection_ms": 4835.758421000001,
+      "deno_info_count": 533,
+      "deno_info_ms": 2041.6347880000071,
+      "dts_info_count": 529,
+      "reads": 171,
+      "read_ms": 57.81973700000344,
+      "fallbacks": 89,
+      "fallback_prepare_ms": 2035.3685909999967
+    },
+    {
+      "run": 2,
+      "analysis_ms": 8489.274175,
+      "phases": {
+        "load module graph": 1709.090146,
+        "prepare JS reflection": 2871.305983,
+        "prepare FFI": 290.00069500000154,
+        "load standard library": 794.3667759999998,
+        "initial partial inference": 355.6167989999958,
+        "contextualize delayed callbacks": 9.756722999998601,
+        "contextual partial inference": 0.047923999998602085,
+        "resolve delayed FFI": 1526.843929999999,
+        "post-resolution partial inference": 337.96298899999783,
+        "resolve delayed FFI (second pass)": 245.053715,
+        "final inference": 337.5496000000039
+      },
+      "batches": 90,
+      "requests": 170,
+      "roots": 102,
+      "program_ms": 3809.6446510000014,
+      "diagnostics_ms": 935.3692579999997,
+      "reflection_ms": 4778.334807999995,
+      "deno_info_count": 533,
+      "deno_info_ms": 2067.6344230000036,
+      "dts_info_count": 529,
+      "reads": 171,
+      "read_ms": 57.88392900000781,
+      "fallbacks": 89,
+      "fallback_prepare_ms": 1908.2591460000085
+    },
+    {
+      "run": 3,
+      "analysis_ms": 8729.60508,
+      "phases": {
+        "load module graph": 1694.0288239999998,
+        "prepare JS reflection": 2844.0774160000005,
+        "prepare FFI": 314.61447800000224,
+        "load standard library": 856.5885740000003,
+        "initial partial inference": 378.09410699999535,
+        "contextualize delayed callbacks": 10.141240999999354,
+        "contextual partial inference": 0.05277900000055524,
+        "resolve delayed FFI": 1621.4963959999986,
+        "post-resolution partial inference": 340.145892999999,
+        "resolve delayed FFI (second pass)": 300.15445400000135,
+        "final inference": 357.37033099999826
+      },
+      "batches": 90,
+      "requests": 170,
+      "roots": 102,
+      "program_ms": 3867.621267,
+      "diagnostics_ms": 1021.4069150000041,
+      "reflection_ms": 4922.873652000006,
+      "deno_info_count": 533,
+      "deno_info_ms": 2050.508174999987,
+      "dts_info_count": 529,
+      "reads": 171,
+      "read_ms": 59.27893199999653,
+      "fallbacks": 89,
+      "fallback_prepare_ms": 2079.9316829999952
+    }
+  ],
+  "process_runs": [
+    {
+      "command": [
+        "deno",
+        "run",
+        "--config=/home/ellie/git/wm-mini/deno.json",
+        "-A",
+        "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+        "src/scripts/play.wm",
+        "--json=/home/ellie/git/wm-mini/_scratch/ts-backends/profile/wmthree/play-unprofiled-1.json"
+      ],
+      "cwd": "/home/ellie/git/wmthree",
+      "exit": 0,
+      "wallSeconds": 8.816924581999046
+    },
+    {
+      "command": [
+        "deno",
+        "run",
+        "--config=/home/ellie/git/wm-mini/deno.json",
+        "-A",
+        "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+        "src/scripts/play.wm",
+        "--json=/home/ellie/git/wm-mini/_scratch/ts-backends/profile/wmthree/play-unprofiled-2.json"
+      ],
+      "cwd": "/home/ellie/git/wmthree",
+      "exit": 0,
+      "wallSeconds": 8.681861144999857
+    },
+    {
+      "command": [
+        "deno",
+        "run",
+        "--config=/home/ellie/git/wm-mini/deno.json",
+        "-A",
+        "/home/ellie/git/wm-mini/scripts/profile_reflection.ts",
+        "src/scripts/play.wm",
+        "--json=/home/ellie/git/wm-mini/_scratch/ts-backends/profile/wmthree/play-unprofiled-3.json"
+      ],
+      "cwd": "/home/ellie/git/wmthree",
+      "exit": 0,
+      "wallSeconds": 8.946472624000307
+    }
+  ],
+  "cpu_profile": {
+    "path": "/tmp/wm-ffi-profiles-2026-10-15/play-fixed.cpuprofile",
+    "markdown": "/tmp/wm-ffi-profiles-2026-10-15/play-fixed.md",
+    "total_sampled_ms": 8892.162,
+    "samples": 10208,
+    "self_top20": [
+      {
+        "function": "op_spawn_sync",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 1930.654,
+        "percent": 21.711862649375934
+      },
+      {
+        "function": "(garbage collector)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 521.984,
+        "percent": 5.8701584609007345
+      },
+      {
+        "function": "snapshotType",
+        "url": "file:///home/ellie/git/wm-mini/src/diagnostic_writer.ts",
+        "line": 220,
+        "column": 5,
+        "milliseconds": 185.112,
+        "percent": 2.081743450018117
+      },
+      {
+        "function": "tryParseJson",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 21179,
+        "column": 22,
+        "milliseconds": 142.142,
+        "percent": 1.5985088890643242
+      },
+      {
+        "function": "op_fs_read_file_sync",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 141.157,
+        "percent": 1.5874317179556559
+      },
+      {
+        "function": "__wm_is_tuple",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 7,
+        "column": 23,
+        "milliseconds": 136.7,
+        "percent": 1.537308924421305
+      },
+      {
+        "function": "matchSequenceInto_205__wm_d6",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 1130,
+        "column": 38,
+        "milliseconds": 128.241,
+        "percent": 1.4421802031946787
+      },
+      {
+        "function": "parseCompiledRule_5155__wm_d5",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 15834,
+        "column": 39,
+        "milliseconds": 124.414,
+        "percent": 1.3991423008262782
+      },
+      {
+        "function": "normalizeString",
+        "url": "ext:deno_node/path/_util.ts",
+        "line": 1,
+        "column": 714,
+        "milliseconds": 102.9,
+        "percent": 1.1571988904385682
+      },
+      {
+        "function": "matchChoiceAt_235__wm_d6",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 1199,
+        "column": 34,
+        "milliseconds": 100.681,
+        "percent": 1.1322443293318318
+      },
+      {
+        "function": "buildCompiledCapture_6121__wm_d3",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 19991,
+        "column": 42,
+        "milliseconds": 96.019,
+        "percent": 1.0798161347037987
+      },
+      {
+        "function": "__wm_basis_Cons",
+        "url": "file:///home/ellie/git/wm-mini/src/generated/frontend_v2_parser.js",
+        "line": 317,
+        "column": 25,
+        "milliseconds": 94.088,
+        "percent": 1.058100380987211
+      },
+      {
+        "function": "set",
+        "url": "data:text/javascript,%2F%2F%20Primitives%20of%20%60host%2Fjs%2Ftable.wm%60.%20A%20%60Js.Table%60%20is%20a%20JavaScript%20%60Map%60%20with%20string%20or%20number%20keys.%0A%2F%2F%20%60lookup%60%20gives%20%60undefined%60%20for%20a%20missing%20key%20and%20%60present%60%20tells%20the%20two%20apart%2C%20so%20this%20file%0A%2F%2F%20doesn't%20depend%20on%20how%20the%20compiler%20represents%20%60Option%60.%20Neither%20takes%20a%20callback%3A%20a%20callback%0A%2F%2F%20parameter%20needs%20an%20FFI%20adapter%20on%20every%20call%2C%20and%20these%20are%20on%20the%20self-hosted%20parser's%20hot%20path.%0A%0Aexport%20const%20empty%20%3D%20()%20%3D%3E%20new%20Map()%3B%0A%0Aexport%20const%20lookup%20%3D%20(table%2C%20key)%20%3D%3E%20table.get(key)%3B%0A%0Aexport%20const%20present%20%3D%20(value)%20%3D%3E%20value%20!%3D%20null%3B%0A%0Aexport%20const%20set%20%3D%20(table%2C%20key%2C%20value)%20%3D%3E%20%7B%0A%20%20table.set(key%2C%20value)%3B%0A%7D%3B%0A",
+        "line": 12,
+        "column": 20,
+        "milliseconds": 86.601,
+        "percent": 0.9739026347023367
+      },
+      {
+        "function": "op_url_parse",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 73.395,
+        "percent": 0.8253898208332237
+      },
+      {
+        "function": "inferExprInner",
+        "url": "file:///home/ellie/git/wm-mini/src/infer/expr.ts",
+        "line": 64,
+        "column": 10,
+        "milliseconds": 64.663,
+        "percent": 0.7271909801013522
+      },
+      {
+        "function": "lookup",
+        "url": "data:text/javascript,%2F%2F%20Primitives%20of%20%60host%2Fjs%2Ftable.wm%60.%20A%20%60Js.Table%60%20is%20a%20JavaScript%20%60Map%60%20with%20string%20or%20number%20keys.%0A%2F%2F%20%60lookup%60%20gives%20%60undefined%60%20for%20a%20missing%20key%20and%20%60present%60%20tells%20the%20two%20apart%2C%20so%20this%20file%0A%2F%2F%20doesn't%20depend%20on%20how%20the%20compiler%20represents%20%60Option%60.%20Neither%20takes%20a%20callback%3A%20a%20callback%0A%2F%2F%20parameter%20needs%20an%20FFI%20adapter%20on%20every%20call%2C%20and%20these%20are%20on%20the%20self-hosted%20parser's%20hot%20path.%0A%0Aexport%20const%20empty%20%3D%20()%20%3D%3E%20new%20Map()%3B%0A%0Aexport%20const%20lookup%20%3D%20(table%2C%20key)%20%3D%3E%20table.get(key)%3B%0A%0Aexport%20const%20present%20%3D%20(value)%20%3D%3E%20value%20!%3D%20null%3B%0A%0Aexport%20const%20set%20%3D%20(table%2C%20key%2C%20value)%20%3D%3E%20%7B%0A%20%20table.set(key%2C%20value)%3B%0A%7D%3B%0A",
+        "line": 8,
+        "column": 23,
+        "milliseconds": 62.508,
+        "percent": 0.7029561539702043
+      },
+      {
+        "function": "pathComponents",
+        "url": "file:///home/ellie/git/wm-mini/node_modules/.deno/typescript@6.0.3/node_modules/typescript/lib/typescript.js",
+        "line": 8837,
+        "column": 24,
+        "milliseconds": 59.014,
+        "percent": 0.6636631226466634
+      },
+      {
+        "function": "memo",
+        "url": "file:///home/ellie/git/wm-mini/src/ffi/reflect/host.ts",
+        "line": 417,
+        "column": 10,
+        "milliseconds": 54.674,
+        "percent": 0.6148560946145606
+      },
+      {
+        "function": "",
+        "url": "file:///home/ellie/git/wm-mini/src/infer/provenance.ts",
+        "line": 459,
+        "column": 23,
+        "milliseconds": 53.748,
+        "percent": 0.6044424291865128
+      },
+      {
+        "function": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "milliseconds": 48.844,
+        "percent": 0.5492927366820353
+      }
+    ]
+  }
+}

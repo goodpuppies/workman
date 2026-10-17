@@ -53,6 +53,13 @@ type PreparedReflection = {
 
 export type JsReflectionProfileEvent =
   | {
+    kind: "deno-info";
+    specifier: string;
+    cwd: string;
+    milliseconds: number;
+    success: boolean;
+  }
+  | {
     kind: "batch";
     labels: string[];
     rootDetails: { fileName: string; requests: number; sourceBytes: number }[];
@@ -64,6 +71,7 @@ export type JsReflectionProfileEvent =
     largestProgramFiles: { fileName: string; sourceBytes: number }[];
     graphMs: number;
     programMs: number;
+    diagnosticsMs: number;
     checkerMs: number;
     indexMs: number;
     totalMs: number;
@@ -224,15 +232,21 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
   };
   host.resolveModuleNames = (moduleNames, containingFile) =>
     moduleNames.map((moduleName) => {
-      const resolveModule = () =>
-        denoResolvedModule(denoGraphs, moduleName, containingFile) ??
+      const resolveModule = () => {
+        // Package declarations normally use TypeScript/Node resolution. Keep
+        // already-known Deno mappings authoritative, but don't discover a Deno
+        // graph for each declaration file when TypeScript can resolve it.
+        const deferDiscovery = isPackageDeclarationFile(containingFile);
+        return denoResolvedModule(denoGraphs, moduleName, containingFile, !deferDiscovery) ??
           ts.resolveModuleName(
             moduleName,
             containingFile,
             compilerOptions,
             host,
             moduleResolutionCache(),
-          ).resolvedModule;
+          ).resolvedModule ??
+          (deferDiscovery ? denoResolvedModule(denoGraphs, moduleName, containingFile) : undefined);
+      };
       let resolved = resolveModule();
       if (!resolved && isNpmGraphImport(denoGraphs, moduleName)) {
         const projectDirectory = enableNodeModulesDir(containingFile);
@@ -267,9 +281,11 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
     previousProgram,
   );
   const programMs = reflectionProfileSink ? performance.now() - programStarted : 0;
+  const diagnosticsStarted = reflectionProfileSink ? performance.now() : 0;
   const unresolvedImport = program.getSemanticDiagnostics().find((diagnostic) =>
     diagnostic.code === 2307
   );
+  const diagnosticsMs = reflectionProfileSink ? performance.now() - diagnosticsStarted : 0;
   if (unresolvedImport) {
     throw new Error(
       `cannot resolve JS import for reflection: ${
@@ -316,6 +332,7 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
       .slice(0, 20),
     graphMs,
     programMs,
+    diagnosticsMs,
     checkerMs,
     indexMs: performance.now() - indexStarted,
     totalMs: performance.now() - totalStarted,
@@ -488,7 +505,15 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
   const cacheKey = `${cwd}\0${specifier}`;
   const cached = denoModuleGraphs.get(cacheKey);
   if (cached) return cached;
+  const started = reflectionProfileSink ? performance.now() : 0;
   const output = runtime.runSync(denoCliPath(), ["info", "--json", specifier], { cwd });
+  reflectionProfileSink?.({
+    kind: "deno-info",
+    specifier,
+    cwd,
+    milliseconds: performance.now() - started,
+    success: output.success,
+  });
   if (!output.success) {
     const message = output.stderr.trim();
     if (!mustResolveWithDeno(specifier)) return undefined;
@@ -589,8 +614,9 @@ function denoResolvedModule(
   graphs: DenoModuleGraph[],
   moduleName: string,
   containingFile: string,
+  discoverImporter = true,
 ): ts.ResolvedModuleFull | undefined {
-  const specifier = resolveDenoSpecifier(graphs, moduleName, containingFile);
+  const specifier = resolveDenoSpecifier(graphs, moduleName, containingFile, discoverImporter);
   if (!specifier) return undefined;
   const module = denoModuleForFileName(graphs, specifier);
   // `deno info` represents npm packages as a graph node without a local source
@@ -647,6 +673,7 @@ function resolveDenoSpecifier(
   graphs: DenoModuleGraph[],
   moduleName: string,
   containingFile: string,
+  discoverImporter: boolean,
 ): string | undefined {
   const raw = isRelativeSpecifier(moduleName) && isUrl(containingFile)
     ? new URL(moduleName, containingFile).href
@@ -665,6 +692,8 @@ function resolveDenoSpecifier(
 
   if (fromImporter !== undefined && knownDenoModules.has(fromImporter)) return fromImporter;
 
+  if (!discoverImporter) return undefined;
+
   const importerPath = isUrl(containingFile) ? pathFromFileUrl(containingFile) : containingFile;
   if (importerPath !== undefined && !graphedImporters.has(importerPath)) {
     graphedImporters.add(importerPath);
@@ -678,6 +707,11 @@ function resolveDenoSpecifier(
     }
   }
   return undefined;
+}
+
+function isPackageDeclarationFile(fileName: string): boolean {
+  const path = fileName.replaceAll("\\", "/");
+  return /\.d\.[cm]?ts$/i.test(path) && /(?:^|\/)node_modules\//.test(path);
 }
 
 function pathFromFileUrl(value: string): string | undefined {

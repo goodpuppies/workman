@@ -7,7 +7,7 @@ import {
   ModuleAnalysisError,
 } from "../compiler.ts";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
-import { FrontendDiagnosticError, genericDiagnostic } from "../diagnostics.ts";
+import { FrontendDiagnosticError, genericDiagnostic } from "../diagnostic_model.ts";
 import { resolveCompilerFrontend } from "../frontend_mode.ts";
 import { runtime } from "../io.ts";
 import type { ModuleInterface, ProjectSnapshot } from "../module_interface.ts";

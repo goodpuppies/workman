@@ -26,7 +26,7 @@ import {
   WMSLANG_BUILTIN_OVERLOADS,
   type WmslangBuiltinValueType,
 } from "../wmslang/builtin_catalog.generated.ts";
-import { diagnosticError } from "../diagnostics.ts";
+import { diagnosticError } from "../diagnostic_model.ts";
 import { lookupLongValue } from "./environment.ts";
 import type { InvocationPlan } from "../pipe_elaboration.ts";
 

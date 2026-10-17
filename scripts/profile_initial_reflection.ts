@@ -26,7 +26,7 @@ const allRequests = initialJsImportReflectionRequests(
   })),
 );
 const selectedRequests = only.startsWith("three-direct")
-  ? directThreeRequests(only, dirname(graph.entry))
+  ? directThreeRequests(only, dirname(graph.nodes.get(graph.entry)!.path))
   : allRequests.filter((request) => selected(request.label, only));
 const requests = limit > 0 ? selectedRequests.slice(0, limit) : selectedRequests;
 const events: JsReflectionProfileEvent[] = [];
@@ -45,6 +45,7 @@ console.log(`requests: ${requests.length}, roots: ${batch.roots}`);
 console.log(`wall: ${ms(performance.now() - started)}`);
 console.log(`graph discovery: ${ms(batch.graphMs)}`);
 console.log(`createProgram: ${ms(batch.programMs)}`);
+console.log(`semantic diagnostics: ${ms(batch.diagnosticsMs)}`);
 console.log(`getTypeChecker: ${ms(batch.checkerMs)}`);
 console.log(`program: ${batch.programFiles} files, ${batch.programSourceBytes} source bytes`);
 console.log("largest files:");
