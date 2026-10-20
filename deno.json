@@ -1,7 +1,7 @@
 {
   "nodeModulesDir": "none",
   "name": "@goodpuppies/workman",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "license": "MIT",
   "exports": {
     ".": "./src/cli.ts"

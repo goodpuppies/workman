@@ -220,6 +220,11 @@ explicitly and resolves declarations from Deno's package cache when local `node_
 disabled. Reflection does not rewrite project configuration or run `deno install`.
 `wm pakman` stores its generated launcher under the user's cache directory,
 separated by compiler source location, rather than writing into installed source.
+JSR loads compiler modules over HTTPS. Pakman materializes that exact version
+from the JSR package manifest into a local cache before compiling `.wm` resources
+or launching compiler subprocesses. Manifest sizes and SHA-256 checksums are
+verified; failed downloads never become a completed cache. Local checkouts use
+their existing source tree.
 
 These fixes and executable support are included in the WM `0.4.2` Git tag.
 Git tagging and JSR package publication are separate steps. Application

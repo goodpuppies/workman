@@ -169,6 +169,9 @@ programs are compiled by the same wm checkout and always run sandboxed, whatever
 The launcher cache uses `$XDG_CACHE_HOME/workman` (or `~/.cache/workman`,
 `$LOCALAPPDATA/workman` on Windows), separated by compiler source location.
 Installed compiler sources need no writes.
+When WM is loaded from JSR, pakman caches that exact published package under
+`workman/packages`, verifying each resource against JSR's manifest before
+starting its local compiler subprocess. It does not substitute a Git checkout.
 
 Each package is its own wm program. pakman compiles it separately (cached until it or pakman's
 `src/` changes) and runs it as a sandboxed Deno process for each step:

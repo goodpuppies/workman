@@ -4,21 +4,19 @@
 import { compileFileArtifacts } from "./compiler.ts";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
+import { cacheJsrPackage, workmanCache } from "./package_cache.ts";
 
-const root = fileURLToPath(new URL("../tooling/pakman", import.meta.url));
-const entry = `${root}/pakman.wm`;
+const sourceUrl = new URL("../tooling/pakman", import.meta.url);
+const root = sourceUrl.protocol === "file:" ? fileURLToPath(sourceUrl) : undefined;
 // Generated imports contain checkout-relative paths. Keep different installed
 // compilers in separate writable caches, never inside the compiler source tree.
-async function cachedOutput(): Promise<string> {
+async function cachedOutput(root: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(root));
   const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
   );
-  const configured = Deno.env.get(Deno.build.os === "windows" ? "LOCALAPPDATA" : "XDG_CACHE_HOME");
-  const cache = configured && isAbsolute(configured) ? configured : join(homedir(), ".cache");
-  return join(cache, "workman", key, "pakman.js");
+  return join(workmanCache(), key, "pakman.js");
 }
 
 async function mtime(path: string): Promise<number> {
@@ -40,7 +38,8 @@ async function newestSource(dir: string): Promise<number> {
   return newest;
 }
 
-async function build(output: string): Promise<string> {
+async function build(root: string, output: string): Promise<string> {
+  const entry = join(root, "pakman.wm");
   const newest = Math.max(await mtime(entry), await newestSource(`${root}/src`));
   if (await mtime(output) >= newest) return await Deno.readTextFile(output);
   const artifacts = await compileFileArtifacts(entry);
@@ -58,8 +57,29 @@ async function build(output: string): Promise<string> {
 }
 
 export async function pakmanCommand(args: string[]): Promise<number> {
-  const output = await cachedOutput();
-  const code = await build(output);
+  if (!root) {
+    const local = await cacheJsrPackage(new URL(import.meta.url));
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "-A",
+        "--no-lock",
+        "--node-modules-dir=none",
+        "--config",
+        join(local, "deno.json"),
+        join(local, "src/cli.ts"),
+        "pakman",
+        ...args,
+      ],
+      env: { WORKMAN_DENO_PATH: Deno.execPath() },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }).spawn();
+    return (await child.status).code;
+  }
+  const output = await cachedOutput(root);
+  const code = await build(root, output);
   const child = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", ...runtimeFlagsForJavaScript(code), output, ...args],
     stdin: "inherit",
