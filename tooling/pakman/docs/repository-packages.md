@@ -67,7 +67,7 @@ and the WM package calls the Deno package with its own selector:
 
 ```wm
 -- In atview's package, illustrative only:
-let wm = Workman.package("~0.4.1");
+let wm = Workman.package("~0.4.2");
 
 -- In that WM package, illustrative only:
 let deno = Deno.package("~2.8.0");
@@ -98,7 +98,7 @@ The first implementation only needs exact versions and patch-compatible
 | Request | Meaning |
 |---|---|
 | `0.4.1` | Exactly 0.4.1 |
-| `~0.4.1` | At least 0.4.1, below 0.5.0 |
+| `~0.4.2` | At least 0.4.2, below 0.5.0 |
 | `~2.8.0` | At least 2.8.0, below 2.9.0 |
 
 Use familiar npm/Deno semver semantics rather than inventing a different

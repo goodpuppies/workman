@@ -70,7 +70,7 @@ one of them the short alias `wm`, but that alias is a lookup convenience.
 Dependency records and cache identities must retain the actual provenance.
 
 The same rule applies to dependency calls. Conceptually,
-`Workman.package("~0.4.1")` should identify a particular package provider and
+`Workman.package("~0.4.2")` should identify a particular package provider and
 request one of its software versions. It must not quietly depend on a globally
 unique `wm` entry in a universal registry. Repository-qualified references and
 explicit catalog mappings are possible ways to supply that provider; the

@@ -22,7 +22,7 @@ Recipes can request private package instances using exact stable versions or
 patch-compatible `~X.Y.Z` selectors:
 
 ```wm
-let wm = package("wm", "~0.4.1");
+let wm = package("wm", "~0.4.2");
 -- In a plan, refer to its exported file:
 file(wm, ".local/bin/wm")
 ```
@@ -74,13 +74,13 @@ supports regular files only. The mapping is an explicit development override;
 an unmapped GitHub address always uses GitHub. The new atview recipe must be
 published there before the unmapped command can find it.
 
-The atview recipe selects `wm ~0.4.1`; the WM recipe in `../pak/paks/wm` selects
+The atview recipe selects `wm ~0.4.2`; the WM recipe in `../pak/paks/wm` selects
 `deno ~2.9.0`. Only `atview` is exposed in the profile. Its recipe explicitly
 describes a generic command build:
 
 ```wm
 BuildCommand(.{
-  program = file(package("wm", "~0.4.1"), ".local/bin/wm"),
+  program = file(package("wm", "~0.4.2"), ".local/bin/wm"),
   arguments = ["compile", "app/main.wm", "--executable", "-o", "atview"],
   source = "atview.tar",
   strip = 1,
@@ -111,8 +111,8 @@ an offline Deno environment or promise byte-identical builds. See the
 [backend policy](docs/declarative-programs.md#compiled-applications-and-backend-policy).
 The WM recipe invokes upstream `src/cli.ts` directly through its selected Deno;
 there is no package-owned TypeScript adapter. Executable support and cache fixes
-require a new WM release; published 0.4.1 lacks them. Development tests use an
-explicit snapshot of this checkout. The WM/Deno recipes currently target Linux,
+are included in the WM `0.4.2` Git tag; application recipes require at least
+that patch. Git tags and JSR package publication are separate. The WM/Deno recipes currently target Linux,
 with Deno binaries for x86_64 and aarch64.
 
 The separate [SubsetML port](../pakman-subsetml/README.md) is authored in WM and

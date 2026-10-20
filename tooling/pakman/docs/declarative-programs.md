@@ -181,7 +181,7 @@ pakman has no built-in knowledge of WM or its compilation command. Atview's
 recipe makes that choice explicit:
 
 ```wm
-let wm = package("wm", "~0.4.1");
+let wm = package("wm", "~0.4.2");
 BuildCommand(.{
   program = file(wm, ".local/bin/wm"),
   arguments = ["compile", "app/main.wm", "--executable", "-o", "atview"],
@@ -221,9 +221,10 @@ disabled. Reflection does not rewrite project configuration or run `deno install
 `wm pakman` stores its generated launcher under the user's cache directory,
 separated by compiler source location, rather than writing into installed source.
 
-These fixes and executable support need a new WM release. Published WM 0.4.1
-does not contain them. Development verification uses an explicit source snapshot
-of this checkout; it must not be mistaken for testing the old published release.
+These fixes and executable support are included in the WM `0.4.2` Git tag.
+Git tagging and JSR package publication are separate steps. Application
+recipes require `~0.4.2` so selection cannot fall back to WM 0.4.1. The normal
+release age policy still applies to private dependencies.
 Compiling WM itself remains separate work: uses of `Deno.execPath()` as a Deno
 CLI need attention before embedding the compiler in another executable.
 
