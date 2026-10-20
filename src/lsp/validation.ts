@@ -1,8 +1,5 @@
 import { analyzeFile, elaborateProjectGpuSemantics, ModuleAnalysisError } from "../compiler.ts";
-import {
-  type CompilerFrontendOptions,
-  defaultFrontendV2ModuleUrl,
-} from "../compiler_frontend.ts";
+import { type CompilerFrontendOptions, defaultFrontendV2ModuleUrl } from "../compiler_frontend.ts";
 import {
   classifyDiagnostic,
   diagnosticNotes,
@@ -314,15 +311,22 @@ function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): L
     ? spanRange(source, diagnostic.primary.span)
     : startRange;
   const relatedInformation = diagnosticNotes(diagnostic)
-    .map((note) => ({
-      location: {
-        uri,
-        range: note.anchor.kind === "source" && source
-          ? spanRange(source, note.anchor.span)
-          : startRange,
-      },
-      message: note.message,
-    }))
+    .map((note) => {
+      const path = note.anchor.kind === "source" ? note.anchor.filePath : undefined;
+      const noteUri = path ? pathToFileUri(path) : uri;
+      const noteSource = path && noteUri !== uri
+        ? diagnostic.support.sources?.find((item) => item.filePath === path)?.source
+        : source;
+      return {
+        location: {
+          uri: noteUri,
+          range: note.anchor.kind === "source" && noteSource
+            ? spanRange(noteSource, note.anchor.span)
+            : startRange,
+        },
+        message: note.message,
+      };
+    })
     .filter((related) =>
       related.location.uri.startsWith("file://") && isValidRange(related.location.range)
     );

@@ -71,6 +71,7 @@ export function inferMatch(
       new Set(),
       facts,
       provenance,
+      sourceForTypedExpr(expr.value, valueType, provenance, "match input"),
     );
     recordExpectedExprType(facts, arm.body, result);
     const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
@@ -179,6 +180,10 @@ function snapshotType(type: Ty, variables = new Map<number, Ty>()): Ty {
       if (existing) return existing;
       const variable: Ty = { tag: "var", id: resolved.id, name: resolved.name };
       variables.set(resolved.id, variable);
+      variable.projectionFields = resolved.projectionFields?.map((field) => ({
+        ...field,
+        type: snapshotType(field.type, variables),
+      }));
       return variable;
     }
     case "prim":

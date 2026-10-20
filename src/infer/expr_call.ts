@@ -514,7 +514,7 @@ function assertJsCompatible(type: Ty, typeEnv: TypeEnv) {
         assertJsCompatible(t.args[1], typeEnv);
         return;
       }
-      const record = typeInfoByName(typeEnv, t.name);
+      const record = t.definition ?? typeInfoByName(typeEnv, t.name);
       if (record?.recordFields) {
         for (const field of instantiateRecordFields(record, t.args)) {
           assertJsCompatible(field.type, typeEnv);

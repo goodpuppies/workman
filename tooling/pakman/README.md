@@ -8,6 +8,10 @@ dependency graph and a sandbox. See [DESIGN.md](DESIGN.md) for the design and
 
 v1 runs on the desktop (wm compiled to JS, run with Deno).
 
+The separate [SubsetML port](../pakman-subsetml/README.md) is authored in WM and
+targets native MLWorks on PS2. Its initial package format and target adapters
+are documented there.
+
 ## Use
 
 ```sh

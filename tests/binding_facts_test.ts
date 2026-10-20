@@ -77,6 +77,29 @@ Deno.test("module binding facts resolve namespace imports to exporter identities
   assertEquals(main.bindings.local.has(imported!), false);
 });
 
+Deno.test("bare constructors do not acquire same-named namespace or carrier identities", async () => {
+  const files = new Map([
+    ["/test/image.wm", "record Image = { value: Number }; let carrier = 99;"],
+    [
+      "/test/main.wm",
+      `from "./image.wm" import * as Image;
+type Element = Empty | Image<Image.Image>;
+let make = (value) => { Image(Image.Image(value)) };
+let constructor = Image;
+let read = match(element) => { Image(payload) => { payload.value }, Empty => { 0 } };`,
+    ],
+  ]);
+  const result = await coreVirtual("/test/main.wm", files);
+  const facts = result.bindings.get(moduleId("/test/main.wm"))!;
+  const constructors = [...result.nominalFacts.constructorReferences.keys()]
+    .filter((node) => (node.kind === "Var" || node.kind === "PCtor") && node.name === "Image");
+  assert(constructors.length >= 3);
+  for (const node of constructors) {
+    assertEquals(facts.structureReferences.has(node), false);
+    assertEquals(facts.references.has(node), false);
+  }
+});
+
 Deno.test("module binding facts consume imports at declaration position", async () => {
   const virtualFs = new Map<string, string>([
     ["/test/lib.wm", "let value = 1;"],

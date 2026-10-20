@@ -1,0 +1,90 @@
+from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "./model.wm" import * as M;
+from "./io.wm" import * as I;
+
+// Versioned line protocol for the native profile. Fields escape %, TAB, LF, CR.
+// Package processes and the manager stay independent, as in the original port.
+let escape = (text) => {
+  String.translate((c) => {
+    match(c) { '%' => { "%25" }, '\t' => { "%09" }, '\n' => { "%0A" }, '\r' => { "%0D" }, _ => { String.str(c) } }
+  })(text)
+};
+let rec unescapeChars = (chars) => {
+  match(chars) {
+    [] => { R.Ok([]) },
+    ['%', '2', '5', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['%', ..xs] }) },
+    ['%', '0', '9', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['\t', ..xs] }) },
+    ['%', '0', 'A', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['\n', ..xs] }) },
+    ['%', '0', 'D', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['\r', ..xs] }) },
+    ['%', .._] => { R.Err("invalid protocol escape") },
+    [c, ..rest] => { R.map(unescapeChars(rest), (xs) => { [c, ..xs] }) }
+  }
+};
+let unescape = (text) => { R.map(unescapeChars(String.explode(text)), String.implode) };
+let line = (parts) => { I.join(I.map(parts, escape), "\t") ++ "\n" };
+let modeName = match { M.Exec => { "exec" }, M.Data => { "data" } };
+let argument = match {
+  M.Literal(text) => { "literal:" ++ text }, M.Input(path) => { "input:" ++ path },
+  M.Work(path) => { "work:" ++ path }, M.Out(path) => { "out:" ++ path }
+};
+let operation = match {
+  M.Build(program, args) => { line(["build", program, ..I.map(args, argument)]) },
+  M.Install(source, dest, mode) => { line(["install", source, dest, modeName(mode)]) },
+  M.InstallTree(source, dest, mode) => { line(["install-tree", source, dest, modeName(mode)]) },
+  M.Launcher(image, dest) => { line(["launcher", image, dest]) }
+};
+let encode = (name, pkg: M.Package) => {
+  "pakman-subsetml-1\n" ++ line(["package", name, pkg.version])
+    ++ String.concat(I.map(pkg.sources, (source: M.Source) => { line(["source", source.file, source.path]) }))
+    ++ String.concat(I.map(pkg.install, operation))
+};
+let parseArgument = (text) => {
+  let rec split = (chars, acc) => {
+    match(chars) {
+      [] => { R.Err("missing build argument kind") },
+      [':', ..rest] => {
+        let body = String.implode(rest);
+        match(String.implode(List.rev(acc))) {
+          "literal" => { R.Ok(M.Literal(body)) }, "input" => { R.Ok(M.Input(body)) },
+          "work" => { R.Ok(M.Work(body)) }, "out" => { R.Ok(M.Out(body)) },
+          _ => { R.Err("unknown build argument kind") }
+        }
+      },
+      [c, ..rest] => { split(rest, [c, ..acc]) }
+    }
+  };
+  split(String.explode(text), [])
+};
+let rec parseLines = (lines, name, version, sources, ops) => {
+  match(lines) {
+    [] => { R.Ok(M.Plan(name, version, List.rev(sources), List.rev(ops))) },
+    [text, ..rest] => {
+      I.bind(I.traverse(I.fields('\t', text), unescape), (parts) => {
+        match(parts) {
+          ["source", file, path] => { parseLines(rest, name, version, [M.Source(file, path), ..sources], ops) },
+          ["build", command, ..args] => {
+            I.bind(I.traverse(args, parseArgument), (parsed) => { parseLines(rest, name, version, sources, [M.Build(command, parsed), ..ops]) })
+          },
+          ["install", source, dest, "exec"] => { parseLines(rest, name, version, sources, [M.Install(source, dest, M.Exec), ..ops]) },
+          ["install", source, dest, "data"] => { parseLines(rest, name, version, sources, [M.Install(source, dest, M.Data), ..ops]) },
+          ["install-tree", source, dest, "exec"] => { parseLines(rest, name, version, sources, [M.InstallTree(source, dest, M.Exec), ..ops]) },
+          ["install-tree", source, dest, "data"] => { parseLines(rest, name, version, sources, [M.InstallTree(source, dest, M.Data), ..ops]) },
+          ["launcher", image, dest] => { parseLines(rest, name, version, sources, [M.Launcher(image, dest), ..ops]) },
+          _ => { R.Err("unsupported or malformed package plan operation") }
+        }
+      })
+    }
+  }
+};
+let decode = (text) => {
+  let lines = String.tokens((c) => { c == '\n' })(text);
+  match(lines) {
+    ["pakman-subsetml-1", header, ..rest] => {
+      I.bind(I.traverse(I.fields('\t', header), unescape), (parts) => {
+        match(parts) { ["package", name, version] => { parseLines(rest, name, version, [], []) }, _ => { R.Err("invalid package header") } }
+      })
+    },
+    _ => { R.Err("expected pakman-subsetml-1 protocol") }
+  }
+};
+

@@ -51,10 +51,10 @@ capability, only legibility.
 **Semantics.** Only two additions are genuinely semantic:
 
 - **Nominal records.** SML records are structural. Workman records are declared and nominal, and
-  several records may share a label. These lower to SML records, with projection resolved by the
-  same context rule SML uses for flexible records (see
-  `issues/record-projection-resolution-is-not-sml-context-deferred.md`). The open question is how
-  nominal identity survives when two records have identical fields.
+  several records may share a label. Projection functions retain generalized field requirements
+  until callers supply nominal receivers (see `nominal-field-requirements.md`). Receiver and
+  result variables preserve identity even when two nominal records have identical fields;
+  sharing a field does not permit casting one nominal record to another.
 - **The FFI.** TypeScript reflection, C imports and GPU islands are target boundaries, not core
   language. `ffi-principles.md` keeps them from reshaping the core.
 

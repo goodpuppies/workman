@@ -1,7 +1,77 @@
 # Issue: contextual nominal projection — current implementation and remaining policy work
 
-Status: open as a design follow-up. The atview and pakman failures are fixed; the current
-behavior is working for those projects. Updated 2026-10-06.
+Status: projection defaults and the intermediate joint-candidate implementation are
+superseded by [nominal field requirements](../nominal-field-requirements.md), adopted
+2026-10-19. Unknown receivers retain generalized field/result relations; callers supply
+the nominal identity. The notes below preserve the investigation and earlier policy.
+
+## Follow-up: jointly resolve projected field types (2026-10-19)
+
+The earlier atview fixes did not cover all projections sharing one unresolved receiver.
+A new CLI reproduction reads `feed.cursor` before passing `feed.posts` to a renderer
+requiring `List<Views.Post>`. `Api.FeedPage` and `Views.AuthorFeed` both own `cursor`
+and `posts`, but FeedPage's posts contain `Api.FeedPost`. Resolving the pending cursor
+first selected FeedPage and made the posts constraint fail. Reordering the projections
+made the reduced program check. This is an inference bug, not a requirement to annotate
+an identity already constrained by the body.
+
+The rule is: **an ambiguity default must never select a candidate contradicted by the
+available program constraints.** If another candidate satisfies those constraints, a type
+error caused solely by the default is an implementation failure. The first implementation
+slice below handles a shared receiver within one declaration; that is a delivery boundary,
+not a claim that a later consumer makes a bad default acceptable.
+
+First implementation slice:
+
+- Accumulate every field/result obligation on the unresolved receiver, preserving the
+  group when receiver variables unify.
+- Before selecting an owner, check all its pending projected field types together.
+  Use one isolated candidate instantiation and one shared copy graph: shared generic
+  parameters and relationships between projection results must stay shared.
+- Include nested receiver obligations in candidate checks without invoking live projection
+  or provenance callbacks or mutating the program while testing a candidate. Pure equality,
+  GPU annotation and JS-representation checks run against the isolated type graph.
+- Apply the existing default only among compatible owners. If no owner is compatible,
+  report a genuine inconsistent constraint with its source origins. Do not recover by
+  forgetting a field or manufacturing a structural record.
+- This first slice retains the current top-level resolution boundary. It does not yet
+  carry unresolved nominal alternatives through generalized/exported schemes. The existing
+  first-owner policy for genuinely unresolved definitions remains a limitation to remove,
+  not the intended end state of the rule above.
+
+Grain is not a solution to this particular bug. Reading its local disambiguation code and
+compiling reduced examples with Grain 0.7.2 confirmed that it selects a label candidate
+and warns, then fails when another field contradicts it; reversing record declaration
+order changes the result. WM's deferred obligations should go further by checking the
+whole pending receiver group before committing.
+
+Regression coverage must include cursor/posts in both orders, reversed declaration order,
+aliased/unified receivers, shared generic parameters across fields, nested receiver
+projections, imported records, genuinely incompatible requirements, and preserved nominal
+identity/generalization boundaries. The prior diagnostic reproductions should continue
+exercising genuine mismatches, while this satisfiable reproduction must become a success.
+
+### Implementation and next boundary
+
+The grouped checks are implemented in `src/infer/records.ts`, with receiver obligation
+merging in `src/types.ts`. Regression tests cover projection/declaration order, merged
+receivers, shared generic parameters, nested fields, equality and JS representation
+constraints, and code generation through imported record types. Genuine inconsistent
+projection tests retain source-aware mismatch diagnostics.
+
+Checking atview now gets past `renderFeed` without source changes. Correcting the separate
+`parseLimit` Result/Number branch mismatch in memory exposes another default-driven clash:
+`Api.searchPostsAuthenticated` projects only `session.accessJwt`, so its definition defaults
+to AppFeeds, while a later caller supplies Auth.Session. Both records have the same String
+field. The body alone cannot eliminate either candidate, but the caller can. This is the
+cross-definition/module counterpart of the same problem, not an annotation requirement.
+
+The next slice needs explicit finite nominal-owner obligations that survive scheme
+generalization, instantiation and module interfaces, allowing ordinary consumers to select
+an owner before a default is imposed. Preserve receiver/result identity and generic
+relationships on each instantiation; do not revive the old structural-row escape, silently
+coerce nominal records, or repeatedly re-elaborate entire definitions. Add the atview
+session case and separately bound callback cases as acceptance tests for that work.
 
 ## Current state
 

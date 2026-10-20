@@ -1,0 +1,133 @@
+from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "./model.wm" import * as M;
+from "./host.wm" import * as H;
+from "./io.wm" import * as I;
+
+record Context = { inputs: String, work: String, out: String };
+record Placement = { source: String, path: String, mode: M.Mode };
+record Built = { path: String, files: List<Placement> };
+// Opt-in debugging keeps compiler output available after a reported failure.
+let cleanFailed = (path) => {
+  if (H.envOr("PAKMAN_KEEP_FAILED_BUILDS", "") == "1") {
+    H.writeStderr("retained failed build: " ++ path ++ "\n")
+  } else { I.removeTree(path) }
+};
+let destination = match {
+  M.Install(_, path, _) => { Some(path) }, M.InstallTree(_, path, _) => { Some(path) }, M.Launcher(_, path) => { Some(path) }, _ => { None }
+};
+let destinations = (ops) => { List.mapPartial(destination)(ops) };
+let rec unique = (items) => {
+  match(items) { [] => { true }, [x, ..rest] => { !I.any(rest, (y) => { x == y }) && unique(rest) } }
+};
+let installPath = (path) => {
+  I.safeRelative(path) && !String.isPrefix(".pakman/")(path) && path != ".pakman"
+};
+let argumentSafe = match { M.Literal(value) => { I.noNul(value) }, M.Input(p) => { I.safeRelative(p) }, M.Work(p) => { I.safeRelative(p) }, M.Out(p) => { I.safeRelative(p) } };
+let validate = (plan: M.Plan) => {
+  let paths = destinations(plan.install);
+  let files = I.map(plan.sources, (source: M.Source) => { source.file });
+  I.ensure(
+    I.safeName(plan.name) && I.safeName(plan.version)
+      && paths != [] && unique(paths) && unique(files)
+      && I.all(paths, installPath)
+      && I.all(plan.sources, (source: M.Source) => { I.safeRelative(source.file) && I.safeRelative(source.path) })
+      && I.all(plan.install, (op) => {
+        match(op) {
+          M.Build(command, args) => { (command == "wm-image" || I.absolute(command)) && I.all(args, argumentSafe) },
+          M.Install(source, _, _) => { I.safeRelative(source) },
+          M.InstallTree(source, _, _) => { I.safeRelative(source) },
+          M.Launcher(image, _) => { I.any(plan.install, (other) => { match(other) { M.Install(_, dest, _) => { image == dest }, _ => { false } } }) }
+        }
+      }), "unsafe, duplicate, empty or unsupported package plan")
+};
+let renderArg = (ctx: Context, arg) => {
+  match(arg) {
+    M.Literal(text) => { text }, M.Input(path) => { I.child(ctx.inputs, path) },
+    M.Work(path) => { I.child(ctx.work, path) }, M.Out(path) => { I.child(ctx.out, path) }
+  }
+};
+let buildStep = (ctx, op) => {
+  match(op) {
+    M.Build(command, args) => {
+      let executable = if (command == "wm-image") { H.envOr("PAKMAN_BUILD_WM", "") } else { command };
+      I.bind(I.ensure(I.absolute(executable), "PAKMAN_BUILD_WM must name an absolute build adapter"), (_) => {
+        R.map(I.run(executable, I.map(args, (arg) => { renderArg(ctx, arg) }), ctx.work), (_) => { void })
+      })
+    },
+    _ => { R.Ok(void) }
+  }
+};
+// Expand regular files only. Every directory and child is checked without
+// following symlinks; expanded paths enter the normal ownership transaction.
+let rec expandTree = (source, path, mode) => {
+  I.bind(I.verifyDir(source), (_) => {
+    I.bind(H.listDir(source), (names) => {
+      R.map(I.traverse(names, (name) => {
+        I.bind(I.ensure(I.safeRelative(name) && I.all(String.explode(name), (c) => { c != '/' }), "unsafe tree entry: " ++ name), (_) => {
+          let file = I.child(source, name);
+          let dest = I.child(path, name);
+          I.bind(H.kind(file), (kind) => {
+            match(kind) {
+              "file" => { R.Ok([Placement(file, dest, mode)]) },
+              "dir" => { expandTree(file, dest, mode) },
+              _ => { R.Err("refusing non-regular tree entry: " ++ file) }
+            }
+          })
+        })
+      }), List.concat)
+    })
+  })
+};
+let realize = (plan: M.Plan, packageDir, state, root) => {
+  let store = I.child(state, "store");
+  I.bind(validate(plan), (_) => {
+    I.bind(I.checkedDir(store), (_) => {
+      I.bind(H.tempDir(store), (directory) => {
+        let ctx = Context(I.child(directory, "inputs"), I.child(directory, "work"), I.child(directory, "out"));
+        let result = I.bind(I.each([ctx.inputs, ctx.work, ctx.out], I.checkedDir), (_) => {
+          I.bind(I.each(plan.sources, (source: M.Source) => {
+            I.copyNew(I.child(packageDir, source.path), I.child(ctx.inputs, source.file), false)
+          }), (_) => {
+            I.bind(I.each(plan.install, (op) => { buildStep(ctx, op) }), (_) => {
+              I.bind(I.traverse(plan.install, (op) => {
+                match(op) {
+                  M.Install(source, path, mode) => { R.Ok([Placement(I.child(ctx.out, source), path, mode)]) },
+                  M.InstallTree(source, path, mode) => { expandTree(I.child(ctx.out, source), path, mode) },
+                  M.Launcher(_, path) => { R.Ok([Placement(I.child(ctx.work, path ++ ".launcher"), path, M.Exec)]) },
+                  _ => { R.Ok([]) }
+                }
+              }), (groups) => {
+                let placements = List.concat(groups);
+                I.bind(I.ensure(unique(I.map(placements, (file: Placement) => { file.path })), "overlapping package payload paths"), (_) => {
+                  I.bind(I.each(plan.install, (op) => {
+                    match(op) {
+                      M.Launcher(image, path) => {
+                        let runner = H.envOr("PAKMAN_RUN_IMAGE", "");
+                        let file = I.child(ctx.work, path ++ ".launcher");
+                        I.bind(I.ensure(I.absolute(runner), "PAKMAN_RUN_IMAGE must name an absolute runtime adapter"), (_) => {
+                          I.bind(I.requireFile(runner), (_) => {
+                            I.bind(I.checkedDir(I.parent(file)), (_) => {
+                              H.writeFile("#!/bin/sh\nexec " ++ I.quote(runner) ++ " " ++ I.quote(I.child(root, image)) ++ " \"$@\"\n", file)
+                            })
+                          })
+                        })
+                      },
+                      _ => { R.Ok(void) }
+                    }
+                  }), (_) => {
+                    R.map(I.each(placements, (file: Placement) => { I.requireFile(file.source) }), (_) => { Built(directory, placements) })
+                  })
+                })
+              })
+            })
+          })
+        });
+        match(result) {
+          R.Ok(value) => { R.Ok(value) },
+          R.Err(message) => { let _ = cleanFailed(directory); R.Err(message) }
+        }
+      })
+    })
+  })
+};
+

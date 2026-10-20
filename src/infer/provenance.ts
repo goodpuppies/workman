@@ -61,22 +61,40 @@ export type TypeSource = {
 
 const expressionSources = new WeakMap<Expr, TypeSource>();
 const schemeSources = new WeakMap<Scheme, TypeSource>();
+const ffiConstraintSources = new WeakMap<Ty, Map<Ty, TypeSource>>();
+
+export function sourceForFfiConstraint(placeholder: Ty, required: Ty): TypeSource | undefined {
+  return ffiConstraintSources.get(placeholder)?.get(required);
+}
 
 export function rememberSchemeSourceDocument(
   scheme: Scheme,
   filePath: string,
   source: string,
 ): void {
+  const seen = new Set<Ty>();
+  const stampFields = (type: Ty): void => {
+    if (seen.has(type)) return;
+    seen.add(type);
+    if (type.tag === "var") {
+      for (const field of type.projectionFields ?? []) {
+        field.document ??= { filePath, source };
+        stampFields(field.type);
+      }
+      if (type.instance) stampFields(type.instance);
+    } else if (type.tag === "fn") {
+      type.params.forEach(stampFields);
+      stampFields(type.result);
+    } else if (type.tag === "tuple") type.items.forEach(stampFields);
+    else if (type.tag === "named") type.args.forEach(stampFields);
+    else if (type.tag === "struct") type.fields.forEach((field) => stampFields(field.type));
+  };
+  stampFields(scheme.type);
   const existing = schemeSources.get(scheme);
   if (!existing) return;
   // Derived origins carry spans from this unit too, so stamp the whole chain: an unstamped
   // derived origin later renders its span against the importing file's source.
-  const stamp = (origin: ConstraintOrigin): ConstraintOrigin => {
-    const derivedFrom = origin.derivedFrom?.map(stamp);
-    return origin.filePath !== undefined
-      ? (derivedFrom ? { ...origin, derivedFrom } : origin)
-      : { ...origin, filePath, source, ...(derivedFrom ? { derivedFrom } : {}) };
-  };
+  const stamp = (origin: ConstraintOrigin) => originWithDocument(origin, { filePath, source });
   schemeSources.set(
     scheme,
     mapSourceOrigins(existing, stamp, new WeakMap(), { filePath, source }),
@@ -219,6 +237,17 @@ export function constrainAt(
         });
         writer.addEdge({ from: constraintId, to: substitutionId, role: "produced" });
         provenanceBind?.(variable, target, path, targetSide);
+      },
+      (placeholder, target, path, targetSide) => {
+        const sources = ffiConstraintSources.get(placeholder) ?? new Map<Ty, TypeSource>();
+        const source = options.sources?.[targetSide];
+        sources.set(target, {
+          ...sourceAtPath(source, path),
+          origin: sourceAt(source, path) ?? reason,
+          type: target,
+          provenance,
+        });
+        ffiConstraintSources.set(placeholder, sources);
       },
     );
   } catch (error) {
@@ -614,6 +643,10 @@ export function rememberVariableSource(
   });
 }
 
+export function rememberSchemeDeclarationSource(scheme: Scheme, origin: ConstraintOrigin): void {
+  schemeSources.set(scheme, { origin, type: scheme.type });
+}
+
 export function rememberSchemeSource(
   scheme: Scheme,
   value: Expr,
@@ -814,11 +847,22 @@ function primaryOriginForSource(
   return functionDefinition;
 }
 
+function originWithDocument(
+  origin: ConstraintOrigin,
+  document: { filePath: string; source: string } | undefined,
+): ConstraintOrigin {
+  if (!document) return origin;
+  const derivedFrom = origin.derivedFrom?.map((derived) => originWithDocument(derived, document));
+  return {
+    ...origin,
+    ...(origin.filePath === undefined ? document : {}),
+    ...(derivedFrom ? { derivedFrom } : {}),
+  };
+}
+
 function originForSource(source: TypeSource | undefined): ConstraintOrigin | undefined {
   if (!source) return undefined;
-  const origin = source.origin && source.document
-    ? { ...source.origin, ...source.document }
-    : source.origin;
+  const origin = source.origin ? originWithDocument(source.origin, source.document) : undefined;
   const derivedFrom = (source.derivedFrom ?? [])
     .map((derived) => originForSource(inheritSourceDocument(source, derived)))
     .filter((item): item is ConstraintOrigin => !!item);
@@ -830,7 +874,7 @@ function originForSource(source: TypeSource | undefined): ConstraintOrigin | und
   if (
     committed && containsProjectionOrigin(committed) && (committed.message !== origin?.message ||
       committed.span?.start !== origin?.span?.start)
-  ) derivedFrom.push(committed);
+  ) derivedFrom.push(originWithDocument(committed, source.document));
   if (!origin) return derivedFrom[0];
   return derivedFrom.length > 0 ? { ...origin, derivedFrom } : origin;
 }

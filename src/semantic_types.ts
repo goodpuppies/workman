@@ -1,11 +1,16 @@
 import type { TypeNameId } from "./ids.ts";
 import type { NominalFacts } from "./nominal_facts.ts";
-import { prune, type Ty } from "./types.ts";
+import { hasProjectionFields, prune, show, type Ty } from "./types.ts";
 
 export type SemanticTypeId = number & { readonly __semanticTypeId: true };
 
 export type SemanticTypeShape =
-  | Readonly<{ kind: "variable"; variable: number; name?: string }>
+  | Readonly<{
+    kind: "variable";
+    variable: number;
+    name?: string;
+    fields?: readonly Readonly<{ name: string; type: SemanticTypeId }>[];
+  }>
   | Readonly<{ kind: "ffi"; obligation: number; path: string; binding?: string }>
   | Readonly<{ kind: "primitive"; name: string }>
   | Readonly<{
@@ -54,7 +59,7 @@ export function createSemanticTypeArena(nominalFacts: NominalFacts): SemanticTyp
     // forever. Ordinary elaborated types are acyclic after pruning.
     types.push(undefined as unknown as SemanticType);
     const shape = snapshotShape(type, snapshot, nominalFacts, variables);
-    const rendered = renderShape(shape, types);
+    const rendered = hasProjectionFields(type) ? show(type) : renderShape(shape, types);
     types[id] = Object.freeze({ id, rendered, shape });
     return id;
   };
@@ -82,6 +87,13 @@ function snapshotShape(
         kind: "variable",
         variable,
         name: type.name,
+        ...(type.projectionFields?.length
+          ? {
+            fields: Object.freeze(type.projectionFields.map((field) =>
+              Object.freeze({ name: field.name, type: snapshot(field.type) })
+            )),
+          }
+          : {}),
       });
     }
     case "ffi":

@@ -56,7 +56,8 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       ],
       stdin: "inherit",
       stdout: options.stdout ?? "inherit",
-      stderr: options.stderr ?? "inherit",
+      // Keep recent diagnostics so leaving a TUI's alternate screen cannot erase them.
+      stderr: "piped",
     }).spawn();
     const stop = () => {
       try {
@@ -69,13 +70,35 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     options.signal?.addEventListener("abort", stop, { once: true });
     if (options.signal?.aborted) stop();
     let completedCleanly = false;
+    let terminalCleanupDone = false;
+    const inheritedStderr = options.stderr !== "piped";
+    const errorOutput = collectChildStderr(child.stderr, inheritedStderr);
     try {
-      const result = await child.output();
+      const [status, stdout, stderr] = await Promise.all([
+        child.status,
+        options.stdout === "piped"
+          ? new Response(child.stdout).arrayBuffer().then((buffer) => new Uint8Array(buffer))
+          : Promise.resolve(new Uint8Array()),
+        errorOutput,
+      ]);
+      const result = { ...status, stdout, stderr: inheritedStderr ? new Uint8Array() : stderr };
       completedCleanly = result.success;
+      if (!completedCleanly) {
+        const restored = restoreParentTerminal();
+        terminalCleanupDone = true;
+        if (inheritedStderr && !options.signal?.aborted) {
+          if (restored && Deno.stderr.isTerminal() && stderr.length) Deno.stderr.writeSync(stderr);
+          if (!stderr.length) {
+            console.error(
+              `error[runtime.exit]: program exited with status ${status.code} without an error message`,
+            );
+          }
+        }
+      }
       return result;
     } finally {
       options.signal?.removeEventListener("abort", stop);
-      if (!completedCleanly) restoreParentTerminal();
+      if (!completedCleanly && !terminalCleanupDone) restoreParentTerminal();
     }
   } finally {
     progress.finish();
@@ -84,22 +107,60 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
 }
 
 /** Recover console state when a child TUI terminates before running its own cleanup. */
-function restoreParentTerminal(): void {
-  if (!Deno.stdin.isTerminal()) return;
-  try {
-    // Force a console-mode write even when Deno's parent-side bookkeeping still
-    // believes the handle is cooked; a child process may have changed the shared
-    // Windows console mode behind its back.
-    Deno.stdin.setRaw(true);
-    Deno.stdin.setRaw(false);
-  } catch {
-    // The input handle may have closed with the child; there is nothing left to restore.
+function restoreParentTerminal(): boolean {
+  if (Deno.stdin.isTerminal()) {
+    try {
+      // Force a console-mode write even when Deno's parent-side bookkeeping still
+      // believes the handle is cooked; a child process may have changed the shared
+      // Windows console mode behind its back.
+      Deno.stdin.setRaw(true);
+      Deno.stdin.setRaw(false);
+    } catch {
+      // The input handle may have closed with the child; there is nothing left to restore.
+    }
   }
   if (Deno.stdout.isTerminal()) {
     // Reset attributes/mouse mode/cursor/alternate screen. Repeating these after a
     // child already cleaned up is harmless.
     Deno.stdout.writeSync(
-      new TextEncoder().encode("\x1b[0m\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l"),
+      new TextEncoder().encode("\x1b[?2026l\x1b[0m\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l"),
     );
+    return true;
   }
+  return false;
+}
+
+async function collectChildStderr(
+  stream: ReadableStream<Uint8Array>,
+  inherit: boolean,
+): Promise<Uint8Array> {
+  const limit = 256 * 1024;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    if (inherit) Deno.stderr.writeSync(chunk);
+    chunks.push(chunk);
+    size += chunk.length;
+    // Captured output remains complete for API callers. Interactive replay only needs a tail.
+    if (inherit) {
+      while (size > limit && chunks.length) {
+        const excess = size - limit;
+        const first = chunks[0];
+        if (first.length <= excess) {
+          chunks.shift();
+          size -= first.length;
+        } else {
+          chunks[0] = first.subarray(excess);
+          size = limit;
+        }
+      }
+    }
+  }
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
 }

@@ -15,9 +15,8 @@ export type Ty =
     jsConstraint?: (t: Ty) => void;
     gpuConstraint?: (t: Ty) => void;
     equalityConstraint?: (t: Ty) => void;
-    projectionConstraint?: (t: Ty) => void;
-    projectionOwners?: Set<number>;
-    pendingProjection?: () => boolean;
+    /** All field/result obligations on this unresolved nominal receiver. */
+    projectionFields?: ProjectionFieldInfo[];
   }
   | {
     tag: "ffi";
@@ -45,6 +44,8 @@ export type Ty =
     foreignKey?: string;
     recordFields?: RecordFieldInfo[];
     recordParams?: number[];
+    /** Canonical metadata remains available for caller-owned and recursive nominal records. */
+    definition?: TypeInfo;
   };
 
 export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
@@ -66,7 +67,6 @@ export type Scheme = {
   constructorDecl?: CtorDecl;
   node?: AstNode;
   preserveStructuralRows?: boolean;
-  finalizeGeneralization?: () => void;
 };
 export type TypeProvenanceNote = {
   message: string;
@@ -76,6 +76,11 @@ export type TypeProvenanceNote = {
 export type Env = Map<string, Scheme>;
 export type TypeEnv = Map<string, TypeInfo>;
 export type RecordFieldInfo = { name: string; type: Ty };
+/** A nominal field relation, freshened together with its receiver at each instantiation. */
+export type ProjectionFieldInfo = RecordFieldInfo & {
+  resolve: (receiver: Ty, requirement: ProjectionFieldInfo) => void;
+  document?: { filePath: string; source: string };
+};
 /**
  * Registration that lets a nominal type carry primitive operators.
  *
@@ -195,6 +200,7 @@ export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
   foreignKey: info.foreignKey,
   recordFields: info.recordFields,
   recordParams: info.recordParams,
+  definition: info,
 });
 export const freshTypeInfo = (name: string, arity: number): TypeInfo => ({
   id: nextType++,
@@ -250,7 +256,20 @@ export type UnifyBind = (
   targetSide: "left" | "right",
 ) => void;
 
-export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): void {
+export type DeferFfiConstraint = (
+  placeholder: Extract<Ty, { tag: "ffi" }>,
+  target: Ty,
+  path: DiffPath,
+  targetSide: "left" | "right",
+) => void;
+
+export function unify(
+  a: Ty,
+  b: Ty,
+  onBind?: UnifyBind,
+  path: DiffPath = [],
+  onDeferFfi?: DeferFfiConstraint,
+): void {
   const originalA = a;
   const originalB = b;
   a = prune(a);
@@ -258,17 +277,20 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
   if (a === b) return;
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
-    if (b.tag === "var" && a.projectionOwners) {
-      b.projectionOwners = b.projectionOwners
-        ? new Set([...b.projectionOwners].filter((id) => a.projectionOwners!.has(id)))
-        : a.projectionOwners;
-    }
-    if (b.tag === "var" && a.pendingProjection) {
-      const previous = b.pendingProjection;
-      const pending = a.pendingProjection;
-      b.pendingProjection = () => !!previous?.() || !!pending();
-    }
     a.instance = b;
+    if (b.tag === "var" && a.projectionFields) {
+      const existing = b.projectionFields ?? [];
+      b.projectionFields = [...existing, ...a.projectionFields];
+      for (const field of a.projectionFields) {
+        const previous = existing.find((item) => item.name === field.name);
+        if (previous) {
+          unify(previous.type, field.type, onBind, [
+            ...path,
+            { kind: "record-field", name: field.name },
+          ], onDeferFfi);
+        }
+      }
+    }
     if (a.jsConstraint) {
       if (b.tag === "var") addJsConstraint(b, a.jsConstraint);
       else a.jsConstraint(b);
@@ -281,7 +303,9 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
       if (b.tag === "var") addEqualityConstraint(b, a.equalityConstraint);
       else a.equalityConstraint(b);
     }
-    if (a.projectionConstraint) addProjectionConstraint(b, a.projectionConstraint);
+    if (b.tag !== "var") {
+      for (const field of a.projectionFields ?? []) field.resolve(b, field);
+    }
     onBind?.(a, b, path, "right");
     return;
   }
@@ -297,24 +321,26 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
     if (b.equalityConstraint) {
       b.equalityConstraint(a);
     }
-    if (b.projectionConstraint) addProjectionConstraint(a, b.projectionConstraint);
+    for (const field of b.projectionFields ?? []) field.resolve(a, field);
     onBind?.(b, a, path, "left");
     return;
   }
   if (a.tag === "ffi") {
     rememberFfiConstraint(a, b);
+    onDeferFfi?.(a, b, path, "right");
     return;
   }
   if (b.tag === "ffi") {
     rememberFfiConstraint(b, a);
+    onDeferFfi?.(b, a, path, "left");
     return;
   }
   if (a.tag === "named" && b.tag === "struct") {
-    unifyNamedWithStructural(a, b, onBind, path);
+    unifyNamedWithStructural(a, b, onBind, path, onDeferFfi);
     return;
   }
   if (a.tag === "struct" && b.tag === "named") {
-    unifyNamedWithStructural(b, a, onBind, path);
+    unifyNamedWithStructural(b, a, onBind, path, onDeferFfi);
     return;
   }
   if (a.tag !== b.tag) throw typeMismatchError(a, b, path, originalA, originalB);
@@ -324,18 +350,18 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
       unify(p, b.params[i], onBind, [
         ...path,
         { kind: "fn-param", index: i },
-      ])
+      ], onDeferFfi)
     );
-    return unify(a.result, b.result, onBind, [...path, { kind: "fn-result" }]);
+    return unify(a.result, b.result, onBind, [...path, { kind: "fn-result" }], onDeferFfi);
   }
   if (a.tag === "tuple" && b.tag === "tuple" && a.items.length === b.items.length) {
     a.items.forEach((x, i) =>
-      unify(x, b.items[i], onBind, [...path, { kind: "tuple-item", index: i }])
+      unify(x, b.items[i], onBind, [...path, { kind: "tuple-item", index: i }], onDeferFfi)
     );
     return;
   }
   if (a.tag === "struct" && b.tag === "struct") {
-    unifyStructuralRecords(a, b, onBind, path);
+    unifyStructuralRecords(a, b, onBind, path, onDeferFfi);
     return;
   }
   if (a.tag === "named" && b.tag === "named" && a.id === b.id && a.args.length === b.args.length) {
@@ -348,7 +374,7 @@ export function unify(a: Ty, b: Ty, onBind?: UnifyBind, path: DiffPath = []): vo
           label: a.argLabels?.[i] ?? b.argLabels?.[i],
           typeName: a.name,
         },
-      ])
+      ], onDeferFfi)
     );
     return;
   }
@@ -360,6 +386,7 @@ function unifyStructuralRecords(
   right: Extract<Ty, { tag: "struct" }>,
   onBind: UnifyBind | undefined,
   path: DiffPath,
+  onDeferFfi?: DeferFfiConstraint,
 ): void {
   for (const field of right.fields) {
     const existing = left.fields.find((item) => item.name === field.name);
@@ -370,7 +397,7 @@ function unifyStructuralRecords(
     unify(existing.type, field.type, onBind, [
       ...path,
       { kind: "record-field", name: field.name },
-    ]);
+    ], onDeferFfi);
   }
 }
 
@@ -379,6 +406,7 @@ function unifyNamedWithStructural(
   structuralType: Extract<Ty, { tag: "struct" }>,
   onBind: UnifyBind | undefined,
   path: DiffPath,
+  onDeferFfi?: DeferFfiConstraint,
 ): void {
   const fields = namedRecordFields(namedType);
   if (!fields) throw typeMismatchError(namedType, structuralType, path, namedType, structuralType);
@@ -388,7 +416,7 @@ function unifyNamedWithStructural(
     unify(found.type, required.type, onBind, [
       ...path,
       { kind: "record-field", name: required.name },
-    ]);
+    ], onDeferFfi);
   }
 }
 
@@ -457,29 +485,31 @@ export function addEqualityConstraint(target: Ty, check: (t: Ty) => void): void 
     : check;
 }
 
-export function addProjectionConstraint(target: Ty, check: (t: Ty) => void): void {
-  const t = prune(target);
-  if (t.tag !== "var") {
-    check(t);
+export function addProjectionField(receiver: Ty, field: ProjectionFieldInfo): void {
+  const target = prune(receiver);
+  if (target.tag !== "var") {
+    field.resolve(target, field);
     return;
   }
-  const previous = t.projectionConstraint;
-  t.projectionConstraint = previous
-    ? (bound) => {
-      previous(bound);
-      check(bound);
-    }
-    : check;
+  const previous = target.projectionFields?.find((item) => item.name === field.name);
+  if (previous) unify(previous.type, field.type);
+  (target.projectionFields ??= []).push(field);
+  const resolved = prune(target);
+  if (resolved.tag !== "var") field.resolve(resolved, field);
 }
 
-export function solveFfi(ffi: Ty, target: Ty): void {
+export function solveFfi(
+  ffi: Ty,
+  target: Ty,
+  checkConstraint: (actual: Ty, required: Ty) => void = unify,
+): void {
   const placeholder = prune(ffi);
   if (placeholder.tag !== "ffi") {
     throw new Error(`expected unresolved JS FFI type, got ${show(placeholder)}`);
   }
   for (const constraint of placeholder.constraints ?? []) {
     if (isBroadJsBoundaryConstraint(constraint)) continue;
-    unify(target, constraint);
+    checkConstraint(target, constraint);
   }
   placeholder.instance = target;
 }
@@ -512,17 +542,24 @@ export function eq(left: Ty, right: Ty): Constraint {
   return { kind: "Eq", left, right };
 }
 
-export function solveConstraints(constraints: Constraint[], onBind?: UnifyBind): void {
+export function solveConstraints(
+  constraints: Constraint[],
+  onBind?: UnifyBind,
+  onDeferFfi?: DeferFfiConstraint,
+): void {
   for (const c of constraints) {
-    if (c.kind === "Eq") unify(c.left, c.right, onBind);
+    if (c.kind === "Eq") unify(c.left, c.right, onBind, [], onDeferFfi);
   }
   constraints.length = 0;
 }
 
 export function ftv(t: Ty, out = new Set<number>()): Set<number> {
   t = prune(t);
-  if (t.tag === "var") out.add(t.id);
-  else if (t.tag === "ffi") {
+  if (t.tag === "var") {
+    if (out.has(t.id)) return out;
+    out.add(t.id);
+    t.projectionFields?.forEach((field) => ftv(field.type, out));
+  } else if (t.tag === "ffi") {
     if (t.receiver) ftv(t.receiver, out);
     t.args.forEach((arg) => ftv(arg, out));
   } else if (t.tag === "fn") {
@@ -545,54 +582,49 @@ export function ftvEnv(env: Env): Set<number> {
 
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
-  // JS boundary obligations are tied to one unresolved foreign interaction. GPU and equality
-  // constraints are verification callbacks which are copied to each fresh instantiation.
   const boundary = jsConstrainedVarIds(type);
   const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
-  const scheme: Scheme = { vars, type, constraints: [] };
-  if (hasPendingProjection(type)) {
-    const capturedEnv = new Map(env);
-    scheme.finalizeGeneralization = () => {
-      const blocked = jsConstrainedVarIds(type);
-      const capturedVars = ftvEnv(capturedEnv);
-      scheme.vars.splice(
-        0,
-        scheme.vars.length,
-        ...[...ftv(type)].filter((id) => !capturedVars.has(id) && !blocked.has(id)),
-      );
-      scheme.finalizeGeneralization = undefined;
-    };
-  }
-  return scheme;
+  return { vars, type, constraints: [] };
 }
 
-function hasPendingProjection(type: Ty): boolean {
-  const t = prune(type);
-  if (t.tag === "var") return !!t.projectionConstraint || !!t.pendingProjection?.();
-  if (t.tag === "fn") return t.params.some(hasPendingProjection) || hasPendingProjection(t.result);
-  if (t.tag === "tuple") return t.items.some(hasPendingProjection);
-  if (t.tag === "named") return t.args.some(hasPendingProjection);
-  if (t.tag === "struct") return t.fields.some((field) => hasPendingProjection(field.type));
-  return false;
-}
-
-function jsConstrainedVarIds(type: Ty, acc = new Set<number>()): Set<number> {
+function jsConstrainedVarIds(
+  type: Ty,
+  acc = new Set<number>(),
+  seen = new Set<Ty>(),
+): Set<number> {
   const t = prune(type);
   if (t.tag === "var") {
-    if (t.jsConstraint || t.projectionConstraint || t.pendingProjection?.()) acc.add(t.id);
+    if (seen.has(t)) return acc;
+    seen.add(t);
+    if (t.jsConstraint) acc.add(t.id);
+    t.projectionFields?.forEach((field) => jsConstrainedVarIds(field.type, acc, seen));
     return acc;
   }
   if (t.tag === "fn") {
-    for (const param of t.params) jsConstrainedVarIds(param, acc);
-    jsConstrainedVarIds(t.result, acc);
+    for (const param of t.params) jsConstrainedVarIds(param, acc, seen);
+    jsConstrainedVarIds(t.result, acc, seen);
   } else if (t.tag === "tuple") {
-    for (const item of t.items) jsConstrainedVarIds(item, acc);
+    for (const item of t.items) jsConstrainedVarIds(item, acc, seen);
   } else if (t.tag === "struct") {
-    for (const field of t.fields) jsConstrainedVarIds(field.type, acc);
+    for (const field of t.fields) jsConstrainedVarIds(field.type, acc, seen);
   } else if (t.tag === "named") {
-    for (const arg of t.args) jsConstrainedVarIds(arg, acc);
+    for (const arg of t.args) jsConstrainedVarIds(arg, acc, seen);
   }
   return acc;
+}
+
+export function hasProjectionFields(type: Ty, seen = new Set<Ty>()): boolean {
+  const t = prune(type);
+  if (seen.has(t)) return false;
+  seen.add(t);
+  if (t.tag === "var") return !!t.projectionFields?.length;
+  if (t.tag === "fn") {
+    return [...t.params, t.result].some((item) => hasProjectionFields(item, seen));
+  }
+  if (t.tag === "tuple") return t.items.some((item) => hasProjectionFields(item, seen));
+  if (t.tag === "named") return t.args.some((item) => hasProjectionFields(item, seen));
+  if (t.tag === "struct") return t.fields.some((field) => hasProjectionFields(field.type, seen));
+  return false;
 }
 
 export function containsUnsolvedJsBoundary(type: Ty): boolean {
@@ -602,6 +634,7 @@ export function containsUnsolvedJsBoundary(type: Ty): boolean {
 export function instantiate(scheme: Scheme): Ty {
   const map = new Map<number, Ty>();
   for (const id of scheme.vars) map.set(id, fresh());
+  const copiedProjections = new Set<number>();
   const go = (t: Ty): Ty => {
     t = prune(t);
     if (t.tag === "var") {
@@ -610,6 +643,12 @@ export function instantiate(scheme: Scheme): Ty {
       if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
       if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
       if (t.equalityConstraint) addEqualityConstraint(mapped, t.equalityConstraint);
+      if (!copiedProjections.has(t.id)) {
+        copiedProjections.add(t.id);
+        for (const field of t.projectionFields ?? []) {
+          addProjectionField(mapped, { ...field, type: go(field.type) });
+        }
+      }
       return mapped;
     }
     if (t.tag === "ffi") {
@@ -650,6 +689,12 @@ export function freshenTypeVars(
       if (existing) return existing;
       const created = fresh(t.name);
       freshen.set(t.id, created);
+      if (t.jsConstraint) addJsConstraint(created, t.jsConstraint);
+      if (t.gpuConstraint) addGpuConstraint(created, t.gpuConstraint);
+      if (t.equalityConstraint) addEqualityConstraint(created, t.equalityConstraint);
+      for (const field of t.projectionFields ?? []) {
+        addProjectionField(created, { ...field, type: go(field.type) });
+      }
       return created;
     }
     if (t.tag === "ffi") {
@@ -776,6 +821,8 @@ export function typeFromAst(
 export function show(t: Ty): string {
   const names = new Map<number, string>();
   let n = 0;
+  const receivers: Extract<Ty, { tag: "var" }>[] = [];
+  const seenReceivers = new Set<number>();
   const nameOf = (id: number) =>
     names.get(id) ?? (names.set(id, `'${String.fromCharCode(97 + n++)}`), names.get(id)!);
   const functionDomain = (params: Ty[]): string => {
@@ -787,7 +834,13 @@ export function show(t: Ty): string {
   };
   const go = (x: Ty): string => {
     x = prune(x);
-    if (x.tag === "var") return x.name ?? nameOf(x.id);
+    if (x.tag === "var") {
+      if (x.projectionFields?.length && !seenReceivers.has(x.id)) {
+        seenReceivers.add(x.id);
+        receivers.push(x);
+      }
+      return x.name ?? nameOf(x.id);
+    }
     if (x.tag === "ffi") return `?ffi#${x.id}:${x.binding ?? x.path.join(".")}`;
     if (x.tag === "prim") return x.name;
     if (x.tag === "tuple") return `(${x.items.map(go).join(", ")})`;
@@ -797,7 +850,17 @@ export function show(t: Ty): string {
     }
     return x.args.length ? `${x.name}<${x.args.map(go).join(", ")}>` : x.name;
   };
-  return go(t);
+  const rendered = go(t);
+  const requirements: string[] = [];
+  for (const receiver of receivers) {
+    const fields = new Set<string>();
+    for (const field of receiver.projectionFields ?? []) {
+      if (fields.has(field.name)) continue;
+      fields.add(field.name);
+      requirements.push(`${go(receiver)}.${field.name}: ${go(field.type)}`);
+    }
+  }
+  return requirements.length ? `${rendered} where ${requirements.join(", ")}` : rendered;
 }
 
 export { baseAdts, baseEnv, baseTypeEnv } from "./types_basis.ts";

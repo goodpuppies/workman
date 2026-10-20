@@ -525,7 +525,7 @@ Deno.test("[module update A608] nominal record field identities cross module bou
   );
 });
 
-Deno.test("[module update A608] ambiguous projections select the first nominal field with a warning", async () => {
+Deno.test("[module update A608] generalized field requirements retain relations without a guessed field identity", async () => {
   const source = "record Point = { x: Number }; " +
     "record Offset = { x: Number }; " +
     "let getX = (value) => { value.x };";
@@ -538,16 +538,18 @@ Deno.test("[module update A608] ambiguous projections select the first nominal f
   const projected = semanticOccurrencesAt(main, projectionOffset).filter((item) =>
     item.target.kind === "field"
   );
-  const declarations = main.occurrences.filter((item) =>
-    item.name === "x" && item.role === "declaration" && item.target.kind === "field"
-  );
-
-  assertEquals(projected.length, 1);
-  assertStrictEquals(projected[0].target.id, declarations[0].target.id);
-  assertStrictEquals(semanticOccurrenceAt(main, projectionOffset), projected[0]);
-  assertEquals(main.diagnostics.map((diagnostic) => diagnostic.code), [
-    "record.ambiguous-projection",
-  ]);
+  assertEquals(projected, []);
+  assertEquals(main.diagnostics, []);
+  const declaration = main.occurrences.find((item) =>
+    item.name === "getX" && item.role === "declaration"
+  )!;
+  const type = main.semanticTypes[declaration.inferredType!.id];
+  assertEquals(type.rendered, "'a -> 'b where 'a.x: 'b");
+  if (type.shape.kind !== "function") throw new Error("expected a function type");
+  const receiver = main.semanticTypes[type.shape.params[0]].shape;
+  if (receiver.kind !== "variable") throw new Error("expected a generic receiver");
+  assertEquals(receiver.fields, [{ name: "x", type: type.shape.result }]);
+  assertEquals(Object.isFrozen(receiver.fields), true);
   assertEquals(
     semanticRenameAt(analysis.projectSnapshot, moduleId("/test/main.wm"), projectionOffset),
     undefined,

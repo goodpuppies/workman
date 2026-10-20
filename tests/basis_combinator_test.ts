@@ -214,17 +214,13 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
   );
 });
 
-Deno.test("Monad.via rejects unrelated nominal records with a compatible fn field", async () => {
-  await assertRejects(
-    () =>
-      checkSource(`
+Deno.test("Monad.via accepts a nominal record satisfying its fn requirement", async () => {
+  const result = await checkSource(`
         record TaskLike = { fn: (Void -> Number) -> Number };
         let task: TaskLike = .{ fn = (f) => { f() } };
         let value = Monad.via task () => { 42 };
-      `),
-    Error,
-    "type collision",
-  );
+      `);
+  expectBinding(result.env, "value", { type: "Number", vars: 0 });
 });
 
 Deno.test("Monad.via composes over Task.fn", async () => {

@@ -29,9 +29,13 @@ function renderSemanticTypeWithLimits(
 ): string {
   const variables = new Map<number, string>();
   let nextVariable = 0;
+  const receivers = new Map<number, SemanticTypeId>();
   const render = (currentId: SemanticTypeId, depth = 0): string => {
     const type = moduleInterface.semanticTypes[currentId];
     if (!type) return `?type#${currentId}`;
+    if (type.shape.kind === "variable" && type.shape.fields?.length) {
+      receivers.set(type.shape.variable, currentId);
+    }
     if (
       limits && depth >= limits.maxDepth &&
       type.shape.kind !== "variable" &&
@@ -52,8 +56,25 @@ function renderSemanticTypeWithLimits(
       limits?.maxItems,
     );
   };
+  const qualify = (rendered: string): string => {
+    const requirements: string[] = [];
+    for (const receiverId of receivers.values()) {
+      const shape = moduleInterface.semanticTypes[receiverId]?.shape;
+      if (shape?.kind !== "variable") continue;
+      const fields = new Set<string>();
+      for (const field of shape.fields ?? []) {
+        if (fields.has(field.name)) continue;
+        fields.add(field.name);
+        if (limits && requirements.length >= limits.maxItems) {
+          return `${rendered} where ${requirements.join(", ")}, …`;
+        }
+        requirements.push(`${render(receiverId)}.${field.name}: ${render(field.type)}`);
+      }
+    }
+    return requirements.length ? `${rendered} where ${requirements.join(", ")}` : rendered;
+  };
   const type = moduleInterface.semanticTypes[id];
-  if (!type || !dropReceiver || type.shape.kind !== "function") return render(id);
+  if (!type || !dropReceiver || type.shape.kind !== "function") return qualify(render(id));
   if (type.shape.params.length === 1) {
     const parameter = moduleInterface.semanticTypes[type.shape.params[0]]?.shape;
     if (parameter?.kind === "tuple") {
@@ -63,7 +84,7 @@ function renderSemanticTypeWithLimits(
         : remaining.length === 1
         ? render(remaining[0])
         : `(${remaining.map((item) => render(item)).join(", ")})`;
-      return `${domain} -> ${render(type.shape.result)}`;
+      return qualify(`${domain} -> ${render(type.shape.result)}`);
     }
   }
   const remaining = type.shape.params.slice(1);
@@ -72,7 +93,7 @@ function renderSemanticTypeWithLimits(
     : remaining.length === 1
     ? render(remaining[0])
     : `(${remaining.map((item) => render(item)).join(", ")})`;
-  return `${domain} -> ${render(type.shape.result)}`;
+  return qualify(`${domain} -> ${render(type.shape.result)}`);
 }
 
 function renderSemanticShape(

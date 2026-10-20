@@ -1,0 +1,110 @@
+from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "./model.wm" import * as M;
+from "./host.wm" import * as H;
+from "./io.wm" import * as I;
+from "./plan.wm" import * as Plan;
+from "./store.wm" import * as Store;
+
+record Owned = { version: String, files: List<(String, String)> };
+let recordDir = (root) => { I.child(root, ".pakman/owned") };
+let recordFile = (root, name) => { I.child(recordDir(root), name) };
+let locked = (root, operation) => {
+  I.bind(I.ensure(root != "/", "this native prototype requires an isolated --root"), (_) => {
+    I.bind(I.checkedDir(recordDir(root)), (_) => {
+      let lock = I.child(root, ".pakman/lock");
+      I.bind(H.makeDir(lock), (_) => {
+        let result = operation();
+        let unlocked = H.removeDir(lock);
+        match(result) { R.Err(message) => { R.Err(message) }, R.Ok(value) => { R.map(unlocked, (_) => { value }) } }
+      })
+    })
+  })
+};
+let encodeOwned = (version, files) => {
+  "pakman-owned-1\n" ++ Plan.line(["version", version]) ++ String.concat(I.map(files, (file) => {
+    let (path, hash) = file; Plan.line(["file", path, hash])
+  }))
+};
+let decodeOwned = (text) => {
+  I.bind(I.traverse(String.tokens((c) => { c == '\n' })(text), (line) => {
+    I.traverse(I.fields('\t', line), Plan.unescape)
+  }), (lines) => {
+    match(lines) {
+      [["pakman-owned-1"], ["version", version], ..rest] => {
+        R.map(I.traverse(rest, (parts) => {
+          match(parts) {
+            ["file", path, hash] => { R.map(I.ensure(Store.installPath(path) && hash != "", "invalid ownership record"), (_) => { (path, hash) }) },
+            _ => { R.Err("invalid ownership record") }
+          }
+        }), (files) => { Owned(version, files) })
+      },
+      _ => { R.Err("invalid ownership record header") }
+    }
+  })
+};
+let checkDestinations = (root, files: List<Store.Placement>) => {
+  I.each(files, (file: Store.Placement) => {
+    let dest = I.child(root, file.path);
+    I.bind(I.checkedDir(I.parent(dest)), (_) => { I.missing(dest) })
+  })
+};
+let rec commit = (root, files, placed) => {
+  match(files) {
+    [] => { R.Ok(placed) },
+    [file, ..rest] => {
+      let (path, staged) = file;
+      match(I.bind(I.missing(I.child(root, path)), (_) => { H.rename(staged, I.child(root, path)) })) {
+        R.Ok(_) => { commit(root, rest, [path, ..placed]) },
+        R.Err(message) => { let _ = I.each(placed, (p) => { H.removeFile(I.child(root, p)) }); R.Err(message) }
+      }
+    }
+  }
+};
+let install = (root, plan: M.Plan, built: Store.Built) => {
+  let owned = recordFile(root, plan.name);
+  I.bind(I.missing(owned), (_) => {
+    I.bind(checkDestinations(root, built.files), (_) => {
+      I.bind(H.tempDir(I.child(root, ".pakman")), (stage) => {
+        let result = I.bind(I.traverse(built.files, (file: Store.Placement) => {
+          let staged = I.child(I.child(stage, "payload"), file.path);
+          I.bind(I.copyNew(file.source, staged, file.mode == M.Exec), (_) => {
+            R.map(H.sha256File(staged), (hash) => { (file.path, hash) })
+          })
+        }), (hashes) => {
+          let manifest = I.child(stage, "owned-record");
+          I.bind(H.writeFile(encodeOwned(plan.version, hashes), manifest), (_) => {
+            I.bind(commit(root, I.map(hashes, (file) => { let (path, _) = file; (path, I.child(I.child(stage, "payload"), path)) }), []), (placed) => {
+              match(H.rename(manifest, owned)) {
+                R.Ok(_) => { R.Ok(void) },
+                R.Err(message) => { let _ = I.each(placed, (p) => { H.removeFile(I.child(root, p)) }); R.Err(message) }
+              }
+            })
+          })
+        });
+        let cleaned = I.removeTree(stage);
+        match(result) { R.Err(message) => { R.Err(message) }, R.Ok(_) => { cleaned } }
+      })
+    })
+  })
+};
+let remove = (root, name) => {
+  let owned = recordFile(root, name);
+  I.bind(I.requireFile(owned), (_) => {
+    I.bind(H.readFile(owned), (text) => {
+      I.bind(decodeOwned(text), (ownedInfo) => {
+        I.bind(I.ensure(Store.unique(I.map(ownedInfo.files, (file) => { let (path, _) = file; path })), "duplicate ownership paths"), (_) => {
+          // Validate every file before removing any, including content changes.
+          I.bind(I.each(ownedInfo.files, (file) => {
+            let (path, expected) = file;
+            let dest = I.child(root, path);
+            I.bind(I.requireFile(dest), (_) => {
+              I.bind(H.sha256File(dest), (actual) => { I.ensure(expected == actual, "refusing modified installed file: " ++ dest) })
+            })
+          }), (_) => {
+            I.bind(I.each(ownedInfo.files, (file) => { let (path, _) = file; H.removeFile(I.child(root, path)) }), (_) => { H.removeFile(owned) })
+          })
+        })
+      })
+    })
+  })
+};

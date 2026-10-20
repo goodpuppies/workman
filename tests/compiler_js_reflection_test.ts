@@ -102,8 +102,8 @@ Deno.test("record fields on unannotated params are not preempted by unresolved J
   `);
 
   expectBinding(result.env, "formatCommit", {
-    type: "(Commit, 'a, 'b) -> String",
-    vars: 2,
+    type: "('a, 'b, 'c) -> String where 'a.id: String, 'a.message: String",
+    vars: 3,
   });
 });
 

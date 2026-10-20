@@ -547,7 +547,7 @@ Deno.test("annotated hover follows imported declarations in unsaved sources", as
   assertEquals(hover?.contents.value, "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```");
 });
 
-Deno.test("annotated hover remains available when annotation erasure is ill-typed", async () => {
+Deno.test("annotated hover shows generalized field requirements after annotation erasure", async () => {
   const path = "/test/annotation-required.wm";
   const source = `
 record First = { value: Number };
@@ -560,5 +560,8 @@ let result = get(.{ value = "hello" }: Second);
     positionOf(source, "get ="),
     new Map([[path, source]]),
   );
-  assertEquals(hover?.contents.value, "```wm\nget: Second -> String\n```");
+  assertEquals(
+    hover?.contents.value,
+    "```wm\nget: Second -> String\nunannotated: 'a -> 'b where 'a.value: 'b\n```",
+  );
 });

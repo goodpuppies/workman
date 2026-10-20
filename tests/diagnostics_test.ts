@@ -1,11 +1,12 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkSource } from "../src/compiler.ts";
+import { checkSource, checkVirtual, ModuleAnalysisError } from "../src/compiler.ts";
 import {
   formatDiagnostic,
   formatDiagnosticDocument,
   formatDiagnosticInspection,
   formatReplDiagnostic,
   type FrontendDiagnostic,
+  FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
   renderDiagnosticSummary,
 } from "../src/diagnostics.ts";
@@ -33,6 +34,28 @@ Deno.test("terminal diagnostic documents wrap on words and keep their indentatio
     "can't be both",
   ]);
   assertEquals(wrapped.lines[0].spans.at(-1)?.role, "type");
+});
+
+Deno.test("instantiated field requirements retain source-aware type mismatch origins", async () => {
+  const source = `record Post = { author: String };
+record FeedPost = { author: Number };
+record FeedPage = { posts: List<FeedPost>, cursor: Option<String> };
+let renderPost = (post) => { post.author ++ "!" };
+let renderPosts = (posts) => { List.map(posts, renderPost) };
+let renderFeed = (feed) => {
+  let cursor = feed.cursor;
+  renderPosts(feed.posts)
+};
+let bad = renderFeed(FeedPage([FeedPost(1)], None));`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const diagnostic = error.diagnostic;
+  assertEquals(diagnostic.failure.frame.rule, "InferRecord.ProjectField");
+  const rendered = formatDiagnostic(diagnostic, "feed.wm", source);
+  assertStringIncludes(rendered, "post.author");
+  assertStringIncludes(rendered, "FeedPost.author field: Number");
+  assertStringIncludes(rendered, "String");
+  assertStringIncludes(rendered, "feed.wm:4:");
+  assertEquals(rendered.includes("ambiguous record projection"), false);
 });
 
 Deno.test("call mismatch produces an auditable diagnostic artifact", async () => {
@@ -332,27 +355,16 @@ Deno.test("pipe mismatch uses the enhanced authored renderer", async () => {
   assertStringIncludes(rendered, "-- Origins");
 });
 
-Deno.test("pipe mismatch explains a separately bound nominal callback's projection", async () => {
+Deno.test("a separately bound projection callback specializes through a pipe", async () => {
   const source = `record ProfileCore = { did: String, handle: String };
 record ActorCore = { did: String, handle: String };
 type Actor = | Actor<String, String>;
 let input: Result<ActorCore, Js.Error> = Err(Js.Unknown);
 let toActor = (core) => { Actor(core.did, core.handle) };
-let bad = input :> Result.map(toActor);`;
-  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
-  assertEquals(error.diagnostic.code, "type.pipe-input-mismatch");
-  for (
-    const rendered of [
-      formatDiagnostic(error.diagnostic, "projection.wm", source),
-      formatDiagnosticInspection(error.diagnostic, "projection.wm", source),
-    ]
-  ) {
-    assertStringIncludes(rendered, "core.did");
-    assertStringIncludes(rendered, "ambiguous record projection did");
-    assertStringIncludes(rendered, "ProfileCore, ActorCore");
-    assertStringIncludes(rendered, "ActorCore");
-  }
-  await checkSource(source.replace("(core) =>", "(core: ActorCore) =>"));
+let result = input :> Result.map(toActor);`;
+  const result = await checkSource(source);
+  assertEquals(result.diagnostics, []);
+  assertEquals(result.warnings, []);
 });
 
 Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
@@ -433,6 +445,136 @@ let rec filterList = (fn, list) => {
   assertStringIncludes(rendered, "Use `match(list) { ... }`");
 });
 
+Deno.test("reflected Result versus plain values use a source-aware type mismatch", async () => {
+  const source = `from js.global("JSON") import { stringify } as JSON;
+let accept = (text: String) => { text };
+let bad = JSON.stringify(JSON{ ok: true }) :> accept;`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  assertEquals(error.diagnostic.code, "type.pipe-input-mismatch");
+  const rendered = formatDiagnostic(error.diagnostic, "app/encode.wm", source);
+  assertStringIncludes(rendered, "Result<String, Js.Error>");
+  assertStringIncludes(rendered, "String");
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "app/encode.wm:1:");
+  assertStringIncludes(origins, "app/encode.wm:3:");
+  assertEquals(rendered.includes("unwrap the Result first"), false);
+});
+
+Deno.test("declared plain JS results are not mislabeled as returning a Result", async () => {
+  const source = `from js.global("JSON") import unsafe {
+  stringify: Js.Value -> String,
+} as JSON;
+let encode = Monad.viaError Task ((error) => { error }) (values) => {
+  let (identifier, password) = values;
+  JSON.stringify(JSON{ identifier: identifier, password: password }) :> Task.fromResult
+};
+let bad = encode(Task.succeed(("id", "secret")));`;
+  const bundle = await assertRejects(() => checkSource(source), FrontendDiagnosticBundleError);
+  if (!(bundle.primary instanceof FrontendDiagnosticError)) throw bundle.primary;
+  const diagnostic = bundle.primary.diagnostic;
+  assertEquals(diagnostic.code, "type.mismatch");
+  const rendered = formatDiagnostic(diagnostic, "app/encode.wm", source);
+  assertStringIncludes(rendered, "type error: JS call JSON.stringify can't be both:");
+  assertStringIncludes(rendered, "JS call JSON.stringify return type: String");
+  assertStringIncludes(rendered.split("-- Origins")[1], "app/encode.wm:2:26");
+  assertStringIncludes(rendered, "Task.fromResult: Result<T, U>");
+  assertStringIncludes(rendered, "app/encode.wm:6:");
+  assertEquals(rendered.includes("unwrap the Result first"), false);
+});
+
+Deno.test("constructor pattern mismatches retain the matched value and pattern locations", async () => {
+  const source = `from js.global("Deno") import unsafe { args: Js.Array<String> };
+let main = () => {
+  match(args) {
+    Err(error) => { void },
+    Ok(values) => { void }
+  }
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const filePath = `${Deno.cwd()}/app/cli.wm`;
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    for (const columns of [120, 40]) {
+      Deno.env.set("COLUMNS", String(columns));
+      const rendered = formatDiagnostic(error.diagnostic, filePath, source);
+      const origins = rendered.split("-- Origins")[1];
+      assertStringIncludes(rendered, "type error: Err(error) can't be both:");
+      assertStringIncludes(origins, "app/cli.wm:1:46");
+      assertStringIncludes(origins, "app/cli.wm:4:5");
+      assertStringIncludes(origins, "Js.Array<String>");
+      assertStringIncludes(origins, "Result<T, U>");
+      assertStringIncludes(origins, "args import type");
+      assertStringIncludes(origins, "Err(error)");
+      assertEquals(rendered.includes(Deno.cwd()), false);
+      const inspection = formatDiagnosticInspection(error.diagnostic, filePath, source);
+      assertStringIncludes(inspection, "app/cli.wm:1:46");
+      assertStringIncludes(inspection, "app/cli.wm:4:5");
+    }
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
+});
+
+Deno.test("pattern mismatch traces aliases across modules back to the JS import type", async () => {
+  const importedSource = `from js.global("Deno") import unsafe { args: Js.Array<String> };
+let values = args;`;
+  const source = `from "../proto/args.wm" import { values };
+let alias = values;
+let bad = match(alias) {
+  Err(error) => { void },
+  Ok(value) => { void }
+};`;
+  const root = Deno.cwd();
+  const filePath = `${root}/app/cli.wm`;
+  const files = new Map([
+    [filePath, source],
+    [`${root}/proto/args.wm`, importedSource],
+  ]);
+  const error = await assertRejects(
+    () => checkVirtual(filePath, files),
+    ModuleAnalysisError,
+  );
+  if (!(error.originalError instanceof FrontendDiagnosticError)) {
+    throw error.originalError;
+  }
+  const rendered = formatDiagnostic(error.originalError.diagnostic, filePath, source);
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "proto/args.wm:1:46");
+  assertStringIncludes(origins, "args import type: Js.Array<String>");
+  assertStringIncludes(origins, "app/cli.wm:4:3");
+  assertEquals(origins.includes("match(alias)"), false);
+});
+
+Deno.test("literal pattern mismatches retain match input context", async () => {
+  const source = `let value = "hello";
+let bad = match(value) {
+  1 => { void },
+  _ => { void }
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "app/literal.wm", source);
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "String");
+  assertStringIncludes(origins, "Number");
+  assertStringIncludes(origins, "app/literal.wm:3:3");
+  assertStringIncludes(origins, "pattern 1");
+});
+
+Deno.test("nested pattern mismatches retain the concrete payload origin", async () => {
+  const source = `let bad = match(Some("hello")) {
+  Some(1) => { void },
+  _ => { void }
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const rendered = formatDiagnostic(error.diagnostic, "app/nested.wm", source);
+  const origins = rendered.split("-- Origins")[1];
+  assertStringIncludes(origins, "expression: String");
+  assertStringIncludes(origins, "pattern 1: Number");
+  assertStringIncludes(origins, "app/nested.wm:1:");
+  assertStringIncludes(origins, "app/nested.wm:2:8");
+});
+
 Deno.test("match arm mismatch uses the shared neutral collision diagnostic", async () => {
   const source = `type AppError = | RenderError<String>;
 let renderErr = (e) => { RenderError(e) };
@@ -457,6 +599,33 @@ let bad = match(true) {
   assertStringIncludes(rendered, "use wm err test.wm to see a more detailed error");
   assertEquals(rendered.includes("These match arms return different types."), false);
   assertEquals(rendered.includes("expected: AppError"), false);
+});
+
+Deno.test("match arm summaries retain relative file locations at wide and narrow widths", async () => {
+  const source = `let parse = match(value) => {
+  None => { Ok(1) },
+  Some(value) => { 2 }
+};`;
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  const filePath = `${Deno.cwd()}/app/cli.wm`;
+  const previousColumns = Deno.env.get("COLUMNS");
+  try {
+    for (const columns of [120, 40]) {
+      Deno.env.set("COLUMNS", String(columns));
+      const rendered = formatDiagnostic(error.diagnostic, filePath, source);
+      const summary = rendered.split("-- Origins")[0];
+      assertStringIncludes(summary, "app/cli.wm:2:");
+      assertStringIncludes(summary, "app/cli.wm:3:");
+      assertStringIncludes(rendered, "use wm err app/cli.wm");
+      assertEquals(rendered.includes(Deno.cwd()), false);
+      const inspection = formatDiagnosticInspection(error.diagnostic, filePath, source);
+      assertStringIncludes(inspection, "app/cli.wm:2:");
+      assertStringIncludes(inspection, "app/cli.wm:3:");
+    }
+  } finally {
+    if (previousColumns === undefined) Deno.env.delete("COLUMNS");
+    else Deno.env.set("COLUMNS", previousColumns);
+  }
 });
 
 Deno.test("match arm collision traces Void to an ending semicolon", async () => {

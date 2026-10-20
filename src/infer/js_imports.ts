@@ -5,6 +5,7 @@ import { rejectDuplicates } from "./decl_helpers.ts";
 import { isDeclaredUnsafeImportSpec } from "../ffi/import_policy.ts";
 import { bindStructure, bindValue, staticEnv, type StrEnv } from "./environment.ts";
 import { recordTypeExpressionFact, recordTypeReferenceFact, type TypeFacts } from "./type_facts.ts";
+import { rememberSchemeDeclarationSource } from "./provenance.ts";
 
 type JsImportDecl = Extract<Decl, { kind: "JsImportDecl" }>;
 
@@ -33,6 +34,11 @@ export function addJsImport(
           onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
         });
         const scheme = { ...generalize(env, type), status: "value" as const, jsImport: true };
+        rememberSchemeDeclarationSource(scheme, {
+          message: `${spec.sourceName ?? spec.name} import type`,
+          node: spec.type.node ?? spec.node,
+          span: spec.type.node?.span ?? spec.node?.span,
+        });
         bindValue(targetEnv, spec.name, scheme);
         facts.jsImportSchemes.set(spec, scheme);
       }
@@ -53,6 +59,11 @@ export function addJsImport(
       { strEnv },
     );
     const scheme = { ...generalize(env, type), status: "value" as const, jsImport: true };
+    rememberSchemeDeclarationSource(scheme, {
+      message: `${decl.clause.alias} namespace import`,
+      node: decl.node,
+      span: decl.node?.span,
+    });
     bindValue(
       staticEnv(strEnv, typeEnv, env),
       decl.clause.alias,
@@ -82,6 +93,11 @@ export function addJsImport(
       jsImport: true,
       ...(isDeclaredUnsafeImportSpec(decl, spec) ? { declaredJsImport: true } : {}),
     };
+    rememberSchemeDeclarationSource(scheme, {
+      message: `${spec.sourceName ?? name} import type`,
+      node: spec.type.node ?? spec.node,
+      span: spec.type.node?.span ?? spec.node?.span,
+    });
     bindValue(targetEnv, name, scheme);
     facts.jsImportSchemes.set(spec, scheme);
   }

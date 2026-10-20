@@ -1,0 +1,15 @@
+from "../../src/model.wm" import * as M;
+from "../../src/package.wm" import * as Package;
+
+let definition: M.Definition = M.Definition {
+  name = "hello",
+  description = "A WM program translated, compiled and installed locally",
+  make = (version, _) => {
+    M.Package(version, [M.Source("hello.wm", "hello.wm")], [
+      M.Build("wm-image", [M.Input("hello.wm"), M.Work("translated"), M.Out("hello.img"), M.Literal("Hello.main")]),
+      M.Install("hello.img", "lib/hello/hello.img", M.Exec),
+      M.Launcher("lib/hello/hello.img", "bin/hello")
+    ])
+  }
+};
+let main = () => { Package.serve(definition) };

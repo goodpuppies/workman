@@ -1,0 +1,38 @@
+// Checked declarations for the native Unix adapter; no JS backend is selected.
+from "../../../../SubsetML/src/subset_result.wm" import * as SubsetResult;
+from "../../../../SubsetML/lib/mlworks/checker/subset_host.wm" import * as SubsetHost;
+
+let readFile = (name) => { SubsetHost.readFile(name) };
+let writeFile = (data, name) => { SubsetHost.writeFile(data, name) };
+let writeStdout = (data) => { SubsetHost.writeStdout(data) };
+let writeStderr = (data) => { SubsetHost.writeStderr(data) };
+let arguments = () => { SubsetHost.arguments() };
+let exit = (success) => { SubsetHost.exit(success) };
+let canonicalPath = (name) => { SubsetHost.canonicalPath(name) };
+let makeDir = (name) => { SubsetHost.makeDir(name) };
+let removeDir = (name) => { SubsetHost.removeDir(name) };
+let removeFile = (name) => { SubsetHost.removeFile(name) };
+let rename = (source, dest) => { SubsetHost.rename(source, dest) };
+let listDir = (name) => { SubsetHost.listDir(name) };
+let envOr = (name: String, fallback: String) => { fallback };
+// kind: missing | file | dir | link | other. OS failures return Err.
+let kind = (name: String) => {
+  (SubsetResult.Err("native adapter required"): SubsetResult.Result<String, String>)
+};
+let tempDir = (parent: String) => {
+  (SubsetResult.Err("native adapter required"): SubsetResult.Result<String, String>)
+};
+// Normal exit (including nonzero): (success, decimal status, stdout, stderr).
+// Arguments are passed literally; stdin is closed. Signals/host errors are Err.
+let runCapture = (program: String, args: List<String>, cwd: String) => {
+  (SubsetResult.Err("native adapter required"): SubsetResult.Result<(Bool, String, String, String), String>)
+};
+let sha256File = (name: String) => {
+  (SubsetResult.Err("native adapter required"): SubsetResult.Result<String, String>)
+};
+let setExecutable = (name: String) => {
+  (SubsetResult.Err("native adapter required"): SubsetResult.Result<Void, String>)
+};
+let copyFile = (source: String, destination: String) => {
+  (SubsetResult.Err("native adapter required"): SubsetResult.Result<Void, String>)
+};

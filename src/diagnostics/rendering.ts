@@ -7,6 +7,8 @@ import type {
 import { displayTypeVariables } from "../diagnostic_type_display.ts";
 import { lineStarts, sliceSource, type SourceSpan } from "../source.ts";
 import { formatPathSegment } from "../type_diff.ts";
+import { isAbsolute, relative } from "node:path";
+import { runtime } from "../io.ts";
 import { renderViolation } from "../diagnostic_syntax_renderer.ts";
 import { type Line, line as documentLine, span } from "../../tooling/tuiman/document.ts";
 
@@ -15,6 +17,12 @@ export type EnhancedDiagnosticRenderMode = "authored" | "detailed" | "explain" |
 export type EnhancedDiagnosticRenderOptions = {
   mode?: EnhancedDiagnosticRenderMode;
 };
+
+export function relativeDiagnosticPath(filePath: string | undefined): string {
+  if (!filePath) return "<input>";
+  return (isAbsolute(filePath) ? relative(runtime.cwd(), filePath) : filePath)
+    .replaceAll("\\", "/");
+}
 
 export function renderExplainDiagnostic(
   diagnostic: AuditableDiagnostic,

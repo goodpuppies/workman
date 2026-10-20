@@ -249,15 +249,20 @@ function findMissingCases(
   return [{ path: [...path], missing: "_" }];
 }
 
-export function mentionsLocalType(t: Ty, allowed: Set<number>): boolean {
+export function mentionsLocalType(t: Ty, allowed: Set<number>, seen = new Set<Ty>()): boolean {
   t = prune(t);
-  if (t.tag === "fn") {
-    return t.params.some((p) => mentionsLocalType(p, allowed)) ||
-      mentionsLocalType(t.result, allowed);
+  if (seen.has(t)) return false;
+  seen.add(t);
+  if (t.tag === "var") {
+    return (t.projectionFields ?? []).some((field) => mentionsLocalType(field.type, allowed, seen));
   }
-  if (t.tag === "tuple") return t.items.some((x) => mentionsLocalType(x, allowed));
+  if (t.tag === "fn") {
+    return t.params.some((p) => mentionsLocalType(p, allowed, seen)) ||
+      mentionsLocalType(t.result, allowed, seen);
+  }
+  if (t.tag === "tuple") return t.items.some((x) => mentionsLocalType(x, allowed, seen));
   if (t.tag === "named") {
-    return !allowed.has(t.id) || t.args.some((x) => mentionsLocalType(x, allowed));
+    return !allowed.has(t.id) || t.args.some((x) => mentionsLocalType(x, allowed, seen));
   }
   return false;
 }

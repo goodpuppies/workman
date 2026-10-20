@@ -39,6 +39,8 @@ export type TypeFacts = {
   jsImportSchemes: Map<Extract<Decl, { kind: "JsImportDecl" }> | JsImportSpec, Scheme>;
   recordFields: Map<RecordExprField | RecordPatternField, RecordFieldFact>;
   recordProjections: Map<Extract<Expr, { kind: "Var" }>, RecordProjectionFact[]>;
+  /** Field relations whose receiver is generic, so no unique declaration is claimed. */
+  recordProjectionRequirements: Set<Extract<Expr, { kind: "Var" }>>;
   dottedProjections: DottedProjectionFact[];
   ffi: Map<number, FfiFact>;
   recoveryHoles: RecoveryHoleFact[];
@@ -193,6 +195,7 @@ export function createTypeFacts(): TypeFacts {
     jsImportSchemes: new Map(),
     recordFields: new Map(),
     recordProjections: new Map(),
+    recordProjectionRequirements: new Set(),
     dottedProjections: [],
     ffi: new Map(),
     recoveryHoles: [],

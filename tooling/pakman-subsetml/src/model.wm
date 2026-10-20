@@ -1,0 +1,14 @@
+// Native profile of the original pakman model. Packages remain WM programs.
+// This first profile has explicit local inputs and an explicitly selected version.
+type Mode = Exec | Data;
+record Source = { file: String, path: String };
+type Argument = Literal<String> | Input<String> | Work<String> | Out<String>;
+type InstallOp =
+  Build<String, List<Argument>>
+  | Install<String, String, Mode>
+  | InstallTree<String, String, Mode>
+  | Launcher<String, String>;
+record Package = { version: String, sources: List<Source>, install: List<InstallOp> };
+record Definition = { name: String, description: String, make: (String, String) -> Package };
+record Plan = { name: String, version: String, sources: List<Source>, install: List<InstallOp> };
+

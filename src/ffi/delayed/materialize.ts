@@ -2,7 +2,8 @@ import type { Expr, TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
-import { freshTypeInfo, prune, show, solveFfi, type Ty, typeFromAst } from "../../types.ts";
+import { constrainAt, sourceForFfiConstraint } from "../../infer/provenance.ts";
+import { freshTypeInfo, prune, solveFfi, type Ty, typeFromAst, unify } from "../../types.ts";
 import { TypeMismatchError } from "../../type_diff.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
@@ -175,9 +176,9 @@ function solveReflectedFfiFunctionValue(
   const materializedType = materializeReflectedType(contextualType, result);
   if (!materializedType) return;
   try {
-    solveFfi(placeholder, materializedType);
+    solveReflectedFfiConstraints(placeholder, materializedType, original, contextualType);
   } catch (error) {
-    throwReflectedSolveDiagnostic(error, result, original, placeholder);
+    throwReflectedSolveDiagnostic(error, result);
   }
   resolveFfiFact(result.facts, placeholder.id, materializedType);
   recordExprFact(result.facts, original, {
@@ -190,41 +191,54 @@ function solveReflectedFfiFunctionValue(
 function throwReflectedSolveDiagnostic(
   error: unknown,
   result: InferResult,
-  original: Expr,
-  placeholder: Ty,
 ): never {
   if (error instanceof TypeMismatchError) {
-    const unwrap = resultUnwrapMismatch(error.left, error.right);
-    if (unwrap) {
-      const consumed = result.facts.ffi.get(placeholder.tag === "ffi" ? placeholder.id : -1)?.consumed
-        ?.kind;
-      const carrier = unwrap.result.tag === "named" ? unwrap.result.name : "Result";
-      const guidance = carrier === "Task"
-        ? "via Task, Task.map/andThen/mapErr, or Task.fromResult at a boundary"
-        : "via Result, Result.map/andThen, Result.withDefault, or match Ok(_) / Err(_)";
-      throw diagnosticError(
-        new Error(
-          `cannot use ${describeFfiOriginal(original)} directly as ${show(unwrap.plain)}: it returns ${
-            show(unwrap.result)
-          }; unwrap the ${carrier} first (${guidance})${
-            consumed ? ` before using it ${consumedUsePhrase(consumed)}` : ""
-          }`,
-        ),
-        original.node,
-        "ffi.result-unwrap-required",
-      );
-    }
     throwForeignDottedProjectionDiagnostic(error, result);
   }
   throw error;
 }
 
-function resultUnwrapMismatch(left: Ty, right: Ty): { result: Ty; plain: Ty } | undefined {
+function solveReflectedFfiConstraints(
+  placeholder: Ty,
+  reflected: Ty,
+  original: Expr,
+  returnType?: TypeExpr,
+  wrapped = false,
+): void {
+  solveFfi(placeholder, reflected, (actual, required) => {
+    try {
+      unify(actual, required);
+    } catch (error) {
+      if (error instanceof TypeMismatchError && isCarrierMismatch(error.left, error.right)) {
+        const origin = {
+          message: `${describeFfiOriginal(original)} ${wrapped ? "success value" : "return type"}`,
+          node: returnType?.node ?? original.node,
+          span: returnType?.node?.span ?? original.node?.span,
+        };
+        constrainAt(required, actual, original, undefined, [], undefined, origin, {
+          sources: {
+            left: sourceForFfiConstraint(placeholder, required),
+            right: { origin, type: actual },
+          },
+          primarySource: "right",
+          premise: {
+            rule: "Ffi.ReflectedResult",
+            role: "reflected return type matches its use",
+            subject: describeFfiOriginal(original),
+            leftRole: "required type",
+            rightRole: "reflected return type",
+          },
+        });
+      }
+      throw error;
+    }
+  });
+}
+
+function isCarrierMismatch(left: Ty, right: Ty): boolean {
   const l = prune(left);
   const r = prune(right);
-  if (isResultOrTask(l) && !isResultOrTask(r)) return { result: l, plain: r };
-  if (isResultOrTask(r) && !isResultOrTask(l)) return { result: r, plain: l };
-  return undefined;
+  return isResultOrTask(l) !== isResultOrTask(r);
 }
 
 function isResultOrTask(type: Ty): boolean {
@@ -241,21 +255,6 @@ function describeFfiOriginal(original: Expr): string {
   }
   if (original.kind === "FfiBindingCall") return `JS call ${original.name}`;
   return "JS member access";
-}
-
-function consumedUsePhrase(kind: "match" | "binding" | "operator" | "pipe" | "call"): string {
-  switch (kind) {
-    case "operator":
-      return "as an operator operand";
-    case "call":
-      return "as a call argument";
-    case "binding":
-      return "in a let binding";
-    case "match":
-      return "in a match";
-    case "pipe":
-      return "in a pipe";
-  }
 }
 
 function throwForeignDottedProjectionDiagnostic(error: unknown, result: InferResult): never {
@@ -876,9 +875,15 @@ export function solveReflectedFfiValue(
   const materializedType = materializeReflectedType(reflected, result);
   if (!materializedType) return;
   try {
-    solveFfi(placeholder, materializedType);
+    solveReflectedFfiConstraints(
+      placeholder,
+      materializedType,
+      original,
+      reflected,
+      value.wrapped && reflected !== variantResult,
+    );
   } catch (error) {
-    throwReflectedSolveDiagnostic(error, result, original, placeholder);
+    throwReflectedSolveDiagnostic(error, result);
   }
   resolveFfiFact(result.facts, placeholder.id, materializedType);
   recordExprFact(result.facts, original, {

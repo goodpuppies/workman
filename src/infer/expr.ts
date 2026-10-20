@@ -111,8 +111,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
             warnings,
             diagnostics,
             provenance,
-            pendingProjections: context.pendingProjections ??= [],
-          }, expected);
+          });
         break;
       }
       t = instantiate(scheme);

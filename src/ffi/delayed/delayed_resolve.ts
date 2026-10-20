@@ -230,7 +230,10 @@ function rejectLegacyDeepDottedCall(
   // A nominal record function can share its label with a reflected member.
   // Inference has already selected the record owner, so this is an ordinary
   // Workman projection rather than legacy JavaScript dotted syntax.
-  if (result.facts.recordProjections.has(expr.callee)) return;
+  if (
+    result.facts.recordProjections.has(expr.callee) ||
+    result.facts.recordProjectionRequirements.has(expr.callee)
+  ) return;
   const path = pathOf(expr.callee);
   const root = path.qualifiers[0];
   if (!root || !/^[a-z_]/.test(root)) return;

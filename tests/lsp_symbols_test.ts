@@ -224,7 +224,7 @@ Deno.test("lsp document highlights preserve local import-alias selection", async
   );
 });
 
-Deno.test("lsp document highlights use certified and deterministic field identities", async () => {
+Deno.test("lsp generic projections do not claim a particular nominal field identity", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
   const source = "let broken = Missing; record First = { x: Number }; " +
@@ -242,17 +242,8 @@ Deno.test("lsp document highlights use certified and deterministic field identit
     new Map(),
   );
 
-  assertEquals(
-    highlights.map(({ range, kind }) => ({
-      text: source.slice(range.start.character, range.end.character),
-      kind,
-    })),
-    [
-      { text: "x", kind: 3 },
-      { text: "x", kind: 2 },
-    ],
-  );
-  assertEquals(definition?.range.start.character, source.indexOf("x: Number"));
+  assertEquals(highlights, []);
+  assertEquals(definition, null);
 });
 
 Deno.test("lsp references stay inside the selected project snapshot", async () => {

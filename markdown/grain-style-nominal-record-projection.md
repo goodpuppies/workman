@@ -1,4 +1,9 @@
-# Grain-style nominal record projection
+# Grain-style nominal record projection (historical)
+
+Superseded 2026-10-19 by [nominal field requirements](nominal-field-requirements.md).
+Projection functions no longer select a first compatible owner at their definition.
+They generalize field requirements and validate the caller's nominal receiver. The
+historical discussion below explains the structural-row safety bug and earlier policy.
 
 ## Decision
 
@@ -20,7 +25,10 @@ let getX = (point) => {
 `getX` has type `Point -> Number`, rather than an open type resembling
 `{ x: Number, ... } -> Number`.
 
-If several records own a label, Workman selects the first candidate and emits an ambiguity warning.
+If several records own a label, Workman must first check all pending projected field types
+for the receiver together. It selects the first compatible candidate and emits an ambiguity
+warning only when several compatible owners remain. A candidate contradicted by another
+projection is not a valid ambiguity default.
 An annotation resolves the ambiguity:
 
 ```wm
@@ -32,6 +40,13 @@ let offsetX = (value: Offset) => { value.x };
 ```
 
 The annotation selects an identity; it does not coerce one nominal record into another.
+
+The joint checks currently cover projections within an enclosing declaration. Carrying
+unresolved nominal alternatives through generalized definitions and module interfaces is
+tracked in the [2026-10-19 follow-up](issues/nominal-projection-context-needs-honest-elaboration.md).
+A later consumer exposing an incompatible default remains a compiler limitation, rather
+than a reason to require redundant annotations.
+
 
 ## Motivation
 

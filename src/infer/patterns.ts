@@ -20,7 +20,7 @@ import {
   typeInfoById,
   VoidTy,
 } from "../types.ts";
-import { constrainAt, type TypeProvenance } from "./provenance.ts";
+import { constrainAt, type TypeProvenance, type TypeSource } from "./provenance.ts";
 import { expandCallArg } from "./shared.ts";
 import { lookupLongValue, type StrEnv } from "./environment.ts";
 import {
@@ -75,6 +75,7 @@ export function inferPattern(
   binders = new Set<string>(),
   facts?: TypeFacts,
   provenance?: TypeProvenance,
+  expectedSource?: TypeSource,
 ): Ty {
   if (facts) recordPatternType(facts, p, expected);
   switch (p.kind) {
@@ -108,6 +109,7 @@ export function inferPattern(
         "InferPattern.Pinned",
         "pinned pattern matches value",
         provenance,
+        expectedSource,
       );
       if (facts) {
         recordPatternFact(facts, p, {
@@ -127,6 +129,7 @@ export function inferPattern(
         "InferPattern.Int",
         "integer pattern matches Number",
         provenance,
+        expectedSource,
       );
       return expected;
     case "PChar":
@@ -137,6 +140,7 @@ export function inferPattern(
         "InferPattern.Char",
         "character pattern matches Char",
         provenance,
+        expectedSource,
       );
       return expected;
     case "PString":
@@ -147,6 +151,7 @@ export function inferPattern(
         "InferPattern.String",
         "string pattern matches String",
         provenance,
+        expectedSource,
       );
       return expected;
     case "PBool":
@@ -157,6 +162,7 @@ export function inferPattern(
         "InferPattern.Bool",
         "boolean pattern matches Bool",
         provenance,
+        expectedSource,
       );
       return expected;
     case "PVoid":
@@ -167,6 +173,7 @@ export function inferPattern(
         "InferPattern.Void",
         "void pattern matches Void",
         provenance,
+        expectedSource,
       );
       return expected;
     case "PTuple": {
@@ -178,9 +185,21 @@ export function inferPattern(
         "InferPattern.Tuple",
         "tuple pattern matches tuple",
         provenance,
+        expectedSource,
       );
       p.items.forEach((x, i) =>
-        inferPattern(x, items[i], env, typeEnv, strEnv, adts, binders, facts, provenance)
+        inferPattern(
+          x,
+          items[i],
+          env,
+          typeEnv,
+          strEnv,
+          adts,
+          binders,
+          facts,
+          provenance,
+          componentSource(expectedSource, items[i], expectedSource?.tupleItems?.[i]),
+        )
       );
       return expected;
     }
@@ -194,6 +213,7 @@ export function inferPattern(
         "InferPattern.Record",
         "record pattern matches record type",
         provenance,
+        expectedSource,
       );
       const fields = instantiateRecordFields(record.info, record.type.args);
       for (const field of p.fields) {
@@ -210,6 +230,7 @@ export function inferPattern(
           binders,
           facts,
           provenance,
+          componentSource(expectedSource, expectedField.type),
         );
       }
       return expected;
@@ -239,9 +260,21 @@ export function inferPattern(
           "InferPattern.ConstructorResult",
           "constructor pattern result matches scrutinee",
           provenance,
+          expectedSource,
         );
         p.args.forEach((x, i) =>
-          inferPattern(x, args[i], env, typeEnv, strEnv, adts, binders, facts, provenance)
+          inferPattern(
+            x,
+            args[i],
+            env,
+            typeEnv,
+            strEnv,
+            adts,
+            binders,
+            facts,
+            provenance,
+            componentSource(expectedSource, args[i]),
+          )
         );
       } else {
         if (p.args.length !== 0) throw new Error(`${p.name} does not carry values`);
@@ -252,6 +285,7 @@ export function inferPattern(
           "InferPattern.NullaryConstructor",
           "nullary constructor pattern matches scrutinee",
           provenance,
+          expectedSource,
         );
       }
       return expected;
@@ -265,6 +299,7 @@ export function inferPattern(
         "InferConstraint.Pattern",
         "pattern matches written type constraint",
         provenance,
+        expectedSource,
       );
       inferPattern(
         p.pattern,
@@ -276,6 +311,7 @@ export function inferPattern(
         binders,
         facts,
         provenance,
+        expectedSource,
       );
       return expected;
     }
@@ -477,6 +513,23 @@ function lookupPatternValue(env: Env, strEnv: StrEnv, name: string, path?: LongI
   return qualifier && strEnv.has(qualifier) ? lookupLongValue(strEnv, resolved) : env.get(name);
 }
 
+// A nested pattern constrains one component, rather than the entire match input.
+// Keep its location without attributing the component's type to the whole value.
+function componentSource(
+  parent: TypeSource | undefined,
+  type: Ty,
+  component?: TypeSource,
+): TypeSource | undefined {
+  if (component) return { ...component, type };
+  if (!parent) return undefined;
+  return {
+    origin: parent.origin ? { ...parent.origin, message: "matched component" } : undefined,
+    type,
+    provenance: parent.provenance,
+    document: parent.document,
+  };
+}
+
 function constrainPattern(
   left: Ty,
   right: Ty,
@@ -484,12 +537,26 @@ function constrainPattern(
   rule: string,
   role: string,
   provenance?: TypeProvenance,
+  expectedSource?: TypeSource,
 ) {
   constrainAt(left, right, pattern, undefined, [], provenance, {
     message: showPattern(pattern),
     node: pattern.node,
     span: pattern.node?.span,
   }, {
+    sources: {
+      left: expectedSource ? { ...expectedSource, type: left } : undefined,
+      right: {
+        origin: {
+          message: `pattern ${showPattern(pattern)}`,
+          node: pattern.node,
+          span: pattern.node?.span,
+        },
+        type: right,
+        provenance,
+      },
+    },
+    primarySource: "right",
     premise: {
       rule,
       role,

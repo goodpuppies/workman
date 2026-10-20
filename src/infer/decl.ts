@@ -35,6 +35,7 @@ import {
 import { inferExpr } from "./expr.ts";
 import { addJsImport } from "./js_imports.ts";
 import { assertExportableRecord, assertExportableType } from "./module_exports.ts";
+import { rememberRecordDeclaration } from "./record_shape.ts";
 import { patternBinders, showPattern } from "./patterns.ts";
 import { constrainAt, rememberSchemeSource } from "./provenance.ts";
 import { callArg } from "./shared.ts";
@@ -202,6 +203,7 @@ function inferRecordDecl(
   rejectDuplicates(decl.params, "type parameter");
   rejectDuplicates(decl.fields.map((field) => field.name), "record field");
   const info = freshTypeInfo(decl.name, decl.params.length);
+  rememberRecordDeclaration(info, decl);
   recordTypeDeclarationFact(facts, decl, info);
   registerTypeInfo(typeEnv, info);
   const path = parseLongId(decl.name);

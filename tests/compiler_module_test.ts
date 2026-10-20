@@ -4,6 +4,7 @@ import {
   checkSource,
   checkVirtual,
   compileFile,
+  compileLibraryVirtual,
   compileVirtual,
   ModuleAnalysisError,
 } from "../src/compiler.ts";
@@ -28,7 +29,7 @@ Deno.test("source-only frontend rejects imports with clear API boundary", async 
 Deno.test("type diagnostics retain the constraint origin across an imported callback", async () => {
   const mainSource = `record Coord = { x: Number };
 from "./runtime.wm" import * as Runtime;
-let render = (model, state) => { model.x };
+let render = (model: Coord, state) => { model.x };
 let bad = Runtime.run(.{x=0}, render);`;
   const virtualFs = new Map<string, string>([
     ["/test/runtime.wm", "let run = (initial, render) => { render(None, initial) };"],
@@ -47,12 +48,44 @@ let bad = Runtime.run(.{x=0}, render);`;
   assertEquals(diagnostic.primary.span.start, mainSource.indexOf("model"));
   assertEquals(diagnostic.primary.span.end, mainSource.indexOf("model") + "model".length);
   const rendered = formatDiagnostic(diagnostic, error.path, error.source);
-  assertStringIncludes(rendered.split("-- Origins")[0], "let render = (model, state)");
+  assertStringIncludes(rendered.split("-- Origins")[0], "let render = (model: Coord, state)");
   assertStringIncludes(rendered, "type error: render parameter 1 can't be both:");
   assertStringIncludes(rendered, "render(None, initial)");
   assertStringIncludes(rendered, "runtime.wm:1:");
   assertStringIncludes(rendered, "Option<T>");
   assertStringIncludes(rendered, "Coord");
+});
+
+Deno.test("instantiated field requirement errors retain the declaring module source", async () => {
+  const librarySource = `record Post = { author: String };
+record FeedPost = { author: Number };
+record FeedPage = { posts: List<FeedPost>, cursor: Option<String> };
+let renderPost = (post) => { post.author ++ "!" };
+let renderPosts = (posts) => { List.map(posts, renderPost) };`;
+  const source = `from "./views.wm" import * as Views;
+let renderFeed = (feed) => {
+  let cursor = feed.cursor;
+  Views.renderPosts(feed.posts)
+};
+let bad = renderFeed(Views.FeedPage([Views.FeedPost(1)], None));`;
+  const error = await assertRejects(
+    () =>
+      checkVirtual(
+        "/test/main.wm",
+        new Map([
+          ["/test/views.wm", librarySource],
+          ["/test/main.wm", source],
+        ]),
+      ),
+    ModuleAnalysisError,
+  );
+  if (!(error.originalError instanceof FrontendDiagnosticError)) {
+    throw new Error("expected a frontend diagnostic");
+  }
+  const rendered = formatDiagnostic(error.originalError.diagnostic, error.path, error.source);
+  assertStringIncludes(rendered, "post.author");
+  assertStringIncludes(rendered, "FeedPost.author field: Number");
+  assertStringIncludes(rendered, "views.wm:4:");
 });
 
 Deno.test("imports are declaration-ordered and not hoisted", async () => {
@@ -177,6 +210,31 @@ Deno.test("local declarations shadow imported bindings", async () => {
     ],
   ]);
   await checkVirtual("/test/main.wm", virtualFs);
+});
+
+Deno.test("a constructor and namespace with the same name retain distinct runtime identities", async () => {
+  const files = new Map([
+    ["/test/image.wm", "record Image = { value: Number }; let marker = 5; let carrier = 99;"],
+    [
+      "/test/main.wm",
+      `from "./image.wm" import * as Image;
+type Element = Empty | Image<Image.Image>;
+let make = (number) => { Image(Image.Image(number)) };
+let constructor = Image;
+let read = match(element) => {
+  Empty => { 0 },
+  Image(payload) => { payload.value },
+};
+let result = read(make(42));
+let higherOrder = read(constructor(Image.Image(7)));
+let qualified = Image.marker;`,
+    ],
+  ]);
+  const js = await compileLibraryVirtual("/test/main.wm", files);
+  const module = await import(`data:text/javascript;base64,${btoa(js)}#${crypto.randomUUID()}`);
+  assertEquals(module.result, 42);
+  assertEquals(module.higherOrder, 7);
+  assertEquals(module.qualified, 5);
 });
 
 Deno.test("named imports see plain declarations by default", async () => {

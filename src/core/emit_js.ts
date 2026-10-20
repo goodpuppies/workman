@@ -66,7 +66,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
       ? ""
       : emitMainInvocation(entry),
   ];
-  return target === "repl"
+  const emitted = target === "repl"
     ? [...emitRuntimePrelude(), stackOverflowSites, "try {", ...body, emitReplRuntimeCatch()].join(
       "\n",
     )
@@ -74,6 +74,64 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
     ? [...emitRuntimePrelude(), stackOverflowSites, "try {", ...body, emitExecutableRuntimeCatch()]
       .join("\n")
     : [...emitRuntimePrelude(), ...body].join("\n");
+  return materializeRuntimeCallSites(emitted);
+}
+
+type RuntimeCallSite = { path: string; line: number; col: number; text: string };
+let runtimeSource: CoreModuleArtifact | undefined;
+let runtimeCallSites: RuntimeCallSite[] = [];
+let runtimeSourceLines = new WeakMap<CoreModuleArtifact, string[]>();
+
+function markRuntimeCall(expr: Extract<CoreExpr, { kind: "CoreApp" }>, call: string): string {
+  if (!runtimeSource || !expr.node) return call;
+  const { line, col } = (expr.callee.node ?? expr.node).span;
+  let lines = runtimeSourceLines.get(runtimeSource);
+  if (!lines) {
+    lines = runtimeSource.source.split(/\r?\n/);
+    runtimeSourceLines.set(runtimeSource, lines);
+  }
+  const index = runtimeCallSites.length;
+  runtimeCallSites.push({
+    path: runtimeSource.path,
+    line,
+    col,
+    text: lines[line - 1] ?? "",
+  });
+  // Literal tabs are escaped inside emitted JS strings, so source text cannot masquerade as a marker.
+  return `/*\t__wm_call_start_${index}__*/${call}/*\t__wm_call_end_${index}__*/`;
+}
+
+/** Map generated stack coordinates to source calls without adding wrappers on the hot path. */
+function materializeRuntimeCallSites(code: string): string {
+  const positions = new Map<number, [number, number]>();
+  const ranges: [number, number, number, number, number][] = [];
+  const marker = /\/\*\t__wm_call_(start|end)_(\d+)__\*\//g;
+  const pieces: string[] = [];
+  let line = 1;
+  let col = 1;
+  let offset = 0;
+  for (const match of code.matchAll(marker)) {
+    const piece = code.slice(offset, match.index);
+    pieces.push(piece);
+    // V8 stack columns count UTF-16 code units, including both halves of a surrogate pair.
+    for (let index = 0; index < piece.length; index++) {
+      if (piece[index] === "\n") {
+        line++;
+        col = 1;
+      } else col++;
+    }
+    offset = match.index! + match[0].length;
+    const index = Number(match[2]);
+    if (match[1] === "start") positions.set(index, [line, col]);
+    else {
+      const start = positions.get(index);
+      if (start) ranges.push([...start, line, col, index]);
+    }
+  }
+  pieces.push(code.slice(offset));
+  // Both substitutions stay on one line, preserving all generated stack line numbers.
+  return pieces.join("").replace("/*__wm_call_table__*/[]", () => JSON.stringify(ranges))
+    .replace("/*__wm_source_call_table__*/[]", () => JSON.stringify(runtimeCallSites));
 }
 
 function emitStackOverflowSites(
@@ -105,7 +163,33 @@ function emitStackOverflowSites(
     );
   const compactSites = compact(sites);
   const compactFrames = compact(frames);
-  return `const __wm_stack_messages = ${JSON.stringify(messages)};
+  return `const __wm_call_sites = /*__wm_call_table__*/[];
+const __wm_source_call_sites = /*__wm_source_call_table__*/[];
+const __wm_typed_hole_message = (error) => {
+  const sites = [];
+  const seen = new Set();
+  for (const frame of String(error.stack ?? "").split("\\n")) {
+    if (!frame.includes(import.meta.url)) continue;
+    const location = /:(\\d+):(\\d+)\\)?$/.exec(frame);
+    if (!location) continue;
+    const line = Number(location[1]), col = Number(location[2]);
+    const matches = __wm_call_sites.filter(([sl, sc, el, ec]) =>
+      (line > sl || line === sl && col >= sc) && (line < el || line === el && col <= ec));
+    matches.sort((a, b) => (a[2] - a[0]) - (b[2] - b[0]) ||
+      (a[2] === a[0] ? a[3] - a[1] : -a[0]) - (b[2] === b[0] ? b[3] - b[1] : -b[0]));
+    const site = matches[0] && __wm_source_call_sites[matches[0][4]];
+    if (!site) continue;
+    const key = site.path + ":" + site.line + ":" + site.col;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const gutter = site.line + "| ";
+    sites.push("  " + site.path + ":" + site.line + ":" + (site.col + 1) + "\\n" +
+      "  " + gutter + site.text + "\\n" + " ".repeat(2 + gutter.length + site.col) + "^");
+    if (sites.length >= 8) break;
+  }
+  return error.message + (sites.length ? "\\nReached from:\\n" + sites.join("\\n") : "");
+};
+const __wm_stack_messages = ${JSON.stringify(messages)};
 const __wm_stack_overflow_sites = ${JSON.stringify(compactSites)};
 const __wm_stack_function_sites = ${JSON.stringify(compactFrames)};
 if (typeof Error.stackTraceLimit === "number") Error.stackTraceLimit = Math.max(Error.stackTraceLimit, 100);
@@ -146,6 +230,16 @@ const __wm_report_stack_overflow = (error) => {
 };
 if (typeof globalThis.addEventListener === "function") {
   globalThis.addEventListener("unhandledrejection", (event) => {
+    ${
+    terminateOnUnhandled
+      ? `if (event.reason instanceof Error && event.reason.name === "TypedHole") {
+      console.error(__wm_typed_hole_message(event.reason));
+      event.preventDefault();
+      if (globalThis.Deno) Deno.exit(1);
+      return;
+    }`
+      : ""
+  }
     if (__wm_report_stack_overflow(event.reason)) {
       event.preventDefault();
       ${terminateOnUnhandled ? "if (globalThis.Deno) Deno.exit(1);" : ""}
@@ -758,14 +852,15 @@ function emitExecutableRuntimeCatch(): string {
   } else if (!(__wm_runtime_error instanceof Error) || __wm_runtime_error.name !== "TypedHole") {
     throw __wm_runtime_error;
   } else {
-    console.error(__wm_runtime_error.message);
-    if (globalThis.Deno) Deno.exitCode = 1;
+    console.error(__wm_typed_hole_message(__wm_runtime_error));
+    if (globalThis.Deno) Deno.exit(1);
     else throw __wm_runtime_error;
   }
 }`;
 }
 
 function emitReplModuleBody(entry: CoreModuleArtifact, program: CoreProgram): string[] {
+  runtimeSource = entry;
   const emittedAliases = new Set<string>();
   resetModuleImportNames();
   namespaceRecordCtors = collectNamespaceRecordCtors(entry.module.decls);
@@ -856,6 +951,9 @@ function replPatternBindings(pattern: CorePattern): CoreDynamicExport[] {
 }
 
 function resetEmitterState(): void {
+  runtimeSource = undefined;
+  runtimeCallSites = [];
+  runtimeSourceLines = new WeakMap();
   needsGpuRuntime = false;
   bindingTemp = 0;
   tailLoopTemp = 0;
@@ -937,6 +1035,7 @@ function emitModuleRequest(artifact: CoreModuleArtifact): string {
 }
 
 function emitModuleBody(artifact: CoreModuleArtifact, program: CoreProgram): string[] {
+  runtimeSource = artifact;
   const emittedAliases = new Set<string>();
   resetModuleImportNames();
   namespaceRecordCtors = collectNamespaceRecordCtors(artifact.module.decls);
@@ -1438,11 +1537,17 @@ function emitExpr(expr: CoreExpr): string {
       if (expr.callee.kind === "CoreVar" && expr.callee.bindingId !== undefined) {
         const direct = directFns.get(expr.callee.bindingId);
         if (direct && expr.arg.kind === "CoreTuple" && expr.arg.items.length === direct.arity) {
-          return `${direct.name}(${expr.arg.items.map(emitExpr).join(", ")})`;
+          return markRuntimeCall(
+            expr,
+            `${direct.name}(${expr.arg.items.map(emitExpr).join(", ")})`,
+          );
         }
       }
       const callee = emitExpr(expr.callee);
-      return `${expr.callee.kind === "CoreFn" ? `(${callee})` : callee}(${emitExpr(expr.arg)})`;
+      return markRuntimeCall(
+        expr,
+        `${expr.callee.kind === "CoreFn" ? `(${callee})` : callee}(${emitExpr(expr.arg)})`,
+      );
     }
     case "CoreIf":
       return `(${emitExpr(expr.cond)} ? ${emitExpr(expr.thenExpr)} : ${emitExpr(expr.elseExpr)})`;

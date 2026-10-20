@@ -294,6 +294,25 @@ building the program and use wm-mini's auditable diagnostic model. Do not use
 These limitations should be handled explicitly in application error types and
 messages rather than by assuming the original JavaScript object remains available.
 
+## Errors from terminal applications
+
+`wm run` streams stderr while the program runs and retains its most recent 256 KiB.
+If the program fails while stdout is a terminal, the runner restores the terminal,
+ends synchronized redraw mode, and replays those diagnostics on the normal screen.
+This also preserves ordinary JavaScript exceptions and asynchronous errors.
+
+A nonzero exit without stderr produces `error[runtime.exit]` with the exit status.
+This cannot recover an error value the application discarded; applications should
+print handled errors when terminating because of them. Captured stderr requested
+through the runner API remains complete, and redirected output is not replayed.
+
+A reached `?` reports its own source location and a `Reached from` trace of active
+Workman calls. This also identifies the application call that reached the intentional
+hole inside `Result.debug`, even when `debug` is called through an alias. Source
+excerpts and call columns distinguish multiple calls on the same line. The trace
+shows up to eight distinct active calls; it does not reconstruct asynchronous calls
+whose JavaScript stack frames have already returned.
+
 ## Implementation and test references
 
 - `src/basis.ts` defines the `Js.Error` datatype and constructors.

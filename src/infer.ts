@@ -193,8 +193,6 @@ function inferModuleCore(
     warnings,
     diagnostics,
     provenance,
-    pendingProjections: [],
-    pendingAnnotationChecks: [],
     dialect: hostTypingDialect,
     recover,
     legacyGpuVectorTuples: options.legacyGpuVectorTuples === true,
@@ -267,11 +265,6 @@ function inferModuleCore(
         typeExports,
         exportableTypeIds,
       );
-      for (const resolve of context.pendingProjections!.splice(0)) resolve();
-      for (const check of context.pendingAnnotationChecks!.splice(0)) check();
-      for (const scheme of env.values()) {
-        scheme.finalizeGeneralization?.();
-      }
     } catch (error) {
       const diagnostic = diagnosticError(error, decl.node);
       if (!recover) throw diagnostic;

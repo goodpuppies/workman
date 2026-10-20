@@ -355,6 +355,7 @@ Deno.test("typed JS array at constrains unannotated helper receivers", async () 
         None => { fallback },
       }
     };
+    let value = firstValue(Js.Array.fromList([WttrValue("x")]), "fallback");
   `);
   expectBinding(result.env, "firstValue", {
     type: "(Js.Array<WttrValue>, String) -> String",
@@ -378,6 +379,7 @@ Deno.test("typed JS array at works through record field receivers", async () => 
         None => { "" },
       }
     };
+    let label = firstLabel(Payload(Js.Array.fromList([Item("x")])));
   `);
   expectBinding(result.env, "firstLabel", { type: "Payload -> String", vars: 0 });
 });

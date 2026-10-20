@@ -170,12 +170,8 @@ export function inferLambdaTy(
         },
       );
     };
-    if (dialect.domain !== "gpu" && context.pendingProjections?.length) {
-      (context.pendingAnnotationChecks ??= []).push(checkAnnotation);
-    } else {
-      checkAnnotation();
-      if (dialect.domain !== "gpu") signatureParams[index] = annotated;
-    }
+    checkAnnotation();
+    if (dialect.domain !== "gpu") signatureParams[index] = annotated;
     if (dialect.domain === "gpu") deferGpuAnnotationCheck(params[index], annotated);
   });
   const replacements = new Map<number, Ty>();

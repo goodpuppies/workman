@@ -1,0 +1,118 @@
+from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "./host.wm" import * as H;
+
+let bind = (value, f) => { R.andThen(value, f) };
+let ensure = (good, message) => { if (good) { R.Ok(void) } else { R.Err(message) } };
+let rec traverse = (xs, f) => {
+  match(xs) {
+    [] => { R.Ok([]) },
+    [x, ..rest] => { bind(f(x), (y) => { R.map(traverse(rest, f), (ys) => { [y, ..ys] }) }) }
+  }
+};
+let rec each = (xs, f) => {
+  match(xs) { [] => { R.Ok(void) }, [x, ..rest] => { bind(f(x), (_) => { each(rest, f) }) } }
+};
+let map = (xs, f) => { List.map(f)(xs) };
+let all = (xs, f) => { List.all(f)(xs) };
+let any = (xs, f) => { List.exists(f)(xs) };
+let fields = (separator, text) => { String.fields((c) => { c == separator })(text) };
+let join = (items, separator) => {
+  match(items) {
+    [] => { "" },
+    [first, ..rest] => { first ++ String.concat(map(rest, (part) => { separator ++ part })) }
+  }
+};
+let noNul = (text) => { !any(String.explode(text), (c) => { c == '\u0000' }) };
+let safeRelative = (path) => {
+  path != "" && noNul(path) && all(fields('/', path), (part) => {
+    part != "" && part != "." && part != ".."
+  })
+};
+let safeName = (name) => {
+  safeRelative(name) && all(String.explode(name), (c) => {
+    Char.isAlphaNum(c) || c == '-' || c == '_' || c == '.'
+  })
+};
+let absolute = (path) => {
+  match(String.explode(path)) {
+    ['/'] => { true },
+    ['/', ..rest] => { safeRelative(String.implode(rest)) },
+    _ => { false }
+  }
+};
+let parent = (path) => {
+  match(List.rev(fields('/', path))) {
+    [] => { "/" },
+    [_, ..rest] => { let value = join(List.rev(rest), "/"); if (value == "") { "/" } else { value } }
+  }
+};
+let child = (root, path) => { if (root == "/") { "/" ++ path } else { root ++ "/" ++ path } };
+let rec ensureDir = (path) => {
+  bind(ensure(absolute(path), "expected a normalized absolute directory: " ++ path), (_) => {
+    bind(H.kind(path), (kind) => {
+      match(kind) {
+        "dir" => { R.Ok(void) },
+        "missing" => { bind(ensureDir(parent(path)), (_) => { H.makeDir(path) }) },
+        _ => { R.Err("refusing directory through a link or file: " ++ path) }
+      }
+    })
+  })
+};
+// Inspect every ancestor even when the final directory already exists.
+let rec checkedDir = (path) => {
+  if (path == "/") { ensureDir(path) } else {
+    bind(ensure(absolute(path), "expected a normalized absolute directory: " ++ path), (_) => {
+      bind(checkedDir(parent(path)), (_) => { ensureDir(path) })
+    })
+  }
+};
+let rec verifyDir = (path) => {
+  if (path == "/") { R.Ok(void) } else {
+    bind(ensure(absolute(path), "expected a normalized absolute directory: " ++ path), (_) => {
+      bind(verifyDir(parent(path)), (_) => {
+        bind(H.kind(path), (kind) => { ensure(kind == "dir", "expected existing directory, refusing links: " ++ path) })
+      })
+    })
+  }
+};
+let requireFile = (path) => {
+  bind(verifyDir(parent(path)), (_) => {
+    bind(H.kind(path), (kind) => { ensure(kind == "file", "expected a file, refusing links: " ++ path) })
+  })
+};
+let quote = (text) => {
+  "'" ++ String.translate((c) => { if (c == '\'') { "'\\''" } else { String.str(c) } })(text) ++ "'"
+};
+let missing = (path) => {
+  bind(H.kind(path), (kind) => { ensure(kind == "missing", "path already exists: " ++ path) })
+};
+let copyNew = (source, dest, executable) => {
+  bind(requireFile(source), (_) => {
+    bind(checkedDir(parent(dest)), (_) => {
+      bind(missing(dest), (_) => {
+        bind(H.copyFile(source, dest), (_) => {
+            if (executable) { H.setExecutable(dest) } else { R.Ok(void) }
+        })
+      })
+    })
+  })
+};
+let run = (program, args, cwd) => {
+  bind(H.runCapture(program, args, cwd), (result) => {
+    let (success, code, stdout, stderr) = result;
+    if (success) { R.Ok(stdout) } else { R.Err(program ++ " exited " ++ code ++ ": " ++ stderr) }
+  })
+};
+let rec removeTree = (path) => {
+  bind(H.kind(path), (kind) => {
+    match(kind) {
+      "missing" => { R.Ok(void) },
+      "dir" => {
+        bind(H.listDir(path), (entries) => {
+          bind(each(entries, (entry) => { removeTree(child(path, entry)) }), (_) => { H.removeDir(path) })
+        })
+      },
+      _ => { H.removeFile(path) }
+    }
+  })
+};

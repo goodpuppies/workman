@@ -4,6 +4,7 @@ import {
   findConstraintForFrame,
   indent,
   isDirectPipeInputConflict,
+  relativeDiagnosticPath as relativeFile,
   renderContextExcerpt,
   renderExplainDiagnostic,
   renderHeader,
@@ -237,8 +238,8 @@ function renderNeutralTypeCollision(
       : participants && source
       ? [
         `  type error: ${subject} can't be both:`,
-        ...participantEquationLines(diagnostic, participants, source, availableWidth).map((line) =>
-          line.spans.map((item) => item.text).join("")
+        ...participantEquationLines(diagnostic, participants, source, filePath, availableWidth).map(
+          (line) => line.spans.map((item) => item.text).join(""),
         ),
       ]
       : [
@@ -344,7 +345,9 @@ function compactCollisionDocument(
     lines.push(
       documentLine(span(`${tiny ? "" : "  "}type error: ${subject} can't be both:`, "error")),
     );
-    lines.push(...participantEquationLines(diagnostic, participants, source, availableWidth));
+    lines.push(
+      ...participantEquationLines(diagnostic, participants, source, filePath, availableWidth),
+    );
   } else if (collisionExcerpt) {
     if (collisionExcerpt.location) {
       lines.push(documentLine(span("  "), ...collisionExcerpt.location.spans));
@@ -574,6 +577,7 @@ function participantEquationLines(
   diagnostic: AuditableDiagnostic,
   participants: CollisionParticipants,
   source: string,
+  filePath: string | undefined,
   availableWidth: number,
 ): Line[] {
   const tiny = availableWidth <= TINY_TERMINAL_WIDTH;
@@ -615,8 +619,19 @@ function participantEquationLines(
       [participants.right, right],
     ] as const
   ) {
-    lines.push(row(participant, view));
+    const equation = row(participant, view);
     const participantOrigin = participant.claim.origin;
+    const location = participantOrigin.kind === "source"
+      ? `${relativeFile(participantOrigin.filePath ?? filePath)}:${participantOrigin.span.line}:${
+        participantOrigin.span.col + 1
+      }`
+      : undefined;
+    if (location && lineWidth(equation) + 2 + location.length <= availableWidth) {
+      lines.push(documentLine(...equation.spans, span(`  ${location}`, "secondary")));
+    } else {
+      if (location) lines.push(documentLine(span(location, "secondary")));
+      lines.push(equation);
+    }
     const note = participantOrigin.kind === "source"
       ? diagnostic.support.entries.find((entry): entry is Extract<SupportEntry, { kind: "note" }> =>
         entry.kind === "note" && entry.origin.kind === "source" &&
@@ -784,6 +799,9 @@ function annotationMismatchSubject(
   diagnostic: AuditableDiagnostic,
   source: string | undefined,
 ): string {
+  if (diagnostic.failure.frame.rule === "Ffi.ReflectedResult") {
+    return diagnostic.failure.frame.subject;
+  }
   const slot = annotationMismatchSlot(diagnostic);
   if (slot) return slot.parameterName;
   return collisionSubject(diagnostic, source);
@@ -1129,12 +1147,6 @@ function compactSectionHeader(label: string, columns: ColumnPair, availableWidth
   );
   const prefix = `-- ${label} `;
   return `${prefix}${"-".repeat(Math.max(1, width - prefix.length))}`;
-}
-
-function relativeFile(filePath: string | undefined): string {
-  if (!filePath) return "<input>";
-  const normalized = filePath.replaceAll("\\", "/");
-  return normalized.slice(normalized.lastIndexOf("/") + 1);
 }
 
 type CompactExcerpt = {

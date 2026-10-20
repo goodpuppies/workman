@@ -41,8 +41,6 @@ export type InferContext = {
   warnings: string[];
   diagnostics: FrontendDiagnostic[];
   provenance: TypeProvenance;
-  pendingProjections?: (() => void)[];
-  pendingAnnotationChecks?: (() => void)[];
   dialect: TypingDialect;
   recover: boolean;
   legacyGpuVectorTuples: boolean;

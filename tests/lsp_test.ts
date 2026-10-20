@@ -337,7 +337,8 @@ let bad = sumList(Cons(1, Empty));
     "-- Origins ",
     "call argument: (Int_list, Number)",
     "Cons: Int_list",
-    "│",
+    "main.wm:11:3",
+    "main.wm:14:19",
   ]);
   assertEquals(diagnostics?.[0].range.start, {
     line: 10,

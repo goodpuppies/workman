@@ -295,7 +295,10 @@ Deno.test("[module update A612] changed closures invalidate and closed contexts 
   );
 
   registry.forgetDocument("/ws/note.wm", configuration);
-  assertEquals(registry.openSnapshots().some((snapshot) => snapshot === standalone.snapshot), false);
+  assertEquals(
+    registry.openSnapshots().some((snapshot) => snapshot === standalone.snapshot),
+    false,
+  );
 });
 
 Deno.test("closing a project's anchor reselects its remaining open documents", async () => {
@@ -388,12 +391,8 @@ Deno.test("[module update G21a] overlapping project snapshots isolate every sema
   assertStrictEquals(testInterface.projectSnapshotId, tests.snapshot.id);
   assertNotStrictEquals(appInterface.generation, testInterface.generation);
   assertNotStrictEquals(appInterface.diagnostics, testInterface.diagnostics);
-  assertEquals(appInterface.diagnostics.map(({ code }) => code), [
-    "record.ambiguous-projection",
-  ]);
-  assertEquals(testInterface.diagnostics.map(({ code }) => code), [
-    "record.ambiguous-projection",
-  ]);
+  assertEquals(appInterface.diagnostics, []);
+  assertEquals(testInterface.diagnostics, []);
   assertNotStrictEquals(appInterface.occurrences, testInterface.occurrences);
   assertNotStrictEquals(appInterface.scopes, testInterface.scopes);
   assertNotStrictEquals(appInterface.typedNodes, testInterface.typedNodes);

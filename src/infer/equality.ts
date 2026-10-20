@@ -60,7 +60,7 @@ function requireEquality(
     if (seen.has(key)) return;
     seen.add(key);
 
-    const record = typeInfoById(typeEnv, resolved.id);
+    const record = typeInfoById(typeEnv, resolved.id) ?? resolved.definition;
     if (record?.recordFields) {
       instantiateRecordFields(record, resolved.args)
         .forEach((field) => requireEquality(field.type, typeEnv, adts, seen));

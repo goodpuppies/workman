@@ -537,6 +537,9 @@ function lookupValue(env: BindingEnv, name: string): BindingId | undefined {
     const base = name.slice(0, dot);
     return env.structures.get(base)?.values.get(name.slice(dot + 1)) ?? env.values.get(base);
   }
+  // A bare constructor is a value, even when a structure has the same name.
+  // Qualified uses still resolve through the separate structure namespace.
+  if (env.constructors.has(name)) return undefined;
   return env.structures.get(name)?.values.get("carrier");
 }
 
@@ -560,7 +563,7 @@ function isJsImportDeclaration(
 
 function lookupStructure(env: BindingEnv, name: string): StructureId | undefined {
   const dot = name.indexOf(".");
-  if (dot < 0 && env.values.has(name)) return undefined;
+  if (dot < 0 && (env.values.has(name) || env.constructors.has(name))) return undefined;
   const base = dot >= 0 ? name.slice(0, dot) : name;
   return env.structures.get(base)?.id;
 }

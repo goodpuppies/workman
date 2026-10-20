@@ -1,0 +1,93 @@
+from "../../../SubsetML/src/subset_result.wm" import * as R;
+from "./src/host.wm" import * as H;
+from "./src/io.wm" import * as I;
+from "./src/plan.wm" import * as Plan;
+from "./src/store.wm" import * as Store;
+from "./src/apply.wm" import * as Apply;
+
+record Options = { root: String, state: String, args: List<String> };
+let rec parse = (args, options: Options) => {
+  match(args) {
+    [] => { R.Ok(Options { ..options, args = List.rev(options.args) }) },
+    ["--root", root, ..rest] => { parse(rest, Options { ..options, root }) },
+    ["--state", state, ..rest] => { parse(rest, Options { ..options, state }) },
+    ["--root"] => { R.Err("--root needs a directory") },
+    ["--state"] => { R.Err("--state needs a directory") },
+    [arg, ..rest] => { parse(rest, Options { ..options, args = [arg, ..options.args] }) }
+  }
+};
+let install = (options: Options, name, version) => {
+  let packages = H.envOr("PAKMAN_PKGS", "");
+  let directory = I.child(packages, name);
+  let program = I.child(directory, "pak");
+  I.bind(I.ensure(I.safeName(name) && I.safeName(version), "invalid package name or version"), (_) => {
+    I.bind(I.ensure(I.absolute(packages), "PAKMAN_PKGS must name an absolute package directory"), (_) => {
+      I.bind(I.verifyDir(directory), (_) => {
+        I.bind(I.requireFile(program), (_) => {
+          I.bind(I.run(program, ["make", version, ""], directory), (text) => {
+            I.bind(Plan.decode(text), (plan) => {
+              I.bind(I.ensure(plan.name == name && plan.version == version, "package returned a different name or version"), (_) => {
+                I.bind(Store.validate(plan), (_) => {
+                  Apply.locked(options.root, () => {
+                    I.bind(I.missing(Apply.recordFile(options.root, name)), (_) => {
+                      I.bind(Store.realize(plan, directory, options.state, options.root), (built) => {
+                        match(Apply.install(options.root, plan, built)) {
+                          R.Ok(_) => { H.writeStdout("installed " ++ name ++ " " ++ version ++ "\n") },
+                          R.Err(message) => { let _ = Store.cleanFailed(built.path); R.Err(message) }
+                        }
+                      })
+                    })
+                  })
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+};
+let remove = (options: Options, name) => {
+  I.bind(I.ensure(I.safeName(name), "invalid package name"), (_) => {
+    Apply.locked(options.root, () => {
+      I.bind(Apply.remove(options.root, name), (_) => { H.writeStdout("removed " ++ name ++ "\n") })
+    })
+  })
+};
+let list = (root) => {
+  I.bind(I.verifyDir(Apply.recordDir(root)), (_) => {
+    I.bind(H.listDir(Apply.recordDir(root)), (names) => {
+      I.each(names, (name) => {
+        let path = Apply.recordFile(root, name);
+        I.bind(I.ensure(I.safeName(name), "invalid ownership filename"), (_) => {
+          I.bind(I.requireFile(path), (_) => {
+            I.bind(H.readFile(path), (text) => {
+              I.bind(Apply.decodeOwned(text), (owned) => { H.writeStdout(name ++ " " ++ owned.version ++ "\n") })
+            })
+          })
+        })
+      })
+    })
+  })
+};
+let run = (args) => {
+  I.bind(parse(args, Options("", H.envOr("PAKMAN_STATE", ""), [])), (options) => {
+    I.bind(I.ensure(I.absolute(options.root) && options.root != "/", "provide an isolated absolute --root"), (_) => {
+      match(options.args) {
+        ["install", name, version] => {
+          I.bind(I.ensure(I.absolute(options.state), "provide an absolute --state or PAKMAN_STATE"), (_) => { install(options, name, version) })
+        },
+        ["remove", name] => { remove(options, name) },
+        ["list"] => { list(options.root) },
+        _ => { R.Err("usage: pakman (install NAME VERSION | remove NAME | list) --root DIR [--state DIR]") }
+      }
+    })
+  })
+};
+let main = () => {
+  match(I.bind(H.arguments(), run)) {
+    R.Ok(_) => { H.exit(true) },
+    R.Err(message) => { let _ = H.writeStderr("pakman: " ++ message ++ "\n"); H.exit(false) }
+  }
+};
+

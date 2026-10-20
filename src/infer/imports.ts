@@ -11,6 +11,7 @@ import {
 } from "../types.ts";
 import type { InferResult } from "../infer.ts";
 import { inheritSchemeSource, rememberSchemeSourceDocument } from "./provenance.ts";
+import { rememberRecordDeclarationDocument } from "./record_shape.ts";
 import {
   bindStructure,
   modifyStaticEnv,
@@ -116,6 +117,9 @@ export function rememberExportedSourceDocument(
   filePath: string,
   source: string,
 ): void {
+  for (const info of knownTypeInfos(result.typeEnv)) {
+    rememberRecordDeclarationDocument(info, filePath, source);
+  }
   const visit = (environment: StaticEnv) => {
     for (const scheme of environment.valEnv.values()) {
       rememberSchemeSourceDocument(scheme, filePath, source);
