@@ -47,12 +47,25 @@ let args = () => { Host.argv() :> Result.map(Js.Array.toList) :> Result.withDefa
 let fetchText = (url) => { Host.fetchText(url) :> Task.mapErr(describe("fetch " ++ url)) };
 let download = (url, dest) => { Host.download(url, dest) :> Task.mapErr(describe("download " ++ url)) };
 let sha256File = (path) => { Host.sha256File(path) :> Task.mapErr(describe("hash " ++ path)) };
+let checkInstanceFile = (tree, path) => {
+  Host.checkInstanceFile(tree, path) :> Task.mapErr(describe("private dependency"))
+};
+let checkInstanceClosure = (tree) => {
+  Host.checkInstanceClosure(tree) :> Task.mapErr(describe("private dependency closure"))
+};
 let buildIdentity = (program, tools) => {
   Host.buildIdentity(program, Js.Array.fromList(tools)) :> Task.mapErr(describe("build identity"))
 };
 let runBuild = (program, id, version, upstreamRef, inputs, work, out, tools) => {
   Host.runBuild(program, id, version, upstreamRef, inputs, work, out, Js.Array.fromList(tools))
     :> Task.mapErr(describe("build " ++ id))
+};
+let commandBuildIdentity = () => {
+  Host.commandBuildIdentity() :> Task.mapErr(describe("command build identity"))
+};
+let runBuildCommand = (program, trees, arguments, source, strip, output, out, dest, mode, work) => {
+  Host.runBuildCommand(program, Js.Array.fromList(trees), Js.Array.fromList(arguments), source, strip, output, out, dest, mode, work)
+    :> Task.mapErr(describe("build command"))
 };
 let sha256Text = (text) => { Host.sha256Text(text) :> Task.mapErr(describe("hash text")) };
 

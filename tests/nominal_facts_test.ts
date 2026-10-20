@@ -122,10 +122,13 @@ Deno.test("qualified same-spelled constructors keep distinct inference-owned ide
 
   const output: string[] = [];
   const executable = await compileVirtual("/test/main.wm", virtualFs);
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-  await new AsyncFunction("console", executable)({
-    log: (value: unknown) => output.push(String(value)),
-  });
+  const originalLog = console.log;
+  console.log = (value: unknown) => output.push(String(value));
+  try {
+    await import(`data:text/javascript;base64,${btoa(executable)}#${crypto.randomUUID()}`);
+  } finally {
+    console.log = originalLog;
+  }
   assertEquals(output, ["3"]);
 });
 
@@ -184,10 +187,13 @@ Deno.test("block-local nominal declarations receive non-exported shared identiti
     };
   `);
   const output: string[] = [];
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-  await new AsyncFunction("console", executable)({
-    log: (value: unknown) => output.push(String(value)),
-  });
+  const originalLog = console.log;
+  console.log = (value: unknown) => output.push(String(value));
+  try {
+    await import(`data:text/javascript;base64,${btoa(executable)}#${crypto.randomUUID()}`);
+  } finally {
+    console.log = originalLog;
+  }
   assertEquals(output, ["7"]);
 });
 

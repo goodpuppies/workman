@@ -1,0 +1,45 @@
+-- Deliberately small first subset: exact stable X.Y.Z and ~X.Y.Z.
+from js.module("./host.ts") import unsafe { captures: (String, String) -> Js.Array<String> };
+from "./io.wm" import { parseIntOr };
+from "./model.wm" import { Candidate };
+
+record Version = { major: Number, minor: Number, patch: Number };
+
+let parse = (text) => {
+  match(captures("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", text) :> Js.Array.toList) {
+    [_, major, minor, patch] => { Some(Version(parseIntOr(major, 0), parseIntOr(minor, 0), parseIntOr(patch, 0))) },
+    _ => { None }
+  }
+};
+
+let matches = (selector, version) => {
+  let patchRange = selector :> .startsWith("~") :> Result.withDefault(false);
+  let base = if (patchRange) { selector :> .slice(1) :> Result.withDefault("") } else { selector };
+  match(parse(base)) {
+    None => { Err("unsupported dependency version " ++ selector ++ "; expected X.Y.Z or ~X.Y.Z") },
+    Some(wanted) => {
+      Ok(match(parse(version)) {
+        None => { false },
+        Some(actual) => {
+          actual.major == wanted.major && actual.minor == wanted.minor
+            && (if (patchRange) { actual.patch >= wanted.patch } else { actual.patch == wanted.patch })
+        }
+      })
+    }
+  }
+};
+
+-- Finder ordering is not necessarily numeric (2.8.10 must beat 2.8.9).
+let newest = (candidates: List<Candidate>) => {
+  List.foldLeft(candidates, None, (best: Option<Candidate>, candidate: Candidate) => {
+    match(best) {
+      None => { Some(candidate) },
+      Some(previous) => {
+        match(parse(candidate.version), parse(previous.version)) {
+          (Some(a), Some(b)) => { if (a.patch > b.patch) { Some(candidate) } else { best } },
+          _ => { best }
+        }
+      }
+    }
+  })
+};

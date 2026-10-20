@@ -12,11 +12,13 @@
 --   build      offline Bubblewrap host environment, invoked by store.wm
 
 from js.global("JSON") import { parse } as JSON;
-from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool };
-from "./model.wm" import { Target, Scope, Candidate, Package };
+from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool, isRepository: String -> Bool };
+from js.module("./host.ts") import { repositoryRecipe, repositoryVersion, recipeSource, packageProgramPath, rememberRecipe, lockedRecipe } as Repository;
+from "./model.wm" import { Target, Scope, Candidate, Package, Source };
 from "./plan.wm" import *;
 from "./paths.wm" import { Paths };
-from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname };
+from "./lock.wm" import { LockEntry, toJson };
+from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname, describe, compactJson };
 from "./text.wm" import { join, concatMap };
 from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, unique };
 
@@ -78,7 +80,7 @@ let describeProgram = (name, program) => {
       checkProtocol(name, i.protocol)
         :> Result.andThen((_) => { Result|decodeTarget(i.target), decodeScope(i.scope)| })
         :> Result.andThen((target, scope) => {
-          if (i.name == name) {
+          if (i.name == name || isRepository(name)) {
             Ok(.{
               name,
               description = i.description,
@@ -135,9 +137,35 @@ let load = (paths: Paths, name) => {
       }
     }
   };
-  find(packageDirs())
-    :> Task.andThen((file) => { compileProgram(file, paths.state ++ "/programs/" ++ name ++ ".js") })
+  let source = if (isRepository(name)) {
+    Repository.repositoryRecipe(paths.state, name, false) :> Task.mapErr(describe("repository " ++ name))
+  } else { find(packageDirs()) };
+  source
+    :> Task.andThen((file) => {
+      Repository.packageProgramPath(paths.state, name, file) :> Task.mapErr(describe("package cache"))
+        :> Task.andThen((output) => { compileProgram(file, output) })
+    })
     :> Task.andThen((program) => { describeProgram(name, program) })
+};
+
+let refresh = (paths: Paths, info: PackageInfo) => {
+  if (!isRepository(info.name)) { Task.succeed(info) } else {
+    Repository.repositoryRecipe(paths.state, info.name, true) :> Task.mapErr(describe("repository " ++ info.name))
+      :> Task.andThen((_) => { load(paths, info.name) })
+  }
+};
+
+let remember = (paths: Paths, info: PackageInfo, entry: LockEntry) => {
+  Repository.rememberRecipe(paths.lockFile, info.name, compactJson(toJson([entry])), info.program)
+    :> Task.mapErr(describe("record recipe"))
+};
+
+let forEntry = (paths: Paths, info: PackageInfo, entry: LockEntry) => {
+  if (!isRepository(info.name)) { Task.succeed(info) } else {
+    Repository.lockedRecipe(paths.lockFile, info.name, compactJson(toJson([entry])))
+      :> Task.mapErr(describe("locked recipe; run pakman resolve " ++ info.name))
+      :> Task.andThen((program) => { describeProgram(info.name, program) })
+  }
 };
 
 let loadAll = (paths: Paths) => {
@@ -159,6 +187,19 @@ let versions = (info: PackageInfo) => {
         :> Result.map((_) => { c.candidates :> Js.Array.toList :> mapAll(decodeCandidate) })
         :> Task.fromResult
     })
+    :> Task.andThen((items) => {
+      series(items, (candidate: Candidate) => {
+        if (candidate.ref != "pak:self") { Task.succeed(candidate) } else {
+          Repository.repositoryVersion(info.program) :> Task.mapErr(describe("repository candidate"))
+            :> Task.andThen((fields) => {
+              match(Js.Array.toList(fields)) {
+                [revision, published] => { Task.succeed(Candidate(revision, published, candidate.channel, [], revision)) },
+                _ => { Task.fail("invalid repository metadata") }
+              }
+            })
+        }
+      })
+    })
 };
 
 -- The plan for one version. Runs with no permissions at all.
@@ -172,5 +213,11 @@ let make = (info: PackageInfo, version, ref) => {
         :> Result.andThen((_) => { decodePlan(p) })
         :> Result.mapErr((message) => { info.name ++ ": " ++ message })
         :> Task.fromResult
+    })
+    :> Task.andThen((pkg: Package) => {
+      series(pkg.sources, (source: Source) => {
+        Repository.recipeSource(info.program, source.url) :> Task.mapErr(describe("recipe source"))
+          :> Task.map((url) => { Source(source.file, url) })
+      }) :> Task.map((sources) => { .{ ..pkg, sources } })
     })
 };

@@ -29,13 +29,22 @@ record Source = { file: String, url: String };
 type PathRef =
   | Own<String>          -- a file this package installs
   | Of<String, String>   -- a file another pakman package installs: package, path
+  | Instance<String, String, String> -- package, exact/patch selector, exported relative path
+  | StorePath<String, String> -- manager-bound instance: immutable store tree, relative path
   | Base<String>;        -- an absolute path the base system must provide
+
+-- A package is its own version manager. Requests select a private instance;
+-- file references keep those dependencies visible in the ordinary plan.
+record PackageRequest = { name: String, version: String };
+let package = (name, version) => { PackageRequest(name, version) };
+let file = (request: PackageRequest, path) => { Instance(request.name, request.version, path) };
 
 -- Text written into files, kept structured until pakman renders it, so the
 -- references inside it stay visible.
 type Text =
   | Lit<String>
   | Ref<PathRef>
+  | ShellRef<PathRef> -- a reference rendered as one POSIX shell argument
   | Cat<List<Text>>;
 
 -- What to unpack. `archive` is a source file followed by members to open in
@@ -43,6 +52,20 @@ type Text =
 -- selects paths inside the innermost archive ([] takes everything); `strip`
 -- drops leading path components, as tar's --strip-components does.
 record Unpack = { archive: List<String>, members: List<String>, dest: String, strip: Number };
+
+-- A declarative command build, with no language-specific command knowledge.
+-- Run program + arguments in the extracted source directory. Output is a
+-- relative file there; dest is its installation path. The program reference
+-- is build-only. This backend permits downloads inside filesystem isolation.
+record CommandBuild = {
+  program: PathRef,
+  arguments: List<String>,
+  source: String,
+  strip: Number,
+  output: String,
+  dest: String,
+  mode: Mode
+};
 
 -- Install steps. Destinations are relative to the scope root: software is
 -- installed where upstream expects it, never relocated.
@@ -53,6 +76,7 @@ type InstallOp =
   | Symlink<PathRef, String>        -- link target, link path
   | WriteText<String, Text, Mode>   -- destination, contents, mode
   | MakeDir<String>
+  | BuildCommand<CommandBuild> -- run a selected tool and install one declared output
   | Build<String, List<String>>;   -- package callback ID, absolute host tool paths
 
 -- Build code owns its orchestration. Inputs are immutable; scratch and out
@@ -138,6 +162,7 @@ let lines = (items) => { Lit(join(items, "\n") ++ "\n") };
 -- Text helpers: `cat([ref(Own("bin/foo")), lit(" %U")])`.
 let lit = (text) => { Lit(text) };
 let ref = (path) => { Ref(path) };
+let shellRef = (path) => { ShellRef(path) };
 let cat = (parts) => { Cat(parts) };
 
 record DesktopEntry = {

@@ -24,6 +24,19 @@ deno install -g -A --name wm jsr:@goodpuppies/workman
 for fresher versions, you can add the argument
 `--min-dep-age=0`
 
+## Standalone executables
+
+```sh
+wm compile hello.wm --executable -o hello
+./hello
+```
+
+WM emits JavaScript and generated workers, then invokes Deno's `compile`.
+The executable includes those modules and its Deno runtime; it needs no WM
+launcher. Deno may download its compilation runtime and imports during the
+build. Like `wm run`, the resulting application runs with full Deno permissions.
+`wm compile hello.wm out.js` still emits JavaScript.
+
 ## C interoperability
 
 C header imports (`c.header`) use a bundled Aro extractor on Linux, macOS, and

@@ -1,0 +1,39 @@
+from "../../testman/test.wm" import *;
+from "../src/semver.wm" import { matches };
+from "../src/instances.wm" import { choose };
+from "../src/model.wm" import { Candidate, Host, User };
+from "../src/packages.wm" import { PackageInfo };
+
+let info: PackageInfo = .{
+  name = "runtime", description = "", homepage = "", license = "", target = Host, scope = User,
+  channel = "stable", minAgeDays = 3, onlyLatest = true, hosts = [], program = ""
+};
+let old = (version) => { Candidate(version, "2020-01-01T00:00:00Z", "stable", [], "") };
+let tests = [
+  test("patch requests exclude other minors, earlier patches and prereleases", () => {
+    checks([
+      assertEqual(matches("~2.8.1", "2.8.1"), Ok(true)),
+      assertEqual(matches("~2.8.1", "2.8.10"), Ok(true)),
+      assertEqual(matches("~2.8.1", "2.8.0"), Ok(false)),
+      assertEqual(matches("~2.8.1", "2.9.0"), Ok(false)),
+      assertEqual(matches("~2.8.1", "2.8.2-rc.1"), Ok(false)),
+      assertEqual(matches("~0.4.1", "0.5.0"), Ok(false)),
+      assertEqual(matches("2.8.1", "2.8.2"), Ok(false))
+    ])
+  }),
+  test("unsupported ranges fail instead of silently widening a request", () => {
+    checks([
+      assertErr(matches("^2.8.0", "2.9.0")) :> Task.map((_) => { void }),
+      assertErr(matches("~2.8", "2.8.1")) :> Task.map((_) => { void }),
+      assertErr(matches("02.8.0", "2.8.0")) :> Task.map((_) => { void })
+    ])
+  }),
+  test("private selection compares patch numbers and applies age before choosing", () => {
+    let candidates = [old("2.8.9"), old("2.9.0"), old("2.8.10"), Candidate("2.8.11", "2999-01-01T00:00:00Z", "stable", [], "")];
+    assertEqual(choose(info, "~2.8.0", candidates) :> Result.map((c: Candidate) => { c.version }), Ok("2.8.10"))
+  }),
+  test("onlyLatest cannot bypass private dependency age policy", () => {
+    assertErr(choose(info, "2.8.0", [Candidate("2.8.0", "2999-01-01T00:00:00Z", "stable", [], "")]))
+      :> Task.andThen((message) => { assertContains(message, "minimum age") })
+  })
+];

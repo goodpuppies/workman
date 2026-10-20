@@ -325,9 +325,17 @@ Deno.test("frontend-v2 normalized IR matches the repository semantic golden corp
       const expected = frontendV2SemanticGolden.files[relative];
       if (expected === undefined) throw new Error(`missing semantic golden for ${relative}`);
       const accepted = expected !== null;
-      assertEquals(recognizeGrammar(grammar, source), accepted, relative);
+      const surface = decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(source));
+      // The corpus includes deliberately damaged editor examples. The Surface
+      // parser can recover these; the plain grammar recognizer cannot insert
+      // the missing tokens recorded by recovery marks.
       assertEquals(
-        decodeSurfaceProgram(surfaceParser.parseSurfaceProgram(source)) !== undefined,
+        recognizeGrammar(grammar, source),
+        accepted && surface?.marks.length === 0,
+        relative,
+      );
+      assertEquals(
+        surface !== undefined,
         accepted,
         relative,
       );

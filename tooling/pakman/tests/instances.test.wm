@@ -1,0 +1,60 @@
+from "../../testman/test.wm" import *;
+from "./support.wm" import { withTempDir, pakman, readLink, Run };
+from "../src/io.wm" import { readText, exists, runCapture };
+
+let succeeds = (run: Run) => {
+  if (run.code == 0) { pass() } else { fail(run.output) }
+};
+let install = (root, name) => { pakman(["install", name, "--root", root]) :> Task.andThen(succeeds) };
+let invoke = (root, command) => { runCapture(root ++ "/.local/bin/" ++ command, []) };
+
+let tests = [
+  test("an app owns its transitive runtime while the global command stays independent", () => {
+    withTempDir((root) => {
+      install(root, "private-runtime@2.9.0")
+        :> Task.andThen((_) => { install(root, "private-app@1.0.0") })
+        :> Task.andThen((_) => { invoke(root, "private-app") })
+        :> Task.andThen((output) => { assertEqual(output, "2.8.10\n") })
+        :> Task.andThen((_) => { invoke(root, "private-runtime") })
+        :> Task.andThen((output) => { assertEqual(output, "2.9.0\n") })
+        :> Task.andThen((_) => { exists(root ++ "/.local/bin/private-wm") })
+        :> Task.andThen((exposed) => { assert(!exposed, "transitive WM was exposed globally") })
+        :> Task.andThen((_) => { pakman(["remove", "private-runtime", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { invoke(root, "private-app") })
+        :> Task.andThen((output) => { assertEqual(output, "2.8.10\n") })
+    })
+  }),
+  test("matching private dependencies share a store instance and rollback restores the old graph", () => {
+    withTempDir((root) => {
+      install(root, "private-app@1.0.0")
+        :> Task.andThen((_) => { install(root, "private-twin") })
+        :> Task.andThen((_) => { readLink(root ++ "/.local/bin/private-twin") })
+        :> Task.andThen((target) => {
+          readText(root ++ "/.local/bin/private-app")
+            :> Task.andThen((launcher) => { assertContains(launcher, target) })
+        })
+        :> Task.andThen((_) => { install(root, "private-app@1.1.0") })
+        :> Task.andThen((_) => { invoke(root, "private-app") })
+        :> Task.andThen((output) => { assertEqual(output, "2.9.0\n") })
+        :> Task.andThen((_) => { invoke(root, "private-twin") })
+        :> Task.andThen((output) => { assertEqual(output, "2.8.10\n") })
+        :> Task.andThen((_) => { pakman(["rollback", "--root", root]) })
+        :> Task.andThen(succeeds)
+        :> Task.andThen((_) => { invoke(root, "private-app") })
+        :> Task.andThen((output) => { assertEqual(output, "2.8.10\n") })
+    })
+  }),
+  test("missing exports and dependency cycles cannot activate a generation", () => {
+    withTempDir((root) => {
+      pakman(["install", "private-broken", "--root", root])
+        :> Task.andThen((run: Run) => { assert(run.code != 0, "missing dependency export was accepted") })
+        :> Task.andThen((_) => { pakman(["install", "private-cycle", "--root", root]) })
+        :> Task.andThen((run: Run) => { checks([
+          assert(run.code != 0, "dependency cycle was accepted"), assertContains(run.output, "cyclic private dependency")
+        ]) })
+        :> Task.andThen((_) => { exists(root ++ "/.local/bin/private-broken") })
+        :> Task.andThen((placed) => { assert(!placed, "broken app was activated") })
+    })
+  })
+];

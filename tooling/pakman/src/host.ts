@@ -6,6 +6,74 @@
 // boundary small for the later rewrite off the JS APIs.
 
 const userAgent = "pakman/0.1 (+https://github.com/goodpuppies)";
+import { pakmanImport } from "../../../src/pakman_imports.ts";
+export {
+  isRepository, packageStoreName, repositoryRecipe, repositoryVersion,
+  recipeSource, packageProgramPath,
+  rememberRecipe, lockedRecipe,
+} from "./repository-host.ts";
+
+/** References may follow re-exports into the selected instance's private closure. */
+export async function checkInstanceFile(tree: string, path: string): Promise<void> {
+  if (!path || path.startsWith("/") || path.split("/").some((p) => p === ".." || p === "." || !p)) {
+    throw new Error(`invalid instance file ${path}`);
+  }
+  const root = await Deno.realPath(tree);
+  const target = await Deno.realPath(`${tree}/${path}`);
+  if (!target.startsWith(`${root}/`)) {
+    const seen = new Set<string>();
+    const owns = async (current: string): Promise<boolean> => {
+      if (seen.has(current)) return false;
+      seen.add(current);
+      if (target.startsWith(`${await Deno.realPath(current)}/`)) return true;
+      if (!await exists(`${current}.json`)) return false;
+      const manifest = JSON.parse(await Deno.readTextFile(`${current}.json`));
+      if (!Array.isArray(manifest.instances)) return false;
+      for (const dep of manifest.instances) {
+        if (typeof dep !== "string" || !dep.startsWith("/")) throw new Error("invalid instance closure");
+        if (await owns(dep)) return true;
+      }
+      return false;
+    };
+    if (!await owns(tree)) throw new Error(`instance file escapes its package closure: ${path}`);
+  }
+  if (!(await Deno.stat(target)).isFile) throw new Error(`instance export is not a file: ${path}`);
+}
+
+/** Older manifests have no instances. Store references retain the private DAG. */
+export async function checkInstanceClosure(tree: string): Promise<void> {
+  const seen = new Set<string>();
+  const visit = async (path: string) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    const manifest = JSON.parse(await Deno.readTextFile(`${path}.json`));
+    if (path !== tree && Deno.env.get("PAKMAN_BASE") !== "none") {
+      for (const base of manifest.base ?? []) {
+        if (!await exists(base)) {
+          throw new Error(`the base system lacks ${base} (required by ${manifest.name})`);
+        }
+      }
+    }
+    if (manifest.instances === undefined) return;
+    if (
+      !Array.isArray(manifest.instances) ||
+      manifest.instances.some((p: unknown) => typeof p !== "string" || !p.startsWith("/"))
+    ) {
+      throw new Error(`invalid instance closure: ${path}`);
+    }
+    for (const use of manifest.instanceUses ?? []) {
+      if (!manifest.instances.includes(use.tree)) {
+        throw new Error(`unrecorded instance use: ${use.tree}`);
+      }
+      await checkInstanceFile(use.tree, use.path);
+    }
+    for (const dep of manifest.instances) {
+      if (!(await Deno.stat(dep)).isDirectory) throw new Error(`missing instance: ${dep}`);
+      await visit(dep);
+    }
+  };
+  await visit(tree);
+}
 
 export function argv(): string[] {
   return Deno.args;
@@ -324,15 +392,27 @@ async function mtime(path: string): Promise<number> {
 
 /** Compiles a package program when stale and returns the compiled JS path. */
 export async function compileProgram(source: string, compiled: string): Promise<string> {
+  let repositoryRoot: string | undefined;
+  try {
+    const metadata = JSON.parse(await Deno.readTextFile(`${dirname(dirname(source))}/snapshot.json`));
+    if (metadata.root === dirname(source)) repositoryRoot = await Deno.realPath(metadata.root);
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+  source = await Deno.realPath(source);
   const inputs: string[] = [];
   const visited = new Set<string>();
   const visit = async (file: string) => {
+    file = await Deno.realPath(file);
+    if (repositoryRoot && !file.startsWith(`${repositoryRoot}/`) && !file.startsWith(`${pakmanSrc}/`)) {
+      throw new Error(`repository recipe import escapes its snapshot: ${file}`);
+    }
     if (visited.has(file)) return;
     visited.add(file);
     const text = await Deno.readTextFile(file);
     inputs.push(file, await sha256Text(text));
     for (const match of text.matchAll(/^\s*from\s+["']([^"']+)["']/gm)) {
-      await visit(decodeURIComponent(new URL(match[1], `file://${file}`).pathname));
+      await visit(pakmanImport(match[1]) ?? decodeURIComponent(new URL(match[1], `file://${file}`).pathname));
     }
   };
   await visit(source);
@@ -346,7 +426,10 @@ export async function compileProgram(source: string, compiled: string): Promise<
   const compiler = Deno.env.get("PAKMAN_WM");
   if (compiler) inputs.push(compiler, await sha256File(compiler));
   const fingerprint = await sha256Text(JSON.stringify(inputs));
-  if (await exists(compiled) && await readTextOr(`${compiled}.inputs`, "") === fingerprint) return compiled;
+  if (await exists(compiled) && await readTextOr(`${compiled}.inputs`, "") === fingerprint) {
+    await Deno.writeTextFile(`${compiled}.source`, source);
+    return compiled;
+  }
   await Deno.mkdir(dirname(compiled), { recursive: true });
   // The wm compiler this pakman is part of, unless PAKMAN_WM names another.
   const wm = Deno.env.get("PAKMAN_WM");
@@ -363,6 +446,7 @@ export async function compileProgram(source: string, compiled: string): Promise<
   }
   await Deno.rename(`${compiled}.tmp`, compiled);
   await Deno.writeTextFile(`${compiled}.inputs`, fingerprint);
+  await Deno.writeTextFile(`${compiled}.source`, source);
   return compiled;
 }
 
@@ -540,9 +624,10 @@ async function buildModules(program: string): Promise<string[]> {
     if (found.has(path)) return;
     found.add(path);
     const text = await Deno.readTextFile(path);
-    const imports = /\bimport\s*\(\s*["']([^"']+)["']|^\s*(?:import|export)[^\n]*?\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/gm;
+    const imports = /\bimport\s*\(\s*["']([^"']+)["']|^\s*(?:import|export)\s+[^;]*?\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/gm;
     for (const match of text.matchAll(imports)) {
       const url = new URL(match[1] ?? match[2] ?? match[3], `file://${path}`);
+      if (url.protocol === "node:") continue; // runtime built-ins, not fetched modules
       if (url.protocol !== "file:") throw new Error(`host builds require local JS imports: ${url}`);
       await visit(decodeURIComponent(url.pathname));
     }
@@ -618,4 +703,80 @@ export async function runBuild(
 export async function stageBuildInput(source: string, inputs: string, name: string): Promise<void> {
   if (!/^[A-Za-z0-9._+-]+$/.test(name) || name === "." || name === "..") throw new Error(`unsafe build input name: ${name}`);
   await copyFile(source, `${inputs}/${name}`, 0o444);
+}
+
+// A generic network-enabled command backend. The recipe declares the command
+// and output; the offline callback backend above has a separate policy.
+export async function commandBuildIdentity(): Promise<string> {
+  return await sha256Text(JSON.stringify([
+    "pakman-command-build-v1", Deno.build.os, Deno.build.arch,
+    await sha256File(decodeURIComponent(new URL(import.meta.url).pathname)),
+    await sha256File("/usr/bin/bwrap"),
+  ]));
+}
+
+function commandBuildPath(path: string): void {
+  if (!path || path.startsWith("/") || path.includes("\\") ||
+    path.split("/").some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`invalid command build path: ${path}`);
+  }
+}
+
+export async function runBuildCommand(
+  program: string, trees: string[], args: string[], archive: string, strip: number,
+  output: string, out: string, dest: string, mode: number, work: string,
+): Promise<void> {
+  commandBuildPath(output);
+  commandBuildPath(dest);
+  if (mode !== 0o755 && mode !== 0o644) throw new Error("invalid output mode");
+  if (!Number.isSafeInteger(strip) || strip < 0) throw new Error("invalid archive strip count");
+  // Require an explicitly selected private tool. No language is special here.
+  if (!trees.length) throw new Error("build program must reference a private package instance");
+  const mounts: string[] = [];
+  const seen = new Set<string>();
+  const mount = async (tree: string) => {
+    if (seen.has(tree)) return;
+    seen.add(tree);
+    if (!tree.startsWith("/")) throw new Error("invalid tool closure path");
+    await checkInstanceClosure(tree);
+    mounts.push("--ro-bind", tree, tree);
+    const manifest = JSON.parse(await Deno.readTextFile(`${tree}.json`));
+    for (const dependency of manifest.instances ?? []) await mount(dependency);
+  };
+  for (const tree of trees) await mount(tree);
+  if (!trees.some((tree) => program.startsWith(`${tree}/`))) {
+    throw new Error("program is outside selected package instance");
+  }
+  const scratch = await Deno.makeTempDir({ dir: work, prefix: "command-" });
+  try {
+    await extract([archive], [], `${scratch}/source`, strip);
+    for (const file of ["resolv.conf", "hosts", "nsswitch.conf"]) {
+      if (await exists(`/etc/${file}`)) mounts.push("--ro-bind", await Deno.realPath(`/etc/${file}`), `/etc/${file}`);
+    }
+    if (await exists("/etc/ssl/certs")) mounts.push("--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs");
+    await runCapture("/usr/bin/bwrap", [
+      "--unshare-all", "--share-net", "--die-with-parent", "--new-session", "--clearenv",
+      "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin",
+      "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64",
+      "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+      ...mounts, "--bind", scratch, "/work",
+      "--setenv", "HOME", "/work", "--setenv", "PATH", "/usr/bin:/bin",
+      "--setenv", "TMPDIR", "/tmp",
+      "--setenv", "LC_ALL", "C", "--chdir", "/work/source",
+      program, ...args,
+    ]);
+    const artifact = `${scratch}/source/${output}`;
+    const stat = await Deno.lstat(artifact);
+    if (!stat.isFile || (stat.mode! & 0o6000) !== 0 || stat.nlink! > 1) {
+      throw new Error("build command did not produce a regular output");
+    }
+    const resolved = await Deno.realPath(artifact);
+    if (!resolved.startsWith(`${scratch}/source/`)) throw new Error("command output escapes source directory");
+    // The build command never receives write access to the package output tree.
+    // The manager installs the one declared artifact.
+    await mkdirp(dirname(`${out}/${dest}`));
+    await copyFile(artifact, `${out}/${dest}`, mode);
+  } finally {
+    await Deno.remove(scratch, { recursive: true });
+  }
 }

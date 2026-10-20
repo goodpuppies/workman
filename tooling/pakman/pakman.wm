@@ -3,6 +3,7 @@
 from "./src/packages.wm" import * as Packages;
 from "./src/paths.wm" import { paths };
 from "./src/lock.wm" import * as Lock;
+from "./src/instances.wm" import * as Instances;
 from "./src/resolve.wm" import { resolveWithOptions, choose, Default, minAgeDays, oldEnough };
 from "./src/packages.wm" import { versions };
 from "./src/model.wm" import { Candidate, System, User };
@@ -141,8 +142,14 @@ let resolveInto = (p, force, pinVersion) => {
       print(describeChange(info.name, before, entry));
       Lock.upsert(lock, entry)
     };
-    resolveWithOptions(p, info, before, selector, force, pinVersion)
-      :> Task.map(recordEntry)
+    Packages.refresh(p, info) :> Task.andThen((currentInfo) => {
+      resolveWithOptions(p, currentInfo, before, selector, force, pinVersion)
+        :> Task.andThen((entry) => {
+          Instances.resolve(p, currentInfo, entry)
+            :> Task.andThen((_) => { Packages.remember(p, currentInfo, entry) })
+            :> Task.map((_) => { recordEntry(entry) })
+        })
+    })
   }
 };
 

@@ -15,6 +15,7 @@
     "jsr:@std/path@^1.0.9": "1.1.5",
     "jsr:@std/path@^1.1.5": "1.1.5",
     "npm:@types/node@*": "26.1.1",
+    "npm:@types/node@26.1.1": "26.1.1",
     "npm:@typescript/typescript6@^6.0.2": "6.0.2",
     "npm:@webgpu/types@0.1.64": "0.1.64",
     "npm:boxen@*": "8.0.1",
@@ -817,6 +818,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@^1.0.17",
+      "npm:@types/node@26.1.1",
       "npm:@typescript/typescript6@^6.0.2",
       "npm:@webgpu/types@0.1.64",
       "npm:peggy@^5.0.6",

@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
 import { FrontendDiagnosticError } from "../src/diagnostics.ts";
+import ts from "typescript-api";
 import {
   contextualizeDelayedCallbacks,
   resolveDelayedFfiElaboration,
@@ -183,7 +184,18 @@ Deno.test("expression ascriptions constrain JSON assertions before a pipe", asyn
   });
 
   const js = await compile(source);
-  new Function(`return async () => {\n${js}\n};`);
+  // Generated JS is an ES module and may contain import.meta. Validate it
+  // as a module rather than as a Function body.
+  const parsed = ts.transpileModule(js, {
+    fileName: "generated.mjs",
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+      allowJs: true,
+    },
+    reportDiagnostics: true,
+  });
+  assertEquals(parsed.diagnostics, []);
 });
 
 Deno.test("rejects an unconstrained variadic reflected function value", async () => {

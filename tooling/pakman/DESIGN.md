@@ -8,6 +8,18 @@ More precisely, pakman is a **meta version manager**. Each package is a standalo
 is the version manager for one piece of software: run it and it says what versions exist upstream
 and exactly how to install any of them. pakman manages those programs, which all share one design.
 
+The intended distribution model is [repository-native packaging](docs/repository-native-packaging.md):
+a repository with `pak.wm` should be directly installable, whether maintained upstream,
+independently, in a collection, or as a personal fork. Curated collections provide review and
+discovery without being a required global package namespace. See
+[repository packages and package-owned dependencies](docs/repository-packages.md) for the proposed
+interface and current implementation status; GitHub root recipes are the first supported case.
+
+The programming-model direction is [programs with a declarative boundary](docs/declarative-programs.md):
+authors compute typed descriptions, and pakman realizes them. It records the lessons from Zig
+build and nob.h, possible capability interfaces beyond packages, the existing callback escape
+hatch, and the implemented `deno compile` application path and backend-specific network policy.
+
 ## A meta version manager
 
 `~/git/pak/paks/zig/pak.wm` is a zig version manager. It works without pakman:
@@ -62,8 +74,8 @@ protocol; a freshness dashboard, CI checks, or the future native PS2 client are 
   natively on the PS2.
 - **Part of wm:** pakman lives in wm-mini's `tooling/pakman` and runs as `wm pakman`, so it always
   compiles itself and its packages with the wm it ships with (`PAKMAN_WM` overrides for packages).
-  Packages import pakman's library by relative path into the wm checkout, since wm imports are
-  relative paths.
+  Packages can import pakman's library using stable `pakman/*.wm` API imports.
+  Existing relative imports into a neighboring WM checkout remain supported.
 - **Scale:** real file lists are large (zig unpacks to ~20,000 files), and std's `List.map`,
   `filter`, `append` and `concat` recurse once per element outside tail position, which overflows
   the JavaScript stack. pakman uses loop-safe versions (`src/fun.wm`) for anything that can be big.
@@ -182,7 +194,7 @@ touch the network. `make` returns a `Package` (see "Package model").
 
 `serve` (`src/package.wm`) answers three commands, each printing one JSON document. Encoders and
 decoders live together in `src/plan.wm` so the two sides can't drift; every document carries
-`protocol` (currently 7) so a stale compiled package is detected.
+`protocol` (currently 10) so a stale compiled package is detected.
 
 | command | prints |
 |---|---|
@@ -219,8 +231,9 @@ names. pakman compiles each package on its own into `<state>/programs/<name>.js`
 the package file or any file in pakman's `src/` is newer. A changed package recompiles alone (~1.6 s);
 a cached command step costs ~25 ms.
 
-Package files outside the checkout must import pakman's library by relative path, because wm has
-no package resolution yet.
+Package files outside the checkout can use `pakman/model.wm`, `pakman/package.wm`, and the
+other `pakman/*.wm` API imports. This is a built-in package API namespace, not a general-purpose
+language package resolver. Repository-native recipes no longer need a neighboring WM checkout.
 
 ## Package model
 
@@ -556,6 +569,10 @@ Not built yet:
 
 ## First build API (2026-10-08)
 
+This section describes the implemented callback API. The later
+[declarative programming-model direction](docs/declarative-programs.md) distinguishes this
+escape hatch from the structured artifact descriptions preferred for future build helpers.
+
 The `Build(id, tools)` operation invokes an optional `serveWithBuild` callback.
 It describes the manager/program boundary, not the package's internal build
 phases. Packages orchestrate ordinary Workman functions and Tasks themselves;
@@ -573,3 +590,29 @@ The initial environment is deliberately the read-only host `/usr`, fingerprinted
 with pacman's installed database and declared executable bytes. It does not
 promise hermetic tool closure or arbitrary-host portability. The README records
 the precise boundary and the remaining dependency/cross-build work.
+
+
+## Declarative command builds (2026-10-20)
+
+`BuildCommand` is a language-neutral operation containing a private program
+reference, argument list, locked source archive, strip count, output path,
+destination and mode. The manager realizes the selected tool closure, extracts
+the source and runs the exact program/arguments in that directory. It copies
+only the declared regular output. Arguments are passed directly, without an
+implicit shell. Both data and executable outputs are supported.
+
+Atview's recipe explicitly selects WM and passes
+`["compile", "app/main.wm", "--executable", "-o", "atview"]`. WM's CLI owns how
+its executable is built; pakman has no dedicated WM operation or automatic
+compiler invocation. Recipes make their selected builder and invocation visible
+as ordinary plan data.
+
+Program references affect resolution and input hashes; only runtime references
+enter the manifest's retained `instances` closure. `buildInstances` records
+build provenance without requiring those tools at application startup. Existing
+`Build` callback behavior is unchanged.
+
+The command backend permits downloads with an isolated scratch home and cache.
+The offline callback sandbox is not a universal pakman requirement. Offline
+provisioning and byte-identical builds are outside this backend's contract.
+See the [policy and limitations](docs/declarative-programs.md#compiled-applications-and-backend-policy).

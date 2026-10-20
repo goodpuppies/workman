@@ -1,0 +1,132 @@
+-- Resolution snapshots for package-owned dependency graphs. Build reads these
+-- snapshots without discovering releases. Legacy Of references remain separate.
+from js.global("JSON") import { parse } as JSON;
+from "./model.wm" import *;
+from "./packages.wm" import * as Packages;
+from "./lock.wm" import { LockEntry, LockedSource, toJson };
+from "./resolve.wm" import { pin, minAgeDays, oldEnough };
+from "./paths.wm" import { Paths };
+from "./refs.wm" import { instances, dependencies };
+from "./semver.wm" import * as Semver;
+from "./fun.wm" import { mapAll, filterAll, appendAll, foldSeries };
+from "./io.wm" import *;
+
+record Edge = { name: String, selector: String, node: String };
+record Node = { id: String, name: String, program: String, programHash: String, entry: LockEntry, edges: List<Edge> };
+record Graph = { root: String, nodes: List<Node> };
+record EdgeJson = { name: String, selector: String, node: String };
+record NodeJson = {
+  id: String, name: String, program: String, programHash: String, version: String, ref: String,
+  sources: Js.Array<LockedSource>, edges: Js.Array<EdgeJson>
+};
+record GraphJson = { format: Number, root: String, nodes: Js.Array<NodeJson> };
+
+let via = Monad.via;
+
+let identity = (info: Packages.PackageInfo, entry: LockEntry) => {
+  sha256File(info.program) :> via Task (programHash) => {
+    sha256Text(programHash ++ compactJson(toJson([entry])))
+      :> Task.map((id) => { (id, programHash) })
+  }
+};
+
+let graphFile = (paths: Paths, id) => { paths.lockFile ++ ".graphs/" ++ id ++ ".json" };
+
+let encode = (graph: Graph) => {
+  let edgeJson = (edge: Edge) => { JSON{ name: edge.name, selector: edge.selector, node: edge.node } };
+  let nodeJson = (node: Node) => {
+    let sourceJson = (s: LockedSource) => { JSON{ file: s.file, url: s.url, sha256: s.sha256, verified: s.verified } };
+    JSON{
+      id: node.id, name: node.name, program: node.program, programHash: node.programHash,
+      version: node.entry.version, ref: node.entry.ref,
+      sources: jsonList(node.entry.sources, sourceJson), edges: jsonList(node.edges, edgeJson)
+    }
+  };
+  JSON{ format: 2, root: graph.root, nodes: jsonList(graph.nodes, nodeJson) }
+};
+
+let find = (graph: Graph, id) => {
+  List.find(graph.nodes, (node: Node) => { node.id == id })
+    :> Option.map(Ok) :> Option.withDefault(Err("missing dependency graph node " ++ id))
+};
+
+let read = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
+  identity(info, entry) :> via Task (id, _) => {
+    let path = graphFile(paths, id);
+    let decoded: Task<GraphJson, String> = readText(path)
+      :> Task.mapErr((message) => { message ++ "; run pakman resolve " ++ info.name ++ " to record private dependencies" })
+      :> Task.andThen((text) => { JSON.parse(text) :> Result.mapErr((_) => { "invalid dependency graph JSON" }) :> Task.fromResult })
+      :> Task.andThen((value) => { value :> Json.assert :> Result.mapErr((_) => { "invalid dependency graph shape" }) :> Task.fromResult });
+    decoded :> Task.andThen((json: GraphJson) => {
+      if (json.format != 2 || json.root != id) { Task.fail("unsupported dependency graph; run pakman resolve " ++ info.name) } else {
+        let node = (n: NodeJson) => {
+          Node(n.id, n.name, n.program, n.programHash, LockEntry(n.name, n.version, "", n.ref, Js.Array.toList(n.sources)),
+            n.edges :> Js.Array.toList :> mapAll((e: EdgeJson) => { Edge(e.name, e.selector, e.node) }))
+        };
+        Task.succeed(Graph(id, json.nodes :> Js.Array.toList :> mapAll(node)))
+      }
+    })
+  }
+};
+
+let choose = (info: Packages.PackageInfo, selector, candidates: List<Candidate>) => {
+  Semver.matches(selector, "0.0.0") :> Result.andThen((_) => {
+    let matching = filterAll(candidates, (c: Candidate) => { Semver.matches(selector, c.version) :> Result.withDefault(false) });
+    let eligible = filterAll(matching, (c: Candidate) => { oldEnough(minAgeDays(info), nowSeconds(), c) });
+    Semver.newest(eligible) :> Option.map(Ok) :> Option.withDefault(Err(info.name ++ ": no release matching " ++ selector
+      ++ " passes the minimum age of " ++ Text.of(minAgeDays(info)) ++ " days"))
+  })
+};
+
+-- The accumulator is the resolved graph, not the global profile's lock.
+-- Requests are evaluated independently; byte-identical instances share IDs.
+let rec visit = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry, ancestors: List<String>, graph: Graph) => {
+  identity(info, entry) :> via Task (id, programHash) => {
+    if (List.any(ancestors, (ancestor) => { ancestor == id })) {
+      Task.fail("cyclic private dependency through " ++ info.name)
+    } else {
+      match(List.find(graph.nodes, (n: Node) => { n.id == id })) {
+        Some(_) => { Task.succeed((id, graph)) },
+        None => {
+          Packages.make(info, entry.version, entry.ref) :> via Task (plan: Package) => {
+            if (ancestors != [] && dependencies(plan) != []) {
+              Task.fail(info.name ++ ": private instances cannot use shared-root Of dependencies")
+            } else {
+              let resolveEdge = (state, request: PackageRequest) => {
+                let (edges, current) = state;
+                Packages.load(paths, request.name) :> via Task (dep: Packages.PackageInfo) => {
+                  if (dep.scope != User || dep.target != info.target) {
+                    Task.fail(request.name ++ ": private dependencies currently require User scope and the same target")
+                  } else {
+                    Packages.versions(dep)
+                      :> Task.andThen((candidates) => { choose(dep, request.version, candidates) :> Task.fromResult })
+                      :> Task.andThen((candidate) => { pin(paths, dep, candidate, "") })
+                      :> Task.andThen((locked) => { visit(paths, dep, locked, [id, ..ancestors], current) })
+                      :> Task.map((child, next) => { (appendAll(edges, [Edge(request.name, request.version, child)]), next) })
+                  }
+                }
+              };
+              -- foldSeries is sequential: later edges can reuse previous nodes.
+              instances(plan) :> foldSeries(([], graph), resolveEdge)
+                :> Task.map((edges, after: Graph) => {
+                  (id, .{ ..after, nodes = appendAll(after.nodes, [Node(id, info.name, info.program, programHash, entry, edges)]) })
+                })
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+let resolve = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
+  Packages.make(info, entry.version, entry.ref) :> via Task (plan: Package) => {
+    if (instances(plan) == []) { Task.succeed(void) } else {
+      visit(paths, info, entry, [], Graph("", [])) :> via Task (root, graph: Graph) => {
+        let path = graphFile(paths, root);
+        Task|mkdirp(dirname(path)), writeText(path ++ ".tmp", prettyJson(encode(.{ ..graph, root })), 420), rename(path ++ ".tmp", path)|
+          :> Task.map((_) => { void })
+      }
+    }
+  }
+};

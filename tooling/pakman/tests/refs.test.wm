@@ -1,10 +1,35 @@
 -- References between packages: rendering them as paths, and symlink targets.
 
 from "../../testman/test.wm" import *;
-from "../src/model.wm" import { Own, Of, Base, Package, Symlink, WriteText, Data, lit, ref, cat };
-from "../src/refs.wm" import { render, relativePath, symlinkTarget, dependencies, baseFiles };
+from "../src/model.wm" import { Own, Of, Base, Exec, Package, Symlink, WriteText, Data, lit, ref, cat, package, file, StorePath, shellRef, BuildCommand, CommandBuild };
+from "../src/refs.wm" import { render, relativePath, symlinkTarget, dependencies, baseFiles, instances, mapRefs, storePaths, runtimePlan };
 
 let tests = [
+  test("command programs resolve as build dependencies, without entering the runtime closure", () => {
+    let pkg = Package("1.0.0", [], [
+      BuildCommand(CommandBuild(file(package("wm", "~0.4.1"), ".local/bin/wm"), ["compile", "app/main.wm", "--executable", "-o", "app"], "app.tar", 1, "app", ".local/bin/app", Exec))
+    ], []);
+    let bound = mapRefs(pkg, (_) => { StorePath("/store/wm", ".local/bin/wm") });
+    checks([
+      assertEqual(instances(pkg), [package("wm", "~0.4.1")]),
+      assertEqual(storePaths(bound), ["/store/wm"]),
+      assertEqual(storePaths(runtimePlan(bound)), [])
+    ])
+  }),
+  test("shell arguments preserve spaces, quotes and metacharacters", () => {
+    assertEqual(render("/home/a'b $x", shellRef(Own(".local/bin/wm"))), "'/home/a'\\''b $x/.local/bin/wm'")
+  }),
+  test("private dependencies are distinct from shared-root requirements", () => {
+    let request = package("wm", "~0.4.1");
+    let pkg = Package("1.0.0", [], [Symlink(file(request, ".local/bin/wm"), ".local/bin/app")], [file(request, "lib/api")]);
+    checks([
+      assertEqual(List.length(instances(pkg)), 1),
+      assertEqual(dependencies(pkg), []),
+      assertEqual(baseFiles(pkg), []),
+      assertEqual(render("/home/u", ref(StorePath("/state/store/wm", ".local/bin/wm"))), "/state/store/wm/.local/bin/wm"),
+      assertEqual(symlinkTarget(".local/bin/app", StorePath("/state/store/wm", ".local/bin/wm")), "/state/store/wm/.local/bin/wm")
+    ])
+  }),
   test("references render absolute under the scope's root", () => {
     checks([
       assertEqual(render("/", ref(Own("opt/zig/zig"))), "/opt/zig/zig"),

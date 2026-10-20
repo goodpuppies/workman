@@ -17,11 +17,12 @@ let rec parts = (text) => {
 };
 
 let refsInText = (text) => {
-  parts(text) :> List.mapPartial(match { Ref(path) => { Some(path) }, _ => { None } })
+  parts(text) :> List.mapPartial(match { Ref(path) => { Some(path) }, ShellRef(path) => { Some(path) }, _ => { None } })
 };
 
 let refsInOp = (op) => {
   match(op) {
+    BuildCommand(build) => { [build.program] },
     Symlink(target, _) => { [target] },
     WriteText(_, contents, _) => { refsInText(contents) },
     _ => { [] }
@@ -31,6 +32,41 @@ let refsInOp = (op) => {
 -- Every reference a package makes: its explicit requirements plus those inside install steps.
 let refsOf = (pkg: Package) => {
   appendAll(pkg.requires, concatMap(pkg.install, refsInOp))
+};
+
+-- Build-only inputs participate in resolution and hashes, but are not retained
+-- in the output's runtime closure.
+let runtimePlan = (pkg: Package) => {
+  .{ ..pkg, install = filterAll(pkg.install, match { BuildCommand(_) => { false }, _ => { true } }) }
+};
+
+let instances = (pkg: Package) => {
+  refsOf(pkg) :> List.mapPartial(match {
+    Instance(name, selector, _) => { Some(PackageRequest(name, selector)) },
+    _ => { None }
+  }) :> unique
+};
+
+-- Rebind all references, including those embedded in text. Used only by the manager.
+let mapRefs = (pkg: Package, f) => {
+  let text = (value) => {
+    Cat(parts(value) :> mapAll(match {
+      Ref(path) => { Ref(f(path)) },
+      ShellRef(path) => { ShellRef(f(path)) },
+      Var(other) => { other }
+    }))
+  };
+  let op = match {
+    BuildCommand(build) => { BuildCommand(.{ ..build, program = f(build.program) }) },
+    Symlink(target, path) => { Symlink(f(target), path) },
+    WriteText(path, contents, mode) => { WriteText(path, text(contents), mode) },
+    Var(other) => { other }
+  };
+  .{ ..pkg, install = mapAll(pkg.install, op), requires = mapAll(pkg.requires, f) }
+};
+
+let storePaths = (pkg: Package) => {
+  refsOf(pkg) :> List.mapPartial(match { StorePath(store, _) => { Some(store) }, _ => { None } }) :> unique
 };
 
 -- The other pakman packages this one needs, by name.
@@ -57,6 +93,8 @@ let resolvePath = (base, ref) => {
   match(ref) {
     Own(path) => { under(base, path) },
     Of(_, path) => { under(base, path) },
+    StorePath(store, path) => { under(store, path) },
+    Instance(name, selector, _) => { Panic("unbound package instance " ++ name ++ "@" ++ selector) },
     Base(path) => { path }
   }
 };
@@ -66,6 +104,7 @@ let render = (base, text) => {
     match(part) {
       Lit(literal) => { literal },
       Ref(path) => { resolvePath(base, path) },
+      ShellRef(path) => { "'" ++ (resolvePath(base, path) :> .replaceAll("'", "'\\''") :> Result.withDefault("")) ++ "'" },
       _ => { "" }
     }
   };
@@ -98,6 +137,8 @@ let symlinkTarget = (linkPath, ref) => {
   match(ref) {
     Base(path) => { path },
     Own(path) => { relativePath(linkPath, path) },
-    Of(_, path) => { relativePath(linkPath, path) }
+    Of(_, path) => { relativePath(linkPath, path) },
+    StorePath(store, path) => { under(store, path) },
+    Instance(name, selector, _) => { Panic("unbound package instance " ++ name ++ "@" ++ selector) }
   }
 };

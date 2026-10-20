@@ -113,14 +113,14 @@ let handleMockDiscord = (req) => {
   })
 };
 
-let formatCommit = (commit, index, array) => {
+let formatCommit = (commit: Commit, index, array) => {
   let id = commit.id;
   let shortId = id :> .slice(0, 7) :> try;
   let message = commit.message;
   "- [" ++ shortId ++ "] " ++ message
 };
 
-let handlePushPayload = (req, payload) => {
+let handlePushPayload = (req, payload: PushPayload) => {
   let repoName = payload.repository.full_name;
   let pusherName = payload.pusher.name;
   let commits = payload.commits;

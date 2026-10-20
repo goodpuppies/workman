@@ -8,6 +8,113 @@ dependency graph and a sandbox. See [DESIGN.md](DESIGN.md) for the design and
 
 v1 runs on the desktop (wm compiled to JS, run with Deno).
 
+Implemented first case: [repository packages and package-owned dependencies](docs/repository-packages.md),
+using atview → WM → Deno as the first case.
+The [architectural rationale](docs/repository-native-packaging.md) explains why
+repositories, forks, and independently maintained packaging projects are central
+to the intended distribution model.
+The [programming-model direction](docs/declarative-programs.md) describes normal WM
+programs returning declarative plans, composable library helpers, and future capabilities.
+
+## Package-owned dependencies (initial implementation)
+
+Recipes can request private package instances using exact stable versions or
+patch-compatible `~X.Y.Z` selectors:
+
+```wm
+let wm = package("wm", "~0.4.1");
+-- In a plan, refer to its exported file:
+file(wm, ".local/bin/wm")
+```
+
+`package` and `file` come from `src/model.wm`. Put these references in `requires`,
+symlinks, or structured text just like `Own`/`Of`. Resolution selects the newest
+matching age-eligible release, independently of globally exposed versions.
+Private dependencies currently require `User` scope and the same target, and
+cannot use shared-root `Of` dependencies. Existing `Of` behavior is unchanged.
+
+`resolve`/`install` save the private graph beside the profile lock in
+`pakman.lock.graphs/`; `build` consumes that snapshot without release discovery.
+Private files stay in store instances, and only the requested package is exposed
+in the profile. Transitive references contribute to store identity and manifests;
+activation and rollback check their availability. Recipe changes require a new
+resolve. Protocol 8 carries instance requests; old profile locks remain readable.
+
+## Install from a GitHub repository
+
+```sh
+wm pakman install github.com/mommysgoodpuppy/atview
+wm pakman install 'github.com/owner/project#branch-or-commit'
+```
+
+The repository must contain a root `pak.wm`. Pakman fetches an immutable GitHub
+commit snapshot and compiles the recipe with the normal sandboxed protocol.
+Repository-qualified identity is retained in locks and generations; its declared
+short name is not a global identity. Only explicit resolve/install/update refresh
+the repository. Builds use the recorded recipe and source snapshot, including
+when another profile has since selected a newer snapshot.
+
+Use `from "pakman/model.wm" import *;` and similar `pakman/*.wm` imports for
+location-independent access to the package API. `pakman/repository.wm` supplies
+`versions` and `source(name)` for a package providing its own repository snapshot,
+and `resource(name, relativePath)` for files beside a recipe. `shellRef(path)`
+embeds a path reference safely as one POSIX shell argument.
+
+To test a new recipe before publishing it, explicitly map its repository address
+to a local Git working tree:
+
+```sh
+PAKMAN_REPOSITORIES='{"github.com/mommysgoodpuppy/atview":"/home/ellie/git/atview"}' \
+  wm pakman install github.com/mommysgoodpuppy/atview
+```
+
+The local snapshot includes tracked files and non-ignored untracked files,
+excluding Git metadata and ignored files such as atview's `.env`. It currently
+supports regular files only. The mapping is an explicit development override;
+an unmapped GitHub address always uses GitHub. The new atview recipe must be
+published there before the unmapped command can find it.
+
+The atview recipe selects `wm ~0.4.1`; the WM recipe in `../pak/paks/wm` selects
+`deno ~2.9.0`. Only `atview` is exposed in the profile. Its recipe explicitly
+describes a generic command build:
+
+```wm
+BuildCommand(.{
+  program = file(package("wm", "~0.4.1"), ".local/bin/wm"),
+  arguments = ["compile", "app/main.wm", "--executable", "-o", "atview"],
+  source = "atview.tar",
+  strip = 1,
+  output = "atview",
+  dest = ".local/bin/atview",
+  mode = Exec
+})
+```
+
+Pakman extracts the source and runs the declared command in that directory.
+There is no WM-specific build operation: the recipe selects WM and its CLI
+arguments just as another package could select another builder. The one declared
+output is installed; the program reference is a build dependency, not part of
+the result's retained runtime closure. WM includes generated workers in the
+executable. Configuration remains atview's `.env` in the working directory.
+Application authors own any CLI/TUI dispatch.
+
+WM also exposes this directly:
+
+```sh
+wm compile app/main.wm --executable -o atview
+```
+
+The command build backend permits Deno's normal runtime/import downloads in a
+filesystem sandbox and works with an empty cache. Offline builds are optional
+backend policy, not a universal package requirement. Pakman does not provision
+an offline Deno environment or promise byte-identical builds. See the
+[backend policy](docs/declarative-programs.md#compiled-applications-and-backend-policy).
+The WM recipe invokes upstream `src/cli.ts` directly through its selected Deno;
+there is no package-owned TypeScript adapter. Executable support and cache fixes
+require a new WM release; published 0.4.1 lacks them. Development tests use an
+explicit snapshot of this checkout. The WM/Deno recipes currently target Linux,
+with Deno binaries for x86_64 and aarch64.
+
 The separate [SubsetML port](../pakman-subsetml/README.md) is authored in WM and
 targets native MLWorks on PS2. Its initial package format and target adapters
 are documented there.
@@ -56,9 +163,12 @@ An ordinary reinstall or update can downgrade a forced release while it is still
 too young. Use `--pin` explicitly if that release must remain installed.
 `build` consumes the existing lock without discovering new versions.
 
-`wm pakman` (`src/pakman.ts` in wm-mini) compiles `pakman.wm` into `.build/pakman.js` when one of
+`wm pakman` (`src/pakman.ts` in wm-mini) compiles `pakman.wm` into a writable user cache when one of
 its sources changed, then runs it like `wm run`, with the permissions the wm launcher has. Package
 programs are compiled by the same wm checkout and always run sandboxed, whatever pakman was granted.
+The launcher cache uses `$XDG_CACHE_HOME/workman` (or `~/.cache/workman`,
+`$LOCALAPPDATA/workman` on Windows), separated by compiler source location.
+Installed compiler sources need no writes.
 
 Each package is its own wm program. pakman compiles it separately (cached until it or pakman's
 `src/` changes) and runs it as a sandboxed Deno process for each step:
@@ -80,6 +190,7 @@ Environment:
 | `PAKMAN_STATE` | `~/.local/state/pakman` | store, source cache, generations |
 | `PAKMAN_LOCK` | `<state>/profiles/<root>/pakman.lock` | the lock file; each root has its own by default |
 | `PAKMAN_PKGS` | `pak/paks` beside the wm checkout (`~/git/pak/paks`) | package directories, colon-separated; the first one wins on duplicate names |
+| `PAKMAN_REPOSITORIES` | `{}` | JSON mapping GitHub repository addresses to local Git working trees for development |
 | `PAKMAN_WM` | this wm checkout | the Workman compiler used for package programs |
 | `PAKMAN_MIN_AGE_DAYS` | per package (3) | overrides every package's minimum release age |
 | `PAKMAN_BASE` | `host` | `none` skips checking that `Base` files exist on the host |
@@ -233,7 +344,7 @@ upstream version stays the same: existing remote pins are retained, local files
 are refreshed, new inputs are pinned, and removed inputs leave the lock. Input
 names are single file names.
 
-The first backend requires Linux, Bubblewrap, and an Arch package database.
+The `Build` callback backend requires Linux, Bubblewrap, and an Arch package database.
 It denies network access, mounts `/usr` read-only, hides the host home, clears
 the environment, and provides writable scratch/output/temp directories.
 Deno restricts direct process launches to declared tools. Those tools' children
@@ -246,8 +357,9 @@ package code, its literal local JS imports, declared tool bytes, Deno and
 Bubblewrap executables, host OS/architecture, and installed pacman database.
 Changes made manually to undeclared files under `/usr` are outside the cache
 contract. This is an offline host backend, not a portable reproducible build
-claim. Independent build-dependency graphs, explicit tool closures, and PS2
-cross-build environments remain future API work.
+claim. Its offline policy does not apply to all backends: command
+builds use selected private tools and permit downloads. General artifact graphs
+and PS2 cross-build environments remain future API work.
 
 Failed callbacks leave no activated generation; their work directory is
 removed. Staged special files, setuid/setgid files and multiply linked regular

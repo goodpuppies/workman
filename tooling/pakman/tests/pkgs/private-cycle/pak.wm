@@ -1,0 +1,9 @@
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+let versions = () => { Task.succeed([Candidate("1.0.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
+let make = (version, _) => { Package(version, [], [], [file(package("private-cycle", "1.0.0"), ".local/bin/private-cycle")]) };
+let definition: Definition = .{
+  name = "private-cycle", description = "private dependency fixture", homepage = "", license = "MIT",
+  target = Host, scope = User, versions, hosts = [], policy = defaultPolicy, make
+};
+let main = () => { serve(definition) };

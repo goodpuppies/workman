@@ -8,12 +8,15 @@
 
 from "./model.wm" import *;
 from "./packages.wm" import { PackageInfo, make };
+from "./packages.wm" import * as Packages;
+from "./instances.wm" import * as Instances;
 from "./plan.wm" import { targetName, scopeName, opJson, refJson };
-from "./refs.wm" import { render, symlinkTarget, dependencies, baseFiles, foreignFiles };
+from "./refs.wm" import { render, symlinkTarget, dependencies, baseFiles, foreignFiles, instances, mapRefs, storePaths, refsOf, runtimePlan, resolvePath };
 from "./lock.wm" import { LockEntry, LockedSource };
 from "./paths.wm" import { Paths };
 from "./io.wm" import *;
 from "./fun.wm" import { ignore, mapAll, concatAll };
+from js.module("./host.ts") import unsafe { packageStoreName: String -> String };
 
 let via = Monad.via;
 
@@ -28,7 +31,7 @@ let modeBits = match(mode) => {
 -- The scope root rendered references point into: / for System, the home
 -- directory for User. It is a build input, since rendered text contains it.
 let baseFor = (paths: Paths, def: PackageInfo) => {
-  match(def.scope) { System => { "/" }, User => { paths.home } }
+  match(def.scope) { System => { "/" }, User => { if (paths.root == "/") { paths.home } else { paths.root } } }
 };
 
 let inputsJson = (base, def: PackageInfo, pkg: Package, sources: List<LockedSource>, builder, upstreamRef) => {
@@ -128,6 +131,11 @@ let runOp = (out, base, sourcePath, def: PackageInfo, entry: LockEntry, inputs, 
         Task|parent(dest), writeText(out ++ "/" ++ dest, render(base, contents), modeBits(mode))| :> Task.map(ignore)
       },
       MakeDir(path) => { mkdirp(out ++ "/" ++ path) },
+      BuildCommand(build) => {
+        let trees = match(build.program) { StorePath(tree, _) => { [tree] }, _ => { [] } };
+        runBuildCommand(resolvePath(base, build.program), trees, build.arguments, sourcePath(build.source),
+          build.strip, build.output, out, build.dest, modeBits(build.mode), work)
+      },
       Build(id, tools) => { runBuild(def.program, id, entry.version, entry.ref, inputs, work, out, tools) }
     }
   }
@@ -137,11 +145,18 @@ let runOp = (out, base, sourcePath, def: PackageInfo, entry: LockEntry, inputs, 
 let manifestJson = (def: PackageInfo, pkg: Package, hash, files: List<(String, String)>) => {
   let fileJson = (path, target) => { JSON{ path: path, link: target } };
   let foreignJson = (name, path) => { JSON{ pkg: name, path: path } };
+  let runtime = runtimePlan(pkg);
+  let privateUses = refsOf(runtime) :> List.mapPartial(match {
+    StorePath(tree, path) => { Some(JSON{ tree: tree, path: path }) }, _ => { None }
+  });
   JSON{
     name: def.name,
     version: pkg.version,
     hash: hash,
     depends: Js.Array.fromList(dependencies(pkg)),
+    instances: Js.Array.fromList(storePaths(runtime)),
+    buildInstances: Js.Array.fromList(storePaths(pkg)),
+    instanceUses: Js.Array.fromList(privateUses),
     base: Js.Array.fromList(baseFiles(pkg)),
     uses: jsonList(foreignFiles(pkg), foreignJson),
     files: jsonList(files, fileJson)
@@ -150,7 +165,7 @@ let manifestJson = (def: PackageInfo, pkg: Package, hash, files: List<(String, S
 
 -- Builds into a temporary directory, then renames into the store, so a store
 -- path either exists completely or not at all.
-let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedSource>, entry: LockEntry, hash, storePath) => {
+let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedSource>, entry: LockEntry, hash, storePath, base) => {
   let sourcePath = (file) => {
     sources
       :> List.find((s: LockedSource) => { s.file == file })
@@ -174,7 +189,7 @@ let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedS
     };
     let buildSources = if (List.any(pkg.install, match { Build(_, _) => { true }, _ => { false } })) { sources } else { [] };
     Task|mkdirp(out), mkdirp(inputs), each(buildSources, stage),
-      each(pkg.install, runOp(out, baseFor(paths, def), sourcePath, def, entry, inputs, work)), walkEntries(out)|
+      each(pkg.install, runOp(out, base, sourcePath, def, entry, inputs, work)), walkEntries(out)|
       :> Task.map((_, _, _, _, files) => { files })
       :> finish
       :> Task.map((_) => { Ok(void) })
@@ -186,23 +201,27 @@ let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedS
         }
       }
   };
-  makeTempDir(paths.tmp, def.name ++ "-")
+  makeTempDir(paths.tmp, packageStoreName(def.name) ++ "-")
     :> populate
 };
 
 -- Realizes one plan against its lock entry. Curried so `realize` can pass it to Task.andThen.
-let realizePlan = (paths: Paths, def: PackageInfo, entry: LockEntry) => {
+let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, privateInstance: Bool) => {
   (pkg: Package) => {
     let hashInputs = via Task (sources) => {
       let tools = pkg.install :> List.mapPartial(match { Build(_, tools) => { Some(tools) }, _ => { None } }) :> concatAll;
       let identity = if (List.length(List.filter(pkg.install, match { Build(_, _) => { true }, _ => { false } })) == 0) {
-        Task.succeed("")
+        -- Even without a callback, private instance identity includes its recipe.
+        if (privateInstance) { sha256File(def.program) } else { Task.succeed("") }
       } else { buildIdentity(def.program, tools) };
-      identity :> via Task (builder) => { sha256Text(compactJson(inputsJson(baseFor(paths, def), def, pkg, sources, builder, entry.ref))) }
+      let commandIdentity = if (List.any(pkg.install, match { BuildCommand(_) => { true }, _ => { false } })) {
+        commandBuildIdentity()
+      } else { Task.succeed("") };
+      Task|identity, commandIdentity| :> Task.map((recipe, backend) => { recipe ++ backend }) :> via Task (builder) => { sha256Text(compactJson(inputsJson(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref))) }
         :> Task.map((fullHash) => { (sources, fullHash :> .slice(0, 32) :> Result.withDefault(fullHash)) })
     };
     let locate = via Task (sources, hash) => {
-      let storePath = paths.store ++ "/" ++ hash ++ "-" ++ def.name ++ "-" ++ pkg.version;
+      let storePath = paths.store ++ "/" ++ hash ++ "-" ++ packageStoreName(def.name) ++ "-" ++ packageStoreName(pkg.version);
       exists(storePath) :> Task.map((built) => { (sources, hash, storePath, built) })
     };
     let buildIfMissing = via Task (sources, hash, storePath, built) => {
@@ -212,7 +231,7 @@ let realizePlan = (paths: Paths, def: PackageInfo, entry: LockEntry) => {
         Task|
           mkdirp(paths.store),
           series(sources, (s) => { ensureSource(paths, s) }),
-          build(paths, def, pkg, sources, entry, hash, storePath)
+          build(paths, def, pkg, sources, entry, hash, storePath, if (privateInstance) { storePath } else { baseFor(paths, def) })
         | :> Task.map((_) => { storePath })
       }
     };
@@ -225,8 +244,62 @@ let realizePlan = (paths: Paths, def: PackageInfo, entry: LockEntry) => {
   }
 };
 
--- Realizes a locked package and returns its store entry. Already-built entries are reused.
+-- Backward-compatible entrypoint for callers realizing an already-bound plan.
+let realizePlan = (paths, def, entry) => { realizePlanWith(paths, def, entry, false) };
+
+-- Build children first from the saved graph. No upstream discovery during build.
+let rec realizeNode = (paths: Paths, graph: Instances.Graph, id, ancestors: List<String>, privateInstance: Bool) => {
+  if (List.any(ancestors, (parent) => { parent == id })) { Task.fail("cyclic instance graph") } else {
+    Instances.find(graph, id) :> Task.fromResult
+      :> Task.andThen((node: Instances.Node) => {
+        Packages.describeProgram(node.name, node.program) :> Monad.via Task (info: PackageInfo) => {
+          sha256File(info.program) :> Monad.via Task (hash) => {
+            if (hash != node.programHash) {
+              Task.fail(node.name ++ ": recipe changed; run pakman resolve before building")
+            } else {
+              let child = (edge: Instances.Edge) => {
+                realizeNode(paths, graph, edge.node, [id, ..ancestors], true)
+                  :> Task.map((stored) => { (edge, stored) })
+              };
+              series(node.edges, child) :> Monad.via Task (children) => {
+                let bind = match {
+                  Instance(name, selector, path) => {
+                    match(List.find(children, (pair) => {
+                      let (edge, _) = pair;
+                      let selected: Instances.Edge = edge;
+                      selected.name == name && selected.selector == selector
+                    })) {
+                      Some((_, Var(stored))) => { let selected: StoreEntry = stored; StorePath(selected.path, path) },
+                      None => { Panic("missing instance binding " ++ name ++ "@" ++ selector) }
+                    }
+                  },
+                  Var(other) => { other }
+                };
+                make(info, node.entry.version, node.entry.ref) :> Monad.via Task (plan: Package) => {
+                  let bound = mapRefs(plan, bind);
+                  let uses = refsOf(bound) :> List.mapPartial(match {
+                    StorePath(tree, path) => { Some((tree, path)) }, _ => { None }
+                  });
+                  each(uses, (tree, path) => { checkInstanceFile(tree, path) })
+                    :> Monad.via Task (_) => { realizePlanWith(paths, info, node.entry, privateInstance)(bound) }
+                }
+              }
+            }
+          }
+        }
+      })
+  }
+};
+
+-- Realizes a locked package and its private closure. Legacy Of dependencies
+-- are still installed by the CLI's existing shared-root path.
 let realize = (paths: Paths, def: PackageInfo, entry: LockEntry) => {
-  make(def, entry.version, entry.ref)
-    :> Task.andThen(realizePlan(paths, def, entry))
+  Packages.forEntry(paths, def, entry) :> Monad.via Task (selected: PackageInfo) => {
+    make(selected, entry.version, entry.ref) :> Monad.via Task (plan: Package) => {
+    if (instances(plan) == []) { realizePlan(paths, selected, entry)(plan) } else {
+      Instances.read(paths, selected, entry)
+        :> Task.andThen((graph: Instances.Graph) => { realizeNode(paths, graph, graph.root, [], false) })
+    }
+    }
+  }
 };

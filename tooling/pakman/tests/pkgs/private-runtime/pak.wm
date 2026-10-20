@@ -1,0 +1,9 @@
+from "../../../src/model.wm" import *;
+from "../../../src/package.wm" import { serve };
+let versions = () => { Task.succeed([Candidate("2.9.0", "2020-01-01T00:00:00Z", "stable", [], ""), Candidate("2.8.9", "2020-01-01T00:00:00Z", "stable", [], ""), Candidate("2.8.10", "2020-01-01T00:00:00Z", "stable", [], "")]) };
+let make = (version, _) => { Package(version, [], [WriteText(".local/bin/private-runtime", lit("#!/bin/sh\nprintf '" ++ version ++ "\\n'\n"), Exec)], []) };
+let definition: Definition = .{
+  name = "private-runtime", description = "private dependency fixture", homepage = "", license = "MIT",
+  target = Host, scope = User, versions, hosts = [], policy = defaultPolicy, make
+};
+let main = () => { serve(definition) };

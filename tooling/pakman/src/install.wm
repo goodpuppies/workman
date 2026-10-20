@@ -170,7 +170,8 @@ let readManifest = (entry: Installed) => {
       :> Result.mapErr(shapeError(manifestFile));
     manifest :> Task.fromResult
   };
-  readJson(manifestFile)
+  checkInstanceClosure(entry.path)
+    :> Task.andThen((_) => { readJson(manifestFile) })
     :> assertManifest
     :> Task.map(toManifest)
 };
@@ -354,7 +355,8 @@ let switchTo = (paths: Paths, root, packages: List<Installed>) => {
 -- Re-activates an existing generation (rollback or roll forward).
 let restore = (paths: Paths, root, number) => {
   let switchFiles = via Task (now: Generation, goal: Generation) => {
-    activate(paths, root, now.files, goal.files)
+    each(goal.packages, (entry: Installed) => { checkInstanceClosure(entry.path) })
+      :> Task.andThen((_) => { activate(paths, root, now.files, goal.files) })
       :> Task.map((counts) => { (goal, counts) })
   };
   let commit = via Task (goal, counts) => {

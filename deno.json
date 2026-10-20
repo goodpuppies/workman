@@ -1,7 +1,7 @@
 {
-  "nodeModulesDir": "auto",
+  "nodeModulesDir": "none",
   "name": "@goodpuppies/workman",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "license": "MIT",
   "exports": {
     ".": "./src/cli.ts"
@@ -44,7 +44,8 @@
     "byte_type": "./src/vendor/byte_type/mod.ts",
     "peggy": "npm:peggy@^5.0.6",
     "typescript": "npm:typescript@^7.0.2",
-    "typescript-api": "npm:@typescript/typescript6@^6.0.2"
+    "typescript-api": "npm:@typescript/typescript6@^6.0.2",
+    "@types/node": "npm:@types/node@26.1.1"
   },
   "fmt": {
     "lineWidth": 100

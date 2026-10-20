@@ -311,7 +311,7 @@ Deno.test("reflects bare npm modules through node_modules declarations", async (
   expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
 });
 
-Deno.test("enables nodeModulesDir and installs npm imports when needed", async () => {
+Deno.test("resolves npm imports without modifying the project or creating node_modules", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -332,10 +332,14 @@ Deno.test("enables nodeModulesDir and installs npm imports when needed", async (
 
   expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
   const config = JSON.parse(await Deno.readTextFile(`${dir}/deno.json`));
-  assertEquals(config.nodeModulesDir, "auto");
+  assertEquals(config.nodeModulesDir, undefined);
+  assertEquals(
+    await Array.fromAsync(Deno.readDir(dir), (entry) => entry.name).then((names) => names.sort()),
+    ["deno.json", "main.wm"],
+  );
 });
 
-Deno.test("reports unresolved npm modules as package resolution errors", async () => {
+Deno.test("resolves import-mapped npm modules with nodeModulesDir disabled", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -357,11 +361,16 @@ Deno.test("reports unresolved npm modules as package resolution errors", async (
     `,
   );
 
-  await assertRejects(
-    () => checkFile(input),
-    Error,
-    'cannot resolve npm package "peggy" for JS import',
-  );
+  const results = await checkFile(input);
+  const result = results.get(input);
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
+  const config = JSON.parse(await Deno.readTextFile(`${dir}/deno.json`));
+  assertEquals(config.nodeModulesDir, "none");
+  assertEquals((await Array.fromAsync(Deno.readDir(dir), (entry) => entry.name)).sort(), [
+    "deno.json",
+    "main.wm",
+  ]);
 });
 
 Deno.test("reflects Deno import-map aliases for JSR modules", async () => {

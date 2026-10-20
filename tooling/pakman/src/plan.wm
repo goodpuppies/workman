@@ -10,7 +10,7 @@ from "./io.wm" import { jsonList };
 from "./refs.wm" import { parts };
 from "./fun.wm" import { mapAll };
 
-let protocol = 7;
+let protocol = 10;
 
 let targetName = match(target) => {
   Host => { "host" },
@@ -67,12 +67,23 @@ let encodeCandidates = (candidates: List<Candidate>) => {
 let refJson = match(ref) => {
   Own(path) => { JSON{ kind: "own", value: path, pkg: "" } },
   Of(name, path) => { JSON{ kind: "of", value: path, pkg: name } },
+  Instance(name, selector, path) => { JSON{ kind: "instance", value: path, pkg: name ++ "@" ++ selector } },
+  StorePath(store, path) => { JSON{ kind: "store", value: path, pkg: store } },
   Base(path) => { JSON{ kind: "base", value: path, pkg: "" } }
 };
 
 let partJson = match(part) => {
   Lit(text) => { JSON{ kind: "lit", value: text, pkg: "" } },
   Ref(path) => { refJson(path) },
+  ShellRef(path) => {
+    match(path) {
+      Own(value) => { JSON{ kind: "shell-own", value: value, pkg: "" } },
+      Of(name, value) => { JSON{ kind: "shell-of", value: value, pkg: name } },
+      Instance(name, selector, value) => { JSON{ kind: "shell-instance", value: value, pkg: name ++ "@" ++ selector } },
+      StorePath(store, value) => { JSON{ kind: "shell-store", value: value, pkg: store } },
+      Base(value) => { JSON{ kind: "shell-base", value: value, pkg: "" } }
+    }
+  },
   _ => { JSON{ kind: "lit", value: "", pkg: "" } }
 };
 
@@ -98,6 +109,10 @@ let opJson = match(op) => {
   },
   WriteText(dest, contents, mode) => {
     JSON{ op: "write", path: dest, source: "", mode: modeName(mode), strip: 0, archive: JSON[], members: JSON[], parts: textJson(contents) }
+  },
+  BuildCommand(build) => {
+    JSON{ op: "build-command", path: build.dest, source: build.source, mode: modeName(build.mode), strip: build.strip,
+      archive: Js.Array.fromList([build.output]), members: Js.Array.fromList(build.arguments), parts: jsonList([build.program], refJson) }
   },
   Build(id, tools) => {
     JSON{ op: "build", path: "", source: id, mode: "", strip: 0, archive: Js.Array.fromList(tools), members: JSON[], parts: JSON[] }
@@ -178,16 +193,28 @@ let decodeRef = (p: PartJson) => {
   match(p.kind) {
     "own" => { Ok(Own(p.value)) },
     "of" => { Ok(Of(p.pkg, p.value)) },
+    "instance" => {
+      let at = p.pkg :> .lastIndexOf("@") :> Result.withDefault(0 - 1);
+      if (at <= 0) { Err("invalid package instance request " ++ p.pkg) } else {
+        let name = p.pkg :> .slice(0, at) :> Result.withDefault("");
+        let selector = p.pkg :> .slice(at + 1) :> Result.withDefault("");
+        Ok(Instance(name, selector, p.value))
+      }
+    },
+    -- StorePath is manager-owned; package programs cannot supply it.
     "base" => { Ok(Base(p.value)) },
     _ => { Err("expected a file reference, got " ++ p.kind) }
   }
 };
 
 let decodePart = (p: PartJson) => {
-  match(p.kind) {
+  if (p.kind :> .startsWith("shell-") :> Result.withDefault(false)) {
+    let kind = p.kind :> .slice(6) :> Result.withDefault("");
+    decodeRef(.{ ..p, kind }) :> Result.map(ShellRef)
+  } else { match(p.kind) {
     "lit" => { Ok(Lit(p.value)) },
     _ => { decodeRef(p) :> Result.map(Ref) }
-  }
+  } }
 };
 
 let decodeText = (items) => {
@@ -213,6 +240,16 @@ let decodeOp = (o: OpJson) => {
     },
     "mkdir" => { Ok(MakeDir(o.path)) },
     "build" => { Ok(Build(o.source, Js.Array.toList(o.archive))) },
+    "build-command" => {
+      match(Js.Array.toList(o.archive), Js.Array.toList(o.parts)) {
+        ([output], [program]) => {
+          Result|decodeRef(program), decodeMode(o.mode)| :> Result.map((ref, mode) => {
+            BuildCommand(CommandBuild(ref, Js.Array.toList(o.members), o.source, o.strip, output, o.path, mode))
+          })
+        },
+        _ => { Err("a command build needs exactly one output and program reference") }
+      }
+    },
     _ => { Err("unknown install step " ++ o.op) }
   }
 };

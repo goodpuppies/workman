@@ -7,6 +7,7 @@ import {
   ModuleAnalysisError,
 } from "./compiler.ts";
 import { dirname } from "node:path";
+import { compileArguments, compileExecutable } from "./executable.ts";
 import {
   formatDiagnosticDocument,
   formatDiagnosticInspection,
@@ -243,13 +244,14 @@ async function checkCommand(args: string[]): Promise<number> {
 }
 
 async function compileCommand(args: string[]): Promise<number> {
-  const [input, output] = args;
+  const { input, output, executable } = compileArguments(args);
   if (!input) return missingInput("compile");
   if (!output) {
     console.log(await withCompilerProgress((options) => compileFile(input, options)));
     return 0;
   }
   const artifacts = await withCompilerProgress((options) => compileFileArtifacts(input, options));
+  if (executable) return await compileExecutable(artifacts, output);
   const outputDir = dirname(output);
   await Deno.mkdir(outputDir, { recursive: true });
   for (const artifact of artifacts) {
@@ -531,6 +533,8 @@ usage:
 commands:
   check <file.wm>               typecheck a module graph
   compile <file.wm> [out.js]    emit JavaScript
+  compile <file.wm> --executable -o <path>
+                               build a standalone executable using Deno
   compile-library <file.wm> [out.js]
                                 emit an importable ES module without running main
   repl [--v2] [file.wm]         interactive session, or watch and evaluate

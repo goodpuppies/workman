@@ -151,7 +151,7 @@ a file the other package doesn't install, and it doesn't depend on hashes surviv
 ## Performance
 
 - `wm compile` takes ~2.6 s for pakman. `wm run` recompiles every time, so `wm pakman`
-  compiles once into `.build/pakman.js` and reuses it until a source file changes.
+  compiles once into a user cache outside the installed compiler source and reuses it until a source file changes.
 - Compiled, a command that doesn't hit the network (`list`, `generations`) takes ~25 ms. For
   scale, evaluating one package from nixpkgs takes seconds; not a fair comparison yet (one
   package vs ~100k), but the per-package evaluation design is meant to keep it this way.

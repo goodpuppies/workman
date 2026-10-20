@@ -6,6 +6,7 @@ from "./model.wm" import { Checksum, Candidate };
 from js.module("./host.ts") import unsafe { jsonTextOr: (Js.Value, String) -> String, captures: (String, String) -> Js.Array<String> };
 from js.module("./host.ts") import { headInfo };
 from "./io.wm" import { describe };
+from "./io.wm" import { series };
 from "./fun.wm" import { mapAll, filterAll };
 
 -- `digest` is "sha256:<hex>", or null on assets uploaded before GitHub computed digests.
@@ -75,6 +76,30 @@ let githubReleases = (repo) => {
   fetchJson(url)
     :> assertReleases
     :> Task.map(publishedReleases)
+};
+
+record GithubTagCommit = { sha: String };
+record GithubTag = { name: String, commit: GithubTagCommit };
+record GithubCommitDate = { date: String };
+record GithubCommitInfo = { committer: GithubCommitDate };
+record GithubCommit = { commit: GithubCommitInfo };
+
+-- For upstreams that publish Git tags without GitHub release objects. Filter
+-- before looking up dates to avoid a commit API request for every old tag.
+let githubTagCandidates = (repo, versionOf) => {
+  let url = "https://api.github.com/repos/" ++ repo;
+  let tags: Task<Js.Array<GithubTag>, String> = fetchJson(url ++ "/tags?per_page=100")
+    :> Task.andThen((body) => { body :> Json.assert :> Result.mapErr((_) => { "invalid GitHub tags" }) :> Task.fromResult });
+  tags :> Task.andThen((items) => {
+    let selected = items :> Js.Array.toList :> List.mapPartial((tag: GithubTag) => {
+      versionOf(tag.name) :> Option.map((version) => { (version, tag.commit.sha) })
+    });
+    series(selected, (version, sha) => {
+      let commit: Task<GithubCommit, String> = fetchJson(url ++ "/commits/" ++ sha)
+        :> Task.andThen((body) => { body :> Json.assert :> Result.mapErr((_) => { "invalid GitHub commit" }) :> Task.fromResult });
+      commit :> Task.map((info: GithubCommit) => { Candidate(version, info.commit.committer.date, "stable", [], sha) })
+    })
+  })
 };
 
 let hasAsset = (release: Release, name) => {

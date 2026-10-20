@@ -9,6 +9,7 @@
 from "./io.wm" import { envOr };
 
 record Paths = {
+  root: String,     -- selected installation root (including --root overrides)
   home: String,     -- the root User-scope packages install into
   state: String,
   sources: String,  -- downloads, by sha256
@@ -27,6 +28,7 @@ let paths = (root) => {
   let home = envOr("HOME", "/root");
   let state = envOr("PAKMAN_STATE", envOr("XDG_STATE_HOME", home ++ "/.local/state") ++ "/pakman");
   .{
+    root,
     home,
     state,
     sources = state ++ "/sources",

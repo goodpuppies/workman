@@ -3,7 +3,7 @@
 from js.global("JSON") import { parse } as JSON;
 from "../../testman/test.wm" import *;
 from "../src/model.wm" import *;
-from "../src/plan.wm" import { encodePlan, decodePlan, PlanJson };
+from "../src/plan.wm" import { encodePlan, decodePlan, PlanJson, decodeRef, PartJson };
 from "../src/io.wm" import { compactJson };
 
 -- Prints a package's plan, then reads the JSON back as pakman does.
@@ -28,12 +28,24 @@ let everyStep = Package(
     WriteText("opt/app/app.ini", lines(["[System]", "UserMode=1"]), Data),
     WriteText("usr/bin/app-run", cat([lit("#!/bin/sh\nexec "), ref(Own("opt/app/app")), lit(" \"$@\"\n")]), Exec),
     Build("compile", ["/usr/bin/cc"]),
+    BuildCommand(CommandBuild(file(package("wm", "~0.4.1"), ".local/bin/wm"), ["compile", "app/main.wm", "--executable", "-o", "app"], "source.tar", 1, "app", ".local/bin/app", Exec)),
     MakeDir("var/lib/app")
   ],
   [Base("/usr/lib/libgtk-3.so.0"), Of("hello-lib", "usr/share/hello-lib/greeting")]
 );
 
 let tests = [
+  test("package programs cannot forge manager-bound store references", () => {
+    assertErr(decodeRef(PartJson("store", "bin/tool", "/unselected/tree")))
+      :> Task.andThen((message) => { assertContains(message, "expected a file reference") })
+  }),
+  test("private dependency references survive the sandbox protocol", () => {
+    let pkg = Package("1.0.0", [], [
+      WriteText(".local/bin/app", cat([lit("exec "), shellRef(file(package("wm", "~0.4.1"), ".local/bin/wm"))]), Exec)
+    ], [file(package("deno", "2.8.0"), ".local/bin/deno")]);
+    assertOk(throughJson(pkg))
+      :> Task.andThen((back) => { assertEqual(compactJson(encodePlan(back)), compactJson(encodePlan(pkg))) })
+  }),
   test("a plan survives printing and reading back", () => {
     assertOk(throughJson(everyStep))
       :> Task.andThen((back) => { assertEqual(compactJson(encodePlan(back)), compactJson(encodePlan(everyStep))) })
