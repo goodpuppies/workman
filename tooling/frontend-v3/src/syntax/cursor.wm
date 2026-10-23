@@ -1,5 +1,5 @@
 from "../lexer/token.wm" import * as Token;
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "basis/utf16_source.wm" import * as Text;
 
 // Precondition: document is Lexer.lex(source). Keep its EOF sentinel in the cursor.
 // Tokens and trivia remain the lexer's authored values; mates stay absolute indices.

@@ -24,7 +24,8 @@ for directory in ['src', 'adapters/portable']:
     shutil.copytree(frontend / directory, source / directory, dirs_exist_ok=True)
 (source / 'tools').mkdir(exist_ok=True)
 shutil.copy2(frontend / 'tools/native-lex.wm', source / 'tools/native-lex.wm')
-basis = source / 'lib/subsetml'
+# The frontend imports the Basis as "basis/x.wm"; sml-entry resolves those to this generated graph.
+basis = source / 'basis'
 basis.mkdir(parents=True, exist_ok=True)
 inventory = json.loads((subsetml / 'docs/basis-dependencies.json').read_text())['modules']
 files = ['src/subset_text_host.sml']
@@ -35,6 +36,7 @@ for name, module in inventory.items():
 subprocess.run([subsetml / 'bin/subsetml', 'wm', basis, *files], cwd=subsetml, check=True)
 subprocess.run([
     subsetml / 'bin/subsetml', 'sml-entry', lowered,
+    '--basis', basis,
     '--panic-runtime', basis / 'subset_process.wm',
     '--native-adapter', basis / 'subset_host.wm', subsetml / 'lib/subset_host.sml', 'SubsetHost',
     '--native-adapter', basis / 'subset_text_host.wm', subsetml / 'lib/subset_text_host.sml', 'SubsetTextHost',

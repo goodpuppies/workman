@@ -68,7 +68,7 @@ The repository-root scripts are listed with their complete repository-relative p
 | `subsetml-lowering-plan.md` | Refactor | Keep compiler/Basis agreements and compatibility findings. Remove old parser implementation/recovery roadmap; preserve only relevant compatibility lessons as clearly historical evidence. |
 | `structural-editor-plan.md` | Keep and align | Remove suggestions to retain the old parser as a scoped helper/reference implementation; this worklist decides to delete it. |
 | `src/lexer/`, `src/source/source.wm` | Keep | Preserve lexical behavior, lossless UTF-16 source handling, trivia, marks, and mates. |
-| `lib/subsetml/`, `adapters/js/lexer.wm`, `adapters/portable/document.wm` | Keep | Preserve portable Basis and lexer transport/codec. No parser dependency belongs in this baseline. |
+| `"basis/..."` imports, `adapters/js/lexer.wm`, `adapters/portable/document.wm` | Keep | Preserve portable Basis and lexer transport/codec. No parser dependency belongs in this baseline. |
 | `tools/lex.wm`, `tools/native-lex.wm`, `tools/reader_debug.wm` | Keep | Preserve lexer/debug consumers. Add editor tools independently. |
 | `lexical-design.md`, examples, Basis sync tooling | Keep | Existing lexer decisions and compatibility work remain in force. |
 | `explorer/`, `tests/frontend_v3_lexer_test.ts` (repository root) | Keep and extend later | Preserve working lexer inspection and regressions. New editor stages must consume actual v3 outputs, never a substitute parser. |

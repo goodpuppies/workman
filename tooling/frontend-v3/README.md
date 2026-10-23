@@ -65,20 +65,12 @@ constraints, implementation sequence and future compiler-integrated lowering dir
 The separate [SubsetML decision record](../../../SubsetML/docs/frontend-v3-native.md)
 contains the existing lowering agreements.
 
-## Basis snapshot
+## Basis
 
-Frontend algorithms remain WM-authored. `lib/subsetml/` is generated from the authoritative
-SubsetML `.sml` sources and includes their existing WM text-host adapter. Runtime use needs
-only this repository; a sibling checkout is required to refresh the snapshot:
-
-```sh
-deno run -A scripts/sync_frontend_v3_basis.ts ../SubsetML
-```
-
-The script runs from the repository root, selects the `SubsetUtf16Source`, `SubsetNatural` and `SubsetProcess` dependency closures,
-copies their original SML sources for future native builds, and records source/output hashes in `lib/subsetml/manifest.json`. Do not hand-edit those WM
-files. Native build integration must select the SubsetML native text adapter; a vendored JS
-adapter is not itself translated into a new host primitive.
+Frontend algorithms remain WM-authored. They use the SubsetML Basis through `"basis/..."`
+imports (`from "basis/list.wm" import * as Lists;`), which WM resolves to the generated
+`subml-basis/` modules and SubsetML's `sml-entry --basis DIR` resolves for native builds. See
+`subml-basis/README.md` for how that directory is regenerated.
 
 ## Code conventions
 
@@ -321,8 +313,9 @@ _scratch/frontend-v3-native/native-lex --utf16le path/to/raw-units.bin
 ```
 
 Run these commands from the wm-mini root. `--subsetml PATH` selects another SubsetML
-checkout; `--output PATH` selects the disposable build directory. The build stages the source
-Basis checker declarations, discovers the entry's canonical import graph and selects the
+checkout; `--output PATH` selects the disposable build directory. The build generates the Basis
+from SubsetML into the staged `basis/` directory, passes it as `--basis`, discovers the entry's
+canonical import graph and selects the
 existing native adapters through the generated MLB. The lexer build is independent of
 editor/parser modules. Its owned staged source directory is rebuilt to remove stale
 files from previous graphs. Authored WM remains the source of truth.

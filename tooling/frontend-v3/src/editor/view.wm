@@ -4,8 +4,8 @@ from "./project.wm" import * as Project;
 from "./diff.wm" import * as Diff;
 from "./inlays.wm" import * as Inlays;
 from "./preview.wm" import * as Preview;
-from "../../lib/subsetml/subset_result.wm" import * as R;
-from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "basis/result.wm" import * as R;
+from "basis/list.wm" import * as Lists;
 
 record AttributedAddition = {
   addition: Inlays.Addition,
@@ -23,7 +23,7 @@ type Error = ProjectionDiffError<Diff.Error> | InlayPreviewError<Preview.Error>;
 
 let render = (document: Ast.Program, marked, limit) => {
   let projection = Project.render(document);
-  R.andThen(R.mapError(Diff.compareAnchored(document.source, projection.text,
+  R.andThen(R.mapErr(Diff.compareAnchored(document.source, projection.text,
     projection.correspondence, limit), ProjectionDiffError), (difference) => {
     let details = Inlays.details(difference);
     let rec attribute = (remaining, virtuals, acc) => {
@@ -54,7 +54,7 @@ let render = (document: Ast.Program, marked, limit) => {
     };
     let additions = attribute(details, projection.virtualSpans, []);
     let insertions = Lists.map(details, (value: Inlays.Addition) => {value.insertion});
-    R.map(R.mapError(Preview.render(document.source, insertions, marked), InlayPreviewError), (preview) => {
+    R.map(R.mapErr(Preview.render(document.source, insertions, marked), InlayPreviewError), (preview) => {
       View(document, projection, difference, preview, additions)
     })
   })

@@ -1,4 +1,4 @@
-from "../../lib/subsetml/subset_list.wm" import * as BasisList;
+from "basis/list.wm" import * as BasisList;
 from "./character.wm" import * as Char;
 from "../source/source.wm" import * as Source;
 from "./token.wm" import * as Token;

@@ -1,4 +1,4 @@
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "basis/utf16_source.wm" import * as Text;
 from "../source/mark.wm" import * as Mark;
 from "../source/source.wm" import * as Source;
 

@@ -30,10 +30,10 @@ Nota's wire encoding.
 
 ## Value model and API
 
-WON is part of the SubsetML Basis, written in SubsetML (`../SubsetML/src/subset_won*.sml`)
-and used from WM through the generated snapshot in `../frontend-v3/lib/subsetml/`. Import
-`subset_won_value.wm` for values and constructors, and `subset_won.wm` for encoding,
-decoding, and access. Values are ordinary datatypes:
+WON is part of the SubsetML Basis, written in SubsetML (`../SubsetML/src/subset_won*.sml`).
+WM programs import it as `"basis/won_value.wm"` for values and constructors and
+`"basis/won.wm"` for encoding, decoding, and access (generated into `subml-basis/`).
+Values are ordinary datatypes:
 
 ```text
 Null
@@ -54,13 +54,11 @@ let port = Won.read(source) :> Won.get("server") :> Won.get("port") :> Won.numbe
 // Ok("8080") | Err(Missing("server.port")) | Err(Mismatch(path, kind)) | Err(Malformed(error))
 ```
 
-`decode(source)` returns `SubsetResult.Ok(value)` or
-`SubsetResult.Err(Error(byteOffset, message))`. Offsets are zero-based bytes, typed `I32`
-(SML `int`).
-The Result datatype comes from the shared Basis snapshot at
-`../frontend-v3/lib/subsetml/subset_result.wm`.
+`decode(source)` returns `Ok(value)` or `Err(Error(byteOffset, message))`. Offsets are
+zero-based bytes, typed `I32` (SML `int`). The Basis's Result is WM's built-in `Result`, so
+`Result.map`, `via` and pipes work on it directly.
 
-`encode(value)` returns `SubsetResult.Ok(source)` or `SubsetResult.Err(message)`.
+`encode(value)` returns `Ok(source)` or `Err(message)`.
 It checks that the supplied value is representable, including duplicate keys,
 names, number spelling, and UTF-8. Output uses bare identifier keys, quoted
 non-identifier keys, single spaces, escaped text, and lowercase hex blobs.
@@ -70,8 +68,8 @@ number spellings or reorder record fields, and is not a canonical encoding for
 signing.
 
 ```wm
-from "../frontend-v3/lib/subsetml/subset_won_value.wm" import * as W;
-from "../frontend-v3/lib/subsetml/subset_won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
+from "basis/won.wm" import * as Won;
 
 let message = W.Tag("Reply", [("id", W.Number("42"))],
   W.Record([("ok", W.Boolean(true)), ("data", W.Blob(['\u0000', 'ÿ']))]));

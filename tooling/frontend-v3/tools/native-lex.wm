@@ -1,11 +1,11 @@
 from "../src/lexer/lexer.wm" import * as Lexer;
 from "../adapters/portable/document.wm" import * as Document;
-from "../lib/subsetml/subset_utf16_source.wm" import * as Text;
-from "../lib/subsetml/subset_utf16.wm" import * as Utf16;
-from "../lib/subsetml/subset_io.wm" import * as Io;
-from "../lib/subsetml/subset_process.wm" import * as Process;
-from "../lib/subsetml/subset_string.wm" import * as Bytes;
-from "../lib/subsetml/subset_result.wm" import * as R;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/utf16.wm" import * as Utf16;
+from "basis/io.wm" import * as Io;
+from "basis/process.wm" import * as Process;
+from "basis/string.wm" import * as Bytes;
+from "basis/result.wm" import * as R;
 
 // Default files are strict UTF-8. --utf16le reads raw units, including lone surrogates.
 // BOMs are ordinary source units; neither path strips or normalizes input.

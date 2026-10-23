@@ -1,4 +1,4 @@
-from "../../lib/subsetml/subset_list.wm" import * as BasisList;
+from "basis/list.wm" import * as BasisList;
 from "./token.wm" import * as Token;
 from "../source/mark.wm" import * as Mark;
 from "./reader.wm" import * as Reader;

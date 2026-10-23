@@ -2,15 +2,15 @@
 """Build WON's conformance probe natively (MLton) and as JS, from one SubsetML source. No downloads.
 
 WON is the SubsetWon Basis module. The probe is SubsetML's tests/basis/won_probe.sml: it is
-compiled with MLton directly, and translated to WM and compiled to JS. won.mjs is the
-snapshot's generated subset_won.wm, the module WM programs import.
+compiled with MLton directly, and translated to WM and compiled to JS. won.mjs is
+subml-basis/subset_won.wm, the module WM programs import as "basis/won.wm".
 """
 import argparse
 from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
-BASIS = ROOT / "tooling/frontend-v3/lib/subsetml"
+BASIS = ROOT / "subml-basis"
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("output", type=Path)
 p.add_argument("--subsetml", type=Path, default=ROOT.parent / "SubsetML/bin/subsetml")

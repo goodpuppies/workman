@@ -2,8 +2,8 @@ from "../syntax/cursor.wm" import * as Cursor;
 from "../surface/ast.wm" import * as Ast;
 from "../source/mark.wm" import * as Marks;
 from "../lexer/token.wm" import * as Token;
-from "../../lib/subsetml/subset_list.wm" import * as Lists;
-from "../../lib/subsetml/subset_result.wm" import * as R;
+from "basis/list.wm" import * as Lists;
+from "basis/result.wm" import * as R;
 
 // This is canonical assembly state, not the deleted recognizer's Parsed/Rejected API.
 // Missing structure does not consume tokens or extend authored source extent.

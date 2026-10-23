@@ -1,9 +1,9 @@
 from "../../testman/test.wm" import *;
 from "../src/editor/hints.wm" import * as Hints;
 from "../src/editor/preview.wm" import * as Preview;
-from "../lib/subsetml/subset_utf16_source.wm" import * as Source;
-from "../lib/subsetml/subset_result.wm" import * as R;
-from "../lib/subsetml/subset_list.wm" import * as Lists;
+from "basis/utf16_source.wm" import * as Source;
+from "basis/result.wm" import * as R;
+from "basis/list.wm" import * as Lists;
 
 let source = (text: String) => {
   match(Source.fromNativeUnits(text)) {

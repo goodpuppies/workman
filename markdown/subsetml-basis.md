@@ -84,7 +84,9 @@ the manifest entry is read from.
 - `std/`: WM's own library, including every module of the old `basis/`. Those need host types
   SubsetML doesn't have (`word`, vectors, `real32`) or are thin JS primitives (`Math`, parts of
   `Real`). Deferred: they move into the SubsetML Basis only if that becomes necessary.
-- `tooling/frontend-v3/lib/subsetml/` is still a separate snapshot; it can move to `subml-basis/`.
+- frontend-v3 and `tooling/won` use `subml-basis/` through `"basis/..."` imports; the old
+  `tooling/frontend-v3/lib/subsetml/` snapshot is gone. SubsetML's `sml-entry --basis DIR`
+  resolves the same specifiers for native builds.
 - `std/list_pair.wm` and `std/basis.wm` stay: their APIs differ from the Basis's (see the std
   overlap question below).
 

@@ -2,9 +2,9 @@ from "../../src/editor/preview.wm" import * as Preview;
 from "../../src/editor/diff.wm" import * as Diff;
 from "../../src/editor/inlays.wm" import * as Inlays;
 from "../../src/editor/hints.wm" import * as Hints;
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
-from "../../lib/subsetml/subset_result.wm" import * as R;
-from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/result.wm" import * as R;
+from "basis/list.wm" import * as Lists;
 
 let source = (value: String) => {
   match(Text.fromNativeUnits(value)) {

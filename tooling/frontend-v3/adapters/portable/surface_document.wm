@@ -1,8 +1,8 @@
 from "./document.wm" import * as Lexical;
 from "../../src/surface/ast.wm" import * as Ast;
 from "../../src/source/mark.wm" import * as Marks;
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
-from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/list.wm" import * as Lists;
 
 // Complete ASCII snapshot for the currently exercised canonical schema. Source and
 // word spellings are exact UTF-16 units; holes, opaque regions and unsupported-feature

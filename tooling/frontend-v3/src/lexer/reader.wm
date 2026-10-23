@@ -1,5 +1,5 @@
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
-from "../../lib/subsetml/subset_result.wm" import * as BasisResult;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/result.wm" import * as BasisResult;
 from "../source/source.wm" import * as Source;
 
 // Immutable UTF-16 source context. Host string conversion belongs to adapters.

@@ -9,9 +9,9 @@ from "../src/editor/inlays.wm" import * as Inlays;
 from "../src/editor/preview.wm" import * as Preview;
 from "../src/editor/view.wm" import * as View;
 from "../adapters/portable/surface_document.wm" import * as Snapshot;
-from "../lib/subsetml/subset_utf16_source.wm" import * as TextSource;
-from "../lib/subsetml/subset_result.wm" import * as R;
-from "../lib/subsetml/subset_list.wm" import * as Lists;
+from "basis/utf16_source.wm" import * as TextSource;
+from "basis/result.wm" import * as R;
+from "basis/list.wm" import * as Lists;
 
 let source = (text: String) => {
   match(TextSource.fromNativeUnits(text)) {

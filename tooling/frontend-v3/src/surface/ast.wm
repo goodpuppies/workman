@@ -1,6 +1,6 @@
 from "../source/mark.wm" import * as Marks;
 from "../lexer/token.wm" import * as Token;
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
+from "basis/utf16_source.wm" import * as Text;
 
 // Minimal canonical slice, deliberately not a declaration of complete WM coverage.
 // Every required structural terminal is authored or marked in the same shape.

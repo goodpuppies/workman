@@ -1,11 +1,11 @@
 from "../../src/lexer/token.wm" import * as Token;
 from "../../src/source/source.wm" import * as Source;
 from "../../src/source/mark.wm" import * as Mark;
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
-from "../../lib/subsetml/subset_natural.wm" import * as Natural;
-from "../../lib/subsetml/subset_string.wm" import * as Bytes;
-from "../../lib/subsetml/subset_list.wm" import * as BasisList;
-from "../../lib/subsetml/subset_result.wm" import * as R;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/natural.wm" import * as Natural;
+from "basis/string.wm" import * as Bytes;
+from "basis/list.wm" import * as BasisList;
+from "basis/result.wm" import * as R;
 
 // Stable ASCII JSON snapshot. Text is represented as exact UTF-16 units.
 // This is a tooling boundary, independent of either backend's runtime representation.

@@ -2,9 +2,9 @@ from "./diff.wm" import * as Diff;
 from "./preview.wm" import * as Preview;
 from "../lexer/lexer.wm" import * as Lexer;
 from "../lexer/token.wm" import * as Token;
-from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
-from "../../lib/subsetml/subset_list.wm" import * as Lists;
-from "../../lib/subsetml/subset_result.wm" import * as R;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/list.wm" import * as Lists;
+from "basis/result.wm" import * as R;
 
 // Insertion-only view of a full diff. Projected lexeme/trivia boundaries split labels
 // so adjacent virtual tokens (? then ;, or } then ,) remain separate and ordered.

@@ -6,7 +6,7 @@ from "../surface/ast.wm" import * as Ast;
 from "../source/mark.wm" import * as Marks;
 from "../lexer/token.wm" import * as Token;
 from "../lexer/lexer.wm" import * as Lexer;
-from "../../lib/subsetml/subset_list.wm" import * as Lists;
+from "basis/list.wm" import * as Lists;
 
 let letWord: List<I32> = [108, 101, 116];
 let arrowKind = Token.PunctuationToken(Token.FatArrow);
