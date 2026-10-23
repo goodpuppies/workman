@@ -338,7 +338,9 @@ function firstUnimportedManualForeignTypeIn(
 }
 
 function isManualFfiBuiltinType(name: string): boolean {
-  return name === "Number" || name === "String" || name === "Bool" || name === "Void" ||
+  // I32 values are JS numbers, so a trusted signature may state that a host integer is in range.
+  return name === "Number" || name === "I32" || name === "String" || name === "Bool" ||
+    name === "Void" ||
     name === "Js.Value" || name === "Js.Object" || name === "Js.Error" ||
     name === "Js.Promise" || name === "Js.Array" || name === "Option" || name === "Result";
 }

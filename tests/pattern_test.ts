@@ -218,3 +218,25 @@ Deno.test("constructor payload binders reject duplicates across nested patterns"
     "duplicate pattern binder x",
   );
 });
+
+Deno.test("a lone wildcard ignores a multi-field constructor payload", async () => {
+  await checkSource(`
+    type Symbol = | Valid<String> | Invalid<String, Number, String>;
+    let invalid = match(symbol) => {
+      Invalid(_) => { true },
+      Valid(_) => { false },
+    };
+  `);
+});
+
+Deno.test("a type-variable payload takes several patterns as one tuple", async () => {
+  await checkSource(`
+    let second = (value) => {
+      match(value) {
+        Some(_, b) => { b },
+        None => { "none" },
+      }
+    };
+    let used = second(Some(1, "a"));
+  `);
+});

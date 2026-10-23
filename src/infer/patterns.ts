@@ -251,7 +251,7 @@ export function inferPattern(
         });
       }
       if (ctor.tag === "fn") {
-        const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
+        const args = constructorPatternArgs(ctor, p);
         if (args.length !== p.args.length) {
           throw new Error(`${p.name} expects ${args.length} patterns`);
         }
@@ -453,7 +453,7 @@ export function inferBindingPattern(
         });
       }
       if (ctor.tag === "fn") {
-        const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
+        const args = constructorPatternArgs(ctor, pattern);
         if (args.length !== pattern.args.length) {
           throw new Error(`${pattern.name} expects ${args.length} patterns`);
         }
@@ -507,6 +507,23 @@ export function inferBindingPattern(
     default:
       throw new Error("unsupported let pattern");
   }
+}
+
+// Constructor patterns are normalized to one pattern per parameter, so later passes see one
+// shape: a lone `_` ignores a payload of any arity, and a constructor whose one parameter is a
+// type variable takes several patterns as one tuple, the way `Some(1, "a")` packs its arguments.
+function constructorPatternArgs(
+  ctor: Extract<Ty, { tag: "fn" }>,
+  pattern: Extract<Pattern, { kind: "PCtor" }>,
+): Ty[] {
+  const args = ctor.params.length === 1 ? expandCallArg(ctor.params[0]) : ctor.params;
+  const given = pattern.args;
+  if (args.length > 1 && given.length === 1 && given[0].kind === "PWildcard") {
+    pattern.args = args.map(() => ({ kind: "PWildcard", node: given[0].node }));
+  } else if (args.length === 1 && given.length > 1 && prune(args[0]).tag === "var") {
+    pattern.args = [{ kind: "PTuple", items: given, node: pattern.node }];
+  }
+  return args;
 }
 
 function lookupPatternValue(env: Env, strEnv: StrEnv, name: string, path?: LongId) {

@@ -186,6 +186,7 @@ function isReflectedForeignTypeName(name: string, localTypes: Set<string>): bool
 
 const builtInTypeNames = new Set([
   "Bool",
+  "I32",
   "Number",
   "Option",
   "Result",

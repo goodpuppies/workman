@@ -1,6 +1,6 @@
 # I32: signed 32-bit integers in WM
 
-Status: decided 2026-10-23; steps 1–5 implemented in wm-mini (uncommitted). Background:
+Status: decided 2026-10-23; steps 1–5 in wm-mini, step 6 in SubsetML (`make test` passes). Background:
 [docs/integer-investigation.md](../docs/integer-investigation.md) and SubsetML's
 `docs/integers.md`, whose language contract WM matches.
 
@@ -71,5 +71,23 @@ result is exact. Comparisons emit plain JS operators.
 
 - Operators used through a user carrier (`map2` lifting) and first-class
   operator values use the unchecked JS operator at `I32`.
-- JS FFI maps TS `number` to `Number` only.
+- Reflected JS FFI maps TS `number` to `Number` only; an `unsafe` import may declare
+  `I32` explicitly.
 - `Gpu.i32` is unrelated to `I32`.
+
+## SubsetML translation (step 6)
+
+SML→WM ascribes every int constant, `(42: I32)`, and prints `div`/`mod` as
+`I32.div`/`I32.mod`. The reader turns `(n: I32)` back into an SML int constant, so
+the round trip is unchanged. An operation typed only by a default
+(`fn (a, b) => a + b`) is rejected in both directions. SubsetML's
+`docs/translation.md#integers` has the rules. `Int.*` and `abs` are not mapped yet.
+
+wm-mini changes this needed:
+
+- `-2147483648` (also `(-2147483648: I32)`) is range-checked as one literal.
+- `unsafe` JS imports may declare `I32`.
+- Constructor patterns: a lone `_` ignores a multi-field payload (`Invalid(_)`), and
+  a constructor whose one parameter is a type variable takes several patterns as a
+  tuple (`Some(_, b)`), matching `Some(1, "a")` in expressions. Inference normalizes
+  both to one pattern per parameter.

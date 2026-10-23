@@ -55,6 +55,9 @@ import { elaborateConstraint } from "./constraints.ts";
 import { callInvocationPlan } from "../pipe_elaboration.ts";
 import { inferDomainInvocation } from "./invocation.ts";
 
+// Literals written directly under unary minus, so `-2147483648` is range-checked as one value.
+const negatedLiterals = new WeakSet<Expr>();
+
 export function inferExpr(expr: Expr, context: InferContext, expected?: Ty): Ty {
   try {
     return inferExprInner(expr, context, expected);
@@ -69,7 +72,9 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
   switch (expr.kind) {
     // An integer literal in I32 range is overloaded; context or defaulting picks the type.
     case "Int":
-      t = isI32Literal(expr.value) ? freshNumeric() : NumberTy;
+      t = isI32Literal(negatedLiterals.has(expr) ? -expr.value : expr.value)
+        ? freshNumeric()
+        : NumberTy;
       break;
     case "Float":
       t = NumberTy;
@@ -477,6 +482,9 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       break;
     case "Unary":
       if (expr.op === "-") {
+        // The parser reads `(-2147483648: I32)` as a minus around the ascribed literal.
+        const operand = expr.value.kind === "Ascribed" ? expr.value.value : expr.value;
+        if (operand.kind === "Int") negatedLiterals.add(operand);
         const numeric = freshNumeric();
         recordExpectedExprType(facts, expr.value, numeric);
         const value = inferExpr(expr.value, context);

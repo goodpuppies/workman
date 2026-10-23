@@ -65,8 +65,10 @@ Deno.test("integer literals take I32 from context", async () => {
       print(limit);
       print(limit > 0);
       print(match(add(1, 1)) { 2 => { "two" }, _ => { "other" } });
+      print((-2147483648: I32));
+      print(match((3: I32)) { (3: I32) => { "three" }, _ => { "other" } });
     `),
-    ["3", "2147483647", "true", "two"],
+    ["3", "2147483647", "true", "two", "-2147483648", "three"],
   );
 });
 
@@ -82,6 +84,7 @@ Deno.test("I32 and Number do not mix", async () => {
 
 Deno.test("integer literals outside the I32 range are Number only", async () => {
   assertStringIncludes(await typeError(`let bad: I32 = 2147483648;`), "Number");
+  assertStringIncludes(await typeError(`let bad: I32 = -2147483649;`), "Number");
   assertStringIncludes(await typeError(`let bad: I32 = 1.0;`), "Number");
 });
 

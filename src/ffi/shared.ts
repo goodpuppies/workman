@@ -422,6 +422,7 @@ function isConcreteForeignName(typeName: string): boolean {
 
 const builtInTypeNames = new Set([
   "Bool",
+  "I32",
   "Number",
   "Option",
   "Result",
