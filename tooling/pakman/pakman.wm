@@ -12,13 +12,14 @@ from "./src/install.wm" import * as Install;
 from "./src/fun.wm" import { foldSeries, ignore, mapAll, filterAll, appendAll, concatAll };
 from "./src/refs.wm" import { dependencies };
 from "./src/text.wm" import { join };
-from "./src/io.wm" import { args, eprint, exit, series, nowSeconds };
+from "./src/io.wm" import { args, eprint, exit, series, nowSeconds, addPackageDirectory };
 
 let via = Monad.via;
 
 let usage = join([
   "usage: pakman <command> [args] [--user | --system | --root DIR]",
   "",
+  "  add-dir <directory>   remember a local package directory in WM configuration",
   "  list                  known packages and their locked versions",
   "  versions <pkg>        what upstream offers, by channel, and which one pakman would pick",
   "  resolve [pkg...]      find upstream versions and pin them in pakman.lock (default: all)",
@@ -447,6 +448,12 @@ let run = (opts: Options) => {
     Task.fail(if (opts.force) { "--force is only supported by install" } else { "--pin is only supported by install" })
   } else {
     match(opts.positional) {
+      ["add-dir", directory] => {
+        if (opts.only != "") { Task.fail("add-dir configures WM; it does not take an installation root") } else {
+          addPackageDirectory(directory) :> Task.map((path) => { print("Package directory registered: " ++ path) })
+        }
+      },
+      ["add-dir", .._] => { Task.fail("add-dir needs exactly one package directory") },
       ["list"] => { listPackages(opts, home) },
       ["resolve"] => {
         Packages.loadAll(p)

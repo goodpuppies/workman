@@ -7,6 +7,8 @@
 
 const userAgent = "pakman/0.1 (+https://github.com/goodpuppies)";
 import { pakmanImport } from "../../../src/pakman_imports.ts";
+export { packageDirectories, addPackageDirectory } from "../../../src/user_config.ts";
+export { pakmanStateDirectory } from "../../../src/user_paths.ts";
 export {
   isRepository, packageStoreName, repositoryRecipe, repositoryVersion,
   recipeSource, packageProgramPath,

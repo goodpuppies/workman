@@ -1,11 +1,6 @@
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
-
-export function workmanCache(): string {
-  const configured = Deno.env.get(Deno.build.os === "windows" ? "LOCALAPPDATA" : "XDG_CACHE_HOME");
-  const cache = configured && isAbsolute(configured) ? configured : join(homedir(), ".cache");
-  return join(cache, "workman");
-}
+import { dirname, join } from "node:path";
+import { workmanCache } from "./user_paths.ts";
+export { workmanCache } from "./user_paths.ts";
 
 async function digest(bytes: Uint8Array): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);

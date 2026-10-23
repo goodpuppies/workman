@@ -115,6 +115,35 @@ are included in the WM `0.4.2` Git tag; application recipes require at least
 that patch. Git tags and JSR package publication are separate. The WM/Deno recipes currently target Linux,
 with Deno binaries for x86_64 and aarch64.
 
+On a fresh machine, register a package collection explicitly:
+
+```sh
+git clone https://github.com/mommysgoodpuppy/pak.git ~/pak
+wm pakman add-dir ~/pak/paks
+wm pakman install github.com/mommysgoodpuppy/atview
+```
+
+`add-dir` records the canonical directory in WM's user configuration at
+`$XDG_CONFIG_HOME/workman/config.json` (default `~/.config/workman/config.json`):
+
+```json
+{ "pakman": { "directories": ["/absolute/path/to/pak/paks"] } }
+```
+
+Registered directories are searched in registration order, before the legacy
+sibling `../pak/paks` fallback. Registering the same path again is harmless.
+`PAKMAN_PKGS`, when set, overrides that search list for the process. Settings
+are shared across profiles and independent of the current working directory.
+
+WM uses `$XDG_CACHE_HOME/workman` for generated files and downloaded compiler
+resources, and `$XDG_STATE_HOME/workman/pakman` for pakman stores/profiles.
+Their defaults are `~/.cache/workman` and `~/.local/state/workman/pakman`.
+`PAKMAN_STATE` remains an explicit override.
+
+Registration solves recipe discovery; it does not change target support. The
+current Deno binary recipe and Bubblewrap command-build backend target Linux;
+registering a collection alone does not provide a Termux build backend.
+
 The separate [SubsetML port](../pakman-subsetml/README.md) is authored in WM and
 targets native MLWorks on PS2. Its initial package format and target adapters
 are documented there.
@@ -190,9 +219,9 @@ Environment:
 
 | variable | default | |
 |---|---|---|
-| `PAKMAN_STATE` | `~/.local/state/pakman` | store, source cache, generations |
+| `PAKMAN_STATE` | `~/.local/state/workman/pakman` | store, source cache, generations |
 | `PAKMAN_LOCK` | `<state>/profiles/<root>/pakman.lock` | the lock file; each root has its own by default |
-| `PAKMAN_PKGS` | `pak/paks` beside the wm checkout (`~/git/pak/paks`) | package directories, colon-separated; the first one wins on duplicate names |
+| `PAKMAN_PKGS` | registered directories, then `pak/paks` beside the wm checkout | override package directories, colon-separated; the first one wins on duplicate names |
 | `PAKMAN_REPOSITORIES` | `{}` | JSON mapping GitHub repository addresses to local Git working trees for development |
 | `PAKMAN_WM` | this wm checkout | the Workman compiler used for package programs |
 | `PAKMAN_MIN_AGE_DAYS` | per package (3) | overrides every package's minimum release age |

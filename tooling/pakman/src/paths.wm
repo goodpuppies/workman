@@ -1,12 +1,13 @@
 -- Where pakman keeps things.
 --
--- v1 keeps all state under the user's home so nothing needs root until a
+-- State follows WM's XDG layout. Nothing needs root until a
 -- generation is installed into a real prefix. PAKMAN_STATE overrides it.
 --
 -- Each install root is an environment with its own generations and its own
 -- lock, so `zig@0.14.1` in one root doesn't change the version in another.
 
 from "./io.wm" import { envOr };
+from js.module("./host.ts") import unsafe { pakmanStateDirectory: Void -> String };
 
 record Paths = {
   root: String,     -- selected installation root (including --root overrides)
@@ -26,7 +27,7 @@ let profileDirOf = (profiles, root) => {
 
 let paths = (root) => {
   let home = envOr("HOME", "/root");
-  let state = envOr("PAKMAN_STATE", envOr("XDG_STATE_HOME", home ++ "/.local/state") ++ "/pakman");
+  let state = pakmanStateDirectory();
   .{
     root,
     home,

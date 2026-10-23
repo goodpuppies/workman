@@ -1,7 +1,7 @@
 -- Packages as programs.
 --
--- Every <name>/pak.wm in the package directories (PAKMAN_PKGS, colon-separated,
--- default pak/paks beside the wm checkout) is a self-contained wm
+-- Every <name>/pak.wm in WM's registered package directories (or an explicit
+-- PAKMAN_PKGS override, with the sibling pak/paks as a legacy fallback) is a self-contained wm
 -- program; there is no index. A package's folder can also hold its patches
 -- and other files. pakman compiles each one on its own and talks to it through
 -- plan.wm's protocol, running it as a separate Deno process with only the
@@ -12,7 +12,7 @@
 --   build      offline Bubblewrap host environment, invoked by store.wm
 
 from js.global("JSON") import { parse } as JSON;
-from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool, isRepository: String -> Bool };
+from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool, isRepository: String -> Bool, packageDirectories: String -> Js.Array<String> };
 from js.module("./host.ts") import { repositoryRecipe, repositoryVersion, recipeSource, packageProgramPath, rememberRecipe, lockedRecipe } as Repository;
 from "./model.wm" import { Target, Scope, Candidate, Package, Source };
 from "./plan.wm" import *;
@@ -42,13 +42,7 @@ record PackageInfo = {
 -- repository beside the wm checkout (~/git/wm-mini -> ~/git/pak/paks).
 let defaultPackageDir = () => { dirname(dirname(dirname(pakmanRoot()))) ++ "/pak/paks" };
 
-let packageDirs = () => {
-  envOr("PAKMAN_PKGS", defaultPackageDir())
-    :> .split(":")
-    :> Result.map(Js.Array.toList)
-    :> Result.withDefault([])
-    :> filterAll((dir) => { dir != "" })
-};
+let packageDirs = () => { packageDirectories(defaultPackageDir()) :> Js.Array.toList };
 
 -- Runs one protocol command and parses its JSON output.
 let call = (name, program, flags, command) => {

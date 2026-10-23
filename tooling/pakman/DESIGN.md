@@ -497,7 +497,7 @@ This retires apk-tools, APKINDEX and the RSA signing pipeline on the PS2.
 | `<state>/programs/<name>.js`, `_apply.js` | compiled package programs and the applier |
 | `<root>/var/lib/pakman/owned.json` | the applier's record of every path it installed in that root |
 
-`<state>` is `PAKMAN_STATE`, default `~/.local/state/pakman` (builds run as the user). Roots: `/` for
+`<state>` is `PAKMAN_STATE`, default `$XDG_STATE_HOME/workman/pakman` (or `~/.local/state/workman/pakman`; builds run as the user). Roots: `/` for
 System packages, the home directory for User packages, or `--root DIR`.
 
 ## Code conventions

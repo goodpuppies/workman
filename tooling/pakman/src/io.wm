@@ -67,6 +67,9 @@ let runBuildCommand = (program, trees, arguments, source, strip, output, out, de
   Host.runBuildCommand(program, Js.Array.fromList(trees), Js.Array.fromList(arguments), source, strip, output, out, dest, mode, work)
     :> Task.mapErr(describe("build command"))
 };
+let addPackageDirectory = (path) => {
+  Host.addPackageDirectory(path) :> Task.mapErr(describe("add package directory"))
+};
 let sha256Text = (text) => { Host.sha256Text(text) :> Task.mapErr(describe("hash text")) };
 
 let exists = (path) => { Host.exists(path) :> Task.mapErr(describe("stat " ++ path)) };
