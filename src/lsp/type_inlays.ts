@@ -11,11 +11,11 @@ export type InferredTypeInlayHint = {
   label: string;
   kind: 1;
   tooltip: Readonly<{ kind: "markdown"; value: string }>;
-  paddingLeft: false;
-  paddingRight: true;
+  paddingLeft: boolean;
+  paddingRight: boolean;
   data: Readonly<{
     kind: "workman.inferred-type";
-    category: "binding" | "parameter" | "result";
+    category: "binding" | "parameter" | "result" | "record";
   }>;
 };
 
@@ -107,7 +107,7 @@ export async function semanticInlayHints(
             value: `\`\`\`workman\n${full}\n\`\`\``,
           }),
           paddingLeft: false as const,
-          paddingRight: true as const,
+          paddingRight: hint.kind !== "record",
           data: Object.freeze({
             kind: "workman.inferred-type" as const,
             category: hint.kind,

@@ -265,7 +265,7 @@ export type SemanticExpectedType = Readonly<{
 }>;
 
 export type SemanticInferredTypeHint = Readonly<{
-  kind: "binding" | "parameter" | "result";
+  kind: "binding" | "parameter" | "result" | "record";
   span: SourceSpan;
   type: SemanticOccurrenceType;
 }>;
@@ -1409,6 +1409,20 @@ function semanticInferredTypeHints(
       type: typed.type,
     }));
   };
+  const addRecordResult = (record: Extract<Expr, { kind: "Record" }>) => {
+    if (!record.node || record.target !== undefined) return;
+    const typed = typedNodes.find((candidate) =>
+      candidate.kind === "expression" && sameSpan(candidate.span, record.node!.span)
+    );
+    const type = typed?.generalType ?? typed?.type;
+    if (!type) return;
+    const position = offsetToLineCol(source, record.node.span.end);
+    hints.push(Object.freeze({
+      kind: "record",
+      span: Object.freeze({ ...position, start: record.node.span.end, end: record.node.span.end }),
+      type,
+    }));
+  };
   const visitDecl = (declaration: Decl) => {
     if (declaration.kind !== "LetDecl") return;
     for (const binding of declaration.bindings) {
@@ -1445,6 +1459,9 @@ function semanticInferredTypeHints(
         expression.items.forEach((item) => visitExpr(item));
         return;
       case "Record":
+        addRecordResult(expression);
+        expression.fields.forEach((field) => visitExpr(field.value));
+        return;
       case "JsonObject":
         expression.fields.forEach((field) => visitExpr(field.value));
         return;

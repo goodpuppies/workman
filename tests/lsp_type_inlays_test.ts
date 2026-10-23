@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { semanticInlayHints } from "../src/lsp/type_inlays.ts";
+import { type InferredTypeInlayHint, semanticInlayHints } from "../src/lsp/type_inlays.ts";
 import { pathToFileUri } from "../src/lsp/uri.ts";
 
 Deno.test("ordinary type inlays cover useful binders and inferred parameters", async () => {
@@ -234,6 +234,57 @@ Deno.test("parameter-name inlays omit aliases without reliable authored paramete
   );
 
   assertEquals(hints.filter((hint) => hint.kind === 2), []);
+});
+
+Deno.test("record literal inlays name the type after the closing brace", async () => {
+  const path = "/test/main.wm";
+  const source = [
+    "record Recipe = { version: String, install: Number };",
+    "let recipe = .{",
+    '  version = "1.0",',
+    "  install = 1",
+    "};",
+  ].join("\n");
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+  );
+  const records = hints.filter((hint): hint is InferredTypeInlayHint =>
+    hint.data.kind === "workman.inferred-type" && hint.data.category === "record"
+  );
+
+  assertEquals(
+    records.map(({ label, position, paddingLeft, paddingRight }) => ({
+      label,
+      position,
+      paddingLeft,
+      paddingRight,
+    })),
+    [{
+      label: ": Recipe",
+      position: { line: 4, character: 1 },
+      paddingLeft: false,
+      paddingRight: false,
+    }],
+  );
+  assertEquals(records[0].tooltip.value.includes("Recipe"), true);
+});
+
+Deno.test("named record literals do not repeat their authored type", async () => {
+  const path = "/test/main.wm";
+  const source = "record Recipe = { version: String, install: Number }; " +
+    'let recipe = Recipe{ version = "1.0", install = 1 };';
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+  );
+
+  assertEquals(
+    hints.filter((hint) => hint.kind === 1 && hint.data.category === "record"),
+    [],
+  );
 });
 
 function fullRange(source: string) {

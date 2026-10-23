@@ -343,6 +343,9 @@ let p = .{ x = 10, y = 20 };
 let p: Point = .{ x = 10, y = 20 };
 ```
 
+When the record type is inferred, the language server shows it after the literal's closing
+brace, as in `.{ x = 10, y = 20 }: Point`.
+
 ### Ordered Constructors
 
 Every record declaration also introduces an ordinary constructor function. Its arguments follow
