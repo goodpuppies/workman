@@ -208,6 +208,13 @@ stack. Tail positions include the function result, either branch of a tail-posit
 of a tail-position `match`, and the final result of a block. Mutual tail calls and non-tail
 recursive calls still use the JavaScript call stack.
 
+The optimizer also follows known function wrappers, including imported procedure adapters
+such as `via(callback)`. If the adapter calls the callback in tail position, a self-call
+inside that callback can become iteration too. Captured arguments are evaluated once at
+the original binding site. This analysis is bounded and conservative: unknown callbacks,
+wrappers with work after the callback, and inaccessible private captures retain ordinary
+calls.
+
 ```workman
 let rec fold = match(items, acc) => {
   [] => { acc },

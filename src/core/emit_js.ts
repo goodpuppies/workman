@@ -13,6 +13,7 @@ import {
 } from "../basis_manifest.ts";
 import type { CompilerSemanticId } from "../compiler_semantics.ts";
 import { emitRuntimePrelude } from "./emit_prelude.ts";
+import { specializeTailCalls } from "./tail_specialize.ts";
 import {
   emitJsImportDecl,
   emitLibraryJsSources,
@@ -32,6 +33,7 @@ export type CoreEmitOptions = {
 };
 
 export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions = {}): string {
+  program = specializeTailCalls(program);
   resetEmitterState();
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
