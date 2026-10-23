@@ -27,7 +27,7 @@ let main = () => {
             })
             :> Task.andThen((decoded) => {
               Buffer.from(decoded.body) :> Task.fromResult :> Task.map((body) => {
-                let length = body :> .length :> Result.withDefault(0);
+                let length = body :> .length :> Result.getOr(0);
                 print(`decoded ${Text.of(decoded.header.width)}x${Text.of(decoded.header.height)} bytes=${Text.of(length)}`)
               })
             })

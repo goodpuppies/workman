@@ -14,7 +14,7 @@ Deno.test("WM CLI resolves Node declarations without a package adapter or local 
           Err(_) => { print("failed") },
           Ok(buffer) => {
             let typed: Buffer = buffer;
-            print(typed :> .toString("base64") :> Result.withDefault("failed"))
+            print(typed :> .toString("base64") :> Result.getOr("failed"))
           }
         }
       };

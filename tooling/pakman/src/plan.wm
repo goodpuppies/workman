@@ -194,10 +194,10 @@ let decodeRef = (p: PartJson) => {
     "own" => { Ok(Own(p.value)) },
     "of" => { Ok(Of(p.pkg, p.value)) },
     "instance" => {
-      let at = p.pkg :> .lastIndexOf("@") :> Result.withDefault(0 - 1);
+      let at = p.pkg :> .lastIndexOf("@") :> Result.getOr(0 - 1);
       if (at <= 0) { Err("invalid package instance request " ++ p.pkg) } else {
-        let name = p.pkg :> .slice(0, at) :> Result.withDefault("");
-        let selector = p.pkg :> .slice(at + 1) :> Result.withDefault("");
+        let name = p.pkg :> .slice(0, at) :> Result.getOr("");
+        let selector = p.pkg :> .slice(at + 1) :> Result.getOr("");
         Ok(Instance(name, selector, p.value))
       }
     },
@@ -208,8 +208,8 @@ let decodeRef = (p: PartJson) => {
 };
 
 let decodePart = (p: PartJson) => {
-  if (p.kind :> .startsWith("shell-") :> Result.withDefault(false)) {
-    let kind = p.kind :> .slice(6) :> Result.withDefault("");
+  if (p.kind :> .startsWith("shell-") :> Result.getOr(false)) {
+    let kind = p.kind :> .slice(6) :> Result.getOr("");
     decodeRef(.{ ..p, kind }) :> Result.map(ShellRef)
   } else { match(p.kind) {
     "lit" => { Ok(Lit(p.value)) },

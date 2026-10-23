@@ -42,7 +42,7 @@ let describe = (what) => {
   }
 };
 
-let args = () => { Host.argv() :> Result.map(Js.Array.toList) :> Result.withDefault([]) };
+let args = () => { Host.argv() :> Result.map(Js.Array.toList) :> Result.getOr([]) };
 
 let fetchText = (url) => { Host.fetchText(url) :> Task.mapErr(describe("fetch " ++ url)) };
 let download = (url, dest) => { Host.download(url, dest) :> Task.mapErr(describe("download " ++ url)) };

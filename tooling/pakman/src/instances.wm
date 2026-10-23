@@ -47,7 +47,7 @@ let encode = (graph: Graph) => {
 
 let find = (graph: Graph, id) => {
   List.find(graph.nodes, (node: Node) => { node.id == id })
-    :> Option.map(Ok) :> Option.withDefault(Err("missing dependency graph node " ++ id))
+    :> Option.map(Ok) :> Option.getOr(Err("missing dependency graph node " ++ id))
 };
 
 let read = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
@@ -71,9 +71,9 @@ let read = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
 
 let choose = (info: Packages.PackageInfo, selector, candidates: List<Candidate>) => {
   Semver.matches(selector, "0.0.0") :> Result.andThen((_) => {
-    let matching = filterAll(candidates, (c: Candidate) => { Semver.matches(selector, c.version) :> Result.withDefault(false) });
+    let matching = filterAll(candidates, (c: Candidate) => { Semver.matches(selector, c.version) :> Result.getOr(false) });
     let eligible = filterAll(matching, (c: Candidate) => { oldEnough(minAgeDays(info), nowSeconds(), c) });
-    Semver.newest(eligible) :> Option.map(Ok) :> Option.withDefault(Err(info.name ++ ": no release matching " ++ selector
+    Semver.newest(eligible) :> Option.map(Ok) :> Option.getOr(Err(info.name ++ ": no release matching " ++ selector
       ++ " passes the minimum age of " ++ Text.of(minAgeDays(info)) ++ " days"))
   })
 };

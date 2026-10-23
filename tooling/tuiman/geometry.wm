@@ -88,7 +88,7 @@ let splitRows = (area: Rect, requestedTop, gap) => {
 
 let percentOf = (total, percent) => {
   floor(total * clamp(0, 100, percent) / 100)
-    :> Result.withDefault(0)
+    :> Result.getOr(0)
 };
 
 let aspectColumns = (
@@ -109,7 +109,7 @@ let aspectColumns = (
     floor(
       rows * terminal.cellHeight * widthRatio /
         (heightRatio * terminal.cellWidth),
-    ) :> Result.withDefault(0)
+    ) :> Result.getOr(0)
   }
 };
 

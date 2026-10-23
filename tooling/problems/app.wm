@@ -237,7 +237,7 @@ let render = (_, model, size) => {
       Draw.accent,
     ) ++
     Draw.text(Geometry.rect(0, 1, body.width, 1), headLine(model.head), Draw.muted) ++
-    Draw.text(Geometry.rect(0, 2, body.width, 1), "─" :> .repeat(body.width) :> Result.withDefault(""), Draw.separator) ++
+    Draw.text(Geometry.rect(0, 2, body.width, 1), "─" :> .repeat(body.width) :> Result.getOr(""), Draw.separator) ++
     Draw.lines(listArea, rows, Draw.plain) ++
     Draw.lines(
       Geometry.rect(0, headerRows + listRows, body.width, detailRows),

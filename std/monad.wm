@@ -1,8 +1,8 @@
 record Carrier<
-  FnArg,
-  FnResult,
-  ErrorArg,
-  ErrorResult,
+  ViaArg,
+  ViaResult,
+  ViaErrorArg,
+  ViaErrorResult,
   SucceedArg,
   SucceedResult,
   MapCarrier,
@@ -19,8 +19,8 @@ record Carrier<
   MapErrTransform,
   MapErrResult,
 > = {
-  fn: FnArg -> FnResult,
-  fnError: ErrorArg -> ErrorResult,
+  via: ViaArg -> ViaResult,
+  viaError: ViaErrorArg -> ViaErrorResult,
   succeed: SucceedArg -> SucceedResult,
   map: (MapCarrier, MapTransform) -> MapResult,
   map2: (Map2Left, Map2Right, Map2Combine) -> Map2Result,
@@ -49,14 +49,14 @@ record Applicative<
 
 let via = (domain) => {
   (f) => {
-    domain.fn(f)
+    domain.via(f)
   }
 };
 
 let viaError = (domain) => {
   (inject) => {
     (f) => {
-      domain.fnError(inject)(f)
+      domain.viaError(inject)(f)
     }
   }
 };

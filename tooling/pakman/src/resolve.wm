@@ -86,7 +86,7 @@ let chooseWithForce = (info: PackageInfo, candidates: List<Candidate>, locked: O
               ++ "); use `wm pakman install --force " ++ info.name ++ "@" ++ version ++ "` to install it anyway")
           }
         })
-        :> Option.withDefault(Err(info.name ++ " has no version " ++ version
+        :> Option.getOr(Err(info.name ++ " has no version " ++ version
           ++ " upstream (see `pakman versions " ++ info.name ++ "`)"))
     }
   }
@@ -150,10 +150,10 @@ let requireSomeVerified = (info: PackageInfo, candidate: Candidate) => {
 -- local patches/scripts even when their URL and the package version are unchanged.
 let refreshSources = (paths: Paths, pkg: Package, candidate: Candidate, previous: List<LockedSource>) => {
   let resolveSource = (src: Source) => {
-    let local = src.url :> .startsWith("file://") :> Result.withDefault(false);
+    let local = src.url :> .startsWith("file://") :> Result.getOr(false);
     let published = List.find(candidate.checksums, (c: Checksum) => { c.url == src.url });
     let reusable = (s: LockedSource) => {
-      let checksumMatches = published :> Option.map((c: Checksum) => { c.sha256 == s.sha256 }) :> Option.withDefault(true);
+      let checksumMatches = published :> Option.map((c: Checksum) => { c.sha256 == s.sha256 }) :> Option.getOr(true);
       !local && s.file == src.file && s.url == src.url && checksumMatches
     };
     match(List.find(previous, reusable)) {
@@ -208,7 +208,7 @@ let noteGate = (info: PackageInfo, candidates: List<Candidate>, picked: Candidat
 let resolveWithOptions = (paths: Paths, info: PackageInfo, locked: Option<LockEntry>, requested: Option<String>, force: Bool, pinVersion: Bool) => {
   let text = match(requested) {
     Some(selector) => { selector },
-    None => { locked :> Option.map(trackOf) :> Option.withDefault("") }
+    None => { locked :> Option.map(trackOf) :> Option.getOr("") }
   };
   let pick = via Task (candidates) => {
     let selector = parseSelector(text, candidates);

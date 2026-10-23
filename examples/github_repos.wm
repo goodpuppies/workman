@@ -17,23 +17,23 @@ let perPage = 5;
 let sort = "updated";
 let user = {
   args :> Result.andThen((xs) => { xs :> .at(0) })
-    :> Result.map((x) => { x :> Option.withDefault(defaultUser) })
-    :> Result.withDefault(defaultUser)
+    :> Result.map((x) => { x :> Option.getOr(defaultUser) })
+    :> Result.getOr(defaultUser)
 };
 let api = {
-  let encoded = user :> encodeURIComponent :> Result.withDefault("default");
+  let encoded = user :> encodeURIComponent :> Result.getOr("default");
   "https://api.github.com/users/" ++ encoded ++ "/repos?sort=" ++ sort ++
     "&per_page=" ++ Text.of(perPage)
 };
 
 let fetchJson = via Task (url) => {
   let checkStatus = via Task (response) => {
-    if (response :> .ok :> Result.withDefault(false)) {
+    if (response :> .ok :> Result.getOr(false)) {
       response :> Task.succeed
     } else {
       let status = response :> .status :> Result.andThen((n) => {
         n :> .toString()
-      }) :> Result.withDefault("?");
+      }) :> Result.getOr("?");
       ("GitHub returned " ++ status) :> Task.fail
     }
   };
@@ -64,16 +64,16 @@ let describe = (repo) => {
   ] :> Json.assert;
 
   lines :> Result.andThen((items) => { items :> .join("\n") })
-    :> Result.withDefault("")
+    :> Result.getOr("")
 };
 
 let render = (user, repos) => {
-  let totalStars = repos :> .reduce((sum, repo, index, array) => { sum + repo.stargazers_count }, 0) :> Result.withDefault(0);
-  let heading = "Recent " ++ user ++ " repos (" ++ Text.of(repos :> .length :> Result.withDefault(0)) ++", " ++ Text.of(totalStars) ++ " stars shown)";
+  let totalStars = repos :> .reduce((sum, repo, index, array) => { sum + repo.stargazers_count }, 0) :> Result.getOr(0);
+  let heading = "Recent " ++ user ++ " repos (" ++ Text.of(repos :> .length :> Result.getOr(0)) ++", " ++ Text.of(totalStars) ++ " stars shown)";
   let body = repos :> .map((repo, index, array) => { describe(repo) })
     :> Result.andThen((items) => { items :> .join("\n\n") })
-    :> Result.withDefault("");
-  heading ++ "\n" ++ "=" :> .repeat(heading :> .length :> Result.withDefault(0)) :> Result.withDefault("") ++ "\n\n" ++ body
+    :> Result.getOr("");
+  heading ++ "\n" ++ "=" :> .repeat(heading :> .length :> Result.getOr(0)) :> Result.getOr("") ++ "\n\n" ++ body
 };
 
 let main = () => {

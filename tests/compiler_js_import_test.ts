@@ -797,7 +797,7 @@ Deno.test("orders generated receiver imports after local record types", async ()
 Deno.test("orders built-in receiver imports before an earlier value use", async () => {
   const result = await checkSource(`
     let textLength = (text) => {
-      text :> .length :> Result.withDefault(0)
+      text :> .length :> Result.getOr(0)
     };
     record Position = { index: Number };
     let measured = textLength("abc");

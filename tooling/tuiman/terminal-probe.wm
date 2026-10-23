@@ -26,7 +26,7 @@ let restore = (input, output, status) => {
   exit(status)
 };
 
-let fromCtrlC = fromCharCode(3) :> Result.withDefault("");
+let fromCtrlC = fromCharCode(3) :> Result.getOr("");
 
 let rec listen = (input, output, count) => {
   match(input :> .once("data", (chunk) => {
@@ -40,7 +40,7 @@ let rec listen = (input, output, count) => {
           restore(input, output, 0)
         } else {
           let line = "event " ++ Text.of(count) ++ " bytes=" ++
-            Text.of(text :> .length :> Result.withDefault(0));
+            Text.of(text :> .length :> Result.getOr(0));
           let _ = write(output, Ansi.cursorTo(4, 2) ++ line ++ "                    ");
           listen(input, output, count + 1)
         }

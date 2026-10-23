@@ -14,7 +14,7 @@ from "./subset_host.wm" import * as SubsetHost;
 
 type Error = HostError<String> | NonByte<I32> | InvalidPath;
 let bytes = (value) => {
-  SubsetResult.mapError(
+  SubsetResult.mapErr(
     SubsetString.fromNative(value),
     match {
       SubsetString.NonByte(offset) => { NonByte(offset) }
@@ -22,7 +22,7 @@ let bytes = (value) => {
   )
 };
 let native = (value) => {
-  SubsetResult.mapError(
+  SubsetResult.mapErr(
     SubsetString.toNative(value),
     match {
       SubsetString.NonByte(offset) => { NonByte(offset) }
@@ -30,7 +30,7 @@ let native = (value) => {
   )
 };
 let host = (result) => {
-  SubsetResult.mapError(result, (message) => { HostError(message) })
+  SubsetResult.mapErr(result, (message) => { HostError(message) })
 };
 
 // Paths are byte strings interpreted by the host; NUL cannot name a file.

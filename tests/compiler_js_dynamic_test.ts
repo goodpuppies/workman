@@ -252,7 +252,7 @@ Deno.test("annotated record handlers allow statically typed JS member calls", as
     record Api = { add: (Payload, String) -> Void };
     let api: Api = .{
       add = (payload, sender) => {
-        let amount = payload.amount :> .toString() :> Result.withDefault("?");
+        let amount = payload.amount :> .toString() :> Result.getOr("?");
         print(amount ++ sender)
       }
     };

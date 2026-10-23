@@ -75,7 +75,7 @@ let encode = (value) => {
     if (parsed == value) { SubsetResult.Ok(source) } else { SubsetResult.Err("value cannot be represented as WON") }
   });
 
-  checkRoundTrip(SubsetResult.mapError(decode(source), (error: Error) => { error.message }))
+  checkRoundTrip(SubsetResult.mapErr(decode(source), (error: Error) => { error.message }))
 };
 
 // Access steps take and return a Result, so a chain is checked once at its end:
@@ -118,7 +118,7 @@ let root = (value) => { SubsetResult.Ok(SubsetWonValue.makeNode([], value)) };
 
 let read = (source) => {
   SubsetResult.map(
-    SubsetResult.mapError(decode(source), SubsetWonValue.Malformed),
+    SubsetResult.mapErr(decode(source), SubsetWonValue.Malformed),
     (value) => { SubsetWonValue.makeNode([], value) }
   )
 };

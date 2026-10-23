@@ -94,10 +94,11 @@ program uses (or caching their interfaces) is needed before this is acceptable.
 
 ## Open questions
 
-- **`std/` overlap.** `std/result.wm`, `list.wm` and `option.wm` overlap Basis modules. Decide what
-  becomes Basis source and what stays as WM-only code (carriers, `Task`, `Map`). Naming rule:
-  `via` and `mapErr` (so SubsetML renames `mapError`, and WM renames `fn`); otherwise prefer the
-  more established existing name over a new one.
+- **`std/` overlap.** `std/result.wm` now takes `map`, `andThen`, `mapErr`, `via`, `viaError` and
+  `withDefault` (as `getOr`) from `SubsetResult` and adds the carrier record, `map2`–`map4`,
+  `debug`, `toBool` and the list helpers. The carrier protocol's fields are `via` and `viaError`
+  (formerly `fn` and `fnError`), and SubsetML's `mapError` is `mapErr`. Still to decide: one name
+  for `withDefault`/`getOr`, and the same pass over `std/list.wm` and `std/option.wm`.
 - **Namespaces.** Library namespaces come from file names, so `subset_list.wm` is `SubsetList`.
   Decide whether WM drops the prefix.
 - **`I32` in WM APIs.** Basis lengths and indexes are `I32`, while existing WM code uses `Number`.

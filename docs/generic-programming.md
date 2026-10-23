@@ -60,14 +60,14 @@ If one step returns `Err`, the later transformations are skipped. If it returns
 `Task` follows the same composition pattern while also representing asynchronous
 work.
 
-To implement that pattern, `Result` and `Task` define operations such as `fn`,
-`fnError`, `succeed`, `map`, `mapErr`, `map2`, and `andThen`. Each module exports them in
+To implement that pattern, `Result` and `Task` define operations such as `via`,
+`viaError`, `succeed`, `map`, `mapErr`, `map2`, and `andThen`. Each module exports them in
 a record like this:
 
 ```wm
 let carrier = .{
-  fn = fn,
-  fnError = fnError,
+  via = via,
+  viaError = viaError,
   succeed = succeed,
   map = map,
   mapErr = mapErr,
@@ -100,12 +100,12 @@ Its essential shape is:
 ```wm
 let via = (carrier) => {
   (transform) => {
-    carrier.fn(transform)
+    carrier.via(transform)
   }
 };
 ```
 
-`Result.fn` and `Task.fn` supply the carrier-specific behavior.
+`Result.via` and `Task.via` supply the carrier-specific behavior.
 
 ## Composing different error types
 
@@ -632,7 +632,7 @@ When code starts repeating a composition pattern:
 
 For carrier-oriented procedures specifically:
 
-- use `Monad.via` to create a transformation through the shared carrier's `fn`;
+- use `Monad.via` to create a transformation through the shared carrier's `via`;
 - use `Monad.viaError` when the transformation's native error must enter a
   shared error ADT;
 - use `Traverse.with` for sequentially applying a carrier-producing

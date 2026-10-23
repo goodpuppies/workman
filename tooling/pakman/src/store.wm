@@ -170,7 +170,7 @@ let build = (paths: Paths, def: PackageInfo, pkg: Package, sources: List<LockedS
     sources
       :> List.find((s: LockedSource) => { s.file == file })
       :> Option.map((s: LockedSource) => { paths.sources ++ "/" ++ s.sha256 })
-      :> Option.withDefault(paths.sources ++ "/missing-" ++ file)
+      :> Option.getOr(paths.sources ++ "/missing-" ++ file)
   };
   let populate = via Task (work) => {
     let out = work ++ "/out";
@@ -218,7 +218,7 @@ let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, private
         commandBuildIdentity()
       } else { Task.succeed("") };
       Task|identity, commandIdentity| :> Task.map((recipe, backend) => { recipe ++ backend }) :> via Task (builder) => { sha256Text(compactJson(inputsJson(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref))) }
-        :> Task.map((fullHash) => { (sources, fullHash :> .slice(0, 32) :> Result.withDefault(fullHash)) })
+        :> Task.map((fullHash) => { (sources, fullHash :> .slice(0, 32) :> Result.getOr(fullHash)) })
     };
     let locate = via Task (sources, hash) => {
       let storePath = paths.store ++ "/" ++ hash ++ "-" ++ packageStoreName(def.name) ++ "-" ++ packageStoreName(pkg.version);

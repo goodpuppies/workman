@@ -10,7 +10,7 @@ let andThen = match(option, f) => {
   (None, _) => { None }
 };
 
-let withDefault = match(option, fallback) => {
+let getOr = match(option, fallback) => {
   (Some(value), _) => { value },
   (None, fallback) => { fallback }
 };
@@ -40,7 +40,7 @@ let collectList = (items) => {
   traverse(items, (item) => { item })
 };
 
-// Basis `OPTION` functions with no existing Workman name. `getOpt` is `withDefault` and
+// Basis `OPTION` functions with no existing Workman name. `getOpt` is `getOr` and
 // `mapPartial` is `andThen`. Arguments come data-first so pipes work.
 
 let isSome = match(option) => {

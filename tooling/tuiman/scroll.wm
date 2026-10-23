@@ -10,7 +10,7 @@ record Viewport = {
 };
 
 let halfUp = (amount) => {
-  floor((amount + 1) / 2) :> Result.withDefault(amount)
+  floor((amount + 1) / 2) :> Result.getOr(amount)
 };
 
 -- Ease halfway to the target on every frame.  Integer rows make the result

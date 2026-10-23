@@ -29,7 +29,7 @@ let main = () => {
         WriteFailed(io) => { `write failed: ${Writer.describe(io)}` },
       };
 
-      Writer.line(Writer.stderrFd, `badfd: ${reason}\n`) :> Result.withDefault(void);
+      Writer.line(Writer.stderrFd, `badfd: ${reason}\n`) :> Result.getOr(void);
 
       Process.failure
     },

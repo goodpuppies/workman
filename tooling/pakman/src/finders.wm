@@ -43,8 +43,8 @@ let fetchJson = (url) => {
 
 let toAsset = (asset: GithubAsset) => {
   let digest = jsonTextOr(asset.digest, "");
-  let sha256 = if (digest :> .startsWith("sha256:") :> Result.withDefault(false)) {
-    digest :> .slice(7) :> Result.withDefault("")
+  let sha256 = if (digest :> .startsWith("sha256:") :> Result.getOr(false)) {
+    digest :> .slice(7) :> Result.getOr("")
   } else {
     ""
   };
@@ -176,7 +176,7 @@ record Tag = { name: String, published: String };
 -- Tags of a GitLab project (`group/name` on `host`), newest first, dated by
 -- their commit.
 let gitlabTags = (host, project) => {
-  let url = "https://" ++ host ++ "/api/v4/projects/" ++ (project :> .replaceAll("/", "%2F") :> Result.withDefault(project))
+  let url = "https://" ++ host ++ "/api/v4/projects/" ++ (project :> .replaceAll("/", "%2F") :> Result.getOr(project))
     ++ "/repository/tags?per_page=50";
   let assertTags = via Task (body) => {
     let tags: Result<Js.Array<GitlabTag>, String> = body

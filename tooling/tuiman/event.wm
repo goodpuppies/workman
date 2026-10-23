@@ -30,17 +30,17 @@ type NumberPrefix =
   | NumberPrefix<Number, List<String>>
   | InvalidNumberPrefix;
 
-let controlC = fromCharCode(3) :> Result.withDefault("");
-let carriageReturn = fromCharCode(13) :> Result.withDefault("");
-let backspace = fromCharCode(127) :> Result.withDefault("");
+let controlC = fromCharCode(3) :> Result.getOr("");
+let carriageReturn = fromCharCode(13) :> Result.getOr("");
+let backspace = fromCharCode(127) :> Result.getOr("");
 let escape = Ansi.esc;
 
 let drop = (text, count) => {
-  text :> .slice(count) :> Result.withDefault("")
+  text :> .slice(count) :> Result.getOr("")
 };
 
 let first = (text) => {
-  text :> .slice(0, 1) :> Result.withDefault("")
+  text :> .slice(0, 1) :> Result.getOr("")
 };
 
 -- Workman follows its JS-oriented String model and intentionally has no

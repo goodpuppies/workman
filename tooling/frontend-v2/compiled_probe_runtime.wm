@@ -30,7 +30,7 @@ type CompiledProbeMatch =
   | CompiledProbeNoMatch<Number, String, String>;
 
 let textLength = (text: String) => {
-  text :> .length :> Result.withDefault(0)
+  text :> .length :> Result.getOr(0)
 };
 
 let codeAt = (source: String, offset: Number) => {

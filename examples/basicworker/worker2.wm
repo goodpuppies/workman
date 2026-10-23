@@ -33,6 +33,6 @@ let main = () => {
       :> dataOf
       :> logMessage
       :> sendReply
-      :> Result.withDefault(void)
+      :> Result.getOr(void)
   })
 };

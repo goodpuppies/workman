@@ -14,7 +14,7 @@ let main = () => {
             Ok(b) => {
               let _ = a :> .copy(dest, 0);
               let _ = b :> .copy(dest, 2);
-              print(dest :> .toString("utf8") :> Result.withDefault("?"))
+              print(dest :> .toString("utf8") :> Result.getOr("?"))
             },
           }
         },

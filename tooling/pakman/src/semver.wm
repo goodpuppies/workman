@@ -13,8 +13,8 @@ let parse = (text) => {
 };
 
 let matches = (selector, version) => {
-  let patchRange = selector :> .startsWith("~") :> Result.withDefault(false);
-  let base = if (patchRange) { selector :> .slice(1) :> Result.withDefault("") } else { selector };
+  let patchRange = selector :> .startsWith("~") :> Result.getOr(false);
+  let base = if (patchRange) { selector :> .slice(1) :> Result.getOr("") } else { selector };
   match(parse(base)) {
     None => { Err("unsupported dependency version " ++ selector ++ "; expected X.Y.Z or ~X.Y.Z") },
     Some(wanted) => {

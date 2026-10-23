@@ -165,7 +165,7 @@ let toUtf16Bytes = (source, order) => {
 
 let fromScalars = (scalars) => {
   SubsetResult.andThen(
-    SubsetResult.mapError(SubsetUtf16.encode(scalars, SubsetUtf16.LittleEndian), UnicodeError),
+    SubsetResult.mapErr(SubsetUtf16.encode(scalars, SubsetUtf16.LittleEndian), UnicodeError),
     (bytes) => { fromUtf16Bytes(bytes, SubsetUtf16.LittleEndian) }
   )
 };
@@ -173,18 +173,18 @@ let toScalars = (source) => {
   SubsetResult.andThen(
     toUtf16Bytes(source, SubsetUtf16.LittleEndian),
     (bytes) => {
-      SubsetResult.mapError(SubsetUtf16.decode(bytes, SubsetUtf16.LittleEndian), UnicodeError)
+      SubsetResult.mapErr(SubsetUtf16.decode(bytes, SubsetUtf16.LittleEndian), UnicodeError)
     }
   )
 };
 let fromUtf8 = (bytes) => {
-  SubsetResult.andThen(SubsetResult.mapError(SubsetUtf8.decode(bytes), UnicodeError), fromScalars)
+  SubsetResult.andThen(SubsetResult.mapErr(SubsetUtf8.decode(bytes), UnicodeError), fromScalars)
 };
 let toUtf8 = (source) => {
   SubsetResult.andThen(
     toScalars(source),
     (scalars) => {
-      SubsetResult.mapError(SubsetUtf8.encode(scalars), UnicodeError)
+      SubsetResult.mapErr(SubsetUtf8.encode(scalars), UnicodeError)
     }
   )
 };

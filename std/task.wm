@@ -103,23 +103,23 @@ let new: ((Result<a, e> -> Void) -> Result<Void, e>) -> Task<a, e> = (register) 
   })
 };
 
-let fn = (f) => {
+let via = (f) => {
   (task) => {
     task :> andThen(f)
   }
 };
 
-let fnError = (inject) => {
+let viaError = (inject) => {
   (f) => {
-    fn((value) => {
+    via((value) => {
       f(value) :> mapErr(inject)
     })
   }
 };
 
 let carrier = .{
-  fn = fn,
-  fnError = fnError,
+  via = via,
+  viaError = viaError,
   succeed = (value) => { succeed(value) },
   map = (task, f) => { map(task, f) },
   mapErr = (task, f) => { mapErr(task, f) },

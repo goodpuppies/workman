@@ -111,7 +111,7 @@ let firstValue = (items, fallback) => {
     :> Result.map((first) => {
       first
         :> Option.map((item) => { item.value })
-        :> Option.withDefault(fallback)
+        :> Option.getOr(fallback)
     })
 };
 
@@ -207,8 +207,8 @@ let formatDay = (day, scale, unit) => {
   let hi = selectTemperature(scale, day.maxtempC, day.maxtempF) :> tempText;
   let lo = selectTemperature(scale, day.mintempC, day.mintempF) :> tempText;
   let rain = day.hourly :> .reduce((best, slot, index, array) => {
-    let chance = toNumber(slot.chanceofrain) :> Result.withDefault(0);
-    mathMax(best, chance) :> Result.withDefault(best)
+    let chance = toNumber(slot.chanceofrain) :> Result.getOr(0);
+    mathMax(best, chance) :> Result.getOr(best)
   }, 0) :> Result.andThen(pad3);
   "  " ++ label ++ " " ++ hi ++ unit ++ " / " ++ lo ++ unit ++
     "  rain " ++ rain ++ "%"
@@ -229,7 +229,7 @@ let renderReport = (data, scale, city) => {
         ]
           :> Js.Array.fromList
           :> .filter((part, index, array) => {
-            (part :> .length :> Result.withDefault(0)) > 0
+            (part :> .length :> Result.getOr(0)) > 0
           })
       })
       :> Result.andThen((kept) => { kept :> .join(", ") })
@@ -273,7 +273,7 @@ let renderReport = (data, scale, city) => {
 };
 
 let cityReport = (cache, now, refresh, scale, city) => {
-  let key = city :> .toLowerCase() :> Result.withDefault(city);
+  let key = city :> .toLowerCase() :> Result.getOr(city);
   let failure = (err) => {
     "\nFailed to get weather for \"" ++ city ++ "\": " ++
       describeError(err)
@@ -311,7 +311,7 @@ let cityReport = (cache, now, refresh, scale, city) => {
 
 let main = () => {
   let isFlag = (text) => {
-    text :> .startsWith("--") :> Result.withDefault(false)
+    text :> .startsWith("--") :> Result.getOr(false)
   };
   let flags = args :> Result.andThen((xs) => {
     xs :> .filter((a, index, array) => {
@@ -320,10 +320,10 @@ let main = () => {
   });
   let useFahrenheit = flags
     :> Result.andThen((xs) => { xs :> .includes("--f") })
-    :> Result.withDefault(false);
+    :> Result.getOr(false);
   let refresh = flags
     :> Result.andThen((xs) => { xs :> .includes("--refresh") })
-    :> Result.withDefault(false);
+    :> Result.getOr(false);
   let scale = if (useFahrenheit) {
     Fahrenheit
   } else {

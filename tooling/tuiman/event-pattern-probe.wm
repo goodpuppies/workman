@@ -4,7 +4,7 @@ from "./ansi.wm" import * as Ansi;
 from "./event.wm" import * as Event;
 from js.global("String") import { fromCharCode };
 
-let controlC = fromCharCode(3) :> Result.withDefault("");
+let controlC = fromCharCode(3) :> Result.getOr("");
 
 let input =
   Ansi.esc ++ "[A" ++

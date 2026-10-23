@@ -301,7 +301,7 @@ export function occurs(id: number, t: Ty): boolean {
   if (t.tag === "ffi") {
     // The receiver and arguments of an unresolved member access are call-site provenance,
     // not part of the eventual member result type, so a variable may legitimately be both
-    // the receiver of a placeholder and unified with its result (e.g. Result.withDefault
+    // the receiver of a placeholder and unified with its result (e.g. Result.getOr
     // over a string method whose default is the receiver itself).
     return t.instance ? occurs(id, t.instance) : false;
   }

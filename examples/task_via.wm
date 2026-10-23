@@ -9,7 +9,7 @@ let via = Monad.via; -- alias from std
 --looks like
 --let via = (x) => { 
 --    (f) => {
---        x.fn(f) -- means (#fn x)(f)
+--        x.via(f) -- means (#via x)(f)
 --    }
 --};
 
@@ -47,7 +47,7 @@ let label = via Task (title) => {
 let summarize = via Task (text, title) => {
   let source = text
     :> .slice(0, 9)
-    :> Result.withDefault("unknown");
+    :> Result.getOr("unknown");
 
   ("via tuple sugar: " ++ title ++ " from " ++ source) :> Task.succeed
 };
@@ -101,7 +101,7 @@ let viaTupleStyle = (path) => {
 --      lines
 --        :> Js.Array.fromList
 --        :> .join("\n")
---        :> Result.withDefault("could not render comparison")
+--        :> Result.getOr("could not render comparison")
 --        :> print
 --    })
 --};

@@ -380,7 +380,7 @@ let decode = (source) => {
     });
     finish(skip(stop))
   });
-  requireEnd(parse(SubsetResult.mapError(
+  requireEnd(parse(SubsetResult.mapErr(
     SubsetString.fromNative(source),
     (_) => { SubsetWonValue.makeError((0: I32), "expected a byte string") }
   )))

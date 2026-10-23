@@ -286,7 +286,7 @@ Deno.test("staged FFI reinference rebuilds shared monotypes with consumer nomina
       "/test/trigger.wm",
       `
         let clean = (text, needle: String) => {
-          text :> .replaceAll(needle, "") :> Result.withDefault(text)
+          text :> .replaceAll(needle, "") :> Result.getOr(text)
         };
       `,
     ],

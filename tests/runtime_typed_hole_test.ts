@@ -82,7 +82,7 @@ let main = () => {
   ${asynchronous ? "Task.succeed(void) :> Task.map((_) => { reached() })" : "reached()"}
 };`;
     const stderr = await runHoleProgram(await compile(source));
-    assertStringIncludes(stderr, "error[type.typed-hole std/result.wm:72:4]");
+    assertStringIncludes(stderr, "error[type.typed-hole std/result.wm:54:4]");
     assertStringIncludes(stderr, "Reached from:");
     assertStringIncludes(stderr, "<source>:4:39");
     assertStringIncludes(stderr, 'Err(Js.Error("failed decoding")) :> unwrap');

@@ -15,11 +15,11 @@ Deno.test("Result and Option combinators infer generically", async () => {
     let doubled = parseAge(21) :> Result.map((n) => { n * 2 });
     let chained = parseAge(21) :> Result.andThen((n) => { parseAge(n - 50) })
       :> Result.mapErr((e) => { "bad: " ++ e });
-    let fallback = parseAge(0 - 1) :> Result.withDefault(0);
+    let fallback = parseAge(0 - 1) :> Result.getOr(0);
     let opt = Some(3) :> Option.map((n) => { n + 1 }) :> Option.andThen((n) => {
       if (n > 3) { Some(n) } else { None }
     });
-    let plain = opt :> Option.withDefault(0);
+    let plain = opt :> Option.getOr(0);
     let listMapped = [1, 2, 3] :> List.map((n) => { n + 1 });
     let listLength = [1, 2, 3] :> List.length;
     let listItem = [1, 2, 3] :> List.at(1);
@@ -130,7 +130,7 @@ Deno.test("Result.debug exposes its intentional typed hole", async () => {
   const result = await runCli(["run", input]);
 
   assertEquals(result.code, 1);
-  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:72:4]");
+  assertStringIncludes(result.stderr, "error[type.typed-hole std/result.wm:54:4]");
   assertStringIncludes(result.stderr, "typed hole; expected type: 'a");
   assertEquals(result.stderr.includes("Panic:"), false);
 });
@@ -214,16 +214,16 @@ Deno.test("type-growing carrier recursion has no finite rank-1 HM shape", async 
   );
 });
 
-Deno.test("Monad.via accepts a nominal record satisfying its fn requirement", async () => {
+Deno.test("Monad.via accepts a nominal record satisfying its via requirement", async () => {
   const result = await checkSource(`
-        record TaskLike = { fn: (Void -> Number) -> Number };
-        let task: TaskLike = .{ fn = (f) => { f() } };
+        record TaskLike = { via: (Void -> Number) -> Number };
+        let task: TaskLike = .{ via = (f) => { f() } };
         let value = Monad.via task () => { 42 };
       `);
   expectBinding(result.env, "value", { type: "Number", vars: 0 });
 });
 
-Deno.test("Monad.via composes over Task.fn", async () => {
+Deno.test("Monad.via composes over Task.via", async () => {
   const result = await checkSource(`
     record User = { login: String, name: String };
     let fetchUser = Monad.via Task (login) => {
@@ -246,7 +246,7 @@ Deno.test("Monad.via composes over Task.fn", async () => {
   expectBinding(result.env, "greeting", { type: "Task<String, 'a>", vars: 0 });
 });
 
-Deno.test("Monad.via composes over Result.fn", async () => {
+Deno.test("Monad.via composes over Result.via", async () => {
   const result = await checkSource(`
     let viaR = Monad.via Result;
     let keepNumber = viaR (n) => {
@@ -423,11 +423,11 @@ Deno.test("Result and Option combinators evaluate correctly", async () => {
         print(parseAge(21) :> Result.map((n) => { n * 2 }));
         print(parseAge(21) :> Result.andThen((n) => { parseAge(n - 50) })
           :> Result.mapErr((e) => { "bad: " ++ e }));
-        print(parseAge(0 - 1) :> Result.withDefault(0));
+        print(parseAge(0 - 1) :> Result.getOr(0));
         print(Some(3) :> Option.map((n) => { n + 1 }) :> Option.andThen((n) => {
           if (n > 3) { Some(n) } else { None }
-        }) :> Option.withDefault(0));
-        print(None :> Option.withDefault(9));
+        }) :> Option.getOr(0));
+        print(None :> Option.getOr(9));
         print([1, 2, 3] :> List.map((n) => { n + 1 }));
         print([Ok(1), Ok(2), Ok(3)] :> Result.collectList);
         print([Some(1), Some(2), Some(3)] :> Option.collectList);
@@ -803,7 +803,7 @@ Deno.test("lifted Task tuple syntax evaluates through Task.andThen and Task.map"
   assertEquals(output.stdout, "text:README.md/title:text:README.md\n");
 });
 
-Deno.test("Task.fn evaluates via-style composition", async () => {
+Deno.test("Task.via evaluates via-style composition", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(
@@ -863,7 +863,7 @@ Deno.test("Task.orElse runs an effectful error continuation and changes the erro
   assertEquals(result.stdout, "original\n42\n");
 });
 
-Deno.test("Task.fn composes real async JS tasks", async () => {
+Deno.test("Task.via composes real async JS tasks", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   const message = `${dir}/message.txt`;

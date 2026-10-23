@@ -21,16 +21,16 @@ wait(duration)
 ```wm
 let via = (carrier) => {
   (f) => {
-    carrier.fn(f)
+    carrier.via(f)
   }
 };
 ```
 
-`Monad.via` factors out that `andThen` shape. The Task carrier supplies an `fn` adapter equivalent
+`Monad.via` factors out that `andThen` shape. The Task carrier supplies a `via` adapter equivalent
 to:
 
 ```wm
-let fn = (transform) => {
+let via = (transform) => {
   (task) => {
     task :> Task.andThen(transform)
   }

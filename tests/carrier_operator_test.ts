@@ -151,7 +151,7 @@ Deno.test("a carrier without andThen still lifts operators", async () => {
       print(Monad.via carrier ((v) => { v }))
     };
   `);
-  assertStringIncludes(message, "Applicative has no field fn");
+  assertStringIncludes(message, "Applicative has no field via");
 });
 
 Deno.test("Result keeps its own lowering when other carriers are registered", async () => {

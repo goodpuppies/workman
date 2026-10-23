@@ -64,10 +64,10 @@ let deleteImage = (identifier) => {
 };
 
 let rec transmitChunks = (remaining, first, placement, identifier) => {
-  let size = remaining :> .length :> Result.withDefault(0);
+  let size = remaining :> .length :> Result.getOr(0);
   let more = size > 4096;
-  let chunk = remaining :> .slice(0, 4096) :> Result.withDefault("");
-  let rest = remaining :> .slice(4096) :> Result.withDefault("");
+  let chunk = remaining :> .slice(0, 4096) :> Result.getOr("");
+  let rest = remaining :> .slice(4096) :> Result.getOr("");
   let continuation = if (more) { "1" } else { "0" };
   let control = if (first) {
     `a=T,f=100,q=2,C=1,${
@@ -89,11 +89,11 @@ let rec transmitChunks = (remaining, first, placement, identifier) => {
 };
 
 let roundedUp = (value) => {
-  ceil(value) :> Result.withDefault(1)
+  ceil(value) :> Result.getOr(1)
 };
 
 let roundedDown = (value) => {
-  floor(value) :> Result.withDefault(0)
+  floor(value) :> Result.getOr(0)
 };
 
 let squareColumns = (rows, terminal: Geometry.Size) => {
@@ -225,7 +225,7 @@ let pngUrl = (url) => {
         Ok(`${url}@png`)
       }
     }
-  }) :> Result.withDefault(url)
+  }) :> Result.getOr(url)
 };
 
 let loadPng = (url, alt) => {
@@ -294,6 +294,6 @@ let loadPng = (url, alt) => {
 let loadAvatar = (url) => {
   let thumbnail = url
     :> .replace("/img/avatar/plain/", "/img/avatar_thumbnail/plain/")
-    :> Result.withDefault(url);
+    :> Result.getOr(url);
   loadPng(thumbnail, "")
 };

@@ -406,12 +406,12 @@ Deno.test("cli run exposes literal lexical import.meta values", async () => {
       from js.meta import { url, main as isMain, resolve };
       let main = () => {
         let assetPath = URL.new("./asset.txt", url) :> .pathname;
-        print(url :> .endsWith("/main.mjs") :> Result.withDefault(false));
+        print(url :> .endsWith("/main.mjs") :> Result.getOr(false));
         print(assetPath :> Result.map((path) => {
-          path :> .endsWith("/asset.txt") :> Result.withDefault(false)
-        }) :> Result.withDefault(false));
+          path :> .endsWith("/asset.txt") :> Result.getOr(false)
+        }) :> Result.getOr(false));
         print(isMain);
-        print(resolve("./asset.txt") :> .endsWith("/asset.txt") :> Result.withDefault(false))
+        print(resolve("./asset.txt") :> .endsWith("/asset.txt") :> Result.getOr(false))
       };
     `,
   );

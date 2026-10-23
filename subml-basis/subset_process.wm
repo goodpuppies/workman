@@ -14,7 +14,7 @@ from "./subset_list.wm" import * as SubsetList;
 
 let arguments = () => {
   SubsetResult.andThen(
-    SubsetResult.mapError(SubsetHost.arguments(), (message) => { SubsetIo.HostError(message) }),
+    SubsetResult.mapErr(SubsetHost.arguments(), (message) => { SubsetIo.HostError(message) }),
     (values) => {
       SubsetList.traverse(
         values,

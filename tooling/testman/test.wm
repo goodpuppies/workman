@@ -35,7 +35,7 @@ let assertNotEqual = (actual, unexpected) => {
   if (actual == unexpected) { fail("expected anything but: " ++ show(unexpected)) } else { pass() }
 };
 
-let contains = (text: String, part: String) => { text :> .includes(part) :> Result.withDefault(false) };
+let contains = (text: String, part: String) => { text :> .includes(part) :> Result.getOr(false) };
 
 let assertContains = (text: String, part: String) => {
   if (contains(text, part)) {

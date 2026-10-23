@@ -42,7 +42,7 @@ let scalarError = (value) => {
 };
 
 let encodeCodes = (codes, index) => {
-  SubsetResult.mapError(
+  SubsetResult.mapErr(
     SubsetList.traverse(codes, SubsetChar.fromCode),
     (error) => { Error(InvalidByte, index) }
   )

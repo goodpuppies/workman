@@ -122,7 +122,7 @@ let current = (paths: Paths, root) => {
 
 -- "12.json" -> Some(12)
 let generationNumber = (name) => {
-  let number = parseIntOr(name :> .replace(".json", "") :> Result.withDefault(""), 0 - 1);
+  let number = parseIntOr(name :> .replace(".json", "") :> Result.getOr(""), 0 - 1);
   if (number > 0) { Some(number) } else { None }
 };
 
@@ -296,7 +296,7 @@ let applyPlan = (paths: Paths, plan: Plan) => {
   let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".json";
   let applier = paths.state ++ "/programs/_apply.js";
   let elevate = via Task (program) => {
-    let sudo = envOr("PAKMAN_SUDO", "sudo") :> .split(" ") :> Result.map(Js.Array.toList) :> Result.withDefault(["sudo"]);
+    let sudo = envOr("PAKMAN_SUDO", "sudo") :> .split(" ") :> Result.map(Js.Array.toList) :> Result.getOr(["sudo"]);
     match(sudo) {
       [cmd, ..flags] => {
         runInteractive(cmd, appendAll(flags, [denoPath(), "run", "-A", "--quiet", program, planFile]))

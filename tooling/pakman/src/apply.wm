@@ -58,9 +58,9 @@ let writeOwned = (root, files: List<String>) => {
 };
 
 let isSafePath = (path) => {
-  let parts = path :> .split("/") :> Result.map(Js.Array.toList) :> Result.withDefault([]);
+  let parts = path :> .split("/") :> Result.map(Js.Array.toList) :> Result.getOr([]);
   path != ""
-    && !(path :> .startsWith("/") :> Result.withDefault(true))
+    && !(path :> .startsWith("/") :> Result.getOr(true))
     && !List.any(parts, (part) => { part == ".." || part == "" })
 };
 
@@ -105,7 +105,7 @@ let triggers = concatAll([triggersFor("usr/share"), triggersFor(".local/share"),
 let runTriggers = (root, changed: List<String>) => {
   let touches = (t: Trigger) => {
     (root == "/" || !t.live)
-      && List.any(changed, (path) => { path :> .startsWith(t.dir) :> Result.withDefault(false) })
+      && List.any(changed, (path) => { path :> .startsWith(t.dir) :> Result.getOr(false) })
   };
   let runCommand = (c: Command) => {
     runQuiet(c.cmd, c.args)

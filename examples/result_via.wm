@@ -4,10 +4,10 @@
 
 type Result<T, E> = Ok<T> | Err<E>;
 
-record ViaCarrier<A, B> = { fn: A -> B };
+record ViaCarrier<A, B> = { via: A -> B };
 
 record ResultCarrier<A, B, E> = {
-  fn: (A -> Result<B, E>) -> Result<A, E> -> Result<B, E>,
+  via: (A -> Result<B, E>) -> Result<A, E> -> Result<B, E>,
   andThen: (Result<A, E>, A -> Result<B, E>) -> Result<B, E>,
   map: (Result<A, E>, A -> B) -> Result<B, E>
 };
@@ -21,7 +21,7 @@ let andThen = (result, f) => {
 
 // Create a Result structure with a carrier function adapter.
 let Var(Result) = .{
-  fn = (f) => {
+  via = (f) => {
     (result) => {
       result :> andThen(f)
     }
@@ -35,12 +35,12 @@ let Var(Result) = .{
   andThen = andThen,
 };
 
-// Create/call a function via a carrier's `fn` function.
-// arg1 a Carrier structure that has an `fn` function
+// Create/call a function via a carrier's `via` function.
+// arg1 a Carrier structure that has a `via` function
 // arg2 a lambda function to adapt
 let via = (x) => {
   (f) => {
-    x.fn(f)
+    x.via(f)
   }
 };
 

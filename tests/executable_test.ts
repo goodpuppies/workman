@@ -58,7 +58,7 @@ Deno.test("executable retains generated workers and JS imports after source remo
       from js.worker("./worker.wm") import { url } as Background;
       from js.module("./harness.ts") import { start, args };
       let main = () => {
-        start(Background.url) :> Task.map((text) => { print(text); print(args() :> Result.withDefault("")) })
+        start(Background.url) :> Task.map((text) => { print(text); print(args() :> Result.getOr("")) })
       };
     `,
     );

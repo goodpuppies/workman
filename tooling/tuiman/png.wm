@@ -9,19 +9,19 @@ record Pixels = {
 };
 
 let length = (buffer) => {
-  buffer :> .length :> Result.withDefault(0)
+  buffer :> .length :> Result.getOr(0)
 };
 
 let byte = (buffer, index) => {
-  buffer :> .readUInt8(index) :> Result.withDefault(0)
+  buffer :> .readUInt8(index) :> Result.getOr(0)
 };
 
 let writeByte = (buffer, index, value) => {
-  buffer :> .writeUInt8(value, index) :> Result.withDefault(0)
+  buffer :> .writeUInt8(value, index) :> Result.getOr(0)
 };
 
 let uint32 = (buffer, index) => {
-  buffer :> .readUInt32BE(index) :> Result.withDefault(0)
+  buffer :> .readUInt32BE(index) :> Result.getOr(0)
 };
 
 let rec blit = (source, sourceIndex, target, targetIndex, count) => {
@@ -67,9 +67,9 @@ let rec copyIdat = (buffer, offset, target, targetOffset) => {
 
 let paeth = (left, above, upperLeft) => {
   let estimate = left + above - upperLeft;
-  let leftDistance = abs(estimate - left) :> Result.withDefault(0);
-  let aboveDistance = abs(estimate - above) :> Result.withDefault(0);
-  let diagonalDistance = abs(estimate - upperLeft) :> Result.withDefault(0);
+  let leftDistance = abs(estimate - left) :> Result.getOr(0);
+  let aboveDistance = abs(estimate - above) :> Result.getOr(0);
+  let diagonalDistance = abs(estimate - upperLeft) :> Result.getOr(0);
   if (leftDistance <= aboveDistance && leftDistance <= diagonalDistance) {
     left
   } else {
@@ -81,11 +81,11 @@ let rec unfilterBytes = (raw, pixels, index, end, stride, channels, filter) => {
   if (index >= end) {
     0
   } else {
-    let column = index - (floor(index / stride) :> Result.withDefault(0)) * stride;
+    let column = index - (floor(index / stride) :> Result.getOr(0)) * stride;
     let left = if (column >= channels) { byte(pixels, index - channels) } else { 0 };
     let above = if (index >= stride) { byte(pixels, index - stride) } else { 0 };
     let upperLeft = if (index >= stride && column >= channels) { byte(pixels, index - stride - channels) } else { 0 };
-    let sourceIndex = index + 1 + (floor(index / stride) :> Result.withDefault(0));
+    let sourceIndex = index + 1 + (floor(index / stride) :> Result.getOr(0));
     let source = byte(raw, sourceIndex);
     let predictor = if (filter == 1) {
       left
@@ -94,18 +94,18 @@ let rec unfilterBytes = (raw, pixels, index, end, stride, channels, filter) => {
         above
       } else {
         if (filter == 3) {
-          floor((left + above) / 2) :> Result.withDefault(0)
+          floor((left + above) / 2) :> Result.getOr(0)
         } else {
           if (filter == 4) { paeth(left, above, upperLeft) } else { 0 }
         }
       }
     };
     let value = source + predictor;
-    let normalized = value - (floor(value / 256) :> Result.withDefault(0)) * 256;
+    let normalized = value - (floor(value / 256) :> Result.getOr(0)) * 256;
     let _ = writeByte(pixels, index, normalized);
     let next = index + 1;
-    let nextFilter = if (next < end && next - (floor(next / stride) :> Result.withDefault(0)) * stride == 0) {
-      byte(raw, next + (floor(next / stride) :> Result.withDefault(0)))
+    let nextFilter = if (next < end && next - (floor(next / stride) :> Result.getOr(0)) * stride == 0) {
+      byte(raw, next + (floor(next / stride) :> Result.getOr(0)))
     } else {
       filter
     };

@@ -104,7 +104,7 @@ let render = (base, text) => {
     match(part) {
       Lit(literal) => { literal },
       Ref(path) => { resolvePath(base, path) },
-      ShellRef(path) => { "'" ++ (resolvePath(base, path) :> .replaceAll("'", "'\\''") :> Result.withDefault("")) ++ "'" },
+      ShellRef(path) => { "'" ++ (resolvePath(base, path) :> .replaceAll("'", "'\\''") :> Result.getOr("")) ++ "'" },
       _ => { "" }
     }
   };
@@ -112,7 +112,7 @@ let render = (base, text) => {
 };
 
 let segments = (path) => {
-  path :> .split("/") :> Result.map(Js.Array.toList) :> Result.withDefault([]) :> filterAll((s) => { s != "" })
+  path :> .split("/") :> Result.map(Js.Array.toList) :> Result.getOr([]) :> filterAll((s) => { s != "" })
 };
 
 let rec dropCommon = (left, right) => {

@@ -21,7 +21,7 @@ record Paths = {
 
 -- The directory for one install root under `profiles`.
 let profileDirOf = (profiles, root) => {
-  profiles ++ "/" ++ (root :> .replaceAll("/", "_") :> Result.withDefault(root))
+  profiles ++ "/" ++ (root :> .replaceAll("/", "_") :> Result.getOr(root))
 };
 
 let paths = (root) => {

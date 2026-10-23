@@ -27,7 +27,7 @@ let main ==> {
       };
       Writer.line(Writer.stderrFd, `hello: ${reason}\n`)
         //stderr is gone too, we void
-        :> Result.withDefault(void);
+        :> Result.getOr(void);
       1
     }
   } :> Runtime.exit

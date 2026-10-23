@@ -84,10 +84,10 @@ let lookup = (p) => { (name) => { Packages.load(p, name) } };
 
 -- "zig@0.14.1" -> ("zig", Some("0.14.1")); "zig" -> ("zig", None)
 let splitRequest = (arg) => {
-  let at = arg :> .indexOf("@") :> Result.withDefault(0 - 1);
+  let at = arg :> .indexOf("@") :> Result.getOr(0 - 1);
   if (at > 0) {
-    let name = arg :> .slice(0, at) :> Result.withDefault(arg);
-    let selector = arg :> .slice(at + 1) :> Result.withDefault("");
+    let name = arg :> .slice(0, at) :> Result.getOr(arg);
+    let selector = arg :> .slice(at + 1) :> Result.getOr("");
     (name, Some(selector))
   } else {
     (arg, None)
@@ -123,9 +123,9 @@ let trackNote = (entry: Lock.LockEntry) => {
 };
 
 let describeChange = (name, before, after: Lock.LockEntry) => {
-  let was = before :> Option.map(Lock.versionOf) :> Option.withDefault("(none)");
+  let was = before :> Option.map(Lock.versionOf) :> Option.getOr("(none)");
   if (was == after.version) {
-    let inputsChanged = before :> Option.map((entry: Lock.LockEntry) => { entry.sources != after.sources || entry.ref != after.ref }) :> Option.withDefault(false);
+    let inputsChanged = before :> Option.map((entry: Lock.LockEntry) => { entry.sources != after.sources || entry.ref != after.ref }) :> Option.getOr(false);
     let note = if (inputsChanged) { " (inputs refreshed)" } else { " (unchanged)" };
     name ++ " " ++ after.version ++ trackNote(after) ++ note
   } else {
@@ -239,8 +239,8 @@ let installWithOptions = (p, root, args, force, pinVersion, refreshSelection) =>
         let previous = Lock.find(lock, info.name);
         let track = previous :> Option.map((entry: Lock.LockEntry) => {
           if (entry.track == entry.version) { "" } else { entry.track }
-        }) :> Option.withDefault("");
-        (info, Some(selector :> Option.withDefault(track)))
+        }) :> Option.getOr("");
+        (info, Some(selector :> Option.getOr(track)))
       };
       requests(p, args)
         :> via Task (wanted) => {
@@ -314,26 +314,26 @@ let update = (p, root) => {
 
 let scopeLabel = (info: Packages.PackageInfo) => { match(info.scope) { System => { "system" }, User => { "user" } } };
 
-let pad = (text, width) => { text :> .padEnd(width) :> Result.withDefault(text) };
+let pad = (text, width) => { text :> .padEnd(width) :> Result.getOr(text) };
 
 -- What upstream offers, newest first, marked with what's locked and what an
 -- automatic resolve would pick.
 let listVersions = (p, info: Packages.PackageInfo) => {
   let render = (info: Packages.PackageInfo, lock, candidates) => {
     let locked = Lock.find(lock, info.name);
-    let lockedVersion = locked :> Option.map(Lock.versionOf) :> Option.withDefault("");
-    let pick = choose(info, candidates, locked, Default) :> Result.map((c: Candidate) => { c.version }) :> Result.withDefault("");
+    let lockedVersion = locked :> Option.map(Lock.versionOf) :> Option.getOr("");
+    let pick = choose(info, candidates, locked, Default) :> Result.map((c: Candidate) => { c.version }) :> Result.getOr("");
     let now = nowSeconds();
     let gated = (c: Candidate) => { !oldEnough(minAgeDays(info), now, c) };
     let line = (c: Candidate) => {
       let notes = concatAll([
-        if (c.version == lockedVersion) { ["locked" ++ (locked :> Option.map(trackNote) :> Option.withDefault(""))] } else { [] },
+        if (c.version == lockedVersion) { ["locked" ++ (locked :> Option.map(trackNote) :> Option.getOr(""))] } else { [] },
         if (c.version == pick) { ["default pick"] } else { [] },
         if (gated(c)) { ["younger than " ++ Text.of(minAgeDays(info)) ++ " days"] } else { [] },
         if (List.length(c.checksums) > 0) { [] } else { ["no upstream checksum"] }
       ]);
       let marker = if (c.version == lockedVersion) { "* " } else { "  " };
-      marker ++ pad(c.version, 32) ++ pad(c.channel, 9) ++ pad(c.published :> .slice(0, 10) :> Result.withDefault(c.published), 12)
+      marker ++ pad(c.version, 32) ++ pad(c.channel, 9) ++ pad(c.published :> .slice(0, 10) :> Result.getOr(c.published), 12)
         ++ join(notes, ", ")
     };
     -- An onlyLatest package holding a build upstream has replaced.
@@ -355,7 +355,7 @@ let listPackages = (opts: Options, home) => {
     let lockFile = lockOf(rootOf(opts, home, info));
     Lock.read(lockFile)
       :> Task.map((lock) => {
-        let version = Lock.find(lock, info.name) :> Option.map(Lock.versionOf) :> Option.withDefault("-");
+        let version = Lock.find(lock, info.name) :> Option.map(Lock.versionOf) :> Option.getOr("-");
         pad(info.name, 24) ++ pad(scopeLabel(info), 8) ++ pad(version, 30) ++ info.description
       })
   };

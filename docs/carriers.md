@@ -252,18 +252,18 @@ The distinction is about code shape:
 ```wm
 let via = (carrier) => {
   (f) => {
-    carrier.fn(f)
+    carrier.via(f)
   }
 };
 ```
 
 In short, `Monad.via M f` creates the carrier-aware callable form of `f` via
-`M`'s `fn` function.
+`M`'s `via` function.
 
-A carrier structure supplies an `fn` adapter shaped like:
+A carrier structure supplies a `via` adapter shaped like:
 
 ```wm
-let fn = (f) => {
+let via = (f) => {
   (wrapped) => {
     wrapped :> andThen(f)
   }
@@ -543,7 +543,7 @@ registers the `Vec2` used throughout
 
 ### Operators, not `via`
 
-`Monad.Carrier` bundles `fn` and `andThen` alongside `succeed`/`map`/`map2`.
+`Monad.Carrier` bundles `via` and `andThen` alongside `succeed`/`map`/`map2`.
 `Vec2` has neither, and cannot: `andThen` means "if this succeeded, feed the
 value to the next step", and a fixed-size vector has no success to check and
 nothing to short-circuit. So a `Vec2` carrier uses `Monad.Applicative`, and gets

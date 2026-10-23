@@ -6,7 +6,7 @@ from "./theme.wm" import * as Theme;
 from js.global("Math") import { floor };
 
 let down = (value) => {
-  floor(value) :> Result.withDefault(0)
+  floor(value) :> Result.getOr(0)
 };
 
 let blend = (value, alpha, background) => {

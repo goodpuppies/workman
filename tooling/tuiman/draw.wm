@@ -68,12 +68,12 @@ let repeat = (text, count) => {
   if (count <= 0) {
     ""
   } else {
-    text :> .repeat(count) :> Result.withDefault("")
+    text :> .repeat(count) :> Result.getOr("")
   }
 };
 
 let replace = (text, needle, replacement) => {
-  text :> .replaceAll(needle, replacement) :> Result.withDefault(text)
+  text :> .replaceAll(needle, replacement) :> Result.getOr(text)
 };
 
 -- Terminal content is untrusted (post text, handles, server errors). Keep
@@ -97,7 +97,7 @@ let truncate = (text, width) => {
 };
 
 let widthOf = (value) => {
-  value :> .length :> Result.withDefault(0)
+  value :> .length :> Result.getOr(0)
 };
 
 -- A word wider than the line has no break opportunity, so split it by force
@@ -106,8 +106,8 @@ let rec chunk = (word, width) => {
   if (width <= 0 || widthOf(word) <= width) {
     [word]
   } else {
-    let head = word :> .slice(0, width) :> Result.withDefault(word);
-    let tail = word :> .slice(width) :> Result.withDefault("");
+    let head = word :> .slice(0, width) :> Result.getOr(word);
+    let tail = word :> .slice(width) :> Result.getOr("");
     [head, ..chunk(tail, width)]
   }
 };
@@ -140,7 +140,7 @@ let rec pack = (words, width, current, rows) => {
 };
 
 let words = (value) => {
-  value :> .split(" ") :> Result.map(Js.Array.toList) :> Result.withDefault([])
+  value :> .split(" ") :> Result.map(Js.Array.toList) :> Result.getOr([])
 };
 
 let wrapLine = (value, width) => {
@@ -163,7 +163,7 @@ let rec wrapAll = match(values, width) => {
 -- to the live terminal width keeps a long message readable at any size, and
 -- hard newlines in the source text stay as breaks.
 let wrap = (value: String, width) => {
-  wrapAll(value :> .split("\n") :> Result.map(Js.Array.toList) :> Result.withDefault([]), width)
+  wrapAll(value :> .split("\n") :> Result.map(Js.Array.toList) :> Result.getOr([]), width)
 };
 
 let styleCode = (style) => {
@@ -215,7 +215,7 @@ let boxWithEdges = (area: Geometry.Rect, title, active, edges: BoxEdges) => {
     } else {
       truncate(" " ++ title ++ " ", inside)
     };
-    let remainingTop = inside - (titleText :> .length :> Result.withDefault(0));
+    let remainingTop = inside - (titleText :> .length :> Result.getOr(0));
     let top = edges.topLeft ++ titleText ++
       repeat("─", remainingTop) ++ edges.topRight;
     let bottom = edges.bottomLeft ++ repeat("─", inside) ++ edges.bottomRight;

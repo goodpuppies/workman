@@ -1,19 +1,17 @@
 from "./monad.wm" import { Carrier };
 from "../host/js/debug.wm" import * as Debug;
+from "../subml-basis/subset_result.wm" import * as SubsetResult;
+
+// The operations the SubsetML Basis defines come from SubsetResult; this module adds WM's
+// carrier record, the multi-argument maps and the list helpers.
 
 let succeed = (value) => {
   Ok(value)
 };
 
-let map = match(result, f) => {
-  (Ok(value), f) => { Ok(f(value)) },
-  (Err(error), _) => { Err(error) }
-};
+let map = SubsetResult.map;
 
-let andThen = match(result, f) => {
-  (Ok(value), f) => { f(value) },
-  (Err(error), _) => { Err(error) }
-};
+let andThen = SubsetResult.andThen;
 
 let toBool = match(r) => {
   Ok(v) => {
@@ -25,24 +23,11 @@ let toBool = match(r) => {
   Err(_) => {false}
 };
 
-let fn = (f) => {
-  (result) => {
-    result :> andThen(f)
-  }
-};
+let via = SubsetResult.via;
 
-let mapErr = match(result, f) => {
-  (Ok(value), _) => { Ok(value) },
-  (Err(error), f) => { Err(f(error)) }
-};
+let mapErr = SubsetResult.mapErr;
 
-let fnError = (inject) => {
-  (f) => {
-    fn((value) => {
-      f(value) :> mapErr(inject)
-    })
-  }
-};
+let viaError = SubsetResult.viaError;
 
 let map2 = match(a, b, f) => {
   (Ok(left), Ok(right), f) => { Ok(f(left, right)) },
@@ -51,8 +36,8 @@ let map2 = match(a, b, f) => {
 };
 
 let carrier = .{
-  fn = fn,
-  fnError = fnError,
+  via = via,
+  viaError = viaError,
   succeed = succeed,
   map = map,
   mapErr = mapErr,
@@ -60,10 +45,7 @@ let carrier = .{
   andThen = andThen,
 };
 
-let withDefault = match(result, fallback) => {
-  (Ok(value), _) => { value },
-  (Err(_), fallback) => { fallback }
-};
+let getOr = SubsetResult.getOr;
 
 let debug = match(result) => {
   Ok(value) => { value },

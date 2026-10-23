@@ -39,11 +39,11 @@ let mapError = match(resource, transform) => {
   (Ready(value), _) => { Ready(value) },
 };
 
-let fn = (transform) => {
+let via = (transform) => {
   (resource) => { resource :> andThen(transform) }
 };
 
-let fnError = (wrap) => {
+let viaError = (wrap) => {
   (transform) => {
     (resource) => {
       resource :> andThen((value) => {
@@ -54,8 +54,8 @@ let fnError = (wrap) => {
 };
 
 let carrier = .{
-  fn = fn,
-  fnError = fnError,
+  via = via,
+  viaError = viaError,
   succeed = succeed,
   map = map,
   mapErr = mapError,

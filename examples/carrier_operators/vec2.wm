@@ -22,7 +22,7 @@ let map2 = (a: Vec2, b: Vec2, f) => {
   Vec2(f(a.x, b.x), f(a.y, b.y))
 };
 
--- No `fn` and no `andThen`: a fixed-size vector has no success to check and
+-- No `via` and no `andThen`: a fixed-size vector has no success to check and
 -- nothing to short-circuit, so this is a Monad.Applicative rather than a
 -- Monad.Carrier. Vec2 gets operators without `via Vec2 f` or `Vec2|...|`.
 let carrier = .{

@@ -27,7 +27,7 @@ let gray = (text) => { paint("90", text) };
 let bold = (text) => { paint("1", text) };
 
 let duration = (ms: Number) => {
-  let whole = ms :> .toFixed(0) :> Result.withDefault("?");
+  let whole = ms :> .toFixed(0) :> Result.getOr("?");
   gray("(" ++ whole ++ "ms)")
 };
 

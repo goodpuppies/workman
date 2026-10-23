@@ -99,7 +99,7 @@ let pairExamples = () => {
 --     Same rule across two basis carriers.
 --
 --   Monad.via Vec2.carrier (someFunction)
---     `via` is built on `fn`, which is built on `andThen`. Vec2 has neither.
+--     `via` is built on the carrier's `via`, which is built on `andThen`. Vec2 has neither.
 --#endregion
 
 let main = () => {

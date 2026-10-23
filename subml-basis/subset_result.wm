@@ -11,7 +11,7 @@ let map = (value, f) => {
   }
 };
 
-let mapError = (value, f) => {
+let mapErr = (value, f) => {
   match(value) {
     Ok(x) => { Ok(x) },
     Err(error) => { Err(f(error)) }
@@ -29,7 +29,7 @@ let andThen = (value, f) => {
 let via = (transform) => (wrapped) => { andThen(wrapped, transform) };
 
 let viaError = (inject) => (transform) => (wrapped) => {
-  andThen(wrapped, (value) => { mapError(transform(value), inject) })
+  andThen(wrapped, (value) => { mapErr(transform(value), inject) })
 };
 
 let getOr = (value, fallback) => {
