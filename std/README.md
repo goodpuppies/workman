@@ -1,8 +1,10 @@
-# basis
+# std
 
-Layer 1 of the Workman basis: the subset of the Standard ML Basis Library that Workman implements.
-See [`../markdown/basis-design.md`](../markdown/basis-design.md) for the rules and
-[`../markdown/basis-update/`](../markdown/basis-update/) for the migration plan.
+Workman's own library: what the SubsetML Basis in [`../subml-basis/`](../subml-basis/) doesn't
+provide. That includes the carriers, `Task`, `Map` and the binary decoding in `binary.wm`, and the
+modules that need host types SubsetML doesn't have yet: the words (`Word8`–`Word64`), vectors,
+`Pack*`, `Float32`/`Float64`, `Real` and `Math`. Portable modules can later move into the SubsetML
+Basis. See [`../markdown/subsetml-basis.md`](../markdown/subsetml-basis.md).
 
 Every top-level `.wm` file here is a library module, discovered automatically by
 `scripts/generate_assets.ts`. Its namespace comes from its snake_case file name, so
@@ -26,11 +28,10 @@ importing one file is fine. A primitive file works on
 plain JavaScript values. Conversions to `List` and `Option`, and `Result` wrapping, belong in the
 `.wm` module.
 
-Layer 2, Workman's own standard library, lives in [`../std/`](../std/) and follows the same rules.
 The JavaScript host helper modules live in [`../host/js/`](../host/js/), also with the same rules,
 but are never opened implicitly: programs import them with `from js.host("table")` (BD17).
 
-A layer-1 module names `Js.*` only in the signatures of its primitive imports, never in its function
+A library module names `Js.*` only in the signatures of its primitive imports, never in its function
 bodies, so porting to another target means replacing the primitive imports and nothing else. A
 conformance test checks this.
 

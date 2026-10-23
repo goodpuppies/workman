@@ -14,10 +14,10 @@ export function emitRuntimePrelude(): string[] {
     // boundary. A missing-symbol load is nearly free because V8 caches the
     // negative lookup on the array's map, so the check stays cheap.
     "const __wm_js_array_tag = Symbol('wm.jsArray');",
-    // Shared with basis/js/byte_vector.js, which creates vectors and slices.
+    // Shared with std/js/byte_vector.js, which creates vectors and slices.
     "const __wm_word8_vector_data = Symbol.for('wm.Word8Vector.data');",
     "const __wm_word8_vector_slice_data = Symbol.for('wm.Word8VectorSlice.data');",
-    // Shared with basis/js/vector.js, which creates vectors and slices.
+    // Shared with std/js/vector.js, which creates vectors and slices.
     "const __wm_vector_data = Symbol.for('wm.Vector.data');",
     "const __wm_vector_slice_data = Symbol.for('wm.VectorSlice.data');",
     "const __wm_is_tuple = (value) => globalThis.Array.isArray(value) && value[__wm_js_array_tag] !== true;",

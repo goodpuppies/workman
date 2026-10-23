@@ -1,4 +1,4 @@
-// Primitives of `basis/vector.wm` and `basis/vector_slice.wm`.
+// Primitives of `std/vector.wm` and `std/vector_slice.wm`.
 //
 // A vector is a frozen object holding a frozen JavaScript array under a registered symbol, and a
 // slice a frozen object holding `{ vector, offset, length }` under another. The compiler's runtime

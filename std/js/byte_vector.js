@@ -1,4 +1,4 @@
-// Primitives of the byte structures in `basis/`: `Word8Vector`, `Word8VectorSlice`, the
+// Primitives of the byte structures in `std/`: `Word8Vector`, `Word8VectorSlice`, the
 // `PackWord*` and `PackReal*` structures, and `Byte`.
 //
 // A vector is a frozen object holding a `Uint8Array` under a registered symbol, and a slice a
@@ -159,7 +159,7 @@ export const sliceConcatArray = (slices) => {
 // PackWord*, PackReal*
 //
 // `width` is the element size in bytes. Words of up to 32 bits are numbers and 64-bit words are
-// bigints, matching `basis/js/word.js`.
+// bigints, matching `std/js/word.js`.
 
 const packLocation = (bytes, index, width) => {
   if (!Number.isSafeInteger(index) || index < 0) {

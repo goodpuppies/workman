@@ -1,0 +1,42 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_list.sml" import * as SubsetList;
+*/
+
+/* Custom Basis paired lists. Unequal lengths are reported, never silently truncated.
+   Mapping validates lengths before invoking any user callback. */
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_list.wm" import * as SubsetList;
+
+type Error = | UnequalLengths;
+
+let zip = (left, right) => {
+  let rec go = match {
+    ([], [], Var(acc)) => { SubsetResult.Ok(SubsetList.reverse(acc)) },
+    ([x, ..xs], [y, ..ys], Var(acc)) => { go(xs, ys, [(x, y), ..acc]) },
+    ([], [y, ..ys], Var(acc)) => { SubsetResult.Err(UnequalLengths) },
+    ([x, ..xs], [], Var(acc)) => { SubsetResult.Err(UnequalLengths) }
+  };
+  go(left, right, [])
+};
+
+let unzip = (pairs) => {
+  let (left, right) = SubsetList.foldLeft(pairs, ([], []), ((x, y), (left, right)) => { ([x, ..left], [y, ..right]) });
+  (SubsetList.reverse(left), SubsetList.reverse(right))
+};
+
+let map = (left, right, f) => {
+  SubsetResult.map(zip(left, right), (pairs) => { SubsetList.map(pairs, f) })
+};
+
+type TraversalError<e> = LengthMismatch | CallbackError<e>;
+
+let traverse = (left, right, f) => {
+  match(zip(left, right)) {
+    SubsetResult.Err(error) => { SubsetResult.Err(LengthMismatch) },
+    SubsetResult.Ok(pairs) => {
+      SubsetResult.mapError(SubsetList.traverse(pairs, f), CallbackError)
+    }
+  }
+};

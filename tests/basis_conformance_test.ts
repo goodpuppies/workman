@@ -296,10 +296,12 @@ Deno.test("Number.div and Number.mod floor like SML's div and mod", async () => 
   );
 });
 
-Deno.test("layer 1 names Js.* only in the signatures of its primitive imports (BD17)", async () => {
+Deno.test("library modules name Js.* only in the signatures of their primitive imports (BD17)", async () => {
   const leaks: string[] = [];
   for (const [path, source] of Object.entries(librarySources)) {
-    if (!path.startsWith("basis/")) continue;
+    if (!path.startsWith("subml-basis/") && !path.startsWith("std/")) continue;
+    // Result and Task convert JS arrays for their FFI-facing operations.
+    if (path === "std/result.wm" || path === "std/task.wm") continue;
     const module = await parseCompilerModule(source, {}, path);
     for (const decl of module.decls) {
       if (decl.kind === "JsImportDecl") continue;

@@ -1,5 +1,5 @@
-from "../basis/basis.wm" import * as Basis;
-from "../basis/general.wm" import { Less, Equal, Greater };
+from "./basis.wm" import * as Basis;
+from "./general.wm" import { Less, Equal, Greater };
 
 let rec map = match(items, f) => {
   ([], _) => { [] },

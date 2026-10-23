@@ -1,4 +1,4 @@
-from "../basis/general.wm" import { Order, Less, Equal, Greater };
+from "./general.wm" import { Order, Less, Equal, Greater };
 
 type MapTree<K, V> =
   | MapEmpty

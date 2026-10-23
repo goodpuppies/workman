@@ -1,4 +1,4 @@
-// Primitives of `basis/real.wm` that need the bits of a double: the sign of zero and NaN, the
+// Primitives of `std/real.wm` that need the bits of a double: the sign of zero and NaN, the
 // exponent, and the neighbouring representable value.
 
 const view = new DataView(new ArrayBuffer(8));

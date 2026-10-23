@@ -1,4 +1,4 @@
-// Primitives of `basis/word8.wm`, `word16.wm`, `word32.wm` and `word64.wm`.
+// Primitives of `std/word8.wm`, `word16.wm`, `word32.wm` and `word64.wm`.
 //
 // Words of up to 32 bits are JavaScript numbers holding the unsigned value. 64-bit words are
 // bigints. Exports are flat and prefixed with the width, because a library file is imported by

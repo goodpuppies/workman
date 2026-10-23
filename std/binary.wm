@@ -1,18 +1,18 @@
-from "../basis/byte.wm" import * as Byte;
-from "../basis/float32.wm" import * as Float32;
-from "../basis/float64.wm" import * as Float64;
-from "../basis/pack_real32_big.wm" import * as PackReal32Big;
-from "../basis/pack_real32_little.wm" import * as PackReal32Little;
-from "../basis/pack_real64_big.wm" import * as PackReal64Big;
-from "../basis/pack_real64_little.wm" import * as PackReal64Little;
-from "../basis/pack_word16_big.wm" import * as PackWord16Big;
-from "../basis/pack_word16_little.wm" import * as PackWord16Little;
-from "../basis/pack_word32_big.wm" import * as PackWord32Big;
-from "../basis/pack_word32_little.wm" import * as PackWord32Little;
-from "../basis/pack_word64_big.wm" import * as PackWord64Big;
-from "../basis/pack_word64_little.wm" import * as PackWord64Little;
-from "../basis/word8.wm" import * as Word8;
-from "../basis/word8_vector_slice.wm" import * as Word8VectorSlice;
+from "./byte.wm" import * as Byte;
+from "./float32.wm" import * as Float32;
+from "./float64.wm" import * as Float64;
+from "./pack_real32_big.wm" import * as PackReal32Big;
+from "./pack_real32_little.wm" import * as PackReal32Little;
+from "./pack_real64_big.wm" import * as PackReal64Big;
+from "./pack_real64_little.wm" import * as PackReal64Little;
+from "./pack_word16_big.wm" import * as PackWord16Big;
+from "./pack_word16_little.wm" import * as PackWord16Little;
+from "./pack_word32_big.wm" import * as PackWord32Big;
+from "./pack_word32_little.wm" import * as PackWord32Little;
+from "./pack_word64_big.wm" import * as PackWord64Big;
+from "./pack_word64_little.wm" import * as PackWord64Little;
+from "./word8.wm" import * as Word8;
+from "./word8_vector_slice.wm" import * as Word8VectorSlice;
 
 type Error =
   | Bounds<Number, Number, Number>

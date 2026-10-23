@@ -1,4 +1,4 @@
-from "../basis/basis.wm" import * as Basis;
+from "./basis.wm" import * as Basis;
 
 let map = match(option, f) => {
   (Some(value), f) => { Some(f(value)) },

@@ -268,7 +268,7 @@ function withStandardValueIds(
 
 /**
  * Namespace alias of a library module, derived from its snake_case file name:
- * `std/list.wm` defines `List` and `basis/word8_vector.wm` defines `Word8Vector`.
+ * `std/list.wm` defines `List` and `std/word8_vector.wm` defines `Word8Vector`.
  */
 export function libraryModuleAlias(path: string): string {
   return posix.basename(path, ".wm")

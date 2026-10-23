@@ -1,4 +1,4 @@
-// Primitives of `basis/float32.wm` and `float64.wm`. A `Float32.Real` is a number rounded to single
+// Primitives of `std/float32.wm` and `float64.wm`. A `Float32.Real` is a number rounded to single
 // precision after every operation; a `Float64.Real` is a plain number.
 
 export const float32Round = (value) => Math.fround(value);

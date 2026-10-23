@@ -24,7 +24,7 @@ export type BasisTypeDescriptor = Readonly<{
   equality: BasisEquality;
   /**
    * A layer-1 type whose values are host values that the library's JavaScript primitives create
-   * and consume. Such values may cross a JS FFI boundary as they are (`basis/js/*.js`).
+   * and consume. Such values may cross a JS FFI boundary as they are (`std/js/*.js`).
    */
   hostOwned?: true;
   argLabels?: readonly string[];

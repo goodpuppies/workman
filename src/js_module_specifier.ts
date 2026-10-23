@@ -6,7 +6,7 @@ import { libraryJsSources } from "./generated/assets.ts";
 
 /**
  * Specifier prefix of a library module's JavaScript primitive file, followed by its
- * repository-relative path (`wm-library:basis/js/word8_vector.js`). The library is embedded in the
+ * repository-relative path (`wm-library:std/js/word8_vector.js`). The library is embedded in the
  * compiler rather than read from disk, so emission inlines the file's source as a `data:` URL.
  */
 export const LIBRARY_JS_SCHEME = "wm-library:";

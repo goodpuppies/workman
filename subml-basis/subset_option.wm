@@ -1,0 +1,42 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+*/
+
+// Custom Basis optional values. Absence is normal; callers choose errors explicitly.
+
+from "./subset_result.wm" import * as SubsetResult;
+
+let getOr = (value, fallback) => {
+  match(value) {
+    None => { fallback },
+    Some(x) => { x }
+  }
+};
+let isSome = match {
+  None => { false },
+  Some(x) => { true }
+};
+let map = (value, f) => {
+  match(value) {
+    None => { None },
+    Some(x) => { Some(f(x)) }
+  }
+};
+let andThen = (value, f) => {
+  match(value) {
+    None => { None },
+    Some(x) => { f(x) }
+  }
+};
+let filter = (value, predicate) => {
+  match(value) {
+    None => { None },
+    Some(x) => { if (predicate(x)) { value } else { None } }
+  }
+};
+let toResult = (value, error) => {
+  match(value) {
+    None => { SubsetResult.Err(error) },
+    Some(x) => { SubsetResult.Ok(x) }
+  }
+};

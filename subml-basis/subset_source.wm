@@ -1,0 +1,73 @@
+/* @subsetml
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_bytes.sml" import * as SubsetBytes;
+from "./subset_string.sml" import * as SubsetString;
+*/
+
+// Immutable source-built byte index. Native input is converted exactly once.
+
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_bytes.wm" import * as SubsetBytes;
+from "./subset_string.wm" import * as SubsetString;
+
+type Source = Empty | Byte<Char> | Branch<I32, Source, Source>;
+let length = match {
+  Empty => { (0: I32) },
+  Byte(c) => { (1: I32) },
+  Branch(size, left, right) => { size }
+};
+let join = (left, right) => { Branch(length(left) + length(right), left, right) };
+let build = (bytes) => {
+  let rec push = (tree, stack) => {
+    match(stack) {
+      [] => { [tree] },
+      [previous, ..rest] => {
+        if (length(previous) <= length(tree)) { push(join(previous, tree), rest) } else { [tree, ..stack] }
+      }
+    }
+  };
+  let forest = SubsetList.foldLeft(bytes, [], (c, stack) => { push(Byte(c), stack) });
+  SubsetList.foldLeft(forest, Empty, (tree, acc) => { join(tree, acc) })
+};
+let fromBytes = (bytes) => { SubsetResult.map(SubsetBytes.validate(bytes), build) };
+let fromNative = (value) => { SubsetResult.map(SubsetString.fromNative(value), build) };
+
+let at = (tree, index: I32) => {
+  if (if (index >= (0: I32)) { index < length(tree) } else { false }) {
+    let rec go = match {
+      (Empty, Var(offset)) => { SubsetResult.Err(SubsetBytes.OutOfBounds) },
+      (Byte(c), Var(offset)) => {
+        if (if (offset <= (0: I32)) { offset >= (0: I32) } else { false }) { SubsetResult.Ok(c) } else { SubsetResult.Err(SubsetBytes.InvalidIndex) }
+      },
+      (Branch(size, left, right), Var(offset)) => {
+        if (offset < length(left)) { go(left, offset) } else { go(right, offset - length(left)) }
+      }
+    };
+    go(tree, index)
+  } else { SubsetResult.Err(SubsetBytes.InvalidIndex) }
+};
+
+let boundary = (tree, index) => {
+  if (if (index >= (0: I32)) { index <= length(tree) } else { false }) {
+    if (index >= length(tree)) { true } else { SubsetResult.isOk(at(tree, index)) }
+  } else { false }
+};
+let slice = (tree, start, count) => {
+  if (if (if (count >= (0: I32)) { boundary(tree, start) } else { false }) { count <= length(tree) - start } else { false }) {
+    let finish = start + count;
+    let rec collect = (node, base, acc) => {
+      if (if (base >= finish) { true } else { base + length(node) <= start }) { acc } else {
+        match(node) {
+          Empty => { acc },
+          Byte(c) => { [c, ..acc] },
+          Branch(size, left, right) => {
+            collect(left, base, collect(right, base + length(left), acc))
+          }
+        }
+      }
+    };
+    SubsetResult.Ok(collect(tree, (0: I32), []))
+  } else { SubsetResult.Err(SubsetBytes.InvalidIndex) }
+};

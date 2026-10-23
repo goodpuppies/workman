@@ -7,8 +7,8 @@ import { analyzeFile, analyzeRecoveredFile } from "../src/compiler.ts";
 Deno.test("library module aliases come from snake_case file names", () => {
   assertEquals(libraryModuleAlias("std/list.wm"), "List");
   assertEquals(libraryModuleAlias("std/result.wm"), "Result");
-  assertEquals(libraryModuleAlias("basis/word8_vector.wm"), "Word8Vector");
-  assertEquals(libraryModuleAlias("basis/pack_word32_little.wm"), "PackWord32Little");
+  assertEquals(libraryModuleAlias("std/word8_vector.wm"), "Word8Vector");
+  assertEquals(libraryModuleAlias("std/pack_word32_little.wm"), "PackWord32Little");
 });
 
 Deno.test("every generated library source is discovered and imports precede importers", async () => {
@@ -57,7 +57,7 @@ Deno.test("library discovery reports missing imports, cycles, and duplicate name
   await assertRejects(
     () =>
       discoverStandardModules({
-        "basis/option.wm": "let x = 1;\n",
+        "subml-basis/option.wm": "let x = 1;\n",
         "std/option.wm": "let y = 2;\n",
       }),
     Error,
@@ -66,11 +66,11 @@ Deno.test("library discovery reports missing imports, cycles, and duplicate name
   await assertRejects(
     () =>
       discoverStandardModules(
-        { "basis/a.wm": 'from js.module("./js/a.js") import unsafe { f: Number -> Number };\n' },
+        { "std/a.wm": 'from js.module("./js/a.js") import unsafe { f: Number -> Number };\n' },
         {},
       ),
     Error,
-    "library module basis/a.wm imports missing JavaScript file basis/js/a.js",
+    "library module std/a.wm imports missing JavaScript file std/js/a.js",
   );
 });
 
@@ -80,7 +80,7 @@ Deno.test("library JavaScript imports resolve to embedded library files", async 
   const specifiers = vector.module.decls.flatMap((decl) =>
     decl.kind === "JsImportDecl" && decl.target.kind === "JsModule" ? [decl.target.specifier] : []
   );
-  assertEquals([...new Set(specifiers)], ["wm-library:basis/js/byte_vector.js"]);
+  assertEquals([...new Set(specifiers)], ["wm-library:std/js/byte_vector.js"]);
 });
 
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
@@ -156,7 +156,7 @@ Deno.test("basis structures are library modules over inlined JavaScript primitiv
   // `Result.debug` reaches `host/js/debug.wm` through an ordinary library import.
   assertEquals(inlined.length, 3);
   assertEquals(inlined.some((text) => text.includes("byte structures")), true);
-  assertEquals(inlined.some((text) => text.includes("basis/word8.wm")), true);
+  assertEquals(inlined.some((text) => text.includes("std/word8.wm")), true);
   assertEquals(inlined.some((text) => text.includes("host/js/debug.wm")), true);
   assertEquals(js.includes('await import("data:'), false);
   assertEquals(js.includes("const Word8Vector = {"), false);
