@@ -1,0 +1,72 @@
+// Offline design corpus, not a stream to send to a running actor.
+// Each list entry is a separate Stageforge-style wire message.
+[
+    {kind = "ready"}
+    {
+        kind = "message"
+        data = {
+            address = {fm = "SYSTEM" to = "WORKER"}
+            type = "INIT"
+            payload = {
+                actorId = "driver@00000000-0000-0000-0000-000000000001"
+                callbackKey = "startup"
+            }
+        }
+    }
+    {
+        kind = "message"
+        data = {
+            address = {
+                fm = "test@00000000-0000-0000-0000-000000000002"
+                to = "driver@00000000-0000-0000-0000-000000000001"
+            }
+            type = "SETCONTROLLERPOSE:pose-1"
+            payload = {
+                hand = "left"
+                position = [0 1.65 -0]
+                rotation = [0 0 0 1]
+            }
+        }
+    }
+    {
+        kind = "message"
+        data = {
+            address = {fm = "SYSTEM" to = "worker"}
+            type = "ECHO:no-argument"
+        }
+    }
+    {
+        kind = "message"
+        data = {
+            address = {fm = "SYSTEM" to = "worker"}
+            type = "ECHO:explicit-null"
+            payload = null
+        }
+    }
+    {
+        kind = "message"
+        data = {
+            address = {fm = "driver" to = "test"}
+            type = "HEALTH:health-1"
+            payload = {
+                ok = true
+                // Synthetic boundary values for the driver's u64 counters.
+                details = {runFrameCount = 9007199254740993 ipcSessions = 18446744073709551615}
+            }
+        }
+    }
+    {
+        kind = "message"
+        data = {
+            address = {fm = "driver" to = "test"}
+            type = "SETCONTROLLERPOSE:pose-2"
+            payload = {
+                __actorError = {
+                    message = "ControllersDisabled"
+                    event = "controller-command"
+                }
+            }
+        }
+    }
+    {kind = "terminate"}
+]

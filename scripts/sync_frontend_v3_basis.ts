@@ -10,7 +10,7 @@ const inventory = JSON.parse(
 ) as {
   modules: Record<string, { source: string; sourceDependencies: string[]; primitives: string[] }>;
 };
-const roots = ["SubsetUtf16Source", "SubsetNatural", "SubsetProcess"];
+const roots = ["SubsetUtf16Source", "SubsetNatural", "SubsetProcess", "SubsetWon"];
 const selected = new Set(roots);
 for (const name of selected) {
   const module = inventory.modules[name];

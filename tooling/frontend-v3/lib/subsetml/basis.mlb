@@ -14,3 +14,7 @@ subset_natural.sml
 native/subset_host.sml
 subset_io.sml
 subset_process.sml
+subset_won_syntax.sml
+subset_won_value.sml
+subset_won_parser.sml
+subset_won.sml

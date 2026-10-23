@@ -1,0 +1,387 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_string.sml" import * as SubsetString;
+from "./subset_char.sml" import * as SubsetChar;
+from "./subset_won_value.sml" import * as SubsetWonValue;
+from "./subset_won_syntax.sml" import * as SubsetWonSyntax;
+*/
+
+// Strict WON grammar and cursor mechanics.
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_won_value.wm" import * as SubsetWonValue;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_won_syntax.wm" import * as SubsetWonSyntax;
+from "./subset_char.wm" import * as SubsetChar;
+from "./subset_string.wm" import * as SubsetString;
+
+record Cursor = {input: List<Char>, offset: I32};
+let makeCursor = (input, offset) => { (.{ input = input, offset = offset }: Cursor) };
+
+let via = SubsetResult.via;
+
+let fail = (cursor: Cursor, message) => {
+  SubsetResult.Err(SubsetWonValue.makeError(cursor.offset, message))
+};
+
+let advance = (cursor: Cursor) => {
+  match(cursor.input) {
+    [] => { cursor },
+    [_, ..rest] => { makeCursor(rest, cursor.offset + (1: I32)) }
+  }
+};
+
+let peek = (cursor: Cursor, c) => {
+  match(cursor.input) {
+    [first, .._] => { first == c },
+    [] => { false }
+  }
+};
+
+// Commas are whitespace: they separate entries but carry no meaning.
+let space = (c) => {
+  match(match(match(match(c == ' ', c == '\t') {
+    (false, false) => { false },
+    _ => { true }
+  }, c == '\r') {
+    (false, false) => { false },
+    _ => { true }
+  }, c == '\n') {
+    (false, false) => { false },
+    _ => { true }
+  }, c == ',') {
+    (false, false) => { false },
+    _ => { true }
+  }
+};
+
+let rec take = (cursor: Cursor, predicate, acc) => {
+  match(cursor.input) {
+    [c, .._] => {
+      if (predicate(c)) { take(advance(cursor), predicate, [c, ..acc]) } else { (SubsetList.reverse(acc), cursor) }
+    },
+    [] => { (SubsetList.reverse(acc), cursor) }
+  }
+};
+
+let rec block = (cursor: Cursor, depth) => {
+  match(cursor.input) {
+    [] => { fail(cursor, "unterminated block comment") },
+    ['/', '*', ..rest] => {
+      block(makeCursor(rest, cursor.offset + (2: I32)), depth + (1: I32))
+    },
+    ['*', '/', ..rest] => {
+      let next = makeCursor(rest, cursor.offset + (2: I32));
+      if (depth <= (1: I32)) { SubsetResult.Ok(next) } else { block(next, depth - (1: I32)) }
+    },
+    _ => { block(advance(cursor), depth) }
+  }
+};
+
+let rec skip = (cursor: Cursor) => {
+  match(cursor.input) {
+    ['/', '/', .._] => {
+      let (_, next) = take(
+        cursor,
+        (c) => {
+          match(c != '\n', c != '\r') {
+            (true, true) => { true },
+            _ => { false }
+          }
+        },
+        []
+      );
+      skip(next)
+    },
+    ['/', '*', ..rest] => {
+      match(block(makeCursor(rest, cursor.offset + (2: I32)), (1: I32))) {
+        SubsetResult.Err(e) => { SubsetResult.Err(e) },
+        SubsetResult.Ok(next) => { skip(next) }
+      }
+    },
+    [c, .._] => {
+      if (space(c)) { skip(advance(cursor)) } else { SubsetResult.Ok(cursor) }
+    },
+    [] => { SubsetResult.Ok(cursor) }
+  }
+};
+
+let expect = (cursor, c) => {
+  let consume = via((next) => {
+    if (peek(next, c)) { SubsetResult.Ok(advance(next)) } else { fail(next, "expected " ++ SubsetWonSyntax.native([c])) }
+  });
+  consume(skip(cursor))
+};
+
+// Text validates strict UTF-8 and accepts only the canonical escape spellings.
+let text = (cursor) => {
+  let rec go = (cur: Cursor, acc) => {
+    match(cur.input) {
+      [] => { fail(cur, "unterminated quoted value") },
+      ['"', .._] => {
+        let xs = SubsetList.reverse(acc);
+        if (SubsetWonSyntax.textValid(xs)) { SubsetResult.Ok(SubsetWonSyntax.native(xs), advance(cur)) } else { fail(cursor, "text is not valid UTF-8") }
+      },
+      ['\\', 'x', a, b, ..rest] => {
+        match(SubsetWonSyntax.hexPair(a, b)) {
+          Some(c) => {
+            if (match(match(match(SubsetChar.isCntrl(c), c != '\n') {
+              (true, true) => { true },
+              _ => { false }
+            }, c != '\r') {
+              (true, true) => { true },
+              _ => { false }
+            }, c != '\t') {
+              (true, true) => { true },
+              _ => { false }
+            }) { go(makeCursor(rest, cur.offset + (4: I32)), [c, ..acc]) } else { fail(cur, "use literal UTF-8 or the named text escape") }
+          },
+          None => { fail(cur, "expected two hex digits after \\x") }
+        }
+      },
+      ['\\', c, ..rest] => {
+        let decoded = match(c) {
+          'n' => { Some('\n') },
+          'r' => { Some('\r') },
+          't' => { Some('\t') },
+          '"' => { Some('"') },
+          '\\' => { Some('\\') },
+          _ => { None }
+        };
+        match(decoded) {
+          Some(value) => { go(makeCursor(rest, cur.offset + (2: I32)), [value, ..acc]) },
+          None => { fail(cur, "unknown escape") }
+        }
+      },
+      [c, .._] => {
+        if (SubsetChar.isCntrl(c)) { fail(cur, "control byte must be escaped") } else { go(advance(cur), [c, ..acc]) }
+      }
+    }
+  };
+  if (peek(cursor, '"')) { go(advance(cursor), []) } else { fail(cursor, "expected quote") }
+};
+
+let name = (cursor: Cursor) => {
+  match(cursor.input) {
+    [c, .._] => {
+      if (SubsetWonSyntax.firstName(c)) {
+        let (xs, next) = take(cursor, SubsetWonSyntax.nameChar, []);
+        SubsetResult.Ok(SubsetWonSyntax.native(xs), next)
+      } else { fail(cursor, "expected ASCII name") }
+    },
+    [] => { fail(cursor, "expected name") }
+  }
+};
+
+// JSON number grammar; preserve the spelling without host conversion or bounds.
+let number = (cursor) => {
+  let start = if (peek(cursor, '-')) { advance(cursor) } else { cursor };
+  let (whole, afterWhole) = take(start, SubsetWonSyntax.digit, []);
+  let requiredDigits = (cur) => {
+    let (xs, next) = take(cur, SubsetWonSyntax.digit, []);
+    match(xs) {
+      [] => { fail(cur, "expected digit") },
+      _ => { SubsetResult.Ok(next) }
+    }
+  };
+  let fraction = (cur) => {
+    if (peek(cur, '.')) { requiredDigits(advance(cur)) } else { SubsetResult.Ok(cur) }
+  };
+  let exponent = (cur) => {
+    if (match(peek(cur, 'e'), peek(cur, 'E')) {
+      (false, false) => { false },
+      _ => { true }
+    }) {
+      let afterE = advance(cur);
+      let signed = if (match(peek(afterE, '-'), peek(afterE, '+')) {
+        (false, false) => { false },
+        _ => { true }
+      }) { advance(afterE) } else { afterE };
+      requiredDigits(signed)
+    } else { SubsetResult.Ok(cur) }
+  };
+  let validWhole = match(whole) {
+    [] => { false },
+    ['0', _, .._] => { false },
+    _ => { true }
+  };
+  let readExponent = via(exponent);
+  let preserveSpelling = (next: Cursor) => {
+    let rec prefix = (cur: Cursor, acc) => {
+      if (cur.offset >= next.offset) { SubsetWonSyntax.native(SubsetList.reverse(acc)) } else {
+        match(cur.input) {
+          [c, .._] => { prefix(advance(cur), [c, ..acc]) },
+          [] => { SubsetWonSyntax.native(SubsetList.reverse(acc)) }
+        }
+      }
+    };
+    (SubsetWonValue.Number(prefix(cursor, [])), next)
+  };
+  if (validWhole) {
+    SubsetResult.map(readExponent(fraction(afterWhole)), preserveSpelling)
+  } else { fail(cursor, "invalid number") }
+};
+
+let key = (cursor) => {
+  let requireQuotedKey = via((name, stop) => {
+    if (SubsetWonSyntax.identifier(name)) { fail(cursor, "identifier keys must be bare") } else { SubsetResult.Ok(name, stop) }
+  });
+  if (peek(cursor, '"')) { requireQuotedKey(text(cursor)) } else { name(cursor) }
+};
+
+let blob = (cursor) => {
+  let rec go = (input: Cursor, acc) => {
+    match(input.input) {
+      ['"', .._] => {
+        SubsetResult.Ok(SubsetWonValue.Blob(SubsetList.reverse(acc)), advance(input))
+      },
+      [a, b, ..tail] => {
+        match(SubsetWonSyntax.hexPair(a, b)) {
+          Some(c) => { go(makeCursor(tail, input.offset + (2: I32)), [c, ..acc]) },
+          None => { fail(input, "hex blob requires pairs of hex digits") }
+        }
+      },
+      _ => { fail(input, "unterminated hex blob") }
+    }
+  };
+  go(advance(advance(cursor)), [])
+};
+
+// Read entries with Result procedures.
+let collect = (input, close, item) => {
+  let step = (cursor, previous) => {
+    let skipTrivia = via((entry, stop) => {
+      SubsetResult.map(skip(stop), (after) => { (entry, stop, after) })
+    });
+    let requireGap = via((entry, stop: Cursor, after: Cursor) => {
+      if (match(peek(after, close), after.offset > stop.offset) {
+        (false, false) => { false },
+        _ => { true }
+      }) { SubsetResult.Ok(entry, after) } else { fail(after, "expected whitespace between values or fields") }
+    });
+    requireGap(skipTrivia(item(cursor, previous)))
+  };
+
+  let rec go = (cursor, acc) => {
+    let read = via((next) => {
+      if (peek(next, close)) { SubsetResult.Ok(SubsetList.reverse(acc), advance(next)) } else {
+        let append = via((entry, after) => { go(after, [entry, ..acc]) });
+        append(step(next, acc))
+      }
+    });
+    read(skip(cursor))
+  };
+  go(input, [])
+};
+
+// Bound nesting independently of the number of container entries.
+let rec value = (cursor, depth) => {
+  let parse = via((cur: Cursor) => {
+    let sequence = (input) => {
+      SubsetResult.map(
+        collect(input, ']', (next, _) => { value(next, depth + (1: I32)) }),
+        (items, stop) => { (SubsetWonValue.List(items), stop) }
+      )
+    };
+    let fields = (input, close) => {
+      let readField = (next, previous) => {
+        let readValue = via((name, afterKey) => {
+          let parseValue = via((afterEquals) => { value(afterEquals, depth + (1: I32)) });
+          if (SubsetWonSyntax.duplicate(previous, name)) { fail(next, "duplicate field: " ++ name) } else {
+            SubsetResult.map(parseValue(expect(afterKey, '=')), (v, stop) => { ((name, v), stop) })
+          }
+        });
+        readValue(key(next))
+      };
+      collect(input, close, readField)
+    };
+    let payload = (input: Cursor) => {
+      let closeScalar = via((v, stop) => {
+        match(v) {
+          SubsetWonValue.Null => { fail(input, "omit null tag payload") },
+          SubsetWonValue.List(_) => { fail(input, "list tag payload must use []") },
+          SubsetWonValue.Record(_) => { fail(input, "record tag payload must use {}") },
+          _ => {
+            SubsetResult.map(expect(stop, ')'), (after) => { (v, after) })
+          }
+        }
+      });
+      match(input.input) {
+        ['(', .._] => { closeScalar(value(advance(input), depth + (1: I32))) },
+        ['[', .._] => { sequence(advance(input)) },
+        ['{', .._] => {
+          SubsetResult.map(
+            fields(advance(input), '}'),
+            (items, stop) => { (SubsetWonValue.Record(items), stop) }
+          )
+        },
+        _ => { SubsetResult.Ok(SubsetWonValue.Null, input) }
+      }
+    };
+    let tag = (name, afterName) => {
+      let requireAttributes = via((attrs, stop) => {
+        match(attrs) {
+          [] => { fail(afterName, "omit empty tag attributes") },
+          _ => { SubsetResult.Ok(attrs, stop) }
+        }
+      });
+      let attachPayload = via((attrs, afterAttrs) => {
+        SubsetResult.map(
+          payload(afterAttrs),
+          (body, stop) => { (SubsetWonValue.Tag(name, attrs, body), stop) }
+        )
+      });
+      let attributes = if (peek(afterName, '<')) { requireAttributes(fields(advance(afterName), '>')) } else { SubsetResult.Ok([], afterName) };
+      attachPayload(attributes)
+    };
+    if (depth > (128: I32)) { fail(cur, "maximum nesting depth exceeded") } else {
+      match(cur.input) {
+        [] => { fail(cur, "expected value") },
+        ['"', .._] => {
+          SubsetResult.map(text(cur), (s, stop) => { (SubsetWonValue.Text(s), stop) })
+        },
+        ['x', '"', .._] => { blob(cur) },
+        ['[', .._] => { sequence(advance(cur)) },
+        ['{', .._] => {
+          SubsetResult.map(
+            fields(advance(cur), '}'),
+            (items, stop) => { (SubsetWonValue.Record(items), stop) }
+          )
+        },
+        [c, .._] => {
+          let interpretName = via((name, stop) => {
+            match(name) {
+              "null" => { SubsetResult.Ok(SubsetWonValue.Null, stop) },
+              "true" => { SubsetResult.Ok(SubsetWonValue.Boolean(true), stop) },
+              "false" => { SubsetResult.Ok(SubsetWonValue.Boolean(false), stop) },
+              _ => { tag(name, stop) }
+            }
+          });
+          if (match(SubsetWonSyntax.digit(c), c == '-') {
+            (false, false) => { false },
+            _ => { true }
+          }) { number(cur) } else { interpretName(name(cur)) }
+        }
+      }
+    }
+  });
+  parse(skip(cursor))
+};
+
+let decode = (source) => {
+  let parse = via((input) => { value(makeCursor(input, (0: I32)), (0: I32)) });
+  let requireEnd = via((parsed, stop) => {
+    let finish = via((next: Cursor) => {
+      match(next.input) {
+        [] => { SubsetResult.Ok(parsed) },
+        _ => { fail(next, "unexpected trailing input") }
+      }
+    });
+    finish(skip(stop))
+  });
+  requireEnd(parse(SubsetResult.mapError(
+    SubsetString.fromNative(source),
+    (_) => { SubsetWonValue.makeError((0: I32), "expected a byte string") }
+  )))
+};

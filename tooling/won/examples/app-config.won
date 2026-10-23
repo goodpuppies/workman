@@ -1,0 +1,71 @@
+AppConfig{
+    name = "Example App"
+    version = "1.4.0"
+    debug = false
+
+    server = {
+        host = "127.0.0.1"
+        port = 8080
+        compression = true
+    }
+
+    database = {
+        driver = "sqlite"
+        path = "./data/app.db"
+    }
+
+    features = [
+        "search"
+        "notifications"
+        "themes"
+    ]
+
+    theme = {
+        name = "dark"
+        accent = "#7c9cff"
+        fontSize = 14
+    }
+
+    page =
+        Html<lang = "en">[
+            Head[
+                Title("Example App")
+
+                Meta<
+                    name = "viewport"
+                    content = "width=device-width, initial-scale=1"
+                >
+            ]
+
+            Body<class = "app">[
+                Header<class = "toolbar">[
+                    H1("Settings")
+
+                    Button<
+                        id = "save"
+                        type = "button"
+                        disabled = false
+                    >("Save")
+                ]
+
+                Main[
+                    Section<
+                        id = "audio"
+                        class = "settings-section"
+                    >[
+                        H2("Audio")
+
+                        Label<for = "volume">("Volume")
+
+                        Input<
+                            id = "volume"
+                            type = "range"
+                            min = 0
+                            max = 100
+                            value = 80
+                        >
+                    ]
+                ]
+            ]
+        ]
+}

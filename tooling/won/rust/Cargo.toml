@@ -1,0 +1,18 @@
+[package]
+name = "won"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Experimental WON reader, writer, and serde format"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+
+[[bin]]
+name = "ipc-driver"
+path = "src/bin/ipc_driver.rs"
+
+[[bin]]
+name = "won-rust"
+path = "src/bin/won_rust.rs"
