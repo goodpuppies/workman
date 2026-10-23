@@ -1,4 +1,5 @@
 from "./basis.wm" import * as Basis;
+from "../subml-basis/subset_list_pair.wm" import * as SubsetListPair;
 
 // Basis `LIST_PAIR`. The plain functions ignore the excess of the longer list; the `Eq` functions
 // return `Err(Basis.UnequalLengths)` instead. Arguments come data-first so pipes work, and fold
@@ -20,14 +21,9 @@ let rec zipEq = match(left, right) => {
   (_, _) => { Err(Basis.UnequalLengths) }
 };
 
-let rec unzip = match(pairs) => {
-  [] => { ([], []) },
-  [pair, ..rest] => {
-    let (a, b) = pair;
-    let (lefts, rights) = unzip(rest);
-    ([a, ..lefts], [b, ..rights])
-  }
-};
+// The SubsetML Basis's zip and map are strict (a Result on unequal lengths), so only unzip is
+// shared; the truncating forms here and the Eq forms keep their Basis Library behavior.
+let unzip = SubsetListPair.unzip;
 
 let rec app = match(left, right, f) => {
   ([a, ..restA], [b, ..restB], f) => {

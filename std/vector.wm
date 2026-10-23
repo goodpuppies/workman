@@ -1,5 +1,5 @@
 from "./basis.wm" import * as Basis;
-from "./general.wm" import { Less, Equal, Greater };
+from "../subml-basis/subset_order.wm" import { Less, Equal, Greater };
 from js.module("./js/vector.js") import unsafe {
   fromArray: Js.Array<a> -> Vector.Vector<a>,
   length as primLength: Vector.Vector<a> -> Number,

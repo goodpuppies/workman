@@ -85,22 +85,38 @@ the manifest entry is read from.
   SubsetML doesn't have (`word`, vectors, `real32`) or are thin JS primitives (`Math`, parts of
   `Real`). Deferred: they move into the SubsetML Basis only if that becomes necessary.
 - `tooling/frontend-v3/lib/subsetml/` is still a separate snapshot; it can move to `subml-basis/`.
-- Duplicates still to remove: `std/list_pair.wm` (`SubsetListPair`), `std/basis.wm` (per-module
-  errors replace `Basis.Error`), and `General.Order` (`SubsetOrder`).
+- `std/list_pair.wm` and `std/basis.wm` stay: their APIs differ from the Basis's (see the std
+  overlap question below).
 
 **Cold start doubled.** Every library module is inferred on each run, so `wm run` of `print(1)`
 went from about 1.15 s to 2.35 s with the Basis modules. Loading only the library modules a
 program uses (or caching their interfaces) is needed before this is acceptable.
 
+## Imports (2026-10-23)
+
+`std/` is preloaded; `subml-basis/` is import-only, reached as `from "basis/won.wm"` (the file
+`subml-basis/subset_won.wm`). `"std/<file>.wm"` imports a std module explicitly. Both resolve in
+`libraryImport` (`src/host_modules.ts`) next to `js.host(...)`, before relative resolution. The
+preloaded core is std's `Result`, `Option`, `List` and so on, rebuilt on the Basis as `Result`
+was, so no `Subset`-prefixed name is ever global.
+
+Follow-up: `"pakman/..."` (`src/pakman_imports.ts`) is a separate one-off mapping to files on
+disk; it can become another built-in scope in `libraryImport`.
+
 ## Open questions
 
-- **`std/` overlap.** `std/result.wm` now takes `map`, `andThen`, `mapErr`, `via`, `viaError` and
-  `withDefault` (as `getOr`) from `SubsetResult` and adds the carrier record, `map2`–`map4`,
-  `debug`, `toBool` and the list helpers. The carrier protocol's fields are `via` and `viaError`
-  (formerly `fn` and `fnError`), and SubsetML's `mapError` is `mapErr`. Still to decide: one name
-  for `withDefault`/`getOr`, and the same pass over `std/list.wm` and `std/option.wm`.
-- **Namespaces.** Library namespaces come from file names, so `subset_list.wm` is `SubsetList`.
-  Decide whether WM drops the prefix.
+- **`std/` overlap.** std reuses the Basis where the behavior is identical and keeps its own
+  API otherwise (decided 2026-10-23):
+  - `Result`: `map`, `andThen`, `mapErr`, `via`, `viaError`, `getOr` from `SubsetResult`.
+  - `Option`: `map`, `andThen`, `getOr`, `isSome`, `toResult` from `SubsetOption`. `filter` stays
+    SML's `Option.filter` (wraps a plain value).
+  - `List`: `map`, `filter`, `foldRight`, `reverse`, `append`, `concat`, `partition`, `find`, `all`
+    from `SubsetList`. `length` (`I32` in the Basis), `foldLeft` (callback order differs) and the
+    forgiving `at`/`take`/`drop` (`Option`/clamping rather than `Result`) stay WM's.
+  - `ListPair`: only `unzip`; the Basis `zip`/`map` are strict.
+  - `Order`: `General.Order` is gone; std uses `SubsetOrder`'s type, and programs import
+    `from "basis/order.wm" import { Less, Equal, Greater }`.
+  `Basis.Error` stays while std's `hd`, `valOf`, `zipEq` and friends return it.
 - **`I32` in WM APIs.** Basis lengths and indexes are `I32`, while existing WM code uses `Number`.
 - **IO.** `SubsetIo` is synchronous; WM's current IO is `Task`-shaped.
 - **Cold start.** Std is inferred on every process start; measure with the full Basis loaded.

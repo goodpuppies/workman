@@ -1,10 +1,12 @@
 from "./basis.wm" import * as Basis;
-from "./general.wm" import { Less, Equal, Greater };
+from "../subml-basis/subset_order.wm" import { Less, Equal, Greater };
+from "../subml-basis/subset_list.wm" import * as SubsetList;
 
-let rec map = match(items, f) => {
-  ([], _) => { [] },
-  ([head, ..rest], f) => { [f(head), ..map(rest, f)] }
-};
+// Functions that behave the same as the SubsetML Basis's come from SubsetList, which is
+// tail-recursive throughout. length (I32 there), foldLeft (whose callback takes the accumulator
+// second there) and the forgiving at/take/drop keep WM's own definitions.
+
+let map = SubsetList.map;
 
 let length = (items) => {
   let rec loop = match(remaining, count) => {
@@ -14,23 +16,9 @@ let length = (items) => {
   loop(items, 0)
 };
 
-let rec append = match(left, right) => {
-  ([], right) => { right },
-  ([head, ..rest], right) => {
-    [head, ..append(rest, right)]
-  }
-};
+let append = SubsetList.append;
 
-let rec filter = match(items, predicate) => {
-  ([], _) => { [] },
-  ([head, ..rest], predicate) => {
-    if (predicate(head)) {
-      [head, ..filter(rest, predicate)]
-    } else {
-      filter(rest, predicate)
-    }
-  }
-};
+let filter = SubsetList.filter;
 
 let rec take = match(items, count) => {
   ([], _) => { [] },
@@ -63,18 +51,9 @@ let rec foldLeft = match(items, initial, f) => {
   }
 };
 
-let rec foldRight = match(items, initial, f) => {
-  ([], initial, _) => { initial },
-  ([head, ..rest], initial, f) => {
-    f(head, foldRight(rest, initial, f))
-  }
-};
+let foldRight = SubsetList.foldRight;
 
-let reverse = (items) => {
-  foldLeft(items, [], (reversed, item) => {
-    [item, ..reversed]
-  })
-};
+let reverse = SubsetList.reverse;
 
 let rec any = match(items, predicate) => {
   ([], _) => { false },
@@ -87,16 +66,7 @@ let rec any = match(items, predicate) => {
   }
 };
 
-let rec all = match(items, predicate) => {
-  ([], _) => { true },
-  ([head, ..rest], predicate) => {
-    if (predicate(head)) {
-      all(rest, predicate)
-    } else {
-      false
-    }
-  }
-};
+let all = SubsetList.all;
 
 let collectWith = (empty, combine, items) => {
   foldRight(items, empty, combine)
@@ -155,9 +125,7 @@ let rec revAppend = match(left, right) => {
   ([head, ..rest], right) => { revAppend(rest, [head, ..right]) }
 };
 
-let concat = (lists) => {
-  foldRight(lists, [], (items, joined) => { append(items, joined) })
-};
+let concat = SubsetList.concat;
 
 let rec app = match(items, f) => {
   ([], _) => { void },
@@ -180,26 +148,9 @@ let mapPartial = (items, f) => {
   loop(items, [])
 };
 
-let rec find = match(items, predicate) => {
-  ([], _) => { None },
-  ([head, ..rest], predicate) => {
-    if (predicate(head)) { Some(head) } else { find(rest, predicate) }
-  }
-};
+let find = SubsetList.find;
 
-let partition = (items, predicate) => {
-  let rec loop = match(remaining, accepted, rejected) => {
-    ([], accepted, rejected) => { (reverse(accepted), reverse(rejected)) },
-    ([head, ..rest], accepted, rejected) => {
-      if (predicate(head)) {
-        loop(rest, [head, ..accepted], rejected)
-      } else {
-        loop(rest, accepted, [head, ..rejected])
-      }
-    }
-  };
-  loop(items, [], [])
-};
+let partition = SubsetList.partition;
 
 let tabulate = (count: Number, f) => {
   if (count < 0 || count % 1 != 0) {

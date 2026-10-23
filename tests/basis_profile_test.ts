@@ -573,20 +573,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "Cursor",
         ],
       },
-      {
-        alias: "General",
-        values: [
-          "Less",
-          "Equal",
-          "Greater",
-          "o",
-          "before",
-          "ignore",
-        ],
-        types: [
-          "Order",
-        ],
-      },
+      { alias: "General", values: ["o", "before", "ignore"], types: [] },
       {
         alias: "List",
         values: [
@@ -735,6 +722,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "map",
           "andThen",
           "getOr",
+          "toResult",
           "map2",
           "traverse",
           "collectList",

@@ -1,7 +1,5 @@
-// Basis `GENERAL`, without `exn`, the exceptions and `ref` (`markdown/core-design.md`). The
-// expected-outcome exceptions are `Basis.Error` constructors instead. `Order` is the spec's `order`,
-// capitalized (BD11).
-type Order = Less | Equal | Greater;
+// General helpers, without `exn`, the exceptions and `ref` (`markdown/core-design.md`). The order
+// type is the SubsetML Basis's: `from "basis/order.wm" import { Order, Less, Equal, Greater };`.
 
 // Function composition: `o(f, g)` is `(x) => f(g(x))`.
 let o = (f, g) => {

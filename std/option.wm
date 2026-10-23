@@ -1,19 +1,16 @@
 from "./basis.wm" import * as Basis;
+from "../subml-basis/subset_option.wm" import * as SubsetOption;
 
-let map = match(option, f) => {
-  (Some(value), f) => { Some(f(value)) },
-  (None, _) => { None }
-};
+// map, andThen, getOr, isSome and toResult come from the SubsetML Basis. filter stays SML's
+// Option.filter, which wraps a plain value; SubsetOption.filter filters an Option.
 
-let andThen = match(option, f) => {
-  (Some(value), f) => { f(value) },
-  (None, _) => { None }
-};
+let map = SubsetOption.map;
 
-let getOr = match(option, fallback) => {
-  (Some(value), _) => { value },
-  (None, fallback) => { fallback }
-};
+let andThen = SubsetOption.andThen;
+
+let getOr = SubsetOption.getOr;
+
+let toResult = SubsetOption.toResult;
 
 let map2 = match(a, b, f) => {
   (Some(left), Some(right), f) => { Some(f(left, right)) },
@@ -43,10 +40,7 @@ let collectList = (items) => {
 // Basis `OPTION` functions with no existing Workman name. `getOpt` is `getOr` and
 // `mapPartial` is `andThen`. Arguments come data-first so pipes work.
 
-let isSome = match(option) => {
-  Some(_) => { true },
-  None => { false }
-};
+let isSome = SubsetOption.isSome;
 
 let valOf = match(option) => {
   Some(value) => { Ok(value) },

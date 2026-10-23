@@ -8,10 +8,10 @@ import { parseCompilerModule } from "../src/compiler_frontend.ts";
 
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
-async function run(lines: string[]): Promise<string[]> {
+async function run(lines: string[], header = ""): Promise<string[]> {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
-  await Deno.writeTextFile(input, `let main = () => {\n${lines.join("\n")}\n};\n`);
+  await Deno.writeTextFile(input, `${header}let main = () => {\n${lines.join("\n")}\n};\n`);
   const output = await new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", cli, "run", input],
     stdout: "piped",
@@ -216,21 +216,24 @@ Deno.test("vectors admit equality exactly when their elements do; slices never d
   }
 });
 
+// The order type is the SubsetML Basis's.
+const orderImport = 'from "basis/order.wm" import { Less, Equal, Greater };\n';
+
 Deno.test("General follows GENERAL", async () => {
   assertEquals(
     await run([
       "print(General.o((x) => { x + 1 }, (x) => { x * 2 })(5));",
       'print(General.before(1, print("evaluated")));',
       "print(General.ignore(3));",
-      "print((General.Less, General.Equal, General.Greater));",
-    ]),
+      "print((Less, Equal, Greater));",
+    ], orderImport),
     ["11", "evaluated", "1", "void", "(Less, Equal, Greater)"],
   );
 });
 
 Deno.test("collate compares lexicographically", async () => {
   const compare =
-    "(a, b) => { if (a < b) { General.Less } else { if (a > b) { General.Greater } else { General.Equal } } }";
+    "(a, b) => { if (a < b) { Less } else { if (a > b) { Greater } else { Equal } } }";
   assertEquals(
     await run([
       `let compare = ${compare};`,
@@ -240,7 +243,7 @@ Deno.test("collate compares lexicographically", async () => {
       "let s = (items) => { VectorSlice.full(Vector.fromList(items)) };",
       "let tail = Result.debug(VectorSlice.slice(Vector.fromList([9, 1, 2]), 1, None));",
       "print((VectorSlice.collate(tail, s([1, 2]), compare), VectorSlice.collate(tail, s([1, 3]), compare), VectorSlice.collate(s([]), s([]), compare)));",
-    ]),
+    ], orderImport),
     [
       "(Equal, Less, Greater)",
       "(Equal, Greater, Less)",

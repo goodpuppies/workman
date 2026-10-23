@@ -1,5 +1,5 @@
 from "./basis.wm" import * as Basis;
-from "./general.wm" import { Less, Equal, Greater };
+from "../subml-basis/subset_order.wm" import { Less, Equal, Greater };
 from js.global("Math") import unsafe {
   abs as primAbs: Number -> Number,
   floor as primFloor: Number -> Number,
