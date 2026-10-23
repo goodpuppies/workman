@@ -2,6 +2,9 @@
 
 ## Status
 
+Superseded on 2026-10-23 by [`../subsetml-basis.md`](../subsetml-basis.md), which lists what
+still holds.
+
 Planned. Started on 2026-09-28 after the core-design discussion that produced
 [`../core-design.md`](../core-design.md) and [`../basis-design.md`](../basis-design.md).
 

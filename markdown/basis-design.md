@@ -1,5 +1,8 @@
 # Basis and standard library design
 
+> **Superseded (2026-10-23)** by [`subsetml-basis.md`](./subsetml-basis.md): WM uses the SubsetML
+> Basis instead of its own SML-Basis layer.
+
 ## Purpose
 
 Workman's basis and standard library are currently a mix of mechanisms: compiler-owned types in
