@@ -94,6 +94,7 @@ async function runProgram(
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(input, source);
   for (const [name, text] of Object.entries(siblings)) {
+    await Deno.mkdir(`${dir}/${name}`.replace(/\/[^/]*$/, ""), { recursive: true });
     await Deno.writeTextFile(`${dir}/${name}`, text);
   }
   const output = await new Deno.Command(Deno.execPath(), {
@@ -300,4 +301,41 @@ let main = () => {
   assertEquals(strict.graph.order.length, 1);
   const recovered = await analyzeRecoveredFile(input);
   assertEquals(recovered.interfaces.size, 1);
+});
+
+Deno.test('"basis/" and "std/" import library modules; "./basis/" stays a local folder', async () => {
+  const result = await runProgram(
+    `from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as WonValue;
+from "std/result.wm" import { getOr };
+from "./basis/local.wm" import { local };
+
+let main = () => {
+  print(Won.decode("[1, true]"));
+  print(Won.encode(WonValue.Boolean(true)) :> getOr("?"));
+  print(Won.decode("true") :> Result.map((value) => { value == WonValue.Boolean(true) }));
+  print(local);
+};
+`,
+    "run",
+    { "basis/local.wm": `let local = "local";\n` },
+  );
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(
+    result.stdout,
+    "Ok(List(Cons(Number(1), Cons(Boolean(true), Nil))))\ntrue\nOk(true)\nlocal\n",
+  );
+});
+
+Deno.test("SubsetML Basis modules are never opened without an import", async () => {
+  const global = await runProgram(`let main = () => { print(SubsetWon.decode("1")) };\n`, "check");
+  assertEquals(global.code === 0, false);
+  assertEquals(global.stderr.includes("unknown name SubsetWon.decode"), true);
+  const unknown = await runProgram(
+    `from "basis/nope.wm" import * as Nope;\nlet main = () => { print(1) };\n`,
+    "check",
+  );
+  assertEquals(unknown.code === 0, false);
+  assertEquals(unknown.stderr.includes(`unknown Basis module "basis/nope.wm"`), true);
 });

@@ -1,6 +1,12 @@
-// Import-only host helper modules (BD17). `from js.host("table") import * as Table;` is projected
-// to an ordinary `ImportDecl` whose path carries this prefix, and the module graph resolves that
-// path to the library module `host/js/table.wm`.
+// Import specifiers that name library modules rather than files.
+//
+// - `from js.host("table") import * as Table;` is projected to an ordinary `ImportDecl` whose path
+//   carries `JS_HOST_IMPORT_PREFIX`, naming the import-only host helper `host/js/table.wm` (BD17).
+// - `from "std/result.wm"` names `std/result.wm`.
+// - `from "basis/won.wm"` names the SubsetML Basis module `subml-basis/subset_won.wm`.
+//
+// The module graph resolves these to library modules; a local folder of the same name is imported
+// with an explicit relative path (`"./basis/..."`).
 
 export const JS_HOST_IMPORT_PREFIX = "js.host:";
 
@@ -14,4 +20,25 @@ export function jsHostImportName(path: string): string | undefined {
 /** Library path of the host module that `js.host(name)` names. */
 export function jsHostModulePath(name: string): string {
   return `host/js/${name}.wm`;
+}
+
+/** A library module named by an import specifier, with how to describe it in errors. */
+export type LibraryImport = { path: string; description: string };
+
+/** The library module an import specifier names, or `undefined` for a file import. */
+export function libraryImport(specifier: string): LibraryImport | undefined {
+  const host = jsHostImportName(specifier);
+  if (host !== undefined) {
+    return {
+      path: jsHostModulePath(host),
+      description: `host module js.host(${JSON.stringify(host)})`,
+    };
+  }
+  const std = /^std\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
+  if (std) return { path: `std/${std[1]}`, description: `library module "${specifier}"` };
+  const basis = /^basis\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
+  if (basis) {
+    return { path: `subml-basis/subset_${basis[1]}`, description: `Basis module "${specifier}"` };
+  }
+  return undefined;
 }

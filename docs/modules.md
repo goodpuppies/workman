@@ -58,6 +58,23 @@ local name twice in the same namespace; this is a simultaneous-clause well-forme
 cross-declaration collision policy. Bare `Lib` in expression position is a syntactic extension
 meaning `Lib.carrier`, tried only after ordinary value lookup; it adds no value binding.
 
+### Library imports
+
+A specifier without `./` or `../` can name a module that ships with the compiler instead of a
+file:
+
+```wm
+from "basis/won.wm" import * as Won;   -- the SubsetML Basis module subset_won.wm
+from "std/result.wm" import { getOr }; -- Workman's own library
+from js.host("table") import * as Table; -- a JS host helper (see jsffi.md)
+```
+
+`std/` modules are also open as namespaces in every program (`Result`, `Option`, `List`, …), so
+importing one only chooses a local name. SubsetML Basis modules (`basis/`) are never open
+implicitly: WON, the text codecs, I/O and the other Basis modules need an import. Importing a
+library module gives the same module the rest of the program sees, not a copy. A local folder
+with one of these names is imported with an explicit relative path, `"./basis/..."`.
+
 ## Identity, graph, and evaluation
 
 Resolution is deterministic: `resolve(referrer, specifier, config) → ModuleId`. The `ModuleId` is

@@ -51,11 +51,12 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
 }
 
 /**
- * Host helper modules (`host/js/`) are never opened implicitly: a program reaches one through an
- * explicit `js.host` import edge (BD17). Layer 1 and layer 2 modules are opened as namespaces.
+ * `std/` modules are opened as namespaces in every program. Host helper modules (`host/js/`, BD17)
+ * and the SubsetML Basis (`subml-basis/`) are never opened implicitly: a program reaches one through
+ * an explicit import (`js.host("table")`, `"basis/won.wm"`), and `std/` builds on the Basis.
  */
 function isAutoOpened(path: string): boolean {
-  return !path.startsWith("host/");
+  return path.startsWith("std/");
 }
 
 /**

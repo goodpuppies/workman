@@ -26,7 +26,7 @@ import {
   type ModuleImportEdge,
   type VirtualFileSystem,
 } from "./module_graph.ts";
-import { jsHostImportName, jsHostModulePath } from "./host_modules.ts";
+import { libraryImport } from "./host_modules.ts";
 import { type CompilerFrontendOptions, parseCompilerModule } from "./compiler_frontend.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
@@ -687,8 +687,9 @@ function containsUnresolvedFfi(type: Ty): boolean {
 }
 
 /**
- * Imports of a module compiled from a source string. Only `js.host` imports are allowed, since
- * they name library modules rather than files; anything else needs `checkFile`.
+ * Imports of a module compiled from a source string. Only library imports (`js.host`, `"std/..."`,
+ * `"basis/..."`) are allowed, since they name library modules rather than files; anything else
+ * needs `checkFile`.
  */
 async function sourceImports(
   module: Module,
@@ -700,11 +701,11 @@ async function sourceImports(
   const results = new Map<string, InferResult>();
   const edges: ModuleImportEdge[] = [];
   for (const decl of declarations) {
-    const name = jsHostImportName(decl.path);
-    if (name === undefined) throw new Error("source strings with imports require checkFile");
-    const path = jsHostModulePath(name);
+    const named = libraryImport(decl.path);
+    if (named === undefined) throw new Error("source strings with imports require checkFile");
+    const path = named.path;
     const result = library.get(moduleId(path));
-    if (!result) throw new Error(`unknown host module js.host(${JSON.stringify(name)})`);
+    if (!result) throw new Error(`unknown ${named.description}`);
     results.set(decl.path, result);
     edges.push({
       referrer,

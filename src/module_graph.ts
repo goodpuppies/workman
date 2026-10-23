@@ -10,7 +10,7 @@ import { diagnosticError, type FrontendDiagnostic } from "./diagnostic_model.ts"
 import { runtime } from "./io.ts";
 import { type ModuleId, moduleId } from "./module_id.ts";
 import type { AstNode } from "./source.ts";
-import { jsHostImportName, jsHostModulePath } from "./host_modules.ts";
+import { libraryImport } from "./host_modules.ts";
 import { librarySources } from "./generated/assets.ts";
 import { pakmanImport } from "./pakman_imports.ts";
 
@@ -162,12 +162,12 @@ async function visitModule(id: ModuleId, ctx: LoadContext) {
         error,
       );
     }
-    const hostName = jsHostImportName(decl.path);
-    if (hostName !== undefined) {
-      const hostPath = jsHostModulePath(hostName);
-      if (!(hostPath in librarySources)) {
+    const library = libraryImport(decl.path);
+    if (library !== undefined) {
+      const libraryPath = library.path;
+      if (!(libraryPath in librarySources)) {
         const error = diagnosticError(
-          new Error(`unknown host module js.host(${JSON.stringify(hostName)})`),
+          new Error(`unknown ${library.description}`),
           decl.pathNode ?? decl.node,
           "module.resolve-import",
         );
@@ -185,8 +185,8 @@ async function visitModule(id: ModuleId, ctx: LoadContext) {
         referrer: id,
         specifier: decl.path,
         specifierNode: decl.pathNode ?? decl.node,
-        target: moduleId(hostPath),
-        path: hostPath,
+        target: moduleId(libraryPath),
+        path: libraryPath,
         clause: decl.clause,
       });
       continue;
