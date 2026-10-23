@@ -15,7 +15,7 @@ from "./subset_char.wm" import * as SubsetChar;
 type Endian = LittleEndian | BigEndian;
 
 let unitCodes = (unitCode, order) => {
-  let (high, low) = SubsetUnicode.split(unitCode, 256);
+  let (high, low) = SubsetUnicode.split(unitCode, (256: I32));
   match(order) {
     LittleEndian => { [low, high] },
     BigEndian => { [high, low] }
@@ -23,9 +23,9 @@ let unitCodes = (unitCode, order) => {
 };
 let encodeOne = (code, order, index) => {
   if (SubsetUnicode.isScalar(code)) {
-    let codes = if (code < 65536) { unitCodes(code, order) } else {
-      let (high, low) = SubsetUnicode.split(code - 65536, 1024);
-      SubsetList.append(unitCodes(55296 + high, order), unitCodes(56320 + low, order))
+    let codes = if (code < (65536: I32)) { unitCodes(code, order) } else {
+      let (high, low) = SubsetUnicode.split(code - (65536: I32), (1024: I32));
+      SubsetList.append(unitCodes((55296: I32) + high, order), unitCodes((56320: I32) + low, order))
     };
     SubsetUnicode.encodeCodes(codes, index)
   } else {
@@ -39,11 +39,13 @@ let encode = (scalars, order) => {
     ([code, ..rest], Var(index), Var(acc)) => {
       match(encodeOne(code, order, index)) {
         SubsetResult.Err(error) => { SubsetResult.Err(error) },
-        SubsetResult.Ok(bytes) => { go(rest, index + 1, SubsetList.reverseAppend(bytes, acc)) }
+        SubsetResult.Ok(bytes) => {
+          go(rest, index + (1: I32), SubsetList.reverseAppend(bytes, acc))
+        }
       }
     }
   };
-  go(scalars, 0, [])
+  go(scalars, (0: I32), [])
 };
 
 let readUnit = (bytes, order, offset) => {
@@ -62,13 +64,13 @@ let readUnit = (bytes, order, offset) => {
         SubsetResult.Ok(first) => {
           match(SubsetChar.toCode(b)) {
             SubsetResult.Err(error) => {
-              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset + 1))
+              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset + (1: I32)))
             },
             SubsetResult.Ok(second) => {
               SubsetResult.Ok(
                 match(order) {
-                  LittleEndian => { first + second * 256 },
-                  BigEndian => { first * 256 + second }
+                  LittleEndian => { first + second * (256: I32) },
+                  BigEndian => { first * (256: I32) + second }
                 },
                 rest
               )
@@ -84,21 +86,25 @@ let decodeOne = (bytes, order, offset) => {
   SubsetResult.andThen(
     readUnit(bytes, order, offset),
     (first, rest) => {
-      if (if (first >= 55296) { first <= 56319 } else { false }) {
+      if (if (first >= (55296: I32)) { first <= (56319: I32) } else { false }) {
         SubsetResult.andThen(
-          readUnit(rest, order, offset + 2),
+          readUnit(rest, order, offset + (2: I32)),
           (second, tail) => {
-            if (if (second >= 56320) { second <= 57343 } else { false }) {
-              SubsetResult.Ok(65536 + (first - 55296) * 1024 + second - 56320, tail, 4)
+            if (if (second >= (56320: I32)) { second <= (57343: I32) } else { false }) {
+              SubsetResult.Ok(
+                (65536: I32) + (first - (55296: I32)) * (1024: I32) + second - (56320: I32),
+                tail,
+                (4: I32)
+              )
             } else {
-              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset + 2))
+              SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset + (2: I32)))
             }
           }
         )
       } else {
-        if (if (first >= 56320) { first <= 57343 } else { false }) {
+        if (if (first >= (56320: I32)) { first <= (57343: I32) } else { false }) {
           SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.UnpairedSurrogate, offset))
-        } else { SubsetResult.Ok(first, rest, 2) }
+        } else { SubsetResult.Ok(first, rest, (2: I32)) }
       }
     }
   )
@@ -117,5 +123,5 @@ let decode = (bytes, order) => {
       }
     }
   };
-  go(bytes, 0, [])
+  go(bytes, (0: I32), [])
 };

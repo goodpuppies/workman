@@ -5,7 +5,7 @@ from "../source/source.wm" import * as Source;
 // Immutable UTF-16 source context. Host string conversion belongs to adapters.
 record Reader = {
   source: Text.Source,
-  length: Number,
+  length: I32,
 };
 
 let create = (source) => {Reader(source, Text.length(source))};
@@ -28,7 +28,7 @@ let matches = (reader: Reader, index, predicate) => {
 let isCode = (reader: Reader, index, expected) => {matches(reader, index, (code) => {code == expected})};
 
 // Positions use UTF-16 offsets and zero-based lines/columns, matching editor buffers.
-let bumpPosition = (reader: Reader, pos: Source.Position, code) => {
+let bumpPosition = (reader: Reader, pos: Source.Position, code: I32) => {
   let crlf = code == 10 && isCode(reader, pos.index - 1, 13);
   let newline = code == 13 || code == 10;
   Source.Position(
@@ -38,7 +38,7 @@ let bumpPosition = (reader: Reader, pos: Source.Position, code) => {
   )
 };
 
-let rec advance = (reader: Reader, pos: Source.Position, amount) => {
+let rec advance = (reader: Reader, pos: Source.Position, amount: I32) => {
   if (amount <= 0) {pos} else {
     match(peekByOne(reader, pos.index)) {
       Some(code) => {advance(reader, bumpPosition(reader, pos, code), amount - 1)},

@@ -7,7 +7,7 @@ from "./subset_host.sml" import * as SubsetHost;
 
 (* Whole-file byte I/O. Conversion and validation are ordinary source algorithms. *)
 structure SubsetIo = struct
-  datatype error = HostError of string | NonByte of real | InvalidPath
+  datatype error = HostError of string | NonByte of int | InvalidPath
   val bytes = fn value =>
     SubsetResult.mapError (SubsetString.fromNative value,
       fn SubsetString.NonByte offset => NonByte offset)

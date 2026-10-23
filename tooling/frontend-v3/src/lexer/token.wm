@@ -148,7 +148,7 @@ type LexicalProblem =
   | UnterminatedMultilineString  // no closing backtick
   | UnterminatedBlockComment     // no closing `*/`
   | InvalidUnicodeScalar         // unpaired UTF-16 surrogate in literal text
-  | InvalidCharacterLength<Number> // decoded literal contains other than one scalar
+  | InvalidCharacterLength<I32> // decoded literal contains other than one scalar
   | UnterminatedCharacter
   | UnmatchedDelimiter<PairGroup, PairSide> // authored delimiter has no recorded pair
   | UnterminatedInterpolation;   // no closing `}` after `${`
@@ -185,7 +185,7 @@ record Trivia = {
 // Pairing index for delimiters that must match up: every open bracket records
 // the index of its closer and vice versa (filled in a later pass). NoMate
 // means the token has no mate - most tokens don't.
-type Mate = Mate<Number> | NoMate;
+type Mate = Mate<I32> | NoMate;
 
 // The base token: what it is, exactly where it came from, its delimiter
 // pairing info, and any lexical problems attached to it.

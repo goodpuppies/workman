@@ -7,32 +7,32 @@ from "../../lib/subsetml/subset_result.wm" import * as R;
 type EditKind = Keep | Insert | Delete;
 record Edit = {
   kind: EditKind,
-  originalStart: Number,
-  originalEnd: Number,
-  projectedStart: Number,
-  projectedEnd: Number,
+  originalStart: I32,
+  originalEnd: I32,
+  projectedStart: I32,
+  projectedEnd: I32,
 };
 record Difference = {
   original: Text.Source,
   projected: Text.Source,
   edits: List<Edit>,
 };
-type Error = InvalidLimit | EditDistanceLimit<Number> | InvalidCorrespondence<Number>;
+type Error = InvalidLimit | EditDistanceLimit<I32> | InvalidCorrespondence<I32>;
 record Correspondence = {
-  originalStart: Number,
-  originalEnd: Number,
-  projectedStart: Number,
-  projectedEnd: Number,
+  originalStart: I32,
+  originalEnd: I32,
+  projectedStart: I32,
+  projectedEnd: I32,
 };
 record Diagonal = {
-  diagonal: Number,
-  originalEnd: Number,
+  diagonal: I32,
+  originalEnd: I32,
 };
 
 // Myers shortest-edit search. Trace memory depends on edit distance, not the product
 // of document lengths. A caller-supplied limit bounds the search on unrelated texts;
 // exceeding it is an explicit computation error, never a guessed successful diff.
-let compare = (original, projected, limit: Number) => {
+let compare = (original, projected, limit: I32) => {
   let validLimit = limit <= 4096 && Lists.validCount(limit);
   if (!validLimit) {R.Err(InvalidLimit)} else {
     let originalLength = Text.length(original);
@@ -168,7 +168,7 @@ let compare = (original, projected, limit: Number) => {
 // a different construct. Search runs only in gaps; the limit applies to each gap.
 let compareAnchored = (original, projected, correspondences, limit) => {
   // Numeric source units need element-wise equality: SML real lists are not eqtypes.
-  let rec sameUnits = (left: List<Number>, right) => {
+  let rec sameUnits = (left: List<I32>, right) => {
     match(left) {
       [] => {Lists.isEmpty(right)},
       [unit, ..rest] => {

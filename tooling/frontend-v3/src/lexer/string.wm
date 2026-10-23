@@ -5,7 +5,7 @@ from "./token.wm" import * as Token;
 from "./reader.wm" import * as Reader;
 from "./read.wm" import * as Read;
 
-type EscapeValue = Scalar<Number> | Gap | Damaged;
+type EscapeValue = Scalar<I32> | Gap | Damaged;
 record EscapeResult = {
   endPos: Source.Position,
   value: EscapeValue,
@@ -13,13 +13,13 @@ record EscapeResult = {
 };
 record BodyResult = {
   endPos: Source.Position,
-  count: Number,
+  count: I32,
   damaged: Bool,
   marks: List<Token.LexicalMark>,
 };
 
 // Kept separate so readBody's literal/mode boundaries remain visible.
-let readEscape = (reader: Reader.Reader, pos: Source.Position, delimiter, kind) => {
+let readEscape = (reader: Reader.Reader, pos: Source.Position, delimiter: I32, kind) => {
   let isScalar = (value) => {
     value >= 0 && value <= 1114111 && !(value >= 55296 && value <= 57343)
   };
@@ -121,7 +121,7 @@ let readEscape = (reader: Reader.Reader, pos: Source.Position, delimiter, kind) 
   }
 };
 
-let readBody = (reader: Reader.Reader, start: Source.Position, delimiter, kind, lineBound) => {
+let readBody = (reader: Reader.Reader, start: Source.Position, delimiter: I32, kind, lineBound) => {
   let rec loop = (current: Source.Position, count, damaged, marks) => {
     if (current.index >= reader.length) {
       BodyResult(current, count, damaged, BasisList.reverse(marks))
@@ -159,7 +159,7 @@ let readBody = (reader: Reader.Reader, start: Source.Position, delimiter, kind, 
 
 //#region literal readers
 
-let readQuoted = (reader: Reader.Reader, pos: Source.Position, delimiter, kind) => {
+let readQuoted = (reader: Reader.Reader, pos: Source.Position, delimiter: I32, kind) => {
   let body = readBody(reader, Reader.advance(reader, pos, 1), delimiter, kind, true);
   let closed = Reader.isCode(reader, body.endPos.index, delimiter);
   let endPos = if (closed) {Reader.advance(reader, body.endPos, 1)} else {body.endPos};

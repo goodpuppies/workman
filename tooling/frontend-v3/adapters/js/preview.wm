@@ -22,7 +22,7 @@ let render = (original: String, hints, marked: Bool) => {
   Preview.render(source(original), insertions, marked)
 };
 let units = Text.toUnits;
-let compare = (original: String, projected: String, limit: Number) => {
+let compare = (original: String, projected: String, limit: I32) => {
   Diff.compare(source(original), source(projected), limit)
 };
 let renderDifference = (difference: Diff.Difference, marked: Bool) => {

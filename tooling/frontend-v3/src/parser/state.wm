@@ -9,15 +9,15 @@ from "../../lib/subsetml/subset_result.wm" import * as R;
 // Missing structure does not consume tokens or extend authored source extent.
 record State = {
   cursor: Cursor.Cursor,
-  authoredEnd: Number,
-  nextNode: Number,
-  nextDelimiter: Number,
-  nextMark: Number,
+  authoredEnd: I32,
+  nextNode: I32,
+  nextDelimiter: I32,
+  nextMark: I32,
   syntaxRev: List<Ast.SyntaxMark>,
 };
 record Boundary = {
   closer: Token.Punctuation,
-  mateIndex: Option<Number>,
+  mateIndex: Option<I32>,
   authoredOpen: Bool,
 };
 let initial = (source, document: Token.LexicalDocument) => {

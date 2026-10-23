@@ -11,8 +11,8 @@ from "../../lib/subsetml/subset_result.wm" import * as R;
 // The canonical projector supplies source correspondence and virtual ranges to View.
 record Addition = {
   insertion: Preview.Insertion,
-  projectedStart: Number,
-  projectedEnd: Number,
+  projectedStart: I32,
+  projectedEnd: I32,
 };
 let details = (difference: Diff.Difference) => {
   let projected = Lexer.lex(difference.projected);
@@ -31,7 +31,7 @@ let details = (difference: Diff.Difference) => {
       }
     }
   };
-  let rec skip = (spans, start: Number) => {
+  let rec skip = (spans, start: I32) => {
     match(spans) {
       [] => {[]}, // Only zero-length remaining projected text has no lexemes/trivia.
       [(Var(a), Var(b)), ..rest] => {if (b <= start) {skip(rest, start)} else {spans}}

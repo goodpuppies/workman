@@ -9,6 +9,10 @@ from "./subset_result.wm" import * as SubsetResult;
 type Order = Less | Equal | Greater;
 type Error = | Unordered;
 
+let compareInt = (left: I32, right: I32) => {
+  if (left < right) { Less } else { if (left > right) { Greater } else { Equal } }
+};
+
 // IEEE comparisons are unordered when either operand is NaN.
 let compareReal = (left: Number, right: Number) => {
   if (left < right) { SubsetResult.Ok(Less) } else {

@@ -7,8 +7,8 @@ from "./subset_order.sml" import * as SubsetOrder;
 
 (* Byte sequences and immutable sequential readers; no native-string access. *)
 structure SubsetBytes = struct
-  datatype error = InvalidIndex | OutOfBounds | NonByte of real
-  datatype reader = Reader of char list * real
+  datatype error = InvalidIndex | OutOfBounds | NonByte of int
+  datatype reader = Reader of char list * int
 
   val validate = fn bytes =>
     let
@@ -17,8 +17,8 @@ structure SubsetBytes = struct
         | (c :: rest, index) =>
             case SubsetChar.toCode c of
               SubsetResult.Err error => SubsetResult.Err (NonByte index)
-            | SubsetResult.Ok code => go (rest, index + 1.0)
-    in go (bytes, 0.0) end
+            | SubsetResult.Ok code => go (rest, index + 1)
+    in go (bytes, 0) end
 
   (* Validate complete operands, then compare unsigned byte codes lexicographically. *)
   (* Internal error adapter lets native strings retain their own error type. *)
@@ -31,13 +31,13 @@ structure SubsetBytes = struct
             | (c :: rest, offset, acc) =>
                 case SubsetChar.toCode c of
                   SubsetResult.Err error => SubsetResult.Err (nonByte offset)
-                | SubsetResult.Ok code => go (rest, offset + 1.0, code :: acc)
-        in go (bytes, 0.0, []) end
+                | SubsetResult.Ok code => go (rest, offset + 1, code :: acc)
+        in go (bytes, 0, []) end
       val rec order = fn
           ([], []) => SubsetOrder.Equal
         | ([], rest) => SubsetOrder.Less
         | (rest, []) => SubsetOrder.Greater
-        | ((a : real) :: xs, b :: ys) =>
+        | ((a : int) :: xs, b :: ys) =>
             if a < b then SubsetOrder.Less
             else (if a > b then SubsetOrder.Greater else order (xs, ys))
     in
@@ -47,7 +47,7 @@ structure SubsetBytes = struct
 
   val compare = fn (left, right) => compareWith (left, right, fn offset => NonByte offset)
 
-  val length = fn bytes => SubsetList.foldLeft (bytes, 0.0, fn (c, n) => n + 1.0)
+  val length = fn bytes => SubsetList.foldLeft (bytes, 0, fn (c, n) => n + 1)
   val trim = fn (bytes, predicate) =>
     SubsetList.reverse (SubsetList.dropWhile (
       SubsetList.reverse (SubsetList.dropWhile (bytes, predicate)), predicate))
@@ -60,24 +60,24 @@ structure SubsetBytes = struct
             else go (rest, c :: field, acc)
     in go (bytes, [], []) end
 
-  val reader = fn bytes => SubsetResult.map (validate bytes, fn valid => Reader (valid, 0.0))
+  val reader = fn bytes => SubsetResult.map (validate bytes, fn valid => Reader (valid, 0))
   val position = fn Reader (bytes, offset) => offset
   val peek = fn Reader ([], offset) => NONE | Reader (c :: rest, offset) => SOME c
   val next = fn Reader ([], offset) => NONE
-    | Reader (c :: rest, offset) => SOME (c, Reader (rest, offset + 1.0))
+    | Reader (c :: rest, offset) => SOME (c, Reader (rest, offset + 1))
 
   (* Bounds derived from the actual list avoid narrowing counts to scalar-code ranges.
-     Fractional indices are detected by countdown; NaN/infinity fail the bounds test. *)
-  val splitAt = fn (bytes, index : real) =>
-    if index >= 0.0 andalso index <= length bytes then
+     Integer indices must lie within the actual byte sequence. *)
+  val splitAt = fn (bytes, index : int) =>
+    if index >= 0 andalso index <= length bytes then
       let
         val rec go = fn (rest, remaining, acc) =>
-          if remaining <= 0.0 then
-            (if remaining >= 0.0 then SubsetResult.Ok (SubsetList.reverse acc, rest)
+          if remaining <= 0 then
+            (if remaining >= 0 then SubsetResult.Ok (SubsetList.reverse acc, rest)
              else SubsetResult.Err InvalidIndex)
           else case rest of
               [] => SubsetResult.Err OutOfBounds
-            | c :: tail => go (tail, remaining - 1.0, c :: acc)
+            | c :: tail => go (tail, remaining - 1, c :: acc)
       in go (bytes, index, []) end
     else SubsetResult.Err InvalidIndex
 

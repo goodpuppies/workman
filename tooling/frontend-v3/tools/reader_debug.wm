@@ -1,7 +1,7 @@
 from "../src/lexer/reader.wm" import * as Reader;
 from "../src/lexer/character.wm" import * as Char;
 from "../src/source/source.wm" import * as Source;
-from js.global("String") import unsafe { fromCharCode: Number -> String };
+from js.global("String") import unsafe { fromCharCode: I32 -> String };
 
 // Debug-only source preview; the lexer does not import this module.
 let printPos = (reader: Reader.Reader, pos: Source.Position) => {

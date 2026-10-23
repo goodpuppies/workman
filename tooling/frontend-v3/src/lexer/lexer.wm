@@ -7,7 +7,7 @@ from "./trivia.wm" import * as Trivia;
 from "./pair.wm" import * as Pair;
 from "./reader.wm" import * as Reader;
 
-type Mode = Code | Template | Interpolation<Number>;
+type Mode = Code | Template | Interpolation<I32>;
 
 let lex = (source) => {
   let reader = Reader.create(source);

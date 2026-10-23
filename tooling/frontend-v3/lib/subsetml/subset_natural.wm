@@ -4,7 +4,7 @@ from "./subset_result.sml" import * as SubsetResult;
 from "./subset_string.sml" import * as SubsetString;
 */
 
-// Exact nonnegative integer arithmetic over the current real-number profile.
+// Checked nonnegative arithmetic over signed 32-bit integers.
 
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_result.wm" import * as SubsetResult;
@@ -13,21 +13,12 @@ from "./subset_string.wm" import * as SubsetString;
 type Error = InvalidNatural | InvalidDivisor;
 let isValid = SubsetList.validCount;
 
-/* Internal: operands are exact integers below 2^53 and base is positive.
-   Binary weights make division bounded by 53 steps, without floor/div/mod. */
-let split = (value: Number, base: Number) => {
-  let rec go = (weight, remaining, quotient) => {
-    if (weight < 1) { (quotient, remaining) } else {
-      let amount = base * weight;
-      if (remaining >= amount) { go(weight / 2, remaining - amount, quotient + weight) } else { go(weight / 2, remaining, quotient) }
-    }
-  };
-  go(4503599627370496, value, 0)
-};
+// Internal: nonnegative integer operands and a positive divisor.
+let split = (value: I32, base: I32) => { (I32.div(value, base), I32.mod(value, base)) };
 
 let divide = (value, base) => {
   if (!isValid(value)) { SubsetResult.Err(InvalidNatural) } else {
-    if (if (!isValid(base)) { true } else { base <= 0 }) { SubsetResult.Err(InvalidDivisor) } else { SubsetResult.Ok(split(value, base)) }
+    if (if (!isValid(base)) { true } else { base <= (0: I32) }) { SubsetResult.Err(InvalidDivisor) } else { SubsetResult.Ok(split(value, base)) }
   }
 };
 
@@ -35,13 +26,15 @@ let toString = (value) => {
   let rec digit = (index, entries) => {
     match(entries) {
       [] => { "" },
-      [first, ..rest] => { if (index <= 0) { first } else { digit(index - 1, rest) } }
+      [first, ..rest] => {
+        if (index <= (0: I32)) { first } else { digit(index - (1: I32), rest) }
+      }
     }
   };
   let rec go = (remaining, acc) => {
-    let (whole, residue) = split(remaining, 10);
+    let (whole, residue) = split(remaining, (10: I32));
     let text = digit(residue, ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    if (whole <= 0) { SubsetString.concat([text, ..acc]) } else { go(whole, [text, ..acc]) }
+    if (whole <= (0: I32)) { SubsetString.concat([text, ..acc]) } else { go(whole, [text, ..acc]) }
   };
   if (isValid(value)) { SubsetResult.Ok(go(value, [])) } else { SubsetResult.Err(InvalidNatural) }
 };

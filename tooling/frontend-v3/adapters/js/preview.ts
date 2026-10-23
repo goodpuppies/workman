@@ -43,6 +43,10 @@ export function list<T>(value: Variant): T[] {
   return items;
 }
 
+// WM offsets and ids are I32, which the host must check before passing a JS number in.
+const isI32 = (value: number) =>
+  Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
+
 // Existing compiler is a bootstrap dependency. Preview execution belongs to the WM core.
 export async function loadPreview() {
   const path = await Deno.makeTempFile({ suffix: ".mjs" });
@@ -58,10 +62,12 @@ export async function loadPreview() {
     const cons = runtime.units(runtime.source(" ")) as Variant;
     const nil = (cons.args[0] as [number, Variant])[1];
     const hints = (items: Insertion[]) =>
-      items.reduceRight<Variant>(
-        (tail, item) => ({ ...cons, args: [[[item.id, item.anchor, item.text], tail]] }),
-        nil,
-      );
+      items.reduceRight<Variant>((tail, item) => {
+        if (!isI32(item.id) || !isI32(item.anchor)) {
+          throw new RangeError(`Invalid UTF-16 anchor ${item.anchor} for insertion ${item.id}`);
+        }
+        return { ...cons, args: [[[item.id, item.anchor, item.text], tail]] };
+      }, nil);
     const decode = (result: Variant): Preview => {
       if (result.name === "Err") {
         const error = result.args[0] as Variant;
@@ -97,6 +103,7 @@ export async function loadPreview() {
       decode(runtime.render([original, hints(insertions), marked]));
     return Object.assign(render, {
       compare(original: string, projected: string, marked = false, limit = 256): Difference {
+        if (!isI32(limit)) throw new RangeError("Diff limit must be an integer from 0 to 4096");
         const result = runtime.compare([original, projected, limit]) as Variant;
         if (result.name === "Err") {
           const error = result.args[0] as Variant;

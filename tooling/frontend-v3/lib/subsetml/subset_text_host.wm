@@ -1,7 +1,8 @@
 // Workman/JS implementation of the sole native-text primitive.
 // Raw host units are validated by SubsetString before entering portable byte storage.
+// charCodeAt returns an integer from 0 to 65535, which is already a valid I32 value.
 from js.global("String.prototype.charCodeAt") import unsafe {
-  call as charCodeAt: (String, Number) -> Number
+  call as charCodeAt: (String, Number) -> I32
 };
 let codes = (value: String) => {
   let size = value :> .length :> Result.debug;

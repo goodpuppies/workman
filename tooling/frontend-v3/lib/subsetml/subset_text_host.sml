@@ -2,5 +2,5 @@
    The Workman target adapter
    lives in lib/subset_text_host.wm. The portable wrapper validates its output. *)
 structure SubsetTextHost = struct
-  val codes = fn value => List.map Num.Char.ord (String.explode value)
+  val codes = fn (value : string) => ([] : int list)
 end

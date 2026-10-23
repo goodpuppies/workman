@@ -5,7 +5,7 @@ from "../../lib/subsetml/subset_list.wm" import * as Lists;
 from "../../lib/subsetml/subset_result.wm" import * as R;
 
 record InlineHint = {
-  insertionId: Number,
+  insertionId: I32,
   position: Source.Position,
   label: Text.Source,
   paddingLeft: Bool,

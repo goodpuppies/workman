@@ -41,31 +41,25 @@ structure SubsetList = struct
   val rec all = fn (xs, predicate) =>
     case xs of [] => true | x :: rest => predicate x andalso all (rest, predicate)
 
-  val length = fn xs => foldLeft (xs, 0.0, fn (x, count) => count + 1.0)
+  val length = fn xs => foldLeft (xs, 0, fn (x, count) => count + 1)
   val rec dropWhile = fn (xs, predicate) =>
     case xs of [] => [] | x :: rest => if predicate x then dropWhile (rest, predicate) else xs
 
-  (* Counts must be exact nonnegative integers below 2^53. Check integrality with
-     bounded binary weights before allocating; no numeric floor primitive is needed. *)
-  val validCount = fn (count : real) =>
-    let
-      val rec integral = fn (remaining, weight) =>
-        if weight < 1.0 then remaining <= 0.0 andalso remaining >= 0.0
-        else integral ((if remaining >= weight then remaining - weight else remaining), weight / 2.0)
-    in count >= 0.0 andalso count < 9007199254740992.0 andalso integral (count, 4503599627370496.0) end
+  (* Signed integer counts are valid exactly when nonnegative. *)
+  val validCount = fn (count : int) => count >= 0
 
   val repeat = fn (value, count) =>
     let
       val rec build = fn (remaining, acc) =>
-        if remaining <= 0.0 then acc else build (remaining - 1.0, value :: acc)
+        if remaining <= 0 then acc else build (remaining - 1, value :: acc)
     in if validCount count then SubsetResult.Ok (build (count, [])) else SubsetResult.Err InvalidCount end
 
   val splitAt = fn (xs, index) =>
     let
       val rec go = fn (rest, remaining, acc) =>
-        if remaining <= 0.0 then SubsetResult.Ok (reverse acc, rest)
+        if remaining <= 0 then SubsetResult.Ok (reverse acc, rest)
         else case rest of [] => SubsetResult.Err OutOfBounds
-          | x :: tail => go (tail, remaining - 1.0, x :: acc)
+          | x :: tail => go (tail, remaining - 1, x :: acc)
     in if validCount index then go (xs, index, []) else SubsetResult.Err InvalidIndex end
   val at = fn (xs, index) =>
     SubsetResult.andThen (splitAt (xs, index), fn (prefix, rest) =>
@@ -76,8 +70,8 @@ structure SubsetList = struct
     let
       val rec go = fn (index, acc) =>
         if index >= count then SubsetResult.Ok (reverse acc)
-        else go (index + 1.0, f index :: acc)
-    in if validCount count then go (0.0, []) else SubsetResult.Err InvalidCount end
+        else go (index + 1, f index :: acc)
+    in if validCount count then go (0, []) else SubsetResult.Err InvalidCount end
 
   val head = fn [] => SubsetResult.Err EmptyList | x :: xs => SubsetResult.Ok x
   val tail = fn [] => SubsetResult.Err EmptyList | x :: xs => SubsetResult.Ok xs

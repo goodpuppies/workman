@@ -4,13 +4,13 @@ from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
 
 // Minimal canonical slice, deliberately not a declaration of complete WM coverage.
 // Every required structural terminal is authored or marked in the same shape.
-type NodeId = | NodeId<Number>;
-type DelimiterId = | DelimiterId<Number>;
+type NodeId = | NodeId<I32>;
+type DelimiterId = | DelimiterId<I32>;
 record Node = {
   nodeId: NodeId,
   authoredSpan: Marks.SourceSpan,
 };
-type Expectation = ExpectedPunctuation<Token.Punctuation> | ExpectedWord<List<Number>>;
+type Expectation = ExpectedPunctuation<Token.Punctuation> | ExpectedWord<List<I32>>;
 type TokenSlot = Marks.Slot<Token.Token, Expectation>;
 type SyntaxProblem = MissingToken<Expectation> | MissingExpression | MissingBindingPattern | UnassembledSyntax;
 type SyntaxRecovery = CompletedToken | InsertedExpressionHole | InsertedWildcardPattern | RetainedOpaqueSyntax;

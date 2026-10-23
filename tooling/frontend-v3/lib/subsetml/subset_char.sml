@@ -57,19 +57,19 @@ structure SubsetChar = struct
     let
       val rec go = fn
           ([], code) => SubsetResult.Err NonByteCharacter
-        | (x :: xs, code) => if c = x then SubsetResult.Ok code else go (xs, code + 1.0)
-    in go (byteChars, 0.0) end
+        | (x :: xs, code) => if c = x then SubsetResult.Ok code else go (xs, code + 1)
+    in go (byteChars, 0) end
 
-  (* Range comparisons reject NaN/infinities; countdown rejects fractional codes. *)
-  val fromCode = fn (code : real) =>
-    if code >= 0.0 andalso code <= 255.0 then
+  (* Integer codes are validated against the byte range before lookup. *)
+  val fromCode = fn (code : int) =>
+    if code >= 0 andalso code <= 255 then
       let
         val rec go = fn
             ([], remaining) => SubsetResult.Err InvalidCode
           | (c :: rest, remaining) =>
-              if remaining <= 0.0 then
-                (if remaining >= 0.0 then SubsetResult.Ok c else SubsetResult.Err InvalidCode)
-              else go (rest, remaining - 1.0)
+              if remaining <= 0 then
+                (if remaining >= 0 then SubsetResult.Ok c else SubsetResult.Err InvalidCode)
+              else go (rest, remaining - 1)
       in go (byteChars, code) end
     else SubsetResult.Err InvalidCode
 

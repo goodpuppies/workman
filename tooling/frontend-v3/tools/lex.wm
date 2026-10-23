@@ -12,7 +12,7 @@ let printToks = (list, sourceText) => {
       [tok, ..rest] => {
         let printToken = (token: Token.Token) => {
           let text = sourceText
-            :> .slice(token.span.startPos.index, token.span.endPos.index)
+            :> .slice(I32.toNumber(token.span.startPos.index), I32.toNumber(token.span.endPos.index))
             :> Result.debug;
           let line = token.span.startPos.line;
           let col = token.span.startPos.col;

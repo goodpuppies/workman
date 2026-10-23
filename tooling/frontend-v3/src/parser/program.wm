@@ -8,7 +8,7 @@ from "../lexer/token.wm" import * as Token;
 from "../lexer/lexer.wm" import * as Lexer;
 from "../../lib/subsetml/subset_list.wm" import * as Lists;
 
-let letWord = [108, 101, 116];
+let letWord: List<I32> = [108, 101, 116];
 let arrowKind = Token.PunctuationToken(Token.FatArrow);
 let rightParen = Token.PunctuationToken(Token.RightParen);
 let commaKind = Token.PunctuationToken(Token.Comma);

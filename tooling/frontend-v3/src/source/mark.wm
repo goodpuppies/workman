@@ -1,14 +1,14 @@
 // Phase-independent marking kernel.
 // A phase supplies closed `Problem` and `Recovery` types.
 
-type SourceOffset = | SourceOffset<Number>;
+type SourceOffset = | SourceOffset<I32>;
 
 record SourceSpan = {
   start: SourceOffset,
   end: SourceOffset,
 };
 
-type MarkId = | MarkId<Number>;
+type MarkId = | MarkId<I32>;
 
 type RecoveryStatus<Recovery> =
   | NotRecovered

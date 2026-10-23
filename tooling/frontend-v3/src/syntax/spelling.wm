@@ -1,7 +1,7 @@
 from "../lexer/token.wm" import * as Token;
 
 // Fixed source-unit spelling of structural expectations; no host string conversion.
-let punctuation = match {
+let punctuation = (punctuation: Token.Punctuation): List<I32> => { match(punctuation) {
   Token.LeftParen => {[40]}, Token.RightParen => {[41]},
   Token.LeftBrace => {[123]}, Token.DotLeftBrace => {[46, 123]}, Token.RightBrace => {[125]},
   Token.LeftBracket => {[91]}, Token.RightBracket => {[93]},
@@ -10,4 +10,4 @@ let punctuation = match {
   Token.Dot => {[46]}, Token.DoubleDot => {[46, 46]}, Token.AtSign => {[64]},
   Token.Equals => {[61]}, Token.FatArrow => {[61, 62]}, Token.ThinArrow => {[45, 62]},
   Token.Pipe => {[124]}, Token.PipeForward => {[58, 62]}
-};
+} };

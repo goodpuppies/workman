@@ -8,7 +8,7 @@ from "./subset_bytes.sml" import * as SubsetBytes;
 
 (* Native byte-string boundary. Only extraction is intrinsic; reconstruction is source. *)
 structure SubsetString = struct
-  datatype error = NonByte of real
+  datatype error = NonByte of int
   val literals = [
     (#"\000", "\000"), (#"\001", "\001"), (#"\002", "\002"), (#"\003", "\003"),
     (#"\004", "\004"), (#"\005", "\005"), (#"\006", "\006"), (#"\007", "\007"),
@@ -82,8 +82,8 @@ structure SubsetString = struct
         | (code :: rest, offset, bytes) =>
             case SubsetChar.fromCode code of
               SubsetResult.Err error => SubsetResult.Err (NonByte offset)
-            | SubsetResult.Ok c => go (rest, offset + 1.0, c :: bytes)
-    in go (SubsetTextHost.codes value, 0.0, []) end
+            | SubsetResult.Ok c => go (rest, offset + 1, c :: bytes)
+    in go (SubsetTextHost.codes value, 0, []) end
 
   val compare = fn (left, right) =>
     SubsetResult.andThen (fromNative left, fn xs =>
@@ -117,6 +117,6 @@ structure SubsetString = struct
         | (c :: rest, offset, pieces) =>
             case literal (c, literals) of
               NONE => SubsetResult.Err (NonByte offset)
-            | SOME text => go (rest, offset + 1.0, text :: pieces)
-    in go (bytes, 0.0, []) end
+            | SOME text => go (rest, offset + 1, text :: pieces)
+    in go (bytes, 0, []) end
 end

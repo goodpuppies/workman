@@ -11,15 +11,15 @@ from "./subset_utf8.sml" import * as SubsetUtf8;
 (* Lossless UTF-16 units, including lone surrogates. Strict codecs remain separate.
    Tree/Source constructors are implementation representations; use the checked builders. *)
 structure SubsetUtf16Source = struct
-  datatype error = InvalidUnit of real | InvalidIndex | UnicodeError of SubsetUnicode.error
-  datatype tree = Empty | Unit of real | Branch of real * tree * tree
-  datatype source = Source of tree * real * real
+  datatype error = InvalidUnit of int | InvalidIndex | UnicodeError of SubsetUnicode.error
+  datatype tree = Empty | Unit of int | Branch of int * tree * tree
+  datatype source = Source of tree * int * int
 
-  val treeLength = fn Empty => 0.0 | Unit code => 1.0 | Branch (size, left, right) => size
+  val treeLength = fn Empty => 0 | Unit code => 1 | Branch (size, left, right) => size
   val length = fn Source (tree, start, count) => count
-  val isUnit = fn (code : real) =>
-    code >= 0.0 andalso code <= 65535.0
-    andalso (let val (whole, residue) = SubsetUnicode.split (code, 1.0) in residue <= 0.0 end)
+  val isUnit = fn (code : int) =>
+    code >= 0 andalso code <= 65535
+    andalso (let val (whole, residue) = SubsetUnicode.split (code, 1) in residue <= 0 end)
 
   val fromUnits = fn units =>
     let
@@ -33,24 +33,24 @@ structure SubsetUtf16Source = struct
       val rec build = fn
           ([], index, stack) =>
             let val tree = SubsetList.foldLeft (stack, Empty, fn (tree, acc) => join (tree, acc))
-            in SubsetResult.Ok (Source (tree, 0.0, index)) end
+            in SubsetResult.Ok (Source (tree, 0, index)) end
         | (code :: rest, index, stack) =>
-            if isUnit code then build (rest, index + 1.0, push (Unit code, stack))
+            if isUnit code then build (rest, index + 1, push (Unit code, stack))
             else SubsetResult.Err (InvalidUnit index)
-    in build (units, 0.0, []) end
+    in build (units, 0, []) end
 
   (* Native means storage units, not implicit UTF-8 decoding. JS supplies UTF-16 units;
      the SML adapter supplies byte values. Decode native UTF-8 file bytes explicitly. *)
   val fromNativeUnits = fn text => fromUnits (SubsetTextHost.codes text)
 
-  (* NONE means no unit at this index: outside the view or not an integral index. *)
-  val peek = fn (Source (tree, start, count), index : real) =>
-    if index >= 0.0 andalso index < count then
+  (* NONE means no unit at this index: outside the view. *)
+  val peek = fn (Source (tree, start, count), index : int) =>
+    if index >= 0 andalso index < count then
       let
         val rec go = fn
             (Empty, offset) => NONE
           | (Unit code, offset) =>
-              if offset <= 0.0 andalso offset >= 0.0 then SOME code else NONE
+              if offset <= 0 andalso offset >= 0 then SOME code else NONE
           | (Branch (size, left, right), offset) =>
               if offset < treeLength left then go (left, offset)
               else go (right, offset - treeLength left)
@@ -63,14 +63,14 @@ structure SubsetUtf16Source = struct
     | NONE => SubsetResult.Err InvalidIndex
 
   (* Views retain the original tree; slicing does not copy or decode source spelling. *)
-  val slice = fn (source, offset : real, count : real) =>
+  val slice = fn (source, offset : int, count : int) =>
     let
       val boundary = fn index =>
-        index >= 0.0 andalso index <= length source
+        index >= 0 andalso index <= length source
         andalso (if index >= length source then true else SubsetResult.isOk (at (source, index)))
       val Source (tree, start, size) = source
     in
-      if count >= 0.0 andalso boundary offset andalso boundary (offset + count) then
+      if count >= 0 andalso boundary offset andalso count <= size - offset then
         SubsetResult.Ok (Source (tree, start + offset, count))
       else SubsetResult.Err InvalidIndex
     end
@@ -85,7 +85,7 @@ structure SubsetUtf16Source = struct
           | Unit code => code :: acc
           | Branch (size, left, right) =>
               collect (left, base, collect (right, base + treeLength left, acc))
-    in collect (tree, 0.0, []) end
+    in collect (tree, 0, []) end
 
   (* Raw UTF-16 bytes validate byte values and pairing, but not surrogate pairing.
      Errors retain byte offsets, including the final byte of an odd-length input. *)
@@ -101,13 +101,13 @@ structure SubsetUtf16Source = struct
               SubsetResult.Err error => invalid (SubsetUnicode.InvalidByte, offset)
             | SubsetResult.Ok a =>
                 case SubsetChar.toCode second of
-                  SubsetResult.Err error => invalid (SubsetUnicode.InvalidByte, offset + 1.0)
+                  SubsetResult.Err error => invalid (SubsetUnicode.InvalidByte, offset + 1)
                 | SubsetResult.Ok b =>
                     let val code = case order of
-                        SubsetUtf16.LittleEndian => a + b * 256.0
-                      | SubsetUtf16.BigEndian => a * 256.0 + b
-                    in read (rest, offset + 2.0, code :: acc) end
-    in read (bytes, 0.0, []) end
+                        SubsetUtf16.LittleEndian => a + b * 256
+                      | SubsetUtf16.BigEndian => a * 256 + b
+                    in read (rest, offset + 2, code :: acc) end
+    in read (bytes, 0, []) end
 
   val toUtf16Bytes = fn (source, order) =>
     let
@@ -116,8 +116,8 @@ structure SubsetUtf16Source = struct
         | (code :: rest, offset, acc) =>
             case SubsetUnicode.encodeCodes (SubsetUtf16.unitCodes (code, order), offset) of
               SubsetResult.Err error => SubsetResult.Err (UnicodeError error)
-            | SubsetResult.Ok bytes => encode (rest, offset + 2.0, SubsetList.reverseAppend (bytes, acc))
-    in encode (toUnits source, 0.0, []) end
+            | SubsetResult.Ok bytes => encode (rest, offset + 2, SubsetList.reverseAppend (bytes, acc))
+    in encode (toUnits source, 0, []) end
 
   val fromScalars = fn scalars =>
     SubsetResult.andThen (

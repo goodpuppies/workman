@@ -54,6 +54,7 @@ try {
       ["subset_host.sml", "src/subset_host.sml"],
       ["subset_host.wm", "lib/subset_host.wm"],
       ["subset_host.js", "lib/subset_host.js"],
+      ["subset_host.d.ts", "lib/subset_host.d.ts"],
       ["native/subset_host.sml", "lib/subset_host.sml"],
     ]
   ) files.set(target, await Deno.readFile(join(subsetml, source)));

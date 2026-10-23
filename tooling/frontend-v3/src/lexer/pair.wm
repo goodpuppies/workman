@@ -5,8 +5,8 @@ from "./reader.wm" import * as Reader;
 
 record State = {
   tokens: List<Token.Token>,
-  stack: List<(Number, Token.PairGroup)>,
-  index: Number,
+  stack: List<(I32, Token.PairGroup)>,
+  index: I32,
 };
 
 let append = (state: State, tok: Token.Token) => {

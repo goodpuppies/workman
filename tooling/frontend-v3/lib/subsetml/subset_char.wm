@@ -284,21 +284,21 @@ let toCode = (c) => {
   let rec go = match {
     ([], Var(code)) => { SubsetResult.Err(NonByteCharacter) },
     ([x, ..xs], Var(code)) => {
-      if (c == x) { SubsetResult.Ok(code) } else { go(xs, code + 1) }
+      if (c == x) { SubsetResult.Ok(code) } else { go(xs, code + (1: I32)) }
     }
   };
-  go(byteChars, 0)
+  go(byteChars, (0: I32))
 };
 
-// Range comparisons reject NaN/infinities; countdown rejects fractional codes.
-let fromCode = (code: Number) => {
-  if (if (code >= 0) { code <= 255 } else { false }) {
+// Integer codes are validated against the byte range before lookup.
+let fromCode = (code: I32) => {
+  if (if (code >= (0: I32)) { code <= (255: I32) } else { false }) {
     let rec go = match {
       ([], Var(remaining)) => { SubsetResult.Err(InvalidCode) },
       ([c, ..rest], Var(remaining)) => {
-        if (remaining <= 0) {
-          if (remaining >= 0) { SubsetResult.Ok(c) } else { SubsetResult.Err(InvalidCode) }
-        } else { go(rest, remaining - 1) }
+        if (remaining <= (0: I32)) {
+          if (remaining >= (0: I32)) { SubsetResult.Ok(c) } else { SubsetResult.Err(InvalidCode) }
+        } else { go(rest, remaining - (1: I32)) }
       }
     };
     go(byteChars, code)

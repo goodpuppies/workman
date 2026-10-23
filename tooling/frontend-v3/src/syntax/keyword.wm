@@ -1,7 +1,7 @@
 from "./cursor.wm" import * as Cursor;
 
 // Reserved words from src/grammar.peggy. Exact ASCII spelling; no lexer keyword kind.
-let reservedUnits = [
+let reservedUnits: List<List<I32>> = [
   [102, 114, 111, 109], // from
   [105, 109, 112, 111, 114, 116], // import
   [97, 115], // as

@@ -1,12 +1,12 @@
 // CLI and canonical filesystem identity. Representation adaptation stays at this boundary.
 from "./subset_result.wm" import * as SubsetResult;
 from js.module("./subset_host.js") import {
-  canonicalPath as rawCanonicalPath: String -> String,
-  readFile as rawReadFile: String -> String,
-  writeFile as rawWriteFile: (String, String) -> Void,
-  writeStdout as rawWriteStdout: String -> Void,
-  writeStderr as rawWriteStderr: String -> Void,
-  arguments as rawArguments: Void -> Js.Array<String>
+  canonicalPath as rawCanonicalPath,
+  readFile as rawReadFile,
+  writeFile as rawWriteFile,
+  writeStdout as rawWriteStdout,
+  writeStderr as rawWriteStderr,
+  arguments as rawArguments
 };
 from js.module("./subset_host.js") import unsafe { exit as rawExit: Bool -> Void };
 let convert = (result) => {
@@ -22,7 +22,7 @@ let writeFile = (data, path) => { convert(rawWriteFile(data, path)) };
 let writeStdout = (data) => { convert(rawWriteStdout(data)) };
 let writeStderr = (data) => { convert(rawWriteStderr(data)) };
 let arguments = () => {
-  match(rawArguments(void)) {
+  match(rawArguments()) {
     Ok(values) => { SubsetResult.Ok(Js.Array.toList(values)) },
     Err(Js.Error(message)) => { SubsetResult.Err(message) },
     Err(Js.Unknown) => { SubsetResult.Err("unknown host error") }

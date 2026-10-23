@@ -6,7 +6,7 @@ from "../../lib/subsetml/subset_utf16_source.wm" import * as Text;
 record Cursor = {
   source: Text.Source,
   remainingTokens: List<Token.Token>,
-  tokenIndex: Number,
+  tokenIndex: I32,
 };
 
 type Step = TokenTaken<Token.Token, Cursor> | ReachedEnd<Token.Token>;

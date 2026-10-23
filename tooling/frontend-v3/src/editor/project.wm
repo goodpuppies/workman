@@ -10,8 +10,8 @@ from "../../lib/subsetml/subset_result.wm" import * as R;
 // Projected mark ranges are metadata. The diff still derives emergent whitespace.
 record VirtualSpan = {
   markId: Marks.MarkId,
-  projectedStart: Number,
-  projectedEnd: Number,
+  projectedStart: I32,
+  projectedEnd: I32,
   delimiter: Option<Ast.DelimiterId>,
 };
 record Projection = {
@@ -20,9 +20,9 @@ record Projection = {
   virtualSpans: List<VirtualSpan>,
 };
 record Writer = {
-  unitsRev: List<Number>,
-  length: Number,
-  indent: Number,
+  unitsRev: List<I32>,
+  length: I32,
+  indent: I32,
   atLineStart: Bool,
   pendingSpace: Bool,
   correspondenceRev: List<Diff.Correspondence>,
