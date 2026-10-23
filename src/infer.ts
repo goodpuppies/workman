@@ -23,6 +23,7 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
+  defaultNumericVars,
 } from "./types.ts";
 
 export type StructureEnv = StaticEnv & { adts: Map<number, TypeDeclInfo> };
@@ -265,6 +266,7 @@ function inferModuleCore(
         typeExports,
         exportableTypeIds,
       );
+      defaultNumericVars();
     } catch (error) {
       const diagnostic = diagnosticError(error, decl.node);
       if (!recover) throw diagnostic;

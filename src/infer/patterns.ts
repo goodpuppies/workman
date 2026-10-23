@@ -10,6 +10,8 @@ import {
   knownTypeInfos,
   named,
   NumberTy,
+  freshNumeric,
+  isI32Literal,
   prune,
   StringTy,
   tuple,
@@ -124,10 +126,10 @@ export function inferPattern(
     case "PInt":
       constrainPattern(
         expected,
-        NumberTy,
+        isI32Literal(p.value) ? freshNumeric() : NumberTy,
         p,
         "InferPattern.Int",
-        "integer pattern matches Number",
+        "integer pattern matches Number or I32",
         provenance,
         expectedSource,
       );
@@ -347,10 +349,10 @@ export function inferBindingPattern(
     case "PInt":
       constrainPattern(
         expected,
-        NumberTy,
+        isI32Literal(pattern.value) ? freshNumeric() : NumberTy,
         pattern,
         "InferBindingPattern.Int",
-        "integer let pattern matches Number",
+        "integer let pattern matches Number or I32",
       );
       return;
     case "PChar":

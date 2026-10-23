@@ -28,6 +28,7 @@ const LAYER0_TYPES = Object.freeze(
     { name: "String", typeNameId: -3, arity: 0, profiles, equality: "always" },
     { name: "Void", typeNameId: -4, arity: 0, profiles, equality: "always" },
     { name: "Char", typeNameId: -34, arity: 0, profiles, equality: "always" },
+    { name: "I32", typeNameId: -35, arity: 0, profiles, equality: "always" },
     {
       name: "Option",
       typeNameId: -10,
@@ -233,6 +234,23 @@ export function basisUnaryOperatorDescriptor(
 export const BASIS_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "print", profiles, runtimeName: "print" },
   { exportName: "Text.of", profiles, runtimeName: "Text.of" },
+  ...[
+    "div",
+    "mod",
+    "checkedAdd",
+    "checkedSub",
+    "checkedMul",
+    "toNumber",
+    "fromNumber",
+    "toString",
+    "fromString",
+    "minimum",
+    "maximum",
+  ].map((name) => ({
+    exportName: `I32.${name}`,
+    profiles: defaultOnly,
+    runtimeName: `I32.${name}`,
+  })),
   ...JS_HOST_VALUES,
 ]);
 

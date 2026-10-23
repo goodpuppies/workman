@@ -534,7 +534,8 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       }
       return {
         kind: "CoreApp",
-        callee: { kind: "CoreVar", name: expr.op, node: expr.node },
+        callee: i32Operator(expr.op, expr.left, context, I32_BINARY_HELPERS) ??
+          { kind: "CoreVar", name: expr.op, node: expr.node },
         arg: {
           kind: "CoreTuple",
           items: [
@@ -553,7 +554,8 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       }
       return {
         kind: "CoreApp",
-        callee: { kind: "CoreVar", name: expr.op, node: expr.node },
+        callee: i32Operator(expr.op, expr.value, context, I32_UNARY_HELPERS) ??
+          { kind: "CoreVar", name: expr.op, node: expr.node },
         arg: coreExprFromSurface(expr.value, context),
         node: expr.node,
       };
@@ -816,6 +818,34 @@ function loweringCarrier(
     context.carrierModules.set(modulePath, alias);
   }
   return { namespace: alias };
+}
+
+const I32_BINARY_HELPERS: Readonly<Record<string, string>> = {
+  "+": "__wm_i32_add",
+  "-": "__wm_i32_sub",
+  "*": "__wm_i32_mul",
+};
+const I32_UNARY_HELPERS: Readonly<Record<string, string>> = { "-": "__wm_i32_neg" };
+
+/**
+ * Host I32 arithmetic goes through checked prelude helpers that panic on overflow; comparisons and
+ * equality keep the plain operators. The shared Core keeps the operator for backends with a native
+ * 32-bit integer.
+ */
+function i32Operator(
+  op: string,
+  operand: Expr,
+  context: CoreLoweringContext | undefined,
+  helpers: Readonly<Record<string, string>>,
+): CoreExpr | undefined {
+  if (!context || context.target === "shared") return undefined;
+  const helper = helpers[op];
+  if (!helper) return undefined;
+  const type = context.types.get(operand);
+  if (!type) return undefined;
+  const resolved = prune(type);
+  if (resolved.tag !== "prim" || resolved.name !== "I32") return undefined;
+  return { kind: "CoreVar", name: helper, node: operand.node };
 }
 
 function carrierLiftedBinary(

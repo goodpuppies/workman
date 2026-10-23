@@ -16,6 +16,7 @@ const primitiveTypes = [
   "String",
   "Void",
   "Char",
+  "I32",
 ];
 
 const jsTypes = [

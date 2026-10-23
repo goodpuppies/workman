@@ -742,7 +742,7 @@ Deno.test("binary operand mismatch records an operator premise", async () => {
   assertEquals(error.diagnostic.failure.premise.role, "operator operands match operator type");
   assertEquals(constraintRoles(error.diagnostic), ["operator", "operands"]);
   assertEquals(
-    ['operator +: "(Number, Number) -> Number"', "left operand", "right operand"]
+    [`operator +: "('num, 'num) -> 'num"`, "left operand", "right operand"]
       .every((subject) => claimSubjects(error.diagnostic).includes(subject)),
     true,
   );
@@ -766,7 +766,7 @@ Deno.test("unary operand mismatch records a unary premise", async () => {
   );
 
   assertEquals(error.diagnostic.failure.frame.rule, "InferUnary.NumericOperand");
-  assertEquals(error.diagnostic.failure.premise.role, "unary - operand is Number");
+  assertEquals(error.diagnostic.failure.premise.role, "unary - operand is Number or I32");
   assertEquals(constraintRoles(error.diagnostic), ["required type", "operand"]);
 });
 

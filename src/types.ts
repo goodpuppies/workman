@@ -15,6 +15,8 @@ export type Ty =
     jsConstraint?: (t: Ty) => void;
     gpuConstraint?: (t: Ty) => void;
     equalityConstraint?: (t: Ty) => void;
+    /** An overloaded numeric literal or operator: binds only to `Number` or `I32`. */
+    numeric?: true;
     /** All field/result obligations on this unresolved nominal receiver. */
     projectionFields?: ProjectionFieldInfo[];
   }
@@ -170,6 +172,66 @@ export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
 
 export const prim = (name: string): Ty => ({ tag: "prim", name });
 export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
+
+/** Numeric variables not yet decided, in creation order; see `defaultNumericVars`. */
+let pendingNumeric: Extract<Ty, { tag: "var" }>[] = [];
+
+export const I32_MIN = -2147483648;
+export const I32_MAX = 2147483647;
+
+/** Integer literals inside the I32 range may become either numeric type. */
+export function isI32Literal(value: number): boolean {
+  return Number.isInteger(value) && value >= I32_MIN && value <= I32_MAX;
+}
+
+/** A variable that becomes `Number` or `I32`, defaulting to `Number`. */
+export function freshNumeric(name?: string): Ty {
+  const t = fresh(name) as Extract<Ty, { tag: "var" }>;
+  markNumeric(t);
+  return t;
+}
+
+function markNumeric(t: Extract<Ty, { tag: "var" }>): void {
+  if (t.numeric) return;
+  t.numeric = true;
+  pendingNumeric.push(t);
+}
+
+// Keeps the bound-variable evidence of the original operands, so a mismatch is attributed
+// to the commitment that introduced the numeric variable.
+function unifyAgainstNumber(
+  a: Ty,
+  b: Ty,
+  originalA: Ty,
+  originalB: Ty,
+  onBind: UnifyBind | undefined,
+  path: DiffPath,
+  onDeferFfi: DeferFfiConstraint | undefined,
+) {
+  try {
+    unify(a, b, onBind, path, onDeferFfi);
+  } catch (error) {
+    if (!(error instanceof TypeMismatchError) || error.path !== path) throw error;
+    throw typeMismatchError(error.left, error.right, path, originalA, originalB);
+  }
+}
+
+function isNumericPrim(t: Ty): boolean {
+  return t.tag === "prim" && (t.name === "Number" || t.name === "I32");
+}
+
+/**
+ * Resolve overloaded numeric literals and operators that context left undecided, as SML does
+ * at each top-level declaration. Existing WM code therefore keeps its `Number` meaning.
+ */
+export function defaultNumericVars(): void {
+  const pending = pendingNumeric;
+  pendingNumeric = [];
+  for (const t of pending) {
+    const target = prune(t);
+    if (target.tag === "var" && target.numeric) unify(target, NumberTy);
+  }
+}
 export const freshFfi = (
   kind: "get" | "call",
   receiver: Ty | undefined,
@@ -209,6 +271,7 @@ export const freshTypeInfo = (name: string, arity: number): TypeInfo => ({
 });
 
 export const NumberTy = prim("Number");
+export const I32Ty = prim("I32");
 export const BoolTy = prim("Bool");
 export const CharTy = prim("Char");
 export const StringTy = prim("String");
@@ -275,6 +338,14 @@ export function unify(
   a = prune(a);
   b = prune(b);
   if (a === b) return;
+  // A non-numeric type meeting a numeric variable fails exactly as it would against Number,
+  // which keeps existing diagnostics; check before binding so the variable stays intact.
+  if (a.tag === "var" && a.numeric && b.tag !== "var" && b.tag !== "ffi" && !isNumericPrim(b)) {
+    unifyAgainstNumber(NumberTy, b, originalA, originalB, onBind, path, onDeferFfi);
+  }
+  if (b.tag === "var" && b.numeric && a.tag !== "var" && a.tag !== "ffi" && !isNumericPrim(a)) {
+    unifyAgainstNumber(a, NumberTy, originalA, originalB, onBind, path, onDeferFfi);
+  }
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
     a.instance = b;
@@ -303,6 +374,7 @@ export function unify(
       if (b.tag === "var") addEqualityConstraint(b, a.equalityConstraint);
       else a.equalityConstraint(b);
     }
+    if (a.numeric && b.tag === "var") markNumeric(b);
     if (b.tag !== "var") {
       for (const field of a.projectionFields ?? []) field.resolve(b, field);
     }
@@ -583,8 +655,31 @@ export function ftvEnv(env: Env): Set<number> {
 export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
   const boundary = jsConstrainedVarIds(type);
-  const vars = [...ftv(type)].filter((id) => !envVars.has(id) && !boundary.has(id));
+  const numeric = numericVarIds(type);
+  const vars = [...ftv(type)].filter((id) =>
+    !envVars.has(id) && !boundary.has(id) && !numeric.has(id)
+  );
   return { vars, type, constraints: [] };
+}
+
+/** Numeric variables stay monomorphic until context or defaulting decides them. */
+function numericVarIds(type: Ty, acc = new Set<number>(), seen = new Set<Ty>()): Set<number> {
+  const t = prune(type);
+  if (seen.has(t)) return acc;
+  seen.add(t);
+  if (t.tag === "var") {
+    if (t.numeric) acc.add(t.id);
+  } else if (t.tag === "fn") {
+    for (const param of t.params) numericVarIds(param, acc, seen);
+    numericVarIds(t.result, acc, seen);
+  } else if (t.tag === "tuple") {
+    for (const item of t.items) numericVarIds(item, acc, seen);
+  } else if (t.tag === "struct") {
+    for (const field of t.fields) numericVarIds(field.type, acc, seen);
+  } else if (t.tag === "named") {
+    for (const arg of t.args) numericVarIds(arg, acc, seen);
+  }
+  return acc;
 }
 
 function jsConstrainedVarIds(
@@ -643,6 +738,7 @@ export function instantiate(scheme: Scheme): Ty {
       if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
       if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
       if (t.equalityConstraint) addEqualityConstraint(mapped, t.equalityConstraint);
+      if (t.numeric && mapped.tag === "var") markNumeric(mapped);
       if (!copiedProjections.has(t.id)) {
         copiedProjections.add(t.id);
         for (const field of t.projectionFields ?? []) {
@@ -692,6 +788,7 @@ export function freshenTypeVars(
       if (t.jsConstraint) addJsConstraint(created, t.jsConstraint);
       if (t.gpuConstraint) addGpuConstraint(created, t.gpuConstraint);
       if (t.equalityConstraint) addEqualityConstraint(created, t.equalityConstraint);
+      if (t.numeric) markNumeric(created as Extract<Ty, { tag: "var" }>);
       for (const field of t.projectionFields ?? []) {
         addProjectionField(created, { ...field, type: go(field.type) });
       }
@@ -812,7 +909,10 @@ export function typeFromAst(
     const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
     return resolved(instantiateAlias(info.alias, info.aliasParams ?? [], args));
   }
-  if (expr.args.length === 0 && ["Number", "Bool", "Char", "String", "Void"].includes(expr.name)) {
+  if (
+    expr.args.length === 0 &&
+    ["Number", "I32", "Bool", "Char", "String", "Void"].includes(expr.name)
+  ) {
     return resolved(prim(expr.name));
   }
   return resolved(named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options))));
@@ -821,10 +921,15 @@ export function typeFromAst(
 export function show(t: Ty): string {
   const names = new Map<number, string>();
   let n = 0;
+  let numeric = 0;
   const receivers: Extract<Ty, { tag: "var" }>[] = [];
   const seenReceivers = new Set<number>();
-  const nameOf = (id: number) =>
-    names.get(id) ?? (names.set(id, `'${String.fromCharCode(97 + n++)}`), names.get(id)!);
+  // Numeric variables (Number or I32) get their own names so the constraint stays visible.
+  const numericName = () => numeric++ === 0 ? "'num" : `'num${numeric}`;
+  const nameOf = (id: number, isNumeric?: boolean) =>
+    names.get(id) ??
+      (names.set(id, isNumeric ? numericName() : `'${String.fromCharCode(97 + n++)}`),
+        names.get(id)!);
   const functionDomain = (params: Ty[]): string => {
     if (params.length === 0) return "Void";
     if (params.length > 1) return `(${params.map(go).join(", ")})`;
@@ -839,7 +944,7 @@ export function show(t: Ty): string {
         seenReceivers.add(x.id);
         receivers.push(x);
       }
-      return x.name ?? nameOf(x.id);
+      return x.name ?? nameOf(x.id, x.numeric);
     }
     if (x.tag === "ffi") return `?ffi#${x.id}:${x.binding ?? x.path.join(".")}`;
     if (x.tag === "prim") return x.name;

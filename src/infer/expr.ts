@@ -9,6 +9,8 @@ import {
   instantiate,
   named,
   NumberTy,
+  freshNumeric,
+  isI32Literal,
   prune,
   StringTy,
   tuple,
@@ -65,7 +67,10 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
   const { env, typeEnv, types, facts, warnings, diagnostics, provenance } = context;
   let t: Ty;
   switch (expr.kind) {
+    // An integer literal in I32 range is overloaded; context or defaulting picks the type.
     case "Int":
+      t = isI32Literal(expr.value) ? freshNumeric() : NumberTy;
+      break;
     case "Float":
       t = NumberTy;
       break;
@@ -472,7 +477,8 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       break;
     case "Unary":
       if (expr.op === "-") {
-        recordExpectedExprType(facts, expr.value, NumberTy);
+        const numeric = freshNumeric();
+        recordExpectedExprType(facts, expr.value, numeric);
         const value = inferExpr(expr.value, context);
         const carrier = resultParts(value, typeEnv);
         recordConsumedFfiUse(facts, value, {
@@ -481,7 +487,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
             "cannot use unresolved JS FFI result as an operator operand before FFI reflection resolves the member access",
         });
         constrainAt(
-          NumberTy,
+          numeric,
           carrier?.payload ?? value,
           expr.value,
           undefined,
@@ -496,7 +502,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
           {
             premise: {
               rule: "InferUnary.NumericOperand",
-              role: "unary - operand is Number",
+              role: "unary - operand is Number or I32",
               subject: "unary - operand",
               leftRole: "required type",
               rightRole: "operand",
@@ -511,7 +517,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
             },
           },
         );
-        t = carrier ? rewrapCarrier(carrier, NumberTy) : NumberTy;
+        t = carrier ? rewrapCarrier(carrier, numeric) : numeric;
       } else {
         recordExpectedExprType(facts, expr.value, BoolTy);
         const value = inferExpr(expr.value, context);

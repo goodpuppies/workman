@@ -8,6 +8,7 @@ import {
   fresh,
   freshTypeInfo,
   generalize,
+  I32Ty,
   named,
   NumberTy,
   StringTy,
@@ -20,6 +21,13 @@ import {
   typeInfoByName,
   VoidTy,
 } from "./types.ts";
+
+/** A scheme's numeric variable: only its instances are registered for defaulting. */
+function numericSchemeVar(): Extract<Ty, { tag: "var" }> {
+  const a = fresh() as Extract<Ty, { tag: "var" }>;
+  a.numeric = true;
+  return a;
+}
 
 function callArg(items: Ty[]): Ty {
   if (items.length === 0) return VoidTy;
@@ -95,24 +103,27 @@ export function basisOperatorEnv(): Env {
   const operator = (vars: number[], type: Ty) => ({ vars, type, standardLibrary: true });
   for (const descriptor of BASIS_OPERATORS) {
     switch (descriptor.kind) {
-      case "number":
-        env.set(
-          descriptor.spelling,
-          operator([], fn([tuple([NumberTy, NumberTy])], NumberTy)),
-        );
+      // `+ - *` take Number or I32 operands of one type; `/` and `%` stay Number-only.
+      case "number": {
+        if (descriptor.spelling === "/" || descriptor.spelling === "%") {
+          env.set(descriptor.spelling, operator([], fn([tuple([NumberTy, NumberTy])], NumberTy)));
+          break;
+        }
+        const a = numericSchemeVar();
+        env.set(descriptor.spelling, operator([a.id], fn([tuple([a, a])], a)));
         break;
+      }
       case "string":
         env.set(
           descriptor.spelling,
           operator([], fn([tuple([StringTy, StringTy])], StringTy)),
         );
         break;
-      case "number-order":
-        env.set(
-          descriptor.spelling,
-          operator([], fn([tuple([NumberTy, NumberTy])], BoolTy)),
-        );
+      case "number-order": {
+        const a = numericSchemeVar();
+        env.set(descriptor.spelling, operator([a.id], fn([tuple([a, a])], BoolTy)));
         break;
+      }
       case "equality": {
         const a = fresh() as Extract<Ty, { tag: "var" }>;
         env.set(
@@ -463,6 +474,27 @@ function addBasisValues(env: Env, typeEnv: TypeEnv) {
     basis: true,
   });
   addJsArrayValues(env, typeEnv);
+  addI32Values(env, typeEnv);
+}
+
+function addI32Values(env: Env, typeEnv: TypeEnv) {
+  const option = typeInfoByName(typeEnv, "Option");
+  if (!option) return;
+  const value = (name: string, type: Ty) => {
+    env.set(`I32.${name}`, { vars: [], type, status: "value", basis: true });
+  };
+  const optionI32 = named(option, [I32Ty]);
+  value("div", fn([tuple([I32Ty, I32Ty])], I32Ty));
+  value("mod", fn([tuple([I32Ty, I32Ty])], I32Ty));
+  value("checkedAdd", fn([tuple([I32Ty, I32Ty])], optionI32));
+  value("checkedSub", fn([tuple([I32Ty, I32Ty])], optionI32));
+  value("checkedMul", fn([tuple([I32Ty, I32Ty])], optionI32));
+  value("toNumber", fn([I32Ty], NumberTy));
+  value("fromNumber", fn([NumberTy], optionI32));
+  value("toString", fn([I32Ty], StringTy));
+  value("fromString", fn([StringTy], optionI32));
+  value("minimum", I32Ty);
+  value("maximum", I32Ty);
 }
 
 function addJsArrayValues(env: Env, typeEnv: TypeEnv) {
