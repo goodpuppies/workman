@@ -14,12 +14,16 @@ import type {
 } from "../ast.ts";
 import { pathOf } from "../ast.ts";
 import type { InferResult } from "../infer.ts";
-import { basisCtorId } from "../basis.ts";
+import { basisCtorId, basisCtorJsName } from "../basis.ts";
 import { type BindingFacts, resolveModuleBindingFacts } from "../binding_facts.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import { gpuOnlyBindingIds } from "../gpu_host_boundary.ts";
 import { resolveGpuFragmentSelections } from "../gpu_selection.ts";
-import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "../compiler_semantics.ts";
+import {
+  type CompilerSemanticId,
+  GPU_SEMANTIC_IDS,
+  isBasisTypeNameId,
+} from "../compiler_semantics.ts";
 import { type NominalFacts, resolveModuleNominalFacts } from "../nominal_facts.ts";
 import {
   type BindingId,
@@ -260,6 +264,8 @@ function coreDeclFromSurface(
       };
     }
     case "TypeDecl":
+      // A `@basis-type` declaration names a built-in type, whose constructors the prelude defines.
+      if (isBasisTypeNameId(context?.nominalFacts?.typeDeclarations.get(decl))) return undefined;
       if (
         context?.target !== "shared" && context?.gpuOnlyTypeNames.has(
           context.nominalFacts?.typeDeclarations.get(decl) as TypeNameId,
@@ -378,6 +384,10 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
       const id = context?.bindings?.references.get(expr);
       const structureId = context?.bindings?.structureReferences.get(expr);
       const ctorId = context?.nominalFacts?.constructorReferences.get(expr);
+      // A built-in constructor is the prelude's, even through a `@basis-type` module's namespace.
+      if (ctorId !== undefined && basisCtorJsName(ctorId) !== undefined) {
+        return { kind: "CoreVar", name: expr.name, ctorId, node: expr.node };
+      }
       if (structureId !== undefined) {
         return desugarDottedVar(expr.name, expr.node, structureId, {
           memberBindingId: id,

@@ -71,6 +71,8 @@ export type Module = Located<{
   kind: "Module";
   decls: Decl[];
   prelude?: "none";
+  /** Built-in types this module declares in source (`// @basis-type Result`). */
+  basisTypes?: string[];
 }>;
 
 export type Decl =

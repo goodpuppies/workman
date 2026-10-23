@@ -197,6 +197,7 @@ function inferModuleCore(
     dialect: hostTypingDialect,
     recover,
     legacyGpuVectorTuples: options.legacyGpuVectorTuples === true,
+    basisTypes: new Set(module.basisTypes ?? []),
   };
   warnWideTuples(module, warnings, diagnostics);
 

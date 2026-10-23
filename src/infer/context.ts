@@ -44,6 +44,8 @@ export type InferContext = {
   dialect: TypingDialect;
   recover: boolean;
   legacyGpuVectorTuples: boolean;
+  /** Types the module declares as built-ins (`// @basis-type`). */
+  basisTypes: ReadonlySet<string>;
 };
 
 export function deriveInferContext(

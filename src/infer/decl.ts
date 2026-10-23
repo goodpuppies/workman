@@ -1,5 +1,6 @@
 import type { Decl } from "../ast.ts";
 import { isQualified, parseLongId } from "../ast.ts";
+import { basisTypeDescriptor } from "../basis_manifest.ts";
 import { warningDiagnostic } from "../diagnostic_model.ts";
 import {
   type Env,
@@ -74,6 +75,20 @@ export function inferDecl(
   }
   if (decl.kind === "RecordDecl") {
     inferRecordDecl(
+      decl,
+      env,
+      exports,
+      typeEnv,
+      strEnv,
+      typeExports,
+      exportableTypeIds,
+      facts,
+      exported,
+    );
+    return;
+  }
+  if (decl.kind === "TypeDecl" && context.basisTypes.has(decl.name)) {
+    adoptBasisType(
       decl,
       env,
       exports,
@@ -350,6 +365,74 @@ function inferTypeDecl(
     if (exported) exports.set(c.name, scheme);
   }
   adts.set(info.id, { ...decl, type: info, paramTypeIds, ctorTypes });
+}
+
+/**
+ * A `// @basis-type` declaration names the compiler's built-in type instead of a new one, so its
+ * type and constructors are the built-in ones (the SubsetML Basis declares `Result` this way). The
+ * declaration must match the built-in exactly: same parameters, constructors and payloads.
+ */
+function adoptBasisType(
+  decl: Extract<Decl, { kind: "TypeDecl" }>,
+  env: Env,
+  exports: Env,
+  typeEnv: TypeEnv,
+  strEnv: StrEnv,
+  typeExports: TypeEnv,
+  exportableTypeIds: Set<number>,
+  facts: TypeFacts,
+  exported: boolean,
+) {
+  const descriptor = basisTypeDescriptor(decl.name);
+  const info = typeEnv.get(decl.name);
+  const mismatch = (detail: string) => new Error(`@basis-type ${decl.name}: ${detail}`);
+  if (!descriptor?.constructors || !info?.basis) {
+    throw mismatch("there is no built-in datatype of that name in this basis profile");
+  }
+  const labels = descriptor.argLabels ?? [];
+  const sameShape = !decl.alias && decl.mutualGroup === undefined &&
+    decl.params.length === descriptor.arity &&
+    decl.ctors.length === descriptor.constructors.length &&
+    decl.ctors.every((ctor, index) => {
+      const builtIn = descriptor.constructors![index];
+      return ctor.name === builtIn.name && ctor.args.length === builtIn.args.length &&
+        ctor.args.every((arg, argIndex) => {
+          const expected = builtIn.args[argIndex];
+          const position = expected.kind === "TName" ? labels.indexOf(expected.name) : -1;
+          return position >= 0 && (arg.kind === "TVar" || arg.kind === "TName") &&
+            (arg.kind === "TVar" || arg.args.length === 0) && arg.name === decl.params[position];
+        });
+    });
+  if (!sameShape) {
+    const ctors = descriptor.constructors.map((ctor) =>
+      ctor.args.length === 0
+        ? ctor.name
+        : `${ctor.name}<${
+          ctor.args.map((arg) => arg.kind === "TName" ? arg.name : "?").join(", ")
+        }>`
+    );
+    throw mismatch(
+      `the declaration must be ${decl.name}<${labels.join(", ")}> = ${ctors.join(" | ")}`,
+    );
+  }
+  recordTypeDeclarationFact(facts, decl, info);
+  bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
+  if (exported) {
+    typeExports.set(decl.name, info);
+    exportableTypeIds.add(info.id);
+  }
+  for (const ctor of decl.ctors) {
+    const scheme = env.get(ctor.name);
+    if (!scheme?.basis || scheme.status !== "constructor") {
+      throw mismatch(`constructor ${ctor.name} is not the built-in one`);
+    }
+    recordBindingFact(facts, ctor.name, {
+      subject: "constructor",
+      instantiated: scheme.type,
+      general: scheme,
+    });
+    if (exported) exports.set(ctor.name, scheme);
+  }
 }
 
 function inferAliasDecl(

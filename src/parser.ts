@@ -1,5 +1,6 @@
 import type { Decl, Expr, Module } from "./ast.ts";
 import { offsetToLineCol, type SourceSpan } from "./source.ts";
+import { basisTypeDirectives, hasNoPreludeDirective } from "./module_directives.ts";
 
 export type Surface = "workman" | "wmsml";
 const supportedDirectives = ["gpu"] as const;
@@ -103,6 +104,8 @@ export function finalizeParsedModule(
 ): Module {
   validateDirectives(module, source, filePath);
   if (hasNoPreludeDirective(source)) module.prelude = "none";
+  const basisTypes = basisTypeDirectives(source);
+  if (basisTypes.length > 0) module.basisTypes = basisTypes;
   return module;
 }
 
@@ -240,15 +243,6 @@ function directiveError(
     },
     filePath,
   );
-}
-
-function hasNoPreludeDirective(source: string): boolean {
-  for (const line of source.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "") continue;
-    return trimmed === "-- @no-prelude" || trimmed === "// @no-prelude";
-  }
-  return false;
 }
 
 async function loadWmsmlParser(): Promise<GeneratedParser> {

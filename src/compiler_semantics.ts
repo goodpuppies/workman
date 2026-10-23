@@ -13,6 +13,11 @@ export function basisTypeNameId(name: string): TypeNameId | undefined {
   return id === undefined ? undefined : id as TypeNameId;
 }
 
+/** Basis type name ids are the manifest's negative ids; declared types count up from zero. */
+export function isBasisTypeNameId(id: TypeNameId | undefined): boolean {
+  return id !== undefined && id < 0;
+}
+
 export function basisValueId(name: string): BasisValueId {
   return `basis-value:${name}` as BasisValueId;
 }

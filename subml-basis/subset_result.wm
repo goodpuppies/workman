@@ -1,3 +1,4 @@
+// @basis-type Result
 /* Custom Basis Result. Core operations take data first; procedure adapters are curried.
    Errors are ordinary datatype values. */
 

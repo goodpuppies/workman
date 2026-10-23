@@ -27,6 +27,7 @@ import {
 } from "./frontend_v2_surface_loader.ts";
 import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
 import { JS_HOST_IMPORT_PREFIX } from "./host_modules.ts";
+import { basisTypeDirectives, hasNoPreludeDirective } from "./module_directives.ts";
 
 export type FrontendV2SemanticAdapterDiagnostic = {
   code: "frontend-v2.unsupported-decl" | "frontend-v2.recovered-decl";
@@ -113,6 +114,9 @@ export function surfaceProgramToModule(
       kind: "Module",
       decls,
       ...(hasNoPreludeDirective(source) ? { prelude: "none" as const } : {}),
+      ...(basisTypeDirectives(source).length > 0
+        ? { basisTypes: basisTypeDirectives(source) }
+        : {}),
       node: nodeFor(context, sourceSpan(programSpan)),
     },
     diagnostics,
@@ -1425,15 +1429,6 @@ function isDeclNode(name: string): boolean {
 
 function isSemanticDecl(value: Decl | Expr): value is Decl {
   return value.kind.endsWith("Decl");
-}
-
-function hasNoPreludeDirective(source: string): boolean {
-  for (const line of source.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "") continue;
-    return trimmed === "-- @no-prelude" || trimmed === "// @no-prelude";
-  }
-  return false;
 }
 
 function unsupported(category: string, node: WmVariant): Error {

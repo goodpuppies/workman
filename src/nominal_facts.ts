@@ -1,4 +1,5 @@
 import type { CtorDecl, Decl, Expr, Module, Pattern, RecordFieldDecl, TypeExpr } from "./ast.ts";
+import { parseLongId } from "./ast.ts";
 import { basisCtorId } from "./basis.ts";
 import { basisTypeNameId } from "./compiler_semantics.ts";
 import type { InferResult } from "./infer.ts";
@@ -193,6 +194,8 @@ function resolveNominalFacts(inputs: ModuleInput[], ids: CompilerIdAllocator): N
         return;
       }
       if (declaration.kind === "ForeignTypeDecl" || declaration.alias) return;
+      // A `@basis-type` declaration's constructors are the built-in ones, with basis ids.
+      if (info.basis) return;
       declaration.ctors.forEach((constructor, tag) => {
         const constructorId = ids.ctor();
         constructors.push({
@@ -260,7 +263,8 @@ function constructorReferenceId(
   const declaration = fact.general?.constructorDecl;
   if (declaration) return declarations.get(declaration);
   if (!fact.general?.basis || !fact.origin?.name) return undefined;
-  const id = basisCtorId(fact.origin.name);
+  // A built-in constructor reached through a `@basis-type` module is spelled `SubsetResult.Ok`.
+  const id = basisCtorId(fact.origin.name) ?? basisCtorId(parseLongId(fact.origin.name).id);
   return id === undefined ? undefined : id as CtorId;
 }
 

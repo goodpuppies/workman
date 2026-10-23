@@ -35,6 +35,15 @@ try {
     const filename = module.source.replace(/^src\//, "").replace(/\.sml$/, ".wm");
     files.set(filename, await Deno.readFile(join(temporary, filename)));
   }
+  // SubsetResult's datatype is WM's built-in Result, so FFI results, std's Result functions and
+  // the Basis share one type and one Ok/Err.
+  files.set(
+    "subset_result.wm",
+    new TextEncoder().encode(
+      "// @basis-type Result\n" +
+        new TextDecoder().decode(files.get("subset_result.wm")!),
+    ),
+  );
   // The host primitives' WM side is SubsetML's hand-written adapters, not a translation. A
   // library module's JS lives in js/, so the host adapter's import is pointed there.
   files.set("subset_text_host.wm", await Deno.readFile(join(subsetml, "lib/subset_text_host.wm")));
