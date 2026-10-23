@@ -8,6 +8,7 @@ import {
   instantiateRecordFields,
   JsBoundaryError,
   named,
+  NumberTy,
   prune,
   quoteType,
   show,
@@ -15,6 +16,7 @@ import {
   type Ty,
   type TypeEnv,
   typeInfoByName,
+  unify,
 } from "../types.ts";
 import type { Ty as TyNode } from "../types.ts";
 import {
@@ -341,7 +343,13 @@ function jsImportActualArg(
   intoJs = true,
 ): Ty {
   const expectedType = prune(expected);
-  const actualType = prune(actual);
+  let actualType = prune(actual);
+  // An undecided numeric literal or operator at a Js.Value position is a JS number, so it is
+  // Number here, as it was before numeric literals could also be I32.
+  if (actualType.tag === "var" && actualType.numeric && isJsValueType(expectedType, typeEnv)) {
+    unify(actualType, NumberTy);
+    actualType = prune(actualType);
+  }
   if (isJsArrayType(expectedType, typeEnv) && isJsArrayType(actualType, typeEnv)) {
     return actualType;
   }
