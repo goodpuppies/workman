@@ -30,7 +30,7 @@ vrmodem/ShaderEmu platform profiles, are described in
 pakman.wm          CLI: install NAME VERSION, remove NAME, list
 src/model.wm      native profile of Definition/Package/Source/InstallOp
 src/package.wm    package-program entry point: describe | make VERSION REF
-src/plan.wm       versioned escaped line protocol between package and manager
+src/plan.wm       WON plan protocol between package and manager
 src/store.wm      local inputs, build orchestration and generated launchers
 src/apply.wm      ownership records, install preflight and removal checks
 src/io.wm         Result composition, path validation and filesystem workflow
@@ -44,9 +44,13 @@ tests/            native lifecycle, refusal cases and host contract
 The WM code uses synchronous `Result` operations in place of the original
 manager's JS-backed `Task` operations. Package programs remain separate
 executables; a package is not a text file interpreted as a plan by the manager.
-The plan/ownership protocol is an explicit native profile, not the original
-JSON protocol. Fields escape `%`, tab, LF and CR. Unknown operations and bad
-escapes are rejected. This prototype does not yet consume unchanged desktop
+Plans and ownership records are WON documents, read with the Basis's
+`SubsetWon` accessors; both sides import `"basis/won.wm"`, staged from SubsetML
+with `--basis`. A package prints one `Plan<protocol = 1>{...}` document, whose
+operations are tags such as `Install{source = ... dest = ... mode = Exec}`, and
+`.pakman/owned/<name>` holds an `Owned<protocol = 1>{...}` record. A different
+protocol, an unknown operation or a missing field is refused with its path, for
+example `install[0]`. This prototype does not yet consume unchanged desktop
 `pak.wm` definitions.
 
 `Build` arguments distinguish literal strings from input, work and output

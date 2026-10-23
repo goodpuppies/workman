@@ -6,6 +6,7 @@ staging emits ordinary SML and projects, not MIPS objects. Build those on PS2.
 """
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import re
 import shlex
@@ -47,11 +48,21 @@ port_sources = sources / "wm-mini/tooling/pakman-subsetml"
 for directory in ("src", "native", "paks"):
     shutil.copytree(repo / directory, port_sources / directory, dirs_exist_ok=True)
 shutil.copy2(repo / "pakman.wm", port_sources / "pakman.wm")
-for name in ("src/subset_result.wm", "lib/mlworks/checker/subset_host.wm",
-             "lib/sml-basis/subset_host.sml"):
+for name in ("lib/mlworks/checker/subset_host.wm", "lib/sml-basis/subset_host.sml"):
     target = sources / "SubsetML" / name
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(subset / name, target)
+
+# "basis/x.wm" imports resolve to this generated Basis graph, staged with the sources.
+basis = sources / "basis"
+basis.mkdir(parents=True, exist_ok=True)
+inventory = json.loads((subset / "docs/basis-dependencies.json").read_text())["modules"]
+basis_files = ["src/subset_text_host.sml"]
+for module_name, module in inventory.items():
+    basis_files.append(module["source"])
+    if module_name == "SubsetResult":
+        basis_files.append("src/subset_host.sml")
+subprocess.run([str(args.subsetml.resolve()), "wm", str(basis), *basis_files], cwd=subset, check=True)
 
 spec = importlib.util.spec_from_file_location("mlworks_project", subset / "scripts/mlworks_project.py")
 project = importlib.util.module_from_spec(spec)
@@ -70,8 +81,11 @@ def stage(name, entry, structure):
     for old in directory.glob("*.sml"):
         old.unlink()
     subprocess.run([str(args.subsetml.resolve()), "sml-entry", str(directory),
+                    "--basis", str(basis),
                     "--native-adapter", str(subset / "lib/mlworks/checker/subset_host.wm"),
                     str(subset / "lib/sml-basis/subset_host.sml"), "SubsetHost",
+                    "--native-adapter", str(basis / "subset_text_host.wm"),
+                    str(subset / "lib/subset_text_host.sml"), "SubsetTextHost",
                     "--native-adapter", str(repo / "src/host.wm"),
                     str(repo / "native/host.sml"), "PakmanHost", str(entry)], check=True)
     if args.target == "mlton":
@@ -105,6 +119,8 @@ def stage(name, entry, structure):
             body = texts[n]
             if n == "subset_host.sml":
                 body = (subset / "lib/sml-basis/subset_host.sml").read_text()
+            elif n == "subset_text_host.sml":
+                body = (subset / "lib/subset_text_host.sml").read_text()
             elif n == "host.sml":
                 requires.append('require "__unix";')
                 body = (repo / "native/host.sml").read_text() + "\nstructure Host = PakmanHost\n"

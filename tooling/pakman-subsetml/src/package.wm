@@ -1,4 +1,4 @@
-from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "basis/result.wm" import * as R;
 from "./model.wm" import * as M;
 from "./plan.wm" import * as Plan;
 from "./host.wm" import * as H;
@@ -6,8 +6,10 @@ from "./host.wm" import * as H;
 let serve = (definition: M.Definition) => {
   let result = R.andThen(H.arguments(), (args) => {
     match(args) {
-      ["describe"] => { H.writeStdout(Plan.line(["package", definition.name, definition.description])) },
-      ["make", version, upstreamRef] => { H.writeStdout(Plan.encode(definition.name, definition.make(version, upstreamRef))) },
+      ["describe"] => { R.andThen(Plan.describe(definition.name, definition.description), (text) => { H.writeStdout(text ++ "\n") }) },
+      ["make", version, upstreamRef] => {
+        R.andThen(Plan.encode(definition.name, definition.make(version, upstreamRef)), (text) => { H.writeStdout(text ++ "\n") })
+      },
       _ => { R.Err("usage: package describe | make VERSION REF") }
     }
   });

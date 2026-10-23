@@ -1,4 +1,4 @@
-from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "basis/result.wm" import * as R;
 from "./host.wm" import * as H;
 
 let bind = (value, f) => { R.andThen(value, f) };

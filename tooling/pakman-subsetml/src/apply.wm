@@ -1,8 +1,10 @@
-from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "basis/result.wm" import * as R;
 from "./model.wm" import * as M;
 from "./host.wm" import * as H;
 from "./io.wm" import * as I;
 from "./plan.wm" import * as Plan;
+from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
 from "./store.wm" import * as Store;
 
 record Owned = { version: String, files: List<(String, String)> };
@@ -20,26 +22,21 @@ let locked = (root, operation) => {
     })
   })
 };
+// Owned<protocol = 1>{version = "1.0" files = [{path = "bin/hello" sha256 = "..."}]}
 let encodeOwned = (version, files) => {
-  "pakman-owned-1\n" ++ Plan.line(["version", version]) ++ String.concat(I.map(files, (file) => {
-    let (path, hash) = file; Plan.line(["file", path, hash])
-  }))
+  let file = (entry) => { let (path, hash) = entry; W.Record([("path", Plan.text(path)), ("sha256", Plan.text(hash))]) };
+  R.map(Plan.write(Plan.document("Owned", [("version", Plan.text(version)), ("files", W.List(I.map(files, file)))])), (text) => { text ++ "\n" })
 };
 let decodeOwned = (text) => {
-  I.bind(I.traverse(String.tokens((c) => { c == '\n' })(text), (line) => {
-    I.traverse(I.fields('\t', line), Plan.unescape)
-  }), (lines) => {
-    match(lines) {
-      [["pakman-owned-1"], ["version", version], ..rest] => {
-        R.map(I.traverse(rest, (parts) => {
-          match(parts) {
-            ["file", path, hash] => { R.map(I.ensure(Store.installPath(path) && hash != "", "invalid ownership record"), (_) => { (path, hash) }) },
-            _ => { R.Err("invalid ownership record") }
-          }
-        }), (files) => { Owned(version, files) })
-      },
-      _ => { R.Err("invalid ownership record header") }
-    }
+  let body = Plan.opened(text, "Owned");
+  let file = (found) => {
+    R.andThen(Plan.field(found, "path"), (path) => { R.map(Plan.field(found, "sha256"), (hash) => { (path, hash) }) })
+  };
+  I.bind(R.mapErr(
+    R.andThen(Plan.field(body, "version"), (version) => { R.map(Plan.list(Won.get(body, "files"), file), (files) => { Owned(version, files) }) }),
+    Won.problemText
+  ), (owned: Owned) => {
+    R.map(I.ensure(I.all(owned.files, (entry) => { let (path, hash) = entry; Store.installPath(path) && hash != "" }), "invalid ownership record"), (_) => { owned })
   })
 };
 let checkDestinations = (root, files: List<Store.Placement>) => {
@@ -72,7 +69,7 @@ let install = (root, plan: M.Plan, built: Store.Built) => {
           })
         }), (hashes) => {
           let manifest = I.child(stage, "owned-record");
-          I.bind(H.writeFile(encodeOwned(plan.version, hashes), manifest), (_) => {
+          I.bind(I.bind(encodeOwned(plan.version, hashes), (text) => { H.writeFile(text, manifest) }), (_) => {
             I.bind(commit(root, I.map(hashes, (file) => { let (path, _) = file; (path, I.child(I.child(stage, "payload"), path)) }), []), (placed) => {
               match(H.rename(manifest, owned)) {
                 R.Ok(_) => { R.Ok(void) },

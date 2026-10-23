@@ -1,90 +1,118 @@
-from "../../../../SubsetML/src/subset_result.wm" import * as R;
+from "basis/result.wm" import * as R;
+from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
 from "./model.wm" import * as M;
 from "./io.wm" import * as I;
 
-// Versioned line protocol for the native profile. Fields escape %, TAB, LF, CR.
-// Package processes and the manager stay independent, as in the original port.
-let escape = (text) => {
-  String.translate((c) => {
-    match(c) { '%' => { "%25" }, '\t' => { "%09" }, '\n' => { "%0A" }, '\r' => { "%0D" }, _ => { String.str(c) } }
-  })(text)
+// The package <-> manager protocol: one WON document per command. Encoders run in
+// the package process and decoders in the manager; `protocol` detects a stale package.
+let protocol = "1";
+
+let text = (value) => { W.Text(value) };
+let tag = (name, fields) => { W.Tag(name, [], W.Record(fields)) };
+let wrapped = (name, value) => { W.Tag(name, [], text(value)) };
+let bare = (name) => { W.Tag(name, [], W.Null) };
+let document = (name, fields) => { W.Tag(name, [("protocol", W.Number(protocol))], W.Record(fields)) };
+let write = (value) => { Won.encode(value) };
+
+let modeValue = match { M.Exec => { bare("Exec") }, M.Data => { bare("Data") } };
+let argumentValue = match {
+  M.Literal(value) => { wrapped("Literal", value) }, M.Input(path) => { wrapped("Input", path) },
+  M.Work(path) => { wrapped("Work", path) }, M.Out(path) => { wrapped("Out", path) }
 };
-let rec unescapeChars = (chars) => {
-  match(chars) {
-    [] => { R.Ok([]) },
-    ['%', '2', '5', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['%', ..xs] }) },
-    ['%', '0', '9', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['\t', ..xs] }) },
-    ['%', '0', 'A', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['\n', ..xs] }) },
-    ['%', '0', 'D', ..rest] => { R.map(unescapeChars(rest), (xs) => { ['\r', ..xs] }) },
-    ['%', .._] => { R.Err("invalid protocol escape") },
-    [c, ..rest] => { R.map(unescapeChars(rest), (xs) => { [c, ..xs] }) }
-  }
+let operationValue = match {
+  M.Build(program, args) => { tag("Build", [("program", text(program)), ("args", W.List(I.map(args, argumentValue)))]) },
+  M.Install(source, dest, mode) => { tag("Install", [("source", text(source)), ("dest", text(dest)), ("mode", modeValue(mode))]) },
+  M.InstallTree(source, dest, mode) => { tag("InstallTree", [("source", text(source)), ("dest", text(dest)), ("mode", modeValue(mode))]) },
+  M.Launcher(image, dest) => { tag("Launcher", [("image", text(image)), ("dest", text(dest))]) }
 };
-let unescape = (text) => { R.map(unescapeChars(String.explode(text)), String.implode) };
-let line = (parts) => { I.join(I.map(parts, escape), "\t") ++ "\n" };
-let modeName = match { M.Exec => { "exec" }, M.Data => { "data" } };
-let argument = match {
-  M.Literal(text) => { "literal:" ++ text }, M.Input(path) => { "input:" ++ path },
-  M.Work(path) => { "work:" ++ path }, M.Out(path) => { "out:" ++ path }
-};
-let operation = match {
-  M.Build(program, args) => { line(["build", program, ..I.map(args, argument)]) },
-  M.Install(source, dest, mode) => { line(["install", source, dest, modeName(mode)]) },
-  M.InstallTree(source, dest, mode) => { line(["install-tree", source, dest, modeName(mode)]) },
-  M.Launcher(image, dest) => { line(["launcher", image, dest]) }
+let sourceValue = (source: M.Source) => { W.Record([("file", text(source.file)), ("path", text(source.path))]) };
+
+let describe = (name, description) => {
+  write(document("Package", [("name", text(name)), ("description", text(description))]))
 };
 let encode = (name, pkg: M.Package) => {
-  "pakman-subsetml-1\n" ++ line(["package", name, pkg.version])
-    ++ String.concat(I.map(pkg.sources, (source: M.Source) => { line(["source", source.file, source.path]) }))
-    ++ String.concat(I.map(pkg.install, operation))
-};
-let parseArgument = (text) => {
-  let rec split = (chars, acc) => {
-    match(chars) {
-      [] => { R.Err("missing build argument kind") },
-      [':', ..rest] => {
-        let body = String.implode(rest);
-        match(String.implode(List.rev(acc))) {
-          "literal" => { R.Ok(M.Literal(body)) }, "input" => { R.Ok(M.Input(body)) },
-          "work" => { R.Ok(M.Work(body)) }, "out" => { R.Ok(M.Out(body)) },
-          _ => { R.Err("unknown build argument kind") }
-        }
-      },
-      [c, ..rest] => { split(rest, [c, ..acc]) }
-    }
-  };
-  split(String.explode(text), [])
-};
-let rec parseLines = (lines, name, version, sources, ops) => {
-  match(lines) {
-    [] => { R.Ok(M.Plan(name, version, List.rev(sources), List.rev(ops))) },
-    [text, ..rest] => {
-      I.bind(I.traverse(I.fields('\t', text), unescape), (parts) => {
-        match(parts) {
-          ["source", file, path] => { parseLines(rest, name, version, [M.Source(file, path), ..sources], ops) },
-          ["build", command, ..args] => {
-            I.bind(I.traverse(args, parseArgument), (parsed) => { parseLines(rest, name, version, sources, [M.Build(command, parsed), ..ops]) })
-          },
-          ["install", source, dest, "exec"] => { parseLines(rest, name, version, sources, [M.Install(source, dest, M.Exec), ..ops]) },
-          ["install", source, dest, "data"] => { parseLines(rest, name, version, sources, [M.Install(source, dest, M.Data), ..ops]) },
-          ["install-tree", source, dest, "exec"] => { parseLines(rest, name, version, sources, [M.InstallTree(source, dest, M.Exec), ..ops]) },
-          ["install-tree", source, dest, "data"] => { parseLines(rest, name, version, sources, [M.InstallTree(source, dest, M.Data), ..ops]) },
-          ["launcher", image, dest] => { parseLines(rest, name, version, sources, [M.Launcher(image, dest), ..ops]) },
-          _ => { R.Err("unsupported or malformed package plan operation") }
-        }
-      })
-    }
-  }
-};
-let decode = (text) => {
-  let lines = String.tokens((c) => { c == '\n' })(text);
-  match(lines) {
-    ["pakman-subsetml-1", header, ..rest] => {
-      I.bind(I.traverse(I.fields('\t', header), unescape), (parts) => {
-        match(parts) { ["package", name, version] => { parseLines(rest, name, version, [], []) }, _ => { R.Err("invalid package header") } }
-      })
-    },
-    _ => { R.Err("expected pakman-subsetml-1 protocol") }
-  }
+  write(document("Plan", [
+    ("name", text(name)), ("version", text(pkg.version)),
+    ("sources", W.List(I.map(pkg.sources, sourceValue))),
+    ("install", W.List(I.map(pkg.install, operationValue)))
+  ]))
 };
 
+// Decoders read through Won's access chains and report a path on the first problem.
+let field = (found, key) => { Won.text(Won.get(found, key)) };
+let payloadField = (found, key) => { Won.text(Won.get(Won.payload(found), key)) };
+let unexpected = (found, kind) => { R.andThen(found, (node) => { Won.mismatch(node, kind) }) };
+let list = (found, f) => { R.andThen(Won.items(found), (nodes) => { I.traverse(nodes, (node) => { f(R.Ok(node)) }) }) };
+
+// A document's root tag, after checking its name and protocol.
+let opened = (source, name) => {
+  let found = Won.read(source);
+  R.andThen(Won.tagName(found), (actual) => {
+    R.andThen(Won.number(Won.attribute(found, "protocol")), (version) => {
+      if (actual == name && version == protocol) { Won.payload(found) } else {
+        unexpected(found, name ++ "<protocol = " ++ protocol ++ ">")
+      }
+    })
+  })
+};
+
+let mode = (found) => {
+  R.andThen(Won.tagName(found), (name) => {
+    match(name) { "Exec" => { R.Ok(M.Exec) }, "Data" => { R.Ok(M.Data) }, _ => { unexpected(found, "Exec or Data") } }
+  })
+};
+let argument = (found) => {
+  R.andThen(Won.tagName(found), (name) => {
+    R.andThen(Won.text(Won.payload(found)), (value) => {
+      match(name) {
+        "Literal" => { R.Ok(M.Literal(value)) }, "Input" => { R.Ok(M.Input(value)) },
+        "Work" => { R.Ok(M.Work(value)) }, "Out" => { R.Ok(M.Out(value)) },
+        _ => { unexpected(found, "Literal, Input, Work or Out") }
+      }
+    })
+  })
+};
+let placement = (found, make) => {
+  R.andThen(payloadField(found, "source"), (source) => {
+    R.andThen(payloadField(found, "dest"), (dest) => {
+      R.map(mode(Won.get(Won.payload(found), "mode")), (m) => { make(source, dest, m) })
+    })
+  })
+};
+let operation = (found) => {
+  R.andThen(Won.tagName(found), (name) => {
+    match(name) {
+      "Build" => {
+        R.andThen(payloadField(found, "program"), (program) => {
+          R.map(list(Won.get(Won.payload(found), "args"), argument), (args) => { M.Build(program, args) })
+        })
+      },
+      "Install" => { placement(found, (source, dest, m) => { M.Install(source, dest, m) }) },
+      "InstallTree" => { placement(found, (source, dest, m) => { M.InstallTree(source, dest, m) }) },
+      "Launcher" => {
+        R.andThen(payloadField(found, "image"), (image) => {
+          R.map(payloadField(found, "dest"), (dest) => { M.Launcher(image, dest) })
+        })
+      },
+      _ => { unexpected(found, "Build, Install, InstallTree or Launcher") }
+    }
+  })
+};
+let source = (found) => {
+  R.andThen(field(found, "file"), (file) => { R.map(field(found, "path"), (path) => { M.Source(file, path) }) })
+};
+
+let decode = (text) => {
+  let body = opened(text, "Plan");
+  R.mapErr(
+    R.andThen(field(body, "name"), (name) => {
+      R.andThen(field(body, "version"), (version) => {
+        R.andThen(list(Won.get(body, "sources"), source), (sources) => {
+          R.map(list(Won.get(body, "install"), operation), (install) => { M.Plan(name, version, sources, install) })
+        })
+      })
+    }),
+    Won.problemText
+  )
+};

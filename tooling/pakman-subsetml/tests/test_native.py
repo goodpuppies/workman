@@ -53,15 +53,40 @@ with tempfile.TemporaryDirectory(prefix="pakman-native-") as temporary:
     assert not launcher.exists() and not image.exists() and not manifest.exists()
     assert cli("list").stdout == ""
 
-    def encode(parts):
-        return "\t".join(s.replace("%", "%25").replace("\t", "%09").replace("\n", "%0A").replace("\r", "%0D") for s in parts)
+    # Operations keep a compact list spelling; `package` writes them as the WON plan.
+    def quote(text):
+        escapes = {'"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+        return '"' + "".join(escapes.get(c, f"\\x{ord(c):02x}" if ord(c) < 32 or ord(c) == 127 else c)
+                             for c in text) + '"'
+    def argument(text):
+        kind, _, value = text.partition(":")
+        return kind.capitalize() + "(" + quote(value) + ")"
+    def operation(op):
+        kind, *rest = op
+        if kind == "build":
+            return f"Build{{program = {quote(rest[0])} args = [{' '.join(map(argument, rest[1:]))}]}}"
+        if kind in ("install", "install-tree"):
+            name = "Install" if kind == "install" else "InstallTree"
+            return f"{name}{{source = {quote(rest[0])} dest = {quote(rest[1])} mode = {rest[2].capitalize()}}}"
+        return f"Launcher{{image = {quote(rest[0])} dest = {quote(rest[1])}}}"
     def package(name, operations):
         directory = stage / "paks" / name; directory.mkdir()
         program = directory / "pak"
-        text = "pakman-subsetml-1\n" + encode(["package", name, "1"]) + "\n"
-        text += "\n".join(encode(op) for op in operations) + "\n"
+        sources = " ".join(f"{{file = {quote(op[1])} path = {quote(op[2])}}}" for op in operations if op[0] == "source")
+        install = " ".join(operation(op) for op in operations if op[0] != "source")
+        text = (f"Plan<protocol = 1>{{name = {quote(name)} version = \"1\" "
+                f"sources = [{sources}] install = [{install}]}}\n")
+        raw(name, text)
+    def raw(name, text):
+        directory = stage / "paks" / name; directory.mkdir(exist_ok=True)
+        program = directory / "pak"
         program.write_text("#!/bin/sh\ncat <<'PAKMAN_TEST_PLAN'\n" + text + "PAKMAN_TEST_PLAN\n")
         program.chmod(0o755)
+    # A stale package and an unknown operation are refused, naming where the problem is.
+    raw("stale", 'Plan<protocol = 0>{name = "stale" version = "1" sources = [] install = []}\n')
+    assert "Plan<protocol = 1>" in cli("install", "stale", "1", good=False).stderr
+    raw("unknown", 'Plan<protocol = 1>{name = "unknown" version = "1" sources = [] install = [Explode]}\n')
+    assert "install[0]" in cli("install", "unknown", "1", good=False).stderr
     # Trees use the same per-file ownership and all-or-nothing validation.
     tree_build = ["build", "/bin/sh", "literal:-c",
                   "literal:mkdir -p \"$1/tree/nested\"; printf alpha > \"$1/tree/a file\"; printf beta > \"$1/tree/nested/b\"",

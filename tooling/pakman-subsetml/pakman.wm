@@ -1,4 +1,4 @@
-from "../../../SubsetML/src/subset_result.wm" import * as R;
+from "basis/result.wm" import * as R;
 from "./src/host.wm" import * as H;
 from "./src/io.wm" import * as I;
 from "./src/plan.wm" import * as Plan;
