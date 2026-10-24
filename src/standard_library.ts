@@ -100,8 +100,8 @@ export async function standardRuntimeGraph(): Promise<{
       path: module.path,
       publicName: module.alias,
       importOnly: !isAutoOpened(module.path),
-      emitName: `__wm_std_${module.alias}`,
-      hostMembers: [...(hostStructures.get(module.alias)?.valEnv.keys() ?? [])]
+      emitName: libraryEmitName(module),
+      hostMembers: [...((isAutoOpened(module.path) ? hostStructures.get(module.alias) : undefined)?.valEnv.keys() ?? [])]
         .filter((name) => !module.result.exports.has(name)),
       sourceMembers: [...module.result.exports.keys()],
     })),
@@ -183,8 +183,16 @@ export async function withoutStandardLibrary(
  * elaboration their JavaScript primitive imports need. Library modules see the initial basis and
  * their own imports, never the library's initial imports.
  */
-async function loadStandardModulesUncached(): Promise<LoadedStandardModule[]> {
-  const modules = await discoverStandardModules();
+function loadStandardModulesUncached(): Promise<LoadedStandardModule[]> {
+  return loadLibraryModules();
+}
+
+/** Infer library sources (by default the generated library). Exported so tests can supply sources. */
+export async function loadLibraryModules(
+  sources: Readonly<Record<string, string>> = librarySources,
+  jsSources: Readonly<Record<string, string>> = libraryJsSources,
+): Promise<LoadedStandardModule[]> {
+  const modules = await discoverStandardModules(sources, jsSources);
   const graph = libraryGraph(modules);
   const results = await analyzeModuleGraph(graph, { inferOptions: {} });
   return modules.map((module) => {
@@ -220,22 +228,24 @@ function libraryGraph(modules: readonly StandardModule[]): ModuleGraph {
           }]
           : []
       ),
-      emitName: `__wm_std_${module.alias}`,
+      emitName: libraryEmitName(module),
     }])),
   };
 }
 
 /**
- * Overlay a library module's exports on the initial-basis structure of the same name. That
- * structure holds only layer-0 material qualified by the library's namespace: compiler-owned types
- * (`Word8.Word`, `Word8Vector.Vector`) and the pervasive constructors (`List.Cons`, `Option.Some`,
- * `Result.Ok`). No library value is defined in TypeScript any more.
+ * Overlay an auto-opened library module's exports on the initial-basis structure of the same name,
+ * as `structure List = struct open List ... end` would. That structure holds only layer-0 material
+ * qualified by the library's namespace: compiler-owned types (`Word8.Word`, `Word8Vector.Vector`)
+ * and the pervasive constructors (`List.Cons`, `Option.Some`, `Result.Ok`). No library value is
+ * defined in TypeScript any more. An import-only module is exactly what its file declares, whatever
+ * its file is called.
  */
 function composeInitialStructure(module: LoadedStandardModule): LoadedStandardModule {
   const source = withStandardValueIds(module.result.exportedStructure, module.path);
-  const host = initialBasis(BASIS_PROFILES.default)
-    .instantiate()
-    .environment.strEnv.get(module.alias);
+  const host = isAutoOpened(module.path)
+    ? initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv.get(module.alias)
+    : undefined;
   const environment = host ? modifiedStaticEnv(host, source) : source;
   return {
     ...module,
@@ -265,6 +275,17 @@ function withStandardValueIds(
       return [name, { ...scheme, valueId: standardValueId(modulePath, qualified) }];
     })),
   );
+}
+
+/**
+ * The JavaScript binding of a library module. Auto-opened modules share one namespace of aliases;
+ * an import-only module is bound by whoever imports it, so its binding comes from its path
+ * (`subml-basis/subset_won.wm` is `__wm_lib_subml_basis_subset_won`).
+ */
+function libraryEmitName(module: { path: string; alias: string }): string {
+  return isAutoOpened(module.path)
+    ? `__wm_std_${module.alias}`
+    : `__wm_lib_${module.path.replace(/\.wm$/, "").replace(/[^A-Za-z0-9]/g, "_")}`;
 }
 
 /**
@@ -301,13 +322,14 @@ export async function discoverStandardModules(
   );
   const byAlias = new Map<string, string>();
   for (const module of modules) {
-    const existing = byAlias.get(module.alias);
+    // Only auto-opened modules are bound by alias; import-only ones are named by their importer.
+    const existing = isAutoOpened(module.path) ? byAlias.get(module.alias) : undefined;
     if (existing) {
       throw new Error(
         `library modules ${existing} and ${module.path} both define namespace ${module.alias}`,
       );
     }
-    byAlias.set(module.alias, module.path);
+    if (isAutoOpened(module.path)) byAlias.set(module.alias, module.path);
     for (const decl of module.module.decls) {
       if (decl.kind !== "JsImportDecl" || decl.target.kind !== "JsModule") continue;
       const { specifier } = decl.target;

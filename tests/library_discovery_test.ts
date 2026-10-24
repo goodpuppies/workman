@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
-import { discoverStandardModules, libraryModuleAlias } from "../src/standard_library.ts";
+import { discoverStandardModules, libraryModuleAlias, loadLibraryModules } from "../src/standard_library.ts";
 import { librarySources } from "../src/generated/assets.ts";
 import { libraryModuleUrl } from "../src/js_module_specifier.ts";
 import { analyzeFile, analyzeRecoveredFile } from "../src/compiler.ts";
@@ -58,11 +58,11 @@ Deno.test("library discovery reports missing imports, cycles, and duplicate name
   await assertRejects(
     () =>
       discoverStandardModules({
-        "subml-basis/option.wm": "let x = 1;\n",
-        "std/option.wm": "let y = 2;\n",
+        "std/word8.wm": "let x = 1;\n",
+        "std/word_8.wm": "let y = 2;\n",
       }),
     Error,
-    "both define namespace Option",
+    "both define namespace Word8",
   );
   await assertRejects(
     () =>
@@ -73,6 +73,22 @@ Deno.test("library discovery reports missing imports, cycles, and duplicate name
     Error,
     "library module std/a.wm imports missing JavaScript file std/js/a.js",
   );
+});
+
+Deno.test("import-only library modules are named by their path, not their file name", async () => {
+  // Only auto-opened std modules are bound by alias, so an import-only module may share a
+  // std module's or a built-in structure's name.
+  const modules = await loadLibraryModules({
+    "std/option.wm": "let fromStd = 1;\n",
+    "subml-basis/option.wm": "let fromBasis = 2;\n",
+    "pakman/text.wm": "let fromPakman = 3;\n",
+  });
+  const exports = (path: string) =>
+    [...modules.find((module) => module.path === path)!.result.exportedStructure.valEnv.keys()].sort();
+  // std/option.wm extends the built-in Option; the others are exactly what their files declare.
+  assertEquals(exports("std/option.wm").includes("fromStd"), true);
+  assertEquals(exports("subml-basis/option.wm"), ["fromBasis"]);
+  assertEquals(exports("pakman/text.wm"), ["fromPakman"]);
 });
 
 Deno.test("library JavaScript imports resolve to embedded library files", async () => {

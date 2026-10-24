@@ -59,9 +59,10 @@ compiler sources by relative path and holds the manager's store, build and extra
 
 ### Steps
 
-1. **Compiler: TypeScript library primitives.** `scripts/generate_assets.ts` also embeds `.ts`
-   files from a library's `js/` directory, and `runtimeJsModuleSpecifier` picks the `data:` media
-   type from the extension. Add a test that runs an embedded `.ts` primitive.
+1. **Compiler: TypeScript library primitives (done).** `scripts/generate_assets.ts` also embeds
+   `.ts` files from a library's `js/` directory, and `libraryModuleUrl` picks the `data:` media
+   type from the extension. `tests/library_discovery_test.ts` loads a TypeScript and a JavaScript
+   primitive through it.
 2. **A `pakman/` library directory**, embedded like `std/`, with:
    - the recipe API: `model.wm`, `package.wm`, `finders.wm`, and one module for the helpers
      recipes now take from `host.ts` and `io.wm` (`captures`, `capturesAll`, `jsonKeys`,
@@ -73,6 +74,26 @@ compiler sources by relative path and holds the manager's store, build and extra
 
    `"pakman/"` resolves through `libraryImport`; `src/pakman_imports.ts` is removed. Only files
    in the library exist, so manager internals are unreachable.
+
+   Library naming was fixed first (see below), so the files need no prefix: `"pakman/model.wm"`
+   is `pakman/model.wm`. Every library module, import-only ones included, is parsed and inferred
+   when the compiler loads its library, so the pakman modules add to every program's cold start.
+   Measure it, and keep the library to what recipes need.
+
+   **Library naming fix (done).** A library module's namespace alias came from its file's base
+   name and was treated as global for every library directory. That caused two bugs:
+   - An import-only module took on the members of a built-in structure with the same name, in
+     the type checker only: with a module `text.wm`, `Lib.of(7)` type-checked against WM's `Text`
+     and then failed at runtime.
+   - Two library modules with the same base name, such as an import-only `list.wm` beside
+     `std/list.wm`, stopped every program from compiling.
+
+   Following the Definition, only auto-opened `std/` modules are bound in the basis by name, and
+   only they extend a built-in structure (as `structure List = struct open List ... end` would,
+   by modification `E + E'`). An import-only module is exactly what its file declares and is
+   bound by its importer, so its emitted binding comes from its path
+   (`__wm_lib_subml_basis_subset_won`), and name uniqueness is checked only among `std/` modules.
+
 3. **The manager** (`tooling/pakman`) imports the shared modules as `"pakman/…"`. Its own
    `host.ts` keeps file I/O, the store, builds, extraction and recipe compilation. Recipe
    fingerprinting no longer walks `"pakman/"` imports; the compiler version covers them.
