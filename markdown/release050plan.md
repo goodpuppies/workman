@@ -120,13 +120,16 @@ compiler sources by relative path and holds the manager's store, build and extra
 
 Following [RELEASE.md](RELEASE.md):
 
-- [ ] Commit the `"pakman/"` work and the recipe migration.
-- [ ] Bring `main` up to the release branch (currently a fast-forward to `i32-integers`).
-- [ ] Set 0.5.0 in `deno.json`, `editors/vscode/package.json` and the VS Code lockfile.
-- [ ] `deno task publish` (local generation and VSIX only).
-- [ ] `deno task test`, plus `wm test` for pakman and testman.
-- [ ] `deno publish --dry-run` against the release contents.
-- [ ] Release notes from "Breaking changes since 0.4.3", including converting pakman state.
+- [x] Commit the `"pakman/"` work and the recipe migration (wm-mini `6fb4cbe`, pak `b85881f`).
+- [x] Bring `main` up to the release branch (fast-forwarded locally to `i32-integers`).
+- [x] Set 0.5.0 in `deno.json`, `editors/vscode/package.json` and the VS Code lockfile.
+- [x] `deno task publish` (local generation and VSIX only).
+- [x] `deno task test` (1228 passed, 1 ignored), plus `wm test` for pakman (80) and testman (9).
+  Fixed on the way: the semantic golden scanned untracked files (now `git ls-files`), two LSP
+  tests raced a fixed 1500 ms wait (now wait for diagnostics), a pattern test still used the
+  carrier field `fn`, and `user_paths.ts` read the home directory even with XDG variables set.
+- [x] `deno publish --dry-run` against the release contents.
+- [x] Release notes (`markdown/releases/0.5.0.md`) from "Breaking changes since 0.4.3", including converting pakman state.
 - [ ] Present the release commit and proposed tag; push and tag only after confirmation.
 
 ## Open items
