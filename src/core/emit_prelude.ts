@@ -239,38 +239,53 @@ const __wm_c_struct_to_buffer = (name, value) => {
     return Promise.resolve(__wm_basis_Err(__wm_js_error(error)));
   }
 };`,
-    `const __wm_eq = (a, b) => {
-  if (a === b) return true;
-  // Unequal primitive values cannot be structural containers. Reject them
-  // before probing vector symbols on primitive strings/numbers in hot comparisons.
-  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
-  const aBytes = a?.[__wm_word8_vector_data];
-  const bBytes = b?.[__wm_word8_vector_data];
-  if (aBytes !== undefined || bBytes !== undefined) {
-    return aBytes !== undefined && bBytes !== undefined && aBytes.length === bBytes.length &&
-      aBytes.every((item, index) => item === bBytes[index]);
+    `const __wm_eq = (left, right) => {
+  // Pairs still to compare, in an explicit stack: a list is nested cons cells,
+  // so recursion would use one JS frame per element and overflow on long lists.
+  const pending = [left, right];
+  const push = (aItems, bItems) => {
+    for (let index = aItems.length - 1; index >= 0; index--) pending.push(aItems[index], bItems[index]);
+  };
+  while (pending.length > 0) {
+    const b = pending.pop();
+    const a = pending.pop();
+    if (a === b) continue;
+    // Unequal primitive values cannot be structural containers. Reject them
+    // before probing vector symbols on primitive strings/numbers in hot comparisons.
+    if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+    const aBytes = a?.[__wm_word8_vector_data];
+    const bBytes = b?.[__wm_word8_vector_data];
+    if (aBytes !== undefined || bBytes !== undefined) {
+      if (!(aBytes !== undefined && bBytes !== undefined && aBytes.length === bBytes.length &&
+        aBytes.every((item, index) => item === bBytes[index]))) return false;
+      continue;
+    }
+    const aItems = a?.[__wm_vector_data];
+    const bItems = b?.[__wm_vector_data];
+    if (aItems !== undefined || bItems !== undefined) {
+      if (!(aItems !== undefined && bItems !== undefined && aItems.length === bItems.length)) return false;
+      push(aItems, bItems);
+      continue;
+    }
+    if (a?.[__wm_word8_vector_slice_data] !== undefined || b?.[__wm_word8_vector_slice_data] !== undefined) {
+      return false;
+    }
+    if (globalThis.Array.isArray(a) || globalThis.Array.isArray(b)) {
+      if (!(globalThis.Array.isArray(a) && globalThis.Array.isArray(b) && a.length === b.length)) return false;
+      push(a, b);
+      continue;
+    }
+    if ("ctor" in a || "ctor" in b) {
+      if (a.ctor !== b.ctor) return false;
+      pending.push(a.args, b.args);
+      continue;
+    }
+    const ak = Object.keys(a).sort();
+    const bk = Object.keys(b).sort();
+    if (!(ak.length === bk.length && ak.every((key, index) => key === bk[index]))) return false;
+    push(ak.map((key) => a[key]), bk.map((key) => b[key]));
   }
-  const aItems = a?.[__wm_vector_data];
-  const bItems = b?.[__wm_vector_data];
-  if (aItems !== undefined || bItems !== undefined) {
-    return aItems !== undefined && bItems !== undefined && aItems.length === bItems.length &&
-      aItems.every((item, index) => __wm_eq(item, bItems[index]));
-  }
-  if (a?.[__wm_word8_vector_slice_data] !== undefined || b?.[__wm_word8_vector_slice_data] !== undefined) {
-    return false;
-  }
-  if (globalThis.Array.isArray(a) || globalThis.Array.isArray(b)) {
-    return globalThis.Array.isArray(a) && globalThis.Array.isArray(b) && a.length === b.length &&
-      a.every((item, index) => __wm_eq(item, b[index]));
-  }
-  if ("ctor" in a || "ctor" in b) {
-    return a.ctor === b.ctor && __wm_eq(a.args, b.args);
-  }
-  const ak = Object.keys(a).sort();
-  const bk = Object.keys(b).sort();
-  return ak.length === bk.length && ak.every((key, index) =>
-    key === bk[index] && __wm_eq(a[key], b[key])
-  );
+  return true;
 };`,
     `const __wm_show = (value, seen = new WeakSet(), quoteStrings = false) => {
   if (value === undefined) return "void";

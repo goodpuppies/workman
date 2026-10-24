@@ -43,3 +43,15 @@ Deno.test("emitted equality retains vector contents and slice identity semantics
   assertEquals(equal(same, same), true);
   assertEquals(equal(slice(), slice()), false);
 });
+
+Deno.test("emitted equality compares long lists without recursion", () => {
+  const list = (length: number, last: unknown) => {
+    let cell: unknown = { ctor: 0, args: [] };
+    for (let index = 0; index < length; index++) {
+      cell = { ctor: 1, args: [[index === 0 ? last : "x", cell]] };
+    }
+    return cell;
+  };
+  assertEquals(equal(list(200000, "x"), list(200000, "x")), true);
+  assertEquals(equal(list(200000, "x"), list(200000, "y")), false);
+});
