@@ -1,8 +1,18 @@
-// Workman/JS implementation of the sole native-text primitive.
+// Workman/JS implementation of the native-text primitives.
 // Raw host units are validated by SubsetString before entering portable byte storage.
 // charCodeAt returns an integer from 0 to 65535, which is already a valid I32 value.
+// A Workman Char is a one-unit JS string, so the same host calls convert characters.
 from js.global("String.prototype.charCodeAt") import unsafe {
   call as charCodeAt: (String, Number) -> I32
+};
+// FFI signatures cannot name Char, so the character calls are imported at a type
+// variable and fixed by the wrappers below.
+from js.global("String.prototype.charCodeAt") import unsafe {
+  call as unitCode: (a, Number) -> I32
+};
+from js.global("String") import unsafe {
+  fromCharCode as codeUnit: I32 -> a,
+  fromCharCode as codeString: I32 -> String
 };
 let codes = (value: String) => {
   let size = match(value :> .length) {
@@ -13,4 +23,15 @@ let codes = (value: String) => {
     if (index < 0) { acc } else { go(index - 1, [charCodeAt(value, index), ..acc]) }
   };
   go(size - 1, [])
+};
+let charCode = (c: Char) => { unitCode(c, 0) };
+let codeChar = (code: I32) => { (codeUnit(code): Char) };
+let fromCodes = (values: List<I32>) => {
+  let rec go = (rest, acc) => {
+    match(rest) {
+      [] => { acc },
+      [code, ..tail] => { go(tail, acc ++ codeString(code)) }
+    }
+  };
+  go(values, "")
 };

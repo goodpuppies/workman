@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "6ec54885dc35ef23f3dba360c8ddc5ed7ec577c9",
+  "commit": "a579d09a5db847bc439fc07e67bb9e78f7d22edc",
   "modules": [
     "SubsetBytes",
     "SubsetChar",
@@ -27,9 +27,9 @@
   "sourceHashes": {
     "lib/subset_host.js": "639c0b14d54d6b4ebf18df8bb921ec912eb2eb1451e7f9c489c7da18be9d643c",
     "lib/subset_host.wm": "e4d7ad54a3520b7511b7aa33f784dd03784d6ce625fd806d7a39ad7f165e67a2",
-    "lib/subset_text_host.wm": "d92eb5e584e561a56d7d69131c2d3bc2daf4632b2797c0aaa510275f56a9b0e5",
+    "lib/subset_text_host.wm": "233c493bacc1d786c671e96dc12911d0ba8914adc4b5339e0d40d9b9d7c51326",
     "src/subset_bytes.sml": "ebe609d7fa96b647ceb7f9202f80d9cd9c320379c27802969b53fcbdd060c09d",
-    "src/subset_char.sml": "6258c88b7062b60f1fc7d254b8f71bc1c0dedd917673071a3bdbca5c0bcf1f70",
+    "src/subset_char.sml": "e399d001aea93679a278a32852f7c27d569fa70731ef73a712da2626f22375ec",
     "src/subset_io.sml": "aa3b30a0ca2b9c41f210333081f9b2e20db0204b04961de483ceef3a93e6b212",
     "src/subset_list.sml": "9ace26c4f5a900f51325f7590bd580a03b74a54989409118439e32bcdc3c93e7",
     "src/subset_list_pair.sml": "9ddba98ea509599d2a16c2d5683252bdf52833145ae0308a4fc031f871b9a5fa",
@@ -40,7 +40,7 @@
     "src/subset_result.sml": "a39c257e82fa2321388eeb5936a67c1db77a653c3942354cb218c2973c1c9423",
     "src/subset_sml_escape.sml": "a3cc9416ed78273723787e81715ef8cfeeca887dca7b810e3b1d8a5989f5cb1d",
     "src/subset_source.sml": "4eb5737397fcb370073fdf5638ed9533e6cfbac64057e79703e01eba2e4fc02b",
-    "src/subset_string.sml": "30eac54c2ac4041cfdbbc44eec16cb98cc30fdc864933a3813a3e0e4c08519e7",
+    "src/subset_string.sml": "311c4743215214e6a2c4b22acb06eab25bc8f14c88789107c5e7ff7d459a1009",
     "src/subset_unicode.sml": "52ad926dc2602480990f278f809e4bca6906e82e5fe49330458177ab944158f1",
     "src/subset_utf16.sml": "a21cb6047dc7e35353e1674899120a9515145dc3ffa1a1fa797cd06e29c3c603",
     "src/subset_utf16_source.sml": "ccbbc6aea1c566dc133a2776f9ad395c165b774323637d84b39ddc9b5c6f50b3",

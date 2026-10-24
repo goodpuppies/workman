@@ -1,6 +1,7 @@
 /* @subsetml
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_order.sml" import * as SubsetOrder;
+from "./subset_text_host.sml" import * as SubsetTextHost;
 */
 
 /* Custom Basis ASCII character operations.
@@ -15,6 +16,7 @@ from "./subset_order.sml" import * as SubsetOrder;
    Case conversion uses a bounded source table, requiring no code conversion primitive.
    Non-ASCII characters are unchanged; this is not Unicode case folding. */
 
+from "./subset_text_host.wm" import * as SubsetTextHost;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_order.wm" import * as SubsetOrder;
 
@@ -280,29 +282,15 @@ let byteChars = [
   '\u00ff'
 ];
 
+/* Code conversion is a host primitive: a scan of byteChars made every byte of text cost
+   hundreds of steps (docs/basis.md, "Byte character codes"). */
 let toCode = (c) => {
-  let rec go = match {
-    ([], Var(code)) => { SubsetResult.Err(NonByteCharacter) },
-    ([x, ..xs], Var(code)) => {
-      if (c == x) { SubsetResult.Ok(code) } else { go(xs, code + (1: I32)) }
-    }
-  };
-  go(byteChars, (0: I32))
+  let code = SubsetTextHost.charCode(c);
+  if (if (code >= (0: I32)) { code <= (255: I32) } else { false }) { SubsetResult.Ok(code) } else { SubsetResult.Err(NonByteCharacter) }
 };
 
-// Integer codes are validated against the byte range before lookup.
 let fromCode = (code: I32) => {
-  if (if (code >= (0: I32)) { code <= (255: I32) } else { false }) {
-    let rec go = match {
-      ([], Var(remaining)) => { SubsetResult.Err(InvalidCode) },
-      ([c, ..rest], Var(remaining)) => {
-        if (remaining <= (0: I32)) {
-          if (remaining >= (0: I32)) { SubsetResult.Ok(c) } else { SubsetResult.Err(InvalidCode) }
-        } else { go(rest, remaining - (1: I32)) }
-      }
-    };
-    go(byteChars, code)
-  } else { SubsetResult.Err(InvalidCode) }
+  if (if (code >= (0: I32)) { code <= (255: I32) } else { false }) { SubsetResult.Ok(SubsetTextHost.codeChar(code)) } else { SubsetResult.Err(InvalidCode) }
 };
 
 let rec member = (c: Char, chars) => {
