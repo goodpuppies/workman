@@ -26,7 +26,7 @@ let tests = [
     assertEqual(versions(releaseCandidates(options)(releases)), ["2.0.0"])
   }),
   test("normalized metadata from any provider preserves date, checksums and custom ref", () => {
-    let rules = .{ ..options, ref = (r, _) => { r.tag } };
+    let rules = .{ ..options, ref = (r, _) => { Some(r.tag) } };
     match(releaseCandidates(rules)(releases)) {
       [candidate] => { checks([
         assertEqual(candidate.published, "2020-01-01T00:00:00Z"),
@@ -57,5 +57,10 @@ let tests = [
       assertEqual(versions(found), ["2.0.0", "1.0.0"]),
       assertEqual(List.map(found, (c: Candidate) => { List.length(c.checksums) }), [0, 0])
     ])
+  }),
+  test("a release whose ref finds nothing is not a candidate", () => {
+    let rules = .{ ..stableReleases, ref = (r: Release, _) => { List.find(r.assets, (a: ReleaseAsset) => { a.name == "helper" }) :> Option.map((a: ReleaseAsset) => { a.name }) } };
+    let found = releaseCandidates(rules)([release("v2.0.0", false, [asset("app-2.0.0"), asset("helper")]), release("v1.0.0", false, [asset("app-1.0.0")])]);
+    checks([assertEqual(versions(found), ["2.0.0"]), assertEqual(List.map(found, (c: Candidate) => { c.ref }), ["helper"])])
   })
 ];

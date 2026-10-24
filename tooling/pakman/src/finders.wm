@@ -128,7 +128,8 @@ record ReleaseOptions = {
   accept: Release -> Bool,
   assets: String -> List<String>,
   channel: String,
-  ref: (Release, String) -> String
+  -- What `make` gets back for this release; None drops the release.
+  ref: (Release, String) -> Option<String>
 };
 
 -- Common release rules, independent of where the releases were fetched.
@@ -138,7 +139,7 @@ let stableReleases: ReleaseOptions = .{
   accept = (release: Release) => { !release.prerelease },
   assets = (_) => { [] },
   channel = "stable",
-  ref = (_, _) => { "" }
+  ref = (_, _) => { Some("") }
 };
 
 let releaseCandidates = (options: ReleaseOptions) => {
@@ -147,7 +148,8 @@ let releaseCandidates = (options: ReleaseOptions) => {
       :> Option.andThen((version) => {
         let missingAsset = List.any(options.assets(version), (name) => { !hasAsset(release, name) });
         if (options.accept(release) && !missingAsset) {
-          Some(Candidate(version, release.published, options.channel, releaseChecksums(release), options.ref(release, version)))
+          options.ref(release, version)
+            :> Option.map((ref) => { Candidate(version, release.published, options.channel, releaseChecksums(release), ref) })
         } else { None }
       })
   };
