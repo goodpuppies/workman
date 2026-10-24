@@ -26,6 +26,7 @@ export type LoadedStandardModule = StandardModule & {
 
 let standardLibraryPromise: Promise<InitialImport[]> | undefined;
 let standardModulesPromise: Promise<LoadedStandardModule[]> | undefined;
+let onDemandModulesPromise: Promise<LoadedStandardModule[]> | undefined;
 
 export function loadStandardLibrary(): Promise<InitialImport[]> {
   standardLibraryPromise ??= loadStandardLibraryUncached();
@@ -60,21 +61,50 @@ function isAutoOpened(path: string): boolean {
 }
 
 /**
- * Results of the library modules by module id, for import edges that name a library module
- * (`js.host`) from a graph that does not contain it.
+ * Library modules inferred only for a program that imports one of them (`"pakman/…"`), so other
+ * programs don't pay for them at startup. They may import any other library module.
  */
-export async function libraryImportResults(): Promise<ModuleMap<InferResult>> {
-  return new Map(
-    (await loadStandardModules()).map((module) => [moduleId(module.path), module.result]),
+export function isLoadedOnDemand(path: string): boolean {
+  return path.startsWith("pakman/");
+}
+
+const onDemandModuleIds = new Set(
+  Object.keys(librarySources).filter(isLoadedOnDemand).map((path) => moduleId(path)),
+);
+
+/** Whether `graph` contains or imports a library module that is loaded on demand. */
+export function reachesOnDemandLibrary(graph: ModuleGraph): boolean {
+  return [...graph.nodes.values()].some((node) =>
+    onDemandModuleIds.has(node.id) ||
+    node.imports.some((edge) => onDemandModuleIds.has(edge.target))
   );
 }
 
-export function loadStandardModules(): Promise<LoadedStandardModule[]> {
-  standardModulesPromise ??= loadStandardModulesUncached();
-  return standardModulesPromise;
+/**
+ * Results of the library modules by module id, for import edges that name a library module
+ * (`js.host`) from a graph that does not contain it.
+ */
+export async function libraryImportResults(onDemand = false): Promise<ModuleMap<InferResult>> {
+  return new Map(
+    (await loadStandardModules(onDemand)).map((module) => [moduleId(module.path), module.result]),
+  );
 }
 
-export async function standardRuntimeGraph(): Promise<{
+/**
+ * The analyzed library: every module except those loaded on demand, plus those when `onDemand`.
+ * The on-demand modules are analyzed against the results of the others, so a program sees one
+ * analysis of each library module either way.
+ */
+export function loadStandardModules(onDemand = false): Promise<LoadedStandardModule[]> {
+  standardModulesPromise ??= loadLibraryModules(
+    Object.fromEntries(Object.entries(librarySources).filter(([path]) => !isLoadedOnDemand(path))),
+  );
+  if (!onDemand) return standardModulesPromise;
+  onDemandModulesPromise ??= standardModulesPromise.then(loadOnDemandModules);
+  return onDemandModulesPromise;
+}
+
+export async function standardRuntimeGraph(onDemand = false): Promise<{
   graph: ModuleGraph;
   results: ModuleMap<InferResult>;
   namespaces: {
@@ -88,7 +118,7 @@ export async function standardRuntimeGraph(): Promise<{
     sourceMembers: string[];
   }[];
 }> {
-  const modules = await loadStandardModules();
+  const modules = await loadStandardModules(onDemand);
   const graph = libraryGraph(modules);
   const ids = new Map(modules.map((module) => [module.path, moduleId(module.path)]));
   const hostStructures = initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv;
@@ -101,7 +131,10 @@ export async function standardRuntimeGraph(): Promise<{
       publicName: module.alias,
       importOnly: !isAutoOpened(module.path),
       emitName: libraryEmitName(module),
-      hostMembers: [...((isAutoOpened(module.path) ? hostStructures.get(module.alias) : undefined)?.valEnv.keys() ?? [])]
+      hostMembers: [
+        ...((isAutoOpened(module.path) ? hostStructures.get(module.alias) : undefined)?.valEnv
+          .keys() ?? []),
+      ]
         .filter((name) => !module.result.exports.has(name)),
       sourceMembers: [...module.result.exports.keys()],
     })),
@@ -124,7 +157,11 @@ export async function withStandardLibrary(
   results: ModuleMap<InferResult>,
 ): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
   if (!usesStandardLibrary(graph)) return { graph, results };
-  return mergeLibraryGraph(graph, results, await standardRuntimeGraph());
+  return mergeLibraryGraph(
+    graph,
+    results,
+    await standardRuntimeGraph(reachesOnDemandLibrary(graph)),
+  );
 }
 
 export function usesStandardLibrary(graph: ModuleGraph): boolean {
@@ -165,7 +202,7 @@ export async function withoutStandardLibrary(
   results: ModuleMap<InferResult>,
 ): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
   if (!usesStandardLibrary(graph)) return { graph, results };
-  const library = (await standardRuntimeGraph()).graph.nodes;
+  const library = (await standardRuntimeGraph(reachesOnDemandLibrary(graph))).graph.nodes;
   if (!graph.order.some((id) => library.has(id))) return { graph, results };
   const order = graph.order.filter((id) => !library.has(id));
   return {
@@ -179,22 +216,38 @@ export async function withoutStandardLibrary(
 }
 
 /**
- * Infer the library through the same staged pipeline as a program, so library modules get the FFI
- * elaboration their JavaScript primitive imports need. Library modules see the initial basis and
- * their own imports, never the library's initial imports.
+ * Infer library sources (by default the generated library) through the same staged pipeline as a
+ * program, so library modules get the FFI elaboration their JavaScript primitive imports need.
+ * Library modules see the initial basis and their own imports, never the library's initial imports.
+ * Exported so tests can supply sources.
  */
-function loadStandardModulesUncached(): Promise<LoadedStandardModule[]> {
-  return loadLibraryModules();
-}
-
-/** Infer library sources (by default the generated library). Exported so tests can supply sources. */
 export async function loadLibraryModules(
   sources: Readonly<Record<string, string>> = librarySources,
   jsSources: Readonly<Record<string, string>> = libraryJsSources,
 ): Promise<LoadedStandardModule[]> {
-  const modules = await discoverStandardModules(sources, jsSources);
+  return analyzeLibraryModules(await discoverStandardModules(sources, jsSources));
+}
+
+/** `loaded` followed by the on-demand library modules, analyzed against `loaded`. */
+async function loadOnDemandModules(
+  loaded: LoadedStandardModule[],
+): Promise<LoadedStandardModule[]> {
+  const sources = Object.entries(librarySources).filter(([path]) => isLoadedOnDemand(path));
+  const modules = await discoverStandardModules(
+    Object.fromEntries(sources),
+    libraryJsSources,
+    new Set(loaded.map((module) => module.path)),
+  );
+  const external = new Map(loaded.map((module) => [moduleId(module.path), module.result]));
+  return [...loaded, ...await analyzeLibraryModules(modules, external)];
+}
+
+async function analyzeLibraryModules(
+  modules: StandardModule[],
+  externalResults: ModuleMap<InferResult> = new Map(),
+): Promise<LoadedStandardModule[]> {
   const graph = libraryGraph(modules);
-  const results = await analyzeModuleGraph(graph, { inferOptions: {} });
+  const results = await analyzeModuleGraph(graph, { inferOptions: {}, externalResults });
   return modules.map((module) => {
     const id = moduleId(module.path);
     return composeInitialStructure({
@@ -205,7 +258,10 @@ export async function loadLibraryModules(
   });
 }
 
-/** Module graph of the library alone, in import order. Each call builds fresh nodes. */
+/**
+ * Module graph of the library alone, in import order. Each call builds fresh nodes. Imports may
+ * name library modules outside `modules`, analyzed earlier.
+ */
 function libraryGraph(modules: readonly StandardModule[]): ModuleGraph {
   const ids = new Map(modules.map((module) => [module.path, moduleId(module.path)]));
   return {
@@ -222,7 +278,7 @@ function libraryGraph(modules: readonly StandardModule[]): ModuleGraph {
             referrer: ids.get(module.path)!,
             specifier: decl.path,
             specifierNode: decl.pathNode ?? decl.node,
-            target: ids.get(standardImportPath(module.path, decl.path))!,
+            target: moduleId(standardImportPath(module.path, decl.path)),
             path: standardImportPath(module.path, decl.path),
             clause: decl.clause,
           }]
@@ -306,6 +362,8 @@ export function libraryModuleAlias(path: string): string {
 export async function discoverStandardModules(
   sources: Readonly<Record<string, string>> = librarySources,
   jsSources: Readonly<Record<string, string>> = libraryJsSources,
+  /** Paths of library modules already loaded, which `sources` may import. */
+  loaded: ReadonlySet<string> = new Set(),
 ): Promise<StandardModule[]> {
   const modules = await Promise.all(
     Object.entries(sources).map(async ([path, source]): Promise<StandardModule> => {
@@ -340,14 +398,14 @@ export async function discoverStandardModules(
       }
     }
   }
-  return orderByImports(modules);
+  return orderByImports(modules, loaded);
 }
 
 /**
  * Depth-first topological order over library imports. Modules are visited in path order, so the
  * result is deterministic and independent of how the sources were enumerated.
  */
-function orderByImports(modules: StandardModule[]): StandardModule[] {
+function orderByImports(modules: StandardModule[], loaded: ReadonlySet<string>): StandardModule[] {
   const byPath = new Map(modules.map((module) => [module.path, module]));
   const state = new Map<string, "visiting" | "done">();
   const ordered: StandardModule[] = [];
@@ -362,6 +420,7 @@ function orderByImports(modules: StandardModule[]): StandardModule[] {
       if (decl.kind !== "ImportDecl") continue;
       const target = standardImportPath(module.path, decl.path);
       const imported = byPath.get(target);
+      if (!imported && loaded.has(target)) continue;
       if (!imported) {
         throw new Error(`library module ${module.path} imports missing library module ${target}`);
       }

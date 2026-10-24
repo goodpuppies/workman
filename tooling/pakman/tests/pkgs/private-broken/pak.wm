@@ -1,5 +1,5 @@
-from "../../../src/model.wm" import *;
-from "../../../src/package.wm" import { serve };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serve };
 let versions = () => { Task.succeed([Candidate("1.0.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
 let make = (version, _) => { Package(version, [], [Symlink(file(package("private-runtime", "~2.8.0"), "missing"), ".local/bin/private-broken")], []) };
 let definition: Definition = .{

@@ -12,7 +12,6 @@ import { type ModuleId, moduleId } from "./module_id.ts";
 import type { AstNode } from "./source.ts";
 import { libraryImport } from "./host_modules.ts";
 import { librarySources } from "./generated/assets.ts";
-import { pakmanImport } from "./pakman_imports.ts";
 
 export type VirtualFileSystem = Map<string, string>;
 
@@ -313,8 +312,6 @@ async function resolveEntryPath(
 }
 
 function resolveImport(fromPath: string, specifier: string): string {
-  const packageApi = pakmanImport(specifier);
-  if (packageApi) return packageApi;
   if (isPosixVirtualPath(fromPath)) {
     return posix.normalize(posix.join(posix.dirname(fromPath), specifier));
   }

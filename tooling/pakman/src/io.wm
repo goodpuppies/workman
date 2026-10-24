@@ -1,4 +1,5 @@
--- Host operations with String errors that say what failed.
+-- Host operations with String errors that say what failed. Those recipes also use are in
+-- "pakman/io.wm"; the manager's own (files, the store, builds) are here.
 
 from js.module("./host.ts") import * as Host;
 from js.module("./host.ts") import unsafe {
@@ -6,43 +7,35 @@ from js.module("./host.ts") import unsafe {
   nowSeconds as nowRaw: Void -> Number,
   isoToSeconds as isoRaw: String -> Number,
   dirname as dirnameRaw: String -> String,
-  eprint as eprintRaw: String -> Void,
   confirmYes: String -> Bool,
-  exit as exitRaw: Number -> Void,
-  parseIntOr as parseIntRaw: (String, Number) -> Number,
   denoPath as denoPathRaw: Void -> String,
   prettyJson as prettyRaw: Js.Value -> String
 };
-from "./fun.wm" import { mapAll };
+from "pakman/fun.wm" import { mapAll };
+from "pakman/io.wm" import * as Shared;
 
 -- Imports are never re-exported, so these are rebound here for other modules.
 let envOr = (name, fallback) => { envOrRaw(name, fallback) };
 let nowSeconds = () => { nowRaw() };
 let isoToSeconds = (iso) => { isoRaw(iso) };
 let dirname = (path) => { dirnameRaw(path) };
-let eprint = (text) => { eprintRaw(text) };
+let eprint = Shared.eprint;
+let exit = Shared.exit;
+let parseIntOr = Shared.parseIntOr;
+let describe = Shared.describe;
+let args = Shared.args;
+let fetchText = Shared.fetchText;
+let runCapture = Shared.runCapture;
+let series = Shared.series;
+let each = Shared.each;
 
 let confirm = (question) => { confirmYes(question) };
-let exit = (code) => { exitRaw(code) };
-let parseIntOr = (text, fallback) => { parseIntRaw(text, fallback) };
 let denoPath = () => { denoPathRaw() };
 
 -- JSON rendering, for store manifests (host.ts reads them).
 let prettyJson = (value: Js.Value) => { prettyRaw(value) };
 let jsonList = (items, f) => { Js.Array.fromList(mapAll(items, f)) };
 
-let describe = (what) => {
-  (error) => {
-    match(error) {
-      Js.Error(message) => { what ++ ": " ++ message },
-      Js.Unknown => { what ++ ": unknown error" }
-    }
-  }
-};
-
-let args = () => { Host.argv() :> Result.map(Js.Array.toList) :> Result.getOr([]) };
-
-let fetchText = (url) => { Host.fetchText(url) :> Task.mapErr(describe("fetch " ++ url)) };
 let download = (url, dest) => { Host.download(url, dest) :> Task.mapErr(describe("download " ++ url)) };
 let sha256File = (path) => { Host.sha256File(path) :> Task.mapErr(describe("hash " ++ path)) };
 let checkInstanceFile = (tree, path) => {
@@ -117,9 +110,6 @@ let extractPayload = (chain, choices, dest) => {
   Host.extract(Js.Array.fromList(chain), Js.Array.fromList([]), dest, 0, Js.Array.fromList(choices))
     :> Task.mapErr(describe("extract payload into " ++ dest))
 };
-let runCapture = (cmd, args) => {
-  Host.runCapture(cmd, Js.Array.fromList(args)) :> Task.mapErr(describe(cmd))
-};
 let compileProgram = (source, compiled) => {
   Host.compileProgram(source, compiled) :> Task.mapErr(describe("compile"))
 };
@@ -152,11 +142,6 @@ let walkEntries = (root) => {
     :> Task.map((flat) => { pairs(Js.Array.toList(flat), []) })
     :> Task.mapErr(describe("walk " ++ root))
 };
-
--- Runs tasks one after another, keeping their results.
-let series = (items, f) => { Task.traverse(items, f) };
-
-let each = (items, f) => { Task.traverse(items, f) :> Task.map((_) => { void }) };
 
 let stageBuildInput = (source, inputs, name) => {
   Host.stageBuildInput(source, inputs, name) :> Task.mapErr(describe("stage input " ++ name))

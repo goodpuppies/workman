@@ -1,13 +1,36 @@
 -- Upstream version finders.
 
+from "../std/list.wm" import * as List;
+from "../std/monad.wm" import * as Monad;
+from "../std/option.wm" import * as Option;
+from "../std/result.wm" import * as Result;
+from "../std/task.wm" import * as Task;
 from js.global("JSON") import { parse } as JSON;
-from "./io.wm" import { fetchText };
+from "./io.wm" import { fetchText, headInfo, series };
 from "./model.wm" import { Checksum, Candidate };
-from js.module("./host.ts") import unsafe { jsonTextOr: (Js.Value, String) -> String, captures: (String, String) -> Js.Array<String> };
-from js.module("./host.ts") import { headInfo };
-from "./io.wm" import { describe };
-from "./io.wm" import { series };
+from js.module("./js/recipe.ts") import unsafe {
+  jsonTextOr as jsonTextRaw: (Js.Value, String) -> String,
+  jsonKeys as jsonKeysRaw: Js.Value -> Js.Array<String>,
+  captures as capturesRaw: (String, String) -> Js.Array<String>,
+  capturesAll as capturesAllRaw: (String, String) -> Js.Array<Js.Array<String>>,
+  jsonHasField: (Js.Value, String) -> Bool,
+  jsonField as jsonFieldRaw: (Js.Value, String) -> Js.Value
+};
 from "./fun.wm" import { mapAll, filterAll };
+
+-- The full match of `pattern` in `text` followed by its capture groups, or [] when it does not match.
+let captures = (pattern, text) => { Js.Array.toList(capturesRaw(pattern, text)) };
+
+-- Every match of `pattern` in `text`, each as its full match followed by its capture groups.
+let capturesAll = (pattern, text) => { capturesAllRaw(pattern, text) :> Js.Array.toList :> mapAll(Js.Array.toList) };
+
+-- Dynamic JSON, for documents a WM record can't describe (object keys that are data,
+-- such as version numbers, or names like "x86_64-linux").
+let jsonKeys = (value: Js.Value) => { Js.Array.toList(jsonKeysRaw(value)) };
+let jsonField = (value: Js.Value, key) => {
+  if (jsonHasField(value, key)) { Ok(jsonFieldRaw(value, key)) } else { Err("JSON: missing field " ++ key) }
+};
+let jsonTextOr = (value: Js.Value, fallback) => { jsonTextRaw(value, fallback) };
 
 -- `digest` is "sha256:<hex>", or null on assets uploaded before GitHub computed digests.
 record GithubAsset = { name: String, browser_download_url: String, digest: Js.Value };
@@ -42,7 +65,7 @@ let fetchJson = (url) => {
 };
 
 let toAsset = (asset: GithubAsset) => {
-  let digest = jsonTextOr(asset.digest, "");
+  let digest = jsonTextRaw(asset.digest, "");
   let sha256 = if (digest :> .startsWith("sha256:") :> Result.getOr(false)) {
     digest :> .slice(7) :> Result.getOr("")
   } else {
@@ -116,7 +139,7 @@ let releaseChecksums = (release: Release) => {
 -- Extract the first capture, or the whole match if the pattern has no group.
 -- This is a string operation, independent of a release provider.
 let matchText = (pattern) => (text) => {
-  match(captures(pattern, text) :> Js.Array.toList) {
+  match(captures(pattern, text)) {
     [_, captured, .._] => { Some(captured) },
     [whole] => { Some(whole) },
     _ => { None }
@@ -160,13 +183,12 @@ let releaseCandidates = (options: ReleaseOptions) => {
 -- for downloads whose version only shows in the redirect target.
 let redirectTarget = (url) => {
   let pair = (parts) => {
-    match(Js.Array.toList(parts)) {
+    match(parts) {
       [final, modified] => { Ok((final, modified)) },
       _ => { Err("HEAD " ++ url ++ ": unexpected response") }
     }
   };
   headInfo(url)
-    :> Task.mapErr(describe("HEAD " ++ url))
     :> Task.andThen((parts) => { pair(parts) :> Task.fromResult })
 };
 

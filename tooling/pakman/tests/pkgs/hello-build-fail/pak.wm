@@ -1,5 +1,5 @@
-from "../../../src/model.wm" import *;
-from "../../../src/package.wm" import { serveWithBuild };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serveWithBuild };
 from "../../../src/io.wm" import { mkdirp, writeText };
 let definition: Definition = .{
   name = "hello-build-fail", description = "fixture: interrupted build", homepage = "", license = "MIT",

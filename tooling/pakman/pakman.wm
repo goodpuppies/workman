@@ -6,12 +6,12 @@ from "./src/lock.wm" import * as Lock;
 from "./src/instances.wm" import * as Instances;
 from "./src/resolve.wm" import { resolveWithOptions, choose, Default, minAgeDays, oldEnough };
 from "./src/packages.wm" import { versions };
-from "./src/model.wm" import { Candidate, System, User };
+from "pakman/model.wm" import { Candidate, System, User };
 from "./src/store.wm" import { realize };
 from "./src/install.wm" import * as Install;
-from "./src/fun.wm" import { foldSeries, ignore, mapAll, filterAll, appendAll, concatAll };
-from "./src/refs.wm" import { dependencies };
-from "./src/text.wm" import { join };
+from "pakman/fun.wm" import { foldSeries, ignore, mapAll, filterAll, appendAll, concatAll };
+from "pakman/refs.wm" import { dependencies };
+from "pakman/text.wm" import { join };
 from "./src/io.wm" import { args, eprint, exit, series, nowSeconds, addPackageDirectory };
 
 let via = Monad.via;

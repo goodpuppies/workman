@@ -67,11 +67,14 @@ file:
 from "basis/won.wm" import * as Won;   -- the SubsetML Basis module subset_won.wm
 from "std/result.wm" import { getOr }; -- Workman's own library
 from js.host("table") import * as Table; -- a JS host helper (see jsffi.md)
+from "pakman/package.wm" import { serve }; -- pakman's package recipe API
 ```
 
 `std/` modules are also open as namespaces in every program (`Result`, `Option`, `List`, …), so
 importing one only chooses a local name. SubsetML Basis modules (`basis/`) are never open
-implicitly: WON, the text codecs, I/O and the other Basis modules need an import. Importing a
+implicitly: WON, the text codecs, I/O and the other Basis modules need an import. `pakman/` is
+the API package recipes are written against (see `tooling/pakman/README.md`); its modules are
+analyzed only for programs that import one, so other programs don't pay for them. Importing a
 library module gives the same module the rest of the program sees, not a copy. A local folder
 with one of these names is imported with an explicit relative path, `"./basis/..."`.
 

@@ -5,6 +5,7 @@
 -- can't drift apart. Every document's root tag carries `protocol` so a stale
 -- compiled package is detected instead of misread.
 
+from "../std/result.wm" import * as Result;
 from "./model.wm" import *;
 from "./refs.wm" import { parts };
 from "./won.wm" import * as D;

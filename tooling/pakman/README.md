@@ -27,7 +27,7 @@ let wm = package("wm", "~0.4.2");
 file(wm, ".local/bin/wm")
 ```
 
-`package` and `file` come from `src/model.wm`. Put these references in `requires`,
+`package` and `file` come from `pakman/model.wm`. Put these references in `requires`,
 symlinks, or structured text just like `Own`/`Of`. Resolution selects the newest
 matching age-eligible release, independently of globally exposed versions.
 Private dependencies currently require `User` scope and the same target, and
@@ -54,8 +54,9 @@ short name is not a global identity. Only explicit resolve/install/update refres
 the repository. Builds use the recorded recipe and source snapshot, including
 when another profile has since selected a newer snapshot.
 
-Use `from "pakman/model.wm" import *;` and similar `pakman/*.wm` imports for
-location-independent access to the package API. `pakman/repository.wm` supplies
+Recipes reach pakman only through `pakman/*.wm` imports, such as
+`from "pakman/model.wm" import *;`, which ship with the compiler (see
+[Writing a package](#writing-a-package)). `pakman/repository.wm` supplies
 `versions` and `source(name)` for a package providing its own repository snapshot,
 and `resource(name, relativePath)` for files beside a recipe. `shellRef(path)`
 embeds a path reference safely as one POSIX shell argument.
@@ -253,21 +254,34 @@ The suite uses testman (`../testman`, a proposal for wm's testing framework). It
 pakman.wm        command line
 ~/git/pak/paks/   the packages (a separate repo): <name>/pak.wm each
 src/packages.wm  finds, compiles and runs package programs (sandboxed)
-src/package.wm   `serve`: the entry point package programs call
-src/plan.wm      the WON protocol between packages and pakman
-src/won.wm       WON helpers shared by the protocol and pakman's files
-src/model.wm     Definition, Package, InstallOp, Policy
-src/finders.wm   upstream version finders (GitHub releases, GitLab tags, redirects)
 src/resolve.wm   picks a version by policy, pins source hashes
 src/lock.wm      the lock: versions, tracks, source hashes
 src/store.wm     builds into <state>/store/<hash>-<name>-<version>
 src/install.wm   generations: checks a package set, plans the switch
 src/apply.wm     the applier: the only code that writes into a root (owned-record, checks, copies)
-src/io.wm        host operations with readable errors
-src/fun.wm       small curried pipeline helpers (keepIf, foldSeries, unique, ignore)
-src/refs.wm      the dependency graph: finds references in plans, renders them to paths
-src/host.ts      the only code that touches Deno
+src/won_file.wm  reads and writes pakman's WON state files
+src/io.wm        the manager's host operations with readable errors
+src/host.ts      the manager's Deno code: files, the store, builds, extraction
 ```
+
+The package API and the modules pakman shares with packages are in wm-mini's `pakman/` directory,
+embedded in the compiler and imported as `"pakman/…"`:
+
+```
+pakman/model.wm       Definition, Package, InstallOp, Policy
+pakman/package.wm     `serve`: the entry point package programs call
+pakman/finders.wm     upstream version finders (GitHub releases, GitLab tags, redirects),
+                      regex captures and dynamic JSON helpers
+pakman/io.wm          what recipes may do: fetchText, headInfo, runCapture, series, each, describe
+pakman/repository.wm  recipes that ship in their own repository
+pakman/plan.wm        the WON protocol between packages and pakman
+pakman/refs.wm        the dependency graph: finds references in plans, renders them to paths
+pakman/won.wm         WON helpers shared by the protocol and pakman's files
+pakman/text.wm, fun.wm  text and curried pipeline helpers (keepIf, foldSeries, unique, ignore)
+pakman/js/recipe.ts   their Deno code (self-contained, since it is embedded)
+```
+
+The manager's own modules (`store.wm`, `lock.wm`, …) can't be imported by a recipe.
 
 ## Writing a package
 
@@ -354,7 +368,7 @@ Run extraction tests with `deno test -A tests/extract-host.test.ts`.
 ## Package-controlled builds
 
 Packages may include `Build("callback-id", ["/usr/bin/cc", ...])` in their plan
-and use `serveWithBuild(definition, build)` from `src/package.wm`. The callback
+and use `serveWithBuild(definition, build)` from `pakman/package.wm`. The callback
 has type `BuildContext -> Task<Void, String>`. It receives the selected version
 and upstream ref plus `/inputs` (locked source files, read-only), `/work`
 (scratch), and `/out` (the root-relative installation tree). The package owns

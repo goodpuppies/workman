@@ -36,6 +36,8 @@ export function libraryImport(specifier: string): LibraryImport | undefined {
   }
   const std = /^std\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
   if (std) return { path: `std/${std[1]}`, description: `library module "${specifier}"` };
+  const pakman = /^pakman\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
+  if (pakman) return { path: `pakman/${pakman[1]}`, description: `pakman module "${specifier}"` };
   const basis = /^basis\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
   if (basis) {
     return { path: `subml-basis/subset_${basis[1]}`, description: `Basis module "${specifier}"` };

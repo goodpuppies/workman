@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { pakmanImport } from "../../../src/pakman_imports.ts";
 import { recipeSource, repositoryLocator, repositoryRecipe } from "../src/repository-host.ts";
 import { compileProgram } from "../src/host.ts";
 
@@ -132,13 +131,6 @@ Deno.test("repository locations and package API imports reject ambiguous or esca
     }
     assert(rejected, `accepted ${input}`);
   }
-  let rejected = false;
-  try {
-    pakmanImport("pakman/../secret.wm");
-  } catch {
-    rejected = true;
-  }
-  assert(rejected, "package API import escaped its root");
 });
 
 Deno.test("local snapshots require pak.wm and recipe resources cannot escape", async () => {

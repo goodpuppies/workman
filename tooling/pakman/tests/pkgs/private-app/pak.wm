@@ -1,5 +1,5 @@
-from "../../../src/model.wm" import *;
-from "../../../src/package.wm" import { serve };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serve };
 let versions = () => { Task.succeed([Candidate("1.0.0", "2020-01-01T00:00:00Z", "stable", [], ""), Candidate("1.1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
 let make = (version, _) => { let runtime = if (version == "1.0.0") { file(package("private-wm", "~0.4.1"), ".local/bin/private-wm") } else { file(package("private-runtime", "2.9.0"), ".local/bin/private-runtime") };
 Package(version, [], [WriteText(".local/bin/private-app", cat([lit("#!/bin/sh\nexec "), ref(runtime), lit(" \"$@\"\n")]), Exec)], []) };

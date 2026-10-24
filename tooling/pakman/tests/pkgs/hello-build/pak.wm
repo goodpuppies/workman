@@ -1,5 +1,5 @@
-from "../../../src/model.wm" import *;
-from "../../../src/package.wm" import { serveWithBuild };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serveWithBuild };
 from "../../../src/io.wm" import { mkdirp, writeText, runCapture, copyFile };
 
 let definition: Definition = .{

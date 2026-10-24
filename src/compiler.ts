@@ -38,8 +38,10 @@ import {
 } from "./diagnostic_model.ts";
 import { prune, type Scheme, show, type Ty } from "./types.ts";
 import {
+  isLoadedOnDemand,
   libraryImportResults,
   mergeLibraryGraph,
+  reachesOnDemandLibrary,
   standardInferOptions,
   standardRuntimeGraph,
   usesStandardLibrary,
@@ -351,7 +353,7 @@ async function coreProgramWithStandardRuntime(input: {
 }): Promise<CoreProgram> {
   const core = coreProgramFromAnalysis(input.graph, input.results, input.elaboration);
   if (!usesStandardLibrary(input.graph)) return core;
-  const standard = await standardRuntimeGraph();
+  const standard = await standardRuntimeGraph(reachesOnDemandLibrary(input.graph));
   if (!input.graph.order.some((id) => standard.graph.nodes.has(id))) return core;
   return {
     ...core,
@@ -494,7 +496,7 @@ async function analyzeStrictSnapshot(
 /** Extends a program graph with the library modules, for facts the tooling snapshot relies on. */
 async function libraryExtension(graph: ModuleGraph): Promise<ExtendGraph | undefined> {
   if (!usesStandardLibrary(graph)) return undefined;
-  const library = await standardRuntimeGraph();
+  const library = await standardRuntimeGraph(reachesOnDemandLibrary(graph));
   return (graph, results) => mergeLibraryGraph(graph, results, library);
 }
 
@@ -697,7 +699,9 @@ async function sourceImports(
 ): Promise<{ results: Map<string, InferResult>; edges: ModuleImportEdge[] }> {
   const declarations = module.decls.filter((decl) => decl.kind === "ImportDecl");
   if (declarations.length === 0) return { results: new Map(), edges: [] };
-  const library = await libraryImportResults();
+  const library = await libraryImportResults(
+    declarations.some((decl) => isLoadedOnDemand(libraryImport(decl.path)?.path ?? "")),
+  );
   const results = new Map<string, InferResult>();
   const edges: ModuleImportEdge[] = [];
   for (const decl of declarations) {

@@ -6,17 +6,17 @@
 -- tree: name, version, target, requirements, source hashes and
 -- install steps. It does not cover the machine that ran the build.
 
-from "./model.wm" import *;
+from "pakman/model.wm" import *;
 from "./packages.wm" import { PackageInfo, make };
 from "./packages.wm" import * as Packages;
 from "./instances.wm" import * as Instances;
-from "./plan.wm" import { targetName, scopeName, opValue, refValue };
-from "./won.wm" import * as D;
-from "./refs.wm" import { render, symlinkTarget, dependencies, baseFiles, foreignFiles, instances, mapRefs, storePaths, refsOf, runtimePlan, resolvePath };
+from "pakman/plan.wm" import { targetName, scopeName, opValue, refValue };
+from "pakman/won.wm" import * as D;
+from "pakman/refs.wm" import { render, symlinkTarget, dependencies, baseFiles, foreignFiles, instances, mapRefs, storePaths, refsOf, runtimePlan, resolvePath };
 from "./lock.wm" import { LockEntry, LockedSource };
 from "./paths.wm" import { Paths };
 from "./io.wm" import *;
-from "./fun.wm" import { ignore, mapAll, concatAll };
+from "pakman/fun.wm" import { ignore, mapAll, concatAll };
 from js.module("./host.ts") import unsafe { packageStoreName: String -> String };
 
 let via = Monad.via;

@@ -4,9 +4,10 @@
 -- `pakman resolve`.
 
 from "./io.wm" import { mkdirp, dirname };
-from "./text.wm" import { before };
-from "./fun.wm" import { ignore };
-from "./won.wm" import * as D;
+from "pakman/text.wm" import { before };
+from "pakman/fun.wm" import { ignore };
+from "pakman/won.wm" import * as D;
+from "./won_file.wm" import * as WonFile;
 
 -- `verified`: the hash matched a checksum upstream published, rather than
 -- only being recorded from the first download.
@@ -47,7 +48,7 @@ let decodeEntry = (found) => {
 
 -- A missing lock is empty.
 let read = (path) => {
-  D.readFile(path) :> Task.andThen((file) => {
+  WonFile.readFile(path) :> Task.andThen((file) => {
     match(file) {
       None => { Task.succeed([]) },
       Some(found) => {
@@ -60,7 +61,7 @@ let read = (path) => {
 };
 
 let write = (path, entries) => {
-  Task|mkdirp(dirname(path)), D.writeFile(path, D.document("Lock", protocol, D.list(entries, entryValue)))| :> Task.map(ignore)
+  Task|mkdirp(dirname(path)), WonFile.writeFile(path, D.document("Lock", protocol, D.list(entries, entryValue)))| :> Task.map(ignore)
 };
 
 let find = (entries: List<LockEntry>, name) => {

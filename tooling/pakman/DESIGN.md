@@ -69,16 +69,16 @@ protocol; a freshness dashboard, CI checks, or the future native PS2 client are 
 - **Lightweight, embedded-grade by design.** v1 doesn't run on the PS2, but the design must not
   rule it out: no daemon, and nothing ever evaluates the whole package set; a command only runs the
   packages it needs.
-- **v1 is wm on Deno and uses JS APIs freely.** All Deno access goes through `src/host.ts`. Once
+- **v1 is wm on Deno and uses JS APIs freely.** All Deno access goes through `src/host.ts`, and
+  for package programs `pakman/js/recipe.ts`. Once
   `../SubsetML` (wm → SML → MLton) is mature enough, pakman gets rewritten off the JS APIs to run
   natively on the PS2.
 - **Part of wm:** pakman lives in wm-mini's `tooling/pakman` and runs as `wm pakman`, so it always
   compiles itself and its packages with the wm it ships with (`PAKMAN_WM` overrides for packages).
-  Packages can import pakman's library using stable `pakman/*.wm` API imports.
-  Existing relative imports into a neighboring WM checkout remain supported.
+  Packages import pakman's API as `pakman/*.wm`, a library embedded in the compiler.
 - **Scale:** real file lists are large (zig unpacks to ~20,000 files), and std's `List.map`,
   `filter`, `append` and `concat` recurse once per element outside tail position, which overflows
-  the JavaScript stack. pakman uses loop-safe versions (`src/fun.wm`) for anything that can be big.
+  the JavaScript stack. pakman uses loop-safe versions (`pakman/fun.wm`) for anything that can be big.
 - **pakman packages applications and native libraries, never language libraries.** No
   `python-foo` or `rust-foo` packages. pakman never writes to `site-packages`, `~/.cargo` or
   `node_modules`, so the user's own `pip`/`uv`/`cargo`/`npm` are never affected. Apps with language
@@ -171,8 +171,8 @@ generations) happens in pakman; packages only describe.
 A package is `paks/<name>/pak.wm`: it defines a `Definition` and hands it to `serve`.
 
 ```wm
-from "../../../wm-mini/tooling/pakman/src/model.wm" import *;
-from "../../../wm-mini/tooling/pakman/src/package.wm" import { serve };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serve };
 
 let definition: Definition = .{
   name = "t3-code",
@@ -192,8 +192,8 @@ touch the network. `make` returns a `Package` (see "Package model").
 
 ### Protocol
 
-`serve` (`src/package.wm`) answers three commands, each printing one WON document. Encoders and
-decoders live together in `src/plan.wm` so the two sides can't drift; every document's root tag
+`serve` (`pakman/package.wm`) answers three commands, each printing one WON document. Encoders and
+decoders live together in `pakman/plan.wm` so the two sides can't drift; every document's root tag
 carries `protocol` (currently 11, as in `Plan<protocol = 11>{...}`) so a stale compiled package is
 detected.
 
@@ -205,7 +205,7 @@ detected.
 
 Install steps, references and text parts are tags, such as `Install{source path mode = Exec}`,
 `Of{package path}` and `Lit("...")`. Text inside a plan travels as a flat list of parts.
-`src/won.wm` holds the encoding and decoding helpers shared by every pakman file format.
+`pakman/won.wm` holds the encoding and decoding helpers shared by every pakman file format.
 
 A package can be run by hand for debugging: `wm run ~/git/pak/paks/t3-code/pak.wm -- make <version> ""`.
 
@@ -230,16 +230,18 @@ There is no package index. Packages live in a separate repo, `../pak` (pakman is
 is to nixpkgs): every `paks/<name>/pak.wm` is a package, and its folder can hold patches and other
 files. `PAKMAN_PKGS` (colon-separated) overrides the directories; the first one wins on duplicate
 names. pakman compiles each package on its own into `<state>/programs/<name>.js` and reuses it until
-the package file or any file in pakman's `src/` is newer. A changed package recompiles alone (~1.6 s);
+the package's files or the compiler (whose `src/` embeds the `pakman/` library) change. A changed package recompiles alone (~1.6 s);
 a cached command step costs ~25 ms.
 
-Package files outside the checkout can use `pakman/model.wm`, `pakman/package.wm`, and the
-other `pakman/*.wm` API imports. This is a built-in package API namespace, not a general-purpose
-language package resolver. Repository-native recipes no longer need a neighboring WM checkout.
+Packages import pakman only as `pakman/model.wm`, `pakman/package.wm` and the other modules of
+wm-mini's `pakman/` directory, which is embedded in the compiler like `std/`. Only those modules
+exist under `pakman/`: the manager's internals are not part of the API. This is a built-in
+package API namespace, not a general-purpose language package resolver, and packages need no
+neighboring wm checkout.
 
 ## Package model
 
-The types in `src/model.wm`:
+The types in `pakman/model.wm`:
 
 ```wm
 type Target = | Host | Ps2;
@@ -319,7 +321,7 @@ its archive choices participate in the normal plan/store identity.
 
 References are data. Every edge from a package to another package, or to the base system, is a
 `PathRef` somewhere in its plan: a symlink target, a reference inside written text, or an entry in
-`requires`. `src/refs.wm` finds them with ordinary functions over the plan:
+`requires`. `pakman/refs.wm` finds them with ordinary functions over the plan:
 
 - `dependencies(pkg)`: the other pakman packages it needs (`Of` names)
 - `foreignFiles(pkg)`: the specific files it uses in them
@@ -504,8 +506,8 @@ System packages, the home directory for User packages, or `--root DIR`.
 
 ## Code conventions
 
-- **One host boundary.** `src/host.ts` is the only code that touches Deno; `src/io.wm` wraps it with
-  readable `String` errors.
+- **One host boundary.** `src/host.ts` (and `pakman/js/recipe.ts` for package programs) is the only
+  code that touches Deno; `src/io.wm` and `pakman/io.wm` wrap it with readable `String` errors.
 - **Carrier procedures.** Effectful code follows wm's documented style: named `Monad.via Task`
   transformations, one pipeline per procedure, values threaded as tuples.
 - **`Task|a(), b()|` for effects in order.** Written inline it runs the steps one after another and
@@ -513,7 +515,7 @@ System packages, the home directory for User packages, or `--root DIR`.
   `via Task (x) => ...` stage. Steps are never bound to names first (Tasks start eagerly).
 - **io functions stay plain**, not lifted with `via Task`: their arguments are pure, so lifting
   would only add `Task.succeed` wrapping.
-- **Loop-safe lists.** Use `mapAll`, `filterAll`, `appendAll`, `concatAll` (`src/fun.wm`) instead of
+- **Loop-safe lists.** Use `mapAll`, `filterAll`, `appendAll`, `concatAll` (`pakman/fun.wm`) instead of
   std's non-tail versions anywhere a list can hold a package's files; write recursions with
   accumulators. Package files with small lists can use std.
 

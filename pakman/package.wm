@@ -5,6 +5,7 @@
 -- pakman then runs it as `<package> describe | versions | make <version> <ref>`.
 -- Each command prints one WON document (see plan.wm) on stdout.
 
+from "../std/task.wm" import * as Task;
 from "./model.wm" import *;
 from "./plan.wm" import { encodeInfo, encodeCandidates, encodePlan };
 from "./io.wm" import { args, eprint, exit };

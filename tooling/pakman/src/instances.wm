@@ -1,14 +1,15 @@
 -- Resolution snapshots for package-owned dependency graphs. Build reads these
 -- snapshots without discovering releases. Legacy Of references remain separate.
-from "./model.wm" import *;
+from "pakman/model.wm" import *;
 from "./packages.wm" import * as Packages;
 from "./lock.wm" import { LockEntry, LockedSource, entryText, sourceValue, decodeSource };
-from "./won.wm" import * as D;
+from "pakman/won.wm" import * as D;
+from "./won_file.wm" import * as WonFile;
 from "./resolve.wm" import { pin, minAgeDays, oldEnough };
 from "./paths.wm" import { Paths };
-from "./refs.wm" import { instances, dependencies };
+from "pakman/refs.wm" import { instances, dependencies };
 from "./semver.wm" import * as Semver;
-from "./fun.wm" import { mapAll, filterAll, appendAll, foldSeries };
+from "pakman/fun.wm" import { mapAll, filterAll, appendAll, foldSeries };
 from "./io.wm" import *;
 
 record Edge = { name: String, selector: String, node: String };
@@ -67,7 +68,7 @@ let read = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
   identity(info, entry) :> via Task (id, _) => {
     let path = graphFile(paths, id);
     let rerun = "; run pakman resolve " ++ info.name ++ " to record private dependencies";
-    D.readFile(path) :> Task.andThen((file) => {
+    WonFile.readFile(path) :> Task.andThen((file) => {
       match(file) {
         None => { Task.fail(path ++ " is missing" ++ rerun) },
         Some(found) => {
@@ -138,7 +139,7 @@ let resolve = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
     if (instances(plan) == []) { Task.succeed(void) } else {
       visit(paths, info, entry, [], Graph("", [])) :> via Task (root, graph: Graph) => {
         let path = graphFile(paths, root);
-        Task|mkdirp(dirname(path)), D.writeFile(path, encode(.{ ..graph, root }))|
+        Task|mkdirp(dirname(path)), WonFile.writeFile(path, encode(.{ ..graph, root }))|
           :> Task.map((_) => { void })
       }
     }

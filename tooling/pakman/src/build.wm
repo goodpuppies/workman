@@ -1,5 +1,5 @@
 -- Optional conveniences; packages remain ordinary programs and choose their order.
-from "./model.wm" import *;
+from "pakman/model.wm" import *;
 from "./io.wm" import { runCapture, mkdirp, dirname, copyFile };
 
 let input = (ctx: BuildContext, name) => { ctx.inputs ++ "/" ++ name };

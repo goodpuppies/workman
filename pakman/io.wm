@@ -1,0 +1,53 @@
+-- Host operations for package recipes, with String errors that say what failed.
+-- The manager's own operations (files, store, builds) are in tooling/pakman/src/io.wm.
+
+from "../std/list.wm" import * as List;
+from "../std/task.wm" import * as Task;
+from js.module("./js/recipe.ts") import unsafe {
+  argv as argvRaw: Void -> Js.Array<String>,
+  eprint as eprintRaw: String -> Void,
+  exit as exitRaw: Number -> Void,
+  parseIntOr as parseIntRaw: (String, Number) -> Number,
+  fetchText as fetchRaw: (String, String -> result, String -> result) -> task,
+  headInfo as headRaw: (String, Js.Array<String> -> result, String -> result) -> task,
+  runCapture as runRaw: (String, Js.Array<String>, String -> result, String -> result) -> task
+};
+
+// The primitives that can fail are typed with free type variables: each settles with the Result
+// its `ok` or `err` callback builds. The bindings below state the real types.
+
+let eprint = (text) => { eprintRaw(text) };
+let exit = (code) => { exitRaw(code) };
+let parseIntOr = (text, fallback) => { parseIntRaw(text, fallback) };
+
+let describe = (what) => {
+  (error) => {
+    match(error) {
+      Js.Error(message) => { what ++ ": " ++ message },
+      Js.Unknown => { what ++ ": unknown error" }
+    }
+  }
+};
+
+let failed = (what) => (message) => { Err(what ++ ": " ++ message) };
+
+let args = () => { Js.Array.toList(argvRaw()) };
+
+let fetchText: String -> Task<String, String> = (url) => {
+  fetchRaw(url, (text) => { Ok(text) }, failed("fetch " ++ url))
+};
+
+-- Where `url` finally redirects to and its Last-Modified date as ISO-8601 ("" if unknown).
+let headInfo: String -> Task<List<String>, String> = (url) => {
+  headRaw(url, (parts) => { Ok(Js.Array.toList(parts)) }, failed("HEAD " ++ url))
+};
+
+-- Runs a command and returns its stdout; a non-zero exit fails with its stderr.
+let runCapture: (String, List<String>) -> Task<String, String> = (cmd, args) => {
+  runRaw(cmd, Js.Array.fromList(args), (text) => { Ok(text) }, failed(cmd))
+};
+
+-- Runs tasks one after another, keeping their results.
+let series = (items, f) => { Task.traverse(items, f) };
+
+let each = (items, f) => { Task.traverse(items, f) :> Task.map((_) => { void }) };

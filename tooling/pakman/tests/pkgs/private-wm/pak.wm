@@ -1,5 +1,5 @@
-from "../../../src/model.wm" import *;
-from "../../../src/package.wm" import { serve };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serve };
 let versions = () => { Task.succeed([Candidate("0.4.1", "2020-01-01T00:00:00Z", "stable", [], "")]) };
 let make = (version, _) => { Package(version, [], [WriteText(".local/bin/private-wm", cat([lit("#!/bin/sh\nexec "), shellRef(file(package("private-runtime", "~2.8.0"), ".local/bin/private-runtime")), lit(" \"$@\"\n")]), Exec)], []) };
 let definition: Definition = .{

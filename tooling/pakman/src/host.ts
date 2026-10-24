@@ -6,7 +6,6 @@
 // boundary small for the later rewrite off the JS APIs.
 
 const userAgent = "pakman/0.1 (+https://github.com/goodpuppies)";
-import { pakmanImport } from "../../../src/pakman_imports.ts";
 import { libraryImport } from "../../../src/host_modules.ts";
 export { packageDirectories, addPackageDirectory } from "../../../src/user_config.ts";
 export { pakmanStateDirectory } from "../../../src/user_paths.ts";
@@ -78,10 +77,6 @@ export async function checkInstanceClosure(tree: string): Promise<void> {
   await visit(tree);
 }
 
-export function argv(): string[] {
-  return Deno.args;
-}
-
 export function envOr(name: string, fallback: string): string {
   return Deno.env.get(name) ?? fallback;
 }
@@ -94,17 +89,6 @@ export function nowSeconds(): number {
 export function isoToSeconds(iso: string): number {
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? -1 : Math.floor(ms / 1000);
-}
-
-/** The full match followed by every capture group, or [] when nothing matches. */
-export function captures(pattern: string, text: string): string[] {
-  const match = text.match(new RegExp(pattern));
-  return match ? Array.from(match, (part) => part ?? "") : [];
-}
-
-// Every match of `pattern` in `text`, each as its captures (whole match first).
-export function capturesAll(pattern: string, text: string): string[][] {
-  return Array.from(text.matchAll(new RegExp(pattern, "g")), (match) => Array.from(match, (part) => part ?? ""));
 }
 
 /** Every full match of a global pattern's first capture group. */
@@ -125,15 +109,6 @@ function headers(): HeadersInit {
   return token
     ? { "User-Agent": userAgent, "Authorization": `Bearer ${token}` }
     : { "User-Agent": userAgent };
-}
-
-export async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: headers() });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`GET ${url}: HTTP ${response.status}`);
-  }
-  return await response.text();
 }
 
 /** Downloads `url` to `dest` (via a temporary file, so `dest` never holds a partial download). */
@@ -367,22 +342,9 @@ export async function runQuiet(cmd: string, args: string[]): Promise<number> {
   }
 }
 
-export function eprint(text: string): void {
-  console.error(text);
-}
-
-export function exit(code: number): void {
-  Deno.exit(code);
-}
-
 export function dirname(path: string): string {
   const index = path.lastIndexOf("/");
   return index <= 0 ? "/" : path.slice(0, index);
-}
-
-/** -1, 0 or 1 by code-unit order (not locale order, so it is stable everywhere). */
-export function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 // Whether `text` contains `letters` in order, not necessarily adjacent: ogb in oscgoesbrrr.
@@ -390,11 +352,6 @@ export function hasLetters(letters: string, text: string): boolean {
   let at = 0;
   for (const letter of text) if (letter === letters[at]) at++;
   return at === letters.length;
-}
-
-/** The decimal integer in `text` (surrounding whitespace allowed), or `fallback`. */
-export function parseIntOr(text: string, fallback: number): number {
-  return /^\s*\d+\s*$/.test(text) ? Number.parseInt(text, 10) : fallback;
 }
 
 /** JSON with two-space indentation and a trailing newline, for files people read and diff. */
@@ -440,7 +397,7 @@ export async function compileProgram(source: string, compiled: string): Promise<
   const visited = new Set<string>();
   const visit = async (file: string) => {
     file = await Deno.realPath(file);
-    if (repositoryRoot && !file.startsWith(`${repositoryRoot}/`) && !file.startsWith(`${pakmanSrc}/`)) {
+    if (repositoryRoot && !file.startsWith(`${repositoryRoot}/`)) {
       throw new Error(`repository recipe import escapes its snapshot: ${file}`);
     }
     if (visited.has(file)) return;
@@ -448,9 +405,9 @@ export async function compileProgram(source: string, compiled: string): Promise<
     const text = await Deno.readTextFile(file);
     inputs.push(file, await sha256Text(text));
     for (const match of text.matchAll(/^\s*from\s+["']([^"']+)["']/gm)) {
-      // "std/" and "basis/" modules are embedded in the compiler, fingerprinted below.
+      // "std/", "basis/" and "pakman/" modules are embedded in the compiler, fingerprinted below.
       if (libraryImport(match[1])) continue;
-      await visit(pakmanImport(match[1]) ?? decodeURIComponent(new URL(match[1], `file://${file}`).pathname));
+      await visit(decodeURIComponent(new URL(match[1], `file://${file}`).pathname));
     }
   };
   await visit(source);
@@ -545,41 +502,6 @@ export async function extract(chain: string[], members: string[], dest: string, 
   } finally {
     for (const temp of temps) await Deno.remove(temp).catch(() => {});
   }
-}
-
-// ---------------------------------------------------------------------------
-// Dynamic JSON, for documents a wm record can't describe (object keys that are
-// data, such as version numbers, or names like "x86_64-linux").
-
-/** The keys of a JSON object in document order, or [] for anything else. */
-export function jsonKeys(value: unknown): string[] {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
-}
-
-/** The field `key` of a JSON object; fails when it is missing. */
-export function jsonField(value: unknown, key: string): unknown {
-  if (value === null || typeof value !== "object" || !(key in value)) {
-    throw new Error(`missing field ${key}`);
-  }
-  return (value as Record<string, unknown>)[key];
-}
-
-/** A JSON string value, or `fallback` for null, missing or non-string values. */
-export function jsonTextOr(value: unknown, fallback: string): string {
-  return typeof value === "string" ? value : fallback;
-}
-
-/**
- * Follows redirects with a HEAD request. Returns [final URL, Last-Modified as
- * ISO-8601 or ""], for downloads whose version is only visible in where a
- * stable link redirects to.
- */
-export async function headInfo(url: string): Promise<string[]> {
-  const response = await fetch(url, { method: "HEAD", redirect: "follow", headers: headers() });
-  if (!response.ok) throw new Error(`HEAD ${url}: HTTP ${response.status}`);
-  const modified = response.headers.get("last-modified");
-  const ms = modified ? Date.parse(modified) : NaN;
-  return [response.url, Number.isNaN(ms) ? "" : new Date(ms).toISOString()];
 }
 
 // ---------------------------------------------------------------------------

@@ -3,14 +3,16 @@
 -- Encoders build values with the helpers below and decoders read them through
 -- Won's access chains, which report a path on the first problem. A document's
 -- root is a tag with a `protocol` number, so a file or package program in an
--- older format is refused instead of misread. Files are read and written as
--- bytes; text values become WM strings through Won.textString.
+-- older format is refused instead of misread. Text values become WM strings
+-- through Won.textString. pakman reads and writes its files as bytes
+-- (tooling/pakman/src/won_file.wm).
 
-from "basis/won.wm" import * as Won;
-from "basis/won_value.wm" import * as W;
-from "basis/text.wm" import * as Utf8;
-from "basis/string.wm" import * as ByteString;
-from "./io.wm" import { readBytesOr, writeBytes, parseIntOr };
+from "../std/result.wm" import * as Result;
+from "../subml-basis/subset_won.wm" import * as Won;
+from "../subml-basis/subset_won_value.wm" import * as W;
+from "../subml-basis/subset_text.wm" import * as Utf8;
+from "../subml-basis/subset_string.wm" import * as ByteString;
+from "./io.wm" import { parseIntOr };
 from "./fun.wm" import { mapAll };
 
 -- ---------------------------------------------------------------------------
@@ -78,19 +80,4 @@ let opened = (found, name, protocol) => {
       }
     })
   })
-};
-
--- ---------------------------------------------------------------------------
--- Files
-
--- None when the file does not exist.
-let readFile = (path) => {
-  readBytesOr(path, "") :> Task.map((bytes) => { if (bytes == "") { None } else { Some(Won.read(bytes)) } })
-};
-
-let writeFile = (path, value) => {
-  match(Won.encode(value)) {
-    Ok(bytes) => { writeBytes(path, bytes ++ "\n", 420) },
-    Err(reason) => { Task.fail(path ++ ": " ++ reason) }
-  }
 };

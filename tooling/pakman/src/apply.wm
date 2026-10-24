@@ -17,9 +17,10 @@
 -- applier (root for /), never to the user who built them.
 
 from "./io.wm" import *;
-from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, ignore, unique };
-from "./text.wm" import { compare, join };
-from "./won.wm" import * as D;
+from "pakman/fun.wm" import { mapAll, filterAll, appendAll, concatAll, ignore, unique };
+from "pakman/text.wm" import { compare, join };
+from "pakman/won.wm" import * as D;
+from "./won_file.wm" import * as WonFile;
 
 let via = Monad.via;
 
@@ -57,7 +58,7 @@ let recordFile = (root) => { recordDir(root) ++ "/owned.won" };
 -- A missing record owns nothing.
 let readOwned = (root) => {
   let file = recordFile(root);
-  D.readFile(file) :> Task.andThen((found) => {
+  WonFile.readFile(file) :> Task.andThen((found) => {
     match(found) {
       None => { Task.succeed([]) },
       Some(document) => {
@@ -71,7 +72,7 @@ let readOwned = (root) => {
 
 let writeOwned = (root, files: List<String>) => {
   let owned = D.document("Owned", ownedProtocol, D.record([("files", D.strings(files))]));
-  Task|mkdirp(recordDir(root)), D.writeFile(recordFile(root), owned)| :> Task.map(ignore)
+  Task|mkdirp(recordDir(root)), WonFile.writeFile(recordFile(root), owned)| :> Task.map(ignore)
 };
 
 let isSafePath = (path) => {
@@ -200,7 +201,7 @@ let applyFile = (file) => {
       }
     }
   };
-  D.readFile(file)
+  WonFile.readFile(file)
     :> decode
     :> via Task (plan) => { apply(plan) }
 };

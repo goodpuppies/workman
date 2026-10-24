@@ -1,6 +1,7 @@
 # 0.5.0 release plan
 
-Status: planning, 2026-10-24. Nothing is committed, tagged or published for 0.5.0.
+Status: 2026-10-24. Steps 1 to 5 are done in the working trees (wm-mini and `~/git/pak`); the
+release checklist is next. Nothing is tagged or published for 0.5.0.
 
 0.5.0 collects the breaking changes since 0.4.3 (23 commits on `i32-integers`, which is ahead
 of `main` with nothing behind) and makes `"pakman/"` the only way a package recipe reaches
@@ -63,7 +64,7 @@ compiler sources by relative path and holds the manager's store, build and extra
    `.ts` files from a library's `js/` directory, and `libraryModuleUrl` picks the `data:` media
    type from the extension. `tests/library_discovery_test.ts` loads a TypeScript and a JavaScript
    primitive through it.
-2. **A `pakman/` library directory**, embedded like `std/`, with:
+2. **A `pakman/` library directory (done)**, embedded like `std/`, with:
    - the recipe API: `model.wm`, `package.wm`, `finders.wm`, and one module for the helpers
      recipes now take from `host.ts` and `io.wm` (`captures`, `capturesAll`, `jsonKeys`,
      `jsonField`, `jsonTextOr`, `series`, `describe`);
@@ -76,9 +77,20 @@ compiler sources by relative path and holds the manager's store, build and extra
    in the library exist, so manager internals are unreachable.
 
    Library naming was fixed first (see below), so the files need no prefix: `"pakman/model.wm"`
-   is `pakman/model.wm`. Every library module, import-only ones included, is parsed and inferred
-   when the compiler loads its library, so the pakman modules add to every program's cold start.
-   Measure it, and keep the library to what recipes need.
+   is `pakman/model.wm`. `repository.wm` joined the library too, since repository-native recipes
+   use it.
+
+   **Cold start.** Inferring the pakman modules with the rest of the library took `wm check` on a
+   hello program from 2.28 s to 2.80 s. They are now analyzed on demand: `loadStandardModules(true)`
+   analyzes `pakman/` against the already-loaded library's results (so `std/` keeps one analysis
+   and one set of type identities), and only for graphs that reach a `pakman/` module
+   (`reachesOnDemandLibrary`). Cold start is back to 2.27 s.
+
+   **Primitives without reflection.** JS import reflection can't see embedded `wm-library:`
+   TypeScript, and std uses only `unsafe` primitive imports, so `pakman/` does the same. A
+   primitive that can fail takes `ok`/`err` callbacks and settles with the Result they build, so
+   `pakman/io.wm` gives `Task<_, String>` without `Js.Error`. The FFI checker rejects a `Result`
+   returned from a synchronous JS call, so `jsonField` is `jsonHasField` plus a field read.
 
    **Library naming fix (done).** A library module's namespace alias came from its file's base
    name and was treated as global for every library directory. That caused two bugs:
@@ -94,20 +106,21 @@ compiler sources by relative path and holds the manager's store, build and extra
    bound by its importer, so its emitted binding comes from its path
    (`__wm_lib_subml_basis_subset_won`), and name uniqueness is checked only among `std/` modules.
 
-3. **The manager** (`tooling/pakman`) imports the shared modules as `"pakman/…"`. Its own
+3. **The manager (done)** (`tooling/pakman`) imports the shared modules as `"pakman/…"`. Its own
    `host.ts` keeps file I/O, the store, builds, extraction and recipe compilation. Recipe
    fingerprinting no longer walks `"pakman/"` imports; the compiler version covers them.
-4. **Recipes** in `~/git/pak` import only `"pakman/…"`. Their `js.module` imports of pakman's
+4. **Recipes (done, uncommitted in `~/git/pak`)** import only `"pakman/…"`. Their `js.module` imports of pakman's
    `host.ts` become calls to the public helpers. Each recipe's `versions` and `make` are checked
-   against the current lock.
-5. **Docs.** pakman's README and DESIGN.md describe the recipe API and `"pakman/"`;
+   against the current lock. All 18 type-check and list versions, with locked versions present;
+   `make` was not run, since that downloads and rebuilds every package.
+5. **Docs (done).** pakman's README and DESIGN.md describe the recipe API and `"pakman/"`;
    `docs/modules.md` lists the namespace beside `"std/"` and `"basis/"`.
 
 ## Release checklist
 
 Following [RELEASE.md](RELEASE.md):
 
-- [ ] Land the `"pakman/"` work and the recipe migration.
+- [ ] Commit the `"pakman/"` work and the recipe migration.
 - [ ] Bring `main` up to the release branch (currently a fast-forward to `i32-integers`).
 - [ ] Set 0.5.0 in `deno.json`, `editors/vscode/package.json` and the VS Code lockfile.
 - [ ] `deno task publish` (local generation and VSIX only).

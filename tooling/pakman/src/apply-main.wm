@@ -3,7 +3,7 @@
 
 from "./apply.wm" import { applyFile };
 from "./io.wm" import { args, eprint, exit };
-from "./fun.wm" import { ignore };
+from "pakman/fun.wm" import { ignore };
 
 let main = () => {
   let fail = (message) => { eprint("pakman: " ++ message); exit(1) };

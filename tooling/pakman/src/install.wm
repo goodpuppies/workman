@@ -8,12 +8,13 @@
 from js.global("JSON") import { parse } as JSON;
 from "./paths.wm" import { Paths, profileDirOf };
 from "./store.wm" import { StoreEntry };
-from "./text.wm" import { compare, join };
+from "pakman/text.wm" import { compare, join };
 from "./io.wm" import *;
 from "./apply.wm" import { apply, planValue, Plan, Placement };
-from "./won.wm" import * as D;
+from "pakman/won.wm" import * as D;
+from "./won_file.wm" import * as WonFile;
 from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String };
-from "./fun.wm" import { ignore, unique, mapAll, filterAll, appendAll, concatAll };
+from "pakman/fun.wm" import { ignore, unique, mapAll, filterAll, appendAll, concatAll };
 
 let via = Monad.via;
 
@@ -105,7 +106,7 @@ let generationFile = (paths: Paths, root, number) => { profileDir(paths, root) +
 
 let readGeneration = (paths: Paths, root, number) => {
   let file = generationFile(paths, root, number);
-  D.readFile(file) :> Task.andThen((found) => {
+  WonFile.readFile(file) :> Task.andThen((found) => {
     match(found) {
       None => { Task.fail(file ++ " does not exist") },
       Some(document) => {
@@ -146,7 +147,7 @@ let recordGeneration = (paths: Paths, g: Generation) => {
   let dir = profileDir(paths, g.root);
   Task|
     mkdirp(dir),
-    D.writeFile(generationFile(paths, g.root, g.number), generationValue(g))
+    WonFile.writeFile(generationFile(paths, g.root, g.number), generationValue(g))
   | :> Task.map(ignore)
 };
 
@@ -316,7 +317,7 @@ let applyPlan = (paths: Paths, plan: Plan) => {
     }
   };
   let elevated = () => {
-    Task|mkdirp(paths.tmp), D.writeFile(planFile, planValue(plan))|
+    Task|mkdirp(paths.tmp), WonFile.writeFile(planFile, planValue(plan))|
       :> via Task (_) => { compileProgram(pakmanRoot() ++ "/src/apply-main.wm", applier) }
       :> elevate
   };

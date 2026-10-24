@@ -1,5 +1,6 @@
 -- A repository-native recipe provides the source snapshot containing itself.
 -- The manager replaces these markers with its recorded revision/date/archive.
+from "../std/task.wm" import * as Task;
 from "./model.wm" import { Candidate, Source };
 
 let versions = () => { Task.succeed([Candidate("self", "", "source", [], "pak:self")]) };

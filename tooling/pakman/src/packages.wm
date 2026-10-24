@@ -13,13 +13,13 @@
 
 from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool, isRepository: String -> Bool, packageDirectories: String -> Js.Array<String> };
 from js.module("./host.ts") import { repositoryRecipe, repositoryVersion, recipeSource, packageProgramPath, rememberRecipe, lockedRecipe } as Repository;
-from "./model.wm" import { Target, Scope, Candidate, Package, Source };
-from "./plan.wm" import *;
+from "pakman/model.wm" import { Target, Scope, Candidate, Package, Source };
+from "pakman/plan.wm" import *;
 from "./paths.wm" import { Paths };
 from "./lock.wm" import { LockEntry, entryText };
 from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname, describe };
-from "./text.wm" import { join, concatMap };
-from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, unique };
+from "pakman/text.wm" import { join, concatMap };
+from "pakman/fun.wm" import { mapAll, filterAll, appendAll, concatAll, unique };
 
 let via = Monad.via;
 

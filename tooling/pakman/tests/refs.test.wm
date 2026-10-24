@@ -1,8 +1,8 @@
 -- References between packages: rendering them as paths, and symlink targets.
 
 from "../../testman/test.wm" import *;
-from "../src/model.wm" import { Own, Of, Base, Exec, Package, Symlink, WriteText, Data, lit, ref, cat, package, file, StorePath, shellRef, BuildCommand, CommandBuild };
-from "../src/refs.wm" import { render, relativePath, symlinkTarget, dependencies, baseFiles, instances, mapRefs, storePaths, runtimePlan };
+from "pakman/model.wm" import { Own, Of, Base, Exec, Package, Symlink, WriteText, Data, lit, ref, cat, package, file, StorePath, shellRef, BuildCommand, CommandBuild };
+from "pakman/refs.wm" import { render, relativePath, symlinkTarget, dependencies, baseFiles, instances, mapRefs, storePaths, runtimePlan };
 
 let tests = [
   test("command programs resolve as build dependencies, without entering the runtime closure", () => {

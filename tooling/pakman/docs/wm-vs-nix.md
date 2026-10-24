@@ -26,7 +26,7 @@ Nix records dependencies by attaching hidden context to strings: interpolate a p
 string and the string remembers it. That is a workaround for a language whose only rich value
 flowing into a build is a string. In wm the same thing is ordinary data: install steps hold
 `PathRef` values (`Own`, `Of`, `Base`) and text is a small ADT (`Lit`, `Ref`, `Cat`), so the
-dependency graph is a fold over the plan (`src/refs.wm`, under 100 lines). No language feature was
+dependency graph is a fold over the plan (`pakman/refs.wm`, under 100 lines). No language feature was
 needed. Compared with Nix it is also checkable before building: pakman refuses a plan that refers to
 a file the other package doesn't install, and it doesn't depend on hashes surviving inside files
 (thesis §3.4 notes compression breaks Nix's scan).
@@ -120,7 +120,7 @@ a file the other package doesn't install, and it doesn't depend on hashes surviv
   compares by identity (`value === Nil`), so an empty list built in one bundle doesn't match `[]` in
   another. Comparing nullary constructors by their `ctor` number would fix it. Until then, per-package
   compilation and plugin-style package repos are blocked.
-- **Package files outside the checkout need relative imports to pakman's `src/model.wm`.** wm has no
+- **Package files outside the checkout need relative imports to pakman's `pakman/model.wm`.** wm has no
   package resolution or import maps yet (deferred in `docs/modules.md`), and absolute paths don't
   resolve. Nix's equivalent is a function taking `{ lib, stdenv, ... }:` and is location-independent.
 

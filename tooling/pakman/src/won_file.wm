@@ -1,0 +1,16 @@
+-- pakman's WON files, read and written as bytes. The encoding helpers are in "pakman/won.wm".
+
+from "basis/won.wm" import * as Won;
+from "./io.wm" import { readBytesOr, writeBytes };
+
+-- None when the file does not exist.
+let readFile = (path) => {
+  readBytesOr(path, "") :> Task.map((bytes) => { if (bytes == "") { None } else { Some(Won.read(bytes)) } })
+};
+
+let writeFile = (path, value) => {
+  match(Won.encode(value)) {
+    Ok(bytes) => { writeBytes(path, bytes ++ "\n", 420) },
+    Err(reason) => { Task.fail(path ++ ": " ++ reason) }
+  }
+};

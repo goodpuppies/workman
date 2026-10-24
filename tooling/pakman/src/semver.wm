@@ -1,12 +1,12 @@
 -- Deliberately small first subset: exact stable X.Y.Z and ~X.Y.Z.
-from js.module("./host.ts") import unsafe { captures: (String, String) -> Js.Array<String> };
+from "pakman/finders.wm" import { captures };
 from "./io.wm" import { parseIntOr };
-from "./model.wm" import { Candidate };
+from "pakman/model.wm" import { Candidate };
 
 record Version = { major: Number, minor: Number, patch: Number };
 
 let parse = (text) => {
-  match(captures("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", text) :> Js.Array.toList) {
+  match(captures("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", text)) {
     [_, major, minor, patch] => { Some(Version(parseIntOr(major, 0), parseIntOr(minor, 0), parseIntOr(patch, 0))) },
     _ => { None }
   }

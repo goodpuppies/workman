@@ -102,8 +102,9 @@ program uses (or caching their interfaces) is needed before this is acceptable.
 preloaded core is std's `Result`, `Option`, `List` and so on, rebuilt on the Basis as `Result`
 was, so no `Subset`-prefixed name is ever global.
 
-Follow-up: `"pakman/..."` (`src/pakman_imports.ts`) is a separate one-off mapping to files on
-disk; it can become another built-in scope in `libraryImport`.
+Follow-up (done for 0.5.0, see `release050plan.md`): `"pakman/..."` was a separate one-off
+mapping to files on disk (`src/pakman_imports.ts`); it is now another built-in scope in
+`libraryImport`.
 
 ## Open questions
 

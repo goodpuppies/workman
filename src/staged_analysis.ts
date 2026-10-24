@@ -21,6 +21,7 @@ import type { ModuleGraph, ModuleNode } from "./module_graph.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
 import {
   libraryImportResults,
+  reachesOnDemandLibrary,
   standardInferOptions,
   usesStandardLibrary,
 } from "./standard_library.ts";
@@ -46,6 +47,8 @@ export type StagedAnalysisEvent = {
 export type StagedAnalysisOptions = {
   /** Inference options for every module. Defaults to the standard library's initial imports. */
   inferOptions?: InferModuleOptions;
+  /** Results for import edges that leave the graph. Defaults to the library modules it reaches. */
+  externalResults?: ModuleMap<InferResult>;
   onEvent?: (event: StagedAnalysisEvent) => void;
   onTiming?: (event: StagedAnalysisTimingEvent) => void;
 };
@@ -108,7 +111,7 @@ export async function analyzeModuleGraph(
     });
   }
 
-  const external = await externalImportResults(graph);
+  const external = options.externalResults ?? await externalImportResults(graph);
   const importsFor = (node: ModuleNode, results: ModuleMap<InferResult>) =>
     importResults(node, results, external);
 
@@ -324,7 +327,7 @@ export async function externalImportResults(graph: ModuleGraph): Promise<ModuleM
   const leaves = [...graph.nodes.values()].some((node) =>
     node.imports.some((edge) => !graph.nodes.has(edge.target))
   );
-  return leaves ? await libraryImportResults() : new Map();
+  return leaves ? await libraryImportResults(reachesOnDemandLibrary(graph)) : new Map();
 }
 
 function importResults(

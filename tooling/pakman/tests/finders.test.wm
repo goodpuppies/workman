@@ -1,7 +1,7 @@
 -- Provider-neutral release rules on normalized metadata, without network access.
 from "../../testman/test.wm" import *;
-from "../src/finders.wm" import { Release, ReleaseAsset, matchText, releaseCandidates, stableReleases };
-from "../src/model.wm" import { Candidate };
+from "pakman/finders.wm" import { Release, ReleaseAsset, matchText, releaseCandidates, stableReleases };
+from "pakman/model.wm" import { Candidate };
 
 let asset = (name) => { ReleaseAsset(name, "https://custom.example/" ++ name, "digest-" ++ name) };
 let release = (tag, prerelease, assets) => { Release(tag, prerelease, "2020-01-01T00:00:00Z", assets) };

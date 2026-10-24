@@ -1,6 +1,11 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
-import { discoverStandardModules, libraryModuleAlias, loadLibraryModules } from "../src/standard_library.ts";
+import {
+  discoverStandardModules,
+  libraryModuleAlias,
+  loadLibraryModules,
+  loadStandardModules,
+} from "../src/standard_library.ts";
 import { librarySources } from "../src/generated/assets.ts";
 import { libraryModuleUrl } from "../src/js_module_specifier.ts";
 import { analyzeFile, analyzeRecoveredFile } from "../src/compiler.ts";
@@ -84,7 +89,8 @@ Deno.test("import-only library modules are named by their path, not their file n
     "pakman/text.wm": "let fromPakman = 3;\n",
   });
   const exports = (path: string) =>
-    [...modules.find((module) => module.path === path)!.result.exportedStructure.valEnv.keys()].sort();
+    [...modules.find((module) => module.path === path)!.result.exportedStructure.valEnv.keys()]
+      .sort();
   // std/option.wm extends the built-in Option; the others are exactly what their files declare.
   assertEquals(exports("std/option.wm").includes("fromStd"), true);
   assertEquals(exports("subml-basis/option.wm"), ["fromBasis"]);
@@ -105,7 +111,9 @@ Deno.test("embedded library primitives load as JavaScript or TypeScript by exten
     "pakman/js/probe.ts",
     'import { basename } from "node:path";\nexport const name = (path: string): string => basename(path);\n',
   ));
-  const plain = await import(libraryModuleUrl("std/js/probe.js", "export const twice = (n) => n * 2;\n"));
+  const plain = await import(
+    libraryModuleUrl("std/js/probe.js", "export const twice = (n) => n * 2;\n")
+  );
   assertEquals([typed.name("/a/b.wm"), plain.twice(21)], ["b.wm", 42]);
 });
 
@@ -388,4 +396,30 @@ Deno.test("SubsetML Basis modules are never opened without an import", async () 
   );
   assertEquals(unknown.code === 0, false);
   assertEquals(unknown.stderr.includes(`unknown Basis module "basis/nope.wm"`), true);
+});
+
+Deno.test("pakman modules are analyzed only for programs that import them, on the shared library", async () => {
+  const core = await loadStandardModules();
+  const all = await loadStandardModules(true);
+  assertEquals(core.some((module) => module.path.startsWith("pakman/")), false);
+  assertEquals(all.some((module) => module.path === "pakman/finders.wm"), true);
+  const list = (modules: typeof core) =>
+    modules.find((module) => module.path === "std/list.wm")!.result;
+  assertEquals(list(all) === list(core), true);
+
+  const result = await runProgram(
+    `from "pakman/finders.wm" import { captures, matchText };
+let main = () => {
+  print(captures("a(b)", "xab") == ["ab", "b"]);
+  print(matchText("^v([0-9]+)$")("v12"));
+};
+`,
+  );
+  assertEquals(result.stderr, "");
+  assertEquals(result.stdout, "true\nSome(12)\n");
+  const unknown = await runProgram(
+    `from "pakman/store.wm" import * as Store;\nlet main = () => { print(1) };\n`,
+    "check",
+  );
+  assertEquals(unknown.stderr.includes(`unknown pakman module "pakman/store.wm"`), true);
 });

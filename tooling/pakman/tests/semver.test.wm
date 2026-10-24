@@ -1,7 +1,7 @@
 from "../../testman/test.wm" import *;
 from "../src/semver.wm" import { matches };
 from "../src/instances.wm" import { choose };
-from "../src/model.wm" import { Candidate, Host, User };
+from "pakman/model.wm" import { Candidate, Host, User };
 from "../src/packages.wm" import { PackageInfo };
 
 let info: PackageInfo = .{

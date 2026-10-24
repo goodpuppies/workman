@@ -1,6 +1,6 @@
 -- Test fixture: refers to a file hello-lib does not install.
-from "../../../src/model.wm" import *;
-from "../../../src/package.wm" import { serve };
+from "pakman/model.wm" import *;
+from "pakman/package.wm" import { serve };
 
 let versions = () => { Task.succeed([Candidate("1.0", "2020-01-01T00:00:00Z", "stable", [], "")]) };
 

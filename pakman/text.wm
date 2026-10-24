@@ -1,6 +1,8 @@
 -- Small string helpers missing from the basis.
 
-from js.module("./host.ts") import unsafe { compareText as compareRaw: (String, String) -> Number };
+from "../std/list.wm" import * as List;
+from "../std/map.wm" import * as Map;
+from js.module("./js/recipe.ts") import unsafe { compareText as compareRaw: (String, String) -> Number };
 from "./fun.wm" import { mapAll, concatAll };
 
 let join = (items, separator) => {

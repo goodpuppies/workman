@@ -1,9 +1,9 @@
 -- Resolution: pick a version upstream offers, and pin its sources' hashes.
 
-from "./model.wm" import { Candidate, Checksum, Source, Package };
+from "pakman/model.wm" import { Candidate, Checksum, Source, Package };
 from "./packages.wm" import { PackageInfo, versions, make };
 from "./lock.wm" import { LockEntry, LockedSource, versionOf, trackOf };
-from "./fun.wm" import { keepIf, filterAll };
+from "pakman/fun.wm" import { keepIf, filterAll };
 from "./paths.wm" import { Paths };
 from "./io.wm" import *;
 

@@ -1,9 +1,9 @@
 -- The WON a package prints for `make`, read back by pakman.
 
 from "../../testman/test.wm" import *;
-from "../src/model.wm" import *;
-from "../src/plan.wm" import { encodePlan, decodePlan, decodeRef };
-from "../src/won.wm" import * as D;
+from "pakman/model.wm" import *;
+from "pakman/plan.wm" import { encodePlan, decodePlan, decodeRef };
+from "pakman/won.wm" import * as D;
 
 let printed = (pkg: Package) => { Result.getOr(D.encode(encodePlan(pkg)), "") };
 

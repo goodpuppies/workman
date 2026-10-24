@@ -4,6 +4,8 @@
 -- PathRef somewhere in its plan. These functions find them by walking the
 -- plan, and render references to the absolute paths they have on the running system.
 
+from "../std/list.wm" import * as List;
+from "../std/result.wm" import * as Result;
 from "./model.wm" import *;
 from "./fun.wm" import { unique, mapAll, filterAll, appendAll };
 from "./text.wm" import { concatMap, join };

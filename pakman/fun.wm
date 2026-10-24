@@ -1,6 +1,9 @@
 -- Small curried helpers for pipelines.
 
 -- Option.filter as an Option.andThen stage: `opt :> Option.andThen(keepIf(predicate))`.
+from "../std/list.wm" import * as List;
+from "../std/option.wm" import * as Option;
+from "../std/task.wm" import * as Task;
 let keepIf = (predicate) => { (value) => { Option.filter(value, predicate) } };
 
 -- A left fold where each step is a Task, run one after another.
