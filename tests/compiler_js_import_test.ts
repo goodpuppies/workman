@@ -373,6 +373,36 @@ Deno.test("resolves import-mapped npm modules with nodeModulesDir disabled", asy
   ]);
 });
 
+Deno.test("reflects npm subpath exports through import-mapped @types packages", async () => {
+  const dir = await Deno.makeTempDir();
+  const input = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    `${dir}/deno.json`,
+    JSON.stringify(
+      {
+        imports: {
+          "@types/three": "npm:@types/three@0.184.0",
+          three: "npm:three@0.184.0",
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  await Deno.writeTextFile(
+    input,
+    `
+      from js.module("three/webgpu") import { Scene };
+      let scene = Scene.new();
+    `,
+  );
+
+  const results = await checkFile(input);
+  const result = results.get(input);
+  if (!result) throw new Error("missing main result");
+  expectBinding(result.env, "scene", { type: "Result<Scene, Js.Error>", vars: 0 });
+});
+
 Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;

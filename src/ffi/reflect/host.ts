@@ -597,18 +597,7 @@ function denoResolvedModule(
   // `deno info` represents npm packages as a graph node without a local source
   // file. Resolve those from Deno's package cache so direct `npm:` imports do
   // not degrade to an untyped namespace when no node_modules tree is present.
-  if (!module?.local) {
-    if (!specifier.startsWith("npm:")) return undefined;
-    const packagePath = npmPackagePathForSpecifier(graphs, specifier);
-    if (!packagePath) return undefined;
-    return ts.resolveModuleName(
-      packagePath,
-      containingFile,
-      compilerOptions,
-      ts.sys,
-      moduleResolutionCache(),
-    ).resolvedModule;
-  }
+  if (!module?.local) return npmResolvedModule(graphs, specifier, containingFile);
   return {
     resolvedFileName: module.specifier.startsWith("file://")
       ? module.local ?? module.specifier
@@ -618,12 +607,54 @@ function denoResolvedModule(
   };
 }
 
-function npmPackagePathForSpecifier(
+// Resolves `npm:name@version/subpath` like Deno does for types: the subpath
+// goes through the package's `exports`, and a package without declarations
+// takes them from `@types/name` when the graph has it.
+function npmResolvedModule(
   graphs: DenoModuleGraph[],
   specifier: string,
-): string | undefined {
-  const packageName = npmPackageName(specifier);
-  if (!packageName) return undefined;
+  containingFile: string,
+): ts.ResolvedModuleFull | undefined {
+  const parsed = npmPackageSpecifier(specifier);
+  if (!parsed) return undefined;
+  const resolveIn = (packageName: string, packageGraphs = graphs) => {
+    const packagePath = npmPackagePath(packageGraphs, packageName);
+    if (!packagePath) return undefined;
+    const target = parsed.subpath
+      ? npmPackageEntry(packagePath, parsed.subpath) ?? join(packagePath, parsed.subpath)
+      : packagePath;
+    const resolved = ts.resolveModuleName(
+      target,
+      containingFile,
+      compilerOptions,
+      ts.sys,
+      moduleResolutionCache(),
+    ).resolvedModule;
+    // The importer names the package, not the `.d.ts` path resolved here, so
+    // TypeScript must not treat it as an import written with a TS extension.
+    return resolved && { ...resolved, resolvedUsingTsExtension: false };
+  };
+  const own = resolveIn(parsed.name);
+  if (own?.extension && isDeclarationExtension(own.extension)) return own;
+  const typesName = parsed.name.startsWith("@")
+    ? `@types/${parsed.name.slice(1).replace("/", "__")}`
+    : `@types/${parsed.name}`;
+  // `deno info` of the package alone omits `@types`; the importer's import map
+  // or package.json supplies it, as Deno's own type checking would use.
+  const importer = isUrl(containingFile) ? pathFromFileUrl(containingFile) : containingFile;
+  const cwd = importer ? dirname(importer) : runtime.cwd();
+  const typesGraph = npmPackagePath(graphs, typesName)
+    ? undefined
+    : denoModuleGraph(typesName, cwd);
+  return resolveIn(typesName, typesGraph ? [typesGraph] : graphs) ?? own;
+}
+
+function isDeclarationExtension(extension: string): boolean {
+  return extension === ts.Extension.Dts || extension === ts.Extension.Dmts ||
+    extension === ts.Extension.Dcts;
+}
+
+function npmPackagePath(graphs: DenoModuleGraph[], packageName: string): string | undefined {
   for (const graph of graphs) {
     const pkg = [...graph.npmPackages.values()].find((candidate) => candidate.name === packageName);
     if (pkg) return pkg.localPath;
@@ -631,17 +662,69 @@ function npmPackagePathForSpecifier(
   return undefined;
 }
 
-function npmPackageName(specifier: string): string | undefined {
-  if (!specifier.startsWith("npm:")) return undefined;
-  const value = specifier.slice("npm:".length).replace(/^\/+/, "");
-  if (value.startsWith("@")) {
-    const slash = value.indexOf("/");
-    if (slash < 0) return undefined;
-    const version = value.indexOf("@", slash);
-    return version < 0 ? value : value.slice(0, version);
+// The file a package subpath such as `/webgpu` names through `exports`.
+function npmPackageEntry(packagePath: string, subpath: string): string | undefined {
+  let manifest: { exports?: unknown };
+  try {
+    manifest = JSON.parse(Deno.readTextFileSync(join(packagePath, "package.json")));
+  } catch {
+    return undefined;
   }
-  const version = value.indexOf("@");
-  return version < 0 ? value : value.slice(0, version);
+  const entries = manifest.exports;
+  if (typeof entries !== "object" || entries === null || Array.isArray(entries)) return undefined;
+  const key = `.${subpath}`;
+  const map = entries as Record<string, unknown>;
+  let target = key in map ? exportTarget(map[key]) : undefined;
+  if (!(key in map)) {
+    for (const [pattern, value] of Object.entries(map)) {
+      const star = pattern.indexOf("*");
+      if (star < 0) continue;
+      const prefix = pattern.slice(0, star);
+      const suffix = pattern.slice(star + 1);
+      if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue;
+      target = exportTarget(value)?.replaceAll(
+        "*",
+        key.slice(prefix.length, key.length - suffix.length),
+      );
+      break;
+    }
+  }
+  return target === undefined ? undefined : join(packagePath, target);
+}
+
+const exportConditions = new Set(["types", "deno", "node", "import", "default"]);
+
+function exportTarget(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const target = exportTarget(item);
+      if (target !== undefined) return target;
+    }
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  // Like Node: the first key, in object order, that is an active condition.
+  for (const [condition, target] of Object.entries(value)) {
+    if (!exportConditions.has(condition)) continue;
+    const resolved = exportTarget(target);
+    if (resolved !== undefined) return resolved;
+  }
+  return undefined;
+}
+
+function npmPackageSpecifier(specifier: string): { name: string; subpath: string } | undefined {
+  if (!specifier.startsWith("npm:")) return undefined;
+  // `@scope/name@version/subpath`, `name@version/subpath`, or without a version.
+  const value = specifier.slice("npm:".length).replace(/^\/+/, "");
+  const scopeSlash = value.startsWith("@") ? value.indexOf("/") : -1;
+  if (value.startsWith("@") && scopeSlash < 0) return undefined;
+  const start = scopeSlash + 1;
+  const version = value.indexOf("@", start);
+  const slash = value.indexOf("/", start);
+  const ends = [version, slash].filter((index) => index >= 0);
+  const name = ends.length ? value.slice(0, Math.min(...ends)) : value;
+  return { name, subpath: slash < 0 ? "" : value.slice(slash) };
 }
 
 function resolveDenoSpecifier(
