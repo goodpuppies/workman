@@ -1,3 +1,5 @@
+import { fileURLToPath, pathToFileURL as toFileUrl } from "node:url";
+import { trackedWmFiles } from "./tracked_wm_files.ts";
 import { normalizeFrontendSemanticAstWithSpans } from "../src/frontend_v2_compare.ts";
 import { decodeSurfaceProgram } from "../src/frontend_v2_surface_loader.ts";
 import { surfaceProgramToModule } from "../src/frontend_v2_surface_semantic.ts";
@@ -51,17 +53,13 @@ async function wmFiles(
   root: URL,
   prefix: string,
 ): Promise<readonly Readonly<{ relative: string; url: URL }>[]> {
-  const output: { relative: string; url: URL }[] = [];
-  for await (const entry of Deno.readDir(root)) {
-    const relative = `${prefix}/${entry.name}`;
-    const url = new URL(entry.name + (entry.isDirectory ? "/" : ""), root);
-    if (entry.isDirectory) {
-      output.push(...await wmFiles(url, relative));
-    } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      output.push({ relative, url });
-    }
-  }
-  return output.sort((left, right) => left.relative.localeCompare(right.relative));
+  const directory = fileURLToPath(root);
+  return (await trackedWmFiles(root))
+    .map((path) => ({
+      relative: `${prefix}/${path.slice(directory.length)}`,
+      url: toFileUrl(path),
+    }))
+    .sort((left, right) => left.relative.localeCompare(right.relative));
 }
 
 async function hashValue(value: unknown): Promise<string> {

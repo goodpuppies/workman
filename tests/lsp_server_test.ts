@@ -902,9 +902,7 @@ Deno.test("lsp server clears diagnostics for files no longer in validation resul
         },
       },
     },
-    async () => {
-      await delay(1500);
-    },
+    publishedFor(uri),
     {
       jsonrpc: "2.0",
       method: "textDocument/didChange",
@@ -1017,10 +1015,9 @@ Deno.test("lsp server revalidates open files after imported file changes", async
         },
       },
     },
+    // Let the initial didOpen validation finish before changing the dependency.
+    publishedFor(uri),
     async () => {
-      // Let the initial didOpen validation finish before changing the dependency. Cold Windows
-      // process startup can exceed the old 700 ms allowance under the full test suite.
-      await delay(1500);
       await Deno.writeTextFile(lib, 'let value = "ok";');
       await delay(200);
     },
@@ -1233,9 +1230,7 @@ Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", as
         textDocument: { uri, languageId: "wm", version: 1, text: "let x: String = 1;" },
       },
     },
-    async () => {
-      await delay(1500);
-    },
+    publishedFor(uri),
     {
       jsonrpc: "2.0",
       method: "textDocument/didSave",
@@ -1382,7 +1377,11 @@ Deno.test("lsp server returns null for hover misses", async () => {
 });
 
 async function runLsp(
-  steps: (RpcMessage | readonly RpcMessage[] | (() => Promise<void>))[],
+  steps: (
+    | RpcMessage
+    | readonly RpcMessage[]
+    | ((received: () => RpcMessage[]) => Promise<void>)
+  )[],
   env: Record<string, string> = {},
   commandArgs: string[] = [
     "run",
@@ -1400,16 +1399,45 @@ async function runLsp(
     stdout: "piped",
     stderr: "piped",
   }).spawn();
+  // Output is collected while the steps run, so a step can wait for what the server has sent.
+  let stdout = new Uint8Array();
+  const reading = (async () => {
+    for await (const chunk of child.stdout) {
+      const joined = new Uint8Array(stdout.length + chunk.length);
+      joined.set(stdout);
+      joined.set(chunk, stdout.length);
+      stdout = joined;
+    }
+  })();
+  const stderr = new Response(child.stderr).text();
+  const received = () => decodeMessages(stdout).messages;
   const writer = child.stdin.getWriter();
   for (const step of steps) {
-    if (typeof step === "function") await step();
+    if (typeof step === "function") await step(received);
     else if (isMessageBatch(step)) await writer.write(encodeMessageBatch(step));
     else await writer.write(encodeMessage(step));
   }
   await writer.close();
-  const output = await child.output();
-  assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
-  return decodeMessages(output.stdout).messages;
+  const status = await child.status;
+  await reading;
+  assertEquals(status.code, 0, await stderr);
+  return received();
+}
+
+/** A step that waits until the server has published diagnostics for `uri`. */
+function publishedFor(uri: string, timeoutMs = 60_000) {
+  return async (received: () => RpcMessage[]) => {
+    const deadline = Date.now() + timeoutMs;
+    while (
+      !received().some((message) =>
+        message.method === "textDocument/publishDiagnostics" &&
+        (message.params as { uri: string }).uri === uri
+      )
+    ) {
+      if (Date.now() > deadline) throw new Error(`no diagnostics published for ${uri}`);
+      await delay(20);
+    }
+  };
 }
 
 function isMessageBatch(

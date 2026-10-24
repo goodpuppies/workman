@@ -1,29 +1,31 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-function absoluteEnvironment(name: string, fallback: string): string {
+/** `name` when it holds an absolute path, else a directory under the home directory. */
+function absoluteEnvironment(name: string, ...fallback: string[]): string {
   const value = Deno.env.get(name);
-  return value && isAbsolute(value) ? value : fallback;
+  // The home directory needs sys permission, so it is looked up only when it is used.
+  return value && isAbsolute(value) ? value : join(homedir(), ...fallback);
 }
 
 export function workmanConfigFile(): string {
   const base = Deno.build.os === "windows"
-    ? absoluteEnvironment("APPDATA", join(homedir(), "AppData", "Roaming"))
-    : absoluteEnvironment("XDG_CONFIG_HOME", join(homedir(), ".config"));
+    ? absoluteEnvironment("APPDATA", "AppData", "Roaming")
+    : absoluteEnvironment("XDG_CONFIG_HOME", ".config");
   return join(base, "workman", "config.json");
 }
 
 export function workmanCache(): string {
   const base = Deno.build.os === "windows"
-    ? absoluteEnvironment("LOCALAPPDATA", join(homedir(), "AppData", "Local"))
-    : absoluteEnvironment("XDG_CACHE_HOME", join(homedir(), ".cache"));
+    ? absoluteEnvironment("LOCALAPPDATA", "AppData", "Local")
+    : absoluteEnvironment("XDG_CACHE_HOME", ".cache");
   return join(base, "workman");
 }
 
 export function workmanState(): string {
   const base = Deno.build.os === "windows"
-    ? absoluteEnvironment("LOCALAPPDATA", join(homedir(), "AppData", "Local"))
-    : absoluteEnvironment("XDG_STATE_HOME", join(homedir(), ".local", "state"));
+    ? absoluteEnvironment("LOCALAPPDATA", "AppData", "Local")
+    : absoluteEnvironment("XDG_STATE_HOME", ".local", "state");
   return join(base, "workman");
 }
 

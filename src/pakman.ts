@@ -40,7 +40,13 @@ async function newestSource(dir: string): Promise<number> {
 
 async function build(root: string, output: string): Promise<string> {
   const entry = join(root, "pakman.wm");
-  const newest = Math.max(await mtime(entry), await newestSource(`${root}/src`));
+  // The "pakman/" modules pakman shares with packages are embedded in the compiler's assets.
+  const assets = fileURLToPath(new URL("./generated/assets.ts", import.meta.url));
+  const newest = Math.max(
+    await mtime(entry),
+    await newestSource(`${root}/src`),
+    await mtime(assets),
+  );
   if (await mtime(output) >= newest) return await Deno.readTextFile(output);
   const artifacts = await compileFileArtifacts(entry);
   await Deno.mkdir(dirname(output), { recursive: true });

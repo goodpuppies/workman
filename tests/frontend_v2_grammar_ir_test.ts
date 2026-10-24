@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
-import { fileURLToPath } from "node:url";
+import { trackedWmFiles } from "../scripts/tracked_wm_files.ts";
 import {
   hashGrammarIr,
   inventoryGrammar,
@@ -354,13 +354,5 @@ Deno.test("frontend-v2 Phase 0 formatter fixtures declare stable mode outputs", 
 });
 
 async function* wmFiles(root: URL): AsyncGenerator<string> {
-  const directory = new URL(root.href.endsWith("/") ? root.href : root.href + "/");
-  for await (const entry of Deno.readDir(root)) {
-    const entryUrl = new URL(entry.name + (entry.isDirectory ? "/" : ""), directory);
-    if (entry.isDirectory) {
-      yield* wmFiles(entryUrl);
-    } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      yield fileURLToPath(entryUrl);
-    }
-  }
+  yield* await trackedWmFiles(root);
 }

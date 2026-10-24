@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { fileURLToPath } from "node:url";
+import { trackedWmFiles } from "../scripts/tracked_wm_files.ts";
 import { emitRecognizer } from "../scripts/generate_frontend_v2_recognizer.ts";
 import { topLevelPhraseEnd, topLevelPhraseRanges } from "../src/top_level_phrases.ts";
 import { recognizeGrammar } from "../tooling/frontend-v2/generator/recognizer.ts";
@@ -747,14 +747,7 @@ function recoveryMarkSummary(
 }
 
 async function* wmFiles(root: URL): AsyncGenerator<string> {
-  for await (const entry of Deno.readDir(root)) {
-    const entryUrl = new URL(entry.name + (entry.isDirectory ? "/" : ""), root);
-    if (entry.isDirectory) {
-      yield* wmFiles(entryUrl);
-    } else if (entry.isFile && entry.name.endsWith(".wm")) {
-      yield fileURLToPath(entryUrl);
-    }
-  }
+  yield* await trackedWmFiles(root);
 }
 
 Deno.test("frontend-v2 backports nested block comments and CR line-comment boundaries", async () => {
