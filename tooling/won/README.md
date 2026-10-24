@@ -82,13 +82,27 @@ are distinct values. Application code performs checked conversion to its
 chosen numeric type. Numeric arithmetic, normalization, IEEE special values,
 and typed conversion helpers are not implemented.
 
-Text and keys contain valid UTF-8. Blobs are arbitrary byte-character lists;
-NUL and non-UTF-8 bytes are supported. **WM/JS strings at this API boundary are
-Latin-1 carriers for bytes**, matching native SML byte strings. Convert ordinary
-JS Unicode strings through `TextEncoder` / `TextDecoder`; do not pass a JS
-Unicode string directly as a wire buffer. The JS probe runner demonstrates
-byte-preserving I/O with `Buffer`. This follows the existing portable SubsetML
-Basis boundary rather than introducing another host-string convention.
+Text and blobs stay distinct. `"abc"` is a text token: strict UTF-8 with the named escapes,
+and control bytes must be escaped. `x"616263"` is a blob of arbitrary bytes, including NUL and
+non-UTF-8 bytes. Both carry byte-character lists, but only `Text` is guaranteed to be valid
+UTF-8, and decoding never turns one into the other.
+
+A text value is its UTF-8 bytes, the way a number is its spelling: the host converts. In WM,
+`Won.textString(found)` returns a text value as a WM `String`, and `SubsetText.toUtf8(string)`
+(`"basis/text.wm"`) builds the bytes for `Text(...)`:
+
+```wm
+from "basis/text.wm" import * as Text;
+
+let name = W.Text(Text.toUtf8("ä — 日本") :> getOr([]));
+let shown = Won.read(source) :> Won.get("name") :> Won.textString;   // Ok("ä — 日本")
+```
+
+Documents, keys and tag names are byte strings. **WM/JS strings at these positions are
+Latin-1 carriers for bytes**, matching native SML byte strings. Read a document as bytes, for
+example with `Buffer`'s `latin1` encoding as the JS probe runner does, rather than as JS
+Unicode text. Names are ASCII, so `Won.get(found, "files")` is the same in both
+representations; a quoted non-ASCII key arrives in its UTF-8 byte form.
 
 ## Source layout
 

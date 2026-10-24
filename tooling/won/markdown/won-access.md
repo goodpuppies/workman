@@ -48,7 +48,7 @@ let port = Won.read(source) :> Won.get("server") :> Won.get("port") :> Won.numbe
 ```
 
 - Steps: `read`, `root`, `get`, `index`, `attribute`, `payload`.
-- Reads: `text`, `number`, `boolean`, `blob`, `tagName`, `value`, `items`, `entries`.
+- Reads: `text` (UTF-8 bytes), `textString` (host text), `number`, `boolean`, `blob`, `tagName`, `value`, `items`, `entries`.
 - `optional` ends a chain and turns `Missing` anywhere along it into `None`.
   A present `null` stays `Some(Null)`; a mismatch stays an error.
 - Paths use WON spelling: `server.port`, `items[1]`, `view<id>`, `"odd key"`;

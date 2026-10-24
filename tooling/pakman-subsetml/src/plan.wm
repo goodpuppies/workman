@@ -1,4 +1,6 @@
 from "basis/result.wm" import * as R;
+from "basis/string.wm" import * as S;
+from "basis/text.wm" import * as Txt;
 from "basis/won.wm" import * as Won;
 from "basis/won_value.wm" import * as W;
 from "./model.wm" import * as M;
@@ -8,7 +10,11 @@ from "./io.wm" import * as I;
 // the package process and decoders in the manager; `protocol` detects a stale package.
 let protocol = "1";
 
-let text = (value) => { W.Text(value) };
+// WON text is UTF-8 bytes. Text that is not valid UTF-8 keeps its raw bytes, so encode
+// reports it instead of writing something else.
+let text = (value) => {
+  match(Txt.toUtf8(value)) { R.Ok(bytes) => { W.Text(bytes) }, R.Err(_) => { W.Text(R.getOr(S.fromNative(value), [])) } }
+};
 let tag = (name, fields) => { W.Tag(name, [], W.Record(fields)) };
 let wrapped = (name, value) => { W.Tag(name, [], text(value)) };
 let bare = (name) => { W.Tag(name, [], W.Null) };
@@ -40,8 +46,8 @@ let encode = (name, pkg: M.Package) => {
 };
 
 // Decoders read through Won's access chains and report a path on the first problem.
-let field = (found, key) => { Won.text(Won.get(found, key)) };
-let payloadField = (found, key) => { Won.text(Won.get(Won.payload(found), key)) };
+let field = (found, key) => { Won.textString(Won.get(found, key)) };
+let payloadField = (found, key) => { Won.textString(Won.get(Won.payload(found), key)) };
 let unexpected = (found, kind) => { R.andThen(found, (node) => { Won.mismatch(node, kind) }) };
 let list = (found, f) => { R.andThen(Won.items(found), (nodes) => { I.traverse(nodes, (node) => { f(R.Ok(node)) }) }) };
 
@@ -64,7 +70,7 @@ let mode = (found) => {
 };
 let argument = (found) => {
   R.andThen(Won.tagName(found), (name) => {
-    R.andThen(Won.text(Won.payload(found)), (value) => {
+    R.andThen(Won.textString(Won.payload(found)), (value) => {
       match(name) {
         "Literal" => { R.Ok(M.Literal(value)) }, "Input" => { R.Ok(M.Input(value)) },
         "Work" => { R.Ok(M.Work(value)) }, "Out" => { R.Ok(M.Out(value)) },

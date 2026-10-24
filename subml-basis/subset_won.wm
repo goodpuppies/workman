@@ -6,6 +6,7 @@ from "./subset_result.sml" import * as SubsetResult;
 from "./subset_list.sml" import * as SubsetList;
 from "./subset_string.sml" import * as SubsetString;
 from "./subset_natural.sml" import * as SubsetNatural;
+from "./subset_text.sml" import * as SubsetText;
 */
 
 // Public portable WON encoding and decoding API.
@@ -17,6 +18,7 @@ from "./subset_list.wm" import * as SubsetList;
 from "./subset_won_syntax.wm" import * as SubsetWonSyntax;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_natural.wm" import * as SubsetNatural;
+from "./subset_text.wm" import * as SubsetText;
 
 type Value = SubsetWonValue.Value;
 type Error = SubsetWonValue.Error;
@@ -250,6 +252,25 @@ let text = (found) => {
     (node: Node) => {
       match(node.value) {
         SubsetWonValue.Text(content) => { SubsetResult.Ok(content) },
+        _ => { mismatch(node, "text") }
+      }
+    }
+  )
+};
+
+/* Text as host text, like a number spelling converted by the caller. Decoded text is
+   always valid UTF-8; a hand-built Text value may not be. */
+let textString = (found) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.value) {
+        SubsetWonValue.Text(content) => {
+          match(SubsetText.fromUtf8(content)) {
+            SubsetResult.Ok(value) => { SubsetResult.Ok(value) },
+            SubsetResult.Err(_) => { mismatch(node, "UTF-8 text") }
+          }
+        },
         _ => { mismatch(node, "text") }
       }
     }

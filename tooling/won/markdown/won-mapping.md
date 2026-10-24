@@ -35,7 +35,8 @@ Host-specific choices:
 - **Zig:** a tagged union with `.get(key)` on records, in the style of
   `std.json.Value`.
 - **SML/WM:** a datatype with the eight cases, and access by pattern matching
-  or [access chains](won-access.md).
+  or [access chains](won-access.md). Text is its UTF-8 bytes, like a blob's bytes but
+  validated; `textString` converts it to a host string, as a caller converts a number spelling.
 
 Untyped access reports a missing field separately from a present `null`
 (`Missing` against `Some(Null)` in WM; `optional()` returning `undefined` in JS).

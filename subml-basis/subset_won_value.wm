@@ -4,7 +4,7 @@ type Value =
   | Null
   | Boolean<Bool>
   | Number<String>
-  | Text<String>
+  | Text<List<Char>>
   | Blob<List<Char>>
   | List<List<Value>>
   | Record<List<(String, Value)>>

@@ -1,0 +1,42 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_string.sml" import * as SubsetString;
+from "./subset_unicode.sml" import * as SubsetUnicode;
+from "./subset_utf8.sml" import * as SubsetUtf8;
+from "./subset_text_host.sml" import * as SubsetTextHost;
+*/
+
+/* Host text and strict UTF-8 bytes. Host text is the host language's own string: an SML
+   string already holds UTF-8 bytes, a Workman/JS string holds UTF-16 text. Use these at a
+   host edge, such as WM text entering WON; Basis byte strings convert with SubsetString. */
+
+from "./subset_string.wm" import * as SubsetString;
+from "./subset_text_host.wm" import * as SubsetTextHost;
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_unicode.wm" import * as SubsetUnicode;
+from "./subset_utf8.wm" import * as SubsetUtf8;
+
+let toUtf8 = (value) => {
+  match(SubsetString.fromNative(SubsetTextHost.encodeUtf8(value))) {
+    SubsetResult.Err(SubsetString.NonByte(offset)) => {
+      SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidScalar, offset))
+    },
+    SubsetResult.Ok(bytes) => {
+      SubsetResult.map(SubsetUtf8.decode(bytes), (scalars) => { bytes })
+    }
+  }
+};
+
+let fromUtf8 = (bytes) => {
+  SubsetResult.andThen(
+    SubsetUtf8.decode(bytes),
+    (scalars) => {
+      match(SubsetString.toNative(bytes)) {
+        SubsetResult.Ok(native) => { SubsetResult.Ok(SubsetTextHost.decodeUtf8(native)) },
+        SubsetResult.Err(SubsetString.NonByte(offset)) => {
+          SubsetResult.Err(SubsetUnicode.Error(SubsetUnicode.InvalidByte, offset))
+        }
+      }
+    }
+  )
+};

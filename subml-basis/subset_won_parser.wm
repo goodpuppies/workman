@@ -121,7 +121,7 @@ let text = (cursor) => {
       [] => { fail(cur, "unterminated quoted value") },
       ['"', .._] => {
         let xs = SubsetList.reverse(acc);
-        if (SubsetWonSyntax.textValid(xs)) { SubsetResult.Ok(SubsetWonSyntax.native(xs), advance(cur)) } else { fail(cursor, "text is not valid UTF-8") }
+        if (SubsetWonSyntax.textValid(xs)) { SubsetResult.Ok(xs, advance(cur)) } else { fail(cursor, "text is not valid UTF-8") }
       },
       ['\\', 'x', a, b, ..rest] => {
         match(SubsetWonSyntax.hexPair(a, b)) {
@@ -227,7 +227,9 @@ let key = (cursor) => {
   let requireQuotedKey = via((name, stop) => {
     if (SubsetWonSyntax.identifier(name)) { fail(cursor, "identifier keys must be bare") } else { SubsetResult.Ok(name, stop) }
   });
-  if (peek(cursor, '"')) { requireQuotedKey(text(cursor)) } else { name(cursor) }
+  if (peek(cursor, '"')) {
+    requireQuotedKey(SubsetResult.map(text(cursor), (xs, stop) => { (SubsetWonSyntax.native(xs), stop) }))
+  } else { name(cursor) }
 };
 
 let blob = (cursor) => {

@@ -15,7 +15,7 @@ export type Value =
   | { name: "Null"; args: [] }
   | { name: "Boolean"; args: [boolean] }
   | { name: "Number"; args: [string] }
-  | { name: "Text"; args: [string] }
+  | { name: "Text"; args: [WmList<string>] }
   | { name: "Blob"; args: [WmList<string>] }
   | { name: "List"; args: [WmList<Value>] }
   | { name: "Record"; args: [Fields] }
@@ -203,7 +203,8 @@ export class Found {
   }
 
   text(): string {
-    return this.read("text", (value) => value.name === "Text" ? decodeText(value.args[0]) : undefined);
+    return this.read("text", (value) =>
+      value.name === "Text" ? decodeText(listToArray(value.args[0]).join("")) : undefined);
   }
 
   /** The exact spelling; numeric conversion is the caller's choice. */

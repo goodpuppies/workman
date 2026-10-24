@@ -84,7 +84,8 @@ let hexByte = (c) => {
   ])
 };
 
-let quote = (s) => {
+// Quotes UTF-8 bytes as a byte string; encode's round trip rejects invalid UTF-8.
+let quote = (content) => {
   let escape = (c) => {
     match(c) {
       '"' => { "\\\"" },
@@ -97,13 +98,13 @@ let quote = (s) => {
       }
     }
   };
-  let escaped = SubsetString.concat(SubsetList.map(bytes(s), escape));
+  let escaped = SubsetString.concat(SubsetList.map(content, escape));
   "\"" ++ escaped ++ "\""
 };
 
 let textValid = (xs) => { SubsetResult.isOk(SubsetUtf8.decode(xs)) };
 
-let keyText = (key) => { if (identifier(key)) { key } else { quote(key) } };
+let keyText = (key) => { if (identifier(key)) { key } else { quote(bytes(key)) } };
 
 let duplicate = (fields, key) => {
   SubsetList.exists(

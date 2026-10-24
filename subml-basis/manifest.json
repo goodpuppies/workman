@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "a579d09a5db847bc439fc07e67bb9e78f7d22edc",
+  "commit": "30a3b932f0e3d34e1b0369eb862e382d88cd683f",
   "modules": [
     "SubsetBytes",
     "SubsetChar",
@@ -15,6 +15,7 @@
     "SubsetSmlEscape",
     "SubsetSource",
     "SubsetString",
+    "SubsetText",
     "SubsetUnicode",
     "SubsetUtf16",
     "SubsetUtf16Source",
@@ -27,7 +28,7 @@
   "sourceHashes": {
     "lib/subset_host.js": "639c0b14d54d6b4ebf18df8bb921ec912eb2eb1451e7f9c489c7da18be9d643c",
     "lib/subset_host.wm": "e4d7ad54a3520b7511b7aa33f784dd03784d6ce625fd806d7a39ad7f165e67a2",
-    "lib/subset_text_host.wm": "233c493bacc1d786c671e96dc12911d0ba8914adc4b5339e0d40d9b9d7c51326",
+    "lib/subset_text_host.wm": "d4c87e5e50d8115af2e3261676a0f1ecae4895701232f72380181551614b4ef1",
     "src/subset_bytes.sml": "ebe609d7fa96b647ceb7f9202f80d9cd9c320379c27802969b53fcbdd060c09d",
     "src/subset_char.sml": "e399d001aea93679a278a32852f7c27d569fa70731ef73a712da2626f22375ec",
     "src/subset_io.sml": "aa3b30a0ca2b9c41f210333081f9b2e20db0204b04961de483ceef3a93e6b212",
@@ -41,13 +42,14 @@
     "src/subset_sml_escape.sml": "a3cc9416ed78273723787e81715ef8cfeeca887dca7b810e3b1d8a5989f5cb1d",
     "src/subset_source.sml": "4eb5737397fcb370073fdf5638ed9533e6cfbac64057e79703e01eba2e4fc02b",
     "src/subset_string.sml": "311c4743215214e6a2c4b22acb06eab25bc8f14c88789107c5e7ff7d459a1009",
+    "src/subset_text.sml": "ca4ecad802fc3c23510ad8fbc8e10b7d804012834571aaac306be82c6af26a1c",
     "src/subset_unicode.sml": "52ad926dc2602480990f278f809e4bca6906e82e5fe49330458177ab944158f1",
     "src/subset_utf16.sml": "a21cb6047dc7e35353e1674899120a9515145dc3ffa1a1fa797cd06e29c3c603",
     "src/subset_utf16_source.sml": "ccbbc6aea1c566dc133a2776f9ad395c165b774323637d84b39ddc9b5c6f50b3",
     "src/subset_utf8.sml": "2ed817cd62ab19d477d5102b04df43e8ff887b5683012e9156593f4d1164550b",
-    "src/subset_won.sml": "7fc8082f722946e47b860ba2d40bec4c8930fb88c06f5d7eb199d7a686e76307",
-    "src/subset_won_parser.sml": "c948092a6e62e263c418433595dbf7b524766a0a47f6940451ca01f7324f4a6d",
-    "src/subset_won_syntax.sml": "97051d7a28cff625fce836dbffa52c163fd581362bd5e85418e2e66813c9cb3a",
-    "src/subset_won_value.sml": "94043f93413ebc9723cafd567dbeb8503567132cf4939a648c8a68b78ed3f985"
+    "src/subset_won.sml": "12a1ea90da0051ea750d97b198235ff4f6a68a94d18e9a939f0248a2233f0cf4",
+    "src/subset_won_parser.sml": "d4106e8726a0a1e93f45d4db2f67796a8e8ab80ffd71f81ac5a874215e0f064d",
+    "src/subset_won_syntax.sml": "7e87ece3f14807ca64c99b2204b1254ad398cb37442e948df38aec10516fa13f",
+    "src/subset_won_value.sml": "182eeae326e8aa71adec6a1f6de1e8469ec4180a9da0362dc33d5c3c1e407aed"
   }
 }

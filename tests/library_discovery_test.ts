@@ -303,6 +303,30 @@ let main = () => {
   assertEquals(recovered.interfaces.size, 1);
 });
 
+Deno.test("WM text crosses WON as UTF-8 text bytes", async () => {
+  const result = await runProgram(
+    `from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
+from "basis/text.wm" import * as Text;
+from "std/result.wm" import { getOr };
+
+let main = () => {
+  let original = "ä — 日本 😀";
+  let bytes = Text.toUtf8(original) :> getOr([]);
+  let document = Won.encode(W.Record([("name", W.Text(bytes))])) :> getOr("?");
+  print(Won.read(document) :> Won.get("name") :> Won.textString :> Result.map((value) => { value == original }));
+  print(Won.read(document) :> Won.get("name") :> Won.text :> Result.map((value) => { value == bytes }));
+  print(Won.read("x\\"616263\\"") :> Won.text :> Result.mapErr(Won.problemText));
+  print(match(Text.fromUtf8(['a', '\\u{FF}'])) { Ok(_) => { "valid" }, Err(_) => { "invalid" } });
+};
+`,
+    "run",
+  );
+  assertEquals(result.stderr, "");
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout, "Ok(true)\nOk(true)\nErr(document: expected text)\ninvalid\n");
+});
+
 Deno.test('"basis/" and "std/" import library modules; "./basis/" stays a local folder', async () => {
   const result = await runProgram(
     `from "basis/won.wm" import * as Won;

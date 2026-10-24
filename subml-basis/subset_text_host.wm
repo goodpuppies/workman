@@ -35,3 +35,21 @@ let fromCodes = (values: List<I32>) => {
   };
   go(values, "")
 };
+// UTF-8 through the URI codecs: encodeURIComponent writes UTF-8 percent escapes, and unescape
+// turns each escape into one code unit, giving a byte string; the decode is the reverse.
+// encodeURIComponent throws on a lone surrogate, so ill-formed text is returned unchanged:
+// its units above 255 fail the byte-string check in SubsetText.
+from js.global("String.prototype.isWellFormed") import unsafe {
+  call as wellFormed: String -> Bool
+};
+from js.global("globalThis") import unsafe {
+  encodeURIComponent: String -> String,
+  decodeURIComponent: String -> String,
+  escape: String -> String,
+  unescape: String -> String
+};
+let encodeUtf8 = (value: String) => {
+  if (wellFormed(value)) { unescape(encodeURIComponent(value)) } else { value }
+};
+// SubsetText validates the bytes first, so decodeURIComponent cannot throw.
+let decodeUtf8 = (bytes: String) => { decodeURIComponent(escape(bytes)) };
