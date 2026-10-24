@@ -5,9 +5,11 @@ import { runtime } from "./io.ts";
 import { libraryJsSources } from "./generated/assets.ts";
 
 /**
- * Specifier prefix of a library module's JavaScript primitive file, followed by its
+ * Specifier prefix of a library module's JavaScript or TypeScript primitive file, followed by its
  * repository-relative path (`wm-library:std/js/word8_vector.js`). The library is embedded in the
  * compiler rather than read from disk, so emission inlines the file's source as a `data:` URL.
+ * Such a file must be self-contained: a `data:` module can import `node:`, `jsr:` or `https:`
+ * specifiers, but not a relative path.
  */
 export const LIBRARY_JS_SCHEME = "wm-library:";
 
@@ -39,10 +41,16 @@ export function runtimeJsModuleSpecifier(specifier: string): string {
     const path = specifier.slice(LIBRARY_JS_SCHEME.length);
     const source = libraryJsSources[path];
     if (source === undefined) throw new Error(`missing library JavaScript file ${path}`);
-    return `data:text/javascript,${encodeURIComponent(source)}`;
+    return libraryModuleUrl(path, source);
   }
   if (!isAbsolutePathSpecifier(specifier)) return specifier;
   return pathToFileURL(normalizePathSpecifier(specifier)).href;
+}
+
+/** A library primitive as a `data:` URL; Deno compiles it as TypeScript when the path says so. */
+export function libraryModuleUrl(path: string, source: string): string {
+  const mediaType = path.endsWith(".ts") ? "application/typescript" : "text/javascript";
+  return `data:${mediaType},${encodeURIComponent(source)}`;
 }
 
 function resolveJsTarget(target: JsTarget, fromPath: string): JsTarget {

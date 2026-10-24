@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { discoverStandardModules, libraryModuleAlias } from "../src/standard_library.ts";
 import { librarySources } from "../src/generated/assets.ts";
+import { libraryModuleUrl } from "../src/js_module_specifier.ts";
 import { analyzeFile, analyzeRecoveredFile } from "../src/compiler.ts";
 
 Deno.test("library module aliases come from snake_case file names", () => {
@@ -81,6 +82,15 @@ Deno.test("library JavaScript imports resolve to embedded library files", async 
     decl.kind === "JsImportDecl" && decl.target.kind === "JsModule" ? [decl.target.specifier] : []
   );
   assertEquals([...new Set(specifiers)], ["wm-library:std/js/byte_vector.js"]);
+});
+
+Deno.test("embedded library primitives load as JavaScript or TypeScript by extension", async () => {
+  const typed = await import(libraryModuleUrl(
+    "pakman/js/probe.ts",
+    'import { basename } from "node:path";\nexport const name = (path: string): string => basename(path);\n',
+  ));
+  const plain = await import(libraryModuleUrl("std/js/probe.js", "export const twice = (n) => n * 2;\n"));
+  assertEquals([typed.name("/a/b.wm"), plain.twice(21)], ["b.wm", 42]);
 });
 
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
