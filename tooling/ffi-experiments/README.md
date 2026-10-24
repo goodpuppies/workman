@@ -2,7 +2,7 @@
 
 ## Baseline, 2026-10-15
 
-Profile the current pipeline before comparing TypeScript backends. The entry is `../wmthree/src/scripts/play.wm`, run with **wmthree as the working directory** and wm-mini's Deno config selecting the compiler's dependencies. Both working trees have existing uncommitted changes; [wmthree-results.json](wmthree-results.json) records repository HEADs, runtime versions and hashes of the 28 WM input modules actually measured.
+Profile the current pipeline before comparing TypeScript backends. The entry is `../bigger-fish/src/scripts/play.wm`, run with **wmthree as the working directory** and wm-mini's Deno config selecting the compiler's dependencies. Both working trees have existing uncommitted changes; [wmthree-results.json](wmthree-results.json) records repository HEADs, runtime versions and hashes of the 28 WM input modules actually measured.
 
 Three successful fresh-process executions without CPU sampling take **8.49–8.73 seconds** inside the graph-loading/analysis driver, median **8.61 seconds**. Process wall times are 8.68–8.95 seconds. OS/package caches are warm; compiler caches begin empty in each process. This is staged analysis, not JS emission, application startup or execution of the game.
 
@@ -137,7 +137,7 @@ In wm-mini, `deno task check`, checks of both profiling scripts, and 54 JS-impor
 
 ## Reproduction
 
-From wmthree:
+From bigger-fish (formerly wmthree):
 
 ```sh
 deno run --config=../wm-mini/deno.json -A ../wm-mini/src/main.ts check src/scripts/play.wm

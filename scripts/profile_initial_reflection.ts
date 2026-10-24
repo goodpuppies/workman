@@ -9,7 +9,7 @@ import { loadModuleGraph } from "../src/module_graph.ts";
 import { dirname, join } from "node:path";
 
 const input = Deno.args.find((arg) => !arg.startsWith("--")) ??
-  "../wmthree/src/scripts/play.wm";
+  "../bigger-fish/src/scripts/play.wm";
 const only = Deno.args.find((arg) => arg.startsWith("--only="))?.slice("--only=".length) ?? "all";
 const limit = Number(
   Deno.args.find((arg) => arg.startsWith("--limit="))?.slice("--limit=".length) ??

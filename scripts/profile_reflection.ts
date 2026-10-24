@@ -6,7 +6,7 @@ import { loadModuleGraph } from "../src/module_graph.ts";
 import { analyzeModuleGraph, StagedAnalysisError } from "../src/staged_analysis.ts";
 import { isAbsolute, relative } from "node:path";
 
-const input = Deno.args[0] ?? "../wmthree/src/scripts/play.wm";
+const input = Deno.args[0] ?? "../bigger-fish/src/scripts/play.wm";
 const events: JsReflectionProfileEvent[] = [];
 const phases = new Map<string, number>();
 const phaseDetails: { phase: string; path: string; milliseconds: number }[] = [];
