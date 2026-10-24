@@ -11,14 +11,13 @@
 --   make       no permissions: building the plan is pure, and Deno enforces it
 --   build      offline Bubblewrap host environment, invoked by store.wm
 
-from js.global("JSON") import { parse } as JSON;
 from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool, isRepository: String -> Bool, packageDirectories: String -> Js.Array<String> };
 from js.module("./host.ts") import { repositoryRecipe, repositoryVersion, recipeSource, packageProgramPath, rememberRecipe, lockedRecipe } as Repository;
 from "./model.wm" import { Target, Scope, Candidate, Package, Source };
 from "./plan.wm" import *;
 from "./paths.wm" import { Paths };
-from "./lock.wm" import { LockEntry, toJson };
-from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname, describe, compactJson };
+from "./lock.wm" import { LockEntry, entryText };
+from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname, describe };
 from "./text.wm" import { join, concatMap };
 from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, unique };
 
@@ -44,55 +43,35 @@ let defaultPackageDir = () => { dirname(dirname(dirname(pakmanRoot()))) ++ "/pak
 
 let packageDirs = () => { packageDirectories(defaultPackageDir()) :> Js.Array.toList };
 
--- Runs one protocol command and parses its JSON output.
+-- Runs one protocol command; its output is one WON document, decoded by the caller.
 let call = (name, program, flags, command) => {
   runCapture("deno", appendAll(["run", "--no-prompt", "--quiet", ..flags], [program, ..command]))
     :> Task.mapErr((message) => { name ++ " " ++ join(command, " ") ++ " failed: " ++ message })
-    :> Task.andThen((output) => {
-      JSON.parse(output)
-        :> Result.mapErr((_) => { name ++ " " ++ join(command, " ") ++ " printed invalid JSON" })
-        :> Task.fromResult
-    })
 };
 
-let checkProtocol = (name, version) => {
-  if (version == protocol) {
-    Ok(void)
-  } else {
-    Err(name ++ " speaks protocol " ++ Text.of(version) ++ ", pakman speaks " ++ Text.of(protocol))
-  }
-};
-
-let shapeError = (name, command) => { (_) => { name ++ " " ++ command ++ " printed an unexpected shape" } };
+let invalid = (name, command) => { (message) => { name ++ " " ++ command ++ " printed " ++ message } };
 
 let describeProgram = (name, program) => {
-  let info: Task<InfoJson, String> = call(name, program, [], ["describe"])
-    :> Task.andThen((v) => { v :> Json.assert :> Result.mapErr(shapeError(name, "describe")) :> Task.fromResult });
-  info
-    :> Task.andThen((json) => {
-      let i: InfoJson = json;
-      checkProtocol(name, i.protocol)
-        :> Result.andThen((_) => { Result|decodeTarget(i.target), decodeScope(i.scope)| })
-        :> Result.andThen((target, scope) => {
-          if (i.name == name || isRepository(name)) {
-            Ok(.{
-              name,
-              description = i.description,
-              homepage = i.homepage,
-              license = i.license,
-              target,
-              scope,
-              channel = i.channel,
-              minAgeDays = i.minAgeDays,
-              onlyLatest = i.onlyLatest,
-              hosts = Js.Array.toList(i.hosts),
-              program
-            }: PackageInfo)
-          } else {
-            Err(name ++ ".wm describes a package called " ++ i.name)
-          }
-        })
-        :> Task.fromResult
+  call(name, program, [], ["describe"])
+    :> Task.andThen((output) => { decodeInfo(output) :> Result.mapErr(invalid(name, "describe")) :> Task.fromResult })
+    :> Task.andThen((i: Info) => {
+      if (i.name == name || isRepository(name)) {
+        Task.succeed(.{
+          name,
+          description = i.description,
+          homepage = i.homepage,
+          license = i.license,
+          target = i.target,
+          scope = i.scope,
+          channel = i.channel,
+          minAgeDays = i.minAgeDays,
+          onlyLatest = i.onlyLatest,
+          hosts = i.hosts,
+          program
+        }: PackageInfo)
+      } else {
+        Task.fail(name ++ ".wm describes a package called " ++ i.name)
+      }
     })
 };
 
@@ -150,13 +129,13 @@ let refresh = (paths: Paths, info: PackageInfo) => {
 };
 
 let remember = (paths: Paths, info: PackageInfo, entry: LockEntry) => {
-  Repository.rememberRecipe(paths.lockFile, info.name, compactJson(toJson([entry])), info.program)
+  Repository.rememberRecipe(paths.lockFile, info.name, entryText(entry), info.program)
     :> Task.mapErr(describe("record recipe"))
 };
 
 let forEntry = (paths: Paths, info: PackageInfo, entry: LockEntry) => {
   if (!isRepository(info.name)) { Task.succeed(info) } else {
-    Repository.lockedRecipe(paths.lockFile, info.name, compactJson(toJson([entry])))
+    Repository.lockedRecipe(paths.lockFile, info.name, entryText(entry))
       :> Task.mapErr(describe("locked recipe; run pakman resolve " ++ info.name))
       :> Task.andThen((program) => { describeProgram(info.name, program) })
   }
@@ -172,15 +151,8 @@ let versions = (info: PackageInfo) => {
     [] => { [] },
     Var(hosts) => { ["--allow-net=" ++ join(hosts, ",")] }
   };
-  let candidates: Task<CandidatesJson, String> = call(info.name, info.program, ["--allow-env=GITHUB_TOKEN", ..net], ["versions"])
-    :> Task.andThen((v) => { v :> Json.assert :> Result.mapErr(shapeError(info.name, "versions")) :> Task.fromResult });
-  candidates
-    :> Task.andThen((json) => {
-      let c: CandidatesJson = json;
-      checkProtocol(info.name, c.protocol)
-        :> Result.map((_) => { c.candidates :> Js.Array.toList :> mapAll(decodeCandidate) })
-        :> Task.fromResult
-    })
+  call(info.name, info.program, ["--allow-env=GITHUB_TOKEN", ..net], ["versions"])
+    :> Task.andThen((output) => { decodeCandidates(output) :> Result.mapErr(invalid(info.name, "versions")) :> Task.fromResult })
     :> Task.andThen((items) => {
       series(items, (candidate: Candidate) => {
         if (candidate.ref != "pak:self") { Task.succeed(candidate) } else {
@@ -198,16 +170,8 @@ let versions = (info: PackageInfo) => {
 
 -- The plan for one version. Runs with no permissions at all.
 let make = (info: PackageInfo, version, ref) => {
-  let plan: Task<PlanJson, String> = call(info.name, info.program, [], ["make", version, ref])
-    :> Task.andThen((v) => { v :> Json.assert :> Result.mapErr(shapeError(info.name, "make")) :> Task.fromResult });
-  plan
-    :> Task.andThen((json) => {
-      let p: PlanJson = json;
-      checkProtocol(info.name, p.protocol)
-        :> Result.andThen((_) => { decodePlan(p) })
-        :> Result.mapErr((message) => { info.name ++ ": " ++ message })
-        :> Task.fromResult
-    })
+  call(info.name, info.program, [], ["make", version, ref])
+    :> Task.andThen((output) => { decodePlan(output) :> Result.mapErr(invalid(info.name, "make")) :> Task.fromResult })
     :> Task.andThen((pkg: Package) => {
       series(pkg.sources, (source: Source) => {
         Repository.recipeSource(info.program, source.url) :> Task.mapErr(describe("recipe source"))

@@ -6,7 +6,7 @@
 -- into /). It trusts nothing in the plan about ownership. Its rules:
 --
 --   - It only removes or replaces paths in its own record of what it
---     installed, <root>/var/lib/pakman/owned.json. For / that record is
+--     installed, <root>/var/lib/pakman/owned.won. For / that record is
 --     root-owned, so nothing running as the user can widen what it deletes.
 --   - It never overwrites a file it doesn't own, and refuses any path pacman's
 --     database inside the root lists (<root>/var/lib/pacman/local).
@@ -16,10 +16,10 @@
 -- Files are copied, not linked: installed files belong to whoever runs the
 -- applier (root for /), never to the user who built them.
 
-from js.global("JSON") import { parse } as JSON;
 from "./io.wm" import *;
 from "./fun.wm" import { mapAll, filterAll, appendAll, concatAll, ignore, unique };
 from "./text.wm" import { compare, join };
+from "./won.wm" import * as D;
 
 let via = Monad.via;
 
@@ -29,32 +29,49 @@ record Placement = { path: String, source: String, link: String };
 
 record Plan = { root: String, add: List<Placement>, remove: List<String> };
 
-record PlanJson = { root: String, add: Js.Array<Placement>, remove: Js.Array<String> };
-record OwnedJson = { files: Js.Array<String> };
+let planProtocol = 1;
+let ownedProtocol = 1;
 
-let planJson = (plan: Plan) => {
-  let placementJson = (p: Placement) => { JSON{ path: p.path, source: p.source, link: p.link } };
-  JSON{ root: plan.root, add: jsonList(plan.add, placementJson), remove: Js.Array.fromList(plan.remove) }
+let planValue = (plan: Plan) => {
+  let placementValue = (p: Placement) => {
+    D.record([("path", D.text(p.path)), ("source", D.text(p.source)), ("link", D.text(p.link))])
+  };
+  D.document("Apply", planProtocol, D.record([
+    ("root", D.text(plan.root)), ("add", D.list(plan.add, placementValue)), ("remove", D.strings(plan.remove))
+  ]))
+};
+
+let decodePlan = (found) => {
+  let placement = (p) => {
+    Result|D.field(p, "path"), D.field(p, "source"), D.field(p, "link")|
+      :> Result.map((path, source, link) => { Placement(path, source, link) })
+  };
+  let body = D.opened(found, "Apply", planProtocol);
+  Result|D.field(body, "root"), D.listField(body, "add", placement), D.stringsField(body, "remove")|
+    :> Result.map((root, add, remove) => { Plan(root, add, remove) })
 };
 
 let recordDir = (root) => { root ++ "/var/lib/pakman" };
-let recordFile = (root) => { recordDir(root) ++ "/owned.json" };
+let recordFile = (root) => { recordDir(root) ++ "/owned.won" };
 
+-- A missing record owns nothing.
 let readOwned = (root) => {
   let file = recordFile(root);
-  let parse = via Task (text) => {
-    let owned: Result<OwnedJson, String> = JSON.parse(text)
-      :> Result.mapErr((_) => { file ++ " is not valid JSON" })
-      :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { file ++ " has an unexpected shape" }) });
-    owned :> Result.map((o) => { Js.Array.toList(o.files) }) :> Task.fromResult
-  };
-  readTextOr(file, "{\"files\":[]}")
-    :> parse
+  D.readFile(file) :> Task.andThen((found) => {
+    match(found) {
+      None => { Task.succeed([]) },
+      Some(document) => {
+        D.stringsField(D.opened(document, "Owned", ownedProtocol), "files")
+          :> Result.mapErr((problem) => { file ++ ": " ++ D.message(problem) })
+          :> Task.fromResult
+      }
+    }
+  })
 };
 
 let writeOwned = (root, files: List<String>) => {
-  Task|mkdirp(recordDir(root)), writeText(recordFile(root), prettyJson(JSON{ files: Js.Array.fromList(files) }), 420)|
-    :> Task.map(ignore)
+  let owned = D.document("Owned", ownedProtocol, D.record([("files", D.strings(files))]));
+  Task|mkdirp(recordDir(root)), D.writeFile(recordFile(root), owned)| :> Task.map(ignore)
 };
 
 let isSafePath = (path) => {
@@ -173,17 +190,17 @@ let apply = (plan: Plan) => {
     :> execute
 };
 
--- Applies a plan file (as written by `planJson`); the entry point under sudo.
+-- Applies a plan file (as written from `planValue`); the entry point under sudo.
 let applyFile = (file) => {
-  let decode = via Task (text) => {
-    let plan: Result<PlanJson, String> = JSON.parse(text)
-      :> Result.mapErr((_) => { file ++ " is not valid JSON" })
-      :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { file ++ " is not a plan" }) });
-    plan
-      :> Result.map((p) => { Plan(p.root, Js.Array.toList(p.add), Js.Array.toList(p.remove)) })
-      :> Task.fromResult
+  let decode = via Task (found) => {
+    match(found) {
+      None => { Task.fail(file ++ " does not exist") },
+      Some(document) => {
+        decodePlan(document) :> Result.mapErr((problem) => { file ++ ": " ++ D.message(problem) }) :> Task.fromResult
+      }
+    }
   };
-  readText(file)
+  D.readFile(file)
     :> decode
     :> via Task (plan) => { apply(plan) }
 };

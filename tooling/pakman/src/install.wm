@@ -10,7 +10,8 @@ from "./paths.wm" import { Paths, profileDirOf };
 from "./store.wm" import { StoreEntry };
 from "./text.wm" import { compare, join };
 from "./io.wm" import *;
-from "./apply.wm" import { apply, planJson, Plan, Placement };
+from "./apply.wm" import { apply, planValue, Plan, Placement };
+from "./won.wm" import * as D;
 from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String };
 from "./fun.wm" import { ignore, unique, mapAll, filterAll, appendAll, concatAll };
 
@@ -49,15 +50,9 @@ record Manifest = {
   base: List<String>,
   uses: List<StoreUseJson>
 };
-record GenerationJson = {
-  number: Number,
-  root: String,
-  packages: Js.Array<Installed>,
-  files: Js.Array<FileEntry>
-};
 
--- Json.assert's target shape is fixed where it is called, so it cannot be
--- wrapped in a generic helper; each reader calls it itself.
+-- Store manifests stay JSON: host.ts reads them too. Json.assert's target
+-- shape is fixed where it is called, so each reader calls it itself.
 let readJson = (path) => {
   let parse = via Task (text) => {
     JSON.parse(text) :> Result.mapErr((_) => { path ++ " is not valid JSON" }) :> Task.fromResult
@@ -75,36 +70,49 @@ let empty = (root) => { Generation(0, root, [], []) };
 -- ---------------------------------------------------------------------------
 -- Reading and writing generations
 
-let generationJson = (g: Generation) => {
-  let installedJson = (i: Installed) => {
-    JSON{ name: i.name, version: i.version, path: i.path }
+let generationProtocol = 1;
+
+let generationValue = (g: Generation) => {
+  let installedValue = (i: Installed) => {
+    D.record([("name", D.text(i.name)), ("version", D.text(i.version)), ("path", D.text(i.path))])
   };
-  let fileJson = (f: FileEntry) => {
-    JSON{ path: f.path, source: f.source, link: f.link }
+  let fileValue = (f: FileEntry) => {
+    D.record([("path", D.text(f.path)), ("source", D.text(f.source)), ("link", D.text(f.link))])
   };
-  JSON{
-    number: g.number,
-    root: g.root,
-    packages: jsonList(g.packages, installedJson),
-    files: jsonList(g.files, fileJson)
-  }
+  D.document("Generation", generationProtocol, D.record([
+    ("number", D.int(g.number)),
+    ("root", D.text(g.root)),
+    ("packages", D.list(g.packages, installedValue)),
+    ("files", D.list(g.files, fileValue))
+  ]))
 };
 
-let fromGenerationJson = (g: GenerationJson) => {
-  Generation(g.number, g.root, Js.Array.toList(g.packages), Js.Array.toList(g.files))
+let decodeGeneration = (found) => {
+  let installed = (i) => {
+    Result|D.field(i, "name"), D.field(i, "version"), D.field(i, "path")|
+      :> Result.map((name, version, path) => { Installed(name, version, path) })
+  };
+  let file = (f) => {
+    Result|D.field(f, "path"), D.field(f, "source"), D.field(f, "link")|
+      :> Result.map((path, source, link) => { FileEntry(path, source, link) })
+  };
+  let body = D.opened(found, "Generation", generationProtocol);
+  Result|D.intField(body, "number"), D.field(body, "root"), D.listField(body, "packages", installed), D.listField(body, "files", file)|
+    :> Result.map((number, root, packages, files) => { Generation(number, root, packages, files) })
 };
+
+let generationFile = (paths: Paths, root, number) => { profileDir(paths, root) ++ "/" ++ Text.of(number) ++ ".won" };
 
 let readGeneration = (paths: Paths, root, number) => {
-  let file = profileDir(paths, root) ++ "/" ++ Text.of(number) ++ ".json";
-  let assertGeneration = via Task (value) => {
-    let generation: Result<GenerationJson, String> = value
-      :> Json.assert
-      :> Result.mapErr(shapeError(file));
-    generation :> Task.fromResult
-  };
-  readJson(file)
-    :> assertGeneration
-    :> Task.map(fromGenerationJson)
+  let file = generationFile(paths, root, number);
+  D.readFile(file) :> Task.andThen((found) => {
+    match(found) {
+      None => { Task.fail(file ++ " does not exist") },
+      Some(document) => {
+        decodeGeneration(document) :> Result.mapErr((problem) => { file ++ ": " ++ D.message(problem) }) :> Task.fromResult
+      }
+    }
+  })
 };
 
 let currentNumber = (paths: Paths, root) => {
@@ -120,9 +128,9 @@ let current = (paths: Paths, root) => {
     :> load
 };
 
--- "12.json" -> Some(12)
+-- "12.won" -> Some(12)
 let generationNumber = (name) => {
-  let number = parseIntOr(name :> .replace(".json", "") :> Result.getOr(""), 0 - 1);
+  let number = parseIntOr(name :> .replace(".won", "") :> Result.getOr(""), 0 - 1);
   if (number > 0) { Some(number) } else { None }
 };
 
@@ -138,7 +146,7 @@ let recordGeneration = (paths: Paths, g: Generation) => {
   let dir = profileDir(paths, g.root);
   Task|
     mkdirp(dir),
-    writeText(dir ++ "/" ++ Text.of(g.number) ++ ".json", prettyJson(generationJson(g)), 420)
+    D.writeFile(generationFile(paths, g.root, g.number), generationValue(g))
   | :> Task.map(ignore)
 };
 
@@ -293,7 +301,7 @@ let changedFrom = (map) => {
 -- program under PAKMAN_SUDO (default `sudo`), so only that step is privileged.
 let applyPlan = (paths: Paths, plan: Plan) => {
   let counts = (List.length(plan.add), List.length(plan.remove));
-  let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".json";
+  let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".won";
   let applier = paths.state ++ "/programs/_apply.js";
   let elevate = via Task (program) => {
     let sudo = envOr("PAKMAN_SUDO", "sudo") :> .split(" ") :> Result.map(Js.Array.toList) :> Result.getOr(["sudo"]);
@@ -308,7 +316,7 @@ let applyPlan = (paths: Paths, plan: Plan) => {
     }
   };
   let elevated = () => {
-    Task|mkdirp(paths.tmp), writeText(planFile, prettyJson(planJson(plan)), 420)|
+    Task|mkdirp(paths.tmp), D.writeFile(planFile, planValue(plan))|
       :> via Task (_) => { compileProgram(pakmanRoot() ++ "/src/apply-main.wm", applier) }
       :> elevate
   };

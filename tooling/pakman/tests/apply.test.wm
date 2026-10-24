@@ -18,7 +18,7 @@ let setUp = (dir) => {
     })
 };
 
-let ownedRecord = (dir) => { readTextOr(dir ++ "/root/var/lib/pakman/owned.json", "") };
+let ownedRecord = (dir) => { readTextOr(dir ++ "/root/var/lib/pakman/owned.won", "") };
 
 -- Applies a plan that should be refused, giving the refusal.
 let refused = (plan) => { assertFails(apply(plan)) };

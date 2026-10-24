@@ -7,6 +7,7 @@
 
 const userAgent = "pakman/0.1 (+https://github.com/goodpuppies)";
 import { pakmanImport } from "../../../src/pakman_imports.ts";
+import { libraryImport } from "../../../src/host_modules.ts";
 export { packageDirectories, addPackageDirectory } from "../../../src/user_config.ts";
 export { pakmanStateDirectory } from "../../../src/user_paths.ts";
 export {
@@ -214,6 +215,39 @@ export async function writeText(path: string, text: string, mode: number): Promi
   await Deno.rename(partial, path);
 }
 
+// WON files are bytes. They cross to WM as Basis byte strings: one code unit per byte.
+function byteString(bytes: Uint8Array): string {
+  const pieces: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 4096) {
+    pieces.push(String.fromCharCode(...bytes.subarray(offset, offset + 4096)));
+  }
+  return pieces.join("");
+}
+
+/** Reads a file as a byte string, or returns `fallback` when it does not exist. */
+export async function readBytesOr(path: string, fallback: string): Promise<string> {
+  try {
+    return byteString(await Deno.readFile(path));
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return fallback;
+    throw error;
+  }
+}
+
+/** Atomically replaces `path` with the bytes of a byte string. */
+export async function writeBytes(path: string, data: string, mode: number): Promise<void> {
+  const bytes = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    const code = data.charCodeAt(i);
+    if (code > 255) throw new Error("expected a byte string");
+    bytes[i] = code;
+  }
+  const partial = `${path}.part`;
+  await Deno.writeFile(partial, bytes, { mode });
+  await Deno.chmod(partial, mode);
+  await Deno.rename(partial, path);
+}
+
 export async function copyFile(source: string, dest: string, mode: number): Promise<void> {
   await Deno.copyFile(source, dest);
   await Deno.chmod(dest, mode);
@@ -414,6 +448,8 @@ export async function compileProgram(source: string, compiled: string): Promise<
     const text = await Deno.readTextFile(file);
     inputs.push(file, await sha256Text(text));
     for (const match of text.matchAll(/^\s*from\s+["']([^"']+)["']/gm)) {
+      // "std/" and "basis/" modules are embedded in the compiler, fingerprinted below.
+      if (libraryImport(match[1])) continue;
       await visit(pakmanImport(match[1]) ?? decodeURIComponent(new URL(match[1], `file://${file}`).pathname));
     }
   };

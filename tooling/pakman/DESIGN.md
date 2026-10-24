@@ -131,7 +131,7 @@ the AUR plays today).
 
 | | primary (PS2, future minimal systems) | guest (CachyOS desktop) |
 |---|---|---|
-| owns | all of `/` | the paths it installed, recorded in `/var/lib/pakman/owned.json` |
+| owns | all of `/` | the paths it installed, recorded in `/var/lib/pakman/owned.won` |
 | base system | kernel + libc | the host distro |
 | host package manager | none | pacman; pakman never runs it, reads its database to avoid its files |
 
@@ -153,7 +153,7 @@ can't write the root itself, the way paru builds unprivileged and then calls `su
 
 ```
           pakman (manager, src/ + pakman.wm)                package programs (~/git/pak/paks/*/pak.wm)
- ┌─────────────────────────────────────────────┐   JSON   ┌────────────────────────────────┐
+ ┌─────────────────────────────────────────────┐   WON    ┌────────────────────────────────┐
  │ resolve: age gate, pin hashes → pakman.lock │ ◀──────▶ │ describe   (no permissions)    │
  │ build:   fetch, verify, run steps → store   │          │ versions   (net: declared hosts)│
  │ install: check graph, link → generation     │          │ make <v>   (no permissions)    │
@@ -161,7 +161,7 @@ can't write the root itself, the way paru builds unprivileged and then calls `su
 ```
 
 pakman never imports package code. It compiles each package file into its own program and talks
-to it over a small JSON protocol. Everything with side effects (downloads, hashing, the store,
+to it over a small [WON](../won/README.md) protocol. Everything with side effects (downloads, hashing, the store,
 generations) happens in pakman; packages only describe.
 
 ## Packages are programs
@@ -192,9 +192,10 @@ touch the network. `make` returns a `Package` (see "Package model").
 
 ### Protocol
 
-`serve` (`src/package.wm`) answers three commands, each printing one JSON document. Encoders and
-decoders live together in `src/plan.wm` so the two sides can't drift; every document carries
-`protocol` (currently 10) so a stale compiled package is detected.
+`serve` (`src/package.wm`) answers three commands, each printing one WON document. Encoders and
+decoders live together in `src/plan.wm` so the two sides can't drift; every document's root tag
+carries `protocol` (currently 11, as in `Plan<protocol = 11>{...}`) so a stale compiled package is
+detected.
 
 | command | prints |
 |---|---|
@@ -202,8 +203,9 @@ decoders live together in `src/plan.wm` so the two sides can't drift; every docu
 | `versions` | candidates: `version`, `published`, `channel`, and the `checksums` upstream publishes for that version's downloads; already filtered by the package's `accept` rule |
 | `make <version> <ref>` | the plan: sources, install steps, requirements |
 
-Text and references inside a plan travel as a flat list of uniform parts,
-`{ kind: "lit" | "own" | "of" | "base", value, pkg }`, so one record shape checks them all.
+Install steps, references and text parts are tags, such as `Install{source path mode = Exec}`,
+`Of{package path}` and `Lit("...")`. Text inside a plan travels as a flat list of parts.
+`src/won.wm` holds the encoding and decoding helpers shared by every pakman file format.
 
 A package can be run by hand for debugging: `wm run ~/git/pak/paks/t3-code/pak.wm -- make <version> ""`.
 
@@ -419,7 +421,7 @@ write the root (User scope, test roots) and otherwise as its own program (`src/a
 compiled to `<state>/programs/_apply.js`) under `sudo`. It trusts nothing in the plan about
 ownership:
 
-- It keeps its own record of what it installed, `<root>/var/lib/pakman/owned.json`, the way
+- It keeps its own record of what it installed, `<root>/var/lib/pakman/owned.won`, the way
   pacman keeps `<root>/var/lib/pacman`. For `/` that record is root-owned, so nothing running as
   the user can widen what it deletes. It only removes or replaces paths in that record.
 - It refuses any path that exists and isn't in the record, and any path pacman's database inside
@@ -490,12 +492,12 @@ This retires apk-tools, APKINDEX and the RSA signing pipeline on the PS2.
 | path | contents |
 |---|---|
 | `<state>/profiles/<root>/pakman.lock` | that root's resolved versions, tracks and source hashes (`PAKMAN_LOCK` overrides) |
-| `<state>/profiles/<root>/<n>.json`, `current` | that root's generations |
+| `<state>/profiles/<root>/<n>.won`, `current` | that root's generations |
 | `<state>/sources/<sha256>` | downloaded sources, content-addressed |
 | `<state>/store/<hash>-<name>-<version>/` | built trees, read-only |
-| `<state>/store/<hash>-<name>-<version>.json` | that entry's files and dependency edges |
+| `<state>/store/<hash>-<name>-<version>.json` | that entry's files and dependency edges (JSON: `host.ts` reads it too) |
 | `<state>/programs/<name>.js`, `_apply.js` | compiled package programs and the applier |
-| `<root>/var/lib/pakman/owned.json` | the applier's record of every path it installed in that root |
+| `<root>/var/lib/pakman/owned.won` | the applier's record of every path it installed in that root |
 
 `<state>` is `PAKMAN_STATE`, default `$XDG_STATE_HOME/workman/pakman` (or `~/.local/state/workman/pakman`; builds run as the user). Roots: `/` for
 System packages, the home directory for User packages, or `--root DIR`.
@@ -522,7 +524,7 @@ System packages, the home directory for User packages, or `--root DIR`.
   recompiled everything, and package code ran with pakman's permissions.
 - **Loading packages as separately compiled modules** (`wm compile-library` + `import()`). Values
   can't cross bundles: wm matches nullary constructors (`Nil`, `None`, `Host`) by identity against
-  per-bundle singletons. JSON between processes avoids the problem and adds the sandbox.
+  per-bundle singletons. Serialized documents between processes avoid the problem and add the sandbox.
 - **Host requirements as pacman package names** (`pacman -T fuse2`). Replaced by `Base` file
   references: host-agnostic, and part of the same dependency graph.
 - **One global lock.** Installing `zig@0.14.1` into a second root rewrote the version for every

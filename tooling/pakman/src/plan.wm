@@ -1,262 +1,262 @@
 -- The protocol between package programs and pakman.
 --
--- A package program prints one JSON document per command. Encoders run in the
+-- A package program prints one WON document per command. Encoders run in the
 -- package process, decoders in pakman; keeping both here means the two sides
--- can't drift apart. Every document carries `protocol` so a stale compiled
--- package is detected instead of misread.
+-- can't drift apart. Every document's root tag carries `protocol` so a stale
+-- compiled package is detected instead of misread.
 
 from "./model.wm" import *;
-from "./io.wm" import { jsonList };
 from "./refs.wm" import { parts };
-from "./fun.wm" import { mapAll };
+from "./won.wm" import * as D;
 
-let protocol = 10;
+let protocol = 11;
 
 let targetName = match(target) => {
-  Host => { "host" },
-  Ps2 => { "ps2" }
+  Host => { "Host" },
+  Ps2 => { "Ps2" }
 };
 
 let scopeName = match(scope) => {
-  System => { "system" },
-  User => { "user" }
-};
-
-let decodeScope = (name) => {
-  match(name) {
-    "system" => { Ok(System) },
-    "user" => { Ok(User) },
-    _ => { Err("unknown scope " ++ name) }
-  }
+  System => { "System" },
+  User => { "User" }
 };
 
 let modeName = match(mode) => {
-  Exec => { "exec" },
-  Data => { "data" }
+  Exec => { "Exec" },
+  Data => { "Data" }
+};
+
+-- ---------------------------------------------------------------------------
+-- Encoding
+
+let sourceValue = (s: Source) => { D.record([("file", D.text(s.file)), ("url", D.text(s.url))]) };
+
+let refValue = match(ref) => {
+  Own(path) => { D.wrap("Own", D.text(path)) },
+  Of(name, path) => { D.tag("Of", [("package", D.text(name)), ("path", D.text(path))]) },
+  Instance(name, selector, path) => {
+    D.tag("Instance", [("package", D.text(name)), ("selector", D.text(selector)), ("path", D.text(path))])
+  },
+  StorePath(store, path) => { D.tag("StorePath", [("store", D.text(store)), ("path", D.text(path))]) },
+  Base(path) => { D.wrap("Base", D.text(path)) }
+};
+
+-- Text travels as a flat list of parts.
+let partValue = match(part) => {
+  Lit(text) => { D.wrap("Lit", D.text(text)) },
+  Ref(path) => { D.wrap("Ref", refValue(path)) },
+  ShellRef(path) => { D.wrap("Shell", refValue(path)) },
+  _ => { D.wrap("Lit", D.text("")) }
+};
+
+let textValue = (text) => { D.list(parts(text), partValue) };
+
+let modeValue = (mode) => { D.bare(modeName(mode)) };
+
+let opValue = match(op) => {
+  Install(file, dest, mode) => {
+    D.tag("Install", [("source", D.text(file)), ("path", D.text(dest)), ("mode", modeValue(mode))])
+  },
+  Extract(unpack) => {
+    D.tag("Extract", [
+      ("archive", D.strings(unpack.archive)), ("members", D.strings(unpack.members)),
+      ("path", D.text(unpack.dest)), ("strip", D.int(unpack.strip))
+    ])
+  },
+  ExtractPayload(chain, choices, dest) => {
+    D.tag("ExtractPayload", [("archive", D.strings(chain)), ("members", D.strings(choices)), ("path", D.text(dest))])
+  },
+  Symlink(target, path) => { D.tag("Symlink", [("target", refValue(target)), ("path", D.text(path))]) },
+  WriteText(dest, contents, mode) => {
+    D.tag("Write", [("path", D.text(dest)), ("mode", modeValue(mode)), ("text", textValue(contents))])
+  },
+  BuildCommand(build) => {
+    D.tag("BuildCommand", [
+      ("program", refValue(build.program)), ("arguments", D.strings(build.arguments)),
+      ("source", D.text(build.source)), ("strip", D.int(build.strip)), ("output", D.text(build.output)),
+      ("path", D.text(build.dest)), ("mode", modeValue(build.mode))
+    ])
+  },
+  Build(id, tools) => { D.tag("Build", [("id", D.text(id)), ("tools", D.strings(tools))]) },
+  MakeDir(path) => { D.wrap("MakeDir", D.text(path)) }
 };
 
 -- `describe`: everything pakman needs to know without running any package code.
 let encodeInfo = (def: Definition) => {
-  JSON{
-    protocol: protocol,
-    name: def.name,
-    description: def.description,
-    homepage: def.homepage,
-    license: def.license,
-    target: targetName(def.target),
-    scope: scopeName(def.scope),
-    channel: def.policy.channel,
-    minAgeDays: def.policy.minAgeDays,
-    onlyLatest: def.policy.onlyLatest,
-    hosts: Js.Array.fromList(def.hosts)
-  }
+  D.document("Package", protocol, D.record([
+    ("name", D.text(def.name)),
+    ("description", D.text(def.description)),
+    ("homepage", D.text(def.homepage)),
+    ("license", D.text(def.license)),
+    ("target", D.bare(targetName(def.target))),
+    ("scope", D.bare(scopeName(def.scope))),
+    ("channel", D.text(def.policy.channel)),
+    ("minAgeDays", D.int(def.policy.minAgeDays)),
+    ("onlyLatest", D.bool(def.policy.onlyLatest)),
+    ("hosts", D.strings(def.hosts))
+  ]))
 };
 
 -- `versions`: candidates newest first, already filtered by the package's own
 -- `accept` rule. pakman applies the minimum age itself, so no package can skip it.
 let encodeCandidates = (candidates: List<Candidate>) => {
-  let checksumJson = (c: Checksum) => { JSON{ url: c.url, sha256: c.sha256 } };
-  let candidateJson = (c: Candidate) => {
-    JSON{ version: c.version, published: c.published, channel: c.channel, checksums: jsonList(c.checksums, checksumJson), ref: c.ref }
+  let checksumValue = (c: Checksum) => { D.record([("url", D.text(c.url)), ("sha256", D.text(c.sha256))]) };
+  let candidateValue = (c: Candidate) => {
+    D.record([
+      ("version", D.text(c.version)), ("published", D.text(c.published)), ("channel", D.text(c.channel)),
+      ("checksums", D.list(c.checksums, checksumValue)), ("ref", D.text(c.ref))
+    ])
   };
-  JSON{ protocol: protocol, candidates: jsonList(candidates, candidateJson) }
-};
-
--- References and text travel as a flat list of parts, one uniform shape:
---   { kind: "lit" | "own" | "of" | "base", value, pkg }
-let refJson = match(ref) => {
-  Own(path) => { JSON{ kind: "own", value: path, pkg: "" } },
-  Of(name, path) => { JSON{ kind: "of", value: path, pkg: name } },
-  Instance(name, selector, path) => { JSON{ kind: "instance", value: path, pkg: name ++ "@" ++ selector } },
-  StorePath(store, path) => { JSON{ kind: "store", value: path, pkg: store } },
-  Base(path) => { JSON{ kind: "base", value: path, pkg: "" } }
-};
-
-let partJson = match(part) => {
-  Lit(text) => { JSON{ kind: "lit", value: text, pkg: "" } },
-  Ref(path) => { refJson(path) },
-  ShellRef(path) => {
-    match(path) {
-      Own(value) => { JSON{ kind: "shell-own", value: value, pkg: "" } },
-      Of(name, value) => { JSON{ kind: "shell-of", value: value, pkg: name } },
-      Instance(name, selector, value) => { JSON{ kind: "shell-instance", value: value, pkg: name ++ "@" ++ selector } },
-      StorePath(store, value) => { JSON{ kind: "shell-store", value: value, pkg: store } },
-      Base(value) => { JSON{ kind: "shell-base", value: value, pkg: "" } }
-    }
-  },
-  _ => { JSON{ kind: "lit", value: "", pkg: "" } }
-};
-
-let textJson = (text) => { jsonList(parts(text), partJson) };
-
--- Install steps share one flat shape so the decoder can check them with a single record.
-let opJson = match(op) => {
-  Install(file, dest, mode) => {
-    JSON{ op: "install", path: dest, source: file, mode: modeName(mode), strip: 0, archive: JSON[], members: JSON[], parts: JSON[] }
-  },
-  Extract(unpack) => {
-    JSON{
-      op: "extract", path: unpack.dest, source: "", mode: "", strip: unpack.strip,
-      archive: Js.Array.fromList(unpack.archive), members: Js.Array.fromList(unpack.members), parts: JSON[]
-    }
-  },
-  ExtractPayload(chain, choices, dest) => {
-    JSON{ op: "extract-payload", path: dest, source: "", mode: "", strip: 0,
-      archive: Js.Array.fromList(chain), members: Js.Array.fromList(choices), parts: JSON[] }
-  },
-  Symlink(target, path) => {
-    JSON{ op: "symlink", path: path, source: "", mode: "", strip: 0, archive: JSON[], members: JSON[], parts: jsonList([target], refJson) }
-  },
-  WriteText(dest, contents, mode) => {
-    JSON{ op: "write", path: dest, source: "", mode: modeName(mode), strip: 0, archive: JSON[], members: JSON[], parts: textJson(contents) }
-  },
-  BuildCommand(build) => {
-    JSON{ op: "build-command", path: build.dest, source: build.source, mode: modeName(build.mode), strip: build.strip,
-      archive: Js.Array.fromList([build.output]), members: Js.Array.fromList(build.arguments), parts: jsonList([build.program], refJson) }
-  },
-  Build(id, tools) => {
-    JSON{ op: "build", path: "", source: id, mode: "", strip: 0, archive: Js.Array.fromList(tools), members: JSON[], parts: JSON[] }
-  },
-  MakeDir(path) => {
-    JSON{ op: "mkdir", path: path, source: "", mode: "", strip: 0, archive: JSON[], members: JSON[], parts: JSON[] }
-  }
+  D.document("Candidates", protocol, D.list(candidates, candidateValue))
 };
 
 -- `make <version>`: the plan pakman builds from.
 let encodePlan = (pkg: Package) => {
-  let sourceJson = (s: Source) => { JSON{ file: s.file, url: s.url } };
-  JSON{
-    protocol: protocol,
-    version: pkg.version,
-    sources: jsonList(pkg.sources, sourceJson),
-    install: jsonList(pkg.install, opJson),
-    requires: jsonList(pkg.requires, refJson)
-  }
+  D.document("Plan", protocol, D.record([
+    ("version", D.text(pkg.version)),
+    ("sources", D.list(pkg.sources, sourceValue)),
+    ("install", D.list(pkg.install, opValue)),
+    ("requires", D.list(pkg.requires, refValue))
+  ]))
 };
 
--- Decoded shapes. Json.assert's target is fixed where it is called, so the
--- asserts live in packages.wm next to each command.
+-- ---------------------------------------------------------------------------
+-- Decoding
 
-record InfoJson = {
-  protocol: Number,
+let decodeTarget = (found) => {
+  D.tagName(found) :> Result.andThen((name) => {
+    match(name) { "Host" => { Ok(Host) }, "Ps2" => { Ok(Ps2) }, _ => { D.problem(found, "Host or Ps2") } }
+  })
+};
+
+let decodeScope = (found) => {
+  D.tagName(found) :> Result.andThen((name) => {
+    match(name) { "System" => { Ok(System) }, "User" => { Ok(User) }, _ => { D.problem(found, "System or User") } }
+  })
+};
+
+let decodeMode = (found) => {
+  D.tagName(found) :> Result.andThen((name) => {
+    match(name) { "Exec" => { Ok(Exec) }, "Data" => { Ok(Data) }, _ => { D.problem(found, "Exec or Data") } }
+  })
+};
+
+let decodeSource = (found) => {
+  Result|D.field(found, "file"), D.field(found, "url")| :> Result.map((file, url) => { Source(file, url) })
+};
+
+-- StorePath is manager-owned; package programs cannot supply it.
+let decodeRef = (found) => {
+  let body = D.payload(found);
+  D.tagName(found) :> Result.andThen((name) => {
+    match(name) {
+      "Own" => { D.textOf(body) :> Result.map(Own) },
+      "Of" => { Result|D.field(body, "package"), D.field(body, "path")| :> Result.map((pkg, path) => { Of(pkg, path) }) },
+      "Instance" => {
+        Result|D.field(body, "package"), D.field(body, "selector"), D.field(body, "path")|
+          :> Result.map((pkg, selector, path) => { Instance(pkg, selector, path) })
+      },
+      "Base" => { D.textOf(body) :> Result.map(Base) },
+      _ => { D.problem(found, "Own, Of, Instance or Base") }
+    }
+  })
+};
+
+let decodePart = (found) => {
+  let body = D.payload(found);
+  D.tagName(found) :> Result.andThen((name) => {
+    match(name) {
+      "Lit" => { D.textOf(body) :> Result.map(Lit) },
+      "Ref" => { decodeRef(body) :> Result.map(Ref) },
+      "Shell" => { decodeRef(body) :> Result.map(ShellRef) },
+      _ => { D.problem(found, "Lit, Ref or Shell") }
+    }
+  })
+};
+
+let decodeText = (found) => { D.items(found, decodePart) :> Result.map(Cat) };
+
+let decodeOp = (found) => {
+  let body = D.payload(found);
+  let text = (key) => { D.field(body, key) };
+  let strings = (key) => { D.stringsField(body, key) };
+  let mode = () => { decodeMode(D.get(body, "mode")) };
+  D.tagName(found) :> Result.andThen((name) => {
+    match(name) {
+      "Install" => {
+        Result|text("source"), text("path"), mode()| :> Result.map((source, dest, m) => { Install(source, dest, m) })
+      },
+      "Extract" => {
+        Result|strings("archive"), strings("members"), text("path"), D.intField(body, "strip")|
+          :> Result.map((archive, members, dest, strip) => { Extract(Unpack(archive, members, dest, strip)) })
+      },
+      "ExtractPayload" => {
+        Result|strings("archive"), strings("members"), text("path")|
+          :> Result.map((chain, choices, dest) => { ExtractPayload(chain, choices, dest) })
+      },
+      "Symlink" => {
+        Result|decodeRef(D.get(body, "target")), text("path")| :> Result.map((target, path) => { Symlink(target, path) })
+      },
+      "Write" => {
+        Result|text("path"), decodeText(D.get(body, "text")), mode()|
+          :> Result.map((dest, contents, m) => { WriteText(dest, contents, m) })
+      },
+      "MakeDir" => { D.textOf(body) :> Result.map(MakeDir) },
+      "Build" => { Result|text("id"), strings("tools")| :> Result.map((id, tools) => { Build(id, tools) }) },
+      "BuildCommand" => {
+        Result|decodeRef(D.get(body, "program")), strings("arguments"), text("source"), D.intField(body, "strip"),
+          text("output"), text("path"), mode()|
+          :> Result.map((program, arguments, source, strip, output, dest, m) => {
+            BuildCommand(CommandBuild(program, arguments, source, strip, output, dest, m))
+          })
+      },
+      _ => { D.problem(found, "an install step") }
+    }
+  })
+};
+
+-- What `describe` reports.
+record Info = {
   name: String,
   description: String,
   homepage: String,
   license: String,
-  target: String,
-  scope: String,
+  target: Target,
+  scope: Scope,
   channel: String,
   minAgeDays: Number,
   onlyLatest: Bool,
-  hosts: Js.Array<String>
+  hosts: List<String>
 };
 
-record CandidateJson = { version: String, published: String, channel: String, checksums: Js.Array<Checksum>, ref: String };
-record CandidatesJson = { protocol: Number, candidates: Js.Array<CandidateJson> };
-
-let decodeCandidate = (c: CandidateJson) => {
-  Candidate(c.version, c.published, c.channel, Js.Array.toList(c.checksums), c.ref)
+let decodeInfo = (source) => {
+  let body = D.opened(D.read(source), "Package", protocol);
+  let text = (key) => { D.field(body, key) };
+  Result|text("name"), text("description"), text("homepage"), text("license"),
+    decodeTarget(D.get(body, "target")), decodeScope(D.get(body, "scope")), text("channel"),
+    D.intField(body, "minAgeDays"), D.boolField(body, "onlyLatest"), D.stringsField(body, "hosts")|
+    :> Result.map((name, description, homepage, license, target, scope, channel, minAgeDays, onlyLatest, hosts) => {
+      Info(name, description, homepage, license, target, scope, channel, minAgeDays, onlyLatest, hosts)
+    })
+    :> Result.mapErr(D.message)
 };
 
-record PartJson = { kind: String, value: String, pkg: String };
-
-record OpJson = {
-  op: String, path: String, source: String, mode: String, strip: Number,
-  archive: Js.Array<String>, members: Js.Array<String>, parts: Js.Array<PartJson>
+let decodeCandidates = (source) => {
+  let checksum = (found) => {
+    Result|D.field(found, "url"), D.field(found, "sha256")| :> Result.map((url, sha256) => { Checksum(url, sha256) })
+  };
+  let candidate = (found) => {
+    Result|D.field(found, "version"), D.field(found, "published"), D.field(found, "channel"),
+      D.listField(found, "checksums", checksum), D.field(found, "ref")|
+      :> Result.map((version, published, channel, checksums, ref) => { Candidate(version, published, channel, checksums, ref) })
+  };
+  D.items(D.opened(D.read(source), "Candidates", protocol), candidate) :> Result.mapErr(D.message)
 };
 
-record PlanJson = {
-  protocol: Number,
-  version: String,
-  sources: Js.Array<Source>,
-  install: Js.Array<OpJson>,
-  requires: Js.Array<PartJson>
-};
-
-let decodeTarget = (name) => {
-  match(name) {
-    "host" => { Ok(Host) },
-    "ps2" => { Ok(Ps2) },
-    _ => { Err("unknown target " ++ name) }
-  }
-};
-
-let decodeMode = (name) => {
-  match(name) {
-    "exec" => { Ok(Exec) },
-    "data" => { Ok(Data) },
-    _ => { Err("unknown file mode " ++ name) }
-  }
-};
-
-let decodeRef = (p: PartJson) => {
-  match(p.kind) {
-    "own" => { Ok(Own(p.value)) },
-    "of" => { Ok(Of(p.pkg, p.value)) },
-    "instance" => {
-      let at = p.pkg :> .lastIndexOf("@") :> Result.getOr(0 - 1);
-      if (at <= 0) { Err("invalid package instance request " ++ p.pkg) } else {
-        let name = p.pkg :> .slice(0, at) :> Result.getOr("");
-        let selector = p.pkg :> .slice(at + 1) :> Result.getOr("");
-        Ok(Instance(name, selector, p.value))
-      }
-    },
-    -- StorePath is manager-owned; package programs cannot supply it.
-    "base" => { Ok(Base(p.value)) },
-    _ => { Err("expected a file reference, got " ++ p.kind) }
-  }
-};
-
-let decodePart = (p: PartJson) => {
-  if (p.kind :> .startsWith("shell-") :> Result.getOr(false)) {
-    let kind = p.kind :> .slice(6) :> Result.getOr("");
-    decodeRef(.{ ..p, kind }) :> Result.map(ShellRef)
-  } else { match(p.kind) {
-    "lit" => { Ok(Lit(p.value)) },
-    _ => { decodeRef(p) :> Result.map(Ref) }
-  } }
-};
-
-let decodeText = (items) => {
-  items :> Js.Array.toList :> mapAll(decodePart) :> Result.collectList :> Result.map(Cat)
-};
-
-let decodeSymlinkTarget = (items) => {
-  match(Js.Array.toList(items)) {
-    [only] => { decodeRef(only) },
-    _ => { Err("a symlink needs exactly one target") }
-  }
-};
-
-let decodeOp = (o: OpJson) => {
-  match(o.op) {
-    "install" => { decodeMode(o.mode) :> Result.map((mode) => { Install(o.source, o.path, mode) }) },
-    "extract" => { Ok(Extract(Unpack(Js.Array.toList(o.archive), Js.Array.toList(o.members), o.path, o.strip))) },
-    "extract-payload" => { Ok(ExtractPayload(Js.Array.toList(o.archive), Js.Array.toList(o.members), o.path)) },
-    "symlink" => { decodeSymlinkTarget(o.parts) :> Result.map((target) => { Symlink(target, o.path) }) },
-    "write" => {
-      Result|decodeText(o.parts), decodeMode(o.mode)|
-        :> Result.map((contents, mode) => { WriteText(o.path, contents, mode) })
-    },
-    "mkdir" => { Ok(MakeDir(o.path)) },
-    "build" => { Ok(Build(o.source, Js.Array.toList(o.archive))) },
-    "build-command" => {
-      match(Js.Array.toList(o.archive), Js.Array.toList(o.parts)) {
-        ([output], [program]) => {
-          Result|decodeRef(program), decodeMode(o.mode)| :> Result.map((ref, mode) => {
-            BuildCommand(CommandBuild(ref, Js.Array.toList(o.members), o.source, o.strip, output, o.path, mode))
-          })
-        },
-        _ => { Err("a command build needs exactly one output and program reference") }
-      }
-    },
-    _ => { Err("unknown install step " ++ o.op) }
-  }
-};
-
-let decodePlan = (plan: PlanJson) => {
-  let install = plan.install :> Js.Array.toList :> mapAll(decodeOp) :> Result.collectList;
-  let requires = plan.requires :> Js.Array.toList :> mapAll(decodeRef) :> Result.collectList;
-  Result|install, requires|
-    :> Result.map((ops, refs) => { Package(plan.version, Js.Array.toList(plan.sources), ops, refs) })
+let decodePlan = (source) => {
+  let body = D.opened(D.read(source), "Plan", protocol);
+  Result|D.field(body, "version"), D.listField(body, "sources", decodeSource),
+    D.listField(body, "install", decodeOp), D.listField(body, "requires", decodeRef)|
+    :> Result.map((version, sources, install, requires) => { Package(version, sources, install, requires) })
+    :> Result.mapErr(D.message)
 };

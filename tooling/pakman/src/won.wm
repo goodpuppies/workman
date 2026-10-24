@@ -1,0 +1,96 @@
+-- WON documents: the format of pakman's own files and of the package protocol.
+--
+-- Encoders build values with the helpers below and decoders read them through
+-- Won's access chains, which report a path on the first problem. A document's
+-- root is a tag with a `protocol` number, so a file or package program in an
+-- older format is refused instead of misread. Files are read and written as
+-- bytes; text values become WM strings through Won.textString.
+
+from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
+from "basis/text.wm" import * as Utf8;
+from "basis/string.wm" import * as ByteString;
+from "./io.wm" import { readBytesOr, writeBytes, parseIntOr };
+from "./fun.wm" import { mapAll };
+
+-- ---------------------------------------------------------------------------
+-- Encoding
+
+-- WON text is UTF-8 bytes. Text that cannot be encoded becomes an invalid
+-- byte, so encoding the document fails instead of writing something else.
+let text = (value) => {
+  match(Utf8.toUtf8(value)) { Ok(bytes) => { W.Text(bytes) }, Err(_) => { W.Text(['\u{FF}']) } }
+};
+let int = (n) => { W.Number(Text.of(n)) };
+let bool = (b) => { W.Boolean(b) };
+let list = (items, f) => { W.List(mapAll(items, f)) };
+let strings = (items) => { list(items, text) };
+let record = (fields) => { W.Record(fields) };
+let tag = (name, fields) => { W.Tag(name, [], W.Record(fields)) };
+let wrap = (name, value) => { W.Tag(name, [], value) };
+let bare = (name) => { W.Tag(name, [], W.Null) };
+let document = (name, protocol, body) => { W.Tag(name, [("protocol", int(protocol))], body) };
+
+-- A document as WM text, for stdout and hashing. Encoded WON is always valid UTF-8.
+let encode = (value) => {
+  Result.map(Won.encode(value), (bytes) => {
+    Result.getOr(Utf8.fromUtf8(Result.getOr(ByteString.fromNative(bytes), [])), "")
+  })
+};
+
+-- Reads a document printed as WM text.
+let read = (source) => {
+  Won.read(Result.getOr(ByteString.toNative(Result.getOr(Utf8.toUtf8(source), [])), ""))
+};
+
+-- ---------------------------------------------------------------------------
+-- Decoding
+
+let problem = (found, kind) => { Result.andThen(found, (node) => { Won.mismatch(node, kind) }) };
+
+let integer = (found) => {
+  Result.andThen(Won.number(found), (spelling) => {
+    let n = parseIntOr(spelling, 0);
+    if (Text.of(n) == spelling) { Ok(n) } else { problem(found, "integer") }
+  })
+};
+
+let field = (found, key) => { Won.textString(Won.get(found, key)) };
+let intField = (found, key) => { integer(Won.get(found, key)) };
+let boolField = (found, key) => { Won.boolean(Won.get(found, key)) };
+let items = (found, f) => {
+  Result.andThen(Won.items(found), (nodes) => { Result.traverse(nodes, (node) => { f(Ok(node)) }) })
+};
+let listField = (found, key, f) => { items(Won.get(found, key), f) };
+let stringsField = (found, key) => { listField(found, key, Won.textString) };
+let textOf = (found) => { Won.textString(found) };
+let tagName = (found) => { Won.tagName(found) };
+let payload = (found) => { Won.payload(found) };
+let get = (found, key) => { Won.get(found, key) };
+let message = (p) => { Won.problemText(p) };
+
+-- The body of a `name<protocol = n>` document.
+let opened = (found, name, protocol) => {
+  Result.andThen(Won.tagName(found), (actual) => {
+    Result.andThen(integer(Won.attribute(found, "protocol")), (version) => {
+      if (actual == name && version == protocol) { Won.payload(found) } else {
+        problem(found, name ++ "<protocol = " ++ Text.of(protocol) ++ ">")
+      }
+    })
+  })
+};
+
+-- ---------------------------------------------------------------------------
+-- Files
+
+-- None when the file does not exist.
+let readFile = (path) => {
+  readBytesOr(path, "") :> Task.map((bytes) => { if (bytes == "") { None } else { Some(Won.read(bytes)) } })
+};
+
+let writeFile = (path, value) => {
+  match(Won.encode(value)) {
+    Ok(bytes) => { writeBytes(path, bytes ++ "\n", 420) },
+    Err(reason) => { Task.fail(path ++ ": " ++ reason) }
+  }
+};

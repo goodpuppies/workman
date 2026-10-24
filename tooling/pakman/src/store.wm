@@ -10,7 +10,8 @@ from "./model.wm" import *;
 from "./packages.wm" import { PackageInfo, make };
 from "./packages.wm" import * as Packages;
 from "./instances.wm" import * as Instances;
-from "./plan.wm" import { targetName, scopeName, opJson, refJson };
+from "./plan.wm" import { targetName, scopeName, opValue, refValue };
+from "./won.wm" import * as D;
 from "./refs.wm" import { render, symlinkTarget, dependencies, baseFiles, foreignFiles, instances, mapRefs, storePaths, refsOf, runtimePlan, resolvePath };
 from "./lock.wm" import { LockEntry, LockedSource };
 from "./paths.wm" import { Paths };
@@ -34,20 +35,21 @@ let baseFor = (paths: Paths, def: PackageInfo) => {
   match(def.scope) { System => { "/" }, User => { if (paths.root == "/") { paths.home } else { paths.root } } }
 };
 
-let inputsJson = (base, def: PackageInfo, pkg: Package, sources: List<LockedSource>, builder, upstreamRef) => {
-  let sourceJson = (s: LockedSource) => { JSON{ file: s.file, sha256: s.sha256 } };
-  JSON{
-    name: def.name,
-    builder: builder,
-    upstreamRef: upstreamRef,
-    version: pkg.version,
-    target: targetName(def.target),
-    scope: scopeName(def.scope),
-    base: base,
-    requires: jsonList(pkg.requires, refJson),
-    sources: jsonList(sources, sourceJson),
-    install: jsonList(pkg.install, opJson)
-  }
+-- Hashed as WON text, so any change to the plan encoding changes every store path.
+let inputsText = (base, def: PackageInfo, pkg: Package, sources: List<LockedSource>, builder, upstreamRef) => {
+  let sourceValue = (s: LockedSource) => { D.record([("file", D.text(s.file)), ("sha256", D.text(s.sha256))]) };
+  D.encode(D.tag("Inputs", [
+    ("name", D.text(def.name)),
+    ("builder", D.text(builder)),
+    ("upstreamRef", D.text(upstreamRef)),
+    ("version", D.text(pkg.version)),
+    ("target", D.bare(targetName(def.target))),
+    ("scope", D.bare(scopeName(def.scope))),
+    ("base", D.text(base)),
+    ("requires", D.list(pkg.requires, refValue)),
+    ("sources", D.list(sources, sourceValue)),
+    ("install", D.list(pkg.install, opValue))
+  ]))
 };
 
 -- The lock must describe exactly the sources `make` asks for; otherwise the
@@ -217,7 +219,10 @@ let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, private
       let commandIdentity = if (List.any(pkg.install, match { BuildCommand(_) => { true }, _ => { false } })) {
         commandBuildIdentity()
       } else { Task.succeed("") };
-      Task|identity, commandIdentity| :> Task.map((recipe, backend) => { recipe ++ backend }) :> via Task (builder) => { sha256Text(compactJson(inputsJson(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref))) }
+      Task|identity, commandIdentity| :> Task.map((recipe, backend) => { recipe ++ backend }) :> via Task (builder) => {
+        inputsText(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref)
+          :> Task.fromResult :> Task.andThen(sha256Text)
+      }
         :> Task.map((fullHash) => { (sources, fullHash :> .slice(0, 32) :> Result.getOr(fullHash)) })
     };
     let locate = via Task (sources, hash) => {

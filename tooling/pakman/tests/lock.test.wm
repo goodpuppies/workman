@@ -1,4 +1,4 @@
--- The lock file: ordering, writing and reading, and older files.
+-- The lock file: ordering, writing and reading, and other formats.
 
 from "../../testman/test.wm" import *;
 from "../src/lock.wm" import { LockEntry, LockedSource, upsert, find, read, write };
@@ -35,21 +35,29 @@ let tests = [
   test("a missing lock reads as empty", () => {
     withTempDir((dir) => { read(dir ++ "/none.lock") :> Task.andThen((back) => { assertEqual(back, []) }) })
   }),
-  test("entries written before refs existed read with an empty ref", () => {
+  test("non-ASCII text in a lock reads back the same", () => {
     withTempDir((dir) => {
       let file = dir ++ "/pakman.lock";
-      let old = "{\"lockVersion\":2,\"packages\":[{\"name\":\"gale\",\"version\":\"1.23.0\",\"track\":\"\",\"sources\":[]}]}";
-      writeText(file, old, 420)
+      let entries = [LockEntry("gale", "1.0", "", "", [LockedSource("Grüße.tar", "https://example.org/日本.tar", "abc", false)])];
+      write(file, entries)
         :> Task.andThen((_) => { read(file) })
-        :> Task.andThen((back) => { assertEqual(back, [LockEntry("gale", "1.23.0", "", "", [])]) })
+        :> Task.andThen((back) => { assertEqual(back, entries) })
+    })
+  }),
+  test("a JSON lock is refused", () => {
+    withTempDir((dir) => {
+      let file = dir ++ "/pakman.lock";
+      writeText(file, "{\"lockVersion\":2,\"packages\":[]}", 420)
+        :> Task.andThen((_) => { assertFails(read(file)) })
+        :> Task.andThen((message) => { assertContains(message, "delete it and run `pakman resolve`") })
     })
   }),
   test("a lock in another format is refused", () => {
     withTempDir((dir) => {
       let file = dir ++ "/pakman.lock";
-      writeText(file, "{\"lockVersion\":1,\"packages\":[]}", 420)
+      writeText(file, "Lock<protocol = 2>[]", 420)
         :> Task.andThen((_) => { assertFails(read(file)) })
-        :> Task.andThen((message) => { assertContains(message, "lock format 1") })
+        :> Task.andThen((message) => { assertContains(message, "expected Lock<protocol = 3>") })
     })
   })
 ];

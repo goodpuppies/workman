@@ -3,11 +3,12 @@
 -- A package file defines a `definition` and ends with
 --   let main = () => { serve(definition) };
 -- pakman then runs it as `<package> describe | versions | make <version> <ref>`.
--- Each command prints one JSON document (see plan.wm) on stdout.
+-- Each command prints one WON document (see plan.wm) on stdout.
 
 from "./model.wm" import *;
 from "./plan.wm" import { encodeInfo, encodeCandidates, encodePlan };
-from "./io.wm" import { args, eprint, exit, compactJson };
+from "./io.wm" import { args, eprint, exit };
+from "./won.wm" import { encode };
 from "./text.wm" import { join };
 from "./fun.wm" import { filterAll };
 
@@ -15,13 +16,14 @@ let usage = "usage: <package>.wm describe | versions | make <version> <ref> | bu
 
 let serveWithBuild = (def: Definition, build: BuildContext -> Task<Void, String>) => {
   let fail = (message) => { eprint(def.name ++ ": " ++ message); exit(1) };
+  let emit = (document) => { match(encode(document)) { Ok(text) => { print(text) }, Err(message) => { fail(message) } } };
   match(args()) {
-    ["describe"] => { print(compactJson(encodeInfo(def))); Task.succeed(void) },
+    ["describe"] => { emit(encodeInfo(def)); Task.succeed(void) },
     ["versions"] => {
       def.versions()
         :> Task.map((candidates) => {
           let accepted = filterAll(candidates, (c: Candidate) => { def.policy.accept(c.version) });
-          print(compactJson(encodeCandidates(accepted)))
+          emit(encodeCandidates(accepted))
         })
         :> Task.recover(fail)
     },
@@ -30,7 +32,7 @@ let serveWithBuild = (def: Definition, build: BuildContext -> Task<Void, String>
         :> Task.recover(fail)
     },
     ["make", version, upstreamRef] => {
-      print(compactJson(encodePlan(def.make(version, upstreamRef))));
+      emit(encodePlan(def.make(version, upstreamRef)));
       Task.succeed(void)
     },
     Var(other) => { fail(usage ++ " (got: " ++ join(other, " ") ++ ")"); Task.succeed(void) }

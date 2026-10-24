@@ -240,7 +240,7 @@ wm test tests --filter refuses
 The suite uses testman (`../testman`, a proposal for wm's testing framework). It has two layers:
 
 - **Unit tests** of the logic: version choice (`resolve.test.wm`), the lock file (`lock.test.wm`),
-  references and symlink paths (`refs.test.wm`), the JSON plan packages print (`plan.test.wm`), and
+  references and symlink paths (`refs.test.wm`), the WON plan packages print (`plan.test.wm`), and
   the applier with each of its refusals (`apply.test.wm`).
 - **End-to-end tests** (`cli.test.wm`) that run `wm pakman` on the packages in `tests/pkgs` in
   throwaway roots: install with a dependency, remove, rollback, and refusing a broken reference, a
@@ -254,7 +254,8 @@ pakman.wm        command line
 ~/git/pak/paks/   the packages (a separate repo): <name>/pak.wm each
 src/packages.wm  finds, compiles and runs package programs (sandboxed)
 src/package.wm   `serve`: the entry point package programs call
-src/plan.wm      the JSON protocol between packages and pakman
+src/plan.wm      the WON protocol between packages and pakman
+src/won.wm       WON helpers shared by the protocol and pakman's files
 src/model.wm     Definition, Package, InstallOp, Policy
 src/finders.wm   upstream version finders (GitHub releases, GitLab tags, redirects)
 src/resolve.wm   picks a version by policy, pins source hashes

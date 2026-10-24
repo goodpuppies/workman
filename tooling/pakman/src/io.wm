@@ -13,7 +13,6 @@ from js.module("./host.ts") import unsafe {
   denoPath as denoPathRaw: Void -> String,
   prettyJson as prettyRaw: Js.Value -> String
 };
-from js.global("JSON") import unsafe { stringify as compactRaw: Js.Value -> String };
 from "./fun.wm" import { mapAll };
 
 -- Imports are never re-exported, so these are rebound here for other modules.
@@ -28,8 +27,7 @@ let exit = (code) => { exitRaw(code) };
 let parseIntOr = (text, fallback) => { parseIntRaw(text, fallback) };
 let denoPath = () => { denoPathRaw() };
 
--- JSON rendering. Object keys keep the order they are written in, which the store hash relies on.
-let compactJson = (value: Js.Value) => { compactRaw(value) };
+-- JSON rendering, for store manifests (host.ts reads them).
 let prettyJson = (value: Js.Value) => { prettyRaw(value) };
 let jsonList = (items, f) => { Js.Array.fromList(mapAll(items, f)) };
 
@@ -83,6 +81,12 @@ let readTextOr = (path, fallback) => {
 };
 let writeText = (path, text, mode) => {
   Host.writeText(path, text, mode) :> Task.mapErr(describe("write " ++ path))
+};
+let readBytesOr = (path, fallback) => {
+  Host.readBytesOr(path, fallback) :> Task.mapErr(describe("read " ++ path))
+};
+let writeBytes = (path, data, mode) => {
+  Host.writeBytes(path, data, mode) :> Task.mapErr(describe("write " ++ path))
 };
 let copyFile = (source, dest, mode) => {
   Host.copyFile(source, dest, mode) :> Task.mapErr(describe("copy " ++ source ++ " to " ++ dest))

@@ -1,9 +1,9 @@
 -- Resolution snapshots for package-owned dependency graphs. Build reads these
 -- snapshots without discovering releases. Legacy Of references remain separate.
-from js.global("JSON") import { parse } as JSON;
 from "./model.wm" import *;
 from "./packages.wm" import * as Packages;
-from "./lock.wm" import { LockEntry, LockedSource, toJson };
+from "./lock.wm" import { LockEntry, LockedSource, entryText, sourceValue, decodeSource };
+from "./won.wm" import * as D;
 from "./resolve.wm" import { pin, minAgeDays, oldEnough };
 from "./paths.wm" import { Paths };
 from "./refs.wm" import { instances, dependencies };
@@ -14,35 +14,48 @@ from "./io.wm" import *;
 record Edge = { name: String, selector: String, node: String };
 record Node = { id: String, name: String, program: String, programHash: String, entry: LockEntry, edges: List<Edge> };
 record Graph = { root: String, nodes: List<Node> };
-record EdgeJson = { name: String, selector: String, node: String };
-record NodeJson = {
-  id: String, name: String, program: String, programHash: String, version: String, ref: String,
-  sources: Js.Array<LockedSource>, edges: Js.Array<EdgeJson>
-};
-record GraphJson = { format: Number, root: String, nodes: Js.Array<NodeJson> };
+
+let protocol = 3;
 
 let via = Monad.via;
 
 let identity = (info: Packages.PackageInfo, entry: LockEntry) => {
   sha256File(info.program) :> via Task (programHash) => {
-    sha256Text(programHash ++ compactJson(toJson([entry])))
+    sha256Text(programHash ++ entryText(entry))
       :> Task.map((id) => { (id, programHash) })
   }
 };
 
-let graphFile = (paths: Paths, id) => { paths.lockFile ++ ".graphs/" ++ id ++ ".json" };
+let graphFile = (paths: Paths, id) => { paths.lockFile ++ ".graphs/" ++ id ++ ".won" };
 
 let encode = (graph: Graph) => {
-  let edgeJson = (edge: Edge) => { JSON{ name: edge.name, selector: edge.selector, node: edge.node } };
-  let nodeJson = (node: Node) => {
-    let sourceJson = (s: LockedSource) => { JSON{ file: s.file, url: s.url, sha256: s.sha256, verified: s.verified } };
-    JSON{
-      id: node.id, name: node.name, program: node.program, programHash: node.programHash,
-      version: node.entry.version, ref: node.entry.ref,
-      sources: jsonList(node.entry.sources, sourceJson), edges: jsonList(node.edges, edgeJson)
-    }
+  let edgeValue = (edge: Edge) => {
+    D.record([("name", D.text(edge.name)), ("selector", D.text(edge.selector)), ("node", D.text(edge.node))])
   };
-  JSON{ format: 2, root: graph.root, nodes: jsonList(graph.nodes, nodeJson) }
+  let nodeValue = (node: Node) => {
+    D.record([
+      ("id", D.text(node.id)), ("name", D.text(node.name)), ("program", D.text(node.program)),
+      ("programHash", D.text(node.programHash)), ("version", D.text(node.entry.version)), ("ref", D.text(node.entry.ref)),
+      ("sources", D.list(node.entry.sources, sourceValue)), ("edges", D.list(node.edges, edgeValue))
+    ])
+  };
+  D.document("Graph", protocol, D.record([("root", D.text(graph.root)), ("nodes", D.list(graph.nodes, nodeValue))]))
+};
+
+let decode = (found) => {
+  let edge = (e) => {
+    Result|D.field(e, "name"), D.field(e, "selector"), D.field(e, "node")|
+      :> Result.map((name, selector, node) => { Edge(name, selector, node) })
+  };
+  let node = (n) => {
+    Result|D.field(n, "id"), D.field(n, "name"), D.field(n, "program"), D.field(n, "programHash"),
+      D.field(n, "version"), D.field(n, "ref"), D.listField(n, "sources", decodeSource), D.listField(n, "edges", edge)|
+      :> Result.map((id, name, program, programHash, version, ref, sources, edges) => {
+        Node(id, name, program, programHash, LockEntry(name, version, "", ref, sources), edges)
+      })
+  };
+  let body = D.opened(found, "Graph", protocol);
+  Result|D.field(body, "root"), D.listField(body, "nodes", node)| :> Result.map((root, nodes) => { Graph(root, nodes) })
 };
 
 let find = (graph: Graph, id) => {
@@ -53,17 +66,18 @@ let find = (graph: Graph, id) => {
 let read = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
   identity(info, entry) :> via Task (id, _) => {
     let path = graphFile(paths, id);
-    let decoded: Task<GraphJson, String> = readText(path)
-      :> Task.mapErr((message) => { message ++ "; run pakman resolve " ++ info.name ++ " to record private dependencies" })
-      :> Task.andThen((text) => { JSON.parse(text) :> Result.mapErr((_) => { "invalid dependency graph JSON" }) :> Task.fromResult })
-      :> Task.andThen((value) => { value :> Json.assert :> Result.mapErr((_) => { "invalid dependency graph shape" }) :> Task.fromResult });
-    decoded :> Task.andThen((json: GraphJson) => {
-      if (json.format != 2 || json.root != id) { Task.fail("unsupported dependency graph; run pakman resolve " ++ info.name) } else {
-        let node = (n: NodeJson) => {
-          Node(n.id, n.name, n.program, n.programHash, LockEntry(n.name, n.version, "", n.ref, Js.Array.toList(n.sources)),
-            n.edges :> Js.Array.toList :> mapAll((e: EdgeJson) => { Edge(e.name, e.selector, e.node) }))
-        };
-        Task.succeed(Graph(id, json.nodes :> Js.Array.toList :> mapAll(node)))
+    let rerun = "; run pakman resolve " ++ info.name ++ " to record private dependencies";
+    D.readFile(path) :> Task.andThen((file) => {
+      match(file) {
+        None => { Task.fail(path ++ " is missing" ++ rerun) },
+        Some(found) => {
+          match(decode(found)) {
+            Ok(graph) => {
+              if (graph.root != id) { Task.fail(path ++ " records another graph" ++ rerun) } else { Task.succeed(graph) }
+            },
+            Err(problem) => { Task.fail(path ++ ": " ++ D.message(problem) ++ rerun) }
+          }
+        }
       }
     })
   }
@@ -124,7 +138,7 @@ let resolve = (paths: Paths, info: Packages.PackageInfo, entry: LockEntry) => {
     if (instances(plan) == []) { Task.succeed(void) } else {
       visit(paths, info, entry, [], Graph("", [])) :> via Task (root, graph: Graph) => {
         let path = graphFile(paths, root);
-        Task|mkdirp(dirname(path)), writeText(path ++ ".tmp", prettyJson(encode(.{ ..graph, root })), 420), rename(path ++ ".tmp", path)|
+        Task|mkdirp(dirname(path)), D.writeFile(path, encode(.{ ..graph, root }))|
           :> Task.map((_) => { void })
       }
     }

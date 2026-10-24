@@ -1,18 +1,14 @@
--- The JSON a package prints for `make`, read back by pakman.
+-- The WON a package prints for `make`, read back by pakman.
 
-from js.global("JSON") import { parse } as JSON;
 from "../../testman/test.wm" import *;
 from "../src/model.wm" import *;
-from "../src/plan.wm" import { encodePlan, decodePlan, PlanJson, decodeRef, PartJson };
-from "../src/io.wm" import { compactJson };
+from "../src/plan.wm" import { encodePlan, decodePlan, decodeRef };
+from "../src/won.wm" import * as D;
 
--- Prints a package's plan, then reads the JSON back as pakman does.
-let throughJson = (pkg: Package) => {
-  let decoded: Result<PlanJson, String> = JSON.parse(compactJson(encodePlan(pkg)))
-    :> Result.mapErr((_) => { "invalid JSON" })
-    :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { "unexpected shape" }) });
-  decoded :> Result.andThen(decodePlan)
-};
+let printed = (pkg: Package) => { Result.getOr(D.encode(encodePlan(pkg)), "") };
+
+-- Prints a package's plan, then reads it back as pakman does.
+let throughWon = (pkg: Package) => { decodePlan(printed(pkg)) };
 
 let everyStep = Package(
   "1.0",
@@ -36,22 +32,27 @@ let everyStep = Package(
 
 let tests = [
   test("package programs cannot forge manager-bound store references", () => {
-    assertErr(decodeRef(PartJson("store", "bin/tool", "/unselected/tree")))
-      :> Task.andThen((message) => { assertContains(message, "expected a file reference") })
+    assertErr(decodeRef(D.read("StorePath{store = \"/unselected/tree\" path = \"bin/tool\"}")) :> Result.mapErr(D.message))
+      :> Task.andThen((message) => { assertContains(message, "expected Own, Of, Instance or Base") })
   }),
   test("private dependency references survive the sandbox protocol", () => {
     let pkg = Package("1.0.0", [], [
       WriteText(".local/bin/app", cat([lit("exec "), shellRef(file(package("wm", "~0.4.1"), ".local/bin/wm"))]), Exec)
     ], [file(package("deno", "2.8.0"), ".local/bin/deno")]);
-    assertOk(throughJson(pkg))
-      :> Task.andThen((back) => { assertEqual(compactJson(encodePlan(back)), compactJson(encodePlan(pkg))) })
+    assertOk(throughWon(pkg))
+      :> Task.andThen((back) => { assertEqual(printed(back), printed(pkg)) })
   }),
   test("a plan survives printing and reading back", () => {
-    assertOk(throughJson(everyStep))
-      :> Task.andThen((back) => { assertEqual(compactJson(encodePlan(back)), compactJson(encodePlan(everyStep))) })
+    assertOk(throughWon(everyStep))
+      :> Task.andThen((back) => { assertEqual(printed(back), printed(everyStep)) })
+  }),
+  test("non-ASCII text survives printing and reading back", () => {
+    let pkg = Package("1.0", [], [WriteText("usr/share/app/name", lit("Grüße — 日本 😀\n"), Data)], []);
+    assertOk(throughWon(pkg))
+      :> Task.andThen((back) => { checks([assertEqual(printed(back), printed(pkg)), assertContains(printed(back), "Grüße — 日本 😀")]) })
   }),
   test("sources and requirements come back unchanged", () => {
-    assertOk(throughJson(everyStep))
+    assertOk(throughWon(everyStep))
       :> Task.andThen((back: Package) => {
         checks([
           assertEqual(back.version, "1.0"),
@@ -62,11 +63,11 @@ let tests = [
       })
   }),
   test("an unknown install step is refused", () => {
-    let json = "{\"protocol\":5,\"version\":\"1\",\"sources\":[],\"requires\":[],\"install\":[{\"op\":\"chmod\",\"path\":\"x\",\"source\":\"\",\"mode\":\"\",\"strip\":0,\"archive\":[],\"members\":[],\"parts\":[]}]}";
-    let decoded: Result<PlanJson, String> = JSON.parse(json)
-      :> Result.mapErr((_) => { "invalid JSON" })
-      :> Result.andThen((v) => { v :> Json.assert :> Result.mapErr((_) => { "unexpected shape" }) });
-    assertErr(decoded :> Result.andThen(decodePlan))
-      :> Task.andThen((message) => { assertContains(message, "unknown install step chmod") })
+    assertErr(decodePlan("Plan<protocol = 11>{version = \"1\" sources = [] requires = [] install = [Chmod(\"x\")]}"))
+      :> Task.andThen((message) => { assertContains(message, "install[0]: expected an install step") })
+  }),
+  test("a plan from an older protocol is refused", () => {
+    assertErr(decodePlan("Plan<protocol = 10>{version = \"1\" sources = [] requires = [] install = []}"))
+      :> Task.andThen((message) => { assertContains(message, "expected Plan<protocol = 11>") })
   })
 ];
