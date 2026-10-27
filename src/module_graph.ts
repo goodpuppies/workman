@@ -368,6 +368,7 @@ function findVirtualPath(path: string, options: ModuleGraphOptions): string | un
 function pathCandidates(input: string): string[] {
   const candidates = [input, normalizeInputPath(input)];
   if (runtime.platform === "win32") {
+    candidates.push(input.replaceAll("\\", "/"));
     const withoutDrive = input.match(/^\/[A-Za-z]:(\/.*)$/)?.[1] ??
       input.match(/^[A-Za-z]:(\/.*)$/)?.[1];
     if (withoutDrive) candidates.push(withoutDrive);

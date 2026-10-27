@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { watchRefreshDivider } from "../src/watch.ts";
 
@@ -12,10 +13,10 @@ Deno.test("watch refresh divider respects narrow terminals", () => {
 
 Deno.test("watch survives parse errors and refreshes its transitive module graph", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
-  const middle = `${directory}/middle.wm`;
-  const leaf = `${directory}/leaf.wm`;
-  const replacement = `${directory}/replacement.wm`;
+  const input = join(directory, "main.wm");
+  const middle = join(directory, "middle.wm");
+  const leaf = join(directory, "leaf.wm");
+  const replacement = join(directory, "replacement.wm");
   await Deno.writeTextFile(leaf, 'let message = "first";');
   await Deno.writeTextFile(replacement, 'let message = "third";');
   await Deno.writeTextFile(
@@ -72,7 +73,7 @@ Deno.test("watch survives parse errors and refreshes its transitive module graph
 
 Deno.test("watch executes until reaching a typed hole and resumes after replacement", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = join(directory, "main.wm");
   await Deno.writeTextFile(
     input,
     'let main = () => { print("before"); ?; print("after") };',
@@ -116,7 +117,7 @@ Deno.test("watch executes until reaching a typed hole and resumes after replacem
 
 Deno.test("watch exits on SIGINT while waiting after an error", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = join(directory, "main.wm");
   await Deno.writeTextFile(input, "let main = () => { ); }; ");
 
   const child = new Deno.Command(Deno.execPath(), {

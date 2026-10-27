@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 const installer = fileURLToPath(new URL("../scripts/install.ts", import.meta.url));
 
 Deno.test("installer creates a cwd-independent wm launcher", async () => {
@@ -34,6 +35,44 @@ Deno.test("installer creates a cwd-independent wm launcher", async () => {
   }
 });
 
+Deno.test("installed launcher works without Deno on PATH", async () => {
+  const binDir = await Deno.makeTempDir({ prefix: "wm launcher " });
+  const cwd = await Deno.makeTempDir();
+  try {
+    const install = await new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--allow-read",
+        "--allow-write",
+        "--allow-env",
+        installer,
+        "--bin-dir",
+        binDir,
+        "--no-modify-path",
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(install.code, 0, new TextDecoder().decode(install.stderr));
+    const result = await runInstalledWm(binDir, cwd, ["--help"], false);
+    assertEquals(result.code, 0, result.stderr);
+    assertStringIncludes(result.stdout, "compiler and runner");
+    await Deno.writeTextFile(
+      join(cwd, "main.wm"),
+      `
+      from js.module("node:path") import { join };
+      let main = () => { print(join("left", "right") :> Result.getOr("")) };
+    `,
+    );
+    const executed = await runInstalledWm(binDir, cwd, ["run", "main.wm"], false);
+    assertEquals(executed.code, 0, executed.stderr);
+    assertEquals(executed.stdout, join("left", "right") + "\n");
+  } finally {
+    await Deno.remove(binDir, { recursive: true });
+    await Deno.remove(cwd, { recursive: true });
+  }
+});
+
 Deno.test("installer shell PATH configuration is idempotent", async () => {
   if (Deno.build.os === "windows") return;
 
@@ -56,12 +95,17 @@ Deno.test("installer shell PATH configuration is idempotent", async () => {
   assertStringIncludes(bashrc, "# existing bash setup");
 });
 
-async function runInstalledWm(binDir: string, cwd: string, args: string[]) {
-  const command = Deno.build.os === "windows" ? "cmd" : "sh";
+async function runInstalledWm(binDir: string, cwd: string, args: string[], inheritPath = true) {
+  const command = Deno.build.os === "windows"
+    ? Deno.env.get("ComSpec") ??
+      join(Deno.env.get("SystemRoot") ?? "C:/Windows", "System32", "cmd.exe")
+    : "/bin/sh";
   const shellArgs = Deno.build.os === "windows"
     ? ["/d", "/c", ["wm", ...args].join(" ")]
     : ["-c", ["wm", ...args.map(shellQuote)].join(" ")];
-  const path = `${binDir}${Deno.build.os === "windows" ? ";" : ":"}${Deno.env.get("PATH") ?? ""}`;
+  const path = `${binDir}${Deno.build.os === "windows" ? ";" : ":"}${
+    inheritPath ? Deno.env.get("PATH") ?? "" : ""
+  }`;
 
   const result = await new Deno.Command(command, {
     args: shellArgs,

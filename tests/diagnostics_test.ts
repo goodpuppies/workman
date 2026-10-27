@@ -525,7 +525,7 @@ let bad = match(alias) {
   Err(error) => { void },
   Ok(value) => { void }
 };`;
-  const root = Deno.cwd();
+  const root = Deno.cwd().replaceAll("\\", "/");
   const filePath = `${root}/app/cli.wm`;
   const files = new Map([
     [filePath, source],

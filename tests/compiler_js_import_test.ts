@@ -327,7 +327,7 @@ Deno.test("resolves npm imports without modifying the project or creating node_m
   );
 
   const results = await checkFile(input);
-  const result = results.get(input);
+  const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
 
   expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
@@ -362,7 +362,7 @@ Deno.test("resolves import-mapped npm modules with nodeModulesDir disabled", asy
   );
 
   const results = await checkFile(input);
-  const result = results.get(input);
+  const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
   expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
   const config = JSON.parse(await Deno.readTextFile(`${dir}/deno.json`));
@@ -389,7 +389,7 @@ Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
   );
 
   const results = await checkFile(input);
-  const result = results.get(input);
+  const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
   expectBinding(result.env, "file", { type: "Result<String, Js.Error>", vars: 0 });
 });
@@ -430,7 +430,7 @@ Deno.test("resolves import-map aliases during delayed reflection independent of 
   try {
     Deno.chdir("/");
     const results = await checkFile(input);
-    const result = results.get(input);
+    const result = results.get(await Deno.realPath(input));
     if (!result) throw new Error("missing main result");
     expectBinding(result.env, "app", { type: "Task<Js.Object, Js.Error>", vars: 0 });
   } finally {

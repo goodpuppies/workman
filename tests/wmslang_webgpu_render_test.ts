@@ -8,7 +8,7 @@ import { renderVisualShaderV1 } from "../src/wmslang/webgpu_render.ts";
 
 const webGpuUnavailable = !navigator.gpu;
 
-Deno.test({
+webGpuTest({
   name: "visual-v1 renders the flat-color artifact as opaque red",
   ignore: webGpuUnavailable,
   async fn() {
@@ -22,7 +22,7 @@ Deno.test({
   },
 });
 
-Deno.test({
+webGpuTest({
   name: "visual-v3 renders the warped-noise acceptance shader",
   ignore: webGpuUnavailable,
   async fn() {
@@ -40,7 +40,7 @@ Deno.test({
   },
 });
 
-Deno.test({
+webGpuTest({
   name: "visual-v3 renders the recursive raymarcher acceptance shader",
   ignore: webGpuUnavailable,
   async fn() {
@@ -59,7 +59,7 @@ Deno.test({
   },
 });
 
-Deno.test({
+webGpuTest({
   name: "visual-v1 renders stable Mandelbrot probes from the f32 CPU oracle",
   ignore: webGpuUnavailable,
   async fn() {
@@ -84,7 +84,7 @@ Deno.test({
   },
 });
 
-Deno.test({
+webGpuTest({
   name: "visual-v2 renders a reflected curried uniform environment",
   ignore: webGpuUnavailable,
   async fn() {
@@ -116,7 +116,7 @@ Deno.test({
   },
 });
 
-Deno.test({
+webGpuTest({
   name: "visual-v5 executes sampled-texture update and display passes with ping-pong feedback",
   ignore: webGpuUnavailable,
   async fn() {
@@ -298,6 +298,41 @@ Deno.test({
     device.destroy();
   },
 });
+
+// Deno's Windows GPU backend fails to initialize later devices after a test
+// destroys its device. Keep every rendering assertion, with a fresh native
+// instance for each Windows case instead of reusing that backend instance.
+function webGpuTest(test: Deno.TestDefinition): void {
+  if (Deno.build.os !== "windows" || Deno.env.get("WM_WEBGPU_TEST_CHILD") === "1" || test.ignore) {
+    Deno.test(test);
+    return;
+  }
+  Deno.test({
+    ...test,
+    async fn() {
+      const result = await new Deno.Command(Deno.execPath(), {
+        args: [
+          "test",
+          "--allow-read",
+          "--allow-write",
+          "--allow-run",
+          "--allow-env",
+          "--filter",
+          test.name,
+          fileURLToPath(import.meta.url),
+        ],
+        env: { WM_WEBGPU_TEST_CHILD: "1" },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(
+        result.code,
+        0,
+        new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr),
+      );
+    },
+  });
+}
 
 async function compileAcceptanceArtifact(name: string): Promise<VisualShaderDescriptorV1> {
   const compiled = await coreVirtual(

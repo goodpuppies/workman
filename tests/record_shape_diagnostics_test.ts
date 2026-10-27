@@ -107,7 +107,7 @@ Deno.test("empty literals retain exact matching and honest incomplete candidates
 });
 
 Deno.test("missing-field evidence keeps imported declaration locations at narrow widths", async () => {
-  const root = Deno.cwd();
+  const root = Deno.cwd().replaceAll("\\", "/");
   const entry = `${root}/app/main.wm`;
   const recordPath = `${root}/proto/point.wm`;
   const recordSource = `record Point = {
