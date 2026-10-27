@@ -13,7 +13,7 @@ export async function trackedWmFiles(root: URL): Promise<string[]> {
     stderr: "piped",
   }).output();
   if (code !== 0) throw new Error(`git ls-files failed: ${new TextDecoder().decode(stderr)}`);
-  const base = directory.endsWith("/") ? directory : `${directory}/`;
+  const base = directory.endsWith("/") || directory.endsWith("\\") ? directory : `${directory}/`;
   const paths = new TextDecoder().decode(stdout).split("\0").filter((path) => path !== "");
   const existing: string[] = [];
   for (const path of paths) {

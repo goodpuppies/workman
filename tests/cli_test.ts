@@ -5,6 +5,7 @@ import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("cli prints help with no arguments", async () => {
@@ -873,7 +874,7 @@ Deno.test("cli run points stack overflows at the non-tail Workman call", async (
   assertEquals(result.stdout, "");
   assertStringIncludes(
     result.stderr,
-    `error[runtime.stack-overflow ${input}:7:29]: non-tail recursion exhausted the JavaScript call stack`,
+    `error[runtime.stack-overflow ${resolve(input)}:7:29]: non-tail recursion exhausted the JavaScript call stack`,
   );
   assertStringIncludes(result.stderr, "[_, ..rest] => { 1 + count(rest) }");
   assertStringIncludes(result.stderr, "`count` calls itself outside tail position.");

@@ -56,7 +56,7 @@ async function wmFiles(
   const directory = fileURLToPath(root);
   return (await trackedWmFiles(root))
     .map((path) => ({
-      relative: `${prefix}/${path.slice(directory.length)}`,
+      relative: `${prefix}/${path.slice(directory.length).replaceAll("\\", "/")}`,
       url: toFileUrl(path),
     }))
     .sort((left, right) => left.relative.localeCompare(right.relative));

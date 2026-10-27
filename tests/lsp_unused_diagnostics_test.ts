@@ -58,7 +58,9 @@ Deno.test("lsp recognizes qualified uses of a C namespace import", async () => {
   const root = Deno.cwd();
   await Deno.writeTextFile(
     main,
-    `from c.header("${root}/examples/c_ffi/fixtures/vec3.h", lib: "${root}/examples/c_ffi/fixtures/libvec3.so") import unsafe * as C;
+    `from c.header(${JSON.stringify(`${root}/examples/c_ffi/fixtures/vec3.h`)}, lib: ${
+      JSON.stringify(`${root}/examples/c_ffi/fixtures/libvec3.so`)
+    }) import unsafe * as C;
      let main = () => { C.v2dot(C.V2(1.0, 2.0), C.V2(3.0, 4.0)) };`,
   );
 

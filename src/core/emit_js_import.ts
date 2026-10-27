@@ -920,12 +920,12 @@ function parseModuleConstructorPath(
 ): { specifier: string; memberName: string } | undefined {
   if (!path.startsWith("module:")) return undefined;
   const rest = path.slice("module:".length);
-  const colon = rest.indexOf(":");
-  if (colon < 0) return undefined;
+  const parts = /^("(?:\\.|[^"\\])*"):("(?:\\.|[^"\\])*")$/.exec(rest);
+  if (!parts) return undefined;
   try {
     return {
-      specifier: JSON.parse(rest.slice(0, colon)),
-      memberName: JSON.parse(rest.slice(colon + 1)),
+      specifier: JSON.parse(parts[1]),
+      memberName: JSON.parse(parts[2]),
     };
   } catch (_error) {
     return undefined;

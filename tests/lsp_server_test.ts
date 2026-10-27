@@ -1,3 +1,4 @@
+import { join as nativeJoin } from "node:path";
 import { assertEquals } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { DocumentStore } from "../src/lsp/documents.ts";
@@ -7,7 +8,7 @@ import { validateUri, type ValidationResult } from "../src/lsp/validation.ts";
 
 Deno.test("lsp server publishes diagnostics for didOpen", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -133,7 +134,7 @@ Deno.test("lsp server enforces lifecycle and returns standard JSON-RPC errors", 
 
 Deno.test("lsp server cancels requests and rejects results from older document state", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -198,7 +199,7 @@ Deno.test("all independent inlay providers can be disabled", async () => {
 
 Deno.test("parameter-name inlays can remain enabled without type inlays", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "let add = (left, right) => { left + right }; let result = add(1, 2);";
   const messages = await runLsp([
@@ -250,7 +251,7 @@ Deno.test("parameter-name inlays can remain enabled without type inlays", async 
 
 Deno.test("lsp server clears diagnostics for a deleted watched file", async () => {
   const dir = await Deno.makeTempDir();
-  const deletedUri = pathToFileUri(`${dir}/moved.wm`);
+  const deletedUri = pathToFileUri(nativeJoin(dir, "moved.wm"));
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
     {
@@ -272,7 +273,7 @@ Deno.test("lsp server clears diagnostics for a deleted watched file", async () =
 
 Deno.test("lsp server returns definitions for Ctrl+Click", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "let identity = (x) => { x }; let result = identity(1);";
   const messages = await runLsp([
@@ -300,7 +301,7 @@ Deno.test("lsp server returns definitions for Ctrl+Click", async () => {
 
 Deno.test("lsp server returns type definitions and document highlights", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "record Point = { x: Number }; let point = Point(1); let use = point;";
   const position = { line: 0, character: source.lastIndexOf("point") + 1 };
@@ -340,7 +341,7 @@ Deno.test("lsp server returns type definitions and document highlights", async (
 
 Deno.test("lsp server returns ordinary compiler-owned completion items", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "let outer = 1; let result = ou";
   const messages = await runLsp([
@@ -375,7 +376,7 @@ Deno.test("lsp server returns ordinary compiler-owned completion items", async (
 
 Deno.test("lsp server returns standard signature help", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source =
     'let format = (count: Number, label: String) => { label }; let result = format(1, "x");';
@@ -414,7 +415,7 @@ Deno.test("lsp server returns standard signature help", async () => {
 
 Deno.test("lsp server returns standard full semantic tokens", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "let identity = (value) => { value }; let result = identity(1);";
   const messages = await runLsp([
@@ -443,7 +444,7 @@ Deno.test("lsp server returns standard full semantic tokens", async () => {
 
 Deno.test("lsp server returns region and syntax folds", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = [
     "//#region outer",
@@ -477,9 +478,9 @@ Deno.test("lsp server returns region and syntax folds", async () => {
 
 Deno.test("lsp server returns symbols from active projects only", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const lib = `${dir}/lib.wm`;
-  const unrelated = `${dir}/unrelated.wm`;
+  const main = nativeJoin(dir, "main.wm");
+  const lib = nativeJoin(dir, "lib.wm");
+  const unrelated = nativeJoin(dir, "unrelated.wm");
   await Deno.writeTextFile(
     main,
     'from "./lib.wm" import { helper }; let main = () => { helper };',
@@ -530,7 +531,7 @@ Deno.test("lsp server returns symbols from active projects only", async () => {
 
 Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "let increment = (value) => { value + 1 };";
   const messages = await runLsp([
@@ -589,7 +590,7 @@ Deno.test("lsp server returns ordinary inferred-type inlays", async () => {
 
 Deno.test("lsp server prepares and returns standard workspace rename edits", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const source = "let value = 1; let result = value;";
   const position = { line: 0, character: source.lastIndexOf("value") + 1 };
@@ -631,8 +632,8 @@ Deno.test("lsp server prepares and returns standard workspace rename edits", asy
 
 Deno.test("lsp server publishes closed imported file diagnostics", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(lib, "let value = 1 + true;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
   const uri = pathToFileUri(main);
@@ -671,7 +672,7 @@ Deno.test("lsp server publishes closed imported file diagnostics", async () => {
 
 Deno.test("lsp server clears diagnostics after didChange", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -708,8 +709,8 @@ Deno.test("lsp server clears diagnostics after didChange", async () => {
 
 Deno.test("lsp server clears project diagnostics after didClose", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(lib, "let value = 1 + true;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
   const uri = pathToFileUri(main);
@@ -760,8 +761,8 @@ Deno.test("lsp server clears project diagnostics after didClose", async () => {
 
 Deno.test("lsp server keeps project diagnostics while another project document is open", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(lib, "let value = 1 + true;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
   const uri = pathToFileUri(main);
@@ -815,9 +816,9 @@ Deno.test("lsp server keeps project diagnostics while another project document i
 
 Deno.test("lsp server only clears diagnostics for the closed project graph", async () => {
   const dir = await Deno.makeTempDir();
-  const aLib = `${dir}/a_lib.wm`;
-  const aMain = `${dir}/a_main.wm`;
-  const bMain = `${dir}/b_main.wm`;
+  const aLib = nativeJoin(dir, "a_lib.wm");
+  const aMain = nativeJoin(dir, "a_main.wm");
+  const bMain = nativeJoin(dir, "b_main.wm");
   await Deno.writeTextFile(aLib, "let value = 1 + true;");
   await Deno.writeTextFile(aMain, 'from "./a_lib.wm" import * as Lib; let x = Lib.value;');
   await Deno.writeTextFile(bMain, "let y: String = 1;");
@@ -882,8 +883,8 @@ Deno.test("lsp server only clears diagnostics for the closed project graph", asy
 
 Deno.test("lsp server clears diagnostics for files no longer in validation results", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(lib, "let value = 1 + true;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
   const uri = pathToFileUri(main);
@@ -931,8 +932,8 @@ Deno.test("lsp server clears diagnostics for files no longer in validation resul
 
 Deno.test("lsp server clears an imported document diagnostic on the next edit", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(lib, "let value = 1;");
   await Deno.writeTextFile(
     main,
@@ -996,8 +997,8 @@ Deno.test("lsp server clears an imported document diagnostic on the next edit", 
 
 Deno.test("lsp server revalidates open files after imported file changes", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(lib, "let value = 1;");
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x: String = Lib.value;');
   const uri = pathToFileUri(main);
@@ -1048,8 +1049,8 @@ Deno.test("lsp server revalidates open files after imported file changes", async
 
 Deno.test("lsp server refreshes an open namespace import after incremental edits", async () => {
   const dir = await Deno.makeTempDir();
-  const lib = `${dir}/lib.wm`;
-  const main = `${dir}/main.wm`;
+  const lib = nativeJoin(dir, "lib.wm");
+  const main = nativeJoin(dir, "main.wm");
   const initialLib = "let value = (a, b) => { a ++ b };";
   const initialMain = 'from "./lib.wm" import * as Lib; let main = () => { Lib.value("h", "i") };';
   const changedMain = 'from "./lib.wm" import * as Lib; let main = () => { Lib.c("h", "i") };';
@@ -1155,8 +1156,8 @@ Deno.test("lsp server refreshes an open namespace import after incremental edits
 
 Deno.test("lsp server revalidates the active unopened project head after dependency edits", async () => {
   const dir = await Deno.makeTempDir();
-  const http = `${dir}/http.wm`;
-  const server = `${dir}/server.wm`;
+  const http = nativeJoin(dir, "http.wm");
+  const server = nativeJoin(dir, "server.wm");
   await Deno.writeTextFile(http, "let dispatch = (req, info) => { req + info };");
   await Deno.writeTextFile(
     server,
@@ -1219,7 +1220,7 @@ Deno.test("lsp server revalidates the active unopened project head after depende
 
 Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -1248,7 +1249,7 @@ Deno.test("lsp server republishes unchanged diagnostics on explicit refresh", as
 
 Deno.test("lsp server validates only the latest rapid document update", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -1294,7 +1295,7 @@ Deno.test("lsp server validates only the latest rapid document update", async ()
 
 Deno.test("lsp server returns hover types", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -1323,7 +1324,7 @@ Deno.test("lsp server returns hover types", async () => {
 
 Deno.test("lsp server returns constructor hover types", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const text = "type Option<T> = None | Some<T>; let x = Some(1);";
   const messages = await runLsp([
@@ -1354,7 +1355,7 @@ Deno.test("lsp server returns constructor hover types", async () => {
 
 Deno.test("lsp server returns null for hover misses", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
+  const main = nativeJoin(dir, "main.wm");
   const uri = pathToFileUri(main);
   const messages = await runLsp([
     { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -1464,8 +1465,8 @@ function delay(ms: number): Promise<void> {
 
 Deno.test("workman/projectStatus reports the selected head and active projects", async () => {
   const dir = await Deno.makeTempDir();
-  const libPath = `${dir}/lib.wm`;
-  const mainPath = `${dir}/main.wm`;
+  const libPath = nativeJoin(dir, "lib.wm");
+  const mainPath = nativeJoin(dir, "main.wm");
   await Deno.writeTextFile(libPath, "let value = 1;");
   await Deno.writeTextFile(
     mainPath,
@@ -1539,7 +1540,7 @@ Deno.test("workman/projectStatus reports the selected head and active projects",
 
 Deno.test("workman/projectStatus promotes a headless file to its own headed project", async () => {
   const dir = await Deno.makeTempDir();
-  const lonePath = `${dir}/lone.wm`;
+  const lonePath = nativeJoin(dir, "lone.wm");
   await Deno.writeTextFile(lonePath, "let value = 1;");
   const loneUri = pathToFileUri(lonePath);
   const messages = await runLsp([

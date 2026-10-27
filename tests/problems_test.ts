@@ -1,3 +1,4 @@
+import { join as nativeJoin } from "node:path";
 import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,7 +14,7 @@ import { runFile } from "../src/run.ts";
 
 Deno.test("problems collects a stable snapshot from a separate LSP process", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = nativeJoin(directory, "main.wm");
   try {
     await Deno.writeTextFile(input, "let answer: String = 42;");
     const problems = await collectProblems(input);
@@ -30,9 +31,9 @@ Deno.test("problems collects a stable snapshot from a separate LSP process", asy
 
 Deno.test("problems reports the project head owning the entrypoint", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = nativeJoin(directory, "main.wm");
   try {
-    await Deno.writeTextFile(`${directory}/helper.wm`, "let answer = 42;");
+    await Deno.writeTextFile(nativeJoin(directory, "helper.wm"), "let answer = 42;");
     await Deno.writeTextFile(
       input,
       'from "./helper.wm" import { answer };\nlet main = () => { print(Text.of(answer)) };\n',
@@ -50,14 +51,14 @@ Deno.test("problems reports the project head owning the entrypoint", async () =>
 Deno.test("problems defaults to main.wm, then to a lone .wm file", async () => {
   const directory = await Deno.makeTempDir();
   try {
-    await Deno.writeTextFile(`${directory}/only.wm`, "let answer = 42;");
-    assertEquals(await defaultEntrypoint(directory), `${directory}/only.wm`);
+    await Deno.writeTextFile(nativeJoin(directory, "only.wm"), "let answer = 42;");
+    assertEquals(await defaultEntrypoint(directory), nativeJoin(directory, "only.wm"));
 
-    await Deno.writeTextFile(`${directory}/main.wm`, "let answer = 42;");
-    assertEquals(await defaultEntrypoint(directory), `${directory}/main.wm`);
+    await Deno.writeTextFile(nativeJoin(directory, "main.wm"), "let answer = 42;");
+    assertEquals(await defaultEntrypoint(directory), nativeJoin(directory, "main.wm"));
 
-    await Deno.remove(`${directory}/main.wm`);
-    await Deno.writeTextFile(`${directory}/other.wm`, "let answer = 42;");
+    await Deno.remove(nativeJoin(directory, "main.wm"));
+    await Deno.writeTextFile(nativeJoin(directory, "other.wm"), "let answer = 42;");
     assertEquals(await defaultEntrypoint(directory), undefined);
   } finally {
     await Deno.remove(directory, { recursive: true });
@@ -68,7 +69,7 @@ Deno.test("problems defaults to main.wm, then to a lone .wm file", async () => {
 // down from an `unload` handler, where only synchronous work can run.
 Deno.test("problems session disposes synchronously without awaiting shutdown", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = nativeJoin(directory, "main.wm");
   try {
     await Deno.writeTextFile(input, "let answer = 42;");
     const session = await startProblemsSession(input);
@@ -116,7 +117,7 @@ Deno.test("problems TUI toggles severity filters in Workman", async () => {
 
 Deno.test("problems watcher adds and clears diagnostics after saves", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = nativeJoin(directory, "main.wm");
   const controller = new AbortController();
   reset();
   try {
@@ -141,7 +142,7 @@ Deno.test("problems watcher adds and clears diagnostics after saves", async () =
 
 Deno.test("problems watcher coalesces one editor save burst", async () => {
   const directory = await Deno.makeTempDir();
-  const input = `${directory}/main.wm`;
+  const input = nativeJoin(directory, "main.wm");
   const controller = new AbortController();
   let refreshes = 0;
   const session: ProblemsSession = {

@@ -1,5 +1,6 @@
-import { normalize, resolve } from "node:path";
+import { normalize, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtime } from "./io.ts";
 import type {
   FrontendV2Surface,
   FrontendV2SurfaceParseFailure,
@@ -79,6 +80,12 @@ export class FrontendV2ParseCache {
 
 function cacheKey(pathOrUri: string): string {
   try {
+    if (runtime.platform === "win32") {
+      const path = pathOrUri.startsWith("file:")
+        ? decodeURIComponent(new URL(pathOrUri).pathname)
+        : pathOrUri;
+      if (path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) return posix.normalize(path);
+    }
     const path = pathOrUri.startsWith("file:") ? fileURLToPath(pathOrUri) : pathOrUri;
     return normalize(resolve(path));
   } catch {

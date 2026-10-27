@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { assertEquals, assertNotStrictEquals, assertStrictEquals } from "@std/assert";
 import { hoverAt } from "../src/lsp/hover.ts";
 import { SemanticService } from "../src/lsp/semantic_service.ts";
@@ -8,10 +9,10 @@ import { validateUri } from "../src/lsp/validation.ts";
 
 Deno.test("semantic service reuses closest-head snapshots and isolates overlapping projects", async () => {
   const dir = await Deno.makeTempDir();
-  const app = `${dir}/app.wm`;
-  const shared = `${dir}/shared.wm`;
-  const test = `${dir}/test.wm`;
-  const testOnly = `${dir}/test_only.wm`;
+  const app = join(dir, "app.wm");
+  const shared = join(dir, "shared.wm");
+  const test = join(dir, "test.wm");
+  const testOnly = join(dir, "test_only.wm");
   await Promise.all([
     Deno.writeTextFile(
       app,
@@ -56,7 +57,7 @@ Deno.test("semantic service reuses closest-head snapshots and isolates overlappi
 
 Deno.test("semantic service keeps strict diagnostics beside recovered current interfaces", async () => {
   const dir = await Deno.makeTempDir();
-  const path = `${dir}/note.wm`;
+  const path = join(dir, "note.wm");
   await Deno.writeTextFile(path, "let good = 1; let bad = 1 + true;");
   const index = new ProjectIndex();
   const overrides = new Map<string, string>();
@@ -82,7 +83,7 @@ Deno.test("semantic service keeps strict diagnostics beside recovered current in
 
 Deno.test("semantic service retries an unfinished empty match arm with a synthetic hole", async () => {
   const dir = await Deno.makeTempDir();
-  const path = `${dir}/note.wm`;
+  const path = join(dir, "note.wm");
   const source = "let choose = match(true) { true => { 1 }, false => {  } }; " +
     "let identity = (item) => { item };";
   await Deno.writeTextFile(path, source);
@@ -126,8 +127,8 @@ Deno.test("semantic service retries an unfinished empty match arm with a synthet
 
 Deno.test("semantic service keeps an imported parse failure on its source module", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const lib = `${dir}/lib.wm`;
+  const main = join(dir, "main.wm");
+  const lib = join(dir, "lib.wm");
   await Deno.writeTextFile(
     main,
     'from "./lib.wm" import { value }; let main = () => { value };',
@@ -154,8 +155,8 @@ Deno.test("semantic service keeps an imported parse failure on its source module
 
 Deno.test("editing a dependency dropped by recovery invalidates its stale headed diagnostic", async () => {
   const dir = await Deno.makeTempDir();
-  const main = `${dir}/main.wm`;
-  const lib = `${dir}/lib.wm`;
+  const main = join(dir, "main.wm");
+  const lib = join(dir, "lib.wm");
   const mainSource = 'from "./lib.wm" import { value }; let main = () => { value };';
   const broken = "let value = Token.;";
   const fixed = "let value = 1 + true;";
@@ -193,7 +194,7 @@ Deno.test("editing a dependency dropped by recovery invalidates its stale headed
 Deno.test("unannotated hover leaves live snapshots intact and refreshes after edits", async () => {
   const dir = await Deno.makeTempDir();
   try {
-    const path = `${dir}/main.wm`;
+    const path = join(dir, "main.wm");
     const uri = pathToFileUri(path);
     const overrides = new Map([[path, "let id: Number -> Number = (x) => { x };"]]);
     const index = new ProjectIndex();

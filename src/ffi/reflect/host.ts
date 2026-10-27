@@ -1,8 +1,8 @@
 import ts from "typescript-api";
-import { dirname, extname, join, normalize } from "node:path";
+import { dirname, extname, isAbsolute, join, normalize } from "node:path";
 import { isBuiltin } from "node:module";
 import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runtime } from "../../io.ts";
 
 const compilerOptions: ts.CompilerOptions = {
@@ -467,9 +467,14 @@ type DenoModuleGraph = {
 };
 
 function denoReflectionGraphs(source: string): DenoModuleGraph[] {
-  const specifiers = [...source.matchAll(/\bimport\s+\*\s+as\s+\w+\s+from\s+["']([^"']+)["']/g)]
-    .map((match) => match[1])
-    .filter((specifier) => needsDenoModuleResolution(specifier) || isRelativeSpecifier(specifier));
+  const parsed = ts.createSourceFile("__wm_imports.ts", source, ts.ScriptTarget.ESNext, false);
+  const specifiers = parsed.statements.flatMap((statement) =>
+    ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)
+      ? [statement.moduleSpecifier.text]
+      : []
+  ).filter((specifier) =>
+    needsDenoModuleResolution(specifier) || isRelativeSpecifier(specifier) || isAbsolute(specifier)
+  );
   const unique = [...new Set(specifiers)];
   const reflectedFile = reflectionFileName(source);
   const cwd = activeReflectionBasePath
@@ -493,7 +498,7 @@ function denoModuleGraph(specifier: string, cwd: string): DenoModuleGraph | unde
     "--json",
     "--no-lock",
     "--node-modules-dir=none",
-    specifier,
+    isAbsolute(specifier) ? pathToFileURL(specifier).href : specifier,
   ], { cwd });
   reflectionProfileSink?.({
     kind: "deno-info",
@@ -623,13 +628,22 @@ function npmResolvedModule(
     const target = parsed.subpath
       ? npmPackageEntry(packagePath, parsed.subpath) ?? join(packagePath, parsed.subpath)
       : packagePath;
-    const resolved = ts.resolveModuleName(
-      target,
-      containingFile,
-      compilerOptions,
-      ts.sys,
-      moduleResolutionCache(),
-    ).resolvedModule;
+    const resolve = (path: string) =>
+      ts.resolveModuleName(
+        path.replaceAll("\\", "/"),
+        containingFile,
+        compilerOptions,
+        ts.sys,
+        moduleResolutionCache(),
+      ).resolvedModule;
+    let resolved = resolve(target);
+    // Absolute cache paths bypass package exports, so a package root whose
+    // declarations are exported only there resolves through its "." entry.
+    if (!parsed.subpath && !(resolved?.extension && isDeclarationExtension(resolved.extension))) {
+      const entry = npmPackageEntry(packagePath, "");
+      const exported = entry ? resolve(entry) : undefined;
+      if (exported) resolved = { ...exported, isExternalLibraryImport: true };
+    }
     // The importer names the package, not the `.d.ts` path resolved here, so
     // TypeScript must not treat it as an import written with a TS extension.
     return resolved && { ...resolved, resolvedUsingTsExtension: false };
@@ -666,11 +680,21 @@ function npmPackagePath(graphs: DenoModuleGraph[], packageName: string): string 
 function npmPackageEntry(packagePath: string, subpath: string): string | undefined {
   let manifest: { exports?: unknown };
   try {
-    manifest = JSON.parse(Deno.readTextFileSync(join(packagePath, "package.json")));
+    manifest = JSON.parse(runtime.readTextFileSync(join(packagePath, "package.json")));
   } catch {
     return undefined;
   }
   const entries = manifest.exports;
+  // A root export may be a bare target or conditions without a "." key.
+  if (
+    subpath === "" &&
+    (typeof entries === "string" ||
+      (typeof entries === "object" && entries !== null && !Array.isArray(entries) &&
+        !Object.keys(entries).some((key) => key.startsWith("."))))
+  ) {
+    const target = exportTarget(entries);
+    return target === undefined ? undefined : join(packagePath, target);
+  }
   if (typeof entries !== "object" || entries === null || Array.isArray(entries)) return undefined;
   const key = `.${subpath}`;
   const map = entries as Record<string, unknown>;
@@ -830,7 +854,7 @@ function denoModuleForFileName(
 
 function pathAsFileUrl(value: string): string | undefined {
   try {
-    return new URL(`file://${value.startsWith("/") ? "" : "/"}${value.replace(/\\/g, "/")}`).href;
+    return pathToFileURL(value).href;
   } catch {
     return undefined;
   }

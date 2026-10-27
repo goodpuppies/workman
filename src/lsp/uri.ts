@@ -29,6 +29,6 @@ export function canonicalFilePath(path: string): string {
   try {
     return runtime.realPathSync(path);
   } catch {
-    return normalize(resolve(path));
+    return normalize(resolve(path)).replace(/^[a-z]:/, (drive) => drive.toUpperCase());
   }
 }

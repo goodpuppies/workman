@@ -202,7 +202,7 @@ Deno.test("cli run passes JSON arrays as one JS argument", async () => {
 Deno.test("cli run marshals None to null for nullable FFI parameters", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
-  const fixture = new URL("./fixtures/ffi_nullable_string.ts", import.meta.url).pathname;
+  const fixture = fileURLToPath(new URL("./fixtures/ffi_nullable_string.ts", import.meta.url));
   await Deno.writeTextFile(
     input,
     `

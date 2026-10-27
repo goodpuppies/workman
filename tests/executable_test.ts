@@ -62,13 +62,15 @@ Deno.test("executable retains generated workers and JS imports after source remo
       };
     `,
     );
+    const executableName = Deno.build.os === "windows" ? "app.exe" : "app";
+    const executable = `${root}/${executableName}`;
     const artifacts = await compileFileArtifacts(`${source}/main.wm`);
-    assertEquals(await compileExecutable(artifacts, `${root}/app`), 0);
+    assertEquals(await compileExecutable(artifacts, executable), 0);
     await Deno.remove(source, { recursive: true });
-    const result = await new Deno.Command(`${root}/app`, { args: ["one", "two words"] }).output();
+    const result = await new Deno.Command(executable, { args: ["one", "two words"] }).output();
     assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
     assertEquals(new TextDecoder().decode(result.stdout), "worker alive\none|two words\n");
-    assertEquals(Array.from(Deno.readDirSync(root), (entry) => entry.name), ["app"]);
+    assertEquals(Array.from(Deno.readDirSync(root), (entry) => entry.name), [executableName]);
   } finally {
     await Deno.remove(root, { recursive: true });
   }

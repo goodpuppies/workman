@@ -1085,10 +1085,11 @@ Deno.test("dotted JS calls preserve this and property getters retain safe errors
       `${dir}/main.wm`,
       `
       from js.module("./counter.ts") import { Counter };
+      let unwrap = match(result) => { Ok(value) => { value }, Err(error) => { Panic("unexpected JS error: " ++ Text.of(error)) } };
       let main = () => {
-        let counter = Counter.new(2) :> Result.debug;
-        print(counter.bump(3) :> Result.debug);
-        print(counter.value :> Result.debug);
+        let counter = Counter.new(2) :> unwrap;
+        print(counter.bump(3) :> unwrap);
+        print(counter.value :> unwrap);
         match(counter.broken) {
           Err(_) => { print("caught") },
           Ok(_) => { Panic("expected getter failure") }
