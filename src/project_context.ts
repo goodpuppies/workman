@@ -57,7 +57,8 @@ export class ReverseImportDiscoveryIndex {
 
   /**
    * Reverse breadth-first search returns the nearest main-bearing importer. Equal-distance ties
-   * prefer the head whose directory is nearest to the opened file, then canonical path order.
+   * prefer the head whose directory is nearest to the opened file, then `main.wm`, then canonical
+   * path order.
    */
   closestHead(path: string): string | undefined {
     this.#closestHeadQueries += 1;
@@ -79,6 +80,7 @@ export class ReverseImportDiscoveryIndex {
         candidates.sort(
           (left, right) =>
             headDirectoryDistance(start, left) - headDirectoryDistance(start, right) ||
+            Number(this.#namedHeads.has(right)) - Number(this.#namedHeads.has(left)) ||
             left.localeCompare(right),
         );
       heads.push(...sortHeads(frontier.filter((candidate) => this.#heads.has(candidate))));

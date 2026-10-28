@@ -1,0 +1,1 @@
+most sml impls define pervasives so you can just "map" without importing List
