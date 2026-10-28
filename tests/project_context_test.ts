@@ -121,6 +121,37 @@ Deno.test("[module update A613/A615] reverse discovery stops at the closest head
   ]);
 });
 
+Deno.test("equally close heads prefer main.wm when a shared config opens first", async () => {
+  const files = new Map<string, string>([
+    ["/ws/config.wm", "let value = 1;"],
+    ["/ws/config-probe.wm", 'from "./config.wm" import { value }; let main = () => { value };'],
+    ["/ws/main.wm", 'from "./config.wm" import { value }; let main = () => { value };'],
+  ]);
+  const discovery = await discoveryIndex(files);
+  assertEquals(discovery.headsFor("/ws/config.wm"), [
+    "/ws/main.wm",
+    "/ws/config-probe.wm",
+  ]);
+  const registry = new ProjectContextRegistry(discovery);
+  const analyzeHead = (head: string) => analyzeRecoveredVirtual(head, files);
+  const analyzeDetached = (path: string) => analyzeDetachedVirtual(path, files);
+  const config = await registry.openDocument(
+    "/ws/config.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  const main = await registry.openDocument(
+    "/ws/main.wm",
+    configuration,
+    analyzeHead,
+    analyzeDetached,
+  );
+  assertEquals(config.snapshot.head, moduleId("/ws/main.wm"));
+  assertStrictEquals(main.snapshot, config.snapshot);
+  assertEquals(registry.activeSnapshots().length, 1);
+});
+
 Deno.test("reverse discovery falls back from explicit main to main.wm by filename", async () => {
   const withoutExplicitMain = new Map<string, string>([
     ["/ws/main.wm", 'from "./lib/value.wm" import { value }; let shown = value;'],
