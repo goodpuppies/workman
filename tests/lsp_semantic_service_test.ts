@@ -7,6 +7,37 @@ import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 import { moduleId } from "../src/module_id.ts";
 import { validateUri } from "../src/lsp/validation.ts";
 
+Deno.test({
+  name: "semantic service resolves encoded lowercase Windows drives to compiler interfaces",
+  ignore: Deno.build.os !== "windows",
+  async fn() {
+    const dir = await Deno.makeTempDir();
+    try {
+      const path = join(dir, "main.wm");
+      await Deno.writeTextFile(path, "let value = 1;");
+      const uri = pathToFileUri(path).replace(
+        /file:\/\/\/[A-Z]:/,
+        (drive) => drive.slice(0, -2) + drive.slice(-2).toLowerCase().replace(":", "%3A"),
+      );
+      const index = new ProjectIndex();
+      const overrides = new Map([[path, "let value = true;"]]);
+      await index.refreshFile(path, overrides);
+      const service = new SemanticService(index.discovery, {
+        sourceOverrides: () => overrides,
+        frontendOptions: () => ({}),
+      });
+      const hover = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
+      assertEquals(hover?.contents.value, "```wm\nvalue: Bool\n```");
+      assertStrictEquals(
+        (await service.documentContext(uri))?.project,
+        (await service.documentContext(pathToFileUri(path)))?.project,
+      );
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
 Deno.test("semantic service reuses closest-head snapshots and isolates overlapping projects", async () => {
   const dir = await Deno.makeTempDir();
   const app = join(dir, "app.wm");
@@ -48,7 +79,17 @@ Deno.test("semantic service reuses closest-head snapshots and isolates overlappi
   assertStrictEquals(sharedAgain?.project, application?.project);
   assertEquals(service.openSnapshots().length, 2);
 
+  // Opening a dependency already in the selected graph must preserve its snapshot.
+  assertEquals(await service.hasCurrentSource(pathToFileUri(shared), "let value = 1;"), true);
+  assertEquals(await service.hasCurrentSource(pathToFileUri(shared), "let value = 9;"), false);
+  overrides.set(shared, "let value = 1;");
+  assertStrictEquals(
+    (await service.documentContext(pathToFileUri(shared)))?.project,
+    application?.project,
+  );
+
   await service.invalidatePaths([shared]);
+  assertEquals(await service.hasCurrentSource(pathToFileUri(shared), "let value = 1;"), false);
   const refreshedApplication = await service.documentContext(pathToFileUri(app));
   const refreshedTests = await service.documentContext(pathToFileUri(testOnly));
   assertNotStrictEquals(refreshedApplication?.project, application?.project);
@@ -204,6 +245,10 @@ Deno.test("unannotated hover leaves live snapshots intact and refreshes after ed
       frontendOptions: () => ({}),
     });
     const before = await service.documentContext(uri);
+    const ordinary = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service, {
+      unannotated: false,
+    });
+    assertEquals(ordinary?.contents.value, "```wm\nid: Number -> Number\n```");
     for (let repeat = 0; repeat < 2; repeat++) {
       const hover = await hoverAt(uri, { line: 0, character: 4 }, overrides, {}, service);
       assertEquals(

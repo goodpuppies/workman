@@ -484,6 +484,8 @@ export function provenanceForType(
 export function dedupeOrigins(
   items: EvidenceOrigin[],
 ): EvidenceOrigin[] {
+  // Most constraints have only their own origin; no keys or set are needed.
+  if (items.length < 2) return items.slice();
   const seen = new Set<string>();
   return items.filter((item) => {
     const span = item.span;

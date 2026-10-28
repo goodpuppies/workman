@@ -127,11 +127,16 @@ let nextVar = 0;
 let nextFfi = 0;
 let nextType = 0;
 const typeRegistries = new WeakMap<TypeEnv, Map<number, TypeInfo>>();
+const sharedTypeRegistries = new WeakSet<Map<number, TypeInfo>>();
 
 export function registerTypeInfo(typeEnv: TypeEnv, info: TypeInfo): void {
   let registry = typeRegistries.get(typeEnv);
+  if (registry?.get(info.id) === info) return;
   if (!registry) {
     registry = new Map([...typeEnv.values()].map((existing) => [existing.id, existing]));
+    typeRegistries.set(typeEnv, registry);
+  } else if (sharedTypeRegistries.has(registry)) {
+    registry = new Map(registry);
     typeRegistries.set(typeEnv, registry);
   }
   registry.set(info.id, info);
@@ -166,7 +171,12 @@ export function knownTypeInfos(typeEnv: TypeEnv): TypeInfo[] {
 export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
   const cloned = new Map(typeEnv);
   const registry = typeRegistries.get(typeEnv);
-  if (registry) typeRegistries.set(cloned, new Map(registry));
+  if (registry) {
+    // Most lexical scopes only read nominal metadata. Detach on the first registration
+    // in either environment, preserving the isolation of the previous eager copy.
+    sharedTypeRegistries.add(registry);
+    typeRegistries.set(cloned, registry);
+  }
   return cloned;
 }
 

@@ -11,6 +11,27 @@ import {
   renderDiagnosticSummary,
 } from "../src/diagnostics.ts";
 import { line, span, wrapDocument } from "../tooling/tuiman/document.ts";
+import { createDiagnosticWriter } from "../src/diagnostic_writer.ts";
+import { fn, fresh, prim, unify } from "../src/types.ts";
+
+Deno.test("diagnostic snapshots retain introduction types across later unification", () => {
+  const writer = createDiagnosticWriter();
+  const variable = fresh("input");
+  const type = fn([variable], variable);
+  const before = writer.snapshotType(type);
+  unify(variable, prim("Number"));
+  const after = writer.snapshotType(type);
+  const support = writer.buildSupport([]);
+  assertEquals(
+    support.types.find((snapshot) => snapshot.id === before)?.rendered,
+    "input -> input",
+  );
+  assertEquals(
+    support.types.find((snapshot) => snapshot.id === after)?.rendered,
+    "Number -> Number",
+  );
+  assertEquals(writer.buildSupport([]), support);
+});
 
 Deno.test("terminal diagnostic documents flow to narrow widths without losing roles", () => {
   const wrapped = wrapDocument(

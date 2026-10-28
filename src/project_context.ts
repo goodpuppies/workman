@@ -1,5 +1,5 @@
-import { basename, dirname, normalize, posix, relative, resolve, sep } from "node:path";
-import { runtime } from "./io.ts";
+import { basename, dirname, relative, sep } from "node:path";
+import { canonicalFilePath as canonicalPath } from "./lsp/uri.ts";
 import type { ProjectSnapshot } from "./module_interface.ts";
 import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./lsp/import_scan.ts";
 
@@ -75,11 +75,12 @@ export class ReverseImportDiscoveryIndex {
     const heads: string[] = [];
     const namedHeads: string[] = [];
     while (frontier.length > 0) {
-      const sortHeads = (candidates: string[]) => candidates.sort(
+      const sortHeads = (candidates: string[]) =>
+        candidates.sort(
           (left, right) =>
             headDirectoryDistance(start, left) - headDirectoryDistance(start, right) ||
             left.localeCompare(right),
-      );
+        );
       heads.push(...sortHeads(frontier.filter((candidate) => this.#heads.has(candidate))));
       namedHeads.push(
         ...sortHeads(frontier.filter((candidate) => this.#namedHeads.has(candidate))),
@@ -392,11 +393,4 @@ function parseContextKey(
 function headDirectoryDistance(start: string, head: string): number {
   const path = relative(dirname(start), dirname(head));
   return path === "" ? 0 : path.split(sep).length;
-}
-
-function canonicalPath(path: string): string {
-  if (runtime.platform === "win32" && path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) {
-    return posix.normalize(path);
-  }
-  return normalize(resolve(path));
 }

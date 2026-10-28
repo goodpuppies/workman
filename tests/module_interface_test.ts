@@ -20,6 +20,32 @@ import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { buildPartialProjectSnapshot } from "../src/program_analysis.ts";
 import { topLevelPhraseRanges } from "../src/top_level_phrases.ts";
 
+Deno.test("semantic presentation preserves shared lexical scopes", async () => {
+  const path = "/test/main.wm";
+  const analysis = await analyzeVirtual(
+    path,
+    new Map([
+      [path, "let value = 1; let f = (x) => { let value = x; value + value };"],
+    ]),
+  );
+  const id = moduleId(path);
+  const bindings = analysis.bindings.get(id)!;
+  const document = analysis.interfaces.get(id)!;
+  const originals = [...bindings.scopeNodes.values()];
+  let reused = 0;
+  for (let index = 0; index < originals.length; index++) {
+    const previous = originals.indexOf(originals[index]);
+    if (previous === index) continue;
+    reused++;
+    assertStrictEquals(document.scopes.nodes[index].scope, document.scopes.nodes[previous].scope);
+    assertStrictEquals(
+      document.completionFacts.scopes.nodes[index].names,
+      document.completionFacts.scopes.nodes[previous].names,
+    );
+  }
+  assertEquals(reused > 0, true);
+});
+
 Deno.test("[module update A601-A606] strict analysis produces one owned interface per module", async () => {
   const analysis = await analyzeVirtual(
     "/test/main.wm",

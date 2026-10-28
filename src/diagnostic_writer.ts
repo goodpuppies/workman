@@ -208,8 +208,7 @@ export function createDiagnosticWriter(): DiagnosticWriter {
   let next = 0;
   const entries: SupportEntry[] = [];
   const edges: { from: EvidenceId; to: EvidenceId; role: string }[] = [];
-  const types: TypeSnapshot[] = [];
-  const renderedTypes = new Map<TypeSnapshotId, string>();
+  const types: { id: TypeSnapshotId; shape: TypeSnapshotShape }[] = [];
   const sources = new Map<string, string>();
 
   const writer: DiagnosticWriter = {
@@ -220,9 +219,7 @@ export function createDiagnosticWriter(): DiagnosticWriter {
     snapshotType(type: Ty) {
       const id = writer.nextId("t");
       const shape = snapshotShape(type, writer);
-      const rendered = renderShape(shape, renderedTypes);
-      renderedTypes.set(id, rendered);
-      types.push({ id, rendered, shape });
+      types.push({ id, shape });
       return id;
     },
     add(entry) {
@@ -235,11 +232,19 @@ export function createDiagnosticWriter(): DiagnosticWriter {
       sources.set(filePath, source);
     },
     buildSupport(roots) {
+      // Capture shapes before unification mutates them, but only render evidence for a failure.
+      // Children precede their parents in the snapshot list.
+      const renderedTypes = new Map<TypeSnapshotId, string>();
+      const snapshots = types.map(({ id, shape }) => {
+        const rendered = renderShape(shape, renderedTypes);
+        renderedTypes.set(id, rendered);
+        return { id, shape, rendered };
+      });
       return {
         entries: [...entries],
         edges: [...edges],
         roots,
-        types: [...types],
+        types: snapshots,
         sources: [...sources].map(([filePath, source]) => ({ filePath, source })),
       };
     },

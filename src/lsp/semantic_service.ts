@@ -1,4 +1,3 @@
-import { normalize, posix, resolve } from "node:path";
 import {
   analyzeDetachedFile,
   analyzeFile,
@@ -9,10 +8,10 @@ import {
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { FrontendDiagnosticError, genericDiagnostic } from "../diagnostic_model.ts";
 import { resolveCompilerFrontend } from "../frontend_mode.ts";
-import { runtime } from "../io.ts";
 import type { ModuleInterface, ProjectSnapshot } from "../module_interface.ts";
+import type { ProgramAnalysis } from "../program_analysis.ts";
 import { ProjectContextRegistry, type ReverseImportDiscoveryIndex } from "../project_context.ts";
-import { fileUriToPath } from "./uri.ts";
+import { canonicalFilePath as canonicalPath, fileUriToPath } from "./uri.ts";
 import { type SemanticDocumentContext, semanticSourceForPath } from "./semantic_context.ts";
 
 export type SemanticServiceInputs = Readonly<{
@@ -32,6 +31,7 @@ export class SemanticService {
   #recoveryHoles = new WeakMap<ProjectSnapshot, readonly SemanticRecoveryHole[]>();
   #recoveryHints = new Map<string, RecoveryHint>();
   #operationTail: Promise<void> = Promise.resolve();
+  #sources = new WeakMap<ProjectSnapshot, ReadonlyMap<string, string>>();
 
   constructor(
     discovery: ReverseImportDiscoveryIndex,
@@ -85,7 +85,7 @@ export class SemanticService {
           }
         }
         try {
-          return (await analyzeFile(head, { ...options, sourceOverrides })).projectSnapshot;
+          return this.#rememberSources(await analyzeFile(head, { ...options, sourceOverrides }));
         } catch (error) {
           recovered = true;
           const synthetic = syntheticMatchArmHole(head, sourceOverrides, error);
@@ -129,10 +129,12 @@ export class SemanticService {
           }
         }
         try {
-          return (await analyzeStrictDetachedFile(document, {
-            ...options,
-            sourceOverrides,
-          })).projectSnapshot;
+          return this.#rememberSources(
+            await analyzeStrictDetachedFile(document, {
+              ...options,
+              sourceOverrides,
+            }),
+          );
         } catch (error) {
           recovered = true;
           const synthetic = syntheticMatchArmHole(document, sourceOverrides, error);
@@ -180,6 +182,27 @@ export class SemanticService {
     await this.#serialize(() => {
       this.registry.invalidatePaths(captured);
     });
+  }
+
+  /** Opening an already analyzed dependency does not change its project's source revision. */
+  async hasCurrentSource(uri: string, source: string): Promise<boolean> {
+    return await this.#serialize(() => {
+      const path = canonicalPath(fileUriToPath(uri));
+      return this.openSnapshots().some((snapshot) =>
+        this.#sources.get(snapshot)?.get(path) === source
+      );
+    });
+  }
+
+  #rememberSources(analysis: ProgramAnalysis): ProjectSnapshot {
+    const snapshot = analysis.projectSnapshot;
+    this.#sources.set(
+      snapshot,
+      new Map(
+        [...analysis.graph.nodes.values()].map((node) => [canonicalPath(node.path), node.source]),
+      ),
+    );
+    return snapshot;
   }
 
   async invalidateUris(uris: Iterable<string>): Promise<void> {
@@ -308,11 +331,4 @@ function configurationKey(options: CompilerFrontendOptions): string {
     surface: options.surface ?? "workman",
     frontendV2ModuleUrl: options.frontendV2ModuleUrl?.toString(),
   });
-}
-
-function canonicalPath(path: string): string {
-  if (runtime.platform === "win32" && path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) {
-    return posix.normalize(path);
-  }
-  return normalize(resolve(path));
 }
