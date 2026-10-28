@@ -1,10 +1,10 @@
-import { normalize, posix, resolve } from "node:path";
+import { normalize, resolve } from "node:path";
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { runtime } from "../io.ts";
 import { resolveModuleImportPath } from "../module_graph.ts";
 import { ReverseImportDiscoveryIndex } from "../project_context.ts";
 import { directWorkmanImportSpecifiers, hasTopLevelMainBinding } from "./import_scan.ts";
-import { fileUriToPath, pathToFileUri } from "./uri.ts";
+import { canonicalFilePath as canonicalPath, fileUriToPath, pathToFileUri } from "./uri.ts";
 
 export type InitializeParams = {
   rootUri?: string | null;
@@ -191,13 +191,6 @@ function affectedContextUris(
 
 function uriPath(uri: string): string {
   return canonicalPath(fileUriToPath(uri));
-}
-
-function canonicalPath(path: string): string {
-  if (runtime.platform === "win32" && path.startsWith("/") && !/^\/[A-Za-z]:\//.test(path)) {
-    return posix.normalize(path);
-  }
-  return normalize(resolve(path));
 }
 
 async function collectWmFiles(root: string): Promise<string[]> {

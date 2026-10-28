@@ -1322,6 +1322,53 @@ Deno.test("lsp server returns hover types", async () => {
   assertEquals(hover.contents.value, "```wm\nid: 'a -> 'a\n```");
 });
 
+for (const enabled of [false, true]) {
+  Deno.test(`lsp server annotation comparison is ${enabled ? "opted in" : "disabled by default"}`, async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+      const uri = pathToFileUri(nativeJoin(dir, "main.wm"));
+      const messages = await runLsp([
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: enabled ? { initializationOptions: { unannotatedHover: true } } : {},
+        },
+        {
+          jsonrpc: "2.0",
+          method: "textDocument/didOpen",
+          params: {
+            textDocument: {
+              uri,
+              languageId: "wm",
+              version: 1,
+              text: "let id: Number -> Number = (x) => { x };",
+            },
+          },
+        },
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "textDocument/hover",
+          params: { textDocument: { uri }, position: { line: 0, character: 4 } },
+        },
+        { jsonrpc: "2.0", id: 3, method: "shutdown", params: null },
+        { jsonrpc: "2.0", method: "exit", params: null },
+      ], { WORKMAN_UNANNOTATED_HOVER: "false" });
+      assertEquals(messages.find((message) => message.id === 2)?.result, {
+        contents: {
+          kind: "markdown",
+          value: enabled
+            ? "```wm\nid: Number -> Number\nunannotated: 'a -> 'a\n```"
+            : "```wm\nid: Number -> Number\n```",
+        },
+      });
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  });
+}
+
 Deno.test("lsp server returns constructor hover types", async () => {
   const dir = await Deno.makeTempDir();
   const main = nativeJoin(dir, "main.wm");

@@ -2,7 +2,7 @@
   "name": "workman",
   "displayName": "Workman",
   "description": "Language support for Workman",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "goodpuppies",
   "license": "MIT",
   "repository": {
@@ -94,6 +94,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show frontend-v2 virtual syntax as structural inlay hints. This is independent of future inferred-type inlays. Restart the language server after changing it."
+        },
+        "workman.hover.unannotated": {
+          "scope": "window",
+          "type": "boolean",
+          "default": false,
+          "description": "Compare annotated types with inference after removing annotations. This can reanalyze the project and delay the first hover. Restart the language server after changing it."
         },
         "workman.trace.server": {
           "scope": "window",

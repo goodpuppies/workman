@@ -126,6 +126,9 @@ export async function activate(context: ExtensionContext) {
       ...process.env,
       WORKMAN_DENO_PATH: denoPath,
       WORKMAN_STRUCTURAL_INLAYS: String(structuralInlays),
+      WORKMAN_UNANNOTATED_HOVER: String(
+        workspace.getConfiguration("workman").get<boolean>("hover.unannotated", false),
+      ),
     };
     outputChannel.appendLine(
       `Starting Workman language server (${server.kind}): ${server.path}`,

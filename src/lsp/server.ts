@@ -1,10 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { once } from "node:events";
 import process from "node:process";
-import {
-  type CompilerFrontendOptions,
-  defaultFrontendV2ModuleUrl,
-} from "../compiler_frontend.ts";
+import { type CompilerFrontendOptions, defaultFrontendV2ModuleUrl } from "../compiler_frontend.ts";
 import { loadFrontendV2Surface } from "../frontend_v2_surface_loader.ts";
 import { runtime } from "../io.ts";
 import { type ContentChange, DocumentStore } from "./documents.ts";
@@ -44,6 +41,7 @@ const validationScheduler = new ValidationScheduler();
 let structuralInlaysEnabled = process.env.WORKMAN_STRUCTURAL_INLAYS !== "false";
 let typeInlaysEnabled = process.env.WORKMAN_TYPE_INLAYS !== "false";
 let parameterInlaysEnabled = process.env.WORKMAN_PARAMETER_INLAYS !== "false";
+let unannotatedHoverEnabled = process.env.WORKMAN_UNANNOTATED_HOVER === "true";
 const lastPublishedUrisByEntry = new Map<string, Set<string>>();
 let isShutdown = false;
 let hasInitialized = false;
@@ -216,12 +214,16 @@ async function handleMessage(message: RpcMessage) {
   if (message.method === "textDocument/didOpen") {
     workspaceRevision++;
     const params = message.params as DidOpenParams;
+    const unchanged = await semanticService.hasCurrentSource(
+      params.textDocument.uri,
+      params.textDocument.text,
+    );
     documents.open(
       params.textDocument.uri,
       params.textDocument.text,
       params.textDocument.version,
     );
-    scheduleAffectedValidation(params.textDocument.uri);
+    scheduleAffectedValidation(params.textDocument.uri, !unchanged);
     return;
   }
   if (message.method === "textDocument/didChange") {
@@ -253,6 +255,7 @@ async function handleMessage(message: RpcMessage) {
       documents.sourceOverrides(),
       frontendOptions,
       semanticService,
+      { unannotated: unannotatedHoverEnabled },
     );
     log(
       "hover result",
@@ -578,19 +581,23 @@ async function clearInactiveProjectDiagnostics(
   }
 }
 
-function scheduleAffectedValidation(uri: string): void {
+function scheduleAffectedValidation(uri: string, invalidate = true): void {
   validationScheduler.schedule(
     uri,
     (ticket) =>
-      publishAffectedValidation(uri, ticket).catch((error) => {
+      publishAffectedValidation(uri, ticket, invalidate).catch((error) => {
         log("affected validate error", uri, String(error));
       }),
   );
 }
 
-async function publishAffectedValidation(uri: string, ticket: ValidationTicket) {
+async function publishAffectedValidation(
+  uri: string,
+  ticket: ValidationTicket,
+  invalidate: boolean,
+) {
   const started = Date.now();
-  await semanticService.invalidateUris([uri]);
+  if (invalidate) await semanticService.invalidateUris([uri]);
   if (!ticket.isCurrent()) return;
   const uris = await projectIndex.affectedUrisForChange(
     uri,
@@ -810,6 +817,9 @@ function applyInitializationOptions(
   if (options.parameterInlayHints !== undefined) {
     parameterInlaysEnabled = options.parameterInlayHints;
   }
+  if (options.unannotatedHover !== undefined) {
+    unannotatedHoverEnabled = options.unannotatedHover;
+  }
 }
 
 export function frontendV2ModuleUrl(
@@ -830,6 +840,7 @@ type WorkmanInitializationOptions = {
   structuralInlayHints?: boolean;
   typeInlayHints?: boolean;
   parameterInlayHints?: boolean;
+  unannotatedHover?: boolean;
 };
 
 type WorkmanInitializeParams = InitializeParams & {

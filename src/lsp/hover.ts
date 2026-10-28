@@ -27,6 +27,7 @@ export async function hoverAt(
   sourceOverrides: Map<string, string>,
   options: CompilerFrontendOptions = {},
   service?: SemanticService,
+  comparisonOptions: { unannotated?: boolean } = {},
 ): Promise<LspHover | null> {
   const context = await semanticDocumentContext(uri, sourceOverrides, options, service);
   if (!context) return null;
@@ -46,6 +47,7 @@ export async function hoverAt(
   }
   const hover = semanticHoverAt(offset, moduleInterface);
   if (!hover) return null;
+  if (comparisonOptions.unannotated === false) return hover;
   const unannotated = await unannotatedHoverType(
     context,
     offset,

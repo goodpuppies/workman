@@ -1,10 +1,6 @@
 import type { Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
 import { isQualified, parseLongId, pathOf } from "./ast.ts";
-import type {
-  BindingFacts,
-  BindingScopeCheckpoint,
-  BindingScopeSnapshot,
-} from "./binding_facts.ts";
+import type { BindingFacts, BindingScopeSnapshot } from "./binding_facts.ts";
 import { basisCtorId } from "./basis.ts";
 import { basisStructureId } from "./compiler_semantics.ts";
 import type { FrontendDiagnostic } from "./diagnostic_model.ts";
@@ -2700,13 +2696,20 @@ export function semanticCompletionFacts(
   module: Module,
   bindings: BindingFacts,
 ): SemanticCompletionFacts {
-  const names = (scope: BindingScopeSnapshot): SemanticCompletionScopeNames =>
-    Object.freeze({
+  // Many syntax nodes share one captured lexical environment.
+  const cachedNames = new Map<BindingScopeSnapshot, SemanticCompletionScopeNames>();
+  const names = (scope: BindingScopeSnapshot): SemanticCompletionScopeNames => {
+    const cached = cachedNames.get(scope);
+    if (cached) return cached;
+    const result = Object.freeze({
       values: sortedNames(scope.values),
       structures: sortedNames(scope.structures),
       types: sortedNames(scope.types),
       constructors: sortedNames(scope.constructors),
     });
+    cachedNames.set(scope, result);
+    return result;
+  };
   return Object.freeze({
     gpuRegions: Object.freeze(
       discoverGpuRegions(module)
@@ -3800,24 +3803,32 @@ function semanticScopes(
   nominalFacts: NominalFacts,
 ): ModuleSemanticScopes {
   const initial = initialSemanticScope(result, nominalFacts);
+  // Keep the sharing already established by binding resolution within this module.
+  const cachedScopes = new Map<BindingScopeSnapshot, SemanticScope>();
+  const scopeFor = (scope: BindingScopeSnapshot): SemanticScope => {
+    const cached = cachedScopes.get(scope);
+    if (cached) return cached;
+    const semantic = overlayBindingScope(
+      initial,
+      scope,
+      nominalFacts,
+      bindings.jsImportSourceBindings,
+    );
+    cachedScopes.set(scope, semantic);
+    return semantic;
+  };
   const nodes = [...bindings.scopeNodes].map(([node, scope]) =>
     Object.freeze({
       span: Object.freeze({ ...node.span }),
-      scope: overlayBindingScope(
-        initial,
-        scope,
-        nominalFacts,
-        bindings.jsImportSourceBindings,
-      ),
+      scope: scopeFor(scope),
     })
   );
   const checkpoints = bindings.scopeCheckpoints.map((checkpoint) =>
-    semanticScopeCheckpoint(
-      initial,
-      checkpoint,
-      nominalFacts,
-      bindings.jsImportSourceBindings,
-    )
+    Object.freeze({
+      container: Object.freeze({ ...checkpoint.container.span }),
+      offset: checkpoint.offset,
+      scope: scopeFor(checkpoint.scope),
+    })
   );
   return Object.freeze({
     initial,
@@ -3949,24 +3960,6 @@ function overlayBindingScope(
     }
   }
   return freezeSemanticScope(values, structures, types);
-}
-
-function semanticScopeCheckpoint(
-  initial: SemanticScope,
-  checkpoint: BindingScopeCheckpoint,
-  nominalFacts: NominalFacts,
-  generatedJsBindings: ReadonlyMap<BindingId, BindingId>,
-): Readonly<{ container: SourceSpan; offset: number; scope: SemanticScope }> {
-  return Object.freeze({
-    container: Object.freeze({ ...checkpoint.container.span }),
-    offset: checkpoint.offset,
-    scope: overlayBindingScope(
-      initial,
-      checkpoint.scope,
-      nominalFacts,
-      generatedJsBindings,
-    ),
-  });
 }
 
 function freezeSemanticScope(
