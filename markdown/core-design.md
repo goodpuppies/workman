@@ -44,7 +44,9 @@ a new feature, not sugar, and has to be justified as one.
 
 **Visibility.** Making something SML leaves implicit explicit, or showing it back through tooling
 (principle 4): explicit closure captures and their inlays, pinned patterns with `Var(x)` binders,
-mandatory braces and `else`, and diagnostics that trace a type back to where it came from.
+braces for statement blocks and branches, mandatory `else`, and diagnostics that trace a type back
+to where it came from. Single-expression lambda bodies and single parameters may omit their
+delimiters (`x => x * x`); an explicit statement block retains its semicolon/result distinction.
 Principle 5 exempts this category from the "try userspace first" rule, because it adds no new
 capability, only legibility.
 

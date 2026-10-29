@@ -3,7 +3,7 @@ from "./generated/surface_types.wm" import {
   VariablePatternNode, ExplicitVariablePatternNode, PinnedPatternNode,
   ConstructorPatternNode, LongNameNode, TypedPatternNode, GroupedPatternNode,
   TypeAnnotationNode,
-  ParameterNode, ParametersNode, CaptureClauseNode, LambdaExpressionNode, TuplePatternNode,
+  ParameterNode, ParametersNode, BareParametersNode, CaptureClauseNode, LambdaExpressionNode, TuplePatternNode,
   ListPatternNode,
   BlockItemNode, BlockBodyNode, BlockExpressionNode,
   ParenthesizedSequenceNode
@@ -175,7 +175,7 @@ let buildParam = (value: ParseValue, span: Span) => {
       OptionalParseValue(annotationValue),
     ]) => {
       let annotation = match(annotationValue) {
-        Some(NodeParseValue(node)) => { Some(node) },
+        Some(annotation) => { firstNode(annotation) },
         _ => { None },
       };
       NodeParseValue(ParameterNode(pattern, annotation, span))
@@ -197,7 +197,12 @@ let buildParamList = (value: ParseValue, span: Span) => {
         )
       )
     },
-    _ => { RuleParseValue("ParamList", value, span) },
+    _ => {
+      match(collectNodes(value)) {
+        [parameter] => { NodeParseValue(BareParametersNode([parameter], span)) },
+        _ => { RuleParseValue("ParamList", value, span) },
+      }
+    },
   }
 };
 

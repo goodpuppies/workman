@@ -8,7 +8,7 @@ from "./generated/surface_types.wm" import {
   DirectiveNode, PanicExpressionNode,
   CarrierLiftExpressionNode, LiftTupleExpressionNode,
   JsonObjectExpressionNode, JsonArrayExpressionNode, JsonObjectFieldNode,
-  RecordExpressionNode, NamedRecordExpressionNode, RecordFieldNode, RecordSpreadNode
+  RecordExpressionNode, NamedRecordExpressionNode, NestedRecordExpressionNode, RecordFieldNode, RecordSpreadNode
 };
 
 let renderExtraToken = (value: SurfaceToken) => { value.text };
@@ -337,6 +337,16 @@ let renderExpressionExtraNode = match(node, depth, materializeMarks, renderNode)
         }
       },
       _ => { None },
+    }
+  },
+  (NestedRecordExpressionNode(open, fields, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderExtraNodes(fields, ", ", "", depth, materializeMarks, renderNode)) {
+      Some(fieldsText) => {
+        Some(renderExtraSurfaceValue(open, materializeMarks) ++
+          (if (fieldsText == "") { "" } else { " " ++ fieldsText ++ " " }) ++
+          renderExtraSurfaceValue(close, materializeMarks))
+      },
+      None => { None },
     }
   },
   (RecordFieldNode(name, equalsToken, expression, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {

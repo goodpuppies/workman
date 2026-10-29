@@ -6,7 +6,7 @@ from "./generated/surface_types.wm" import {
   UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, IfExpressionNode,
   CarrierLiftExpressionNode, LiftTupleExpressionNode,
   JsonObjectExpressionNode, JsonArrayExpressionNode, JsonObjectFieldNode,
-  RecordExpressionNode, NamedRecordExpressionNode, RecordFieldNode, RecordSpreadNode,
+  RecordExpressionNode, NamedRecordExpressionNode, NestedRecordExpressionNode, RecordFieldNode, RecordSpreadNode,
   TupleExpressionNode, GroupedExpressionNode, ListExpressionNode
 };
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
@@ -185,16 +185,16 @@ let buildRecordExprField = (value: ParseValue, span: Span) => {
       EmptyParseValue,
       TokenParseValue(equalsToken),
       EmptyParseValue,
-      NodeParseValue(expression),
+      expressionValue,
     ])) => {
-      NodeParseValue(
+      match(firstNode(expressionValue)) { Some(expression) => { NodeParseValue(
         RecordFieldNode(
           name,
           Some(surfaceValue(equalsToken)),
           Some(expression),
           span,
         )
-      )
+      ) }, None => { RuleParseValue("RecordExprField", value, span) } }
     },
     ChoiceParseValue(2, TokenParseValue(name)) => {
       NodeParseValue(RecordFieldNode(name, None, None, span))
@@ -255,6 +255,19 @@ let buildNamedRecordExpr = (value: ParseValue, span: Span) => {
       }
     },
     _ => { RuleParseValue("NamedRecordExpr", value, span) },
+  }
+};
+
+let buildNestedRecordExpr = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(open), EmptyParseValue, fieldsValue, EmptyParseValue, TokenParseValue(close)
+    ]) => {
+      NodeParseValue(NestedRecordExpressionNode(
+        surfaceValue(open), collectNodes(fieldsValue), surfaceValue(close), span
+      ))
+    },
+    _ => { RuleParseValue("NestedRecordExpr", value, span) },
   }
 };
 
