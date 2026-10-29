@@ -1,6 +1,8 @@
 import { type BindingFacts, resolveProgramBindingFacts } from "./binding_facts.ts";
 import type { Expr, Pattern } from "./ast.ts";
 import type { InferResult } from "./infer.ts";
+import { standardValueId } from "./compiler_semantics.ts";
+import { librarySources } from "./generated/assets.ts";
 import { CompilerIdAllocator } from "./ids.ts";
 import type { ModuleGraph } from "./module_graph.ts";
 import type { ModuleId, ModuleMap, ReadonlyModuleMap } from "./module_id.ts";
@@ -11,7 +13,7 @@ import {
   normalizeGpuSlicePrograms,
 } from "./wmslang/v2_normalize.ts";
 import { gpuOnlyBindingIds } from "./gpu_host_boundary.ts";
-import type { BindingId } from "./ids.ts";
+import type { BindingId, ValueId } from "./ids.ts";
 import type { TypeNameId } from "./ids.ts";
 import { type GpuFragmentSelectionFacts, resolveGpuFragmentSelections } from "./gpu_selection.ts";
 import { type NominalFacts, resolveProgramNominalFacts } from "./nominal_facts.ts";
@@ -25,6 +27,7 @@ import {
   type ProjectSnapshotContext,
   semanticCompletionFacts,
   type SemanticResolvedDefinition,
+  type SemanticSourceLocation,
 } from "./module_interface.ts";
 import { type AstNode, offsetToLineCol, type SourceSpan } from "./source.ts";
 import { elaborateSharedCore, type SharedCoreModule } from "./core/elaboration.ts";
@@ -157,7 +160,11 @@ export function buildProgramAnalysis(
     analysis.bindings,
     analysis.nominalFacts,
     context,
-    { gpuSelections: analysis.fragmentSelections, gpuSlices: analysis.gpuSlices },
+    {
+      gpuSelections: analysis.fragmentSelections,
+      gpuSlices: analysis.gpuSlices,
+      libraryValueDefinitions: libraryValueDefinitions(extended.graph, analysis.bindings),
+    },
   );
   return {
     ...analysis,
@@ -237,6 +244,7 @@ export function buildPartialProjectSnapshot(
     // Selection/root facts remain useful for unresolved tooling even when normalization fails.
   }
   return buildProjectSnapshot(certified, factsResults, bindings, nominalFacts, context, {
+    libraryValueDefinitions: libraryValueDefinitions(factsGraph, bindings),
     gpuSelections: fragmentSelections,
     gpuSlices,
     completionFacts: semanticFacts.completionFacts,
@@ -246,6 +254,29 @@ export function buildPartialProjectSnapshot(
       certified,
     ),
   });
+}
+
+/** Retain library definition sites without expanding the user project's interface set. */
+function libraryValueDefinitions(
+  graph: ModuleGraph,
+  bindings: ModuleMap<BindingFacts>,
+): ReadonlyMap<ValueId, SemanticSourceLocation> {
+  const definitions = new Map<ValueId, SemanticSourceLocation>();
+  for (const [moduleId, node] of graph.nodes) {
+    if (!(node.path in librarySources)) continue;
+    const facts = bindings.get(moduleId);
+    if (!facts) continue;
+    for (const [pattern, bindingId] of facts.binders) {
+      if (
+        pattern.kind !== "PVar" || !pattern.node ||
+        facts.exports.get(pattern.name) !== bindingId
+      ) continue;
+      const definition = Object.freeze({ moduleId, path: node.path, span: pattern.node.span });
+      definitions.set(standardValueId(node.path, pattern.name), definition);
+      definitions.set(bindingId, definition);
+    }
+  }
+  return definitions;
 }
 
 /** Capture syntax-certified, name-only scopes before failed phrases are transactionally removed. */

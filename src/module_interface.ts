@@ -534,6 +534,8 @@ export type ProjectSnapshot = Readonly<{
   basisGenerations: ReadonlyMap<BasisProfileName, BasisGeneration>;
   generation: InterfaceGeneration;
   interfaces: ReadonlyMap<ModuleId, ModuleInterface>;
+  /** Library declarations have source locations without becoming user-project interfaces. */
+  libraryValueDefinitions?: ReadonlyMap<ValueId, SemanticSourceLocation>;
 }>;
 
 export type ProjectConfiguration = Readonly<{
@@ -547,6 +549,7 @@ export type ProjectSnapshotContext = Readonly<{
 }>;
 
 export type ProjectSemanticFacts = Readonly<{
+  libraryValueDefinitions?: ReadonlyMap<ValueId, SemanticSourceLocation>;
   gpuSelections?: GpuFragmentSelectionFacts;
   gpuSlices?: readonly NormalizedGpuSlice[];
   completionFacts?: ReadonlyMap<ModuleId, SemanticCompletionFacts>;
@@ -759,6 +762,7 @@ export function buildProjectSnapshot(
     ),
     generation,
     interfaces,
+    libraryValueDefinitions: semanticFacts.libraryValueDefinitions,
   });
 }
 
@@ -2495,6 +2499,10 @@ export function semanticDefinitionsForTarget(
   project: ProjectSnapshot,
   target: SemanticOccurrenceTarget,
 ): readonly SemanticSourceLocation[] {
+  if (target.kind === "value") {
+    const definition = project.libraryValueDefinitions?.get(target.id);
+    if (definition) return [definition];
+  }
   if (target.kind === "module") {
     const moduleInterface = project.interfaces.get(target.id);
     return moduleInterface
