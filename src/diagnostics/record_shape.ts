@@ -41,7 +41,7 @@ function recordShapeDocument(
   const lines = [renderHeaderLine(diagnostic, filePath)];
   const violation = diagnostic.failure.violation;
   if (violation.kind === "unsatisfied") {
-    lines.push(line(span(`  ${violation.message}`, "error")));
+    lines.push(...violation.message.split("\n").map((text) => line(span(`  ${text}`, "error"))));
   }
   const excerpt = (anchor: SourceAnchor) => {
     if (anchor.kind !== "source") return;

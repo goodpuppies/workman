@@ -7,8 +7,11 @@ checker also looks for records containing all of those names.
   declaration location.
 - Several containing records produce `record.ambiguous-incomplete`, showing their missing fields
   without selecting a nominal identity.
-- No containing record produces `record.no-matching-type`, listing the supplied fields without
-  suggesting an unrelated record.
+- No containing record produces `record.no-matching-type`, listing the supplied fields. When
+  records share at least half of the supplied field names, the ones sharing the most (up to three)
+  are named as the closest record, with their missing and unknown fields and the same per-field
+  evidence as the cases above. This catches renamed fields, such as a carrier still written with
+  `fn` after `Carrier` renamed it to `via`. Records sharing fewer names are not suggested.
 
 Exact matches retain precedence. A partial literal is still an error: this does not synthesize
 fields or introduce anonymous structural record values. Candidate comparison uses field names and

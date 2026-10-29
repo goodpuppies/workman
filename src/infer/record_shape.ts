@@ -32,6 +32,7 @@ export function recordFieldSetError(
   provided: string[],
   candidates: TypeInfo[],
   allowMissing = false,
+  closest = false,
 ): FrontendDiagnosticError {
   const differences = candidates.map((info) => {
     const required = info.recordFields!.map((field) => field.name);
@@ -44,20 +45,26 @@ export function recordFieldSetError(
   });
   const only = differences.length === 1 ? differences[0] : undefined;
   const describe = (label: string, names: string[]) => `${label} ${names.join(", ")}`;
-  const issues = only
-    ? [
-      ...(only.missing.length ? [describe("missing fields:", only.missing)] : []),
-      ...(only.unexpected.length ? [describe("unknown fields:", only.unexpected)] : []),
-    ]
-    : [];
-  const code = only
+  const issuesOf = (difference: (typeof differences)[number]) => [
+    ...(difference.missing.length ? [describe("missing fields:", difference.missing)] : []),
+    ...(difference.unexpected.length ? [describe("unknown fields:", difference.unexpected)] : []),
+  ];
+  const issues = only ? issuesOf(only) : [];
+  const nearest = differences.map((difference) =>
+    [`\nclosest record: ${difference.info.name}`, ...issuesOf(difference)].join("\n  ")
+  ).join("");
+  const code = closest
+    ? "record.no-matching-type"
+    : only
     ? only.unexpected.length
       ? only.missing.length ? "record.field-set-mismatch" : "record.unknown-fields"
       : "record.missing-fields"
     : candidates.length
     ? "record.ambiguous-incomplete"
     : "record.no-matching-type";
-  const message = only
+  const message = closest
+    ? `no record type matches these fields: ${provided.join(", ") || "(none)"}${nearest}`
+    : only
     ? `record literal for ${only.info.name} has ${issues.join("; ")}`
     : candidates.length
     ? "incomplete record literal; multiple record types contain its fields"
@@ -66,7 +73,7 @@ export function recordFieldSetError(
   const context = premiseContext(
     "InferRecord.FieldSet",
     "record literal supplies exactly the fields of its nominal type",
-    only?.info.name ?? "record literal",
+    closest ? "record literal" : only?.info.name ?? "record literal",
     expr.node,
     { frame: writer.nextId("f"), premise: writer.nextId("p") },
   );

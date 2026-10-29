@@ -441,7 +441,8 @@ function recordCandidate(
   const candidates = findRecordTypes(typeEnv, names, mode);
   if (candidates.length === 0) {
     const containing = mode === "exact" ? findRecordTypes(typeEnv, names, "contains") : [];
-    throw recordFieldSetError(expr, names, containing);
+    if (containing.length) throw recordFieldSetError(expr, names, containing);
+    throw recordFieldSetError(expr, names, closestRecordTypes(typeEnv, names), false, true);
   }
   if (candidates.length > 1) {
     if (!warnings || !diagnostics) throw new Error(ambiguous);
@@ -470,6 +471,18 @@ function findRecordTypes(
     return fields.length === wanted.length &&
       [...fields].sort().every((name, i) => name === wanted[i]);
   });
+}
+
+/** Records sharing the most field names, when they share at least half of the supplied ones. */
+function closestRecordTypes(typeEnv: TypeEnv, names: string[]): TypeInfo[] {
+  const scored = knownTypeInfos(typeEnv).flatMap((info) => {
+    if (!info.recordFields) return [];
+    const fields = info.recordFields.map((field) => field.name);
+    const shared = names.filter((name) => fields.includes(name)).length;
+    return shared > 0 && shared * 2 >= names.length ? [{ info, shared }] : [];
+  });
+  const best = Math.max(0, ...scored.map((entry) => entry.shared));
+  return scored.filter((entry) => entry.shared === best).slice(0, 3).map((entry) => entry.info);
 }
 
 function rejectDuplicateFields(names: string[]) {

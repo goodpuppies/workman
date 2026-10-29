@@ -97,6 +97,20 @@ Deno.test("unmatched literals report their fields without suggesting unrelated r
   assertEquals(rendered.includes("Point requires"), false);
 });
 
+Deno.test("a literal sharing most fields with a record names it as the closest shape", async () => {
+  const source = "-- @no-prelude\n" +
+    "record Pair = { first: Number, second: Number, label: String };\n" +
+    "let p = .{ first = 1, secnd = 2, label = \"x\" };";
+  const error = await assertRejects(() => checkSource(source), FrontendDiagnosticError);
+  assertEquals(error.diagnostic.code, "record.no-matching-type");
+  const rendered = formatDiagnostic(error.diagnostic, "pair.wm", source);
+  assertStringIncludes(rendered, "closest record: Pair");
+  assertStringIncludes(rendered, "missing fields: second");
+  assertStringIncludes(rendered, "unknown fields: secnd");
+  assertStringIncludes(rendered, "Pair requires field second");
+  assertStringIncludes(rendered, "Pair has no field secnd");
+});
+
 Deno.test("empty literals retain exact matching and honest incomplete candidates", async () => {
   const result = await checkSource("-- @no-prelude\nrecord Empty = {}; let empty = .{};");
   expectBinding(result.env, "empty", { type: "Empty", vars: 0 });
