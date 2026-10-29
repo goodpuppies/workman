@@ -833,7 +833,7 @@ export function instantiateRecordFields(info: TypeInfo, args: Ty[]): RecordField
   }));
 }
 
-function namedRecordFields(type: Extract<Ty, { tag: "named" }>): RecordFieldInfo[] | undefined {
+export function namedRecordFields(type: Extract<Ty, { tag: "named" }>): RecordFieldInfo[] | undefined {
   if (!type.recordFields) return undefined;
   const subst = new Map<number, Ty>();
   (type.recordParams ?? []).forEach((id, i) => subst.set(id, type.args[i]));

@@ -1,5 +1,27 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { CHeaderExtractError, extractCHeader } from "../src/ffi/c/extract.ts";
+import { windowsGnuHeaderDirectories } from "../src/ffi/c/windows_headers.ts";
+
+Deno.test("Windows header discovery explains missing tools and incomplete header installations", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const missing = await assertRejects(
+      () => windowsGnuHeaderDirectories("", `${dir}/missing-zig`),
+      Error,
+      "Cannot locate Windows MinGW headers",
+    );
+    assertStringIncludes(missing.message, "WM_C_HEADER_ZIG_LIB_DIR");
+    const incomplete = await assertRejects(
+      () => windowsGnuHeaderDirectories(dir, `${dir}/missing-zig`),
+      Error,
+      "Windows MinGW headers are incomplete",
+    );
+    assertStringIncludes(incomplete.message, "libc/include/any-windows-any/_mingw.h");
+    assertStringIncludes(incomplete.message, "include/stddef.h");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
 
 Deno.test("C header reflection explains a missing system Zig installation", async () => {
   const dir = await Deno.makeTempDir();

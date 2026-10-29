@@ -1,0 +1,62 @@
+// Minimal blocking HTTP/1.1 server: one recv/send per client, no timeouts.
+from "host/c/pointer.wm" import * as Pointer;
+from c.header("stdlib.h") import unsafe { calloc, free };
+from c.header("winsock2.h", lib: "ws2_32") import unsafe *;
+
+let cstr = str => Some(str :> Pointer.fromString);
+let httpPayload =
+  "HTTP/1.1 200 OK\r\n" ++
+  "Content-Type: text/plain\r\n" ++
+  "Content-Length: 19\r\n" ++
+  "Connection: close\r\n\r\n" ++
+  "Hello from workman!";
+let size = Word64.fromNumber;
+let i32 = number => { let Some(value) = I32.fromNumber(number); value };
+
+// Native receive buffer; unchecked allocation, as in a small C sketch.
+let handleClient = (clientSock) => {
+  let Some(buffer) = calloc(size(1), size(1024)) :> Option.map(Pointer.cast);
+  let bytesReceived = recv(clientSock, Some(buffer), 1024, 0);
+  if (bytesReceived > 0) {
+    send(clientSock, cstr httpPayload, i32(Pointer.byteLength(httpPayload)), 0);
+  } else { void };
+  free(Some(Pointer.cast(buffer)));
+  closesocket(clientSock);
+};
+
+let rec serverLoop = (listenSock) => {
+  let clientSock = accept(listenSock, None, None);
+  if (clientSock == INVALID_SOCKET) {
+    print "workman: Accept failed.";
+  } else {
+    handleClient(clientSock);
+    serverLoop(listenSock);
+  }
+};
+
+let serve = (port: Number) => {
+  let wsaData = WSAData{};
+  let startupResult = WSAStartup(Word16.fromNumber(514), Some(wsaData.pointer)); // MAKEWORD(2, 2).
+  if (startupResult != 0) { 1 } else {
+    let listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    let serverAddr = sockaddr_in{
+      sin_family = AF_INET,
+      sin_port = htons(Word16.fromNumber(port)),
+      sin_addr = { S_un = { S_addr = INADDR_ANY } }
+    };
+    let bindResult = bind(listenSock, Some(Pointer.cast(serverAddr.pointer)), i32(serverAddr.size));
+    if (bindResult == SOCKET_ERROR) {
+      closesocket(listenSock);
+      WSACleanup();
+      1
+    } else {
+      listen(listenSock, SOMAXCONN);
+      print("LISTENING " ++ Text.of(port));
+      serverLoop(listenSock);
+      closesocket(listenSock);
+      WSACleanup();
+      0
+    }
+  }
+};
+let main ==> { serve(8080); };

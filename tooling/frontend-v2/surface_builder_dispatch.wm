@@ -15,7 +15,7 @@ from "./surface_builders_expr.wm" import {
   buildPrimary, buildExplicitCall, buildSpaceCall, buildUnary,
   buildPipeMember, buildPipe, buildCarrierLift, buildLiftTuple,
   buildJsonObjectField, buildJsonExpr, buildRecordExprField, buildRecordExpr,
-  buildNamedRecordExpr,
+  buildNamedRecordExpr, buildNestedRecordExpr,
   buildBinaryFold, buildIf,
   buildTupleOrGroup, buildListExpr
 };
@@ -189,6 +189,7 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "RecordExprField" => { buildRecordExprField(value, span) },
             "RecordExpr" => { buildRecordExpr(value, span) },
             "NamedRecordExpr" => { buildNamedRecordExpr(value, span) },
+            "NestedRecordExpr" => { buildNestedRecordExpr(value, span) },
             "Postfix" => {
               buildPostfix(value, span)
             },

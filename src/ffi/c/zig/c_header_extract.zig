@@ -257,10 +257,12 @@ fn writeValue(
                 try list.appendSlice(allocator, "false");
             }
         },
-        .int => {
+        .int => |int_info| {
             var buffer: [40]u8 = undefined;
             const slice = try std.fmt.bufPrint(&buffer, "{d}", .{value});
-            try list.appendSlice(allocator, slice);
+            if (int_info.bits == 64) {
+                try writeJsonString(allocator, list, slice);
+            } else try list.appendSlice(allocator, slice);
         },
         .comptime_int => {
             var buffer: [40]u8 = undefined;

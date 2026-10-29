@@ -51,10 +51,10 @@ export const formatterFixtures: readonly FormatterFixture[] = Object.freeze([
     realFix: "let value = 1;\n",
   },
   {
-    name: "missing lambda block and terminator",
+    name: "expression lambda missing terminator",
     source: 'let main=()=>print "hello world"',
     real: 'let main = () => print "hello world"\n',
-    realFix: 'let main = () => {\n  print "hello world"\n};\n',
+    realFix: 'let main = () => print "hello world";\n',
   },
   {
     name: "block indentation",

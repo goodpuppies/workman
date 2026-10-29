@@ -1,0 +1,11 @@
+from c.header("winsock2.h", lib: "ws2_32") import unsafe {
+  htons,
+  AF_INET,
+  SOCK_STREAM,
+};
+
+let main = () => {
+  print(htons(Word16.fromNumber(8080)));
+  print(AF_INET);
+  print(SOCK_STREAM);
+};

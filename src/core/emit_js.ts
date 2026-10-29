@@ -24,6 +24,7 @@ import {
   setWorkerSpecifiers,
 } from "./emit_js_import.ts";
 import { emitJsIdentifier as id, emitJsMember, emitJsPropertyKey } from "./emit_name.ts";
+import { LIBRARY_PERVASIVES, pervasiveSourceName } from "../library_pervasives.ts";
 
 export type CoreEmitTarget = "executable" | "library" | "repl";
 
@@ -61,6 +62,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
       .filter((moduleId) => moduleId !== program.entry && standardIds.has(moduleId))
       .map((moduleId) => emitModuleRequest(program.modules.get(moduleId)!)),
     ...emitStandardNamespaces(program, requiredStandardIds),
+    ...emitLibraryPervasives(program, requiredStandardIds),
     emitModuleRequest(entry),
     target === "library"
       ? emitLibraryExports(entry)
@@ -260,6 +262,12 @@ function collectRequiredStandardModules(
       .map((namespace) => [namespace.publicName, namespace.id]),
   );
   const required = new Set<ModuleId>();
+  const moduleIdsByPath = new Map(
+    (program.standardNamespaces ?? []).map((namespace) => [namespace.path, namespace.id]),
+  );
+  const pervasiveIds = new Map(
+    LIBRARY_PERVASIVES.map((binding) => [binding.name, moduleIdsByPath.get(binding.modulePath)]),
+  );
   const requireId = (id: ModuleId | undefined) => {
     if (id !== undefined && standardIds.has(id)) required.add(id);
   };
@@ -288,6 +296,7 @@ function collectRequiredStandardModules(
     switch (expr.kind) {
       case "CoreVar":
         requireId(namespaceIds.get(expr.name));
+        if (expr.bindingId === undefined) requireId(pervasiveIds.get(expr.name));
         return;
       case "CoreTuple":
       case "CoreJsonArray":
@@ -559,6 +568,24 @@ function emitStandardNamespaces(
       ...namespace.sourceMembers.map((name) => field(namespace.emitName, name)),
     ];
     return `const ${id(namespace.publicName)} = { ${fields.join(", ")} };`;
+  });
+}
+
+/** Aliases share the original function value; unused libraries are not pulled into the program. */
+function emitLibraryPervasives(
+  program: CoreProgram,
+  requiredStandardIds: ReadonlySet<ModuleId>,
+): string[] {
+  const namespaces = new Map(
+    (program.standardNamespaces ?? []).map((namespace) => [namespace.path, namespace]),
+  );
+  return LIBRARY_PERVASIVES.flatMap((binding) => {
+    const { modulePath, name } = binding;
+    const namespace = namespaces.get(modulePath);
+    if (!namespace || !requiredStandardIds.has(namespace.id)) return [];
+    return [
+      `const ${id(name)} = ${emitJsMember(id(namespace.emitName), pervasiveSourceName(binding))};`,
+    ];
   });
 }
 

@@ -1,8 +1,8 @@
 // Mapping from extractor JSON type descriptors to Workman surface TypeExpr.
 //
-// V1 simplifications (documented in markdown/c_ffi/type-mapping.md):
-// - C integers map to Workman `Number` — width info lives in the ABI descriptor
-//   the codegen emits, not in the type (wm-mini has no width-typed ints yet).
+// Mapping rules (documented in docs/cffi.md):
+// - Unsigned C integers use Word8/16/32/64.Word, selected by reflected width.
+// - Signed integers through 32 bits use I32; 64-bit values use Int64.Int.
 // - Every C pointer is `Option<Ptr<T>>`, uniformly: Deno.PointerValue is
 //   `null | PointerObject` at runtime, and C has no nullability signal.
 // - `anyopaque`/`void*` map to `Option<Ptr<Opaque>>`; known-name C types keep
@@ -15,8 +15,6 @@ export type MappedType = {
   type: TypeExpr;
   /** True when the mapped Workman value is a pointer (wrapped in Option). */
   pointer: boolean;
-  /** C-level char pointer, for string conversion at the ABI boundary. */
-  charPointer: boolean;
   /** Non-representable in v1; carries the reflected C type text for diagnostics. */
   unsupported?: string;
 };
@@ -35,21 +33,28 @@ export function mapTypeDesc(
       return position === "return"
         ? plain("Void")
         : { ...plain("Void"), unsupported: "void value parameter" };
-    case "int":
-      return plain("Number");
+    case "int": {
+      const bits = desc.bits ?? 32;
+      if (bits > INT_MAX_BITS) {
+        return { ...plain("Number"), unsupported: `C integer width ${desc.bits} exceeds 64 bits` };
+      }
+      if (![8, 16, 32, 64].includes(bits)) {
+        return { ...plain("Number"), unsupported: `C integer width ${bits} is not supported` };
+      }
+      return plain(desc.signed ? bits <= 32 ? "I32" : "Int64.Int" : `Word${bits}.Word`);
+    }
     case "float":
       return plain("Number");
     case "pointer": {
       const child = desc.child;
       if (!child) return unknownType(desc);
       if (child.kind === "void") return opaquePointer();
-      if (child.kind === "int" && isChar(child)) return charPointer();
       if (child.kind === "named") {
         return namedPointer(child.name ? cTypeName(child.name) : "Opaque");
       }
       const inner = mapTypeDesc(child, types, "value");
       if (inner.unsupported) return { ...inner, pointer: true };
-      // Pointers to scalars: Option<Ptr<Number|Bool>>.
+      // Scalar pointers preserve the corresponding integer/float/bool type.
       return pointerOf(inner.type);
     }
     case "array":
@@ -104,20 +109,20 @@ export function mapValueDesc(
   if (desc.kind === "named") {
     return plain(cTypeName(desc.name ?? "Opaque"));
   }
-  if (desc.kind === "int" || desc.kind === "float") return plain("Number");
+  if (desc.kind === "int") return mapTypeDesc(desc, types, "value");
+  if (desc.kind === "float") return plain("Number");
   if (desc.kind === "bool") return plain("Bool");
   return unknownType(desc);
 }
 
 function plain(name: string): MappedType {
-  return { type: { kind: "TName", name, args: [] }, pointer: false, charPointer: false };
+  return { type: { kind: "TName", name, args: [] }, pointer: false };
 }
 
 function pointerOf(inner: TypeExpr): MappedType {
   return {
     type: { kind: "TName", name: "Option", args: [{ kind: "TName", name: "Ptr", args: [inner] }] },
     pointer: true,
-    charPointer: false,
   };
 }
 
@@ -129,33 +134,27 @@ function namedPointer(name: string): MappedType {
   return pointerOf({ kind: "TName", name, args: [] });
 }
 
-function charPointer(): MappedType {
-  return { type: plain("String").type, pointer: true, charPointer: true };
-}
-
 function unknownType(desc: ExtractedTypeDesc): MappedType {
   return {
     type: { kind: "TName", name: "Void", args: [] },
     pointer: false,
-    charPointer: false,
     unsupported: `reflected C type ${desc.kind}${desc.name ? ` (${desc.name})` : ""}`,
   };
 }
 
-function isChar(desc: ExtractedTypeDesc): boolean {
-  return desc.kind === "int" && desc.bits === 8;
-}
-
 /** `cimport.struct_Vector3` → `Vector3`; `cimport.FOO` → `FOO`. */
 export function cTypeName(name: string): string {
-  const withoutPrefix = name.replace(/^cimport\.(struct_|union_|enum_)/, "");
+  const withoutPrefix = name.replace(/^(?:cimport\.)?(struct_|union_|enum_)/, "");
   return withoutPrefix.replace(/^cimport\./, "");
 }
 
 /** Struct and enum types declared by an extraction, by their C name. */
 export function declaredTypes(result: { types: ExtractedType[] }): Map<string, ExtractedType> {
   const map = new Map<string, ExtractedType>();
-  for (const type of result.types) map.set(type.name, type);
+  for (const type of result.types) {
+    const name = cTypeName(type.name);
+    map.set(name, { ...type, name });
+  }
   return map;
 }
 
@@ -188,6 +187,7 @@ export function byValueRepresentable(
       if (declared.kind === "enum") return true;
       if (declared.kind === "alias") return byValueRepresentable(declared.target, types);
       return declared.kind === "struct" &&
+        !declared.isUnion &&
         declared.fields.length > 0 &&
         declared.fields.every((field) =>
           field.type.kind === "int" || field.type.kind === "float" || field.type.kind === "bool"

@@ -261,6 +261,7 @@ JsImportClauseBody
   = "*" __ "as" __ alias:Name { return { kind: "Namespace", alias }; }
   / "{" _ specs:JsImportSpecList? _ "}" alias:(__ "as" __ a:Name { return a; })?
     { return { kind: "Named", specs: specs ?? [], alias }; }
+  / "*" { return { kind: "Named", specs: [], all: true }; }
 
 JsImportSpecList = first:JsImportSpec rest:(_ "," _ s:JsImportSpec { return s; })* _ ","? { return [first, ...rest]; }
 JsImportSpec
@@ -348,7 +349,7 @@ MatchExpr
     { return matchExpr(values, arms, location()); }
 
 MatchFn
-  = "match" _ "(" _ names:MatchFnParams _ ")" _ "=>" _ "{" _ arms:MatchArmList _ "}"
+  = "match" _ "(" _ names:MatchFnParams _ ")" _ "=>" _ arms:("{" _ items:MatchArmList _ "}" { return items; } / items:BareMatchArmList { return items; })
     {
       const params = names.map((name) => at({ pattern: at({ kind: "PVar", name }, location()) }, location()));
       const value = names.length === 1
@@ -364,7 +365,8 @@ AnonymousMatchFn
 MatchFnParams = first:Identifier rest:(_ "," _ n:Identifier { return n; })* _ ","? { return [first, ...rest]; }
 
 MatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* _ ","? { return [first, ...rest]; }
-MatchArm = pattern:Pattern _ "=>" _ body:Block { return at({ pattern, body }, location()); }
+BareMatchArmList = first:MatchArm rest:(_ "," _ a:MatchArm { return a; })* { return [first, ...rest]; }
+MatchArm = pattern:Pattern _ "=>" _ body:Expr { return at({ pattern, body }, location()); }
 
 Lambda
   = params:ParamList returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
@@ -406,8 +408,7 @@ CaptureList
 
 LambdaBody
   = LambdaBlock
-  / body:Lambda { return { directives: [], body }; }
-  / body:ParenSeq { return { directives: [], body }; }
+  / body:Expr { return { directives: [], body }; }
 
 LambdaBlock
   = "{" _ directives:(directive:Directive _ { return directive; })* seq:BlockSeqBody _ "}" {
@@ -489,12 +490,15 @@ RecordExpr
   = "." _ "{" _ fields:RecordExprFieldList? _ "}"
     { return at({ kind: "Record", fields: fields ?? [] }, location()); }
 NamedRecordExpr
-  = target:(name:LongConstructor { return longNode("TName", name, { args: [] }, location()); }) _ "{" _ fields:RecordExprFieldList? _ "}"
+  = target:(name:LongName { return longNode("TName", name, { args: [] }, location()); }) _ "{" _ fields:RecordExprFieldList? _ "}"
     { return at({ kind: "Record", target, fields: fields ?? [] }, location()); }
+NestedRecordExpr
+  = "{" _ fields:RecordExprFieldList? _ "}"
+    { return at({ kind: "Record", fields: fields ?? [] }, location()); }
 RecordExprFieldList = first:RecordExprField rest:(_ "," _ f:RecordExprField { return f; })* _ ","? { return [first, ...rest]; }
 RecordExprField
   = ".." _ value:Expr { return recordSpread(value, location()); }
-  / name:FieldName _ "=" _ value:Expr { return recordField(name, value, location()); }
+  / name:FieldName _ "=" _ value:(NestedRecordExpr / Expr) { return recordField(name, value, location()); }
   / name:Identifier { return recordField(name, at({ kind: "Var", name }, location()), location()); }
 
 ListExpr
@@ -552,7 +556,8 @@ PatternCore
   / v:LongName { return longNode("PPinned", v, {}, location()); }
 
 ParamList = "(" _ ps:ParamListItems? _ ")" { return ps ?? []; }
-Param = pattern:ParamPattern ann:TypeAnn? { return at({ pattern, annotation: ann }, location()); }
+  / param:Param { return [param]; }
+Param = pattern:ParamPattern ann:(_ value:TypeAnn { return value; })? { return at({ pattern, annotation: ann }, location()); }
 ParamPattern
   = "(" _ pattern:ParamPattern _ annotation:TypeAnn _ ")"
     { return ascribedPattern(pattern, annotation, location()); }

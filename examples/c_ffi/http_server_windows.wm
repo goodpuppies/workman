@@ -1,0 +1,102 @@
+// One blocking request on IPv4 loopback; serveOnce(0) chooses an available port.
+from "host/c/pointer.wm" import * as Pointer;
+from "host/c/resource.wm" import { withCleanup };
+from c.header("stdlib.h") import unsafe { malloc, calloc, free };
+from c.header("string.h") import unsafe { strstr };
+from c.header("winsock2.h", lib: "ws2_32") import unsafe {
+  WSAStartup, WSACleanup, WSAGetLastError,
+  socket, bind, listen, accept, recv, send, getsockname, closesocket, shutdown,
+  setsockopt, htons, ntohs, inet_addr,
+  AF_INET, SOCK_STREAM, IPPROTO_TCP, INVALID_SOCKET,
+  SOL_SOCKET, SO_RCVTIMEO, SO_SNDTIMEO, SD_SEND,
+};
+from c.header("winsock2.h") import type { sockaddr_in };
+
+let cstr = str => Some(str :> Pointer.fromString);
+let size = Word64.fromNumber;
+let i32 = number => { let Some(value) = I32.fromNumber(number); value };
+let withMemory = (allocation, action) => {
+  match(allocation) {
+    None => { Panic("malloc/calloc failed") },
+    Some(raw) => { withCleanup(() => { action(raw) }, () => { free(Some(raw)); }) },
+  }
+};
+let check = (operation, code: I32) => {
+  if (code == -1) { Panic(operation ++ ": " ++ Text.of(WSAGetLastError())) } else { void }
+};
+let checkSocket = (operation, handle) => {
+  if (handle == INVALID_SOCKET) { Panic(operation ++ ": " ++ Text.of(WSAGetLastError())) } else { handle }
+};
+
+let headerEnd = cstr "\r\n\r\n";
+let rec readHeaders = (client, buffer, used) => {
+  if (used >= 4096) { Panic("request headers exceed 4096 bytes") } else {
+    let count = recv(client, Some(Pointer.offset(buffer, used)), i32(4096 - used), 0);
+    check("recv", count);
+    if (count == 0) { Panic("client closed before completing HTTP headers") } else {
+      let total = used + I32.toNumber(count);
+      Pointer.setU8(buffer, total, 0);
+      match(strstr(Some(buffer), headerEnd)) {
+        Some(_) => { void },
+        None => { readHeaders(client, buffer, total) },
+      }
+    }
+  }
+};
+let rec sendAll = (client, buffer, length, sent) => {
+  if (sent >= length) { void } else {
+    let count = send(client, Some(Pointer.offset(buffer, sent)), i32(length - sent), 0);
+    check("send", count);
+    if (count == 0) { Panic("send made no progress") } else { sendAll(client, buffer, length, sent + I32.toNumber(count)) }
+  }
+};
+
+let serveOnce = (port: Number) => {
+  withMemory(calloc(size(1), size(sizeOfWSAData)), (raw_wsa) => {
+    let wsa = Pointer.cast(raw_wsa);
+    let result = WSAStartup(Word16.fromNumber(514), Some(wsa));
+    if (result != 0) { Panic("WSAStartup: " ++ Text.of(result)) } else {
+      withCleanup(() => {
+        let listener = checkSocket("socket", socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        withCleanup(() => {
+          {
+            let address = sockaddr_in{
+              sin_family = AF_INET,
+              sin_port = htons(Word16.fromNumber(port)),
+              sin_addr = { S_un = { S_addr = inet_addr(cstr "127.0.0.1") } }
+            };
+            let socketAddress = Pointer.cast(address.pointer);
+            check("bind", bind(listener, Some(socketAddress), i32(address.size)));
+            check("listen", listen(listener, 1));
+            withMemory(malloc(size(4)), (raw_addressSize) => {
+              let addressSize = Pointer.cast(raw_addressSize);
+              Pointer.setI32(addressSize, 0, address.size);
+              check("getsockname", getsockname(listener, Some(socketAddress), Some(addressSize)));
+            });
+            print("LISTENING " ++ Text.of(ntohs(getsockaddr_in_sin_port(address.pointer))));
+            let client = checkSocket("accept", accept(listener, None, None));
+            withCleanup(() => {
+              withMemory(malloc(size(4)), (raw_timeout) => {
+                let timeout = Pointer.cast(raw_timeout);
+                Pointer.setI32(timeout, 0, 3000);
+                check("SO_RCVTIMEO", setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, Some(timeout), 4));
+                check("SO_SNDTIMEO", setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, Some(timeout), 4));
+              });
+              withMemory(malloc(size(4097)), (raw_request) => {
+                let request = Pointer.cast(raw_request);
+                readHeaders(client, request, 0);
+              });
+              let body = "hello from wm C FFI — moi!\n";
+              let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " ++
+                Text.of(Pointer.byteLength(body)) ++ "\r\nConnection: close\r\n\r\n" ++ body;
+              sendAll(client, Pointer.fromString(response), Pointer.byteLength(response), 0);
+              check("shutdown", shutdown(client, SD_SEND));
+            }, () => { closesocket(client); });
+          };
+        }, () => { closesocket(listener); });
+      }, () => { WSACleanup(); });
+    }
+  });
+};
+let main = () => { serveOnce(8080); };
+

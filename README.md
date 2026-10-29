@@ -39,10 +39,15 @@ build. Like `wm run`, the resulting application runs with full Deno permissions.
 
 ## C interoperability
 
+See [C interoperability and the Windows HTTP example](docs/cffi.md) for imports,
+buffers, exact integers, and a small server built through Winsock.
+
 C header imports (`c.header`) use a bundled Aro extractor on Linux, macOS, and
-Windows for x64 and ARM64; users do not need Zig. The compiler and LSP unpack the
+Windows for x64 and ARM64. The compiler and LSP unpack the
 matching binary with its resource headers and licenses on first use. System C
-headers/SDKs are still required where included by your header. See
+headers are still required where included by your header. Windows currently uses
+MinGW/compiler headers from an installed Zig distribution, or a directory selected
+by `WM_C_HEADER_ZIG_LIB_DIR`; the extractor itself does not run Zig. See
 [C header reflection](markdown/c_ffi/reflection-extractor.md) for configuration
 and the [extractor's beta limits](tooling/c-header-extractor/README.md).
 

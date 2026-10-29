@@ -1,5 +1,6 @@
 import type { JsImportSpec, TypeExpr } from "../ast.ts";
 import { cExtractionFor, CODEC_LIB_PREFIX } from "../ffi/c/prepare.ts";
+import { cInitializerFor } from "../ffi/c/initializers.ts";
 import { type CCodecDescriptor, validateCodecDescriptor } from "../ffi/c/byte_type.ts";
 import type { ExtractedStruct, ExtractedTypeDesc } from "../ffi/c/extract.ts";
 import { LIBRARY_JS_SCHEME, runtimeJsModuleSpecifier } from "../js_module_specifier.ts";
@@ -190,7 +191,26 @@ function emitCodecBinding(
   binding: string,
   registry: NonNullable<ReturnType<typeof cExtractionFor>>,
 ): string[] {
-  const constructor = /^new([A-Z].*)$/.exec(name);
+  const initializer = cInitializerFor(name);
+  if (initializer) {
+    return [
+      `const ${binding} = ((__wm_bt) => (...args) => __wm_c_initialize(${
+        JSON.stringify(initializer)
+      }, args, __wm_bt))(await import(${JSON.stringify(byteTypeRuntimeUrl)}));`,
+    ];
+  }
+  const size = /^sizeOf(.+)$/.exec(name);
+  if (size) return [`const ${binding} = ${requireStruct(registry, size[1]).size};`];
+  if (name.startsWith("offsetOf")) {
+    // Field names themselves can contain underscores; find the struct prefix first.
+    for (const [structName, declared] of registry.types) {
+      if (declared.kind !== "struct" || !name.startsWith(`offsetOf${structName}_`)) continue;
+      const fieldName = name.slice(`offsetOf${structName}_`.length);
+      const field = declared.fields.find((field) => field.name === fieldName);
+      if (field) return [`const ${binding} = ${field.offset};`];
+    }
+  }
+  const constructor = /^new(.+)$/.exec(name);
   if (constructor) {
     const struct = requireStruct(registry, constructor[1]);
     return [
@@ -200,17 +220,23 @@ function emitCodecBinding(
       }, __wm_c_args);`,
     ];
   }
-  const getter = /^get([A-Z].*)_([A-Za-z0-9_]+)$/.exec(name);
-  if (getter) {
-    const struct = requireStruct(registry, getter[1]);
-    const field = struct.fields.find((entry) => entry.name === getter[2]);
-    if (!field) throw new Error(`no field ${getter[2]} on C struct ${struct.name}`);
-    return [
-      ...codecSetupLines(registry, struct),
-      `const ${binding} = (pointer) => __wm_c_struct_get(${JSON.stringify(struct.name)}, pointer, ${
-        JSON.stringify(getter[2])
-      });`,
-    ];
+  if (name.startsWith("get") || name.startsWith("set")) {
+    for (const [structName, struct] of registry.types) {
+      const prefix = `${name.slice(0, 3)}${structName}_`;
+      if (struct.kind !== "struct" || !name.startsWith(prefix)) continue;
+      const fieldName = name.slice(prefix.length);
+      if (!struct.fields.some((field) => field.name === fieldName)) continue;
+      return [
+        ...codecSetupLines(registry, struct),
+        name.startsWith("set")
+          ? `const ${binding} = (...args) => __wm_c_struct_set(${
+            JSON.stringify(struct.name)
+          }, args, ${JSON.stringify(fieldName)});`
+          : `const ${binding} = (pointer) => __wm_c_struct_get(${
+            JSON.stringify(struct.name)
+          }, pointer, ${JSON.stringify(fieldName)});`,
+      ];
+    }
   }
   throw new Error(`unknown generated C codec binding '${name}'`);
 }
@@ -250,7 +276,8 @@ function codecDescriptor(struct: ExtractedStruct): CCodecDescriptor {
     name: struct.name,
     size: struct.size,
     align: struct.align,
-    fields: struct.fields.map((field) => ({
+    fieldsOnly: !isFlatNumericCStruct(struct),
+    fields: struct.fields.filter((field) => isNumericDesc(field.type)).map((field) => ({
       name: field.name,
       offset: field.offset,
       codec: byteTypeName(field.type),
@@ -307,7 +334,11 @@ function emitCImportSpecs(
     const binding = boundName(spec.alias ?? spec.name, decl.bindingIds?.[index]);
     if (signature.constant) {
       if (signature.constant.kind === "scalar") {
-        wrappers.push(`const ${binding} = ${JSON.stringify(signature.constant.value)};`);
+        wrappers.push(
+          `const ${binding} = ${
+            cScalarLiteral(signature.constant.value, signature.constant.bigint)
+          };`,
+        );
         return;
       }
       if (!registry) {
@@ -321,7 +352,10 @@ function emitCImportSpecs(
         `const ${binding} = { ${
           struct.fields.map((field) =>
             `${emitJsPropertyKey(field.name)}: ${
-              JSON.stringify((constant.fields as Record<string, unknown>)[field.name])
+              cScalarLiteral(
+                (constant.fields as Record<string, unknown>)[field.name],
+                field.type.kind === "int" && (field.type.bits ?? 0) >= 64,
+              )
             }`
           ).join(", ")
         } };`,
@@ -362,7 +396,7 @@ function emitCImportSpecs(
     : [];
   return [
     ...setupLines,
-    `const ${libVar} = Deno.dlopen(${JSON.stringify(libPath)}, { ${symbols.join(", ")} });`,
+    `const ${libVar} = Deno.dlopen(${libPath}, { ${symbols.join(", ")} });`,
     ...wrappers,
   ];
 }
@@ -390,7 +424,7 @@ function emitCNamespaceImport(
     if (signature.constant) {
       const constant = signature.constant;
       if (constant.kind === "scalar") {
-        members.push(`${id(spec.name)}: ${JSON.stringify(constant.value)}`);
+        members.push(`${id(spec.name)}: ${cScalarLiteral(constant.value, constant.bigint)}`);
         continue;
       }
       const struct = requireStruct(registry, constant.descriptor.name);
@@ -398,7 +432,10 @@ function emitCNamespaceImport(
         `${id(spec.name)}: { ${
           struct.fields.map((field) =>
             `${emitJsPropertyKey(field.name)}: ${
-              JSON.stringify((constant.fields as Record<string, unknown>)[field.name])
+              cScalarLiteral(
+                (constant.fields as Record<string, unknown>)[field.name],
+                field.type.kind === "int" && (field.type.bits ?? 0) >= 64,
+              )
             }`
           ).join(", ")
         } }`,
@@ -438,7 +475,7 @@ function emitCNamespaceImport(
   );
   const dlopenLines = symbols.length === 0
     ? []
-    : [`const ${libVar} = Deno.dlopen(${JSON.stringify(libPath)}, { ${symbols.join(", ")} });`];
+    : [`const ${libVar} = Deno.dlopen(${libPath}, { ${symbols.join(", ")} });`];
   for (const { member, ref } of namespaceRecordCtors.get(decl.clause.alias) ?? []) {
     if (usedMembers instanceof Set && !usedMembers.has(member)) continue;
     members.push(`${id(member)}: ${ref}`);
@@ -462,8 +499,18 @@ type CSignature = {
 };
 
 type CConstant =
-  | { kind: "scalar"; value: unknown }
+  | { kind: "scalar"; value: unknown; bigint?: boolean }
   | { kind: "struct"; descriptor: CCodecDescriptor; fields: unknown };
+
+function cScalarLiteral(value: unknown, bigint = false): string {
+  if (!bigint) return JSON.stringify(value);
+  if (typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new Error(
+      "C extractor returned an inexact 64-bit constant; use an extractor that emits decimal strings",
+    );
+  }
+  return `globalThis.BigInt(${JSON.stringify(value)})`;
+}
 
 type CDenoType = string | { struct: string[] };
 type CArgConverter =
@@ -477,6 +524,7 @@ type CResultConverter =
   | "id"
   | "cstr-to-string"
   | "option-wrap"
+  | "bigint"
   | { kind: "struct-read"; name: string };
 
 function cSignatureForSpec(
@@ -530,11 +578,10 @@ function cSignatureFromExtraction(
       }
     }
     const result = returnType ? cDenoTypeFromDesc(returnType, registry) : "void";
-    const resultConverter = returnType && returnType.kind === "pointer" &&
-        returnType.child?.kind === "int" && returnType.child.bits === 8
-      ? "cstr-to-string"
-      : result === "pointer"
+    const resultConverter = result === "pointer"
       ? "option-wrap"
+      : result === "i64" || result === "u64"
+      ? "bigint"
       : "id";
     return { parameters, result, converters, resultConverter };
   }
@@ -565,7 +612,11 @@ function cSignatureFromExtraction(
       result: "f64",
       converters: [],
       resultConverter: "id",
-      constant: { kind: "scalar", value: value.value },
+      constant: {
+        kind: "scalar",
+        value: value.value,
+        bigint: value.type.kind === "int" && (value.type.bits ?? 0) >= 64,
+      },
     };
   }
   throw new Error(
@@ -574,7 +625,7 @@ function cSignatureFromExtraction(
 }
 
 function isFlatNumericCStruct(struct: ExtractedStruct): boolean {
-  return struct.fields.length > 0 &&
+  return !struct.isUnion && struct.fields.length > 0 &&
     struct.fields.every((field) => isNumericDesc(field.type));
 }
 
@@ -583,7 +634,7 @@ function isNumericDesc(desc: ExtractedTypeDesc): boolean {
 }
 
 function cTypeName(name: string): string {
-  return name.replace(/^cimport\.(struct_|union_|enum_)/, "").replace(/^cimport\./, "");
+  return name.replace(/^(?:cimport\.)?(struct_|union_|enum_)/, "").replace(/^cimport\./, "");
 }
 
 function cDenoTypeFromDesc(
@@ -629,9 +680,6 @@ function cConverterFromDesc(
   desc: ExtractedTypeDesc,
   registry: NonNullable<ReturnType<typeof cExtractionFor>>,
 ): CArgConverter {
-  if (desc.kind === "pointer" && desc.child?.kind === "int" && desc.child.bits === 8) {
-    return "string-to-cstr";
-  }
   if (desc.kind === "int" && (desc.bits ?? 0) >= 64) return "number-to-bigint";
   if (desc.kind === "pointer" || desc.kind === "optional") return "option-unwrap";
   if (desc.kind === "named") {
@@ -673,6 +721,9 @@ function cSignatureFromAuthoredType(type: TypeExpr | undefined): CSignature {
       ? "cstr-to-string"
       : type.result.kind === "TName" && type.result.name === "Option"
       ? "option-wrap"
+      : type.result.kind === "TName" &&
+          (type.result.name === "Int64.Int" || type.result.name === "Word64.Word")
+      ? "bigint"
       : "id",
   };
 }
@@ -693,19 +744,31 @@ function cDenoTypeFromAuthored(
     };
   }
   if (type.name === "Number") return { denoType: "i32", converter: "id" };
+  if (type.name === "I32") return { denoType: "i32", converter: "id" };
+  if (type.name === "Word8.Word") return { denoType: "u8", converter: "id" };
+  if (type.name === "Word16.Word") return { denoType: "u16", converter: "id" };
+  if (type.name === "Word32.Word") return { denoType: "u32", converter: "id" };
+  if (type.name === "Word64.Word") return { denoType: "u64", converter: "number-to-bigint" };
+  if (type.name === "Int64.Int") return { denoType: "i64", converter: "number-to-bigint" };
   if (type.name === "Bool") return { denoType: "bool", converter: "id" };
   if (type.name === "String") return { denoType: "pointer", converter: "string-to-cstr" };
   throw new Error(
-    `c.lib parameter type '${type.name}' is not representable in v1 (use Ptr<T>, Option<Ptr<T>>, Number, Bool, String, Void)`,
+    `c.lib parameter type '${type.name}' is not representable (use fixed-width integers, Ptr<T>, Option<Ptr<T>>, Number, Bool, String, Void)`,
   );
 }
 
 function cLibraryPath(libName: string): string {
-  if (libName === "c" || libName === "libc") return "libc.so.6";
-  if (libName.includes("/")) return libName;
+  if (libName === "c" || libName === "libc") {
+    return '(Deno.build.os === "windows" ? "ucrtbase.dll" : Deno.build.os === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6")';
+  }
+  if (libName.includes("/") || libName.includes("\\")) return JSON.stringify(libName);
   // Derived file names already carry their platform suffix.
-  if (/\.(so|dylib|dll)$/.test(libName)) return libName;
-  return `lib${libName}.so`;
+  if (/\.(so(?:\.\d+)*|dylib|dll)$/i.test(libName)) return JSON.stringify(libName);
+  return `(Deno.build.os === "windows" ? ${
+    JSON.stringify(`${libName}.dll`)
+  } : Deno.build.os === "darwin" ? ${JSON.stringify(`lib${libName}.dylib`)} : ${
+    JSON.stringify(`lib${libName}.so`)
+  })`;
 }
 
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {

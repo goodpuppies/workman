@@ -96,17 +96,38 @@ program uses (or caching their interfaces) is needed before this is acceptable.
 
 ## Imports (2026-10-23)
 
-`std/` is preloaded; `subml-basis/` is import-only, reached as `from "basis/won.wm"` (the file
+`std/` is preloaded; `subml-basis/` namespaces require imports such as `from "basis/won.wm"` (the file
 `subml-basis/subset_won.wm`). `"std/<file>.wm"` imports a std module explicitly. Both resolve in
 `libraryImport` (`src/host_modules.ts`) next to `js.host(...)`, before relative resolution. The
 preloaded core is std's `Result`, `Option`, `List` and so on, rebuilt on the Basis as `Result`
 was, so no `Subset`-prefixed name is ever global.
+
+Default pervasives added 2026-10-28 project selected list/option functions directly
+from the shared Basis, without opening its namespaces. Their counts, callbacks
+and error contracts are the shared APIs, even where a legacy std namespace still
+differs. See `docs/pervasives.md` and `src/library_pervasives.ts` for the shipped set.
 
 Follow-up (done for 0.5.0, see `release050plan.md`): `"pakman/..."` was a separate one-off
 mapping to files on disk (`src/pakman_imports.ts`); it is now another built-in scope in
 `libraryImport`.
 
 ## Open questions
+
+### Ownership clarification (2026-10-28)
+
+The shared SubsetML Basis is the primary API for portable code, including the
+planned default pervasive bindings. `std/` is for extra WM and host-dependent
+facilities. Existing duplicate std implementations are transitional and should
+be removed later with their callers migrated to the shared Basis.
+
+This supersedes the older overlap policy below where it retained differing std
+versions of the same portable operation. In particular, std's Number list length,
+accumulator-first left fold and alternative error contracts do not constrain
+the new pervasive APIs. Use the Basis's I32 counts, element-first callbacks and
+module-specific typed errors. Shared Basis functions that std already forwards
+to need one defining implementation, even if a public namespace projects it.
+The older inventory below describes current overlaps, not permission to grow or
+preserve a second Basis. No duplicate removal is implemented by this note.
 
 - **`std/` overlap.** std reuses the Basis where the behavior is identical and keeps its own
   API otherwise (decided 2026-10-23):

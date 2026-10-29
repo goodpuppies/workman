@@ -395,6 +395,19 @@ export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
         },
       ]),
     );
+    for (const descriptor of BASIS_TYPES) {
+      if (!descriptor.recordFields) continue;
+      const info = basisTypeEnvCache.get(descriptor.name)!;
+      const labels = descriptor.argLabels ?? [];
+      const vars = new Map(labels.map((label) => [label, fresh(label)] as const));
+      info.recordParams = [...vars.values()].map((variable) =>
+        (variable as Extract<Ty, { tag: "var" }>).id
+      );
+      info.recordFields = descriptor.recordFields.map((field) => ({
+        name: field.name,
+        type: typeFromAst(field.type, basisTypeEnvCache!, vars, { allowFreeVars: false }),
+      }));
+    }
   }
   const result = new Map(basisTypeEnvCache);
   const profile = options.includeAlgebraicBasis === false ? "kernel" : "default";

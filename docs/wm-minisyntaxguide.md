@@ -162,6 +162,47 @@ let main = () => {
 
 ### Application, Tuples, and Currying
 
+A single parameter can omit its parameter-list parentheses, and a single-expression
+body can omit braces:
+
+```workman
+let square = x => x * x;
+let addCurried = x => y => x + y;
+let mapped = map([1, 2, 3], x => x * x);
+let typed = x: Number => x * x;
+```
+
+A bare parameter may also be a single delimited pattern, such as
+`[head, ..tail] => head`. Tuple-shaped multi-parameter lists still use `(x, y)`.
+Parentheses and braces remain available, and formatting preserves the authored
+choice rather than inserting them as repairs.
+
+The semicolon in `let square = x => x * x;` ends the declaration; the function
+returns the product. To discard a final expression, put its semicolon inside an
+explicit block: `x => { x * x; }` returns `Void`. Use a block for local declarations
+or a sequence of statements. Comments and line breaks can separate tokens, but
+do not replace declaration semicolons.
+
+An expression body extends through the following expression, including nested
+lambdas and whitespace application, until its enclosing delimiter or semicolon.
+For example, `apply x => x + 1` means `apply(x => x + 1)`. Use parentheses when a
+lambda must be grouped as an operand. Bare `x: Number => ...` annotates the
+parameter; `(x): Number => ...` annotates the function's return.
+
+Match arms can also return expressions directly. Match functions can omit the
+braces around their arms:
+
+```workman
+let rec fac = match(n) => 0 => 1, Var(n) => n * fac(n - 1);
+let rec facBraced = match(n) => {0 => 1, Var(n) => n * facBraced(n - 1)};
+```
+
+Arm bodies may still use blocks for local declarations or statements. Braced arm
+lists allow a trailing comma; braceless lists do not, so a comma before another
+call argument remains outside the match. An inner braceless match takes following
+arms until its enclosing delimiter; use braces or parentheses to end its arms
+before continuing an outer match.
+
 `wm-mini` follows the SML-style distinction between tuple arguments and curried application:
 
 ```workman

@@ -131,7 +131,9 @@ export type JsImportClause =
       typeNames?: string[];
     }
   >
-  | Located<{ kind: "Named"; specs: JsImportSpec[]; alias?: string; unsafe?: boolean }>;
+  | Located<
+    { kind: "Named"; specs: JsImportSpec[]; alias?: string; unsafe?: boolean; all?: boolean }
+  >;
 export type JsImportSpec = Located<{
   name: string;
   alias?: string;

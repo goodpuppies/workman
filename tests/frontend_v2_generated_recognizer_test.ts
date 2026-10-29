@@ -91,7 +91,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 144,
+    classified: 146,
     missing: [],
     unknown: [],
     duplicates: [],
@@ -390,22 +390,20 @@ Deno.test("frontend-v2 does not repair a missing expression as an empty block", 
   });
 });
 
-Deno.test("frontend-v2 marks committed braceless lambda body and semicolon slots", async () => {
+Deno.test("frontend-v2 expression lambda recovery marks only the missing phrase semicolon", async () => {
   const source = 'let main=()=>print "hello world"';
   const normal = surfaceParser.formatSurfaceSource(source);
   const fixed = surfaceParser.formatSurfaceSourceFix(source);
   assertEquals(normal.name, "Some");
-  assertEquals(normal.args[0], 'let main = () =>\n  print "hello world"');
+  assertEquals(normal.args[0], 'let main = () => print "hello world"');
   assertEquals(fixed.name, "Some");
-  assertEquals(fixed.args[0], 'let main = () => {\n  print "hello world"\n};');
+  assertEquals(fixed.args[0], 'let main = () => print "hello world";');
   const parsed = surfaceParser.parseSurfaceProgram(source);
   assertEquals(parsed.name, "Some");
   assertEquals(
     parsed.name === "Some" ? recoveryMarkSummary(parsed.args[0].marks) : [],
     [
-      [1, 13, "{", "LambdaBlock:open-brace", "AutoFix"],
-      [2, 32, "}", "LambdaBlock:close-brace", "AutoFix"],
-      [3, 32, ";", "TopPhrase:semicolon", "AutoFix"],
+      [1, 32, ";", "TopPhrase:semicolon", "AutoFix"],
     ],
   );
   if (fixed.name === "Some") {
@@ -636,6 +634,37 @@ Deno.test("frontend-v2 formats explicit nominal record expressions", async () =>
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
   assertEquals(second.args[0], expected);
+});
+
+Deno.test("frontend-v2 parses and formats inferred nested aggregate initializers", async () => {
+  const source = "let address = Winsock.sockaddr_in{sin_family=2,sin_addr={S_un={S_addr=0}}};";
+  const formatted = surfaceParser.formatSurfaceSource(source);
+  assertEquals(formatted.name, "Some");
+  if (formatted.name !== "Some") return;
+  assertStringIncludes(formatted.args[0], "Winsock.sockaddr_in{");
+  assertStringIncludes(formatted.args[0], "sin_addr = { S_un = { S_addr = 0 } }");
+  const before = await parse(source);
+  const after = await parse(formatted.args[0]);
+  assertEquals(normalizeFrontendSemanticAst(after), normalizeFrontendSemanticAst(before));
+});
+
+Deno.test("frontend-v2 parses and formats unqualified unsafe C wildcard imports", async () => {
+  const source = 'from c.header("winsock2.h", lib: "ws2_32") import unsafe *;';
+  const formatted = surfaceParser.formatSurfaceSource(source);
+  assertEquals(formatted.name, "Some");
+  if (formatted.name !== "Some") return;
+  assertStringIncludes(formatted.args[0], "import unsafe *;");
+  const parsed = await parse(source);
+  const decl = parsed.decls[0];
+  assertEquals(decl.kind, "JsImportDecl");
+  if (decl.kind === "JsImportDecl" && decl.clause.kind === "Named") {
+    assertEquals(decl.clause.all, true);
+    assertEquals(decl.clause.unsafe, true);
+  }
+  assertEquals(
+    normalizeFrontendSemanticAst(await parse(formatted.args[0])),
+    normalizeFrontendSemanticAst(parsed),
+  );
 });
 
 Deno.test("frontend-v2 formats parenthesized lambda sequences", async () => {

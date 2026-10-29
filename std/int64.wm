@@ -1,0 +1,11 @@
+from js.module("./js/int64.js") import unsafe {
+  fromNumber as primFromNumber: Number -> Int64.Int,
+  toNumber as primToNumber: Int64.Int -> Number,
+  fromString as primFromString: String -> Int64.Int,
+  toString as primToString: Int64.Int -> String,
+};
+
+let fromNumber = primFromNumber;
+let toNumber = primToNumber;
+let fromString = primFromString;
+let toString = primToString;

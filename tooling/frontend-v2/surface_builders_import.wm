@@ -275,6 +275,9 @@ let buildJsTarget = (value: ParseValue, span: Span) => {
 
 let buildJsImportClauseBody = (value: ParseValue, span: Span) => {
   match(value) {
+    ChoiceParseValue(2, TokenParseValue(star)) => {
+      NodeParseValue(ImportAllClauseNode(star, span))
+    },
     ChoiceParseValue(0, inner) => {
       let tokens = collectTokens(inner);
       match(tokens) {

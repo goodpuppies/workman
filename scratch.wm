@@ -1,0 +1,12 @@
+from "host/c/pointer.wm" import * as Pointer;
+let followedBy = wrap => convert => input =>
+  input :> convert :> wrap;
+
+let cstr = Some Pointer.fromString;
+--let x = cstr "hi";
+
+let add = x => y => x + y;
+
+let add1 = add 1;
+
+let result = add1 2;

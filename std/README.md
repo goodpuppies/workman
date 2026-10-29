@@ -6,6 +6,11 @@ modules that need host types SubsetML doesn't have yet: the words (`Word8`–`Wo
 `Pack*`, `Float32`/`Float64`, `Real` and `Math`. Portable modules can later move into the SubsetML
 Basis. See [`../markdown/subsetml-basis.md`](../markdown/subsetml-basis.md).
 
+The SubsetML Basis is the primary portable API. Duplicate implementations still
+present here are transitional and will be removed later as callers migrate;
+their differing signatures or error types do not define a second portable Basis.
+Default pervasives should project the shared Basis where it provides the operation.
+
 Every top-level `.wm` file here is a library module, discovered automatically by
 `scripts/generate_assets.ts`. Its namespace comes from its snake_case file name, so
 `word8_vector.wm` defines `Word8Vector`. After adding or changing a file, run

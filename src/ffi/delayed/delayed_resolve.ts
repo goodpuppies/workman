@@ -2,7 +2,7 @@ import { type Decl, type Expr, parseLongId, pathOf, type TypeExpr } from "../../
 import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
-import { fresh, prune, show, solveFfi, type Ty } from "../../types.ts";
+import { fresh, namedRecordFields, prune, show, solveFfi, type Ty } from "../../types.ts";
 import { resolveFfiFact } from "../../infer/type_facts.ts";
 import {
   materializeBindingCall,
@@ -891,7 +891,7 @@ function recordPathMember(
   for (const part of path) {
     const target = prune(current);
     if (target.tag !== "named" || !target.recordFields) return undefined;
-    const found = target.recordFields.find((field) => field.name === part);
+    const found = namedRecordFields(target)?.find((field) => field.name === part);
     if (!found) return undefined;
     current = found.type;
   }
@@ -908,7 +908,7 @@ function recordPathMemberTy(
     const fields = target.tag === "struct"
       ? target.fields
       : target.tag === "named"
-      ? target.recordFields
+      ? namedRecordFields(target)
       : undefined;
     if (!fields) return undefined;
     let found = fields.find((field) => field.name === part);

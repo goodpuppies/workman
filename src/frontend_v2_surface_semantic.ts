@@ -240,6 +240,9 @@ function projectJavaScriptClause(node: WmVariant, context: Context): JsImportCla
   const [unsafeValue, bodyNode] = fields(node, "JavaScriptImportClauseNode");
   const unsafe = option(unsafeValue) !== undefined;
   const body = variant(bodyNode);
+  if (body.name === "ImportAllClauseNode") {
+    return { kind: "Named", specs: [], all: true, unsafe, node: nodeFor(context, spanOf(node)) };
+  }
   if (body.name === "ImportNamespaceClauseNode") {
     const [, , aliasToken] = fields(body);
     return {
@@ -743,8 +746,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         node: pipeNode,
       };
     }
-    case "RecordExpressionNode": {
-      const [, , itemsValue] = fields(node);
+    case "RecordExpressionNode":
+    case "NestedRecordExpressionNode": {
+      const itemsValue = fields(node)[node.name === "NestedRecordExpressionNode" ? 1 : 2];
       return {
         kind: "Record",
         fields: list(itemsValue).map((item) => projectRecordItem(variant(item), context)),
@@ -854,8 +858,10 @@ function projectExpr(node: WmVariant, context: Context): Expr {
     }
     case "InterpolatedStringExpressionNode":
       return projectInterpolatedString(node, context);
-    case "MatchFunctionNode": {
-      const [, , namesValue, , , , armsValue] = fields(node);
+    case "MatchFunctionNode":
+    case "BareMatchFunctionNode": {
+      const namesValue = fields(node)[2];
+      const armsValue = fields(node)[node.name === "BareMatchFunctionNode" ? 5 : 6];
       const names = list(namesValue).map(tokenText);
       const params: Param[] = names.map((name) => ({
         pattern: {
@@ -1126,7 +1132,9 @@ function projectLambdaAnnotation(node: WmVariant, context: Context): TypeExpr {
 }
 
 function projectParameters(node: WmVariant, context: Context): Param[] {
-  const [, parametersValue] = fields(node, "ParametersNode");
+  const parametersValue = node.name === "BareParametersNode"
+    ? fields(node)[0]
+    : fields(node, "ParametersNode")[1];
   return list(parametersValue).map((parameterValue) => {
     const parameter = variant(parameterValue, "ParameterNode");
     const [patternNode, annotationValue] = fields(parameter);

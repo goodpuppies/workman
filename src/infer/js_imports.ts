@@ -17,7 +17,9 @@ export function addJsImport(
   facts: TypeFacts,
 ) {
   if (decl.clause.kind === "Namespace") {
-    if (env.has(decl.clause.alias)) throw new Error(`duplicate value import ${decl.clause.alias}`);
+    if (env.has(decl.clause.alias) && !env.get(decl.clause.alias)?.standardLibrary) {
+      throw new Error(`duplicate value import ${decl.clause.alias}`);
+    }
     // C namespace imports arrive with every member's type filled by the FFI
     // preparation pass; they bind as a structure like a named+alias import.
     if (decl.clause.specs) {
@@ -72,11 +74,18 @@ export function addJsImport(
     facts.jsImportSchemes.set(decl, scheme);
     return;
   }
+  if (decl.clause.all && decl.target.kind !== "CHeader") {
+    throw new Error(
+      "unqualified wildcard FFI imports require c.header; use '* as Name' for other FFI targets",
+    );
+  }
   rejectDuplicates(decl.clause.specs.map((spec) => spec.alias ?? spec.name), "JS import");
   const targetEnv = decl.clause.alias ? staticEnv() : staticEnv(strEnv, typeEnv, env);
   for (const spec of decl.clause.specs) {
     const name = spec.alias ?? spec.name;
-    if (targetEnv.valEnv.has(name)) throw new Error(`duplicate value import ${name}`);
+    if (targetEnv.valEnv.has(name) && !targetEnv.valEnv.get(name)?.standardLibrary) {
+      throw new Error(`duplicate value import ${name}`);
+    }
     if (!spec.type) {
       throw new Error(`unknown JS import ${jsTargetLabel(decl.target)}.${spec.name}`);
     }

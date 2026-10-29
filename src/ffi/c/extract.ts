@@ -12,6 +12,7 @@ import process from "node:process";
 import { promisify } from "node:util";
 
 import { bundledCHeaderExtractor } from "./bundled_extractor.ts";
+import { windowsGnuHeaderDirectories } from "./windows_headers.ts";
 
 import { cHeaderExtractorSource } from "../../generated/assets.ts";
 
@@ -36,6 +37,7 @@ export interface ExtractedField {
 
 export interface ExtractedStruct {
   kind: "struct";
+  isUnion?: boolean;
   name: string;
   size: number;
   align: number;
@@ -242,19 +244,37 @@ async function extractWithAro(
       String(error),
     );
   }
-  const target = options.target ?? process.env.WM_C_HEADER_TARGET ?? DEFAULT_TARGET;
+  const requestedTarget = options.target ?? process.env.WM_C_HEADER_TARGET ?? DEFAULT_TARGET;
+  // Pair the native Windows target with Zig's MinGW headers, independent of
+  // which ABI was used to build the extractor itself.
+  const target = requestedTarget === "native" && process.platform === "win32"
+    ? `${process.arch === "arm64" ? "aarch64" : "x86_64"}-windows-gnu`
+    : requestedTarget;
+  const windowsGnu = target.includes("-windows") && target.endsWith("-gnu");
+  let systemIncludeDirs: string[] = [];
+  if (windowsGnu) {
+    try {
+      systemIncludeDirs = await windowsGnuHeaderDirectories();
+    } catch (error) {
+      throw new CHeaderExtractError(String(error), options.header, String(error));
+    }
+  }
   const includeDirs = [...(options.includeDirs ?? []), ...readEnvList("WM_C_HEADER_INCLUDE_DIRS")]
     .map((directory) => resolve(directory));
-  const defines = [...(options.defines ?? []), ...readEnvList("WM_C_HEADER_DEFINES")];
+  const defines = [
+    ...(windowsGnu ? ["_UCRT=1", "__MSVCRT_VERSION__=0xE00"] : []),
+    ...(options.defines ?? []),
+    ...readEnvList("WM_C_HEADER_DEFINES"),
+  ];
   const symbols = [...new Set(options.symbols)];
   const header = await resolveHeaderPath(options.header);
   const key = await cacheKey({
     header,
     target: target === "native" ? `native:${process.arch}-${process.platform}` : target,
-    includeDirs,
+    includeDirs: [...includeDirs, ...systemIncludeDirs],
     defines,
     symbols,
-    extractor: version,
+    extractor: `${version}\n${process.platform === "win32" ? process.env.INCLUDE ?? "" : ""}`,
     zigVersion: "standalone-aro",
   });
   const directory = options.cacheDir ?? process.env.WM_C_CACHE_DIR ?? ".wm_cache/c_headers";
@@ -271,8 +291,16 @@ async function extractWithAro(
       if (valid.every(Boolean)) return cached.result;
     }
   } catch { /* Missing or stale dependency invalidates the reflection cache. */ }
-  const args = ["-target", target, "-resource-dir", dirname(binary)];
+  // Successful extraction ignores warnings already. Suppress them at the source
+  // so large SDKs cannot exhaust the subprocess stderr buffer with warnings.
+  const args = ["-w", "-target", target, "-resource-dir", dirname(binary)];
   for (const dir of includeDirs) args.push(`-I${dir}`);
+  if (windowsGnu) {
+    // Keep this environment coherent: no Aro or host SDK headers mixed into
+    // Zig's matching MinGW/compiler header pair.
+    args.push("-nostdinc");
+    for (const dir of systemIncludeDirs) args.push("-isystem", dir);
+  }
   for (const define of defines) args.push(define.startsWith("-D") ? define : `-D${define}`);
   for (const symbol of symbols) args.push("--symbol", symbol);
   // Bare system headers need an include directive, rather than a filesystem input.

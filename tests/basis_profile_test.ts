@@ -79,6 +79,9 @@ Deno.test("[module update T130/T132] current default low-level basis type interf
     ["Result", 2],
     ["List", 1],
     ["Task", 2],
+    ["Ptr", 1],
+    ["Opaque", 0],
+    ["CStorage", 1],
   ]);
   assertEquals(
     [...initialBasis(BASIS_PROFILES.default).instantiate().environment.strEnv.get("Js")!.tyEnv
@@ -574,6 +577,11 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
         ],
       },
       { alias: "General", values: ["o", "before", "ignore"], types: [] },
+      {
+        alias: "Int64",
+        values: ["fromNumber", "toNumber", "fromString", "toString"],
+        types: ["Int"],
+      },
       {
         alias: "List",
         values: [

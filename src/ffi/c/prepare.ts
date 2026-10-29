@@ -14,20 +14,37 @@
 
 import { statSync } from "node:fs";
 
-import type { Decl, JsImportSpec, JsTarget, Module, TypeExpr } from "../../ast.ts";
+import {
+  type Decl,
+  type JsImportSpec,
+  type JsTarget,
+  type LongId,
+  type Module,
+  pathOf,
+  type TypeExpr,
+} from "../../ast.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
+import { lowerCInitializers, resetCInitializers } from "./initializers.ts";
 import {
   extractCHeader,
   type ExtractedResult,
   type ExtractedType,
   type ExtractedTypeDesc,
 } from "./extract.ts";
-import { byValueRepresentable, cTypeName, declaredTypes, mapFn, mapValueDesc } from "./mapping.ts";
+import {
+  byValueRepresentable,
+  cTypeName,
+  declaredTypes,
+  mapFn,
+  mapTypeDesc,
+  mapValueDesc,
+} from "./mapping.ts";
 
 export type CExtraction = {
   header: string;
   result: ExtractedResult;
   types: Map<string, ExtractedType>;
+  symbols: string[];
 };
 
 // Extraction results keyed by header specifier. The emitter consults this to
@@ -40,6 +57,7 @@ export function cExtractionFor(header: string): CExtraction | undefined {
 
 export function resetCExtractions(): void {
   extractions.clear();
+  resetCInitializers();
 }
 
 const CODEC_LIB_PREFIX = "wm-c-codec:";
@@ -55,19 +73,26 @@ export async function prepareCImports(module: Module): Promise<Module> {
   for (const decl of cDecls) {
     if (decl.typeOnly || decl.clause.unsafe) continue;
     throw diagnosticError(
-      new Error("C calls are process-unsafe; add unsafe (import unsafe { ... } or import unsafe * as ...)"),
+      new Error(
+        "C calls are process-unsafe; add unsafe (import unsafe { ... } or import unsafe * as ...)",
+      ),
       declNode(decl),
     );
   }
 
   const symbolsByHeader = new Map<string, string[]>();
+  const usage = wildcardUsage(module);
   for (const decl of cDecls) {
     if (decl.target.kind !== "CHeader") continue;
     const specs = decl.clause.kind === "Named" ? decl.clause.specs : [];
     const symbols = symbolsByHeader.get(decl.target.header) ?? [];
     symbolsByHeader.set(decl.target.header, [
       ...symbols,
-      ...specs.map((spec) => spec.name),
+      ...(decl.clause.kind === "Namespace"
+        ? usage.namespaces.get(decl.clause.alias) ?? []
+        : decl.clause.all
+        ? usage.unqualified
+        : specs.map((spec) => spec.name)),
     ]);
   }
   const extractionsByHeader = new Map<string, CExtraction>();
@@ -114,8 +139,19 @@ export async function prepareCImports(module: Module): Promise<Module> {
     const extraction = extractionsByHeader.get(decl.target.header)!;
     const isTypeOnly = !!decl.typeOnly;
     const isNamespace = decl.clause.kind === "Namespace";
+    const isWildcard = decl.clause.kind === "Named" && !!decl.clause.all;
+    const requested = isNamespace
+      ? usage.namespaces.get(decl.clause.alias!) ?? []
+      : usage.unqualified;
+    const wildcardSpecs = () =>
+      namespaceSpecs(extraction, declNode(decl)).filter((spec) =>
+        requested.length === 0 || requested.includes(spec.name)
+      );
+    if (isWildcard && decl.clause.kind === "Named") {
+      decl.clause.specs = isTypeOnly ? [] : wildcardSpecs();
+    }
     if (isNamespace) {
-      decl.clause.specs = namespaceSpecs(extraction, declNode(decl));
+      decl.clause.specs = wildcardSpecs();
     }
     for (const spec of decl.clause.kind === "Named" ? decl.clause.specs : decl.clause.specs ?? []) {
       if (isTypeOnly) {
@@ -134,7 +170,24 @@ export async function prepareCImports(module: Module): Promise<Module> {
             "c-ffi.unrepresentable",
           );
         }
-        spec.type = mapped.type;
+        if (spec.type) {
+          const authored = spec.type;
+          const reflected = mapped.type;
+          if (
+            authored.kind !== "TFn" || reflected.kind !== "TFn" ||
+            authored.params.length !== reflected.params.length ||
+            !sameCType(authored.result, reflected.result) ||
+            !authored.params.every((param, index) => sameCType(param, reflected.params[index]))
+          ) {
+            throw diagnosticError(
+              new Error(
+                `C import '${spec.name}': annotation must match the reflected signature`,
+              ),
+              spec.node ?? decl.node,
+              "c-ffi.signature-mismatch",
+            );
+          }
+        } else spec.type = mapped.type;
       } else if (value) {
         if (value.type.kind === "named") {
           // Flat numeric structs are records; constants materialize as plain
@@ -172,6 +225,15 @@ export async function prepareCImports(module: Module): Promise<Module> {
     // import makes the plain name visible.
     if (!isTypeOnly) {
       const namespaceTypeNames = new Set<string>();
+      if (isNamespace || isWildcard) {
+        for (const [name, type] of extraction.types) {
+          // Anonymous nested records have layouts, but no source-level type name.
+          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) continue;
+          if (type.kind !== "struct" && type.kind !== "enum") continue;
+          registerForeignType(name, decl.target.header, isNamespace, decl.clause.alias);
+          namespaceTypeNames.add(name);
+        }
+      }
       for (const spec of decl.clause.specs ?? []) {
         const type = spec.type;
         if (!type) continue;
@@ -183,6 +245,14 @@ export async function prepareCImports(module: Module): Promise<Module> {
       }
       if (isNamespace && decl.clause.kind === "Namespace") {
         decl.clause.typeNames = [...namespaceTypeNames];
+      }
+    }
+    if (isTypeOnly && isWildcard) {
+      for (const [name, type] of extraction.types) {
+        if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(name)) continue;
+        if (type.kind === "struct" || type.kind === "enum") {
+          registerForeignType(name, decl.target.header, false);
+        }
       }
     }
     // Library resolution: a c.header import without `lib:` derives the binary
@@ -259,9 +329,23 @@ export async function prepareCImports(module: Module): Promise<Module> {
     const specs = [];
     for (const { name, declName } of entries) {
       const struct = extraction.types.get(name);
-      // Only flat numeric structs get codecs; mixed structs (pointer/array
-      // fields) have no numeric-only codec.
-      if (!isFlatNumericStruct(struct)) continue;
+      if (struct?.kind === "struct" && !struct.opaque) {
+        specs.push({
+          name: `sizeOf${name}`,
+          type: numberType(declNode(cDecls[0])),
+          node: declNode(cDecls[0]),
+        });
+        for (const field of struct.fields) {
+          specs.push({
+            name: `offsetOf${name}_${field.name}`,
+            type: numberType(declNode(cDecls[0])),
+            node: declNode(cDecls[0]),
+          });
+        }
+      }
+      // Scalar fields of mixed structs can use primitive byte_type codecs at
+      // the reflected offsets, without inventing a whole-struct codec.
+      if (struct?.kind !== "struct" || struct.opaque) continue;
       specs.push(...codecSpecsForStruct(struct, declNode(cDecls[0]), declName));
     }
     if (specs.length > 0) {
@@ -280,17 +364,10 @@ export async function prepareCImports(module: Module): Promise<Module> {
   }
 
   const typeDecls: Decl[] = [
-    {
-      kind: "TypeDecl" as const,
-      exported: false,
-      name: "Ptr",
-      params: ["t"],
-      ctors: [],
-      node: declNode(cDecls[0]),
-    },
     ...[...foreignTypes.values()].flatMap((entry): Decl[] => {
       const struct = extractionsByHeader.get(entry.header)?.types.get(entry.name);
       const isRecord = !!struct && struct.kind === "struct" &&
+        !struct.isUnion &&
         struct.fields.length > 0 &&
         struct.fields.every((field) => isNumericField(field.type));
       return foreignTypeDeclNames(entry).map((declName): Decl => {
@@ -306,7 +383,8 @@ export async function prepareCImports(module: Module): Promise<Module> {
             params: [],
             fields: struct.fields.map((field) => ({
               name: field.name,
-              type: numberType(declNode(cDecls[0])),
+              type:
+                mapTypeDesc(field.type, extractionsByHeader.get(entry.header)!.types, "field").type,
               node: declNode(cDecls[0]),
             })),
             node: declNode(cDecls[0]),
@@ -321,7 +399,21 @@ export async function prepareCImports(module: Module): Promise<Module> {
       });
     }),
   ];
-  return { ...module, decls: [...typeDecls, ...codecDecls, ...out] };
+  return lowerCInitializers(
+    { ...module, decls: [...typeDecls, ...codecDecls, ...out] },
+    new Map(
+      [...foreignTypes.values()].flatMap((entry) =>
+        foreignTypeDeclNames(entry).map((declName) =>
+          [declName, {
+            name: entry.name,
+            header: entry.header,
+            types: extractionsByHeader.get(entry.header)!.types,
+          }] as const
+        )
+      ),
+    ),
+    CODEC_LIB_PREFIX,
+  );
 }
 
 /**
@@ -342,7 +434,7 @@ function foreignTypeDeclNames(
 function isFlatNumericStruct(
   struct: ExtractedType | undefined,
 ): struct is Extract<ExtractedType, { kind: "struct" }> {
-  return !!struct && struct.kind === "struct" && struct.fields.length > 0 &&
+  return !!struct && struct.kind === "struct" && !struct.isUnion && struct.fields.length > 0 &&
     struct.fields.every((field) => isNumericField(field.type));
 }
 
@@ -394,21 +486,38 @@ function codecSpecsForStruct(
 ): { name: string; type: TypeExpr; node?: Decl["node"] }[] {
   const specs: { name: string; type: TypeExpr; node?: Decl["node"] }[] = [];
   const ptr = () => ptrType(declName, node);
-  specs.push({
-    name: `new${struct.name}`,
-    type: {
-      kind: "TFn",
-      params: struct.fields.map(() => numberType(node)),
-      result: ptr(),
+  if (isFlatNumericStruct(struct)) {
+    specs.push({
+      name: `new${struct.name}`,
+      type: {
+        kind: "TFn",
+        params: struct.fields.map((field) => mapTypeDesc(field.type, new Map(), "field").type),
+        result: ptr(),
+        node,
+      },
       node,
-    },
-    node,
-  });
+    });
+  }
   for (const field of struct.fields) {
     if (!isNumericField(field.type)) continue;
     specs.push({
       name: `get${struct.name}_${field.name}`,
-      type: { kind: "TFn", params: [ptr()], result: numberType(node), node },
+      type: {
+        kind: "TFn",
+        params: [ptr()],
+        result: mapTypeDesc(field.type, new Map(), "field").type,
+        node,
+      },
+      node,
+    });
+    specs.push({
+      name: `set${struct.name}_${field.name}`,
+      type: {
+        kind: "TFn",
+        params: [ptr(), mapTypeDesc(field.type, new Map(), "field").type],
+        result: { kind: "TName", name: "Void", args: [], node },
+        node,
+      },
       node,
     });
   }
@@ -483,8 +592,15 @@ function existsSync(path: string): boolean {
 
 async function extractionForHeader(header: string, symbols: string[]): Promise<CExtraction> {
   const cached = extractions.get(header);
-  if (cached) return cached;
-  let result = await extractCHeader({ header, symbols });
+  if (
+    cached && (cached.symbols.length === 0 ||
+      (symbols.length > 0 && symbols.every((symbol) => cached.symbols.includes(symbol))))
+  ) return cached;
+  if (symbols.length > 0) symbols = [...new Set([...(cached?.symbols ?? []), ...symbols])];
+  const withTags = (
+    names: string[],
+  ) => [...new Set(names.flatMap((name) => [name, `struct_${name}`, `enum_${name}`]))];
+  let result = await extractCHeader({ header, symbols: withTags(symbols) });
   let types = declaredTypes(result);
   // Functions may reference struct types that were not imported by name;
   // their layouts are needed for codecs. Re-extract once with the missing
@@ -493,11 +609,11 @@ async function extractionForHeader(header: string, symbols: string[]): Promise<C
   if (missing.size > 0) {
     result = await extractCHeader({
       header,
-      symbols: [...new Set([...symbols, ...missing])],
+      symbols: withTags([...symbols, ...missing]),
     });
     types = declaredTypes(result);
   }
-  const entry: CExtraction = { header, result, types };
+  const entry: CExtraction = { header, result, types, symbols };
   extractions.set(header, entry);
   return entry;
 }
@@ -520,6 +636,7 @@ function missingNamedTypes(
     for (const param of fn.params) walk(param);
     if (fn.return) walk(fn.return);
   }
+  for (const value of result.values) walk(value.type);
   return missing;
 }
 
@@ -536,8 +653,77 @@ function collectNamedTypes(type: TypeExpr): string[] {
   }
 }
 
+// Header wildcards expose declarations on demand. Reflecting every declaration
+// in a system header would also require unrelated DLL symbols and unsupported
+// C declarations. Explicit imports take precedence over unqualified wildcards.
+function wildcardUsage(
+  module: Module,
+): { unqualified: string[]; namespaces: Map<string, string[]> } {
+  const plain = new Set<string>();
+  const qualified = new Map<string, Set<string>>();
+  const explicit = new Set<string>();
+  const escaped = new Set<string>();
+  for (const decl of module.decls) {
+    if (decl.kind !== "JsImportDecl") continue;
+    if (decl.clause.kind === "Namespace") qualified.set(decl.clause.alias, new Set());
+    else if (!decl.clause.all) {
+      for (const spec of decl.clause.specs) explicit.add(spec.alias ?? spec.name);
+    }
+  }
+  const scan = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(scan);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const object = value as Record<string, unknown>;
+    if (
+      ["Var", "TName", "PPinned"].includes(String(object.kind)) && typeof object.name === "string"
+    ) {
+      const path = pathOf(object as { name: string; path?: LongId });
+      if (path.qualifiers.length === 0) {
+        plain.add(path.id);
+        if (qualified.has(path.id) && object.kind === "Var") escaped.add(path.id);
+      } else qualified.get(path.qualifiers[0])?.add(path.qualifiers[1] ?? path.id);
+    }
+    for (const [key, child] of Object.entries(object)) if (key !== "node") scan(child);
+  };
+  for (const decl of module.decls) {
+    if (decl.kind !== "JsImportDecl" && decl.kind !== "ImportDecl") scan(decl);
+  }
+  const nonempty = (names: string[]) => names.length ? names : ["__wm_no_used_c_symbols"];
+  return {
+    unqualified: nonempty([...plain].filter((name) => !explicit.has(name))),
+    namespaces: new Map([...qualified].map(([alias, names]) => [
+      alias,
+      escaped.has(alias) ? [] : nonempty([...names]),
+    ])),
+  };
+}
+
 function isCTarget(target: JsTarget): boolean {
   return target.kind === "CHeader" || target.kind === "CLib";
 }
 
 export { CODEC_LIB_PREFIX, cTypeName };
+
+function sameCType(left: TypeExpr, right: TypeExpr): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "TName" && right.kind === "TName") {
+    return left.name === right.name &&
+      left.args.length === right.args.length && left.args.every((arg, index) =>
+        sameCType(arg, right.args[index])
+      );
+  }
+  if (left.kind === "TVar" && right.kind === "TVar") return left.name === right.name;
+  if (left.kind === "TTuple" && right.kind === "TTuple") {
+    return left.items.length === right.items.length &&
+      left.items.every((item, index) => sameCType(item, right.items[index]));
+  }
+  if (left.kind === "TFn" && right.kind === "TFn") {
+    return left.params.length === right.params.length && left.params.every((param, index) =>
+      sameCType(param, right.params[index])
+    ) && sameCType(left.result, right.result);
+  }
+  return false;
+}

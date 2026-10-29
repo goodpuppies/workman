@@ -4,12 +4,12 @@ from "./generated/surface_types.wm" import {
   ProgramNode, TopPhraseNode,
   LetDeclarationNode, LetBindingNode,
   PinnedPatternNode, ConstructorPatternNode,
-  LambdaExpressionNode, ParametersNode, ParameterNode, CaptureClauseNode,
+  LambdaExpressionNode, ParametersNode, BareParametersNode, ParameterNode, CaptureClauseNode,
   BlockExpressionNode, BlockBodyNode, BlockItemNode,
   IfExpressionNode,
   TupleExpressionNode, GroupedExpressionNode,
   ListExpressionNode, ListPatternNode, TuplePatternNode,
-  MatchExpressionNode, MatchFunctionNode, AnonymousMatchFunctionNode, MatchArmNode,
+  MatchExpressionNode, MatchFunctionNode, BareMatchFunctionNode, AnonymousMatchFunctionNode, MatchArmNode,
   TypeDeclarationNode, TypeDeclarationGroupNode, TypeBindingNode, TypeDeclarationBodyNode, TypeParametersNode,
   NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode,
@@ -187,6 +187,9 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
       None => { None },
     }
   },
+  (BareParametersNode(parameters, span), Var(depth), Var(materializeMarks)) => {
+    renderNodes(parameters, ", ", "", depth, materializeMarks)
+  },
   (ParameterNode(pattern, annotation, span), Var(depth), Var(materializeMarks)) => {
     match((renderSurfaceNodeAt(pattern, depth, materializeMarks), renderOptionalNode(annotation, depth, materializeMarks))) {
       (Some(patternText), Some(annotationText)) => {
@@ -288,6 +291,16 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
           "\n" ++ armIndent ++ armsText ++ "\n" ++ closeIndent ++
           renderSurfaceValue(closeBrace, materializeMarks)
         )
+      },
+      None => { None },
+    }
+  },
+  (BareMatchFunctionNode(matchToken, open, names, close, arrow, arms, span), Var(depth), Var(materializeMarks)) => {
+    match(renderNodes(arms, ", ", "", depth, materializeMarks)) {
+      Some(armsText) => {
+        Some(renderToken(matchToken) ++ renderSurfaceValue(open, materializeMarks) ++
+          joinTokens(names, ", ", "") ++ renderSurfaceValue(close, materializeMarks) ++
+          " " ++ renderSurfaceValue(arrow, materializeMarks) ++ " " ++ armsText)
       },
       None => { None },
     }

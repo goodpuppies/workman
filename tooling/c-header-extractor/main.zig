@@ -64,6 +64,7 @@ pub fn main(init: std.process.Init) !void {
     defer toolchain.deinit();
     try toolchain.discover();
     try toolchain.defineSystemIncludes();
+    try addWindowsSystemIncludes(&toolchain, &environ);
     try comp.initSearchPath(driver.includes.items, false);
     const builtin_macros = try comp.generateBuiltinMacros(driver.system_defines);
     const command_line = try comp.addSourceFromBuffer("<command line>", macros.items);
@@ -143,6 +144,34 @@ pub fn main(init: std.process.Init) !void {
     try out.interface.flush();
 }
 
+// Aro's generic toolchain currently only adds /usr/include. Reuse the SDK
+// discovery shipped in Zig's standard library, without requiring Zig at runtime.
+fn addWindowsSystemIncludes(tc: *aro.Toolchain, environ: *const std.process.Environ.Map) !void {
+    if (@import("builtin").os.tag != .windows) return;
+    const comp = tc.driver.comp;
+    if (comp.target.os.tag != .windows or comp.target.abi != .msvc or
+        tc.driver.nostdinc or tc.driver.nostdlibinc) return;
+    if (environ.get("INCLUDE")) |paths| {
+        var it = std.mem.tokenizeScalar(u8, paths, ';');
+        while (it.next()) |path| try tc.addSystemIncludeDir(path);
+    }
+    const sdk = std.zig.WindowsSdk.find(comp.gpa, comp.io, comp.target.cpu.arch, environ) catch |err| switch (err) {
+        error.NotFound, error.PathTooLong => return,
+        else => return err,
+    };
+    defer sdk.free(comp.gpa);
+    if (sdk.msvc_lib_dir) |lib_dir| {
+        const arch_dir = std.fs.path.dirname(lib_dir) orelse return;
+        const root = std.fs.path.dirname(arch_dir) orelse return;
+        try tc.addSystemIncludeDir(try std.fs.path.join(comp.arena, &.{ root, "include" }));
+    }
+    if (sdk.windows10sdk) |install| {
+        for ([_][]const u8{ "ucrt", "shared", "um", "winrt" }) |part| {
+            try tc.addSystemIncludeDir(try std.fs.path.join(comp.arena, &.{ install.path, "Include", install.version, part }));
+        }
+    }
+}
+
 const Reflection = struct {
     a: A,
     comp: *aro.Compilation,
@@ -218,9 +247,9 @@ const Reflection = struct {
         try r.emitted.put(r.a, name, {});
         var item = object(r.a);
         try put(r.a, &item, "name", text(name));
-        if (qt.is(r.comp, .@"union")) return error.UnionTypesNotSupported;
         if (qt.getRecord(r.comp)) |record| {
             try put(r.a, &item, "kind", text("struct"));
+            try put(r.a, &item, "isUnion", .{ .bool = qt.is(r.comp, .@"union") });
             try put(r.a, &item, "size", integer(if (record.layout) |layout| layout.size_bits / 8 else 0));
             try put(r.a, &item, "align", integer(if (record.layout) |layout| layout.pointer_alignment_bits / 8 else 1));
             try put(r.a, &item, "opaque", .{ .bool = record.layout == null or record.fields.len == 0 });
@@ -302,10 +331,11 @@ const Reflection = struct {
                 try put(r.a, &item, "child", try r.desc(arr.elem, depth + 1));
                 break :blk item;
             },
-            .@"union" => return error.UnionTypesNotSupported,
-            .@"struct" => |record| blk: {
+            .@"struct", .@"union" => |record| blk: {
                 var item = try tag(r.a, "named");
-                try put(r.a, &item, "name", text(try std.fmt.allocPrint(r.a, "cimport.{s}_{s}", .{ if (qt.is(r.comp, .@"union")) "union" else "struct", record.name.lookup(r.comp) })));
+                const name = try std.fmt.allocPrint(r.a, "{s}_{s}", .{ if (qt.is(r.comp, .@"union")) "union" else "struct", record.name.lookup(r.comp) });
+                try put(r.a, &item, "name", text(try std.fmt.allocPrint(r.a, "cimport.{s}", .{name})));
+                try r.typeDecl(name, qt);
                 break :blk item;
             },
             .@"enum" => |en| if (en.tag) |backing| r.desc(backing, depth + 1) else tag(r.a, "unknown"),
@@ -314,6 +344,12 @@ const Reflection = struct {
     }
     fn scalar(r: *Reflection, v: aro.Value, qt: aro.QualType) !J {
         if (qt.is(r.comp, .bool)) return .{ .bool = v.toBool(r.comp) };
+        // JSON numbers cannot carry all 64-bit integer constants through JS.
+        if (qt.isInt(r.comp) and qt.bitSizeof(r.comp) == 64) {
+            if (qt.signedness(r.comp) == .signed) {
+                if (v.toInt(i64, r.comp)) |n| return text(try std.fmt.allocPrint(r.a, "{d}", .{n}));
+            } else if (v.toInt(u64, r.comp)) |n| return text(try std.fmt.allocPrint(r.a, "{d}", .{n}));
+        }
         if (v.toInt(i64, r.comp)) |n| return integer(n);
         if (v.toInt(u64, r.comp)) |n| return .{ .number_string = try std.fmt.allocPrint(r.a, "{d}", .{n}) };
         if (v.is(.float, r.comp)) return .{ .float = v.toFloat(f64, r.comp) };

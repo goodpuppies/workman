@@ -1,0 +1,32 @@
+// Raw C pointers. Allocation and release come from the imported C library.
+from js.module("./js/pointer.js") import unsafe {
+  cast as primCast: Ptr<a> -> Ptr<b>,
+  offset as primOffset: (Ptr<t>, Number) -> Ptr<t>,
+  equals as primEquals: (Ptr<a>, Ptr<b>) -> Bool,
+  // The backing bytes have no signedness; infer the pointee from the C call.
+  fromString as primFromString: String -> Ptr<t>,
+  toString as primToString: Ptr<t> -> String,
+  byteLength as primByteLength: String -> Number,
+  readUtf8 as primReadUtf8: (Ptr<t>, Number) -> String,
+  writeUtf8 as primWriteUtf8: (Ptr<t>, Number, String) -> Number,
+  getU8 as primGetU8: (Ptr<t>, Number) -> Number,
+  setU8 as primSetU8: (Ptr<t>, Number, Number) -> Void,
+  getU32 as primGetU32: (Ptr<t>, Number) -> Number,
+  getI32 as primGetI32: (Ptr<t>, Number) -> Number,
+  setU32 as primSetU32: (Ptr<t>, Number, Number) -> Void,
+  setI32 as primSetI32: (Ptr<t>, Number, Number) -> Void,
+};
+let cast = (pointer) => { primCast(pointer) };
+let offset = primOffset;
+let equals = primEquals;
+let fromString = primFromString;
+let toString = primToString;
+let byteLength = primByteLength;
+let readUtf8 = primReadUtf8;
+let writeUtf8 = primWriteUtf8;
+let getU8 = primGetU8;
+let setU8 = primSetU8;
+let getU32 = primGetU32;
+let getI32 = primGetI32;
+let setU32 = primSetU32;
+let setI32 = primSetI32;

@@ -11,6 +11,7 @@ import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
 import { modifiedStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
 import { standardValueId } from "./compiler_semantics.ts";
 import { LIBRARY_JS_SCHEME, resolveLibraryJsModuleSpecifiers } from "./js_module_specifier.ts";
+import { LIBRARY_PERVASIVES, pervasiveSourceName } from "./library_pervasives.ts";
 
 export type StandardModule = {
   path: string;
@@ -43,9 +44,24 @@ export async function standardInferOptions(includePrelude = true): Promise<Infer
 async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
   const out: InitialImport[] = [];
   for (const module of await loadStandardModules()) {
-    if (!isAutoOpened(module.path)) continue;
-    for (const clause of module.clauses) {
-      out.push({ clause, result: module.result, standard: true });
+    if (isAutoOpened(module.path)) {
+      for (const clause of module.clauses) {
+        out.push({ clause, result: module.result, standard: true });
+      }
+    }
+    const bindings = LIBRARY_PERVASIVES.filter((binding) => binding.modulePath === module.path);
+    if (bindings.length > 0) {
+      out.push({
+        clause: {
+          kind: "Named",
+          specs: bindings.map((binding) => ({
+            name: pervasiveSourceName(binding),
+            alias: binding.name,
+          })),
+        },
+        result: module.result,
+        standard: true,
+      });
     }
   }
   return out;
@@ -53,8 +69,9 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
 
 /**
  * `std/` modules are opened as namespaces in every program. Host helper modules (`host/js/`, BD17)
- * and the SubsetML Basis (`subml-basis/`) are never opened implicitly: a program reaches one through
- * an explicit import (`js.host("table")`, `"basis/won.wm"`), and `std/` builds on the Basis.
+ * and the SubsetML Basis (`subml-basis/`) are never opened as implicit namespaces. Selected Basis
+ * values are projected through LIBRARY_PERVASIVES; other members require explicit imports
+ * (`js.host("table")`, `"basis/won.wm"`), and `std/` builds on the Basis.
  */
 function isAutoOpened(path: string): boolean {
   return path.startsWith("std/");
@@ -65,7 +82,7 @@ function isAutoOpened(path: string): boolean {
  * programs don't pay for them at startup. They may import any other library module.
  */
 export function isLoadedOnDemand(path: string): boolean {
-  return path.startsWith("pakman/");
+  return path.startsWith("pakman/") || path.startsWith("host/c/");
 }
 
 const onDemandModuleIds = new Set(

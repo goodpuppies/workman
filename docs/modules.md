@@ -102,11 +102,16 @@ while declaration-driven scripts and libraries still receive complete project an
 The basis follows the SML model independently of library size: a kernel of
 non-source-expressible facts, compiled standard structures installed as real structure
 environments, and an explicit pervasive table whose unqualified bindings are projections of the
-same semantic objects as their qualified members. Static and dynamic profiles are built from one
-compiler-owned manifest; fixed operators are kernel syntax rather than `ValEnv` identifiers,
+same semantic objects as their qualified members. Kernel facts come from the compiler-owned
+manifest; default library values come from a shared projection table used for inference and
+runtime emission. Fixed operators are kernel syntax rather than `ValEnv` identifiers,
 while ordinary initial values such as `print` shadow normally. `-- @no-prelude` selects the
 recorded kernel profile. Standard-basis construction is deterministic and observationally
 effect-free.
+
+The [default pervasives](pervasives.md) include data-first list and option functions from
+the shared SubsetML Basis, plus selected WM extras. In particular, bare `length` returns `I32`,
+both bare folds use element-first callbacks, and bare `concat` flattens lists.
 
 ## Interface artifact
 

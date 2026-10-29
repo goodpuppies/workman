@@ -31,6 +31,14 @@ export function collectFfiDecl(
   importedTypeRefs: Map<string, JsTypeRef>,
   decl: Extract<Decl, { kind: "JsImportDecl" }>,
 ) {
+  if (decl.clause.kind === "Named" && decl.clause.all && decl.target.kind !== "CHeader") {
+    throw diagnosticError(
+      new Error(
+        "unqualified wildcard FFI imports require c.header; use '* as Name' for other FFI targets",
+      ),
+      decl.node,
+    );
+  }
   assertReflectedGlobalTarget(decl);
   if (decl.typeOnly) {
     collectFfiTypeDecl(importedTypeRefs, decl);
