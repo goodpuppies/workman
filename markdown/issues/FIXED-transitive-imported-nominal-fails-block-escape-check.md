@@ -1,6 +1,60 @@
 # Issue: Transitive Imported Nominal Fails the Block Escape Check
 
-Status: open
+Status: fixed on the current checkout; verified against atview 2026-10-28
+
+## Atview verification (2026-10-28)
+
+Rechecked the original `../atview/app/image-boundary-probe.wm` after removing its
+unused `AppError` import: it passes. The actual `app/main.wm` also passes without
+`AppError`, `RenderModel`, `RenderDependency`, and the unused namespace imports
+previously retained for transitive nominal support. Main-app code generation,
+including the image worker, succeeds.
+
+Removed unused `AppError` imports from twelve atview files. Eleven pass checking;
+`bench/image-bench.wm` has an independent `Carrier` literal missing `mapErr`, which
+also fails with its original import restored through a source override. The
+`AppError` import in `app/model.wm` remains necessary for explicit annotations.
+
+The recheck below records the earlier reduced investigation. Its statement that
+the external atview probe had not been rerun is superseded by this verification.
+
+## Recheck (2026-10-28)
+
+The reduced missing-type-import behavior no longer reproduces on the current
+checkout. The original external atview probe below was not rerun, so its exact
+Task/FFI path remains unverified; the `open` status above is historical rather
+than evidence of a current failure.
+
+Verified using `checkVirtual` with three modules:
+
+```wm
+// model.wm
+record Inner = { quit: Bool };
+record Outer = { controls: Inner };
+let make = () => { Outer { controls = Inner { quit = false } } };
+
+// api.wm
+from "./model.wm" import { make };
+let load = () => { make() };
+
+// main.wm: both forms pass without importing Outer or Inner
+from "./api.wm" import { load };
+let run = () => { load() };
+let read = () => { let item = load(); item.controls.quit };
+```
+
+A direct annotated projection importing only `Outer` also passes without importing
+`Inner`. The existing `tests/module_test.ts` regression `transitive imports
+preserve hidden nominal type-name support` passes as well.
+
+The implementation now separates source-visible names from hidden nominal
+metadata: `addImport` registers `knownTypeInfos` from the dependency environment,
+environment composition carries that registry, and `inferBlock` uses
+`knownTypeIds` for its outer scope. A type can therefore be known for checking
+without being imported as a source-level name. Explicitly writing that type's
+name in an annotation still requires it to be in scope.
+
+Reproduction: gitignored `research/import-type-triage-2026-10-28.ts`.
 
 Discovered while splitting the Workman AT Protocol client into application, protocol, and reusable
 TUI modules.
