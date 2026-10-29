@@ -83,7 +83,6 @@ let jellyShade = (uniforms: JellyUniforms) => {
       let boxSpinA = rotate((boxShifted.x, boxShifted.z), radians(14.0 * time));
       let boxSpinB = rotate((boxShifted.y, boxSpinA.y), radians(26.0 * time));
       let boxP = (boxSpinA.x, boxSpinB.x, boxSpinB.y);
-      let pulse = 0.75 + 0.1 * (0.5 + 0.5 * cos(4.0 * time + 9.0 * boxP.y));
       let box = boxDistance(boxP, (0.6, 0.6, 0.6), 0.05);
       let ballShifted = p - (2.5 * cos(1.25 * time), 0.75, 0.2);
       let ballSpinA = rotate((ballShifted.x, ballShifted.z), radians(0.0 - 60.0 * time));
