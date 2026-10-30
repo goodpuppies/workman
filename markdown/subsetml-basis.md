@@ -16,6 +16,39 @@ the `Subset*` modules, written in SubsetML and translated to WM by SubsetML's tr
   `research/The-Definition-of-Standard-ML-Revised`. Only the *library* is custom: the Definition's
   Appendices C and D, the initial basis, are still the model for what the compiler owns.
 
+## Placement of new library helpers (2026-10-30)
+
+Use the SML Basis specification in `research/sml-basis-spec/Basis/` as the
+placement guide. If a comparable operation exists there, implement it in the
+shared SubsetML Basis and consume it through `basis/`. Keep SubsetML conventions:
+data-first arguments, typed Results, and source implementations over the minimal
+host adapters. Operations without an SML Basis counterpart generally belong in
+WM `std/`. This guides new additions and migration; existing std implementations
+are not evidence that another host-backed implementation should be added there.
+
+The first text batch follows `STRING.isPrefix/isSuffix/isSubstring/fields/tokens`.
+Byte-string variants live in `SubsetString`; Unicode host-text counterparts live
+in `SubsetText`. Splitting predicates receive byte `Char` and scalar `I32`
+respectively. Both are generated into WM's `basis/` modules.
+
+The second batch adds `extract/substring/map/translate` to both representations,
+plus Unicode `Text.explode/implode/str`. Range indices count bytes for String and
+Unicode scalars for Text; typed slice errors distinguish bounds from malformed
+input. Pakman now consumes these for request splitting, date/hash slices, shell
+quoting, GitLab project paths, profile names, sudo fields and existing prefix
+checks. General substring replacement remains std work. Padding belongs in the
+shared Basis because SML has `StringCvt.padLeft/padRight`; integer parsing also
+remains a Basis candidate.
+
+The subsequent pakman cleanup adds source `SubsetInt` decimal parsing,
+`SubsetStringCvt` padding, a slash-separated `SubsetPath.dir`, and explicit
+UTF-16-order Unicode comparison. `std/string.wm` adds checked scalar subsequence
+matching, which has no comparable SML Basis operation. Pakman SemVer no longer
+uses regex or host number parsing. Config/protocol Number boundaries call the
+checked I32 parser with caller fallbacks; SemVer components have an explicit I32
+range and generation files require a `.won` suffix. See the current
+[pakman status](pakman-portability-status.md) for the remaining larger boundaries.
+
 ## `Result`
 
 WM's `Result` *is* SubsetML's `SubsetResult` datatype
