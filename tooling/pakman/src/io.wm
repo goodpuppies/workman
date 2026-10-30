@@ -1,12 +1,12 @@
 -- Host operations with String errors that say what failed. Those recipes also use are in
 -- "pakman/io.wm"; the manager's own (files, the store, builds) are here.
 
+from "basis/path.wm" import * as Path;
 from js.module("./host.ts") import * as Host;
 from js.module("./host.ts") import unsafe {
   envOr as envOrRaw: (String, String) -> String,
   nowSeconds as nowRaw: Void -> Number,
   isoToSeconds as isoRaw: String -> Number,
-  dirname as dirnameRaw: String -> String,
   confirmYes: String -> Bool,
   denoPath as denoPathRaw: Void -> String,
   prettyJson as prettyRaw: Js.Value -> String
@@ -18,7 +18,13 @@ from "pakman/io.wm" import * as Shared;
 let envOr = (name, fallback) => { envOrRaw(name, fallback) };
 let nowSeconds = () => { nowRaw() };
 let isoToSeconds = (iso) => { isoRaw(iso) };
-let dirname = (path) => { dirnameRaw(path) };
+let dirname = (path) => {
+  match(Path.dir(path)) {
+    Ok("") => { "/" },
+    Ok(parent) => { parent },
+    Err(_) => { Panic("invalid Unicode path") }
+  }
+};
 let eprint = Shared.eprint;
 let exit = Shared.exit;
 let parseIntOr = Shared.parseIntOr;

@@ -5,6 +5,7 @@
 -- touches what changed. pakman never overwrites a file the current
 -- generation does not own, so pacman's files (or anyone else's) are safe.
 
+from "basis/text.wm" import * as UnicodeText;
 from js.global("JSON") import { parse } as JSON;
 from "./paths.wm" import { Paths, profileDirOf };
 from "./store.wm" import { StoreEntry };
@@ -131,8 +132,17 @@ let current = (paths: Paths, root) => {
 
 -- "12.won" -> Some(12)
 let generationNumber = (name) => {
-  let number = parseIntOr(name :> .replace(".won", "") :> Result.getOr(""), 0 - 1);
-  if (number > 0) { Some(number) } else { None }
+  match(UnicodeText.size(name)) {
+    Ok(length) => {
+      if (length <= (4: I32) || !(UnicodeText.isSuffix(name, ".won") :> Result.getOr(false))) { None }
+      else {
+        let stem = UnicodeText.substring(name, (0: I32), length - (4: I32)) :> Result.getOr("");
+        let number = parseIntOr(stem, 0 - 1);
+        if (number > 0) { Some(number) } else { None }
+      }
+    },
+    Err(_) => { None }
+  }
 };
 
 let generationNumbers = (names) => { names :> List.mapPartial(generationNumber) };
@@ -305,7 +315,7 @@ let applyPlan = (paths: Paths, plan: Plan) => {
   let planFile = paths.tmp ++ "/apply-" ++ Text.of(nowSeconds()) ++ ".won";
   let applier = paths.state ++ "/programs/_apply.js";
   let elevate = via Task (program) => {
-    let sudo = envOr("PAKMAN_SUDO", "sudo") :> .split(" ") :> Result.map(Js.Array.toList) :> Result.getOr(["sudo"]);
+    let sudo = UnicodeText.fields(envOr("PAKMAN_SUDO", "sudo"), (scalar) => { scalar == (32: I32) }) :> Result.getOr(["sudo"]);
     match(sudo) {
       [cmd, ..flags] => {
         runInteractive(cmd, appendAll(flags, [denoPath(), "run", "-A", "--quiet", program, planFile]))

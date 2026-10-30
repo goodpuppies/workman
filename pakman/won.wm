@@ -12,8 +12,8 @@ from "../subml-basis/subset_won.wm" import * as Won;
 from "../subml-basis/subset_won_value.wm" import * as W;
 from "../subml-basis/subset_text.wm" import * as Utf8;
 from "../subml-basis/subset_string.wm" import * as ByteString;
-from "./io.wm" import { parseIntOr };
-from "./fun.wm" import { mapAll };
+from "./number.wm" import { parseIntOr };
+from "basis/list.wm" import * as Lists;
 
 -- ---------------------------------------------------------------------------
 -- Encoding
@@ -25,7 +25,7 @@ let text = (value) => {
 };
 let int = (n) => { W.Number(Text.of(n)) };
 let bool = (b) => { W.Boolean(b) };
-let list = (items, f) => { W.List(mapAll(items, f)) };
+let list = (items, f) => { W.List(Lists.map(items, f)) };
 let strings = (items) => { list(items, text) };
 let record = (fields) => { W.Record(fields) };
 let tag = (name, fields) => { W.Tag(name, [], W.Record(fields)) };

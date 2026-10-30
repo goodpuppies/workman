@@ -8,7 +8,7 @@ from "../std/list.wm" import * as List;
 from "../std/result.wm" import * as Result;
 from "./model.wm" import *;
 from "./fun.wm" import { unique, mapAll, filterAll, appendAll };
-from "./text.wm" import { concatMap, join };
+from "./text.wm" import { concatMap, join, pathSegments, shellQuote };
 
 -- Text with nested Cats flattened into a list of Lit and Ref parts.
 let rec parts = (text) => {
@@ -106,7 +106,7 @@ let render = (base, text) => {
     match(part) {
       Lit(literal) => { literal },
       Ref(path) => { resolvePath(base, path) },
-      ShellRef(path) => { "'" ++ (resolvePath(base, path) :> .replaceAll("'", "'\\''") :> Result.getOr("")) ++ "'" },
+      ShellRef(path) => { shellQuote(resolvePath(base, path)) },
       _ => { "" }
     }
   };
@@ -114,7 +114,10 @@ let render = (base, text) => {
 };
 
 let segments = (path) => {
-  path :> .split("/") :> Result.map(Js.Array.toList) :> Result.getOr([]) :> filterAll((s) => { s != "" })
+  match(pathSegments(path)) {
+    Ok(pieces) => { pieces },
+    Err(_) => { Panic("invalid Unicode path") }
+  }
 };
 
 let rec dropCommon = (left, right) => {

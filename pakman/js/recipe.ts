@@ -104,20 +104,7 @@ export function capturesAll(pattern: string, text: string): string[][] {
   );
 }
 
-/** -1, 0 or 1 by code-unit order (not locale order, so it is stable everywhere). */
-export function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-/** The decimal integer in `text` (surrounding whitespace allowed), or `fallback`. */
-export function parseIntOr(text: string, fallback: number): number {
-  return /^\s*\d+\s*$/.test(text) ? Number.parseInt(text, 10) : fallback;
-}
-
-// Dynamic JSON, for documents a wm record can't describe (object keys that are
-// data, such as version numbers, or names like "x86_64-linux").
-
-/** The keys of a JSON object in document order, or [] for anything else. */
+/** Keys of a JSON object, or an empty list for other values. */
 export function jsonKeys(value: unknown): string[] {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? Object.keys(value)

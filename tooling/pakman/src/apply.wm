@@ -16,6 +16,7 @@
 -- Files are copied, not linked: installed files belong to whoever runs the
 -- applier (root for /), never to the user who built them.
 
+from "basis/text.wm" import * as UnicodeText;
 from "./io.wm" import *;
 from "pakman/fun.wm" import { mapAll, filterAll, appendAll, concatAll, ignore, unique };
 from "pakman/text.wm" import { compare, join };
@@ -76,10 +77,13 @@ let writeOwned = (root, files: List<String>) => {
 };
 
 let isSafePath = (path) => {
-  let parts = path :> .split("/") :> Result.map(Js.Array.toList) :> Result.getOr([]);
-  path != ""
-    && !(path :> .startsWith("/") :> Result.getOr(true))
-    && !List.any(parts, (part) => { part == ".." || part == "" })
+  match(UnicodeText.fields(path, (scalar) => { scalar == (47: I32) })) {
+    Err(_) => { false },
+    Ok(parts) => {
+      path != "" && !(UnicodeText.isPrefix(path, "/") :> Result.getOr(true))
+        && !List.any(parts, (part) => { part == ".." || part == "" })
+    }
+  }
 };
 
 -- ---------------------------------------------------------------------------
@@ -123,7 +127,7 @@ let triggers = concatAll([triggersFor("usr/share"), triggersFor(".local/share"),
 let runTriggers = (root, changed: List<String>) => {
   let touches = (t: Trigger) => {
     (root == "/" || !t.live)
-      && List.any(changed, (path) => { path :> .startsWith(t.dir) :> Result.getOr(false) })
+      && List.any(changed, (path) => { UnicodeText.isPrefix(path, t.dir) :> Result.getOr(false) })
   };
   let runCommand = (c: Command) => {
     runQuiet(c.cmd, c.args)

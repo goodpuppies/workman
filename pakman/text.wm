@@ -1,23 +1,66 @@
--- Small string helpers missing from the basis.
+-- Pakman text helpers backed by the shared portable Basis.
 
-from "../std/list.wm" import * as List;
-from "../std/map.wm" import * as Map;
-from js.module("./js/recipe.ts") import unsafe { compareText as compareRaw: (String, String) -> Number };
-from "./fun.wm" import { mapAll, concatAll };
+from "basis/utf16_source.wm" import * as Utf16Source;
+from "basis/list.wm" import * as Lists;
+from "basis/string.wm" import * as ByteString;
+from "basis/text.wm" import * as UnicodeText;
+from "basis/order.wm" import * as Order;
 
-let join = (items, separator) => {
-  match(items) {
-    [] => { "" },
-    [first, ..rest] => { List.foldLeft(rest, first, (joined, item) => { joined ++ separator ++ item }) }
+let join = ByteString.concatWith;
+
+-- Reject malformed host text rather than interpreting a broken path as no components.
+let pathSegments = (path: String) => {
+  UnicodeText.tokens(path, (scalar) => { scalar == (47: I32) })
+};
+
+-- Only used with validated scalars supplied by UnicodeText callbacks.
+let scalarText = (scalar: I32) => {
+  match(UnicodeText.str(scalar)) {
+    Ok(text) => { text },
+    Err(_) => { Panic("invalid Unicode scalar") }
   }
 };
 
-let concatMap = (items, f) => { concatAll(mapAll(items, f)) };
+let shellQuote = (value: String) => {
+  match(UnicodeText.translate(value, (scalar) => {
+    if (scalar == (39: I32)) { "'\\''" } else { scalarText(scalar) }
+  })) {
+    Ok(escaped) => { "'" ++ escaped ++ "'" },
+    Err(_) => { Panic("invalid Unicode shell argument") }
+  }
+};
+
+let concatMap = (items, f) => { Lists.concat(Lists.map(items, f)) };
 
 
 
--- String ordering for std Map keys.
--- (The basis does not export Order's constructors, so borrow numberCompare's.)
-let compare = (left, right) => { Map.numberCompare(compareRaw(left, right), 0) };
+-- Exact UTF-16 lexical order, preserved across valid Unicode host representations.
+let compare = (left: String, right: String) => {
+  match(UnicodeText.compare(left, right)) {
+    Ok(order) => { order },
+    Err(_) => { Panic("invalid Unicode comparison") }
+  }
+};
+let before = (left, right) => { match(compare(left, right)) { Order.Less => { true }, _ => { false } } };
 
-let before = (left, right) => { compareRaw(left, right) < 0 };
+-- Store component encoding preserves the previous one-underscore-per-UTF-16-unit policy.
+let packageStoreName = (name: String) => {
+  let safe = (unit: I32) => {
+    (unit >= (65: I32) && unit <= (90: I32)) || (unit >= (97: I32) && unit <= (122: I32))
+      || (unit >= (48: I32) && unit <= (57: I32)) || unit == (46: I32)
+      || unit == (95: I32) || unit == (43: I32) || unit == (45: I32)
+  };
+  match(UnicodeText.explode(name)) {
+    Err(_) => { Panic("invalid Unicode store name") },
+    Ok(scalars) => {
+      match(Utf16Source.fromScalars(scalars)) {
+        Err(_) => { Panic("invalid Unicode store name") },
+        Ok(source) => {
+          join(Lists.map(Utf16Source.toUnits(source), (unit) => {
+            if (safe(unit)) { scalarText(unit) } else { "_" }
+          }), "")
+        }
+      }
+    }
+  }
+};

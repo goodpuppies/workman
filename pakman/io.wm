@@ -1,13 +1,13 @@
 -- Host operations for package recipes, with String errors that say what failed.
 -- The manager's own operations (files, store, builds) are in tooling/pakman/src/io.wm.
 
+from "./number.wm" import * as Numbers;
 from "../std/list.wm" import * as List;
 from "../std/task.wm" import * as Task;
 from js.module("./js/recipe.ts") import unsafe {
   argv as argvRaw: Void -> Js.Array<String>,
   eprint as eprintRaw: String -> Void,
   exit as exitRaw: Number -> Void,
-  parseIntOr as parseIntRaw: (String, Number) -> Number,
   fetchText as fetchRaw: (String, String -> result, String -> result) -> task,
   headInfo as headRaw: (String, Js.Array<String> -> result, String -> result) -> task,
   runCapture as runRaw: (String, Js.Array<String>, String -> result, String -> result) -> task
@@ -18,7 +18,7 @@ from js.module("./js/recipe.ts") import unsafe {
 
 let eprint = (text) => { eprintRaw(text) };
 let exit = (code) => { exitRaw(code) };
-let parseIntOr = (text, fallback) => { parseIntRaw(text, fallback) };
+let parseIntOr = Numbers.parseIntOr;
 
 let describe = (what) => {
   (error) => {

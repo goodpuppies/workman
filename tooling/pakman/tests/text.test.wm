@@ -1,0 +1,56 @@
+from "../../testman/test.wm" import *;
+from "pakman/text.wm" import { compare, before, packageStoreName };
+from "pakman/number.wm" import { parseIntOr };
+from "../src/semver.wm" import { parse };
+from "../src/install.wm" import { generationNumbers };
+from "../src/paths.wm" import { profileDirOf };
+from "../src/io.wm" import { dirname };
+from "basis/order.wm" import * as Order;
+
+let tests = [
+  test("unsigned integer config parsing keeps whitespace policy and rejects overflow", () => {
+    checks([
+      assertEqual(parseIntOr("\u00a0\uFEFF0012\u2029", 7), 12),
+      assertEqual(parseIntOr("+12", 7), 7),
+      assertEqual(parseIntOr("-12", 7), 7),
+      assertEqual(parseIntOr("2147483648", 7), 7),
+      assertEqual(parseIntOr("1x", 7), 7)
+    ])
+  }),
+  test("SemVer components are canonical nonnegative I32 with full consumption", () => {
+    checks([
+      assertSome(parse("2147483647.0.0")) :> Task.map((_) => { void }),
+      assertEqual(parse("2147483648.0.0"), None),
+      assertEqual(parse("1.02.3"), None),
+      assertEqual(parse("1.2.3\n"), None),
+      assertEqual(parse("+1.2.3"), None),
+      assertEqual(parse("1.2.3.4"), None)
+    ])
+  }),
+  test("generation entries require a won suffix and a bounded positive number", () => {
+    assertEqual(generationNumbers(["1.won", "2.won", "3.won.bak", ".won4", "0.won", "2147483648.won"]), [1, 2])
+  }),
+  test("profile roots and parent paths preserve Unicode", () => {
+    checks([
+      assertEqual(profileDirOf("/profiles", "/café/🦊"), "/profiles/_café_🦊"),
+      assertEqual(dirname("/café/🦊/app"), "/café/🦊"),
+      assertEqual(dirname("/file"), "/"),
+      assertEqual(dirname("file"), "/"),
+      assertEqual(dirname("a//b"), "a/")
+    ])
+  }),
+  test("store component encoding keeps the previous UTF-16 unit policy", () => {
+    checks([
+      assertEqual(packageStoreName("github.com/owner/repo#main"), "github.com_owner_repo_main"),
+      assertEqual(packageStoreName("a🦊東京é/"), "a______"),
+      assertEqual(packageStoreName("aA0._+-"), "aA0._+-")
+    ])
+  }),
+  test("portable comparisons preserve UTF-16 ordering across Unicode planes", () => {
+    checks([
+      assert(before("🦊", "\uE000"), "UTF-16 plane ordering"),
+      assert(before("a", "b"), "a before b"),
+      assert(match(compare("東京", "東京")) { Order.Equal => { true }, _ => { false } }, "equal text")
+    ])
+  })
+];

@@ -11,8 +11,10 @@
 --   make       no permissions: building the plan is pure, and Deno enforces it
 --   build      offline Bubblewrap host environment, invoked by store.wm
 
-from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, hasLetters: (String, String) -> Bool, isRepository: String -> Bool, packageDirectories: String -> Js.Array<String> };
+from js.module("./host.ts") import unsafe { pakmanRoot: Void -> String, packageDirectories: String -> Js.Array<String> };
 from js.module("./host.ts") import { repositoryRecipe, repositoryVersion, recipeSource, packageProgramPath, rememberRecipe, lockedRecipe } as Repository;
+from "basis/text.wm" import * as UnicodeText;
+from "std/string.wm" import * as Strings;
 from "pakman/model.wm" import { Target, Scope, Candidate, Package, Source };
 from "pakman/plan.wm" import *;
 from "./paths.wm" import { Paths };
@@ -20,6 +22,8 @@ from "./lock.wm" import { LockEntry, entryText };
 from "./io.wm" import { envOr, exists, listDir, series, runCapture, compileProgram, dirname, describe };
 from "pakman/text.wm" import { join, concatMap };
 from "pakman/fun.wm" import { mapAll, filterAll, appendAll, concatAll, unique };
+
+let isRepository = (name: String) => { UnicodeText.isPrefix(name, "github.com/") :> Result.getOr(false) };
 
 let via = Monad.via;
 
@@ -91,7 +95,7 @@ let names = () => {
 
 -- "unknown package ogb, did you mean oscgoesbrrr?" for the packages holding the name's letters in order.
 let unknown = (name, known) => {
-  let matches = List.filter(known, (candidate) => { hasLetters(name, candidate) });
+  let matches = List.filter(known, (candidate) => { Strings.isSubsequence(candidate, name) :> Result.getOr(false) });
   if (matches == []) {
     "unknown package " ++ name
   } else {

@@ -892,7 +892,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
       },
       {
         alias: "String",
-        values: ["toList"],
+        values: ["toList", "isSubsequence"],
         types: [],
       },
       {

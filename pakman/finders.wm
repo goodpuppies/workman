@@ -1,5 +1,8 @@
 -- Upstream version finders.
 
+from "std/json.wm" import * as Document;
+from "basis/text.wm" import * as UnicodeText;
+from "./text.wm" import { scalarText };
 from "../std/list.wm" import * as List;
 from "../std/monad.wm" import * as Monad;
 from "../std/option.wm" import * as Option;
@@ -32,95 +35,89 @@ let jsonField = (value: Js.Value, key) => {
 };
 let jsonTextOr = (value: Js.Value, fallback) => { jsonTextRaw(value, fallback) };
 
--- `digest` is "sha256:<hex>", or null on assets uploaded before GitHub computed digests.
-record GithubAsset = { name: String, browser_download_url: String, digest: Js.Value };
-
 record ReleaseAsset = { name: String, url: String, sha256: String };
-
-record GithubRelease = {
-  tag_name: String,
-  prerelease: Bool,
-  draft: Bool,
-  published_at: String,
-  assets: Js.Array<GithubAsset>
-};
-
-record Release = {
-  tag: String,
-  prerelease: Bool,
-  published: String,
-  assets: List<ReleaseAsset>
-};
+record Release = { tag: String, prerelease: Bool, published: String, assets: List<ReleaseAsset> };
 
 let via = Monad.via;
 
+-- Legacy JS-value entry point for recipes using Json.assert. New source decoders
+-- use fetchDocument and the checked std/json.wm accessors below.
 let fetchJson = (url) => {
   let parse = via Task (text) => {
-    JSON.parse(text)
-      :> Result.mapErr((_) => { "invalid JSON from " ++ url })
+    JSON.parse(text) :> Result.mapErr((_) => { "invalid JSON from " ++ url }) :> Task.fromResult
+  };
+  fetchText(url) :> parse
+};
+
+let fetchDocument = (url) => {
+  fetchText(url) :> Task.andThen((text) => {
+    Document.read(text)
+      :> Result.mapErr((problem) => { url ++ ": " ++ Document.problemText(problem) })
       :> Task.fromResult
-  };
-  fetchText(url)
-    :> parse
+  })
 };
 
-let toAsset = (asset: GithubAsset) => {
-  let digest = jsonTextRaw(asset.digest, "");
-  let sha256 = if (digest :> .startsWith("sha256:") :> Result.getOr(false)) {
-    digest :> .slice(7) :> Result.getOr("")
-  } else {
-    ""
-  };
-  ReleaseAsset(asset.name, asset.browser_download_url, sha256)
+let textField = (found, key) => { Document.get(found, key) :> Document.text };
+let boolField = (found, key) => { Document.get(found, key) :> Document.boolean };
+
+let decodeAsset = (found) => {
+  Result.andThen(textField(found, "name"), (name) => {
+    Result.map(textField(found, "browser_download_url"), (url) => {
+      let digest = textField(found, "digest") :> Result.getOr("");
+      let sha256 = if (UnicodeText.isPrefix(digest, "sha256:") :> Result.getOr(false)) {
+        UnicodeText.extract(digest, (7: I32), None) :> Result.getOr("")
+      } else { "" };
+      ReleaseAsset(name, url, sha256)
+    })
+  })
 };
 
-let toRelease = (r: GithubRelease) => {
-  Release(r.tag_name, r.prerelease, r.published_at, r.assets :> Js.Array.toList :> mapAll(toAsset))
+record PublishedRelease = { release: Release, draft: Bool };
+let decodeRelease = (found) => {
+  Result.andThen(textField(found, "tag_name"), (tag) => {
+    Result.andThen(textField(found, "published_at"), (published) => {
+      Result.andThen(boolField(found, "prerelease"), (prerelease) => {
+        Result.andThen(boolField(found, "draft"), (draft) => {
+          Result.map(Document.items(Document.get(found, "assets"), decodeAsset), (assets) => {
+            PublishedRelease(Release(tag, prerelease, published, assets), draft)
+          })
+        })
+      })
+    })
+  })
+};
+let decodeReleases = (found) => {
+  Document.items(found, decodeRelease) :> Result.map((releases) => {
+    releases :> filterAll((r: PublishedRelease) => { !r.draft }) :> mapAll((r: PublishedRelease) => { r.release })
+  })
 };
 
-let isPublished = (r: GithubRelease) => { !r.draft };
-
-let publishedReleases = (items) => {
-  items
-    :> Js.Array.toList
-    :> filterAll(isPublished)
-    :> mapAll(toRelease)
-};
-
--- Published (non-draft) releases of `owner/repo`, newest first.
 let githubReleases = (repo) => {
   let url = "https://api.github.com/repos/" ++ repo ++ "/releases?per_page=50";
-  let assertReleases = via Task (body) => {
-    let releases: Result<Js.Array<GithubRelease>, String> = body
-      :> Json.assert
-      :> Result.mapErr((_) => { "unexpected release JSON from " ++ url });
-    releases :> Task.fromResult
-  };
-  fetchJson(url)
-    :> assertReleases
-    :> Task.map(publishedReleases)
+  fetchDocument(url) :> Task.andThen((document) => {
+    decodeReleases(Ok(document)) :> Result.mapErr(Document.problemText) :> Task.fromResult
+  })
 };
 
-record GithubTagCommit = { sha: String };
-record GithubTag = { name: String, commit: GithubTagCommit };
-record GithubCommitDate = { date: String };
-record GithubCommitInfo = { committer: GithubCommitDate };
-record GithubCommit = { commit: GithubCommitInfo };
-
--- For upstreams that publish Git tags without GitHub release objects. Filter
--- before looking up dates to avoid a commit API request for every old tag.
+record GithubTag = { name: String, sha: String };
+let decodeGithubTag = (found) => {
+  Result.andThen(textField(found, "name"), (name) => {
+    textField(Document.get(found, "commit"), "sha") :> Result.map((sha) => { GithubTag(name, sha) })
+  })
+};
 let githubTagCandidates = (repo, versionOf) => {
   let url = "https://api.github.com/repos/" ++ repo;
-  let tags: Task<Js.Array<GithubTag>, String> = fetchJson(url ++ "/tags?per_page=100")
-    :> Task.andThen((body) => { body :> Json.assert :> Result.mapErr((_) => { "invalid GitHub tags" }) :> Task.fromResult });
-  tags :> Task.andThen((items) => {
-    let selected = items :> Js.Array.toList :> List.mapPartial((tag: GithubTag) => {
-      versionOf(tag.name) :> Option.map((version) => { (version, tag.commit.sha) })
+  fetchDocument(url ++ "/tags?per_page=100") :> Task.andThen((document) => {
+    Document.items(Ok(document), decodeGithubTag) :> Result.mapErr(Document.problemText) :> Task.fromResult
+  }) :> Task.andThen((items) => {
+    let selected = items :> List.mapPartial((tag: GithubTag) => {
+      versionOf(tag.name) :> Option.map((version) => { (version, tag.sha) })
     });
     series(selected, (version, sha) => {
-      let commit: Task<GithubCommit, String> = fetchJson(url ++ "/commits/" ++ sha)
-        :> Task.andThen((body) => { body :> Json.assert :> Result.mapErr((_) => { "invalid GitHub commit" }) :> Task.fromResult });
-      commit :> Task.map((info: GithubCommit) => { Candidate(version, info.commit.committer.date, "stable", [], sha) })
+      fetchDocument(url ++ "/commits/" ++ sha) :> Task.andThen((document) => {
+        textField(Document.get(Document.get(Ok(document), "commit"), "committer"), "date")
+          :> Result.mapErr(Document.problemText) :> Task.fromResult
+      }) :> Task.map((date) => { Candidate(version, date, "stable", [], sha) })
     })
   })
 };
@@ -128,11 +125,8 @@ let githubTagCandidates = (repo, versionOf) => {
 let hasAsset = (release: Release, name) => {
   List.any(release.assets, (asset: ReleaseAsset) => { asset.name == name })
 };
-
--- The checksums GitHub publishes for a release's assets.
 let releaseChecksums = (release: Release) => {
-  release.assets
-    :> filterAll((asset: ReleaseAsset) => { asset.sha256 != "" })
+  release.assets :> filterAll((asset: ReleaseAsset) => { asset.sha256 != "" })
     :> mapAll((asset: ReleaseAsset) => { Checksum(asset.url, asset.sha256) })
 };
 
@@ -192,23 +186,29 @@ let redirectTarget = (url) => {
     :> Task.andThen((parts) => { pair(parts) :> Task.fromResult })
 };
 
-record GitlabCommit = { committed_date: String };
-record GitlabTag = { name: String, commit: GitlabCommit };
-
 record Tag = { name: String, published: String };
+let decodeGitlabTag = (found) => {
+  Result.andThen(textField(found, "name"), (name) => {
+    textField(Document.get(found, "commit"), "committed_date") :> Result.map((date) => { Tag(name, date) })
+  })
+};
+
+-- Encode the slash-separated project identity in a GitLab API path.
+let projectPath = (project: String) => {
+  match(UnicodeText.translate(project, (scalar) => {
+    if (scalar == (47: I32)) { "%2F" } else { scalarText(scalar) }
+  })) {
+    Ok(path) => { path },
+    Err(_) => { Panic("invalid Unicode project path") }
+  }
+};
 
 -- Tags of a GitLab project (`group/name` on `host`), newest first, dated by
 -- their commit.
 let gitlabTags = (host, project) => {
-  let url = "https://" ++ host ++ "/api/v4/projects/" ++ (project :> .replaceAll("/", "%2F") :> Result.getOr(project))
+  let url = "https://" ++ host ++ "/api/v4/projects/" ++ projectPath(project)
     ++ "/repository/tags?per_page=50";
-  let assertTags = via Task (body) => {
-    let tags: Result<Js.Array<GitlabTag>, String> = body
-      :> Json.assert
-      :> Result.mapErr((_) => { "unexpected tag JSON from " ++ url });
-    tags :> Task.fromResult
-  };
-  fetchJson(url)
-    :> assertTags
-    :> Task.map((tags) => { tags :> Js.Array.toList :> mapAll((t: GitlabTag) => { Tag(t.name, t.commit.committed_date) }) })
+  fetchDocument(url) :> Task.andThen((document) => {
+    Document.items(Ok(document), decodeGitlabTag) :> Result.mapErr(Document.problemText) :> Task.fromResult
+  })
 };

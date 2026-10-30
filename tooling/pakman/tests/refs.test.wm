@@ -19,6 +19,9 @@ let tests = [
   test("shell arguments preserve spaces, quotes and metacharacters", () => {
     assertEqual(render("/home/a'b $x", shellRef(Own(".local/bin/wm"))), "'/home/a'\\''b $x/.local/bin/wm'")
   }),
+  test("shell arguments preserve Unicode alongside apostrophes", () => {
+    assertEqual(render("/café/🦊'東京", shellRef(Own("bin/app"))), "'/café/🦊'\\''東京/bin/app'")
+  }),
   test("private dependencies are distinct from shared-root requirements", () => {
     let request = package("wm", "~0.4.1");
     let pkg = Package("1.0.0", [], [Symlink(file(request, ".local/bin/wm"), ".local/bin/app")], [file(request, "lib/api")]);
@@ -45,6 +48,13 @@ let tests = [
       assertEqual(relativePath("usr/bin/zig", "opt/zig/zig"), "../../opt/zig/zig"),
       assertEqual(relativePath(".local/bin/x", ".local/lib/x/x"), "../lib/x/x"),
       assertEqual(symlinkTarget("usr/bin/vesktop", Own("opt/Vesktop/vesktop")), "../../opt/Vesktop/vesktop")
+    ])
+  }),
+  test("relative paths preserve Unicode and ignore empty path components", () => {
+    checks([
+      assertEqual(relativePath("/café//bin/app/", "/café/東京/🦊"), "../東京/🦊"),
+      assertEqual(relativePath("app", ""), ""),
+      assertEqual(relativePath("/a//app", "/a//lib/"), "lib")
     ])
   }),
   test("symlinks to host files stay absolute", () => {

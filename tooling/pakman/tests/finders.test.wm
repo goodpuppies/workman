@@ -1,6 +1,7 @@
+from "std/json.wm" import * as Document;
 -- Provider-neutral release rules on normalized metadata, without network access.
 from "../../testman/test.wm" import *;
-from "pakman/finders.wm" import { Release, ReleaseAsset, matchText, releaseCandidates, stableReleases };
+from "pakman/finders.wm" import { Release, ReleaseAsset, matchText, releaseCandidates, stableReleases, projectPath, decodeReleases, decodeGithubTag, decodeGitlabTag };
 from "pakman/model.wm" import { Candidate };
 
 let asset = (name) => { ReleaseAsset(name, "https://custom.example/" ++ name, "digest-" ++ name) };
@@ -15,6 +16,28 @@ let releases = [
 let options = .{ ..stableReleases, assets = (version) => { ["app-" ++ version, "helper"] } };
 
 let tests = [
+  test("GitHub release decoding uses portable JSON and omits drafts", () => {
+    let source = "[{\"tag_name\":\"v1.2.3\",\"published_at\":\"2020-01-01T00:00:00Z\",\"prerelease\":false,\"draft\":false,\"assets\":[{\"name\":\"app\",\"browser_download_url\":\"https://example/app\",\"digest\":\"sha256:abc\"}]},{\"tag_name\":\"draft\",\"published_at\":\"2020-01-01T00:00:00Z\",\"prerelease\":false,\"draft\":true,\"assets\":[]}]";
+    assertEqual(decodeReleases(Document.read(source)), Ok([
+      Release("v1.2.3", false, "2020-01-01T00:00:00Z", [ReleaseAsset("app", "https://example/app", "abc")])
+    ]))
+  }),
+  test("provider decoding preserves field and array paths on malformed data", () => {
+    let source = "[{\"tag_name\":17}]";
+    assertEqual(decodeReleases(Document.read(source)) :> Result.mapErr(Document.problemText), Err("$[0][\"tag_name\"]: expected text"))
+  }),
+  test("tag decoders read nested portable JSON objects", () => {
+    checks([
+      assertEqual(decodeGithubTag(Document.read("{\"name\":\"v1\",\"commit\":{\"sha\":\"abc\"}}")) :> Result.map((tag) => { (tag.name, tag.sha) }), Ok(("v1", "abc"))),
+      assertEqual(decodeGitlabTag(Document.read("{\"name\":\"v1\",\"commit\":{\"committed_date\":\"2020-01-01\"}}")) :> Result.map((tag) => { (tag.name, tag.published) }), Ok(("v1", "2020-01-01")))
+    ])
+  }),
+  test("GitLab project escaping preserves Unicode and replaces every slash", () => {
+    checks([
+      assertEqual(projectPath("group/東京/🦊"), "group%2F東京%2F🦊"),
+      assertEqual(projectPath("/group//"), "%2Fgroup%2F%2F")
+    ])
+  }),
   test("matchText returns a capture, a whole match, or None", () => {
     checks([
       assertEqual(matchText("^gui-v(\\d+\\.\\d+\\.\\d+)$")("gui-v1.2.3"), Some("1.2.3")),

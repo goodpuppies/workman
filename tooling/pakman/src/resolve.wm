@@ -1,5 +1,6 @@
 -- Resolution: pick a version upstream offers, and pin its sources' hashes.
 
+from "basis/text.wm" import * as UnicodeText;
 from "pakman/model.wm" import { Candidate, Checksum, Source, Package };
 from "./packages.wm" import { PackageInfo, versions, make };
 from "./lock.wm" import { LockEntry, LockedSource, versionOf, trackOf };
@@ -150,7 +151,7 @@ let requireSomeVerified = (info: PackageInfo, candidate: Candidate) => {
 -- local patches/scripts even when their URL and the package version are unchanged.
 let refreshSources = (paths: Paths, pkg: Package, candidate: Candidate, previous: List<LockedSource>) => {
   let resolveSource = (src: Source) => {
-    let local = src.url :> .startsWith("file://") :> Result.getOr(false);
+    let local = UnicodeText.isPrefix(src.url, "file://") :> Result.getOr(false);
     let published = List.find(candidate.checksums, (c: Checksum) => { c.url == src.url });
     let reusable = (s: LockedSource) => {
       let checksumMatches = published :> Option.map((c: Checksum) => { c.sha256 == s.sha256 }) :> Option.getOr(true);

@@ -27,6 +27,8 @@ let tests = [
   test("only relative paths without .. are safe", () => {
     checks([
       assert(isSafePath("usr/bin/zig"), "usr/bin/zig"),
+      assert(isSafePath("café/東京/🦊"), "Unicode path"),
+      assert(!isSafePath("usr/bin/"), "trailing empty segment"),
       assert(!isSafePath("/usr/bin/zig"), "absolute"),
       assert(!isSafePath("usr/../etc/passwd"), ".."),
       assert(!isSafePath("usr//bin"), "empty segment"),

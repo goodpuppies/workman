@@ -6,6 +6,7 @@
 -- tree: name, version, target, requirements, source hashes and
 -- install steps. It does not cover the machine that ran the build.
 
+from "basis/string.wm" import * as ByteString;
 from "pakman/model.wm" import *;
 from "./packages.wm" import { PackageInfo, make };
 from "./packages.wm" import * as Packages;
@@ -17,7 +18,7 @@ from "./lock.wm" import { LockEntry, LockedSource };
 from "./paths.wm" import { Paths };
 from "./io.wm" import *;
 from "pakman/fun.wm" import { ignore, mapAll, concatAll };
-from js.module("./host.ts") import unsafe { packageStoreName: String -> String };
+from "pakman/text.wm" import { packageStoreName };
 
 let via = Monad.via;
 
@@ -223,7 +224,7 @@ let realizePlanWith = (paths: Paths, def: PackageInfo, entry: LockEntry, private
         inputsText(if (privateInstance) { "@private" } else { baseFor(paths, def) }, def, pkg, sources, builder, entry.ref)
           :> Task.fromResult :> Task.andThen(sha256Text)
       }
-        :> Task.map((fullHash) => { (sources, fullHash :> .slice(0, 32) :> Result.getOr(fullHash)) })
+        :> Task.map((fullHash) => { (sources, ByteString.substring(fullHash, (0: I32), (32: I32)) :> Result.getOr(fullHash)) })
     };
     let locate = via Task (sources, hash) => {
       let storePath = paths.store ++ "/" ++ hash ++ "-" ++ packageStoreName(def.name) ++ "-" ++ packageStoreName(pkg.version);

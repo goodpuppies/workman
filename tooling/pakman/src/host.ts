@@ -342,16 +342,10 @@ export async function runQuiet(cmd: string, args: string[]): Promise<number> {
   }
 }
 
-export function dirname(path: string): string {
+// Filesystem adapter internals still need lexical parent paths. WM uses basis/path.
+function dirname(path: string): string {
   const index = path.lastIndexOf("/");
   return index <= 0 ? "/" : path.slice(0, index);
-}
-
-// Whether `text` contains `letters` in order, not necessarily adjacent: ogb in oscgoesbrrr.
-export function hasLetters(letters: string, text: string): boolean {
-  let at = 0;
-  for (const letter of text) if (letter === letters[at]) at++;
-  return at === letters.length;
 }
 
 /** JSON with two-space indentation and a trailing newline, for files people read and diff. */

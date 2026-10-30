@@ -1,0 +1,20 @@
+-- Pakman's legacy unsigned Number boundary; the shared parser works in I32.
+from "basis/int.wm" import * as Int;
+from "basis/text.wm" import * as UnicodeText;
+from "basis/result.wm" import * as R;
+
+-- ECMAScript whitespace, including BOM, preserving the previous config policy.
+let isSpace = (c: I32) => {
+  (c >= (9: I32) && c <= (13: I32)) || c == (32: I32) || c == (160: I32)
+    || c == (5760: I32) || (c >= (8192: I32) && c <= (8202: I32))
+    || c == (8232: I32) || c == (8233: I32) || c == (8239: I32)
+    || c == (8287: I32) || c == (12288: I32) || c == (65279: I32)
+};
+
+-- Full input, digits only after trimming. Overflow returns the caller's fallback.
+let parseIntOr = (text: String, fallback: Number) => {
+  match(UnicodeText.trim(text, isSpace)) {
+    Err(_) => { fallback },
+    Ok(trimmed) => { R.getOr(R.map(Int.parseNatural(trimmed), I32.toNumber), fallback) }
+  }
+};

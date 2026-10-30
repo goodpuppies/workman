@@ -6,6 +6,7 @@
 -- Each install root is an environment with its own generations and its own
 -- lock, so `zig@0.14.1` in one root doesn't change the version in another.
 
+from "basis/text.wm" import * as UnicodeText;
 from "./io.wm" import { envOr };
 from js.module("./host.ts") import unsafe { pakmanStateDirectory: Void -> String };
 
@@ -22,7 +23,12 @@ record Paths = {
 
 -- The directory for one install root under `profiles`.
 let profileDirOf = (profiles, root) => {
-  profiles ++ "/" ++ (root :> .replaceAll("/", "_") :> Result.getOr(root))
+  match(UnicodeText.map(root, (scalar) => {
+    if (scalar == (47: I32)) { (95: I32) } else { scalar }
+  })) {
+    Ok(name) => { profiles ++ "/" ++ name },
+    Err(_) => { Panic("invalid Unicode profile root") }
+  }
 };
 
 let paths = (root) => {

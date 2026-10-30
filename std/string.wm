@@ -1,3 +1,4 @@
+from "basis/text.wm" import * as UnicodeText;
 from "basis/string.wm" import * as Strings;
 from "basis/list.wm" import * as Lists;
 from "basis/result.wm" import * as Results;
@@ -8,4 +9,20 @@ let toList = (value: String) => {
     Results.andThen(Strings.fromNative(value), (chars) => { Lists.traverse(chars, Strings.str) }),
     []
   )
+};
+
+// Does the pattern appear in order, allowing gaps? Comparisons use Unicode scalars.
+let isSubsequence = (text: String, pattern: String) => {
+  let rec search = (chars, wanted) => {
+    match(chars, wanted) {
+      (_, []) => { true },
+      ([], _) => { false },
+      ([c, ..rest], [next, ..tail]) => {
+        search(rest, if (c == next) { tail } else { wanted })
+      }
+    }
+  };
+  Results.andThen(UnicodeText.explode(text), (chars) => {
+    Results.map(UnicodeText.explode(pattern), (wanted) => { search(chars, wanted) })
+  })
 };
