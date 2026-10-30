@@ -3,6 +3,9 @@
 Scope: the main `pakman/` API and `tooling/pakman/` manager, 2026-10-30.
 The temporary `tooling/pakman-subsetml/` sister project is not the migration target.
 
+The recipe API now lives in `tooling/pakman/api/`; `pakman/...` remains its public
+import prefix. Historical paths and counts below refer to the pre-move inventory.
+
 ## Source implementations now in use
 
 - Shared byte-string and Unicode text matching, fields/tokens, extraction/slicing,

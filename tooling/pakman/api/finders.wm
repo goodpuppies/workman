@@ -3,11 +3,11 @@
 from "std/json.wm" import * as Document;
 from "basis/text.wm" import * as UnicodeText;
 from "./text.wm" import { scalarText };
-from "../std/list.wm" import * as List;
-from "../std/monad.wm" import * as Monad;
-from "../std/option.wm" import * as Option;
-from "../std/result.wm" import * as Result;
-from "../std/task.wm" import * as Task;
+from "std/list.wm" import * as List;
+from "std/monad.wm" import * as Monad;
+from "std/option.wm" import * as Option;
+from "std/result.wm" import * as Result;
+from "std/task.wm" import * as Task;
 from js.global("JSON") import { parse } as JSON;
 from "./io.wm" import { fetchText, headInfo, series };
 from "./model.wm" import { Checksum, Candidate };

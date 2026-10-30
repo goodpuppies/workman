@@ -110,7 +110,7 @@ Deno.test("import-only library modules are named by their path, not their file n
   const modules = await loadLibraryModules({
     "std/option.wm": "let fromStd = 1;\n",
     "subml-basis/option.wm": "let fromBasis = 2;\n",
-    "pakman/text.wm": "let fromPakman = 3;\n",
+    "tooling/pakman/api/text.wm": "let fromPakman = 3;\n",
   });
   const exports = (path: string) =>
     [...modules.find((module) => module.path === path)!.result.exportedStructure.valEnv.keys()]
@@ -118,7 +118,7 @@ Deno.test("import-only library modules are named by their path, not their file n
   // std/option.wm extends the built-in Option; the others are exactly what their files declare.
   assertEquals(exports("std/option.wm").includes("fromStd"), true);
   assertEquals(exports("subml-basis/option.wm"), ["fromBasis"]);
-  assertEquals(exports("pakman/text.wm"), ["fromPakman"]);
+  assertEquals(exports("tooling/pakman/api/text.wm"), ["fromPakman"]);
 });
 
 Deno.test("library JavaScript imports resolve to embedded library files", async () => {
@@ -132,7 +132,7 @@ Deno.test("library JavaScript imports resolve to embedded library files", async 
 
 Deno.test("embedded library primitives load as JavaScript or TypeScript by extension", async () => {
   const typed = await import(libraryModuleUrl(
-    "pakman/js/probe.ts",
+    "tooling/pakman/api/js/probe.ts",
     'import { basename } from "node:path";\nexport const name = (path: string): string => basename(path);\n',
   ));
   const plain = await import(
@@ -422,11 +422,20 @@ Deno.test("SubsetML Basis modules are never opened without an import", async () 
   assertEquals(unknown.stderr.includes(`unknown Basis module "basis/nope.wm"`), true);
 });
 
+Deno.test("pakman public imports map to the embedded tooling API directory", () => {
+  assertEquals(libraryImport("pakman/model.wm"), {
+    path: "tooling/pakman/api/model.wm",
+    description: 'pakman module "pakman/model.wm"',
+  });
+  assertEquals(libraryImport("./pakman/model.wm"), undefined);
+  assertEquals(Object.keys(librarySources).some((path) => path.startsWith("pakman/")), false);
+});
+
 Deno.test("pakman modules are analyzed only for programs that import them, on the shared library", async () => {
   const core = await loadStandardModules();
   const all = await loadStandardModules(true);
-  assertEquals(core.some((module) => module.path.startsWith("pakman/")), false);
-  assertEquals(all.some((module) => module.path === "pakman/finders.wm"), true);
+  assertEquals(core.some((module) => module.path.startsWith("tooling/pakman/api/")), false);
+  assertEquals(all.some((module) => module.path === "tooling/pakman/api/finders.wm"), true);
   const list = (modules: typeof core) =>
     modules.find((module) => module.path === "std/list.wm")!.result;
   assertEquals(list(all) === list(core), true);

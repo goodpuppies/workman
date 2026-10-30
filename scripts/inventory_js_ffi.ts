@@ -16,6 +16,7 @@ const untracked = (await git("ls-files", "--others", "--exclude-standard", "-z",
   .split("\0").filter((file) => file.startsWith("examples/") && file.endsWith(".wm"));
 const files = [...tracked, ...untracked].sort();
 function area(file: string) {
+  if (file.startsWith("tooling/pakman/api/")) return "pakman";
   if (file.startsWith("subml-basis/")) return "shared-basis-generated";
   return file.includes("/") ? file.split("/")[0] : "root";
 }

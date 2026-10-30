@@ -264,8 +264,9 @@ src/io.wm        the manager's host operations with readable errors
 src/host.ts      the manager's Deno code: files, the store, builds, extraction
 ```
 
-The package API and the modules pakman shares with packages are in wm-mini's `pakman/` directory,
-embedded in the compiler and imported as `"pakman/…"`:
+The package API and the modules pakman shares with packages live in `tooling/pakman/api/`,
+embedded in the compiler and imported through the stable `"pakman/…"` prefix.
+The paths below are public import names; the JS adapter lives in `api/js/`:
 
 ```
 pakman/model.wm       Definition, Package, InstallOp, Policy

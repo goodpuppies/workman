@@ -2,6 +2,7 @@
 //
 // - `from js.host("table") import * as Table;` is projected to an ordinary `ImportDecl` whose path
 //   carries `JS_HOST_IMPORT_PREFIX`, naming the import-only host helper `host/js/table.wm` (BD17).
+// - `from "pakman/model.wm"` names `tooling/pakman/api/model.wm`.
 // - `from "std/result.wm"` names `std/result.wm`.
 // - `from "basis/won.wm"` names the SubsetML Basis module `subml-basis/subset_won.wm`.
 //
@@ -37,7 +38,9 @@ export function libraryImport(specifier: string): LibraryImport | undefined {
   const std = /^std\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
   if (std) return { path: `std/${std[1]}`, description: `library module "${specifier}"` };
   const pakman = /^pakman\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
-  if (pakman) return { path: `pakman/${pakman[1]}`, description: `pakman module "${specifier}"` };
+  if (pakman) {
+    return { path: `tooling/pakman/api/${pakman[1]}`, description: `pakman module "${specifier}"` };
+  }
   const basis = /^basis\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
   if (basis) {
     return { path: `subml-basis/subset_${basis[1]}`, description: `Basis module "${specifier}"` };

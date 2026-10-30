@@ -2,8 +2,8 @@
 -- The manager's own operations (files, store, builds) are in tooling/pakman/src/io.wm.
 
 from "./number.wm" import * as Numbers;
-from "../std/list.wm" import * as List;
-from "../std/task.wm" import * as Task;
+from "std/list.wm" import * as List;
+from "std/task.wm" import * as Task;
 from js.module("./js/recipe.ts") import unsafe {
   argv as argvRaw: Void -> Js.Array<String>,
   eprint as eprintRaw: String -> Void,

@@ -83,7 +83,7 @@ function isAutoOpened(path: string): boolean {
  * programs don't pay for them at startup. They may import any other library module.
  */
 export function isLoadedOnDemand(path: string): boolean {
-  return path.startsWith("pakman/");
+  return path.startsWith("tooling/pakman/api/");
 }
 
 const onDemandModuleIds = new Set(

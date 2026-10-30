@@ -70,7 +70,7 @@ protocol; a freshness dashboard, CI checks, or the future native PS2 client are 
   rule it out: no daemon, and nothing ever evaluates the whole package set; a command only runs the
   packages it needs.
 - **v1 is wm on Deno and uses JS APIs freely.** All Deno access goes through `src/host.ts`, and
-  for package programs `pakman/js/recipe.ts`. Once
+  for package programs `api/js/recipe.ts`. Once
   `../SubsetML` (wm → SML → MLton) is mature enough, pakman gets rewritten off the JS APIs to run
   natively on the PS2.
 - **Part of wm:** pakman lives in wm-mini's `tooling/pakman` and runs as `wm pakman`, so it always
@@ -506,7 +506,7 @@ System packages, the home directory for User packages, or `--root DIR`.
 
 ## Code conventions
 
-- **One host boundary.** `src/host.ts` (and `pakman/js/recipe.ts` for package programs) is the only
+- **One host boundary.** `src/host.ts` (and `api/js/recipe.ts` for package programs) is the only
   code that touches Deno; `src/io.wm` and `pakman/io.wm` wrap it with readable `String` errors.
 - **Carrier procedures.** Effectful code follows wm's documented style: named `Monad.via Task`
   transformations, one pipeline per procedure, values threaded as tuples.

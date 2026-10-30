@@ -7,11 +7,11 @@
 -- through Won.textString. pakman reads and writes its files as bytes
 -- (tooling/pakman/src/won_file.wm).
 
-from "../std/result.wm" import * as Result;
-from "../subml-basis/subset_won.wm" import * as Won;
-from "../subml-basis/subset_won_value.wm" import * as W;
-from "../subml-basis/subset_text.wm" import * as Utf8;
-from "../subml-basis/subset_string.wm" import * as ByteString;
+from "std/result.wm" import * as Result;
+from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
+from "basis/text.wm" import * as Utf8;
+from "basis/string.wm" import * as ByteString;
 from "./number.wm" import { parseIntOr };
 from "basis/list.wm" import * as Lists;
 
