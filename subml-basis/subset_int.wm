@@ -1,0 +1,91 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_string.sml" import * as SubsetString;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_char.sml" import * as SubsetChar;
+*/
+
+// Checked decimal parsing over the portable signed 32-bit integer domain.
+
+from "./subset_string.wm" import * as SubsetString;
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_char.wm" import * as SubsetChar;
+from "./subset_list.wm" import * as SubsetList;
+
+type Error = InvalidInteger | Overflow | StringError<SubsetString.Error>;
+
+// Accumulate negatively so the minimum integer never needs to be negated.
+let digits = (bytes, negative) => {
+  let last = if (negative) { (8: I32) } else { (7: I32) };
+  let finish = (rest, acc, seen) => {
+    if (seen) {
+      SubsetResult.Ok(if (negative) { acc } else { (0: I32) - acc }, rest)
+    } else { SubsetResult.Err(InvalidInteger) }
+  };
+  let rec go = (rest, acc: I32, seen) => {
+    match(rest) {
+      [] => { finish(rest, acc, seen) },
+      [c, ..tail] => {
+        if (SubsetChar.isDigit(c)) {
+          match(SubsetChar.toCode(c)) {
+            SubsetResult.Err(error) => { SubsetResult.Err(InvalidInteger) },
+            SubsetResult.Ok(code) => {
+              let digit = code - (48: I32);
+              if (if (acc < (-214748364: I32)) { true } else {
+                if (acc == (-214748364: I32)) { digit > last } else { false }
+              }) { SubsetResult.Err(Overflow) } else { go(tail, acc * (10: I32) - digit, true) }
+            }
+          }
+        } else { finish(rest, acc, seen) }
+      }
+    }
+  };
+  go(bytes, (0: I32), false)
+};
+
+let signed = (bytes) => {
+  match(bytes) {
+    ['~', ..rest] => { digits(rest, true) },
+    ['-', ..rest] => { digits(rest, true) },
+    ['+', ..rest] => { digits(rest, false) },
+    Var(rest) => { digits(rest, false) }
+  }
+};
+
+// SML INTEGER.fromString: skip ASCII space, parse a signed decimal prefix.
+let fromString = (value) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetString.fromNative(value), StringError),
+    (bytes) => {
+      SubsetResult.map(
+        signed(SubsetList.dropWhile(bytes, SubsetChar.isSpace)),
+        (number, rest) => { number }
+      )
+    }
+  )
+};
+
+// Full-input decimal and unsigned decimal parsers: no whitespace or trailing data.
+let complete = (result) => {
+  SubsetResult.andThen(
+    result,
+    (number, rest) => {
+      match(rest) {
+        [] => { SubsetResult.Ok(number) },
+        [c, ..tail] => { SubsetResult.Err(InvalidInteger) }
+      }
+    }
+  )
+};
+let parseDecimal = (value) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetString.fromNative(value), StringError),
+    (bytes) => { complete(signed(bytes)) }
+  )
+};
+let parseNatural = (value) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetString.fromNative(value), StringError),
+    (bytes) => { complete(digits(bytes, false)) }
+  )
+};

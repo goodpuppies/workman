@@ -1,0 +1,71 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_string.sml" import * as SubsetString;
+from "./subset_text.sml" import * as SubsetText;
+*/
+
+// SML STRING_CVT padding, data first. Text widths count Unicode scalars.
+
+from "./subset_string.wm" import * as SubsetString;
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_text.wm" import * as SubsetText;
+
+let repeat = (piece, count: I32) => {
+  let rec go = (left, acc) => {
+    if (left <= (0: I32)) { SubsetString.concat(acc) } else { go(left - (1: I32), [piece, ..acc]) }
+  };
+  go(count, [])
+};
+let pad = (value, width: I32, piece, length: I32, left) => {
+  if (width <= length) { value } else {
+    let padding = repeat(piece, width - length);
+    if (left) { padding ++ value } else { value ++ padding }
+  }
+};
+
+let padLeft = (value, width, c) => {
+  SubsetResult.andThen(
+    SubsetString.fromNative(value),
+    (bytes) => {
+      SubsetResult.map(
+        SubsetString.str(c),
+        (piece) => { pad(value, width, piece, SubsetList.length(bytes), true) }
+      )
+    }
+  )
+};
+let padRight = (value, width, c) => {
+  SubsetResult.andThen(
+    SubsetString.fromNative(value),
+    (bytes) => {
+      SubsetResult.map(
+        SubsetString.str(c),
+        (piece) => { pad(value, width, piece, SubsetList.length(bytes), false) }
+      )
+    }
+  )
+};
+let padTextLeft = (value, width, scalar) => {
+  SubsetResult.andThen(
+    SubsetText.explode(value),
+    (scalars) => {
+      SubsetResult.map(
+        SubsetText.str(scalar),
+        (piece) => { pad(value, width, piece, SubsetList.length(scalars), true) }
+      )
+    }
+  )
+};
+let padTextRight = (value, width, scalar) => {
+  SubsetResult.andThen(
+    SubsetText.explode(value),
+    (scalars) => {
+      SubsetResult.map(
+        SubsetText.str(scalar),
+        (piece) => { pad(value, width, piece, SubsetList.length(scalars), false) }
+      )
+    }
+  )
+};

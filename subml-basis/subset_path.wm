@@ -1,0 +1,32 @@
+/* @subsetml
+from "./subset_result.sml" import * as SubsetResult;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_string.sml" import * as SubsetString;
+from "./subset_text.sml" import * as SubsetText;
+*/
+
+/* Source-only OS.Path.dir counterpart for slash-separated Unicode paths.
+   Lexical only: no normalization, filesystem access, or platform path inference. */
+
+from "./subset_result.wm" import * as SubsetResult;
+from "./subset_text.wm" import * as SubsetText;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_string.wm" import * as SubsetString;
+
+let dir = (value) => {
+  SubsetResult.map(
+    SubsetText.fields(value, (scalar) => { scalar == (47: I32) }),
+    (pieces) => {
+      match(SubsetList.reverse(pieces)) {
+        [] => { "" },
+        [file, ..reversed] => {
+          let parent = SubsetList.reverse(reversed);
+          match(parent) {
+            [""] => { "/" },
+            Var(rest) => { SubsetString.concatWith(rest, "/") }
+          }
+        }
+      }
+    }
+  )
+};

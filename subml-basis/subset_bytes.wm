@@ -79,6 +79,28 @@ let fields = (bytes, delimiter) => {
   go(bytes, [], [])
 };
 
+/* Like fields/trim, these operate on byte sequences already checked at the boundary.
+   Data first: the sequence precedes the sought prefix, suffix or substring. */
+let rec isPrefix = match {
+  (Var(bytes), []) => { true },
+  ([], [c, ..rest]) => { false },
+  ([c, ..bytes], [wanted, ..rest]) => { if (c == wanted) { isPrefix(bytes, rest) } else { false } }
+};
+let isSuffix = (bytes, suffix) => {
+  isPrefix(SubsetList.reverse(bytes), SubsetList.reverse(suffix))
+};
+let isSubstring = (bytes, needle) => {
+  let rec search = (rest) => {
+    if (isPrefix(rest, needle)) { true } else {
+      match(rest) {
+        [] => { false },
+        [c, ..tail] => { search(tail) }
+      }
+    }
+  };
+  search(bytes)
+};
+
 let reader = (bytes) => {
   SubsetResult.map(validate(bytes), (valid) => { Reader(valid, (0: I32)) })
 };

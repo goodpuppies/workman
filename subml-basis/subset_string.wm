@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_list.sml" import * as SubsetList;
 from "./subset_char.sml" import * as SubsetChar;
@@ -13,8 +14,10 @@ from "./subset_list.wm" import * as SubsetList;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_text_host.wm" import * as SubsetTextHost;
 from "./subset_bytes.wm" import * as SubsetBytes;
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 
 type Error = | NonByte<I32>;
+type Slice_error = InvalidIndex | StringError<Error>;
 let fromNative = (value) => {
   let rec go = match {
     ([], Var(offset), Var(bytes)) => { SubsetResult.Ok(SubsetList.reverse(bytes)) },
@@ -88,3 +91,83 @@ let toNative = (bytes) => {
 // Checked byte-string helpers share the extraction/reconstruction boundaries.
 let size = (value) => { SubsetResult.map(fromNative(value), SubsetList.length) };
 let str = (c) => { toNative([c]) };
+
+/* SML STRING counterparts, with data-first arguments and typed boundary errors.
+   Validate complete operands even when a match could be decided early. */
+let isPrefix = (value, prefix) => {
+  SubsetResult.andThen(
+    fromNative(value),
+    (bytes) => {
+      SubsetResult.map(fromNative(prefix), (wanted) => { SubsetBytes.isPrefix(bytes, wanted) })
+    }
+  )
+};
+let isSuffix = (value, suffix) => {
+  SubsetResult.andThen(
+    fromNative(value),
+    (bytes) => {
+      SubsetResult.map(fromNative(suffix), (wanted) => { SubsetBytes.isSuffix(bytes, wanted) })
+    }
+  )
+};
+let isSubstring = (value, needle) => {
+  SubsetResult.andThen(
+    fromNative(value),
+    (bytes) => {
+      SubsetResult.map(fromNative(needle), (wanted) => { SubsetBytes.isSubstring(bytes, wanted) })
+    }
+  )
+};
+
+let fields = (value, delimiter) => {
+  SubsetResult.andThen(
+    fromNative(value),
+    (bytes) => {
+      SubsetList.traverse(SubsetBytes.fields(bytes, delimiter), toNative)
+    }
+  )
+};
+let tokens = (value, delimiter) => {
+  SubsetResult.map(
+    fields(value, delimiter),
+    (pieces) => { SubsetList.filter(pieces, (piece) => { piece != "" }) }
+  )
+};
+
+/* Range errors are separate from the existing byte-conversion error type.
+   Successive checked drops/takes avoid overflowing start + count. */
+let extract = (value, start, count) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(fromNative(value), StringError),
+    (bytes) => {
+      SubsetResult.andThen(
+        SubsetResult.mapErr(SubsetList.drop(bytes, start), (error) => { InvalidIndex }),
+        (rest) => {
+          let selected = match(count) {
+            SubsetOptionValue.None => { SubsetResult.Ok(rest) },
+            SubsetOptionValue.Some(size) => {
+              SubsetResult.mapErr(SubsetList.take(rest, size), (error) => { InvalidIndex })
+            }
+          };
+          SubsetResult.andThen(selected, (chosen) => { SubsetResult.mapErr(toNative(chosen), StringError) })
+        }
+      )
+    }
+  )
+};
+let substring = (value, start, count) => { extract(value, start, SubsetOptionValue.Some(count)) };
+
+let map = (value, transform) => {
+  SubsetResult.andThen(fromNative(value), (bytes) => { toNative(SubsetList.map(bytes, transform)) })
+};
+let translate = (value, transform) => {
+  SubsetResult.andThen(
+    fromNative(value),
+    (bytes) => {
+      SubsetResult.andThen(
+        SubsetList.traverse(bytes, (c) => { fromNative(transform(c)) }),
+        (pieces) => { toNative(SubsetList.concat(pieces)) }
+      )
+    }
+  )
+};

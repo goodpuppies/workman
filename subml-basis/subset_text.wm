@@ -1,4 +1,8 @@
 /* @subsetml
+from "./subset_order.sml" import * as SubsetOrder;
+from "./subset_option_value.sml" import * as SubsetOptionValue;
+from "./subset_list.sml" import * as SubsetList;
+from "./subset_bytes.sml" import * as SubsetBytes;
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_string.sml" import * as SubsetString;
 from "./subset_unicode.sml" import * as SubsetUnicode;
@@ -10,12 +14,17 @@ from "./subset_text_host.sml" import * as SubsetTextHost;
    string already holds UTF-8 bytes, a Workman/JS string holds UTF-16 text. Use these at a
    host edge, such as WM text entering WON; Basis byte strings convert with SubsetString. */
 
+from "./subset_unicode.wm" import * as SubsetUnicode;
 from "./subset_string.wm" import * as SubsetString;
 from "./subset_text_host.wm" import * as SubsetTextHost;
 from "./subset_result.wm" import * as SubsetResult;
-from "./subset_unicode.wm" import * as SubsetUnicode;
 from "./subset_utf8.wm" import * as SubsetUtf8;
+from "./subset_list.wm" import * as SubsetList;
+from "./subset_option_value.wm" import * as SubsetOptionValue;
+from "./subset_order.wm" import * as SubsetOrder;
+from "./subset_bytes.wm" import * as SubsetBytes;
 
+type Slice_error = InvalidIndex | UnicodeError<SubsetUnicode.Error>;
 let toUtf8 = (value) => {
   match(SubsetString.fromNative(SubsetTextHost.encodeUtf8(value))) {
     SubsetResult.Err(SubsetString.NonByte(offset)) => {
@@ -38,5 +47,136 @@ let fromUtf8 = (bytes) => {
         }
       }
     }
+  )
+};
+
+// Unicode counterparts of STRING's character operations.
+let explode = (value) => { SubsetResult.andThen(toUtf8(value), SubsetUtf8.decode) };
+let implode = (scalars) => { SubsetResult.andThen(SubsetUtf8.encode(scalars), fromUtf8) };
+let str = (scalar) => { implode([scalar]) };
+let size = (value) => { SubsetResult.map(explode(value), SubsetList.length) };
+
+// Text indices and counts are Unicode scalars, never bytes or UTF-16 units.
+let extract = (value, start, count) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(explode(value), UnicodeError),
+    (scalars) => {
+      SubsetResult.andThen(
+        SubsetResult.mapErr(SubsetList.drop(scalars, start), (error) => { InvalidIndex }),
+        (rest) => {
+          let selected = match(count) {
+            SubsetOptionValue.None => { SubsetResult.Ok(rest) },
+            SubsetOptionValue.Some(size) => {
+              SubsetResult.mapErr(SubsetList.take(rest, size), (error) => { InvalidIndex })
+            }
+          };
+          SubsetResult.andThen(selected, (chosen) => { SubsetResult.mapErr(implode(chosen), UnicodeError) })
+        }
+      )
+    }
+  )
+};
+let substring = (value, start, count) => { extract(value, start, SubsetOptionValue.Some(count)) };
+
+let map = (value, transform) => {
+  SubsetResult.andThen(explode(value), (scalars) => { implode(SubsetList.map(scalars, transform)) })
+};
+let translate = (value, transform) => {
+  SubsetResult.andThen(
+    explode(value),
+    (scalars) => {
+      SubsetResult.andThen(
+        SubsetList.traverse(scalars, (scalar) => { toUtf8(transform(scalar)) }),
+        (pieces) => { fromUtf8(SubsetList.concat(pieces)) }
+      )
+    }
+  )
+};
+
+let trim = (value, predicate) => {
+  SubsetResult.andThen(
+    explode(value),
+    (scalars) => {
+      implode(SubsetList.reverse(SubsetList.dropWhile(SubsetList.reverse(SubsetList.dropWhile(scalars, predicate)), predicate)))
+    }
+  )
+};
+
+/* Preserve JS lexical ordering for valid text on every host. A scalar's first
+   UTF-16 unit determines cross-plane order; scalar order resolves equal leads. */
+let compare = (left, right) => {
+  let firstUnit = (scalar: I32) => {
+    if (scalar < (65536: I32)) { scalar } else { (55296: I32) + I32.div(scalar - (65536: I32), (1024: I32)) }
+  };
+  let rec order = match {
+    ([], []) => { SubsetOrder.Equal },
+    ([], Var(rest)) => { SubsetOrder.Less },
+    (Var(rest), []) => { SubsetOrder.Greater },
+    ([a, ..xs], [b, ..ys]) => {
+      if (firstUnit(a) < firstUnit(b)) { SubsetOrder.Less } else {
+        if (firstUnit(a) > firstUnit(b)) { SubsetOrder.Greater } else {
+          if (a < b) { SubsetOrder.Less } else { if (a > b) { SubsetOrder.Greater } else { order(xs, ys) } }
+        }
+      }
+    }
+  };
+  SubsetResult.andThen(
+    explode(left),
+    (xs) => { SubsetResult.map(explode(right), (ys) => { order(xs, ys) }) }
+  )
+};
+
+// Valid UTF-8 substring matches cannot start or end inside a scalar encoding.
+let isPrefix = (value, prefix) => {
+  SubsetResult.andThen(
+    toUtf8(value),
+    (bytes) => {
+      SubsetResult.map(toUtf8(prefix), (wanted) => { SubsetBytes.isPrefix(bytes, wanted) })
+    }
+  )
+};
+let isSuffix = (value, suffix) => {
+  SubsetResult.andThen(
+    toUtf8(value),
+    (bytes) => {
+      SubsetResult.map(toUtf8(suffix), (wanted) => { SubsetBytes.isSuffix(bytes, wanted) })
+    }
+  )
+};
+let isSubstring = (value, needle) => {
+  SubsetResult.andThen(
+    toUtf8(value),
+    (bytes) => {
+      SubsetResult.map(toUtf8(needle), (wanted) => { SubsetBytes.isSubstring(bytes, wanted) })
+    }
+  )
+};
+
+/* Unicode counterpart of STRING.fields: the predicate receives scalar integers,
+   once per scalar in source order, only after the entire input is validated. */
+let fields = (value, delimiter) => {
+  SubsetResult.andThen(
+    toUtf8(value),
+    (bytes) => {
+      SubsetResult.andThen(
+        SubsetUtf8.decode(bytes),
+        (scalars) => {
+          let rec split = match {
+            ([], Var(field), Var(acc)) => { SubsetList.reverse([SubsetList.reverse(field), ..acc]) },
+            ([scalar, ..rest], Var(field), Var(acc)) => {
+              if (delimiter(scalar)) { split(rest, [], [SubsetList.reverse(field), ..acc]) } else { split(rest, [scalar, ..field], acc) }
+            }
+          };
+          let text = (codes) => { SubsetResult.andThen(SubsetUtf8.encode(codes), fromUtf8) };
+          SubsetList.traverse(split(scalars, [], []), text)
+        }
+      )
+    }
+  )
+};
+let tokens = (value, delimiter) => {
+  SubsetResult.map(
+    fields(value, delimiter),
+    (pieces) => { SubsetList.filter(pieces, (piece) => { piece != "" }) }
   )
 };
