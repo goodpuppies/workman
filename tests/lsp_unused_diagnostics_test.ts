@@ -67,6 +67,25 @@ Deno.test("lsp recognizes qualified uses of a C namespace import", async () => {
   assertEquals(await compactDiagnostics(main), []);
 });
 
+Deno.test("lsp recognizes called, bare and piped uses of a reflected JS namespace", async () => {
+  const dir = await Deno.makeTempDir();
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(
+    main,
+    `from js.global("Math") import * as Called;
+     from js.global("Math") import * as Bare;
+     from js.global("Math") import * as Piped;
+     from js.global("Math") import * as Spare;
+     let called = () => { Called.random() };
+     let bare = Bare.random;
+     let piped = (x: Number) => { x :> Piped.floor };`,
+  );
+
+  assertEquals(await compactDiagnostics(main), [
+    ["lint.unused-import", "Spare", [1]],
+  ]);
+});
+
 Deno.test("lsp does not warn for unused public nominal APIs", async () => {
   const dir = await Deno.makeTempDir();
   const main = `${dir}/main.wm`;

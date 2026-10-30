@@ -91,6 +91,7 @@ export function reflectedReceiverProperty(
   selected: Set<string>,
   refs: Map<string, JsTypeRef>,
   receiverType?: TypeExpr,
+  node?: Expr["node"],
 ): Expr | undefined {
   const parts = name.split(".");
   if (parts.length < 2) return undefined;
@@ -124,7 +125,7 @@ export function reflectedReceiverProperty(
   return {
     kind: "Call",
     callee: { kind: "Var", name: variant.internalName },
-    args: [{ kind: "Var", name: baseName }],
+    args: [{ kind: "Var", name: baseName, node }],
   };
 }
 
@@ -134,6 +135,7 @@ export function reflectedReceiverFunctionValue(
   selected: Set<string>,
   refs: Map<string, JsTypeRef>,
   receiverType?: TypeExpr,
+  node?: Expr["node"],
 ): Expr | undefined {
   const parts = name.split(".");
   if (parts.length < 2) return undefined;
@@ -180,7 +182,7 @@ export function reflectedReceiverFunctionValue(
       kind: "Call",
       callee: { kind: "Var", name: variant.internalName },
       args: [
-        { kind: "Var", name: baseName },
+        { kind: "Var", name: baseName, node },
         ...params.map((param) => ({ kind: "Var" as const, name: param })),
       ],
     },
@@ -206,7 +208,7 @@ export function delayedReflectedReceiverFunctionValue(
   }
   return {
     kind: "FfiGet",
-    receiver: { kind: "Var", name: baseName },
+    receiver: { kind: "Var", name: baseName, node },
     path,
     node,
   };

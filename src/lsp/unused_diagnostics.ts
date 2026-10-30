@@ -55,7 +55,7 @@ export function unusedDiagnostics(
 
 function ffiImportCandidates(moduleInterface: ModuleInterface): UnusedCandidate[] {
   return moduleInterface.ffiFacts.imports.flatMap((imported) => {
-    if (!imported.structureAlias) return [];
+    if (!imported.structureAlias) return reflectedImportCandidates(moduleInterface, imported);
     const occurrence = moduleInterface.occurrences.find((candidate) =>
       candidate.role === "import-alias" &&
       candidate.target.kind === "structure" &&
@@ -73,6 +73,35 @@ function ffiImportCandidates(moduleInterface: ModuleInterface): UnusedCandidate[
         ...(namespaceValue ? [{ kind: "value" as const, id: namespaceValue.id }] : []),
       ],
     )];
+  });
+}
+
+/**
+ * A reflected `* as Alias` import binds the alias as a value, and each member it reaches as a
+ * separate `Alias.member` value; `Alias.member` uses reference only the member.
+ */
+function reflectedImportCandidates(
+  moduleInterface: ModuleInterface,
+  imported: ModuleInterface["ffiFacts"]["imports"][number],
+): UnusedCandidate[] {
+  return imported.bindings.flatMap((binding) => {
+    if (binding.localName.includes(".")) return [];
+    const occurrence = moduleInterface.occurrences.find((candidate) =>
+      candidate.role === "declaration" &&
+      candidate.target.kind === "value" &&
+      candidate.target.id === binding.id
+    );
+    if (!occurrence) return [];
+    const members = imported.bindings.filter((member) =>
+      member.localName.startsWith(`${binding.localName}.`)
+    );
+    return [{
+      ...importCandidate(binding.localName, occurrence.span, [
+        { kind: "value" as const, id: binding.id },
+        ...members.map((member) => ({ kind: "value" as const, id: member.id })),
+      ]),
+      matchName: false,
+    }];
   });
 }
 

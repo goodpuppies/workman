@@ -208,13 +208,28 @@ export function rewriteExprCalls(
         });
       } else {
         assertDottedModuleNamespaceMember(expr.name, refs, expr.node);
-        const functionValue = reflectedReceiverFunctionValue(expr.name, bindings, selected, refs);
+        // The authored node lets tooling see the namespace receiver as a use of its import.
+        const functionValue = reflectedReceiverFunctionValue(
+          expr.name,
+          bindings,
+          selected,
+          refs,
+          undefined,
+          expr.node,
+        );
         const delayedFunctionValue = delayedReflectedReceiverFunctionValue(
           expr.name,
           refs,
           expr.node,
         );
-        const property = reflectedReceiverProperty(expr.name, bindings, selected, refs);
+        const property = reflectedReceiverProperty(
+          expr.name,
+          bindings,
+          selected,
+          refs,
+          undefined,
+          expr.node,
+        );
         return functionValue ?? delayedFunctionValue ?? property ?? expr;
       }
       return expr;
