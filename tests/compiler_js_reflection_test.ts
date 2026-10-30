@@ -380,7 +380,7 @@ Deno.test("reflects callback parameter object refs before HM", async () => {
     });
   `);
 
-  expectBinding(result.env, "server", { type: "Result<HttpServer, Js.Error>", vars: 0 });
+  expectBinding(result.env, "server", { type: "Result<HttpServer<NetAddr>, Js.Error>", vars: 0 });
 });
 
 Deno.test("reflects dynamic properties from annotated Js.Object values", async () => {

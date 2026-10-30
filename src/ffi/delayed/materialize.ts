@@ -27,13 +27,17 @@ import {
   selectVariant,
 } from "../shared.ts";
 import {
+  instantiateJsTypeRef,
   jsGlobalTypeRef,
   type JsMemberType,
   jsRefCall,
   jsRefDeepCall,
   type JsTypeRef,
 } from "../reflect/types.ts";
-import { contextualFfiFunctionArity } from "./delayed_reflection_hints.ts";
+import {
+  callArgHintForReflection,
+  contextualFfiFunctionArity,
+} from "./delayed_reflection_hints.ts";
 
 type ResolveExpr = (
   expr: Expr,
@@ -501,6 +505,10 @@ export function materializeBindingCall(
   if (!binding) {
     throw diagnosticError(new Error(`unknown JS FFI binding ${original.name}`), original.node);
   }
+  contextualizeBindingCallInputs(original, ffi, result);
+  args = args.map((arg) =>
+    arg.kind === "Lambda" ? resolveExpr(arg, ffi, result, selected, options, valueRefs) : arg
+  );
   const argTypes = args.map((arg) => {
     const type = inferredType(result, arg);
     return type ? knownTyToTypeExpr(type) : undefined;
@@ -514,6 +522,7 @@ export function materializeBindingCall(
     );
   }
   variant = specializeReflectedBindingCall(binding, variant, args, ffi, result, options);
+  if (!variant) return original;
   variant = specializeDeepBindingCall(binding, variant, args, ffi);
   solveReflectedFfiValue(original, variant, result);
   selected.add(variant.internalName);
@@ -559,8 +568,50 @@ export function solveBindingCallType(
   let variant = selectVariant(binding.variants, args, argTypes);
   if (!variant) return;
   variant = specializeReflectedBindingCall(binding, variant, args, ffi, result);
+  if (!variant) return;
   variant = specializeDeepBindingCall(binding, variant, args, ffi);
   solveReflectedFfiValue(original, variant, result);
+}
+
+/** Supply TS's contextual input types before resolving an inline callback body. */
+export function contextualizeBindingCallInputs(
+  original: Extract<Expr, { kind: "FfiBindingCall" }>,
+  ffi: FfiElaboration,
+  result: InferResult,
+): void {
+  const binding = ffi.bindings.get(original.name);
+  if (!binding) return;
+  const argTypes = original.args.map((arg) => {
+    const type = inferredType(result, arg);
+    return type ? knownTyToTypeExpr(type) : undefined;
+  });
+  const seed = selectVariant(binding.variants, original.args, argTypes);
+  if (!seed?.callRef) return;
+  const variant = specializeReflectedBindingCall(
+    binding,
+    seed,
+    original.args,
+    ffi,
+    result,
+    undefined,
+    true,
+  );
+  if (!variant) return;
+  for (const callback of variant.callbackParamRefs ?? []) {
+    const arg = original.args[callback.argIndex];
+    if (arg?.kind !== "Lambda") continue;
+    const inferred = inferredType(result, arg);
+    const type = inferred ? prune(inferred) : undefined;
+    if (type?.tag !== "fn") continue;
+    const domain = type.params.length === 1 ? prune(type.params[0]) : undefined;
+    const params = domain?.tag === "tuple" ? domain.items : type.params;
+    for (const [index, ref] of callback.params.entries()) {
+      if (!params[index] || !ref.type) continue;
+      if (ref.type.kind === "TName" && ref.type.name === "Js.Value") continue;
+      const reflected = materializeReflectedType(ref.type, result);
+      if (reflected) unify(params[index], reflected);
+    }
+  }
 }
 
 function specializeReflectedBindingCall(
@@ -570,10 +621,33 @@ function specializeReflectedBindingCall(
   ffi: FfiElaboration,
   result: InferResult,
   options?: ResolveOptions,
-): FfiVariant {
+  contextOnly = false,
+): FfiVariant | undefined {
   if (!variant.callRef || variant.deep) return variant;
   const foreignRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options?.foreignTypeRefs);
+  const usesGeneric = (type: TypeExpr): boolean => {
+    if (type.kind === "TName") {
+      return !!foreignRefs.get(type.name)?.generic || type.args.some(usesGeneric);
+    }
+    if (type.kind === "TTuple") return type.items.some(usesGeneric);
+    if (type.kind === "TFn") return type.params.some(usesGeneric) || usesGeneric(type.result);
+    return false;
+  };
+  // Do not commit a discovery signature while a native call/callback still
+  // supplies evidence. The existing finite staging passes revisit the obligation.
+  if (
+    usesGeneric(variant.type) && args.some((arg) => {
+      if (arg.kind === "Lambda" || arg.kind === "Int" || arg.kind === "Float") return false;
+      const inferred = inferredType(result, arg);
+      const type = inferred ? prune(inferred) : undefined;
+      return !type || type.tag === "ffi" || type.tag === "var";
+    })
+  ) return undefined;
   const hints = args.map((arg) => {
+    // A tag such as "TimeoutError" selects a TS overload; widening it to a
+    // primitive string receiver ref changes the meaning of the synthetic call.
+    const literal = callArgHint(arg);
+    if (literal.kind === "string" || literal.kind === "number") return literal;
     const inferred = inferredType(result, arg);
     const foreign = inferred ? foreignReceiver(inferred, foreignRefs) : undefined;
     if (foreign) return { kind: "ref" as const, ref: foreign.ref, type: foreign.type };
@@ -582,9 +656,26 @@ function specializeReflectedBindingCall(
       const ref = foreignRefs.get(known.name);
       if (ref) return { kind: "ref" as const, ref, type: known };
     }
-    return callArgHint(arg);
+    const hint = callArgHintForReflection(arg, result);
+    if (hint.kind === "function" && hint.resultType?.kind === "TName") {
+      const ref = foreignRefs.get(hint.resultType.name);
+      const instance = ref ? instantiateJsTypeRef(ref, hint.resultType, foreignRefs) : undefined;
+      if (instance) return { ...hint, resultRef: instance };
+    }
+    return hint;
   });
-  if (!hints.some((hint) => hint.kind === "ref")) return variant;
+  if (
+    !contextOnly && usesGeneric(variant.type) &&
+    hints.some((hint) => hint.kind === "function" && !hint.resultType)
+  ) return undefined;
+  if (
+    hints.length > 0 &&
+    !hints.some((hint) =>
+      hint.kind === "ref" ||
+      usesGeneric(variant.type) && (hint.kind === "string" || hint.kind === "number") ||
+      hint.kind === "function" && hint.resultType
+    )
+  ) return variant;
   const reflected = jsRefCall(variant.callRef, hints);
   const concrete = reflected ? memberVariants(reflected)[0] : undefined;
   if (!concrete) return variant;
@@ -966,10 +1057,11 @@ function rememberForeignTypeNames(
 ) {
   switch (type.kind) {
     case "TName":
-      if (type.args.length === 0 && isReflectedForeignTypeName(type.name)) {
+      if (isReflectedForeignTypeName(type.name)) {
         const typeRef = ref ?? jsGlobalTypeRef(type.name);
         if (ref || !foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
+        if (typeRef.generic) foreignTypeRefs.set(typeRef.generic.key, typeRef);
       }
       for (const arg of type.args) rememberForeignTypeNames(arg, foreignTypeRefs);
       break;
@@ -996,6 +1088,7 @@ const builtInTypeNames = new Set([
   "Number",
   "Option",
   "Result",
+  "Task",
   "String",
   "Void",
 ]);

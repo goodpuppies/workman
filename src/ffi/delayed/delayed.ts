@@ -10,6 +10,7 @@ import { generatedJsImports } from "../imports.ts";
 import { recordFieldNamesInDecls } from "../record_fields.ts";
 import { generatedForeignDeclsForRefs } from "./bindings.ts";
 import {
+  contextualizeBindingCallInputs,
   materializeReceiverCall,
   materializeReceiverProperty,
   solveBindingCallType,
@@ -335,7 +336,11 @@ function solveDelayedBindingTypesInExpr(
 ): void {
   switch (expr.kind) {
     case "FfiBindingCall":
-      expr.args.forEach((arg) => solveDelayedBindingTypesInExpr(arg, ffi, result));
+      expr.args.filter((arg) => arg.kind !== "Lambda")
+        .forEach((arg) => solveDelayedBindingTypesInExpr(arg, ffi, result));
+      contextualizeBindingCallInputs(expr, ffi, result);
+      expr.args.filter((arg) => arg.kind === "Lambda")
+        .forEach((arg) => solveDelayedBindingTypesInExpr(arg, ffi, result));
       solveBindingCallType(expr, expr.args, ffi, result);
       return;
     case "FfiGet":

@@ -6,6 +6,7 @@ import type { FfiElaboration } from "../shared.ts";
 import { fn, memberVariants, name, nameArgs, tvar } from "../shared.ts";
 import { option } from "../type_expr.ts";
 import {
+  instantiateJsTypeRef,
   type JsMemberType,
   jsPrimitiveValueRef,
   jsRefTypeExpr,
@@ -316,6 +317,9 @@ export function foreignTypeRefLookup(
   return new Map([
     ...[...localRefs].flatMap(([name, ref]) => [[name, ref], [ref.key, ref]] as const),
     ...(globalRefs ?? new Map()),
+    ...[...(globalRefs?.values() ?? [])].flatMap((ref) =>
+      ref.generic ? [[ref.generic.key, ref] as const] : []
+    ),
   ]);
 }
 
@@ -339,5 +343,8 @@ export function foreignReceiver(
   const ref = (target.foreignKey ? foreignTypeRefs.get(target.foreignKey) : undefined) ??
     foreignTypeRefs.get(target.name);
   if (!ref) return undefined;
-  return { ref, type: { kind: "TName", name: target.name, args: [] } };
+  const reflected = knownTyToTypeExpr(target);
+  if (!reflected) return undefined;
+  const instance = instantiateJsTypeRef(ref, reflected, foreignTypeRefs);
+  return instance ? { ref: instance, type: reflected } : undefined;
 }

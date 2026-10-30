@@ -400,7 +400,7 @@ Deno.test("reflects npm subpath exports through import-mapped @types packages", 
   const results = await checkFile(input);
   const result = results.get(input);
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "scene", { type: "Result<Scene, Js.Error>", vars: 0 });
+  expectBinding(result.env, "scene", { type: "Result<Scene<Js.Value>, Js.Error>", vars: 0 });
 });
 
 Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
@@ -722,7 +722,7 @@ Deno.test("module imports preserve static methods on callable constructors", asy
         match(Buffer.from("ok")) {
           Err(_) => { console.log("err") },
           Ok(buffer) => {
-            let typed: Buffer = buffer;
+            let typed = buffer;
             match(typed :> .toString("base64")) {
               Ok(encoded) => { console.log(encoded) },
               Err(_) => { console.log("err") },
@@ -927,9 +927,10 @@ Deno.test("maps function-valued JS union parameters as JS values", async () => {
 Deno.test("maps object-bearing JS union parameters as JS values", async () => {
   const result = await checkSource(`
     from js.global("crypto.subtle") import unsafe { importKey };
+    -- Object key data uses the JWK overload; raw key data requires bytes.
     let key = importKey(
-      "raw",
-      JSON{ key: "secret" },
+      "jwk",
+      JSON{ kty: "oct", k: "c2VjcmV0" },
       JSON{ name: "HMAC", hash: "SHA-256" },
       false,
       JSON["sign"],

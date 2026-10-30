@@ -6,6 +6,8 @@ import {
   dedupeVariants,
   functionVariantsFromSignature,
   jsMemberTypeFromTsType,
+  nestedForeignTypeRefs,
+  nominalGenericConstructor,
   nominalObjectTypeName,
   typeExprFromTsType,
 } from "./type_mapping.ts";
@@ -361,7 +363,60 @@ export function jsPrimitiveValueRef(name: "String" | "Number" | "Bool"): JsTypeR
 }
 
 export function jsGlobalTypeRef(name: string): JsTypeRef {
+  if (name === "JsNever") return typeRefFromSource("ts:never", "", "never");
   return typeRefFromSource(`global-type:${name}`, "", name);
+}
+
+/** Reconstruct one concrete TS instance from its nominal HM type arguments. */
+export function instantiateJsTypeRef(
+  ref: JsTypeRef,
+  type: TypeExpr,
+  foreignRefs: Map<string, JsTypeRef>,
+): JsTypeRef | undefined {
+  if (!ref.generic || type.kind !== "TName" || type.args.length !== ref.generic.arity) return ref;
+  const sources: string[] = [];
+  const render = (arg: TypeExpr): string | undefined => {
+    if (arg.kind === "TVar") return undefined;
+    if (arg.kind === "TTuple") {
+      const items = arg.items.map(render);
+      return items.every((item) => item !== undefined) ? `[${items.join(", ")}]` : undefined;
+    }
+    if (arg.kind === "TFn") {
+      const params = arg.params.map(render);
+      const result = render(arg.result);
+      return result && params.every((item) => item !== undefined)
+        ? `(${params.map((item, index) => `arg${index}: ${item}`).join(", ")}) => ${result}`
+        : undefined;
+    }
+    const nested = foreignRefs.get(arg.name);
+    if (nested) {
+      const instance = instantiateJsTypeRef(nested, arg, foreignRefs);
+      if (!instance) return undefined;
+      const index = sources.length;
+      sources.push(hygienicArgSource(instance.source, index));
+      return `typeof ${hygienicArgExpr(instance.expr, index)}`;
+    }
+    // Only built-in shapes have names which are meaningful without a TS ref.
+    if (
+      ["String", "Number", "Bool", "Void", "Js.Value", "Js.Object", "JsNever"].includes(arg.name)
+    ) {
+      return tsTypeFromTypeExpr(arg);
+    }
+    if (arg.name === "Js.Array" && arg.args.length === 1) {
+      const element = render(arg.args[0]);
+      return element ? `Array<${element}>` : undefined;
+    }
+    return undefined;
+  };
+  const args = type.args.map(render);
+  if (args.some((arg) => arg === undefined)) return undefined;
+  const key = `${ref.generic.key}<${type.args.map(typeExprKey).join(",")}>`;
+  const value = typeRefFromSource(
+    key,
+    sources.join("\n"),
+    `${ref.generic.expression}<${args.join(", ")}>`,
+  );
+  return { ...value, generic: ref.generic, type };
 }
 
 export function jsGlobalMemberTypeRef(path: string, name: string): JsTypeRef {
@@ -371,6 +426,35 @@ export function jsGlobalMemberTypeRef(path: string, name: string): JsTypeRef {
 
 export function jsModuleTypeRef(specifier: string, name: string): JsTypeRef {
   const target = jsModuleSource(specifier);
+  const generic = reflectSource(
+    `${target.key}:generic-type:${name}`,
+    target.source,
+    (checker, sf) => {
+      let imported: ts.ImportDeclaration | undefined;
+      sf.forEachChild((node) => {
+        if (ts.isImportDeclaration(node)) imported = node;
+      });
+      const symbol = imported ? checker.getSymbolAtLocation(imported.moduleSpecifier) : undefined;
+      const exported = symbol
+        ? checker.getExportsOfModule(symbol).find((item) => item.name === name)
+        : undefined;
+      if (!exported) return undefined;
+      const declared = exported.flags & ts.SymbolFlags.Alias
+        ? checker.getAliasedSymbol(exported)
+        : exported;
+      return nominalGenericConstructor(checker, checker.getDeclaredTypeOfSymbol(declared));
+    },
+  );
+  if (generic) {
+    return {
+      ...typeRefFromSource(
+        generic.key,
+        target.source,
+        `${generic.expression}<${Array.from({ length: generic.arity }, () => "any").join(", ")}>`,
+      ),
+      generic,
+    };
+  }
   return typeRefFromSource(
     `module-type:${specifier}.${name}`,
     target.source,
@@ -596,7 +680,7 @@ function jsRefCallTarget(
         ? String(arg.value)
         : arg.kind === "function"
         ? `fn/${arg.arity}:${arg.paramTypes?.map(typeExprKey).join(",") ?? "?"}:${
-          arg.resultType ? typeExprKey(arg.resultType) : "?"
+          arg.resultRef?.key ?? (arg.resultType ? typeExprKey(arg.resultType) : "?")
         }`
         : arg.kind === "ref"
         ? `ref/${arg.ref.key}`
@@ -622,7 +706,13 @@ function jsRefCallTarget(
     );
   const argSources = reflectedArgs
     .map(({ arg, index }) => hygienicArgSource(arg.ref.source, index))
-    .join("\n");
+    .concat(
+      args.flatMap((arg, index) =>
+        arg.kind === "function" && arg.resultRef
+          ? [hygienicArgSource(arg.resultRef.source, index + args.length)]
+          : []
+      ),
+    ).join("\n");
   const argDecls = args
     .flatMap((arg, index) => {
       if (arg.kind === "unknown") return [`declare const __wm_arg_${index}: any;`];
@@ -630,7 +720,11 @@ function jsRefCallTarget(
       if (arg.kind === "function") {
         return [
           `declare const __wm_cb_return_${index}: ${
-            arg.resultType ? tsTypeFromTypeExpr(arg.resultType) : "any"
+            arg.resultRef
+              ? `typeof ${hygienicArgExpr(arg.resultRef.expr, index + args.length)}`
+              : arg.resultType
+              ? tsTypeFromTypeExpr(arg.resultType)
+              : "any"
           };`,
         ];
       }
@@ -704,7 +798,17 @@ function callResultTypeRef(
   source: string,
 ): JsTypeRef {
   const resultType = callType.kind === "TFn" ? callType.result : callType;
-  const ref = returnTypeRef(key, source, "typeof __wm_call_result");
+  const actual = checker.getTypeAtLocation(call);
+  const generic =
+    resultType.kind === "TName" && resultType.name === nominalObjectTypeName(checker, actual)
+      ? nominalGenericConstructor(checker, actual)
+      : undefined;
+  const ref: JsTypeRef = {
+    ...returnTypeRef(key, source, "typeof __wm_call_result"),
+    generic,
+    ...(generic ? { type: resultType } : {}),
+    nestedTypeRefs: nestedForeignTypeRefs(checker, actual, source),
+  };
   if (
     resultType.kind !== "TName" || resultType.name !== "Js.Array" ||
     resultType.args.length !== 1
@@ -875,6 +979,15 @@ function typeRefFromTsType(
 ): JsTypeRef {
   const nominal = nominalObjectTypeName(checker, type);
   if (nominal) {
+    const generic = nominalGenericConstructor(checker, type);
+    if (generic) {
+      const ref = typeRefFromSource(
+        key,
+        source,
+        checker.typeToString(type, undefined, ts.TypeFormatFlags.UseFullyQualifiedType),
+      );
+      return { ...ref, generic, type: typeExprFromTsType(checker, type, "param") };
+    }
     const ref = typeRefFromSource(`global-type:${nominal}`, source, nominal);
     return { ...ref, type: { kind: "TName", name: nominal, args: [] } };
   }

@@ -162,9 +162,9 @@ function callbackReturnType(expr: Expr, result: InferResult): TypeExpr | undefin
   if (expr.kind === "Lambda") {
     if (!hostFfiDescendsInto(expr)) return undefined;
     const bodyType = inferredType(result, expr.body);
-    return bodyType ? knownTyToTypeExpr(bodyType) : undefined;
+    return bodyType ? concreteReflectionHint(bodyType) : undefined;
   }
   const type = inferredType(result, expr);
   const target = type ? prune(type) : undefined;
-  return target?.tag === "fn" ? knownTyToTypeExpr(target.result) : undefined;
+  return target?.tag === "fn" ? concreteReflectionHint(target.result) : undefined;
 }

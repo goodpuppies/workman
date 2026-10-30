@@ -53,7 +53,10 @@ export function collectFfiDecl(
         `${decl.clause.alias}.${member.name}`,
         member.name,
         decl.target,
-        memberVariants(member),
+        memberVariants(member).map((variant) => ({
+          ...variant,
+          callRef: jsTargetMemberValueRef(decl.target, member.name),
+        })),
         !decl.clause.unsafe,
         decl.node,
       );
@@ -351,7 +354,18 @@ function specializeForeignResultVariants(
 ): ReturnType<typeof memberVariants> {
   return variants.map((variant) => {
     const resultType = variant.resultRef && foreignTypeForRef(variant.resultRef, importedTypeRefs);
-    return resultType ? { ...variant, type: replaceResultType(variant.type, resultType) } : variant;
+    const original = variant.type.kind === "TFn" ? variant.type.result : variant.type;
+    return resultType
+      ? {
+        ...variant,
+        type: replaceResultType(
+          variant.type,
+          original.kind === "TName" && resultType.kind === "TName"
+            ? { ...resultType, args: original.args }
+            : resultType,
+        ),
+      }
+      : variant;
   });
 }
 
@@ -360,7 +374,9 @@ function foreignTypeForRef(
   importedTypeRefs: Map<string, JsTypeRef>,
 ): TypeExpr | undefined {
   for (const [name, imported] of importedTypeRefs) {
-    if (imported.key === ref.key) return { kind: "TName", name, args: [] };
+    if (imported.key === ref.key) {
+      return { kind: "TName", name, args: ref.type?.kind === "TName" ? ref.type.args : [] };
+    }
   }
   return undefined;
 }
@@ -384,10 +400,10 @@ function rememberConstructorResultRefs(
 function constructorResultName(type: TypeExpr): string | undefined {
   const result = type.kind === "TFn" ? type.result : type;
   if (result.kind !== "TName" || result.name !== "Result" || result.args.length !== 2) {
-    return result.kind === "TName" && result.args.length === 0 ? result.name : undefined;
+    return result.kind === "TName" ? result.name : undefined;
   }
   const value = result.args[0];
-  return value.kind === "TName" && value.args.length === 0 ? value.name : undefined;
+  return value.kind === "TName" ? value.name : undefined;
 }
 
 function collectFfiTypeDecl(
@@ -517,7 +533,8 @@ export function generatedTypeAliases(
       return {
         kind: "ForeignTypeDecl" as const,
         name: typeName,
-        foreignKey: ref.key,
+        foreignKey: ref.generic?.key ?? ref.key,
+        arity: ref.generic?.arity,
         node: source?.node,
       };
     });

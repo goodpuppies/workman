@@ -43,6 +43,8 @@ export function jsMemberTypeFromTsType(
         resultRef: resultRefWithType(
           resultRef?.(index, signature),
           returnTypeOfVariant(variant.type),
+          checker,
+          checker.getReturnTypeOfSignature(signature),
         ),
       }))
     ),
@@ -56,8 +58,23 @@ export function jsMemberTypeFromTsType(
   };
 }
 
-function resultRefWithType(ref: JsTypeRef | undefined, type: TypeExpr): JsTypeRef | undefined {
-  return ref ? { ...ref, type } : undefined;
+function resultRefWithType(
+  ref: JsTypeRef | undefined,
+  type: TypeExpr,
+  checker: ts.TypeChecker,
+  foreign: ts.Type,
+): JsTypeRef | undefined {
+  const generic = type.kind === "TName" && type.name === nominalObjectTypeName(checker, foreign)
+    ? nominalGenericConstructor(checker, foreign)
+    : undefined;
+  return ref
+    ? {
+      ...ref,
+      generic,
+      type,
+      nestedTypeRefs: nestedForeignTypeRefs(checker, foreign, ref.source),
+    }
+    : undefined;
 }
 
 function returnTypeOfVariant(type: TypeExpr): TypeExpr {
@@ -89,6 +106,7 @@ export function typeExprFromTsType(
     if (bufferSource) return bufferSource;
   }
   if (isAnyOrUnknown(type)) return name("Js.Value");
+  if (type.flags & ts.TypeFlags.Never) return name("JsNever");
   if (type.flags & ts.TypeFlags.Conditional) return name("Js.Value");
   if (isTsType(checker, type, "number")) return name("Number");
   if (isTsType(checker, type, "string")) return name("String");
@@ -159,7 +177,20 @@ export function typeExprFromTsType(
   } */
   const nominal = nominalObjectTypeName(checker, type);
   if (nominal === "DynamicLibrary") return name("Js.Object");
-  if (position === "result" && nominal) return name(nominal);
+  if (nominal) {
+    const generic = nominalGenericConstructor(checker, type);
+    if (generic) {
+      // Uninstantiated declaration signatures are discovery seeds only. Concrete
+      // calls are resolved again with HM arguments before these slots escape.
+      const args = checker.getTypeArguments(type as ts.TypeReference).slice(0, generic.arity)
+        .map((arg) =>
+          containsTypeParameter(arg) ? name("Js.Value") : typeExprFromTsType(checker, arg, position)
+        );
+      if (args.length !== generic.arity || args.some((arg) => !arg)) return undefined;
+      return { kind: "TName", name: nominal, args: args as TypeExpr[] };
+    }
+    if (position === "result") return name(nominal);
+  }
   const tuple = fixedTupleTypeExpr(checker, type, position);
   if (tuple) return tuple;
   const opaqueTupleAlias = opaqueTupleAliasTypeName(type);
@@ -250,6 +281,81 @@ export function nominalObjectTypeName(checker: ts.TypeChecker, type: ts.Type): s
   const text = checker.typeToString(type);
   if (/[<>{}&|()[\],]/.test(text)) return undefined;
   return typeName;
+}
+
+export function nominalGenericConstructor(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+): JsTypeRef["generic"] {
+  if (!(type.flags & ts.TypeFlags.Object)) return undefined;
+  if (!((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference)) return undefined;
+  const symbol = type.aliasSymbol ?? type.getSymbol();
+  const declaration = symbol?.declarations?.find((decl) =>
+    ts.isClassDeclaration(decl) || ts.isInterfaceDeclaration(decl)
+  );
+  if (!declaration || !symbol) return undefined;
+  const arity = declaration.typeParameters?.length ?? 0;
+  if (!arity || isNumericTypedArrayName(symbol.getName())) return undefined;
+  const qualified = checker.getFullyQualifiedName(symbol);
+  const expression = qualified.replace(/^("(?:[^"\\]|\\.)+")\./, "import($1).")
+    .replace(/^global\./, "");
+  return { key: `generic-type:${expression}`, expression, arity };
+}
+
+function containsTypeParameter(type: ts.Type): boolean {
+  if (type.flags & ts.TypeFlags.TypeParameter) return true;
+  if (type.isUnionOrIntersection()) return type.types.some(containsTypeParameter);
+  if (type.flags & ts.TypeFlags.Conditional) {
+    const conditional = type as ts.ConditionalType;
+    return containsTypeParameter(conditional.checkType) ||
+      containsTypeParameter(conditional.extendsType);
+  }
+  return false;
+}
+
+/** Nominal identities below a generic result (for example an Effect's error). */
+export function nestedForeignTypeRefs(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  source: string,
+): JsTypeRef[] {
+  const refs: JsTypeRef[] = [];
+  const seen = new Set<ts.Type>();
+  const visit = (current: ts.Type) => {
+    if (seen.has(current)) return;
+    seen.add(current);
+    const nominal = nominalObjectTypeName(checker, current);
+    const mapped = typeExprFromTsType(checker, current);
+    if (nominal && mapped?.kind === "TName" && mapped.name === nominal) {
+      const generic = nominalGenericConstructor(checker, current);
+      const expression = checker.typeToString(
+        current,
+        undefined,
+        ts.TypeFormatFlags.UseFullyQualifiedType,
+      );
+      const expr = `__wm_nested_type_${refs.length}`;
+      refs.push({
+        key: generic?.key ?? `nominal-type:${expression}`,
+        source: `${source}\ndeclare const ${expr}: ${expression};`,
+        expr,
+        generic,
+        type: mapped,
+      });
+    }
+    if (
+      current.flags & ts.TypeFlags.Object &&
+      (current as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
+    ) {
+      checker.getTypeArguments(current as ts.TypeReference).forEach(visit);
+    }
+  };
+  if (
+    type.flags & ts.TypeFlags.Object &&
+    (type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
+  ) {
+    checker.getTypeArguments(type as ts.TypeReference).forEach(visit);
+  }
+  return refs;
 }
 
 function awaitedTypeArgument(

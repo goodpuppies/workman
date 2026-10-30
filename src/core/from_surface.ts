@@ -233,7 +233,7 @@ function coreDeclFromSurface(
         kind: "CoreType",
         exported: false,
         name: decl.name,
-        params: [],
+        params: Array.from({ length: decl.arity ?? 0 }, (_, index) => `a${index}`),
         ctors: [],
         node: decl.node,
       };

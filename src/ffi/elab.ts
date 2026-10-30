@@ -159,10 +159,11 @@ function collectForeignTypeNames(
 ) {
   switch (type.kind) {
     case "TName":
-      if (type.args.length === 0 && isReflectedForeignTypeName(type.name, localTypes)) {
+      if (isReflectedForeignTypeName(type.name, localTypes)) {
         const typeRef = ref ?? jsGlobalTypeRef(type.name);
         if (ref || !foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
+        if (typeRef.generic) foreignTypeRefs.set(typeRef.generic.key, typeRef);
       }
       for (const arg of type.args) collectForeignTypeNames(arg, foreignTypeRefs, localTypes);
       break;
@@ -190,6 +191,7 @@ const builtInTypeNames = new Set([
   "Number",
   "Option",
   "Result",
+  "Task",
   "String",
   "Void",
 ]);

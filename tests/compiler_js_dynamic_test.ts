@@ -616,7 +616,10 @@ Deno.test("Array.from monomorphizes a reflected iterable without a typed shim", 
     };
   `);
 
-  expectBinding(result.env, "iterator", { type: "IterableIterator", vars: 0 });
+  expectBinding(result.env, "iterator", {
+    type: "IterableIterator<FfiEntry, Js.Value, Js.Value>",
+    vars: 0,
+  });
   expectBinding(result.env, "entries", {
     type: "Result<Js.Array<FfiEntry>, Js.Error>",
     vars: 0,

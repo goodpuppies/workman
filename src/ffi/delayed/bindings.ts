@@ -11,13 +11,14 @@ export function generatedForeignDeclsForRefs(
   for (const [name, ref] of foreignTypeRefs) {
     if (!isForeignTypeDeclName(name)) continue;
     if (localTypes.has(name)) continue;
-    const key = `${name}:${ref.key}`;
+    const key = `${name}:${ref.generic?.key ?? ref.key}`;
     if (existing.has(key)) continue;
     existing.add(key);
     generated.push({
       kind: "ForeignTypeDecl",
       name,
-      foreignKey: ref.key,
+      foreignKey: ref.generic?.key ?? ref.key,
+      arity: ref.generic?.arity,
     });
   }
   return generated;

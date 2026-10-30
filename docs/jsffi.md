@@ -72,6 +72,20 @@ from js.module("./request_bridge.ts") import unsafe {
 let method = methodOf(Panic("request"));
 ```
 
+Reflected generic class and interface instances retain representable type arguments:
+TypeScript `Box<number>` and `Box<string>` become distinct Workman `Box<Number>` and
+`Box<String>` types. They remain foreign nominal types; their fields and methods are
+resolved through TypeScript at FFI operations. They do not become native Workman records.
+Module type-only imports also retain the constructor's arity, so a type imported as
+`Box` can appear as `Box<Number>` in a checked signature.
+
+Concrete generic calls use their inferred argument and callback types to ask
+TypeScript for an instantiated signature. Native tuple callback results can therefore
+flow through compatible foreign combinators without a cast. This does not add
+TypeScript subtyping, variance, or general union/conditional-type inference to Workman.
+Unrepresentable static arguments still need an explicit boundary. TypeScript's
+`never` is preserved as the uninhabited foreign marker `JsNever` in reflected types.
+
 Writing `req: Request` on an otherwise unresolved callback does not itself give the FFI resolver a
 `Request` receiver. The annotation checks the inferred callback type; it does not create foreign
 evidence.

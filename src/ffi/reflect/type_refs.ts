@@ -18,6 +18,9 @@ export type JsTypeRef = {
   source: string;
   expr: string;
   type?: TypeExpr;
+  // A nominal TS type constructor. Its concrete arguments live in HM, rather
+  // than being recovered from whichever producer last registered this ref.
+  generic?: { key: string; expression: string; arity: number };
   moduleNamespaceSpecifier?: string;
   // Constructor values can carry the canonical nominal type of their instances.
   // This avoids deriving identity from a reflection query's transient return key.
@@ -37,6 +40,12 @@ export type JsCallbackParamRefs = {
 export type JsCallArgHint =
   | { kind: "string"; value: string }
   | { kind: "number"; value: number }
-  | { kind: "function"; arity: number; paramTypes?: TypeExpr[]; resultType?: TypeExpr }
+  | {
+    kind: "function";
+    arity: number;
+    paramTypes?: TypeExpr[];
+    resultType?: TypeExpr;
+    resultRef?: JsTypeRef;
+  }
   | { kind: "ref"; ref: JsTypeRef; type?: TypeExpr }
   | { kind: "unknown" };

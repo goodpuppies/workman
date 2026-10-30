@@ -250,6 +250,15 @@ function rejectLegacyDeepDottedCall(
   );
 }
 
+function rememberGenericReceiver(
+  foreign: { ref: JsTypeRef; type: TypeExpr },
+  ffi: FfiElaboration,
+) {
+  if (!foreign.ref.generic || foreign.type.kind !== "TName") return;
+  ffi.foreignTypeRefs.set(foreign.type.name, foreign.ref);
+  ffi.foreignTypeRefs.set(foreign.ref.generic.key, foreign.ref);
+}
+
 function resolveDelayedFfiBindingCall(
   expr: Extract<Expr, { kind: "FfiBindingCall" }>,
   ffi: FfiElaboration,
@@ -260,7 +269,11 @@ function resolveDelayedFfiBindingCall(
 ): Expr {
   return materializeBindingCall(
     expr,
-    expr.args.map((arg) => resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)),
+    expr.args.map((arg) =>
+      arg.kind === "Lambda"
+        ? arg
+        : resolveDelayedExpr(arg, ffi, result, selected, options, valueRefs)
+    ),
     ffi,
     result,
     selected,
@@ -285,6 +298,7 @@ function resolveDelayedFfiGet(
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
   if (foreign) {
+    rememberGenericReceiver(foreign, ffi);
     const member = jsRefMember(foreign.ref, expr.path);
     if (member) {
       return materializeReceiverProperty(
@@ -459,6 +473,7 @@ function resolveDelayedFfiCall(
   const foreignTypeRefs = foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs);
   const foreign = receiverType ? foreignReceiver(receiverType, foreignTypeRefs) : undefined;
   if (foreign) {
+    rememberGenericReceiver(foreign, ffi);
     const callMember = reflectedFfiCallMember(foreign.ref, expr, result);
     const member = callMember ?? jsRefMember(foreign.ref, expr.path);
     if (member) {

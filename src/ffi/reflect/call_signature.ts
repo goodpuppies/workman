@@ -14,17 +14,8 @@ export function functionTypeFromCall(
 ): TypeExpr | undefined {
   const signatureParams = signature.getParameters();
   const declaration = signature.getDeclaration();
+  let invalidArguments = false;
   const params = call.arguments.map((arg, index) => {
-    if (args[index]?.kind === "function") {
-      return syntheticCallbackTypeFromArg(checker, arg, args[index]);
-    }
-    if (args[index]?.kind === "string") return name("String");
-    if (args[index]?.kind === "number") return name("Number");
-    if (args[index]?.kind === "ref") {
-      return args[index].type ??
-        typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??
-        name("Js.Value");
-    }
     const lastParameterIndex = signatureParams.length - 1;
     const hasRestParameter = lastParameterIndex >= 0 &&
       !!declaration?.parameters[lastParameterIndex]?.dotDotDotToken;
@@ -37,11 +28,28 @@ export function functionTypeFromCall(
     const reflectedParamType = symbolType
       ? suppliedParameterType(checker, symbolType, declaration, signatureParamIndex, index)
       : undefined;
+    if (
+      reflectedParamType &&
+      !checker.isTypeAssignableTo(checker.getTypeAtLocation(arg), reflectedParamType)
+    ) {
+      invalidArguments = true;
+    }
+    if (args[index]?.kind === "function") {
+      return syntheticCallbackTypeFromArg(checker, arg, args[index]);
+    }
+    if (args[index]?.kind === "string") return name("String");
+    if (args[index]?.kind === "number") return name("Number");
+    if (args[index]?.kind === "ref") {
+      return args[index].type ??
+        typeExprFromTsType(checker, checker.getTypeAtLocation(arg), "param") ??
+        name("Js.Value");
+    }
     const mapped = reflectedParamType
       ? typeExprFromTsType(checker, reflectedParamType, "param") ?? name("Js.Value")
       : name("Js.Value");
     return stripSuppliedOptionalParam(mapped, declaration, index);
   });
+  if (invalidArguments) return undefined;
   const result = typeExprFromTsType(checker, checker.getTypeAtLocation(call));
   if (!result) return undefined;
   return fn(params, result);
