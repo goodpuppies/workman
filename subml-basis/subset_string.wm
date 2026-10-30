@@ -84,3 +84,7 @@ let toNative = (bytes) => {
   };
   go(bytes, (0: I32), [])
 };
+
+// Checked byte-string helpers share the extraction/reconstruction boundaries.
+let size = (value) => { SubsetResult.map(fromNative(value), SubsetList.length) };
+let str = (c) => { toNative([c]) };

@@ -6,12 +6,16 @@ modules. Calls keep the defining library's data-first argument order.
 | Defining library | Unqualified functions |
 | --- | --- |
 | Shared Basis list (`basis/list.wm`) | `map`, `filter`, `forEach`, `foldLeft`, `foldRight`, `head`, `tail`, `length`, `isEmpty`, `reverse`, `concat` |
-| Shared Basis option (`basis/option.wm`) | `getOr`, `isSome` |
+| Shared Basis option (`basis/option.wm`) | `getOr`, `isSome`, `toResult` |
+| Shared Basis bool (`basis/bool.wm`) | `not` |
+| Shared Basis char (`basis/char.wm`) | `chr` (`fromCode`), `ord` (`toCode`) |
+| Shared Basis string (`basis/string.wm`) | `explode` (`fromNative`), `implode` (`toNative`), `size`, `str` |
 | WM General | `before`, `ignore`, `o` |
 | WM Real | `ceil`, `floor`, `round`, `trunc` |
+| WM String (`std/string.wm`) | `toList` (`String.toList`) |
 | WM Vector | `vector` (the `Vector.fromList` function) |
 
-The shared SubsetML Basis owns the portable list and option operations. The
+The shared SubsetML Basis owns the portable list, option, boolean, character and string operations. The
 remaining functions come from existing WM extensions. Each pervasive refers to
 the original function value, with the same polymorphism, error types and runtime
 identity; it is not a wrapper with another calling convention.
@@ -35,6 +39,44 @@ joining a list of strings remains available through an explicit import of
 `head` and `tail` return `Result` with the shared list module's `Error` type;
 empty input produces its `EmptyList` error. `getOr` takes an `Option` and an
 eager fallback value. `forEach` requires a callback returning `Void`.
+
+`toResult(option, error)` turns `Some(value)` into `Ok(value)` and `None` into
+`Err(error)`. The caller chooses the error type and value. `not` is a first-class
+`Bool -> Bool` function, so `map([true, false], not)` returns `[false, true]`.
+
+The character and string functions use the shared Basis's **byte** domain (codes
+0–255), with checked `Result` boundaries:
+
+| Function | Type | Failure |
+| --- | --- | --- |
+| `chr` | `I32 -> Result<Char, Chars.Error>` | `Chars.InvalidCode` outside 0–255 |
+| `ord` | `Char -> Result<I32, Chars.Error>` | `Chars.NonByteCharacter` for a foreign non-byte character |
+| `explode` | `String -> Result<List<Char>, Strings.Error>` | `Strings.NonByte(offset)` at the first non-byte element |
+| `implode` | `List<Char> -> Result<String, Strings.Error>` | `Strings.NonByte(offset)` at the first non-byte character |
+| `size` | `String -> Result<I32, Strings.Error>` | Same full byte validation as `explode` |
+| `str` | `Char -> Result<String, Strings.Error>` | `Strings.NonByte(0)` for a non-byte character |
+
+`Chars` and `Strings` denote explicit import aliases for `basis/char.wm` and
+`basis/string.wm`; their errors are not implicitly opened. Empty strings, NULs
+and high bytes round-trip exactly. `size` counts bytes after validation and takes
+linear time. These functions do not encode or decode Unicode text.
+
+```wm
+let bytes = explode("abc"); // Ok(['a', 'b', 'c'])
+let native = implode(['a', 'b', 'c']); // Ok("abc")
+let count = size("abc"); // Ok(3: I32)
+let initial = str('a'); // Ok("a")
+let code = ord('a'); // Ok(97: I32)
+let character = chr(97: I32); // Ok('a')
+```
+
+`toList: String -> List<String>` is a WM std convenience, also available as
+`String.toList`. It composes shared Basis byte extraction and single-character
+string construction: `toList("abc")` is `["a", "b", "c"]`, and `toList("")` is
+`[]`. NUL and high bytes are preserved. Any conversion error returns `[]` for the
+whole input, including non-byte text such as an emoji or a character above 255.
+Use `explode` when the caller needs the typed error. `std/string.wm` has no direct
+JS FFI; all host access stays behind the shared Basis adapters.
 
 The current rounding helpers return `Result<Number, Basis.Error>`, report NaN as
 `Err(Basis.Domain)`, and panic on infinity. `print` remains available separately

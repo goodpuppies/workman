@@ -1,0 +1,3 @@
+// Boolean operations as ordinary first-class library values.
+
+let not = (value) => { if (value) { false } else { true } };

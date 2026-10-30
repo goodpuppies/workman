@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_unicode.sml" import * as SubsetUnicode;
 from "./subset_list.sml" import * as SubsetList;
 from "./subset_result.sml" import * as SubsetResult;
@@ -11,6 +12,7 @@ from "./subset_utf8.sml" import * as SubsetUtf8;
 /* Lossless UTF-16 units, including lone surrogates. Strict codecs remain separate.
    Tree/Source constructors are implementation representations; use the checked builders. */
 
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_unicode.wm" import * as SubsetUnicode;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_result.wm" import * as SubsetResult;
@@ -18,6 +20,8 @@ from "./subset_text_host.wm" import * as SubsetTextHost;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_utf16.wm" import * as SubsetUtf16;
 from "./subset_utf8.wm" import * as SubsetUtf8;
+
+from "./subset_option_value.wm" import *;
 
 type Error = InvalidUnit<I32> | InvalidIndex | UnicodeError<SubsetUnicode.Error>;
 type Tree = Empty | Unit<I32> | Branch<I32, Tree, Tree>;

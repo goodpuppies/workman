@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_list.sml" import * as SubsetList;
 from "./subset_string.sml" import * as SubsetString;
@@ -8,11 +9,14 @@ from "./subset_utf8.sml" import * as SubsetUtf8;
 
 // Shared byte-string and canonical-token helpers; not the public WON API.
 
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_string.wm" import * as SubsetString;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_utf8.wm" import * as SubsetUtf8;
+
+from "./subset_option_value.wm" import *;
 
 let native = (xs) => { SubsetResult.getOr(SubsetString.toNative(xs), "") };
 

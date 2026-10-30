@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_list.sml" import * as SubsetList;
 from "./subset_string.sml" import * as SubsetString;
@@ -9,12 +10,15 @@ from "./subset_won_syntax.sml" import * as SubsetWonSyntax;
 
 // Strict WON grammar and cursor mechanics.
 
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_won_value.wm" import * as SubsetWonValue;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_won_syntax.wm" import * as SubsetWonSyntax;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_string.wm" import * as SubsetString;
+
+from "./subset_option_value.wm" import *;
 
 record Cursor = {input: List<Char>, offset: I32};
 let makeCursor = (input, offset) => { (.{ input = input, offset = offset }: Cursor) };

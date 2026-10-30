@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_char.sml" import * as SubsetChar;
 from "./subset_list.sml" import * as SubsetList;
@@ -7,10 +8,13 @@ from "./subset_order.sml" import * as SubsetOrder;
 
 // Byte sequences and immutable sequential readers; no native-string access.
 
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_order.wm" import * as SubsetOrder;
+
+from "./subset_option_value.wm" import *;
 
 type Error = InvalidIndex | OutOfBounds | NonByte<I32>;
 type Reader = | Reader<List<Char>, I32>;

@@ -1,11 +1,15 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_result.sml" import * as SubsetResult;
 */
 
 /* Custom Basis lists. No host library calls, references or exceptions.
    Adapted from the existing portable SmlList algorithms; callbacks take data first. */
 
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_result.wm" import * as SubsetResult;
+
+from "./subset_option_value.wm" import *;
 
 type Error = EmptyList | InvalidCount | InvalidIndex | OutOfBounds;
 

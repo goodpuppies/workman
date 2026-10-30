@@ -11,6 +11,11 @@ present here are transitional and will be removed later as callers migrate;
 their differing signatures or error types do not define a second portable Basis.
 Default pervasives should project the shared Basis where it provides the operation.
 
+`string.wm` adds `String.toList: String -> List<String>`, also projected as the
+pervasive `toList`. It composes shared Basis byte conversions and returns `[]` on any
+conversion error, including non-byte input. It uses no direct JS FFI.
+The checked portable byte conversion remains the Basis's `explode`.
+
 Use public library specifiers for shared dependencies: `"basis/list.wm"`,
 `"basis/string.wm"`, etc. The embedded library loader resolves the same `basis/`,
 `std/` and other built-in scopes as ordinary programs. Explicit `./` and `../`

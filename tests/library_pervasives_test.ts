@@ -159,3 +159,129 @@ Deno.test("explicit JS imports shadow pervasive values", async () => {
   const runtime = await import(`data:text/javascript;base64,${btoa(code)}`);
   assertEquals([runtime.named, runtime.namespace], [4, 3]);
 });
+
+Deno.test("string, character, boolean and option pervasives preserve checked boundaries", async () => {
+  const source = String.raw`
+    from "basis/string.wm" import * as Strings;
+    from "basis/char.wm" import * as Chars;
+    let checks = (
+      match(explode("")) { Ok(xs) => { xs == [] }, Err(_) => { false } },
+      match(explode("a\u0000\u00ff")) {
+        Ok(xs) => { xs == ['a', '\u0000', '\u00ff'] }, Err(_) => { false }
+      },
+      match(implode(['a', '\u0000', '\u00ff'])) {
+        Ok(s) => { s == "a\u0000\u00ff" }, Err(_) => { false }
+      },
+      match(implode([])) { Ok(s) => { s == "" }, Err(_) => { false } },
+      match(explode("a\u0100")) {
+        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+      },
+      match(explode("a\u{1f600}")) {
+        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+      },
+      match(implode(['a', '\u0100'])) {
+        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+      },
+      match(chr(0: I32)) { Ok(c) => { c == '\u0000' }, Err(_) => { false } },
+      match(chr(255: I32)) { Ok(c) => { c == '\u00ff' }, Err(_) => { false } },
+      match(chr(-1: I32)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
+      match(chr(256: I32)) { Err(Chars.InvalidCode) => { true }, _ => { false } },
+      match(ord('\u00ff')) { Ok(n) => { n == (255: I32) }, Err(_) => { false } },
+      match(ord('\u0100')) { Err(Chars.NonByteCharacter) => { true }, _ => { false } },
+      match(size("")) { Ok(n) => { n == (0: I32) }, Err(_) => { false } },
+      match(size("a\u0000\u00ff")) { Ok(n) => { n == (3: I32) }, Err(_) => { false } },
+      match(size("a\u0100")) {
+        Err(Strings.NonByte(offset)) => { offset == (1: I32) }, _ => { false }
+      },
+      match(str('\u0000')) { Ok(s) => { s == "\u0000" }, Err(_) => { false } },
+      match(str('\u00ff')) { Ok(s) => { s == "\u00ff" }, Err(_) => { false } },
+      match(str('\u0100')) {
+        Err(Strings.NonByte(offset)) => { offset == (0: I32) }, _ => { false }
+      },
+      not(false), !not(true), map([true, false], not) == [false, true],
+      match(toResult(Some(42), "missing")) { Ok(n) => { n == 42 }, Err(_) => { false } },
+      match(toResult(None, "missing")) { Err(e) => { e == "missing" }, Ok(_) => { false } },
+      match(toResult(None, 7)) { Err(e) => { e == 7 }, Ok(_) => { false } }
+    );
+  `;
+  await checkSource(source);
+  const files = new Map([["/test/main.wm", source]]);
+  await checkVirtual("/test/main.wm", files);
+  const code = await compileLibraryVirtual("/test/main.wm", files);
+  const runtime = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+  assertEquals(runtime.checks, Array(25).fill(true));
+  for (
+    const expression of [
+      "chr(1: Number)",
+      'ord("a")',
+      'implode(["a"])',
+      "size([])",
+      'str("a")',
+      "not(1)",
+    ]
+  ) {
+    await assertRejects(() => checkSource(`let value = ${expression};`));
+  }
+});
+
+Deno.test("every pervasive alias resolves to the defining library declaration", async () => {
+  const paths = [...new Set(LIBRARY_PERVASIVES.map((binding) => binding.modulePath))];
+  const imports = paths.map((path, i) => {
+    const specifier = path.replace("subml-basis/subset_", "basis/");
+    return `from "${specifier}" import * as Owner${i};`;
+  });
+  const aliases = LIBRARY_PERVASIVES.flatMap((binding) => [
+    `let bare_${binding.name} = ${binding.name};`,
+    `let qualified_${binding.name} = Owner${paths.indexOf(binding.modulePath)}.${
+      pervasiveSourceName(binding)
+    };`,
+  ]);
+  const source = [...imports, ...aliases].join("\n");
+  const { projectSnapshot: project } = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const main = [...project.interfaces.values()].find((item) => item.path === "/test/main.wm")!;
+  for (const binding of LIBRARY_PERVASIVES) {
+    const bareOffset = source.indexOf(`= ${binding.name};`) + 2;
+    const qualifiedOffset = source.indexOf(
+      `= Owner${paths.indexOf(binding.modulePath)}.${pervasiveSourceName(binding)};`,
+    ) + 2;
+    const bare = semanticDefinitionsAt(project, main.moduleId, bareOffset);
+    const qualified = semanticDefinitionsAt(
+      project,
+      main.moduleId,
+      qualifiedOffset + `Owner${paths.indexOf(binding.modulePath)}.`.length,
+    );
+    assertEquals(bare.length, 1, binding.name);
+    assertEquals(bare[0].path, binding.modulePath, binding.name);
+    assertEquals(bare, qualified, binding.name);
+  }
+});
+
+Deno.test("std String.toList projects portable byte conversions with an empty error fallback", async () => {
+  const source = String.raw`
+    let convert = toList;
+    let qualified = String.toList;
+    let checks = (
+      toList("") == [],
+      toList("abc") == ["a", "b", "c"],
+      toList("a\u0000\u00ff") == ["a", "\u0000", "\u00ff"],
+      toList("\u0100") == [],
+      toList("abc\u0100") == [],
+      toList("a\u{1f600}b") == [],
+      toList("e\u0301") == [],
+      String.toList("ab") == toList("ab")
+    );
+  `;
+  const checked = await checkSource(source);
+  expectBinding(checked.env, "convert", { type: "String -> List<String>", vars: 0 });
+  const code = await compileLibraryVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const runtime = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+  assertEquals(runtime.checks, Array(8).fill(true));
+  assertStrictEquals(runtime.convert, runtime.qualified);
+  await assertRejects(() => checkSource("let value = toList(42);"));
+});

@@ -1,6 +1,14 @@
 // @basis-type Result
+/* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
+*/
+
 /* Custom Basis Result. Core operations take data first; procedure adapters are curried.
    Errors are ordinary datatype values. */
+
+from "./subset_option_value.wm" import * as SubsetOptionValue;
+
+from "./subset_option_value.wm" import *;
 
 type Result<a, e> = Ok<a> | Err<e>;
 

@@ -1,0 +1,5 @@
+// @basis-type Option
+/* Optional values are an ordinary source datatype, independent of Result.
+   Kept separate from SubsetOption helpers to avoid a Result/Option import cycle. */
+
+type Option<a> = None | Some<a>;

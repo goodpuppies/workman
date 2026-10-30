@@ -50,6 +50,27 @@ print(match(parse("1")) { R.Ok(_) => { "parsed" }, R.Err(_) => { "failed" } });`
   );
 });
 
+Deno.test("the source-owned SubsetML option shares WM's Option type and constructor identities", async () => {
+  assertEquals(
+    await run({
+      "/test/main.wm": `
+from "basis/option_value.wm" import * as O;
+from "basis/option.wm" import * as Options;
+from "basis/result.wm" import * as Results;
+from "basis/list.wm" import * as Lists;
+let typed = (value: O.Option<Number>) => { Options.getOr(value, 0) };
+print(typed(Some(42)));
+print(match(Results.toOption(Ok("yes"))) { O.Some(s) => { s }, O.None => { "no" } });
+print(match(Results.toOption(Err("missing"))) { Some(_) => { false }, None => { true } });
+print(match(Lists.find([1, 2], (n) => { n == 2 })) { O.Some(n) => { n }, O.None => { 0 } });
+print(match(O.Some(3)) { Some(n) => { n }, None => { 0 } });
+print(match(None) { O.Some(_) => { false }, O.None => { true } });
+`,
+    }),
+    ["42", "yes", "true", "2", "3", "true"],
+  );
+});
+
 Deno.test("a @basis-type declaration must match the built-in", async () => {
   for (
     const declaration of [

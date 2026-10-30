@@ -21,14 +21,31 @@ export const LIBRARY_PERVASIVES: readonly Readonly<{
     "reverse",
     "concat",
   ].map((name) => Object.freeze({ modulePath: "subml-basis/subset_list.wm", name })),
-  ...["getOr", "isSome"].map((name) =>
+  ...["getOr", "isSome", "toResult"].map((name) =>
     Object.freeze({ modulePath: "subml-basis/subset_option.wm", name })
+  ),
+  Object.freeze({ modulePath: "subml-basis/subset_bool.wm", name: "not" }),
+  Object.freeze({ modulePath: "subml-basis/subset_char.wm", name: "chr", sourceName: "fromCode" }),
+  Object.freeze({ modulePath: "subml-basis/subset_char.wm", name: "ord", sourceName: "toCode" }),
+  Object.freeze({
+    modulePath: "subml-basis/subset_string.wm",
+    name: "explode",
+    sourceName: "fromNative",
+  }),
+  Object.freeze({
+    modulePath: "subml-basis/subset_string.wm",
+    name: "implode",
+    sourceName: "toNative",
+  }),
+  ...["size", "str"].map((name) =>
+    Object.freeze({ modulePath: "subml-basis/subset_string.wm", name })
   ),
   ...["before", "ignore", "o"].map((name) => Object.freeze({ modulePath: "std/general.wm", name })),
   ...["ceil", "floor", "round", "trunc"].map((name) =>
     Object.freeze({ modulePath: "std/real.wm", name })
   ),
   Object.freeze({ modulePath: "std/vector.wm", name: "vector", sourceName: "fromList" }),
+  Object.freeze({ modulePath: "std/string.wm", name: "toList" }),
 ]);
 
 export function pervasiveSourceName(binding: (typeof LIBRARY_PERVASIVES)[number]): string {

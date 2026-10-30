@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_option_value.sml" import * as SubsetOptionValue;
 from "./subset_won_value.sml" import * as SubsetWonValue;
 from "./subset_won_parser.sml" import * as SubsetWonParser;
 from "./subset_won_syntax.sml" import * as SubsetWonSyntax;
@@ -11,6 +12,7 @@ from "./subset_text.sml" import * as SubsetText;
 
 // Public portable WON encoding and decoding API.
 
+from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_won_value.wm" import * as SubsetWonValue;
 from "./subset_won_parser.wm" import * as SubsetWonParser;
 from "./subset_string.wm" import * as SubsetString;
@@ -19,6 +21,8 @@ from "./subset_won_syntax.wm" import * as SubsetWonSyntax;
 from "./subset_result.wm" import * as SubsetResult;
 from "./subset_natural.wm" import * as SubsetNatural;
 from "./subset_text.wm" import * as SubsetText;
+
+from "./subset_option_value.wm" import *;
 
 type Value = SubsetWonValue.Value;
 type Error = SubsetWonValue.Error;

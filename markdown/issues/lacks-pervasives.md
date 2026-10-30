@@ -1,8 +1,8 @@
 most sml impls define pervasives so you can just "map" without importing List
 
-## Implemented subset (2026-10-28)
+## Implemented subsets (updated 2026-10-29)
 
-The clear existing targets are now implemented through `src/library_pervasives.ts`:
+The initial batch (2026-10-28) projects these targets through `src/library_pervasives.ts`:
 
 - Shared Basis list: `map`, `filter`, `forEach`, `foldLeft`, `foldRight`, `head`,
   `tail`, `length`, `isEmpty`, `reverse`, `concat`.
@@ -10,7 +10,7 @@ The clear existing targets are now implemented through `src/library_pervasives.t
 - Existing std extras: `before`, `ignore`, `o`, `vector` (Vector.fromList),
   `ceil`, `floor`, `round`, `trunc`.
 
-All 21 project the original schemes and function values, without wrappers or
+These 21 project the original schemes and function values, without wrappers or
 changes to generated Basis sources. Inference and runtime use the same table;
 unused libraries are not pulled into emitted programs by these projections.
 The values remain shadowable, absent from the kernel profile, and excluded from
@@ -22,8 +22,23 @@ The older qualified std namespace APIs are unchanged. In particular, bare
 while `List.length` and `List.foldLeft` still expose their transitional std
 behavior. Their removal/caller migration remains separate work.
 
-String/character conversion spellings, `not`, `real`, order projections and the
-remaining coverage are still undecided or need library extensions.
+A second batch (2026-10-29) adds eight values: `toResult`, `not`, `chr`, `ord`,
+`explode`, `implode`, `size`, and `str`. This brings that batch to 29 library pervasives.
+`chr`/`ord` alias Basis `fromCode`/`toCode`; `explode`/`implode` alias Basis
+`fromNative`/`toNative`. `not` lives in the new shared `SubsetBool` module;
+`SubsetString.size` and `str` reuse the existing checked byte boundaries.
+`size` returns `Result<I32, Strings.Error>`, validating the entire native string;
+`str` returns `Result<String, Strings.Error>` and rejects non-byte characters.
+These are byte APIs, not a Unicode `String -> List<String>` operation.
+`toResult` preserves caller-selected errors. `real`, order projections,
+`substring` and overloaded arithmetic names remain deferred.
+
+A further accepted WM addition (2026-10-29) is std `String.toList`, projected as
+`toList: String -> List<String>` (30 library pervasives total). It composes shared
+Basis byte extraction and single-character string construction, returning an
+empty list on any conversion error (including non-byte input). Std introduces no
+direct JS FFI. Checked byte `explode` remains available when errors matter.
+
 User-facing behavior is documented in `docs/pervasives.md`.
 
 ## Source of truth (updated 2026-10-28)
@@ -252,7 +267,7 @@ type from its implementation status and semantic differences.
 | No pervasive; `List.filter: (T -> bool) -> T list -> T list` | `filter: (List<T>, T -> Bool) -> List<T>` | Project Basis `list.filter`; accepted addition | Add an unqualified name beyond the SML set; data first and predicate last; preserve retained-element order |
 | `getOpt: (T option * T) -> T` | `getOr: (Option<T>, T) -> T` | Project Basis `option.getOr` | Use the Basis name; option before eager fallback, as in SML |
 | `isSome: T option -> bool` | `isSome: Option<T> -> Bool` | Project Basis `option.isSome` | Type spelling changes; same presence predicate |
-| `valOf: T option -> T` | No direct pervasive selected; `toResult: (Option<T>, E) -> Result<T, E>` is the Basis alternative | Basis `option.toResult`; pervasive selection pending | Caller chooses the error value; no shared `Basis.Option` error and no exception. Do not preserve std `valOf` just to fill the SML row |
+| `valOf: T option -> T` | `toResult: (Option<T>, E) -> Result<T, E>` | Implemented from Basis `option.toResult` | Caller chooses the error value; no shared `Basis.Option` error and no exception. Do not preserve std `valOf` just to fill the SML row |
 | `before: (T * unit) -> T` | `before: (T, Void) -> T` | Implemented from std General extra | No shared Basis counterpart; ordinary call replaces SML infix use. Uses the existing extra without adding a second portable Basis module |
 | `ignore: T -> unit` | `ignore: T -> Void` | Implemented from std General extra | Discard a value and return Void; no shared Basis counterpart is duplicated |
 | `o: ((U -> A) * (T -> U)) -> T -> A` | `o: (U -> A, T -> U) -> (T -> A)` | Implemented from std General extra | Same composition direction; ordinary function call. No shared Basis counterpart is duplicated |
@@ -260,19 +275,19 @@ type from its implementation status and semantic differences.
 | `exnMessage: exn -> string` | Omitted | No target | Same omission; `Basis.Error` is an ordinary closed datatype, not `exn` |
 | `print: string -> unit` | `print: T -> Void` | Keep existing pervasive | Generalize input to printable values; WM formats through `__wm_show` and current JS output uses `console.log`, adding a newline. SML writes the supplied string without adding one |
 | `vector: T list -> T vector` | `vector: List<T> -> Vector.Vector<T>` | Implemented from std `Vector.fromList` | Same list-to-immutable-vector construction; qualified WM result type. Does not introduce a bare type alias or mutable array operations |
-| `not: bool -> bool` | `not: Bool -> Bool` | Pending ordinary library target | Same boolean negation; unary `!value` exists but `std/bool.wm`/`Bool.not` does not yet provide a value to project |
+| `not: bool -> bool` | `not: Bool -> Bool` | Implemented from Basis `bool.not` | Same boolean negation as unary `!`; first-class function, no host primitive |
 | `ceil: real -> int` | `ceil: Number -> Result<Number, Basis.Error>` | Implemented from std `Real.ceil` extra | Round upward; return Number inside Ok, NaN as Err(Basis.Domain), infinity as Overflow panic. This existing extra is not the shared Basis's integer-conversion contract |
 | `floor: real -> int` | `floor: Number -> Result<Number, Basis.Error>` | Implemented from std `Real.floor` extra | Round downward; same numeric-result and failure adaptation as std ceil. Other std numeric helpers are not automatically made pervasive |
 | `round: real -> int` | `round: Number -> Result<Number, Basis.Error>` | Implemented from std `Real.round` extra | Round to nearest, ties to even as in SML; same numeric-result and failure adaptation as std ceil |
 | `trunc: real -> int` | `trunc: Number -> Result<Number, Basis.Error>` | Implemented from std `Real.trunc` extra | Round toward zero; same numeric-result and failure adaptation as std ceil |
 | `real: int -> real` | Existing explicit conversion `I32.toNumber: I32 -> Number`; no bare name selected | Pending pervasive conversion selection | Shared Basis counts are I32, so integer-to-Number conversion is meaningful. Prefer the canonical integer conversion as it moves into the shared Basis; do not add an identity helper based on legacy std Number counts |
-| `chr: int -> char` | Basis `fromCode: I32 -> Result<Char, Char.Error>` | `basis/char.wm`; pervasive name/selection pending | Byte-character domain 0–255; invalid code returns `Err(Char.InvalidCode)`. Use the existing typed error and I32 argument, not Number plus shared Basis.Error |
-| `ord: char -> int` | Basis `toCode: Char -> Result<I32, Char.Error>` | `basis/char.wm`; pervasive name/selection pending | Can reject a non-byte host character with `NonByteCharacter`; unlike SML ord this boundary is fallible. Existing implementation, not a missing API |
+| `chr: int -> char` | Basis `fromCode: I32 -> Result<Char, Char.Error>` | Implemented alias from `basis/char.wm` | Byte-character domain 0–255; invalid code returns `Err(Char.InvalidCode)`. Use the existing typed error and I32 argument, not Number plus shared Basis.Error |
+| `ord: char -> int` | Basis `toCode: Char -> Result<I32, Char.Error>` | Implemented alias from `basis/char.wm` | Can reject a non-byte host character with `NonByteCharacter`; unlike SML ord this boundary is fallible. Existing implementation, not a missing API |
 | `concat: string list -> string` | `concat: List<List<T>> -> List<T>` | Project Basis `list.concat`; accepted meaning change | Flatten one list level instead of joining strings. The existing Basis `string.concat: List<String> -> String` stays qualified or explicitly imported; `++` joins two string expressions |
-| `explode: string -> char list` | Basis `fromNative: String -> Result<List<Char>, StringApi.Error>` | `basis/string.wm`; pervasive name/selection pending | Existing byte extraction validates host string codes; failure reports `NonByte(offset)` with I32 offset. `StringApi` is an import alias, not the primitive String type. Not a total arbitrary-Unicode explode |
-| `implode: char list -> string` | Basis `toNative: List<Char> -> Result<String, StringApi.Error>` | `basis/string.wm`; pervasive name/selection pending | Existing reconstruction validates byte characters and reports `NonByte(offset)`; preserve that boundary rather than adding a total duplicate |
-| `size: string -> int` | No bare signature selected | Pending selection of the intended byte/text/source operation | Shared Basis has distinct native strings, byte lists and UTF-16 source views. Choose the corresponding existing length API and unit; do not assume a generic Number-returning string helper |
-| `str: char -> string` | No bare signature selected | Pending operation/selection | One-character native-string construction is not polymorphic `Text.of`; first assess shared text primitives instead of adding a second string API |
+| `explode: string -> char list` | Basis `fromNative: String -> Result<List<Char>, StringApi.Error>` | Implemented alias from `basis/string.wm` | Existing byte extraction validates host string codes; failure reports `NonByte(offset)` with I32 offset. `StringApi` is an import alias, not the primitive String type. Not a total arbitrary-Unicode explode |
+| `implode: char list -> string` | Basis `toNative: List<Char> -> Result<String, StringApi.Error>` | Implemented alias from `basis/string.wm` | Existing reconstruction validates byte characters and reports `NonByte(offset)`; preserve that boundary rather than adding a total duplicate |
+| `size: string -> int` | `size: String -> Result<I32, Strings.Error>` | Implemented from Basis `string.size` | Validate all native elements as bytes, then count them in I32; linear time; `NonByte(offset)` on invalid input |
+| `str: char -> string` | `str: Char -> Result<String, Strings.Error>` | Implemented from Basis `string.str` | Reuse checked `toNative [c]`; `NonByte(0)` for a non-byte character |
 | `substring: (string * int * int) -> string` | No bare signature selected | Pending byte/text slicing operation | Shared Basis count/index APIs use I32 and typed errors. Choose the intended representation and existing slicing operation first; do not impose std Number counts or JS permissive substring behavior |
 
 ### Fold consistency follow-up
@@ -368,8 +383,8 @@ catchable `exn` values. Do not add bare SML exception names to mimic that namesp
 6. WM already supplies selected standard structures as namespaces. The SML Basis
    permits implementation-defined structure availability; this choice is
    independent of which names are unqualified.
-7. Unselected string/character projections, missing helpers such as `not`,
-   conversion aliases, order projections and overloaded-name policy remain
+7. String slicing, numeric conversion aliases, order projections and
+   overloaded-name policy remain
    explicit incomplete work. Distinguish existing shared Basis operations from
    genuinely missing implementations. An
    implementation of the currently available subset must not be described as

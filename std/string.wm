@@ -1,0 +1,11 @@
+from "basis/string.wm" import * as Strings;
+from "basis/list.wm" import * as Lists;
+from "basis/result.wm" import * as Results;
+
+// Portable byte-string convenience. Any conversion error returns an empty list.
+let toList = (value: String) => {
+  Results.getOr(
+    Results.andThen(Strings.fromNative(value), (chars) => { Lists.traverse(chars, Strings.str) }),
+    []
+  )
+};

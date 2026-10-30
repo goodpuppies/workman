@@ -1,4 +1,5 @@
 /* @subsetml
+from "./subset_bool.sml" import * as SubsetBool;
 from "./subset_result.sml" import * as SubsetResult;
 from "./subset_order.sml" import * as SubsetOrder;
 from "./subset_text_host.sml" import * as SubsetTextHost;
@@ -18,6 +19,7 @@ from "./subset_text_host.sml" import * as SubsetTextHost;
 
 from "./subset_text_host.wm" import * as SubsetTextHost;
 from "./subset_result.wm" import * as SubsetResult;
+from "./subset_bool.wm" import * as SubsetBool;
 from "./subset_order.wm" import * as SubsetOrder;
 
 type Error = NonAscii | NonByteCharacter | InvalidCode;
@@ -740,7 +742,9 @@ let isHexDigit = (c) => {
     member(c, ['a', 'b', 'c', 'd', 'e', 'f', 'A', 'B', 'C', 'D', 'E', 'F'])
   }
 };
-let isPunct = (c) => { if (isGraph(c)) { !isAlphaNum(c) } else { false } };
+let isPunct = (c) => {
+  if (isGraph(c)) { SubsetBool.not(isAlphaNum(c)) } else { false }
+};
 
 // Only ASCII has a source-defined order here. Other characters are rejected.
 let compareAscii = (left, right) => {

@@ -50,7 +50,7 @@ gives the initial static basis T0 = `bool`, `int`, `real`, `string`, `char`, `wo
 | `Bool`, `I32` (int), `Number` (real), `String`, `Char`, `List`, `Void` (unit) | T0 | Keep |
 | `ref`, `exn` | T0 | Omitted by design (no mutation, no exceptions) |
 | `word` | T0 | Open: absent today; `Word32.Word` or a library type |
-| `Option` | Not in T0 (SML Basis) | SubsetML uses SML's `option`, translated to `Option`; decide whether it stays compiler-owned |
+| `Option` | Not in T0 (SML Basis) | SubsetML declares `SubsetOptionValue.option` in source; WM adopts it with `@basis-type Option` |
 | `Result` | Not in T0 | `SubsetResult` declaration (above) |
 | `Task` | Not in T0 | WM library or host type; no SubsetML counterpart yet |
 | `Word8`–`Word64`, `Word8Vector`, slices, `Float32`/`Float64`, `Vector` | Not in T0 | Host-represented primitive types, declared through manual `import type` (BD8, C1) rather than the manifest |
@@ -73,6 +73,21 @@ pervasive without an import.
 The manifest still owns the identity, so the FFI and the kernel profile are unchanged. Removing
 `Result` from the manifest is still possible later; the directive would then mark the declaration
 the manifest entry is read from.
+
+## Source-owned Option (2026-10-29)
+
+SubsetML's portable initial environment no longer supplies `option`, `NONE` or
+`SOME`. `SubsetOptionValue` declares the datatype in source; `SubsetOption` adds
+helpers. Keeping the datatype separate avoids a cycle between `Result.toOption`
+and `Option.toResult`. Compiler source imports the same datatype for its internal
+optional values. Compatibility checking still offers SML's separate initial
+option for external SML fixtures.
+
+The sync script marks `subml-basis/subset_option_value.wm` with `@basis-type Option`,
+matching the Result adoption above. It projects WM's existing type/constructor
+identities rather than introducing incompatible options. WM's manifest still owns
+those identities for FFI and kernel integration; removing that WM mechanism is
+separate from removing option as a SubsetML runtime requirement.
 
 ## Layout (2026-10-23)
 

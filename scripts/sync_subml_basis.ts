@@ -44,6 +44,14 @@ try {
         new TextDecoder().decode(files.get("subset_result.wm")!),
     ),
   );
+  // The source-owned option datatype shares WM's existing FFI/constructor identity.
+  files.set(
+    "subset_option_value.wm",
+    new TextEncoder().encode(
+      "// @basis-type Option\n" +
+        new TextDecoder().decode(files.get("subset_option_value.wm")!),
+    ),
+  );
   // The host primitives' WM side is SubsetML's hand-written adapters, not a translation. A
   // library module's JS lives in js/, so the host adapter's import is pointed there.
   files.set("subset_text_host.wm", await Deno.readFile(join(subsetml, "lib/subset_text_host.wm")));
