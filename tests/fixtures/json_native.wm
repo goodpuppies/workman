@@ -1,0 +1,28 @@
+from "basis/option_value.wm" import * as O;
+from "../../std/json.wm" import * as J;
+from "../../std/json_value.wm" import * as V;
+from "basis/text.wm" import * as T;
+from "basis/result.wm" import * as R;
+from "basis/list.wm" import * as L;
+
+let fails = (result) => { match(result) { R.Err(_) => { true }, R.Ok(_) => { false } } };
+let same = (result, expected) => { match(result) { R.Ok(value) => { value == expected }, R.Err(_) => { false } } };
+let document = J.read("{\"releases\":[{\"name\":\"\\ud83e\\udd8a\",\"n\":9007199254740993}],\"null\":null}");
+let first = J.at(J.get(document, "releases"), (0: I32));
+let fox = T.str((129418: I32));
+let syntax = L.all(["", "01", "1e+", "[1,]", "{\"a\":1,}", "[1 2]", "true false", "\"\\ud800\"", "\"\\uDC00\""], (source) => { fails(J.read(source)) });
+let checks = syntax
+  && same(J.number(J.get(first, "n")), "9007199254740993")
+  && same(J.integer(J.read("-2147483648")), (-2147483648: I32))
+  && fails(J.integer(J.read("2147483648")))
+  && same(J.text(J.get(first, "name")), R.getOr(fox, "FAILED"))
+  && same(R.andThen(J.decode("{\"x\":1,\"x\":2}"), J.encode), "{\"x\":1,\"x\":2}")
+  && same(J.integer(J.get(J.read("{\"x\":1,\"x\":2}"), "x")), (2: I32))
+  && same(J.keys(J.read("{\"a\":1,\"b\":2,\"a\":3}")), ["a", "b"])
+  && same(J.optional(J.get(document, "missing")), O.None)
+  && same(J.isNull(J.get(document, "null")), true)
+  && fails(J.decodeBytes(['\u0080']))
+  && fails(J.encode(V.Number("1,2")))
+  && fails(J.encode(V.Text(['\u0080'])))
+  && fails(J.decodeWithLimit("[[]]", (1: I32)))
+  && same(J.decodeWithLimit("[]", (1: I32)), V.Array([]));

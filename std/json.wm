@@ -1,0 +1,379 @@
+// Portable JSON: the WM source is maintained here and checked through SubsetML.
+
+from "basis/option_value.wm" import * as SubsetOptionValue;
+from "./json_value.wm" import * as JsonValue;
+from "basis/unicode.wm" import * as SubsetUnicode;
+from "./json_parser.wm" import * as JsonParser;
+from "basis/result.wm" import * as SubsetResult;
+from "basis/text.wm" import * as SubsetText;
+from "basis/string.wm" import * as SubsetString;
+from "basis/list.wm" import * as SubsetList;
+from "basis/utf8.wm" import * as SubsetUtf8;
+from "basis/char.wm" import * as SubsetChar;
+from "basis/int.wm" import * as SubsetInt;
+from "basis/natural.wm" import * as SubsetNatural;
+
+from "basis/option_value.wm" import *;
+type Value = JsonValue.Value;
+type Node = JsonValue.Node;
+type Error = JsonValue.Error;
+type Problem = JsonValue.Problem;
+let unicodeError = match {
+  SubsetUnicode.Error(reason, offset) => { JsonValue.error(offset, "invalid Unicode text") }
+};
+let decodeBytes = JsonParser.decode;
+let decodeWithLimit = (source, limit) => {
+  SubsetResult.andThen(
+    SubsetResult.mapErr(SubsetText.toUtf8(source), unicodeError),
+    (bytes) => { JsonParser.decodeWithLimit(bytes, limit) }
+  )
+};
+let decode = (source) => { decodeWithLimit(source, (128: I32)) };
+let root = (value) => { SubsetResult.Ok(JsonValue.node([], value)) };
+let read = (source) => {
+  SubsetResult.map(
+    SubsetResult.mapErr(decode(source), JsonValue.Malformed),
+    (value) => { JsonValue.node([], value) }
+  )
+};
+let readBytes = (bytes) => {
+  SubsetResult.map(
+    SubsetResult.mapErr(decodeBytes(bytes), JsonValue.Malformed),
+    (value) => { JsonValue.node([], value) }
+  )
+};
+
+let hexDigit = (code) => {
+  SubsetResult.getOr(
+    SubsetString.str(SubsetResult.getOr(
+      SubsetList.at(
+        ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'],
+        code
+      ),
+      '0'
+    )),
+    ""
+  )
+};
+let quote = (bytes) => {
+  match(SubsetUtf8.decode(bytes)) {
+    SubsetResult.Err(error) => {
+      SubsetResult.Err(JsonValue.error((0: I32), "invalid UTF-8 string"))
+    },
+    SubsetResult.Ok(scalars) => {
+      let escape = (c) => {
+        match(c) {
+          '"' => { "\\\"" },
+          '\\' => { "\\\\" },
+          '\u0008' => { "\\b" },
+          '\u000c' => { "\\f" },
+          '\n' => { "\\n" },
+          '\r' => { "\\r" },
+          '\t' => { "\\t" },
+          _ => {
+            let code = SubsetResult.getOr(SubsetChar.toCode(c), (0: I32));
+            if (code < (32: I32)) {
+              "\\u00" ++ hexDigit(I32.div(code, (16: I32))) ++ hexDigit(I32.mod(code, (16: I32)))
+            } else { SubsetResult.getOr(SubsetString.str(c), "") }
+          }
+        }
+      };
+      SubsetResult.Ok("\"" ++ SubsetString.concat(SubsetList.map(bytes, escape)) ++ "\"")
+    }
+  }
+};
+
+let rec render = (value, depth, limit) => {
+  let fail = (message) => { SubsetResult.Err(JsonValue.error((0: I32), message)) };
+  match(value) {
+    JsonValue.Null => { SubsetResult.Ok("null") },
+    JsonValue.Boolean(true) => { SubsetResult.Ok("true") },
+    JsonValue.Boolean(false) => { SubsetResult.Ok("false") },
+    JsonValue.Number(spelling) => {
+      match(SubsetString.fromNative(spelling)) {
+        SubsetResult.Err(error) => { fail("invalid number spelling") },
+        SubsetResult.Ok(bytes) => {
+          match(JsonParser.decode(bytes)) {
+            SubsetResult.Ok(JsonValue.Number(parsed)) => {
+              if (parsed == spelling) { SubsetResult.Ok(spelling) } else { fail("invalid number spelling") }
+            },
+            _ => { fail("invalid number spelling") }
+          }
+        }
+      }
+    },
+    JsonValue.Text(bytes) => { quote(bytes) },
+    JsonValue.Array(values) => {
+      if (depth >= limit) { fail("maximum nesting depth exceeded") } else {
+        SubsetResult.map(
+          SubsetList.traverse(values, (item) => { render(item, depth + (1: I32), limit) }),
+          (pieces) => { "[" ++ SubsetString.concatWith(pieces, ",") ++ "]" }
+        )
+      }
+    },
+    JsonValue.Object(fields) => {
+      if (depth >= limit) { fail("maximum nesting depth exceeded") } else {
+        SubsetResult.map(
+          SubsetList.traverse(
+            fields,
+            (key, item) => {
+              SubsetResult.andThen(
+                quote(key),
+                (name) => {
+                  SubsetResult.map(render(item, depth + (1: I32), limit), (text) => { name ++ ":" ++ text })
+                }
+              )
+            }
+          ),
+          (pieces) => { "{" ++ SubsetString.concatWith(pieces, ",") ++ "}" }
+        )
+      }
+    }
+  }
+};
+let encodeBytes = (value) => {
+  SubsetResult.andThen(
+    render(value, (0: I32), (128: I32)),
+    (source) => {
+      SubsetResult.mapErr(
+        SubsetString.fromNative(source),
+        (error) => { JsonValue.error((0: I32), "invalid output byte") }
+      )
+    }
+  )
+};
+let encode = (value) => {
+  SubsetResult.andThen(
+    encodeBytes(value),
+    (bytes) => {
+      SubsetResult.mapErr(SubsetText.fromUtf8(bytes), unicodeError)
+    }
+  )
+};
+
+let mismatch = (node: Node, kind) => { SubsetResult.Err(JsonValue.Mismatch(node.steps, kind)) };
+// Field names are host text, checked before comparing UTF-8 keys. Last duplicate wins.
+let get = (found, key) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Object(fields) => {
+          match(SubsetText.toUtf8(key)) {
+            SubsetResult.Err(error) => { mismatch(node, "valid Unicode field name") },
+            SubsetResult.Ok(bytes) => {
+              let steps = [JsonValue.Key(bytes), ..node.steps];
+              match(SubsetList.find(SubsetList.reverse(fields), (name, item) => { name == bytes })) {
+                None => { SubsetResult.Err(JsonValue.Missing(steps)) },
+                Some(name, item) => { SubsetResult.Ok(JsonValue.node(steps, item)) }
+              }
+            }
+          }
+        },
+        _ => { mismatch(node, "object") }
+      }
+    }
+  )
+};
+let at = (found, index) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Array(items) => {
+          let steps = [JsonValue.Index(index), ..node.steps];
+          match(SubsetList.at(items, index)) {
+            SubsetResult.Err(error) => { SubsetResult.Err(JsonValue.Missing(steps)) },
+            SubsetResult.Ok(item) => { SubsetResult.Ok(JsonValue.node(steps, item)) }
+          }
+        },
+        _ => { mismatch(node, "array") }
+      }
+    }
+  )
+};
+let index = at;
+let nodes = (found) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Array(values) => {
+          let rec go = (rest, index, acc) => {
+            match(rest) {
+              [] => { SubsetList.reverse(acc) },
+              [item, ..tail] => {
+                go(
+                  tail,
+                  index + (1: I32),
+                  [JsonValue.node([JsonValue.Index(index), ..node.steps], item), ..acc]
+                )
+              }
+            }
+          };
+          SubsetResult.Ok(go(values, (0: I32), []))
+        },
+        _ => { mismatch(node, "array") }
+      }
+    }
+  )
+};
+let items = (found, decode) => {
+  SubsetResult.andThen(
+    nodes(found),
+    (values) => {
+      SubsetList.traverse(values, (node) => { decode(SubsetResult.Ok(node)) })
+    }
+  )
+};
+let entries = (found) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Object(fields) => {
+          SubsetList.traverse(
+            fields,
+            (name, item) => {
+              SubsetResult.map(
+                SubsetResult.mapErr(
+                  SubsetText.fromUtf8(name),
+                  (error) => { JsonValue.Mismatch(node.steps, "valid Unicode field name") }
+                ),
+                (key) => {
+                  (key, JsonValue.node([JsonValue.Key(name), ..node.steps], item))
+                }
+              )
+            }
+          )
+        },
+        _ => { mismatch(node, "object") }
+      }
+    }
+  )
+};
+let fields = entries;
+let keys = (found) => {
+  SubsetResult.map(
+    entries(found),
+    (fields) => {
+      SubsetList.reverse(SubsetList.foldLeft(
+        fields,
+        [],
+        ((name, item), seen) => {
+          if (SubsetList.exists(seen, (key) => { key == name })) { seen } else { [name, ..seen] }
+        }
+      ))
+    }
+  )
+};
+let text = (found) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Text(bytes) => {
+          SubsetResult.mapErr(
+            SubsetText.fromUtf8(bytes),
+            (error) => { JsonValue.Mismatch(node.steps, "valid Unicode text") }
+          )
+        },
+        _ => { mismatch(node, "text") }
+      }
+    }
+  )
+};
+let number = (found) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Number(spelling) => { SubsetResult.Ok(spelling) },
+        _ => { mismatch(node, "number") }
+      }
+    }
+  )
+};
+let integer = (found) => {
+  SubsetResult.andThen(found, (node: Node) => {
+    SubsetResult.andThen(number(SubsetResult.Ok(node)), (spelling) => {
+      match(decode(spelling)) {
+        SubsetResult.Ok(JsonValue.Number(parsed)) => {
+          if (parsed == spelling) {
+            SubsetResult.mapErr(SubsetInt.parseDecimal(spelling), (error) => {
+              JsonValue.Mismatch(node.steps, "I32 integer")
+            })
+          } else { mismatch(node, "I32 integer") }
+        },
+        _ => { mismatch(node, "I32 integer") }
+      }
+    })
+  })
+};
+let boolean = (found) => {
+  SubsetResult.andThen(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Boolean(flag) => { SubsetResult.Ok(flag) },
+        _ => { mismatch(node, "boolean") }
+      }
+    }
+  )
+};
+let isNull = (found) => {
+  SubsetResult.map(
+    found,
+    (node: Node) => {
+      match(node.data) {
+        JsonValue.Null => { true },
+        _ => { false }
+      }
+    }
+  )
+};
+let value = (found) => { SubsetResult.map(found, (node: Node) => { node.data }) };
+let optional = (found) => {
+  match(found) {
+    SubsetResult.Ok(node) => { SubsetResult.Ok(Some(node)) },
+    SubsetResult.Err(JsonValue.Missing(steps)) => { SubsetResult.Ok(None) },
+    SubsetResult.Err(problem) => { SubsetResult.Err(problem) }
+  }
+};
+let pathText = (steps) => {
+  "$" ++ SubsetString.concat(SubsetList.map(
+    SubsetList.reverse(steps),
+    (step) => {
+      match(step) {
+        JsonValue.Key(bytes) => {
+          let quoted = match(quote(bytes)) {
+            SubsetResult.Err(error) => { "?" },
+            SubsetResult.Ok(encoded) => {
+              match(SubsetString.fromNative(encoded)) {
+                SubsetResult.Err(error) => { "?" },
+                SubsetResult.Ok(raw) => { SubsetResult.getOr(SubsetText.fromUtf8(raw), "?") }
+              }
+            }
+          };
+          "[" ++ quoted ++ "]"
+        },
+        JsonValue.Index(index) => {
+          let spelling = if (index == (-2147483648: I32)) { "-2147483648" } else {
+            if (index < (0: I32)) { "-" ++ SubsetResult.getOr(SubsetNatural.toString((0: I32) - index), "?") }
+            else { SubsetResult.getOr(SubsetNatural.toString(index), "?") }
+          };
+          "[" ++ spelling ++ "]"
+        }
+      }
+    }
+  ))
+};
+let problemText = (problem) => {
+  match(problem) {
+    JsonValue.Malformed(error) => {
+      "byte " ++ SubsetResult.getOr(SubsetNatural.toString(error.byteOffset), "?") ++ ": " ++ error.message
+    },
+    JsonValue.Missing(steps) => { pathText(steps) ++ ": missing" },
+    JsonValue.Mismatch(steps, kind) => { pathText(steps) ++ ": expected " ++ kind }
+  }
+};

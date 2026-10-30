@@ -1,0 +1,293 @@
+from "basis/option_value.wm" import * as SubsetOptionValue;
+from "basis/result.wm" import * as SubsetResult;
+from "./json_value.wm" import * as JsonValue;
+from "basis/string.wm" import * as SubsetString;
+from "basis/list.wm" import * as SubsetList;
+from "basis/char.wm" import * as SubsetChar;
+from "basis/utf8.wm" import * as SubsetUtf8;
+from "basis/unicode.wm" import * as SubsetUnicode;
+
+from "basis/option_value.wm" import *;
+record Cursor = {jsonInput: List<Char>, jsonOffset: I32};
+let cursor = (input, offset) => { (.{ jsonInput = input, jsonOffset = offset }: Cursor) };
+let fail = (cur: Cursor, message) => { SubsetResult.Err(JsonValue.error(cur.jsonOffset, message)) };
+let advance = (cur: Cursor) => {
+  match(cur.jsonInput) {
+    [] => { cur },
+    [c, ..rest] => { cursor(rest, cur.jsonOffset + (1: I32)) }
+  }
+};
+let peek = (cur: Cursor, wanted) => {
+  match(cur.jsonInput) {
+    [] => { false },
+    [c, ..rest] => { c == wanted }
+  }
+};
+let rec skip = (cur: Cursor) => {
+  match(cur.jsonInput) {
+    [c, ..rest] => {
+      if (if (if (if (c == ' ') { true } else { c == '\t' }) { true } else { c == '\r' }) { true } else { c == '\n' }) { skip(advance(cur)) } else { cur }
+    },
+    [] => { cur }
+  }
+};
+let expect = (cur, wanted) => {
+  if (peek(cur, wanted)) { SubsetResult.Ok(advance(cur)) } else { fail(cur, "unexpected character") }
+};
+let native = (bytes) => { SubsetResult.getOr(SubsetString.toNative(bytes), "") };
+let via = SubsetResult.via;
+let rec take = (cur: Cursor, predicate, acc) => {
+  match(cur.jsonInput) {
+    [c, ..rest] => {
+      if (predicate(c)) { take(advance(cur), predicate, [c, ..acc]) } else { (SubsetList.reverse(acc), cur) }
+    },
+    [] => { (SubsetList.reverse(acc), cur) }
+  }
+};
+let hex = (c) => {
+  match(SubsetChar.toCode(c)) {
+    SubsetResult.Err(error) => { None },
+    SubsetResult.Ok(code) => {
+      if (if (code >= (48: I32)) { code <= (57: I32) } else { false }) { Some(code - (48: I32)) } else {
+        if (if (code >= (65: I32)) { code <= (70: I32) } else { false }) { Some(code - (55: I32)) } else {
+          if (if (code >= (97: I32)) { code <= (102: I32) } else { false }) { Some(code - (87: I32)) } else { None }
+        }
+      }
+    }
+  }
+};
+let hex4 = (input) => {
+  let rec go = (cur: Cursor, left, code) => {
+    if (left <= (0: I32)) { SubsetResult.Ok(code, cur) } else {
+      match(cur.jsonInput) {
+        [] => { fail(cur, "incomplete Unicode escape") },
+        [c, ..rest] => {
+          match(hex(c)) {
+            None => { fail(cur, "expected hexadecimal digit") },
+            Some(digit) => { go(advance(cur), left - (1: I32), code * (16: I32) + digit) }
+          }
+        }
+      }
+    }
+  };
+  go(input, (4: I32), (0: I32))
+};
+
+let text = (input) => {
+  let rec go = (cur: Cursor, acc) => {
+    match(cur.jsonInput) {
+      [] => { fail(cur, "unterminated string") },
+      ['"', ..rest] => { SubsetResult.Ok(SubsetList.reverse(acc), advance(cur)) },
+      ['\\', ..rest] => {
+        let escaped = advance(cur);
+        let unicode = (start) => {
+          match(hex4(start)) {
+            SubsetResult.Err(error) => { SubsetResult.Err(error) },
+            SubsetResult.Ok(code, stop) => {
+              if (if (code >= (55296: I32)) { code <= (56319: I32) } else { false }) {
+                let low = via((afterSlash) => { SubsetResult.andThen(expect(afterSlash, 'u'), hex4) });
+                SubsetResult.andThen(
+                  low(expect(stop, '\\')),
+                  (last, finish) => {
+                    if (if (last >= (56320: I32)) { last <= (57343: I32) } else { false }) {
+                      SubsetResult.Ok(
+                        (65536: I32) + (code - (55296: I32)) * (1024: I32) + last - (56320: I32),
+                        finish
+                      )
+                    } else { fail(stop, "expected low surrogate") }
+                  }
+                )
+              } else {
+                if (if (code >= (56320: I32)) { code <= (57343: I32) } else { false }) { fail(cur, "unpaired low surrogate") } else { SubsetResult.Ok(code, stop) }
+              }
+            }
+          }
+        };
+        match(escaped.jsonInput) {
+          [] => { fail(escaped, "incomplete escape") },
+          ['u', ..tail] => {
+            match(unicode(advance(escaped))) {
+              SubsetResult.Err(error) => { SubsetResult.Err(error) },
+              SubsetResult.Ok(code, stop) => {
+                match(SubsetUtf8.encode([code])) {
+                  SubsetResult.Err(error) => { fail(cur, "invalid Unicode escape") },
+                  SubsetResult.Ok(bytes) => { go(stop, SubsetList.reverseAppend(bytes, acc)) }
+                }
+              }
+            }
+          },
+          [c, ..tail] => {
+            let decoded = match(c) {
+              '"' => { Some('"') },
+              '\\' => { Some('\\') },
+              '/' => { Some('/') },
+              'b' => { Some('\u0008') },
+              'f' => { Some('\u000c') },
+              'n' => { Some('\n') },
+              'r' => { Some('\r') },
+              't' => { Some('\t') },
+              _ => { None }
+            };
+            match(decoded) {
+              None => { fail(escaped, "invalid escape") },
+              Some(byte) => { go(advance(escaped), [byte, ..acc]) }
+            }
+          }
+        }
+      },
+      [c, ..rest] => {
+        match(SubsetChar.toCode(c)) {
+          SubsetResult.Err(error) => { fail(cur, "invalid byte") },
+          SubsetResult.Ok(code) => {
+            if (code < (32: I32)) { fail(cur, "unescaped control character") } else { go(advance(cur), [c, ..acc]) }
+          }
+        }
+      }
+    }
+  };
+  SubsetResult.andThen(expect(input, '"'), (start) => { go(start, []) })
+};
+
+let number = (input) => {
+  let start = if (peek(input, '-')) { advance(input) } else { input };
+  let (whole, afterWhole) = take(start, SubsetChar.isDigit, []);
+  let required = (cur) => {
+    let (digits, stop) = take(cur, SubsetChar.isDigit, []);
+    match(digits) {
+      [] => { fail(cur, "expected digit") },
+      _ => { SubsetResult.Ok(stop) }
+    }
+  };
+  let fraction = (cur) => {
+    if (peek(cur, '.')) { required(advance(cur)) } else { SubsetResult.Ok(cur) }
+  };
+  let exponent = (cur) => {
+    if (if (peek(cur, 'e')) { true } else { peek(cur, 'E') }) {
+      let afterE = advance(cur);
+      let signed = if (if (peek(afterE, '+')) { true } else { peek(afterE, '-') }) { advance(afterE) } else { afterE };
+      required(signed)
+    } else { SubsetResult.Ok(cur) }
+  };
+  let valid = match(whole) {
+    [] => { false },
+    ['0', _, .._] => { false },
+    _ => { true }
+  };
+  let spelling = (stop: Cursor) => {
+    let rec collect = (cur: Cursor, acc) => {
+      if (cur.jsonOffset >= stop.jsonOffset) { native(SubsetList.reverse(acc)) } else {
+        match(cur.jsonInput) {
+          [] => { native(SubsetList.reverse(acc)) },
+          [c, ..rest] => { collect(advance(cur), [c, ..acc]) }
+        }
+      }
+    };
+    (JsonValue.Number(collect(input, [])), stop)
+  };
+  if (valid) {
+    SubsetResult.map(SubsetResult.andThen(fraction(afterWhole), exponent), spelling)
+  } else { fail(input, "invalid number") }
+};
+let literal = (input, expected, result) => {
+  let rec go = (cur, chars) => {
+    match(chars) {
+      [] => { SubsetResult.Ok(result, cur) },
+      [c, ..rest] => {
+        if (peek(cur, c)) { go(advance(cur), rest) } else { fail(cur, "invalid literal") }
+      }
+    }
+  };
+  go(input, expected)
+};
+
+let rec value = (input, depth, limit) => {
+  let cur = skip(input);
+  let array = (start) => {
+    let rec go = (next, acc) => {
+      match(value(next, depth + (1: I32), limit)) {
+        SubsetResult.Err(error) => { SubsetResult.Err(error) },
+        SubsetResult.Ok(item, stop) => {
+          let finish = skip(stop);
+          if (peek(finish, ',')) { go(advance(finish), [item, ..acc]) } else {
+            SubsetResult.map(
+              expect(finish, ']'),
+              (last) => { (JsonValue.Array(SubsetList.reverse([item, ..acc])), last) }
+            )
+          }
+        }
+      }
+    };
+    if (peek(skip(start), ']')) { SubsetResult.Ok(JsonValue.Array([]), advance(skip(start))) } else { go(start, []) }
+  };
+  let object = (start) => {
+    let rec go = (next, acc) => {
+      match(text(skip(next))) {
+        SubsetResult.Err(error) => { SubsetResult.Err(error) },
+        SubsetResult.Ok(key, afterKey) => {
+          match(expect(skip(afterKey), ':')) {
+            SubsetResult.Err(error) => { SubsetResult.Err(error) },
+            SubsetResult.Ok(afterColon) => {
+              match(value(afterColon, depth + (1: I32), limit)) {
+                SubsetResult.Err(error) => { SubsetResult.Err(error) },
+                SubsetResult.Ok(item, stop) => {
+                  let finish = skip(stop);
+                  if (peek(finish, ',')) { go(advance(finish), [(key, item), ..acc]) } else {
+                    SubsetResult.map(
+                      expect(finish, '}'),
+                      (last) => {
+                        (JsonValue.Object(SubsetList.reverse([(key, item), ..acc])), last)
+                      }
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+    if (peek(skip(start), '}')) { SubsetResult.Ok(JsonValue.Object([]), advance(skip(start))) } else { go(start, []) }
+  };
+  match(cur.jsonInput) {
+    [] => { fail(cur, "expected JSON value") },
+    ['[', ..rest] => {
+      if (depth >= limit) { fail(cur, "maximum nesting depth exceeded") } else { array(advance(cur)) }
+    },
+    ['{', ..rest] => {
+      if (depth >= limit) { fail(cur, "maximum nesting depth exceeded") } else { object(advance(cur)) }
+    },
+    ['"', ..rest] => {
+      SubsetResult.map(text(cur), (bytes, stop) => { (JsonValue.Text(bytes), stop) })
+    },
+    ['n', ..rest] => { literal(cur, ['n', 'u', 'l', 'l'], JsonValue.Null) },
+    ['t', ..rest] => { literal(cur, ['t', 'r', 'u', 'e'], JsonValue.Boolean(true)) },
+    ['f', ..rest] => {
+      literal(cur, ['f', 'a', 'l', 's', 'e'], JsonValue.Boolean(false))
+    },
+    [c, ..rest] => {
+      if (if (c == '-') { true } else { SubsetChar.isDigit(c) }) { number(cur) } else { fail(cur, "expected JSON value") }
+    }
+  }
+};
+let decodeWithLimit = (bytes, limit: I32) => {
+  if (limit < (0: I32)) {
+    SubsetResult.Err(JsonValue.error((0: I32), "invalid nesting limit"))
+  } else {
+    match(SubsetUtf8.decode(bytes)) {
+      SubsetResult.Err(SubsetUnicode.Error(reason, offset)) => { SubsetResult.Err(JsonValue.error(offset, "invalid UTF-8")) },
+      SubsetResult.Ok(scalars) => {
+        SubsetResult.andThen(
+          value(cursor(bytes, (0: I32)), (0: I32), limit),
+          (parsed, stop) => {
+            let finish = skip(stop);
+            match(finish.jsonInput) {
+              [] => { SubsetResult.Ok(parsed) },
+              _ => { fail(finish, "unexpected trailing input") }
+            }
+          }
+        )
+      }
+    }
+  }
+};
+let decode = (bytes) => { decodeWithLimit(bytes, (128: I32)) };

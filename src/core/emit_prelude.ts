@@ -387,7 +387,8 @@ const __wm_c_struct_to_buffer = (name, value) => {
   toString: (a) => String(a),
   fromString: (text) => /^-?[0-9]+$/.test(text) ? __wm_i32_option(Number(text)) : __wm_basis_None,
 };`,
-    `const Json = {
+    // Keep the host assertion runtime separate from the source std Json namespace.
+    `const __wm_basis_Json = {
   assert: (value) => value == null
     ? __wm_basis_Err(__wm_js_error(new Error("Json.assert failed")))
     : __wm_basis_Ok(value),

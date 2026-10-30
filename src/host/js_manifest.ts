@@ -63,5 +63,5 @@ export const JS_HOST_TYPES = Object.freeze(
 export const JS_HOST_VALUES: readonly BasisValueDescriptor[] = Object.freeze([
   { exportName: "Js.Array.toList", profiles: defaultOnly, runtimeName: "Js.Array.toList" },
   { exportName: "Js.Array.fromList", profiles: defaultOnly, runtimeName: "Js.Array.fromList" },
-  { exportName: "Json.assert", profiles: defaultOnly, runtimeName: "Json.assert" },
+  { exportName: "Json.assert", profiles: defaultOnly, runtimeName: "__wm_basis_Json.assert" },
 ]);

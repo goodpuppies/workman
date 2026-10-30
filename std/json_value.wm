@@ -1,0 +1,15 @@
+// Portable JSON data, independent of WON and host JS values.
+
+type Value =
+  | Null
+  | Boolean<Bool>
+  | Number<String>
+  | Text<List<Char>>
+  | Array<List<Value>>
+  | Object<List<(List<Char>, Value)>>;
+record Error = {byteOffset: I32, message: String};
+let error = (offset, message) => { (.{ byteOffset = offset, message = message }: Error) };
+type Step = Key<List<Char>> | Index<I32>;
+record Node = {steps: List<Step>, data: Value};
+let node = (path, value) => { (.{ steps = path, data = value }: Node) };
+type Problem = Malformed<Error> | Missing<List<Step>> | Mismatch<List<Step>, String>;
