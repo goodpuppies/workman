@@ -1,0 +1,21 @@
+-- Direct Effect v4 sequencing using WM pipes and carrier tuples.
+-- Run: deno task wm run examples/effect-ts/effect_sequence.wm
+from js.module("npm:effect@4.0.6/Effect") import unsafe * as Effect;
+
+let viaEffect = (f) => {
+  (effect) => { Effect.flatMap(effect, f) }
+};
+
+let double = viaEffect (number) => {
+  Effect.succeed(number * 2)
+};
+
+let answer = Effect.succeed(21) :> double;
+let grouped = Effect|answer, Effect.succeed("hello")|;
+
+let main = () => {
+  -- The result is a native (Number, String) tuple, with no cast or assertion.
+  let (number, text) = Effect.runSync(grouped);
+  print(number);
+  print(text)
+};

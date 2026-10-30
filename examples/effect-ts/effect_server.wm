@@ -1,0 +1,78 @@
+-- Effect v4 HTTP server, imported directly without a TypeScript shim.
+-- Run: deno task wm run examples/effect-ts/effect_server.wm
+-- Try: curl http://127.0.0.1:3000/
+-- See examples/effect-ts/effect.md for routes and expected behavior.
+
+from js.module("npm:effect@4.0.6/Effect") import unsafe * as Effect;
+from js.module("npm:effect@4.0.6/Layer") import unsafe * as Layer;
+from js.module("npm:effect@4.0.6/http/HttpRouter") import unsafe * as HttpRouter;
+from js.module("npm:effect@4.0.6/http/HttpServerResponse") import unsafe * as Response;
+from js.module("npm:@effect/platform-node@4.0.6/NodeHttpServer") import unsafe * as NodeHttpServer;
+from js.module("npm:@effect/platform-node@4.0.6/NodeRuntime") import unsafe * as NodeRuntime;
+from js.global("console") import unsafe { log };
+from js.module("node:http") import unsafe { createServer };
+
+-- Effects describe work: building these values does not start the jobs.
+-- unsafe removes only WM's construction-time Result wrapper. Effect still
+-- handles its own failures, interruption, and finalizers when the program runs.
+let note = (message) => { Effect.sync(() => { log(message) }) };
+
+let job = (name, milliseconds) => {
+  let start = note("start " ++ name);
+  let work = Effect.flatMap(start, (_) => {
+    Effect.as(Effect.sleep(milliseconds), name)
+  });
+  Effect.ensuring(work, note("release " ++ name))
+};
+
+-- Four 200ms jobs: about 400ms with a limit of two, or 800ms sequentially.
+-- The finalizers also run when a timeout, lost race, or client abort interrupts.
+let names = JSON["alpha", "beta", "gamma", "delta"];
+let batch = (concurrency) => {
+  let work = Effect.forEach(names, (name, _) => {
+    job(name, 200)
+  }, JSON{ concurrency: concurrency });
+  Effect.flatMap(work, (results) => {
+    Response.json(JSON{ concurrency: concurrency, results: results })
+  })
+};
+
+let parallel = batch(2);
+let sequential = batch(1);
+
+-- A deadline interrupts the slow job, runs its finalizer, then returns HTTP 504.
+let slow = Effect.map(job("timeout-job", 5000), (name) => { Response.text(name) });
+let deadline = Effect.catchTag(Effect.timeout(slow, 100), "TimeoutError", (_) => {
+  Effect.succeed(Response.text("upstream timed out\n", JSON{ status: 504 }))
+});
+
+-- First success wins; Effect interrupts the loser and runs its finalizer.
+-- Explicit options distinguish the data-first call from race(that, options).
+let winner = Effect.race(job("fast", 100), job("slow", 5000), JSON{});
+let raced = Effect.map(winner, (name) => { Response.text("winner: " ++ name ++ "\n") });
+
+-- Disconnect from this route early to see release disconnect-job immediately.
+let disconnect = Effect.map(job("disconnect-job", 5000), (name) => {
+  Response.text("completed: " ++ name ++ "\n")
+});
+
+let index = Response.text(
+  "Workman + Effect v4\n\nGET /parallel   four jobs, concurrency 2\nGET /sequential four jobs, concurrency 1\nGET /timeout    100ms deadline, HTTP 504\nGET /race       first success, loser interrupted\nGET /disconnect cancel request to interrupt work\n"
+);
+let routes = Layer.mergeAll(
+  HttpRouter.add("GET", "/", index),
+  HttpRouter.add("GET", "/parallel", parallel),
+  HttpRouter.add("GET", "/sequential", sequential),
+  HttpRouter.add("GET", "/timeout", deadline),
+  HttpRouter.add("GET", "/race", raced),
+  HttpRouter.add("GET", "/disconnect", disconnect)
+);
+let platform = NodeHttpServer.layer(
+  () => { createServer() },
+  JSON{ host: "127.0.0.1", port: 3000 }
+);
+let live = Layer.provide(HttpRouter.serve(routes), platform);
+
+let main = () => {
+  NodeRuntime.runMain(Layer.launch(live))
+};
