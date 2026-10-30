@@ -147,7 +147,8 @@ with tempfile.TemporaryDirectory(prefix="pakman-native-") as temporary:
     # Compile the actual adapter with a full SML contract harness.
     host_mlb = base / "host.mlb"
     host_mlb.write_text('$(SML_LIB)/basis/basis.mlb\n' + "\n".join(
-        '"' + str(p) + '"' for p in [stage / "generated/pakman/subset_result.sml",
+        '"' + str(p) + '"' for p in [stage / "generated/pakman/subset_option_value.sml",
+            stage / "generated/pakman/subset_result.sml",
             subset / "lib/sml-basis/subset_host.sml", repo / "native/host.sml", repo / "tests/host.sml"]) + "\n")
     subprocess.run(["mlton", "-output", str(base / "host"), str(host_mlb)], check=True)
     assert "PAKMAN_HOST_OK" in call([base / "host"], env).stdout
