@@ -63,7 +63,7 @@ Large images are copied in 64 KiB chunks rather than read into the WM heap.
 
 ## Desktop native test
 
-Requires the sibling `~/git/SubsetML` checkout with `bin/subsetml`, plus MLton:
+Requires the `subm/SubsetML` submodule checkout with `bin/subsetml`, plus MLton:
 
 ```sh
 cd ~/git/wm-mini

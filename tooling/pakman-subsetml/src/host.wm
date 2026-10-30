@@ -1,6 +1,6 @@
 // Checked declarations for the native Unix adapter; no JS backend is selected.
 from "basis/result.wm" import * as SubsetResult;
-from "../../../../SubsetML/lib/mlworks/checker/subset_host.wm" import * as SubsetHost;
+from "../../../subm/SubsetML/lib/mlworks/checker/subset_host.wm" import * as SubsetHost;
 
 let readFile = (name) => { SubsetHost.readFile(name) };
 let writeFile = (data, name) => { SubsetHost.writeFile(data, name) };

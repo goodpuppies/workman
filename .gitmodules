@@ -4,3 +4,6 @@
 [submodule "editors/zed-workman"]
 	path = editors/zed-workman
 	url = https://github.com/goodpuppies/zed-workman.git
+[submodule "subm/SubsetML"]
+	path = subm/SubsetML
+	url = https://github.com/mommysgoodpuppy/SubsetML.git

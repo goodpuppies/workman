@@ -7,7 +7,7 @@ import subprocess
 
 repository = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--subsetml', type=Path, default=repository.parent / 'SubsetML')
+parser.add_argument('--subsetml', type=Path, default=repository / 'subm/SubsetML')
 parser.add_argument('--output', type=Path, default=repository / '_scratch/frontend-v3-native')
 args = parser.parse_args()
 subsetml = args.subsetml.resolve()

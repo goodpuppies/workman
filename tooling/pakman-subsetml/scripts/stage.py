@@ -15,7 +15,7 @@ import subprocess
 
 repo = Path(__file__).resolve().parents[1]
 git_root = repo.parents[2]
-subset = git_root / "SubsetML"
+subset = repo.parents[1] / "subm/SubsetML"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("output", type=Path)
 parser.add_argument("--target", choices=("mlton", "mlworks"), default="mlton")
@@ -26,6 +26,7 @@ parser.add_argument("--package", action="append", default=[], metavar="NAME=PAK_
                     help="include an external package alongside hello")
 parser.add_argument("--library-path", default="/home/ellie/testingstuff/mlworks-r5900/target-objects")
 args = parser.parse_args()
+subset = args.subsetml.resolve().parents[1]
 output = args.output.resolve()
 prefix = args.prefix or str(output)
 packages_prefix = args.packages_prefix or prefix + "/paks"
@@ -49,7 +50,7 @@ for directory in ("src", "native", "paks"):
     shutil.copytree(repo / directory, port_sources / directory, dirs_exist_ok=True)
 shutil.copy2(repo / "pakman.wm", port_sources / "pakman.wm")
 for name in ("lib/mlworks/checker/subset_host.wm", "lib/sml-basis/subset_host.sml"):
-    target = sources / "SubsetML" / name
+    target = sources / "wm-mini/subm/SubsetML" / name
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(subset / name, target)
 

@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[1]
-subset = repo.parents[2] / "SubsetML"
+subset = repo.parents[1] / "subm/SubsetML"
 
 def call(args, env, success=True):
     result = subprocess.run([str(x) for x in args], env=env, capture_output=True,

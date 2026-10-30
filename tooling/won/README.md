@@ -30,7 +30,7 @@ Nota's wire encoding.
 
 ## Value model and API
 
-WON is part of the SubsetML Basis, written in SubsetML (`../SubsetML/src/subset_won*.sml`).
+WON is part of the SubsetML Basis, written in SubsetML (`subm/SubsetML/src/subset_won*.sml`).
 WM programs import it as `"basis/won_value.wm"` for values and constructors and
 `"basis/won.wm"` for encoding, decoding, and access (generated into `subml-basis/`).
 Values are ordinary datatypes:
@@ -141,11 +141,11 @@ Parser architecture and development decisions live in
 
 ## Build and evaluate
 
-Requires the sibling `../SubsetML/bin/subsetml`, MLton, Python 3, Deno, Zig 0.16, and Cargo
+Requires the built `subm/SubsetML/bin/subsetml`, MLton, Python 3, Deno, Zig 0.16, and Cargo
 (offline, with serde and serde_bytes in the local crate cache).
 The WM sources follow the procedure/transform pattern with `SubsetResult.via`
 and syntax-based function pipes. If its binary predates function-pipe support,
-rebuild it with `make -C ../SubsetML`. Receiver pipes and JS reflection are not
+rebuild it with `make -C subm/SubsetML`. Receiver pipes and JS reflection are not
 used by the portable library. The exchange runs entirely locally.
 Run from the repository root:
 

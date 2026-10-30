@@ -95,6 +95,22 @@ saved.
 that acts as the version manager for one piece of software. See
 [`tooling/pakman`](tooling/pakman/README.md).
 
+## Developing the shared Basis
+
+The portable library comes from the pinned [SubsetML](subm/SubsetML) submodule.
+To build its compiler and regenerate Workman's checked-in library snapshot, install
+MLton and run from this repository root:
+
+```sh
+git submodule update --init subm/SubsetML
+make -C subm/SubsetML
+deno run -A scripts/sync_subml_basis.ts
+```
+
+Edit the owning SubsetML `.sml` sources rather than generated `subml-basis/*.wm`
+files. Ordinary Workman use loads the checked-in snapshot and needs no SubsetML
+build. See [library ownership and workflow](markdown/subsetml-basis.md).
+
 ## Documentation
 
 * To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/wm-minisyntaxguide.md). It is short and the best way to learn the language

@@ -62,7 +62,7 @@ without stalling independent editor work.
 [Native portability](native-portability.md) records the current blockers and the next design
 choices. The [lowering plan](subsetml-lowering-plan.md) records the temporary source
 constraints, implementation sequence and future compiler-integrated lowering direction.
-The separate [SubsetML decision record](../../../SubsetML/docs/frontend-v3-native.md)
+The separate [SubsetML decision record](../../subm/SubsetML/docs/frontend-v3-native.md)
 contains the existing lowering agreements.
 
 ## Basis
@@ -304,7 +304,7 @@ primitive projections (UTF-16 unit lists, positions and IDs).
 
 ## Native lexer
 
-Build the WM-authored lexer with a built sibling SubsetML compiler and MLton:
+Build the WM-authored lexer with the built SubsetML submodule compiler and MLton:
 
 ```sh
 python3 scripts/build_frontend_v3_native.py

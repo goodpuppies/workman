@@ -278,9 +278,9 @@ remain separate consumers; native compilation does not require translating their
 
 - [Frontend conventions and ownership](README.md)
 - [Portability status and type-dependent lowering audit](native-portability.md)
-- [SubsetML native frontend decisions](../../../SubsetML/docs/frontend-v3-native.md)
-- [SubsetML translation profile](../../../SubsetML/docs/translation.md)
-- [Module loading contract](../../../SubsetML/docs/module-loading-plan.md)
+- [SubsetML native frontend decisions](../../subm/SubsetML/docs/frontend-v3-native.md)
+- [SubsetML translation profile](../../subm/SubsetML/docs/translation.md)
+- [Module loading contract](../../subm/SubsetML/docs/module-loading-plan.md)
 
 ## Implementation checkpoint and resolved naming decision
 

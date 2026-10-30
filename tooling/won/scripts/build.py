@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 BASIS = ROOT / "subml-basis"
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("output", type=Path)
-p.add_argument("--subsetml", type=Path, default=ROOT.parent / "SubsetML/bin/subsetml")
+p.add_argument("--subsetml", type=Path, default=ROOT / "subm/SubsetML/bin/subsetml")
 a = p.parse_args()
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=True)

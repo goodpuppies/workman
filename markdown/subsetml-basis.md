@@ -5,7 +5,7 @@
 
 ## Decision
 
-Workman has no Basis of its own. Its library is the SubsetML Basis (`../SubsetML/docs/basis.md`):
+Workman has no Basis of its own. Its library is the SubsetML Basis ([Basis documentation](../subm/SubsetML/docs/basis.md)):
 the `Subset*` modules, written in SubsetML and translated to WM by SubsetML's translator.
 
 - **Why:** WM will compile to SubsetML, so sharing one Basis is the simplest way to make WM programs
@@ -144,3 +144,18 @@ preserve a second Basis. No duplicate removal is implemented by this note.
 - **`I32` in WM APIs.** Basis lengths and indexes are `I32`, while existing WM code uses `Number`.
 - **IO.** `SubsetIo` is synchronous; WM's current IO is `Task`-shaped.
 - **Cold start.** Std is inferred on every process start; measure with the full Basis loaded.
+
+## Pinned source checkout (2026-10-29)
+
+`subm/SubsetML/` is a Git submodule pointing to the published SubsetML repository.
+Initialize it with `git submodule update --init subm/SubsetML`, then build its
+compiler with `make -C subm/SubsetML`. `scripts/sync_subml_basis.ts` and the native
+build helpers default to this checkout; explicit source/compiler overrides remain
+available. The generated `subml-basis/` snapshot remains checked in, so ordinary
+WM use does not require MLton or an initialized SubsetML checkout.
+
+Change portable APIs in SubsetML's `.sml` sources, test there, regenerate the WM
+snapshot, then update the pinned submodule revision together with the snapshot.
+SubsetML source changes must be committed in that repository before Workman can
+record a reproducible new pin. Committing and publishing remain explicit user
+actions.

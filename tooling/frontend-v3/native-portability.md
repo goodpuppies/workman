@@ -29,7 +29,7 @@ focused reproduction when native work resumes; the exact root cause is not estab
 
 ## Existing agreements
 
-The [SubsetML native decision record](../../../SubsetML/docs/frontend-v3-native.md)
+The [SubsetML native decision record](../../subm/SubsetML/docs/frontend-v3-native.md)
 records the relevant lowerings. Keep their semantics while implementing them:
 
 - Invariant `Panic` lowers to `SubsetProcess.panic`: evaluate its message once, attempt to
@@ -207,7 +207,7 @@ real arguments fails SML equality checking. No frontend implementation changes w
 The updated source-list probe reaches pair's nested `token.span.endPos.index` inside a case
 branch despite an existing typed subject. A plain SML reproduction compiles in MLton and
 fails SubsetML checking. This case-subject propagation gap is recorded in the
-[SubsetML native decisions](../../../SubsetML/docs/frontend-v3-native.md); the general selector scope correction is now implemented. The full lexer translates and
+[SubsetML native decisions](../../subm/SubsetML/docs/frontend-v3-native.md); the general selector scope correction is now implemented. The full lexer translates and
 passes an entry-driven MLton smoke build with explicit native adapter selection. Native driver tooling and complete document parity now pass; see the lowering plan and
 README for the build/input contract. Pair/string/trivia now import the existing portable
 list operations explicitly, with no Basis expansion.

@@ -2,9 +2,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Regenerate subml-basis/, the library modules WM loads from the SubsetML Basis, from the
-// authoritative SubsetML sources: deno run -A scripts/sync_subml_basis.ts [../SubsetML]
+// authoritative SubsetML sources: deno run -A scripts/sync_subml_basis.ts [subm/SubsetML]
 const repository = fileURLToPath(new URL("../", import.meta.url));
-const subsetml = resolve(Deno.args[0] ?? join(repository, "../SubsetML"));
+const subsetml = resolve(Deno.args[0] ?? join(repository, "subm/SubsetML"));
 const output = join(repository, "subml-basis");
 const inventory = JSON.parse(
   await Deno.readTextFile(join(subsetml, "docs/basis-dependencies.json")),
