@@ -1,4 +1,4 @@
-from "../subml-basis/subset_order.wm" import { Order, Less, Equal, Greater };
+from "basis/order.wm" import { Order, Less, Equal, Greater };
 
 type MapTree<K, V> =
   | MapEmpty

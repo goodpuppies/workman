@@ -12,6 +12,7 @@ import { modifiedStaticEnv, type StaticEnv, staticEnv } from "./infer/environmen
 import { standardValueId } from "./compiler_semantics.ts";
 import { LIBRARY_JS_SCHEME, resolveLibraryJsModuleSpecifiers } from "./js_module_specifier.ts";
 import { LIBRARY_PERVASIVES, pervasiveSourceName } from "./library_pervasives.ts";
+import { libraryImport } from "./host_modules.ts";
 
 export type StandardModule = {
   path: string;
@@ -451,5 +452,6 @@ function orderByImports(modules: StandardModule[], loaded: ReadonlySet<string>):
 }
 
 function standardImportPath(from: string, specifier: string): string {
-  return posix.normalize(posix.join(posix.dirname(from), specifier));
+  return libraryImport(specifier)?.path ??
+    posix.normalize(posix.join(posix.dirname(from), specifier));
 }

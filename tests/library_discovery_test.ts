@@ -1,5 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { fileURLToPath } from "node:url";
+import { posix } from "node:path";
+import { libraryImport } from "../src/host_modules.ts";
 import {
   discoverStandardModules,
   libraryModuleAlias,
@@ -24,8 +26,9 @@ Deno.test("every generated library source is discovered and imports precede impo
   for (const module of modules) {
     for (const decl of module.module.decls) {
       if (decl.kind !== "ImportDecl") continue;
-      const target = `std/${decl.path.replace(/^\.\//, "")}`;
-      if (!position.has(target)) continue;
+      const target = libraryImport(decl.path)?.path ??
+        posix.normalize(posix.join(posix.dirname(module.path), decl.path));
+      assertEquals(position.has(target), true, `${module.path} imports ${target}`);
       if (position.get(target)! > position.get(module.path)!) {
         throw new Error(`${module.path} is ordered before its import ${target}`);
       }
@@ -42,6 +45,27 @@ Deno.test("a new library file needs no registration and is ordered after its imp
   assertEquals(
     modules.map((module) => [module.path, module.alias]),
     [["std/zebra.wm", "Zebra"], ["std/aardvark.wm", "Aardvark"]],
+  );
+});
+
+Deno.test("library imports resolve public scopes before relative paths", async () => {
+  const modules = await loadLibraryModules({
+    "std/consumer.wm": `
+      from "basis/probe.wm" import * as BasisProbe;
+      from "std/probe.wm" import * as StdProbe;
+      from "./basis/local_probe.wm" import * as LocalProbe;
+      let answer = BasisProbe.value + StdProbe.value + LocalProbe.value;
+    `,
+    "subml-basis/subset_probe.wm": "let value = 1;",
+    "std/probe.wm": "let value = 2;",
+    "std/basis/local_probe.wm": "let value = 4;",
+  });
+  assertEquals(modules.at(-1)!.path, "std/consumer.wm");
+  assertEquals(modules.at(-1)!.result.exportedStructure.valEnv.has("answer"), true);
+  await assertRejects(
+    () => discoverStandardModules({ "std/consumer.wm": 'from "basis/missing.wm" import * as M;' }),
+    Error,
+    "std/consumer.wm imports missing library module subml-basis/subset_missing.wm",
   );
 });
 

@@ -1,6 +1,6 @@
 from "./monad.wm" import { Carrier };
 from "../host/js/debug.wm" import * as Debug;
-from "../subml-basis/subset_result.wm" import * as SubsetResult;
+from "basis/result.wm" import * as SubsetResult;
 
 // The operations the SubsetML Basis defines come from SubsetResult; this module adds WM's
 // carrier record, the multi-argument maps and the list helpers.

@@ -1,6 +1,6 @@
 from "./basis.wm" import * as Basis;
-from "../subml-basis/subset_order.wm" import { Less, Equal, Greater };
-from "../subml-basis/subset_list.wm" import * as SubsetList;
+from "basis/order.wm" import { Less, Equal, Greater };
+from "basis/list.wm" import * as SubsetList;
 
 // Functions that behave the same as the SubsetML Basis's come from SubsetList, which is
 // tail-recursive throughout. length (I32 there), foldLeft (whose callback takes the accumulator

@@ -11,6 +11,11 @@ present here are transitional and will be removed later as callers migrate;
 their differing signatures or error types do not define a second portable Basis.
 Default pervasives should project the shared Basis where it provides the operation.
 
+Use public library specifiers for shared dependencies: `"basis/list.wm"`,
+`"basis/string.wm"`, etc. The embedded library loader resolves the same `basis/`,
+`std/` and other built-in scopes as ordinary programs. Explicit `./` and `../`
+imports remain relative to the importing module.
+
 Every top-level `.wm` file here is a library module, discovered automatically by
 `scripts/generate_assets.ts`. Its namespace comes from its snake_case file name, so
 `word8_vector.wm` defines `Word8Vector`. After adding or changing a file, run

@@ -1,5 +1,5 @@
 from "./basis.wm" import * as Basis;
-from "../subml-basis/subset_list_pair.wm" import * as SubsetListPair;
+from "basis/list_pair.wm" import * as SubsetListPair;
 
 // Basis `LIST_PAIR`. The plain functions ignore the excess of the longer list; the `Eq` functions
 // return `Err(Basis.UnequalLengths)` instead. Arguments come data-first so pipes work, and fold

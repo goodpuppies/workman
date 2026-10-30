@@ -1,5 +1,5 @@
 from "./basis.wm" import * as Basis;
-from "../subml-basis/subset_option.wm" import * as SubsetOption;
+from "basis/option.wm" import * as SubsetOption;
 
 // map, andThen, getOr, isSome and toResult come from the SubsetML Basis. filter stays SML's
 // Option.filter, which wraps a plain value; SubsetOption.filter filters an Option.
