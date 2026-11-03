@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "grammarHash": "6f59e2f0d7266edb910c69711bb93a97de17190807efbfa822111a41b38b2c51",
+  "grammarHash": "e2c126acf4e6df322a43cef96524918ad2a33e4048a676481686fe5c5cf5d275",
   "grammarPath": "src/grammar.peggy",
   "ruleCount": 146,
   "recoveryAnnotations": [

@@ -1,5 +1,28 @@
 # Default pervasive values
 
+The shared Basis ordering type `Order` and its constructors `Less`, `Equal`, and
+`Greater` are available without imports. They retain the type and constructor
+identities defined by `basis/order.wm`, including in patterns:
+
+```wm
+let rank: Order -> Number = match {
+  Less => -1,
+  Equal => 0,
+  Greater => 1
+};
+let result = match(Real.compare(1, 0)) {
+  Ok(Greater) => true,
+  _ => false
+};
+```
+
+This follows the SML Basis Library's top-level `order` datatype, using WM names.
+Comparison functions remain qualified or explicitly imported. `Real.compare`
+is available through the preloaded `Real` namespace; `compareInt` and `compareReal`
+from `basis/order.wm` require explicit imports. The ordering type and constructors
+are omitted under `-- @no-prelude`, shadow normally, and are not re-exported by
+user modules.
+
 These library functions are available without an import in ordinary Workman
 modules. Calls keep the defining library's data-first argument order.
 

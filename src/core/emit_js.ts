@@ -270,6 +270,15 @@ function collectRequiredStandardModules(
   const pervasiveIds = new Map(
     LIBRARY_PERVASIVES.map((binding) => [binding.name, moduleIdsByPath.get(binding.modulePath)]),
   );
+  const pervasiveConstructors = new Map<NonNullable<CoreDynamicExport["ctorId"]>, ModuleId>();
+  for (const binding of LIBRARY_PERVASIVES) {
+    const moduleId = moduleIdsByPath.get(binding.modulePath);
+    if (moduleId === undefined) continue;
+    const exported = program.modules.get(moduleId)?.dynamicExports.find((item) =>
+      item.name === pervasiveSourceName(binding)
+    );
+    if (exported?.ctorId !== undefined) pervasiveConstructors.set(exported.ctorId, moduleId);
+  }
   const requireId = (id: ModuleId | undefined) => {
     if (id !== undefined && standardIds.has(id)) required.add(id);
   };
@@ -280,8 +289,9 @@ function collectRequiredStandardModules(
       pattern.items.forEach(visitPattern);
     } else if (pattern.kind === "CorePRecord") {
       pattern.fields.forEach((field) => visitPattern(field.pattern));
-    } else if (pattern.kind === "CorePCtor" && pattern.payload) {
-      visitPattern(pattern.payload);
+    } else if (pattern.kind === "CorePCtor") {
+      if (pattern.ctorId !== undefined) requireId(pervasiveConstructors.get(pattern.ctorId));
+      if (pattern.payload) visitPattern(pattern.payload);
     }
   };
   const visitDecl = (decl: CoreDecl): void => {
@@ -298,7 +308,8 @@ function collectRequiredStandardModules(
     switch (expr.kind) {
       case "CoreVar":
         requireId(namespaceIds.get(expr.name));
-        if (expr.bindingId === undefined) requireId(pervasiveIds.get(expr.name));
+        if (expr.ctorId !== undefined) requireId(pervasiveConstructors.get(expr.ctorId));
+        else if (expr.bindingId === undefined) requireId(pervasiveIds.get(expr.name));
         return;
       case "CoreTuple":
       case "CoreJsonArray":
@@ -573,7 +584,7 @@ function emitStandardNamespaces(
   });
 }
 
-/** Aliases share the original function value; unused libraries are not pulled into the program. */
+/** Aliases share the original value; unused libraries are not pulled into the program. */
 function emitLibraryPervasives(
   program: CoreProgram,
   requiredStandardIds: ReadonlySet<ModuleId>,
@@ -585,8 +596,13 @@ function emitLibraryPervasives(
     const { modulePath, name } = binding;
     const namespace = namespaces.get(modulePath);
     if (!namespace || !requiredStandardIds.has(namespace.id)) return [];
+    const sourceName = pervasiveSourceName(binding);
+    const exported = program.modules.get(namespace.id)?.dynamicExports.find((item) =>
+      item.name === sourceName
+    );
+    const alias = exported?.ctorId === undefined ? id(name) : ctorRefName(name, exported.ctorId);
     return [
-      `const ${id(name)} = ${emitJsMember(id(namespace.emitName), pervasiveSourceName(binding))};`,
+      `const ${alias} = ${emitJsMember(id(namespace.emitName), sourceName)};`,
     ];
   });
 }

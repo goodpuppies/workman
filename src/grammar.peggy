@@ -341,7 +341,7 @@ TypeDeclBody
       };
     }
 
-Expr = IfExpr / MatchFn / MatchExpr / Lambda / Binary
+Expr = IfExpr / MatchExpr / Lambda / Binary
 
 IfExpr
   = "if" _ "(" _ cond:Expr _ ")" _ thenExpr:Block _ "else" _ elseExpr:Block
@@ -469,7 +469,7 @@ SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
 Primary
-  = Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / AnonymousMatchFn / v:LongName { return longNode("Var", v, {}, location()); }
+  = Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / matched:(MatchFn / AnonymousMatchFn) !(!("(" / "-") SpaceArg) { return matched; } / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }

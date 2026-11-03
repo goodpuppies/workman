@@ -407,6 +407,25 @@ Deno.test("repl binds a top-level expression to it", async () => {
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
+Deno.test("interactive repl applies named and anonymous match functions as one expression", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    [
+      "match(x)=>{true=>1,false=>0} true;",
+      "match{true=>1,false=>0} true;",
+      "match(x)=>{true=>x,false=>x}(false);",
+      "match(x)=>{true=>1,false=>0} true;",
+    ].join("\n") + "\n",
+  );
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertEquals(
+    result.stdout,
+    `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n` +
+      "- it = 1 : Number\n- it = 1 : Number\n- it = false : Bool\n- it = 1 : Number\n- ",
+  );
+});
+
 Deno.test("repl reports every binder introduced by a top-level pattern", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/pattern.wm`;

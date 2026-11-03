@@ -25,6 +25,9 @@ export const LIBRARY_PERVASIVES: readonly Readonly<{
     Object.freeze({ modulePath: "subml-basis/subset_option.wm", name })
   ),
   Object.freeze({ modulePath: "subml-basis/subset_bool.wm", name: "not" }),
+  ...["Less", "Equal", "Greater"].map((name) =>
+    Object.freeze({ modulePath: "subml-basis/subset_order.wm", name })
+  ),
   Object.freeze({ modulePath: "subml-basis/subset_char.wm", name: "chr", sourceName: "fromCode" }),
   Object.freeze({ modulePath: "subml-basis/subset_char.wm", name: "ord", sourceName: "toCode" }),
   Object.freeze({
@@ -46,6 +49,11 @@ export const LIBRARY_PERVASIVES: readonly Readonly<{
   ),
   Object.freeze({ modulePath: "std/vector.wm", name: "vector", sourceName: "fromList" }),
   Object.freeze({ modulePath: "std/string.wm", name: "toList" }),
+]);
+
+/** Type projections use the same named-import semantics, but have no runtime aliases. */
+export const LIBRARY_PERVASIVE_TYPES = Object.freeze([
+  Object.freeze({ modulePath: "subml-basis/subset_order.wm", name: "Order" }),
 ]);
 
 export function pervasiveSourceName(binding: (typeof LIBRARY_PERVASIVES)[number]): string {

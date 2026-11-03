@@ -6,6 +6,7 @@ import { basisStructureId } from "./compiler_semantics.ts";
 import type { FrontendDiagnostic } from "./diagnostic_model.ts";
 import { resolveCompilerFrontend } from "./frontend_mode.ts";
 import { discoverGpuRegions } from "./directives.ts";
+import { librarySources } from "./generated/assets.ts";
 import type { GpuFragmentSelectionFacts } from "./gpu_selection.ts";
 import { isDecl } from "./infer/ast_utils.ts";
 import type { StructureEnv } from "./infer.ts";
@@ -536,6 +537,7 @@ export type ProjectSnapshot = Readonly<{
   interfaces: ReadonlyMap<ModuleId, ModuleInterface>;
   /** Library declarations have source locations without becoming user-project interfaces. */
   libraryValueDefinitions?: ReadonlyMap<ValueId, SemanticSourceLocation>;
+  libraryNominalDefinitions?: ReadonlyMap<string, SemanticSourceLocation>;
 }>;
 
 export type ProjectConfiguration = Readonly<{
@@ -763,6 +765,7 @@ export function buildProjectSnapshot(
     generation,
     interfaces,
     libraryValueDefinitions: semanticFacts.libraryValueDefinitions,
+    libraryNominalDefinitions: libraryNominalDefinitions(nominalFacts),
   });
 }
 
@@ -2495,6 +2498,35 @@ export type SemanticSourceLocation = Readonly<{
   occurrence?: ModuleSemanticOccurrence;
 }>;
 
+/** Keep library type/constructor definition sites without adding library project interfaces. */
+function libraryNominalDefinitions(
+  facts: NominalFacts,
+): ReadonlyMap<string, SemanticSourceLocation> {
+  const definitions = new Map<string, SemanticSourceLocation>();
+  const entries = [
+    ...facts.types.map((fact) => ({ fact, target: { kind: "type", id: fact.id } as const })),
+    ...facts.constructors.map((fact) => ({
+      fact,
+      target: { kind: "constructor", id: fact.id } as const,
+    })),
+  ];
+  for (const { fact, target } of entries) {
+    const source = librarySources[fact.modulePath];
+    if (source === undefined || !fact.exported || !fact.declaration.node) continue;
+    const span = identifierSpan(source, fact.declaration.node, fact.name, "first");
+    if (!span) continue;
+    definitions.set(
+      semanticTargetKey(target),
+      Object.freeze({
+        moduleId: fact.moduleId,
+        path: fact.modulePath,
+        span,
+      }),
+    );
+  }
+  return definitions;
+}
+
 export function semanticDefinitionsForTarget(
   project: ProjectSnapshot,
   target: SemanticOccurrenceTarget,
@@ -2528,7 +2560,7 @@ export function semanticDefinitionsForTarget(
       })];
     }
   }
-  return Object.freeze(
+  const definitions = Object.freeze(
     semanticOccurrencesForTarget(project, target)
       .filter(({ occurrence }) => occurrence.declaration !== undefined)
       .map(({ moduleId, occurrence }) => {
@@ -2541,6 +2573,9 @@ export function semanticDefinitionsForTarget(
         });
       }),
   );
+  if (definitions.length > 0) return definitions;
+  const nominalDefinition = project.libraryNominalDefinitions?.get(semanticTargetKey(target));
+  return nominalDefinition ? [nominalDefinition] : definitions;
 }
 
 export function semanticDefinitionsAt(
@@ -4197,6 +4232,7 @@ function semanticOccurrences(
       fact.origin.structureId,
       source,
       semanticOccurrenceType(typeArena, fact.instantiated ?? result.types.get(expression)),
+      !nominalFacts.constructorReferences.has(expression),
     );
   }
   for (const [pattern, fact] of result.facts.patterns) {
@@ -4585,6 +4621,7 @@ function addExternalValueOccurrences(
   structureId: StructureSemanticId | undefined,
   source: string,
   inferredType: SemanticOccurrenceType | undefined,
+  includeValue = true,
 ): void {
   // `name` is a basis/standard spelling from a compiler-owned table, so the path is
   // constructed once through the sanctioned constructor.
@@ -4600,6 +4637,8 @@ function addExternalValueOccurrences(
       "first",
     );
   }
+  // Constructors receive their nominal target below, while their qualifier still belongs here.
+  if (!includeValue) return;
   addSemanticOccurrence(
     output,
     path.id,

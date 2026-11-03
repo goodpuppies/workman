@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { checkSource, compileLibraryVirtual } from "../src/compiler.ts";
 import { formatFrontendV2Source } from "../src/frontend_v2_formatter.ts";
@@ -98,6 +98,60 @@ Deno.test("expression match arms and braceless recursive match functions execute
     const value = declaration.bindings[0].value;
     assert(value.kind === "Lambda" && value.body.kind === "Match");
     assertEquals(value.body.arms.length, expectedArms);
+  }
+});
+
+Deno.test("named and anonymous match functions support direct application", async () => {
+  const expressions = [
+    ["match(x)=>{0=>2,Var(n)=>x} 3", 3],
+    ["match{0=>2,Var(n)=>n} 3", 3],
+    ["match(x)=>{true=>1,false=>0} true", 1],
+    ["match(x)=>{true=>1,false=>0}(false)", 0],
+    ["match{true=>1,false=>0} true", 1],
+    ["match{true=>1,false=>0}(false)", 0],
+    ["match(x)=>{true=>x,false=>x}(true)", true],
+    ["match(left,right)=>{(true,false)=>(left,right),_=>(false,true)}(true,false)", [true, false]],
+    ["match(x)=>{true=>1,false=>0}(true) + 2", 3],
+    ["match(x)=>{true=>3,false=>0} true-1", 2],
+    ["match(x)=>{true=>3,false=>0}(true)-1", 2],
+    ["match(x)=>{true=>3,false=>0} true :> (n => n + 1)", 4],
+    ["true :> match(x)=>{true=>1,false=>0}", 1],
+    ["match(x)=>{true=>y=>x,false=>y=>y}(true)(false)", true],
+  ] as const;
+  const sources: string[] = [];
+  for (const [index, [expression]] of expressions.entries()) {
+    const source = `let result${index} = ${expression};`;
+    sources.push(source);
+    assert(recognizeGrammar(grammar, source), source);
+    const surface = frontend.parseSurfaceProgram(source);
+    assert(surface, source);
+    assertEquals(surface.marks, [], source);
+    const module = await parse(source);
+    assertEquals(module.decls.length, 1, source);
+    const original = normalizeFrontendSemanticAst(module);
+    for (const fix of [false, true]) {
+      const formatted = await formatFrontendV2Source(source, "<match-application>", fix);
+      assertEquals(normalizeFrontendSemanticAst(await parse(formatted)), original, formatted);
+      assertEquals(await formatFrontendV2Source(formatted, "<match-application>", fix), formatted);
+    }
+    // A bare REPL expression must stay one expression, rather than a function plus `it`.
+    assertEquals((await parse(`${expression};`)).decls.length, 1, expression);
+  }
+  const code = await compileLibraryVirtual(
+    "/test/match-application.wm",
+    new Map([["/test/match-application.wm", sources.join("\n")]]),
+  );
+  const runtime = await import(`data:text/javascript;base64,${btoa(code)}`);
+  expressions.forEach(([, expected], index) => assertEquals(runtime[`result${index}`], expected));
+  for (const head of ["match(x)=>{true=>1,false=>0}", "match{true=>1,false=>0}"]) {
+    for (const argument of ["true", "false", "1", '"text"', "[true]", "'a'"]) {
+      for (const prefix of ["", "let value = "]) {
+        const source = `${prefix}${head}${argument};`;
+        assertEquals(recognizeGrammar(grammar, source), false, source);
+        assertEquals(frontend.parseSurfaceProgram(source), undefined, source);
+        await assertRejects(() => parse(source), Error);
+      }
+    }
   }
 });
 

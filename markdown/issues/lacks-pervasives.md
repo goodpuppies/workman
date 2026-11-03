@@ -41,6 +41,22 @@ direct JS FFI. Checked byte `explode` remains available when errors matter.
 
 User-facing behavior is documented in `docs/pervasives.md`.
 
+### Ordering projections (2026-11-03)
+
+Implemented the accepted default projections `Order`, `Less`, `Equal`, and `Greater`
+from `basis/order.wm`. The SML Basis Library's local reference explicitly lists
+`datatype order = LESS | EQUAL | GREATER` in
+`research/sml-basis-spec/Basis/top-level-chapter.html`; `Basis/general.html` also
+states that all General types and values are available unqualified. This follows
+the library specification, rather than extending the Revised Definition's minimal kernel.
+
+There are now 33 library value projections plus one library type projection. Named
+imports preserve the defining type and constructor status; runtime aliases retain
+the original constructor singletons. Editor definition lookup retains library
+type and constructor locations without adding library interfaces to the user's
+project. Projections are shadowable, absent under `@no-prelude`, and not module
+exports. Comparison functions remain qualified or explicitly imported.
+
 ## Source of truth (updated 2026-10-28)
 
 **The SubsetML Basis is WM's primary library.** Portable pervasive operations
@@ -322,7 +338,7 @@ describes the Basis target, not the legacy std variant.
 | `word` | Existing explicitly qualified word types/structures remain; no new bare SML `word` alias selected here |
 | `'a list`, `nil`, `::` | WM `List<T>`, `Nil`, `Cons`, and existing list literal/pattern/spread syntax. Preserve constructor identity/status; no `nil` or `::` spelling added |
 | `'a option`, `NONE`, `SOME` | WM `Option<T>`, `None`, `Some`; preserve current pervasive constructors and their qualified identities |
-| `order`, `LESS`, `EQUAL`, `GREATER` | Existing portable order API is explicitly imported from `basis/order.wm` as `Order`, `Less`, `Equal`, `Greater`. Making these additionally pervasive is **pending**, not implied by the function list |
+| `order`, `LESS`, `EQUAL`, `GREATER` | Implemented default projections `Order`, `Less`, `Equal`, `Greater` from `basis/order.wm`; preserve defining type identity and constructor status |
 | `'a vector` | Existing qualified `Vector.Vector<T>`; proposed bare `vector` is a value, not a new unqualified type alias |
 | `'a array` | Omitted as a general mutable core facility; foreign mutable arrays remain an explicit host boundary |
 | `substring` type | No new type alias in this change; depends on the deferred string/slice library |
@@ -383,7 +399,7 @@ catchable `exn` values. Do not add bare SML exception names to mimic that namesp
 6. WM already supplies selected standard structures as namespaces. The SML Basis
    permits implementation-defined structure availability; this choice is
    independent of which names are unqualified.
-7. String slicing, numeric conversion aliases, order projections and
+7. String slicing, numeric conversion aliases and
    overloaded-name policy remain
    explicit incomplete work. Distinguish existing shared Basis operations from
    genuinely missing implementations. An

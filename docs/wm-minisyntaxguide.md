@@ -197,6 +197,19 @@ let rec fac = match(n) => 0 => 1, Var(n) => n * fac(n - 1);
 let rec facBraced = match(n) => {0 => 1, Var(n) => n * facBraced(n - 1)};
 ```
 
+Braced match functions support direct application with or without named parameters:
+
+```wm
+let named = match(x)=>{true=>1,false=>0} true;
+let anonymous = match{true=>1,false=>0} true;
+let explicit = match(x)=>{true=>x,false=>x}(true);
+```
+
+The first two bindings are `1`; the last is `true`. Use a space or explicit `(argument)`
+parentheses before the argument. Compact `}true` is a syntax error.
+The named form keeps `x` available inside the arms. Group a braceless match function in
+parentheses before applying it directly.
+
 Arm bodies may still use blocks for local declarations or statements. Braced arm
 lists allow a trailing comma; braceless lists do not, so a comma before another
 call argument remains outside the match. An inner braceless match takes following

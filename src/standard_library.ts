@@ -11,7 +11,11 @@ import { BASIS_PROFILES, initialBasis } from "./initial_basis.ts";
 import { modifiedStaticEnv, type StaticEnv, staticEnv } from "./infer/environment.ts";
 import { standardValueId } from "./compiler_semantics.ts";
 import { LIBRARY_JS_SCHEME, resolveLibraryJsModuleSpecifiers } from "./js_module_specifier.ts";
-import { LIBRARY_PERVASIVES, pervasiveSourceName } from "./library_pervasives.ts";
+import {
+  LIBRARY_PERVASIVE_TYPES,
+  LIBRARY_PERVASIVES,
+  pervasiveSourceName,
+} from "./library_pervasives.ts";
 import { libraryImport } from "./host_modules.ts";
 
 export type StandardModule = {
@@ -50,7 +54,9 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
         out.push({ clause, result: module.result, standard: true });
       }
     }
-    const bindings = LIBRARY_PERVASIVES.filter((binding) => binding.modulePath === module.path);
+    const bindings = [...LIBRARY_PERVASIVES, ...LIBRARY_PERVASIVE_TYPES].filter((binding) =>
+      binding.modulePath === module.path
+    );
     if (bindings.length > 0) {
       out.push({
         clause: {
@@ -71,7 +77,7 @@ async function loadStandardLibraryUncached(): Promise<InitialImport[]> {
 /**
  * `std/` modules are opened as namespaces in every program. Host helper modules (`host/js/`, BD17)
  * and the SubsetML Basis (`subml-basis/`) are never opened as implicit namespaces. Selected Basis
- * values are projected through LIBRARY_PERVASIVES; other members require explicit imports
+ * values and types are projected through the library pervasive tables; other members require explicit imports
  * (`js.host("table")`, `"basis/won.wm"`), and `std/` builds on the Basis.
  */
 function isAutoOpened(path: string): boolean {

@@ -38,6 +38,89 @@ Deno.test("library pervasives project their defining schemes without exporting t
   await assertRejects(() => checkSource('let value = concat(["a", "b"]);'));
 });
 
+Deno.test("pervasive Order preserves shared type and constructor identity in patterns", async () => {
+  const source = `
+    from "basis/order.wm" import * as Orders;
+    let bare: Order = Less;
+    let qualified: Orders.Order = Orders.Less;
+    let rank: Order -> Number = match {
+      Less => -1, Equal => 0, Greater => 1
+    };
+    let real = match(Real.compare(1, 0)) {
+      Ok(Greater) => true, _ => false
+    };
+    let ranks = (rank(Orders.Less), rank(Orders.Equal), rank(Orders.Greater));
+  `;
+  const checked = await checkSource(source);
+  const owner = (await loadStandardModules()).find((module) =>
+    module.path === "subml-basis/subset_order.wm"
+  )!;
+  assertStrictEquals(
+    checked.initialStructure.tyEnv.get("Order"),
+    owner.result.exportedStructure.tyEnv.get("Order"),
+  );
+  assertEquals(checked.exportedStructure.tyEnv.has("Order"), false);
+  for (const name of ["Less", "Equal", "Greater"]) {
+    assertEquals(checked.initialStructure.valEnv.get(name)?.status, "constructor");
+    assertEquals(checked.exportedStructure.valEnv.has(name), false);
+  }
+  const code = await compileLibraryVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
+  const runtime = await import(`data:text/javascript;base64,${btoa(code)}`);
+  assertStrictEquals(runtime.bare, runtime.qualified);
+  assertEquals(runtime.ranks, [-1, 0, 1]);
+  assertEquals(runtime.real, true);
+  await assertRejects(() => checkSource("-- @no-prelude\nlet rank: Order -> Number = _ => 0;"));
+  const unused = await compile("let value: Option<Order> = None;");
+  assertEquals(unused.includes("__wm_lib_subml_basis_subset_order"), false);
+  const patternsOnly = await compileLibraryVirtual(
+    "/test/patterns.wm",
+    new Map([[
+      "/test/patterns.wm",
+      `
+      let rank: Order -> Number = match { Less => -1, Equal => 0, Greater => 1 };
+    `,
+    ]]),
+  );
+  assertEquals(patternsOnly.includes("__wm_lib_subml_basis_subset_order"), true);
+  const patternsRuntime = await import(`data:text/javascript;base64,${btoa(patternsOnly)}`);
+  assertEquals(typeof patternsRuntime.rank, "function");
+  const shadowed = await compileLibraryVirtual(
+    "/test/shadow.wm",
+    new Map([[
+      "/test/shadow.wm",
+      `
+      type Order = Less | Equal;
+      let value: Order = Less;
+      let rank = match { Less => 10, Equal => 20 };
+      let answer = rank(value);
+    `,
+    ]]),
+  );
+  assertEquals(shadowed.includes("__wm_lib_subml_basis_subset_order"), false);
+  const shadowRuntime = await import(`data:text/javascript;base64,${btoa(shadowed)}`);
+  assertEquals(shadowRuntime.answer, 10);
+});
+
+Deno.test("pervasive ordering types and constructors resolve to shared library definitions", async () => {
+  const source = `let value: Order = Less;
+    let rank: Order -> Number = match { Less => -1, Equal => 0, Greater => 1 };`;
+  const { projectSnapshot: project } = await analyzeVirtual(
+    "/test/main.wm",
+    new Map([["/test/main.wm", source]]),
+  );
+  const main = [...project.interfaces.values()].find((item) => item.path === "/test/main.wm")!;
+  assertEquals(project.interfaces.size, 1);
+  for (const name of ["Order", "Less", "Equal", "Greater"]) {
+    const definitions = semanticDefinitionsAt(project, main.moduleId, source.indexOf(name));
+    assertEquals(definitions.length, 1, name);
+    assertEquals(definitions[0].path, "subml-basis/subset_order.wm", name);
+    const owner = (await loadStandardModules()).find((module) =>
+      module.path === definitions[0].path
+    )!;
+    assertEquals(owner.source.slice(definitions[0].span.start, definitions[0].span.end), name);
+  }
+});
+
 Deno.test("bare library pervasives retain Basis behavior through code generation", async () => {
   const source = `
     let values = map([1, 2, 3], (n) => { n * 2 });
@@ -81,7 +164,7 @@ Deno.test("bare library pervasives retain Basis behavior through code generation
   assertEquals(output, ["1", "2", "3"]);
 });
 
-Deno.test("pervasive projections share runtime function identity with explicit imports", async () => {
+Deno.test("pervasive projections share runtime value identity with explicit imports", async () => {
   const paths = [...new Set(LIBRARY_PERVASIVES.map((binding) => binding.modulePath))];
   const imports = paths.map((path, i) => {
     const specifier = path.startsWith("subml-basis/")
