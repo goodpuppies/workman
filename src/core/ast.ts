@@ -80,7 +80,7 @@ export type CoreRecordFieldDecl = {
 };
 
 export type CoreExpr =
-  | { kind: "CoreInt"; value: number; node?: AstNode }
+  | { kind: "CoreInt"; value: number; exact?: string; numericType?: string; node?: AstNode }
   | { kind: "CoreFloat"; value: number; node?: AstNode }
   | { kind: "CoreString"; value: string; node?: AstNode }
   | { kind: "CoreBool"; value: boolean; node?: AstNode }
@@ -154,7 +154,7 @@ export type CoreMatchArm = {
 export type CorePattern =
   | { kind: "CorePWildcard"; node?: AstNode }
   | { kind: "CorePVar"; name: string; bindingId?: BindingId; node?: AstNode }
-  | { kind: "CorePInt"; value: number; node?: AstNode }
+  | { kind: "CorePInt"; value: number; exact?: string; numericType?: string; node?: AstNode }
   | { kind: "CorePString"; value: string; node?: AstNode }
   | { kind: "CorePBool"; value: boolean; node?: AstNode }
   | { kind: "CorePVoid"; node?: AstNode }

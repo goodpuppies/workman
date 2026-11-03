@@ -6,11 +6,11 @@ import {
   CharTy,
   fresh,
   freshFfi,
+  freshIntegerLiteral,
+  freshNumeric,
   instantiate,
   named,
   NumberTy,
-  freshNumeric,
-  isI32Literal,
   prune,
   StringTy,
   tuple,
@@ -70,11 +70,9 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
   const { env, typeEnv, types, facts, warnings, diagnostics, provenance } = context;
   let t: Ty;
   switch (expr.kind) {
-    // An integer literal in I32 range is overloaded; context or defaulting picks the type.
+    // Integer literals carry candidate types until context or defaulting selects one.
     case "Int":
-      t = isI32Literal(negatedLiterals.has(expr) ? -expr.value : expr.value)
-        ? freshNumeric()
-        : NumberTy;
+      t = freshIntegerLiteral(expr, negatedLiterals.has(expr));
       break;
     case "Float":
       t = NumberTy;
@@ -485,9 +483,16 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
         // The parser reads `(-2147483648: I32)` as a minus around the ascribed literal.
         const operand = expr.value.kind === "Ascribed" ? expr.value.value : expr.value;
         if (operand.kind === "Int") negatedLiterals.add(operand);
-        const numeric = freshNumeric();
+        const numeric = operand.kind === "Int"
+          ? freshIntegerLiteral(operand, true)
+          : freshNumeric();
         recordExpectedExprType(facts, expr.value, numeric);
-        const value = inferExpr(expr.value, context);
+        let value: Ty;
+        try {
+          value = inferExpr(expr.value, context);
+        } finally {
+          if (operand.kind === "Int") negatedLiterals.delete(operand);
+        }
         const carrier = resultParts(value, typeEnv);
         recordConsumedFfiUse(facts, value, {
           kind: "operator",
@@ -510,7 +515,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
           {
             premise: {
               rule: "InferUnary.NumericOperand",
-              role: "unary - operand is Number or I32",
+              role: "unary - operand has a supported numeric type",
               subject: "unary - operand",
               leftRole: "required type",
               rightRole: "operand",

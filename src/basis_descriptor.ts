@@ -28,6 +28,8 @@ export type BasisTypeDescriptor = Readonly<{
    */
   hostOwned?: true;
   argLabels?: readonly string[];
+  /** Named fields for compiler-supplied ordinary record types. */
+  recordFields?: readonly Readonly<{ name: string; type: TypeExpr }>[];
   constructors?: readonly BasisConstructorDescriptor[];
 }>;
 

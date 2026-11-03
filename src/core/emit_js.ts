@@ -1,3 +1,4 @@
+import { integerSource } from "../numeric.ts";
 import type { CoreDecl, CoreExpr, CoreMatchArm, CorePattern } from "./ast.ts";
 import type { TypeExpr } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
@@ -1511,6 +1512,7 @@ let bindingTemp = 0;
 function emitExpr(expr: CoreExpr): string {
   switch (expr.kind) {
     case "CoreInt":
+      return integerSource(expr);
     case "CoreFloat":
       return String(expr.value);
     case "CoreString":
@@ -2095,7 +2097,7 @@ function patternChecks(
     case "CorePVar":
       return [];
     case "CorePInt":
-      return [`${value} === ${pattern.value}`];
+      return [`${value} === ${integerSource(pattern)}`];
     case "CorePString":
       return [`${value} === ${JSON.stringify(pattern.value)}`];
     case "CorePBool":

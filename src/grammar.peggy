@@ -44,6 +44,9 @@
   function node(loc) { return { id: nextNodeId++, span: span(loc) }; }
   function at(value, loc) { return { ...value, node: node(loc) }; }
   function atSpan(value, span) { return { ...value, node: { id: nextNodeId++, span } }; }
+  function integerLiteral(kind, value, text, loc) {
+    return at(Number.isSafeInteger(value) ? { kind, value } : { kind, value, exact: text }, loc);
+  }
   function isDecl(value) {
     return value.kind === "ImportDecl" || value.kind === "LetDecl" ||
       value.kind === "JsImportDecl" || value.kind === "TypeDecl" || value.kind === "RecordDecl" ||
@@ -261,6 +264,7 @@ JsImportClauseBody
   = "*" __ "as" __ alias:Name { return { kind: "Namespace", alias }; }
   / "{" _ specs:JsImportSpecList? _ "}" alias:(__ "as" __ a:Name { return a; })?
     { return { kind: "Named", specs: specs ?? [], alias }; }
+  / "*" { return { kind: "Named", specs: [], all: true }; }
 
 JsImportSpecList = first:JsImportSpec rest:(_ "," _ s:JsImportSpec { return s; })* _ ","? { return [first, ...rest]; }
 JsImportSpec
@@ -281,7 +285,7 @@ LetPattern
   / Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
-  / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
+  / i:Int { return integerLiteral("PInt", i.value, i.exact, location()); }
   / c:Character { return at({ kind: "PChar", value: c.value }, location()); }
   / s:String { return at({ kind: "PString", value: s.value }, location()); }
   / RecordLetPattern
@@ -542,7 +546,7 @@ PatternCore
   = Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
-  / i:Int { return at({ kind: "PInt", value: i.value }, location()); }
+  / i:Int { return integerLiteral("PInt", i.value, i.exact, location()); }
   / c:Character { return at({ kind: "PChar", value: c.value }, location()); }
   / s:String { return at({ kind: "PString", value: s.value }, location()); }
   / RecordPattern
@@ -644,8 +648,8 @@ TypeParam = name:(Identifier / Constructor) { return name; }
 
 Float = n:$("-"? [0-9]+ ("." [0-9]+ ([eE] [+-]? [0-9]+)? / [eE] [+-]? [0-9]+)) !IdentPart { return at({ kind: "Float", value: Number(n) }, location()); }
 Int
-  = n:$("-"? "0x" [0-9a-fA-F]+) !IdentPart { return at({ kind: "Int", value: Number.parseInt(n) }, location()); }
-  / n:$("-"? [0-9]+) !IdentPart { return at({ kind: "Int", value: Number(n) }, location()); }
+  = n:$("-"? "0x" [0-9a-fA-F]+) !IdentPart { return integerLiteral("Int", Number.parseInt(n), n, location()); }
+  / n:$("-"? [0-9]+) !IdentPart { return integerLiteral("Int", Number(n), n, location()); }
 String = MultilineString / QuotedString
 InterpolatedString
   = "`" InterpolatedStringText? StringInterpolation

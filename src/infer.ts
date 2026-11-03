@@ -13,6 +13,7 @@ import { basisProfile, type InitialBasis, initialBasis } from "./initial_basis.t
 import type { SourceSpan } from "./source.ts";
 import {
   containsUnsolvedJsBoundary,
+  defaultNumericVars,
   type Env,
   knownTypeIds,
   knownTypeInfos,
@@ -23,7 +24,7 @@ import {
   type Ty,
   type TypeDeclInfo,
   type TypeEnv,
-  defaultNumericVars,
+  withNumericScope,
 } from "./types.ts";
 
 export type StructureEnv = StaticEnv & { adts: Map<number, TypeDeclInfo> };
@@ -156,6 +157,18 @@ export function inferModuleRecovered(
 }
 
 function inferModuleCore(
+  module: Module,
+  imports: Map<string, InferResult>,
+  recover: boolean,
+  options: InferModuleOptions,
+  captureSteps: boolean,
+): { result: InferResult; steps: InferStep[] } {
+  return withNumericScope(() =>
+    inferModuleCoreInner(module, imports, recover, options, captureSteps)
+  );
+}
+
+function inferModuleCoreInner(
   module: Module,
   imports: Map<string, InferResult>,
   recover: boolean,

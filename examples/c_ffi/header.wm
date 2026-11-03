@@ -1,7 +1,8 @@
+from "host/c/pointer.wm" import * as Pointer;
 from c.header("stdio.h") import unsafe {
   puts,
 };
 
 let main = () => {
-  puts("hello from stdio.h");
+  puts(Some(Pointer.fromString("hello from stdio.h")));
 };

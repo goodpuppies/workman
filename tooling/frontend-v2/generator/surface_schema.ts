@@ -286,6 +286,7 @@ export const surfaceBuilderPlan: Readonly<Record<string, readonly string[]>> = O
   JsImportClauseBody: [
     "ImportNamespaceClauseNode",
     "JavaScriptNamedClauseNode",
+    "ImportAllClauseNode",
   ],
   JsImportSpec: ["JavaScriptImportSpecificationNode"],
   LetDecl: ["LetDeclarationNode"],

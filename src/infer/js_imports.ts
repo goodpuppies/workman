@@ -74,6 +74,11 @@ export function addJsImport(
     facts.jsImportSchemes.set(decl, scheme);
     return;
   }
+  if (decl.clause.all && decl.target.kind !== "CHeader") {
+    throw new Error(
+      "unqualified wildcard FFI imports require c.header; use '* as Name' for other FFI targets",
+    );
+  }
   rejectDuplicates(decl.clause.specs.map((spec) => spec.alias ?? spec.name), "JS import");
   const targetEnv = decl.clause.alias ? staticEnv() : staticEnv(strEnv, typeEnv, env);
   for (const spec of decl.clause.specs) {

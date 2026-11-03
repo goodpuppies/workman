@@ -1,3 +1,11 @@
+import { diagnosticError } from "./diagnostic_model.ts";
+import {
+  exactInteger,
+  INTEGER_LITERAL_TYPES,
+  type NumericType,
+  numericType,
+  OPERATOR_NUMERIC_TYPES,
+} from "./numeric.ts";
 import type { AstNode } from "./source.ts";
 import type { CtorDecl, Expr, TypeExpr } from "./ast.ts";
 import { isQualified, pathOf } from "./ast.ts";
@@ -15,8 +23,8 @@ export type Ty =
     jsConstraint?: (t: Ty) => void;
     gpuConstraint?: (t: Ty) => void;
     equalityConstraint?: (t: Ty) => void;
-    /** An overloaded numeric literal or operator: binds only to `Number` or `I32`. */
-    numeric?: true;
+    /** Finite admissible types and literal range obligations; never generalized. */
+    numeric?: NumericConstraint;
     /** All field/result obligations on this unresolved nominal receiver. */
     projectionFields?: ProjectionFieldInfo[];
   }
@@ -183,28 +191,84 @@ export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
 export const prim = (name: string): Ty => ({ tag: "prim", name });
 export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
 
-/** Numeric variables not yet decided, in creation order; see `defaultNumericVars`. */
+export type NumericConstraint = Readonly<{
+  candidates: readonly NumericType[];
+  literals: readonly { text: string; node?: Expr["node"] }[];
+}>;
+
+/** Numeric variables belong to one synchronous module-inference scope. */
 let pendingNumeric: Extract<Ty, { tag: "var" }>[] = [];
 
-export const I32_MIN = -2147483648;
-export const I32_MAX = 2147483647;
-
-/** Integer literals inside the I32 range may become either numeric type. */
-export function isI32Literal(value: number): boolean {
-  return Number.isInteger(value) && value >= I32_MIN && value <= I32_MAX;
+export function withNumericScope<T>(action: () => T): T {
+  const previous = pendingNumeric;
+  pendingNumeric = [];
+  try {
+    return action();
+  } finally {
+    pendingNumeric = previous;
+  }
 }
 
-/** A variable that becomes `Number` or `I32`, defaulting to `Number`. */
+export const operatorNumericConstraint = (): NumericConstraint => ({
+  candidates: OPERATOR_NUMERIC_TYPES,
+  literals: [],
+});
+
+/** Operators retain their implemented Number/I32 domain in the first literal slice. */
 export function freshNumeric(name?: string): Ty {
   const t = fresh(name) as Extract<Ty, { tag: "var" }>;
-  markNumeric(t);
+  markNumeric(t, operatorNumericConstraint());
   return t;
 }
 
-function markNumeric(t: Extract<Ty, { tag: "var" }>): void {
-  if (t.numeric) return;
-  t.numeric = true;
-  pendingNumeric.push(t);
+export function freshIntegerLiteral(
+  literal: { value: number; exact?: string; node?: Expr["node"] },
+  negated = false,
+): Ty {
+  const text = literal.exact ?? String(literal.value);
+  const signed = negated ? (text.startsWith("-") ? text.slice(1) : "-" + text) : text;
+  const t = fresh() as Extract<Ty, { tag: "var" }>;
+  markNumeric(t, {
+    candidates: INTEGER_LITERAL_TYPES,
+    literals: [{ text: signed, node: literal.node }],
+  });
+  return t;
+}
+
+function markNumeric(t: Extract<Ty, { tag: "var" }>, constraint: NumericConstraint): void {
+  if (t.numeric === constraint) return;
+  if (t.numeric) {
+    const candidates = t.numeric.candidates.filter((candidate) =>
+      constraint.candidates.includes(candidate)
+    );
+    if (!candidates.length) throw new Error("incompatible numeric overload constraints");
+    t.numeric = { candidates, literals: [...t.numeric.literals, ...constraint.literals] };
+  } else {
+    t.numeric = constraint;
+    pendingNumeric.push(t);
+  }
+}
+
+function checkNumeric(constraint: NumericConstraint, type: Ty): boolean {
+  const selected = numericType(type);
+  if (!selected || !constraint.candidates.includes(selected)) return false;
+  if (selected.bits !== undefined) {
+    const width = BigInt(selected.bits);
+    const min = selected.signed ? -(1n << (width - 1n)) : 0n;
+    const max = selected.signed ? (1n << (width - 1n)) - 1n : (1n << width) - 1n;
+    for (const literal of constraint.literals) {
+      const value = exactInteger(literal.text);
+      if (value < min || value > max) {
+        throw diagnosticError(
+          new Error(
+            `integer literal ${literal.text} is out of range for ${selected.name} (${min} through ${max})`,
+          ),
+          literal.node,
+        );
+      }
+    }
+  }
+  return true;
 }
 
 // Keeps the bound-variable evidence of the original operands, so a mismatch is attributed
@@ -224,10 +288,6 @@ function unifyAgainstNumber(
     if (!(error instanceof TypeMismatchError) || error.path !== path) throw error;
     throw typeMismatchError(error.left, error.right, path, originalA, originalB);
   }
-}
-
-function isNumericPrim(t: Ty): boolean {
-  return t.tag === "prim" && (t.name === "Number" || t.name === "I32");
 }
 
 /**
@@ -350,14 +410,21 @@ export function unify(
   if (a === b) return;
   // A non-numeric type meeting a numeric variable fails exactly as it would against Number,
   // which keeps existing diagnostics; check before binding so the variable stays intact.
-  if (a.tag === "var" && a.numeric && b.tag !== "var" && b.tag !== "ffi" && !isNumericPrim(b)) {
+  if (
+    a.tag === "var" && a.numeric && b.tag !== "var" && b.tag !== "ffi" &&
+    !checkNumeric(a.numeric, b)
+  ) {
     unifyAgainstNumber(NumberTy, b, originalA, originalB, onBind, path, onDeferFfi);
   }
-  if (b.tag === "var" && b.numeric && a.tag !== "var" && a.tag !== "ffi" && !isNumericPrim(a)) {
+  if (
+    b.tag === "var" && b.numeric && a.tag !== "var" && a.tag !== "ffi" &&
+    !checkNumeric(b.numeric, a)
+  ) {
     unifyAgainstNumber(a, NumberTy, originalA, originalB, onBind, path, onDeferFfi);
   }
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
+    if (a.numeric && b.tag === "var") markNumeric(b, a.numeric);
     a.instance = b;
     if (b.tag === "var" && a.projectionFields) {
       const existing = b.projectionFields ?? [];
@@ -384,7 +451,6 @@ export function unify(
       if (b.tag === "var") addEqualityConstraint(b, a.equalityConstraint);
       else a.equalityConstraint(b);
     }
-    if (a.numeric && b.tag === "var") markNumeric(b);
     if (b.tag !== "var") {
       for (const field of a.projectionFields ?? []) field.resolve(b, field);
     }
@@ -748,7 +814,7 @@ export function instantiate(scheme: Scheme): Ty {
       if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
       if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
       if (t.equalityConstraint) addEqualityConstraint(mapped, t.equalityConstraint);
-      if (t.numeric && mapped.tag === "var") markNumeric(mapped);
+      if (t.numeric && mapped.tag === "var") markNumeric(mapped, t.numeric);
       if (!copiedProjections.has(t.id)) {
         copiedProjections.add(t.id);
         for (const field of t.projectionFields ?? []) {
@@ -798,7 +864,7 @@ export function freshenTypeVars(
       if (t.jsConstraint) addJsConstraint(created, t.jsConstraint);
       if (t.gpuConstraint) addGpuConstraint(created, t.gpuConstraint);
       if (t.equalityConstraint) addEqualityConstraint(created, t.equalityConstraint);
-      if (t.numeric) markNumeric(created as Extract<Ty, { tag: "var" }>);
+      if (t.numeric) markNumeric(created as Extract<Ty, { tag: "var" }>, t.numeric);
       for (const field of t.projectionFields ?? []) {
         addProjectionField(created, { ...field, type: go(field.type) });
       }
@@ -833,7 +899,9 @@ export function instantiateRecordFields(info: TypeInfo, args: Ty[]): RecordField
   }));
 }
 
-function namedRecordFields(type: Extract<Ty, { tag: "named" }>): RecordFieldInfo[] | undefined {
+export function namedRecordFields(
+  type: Extract<Ty, { tag: "named" }>,
+): RecordFieldInfo[] | undefined {
   if (!type.recordFields) return undefined;
   const subst = new Map<number, Ty>();
   (type.recordParams ?? []).forEach((id, i) => subst.set(id, type.args[i]));
@@ -875,6 +943,12 @@ export function typeFromAst(
     if (existing) {
       options.onResolveVariable?.(expr, existing);
       return resolved(existing);
+    }
+    // Reflected C typedefs commonly start with lowercase letters (sqlite3, size_t).
+    // Explicit scoped type parameters above still take precedence over imported names.
+    const foreign = typeEnv.get(expr.name);
+    if (foreign?.foreign && foreign.arity === 0) {
+      return resolved(typeFromAst({ ...expr, kind: "TName", args: [] }, typeEnv, vars, options));
     }
     if (!allowFreeVars) throw new Error(`unbound type variable ${expr.name}`);
     const created = fresh(expr.name);
@@ -934,7 +1008,7 @@ export function show(t: Ty): string {
   let numeric = 0;
   const receivers: Extract<Ty, { tag: "var" }>[] = [];
   const seenReceivers = new Set<number>();
-  // Numeric variables (Number or I32) get their own names so the constraint stays visible.
+  // Unresolved numeric candidates get their own names so the constraint stays visible.
   const numericName = () => numeric++ === 0 ? "'num" : `'num${numeric}`;
   const nameOf = (id: number, isNumeric?: boolean) =>
     names.get(id) ??
@@ -954,7 +1028,7 @@ export function show(t: Ty): string {
         seenReceivers.add(x.id);
         receivers.push(x);
       }
-      return x.name ?? nameOf(x.id, x.numeric);
+      return x.name ?? nameOf(x.id, !!x.numeric);
     }
     if (x.tag === "ffi") return `?ffi#${x.id}:${x.binding ?? x.path.join(".")}`;
     if (x.tag === "prim") return x.name;

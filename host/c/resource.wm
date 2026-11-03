@@ -1,0 +1,5 @@
+// Optional exception cleanup; it adds no allocation or ownership semantics.
+from js.module("./js/pointer.js") import unsafe {
+  withCleanup as primWithCleanup: (Void -> a, Void -> Void) -> a,
+};
+let withCleanup = primWithCleanup;

@@ -1,3 +1,4 @@
+import { numericType } from "../numeric.ts";
 import type {
   Binding,
   CtorDecl,
@@ -54,6 +55,7 @@ import type {
 type CoreLoweringContext = {
   target: "shared" | "host";
   types: Map<Expr, Ty>;
+  patternTypes: Map<Pattern, Ty>;
   namespaceValues: ReadonlyMap<Expr, string>;
   typeEnv: TypeEnv;
   bindings?: BindingFacts;
@@ -116,6 +118,7 @@ export function coreFromSurface(
     ? {
       target: "host" as const,
       types: analysis?.types ?? new Map<Expr, Ty>(),
+      patternTypes: analysis?.facts.patternTypes ?? new Map<Pattern, Ty>(),
       namespaceValues: analysis?.facts.namespaceValues ?? new Map<Expr, string>(),
       typeEnv: analysis?.typeEnv ?? new Map(),
       bindings: resolvedBindings,
@@ -163,6 +166,7 @@ export function sharedCoreFromSurface(
   const context: CoreLoweringContext = {
     target: "shared",
     types: analysis.types,
+    patternTypes: analysis.facts.patternTypes,
     namespaceValues: analysis.facts.namespaceValues,
     typeEnv: analysis.typeEnv,
     bindings: resolvedBindings,
@@ -328,7 +332,12 @@ function coreRecordFieldDeclFromSurface(decl: RecordFieldDecl): CoreRecordFieldD
 function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExpr {
   switch (expr.kind) {
     case "Int":
-      return { kind: "CoreInt", value: expr.value, node: expr.node };
+      return {
+        kind: "CoreInt",
+        value: expr.value,
+        ...integerDetails(expr, context?.types.get(expr)),
+        node: expr.node,
+      };
     case "Float":
       return { kind: "CoreFloat", value: expr.value, node: expr.node };
     // Character typing is complete; host Core stores the single scalar as text.
@@ -638,7 +647,12 @@ function corePatternFromSurface(
         node: pattern.node,
       };
     case "PInt":
-      return { kind: "CorePInt", value: pattern.value, node: pattern.node };
+      return {
+        kind: "CorePInt",
+        value: pattern.value,
+        ...integerDetails(pattern, context?.patternTypes.get(pattern)),
+        node: pattern.node,
+      };
     // Char and String keep distinct Surface types and share host equality checks.
     case "PChar":
     case "PString":
@@ -1012,4 +1026,13 @@ function desugarDottedVar(
     };
   }
   return result;
+}
+
+/** Preserve the selected semantic type and any magnitude that Number cannot store exactly. */
+function integerDetails(literal: { exact?: string }, type?: Ty) {
+  const selected = type && numericType(prune(type));
+  return {
+    ...(literal.exact === undefined ? {} : { exact: literal.exact }),
+    ...(selected?.id === undefined ? {} : { numericType: selected.name }),
+  };
 }

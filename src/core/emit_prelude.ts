@@ -76,21 +76,29 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_c_text_encoder = new globalThis.TextEncoder();
 const __wm_c_string_to_cstr = (value) => {
   const bytes = __wm_c_text_encoder.encode(String(value) + "\\0");
-  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  __wm_c_cstr_cache[__wm_c_cstr_index] = buffer;
-  __wm_c_cstr_index = (__wm_c_cstr_index + 1) % 256;
-  return globalThis.Deno.UnsafePointer.of(buffer);
+  return globalThis.Deno.UnsafePointer.of(bytes);
 };
-const __wm_c_cstr_cache = new globalThis.Array(256);
-let __wm_c_cstr_index = 0;
 const __wm_c_codecs = {};
-const __wm_c_keepalive = [];
+const __wm_c_initialize = (plan, args, bt) => {
+  if (args.length === 1 && globalThis.Array.isArray(args[0]) && plan.writes.length > 1) args = args[0];
+  const buffer = new ArrayBuffer(plan.size);
+  const view = new DataView(buffer);
+  plan.writes.forEach((write, index) => {
+    if (write.copySize !== undefined) {
+      new globalThis.Deno.UnsafePointerView(args[index].pointer).copyInto(new Uint8Array(buffer, write.offset, write.copySize));
+    } else {
+      bt[write.codec].write(args[index], view, { byteOffset: write.offset });
+    }
+  });
+  return { pointer: globalThis.Deno.UnsafePointer.of(buffer), size: plan.size };
+};
 const __wm_c_setup_codec = async (descriptor, bt) => {
   const fields = {};
   for (const field of descriptor.fields) fields[field.name] = bt[field.codec];
-  const codec = bt.createSizedStruct(fields);
+  const codec = descriptor.fieldsOnly ? null : bt.createSizedStruct(fields);
   __wm_c_codecs[descriptor.name] = {
     codec,
+    fields: Object.fromEntries(descriptor.fields.map(field => [field.name, { codec: bt[field.codec], offset: field.offset }])),
     size: descriptor.size,
     fieldNames: descriptor.fields.map((field) => field.name),
   };
@@ -104,14 +112,22 @@ const __wm_c_struct_new = (name, args) => {
   entry.fieldNames.forEach((field, index) => { value[field] = args[index]; });
   const buffer = new ArrayBuffer(entry.size);
   entry.codec.write(value, new DataView(buffer));
-  __wm_c_keepalive.push(buffer);
   return globalThis.Deno.UnsafePointer.of(buffer);
 };
 const __wm_c_struct_get = (name, pointer, field) => {
   const entry = __wm_c_codecs[name];
   const view = new globalThis.Deno.UnsafePointerView(pointer);
   const dataView = new DataView(view.getArrayBuffer(entry.size));
-  return entry.codec.read(dataView)[field];
+  const member = entry.fields[field];
+  return member.codec.read(dataView, { byteOffset: member.offset });
+};
+const __wm_c_struct_set = (name, args, field) => {
+  if (args.length === 1 && globalThis.Array.isArray(args[0])) args = args[0];
+  const [pointer, value] = args;
+  const entry = __wm_c_codecs[name];
+  const view = new DataView(new globalThis.Deno.UnsafePointerView(pointer).getArrayBuffer(entry.size));
+  const member = entry.fields[field];
+  member.codec.write(value, view, { byteOffset: member.offset });
 };
 const __wm_c_call = (symbol, args, converters, resultConverter) => {
   if (args.length === 1 && globalThis.Array.isArray(args[0]) && converters.length > 1) {
@@ -126,7 +142,6 @@ const __wm_c_call = (symbol, args, converters, resultConverter) => {
         return unwrapped === null ? null : __wm_c_string_to_cstr(unwrapped);
       }
       case "option-unwrap": return __wm_js_option_unwrap(arg);
-      case "number-to-bigint": return globalThis.BigInt(globalThis.Math.trunc(arg));
       default: {
         if (typeof converter === "object" && converter.kind === "struct-by-value") {
           return __wm_c_struct_to_buffer(converter.name, arg);
@@ -138,6 +153,9 @@ const __wm_c_call = (symbol, args, converters, resultConverter) => {
   const result = symbol(...converted);
   switch (resultConverter) {
     case "cstr-to-string": {
+      return new globalThis.Deno.UnsafePointerView(result).getCString();
+    }
+    case "option-cstr-to-string": {
       return result == null
         ? __wm_basis_None
         : __wm_basis_Some(new globalThis.Deno.UnsafePointerView(result).getCString());
@@ -155,7 +173,6 @@ const __wm_c_struct_to_buffer = (name, value) => {
   const entry = __wm_c_codecs[name];
   const buffer = new ArrayBuffer(entry.size);
   entry.codec.write(value, new DataView(buffer));
-  __wm_c_keepalive.push(buffer);
   return buffer;
 };`,
     `const __wm_js_to_workman = (value, converter) => {
@@ -240,6 +257,8 @@ const __wm_c_struct_to_buffer = (name, value) => {
   }
 };`,
     `const __wm_eq = (left, right) => {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
   // Pairs still to compare, in an explicit stack: a list is nested cons cells,
   // so recursion would use one JS frame per element and overflow on long lists.
   const pending = [left, right];

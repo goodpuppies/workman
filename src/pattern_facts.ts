@@ -308,7 +308,7 @@ class PatternFactState {
         break;
       }
       case "PInt":
-        fact = { ...base, kind: "i32", literal: pattern.value, children: [] };
+        fact = { ...base, kind: "i32", literal: pattern.exact ?? pattern.value, children: [] };
         break;
       case "PChar":
         fact = { ...base, kind: "char", literal: pattern.value, children: [] };

@@ -1,3 +1,4 @@
+import { integerSource } from "../numeric.ts";
 import type { TypeExpr } from "../ast.ts";
 import type { CoreDecl, CoreExpr, CoreModule, CorePattern } from "./ast.ts";
 
@@ -82,6 +83,7 @@ function showType(type: TypeExpr): string {
 function showExpr(expr: CoreExpr): string {
   switch (expr.kind) {
     case "CoreInt":
+      return expr.exact ?? integerSource(expr);
     case "CoreFloat":
       return String(expr.value);
     case "CoreString":
@@ -150,7 +152,7 @@ function showPattern(pattern: CorePattern): string {
     case "CorePVar":
       return pattern.name;
     case "CorePInt":
-      return String(pattern.value);
+      return pattern.exact ?? integerSource(pattern);
     case "CorePString":
       return JSON.stringify(pattern.value);
     case "CorePBool":

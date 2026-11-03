@@ -5,13 +5,12 @@ import {
   CharTy,
   type Env,
   fresh,
+  freshIntegerLiteral,
   instantiate,
   instantiateRecordFields,
   knownTypeInfos,
   named,
   NumberTy,
-  freshNumeric,
-  isI32Literal,
   prune,
   StringTy,
   tuple,
@@ -41,7 +40,7 @@ export function showPattern(pattern: Pattern): string {
     case "PVar":
       return pattern.name;
     case "PInt":
-      return String(pattern.value);
+      return pattern.exact ?? String(pattern.value);
     case "PChar":
       return "'" + JSON.stringify(pattern.value).slice(1, -1).replaceAll("'", "\\'") + "'";
     case "PString":
@@ -126,10 +125,10 @@ export function inferPattern(
     case "PInt":
       constrainPattern(
         expected,
-        isI32Literal(p.value) ? freshNumeric() : NumberTy,
+        freshIntegerLiteral(p),
         p,
         "InferPattern.Int",
-        "integer pattern matches Number or I32",
+        "integer pattern matches its selected numeric type",
         provenance,
         expectedSource,
       );
@@ -349,10 +348,10 @@ export function inferBindingPattern(
     case "PInt":
       constrainPattern(
         expected,
-        isI32Literal(pattern.value) ? freshNumeric() : NumberTy,
+        freshIntegerLiteral(pattern),
         pattern,
         "InferBindingPattern.Int",
-        "integer let pattern matches Number or I32",
+        "integer let pattern matches its selected numeric type",
       );
       return;
     case "PChar":

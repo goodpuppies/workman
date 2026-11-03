@@ -3,6 +3,8 @@ from js.module("./js/table.js") import unsafe {
   lookup as primGet: (Js.Table<v>, String) -> v,
   lookup as primGetAt: (Js.Table<v>, Number) -> v,
   present: v -> Bool,
+  remove as primRemove: (Js.Table<v>, String) -> Void,
+  remove as primRemoveAt: (Js.Table<v>, Number) -> Void,
   set as primSet: (Js.Table<v>, String, v) -> Void,
   set as primSetAt: (Js.Table<v>, Number, v) -> Void
 };
@@ -31,3 +33,6 @@ let getAt: (Js.Table<v>, Number) -> Option<v> = (table, key) => {
 let setAt: (Js.Table<v>, Number, v) -> Void = (table, key, value) => {
   primSetAt(table, key, value)
 };
+
+let remove: (Js.Table<v>, String) -> Void = (table, key) => { primRemove(table, key) };
+let removeAt: (Js.Table<v>, Number) -> Void = (table, key) => { primRemoveAt(table, key) };

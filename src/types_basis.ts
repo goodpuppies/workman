@@ -1,3 +1,4 @@
+import { registerNumericIdentity } from "./numeric.ts";
 import { basisTypes } from "./basis.ts";
 import { BASIS_OPERATORS, BASIS_TYPES } from "./basis_manifest.ts";
 import { type CompilerSemanticId, GPU_SEMANTIC_IDS } from "./compiler_semantics.ts";
@@ -11,6 +12,7 @@ import {
   I32Ty,
   named,
   NumberTy,
+  operatorNumericConstraint,
   StringTy,
   tuple,
   type Ty,
@@ -25,7 +27,7 @@ import {
 /** A scheme's numeric variable: only its instances are registered for defaulting. */
 function numericSchemeVar(): Extract<Ty, { tag: "var" }> {
   const a = fresh() as Extract<Ty, { tag: "var" }>;
-  a.numeric = true;
+  a.numeric = operatorNumericConstraint();
   return a;
 }
 
@@ -395,6 +397,20 @@ export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
         },
       ]),
     );
+    for (const info of basisTypeEnvCache.values()) registerNumericIdentity(info.name, info.id);
+    for (const descriptor of BASIS_TYPES) {
+      if (!descriptor.recordFields) continue;
+      const info = basisTypeEnvCache.get(descriptor.name)!;
+      const labels = descriptor.argLabels ?? [];
+      const vars = new Map(labels.map((label) => [label, fresh(label)] as const));
+      info.recordParams = [...vars.values()].map((variable) =>
+        (variable as Extract<Ty, { tag: "var" }>).id
+      );
+      info.recordFields = descriptor.recordFields.map((field) => ({
+        name: field.name,
+        type: typeFromAst(field.type, basisTypeEnvCache!, vars, { allowFreeVars: false }),
+      }));
+    }
   }
   const result = new Map(basisTypeEnvCache);
   const profile = options.includeAlgebraicBasis === false ? "kernel" : "default";

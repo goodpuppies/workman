@@ -33,6 +33,8 @@ export type CCodecDescriptor = {
   size: number;
   align: number;
   fields: CCodecField[];
+  /** Primitive field access only: arrays/pointers/nested fields stay opaque. */
+  fieldsOnly?: boolean;
 };
 
 export function validateCodecDescriptor(descriptor: CCodecDescriptor): void {
@@ -40,8 +42,17 @@ export function validateCodecDescriptor(descriptor: CCodecDescriptor): void {
   for (const field of descriptor.fields) {
     const codec = CODEC_BY_NAME[field.codec];
     if (!codec) throw new Error(`no byte_type codec for '${field.codec}'`);
+    if (
+      descriptor.fieldsOnly && (
+        field.offset < 0 ||
+        field.offset + (codec as { byteSize: number }).byteSize > descriptor.size
+      )
+    ) {
+      throw new Error(`C struct ${descriptor.name} field ${field.name} exceeds its reflected size`);
+    }
     fields[field.name] = codec;
   }
+  if (descriptor.fieldsOnly) return;
   const codec = createSizedStruct(fields);
   const offsets = codec.getFieldOffsets() as Record<string, number>;
   for (const field of descriptor.fields) {

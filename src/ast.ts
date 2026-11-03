@@ -131,7 +131,9 @@ export type JsImportClause =
       typeNames?: string[];
     }
   >
-  | Located<{ kind: "Named"; specs: JsImportSpec[]; alias?: string; unsafe?: boolean }>;
+  | Located<
+    { kind: "Named"; specs: JsImportSpec[]; alias?: string; unsafe?: boolean; all?: boolean }
+  >;
 export type JsImportSpec = Located<{
   name: string;
   alias?: string;
@@ -158,7 +160,7 @@ export type CaptureClause = Located<{
 }>;
 
 export type Expr =
-  | Located<{ kind: "Int"; value: number }>
+  | Located<{ kind: "Int"; value: number; exact?: string }>
   | Located<{ kind: "Float"; value: number }>
   | Located<{ kind: "Char"; value: string }>
   | Located<{ kind: "String"; value: string }>
@@ -236,7 +238,7 @@ export type MatchArm = Located<{ pattern: Pattern; body: Expr }>;
 export type Pattern =
   | Located<{ kind: "PWildcard" }>
   | Located<{ kind: "PVar"; name: string }>
-  | Located<{ kind: "PInt"; value: number }>
+  | Located<{ kind: "PInt"; value: number; exact?: string }>
   | Located<{ kind: "PChar"; value: string }>
   | Located<{ kind: "PString"; value: string }>
   | Located<{ kind: "PBool"; value: boolean }>

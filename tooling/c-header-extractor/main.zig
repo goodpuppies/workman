@@ -11,8 +11,9 @@ fn object(_: A) J {
 fn array(a: A) J {
     return .{ .array = std.array_list.Managed(J).init(a) };
 }
-fn text(s: []const u8) J {
-    return .{ .string = s };
+fn text(a: A, s: []const u8) !J {
+    // Parsing macro probes may grow Aro's string pool and invalidate lookups.
+    return .{ .string = try a.dupe(u8, s) };
 }
 fn integer(n: anytype) J {
     return .{ .integer = @intCast(n) };
@@ -22,7 +23,7 @@ fn put(a: A, o: *J, k: []const u8, v: J) !void {
 }
 fn tag(a: A, kind: []const u8) !J {
     var o = object(a);
-    try put(a, &o, "kind", text(kind));
+    try put(a, &o, "kind", try text(a, kind));
     return o;
 }
 
@@ -64,6 +65,7 @@ pub fn main(init: std.process.Init) !void {
     defer toolchain.deinit();
     try toolchain.discover();
     try toolchain.defineSystemIncludes();
+    try addWindowsSystemIncludes(&toolchain, &environ);
     try comp.initSearchPath(driver.includes.items, false);
     const builtin_macros = try comp.generateBuiltinMacros(driver.system_defines);
     const command_line = try comp.addSourceFromBuffer("<command line>", macros.items);
@@ -111,7 +113,7 @@ pub fn main(init: std.process.Init) !void {
                             const value = try probe_reflection.value(initializer, 0);
                             if (value != .null) {
                                 var item = object(a);
-                                try put(a, &item, "name", text(name));
+                                try put(a, &item, "name", try text(a, name));
                                 try put(a, &item, "type", try reflection.desc(v.qt, 0));
                                 try put(a, &item, "value", value);
                                 try reflection.values.array.append(item);
@@ -135,12 +137,40 @@ pub fn main(init: std.process.Init) !void {
     try put(a, &output, "values", reflection.values);
     var dependencies = array(a);
     for (comp.sources.values()) |source| if (!std.mem.startsWith(u8, source.path, "<")) {
-        try dependencies.array.append(text(source.path));
+        try dependencies.array.append(try text(a, source.path));
     };
     try put(a, &output, "dependencies", dependencies);
     try out.interface.writeAll(try std.json.Stringify.valueAlloc(a, output, .{}));
     try out.interface.writeAll("\n");
     try out.interface.flush();
+}
+
+// Aro's generic toolchain currently only adds /usr/include. Reuse the SDK
+// discovery shipped in Zig's standard library, without requiring Zig at runtime.
+fn addWindowsSystemIncludes(tc: *aro.Toolchain, environ: *const std.process.Environ.Map) !void {
+    if (@import("builtin").os.tag != .windows) return;
+    const comp = tc.driver.comp;
+    if (comp.target.os.tag != .windows or comp.target.abi != .msvc or
+        tc.driver.nostdinc or tc.driver.nostdlibinc) return;
+    if (environ.get("INCLUDE")) |paths| {
+        var it = std.mem.tokenizeScalar(u8, paths, ';');
+        while (it.next()) |path| try tc.addSystemIncludeDir(path);
+    }
+    const sdk = std.zig.WindowsSdk.find(comp.gpa, comp.io, comp.target.cpu.arch, environ) catch |err| switch (err) {
+        error.NotFound, error.PathTooLong => return,
+        else => return err,
+    };
+    defer sdk.free(comp.gpa);
+    if (sdk.msvc_lib_dir) |lib_dir| {
+        const arch_dir = std.fs.path.dirname(lib_dir) orelse return;
+        const root = std.fs.path.dirname(arch_dir) orelse return;
+        try tc.addSystemIncludeDir(try std.fs.path.join(comp.arena, &.{ root, "include" }));
+    }
+    if (sdk.windows10sdk) |install| {
+        for ([_][]const u8{ "ucrt", "shared", "um", "winrt" }) |part| {
+            try tc.addSystemIncludeDir(try std.fs.path.join(comp.arena, &.{ install.path, "Include", install.version, part }));
+        }
+    }
 }
 
 const Reflection = struct {
@@ -176,9 +206,9 @@ const Reflection = struct {
                     const field_name = field.name.lookup(r.comp);
                     if (r.wanted(field_name)) {
                         var item = object(r.a);
-                        try put(r.a, &item, "name", text(field_name));
+                        try put(r.a, &item, "name", try text(r.a, field_name));
                         try put(r.a, &item, "type", try r.desc(field.qt, 0));
-                        try put(r.a, &item, "value", try r.enumValue(field.name_tok));
+                        try put(r.a, &item, "value", try r.enumValue(en.decl_node, field.name_tok));
                         try r.values.array.append(item);
                     }
                 };
@@ -192,7 +222,7 @@ const Reflection = struct {
                 if (!r.wanted(name)) return;
                 if (d.qt.get(r.comp, .pointer)) |p| if (p.child.is(r.comp, .func)) return r.functionDecl(name, p.child);
                 var item = object(r.a);
-                try put(r.a, &item, "name", text(name));
+                try put(r.a, &item, "name", try text(r.a, name));
                 try put(r.a, &item, "type", try r.desc(d.qt, 0));
                 try put(r.a, &item, "value", if (d.initializer) |initializer| try r.value(initializer, 0) else .null);
                 try r.values.array.append(item);
@@ -200,16 +230,18 @@ const Reflection = struct {
             else => {},
         }
     }
-    fn enumValue(r: *Reflection, token: u32) !J {
-        for (0..r.tree.nodes.len) |i| {
-            const index: aro.Tree.Node.Index = @enumFromInt(i);
-            switch (index.get(r.tree)) {
-                .enum_field => |field| if (field.name_tok == token) {
-                    if (r.tree.value_map.get(index)) |v| return r.scalar(v, field.qt);
-                    if (field.init) |initializer| return r.value(initializer, 0);
-                },
-                else => {},
-            }
+    fn enumValue(r: *Reflection, enum_node: aro.Tree.Node.Index, token: u32) !J {
+        // Follow the enum's own fields. Aro's node arena also contains unused
+        // reserved slots for references to previously declared struct/enum types.
+        const fields = switch (enum_node.get(r.tree)) {
+            .enum_decl => |decl| decl.fields,
+            else => return .null,
+        };
+        for (fields) |index| {
+            const field = index.get(r.tree).enum_field;
+            if (field.name_tok != token) continue;
+            if (r.tree.value_map.get(index)) |v| return r.scalar(v, field.qt);
+            if (field.init) |initializer| return r.value(initializer, 0);
         }
         return .null;
     }
@@ -217,10 +249,10 @@ const Reflection = struct {
         if (r.emitted.contains(name)) return;
         try r.emitted.put(r.a, name, {});
         var item = object(r.a);
-        try put(r.a, &item, "name", text(name));
-        if (qt.is(r.comp, .@"union")) return error.UnionTypesNotSupported;
+        try put(r.a, &item, "name", try text(r.a, name));
         if (qt.getRecord(r.comp)) |record| {
-            try put(r.a, &item, "kind", text("struct"));
+            try put(r.a, &item, "kind", try text(r.a, "struct"));
+            try put(r.a, &item, "isUnion", .{ .bool = qt.is(r.comp, .@"union") });
             try put(r.a, &item, "size", integer(if (record.layout) |layout| layout.size_bits / 8 else 0));
             try put(r.a, &item, "align", integer(if (record.layout) |layout| layout.pointer_alignment_bits / 8 else 1));
             try put(r.a, &item, "opaque", .{ .bool = record.layout == null or record.fields.len == 0 });
@@ -229,17 +261,17 @@ const Reflection = struct {
                 if (field.name == .empty) return error.AnonymousFieldsNotSupported;
                 if (field.bit_width.unpack() != null) return error.BitFieldsNotSupported;
                 var f = object(r.a);
-                try put(r.a, &f, "name", text(field.name.lookup(r.comp)));
+                try put(r.a, &f, "name", try text(r.a, field.name.lookup(r.comp)));
                 try put(r.a, &f, "type", try r.desc(field.qt, 0));
                 try put(r.a, &f, "offset", integer(field.layout.offset_bits / 8));
                 try fields.array.append(f);
             }
             try put(r.a, &item, "fields", fields);
         } else if (qt.get(r.comp, .@"enum")) |en| {
-            try put(r.a, &item, "kind", text("alias"));
+            try put(r.a, &item, "kind", try text(r.a, "alias"));
             try put(r.a, &item, "target", if (en.tag) |backing| try r.desc(backing, 0) else try tag(r.a, "unknown"));
         } else {
-            try put(r.a, &item, "kind", text("alias"));
+            try put(r.a, &item, "kind", try text(r.a, "alias"));
             try put(r.a, &item, "target", try r.desc(qt, 0));
         }
         try r.types.array.append(item);
@@ -248,7 +280,7 @@ const Reflection = struct {
         const f = qt.get(r.comp, .func) orelse return error.ExpectedFunction;
         if (f.kind != .normal) return error.VariadicFunctionsNotSupported;
         var item = object(r.a);
-        try put(r.a, &item, "name", text(name));
+        try put(r.a, &item, "name", try text(r.a, name));
         var params = array(r.a);
         for (f.params) |param| try params.array.append(try r.desc(param.qt, 0));
         try put(r.a, &item, "params", params);
@@ -277,13 +309,13 @@ const Reflection = struct {
                 } else try std.fmt.allocPrint(r.a, "{s}{d}", .{ if (signed) "i" else "u", bits });
                 try put(r.a, &item, "bits", integer(bits));
                 try put(r.a, &item, "signed", .{ .bool = signed });
-                try put(r.a, &item, "name", text(name));
+                try put(r.a, &item, "name", try text(r.a, name));
                 break :blk item;
             },
             .float => |f| blk: {
                 var item = try tag(r.a, "float");
                 try put(r.a, &item, "bits", integer(f.bits(r.comp)));
-                try put(r.a, &item, "name", text(try std.fmt.allocPrint(r.a, "f{d}", .{f.bits(r.comp)})));
+                try put(r.a, &item, "name", try text(r.a, try std.fmt.allocPrint(r.a, "f{d}", .{f.bits(r.comp)})));
                 break :blk item;
             },
             .pointer => |p| blk: {
@@ -302,10 +334,11 @@ const Reflection = struct {
                 try put(r.a, &item, "child", try r.desc(arr.elem, depth + 1));
                 break :blk item;
             },
-            .@"union" => return error.UnionTypesNotSupported,
-            .@"struct" => |record| blk: {
+            .@"struct", .@"union" => |record| blk: {
                 var item = try tag(r.a, "named");
-                try put(r.a, &item, "name", text(try std.fmt.allocPrint(r.a, "cimport.{s}_{s}", .{ if (qt.is(r.comp, .@"union")) "union" else "struct", record.name.lookup(r.comp) })));
+                const name = try std.fmt.allocPrint(r.a, "{s}_{s}", .{ if (qt.is(r.comp, .@"union")) "union" else "struct", record.name.lookup(r.comp) });
+                try put(r.a, &item, "name", try text(r.a, try std.fmt.allocPrint(r.a, "cimport.{s}", .{name})));
+                try r.typeDecl(name, qt);
                 break :blk item;
             },
             .@"enum" => |en| if (en.tag) |backing| r.desc(backing, depth + 1) else tag(r.a, "unknown"),
@@ -314,6 +347,12 @@ const Reflection = struct {
     }
     fn scalar(r: *Reflection, v: aro.Value, qt: aro.QualType) !J {
         if (qt.is(r.comp, .bool)) return .{ .bool = v.toBool(r.comp) };
+        // JSON numbers cannot carry all 64-bit integer constants through JS.
+        if (qt.isInt(r.comp) and qt.bitSizeof(r.comp) == 64) {
+            if (qt.signedness(r.comp) == .signed) {
+                if (v.toInt(i64, r.comp)) |n| return try text(r.a, try std.fmt.allocPrint(r.a, "{d}", .{n}));
+            } else if (v.toInt(u64, r.comp)) |n| return try text(r.a, try std.fmt.allocPrint(r.a, "{d}", .{n}));
+        }
         if (v.toInt(i64, r.comp)) |n| return integer(n);
         if (v.toInt(u64, r.comp)) |n| return .{ .number_string = try std.fmt.allocPrint(r.a, "{d}", .{n}) };
         if (v.is(.float, r.comp)) return .{ .float = v.toFloat(f64, r.comp) };

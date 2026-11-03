@@ -8,6 +8,7 @@ import {
   profiles,
 } from "./basis_descriptor.ts";
 import { JS_HOST_TYPES, JS_HOST_VALUES } from "./host/js_manifest.ts";
+import { C_HOST_TYPES } from "./host/c_manifest.ts";
 import {
   BASIS_INTRINSICS,
   GPU_INTRINSIC_ENTRIES,
@@ -169,6 +170,7 @@ const LAYER0_TYPES = Object.freeze(
 export const BASIS_TYPES: readonly BasisTypeDescriptor[] = Object.freeze([
   ...LAYER0_TYPES,
   ...JS_HOST_TYPES,
+  ...C_HOST_TYPES,
   ...GPU_TARGET_TYPES,
 ]);
 

@@ -12,3 +12,7 @@ export const present = (value) => value != null;
 export const set = (table, key, value) => {
   table.set(key, value);
 };
+
+export const remove = (table, key) => {
+  table.delete(key);
+};

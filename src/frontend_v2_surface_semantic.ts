@@ -1,3 +1,4 @@
+import { integerToken } from "./numeric.ts";
 import {
   type Binding,
   type CtorDecl,
@@ -240,6 +241,9 @@ function projectJavaScriptClause(node: WmVariant, context: Context): JsImportCla
   const [unsafeValue, bodyNode] = fields(node, "JavaScriptImportClauseNode");
   const unsafe = option(unsafeValue) !== undefined;
   const body = variant(bodyNode);
+  if (body.name === "ImportAllClauseNode") {
+    return { kind: "Named", specs: [], all: true, unsafe, node: nodeFor(context, spanOf(node)) };
+  }
   if (body.name === "ImportNamespaceClauseNode") {
     const [, , aliasToken] = fields(body);
     return {
@@ -575,7 +579,7 @@ function projectLiteralPattern(
   if (text.startsWith('"') || text.startsWith("`")) {
     return { kind: "PString", value: decodeStringLiteral(text), ...located };
   }
-  return { kind: "PInt", value: decodeNumericLiteral(text), ...located };
+  return { kind: "PInt", ...integerToken(text), ...located };
 }
 
 function projectTypeAnnotation(node: WmVariant, context: Context): TypeExpr {
@@ -1246,7 +1250,7 @@ function projectLiteralExpr(text: string, located: { node: AstNode }): Expr {
   const isReal = !isHex && /[.eE]/.test(text);
   return isReal
     ? { kind: "Float", value: decodeNumericLiteral(text), ...located }
-    : { kind: "Int", value: decodeNumericLiteral(text), ...located };
+    : { kind: "Int", ...integerToken(text), ...located };
 }
 
 function decodeNumericLiteral(text: string): number {

@@ -787,7 +787,7 @@ Deno.test("unary operand mismatch records a unary premise", async () => {
   );
 
   assertEquals(error.diagnostic.failure.frame.rule, "InferUnary.NumericOperand");
-  assertEquals(error.diagnostic.failure.premise.role, "unary - operand is Number or I32");
+  assertEquals(error.diagnostic.failure.premise.role, "unary - operand has a supported numeric type");
   assertEquals(constraintRoles(error.diagnostic), ["required type", "operand"]);
 });
 

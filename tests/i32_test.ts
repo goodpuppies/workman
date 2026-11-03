@@ -82,9 +82,9 @@ Deno.test("I32 and Number do not mix", async () => {
   assertStringIncludes(await typeError(`let bad = (x: I32) => { x ++ "a" };`), "I32");
 });
 
-Deno.test("integer literals outside the I32 range are Number only", async () => {
-  assertStringIncludes(await typeError(`let bad: I32 = 2147483648;`), "Number");
-  assertStringIncludes(await typeError(`let bad: I32 = -2147483649;`), "Number");
+Deno.test("integer literals outside the I32 range are rejected when selected as I32", async () => {
+  assertStringIncludes(await typeError(`let bad: I32 = 2147483648;`), "out of range for I32");
+  assertStringIncludes(await typeError(`let bad: I32 = -2147483649;`), "out of range for I32");
   assertStringIncludes(await typeError(`let bad: I32 = 1.0;`), "Number");
 });
 

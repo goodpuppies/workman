@@ -925,3 +925,42 @@ Deno.test("character delimiters and primed names preserve top-level phrase bound
   assertEquals(topLevelPhraseRanges(withGap).length, 2);
   assertEquals(topLevelPhraseEnd(withGap), withGap.length);
 });
+
+Deno.test("frontend-v2 parses and formats unqualified unsafe C wildcard imports", async () => {
+  const source = 'from c.header("winsock2.h", lib: "ws2_32") import unsafe *;';
+  const formatted = surfaceParser.formatSurfaceSource(source);
+  assertEquals(formatted.name, "Some");
+  if (formatted.name !== "Some") return;
+  assertStringIncludes(formatted.args[0], "import unsafe *;");
+  const parsed = await parse(source);
+  const decl = parsed.decls[0];
+  assertEquals(decl.kind, "JsImportDecl");
+  if (decl.kind === "JsImportDecl" && decl.clause.kind === "Named") {
+    assertEquals(decl.clause.all, true);
+    assertEquals(decl.clause.unsafe, true);
+  }
+  assertEquals(
+    normalizeFrontendSemanticAst(await parse(formatted.args[0])),
+    normalizeFrontendSemanticAst(parsed),
+  );
+});
+
+Deno.test("frontend-v2 retains exact integer tokens through expression and pattern formatting", async () => {
+  const source = `let value: Word64.Word = 0xffffffffffffffff;
+let pick = match(value) { 18446744073709551615 => { 1 }, _ => { 0 } };`;
+  const before = await parse(source);
+  const formatted = surfaceParser.formatSurfaceSource(source);
+  assertEquals(formatted.name, "Some");
+  if (formatted.name !== "Some") return;
+  assertStringIncludes(formatted.args[0], "0xffffffffffffffff");
+  assertStringIncludes(formatted.args[0], "18446744073709551615");
+  assertEquals(
+    normalizeFrontendSemanticAst(await parse(formatted.args[0])),
+    normalizeFrontendSemanticAst(before),
+  );
+  const declaration = before.decls[0];
+  if (declaration.kind !== "LetDecl" || declaration.bindings[0].value.kind !== "Int") {
+    throw new Error("missing integer literal");
+  }
+  assertEquals(declaration.bindings[0].value.exact, "0xffffffffffffffff");
+});

@@ -36,6 +36,8 @@ export function libraryImport(specifier: string): LibraryImport | undefined {
     };
   }
   const std = /^std\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
+  const c = /^host\/c\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
+  if (c) return { path: `host/c/${c[1]}`, description: `C host module "${specifier}"` };
   if (std) return { path: `std/${std[1]}`, description: `library module "${specifier}"` };
   const pakman = /^pakman\/([a-z][a-z0-9_]*\.wm)$/.exec(specifier);
   if (pakman) {
