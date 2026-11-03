@@ -126,6 +126,10 @@ deno task install
 wm run examples/factorial.wm
 ```
 
+Run `wm repl` for an interactive session. End each input with `;`; use Left/Right to move the cursor
+and Up/Down to recall earlier input. Failed inputs leave the accepted bindings unchanged. Press
+Ctrl-D or Ctrl-C to exit.
+
 For a live top-level evaluation loop, use `wm repl <file.wm>`. The file is evaluated immediately and
 again whenever it is saved; unlike `wm run`, it does not require a `main` function:
 

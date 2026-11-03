@@ -1120,8 +1120,14 @@ Deno.test("interactive repl evaluates phrases, prints prompts, and keeps the bas
 Deno.test("interactive repl carries partial phrases across reads and supports multi-phrase lines", async () => {
   const input = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode("let first =\n"));
-      controller.enqueue(new TextEncoder().encode("7; let second = first + 1;\n"));
+      controller.enqueue(new TextEncoder().encode("let fir"));
+      controller.enqueue(new TextEncoder().encode("st =\n"));
+      controller.enqueue(new TextEncoder().encode("7; let sec"));
+      controller.enqueue(new TextEncoder().encode("ond = first + 1;\n"));
+      // Split both a UTF-8 character and a terminator from the rest of its line.
+      for (const byte of new TextEncoder().encode('let text = "café";\ntext;')) {
+        controller.enqueue(new Uint8Array([byte]));
+      }
       controller.close();
     },
   });
@@ -1139,6 +1145,64 @@ Deno.test("interactive repl carries partial phrases across reads and supports mu
   const stdout = stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
   assertStringIncludes(stdout, "first = 7 : Number");
   assertStringIncludes(stdout, "second = 8 : Number");
+  assertStringIncludes(stdout, 'text = "café" : String');
+  assertStringIncludes(stdout, 'it = "café" : String');
+});
+
+Deno.test("interactive repl restores its session file after static and runtime failures", async () => {
+  const input = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode([
+        "let x = 40;",
+        "let bad = ;",
+        'let x = Panic("boom");',
+        "let bad = missing;",
+        "x + 2;",
+      ].join("\n")));
+      controller.close();
+    },
+  });
+  const sessionWrites: string[] = [];
+  const stdoutChunks: Uint8Array[] = [];
+  const stderrChunks: Uint8Array[] = [];
+  const errors: unknown[] = [];
+  const originalWrite = Deno.writeTextFile;
+  const originalStdout = Deno.stdout.write;
+  const originalStderr = Deno.stderr.write;
+  Deno.writeTextFile = async (...args: Parameters<typeof Deno.writeTextFile>) => {
+    await originalWrite(...args);
+    if (String(args[0]).endsWith("/session.wm")) {
+      sessionWrites.push(await Deno.readTextFile(args[0]));
+    }
+  };
+  Deno.stdout.write = (chunk) => {
+    stdoutChunks.push(chunk.slice());
+    return Promise.resolve(chunk.length);
+  };
+  Deno.stderr.write = (chunk) => {
+    stderrChunks.push(chunk.slice());
+    return Promise.resolve(chunk.length);
+  };
+  try {
+    await runInteractiveRepl({ input, quiet: true, onError: (error) => errors.push(error) });
+  } finally {
+    Deno.writeTextFile = originalWrite;
+    Deno.stdout.write = originalStdout;
+    Deno.stderr.write = originalStderr;
+  }
+  assertEquals(errors.length, 2);
+  const decode = (chunks: Uint8Array[]) =>
+    chunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
+  assertStringIncludes(decode(stdoutChunks), "it = 42 : Number\n");
+  assertEquals(decode(stderrChunks), "runtime[Panic]: boom\n");
+  // A rejected candidate must be removed from disk, including the replacement
+  // of x whose evaluation raises an exception.
+  const rejectedWrites = sessionWrites.flatMap((source, index) =>
+    /let bad|Panic/.test(source) ? [index] : []
+  );
+  assertEquals(rejectedWrites.length, 3);
+  for (const index of rejectedWrites) assertEquals(sessionWrites[index + 1], "let x = 40;");
+  assertEquals(sessionWrites.at(-1), "let x = 40;\n\nx + 2;");
 });
 
 Deno.test("repl phrase end ignores quoted and commented semicolons", () => {

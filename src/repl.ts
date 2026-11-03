@@ -1,12 +1,10 @@
 import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 import { dirname, resolve } from "node:path";
+import { createInterface } from "node:readline";
+import process from "node:process";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
-import {
-  maskSourceRange,
-  topLevelPhraseEnd,
-  topLevelPhraseRanges,
-} from "./top_level_phrases.ts";
+import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
@@ -144,13 +142,32 @@ export async function runInteractiveRepl(
     void temporaryDirectory.cleanup().then(() => Deno.exit(130));
   };
   Deno.addSignalListener("SIGINT", onInterrupt);
+  const terminal = !stdin && !options.quiet && Deno.stdin.isTerminal() &&
+      Deno.stdout.isTerminal()
+    ? createInterface({ input: process.stdin, output: process.stdout, terminal: true })
+    : undefined;
+  let terminalClosed = false;
+  terminal?.once("close", () => terminalClosed = true);
+  terminal?.on("SIGINT", onInterrupt);
   try {
     await Deno.stdout.write(
       new TextEncoder().encode(
         `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n`,
       ),
     );
-    for await (const phrase of phrases(stdin ?? Deno.stdin.readable, options.quiet)) {
+    await Deno.writeTextFile(sessionPath, committed);
+    async function* terminalInput(): AsyncGenerator<Uint8Array> {
+      for await (const line of terminal!) yield new TextEncoder().encode(`${line}\n`);
+    }
+    const input = terminal ? terminalInput() : stdin ?? Deno.stdin.readable;
+    const prompt = terminal
+      ? (text: string) => {
+        if (terminalClosed) return;
+        terminal.setPrompt(text);
+        terminal.prompt();
+      }
+      : undefined;
+    for await (const phrase of phrases(input, options.quiet, prompt)) {
       const candidate = committed ? `${committed}\n${phrase}` : phrase;
       try {
         await Deno.writeTextFile(sessionPath, candidate);
@@ -165,14 +182,18 @@ export async function runInteractiveRepl(
         }
       } catch (error) {
         onError(error);
+      } finally {
+        // The on-disk session must agree with the accepted basis even after a
+        // parse, type, or runtime error. Compile the next candidate from that basis.
+        await Deno.writeTextFile(sessionPath, committed);
       }
     }
   } finally {
+    terminal?.close();
     Deno.removeSignalListener("SIGINT", onInterrupt);
     if (!interrupted) await temporaryDirectory.cleanup();
   }
 }
-
 
 /**
  * Reads phrases from stdin, prompting `- ` for a new phrase and `= ` for its
@@ -182,11 +203,13 @@ export async function runInteractiveRepl(
  * treatment of watched REPL files.
  */
 async function* phrases(
-  stdin: ReadableStream<Uint8Array>,
+  stdin: AsyncIterable<Uint8Array>,
   quiet: boolean | undefined,
+  terminalPrompt?: (text: string) => void,
 ): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   const prompt = async (text: string) => {
+    if (terminalPrompt) return terminalPrompt(text);
     if (!quiet) await Deno.stdout.write(new TextEncoder().encode(text));
   };
   let pending = "";
@@ -201,8 +224,11 @@ async function* phrases(
         await prompt(pending.trim() ? "= " : "- ");
         needPrompt = false;
       }
-      pending = pending ? `${pending}\n${line}` : line;
+      pending += line + (completeLine ? "\n" : "");
       if (completeLine) needPrompt = true;
+      // A read can end anywhere, including inside an identifier or just after
+      // a semicolon. Only submit complete lines (or the trailing input at EOF).
+      if (!completeLine) continue;
       for (;;) {
         const end = topLevelPhraseEnd(pending);
         if (end === undefined) break;
