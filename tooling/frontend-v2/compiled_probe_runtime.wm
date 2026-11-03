@@ -38,20 +38,24 @@ let codeAt = (source: String, offset: Number) => {
 };
 
 let failurePriority = (rule: String) => {
-  if (
-    rule == "Whitespace" || rule == "Comment" || rule == "BlockComment" || rule == "_" || rule == "__" ||
-    rule == "<choice>" || rule == "<lookahead>"
-  ) {
-    0
+  if (rule == "MatchFnArms") {
+    4
   } else {
     if (
-      rule == "Expr" || rule == "Pattern" || rule == "LetPattern" ||
-      rule == "ParamPattern" || rule == "TypeAtom" || rule == "TypeDeclBody" ||
-      rule == "ImportDecl" || rule == "JsImportDecl"
+      rule == "Whitespace" || rule == "Comment" || rule == "BlockComment" || rule == "_" || rule == "__" ||
+      rule == "<choice>" || rule == "<lookahead>"
     ) {
-      3
+      0
     } else {
-      1
+      if (
+        rule == "Expr" || rule == "Pattern" || rule == "LetPattern" ||
+        rule == "ParamPattern" || rule == "TypeAtom" || rule == "TypeDeclBody" ||
+        rule == "ImportDecl" || rule == "JsImportDecl"
+      ) {
+        3
+      } else {
+        1
+      }
     }
   }
 };
@@ -397,6 +401,30 @@ let rec matchSequenceInto = match(parsers, diagnose, source, offset, reversed, b
 
 let matchSequence = (parsers, diagnose: Bool, source: String, offset: Number) => {
   matchSequenceInto(parsers, diagnose, source, offset, [], None)
+};
+
+-- Called only after `match (identifiers) =>` has matched. A complete first
+-- arm header or an authored brace means the error is inside an intended match
+-- body; preserve its ordinary diagnostic rather than suggesting another form.
+let matchNamedMatchArms = (source: String, offset: Number, result: CompiledProbeMatch, parseRule) => {
+  match(result) {
+    CompiledProbeNoMatch(failedAt, expected, rule) => {
+      if (codeAt(source, offset) == 123) { result } else {
+        let header = matchSequence([
+          (source, offset) => { parseRule("Pattern", source, offset, false, false) },
+          (source, offset) => { parseRule("_", source, offset, false, false) },
+          (source, offset) => { matchLiteral([61, 62], "=>", "MatchArm", source, offset) },
+        ], false, source, offset);
+        match(header) {
+          CompiledProbeMatched(_, _, _) => { result },
+          CompiledProbeNoMatch(_, _, _) => {
+            CompiledProbeNoMatch(failedAt, "a match arm after named parameters", "MatchFnArms")
+          },
+        }
+      }
+    },
+    _ => { result },
+  }
 };
 
 let rec matchChoiceAt = match(parsers, diagnose, source, offset, index, best) => {

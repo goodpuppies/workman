@@ -6,16 +6,16 @@ from "./generated/surface_types.wm" import {
   PinnedPatternNode, ConstructorPatternNode,
   LambdaExpressionNode, ParametersNode, BareParametersNode, ParameterNode, CaptureClauseNode,
   BlockExpressionNode, BlockBodyNode, BlockItemNode,
-  IfExpressionNode,
+  IfExpressionNode, PipeConditionalNode,
   TupleExpressionNode, GroupedExpressionNode,
   ListExpressionNode, ListPatternNode, TuplePatternNode,
-  MatchExpressionNode, MatchFunctionNode, BareMatchFunctionNode, AnonymousMatchFunctionNode, MatchArmNode,
+  MatchExpressionNode, MatchFunctionNode, BareMatchFunctionNode, AnonymousMatchFunctionNode, BareAnonymousMatchFunctionNode, MatchArmNode,
   TypeDeclarationNode, TypeDeclarationGroupNode, TypeBindingNode, TypeDeclarationBodyNode, TypeParametersNode,
   NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode,
   TypeArgumentsNode, LongNameNode, LiteralExpressionNode,
   InterpolatedStringExpressionNode, InterpolatedStringTextNode, StringInterpolationNode,
-  BinaryExpressionNode, UnaryExpressionNode, PipeExpressionNode, PipeMemberNode,
+  BinaryExpressionNode, UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, ArgumentPlaceholderNode,
   ApplyExpressionNode,
   ExplicitCallNode, SpaceCallNode, NameExpressionNode
 };
@@ -236,6 +236,17 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
       _ => { None },
     }
   },
+  (PipeConditionalNode(ifToken, thenExpression, elseToken, elseExpression, span), Var(depth), Var(materializeMarks)) => {
+    match((
+      renderSurfaceNodeAt(thenExpression, depth, materializeMarks),
+      renderSurfaceNodeAt(elseExpression, depth, materializeMarks)
+    )) {
+      (Some(thenText), Some(elseText)) => {
+        Some(renderToken(ifToken) ++ " " ++ thenText ++ " " ++ renderToken(elseToken) ++ " " ++ elseText)
+      },
+      _ => { None },
+    }
+  },
   (MatchExpressionNode(
     matchToken,
     open,
@@ -322,6 +333,12 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
           renderSurfaceValue(closeBrace, materializeMarks)
         )
       },
+      None => { None },
+    }
+  },
+  (BareAnonymousMatchFunctionNode(matchToken, arms, span), Var(depth), Var(materializeMarks)) => {
+    match(renderNodes(arms, ", ", "", depth, materializeMarks)) {
+      Some(armsText) => { Some(renderToken(matchToken) ++ " " ++ armsText) },
       None => { None },
     }
   },
@@ -507,6 +524,7 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
       None => { None },
     }
   },
+  (ArgumentPlaceholderNode(token, span), Var(depth), Var(materializeMarks)) => { Some(renderToken(token)) },
   (PipeExpressionNode(left, operator, right, span), Var(depth), Var(materializeMarks)) => {
     match((renderSurfaceNodeAt(left, depth, materializeMarks), renderSurfaceNodeAt(right, depth, materializeMarks))) {
       (Some(leftText), Some(rightText)) => {

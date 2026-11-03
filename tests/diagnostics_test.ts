@@ -5,6 +5,7 @@ import {
   formatDiagnosticDocument,
   formatDiagnosticInspection,
   formatReplDiagnostic,
+  formatReplError,
   type FrontendDiagnostic,
   FrontendDiagnosticBundleError,
   FrontendDiagnosticError,
@@ -403,6 +404,25 @@ Deno.test("REPL diagnostics keep one compact source excerpt", async () => {
   assertEquals(rendered.includes("support:"), false);
   assertEquals(rendered.includes("rule:"), false);
   assertEquals(rendered.split("\n").filter(Boolean).length, 3);
+});
+
+Deno.test("REPL syntax explanations stay below the excerpt without truncating the hint", () => {
+  const source = "let f = match(a,b) => print(1);";
+  const details = [
+    "`match (names) =>` declares named parameters and requires an arm list.",
+    "If the parenthesized names are your first pattern, put braces around the arms:",
+    "  match { (a, b) => expression, _ => fallback }",
+  ].join("\n");
+  const rendered = formatReplError(
+    "Expected a match arm (`pattern => body`) after named match parameters.\n" + details,
+    "Main.wm",
+    source,
+    { start: 27, end: 28, line: 1, col: 27 },
+  );
+  assertStringIncludes(rendered, "error[parse.syntax-error] Main.wm:1:28:");
+  assertStringIncludes(rendered, "1 | " + source);
+  assertEquals(rendered.endsWith(details + "\n"), true);
+  assertEquals(rendered.includes("…"), false);
 });
 
 Deno.test("pipe mismatch points at trailing semicolon Void source", async () => {

@@ -130,6 +130,11 @@ Run `wm repl` for an interactive session. End each input with `;`; use Left/Righ
 and Up/Down to recall earlier input. Failed inputs leave the accepted bindings unchanged. Press
 Ctrl-D or Ctrl-C to exit.
 
+Interactive input history is shared across sessions and saved as `repl-history.json` in Workman's
+state directory (`$XDG_STATE_HOME/workman`, defaulting to `~/.local/state/workman` on Unix;
+`%LOCALAPPDATA%\workman` on Windows). It keeps the most recent 1,000 input lines, including failed
+inputs. Delete that file to clear saved history. Piped input is not saved.
+
 For a live top-level evaluation loop, use `wm repl <file.wm>`. The file is evaluated immediately and
 again whenever it is saved; unlike `wm run`, it does not require a `main` function:
 

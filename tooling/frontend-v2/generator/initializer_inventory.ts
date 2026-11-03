@@ -23,6 +23,7 @@ const stateBindings: Readonly<Record<string, string>> = Object.freeze({
   nextNodeId: "nextNodeId",
   nextLiftId: "nextLiftId",
   nextAnonymousMatchId: "nextAnonymousMatchId",
+  nextPlaceholderId: "nextPlaceholderId",
 });
 
 export function inventoryInitializer(grammar: WorkmanGrammarIr): InitializerInventory {

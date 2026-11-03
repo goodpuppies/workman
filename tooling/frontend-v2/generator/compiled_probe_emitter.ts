@@ -27,7 +27,7 @@ export function emitCompiledProbe(
       moduleName(index),
       [
         header(grammar, grammarHash, rules.map((rule) => rule.name)),
-        'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate };',
+        'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms };',
         'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
         "",
         ...rules.flatMap((rule) => [
@@ -232,12 +232,18 @@ function emitExpression(
         recoveryMode,
         recoveries,
       );
-    case "labeled":
-      return [
+    case "labeled": {
+      const labeled = [
         `matchLabeled(${emitOptionalString(expression.label)},`,
         indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
         ")",
       ].join("\n");
+      // This slot is reached only after the named parameter list and its arrow
+      // have matched. Keep the diagnostic tied to that grammar decision.
+      return ruleName === "MatchFn" && expression.label === "arms"
+        ? `matchNamedMatchArms(source, offset,\n${indent(labeled, 1)}\n, parseRule)`
+        : labeled;
+    }
     case "text":
       return [
         "matchText(",

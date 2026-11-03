@@ -9,6 +9,7 @@ import {
 import { formatFrontendV2Source } from "../src/frontend_v2_formatter.ts";
 import { moduleId } from "../src/module_id.ts";
 import { ParseError } from "../src/parser.ts";
+import { parseCompilerModule } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 Deno.test("compiler frontend modes execute the v2 simple-let subset", async () => {
@@ -37,6 +38,49 @@ Deno.test("compiler v2 rejection preserves generated failure location and gramma
     "Expected ) while parsing LetPattern.",
   );
   assertEquals(error.span, { line: 1, col: 9, start: 9, end: 10 });
+});
+
+Deno.test("named match prefixes with no first arm header explain the anonymous braces escape", async () => {
+  for (
+    const source of [
+      '(a,b) :> (match (a,b)=>print("meow"),_=>Panic("X"));',
+      "let f = match(x) => x + 1;",
+      "let f = match(a, b,) => 0;",
+      "let f = match /* parameters */ (a, b) /* arrow */ => print(1);",
+      "let f = match (a,\n b) =>\n print(1);",
+    ]
+  ) {
+    const error = await assertRejects(() => parseCompilerModule(source), ParseError);
+    assertStringIncludes(error.message, "Expected a match arm (`pattern => body`)");
+    assertStringIncludes(error.message, "`match (names) =>` declares named parameters");
+    assertStringIncludes(error.message, "put braces around the arms");
+    assertStringIncludes(error.message, "match { (a, b) => expression, _ => fallback }");
+    assertEquals(error.source, source);
+  }
+  const source = '(a,b) :> (match (a,b)=>print("meow"),_=>Panic("X"));';
+  const error = await assertRejects(() => parseCompilerModule(source), ParseError);
+  assertEquals(error.span, { line: 1, col: 28, start: 28, end: 29 });
+  // The suggested explicit form parses and typechecks without changing the
+  // interpretation of the reserved named prefix.
+  await checkSource(`let (a,b) = (1,2);
+    (a,b) :> match { (a,b) => print("meow"), _ => Panic("X") };`);
+});
+
+Deno.test("match braces hint does not replace errors in arm bodies or unrelated syntax", async () => {
+  for (
+    const source of [
+      "let f = match(x) => _ => ;",
+      "let f = match(x) => { _ => ; };",
+      "let f = match(x) { _ => ; };",
+      "let f = match(a, b) => _ => 0; let broken = ;",
+      'let text = "match(a,b)=>print(1)"; let broken = ;',
+      "-- match(a,b)=>print(1)\nlet broken = ;",
+      "let f = match (a, b +) => 0;",
+    ]
+  ) {
+    const error = await assertRejects(() => parseCompilerModule(source), ParseError);
+    assertEquals(error.message.includes("put braces around the arms"), false, source);
+  }
 });
 
 Deno.test("compiler v2 mode typechecks simple calls", async () => {

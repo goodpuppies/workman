@@ -5,7 +5,7 @@ from "./generated/surface_types.wm" import {
   LiteralPatternNode,
   ParenthesizedSequenceNode,
   BlockExpressionNode,
-  DirectiveNode, PanicExpressionNode,
+  DirectiveNode, PanicExpressionNode, BarePanicExpressionNode,
   CarrierLiftExpressionNode, LiftTupleExpressionNode,
   JsonObjectExpressionNode, JsonArrayExpressionNode, JsonObjectFieldNode,
   RecordExpressionNode, NamedRecordExpressionNode, NestedRecordExpressionNode, RecordFieldNode, RecordSpreadNode
@@ -224,6 +224,12 @@ let renderExpressionExtraNode = match(node, depth, materializeMarks, renderNode)
       renderExtraToken(atToken) ++ renderExtraToken(name) ++
       renderExtraSurfaceValue(terminator, materializeMarks)
     )
+  },
+  (BarePanicExpressionNode(panicToken, message, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(message, depth, materializeMarks)) {
+      Some(text) => { Some(renderExtraToken(panicToken) ++ " " ++ text) },
+      None => { None },
+    }
   },
   (PanicExpressionNode(panicToken, open, message, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
     match(renderNode(message, depth, materializeMarks)) {

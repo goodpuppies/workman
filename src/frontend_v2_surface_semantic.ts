@@ -46,6 +46,7 @@ type Context = {
   nextNodeId: number;
   nextLiftId: number;
   nextAnonymousMatchId: number;
+  nextPlaceholderId: number;
   nextTypeGroupId: number;
 };
 
@@ -65,6 +66,7 @@ export function surfaceProgramToModule(
     nextNodeId: 0,
     nextLiftId: 0,
     nextAnonymousMatchId: 0,
+    nextPlaceholderId: 0,
     nextTypeGroupId: 0,
   };
   const diagnostics: FrontendV2SemanticAdapterDiagnostic[] = [];
@@ -668,13 +670,26 @@ function projectExpr(node: WmVariant, context: Context): Expr {
       const argument = variant(argumentNode);
       if (argument.name === "ExplicitCallNode") {
         const [, argsValue] = fields(argument);
-        return {
+        const params: Param[] = [];
+        const args = list(argsValue).map((value) => {
+          const arg = variant(value);
+          if (arg.name !== "ArgumentPlaceholderNode") return projectExpr(arg, context);
+          const name = `$wm_arg_${context.nextPlaceholderId++}`;
+          const span = spanOf(arg);
+          params.push({
+            pattern: { kind: "PVar", name, node: nodeFor(context, span) },
+            node: nodeFor(context, span),
+          });
+          return { kind: "Var" as const, name, node: nodeFor(context, span) };
+        });
+        const body: Expr = {
           kind: "Call",
           callee,
-          args: list(argsValue).map((arg) => projectExpr(variant(arg), context)),
+          args,
           applicationStyle: "explicit",
-          ...located,
+          node: params.length ? nodeFor(context, spanOf(node)) : located.node,
         };
+        return params.length ? { kind: "Lambda", params, directives: [], body, ...located } : body;
       }
       if (argument.name === "SpaceCallNode") {
         return {
@@ -726,6 +741,16 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         start: left.node?.span.start ?? spanOf(node).start,
         end: rightSpan.end,
       });
+      if (right.name === "PipeConditionalNode") {
+        const [, thenExpr, , elseExpr] = fields(right);
+        return {
+          kind: "If",
+          cond: left,
+          thenExpr: projectExpr(variant(thenExpr), context),
+          elseExpr: projectExpr(variant(elseExpr), context),
+          node: pipeNode,
+        };
+      }
       if (right.name === "PipeMemberNode") {
         const [, pathValue, callValue] = fields(right);
         const path = list(pathValue).map(tokenText);
@@ -893,8 +918,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         ...located,
       };
     }
-    case "AnonymousMatchFunctionNode": {
-      const [, , armsValue] = fields(node);
+    case "AnonymousMatchFunctionNode":
+    case "BareAnonymousMatchFunctionNode": {
+      const armsValue = fields(node)[node.name === "BareAnonymousMatchFunctionNode" ? 1 : 2];
       const name = `$wm_match_${context.nextAnonymousMatchId++}`;
       const paramNode = nodeFor(context, spanOf(node));
       const valueNode = nodeFor(context, spanOf(node));
@@ -914,8 +940,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         ...located,
       };
     }
-    case "PanicExpressionNode": {
-      const [, , message] = fields(node);
+    case "PanicExpressionNode":
+    case "BarePanicExpressionNode": {
+      const message = fields(node)[node.name === "BarePanicExpressionNode" ? 1 : 2];
       return { kind: "Panic", message: projectExpr(variant(message), context), ...located };
     }
     default:

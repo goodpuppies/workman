@@ -1,6 +1,6 @@
 from "./generated/surface_types.wm" import {
   Span, SurfaceToken, MatchArmNode, MatchExpressionNode, MatchFunctionNode, BareMatchFunctionNode,
-  AnonymousMatchFunctionNode, TupleExpressionNode
+  AnonymousMatchFunctionNode, BareAnonymousMatchFunctionNode, TupleExpressionNode
 };
 from "./surface_parse_value.wm" import {
   ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue,
@@ -125,7 +125,7 @@ let buildMatchFn = (value: ParseValue, span: Span) => {
 
 let buildAnonymousMatchFn = (value: ParseValue, span: Span) => {
   match(value) {
-    SequenceParseValue([
+    ChoiceParseValue(0, SequenceParseValue([
       TokenParseValue(matchToken),
       EmptyParseValue,
       TokenParseValue(openBrace),
@@ -133,7 +133,7 @@ let buildAnonymousMatchFn = (value: ParseValue, span: Span) => {
       NodeListParseValue(arms),
       EmptyParseValue,
       TokenParseValue(closeBrace),
-    ]) => {
+    ])) => {
       NodeParseValue(
         AnonymousMatchFunctionNode(
           matchToken,
@@ -143,6 +143,12 @@ let buildAnonymousMatchFn = (value: ParseValue, span: Span) => {
           span,
         )
       )
+    },
+    ChoiceParseValue(1, SequenceParseValue([
+      TokenParseValue(matchToken), EmptyParseValue, EmptyParseValue,
+      NodeListParseValue(arms),
+    ])) => {
+      NodeParseValue(BareAnonymousMatchFunctionNode(matchToken, arms, span))
     },
     _ => { RuleParseValue("AnonymousMatchFn", value, span) },
   }

@@ -426,6 +426,20 @@ Deno.test("interactive repl applies named and anonymous match functions as one e
   );
 });
 
+Deno.test("interactive repl explains the named-match collision and continues without repairing it", async () => {
+  const result = await runCliWithStdin(["repl"], [
+    "let (a,b) = (1,2);",
+    '(a,b) :> (match (a,b)=>print("meow"),_=>Panic("X"));',
+    "a + b;",
+  ].join("\n") + "\n");
+  assertEquals(result.code, 0);
+  assertStringIncludes(result.stderr, "Expected a match arm (`pattern => body`)");
+  assertStringIncludes(result.stderr, "put braces around the arms");
+  assertStringIncludes(result.stderr, "match { (a, b) => expression, _ => fallback }");
+  assertEquals(result.stdout.includes("meow"), false);
+  assertStringIncludes(result.stdout, "it = 3 : Number");
+});
+
 Deno.test("repl reports every binder introduced by a top-level pattern", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/pattern.wm`;
@@ -524,6 +538,22 @@ Deno.test("repl continues after a parse failure at a semicolon phrase boundary",
 Deno.test("repl phrase boundaries ignore nested and quoted semicolons", () => {
   const source = 'let text = ";"; let value = { let inner = 1; inner }; -- ;\n1 + 1;';
   assertEquals(topLevelPhraseRanges(source).length, 3);
+});
+
+Deno.test("repl evaluates parenthesized and space-applied Panic identically", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = `${dir}/panic.wm`;
+    for (const expression of ['Panic("x")', 'Panic "x"', 'Panic ("x")', 'Panic { "x" }']) {
+      await Deno.writeTextFile(path, `let crash = ${expression};`);
+      const result = await evaluateReplFile(path);
+      assertEquals(result.code, 1, expression);
+      assertEquals(new TextDecoder().decode(result.stdout), "", expression);
+      assertEquals(new TextDecoder().decode(result.stderr), "runtime[Panic]: x\n", expression);
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("repl preserves successful phrase output before runtime failure", async () => {

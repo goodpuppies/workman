@@ -1,9 +1,9 @@
 from "./generated/surface_types.wm" import {
   Span, SurfaceToken, AuthoredValue, LongNameNode, NameExpressionNode,
   LiteralExpressionNode,
-  ExplicitCallNode, SpaceCallNode,
+  ExplicitCallNode, SpaceCallNode, ArgumentPlaceholderNode,
   BinaryExpressionNode,
-  UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, IfExpressionNode,
+  UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, IfExpressionNode, PipeConditionalNode,
   CarrierLiftExpressionNode, LiftTupleExpressionNode,
   JsonObjectExpressionNode, JsonArrayExpressionNode, JsonObjectFieldNode,
   RecordExpressionNode, NamedRecordExpressionNode, NestedRecordExpressionNode, RecordFieldNode, RecordSpreadNode,
@@ -44,6 +44,13 @@ let buildExplicitCall = (value: ParseValue, span: Span) => {
       )
     },
     _ => { RuleParseValue("ExplicitCall", value, span) },
+  }
+};
+
+let buildArgumentPlaceholder = (value: ParseValue, span: Span) => {
+  match(firstTokenWithText(collectTokens(value), "_")) {
+    Some(token) => { NodeParseValue(ArgumentPlaceholderNode(token, span)) },
+    None => { RuleParseValue("ArgumentPlaceholder", value, span) },
   }
 };
 
@@ -395,6 +402,20 @@ let buildIf = (value: ParseValue, span: Span) => {
       }
     },
     _ => { RuleParseValue("IfExpr", value, span) },
+  }
+};
+
+let buildPipeConditional = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(ifToken), EmptyParseValue,
+      NodeParseValue(thenExpression), EmptyParseValue,
+      TokenParseValue(elseToken), EmptyParseValue,
+      NodeParseValue(elseExpression),
+    ]) => {
+      NodeParseValue(PipeConditionalNode(ifToken, thenExpression, elseToken, elseExpression, span))
+    },
+    _ => { RuleParseValue("PipeConditional", value, span) },
   }
 };
 

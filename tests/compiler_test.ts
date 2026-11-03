@@ -215,6 +215,9 @@ Deno.test("Panic acts as an escape hatch in any type context", async () => {
       }
     };
     let n: Number = unwrapOrPanic(Some(1));
+    let number = (): Number => { Panic "number" };
+    let text = (): String => { Panic "text" };
+    let computed = (detail: String): Number => { Panic ("failed: " ++ detail) };
   `);
 });
 

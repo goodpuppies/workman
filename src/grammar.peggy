@@ -2,6 +2,7 @@
   let nextNodeId = 0;
   let nextLiftId = 0;
   let nextAnonymousMatchId = 0;
+  let nextPlaceholderId = 0;
   function decodeLiteralBody(body) {
     const simple = { a: "\x07", b: "\b", t: "\t", n: "\n", v: "\v", f: "\f", r: "\r",
       '"': '"', "'": "'", "\\": "\\", "`": "`", "$": "$" };
@@ -134,6 +135,17 @@
   }
   function callExpr(callee, args, loc) {
     return at({ kind: "Call", callee, args }, loc);
+  }
+  function partialCall(callee, args, loc) {
+    const params = [];
+    const values = args.map(arg => {
+      if (arg.kind !== "ArgumentPlaceholder") return arg;
+      const name = `$wm_arg_${nextPlaceholderId++}`;
+      params.push(at({ pattern: at({ kind: "PVar", name }, loc) }, loc));
+      return at({ kind: "Var", name }, loc);
+    });
+    const body = at({ kind: "Call", callee, args: values }, loc);
+    return params.length ? at({ kind: "Lambda", params, directives: [], body }, loc) : body;
   }
   function callExprAtSpan(callee, args, span) {
     return { kind: "Call", callee, args, node: { id: nextNodeId++, span } };
@@ -364,6 +376,8 @@ MatchFn
 AnonymousMatchFn
   = "match" _ "{" _ arms:MatchArmList _ "}"
     { return anonymousMatchFn(arms, location()); }
+  / "match" _ !("(" _ MatchFnParams _ ")" _ "=>") arms:BareMatchArmList
+    { return anonymousMatchFn(arms, location()); }
 
 MatchFnParams = first:Identifier rest:(_ "," _ n:Identifier { return n; })* _ ","? { return [first, ...rest]; }
 
@@ -439,11 +453,14 @@ Mul = left:Unary rest:(_ op:("*" / "/" / "%") _ right:Unary { return { op, right
   { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
 
 Unary = op:("!" / "-") _ value:Unary { return at({ kind: "Unary", op, value }, location()); } / Pipe
-Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right, loc: location() }; })*
+Pipe = left:Postfix rest:(_ ":>" _ right:(PipeConditional / PipeMember / Postfix) { return { right, loc: location() }; })*
   {
     return rest.reduce((left, segment) => {
       const right = segment.right;
       const exprSpan = spanFromStartToLoc(left.node, segment.loc);
+      if (right.kind === "PipeConditional") {
+        return atSpan({ kind: "If", cond: left, thenExpr: right.thenExpr, elseExpr: right.elseExpr }, exprSpan);
+      }
       if (right.kind === "PipeMember") {
         return right.args === undefined
           ? atSpan({ kind: "FfiGet", receiver: left, path: right.path }, exprSpan)
@@ -452,6 +469,9 @@ Pipe = left:Postfix rest:(_ ":>" _ right:(PipeMember / Postfix) { return { right
       return atSpan({ kind: "Pipe", left, right }, exprSpan);
     }, left);
   }
+PipeConditional
+  = "if" _ thenExpr:Block _ "else" _ elseExpr:Block
+    { return { kind: "PipeConditional", thenExpr, elseExpr }; }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
 Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
@@ -459,12 +479,15 @@ Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
   !("." MemberName)
   {
     const value = tail.reduce(
-      (callee, item) => at({ kind: "Call", callee, args: item.args }, location()),
+      (callee, item) => partialCall(callee, item.args, location()),
       head,
     );
     return annotation ? ascribedExpr(value, annotation, location()) : value;
   }
-ExplicitCall = _ "(" _ args:ArgList? _ ")" !(_ "=>") { return { kind: "Call", args: args ?? [] }; }
+ExplicitCall = _ "(" _ args:CallArgList? _ ")" !(_ "=>") { return { kind: "Call", args: args ?? [] }; }
+CallArgList = first:CallArg rest:(_ "," _ arg:CallArg { return arg; })* _ ","? { return [first, ...rest]; }
+CallArg = ArgumentPlaceholder / Expr
+ArgumentPlaceholder = "_" !IdentPart !(!(_ ("," / ")"))) { return at({ kind: "ArgumentPlaceholder" }, location()); }
 SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
 SpaceArg = Lambda / Primary
 
@@ -476,6 +499,8 @@ LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()
 
 PanicExpr
   = "Panic" !IdentPart _ "(" _ message:Expr _ ")"
+    { return at({ kind: "Panic", message }, location()); }
+  / "Panic" !IdentPart __ message:SpaceArg
     { return at({ kind: "Panic", message }, location()); }
 
 JsonExpr

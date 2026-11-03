@@ -93,16 +93,20 @@ export function formatReplError(
   source: string | undefined,
   span: SourceSpan | undefined,
 ): string {
-  return formatReplDiagnostic(
+  const [headline, ...details] = message.split("\n");
+  const formatted = formatReplDiagnostic(
     genericDiagnostic(
       "error",
       classifyDiagnostic(message),
-      message,
+      headline,
       span ? { id: -1, span } : undefined,
     ),
     filePath,
     source,
   );
+  // Explanations and examples belong below the compact excerpt. Folding them
+  // into the headline would truncate the actionable part of syntax errors.
+  return details.length ? `${formatted}${details.join("\n")}\n` : formatted;
 }
 
 function compactDiagnosticMessage(diagnostic: FrontendDiagnostic): string {

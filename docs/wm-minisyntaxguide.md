@@ -189,12 +189,29 @@ For example, `apply x => x + 1` means `apply(x => x + 1)`. Use parentheses when 
 lambda must be grouped as an operand. Bare `x: Number => ...` annotates the
 parameter; `(x): Number => ...` annotates the function's return.
 
+Use `_` as a whole argument in a parenthesized call to create a function:
+
+```workman
+let subtract = (a, b) => a - b;
+let fromTen = subtract(10, _); -- x => subtract(10, x)
+let result = 3 :> subtract(10, _); -- 7
+let both = subtract(_, _); -- (a, b) => subtract(a, b)
+```
+
+Placeholders belong to their nearest call: `x(z(_, true))` is
+`x(value => z(value, true))`. A pipe applies the generated function without
+inserting an extra argument. Fixed argument expressions run each time the
+generated function is called, as in an explicit lambda. See
+[argument placeholders](advancedsyntax.md#argument-placeholders) for details.
+
 Match arms can also return expressions directly. Match functions can omit the
 braces around their arms:
 
 ```workman
 let rec fac = match(n) => 0 => 1, Var(n) => n * fac(n - 1);
 let rec facBraced = match(n) => {0 => 1, Var(n) => n * facBraced(n - 1)};
+let rec facAnonymous = match 0 => 1, Var(n) => n * facAnonymous(n - 1);
+let flag = match true => 1, false => 0;
 ```
 
 Braced match functions support direct application with or without named parameters:
@@ -209,6 +226,11 @@ The first two bindings are `1`; the last is `true`. Use a space or explicit `(ar
 parentheses before the argument. Compact `}true` is a syntax error.
 The named form keeps `x` available inside the arms. Group a braceless match function in
 parentheses before applying it directly.
+
+The prefix `match (identifiers) =>` is reserved for the named form, even if its
+arm list is invalid. For an anonymous match whose first pattern has that shape,
+keep the braces: `match { (a, b) => _ => 0 }`. Here `a` and `b` are pinned values
+in a tuple pattern; `match(a, b) => _ => 0` instead names two function parameters.
 
 Arm bodies may still use blocks for local declarations or statements. Braced arm
 lists allow a trailing comma; braceless lists do not, so a comma before another
@@ -483,7 +505,8 @@ interfaces, and other capability abstractions.
 
 ### Basic Match
 
-**Braces `{}` are mandatory** around match bodies:
+Matching an explicit value with `match(value) { arms }` requires braces. Named and
+anonymous match functions can omit them as described under functions above:
 
 ```workman
 let describe = match(n) => {
@@ -626,6 +649,19 @@ let extract = match(actual) => {
 1. **`else` is mandatory** (expressions must return a value)
 2. **`else if` is banned** (use nested if or match instead)
 3. **Braces are mandatory**
+
+A pipeline can supply the Boolean condition directly:
+
+```workman
+let label = (value > 0) :> if { "positive" } else { "nonpositive" };
+-- Equivalent to: if (value > 0) { "positive" } else { "nonpositive" }
+```
+
+The input is evaluated once and only the selected branch runs. Branches use normal
+block scope and must have compatible types. The result can feed another pipe.
+`if { ... } else { ... }` is a conditional stage only after `:>`; a standalone
+conditional still needs `if (condition)`. Parenthesize a comparison before piping
+it, since `:>` currently binds tighter than comparison and arithmetic operators.
 
 ```workman
 -- ✅ CORRECT
@@ -1140,6 +1176,10 @@ JS/JSON data into a Workman record or primitive; use an explicit runtime validat
 `Json.assert` for dynamic data.
 
 ### 12. Panic for Unrecoverable Errors
+
+Both `Panic("message")` and `Panic "message"` are supported. The space form takes
+one argument, like ordinary space application; group a computed message, as in
+`Panic ("failed: " ++ detail)`.
 
 `Panic` is a special expression for unrecoverable errors. It can appear in any type context since it
 never returns:

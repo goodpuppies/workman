@@ -104,3 +104,12 @@ let all = (items) => {
 let collectList = (items) => {
   traverse(items, (item) => { item })
 };
+
+// Keep the original Result on success or an existing error. Only test Ok values;
+// a rejected value uses the supplied error, with the same error type as value.
+let filter = (value, predicate, error) => {
+  match(value) {
+    Ok(x) => { if (predicate(x)) { value } else { Err(error) } },
+    Err(_) => { value }
+  }
+};

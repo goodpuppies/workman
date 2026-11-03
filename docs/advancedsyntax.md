@@ -2,6 +2,83 @@
 
 This document records unusual but useful syntax you may encounter in Workman code.
 
+## Argument placeholders
+
+An `_` occupying a complete argument in a parenthesized function call creates a
+lambda for that call:
+
+```wm
+let subtract = (a, b) => a - b;
+let fromTen = subtract(10, _); -- value => subtract(10, value)
+let difference = 3 :> subtract(10, _); -- 7
+let both = subtract(_, _); -- (left, right) => subtract(left, right)
+let result = both(10, 3); -- 7
+```
+
+Each placeholder introduces a separate parameter, in argument order. Multiple
+parameters use the usual tupled calling convention, so `(10, 3) :> subtract(_, _)`
+also gives `7`. A pipe applies the generated lambda; it does not insert another
+argument into the original call. Calls without direct placeholder arguments keep
+the ordinary pipe insertion rule, including when a nested callback uses
+placeholders: `items :> List.map(z(_, true))` still pipes `items` into `List.map`.
+
+The nearest call owns its placeholders: `x(z(_, true))` means
+`x(value => z(value, true))`. To delay the outer call too, write
+`value => x(z(value, true))` explicitly. A call suffix after a placeholder call
+applies the generated function, as in `subtract(_, 2)(8)`.
+
+This is lambda shorthand. The callee and fixed argument expressions are evaluated
+when the generated function is invoked, and evaluated again on each invocation.
+Use a `let` binding outside the placeholder call to compute a fixed value once.
+
+Placeholders are supported in ordinary parenthesized function and constructor
+calls, including imported foreign functions. They must occupy whole arguments:
+use `value => f(value + 1)` for `f(_ + 1)`. Space application `f _` and grouped
+expression holes such as `f((_))` are not placeholder forms. Existing wildcard
+patterns and parameters, including `Some(_)` in a pattern and `_ => value`,
+retain their meanings.
+
+## Piped conditionals
+
+A Boolean can flow directly into an `if` stage:
+
+```wm
+(Some(1) :> match {
+  Some(x) => x > 0
+}) :> if { "positive" } else { "nonpositive" }
+```
+
+The incoming Boolean is evaluated once, then only the selected branch runs. An
+input match that fails still raises a non-exhaustive-match error; it does not
+choose the `else` branch. Here the missing `None` arm is intentional.
+
+This is equivalent to an ordinary `if (condition) { ... } else { ... }`. Both
+branches require blocks, share the usual branch type checks, and keep their
+bindings local. The conditional's result can continue through more pipe stages.
+Nested conditionals stay inside their branch blocks.
+
+Group a computed condition, as in `(value > 0) :> if { ... } else { ... }`, because
+the current pipe precedence is higher than arithmetic and comparison operators.
+
+## Filtering a Result
+
+`Result.filter(value, predicate, error)` keeps an `Ok` value when its predicate
+passes and returns `Err(error)` when it fails. An existing `Err` passes through
+unchanged without calling the predicate. The predicate runs once for an `Ok`.
+
+```wm
+let checked = Ok(3) :> Result.filter(x => x > 0, "not positive");
+let fromOption = Some(3)
+  :> Option.toResult("missing")
+  :> Result.filter(x => x > 0, "not positive");
+```
+
+The supplied error must have the existing Result's error type. For a
+`Result<Number, Js.Error>`, supply `Js.Error("not positive")`, or use
+`Result.mapErr` first to convert existing errors to the type you want to return.
+As with other function arguments, the supplied error value is evaluated before
+the call; only the predicate callback is conditional on an `Ok` input.
+
 ## Inline Task continuations with `via`
 
 Start with an ordinary `Task.andThen` continuation. The callback runs after `wait(duration)`

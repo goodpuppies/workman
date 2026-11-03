@@ -276,16 +276,16 @@ and are separated by commas. All arm results must have the same type.
 | `match(Char.compareAscii('A', 'a')) { Ok(Less) => ":)", _ => ":(" }` | `Ok(Less) => ":)"` | `Ok(Less)` | `":)"` |
 | `match(compareInt(1, 0)) { Less => false, Equal => false, Greater => true }` | `Greater => true` | `Greater` | `true` |
 
-`match { ... }` is a function; `match(value) { ... }` evaluates a match immediately.
+`match { ... }` and `match arms` are functions; `match(value) { ... }` evaluates a match immediately.
 The wildcard `_` accepts any value without binding a name.
 
 Several spellings use the same arms. Braces around the **arm list** depend on the form:
 
 ```wm
-let piped = true :> match { true => 1, false => 0 }; -- Braces required.
-let immediate = match(true) true => 1, false => 0;  -- Arm-list braces optional.
-let applied = match { true => 1, false => 0 } true; -- Braces required.
-let called = match { true => 1, false => 0 }(true); -- Braces required; same application.
+let piped = true :> match true => 1, false => 0;    -- Arm-list braces optional.
+let immediate = match(true) { true => 1, false => 0 }; -- Immediate match requires braces.
+let applied = match { true => 1, false => 0 } true;
+let called = (match true => 1, false => 0)(true);   -- Group a braceless function to apply it.
 
 let namedMatch = match (x) => true => 1, false => 0; -- (x) required; braces optional.
 let matched = namedMatch(true); -- 1
@@ -297,7 +297,7 @@ keeps `x` available inside its arms:
 ```wm
 let namedApplied = match(x) => { true => 1, false => 1 } true;
 let anonymousApplied = match { true => 1, false => 1 } true;
--- Both are 1. Braces are required around the arms for direct application.
+-- Both are 1. Braceless functions need grouping before direct application.
 ```
 
 Both forms also accept explicit calls, such as `match(x)=>{true=>1,false=>0}(true)`.
@@ -313,10 +313,14 @@ The `piped`, `immediate`, `applied`, and `called` bindings above are all `1`.
 The `match (x) => ...` form creates a function
 whose parameter `x` remains available inside each arm. Its parameter-list parentheses are
 required, even for one name. The immediate form requires parentheses around its subject,
-as in `match(true) ...`.
+as in `match(true) { ... }`.
 
-In the immediate and named-parameter forms, `{ true => 1, false => 0 }` is also a valid arm
-list. Braced arm lists allow a trailing comma; braceless ones do not. Each arm body above is
+The prefix `match (identifiers) =>` is reserved for named parameters, even when its
+arm list is invalid. Keep braces when an anonymous first arm would have that shape:
+`match { (a, b) => _ => 0 }` uses a tuple pattern with pinned values `a` and `b`,
+whereas `match(a, b) => _ => 0` names two parameters.
+
+Braced arm lists allow a trailing comma; braceless ones do not. Each arm body above is
 an expression; use a block body such as `true => { let n = 1; n }` for local declarations.
 
 Bare names in match patterns are **pinned**: they compare against existing values.

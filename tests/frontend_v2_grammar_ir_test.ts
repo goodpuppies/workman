@@ -32,29 +32,29 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 146);
+  assertEquals(inventory.ruleCount, 150);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 255,
+    unclassified: 261,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 254,
+    action: 260,
     any: 3,
-    choice: 67,
-    class: 41,
-    group: 21,
-    labeled: 348,
-    literal: 347,
+    choice: 70,
+    class: 42,
+    group: 23,
+    labeled: 355,
+    literal: 357,
     oneOrMore: 10,
-    optional: 91,
-    ruleRef: 767,
+    optional: 92,
+    ruleRef: 791,
     semanticAnd: 1,
-    sequence: 250,
-    simpleNot: 37,
+    sequence: 258,
+    simpleNot: 42,
     text: 8,
-    zeroOrMore: 55,
+    zeroOrMore: 56,
   });
 });
 
@@ -67,13 +67,13 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "e2c126acf4e6df322a43cef96524918ad2a33e4048a676481686fe5c5cf5d275",
+    "cd6a38e21f42df1f34b5b5e267f28439d6b6e835abb6dbe342265d5c478f767e",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 242);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 248);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [
@@ -100,6 +100,7 @@ Deno.test("frontend-v2 inventories every initializer helper as a named WM bounda
     { jsName: "nextNodeId", wmName: "nextNodeId", initialValue: 0 },
     { jsName: "nextLiftId", wmName: "nextLiftId", initialValue: 0 },
     { jsName: "nextAnonymousMatchId", wmName: "nextAnonymousMatchId", initialValue: 0 },
+    { jsName: "nextPlaceholderId", wmName: "nextPlaceholderId", initialValue: 0 },
   ]);
   assertEquals(initializer.helpers.map((helper) => helper.jsName), [
     "decodeLiteralBody",
@@ -129,6 +130,7 @@ Deno.test("frontend-v2 inventories every initializer helper as a named WM bounda
     "jsonField",
     "varExpr",
     "callExpr",
+    "partialCall",
     "callExprAtSpan",
     "tupleExpr",
     "matchExpr",

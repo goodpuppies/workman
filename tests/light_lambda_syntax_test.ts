@@ -48,6 +48,26 @@ Deno.test("lightweight lambdas are strict syntax with no synthesized punctuation
       "let result = apply(match(n) => 0 => 1, Var(n) => n, 5,);",
       "let result = match(1) {0 => 1, Var(n) => n};",
       "let f = match {0 => 1, Var(n) => n};",
+      "let f = match 0 => 1, Var(n) => n;",
+      "let f = match true => 1, false => 0;",
+      "let f = match Some(x) => x, None => 0;",
+      "let f = match [] => 0, [head, ..tail] => head;",
+      "let f = match (0, _) => 1, (_, Var(n)) => n;",
+      "let f = match (true) => 1, false => 0;",
+      "let f = match _ => x => x;",
+      'let f = () => Panic "boom";',
+      "let f = () => Panic message;",
+      'let f = () => Panic ("a" ++ "b");',
+      'let f = () => Panic { let message = "boom"; message };',
+      'let PanicMessage = "boom"; let f = () => Panic PanicMessage;',
+      "let f = match { (a, b) => _ => 0 };",
+      "let f = match { (x) => x + 1 };",
+      "let result = (match true => 1, false => 0)(true);",
+      "let result = true :> match true => 1, false => 0;",
+      "let result = apply(match 0 => 1, Var(n) => n, 5);",
+      "let result = apply(match 0 => 1, Var(n) => n, 5,);",
+      "let f = match 0 => match 0 => 1, _ => 2;",
+      "let f = match 0 => (match 0 => 1, _ => 2), _ => 3;",
       "let f = match(n) => 0 => match(n) {0 => 1, _ => 2}, _ => 3;",
       "let f = match(n) => 0 => (match(n) => 0 => 1, _ => 2), _ => 3;",
       "let f = match(n) => 0 => match(n) => 0 => 1, _ => 2;",
@@ -66,6 +86,67 @@ Deno.test("lightweight lambdas are strict syntax with no synthesized punctuation
       assertEquals(normalizeFrontendSemanticAst(await parse(formatted)), original, formatted);
       assertEquals(await formatFrontendV2Source(formatted, "<test>", fix), formatted);
     }
+  }
+});
+
+Deno.test("braceless anonymous matches execute and reserve named match prefixes", async () => {
+  const source = `
+    let apply = (f, value) => f(value);
+    let rec fac = match 0 => 1, Var(n) => n * fac(n - 1);
+    let named = match(a, b) => _ => a + b;
+    let a = 1;
+    let b = 2;
+    let braced = match { (a, b) => _ => 7, _ => _ => 0 };
+    let checks = (
+      fac(5),
+      apply(match 0 => 1, Var(n) => n * 2, 5),
+      (match true => 1, false => 0)(false),
+      (match Some(x) => x, None => 0)(Some(9)),
+      (match [] => 0, [head, ..tail] => head)([8, 9]),
+      (match (0, _) => 1, (_, Var(n)) => n)(2, 7),
+      named(3, 4),
+      braced(1, 2)(void),
+      true :> match true => 1, false => 0
+    );
+  `;
+  const code = await compileLibraryVirtual(
+    "/test/bare-match.wm",
+    new Map([["/test/bare-match.wm", source]]),
+  );
+  const runtime = await import(`data:text/javascript;base64,${btoa(code)}`);
+  assertEquals(runtime.checks, [120, 10, 0, 9, 8, 7, 7, 7, 1]);
+
+  for (const text of ["match(a,b) => _ => 0", "match (a, b,) => { _ => 0 }"]) {
+    const module = await parse(`let f = ${text};`);
+    const declaration = module.decls[0];
+    assert(declaration.kind === "LetDecl");
+    const value = declaration.bindings[0].value;
+    assert(value.kind === "Lambda" && value.body.kind === "Match");
+    assertEquals(value.params.map((param) => param.pattern.kind), ["PVar", "PVar"]);
+    assertEquals(value.body.arms.length, 1);
+    assertEquals(value.body.arms[0].body.kind, "Int");
+  }
+  // A reserved prefix cannot fall back to an anonymous arm when the named
+  // form's arm list is invalid. Use braces for the anonymous interpretation.
+  for (const text of ["match(a,b) => 0", "match(x) => x + 1"]) {
+    const source = `let f = ${text};`;
+    assertEquals(recognizeGrammar(grammar, source), false, source);
+    assertEquals(frontend.parseSurfaceProgram(source), undefined, source);
+    await assertRejects(() => parse(source), Error);
+  }
+  for (
+    const [text, expectedArms] of [
+      ["match 0 => match 0 => 1, _ => 2", 1],
+      ["match 0 => (match 0 => 1, _ => 2), _ => 3", 2],
+    ] as const
+  ) {
+    const module = await parse(`let f = ${text};`);
+    const declaration = module.decls[0];
+    assert(declaration.kind === "LetDecl");
+    const value = declaration.bindings[0].value;
+    assert(value.kind === "Lambda" && value.body.kind === "Match");
+    assertEquals(value.params.length, 1);
+    assertEquals(value.body.arms.length, expectedArms);
   }
 });
 

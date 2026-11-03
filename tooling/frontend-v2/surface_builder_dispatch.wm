@@ -12,11 +12,11 @@ from "./surface_builders_type.wm" import {
   buildTypeDeclBody, buildTypeBinding, buildTypeDecl
 };
 from "./surface_builders_expr.wm" import {
-  buildPrimary, buildExplicitCall, buildSpaceCall, buildUnary,
+  buildPrimary, buildExplicitCall, buildArgumentPlaceholder, buildSpaceCall, buildUnary,
   buildPipeMember, buildPipe, buildCarrierLift, buildLiftTuple,
   buildJsonObjectField, buildJsonExpr, buildRecordExprField, buildRecordExpr,
   buildNamedRecordExpr, buildNestedRecordExpr,
-  buildBinaryFold, buildIf,
+  buildBinaryFold, buildIf, buildPipeConditional,
   buildTupleOrGroup, buildListExpr
 };
 from "./surface_builders_postfix.wm" import { buildPostfix };
@@ -125,6 +125,8 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "CaptureClause" => { buildCaptureClause(value, span) },
             "Lambda" => { buildLambda(value, span) },
             "IfExpr" => { buildIf(value, span) },
+            "ArgumentPlaceholder" => { buildArgumentPlaceholder(value, span) },
+            "PipeConditional" => { buildPipeConditional(value, span) },
             "TupleOrGroup" => { buildTupleOrGroup(value, span) },
             "ListExpr" => { buildListExpr(value, span) },
             "Pattern" => { buildPattern(value, span) },

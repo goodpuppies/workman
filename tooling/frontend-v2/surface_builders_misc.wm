@@ -1,9 +1,9 @@
 from "./generated/surface_types.wm" import {
-  Span, AuthoredValue, DirectiveNode, PanicExpressionNode,
+  Span, AuthoredValue, DirectiveNode, PanicExpressionNode, BarePanicExpressionNode,
   InterpolatedStringExpressionNode, InterpolatedStringTextNode, StringInterpolationNode
 };
 from "./surface_parse_value.wm" import {
-  ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue,
+  ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue,
   NodeParseValue, RuleParseValue
 };
 from "./surface_builder_support.wm" import {
@@ -23,7 +23,7 @@ let buildDirective = (value: ParseValue, span: Span) => {
   }
 };
 
-let buildPanic = (value: ParseValue, span: Span) => {
+let buildParenthesizedPanic = (value: ParseValue, span: Span) => {
   let tokens = collectTokens(value);
   match((
     firstTokenWithText(tokens, "Panic"),
@@ -43,6 +43,16 @@ let buildPanic = (value: ParseValue, span: Span) => {
       )
     },
     _ => { RuleParseValue("PanicExpr", value, span) },
+  }
+};
+
+let buildPanic = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(1, SequenceParseValue([
+      TokenParseValue(panicToken), EmptyParseValue, EmptyParseValue,
+      NodeParseValue(message),
+    ])) => { NodeParseValue(BarePanicExpressionNode(panicToken, message, span)) },
+    _ => { buildParenthesizedPanic(value, span) },
   }
 };
 

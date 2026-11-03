@@ -6,6 +6,12 @@ import process from "node:process";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
+import {
+  readReplHistory,
+  recordReplHistory,
+  replHistoryFile,
+  replHistoryLimit,
+} from "./repl_history.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -142,10 +148,43 @@ export async function runInteractiveRepl(
     void temporaryDirectory.cleanup().then(() => Deno.exit(130));
   };
   Deno.addSignalListener("SIGINT", onInterrupt);
-  const terminal = !stdin && !options.quiet && Deno.stdin.isTerminal() &&
-      Deno.stdout.isTerminal()
-    ? createInterface({ input: process.stdin, output: process.stdout, terminal: true })
+  const isTerminal = !stdin && !options.quiet && Deno.stdin.isTerminal() &&
+    Deno.stdout.isTerminal();
+  let historyFile: string | undefined;
+  let history: string[] = [];
+  let historyWarning = false;
+  const reportHistoryError = (error: unknown) => {
+    if (historyWarning) return;
+    historyWarning = true;
+    console.error(
+      `warning: REPL history unavailable: ${error instanceof Error ? error.message : error}`,
+    );
+  };
+  if (isTerminal) {
+    try {
+      historyFile = replHistoryFile();
+      history = readReplHistory(historyFile);
+    } catch (error) {
+      reportHistoryError(error);
+    }
+  }
+  const terminal = isTerminal
+    ? createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+      history,
+      historySize: replHistoryLimit,
+    })
     : undefined;
+  terminal?.on("line", (line: string) => {
+    if (!historyFile) return;
+    try {
+      recordReplHistory(historyFile, line);
+    } catch (error) {
+      reportHistoryError(error);
+    }
+  });
   let terminalClosed = false;
   terminal?.once("close", () => terminalClosed = true);
   terminal?.on("SIGINT", onInterrupt);

@@ -84,11 +84,16 @@ function generatedParseError(
   const rule = failure?.rule && !failure.rule.startsWith("<")
     ? ` while parsing ${failure.rule}`
     : "";
-  const message = contextualSyntaxError(
-    `Expected ${expected}${rule}.`,
-    source,
-    offset,
-  );
+  const message = failure?.rule === "MatchFnArms"
+    ? "Expected a match arm (`pattern => body`) after named match parameters.\n" +
+      "`match (names) =>` declares named parameters and requires an arm list.\n" +
+      "If the parenthesized names are your first pattern, put braces around the arms:\n" +
+      "  match { (a, b) => expression, _ => fallback }"
+    : contextualSyntaxError(
+      `Expected ${expected}${rule}.`,
+      source,
+      offset,
+    );
   return new ParseError(
     message,
     source,
