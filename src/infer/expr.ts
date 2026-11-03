@@ -1,3 +1,5 @@
+import { taintExpression } from "./taint.ts";
+import { holdResult } from "../types.ts";
 import type { Expr } from "../ast.ts";
 import { pathOf } from "../ast.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
@@ -349,6 +351,8 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
         "else branch result",
       );
       recordExpectedExprType(facts, expr.thenExpr, elseType);
+      // `if` is a derived form of `match`: both branches meet in one result variable.
+      t = holdResult(t);
       constrainAt(
         t,
         elseType,
@@ -585,6 +589,7 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
     const operatorId = gpuOperatorId(expr);
     if (operatorId) recordOperatorFact(facts, expr, operatorId);
   }
+  t = taintExpression(expr, t, context);
   types.set(expr, t);
   rememberExpressionSource(expr, t, provenance);
   return t;

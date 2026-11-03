@@ -1,3 +1,5 @@
+import { sequenceType, sequenceView } from "../taint.ts";
+import { setMatchArm } from "./patterns.ts";
 import type { Decl, Expr, Param } from "../ast.ts";
 import { diagnosticError, warningDiagnostic } from "../diagnostic_model.ts";
 import {
@@ -61,18 +63,23 @@ export function inferMatch(
   const previousArmSources: TypeSource[] = [];
   for (const arm of expr.arms) {
     const local = new Map(env);
-    inferPattern(
-      arm.pattern,
-      valueType,
-      local,
-      typeEnv,
-      strEnv,
-      adts,
-      new Set(),
-      facts,
-      provenance,
-      sourceForTypedExpr(expr.value, valueType, provenance, "match input"),
-    );
+    const previousArm = setMatchArm(true);
+    try {
+      inferPattern(
+        arm.pattern,
+        valueType,
+        local,
+        typeEnv,
+        strEnv,
+        adts,
+        new Set(),
+        facts,
+        provenance,
+        sourceForTypedExpr(expr.value, valueType, provenance, "match input"),
+      );
+    } finally {
+      setMatchArm(previousArm);
+    }
     recordExpectedExprType(facts, arm.body, result);
     const armType = inferExpr(arm.body, deriveInferContext(context, { env: local }));
     const armSource = sourceForTypedExpr(arm.body, armType, provenance, "match arm result");
@@ -232,11 +239,17 @@ export function inferBlock(
   const local = new Map(env);
   const localTypes = cloneTypeEnv(typeEnv);
   const outerTypeIds = knownTypeIds(typeEnv);
-  const localContext = deriveInferContext(context, { env: local, typeEnv: localTypes });
+  const localContext = deriveInferContext(context, {
+    env: local,
+    typeEnv: localTypes,
+  });
+  const sequence: Ty[] = [];
+  const sequenceNodes: Expr[] = [];
   const predeclaredGroups = new Set<number>();
   expr.items.forEach((s) => {
     if (!isDecl(s)) {
-      inferExpr(s, localContext);
+      sequence.push(inferExpr(s, localContext));
+      sequenceNodes.push(s);
       return;
     }
     if (
@@ -253,13 +266,30 @@ export function inferBlock(
       predeclaredGroups.add(s.mutualGroup);
     }
     inferDecl(s, localContext, new Map(), new Map(), knownTypeIds(localTypes), false);
+    if (s.kind === "LetDecl") {
+      for (const binding of s.bindings) {
+        const type = context.types.get(binding.value);
+        if (type) {
+          sequence.push(type);
+          sequenceNodes.push(binding.value);
+        }
+      }
+    }
   });
   const result = inferExpr(
     expr.result,
-    deriveInferContext(context, { env: local, typeEnv: localTypes }),
+    localContext,
   );
   if (mentionsLocalType(result, outerTypeIds)) throw new Error("local type escapes scope");
-  return result;
+  if (!sequence.length) return result;
+  const grouped = sequenceType(sequence, result);
+  // A clean sequence changes nothing about its members.
+  if (grouped === result) return result;
+  sequenceNodes.forEach((node, index) => {
+    context.types.set(node, sequenceView(grouped, sequence[index]));
+  });
+  context.types.set(expr.result, grouped);
+  return grouped;
 }
 
 export function inferBinary(

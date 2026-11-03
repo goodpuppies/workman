@@ -44,7 +44,7 @@ Deno.test("reflection resolves package declaration imports without discovering e
       {},
       `${directory}/main.wm`,
     );
-    expectBinding(checked.env, "result", { type: "Result<Number, Js.Error>", vars: 0 });
+    expectBinding(checked.env, "result", { type: "Result<Number, Js.Error>!", vars: 0 });
     const declarationGraphs = events.filter((event) =>
       event.kind === "deno-info" && event.specifier.includes("/node_modules/fixture/")
     );
@@ -87,7 +87,7 @@ Deno.test("known Deno import-map types take precedence over an installed package
       {},
       `${directory}/main.wm`,
     );
-    expectBinding(checked.env, "result", { type: "Result<Number, Js.Error>", vars: 0 });
+    expectBinding(checked.env, "result", { type: "Result<Number, Js.Error>!", vars: 0 });
   } finally {
     await Deno.remove(directory, { recursive: true });
   }

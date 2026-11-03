@@ -1,3 +1,4 @@
+import { sequenceType } from "../taint.ts";
 import type { Expr, LongId, RecordExprSpread, TypeExpr } from "../ast.ts";
 import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostic_model.ts";
@@ -72,7 +73,7 @@ export function inferDottedVar(
           type: resolved.type,
         });
       }
-      return resolved.type;
+      return projectedType(resolved.type, type);
     }, instantiate(structured.scheme));
   }
   // No structure prefix resolved: the final segment is a record field of the
@@ -107,7 +108,7 @@ export function inferDottedVar(
         type: resolved.type,
       });
     }
-    return resolved.type;
+    return projectedType(resolved.type, receiverType);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("unknown name ")) {
       throw new Error(`unknown name ${name}`);
@@ -491,4 +492,8 @@ function rejectDuplicateFields(names: string[]) {
     if (seen.has(name)) throw new Error(`duplicate record field ${name}`);
     seen.add(name);
   }
+}
+
+function projectedType(field: Ty, receiver: Ty): Ty {
+  return sequenceType([receiver], field);
 }

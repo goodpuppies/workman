@@ -1,3 +1,4 @@
+import { taintedType } from "./taint.ts";
 import { registerNumericIdentity } from "./numeric.ts";
 import { basisTypes } from "./basis.ts";
 import { BASIS_OPERATORS, BASIS_TYPES } from "./basis_manifest.ts";
@@ -76,7 +77,7 @@ export function baseEnv(
   const printable = fresh() as Extract<Ty, { tag: "var" }>;
   pervasiveSources.set("print", {
     vars: [printable.id],
-    type: fn([printable], VoidTy),
+    type: fn([printable], taintedType(VoidTy)),
     standardLibrary: true,
   });
   const textValue = fresh() as Extract<Ty, { tag: "var" }>;
@@ -408,7 +409,10 @@ export function baseTypeEnv(options: BasisOptions = {}): TypeEnv {
       );
       info.recordFields = descriptor.recordFields.map((field) => ({
         name: field.name,
-        type: typeFromAst(field.type, basisTypeEnvCache!, vars, { allowFreeVars: false }),
+        type: typeFromAst(field.type, basisTypeEnvCache!, vars, {
+          allowFreeVars: false,
+          parameter: true,
+        }),
       }));
     }
   }
@@ -445,7 +449,7 @@ function addBasisConstructors(env: Env, pervasiveSources: Env, typeEnv: TypeEnv)
     const result = named(info, type.params.map((name) => vars.get(name)!));
     for (const ctor of type.ctors) {
       const args = ctor.args.map((arg) =>
-        typeFromAst(arg, typeEnv, vars, { allowFreeVars: false })
+        typeFromAst(arg, typeEnv, vars, { allowFreeVars: false, parameter: true })
       );
       const ctorType = args.length === 0 ? result : fn([callArg(args)], result);
       const scheme = {

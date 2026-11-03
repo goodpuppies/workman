@@ -1,3 +1,4 @@
+import { sequenceType } from "../taint.ts";
 import type { LongId, Pattern } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
 import {
@@ -191,7 +192,7 @@ export function inferPattern(
       p.items.forEach((x, i) =>
         inferPattern(
           x,
-          items[i],
+          patternComponent(items[i], expected),
           env,
           typeEnv,
           strEnv,
@@ -223,7 +224,7 @@ export function inferPattern(
         if (facts) recordRecordFieldFact(facts, field, record.info, expectedField.type);
         inferPattern(
           field.pattern,
-          expectedField.type,
+          patternComponent(expectedField.type, expected),
           env,
           typeEnv,
           strEnv,
@@ -266,7 +267,7 @@ export function inferPattern(
         p.args.forEach((x, i) =>
           inferPattern(
             x,
-            args[i],
+            patternComponent(args[i], expected),
             env,
             typeEnv,
             strEnv,
@@ -400,7 +401,16 @@ export function inferBindingPattern(
         "tuple let pattern matches tuple",
       );
       pattern.items.forEach((item, i) =>
-        inferBindingPattern(item, items[i], env, typeEnv, strEnv, out, binders, facts)
+        inferBindingPattern(
+          item,
+          patternComponent(items[i], expected),
+          env,
+          typeEnv,
+          strEnv,
+          out,
+          binders,
+          facts,
+        )
       );
       return;
     }
@@ -425,7 +435,7 @@ export function inferBindingPattern(
         if (facts) recordRecordFieldFact(facts, field, record.info, expectedField.type);
         inferBindingPattern(
           field.pattern,
-          expectedField.type,
+          patternComponent(expectedField.type, expected),
           env,
           typeEnv,
           strEnv,
@@ -464,7 +474,16 @@ export function inferBindingPattern(
           "constructor let pattern result matches value",
         );
         pattern.args.forEach((item, i) =>
-          inferBindingPattern(item, args[i], env, typeEnv, strEnv, out, binders, facts)
+          inferBindingPattern(
+            item,
+            patternComponent(args[i], expected),
+            env,
+            typeEnv,
+            strEnv,
+            out,
+            binders,
+            facts,
+          )
         );
       } else {
         if (pattern.args.length !== 0) throw new Error(`${pattern.name} does not carry values`);
@@ -641,4 +660,17 @@ function rejectDuplicateFields(names: string[]) {
     if (seen.has(name)) throw new Error(`duplicate record field ${name}`);
     seen.add(name);
   }
+}
+
+let inMatchArm = false;
+
+/** A `match` carries its scrutinee's `!` on its result, so arm bindings keep their own positions. */
+export function setMatchArm(value: boolean): boolean {
+  const previous = inMatchArm;
+  inMatchArm = value;
+  return previous;
+}
+
+function patternComponent(component: Ty, aggregate: Ty): Ty {
+  return inMatchArm ? component : sequenceType([], component, [aggregate]);
 }

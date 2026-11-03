@@ -1250,7 +1250,7 @@ Deno.test("[module update A608] JS imports use compiler binding identities in sc
         sourceName: "floor",
         localName: "jsfloor",
         fallible: true,
-        type: "Number -> Result<Number, Js.Error>",
+        type: "Number -> Result<Number, Js.Error>!",
       }],
     }],
   );

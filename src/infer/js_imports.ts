@@ -1,5 +1,7 @@
+import { taintedType } from "../taint.ts";
+import { fn, prune } from "../types.ts";
 import type { Decl } from "../ast.ts";
-import type { Env, TypeEnv } from "../types.ts";
+import type { Env, Ty, TypeEnv } from "../types.ts";
 import { generalize, typeFromAst } from "../types.ts";
 import { rejectDuplicates } from "./decl_helpers.ts";
 import { isDeclaredUnsafeImportSpec } from "../ffi/import_policy.ts";
@@ -35,7 +37,11 @@ export function addJsImport(
             recordTypeReferenceFact(facts, expression, resolved, qualifier),
           onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
         });
-        const scheme = { ...generalize(env, type), status: "value" as const, jsImport: true };
+        const scheme = {
+          ...generalize(env, foreignType(type)),
+          status: "value" as const,
+          jsImport: true,
+        };
         rememberSchemeDeclarationSource(scheme, {
           message: `${spec.sourceName ?? spec.name} import type`,
           node: spec.type.node ?? spec.node,
@@ -60,7 +66,11 @@ export function addJsImport(
       new Map(),
       { strEnv },
     );
-    const scheme = { ...generalize(env, type), status: "value" as const, jsImport: true };
+    const scheme = {
+      ...generalize(env, foreignType(type)),
+      status: "value" as const,
+      jsImport: true,
+    };
     rememberSchemeDeclarationSource(scheme, {
       message: `${decl.clause.alias} namespace import`,
       node: decl.node,
@@ -97,7 +107,7 @@ export function addJsImport(
       onResolveType: (expression, type) => recordTypeExpressionFact(facts, expression, type),
     });
     const scheme = {
-      ...generalize(env, type),
+      ...generalize(env, foreignType(type)),
       status: "value" as const,
       jsImport: true,
       ...(isDeclaredUnsafeImportSpec(decl, spec) ? { declaredJsImport: true } : {}),
@@ -125,4 +135,12 @@ function jsTargetLabel(target: JsImportDecl["target"]): string {
   if (target.kind === "CHeader") return `c.header ${target.header}`;
   if (target.kind === "CLib") return `c.lib ${target.name}`;
   return `receiver.${target.path.join(".")}`;
+}
+
+/** Catching foreign exceptions changes failure handling, not whether a call is effectful. */
+function foreignType(type: Ty): Ty {
+  const resolved = prune(type);
+  return resolved.tag === "fn"
+    ? fn(resolved.params, taintedType(resolved.result))
+    : taintedType(type);
 }

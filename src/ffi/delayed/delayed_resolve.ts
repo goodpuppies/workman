@@ -1,3 +1,4 @@
+
 import { type Decl, type Expr, parseLongId, pathOf, type TypeExpr } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";

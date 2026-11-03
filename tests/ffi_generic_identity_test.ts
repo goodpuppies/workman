@@ -23,10 +23,10 @@ Deno.test("foreign generic instances keep their arguments regardless of import o
       let numberValue = number :> .value;
       let textValue = text :> .value;
     `);
-    expectBinding(result.env, "number", { type: "Box<Number>", vars: 0 });
-    expectBinding(result.env, "text", { type: "Box<String>", vars: 0 });
-    expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>", vars: 0 });
-    expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>", vars: 0 });
+    expectBinding(result.env, "number", { type: "Box<Number>!", vars: 0 });
+    expectBinding(result.env, "text", { type: "Box<String>!", vars: 0 });
+    expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>!", vars: 0 });
+    expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>!", vars: 0 });
   }
 });
 
@@ -46,10 +46,10 @@ Deno.test("generic foreign calls preserve scalar and tuple callback results", as
     };
   `;
   const result = await checkSource(source);
-  expectBinding(result.env, "number", { type: "Number", vars: 0 });
-  expectBinding(result.env, "text", { type: "String", vars: 0 });
-  expectBinding(result.env, "grouped", { type: "Box<(Number, String)>", vars: 0 });
-  expectBinding(result.env, "pair", { type: "(Number, String)", vars: 0 });
+  expectBinding(result.env, "number", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "text", { type: "String!", vars: 0 });
+  expectBinding(result.env, "grouped", { type: "Box<(Number, String)>!", vars: 0 });
+  expectBinding(result.env, "pair", { type: "(Number, String)!", vars: 0 });
   const runtimeSource = source.replaceAll(
     fixture,
     new URL("./fixtures/ffi_generic_box.ts", import.meta.url).pathname,
@@ -79,7 +79,7 @@ Deno.test("type-only foreign imports retain generic arity and reject wrong argum
     let boxed: Container<Number> = numberBox();
     let value = boxed :> .value;
   `);
-  expectBinding(result.env, "value", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "value", { type: "Result<Number, Js.Error>!", vars: 0 });
   await assertRejects(() =>
     checkSource(`${header}
     let boxed: Container<String> = numberBox();
@@ -92,7 +92,7 @@ Deno.test("concrete foreign generic parameters reject incompatible payloads", as
   const result = await checkSource(`${header}
     let size = Box.textLength(Box.stringBox());
   `);
-  expectBinding(result.env, "size", { type: "Number", vars: 0 });
+  expectBinding(result.env, "size", { type: "Number!", vars: 0 });
   await assertRejects(() =>
     checkSource(`${header}
     let size = Box.textLength(Box.numberBox());
@@ -108,10 +108,10 @@ Deno.test("generic overload specialization preserves discriminator literals", as
     let numberValue = number :> .value;
     let textValue = text :> .value;
   `);
-  expectBinding(result.env, "number", { type: "Box<Number>", vars: 0 });
-  expectBinding(result.env, "text", { type: "Box<String>", vars: 0 });
-  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "number", { type: "Box<Number>!", vars: 0 });
+  expectBinding(result.env, "text", { type: "Box<String>!", vars: 0 });
+  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("generic callback captures resolve before their result is materialized", async () => {
@@ -125,8 +125,8 @@ Deno.test("generic callback captures resolve before their result is materialized
     });
     let (value, text) = Box.run(grouped);
   `);
-  expectBinding(result.env, "value", { type: "Number", vars: 0 });
-  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  expectBinding(result.env, "value", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "text", { type: "String!", vars: 0 });
 });
 
 Deno.test("safe imports retain foreign generic arguments inside Result", async () => {
@@ -137,10 +137,10 @@ Deno.test("safe imports retain foreign generic arguments inside Result", async (
     let numberValue = number :> Result.andThen((box) => { box :> .value });
     let textValue = text :> Result.andThen((box) => { box :> .value });
   `);
-  expectBinding(result.env, "number", { type: "Result<Box<Number>, Js.Error>", vars: 0 });
-  expectBinding(result.env, "text", { type: "Result<Box<String>, Js.Error>", vars: 0 });
-  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "number", { type: "Result<Box<Number>, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "text", { type: "Result<Box<String>, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("foreign generic arguments survive Workman module interfaces", async () => {
@@ -168,8 +168,8 @@ Deno.test("foreign generic arguments survive Workman module interfaces", async (
   );
   const result = results.get("/test/main.wm");
   assertExists(result);
-  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "numberValue", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "textValue", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("concrete generic call refs retain distinct payload types in TS reflection", () => {

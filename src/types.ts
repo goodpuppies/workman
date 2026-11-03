@@ -1,3 +1,16 @@
+import {
+  absorbLinks,
+  chainEnd,
+  held,
+  isTainted,
+  joinTypeTaints,
+  keepHeld,
+  openCallbacks,
+  openDeps,
+  openPosition,
+  rebind,
+  taintedType,
+} from "./taint.ts";
 import { diagnosticError } from "./diagnostic_model.ts";
 import {
   exactInteger,
@@ -15,53 +28,70 @@ import { type DiffPath, TypeMismatchError } from "./type_diff.ts";
 import { resolveLongType, type StaticEnv, type StrEnv } from "./infer/environment.ts";
 
 export type Ty =
-  | {
-    tag: "var";
-    id: number;
-    name?: string;
-    instance?: Ty;
-    jsConstraint?: (t: Ty) => void;
-    gpuConstraint?: (t: Ty) => void;
-    equalityConstraint?: (t: Ty) => void;
-    /** Finite admissible types and literal range obligations; never generalized. */
-    numeric?: NumericConstraint;
-    /** All field/result obligations on this unresolved nominal receiver. */
-    projectionFields?: ProjectionFieldInfo[];
+  & {
+    /** The `!` bit. */
+    tainted?: boolean;
+    /** Open positions this one takes its `!` from. Only variables and views ever hold links. */
+    deps?: Ty[];
+    /** A link refers to this variable, so instantiation must keep it as a position. */
+    linked?: boolean;
   }
-  | {
-    tag: "ffi";
-    id: number;
-    kind: "get" | "call";
-    receiver?: Ty;
-    path: string[];
-    args: Ty[];
-    binding?: string;
-    node?: Expr["node"];
-    instance?: Ty;
-    constraints?: Ty[];
-  }
-  | { tag: "prim"; name: string }
-  | { tag: "fn"; params: Ty[]; result: Ty }
-  | { tag: "tuple"; items: Ty[] }
-  | { tag: "struct"; fields: RecordFieldInfo[] }
-  | {
-    tag: "named";
-    id: number;
-    name: string;
-    args: Ty[];
-    argLabels?: string[];
-    foreign?: boolean;
-    foreignKey?: string;
-    recordFields?: RecordFieldInfo[];
-    recordParams?: number[];
-    /** Canonical metadata remains available for caller-owned and recursive nominal records. */
-    definition?: TypeInfo;
-  };
+  & (
+    | {
+      tag: "var";
+      id: number;
+      name?: string;
+      instance?: Ty;
+      jsConstraint?: (t: Ty) => void;
+      gpuConstraint?: (t: Ty) => void;
+      equalityConstraint?: (t: Ty) => void;
+      /** Finite admissible types and literal range obligations; never generalized. */
+      numeric?: NumericConstraint;
+      /** All field/result obligations on this unresolved nominal receiver. */
+      projectionFields?: ProjectionFieldInfo[];
+    }
+    | {
+      tag: "ffi";
+      id: number;
+      kind: "get" | "call";
+      receiver?: Ty;
+      path: string[];
+      args: Ty[];
+      binding?: string;
+      node?: Expr["node"];
+      instance?: Ty;
+      constraints?: Ty[];
+    }
+    | { tag: "view"; value: Ty }
+    | { tag: "prim"; name: string }
+    | { tag: "fn"; params: Ty[]; result: Ty }
+    | {
+      tag: "tuple";
+      items: Ty[];
+    }
+    | { tag: "struct"; fields: RecordFieldInfo[] }
+    | {
+      tag: "named";
+      id: number;
+      name: string;
+      args: Ty[];
+      argLabels?: string[];
+      foreign?: boolean;
+      foreignKey?: string;
+      recordFields?: RecordFieldInfo[];
+      recordParams?: number[];
+      /** Canonical metadata remains available for caller-owned and recursive nominal records. */
+      definition?: TypeInfo;
+    }
+  );
 
 export type Constraint = { kind: "Eq"; left: Ty; right: Ty };
 export type IdentifierStatus = "value" | "constructor" | "record-constructor";
 export type Scheme = {
+  closed?: boolean;
   vars: number[];
+  /** Linked variables freshened per use although HM does not quantify them. */
+  cells?: Set<number>;
   type: Ty;
   constraints?: Constraint[];
   status?: IdentifierStatus;
@@ -188,8 +218,16 @@ export function cloneTypeEnv(typeEnv: TypeEnv): TypeEnv {
   return cloned;
 }
 
-export const prim = (name: string): Ty => ({ tag: "prim", name });
-export const fresh = (name?: string): Ty => ({ tag: "var", id: nextVar++, name });
+export const prim = (name: string): Ty => ({ tag: "prim", name, tainted: undefined });
+export const fresh = (name?: string): Ty => ({
+  tag: "var",
+  id: nextVar++,
+  name,
+  instance: undefined,
+  tainted: undefined,
+  deps: undefined,
+  linked: undefined,
+});
 
 export type NumericConstraint = Readonly<{
   candidates: readonly NumericType[];
@@ -319,11 +357,21 @@ export const freshFfi = (
   node,
   binding,
 });
-export const fn = (params: Ty[], result: Ty): Ty => ({ tag: "fn", params, result });
-export const tuple = (items: Ty[]): Ty => ({ tag: "tuple", items });
-export const structural = (fields: RecordFieldInfo[]): Ty => ({ tag: "struct", fields });
+export const fn = (params: Ty[], result: Ty): Ty => ({
+  tag: "fn",
+  params,
+  result,
+  tainted: undefined,
+});
+export const tuple = (items: Ty[]): Ty => ({ tag: "tuple", items, tainted: undefined });
+export const structural = (fields: RecordFieldInfo[]): Ty => ({
+  tag: "struct",
+  fields,
+  tainted: undefined,
+});
 export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
   tag: "named",
+  tainted: undefined,
   id: info.id,
   name: info.name,
   args,
@@ -340,12 +388,12 @@ export const freshTypeInfo = (name: string, arity: number): TypeInfo => ({
   arity,
 });
 
-export const NumberTy = prim("Number");
-export const I32Ty = prim("I32");
-export const BoolTy = prim("Bool");
-export const CharTy = prim("Char");
-export const StringTy = prim("String");
-export const VoidTy = prim("Void");
+export const NumberTy = Object.freeze(prim("Number"));
+export const I32Ty = Object.freeze(prim("I32"));
+export const BoolTy = Object.freeze(prim("Bool"));
+export const CharTy = Object.freeze(prim("Char"));
+export const StringTy = Object.freeze(prim("String"));
+export const VoidTy = Object.freeze(prim("Void"));
 
 function callArg(items: Ty[]): Ty {
   if (items.length === 0) return VoidTy;
@@ -353,16 +401,39 @@ function callArg(items: Ty[]): Ty {
   return tuple(items);
 }
 
-export function prune(t: Ty): Ty {
-  if (t.tag === "var" && t.instance) {
-    t.instance = prune(t.instance);
-    return t.instance;
+/** A result variable already holding its first branch, as `match` gets from its first arm. */
+export function holdResult(type: Ty): Ty {
+  if (type.tag === "var" || type.tag === "view" || type.tag === "ffi") return type;
+  const result = fresh() as Extract<Ty, { tag: "var" }>;
+  result.instance = type;
+  return result;
+}
+
+export function prune(t: Ty): Exclude<Ty, { tag: "view" }> {
+  let hops = 0;
+  const start = t;
+  while (true) {
+    if (t.tag === "view") t = t.value;
+    else if ((t.tag === "var" || t.tag === "ffi") && t.instance) {
+      t = t.instance;
+      hops++;
+    } else break;
   }
-  if (t.tag === "ffi" && t.instance) {
-    t.instance = prune(t.instance);
-    return t.instance;
-  }
+  // Compression keeps the last variable: a join replaces what that one variable holds, and every
+  // variable unified with it must see the replacement. Two hops is already as short as that gets.
+  if (hops > 2) compress(start);
   return t;
+}
+
+function compress(t: Ty): void {
+  while ((t.tag === "var" || t.tag === "ffi") && t.instance) {
+    const following: Ty = t.instance;
+    if ((following.tag !== "var" && following.tag !== "ffi") || held(following)) return;
+    const after = following.instance;
+    if (!after || (after.tag !== "var" && after.tag !== "ffi")) return;
+    t.instance = after;
+    t = after;
+  }
 }
 
 export function occurs(id: number, t: Ty): boolean {
@@ -396,18 +467,43 @@ export type DeferFfiConstraint = (
   targetSide: "left" | "right",
 ) => void;
 
+/** Bind to the last variable on the way to the resolved type, so unified variables stay shared. */
+function bindingTarget(original: Ty, resolved: Ty): Ty {
+  if (resolved.tag === "var" || resolved.tag === "ffi") {
+    for (let c = original; c !== resolved;) {
+      if (c.tag === "view" || held(c)) return original;
+      c = (c as Extract<Ty, { tag: "var" }>).instance!;
+    }
+    return resolved;
+  }
+  for (let c = original; c !== resolved;) {
+    if (c.tag === "view") return original;
+    const following: Ty = (c as Extract<Ty, { tag: "var" }>).instance!;
+    if (following === resolved) return c;
+    if (held(c)) return original;
+    c = following;
+  }
+  return resolved;
+}
+
 export function unify(
   a: Ty,
   b: Ty,
   onBind?: UnifyBind,
   path: DiffPath = [],
   onDeferFfi?: DeferFfiConstraint,
-): void {
+): Ty | undefined {
+  const marks = joinTypeTaints(a, b);
   const originalA = a;
   const originalB = b;
   a = prune(a);
   b = prune(b);
-  if (a === b) return;
+  if (a === b) {
+    if (originalA !== originalB && (a.tag === "var" || a.tag === "ffi")) {
+      absorbLinks(a, originalA, originalB);
+    }
+    return;
+  }
   // A non-numeric type meeting a numeric variable fails exactly as it would against Number,
   // which keeps existing diagnostics; check before binding so the variable stays intact.
   if (
@@ -425,7 +521,8 @@ export function unify(
   if (a.tag === "var") {
     if (occurs(a.id, b)) throw new Error(`recursive type ${show(a)} ~ ${show(b)}`);
     if (a.numeric && b.tag === "var") markNumeric(b, a.numeric);
-    a.instance = b;
+    a.instance = bindingTarget(originalB, b);
+    if (a.linked && b.tag === "var") b.linked = true;
     if (b.tag === "var" && a.projectionFields) {
       const existing = b.projectionFields ?? [];
       b.projectionFields = [...existing, ...a.projectionFields];
@@ -459,7 +556,7 @@ export function unify(
   }
   if (b.tag === "var") {
     if (occurs(b.id, a)) throw new Error(`recursive type ${show(b)} ~ ${show(a)}`);
-    b.instance = a;
+    b.instance = bindingTarget(originalA, a);
     if (b.jsConstraint) {
       b.jsConstraint(a);
     }
@@ -492,29 +589,51 @@ export function unify(
     return;
   }
   if (a.tag !== b.tag) throw typeMismatchError(a, b, path, originalA, originalB);
-  if (a.tag === "prim" && b.tag === "prim" && a.name === b.name) return;
-  if (a.tag === "fn" && b.tag === "fn" && a.params.length === b.params.length) {
-    a.params.forEach((p, i) =>
-      unify(p, b.params[i], onBind, [
+  // Two equal shapes may still differ in `!`. Their join replaces whatever holds them.
+  const outerDiffers = marks === 1 || marks === 2;
+  let joined: Ty | undefined;
+  if (a.tag === "prim" && b.tag === "prim" && a.name === b.name) {
+    if (outerDiffers) joined = taintedType(marks === 1 ? a : b);
+  } else if (a.tag === "fn" && b.tag === "fn" && a.params.length === b.params.length) {
+    let params: Ty[] | undefined;
+    for (let i = 0; i < a.params.length; i++) {
+      const inner = unify(a.params[i], b.params[i], onBind, [
         ...path,
         { kind: "fn-param", index: i },
-      ], onDeferFfi)
-    );
-    return unify(a.result, b.result, onBind, [...path, { kind: "fn-result" }], onDeferFfi);
-  }
-  if (a.tag === "tuple" && b.tag === "tuple" && a.items.length === b.items.length) {
-    a.items.forEach((x, i) =>
-      unify(x, b.items[i], onBind, [...path, { kind: "tuple-item", index: i }], onDeferFfi)
-    );
-    return;
-  }
-  if (a.tag === "struct" && b.tag === "struct") {
+      ], onDeferFfi);
+      if (inner) (params ??= [...a.params])[i] = keepHeld(a.params[i], b.params[i], inner);
+    }
+    const inner = unify(a.result, b.result, onBind, [...path, { kind: "fn-result" }], onDeferFfi);
+    if (params || inner || outerDiffers) {
+      joined = {
+        ...a,
+        params: params ?? a.params,
+        result: inner ? keepHeld(a.result, b.result, inner) : a.result,
+      };
+      if (marks) joined.tainted = true;
+    }
+  } else if (a.tag === "tuple" && b.tag === "tuple" && a.items.length === b.items.length) {
+    let items: Ty[] | undefined;
+    for (let i = 0; i < a.items.length; i++) {
+      const inner = unify(a.items[i], b.items[i], onBind, [
+        ...path,
+        { kind: "tuple-item", index: i },
+      ], onDeferFfi);
+      if (inner) (items ??= [...a.items])[i] = keepHeld(a.items[i], b.items[i], inner);
+    }
+    if (items || outerDiffers) {
+      joined = { ...a, items: items ?? a.items };
+      if (marks) joined.tainted = true;
+    }
+  } else if (a.tag === "struct" && b.tag === "struct") {
     unifyStructuralRecords(a, b, onBind, path, onDeferFfi);
     return;
-  }
-  if (a.tag === "named" && b.tag === "named" && a.id === b.id && a.args.length === b.args.length) {
-    a.args.forEach((x, i) =>
-      unify(x, b.args[i], onBind, [
+  } else if (
+    a.tag === "named" && b.tag === "named" && a.id === b.id && a.args.length === b.args.length
+  ) {
+    let args: Ty[] | undefined;
+    for (let i = 0; i < a.args.length; i++) {
+      const inner = unify(a.args[i], b.args[i], onBind, [
         ...path,
         {
           kind: "named-arg",
@@ -522,11 +641,19 @@ export function unify(
           label: a.argLabels?.[i] ?? b.argLabels?.[i],
           typeName: a.name,
         },
-      ], onDeferFfi)
-    );
-    return;
+      ], onDeferFfi);
+      if (inner) (args ??= [...a.args])[i] = keepHeld(a.args[i], b.args[i], inner);
+    }
+    if (args || outerDiffers) {
+      joined = { ...a, args: args ?? a.args };
+      if (marks) joined.tainted = true;
+    }
+  } else throw typeMismatchError(a, b, path, originalA, originalB);
+  if (joined) {
+    rebind(originalA, joined);
+    rebind(originalB, joined);
   }
-  throw typeMismatchError(a, b, path, originalA, originalB);
+  return joined;
 }
 
 function unifyStructuralRecords(
@@ -575,6 +702,12 @@ function typeMismatchError(
   originalLeft: Ty,
   originalRight: Ty,
 ): TypeMismatchError {
+  while (originalLeft.tag === "view") {
+    originalLeft = originalLeft.value;
+  }
+  while (originalRight.tag === "view") {
+    originalRight = originalRight.value;
+  }
   if (originalLeft.tag === "var" && originalLeft.instance) {
     return new TypeMismatchError(left, right, path, originalLeft.id, "right");
   }
@@ -659,6 +792,7 @@ export function solveFfi(
     if (isBroadJsBoundaryConstraint(constraint)) continue;
     checkConstraint(target, constraint);
   }
+  joinTypeTaints(placeholder, target);
   placeholder.instance = target;
 }
 
@@ -701,29 +835,45 @@ export function solveConstraints(
   constraints.length = 0;
 }
 
-export function ftv(t: Ty, out = new Set<number>()): Set<number> {
-  t = prune(t);
+export function ftv(t: Ty, out = new Set<number>(), cells: Set<number> = out): Set<number> {
+  if (t.tag === "var" || t.tag === "view") {
+    const resolved = prune(t);
+    // prune leaves only held variables on the chain, so this walk is at most a hop or two.
+    for (let c: Ty = t; c !== resolved;) {
+      if (c.tag === "var" && c.linked) cells.add(c.id);
+      c = c.tag === "view" ? c.value : (c as Extract<Ty, { tag: "var" }>).instance!;
+    }
+    t = resolved;
+  }
   if (t.tag === "var") {
     if (out.has(t.id)) return out;
     out.add(t.id);
-    t.projectionFields?.forEach((field) => ftv(field.type, out));
+    t.projectionFields?.forEach((field) => ftv(field.type, out, cells));
   } else if (t.tag === "ffi") {
-    if (t.receiver) ftv(t.receiver, out);
-    t.args.forEach((arg) => ftv(arg, out));
+    if (t.receiver) ftv(t.receiver, out, cells);
+    t.args.forEach((arg) => ftv(arg, out, cells));
   } else if (t.tag === "fn") {
-    t.params.forEach((p) => ftv(p, out));
-    ftv(t.result, out);
-  } else if (t.tag === "tuple") t.items.forEach((x) => ftv(x, out));
-  else if (t.tag === "struct") t.fields.forEach((field) => ftv(field.type, out));
-  else if (t.tag === "named") t.args.forEach((x) => ftv(x, out));
+    t.params.forEach((p) => ftv(p, out, cells));
+    ftv(t.result, out, cells);
+  } else if (t.tag === "tuple") t.items.forEach((x) => ftv(x, out, cells));
+  else if (t.tag === "struct") t.fields.forEach((field) => ftv(field.type, out, cells));
+  else if (t.tag === "named") t.args.forEach((x) => ftv(x, out, cells));
   return out;
 }
 
 export function ftvEnv(env: Env): Set<number> {
   const out = new Set<number>();
   for (const s of env.values()) {
-    const local = ftv(s.type);
-    for (const id of local) if (!s.vars.includes(id)) out.add(id);
+    if (s.closed) continue;
+    let open = false;
+    for (const id of ftv(s.type)) {
+      if (!s.vars.includes(id) && !s.cells?.has(id)) {
+        out.add(id);
+        open = true;
+      }
+    }
+    // A type with no free variables can never gain one, so it never needs walking again.
+    if (!open) s.closed = true;
   }
   return out;
 }
@@ -732,10 +882,16 @@ export function generalize(env: Env, type: Ty): Scheme {
   const envVars = ftvEnv(env);
   const boundary = jsConstrainedVarIds(type);
   const numeric = numericVarIds(type);
-  const vars = [...ftv(type)].filter((id) =>
+  const found = new Set<number>();
+  const held = new Set<number>();
+  const vars = [...ftv(type, found, held)].filter((id) =>
     !envVars.has(id) && !boundary.has(id) && !numeric.has(id)
   );
-  return { vars, type, constraints: [] };
+  // A numeric variable stays monomorphic until defaulted, but its `!` still belongs to each use.
+  for (const id of numeric) if (!envVars.has(id)) held.add(id);
+  let cells: Set<number> | undefined;
+  for (const id of held) if (!envVars.has(id)) (cells ??= new Set()).add(id);
+  return { vars, cells, type, constraints: [] };
 }
 
 /** Numeric variables stay monomorphic until context or defaulting decides them. */
@@ -803,88 +959,140 @@ export function containsUnsolvedJsBoundary(type: Ty): boolean {
 }
 
 export function instantiate(scheme: Scheme): Ty {
-  const map = new Map<number, Ty>();
-  for (const id of scheme.vars) map.set(id, fresh());
-  const copiedProjections = new Set<number>();
-  const go = (t: Ty): Ty => {
-    t = prune(t);
-    if (t.tag === "var") {
-      const mapped = map.get(t.id);
-      if (!mapped) return t;
-      if (t.jsConstraint) addJsConstraint(mapped, t.jsConstraint);
-      if (t.gpuConstraint) addGpuConstraint(mapped, t.gpuConstraint);
-      if (t.equalityConstraint) addEqualityConstraint(mapped, t.equalityConstraint);
-      if (t.numeric && mapped.tag === "var") markNumeric(mapped, t.numeric);
-      if (!copiedProjections.has(t.id)) {
-        copiedProjections.add(t.id);
-        for (const field of t.projectionFields ?? []) {
-          addProjectionField(mapped, { ...field, type: go(field.type) });
-        }
-      }
-      return mapped;
-    }
-    if (t.tag === "ffi") {
-      return t;
-    }
-    if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
-    if (t.tag === "tuple") return tuple(t.items.map(go));
-    if (t.tag === "struct") {
-      // Structural requirements are open, mutable rows during inference.
-      // Repeated uses of one monomorphic receiver must accumulate fields on
-      // the same row; polymorphic occurrences still need independent rows.
-      if (scheme.preserveStructuralRows && scheme.vars.length === 0) return t;
-      return structural(t.fields.map((field) => ({ ...field, type: go(field.type) })));
-    }
-    if (t.tag === "named") return { ...t, args: t.args.map(go) };
-    return t;
-  };
-  return go(scheme.type);
+  const variables = new Map(scheme.vars.map((id) => [id, fresh()]));
+  return copyType(scheme.type, variables, {
+    preserveRows: scheme.preserveStructuralRows === true && scheme.vars.length === 0,
+    cells: scheme.cells,
+  });
 }
 
 export function substituteTypeVars(template: Ty, subst: Map<number, Ty>): Ty {
-  const freshen = new Map<number, Ty>();
-  return freshenTypeVars(template, subst, freshen);
+  return freshenTypeVars(template, subst, new Map());
 }
 
-/** Clone a type graph while sharing one freshening map across every owned occurrence. */
+/** Clone value types and their symbolic summaries with ordinary variable substitution. */
 export function freshenTypeVars(
   template: Ty,
   subst: Map<number, Ty>,
   freshen: Map<number, Ty>,
 ): Ty {
-  const go = (t: Ty): Ty => {
-    t = prune(t);
-    if (t.tag === "var") {
-      const bound = subst.get(t.id);
-      if (bound) return bound;
-      const existing = freshen.get(t.id);
-      if (existing) return existing;
-      const created = fresh(t.name);
-      freshen.set(t.id, created);
-      if (t.jsConstraint) addJsConstraint(created, t.jsConstraint);
-      if (t.gpuConstraint) addGpuConstraint(created, t.gpuConstraint);
-      if (t.equalityConstraint) addEqualityConstraint(created, t.equalityConstraint);
-      if (t.numeric) markNumeric(created as Extract<Ty, { tag: "var" }>, t.numeric);
-      for (const field of t.projectionFields ?? []) {
-        addProjectionField(created, { ...field, type: go(field.type) });
-      }
-      return created;
+  return copyType(template, freshen, { subst, freshen: true });
+}
+
+function copyType(
+  template: Ty,
+  variables: Map<number, Ty>,
+  options: {
+    preserveRows?: boolean;
+    subst?: Map<number, Ty>;
+    freshen?: boolean;
+    cells?: Set<number>;
+  },
+): Ty {
+  let linkedCopies: Map<Ty, Ty> | undefined;
+  const copiedProjections = new Set<number>();
+  const go = (input: Ty): Ty => {
+    // Ordered by frequency. A concrete node's copy only differs from HM's by keeping its `!`.
+    if (input.tag === "prim") return input;
+    if (input.tag === "named") return { ...input, args: input.args.map(go) };
+    if (input.tag === "fn") {
+      const result = fn(input.params.map(go), go(input.result));
+      if (input.tainted) result.tainted = true;
+      return result;
     }
-    if (t.tag === "ffi") {
+    if (input.tag === "tuple") return { ...input, items: input.items.map(go) };
+    if (input.tag === "var") {
+      if (input.instance) {
+        const following: Ty = input.instance;
+        if (!input.linked && !input.tainted && !input.deps && following.tag !== "view") {
+          return go(following);
+        }
+        return goHeld(input as Extract<Ty, { tag: "var" }>);
+      }
+      return goFree(input);
+    }
+    if (input.tag === "view") {
+      if (!input.tainted && !input.deps) return go(input.value);
+      return occurrence(input, input.value);
+    }
+    if (input.tag === "struct") {
+      if (options.preserveRows) return input;
       return {
-        ...t,
-        receiver: t.receiver ? go(t.receiver) : undefined,
-        args: t.args.map(go),
-        instance: t.instance ? go(t.instance) : undefined,
+        ...input,
+        fields: input.fields.map((field) => ({ ...field, type: go(field.type) })),
       };
     }
-    if (t.tag === "fn") return fn(t.params.map(go), go(t.result));
-    if (t.tag === "tuple") return tuple(t.items.map(go));
-    if (t.tag === "struct") {
-      return structural(t.fields.map((field) => ({ ...field, type: go(field.type) })));
+    // Unresolved foreign member.
+    if (input.instance && !options.freshen) return go(input.instance);
+    if (!options.freshen) return input;
+    return {
+      ...input,
+      receiver: input.receiver ? go(input.receiver) : undefined,
+      args: input.args.map(go),
+      instance: input.instance ? go(input.instance) : undefined,
+    };
+  };
+  const goHeld = (input: Extract<Ty, { tag: "var" }>): Ty => {
+    const end = chainEnd(input) as Extract<Ty, { tag: "var" }>;
+    if (!end.instance) return go(end);
+    if (end.tainted || end.deps) return occurrence(end, end.instance);
+    if (!end.linked) return go(end.instance);
+    let target = variables.get(end.id);
+    if (!target && (options.freshen || options.cells?.has(end.id))) {
+      target = fresh(end.name);
+      variables.set(end.id, target);
     }
-    if (t.tag === "named") return { ...t, args: t.args.map(go) };
-    return t;
+    if (!target) return end;
+    if (target.tag === "var" && !target.instance && !target.linked) {
+      openPosition(target, target);
+      target.instance = go(end.instance);
+    }
+    return target;
+  };
+  const goFree = (input: Extract<Ty, { tag: "var" }>): Ty => {
+    const bound = options.subst?.get(input.id);
+    if (bound) return bound;
+    let target = variables.get(input.id);
+    if (!target && options.freshen) {
+      target = fresh(input.name);
+      variables.set(input.id, target);
+    }
+    if (!target) return input;
+    if (input.jsConstraint) addJsConstraint(target, input.jsConstraint);
+    if (input.gpuConstraint) addGpuConstraint(target, input.gpuConstraint);
+    if (input.equalityConstraint) addEqualityConstraint(target, input.equalityConstraint);
+    if (input.numeric && target.tag === "var") markNumeric(target, input.numeric);
+    if (!copiedProjections.has(input.id)) {
+      copiedProjections.add(input.id);
+      for (const field of input.projectionFields ?? []) {
+        addProjectionField(target, { ...field, type: go(field.type) });
+      }
+    }
+    if (input.tainted) target.tainted = true;
+    if (input.linked) target.linked = true;
+    if (input.deps && !target.deps) {
+      const deps = openDeps(input.deps);
+      if (deps) {
+        // Set first: a recursive result's links can lead back to this variable.
+        target.deps = [];
+        target.deps = deps.map(go);
+      } else target.tainted = true;
+    }
+    return target;
+  };
+  /** A position with links. Links that resolved clean disappear here instead of being copied. */
+  const occurrence = (input: Ty, value: Ty): Ty => {
+    if (input.tainted) return taintedType(go(value));
+    const deps = openDeps(input.deps ?? []);
+    if (!deps) return taintedType(go(value));
+    if (!deps.length) return go(value);
+    const known = (linkedCopies ??= new Map()).get(input);
+    if (known) return known;
+    const result: Ty = { tag: "view", value, deps: [], tainted: undefined, linked: undefined };
+    linkedCopies.set(input, result);
+    result.value = go(value);
+    result.deps = deps.map(go);
+    return result;
   };
   return go(template);
 }
@@ -925,6 +1133,8 @@ export function typeFromAst(
     ) => void;
     onResolveVariable?: (expression: TypeExpr, type: Ty) => void;
     onResolveType?: (expression: TypeExpr, type: Ty) => void;
+    /** This type is a parameter's: a function here is a callback, whose result a caller decides. */
+    parameter?: boolean;
   } = {},
 ): Ty {
   const allowFreeVars = options.allowFreeVars ?? true;
@@ -960,9 +1170,12 @@ export function typeFromAst(
     return resolved(tuple(expr.items.map((x) => typeFromAst(x, typeEnv, vars, options))));
   }
   if (expr.kind === "TFn") {
+    const flipped = { ...options, parameter: !options.parameter };
+    const params = [callArg(expr.params.map((x) => typeFromAst(x, typeEnv, vars, flipped)))];
+    const result = typeFromAst(expr.result, typeEnv, vars, options);
     return resolved(fn(
-      [callArg(expr.params.map((x) => typeFromAst(x, typeEnv, vars, options)))],
-      typeFromAst(expr.result, typeEnv, vars, options),
+      params,
+      options.parameter && result.tag !== "var" ? openPosition(fresh(), result) : result,
     ));
   }
   if (expr.args.length === 0 && vars.has(expr.name)) {
@@ -991,7 +1204,9 @@ export function typeFromAst(
   );
   if (info.alias) {
     const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
-    return resolved(instantiateAlias(info.alias, info.aliasParams ?? [], args));
+    const expanded = instantiateAlias(info.alias, info.aliasParams ?? [], args);
+    openCallbacks(expanded, options.parameter === true, fresh);
+    return resolved(expanded);
   }
   if (
     expr.args.length === 0 &&
@@ -1016,12 +1231,27 @@ export function show(t: Ty): string {
         names.get(id)!);
   const functionDomain = (params: Ty[]): string => {
     if (params.length === 0) return "Void";
-    if (params.length > 1) return `(${params.map(go).join(", ")})`;
+    if (params.length > 1) return `(${params.map(domain).join(", ")})`;
     const param = prune(params[0]);
-    const rendered = go(param);
+    const rendered = domain(params[0]);
     return param.tag === "fn" ? `(${rendered})` : rendered;
   };
+  const domain = (x: Ty): string => {
+    const type = prune(x);
+    if (type.tag === "tuple") return `(${type.items.map(domain).join(", ")})`;
+    if (type.tag === "named" && type.args.length) {
+      return `${type.name}<${type.args.map(domain).join(", ")}>`;
+    }
+    if (type.tag === "struct") {
+      return `{ ${type.fields.map((field) => `${field.name}: ${domain(field.type)}`).join(", ")} }`;
+    }
+    return shape(x);
+  };
   const go = (x: Ty): string => {
+    const rendered = shape(x);
+    return isTainted(x) ? prune(x).tag === "fn" ? `(${rendered})!` : `${rendered}!` : rendered;
+  };
+  const shape = (x: Ty): string => {
     x = prune(x);
     if (x.tag === "var") {
       if (x.projectionFields?.length && !seenReceivers.has(x.id)) {

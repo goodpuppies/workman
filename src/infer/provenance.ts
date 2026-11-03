@@ -550,6 +550,9 @@ function collectProvenance(
   provenance: TypeProvenance,
   seen = new Set<number>(),
 ): EvidenceOrigin[] {
+  if (type.tag === "view") {
+    return collectProvenance(type.value, provenance, seen);
+  }
   if (type.tag === "var") {
     if (seen.has(type.id)) return [];
     seen.add(type.id);
@@ -966,6 +969,9 @@ function commitmentOriginForType(
   provenance: TypeProvenance,
   seen = new Set<number>(),
 ): ConstraintOrigin | undefined {
+  if (type.tag === "view") {
+    return commitmentOriginForType(type.value, provenance, seen);
+  }
   if (type.tag === "var") {
     if (seen.has(type.id)) return undefined;
     seen.add(type.id);

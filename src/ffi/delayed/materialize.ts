@@ -150,7 +150,7 @@ function contextualFunctionType(
     );
 }
 
-function isConcreteContextType(type: ReturnType<typeof prune>): boolean {
+function isConcreteContextType(type: Ty): boolean {
   const target = prune(type);
   switch (target.tag) {
     case "var":

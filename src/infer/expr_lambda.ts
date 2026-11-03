@@ -1,3 +1,4 @@
+import { preserveTaint } from "../taint.ts";
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import { isGpuLambda } from "../directives.ts";
@@ -41,6 +42,7 @@ export function inferLambdaTy(
   const annotations = expr.params.map((param) =>
     param.annotation
       ? typeFromAst(param.annotation, typeEnv, annotationVars, {
+        parameter: true,
         strEnv,
         onResolveName: (expression, resolved, qualifier) =>
           recordTypeReferenceFact(facts, expression, resolved, qualifier),
@@ -208,7 +210,7 @@ export function inferLambdaTy(
   }
   const t = fn(
     [callArg(signatureParams)],
-    signatureBody,
+    preserveTaint(signatureBody, body),
   );
   types.set(expr, t);
   return t;
@@ -363,7 +365,7 @@ function ffiReceiverObligationForParam(
 function collectParamReplacements(source: Ty, replacement: Ty, out: Map<number, Ty>) {
   const resolved = prune(source);
   if (resolved.tag === "var") {
-    out.set(resolved.id, replacement);
+    if (resolved !== prune(replacement)) out.set(resolved.id, replacement);
     return;
   }
   const target = prune(replacement);
@@ -378,33 +380,31 @@ function collectParamReplacements(source: Ty, replacement: Ty, out: Map<number, 
 }
 
 function replaceParamOccurrences(type: Ty, replacements: Map<number, Ty>): Ty {
-  const resolved = prune(type);
-  if (resolved.tag === "var") return replacements.get(resolved.id) ?? resolved;
-  if (resolved.tag === "fn") {
-    return fn(
-      resolved.params.map((param) => replaceParamOccurrences(param, replacements)),
-      replaceParamOccurrences(resolved.result, replacements),
-    );
-  }
-  if (resolved.tag === "tuple") {
-    return tuple(resolved.items.map((item) => replaceParamOccurrences(item, replacements)));
-  }
-  if (resolved.tag === "struct") {
-    return {
-      ...resolved,
-      fields: resolved.fields.map((field) => ({
-        ...field,
-        type: replaceParamOccurrences(field.type, replacements),
-      })),
-    };
-  }
-  if (resolved.tag === "named") {
-    return {
-      ...resolved,
-      args: resolved.args.map((arg) => replaceParamOccurrences(arg, replacements)),
-    };
-  }
-  return resolved;
+  if (replacements.size === 0) return type;
+  const copies = new Map<object, Ty>();
+  const go = (input: Ty): Ty => {
+    const copied = copies.get(input);
+    if (copied) return copied;
+    if ((input.tag === "var" || input.tag === "ffi") && input.instance) return go(input.instance);
+    const resolved = input;
+    if (resolved.tag === "var") return replacements.get(resolved.id) ?? resolved;
+    const result: Ty = { ...resolved };
+    copies.set(input, result);
+    if (resolved.tag === "view" && result.tag === "view") {
+      result.value = go(resolved.value);
+    } else if (resolved.tag === "fn" && result.tag === "fn") {
+      result.params = resolved.params.map(go);
+      result.result = go(resolved.result);
+    } else if (resolved.tag === "tuple" && result.tag === "tuple") {
+      result.items = resolved.items.map(go);
+    } else if (resolved.tag === "struct" && result.tag === "struct") {
+      result.fields = resolved.fields.map((field) => ({ ...field, type: go(field.type) }));
+    } else if (resolved.tag === "named" && result.tag === "named") {
+      result.args = resolved.args.map(go);
+    } else return resolved;
+    return result;
+  };
+  return go(type);
 }
 
 // Context narrows nominal projections; foreign reflection and GPU overloads retain

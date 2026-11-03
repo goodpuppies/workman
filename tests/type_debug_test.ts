@@ -43,5 +43,5 @@ Deno.test("type-debug completes after recoverable delayed FFI diagnostics", asyn
   const output = await typeDebugFile(main);
 
   assertStringIncludes(output, "type-debug: ok");
-  assertStringIncludes(output, "value: Result<Number, Js.Error>");
+  assertStringIncludes(output, "value: Result<Number, Js.Error>!");
 });

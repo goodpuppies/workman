@@ -247,6 +247,7 @@ function inferRecordDecl(
   info.recordFields = decl.fields.map((field) => ({
     name: field.name,
     type: typeFromAst(field.type, typeEnv, vars, {
+      parameter: true,
       allowFreeVars: false,
       strEnv,
       onResolveName: (expression, resolved, qualifier) =>
@@ -338,6 +339,7 @@ function inferTypeDecl(
   for (const c of decl.ctors) {
     const args = c.args.map((x) =>
       typeFromAst(x, typeEnv, vars, {
+        parameter: true,
         allowFreeVars: false,
         strEnv,
         onResolveName: (expression, resolved, qualifier) =>

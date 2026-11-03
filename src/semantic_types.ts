@@ -1,3 +1,4 @@
+import { isTainted } from "./taint.ts";
 import type { TypeNameId } from "./ids.ts";
 import type { NominalFacts } from "./nominal_facts.ts";
 import { hasProjectionFields, prune, show, type Ty } from "./types.ts";
@@ -35,6 +36,7 @@ export type SemanticTypeShape =
 export type SemanticType = Readonly<{
   id: SemanticTypeId;
   rendered: string;
+  tainted?: true;
   shape: SemanticTypeShape;
 }>;
 
@@ -47,20 +49,31 @@ export type SemanticTypeArena = {
 export function createSemanticTypeArena(nominalFacts: NominalFacts): SemanticTypeArena {
   const types: SemanticType[] = [];
   const byType = new Map<Ty, SemanticTypeId>();
+  const byTaintedType = new Map<Ty, SemanticTypeId>();
   const variables = new Map<number, number>();
 
   const snapshot = (input: Ty): SemanticTypeId => {
     const type = prune(input);
-    const existing = byType.get(type);
+    const tainted = isTainted(input);
+    const arena = tainted ? byTaintedType : byType;
+    const existing = arena.get(type);
     if (existing !== undefined) return existing;
     const id = types.length as SemanticTypeId;
-    byType.set(type, id);
+    arena.set(type, id);
     // Reserve the slot before descending so a malformed cyclic inference graph cannot recurse
     // forever. Ordinary elaborated types are acyclic after pruning.
     types.push(undefined as unknown as SemanticType);
     const shape = snapshotShape(type, snapshot, nominalFacts, variables);
-    const rendered = hasProjectionFields(type) ? show(type) : renderShape(shape, types);
-    types[id] = Object.freeze({ id, rendered, shape });
+    const base = hasProjectionFields(type) ? show(input) : renderShape(shape, types);
+    const rendered = tainted && !hasProjectionFields(type)
+      ? shape.kind === "function" ? `(${base})!` : `${base}!`
+      : base;
+    types[id] = Object.freeze({
+      id,
+      rendered,
+      shape,
+      ...(tainted ? { tainted: true as const } : {}),
+    });
     return id;
   };
 
@@ -71,7 +84,7 @@ export function createSemanticTypeArena(nominalFacts: NominalFacts): SemanticTyp
 }
 
 function snapshotShape(
-  type: Ty,
+  type: ReturnType<typeof prune>,
   snapshot: (type: Ty) => SemanticTypeId,
   nominalFacts: NominalFacts,
   variables: Map<number, number>,
@@ -139,10 +152,25 @@ function snapshotShape(
 
 function renderShape(shape: SemanticTypeShape, types: readonly SemanticType[]): string {
   const render = (id: SemanticTypeId) => types[id]?.rendered ?? `?type#${id}`;
+  const domain = (id: SemanticTypeId): string => {
+    const type = types[id];
+    if (!type) return `?type#${id}`;
+    const shape = type.shape;
+    if (shape.kind === "tuple") return `(${shape.items.map(domain).join(", ")})`;
+    if (shape.kind === "named" && shape.args.length) {
+      return `${shape.name}<${shape.args.map(domain).join(", ")}>`;
+    }
+    if (shape.kind === "structural-record") {
+      return `{ ${
+        shape.fields.map((field) => `${field.name}: ${domain(field.type)}`).join(", ")
+      } }`;
+    }
+    return renderShape(shape, types);
+  };
   const functionDomain = (params: readonly SemanticTypeId[]): string => {
     if (params.length === 0) return "Void";
-    if (params.length > 1) return `(${params.map(render).join(", ")})`;
-    const rendered = render(params[0]);
+    if (params.length > 1) return `(${params.map(domain).join(", ")})`;
+    const rendered = domain(params[0]);
     return types[params[0]]?.shape.kind === "function" ? `(${rendered})` : rendered;
   };
   switch (shape.kind) {
