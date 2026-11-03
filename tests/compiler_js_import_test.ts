@@ -28,7 +28,9 @@ Deno.test("unsafe primitive imports bypass the conversion runtime", async () => 
   `);
 
   const binding = js.slice(js.indexOf("const max_"), js.indexOf("const answer_"));
-  assertStringIncludes(binding, "(...__arg)");
+  assertStringIncludes(binding, "__wm_d2");
+  assertStringIncludes(binding, "__wm_js_fn(__wm_js_arg_0, __wm_js_arg_1)");
+  assertEquals(/max_\d+__wm_d2\(1, 2\)/.test(js), true);
   assertEquals(binding.includes("__wm_js_apply"), false);
 });
 

@@ -5,10 +5,41 @@ import { type CCodecDescriptor, validateCodecDescriptor } from "../ffi/c/byte_ty
 import type { ExtractedStruct, ExtractedTypeDesc } from "../ffi/c/extract.ts";
 import { LIBRARY_JS_SCHEME, runtimeJsModuleSpecifier } from "../js_module_specifier.ts";
 import type { CoreDecl } from "./ast.ts";
+import type { BindingId } from "./ids.ts";
 import { emitJsIdentifier as id, emitJsPropertyKey } from "./emit_name.ts";
 import { byteTypeRuntimeUrl } from "../generated/byte_type_runtime.ts";
 
 type CoreJsImport = Extract<CoreDecl, { kind: "CoreJsImport" }>;
+
+/** Fixed-arity entries share the normal WM binding's identity and export path. */
+export function foreignDirectBindings(
+  decl: CoreJsImport,
+): { bindingId: BindingId; name: string; arity: number }[] {
+  if (decl.clause.kind !== "Named" || decl.clause.alias) return [];
+  if (decl.target.kind === "CLib" && decl.target.name.startsWith(CODEC_LIB_PREFIX)) return [];
+  return decl.clause.specs.flatMap((spec, index) => {
+    const bindingId = decl.bindingIds?.[index];
+    if (bindingId === undefined) return [];
+    let arity: number;
+    if (decl.target.kind === "CLib" || decl.target.kind === "CHeader") {
+      const signature = cSignatureForSpec(
+        spec,
+        decl.target.kind === "CHeader" ? cExtractionFor(decl.target.header) : undefined,
+        decl.target,
+      );
+      if (signature.constant) return [];
+      arity = signature.parameters.length;
+    } else {
+      if (spec.type?.kind !== "TFn") return [];
+      arity = spec.type.params.length;
+    }
+    return arity < 2 ? [] : [{
+      bindingId,
+      name: `${boundName(spec.alias ?? spec.name, bindingId)}__wm_d${arity}`,
+      arity,
+    }];
+  });
+}
 
 type JsTargetRef = { kind: "global"; path: string; setup?: string } | {
   kind: "meta";
@@ -120,11 +151,31 @@ export function emitJsImportDecl(decl: CoreJsImport): string[] {
   }
   return [
     ...prefix,
-    ...decl.clause.specs.map((spec, index) =>
-      `const ${boundName(spec.alias ?? spec.name, decl.bindingIds?.[index])} = ${
-        jsImportWrapper(jsMemberRef(target, JSON.stringify(spec.name)), spec)
-      };`
-    ),
+    ...decl.clause.specs.flatMap((spec, index) => {
+      const binding = boundName(spec.alias ?? spec.name, decl.bindingIds?.[index]);
+      let member = jsMemberRef(target, JSON.stringify(spec.name));
+      const arity = spec.type?.kind === "TFn" ? spec.type.params.length : 0;
+      if (decl.bindingIds?.[index] !== undefined && arity > 1) {
+        const direct = `${binding}__wm_d${arity}`;
+        const setup: string[] = [];
+        // Both entries must share the unsafe identity import's single eager
+        // lookup. Other imports deliberately resolve their member on each call.
+        if (
+          !spec.fallible && jsParamConverters(spec.type).every((converter) => converter === "id") &&
+          jsResultConverter(spec.type, false) === "id"
+        ) {
+          const native = `${binding}__wm_native`;
+          setup.push(`const ${native} = ${member};`);
+          member = native;
+        }
+        return [
+          ...setup,
+          `const ${direct} = ${jsDirectFunctionWrapper(member, spec)};`,
+          `const ${binding} = ${jsImportWrapper(member, spec)};`,
+        ];
+      }
+      return [`const ${binding} = ${jsImportWrapper(member, spec)};`];
+    }),
   ];
 }
 
@@ -381,11 +432,17 @@ function emitCImportSpecs(
         JSON.stringify(signature.result)
       } }`,
     );
-    wrappers.push(
-      `const ${binding} = ${
-        cFunctionWrapper(`${libVar}.symbols[${JSON.stringify(symbol)}]`, signature)
-      };`,
-    );
+    const native = `${libVar}.symbols[${JSON.stringify(symbol)}]`;
+    const arity = signature.parameters.length;
+    if (!decl.clause.alias && decl.bindingIds?.[index] !== undefined && arity > 1) {
+      const direct = `${binding}__wm_d${arity}`;
+      wrappers.push(
+        `const ${direct} = ${cDirectFunctionWrapper(native, signature)};`,
+        `const ${binding} = ${cFunctionWrapper(native, signature)};`,
+      );
+    } else {
+      wrappers.push(`const ${binding} = ${cFunctionWrapper(native, signature)};`);
+    }
   });
   if (wrappers.length === 0 || symbols.length === 0) return wrappers;
   const libPath = cLibraryPath(libName);
@@ -529,6 +586,47 @@ function cFunctionWrapper(symbol: string, signature: CSignature): string {
   return `(...__wm_c_args) => __wm_c_call(${symbol}, __wm_c_args, ${
     JSON.stringify(signature.converters)
   }, ${JSON.stringify(signature.resultConverter)})`;
+}
+
+function cDirectFunctionWrapper(symbol: string, signature: CSignature): string {
+  const params = signature.parameters.map((_, index) => `__wm_c_arg_${index}`);
+  const setup: string[] = [];
+  const args = params.map((arg, index) => {
+    const converter = signature.converters[index];
+    if (converter === "id") return arg;
+    const converted = `__wm_c_converted_${index}`;
+    let value: string;
+    if (converter === "option-unwrap") value = `__wm_js_option_unwrap(${arg})`;
+    else if (converter === "string-to-cstr") value = `__wm_c_string_to_cstr(${arg})`;
+    else if (converter === "option-string-to-cstr") {
+      const unwrapped = `__wm_c_unwrapped_${index}`;
+      setup.push(`const ${unwrapped} = __wm_js_option_unwrap(${arg});`);
+      value = `${unwrapped} === null ? null : __wm_c_string_to_cstr(${unwrapped})`;
+    } else {
+      value = `__wm_c_struct_to_buffer(${JSON.stringify(converter.name)}, ${arg})`;
+    }
+    setup.push(`const ${converted} = ${value};`);
+    return converted;
+  });
+  const call = `${symbol}(${args.join(", ")})`;
+  const converter = signature.resultConverter;
+  let result: string;
+  if (converter === "id") result = call;
+  else if (converter === "option-wrap") result = `__wm_js_option_wrap(${call})`;
+  else {
+    setup.push(`const __wm_c_result = ${call};`);
+    if (converter === "cstr-to-string") {
+      result = "new globalThis.Deno.UnsafePointerView(__wm_c_result).getCString()";
+    } else if (converter === "option-cstr-to-string") {
+      result =
+        "__wm_c_result == null ? __wm_basis_None : __wm_basis_Some(new globalThis.Deno.UnsafePointerView(__wm_c_result).getCString())";
+    } else {
+      result = `__wm_c_codecs[${
+        JSON.stringify(converter.name)
+      }].codec.read(new DataView(__wm_c_result))`;
+    }
+  }
+  return `(${params.join(", ")}) => {\n${setup.join("\n")}\nreturn ${result};\n}`;
 }
 
 type CConstant =
@@ -800,6 +898,38 @@ function cLibraryPath(libName: string): string {
   } : Deno.build.os === "darwin" ? ${JSON.stringify(`lib${libName}.dylib`)} : ${
     JSON.stringify(`lib${libName}.so`)
   })`;
+}
+
+function jsDirectFunctionWrapper(memberRef: string, spec: JsImportSpec): string {
+  const converters = jsParamConverters(spec.type);
+  const resultConverter = jsResultConverter(spec.type, !!spec.fallible);
+  const params = converters.map((_, index) => `__wm_js_arg_${index}`);
+  if (
+    !spec.fallible && converters.every((converter) => converter === "id") &&
+    resultConverter === "id"
+  ) {
+    // Preserve the existing unsafe import's eager lookup and bound receiver.
+    return `(() => { const __wm_js_fn = ${memberRef}; return (${params.join(", ")}) => __wm_js_fn(${
+      params.join(", ")
+    }); })()`;
+  }
+  const setup = [`const __wm_js_fn = ${memberRef};`];
+  const args = params.map((arg, index) => {
+    const converter = converters[index];
+    if (converter === "id") return arg;
+    const converted = `__wm_js_converted_${index}`;
+    setup.push(`const ${converted} = __wm_js_to_js(${arg}, ${JSON.stringify(converter)});`);
+    return converted;
+  });
+  const call = `__wm_js_fn(${args.join(", ")})`;
+  const result = `__wm_js_to_workman(${call}, ${JSON.stringify(resultConverter)})`;
+  // As with __wm_js_apply, argument conversions precede the exception boundary.
+  const body = !spec.fallible
+    ? `return ${result};`
+    : jsFallibleMode(spec.type) === "task"
+    ? `return __wm_js_task_from_thunk(() => ${call}, ${JSON.stringify(resultConverter)});`
+    : `try { return __wm_basis_Ok(${result}); } catch (error) { return __wm_basis_Err(__wm_js_error(error)); }`;
+  return `(${params.join(", ")}) => {\n${setup.join("\n")}\n${body}\n}`;
 }
 
 function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {

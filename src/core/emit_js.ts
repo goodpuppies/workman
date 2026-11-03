@@ -18,6 +18,7 @@ import { specializeTailCalls } from "./tail_specialize.ts";
 import {
   emitJsImportDecl,
   emitLibraryJsSources,
+  foreignDirectBindings,
   resetJsImportEmitter,
   resetModuleImportNames,
   setCNamespaceMemberUsage,
@@ -1358,6 +1359,12 @@ function collectDirectFnsInDecl(
   owner: string,
   found: Map<BindingId | StructureId, DirectFn>,
 ): void {
+  if (decl.kind === "CoreJsImport") {
+    for (const entry of foreignDirectBindings(decl)) {
+      found.set(entry.bindingId, { ...entry, owner, exportKey: `__wm_d${entry.arity}` });
+    }
+    return;
+  }
   if (decl.kind !== "CoreLet") return;
   for (const binding of decl.bindings) {
     const candidate = arityRaiseCandidate(binding, owner);

@@ -547,6 +547,12 @@ let hexByte = (byte: Number, index, array) => {
 };
 ```
 
+For statically known named imports, including generated receiver bindings, a call
+with literal tuple arguments can use a fixed-argument JavaScript entry point
+without constructing that WM tuple. Conversions, receiver binding and safe
+`Result`/`Task` error handling are preserved. First-class functions and calls with
+existing tuple values retain the ordinary WM calling convention.
+
 ## Optional Arguments
 
 Supplied optional JS parameters can usually be passed directly.

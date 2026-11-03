@@ -151,6 +151,11 @@ Calls pass existing `Int64` and `Word64` values directly as bigints, including
 64-bit results. CFFI does not implicitly cast a `Number` to these types; use an
 explicit conversion when the value comes from a Number-based API.
 
+Known named C imports called with literal tuple arguments use fixed-argument
+JavaScript entry points, avoiding the temporary WM argument tuple. Argument and
+result conversions still follow the declared ABI. Passing a function as a value
+or calling it with an existing tuple retains the ordinary WM calling convention.
+
 Widths and signedness come from Aro for the selected target, rather than the C
 type's spelling: a 16-bit `unsigned short` maps to `Word16.Word`, while a target
 with a 32-bit `unsigned short` maps to `Word32.Word`. `htons`, for example, takes
