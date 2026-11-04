@@ -341,13 +341,14 @@ Deno.test("lowers known primitive operator applications without argument tuples"
     let sum = 1 + 2;
     let ordered = sum >= 2;
     let equal = sum == 3;
-    let eager = true && false;
+    let sequential = true && false;
   `);
 
   assertStringIncludes(js, "(1 + 2)");
   assertStringIncludes(js, " >= 2)");
   assertStringIncludes(js, "__wm_eq(");
-  assertStringIncludes(js, "__wm_op_and_d2(true, false)");
+  assertStringIncludes(js, "(true ? false : false)");
+  assertEquals(js.includes("__wm_op_and_d2(true, false)"), false);
   assertEquals(js.includes("__wm_op_add([1, 2])"), false);
   assertEquals(js.includes("__wm_op_gte(["), false);
 });
