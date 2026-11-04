@@ -306,7 +306,7 @@ const __wm_c_struct_to_buffer = (name, value) => {
   }
   return true;
 };`,
-    `const __wm_show = (value, seen = new WeakSet(), quoteStrings = false) => {
+    `const __wm_show = (value, seen = new WeakSet(), quoteStrings = false, listSyntax = false) => {
   if (value === undefined) return "void";
   if (value === null) return "null";
   if (typeof value === "string") return quoteStrings ? JSON.stringify(value) : value;
@@ -326,31 +326,34 @@ const __wm_c_struct_to_buffer = (name, value) => {
     ).join(", ") + "]";
   } else if (value[__wm_vector_data] !== undefined) {
     shown = "Vector[" + value[__wm_vector_data]
-      .map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
+      .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else if (value[__wm_vector_slice_data] !== undefined) {
     const slice = value[__wm_vector_slice_data];
     shown = "VectorSlice[" + slice.vector[__wm_vector_data]
       .slice(slice.offset, slice.offset + slice.length)
-      .map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
+      .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else if (__wm_is_tuple(value)) {
-    shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + ")";
+    shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + ")";
+  } else if (listSyntax && (value.ctor === ${basisCtorId("Cons")} || value.ctor === ${basisCtorId("Nil")})) {
+    shown = "[" + __wm_list_to_array(value)
+      .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else if ("ctor" in value) {
     shown = value.args.length === 0
       ? value.name
       : value.name + "(" + value.args.map((item) => {
-        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen, quoteStrings)).join(", ");
-        return __wm_show(item, seen, quoteStrings);
+        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen, quoteStrings, listSyntax)).join(", ");
+        return __wm_show(item, seen, quoteStrings, listSyntax);
       }).join(", ") + ")";
   } else if (globalThis.Array.isArray(value)) {
-    shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings)).join(", ") + "]";
+    shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else {
-    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen, quoteStrings)).join(", ") + " }";
+    shown = "{ " + Object.keys(value).sort().map((key) => key + " = " + __wm_show(value[key], seen, quoteStrings, listSyntax)).join(", ") + " }";
   }
   seen.delete(value);
   return shown;
 };`,
     "const print = (value) => console.log(__wm_show(value));",
-    "const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true);",
+    "const __wm_repl_show = (value) => __wm_show(value, new WeakSet(), true, true);",
     `const __wm_text_of = (value) => {
   try {
     return __wm_show(value);

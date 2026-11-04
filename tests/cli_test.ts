@@ -428,6 +428,52 @@ Deno.test("interactive repl applies named and anonymous match functions as one e
   );
 });
 
+Deno.test("repl shows lists in list syntax, at any depth", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    [
+      "let a = [1, 2];",
+      "Some([1]);",
+      "[];",
+      "[[1], []];",
+      '["a"];',
+      'let p = (["x"], 1);',
+      "Cons(1, Nil);",
+    ].join("\n") + "\n",
+  );
+  assertEquals(result.stderr, "");
+  for (
+    const line of [
+      "a = [1, 2] : List<Number>",
+      "it = Some([1]) : Option<List<Number>>",
+      "it = [] : List<'a>",
+      "it = [[1], []] : List<List<Number>>",
+      'it = ["a"] : List<String>',
+      'p = (["x"], 1) : (List<String>, Number)',
+      "it = [1] : List<Number>",
+    ]
+  ) assertStringIncludes(result.stdout, line);
+  assertEquals(result.stdout.includes("Cons"), false);
+});
+
+Deno.test("repl keeps constructors for a user's own Cons type and for print", async () => {
+  const own = await runCliWithStdin(["repl"], "type Mine = Cons<Number, Mine> | Nil;\nCons(1, Nil);\n");
+  assertStringIncludes(own.stdout, "it = Cons(1, Nil) : Mine");
+  const printed = await runCliWithStdin(["repl"], "print([1, 2]);\n");
+  assertStringIncludes(printed.stdout, "Cons(1, Cons(2, Nil))");
+});
+
+Deno.test("repl shows a long list without exhausting the stack", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    "let rec build = (n, acc) => { if (n == 0) { acc } else { build(n - 1, Cons(n, acc)) } };\n" +
+      "build(50000, []);\n",
+  );
+  assertEquals(result.stderr, "");
+  assertStringIncludes(result.stdout, "it = [1, 2, 3, ");
+  assertStringIncludes(result.stdout, "49999, 50000] : List<Number>");
+});
+
 Deno.test("repl :type shows a type without running the expression or changing the session", async () => {
   const result = await runCliWithStdin(
     ["repl"],
