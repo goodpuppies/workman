@@ -421,7 +421,7 @@ Deno.test("interactive repl applies named and anonymous match functions as one e
   assertEquals(result.stderr, "");
   assertEquals(
     result.stdout,
-    `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n` +
+    `🗿 Workman ${denoConfig.version}\nPress Ctrl-C or Ctrl-D to exit.\n` +
       "- it = 1 : Number\n- it = 1 : Number\n- it = false : Bool\n- it = 1 : Number\n- ",
   );
 });
@@ -1131,7 +1131,7 @@ Deno.test("interactive repl evaluates phrases, prints prompts, and keeps the bas
   assertEquals(
     stdout,
     [
-      `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n`,
+      `🗿 Workman ${denoConfig.version}\nPress Ctrl-C or Ctrl-D to exit.\n`,
       "- ",
       "it = 3 : Number\n",
       "- ",

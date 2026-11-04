@@ -126,13 +126,27 @@ deno task install
 wm run examples/factorial.wm
 ```
 
-Run `wm repl` for an interactive session. End each input with `;`; use Left/Right to move the cursor
-and Up/Down to recall earlier input. Failed inputs leave the accepted bindings unchanged. Press
-Ctrl-D or Ctrl-C to exit.
+Run `wm repl` for an interactive session. The prompt is a multi-line text box: move around it with
+the arrow keys, Home/End, and Ctrl+Left/Right, and paste multi-line code freely. Failed inputs leave
+the accepted bindings unchanged.
+
+| Key                      | Action                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| Enter                    | Run the input if it ends with a top-level `;` and the cursor is on its last line; otherwise add a new line |
+| Shift+Enter or Alt+Enter | Jump to the end, add the missing `;`, and press Enter                                   |
+| Ctrl+Enter or Ctrl+J     | Always add a new line                                                                   |
+| Up/Down                  | Move between lines; past the first or last line, recall earlier input                   |
+| Ctrl-C                   | Discard the current input; exit if it is empty                                          |
+| Ctrl-D                   | Exit if the input is empty                                                              |
+| Ctrl-L                   | Clear the screen                                                                        |
+
+Shift+Enter needs a terminal with the kitty keyboard protocol, such as Ghostty, kitty, WezTerm, foot,
+Alacritty, or iTerm2. Other terminals send it as a plain Enter, so use Alt+Enter there. While a
+recalled input is unedited, Up/Down keep walking history; press any other movement key to edit it.
 
 Interactive input history is shared across sessions and saved as `repl-history.json` in Workman's
 state directory (`$XDG_STATE_HOME/workman`, defaulting to `~/.local/state/workman` on Unix;
-`%LOCALAPPDATA%\workman` on Windows). It keeps the most recent 1,000 input lines, including failed
+`%LOCALAPPDATA%\workman` on Windows). It keeps the most recent 1,000 inputs, including failed
 inputs. Delete that file to clear saved history. Piped input is not saved.
 
 For a live top-level evaluation loop, use `wm repl <file.wm>`. The file is evaluated immediately and

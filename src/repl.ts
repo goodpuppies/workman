@@ -1,17 +1,11 @@
 import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 import { dirname, resolve } from "node:path";
-import { createInterface } from "node:readline";
-import process from "node:process";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
-import {
-  readReplHistory,
-  recordReplHistory,
-  replHistoryFile,
-  replHistoryLimit,
-} from "./repl_history.ts";
+import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
+import { TerminalEditor } from "./repl_editor.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -141,11 +135,12 @@ export async function runInteractiveRepl(
   let committed = "";
   let committedStdout = 0;
   let committedStderr = 0;
-  let interrupted = false;
+  let editor: TerminalEditor | undefined;
+  let interruption: Promise<void> | undefined;
   const onInterrupt = () => {
-    if (interrupted) return;
-    interrupted = true;
-    void temporaryDirectory.cleanup().then(() => Deno.exit(130));
+    editor?.release();
+    interruption ??= temporaryDirectory.cleanup().then(() => Deno.exit(130));
+    return interruption;
   };
   Deno.addSignalListener("SIGINT", onInterrupt);
   const isTerminal = !stdin && !options.quiet && Deno.stdin.isTerminal() &&
@@ -168,50 +163,49 @@ export async function runInteractiveRepl(
       reportHistoryError(error);
     }
   }
-  const terminal = isTerminal
-    ? createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: true,
-      history,
-      historySize: replHistoryLimit,
-    })
-    : undefined;
-  terminal?.on("line", (line: string) => {
+  editor = isTerminal ? new TerminalEditor(history) : undefined;
+  const record = (entry: string) => {
+    editor?.remember(entry);
     if (!historyFile) return;
     try {
-      recordReplHistory(historyFile, line);
+      recordReplHistory(historyFile, entry);
     } catch (error) {
       reportHistoryError(error);
     }
-  });
-  let terminalClosed = false;
-  terminal?.once("close", () => terminalClosed = true);
-  terminal?.on("SIGINT", onInterrupt);
+  };
+  async function* editedPhrases(terminal: TerminalEditor): AsyncGenerator<string> {
+    for (;;) {
+      const result = await terminal.read();
+      if (result.kind === "eof") return;
+      if (result.kind === "interrupt") {
+        await onInterrupt();
+        return;
+      }
+      const entry = result.text.trimEnd();
+      record(entry);
+      // Enter submits only a finished buffer, so all that can follow the phrase is comments.
+      yield entry.slice(0, topLevelPhraseEnd(entry));
+    }
+  }
   try {
     await Deno.stdout.write(
       new TextEncoder().encode(
-        `🗿 workman ${denoConfig.version} repl\nPress Ctrl-C or Ctrl-D to exit.\n`,
+        `🗿 Workman ${denoConfig.version}\n${
+          editor ? "Exit using ctrl+d or ctrl+c" : "Press Ctrl-C or Ctrl-D to exit."
+        }\n`,
       ),
     );
     await Deno.writeTextFile(sessionPath, committed);
-    async function* terminalInput(): AsyncGenerator<Uint8Array> {
-      for await (const line of terminal!) yield new TextEncoder().encode(`${line}\n`);
-    }
-    const input = terminal ? terminalInput() : stdin ?? Deno.stdin.readable;
-    const prompt = terminal
-      ? (text: string) => {
-        if (terminalClosed) return;
-        terminal.setPrompt(text);
-        terminal.prompt();
-      }
-      : undefined;
-    for await (const phrase of phrases(input, options.quiet, prompt)) {
+    const inputPhrases = editor
+      ? editedPhrases(editor)
+      : phrases(stdin ?? Deno.stdin.readable, options.quiet);
+    for await (const phrase of inputPhrases) {
       const candidate = committed ? `${committed}\n${phrase}` : phrase;
       try {
         await Deno.writeTextFile(sessionPath, candidate);
         const artifacts = await compileReplFileArtifacts(sessionPath, compileOptions);
         const result = await executeReplArtifacts(sessionPath, artifacts);
+        editor?.release();
         await Deno.stdout.write(result.stdout.subarray(committedStdout));
         await Deno.stderr.write(result.stderr.subarray(committedStderr));
         if (result.code === 0) {
@@ -220,6 +214,7 @@ export async function runInteractiveRepl(
           committedStderr = result.stderr.length;
         }
       } catch (error) {
+        editor?.release();
         onError(error);
       } finally {
         // The on-disk session must agree with the accepted basis even after a
@@ -228,9 +223,9 @@ export async function runInteractiveRepl(
       }
     }
   } finally {
-    terminal?.close();
+    editor?.release();
     Deno.removeSignalListener("SIGINT", onInterrupt);
-    if (!interrupted) await temporaryDirectory.cleanup();
+    if (!interruption) await temporaryDirectory.cleanup();
   }
 }
 
@@ -244,11 +239,9 @@ export async function runInteractiveRepl(
 async function* phrases(
   stdin: AsyncIterable<Uint8Array>,
   quiet: boolean | undefined,
-  terminalPrompt?: (text: string) => void,
 ): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   const prompt = async (text: string) => {
-    if (terminalPrompt) return terminalPrompt(text);
     if (!quiet) await Deno.stdout.write(new TextEncoder().encode(text));
   };
   let pending = "";
