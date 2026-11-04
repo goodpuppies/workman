@@ -11,7 +11,6 @@ import { moduleId } from "../src/module_id.ts";
 import { ParseError } from "../src/parser.ts";
 import { parseCompilerModule } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
-import { knownIssue } from "./known_issue.ts";
 
 Deno.test("compiler frontend modes execute the v2 simple-let subset", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
@@ -359,7 +358,7 @@ Deno.test("compiler v2 mode calls an imported namespace function after virtual t
   });
 });
 
-Deno.test("[known issue] compiler v2 mode lowers typed lambdas through a structurally missing block mate", { ignore: knownIssue("lambda-with-parameters-loses-brace-recovery") }, async () => {
+Deno.test("compiler v2 mode lowers typed lambdas through a structurally missing block mate", async () => {
   const frontendV2ModuleUrl = await buildFrontendV2();
   const analysis = await analyzeFile("/main.wm", {
     frontend: "v2",

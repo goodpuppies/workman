@@ -53,7 +53,7 @@ function emitDispatch(
 ): string {
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
-    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, wrapCompiledRule, compiledRuleMemoSlot, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
+    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule, compiledRuleMemoSlot, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
     ...modules.map((_, index) => `from "./${moduleName(index)}" import * as Probe${index};`),
     'from js.host("table") import * as Table;',
     "",
@@ -130,7 +130,7 @@ function emitRecoveringRuleEntry(ruleName: string, moduleIndex: number): string 
   let recovering = call("true");
   if (probeBeforeRecoveryRules.has(ruleName)) {
     const committed = ruleName === "Primary"
-      ? "commitsJsonPrimaryRecovery(source, offset)"
+      ? "commitsJsonPrimaryRecovery(source, offset) || commitsLambdaPrimaryRecovery(source, offset, parseRule)"
       : "false";
     recovering = `if (${committed}) { ${
       call("true")

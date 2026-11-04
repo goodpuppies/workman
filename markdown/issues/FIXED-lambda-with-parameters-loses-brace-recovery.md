@@ -8,7 +8,7 @@ breaks the binding in two.
 
 ## Reproduction
 
-| Source (frontend v2) | Parsed as |
+| Source (frontend v2) | Parsed as, before the fix |
 |---|---|
 | `let id = () => { 1` | `id = Lambda` (correct) |
 | `let id = (x) => { x };` | `id = Lambda` (correct) |
@@ -21,16 +21,11 @@ breaks the binding in two.
 The body then fails with misleading errors, such as `unknown name x`, because the parameter is no
 longer in scope.
 
-## Known-issue tests
+## Tests
 
-These passed before `d04d72f` and are now ignored:
+These passed before `d04d72f`, were ignored while this was open, and pass again:
 
 - `tests/compiler_frontend_v2_test.ts`: lowers typed lambdas through a structurally missing block mate
 - `tests/lsp_frontend_v2_test.ts`: validation typechecks through a structurally missing block mate
 - `tests/directive_test.ts`: missing directive semicolon is preserved normally
 - `tests/cli_test.ts`: v2 repl evaluates source with recovered terminators and delimiters
-
-## Likely fix
-
-In `src/grammar.peggy`, once `(...) =>` has been seen, commit to the lambda alternative, so that
-recovery inside the body can't send the parser back to the grouped expression.

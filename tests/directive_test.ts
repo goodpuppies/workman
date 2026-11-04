@@ -8,7 +8,6 @@ import { hostTypingDialect } from "../src/infer/context.ts";
 import { lambdaTypingDialect } from "../src/infer/expr_lambda.ts";
 import { gpuTypingDialect } from "../src/infer/gpu_dialect.ts";
 import { ParseError } from "../src/parser.ts";
-import { knownIssue } from "./known_issue.ts";
 
 Deno.test("@gpu is lambda prologue metadata with a stable region fact", async () => {
   const module = await parse("let tint = (color) => { @gpu; color * 0.5 };");
@@ -54,7 +53,7 @@ Deno.test("directive placement, duplication, spelling, and damage are rejected",
   await assertRejects(() => parse("@gpu;"), ParseError);
 });
 
-Deno.test("[known issue] missing directive semicolon is preserved normally and materialized in fix mode", { ignore: knownIssue("lambda-with-parameters-loses-brace-recovery") }, async () => {
+Deno.test("missing directive semicolon is preserved normally and materialized in fix mode", async () => {
   const source = "let f = (x) => { @gpu x };";
   const module = await parse(source);
   const declaration = module.decls[0];

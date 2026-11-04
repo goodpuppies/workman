@@ -293,6 +293,31 @@ let commitsJsonPrimaryRecovery = (source: String, offset: Number) => {
   }
 };
 
+let skipOptionalRule = (name: String, source: String, offset: Number, parseRule) => {
+  match(parseRule(name, source, offset, false, false)) {
+    CompiledProbeMatched(next, ignoredCapture, ignoredLatent) => { next },
+    CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { offset },
+  }
+};
+
+-- Parameters followed by a written `=>` are a lambda, even if its body is unfinished. Without this
+-- commitment the strict probe of `(x) => { x` fails at the lambda and then succeeds on the group `(x)`,
+-- so recovery would never reach the lambda. `=>` itself is never recovered, so this can't invent one.
+let commitsLambdaPrimaryRecovery = (source: String, offset: Number, parseRule) => {
+  match(parseRule("ParamList", source, offset, false, false)) {
+    CompiledProbeMatched(afterParams, ignoredCapture, ignoredLatent) => {
+      let afterAnnotation = skipOptionalRule("LambdaReturnAnnotation", source, afterParams, parseRule);
+      let afterCapture = skipOptionalRule("CaptureClause", source, afterAnnotation, parseRule);
+      let arrow = skipOptionalRule("_", source, afterCapture, parseRule);
+      match(matchCodes(source, [61, 62], arrow, "=>", "Primary")) {
+        CompiledProbeMatched(ignoredNext, ignoredArrow, ignoredArrowLatent) => { true },
+        CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { false },
+      }
+    },
+    CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { false },
+  }
+};
+
 let matchCharacterClass = (
   parts: List<ClassPart>,
   inverted: Bool,

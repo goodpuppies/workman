@@ -6,7 +6,6 @@ import denoConfig from "../deno.json" with { type: "json" };
 
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { knownIssue } from "./known_issue.ts";
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
 Deno.test("cli prints help with no arguments", async () => {
@@ -344,7 +343,7 @@ Deno.test("repl evaluates top-level bindings without a main function", async () 
   assertEquals(new TextDecoder().decode(result.stderr), "");
 });
 
-Deno.test("[known issue] v2 repl evaluates source with recovered terminators and delimiters", { ignore: knownIssue("lambda-with-parameters-loses-brace-recovery") }, async () => {
+Deno.test("v2 repl evaluates source with recovered terminators and delimiters", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/recovered.wm`;
   await Deno.writeTextFile(input, "let answer = 42\nlet id = (x) => { x");
