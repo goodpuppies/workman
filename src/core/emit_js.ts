@@ -1012,7 +1012,16 @@ function resetEmitterState(): void {
 
 function emitMainInvocation(entry: CoreModuleArtifact): string {
   const main = `${id(entry.emitName)}[${JSON.stringify("main")}]`;
-  return `if (typeof ${main} === "function") await ${main}();`;
+  // A Task settles to a Result, so one check covers both. Only the outermost `Err` is a failure:
+  // `Ok(Err(x))` is a program that succeeded with that value.
+  return `if (typeof ${main} === "function") {
+  const __wm_main_result = await ${main}();
+  if (__wm_main_result?.ctor === ${basisCtorId("Err")}) {
+    console.error("error[runtime.main-failed]: main failed with " + __wm_show(__wm_main_result.args[0], new WeakSet(), true));
+    if (globalThis.Deno) Deno.exitCode = 1;
+    else if (globalThis.process) globalThis.process.exitCode = 1;
+  }
+}`;
 }
 
 function emitLibraryExports(entry: CoreModuleArtifact): string {

@@ -23,6 +23,10 @@ At runtime, a Task is represented by a JavaScript `Promise<Result<a, e>>`. Workm
 `await` it directly. Instead, the generated program awaits the `main` task boundary and Task
 combinators compose the promise-backed value.
 
+If `main` ends with an `Err`, from a failed Task or a plain `Result`, the program prints
+`error[runtime.main-failed]: main failed with <value>` and exits with code 1. To handle a failure
+yourself, use `Task.recover` or `Task.orElse` before it reaches `main`.
+
 ## The Important Rule
 
 Tasks are eager handles.

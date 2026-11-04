@@ -66,13 +66,6 @@ issue(
     ),
 );
 
-issue("failed-main-task-exits-successfully", "a failed main Task exits nonzero", async () => {
-  const result = await wm("run", {
-    "m.wm": `let main = () => { Task.fail("boom") :> Task.map((x) => { print(x) }) };`,
-  });
-  assert(result.code !== 0, "a failed main Task exited with code 0");
-});
-
 issue(
   "equality-does-not-check-option-list-result-arguments",
   "== rejects functions inside an Option",

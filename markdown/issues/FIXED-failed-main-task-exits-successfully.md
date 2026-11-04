@@ -1,8 +1,12 @@
 # Issue: A Failed `main` Task Is Silently Discarded and Exits 0
 
-Status: open
+Status: fixed 2026-11-04. The entry point now checks what `main` returns: an outermost `Err` prints
+`error[runtime.main-failed]: main failed with <value>` and sets exit code 1. Regression test:
+`tests/main_exit_code_test.ts`.
 
-Known-issue test: `tests/known_issues_test.ts`.
+A plain `Result` gets the same treatment as a Task, because a settled Task is a `Result` at runtime and
+an `Err` reaching the program's edge is a failure either way. `Ok(Err(x))` counts as success. The check
+compares the basis constructor id, so a user constructor named `Err` isn't affected.
 
 Discovered while moving the wmthree NTO pipeline onto `Bytes.readFile` on 2026-09-23.
 
