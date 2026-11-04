@@ -583,6 +583,11 @@ export class TerminalEditor {
     }
   }
 
+  /** Holds keys for the next read without echoing them; Ctrl-C still raises a signal. */
+  holdInput(): void {
+    Deno.stdin.setRaw(true, { cbreak: true });
+  }
+
   /** Restores normal terminal behavior, for writing output or exiting. */
   release(): void {
     Deno.stdin.setRaw(false);

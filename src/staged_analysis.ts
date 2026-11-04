@@ -51,6 +51,11 @@ export type StagedAnalysisOptions = {
   externalResults?: ModuleMap<InferResult>;
   onEvent?: (event: StagedAnalysisEvent) => void;
   onTiming?: (event: StagedAnalysisTimingEvent) => void;
+  /**
+   * Awaited after each phase of each module. Analysis otherwise stays on the microtask queue, so
+   * a caller drawing progress can use this to let timers and signals run. No cost when unset.
+   */
+  afterStep?: () => void | Promise<void>;
 };
 
 export type StagedAnalysisTimingEvent = {
@@ -93,6 +98,7 @@ export async function analyzeModuleGraph(
       throw new StagedAnalysisError(phase, node, error, result);
     } finally {
       options.onTiming?.({ phase, node, milliseconds: performance.now() - started });
+      await options.afterStep?.();
     }
   };
 

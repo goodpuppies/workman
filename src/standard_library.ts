@@ -3,7 +3,7 @@ import type { ModuleGraph } from "./module_graph.ts";
 import { posix } from "node:path";
 import { libraryJsSources, librarySources } from "./generated/assets.ts";
 import type { InferModuleOptions, InferResult, InitialImport } from "./infer.ts";
-import { analyzeModuleGraph } from "./staged_analysis.ts";
+import { analyzeModuleGraph, type StagedAnalysisOptions } from "./staged_analysis.ts";
 import { cloneTypeEnv } from "./types.ts";
 import { parseCompilerModule } from "./compiler_frontend.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "./module_id.ts";
@@ -33,6 +33,16 @@ export type LoadedStandardModule = StandardModule & {
 let standardLibraryPromise: Promise<InitialImport[]> | undefined;
 let standardModulesPromise: Promise<LoadedStandardModule[]> | undefined;
 let onDemandModulesPromise: Promise<LoadedStandardModule[]> | undefined;
+
+export type LibraryLoadObserver = Pick<StagedAnalysisOptions, "onTiming" | "afterStep"> & {
+  onParsed?: (done: number, total: number) => void;
+};
+let libraryLoadObserver: LibraryLoadObserver | undefined;
+
+/** Watches the one analysis of the library in this process, for startup progress. */
+export function observeLibraryLoad(observer: LibraryLoadObserver | undefined): void {
+  libraryLoadObserver = observer;
+}
 
 export function loadStandardLibrary(): Promise<InitialImport[]> {
   standardLibraryPromise ??= loadStandardLibraryUncached();
@@ -271,7 +281,12 @@ async function analyzeLibraryModules(
   externalResults: ModuleMap<InferResult> = new Map(),
 ): Promise<LoadedStandardModule[]> {
   const graph = libraryGraph(modules);
-  const results = await analyzeModuleGraph(graph, { inferOptions: {}, externalResults });
+  const results = await analyzeModuleGraph(graph, {
+    inferOptions: {},
+    externalResults,
+    onTiming: libraryLoadObserver?.onTiming,
+    afterStep: libraryLoadObserver?.afterStep,
+  });
   return modules.map((module) => {
     const id = moduleId(module.path);
     return composeInitialStructure({
@@ -389,19 +404,22 @@ export async function discoverStandardModules(
   /** Paths of library modules already loaded, which `sources` may import. */
   loaded: ReadonlySet<string> = new Set(),
 ): Promise<StandardModule[]> {
-  const modules = await Promise.all(
-    Object.entries(sources).map(async ([path, source]): Promise<StandardModule> => {
-      const alias = libraryModuleAlias(path);
-      const parsed = await parseCompilerModule(source, {}, path);
-      return {
-        path,
-        source,
-        alias,
-        clauses: [{ kind: "Namespace", alias }],
-        module: resolveLibraryJsModuleSpecifiers(parsed, path),
-      };
-    }),
-  );
+  // One at a time: parsing is CPU work, and a watcher needs to see each module finish.
+  const entries = Object.entries(sources);
+  const modules: StandardModule[] = [];
+  for (const [path, source] of entries) {
+    const alias = libraryModuleAlias(path);
+    const parsed = await parseCompilerModule(source, {}, path);
+    modules.push({
+      path,
+      source,
+      alias,
+      clauses: [{ kind: "Namespace", alias }],
+      module: resolveLibraryJsModuleSpecifiers(parsed, path),
+    });
+    libraryLoadObserver?.onParsed?.(modules.length, entries.length);
+    await libraryLoadObserver?.afterStep?.();
+  }
   const byAlias = new Map<string, string>();
   for (const module of modules) {
     // Only auto-opened modules are bound by alias; import-only ones are named by their importer.

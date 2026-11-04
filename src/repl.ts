@@ -6,6 +6,8 @@ import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
 import { TerminalEditor } from "./repl_editor.ts";
+import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
+import { observeLibraryLoad } from "./standard_library.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -122,6 +124,32 @@ let quit = () => {
 `;
 const REPL_SESSION_HEADER = `from "./${REPL_PERVASIVES_FILE}" import { quit };`;
 
+/**
+ * Compiles the empty session so the first phrase finds the standard library already loaded. A
+ * failure is ignored here: the first phrase hits the same error and reports it properly.
+ */
+async function warmSession(
+  sessionPath: string,
+  options: CompileOptions,
+  bar: LoadingBar | undefined,
+): Promise<void> {
+  observeLibraryLoad(bar?.observer);
+  try {
+    await compileReplFileArtifacts(sessionPath, {
+      ...options,
+      onStage: (name) => {
+        bar?.stage(name);
+        options.onStage?.(name);
+      },
+    });
+  } catch {
+    /* Reported by the first phrase. */
+  } finally {
+    observeLibraryLoad(undefined);
+    bar?.finish();
+  }
+}
+
 export type InteractiveReplOptions = CompileOptions & {
   /** Reports static (parse/elaboration) errors for a rejected phrase. */
   onError?: (error: unknown) => void;
@@ -158,8 +186,10 @@ export async function runInteractiveRepl(
   let committedStdout = 0;
   let committedStderr = 0;
   let editor: TerminalEditor | undefined;
+  let loadingBar: LoadingBar | undefined;
   let interruption: Promise<void> | undefined;
   const onInterrupt = () => {
+    loadingBar?.finish();
     editor?.release();
     interruption ??= temporaryDirectory.cleanup().then(() => Deno.exit(130));
     return interruption;
@@ -210,6 +240,13 @@ export async function runInteractiveRepl(
     }
   }
   try {
+    await Deno.writeTextFile(sessionPath, committed);
+    if (editor) {
+      // Keys pressed while loading become the start of the first input.
+      editor.holdInput();
+      loadingBar = createLoadingBar();
+    }
+    await warmSession(sessionPath, compileOptions, loadingBar);
     await Deno.stdout.write(
       new TextEncoder().encode(
         `🗿 Workman ${denoConfig.version}\n${
@@ -217,7 +254,6 @@ export async function runInteractiveRepl(
         }\n`,
       ),
     );
-    await Deno.writeTextFile(sessionPath, committed);
     const inputPhrases = editor
       ? editedPhrases(editor)
       : phrases(stdin ?? Deno.stdin.readable, options.quiet);
