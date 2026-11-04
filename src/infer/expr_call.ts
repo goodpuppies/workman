@@ -307,7 +307,11 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     }
   }
   if (isPipe) {
-    recordExprFact(facts, calleeExpr, { subject: "expr", instantiated: fn([arg], result) });
+    // Only the type is refined here: a constructor stage has to stay a constructor for lowering.
+    recordExprFact(facts, calleeExpr, {
+      subject: facts.expressions.get(calleeExpr)?.subject ?? "expr",
+      instantiated: fn([arg], result),
+    });
   }
   return result;
 }

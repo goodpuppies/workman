@@ -1,6 +1,8 @@
 # Basis constructor used as a pipe stage emits an unbound name
 
-Known-issue test: `tests/known_issues_test.ts`.
+Status: fixed 2026-11-04. It affected every constructor used as a pipe stage, including user-declared
+ones: `inferApplication` replaced the stage's `constructor` fact with `expr`, so lowering emitted the
+bare name. Regression test: `tests/pipe_constructor_test.ts`.
 
 Observed while simplifying the Windows C HTTP server example.
 

@@ -83,21 +83,6 @@ issue(
     ),
 );
 
-issue(
-  "basis-constructor-pipe-emits-unbound-some",
-  "a basis constructor works as a pipe stage",
-  () =>
-    runs(
-      {
-        "m.wm": `
-          let wrap = value => value :> Some;
-          let main = () => { print(wrap(1) :> getOr(0)) };
-        `,
-      },
-      "1\n",
-    ),
-);
-
 issue("failed-main-task-exits-successfully", "a failed main Task exits nonzero", async () => {
   const result = await wm("run", {
     "m.wm": `let main = () => { Task.fail("boom") :> Task.map((x) => { print(x) }) };`,
