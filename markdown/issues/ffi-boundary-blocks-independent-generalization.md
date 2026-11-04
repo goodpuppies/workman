@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered while implementing the typed actor runtime in
 `stageforgeman/prior-experiments/actor_system/stageforge/postman.wm`.
 

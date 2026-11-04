@@ -2,6 +2,10 @@
 
 Status: open
 
+Verified 2026-11-04: the reproduction now needs `import unsafe` on `serve`, and is still accepted.
+
+Known-issue test: `tests/known_issues_test.ts`.
+
 ## Summary
 
 A value of type `Js.Object` can be passed to a parameter whose type is a

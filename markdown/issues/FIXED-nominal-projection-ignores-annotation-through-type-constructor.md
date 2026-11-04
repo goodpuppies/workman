@@ -1,6 +1,6 @@
 # Issue: Nominal Projection Ignores Annotations Nested Inside Type Constructors
 
-Status: open
+Status: fixed. Verified 2026-11-04: the reproduction runs and prints `x`. Regression test in `tests/known_issues_test.ts`.
 
 Discovered while migrating the wmthree Shadow of the Colossus pipeline to nominal record
 projection on 2026-09-23.

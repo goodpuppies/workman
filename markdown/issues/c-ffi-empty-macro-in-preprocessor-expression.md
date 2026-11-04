@@ -2,6 +2,10 @@
 
 Status: open (2026-10-31). Found while auditing SQLite's private B-tree API.
 
+Verified 2026-11-04: fails with `InvalidHeader`.
+
+Known-issue test: `tests/known_issues_test.ts`.
+
 The bundled extractor rejects this valid header:
 
 ```c

@@ -2,6 +2,10 @@
 
 Status: open
 
+Verified 2026-11-04: the reproduction now needs `import unsafe` on `stringify`, and still reports `unknown import search`.
+
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered while building searchman (a Workman CLI that imports an Exa API client module).
 
 ## Summary

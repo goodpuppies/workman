@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered while moving the wmthree NTO pipeline onto `Bytes.readFile` on 2026-09-23.
 
 ## Summary

@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered next to the imported-generic equality issue on 2026-10-07.
 
 ## Summary

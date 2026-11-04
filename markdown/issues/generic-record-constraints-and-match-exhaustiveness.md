@@ -2,6 +2,10 @@
 
 Status: open
 
+Verified 2026-11-04: Issue A's `record spread requires a record type` no longer reproduces, but both exhaustiveness warnings in Issue B do. The record field type syntax in the reproductions is now `(K, K) -> Ordering`.
+
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered while prototyping a generic persistent Workman map for the wmslang compiler plan.
 
 ## Summary

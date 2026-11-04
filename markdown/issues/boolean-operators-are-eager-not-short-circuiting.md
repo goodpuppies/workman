@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 ## Summary
 
 Workman's `&&` and `||` are ordinary binary operator functions of type

@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 ## Summary
 
 The forward pipe `:>` sits above every binary arithmetic, comparison, equality,

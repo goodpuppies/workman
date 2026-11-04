@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 ## Summary
 
 A wrong argument passed to a recursive function built with `via` produces a large type-mismatch diagnostic

@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered while writing a `writev(2)`-backed buffered stdout writer in Workman
 (`examples/enterprise/writev.wm`).
 

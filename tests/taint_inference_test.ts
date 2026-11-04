@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
+import { checkSource } from "../src/compiler.ts";
 import { parseCompilerModule } from "../src/compiler_frontend.ts";
 import { inferModule } from "../src/infer.ts";
 import { isTainted, sequenceType, sequenceView, taintedType } from "../src/taint.ts";
@@ -19,6 +20,7 @@ import {
   unify,
   VoidTy,
 } from "../src/types.ts";
+import { knownIssue } from "./known_issue.ts";
 
 async function infer(source: string) {
   const module = await parseCompilerModule(source);
@@ -764,4 +766,36 @@ Deno.test("a callback result stays open when an operator in the body makes it co
   assertEquals(types.i, "Number");
   assertEquals(types.j, "String!");
   assertEquals(types.l, "String");
+});
+
+const pureLibraryCalls = `
+  let byte = Word8.fromNumber(260);
+  let chars = String.toList("ab");
+  let task = Task.succeed(1);
+  let parsed = Monad.via Task (login) => { login :> Task.succeed };
+`;
+
+Deno.test({
+  name: "[known issue: pure-std-primitives-carry-effect-taint] pure library calls stay clean",
+  ignore: knownIssue("pure-std-primitives-carry-effect-taint"),
+  async fn() {
+    const { env } = await checkSource(pureLibraryCalls);
+    const type = (name: string) => show(env.get(name)!.type);
+    assertEquals(type("byte"), "Word8.Word");
+    assertEquals(type("chars"), "List<String>");
+    assertEquals(type("task"), "Task<Number, 'a>");
+    assertEquals(type("parsed"), "Task<'a, 'b> -> Task<'a, 'b>");
+  },
+});
+
+Deno.test("destructuring keeps a generic component's taint", async () => {
+  const types = await bindings(`
+    let eff = () => { print("x"); 1 };
+    let clean = () => { 1 };
+    let first = (p) => { let (a, b) = p; [a] };
+    let tainted = first((eff(), 2));
+    let untainted = first((clean(), 2));
+  `);
+  assertEquals(types.tainted, "List<Number!>!");
+  assertEquals(types.untainted, "List<Number>");
 });

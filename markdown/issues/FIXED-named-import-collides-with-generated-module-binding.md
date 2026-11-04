@@ -1,6 +1,6 @@
 # Issue: Named Import Collides with Generated Module Binding
 
-Status: open
+Status: fixed. Verified 2026-11-04: the reproduction runs and prints `ok`. Regression test in `tests/known_issues_test.ts`.
 
 Discovered during the ownership-based atview module split.
 

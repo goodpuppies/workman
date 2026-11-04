@@ -1,6 +1,6 @@
 # Issue: Lambda Parameter Annotation Does Not Provide Equality Evidence in the Body
 
-Status: to be determined if real issue 
+Status: fixed. Verified 2026-11-04: the reproduction runs and prints `true`. Regression test in `tests/known_issues_test.ts`.
 
 Discovered while writing a Workman-owned exact-name selector for the wmthree
 Shadow of the Colossus asset pipeline on 2026-07-19.

@@ -1,6 +1,6 @@
 # C FFI anonymous struct typedef emits invalid JavaScript helper names
 
-Status: open (2026-10-31).
+Status: fixed. Verified 2026-11-04: `print(sizeOfsigset_t)` runs and prints 128. Regression test in `tests/known_issues_test.ts`.
 
 ## Reproduction
 

@@ -2,6 +2,8 @@
 
 Status: open
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 Discovered while writing testman's `assertEqual` and pakman's test suite on 2026-10-07.
 
 ## Summary

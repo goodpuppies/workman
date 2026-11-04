@@ -1,5 +1,7 @@
 # Basis constructor used as a pipe stage emits an unbound name
 
+Known-issue test: `tests/known_issues_test.ts`.
+
 Observed while simplifying the Windows C HTTP server example.
 
 ```wm
