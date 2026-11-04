@@ -139,6 +139,37 @@ function remainderIsBlank(source: string): boolean {
   }
   return !stringEnd;
 }
+export type LexicalContext = "code" | "string" | "escaped" | "comment";
+
+/** What the scanner above would be inside of at `offset`, for editing rather than splitting. */
+export function lexicalContextAt(source: string, offset: number): LexicalContext {
+  let lineComment = false;
+  let stringEnd: string | undefined;
+  let escaped = false;
+  for (let index = 0; index < offset; index++) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (lineComment) {
+      if (char === "\n" || char === "\r") lineComment = false;
+    } else if (stringEnd) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === stringEnd) stringEnd = undefined;
+    } else if ((char === "/" && next === "/") || (char === "-" && next === "-")) {
+      lineComment = true;
+      index += 1;
+    } else if (
+      char === '"' || char === "`" ||
+      (char === "'" && !/[A-Za-z0-9_']/.test(source[index - 1] ?? ""))
+    ) {
+      stringEnd = char;
+    }
+  }
+  if (lineComment) return "comment";
+  if (!stringEnd) return "code";
+  return escaped ? "escaped" : "string";
+}
+
 /** Preserve length and line structure so every surviving AST node keeps its authored offsets. */
 export function maskSourceRange(source: string, start: number, end: number): string {
   const masked = source.slice(start, end).replace(/[^\r\n]/g, " ");

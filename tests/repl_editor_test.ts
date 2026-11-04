@@ -242,6 +242,84 @@ Deno.test("word and line editing commands", () => {
   assertEquals(start.text, "ab\n");
 });
 
+function typed(input: string, start = "", cursor = start.length): EditorState {
+  const state = stateWith(start, cursor);
+  press(state, input);
+  return state;
+}
+
+function withCursor(state: EditorState): string {
+  return `${state.text.slice(0, state.cursor)}|${state.text.slice(state.cursor)}`;
+}
+
+Deno.test("an opening bracket or quote closes itself around the cursor", () => {
+  assertEquals(withCursor(typed("(")), "(|)");
+  assertEquals(withCursor(typed("[")), "[|]");
+  assertEquals(withCursor(typed("{")), "{|}");
+  assertEquals(withCursor(typed('"')), '"|"');
+  assertEquals(withCursor(typed("`")), "`|`");
+  assertEquals(withCursor(typed("([{")), "([{|}])");
+});
+
+Deno.test("typing a closer steps over the one already there", () => {
+  assertEquals(withCursor(typed("()")), "()|");
+  assertEquals(withCursor(typed('print("hi");')), 'print("hi");|');
+  assertEquals(withCursor(typed("match { (a, b) => [a, b] }")), "match { (a, b) => [a, b] }|");
+  assertEquals(withCursor(typed(")", "ab")), "ab)|");
+});
+
+Deno.test("nothing is paired in front of a word, inside a string, or in a comment", () => {
+  assertEquals(withCursor(typed("(", "foo", 0)), "(|foo");
+  assertEquals(withCursor(typed('"', "foo", 0)), '"|foo');
+  assertEquals(withCursor(typed("(", '"a"', 2)), '"a(|"');
+  assertEquals(withCursor(typed(")", '"a)"', 2)), '"a)|)"');
+  assertEquals(withCursor(typed("(", "// a")), "// a(|");
+  assertEquals(withCursor(typed('"', "// a ")), '// a "|');
+  assertEquals(withCursor(typed('"', "word")), 'word"|');
+});
+
+Deno.test("a quote closes a string but an escaped quote stays inside it", () => {
+  assertEquals(withCursor(typed('"', '"a"', 2)), '"a"|');
+  assertEquals(withCursor(typed('"', '"a\\"', 3)), '"a\\"|"');
+});
+
+Deno.test("an apostrophe never pairs, leaving type variables and char literals alone", () => {
+  assertEquals(withCursor(typed("'a")), "'a|");
+  assertEquals(withCursor(typed("x'")), "x'|");
+});
+
+Deno.test("Backspace removes an empty pair and otherwise one character", () => {
+  assertEquals(withCursor(typed("(\x7f")), "|");
+  assertEquals(withCursor(typed('"\x7f')), "|");
+  assertEquals(withCursor(typed("\x7f", "(a)", 2)), "(|)");
+  assertEquals(withCursor(typed("\x7f", "()", 2)), "(|");
+});
+
+Deno.test("Enter opens an empty bracket pair onto its own lines, even in a finished phrase", () => {
+  assertEquals(withCursor(typed("{\r")), "{\n  |\n}");
+  assertEquals(withCursor(typed("\r", "  f({});", 5)), "  f({\n    |\n  });");
+  const state = stateWith("f();", 2);
+  assertEquals(press(state, ENTER), ["none"]);
+  assertEquals(withCursor(state), "f(\n  |\n);");
+});
+
+Deno.test("Enter still submits a finished phrase from outside a pair", () => {
+  assertEquals(press(stateWith("f();"), ENTER), ["submit"]);
+});
+
+Deno.test("Shift+Enter leaves the pair and terminates the phrase after it", () => {
+  const state = typed('print("hi');
+  assertEquals(withCursor(state), 'print("hi|")');
+  assertEquals(press(state, SHIFT_ENTER), ["submit"]);
+  assertEquals(state.text, 'print("hi");');
+});
+
+Deno.test("a paste is inserted exactly, with no pairing", () => {
+  const state = new EditorState();
+  press(state, '\x1b[200~f("a", (b\x1b[201~');
+  assertEquals(withCursor(state), 'f("a", (b|');
+});
+
 Deno.test("a paste keeps its newlines and never submits", () => {
   const state = new EditorState();
   const actions = press(state, "\x1b[200~let a = 1;\r\nlet b\t= 2;\r\x1b[201~");

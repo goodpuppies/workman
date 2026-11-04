@@ -1,4 +1,4 @@
-import { topLevelPhraseEnd } from "./top_level_phrases.ts";
+import { lexicalContextAt, topLevelPhraseEnd } from "./top_level_phrases.ts";
 
 /** A decoded keypress. `name` is a named key or a lowercase letter; `text` is literal input. */
 export type EditorKey =
@@ -213,6 +213,15 @@ function offsetAtColumn(text: string, row: EditorRow, column: number): number {
   return offset;
 }
 
+const BRACKETS: Readonly<Record<string, string>> = { "(": ")", "[": "]", "{": "}" };
+const CLOSERS = new Set(Object.values(BRACKETS));
+/**
+ * `'` is left out: it opens both a character literal and a type variable like `'a`, and pairing
+ * it would turn every `'a` into `'a'`.
+ */
+const QUOTES = new Set(['"', "`"]);
+const PAIRED_CHAR = /([()[\]{}"`])/;
+
 export type EditorAction = "none" | "submit" | "cancel" | "eof" | "interrupt" | "clear";
 
 const WORD = /[\p{L}\p{N}_']/u;
@@ -255,7 +264,7 @@ export class EditorState {
   apply(key: EditorKey, width: number): EditorAction {
     if (key.kind === "text") {
       this.#settle();
-      this.#insert(key.text);
+      this.#type(key.text);
       return "none";
     }
     if (key.kind === "paste") {
@@ -316,7 +325,7 @@ export class EditorState {
         this.cursor = this.text.length;
         break;
       case "backspace":
-        this.#remove(this.#previousGrapheme(), this.cursor);
+        this.#removeBackward();
         break;
       case "delete":
         this.#remove(this.cursor, this.#nextGrapheme());
@@ -366,7 +375,7 @@ export class EditorState {
         this.cursor = this.text.length;
         break;
       case "h":
-        this.#remove(this.#previousGrapheme(), this.cursor);
+        this.#removeBackward();
         break;
       case "u":
         this.#remove(this.#lineStart(), this.cursor);
@@ -391,6 +400,10 @@ export class EditorState {
 
   #enter(): EditorAction {
     if (!this.text.trim()) return "none";
+    if (this.#betweenEmptyBrackets()) {
+      this.#insertNewline();
+      return "none";
+    }
     const onLastLine = !this.text.slice(this.#lineEnd()).trim();
     if (onLastLine && topLevelPhraseEnd(this.text) !== undefined) return "submit";
     this.#insertNewline();
@@ -408,7 +421,69 @@ export class EditorState {
 
   #insertNewline(): void {
     const indent = /^[ \t]*/.exec(this.text.slice(this.#lineStart(), this.cursor))![0];
+    if (this.#betweenEmptyBrackets()) {
+      // Open the pair onto its own lines, with the cursor on the indented one between them.
+      this.#insert(`\n${indent}  `);
+      const middle = this.cursor;
+      this.#insert(`\n${indent}`);
+      this.cursor = middle;
+      return;
+    }
     this.#insert(`\n${indent}`);
+  }
+
+  #betweenEmptyBrackets(): boolean {
+    return this.#betweenBrackets() && lexicalContextAt(this.text, this.cursor) === "code";
+  }
+
+  #betweenBrackets(): boolean {
+    const closer = BRACKETS[this.text[this.cursor - 1]];
+    return closer !== undefined && closer === this.text[this.cursor];
+  }
+
+  /** Typed text, closing pairs. A run can be several keys read at once, so each is handled alone. */
+  #type(text: string): void {
+    for (const part of text.split(PAIRED_CHAR)) {
+      if (part.length === 1 && PAIRED_CHAR.test(part)) this.#typePaired(part);
+      else this.#insert(part);
+    }
+  }
+
+  #typePaired(char: string): void {
+    const context = lexicalContextAt(this.text, this.cursor);
+    const next = this.text[this.cursor];
+    if (QUOTES.has(char)) {
+      if (context === "string" && next === char) this.cursor += 1;
+      else if (context === "code" && this.#canCloseAtCursor(true)) {
+        this.#insert(char);
+        this.#insert(char);
+        this.cursor -= 1;
+      } else this.#insert(char);
+    } else if (context !== "code") {
+      this.#insert(char);
+    } else if (CLOSERS.has(char) && next === char) {
+      this.cursor += 1;
+    } else if (BRACKETS[char] && this.#canCloseAtCursor(false)) {
+      this.#insert(char);
+      this.#insert(BRACKETS[char]);
+      this.cursor -= 1;
+    } else {
+      this.#insert(char);
+    }
+  }
+
+  /** Pairing is only welcome before a gap, so typing `(` in front of `foo` stays a single `(`. */
+  #canCloseAtCursor(quote: boolean): boolean {
+    const next = this.text[this.cursor];
+    if (next !== undefined && !/\s/.test(next) && !CLOSERS.has(next)) return false;
+    return !quote || !WORD.test(this.text[this.cursor - 1] ?? "");
+  }
+
+  #removeBackward(): void {
+    const before = this.text[this.cursor - 1];
+    const after = this.text[this.cursor];
+    const pair = this.#betweenBrackets() || (QUOTES.has(before) && before === after);
+    this.#remove(this.#previousGrapheme(), pair ? this.cursor + 1 : this.cursor);
   }
 
   #insert(text: string): void {

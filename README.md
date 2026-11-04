@@ -140,6 +140,11 @@ the accepted bindings unchanged.
 | Ctrl-D                   | Exit if the input is empty                                                              |
 | Ctrl-L                   | Clear the screen                                                                        |
 
+Typing `(`, `[`, `{`, `"`, or a backtick also adds its closing character, and typing that character
+steps over it. Backspace removes an empty pair, and Enter opens one onto its own lines. Nothing is
+paired in front of a word, inside a string, or in a comment, and `'` never pairs because it also
+starts type variables like `'a`.
+
 Calling `quit()` also ends the session. It is available only in `wm repl` sessions, never returns,
 and can be called anywhere, as in `if (done) { quit() } else { 42 };`. Your own `let quit = ...`
 replaces it.
