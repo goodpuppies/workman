@@ -2,6 +2,7 @@ import { openInferredCallbacks, preserveTaint } from "../taint.ts";
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import { isGpuLambda } from "../directives.ts";
+import { hideLibraryPervasives } from "../library_pervasives.ts";
 import {
   addGpuConstraint,
   fn,
@@ -38,6 +39,7 @@ export function inferLambdaTy(
 ): Ty {
   const { env, typeEnv, strEnv, adts, types, facts, provenance } = context;
   const local = new Map(env);
+  if (isGpuLambda(expr)) hideLibraryPervasives(local);
   const annotationVars: TypeVarScope = new Map();
   const binders = new Set<string>();
   const annotations = expr.params.map((param) =>

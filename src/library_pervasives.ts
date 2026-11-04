@@ -51,6 +51,16 @@ export const LIBRARY_PERVASIVES: readonly Readonly<{
   Object.freeze({ modulePath: "std/string.wm", name: "toList" }),
 ]);
 
+/**
+ * `@gpu` code can't call host library values, and these names (`floor`, `length`) would otherwise hide
+ * the GPU builtins of the same name. Anything the program bound or imported itself stays in scope.
+ */
+export function hideLibraryPervasives(env: Map<string, { standardLibrary?: boolean }>): void {
+  for (const { name } of LIBRARY_PERVASIVES) {
+    if (env.get(name)?.standardLibrary) env.delete(name);
+  }
+}
+
 /** Type projections use the same named-import semantics, but have no runtime aliases. */
 export const LIBRARY_PERVASIVE_TYPES = Object.freeze([
   Object.freeze({ modulePath: "subml-basis/subset_order.wm", name: "Order" }),

@@ -1,6 +1,8 @@
 # Library pervasives shadow GPU builtins in `@gpu` code
 
-Status: open, found 2026-11-04. Failing since before `4e9b523`.
+Status: fixed 2026-11-04. `@gpu` lambdas now hide the library pervasives from their scope
+(`hideLibraryPervasives`), so these names reach the GPU builtins. Names the program binds itself still
+win. Regression tests: `tests/wmslang_v4_specialize_test.ts`.
 
 `src/library_pervasives.ts` installs unqualified library names, including `floor`, `ceil`, `round`,
 `trunc` (`std/real.wm`) and `length` (`subml-basis/subset_list.wm`). Inside a `@gpu` lambda those
@@ -25,18 +27,13 @@ The other failures have the same shape:
 - `left: (Number, Number) ... right: Result<Number, Error>` in the jelly shader
 - `type.call-argument-mismatch` where `gpu.builtin.overload` was expected
 
-## Known-issue tests
+## Tests
 
-12 tests are ignored, in `tests/wmslang_v3_builtin_test.ts`, `tests/wmslang_v4_specialize_test.ts`,
+12 tests were ignored while this was open and pass again, in `tests/wmslang_v3_builtin_test.ts`, `tests/wmslang_v4_specialize_test.ts`,
 `tests/wmslang_window_example_test.ts` and `tests/wmslang_webgpu_render_test.ts`.
 
 ## Cause, verified
 
 With `floor`, `ceil`, `round`, `trunc` and `length` removed from the pervasive table in a scratch copy
-of `490cfe1`, all 51 tests in those four files pass. Removing them isn't the fix, since programs use
-those pervasives.
-
-## Likely fix
-
-Inside `@gpu` regions, resolve a name to the GPU catalog before the library pervasives. A binding the
-program declares itself should still win over both.
+of `490cfe1`, all 51 tests in those four files pass. Removing them from the table wasn't the fix, since
+host programs use them.

@@ -11,7 +11,6 @@ import {
   GpuSpecializationError,
   specializeGpuTemplates,
 } from "../src/wmslang/v4_specialize.ts";
-import { knownIssue } from "./known_issue.ts";
 
 const arithmeticRows: GpuOperationRow[] = [
   { id: 0, args: ["f32", "f32"], result: "f32" },
@@ -44,7 +43,7 @@ Deno.test("v4 GPU operation skeletons remain ordinary generalized HM", async () 
   );
 });
 
-Deno.test("[known issue] v4 catalog skeletons contribute only universal HM equalities", { ignore: knownIssue("gpu-builtins-shadowed-by-library-pervasives") }, async () => {
+Deno.test("v4 catalog skeletons contribute only universal HM equalities", async () => {
   const module = await parse(`
     let shade = (coord) => {
       @gpu;
@@ -679,3 +678,34 @@ Deno.test("v4 does not select an operation backward from its expected result", (
 function expression(kind: Expr["kind"]): Expr {
   return { kind } as Expr;
 }
+
+Deno.test("library pervasives are hidden in @gpu code, and only there", async () => {
+  const module = await parse(`
+    let hostFloor = floor;
+    let shade = (coord) => {
+      @gpu;
+      let floored = (x) => { floor(x) };
+      (coord.x, coord.y, 0.0, 1.0)
+    };
+  `);
+  const result = inferModule(module, new Map(), await standardInferOptions());
+  const general = (name: string) => show(result.facts.bindings.get(name)!.at(-1)!.general!.type);
+  assertEquals(general("floored").replaceAll(/'\w+/g, "'a"), "'a -> 'a");
+  assertEquals(general("hostFloor"), "Number -> Result<Number!, Error>!");
+});
+
+Deno.test("a name the program binds itself still wins over a GPU builtin", async () => {
+  const module = await parse(`
+    let floor = (x) => { x + 1.0 };
+    let shade = (coord) => {
+      @gpu;
+      let floored = (x) => { floor(x) };
+      (coord.x, coord.y, 0.0, 1.0)
+    };
+  `);
+  const result = inferModule(module, new Map(), await standardInferOptions());
+  assertEquals(
+    show(result.facts.bindings.get("floored")!.at(-1)!.general!.type),
+    "Number -> Number",
+  );
+});

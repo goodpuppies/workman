@@ -1,7 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { checkFile, compileFile, coreFile } from "../src/compiler.ts";
-import { knownIssue } from "./known_issue.ts";
 
 Deno.test("SDL window example keeps the complete WebGPU presentation path in Workman", async () => {
   const javaScript = await compileFile(
@@ -41,7 +40,7 @@ Deno.test("SDL feedback example compiles explicit resize and texture retirement"
   assertStringIncludes(javaScript, "frameLoop");
 });
 
-Deno.test("[known issue] jelly raymarcher port typechecks heterogeneous multi-value shader flow", { ignore: knownIssue("gpu-builtins-shadowed-by-library-pervasives") }, async () => {
+Deno.test("jelly raymarcher port typechecks heterogeneous multi-value shader flow", async () => {
   const results = await checkFile(
     fileURLToPath(new URL("../examples/wmslang_window/src/jelly_shader.wm", import.meta.url)),
   );
@@ -59,7 +58,7 @@ Deno.test("[known issue] jelly raymarcher port typechecks heterogeneous multi-va
   );
 });
 
-Deno.test("[known issue] jelly host module drives the imported fragment without GPU-only leakage", { ignore: knownIssue("gpu-builtins-shadowed-by-library-pervasives") }, async () => {
+Deno.test("jelly host module drives the imported fragment without GPU-only leakage", async () => {
   const path = fileURLToPath(
     new URL("../examples/wmslang_window/src/jelly_main.wm", import.meta.url),
   );

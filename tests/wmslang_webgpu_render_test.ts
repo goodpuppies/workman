@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { coreFile, coreVirtual } from "../src/compiler.ts";
 import type { VisualShaderArtifactV1, VisualShaderDescriptorV1 } from "../src/gpu_artifact.ts";
 import { renderVisualShaderV1 } from "../src/wmslang/webgpu_render.ts";
-import { knownIssue } from "./known_issue.ts";
 
 const webGpuUnavailable = !navigator.gpu;
 
@@ -24,8 +23,8 @@ webGpuTest({
 });
 
 webGpuTest({
-  name: "[known issue] visual-v3 renders the warped-noise acceptance shader",
-  ignore: webGpuUnavailable || knownIssue("gpu-builtins-shadowed-by-library-pervasives"),
+  name: "visual-v3 renders the warped-noise acceptance shader",
+  ignore: webGpuUnavailable,
   async fn() {
     const artifact = await compileExampleArtifact("warped_noise_shader.wm");
     const pixels = await renderVisualShaderV1(
@@ -42,8 +41,8 @@ webGpuTest({
 });
 
 webGpuTest({
-  name: "[known issue] visual-v3 renders the recursive raymarcher acceptance shader",
-  ignore: webGpuUnavailable || knownIssue("gpu-builtins-shadowed-by-library-pervasives"),
+  name: "visual-v3 renders the recursive raymarcher acceptance shader",
+  ignore: webGpuUnavailable,
   async fn() {
     const artifact = await compileExampleArtifact("raymarch_shader.wm");
     const pixels = await renderVisualShaderV1(
