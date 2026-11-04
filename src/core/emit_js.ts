@@ -1665,9 +1665,8 @@ function emitPrimitiveOperatorApp(
       return `__wm_eq(${left}, ${right})`;
     case "!=":
       return `!__wm_eq(${left}, ${right})`;
-    // Workman operators are eager because applications evaluate their tuple
-    // argument before the call. Keep that behavior for JavaScript's normally
-    // short-circuiting operators while still avoiding tuple allocation.
+    // A written `&&` or `||` lowers to CoreIf. These operands are already evaluated, as in the
+    // function a carrier-lifted operator passes to `map2`.
     case "&&":
     case "||":
       if (!operator.directRuntimeName) {

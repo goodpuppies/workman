@@ -551,6 +551,9 @@ function coreExprFromSurface(expr: Expr, context?: CoreLoweringContext): CoreExp
             loweringCarrier(context.types.get(expr.right), context));
         if (binaryCarrier) return carrierLiftedBinary(expr, binaryCarrier, context!);
       }
+      if ((expr.op === "&&" || expr.op === "||") && context?.target !== "shared") {
+        return sequentialBooleanFromSurface(expr, context);
+      }
       return {
         kind: "CoreApp",
         callee: i32Operator(expr.op, expr.left, context, I32_BINARY_HELPERS) ??
@@ -870,6 +873,22 @@ function i32Operator(
   const resolved = prune(type);
   if (resolved.tag !== "prim" || resolved.name !== "I32") return undefined;
   return { kind: "CoreVar", name: helper, node: operand.node };
+}
+
+/**
+ * The Definition derives `andalso` and `orelse` from `if` (Appendix A), so the right operand runs only
+ * when the left one doesn't decide the result, and it stays in tail position.
+ */
+function sequentialBooleanFromSurface(
+  expr: Extract<Expr, { kind: "Binary" }>,
+  context?: CoreLoweringContext,
+): CoreExpr {
+  const left = coreExprFromSurface(expr.left, context);
+  const right = coreExprFromSurface(expr.right, context);
+  const decided = (value: boolean): CoreExpr => ({ kind: "CoreBool", value, node: expr.node });
+  return expr.op === "&&"
+    ? { kind: "CoreIf", cond: left, thenExpr: right, elseExpr: decided(false), node: expr.node }
+    : { kind: "CoreIf", cond: left, thenExpr: decided(true), elseExpr: right, node: expr.node };
 }
 
 function carrierLiftedBinary(

@@ -73,8 +73,8 @@ WM uses `&&`, `||`, and `!`.
 
 | Expression | Evaluates to | Notes |
 | :--- | :---: | :--- |
-| `false && true` | `false` | Both operands are evaluated |
-| `true \|\| false` | `true` | Both operands are evaluated |
+| `false && f()` | `false` | `f()` doesn't run: the left operand decides |
+| `true \|\| f()` | `true` | `f()` doesn't run: the left operand decides |
 | `!true` | `false` | Boolean negation |
 | `!false` | `true` | Boolean negation |
 

@@ -374,7 +374,7 @@ catchable `exn` values. Do not add bare SML exception names to mimic that namesp
 - SML fixity declarations are not imported. `before` and `o` use WM calls;
   adding a pervasive value does not register a new parser precedence.
 - `andalso`/`orelse` are SML derived syntax, not missing pervasive functions.
-  The separate `boolean-operators-are-eager-not-short-circuiting.md` issue records
+  The separate `FIXED-boolean-operators-are-eager-not-short-circuiting.md` issue records
   WM's current `&&`/`||` behavior; this work does not claim to resolve it.
 - The optional SML `use` function is not added. WM keeps its module imports and
   CLI/REPL file-loading mechanisms.

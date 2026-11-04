@@ -146,7 +146,7 @@ foreign APIs. Each one needs an explicit decision.
 
 ## Related
 
-- `markdown/issues/boolean-operators-are-eager-not-short-circuiting.md` is a
+- `markdown/issues/FIXED-boolean-operators-are-eager-not-short-circuiting.md` is a
   separate behavioral divergence found alongside this one.
 - `docs/jsffi.md:42-48` already documents type-only JS imports as "useful in
   trusted boundary" positions, which is the category this coercion is currently

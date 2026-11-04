@@ -271,10 +271,11 @@ defines the primitive operations exposed by the core:
 - unary negation and boolean negation,
 - pipe application.
 
-Current code generation lowers binary operators to primitive calls; the runtime
-prelude defines `__wm_op_and` and `__wm_op_or` over tupled arguments. That means
-short-circuit behavior should not be claimed unless a later implementation or
-test anchors it explicitly.
+Current code generation lowers binary operators to primitive calls, except `&&`
+and `||`. Those lower to `CoreIf`, following the derived forms of `andalso` and
+`orelse` in Appendix A of the Definition (`app1.tex`), so the right operand runs
+only when the left one doesn't decide the result. `tests/boolean_short_circuit_test.ts`
+anchors this. A carrier-lifted `&&` still goes through `map2`.
 
 Anchors: SML fixity directives and the initial infix basis are in `syncor.tex`
 and `app4.tex`. Current `wm-mini` precedence and operator parsing are in

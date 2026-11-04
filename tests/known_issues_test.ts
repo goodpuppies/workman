@@ -52,23 +52,6 @@ async function rejects(files: Files) {
 }
 
 issue(
-  "boolean-operators-are-eager-not-short-circuiting",
-  "the right side of && and || runs only when needed",
-  () =>
-    runs(
-      {
-        "m.wm": `
-          let f = (x) => { print("RHS evaluated"); x };
-          let r = false && f(true);
-          let s = true || f(true);
-          let main = () => { print((r, s)) };
-        `,
-      },
-      "(false, true)\n",
-    ),
-);
-
-issue(
   "forward-pipe-binds-tighter-than-arithmetic",
   "a pipe takes the whole arithmetic expression on its left",
   () =>

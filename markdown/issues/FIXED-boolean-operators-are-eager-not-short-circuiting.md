@@ -1,8 +1,9 @@
 # Issue: `&&` and `||` are eager, so they do not short-circuit
 
-Status: open
-
-Known-issue test: `tests/known_issues_test.ts`.
+Status: fixed 2026-11-04. A written `&&` or `||` now lowers to `CoreIf`, following Appendix A of the
+Definition (`research/The-Definition-of-Standard-ML-Revised/app1.tex`). Regression test:
+`tests/boolean_short_circuit_test.ts`. A carrier-lifted `&&` on `Result` or `Task` operands still goes
+through `map2`, so both operands run.
 
 ## Summary
 

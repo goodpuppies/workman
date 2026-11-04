@@ -509,8 +509,7 @@ function emitBasisOperators(): string[] {
   return [
     ...definitionsFor(BASIS_OPERATORS, OPERATOR_BODIES, "BASIS_OPERATORS"),
     ...definitionsFor(BASIS_UNARY_OPERATORS, UNARY_OPERATOR_BODIES, "BASIS_UNARY_OPERATORS"),
-    // Direct eager entry points let statically known boolean applications avoid
-    // their argument tuple without adopting JavaScript's short-circuit semantics.
+    // Direct entry points let statically known operator applications avoid their argument tuple.
     ...directDefinitionsFor(BASIS_OPERATORS),
   ];
 }

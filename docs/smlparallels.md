@@ -71,7 +71,7 @@ form.
 | record projection `r.x`, `#x r`          | `r.x`                                                       | Same projection operation |
 | selector function `#x`                   | `(r: Point) => { r.x }`                                     | SML provides derived shorthand; Workman writes the function explicitly |
 | record pattern `{x, y}`                  | `.{ x, y }`                                                 | No SML flexible-row `...` pattern |
-| `andalso`, `orelse`, `not e`             | `&&`, `\|\|`, `!e`                                         | |
+| `andalso`, `orelse`, `not e`             | `&&`, `\|\|`, `!e`                                         | `&&` and `\|\|` run the right operand only when needed, as in SML |
 | `=` / `<>`                               | `==` / `!=`                                                 | Workman does not expose SML equality type variables |
 | `~e`                                     | `-e`                                                        | |
 | `^`                                      | `++`                                                        | String concatenation |

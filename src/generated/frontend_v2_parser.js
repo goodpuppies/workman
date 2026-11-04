@@ -763,10 +763,10 @@ const rule_44 = __arg;
 if (__wm_eq(rule_44, "MatchFnArms")) {
 return 4;
 } else {
-if (__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_eq(rule_44, "Whitespace"), __wm_eq(rule_44, "Comment")), __wm_eq(rule_44, "BlockComment")), __wm_eq(rule_44, "_")), __wm_eq(rule_44, "__")), __wm_eq(rule_44, "<choice>")), __wm_eq(rule_44, "<lookahead>"))) {
+if (((((((__wm_eq(rule_44, "Whitespace") ? true : __wm_eq(rule_44, "Comment")) ? true : __wm_eq(rule_44, "BlockComment")) ? true : __wm_eq(rule_44, "_")) ? true : __wm_eq(rule_44, "__")) ? true : __wm_eq(rule_44, "<choice>")) ? true : __wm_eq(rule_44, "<lookahead>"))) {
 return 0;
 } else {
-if (__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_eq(rule_44, "Expr"), __wm_eq(rule_44, "Pattern")), __wm_eq(rule_44, "LetPattern")), __wm_eq(rule_44, "ParamPattern")), __wm_eq(rule_44, "TypeAtom")), __wm_eq(rule_44, "TypeDeclBody")), __wm_eq(rule_44, "ImportDecl")), __wm_eq(rule_44, "JsImportDecl"))) {
+if ((((((((__wm_eq(rule_44, "Expr") ? true : __wm_eq(rule_44, "Pattern")) ? true : __wm_eq(rule_44, "LetPattern")) ? true : __wm_eq(rule_44, "ParamPattern")) ? true : __wm_eq(rule_44, "TypeAtom")) ? true : __wm_eq(rule_44, "TypeDeclBody")) ? true : __wm_eq(rule_44, "ImportDecl")) ? true : __wm_eq(rule_44, "JsImportDecl"))) {
 return 3;
 } else {
 return 1;
@@ -789,7 +789,7 @@ const rightRule_53 = __wm_scalar_0_1.args[0][2];
 if ((rightAt_51 > leftAt_48)) {
 return CompiledProbeNoMatch_ctor_115([rightAt_51, rightExpected_52, rightRule_53]);
 } else {
-if (__wm_op_or_d2((leftAt_48 > rightAt_51), (failurePriority_45(leftRule_50) >= failurePriority_45(rightRule_53)))) {
+if (((leftAt_48 > rightAt_51) ? true : (failurePriority_45(leftRule_50) >= failurePriority_45(rightRule_53)))) {
 return CompiledProbeNoMatch_ctor_115([leftAt_48, leftExpected_49, leftRule_50]);
 } else {
 return CompiledProbeNoMatch_ctor_115([rightAt_51, rightExpected_52, rightRule_53]);
@@ -985,7 +985,7 @@ continue __wm_tail_1;
 } else if (__wm_tail_value_1?.ctor === 103 && __wm_tail_value_1.args.length === 1 && __wm_is_tuple(__wm_tail_value_1.args[0]) && __wm_tail_value_1.args[0].length === 2) {
 const start_112 = __wm_tail_value_1.args[0][0];
 const end_113 = __wm_tail_value_1.args[0][1];
-if (__wm_op_and_d2((code_110 >= start_112), (code_110 <= end_113))) {
+if (((code_110 >= start_112) ? (code_110 <= end_113) : false)) {
 return true;
 } else {
 {
@@ -1062,7 +1062,7 @@ const failedAt_146 = __wm_return_value_5.args[0][0];
 const expected_147 = __wm_return_value_5.args[0][1];
 const failedRule_148 = __wm_return_value_5.args[0][2];
 const nextCode_149 = codeAt_43__wm_d2(source_141, offset_142);
-if (__wm_op_and_d2(__wm_op_and_d2(__wm_op_and_d2(__wm_op_and_d2(__wm_op_and_d2(__wm_op_and_d2(recover_140, (nextCode_149 >= 0)), !__wm_eq(nextCode_149, 41)), !__wm_eq(nextCode_149, 44)), !__wm_eq(nextCode_149, 59)), !__wm_eq(nextCode_149, 93)), !__wm_eq(nextCode_149, 125))) {
+if (((((((recover_140 ? (nextCode_149 >= 0) : false) ? !__wm_eq(nextCode_149, 41) : false) ? !__wm_eq(nextCode_149, 44) : false) ? !__wm_eq(nextCode_149, 59) : false) ? !__wm_eq(nextCode_149, 93) : false) ? !__wm_eq(nextCode_149, 125) : false)) {
 return CompiledProbeMatched_ctor_114([offset_142, MissingCompiledCapture_ctor_106(["{", offset_142, site_139]), __wm_basis_None]);
 } else {
 return CompiledProbeNoMatch_ctor_115([failedAt_146, expected_147, failedRule_148]);
@@ -1112,7 +1112,11 @@ __wm_fail("Match", "pattern match failure in function");
 const isIdentifierPartCode_167 = (__arg) => {
 if (true) {
 const code_166 = __arg;
-return __wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_and_d2((code_166 >= 65), (code_166 <= 90)), __wm_op_and_d2((code_166 >= 97), (code_166 <= 122))), __wm_op_and_d2((code_166 >= 48), (code_166 <= 57))), __wm_eq(code_166, 95)), __wm_eq(code_166, 36));
+if ((((((code_166 >= 65) ? (code_166 <= 90) : false) ? true : ((code_166 >= 97) ? (code_166 <= 122) : false)) ? true : ((code_166 >= 48) ? (code_166 <= 57) : false)) ? true : __wm_eq(code_166, 95))) {
+return true;
+} else {
+return __wm_eq(code_166, 36);
+}
 }
 __wm_fail("Match", "pattern match failure in function");
 };
@@ -16251,7 +16255,7 @@ const source_5192 = __arg[0];
 const offset_5193 = __arg[1];
 const diagnose_5194 = __arg[2];
 const parseRule_5195 = __arg[3];
-if (__wm_op_or_d2(commitsJsonPrimaryRecovery_176__wm_d2(source_5192, offset_5193), commitsLambdaPrimaryRecovery_206__wm_d3(source_5192, offset_5193, parseRule_5195))) {
+if ((commitsJsonPrimaryRecovery_176__wm_d2(source_5192, offset_5193) ? true : commitsLambdaPrimaryRecovery_206__wm_d3(source_5192, offset_5193, parseRule_5195))) {
 return Probe8_9.rule_Primary([source_5192, offset_5193, true, diagnose_5194, parseRule_5195]);
 } else {
 return matchCommittedRule_165__wm_d2((__arg) => {
@@ -19342,7 +19346,11 @@ const varToken_6085 = __wm_return_value_90.args[0];
 const __wm_return_value_91 = [firstTokenWithText_5722__wm_d2(tokens_6057, "("), List.filter([tokens_6057, (__arg) => {
 if (true) {
 const token_6086 = __arg;
-return __wm_op_or_d2(__wm_eq(token_6086.kind, "Identifier"), __wm_eq(token_6086.kind, "Name"));
+if (__wm_eq(token_6086.kind, "Identifier")) {
+return true;
+} else {
+return __wm_eq(token_6086.kind, "Name");
+}
 }
 __wm_fail("Match", "pattern match failure in function");
 }]), lastTokenWithText_5729__wm_d3(tokens_6057, ")", __wm_basis_None)];
@@ -19364,7 +19372,7 @@ const token_6090 = __wm_return_value_92.args[0].args[0];
 if (__wm_eq(token_6090.text, "_")) {
 return NodeParseValue_ctor_122(WildcardPatternNode_ctor_46([token_6090, span_6055]));
 } else {
-if (__wm_op_or_d2(__wm_eq(token_6090.kind, "Character"), __wm_op_and_d2(allowLiterals_6056, __wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_eq(token_6090.text, "void"), __wm_eq(token_6090.text, "true")), __wm_eq(token_6090.text, "false")), __wm_eq(token_6090.kind, "Int")), __wm_eq(token_6090.kind, "String"))))) {
+if ((__wm_eq(token_6090.kind, "Character") ? true : (allowLiterals_6056 ? ((((__wm_eq(token_6090.text, "void") ? true : __wm_eq(token_6090.text, "true")) ? true : __wm_eq(token_6090.text, "false")) ? true : __wm_eq(token_6090.kind, "Int")) ? true : __wm_eq(token_6090.kind, "String")) : false))) {
 return NodeParseValue_ctor_122(LiteralPatternNode_ctor_47([token_6090, span_6055]));
 } else {
 return NodeParseValue_ctor_122(VariablePatternNode_ctor_42([token_6090, span_6055]));
@@ -21379,7 +21387,11 @@ const buildRuleValue_6540__wm_d4 = __wm_module_35["buildRuleValue__wm_d4"];
 const isPreambleWhitespace_6542 = (__arg) => {
 if (true) {
 const code_6541 = __arg;
-return __wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_eq(code_6541, 9), __wm_eq(code_6541, 10)), __wm_eq(code_6541, 13)), __wm_eq(code_6541, 32));
+if (((__wm_eq(code_6541, 9) ? true : __wm_eq(code_6541, 10)) ? true : __wm_eq(code_6541, 13))) {
+return true;
+} else {
+return __wm_eq(code_6541, 32);
+}
 }
 __wm_fail("Match", "pattern match failure in function");
 };
@@ -21418,7 +21430,7 @@ const code_6551 = codeAt_43__wm_d2(source_6548, offset_6549);
 if (__wm_eq(code_6551, 10)) {
 return true;
 } else {
-if (__wm_op_or_d2(__wm_op_or_d2(__wm_eq(code_6551, 9), __wm_eq(code_6551, 13)), __wm_eq(code_6551, 32))) {
+if (((__wm_eq(code_6551, 9) ? true : __wm_eq(code_6551, 13)) ? true : __wm_eq(code_6551, 32))) {
 {
 const __wm_tail_arg_39_0 = source_6548;
 const __wm_tail_arg_39_1 = (offset_6549 + 1);
@@ -21447,7 +21459,7 @@ const length_6553 = textLength_40(source_6552);
 const start_6554 = firstNonWhitespaceOffset_6543__wm_d3(source_6552, 0, length_6553);
 const end_6555 = (start_6554 + 14);
 const line_6556 = slice_5589__wm_d3(source_6552, start_6554, end_6555);
-if (__wm_op_and_d2(__wm_op_or_d2(__wm_eq(line_6556, "-- @no-prelude"), __wm_eq(line_6556, "// @no-prelude")), directiveTailIsWhitespace_6547__wm_d3(source_6552, end_6555, length_6553))) {
+if (((__wm_eq(line_6556, "-- @no-prelude") ? true : __wm_eq(line_6556, "// @no-prelude")) ? directiveTailIsWhitespace_6547__wm_d3(source_6552, end_6555, length_6553) : false)) {
 return (line_6556 + "\n");
 } else {
 return "";
@@ -21645,7 +21657,11 @@ __wm_fail("Match", "pattern match failure in function");
 const isFingerprintTrivia_6638 = (__arg) => {
 if (true) {
 const name_6637 = __arg;
-return __wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_op_or_d2(__wm_eq(name_6637, "__"), __wm_eq(name_6637, "_")), __wm_eq(name_6637, "Whitespace")), __wm_eq(name_6637, "Comment")), __wm_eq(name_6637, "BlockComment")), __wm_eq(name_6637, "EOF"));
+if (((((__wm_eq(name_6637, "__") ? true : __wm_eq(name_6637, "_")) ? true : __wm_eq(name_6637, "Whitespace")) ? true : __wm_eq(name_6637, "Comment")) ? true : __wm_eq(name_6637, "BlockComment"))) {
+return true;
+} else {
+return __wm_eq(name_6637, "EOF");
+}
 }
 __wm_fail("Match", "pattern match failure in function");
 };
@@ -21794,7 +21810,7 @@ const ignored_6696 = __wm_scalar_27_2;
 {
 const __wm_tail_arg_48_0 = inner_6692;
 const __wm_tail_arg_48_1 = source_6695;
-const __wm_tail_arg_48_2 = __wm_op_or_d2(ignored_6696, isFingerprintTrivia_6638(name_6691));
+const __wm_tail_arg_48_2 = (ignored_6696 ? true : isFingerprintTrivia_6638(name_6691));
 capture_6653 = __wm_tail_arg_48_0;
 source_6654 = __wm_tail_arg_48_1;
 ignored_6655 = __wm_tail_arg_48_2;
@@ -25867,7 +25883,7 @@ __wm_fail("Match", "pattern match failure in function");
 const find_9345 = SubsetList_112.find;
 const partition_9346 = SubsetList_112.partition;
 const tabulate_9352__wm_d2 = (count_9347, f_9348) => {
-if (__wm_op_or_d2((count_9347 < 0), !__wm_eq((count_9347 % 1), 0))) {
+if (((count_9347 < 0) ? true : !__wm_eq((count_9347 % 1), 0))) {
 return __wm_fail("Panic", "Size: List.tabulate count must be a non-negative integer");
 } else {
 const loop_9349__wm_d2 = (index_9350, built_9351) => {
