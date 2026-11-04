@@ -358,7 +358,7 @@ Deno.test("std String.toList projects portable byte conversions with an empty er
     );
   `;
   const checked = await checkSource(source);
-  expectBinding(checked.env, "convert", { type: "String -> List<String>", vars: 0 });
+  expectBinding(checked.env, "convert", { type: "String -> List<String!>!", vars: 0 });
   const code = await compileLibraryVirtual(
     "/test/main.wm",
     new Map([["/test/main.wm", source]]),

@@ -221,7 +221,7 @@ Deno.test("basis structures are library modules over inlined JavaScript primitiv
   assertEquals(js.includes("const Word8Vector = {"), false);
   // `sub` calls the primitive directly with spread arguments.
   assertEquals(
-    /__wm_js_member_obj\(__wm_js_module_\d+, "sub"\); return \(__arg\) => __wm_js_direct_\d+\(\.\.\.__arg\)/
+    /const (\w+)__wm_native = __wm_js_member_obj\(__wm_js_module_\d+, "sub"\);[\s\S]*?const __wm_js_direct_\d+ = \1__wm_native; return \(__arg\) => __wm_js_direct_\d+\(\.\.\.__arg\)/
       .test(js),
     true,
   );

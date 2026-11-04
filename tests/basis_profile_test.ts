@@ -897,6 +897,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "traverse",
           "all",
           "collectList",
+          "filter",
         ],
         types: [],
       },

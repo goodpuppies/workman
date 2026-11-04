@@ -104,7 +104,7 @@ async function runInstalledWm(binDir: string, cwd: string, args: string[], inher
     ? ["/d", "/c", ["wm", ...args].join(" ")]
     : ["-c", ["wm", ...args.map(shellQuote)].join(" ")];
   const path = `${binDir}${Deno.build.os === "windows" ? ";" : ":"}${
-    inheritPath ? Deno.env.get("PATH") ?? "" : ""
+    inheritPath ? Deno.env.get("PATH") ?? "" : Deno.build.os === "windows" ? "" : "/usr/bin:/bin"
   }`;
 
   const result = await new Deno.Command(command, {

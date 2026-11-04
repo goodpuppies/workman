@@ -18,13 +18,13 @@ Deno.test("exact word and Word8Vector basis members have nominal types", async (
     );
   `);
 
-  expectBinding(result.env, "byte", { type: "Word8.Word", vars: 0 });
-  expectBinding(result.env, "wide", { type: "Word64.Word", vars: 0 });
-  expectBinding(result.env, "bytes", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "maybeByte", { type: "Result<Word8.Word, Error>", vars: 0 });
-  expectBinding(result.env, "generated", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "unfolded", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "finalState", { type: "Word8.Word", vars: 0 });
+  expectBinding(result.env, "byte", { type: "Word8.Word!", vars: 0 });
+  expectBinding(result.env, "wide", { type: "Word64.Word!", vars: 0 });
+  expectBinding(result.env, "bytes", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "maybeByte", { type: "Result<Word8.Word!, Error>!", vars: 0 });
+  expectBinding(result.env, "generated", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "unfolded", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "finalState", { type: "Word8.Word!", vars: 0 });
 });
 
 Deno.test("word arithmetic is modular and shifts respect the declared width", async () => {
@@ -92,12 +92,12 @@ Deno.test("Word8VectorSlice creates bounded zero-copy views and freezes explicit
     let frozen = Word8VectorSlice.vector(tail);
     let (base, offset, length) = Word8VectorSlice.base(tail);
   `);
-  expectBinding(result.env, "middle", { type: "Word8VectorSlice.Slice", vars: 0 });
-  expectBinding(result.env, "tail", { type: "Word8VectorSlice.Slice", vars: 0 });
-  expectBinding(result.env, "frozen", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "base", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "offset", { type: "Number", vars: 0 });
-  expectBinding(result.env, "length", { type: "Number", vars: 0 });
+  expectBinding(result.env, "middle", { type: "Word8VectorSlice.Slice!", vars: 0 });
+  expectBinding(result.env, "tail", { type: "Word8VectorSlice.Slice!", vars: 0 });
+  expectBinding(result.env, "frozen", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "base", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "offset", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "length", { type: "Number!", vars: 0 });
 
   const output = await run(`
     let main = () => {
@@ -154,10 +154,10 @@ Deno.test("PackWord modules decode vectors and slices in both byte orders", asyn
     let little32 = PackWord32Little.subSlice(slice, 0);
     let wide = PackWord64Big.subVec(bytes, 0);
   `);
-  expectBinding(result.env, "little16", { type: "Result<Word16.Word, Error>", vars: 0 });
-  expectBinding(result.env, "big32", { type: "Result<Word32.Word, Error>", vars: 0 });
-  expectBinding(result.env, "little32", { type: "Result<Word32.Word, Error>", vars: 0 });
-  expectBinding(result.env, "wide", { type: "Result<Word64.Word, Error>", vars: 0 });
+  expectBinding(result.env, "little16", { type: "Result<Word16.Word!, Error>!", vars: 0 });
+  expectBinding(result.env, "big32", { type: "Result<Word32.Word!, Error>!", vars: 0 });
+  expectBinding(result.env, "little32", { type: "Result<Word32.Word!, Error>!", vars: 0 });
+  expectBinding(result.env, "wide", { type: "Result<Word64.Word!, Error>!", vars: 0 });
 
   const output = await run(`
     let main = () => {
@@ -223,16 +223,16 @@ Deno.test("Binary provides checked byte-offset reads and immutable cursor advanc
     let stepped = Binary.readU16le(cursor);
     let invalid = Binary.u32le(slice, 2);
   `);
-  expectBinding(result.env, "direct", { type: "Result<Word32.Word, Error>", vars: 0 });
+  expectBinding(result.env, "direct", { type: "Result<Word32.Word!, Error>!", vars: 0 });
   expectBinding(result.env, "cursor", {
-    type: "Cursor<Word8VectorSlice.Slice>",
+    type: "Cursor<Word8VectorSlice.Slice!>!",
     vars: 0,
   });
   expectBinding(result.env, "stepped", {
-    type: "Result<(Word16.Word, Cursor<Word8VectorSlice.Slice>), Error>",
+    type: "Result<(Word16.Word!, Cursor<Word8VectorSlice.Slice!>!), Error>!",
     vars: 0,
   });
-  expectBinding(result.env, "invalid", { type: "Result<Word32.Word, Error>", vars: 0 });
+  expectBinding(result.env, "invalid", { type: "Result<Word32.Word!, Error>!", vars: 0 });
 
   const output = await run(`
     let main = () => {
@@ -260,11 +260,11 @@ Deno.test("PackReal preserves explicit float precision while Binary exposes nume
     let number = Float32.toNumber(decoded);
     let binary = Binary.f32le(Word8VectorSlice.full(encoded), 0);
   `);
-  expectBinding(result.env, "real", { type: "Float32.Real", vars: 0 });
-  expectBinding(result.env, "encoded", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "decoded", { type: "Float32.Real", vars: 0 });
-  expectBinding(result.env, "number", { type: "Number", vars: 0 });
-  expectBinding(result.env, "binary", { type: "Result<Number, Error>", vars: 0 });
+  expectBinding(result.env, "real", { type: "Float32.Real!", vars: 0 });
+  expectBinding(result.env, "encoded", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "decoded", { type: "Float32.Real!", vars: 0 });
+  expectBinding(result.env, "number", { type: "Number!", vars: 0 });
+  expectBinding(result.env, "binary", { type: "Result<Number!, Error>!", vars: 0 });
 
   const output = await run(`
     let main = () => {
@@ -294,9 +294,9 @@ Deno.test("Byte conversion and Binary.asciiZ replace the host string shim", asyn
     ]);
     let parsed = Binary.asciiZ(Word8VectorSlice.full(terminated), 0);
   `);
-  expectBinding(result.env, "encoded", { type: "Word8Vector.Vector", vars: 0 });
-  expectBinding(result.env, "decoded", { type: "String", vars: 0 });
-  expectBinding(result.env, "parsed", { type: "Result<String, Error>", vars: 0 });
+  expectBinding(result.env, "encoded", { type: "Word8Vector.Vector!", vars: 0 });
+  expectBinding(result.env, "decoded", { type: "String!", vars: 0 });
+  expectBinding(result.env, "parsed", { type: "Result<String!, Error!>!", vars: 0 });
 
   const output = await run(`
     let main = () => {

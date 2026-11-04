@@ -243,7 +243,7 @@ Deno.test("cli fmt formats in place by default and is idempotent", async () => {
   assertEquals(await Deno.readTextFile(input), formatted);
 });
 
-Deno.test("cli fmt --fix materializes marked missing braces and semicolon", async () => {
+Deno.test("cli fmt --fix materializes a marked missing semicolon", async () => {
   const dir = await Deno.makeTempDir();
   const input = `${dir}/main.wm`;
   await Deno.writeTextFile(input, 'let main=()=>print "hello world"');
@@ -254,7 +254,7 @@ Deno.test("cli fmt --fix materializes marked missing braces and semicolon", asyn
 
   assertEquals(first, { code: 0, stdout: "", stderr: "" });
   assertEquals(second, { code: 0, stdout: "", stderr: "" });
-  assertEquals(formatted, 'let main = () => {\n  print "hello world"\n};');
+  assertEquals(formatted, 'let main = () => print "hello world";');
   assertEquals(await Deno.readTextFile(input), formatted);
 });
 

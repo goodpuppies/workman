@@ -373,7 +373,7 @@ Deno.test("compiler v2 mode lowers typed lambdas through a structurally missing 
   });
 
   expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "main", {
-    type: "String -> Void",
+    type: "String -> Void!",
     vars: 0,
   });
 });

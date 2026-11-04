@@ -66,7 +66,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "doubled", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "chained", { type: "Result<Number, String>", vars: 0 });
   expectBinding(result.env, "fallback", { type: "Number", vars: 0 });
-  expectBinding(result.env, "debugged", { type: "Number", vars: 0 });
+  expectBinding(result.env, "debugged", { type: "Number!", vars: 0 });
   expectBinding(result.env, "opt", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "plain", { type: "Number", vars: 0 });
   expectBinding(result.env, "listMapped", { type: "List<Number>", vars: 0 });
@@ -75,25 +75,25 @@ Deno.test("Result and Option combinators infer generically", async () => {
   expectBinding(result.env, "missingListItem", { type: "Option<Number>", vars: 0 });
   expectBinding(result.env, "filtered", { type: "List<Number>", vars: 0 });
   expectBinding(result.env, "reversed", { type: "List<Number>", vars: 0 });
-  expectBinding(result.env, "traversed", { type: "Result<List<Number>, 'a>", vars: 0 });
+  expectBinding(result.env, "traversed", { type: "Result<List<Number>, 'a!>!", vars: 0 });
   expectBinding(result.env, "collectedResults", { type: "Result<List<Number>, 'a>", vars: 0 });
   expectBinding(result.env, "collectedOptions", { type: "Option<List<Number>>", vars: 0 });
   expectBinding(result.env, "traversedArray", {
-    type: "Result<Js.Array<Number>, Js.Error>",
+    type: "Result<Js.Array<Number>, Js.Error!>!",
     vars: 0,
   });
-  expectBinding(result.env, "task", { type: "Task<Number, String>", vars: 0 });
-  expectBinding(result.env, "constructed", { type: "Task<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "retriedTask", { type: "Task<Number, Number>", vars: 0 });
-  expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "racedTask", { type: "Task<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "collectedTasks", { type: "Task<List<Number>, 'a>", vars: 0 });
+  expectBinding(result.env, "task", { type: "Task<Number, String>!", vars: 0 });
+  expectBinding(result.env, "constructed", { type: "Task<Number, 'a>!", vars: 0 });
+  expectBinding(result.env, "retriedTask", { type: "Task<Number, Number>!", vars: 0 });
+  expectBinding(result.env, "pairedTask", { type: "Task<Number, 'a>!", vars: 0 });
+  expectBinding(result.env, "racedTask", { type: "Task<Number, 'a>!", vars: 0 });
+  expectBinding(result.env, "collectedTasks", { type: "Task<List<Number>, 'a>!", vars: 0 });
   expectBinding(result.env, "taskItems", {
-    type: "Task<List<Number>, 'a>",
+    type: "Task<List<Number>, 'a>!",
     vars: 0,
   });
   expectBinding(result.env, "taskArrayItems", {
-    type: "Task<Js.Array<Number>, String>",
+    type: "Task<Js.Array<Number>, String>!",
     vars: 0,
   });
   expectBinding(result.env, "allResults", {
@@ -105,7 +105,7 @@ Deno.test("Result and Option combinators infer generically", async () => {
     vars: 0,
   });
   expectBinding(result.env, "genericTasks", {
-    type: "Task<List<Number>, 'a>",
+    type: "Task<List<Number>, 'a>!",
     vars: 0,
   });
   assertEquals(result.structure.strEnv.get("Option")?.valEnv.get("map")?.imported, true);
@@ -236,14 +236,14 @@ Deno.test("Monad.via composes over Task.via", async () => {
   `);
 
   expectBinding(result.env, "fetchUser", {
-    type: "Task<String, 'a> -> Task<User, 'a>",
+    type: "(Task<String, 'a> -> Task<User, 'a>!)!",
     vars: 0,
   });
   expectBinding(result.env, "getDisplayName", {
-    type: "Task<User, 'a> -> Task<String, 'a>",
+    type: "(Task<User, 'a> -> Task<String, 'a>!)!",
     vars: 0,
   });
-  expectBinding(result.env, "greeting", { type: "Task<String, 'a>", vars: 0 });
+  expectBinding(result.env, "greeting", { type: "Task<String, 'a>!", vars: 0 });
 });
 
 Deno.test("Monad.via composes over Result.via", async () => {
@@ -280,7 +280,7 @@ Deno.test("carrier viaError injects native errors into one application error", a
     let result = Ok(1) :> requirePositive;
   `);
 
-  expectBinding(result.env, "task", { type: "Task<String, AppError>", vars: 0 });
+  expectBinding(result.env, "task", { type: "Task<String, AppError>!", vars: 0 });
   expectBinding(result.env, "result", { type: "Result<Number, AppError>", vars: 0 });
 });
 
@@ -299,8 +299,8 @@ Deno.test("Monad map adapters compose through explicit carrier namespaces", asyn
       :> Monad.mapErr Result DomainFailure;
   `);
 
-  expectBinding(result.env, "taskValue", { type: "Task<Number, 'a>", vars: 0 });
-  expectBinding(result.env, "taskFailure", { type: "Task<Number, AppError>", vars: 0 });
+  expectBinding(result.env, "taskValue", { type: "Task<Number, 'a>!", vars: 0 });
+  expectBinding(result.env, "taskFailure", { type: "Task<Number, AppError>!", vars: 0 });
   expectBinding(result.env, "resultValue", { type: "Result<String, 'a>", vars: 0 });
   expectBinding(result.env, "resultFailure", { type: "Result<Number, AppError>", vars: 0 });
 });
@@ -325,8 +325,8 @@ Deno.test("carrier records instantiate independently across viaError uses", asyn
     let validated: Task<String, NameError> = Task.succeed("abc") :> validate;
   `);
 
-  expectBinding(result.env, "fetched", { type: "Task<String, FetchError>", vars: 0 });
-  expectBinding(result.env, "validated", { type: "Task<String, NameError>", vars: 0 });
+  expectBinding(result.env, "fetched", { type: "Task<String, FetchError>!", vars: 0 });
+  expectBinding(result.env, "validated", { type: "Task<String, NameError>!", vars: 0 });
 });
 
 Deno.test("carrier viaError evaluates the injected error", async () => {
@@ -760,11 +760,11 @@ Deno.test("lifted Task tuple syntax sequences task values into one tuple task", 
   `);
 
   expectBinding(result.env, "render", {
-    type: "Task<(String, String), 'a> -> Task<String, 'a>",
+    type: "(Task<(String, String), 'a> -> Task<String, 'a>!)!",
     vars: 0,
   });
-  expectBinding(result.env, "tupled", { type: "Task<(String, String), 'a>", vars: 0 });
-  expectBinding(result.env, "page", { type: "Task<String, 'a>", vars: 0 });
+  expectBinding(result.env, "tupled", { type: "Task<(String, String), 'a>!", vars: 0 });
+  expectBinding(result.env, "page", { type: "Task<String, 'a>!", vars: 0 });
 });
 
 Deno.test("lifted Task tuple syntax evaluates through Task.andThen and Task.map", async () => {

@@ -755,7 +755,7 @@ Deno.test("candidate checks retain JS representation requirements on projected r
     let emit = (record) => { log(record.value) };
     let used = emit(TextValue("text"));
   `);
-  expectBinding(result.env, "emit", { type: "TextValue -> Void", vars: 0 });
+  expectBinding(result.env, "emit", { type: "TextValue -> Void!", vars: 0 });
   assertEquals(result.warnings, []);
 });
 
