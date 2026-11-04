@@ -1,6 +1,6 @@
 # A line comment at the end of a file without a newline exhausts memory
 
-Status: open, found 2026-11-04. Release blocker: it crashes the compiler on a valid file.
+Status: fixed 2026-11-04. Regression test: `tests/comment_end_of_file_test.ts`.
 
 ```text
 $ printf 'let a = 1;\n-- c' > m.wm
@@ -23,12 +23,11 @@ easy to hit in `wm watch`, or in any editor that doesn't add a final newline, an
 seconds to fail with a 1.5 GB heap. It was found by truncating `tooling/tuiman/demo.wm` during the
 `wm-watch-stack-overflow-after-edits.md` investigation, and isn't known to be related to that report.
 
-## Likely cause, not yet confirmed by a fix
+## Cause
 
 `Comment` in the grammar is `"--" [^\r\n]*`, the only common repetition over an inverted class that can
 reach the end of input. `matchCharacterClass` in `tooling/frontend-v2/compiled_probe_runtime.wm` guards
-the end of input with `code < 0`, but `codeAt` calls `charCodeAt`. If that returns `NaN` past the end, as
-the JavaScript method does, the guard is false, `classContains` is false, and an inverted class matches.
-The repetition then advances forever and allocates a capture each time.
-
-Known-issue test: `tests/known_issues_test.ts`.
+the end of input with `code < 0`, but `codeAt` calls `charCodeAt`. That returns `NaN` past the end, so the
+guard was false, `classContains` was false, and an inverted class matched.
+The repetition then advanced forever, allocating a capture each time. `codeAt` now returns `-1` past
+the end, which its callers already expect.

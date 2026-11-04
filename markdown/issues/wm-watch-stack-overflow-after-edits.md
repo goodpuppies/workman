@@ -22,7 +22,7 @@ None of these overflowed:
 - 120 rebuilds each of several programs, cycling through valid edits, unfinished lambdas, type errors,
   unknown names and truncated files, with `loadModuleGraph` in recovery mode as `watch` uses it. The
   `tooling/tuiman/demo.wm` run stopped early at an unrelated crash, see
-  `comment-at-end-of-file-without-newline-exhausts-memory.md`.
+  `FIXED-comment-at-end-of-file-without-newline-exhausts-memory.md`.
 - 54 `runFile` calls in one process over 9 variants of `scratch3.wm`, including recursion 300,000 deep.
   Each variant gave the same exit code in every round and in a fresh process.
 - Generated code for `examples/webhook.wm` is byte-identical between a fresh compiler and one that has

@@ -751,7 +751,11 @@ return Result.getOr([__ffi___receiver_primitive_string_length_length_0_38(text_3
 __wm_fail("Match", "pattern match failure in function");
 };
 const codeAt_43__wm_d2 = (source_41, offset_42) => {
+if ((offset_42 < textLength_40(source_41))) {
 return charCodeAt_36__wm_d2(source_41, offset_42);
+} else {
+return __wm_op_sub(1);
+}
 };
 const codeAt_43 = (__arg) => {
 if (__wm_is_tuple(__arg) && __arg.length === 2) return codeAt_43__wm_d2(__arg[0], __arg[1]);

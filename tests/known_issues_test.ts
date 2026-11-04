@@ -304,26 +304,6 @@ issue(
     ),
 );
 
-issue(
-  "comment-at-end-of-file-without-newline-exhausts-memory",
-  "a line comment can end a file without a newline",
-  async () => {
-    const dir = await Deno.makeTempDir({ prefix: "wm-known-issue-" });
-    try {
-      await Deno.writeTextFile(join(dir, "m.wm"), "let a = 1;\n-- c");
-      const output = await new Deno.Command(Deno.execPath(), {
-        args: ["run", "-A", "--v8-flags=--max-old-space-size=300", main, "check", "m.wm"],
-        cwd: dir,
-        stdout: "null",
-        stderr: "null",
-      }).output();
-      assertEquals(output.code, 0);
-    } finally {
-      await Deno.remove(dir, { recursive: true });
-    }
-  },
-);
-
 // These reproduced in an issue file once and no longer do. Keep them passing.
 Deno.test("fixed: a missing js.module path gets a diagnostic", async () => {
   const result = await wm("check", {

@@ -33,8 +33,10 @@ let textLength = (text: String) => {
   text :> .length :> Result.getOr(0)
 };
 
+-- JavaScript's charCodeAt gives NaN past the end, which compares false against everything, so a negated
+-- character class would keep matching forever.
 let codeAt = (source: String, offset: Number) => {
-  charCodeAt(source, offset)
+  if (offset < textLength(source)) { charCodeAt(source, offset) } else { -1 }
 };
 
 let failurePriority = (rule: String) => {

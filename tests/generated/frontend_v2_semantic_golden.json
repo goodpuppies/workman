@@ -121,7 +121,7 @@
     "examples/wmslang_window/src/sdl_window.wm": "2bdabc7d0efa9f728ba379efd0e4c3dab372bc979eac98bbd63993540e18b180",
     "examples/wmslang_window/src/warped_noise_shader.wm": "4b107f8d11f4805ba0bbf9081e4005546fa1340ce30947f23c50869de1f31c10",
     "examples/wmslang_window/src/webgpu_present.wm": "1d6be496c978ef4790c231af06d864609824a7389bb68a828a8bb27974bac6fb",
-    "tooling/frontend-v2/compiled_probe_runtime.wm": "ebaf24d5ab22a5c8daf1510f9bb537847e963466f6583506e406c354d5ae8550",
+    "tooling/frontend-v2/compiled_probe_runtime.wm": "e98bee57e2f7b8ac5f8c242350697116ffa8b3d26bf011fcaccbd3fff6ded695",
     "tooling/frontend-v2/compiler_frontend.wm": "4db48d5d23e55402af4d0fa0e94976661ec002a5d973908cf309bd36b4957574",
     "tooling/frontend-v2/generated/compiled_probe_dispatch.wm": "1289d123c1877ccbdabf9615300f8b61fe6c0cdc7696f06a18b5b8e76f557a9b",
     "tooling/frontend-v2/generated/compiled_probe_rules_00.wm": "806f64380e18390e32236ba5f7bccad78477403a40ce9b5bcfc35fd03e575ef8",
