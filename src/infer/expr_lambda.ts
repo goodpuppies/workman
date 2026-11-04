@@ -1,10 +1,11 @@
-import { preserveTaint } from "../taint.ts";
+import { openInferredCallbacks, preserveTaint } from "../taint.ts";
 import type { Expr } from "../ast.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import { isGpuLambda } from "../directives.ts";
 import {
   addGpuConstraint,
   fn,
+  fresh,
   prune,
   quoteType,
   substituteTypeVars,
@@ -205,8 +206,12 @@ export function inferLambdaTy(
       },
     );
     if (dialect.domain !== "gpu") {
-      signatureBody = replaceParamOccurrences(annotation.type, replacements);
+      // The body has the annotation's shape now and keeps the positions a caller's `!` reaches.
+      signatureBody = replaceParamOccurrences(body, replacements);
     }
+  }
+  if (dialect.domain !== "gpu") {
+    for (const param of signatureParams) openInferredCallbacks(param, true, fresh);
   }
   const t = fn(
     [callArg(signatureParams)],

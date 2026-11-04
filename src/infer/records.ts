@@ -1,5 +1,6 @@
 import { sequenceType } from "../taint.ts";
 import type { Expr, LongId, RecordExprSpread, TypeExpr } from "../ast.ts";
+import { addRecordPart, type RecordInputs } from "./taint.ts";
 import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostic_model.ts";
 import {
@@ -175,7 +176,9 @@ export function inferRecordExpr(
       spreads.length > 0,
     );
   }
+  const inputs: RecordInputs = { evaluated: [], settled: [] };
   for (const { spread, type } of inferredSpreads) {
+    addRecordPart(inputs, spread.value, type);
     constrainRecord(
       type,
       result,
@@ -197,8 +200,10 @@ export function inferRecordExpr(
         expectedField.type,
       );
     }
+    const value = inferValue(field.value);
+    addRecordPart(inputs, field.value, value, expectedField.type);
     constrainRecord(
-      inferValue(field.value),
+      value,
       expectedField.type,
       field.value,
       "InferRecord.FieldValue",
@@ -208,7 +213,7 @@ export function inferRecordExpr(
       "declared field",
     );
   }
-  return result;
+  return sequenceType(inputs.evaluated, result, inputs.settled);
 }
 
 function explicitRecord(

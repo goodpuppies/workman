@@ -1,28 +1,33 @@
 # Taint as a bit on the type
 
 This replaces the symbolic summaries. No taint terms, summaries or formulas remain. `!` is a bit on
-the type, and HM's own variables carry whatever is still unresolved. Nothing here is committed.
+the type, and HM's own variables carry whatever is still unresolved.
 
 ## Rules
 
-- `unify(T, T!)` is `T!`. Concrete nodes are immutable, so `unify` returns the join and replaces what
-  a bound variable or view holds. Bound variables can therefore be replaced again, only by a more
-  tainted version of the same type.
+- `unify(T, T!)` is `T!`. Concrete nodes are immutable, so `unify` returns the join and replaces
+  what a bound variable or view holds. Bound variables can therefore be replaced again, only by a
+  more tainted version of the same type.
 - An outer `!` means producing the value crossed an effect. Only what ran before a value adds one; a
   value's own contents do not. `{ eff(); [1, eff()] }` is `List<Number!>!`, `{ [1, eff()] }` is
   `List<Number!>`, and this holds at call sites as well as in signatures.
 - `if` and `match` count only their condition or scrutinee. Their results meet in one variable, as
   `if` is a derived form of `match`, so unification joins the branches.
-- A `match` arm's bindings keep their own positions, so a generic `map` and the inlined `match` agree.
-  `let` destructuring has no enclosing `match` and passes along a known `!`.
-- A concrete function field marks the constructed value: `H(eff)` is `H!`. Generic fields record it in
-  their type argument: `Some(eff)` is `Option<Void -> Number!>`.
+- A `match` arm's bindings keep their own positions, so a generic `map` and the inlined `match`
+  agree. `let` destructuring has no enclosing `match` and passes along a known `!`.
+- A concrete field marks the constructed value: `Box(eff())` is `Box!` and `H(eff)` is `H!`. Generic
+  fields record it in their type argument: `Some(eff)` is `Option<Void -> Number!>`. Record literals
+  follow the same rule.
+- A callback parameter's result stays open per instance whatever it meets in the body, so
+  `(f) => { if (c) { f() } else { 0 } }` and `(c, f) => { if (c) { clean } else { f } }` both pass a
+  caller's `!` through. A return annotation keeps the body's positions for the same reason.
 
 ## Representation (`src/taint.ts`)
 
 A sequence reads its members when built. A known `!` or a clean result leaves no link. A member held
 open by an HM variable leaves a link, stored as a flat list of those variables on a view, so nested
-sequences never chain. Instantiation maps links like any variable and drops ones that resolved clean.
+sequences never chain. Instantiation maps links like any variable and drops ones that resolved
+clean.
 
 Variables and patterns add no links. Their binder already linked them, and a call covers its
 arguments. A callback's concrete annotated result is an open position: a variable bound to the
@@ -36,23 +41,23 @@ later replacement.
 Median of three process medians, seven samples after three warm-ups, with process order reversed on
 alternate rounds. Times in ms. "Closed skip" is the baseline plus the `ftvEnv` change below.
 
-| Workload                     | Baseline | Closed skip | Symbolic |    Now | Now vs baseline |
+| Workload                     | Baseline | Closed skip | Symbolic | Now    | Now vs baseline |
 | ---------------------------- | -------: | ----------: | -------: | ------ | --------------: |
-| `scalar-250`                 |    17.29 |       11.59 |    24.69 |  13.36 |            -23% |
-| `scalar-250-with-snapshots`  |    28.77 |       23.30 |    53.37 |  29.57 |             +3% |
+| `scalar-250`                 |    17.29 |       11.59 |    24.69 | 13.36  |            -23% |
+| `scalar-250-with-snapshots`  |    28.77 |       23.30 |    53.37 | 29.57  |             +3% |
 | `scalar-250-check-source`    |   155.33 |      152.14 |   202.86 | 163.03 |             +5% |
-| `polymorphic-250`            |    11.30 |       11.67 |    15.04 |  13.06 |            +16% |
-| `higher-order-100`           |    17.21 |       15.36 |    27.61 |  18.28 |             +6% |
-| `nested-data-150`            |    18.71 |       16.96 |    26.81 |  20.19 |             +8% |
-| `latent-functions-150`       |    17.71 |       13.85 |    25.66 |  15.30 |            -14% |
+| `polymorphic-250`            |    11.30 |       11.67 |    15.04 | 13.06  |            +16% |
+| `higher-order-100`           |    17.21 |       15.36 |    27.61 | 18.28  |             +6% |
+| `nested-data-150`            |    18.71 |       16.96 |    26.81 | 20.19  |             +8% |
+| `latent-functions-150`       |    17.71 |       13.85 |    25.66 | 15.30  |            -14% |
 | `stdlib-wave`                |   154.97 |      152.27 |   255.89 | 173.70 |            +12% |
 | `stdlib-wave-with-snapshots` |   170.28 |      165.35 |   285.87 | 193.67 |            +14% |
 
 "Now" includes the closed skip, which is not a taint change and would speed up the baseline as well.
 Against the closed-skip column, the overhead is +14% on `stdlib-wave` and +15% on `scalar-250`.
 
-`ftvEnv` re-walked every scheme in the environment at each `let`. A scheme with no free variables can
-never gain one, so it is now skipped permanently.
+`ftvEnv` re-walked every scheme in the environment at each `let`. A scheme with no free variables
+can never gain one, so it is now skipped permanently.
 
 ## What moved the numbers
 
@@ -70,9 +75,9 @@ functions appeared to grow. Ablation, timing a copy with one piece disabled, was
 | Concrete types carry only `tainted`                  | about -7 ms             |
 
 Reading absent properties at megamorphic sites was a real cost, which is why the fields are set on
-creation. Removing closures and temporary arrays from `carries`, `open` and `taintExpression` made no
-measurable difference. The same was true of the iterative `prune` and reordered `copyType` on the full
-build, although those two functions were the measured cost when taint was inert.
+creation. Removing closures and temporary arrays from `carries`, `open` and `taintExpression` made
+no measurable difference. The same was true of the iterative `prune` and reordered `copyType` on the
+full build, although those two functions were the measured cost when taint was inert.
 
 The last ablation, before slimming the fields, measured 177 ms with everything on, 167 ms with all
 taint operations off, and 154 ms for the closed-skip baseline. About half the remaining overhead is
@@ -108,3 +113,19 @@ Run a timing worker with:
 ```sh
 deno run -A scripts/profile_taint.ts --root=ROOT --samples=7 --warmup=3
 ```
+
+## Corrections after the first commit
+
+The first commit's "260 selected tests" left out `tests/compiler_*`. The suites that were left out
+had 88 tests whose expectations needed the correct `!`, so `main` had failures from `de73691` until
+they were updated. A wider corner-case probe then found these real losses of `!`, all now fixed with
+regressions:
+
+- A concrete data field dropped `!`: `Box(eff())` was `Box`, and matching on it gave a clean
+  `Number`.
+- Record literals, including those checked against an annotation, did not contribute at all.
+- A callback result that met a concrete type or an undefaulted literal in the body lost its link, so
+  `run(eff)` was `Number`.
+- A return annotation replaced the body's open positions.
+- The language server's renderer ignored `tainted` and showed no `!` anywhere.
+- A typed hole `?` counted as a panic and so as an effect.

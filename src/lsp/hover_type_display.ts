@@ -30,7 +30,8 @@ function renderSemanticTypeWithLimits(
   const variables = new Map<number, string>();
   let nextVariable = 0;
   const receivers = new Map<number, SemanticTypeId>();
-  const render = (currentId: SemanticTypeId, depth = 0): string => {
+  // `domain`: a parameter's own `!` is hidden, as a function's argument taint is in every display.
+  const render = (currentId: SemanticTypeId, depth = 0, domain = false): string => {
     const type = moduleInterface.semanticTypes[currentId];
     if (!type) return `?type#${currentId}`;
     if (type.shape.kind === "variable" && type.shape.fields?.length) {
@@ -41,10 +42,12 @@ function renderSemanticTypeWithLimits(
       type.shape.kind !== "variable" &&
       type.shape.kind !== "ffi" &&
       type.shape.kind !== "primitive"
-    ) return "…";
-    return renderSemanticShape(
+    ) return type.tainted && !domain ? "…!" : "…";
+    const text = renderSemanticShape(
       type.shape,
-      (child) => render(child, depth + 1),
+      (child) => render(child, depth + 1, domain),
+      (child) => render(child, depth + 1, true),
+      (child) => render(child, depth + 1, false),
       (child) => moduleInterface.semanticTypes[child]?.shape.kind === "function",
       (variable) => {
         const existing = variables.get(variable);
@@ -55,6 +58,11 @@ function renderSemanticTypeWithLimits(
       },
       limits?.maxItems,
     );
+    return !type.tainted || domain
+      ? text
+      : type.shape.kind === "function"
+      ? `(${text})!`
+      : `${text}!`;
   };
   const qualify = (rendered: string): string => {
     const requirements: string[] = [];
@@ -75,6 +83,7 @@ function renderSemanticTypeWithLimits(
   };
   const type = moduleInterface.semanticTypes[id];
   if (!type || !dropReceiver || type.shape.kind !== "function") return qualify(render(id));
+  const signature = (text: string) => qualify(type.tainted ? `(${text})!` : text);
   if (type.shape.params.length === 1) {
     const parameter = moduleInterface.semanticTypes[type.shape.params[0]]?.shape;
     if (parameter?.kind === "tuple") {
@@ -82,23 +91,25 @@ function renderSemanticTypeWithLimits(
       const domain = remaining.length === 0
         ? "Void"
         : remaining.length === 1
-        ? render(remaining[0])
-        : `(${remaining.map((item) => render(item)).join(", ")})`;
-      return qualify(`${domain} -> ${render(type.shape.result)}`);
+        ? render(remaining[0], 0, true)
+        : `(${remaining.map((item) => render(item, 0, true)).join(", ")})`;
+      return signature(`${domain} -> ${render(type.shape.result)}`);
     }
   }
   const remaining = type.shape.params.slice(1);
   const domain = remaining.length === 0
     ? "Void"
     : remaining.length === 1
-    ? render(remaining[0])
-    : `(${remaining.map((item) => render(item)).join(", ")})`;
-  return qualify(`${domain} -> ${render(type.shape.result)}`);
+    ? render(remaining[0], 0, true)
+    : `(${remaining.map((item) => render(item, 0, true)).join(", ")})`;
+  return signature(`${domain} -> ${render(type.shape.result)}`);
 }
 
 function renderSemanticShape(
   shape: SemanticTypeShape,
   render: (id: SemanticTypeId) => string,
+  renderParameter: (id: SemanticTypeId) => string,
+  renderResult: (id: SemanticTypeId) => string,
   isFunction: (id: SemanticTypeId) => boolean,
   variableName: (variable: number) => string,
   maxItems = Number.POSITIVE_INFINITY,
@@ -108,7 +119,10 @@ function renderSemanticShape(
     ...(items.length > maxItems ? ["…"] : []),
   ];
   const functionDomain = (params: readonly SemanticTypeId[]): string => {
-    const rendered = renderItems(params);
+    const rendered = [
+      ...params.slice(0, maxItems).map(renderParameter),
+      ...(params.length > maxItems ? ["…"] : []),
+    ];
     if (params.length === 0) return "Void";
     if (params.length > 1) return `(${rendered.join(", ")})`;
     return isFunction(params[0]) ? `(${rendered[0]})` : rendered[0];
@@ -121,7 +135,7 @@ function renderSemanticShape(
     case "primitive":
       return shape.name;
     case "function":
-      return `${functionDomain(shape.params)} -> ${render(shape.result)}`;
+      return `${functionDomain(shape.params)} -> ${renderResult(shape.result)}`;
     case "tuple":
       return `(${renderItems(shape.items).join(", ")})`;
     case "structural-record":

@@ -35,7 +35,7 @@ Deno.test("lsp hover v2 mode returns simple call callee types", async () => {
 
   assertEquals(
     hover?.contents.value,
-    "```wm\nprint\ntype: Number -> Void\ngeneral: 'a -> Void\n```",
+    "```wm\nprint\ntype: Number -> Void!\ngeneral: 'a -> Void!\n```",
   );
 });
 

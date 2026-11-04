@@ -1057,7 +1057,13 @@ function copyType(
       target = fresh(input.name);
       variables.set(input.id, target);
     }
-    if (!target) return input;
+    if (!target) {
+      // An undefaulted numeric callback result stays one type, with its own `!` at each use.
+      if (!input.linked || !input.numeric || !options.cells?.has(input.id)) return input;
+      target = openPosition(fresh(input.name), input);
+      variables.set(input.id, target);
+      return target;
+    }
     if (input.jsConstraint) addJsConstraint(target, input.jsConstraint);
     if (input.gpuConstraint) addGpuConstraint(target, input.gpuConstraint);
     if (input.equalityConstraint) addEqualityConstraint(target, input.equalityConstraint);

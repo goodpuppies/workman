@@ -88,8 +88,8 @@ Deno.test("compiler v2 mode typechecks simple calls", async () => {
   const source = "let logged = print(1);\nlet printed = print(true);";
   const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(result.env, "logged", { type: "Void", vars: 0 });
-  expectBinding(result.env, "printed", { type: "Void", vars: 0 });
+  expectBinding(result.env, "logged", { type: "Void!", vars: 0 });
+  expectBinding(result.env, "printed", { type: "Void!", vars: 0 });
 });
 
 Deno.test("compiler v2 treats question marks as contextually typed holes", async () => {
@@ -317,8 +317,8 @@ Deno.test("compiler v2 mode projects simple lambdas, blocks, and whitespace appl
   const source = 'let printer = (x) => { print x };\nlet main = () => { printer "ok" }';
   const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(result.env, "printer", { type: "'a -> Void", vars: 1 });
-  expectBinding(result.env, "main", { type: "Void -> Void", vars: 0 });
+  expectBinding(result.env, "printer", { type: "'a -> Void!", vars: 1 });
+  expectBinding(result.env, "main", { type: "Void -> Void!", vars: 0 });
 });
 
 Deno.test("compiler v2 checks lambda return annotations", async () => {
@@ -334,8 +334,8 @@ Deno.test("compiler v2 checks simple lambdas and whitespace application", async 
   const source = 'let printer = (x) => { print x };\nlet main = () => { printer "ok" };';
   const result = await checkSource(source, { frontend: "v2", frontendV2ModuleUrl });
 
-  expectBinding(result.env, "printer", { type: "'a -> Void", vars: 1 });
-  expectBinding(result.env, "main", { type: "Void -> Void", vars: 0 });
+  expectBinding(result.env, "printer", { type: "'a -> Void!", vars: 1 });
+  expectBinding(result.env, "main", { type: "Void -> Void!", vars: 0 });
 });
 
 Deno.test("compiler v2 mode calls an imported namespace function after virtual termination", async () => {
@@ -353,7 +353,7 @@ Deno.test("compiler v2 mode calls an imported namespace function after virtual t
   });
 
   expectBinding(analysis.results.get(moduleId("/main.wm"))!.env, "main", {
-    type: "Void -> Void",
+    type: "Void -> Void!",
     vars: 0,
   });
 });

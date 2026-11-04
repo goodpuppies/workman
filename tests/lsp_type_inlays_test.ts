@@ -294,3 +294,62 @@ function fullRange(source: string) {
     end: { line: lines.length - 1, character: lines.at(-1)!.length },
   };
 }
+
+Deno.test("type inlays show effect taint and keep it when a label is shortened", async () => {
+  const path = "/test/main.wm";
+  const source = [
+    'let eff = () => { print("x"); 1 };',
+    "let value = eff();",
+    "let run = (f) => { f() };",
+    "let inner = () => { [1, eff()] };",
+    "let outer = () => { eff(); [1, eff()] };",
+    'let long = () => { eff(); [(1, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")] };',
+  ].join("\n");
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+  );
+  const labels = hints.filter((hint) => hint.kind === 1 && hint.data.category !== "capture")
+    .map((hint) => [hint.position.line, hint.label]);
+  assertEquals(labels, [
+    [0, ": Number!"],
+    [1, ": Number!"],
+    [2, ": Void -> 'a"],
+    [2, ": 'a"],
+    [3, ": List<Number!>"],
+    [4, ": List<Number!>!"],
+    [5, ": List<(Number, Stri...!"],
+  ]);
+});
+
+Deno.test("a bare lambda parameter shows its result after the parameter's own type", async () => {
+  const path = "/test/main.wm";
+  const source = [
+    "let bare = x => x + 1;",
+    "let block = x => { x + 1 };",
+    "let generic = x => x;",
+    "let curried = x => y => x + y;",
+    "let parenthesized = (x) => x + 1;",
+    "let add = (a, b) => a + b;",
+    "let partial = add(1, _);",
+  ].join("\n");
+  const hints = await semanticInlayHints(
+    pathToFileUri(path),
+    fullRange(source),
+    new Map([[path, source]]),
+  );
+  const labels = hints.filter((hint) => hint.kind === 1 && hint.data.category !== "capture")
+    .map((hint) => [hint.position.line, hint.position.character, hint.label]);
+  const at = (line: number) => labels.filter((label) => label[0] === line).map((label) => label[2]);
+  assertEquals(at(0), [": Number", "-> Number"]);
+  assertEquals(labels.filter((label) => label[0] === 0).map((label) => label[1]), [
+    "let bare = x".length,
+    "let bare = x".length,
+  ]);
+  assertEquals(at(1), [": Number", "-> Number"]);
+  assertEquals(at(2), [": 'a", "-> 'a"]);
+  assertEquals(at(3).slice(0, 2), [": Number", "-> Number -> Number"]);
+  assertEquals(at(4), [": Number", ": Number"]);
+  assertEquals(at(6).includes("-> Number"), false);
+});

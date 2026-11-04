@@ -638,3 +638,98 @@ Deno.test("a concrete function field marks the value that holds it", async () =>
   assertEquals(types.recordClean, "Holder");
   assertEquals(types.generic, "Option<Void -> Number!>");
 });
+
+Deno.test("a concrete data field marks the value, and a generic one keeps the mark inside", async () => {
+  const types = await bindings(`
+    let eff = () => { print("x"); 1 };
+    let clean = () => 1;
+    type Box = | Box<Number>;
+    type Lst = | Lst<List<Number>>;
+    type Mix<T> = | Mix<T, Number>;
+    type Gen<T> = | Gen<List<T>>;
+    record P = { a: Number, b: String };
+    record G<T> = { v: T, n: Number };
+    record C = { f: Void -> Number };
+    record D<T> = { f: Void -> T };
+    let box = Box(eff());
+    let list = Lst([eff()]);
+    let mixConcrete = Mix(1, eff());
+    let mixGeneric = Mix(eff(), 1);
+    let gen = Gen([eff()]);
+    let record = P(eff(), "s");
+    let literal = .{ a = eff(), b = "s" };
+    let genericLiteral = .{ v = eff(), n = 1 };
+    let concreteLiteral: G<Number> = .{ v = 1, n = eff() };
+    let spread = .{ ..literal, b = "t" };
+    let functionField = .{ f = eff };
+    let cleanFunctionField = .{ f = clean };
+    let genericFunctionField: D<Number> = .{ f = eff };
+    let extracted = () => { match(Box(eff())) { Box(x) => { x } } };
+    let sibling = () => { let p = P(eff(), "s"); p.b };
+    let viaCallback = (g) => { Box(g()) };
+    let tainted = viaCallback(eff);
+    let untainted = viaCallback(clean);
+  `);
+  assertEquals(types.box, "Box!");
+  assertEquals(types.list, "Lst!");
+  assertEquals(types.mixConcrete, "Mix<Number>!");
+  assertEquals(types.mixGeneric, "Mix<Number!>");
+  assertEquals(types.gen, "Gen<Number!>");
+  assertEquals(types.record, "P!");
+  assertEquals(types.literal, "P!");
+  assertEquals(types.genericLiteral, "G<Number!>");
+  assertEquals(types.concreteLiteral, "G<Number>!");
+  assertEquals(types.spread, "P!");
+  assertEquals(types.functionField, "C!");
+  assertEquals(types.cleanFunctionField, "C");
+  assertEquals(types.genericFunctionField, "D<Number>!");
+  assertEquals(types.extracted, "Void -> Number!");
+  assertEquals(types.sibling, "Void -> String!");
+  assertEquals(types.tainted, "Box!");
+  assertEquals(types.untainted, "Box");
+});
+
+Deno.test("a callback result stays open after meeting a concrete type in the body", async () => {
+  const types = await bindings(`
+    let eff = () => { print("x"); 1 };
+    let clean = () => 1;
+    type Opt<T> = | None | Some<T>;
+    let literal = (f) => { if (true) { f() } else { 0 } };
+    let a = literal(eff);
+    let b = literal(clean);
+    let nested = (o) => { match(o) { Some(f) => { f() }, None => { 0 } } };
+    let c = nested(Some(eff));
+    let d = nested(Some(clean));
+    let joined = (x, f) => { if (x) { clean } else { f } };
+    let e = joined(true, eff)();
+    let g = joined(true, clean)();
+  `);
+  assertEquals(types.a, "Number!");
+  assertEquals(types.b, "Number");
+  assertEquals(types.c, "Number!");
+  assertEquals(types.d, "Number");
+  assertEquals(types.e, "Number!");
+  assertEquals(types.g, "Number");
+});
+
+Deno.test("a return annotation keeps the positions a caller's taint reaches", async () => {
+  const types = await bindings(`
+    let eff = () => { print("x"); 1 };
+    let clean = () => 1;
+    let value = (f: Void -> Number): Number => { f() };
+    let a = value(eff);
+    let b = value(clean);
+    let same = (f: Void -> Number): (Void -> Number) => { f };
+    let c = same(eff)();
+    let d = same(clean)();
+    let list = (f: Void -> Number): List<Number> => { [f()] };
+    let e = list(eff);
+    let g = list(clean);
+  `);
+  assertEquals(types.a, "Number!");
+  assertEquals(types.b, "Number");
+  assertEquals(types.c, "Number!");
+  assertEquals(types.d, "Number");
+  assertEquals(types.e, "List<Number!>");
+  assertEquals(types.g, "List<Number>");
+});

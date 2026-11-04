@@ -45,10 +45,10 @@ Deno.test("supports JSON literals as explicit JS values", async () => {
   `);
 
   expectBinding(result.env, "spawn", {
-    type: "(String, Js.Value, Js.Value) -> Js.Value",
+    type: "(String, Js.Value, Js.Value) -> Js.Value!",
     vars: 0,
   });
-  expectBinding(result.env, "proc", { type: "Js.Value", vars: 0 });
+  expectBinding(result.env, "proc", { type: "Js.Value!", vars: 0 });
 });
 
 Deno.test("JSON literal variables can settle to primitive types", async () => {
@@ -60,8 +60,8 @@ Deno.test("JSON literal variables can settle to primitive types", async () => {
     let value = response("ok", 200);
   `);
 
-  expectBinding(result.env, "response", { type: "(String, Number) -> Response", vars: 0 });
-  expectBinding(result.env, "value", { type: "Response", vars: 0 });
+  expectBinding(result.env, "response", { type: "(String, Number) -> Response!", vars: 0 });
+  expectBinding(result.env, "value", { type: "Response!", vars: 0 });
 });
 
 Deno.test("dynamic JS receiver callbacks adapt Workman lambdas", async () => {
@@ -137,10 +137,10 @@ Deno.test("constrained dynamic receiver calls materialize with inferred result t
   `);
 
   expectBinding(result.env, "pollOnce", {
-    type: "(Js.Object, Js.Object) -> Bool",
+    type: "(Js.Object, Js.Object) -> Bool!",
     vars: 0,
   });
-  expectBinding(result.env, "checked", { type: "Bool", vars: 0 });
+  expectBinding(result.env, "checked", { type: "Bool!", vars: 0 });
 });
 
 Deno.test("deep reflected generic calls expose concrete result members", async () => {
@@ -157,7 +157,7 @@ Deno.test("deep reflected generic calls expose concrete result members", async (
   `;
   const result = await checkSource(source);
 
-  expectBinding(result.env, "use", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "use", { type: "Result<Number, Js.Error>!", vars: 0 });
 
   const js = await compile(source);
   if (js.includes("__dynamic.symbols.SDL_PollEvent")) {
@@ -292,7 +292,7 @@ Deno.test("Json.assert is an explicit dynamic shape assertion", async () => {
     let text = commit.id ++ ": " ++ commit.message;
   `);
 
-  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  expectBinding(result.env, "text", { type: "String!", vars: 0 });
 });
 
 Deno.test("dynamic JS array receiver annotations require an explicit assertion", async () => {
@@ -358,7 +358,7 @@ Deno.test("typed JS array at constrains unannotated helper receivers", async () 
     let value = firstValue(Js.Array.fromList([WttrValue("x")]), "fallback");
   `);
   expectBinding(result.env, "firstValue", {
-    type: "(Js.Array<WttrValue>, String) -> String",
+    type: "(Js.Array<WttrValue>, String) -> String!",
     vars: 0,
   });
 });
@@ -381,7 +381,7 @@ Deno.test("typed JS array at works through record field receivers", async () => 
     };
     let label = firstLabel(Payload(Js.Array.fromList([Item("x")])));
   `);
-  expectBinding(result.env, "firstLabel", { type: "Payload -> String", vars: 0 });
+  expectBinding(result.env, "firstLabel", { type: "Payload -> String!", vars: 0 });
 });
 
 Deno.test("primitive JS methods constrain unannotated helper receivers", async () => {
@@ -402,9 +402,9 @@ Deno.test("primitive JS methods constrain unannotated helper receivers", async (
       text :> .repeat(count) :> try
     };
   `);
-  expectBinding(result.env, "numberText", { type: "Number -> String", vars: 0 });
-  expectBinding(result.env, "paddedRight", { type: "(String, Number) -> String", vars: 0 });
-  expectBinding(result.env, "repeated", { type: "(String, Number) -> String", vars: 0 });
+  expectBinding(result.env, "numberText", { type: "Number -> String!", vars: 0 });
+  expectBinding(result.env, "paddedRight", { type: "(String, Number) -> String!", vars: 0 });
+  expectBinding(result.env, "repeated", { type: "(String, Number) -> String!", vars: 0 });
 });
 
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
@@ -430,10 +430,10 @@ Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", 
     let text = save(cache);
     let annotatedText = saveAnnotated(cache);
   `);
-  expectBinding(result.env, "save", { type: "Js.Dict<Entry> -> String", vars: 0 });
-  expectBinding(result.env, "saveAnnotated", { type: "Js.Dict<Entry> -> String", vars: 0 });
-  expectBinding(result.env, "text", { type: "String", vars: 0 });
-  expectBinding(result.env, "annotatedText", { type: "String", vars: 0 });
+  expectBinding(result.env, "save", { type: "Js.Dict<Entry> -> String!", vars: 0 });
+  expectBinding(result.env, "saveAnnotated", { type: "Js.Dict<Entry> -> String!", vars: 0 });
+  expectBinding(result.env, "text", { type: "String!", vars: 0 });
+  expectBinding(result.env, "annotatedText", { type: "String!", vars: 0 });
 });
 
 Deno.test("Workman ADT values are still rejected through JS boundary helpers", async () => {
@@ -488,9 +488,9 @@ Deno.test("Js.Dict supports typed string-key access through Dict.get and Dict.se
     let stored = Dict.set(cache, "oulu", .{ fetchedAt = 1, city = "Oulu" });
     let text = JSON.stringify(cache);
   `);
-  expectBinding(result.env, "entry", { type: "Option<CacheEntry>", vars: 0 });
-  expectBinding(result.env, "stored", { type: "Void", vars: 0 });
-  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  expectBinding(result.env, "entry", { type: "Option<CacheEntry!>!", vars: 0 });
+  expectBinding(result.env, "stored", { type: "Void!", vars: 0 });
+  expectBinding(result.env, "text", { type: "String!", vars: 0 });
 });
 
 Deno.test("Response.json() result feeds a following then", async () => {
@@ -519,7 +519,7 @@ Deno.test("Response.json() result feeds a following then", async () => {
     };
   `);
   expectBinding(result.env, "fetchJson", {
-    type: "String -> Task<Js.Object, Js.Error>",
+    type: "String -> Task<Js.Object!, Js.Error>!",
     vars: 0,
   });
 });
@@ -543,10 +543,10 @@ Deno.test("typed JS array filter and includes infer with string callbacks", asyn
     let fahrenheit = flags(args) :> .includes("--f") :> try;
   `);
   expectBinding(result.env, "flags", {
-    type: "Js.Array<String> -> Js.Array<String>",
+    type: "Js.Array<String> -> Js.Array<String>!",
     vars: 0,
   });
-  expectBinding(result.env, "fahrenheit", { type: "Bool", vars: 0 });
+  expectBinding(result.env, "fahrenheit", { type: "Bool!", vars: 0 });
 });
 
 Deno.test("typed JS array receiver results infer through map and join", async () => {
@@ -571,8 +571,8 @@ Deno.test("typed JS array receiver results infer through map and join", async ()
     let text = commitLines :> .join("\\n") :> try;
   `);
 
-  expectBinding(result.env, "commitLines", { type: "Js.Array<String>", vars: 0 });
-  expectBinding(result.env, "text", { type: "String", vars: 0 });
+  expectBinding(result.env, "commitLines", { type: "Js.Array<String>!", vars: 0 });
+  expectBinding(result.env, "text", { type: "String!", vars: 0 });
 });
 
 Deno.test("Array.from works with explicit typed array element annotations", async () => {
@@ -598,7 +598,7 @@ Deno.test("Array.from works with explicit typed array element annotations", asyn
   const results = await checkVirtual("/test/main.wm", new Map([["/test/main.wm", source]]));
   const result = results.get("/test/main.wm")!;
 
-  expectBinding(result.env, "makeHex", { type: "Void -> String", vars: 0 });
+  expectBinding(result.env, "makeHex", { type: "Void -> String!", vars: 0 });
 });
 
 Deno.test("Array.from monomorphizes a reflected iterable without a typed shim", async () => {
@@ -617,14 +617,14 @@ Deno.test("Array.from monomorphizes a reflected iterable without a typed shim", 
   `);
 
   expectBinding(result.env, "iterator", {
-    type: "IterableIterator<FfiEntry, Js.Value, Js.Value>",
+    type: "IterableIterator<FfiEntry, Js.Value, Js.Value>!",
     vars: 0,
   });
   expectBinding(result.env, "entries", {
-    type: "Result<Js.Array<FfiEntry>, Js.Error>",
+    type: "Result<Js.Array<FfiEntry>, Js.Error>!",
     vars: 0,
   });
-  expectBinding(result.env, "path", { type: "String", vars: 0 });
+  expectBinding(result.env, "path", { type: "String!", vars: 0 });
 });
 
 Deno.test("match-bound Workman record fields do not become JS FFI projections", async () => {

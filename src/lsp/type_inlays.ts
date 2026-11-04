@@ -93,7 +93,9 @@ export async function semanticInlayHints(
         const position = offsetToLineColFromStarts(hint.span.end, starts);
         const full = renderSemanticType(context.moduleInterface, typeId);
         const compact = truncateInlay(
-          `: ${renderSemanticTypeCompact(context.moduleInterface, typeId)}`,
+          `${hint.arrow ? "->" : ":"} ${
+            renderSemanticTypeCompact(context.moduleInterface, typeId)
+          }`,
           hint.kind === "result"
             ? MAX_LAMBDA_RESULT_INLAY_LABEL_LENGTH
             : MAX_TYPE_INLAY_LABEL_LENGTH,
@@ -191,7 +193,9 @@ function inferredHintTypeId(
 
 function truncateInlay(label: string, maximumLength: number): string {
   if (label.length <= maximumLength) return label;
-  return `${label.slice(0, maximumLength - 3).trimEnd()}...`;
+  // The outer `!` is the last character, and the part of a long type most worth keeping.
+  const mark = label.endsWith("!") ? "!" : "";
+  return `${label.slice(0, maximumLength - 3 - mark.length).trimEnd()}...${mark}`;
 }
 
 function positionOffset(position: LspPosition, starts: number[], sourceLength: number): number {

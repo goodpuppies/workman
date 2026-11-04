@@ -1,6 +1,12 @@
 import type { Expr } from "../ast.ts";
-import { concreteFieldResults, sequenceType, taintedType } from "../taint.ts";
-import type { Ty } from "../types.ts";
+import {
+  concreteFieldInputs,
+  concreteFieldResults,
+  outerInputs,
+  sequenceType,
+  taintedType,
+} from "../taint.ts";
+import { prune, type Ty } from "../types.ts";
 import type { InferContext } from "./context.ts";
 
 const NONE: Ty[] = [];
@@ -35,10 +41,39 @@ function inputs(expr: Expr): Expr[] | undefined {
   }
 }
 
+function constructed(args: Expr[], callee: Ty, result: Ty, context: InferContext): Ty {
+  const evaluated = concreteFieldResults(callee);
+  const signature = prune(callee);
+  if (signature.tag !== "fn") return sequenceType(evaluated, result);
+  const only = signature.params.length === 1 ? prune(signature.params[0]) : undefined;
+  const fields = args.length > 1 && only?.tag === "tuple" ? only.items : signature.params;
+  let settled: Ty[] | undefined;
+  args.forEach((arg, index) => {
+    const type = context.types.get(arg);
+    if (!type || !fields[index] || LITERALS.has(arg.kind)) return;
+    // As for any input, a variable's binder already linked it.
+    concreteFieldInputs(fields[index], type, arg.kind === "Var" ? (settled ??= []) : evaluated);
+  });
+  return sequenceType(evaluated, result, settled);
+}
+
+/**
+ * What a record literal's evaluated parts contribute, as a constructor call's arguments would. Add a
+ * part before its field is unified, while a generic field is still an unbound variable.
+ */
+export type RecordInputs = { evaluated: Ty[]; settled: Ty[] };
+
+export function addRecordPart(inputs: RecordInputs, value: Expr, type: Ty, field?: Ty): void {
+  if (LITERALS.has(value.kind)) return;
+  const out = value.kind === "Var" ? inputs.settled : inputs.evaluated;
+  if (field) concreteFieldInputs(field, type, out);
+  else outerInputs(type, out);
+}
+
 export function taintExpression(expr: Expr, type: Ty, context: InferContext): Ty {
   if (context.dialect.domain === "gpu") return type;
   const tainted = expr.kind === "FfiGet" || expr.kind === "FfiCall" ||
-    expr.kind === "FfiBindingCall" || (expr.kind === "Panic" && !expr.recoveryHole);
+    expr.kind === "FfiBindingCall" || (expr.kind === "Panic" && !expr.hole);
   const result = tainted ? taintedType(type) : type;
   const children = inputs(expr);
   if (!children) return result;
@@ -46,7 +81,7 @@ export function taintExpression(expr: Expr, type: Ty, context: InferContext): Ty
     const status = context.env.get(expr.callee.name)?.status;
     if (status === "constructor" || status === "record-constructor") {
       const callee = context.types.get(expr.callee);
-      return callee ? sequenceType(concreteFieldResults(callee), result) : result;
+      return callee ? constructed(expr.args, callee, result, context) : result;
     }
   }
   let dependencies: Ty[] | undefined;

@@ -7,6 +7,7 @@ import type { Ty } from "./types.ts";
  * A sequence reads its members when built. Only a member still held open by an HM variable leaves a
  * link, and links are ordinary references that instantiation maps like any other variable.
  */
+const NONE: Ty[] = [];
 const bindable = (t: Ty) => t.tag === "var" || t.tag === "ffi";
 
 /** The last variable of a binding chain, which is HM's own union-find representative. */
@@ -269,7 +270,11 @@ export function preserveTaint(shape: Ty, original: Ty): Ty {
   if (shape === original) return shape;
   if (isTainted(original)) return taintedType(shape);
   const deps: Ty[] = [];
-  for (let c: Ty | undefined = original; c; c = next(c)) if (c.deps) deps.push(...c.deps);
+  for (let c: Ty | undefined = original; c; c = next(c)) {
+    if (c.deps) deps.push(...c.deps);
+    // The annotation's own node replaces a cell a caller's `!` would reach.
+    if (c.linked && bindable(c) && !deps.includes(c)) deps.push(c);
+  }
   return deps.length
     ? { tag: "view", value: shape, deps, tainted: undefined, linked: undefined }
     : shape;
@@ -314,6 +319,74 @@ export function concreteFieldResults(callee: Ty): Ty[] {
   while (f.tag === "view" || ((f.tag === "var" || f.tag === "ffi") && f.instance)) f = next(f)!;
   if (f.tag === "fn") f.params.forEach(visit);
   return out;
+}
+
+/**
+ * What a constructor argument contributes when its field has no type argument to hold it. A generic
+ * position keeps `!` in the value's type, so `Some(eff())` stays `Option<Number!>`, while a concrete
+ * one can only mark the value: `Box(eff())` is `Box!`.
+ */
+export function concreteFieldInputs(field: Ty, value: Ty, out: Ty[]): void {
+  if (field.tag === "var" || field.tag === "ffi" || field.tag === "view") return;
+  const c = outerInputs(value, out);
+  if (field.tag === "fn") {
+    if (c.tag !== "fn") return;
+    // A declared callback result is a cell around the concrete type, not a generic position.
+    const end = chainEnd(field.result);
+    concreteFieldInputs(
+      (end as { instance?: Ty }).instance ?? end,
+      c.result,
+      out,
+    );
+    return;
+  }
+  const children = field.tag === "named" ? field.args : field.tag === "tuple" ? field.items : NONE;
+  if (!children.length) {
+    // The field binds any variable here, and a caller's `!` must still reach it.
+    const end = chainEnd(value);
+    if (bindable(end)) end.linked = true;
+    out.push(value);
+    return;
+  }
+  // A container's contents count only where its own field is concrete.
+  const items = c.tag === "named" ? c.args : c.tag === "tuple" ? c.items : NONE;
+  if (items.length !== children.length) return;
+  children.forEach((child, index) => concreteFieldInputs(child, items[index], out));
+}
+
+/** Collect the `!` and links of one position, without its contents. Returns what it holds. */
+export function outerInputs(value: Ty, out: Ty[]): Ty {
+  let c = value;
+  while (true) {
+    if (c.tainted) out.push(c);
+    if (c.deps) out.push(...c.deps);
+    const following = next(c);
+    if (!following) return c;
+    c = following;
+  }
+}
+
+/**
+ * Keep a callback parameter's result open per instance, whatever it met in the body. A result can be
+ * bound to a concrete type by the body (`if (c) { clean } else { f }`), and HM would then have no
+ * variable left for a caller's `!` to reach. Only a parameter can later receive one.
+ */
+export function openInferredCallbacks(type: Ty, parameter: boolean, fresh: () => Ty): void {
+  let t = type;
+  while (t.tag === "view" || ((t.tag === "var" || t.tag === "ffi") && t.instance)) t = next(t)!;
+  if (t.tag === "fn") {
+    for (const param of t.params) openInferredCallbacks(param, !parameter, fresh);
+    openInferredCallbacks(t.result, parameter, fresh);
+    if (!parameter) return;
+    const end = chainEnd(t.result);
+    if (end.tag === "var" || end.tag === "ffi") {
+      if (end.instance || (end.tag === "var" && end.numeric)) end.linked = true;
+    } else if (end.tag !== "view") t.result = openPosition(fresh(), end);
+  } else if (t.tag === "tuple") {
+    for (const item of t.items) openInferredCallbacks(item, parameter, fresh);
+  } else if (t.tag === "named") {
+    for (const arg of t.args) openInferredCallbacks(arg, parameter, fresh);
+  }
 }
 
 /** Annotated callback results are concrete but stay open per instance, like a variable. */

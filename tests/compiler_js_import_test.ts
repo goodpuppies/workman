@@ -18,7 +18,7 @@ Deno.test("supports typed JS namespace imports", async () => {
     };
   `);
 
-  expectBinding(result.env, "main", { type: "Void -> Void", vars: 0 });
+  expectBinding(result.env, "main", { type: "Void -> Void!", vars: 0 });
 });
 
 Deno.test("unsafe primitive imports bypass the conversion runtime", async () => {
@@ -54,8 +54,8 @@ Deno.test("safe reflected imports are fallible", async () => {
     let text = JSON.stringify(JSON{ ok: true });
   `);
 
-  expectBinding(result.env, "parsed", { type: "Result<Js.Value, Js.Error>", vars: 0 });
-  expectBinding(result.env, "text", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "parsed", { type: "Result<Js.Value, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "text", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("imports lexical JavaScript module metadata directly", async () => {
@@ -65,12 +65,12 @@ Deno.test("imports lexical JavaScript module metadata directly", async () => {
     let assetPath = URL.new("./asset.txt", url) :> .pathname;
   `);
 
-  expectBinding(result.env, "url", { type: "String", vars: 0 });
-  expectBinding(result.env, "isMain", { type: "Bool", vars: 0 });
-  expectBinding(result.env, "filename", { type: "Option<String>", vars: 0 });
-  expectBinding(result.env, "dirname", { type: "Option<String>", vars: 0 });
-  expectBinding(result.env, "resolve", { type: "String -> String", vars: 0 });
-  expectBinding(result.env, "assetPath", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "url", { type: "String!", vars: 0 });
+  expectBinding(result.env, "isMain", { type: "Bool!", vars: 0 });
+  expectBinding(result.env, "filename", { type: "Option<String>!", vars: 0 });
+  expectBinding(result.env, "dirname", { type: "Option<String>!", vars: 0 });
+  expectBinding(result.env, "resolve", { type: "String -> String!", vars: 0 });
+  expectBinding(result.env, "assetPath", { type: "Result<String, Js.Error>!", vars: 0 });
 
   const js = await compile(`
     from js.meta import { url };
@@ -91,9 +91,9 @@ Deno.test("explicit calls ignore whitespace and newlines before parentheses", as
     let viaResult = Monad.via Result (value) => { Ok(value) };
   `);
 
-  expectBinding(result.env, "adjacent", { type: "URL", vars: 0 });
-  expectBinding(result.env, "spaced", { type: "URL", vars: 0 });
-  expectBinding(result.env, "newline", { type: "URL", vars: 0 });
+  expectBinding(result.env, "adjacent", { type: "URL!", vars: 0 });
+  expectBinding(result.env, "spaced", { type: "URL!", vars: 0 });
+  expectBinding(result.env, "newline", { type: "URL!", vars: 0 });
 });
 
 Deno.test("Js.Error is a matchable basis datatype", async () => {
@@ -150,11 +150,11 @@ Deno.test("unsafe manual JS imports may explicitly quantify type variables", asy
     let answer: Number = roundTrip(42);
   `);
 
-  expectBinding(result.env, "erase", { type: "value -> Js.Value", vars: 1 });
-  expectBinding(result.env, "restore", { type: "Js.Value -> value", vars: 1 });
-  expectBinding(result.env, "roundTrip", { type: "'a -> 'b", vars: 2 });
-  expectBinding(result.env, "nothing", { type: "Void", vars: 0 });
-  expectBinding(result.env, "answer", { type: "Number", vars: 0 });
+  expectBinding(result.env, "erase", { type: "value -> Js.Value!", vars: 1 });
+  expectBinding(result.env, "restore", { type: "Js.Value -> value!", vars: 1 });
+  expectBinding(result.env, "roundTrip", { type: "'a -> 'b!", vars: 2 });
+  expectBinding(result.env, "nothing", { type: "Void!", vars: 0 });
+  expectBinding(result.env, "answer", { type: "Number!", vars: 0 });
 });
 
 Deno.test("supports inferred JS named and namespace imports", async () => {
@@ -166,10 +166,10 @@ Deno.test("supports inferred JS named and namespace imports", async () => {
     let rooted = Math.sqrt(9);
   `);
 
-  expectBinding(result.env, "floor", { type: "Number -> Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "bigger", { type: "Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "rounded", { type: "Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "rooted", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "floor", { type: "Number -> Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "bigger", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "rounded", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "rooted", { type: "Result<Number, Js.Error>!", vars: 0 });
 });
 
 Deno.test("rejects unknown reflected JS globals instead of using a dynamic namespace", async () => {
@@ -229,7 +229,7 @@ Deno.test("reflects direct npm specifiers instead of treating them as dynamic JS
     let banner = figlet.textSync("hello");
   `);
 
-  expectBinding(result.env, "banner", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "banner", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("rejects missing typed module namespace members instead of using dynamic JS", async () => {
@@ -300,7 +300,7 @@ Deno.test("reflects JSR module imports", async () => {
     let file = basename("/tmp/x.txt");
   `);
 
-  expectBinding(result.env, "file", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "file", { type: "Result<String, Js.Error>!", vars: 0 });
   assertStringIncludes(js, `await import("jsr:@std/path@^1.0.9")`);
 });
 
@@ -310,7 +310,7 @@ Deno.test("reflects bare npm modules through node_modules declarations", async (
     let parser = generate("start = \\"x\\"");
   `);
 
-  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
+  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>!", vars: 0 });
 });
 
 Deno.test("resolves npm imports without modifying the project or creating node_modules", async () => {
@@ -332,7 +332,7 @@ Deno.test("resolves npm imports without modifying the project or creating node_m
   const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
 
-  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
+  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>!", vars: 0 });
   const config = JSON.parse(await Deno.readTextFile(`${dir}/deno.json`));
   assertEquals(config.nodeModulesDir, undefined);
   assertEquals(
@@ -366,7 +366,7 @@ Deno.test("resolves import-mapped npm modules with nodeModulesDir disabled", asy
   const results = await checkFile(input);
   const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>", vars: 0 });
+  expectBinding(result.env, "parser", { type: "Result<Parser, Js.Error>!", vars: 0 });
   const config = JSON.parse(await Deno.readTextFile(`${dir}/deno.json`));
   assertEquals(config.nodeModulesDir, "none");
   assertEquals((await Array.fromAsync(Deno.readDir(dir), (entry) => entry.name)).sort(), [
@@ -402,7 +402,7 @@ Deno.test("reflects npm subpath exports through import-mapped @types packages", 
   const results = await checkFile(input);
   const result = results.get(input);
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "scene", { type: "Result<Scene<Js.Value>, Js.Error>", vars: 0 });
+  expectBinding(result.env, "scene", { type: "Result<Scene<Js.Value>, Js.Error>!", vars: 0 });
 });
 
 Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
@@ -423,7 +423,7 @@ Deno.test("reflects Deno import-map aliases for JSR modules", async () => {
   const results = await checkFile(input);
   const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "file", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "file", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("resolves import-map aliases during delayed reflection independent of process cwd", async () => {
@@ -464,7 +464,7 @@ Deno.test("resolves import-map aliases during delayed reflection independent of 
     const results = await checkFile(input);
     const result = results.get(await Deno.realPath(input));
     if (!result) throw new Error("missing main result");
-    expectBinding(result.env, "app", { type: "Task<Js.Object, Js.Error>", vars: 0 });
+    expectBinding(result.env, "app", { type: "Task<Js.Object, Js.Error>!", vars: 0 });
   } finally {
     Deno.chdir(previous);
   }
@@ -583,7 +583,7 @@ Deno.test("reflects constructor-valued JS module exports through new member", as
   const results = await checkFile(input);
   const result = [...results.values()][0];
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>", vars: 0 });
+  expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>!", vars: 0 });
 });
 
 Deno.test("module constructor results retain nominal identity across Workman modules", async () => {
@@ -612,7 +612,7 @@ Deno.test("module constructor results retain nominal identity across Workman mod
   const results = await checkFile(input);
   const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>", vars: 0 });
+  expectBinding(result.env, "thing", { type: "Result<Thing, Js.Error>!", vars: 0 });
 });
 
 Deno.test("a TypeScript bridge handles foreign class inheritance explicitly", async () => {
@@ -655,7 +655,7 @@ Deno.test("a TypeScript bridge handles foreign class inheritance explicitly", as
   const results = await checkFile(input);
   const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "mesh", { type: "Result<Mesh, Js.Error>", vars: 0 });
+  expectBinding(result.env, "mesh", { type: "Result<Mesh, Js.Error>!", vars: 0 });
 });
 
 Deno.test("reflects static methods on constructor-valued JS module exports", async () => {
@@ -677,8 +677,8 @@ Deno.test("reflects static methods on constructor-valued JS module exports", asy
   const results = await checkFile(input);
   const result = [...results.values()][0];
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "Thing", { type: "Js.Object", vars: 0 });
-  expectBinding(result.env, "msg", { type: "Result<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "Thing", { type: "Js.Object!", vars: 0 });
+  expectBinding(result.env, "msg", { type: "Result<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("emits imported class values with static members intact", async () => {
@@ -770,11 +770,11 @@ Deno.test("reflects JS namespace functions as values", async () => {
   `);
 
   expectBinding(result.env, "sin", {
-    type: "Result<Number, Js.Error> -> Result<Number, Js.Error>",
+    type: "Result<Number, Js.Error> -> Result<Number, Js.Error>!",
     vars: 0,
   });
   expectBinding(result.env, "wave", {
-    type: "Result<Number, Js.Error>",
+    type: "Result<Number, Js.Error>!",
     vars: 0,
   });
 });
@@ -798,8 +798,8 @@ Deno.test("delayed JS binding calls preserve their Result carrier in operators",
   const results = await checkFile(input);
   const result = [...results.values()][0];
   if (!result) throw new Error("missing main result");
-  expectBinding(result.env, "time", { type: "Result<Number, Js.Error>", vars: 0 });
-  expectBinding(result.env, "scaled", { type: "Result<Number, Js.Error>", vars: 0 });
+  expectBinding(result.env, "time", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "scaled", { type: "Result<Number, Js.Error>!", vars: 0 });
 });
 
 Deno.test("orders generated receiver imports after local record types", async () => {
@@ -835,8 +835,8 @@ Deno.test("orders built-in receiver imports before an earlier value use", async 
     let measured = textLength("abc");
   `);
 
-  expectBinding(result.env, "textLength", { type: "String -> Number", vars: 0 });
-  expectBinding(result.env, "measured", { type: "Number", vars: 0 });
+  expectBinding(result.env, "textLength", { type: "String -> Number!", vars: 0 });
+  expectBinding(result.env, "measured", { type: "Number!", vars: 0 });
 });
 
 Deno.test("supports inferred callable root JS globals", async () => {
@@ -850,7 +850,7 @@ Deno.test("supports inferred callable root JS globals", async () => {
   `);
 
   expectBinding(result.env, "response", {
-    type: "Task<Response, Js.Error>",
+    type: "Task<Response, Js.Error>!",
     vars: 0,
   });
   assertStringIncludes(js, '__wm_js_member("fetch")');
@@ -861,7 +861,7 @@ Deno.test("supports Task as a basis type", async () => {
     let task: Task<String, Js.Error> = Panic("task");
   `);
 
-  expectBinding(result.env, "task", { type: "Task<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "task", { type: "Task<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("maps reflected TS promises to Task", async () => {
@@ -871,7 +871,7 @@ Deno.test("maps reflected TS promises to Task", async () => {
   `);
 
   expectBinding(result.env, "file", {
-    type: "Task<String, Js.Error>",
+    type: "Task<String, Js.Error>!",
     vars: 0,
   });
 });
@@ -882,7 +882,7 @@ Deno.test("preserves reflected nominal promise results", async () => {
     let signature = sign("HMAC", Panic("key"), Panic("bytes"));
   `);
 
-  expectBinding(result.env, "signature", { type: "Task<ArrayBuffer, Js.Error>", vars: 0 });
+  expectBinding(result.env, "signature", { type: "Task<ArrayBuffer, Js.Error>!", vars: 0 });
 });
 
 Deno.test("uses nominal promise results with reflected constructors", async () => {
@@ -901,7 +901,7 @@ Deno.test("uses nominal promise results with reflected constructors", async () =
     });
   `);
 
-  expectBinding(result.env, "bytes", { type: "Task<Uint8Array, Js.Error>", vars: 0 });
+  expectBinding(result.env, "bytes", { type: "Task<Uint8Array!, Js.Error>!", vars: 0 });
 });
 
 Deno.test("typed JS promise receiver results infer through then", async () => {
@@ -914,7 +914,7 @@ Deno.test("typed JS promise receiver results infer through then", async () => {
     };
   `);
 
-  expectBinding(result.env, "readBang", { type: "Void -> Task<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "readBang", { type: "Void -> Task<String, Js.Error>!", vars: 0 });
 });
 
 Deno.test("maps function-valued JS union parameters as JS values", async () => {
@@ -923,7 +923,7 @@ Deno.test("maps function-valued JS union parameters as JS values", async () => {
     let timer = setTimeout(() => { void }, 10);
   `);
 
-  expectBinding(result.env, "timer", { type: "Number", vars: 0 });
+  expectBinding(result.env, "timer", { type: "Number!", vars: 0 });
 });
 
 Deno.test("maps object-bearing JS union parameters as JS values", async () => {
@@ -939,7 +939,7 @@ Deno.test("maps object-bearing JS union parameters as JS values", async () => {
     );
   `);
 
-  expectBinding(result.env, "key", { type: "Task<CryptoKey, Js.Error>", vars: 0 });
+  expectBinding(result.env, "key", { type: "Task<CryptoKey, Js.Error>!", vars: 0 });
 });
 
 Deno.test("typed task receivers work through explicit foreign receiver types", async () => {
@@ -960,5 +960,5 @@ Deno.test("typed task receivers work through explicit foreign receiver types", a
     })(useText, Panic("req"));
   `);
 
-  expectBinding(result.env, "useText", { type: "Request -> Task<String, Js.Error>", vars: 0 });
+  expectBinding(result.env, "useText", { type: "Request -> Task<String, Js.Error>!", vars: 0 });
 });

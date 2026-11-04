@@ -265,6 +265,8 @@ export type SemanticInferredTypeHint = Readonly<{
   kind: "binding" | "parameter" | "result" | "record";
   span: SourceSpan;
   type: SemanticOccurrenceType;
+  /** A result that follows its bare parameter's own hint: `x: T -> T => ...`. */
+  arrow?: true;
 }>;
 
 export type SemanticParameterHint = Readonly<{
@@ -1403,13 +1405,15 @@ function semanticInferredTypeHints(
     const typed = typedNodes.find((candidate) =>
       candidate.kind === "expression" && sameSpan(candidate.span, lambda.node!.span)
     );
-    const end = lambdaParameterListEnd(source, lambda);
+    const bare = bareLambdaParameterEnd(source, lambda);
+    const end = bare ?? lambdaParameterListEnd(source, lambda);
     if (!typed || end === undefined) return;
     const position = offsetToLineCol(source, end);
     hints.push(Object.freeze({
       kind: "result",
       span: Object.freeze({ ...position, start: end, end }),
       type: typed.type,
+      ...(bare === undefined ? {} : { arrow: true as const }),
     }));
   };
   const addRecordResult = (record: Extract<Expr, { kind: "Record" }>) => {
@@ -1545,6 +1549,19 @@ function obviousInferredType(expression: Expr): boolean {
   return expression.kind === "Int" || expression.kind === "Float" ||
     expression.kind === "Char" || expression.kind === "String" || expression.kind === "Bool" ||
     expression.kind === "Void";
+}
+
+/** Where `x` ends in `x => ...`, which has no closing parenthesis to place a result after. */
+function bareLambdaParameterEnd(
+  source: string,
+  lambda: Extract<Expr, { kind: "Lambda" }>,
+): number | undefined {
+  const parameter = lambda.params.length === 1 ? lambda.params[0] : undefined;
+  const span = parameter?.pattern.node?.span;
+  if (!lambda.node || !span || parameter?.annotation) return undefined;
+  if (source[span.start] === "(" || span.start !== lambda.node.span.start) return undefined;
+  // Elaborated lambdas such as `f(_, 1)` have parameters but no arrow of their own here.
+  return /^\s*=>/.test(source.slice(span.end, span.end + 64)) ? span.end : undefined;
 }
 
 function lambdaParameterListEnd(
