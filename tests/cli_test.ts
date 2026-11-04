@@ -426,6 +426,44 @@ Deno.test("interactive repl applies named and anonymous match functions as one e
   );
 });
 
+Deno.test("interactive repl quit prints the phrase's output and ends the session", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    'let done = true;\nprint("before");\nif (done) { print("bye"); quit() } else { 42 };\nprint("never");\n',
+  );
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertStringIncludes(result.stdout, "before\n");
+  assertStringIncludes(result.stdout, "bye\n");
+  assertEquals(result.stdout.includes("never"), false);
+});
+
+Deno.test("interactive repl quit fires only when called and can be shadowed", async () => {
+  const deferred = await runCliWithStdin(
+    ["repl"],
+    'let leave = () => { quit() };\nprint("alive");\nleave();\nprint("never");\n',
+  );
+  assertEquals(deferred.code, 0);
+  assertStringIncludes(deferred.stdout, "alive\n");
+  assertEquals(deferred.stdout.includes("never"), false);
+  const shadowed = await runCliWithStdin(["repl"], "let quit = 5;\nquit + 1;\n");
+  assertEquals(shadowed.stderr, "");
+  assertStringIncludes(shadowed.stdout, "it = 6 : Number");
+});
+
+Deno.test("quit is not defined outside interactive sessions", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const input = `${dir}/main.wm`;
+    await Deno.writeTextFile(input, "quit();\n");
+    const result = await evaluateReplFile(input);
+    assertEquals(result.code, 1);
+    assertStringIncludes(String(result.staticErrors), "unknown name quit");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("interactive repl explains the named-match collision and continues without repairing it", async () => {
   const result = await runCliWithStdin(["repl"], [
     "let (a,b) = (1,2);",
@@ -1231,8 +1269,11 @@ Deno.test("interactive repl restores its session file after static and runtime f
     /let bad|Panic/.test(source) ? [index] : []
   );
   assertEquals(rejectedWrites.length, 3);
-  for (const index of rejectedWrites) assertEquals(sessionWrites[index + 1], "let x = 40;");
-  assertEquals(sessionWrites.at(-1), "let x = 40;\n\nx + 2;");
+  const header = 'from "./repl_pervasives.wm" import { quit };\n';
+  for (const index of rejectedWrites) {
+    assertEquals(sessionWrites[index + 1], `${header}let x = 40;`);
+  }
+  assertEquals(sessionWrites.at(-1), `${header}let x = 40;\n\nx + 2;`);
 });
 
 Deno.test("repl phrase end ignores quoted and commented semicolons", () => {

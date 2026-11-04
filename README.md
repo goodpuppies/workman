@@ -140,6 +140,10 @@ the accepted bindings unchanged.
 | Ctrl-D                   | Exit if the input is empty                                                              |
 | Ctrl-L                   | Clear the screen                                                                        |
 
+Calling `quit()` also ends the session. It is available only in `wm repl` sessions, never returns,
+and can be called anywhere, as in `if (done) { quit() } else { 42 };`. Your own `let quit = ...`
+replaces it.
+
 Shift+Enter needs a terminal with the kitty keyboard protocol, such as Ghostty, kitty, WezTerm, foot,
 Alacritty, or iTerm2. Other terminals send it as a plain Enter, so use Alt+Enter there. While a
 recalled input is unedited, Up/Down keep walking history; press any other movement key to edit it.

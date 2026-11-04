@@ -104,6 +104,24 @@ export async function* watchReplChanges(input: string): AsyncGenerator<void> {
   }
 }
 
+/**
+ * An evaluation ending with this code asked to leave the session. The phrase runs in a
+ * child process, so `quit` can only end that child; the parent reads this code to stop.
+ */
+const REPL_QUIT_EXIT_CODE = 113;
+
+/** REPL-only pervasives. The session imports this module, so `let quit = ...` still shadows it. */
+const REPL_PERVASIVES_FILE = "repl_pervasives.wm";
+const REPL_PERVASIVES_SOURCE = `from js.global("Deno") import { exit as hostExit };
+// Never returns, so a call fits wherever a value of any type is expected.
+let quit = () => {
+  let _ = hostExit(${REPL_QUIT_EXIT_CODE});
+  let rec unreachable = () => { unreachable() };
+  unreachable()
+};
+`;
+const REPL_SESSION_HEADER = `from "./${REPL_PERVASIVES_FILE}" import { quit };`;
+
 export type InteractiveReplOptions = CompileOptions & {
   /** Reports static (parse/elaboration) errors for a rejected phrase. */
   onError?: (error: unknown) => void;
@@ -132,7 +150,11 @@ export async function runInteractiveRepl(
     prefix: ".wm-mini-repl-",
   });
   const sessionPath = `${temporaryDirectory.path}/session.wm`;
-  let committed = "";
+  await Deno.writeTextFile(
+    `${temporaryDirectory.path}/${REPL_PERVASIVES_FILE}`,
+    REPL_PERVASIVES_SOURCE,
+  );
+  let committed = REPL_SESSION_HEADER;
   let committedStdout = 0;
   let committedStderr = 0;
   let editor: TerminalEditor | undefined;
@@ -191,7 +213,7 @@ export async function runInteractiveRepl(
     await Deno.stdout.write(
       new TextEncoder().encode(
         `🗿 Workman ${denoConfig.version}\n${
-          editor ? "Exit using ctrl+d or ctrl+c" : "Press Ctrl-C or Ctrl-D to exit."
+          editor ? "Exit using ctrl+d, ctrl+c, or quit()" : "Press Ctrl-C or Ctrl-D to exit."
         }\n`,
       ),
     );
@@ -208,6 +230,7 @@ export async function runInteractiveRepl(
         editor?.release();
         await Deno.stdout.write(result.stdout.subarray(committedStdout));
         await Deno.stderr.write(result.stderr.subarray(committedStderr));
+        if (result.code === REPL_QUIT_EXIT_CODE) break;
         if (result.code === 0) {
           committed = candidate;
           committedStdout = result.stdout.length;
