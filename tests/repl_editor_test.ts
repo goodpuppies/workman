@@ -320,9 +320,15 @@ Deno.test("a quote closes a string but an escaped quote stays inside it", () => 
   assertEquals(withCursor(typed('"', '"a\\"', 3)), '"a\\"|"');
 });
 
-Deno.test("an apostrophe never pairs, leaving type variables and char literals alone", () => {
-  assertEquals(withCursor(typed("'a")), "'a|");
+Deno.test("an apostrophe pairs as a character literal but continues a name", () => {
+  assertEquals(withCursor(typed("'")), "'|'");
+  assertEquals(withCursor(typed("'a'")), "'a'|");
+  assertEquals(withCursor(typed("'\\n'")), "'\\n'|");
+  assertEquals(withCursor(typed("let c = 'a';")), "let c = 'a';|");
   assertEquals(withCursor(typed("x'")), "x'|");
+  assertEquals(withCursor(typed("let x' = x'';")), "let x' = x'';|");
+  assertEquals(withCursor(typed("'\x7f")), "|");
+  assertEquals(withCursor(typed("'", '"don', 4)), "\"don'|");
 });
 
 Deno.test("Backspace removes an empty pair and otherwise one character", () => {

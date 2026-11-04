@@ -218,12 +218,9 @@ function offsetAtColumn(text: string, row: EditorRow, column: number): number {
 
 const BRACKETS: Readonly<Record<string, string>> = { "(": ")", "[": "]", "{": "}" };
 const CLOSERS = new Set(Object.values(BRACKETS));
-/**
- * `'` is left out: it opens both a character literal and a type variable like `'a`, and pairing
- * it would turn every `'a` into `'a'`.
- */
-const QUOTES = new Set(['"', "`"]);
-const PAIRED_CHAR = /([()[\]{}"`])/;
+/** After a word, `'` continues the name instead of opening a character, so it doesn't pair there. */
+const QUOTES = new Set(['"', "`", "'"]);
+const PAIRED_CHAR = /([()[\]{}"`'])/;
 
 export type EditorAction = "none" | "submit" | "cancel" | "eof" | "interrupt" | "clear";
 
