@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/cli.ts"
   },
+  "publish": {
+    "exclude": ["markdown/", "tests/"]
+  },
   "tasks": {
     "generate-assets": "deno run --allow-read --allow-write scripts/generate_assets.ts",
     "byte-type:build": "deno run -A scripts/build_byte_type.ts",
