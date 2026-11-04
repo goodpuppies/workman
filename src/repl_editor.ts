@@ -1,4 +1,5 @@
 import { lexicalContextAt, topLevelPhraseEnd } from "./top_level_phrases.ts";
+import type { ReplPromptSettings } from "./user_config.ts";
 
 /** A decoded keypress. `name` is a named key or a lowercase letter; `text` is literal input. */
 export type EditorKey =
@@ -566,13 +567,30 @@ function sanitizePaste(text: string): string {
   );
 }
 
-export const PROMPT_WIDTH = 2;
+/** The left margin of each row kind, all `width` columns wide so the text lines up. */
+export type EditorPrompts = { first: string; continuation: string; wrap: string; width: number };
+
+/** Defaults to the SML prompts, and pads the shorter prompt on the left to align the text. */
+export function editorPrompts(settings: ReplPromptSettings = {}): EditorPrompts {
+  const first = `${settings.name ?? ""}${settings.prompt ?? "- "}`;
+  const continuation = settings.continuation ?? "= ";
+  const width = Math.max(displayWidth(first), displayWidth(continuation));
+  const padded = (prompt: string) => " ".repeat(width - displayWidth(prompt)) + prompt;
+  return {
+    first: padded(first),
+    continuation: padded(continuation),
+    wrap: " ".repeat(width),
+    width,
+  };
+}
+
+const DEFAULT_PROMPTS = editorPrompts();
 
 export type EditorFrame = { lines: string[]; cursorRow: number; cursorColumn: number };
 
 /** The text area leaves the last column free, so the cursor never hits a pending wrap. */
-export function textWidth(columns: number): number {
-  return Math.max(columns - PROMPT_WIDTH - 1, 1);
+export function textWidth(columns: number, promptWidth = DEFAULT_PROMPTS.width): number {
+  return Math.max(columns - promptWidth - 1, 1);
 }
 
 /** Lays out the buffer for the screen, scrolling so a buffer taller than it keeps the cursor. */
@@ -580,21 +598,26 @@ export function renderFrame(
   text: string,
   cursor: number,
   size: { columns: number; rows: number },
+  prompts: EditorPrompts = DEFAULT_PROMPTS,
   stylePrompt: (prompt: string) => string = (prompt) => prompt,
 ): EditorFrame {
-  const rows = layoutRows(text, textWidth(size.columns));
+  const rows = layoutRows(text, textWidth(size.columns, prompts.width));
   const cursorIndex = rowContaining(rows, cursor);
   const height = Math.max(size.rows - 1, 1);
   const top = Math.max(cursorIndex - height + 1, 0);
   const lines = rows.slice(top, top + height).map((row) => {
-    const prompt = !row.lineStart ? "  " : row.start === 0 ? "- " : "= ";
+    const prompt = !row.lineStart
+      ? prompts.wrap
+      : row.start === 0
+      ? prompts.first
+      : prompts.continuation;
     return stylePrompt(prompt) + text.slice(row.start, row.end);
   });
   const row = rows[cursorIndex];
   return {
     lines,
     cursorRow: cursorIndex - top,
-    cursorColumn: PROMPT_WIDTH + displayWidth(text.slice(row.start, cursor)),
+    cursorColumn: prompts.width + displayWidth(text.slice(row.start, cursor)),
   };
 }
 
@@ -617,9 +640,11 @@ export class TerminalEditor {
   #queue: EditorKey[] = [];
   #cursorRow = 0;
   #encoder = new TextEncoder();
+  #prompts: EditorPrompts;
 
-  constructor(history: string[]) {
+  constructor(history: string[], prompts: EditorPrompts = DEFAULT_PROMPTS) {
     this.#state = new EditorState(history);
+    this.#prompts = prompts;
   }
 
   remember(entry: string): void {
@@ -672,7 +697,10 @@ export class TerminalEditor {
   #drainQueue(): EditorResult | undefined {
     let dirty = false;
     while (this.#queue.length) {
-      const action = this.#state.apply(this.#queue.shift()!, textWidth(this.#size().columns));
+      const action = this.#state.apply(
+        this.#queue.shift()!,
+        textWidth(this.#size().columns, this.#prompts.width),
+      );
       dirty = true;
       switch (action) {
         case "submit":
@@ -709,7 +737,13 @@ export class TerminalEditor {
   }
 
   #draw(): void {
-    const frame = renderFrame(this.#state.text, this.#state.cursor, this.#size(), stylePrompt);
+    const frame = renderFrame(
+      this.#state.text,
+      this.#state.cursor,
+      this.#size(),
+      this.#prompts,
+      stylePrompt,
+    );
     const up = (count: number) => count > 0 ? `\x1b[${count}A` : "";
     const right = frame.cursorColumn > 0 ? `\x1b[${frame.cursorColumn}C` : "";
     this.#write(

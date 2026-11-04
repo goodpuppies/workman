@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import {
   type EditorAction,
   type EditorKey,
+  editorPrompts,
   EditorState,
   KeyDecoder,
   layoutRows,
@@ -340,6 +341,33 @@ Deno.test("frame prompts lines, indents wrapped rows, and places the cursor", ()
   // A cursor at a wrap boundary sits at the start of the next row.
   const boundary = renderFrame("abcdefgh", 5, { columns: 8, rows: 24 });
   assertEquals([boundary.cursorRow, boundary.cursorColumn], [1, 2]);
+});
+
+Deno.test("prompts default to the SML pair", () => {
+  assertEquals(editorPrompts(), { first: "- ", continuation: "= ", wrap: "  ", width: 2 });
+});
+
+Deno.test("a name goes in front of the prompt and the continuation aligns under it", () => {
+  const prompts = editorPrompts({ name: "wm", prompt: "> ", continuation: "| " });
+  assertEquals(prompts, { first: "wm> ", continuation: "  | ", wrap: "    ", width: 4 });
+  const frame = renderFrame("abcdefgh\nij", 11, { columns: 10, rows: 24 }, prompts);
+  assertEquals(frame.lines, ["wm> abcde", "    fgh", "  | ij"]);
+  assertEquals([frame.cursorRow, frame.cursorColumn], [2, 6]);
+});
+
+Deno.test("prompts are used as written and a longer continuation pads the first prompt", () => {
+  const speakeasy = editorPrompts({ prompt: ":_", continuation: "" });
+  assertEquals(speakeasy, { first: ":_", continuation: "  ", wrap: "  ", width: 2 });
+  assertEquals(renderFrame("x", 1, { columns: 20, rows: 24 }, speakeasy).lines, [":_x"]);
+  const long = editorPrompts({ prompt: "> ", continuation: "... " });
+  assertEquals([long.first, long.continuation, long.width], ["  > ", "... ", 4]);
+});
+
+Deno.test("a wide character in a prompt counts for its display width", () => {
+  const prompts = editorPrompts({ prompt: "🗿 " });
+  assertEquals(prompts.width, 3);
+  assertEquals(prompts.continuation, " = ");
+  assertEquals(renderFrame("a", 1, { columns: 20, rows: 24 }, prompts).cursorColumn, 4);
 });
 
 Deno.test("a buffer taller than the screen scrolls to keep the cursor visible", () => {

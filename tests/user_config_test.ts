@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
-import { addPackageDirectory, packageDirectories } from "../src/user_config.ts";
+import { addPackageDirectory, packageDirectories, replPromptSettings } from "../src/user_config.ts";
 
 Deno.test("registered directories persist canonically without losing unrelated WM settings", async () => {
   const root = await Deno.makeTempDir();
@@ -62,5 +62,36 @@ Deno.test("invalid registrations and malformed config leave existing settings in
     if (old === undefined) Deno.env.delete("PAKMAN_PKGS");
     else Deno.env.set("PAKMAN_PKGS", old);
     await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("repl prompt settings read each optional field", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const file = `${dir}/config.json`;
+    assertEquals(replPromptSettings(file), {});
+    await Deno.writeTextFile(file, '{"pakman":{"directories":[]}}');
+    assertEquals(replPromptSettings(file), {});
+    await Deno.writeTextFile(file, '{"repl":{"name":"wm","prompt":":_","continuation":""}}');
+    assertEquals(replPromptSettings(file), { name: "wm", prompt: ":_", continuation: "" });
+    await Deno.writeTextFile(file, '{"repl":{"prompt":"> "}}');
+    assertEquals(replPromptSettings(file), { prompt: "> " });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("repl prompt settings reject values the editor could not measure", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const file = `${dir}/config.json`;
+    for (
+      const source of ['{"repl":"> "}', '{"repl":{"prompt":3}}', '{"repl":{"name":"\\u001b[31m"}}']
+    ) {
+      await Deno.writeTextFile(file, source);
+      assertThrows(() => replPromptSettings(file));
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
   }
 });

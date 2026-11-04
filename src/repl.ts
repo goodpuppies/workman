@@ -5,7 +5,8 @@ import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
-import { TerminalEditor } from "./repl_editor.ts";
+import { editorPrompts, TerminalEditor } from "./repl_editor.ts";
+import { type ReplPromptSettings, replPromptSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
 import { observeLibraryLoad } from "./standard_library.ts";
 
@@ -215,7 +216,18 @@ export async function runInteractiveRepl(
       reportHistoryError(error);
     }
   }
-  editor = isTerminal ? new TerminalEditor(history) : undefined;
+  // Piped input keeps the fixed prompts, so a script's output doesn't depend on this user's setup.
+  let promptSettings: ReplPromptSettings = {};
+  if (isTerminal) {
+    try {
+      promptSettings = replPromptSettings();
+    } catch (error) {
+      console.error(
+        `warning: using the default REPL prompt: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+  editor = isTerminal ? new TerminalEditor(history, editorPrompts(promptSettings)) : undefined;
   const record = (entry: string) => {
     editor?.remember(entry);
     if (!historyFile) return;

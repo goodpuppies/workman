@@ -153,6 +153,25 @@ Shift+Enter needs a terminal with the kitty keyboard protocol, such as Ghostty, 
 Alacritty, or iTerm2. Other terminals send it as a plain Enter, so use Alt+Enter there. While a
 recalled input is unedited, Up/Down keep walking history; press any other movement key to edit it.
 
+To change the prompt, add a `repl` section to `~/.config/workman/config.json`
+(`$XDG_CONFIG_HOME/workman/config.json`; `%APPDATA%\workman\config.json` on Windows):
+
+```json
+{
+  "repl": {
+    "name": "wm",
+    "prompt": "> ",
+    "continuation": "| "
+  }
+}
+```
+
+`prompt` starts a new input and defaults to `- `, and `continuation` starts its later lines and
+defaults to `= `. `name` goes in front of `prompt` and is empty by default, so this example shows
+`wm> `. The strings are used exactly as written, so include any space you want before your input;
+`"prompt": ":_"` puts your text straight after it. The shorter prompt is padded on the left so lines
+stay aligned. Piped input always uses the defaults.
+
 Interactive input history is shared across sessions and saved as `repl-history.json` in Workman's
 state directory (`$XDG_STATE_HOME/workman`, defaulting to `~/.local/state/workman` on Unix;
 `%LOCALAPPDATA%\workman` on Windows). It keeps the most recent 1,000 inputs, including failed

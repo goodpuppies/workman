@@ -40,6 +40,25 @@ export function packageDirectories(fallback: string, file = workmanConfigFile())
   return [...new Set([...saved, fallback].filter(Boolean))];
 }
 
+export type ReplPromptSettings = { name?: string; prompt?: string; continuation?: string };
+
+/** The `repl` section of the configuration. Every field is optional. */
+export function replPromptSettings(file = workmanConfigFile()): ReplPromptSettings {
+  const { repl } = readConfiguration(file);
+  if (repl === undefined) return {};
+  if (!record(repl)) throw new Error(`invalid repl settings in ${file}`);
+  const field = (key: keyof ReplPromptSettings) => {
+    const value = repl[key];
+    if (value === undefined) return {};
+    // Control characters would move the cursor, so the editor could not measure the prompt.
+    if (typeof value !== "string" || /[\x00-\x1f\x7f-\x9f]/.test(value)) {
+      throw new Error(`repl.${key} in ${file} must be a string without control characters`);
+    }
+    return { [key]: value };
+  };
+  return { ...field("name"), ...field("prompt"), ...field("continuation") };
+}
+
 export async function addPackageDirectory(
   path: string,
   file = workmanConfigFile(),
