@@ -543,6 +543,7 @@ export function generatedTypeAliases(
         name: typeName,
         foreignKey: ref.generic?.key ?? ref.key,
         arity: ref.generic?.arity,
+        requiredArity: ref.generic?.requiredArity,
         node: source?.node,
       };
     });

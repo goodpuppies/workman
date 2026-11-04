@@ -172,7 +172,12 @@ function addForeignType(
   exported: boolean,
 ) {
   const key = decl.foreignKey ?? `name:${decl.name}`;
-  const info = foreignTypeInfo(canonicalForeignTypeName(decl.name, key), key, decl.arity ?? 0);
+  const info = foreignTypeInfo(
+    canonicalForeignTypeName(decl.name, key),
+    key,
+    decl.arity ?? 0,
+    decl.requiredArity,
+  );
   registerTypeInfo(typeEnv, info);
   const path = parseLongId(decl.name);
   if (isQualified(path)) bindLongType(strEnv, path, info);
@@ -186,13 +191,13 @@ function addForeignType(
 
 const foreignTypes = new Map<string, ReturnType<typeof freshTypeInfo>>();
 
-function foreignTypeInfo(name: string, key: string, arity: number) {
+function foreignTypeInfo(name: string, key: string, arity: number, requiredArity?: number) {
   const existing = foreignTypes.get(key);
   if (existing) {
     if (existing.arity !== arity) throw new Error(`inconsistent arity for foreign type ${name}`);
     return existing;
   }
-  const created = { ...freshTypeInfo(name, arity), foreign: true, foreignKey: key };
+  const created = { ...freshTypeInfo(name, arity), foreign: true, foreignKey: key, requiredArity };
   foreignTypes.set(key, created);
   return created;
 }

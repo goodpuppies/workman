@@ -145,6 +145,8 @@ export type TypeInfo = {
   basisConstructors?: string[];
   foreign?: boolean;
   foreignKey?: string;
+  /** Type arguments a reference must write; the rest have a default in the foreign declaration. */
+  requiredArity?: number;
   alias?: Ty;
   aliasParams?: number[];
   recordFields?: RecordFieldInfo[];
@@ -1195,7 +1197,10 @@ export function typeFromAst(
     : undefined;
   const info = qualified?.info ?? typeEnv.get(expr.name);
   if (!info) throw new Error(`unknown type ${expr.name}`);
-  if (info.arity !== expr.args.length) {
+  // HM has no subtyping to apply a TS default such as `Buffer<ArrayBufferLike>` to a
+  // `Buffer<ArrayBuffer>`, so an omitted argument is inferred, where free variables are allowed.
+  const omittable = allowFreeVars && expr.args.length >= (info.requiredArity ?? info.arity);
+  if (expr.args.length > info.arity || (expr.args.length < info.arity && !omittable)) {
     throw new Error(`${expr.name} expects ${info.arity} type arguments`);
   }
   options.onResolveName?.(
@@ -1220,7 +1225,9 @@ export function typeFromAst(
   ) {
     return resolved(prim(expr.name));
   }
-  return resolved(named(info, expr.args.map((x) => typeFromAst(x, typeEnv, vars, options))));
+  const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
+  while (args.length < info.arity) args.push(fresh());
+  return resolved(named(info, args));
 }
 
 export function show(t: Ty): string {

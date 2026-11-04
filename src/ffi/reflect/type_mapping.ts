@@ -299,7 +299,8 @@ export function nominalGenericConstructor(
   const qualified = checker.getFullyQualifiedName(symbol);
   const expression = qualified.replace(/^("(?:[^"\\]|\\.)+")\./, "import($1).")
     .replace(/^global\./, "");
-  return { key: `generic-type:${expression}`, expression, arity };
+  const requiredArity = declaration.typeParameters!.filter((param) => !param.default).length;
+  return { key: `generic-type:${expression}`, expression, arity, requiredArity };
 }
 
 function containsTypeParameter(type: ts.Type): boolean {

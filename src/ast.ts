@@ -85,7 +85,13 @@ export type Decl =
     /** Authored clause retained when FFI lowering replaces it with compiler-only imports. */
     sourceClause?: JsImportClause;
   }>
-  | Located<{ kind: "ForeignTypeDecl"; name: string; foreignKey?: string; arity?: number }>
+  | Located<{
+    kind: "ForeignTypeDecl";
+    name: string;
+    foreignKey?: string;
+    arity?: number;
+    requiredArity?: number;
+  }>
   | Located<{ kind: "LetDecl"; exported: boolean; recursive: boolean; bindings: Binding[] }>
   | Located<{
     kind: "RecordDecl";

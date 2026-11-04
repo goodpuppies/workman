@@ -1,8 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { fileURLToPath } from "node:url";
-import { knownIssue } from "./known_issue.ts";
 
-Deno.test("[known issue] WM CLI resolves Node declarations without a package adapter or local node_modules", { ignore: knownIssue("node-buffer-declaration-rejected-for-missing-type-argument") }, async () => {
+Deno.test("WM CLI resolves Node declarations without a package adapter or local node_modules", async () => {
   const root = await Deno.makeTempDir();
   try {
     const input = `${root}/main.wm`;

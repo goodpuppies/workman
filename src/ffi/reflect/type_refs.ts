@@ -20,7 +20,8 @@ export type JsTypeRef = {
   type?: TypeExpr;
   // A nominal TS type constructor. Its concrete arguments live in HM, rather
   // than being recovered from whichever producer last registered this ref.
-  generic?: { key: string; expression: string; arity: number };
+  // `requiredArity` leaves out trailing parameters with a default, which TS lets a reference omit.
+  generic?: { key: string; expression: string; arity: number; requiredArity: number };
   moduleNamespaceSpecifier?: string;
   // Constructor values can carry the canonical nominal type of their instances.
   // This avoids deriving identity from a reflection query's transient return key.
