@@ -257,6 +257,9 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
       },
     );
   } else {
+    // The callee is still unknown, so a caller can still add `!` to this result, even after the body
+    // binds it to a concrete type.
+    (result as { linked?: boolean }).linked = true;
     const callDepth =
       maxCallDepth([...callCalleeRelated(calleeExpr, callee), ...calleeProvenance]) + 1;
     if (isPipe) {

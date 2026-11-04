@@ -733,3 +733,35 @@ Deno.test("a return annotation keeps the positions a caller's taint reaches", as
   assertEquals(types.e, "List<Number!>");
   assertEquals(types.g, "List<Number>");
 });
+
+Deno.test("a callback result stays open when an operator in the body makes it concrete", async () => {
+  const types = await bindings(`
+    let eff = (i) => { print("x"); i };
+    let clean = (i) => { i };
+    let number = f => { f(1) + 1 };
+    let a = number(eff);
+    let b = number(clean);
+    let text = f => { f("s") ++ "t" };
+    let c = text(eff);
+    let d = text(clean);
+    let compare = f => { f("s") == "t" };
+    let e = compare(eff);
+    let g = compare(clean);
+    let branch = f => { if (f(true)) { 1 } else { 2 } };
+    let h = branch(eff);
+    let i = branch(clean);
+    let rec loop = (k, n) => { if (n == 0) { k("s") ++ "t" } else { loop(k, n - 1) } };
+    let j = loop(eff, 1);
+    let l = loop(clean, 1);
+  `);
+  assertEquals(types.a, "Number!");
+  assertEquals(types.b, "Number");
+  assertEquals(types.c, "String!");
+  assertEquals(types.d, "String");
+  assertEquals(types.e, "Bool!");
+  assertEquals(types.g, "Bool");
+  assertEquals(types.h, "Number!");
+  assertEquals(types.i, "Number");
+  assertEquals(types.j, "String!");
+  assertEquals(types.l, "String");
+});
