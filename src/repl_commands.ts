@@ -1,11 +1,16 @@
-/** A `:` followed by a letter, as in Scala's REPL, so an operator can't be taken for a command. */
-const COMMAND = /^\s*:([a-zA-Z]\S*)\s*([\s\S]*)$/;
+/**
+ * A `:` followed by a letter, as in Scala's REPL, so an operator can't be taken for a command. Only
+ * comments may come first, since a comment after one phrase's `;` carries into the next input.
+ */
+const COMMAND = /^(?:\s|(?:\/\/|--)[^\n]*(?:\n|$))*:([a-zA-Z][^\s;]*)\s*([\s\S]*)$/;
 
 export type ReplCommandDescription = {
   name: string;
   usage: string;
   summary: string;
   detail: string;
+  /** Its argument is an expression, which can always continue, so only `;` can end it. */
+  takesExpression?: boolean;
 };
 
 export const REPL_COMMANDS: readonly ReplCommandDescription[] = [
@@ -17,15 +22,26 @@ export const REPL_COMMANDS: readonly ReplCommandDescription[] = [
   },
   {
     name: "type",
-    usage: ":type <expression>",
+    usage: ":type <expression>;",
     summary: "show an expression's type without running it",
     detail: "Nothing runs and no binding changes, so this is safe for code with side effects.\n" +
       "A ! in the type marks an expression with effects, as in Void!.",
+    takesExpression: true,
   },
 ];
 
 export function isReplCommand(text: string): boolean {
   return COMMAND.test(text);
+}
+
+/** Whether this command, like a phrase, isn't finished until its top-level `;`. */
+export function replCommandNeedsSemicolon(
+  text: string,
+  commands: readonly ReplCommandDescription[] = REPL_COMMANDS,
+): boolean {
+  const parsed = parseReplCommand(text, commands);
+  return parsed.kind === "command" &&
+    commands.some((command) => command.name === parsed.name && command.takesExpression);
 }
 
 export type ParsedReplCommand =
@@ -42,7 +58,7 @@ export function parseReplCommand(
   const [, typed, rest] = match;
   const found = resolveCommand(typed, commands);
   if (found.kind === "error") return found;
-  // A habitual `;` isn't part of the argument.
+  // The `;` ends the argument rather than being part of it.
   return { kind: "command", name: found.name, argument: rest.trim().replace(/;\s*$/, "").trim() };
 }
 
@@ -79,7 +95,7 @@ export function replHelpText(
     ...rows,
     "",
     "Keys:",
-    "  Enter        run a phrase ending in ; or a command, otherwise add a line",
+    "  Enter        run an input ending in ; or a command with no expression, otherwise add a line",
     "  Shift+Enter  add the missing ; and run (Alt+Enter on terminals without Shift+Enter)",
     "  Ctrl+J       always add a line",
     "  Up/Down      move between lines, then through history",

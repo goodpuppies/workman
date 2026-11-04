@@ -4,6 +4,7 @@ import {
   type ParsedReplCommand,
   parseReplCommand,
   type ReplCommandDescription,
+  replCommandNeedsSemicolon,
   replHelpText,
 } from "../src/repl_commands.ts";
 
@@ -15,9 +16,32 @@ const describe = (name: string): ReplCommandDescription => ({
 });
 
 Deno.test("only a colon followed by a letter is a command", () => {
-  for (const text of [":t x", ":help", "  :t x", ":t"]) assertEquals(isReplCommand(text), true);
-  for (const text of ["x", "let x : Number = 1;", ":: x", ":> f", ": x", ":5", "x\n:t y", ""]) {
+  for (const text of [":t x", ":help", "  :t x", ":t", ":t;", "// note\n:t x", " -- a\n\n:h"]) {
+    assertEquals(isReplCommand(text), true);
+  }
+  for (
+    const text of [
+      "x",
+      "let x : Number = 1;",
+      ":: x",
+      ":> f",
+      ": x",
+      ":5",
+      "x\n:t y",
+      "",
+      "// :t x",
+    ]
+  ) {
     assertEquals(isReplCommand(text), false);
+  }
+});
+
+Deno.test("only a command taking an expression needs a semicolon", () => {
+  for (const text of [":t x", ":type", ":ty x"]) {
+    assertEquals(replCommandNeedsSemicolon(text), true);
+  }
+  for (const text of [":help", ":h type", ":nope"]) {
+    assertEquals(replCommandNeedsSemicolon(text), false);
   }
 });
 
@@ -27,6 +51,12 @@ Deno.test("a command resolves by full name or unique prefix", () => {
   assertEquals(parseReplCommand(":t x + 1"), type);
   assertEquals(parseReplCommand(":ty x + 1"), type);
   assertEquals(parseReplCommand(":h"), { kind: "command", name: "help", argument: "" });
+  assertEquals(parseReplCommand(":t;"), { kind: "command", name: "type", argument: "" });
+  assertEquals(parseReplCommand("// note\n:t x;"), {
+    kind: "command",
+    name: "type",
+    argument: "x",
+  });
 });
 
 Deno.test("a command argument keeps its lines and drops a habitual semicolon", () => {

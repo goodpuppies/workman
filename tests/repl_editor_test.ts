@@ -137,21 +137,34 @@ Deno.test("Shift+Enter inside an open block presses Enter after the semicolon", 
   assertEquals(state.text, "{ let a = 1;\n");
 });
 
-Deno.test("Enter runs a command with no semicolon, but opens an empty pair first", () => {
-  assertEquals(press(stateWith(":t x"), ENTER), ["submit"]);
+Deno.test("Enter runs a command with no expression at once", () => {
+  assertEquals(press(stateWith(":help"), ENTER), ["submit"]);
   assertEquals(press(stateWith(":help", 2), ENTER), ["submit"]);
-  const multiline = stateWith(":t f(\n  x", 2);
-  assertEquals(press(multiline, ENTER), ["none"]);
-  assertEquals(press(stateWith(":t f(\n  x)"), ENTER), ["submit"]);
-  const pair = stateWith(":t {}", 4);
-  assertEquals(press(pair, ENTER), ["none"]);
-  assertEquals(withCursor(pair), ":t {\n  |\n}");
+  assertEquals(press(stateWith(":help type"), ENTER), ["submit"]);
+  assertEquals(press(stateWith(":nope"), ENTER), ["submit"]);
 });
 
-Deno.test("Shift+Enter runs a command without adding a semicolon", () => {
-  const state = stateWith(":t {}", 4);
-  assertEquals(press(state, SHIFT_ENTER), ["submit"]);
-  assertEquals(state.text, ":t {}");
+Deno.test("a command taking an expression continues until its semicolon", () => {
+  for (const text of [":t x", ':t print "nope"', ":t", ":type x +"]) {
+    const state = stateWith(text);
+    assertEquals(press(state, ENTER), ["none"]);
+    assertEquals(state.text, `${text}\n`);
+  }
+  assertEquals(press(stateWith(":t x;"), ENTER), ["submit"]);
+  assertEquals(press(stateWith(":t x +\n1;"), ENTER), ["submit"]);
+  assertEquals(press(stateWith(":t { a; "), ENTER), ["none"]);
+  const pair = stateWith(":t {};", 4);
+  assertEquals(press(pair, ENTER), ["none"]);
+  assertEquals(withCursor(pair), ":t {\n  |\n};");
+});
+
+Deno.test("Shift+Enter ends an expression command but adds nothing to the others", () => {
+  const type = stateWith(":t {}", 4);
+  assertEquals(press(type, SHIFT_ENTER), ["submit"]);
+  assertEquals(type.text, ":t {};");
+  const help = stateWith(":help", 2);
+  assertEquals(press(help, SHIFT_ENTER), ["submit"]);
+  assertEquals(help.text, ":help");
 });
 
 Deno.test("a colon later in the input is not a command", () => {

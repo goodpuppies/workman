@@ -5,7 +5,12 @@ import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
-import { isReplCommand, parseReplCommand, replHelpText } from "./repl_commands.ts";
+import {
+  isReplCommand,
+  parseReplCommand,
+  replCommandNeedsSemicolon,
+  replHelpText,
+} from "./repl_commands.ts";
 import { editorPrompts, TerminalEditor } from "./repl_editor.ts";
 import { type ReplPromptSettings, replPromptSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
@@ -269,8 +274,8 @@ export async function runInteractiveRepl(
       }
       const entry = result.text.trimEnd();
       record(entry);
-      // Enter submits only a finished buffer, so all that can follow the phrase is comments.
-      yield isReplCommand(entry) ? entry : entry.slice(0, topLevelPhraseEnd(entry));
+      // What can follow the end is only comments, and a command without an expression has no end.
+      yield entry.slice(0, topLevelPhraseEnd(entry));
     }
   }
   try {
@@ -296,7 +301,7 @@ export async function runInteractiveRepl(
       let output: string;
       if (command.kind === "error") output = command.message;
       else if (command.name === "help") output = replHelpText(command.argument);
-      else if (!command.argument) output = "usage: :type <expression>";
+      else if (!command.argument) output = "usage: :type <expression>;";
       else {
         output = await typeOfExpression(sessionPath, committed, command.argument, compileOptions);
       }
@@ -371,7 +376,7 @@ async function* phrases(
       }
       pending += line + (completeLine ? "\n" : "");
       if (completeLine) needPrompt = true;
-      if (completeLine && isReplCommand(pending)) {
+      if (completeLine && isReplCommand(pending) && !replCommandNeedsSemicolon(pending)) {
         yield pending;
         pending = "";
         continue;
