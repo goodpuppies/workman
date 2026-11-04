@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
-Deno.test("cli prints help with no arguments", async () => {
-  const result = await runCli([]);
+Deno.test("cli starts an interactive session with no arguments", async () => {
+  const result = await runCliWithStdin([], "1 + 1;\n");
 
   assertEquals(result.code, 0);
   assertEquals(result.stderr, "");
-  assertStringIncludes(result.stdout, `🗿 workman ${denoConfig.version} - compiler and runner`);
-  assertStringIncludes(result.stdout, "wm run examples/factorial.wm");
+  assertStringIncludes(result.stdout, `🗿 Workman ${denoConfig.version}\n`);
+  assertStringIncludes(result.stdout, "it = 2 : Number");
 });
 
 Deno.test("cli prints help with command and flag variants", async () => {
@@ -23,6 +23,8 @@ Deno.test("cli prints help with command and flag variants", async () => {
 
     assertEquals(result.code, 0);
     assertEquals(result.stderr, "");
+    assertStringIncludes(result.stdout, `🗿 workman ${denoConfig.version} - compiler and runner`);
+    assertStringIncludes(result.stdout, "wm run examples/factorial.wm");
     assertStringIncludes(result.stdout, "commands:");
     assertStringIncludes(result.stdout, "watch <file.wm> [-- args...]");
     assertStringIncludes(result.stdout, "repl [--v2] [file.wm]");

@@ -168,7 +168,8 @@ if (import.meta.main) {
 
 export async function main(args: string[]): Promise<number> {
   const [head, ...rest] = args;
-  if (!head || head === "--help" || head === "-h") {
+  if (!head) return await replCommand([]);
+  if (head === "--help" || head === "-h") {
     usage();
     return 0;
   }
@@ -527,6 +528,7 @@ function usage(): void {
   console.log(`🗿 workman ${VERSION} - compiler and runner
 
 usage:
+  wm                            start an interactive session
   wm <command> [args]
   wm <file.wm> [out.js]
 

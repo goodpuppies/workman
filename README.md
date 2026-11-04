@@ -126,7 +126,7 @@ deno task install
 wm run examples/factorial.wm
 ```
 
-Run `wm repl` for an interactive session. The prompt is a multi-line text box: move around it with
+Run `wm` or `wm repl` for an interactive session. The prompt is a multi-line text box: move around it with
 the arrow keys, Home/End, and Ctrl+Left/Right, and paste multi-line code freely. Failed inputs leave
 the accepted bindings unchanged.
 
