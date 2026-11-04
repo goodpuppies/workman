@@ -41,9 +41,10 @@ export function packageDirectories(fallback: string, file = workmanConfigFile())
 }
 
 export type ReplPromptSettings = { name?: string; prompt?: string; continuation?: string };
+export type ReplSettings = ReplPromptSettings & { highlight?: boolean };
 
 /** The `repl` section of the configuration. Every field is optional. */
-export function replPromptSettings(file = workmanConfigFile()): ReplPromptSettings {
+export function replSettings(file = workmanConfigFile()): ReplSettings {
   const { repl } = readConfiguration(file);
   if (repl === undefined) return {};
   if (!record(repl)) throw new Error(`invalid repl settings in ${file}`);
@@ -56,7 +57,15 @@ export function replPromptSettings(file = workmanConfigFile()): ReplPromptSettin
     }
     return { [key]: value };
   };
-  return { ...field("name"), ...field("prompt"), ...field("continuation") };
+  if (repl.highlight !== undefined && typeof repl.highlight !== "boolean") {
+    throw new Error(`repl.highlight in ${file} must be true or false`);
+  }
+  return {
+    ...field("name"),
+    ...field("prompt"),
+    ...field("continuation"),
+    ...(repl.highlight === undefined ? {} : { highlight: repl.highlight }),
+  };
 }
 
 export async function addPackageDirectory(

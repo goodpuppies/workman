@@ -12,7 +12,8 @@ import {
   replHelpText,
 } from "./repl_commands.ts";
 import { editorPrompts, TerminalEditor } from "./repl_editor.ts";
-import { type ReplPromptSettings, replPromptSettings } from "./user_config.ts";
+import { highlightSpans } from "./repl_highlight.ts";
+import { type ReplSettings, replSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
 import { observeLibraryLoad } from "./standard_library.ts";
 
@@ -243,18 +244,26 @@ export async function runInteractiveRepl(
       reportHistoryError(error);
     }
   }
-  // Piped input keeps the fixed prompts, so a script's output doesn't depend on this user's setup.
-  let promptSettings: ReplPromptSettings = {};
+  // Piped input ignores this, so a script's output doesn't depend on this user's setup.
+  let settings: ReplSettings = {};
   if (isTerminal) {
     try {
-      promptSettings = replPromptSettings();
+      settings = replSettings();
     } catch (error) {
       console.error(
-        `warning: using the default REPL prompt: ${error instanceof Error ? error.message : error}`,
+        `warning: using the default REPL settings: ${
+          error instanceof Error ? error.message : error
+        }`,
       );
     }
   }
-  editor = isTerminal ? new TerminalEditor(history, editorPrompts(promptSettings)) : undefined;
+  editor = isTerminal
+    ? new TerminalEditor(
+      history,
+      editorPrompts(settings),
+      settings.highlight !== false && !Deno.noColor ? highlightSpans : undefined,
+    )
+    : undefined;
   const record = (entry: string) => {
     editor?.remember(entry);
     if (!historyFile) return;

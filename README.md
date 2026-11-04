@@ -170,7 +170,8 @@ To change the prompt, add a `repl` section to `~/.config/workman/config.json`
   "repl": {
     "name": "wm",
     "prompt": "> ",
-    "continuation": "| "
+    "continuation": "| ",
+    "highlight": true
   }
 }
 ```
@@ -179,7 +180,11 @@ To change the prompt, add a `repl` section to `~/.config/workman/config.json`
 defaults to `= `. `name` goes in front of `prompt` and is empty by default, so this example shows
 `wm> `. The strings are used exactly as written, so include any space you want before your input;
 `"prompt": ":_"` puts your text straight after it. The shorter prompt is padded on the left so lines
-stay aligned. Piped input always uses the defaults.
+stay aligned.
+
+`highlight` colors your input as you type, using your terminal's color theme. It is on by default;
+set it to `false` to turn it off. `NO_COLOR` also turns it off. Piped input ignores all of these
+settings.
 
 Interactive input history is shared across sessions and saved as `repl-history.json` in Workman's
 state directory (`$XDG_STATE_HOME/workman`, defaulting to `~/.local/state/workman` on Unix;

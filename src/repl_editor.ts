@@ -1,4 +1,5 @@
 import { isReplCommand, replCommandNeedsSemicolon } from "./repl_commands.ts";
+import { type HighlightSpan, paintRange } from "./repl_highlight.ts";
 import { lexicalContextAt, topLevelPhraseEnd } from "./top_level_phrases.ts";
 import type { ReplPromptSettings } from "./user_config.ts";
 
@@ -614,8 +615,10 @@ export function renderFrame(
   size: { columns: number; rows: number },
   prompts: EditorPrompts = DEFAULT_PROMPTS,
   stylePrompt: (prompt: string) => string = (prompt) => prompt,
+  highlight?: (text: string) => readonly HighlightSpan[],
 ): EditorFrame {
   const rows = layoutRows(text, textWidth(size.columns, prompts.width));
+  const spans = highlight?.(text) ?? [];
   const cursorIndex = rowContaining(rows, cursor);
   const height = Math.max(size.rows - 1, 1);
   const top = Math.max(cursorIndex - height + 1, 0);
@@ -625,7 +628,7 @@ export function renderFrame(
       : row.start === 0
       ? prompts.first
       : prompts.continuation;
-    return stylePrompt(prompt) + text.slice(row.start, row.end);
+    return stylePrompt(prompt) + paintRange(text, row.start, row.end, spans);
   });
   const row = rows[cursorIndex];
   return {
@@ -655,10 +658,16 @@ export class TerminalEditor {
   #cursorRow = 0;
   #encoder = new TextEncoder();
   #prompts: EditorPrompts;
+  #highlight?: (text: string) => readonly HighlightSpan[];
 
-  constructor(history: string[], prompts: EditorPrompts = DEFAULT_PROMPTS) {
+  constructor(
+    history: string[],
+    prompts: EditorPrompts = DEFAULT_PROMPTS,
+    highlight?: (text: string) => readonly HighlightSpan[],
+  ) {
     this.#state = new EditorState(history);
     this.#prompts = prompts;
+    this.#highlight = highlight;
   }
 
   remember(entry: string): void {
@@ -757,6 +766,7 @@ export class TerminalEditor {
       this.#size(),
       this.#prompts,
       stylePrompt,
+      this.#highlight,
     );
     const up = (count: number) => count > 0 ? `\x1b[${count}A` : "";
     const right = frame.cursorColumn > 0 ? `\x1b[${frame.cursorColumn}C` : "";

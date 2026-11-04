@@ -1,0 +1,115 @@
+import { assertEquals } from "@std/assert";
+import { highlightSpans, paintRange } from "../src/repl_highlight.ts";
+import { editorPrompts, renderFrame } from "../src/repl_editor.ts";
+
+/** The highlighted pieces of `text`, as `kind:piece`. */
+function pieces(text: string): string[] {
+  return highlightSpans(text).map(({ start, end, kind }) => `${kind}:${text.slice(start, end)}`);
+}
+
+Deno.test("keywords, constants, and numbers are recognized as whole words", () => {
+  assertEquals(pieces("let rec x = if true { 1.5 } else { 0xFF };"), [
+    "keyword:let",
+    "keyword:rec",
+    "keyword:if",
+    "constant:true",
+    "number:1.5",
+    "keyword:else",
+    "number:0xFF",
+  ]);
+  assertEquals(pieces("letter iffy void' x2"), []);
+});
+
+Deno.test("capitalized names are types and a name before a parenthesis is a function", () => {
+  assertEquals(pieces("Some(x)"), ["type:Some"]);
+  assertEquals(pieces("print (x); y"), ["function:print"]);
+  assertEquals(pieces("List.map(f)"), ["type:List", "function:map"]);
+});
+
+Deno.test("strings and comments hide what they contain", () => {
+  assertEquals(pieces('"let x" + 1'), ['string:"let x"', "number:1"]);
+  assertEquals(pieces('"a\\"let"'), ['string:"a\\"let"']);
+  assertEquals(pieces("`let ${x}`"), ["string:`let ${x}`"]);
+  assertEquals(pieces("1 // let\nlet"), ["number:1", "comment:// let", "keyword:let"]);
+  assertEquals(pieces("1 -- let"), ["number:1", "comment:-- let"]);
+  assertEquals(pieces("/* let /* nested */ let */ let"), [
+    "comment:/* let /* nested */ let */",
+    "keyword:let",
+  ]);
+});
+
+Deno.test("input still being typed colors to its end", () => {
+  assertEquals(pieces('"open\nlet'), ['string:"open\nlet']);
+  assertEquals(pieces("/* open\nlet"), ["comment:/* open\nlet"]);
+  assertEquals(pieces("/"), []);
+});
+
+Deno.test("an apostrophe opens a character or continues a name", () => {
+  assertEquals(pieces("'a' 'x'"), ["string:'a'", "string:'x'"]);
+  assertEquals(pieces("'\\n'"), ["string:'\\n'"]);
+  assertEquals(pieces("'open"), []);
+  assertEquals(pieces("x' y'"), []);
+  assertEquals(pieces("'"), []);
+});
+
+Deno.test("a command name is colored, and only an expression argument is code", () => {
+  assertEquals(pieces(":t let"), ["command::t", "keyword:let"]);
+  assertEquals(pieces(":help type"), ["command::help"]);
+  assertEquals(pieces("// note\n:t 1;"), ["comment:// note", "command::t", "number:1"]);
+  assertEquals(pieces("  :h"), ["command::h"]);
+});
+
+Deno.test("painting a range keeps its text and color across a row boundary", () => {
+  const text = '"abcdef" x';
+  const spans = highlightSpans(text);
+  assertEquals(paintRange(text, 0, 4, spans), '\x1b[32m"abc\x1b[39m');
+  assertEquals(paintRange(text, 4, 10, spans), '\x1b[32mdef"\x1b[39m x');
+  assertEquals(paintRange("plain", 0, 5, []), "plain");
+  assertEquals(paintRange(text, 8, 10, spans), " x");
+});
+
+Deno.test("spans are ordered and don't overlap, for any input", () => {
+  for (
+    const text of [
+      "let f = (x: 'a) => { print(`a${x}`); /* c */ 'b' };",
+      '// a\n:t "b" + 1;',
+      "'''' \"\\",
+      "-- \n/* */ 1e5 0x",
+    ]
+  ) {
+    let last = 0;
+    for (const span of highlightSpans(text)) {
+      assertEquals(span.start >= last && span.end > span.start, true, text);
+      last = span.end;
+    }
+    assertEquals(last <= text.length, true);
+  }
+});
+
+Deno.test("the frame colors text but measures the cursor without the color", () => {
+  const prompts = editorPrompts();
+  const plain = renderFrame("let x", 5, { columns: 40, rows: 24 }, prompts);
+  const colored = renderFrame(
+    "let x",
+    5,
+    { columns: 40, rows: 24 },
+    prompts,
+    undefined,
+    highlightSpans,
+  );
+  assertEquals(plain.lines, ["- let x"]);
+  assertEquals(colored.lines, ["- \x1b[35mlet\x1b[39m x"]);
+  assertEquals(colored.cursorColumn, plain.cursorColumn);
+});
+
+Deno.test("a frame colors a string split across a soft wrap on both rows", () => {
+  const frame = renderFrame(
+    '"abcdefgh"',
+    0,
+    { columns: 8, rows: 24 },
+    editorPrompts(),
+    undefined,
+    highlightSpans,
+  );
+  assertEquals(frame.lines, ['- \x1b[32m"abcd\x1b[39m', '  \x1b[32mefgh"\x1b[39m']);
+});
