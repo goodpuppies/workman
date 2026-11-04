@@ -23,8 +23,14 @@ let buildPatternLike = (
 ) => {
   let tokens = collectTokens(value);
   let nodes = collectNodes(value);
+  let groupOpen = match(firstSyntax(value)) {
+    Some(TokenParseValue(token)) => {
+      if (token.text == "(") { Some(token) } else { None }
+    },
+    _ => { None },
+  };
   match((
-    firstTokenWithText(tokens, "("),
+    groupOpen,
     lastTokenWithText(tokens, ")", None),
     nodes
   )) {
@@ -44,7 +50,7 @@ let buildPatternLike = (
     },
     _ => {
       match((
-        firstTokenWithText(tokens, "("),
+        groupOpen,
         firstTokenWithText(tokens, ","),
         lastTokenWithText(tokens, ")", None),
         nodes

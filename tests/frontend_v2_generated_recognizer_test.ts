@@ -91,7 +91,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 150,
+    classified: 154,
     missing: [],
     unknown: [],
     duplicates: [],

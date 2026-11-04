@@ -353,7 +353,8 @@ TypeDeclBody
       };
     }
 
-Expr = IfExpr / MatchExpr / Lambda / Binary
+// All expression operands share the precedence ladder, including lambdas.
+Expr = body:Binary { return body; }
 
 IfExpr
   = "if" _ "(" _ cond:Expr _ ")" _ thenExpr:Block _ "else" _ elseExpr:Block
@@ -410,6 +411,40 @@ Lambda
         trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
       }, location());
     }
+
+
+// Full binding patterns are available when parentheses delimit the whole lambda.
+GroupedLambda
+  = params:GroupedLambdaParams returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
+    trailingReturnAnnotation:LambdaReturnAnnotation? {
+      return at({
+        kind: "Lambda",
+        params,
+        directives: parsed.directives,
+        body: parsed.body,
+        captureClause: captureClause ?? undefined,
+        returnAnnotation: returnAnnotation ?? undefined,
+        trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
+      }, location());
+    }
+  / returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
+    trailingReturnAnnotation:LambdaReturnAnnotation? {
+      return at({
+        kind: "Lambda",
+        params: [],
+        directives: parsed.directives,
+        body: parsed.body,
+        captureClause: captureClause ?? undefined,
+        returnAnnotation: returnAnnotation ?? undefined,
+        trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
+      }, location());
+    }
+
+
+GroupedLambdaParams = "(" _ ps:GroupedLambdaParamList? _ ")" { return ps ?? []; }
+  / param:GroupedLambdaParam { return [param]; }
+GroupedLambdaParamList = first:GroupedLambdaParam rest:(_ "," _ p:GroupedLambdaParam { return p; })* _ ","? { return [first, ...rest]; }
+GroupedLambdaParam = pattern:LetPattern ann:(_ value:TypeAnn { return value; })? { return at({ pattern, annotation: ann }, location()); }
 
 LambdaReturnAnnotation = _ ":" _ type:TypeExpr { return type; }
 
@@ -489,10 +524,11 @@ CallArgList = first:CallArg rest:(_ "," _ arg:CallArg { return arg; })* _ ","? {
 CallArg = ArgumentPlaceholder / Expr
 ArgumentPlaceholder = "_" !IdentPart !(!(_ ("," / ")"))) { return at({ kind: "ArgumentPlaceholder" }, location()); }
 SpaceCall = __ arg:SpaceArg { return { kind: "Call", args: [arg] }; }
-SpaceArg = Lambda / Primary
+SpaceArg = value:Primary { return value; }
 
 Primary
-  = Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / matched:(MatchFn / AnonymousMatchFn) !(!("(" / "-") SpaceArg) { return matched; } / v:LongName { return longNode("Var", v, {}, location()); }
+  = IfExpr / MatchExpr / Lambda
+  / Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / matched:(MatchFn / AnonymousMatchFn) !(!("(" / "-") SpaceArg) { return matched; } / v:LongName { return longNode("Var", v, {}, location()); }
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }
@@ -536,7 +572,8 @@ ListExpr
     { return listExpr([first, ...rest], tail ?? undefined, location()); }
 
 TupleOrGroup
-  = "(" _ first:Expr _ "," _ rest:ArgList? _ ")" { return at({ kind: "Tuple", items: [first, ...(rest ?? [])] }, location()); }
+  = "(" _ e:GroupedLambda _ ")" { return e; }
+  / "(" _ first:Expr _ "," _ rest:ArgList? _ ")" { return at({ kind: "Tuple", items: [first, ...(rest ?? [])] }, location()); }
   / "(" _ e:Expr _ ")" { return e; }
 
 ParenSeq = "(" _ seq:ParenSeqBody _ ")" { return at({ kind: "Block", items: seq.items, result: seq.result }, location()); }

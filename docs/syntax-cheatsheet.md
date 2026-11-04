@@ -279,6 +279,19 @@ and are separated by commas. All arm results must have the same type.
 `match { ... }` and `match arms` are functions; `match(value) { ... }` evaluates a match immediately.
 The wildcard `_` accepts any value without binding a name.
 
+Parenthesize the whole lambda to use constructor patterns in its parameters:
+
+```wm
+let unwrap = (Ok(x) => x);
+let value = Ok(3) :> (Ok(x) => x) :> increment;
+```
+
+`(Ok (x) => x)` accepts the same pattern. The outer parentheses delimit the
+lambda, preserving callback application such as `via Task (x) => body`.
+Bare lambdas such as `value :> x => x + 1` are also valid pipe operands;
+their expression bodies extend through subsequent pipes. Group the whole lambda
+to end its body before the next pipeline stage.
+
 Several spellings use the same arms. Braces around the **arm list** depend on the form:
 
 ```wm
