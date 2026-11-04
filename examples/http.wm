@@ -1,19 +1,19 @@
 -- HTTP server helpers for wm-mini
 
 from js.global import unsafe { URL, Response };
-from js.global import type { Request };
+from js.global import type { Request, Response };
 
 record Route = {
   method: String,
   path: String,
-  handler: Request -> Js.Object
+  handler: Request -> Response
 };
 
 let get = (path, handler) => {
   .{ method = "GET", path, handler }
 };
 
-let response = (body, init) => {
+let response = (body: String, init: Js.Value) => {
   Response.new(body, init)
 };
 
@@ -31,7 +31,7 @@ let rec findHandler = (routes, method, path) => {
 };
 
 let dispatch = (routes) => {
-  (req, info) => {
+  (req: Request) => {
     let method = match(req.method) {
       Ok(value) => { value },
       Err(_) => { "" },

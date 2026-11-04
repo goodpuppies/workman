@@ -83,6 +83,7 @@ calls requires keeping their backing storage valid for that entire period.
 
 `host/c/resource.wm` separately provides an optional synchronous
 `withCleanup(body, cleanup)` helper that runs cleanup on return or exception.
+The HTTP example defines its own `withMemory` wrapper using ordinary `free`.
 There is no globally opened `Unsafe` namespace.
 
 ## Struct sizes and field access
@@ -171,6 +172,71 @@ without explicit conversions. See [numeric literals](numbers.md) for ranges and 
 Convert ordinary byte counts to `I32` when a C function expects `int`, and use
 `I32.toNumber` when a returned C integer is needed for Number-based pointer byte
 offsets. Unsigned word conversions retain the existing standard library semantics.
+
+## Windows HTTP example
+
+For the smaller sketch with a recursive accept loop:
+
+```powershell
+.\wm.bat run examples/server/windows_simple.wm
+```
+
+It listens on all IPv4 interfaces and replies `Hello from workman!` to successive
+connections until interrupted. Each handler
+reads one chunk (at most 1024 bytes), calls send once, and closes the connection.
+This is deliberately unchecked sketch code: allocation results use
+`let Some(pointer) = ...`, and startup/bind failures return 1. Other Winsock
+return codes are mostly ignored. It omits
+full header parsing, partial-write handling, exception cleanup and timeouts.
+Allocation uses C `calloc` and `free`; there is no stack-allocation emulation.
+Reflected nullable pointers use `Some(pointer)` and `None`.
+
+For the more thorough one-request example:
+
+From the repository root:
+
+```powershell
+.\wm.bat run examples/server/windows.wm
+```
+
+After `LISTENING 8080`, use another terminal:
+
+```powershell
+curl.exe --max-time 5 http://127.0.0.1:8080/
+```
+
+The response is `hello from wm C FFI — moi!`. The example serves one connection
+and exits. It uses reflected Winsock, C allocation/free, scalar struct codecs,
+and explicit string-pointer conversion; no function signature annotations are
+required. The receive buffer is 4096 bytes plus a NUL terminator for `strstr`.
+Partial sends and fragmented headers are handled, UTF-8 lengths are byte counts,
+and accepted sockets have three-second send/receive timeouts. Accept remains
+blocking. This is a fixed-response demonstration, without routing, request-body
+processing, concurrent clients, or full HTTP validation.
+
+The host module interface is intentionally separate from the portable Basis.
+Its present primitive implementation is Deno-specific; no SML backend
+implementation is claimed here.
+
+## Unix HTTP example
+
+On Linux, run the matching POSIX socket sketch from the repository root:
+
+```sh
+deno task wm run examples/server/unix_simple.wm
+curl --max-time 5 http://127.0.0.1:8080/
+```
+
+It has the same response and one-receive/one-send design as `windows_simple.wm`.
+Both simple variants bind all IPv4 interfaces on port 8080 and keep accepting
+clients until interrupted. They are small API examples, without complete HTTP
+parsing, partial-write handling, timeouts, or concurrency.
+
+The Deno router example is at `examples/server/deno.wm`:
+
+```sh
+deno task wm run examples/server/deno.wm
+```
 
 ## Nullary authored functions
 

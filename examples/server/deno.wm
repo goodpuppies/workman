@@ -1,9 +1,13 @@
 -- HTTP server using the wm-mini router library
 
 from js.global import unsafe { Date };
-from js.global("Deno") import unsafe { serve };
+from js.global import type { Request, Response };
+// Use the synchronous, request-only handler form of Deno.serve.
+from js.module("./deno.js") import unsafe {
+  serve: (Js.Value, Request -> Response) -> Js.Object
+};
 from js.global("console") import unsafe { log };
-from "./http.wm" import { get, response, dispatch };
+from "../http.wm" import { get, response, dispatch };
 
 let routes = [
   get("/", (req) => {
@@ -24,5 +28,5 @@ let routes = [
 
 let main = () => {
   log("Starting server on http://127.0.0.1:8080");
-  serve(dispatch(routes));
+  serve(JSON{hostname: "127.0.0.1", port: 8080}, dispatch(routes));
 };

@@ -323,13 +323,13 @@ let main = () => {
 Run programs with the permissions the underlying JS APIs need:
 
 ```sh
-deno task wm run examples/server.wm
+deno task wm run examples/server/deno.wm
 ```
 
 or directly:
 
 ```sh
-deno run --allow-read --allow-write --allow-run --allow-env --allow-net src/main.ts run examples/server.wm
+deno run --allow-read --allow-write --allow-run --allow-env --allow-net src/main.ts run examples/server/deno.wm
 ```
 
 ## Module Metadata

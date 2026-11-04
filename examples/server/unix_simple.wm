@@ -1,0 +1,66 @@
+// Minimal blocking IPv4 HTTP server: one recv/send per client, no timeouts.
+// POSIX sockets on Linux; stop with Ctrl+C.
+from "host/c/pointer.wm" import * as Pointer;
+from c.header("stdlib.h") import unsafe { calloc, free };
+from c.header("sys/socket.h") import unsafe { socket, bind, listen, accept, recv, send, AF_INET, SOCK_STREAM };
+from c.header("netinet/in.h") import unsafe { IPPROTO_TCP, INADDR_ANY };
+from c.header("netinet/in.h") import type { sockaddr_in };
+from c.header("arpa/inet.h") import unsafe { htons };
+from c.header("unistd.h") import unsafe { close };
+
+let cstr = str => Some(str :> Pointer.fromString);
+let size = Word64.fromNumber;
+let httpPayload =
+  "HTTP/1.1 200 OK\r\n" ++
+  "Content-Type: text/plain\r\n" ++
+  "Content-Length: 19\r\n" ++
+  "Connection: close\r\n\r\n" ++
+  "Hello from workman!";
+
+let handleClient = (clientSock) => {
+  let Some(buffer) = calloc(1, 1024) :> Option.map(Pointer.cast);
+  let bytesReceived = recv(clientSock, Some(buffer), 1024, 0);
+  if (Int64.toNumber(bytesReceived) > 0) {
+    send(clientSock, cstr httpPayload, size(Pointer.byteLength(httpPayload)), 0);
+  } else { void };
+  free(Some(Pointer.cast(buffer)));
+  close(clientSock);
+};
+
+let rec serverLoop = (listenSock) => {
+  let clientSock = accept(listenSock, None, None);
+  if (clientSock == -1) {
+    print "workman: Accept failed.";
+  } else {
+    handleClient(clientSock);
+    serverLoop(listenSock);
+  }
+};
+
+let serve = (port) => {
+  let listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (listenSock == -1) { 1 } else {
+    let serverAddr = sockaddr_in{
+      sin_family = Word16.fromNumber(I32.toNumber(AF_INET)),
+      sin_port = htons(port),
+      sin_addr = { s_addr = INADDR_ANY }
+    };
+    let bindResult = bind(listenSock, Some(Pointer.cast(serverAddr.pointer)), Word32.fromNumber(serverAddr.size));
+    if (bindResult == -1) {
+      close(listenSock);
+      1
+    } else {
+      let listenResult = listen(listenSock, 16);
+      if (listenResult == -1) {
+        close(listenSock);
+        1
+      } else {
+        print("LISTENING " ++ Text.of(port));
+        serverLoop(listenSock);
+        close(listenSock);
+        0
+      }
+    }
+  }
+};
+let main ==> { serve(8081); };
