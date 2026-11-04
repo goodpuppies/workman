@@ -236,13 +236,18 @@ export function inferBlock(
   context: InferContext,
 ): Ty {
   const { env, typeEnv } = context;
+  // Most blocks declare no types and only read their surroundings'. Only those that do need a copy.
+  const declaresTypes = expr.items.some((item) => isDecl(item) && item.kind !== "LetDecl");
   const local = new Map(env);
-  const localTypes = cloneTypeEnv(typeEnv);
-  const outerTypeIds = knownTypeIds(typeEnv);
+  const localTypes = declaresTypes ? cloneTypeEnv(typeEnv) : typeEnv;
+  const outerTypeIds = declaresTypes ? knownTypeIds(typeEnv) : undefined;
   const localContext = deriveInferContext(context, {
     env: local,
     typeEnv: localTypes,
   });
+  let knownIds: Set<number> | undefined;
+  const localTypeIds = () =>
+    declaresTypes ? knownTypeIds(localTypes) : knownIds ??= knownTypeIds(typeEnv);
   const sequence: Ty[] = [];
   const sequenceNodes: Expr[] = [];
   const predeclaredGroups = new Set<number>();
@@ -265,7 +270,7 @@ export function inferBlock(
       predeclareTypeGroup(group, localContext);
       predeclaredGroups.add(s.mutualGroup);
     }
-    inferDecl(s, localContext, new Map(), new Map(), knownTypeIds(localTypes), false);
+    inferDecl(s, localContext, new Map(), new Map(), localTypeIds(), false);
     if (s.kind === "LetDecl") {
       for (const binding of s.bindings) {
         const type = context.types.get(binding.value);
@@ -280,7 +285,9 @@ export function inferBlock(
     expr.result,
     localContext,
   );
-  if (mentionsLocalType(result, outerTypeIds)) throw new Error("local type escapes scope");
+  if (outerTypeIds && mentionsLocalType(result, outerTypeIds)) {
+    throw new Error("local type escapes scope");
+  }
   if (!sequence.length) return result;
   const grouped = sequenceType(sequence, result);
   // A clean sequence changes nothing about its members.

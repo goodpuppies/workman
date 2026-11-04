@@ -155,6 +155,72 @@ export function constrainAt(
   reason?: EvidenceOrigin,
   options: ConstrainAtOptions = {},
 ) {
+  // The trace below is only ever read by a failure, so nothing is built for a constraint that holds.
+  const bindings: ConstraintBinding[] = [];
+  const provenanceBind = provenance && reason
+    ? rememberProvenance(provenance, reason, options.sources)
+    : undefined;
+  try {
+    constrain(
+      left,
+      right,
+      (variable, target, path, targetSide) => {
+        bindings.push({ variable, target, path });
+        provenanceBind?.(variable, target, path, targetSide);
+      },
+      (placeholder, target, path, targetSide) => {
+        const sources = ffiConstraintSources.get(placeholder) ?? new Map<Ty, TypeSource>();
+        const source = options.sources?.[targetSide];
+        sources.set(target, {
+          ...sourceAtPath(source, path),
+          origin: sourceAt(source, path) ?? reason,
+          type: target,
+          provenance,
+        });
+        ffiConstraintSources.set(placeholder, sources);
+      },
+    );
+  } catch (error) {
+    if (error instanceof TypeMismatchError) {
+      throw constraintFailure(
+        error,
+        bindings,
+        left,
+        right,
+        expr,
+        origins,
+        provenance,
+        reason,
+        options,
+      );
+    }
+    throw diagnosticError(
+      message && !(error instanceof JsBoundaryError) ? new Error(message()) : error,
+      selectPrimaryCallsite(origins, reason)?.node ?? expr?.node,
+      undefined,
+    );
+  }
+}
+
+type ConstraintBinding = { variable: Ty; target: Ty; path: DiffPath };
+
+/**
+ * Rewind what the failed constraint bound, so the trace shows the types as they were introduced, then
+ * replay each binding in order to record it. This reaches the same state the failure left.
+ */
+function constraintFailure(
+  error: TypeMismatchError,
+  bindings: readonly ConstraintBinding[],
+  left: Ty,
+  right: Ty,
+  expr: Expr | Param | Pattern | undefined,
+  origins: EvidenceOrigin[],
+  provenance: TypeProvenance | undefined,
+  reason: EvidenceOrigin | undefined,
+  options: ConstrainAtOptions,
+): FrontendDiagnosticError {
+  const instances = bindings.map(({ variable }) => (variable as { instance?: Ty }).instance);
+  for (const { variable } of bindings) (variable as { instance?: Ty }).instance = undefined;
   const writer = createDiagnosticWriter();
   const primary = selectPrimaryCallsite(origins, reason);
   const ruleSubject = primary?.message ?? reason?.message ?? "type constraint";
@@ -218,112 +284,84 @@ export function constrainAt(
     });
     writer.addEdge({ from: claimId, to: constraintId, role: "supports" });
   }
-  const provenanceBind = provenance && reason
-    ? rememberProvenance(provenance, reason, options.sources)
+  bindings.forEach(({ variable, target, path }, index) => {
+    (variable as { instance?: Ty }).instance = instances[index];
+    const substitutionId = writer.nextId("s");
+    writer.add({
+      kind: "substitution",
+      id: substitutionId,
+      variable: writer.snapshotType(variable),
+      target: writer.snapshotType(target),
+      constraint: constraintId,
+      path,
+    });
+    writer.addEdge({ from: constraintId, to: substitutionId, role: "produced" });
+  });
+  const collisionId = writer.nextId("x");
+  const commitment = error.boundVariableId === undefined
+    ? undefined
+    : provenance?.get(error.boundVariableId)?.commitment;
+  const attempted = error.attemptedSide === "left" ? error.left : error.right;
+  const attemptedOrigin = error.attemptedSide
+    ? sourceAt(options.sources?.[error.attemptedSide], error.path)
     : undefined;
-  try {
-    constrain(
-      left,
-      right,
-      (variable, target, path, targetSide) => {
-        const substitutionId = writer.nextId("s");
-        writer.add({
-          kind: "substitution",
-          id: substitutionId,
-          variable: writer.snapshotType(variable),
-          target: writer.snapshotType(target),
-          constraint: constraintId,
-          path,
-        });
-        writer.addEdge({ from: constraintId, to: substitutionId, role: "produced" });
-        provenanceBind?.(variable, target, path, targetSide);
+  const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
+  const observedRight = writer.snapshotType(commitment?.type ?? error.right);
+  const useSourcePathOrigins = options.primarySource !== undefined;
+  const leftOrigin = attemptedOrigin ??
+    (useSourcePathOrigins ? sourceAt(options.sources?.left, error.path) : undefined);
+  const rightOrigin = commitmentOriginWithDownstream(commitment, provenance) ??
+    (useSourcePathOrigins ? sourceAt(options.sources?.right, error.path) : undefined);
+  const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
+    ? primaryOriginForSource(options.sources?.[options.primarySource], error.path)
+    : undefined;
+  const leftClaim = addObservedOriginClaim(writer, leftOrigin, observedLeft);
+  const rightClaim = addObservedOriginClaim(writer, rightOrigin, observedRight);
+  writer.add({
+    kind: "collision",
+    id: collisionId,
+    constraint: constraintId,
+    left: observedLeft,
+    right: observedRight,
+    path: error.path,
+  });
+  if (leftClaim) writer.addEdge({ from: leftClaim, to: collisionId, role: "observed" });
+  if (rightClaim) writer.addEdge({ from: rightClaim, to: collisionId, role: "observed" });
+  writer.addEdge({ from: constraintId, to: collisionId, role: "failed" });
+  const failure: Failure = {
+    frame: context.frame,
+    premise: {
+      ...context.premise,
+      predicate: {
+        kind: "equal",
+        left: leftAtIntroduction,
+        right: rightAtIntroduction,
+        domain: "type",
       },
-      (placeholder, target, path, targetSide) => {
-        const sources = ffiConstraintSources.get(placeholder) ?? new Map<Ty, TypeSource>();
-        const source = options.sources?.[targetSide];
-        sources.set(target, {
-          ...sourceAtPath(source, path),
-          origin: sourceAt(source, path) ?? reason,
-          type: target,
-          provenance,
-        });
-        ffiConstraintSources.set(placeholder, sources);
+    },
+    violation: {
+      kind: "contradicted",
+      observed: { left: observedLeft, right: observedRight },
+      conflictPath: error.path,
+      context: options.context?.(error.path),
+      origins: {
+        left: leftOrigin?.message,
+        right: rightOrigin?.message,
       },
-    );
-  } catch (error) {
-    if (error instanceof TypeMismatchError) {
-      const collisionId = writer.nextId("x");
-      const commitment = error.boundVariableId === undefined
-        ? undefined
-        : provenance?.get(error.boundVariableId)?.commitment;
-      const attempted = error.attemptedSide === "left" ? error.left : error.right;
-      const attemptedOrigin = error.attemptedSide
-        ? sourceAt(options.sources?.[error.attemptedSide], error.path)
-        : undefined;
-      const observedLeft = writer.snapshotType(commitment ? attempted : error.left);
-      const observedRight = writer.snapshotType(commitment?.type ?? error.right);
-      const useSourcePathOrigins = options.primarySource !== undefined;
-      const leftOrigin = attemptedOrigin ??
-        (useSourcePathOrigins ? sourceAt(options.sources?.left, error.path) : undefined);
-      const rightOrigin = commitmentOriginWithDownstream(commitment, provenance) ??
-        (useSourcePathOrigins ? sourceAt(options.sources?.right, error.path) : undefined);
-      const primaryOrigin = options.primarySource && !isInheritedCallsitePrimary(primary, reason)
-        ? primaryOriginForSource(options.sources?.[options.primarySource], error.path)
-        : undefined;
-      const leftClaim = addObservedOriginClaim(writer, leftOrigin, observedLeft);
-      const rightClaim = addObservedOriginClaim(writer, rightOrigin, observedRight);
-      writer.add({
-        kind: "collision",
-        id: collisionId,
-        constraint: constraintId,
-        left: observedLeft,
-        right: observedRight,
-        path: error.path,
-      });
-      if (leftClaim) writer.addEdge({ from: leftClaim, to: collisionId, role: "observed" });
-      if (rightClaim) writer.addEdge({ from: rightClaim, to: collisionId, role: "observed" });
-      writer.addEdge({ from: constraintId, to: collisionId, role: "failed" });
-      const failure: Failure = {
-        frame: context.frame,
-        premise: {
-          ...context.premise,
-          predicate: {
-            kind: "equal",
-            left: leftAtIntroduction,
-            right: rightAtIntroduction,
-            domain: "type",
-          },
-        },
-        violation: {
-          kind: "contradicted",
-          observed: { left: observedLeft, right: observedRight },
-          conflictPath: error.path,
-          context: options.context?.(error.path),
-          origins: {
-            left: leftOrigin?.message,
-            right: rightOrigin?.message,
-          },
-        },
-      };
-      throw new FrontendDiagnosticError({
-        id: writer.nextId("d"),
-        code: premise?.code ?? "type.mismatch",
-        severity: "error",
-        primary: primaryOrigin
-          ? anchorFromOrigin(primaryOrigin)
-          : anchorFromEvidence(primary, expr?.node),
-        failure,
-        support: writer.buildSupport([collisionId]),
-        repairs: [],
-        dependsOn: [],
-      });
-    }
-    throw diagnosticError(
-      message && !(error instanceof JsBoundaryError) ? new Error(message()) : error,
-      primary?.node ?? expr?.node,
-      undefined,
-    );
-  }
+    },
+  };
+  throw new FrontendDiagnosticError({
+    id: writer.nextId("d"),
+    code: premise?.code ?? "type.mismatch",
+    severity: "error",
+    primary: primaryOrigin
+      ? anchorFromOrigin(primaryOrigin)
+      : anchorFromEvidence(primary, expr?.node),
+    failure,
+    support: writer.buildSupport([collisionId]),
+    repairs: [],
+    dependsOn: [],
+  });
 }
 
 function claimsForSource(

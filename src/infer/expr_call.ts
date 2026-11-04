@@ -573,9 +573,12 @@ export function maxCallDepth(origins: EvidenceOrigin[]): number {
 export function callCalleeRelated(callee: Expr, type: Ty): EvidenceOrigin[] {
   if (!callee.node) return [];
   return [{
-    message: callee.kind === "Var"
-      ? `callee ${callee.name}: ${show(type)}`
-      : `callee: ${show(type)}`,
+    // Rendered only if a diagnostic reads it, which is rare, while every call builds this.
+    get message() {
+      return callee.kind === "Var"
+        ? `callee ${callee.name}: ${show(type)}`
+        : `callee: ${show(type)}`;
+    },
     node: callee.node,
     span: callee.node.span,
   }];
