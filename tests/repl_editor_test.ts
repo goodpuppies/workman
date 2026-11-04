@@ -137,6 +137,29 @@ Deno.test("Shift+Enter inside an open block presses Enter after the semicolon", 
   assertEquals(state.text, "{ let a = 1;\n");
 });
 
+Deno.test("Enter runs a command with no semicolon, but opens an empty pair first", () => {
+  assertEquals(press(stateWith(":t x"), ENTER), ["submit"]);
+  assertEquals(press(stateWith(":help", 2), ENTER), ["submit"]);
+  const multiline = stateWith(":t f(\n  x", 2);
+  assertEquals(press(multiline, ENTER), ["none"]);
+  assertEquals(press(stateWith(":t f(\n  x)"), ENTER), ["submit"]);
+  const pair = stateWith(":t {}", 4);
+  assertEquals(press(pair, ENTER), ["none"]);
+  assertEquals(withCursor(pair), ":t {\n  |\n}");
+});
+
+Deno.test("Shift+Enter runs a command without adding a semicolon", () => {
+  const state = stateWith(":t {}", 4);
+  assertEquals(press(state, SHIFT_ENTER), ["submit"]);
+  assertEquals(state.text, ":t {}");
+});
+
+Deno.test("a colon later in the input is not a command", () => {
+  const state = stateWith("x\n:t y");
+  assertEquals(press(state, ENTER), ["none"]);
+  assertEquals(state.text, "x\n:t y\n");
+});
+
 Deno.test("a new line keeps the current indent", () => {
   const state = stateWith("{\n  let a = 1;");
   press(state, "\n");

@@ -1,10 +1,11 @@
-import { type CompileOptions, compileReplFileArtifacts } from "./compiler.ts";
+import { type CompileOptions, compileReplFileArtifacts, coreFile } from "./compiler.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
+import { isReplCommand, parseReplCommand, replHelpText } from "./repl_commands.ts";
 import { editorPrompts, TerminalEditor } from "./repl_editor.ts";
 import { type ReplPromptSettings, replPromptSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
@@ -151,6 +152,27 @@ async function warmSession(
   }
 }
 
+/**
+ * Types an expression against the session without emitting or running anything. The binding is new
+ * to this compile, and the newline keeps a trailing comment from swallowing the parenthesis.
+ */
+async function typeOfExpression(
+  sessionPath: string,
+  committed: string,
+  expression: string,
+  options: CompileOptions,
+): Promise<string> {
+  try {
+    await Deno.writeTextFile(sessionPath, `${committed}\nlet it = (${expression}\n);`);
+    const { core } = await coreFile(sessionPath, options);
+    const type = core.modules.get(core.entry)?.analysis.steps.at(-1)?.env.get("it")?.type;
+    if (type === undefined) throw new Error(`cannot find the type of ${expression}`);
+    return type;
+  } finally {
+    await Deno.writeTextFile(sessionPath, committed);
+  }
+}
+
 export type InteractiveReplOptions = CompileOptions & {
   /** Reports static (parse/elaboration) errors for a rejected phrase. */
   onError?: (error: unknown) => void;
@@ -248,7 +270,7 @@ export async function runInteractiveRepl(
       const entry = result.text.trimEnd();
       record(entry);
       // Enter submits only a finished buffer, so all that can follow the phrase is comments.
-      yield entry.slice(0, topLevelPhraseEnd(entry));
+      yield isReplCommand(entry) ? entry : entry.slice(0, topLevelPhraseEnd(entry));
     }
   }
   try {
@@ -269,7 +291,27 @@ export async function runInteractiveRepl(
     const inputPhrases = editor
       ? editedPhrases(editor)
       : phrases(stdin ?? Deno.stdin.readable, options.quiet);
+    const runCommand = async (text: string) => {
+      const command = parseReplCommand(text);
+      let output: string;
+      if (command.kind === "error") output = command.message;
+      else if (command.name === "help") output = replHelpText(command.argument);
+      else if (!command.argument) output = "usage: :type <expression>";
+      else {
+        output = await typeOfExpression(sessionPath, committed, command.argument, compileOptions);
+      }
+      await Deno.stdout.write(new TextEncoder().encode(`${output}\n`));
+    };
     for await (const phrase of inputPhrases) {
+      if (isReplCommand(phrase)) {
+        editor?.release();
+        try {
+          await runCommand(phrase);
+        } catch (error) {
+          onError(error);
+        }
+        continue;
+      }
       const candidate = committed ? `${committed}\n${phrase}` : phrase;
       try {
         await Deno.writeTextFile(sessionPath, candidate);
@@ -329,6 +371,11 @@ async function* phrases(
       }
       pending += line + (completeLine ? "\n" : "");
       if (completeLine) needPrompt = true;
+      if (completeLine && isReplCommand(pending)) {
+        yield pending;
+        pending = "";
+        continue;
+      }
       // A read can end anywhere, including inside an identifier or just after
       // a semicolon. Only submit complete lines (or the trailing input at EOF).
       if (!completeLine) continue;

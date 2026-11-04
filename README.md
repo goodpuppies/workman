@@ -153,6 +153,14 @@ Shift+Enter needs a terminal with the kitty keyboard protocol, such as Ghostty, 
 Alacritty, or iTerm2. Other terminals send it as a plain Enter, so use Alt+Enter there. While a
 recalled input is unedited, Up/Down keep walking history; press any other movement key to edit it.
 
+Commands start with `:` and run on Enter without a `;`. Any unambiguous prefix works, so `:t` is
+`:type`:
+
+| Command              | Action                                                           |
+| -------------------- | ---------------------------------------------------------------- |
+| `:help [command]`    | List the commands and keys, or show the details of one command   |
+| `:type <expression>` | Show an expression's type without running it or changing bindings |
+
 To change the prompt, add a `repl` section to `~/.config/workman/config.json`
 (`$XDG_CONFIG_HOME/workman/config.json`; `%APPDATA%\workman\config.json` on Windows):
 

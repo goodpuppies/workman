@@ -428,6 +428,53 @@ Deno.test("interactive repl applies named and anonymous match functions as one e
   );
 });
 
+Deno.test("repl :type shows a type without running the expression or changing the session", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    [
+      "let x = 5;",
+      ":type x + 1",
+      ':t print("must not run")',
+      ":t (a) => a;",
+      ":t x // a comment",
+      ":t",
+      ":t let y = 1",
+      "y;",
+      "x + 1;",
+    ].join("\n") + "\n",
+  );
+  assertEquals(result.code, 0);
+  assertEquals(result.stdout.includes("must not run"), false);
+  assertStringIncludes(result.stdout, "x = 5 : Number\n- Number\n- Void!\n- 'a -> 'a\n- Number\n");
+  assertStringIncludes(result.stdout, "usage: :type <expression>");
+  assertStringIncludes(result.stderr, "unknown name y");
+  assertStringIncludes(result.stdout, "it = 6 : Number");
+  assertEquals(result.stdout.includes("it = void"), false);
+});
+
+Deno.test("repl :type reports a bad expression and the session carries on", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    "let x = 5;\n:t nope\n:t x +\n:t (\nx + 1;\n",
+  );
+  assertEquals(result.code, 0);
+  assertStringIncludes(result.stderr, "unknown name nope");
+  assertStringIncludes(result.stdout, "it = 6 : Number");
+});
+
+Deno.test("repl :help and unknown commands print without touching the session", async () => {
+  const result = await runCliWithStdin(
+    ["repl"],
+    "let x = 5;\n:help\n:help type\n:nope\n:help nope\nx;\n",
+  );
+  assertEquals(result.code, 0);
+  assertEquals(result.stderr, "");
+  assertStringIncludes(result.stdout, ":type <expression>  show an expression's type");
+  assertStringIncludes(result.stdout, "Nothing runs and no binding changes");
+  assertStringIncludes(result.stdout, "unknown command :nope; try :help");
+  assertStringIncludes(result.stdout, "it = 5 : Number");
+});
+
 Deno.test("interactive repl quit prints the phrase's output and ends the session", async () => {
   const result = await runCliWithStdin(
     ["repl"],

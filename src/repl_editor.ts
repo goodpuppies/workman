@@ -1,3 +1,4 @@
+import { isReplCommand } from "./repl_commands.ts";
 import { lexicalContextAt, topLevelPhraseEnd } from "./top_level_phrases.ts";
 import type { ReplPromptSettings } from "./user_config.ts";
 
@@ -406,7 +407,8 @@ export class EditorState {
       return "none";
     }
     const onLastLine = !this.text.slice(this.#lineEnd()).trim();
-    if (onLastLine && topLevelPhraseEnd(this.text) !== undefined) return "submit";
+    const finished = isReplCommand(this.text) || topLevelPhraseEnd(this.text) !== undefined;
+    if (onLastLine && finished) return "submit";
     this.#insertNewline();
     return "none";
   }
@@ -414,7 +416,11 @@ export class EditorState {
   /** Shift+Enter: jump to the end of the buffer, insert `;`, and press Enter. */
   #terminateAndEnter(): EditorAction {
     if (!this.text.trim()) return "none";
-    // A phrase that already ends needs no second `;`.
+    // A command takes no `;`, and a phrase that already ends needs no second one.
+    if (isReplCommand(this.text)) {
+      this.cursor = this.text.length;
+      return "submit";
+    }
     if (topLevelPhraseEnd(this.text) === undefined) this.text = `${this.text.trimEnd()};`;
     this.cursor = this.text.length;
     return this.#enter();
