@@ -112,8 +112,9 @@ compare / min / max
 
 The source spelling need not adopt SML symbolic word operators immediately. Named members allow
 the representation and conversion semantics to land before general overloaded-operator solving.
-Later, SML word literals (`0w5`, `0wxFF`) and operator overloading can elaborate to the same semantic
-members rather than creating another numeric implementation.
+The next step is context-selected ordinary literals (`5`, `0xFF`) and operator overloading,
+elaborating to the same semantic members. WM will not add a separate SML `0w` spelling; see
+[numeric-overloading.md](numeric-overloading.md).
 
 ### Signed values follow SML `INTEGER`
 
@@ -443,9 +444,12 @@ out-parameters use visibly foreign mutable storage without constructing `JSON[]`
 
 ### Slice E: source syntax and overloading
 
+The focused next-step plan is [numeric-overloading.md](numeric-overloading.md), based on
+MLWorks and Appendix E of the local Revised Definition.
+
 Only after the concrete structures are exercised:
 
-1. decide whether to add SML `0w`/`0wx` literals;
+1. use ordinary integer literals for all numeric types, including words (no `0w`/`0wx` syntax);
 2. extend the kernel's fixed operator catalog with SML-style numeric overloading classes;
 3. default ordinary integer literals exactly as today unless word context resolves them;
 4. preserve one selected type throughout an overloaded operator occurrence;

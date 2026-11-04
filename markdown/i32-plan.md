@@ -4,6 +4,12 @@ Status: decided 2026-10-23; steps 1–5 in wm-mini, step 6 in SubsetML (`make te
 [docs/integer-investigation.md](../docs/integer-investigation.md) and SubsetML's
 `docs/integers.md`, whose language contract WM matches.
 
+The literal domain was extended on 2026-10-30: ordinary literals now also select
+word and Int64 types from context, with range diagnostics after selection. See
+[numeric-overloading.md](numeric-overloading.md) and [numeric literal documentation](../docs/numbers.md).
+The Number/I32-only literal rules below describe the original I32 implementation;
+its operator rules remain current.
+
 ## Decisions
 
 - **Name:** `I32`. SubsetML's bootstrap integer namespace (`Int.toString`,
