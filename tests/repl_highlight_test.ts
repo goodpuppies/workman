@@ -1,5 +1,11 @@
 import { assertEquals } from "@std/assert";
-import { highlightSpans, paintRange } from "../src/repl_highlight.ts";
+import {
+  BASIC_STYLES,
+  highlightSpans,
+  paintRange,
+  terminalHighlightStyles,
+  WORKMAN_STYLES,
+} from "../src/repl_highlight.ts";
 import { editorPrompts, renderFrame } from "../src/repl_editor.ts";
 
 /** The highlighted pieces of `text`, as `kind:piece`. */
@@ -62,10 +68,10 @@ Deno.test("a command name is colored, and only an expression argument is code", 
 Deno.test("painting a range keeps its text and color across a row boundary", () => {
   const text = '"abcdef" x';
   const spans = highlightSpans(text);
-  assertEquals(paintRange(text, 0, 4, spans), '\x1b[32m"abc\x1b[39m');
-  assertEquals(paintRange(text, 4, 10, spans), '\x1b[32mdef"\x1b[39m x');
-  assertEquals(paintRange("plain", 0, 5, []), "plain");
-  assertEquals(paintRange(text, 8, 10, spans), " x");
+  assertEquals(paintRange(text, 0, 4, spans, BASIC_STYLES), '\x1b[32m"abc\x1b[39m');
+  assertEquals(paintRange(text, 4, 10, spans, BASIC_STYLES), '\x1b[32mdef"\x1b[39m x');
+  assertEquals(paintRange("plain", 0, 5, [], BASIC_STYLES), "plain");
+  assertEquals(paintRange(text, 8, 10, spans, BASIC_STYLES), " x");
 });
 
 Deno.test("spans are ordered and don't overlap, for any input", () => {
@@ -96,6 +102,7 @@ Deno.test("the frame colors text but measures the cursor without the color", () 
     prompts,
     undefined,
     highlightSpans,
+    BASIC_STYLES,
   );
   assertEquals(plain.lines, ["- let x"]);
   assertEquals(colored.lines, ["- \x1b[35mlet\x1b[39m x"]);
@@ -110,6 +117,35 @@ Deno.test("a frame colors a string split across a soft wrap on both rows", () =>
     editorPrompts(),
     undefined,
     highlightSpans,
+    BASIC_STYLES,
   );
   assertEquals(frame.lines, ['- \x1b[32m"abcd\x1b[39m', '  \x1b[32mefgh"\x1b[39m']);
+});
+
+Deno.test("the Workman colors need truecolor, and other terminals keep the 16-color palette", () => {
+  const previous = Deno.env.get("COLORTERM");
+  const restore = () => {
+    if (previous === undefined) Deno.env.delete("COLORTERM");
+    else Deno.env.set("COLORTERM", previous);
+  };
+  try {
+    for (const value of ["truecolor", "24bit"]) {
+      Deno.env.set("COLORTERM", value);
+      assertEquals(terminalHighlightStyles(), WORKMAN_STYLES);
+    }
+    Deno.env.set("COLORTERM", "yes");
+    assertEquals(terminalHighlightStyles(), BASIC_STYLES);
+    Deno.env.delete("COLORTERM");
+    assertEquals(terminalHighlightStyles(), BASIC_STYLES);
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("the Workman keyword color is the loading bar's orange", () => {
+  const text = "let x";
+  assertEquals(
+    paintRange(text, 0, 5, highlightSpans(text), WORKMAN_STYLES),
+    "\x1b[38;2;255;106;21mlet\x1b[39m x",
+  );
 });

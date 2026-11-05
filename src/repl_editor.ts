@@ -1,5 +1,10 @@
 import { isReplCommand, replCommandNeedsSemicolon } from "./repl_commands.ts";
-import { type HighlightSpan, paintRange } from "./repl_highlight.ts";
+import {
+  type HighlightSpan,
+  type HighlightStyles,
+  paintRange,
+  terminalHighlightStyles,
+} from "./repl_highlight.ts";
 import { lexicalContextAt, topLevelPhraseEnd } from "./top_level_phrases.ts";
 import type { ReplPromptSettings } from "./user_config.ts";
 
@@ -613,6 +618,7 @@ export function renderFrame(
   prompts: EditorPrompts = DEFAULT_PROMPTS,
   stylePrompt: (prompt: string) => string = (prompt) => prompt,
   highlight?: (text: string) => readonly HighlightSpan[],
+  styles: HighlightStyles = terminalHighlightStyles(),
 ): EditorFrame {
   const rows = layoutRows(text, textWidth(size.columns, prompts.width));
   const spans = highlight?.(text) ?? [];
@@ -625,7 +631,7 @@ export function renderFrame(
       : row.start === 0
       ? prompts.first
       : prompts.continuation;
-    return stylePrompt(prompt) + paintRange(text, row.start, row.end, spans);
+    return stylePrompt(prompt) + paintRange(text, row.start, row.end, spans, styles);
   });
   const row = rows[cursorIndex];
   return {

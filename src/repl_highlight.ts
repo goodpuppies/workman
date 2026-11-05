@@ -12,8 +12,22 @@ export type HighlightKind =
 
 export type HighlightSpan = Readonly<{ start: number; end: number; kind: HighlightKind }>;
 
-/** The 16-color palette, so highlighting follows the terminal's own theme. */
-const STYLES: Readonly<Record<HighlightKind, string>> = {
+export type HighlightStyles = Readonly<Record<HighlightKind, string>>;
+
+/** Workman's colors, built around the orange of the logo and the loading bar. */
+export const WORKMAN_STYLES: HighlightStyles = {
+  keyword: "\x1b[38;2;255;106;21m",
+  constant: "\x1b[38;2;255;167;115m",
+  number: "\x1b[38;2;255;167;115m",
+  string: "\x1b[38;2;216;199;168m",
+  comment: "\x1b[38;2;111;106;102m",
+  type: "\x1b[38;2;255;201;163m",
+  function: "\x1b[38;2;255;255;255m",
+  command: "\x1b[38;2;255;106;21m",
+};
+
+/** For a terminal without truecolor: the 16-color palette, which follows its own theme. */
+export const BASIC_STYLES: HighlightStyles = {
   keyword: "\x1b[35m",
   constant: "\x1b[33m",
   number: "\x1b[33m",
@@ -23,6 +37,16 @@ const STYLES: Readonly<Record<HighlightKind, string>> = {
   function: "\x1b[34m",
   command: "\x1b[35m",
 };
+
+export function terminalHasTruecolor(): boolean {
+  const colorTerm = Deno.env.get("COLORTERM");
+  return colorTerm === "truecolor" || colorTerm === "24bit";
+}
+
+export function terminalHighlightStyles(): HighlightStyles {
+  return terminalHasTruecolor() ? WORKMAN_STYLES : BASIC_STYLES;
+}
+
 const RESET_COLOR = "\x1b[39m";
 
 const KEYWORDS = new Set([
@@ -143,6 +167,7 @@ export function paintRange(
   start: number,
   end: number,
   spans: readonly HighlightSpan[],
+  styles: HighlightStyles = terminalHighlightStyles(),
 ): string {
   let painted = "";
   let index = start;
@@ -151,7 +176,7 @@ export function paintRange(
     if (span.start >= end) break;
     const from = Math.max(span.start, start);
     const to = Math.min(span.end, end);
-    painted += text.slice(index, from) + STYLES[span.kind] + text.slice(from, to) + RESET_COLOR;
+    painted += text.slice(index, from) + styles[span.kind] + text.slice(from, to) + RESET_COLOR;
     index = to;
   }
   return painted + text.slice(index, end);

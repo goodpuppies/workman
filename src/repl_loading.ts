@@ -1,3 +1,4 @@
+import { terminalHasTruecolor } from "./repl_highlight.ts";
 import type { LibraryLoadObserver } from "./standard_library.ts";
 
 const BAR_WIDTH = 28;
@@ -66,9 +67,7 @@ export function renderLoadingBar(
 }
 
 export function loadingBarStyle(): LoadingBarStyle {
-  const colorTerm = Deno.env.get("COLORTERM");
-  const truecolor = colorTerm === "truecolor" || colorTerm === "24bit";
-  return { color: truecolor && !Deno.noColor ? "truecolor" : "none" };
+  return { color: terminalHasTruecolor() && !Deno.noColor ? "truecolor" : "none" };
 }
 
 /** Maps compiler events to a position on the bar, which only ever moves forward. */
