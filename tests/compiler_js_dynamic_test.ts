@@ -488,6 +488,57 @@ Deno.test("numeric typed arrays stay non-generic when imported by name", async (
   );
 });
 
+const bufferHolder = (argument: string) => `
+  from js.module("node:buffer") import { Buffer };
+  from js.global import type { ${argument} };
+  record Holder = { bytes: Buffer<${argument}> };
+  let first = (holder: Holder) => { holder.bytes :> .readUInt8(0) };
+`;
+
+Deno.test("a global type argument keeps its identity across modules", async () => {
+  const results = await checkVirtual(
+    "/test/main.wm",
+    new Map([
+      ["/test/holder.wm", bufferHolder("ArrayBuffer")],
+      [
+        "/test/main.wm",
+        `
+          from "./holder.wm" import { Holder, first };
+          from js.module("node:buffer") import { Buffer };
+          let holder = Buffer.alloc(4) :> Result.map((bytes) => { Holder(bytes) });
+          let byte = Buffer.alloc(4) :> Result.map((bytes) => { first(Holder(bytes)) });
+        `,
+      ],
+    ]),
+  );
+  expectBinding(results.get("/test/main.wm")!.env, "holder", {
+    type: "Result<Holder, Js.Error>!",
+    vars: 0,
+  });
+});
+
+Deno.test("distinct global type arguments stay distinct across modules", async () => {
+  await assertRejects(
+    () =>
+      checkVirtual(
+        "/test/main.wm",
+        new Map([
+          ["/test/holder.wm", bufferHolder("SharedArrayBuffer")],
+          [
+            "/test/main.wm",
+            `
+              from "./holder.wm" import { Holder };
+              from js.module("node:buffer") import { Buffer };
+              let holder = Buffer.alloc(4) :> Result.map((bytes) => { Holder(bytes) });
+            `,
+          ],
+        ]),
+      ),
+    Error,
+    "type mismatch",
+  );
+});
+
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
   const result = await checkSource(`
     from js.global("JSON") import unsafe {

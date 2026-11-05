@@ -314,6 +314,15 @@ function containsTypeParameter(type: ts.Type): boolean {
   return false;
 }
 
+/** A global type has one identity however it is reached, so it uses the key its import gets. */
+function nestedNominalKey(checker: ts.TypeChecker, type: ts.Type, expression: string): string {
+  const symbol = type.aliasSymbol ?? type.getSymbol();
+  const qualified = symbol && checker.getFullyQualifiedName(symbol).replace(/^global\./, "");
+  return qualified && !qualified.startsWith('"')
+    ? `global-type:${qualified}`
+    : `nominal-type:${expression}`;
+}
+
 /** Nominal identities below a generic result (for example an Effect's error). */
 export function nestedForeignTypeRefs(
   checker: ts.TypeChecker,
@@ -336,7 +345,7 @@ export function nestedForeignTypeRefs(
       );
       const expr = `__wm_nested_type_${refs.length}`;
       refs.push({
-        key: generic?.key ?? `nominal-type:${expression}`,
+        key: generic?.key ?? nestedNominalKey(checker, current, expression),
         source: `${source}\ndeclare const ${expr}: ${expression};`,
         expr,
         generic,
