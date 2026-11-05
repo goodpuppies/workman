@@ -150,6 +150,16 @@ let mapPartial = (items, f) => {
 
 let find = SubsetList.find;
 
+let rec findMap = match(items, f) => {
+  ([], _) => { None },
+  ([head, ..rest], f) => {
+    match(f(head)) {
+      Some(value) => { Some(value) },
+      None => { findMap(rest, f) }
+    }
+  }
+};
+
 let partition = SubsetList.partition;
 
 let tabulate = (count: Number, f) => {

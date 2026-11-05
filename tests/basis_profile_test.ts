@@ -698,6 +698,7 @@ Deno.test("[module update T130] current compiled standard structure interfaces a
           "app",
           "mapPartial",
           "find",
+          "findMap",
           "partition",
           "tabulate",
           "collate",
@@ -1168,7 +1169,7 @@ Deno.test("[module update B303/G9] every basis fact evaluates to a defined runti
     new Map([["/test/probe.wm", source]]),
   );
   const module = await importProgram(
-    `data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`
+    `data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`,
   ) as Record<string, unknown>;
 
   const undefinedReferences = references

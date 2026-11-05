@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "@std/assert";
-import { checkSource } from "../src/compiler.ts";
+import { checkSource, compile } from "../src/compiler.ts";
 import { inferModule } from "../src/infer.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
 import { expectBinding } from "./type_helpers.ts";
@@ -914,3 +914,40 @@ async function runCli(args: string[]) {
     stderr: new TextDecoder().decode(output.stderr),
   };
 }
+
+Deno.test("List.findMap returns the first mapped value", async () => {
+  const result = await checkSource(`
+    let halve = (n: Number) => { if (n % 2 == 0) { Some(n / 2) } else { None } };
+    let found = [1, 4, 6] :> List.findMap(halve);
+    let missing = [1, 3] :> List.findMap(halve);
+    let empty = List.findMap([], halve);
+    let piped = [1, 4] :> List.findMap(halve) :> Option.getOr(0);
+  `);
+  expectBinding(result.env, "found", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "missing", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "empty", { type: "Option<Number>", vars: 0 });
+  expectBinding(result.env, "piped", { type: "Number", vars: 0 });
+});
+
+Deno.test("List.findMap doesn't call its function after the first match", async () => {
+  const js = await compile(`
+    let check = (n: Number) => {
+      print(n);
+      if (n > 1) { Some(n * 10) } else { None }
+    };
+    let main = () => { print([1, 2, 3] :> List.findMap(check) :> Option.getOr(0)); };
+  `);
+  const path = await Deno.makeTempFile({ suffix: ".mjs" });
+  try {
+    await Deno.writeTextFile(path, js);
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", path],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(new TextDecoder().decode(output.stderr), "");
+    assertEquals(new TextDecoder().decode(output.stdout), "1\n2\n20\n");
+  } finally {
+    await Deno.remove(path);
+  }
+});
