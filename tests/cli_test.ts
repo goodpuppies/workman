@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { evaluateReplFile, runInteractiveRepl, topLevelPhraseRanges } from "../src/repl.ts";
+import { evaluateReplFile, REPL_SESSION_HEADER,
+  runInteractiveRepl, topLevelPhraseRanges } from "../src/repl.ts";
 import { topLevelPhraseEnd } from "../src/top_level_phrases.ts";
 import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
@@ -1369,11 +1370,50 @@ Deno.test("interactive repl restores its session file after static and runtime f
     /let bad|Panic/.test(source) ? [index] : []
   );
   assertEquals(rejectedWrites.length, 3);
-  const header = 'from "./repl_pervasives.wm" import { quit };\n';
+  const header = `${REPL_SESSION_HEADER}\n`;
   for (const index of rejectedWrites) {
     assertEquals(sessionWrites[index + 1], `${header}let x = 40;`);
   }
   assertEquals(sessionWrites.at(-1), `${header}let x = 40;\n\nx + 2;`);
+});
+
+Deno.test("repl session has SML's top-level structures without imports", async () => {
+  const phrases = [
+    "Bool.not(true);",
+    "Char.isDigit;",
+    "Int.fromString;",
+    "Io.readFile;",
+    "OS.Process.isSuccess(OS.Process.success);",
+    'OS.Path.dir("a/b");',
+    "StringCvt.padLeft(\"a\", 3, ' ');",
+    "Text.size;",
+    // Session imports shadow the header's, as in any module.
+    'from "basis/list.wm" import * as Text;',
+    "Text.length;",
+  ];
+  const input = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(phrases.join("\n")));
+      controller.close();
+    },
+  });
+  const errors: unknown[] = [];
+  const stdoutChunks: Uint8Array[] = [];
+  const originalStdout = Deno.stdout.write;
+  Deno.stdout.write = (chunk) => {
+    stdoutChunks.push(chunk.slice());
+    return Promise.resolve(chunk.length);
+  };
+  try {
+    await runInteractiveRepl({ input, quiet: true, onError: (error) => errors.push(error) });
+  } finally {
+    Deno.stdout.write = originalStdout;
+  }
+  assertEquals(errors, []);
+  assertStringIncludes(
+    stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join(""),
+    "it = true : Bool",
+  );
 });
 
 Deno.test("repl phrase end ignores quoted and commented semicolons", () => {

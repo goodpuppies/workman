@@ -145,6 +145,11 @@ character steps over it. Backspace removes an empty pair, and Enter opens one on
 paired in front of a word, inside a string, or in a comment, and `'` after a name stays part of the
 name, as in `x'`.
 
+A session starts with SML's usual top-level structures available without imports: `OS.Process`,
+`OS.Path`, `Bool`, `Char`, `Int` and `StringCvt`, alongside `Io` for files and `Text` for Unicode
+text, plus the preloaded `List`, `String`, `Option` and the rest. These are ordinary imports in the
+session's module, so a later import of the same name shadows them.
+
 Calling `quit()` also ends the session. It is available only in `wm repl` sessions, never returns,
 and can be called anywhere, as in `if (done) { quit() } else { 42 };`. Your own `let quit = ...`
 replaces it.

@@ -130,7 +130,20 @@ let quit = () => {
   unreachable()
 };
 `;
-const REPL_SESSION_HEADER = `from "./${REPL_PERVASIVES_FILE}" import { quit };`;
+// A session is an ordinary module, so these are ordinary imports, loaded at startup and shadowed
+// like any others. They're what an SML session has at top level; modules that `std` already
+// provides, such as `List`, don't need a line here. `Io` and `Text` are SubsetML's counterparts of
+// `TextIO` and Unicode text.
+export const REPL_SESSION_HEADER = [
+  `from "./${REPL_PERVASIVES_FILE}" import { quit };`,
+  `from "basis/bool.wm" import * as Bool;`,
+  `from "basis/char.wm" import * as Char;`,
+  `from "basis/int.wm" import * as Int;`,
+  `from "basis/io.wm" import * as Io;`,
+  `from "basis/os.wm" import * as OS;`,
+  `from "basis/string_cvt.wm" import * as StringCvt;`,
+  `from "basis/text.wm" import * as Text;`,
+].join("\n");
 
 /**
  * Compiles the empty session so the first phrase finds the standard library already loaded. A
