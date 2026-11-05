@@ -166,6 +166,14 @@ Deno.test("export from a named import forwards one binding, renamed", async () =
   );
 });
 
+Deno.test("the Basis OS module nests Process, as in SML", async () => {
+  const main = (expression: string) =>
+    `from "basis/os.wm" import * as OS;
+     print(${expression});`;
+  assertEquals(await run(main(`OS.Process.isSuccess(OS.Process.success)`)), "true");
+  assertEquals(await run(main(`OS.Process.isSuccess(OS.Process.failure)`)), "false");
+});
+
 Deno.test("export is still an ordinary name elsewhere", async () => {
   assertEquals(await run(`let export = 3; print(export + 1);`), "4");
 });

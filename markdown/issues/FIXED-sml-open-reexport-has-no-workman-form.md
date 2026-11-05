@@ -132,6 +132,6 @@ The SubsetML translator lowers `export from ... import *;` to `open` and prints 
 form. The other two `export from` clauses need nested structures, which SubsetML doesn't have, so it
 diagnoses them. A plain `import *` also lowers to `open`, which exposes more on the SML side, because
 SubsetML omits `local`; that is SubsetML's
-`markdown/issues/plain-import-star-exposes-names-in-sml.md`.
+`markdown/issues/private-imports.md`.
 
 `tests/module_export_import_test.ts` covers the checks listed above.

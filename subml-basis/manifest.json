@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "e7f362b0b54e70dd5bf4a381bb94d08513c1dd7d",
+  "commit": "2cf2b3fbd5af49ebb0e386df36d96daae212b221",
   "modules": [
     "SubsetBool",
     "SubsetBytes",
@@ -13,6 +13,7 @@
     "SubsetOption",
     "SubsetOptionValue",
     "SubsetOrder",
+    "SubsetOs",
     "SubsetPath",
     "SubsetProcess",
     "SubsetResult",
@@ -45,6 +46,7 @@
     "src/subset_option.sml": "e75eebe6e9c04a4fd32772cb2223b06033b19ebd3c3d93733ae4742297a70e69",
     "src/subset_option_value.sml": "642779e8a4c81370c6abd01434bcf18688cc638cda4198d0c82543f745bb12e3",
     "src/subset_order.sml": "58bfe21bae57c28626812d16e35fcf8d93973d23a6dec9998d0a62c87463d7ee",
+    "src/subset_os.sml": "47b87cd732ed9a63c06d23a5cf0ca521e47b075c6d67e64be926d365c405c95b",
     "src/subset_path.sml": "aafa31b9db28f7ad78900b0a1e64f6f8ba423d87040313f57c40d885d272c422",
     "src/subset_process.sml": "cd2a8c0e75d20e5197f493966350183865ed71dcc5f02fd34c27137f2743211c",
     "src/subset_result.sml": "1a624117f1a4338ccdd193324d4afb1f6c406015e79dc417eeec57a7d9121819",
