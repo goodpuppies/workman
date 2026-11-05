@@ -1,6 +1,7 @@
 import { type CompileOptions, compileReplFileArtifacts, coreFile } from "./compiler.ts";
 import denoConfig from "../deno.json" with { type: "json" };
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
@@ -173,23 +174,226 @@ async function warmSession(
 }
 
 /**
- * Types an expression against the session without emitting or running anything. The binding is new
- * to this compile, and the newline keeps a trailing comment from swallowing the parenthesis.
+ * A session follows Section 8, "Programs", of the Definition of Standard ML (Revised). Each phrase
+ * is its own module, `phrase_n.wm`, which re-exports the previous accepted phrase and then declares
+ * its own bindings, so a later binding shadows an earlier one: B' = B ⊕ B1. One host process imports
+ * each phrase's bundle once, and modules that earlier phrases initialized are shared through the
+ * emitted registry, so no phrase is evaluated twice.
+ *
+ * - A phrase that fails to elaborate has no effect whatever (rule 189): it never runs.
+ * - A phrase that raises keeps its effects on the state but doesn't change the basis (rule 190): the
+ *   next phrase imports the previous accepted phrase, not this one.
+ * - A phrase that succeeds extends the basis (rule 191).
  */
-async function typeOfExpression(
-  sessionPath: string,
-  committed: string,
-  expression: string,
-  options: CompileOptions,
-): Promise<string> {
-  try {
-    await Deno.writeTextFile(sessionPath, `${committed}\nlet it = (${expression}\n);`);
-    const { core } = await coreFile(sessionPath, options);
+class PhraseSession {
+  #directory: string;
+  #accepted = 0;
+  #next = 1;
+  /** Accepted `from js...` imports, which can't be re-exported, so every later phrase repeats them. */
+  #jsImports: string[] = [];
+  #host: ReplHost | undefined;
+
+  constructor(directory: string) {
+    this.#directory = directory;
+  }
+
+  get headerPath(): string {
+    return `${this.#directory}/phrase_0.wm`;
+  }
+
+  async start(): Promise<void> {
+    // The header's imports are re-exported, so every phrase sees them, as SML's top level does.
+    const header = REPL_SESSION_HEADER.split("\n").map((line) => `export ${line}`).join("\n");
+    await Deno.writeTextFile(this.headerPath, `${header}\n`);
+  }
+
+  /** The source of a module that sees every accepted binding and then holds `body`. */
+  #module(body: string): string {
+    const imports = this.#jsImports.map((declaration) => `${declaration}\n`).join("");
+    return `export from "./phrase_${this.#accepted}.wm" import *;\n${imports}${body}`;
+  }
+
+  async evaluate(phrase: string, options: CompileOptions): Promise<"accepted" | "raised" | "quit"> {
+    const index = this.#next++;
+    const path = `${this.#directory}/phrase_${index}.wm`;
+    // An import phrase is re-exported, so the names it brings in stay visible to later phrases.
+    const jsImport = /^\s*from\s+js\./.test(phrase);
+    const source = jsImport ? phrase : phrase.replace(/^(\s*)from\s/, "$1export from ");
+    await Deno.writeTextFile(path, this.#module(source));
+    const artifacts = await compileReplFileArtifacts(path, options);
+    const output = `${this.#directory}/out_${index}`;
+    await Deno.mkdir(output);
+    for (const artifact of artifacts) {
+      await Deno.writeTextFile(`${output}/${artifact.path}`, artifact.code);
+    }
+    const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
+    if (!entry) throw new Error("compiler produced no REPL artifact");
+    this.#host ??= await ReplHost.start(this.#directory);
+    const result = await this.#host.run(pathToFileURL(`${output}/${entry.path}`).href);
+    if (result.kind === "exited") {
+      this.#host = undefined;
+      if (result.code === REPL_QUIT_EXIT_CODE) return "quit";
+      // The session's state is gone with its process. Earlier phrases run again, once, when the
+      // next phrase imports them.
+      await Deno.stderr.write(new TextEncoder().encode(
+        `the session's process exited with code ${result.code}; its state was lost\n`,
+      ));
+      return "raised";
+    }
+    if (result.code !== 0) return "raised";
+    this.#accepted = index;
+    if (jsImport) this.#jsImports.push(phrase.trim());
+    return "accepted";
+  }
+
+  /** Types an expression against the accepted phrases without running anything. */
+  async typeOf(expression: string, options: CompileOptions): Promise<string> {
+    const path = `${this.#directory}/type_query.wm`;
+    // The newline keeps a trailing comment from swallowing the parenthesis.
+    await Deno.writeTextFile(path, this.#module(`let it = (${expression}\n);`));
+    const { core } = await coreFile(path, options);
     const type = core.modules.get(core.entry)?.analysis.steps.at(-1)?.env.get("it")?.type;
     if (type === undefined) throw new Error(`cannot find the type of ${expression}`);
     return type;
-  } finally {
-    await Deno.writeTextFile(sessionPath, committed);
+  }
+
+  async close(): Promise<void> {
+    await this.#host?.close();
+    this.#host = undefined;
+  }
+}
+
+/**
+ * Imports one phrase bundle per request and reports its exit status, then a marker, on stdout and
+ * stderr. A bundle reports a raised exception through `Deno.exitCode` without exiting.
+ */
+const REPL_HOST_SOURCE = `const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+let pending = "";
+for await (const chunk of Deno.stdin.readable) {
+  pending += decoder.decode(chunk, { stream: true });
+  for (let newline = pending.indexOf("\\n"); newline >= 0; newline = pending.indexOf("\\n")) {
+    const { url, marker } = JSON.parse(pending.slice(0, newline));
+    pending = pending.slice(newline + 1);
+    Deno.exitCode = 0;
+    try {
+      await import(url);
+    } catch (error) {
+      console.error("runtime[" + (error?.name ?? "Error") + "]: " + String(error?.message ?? error));
+      Deno.exitCode = 1;
+    }
+    const code = Deno.exitCode;
+    Deno.exitCode = 0;
+    await Deno.stdout.write(encoder.encode(marker + code + "\\n"));
+    await Deno.stderr.write(encoder.encode(marker + code + "\\n"));
+  }
+}
+`;
+
+type HostResult = { kind: "completed"; code: number } | { kind: "exited"; code: number };
+
+class ReplHost {
+  #child: Deno.ChildProcess;
+  #writer: WritableStreamDefaultWriter<Uint8Array>;
+  #stdout: MarkedStream;
+  #stderr: MarkedStream;
+
+  private constructor(child: Deno.ChildProcess) {
+    this.#child = child;
+    this.#writer = child.stdin.getWriter();
+    this.#stdout = new MarkedStream(child.stdout, (chunk) => Deno.stdout.write(chunk));
+    this.#stderr = new MarkedStream(child.stderr, (chunk) => Deno.stderr.write(chunk));
+  }
+
+  static async start(directory: string): Promise<ReplHost> {
+    const path = `${directory}/host.mjs`;
+    await Deno.writeTextFile(path, REPL_HOST_SOURCE);
+    // One process serves every phrase, so it gets every runtime flag a phrase might need.
+    const child = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", "--unstable-webgpu", path],
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "piped",
+    }).spawn();
+    return new ReplHost(child);
+  }
+
+  async run(url: string): Promise<HostResult> {
+    const marker = `\u0000wm-repl-done:${crypto.randomUUID()}:`;
+    await this.#writer.write(new TextEncoder().encode(`${JSON.stringify({ url, marker })}\n`));
+    const [stdout, stderr] = await Promise.all([
+      this.#stdout.until(marker),
+      this.#stderr.until(marker),
+    ]);
+    if (stdout === undefined || stderr === undefined) {
+      return { kind: "exited", code: (await this.#child.status).code };
+    }
+    return { kind: "completed", code: stdout };
+  }
+
+  async close(): Promise<void> {
+    try {
+      await this.#writer.close();
+    } catch {
+      /* The process already ended. */
+    }
+    await this.#child.status;
+    await Promise.all([this.#stdout.drain(), this.#stderr.drain()]);
+  }
+}
+
+/** Forwards a stream as it arrives and finds the status a marker reports. */
+class MarkedStream {
+  #reader: ReadableStreamDefaultReader<Uint8Array>;
+  #forward: (chunk: Uint8Array) => Promise<unknown>;
+  #decoder = new TextDecoder();
+  #encoder = new TextEncoder();
+  #text = "";
+  #ended = false;
+
+  constructor(stream: ReadableStream<Uint8Array>, forward: (chunk: Uint8Array) => Promise<unknown>) {
+    this.#reader = stream.getReader();
+    this.#forward = forward;
+  }
+
+  /** Forwards output up to the marker and returns its status, or undefined if the stream ended. */
+  async until(marker: string): Promise<number | undefined> {
+    for (;;) {
+      const at = this.#text.indexOf(marker);
+      const end = at < 0 ? -1 : this.#text.indexOf("\n", at);
+      if (end >= 0) {
+        await this.#emit(this.#text.slice(0, at));
+        const code = Number(this.#text.slice(at + marker.length, end));
+        this.#text = this.#text.slice(end + 1);
+        return code;
+      }
+      // Keep a possible start of the marker back until the next chunk shows whether it is one.
+      const keep = at >= 0 ? this.#text.length - at : Math.min(this.#text.length, marker.length);
+      await this.#emit(this.#text.slice(0, this.#text.length - keep));
+      this.#text = this.#text.slice(this.#text.length - keep);
+      if (this.#ended) {
+        await this.#emit(this.#text);
+        this.#text = "";
+        return undefined;
+      }
+      const { value, done } = await this.#reader.read();
+      if (done) this.#ended = true;
+      else this.#text += this.#decoder.decode(value, { stream: true });
+    }
+  }
+
+  async drain(): Promise<void> {
+    while (!this.#ended) {
+      const { value, done } = await this.#reader.read();
+      if (done) this.#ended = true;
+      else this.#text += this.#decoder.decode(value, { stream: true });
+    }
+    await this.#emit(this.#text);
+    this.#text = "";
+  }
+
+  async #emit(text: string): Promise<void> {
+    if (text) await this.#forward(this.#encoder.encode(text));
   }
 }
 
@@ -203,7 +407,7 @@ export type InteractiveReplOptions = CompileOptions & {
 };
 
 /**
- * Interactive session following Section 7 "Programs" of the Definition of
+ * Interactive session following Section 8 "Programs" of the Definition of
  * Standard ML (Revised): upon `;` the machine parses, elaborates, and
  * evaluates the phrase against the accumulated basis. A failing elaboration
  * has no effect whatever (rule 65.2), and an evaluation that raises an
@@ -225,14 +429,11 @@ export async function runInteractiveRepl(
     dir: Deno.cwd(),
     prefix: ".wm-mini-repl-",
   });
-  const sessionPath = `${temporaryDirectory.path}/session.wm`;
+  const session = new PhraseSession(temporaryDirectory.path);
   await Deno.writeTextFile(
     `${temporaryDirectory.path}/${REPL_PERVASIVES_FILE}`,
     REPL_PERVASIVES_SOURCE,
   );
-  let committed = REPL_SESSION_HEADER;
-  let committedStdout = 0;
-  let committedStderr = 0;
   let editor: TerminalEditor | undefined;
   let loadingBar: LoadingBar | undefined;
   let interruption: Promise<void> | undefined;
@@ -307,13 +508,13 @@ export async function runInteractiveRepl(
     }
   }
   try {
-    await Deno.writeTextFile(sessionPath, committed);
+    await session.start();
     if (editor) {
       // Keys pressed while loading become the start of the first input.
       editor.holdInput();
       loadingBar = createLoadingBar();
     }
-    await warmSession(sessionPath, compileOptions, loadingBar);
+    await warmSession(session.headerPath, compileOptions, loadingBar);
     await Deno.stdout.write(
       new TextEncoder().encode(
         `🗿 Workman ${denoConfig.version}\n${
@@ -331,7 +532,7 @@ export async function runInteractiveRepl(
       else if (command.name === "help") output = replHelpText(command.argument);
       else if (!command.argument) output = "usage: :type <expression>;";
       else {
-        output = await typeOfExpression(sessionPath, committed, command.argument, compileOptions);
+        output = await session.typeOf(command.argument, compileOptions);
       }
       await Deno.stdout.write(new TextEncoder().encode(`${output}\n`));
     };
@@ -345,32 +546,19 @@ export async function runInteractiveRepl(
         }
         continue;
       }
-      const candidate = committed ? `${committed}\n${phrase}` : phrase;
       try {
-        await Deno.writeTextFile(sessionPath, candidate);
-        const artifacts = await compileReplFileArtifacts(sessionPath, compileOptions);
-        const result = await executeReplArtifacts(sessionPath, artifacts);
+        // Output streams while the phrase runs, so the editor gives the terminal back first.
         editor?.release();
-        await Deno.stdout.write(result.stdout.subarray(committedStdout));
-        await Deno.stderr.write(result.stderr.subarray(committedStderr));
-        if (result.code === REPL_QUIT_EXIT_CODE) break;
-        if (result.code === 0) {
-          committed = candidate;
-          committedStdout = result.stdout.length;
-          committedStderr = result.stderr.length;
-        }
+        if (await session.evaluate(phrase, compileOptions) === "quit") break;
       } catch (error) {
         editor?.release();
         onError(error);
-      } finally {
-        // The on-disk session must agree with the accepted basis even after a
-        // parse, type, or runtime error. Compile the next candidate from that basis.
-        await Deno.writeTextFile(sessionPath, committed);
       }
     }
   } finally {
     editor?.release();
     Deno.removeSignalListener("SIGINT", onInterrupt);
+    await session.close();
     if (!interruption) await temporaryDirectory.cleanup();
   }
 }

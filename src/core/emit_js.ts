@@ -47,6 +47,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   const emittedOrder = program.order.filter((moduleId) =>
     !standardIds.has(moduleId) || requiredStandardIds.has(moduleId)
   );
+  moduleKeys = target === "repl" ? replModuleKeys(program, emittedOrder) : undefined;
   const stackOverflowSites = emitStackOverflowSites(
     program,
     emittedOrder,
@@ -57,7 +58,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   );
   const body = [
     ...emitShaderArtifactTable(program),
-    ...emitModuleRuntime(),
+    ...emitModuleRuntime(target),
     ...emitLibraryJsSources(),
     ...moduleDefinitions,
     ...emittedOrder
@@ -528,13 +529,62 @@ function firstNonTailSelfCall(
   return undefined;
 }
 
-function emitModuleRuntime(): string[] {
+/**
+ * Registry keys for a REPL phrase: a module's path and a hash of its source and dependencies. A REPL
+ * session imports one bundle per phrase into the same process, so modules that earlier phrases
+ * already initialized are reused instead of evaluated again (the Definition evaluates each phrase
+ * once, Section 8). A module whose source changed gets a new key, so it's a new instance.
+ */
+let moduleKeys: Map<CoreModuleArtifact, string> | undefined;
+
+function replModuleKeys(
+  program: CoreProgram,
+  order: readonly ModuleId[],
+): Map<CoreModuleArtifact, string> {
+  const keys = new Map<CoreModuleArtifact, string>();
+  const keyOf = (moduleId: ModuleId): string => {
+    const artifact = program.modules.get(moduleId)!;
+    const known = keys.get(artifact);
+    if (known !== undefined) return known;
+    keys.set(artifact, artifact.path); // A cycle can't reach here: module imports are acyclic.
+    const dependencies = artifact.imports.map((edge) => keyOf(edge.target)).sort();
+    const key = `${artifact.path}#${stableHash([artifact.source, ...dependencies].join("\0"))}`;
+    keys.set(artifact, key);
+    return key;
+  };
+  order.forEach((moduleId) => keyOf(moduleId));
+  return keys;
+}
+
+/** FNV-1a over UTF-16 units, as eight hex digits. */
+function stableHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function moduleKey(artifact: CoreModuleArtifact): string {
+  return moduleKeys?.get(artifact) ?? artifact.emitName;
+}
+
+function emitModuleRuntime(target: CoreEmitTarget): string[] {
+  const repl = target === "repl";
   return [
-    "const __wm_module_instances = new globalThis.Map();",
+    repl
+      ? "const __wm_module_instances = globalThis.__wm_repl_module_instances ??= new globalThis.Map();"
+      : "const __wm_module_instances = new globalThis.Map();",
     "const __wm_define_module = (key, dependencies, initialize, publish) => {",
-    '  if (__wm_module_instances.has(key)) throw new globalThis.Error("duplicate Workman module instance");',
+    "  const existing = __wm_module_instances.get(key);",
+    "  if (existing) {",
+    repl
+      ? '    existing.publishers.push(publish);\n    if (existing.state === "completed") publish(existing.value);\n    return;'
+      : '    throw new globalThis.Error("duplicate Workman module instance");',
+    "  }",
     "  __wm_module_instances.set(key, {",
-    '    state: "uninitialized", dependencies, initialize, publish, value: undefined, error: undefined',
+    '    state: "uninitialized", dependencies, initialize, publishers: [publish], value: undefined, error: undefined',
     "  });",
     "};",
     "const __wm_request_module = async (key) => {",
@@ -552,7 +602,7 @@ function emitModuleRuntime(): string[] {
     "    }",
     "    const value = await instance.initialize();",
     "    instance.value = value;",
-    "    instance.publish(value);",
+    "    for (const publish of instance.publishers) publish(value);",
     '    instance.state = "completed";',
     "    return value;",
     "  } catch (error) {",
@@ -659,10 +709,10 @@ function emitShaderArtifactTable(program: CoreProgram): string[] {
     "const __wm_gpu_uniform_byte_length = (artifact) => artifact.uniformLayout?.byteLength ?? 0;",
     "const __wm_gpu_uniform_bytes = (artifact) => artifact.uniformBytes ?? __wm_js_array_mark([]);",
     "const __wm_gpu_binding_count = (artifact) => (artifact.uniformLayout ? 1 : 0) + (artifact.resourceLayout?.bindings.length ?? 0);",
-    `const __wm_gpu_texture_brand = Symbol("wm.gpu.texture2d");
-const __wm_gpu_sampled_brand = Symbol("wm.gpu.sampled-texture2d");
-const __wm_gpu_target_brand = Symbol("wm.gpu.render-target2d");
-const __wm_gpu_sampler_brand = Symbol("wm.gpu.sampler");
+    `const __wm_gpu_texture_brand = Symbol.for("wm.gpu.texture2d");
+const __wm_gpu_sampled_brand = Symbol.for("wm.gpu.sampled-texture2d");
+const __wm_gpu_target_brand = Symbol.for("wm.gpu.render-target2d");
+const __wm_gpu_sampler_brand = Symbol.for("wm.gpu.sampler");
 const __wm_gpu_destroyed_textures = new WeakSet();
 const __wm_gpu_result = (thunk) => {
   try { return __wm_basis_Ok(thunk()); }
@@ -1068,10 +1118,10 @@ function emitModuleDefinition(
   );
   const dependencies = [
     ...new Set([...artifact.imports.map((edge) => edge.target), ...carrierTargets]),
-  ].map((target) => JSON.stringify(program.modules.get(target)!.emitName));
+  ].map((target) => JSON.stringify(moduleKey(program.modules.get(target)!)));
   return `let ${id(artifact.emitName)};
 __wm_define_module(
-  ${JSON.stringify(artifact.emitName)},
+  ${JSON.stringify(moduleKey(artifact))},
   [${dependencies.join(", ")}],
   async () => {
 ${body}
@@ -1092,7 +1142,7 @@ return { ${
 }
 
 function emitModuleRequest(artifact: CoreModuleArtifact): string {
-  return `await __wm_request_module(${JSON.stringify(artifact.emitName)});`;
+  return `await __wm_request_module(${JSON.stringify(moduleKey(artifact))});`;
 }
 
 function emitModuleBody(artifact: CoreModuleArtifact, program: CoreProgram): string[] {

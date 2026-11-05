@@ -1,5 +1,5 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
-import { evaluateReplFile, REPL_SESSION_HEADER,
+import { assertEquals, assertMatch, assertStringIncludes } from "@std/assert";
+import { evaluateReplFile,
   runInteractiveRepl, topLevelPhraseRanges } from "../src/repl.ts";
 import { FrontendV2ParseCache } from "../src/frontend_v2_parse_cache.ts";
 import { basename } from "node:path";
@@ -1320,7 +1320,7 @@ Deno.test("interactive repl carries partial phrases across reads and supports mu
   assertStringIncludes(stdout, 'it = "café" : String');
 });
 
-Deno.test("interactive repl restores its session file after static and runtime failures", async () => {
+Deno.test("interactive repl phrases see only the phrases that succeeded", async () => {
   const input = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new TextEncoder().encode([
@@ -1333,7 +1333,7 @@ Deno.test("interactive repl restores its session file after static and runtime f
       controller.close();
     },
   });
-  const sessionWrites: string[] = [];
+  const phraseWrites: string[] = [];
   const stdoutChunks: Uint8Array[] = [];
   const stderrChunks: Uint8Array[] = [];
   const errors: unknown[] = [];
@@ -1342,8 +1342,8 @@ Deno.test("interactive repl restores its session file after static and runtime f
   const originalStderr = Deno.stderr.write;
   Deno.writeTextFile = async (...args: Parameters<typeof Deno.writeTextFile>) => {
     await originalWrite(...args);
-    if (String(args[0]).endsWith("/session.wm")) {
-      sessionWrites.push(await Deno.readTextFile(args[0]));
+    if (/\/phrase_[1-9]\d*\.wm$/.test(String(args[0]))) {
+      phraseWrites.push(await Deno.readTextFile(args[0]));
     }
   };
   Deno.stdout.write = (chunk) => {
@@ -1366,17 +1366,56 @@ Deno.test("interactive repl restores its session file after static and runtime f
     chunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
   assertStringIncludes(decode(stdoutChunks), "it = 42 : Number\n");
   assertEquals(decode(stderrChunks), "runtime[Panic]: boom\n");
-  // A rejected candidate must be removed from disk, including the replacement
-  // of x whose evaluation raises an exception.
-  const rejectedWrites = sessionWrites.flatMap((source, index) =>
-    /let bad|Panic/.test(source) ? [index] : []
-  );
-  assertEquals(rejectedWrites.length, 3);
-  const header = `${REPL_SESSION_HEADER}\n`;
-  for (const index of rejectedWrites) {
-    assertEquals(sessionWrites[index + 1], `${header}let x = 40;`);
+  // Definition rules 189 and 190: neither a phrase that fails to elaborate nor one that raises
+  // changes the basis, so every later phrase builds on the one that bound x = 40.
+  assertEquals(phraseWrites.length, 5);
+  for (const source of phraseWrites.slice(1)) {
+    assertMatch(source, /^export from "\.\/phrase_1\.wm" import \*;\n/);
   }
-  assertEquals(sessionWrites.at(-1), `${header}let x = 40;\n\nx + 2;`);
+  assertMatch(phraseWrites.at(-1)!, /\n\s*x \+ 2;$/);
+});
+
+Deno.test("interactive repl keeps a js import visible to later phrases", async () => {
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", cli, "repl"],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const writer = child.stdin.getWriter();
+  await writer.write(new TextEncoder().encode([
+    'from js.global("Math") import unsafe { max: (Number, Number) -> Number };',
+    "let x = 1;",
+    "max(x, 2);",
+  ].join("\n")));
+  await writer.close();
+  const result = await child.output();
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+  assertStringIncludes(new TextDecoder().decode(result.stdout), "it = 2 : Number");
+});
+
+Deno.test("interactive repl evaluates each phrase once", async () => {
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", cli, "repl"],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const writer = child.stdin.getWriter();
+  await writer.write(new TextEncoder().encode([
+    'let x = { print("once"); 40 };',
+    'let y = Panic("boom");',
+    "x + 2;",
+    "let x = x + 1;",
+    "x;",
+  ].join("\n")));
+  await writer.close();
+  const result = await child.output();
+  const stdout = new TextDecoder().decode(result.stdout);
+  assertEquals(stdout.split("once").length - 1, 1, stdout);
+  assertStringIncludes(stdout, "it = 42 : Number");
+  assertStringIncludes(stdout, "it = 41 : Number");
+  assertEquals(new TextDecoder().decode(result.stderr), "runtime[Panic]: boom\n");
 });
 
 Deno.test("repl session has SML's top-level structures without imports", async () => {

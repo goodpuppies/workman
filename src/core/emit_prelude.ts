@@ -13,7 +13,7 @@ export function emitRuntimePrelude(): string[] {
     // ~9% of parse time; Js.Array values are far rarer and only cross the FFI
     // boundary. A missing-symbol load is nearly free because V8 caches the
     // negative lookup on the array's map, so the check stays cheap.
-    "const __wm_js_array_tag = Symbol('wm.jsArray');",
+    "const __wm_js_array_tag = Symbol.for('wm.jsArray');",
     // Shared with std/js/byte_vector.js, which creates vectors and slices.
     "const __wm_word8_vector_data = Symbol.for('wm.Word8Vector.data');",
     "const __wm_word8_vector_slice_data = Symbol.for('wm.Word8VectorSlice.data');",
