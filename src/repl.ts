@@ -16,6 +16,7 @@ import { highlightSpans } from "./repl_highlight.ts";
 import { type ReplSettings, replSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
 import { observeLibraryLoad } from "./standard_library.ts";
+import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -214,7 +215,12 @@ export async function runInteractiveRepl(
 ): Promise<void> {
   const onError = options.onError ??
     ((error) => console.error(error instanceof Error ? error.message : String(error)));
-  const { input: stdin, ...compileOptions } = options;
+  const { input: stdin, ...sessionOptions } = options;
+  // Each phrase recompiles the session, so modules it imports are parsed once and reused.
+  const compileOptions: CompileOptions = {
+    ...sessionOptions,
+    frontendV2ParseCache: sessionOptions.frontendV2ParseCache ?? new FrontendV2ParseCache(),
+  };
   const temporaryDirectory = await createTemporaryDirectory({
     dir: Deno.cwd(),
     prefix: ".wm-mini-repl-",

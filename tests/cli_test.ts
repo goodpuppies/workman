@@ -1,6 +1,8 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { evaluateReplFile, REPL_SESSION_HEADER,
   runInteractiveRepl, topLevelPhraseRanges } from "../src/repl.ts";
+import { FrontendV2ParseCache } from "../src/frontend_v2_parse_cache.ts";
+import { basename } from "node:path";
 import { topLevelPhraseEnd } from "../src/top_level_phrases.ts";
 import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
@@ -1422,4 +1424,39 @@ Deno.test("repl phrase end ignores quoted and commented semicolons", () => {
   assertEquals(topLevelPhraseEnd("let x = 1; -- trailing ; comment\n"), 10);
   assertEquals(topLevelPhraseEnd('let x = "a;b";'), 14);
   assertEquals(topLevelPhraseEnd('let x = "open'), undefined);
+});
+
+Deno.test("interactive repl compiles every phrase through the session parse cache", async () => {
+  // A session lives in a directory under the working directory, so it imports with "../".
+  const dir = await Deno.makeTempDir({ dir: Deno.cwd(), prefix: ".wm-repl-cache-test-" });
+  await Deno.writeTextFile(`${dir}/numbers.wm`, "let base = 40;\n");
+  const parsed: string[] = [];
+  class CountingCache extends FrontendV2ParseCache {
+    override surface(...args: Parameters<FrontendV2ParseCache["surface"]>) {
+      parsed.push(args[0]);
+      return super.surface(...args);
+    }
+  }
+  const script = `from "../${basename(dir)}/numbers.wm" import { base };\nbase + 1;\nbase + 2;\n`;
+  const input = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(script));
+      controller.close();
+    },
+  });
+  const originalStdout = Deno.stdout.write;
+  const stdout: string[] = [];
+  Deno.stdout.write = (chunk: Uint8Array): Promise<number> => {
+    stdout.push(new TextDecoder().decode(chunk));
+    return Promise.resolve(chunk.length);
+  };
+  try {
+    await runInteractiveRepl({ input, frontendV2ParseCache: new CountingCache() });
+  } finally {
+    Deno.stdout.write = originalStdout;
+    await Deno.remove(dir, { recursive: true });
+  }
+  assertStringIncludes(stdout.join(""), "it = 42 : Number");
+  const dependencyParses = parsed.filter((path) => path.endsWith("numbers.wm")).length;
+  assertEquals(dependencyParses >= 3, true, parsed.join("\n"));
 });

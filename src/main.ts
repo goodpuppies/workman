@@ -23,6 +23,7 @@ import { moduleNodeForPath } from "./module_graph.ts";
 import { runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
 import { evaluateReplFile, runInteractiveRepl, watchReplChanges } from "./repl.ts";
+import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { watchFile } from "./watch.ts";
 import { formatFrontendV2Source } from "./frontend_v2_formatter.ts";
 import { withCompilerProgress } from "./progress.ts";
@@ -311,9 +312,11 @@ async function replCommand(args: string[]): Promise<number> {
     await runInteractiveRepl({ ...options, onError: reportReplError });
     return 0;
   }
+  // Each save recompiles the file, so the modules it imports are parsed once and reused.
+  const watchOptions = { ...options, frontendV2ParseCache: new FrontendV2ParseCache() };
   for await (const _ of watchReplChanges(input)) {
     try {
-      const result = await evaluateReplFile(input, options);
+      const result = await evaluateReplFile(input, watchOptions);
       clearReplOutput();
       await Deno.stdout.write(result.stdout);
       await Deno.stderr.write(result.stderr);
