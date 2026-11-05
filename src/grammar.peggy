@@ -513,16 +513,19 @@ PipeConditional
     { return { kind: "PipeConditional", thenExpr, elseExpr }; }
 PipeMember = "." first:MemberName rest:("." n:MemberName { return n; })* call:(_ "(" _ args:ArgList? _ ")" { return args ?? []; })?
   { return { kind: "PipeMember", path: [first, ...rest], args: call ?? undefined }; }
-Postfix = head:Primary tail:(ExplicitCall / SpaceCall)*
+Postfix = head:Primary tail:(ExplicitCall / SpaceCall / PostfixField)*
   annotation:(_ value:TypeAnn { return value; })?
   !("." MemberName)
   {
     const value = tail.reduce(
-      (callee, item) => partialCall(callee, item.args, location()),
+      (callee, item) => item.kind === "PostfixField"
+        ? at({ kind: "PostfixField", receiver: callee, name: item.name }, location())
+        : partialCall(callee, item.args, location()),
       head,
     );
     return annotation ? ascribedExpr(value, annotation, location()) : value;
   }
+PostfixField = "." name:MemberName { return { kind: "PostfixField", name }; }
 ExplicitCall = _ "(" _ args:CallArgList? _ ")" !(_ "=>") { return { kind: "Call", args: args ?? [] }; }
 CallArgList = first:CallArg rest:(_ "," _ arg:CallArg { return arg; })* _ ","? { return [first, ...rest]; }
 CallArg = ArgumentPlaceholder / Expr
@@ -712,10 +715,10 @@ TypeList = first:TypeExpr rest:(_ "," _ t:TypeExpr { return t; })* _ ","? { retu
 TypeParams = "<" _ first:TypeParam rest:(_ "," _ t:TypeParam { return t; })* _ ","? _ ">" { return [first, ...rest]; }
 TypeParam = name:(Identifier / Constructor) { return name; }
 
-Float = n:$("-"? [0-9]+ ("." [0-9]+ ([eE] [+-]? [0-9]+)? / [eE] [+-]? [0-9]+)) !IdentPart { return at({ kind: "Float", value: Number(n) }, location()); }
+Float = n:$("-"? [0-9]+ ("." [0-9]+ ([eE] [+-]? [0-9]+)? / [eE] [+-]? [0-9]+)) !IdentPart !("." MemberName) { return at({ kind: "Float", value: Number(n) }, location()); }
 Int
-  = n:$("-"? "0x" [0-9a-fA-F]+) !IdentPart { return integerLiteral("Int", Number.parseInt(n), n, location()); }
-  / n:$("-"? [0-9]+) !IdentPart { return integerLiteral("Int", Number(n), n, location()); }
+  = n:$("-"? "0x" [0-9a-fA-F]+) !IdentPart !("." MemberName) { return integerLiteral("Int", Number.parseInt(n), n, location()); }
+  / n:$("-"? [0-9]+) !IdentPart !("." MemberName) { return integerLiteral("Int", Number(n), n, location()); }
 String = MultilineString / QuotedString
 InterpolatedString
   = "`" InterpolatedStringText? StringInterpolation

@@ -5,8 +5,10 @@ import {
   type Decl,
   type Directive,
   type Expr,
+  fieldAccessReceiverName,
   type ImportClause,
   type ImportSpec,
+  isFieldAccessReceiver,
   type JsImportClause,
   type JsImportSpec,
   type JsTarget,
@@ -669,7 +671,10 @@ function projectExpr(node: WmVariant, context: Context): Expr {
     case "GroupedExpressionNode": {
       const [, inner] = fields(node);
       const expression = projectExpr(variant(inner), context);
-      return expression.kind === "Call" ? { ...expression, grouped: true } : expression;
+      if (expression.kind === "Call") return { ...expression, grouped: true };
+      return expression.kind === "Block" && fieldAccessBinding(expression)
+        ? { ...expression, grouped: true }
+        : expression;
     }
     case "ApplyExpressionNode": {
       const [calleeNode, argumentNode] = fields(node);
@@ -706,6 +711,9 @@ function projectExpr(node: WmVariant, context: Context): Expr {
           applicationStyle: "space",
           ...located,
         };
+      }
+      if (argument.name === "PostfixFieldNode") {
+        return projectFieldAccess(callee, argument, located.node, context);
       }
       throw unsupported("application suffix", argument);
     }
@@ -772,10 +780,11 @@ function projectExpr(node: WmVariant, context: Context): Expr {
           }
           : { kind: "FfiGet", receiver: left, path, node: pipeNode };
       }
-      return {
+      const stage = projectExpr(right, context);
+      return pipeIntoFieldAccess(left, stage, pipeNode) ?? {
         kind: "Pipe",
         left,
-        right: projectExpr(right, context),
+        right: stage,
         node: pipeNode,
       };
     }
@@ -1051,6 +1060,88 @@ function projectListPattern(
     };
   }
   return result;
+}
+
+/**
+ * `e.field` means `{ let x = e; x.field }`, so moving a receiver into a let never changes what the
+ * access means. `#field (e)` is the same thing in SML.
+ */
+function projectFieldAccess(
+  receiver: Expr,
+  node: WmVariant,
+  whole: Expr["node"],
+  context: Context,
+): Expr {
+  const span = spanOf(node);
+  const fieldToken = fields(node, "PostfixFieldNode")[1];
+  const name = fieldAccessReceiverName(context.nextPlaceholderId++);
+  const path = { qualifiers: [name], id: tokenText(fieldToken) };
+  const binding: Binding = {
+    pattern: { kind: "PVar", name, node: nodeFor(context, span) },
+    value: receiver,
+    node: nodeFor(context, span),
+  };
+  return {
+    kind: "Block",
+    items: [{
+      kind: "LetDecl",
+      exported: true,
+      recursive: false,
+      bindings: [binding],
+      node: nodeFor(context, span),
+    }],
+    result: {
+      kind: "Var",
+      name: longIdSpelling(path),
+      path,
+      node: nodeFor(context, tokenSpan(fieldToken)),
+    },
+    node: whole,
+  };
+}
+
+function fieldAccessBinding(expr: Expr): Binding | undefined {
+  if (expr.kind !== "Block" || expr.items.length !== 1) return undefined;
+  const decl = expr.items[0];
+  if (decl.kind !== "LetDecl") return undefined;
+  const pattern = decl.bindings[0].pattern;
+  return pattern.kind === "PVar" && isFieldAccessReceiver(pattern.name)
+    ? decl.bindings[0]
+    : undefined;
+}
+
+/**
+ * `x :> f(a).b.c(d)` pipes into the chain's first call, as `f(x, a).b.c(d)`. Parentheses make the
+ * receiver a value, as they do for a call, so `x :> (f(a)).b` is `f(a).b(x)`. Returns undefined when
+ * the stage has no call to pipe into.
+ */
+function pipeIntoFieldAccess(left: Expr, stage: Expr, node: Expr["node"]): Expr | undefined {
+  const isChain = (expr: Expr) => fieldAccessBinding(expr) !== undefined;
+  if (!isChain(stage) && !(stage.kind === "Call" && !stage.grouped && isChain(stage.callee))) {
+    return undefined;
+  }
+  const pipe = (current: Expr): Expr | undefined => {
+    const binding = fieldAccessBinding(current);
+    if (binding && current.kind === "Block") {
+      if (current.grouped) return undefined;
+      const value = pipe(binding.value);
+      if (!value) return undefined;
+      const decl = current.items[0] as Extract<Decl, { kind: "LetDecl" }>;
+      return { ...current, items: [{ ...decl, bindings: [{ ...binding, value }] }] };
+    }
+    if (current.kind === "Call" && !current.grouped && isChain(current.callee)) {
+      const callee = pipe(current.callee);
+      return callee ? { ...current, callee } : undefined;
+    }
+    const accepts = current.kind === "Call"
+      ? !current.grouped && current.applicationStyle !== "space"
+      : current.kind === "Lambda" &&
+        current.params.some((param) =>
+          param.pattern.kind === "PVar" && param.pattern.name.startsWith("$wm_arg_")
+        );
+    return accepts ? { kind: "Pipe", left, right: current, node } : undefined;
+  };
+  return pipe(stage);
 }
 
 function projectExplicitArguments(node: WmVariant, context: Context): Expr[] {

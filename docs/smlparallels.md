@@ -69,6 +69,7 @@ form.
 | record value `{x = e, y = f}`            | `.{ x = e, y = f }`                                        | Workman records are nominal |
 | record fields `{x = x, y = y}`           | punned `.{ x, y }`                                         | Field punning is Workman shorthand |
 | record projection `r.x`, `#x r`          | `r.x`                                                       | Same projection operation |
+| projection of an expression `#x (f y)`   | `f(y).x`                                                    | Same operation; `f(y).x.z` is `#z (#x (f y))` |
 | selector function `#x`                   | `(r: Point) => { r.x }`                                     | SML provides derived shorthand; Workman writes the function explicitly |
 | record pattern `{x, y}`                  | `.{ x, y }`                                                 | No SML flexible-row `...` pattern |
 | `andalso`, `orelse`, `not e`             | `&&`, `\|\|`, `!e`                                         | `&&` and `\|\|` run the right operand only when needed, as in SML |

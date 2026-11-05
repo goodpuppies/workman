@@ -1,7 +1,7 @@
 from "./generated/surface_types.wm" import {
   Span, SurfaceToken, AuthoredValue, LongNameNode, NameExpressionNode,
   LiteralExpressionNode,
-  ExplicitCallNode, SpaceCallNode, ArgumentPlaceholderNode,
+  ExplicitCallNode, SpaceCallNode, PostfixFieldNode, ArgumentPlaceholderNode,
   BinaryExpressionNode,
   UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, IfExpressionNode, PipeConditionalNode,
   CarrierLiftExpressionNode, LiftTupleExpressionNode,
@@ -58,6 +58,13 @@ let buildSpaceCall = (value: ParseValue, span: Span) => {
   match(firstNode(value)) {
     Some(argument) => { NodeParseValue(SpaceCallNode(argument, span)) },
     None => { RuleParseValue("SpaceCall", value, span) },
+  }
+};
+
+let buildPostfixField = (value: ParseValue, span: Span) => {
+  match(collectTokens(value)) {
+    [dot, name] => { NodeParseValue(PostfixFieldNode(dot, name, span)) },
+    _ => { RuleParseValue("PostfixField", value, span) },
   }
 };
 

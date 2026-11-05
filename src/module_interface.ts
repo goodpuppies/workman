@@ -1,5 +1,5 @@
 import type { Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
-import { isQualified, parseLongId, pathOf } from "./ast.ts";
+import { isFieldAccessReceiver, isQualified, parseLongId, pathOf } from "./ast.ts";
 import type { BindingFacts, BindingScopeSnapshot } from "./binding_facts.ts";
 import { basisCtorId } from "./basis.ts";
 import { basisStructureId } from "./compiler_semantics.ts";
@@ -1292,6 +1292,7 @@ function semanticTypedNodes(
   }
   for (const [pattern, type] of result.facts.patternTypes) {
     if (!pattern.node) continue;
+    if (pattern.kind === "PVar" && isFieldAccessReceiver(pattern.name)) continue;
     const fact = result.facts.patterns.get(pattern);
     nodes.push(Object.freeze({
       kind: "pattern",
@@ -2167,7 +2168,13 @@ function argumentUsesParameterName(argument: Expr, parameter: string): boolean {
 }
 
 function semanticExpressionLabel(expression: Expr): string {
-  if (expression.kind === "Var") return expression.sourceName ?? expression.name;
+  if (expression.kind === "Var") {
+    const path = pathOf(expression);
+    if (path.qualifiers.length === 1 && isFieldAccessReceiver(path.qualifiers[0])) {
+      return `.${path.id}`;
+    }
+    return expression.sourceName ?? expression.name;
+  }
   if (expression.kind === "Panic" && expression.hole) return "?";
   return expression.kind;
 }
@@ -4678,6 +4685,7 @@ function dottedNameSegmentSpan(
   const parts = name.split(".");
   const part = parts[partIndex];
   if (part === undefined) return undefined;
+  if (isFieldAccessReceiver(parts[0])) return partIndex === 1 ? node.span : undefined;
   const nodeText = source.slice(node.span.start, node.span.end);
   const nameStart = nodeText.indexOf(name);
   if (nameStart < 0) return undefined;

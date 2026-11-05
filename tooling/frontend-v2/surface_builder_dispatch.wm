@@ -12,7 +12,7 @@ from "./surface_builders_type.wm" import {
   buildTypeDeclBody, buildTypeBinding, buildTypeDecl
 };
 from "./surface_builders_expr.wm" import {
-  buildPrimary, buildExplicitCall, buildArgumentPlaceholder, buildSpaceCall, buildUnary,
+  buildPrimary, buildExplicitCall, buildPostfixField, buildArgumentPlaceholder, buildSpaceCall, buildUnary,
   buildPipeMember, buildPipe, buildCarrierLift, buildLiftTuple,
   buildJsonObjectField, buildJsonExpr, buildRecordExprField, buildRecordExpr,
   buildNamedRecordExpr, buildNestedRecordExpr,
@@ -153,6 +153,7 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "LetDecl" => { buildLetDecl(value, span) },
             "ExplicitCall" => { buildExplicitCall(value, span) },
             "SpaceCall" => { buildSpaceCall(value, span) },
+            "PostfixField" => { buildPostfixField(value, span) },
             "FnType" => {
               buildFnType(value, span)
             },

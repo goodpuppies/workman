@@ -17,7 +17,7 @@ from "./generated/surface_types.wm" import {
   InterpolatedStringExpressionNode, InterpolatedStringTextNode, StringInterpolationNode,
   BinaryExpressionNode, UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, ArgumentPlaceholderNode,
   ApplyExpressionNode,
-  ExplicitCallNode, SpaceCallNode, NameExpressionNode
+  ExplicitCallNode, SpaceCallNode, PostfixFieldNode, NameExpressionNode
 };
 from "./surface_renderer_import.wm" import { renderImportNode };
 from "./surface_renderer_record.wm" import { renderRecordNode };
@@ -564,6 +564,9 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
       Some(text) => { Some(" " ++ text) },
       None => { None },
     }
+  },
+  (PostfixFieldNode(dot, name, span), Var(depth), Var(materializeMarks)) => {
+    Some(renderToken(dot) ++ renderToken(name))
   },
   (Var(other), Var(depth), Var(materializeMarks)) => {
     match(renderImportNode(other, depth, materializeMarks, renderSurfaceNodeAt)) {

@@ -67,6 +67,17 @@ export function parseLongId(spelling: string): LongId {
   return { qualifiers: parts.slice(0, -1), id: parts.at(-1)! };
 }
 
+const FIELD_ACCESS_RECEIVER = "$wm_field_";
+
+/** The name of the compiler's let for `e.field`, which authored code can't spell. */
+export function fieldAccessReceiverName(index: number): string {
+  return `${FIELD_ACCESS_RECEIVER}${index}`;
+}
+
+export function isFieldAccessReceiver(name: string): boolean {
+  return name.startsWith(FIELD_ACCESS_RECEIVER);
+}
+
 export type Module = Located<{
   kind: "Module";
   decls: Decl[];
@@ -234,7 +245,13 @@ export type Expr =
     hole?: boolean;
     recoveryHole?: { id: number; anchor: number; diagnosticCode: string };
   }>
-  | Located<{ kind: "Block"; items: (Decl | Expr)[]; result: Expr }>
+  | Located<{
+    kind: "Block";
+    items: (Decl | Expr)[];
+    result: Expr;
+    /** A parenthesized field access, which makes it an explicit pipe-stage value. */
+    grouped?: true;
+  }>
   | Located<{ kind: "Ascribed"; value: Expr; annotation: TypeExpr }>
   | Located<{ kind: "Binary"; op: string; left: Expr; right: Expr }>
   | Located<{ kind: "Unary"; op: string; value: Expr }>

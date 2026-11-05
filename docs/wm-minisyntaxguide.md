@@ -496,6 +496,29 @@ let p = .{ x = 10, y = 20 };
 let xVal = p.x;  -- 10
 ```
 
+A field can be read from any expression without a binding, and the result can be read or called in
+turn. `e.field` means the same as `{ let value = e; value.field }`, so `e` runs once:
+
+```workman
+let did = profile("thing").did;
+let port = config().server.port;
+let grouped = (profile("thing")).did;
+let next = counter().step(1);
+```
+
+The `.` must follow the expression directly, with no space, and a numeric literal can't take a field.
+Use `:> .member` for pipeline stages on JS values, especially method calls.
+
+In a pipeline, the input goes into the first call of the access. Parentheses make the stage a value
+that gets called with the input, as they do for any call:
+
+```workman
+did :> feed(30).posts;      -- feed(did, 30).posts
+did :> feed(30).next(1);    -- feed(did, 30).next(1)
+1 :> (counter()).step;      -- counter().step(1)
+1 :> (counter().step);      -- counter().step(1)
+```
+
 See [Generic programming](./generic-programming.md) for using records in place of traits,
 interfaces, and other capability abstractions.
 
