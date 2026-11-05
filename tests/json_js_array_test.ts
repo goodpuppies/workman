@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { checkSource, compile } from "../src/compiler.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("JSON literals accept Js.Array values whose elements are JSON-compatible", async () => {
   await checkSource(`
@@ -26,7 +27,7 @@ Deno.test("JSON literals accept Js.Array values whose elements are JSON-compatib
         }
       };
     `);
-    await import(`data:text/javascript;base64,${btoa(javaScript)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}#${crypto.randomUUID()}`);
   } finally {
     console.log = original;
   }

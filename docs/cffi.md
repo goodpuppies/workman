@@ -81,6 +81,10 @@ offsets retain the base pointer for managed conversions, but cannot prevent a
 caller from freeing a native allocation prematurely. C retaining pointers after
 calls requires keeping their backing storage valid for that entire period.
 
+`Pointer.fromBytes(array)` gives the address of a JS typed array, such as a
+`Uint8Array`, for C to read or fill. The JS array owns that memory: retain it while
+C uses the pointer, and do not pass the pointer to `free`.
+
 `host/c/resource.wm` separately provides an optional synchronous
 `withCleanup(body, cleanup)` helper that runs cleanup on return or exception.
 The HTTP example defines its own `withMemory` wrapper using ordinary `free`.

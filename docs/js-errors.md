@@ -301,9 +301,9 @@ If the program fails while stdout is a terminal, the runner restores the termina
 ends synchronized redraw mode, and replays those diagnostics on the normal screen.
 This also preserves ordinary JavaScript exceptions and asynchronous errors.
 
-A nonzero exit without stderr produces `error[runtime.exit]` with the exit status.
-This cannot recover an error value the application discarded; applications should
-print handled errors when terminating because of them. Captured stderr requested
+A nonzero exit without stderr keeps its exit status and prints nothing, so a program
+can use exit codes on purpose. Applications should print handled errors when
+terminating because of them. Captured stderr requested
 through the runner API remains complete, and redirected output is not replayed.
 
 A reached `?` reports its own source location and a `Reached from` trace of active

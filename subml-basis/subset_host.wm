@@ -11,10 +11,10 @@ from js.module("./js/subset_host.js") import unsafe {
   writeStderr as rawWriteStderr: String -> (Bool, String),
   argumentCount: Void -> Number,
   argument: Number -> String,
-  system as rawSystem: String -> (Bool, Number, String),
+  system as rawSystem: String -> (Bool, I32, String),
   getEnv as rawGetEnv: String -> (Bool, String),
-  exit as rawExit: Number -> Void,
-  terminate as rawTerminate: Number -> Void
+  exit as rawExit: I32 -> Void,
+  terminate as rawTerminate: I32 -> Void
 };
 let convert = (result) => {
   let (succeeded, text) = result;
@@ -35,17 +35,13 @@ let arguments = () => {
   };
   SubsetResult.Ok(go(argumentCount() - 1, []))
 };
-type Status = | Status<Number>;
-let success = Status(0);
-let failure = Status(1);
-let isSuccess = (status) => { match(status) { Status(code) => { code == 0 } } };
 let system = (command) => {
   let (succeeded, code, message) = rawSystem(command);
-  if (succeeded) { SubsetResult.Ok(Status(code)) } else { SubsetResult.Err(message) }
+  if (succeeded) { SubsetResult.Ok(code) } else { SubsetResult.Err(message) }
 };
 let getEnv = (name) => {
   let (found, value) = rawGetEnv(name);
   if (found) { SubsetOptionValue.Some(value) } else { SubsetOptionValue.None }
 };
-let exit = (status) => { match(status) { Status(code) => { rawExit(code) } } };
-let terminate = (status) => { match(status) { Status(code) => { rawTerminate(code) } } };
+let exit = (code) => { rawExit(code) };
+let terminate = (code) => { rawTerminate(code) };

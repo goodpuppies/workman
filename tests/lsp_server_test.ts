@@ -747,11 +747,66 @@ Deno.test("lsp server publishes closed imported file diagnostics", async () => {
   const libPublish = publishes.find((message) =>
     (message.params as { uri: string }).uri === libUri
   );
-  assertEquals((mainPublish?.params as { diagnostics: unknown[] }).diagnostics, []);
+  assertEquals(
+    (mainPublish?.params as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code),
+    ["import.failed"],
+  );
   assertEquals(
     (libPublish?.params as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code),
     ["type.mismatch"],
   );
+});
+
+Deno.test("an open module keeps its own error when the head it's analyzed under fails first", async () => {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const lib = nativeJoin(dir, "lib.wm");
+  const broken = nativeJoin(dir, "a_broken.wm");
+  const good = nativeJoin(dir, "b_good.wm");
+  // An error recovery can't get past, unlike a type mismatch.
+  await Deno.writeTextFile(
+    lib,
+    'from js.global("Math") import { floor: Number -> Number };\nlet value = floor(1);',
+  );
+  // Sorted first, so it's the head chosen for lib.wm. Its missing import stops analysis early.
+  await Deno.writeTextFile(
+    broken,
+    'from "./lib.wm" import * as Lib; from "./missing.wm" import *; let main = () => { Lib.value };',
+  );
+  await Deno.writeTextFile(good, 'from "./lib.wm" import * as Lib; let main = () => { Lib.value };');
+  const libUri = pathToFileUri(lib);
+  const open = async (path: string) => ({
+    jsonrpc: "2.0" as const,
+    method: "textDocument/didOpen",
+    params: {
+      textDocument: {
+        uri: pathToFileUri(path),
+        languageId: "wm",
+        version: 1,
+        text: await Deno.readTextFile(path),
+      },
+    },
+  });
+  const messages = await runLsp([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { workspaceFolders: [{ uri: pathToFileUri(dir), name: "t" }] },
+    },
+    await open(good),
+    await open(lib),
+    { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+  const libPublishes = messages
+    .filter((message) =>
+      message.method === "textDocument/publishDiagnostics" &&
+      (message.params as { uri: string }).uri === libUri
+    )
+    .map((message) =>
+      (message.params as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code)
+    );
+  assertEquals(libPublishes.at(-1), ["error"], JSON.stringify(libPublishes));
 });
 
 Deno.test("lsp server clears diagnostics after didChange", async () => {

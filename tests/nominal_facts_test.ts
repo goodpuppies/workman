@@ -4,6 +4,7 @@ import { basisTypeNameId } from "../src/compiler_semantics.ts";
 import type { CoreModule } from "../src/core/ast.ts";
 import { moduleId } from "../src/module_id.ts";
 import { typeInfoByName } from "../src/types.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("program analysis assigns shared type, record, constructor, and basis identities", async () => {
   const analysis = await coreVirtual(
@@ -125,7 +126,7 @@ Deno.test("qualified same-spelled constructors keep distinct inference-owned ide
   const originalLog = console.log;
   console.log = (value: unknown) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(executable)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(executable)}#${crypto.randomUUID()}`);
   } finally {
     console.log = originalLog;
   }
@@ -190,7 +191,7 @@ Deno.test("block-local nominal declarations receive non-exported shared identiti
   const originalLog = console.log;
   console.log = (value: unknown) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(executable)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(executable)}#${crypto.randomUUID()}`);
   } finally {
     console.log = originalLog;
   }

@@ -88,11 +88,6 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
         terminalCleanupDone = true;
         if (inheritedStderr && !options.signal?.aborted) {
           if (restored && Deno.stderr.isTerminal() && stderr.length) Deno.stderr.writeSync(stderr);
-          if (!stderr.length) {
-            console.error(
-              `error[runtime.exit]: program exited with status ${status.code} without an error message`,
-            );
-          }
         }
       }
       return result;

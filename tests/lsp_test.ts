@@ -213,7 +213,8 @@ Deno.test("lsp validation reports imported module errors on the imported file", 
   await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib; let x = Lib.value;');
 
   const results = await validateUri(pathToFileUri(main), new Map());
-  assertEquals(await diagnosticsForPath(results, main), []);
+  const mainDiagnostics = await diagnosticsForPath(results, main);
+  assertEquals(mainDiagnostics?.map((diagnostic) => diagnostic.code), ["import.failed"]);
   const libDiagnostics = await diagnosticsForPath(results, lib);
   assertEquals(libDiagnostics?.map((diagnostic) => diagnostic.code), ["type.mismatch"]);
   assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });
@@ -227,7 +228,8 @@ Deno.test("lsp validation reports imported parse errors on the imported file", a
   await Deno.writeTextFile(main, 'from "./lib.wm" import { value }; let main = () => { value };');
 
   const results = await validateUri(pathToFileUri(main), new Map());
-  assertEquals(await diagnosticsForPath(results, main), []);
+  const mainDiagnostics = await diagnosticsForPath(results, main);
+  assertEquals(mainDiagnostics?.map((diagnostic) => diagnostic.code), ["import.failed"]);
   const libDiagnostics = await diagnosticsForPath(results, lib);
   assertEquals(libDiagnostics?.map((diagnostic) => diagnostic.code), ["parse.syntax-error"]);
   assertEquals(libDiagnostics?.[0].range.start, { line: 0, character: 12 });

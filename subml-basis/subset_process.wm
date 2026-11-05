@@ -11,16 +11,19 @@ from "./subset_list.sml" import * as SubsetList;
    commands and environment values are host byte strings. atExit needs host state and sleep needs
    a Time type, so neither is here yet. */
 
-from "./subset_host.wm" import * as SubsetHost;
 from "./subset_result.wm" import * as SubsetResult;
+from "./subset_host.wm" import * as SubsetHost;
 from "./subset_io.wm" import * as SubsetIo;
 from "./subset_list.wm" import * as SubsetList;
 
-// The host owns this type, so a status from system keeps its exit code when passed to exit.
-type Status = SubsetHost.Status;
-let success = SubsetHost.success;
-let failure = SubsetHost.failure;
-let isSuccess = (status) => { SubsetHost.isSuccess(status) };
+/* An exit code. Abstract in the SML Basis, but exit codes are worth being able to use: a status
+   from system keeps its code when passed to exit, and a program can choose its own. */
+type Status = | Status<I32>;
+let success = Status((0: I32));
+let failure = Status((1: I32));
+let isSuccess = match {
+  Status(code) => { code == (0: I32) }
+};
 
 let arguments = () => {
   SubsetResult.andThen(
@@ -40,7 +43,10 @@ let system = (command) => {
   SubsetResult.andThen(
     SubsetIo.bytes(command),
     (bytes) => {
-      SubsetResult.mapErr(SubsetHost.system(command), (message) => { SubsetIo.HostError(message) })
+      SubsetResult.map(
+        SubsetResult.mapErr(SubsetHost.system(command), (message) => { SubsetIo.HostError(message) }),
+        (code) => { Status(code) }
+      )
     }
   )
 };
@@ -48,13 +54,15 @@ let getEnv = (name) => { SubsetHost.getEnv(name) };
 
 // Exit never returns, including in the portable type system.
 let exit = (status) => {
-  let void = SubsetHost.exit(status);
+  let Status(code) = status;
+  let void = SubsetHost.exit(code);
   let rec unreachable = () => { unreachable() };
   unreachable()
 };
 // Without atExit actions there is nothing for terminate to skip beyond the host's own cleanup.
 let terminate = (status) => {
-  let void = SubsetHost.terminate(status);
+  let Status(code) = status;
+  let void = SubsetHost.terminate(code);
   let rec unreachable = () => { unreachable() };
   unreachable()
 };

@@ -1,6 +1,6 @@
 from "./writev.wm" import * as Writer;
 from "./error.wm" import * as Error;
-from "./process.wm" import * as Process;
+from "basis/process.wm" import * as Process;
 from js.global import { Uint8Array };
 
 

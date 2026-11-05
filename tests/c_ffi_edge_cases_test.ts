@@ -609,6 +609,26 @@ Deno.test("native pointer slots expose null and C out parameters with exact byte
   assertEquals(output, "null\ntail\n3\n-3\n");
 });
 
+Deno.test("fromBytes gives C the address of a JS typed array", async () => {
+  const output = await run(
+    new Map([[
+      "/test/main.wm",
+      `
+    from js.global import { Uint8Array };
+    from c.header("string.h") import unsafe { memset };
+    from "host/c/pointer.wm" import * as Pointer;
+    let main = () => {
+      let Ok(bytes) = Uint8Array.new(4);
+      memset(Some(Pointer.fromBytes(bytes)), 7, 3);
+      print(Pointer.getU8(Pointer.fromBytes(bytes), 2));
+      print(Pointer.getU8(Pointer.fromBytes(bytes), 3));
+    };
+  `,
+    ]]),
+  );
+  assertEquals(output, "7\n0\n");
+});
+
 Deno.test({
   name: "manual C unit signatures call nullary functions and expose libc errno without a C shim",
   ignore: Deno.build.os !== "linux",

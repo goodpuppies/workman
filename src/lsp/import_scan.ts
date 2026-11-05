@@ -4,7 +4,14 @@
  * type-checking an entire recursive module graph here is unnecessary.
  */
 export function directWorkmanImportSpecifiers(source: string): string[] {
-  const imports = new Set<string>();
+  return [...new Set(directWorkmanImports(source).map((site) => site.specifier))];
+}
+
+/** Each top-level Workman import, with the span of its path string. */
+export function directWorkmanImports(
+  source: string,
+): { specifier: string; span: { start: number; end: number } }[] {
+  const imports: { specifier: string; span: { start: number; end: number } }[] = [];
   let braces = 0;
   let brackets = 0;
   let parens = 0;
@@ -28,7 +35,7 @@ export function directWorkmanImportSpecifiers(source: string): string[] {
       ) {
         const declaration = scanImportDeclaration(source, identifier.end);
         if (declaration) {
-          imports.add(declaration.specifier);
+          imports.push({ specifier: declaration.specifier, span: declaration.span });
           i = declaration.end;
           continue;
         }
@@ -46,7 +53,7 @@ export function directWorkmanImportSpecifiers(source: string): string[] {
     i++;
   }
 
-  return [...imports];
+  return imports;
 }
 
 /** Discovery-only head candidate scan; semantic entrypoint validation remains compiler-owned. */
@@ -97,7 +104,7 @@ export function hasTopLevelMainBinding(source: string): boolean {
 function scanImportDeclaration(
   source: string,
   afterFrom: number,
-): { specifier: string; end: number } | undefined {
+): { specifier: string; span: { start: number; end: number }; end: number } | undefined {
   const stringStart = skipTrivia(source, afterFrom);
   if (source[stringStart] !== '"') return;
   const path = scanString(source, stringStart, '"');
@@ -107,7 +114,11 @@ function scanImportDeclaration(
   if (!isIdentifierStart(source[importStart])) return;
   const keyword = scanIdentifier(source, importStart);
   if (keyword.value !== "import") return;
-  return { specifier: path.value, end: keyword.end };
+  return {
+    specifier: path.value,
+    span: { start: stringStart, end: path.end },
+    end: keyword.end,
+  };
 }
 
 function skipTrivia(source: string, start: number): number {

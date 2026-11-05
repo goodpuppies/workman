@@ -9,6 +9,7 @@ import {
 } from "../src/compiler.ts";
 import { show } from "../src/types.ts";
 import { expectBinding, expectStepBinding, expectStepMissing } from "./type_helpers.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("record remains usable as a field, variable and parameter name", async () => {
   const result = await checkSource(`
@@ -193,7 +194,7 @@ Deno.test("record constructors preserve declaration order at runtime and across 
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
   } finally {
     console.log = original;
   }
@@ -740,7 +741,7 @@ Deno.test("joint projection resolution survives imports and emits the selected n
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
   } finally {
     console.log = original;
   }
@@ -798,7 +799,7 @@ Deno.test("exported field requirements accept caller-owned nominal types and pre
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
   } finally {
     console.log = original;
   }
@@ -885,7 +886,7 @@ Deno.test("imported nested field requirements support caller-owned recursive rec
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
   } finally {
     console.log = original;
   }

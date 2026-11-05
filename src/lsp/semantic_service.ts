@@ -8,7 +8,9 @@ import {
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
 import { FrontendDiagnosticError, genericDiagnostic } from "../diagnostic_model.ts";
 import { resolveCompilerFrontend } from "../frontend_mode.ts";
+import { ModuleGraphDiagnosticError } from "../module_graph.ts";
 import type { ModuleInterface, ProjectSnapshot } from "../module_interface.ts";
+import { ParseError } from "../parser.ts";
 import type { ProgramAnalysis } from "../program_analysis.ts";
 import { ProjectContextRegistry, type ReverseImportDiscoveryIndex } from "../project_context.ts";
 import { canonicalFilePath as canonicalPath, fileUriToPath } from "./uri.ts";
@@ -44,7 +46,14 @@ export class SemanticService {
     uri: string,
     rememberDocument = true,
   ): Promise<SemanticDocumentContext | null> {
-    return await this.#serialize(() => this.#documentContext(uri, rememberDocument));
+    try {
+      return await this.#serialize(() => this.#documentContext(uri, rememberDocument));
+    } catch (error) {
+      // Recovery failed too, so the program has no analysis to offer. Validation reports why;
+      // hovers and inlays just have nothing to say, rather than failing as requests.
+      if (isProgramError(error)) return null;
+      throw error;
+    }
   }
 
   async #documentContext(
@@ -304,6 +313,11 @@ function syntheticSource(source: string, match: RegExpMatchArray) {
 function armPrefix(source: string, arrow: number): string {
   const lineStart = Math.max(source.lastIndexOf("\n", arrow), source.lastIndexOf(",", arrow)) + 1;
   return source.slice(lineStart, arrow).trim();
+}
+
+function isProgramError(error: unknown): boolean {
+  return error instanceof FrontendDiagnosticError || error instanceof ModuleAnalysisError ||
+    error instanceof ModuleGraphDiagnosticError || error instanceof ParseError;
 }
 
 function recoveryHoleError(hole: SemanticRecoveryHole): FrontendDiagnosticError {

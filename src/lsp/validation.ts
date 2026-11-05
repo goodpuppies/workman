@@ -13,10 +13,11 @@ import {
 import { type FrontendV2Surface, loadFrontendV2Surface } from "../frontend_v2_surface_loader.ts";
 import type { ProjectSnapshot } from "../module_interface.ts";
 import { runtime } from "../io.ts";
-import { ModuleGraphDiagnosticError } from "../module_graph.ts";
+import { ModuleGraphDiagnosticError, resolveModuleImportPath } from "../module_graph.ts";
 import { ParseError } from "../parser.ts";
 import { WmslangNumericDiagnosticError } from "../wmslang/v2_loader.ts";
 import type { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
+import { directWorkmanImports, directWorkmanImportSpecifiers } from "./import_scan.ts";
 import { type LspRange, peggyLocationRange, spanRange, startRange } from "./range.ts";
 import { semanticSourceForPath } from "./semantic_context.ts";
 import type { SemanticService } from "./semantic_service.ts";
@@ -63,6 +64,93 @@ export async function validateUri(
   validationOptions: ValidationOptions = {},
 ): Promise<ValidationResult[]> {
   const entryPath = canonicalFilePath(fileUriToPath(uri));
+  const results = await validateProjectOf(
+    uri,
+    entryPath,
+    sourceOverrides,
+    options,
+    validationOptions,
+  );
+  return await withImportFailures(results, entryPath, sourceOverrides);
+}
+
+/**
+ * An error in another module also marks the import in this one that reaches it. Otherwise a file
+ * whose dependency doesn't compile has no diagnostics, and hovers and inlays just go quiet.
+ */
+async function withImportFailures(
+  results: ValidationResult[],
+  entryPath: string,
+  sourceOverrides: Map<string, string>,
+): Promise<ValidationResult[]> {
+  const entryUri = pathToFileUri(canonicalPath(entryPath, sourceOverrides));
+  const failures = results.flatMap((result) => {
+    const error = result.diagnostics.find((diagnostic) => diagnostic.severity === 1);
+    return result.uri !== entryUri && error ? [{ uri: result.uri, error }] : [];
+  });
+  if (failures.length === 0) return results;
+
+  const source = await sourceForPath(entryPath, sourceOverrides);
+  const added: LspDiagnostic[] = [];
+  const remaining = new Set(failures.map((failure) => failure.uri));
+  for (const site of directWorkmanImports(source)) {
+    const reached = await modulesReachedFrom(entryPath, site.specifier, sourceOverrides);
+    for (const failure of failures) {
+      if (!remaining.has(failure.uri) || !reached.has(failure.uri)) continue;
+      remaining.delete(failure.uri);
+      const message = failure.error.message.split("\n")[0];
+      added.push({
+        range: spanRange(source, site.span as SourceSpanLike),
+        severity: 1,
+        code: "import.failed",
+        source: "wm-mini",
+        message: `This import doesn't compile: ${message}`,
+        relatedInformation: [{
+          location: { uri: failure.uri, range: failure.error.range },
+          message: "the error",
+        }],
+      });
+    }
+  }
+  if (added.length === 0) return results;
+  const entry = results.find((result) => result.uri === entryUri);
+  return entry
+    ? results.map((result) =>
+      result === entry ? { ...result, diagnostics: [...result.diagnostics, ...added] } : result
+    )
+    : [{ uri: entryUri, diagnostics: added }, ...results];
+}
+
+async function modulesReachedFrom(
+  fromPath: string,
+  specifier: string,
+  sourceOverrides: Map<string, string>,
+): Promise<Set<string>> {
+  const reached = new Set<string>();
+  const visit = async (from: string, next: string): Promise<void> => {
+    let path: string;
+    try {
+      path = canonicalPath(await resolveModuleImportPath(from, next), sourceOverrides);
+    } catch {
+      return;
+    }
+    const uri = pathToFileUri(path);
+    if (reached.has(uri)) return;
+    reached.add(uri);
+    const source = await sourceForPath(path, sourceOverrides);
+    for (const child of directWorkmanImportSpecifiers(source)) await visit(path, child);
+  };
+  await visit(fromPath, specifier);
+  return reached;
+}
+
+async function validateProjectOf(
+  uri: string,
+  entryPath: string,
+  sourceOverrides: Map<string, string>,
+  options: CompilerFrontendOptions,
+  validationOptions: ValidationOptions,
+): Promise<ValidationResult[]> {
   const serviceContext = validationOptions.semanticService
     ? await validationOptions.semanticService.documentContext(uri, false)
     : null;

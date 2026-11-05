@@ -63,7 +63,6 @@ Deno.test("a successful main stays silent and exits 0", async () => {
   await succeeds(`let main = () => { Task.succeed(void) };`);
   await succeeds(`let main = () => { Ok(1) };`);
   await succeeds(`let main = () => { print("hi") };`, "hi\n");
-  await succeeds(`let main = () => { 7 };`);
   await succeeds(`let main ==> { void };`);
 });
 
@@ -75,3 +74,24 @@ Deno.test("a user constructor named Err isn't a failure", () =>
     type Mine = | Oops<Number>;
     let main = () => { Oops(1) };
   `));
+
+Deno.test("a whole number returned from main is the exit code", async () => {
+  for (const [source, code] of [["3", 3], ["0", 0], ["2.5", 0]] as const) {
+    const result = await run(`let main = () => { ${source} };`);
+    assertEquals(result.code, code, result.stderr);
+    assertEquals(result.stderr, "");
+  }
+});
+
+Deno.test("an I32 from main is the exit code, and a Task's Ok(n) is a success", async () => {
+  const typed = await run(`let main = () => { let code: I32 = 4; code };`);
+  assertEquals(typed.code, 4, typed.stderr);
+  const task = await run(`let main = () => { Task.succeed(3) };`);
+  assertEquals(task.code, 0, task.stderr);
+});
+
+Deno.test("main's exit code works in a program that uses the Number module", async () => {
+  const result = await run(`let main = () => { Number.div(7, 2) };`);
+  assertEquals(result.code, 3, result.stderr);
+  assertEquals(result.stderr, "");
+});

@@ -4,6 +4,7 @@ import {
   compileReplFileArtifacts,
   compileVirtual,
 } from "../src/compiler.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("[module update T122/T123/R509] diamond dependencies initialize once in source-edge DFS order", async () => {
   const virtualFs = new Map<string, string>([
@@ -161,7 +162,7 @@ async function evaluateVirtual(
 
 async function importError(url: string): Promise<unknown> {
   try {
-    await import(url);
+    await importProgram(url);
     return undefined;
   } catch (error) {
     return error;

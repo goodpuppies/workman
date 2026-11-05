@@ -3,6 +3,7 @@ import type { LongId } from "../src/ast.ts";
 import { longIdSpelling } from "../src/ast.ts";
 import { checkVirtual, compileVirtual } from "../src/compiler.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
+import { importProgram } from "./import_program.ts";
 
 /**
  * Desired-semantics regressions for the module update.
@@ -224,7 +225,7 @@ async function runVirtual(
   console.log = (value) => output.push(String(value));
   try {
     const nonce = crypto.randomUUID();
-    await import(`data:text/javascript;base64,${btoa(javaScript)}#${nonce}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}#${nonce}`);
   } finally {
     console.log = original;
   }

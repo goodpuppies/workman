@@ -3,7 +3,6 @@
 
 from "./writev.wm" import * as Writer;
 from "./error.wm" import * as Error;
-from js.global("Deno") import unsafe { exit: Number -> Void } as Runtime;
 from js.global import { Uint8Array };
 from js.global import unsafe { String as textOf: Number -> String };
 
@@ -35,7 +34,7 @@ let main = () => {
   let many      = viaWriter (writer) => { lines(writer, 0, 5000) };
   let drained   = viaWriter (writer) => { Writer.flush(writer) };
 
-  (match({Result|
+  match({Result|
     Uint8Array.new(64) :> Result.mapErr(AllocationFailed)
       :> attach
       :> buffered
@@ -55,5 +54,5 @@ let main = () => {
 
       1
     },
-  }):>  Runtime.exit
+  }
 };

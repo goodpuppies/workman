@@ -5,6 +5,7 @@ from js.module("./js/pointer.js") import unsafe {
   equals as primEquals: (Ptr<a>, Ptr<b>) -> Bool,
   // The backing bytes have no signedness; infer the pointee from the C call.
   fromString as primFromString: String -> Ptr<t>,
+  fromBytes as primFromBytes: bytes -> Ptr<t>,
   getPointer as primGetPointer: (Ptr<a>, Number) -> Option<Ptr<b>>,
   distance as primDistance: (Ptr<a>, Ptr<b>) -> Number,
   toString as primToString: Ptr<t> -> String,
@@ -22,6 +23,8 @@ let cast = (pointer) => { primCast(pointer) };
 let offset = primOffset;
 let equals = primEquals;
 let fromString = primFromString;
+// The address of a JS typed array, such as a Uint8Array. Keep the array alive while C uses it.
+let fromBytes = (bytes) => { primFromBytes(bytes) };
 let toString = primToString;
 let byteLength = primByteLength;
 let readUtf8 = primReadUtf8;

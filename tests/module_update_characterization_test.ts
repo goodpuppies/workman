@@ -3,6 +3,7 @@ import { checkVirtual, compileVirtual } from "../src/compiler.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
 import { moduleId } from "../src/module_id.ts";
 import { expectBinding } from "./type_helpers.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("[module update T102] normalized specifiers share one graph node and nominal identity", async () => {
   const virtualFs = new Map<string, string>([
@@ -214,7 +215,7 @@ async function runVirtual(
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}#${crypto.randomUUID()}`);
   } finally {
     console.log = original;
   }

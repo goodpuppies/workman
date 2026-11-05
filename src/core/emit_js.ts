@@ -1014,12 +1014,17 @@ function emitMainInvocation(entry: CoreModuleArtifact): string {
   const main = `${id(entry.emitName)}[${JSON.stringify("main")}]`;
   // A Task settles to a Result, so one check covers both. Only the outermost `Err` is a failure:
   // `Ok(Err(x))` is a program that succeeded with that value.
+  // A whole number returned directly is the exit code; a Task's `Ok(n)` is still a success.
+  // This runs in the program's scope, where `Number` can be Workman's module, not the JS global.
   return `if (typeof ${main} === "function") {
   const __wm_main_result = await ${main}();
   if (__wm_main_result?.ctor === ${basisCtorId("Err")}) {
     console.error("error[runtime.main-failed]: main failed with " + __wm_show(__wm_main_result.args[0], new WeakSet(), true));
     if (globalThis.Deno) Deno.exitCode = 1;
     else if (globalThis.process) globalThis.process.exitCode = 1;
+  } else if (typeof __wm_main_result === "number" && __wm_main_result % 1 === 0) {
+    if (globalThis.Deno) Deno.exitCode = __wm_main_result;
+    else if (globalThis.process) globalThis.process.exitCode = __wm_main_result;
   }
 }`;
 }

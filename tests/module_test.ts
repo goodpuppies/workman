@@ -3,6 +3,7 @@ import { checkFile, checkVirtual, compileVirtual } from "../src/compiler.ts";
 import { loadModuleGraph } from "../src/module_graph.ts";
 import { moduleId } from "../src/module_id.ts";
 import { expectBinding } from "./type_helpers.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("imported type constructors and constructors remain available through namespace", async () => {
   const virtualFs = new Map<string, string>([
@@ -194,7 +195,7 @@ Deno.test("Workman namespace in value position resolves its explicit carrier exp
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
   } finally {
     console.log = original;
   }
@@ -230,7 +231,7 @@ Deno.test("only a bare namespace value resolves to its carrier export", async ()
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(javaScript)}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}`);
   } finally {
     console.log = original;
   }

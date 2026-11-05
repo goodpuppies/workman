@@ -46,17 +46,19 @@ console.log(JSON.stringify({ code: result.code, writes }));`,
         const reset = captured.writes.findIndex(([stream, text]) =>
           stream === "stdout" && text.includes("\x1b[?1049l")
         );
-        const expected = silent ? "error[runtime.exit]" : "retained diagnostic";
+        const expected = "retained diagnostic";
         const messages = captured.writes.filter(([stream, text]) =>
           stream === "stderr" && text.includes(expected)
         );
-        assertEquals(messages.length, terminal && !silent ? 2 : 1);
+        // A deliberate exit keeps its status and prints nothing the program didn't.
+        assertEquals(messages.length, silent ? 0 : terminal ? 2 : 1);
+        assertEquals(captured.writes.some(([stream]) => stream === "stderr"), !silent);
         if (terminal) {
           assertEquals(reset >= 0, true);
           assertStringIncludes(captured.writes[reset][1], "\x1b[?2026l");
           assertEquals(
             captured.writes.slice(reset + 1).some(([, text]) => text.includes(expected)),
-            true,
+            !silent,
           );
         } else {
           assertEquals(reset, -1);

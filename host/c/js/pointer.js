@@ -14,6 +14,7 @@ export const offset = (pointer, bytes) => {
   return result;
 };
 export const fromString = (text) => Deno.UnsafePointer.of(encoder.encode(text + "\0"));
+export const fromBytes = (bytes) => Deno.UnsafePointer.of(bytes);
 export const toString = (pointer) => new Deno.UnsafePointerView(pointer).getCString();
 export const byteLength = (text) => Buffer.byteLength(text, "utf8");
 const view = (pointer, start, size) =>

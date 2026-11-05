@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { checkSource, compile } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
+import { importProgram } from "./import_program.ts";
 
 Deno.test("exact word and Word8Vector basis members have nominal types", async () => {
   const result = await checkSource(`
@@ -318,7 +319,7 @@ async function run(source: string): Promise<string[]> {
   console.log = (value) => output.push(String(value));
   try {
     const javaScript = await compile(source);
-    await import(`data:text/javascript;base64,${btoa(javaScript)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(javaScript)}#${crypto.randomUUID()}`);
   } finally {
     console.log = original;
   }

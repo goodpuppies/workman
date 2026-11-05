@@ -27,6 +27,9 @@ If `main` ends with an `Err`, from a failed Task or a plain `Result`, the progra
 `error[runtime.main-failed]: main failed with <value>` and exits with code 1. To handle a failure
 yourself, use `Task.recover` or `Task.orElse` before it reaches `main`.
 
+A whole number returned directly from `main` is the exit code, as in `let main = () => { 3 };`.
+A Task that succeeds with a number is still a success and exits 0.
+
 ## The Important Rule
 
 Tasks are eager handles.

@@ -189,7 +189,7 @@ Deno.test("semantic service keeps an imported parse failure on its source module
   });
   const byPath = new Map(results.map((result) => [fileUriToPath(result.uri), result.diagnostics]));
 
-  assertEquals(byPath.get(main), []);
+  assertEquals(byPath.get(main)?.map((diagnostic) => diagnostic.code), ["import.failed"]);
   assertEquals(byPath.get(lib)?.map((diagnostic) => diagnostic.code), ["parse.syntax-error"]);
   assertEquals(byPath.get(lib)?.[0].range.start, { line: 0, character: 12 });
 });
@@ -217,7 +217,7 @@ Deno.test("editing a dependency dropped by recovery invalidates its stale headed
   });
   assertEquals(
     before.flatMap(({ diagnostics }) => diagnostics.map(({ code }) => code)),
-    ["parse.syntax-error"],
+    ["import.failed", "parse.syntax-error"],
   );
 
   overrides.set(lib, fixed);
@@ -228,7 +228,7 @@ Deno.test("editing a dependency dropped by recovery invalidates its stale headed
 
   assertEquals(
     after.flatMap(({ diagnostics }) => diagnostics.map(({ code }) => code)),
-    ["type.mismatch"],
+    ["import.failed", "type.mismatch"],
   );
 });
 
@@ -265,4 +265,30 @@ Deno.test("unannotated hover leaves live snapshots intact and refreshes after ed
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("a dependency that recovery can't handle leaves requests empty, with a diagnostic", async () => {
+  const dir = await Deno.realPath(await Deno.makeTempDir());
+  const main = join(dir, "main.wm");
+  const lib = join(dir, "lib.wm");
+  await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib;\nlet main = () => { Lib.value };');
+  await Deno.writeTextFile(
+    lib,
+    'from js.global("Math") import { floor: Number -> Number };\nlet value = floor(1);',
+  );
+  const index = new ProjectIndex();
+  index.rememberWorkspaceRoots({ workspaceFolders: [{ uri: pathToFileUri(dir) }] });
+  const overrides = new Map<string, string>();
+  await index.initialize(overrides);
+  const service = new SemanticService(index.discovery, {
+    sourceOverrides: () => overrides,
+    frontendOptions: () => ({}),
+  });
+  const uri = pathToFileUri(main);
+
+  assertEquals(await hoverAt(uri, { line: 1, character: 4 }, overrides, {}, service), null);
+  const results = await validateUri(uri, overrides, {}, { semanticService: service });
+  const byPath = new Map(results.map((result) => [fileUriToPath(result.uri), result.diagnostics]));
+  assertEquals(byPath.get(main)?.map((diagnostic) => diagnostic.code), ["import.failed"]);
+  assertEquals(byPath.get(lib)?.length, 1);
 });

@@ -9,6 +9,7 @@ import type { StaticEnv } from "../src/infer/environment.ts";
 import { BASIS_PROFILES, initialBasis } from "../src/initial_basis.ts";
 import { loadStandardModules } from "../src/standard_library.ts";
 import { expectBinding } from "./type_helpers.ts";
+import { importProgram } from "./import_program.ts";
 
 const primitiveTypes = [
   "Number",
@@ -209,7 +210,7 @@ Deno.test("[module update B302/T135] fixed operator static and runtime catalogs 
   console.log = (value) => output.push(String(value));
   try {
     const compiled = await compile("let main = () => { print((1 + 2) * 3 == 9) };");
-    await import(`data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`);
   } finally {
     console.log = original;
   }
@@ -246,7 +247,7 @@ Deno.test("[module update T131/G9] every initial static value has an implementat
     ),
   ];
   const compiled = await compile(`let runtimeFacts = (${runtimeReferences.join(", ")});`);
-  await import(`data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`);
+  await importProgram(`data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`);
 });
 
 Deno.test("[module update T136/B305] pervasive print is an ordinarily shadowable value", async () => {
@@ -277,7 +278,7 @@ Deno.test("[module update T137/B317] standard-basis construction is deterministi
   const original = console.log;
   console.log = (value) => output.push(String(value));
   try {
-    await import(`data:text/javascript;base64,${btoa(first)}#${crypto.randomUUID()}`);
+    await importProgram(`data:text/javascript;base64,${btoa(first)}#${crypto.randomUUID()}`);
   } finally {
     console.log = original;
   }
@@ -1166,7 +1167,7 @@ Deno.test("[module update B303/G9] every basis fact evaluates to a defined runti
     "/test/probe.wm",
     new Map([["/test/probe.wm", source]]),
   );
-  const module = await import(
+  const module = await importProgram(
     `data:text/javascript;base64,${btoa(compiled)}#${crypto.randomUUID()}`
   ) as Record<string, unknown>;
 

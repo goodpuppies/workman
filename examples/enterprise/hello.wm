@@ -1,6 +1,6 @@
 from "./writev.wm" import * as Writer;
 from "./error.wm" import * as Error;
-from js.global("Deno") import unsafe { exit: Number -> Void } as Runtime;
+from "basis/process.wm" import * as Process;
 from js.global import { Uint8Array };
 
 type AppError =
@@ -19,7 +19,7 @@ let main ==> {
     Writer.close()
       :> Result.mapErr(WriteFailed)
   | :> match {
-    Ok(_) => { 0 },
+    Ok(_) => { Process.Status(0) },
     Err(error) => {
       let reason = match(error) {
         AllocationFailed(js) => { `could not allocate: ${Error.message(js)}` },
@@ -28,7 +28,7 @@ let main ==> {
       Writer.line(Writer.stderrFd, `hello: ${reason}\n`)
         //stderr is gone too, we void
         :> Result.getOr(void);
-      1
+      Process.Status(1)
     }
-  } :> Runtime.exit
+  } :> Process.exit
 };
