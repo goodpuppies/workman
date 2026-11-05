@@ -1,7 +1,7 @@
 import { sequenceType } from "../taint.ts";
 import type { Expr, LongId, RecordExprSpread, TypeExpr } from "../ast.ts";
 import { addRecordPart, type RecordInputs } from "./taint.ts";
-import { isQualified, longIdSpelling, pathOf } from "../ast.ts";
+import { isFieldAccessReceiver, isQualified, longIdSpelling, pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostic_model.ts";
 import {
   addProjectionField,
@@ -282,10 +282,7 @@ function inferRecordField(
       : undefined);
     if (!info?.recordFields) {
       if (occurrence && (info?.foreign || target.name === "Js.Object")) {
-        const path = pathOf(occurrence.expression);
-        const parts = [...path.qualifiers, path.id];
-        const fieldIndex = parts.lastIndexOf(field);
-        const receiver = parts.slice(0, fieldIndex).join(".");
+        const receiver = receiverSpelling(occurrence.expression, field);
         throw new Error(
           `${target.name} is a JavaScript value; use ${receiver} :> .${field} for member access`,
         );
@@ -364,14 +361,7 @@ function inferRecordField(
       });
       return { type: result };
     }
-    const receiver = occurrence
-      ? (() => {
-        const path = pathOf(occurrence.expression);
-        const parts = [...path.qualifiers, path.id];
-        const fieldIndex = parts.lastIndexOf(field);
-        return parts.slice(0, fieldIndex).join(".");
-      })()
-      : "value";
+    const receiver = occurrence ? receiverSpelling(occurrence.expression, field) : "value";
     throw new Error(
       `unknown record field ${field}; no nominal record type declares it. ` +
         `For JavaScript member access, use ${receiver} :> .${field}`,
@@ -384,7 +374,26 @@ function inferRecordField(
     target.fields.push({ name: field, type: result });
     return { type: result };
   }
+  // A computed receiver, as in `"text".length`, can only take a record field.
+  if (occurrence && isFieldAccessReceiver(pathOf(occurrence.expression).qualifiers[0] ?? "")) {
+    throw new Error(
+      `type ${show(base)} has no field ${field}. ` +
+        `For JavaScript member access, use ${receiverSpelling(occurrence.expression, field)} :> .${field}`,
+    );
+  }
   throw new Error(`type ${show(base)} has no field ${field}`);
+}
+
+/**
+ * How the receiver of `field` reads in a hint. A computed receiver, `e` in `e.field`, is bound to a
+ * name authored code can't spell, so the hint shows it as `(…)`.
+ */
+function receiverSpelling(expression: Extract<Expr, { kind: "Var" }>, field: string): string {
+  const path = pathOf(expression);
+  const parts = [...path.qualifiers, path.id];
+  const receiver = parts.slice(0, parts.lastIndexOf(field));
+  if (receiver.length > 0 && isFieldAccessReceiver(receiver[0])) receiver[0] = "(…)";
+  return receiver.join(".");
 }
 
 function constrainRecord(

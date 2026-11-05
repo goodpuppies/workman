@@ -1059,10 +1059,13 @@ Deno.test("named JS properties retain foreign types when nominal labels overlap"
 });
 
 Deno.test("computed receivers require explicit pipe-member syntax", async () => {
-  for (
-    const value of ['"hello".length', "(text).length", "make().length", "response.json().length"]
-  ) {
-    await assertRejects(() => parse(`let value = ${value};`));
+  // `e.field` on a computed receiver reads a record field, as SML's `#field e` does, so a JavaScript
+  // member of a computed value must be spelled `e :> .member`.
+  for (const value of ['"hello".length', "(text).length", "make().length", "make().slice(1)"]) {
+    const error = await assertRejects(() =>
+      checkSource(`let text = "x";\nlet make = () => "y";\nlet value = ${value};`)
+    );
+    assertStringIncludes(String(error), ":> .");
   }
   const result = await checkSource('let length = "hello" :> .length;');
   expectBinding(result.env, "length", { type: "Result<Number, Js.Error>!", vars: 0 });

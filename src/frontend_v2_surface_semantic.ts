@@ -1063,8 +1063,9 @@ function projectListPattern(
 }
 
 /**
- * `e.field` means `{ let x = e; x.field }`, so moving a receiver into a let never changes what the
- * access means. `#field (e)` is the same thing in SML.
+ * `e.field` reads a record field of `e`, as `#field (e)` does in SML. It is built as
+ * `{ let x = e; x.field }` so `e` runs once, but the hidden `x` never reaches a JavaScript member:
+ * that is spelled `e :> .member` (see `localDottedMember`).
  */
 function projectFieldAccess(
   receiver: Expr,

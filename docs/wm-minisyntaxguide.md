@@ -496,8 +496,8 @@ let p = .{ x = 10, y = 20 };
 let xVal = p.x;  -- 10
 ```
 
-A field can be read from any expression without a binding, and the result can be read or called in
-turn. `e.field` means the same as `{ let value = e; value.field }`, so `e` runs once:
+A record field can be read from any expression without a binding, and the result can be read or
+called in turn. `e` runs once, and `e.field` is SML's `#field e`:
 
 ```workman
 let did = profile("thing").did;
@@ -507,7 +507,9 @@ let next = counter().step(1);
 ```
 
 The `.` must follow the expression directly, with no space, and a numeric literal can't take a field.
-Use `:> .member` for pipeline stages on JS values, especially method calls.
+After an expression, `.` only reads a record field. A JS member of a computed value is spelled
+`:> .member`, as in `JSON.parse(text) :> .did` or `"hello" :> .length`. A name bound to a JS value
+can still use `value.member`.
 
 In a pipeline, the input goes into the first call of the access. Parentheses make the stage a value
 that gets called with the input, as they do for any call:

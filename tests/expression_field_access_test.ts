@@ -138,23 +138,30 @@ Deno.test("nested field accesses keep their own receivers", async () => {
   assertEquals(output, "inner\n1\n");
 });
 
-Deno.test("field access means the same as reading the field from a let", async () => {
+Deno.test("a record field access means the same as reading the field from a let", async () => {
   const result = await checkSource(`
     ${records}
-    from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
     let recordField = make("a").inner;
     let recordLet = { let value = make("a"); value.inner };
-    let jsField = (text: String) => { JSON.parse(text).did };
-    let jsLet = (text: String) => { let value = JSON.parse(text); value.did };
   `);
-  for (
-    const [field, viaLet] of [
-      ["recordField", "recordLet"],
-      ["jsField", "jsLet"],
-    ]
-  ) {
-    assertEquals(show(result.env.get(field)!.type), show(result.env.get(viaLet)!.type), field);
-  }
+  assertEquals(show(result.env.get("recordField")!.type), show(result.env.get("recordLet")!.type));
+});
+
+// `e.field` reads a record field, as SML's `#field e` does. A JavaScript member of a computed value
+// is spelled `e :> .member`, so a `.` after an expression never reaches into JavaScript.
+Deno.test("a JavaScript member of a computed value needs a pipe", async () => {
+  const json = 'from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;';
+  await assertRejects(
+    () => checkSource(`${json}\nlet read = (text: String) => { JSON.parse(text).did };`),
+    Error,
+    "use (…) :> .did",
+  );
+  const result = await checkSource(`
+    ${json}
+    let piped = (text: String) => { JSON.parse(text) :> .did };
+    let viaLet = (text: String) => { let value = JSON.parse(text); value.did };
+  `);
+  assertEquals(show(result.env.get("piped")!.type), show(result.env.get("viaLet")!.type));
 });
 
 Deno.test("field access keeps a dropped-effect taint", async () => {
@@ -168,15 +175,13 @@ Deno.test("field access keeps a dropped-effect taint", async () => {
   assertEquals(show(result.env.get("viaField")!.type), show(result.env.get("viaLet")!.type));
 });
 
-Deno.test("a field access on a primitive follows the same rule as a let", async () => {
-  for (const access of ["(1 + 2).did", "{ let value = 1 + 2; value.did }"]) {
-    await checkSource(`let read = ${access};`);
-    await assertRejects(
-      () => checkSource(`record Named = { did: String }; let read = ${access};`),
-      Error,
-      "requires a nominal record, got Number",
-    );
-  }
+Deno.test("a field access on a computed primitive is rejected", async () => {
+  await assertRejects(() => checkSource("let read = (1 + 2).did;"), Error, "use (…) :> .did");
+  await assertRejects(
+    () => checkSource("record Named = { did: String }; let read = (1 + 2).did;"),
+    Error,
+    "requires a nominal record, got Number",
+  );
 });
 
 Deno.test("a missing field is rejected and names the field, not a compiler binding", async () => {

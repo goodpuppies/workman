@@ -1,4 +1,5 @@
 import type { Expr } from "../../ast.ts";
+import { isFieldAccessReceiver } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { jsRefCallMember, jsRefHasMemberPath, type JsTypeRef } from "../reflect/types.ts";
@@ -486,6 +487,9 @@ function localDottedMember(
 ): { base: string; path: string[] } | undefined {
   const parts = name.split(".");
   if (parts.length < 2) return undefined;
+  // `e.field` on a computed receiver reads a record field, as SML's `#field e` does. A JavaScript
+  // member of a computed value is spelled `e :> .member`.
+  if (isFieldAccessReceiver(parts[0])) return undefined;
   const access = objectAccess.get(parts[0]);
   if (!access) return undefined; // Qualified module/import names keep their existing lookup.
   if (access.kind === "unresolved") {
