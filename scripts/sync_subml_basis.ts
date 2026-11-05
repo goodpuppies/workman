@@ -12,6 +12,11 @@ const inventory = JSON.parse(
   modules: Record<string, { source: string; sourceDependencies: string[]; primitives: string[] }>;
 };
 const modules = Object.entries(inventory.modules);
+// Goes under any `// @basis-type` line, so that line stays first.
+const SYNCED = "// Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do not edit here.\n";
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+const synced = (bytes: Uint8Array) => encoder.encode(SYNCED + decoder.decode(bytes));
 
 const temporary = await Deno.makeTempDir({ prefix: "subml-basis-" });
 try {
@@ -33,7 +38,7 @@ try {
   const files = new Map<string, Uint8Array>();
   for (const [, module] of modules) {
     const filename = module.source.replace(/^src\//, "").replace(/\.sml$/, ".wm");
-    files.set(filename, await Deno.readFile(join(temporary, filename)));
+    files.set(filename, synced(await Deno.readFile(join(temporary, filename))));
   }
   // SubsetResult's datatype is WM's built-in Result, so FFI results, std's Result functions and
   // the Basis share one type and one Ok/Err.
@@ -54,18 +59,21 @@ try {
   );
   // The host primitives' WM side is SubsetML's hand-written adapters, not a translation. A
   // library module's JS lives in js/, so the host adapter's import is pointed there.
-  files.set("subset_text_host.wm", await Deno.readFile(join(subsetml, "lib/subset_text_host.wm")));
+  files.set(
+    "subset_text_host.wm",
+    synced(await Deno.readFile(join(subsetml, "lib/subset_text_host.wm"))),
+  );
   const host = await Deno.readTextFile(join(subsetml, "lib/subset_host.wm"));
   if (!host.includes('js.module("./subset_host.js")')) {
     throw new Error("lib/subset_host.wm no longer imports ./subset_host.js");
   }
   files.set(
     "subset_host.wm",
-    new TextEncoder().encode(
+    synced(encoder.encode(
       host.replaceAll('js.module("./subset_host.js")', 'js.module("./js/subset_host.js")'),
-    ),
+    )),
   );
-  files.set("js/subset_host.js", await Deno.readFile(join(subsetml, "lib/subset_host.js")));
+  files.set("js/subset_host.js", synced(await Deno.readFile(join(subsetml, "lib/subset_host.js"))));
 
   for await (const entry of Deno.readDir(output)) {
     if (entry.isFile && entry.name.endsWith(".wm") && !files.has(entry.name)) {

@@ -1,3 +1,4 @@
+// Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do not edit here.
 // Deno/Node adapter. Latin-1 strings carry raw bytes across the FFI boundary.
 // Nothing throws: a fallible call returns [true, value] or [false, message].
 import { readFileSync, writeFileSync, writeSync, realpathSync } from "node:fs";

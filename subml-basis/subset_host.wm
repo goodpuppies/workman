@@ -1,3 +1,4 @@
+// Synced from subm/SubsetML by scripts/sync_subml_basis.ts. Do not edit here.
 // CLI and canonical filesystem identity. Representation adaptation stays at this boundary.
 // The JS calls never throw: each fallible one returns (succeeded, value or message).
 from "./subset_result.wm" import * as SubsetResult;
