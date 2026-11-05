@@ -47,6 +47,11 @@ let isShutdown = false;
 let hasInitialized = false;
 let writeChain: Promise<void> = Promise.resolve();
 let workspaceRevision = 0;
+/**
+ * An editor can redraw its previous inlays as soon as a provider exists. Registering the provider
+ * after the first analysis shows none while loading, instead of possibly outdated ones.
+ */
+let inlayHintsAwaitAnalysis = false;
 const requestStates = new Map<string, {
   revision: number;
   cancelled: boolean;
@@ -138,6 +143,10 @@ async function handleMessage(message: RpcMessage) {
     }
     const params = message.params as WorkmanInitializeParams | undefined;
     applyInitializationOptions(params?.initializationOptions);
+    const inlayHintsEnabled = typeInlaysEnabled || parameterInlaysEnabled ||
+      structuralInlaysEnabled;
+    inlayHintsAwaitAnalysis = inlayHintsEnabled &&
+      params?.capabilities?.textDocument?.inlayHint?.dynamicRegistration === true;
     projectIndex.rememberWorkspaceRoots(params);
     const indexStarted = Date.now();
     const indexedFiles = await projectIndex.initialize(
@@ -178,9 +187,7 @@ async function handleMessage(message: RpcMessage) {
           },
           full: true,
         },
-        ...(typeInlaysEnabled || parameterInlaysEnabled || structuralInlaysEnabled
-          ? { inlayHintProvider: true }
-          : {}),
+        ...(inlayHintsEnabled && !inlayHintsAwaitAnalysis ? { inlayHintProvider: true } : {}),
       },
       serverInfo: { name: "workman-lsp", version: "0.0.1" },
     });
@@ -193,6 +200,11 @@ async function handleMessage(message: RpcMessage) {
   }
   if (isShutdown) {
     await respondError(message.id, -32600, "server has shut down");
+    return;
+  }
+  if (message.method === undefined) {
+    // The only requests this server sends are capability registrations.
+    if (message.error) log("client request failed", `id=${String(message.id)}`);
     return;
   }
   if (message.method === "initialized") return;
@@ -475,13 +487,11 @@ async function handleMessage(message: RpcMessage) {
     );
     return;
   }
-  if (message.method !== undefined) {
-    await respondError(
-      message.id,
-      -32601,
-      `method not found: ${message.method}`,
-    );
-  }
+  await respondError(
+    message.id,
+    -32601,
+    `method not found: ${message.method}`,
+  );
 }
 
 async function inlayHints(params: InlayHintParams) {
@@ -587,8 +597,25 @@ function scheduleAffectedValidation(uri: string, invalidate = true): void {
     (ticket) =>
       publishAffectedValidation(uri, ticket, invalidate).catch((error) => {
         log("affected validate error", uri, String(error));
-      }),
+      }).finally(() => ticket.isCurrent() ? registerInlayHints() : undefined),
   );
+}
+
+async function registerInlayHints(): Promise<void> {
+  if (!inlayHintsAwaitAnalysis) return;
+  inlayHintsAwaitAnalysis = false;
+  await write({
+    jsonrpc: "2.0",
+    id: "workman/registerInlayHints",
+    method: "client/registerCapability",
+    params: {
+      registrations: [{
+        id: "workman/inlayHints",
+        method: "textDocument/inlayHint",
+        registerOptions: { documentSelector: [{ scheme: "file", language: "wm" }] },
+      }],
+    },
+  });
 }
 
 async function publishAffectedValidation(
@@ -845,6 +872,7 @@ type WorkmanInitializationOptions = {
 
 type WorkmanInitializeParams = InitializeParams & {
   initializationOptions?: WorkmanInitializationOptions;
+  capabilities?: { textDocument?: { inlayHint?: { dynamicRegistration?: boolean } } };
 };
 
 type DidOpenParams = {

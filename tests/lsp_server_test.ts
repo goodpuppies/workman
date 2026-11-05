@@ -197,6 +197,90 @@ Deno.test("all independent inlay providers can be disabled", async () => {
   assertEquals(capabilities.inlayHintProvider, undefined);
 });
 
+Deno.test("inlay hints register after the first analysis when the client allows it", async () => {
+  const dir = await Deno.makeTempDir();
+  const uri = pathToFileUri(nativeJoin(dir, "main.wm"));
+  const open = (id: string, text: string) => ({
+    jsonrpc: "2.0" as const,
+    method: "textDocument/didOpen",
+    params: { textDocument: { uri: `${uri}${id}`, languageId: "wm", version: 1, text } },
+  });
+  const messages = await runLsp([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { capabilities: { textDocument: { inlayHint: { dynamicRegistration: true } } } },
+    },
+    open("", "let add = (left, right) => { left + right };"),
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "textDocument/documentSymbol",
+      params: { textDocument: { uri } },
+    },
+    open(".other.wm", "let y = 2;"),
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "textDocument/documentSymbol",
+      params: { textDocument: { uri } },
+    },
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "textDocument/inlayHint",
+      params: {
+        textDocument: { uri },
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 50 } },
+      },
+    },
+    { jsonrpc: "2.0", id: 5, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+
+  const capabilities = (messages.find((message) => message.id === 1)?.result as {
+    capabilities: { inlayHintProvider?: boolean };
+  }).capabilities;
+  assertEquals(capabilities.inlayHintProvider, undefined);
+  const registrations = messages.filter((message) =>
+    message.method === "client/registerCapability"
+  );
+  assertEquals(registrations.length, 1);
+  assertEquals(registrations[0].params, {
+    registrations: [{
+      id: "workman/inlayHints",
+      method: "textDocument/inlayHint",
+      registerOptions: { documentSelector: [{ scheme: "file", language: "wm" }] },
+    }],
+  });
+  // The hints are ready by the time the editor can ask for them.
+  const index = (match: (message: RpcMessage) => boolean) => messages.findIndex(match);
+  const published = index((message) => message.method === "textDocument/publishDiagnostics");
+  const registered = index((message) => message.method === "client/registerCapability");
+  assertEquals(published !== -1 && published < registered, true);
+  const hints = messages.find((message) => message.id === 4)?.result as { label: string }[];
+  assertEquals(hints.length > 0, true);
+});
+
+Deno.test("inlay hints stay static for a client without dynamic registration", async () => {
+  const messages = await runLsp([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { capabilities: { textDocument: { inlayHint: {} } } },
+    },
+    { jsonrpc: "2.0", id: 2, method: "shutdown", params: null },
+    { jsonrpc: "2.0", method: "exit", params: null },
+  ]);
+  const capabilities = (messages.find((message) => message.id === 1)?.result as {
+    capabilities: { inlayHintProvider?: boolean };
+  }).capabilities;
+  assertEquals(capabilities.inlayHintProvider, true);
+  assertEquals(messages.some((message) => message.method === "client/registerCapability"), false);
+});
+
 Deno.test("parameter-name inlays can remain enabled without type inlays", async () => {
   const dir = await Deno.makeTempDir();
   const main = nativeJoin(dir, "main.wm");
