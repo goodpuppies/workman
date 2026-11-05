@@ -1,3 +1,4 @@
+import type { ModuleAnalysisCache } from "./module_analysis_cache.ts";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { posix } from "node:path";
 import type { ImportClause, Module } from "./ast.ts";
@@ -17,6 +18,8 @@ export type VirtualFileSystem = Map<string, string>;
 
 export type ModuleGraphOptions = CompilerFrontendOptions & {
   sourceOverrides?: Map<string, string>;
+  /** Analyses kept from earlier compiles, so unchanged modules aren't analyzed again. */
+  moduleAnalysisCache?: ModuleAnalysisCache;
   virtualFs?: VirtualFileSystem;
   /** Recover independent semicolon-terminated top-level phrases instead of rejecting the graph. */
   syntaxRecovery?: boolean;

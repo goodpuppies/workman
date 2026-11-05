@@ -525,6 +525,7 @@ async function analyzeStrict<T>(
     return build(
       graph,
       await analyzeModuleGraph(graph, {
+        cache: options.moduleAnalysisCache,
         onEvent: ({ phase, node }) => {
           if (!options.onAnalysisProgress) return;
           const seen = cleared.get(phase) ?? new Set<string>();

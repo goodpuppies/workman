@@ -18,6 +18,7 @@ import { type ReplSettings, replSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
 import { observeLibraryLoad } from "./standard_library.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
+import { ModuleAnalysisCache } from "./module_analysis_cache.ts";
 
 export { topLevelPhraseRanges } from "./top_level_phrases.ts";
 
@@ -420,10 +421,13 @@ export async function runInteractiveRepl(
   const onError = options.onError ??
     ((error) => console.error(error instanceof Error ? error.message : String(error)));
   const { input: stdin, ...sessionOptions } = options;
-  // Each phrase recompiles the session, so modules it imports are parsed once and reused.
+  // Each phrase compiles its module and everything it imports, so the session keeps what it parsed.
   const compileOptions: CompileOptions = {
     ...sessionOptions,
     frontendV2ParseCache: sessionOptions.frontendV2ParseCache ?? new FrontendV2ParseCache(),
+    // A phrase analyzes only itself and what it newly imports, as an SML top level elaborates a
+    // phrase against the static basis it already holds.
+    moduleAnalysisCache: sessionOptions.moduleAnalysisCache ?? new ModuleAnalysisCache(),
   };
   const temporaryDirectory = await createTemporaryDirectory({
     dir: Deno.cwd(),

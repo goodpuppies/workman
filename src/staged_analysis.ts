@@ -18,6 +18,8 @@ import { rememberExportedSourceDocument } from "./infer/imports.ts";
 import { registerModuleCarrier } from "./infer/carriers.ts";
 import { resolveLocalJsModuleSpecifiers } from "./js_module_specifier.ts";
 import type { ModuleGraph, ModuleNode } from "./module_graph.ts";
+import type { CachedModuleAnalysis, ModuleAnalysisCache } from "./module_analysis_cache.ts";
+import { moduleContentKeys } from "./module_content_key.ts";
 import type { ModuleId, ModuleMap } from "./module_id.ts";
 import {
   libraryImportResults,
@@ -50,6 +52,12 @@ export type StagedAnalysisOptions = {
   /** Results for import edges that leave the graph. Defaults to the library modules it reaches. */
   externalResults?: ModuleMap<InferResult>;
   onEvent?: (event: StagedAnalysisEvent) => void;
+  /**
+   * Finished analyses to reuse, and to keep the new ones in once the whole graph succeeds. A reused
+   * module skips every phase and serves its importers as it did when it was analyzed. Ignored when
+   * `inferOptions` is given, since the key doesn't cover it.
+   */
+  cache?: ModuleAnalysisCache;
   onTiming?: (event: StagedAnalysisTimingEvent) => void;
   /**
    * Awaited after each phase of each module. Analysis otherwise stays on the microtask queue, so
@@ -117,12 +125,39 @@ export async function analyzeModuleGraph(
     });
   }
 
+  const cache = options.inferOptions ? undefined : options.cache;
+  const prelude = usesStandardLibrary(graph);
+  const keys = cache ? moduleContentKeys(graph.nodes, graph.order) : new Map<ModuleId, string>();
+  const cacheKey = (id: ModuleId) => `${keys.get(id)}|${prelude ? "prelude" : "bare"}`;
+  const cached = new Map<ModuleId, CachedModuleAnalysis>();
+  for (const id of graph.order) {
+    const analysis = cache?.get(cacheKey(id));
+    if (!analysis) continue;
+    cached.set(id, analysis);
+    graph.nodes.get(id)!.module = analysis.module;
+  }
+  const fresh = graph.order.filter((id) => !cached.has(id));
+  const freshNodes = [...graph.nodes.values()].filter((node) => !cached.has(node.id));
+  const cachedResults = () => new Map([...cached].map(([id, analysis]) => [id, analysis.result]));
+  const finish = (results: ModuleMap<InferResult>): ModuleMap<InferResult> => {
+    if (cache) {
+      for (const id of fresh) {
+        cache.set(cacheKey(id), {
+          module: graph.nodes.get(id)!.module,
+          result: results.get(id)!,
+          foreignTypeRefs: ffi.get(id)!.foreignTypeRefs,
+        });
+      }
+    }
+    return new Map(graph.order.map((id) => [id, results.get(id)!]));
+  };
+
   const external = options.externalResults ?? await externalImportResults(graph);
   const importsFor = (node: ModuleNode, results: ModuleMap<InferResult>) =>
     importResults(node, results, external);
 
   const ffi = new Map<ModuleId, FfiElaboration>();
-  for (const node of graph.nodes.values()) {
+  for (const node of freshNodes) {
     await run("prepare FFI", node, undefined, async () => {
       node.module = await prepareCImports(node.module);
       const prepared = prepareFfiElaboration(node.module, {
@@ -137,15 +172,15 @@ export async function analyzeModuleGraph(
 
   const standardLibraryStarted = performance.now();
   const inferOptions = options.inferOptions ??
-    await standardInferOptions(usesStandardLibrary(graph));
+    await standardInferOptions(prelude);
   options.onTiming?.({
     phase: "load standard library",
     milliseconds: performance.now() - standardLibraryStarted,
   });
 
   if (![...ffi.values()].some(requiresFfiStaging)) {
-    const results = new Map<ModuleId, InferResult>();
-    for (const id of graph.order) {
+    const results: ModuleMap<InferResult> = cachedResults();
+    for (const id of fresh) {
       const node = graph.nodes.get(id)!;
       const result = await run(
         "final inference",
@@ -158,11 +193,11 @@ export async function analyzeModuleGraph(
       results.set(id, result);
       emit("final inference", node, result);
     }
-    return results;
+    return finish(results);
   }
 
-  const firstResults = new Map<ModuleId, InferResult>();
-  for (const id of graph.order) {
+  const firstResults: ModuleMap<InferResult> = cachedResults();
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     const result = await run(
       "initial partial inference",
@@ -178,7 +213,7 @@ export async function analyzeModuleGraph(
   }
 
   const contextualizedIds = new Set<ModuleId>();
-  for (const id of graph.order) {
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     await run("contextualize delayed callbacks", node, firstResults.get(id), () => {
       const previous = ffi.get(id)!;
@@ -190,14 +225,14 @@ export async function analyzeModuleGraph(
     });
   }
 
-  const contextualResults = new Map<ModuleId, InferResult>();
+  const contextualResults: ModuleMap<InferResult> = cachedResults();
   // Imported monomorphic schemes are deliberately shared so constraints from a
   // downstream module can settle an unresolved FFI binding. Once any module's
   // AST changes, those schemes and nominal type identities must be rebuilt as
   // one coherent graph wave; mixing reused dependency results with reinferred
   // consumers retains constraints from the preceding wave.
   const requiresContextualGraphReinference = contextualizedIds.size > 0;
-  for (const id of graph.order) {
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     const requiresReinference = requiresContextualGraphReinference;
     const result = await run(
@@ -222,11 +257,13 @@ export async function analyzeModuleGraph(
   }
 
   const foreignTypeRefs = new Map(
-    [...ffi.values()].flatMap((item) =>
-      [...item.foreignTypeRefs.values()].map((ref) => [ref.key, ref] as const)
-    ),
+    [
+      ...[...cached.values()].map((analysis) => analysis.foreignTypeRefs),
+      ...[...ffi.values()].map((item) => item.foreignTypeRefs),
+    ]
+      .flatMap((refs) => [...refs.values()].map((ref) => [ref.key, ref] as const)),
   );
-  for (const id of graph.order) {
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     const result = contextualResults.get(id)!;
     await run("resolve delayed FFI", node, result, () => {
@@ -241,12 +278,12 @@ export async function analyzeModuleGraph(
   }
 
   const idsWithDelayedFfi = new Set(
-    graph.order.filter((id) => moduleHasDelayedFfi(graph.nodes.get(id)!.module)),
+    fresh.filter((id) => moduleHasDelayedFfi(graph.nodes.get(id)!.module)),
   );
-  const postResolveResults = new Map<ModuleId, InferResult>();
+  const postResolveResults: ModuleMap<InferResult> = cachedResults();
   const postResolutionReinferredIds = new Set<ModuleId>();
   const requiresPostResolutionGraphReinference = idsWithDelayedFfi.size > 0;
-  for (const id of graph.order) {
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     const requiresReinference = requiresPostResolutionGraphReinference;
     const result = await run(
@@ -274,7 +311,7 @@ export async function analyzeModuleGraph(
     );
   }
 
-  for (const id of graph.order) {
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     const result = postResolveResults.get(id)!;
     await run("resolve delayed FFI (second pass)", node, result, () => {
@@ -286,8 +323,8 @@ export async function analyzeModuleGraph(
     });
   }
 
-  const results = new Map<ModuleId, InferResult>();
-  for (const id of graph.order) {
+  const results: ModuleMap<InferResult> = cachedResults();
+  for (const id of fresh) {
     const node = graph.nodes.get(id)!;
     const result = await run(
       "final inference",
@@ -300,7 +337,7 @@ export async function analyzeModuleGraph(
     results.set(id, result);
     emit("final inference", node, result);
   }
-  return results;
+  return finish(results);
 }
 
 function moduleHasDelayedFfi(module: ModuleNode["module"]): boolean {

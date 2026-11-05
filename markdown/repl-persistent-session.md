@@ -1,7 +1,7 @@
 # A persistent REPL session
 
-Status: 2026-11-05. Step 1 (parse cache, `10e0d2d`) and steps 1–5 of the plan below are done;
-step 6, analysis reuse, is still open.
+Status: done, 2026-11-06. Parse cache `10e0d2d`, persistent session `88f3417`, then analysis reuse
+(step 6).
 
 ## Problem
 
@@ -28,6 +28,10 @@ atview session importing `repl.wm`, offline fixture, per phrase:
 | emit | 0.1 s | 0.1 s |
 | run in a new process, replaying every phrase | about 1 s | about 1 s |
 | total per phrase | 3.8 s | 1.7 s |
+
+After the persistent session (step 5), on the same fixture: compile about 1.3 s per phrase (analyze
+1.15 s, of which module inference 0.9 s), and nothing replays. After analysis reuse (step 6): compile
+about 0.4 s per phrase, with output byte-identical to an uncached compile.
 
 ## Plan
 
@@ -71,8 +75,27 @@ the host once.
   analyzes it without running.
 - If the host process dies with any code but `quit`'s, the REPL reports that the session's state
   was lost and starts a new host for the next phrase, which then runs its imported phrases once more.
+- Analysis reuse follows MLWorks's project system (`../mlworks/src/main/_project.sml`), which keeps
+  each loaded unit's static basis and reuses it while the unit and its dependencies are unchanged.
+  `ModuleAnalysisCache` (`src/module_analysis_cache.ts`) keeps each module's elaborated AST and
+  inference result under the content key the REPL emitter also uses (`src/module_content_key.ts`):
+  path, source, and the keys of its imports. `analyzeModuleGraph` skips cached modules in every
+  phase and stores new analyses only when the whole graph succeeds, so a phrase that fails to
+  elaborate leaves the cache as it was. Program facts, Core and JavaScript are still built for the
+  whole program each compile.
+- Like MLWorks, and unlike SML/NJ's Compilation Manager, there is no cutoff: a changed module is
+  analyzed again with everything that imports it, even if its interface didn't change.
+- A module is analyzed once and then fixed. Delayed JS FFI types can be settled by an importer
+  within one graph, so a module first analyzed in one graph keeps that settlement when a later
+  graph imports it. That is how an accepted SML phrase behaves too.
+- Known gap: imported schemes share their types with the cached result, as the standard library's
+  already do. If a cached module ever exported a type that is not generalized, a later phrase that
+  fails could still have unified it. No case of this has been seen.
 
 ## Open questions
+
+- The remaining 0.4 s is mostly program facts, Core lowering and emit for the whole program. Caching
+  those per module, or emitting only modules the host hasn't loaded, is the next step if needed.
 
 - Watch mode (`wm repl file.wm`) re-runs a whole file on save, which is intentional there. It stays as
   it is.

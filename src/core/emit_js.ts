@@ -5,6 +5,7 @@ import { parseLongId } from "../ast.ts";
 import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artifact.ts";
 import type { BindingId, StructureId } from "./ids.ts";
 import type { ModuleId } from "../module_id.ts";
+import { moduleContentKeys } from "../module_content_key.ts";
 import { basisCtorId, basisCtorJsName } from "../basis.ts";
 import {
   basisIntrinsicDescriptor,
@@ -541,29 +542,8 @@ function replModuleKeys(
   program: CoreProgram,
   order: readonly ModuleId[],
 ): Map<CoreModuleArtifact, string> {
-  const keys = new Map<CoreModuleArtifact, string>();
-  const keyOf = (moduleId: ModuleId): string => {
-    const artifact = program.modules.get(moduleId)!;
-    const known = keys.get(artifact);
-    if (known !== undefined) return known;
-    keys.set(artifact, artifact.path); // A cycle can't reach here: module imports are acyclic.
-    const dependencies = artifact.imports.map((edge) => keyOf(edge.target)).sort();
-    const key = `${artifact.path}#${stableHash([artifact.source, ...dependencies].join("\0"))}`;
-    keys.set(artifact, key);
-    return key;
-  };
-  order.forEach((moduleId) => keyOf(moduleId));
-  return keys;
-}
-
-/** FNV-1a over UTF-16 units, as eight hex digits. */
-function stableHash(text: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index++) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
+  const keys = moduleContentKeys(program.modules, order);
+  return new Map([...keys].map(([moduleId, key]) => [program.modules.get(moduleId)!, key]));
 }
 
 function moduleKey(artifact: CoreModuleArtifact): string {
