@@ -458,6 +458,36 @@ Deno.test("a function's annotation doesn't treat pending calls in its body as ca
   );
 });
 
+Deno.test("generic JS globals keep their arity when imported by name", async () => {
+  const result = await checkSource(`
+    from js.global import { ArrayBuffer, DataView, Map, Set, WeakMap, WeakSet };
+    from js.global import type { Date };
+    record Views = { view: DataView<ArrayBuffer>, dates: WeakMap<Date, Number> };
+    let map = Map.new() :> Result.debug;
+    let set = Set.new() :> Result.debug;
+    let weakMap = WeakMap.new() :> Result.debug;
+    let weakSet = WeakSet.new() :> Result.debug;
+    let size = map :> .size;
+  `);
+  expectBinding(result.env, "size", { type: "Result<Number, Js.Error>!", vars: 0 });
+});
+
+Deno.test("numeric typed arrays stay non-generic when imported by name", async () => {
+  await checkSource(`
+    from js.global import type { Uint8Array };
+    record Holder = { bytes: Uint8Array };
+  `);
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global import type { ArrayBuffer, Uint8Array };
+        record Holder = { bytes: Uint8Array<ArrayBuffer> };
+      `),
+    Error,
+    "Uint8Array expects 0 type arguments",
+  );
+});
+
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
   const result = await checkSource(`
     from js.global("JSON") import unsafe {

@@ -364,6 +364,20 @@ export function jsPrimitiveValueRef(name: "String" | "Number" | "Bool"): JsTypeR
 
 export function jsGlobalTypeRef(name: string): JsTypeRef {
   if (name === "JsNever") return typeRefFromSource("ts:never", "", "never");
+  const generic = reflectSource(`global-generic-type:${name}`, "export {};", (checker, sf) => {
+    const symbol = checker.resolveName(name, sf, ts.SymbolFlags.Type, false);
+    return symbol && nominalGenericConstructor(checker, checker.getDeclaredTypeOfSymbol(symbol));
+  });
+  if (generic) {
+    return {
+      ...typeRefFromSource(
+        generic.key,
+        "",
+        `${generic.expression}<${Array.from({ length: generic.arity }, () => "any").join(", ")}>`,
+      ),
+      generic,
+    };
+  }
   return typeRefFromSource(`global-type:${name}`, "", name);
 }
 
