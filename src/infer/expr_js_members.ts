@@ -5,13 +5,15 @@ import {
   named,
   NumberTy,
   prune,
+  show,
   StringTy,
   tuple,
-  typeInfoByName,
   type Ty,
   type TypeEnv,
+  typeInfoByName,
 } from "../types.ts";
 import { constrainAt } from "./provenance.ts";
+import type { TypeFacts } from "./type_facts.ts";
 
 export function ffiCallbackParamHints(
   typeEnv: TypeEnv,
@@ -150,10 +152,8 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
   if (path.length !== 1) return undefined;
   const member = path[0];
   const target = prune(receiver);
-  const primitive = target.tag === "prim"
-    ? target.name
-    : inferPrimitiveReceiverFromMember(receiver, member);
-  if (!primitive) return undefined;
+  if (target.tag !== "prim") return undefined;
+  const primitive = target.name;
   if (primitive === "Number" && member === "toString") {
     if (args.length > 1) return undefined;
     if (args[0]) {
@@ -209,31 +209,36 @@ export function jsPrimitiveFfiCallValue(receiver: Ty, path: string[], args: Ty[]
   return undefined;
 }
 
-function inferPrimitiveReceiverFromMember(receiver: Ty, member: string): string | undefined {
-  const target = prune(receiver);
-  if (target.tag !== "var") return undefined;
-  if (member === "toString" || member === "toFixed") {
+const PRIMITIVE_RECEIVER_DEFAULTS: Readonly<Record<string, Ty>> = {
+  toString: NumberTy,
+  toFixed: NumberTy,
+  slice: StringTy,
+  padStart: StringTy,
+  padEnd: StringTy,
+  repeat: StringTy,
+  startsWith: StringTy,
+  endsWith: StringTy,
+  toLowerCase: StringTy,
+};
+
+/**
+ * A helper like `(n) => n :> .toString()` has no receiver evidence anywhere, so its member picks a
+ * default, as an overloaded SML operator does. This is only sound once inference has no more
+ * evidence to offer, so it must not run while a delayed call could still reveal the receiver.
+ */
+export function defaultPrimitiveReceivers(facts: TypeFacts): void {
+  for (const fact of facts.ffi.values()) {
+    if (fact.status !== "unresolved" || fact.kind !== "call" || fact.path.length !== 1) continue;
+    if (!fact.receiver || prune(fact.receiver).tag !== "var") continue;
+    const member = fact.path[0];
+    if (!Object.hasOwn(PRIMITIVE_RECEIVER_DEFAULTS, member)) continue;
     constrainMember(
-      receiver,
-      NumberTy,
-      `Number.${member} receiver`,
-      "receiver matches number member",
+      fact.receiver,
+      PRIMITIVE_RECEIVER_DEFAULTS[member],
+      `${show(PRIMITIVE_RECEIVER_DEFAULTS[member])}.${member} receiver`,
+      "receiver takes the member's default type",
     );
-    return "Number";
   }
-  if (
-    member === "slice" || member === "padStart" || member === "padEnd" || member === "repeat" ||
-    member === "startsWith" || member === "endsWith" || member === "toLowerCase"
-  ) {
-    constrainMember(
-      receiver,
-      StringTy,
-      `String.${member} receiver`,
-      "receiver matches string member",
-    );
-    return "String";
-  }
-  return undefined;
 }
 
 function jsArrayTy(typeEnv: TypeEnv, element: Ty): Ty {

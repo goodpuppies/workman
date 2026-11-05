@@ -310,7 +310,7 @@ function dynamicFfiWithoutJsonAssert(
         node.args.forEach(visit);
         return;
       case "Lambda":
-        visit(node.body);
+        // A function's annotation casts nothing inside it, and HM still checks what it returns.
         return;
       case "Call":
         visit(node.callee);

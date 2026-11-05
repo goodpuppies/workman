@@ -255,7 +255,10 @@ export async function analyzeModuleGraph(
       undefined,
       () =>
         requiresReinference
-          ? inferModulePartial(node.module, importsFor(node, postResolveResults), inferOptions)
+          ? inferModulePartial(node.module, importsFor(node, postResolveResults), {
+            ...inferOptions,
+            defaultPrimitiveReceivers: true,
+          })
           : contextualResults.get(id)!,
     );
     rememberExportedSourceDocument(result, node.path, node.source);

@@ -407,6 +407,57 @@ Deno.test("primitive JS methods constrain unannotated helper receivers", async (
   expectBinding(result.env, "repeated", { type: "(String, Number) -> String!", vars: 0 });
 });
 
+Deno.test("a member's primitive default waits for receiver evidence", async () => {
+  const result = await checkSource(`
+    from js.module("node:buffer") import { Buffer };
+    let inCallback = Buffer.from("hi") :> Result.andThen((buffer) => {
+      buffer :> .toString("base64")
+    });
+    let sliced = Buffer.from("hi") :> Result.andThen((buffer) => { buffer :> .slice(1) })
+      :> Result.andThen((buffer) => { buffer :> .length });
+    let encode = (buffer) => { buffer :> .toString("base64") };
+    let viaHelper = Buffer.from("hi") :> Result.andThen(encode);
+    let plain = (buffer) => { buffer :> .toString() };
+    let viaLaterCall = Buffer.from("hi") :> Result.andThen(plain);
+  `);
+  expectBinding(result.env, "inCallback", { type: "Result<String, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "sliced", { type: "Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "viaHelper", { type: "Result<String, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "viaLaterCall", { type: "Result<String, Js.Error>!", vars: 0 });
+});
+
+Deno.test("a member's primitive default doesn't accept the wrong arguments", async () => {
+  await assertRejects(
+    () => checkSource(`let encode = (value) => { value :> .toString("base64") };`),
+    Error,
+    "type collision",
+  );
+  await assertRejects(
+    () => checkSource(`let encode = 5 :> .toString("base64");`),
+    Error,
+    "type collision",
+  );
+});
+
+Deno.test("a function's annotation doesn't treat pending calls in its body as casts", async () => {
+  const result = await checkSource(`
+    record Payload = { amount: Number };
+    record Api = { describe: Payload -> Result<String, Js.Error> };
+    let api: Api = .{ describe = (payload) => { payload.amount :> .toExponential() } };
+    let describe: Number -> Result<String, Js.Error> = (n) => { n :> .toExponential() };
+  `);
+  expectBinding(result.env, "describe", { type: "Number -> Result<String, Js.Error>!", vars: 0 });
+  await assertRejects(
+    () =>
+      checkSource(`
+        from js.global("JSON") import unsafe { parse: String -> Js.Object } as JSON;
+        let f: String -> Result<Number, Js.Error> = (s) => { JSON.parse(s) :> .commits };
+      `),
+    Error,
+    "type mismatch",
+  );
+});
+
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
   const result = await checkSource(`
     from js.global("JSON") import unsafe {

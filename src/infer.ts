@@ -1,6 +1,7 @@
 import type { Decl, Expr, ImportClause, Module } from "./ast.ts";
 import { diagnosticError, type FrontendDiagnostic } from "./diagnostic_model.ts";
 import { inferDecl, predeclareTypeGroup } from "./infer/decl.ts";
+import { defaultPrimitiveReceivers } from "./infer/expr_js_members.ts";
 import { hostTypingDialect, type InferContext } from "./infer/context.ts";
 import { addAdts, addImport, addImportExports } from "./infer/imports.ts";
 import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
@@ -67,6 +68,8 @@ export type InferModuleOptions = {
    * returns survive inference; only the H0 research-fixture entry opts in.
    */
   legacyGpuVectorTuples?: boolean;
+  /** For the last pass that can still resolve FFI: see `defaultPrimitiveReceivers`. */
+  defaultPrimitiveReceivers?: boolean;
 };
 
 export type InitialImport = {
@@ -309,6 +312,7 @@ function inferModuleCoreInner(
   }
 
   try {
+    if (options.defaultPrimitiveReceivers) defaultPrimitiveReceivers(facts);
     assertNoTopLevelUnresolvedFfi(env);
     assertNoConsumedUnresolvedFfi(facts);
     assertNoTopLevelUnsolvedJsBoundary(env);

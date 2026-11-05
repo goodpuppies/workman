@@ -641,7 +641,10 @@ async function checkPreparedModuleWithoutImports(
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
   }
   const postResolveResult = assertNoPartialDiagnostics(
-    inferModulePartial(resolved.module, imports, inferOptions),
+    inferModulePartial(resolved.module, imports, {
+      ...inferOptions,
+      defaultPrimitiveReceivers: true,
+    }),
   );
   const finalResolved = resolveDelayedFfiElaboration(resolved, postResolveResult, {
     foreignTypeRefs,
