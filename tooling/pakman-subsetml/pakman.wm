@@ -86,8 +86,8 @@ let run = (args) => {
 };
 let main = () => {
   match(I.bind(H.arguments(), run)) {
-    R.Ok(_) => { H.exit(true) },
-    R.Err(message) => { let _ = H.writeStderr("pakman: " ++ message ++ "\n"); H.exit(false) }
+    R.Ok(_) => { H.exit(H.success) },
+    R.Err(message) => { let _ = H.writeStderr("pakman: " ++ message ++ "\n"); H.exit(H.failure) }
   }
 };
 

@@ -7,12 +7,20 @@ from "./subset_io.sml" import * as SubsetIo;
 from "./subset_list.sml" import * as SubsetList;
 */
 
-// Process arguments are host byte strings; exit accepts success/failure only.
+/* OS.Process with data-first arguments and Result instead of exceptions. Process arguments,
+   commands and environment values are host byte strings. atExit needs host state and sleep needs
+   a Time type, so neither is here yet. */
 
-from "./subset_result.wm" import * as SubsetResult;
 from "./subset_host.wm" import * as SubsetHost;
+from "./subset_result.wm" import * as SubsetResult;
 from "./subset_io.wm" import * as SubsetIo;
 from "./subset_list.wm" import * as SubsetList;
+
+// The host owns this type, so a status from system keeps its exit code when passed to exit.
+type Status = SubsetHost.Status;
+let success = SubsetHost.success;
+let failure = SubsetHost.failure;
+let isSuccess = (status) => { SubsetHost.isSuccess(status) };
 
 let arguments = () => {
   SubsetResult.andThen(
@@ -27,9 +35,26 @@ let arguments = () => {
     }
   )
 };
+// Runs the command through the host's shell, with this process's standard streams.
+let system = (command) => {
+  SubsetResult.andThen(
+    SubsetIo.bytes(command),
+    (bytes) => {
+      SubsetResult.mapErr(SubsetHost.system(command), (message) => { SubsetIo.HostError(message) })
+    }
+  )
+};
+let getEnv = (name) => { SubsetHost.getEnv(name) };
+
 // Exit never returns, including in the portable type system.
-let exit = (success) => {
-  let void = SubsetHost.exit(success);
+let exit = (status) => {
+  let void = SubsetHost.exit(status);
+  let rec unreachable = () => { unreachable() };
+  unreachable()
+};
+// Without atExit actions there is nothing for terminate to skip beyond the host's own cleanup.
+let terminate = (status) => {
+  let void = SubsetHost.terminate(status);
   let rec unreachable = () => { unreachable() };
   unreachable()
 };
@@ -41,7 +66,7 @@ let panic = (message: String) => {
     SubsetIo.bytes(message),
     (bytes) => { SubsetIo.writeStderr(SubsetList.append(bytes, ['\n'])) }
   )) {
-    SubsetResult.Ok(void) => { exit(false) },
-    SubsetResult.Err(_) => { exit(false) }
+    SubsetResult.Ok(void) => { exit(failure) },
+    SubsetResult.Err(_) => { exit(failure) }
   }
 };

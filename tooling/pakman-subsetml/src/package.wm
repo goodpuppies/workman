@@ -14,8 +14,8 @@ let serve = (definition: M.Definition) => {
     }
   });
   match(result) {
-    R.Ok(_) => { H.exit(true) },
-    R.Err(message) => { let _ = H.writeStderr(message ++ "\n"); H.exit(false) }
+    R.Ok(_) => { H.exit(H.success) },
+    R.Err(message) => { let _ = H.writeStderr(message ++ "\n"); H.exit(H.failure) }
   }
 };
 
