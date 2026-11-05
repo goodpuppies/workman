@@ -889,11 +889,35 @@ export function generalize(env: Env, type: Ty): Scheme {
   const vars = [...ftv(type, found, held)].filter((id) =>
     !envVars.has(id) && !boundary.has(id) && !numeric.has(id)
   );
+  linkedCells(type, held);
   // A numeric variable stays monomorphic until defaulted, but its `!` still belongs to each use.
   for (const id of numeric) if (!envVars.has(id)) held.add(id);
   let cells: Set<number> | undefined;
   for (const id of held) if (!envVars.has(id)) (cells ??= new Set()).add(id);
   return { vars, cells, type, constraints: [] };
+}
+
+/**
+ * Bound variables a type's `!` links reach. `ftv` follows the shape only, and a cell left out of a
+ * scheme is shared by every instance, so a caller's `!` would never reach what it holds.
+ */
+function linkedCells(type: Ty, cells: Set<number>, seen = new Set<Ty>()): void {
+  if (type.tag === "prim" || seen.has(type)) return;
+  seen.add(type);
+  const visit = (item: Ty) => linkedCells(item, cells, seen);
+  if (type.tag === "view" || type.tag === "var" || type.tag === "ffi") {
+    type.deps?.forEach(visit);
+    if (type.tag === "view") visit(type.value);
+    else if (type.instance) {
+      if (type.tag === "var" && type.linked) cells.add(type.id);
+      visit(type.instance);
+    }
+  } else if (type.tag === "fn") {
+    type.params.forEach(visit);
+    visit(type.result);
+  } else if (type.tag === "tuple") type.items.forEach(visit);
+  else if (type.tag === "named") type.args.forEach(visit);
+  else if (type.tag === "struct") type.fields.forEach((field) => visit(field.type));
 }
 
 /** Numeric variables stay monomorphic until context or defaulting decides them. */

@@ -32,6 +32,11 @@ async function bindings(source: string) {
   return Object.fromEntries([...result.exports].map(([name, scheme]) => [name, show(scheme.type)]));
 }
 
+async function checkedBindings(source: string) {
+  const result = await checkSource(source);
+  return Object.fromEntries([...result.exports].map(([name, scheme]) => [name, show(scheme.type)]));
+}
+
 Deno.test("discarded effects taint a local sequence, while top-level declarations stay independent", async () => {
   const { module, result } = await infer(`
     let outer = 7;
@@ -689,6 +694,34 @@ Deno.test("a concrete data field marks the value, and a generic one keeps the ma
   assertEquals(types.sibling, "Void -> String!");
   assertEquals(types.tainted, "Box!");
   assertEquals(types.untainted, "Box");
+});
+
+Deno.test("a discarded call taints through a callback whose own result is concrete", async () => {
+  const types = await checkedBindings(`
+    let effect = x => { print("hello"); x + 1 };
+    let clean = x => x + 1;
+    let call = g => { g(1) };
+    let listOf = g => { [g(1)] };
+    let wrapped = f => { call(x => { f(x); 2 }); 1 };
+    let collected = f => { listOf(x => { f(x); void }); 1 };
+    let named = f => { let g = x => { f(x); void }; call(g); 1 };
+    let mapIgnore = (xs, f) => { xs :> map(x => { f(x); void }); [1, 2, 3] };
+    let wrappedEffect = wrapped(effect);
+    let wrappedClean = wrapped(clean);
+    let collectedEffect = collected(effect);
+    let namedEffect = named(effect);
+    let mappedEffect = mapIgnore([1, 2], effect);
+    let mappedClean = mapIgnore([1, 2], clean);
+    let mappedEffectAgain = mapIgnore([1, 2], effect);
+  `);
+  assertEquals(types.wrappedEffect, "Number!");
+  assertEquals(types.wrappedClean, "Number");
+  assertEquals(types.collectedEffect, "Number!");
+  assertEquals(types.namedEffect, "Number!");
+  assertEquals(types.mappedEffect, "List<Number>!");
+  // One caller's `!` stays with that caller.
+  assertEquals(types.mappedClean, "List<Number>");
+  assertEquals(types.mappedEffectAgain, "List<Number>!");
 });
 
 Deno.test("a callback result stays open after meeting a concrete type in the body", async () => {
