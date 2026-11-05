@@ -50,6 +50,7 @@ export type BindingFacts = {
   exports: Map<string, BindingId>;
   typeExports: Map<string, TypeScopeDeclaration>;
   constructorExports: Map<string, CtorDecl>;
+  structureExports: Map<string, StructureBinding>;
   jsImportBinders: Map<Extract<Decl, { kind: "JsImportDecl" }> | JsImportSpec, BindingId>;
   /** Compiler-generated JS binding -> authored import binding. Lowering identities stay distinct. */
   jsImportSourceBindings: Map<BindingId, BindingId>;
@@ -64,10 +65,13 @@ type BindingEnv = {
   values: ValueEnv;
   types: Map<string, TypeScopeDeclaration>;
   constructors: Map<string, CtorDecl>;
-  structures: Map<string, {
-    id: StructureId;
-    values: ReadonlyMap<string, BindingId>;
-  }>;
+  structures: Map<string, StructureBinding>;
+};
+type StructureBinding = {
+  id: StructureId;
+  values: ReadonlyMap<string, BindingId>;
+  /** Structures this one exports, reached by `export from x import * as Y`. */
+  structures?: ReadonlyMap<string, StructureBinding>;
 };
 
 export function resolveProgramBindingFacts(
@@ -108,6 +112,7 @@ export function resolveModuleBindingFacts(
     exports: new Map(),
     typeExports: new Map(),
     constructorExports: new Map(),
+    structureExports: new Map(),
     jsImportBinders: new Map(),
     jsImportSourceBindings: new Map(),
     jsStructureBinders: new Map(),
@@ -224,24 +229,53 @@ function addImport(
   if (clause.kind === "Namespace") {
     const id = ids.structure();
     facts.structureBinders.set(decl, id);
-    next.structures.set(clause.alias, { id, values: importedFacts.exports });
+    const structure = {
+      id,
+      values: importedFacts.exports,
+      structures: importedFacts.structureExports,
+    };
+    next.structures.set(clause.alias, structure);
+    if (decl.exported) facts.structureExports.set(clause.alias, structure);
   } else if (clause.kind === "All") {
-    for (const [name, id] of importedFacts.exports) next.values.set(name, id);
+    for (const [name, id] of importedFacts.exports) {
+      next.values.set(name, id);
+      if (decl.exported) facts.exports.set(name, id);
+    }
     for (const [name, declaration] of importedFacts.typeExports) {
       next.types.set(name, declaration);
+      if (decl.exported) facts.typeExports.set(name, declaration);
     }
     for (const [name, declaration] of importedFacts.constructorExports) {
       next.constructors.set(name, declaration);
+      if (decl.exported) facts.constructorExports.set(name, declaration);
+    }
+    for (const [name, structure] of importedFacts.structureExports) {
+      next.structures.set(name, structure);
+      if (decl.exported) facts.structureExports.set(name, structure);
     }
   } else {
     for (const spec of clause.specs) {
       const localName = spec.alias ?? spec.name;
       const id = importedFacts.exports.get(spec.name);
-      if (id !== undefined) next.values.set(localName, id);
+      if (id !== undefined) {
+        next.values.set(localName, id);
+        if (decl.exported) facts.exports.set(localName, id);
+      }
       const type = importedFacts.typeExports.get(spec.name);
-      if (type !== undefined) next.types.set(localName, type);
+      if (type !== undefined) {
+        next.types.set(localName, type);
+        if (decl.exported) facts.typeExports.set(localName, type);
+      }
       const constructor = importedFacts.constructorExports.get(spec.name);
-      if (constructor !== undefined) next.constructors.set(localName, constructor);
+      if (constructor !== undefined) {
+        next.constructors.set(localName, constructor);
+        if (decl.exported) facts.constructorExports.set(localName, constructor);
+      }
+      const structure = importedFacts.structureExports.get(spec.name);
+      if (structure !== undefined) {
+        next.structures.set(localName, structure);
+        if (decl.exported) facts.structureExports.set(localName, structure);
+      }
     }
   }
   return next;
@@ -534,8 +568,10 @@ function lookupValue(env: BindingEnv, name: string): BindingId | undefined {
   if (direct !== undefined) return direct;
   const dot = name.indexOf(".");
   if (dot >= 0) {
-    const base = name.slice(0, dot);
-    return env.structures.get(base)?.values.get(name.slice(dot + 1)) ?? env.values.get(base);
+    const [base, ...path] = name.split(".");
+    let structure = env.structures.get(base);
+    for (const part of path.slice(0, -1)) structure = structure?.structures?.get(part);
+    return structure?.values.get(path[path.length - 1]) ?? env.values.get(base);
   }
   // A bare constructor is a value, even when a structure has the same name.
   // Qualified uses still resolve through the separate structure namespace.

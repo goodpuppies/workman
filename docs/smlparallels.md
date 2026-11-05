@@ -75,7 +75,7 @@ form.
 | `=` / `<>`                               | `==` / `!=`                                                 | Workman does not expose SML equality type variables |
 | `~e`                                     | `-e`                                                        | |
 | `^`                                      | `++`                                                        | String concatenation |
-| `open Math`                              | `from "./math.wm" import *;`                                | Practical equivalent: Workman opens a file rather than an SML structure |
+| `open Math`                              | `export from "./math.wm" import *;`                         | Practical equivalent: Workman opens a file rather than an SML structure |
 | qualified name `Math.f`                  | namespace import plus `Math.f`                              | `from "./math.wm" import * as Math;` |
 | `structure Math = struct ... end`        | file `math.wm`, imported with `* as Math`                    | A file's public environment is a real SML structure environment |
 | program execution                        | `let main = () => { ... };`                                 | `wm run` invokes `main`; watched REPL files accept top-level expressions |
@@ -751,8 +751,10 @@ let value: Opt.Option<Number> = Opt.Some(1);
 Collisions follow the Definition's sequential, right-biased environment modification: a later
 import or local declaration shadows an earlier binding in the same namespace, and equal spellings
 in different namespaces do not collide. Imports take effect at their declaration positions, like
-ordered SML environment declarations, and are not re-exported: the normative account nests each
-import as the local part of an SML `local … in … end` around the remaining declarations.
+ordered SML environment declarations. A plain import isn't re-exported: the normative account nests
+it as the local part of an SML `local … in … end` around the remaining declarations. `export from`
+adds the imported bindings to the file's public environment: `export from "./x.wm" import *;` is SML's
+`open X`, `import * as Y` under it is `structure Y = X`, and a named import under it is `val g = X.f`.
 
 The file protocol contributes the ESM-derived properties: every import is statically
 discoverable; resolution produces one canonical `ModuleId`, so all spellings of one file share

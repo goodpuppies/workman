@@ -395,7 +395,7 @@ catchable `exn` values. Do not add bare SML exception names to mimic that namesp
    is not permission to treat constructors as ordinary values in patterns.
 5. Initial/pervasive bindings are not module-owned exports. Merely using `map`
    does not re-export it from a user module. SML structure-level `open` behavior
-   is the separate issue `sml-open-reexport-has-no-workman-form.md`.
+   is the separate issue `FIXED-sml-open-reexport-has-no-workman-form.md`.
 6. WM already supplies selected standard structures as namespaces. The SML Basis
    permits implementation-defined structure availability; this choice is
    independent of which names are unqualified.

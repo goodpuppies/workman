@@ -42,14 +42,18 @@ serves basis installation, all import forms, `open`, and ordinary declarations.
 ## Files and imports
 
 A `.wm` file elaborates against the initial basis plus its explicit imports, in declaration
-order; compilation order grants no ambient visibility. Its public environment contains exactly
-its module-owned top-level declarations — imported and basis bindings are working scope only and
-are never re-exported (normatively: each import is the local part of an SML `local … in … end`).
+order; compilation order grants no ambient visibility. Its public environment contains its
+top-level declarations and what it imports with `export from`. Plain imports and basis bindings are
+working scope only (normatively: the local part of an SML `local … in … end`).
 
 ```wm
 from "./lib.wm" import * as Lib;   -- static structure alias in StrEnv
 from "./lib.wm" import { f as g }; -- namespace-preserving projection with key-only renaming
-from "./lib.wm" import *;          -- SML open
+from "./lib.wm" import *;          -- local open X in ... end
+
+export from "./lib.wm" import *;          -- SML open X
+export from "./lib.wm" import * as Lib;   -- SML structure Lib = X
+export from "./lib.wm" import { f as g }; -- SML val g = X.f, or the type or constructor equivalent
 ```
 
 Imports project the original semantic objects: schemes, constructor status, and nominal type
@@ -126,7 +130,7 @@ facts instead.
 - fixed operator syntax; no symbolic value declarations, `op`, or user fixity;
 - no signatures, ascription, functors, sharing, or nested/anonymous structures — a structure is a
   file;
-- no re-export or forwarding syntax; aliasing a value is a new declaration;
+- `export from` is the only forwarding syntax; aliasing a value is a new declaration;
 - acyclic file graph; cross-file recursion is rejected rather than given ESM temporal semantics;
 - no `local … in … end` phrase form (blocks provide local scope in expressions);
 - the duplicate-target restriction inside one simultaneous named-import clause.
@@ -145,5 +149,5 @@ facts instead.
 ## Deferred
 
 Package resolution, import maps, URLs beyond local files, persistent cross-build identity,
-`private`, re-export, and recursive modules are explicitly deferred and tracked in the decision
+`private` and recursive modules are explicitly deferred and tracked in the decision
 register.

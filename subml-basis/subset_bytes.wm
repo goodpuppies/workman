@@ -16,7 +16,7 @@ from "./subset_char.wm" import * as SubsetChar;
 from "./subset_list.wm" import * as SubsetList;
 from "./subset_order.wm" import * as SubsetOrder;
 
-from "./subset_option_value.wm" import *;
+export from "./subset_option_value.wm" import *;
 
 type Error = InvalidIndex | OutOfBounds | NonByte<I32>;
 type Reader = | Reader<List<Char>, I32>;

@@ -25,6 +25,15 @@ Deno.test("direct import scan tolerates comments between import tokens", () => {
   );
 });
 
+Deno.test("direct import scan finds imports with an export prefix", () => {
+  assertEquals(
+    directWorkmanImportSpecifiers(
+      'export from "./one.wm" import *;\nexport from "./two.wm" import * as Two;',
+    ),
+    ["./one.wm", "./two.wm"],
+  );
+});
+
 Deno.test("[module update A613] discovery finds only top-level main binders", () => {
   assertEquals(hasTopLevelMainBinding("let main = () => { 0 };"), true);
   assertEquals(hasTopLevelMainBinding("let rec main = () => { main() };"), true);

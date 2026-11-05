@@ -130,6 +130,7 @@ function localCandidates(moduleInterface: ModuleInterface): UnusedCandidate[] {
     if (
       isPublicApiOccurrence(moduleInterface, occurrence) ||
       isImplicitRecordConstructor(moduleInterface, occurrence) ||
+      isExportedImportAlias(moduleInterface, occurrence) ||
       (occurrence.role !== "declaration" && occurrence.role !== "import-alias")
     ) return [];
     const parameter = moduleInterface.semanticTokens.some((token) =>
@@ -154,6 +155,17 @@ function localCandidates(moduleInterface: ModuleInterface): UnusedCandidate[] {
       matchName: false,
     }];
   });
+}
+
+function isExportedImportAlias(
+  moduleInterface: ModuleInterface,
+  occurrence: ModuleSemanticOccurrence,
+): boolean {
+  return occurrence.role === "import-alias" &&
+    moduleInterface.imports.some((imported) =>
+      imported.declaration.exported === true &&
+      inside(occurrence.span, imported.declaration.node?.span)
+    );
 }
 
 function isImplicitRecordConstructor(
@@ -186,6 +198,7 @@ function isPublicApiOccurrence(
 
 function importCandidates(moduleInterface: ModuleInterface): UnusedCandidate[] {
   return moduleInterface.imports.flatMap((imported) => {
+    if (imported.declaration.exported) return [];
     if (imported.clause.kind === "Namespace" && imported.structureAlias) {
       const occurrence = moduleInterface.occurrences.find((candidate) =>
         candidate.role === "import-alias" &&

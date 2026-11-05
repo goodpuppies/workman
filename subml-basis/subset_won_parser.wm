@@ -20,7 +20,7 @@ from "./subset_won_syntax.wm" import * as SubsetWonSyntax;
 from "./subset_char.wm" import * as SubsetChar;
 from "./subset_string.wm" import * as SubsetString;
 
-from "./subset_option_value.wm" import *;
+export from "./subset_option_value.wm" import *;
 
 record Cursor = {input: List<Char>, offset: I32};
 let makeCursor = (input, offset) => { (.{ input = input, offset = offset }: Cursor) };

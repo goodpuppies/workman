@@ -1,6 +1,6 @@
 # Issue: SML `open` Inside a Structure Re-exports; Workman Imports Cannot
 
-Status: open (2026-10-02)
+Status: fixed 2026-11-05 (opened 2026-10-02)
 
 Found while building the SubsetML ⇄ Workman translator (`../SubsetML`, `docs/translation.md`).
 
@@ -110,3 +110,28 @@ decision merely because v3 is underway. Required checks include a three-module
 chain, constructor patterns, type annotations, nested structures, collisions and
 runtime access through the forwarding module. No syntax was selected or
 implemented by this investigation.
+
+## Resolution (2026-11-05)
+
+Re-exporting is an explicit `export` prefix on an import, and a plain import stays private in every
+form:
+
+| Workman | SML |
+|---|---|
+| `from "./x.wm" import *;` | `local open X in ... end` |
+| `from "./x.wm" import * as P;` | private alias |
+| `from "./x.wm" import { f };` | private projection |
+| `export from "./x.wm" import *;` | `open X` |
+| `export from "./x.wm" import * as P;` | `structure P = X` |
+| `export from "./x.wm" import { f as g };` | `val g = X.f`, or the type or constructor equivalent |
+
+`export` is contextual, so it stays an ordinary name elsewhere. The namespace form gives real nested
+access (`OS.Process.value`, types and patterns too), which is what `OS.Process` needs.
+
+The SubsetML translator lowers `export from ... import *;` to `open` and prints `open` back as that
+form. The other two `export from` clauses need nested structures, which SubsetML doesn't have, so it
+diagnoses them. A plain `import *` also lowers to `open`, which exposes more on the SML side, because
+SubsetML omits `local`; that is SubsetML's
+`markdown/issues/plain-import-star-exposes-names-in-sml.md`.
+
+`tests/module_export_import_test.ts` covers the checks listed above.

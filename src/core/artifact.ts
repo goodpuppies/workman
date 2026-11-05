@@ -16,7 +16,13 @@ import {
   resolveModuleNominalFacts,
   resolveProgramNominalFacts,
 } from "../nominal_facts.ts";
-import { type BindingId, CoreIdAllocator, type CtorId, type TypeNameId } from "./ids.ts";
+import {
+  type BindingId,
+  CoreIdAllocator,
+  type CtorId,
+  type StructureId,
+  type TypeNameId,
+} from "./ids.ts";
 import type { MaterializedGpuArtifacts, VisualShaderArtifactV1 } from "../gpu_artifact.ts";
 import { type ModuleId, moduleId, type ModuleMap } from "../module_id.ts";
 
@@ -36,6 +42,7 @@ export type CoreDynamicExport = {
   name: string;
   bindingId?: BindingId;
   ctorId?: CtorId;
+  structureId?: StructureId;
 };
 
 export type CoreModuleArtifact = {
@@ -133,8 +140,12 @@ export function coreProgramFromAnalysis(
       dynamicExports: [],
     });
   }
+  // Dependencies first, so a module that opens another finds its exports already computed.
   for (const id of graph.order) {
-    modules.get(id)!.dynamicExports = dynamicExports(modules.get(id)!.module);
+    modules.get(id)!.dynamicExports = dynamicExports(
+      modules.get(id)!.module,
+      (target) => modules.get(target)?.dynamicExports ?? [],
+    );
   }
   return {
     entry: graph.entry,
@@ -212,9 +223,24 @@ function collectShaderArtifacts(
   return artifacts;
 }
 
-export function dynamicExports(module: CoreModule): CoreDynamicExport[] {
+export function dynamicExports(
+  module: CoreModule,
+  exportsOf: (target: ModuleId) => CoreDynamicExport[] = () => [],
+): CoreDynamicExport[] {
   const exports: CoreDynamicExport[] = [];
   for (const decl of module.decls) {
+    if (decl.kind === "CoreImport" && decl.exported && decl.target) {
+      const imported = exportsOf(decl.target);
+      if (decl.clause.kind === "All") exports.push(...imported);
+      else if (decl.clause.kind === "Namespace") {
+        exports.push({ name: decl.clause.alias, structureId: decl.structureId });
+      } else {
+        for (const spec of decl.clause.specs) {
+          const item = imported.find((item) => item.name === spec.name);
+          if (item) exports.push({ ...item, name: spec.alias ?? spec.name });
+        }
+      }
+    }
     if (decl.kind === "CoreLet" && decl.exported) {
       exports.push(...decl.bindings.flatMap((binding) => patternBinders(binding.pattern)));
     }
@@ -225,7 +251,13 @@ export function dynamicExports(module: CoreModule): CoreDynamicExport[] {
       exports.push({ name: decl.name, bindingId: decl.constructorBindingId });
     }
   }
-  return exports;
+  // A later declaration shadows an earlier one of the same name, so each name appears once.
+  const seen = new Set<string>();
+  return exports.reverse().filter((item) => {
+    if (seen.has(item.name)) return false;
+    seen.add(item.name);
+    return true;
+  }).reverse();
 }
 
 function patternBinders(pattern: CorePattern): CoreDynamicExport[] {

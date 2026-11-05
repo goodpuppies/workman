@@ -1,6 +1,6 @@
 from "./generated/surface_types.wm" import {
   Span, AuthoredValue,
-  ImportDeclarationNode, ImportNamespaceClauseNode, ImportAllClauseNode,
+  ImportDeclarationNode, ExportImportDeclarationNode, ImportNamespaceClauseNode, ImportAllClauseNode,
   ImportNamedClauseNode, ImportSpecificationNode, ImportAliasNode,
   LiteralExpressionNode,
   JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
@@ -80,6 +80,19 @@ let buildImportSpec = (value: ParseValue, span: Span) => {
       NodeParseValue(ImportSpecificationNode(name, alias, span))
     },
     _ => { RuleParseValue("ImportSpec", value, span) },
+  }
+};
+
+let buildExportImportDecl = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(exportToken),
+      EmptyParseValue,
+      NodeParseValue(declaration),
+    ]) => {
+      NodeParseValue(ExportImportDeclarationNode(exportToken, declaration, span))
+    },
+    _ => { RuleParseValue("ExportImportDecl", value, span) },
   }
 };
 

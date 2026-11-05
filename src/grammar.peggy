@@ -232,11 +232,15 @@ TopPhrase
   = d:TopDecl _ ";" { return d; }
   / e:Expr _ ";" { return topExpression(e, location()); }
 
-TopDecl = JsImportDecl / ImportDecl / RecordDecl / TypeDecl / LetDecl
+TopDecl = JsImportDecl / ImportDecl / ExportImportDecl / RecordDecl / TypeDecl / LetDecl
 
 ImportDecl
   = "from" __ path:String __ "import" __ clause:ImportClause
     { return at({ kind: "ImportDecl", path: path.value, pathNode: path.node, clause }, location()); }
+
+ExportImportDecl
+  = "export" __ decl:ImportDecl
+    { return { ...decl, exported: true }; }
 
 ImportClause
   = "*" __ "as" __ alias:Name { return at({ kind: "Namespace", alias }, location()); }

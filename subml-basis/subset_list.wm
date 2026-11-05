@@ -11,7 +11,7 @@ from "./subset_result.sml" import * as SubsetResult;
 from "./subset_option_value.wm" import * as SubsetOptionValue;
 from "./subset_result.wm" import * as SubsetResult;
 
-from "./subset_option_value.wm" import *;
+export from "./subset_option_value.wm" import *;
 
 type Error = EmptyList | InvalidCount | InvalidIndex | OutOfBounds;
 

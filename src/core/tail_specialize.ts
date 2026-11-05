@@ -42,8 +42,13 @@ export function specializeTailCalls(program: CoreProgram): CoreProgram {
         memberBindingId: item.bindingId,
         ctorId: item.ctorId,
       };
-      if (item.bindingId !== undefined) exports.set(item.bindingId, access);
-      if (item.ctorId !== undefined) constructors.set(item.ctorId, access);
+      // A module that re-exports another's values also lists them; access goes through the owner.
+      if (item.bindingId !== undefined && !exports.has(item.bindingId)) {
+        exports.set(item.bindingId, access);
+      }
+      if (item.ctorId !== undefined && !constructors.has(item.ctorId)) {
+        constructors.set(item.ctorId, access);
+      }
     }
     for (const decl of owner.module.decls) {
       if (decl.kind === "CoreLet") {

@@ -1,0 +1,10 @@
+// `export from` is SML's `open`: everything from shapes.wm is now also part of this module.
+export from "./shapes.wm" import *;
+// A plain import stays private to this file.
+from "basis/list.wm" import * as BasisList;
+
+let totalArea = (shapes) => {
+  BasisList.foldLeft(shapes, 0, (shape, total) => { area(shape) + total })
+};
+// A later declaration shadows an opened one, as in SML, so clients see this `unit`.
+let unit = 10;

@@ -1,0 +1,10 @@
+// The module everything comes from.
+type Shape = | Circle<Number> | Square<Number>;
+
+let area = (shape) => {
+  match(shape) {
+    Circle(r) => { 3 * r * r },
+    Square(side) => { side * side }
+  }
+};
+let unit = 1;

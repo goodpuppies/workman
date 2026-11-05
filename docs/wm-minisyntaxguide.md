@@ -900,8 +900,17 @@ let myFunction = (x) => { x * 2 };
 
 type MyType = A | B<Number>;
 
--- Re-export declarations are planned/design syntax, not current `wm-mini`.
 ```
+
+Imports are private. Prefix one with `export` to make what it imports part of this module too:
+
+```workman
+export from "./shapes.wm" import *;             -- clients see shapes.wm's names directly
+export from "./process.wm" import * as Process; -- clients write OS.Process.run(...)
+export from "./math.wm" import { add as plus }; -- clients see only plus
+```
+
+`export` isn't reserved, so it's still usable as a name elsewhere.
 
 ---
 

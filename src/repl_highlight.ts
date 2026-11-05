@@ -129,6 +129,8 @@ function highlightCode(text: string, from: number, spans: HighlightSpan[]): void
 
 function wordKind(word: string, text: string, end: number): HighlightKind | undefined {
   if (KEYWORDS.has(word)) return "keyword";
+  // `export` is only a keyword in front of an import; elsewhere it's an ordinary name.
+  if (word === "export" && /^\s+from\b/.test(text.slice(end, end + 80))) return "keyword";
   if (CONSTANTS.has(word)) return "constant";
   if (/^[A-Z]/.test(word)) return "type";
   return /^\s*\(/.test(text.slice(end, end + 80)) ? "function" : undefined;

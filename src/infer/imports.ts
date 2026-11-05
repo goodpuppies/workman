@@ -81,6 +81,40 @@ export function addImport(
   return undefined;
 }
 
+/** What `export from` adds to the public environment. Later declarations shadow it as usual. */
+export function addImportExports(
+  clause: ImportClause,
+  imported: InferResult,
+  namespace: StaticEnv | undefined,
+  exports: {
+    values: Env;
+    types: TypeEnv;
+    structures: StrEnv;
+    adts: Map<number, TypeDeclInfo>;
+  },
+): void {
+  addAdts(exports.adts, imported.exportedStructure.adts);
+  const add = (environment: StaticEnv, spelled: TypeEnv) => {
+    for (const [name, scheme] of environment.valEnv) exports.values.set(name, scheme);
+    for (const [name, info] of spelled) exports.types.set(name, info);
+    for (const [name, nested] of environment.strEnv) exports.structures.set(name, nested);
+  };
+  if (clause.kind === "Namespace") {
+    exports.structures.set(clause.alias, namespace!);
+  } else if (clause.kind === "All") {
+    add(imported.exportedStructure, imported.typeExports);
+  } else {
+    for (const spec of clause.specs) {
+      const local = spec.alias ?? spec.name;
+      const type = imported.typeExports.get(spec.name);
+      add(
+        projectStaticEnv(imported.exportedStructure, spec.name, local)!,
+        type ? new Map([[local, type]]) : new Map(),
+      );
+    }
+  }
+}
+
 function registerStaticTypes(typeEnv: TypeEnv, environment: StaticEnv): void {
   for (const info of knownTypeInfos(environment.tyEnv)) registerTypeInfo(typeEnv, info);
   for (const nested of environment.strEnv.values()) registerStaticTypes(typeEnv, nested);

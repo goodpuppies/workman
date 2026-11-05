@@ -24,7 +24,7 @@ from "./subset_result.wm" import * as SubsetResult;
 from "./subset_natural.wm" import * as SubsetNatural;
 from "./subset_text.wm" import * as SubsetText;
 
-from "./subset_option_value.wm" import *;
+export from "./subset_option_value.wm" import *;
 
 type Value = SubsetWonValue.Value;
 type Error = SubsetWonValue.Error;

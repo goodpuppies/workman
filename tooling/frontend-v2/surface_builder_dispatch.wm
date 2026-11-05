@@ -37,7 +37,7 @@ from "./surface_builders_decl.wm" import {
   buildTopPhrase, buildProgram
 };
 from "./surface_builders_import.wm" import {
-  buildImportClause, buildImportSpec, buildImportDecl,
+  buildImportClause, buildImportSpec, buildImportDecl, buildExportImportDecl,
   buildJsTarget, buildJsImportClauseBody, buildJsImportClause,
   buildJsImportSpec, buildJsImportDecl
 };
@@ -90,6 +90,7 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "ImportClause" => { buildImportClause(value, span) },
             "ImportSpec" => { buildImportSpec(value, span) },
             "ImportDecl" => { buildImportDecl(value, span) },
+            "ExportImportDecl" => { buildExportImportDecl(value, span) },
             "JsTarget" => { buildJsTarget(value, span) },
             "JsImportClauseBody" => { buildJsImportClauseBody(value, span) },
             "JsImportClause" => { buildJsImportClause(value, span) },

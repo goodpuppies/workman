@@ -37,6 +37,20 @@ Deno.test("lsp warns for unused named and namespace imports", async () => {
   ]);
 });
 
+Deno.test("lsp does not warn for an unused import that is exported", async () => {
+  const dir = await Deno.makeTempDir();
+  const lib = `${dir}/lib.wm`;
+  const main = `${dir}/main.wm`;
+  await Deno.writeTextFile(lib, "let spare = 2; let other = 3;");
+  await Deno.writeTextFile(
+    main,
+    `export from "./lib.wm" import * as Lib;
+     export from "./lib.wm" import { spare as renamed };`,
+  );
+
+  assertEquals(await compactDiagnostics(main), []);
+});
+
 Deno.test("lsp suppresses underscore-prefixed unused imports", async () => {
   const dir = await Deno.makeTempDir();
   const lib = `${dir}/lib.wm`;

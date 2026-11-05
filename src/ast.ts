@@ -76,7 +76,14 @@ export type Module = Located<{
 }>;
 
 export type Decl =
-  | Located<{ kind: "ImportDecl"; path: string; pathNode?: AstNode; clause: ImportClause }>
+  | Located<{
+    kind: "ImportDecl";
+    path: string;
+    pathNode?: AstNode;
+    clause: ImportClause;
+    /** `export from`: the import's bindings are also part of this module's public environment. */
+    exported?: boolean;
+  }>
   | Located<{
     kind: "JsImportDecl";
     target: JsTarget;

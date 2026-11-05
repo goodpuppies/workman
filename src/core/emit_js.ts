@@ -1073,7 +1073,7 @@ ${body}
 return { ${
     finalExports(artifact.dynamicExports).flatMap((item) => {
       const entries = [`${JSON.stringify(item.name)}: ${emitExportRef(item)}`];
-      const direct = ownedDirectFn(item, artifact.emitName);
+      const direct = exportedDirectFn(item);
       if (direct) {
         entries.push(`${JSON.stringify(item.name + direct.exportKey)}: ${direct.name}`);
       }
@@ -1305,7 +1305,7 @@ function emitImportedValueAlias(
   aliases.push(
     `const ${alias} = ${id(imported.emitName)}[${JSON.stringify(item.name)}];`,
   );
-  const direct = ownedDirectFn(item, imported.emitName);
+  const direct = exportedDirectFn(item);
   if (direct) {
     aliases.push(
       `const ${direct.name} = ${id(imported.emitName)}[${
@@ -1458,10 +1458,9 @@ function emitArityRaisedBinding(
 }
 
 /** Direct entry point for an exported binding this module actually defines. */
-function ownedDirectFn(item: CoreDynamicExport, owner: string): DirectFn | undefined {
-  if (item.bindingId === undefined) return undefined;
-  const direct = directFns.get(item.bindingId);
-  return direct && direct.owner === owner ? direct : undefined;
+/** An export's direct entry. A module that re-exports a value forwards it along with the value. */
+function exportedDirectFn(item: CoreDynamicExport): DirectFn | undefined {
+  return item.bindingId === undefined ? undefined : directFns.get(item.bindingId);
 }
 
 function emitDecl(decl: CoreDecl): string[] {
@@ -2210,6 +2209,7 @@ function emitExportRef(item: CoreDynamicExport): string {
 
 function dynamicExportLocalRef(item: CoreDynamicExport, localName: string): string {
   if (item.bindingId !== undefined) return bindingName(localName, item.bindingId);
+  if (item.structureId !== undefined) return bindingName(localName, item.structureId);
   if (item.ctorId !== undefined) return ctorRefName(localName, item.ctorId);
   return id(localName);
 }

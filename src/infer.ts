@@ -2,7 +2,7 @@ import type { Decl, Expr, ImportClause, Module } from "./ast.ts";
 import { diagnosticError, type FrontendDiagnostic } from "./diagnostic_model.ts";
 import { inferDecl, predeclareTypeGroup } from "./infer/decl.ts";
 import { hostTypingDialect, type InferContext } from "./infer/context.ts";
-import { addAdts, addImport } from "./infer/imports.ts";
+import { addAdts, addImport, addImportExports } from "./infer/imports.ts";
 import { addExportableTypes, exportedAdts } from "./infer/module_exports.ts";
 import { snapshotEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 import { createTypeFacts, type TypeFacts } from "./infer/type_facts.ts";
@@ -188,6 +188,8 @@ function inferModuleCoreInner(
   const { strEnv, tyEnv: typeEnv, valEnv: env } = basis.environment;
   const exports: Env = new Map();
   const typeExports: TypeEnv = new Map();
+  const structureExports = new Map<string, StaticEnv>();
+  const reexportedAdts = new Map<number, TypeDeclInfo>();
   const adts = basis.adts;
   const exportableTypeIds = knownTypeIds(typeEnv);
   const types = new Map<Expr, Ty>();
@@ -234,6 +236,14 @@ function inferModuleCoreInner(
           strEnv,
         });
         if (importedStructure) facts.structureImports.set(decl, importedStructure);
+        if (decl.exported) {
+          addImportExports(decl.clause, imported, importedStructure, {
+            values: exports,
+            types: typeExports,
+            structures: structureExports,
+            adts: reexportedAdts,
+          });
+        }
         addAdts(adts, imported.exportedStructure.adts);
         addExportableTypes(exportableTypeIds, imported.exportedStructure.tyEnv);
       } catch (error) {
@@ -312,18 +322,18 @@ function inferModuleCoreInner(
     ? []
     : [{ start: module.node.span.start, end: module.node.span.end }];
   const structure: StructureEnv = { ...staticEnv(strEnv, typeEnv, env), adts };
-  // Executable form of the normative nested-`local` translation: imports modify only the working
-  // environment, while each body declaration modifies both working and public environments.
-  // Thus imported/basis bindings are in scope but cannot enter the returned environment.
+  // Executable form of the normative translation: a plain import is the local part of a nested
+  // `local`, modifying only the working environment. `export from` and each body declaration
+  // modify both working and public environments, and basis bindings stay out.
   // As in SML's basis, keep generated type-name support separate from the
   // source-visible type-constructor environment. Exported values can mention
   // a nominal type without implicitly exporting a spelling for that type.
   const publicTypeEnv = new Map(typeExports);
   for (const info of knownTypeInfos(typeEnv)) registerTypeInfo(publicTypeEnv, info);
-  const publicEnvironment = staticEnv(new Map(), publicTypeEnv, exports);
+  const publicEnvironment = staticEnv(structureExports, publicTypeEnv, exports);
   const exportedStructure: StructureEnv = {
     ...publicEnvironment,
-    adts: exportedAdts(adts, typeExports),
+    adts: new Map([...reexportedAdts, ...exportedAdts(adts, typeExports)]),
   };
   return {
     result: {

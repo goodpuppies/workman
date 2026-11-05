@@ -229,6 +229,7 @@ function coreDeclFromSurface(
         kind: "CoreImport",
         path: decl.path,
         clause: decl.clause,
+        exported: decl.exported,
         structureId: context?.bindings?.structureBinders.get(decl),
         node: decl.node,
       };

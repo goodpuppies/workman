@@ -52,7 +52,7 @@ let failurePriority = (rule: String) => {
       if (
         rule == "Expr" || rule == "Pattern" || rule == "LetPattern" ||
         rule == "ParamPattern" || rule == "TypeAtom" || rule == "TypeDeclBody" ||
-        rule == "ImportDecl" || rule == "JsImportDecl"
+        rule == "ImportDecl" || rule == "ExportImportDecl" || rule == "JsImportDecl"
       ) {
         3
       } else {
@@ -148,6 +148,7 @@ let friendlyRuleExpectation = match(name) => {
   "TypeAtom" => { Some("a type") },
   "TypeDeclBody" => { Some("a type declaration body") },
   "ImportDecl" => { Some("an import declaration") },
+  "ExportImportDecl" => { Some("an export declaration") },
   "JsImportDecl" => { Some("a JavaScript import declaration") },
   _ => { None },
 };

@@ -1,0 +1,17 @@
+// Only geometry.wm is imported, but what it opened is reachable through it.
+from "./geometry.wm" import * as Geometry;
+
+let shapes: List<Geometry.Shape> = [Geometry.Circle(2), Geometry.Square(3)];
+
+print(Geometry.totalArea(shapes));                 // 21: declared in geometry.wm
+print(Geometry.area(Geometry.Square(4)));          // 16: opened from shapes.wm
+print(Geometry.unit);                              // 10: geometry.wm's shadows shapes.wm's
+
+// Patterns work too, because the constructors keep their identity.
+print(match(Geometry.Circle(5)) {
+  Geometry.Circle(r) => { r },
+  Geometry.Square(side) => { side }
+});                                                // 5
+
+// Error: geometry.wm's namespace import is private.
+// print(Geometry.BasisList.length(shapes));

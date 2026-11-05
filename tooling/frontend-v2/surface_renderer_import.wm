@@ -1,7 +1,7 @@
 from "./generated/surface_types.wm" import {
   SurfaceToken, SurfaceValue, SurfaceNode,
   AuthoredValue, MarkedValue,
-  ImportDeclarationNode, ImportNamespaceClauseNode, ImportAllClauseNode,
+  ImportDeclarationNode, ExportImportDeclarationNode, ImportNamespaceClauseNode, ImportAllClauseNode,
   ImportNamedClauseNode, ImportSpecificationNode, ImportAliasNode,
   JavaScriptImportDeclarationNode, JavaScriptGlobalTargetNode,
   JavaScriptGlobalRootTargetNode, JavaScriptMetaTargetNode,
@@ -49,6 +49,12 @@ let renderOptionalImportNode = match(value, depth, materializeMarks, renderNode)
 };
 
 let renderImportNode = match(node, depth, materializeMarks, renderNode) => {
+  (ExportImportDeclarationNode(exportToken, declaration, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    match(renderNode(declaration, depth, materializeMarks)) {
+      Some(text) => { Some(renderImportToken(exportToken) ++ " " ++ text) },
+      None => { None },
+    }
+  },
   (ImportDeclarationNode(fromToken, path, importToken, clause, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
     match((renderNode(path, depth, materializeMarks), renderNode(clause, depth, materializeMarks))) {
       (Some(pathText), Some(clauseText)) => {

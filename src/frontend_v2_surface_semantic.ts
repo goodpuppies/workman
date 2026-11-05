@@ -130,6 +130,13 @@ function projectDecl(node: WmVariant, context: Context): Decl {
   switch (node.name) {
     case "ImportDeclarationNode":
       return projectImport(node, context);
+    case "ExportImportDeclarationNode": {
+      const [, declaration] = fields(node, "ExportImportDeclarationNode");
+      const decl = projectImport(variant(declaration), context);
+      // The grammar only puts a Workman import here, never a JS one.
+      if (decl.kind !== "ImportDecl") throw new Error("export from applies to Workman imports");
+      return { ...decl, exported: true };
+    }
     case "LetDeclarationNode":
       return projectLet(node, context);
     case "RecordDeclarationNode":
@@ -1456,6 +1463,7 @@ function nodeFor(context: Context, span: SourceSpan): AstNode {
 
 function isDeclNode(name: string): boolean {
   return name === "ImportDeclarationNode" ||
+    name === "ExportImportDeclarationNode" ||
     name === "LetDeclarationNode" ||
     name === "RecordDeclarationNode" ||
     name === "TypeDeclarationNode" ||

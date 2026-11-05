@@ -16,6 +16,7 @@ export type CoreDecl =
     kind: "CoreImport";
     path: string;
     clause: ImportClause;
+    exported?: boolean;
     target?: ModuleId;
     structureId?: StructureId;
     /** Compiler-injected namespace for a carrier an operator lowered against. */
