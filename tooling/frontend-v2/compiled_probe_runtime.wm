@@ -142,6 +142,11 @@ let failureWithBest = (best, offset: Number, expected: String, rule: String) => 
   }
 };
 
+-- What a choice alternative skipped by its first-character guard gives. Guards only skip while not
+-- diagnosing, and a non-diagnosing choice discards its alternatives' failures, so the contents of
+-- this value are never observed.
+let skippedAlternative = CompiledProbeNoMatch(0, "a different first character", "<choice>");
+
 let friendlyRuleExpectation = match(name) => {
   "Expr" => { Some("an expression") },
   "Pattern" => { Some("a pattern") },
@@ -361,33 +366,6 @@ let matchAnyCharacter = (rule: String, source: String, offset: Number) => {
     )
   } else {
     CompiledProbeNoMatch(offset, "a character", rule)
-  }
-};
-
-let compiledRuleMemoSlot = (
-  offset: Number,
-  diagnose: Bool,
-  recover: Bool,
-) => {
-  offset * 4 + (if (diagnose) { 2 } else { 0 }) + (if (recover) { 1 } else { 0 })
-};
-
-let memoizedCompiledRule = (cache, name: String, slot: Number, parse) => {
-  let slots = match(Table.get(cache, name)) {
-    Some(existing) => { existing },
-    None => {
-      let created = Table.empty();
-      Table.set(cache, name, created);
-      created
-    },
-  };
-  match(Table.getAt(slots, slot)) {
-    Some(result) => { result },
-    None => {
-      let result = parse();
-      Table.setAt(slots, slot, result);
-      result
-    },
   }
 };
 

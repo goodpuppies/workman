@@ -45,128 +45,125 @@ export function emitCompiledProbe(
       "",
     ].join("\n"),
   );
-  const modules = partitionRules(grammar.rules, 420, recoveryIndex);
-  for (const [index, rules] of modules.entries()) {
-    moduleConstants = new Map();
-    const bodies = rules.flatMap((rule) => [
-      `let rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {`,
-      indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
-      "};",
-      "",
-    ]);
-    const constants = [...moduleConstants].map(([value, name]) => `let ${name} = ${value};`);
-    moduleConstants = undefined;
-    files.set(
-      moduleName(index),
-      [
-        header(grammar, grammarHash, rules.map((rule) => rule.name)),
-        'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeNoMatch, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms };',
-        'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
-        "",
-        ...constants,
-        ...(constants.length ? [""] : []),
-        ...bodies,
-      ].join("\n"),
-    );
-  }
-  files.set(
-    "compiled_probe_dispatch.wm",
-    emitDispatch(grammar, grammarHash, modules),
-  );
+  files.set("compiled_probe_rules.wm", emitRules(grammar, grammarHash, recoveryIndex));
+  files.set("compiled_probe_dispatch.wm", emitDispatch(grammar, grammarHash));
   return files;
 }
 
-function emitDispatch(
+/**
+ * Every rule in one module, as one recursive group, so a rule reference is a direct call: rules
+ * split across modules could only reach each other through a rule-name lookup passed in as a
+ * function, which cost a table lookup and an argument tuple per call.
+ *
+ * `rule_X` parses rule X in one recovery mode. `enter_X` is what a reference to X calls: it looks
+ * the result up in the parse's memo, otherwise runs the strict or recovering entry and wraps the
+ * capture, exactly as the former name-keyed dispatcher did.
+ */
+function emitRules(
   grammar: WorkmanGrammarIr,
   grammarHash: string,
-  modules: readonly (readonly WorkmanGrammarIr["rules"][number][])[],
+  recoveryIndex: ReadonlySet<string>,
 ): string {
+  moduleConstants = new Map();
+  const ruleCount = grammar.rules.length;
+  const group = grammar.rules.flatMap((rule, index) => [
+    `${index === 0 ? "let rec" : "and"} rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parser: CompiledParser): CompiledProbeMatch => {`,
+    indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
+    "}",
+    `and enter_${rule.name} = (parser: CompiledParser, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {`,
+    `  let slot = compiledRuleSlot(${index}, offset, diagnose, recover);`,
+    "  match(Table.getAt(parser.memo, slot)) {",
+    "    Some(cached) => { cached },",
+    "    None => {",
+    `      let result = wrapCompiledRule(${JSON.stringify(rule.name)}, offset, if (recover) {`,
+    indent(emitRecoveringEntry(rule.name), 4),
+    "      } else {",
+    `        rule_${rule.name}(source, offset, false, diagnose, parser)`,
+    "      });",
+    "      Table.setAt(parser.memo, slot, result);",
+    "      result",
+    "    },",
+    "  }",
+    "}",
+  ]);
+  const byName = [
+    "and parseRuleByName = (parser: CompiledParser, name: String, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {",
+    "  match(name) {",
+    ...grammar.rules.map((rule) =>
+      `    ${JSON.stringify(rule.name)} => { enter_${rule.name}(parser, source, offset, diagnose, recover) },`
+    ),
+    '    _ => { CompiledProbeNoMatch(offset, "known grammar rule", name) },',
+    "  }",
+    "};",
+  ];
+  const constants = [...moduleConstants].map(([value, name]) => `let ${name} = ${value};`);
+  moduleConstants = undefined;
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
-    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledProbeMatch, CompiledProbeNoMatch, CompiledParseFailure, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule, compiledRuleMemoSlot, memoizedCompiledRule, isCompleteProbe, completedCapture, compiledFailure };',
-    ...modules.map((_, index) => `from "./${moduleName(index)}" import * as Probe${index};`),
+    'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeMatched, CompiledProbeNoMatch, SequenceCompiledCapture, ChoiceCompiledCapture, bestFailure, failureWithBest, trackedFailure, skippedAlternative, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule };',
+    'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
     'from js.host("table") import * as Table;',
     "",
-    "let strictCompiledRules = {",
-    "  let rules = Table.empty();",
-    ...modules.flatMap((rules, index) =>
-      rules.map((rule) => emitStrictRuleEntry(rule.name, index))
-    ),
-    "  rules",
+    "-- The state of one parse: memoized rule results, keyed by `compiledRuleSlot`.",
+    "record CompiledParser = { memo: Js.Table<CompiledProbeMatch> };",
+    "",
+    "let newCompiledParser = () => {",
+    "  let parser: CompiledParser = .{ memo = Table.empty() };",
+    "  parser",
     "};",
     "",
-    "let recoveringCompiledRules = {",
-    "  let rules = Table.empty();",
-    ...modules.flatMap((rules, index) =>
-      rules.map((rule) => emitRecoveringRuleEntry(rule.name, index))
-    ),
-    "  rules",
+    "-- One number per rule, offset and mode: a single table lookup per rule call.",
+    "let compiledRuleSlot = (rule: Number, offset: Number, diagnose: Bool, recover: Bool) => {",
+    `  (offset * 4 + (if (diagnose) { 2 } else { 0 }) + (if (recover) { 1 } else { 0 })) * ${ruleCount} + rule`,
     "};",
     "",
-    "let makeCompiledParser = () => {",
-    "  let cache = Table.empty();",
-    "  let rec parseCompiledRule = (name, source, offset, diagnose, recover) => {",
-    "    let selected = if (recover) {",
-    "      Table.get(recoveringCompiledRules, name)",
-    "    } else {",
-    "      Table.get(strictCompiledRules, name)",
-    "    };",
-    "    match(selected) {",
-    "      Some(parseRule) => {",
-    "        memoizedCompiledRule(",
-    "          cache,",
-    "          name,",
-    "          compiledRuleMemoSlot(offset, diagnose, recover),",
-    "          () => { wrapCompiledRule(name, offset, parseRule(source, offset, diagnose, parseCompiledRule)) },",
-    "        )",
-    "      },",
-    '      None => { CompiledProbeNoMatch(offset, "known grammar rule", name) },',
-    "    }",
-    "  };",
-    "  parseCompiledRule",
-    "};",
+    ...constants,
+    "",
+    ...group,
+    ...byName,
+    "",
+  ].join("\n");
+}
+
+function emitDispatch(grammar: WorkmanGrammarIr, grammarHash: string): string {
+  return [
+    header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
+    'from "../compiled_probe_runtime.wm" import { CompiledCapture, CompiledParseFailure, isCompleteProbe, completedCapture, compiledFailure };',
+    'from "./compiled_probe_rules.wm" import { enter_Start, newCompiledParser };',
     "",
     "let recognizeCompiled = (source: String) => {",
-    "  let parseRule = makeCompiledParser();",
-    '  isCompleteProbe(source, parseRule("Start", source, 0, false, false))',
+    "  isCompleteProbe(source, enter_Start(newCompiledParser(), source, 0, false, false))",
     "};",
     "",
     "let parseCompiledCapture = (source: String): Option<CompiledCapture> => {",
-    "  let parseRule = makeCompiledParser();",
-    '  completedCapture(source, parseRule("Start", source, 0, false, false))',
+    "  completedCapture(source, enter_Start(newCompiledParser(), source, 0, false, false))",
     "};",
     "",
     "let parseRecoveringCompiledCapture = (source: String): Option<CompiledCapture> => {",
-    "  let parseRule = makeCompiledParser();",
-    '  completedCapture(source, parseRule("Start", source, 0, false, true))',
+    "  completedCapture(source, enter_Start(newCompiledParser(), source, 0, false, true))",
     "};",
     "",
     "let parseCompiledFailure = (source: String): Option<CompiledParseFailure> => {",
-    "  let parseRule = makeCompiledParser();",
-    '  compiledFailure(source, parseRule("Start", source, 0, true, false))',
+    "  compiledFailure(source, enter_Start(newCompiledParser(), source, 0, true, false))",
     "};",
     "",
   ].join("\n");
 }
 
-function emitStrictRuleEntry(ruleName: string, moduleIndex: number): string {
-  const call = `Probe${moduleIndex}.rule_${ruleName}(source, offset, false, diagnose, parseRule)`;
-  return `  Table.set(rules, "${ruleName}", (source, offset, diagnose, parseRule) => { ${call} });`;
-}
+/** A runtime helper that looks rules up by name, bound to this parse. */
+const parseRuleCallback =
+  "(name, source, offset, diagnose, recover) => { parseRuleByName(parser, name, source, offset, diagnose, recover) }";
 
-function emitRecoveringRuleEntry(ruleName: string, moduleIndex: number): string {
-  const call = (recover: string) =>
-    `Probe${moduleIndex}.rule_${ruleName}(source, offset, ${recover}, diagnose, parseRule)`;
-  let recovering = call("true");
-  if (probeBeforeRecoveryRules.has(ruleName)) {
-    const committed = ruleName === "Primary"
-      ? "commitsJsonPrimaryRecovery(source, offset) || commitsLambdaPrimaryRecovery(source, offset, parseRule)"
-      : "false";
-    recovering = `if (${committed}) { ${
-      call("true")
-    } } else { matchCommittedRule((activeRecover) => { ${call("activeRecover")} }, true) }`;
-  }
-  return `  Table.set(rules, "${ruleName}", (source, offset, diagnose, parseRule) => { ${recovering} });`;
+/** How rule X runs with recovery active; mirrors the former recovering dispatch table. */
+function emitRecoveringEntry(ruleName: string): string {
+  const call = (recover: string) => `rule_${ruleName}(source, offset, ${recover}, diagnose, parser)`;
+  if (!probeBeforeRecoveryRules.has(ruleName)) return call("true");
+  const committed = ruleName === "Primary"
+    ? `commitsJsonPrimaryRecovery(source, offset) || commitsLambdaPrimaryRecovery(source, offset, ${parseRuleCallback})`
+    : "false";
+  return `if (${committed}) { ${call("true")} } else { matchCommittedRule((activeRecover) => { ${
+    call("activeRecover")
+  } }, true) }`;
 }
 
 function emitRuleExpression(
@@ -174,6 +171,7 @@ function emitRuleExpression(
   ruleName: string,
   recoveries: ReadonlySet<string>,
 ): string {
+  inlineNames = 0;
   return emitExpression(expression, ruleName, "recover", recoveries);
 }
 
@@ -233,9 +231,7 @@ function emitExpression(
     case "any":
       return `matchAnyCharacter(${JSON.stringify(ruleName)}, source, offset)`;
     case "ruleRef":
-      return `parseRule(${
-        JSON.stringify(expression.name)
-      }, source, offset, diagnose, ${recoveryMode})`;
+      return `enter_${expression.name}(parser, source, offset, diagnose, ${recoveryMode})`;
     case "sequence":
       return emitParserList(
         "matchSequence",
@@ -271,7 +267,7 @@ function emitExpression(
       // This slot is reached only after the named parameter list and its arrow
       // have matched. Keep the diagnostic tied to that grammar decision.
       return ruleName === "MatchFn" && expression.label === "arms"
-        ? `matchNamedMatchArms(source, offset,\n${indent(labeled, 1)}\n, parseRule)`
+        ? `matchNamedMatchArms(source, offset,\n${indent(labeled, 1)}\n, ${parseRuleCallback})`
         : labeled;
     }
     case "text":
@@ -337,40 +333,89 @@ function emitParserList(
   if (expressions.length === 0) {
     return `${combinator}([], ${diagnosticArgument}source, offset)`;
   }
-  const guards = combinator === "matchChoice"
-    ? expressions.map((expression, index) =>
-      firstGuard(expression, ruleName, recoveryModes?.[index] ?? recoveryMode)
-    )
-    : [];
-  const list = [
-    `${combinator}([`,
-    ...expressions.flatMap((expression, index) => {
-      const body = emitExpression(
-        expression,
-        ruleName,
-        recoveryModes?.[index] ?? recoveryMode,
-        recoveries,
-      );
-      const guard = guards[index];
-      return [
-        "  (source, offset) => {",
-        indent(
-          guard === undefined ? body : [
-            `if (diagnose || ${guard}) {`,
-            indent(body, 1),
-            `} else { CompiledProbeNoMatch(offset, "a different first character", ${
-              JSON.stringify(ruleName)
-            }) }`,
-          ].join("\n"),
-          2,
-        ),
-        "  },",
-      ];
-    }),
-    `], ${diagnosticArgument}source, offset)`,
-  ].join("\n");
-  if (!guards.some((guard) => guard !== undefined)) return list;
-  return ["{", "  let firstCode = codeAt(source, offset);", indent(list, 1), "}"].join("\n");
+  const bodies = expressions.map((expression, index) =>
+    emitExpression(expression, ruleName, recoveryModes?.[index] ?? recoveryMode, recoveries)
+  );
+  if (combinator === "matchSequence") return emitInlineSequence(bodies);
+  const guards = expressions.map((expression, index) =>
+    firstGuard(expression, ruleName, recoveryModes?.[index] ?? recoveryMode)
+  );
+  const alternatives = bodies.map((body, index) =>
+    guards[index] === undefined
+      ? body
+      : [`if (diagnose || ${guards[index]}) {`, indent(body, 1), "} else { skippedAlternative }"]
+        .join("\n")
+  );
+  const choice = emitInlineChoice(alternatives);
+  if (!guards.some((guard) => guard !== undefined)) return choice;
+  return ["{", "  let firstCode = codeAt(source, offset);", indent(choice, 1), "}"].join("\n");
+}
+
+/** Names for the locals of inline sequences and choices, unique within one rule body. */
+let inlineNames = 0;
+
+function inlineName(prefix: string): string {
+  return `${prefix}${inlineNames++}`;
+}
+
+/**
+ * A sequence written out element by element, as `matchSequenceInto` would run it: each element
+ * starts where the previous one ended, the best failure seen so far is carried while
+ * diagnosing, and the first failing element ends the sequence. No parser list is built.
+ */
+function emitInlineSequence(elements: readonly string[]): string {
+  const step = (index: number, at: string, best: string, captures: readonly string[]): string => {
+    if (index === elements.length) {
+      return `CompiledProbeMatched(${at}, SequenceCompiledCapture([${captures.join(", ")}]), ${best})`;
+    }
+    const element = index === 0
+      ? elements[index]
+      : [`{`, `  let offset = ${at};`, indent(elements[index], 1), `}`].join("\n");
+    const [next, capture, latent, nextBest] = ["next", "capture", "latent", "best"].map(inlineName);
+    const [failedAt, expected, rule] = ["failedAt", "expected", "rule"].map(inlineName);
+    return [
+      "match(",
+      indent(element, 1),
+      ") {",
+      `  CompiledProbeMatched(${next}, ${capture}, ${latent}) => {`,
+      `    let ${nextBest} = if (diagnose) { bestFailure(${best}, ${latent}) } else { None };`,
+      indent(step(index + 1, next, nextBest, [...captures, capture]), 2),
+      "  },",
+      `  CompiledProbeNoMatch(${failedAt}, ${expected}, ${rule}) => {`,
+      `    failureWithBest(${best}, ${failedAt}, ${expected}, ${rule})`,
+      "  },",
+      "}",
+    ].join("\n");
+  };
+  return step(0, "offset", "None", []);
+}
+
+/**
+ * A choice written out alternative by alternative, as `matchChoiceAt` would run it: the first
+ * match wins, and each failure is folded into the best failure while diagnosing.
+ */
+function emitInlineChoice(alternatives: readonly string[]): string {
+  const step = (index: number, best: string): string => {
+    if (index === alternatives.length) {
+      return `failureWithBest(${best}, offset, "valid syntax", "<choice>")`;
+    }
+    const [next, capture, latent, nextBest] = ["next", "capture", "latent", "best"].map(inlineName);
+    const [failedAt, expected, rule] = ["failedAt", "expected", "rule"].map(inlineName);
+    return [
+      "match(",
+      indent(alternatives[index], 1),
+      ") {",
+      `  CompiledProbeMatched(${next}, ${capture}, ${latent}) => {`,
+      `    CompiledProbeMatched(${next}, ChoiceCompiledCapture(${index}, ${capture}), if (diagnose) { bestFailure(${best}, ${latent}) } else { None })`,
+      "  },",
+      `  CompiledProbeNoMatch(${failedAt}, ${expected}, ${rule}) => {`,
+      `    let ${nextBest} = bestFailure(${best}, trackedFailure(diagnose, ${failedAt}, ${expected}, ${rule}));`,
+      indent(step(index + 1, nextBest), 2),
+      "  },",
+      "}",
+    ].join("\n");
+  };
+  return step(0, "None");
 }
 
 /**
@@ -418,28 +463,6 @@ function emitUnaryParser(
   ].join("\n");
 }
 
-function partitionRules(
-  rules: WorkmanGrammarIr["rules"],
-  maximumLines: number,
-  recoveries: ReadonlySet<string>,
-): readonly (readonly WorkmanGrammarIr["rules"][number][])[] {
-  const modules: WorkmanGrammarIr["rules"][number][][] = [];
-  let current: WorkmanGrammarIr["rules"][number][] = [];
-  let currentLines = 4;
-  for (const rule of rules) {
-    const lines = emitRuleExpression(rule.expression, rule.name, recoveries).split("\n").length + 4;
-    if (current.length > 0 && currentLines + lines > maximumLines) {
-      modules.push(current);
-      current = [];
-      currentLines = 4;
-    }
-    current.push(rule);
-    currentLines += lines;
-  }
-  if (current.length > 0) modules.push(current);
-  return modules;
-}
-
 const probeBeforeRecoveryRules = new Set([
   "Start",
   "LambdaBody",
@@ -460,10 +483,6 @@ function recoveryKey(ruleName: string, value: string): string {
 function recoverySite(ruleName: string, value: string): string {
   if (value === ";") return `${ruleName}:semicolon`;
   return `${ruleName}:${value === "{" ? "open-brace" : "close-brace"}`;
-}
-
-function moduleName(index: number): string {
-  return `compiled_probe_rules_${String(index).padStart(2, "0")}.wm`;
 }
 
 function header(grammar: WorkmanGrammarIr, hash: string, rules: readonly string[]): string {
