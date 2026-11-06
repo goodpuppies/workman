@@ -49,6 +49,7 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
   program = specializeTailCalls(program);
   resetEmitterState();
   ctorLayouts = collectCtorLayouts(program);
+  moduleNamespaces = collectModuleNamespaces(program);
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
   directFns = collectProgramDirectFns(program);
@@ -1037,6 +1038,36 @@ function replPatternBindings(pattern: CorePattern): CoreDynamicExport[] {
   }
 }
 
+/**
+ * References that evaluate to a program module's namespace object: namespace imports of program
+ * modules (by structure id) and the module objects themselves (by emit name). Those objects carry
+ * the `<name>__wm_dN` direct entries, so a qualified call through them can skip the tuple.
+ */
+let moduleNamespaces = { structures: new Set<number>(), emitNames: new Set<string>() };
+
+function collectModuleNamespaces(program: CoreProgram): typeof moduleNamespaces {
+  const structures = new Set<number>();
+  const emitNames = new Set<string>();
+  for (const artifact of program.modules.values()) {
+    emitNames.add(artifact.emitName);
+    for (const decl of artifact.module.decls) {
+      if (decl.kind !== "CoreImport" || decl.clause.kind !== "Namespace") continue;
+      if (decl.structureId === undefined) continue;
+      const target = decl.target ??
+        artifact.imports.find((edge) => edge.specifierNode === decl.node)?.target;
+      if (target !== undefined && program.modules.has(target)) structures.add(decl.structureId);
+    }
+  }
+  return { structures, emitNames };
+}
+
+function isModuleNamespaceRef(expr: CoreExpr): boolean {
+  if (expr.kind !== "CoreVar") return false;
+  return expr.bindingId === undefined
+    ? moduleNamespaces.emitNames.has(expr.name)
+    : moduleNamespaces.structures.has(expr.bindingId);
+}
+
 type CtorLayout = { name: string; fieldCount: number };
 
 /** Field counts of the constructors this program declares, by constructor id. */
@@ -1671,6 +1702,8 @@ function emitExpr(expr: CoreExpr): string {
       if (primitive) return primitive;
       const constructed = emitCtorApp(expr);
       if (constructed) return constructed;
+      const qualified = emitQualifiedDirectApp(expr);
+      if (qualified) return qualified;
       if (expr.callee.kind === "CoreVar" && expr.callee.bindingId !== undefined) {
         const direct = directFns.get(expr.callee.bindingId);
         if (direct && expr.arg.kind === "CoreTuple" && expr.arg.items.length === direct.arity) {
@@ -1716,6 +1749,23 @@ function typedHoleRuntimeMessage(expr: Extract<CoreExpr, { kind: "CorePanic" }>)
   const gutter = `${line}| `;
   return `error[type.typed-hole ${hole.path}:${line}:${col}]: typed hole; expected type: ${hole.expectedType}\n` +
     `${gutter}${hole.lineText}\n${" ".repeat(gutter.length + col)}^`;
+}
+
+/** `Module.f(a, b)` through a module namespace targets the module's exported direct entry. */
+function emitQualifiedDirectApp(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | undefined {
+  const callee = expr.callee;
+  if (callee.kind !== "CoreRecordAccess" || callee.memberBindingId === undefined) return undefined;
+  if (!isModuleNamespaceRef(callee.record)) return undefined;
+  const direct = directFns.get(callee.memberBindingId);
+  if (!direct || expr.arg.kind !== "CoreTuple" || expr.arg.items.length !== direct.arity) {
+    return undefined;
+  }
+  return markRuntimeCall(
+    expr,
+    `${emitJsMember(emitExpr(callee.record), callee.field + direct.exportKey)}(${
+      expr.arg.items.map(emitExpr).join(", ")
+    })`,
+  );
 }
 
 /**

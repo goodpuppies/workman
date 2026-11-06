@@ -2,8 +2,18 @@
 -- Grammar: src/grammar.peggy
 -- Grammar IR SHA-256: f21ba7f25bb10c414336d394a95e7df03480af4864f15fccd8e7b8a819359f38
 -- Directly compiled rules: Start, TopPhrase, TopDecl, ImportDecl, ExportImportDecl, ImportClause, ImportSpecList, ImportSpec, JsImportDecl
-from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms };
+from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeNoMatch, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms };
 from "./compiled_probe_types.wm" import { SingleCode, CodeRange };
+
+let literal_0 = [59];
+let literal_1 = [102, 114, 111, 109];
+let literal_2 = [105, 109, 112, 111, 114, 116];
+let literal_3 = [101, 120, 112, 111, 114, 116];
+let literal_4 = [42];
+let literal_5 = [97, 115];
+let literal_6 = [125];
+let literal_7 = [44];
+let literal_8 = [116, 121, 112, 101];
 
 let rule_Start = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {
   matchSyntaxAction("Start:root",
@@ -43,72 +53,94 @@ let rule_Start = (source: String, offset: Number, recover: Bool, diagnose: Bool,
 };
 
 let rule_TopPhrase = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {
-  matchChoice([
-    (source, offset) => {
-      matchSyntaxAction("TopPhrase:root.alternatives.0",
-        matchSequence([
-          (source, offset) => {
-            matchLabeled(Some("d"),
-              parseRule("TopDecl", source, offset, diagnose, recover)
-            )
-          },
-          (source, offset) => {
-            parseRule("_", source, offset, diagnose, recover)
-          },
-          (source, offset) => {
-            matchRecoverableLiteral([59], ";", "TopPhrase:semicolon", recover, source, offset)
-          },
-        ], diagnose, source, offset)
-      )
-    },
-    (source, offset) => {
-      matchSyntaxAction("TopPhrase:root.alternatives.1",
-        matchSequence([
-          (source, offset) => {
-            matchLabeled(Some("e"),
-              parseRule("Expr", source, offset, diagnose, recover)
-            )
-          },
-          (source, offset) => {
-            parseRule("_", source, offset, diagnose, recover)
-          },
-          (source, offset) => {
-            matchRecoverableLiteral([59], ";", "TopPhrase:semicolon", recover, source, offset)
-          },
-        ], diagnose, source, offset)
-      )
-    },
-  ], diagnose, source, offset)
+  {
+    let firstCode = codeAt(source, offset);
+    matchChoice([
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 101 && firstCode <= 102) || (firstCode >= 108 && firstCode <= 108) || (firstCode >= 114 && firstCode <= 114) || (firstCode >= 116 && firstCode <= 116))) {
+          matchSyntaxAction("TopPhrase:root.alternatives.0",
+            matchSequence([
+              (source, offset) => {
+                matchLabeled(Some("d"),
+                  parseRule("TopDecl", source, offset, diagnose, recover)
+                )
+              },
+              (source, offset) => {
+                parseRule("_", source, offset, diagnose, recover)
+              },
+              (source, offset) => {
+                matchRecoverableLiteral(literal_0, ";", "TopPhrase:semicolon", recover, source, offset)
+              },
+            ], diagnose, source, offset)
+          )
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopPhrase") }
+      },
+      (source, offset) => {
+        if (diagnose || (recover || ((firstCode >= 9 && firstCode <= 10) || (firstCode >= 13 && firstCode <= 13) || (firstCode >= 32 && firstCode <= 34) || (firstCode >= 39 && firstCode <= 40) || (firstCode >= 45 && firstCode <= 58) || (firstCode >= 61 && firstCode <= 61) || (firstCode >= 63 && firstCode <= 63) || (firstCode >= 65 && firstCode <= 91) || (firstCode >= 95 && firstCode <= 124)))) {
+          matchSyntaxAction("TopPhrase:root.alternatives.1",
+            matchSequence([
+              (source, offset) => {
+                matchLabeled(Some("e"),
+                  parseRule("Expr", source, offset, diagnose, recover)
+                )
+              },
+              (source, offset) => {
+                parseRule("_", source, offset, diagnose, recover)
+              },
+              (source, offset) => {
+                matchRecoverableLiteral(literal_0, ";", "TopPhrase:semicolon", recover, source, offset)
+              },
+            ], diagnose, source, offset)
+          )
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopPhrase") }
+      },
+    ], diagnose, source, offset)
+  }
 };
 
 let rule_TopDecl = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {
-  matchChoice([
-    (source, offset) => {
-      parseRule("JsImportDecl", source, offset, diagnose, recover)
-    },
-    (source, offset) => {
-      parseRule("ImportDecl", source, offset, diagnose, recover)
-    },
-    (source, offset) => {
-      parseRule("ExportImportDecl", source, offset, diagnose, recover)
-    },
-    (source, offset) => {
-      parseRule("RecordDecl", source, offset, diagnose, recover)
-    },
-    (source, offset) => {
-      parseRule("TypeDecl", source, offset, diagnose, recover)
-    },
-    (source, offset) => {
-      parseRule("LetDecl", source, offset, diagnose, recover)
-    },
-  ], diagnose, source, offset)
+  {
+    let firstCode = codeAt(source, offset);
+    matchChoice([
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 102 && firstCode <= 102))) {
+          parseRule("JsImportDecl", source, offset, diagnose, recover)
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopDecl") }
+      },
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 102 && firstCode <= 102))) {
+          parseRule("ImportDecl", source, offset, diagnose, recover)
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopDecl") }
+      },
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 101 && firstCode <= 101))) {
+          parseRule("ExportImportDecl", source, offset, diagnose, recover)
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopDecl") }
+      },
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 114 && firstCode <= 114))) {
+          parseRule("RecordDecl", source, offset, diagnose, recover)
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopDecl") }
+      },
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 116 && firstCode <= 116))) {
+          parseRule("TypeDecl", source, offset, diagnose, recover)
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopDecl") }
+      },
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 108 && firstCode <= 108))) {
+          parseRule("LetDecl", source, offset, diagnose, recover)
+        } else { CompiledProbeNoMatch(offset, "a different first character", "TopDecl") }
+      },
+    ], diagnose, source, offset)
+  }
 };
 
 let rule_ImportDecl = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {
   matchSyntaxAction("ImportDecl:root",
     matchSequence([
       (source, offset) => {
-        matchLiteral([102, 114, 111, 109], "from", "ImportDecl", source, offset)
+        matchLiteral(literal_1, "from", "ImportDecl", source, offset)
       },
       (source, offset) => {
         parseRule("__", source, offset, diagnose, recover)
@@ -122,7 +154,7 @@ let rule_ImportDecl = (source: String, offset: Number, recover: Bool, diagnose: 
         parseRule("__", source, offset, diagnose, recover)
       },
       (source, offset) => {
-        matchLiteral([105, 109, 112, 111, 114, 116], "import", "ImportDecl", source, offset)
+        matchLiteral(literal_2, "import", "ImportDecl", source, offset)
       },
       (source, offset) => {
         parseRule("__", source, offset, diagnose, recover)
@@ -140,7 +172,7 @@ let rule_ExportImportDecl = (source: String, offset: Number, recover: Bool, diag
   matchSyntaxAction("ExportImportDecl:root",
     matchSequence([
       (source, offset) => {
-        matchLiteral([101, 120, 112, 111, 114, 116], "export", "ExportImportDecl", source, offset)
+        matchLiteral(literal_3, "export", "ExportImportDecl", source, offset)
       },
       (source, offset) => {
         parseRule("__", source, offset, diagnose, recover)
@@ -155,61 +187,70 @@ let rule_ExportImportDecl = (source: String, offset: Number, recover: Bool, diag
 };
 
 let rule_ImportClause = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {
-  matchChoice([
-    (source, offset) => {
-      matchSyntaxAction("ImportClause:root.alternatives.0",
-        matchSequence([
-          (source, offset) => {
-            matchLiteral([42], "*", "ImportClause", source, offset)
-          },
-          (source, offset) => {
-            parseRule("__", source, offset, diagnose, recover)
-          },
-          (source, offset) => {
-            matchLiteral([97, 115], "as", "ImportClause", source, offset)
-          },
-          (source, offset) => {
-            parseRule("__", source, offset, diagnose, recover)
-          },
-          (source, offset) => {
-            matchLabeled(Some("alias"),
-              parseRule("Name", source, offset, diagnose, recover)
-            )
-          },
-        ], diagnose, source, offset)
-      )
-    },
-    (source, offset) => {
-      matchSyntaxAction("ImportClause:root.alternatives.1",
-        matchLiteral([42], "*", "ImportClause", source, offset)
-      )
-    },
-    (source, offset) => {
-      matchSyntaxAction("ImportClause:root.alternatives.2",
-        matchSequence([
-          (source, offset) => {
-            matchRecoverableOpeningBrace("ImportClause:open-brace", recover, source, offset)
-          },
-          (source, offset) => {
-            parseRule("_", source, offset, diagnose, recover)
-          },
-          (source, offset) => {
-            matchLabeled(Some("specs"),
-              matchOptional(
-                parseRule("ImportSpecList", source, offset, diagnose, false)
-              , diagnose, offset)
-            )
-          },
-          (source, offset) => {
-            parseRule("_", source, offset, diagnose, recover)
-          },
-          (source, offset) => {
-            matchRecoverableLiteral([125], "}", "ImportClause:close-brace", recover, source, offset)
-          },
-        ], diagnose, source, offset)
-      )
-    },
-  ], diagnose, source, offset)
+  {
+    let firstCode = codeAt(source, offset);
+    matchChoice([
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 42 && firstCode <= 42))) {
+          matchSyntaxAction("ImportClause:root.alternatives.0",
+            matchSequence([
+              (source, offset) => {
+                matchLiteral(literal_4, "*", "ImportClause", source, offset)
+              },
+              (source, offset) => {
+                parseRule("__", source, offset, diagnose, recover)
+              },
+              (source, offset) => {
+                matchLiteral(literal_5, "as", "ImportClause", source, offset)
+              },
+              (source, offset) => {
+                parseRule("__", source, offset, diagnose, recover)
+              },
+              (source, offset) => {
+                matchLabeled(Some("alias"),
+                  parseRule("Name", source, offset, diagnose, recover)
+                )
+              },
+            ], diagnose, source, offset)
+          )
+        } else { CompiledProbeNoMatch(offset, "a different first character", "ImportClause") }
+      },
+      (source, offset) => {
+        if (diagnose || ((firstCode >= 42 && firstCode <= 42))) {
+          matchSyntaxAction("ImportClause:root.alternatives.1",
+            matchLiteral(literal_4, "*", "ImportClause", source, offset)
+          )
+        } else { CompiledProbeNoMatch(offset, "a different first character", "ImportClause") }
+      },
+      (source, offset) => {
+        if (diagnose || (recover || ((firstCode >= 123 && firstCode <= 123)))) {
+          matchSyntaxAction("ImportClause:root.alternatives.2",
+            matchSequence([
+              (source, offset) => {
+                matchRecoverableOpeningBrace("ImportClause:open-brace", recover, source, offset)
+              },
+              (source, offset) => {
+                parseRule("_", source, offset, diagnose, recover)
+              },
+              (source, offset) => {
+                matchLabeled(Some("specs"),
+                  matchOptional(
+                    parseRule("ImportSpecList", source, offset, diagnose, false)
+                  , diagnose, offset)
+                )
+              },
+              (source, offset) => {
+                parseRule("_", source, offset, diagnose, recover)
+              },
+              (source, offset) => {
+                matchRecoverableLiteral(literal_6, "}", "ImportClause:close-brace", recover, source, offset)
+              },
+            ], diagnose, source, offset)
+          )
+        } else { CompiledProbeNoMatch(offset, "a different first character", "ImportClause") }
+      },
+    ], diagnose, source, offset)
+  }
 };
 
 let rule_ImportSpecList = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {
@@ -229,7 +270,7 @@ let rule_ImportSpecList = (source: String, offset: Number, recover: Bool, diagno
                   parseRule("_", source, offset, diagnose, false)
                 },
                 (source, offset) => {
-                  matchLiteral([44], ",", "ImportSpecList", source, offset)
+                  matchLiteral(literal_7, ",", "ImportSpecList", source, offset)
                 },
                 (source, offset) => {
                   parseRule("_", source, offset, diagnose, false)
@@ -249,7 +290,7 @@ let rule_ImportSpecList = (source: String, offset: Number, recover: Bool, diagno
       },
       (source, offset) => {
         matchOptional(
-          matchLiteral([44], ",", "ImportSpecList", source, offset)
+          matchLiteral(literal_7, ",", "ImportSpecList", source, offset)
         , diagnose, offset)
       },
     ], diagnose, source, offset)
@@ -273,7 +314,7 @@ let rule_ImportSpec = (source: String, offset: Number, recover: Bool, diagnose: 
                   parseRule("_", source, offset, diagnose, false)
                 },
                 (source, offset) => {
-                  matchLiteral([97, 115], "as", "ImportSpec", source, offset)
+                  matchLiteral(literal_5, "as", "ImportSpec", source, offset)
                 },
                 (source, offset) => {
                   parseRule("_", source, offset, diagnose, false)
@@ -296,7 +337,7 @@ let rule_JsImportDecl = (source: String, offset: Number, recover: Bool, diagnose
   matchSyntaxAction("JsImportDecl:root",
     matchSequence([
       (source, offset) => {
-        matchLiteral([102, 114, 111, 109], "from", "JsImportDecl", source, offset)
+        matchLiteral(literal_1, "from", "JsImportDecl", source, offset)
       },
       (source, offset) => {
         parseRule("__", source, offset, diagnose, recover)
@@ -310,7 +351,7 @@ let rule_JsImportDecl = (source: String, offset: Number, recover: Bool, diagnose
         parseRule("__", source, offset, diagnose, recover)
       },
       (source, offset) => {
-        matchLiteral([105, 109, 112, 111, 114, 116], "import", "JsImportDecl", source, offset)
+        matchLiteral(literal_2, "import", "JsImportDecl", source, offset)
       },
       (source, offset) => {
         parseRule("__", source, offset, diagnose, recover)
@@ -320,7 +361,7 @@ let rule_JsImportDecl = (source: String, offset: Number, recover: Bool, diagnose
           matchOptional(
             matchSequence([
               (source, offset) => {
-                matchLiteral([116, 121, 112, 101], "type", "JsImportDecl", source, offset)
+                matchLiteral(literal_8, "type", "JsImportDecl", source, offset)
               },
               (source, offset) => {
                 parseRule("__", source, offset, diagnose, false)

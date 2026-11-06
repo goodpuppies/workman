@@ -34,9 +34,11 @@ let textLength = (text: String) => {
 };
 
 -- JavaScript's charCodeAt gives NaN past the end, which compares false against everything, so a negated
--- character class would keep matching forever.
+-- character class would keep matching forever. NaN also fails `>= 0`, which maps it to -1 without
+-- reading the length on every character.
 let codeAt = (source: String, offset: Number) => {
-  if (offset < textLength(source)) { charCodeAt(source, offset) } else { -1 }
+  let code = charCodeAt(source, offset);
+  if (code >= 0) { code } else { -1 }
 };
 
 let failurePriority = (rule: String) => {
@@ -223,13 +225,18 @@ let matchRecoverableLiteral = (
   }
 };
 
+-- Code-unit lists for literals matched by this runtime, built once rather than on every call.
+let openBraceCodes = [123];
+let jsonCodes = [74, 83, 79, 78];
+let arrowCodes = [61, 62];
+
 let matchRecoverableOpeningBrace = (
   site: String,
   recover: Bool,
   source: String,
   offset: Number,
 ) => {
-  match(matchLiteral([123], "{", site, source, offset)) {
+  match(matchLiteral(openBraceCodes, "{", site, source, offset)) {
     CompiledProbeMatched(next, capture, latent) => {
       CompiledProbeMatched(next, capture, latent)
     },
@@ -288,7 +295,7 @@ let isIdentifierPartCode = (code: Number) => {
 -- `JSON` is also a legal constructor name, so a damaged `JSON { ... }`
 -- production needs this explicit keyword-boundary commitment annotation.
 let commitsJsonPrimaryRecovery = (source: String, offset: Number) => {
-  match(matchCodes(source, [74, 83, 79, 78], offset, "JSON", "Primary")) {
+  match(matchCodes(source, jsonCodes, offset, "JSON", "Primary")) {
     CompiledProbeMatched(next, capture, latent) => {
       !isIdentifierPartCode(codeAt(source, next))
     },
@@ -312,7 +319,7 @@ let commitsLambdaPrimaryRecovery = (source: String, offset: Number, parseRule) =
       let afterAnnotation = skipOptionalRule("LambdaReturnAnnotation", source, afterParams, parseRule);
       let afterCapture = skipOptionalRule("CaptureClause", source, afterAnnotation, parseRule);
       let arrow = skipOptionalRule("_", source, afterCapture, parseRule);
-      match(matchCodes(source, [61, 62], arrow, "=>", "Primary")) {
+      match(matchCodes(source, arrowCodes, arrow, "=>", "Primary")) {
         CompiledProbeMatched(ignoredNext, ignoredArrow, ignoredArrowLatent) => { true },
         CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { false },
       }
@@ -441,7 +448,7 @@ let matchNamedMatchArms = (source: String, offset: Number, result: CompiledProbe
         let header = matchSequence([
           (source, offset) => { parseRule("Pattern", source, offset, false, false) },
           (source, offset) => { parseRule("_", source, offset, false, false) },
-          (source, offset) => { matchLiteral([61, 62], "=>", "MatchArm", source, offset) },
+          (source, offset) => { matchLiteral(arrowCodes, "=>", "MatchArm", source, offset) },
         ], false, source, offset);
         match(header) {
           CompiledProbeMatched(_, _, _) => { result },

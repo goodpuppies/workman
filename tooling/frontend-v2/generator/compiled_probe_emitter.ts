@@ -3,6 +3,26 @@ import type {
   WorkmanGrammarIr,
 } from "../../../scripts/frontend_v2_grammar_ir.ts";
 import type { RequiredTokenRecovery } from "./contract.ts";
+import { emitFirstCheck, FirstSets, isGuardable } from "./first_sets.ts";
+
+/** FIRST sets of the grammar being emitted; set by `emitCompiledProbe`. */
+let firstSets: FirstSets | undefined;
+
+/**
+ * Constant lists of the rules module being emitted, by WM source text. A list literal in a rule
+ * body would build its cons cells on every call; a module-level `let` builds them once.
+ */
+let moduleConstants: Map<string, string> | undefined;
+
+function constant(prefix: string, value: string): string {
+  if (!moduleConstants) return value;
+  let name = moduleConstants.get(value);
+  if (!name) {
+    name = `${prefix}_${moduleConstants.size}`;
+    moduleConstants.set(value, name);
+  }
+  return name;
+}
 
 export function emitCompiledProbe(
   grammar: WorkmanGrammarIr,
@@ -12,6 +32,10 @@ export function emitCompiledProbe(
   const recoveryIndex = new Set(
     recoveries.map(({ rule, token }) => recoveryKey(rule, token)),
   );
+  firstSets = new FirstSets(grammar, {
+    isRecoverableLiteral: (rule, value) => recoveryIndex.has(recoveryKey(rule, value)),
+    recoveryRepetitionRules,
+  });
   const files = new Map<string, string>();
   files.set(
     "compiled_probe_types.wm",
@@ -23,19 +47,25 @@ export function emitCompiledProbe(
   );
   const modules = partitionRules(grammar.rules, 420, recoveryIndex);
   for (const [index, rules] of modules.entries()) {
+    moduleConstants = new Map();
+    const bodies = rules.flatMap((rule) => [
+      `let rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {`,
+      indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
+      "};",
+      "",
+    ]);
+    const constants = [...moduleConstants].map(([value, name]) => `let ${name} = ${value};`);
+    moduleConstants = undefined;
     files.set(
       moduleName(index),
       [
         header(grammar, grammarHash, rules.map((rule) => rule.name)),
-        'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms };',
+        'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeNoMatch, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms };',
         'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
         "",
-        ...rules.flatMap((rule) => [
-          `let rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parseRule): CompiledProbeMatch => {`,
-          indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
-          "};",
-          "",
-        ]),
+        ...constants,
+        ...(constants.length ? [""] : []),
+        ...bodies,
       ].join("\n"),
     );
   }
@@ -166,20 +196,20 @@ function emitExpression(
             JSON.stringify(recoverySite(ruleName, expression.value))
           }, ${recoveryMode}, source, offset)`;
         }
-        return `matchRecoverableLiteral(${numberList(codeUnits(expression.value))}, ${
+        return `matchRecoverableLiteral(${constant("literal", numberList(codeUnits(expression.value)))}, ${
           JSON.stringify(expression.value)
         }, ${
           JSON.stringify(recoverySite(ruleName, expression.value))
         }, ${recoveryMode}, source, offset)`;
       }
-      return `matchLiteral(${numberList(codeUnits(expression.value))}, ${
+      return `matchLiteral(${constant("literal", numberList(codeUnits(expression.value)))}, ${
         JSON.stringify(literalExpectation(expression.value))
       }, ${JSON.stringify(ruleName)}, source, offset)`;
     case "class":
       if (expression.ignoreCase) {
         throw new Error("compiled probe does not support case-insensitive classes");
       }
-      return `matchCharacterClass([${
+      return `matchCharacterClass(${constant("characters", `[${
         expression.parts.map((part) => {
           if (typeof part === "string") {
             const codes = codeUnits(part);
@@ -195,7 +225,7 @@ function emitExpression(
           }
           return `CodeRange(${start[0]}, ${end[0]})`;
         }).join(", ")
-      }], ${expression.inverted ? "true" : "false"}, ${
+      }]`)}, ${expression.inverted ? "true" : "false"}, ${
         JSON.stringify(
           expression.inverted ? "a character outside the class" : "a character in the class",
         )
@@ -307,23 +337,67 @@ function emitParserList(
   if (expressions.length === 0) {
     return `${combinator}([], ${diagnosticArgument}source, offset)`;
   }
-  return [
+  const guards = combinator === "matchChoice"
+    ? expressions.map((expression, index) =>
+      firstGuard(expression, ruleName, recoveryModes?.[index] ?? recoveryMode)
+    )
+    : [];
+  const list = [
     `${combinator}([`,
-    ...expressions.flatMap((expression, index) => [
-      "  (source, offset) => {",
-      indent(
-        emitExpression(
-          expression,
-          ruleName,
-          recoveryModes?.[index] ?? recoveryMode,
-          recoveries,
+    ...expressions.flatMap((expression, index) => {
+      const body = emitExpression(
+        expression,
+        ruleName,
+        recoveryModes?.[index] ?? recoveryMode,
+        recoveries,
+      );
+      const guard = guards[index];
+      return [
+        "  (source, offset) => {",
+        indent(
+          guard === undefined ? body : [
+            `if (diagnose || ${guard}) {`,
+            indent(body, 1),
+            `} else { CompiledProbeNoMatch(offset, "a different first character", ${
+              JSON.stringify(ruleName)
+            }) }`,
+          ].join("\n"),
+          2,
         ),
-        2,
-      ),
-      "  },",
-    ]),
+        "  },",
+      ];
+    }),
     `], ${diagnosticArgument}source, offset)`,
   ].join("\n");
+  if (!guards.some((guard) => guard !== undefined)) return list;
+  return ["{", "  let firstCode = codeAt(source, offset);", indent(list, 1), "}"].join("\n");
+}
+
+/**
+ * The condition under which a choice alternative can match at all, from the code unit at the
+ * choice's offset; undefined when it can't be decided that way. Only consulted without
+ * diagnostics: a choice that is not diagnosing discards its alternatives' failures, so skipping
+ * one that would fail leaves the result unchanged. Diagnosing runs every alternative as before.
+ */
+function firstGuard(
+  expression: GrammarExpression,
+  ruleName: string,
+  recoveryMode: RecoveryMode,
+): string | undefined {
+  const sets = firstSets!;
+  const strict = sets.of(expression, ruleName, false);
+  const recovering = sets.of(expression, ruleName, true);
+  const check = (first: typeof strict) =>
+    isGuardable(first) ? `(${emitFirstCheck(first, "firstCode")})` : undefined;
+  if (recoveryMode === "false") return check(strict);
+  if (recoveryMode === "true") return check(recovering);
+  const strictCheck = check(strict);
+  const recoveringCheck = check(recovering);
+  if (strictCheck === undefined) return undefined;
+  if (recoveringCheck === undefined) return `(recover || ${strictCheck})`;
+  return recoveringCheck === strictCheck
+    ? strictCheck
+    : `(if (recover) { ${recoveringCheck} } else { ${strictCheck} })`;
 }
 
 function emitUnaryParser(
