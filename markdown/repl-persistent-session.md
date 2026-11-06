@@ -65,13 +65,15 @@ the host once.
 
 ## As built
 
-- `phrase_0.wm` holds the session header with every line re-exported. Phrase `n` is written to
-  `phrase_n.wm` and compiled to `out_n/`, and numbers are never reused.
+- Phrase modules exist only in memory, as `sourceOverrides` entries named `<repl-n>.wm` in the
+  working directory, so a phrase's relative imports resolve from where `wm repl` started. `<repl-0>`
+  holds the session header with every line re-exported. Phrase `n` is compiled to `n/` in a
+  directory in the OS temporary directory, which also holds the host, and numbers are never reused.
 - An import phrase `from "..." import ...` is written as `export from ...`, so later phrases see its
   names. `from js...` imports can't be re-exported, so an accepted one is repeated at the top of
   every later phrase module instead.
 - Constructor IDs survive: a phrase that matches on a datatype an earlier phrase declared works.
-- `:type` writes `type_query.wm`, which re-exports the latest accepted phrase and binds `it`, and
+- `:type` compiles `<repl-type>.wm`, which re-exports the latest accepted phrase and binds `it`, and
   analyzes it without running.
 - If the host process dies with any code but `quit`'s, the REPL reports that the session's state
   was lost and starts a new host for the next phrase, which then runs its imported phrases once more.

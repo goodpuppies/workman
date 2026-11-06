@@ -128,7 +128,12 @@ wm run examples/factorial.wm
 
 Run `wm` or `wm repl` for an interactive session. The prompt is a multi-line text box: move around it with
 the arrow keys, Home/End, and Ctrl+Left/Right, and paste multi-line code freely. Failed inputs leave
-the accepted bindings unchanged.
+the accepted bindings unchanged. Imports resolve from the directory you started `wm repl` in, so
+`from "./lib.wm" import *;` imports `lib.wm` there.
+
+`wm run`, `wm watch` and `wm repl` write the compiled JavaScript to the OS temporary directory, never
+beside your sources, and remove it when they finish, including after Ctrl-C. The program still runs
+with the `deno.json` nearest to the source, so its import map and npm settings apply.
 
 | Key                      | Action                                                                                  |
 | ------------------------ | --------------------------------------------------------------------------------------- |

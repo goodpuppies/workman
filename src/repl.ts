@@ -4,6 +4,12 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_level_phrases.ts";
+import {
+  denoConfigArgs,
+  handleTerminationSignals,
+  relayTerminationSignals,
+  terminationExitCode,
+} from "./child_runtime.ts";
 import { createTemporaryDirectory } from "./temporary_directory.ts";
 import { readReplHistory, recordReplHistory, replHistoryFile } from "./repl_history.ts";
 import {
@@ -67,10 +73,7 @@ async function executeReplArtifacts(
   inputPath: string,
   artifacts: Awaited<ReturnType<typeof compileReplFileArtifacts>>,
 ): Promise<ReplEvaluation> {
-  const temporaryDirectory = await createTemporaryDirectory({
-    dir: dirname(inputPath),
-    prefix: ".wm-mini-repl-",
-  });
+  const temporaryDirectory = await createTemporaryDirectory({ prefix: "wm-repl-" });
   const dir = temporaryDirectory.path;
   try {
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
@@ -78,11 +81,23 @@ async function executeReplArtifacts(
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
-    return await new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", ...runtimeFlagsForJavaScript(entry.code), `${dir}/${entry.path}`],
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "-A",
+        ...denoConfigArgs(dirname(inputPath)),
+        ...runtimeFlagsForJavaScript(entry.code),
+        `${dir}/${entry.path}`,
+      ],
       stdout: "piped",
       stderr: "piped",
-    }).output();
+    }).spawn();
+    const stopRelaying = relayTerminationSignals(child);
+    try {
+      return await child.output();
+    } finally {
+      stopRelaying();
+    }
   } finally {
     await temporaryDirectory.cleanup();
   }
@@ -124,7 +139,16 @@ export async function* watchReplChanges(input: string): AsyncGenerator<void> {
 const REPL_QUIT_EXIT_CODE = 113;
 
 /** REPL-only pervasives. The session imports this module, so `let quit = ...` still shadows it. */
-const REPL_PERVASIVES_FILE = "repl_pervasives.wm";
+/**
+ * A session's modules exist only in memory, at these names in the working directory, so a phrase's
+ * relative imports resolve from where `wm repl` was started. `<` and `>` keep them apart from real
+ * files: Windows can't name a file with them, and nobody does elsewhere.
+ */
+function sessionModuleName(name: string): string {
+  return `<repl-${name}>.wm`;
+}
+
+const REPL_PERVASIVES_FILE = sessionModuleName("pervasives");
 const REPL_PERVASIVES_SOURCE = `from js.global("Deno") import { exit as hostExit };
 // Never returns, so a call fits wherever a value of any type is expected.
 let quit = () => {
@@ -187,49 +211,63 @@ async function warmSession(
  * - A phrase that succeeds extends the basis (rule 191).
  */
 class PhraseSession {
-  #directory: string;
+  #sourceDirectory: string;
+  #outputDirectory: string;
+  #sources: Map<string, string>;
   #accepted = 0;
   #next = 1;
   /** Accepted `from js...` imports, which can't be re-exported, so every later phrase repeats them. */
   #jsImports: string[] = [];
   #host: ReplHost | undefined;
 
-  constructor(directory: string) {
-    this.#directory = directory;
+  /**
+   * Phrase modules are entries of `sources`, the compile options' `sourceOverrides`, named as if
+   * they were in `sourceDirectory`. Emitted code and the host go in `outputDirectory`.
+   */
+  constructor(sourceDirectory: string, outputDirectory: string, sources: Map<string, string>) {
+    this.#sourceDirectory = sourceDirectory;
+    this.#outputDirectory = outputDirectory;
+    this.#sources = sources;
+  }
+
+  #path(name: string): string {
+    return `${this.#sourceDirectory}/${sessionModuleName(name)}`;
   }
 
   get headerPath(): string {
-    return `${this.#directory}/phrase_0.wm`;
+    return this.#path("0");
   }
 
-  async start(): Promise<void> {
+  start(): void {
+    this.#sources.set(this.#path("pervasives"), REPL_PERVASIVES_SOURCE);
     // The header's imports are re-exported, so every phrase sees them, as SML's top level does.
     const header = REPL_SESSION_HEADER.split("\n").map((line) => `export ${line}`).join("\n");
-    await Deno.writeTextFile(this.headerPath, `${header}\n`);
+    this.#sources.set(this.headerPath, `${header}\n`);
   }
 
   /** The source of a module that sees every accepted binding and then holds `body`. */
   #module(body: string): string {
     const imports = this.#jsImports.map((declaration) => `${declaration}\n`).join("");
-    return `export from "./phrase_${this.#accepted}.wm" import *;\n${imports}${body}`;
+    const accepted = sessionModuleName(String(this.#accepted));
+    return `export from "./${accepted}" import *;\n${imports}${body}`;
   }
 
   async evaluate(phrase: string, options: CompileOptions): Promise<"accepted" | "raised" | "quit"> {
     const index = this.#next++;
-    const path = `${this.#directory}/phrase_${index}.wm`;
+    const path = this.#path(String(index));
     // An import phrase is re-exported, so the names it brings in stay visible to later phrases.
     const jsImport = /^\s*from\s+js\./.test(phrase);
     const source = jsImport ? phrase : phrase.replace(/^(\s*)from\s/, "$1export from ");
-    await Deno.writeTextFile(path, this.#module(source));
+    this.#sources.set(path, this.#module(source));
     const artifacts = await compileReplFileArtifacts(path, options);
-    const output = `${this.#directory}/out_${index}`;
+    const output = `${this.#outputDirectory}/${index}`;
     await Deno.mkdir(output);
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${output}/${artifact.path}`, artifact.code);
     }
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no REPL artifact");
-    this.#host ??= await ReplHost.start(this.#directory);
+    this.#host ??= await ReplHost.start(this.#outputDirectory, this.#sourceDirectory);
     const result = await this.#host.run(pathToFileURL(`${output}/${entry.path}`).href);
     if (result.kind === "exited") {
       this.#host = undefined;
@@ -249,9 +287,9 @@ class PhraseSession {
 
   /** Types an expression against the accepted phrases without running anything. */
   async typeOf(expression: string, options: CompileOptions): Promise<string> {
-    const path = `${this.#directory}/type_query.wm`;
+    const path = this.#path("type");
     // The newline keeps a trailing comment from swallowing the parenthesis.
-    await Deno.writeTextFile(path, this.#module(`let it = (${expression}\n);`));
+    this.#sources.set(path, this.#module(`let it = (${expression}\n);`));
     const { core } = await coreFile(path, options);
     const type = core.modules.get(core.entry)?.analysis.steps.at(-1)?.env.get("it")?.type;
     if (type === undefined) throw new Error(`cannot find the type of ${expression}`);
@@ -306,12 +344,13 @@ class ReplHost {
     this.#stderr = new MarkedStream(child.stderr, (chunk) => Deno.stderr.write(chunk));
   }
 
-  static async start(directory: string): Promise<ReplHost> {
+  /** Starts a host in `directory` that runs with the configuration of the project at `project`. */
+  static async start(directory: string, project: string): Promise<ReplHost> {
     const path = `${directory}/host.mjs`;
     await Deno.writeTextFile(path, REPL_HOST_SOURCE);
     // One process serves every phrase, so it gets every runtime flag a phrase might need.
     const child = new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", "--unstable-webgpu", path],
+      args: ["run", "-A", ...denoConfigArgs(project), "--unstable-webgpu", path],
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",
@@ -421,6 +460,7 @@ export async function runInteractiveRepl(
   const onError = options.onError ??
     ((error) => console.error(error instanceof Error ? error.message : String(error)));
   const { input: stdin, ...sessionOptions } = options;
+  const sources = new Map(sessionOptions.sourceOverrides ?? []);
   // Each phrase compiles its module and everything it imports, so the session keeps what it parsed.
   const compileOptions: CompileOptions = {
     ...sessionOptions,
@@ -428,26 +468,26 @@ export async function runInteractiveRepl(
     // A phrase analyzes only itself and what it newly imports, as an SML top level elaborates a
     // phrase against the static basis it already holds.
     moduleAnalysisCache: sessionOptions.moduleAnalysisCache ?? new ModuleAnalysisCache(),
+    sourceOverrides: sources,
   };
-  const temporaryDirectory = await createTemporaryDirectory({
-    dir: Deno.cwd(),
-    prefix: ".wm-mini-repl-",
-  });
-  const session = new PhraseSession(temporaryDirectory.path);
-  await Deno.writeTextFile(
-    `${temporaryDirectory.path}/${REPL_PERVASIVES_FILE}`,
-    REPL_PERVASIVES_SOURCE,
-  );
+  // Only emitted code touches the disk, in the OS temporary directory.
+  const temporaryDirectory = await createTemporaryDirectory({ prefix: "wm-repl-" });
+  const session = new PhraseSession(Deno.cwd(), temporaryDirectory.path, sources);
+  session.start();
   let editor: TerminalEditor | undefined;
   let loadingBar: LoadingBar | undefined;
   let interruption: Promise<void> | undefined;
-  const onInterrupt = () => {
+  const endSession = (code: number) => {
     loadingBar?.finish();
     editor?.release();
-    interruption ??= temporaryDirectory.cleanup().then(() => Deno.exit(130));
+    interruption ??= temporaryDirectory.cleanup().then(() => Deno.exit(code));
     return interruption;
   };
-  Deno.addSignalListener("SIGINT", onInterrupt);
+  // A closed terminal or a `kill` ends the session as Ctrl-C does, so the session cleans up. The
+  // host's stdin closes with this process, so it ends too.
+  const stopHandlingSignals = handleTerminationSignals((signal) => {
+    endSession(terminationExitCode[signal]);
+  });
   const isTerminal = !stdin && !options.quiet && Deno.stdin.isTerminal() &&
     Deno.stdout.isTerminal();
   let historyFile: string | undefined;
@@ -502,7 +542,7 @@ export async function runInteractiveRepl(
       const result = await terminal.read();
       if (result.kind === "eof") return;
       if (result.kind === "interrupt") {
-        await onInterrupt();
+        await endSession(130);
         return;
       }
       const entry = result.text.trimEnd();
@@ -512,7 +552,6 @@ export async function runInteractiveRepl(
     }
   }
   try {
-    await session.start();
     if (editor) {
       // Keys pressed while loading become the start of the first input.
       editor.holdInput();
@@ -561,7 +600,7 @@ export async function runInteractiveRepl(
     }
   } finally {
     editor?.release();
-    Deno.removeSignalListener("SIGINT", onInterrupt);
+    stopHandlingSignals();
     await session.close();
     if (!interruption) await temporaryDirectory.cleanup();
   }

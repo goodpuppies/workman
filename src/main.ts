@@ -22,6 +22,7 @@ import { ParseError } from "./parser.ts";
 import { moduleNodeForPath } from "./module_graph.ts";
 import { runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
+import { exitIfTerminated, handleTerminationSignals, terminationExitCode } from "./child_runtime.ts";
 import { evaluateReplFile, runInteractiveRepl, watchReplChanges } from "./repl.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { watchFile } from "./watch.ts";
@@ -288,21 +289,21 @@ async function watchCommand(args: string[]): Promise<number> {
   const [input] = inputArgs;
   if (!input) return missingInput("watch");
   const controller = new AbortController();
-  let interrupted = false;
-  const onInterrupt = () => {
-    interrupted = true;
+  let exitCode = 0;
+  // Ctrl-C, a closed terminal or a `kill` stops the running program and then the watcher.
+  const stopHandlingSignals = handleTerminationSignals((signal) => {
+    exitCode = terminationExitCode[signal];
     controller.abort();
-  };
-  Deno.addSignalListener("SIGINT", onInterrupt);
+  });
   try {
     await watchFile(input, {
       args: programArgs,
       onError: reportError,
       signal: controller.signal,
     });
-    return interrupted ? 130 : 0;
+    return exitCode;
   } finally {
-    Deno.removeSignalListener("SIGINT", onInterrupt);
+    stopHandlingSignals();
   }
 }
 
@@ -325,6 +326,8 @@ async function replCommand(args: string[]): Promise<number> {
       clearReplOutput();
       reportReplError(error);
     }
+    // Ctrl-C during an evaluation ended the evaluation; it ends the watch too.
+    exitIfTerminated();
   }
   return 0;
 }

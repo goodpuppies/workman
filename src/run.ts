@@ -2,7 +2,8 @@ import { compileFileArtifactsFromCore, type CompileOptions, coreFile } from "./c
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { createProgressReporter } from "./progress.ts";
-import { createTemporaryDirectory } from "./temporary_directory.ts";
+import { denoConfigArgs, relayTerminationSignals } from "./child_runtime.ts";
+import { createTemporaryDirectory, type TemporaryDirectory } from "./temporary_directory.ts";
 
 export type RunOptions = CompileOptions & {
   args?: string[];
@@ -22,12 +23,7 @@ export type RunResult = {
 
 export async function runFile(input: string, options: RunOptions = {}): Promise<RunResult> {
   const inputPath = await Deno.realPath(resolve(input));
-  const temporaryDirectory = await createTemporaryDirectory({
-    dir: dirname(inputPath),
-    prefix: ".wm-mini-",
-  });
-  const dir = temporaryDirectory.path;
-  const output = `${dir}/main.mjs`;
+  let temporaryDirectory: TemporaryDirectory | undefined;
   // Progress is drawn only while compiling; it is cleared before the program
   // takes over the terminal, so a TUI never inherits a partial line.
   const progress = createProgressReporter({ enabled: options.progress });
@@ -42,6 +38,10 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     const artifacts = await compileFileArtifactsFromCore(compiled, compileOptions);
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no executable artifact");
+    // The emitted program lives in the OS temporary directory, never beside the source, and only
+    // once there is something to write.
+    temporaryDirectory = await createTemporaryDirectory({ prefix: "wm-run-" });
+    const dir = temporaryDirectory.path;
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
@@ -50,8 +50,9 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       args: [
         "run",
         "-A",
+        ...denoConfigArgs(dirname(inputPath)),
         ...runtimeFlagsForJavaScript(entry.code),
-        output,
+        `${dir}/${entry.path}`,
         ...(options.args ?? []),
       ],
       stdin: "inherit",
@@ -69,6 +70,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     };
     options.signal?.addEventListener("abort", stop, { once: true });
     if (options.signal?.aborted) stop();
+    const stopRelaying = relayTerminationSignals(child);
     let completedCleanly = false;
     let terminalCleanupDone = false;
     const inheritedStderr = options.stderr !== "piped";
@@ -92,12 +94,13 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       }
       return result;
     } finally {
+      stopRelaying();
       options.signal?.removeEventListener("abort", stop);
       if (!completedCleanly && !terminalCleanupDone) restoreParentTerminal();
     }
   } finally {
     progress.finish();
-    await temporaryDirectory.cleanup();
+    await temporaryDirectory?.cleanup();
   }
 }
 

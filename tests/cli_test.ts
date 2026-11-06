@@ -1,8 +1,8 @@
-import { assertEquals, assertMatch, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { evaluateReplFile,
   runInteractiveRepl, topLevelPhraseRanges } from "../src/repl.ts";
 import { FrontendV2ParseCache } from "../src/frontend_v2_parse_cache.ts";
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
 import { topLevelPhraseEnd } from "../src/top_level_phrases.ts";
 import { parseReplArguments } from "../src/main.ts";
 import denoConfig from "../deno.json" with { type: "json" };
@@ -1329,11 +1329,12 @@ Deno.test("interactive repl phrases see only the phrases that succeeded", async 
         'let x = Panic("boom");',
         "let bad = missing;",
         "x + 2;",
+        "bad;",
       ].join("\n")));
       controller.close();
     },
   });
-  const phraseWrites: string[] = [];
+  const writes: string[] = [];
   const stdoutChunks: Uint8Array[] = [];
   const stderrChunks: Uint8Array[] = [];
   const errors: unknown[] = [];
@@ -1341,10 +1342,8 @@ Deno.test("interactive repl phrases see only the phrases that succeeded", async 
   const originalStdout = Deno.stdout.write;
   const originalStderr = Deno.stderr.write;
   Deno.writeTextFile = async (...args: Parameters<typeof Deno.writeTextFile>) => {
+    writes.push(String(args[0]));
     await originalWrite(...args);
-    if (/\/phrase_[1-9]\d*\.wm$/.test(String(args[0]))) {
-      phraseWrites.push(await Deno.readTextFile(args[0]));
-    }
   };
   Deno.stdout.write = (chunk) => {
     stdoutChunks.push(chunk.slice());
@@ -1361,18 +1360,19 @@ Deno.test("interactive repl phrases see only the phrases that succeeded", async 
     Deno.stdout.write = originalStdout;
     Deno.stderr.write = originalStderr;
   }
-  assertEquals(errors.length, 2);
+  // Definition rules 189 and 190: neither a phrase that fails to elaborate nor one that raises
+  // changes the basis, so x is still 40 and bad was never bound.
+  assertEquals(errors.length, 3);
+  assertStringIncludes(String(errors.at(-1)), "unknown name bad");
   const decode = (chunks: Uint8Array[]) =>
     chunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
   assertStringIncludes(decode(stdoutChunks), "it = 42 : Number\n");
   assertEquals(decode(stderrChunks), "runtime[Panic]: boom\n");
-  // Definition rules 189 and 190: neither a phrase that fails to elaborate nor one that raises
-  // changes the basis, so every later phrase builds on the one that bound x = 40.
-  assertEquals(phraseWrites.length, 5);
-  for (const source of phraseWrites.slice(1)) {
-    assertMatch(source, /^export from "\.\/phrase_1\.wm" import \*;\n/);
-  }
-  assertMatch(phraseWrites.at(-1)!, /\n\s*x \+ 2;$/);
+  // Phrases live in memory; only emitted code is written, and only to the OS temporary directory.
+  const probe = await Deno.makeTempDir();
+  await Deno.remove(probe);
+  const temporary = dirname(probe);
+  assertEquals(writes.filter((path) => !path.startsWith(temporary)), []);
 });
 
 Deno.test("interactive repl keeps a js import visible to later phrases", async () => {
@@ -1466,7 +1466,7 @@ Deno.test("repl phrase end ignores quoted and commented semicolons", () => {
 });
 
 Deno.test("interactive repl compiles every phrase through the session parse cache", async () => {
-  // A session lives in a directory under the working directory, so it imports with "../".
+  // A phrase's imports resolve from the working directory.
   const dir = await Deno.makeTempDir({ dir: Deno.cwd(), prefix: ".wm-repl-cache-test-" });
   await Deno.writeTextFile(`${dir}/numbers.wm`, "let base = 40;\n");
   const parsed: string[] = [];
@@ -1476,7 +1476,7 @@ Deno.test("interactive repl compiles every phrase through the session parse cach
       return super.surface(...args);
     }
   }
-  const script = `from "../${basename(dir)}/numbers.wm" import { base };\nbase + 1;\nbase + 2;\n`;
+  const script = `from "./${basename(dir)}/numbers.wm" import { base };\nbase + 1;\nbase + 2;\n`;
   const input = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new TextEncoder().encode(script));

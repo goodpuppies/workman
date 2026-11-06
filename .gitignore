@@ -9,7 +9,6 @@ tooling/c-header-extractor/dist/
 tooling/wmslang/wmslang.generated.mjs
 profiles/
 benchmarks/
-*.wm-mini*
 *.wm_cache*
 _scratch/
 tooling/pakman/.build/
