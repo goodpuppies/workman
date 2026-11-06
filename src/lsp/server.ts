@@ -815,10 +815,7 @@ function showError(error: unknown): string {
 }
 
 function frontendOptionsFromEnv(): CompilerFrontendOptions {
-  const modulePath = (
-    process.env.WORKMAN_FRONTEND_V2_MODULE ??
-      process.env.WM_MINI_FRONTEND_V2_MODULE
-  )?.trim();
+  const modulePath = process.env.WORKMAN_FRONTEND_V2_MODULE?.trim();
   return {
     frontend: "v2",
     ...(modulePath ? { frontendV2ModuleUrl: pathToFileUrl(modulePath) } : {}),

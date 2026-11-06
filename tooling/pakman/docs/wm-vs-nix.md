@@ -1,6 +1,6 @@
 # wm vs Nix: findings log
 
-What building pakman in Workman (wm-mini 0.4.0) shows, compared with Nix and with the previous
+What building pakman in Workman (wm 0.4.0) shows, compared with Nix and with the previous
 PKGBUILD + Deno setup in `../cachy-packages-main`. Newest entries at the bottom of each section.
 
 ## Package definitions
@@ -63,7 +63,7 @@ a file the other package doesn't install, and it doesn't depend on hashes surviv
 
 ## Language ergonomics hit
 
-- **Record projection used to pick the wrong record** (fixed in wm-mini, uncommitted as of
+- **Record projection used to pick the wrong record** (fixed in wm, uncommitted as of
   2026-10-06). Several pakman records share field names (`name`, `version`, `path`). wm already
   knew a value's type from inference or an annotation, but `x.version` still resolved against the
   first declared record with that field (`Candidate`) and then failed with a type error. pakman

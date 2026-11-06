@@ -73,7 +73,7 @@ protocol; a freshness dashboard, CI checks, or the future native PS2 client are 
   for package programs `api/js/recipe.ts`. Once
   `../SubsetML` (wm → SML → MLton) is mature enough, pakman gets rewritten off the JS APIs to run
   natively on the PS2.
-- **Part of wm:** pakman lives in wm-mini's `tooling/pakman` and runs as `wm pakman`, so it always
+- **Part of wm:** pakman lives in wm's `tooling/pakman` and runs as `wm pakman`, so it always
   compiles itself and its packages with the wm it ships with (`PAKMAN_WM` overrides for packages).
   Packages import pakman's API as `pakman/*.wm`, a library embedded in the compiler.
 - **Scale:** real file lists are large (zig unpacks to ~20,000 files), and std's `List.map`,
@@ -234,7 +234,7 @@ the package's files or the compiler (whose `src/` embeds the `pakman/` library) 
 a cached command step costs ~25 ms.
 
 Packages import pakman only as `pakman/model.wm`, `pakman/package.wm` and the other modules of
-wm-mini's `pakman/` directory, which is embedded in the compiler like `std/`. Only those modules
+wm's `pakman/` directory, which is embedded in the compiler like `std/`. Only those modules
 exist under `pakman/`: the manager's internals are not part of the API. This is a built-in
 package API namespace, not a general-purpose language package resolver, and packages need no
 neighboring wm checkout.

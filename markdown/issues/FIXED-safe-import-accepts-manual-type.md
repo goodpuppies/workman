@@ -22,7 +22,7 @@ The compiler accepted the invalid form and wrapped the declared result in `Resul
 or kept it as written when it already was a `Result` or `Task` (`fallibleValueType` in
 `src/ffi/shared.ts`; `jsFallibleMode` in `src/core/emit_js_import.ts`). Until 2026-10-07 the docs
 described this as a feature ("safe manual imports"); `docs/jsffi.md`, `docs/js-errors.md`,
-`docs/async.md` and `docs/wm-minisyntaxguide.md` now state the rule instead.
+`docs/async.md` and `docs/syntax-guide.md` now state the rule instead.
 
 Because the claim is unchecked, the form can silently lie:
 

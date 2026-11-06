@@ -1,4 +1,4 @@
-// C header reflection extractor for the wm-mini C FFI.
+// C header reflection extractor for the wm C FFI.
 //
 // A templated copy of this file is emitted per header with the HEADER and
 // SYMBOLS placeholder slots substituted, then run with `zig run`. The program @cImports the

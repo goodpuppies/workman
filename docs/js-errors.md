@@ -276,7 +276,7 @@ between a known JS message and `Js.Unknown`, and often loses operation context.
 JavaScript operation executed by the program.
 
 Compiler parse/type/module diagnostics are different: they are produced while
-building the program and use wm-mini's auditable diagnostic model. Do not use
+building the program and use wm's auditable diagnostic model. Do not use
 `Js.Error` for frontend recovery marks, type errors, or LSP diagnostics.
 
 ## Current limitations

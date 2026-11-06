@@ -4,7 +4,7 @@ Adapted for Workman (WM) from David Sun's
 [SML Syntax Cheatsheet](https://github.com/smlhelp/book/blob/master/docs/start/syntax.md)
 (February 2021). Sections follow the original order, with WM syntax, types, and behavior.
 `MISSING` marks a feature with no direct WM equivalent; alternatives are shown where available.
-For a broader introduction, see the [syntax guide](wm-minisyntaxguide.md).
+For a broader introduction, see the [syntax guide](syntax-guide.md).
 
 #### Built-in Types
 

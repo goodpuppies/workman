@@ -38,7 +38,7 @@ and prevents placeholder constructors from becoming accidental architecture.
 - [`docs/smlparallels.md`](../../docs/smlparallels.md)
 - [`src/grammar.peggy`](../../src/grammar.peggy)
 - [`src/ast.ts`](../../src/ast.ts)
-- [`docs/wm-minisyntaxguide.md`](../../docs/wm-minisyntaxguide.md)
+- [`docs/syntax-guide.md`](../../docs/syntax-guide.md)
 - [`docs/carriers.md`](../../docs/carriers.md)
 - current `examples/`, `std/`, and parser/compiler tests
 

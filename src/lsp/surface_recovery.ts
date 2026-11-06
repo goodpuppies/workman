@@ -19,7 +19,7 @@ export function surfaceRecoveryDiagnostics(
       range: insertionRange(source, displayAnchor(source, mark)),
       severity: 2,
       code: diagnosticCode(mark, source),
-      source: "wm-mini",
+      source: "wm",
       message: `Missing ${tokenName(mark.expectedText)}.`,
     }));
 }

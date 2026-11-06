@@ -754,7 +754,7 @@ Deno.test("lifted Task tuple syntax sequences task values into one tuple task", 
       Task.succeed(text ++ "/" ++ title)
     };
     let text = Task.succeed("README.md");
-    let title = Task.succeed("# wm-mini");
+    let title = Task.succeed("# wm");
     let tupled = |text, title|;
     let page = render(tupled);
   `);

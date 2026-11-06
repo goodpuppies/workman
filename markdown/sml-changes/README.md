@@ -64,7 +64,7 @@ Every claimed difference should be grounded in both sides:
 - the `wm-mini` side should cite current grammar, implementation behavior, or
   tests from this repository.
 
-User-facing docs such as `docs/wm-minisyntaxguide.md` are useful orientation,
+User-facing docs such as `docs/syntax-guide.md` are useful orientation,
 but they are not proof of current behavior. The `research/workman` and
 `research/workmangr` trees are related history and design context, not
 authoritative evidence for current `wm-mini`.

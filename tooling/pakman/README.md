@@ -193,7 +193,7 @@ An ordinary reinstall or update can downgrade a forced release while it is still
 too young. Use `--pin` explicitly if that release must remain installed.
 `build` consumes the existing lock without discovering new versions.
 
-`wm pakman` (`src/pakman.ts` in wm-mini) compiles `pakman.wm` into a writable user cache when one of
+`wm pakman` (`src/pakman.ts` in wm) compiles `pakman.wm` into a writable user cache when one of
 its sources changed, then runs it like `wm run`, with the permissions the wm launcher has. Package
 programs are compiled by the same wm checkout and always run sandboxed, whatever pakman was granted.
 The launcher cache uses `$XDG_CACHE_HOME/workman` (or `~/.cache/workman`,

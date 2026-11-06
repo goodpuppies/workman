@@ -312,7 +312,7 @@ _scratch/frontend-v3-native/native-lex path/to/source.wm
 _scratch/frontend-v3-native/native-lex --utf16le path/to/raw-units.bin
 ```
 
-Run these commands from the wm-mini root. `--subsetml PATH` selects another SubsetML
+Run these commands from the repository root. `--subsetml PATH` selects another SubsetML
 checkout; `--output PATH` selects the disposable build directory. The build generates the Basis
 from SubsetML into the staged `basis/` directory, passes it as `--basis`, discovers the entry's
 canonical import graph and selects the

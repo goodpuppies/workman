@@ -34,7 +34,7 @@ export type LspDiagnostic = {
   range: LspRange;
   severity: 1 | 2 | 3 | 4;
   code: string;
-  source: "wm-mini";
+  source: "wm";
   message: string;
   relatedInformation?: LspRelatedInformation[];
   tags?: readonly (1 | 2)[];
@@ -103,7 +103,7 @@ async function withImportFailures(
         range: spanRange(source, site.span as SourceSpanLike),
         severity: 1,
         code: "import.failed",
-        source: "wm-mini",
+        source: "wm",
         message: `This import doesn't compile: ${message}`,
         relatedInformation: [{
           location: { uri: failure.uri, range: failure.error.range },
@@ -322,7 +322,7 @@ async function unresolvedGpuTypeWarning(
           range: span && source ? spanRange(source, span) : startRange,
           severity: 1,
           code: diagnostic.code,
-          source: "wm-mini",
+          source: "wm",
           message: diagnostic.message,
           relatedInformation: relatedInformation.length ? relatedInformation : undefined,
         },
@@ -339,7 +339,7 @@ async function unresolvedGpuTypeWarning(
         range: span && source ? spanRange(source, span) : startRange,
         severity: 2,
         code: "gpu.type.unresolved",
-        source: "wm-mini",
+        source: "wm",
         message: `GPU type elaboration is unresolved: ${errorMessage(error)}. ` +
           'Hover inside this shader will show "unresolved GPU type".',
       },
@@ -389,7 +389,7 @@ function errorDiagnostics(error: unknown, source = "", uri = ""): LspDiagnostic[
     range: span && source ? spanRange(source, span) : peggyLocationRange(errorLocation(error)),
     severity: 1,
     code: compilerErrorCode(error) ?? classifyDiagnostic(message),
-    source: "wm-mini",
+    source: "wm",
     message,
   }];
 }
@@ -422,7 +422,7 @@ function lspDiagnostic(diagnostic: FrontendDiagnostic, source = "", uri = ""): L
     range,
     severity: lspSeverity(diagnostic.severity),
     code: diagnostic.code,
-    source: "wm-mini",
+    source: "wm",
     message: formatDiagnostic(diagnostic, uri ? fileUriToPath(uri) : undefined, source).trimEnd(),
     relatedInformation: relatedInformation.length ? relatedInformation : undefined,
   };

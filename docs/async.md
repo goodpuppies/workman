@@ -1,6 +1,6 @@
 # Async and Task
 
-wm-mini's async story is intentionally small:
+wm's async story is intentionally small:
 
 ```workman
 Task<a, e>
@@ -178,7 +178,7 @@ List<Result<a, e>> -> Result<List<a>, e>
 List<Option<a>>    -> Option<List<a>>
 ```
 
-wm-mini currently provides the specialized list-shaped names:
+wm currently provides the specialized list-shaped names:
 
 ```workman
 Task.collectList
@@ -255,7 +255,7 @@ ports
 For a large list, this may create too much concurrency. A port scan over 1024 ports creates 1024
 connection attempts immediately.
 
-wm-mini does not yet have a bounded parallel helper. The likely future shape is:
+wm does not yet have a bounded parallel helper. The likely future shape is:
 
 ```workman
 Task.traverseListLimit(limit, items, f)
@@ -446,7 +446,7 @@ composition over `Task`.
 Elm's `Task` is closer to a description of work. You hand the description to the runtime, and the
 runtime decides when to execute it.
 
-wm-mini's Task is closer to an already-started JavaScript promise handle. This is because wm-mini's
+wm's Task is closer to an already-started JavaScript promise handle. This is because wm's
 async boundary is JavaScript FFI, and JavaScript promises start when created.
 
 That means this is not just a description:
@@ -462,7 +462,7 @@ The fetch has already started.
 Standard ML has no built-in async model. SML concurrency libraries usually introduce explicit
 threads, futures, events, or implementation-specific primitives.
 
-wm-mini does not add an SML-style concurrency subsystem. It only gives a typed Workman wrapper for
+wm does not add an SML-style concurrency subsystem. It only gives a typed Workman wrapper for
 JavaScript promise-backed work.
 
 The result is smaller:
@@ -524,7 +524,7 @@ effect dictionary:
 - partial type application or higher-kinded types
 - SML-functor-like abstraction or typeclass-like instance passing
 
-wm-mini deliberately avoids that machinery for now. The current design keeps the language small and
+wm deliberately avoids that machinery for now. The current design keeps the language small and
 spells the useful operations directly:
 
 ```workman

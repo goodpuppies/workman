@@ -21,7 +21,7 @@ translation guide.
 - [Lists](#lists)
 - [Modules and Imports](#modules-and-imports)
 - [Quirks and Gotchas](#quirks-and-gotchas)
-- [Current `wm-mini` Unsupported Notes](#current-wm-mini-unsupported-notes)
+- [Current `wm` Unsupported Notes](#current-wm-unsupported-notes)
 
 ---
 
@@ -238,7 +238,7 @@ call argument remains outside the match. An inner braceless match takes followin
 arms until its enclosing delimiter; use braces or parentheses to end its arms
 before continuing an outer match.
 
-`wm-mini` follows the SML-style distinction between tuple arguments and curried application:
+`wm` follows the SML-style distinction between tuple arguments and curried application:
 
 ```workman
 let addPair = (a, b) => { a + b };
@@ -577,7 +577,7 @@ let getFirst = match(nested) => {
 ### Literal Patterns
 
 Number, string, boolean, and `void` patterns are supported. Character literals like `'a'` are shown
-as intended syntax below, but they are **not supported yet** in current `wm-mini`.
+as intended syntax below, but they are **not supported yet** in current `wm`.
 
 ```workman
 let isZero = match(n) => {
@@ -635,7 +635,7 @@ let matcher = (input) => {
 
 ### Pattern Rules (Current Subset)
 
-Current `wm-mini` pattern behavior:
+Current `wm` pattern behavior:
 
 - Wildcard `_`, literals, tuple patterns, and constructor patterns are supported.
 - Bare names in `match` patterns are pinned (matched against existing names).
@@ -769,7 +769,7 @@ let negated = !flag;
 
 ### Custom Operators
 
-**Not supported yet in current `wm-mini`.** Fixed built-in operators are available; custom fixity is
+**Not supported yet in current `wm`.** Fixed built-in operators are available; custom fixity is
 planned/design syntax.
 
 ```workman
@@ -1053,7 +1053,7 @@ statically resolved and do not enter a closure's captured environment.
 
 ### 8. Out of Scope (for now)
 
-The following are intentionally not part of current `wm-mini` frontend scope:
+The following are intentionally not part of current `wm` frontend scope:
 
 - infection/effect features
 - full record and list feature set
@@ -1061,11 +1061,11 @@ The following are intentionally not part of current `wm-mini` frontend scope:
 - custom panic/runtime recovery semantics beyond the basic `Panic` and typed-hole behavior
 
 Some sections below describe intended Workman syntax or older/full Workman design ideas. When a
-feature is not implemented in current `wm-mini`, it is marked with a **Not supported yet** note.
+feature is not implemented in current `wm`, it is marked with a **Not supported yet** note.
 
 #### Opaque Types
 
-**Not supported yet in current `wm-mini`.**
+**Not supported yet in current `wm`.**
 
 Declare types without exposing their implementation:
 
@@ -1243,9 +1243,9 @@ let getValue = (opt) => {
 
 ---
 
-## Current `wm-mini` Unsupported Notes
+## Current `wm` Unsupported Notes
 
-The guide includes some intended Workman syntax, but current `wm-mini` is deliberately smaller.
+The guide includes some intended Workman syntax, but current `wm` is deliberately smaller.
 These features are not supported yet or are only partially supported:
 
 - **Full SML modules/functors/signatures:** files are the current module boundary.

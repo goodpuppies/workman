@@ -1,6 +1,6 @@
 # JavaScript FFI
 
-wm-mini can call JavaScript and TypeScript-declared APIs directly from Workman. The goal is a small
+wm can call JavaScript and TypeScript-declared APIs directly from Workman. The goal is a small
 FFI surface that feels close to JavaScript while keeping the Workman core ML-shaped.
 
 This document describes the current user-facing FFI.
@@ -535,7 +535,7 @@ stream.on("data", (chunk) => {
 });
 ```
 
-When TypeScript gives callback parameter types, wm-mini uses those types for property and method
+When TypeScript gives callback parameter types, wm uses those types for property and method
 reflection inside the callback.
 
 Workman functions are still unary in the ML sense. A callback that looks like multiple parameters is

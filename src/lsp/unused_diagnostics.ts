@@ -47,7 +47,7 @@ export function unusedDiagnostics(
       range: spanRange(source, candidate.span),
       severity: 2,
       code: candidate.code,
-      source: "wm-mini",
+      source: "wm",
       message: candidate.message,
       tags: [1],
     }));
@@ -120,7 +120,7 @@ export function resultDebugDiagnostics(
       range: spanRange(source, occurrence.span),
       severity: 2,
       code: "lint.result-debug",
-      source: "wm-mini",
+      source: "wm",
       message: "Result.debug aborts on Err; handle the Result explicitly when possible.",
     }));
 }

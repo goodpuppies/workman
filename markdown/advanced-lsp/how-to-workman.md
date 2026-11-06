@@ -4,7 +4,7 @@
 
 This is practical onboarding for contributors implementing the structural frontend
 and later LSP in current `wm-mini`. It does not replace
-[`docs/wm-minisyntaxguide.md`](../../docs/wm-minisyntaxguide.md) or
+[`docs/syntax-guide.md`](../../docs/syntax-guide.md) or
 [`docs/jsffi.md`](../../docs/jsffi.md). Before writing substantial code, also read
 [`docs/carriers.md`](../../docs/carriers.md). It explains one compact design pattern
 and its syntax sugar, but that pattern shapes most real Workman code because errors
