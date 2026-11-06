@@ -57,7 +57,7 @@ Deno.test("JS imports use direct tuple entries across modules and retain higher-
     13,
   ]);
   assertEquals(module.variadic.name, "Ok");
-  assertEquals(module.variadic.args[0], 9);
+  assertEquals(module.variadic.a0, 9);
 });
 
 Deno.test("direct JS calls preserve optional values, callbacks, receivers, constructors and failures", async () => {
@@ -124,10 +124,10 @@ Deno.test("direct JS calls preserve optional values, callbacks, receivers, const
     );
     assertEquals(module.order, 12);
     assertEquals(module.some.name, "Ok");
-    assertEquals(module.some.args[0].name, "Some");
-    assertEquals(module.some.args[0].args[0], 7);
-    assertEquals(module.none.args[0].name, "None");
-    assertEquals(module.fromValue.args[0].args[0], 7);
+    assertEquals(module.some.a0.name, "Some");
+    assertEquals(module.some.a0.a0, 7);
+    assertEquals(module.none.a0.name, "None");
+    assertEquals(module.fromValue.a0.a0, 7);
     for (
       const [name, value] of [["calledBack", 7], ["success", 7], ["receiver", 15], [
         "constructed",
@@ -135,10 +135,10 @@ Deno.test("direct JS calls preserve optional values, callbacks, receivers, const
       ]] as const
     ) {
       assertEquals(module[name].name, "Ok", name);
-      assertEquals(module[name].args[0], value, name);
+      assertEquals(module[name].a0, value, name);
     }
     assertEquals(module.failure.name, "Err");
-    assertEquals((await module.promised).args[0], 7);
+    assertEquals((await module.promised).a0, 7);
     assertEquals((await module.rejected).name, "Err");
     assertEquals((await module.syncRejected).name, "Err");
   } finally {
@@ -182,6 +182,6 @@ Deno.test({
     assertEquals([module.equal, module.bytes, module.firstClass], [0, 0, 0]);
     assertEquals(module.suffix, "bb");
     assertEquals(module.missing.name, "None");
-    assertEquals(module.present.args[0], "bb");
+    assertEquals(module.present.a0, "bb");
   },
 });

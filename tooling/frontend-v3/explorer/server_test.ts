@@ -29,7 +29,7 @@ Deno.test("explorer transports v3 marks and distinguishes source faults from unf
     ...token.marks,
   ]);
   assertEquals(attached, marks);
-  assertEquals(marks.map((mark) => mark.id.args[0]), [0, 1, 2]);
+  assertEquals(marks.map((mark) => mark.id.a0), [0, 1, 2]);
 
   const rawTrivia = "/*\uD800\0\uDC00*/\r\n";
   const rawResponse = await request(rawTrivia);

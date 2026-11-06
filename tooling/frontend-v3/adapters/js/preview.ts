@@ -1,6 +1,7 @@
 import { compileLibraryFile } from "../../../../src/compiler.ts";
 
-type Variant = { name: string; args: unknown[]; [field: string]: unknown };
+/** A WM datatype value; payload fields `a0`, `a1`, ... (see src/core/ctor_layout.ts). */
+type Variant = { name: string; [field: string]: unknown };
 export type Insertion = { id: number; anchor: number; text: string };
 export type Placement = {
   id: number;
@@ -35,9 +36,8 @@ export type Difference = Preview & { projected: string; edits: Edit[] };
 export function list<T>(value: Variant): T[] {
   const items: T[] = [];
   while (value.name === "Cons") {
-    const [head, tail] = value.args[0] as [T, Variant];
-    items.push(head);
-    value = tail;
+    items.push(value.a0 as T);
+    value = value.a1 as Variant;
   }
   if (value.name !== "Nil") throw new Error("Invalid WM list in preview transport");
   return items;
@@ -60,22 +60,22 @@ export async function loadPreview() {
     const runtime = await import(`file://${path}`);
     // Reuse actual constructor identities, as in lexer raw-unit transport.
     const cons = runtime.units(runtime.source(" ")) as Variant;
-    const nil = (cons.args[0] as [number, Variant])[1];
+    const nil = cons.a1 as Variant;
     const hints = (items: Insertion[]) =>
       items.reduceRight<Variant>((tail, item) => {
         if (!isI32(item.id) || !isI32(item.anchor)) {
           throw new RangeError(`Invalid UTF-16 anchor ${item.anchor} for insertion ${item.id}`);
         }
-        return { ...cons, args: [[[item.id, item.anchor, item.text], tail]] };
+        return { ...cons, a0: [item.id, item.anchor, item.text], a1: tail };
       }, nil);
     const decode = (result: Variant): Preview => {
       if (result.name === "Err") {
-        const error = result.args[0] as Variant;
-        const [id, anchor] = error.args[0] as [number, number];
+        const error = result.a0 as Variant;
+        const [id, anchor] = [error.a0 as number, error.a1 as number];
         throw new RangeError(`Invalid UTF-16 anchor ${anchor} for insertion ${id}`);
       }
       if (result.name !== "Ok") throw new Error("Invalid WM preview result");
-      const value = result.args[0] as { rendered: unknown; placements: Variant };
+      const value = result.a0 as { rendered: unknown; placements: Variant };
       const units = list<number>(runtime.units(value.rendered));
       return {
         text: units.map((unit) => String.fromCharCode(unit)).join(""),
@@ -106,7 +106,7 @@ export async function loadPreview() {
         if (!isI32(limit)) throw new RangeError("Diff limit must be an integer from 0 to 4096");
         const result = runtime.compare([original, projected, limit]) as Variant;
         if (result.name === "Err") {
-          const error = result.args[0] as Variant;
+          const error = result.a0 as Variant;
           throw new RangeError(
             error.name === "InvalidLimit"
               ? "Diff limit must be an integer from 0 to 4096"
@@ -114,7 +114,7 @@ export async function loadPreview() {
           );
         }
         if (result.name !== "Ok") throw new Error("Invalid WM diff result");
-        const difference = result.args[0] as { edits: Variant };
+        const difference = result.a0 as { edits: Variant };
         return {
           ...decode(runtime.renderDifference([difference, marked])),
           projected,

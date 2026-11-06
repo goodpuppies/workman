@@ -1,7 +1,7 @@
 import { assertEquals, assertStrictEquals } from "@std/assert";
 import { compileLibraryFile } from "../src/compiler.ts";
 
-type Variant = { name: string; args: unknown[] };
+type Variant = { name: string; [field: `a${number}`]: unknown };
 type Position = { index: number; line: number; col: number };
 type Mark = {
   id: Variant;
@@ -21,9 +21,8 @@ type Token = {
 function list<T>(value: Variant): T[] {
   const items: T[] = [];
   while (value.name === "Cons") {
-    const [head, tail] = value.args[0] as [T, Variant];
-    items.push(head);
-    value = tail;
+    items.push(value.a0 as T);
+    value = value.a1 as Variant;
   }
   assertEquals(value.name, "Nil");
   return items;
@@ -49,7 +48,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       const marks = list<Mark>(document.marks);
       assertEquals(tokens.at(-1)?.kind.name, "EndOfFileToken");
       assertEquals(tokens.at(-1)?.span.endPos.index, source.length);
-      assertEquals(marks.map((mark) => mark.id.args[0]), marks.map((_, i) => i));
+      assertEquals(marks.map((mark) => mark.id.a0), marks.map((_, i) => i));
       const attached = tokens.flatMap((token) => [
         ...list<{ marks: Variant }>(token.leadingTrivia).flatMap((item) => list<Mark>(item.marks)),
         ...list<Mark>(token.marks),
@@ -58,9 +57,9 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       attached.forEach((mark, i) => assertStrictEquals(mark, marks[i]));
       tokens.forEach((token, index) => {
         if (token.mateIdx.name === "Mate") {
-          const other = token.mateIdx.args[0] as number;
+          const other = token.mateIdx.a0 as number;
           assertEquals(tokens[other].mateIdx.name, "Mate");
-          assertEquals(tokens[other].mateIdx.args[0], index);
+          assertEquals(tokens[other].mateIdx.a0, index);
         }
       });
       let cursor = 0;
@@ -119,16 +118,16 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     ]);
     assertEquals(
       damaged.marks.map((mark) => [
-        mark.anchor.args[0],
-        mark.affectedSpan.start.args[0],
-        mark.affectedSpan.end.args[0],
+        mark.anchor.a0,
+        mark.affectedSpan.start.a0,
+        mark.affectedSpan.end.a0,
       ]),
       [[0, 0, 1], [2, 2, 4], [4, 4, 6], [7, 7, 8]],
     );
 
     const unclosed = read('"oops\r\nnext');
     assertEquals(unclosed.marks.map((mark) => mark.problem.name), ["UnterminatedQuotedString"]);
-    assertEquals(unclosed.marks[0].anchor.args[0], 5);
+    assertEquals(unclosed.marks[0].anchor.a0, 5);
     assertEquals(unclosed.tokens[1].span.startPos, { index: 7, line: 1, col: 0 });
     assertEquals(read('"\\q').marks.map((mark) => mark.problem.name), [
       "InvalidEscape",
@@ -170,7 +169,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     ) {
       const { marks } = read(quoted(body, "'"));
       assertEquals(marks.map((mark) => mark.problem.name), ["InvalidCharacterLength"]);
-      assertEquals(marks[0].problem.args[0], count);
+      assertEquals(marks[0].problem.a0, count);
     }
     for (
       const body of [
@@ -207,8 +206,8 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       "InvalidEscape",
     ]);
     const shortEscape = read(quoted("\\u12Z"));
-    assertEquals(shortEscape.marks[0].affectedSpan.start.args[0], 1);
-    assertEquals(shortEscape.marks[0].affectedSpan.end.args[0], 5);
+    assertEquals(shortEscape.marks[0].affectedSpan.start.a0, 1);
+    assertEquals(shortEscape.marks[0].affectedSpan.end.a0, 5);
     assertEquals(read("'\\").marks.map((mark) => mark.problem.name), [
       "InvalidEscape",
       "UnterminatedCharacter",
@@ -235,7 +234,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       "InterpolationEndToken",
       "MultilineStringEndToken",
     ]);
-    assertEquals(templateDoc.tokens.slice(0, -1).map((token) => token.mateIdx.args[0]), [
+    assertEquals(templateDoc.tokens.slice(0, -1).map((token) => token.mateIdx.a0), [
       5,
       undefined,
       4,
@@ -262,8 +261,8 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       "UnterminatedMultilineString",
       "UnterminatedInterpolation",
     ]);
-    assertEquals(unclosedTemplate.marks.map((mark) => mark.anchor.args[0]), [0, 3]);
-    assertEquals(unclosedTemplate.marks.map((mark) => mark.affectedSpan.end.args[0]), [6, 6]);
+    assertEquals(unclosedTemplate.marks.map((mark) => mark.anchor.a0), [0, 3]);
+    assertEquals(unclosedTemplate.marks.map((mark) => mark.affectedSpan.end.a0), [6, 6]);
     assertEquals(read(tick).marks.map((mark) => mark.problem.name), [
       "UnterminatedMultilineString",
     ]);
@@ -307,7 +306,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     const unicode = read("🐾x");
     assertEquals(unicode.tokens.length, 3);
     assertEquals(unicode.marks.length, 1);
-    assertEquals(unicode.marks[0].affectedSpan.end.args[0], 2);
+    assertEquals(unicode.marks[0].affectedSpan.end.a0, 2);
     assertEquals(unicode.tokens[1].span.startPos.col, 2);
 
     const primed = read("x' x'' value'next Ctor' let' Module.value' 'a'");
@@ -381,11 +380,11 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
         document.marks.map((mark) => mark.problem.name),
         delimiter ? ["UnmatchedDelimiter"] : [],
       );
-      assertEquals((document.tokens[0].kind.args[0] as Variant).name, name);
+      assertEquals((document.tokens[0].kind.a0 as Variant).name, name);
       assertEquals(document.tokens[0].span.endPos.index, spelling.length);
     }
     assertEquals(
-      read("+++<==").tokens.slice(0, -1).map((token) => (token.kind.args[0] as Variant).name),
+      read("+++<==").tokens.slice(0, -1).map((token) => (token.kind.a0 as Variant).name),
       ["Concatenate", "Add", "LessOrEqual", "Equals"],
     );
 
@@ -408,7 +407,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       const document = read(spelling);
       assertEquals(document.tokens.length, 2);
       assertEquals(document.marks.map((mark) => mark.problem.name), ["MalformedNumber"]);
-      assertEquals(document.marks[0].affectedSpan.end.args[0], spelling.length);
+      assertEquals(document.marks[0].affectedSpan.end.a0, spelling.length);
     }
     for (
       const [spelling, kind] of [
@@ -458,9 +457,9 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       const { tokens, marks } = read(spelling);
       assertEquals(tokens.length, 2);
       assertEquals(marks.map((mark) => mark.problem.name), ["MalformedNumber"]);
-      assertEquals(marks[0].anchor.args[0], anchor);
-      assertEquals(marks[0].affectedSpan.start.args[0], 0);
-      assertEquals(marks[0].affectedSpan.end.args[0], spelling.length);
+      assertEquals(marks[0].anchor.a0, anchor);
+      assertEquals(marks[0].affectedSpan.start.a0, 0);
+      assertEquals(marks[0].affectedSpan.end.a0, spelling.length);
     }
     for (
       const [source, spellings] of [
@@ -526,9 +525,9 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       "UnterminatedBlockComment",
       "UnterminatedBlockComment",
     ]);
-    assertEquals(comments.marks.map((mark) => mark.anchor.args[0]), [0, 2, 11]);
-    assertEquals(comments.marks.slice(1).map((mark) => mark.affectedSpan.end.args[0]), [19, 19]);
-    assertEquals(read("/* outer /* inner */").marks.map((mark) => mark.anchor.args[0]), [0]);
+    assertEquals(comments.marks.map((mark) => mark.anchor.a0), [0, 2, 11]);
+    assertEquals(comments.marks.slice(1).map((mark) => mark.affectedSpan.end.a0), [19, 19]);
+    assertEquals(read("/* outer /* inner */").marks.map((mark) => mark.anchor.a0), [0]);
     assertEquals(read("/*".repeat(5000) + "*/".repeat(5000)).marks.length, 0);
     assertEquals(read("/*".repeat(5000)).marks.length, 5000);
     const commented = "/* outer /* inner */ tail */x";
@@ -536,7 +535,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
 
     const paired = read(".{[()]} ");
     assertEquals(paired.marks.length, 0);
-    assertEquals(paired.tokens.slice(0, -1).map((token) => token.mateIdx.args[0]), [
+    assertEquals(paired.tokens.slice(0, -1).map((token) => token.mateIdx.a0), [
       5,
       4,
       3,
@@ -560,12 +559,12 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       assertEquals(tokens[0].mateIdx.name, "NoMate");
       assertEquals(marks.length, 1);
       assertEquals(marks[0].problem.name, "UnmatchedDelimiter");
-      assertEquals((marks[0].problem.args[0] as Variant[]).map((arg) => arg.name), [group, side]);
-      assertEquals(marks[0].anchor.args[0], 0);
-      assertEquals(marks[0].affectedSpan.start.args[0], 0);
-      assertEquals(marks[0].affectedSpan.end.args[0], source.length);
+      assertEquals(([marks[0].problem.a0, marks[0].problem.a1] as Variant[]).map((arg) => arg.name), [group, side]);
+      assertEquals(marks[0].anchor.a0, 0);
+      assertEquals(marks[0].affectedSpan.start.a0, 0);
+      assertEquals(marks[0].affectedSpan.end.a0, source.length);
       assertEquals(marks[0].recovery.name, "RecoveredWith");
-      assertEquals((marks[0].recovery.args[0] as Variant).name, "RetainedUnpairedDelimiter");
+      assertEquals((marks[0].recovery.a0 as Variant).name, "RetainedUnpairedDelimiter");
     }
     const crossed = read("([)]");
     assertEquals(crossed.tokens.slice(0, -1).map((token) => token.mateIdx.name), [
@@ -574,7 +573,7 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       "NoMate",
       "Mate",
     ]);
-    assertEquals(crossed.marks.map((mark) => mark.anchor.args[0]), [0, 2]);
+    assertEquals(crossed.marks.map((mark) => mark.anchor.a0), [0, 2]);
     const mixed = read('{ & "\\q" } ] /*');
     assertEquals(mixed.marks.map((mark) => mark.problem.name), [
       "UnknownCharacter",
@@ -595,8 +594,8 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       const { tokens } = read(source);
       tokens.forEach((token, index) => {
         if (token.mateIdx.name === "Mate") {
-          const other = token.mateIdx.args[0] as number;
-          assertEquals(tokens[other].mateIdx.args[0], index);
+          const other = token.mateIdx.a0 as number;
+          assertEquals(tokens[other].mateIdx.a0, index);
         }
       });
     }
@@ -605,11 +604,11 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
     const eof = list<Token>(lex(" ").tokens)[0];
     const trivia = list<{ text: unknown }>(eof.leadingTrivia)[0];
     const cons = sourceUnits(trivia.text);
-    const nil = (cons.args[0] as [number, Variant])[1];
+    const nil = cons.a1 as Variant;
     // Preserve the compiler's constructor identity when building host-side input lists.
     const runtimeList = (units: number[]): Variant =>
       units.reduceRight<Variant>(
-        (tail, unit) => ({ ...cons, args: [[unit, tail]] }),
+        (tail, unit) => ({ ...cons, a0: unit, a1: tail }),
         nil,
       );
     // The core entry consumes source units independently of JS string extraction.
@@ -637,13 +636,13 @@ Deno.test("frontend v3 lexer retains damaged lexemes and localized recovery mark
       const units = Array.from({ length: source.length }, (_, index) => source.charCodeAt(index));
       const result = lexUnits(runtimeList(units));
       assertEquals(result.name, "Ok");
-      assertEquals(result.args[0], lex(source), source);
+      assertEquals(result.a0, lex(source), source);
       read(source);
     }
     const invalid = lexUnits(runtimeList([65, 65536]));
     assertEquals(invalid.name, "Err");
-    assertEquals((invalid.args[0] as Variant).name, "InvalidUnit");
-    assertEquals((invalid.args[0] as Variant).args[0], 1);
+    assertEquals((invalid.a0 as Variant).name, "InvalidUnit");
+    assertEquals((invalid.a0 as Variant).a0, 1);
 
     // Every prefix is a realistic intermediate editor buffer, including a dangling escape.
     const source = 'let x = "a\\q"; & [42] // comment\n"unfinished\\';

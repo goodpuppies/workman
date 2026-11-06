@@ -26,8 +26,8 @@ const grammar = parseWorkmanGrammar(
 const generatedDirectory = new URL("../tooling/frontend-v2/generated/", import.meta.url);
 
 type WorkmanList<T> =
-  | Readonly<{ name: "Nil"; args: readonly [] }>
-  | Readonly<{ name: "Cons"; args: readonly [readonly [T, WorkmanList<T>]] }>;
+  | Readonly<{ name: "Nil" }>
+  | Readonly<{ name: "Cons"; a0: T; a1: WorkmanList<T> }>;
 
 type SurfaceRecoveryMark = Readonly<{
   id: number;
@@ -48,19 +48,19 @@ const packagedSurfaceParser = await import(
 ) as {
   formatSurfaceSource(source: string): {
     name: "Some" | "None";
-    args: readonly [string];
+    a0: string;
   };
   formatSurfaceSourceFix(source: string): {
     name: "Some" | "None";
-    args: readonly [string];
+    a0: string;
   };
   parseSurfaceProgram(source: string): {
     name: "Some" | "None";
-    args: readonly [{ marks: WorkmanList<SurfaceRecoveryMark> }];
+    a0: { marks: WorkmanList<SurfaceRecoveryMark> };
   };
   parseSurfaceFailure(source: string): {
     name: "Some" | "None";
-    args: readonly [SurfaceParseFailure];
+    a0: SurfaceParseFailure;
   };
 };
 
@@ -166,15 +166,15 @@ Deno.test("frontend-v2 generated WM parser matches the semantic golden for every
     const first = surfaceParser.formatSurfaceSource(source);
     assertEquals(first.name, accepted ? "Some" : "None", relative);
     if (first.name === "Some") {
-      const formattedModule = await parse(first.args[0]);
+      const formattedModule = await parse(first.a0);
       assertEquals(
         normalizeFrontendSemanticAst(formattedModule),
         normalizeFrontendSemanticAst(sourceModule),
         relative,
       );
-      const second = surfaceParser.formatSurfaceSource(first.args[0]);
+      const second = surfaceParser.formatSurfaceSource(first.a0);
       assertEquals(second.name, "Some", relative);
-      assertEquals(second.args[0], first.args[0], relative);
+      assertEquals(second.a0, first.a0, relative);
       formatted += 1;
     }
     checked.push(relative);
@@ -257,12 +257,12 @@ Deno.test("frontend-v2 generated Surface semantics match the repository golden",
         assertEquals(failure.name, "Some", relative);
         if (failure.name === "Some") {
           assertEquals(
-            failure.args[0].offset >= 0 && failure.args[0].offset <= source.length,
+            failure.a0.offset >= 0 && failure.a0.offset <= source.length,
             true,
             relative,
           );
-          assertEquals(failure.args[0].expected.length > 0, true, relative);
-          assertEquals(failure.args[0].rule.length > 0, true, relative);
+          assertEquals(failure.a0.expected.length > 0, true, relative);
+          assertEquals(failure.a0.rule.length > 0, true, relative);
         }
       }
       checked.push(relative);
@@ -291,7 +291,7 @@ Deno.test("frontend-v2 preserves authored content in the completed formatting sl
     const formatted = surfaceParser.formatSurfaceSource(source);
     assertEquals(formatted.name, "Some", relative);
     assertEquals(
-      normalizeFrontendSemanticAst(await parse(formatted.args[0])),
+      normalizeFrontendSemanticAst(await parse(formatted.a0)),
       normalizeFrontendSemanticAst(await parse(source)),
       relative,
     );
@@ -309,9 +309,9 @@ Deno.test("frontend-v2 preserves and canonicalizes both no-prelude directive spe
     const normal = surfaceParser.formatSurfaceSource(source);
     const fixed = surfaceParser.formatSurfaceSourceFix(source);
     assertEquals(normal.name, "Some", source);
-    assertEquals(normal.args[0], expected, source);
+    assertEquals(normal.a0, expected, source);
     assertEquals(fixed.name, "Some", source);
-    assertEquals(fixed.args[0], expected, source);
+    assertEquals(fixed.a0, expected, source);
 
     const formattedModule = await parse(expected);
     assertEquals(formattedModule.prelude, "none", source);
@@ -324,20 +324,20 @@ Deno.test("frontend-v2 preserves and canonicalizes both no-prelude directive spe
     const normalAgain = surfaceParser.formatSurfaceSource(expected);
     const fixedAgain = surfaceParser.formatSurfaceSourceFix(expected);
     assertEquals(normalAgain.name, "Some", source);
-    assertEquals(normalAgain.args[0], expected, source);
+    assertEquals(normalAgain.a0, expected, source);
     assertEquals(fixedAgain.name, "Some", source);
-    assertEquals(fixedAgain.args[0], expected, source);
+    assertEquals(fixedAgain.a0, expected, source);
   }
 
   const missingSemicolon = "// @no-prelude\nlet answer=42";
   const normal = surfaceParser.formatSurfaceSource(missingSemicolon);
   const fixed = surfaceParser.formatSurfaceSourceFix(missingSemicolon);
   assertEquals(normal.name, "Some");
-  assertEquals(normal.args[0], "// @no-prelude\nlet answer = 42");
+  assertEquals(normal.a0, "// @no-prelude\nlet answer = 42");
   assertEquals(fixed.name, "Some");
-  assertEquals(fixed.args[0], "// @no-prelude\nlet answer = 42;");
+  assertEquals(fixed.a0, "// @no-prelude\nlet answer = 42;");
   if (fixed.name === "Some") {
-    assertEquals((await parse(fixed.args[0])).prelude, "none");
+    assertEquals((await parse(fixed.a0)).prelude, "none");
   }
 });
 
@@ -346,13 +346,13 @@ Deno.test("frontend-v2 marks a committed missing semicolon and fixes only in fix
   const normal = surfaceParser.formatSurfaceSource(source);
   const fixed = surfaceParser.formatSurfaceSourceFix(source);
   assertEquals(normal.name, "Some");
-  assertEquals(normal.args[0], source);
+  assertEquals(normal.a0, source);
   assertEquals(fixed.name, "Some");
-  assertEquals(fixed.args[0], "let answer = 42;");
+  assertEquals(fixed.a0, "let answer = 42;");
   const parsed = surfaceParser.parseSurfaceProgram(source);
   assertEquals(parsed.name, "Some");
   assertEquals(
-    parsed.name === "Some" ? recoveryMarkSummary(parsed.args[0].marks) : [],
+    parsed.name === "Some" ? recoveryMarkSummary(parsed.a0.marks) : [],
     [[1, 15, ";", "TopPhrase:semicolon", "AutoFix"]],
   );
 });
@@ -360,7 +360,7 @@ Deno.test("frontend-v2 marks a committed missing semicolon and fixes only in fix
 Deno.test("frontend-v2 reports a farthest generated failure for rejected syntax", () => {
   const invalid = surfaceParser.parseSurfaceFailure("let Ctor(Var(x)) = value;");
   assertEquals(invalid.name, "Some");
-  assertEquals(invalid.name === "Some" ? invalid.args[0] : undefined, {
+  assertEquals(invalid.name === "Some" ? invalid.a0 : undefined, {
     offset: 9,
     expected: ")",
     rule: "LetPattern",
@@ -383,7 +383,7 @@ Deno.test("frontend-v2 does not repair a missing expression as an empty block", 
   assertEquals(surfaceParser.formatSurfaceSourceFix(source).name, "None");
   const failure = surfaceParser.parseSurfaceFailure(source);
   assertEquals(failure.name, "Some");
-  assertEquals(failure.name === "Some" ? failure.args[0] : undefined, {
+  assertEquals(failure.name === "Some" ? failure.a0 : undefined, {
     offset: 11,
     expected: "an expression",
     rule: "Expr",
@@ -395,26 +395,26 @@ Deno.test("frontend-v2 expression lambda recovery marks only the missing phrase 
   const normal = surfaceParser.formatSurfaceSource(source);
   const fixed = surfaceParser.formatSurfaceSourceFix(source);
   assertEquals(normal.name, "Some");
-  assertEquals(normal.args[0], 'let main = () => print "hello world"');
+  assertEquals(normal.a0, 'let main = () => print "hello world"');
   assertEquals(fixed.name, "Some");
-  assertEquals(fixed.args[0], 'let main = () => print "hello world";');
+  assertEquals(fixed.a0, 'let main = () => print "hello world";');
   const parsed = surfaceParser.parseSurfaceProgram(source);
   assertEquals(parsed.name, "Some");
   assertEquals(
-    parsed.name === "Some" ? recoveryMarkSummary(parsed.args[0].marks) : [],
+    parsed.name === "Some" ? recoveryMarkSummary(parsed.a0.marks) : [],
     [
       [1, 32, ";", "TopPhrase:semicolon", "AutoFix"],
     ],
   );
   if (fixed.name === "Some") {
-    await parse(fixed.args[0]);
-    const second = surfaceParser.formatSurfaceSourceFix(fixed.args[0]);
+    await parse(fixed.a0);
+    const second = surfaceParser.formatSurfaceSourceFix(fixed.a0);
     assertEquals(second.name, "Some");
-    assertEquals(second.args[0], fixed.args[0]);
-    const fixedProgram = surfaceParser.parseSurfaceProgram(fixed.args[0]);
+    assertEquals(second.a0, fixed.a0);
+    const fixedProgram = surfaceParser.parseSurfaceProgram(fixed.a0);
     assertEquals(fixedProgram.name, "Some");
     assertEquals(
-      fixedProgram.name === "Some" ? recoveryMarkSummary(fixedProgram.args[0].marks) : [],
+      fixedProgram.name === "Some" ? recoveryMarkSummary(fixedProgram.a0.marks) : [],
       [],
     );
   }
@@ -424,11 +424,11 @@ Deno.test("frontend-v2 marks a committed missing closing block brace", () => {
   const source = "let answer = { 42";
   const fixed = surfaceParser.formatSurfaceSourceFix(source);
   assertEquals(fixed.name, "Some");
-  assertEquals(fixed.args[0], "let answer = {\n  42\n};");
+  assertEquals(fixed.a0, "let answer = {\n  42\n};");
   const parsed = surfaceParser.parseSurfaceProgram(source);
   assertEquals(parsed.name, "Some");
   assertEquals(
-    parsed.name === "Some" ? recoveryMarkSummary(parsed.args[0].marks) : [],
+    parsed.name === "Some" ? recoveryMarkSummary(parsed.a0.marks) : [],
     [
       [1, 17, "}", "Block:close-brace", "AutoFix"],
       [2, 17, ";", "TopPhrase:semicolon", "AutoFix"],
@@ -442,21 +442,21 @@ Deno.test("frontend-v2 marks an unambiguous missing block-declaration semicolon"
   const fixed = surfaceParser.formatSurfaceSourceFix(source);
   assertEquals(normal.name, "Some");
   assertEquals(
-    normal.args[0],
+    normal.a0,
     "let x = {\n  let y = 1\n  let z = 2;\n  z\n};",
   );
   assertEquals(fixed.name, "Some");
   assertEquals(
-    fixed.args[0],
+    fixed.a0,
     "let x = {\n  let y = 1;\n  let z = 2;\n  z\n};",
   );
   const parsed = surfaceParser.parseSurfaceProgram(source);
   assertEquals(parsed.name, "Some");
   assertEquals(
-    parsed.name === "Some" ? recoveryMarkSummary(parsed.args[0].marks) : [],
+    parsed.name === "Some" ? recoveryMarkSummary(parsed.a0.marks) : [],
     [[1, 20, ";", "SemiToken:semicolon", "AutoFix"]],
   );
-  if (fixed.name === "Some") await parse(fixed.args[0]);
+  if (fixed.name === "Some") await parse(fixed.a0);
 });
 
 Deno.test("frontend-v2 generated brace annotations repair committed grammar families", async () => {
@@ -475,11 +475,11 @@ Deno.test("frontend-v2 generated brace annotations repair committed grammar fami
   ) {
     const fixed = surfaceParser.formatSurfaceSourceFix(source);
     assertEquals(fixed.name, "Some", source);
-    assertEquals(fixed.args[0], expected, source);
+    assertEquals(fixed.a0, expected, source);
     await parse(expected);
     const parsed = surfaceParser.parseSurfaceProgram(source);
     assertEquals(parsed.name, "Some", source);
-    const marks = parsed.name === "Some" ? recoveryMarkSummary(parsed.args[0].marks) : [];
+    const marks = parsed.name === "Some" ? recoveryMarkSummary(parsed.a0.marks) : [];
     assertEquals(marks.length > 0, true, source);
     assertEquals(
       marks.every((mark) => [";", "{", "}"].includes(mark[2])),
@@ -500,10 +500,10 @@ Deno.test("frontend-v2 constructs and canonically renders the type-declaration s
     "let rec answer: Number = 42;";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
-  const second = surfaceParser.formatSurfaceSource(first.args[0]);
+  assertEquals(first.a0, expected);
+  const second = surfaceParser.formatSurfaceSource(first.a0);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 formats the coordinated function-type arrow grammar", async () => {
@@ -543,10 +543,10 @@ Deno.test("frontend-v2 formats the coordinated function-type arrow grammar", asy
   assertEquals(surfaceParser.parsesSurfaceSyntax(expected), true);
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 
   for (
     const invalid of [
@@ -572,11 +572,11 @@ Deno.test("frontend-v2 preserves and formats postfix type ascriptions", async ()
   const expected = "let answer = (1 + 2) : Number;";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   await parse(expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 preserves and formats general expression and pattern constraints", async () => {
@@ -616,10 +616,10 @@ Deno.test("frontend-v2 preserves and formats general expression and pattern cons
 
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 formats explicit nominal record expressions", async () => {
@@ -629,11 +629,11 @@ Deno.test("frontend-v2 formats explicit nominal record expressions", async () =>
     'record User = { name: String, active: Bool };\nlet name = "Ada";\nlet user = User{ name, ..User{ name = "Grace", active = false }, active = true };';
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   await parse(expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 parses and formats inferred nested aggregate initializers", async () => {
@@ -641,10 +641,10 @@ Deno.test("frontend-v2 parses and formats inferred nested aggregate initializers
   const formatted = surfaceParser.formatSurfaceSource(source);
   assertEquals(formatted.name, "Some");
   if (formatted.name !== "Some") return;
-  assertStringIncludes(formatted.args[0], "Winsock.sockaddr_in{");
-  assertStringIncludes(formatted.args[0], "sin_addr = { S_un = { S_addr = 0 } }");
+  assertStringIncludes(formatted.a0, "Winsock.sockaddr_in{");
+  assertStringIncludes(formatted.a0, "sin_addr = { S_un = { S_addr = 0 } }");
   const before = await parse(source);
-  const after = await parse(formatted.args[0]);
+  const after = await parse(formatted.a0);
   assertEquals(normalizeFrontendSemanticAst(after), normalizeFrontendSemanticAst(before));
 });
 
@@ -653,11 +653,11 @@ Deno.test("frontend-v2 formats parenthesized lambda sequences", async () => {
   const expected = "let f = (x) => (x; x);";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   await parse(expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 formats lightweight chained curried lambdas", async () => {
@@ -665,11 +665,11 @@ Deno.test("frontend-v2 formats lightweight chained curried lambdas", async () =>
   const expected = "let add3 = (a) => (b) => (c) => {\n  a + b + c\n};";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   await parse(expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 formats anonymous match functions in pipelines", async () => {
@@ -684,11 +684,11 @@ Deno.test("frontend-v2 formats anonymous match functions in pipelines", async ()
     "} :> next;";
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
+  assertEquals(first.a0, expected);
   await parse(expected);
   const second = surfaceParser.formatSurfaceSource(expected);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 constructs and canonically renders generated import captures", () => {
@@ -706,10 +706,10 @@ Deno.test("frontend-v2 constructs and canonically renders generated import captu
     'from js.module("x") import type { Foo: Bar };';
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
-  assertEquals(first.args[0], expected);
-  const second = surfaceParser.formatSurfaceSource(first.args[0]);
+  assertEquals(first.a0, expected);
+  const second = surfaceParser.formatSurfaceSource(first.a0);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], expected);
+  assertEquals(second.a0, expected);
 });
 
 Deno.test("frontend-v2 canonically formats the math example through the Surface AST", async () => {
@@ -719,7 +719,7 @@ Deno.test("frontend-v2 canonically formats the math example through the Surface 
   const first = surfaceParser.formatSurfaceSource(source);
   assertEquals(first.name, "Some");
   assertStringIncludes(
-    first.args[0],
+    first.a0,
     "let rec foldLeft = (fn, acc, list) => {\n" +
       "  match(list) {\n" +
       "    [] => {\n" +
@@ -727,14 +727,14 @@ Deno.test("frontend-v2 canonically formats the math example through the Surface 
       "    },",
   );
   assertStringIncludes(
-    first.args[0],
+    first.a0,
     "      if (fn(head)) {\n" +
       "        [head, ..filterList(fn, tail)]\n" +
       "      } else {",
   );
-  const second = surfaceParser.formatSurfaceSource(first.args[0]);
+  const second = surfaceParser.formatSurfaceSource(first.a0);
   assertEquals(second.name, "Some");
-  assertEquals(second.args[0], first.args[0]);
+  assertEquals(second.a0, first.a0);
 });
 
 function recoveryMarkSummary(
@@ -743,7 +743,7 @@ function recoveryMarkSummary(
   const output: [number, number, string, string, string][] = [];
   let remaining = marks;
   while (remaining.name === "Cons") {
-    const [mark, rest] = remaining.args[0];
+    const [mark, rest] = [remaining.a0, remaining.a1];
     output.push([
       mark.id,
       mark.anchor,
@@ -931,7 +931,7 @@ Deno.test("frontend-v2 parses and formats unqualified unsafe C wildcard imports"
   const formatted = surfaceParser.formatSurfaceSource(source);
   assertEquals(formatted.name, "Some");
   if (formatted.name !== "Some") return;
-  assertStringIncludes(formatted.args[0], "import unsafe *;");
+  assertStringIncludes(formatted.a0, "import unsafe *;");
   const parsed = await parse(source);
   const decl = parsed.decls[0];
   assertEquals(decl.kind, "JsImportDecl");
@@ -940,7 +940,7 @@ Deno.test("frontend-v2 parses and formats unqualified unsafe C wildcard imports"
     assertEquals(decl.clause.unsafe, true);
   }
   assertEquals(
-    normalizeFrontendSemanticAst(await parse(formatted.args[0])),
+    normalizeFrontendSemanticAst(await parse(formatted.a0)),
     normalizeFrontendSemanticAst(parsed),
   );
 });
@@ -952,10 +952,10 @@ let pick = match(value) { 18446744073709551615 => { 1 }, _ => { 0 } };`;
   const formatted = surfaceParser.formatSurfaceSource(source);
   assertEquals(formatted.name, "Some");
   if (formatted.name !== "Some") return;
-  assertStringIncludes(formatted.args[0], "0xffffffffffffffff");
-  assertStringIncludes(formatted.args[0], "18446744073709551615");
+  assertStringIncludes(formatted.a0, "0xffffffffffffffff");
+  assertStringIncludes(formatted.a0, "18446744073709551615");
   assertEquals(
-    normalizeFrontendSemanticAst(await parse(formatted.args[0])),
+    normalizeFrontendSemanticAst(await parse(formatted.a0)),
     normalizeFrontendSemanticAst(before),
   );
   const declaration = before.decls[0];

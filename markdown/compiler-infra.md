@@ -222,15 +222,23 @@ type WmValue =
 type WmData = {
   ctor: WmCtorId;
   name: string;
-  args: WmValue[];
+  a0?: WmValue; // payload fields, see below
+  a1?: WmValue;
+  // ...
 };
 ```
 
 `name` is for display and debugging. `ctor` is for equality, matching, and semantic identity.
 
-Open design questions:
+Payload layout (2026-11-06, `src/core/ctor_layout.ts`): one object per value. A constructor whose
+declared payload is a tuple (`Cons<T, List<T>>`) stores the items in `a0..a(n-1)`; any other
+payload is stored whole in `a0`; a nullary constructor has no fields and is a frozen singleton.
+The count follows from the declaration's syntax, so a payload written as a tuple alias stays whole
+in `a0`. Code that does not know the count rebuilds the payload with `__wm_ctor_payload`. This
+replaced `args: [payload]`, which cost three allocations per list cell; see
+`markdown/bun-aot-ts-emit-2026-11-06.md`.
 
-- Whether nullary constructors should be singleton frozen objects.
+Open design questions:
 - Whether tuples should stay arrays or use tagged objects.
 - Whether records should carry record type IDs at runtime.
 - How much structural equality should exist before SML equality types are implemented.

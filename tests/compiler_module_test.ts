@@ -120,7 +120,7 @@ Deno.test("supports long type constructors from imported files", async () => {
   await checkVirtual("/test/main.wm", virtualFs);
   const javaScript = await compileVirtual("/test/main.wm", virtualFs);
   assertStringIncludes(javaScript, "?.ctor ===");
-  assertStringIncludes(javaScript, ".args.length === 0");
+  assertStringIncludes(javaScript, 'name: "Box", a0: ');
 });
 
 Deno.test("supports long constructor identifiers in match patterns", async () => {

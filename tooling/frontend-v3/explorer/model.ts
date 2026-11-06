@@ -1,4 +1,5 @@
-export type Variant<T = unknown> = { name: string; args: T[] };
+/** A WM datatype value: payload fields `a0`, `a1`, ...; a tuple payload is spread over them. */
+export type Variant<T = unknown> = { name: string; a0?: T; [field: `a${number}`]: unknown };
 type Position = { index: number; line: number; col: number };
 export type Span = { startPos: Position; endPos: Position };
 export type Mark = {
@@ -21,14 +22,16 @@ export type Item = Token | Trivia | Mark;
 export function spanOf(item: Item): [number, number] {
   return "span" in item
     ? [item.span.startPos.index, item.span.endPos.index]
-    : [item.affectedSpan.start.args[0], item.affectedSpan.end.args[0]];
+    : [item.affectedSpan.start.a0 as number, item.affectedSpan.end.a0 as number];
 }
 
 export function label(value: unknown): string {
   if (Array.isArray(value)) return value.map(label).join(", ");
-  if (value !== null && typeof value === "object" && "name" in value && "args" in value) {
+  if (value !== null && typeof value === "object" && "name" in value && "ctor" in value) {
     const variant = value as Variant;
-    return variant.args.length ? `${variant.name}(${variant.args.map(label).join(", ")})` : variant.name;
+    const fields: unknown[] = [];
+    for (let index = 0; `a${index}` in variant; index++) fields.push(variant[`a${index}`]);
+    return fields.length ? `${variant.name}(${fields.map(label).join(", ")})` : variant.name;
   }
   return String(value);
 }

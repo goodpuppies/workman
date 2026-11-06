@@ -1,3 +1,4 @@
+import { basisCtorFieldCount, emitCtorBinding } from "./ctor_layout.ts";
 import { basisCtorId, basisCtorJsName, basisTypes } from "../basis.ts";
 import {
   BASIS_OPERATORS,
@@ -72,7 +73,7 @@ export function emitRuntimePrelude(): string[] {
     `const __wm_js_construct = (path) => (...args) => new (__wm_js_global(path))(...args);`,
     `const __wm_js_call = (fn, arg) => __wm_is_tuple(arg) ? fn(...arg) : fn(arg);`,
     `const __wm_js_option_wrap = (value) => value == null ? __wm_basis_None : __wm_basis_Some(value);`,
-    `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? null : value?.ctor === -2 ? value.args[0] : value;`,
+    `const __wm_js_option_unwrap = (value) => value?.ctor === -1 ? null : value?.ctor === -2 ? value.a0 : value;`,
     `const __wm_c_text_encoder = new globalThis.TextEncoder();
 const __wm_c_string_to_cstr = (value) => {
   const bytes = __wm_c_text_encoder.encode(String(value) + "\\0");
@@ -296,7 +297,8 @@ const __wm_c_struct_to_buffer = (name, value) => {
     }
     if ("ctor" in a || "ctor" in b) {
       if (a.ctor !== b.ctor) return false;
-      pending.push(a.args, b.args);
+      // Same constructor, same fields: a0, a1, ... as the layout in core/ctor_layout.ts.
+      for (let index = 0; ("a" + index) in a; index++) pending.push(a["a" + index], b["a" + index]);
       continue;
     }
     const ak = Object.keys(a).sort();
@@ -338,12 +340,13 @@ const __wm_c_struct_to_buffer = (name, value) => {
     shown = "[" + __wm_list_to_array(value)
       .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else if ("ctor" in value) {
-    shown = value.args.length === 0
-      ? value.name
-      : value.name + "(" + value.args.map((item) => {
-        if (__wm_is_tuple(item)) return item.map((part) => __wm_show(part, seen, quoteStrings, listSyntax)).join(", ");
-        return __wm_show(item, seen, quoteStrings, listSyntax);
-      }).join(", ") + ")";
+    if (!("a0" in value)) {
+      shown = value.name;
+    } else {
+      const payload = __wm_ctor_payload(value);
+      shown = value.name + "(" + (__wm_is_tuple(payload) ? payload : [payload])
+        .map((part) => __wm_show(part, seen, quoteStrings, listSyntax)).join(", ") + ")";
+    }
   } else if (globalThis.Array.isArray(value)) {
     shown = "[" + value.map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else {
@@ -418,7 +421,7 @@ const __wm_c_struct_to_buffer = (name, value) => {
     `const __wm_array_to_list = (items) => {
   let list = __wm_basis_Nil;
   for (let index = items.length - 1; index >= 0; index--) {
-    list = __wm_basis_Cons([items[index], list]);
+    list = { ctor: ${basisCtorId("Cons")}, name: "Cons", a0: items[index], a1: list };
   }
   return list;
 };`,
@@ -426,9 +429,8 @@ const __wm_c_struct_to_buffer = (name, value) => {
   const items = [];
   let cursor = list;
   while (cursor?.ctor === ${basisCtorId("Cons")}) {
-    const [head, tail] = cursor.args[0];
-    items.push(head);
-    cursor = tail;
+    items.push(cursor.a0);
+    cursor = cursor.a1;
   }
   return __wm_js_array_mark(items);
 };`,
@@ -548,15 +550,23 @@ function definitionsFor(
 }
 
 function emitBasisConstructors(): string[] {
-  return basisTypes.flatMap((type) =>
-    type.ctors.map((ctor) =>
-      ctor.args.length
-        ? `const ${basisCtorJsName(ctor.id)} = (__payload) => ({ ctor: ${
-          JSON.stringify(ctor.id)
-        }, name: ${JSON.stringify(ctor.name)}, args: [__payload] });`
-        : `const ${basisCtorJsName(ctor.id)} = Object.freeze({ ctor: ${
-          JSON.stringify(ctor.id)
-        }, name: ${JSON.stringify(ctor.name)}, args: [] });`
-    )
-  );
+  return [
+    // The payload of a constructor value as one value; see core/ctor_layout.ts.
+    `const __wm_ctor_payload = (value) => {
+  if (!("a1" in value)) return value.a0;
+  const items = [value.a0, value.a1];
+  for (let index = 2; ("a" + index) in value; index++) items.push(value["a" + index]);
+  return items;
+};`,
+    ...basisTypes.flatMap((type) =>
+      type.ctors.map((ctor) =>
+        emitCtorBinding(
+          basisCtorJsName(ctor.id)!,
+          ctor.id,
+          ctor.name,
+          basisCtorFieldCount(ctor.args),
+        )
+      )
+    ),
+  ];
 }

@@ -46,9 +46,9 @@ Deno.test("emitted equality retains vector contents and slice identity semantics
 
 Deno.test("emitted equality compares long lists without recursion", () => {
   const list = (length: number, last: unknown) => {
-    let cell: unknown = { ctor: 0, args: [] };
+    let cell: unknown = { ctor: 0 };
     for (let index = 0; index < length; index++) {
-      cell = { ctor: 1, args: [[index === 0 ? last : "x", cell]] };
+      cell = { ctor: 1, a0: index === 0 ? last : "x", a1: cell };
     }
     return cell;
   };

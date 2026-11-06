@@ -7,7 +7,9 @@ import peggy from "peggy";
 function variant(value: any): any {
   if (value === null || typeof value !== "object") return value;
   if (!value.name) throw new Error("Unexpected non-variant in lexical metadata");
-  const args = value.args.length === 1 && Array.isArray(value.args[0]) ? value.args[0] : value.args;
+  const fields: unknown[] = [];
+  for (let index = 0; `a${index}` in value; index++) fields.push(value[`a${index}`]);
+  const args = fields.length === 1 && Array.isArray(fields[0]) ? fields[0] : fields;
   return [value.name, ...args.map(variant)];
 }
 const units = (text: string) => Array.from({ length: text.length }, (_, i) => text.charCodeAt(i));
@@ -15,10 +17,10 @@ const position = (p: any) => [p.index, p.line, p.col];
 const span = (s: any) => [position(s.startPos), position(s.endPos)];
 const mark = (
   m: any,
-) => [m.id.args[0], variant(m.problem), variant(m.recovery), m.anchor.args[0], [
-  m.affectedSpan.start.args[0],
-  m.affectedSpan.end.args[0],
-], m.causedBy.name === "None" ? null : m.causedBy.args[0].args[0]];
+) => [m.id.a0, variant(m.problem), variant(m.recovery), m.anchor.a0, [
+  m.affectedSpan.start.a0,
+  m.affectedSpan.end.a0,
+], m.causedBy.name === "None" ? null : m.causedBy.a0.a0];
 
 Deno.test("v3 parser preserves lexical ownership, marks and termination on damaged prefixes", async () => {
   const inspect = await loadEditor();
@@ -36,7 +38,7 @@ Deno.test("v3 parser preserves lexical ownership, marks and termination on damag
     ) => [
       variant(t.kind),
       span(t.span),
-      t.mateIdx.name === "NoMate" ? null : t.mateIdx.args[0],
+      t.mateIdx.name === "NoMate" ? null : t.mateIdx.a0,
       list<any>(t.marks).map(mark),
       list<any>(t.leadingTrivia).map((
         v,

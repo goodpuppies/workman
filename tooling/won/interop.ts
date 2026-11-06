@@ -3,30 +3,29 @@
  * Records stay lists of key/value pairs, never coerced to JS objects.
  */
 export type WmList<T> =
-  | { name: "Nil"; args: [] }
-  | { name: "Cons"; args: [[T, WmList<T>]] };
+  | { name: "Nil" }
+  | { name: "Cons"; a0: T; a1: WmList<T> };
 export type WmResult<T, E> =
-  | { name: "Ok"; args: [T] }
-  | { name: "Err"; args: [E] };
+  | { name: "Ok"; a0: T }
+  | { name: "Err"; a0: E };
 /** `message` is a UTF-8 byte string; `offset` counts bytes from zero. */
 export type DecodeError = { offset: number; message: string };
 export type Fields = WmList<[string, Value]>;
 export type Value =
-  | { name: "Null"; args: [] }
-  | { name: "Boolean"; args: [boolean] }
-  | { name: "Number"; args: [string] }
-  | { name: "Text"; args: [WmList<string>] }
-  | { name: "Blob"; args: [WmList<string>] }
-  | { name: "List"; args: [WmList<Value>] }
-  | { name: "Record"; args: [Fields] }
-  | { name: "Tag"; args: [[string, Fields, Value]] };
+  | { name: "Null" }
+  | { name: "Boolean"; a0: boolean }
+  | { name: "Number"; a0: string }
+  | { name: "Text"; a0: WmList<string> }
+  | { name: "Blob"; a0: WmList<string> }
+  | { name: "List"; a0: WmList<Value> }
+  | { name: "Record"; a0: Fields }
+  | { name: "Tag"; a0: string; a1: Fields; a2: Value };
 
 export function listToArray<T>(list: WmList<T>): T[] {
   const result: T[] = [];
   while (list.name === "Cons") {
-    const [head, tail] = list.args[0];
-    result.push(head);
-    list = tail;
+    result.push(list.a0);
+    list = list.a1;
   }
   return result;
 }
@@ -35,8 +34,8 @@ export function resultToJS<T, E>(
   result: WmResult<T, E>,
 ): { ok: true; value: T } | { ok: false; error: E } {
   return result.name === "Ok"
-    ? { ok: true, value: result.args[0] }
-    : { ok: false, error: result.args[0] };
+    ? { ok: true, value: result.a0 }
+    : { ok: false, error: result.a0 };
 }
 
 /** Byte strings carry octets, not JS Unicode text. */
@@ -148,19 +147,19 @@ export class Found {
   get(key: string): Found {
     return this.then("record", (value, path) =>
       value.name === "Record"
-        ? lookup(value.args[0], key, keyStep(path, key))
+        ? lookup(value.a0, key, keyStep(path, key))
         : undefined);
   }
 
   attribute(key: string): Found {
     return this.then("tag", (value, path) =>
-      value.name === "Tag" ? lookup(value.args[0][1], key, [...path, `<${keyText(key)}>`]) : undefined);
+      value.name === "Tag" ? lookup(value.a1, key, [...path, `<${keyText(key)}>`]) : undefined);
   }
 
   index(position: number): Found {
     return this.then("list", (value, path) => {
       if (value.name !== "List") return undefined;
-      const item = listToArray(value.args[0])[position];
+      const item = listToArray(value.a0)[position];
       const at = [...path, `[${position}]`];
       return item ? { value: item, path: at } : { error: new WonAccessError(pathText(at)) };
     });
@@ -169,7 +168,7 @@ export class Found {
   /** A tag's payload keeps the tag's path. */
   payload(): Found {
     return this.then("tag", (value, path) =>
-      value.name === "Tag" ? { value: value.args[0][2], path } : undefined);
+      value.name === "Tag" ? { value: value.a2, path } : undefined);
   }
 
   /** Ends a chain: undefined if anything along it was missing; mismatches still throw. */
@@ -184,17 +183,17 @@ export class Found {
   }
 
   tagName(): string {
-    return this.read("tag", (value) => value.name === "Tag" ? decodeText(value.args[0][0]) : undefined);
+    return this.read("tag", (value) => value.name === "Tag" ? decodeText(value.a0) : undefined);
   }
 
   items(): Found[] {
-    const values = this.read("list", (value) => value.name === "List" ? listToArray(value.args[0]) : undefined);
+    const values = this.read("list", (value) => value.name === "List" ? listToArray(value.a0) : undefined);
     const path = (this.state as { path: string[] }).path;
     return values.map((value, i) => new Found({ value, path: [...path, `[${i}]`] }));
   }
 
   entries(): [string, Found][] {
-    const fields = this.read("record", (value) => value.name === "Record" ? listToArray(value.args[0]) : undefined);
+    const fields = this.read("record", (value) => value.name === "Record" ? listToArray(value.a0) : undefined);
     const path = (this.state as { path: string[] }).path;
     return fields.map(([name, value]) => {
       const key = decodeText(name);
@@ -204,20 +203,20 @@ export class Found {
 
   text(): string {
     return this.read("text", (value) =>
-      value.name === "Text" ? decodeText(listToArray(value.args[0]).join("")) : undefined);
+      value.name === "Text" ? decodeText(listToArray(value.a0).join("")) : undefined);
   }
 
   /** The exact spelling; numeric conversion is the caller's choice. */
   number(): string {
-    return this.read("number", (value) => value.name === "Number" ? value.args[0] : undefined);
+    return this.read("number", (value) => value.name === "Number" ? value.a0 : undefined);
   }
 
   boolean(): boolean {
-    return this.read("boolean", (value) => value.name === "Boolean" ? value.args[0] : undefined);
+    return this.read("boolean", (value) => value.name === "Boolean" ? value.a0 : undefined);
   }
 
   blob(): Uint8Array {
     return this.read("blob", (value) =>
-      value.name === "Blob" ? stringToBytes(listToArray(value.args[0]).join("")) : undefined);
+      value.name === "Blob" ? stringToBytes(listToArray(value.a0).join("")) : undefined);
   }
 }

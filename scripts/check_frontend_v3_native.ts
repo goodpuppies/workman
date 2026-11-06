@@ -29,37 +29,38 @@ let snapshot = (text) => {Document.encode(JsLexer.lex(text))};
 const module = join(output, "parity.mjs");
 await Deno.writeTextFile(module, await compileLibraryFile(bridge));
 const { lex, sourceUnits, snapshot } = await import(`file://${module}`);
-type Variant = { name: string; args: any[] };
+type Variant = { name: string; [field: `a${number}`]: any };
 function list(value: Variant): any[] {
   const result = [];
   while (value.name === "Cons") {
-    const [head, tail] = value.args[0];
-    result.push(head);
-    value = tail;
+    result.push(value.a0);
+    value = value.a1;
   }
   assertEquals(value.name, "Nil");
   return result;
 }
 function variant(value: Variant): any[] {
-  const args = value.args.length === 1 && Array.isArray(value.args[0]) ? value.args[0] : value.args;
+  const fields: any[] = [];
+  for (let index = 0; `a${index}` in value; index++) fields.push(value[`a${index}`]);
+  const args = fields.length === 1 && Array.isArray(fields[0]) ? fields[0] : fields;
   return [value.name, ...args.map((v: any) => typeof v === "object" ? variant(v) : v)];
 }
 const position = (value: any) => [value.index, value.line, value.col];
 const span = (value: any) => [position(value.startPos), position(value.endPos)];
 const mark = (value: any) => [
-  value.id.args[0],
+  value.id.a0,
   variant(value.problem),
   variant(value.recovery),
-  value.anchor.args[0],
-  [value.affectedSpan.start.args[0], value.affectedSpan.end.args[0]],
-  value.causedBy.name === "None" ? null : value.causedBy.args[0].args[0],
+  value.anchor.a0,
+  [value.affectedSpan.start.a0, value.affectedSpan.end.a0],
+  value.causedBy.name === "None" ? null : value.causedBy.a0.a0,
 ];
 function document(value: any) {
   return [
     list(value.tokens).map((token: any) => [
       variant(token.kind),
       span(token.span),
-      token.mateIdx.name === "NoMate" ? null : token.mateIdx.args[0],
+      token.mateIdx.name === "NoMate" ? null : token.mateIdx.a0,
       list(token.marks).map(mark),
       list(token.leadingTrivia).map((trivia: any) => [
         variant(trivia.kind),

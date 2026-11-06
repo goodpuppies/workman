@@ -24,6 +24,7 @@ import {
   type FrontendV2SurfaceProgram,
   list,
   option,
+  payload,
   record,
   variant,
   type WmVariant,
@@ -1510,10 +1511,11 @@ function tokenSpan(value: unknown): SourceSpan {
 
 function surfaceValueToken(value: unknown): unknown {
   const carrier = variant(value);
+  const carried = payload(carrier);
   const token = carrier.name === "AuthoredValue"
-    ? carrier.args[0]
-    : carrier.name === "MarkedValue" && Array.isArray(carrier.args[0])
-    ? carrier.args[0][1]
+    ? carried
+    : carrier.name === "MarkedValue" && Array.isArray(carried)
+    ? carried[1]
     : undefined;
   if (!token) throw new Error(`frontend-v2 expected SurfaceValue token, got ${carrier.name}`);
   return token;
@@ -1521,10 +1523,11 @@ function surfaceValueToken(value: unknown): unknown {
 
 function surfaceTokenSpan(value: unknown, context: Context): SourceSpan {
   const carrier = variant(value);
+  const carried = payload(carrier);
   const token = carrier.name === "AuthoredValue"
-    ? carrier.args[0]
-    : carrier.name === "MarkedValue" && Array.isArray(carrier.args[0])
-    ? carrier.args[0][1]
+    ? carried
+    : carrier.name === "MarkedValue" && Array.isArray(carried)
+    ? carried[1]
     : undefined;
   if (!token) throw new Error(`frontend-v2 expected SurfaceValue token, got ${carrier.name}`);
   const span = tokenSpan(token);

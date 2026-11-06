@@ -1,6 +1,6 @@
-import type { LexicalDocument, Mark, Token, Trivia, Variant } from "./model.ts";
+import type { LexicalDocument, Mark, Token, Trivia } from "./model.ts";
 
-type RuntimeList<T> = Variant<[T, RuntimeList<T>]>;
+type RuntimeList<T> = { name: string; a0?: T; a1?: RuntimeList<T> };
 type RuntimeTrivia = Omit<Trivia, "marks" | "text"> & { text: unknown; marks: RuntimeList<Mark> };
 type RuntimeToken = Omit<Token, "marks" | "leadingTrivia"> & {
   marks: RuntimeList<Mark>;
@@ -13,9 +13,8 @@ export type RuntimeDocument = { tokens: RuntimeList<RuntimeToken>; marks: Runtim
 function list<T>(value: RuntimeList<T>) {
   const out: T[] = [];
   while (value.name === "Cons") {
-    const [head, tail] = value.args[0];
-    out.push(head);
-    value = tail;
+    out.push(value.a0!);
+    value = value.a1!;
   }
   if (value.name !== "Nil") throw new Error(`Expected runtime List, received ${value.name}`);
   return out;

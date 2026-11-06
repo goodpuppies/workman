@@ -1,7 +1,8 @@
 import { compileLibraryFile } from "../../../../src/compiler.ts";
 import { type Edit, type InlineHint, list } from "./preview.ts";
 
-type Variant = { name: string; args: any[] };
+/** A WM datatype value; payload fields `a0`, `a1`, ... (see src/core/ctor_layout.ts). */
+type Variant = { name: string; [field: `a${number}`]: any };
 export type EditorResult = {
   source: string;
   projected: string;
@@ -36,7 +37,7 @@ export async function loadEditor() {
         .map((unit) => String.fromCharCode(unit)).join("");
     const optionalId = (value: Variant): number | null => {
       if (value.name === "None") return null;
-      if (value.name === "Some") return value.args[0].args[0];
+      if (value.name === "Some") return value.a0.a0;
       throw new Error("Invalid WM option in editor transport");
     };
     return (source: string, marked = false): EditorResult => {
@@ -45,7 +46,7 @@ export async function loadEditor() {
         throw new Error(`Editor view failed: ${JSON.stringify(result)}`);
       }
       if (result.name !== "Ok") throw new Error("Invalid WM editor result");
-      const view = result.args[0];
+      const view = result.a0;
       return {
         source,
         projected: text(view.projection.text),

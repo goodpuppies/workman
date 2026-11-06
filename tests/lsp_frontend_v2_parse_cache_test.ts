@@ -83,7 +83,7 @@ function countingSurfaceFrontend() {
     parseSurfaceProgram(source: string): FrontendV2SurfaceProgram {
       calls += 1;
       return {
-        root: { name: "ProgramNode", args: [[source, calls]] },
+        root: { name: "ProgramNode", a0: source, a1: calls },
         marks: [],
       };
     },

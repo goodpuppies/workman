@@ -1,8 +1,11 @@
 type UnknownRecord = Record<string, unknown>;
 
+/** A WM datatype value: `{ ctor, name, a0, a1, ... }`, see `core/ctor_layout.ts`. */
 export type WmVariant = Readonly<{
   name: string;
-  args: readonly unknown[];
+  a0?: unknown;
+  a1?: unknown;
+  [field: `a${number}`]: unknown;
 }>;
 
 export type FrontendV2SurfaceProgram = Readonly<{
@@ -84,8 +87,7 @@ export function decodeSurfaceFailure(value: unknown): FrontendV2SurfaceParseFail
 export function variant(value: unknown, expected?: string): WmVariant {
   if (
     !isRecord(value) ||
-    typeof value.name !== "string" ||
-    !Array.isArray(value.args)
+    typeof value.name !== "string"
   ) {
     throw new Error(`frontend-v2 expected${expected ? ` ${expected}` : ""} constructor`);
   }
@@ -95,21 +97,32 @@ export function variant(value: unknown, expected?: string): WmVariant {
   return value as WmVariant;
 }
 
+/** Whether the constructor value carries a payload. */
+export function hasPayload(constructor: WmVariant): boolean {
+  return "a0" in constructor;
+}
+
+/** The constructor's payload as one value; a spread tuple payload comes back as an array. */
+export function payload(constructor: WmVariant): unknown {
+  if (!("a1" in constructor)) return constructor.a0;
+  const items: unknown[] = [];
+  for (let index = 0; `a${index}` in constructor; index++) items.push(constructor[`a${index}`]);
+  return items;
+}
+
 export function fields(value: unknown, expected?: string): readonly unknown[] {
   const constructor = variant(value, expected);
-  if (
-    constructor.args.length !== 1 ||
-    !Array.isArray(constructor.args[0])
-  ) {
+  const items = payload(constructor);
+  if (!hasPayload(constructor) || !Array.isArray(items)) {
     throw new Error(`frontend-v2 ${constructor.name} has an invalid product payload`);
   }
-  return constructor.args[0] as readonly unknown[];
+  return items;
 }
 
 export function option(value: unknown): unknown | undefined {
   const constructor = variant(value);
-  if (constructor.name === "None" && constructor.args.length === 0) return undefined;
-  if (constructor.name === "Some" && constructor.args.length === 1) return constructor.args[0];
+  if (constructor.name === "None" && !hasPayload(constructor)) return undefined;
+  if (constructor.name === "Some" && hasPayload(constructor)) return payload(constructor);
   throw new Error(`frontend-v2 expected Option, got ${constructor.name}`);
 }
 
@@ -118,17 +131,12 @@ export function list(value: unknown): readonly unknown[] {
   let current = value;
   while (true) {
     const constructor = variant(current);
-    if (constructor.name === "Nil" && constructor.args.length === 0) return output;
-    if (
-      constructor.name !== "Cons" ||
-      constructor.args.length !== 1 ||
-      !Array.isArray(constructor.args[0]) ||
-      constructor.args[0].length !== 2
-    ) {
+    if (constructor.name === "Nil" && !hasPayload(constructor)) return output;
+    if (constructor.name !== "Cons") {
       throw new Error(`frontend-v2 expected List, got ${constructor.name}`);
     }
-    output.push(constructor.args[0][0]);
-    current = constructor.args[0][1];
+    output.push(constructor.a0);
+    current = constructor.a1;
   }
 }
 

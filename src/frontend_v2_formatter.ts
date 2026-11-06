@@ -1,6 +1,6 @@
 type WorkmanOption<T> =
-  | Readonly<{ name: "Some"; args: readonly [T] }>
-  | Readonly<{ name: "None"; args: readonly [] }>;
+  | Readonly<{ name: "Some"; a0: T }>
+  | Readonly<{ name: "None" }>;
 
 type FormatterLibrary = Readonly<{
   formatSurfaceSource(source: string): WorkmanOption<string>;
@@ -21,7 +21,7 @@ export async function formatFrontendV2Source(
   if (result.name === "None") {
     throw new Error(`frontend-v2 has no complete Surface tree for ${path}`);
   }
-  return result.args[0];
+  return result.a0;
 }
 
 async function loadFormatter(): Promise<FormatterLibrary> {

@@ -20,7 +20,7 @@ export function NodeInspector({ item, source, onMate }: {
   const bounds = item && spanOf(item);
   return <section className="inspector-pane">
     <h2>Inspector{item && "mateIdx" in item && item.mateIdx.name === "Mate" &&
-      <button onClick={() => onMate(item.mateIdx.args[0])}>Go to mate</button>}</h2>
+      <button onClick={() => onMate(item.mateIdx.a0!)}>Go to mate</button>}</h2>
     <pre id="spelling">{bounds && JSON.stringify(source.slice(...bounds))}</pre>
     <div id="inspector">{item ? tree("item", item) : "Select an item to inspect its fields."}</div>
   </section>;

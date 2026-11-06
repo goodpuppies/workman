@@ -6,7 +6,7 @@ export const describe = (error, show) => {
   if (error instanceof Error) return String(error.message);
   if (error === null) return "null";
   if (typeof error === "object" && "ctor" in error) {
-    if (error.name === "Js.Error") return String(error.args[0]);
+    if (error.name === "Js.Error") return String(error.a0);
     if (error.name === "Js.Unknown") return "unknown JavaScript error";
   }
   return show(error);

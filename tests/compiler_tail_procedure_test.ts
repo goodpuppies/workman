@@ -49,9 +49,9 @@ Deno.test("tail-specializes imported procedure factories and nested callback sta
   `);
   assertStringIncludes(js, "continue __wm_tail_");
   assertEquals(mod.answer.name, "Good");
-  assertEquals(mod.answer.args, [100000]);
+  assertEquals(mod.answer.a0, 100000);
   assertEquals(mod.failed.name, "Bad");
-  assertEquals(mod.failed.args, ["stop"]);
+  assertEquals(mod.failed.a0, "stop");
 });
 
 Deno.test("procedure specialization preserves callback captures and argument evaluation order", async () => {
@@ -91,9 +91,10 @@ Deno.test("procedure specialization preserves callback captures and argument eva
     assertStringIncludes(js, "continue __wm_tail_");
     assertEquals(mod.answer, 6);
     assertEquals(mod.log.name, "Ok");
-    assertEquals(mod.log.args, [
+    assertEquals(
+      mod.log.a0,
       "capture,argument,capture,argument,capture,argument,capture,argument",
-    ]);
+    );
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

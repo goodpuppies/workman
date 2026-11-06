@@ -6,7 +6,16 @@ import type { CoreDynamicExport, CoreModuleArtifact, CoreProgram } from "./artif
 import type { BindingId, StructureId } from "./ids.ts";
 import type { ModuleId } from "../module_id.ts";
 import { moduleContentKeys } from "../module_content_key.ts";
-import { basisCtorId, basisCtorJsName } from "../basis.ts";
+import { basisCtorId, basisCtorJsName, basisTypes } from "../basis.ts";
+import type { CtorId } from "./ids.ts";
+import {
+  basisCtorFieldCount,
+  ctorField,
+  ctorFieldCount,
+  emitCtorBinding,
+  emitCtorPayload,
+  emitCtorValue,
+} from "./ctor_layout.ts";
 import {
   basisIntrinsicDescriptor,
   basisIntrinsicDescriptorBySemanticId,
@@ -39,6 +48,7 @@ export type CoreEmitOptions = {
 export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions = {}): string {
   program = specializeTailCalls(program);
   resetEmitterState();
+  ctorLayouts = collectCtorLayouts(program);
   setWorkerSpecifiers(options.workerSpecifiers);
   const entry = program.modules.get(program.entry)!;
   directFns = collectProgramDirectFns(program);
@@ -1027,6 +1037,36 @@ function replPatternBindings(pattern: CorePattern): CoreDynamicExport[] {
   }
 }
 
+type CtorLayout = { name: string; fieldCount: number };
+
+/** Field counts of the constructors this program declares, by constructor id. */
+let ctorLayouts = new Map<number, CtorLayout>();
+
+function collectCtorLayouts(program: CoreProgram): Map<number, CtorLayout> {
+  const layouts = new Map<number, CtorLayout>();
+  for (const type of basisTypes) {
+    for (const ctor of type.ctors) {
+      layouts.set(ctor.id, { name: ctor.name, fieldCount: basisCtorFieldCount(ctor.args) });
+    }
+  }
+  for (const artifact of program.modules.values()) {
+    for (const decl of artifact.module.decls) registerCtorLayouts(decl, layouts);
+  }
+  return layouts;
+}
+
+function registerCtorLayouts(decl: CoreDecl, layouts = ctorLayouts): void {
+  if (decl.kind !== "CoreType" || decl.alias) return;
+  for (const ctor of decl.ctors) {
+    if (ctor.id === undefined) continue;
+    layouts.set(ctor.id, { name: ctor.name, fieldCount: ctorFieldCount(ctor.payload) });
+  }
+}
+
+function ctorLayout(ctorId: CtorId | undefined): CtorLayout | undefined {
+  return ctorId === undefined ? undefined : ctorLayouts.get(ctorId);
+}
+
 function resetEmitterState(): void {
   runtimeSource = undefined;
   runtimeCallSites = [];
@@ -1049,7 +1089,7 @@ function emitMainInvocation(entry: CoreModuleArtifact): string {
   return `if (typeof ${main} === "function") {
   const __wm_main_result = await ${main}();
   if (__wm_main_result?.ctor === ${basisCtorId("Err")}) {
-    console.error("error[runtime.main-failed]: main failed with " + __wm_show(__wm_main_result.args[0], new WeakSet(), true));
+    console.error("error[runtime.main-failed]: main failed with " + __wm_show(__wm_main_result.a0, new WeakSet(), true));
     if (globalThis.Deno) Deno.exitCode = 1;
     else if (globalThis.process) globalThis.process.exitCode = 1;
   } else if (typeof __wm_main_result === "number" && __wm_main_result % 1 === 0) {
@@ -1518,17 +1558,15 @@ function emitDecl(decl: CoreDecl): string[] {
   }
   if (decl.kind === "CoreType") {
     if (decl.alias) return [];
-    return decl.ctors.map((ctor) => {
-      const ctorId = ctor.id ?? ctor.name;
-      const name = ctorRefName(ctor.name, ctor.id);
-      return ctor.payload
-        ? `const ${name} = (__payload) => ({ ctor: ${JSON.stringify(ctorId)}, name: ${
-          JSON.stringify(ctor.name)
-        }, args: [__payload] });`
-        : `const ${name} = Object.freeze({ ctor: ${JSON.stringify(ctorId)}, name: ${
-          JSON.stringify(ctor.name)
-        }, args: [] });`;
-    });
+    registerCtorLayouts(decl);
+    return decl.ctors.map((ctor) =>
+      emitCtorBinding(
+        ctorRefName(ctor.name, ctor.id),
+        ctor.id ?? ctor.name,
+        ctor.name,
+        ctorFieldCount(ctor.payload),
+      )
+    );
   }
   if (decl.recursive) {
     return decl.bindings.flatMap((binding) => {
@@ -1631,6 +1669,8 @@ function emitExpr(expr: CoreExpr): string {
     case "CoreApp": {
       const primitive = emitPrimitiveOperatorApp(expr);
       if (primitive) return primitive;
+      const constructed = emitCtorApp(expr);
+      if (constructed) return constructed;
       if (expr.callee.kind === "CoreVar" && expr.callee.bindingId !== undefined) {
         const direct = directFns.get(expr.callee.bindingId);
         if (direct && expr.arg.kind === "CoreTuple" && expr.arg.items.length === direct.arity) {
@@ -1676,6 +1716,29 @@ function typedHoleRuntimeMessage(expr: Extract<CoreExpr, { kind: "CorePanic" }>)
   const gutter = `${line}| `;
   return `error[type.typed-hole ${hole.path}:${line}:${col}]: typed hole; expected type: ${hole.expectedType}\n` +
     `${gutter}${hole.lineText}\n${" ".repeat(gutter.length + col)}^`;
+}
+
+/**
+ * A known constructor applied to its payload builds the value in place: a tuple payload goes
+ * straight into the fields instead of through an array and a call.
+ */
+function emitCtorApp(expr: Extract<CoreExpr, { kind: "CoreApp" }>): string | undefined {
+  const callee = expr.callee;
+  const ctorId = callee.kind === "CoreVar" && callee.bindingId === undefined
+    ? callee.ctorId
+    : callee.kind === "CoreRecordAccess"
+    ? callee.ctorId
+    : undefined;
+  const layout = ctorLayout(ctorId);
+  if (!layout || ctorId === undefined) return undefined;
+  if (layout.fieldCount === 1) return emitCtorValue(ctorId, layout.name, [emitExpr(expr.arg)]);
+  if (
+    layout.fieldCount >= 2 && expr.arg.kind === "CoreTuple" &&
+    expr.arg.items.length === layout.fieldCount
+  ) {
+    return emitCtorValue(ctorId, layout.name, expr.arg.items.map(emitExpr));
+  }
+  return undefined;
 }
 
 function emitPrimitiveOperatorApp(
@@ -2201,12 +2264,7 @@ function patternChecks(
         // not through the exporting module's local singleton binding. Core
         // patterns do not yet retain the resolved structure id needed to name
         // that alias, so use the stable constructor tag at this boundary.
-        if (path.qualifiers.length > 0) {
-          return [
-            `${value}?.ctor === ${JSON.stringify(ctorId)}`,
-            `${value}.args.length === 0`,
-          ];
-        }
+        if (path.qualifiers.length > 0) return [`${value}?.ctor === ${JSON.stringify(ctorId)}`];
         const ctor = pattern.ctorId === undefined
           ? id(ctorName)
           : basisCtorJsName(pattern.ctorId) ?? ctorRefName(ctorName, pattern.ctorId);
@@ -2214,8 +2272,9 @@ function patternChecks(
       }
       return [
         `${value}?.ctor === ${JSON.stringify(ctorId)}`,
-        `${value}.args.length === 1`,
-        ...patternChecks(pattern.payload, `${value}.args[0]`),
+        ...ctorPayloadParts(pattern.payload, value, pattern.ctorId).flatMap(([item, at]) =>
+          patternChecks(item, at)
+        ),
       ];
     }
   }
@@ -2232,10 +2291,33 @@ function emitPatternBind(pattern: CorePattern, value: string): string[] {
         emitPatternBind(field.pattern, emitJsMember(value, field.name))
       );
     case "CorePCtor":
-      return pattern.payload ? emitPatternBind(pattern.payload, `${value}.args[0]`) : [];
+      return pattern.payload
+        ? ctorPayloadParts(pattern.payload, value, pattern.ctorId).flatMap(([item, at]) =>
+          emitPatternBind(item, at)
+        )
+        : [];
     default:
       return [];
   }
+}
+
+/**
+ * The payload pattern of a constructor pattern, split over the value's fields: a tuple pattern
+ * against a spread tuple payload matches field by field, anything else sees the whole payload.
+ */
+function ctorPayloadParts(
+  payload: CorePattern,
+  value: string,
+  ctorId: CtorId | undefined,
+): [CorePattern, string][] {
+  const fieldCount = ctorLayout(ctorId)?.fieldCount;
+  if (
+    fieldCount !== undefined && fieldCount >= 2 && payload.kind === "CorePTuple" &&
+    payload.items.length === fieldCount
+  ) {
+    return payload.items.map((item, index) => [item, `${value}.${ctorField(index)}`]);
+  }
+  return [[payload, emitCtorPayload(value, fieldCount)]];
 }
 
 function emitExportRef(item: CoreDynamicExport): string {
