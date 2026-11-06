@@ -84,3 +84,33 @@ Emitted JS is smaller too (3.26 M to 2.50 M characters for `compiler_frontend.wm
 Known gap: a payload written through a tuple alias (`Tagged<Pair>` with `type Pair = (A, B)`) stays
 whole in `a0`, because the layout follows declaration syntax while the checker expands the alias.
 It is correct, only not flattened.
+
+## Where a one-shot compile goes after the layout change
+
+atview `app/main.wm`, one fresh process (`scripts/profile_typecheck.ts`, `scripts/profile_reflection.ts`
+and wall-clock timers around `analyzeModuleGraph`), 7.6 s total:
+
+| Cost | Time | Notes |
+| --- | ---: | --- |
+| Parse the program's 48 modules | 1.75 s | `load module graph` |
+| Parse and analyze the standard library | 1.9 s | `externalImportResults`; no `onTiming` phase reports it. Parsing the 87 library modules (260 KB) alone is 1.5–1.7 s |
+| JS reflection workspace | 2.0 s | 126 TypeScript batches: `createProgram` 1.35 s (204 files, 6.1 MB, `lib.dom.d.ts` 2.3 MB), `getSemanticDiagnostics()` 0.62 s, 68 `deno info` subprocesses 0.40 s |
+| Other FFI preparation and delayed resolution | ~0.5 s | `prepare FFI`, `resolve delayed FFI` beyond reflection |
+| Inference | 1.05 s | three passes per module: initial partial, post-resolution partial, final |
+| Build program analysis | 0.8 s | |
+
+The parser runs at about 170 KB/s, so parsing (program plus library) is ~45% of the compile and
+type inference proper is ~15%.
+
+Findings:
+
+- The library's parsed modules are plain data (143,609 objects, no class instances, no `undefined`
+  fields). As JSON they are 4.3 MB and load in 27 ms against 1.5–1.7 s to parse. 63 objects are
+  referenced twice, all `node` span records shared by a parameter and its pattern; a cache must
+  keep that sharing or show it does not matter (`binding_facts.scopeNodes` and
+  `module_interface` `byRegion` are keyed by nodes).
+- `prepareReflectionSources` calls `program.getSemanticDiagnostics()` for every file only to look
+  for TS2307 (unresolved import). Checking the root files alone would skip most of the 0.62 s, but
+  stops reporting unresolved imports inside imported TypeScript dependencies.
+- In the staged pipeline, any module that needs FFI staging makes every fresh module, library
+  included, go through the partial passes again.
