@@ -1,0 +1,11 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:effect@4.0.6": "4.0.6"
+  },
+  "npm": {
+    "effect@4.0.6": {
+      "integrity": "sha512-Tc3mkzuLR6t6P9dhLt0D2GrxYtmU5td4XEJEiXCmILz53IRIfJyHsKZWjTA3xEjiwpNTtXBgI4iqYPxMztBDrw=="
+    }
+  }
+}
