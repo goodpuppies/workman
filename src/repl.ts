@@ -7,6 +7,7 @@ import { maskSourceRange, topLevelPhraseEnd, topLevelPhraseRanges } from "./top_
 import {
   denoConfigArgs,
   handleTerminationSignals,
+  linkProjectPackages,
   relayTerminationSignals,
   terminationExitCode,
 } from "./child_runtime.ts";
@@ -78,6 +79,7 @@ async function executeReplArtifacts(
   try {
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no REPL artifact");
+    await linkProjectPackages(dirname(inputPath), dir);
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
@@ -348,6 +350,7 @@ class ReplHost {
   static async start(directory: string, project: string): Promise<ReplHost> {
     const path = `${directory}/host.mjs`;
     await Deno.writeTextFile(path, REPL_HOST_SOURCE);
+    await linkProjectPackages(project, directory);
     // One process serves every phrase, so it gets every runtime flag a phrase might need.
     const child = new Deno.Command(Deno.execPath(), {
       args: ["run", "-A", ...denoConfigArgs(project), "--unstable-webgpu", path],

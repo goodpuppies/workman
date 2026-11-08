@@ -458,16 +458,23 @@ Deno.test("resolves import-map aliases during delayed reflection independent of 
     `,
   );
 
-  const previous = Deno.cwd();
-  try {
-    Deno.chdir("/");
-    const results = await checkFile(input);
-    const result = results.get(await Deno.realPath(input));
+  // In a child process: the working directory is shared by every test file running in parallel.
+  const check = `
+    import { checkFile } from ${JSON.stringify(new URL("../src/compiler.ts", import.meta.url).href)};
+    import { expectBinding } from ${JSON.stringify(new URL("./type_helpers.ts", import.meta.url).href)};
+    const input = ${JSON.stringify(input)};
+    const result = (await checkFile(input)).get(await Deno.realPath(input));
     if (!result) throw new Error("missing main result");
     expectBinding(result.env, "app", { type: "Task<Js.Object, Js.Error>!", vars: 0 });
-  } finally {
-    Deno.chdir(previous);
-  }
+  `;
+  const child = await new Deno.Command(Deno.execPath(), {
+    args: ["eval", "--config", new URL("../deno.json", import.meta.url).pathname, check],
+    cwd: "/",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(new TextDecoder().decode(child.stderr), "");
+  assertEquals(child.code, 0);
 });
 
 Deno.test("emits Workman worker targets as sibling artifacts", async () => {

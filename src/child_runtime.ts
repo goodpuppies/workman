@@ -24,6 +24,34 @@ export function denoConfigArgs(directory: string): string[] {
   }
 }
 
+/**
+ * Lets emitted code in `output` import the npm packages of the project at `directory`.
+ *
+ * Deno resolves bare specifiers from the `package.json` and `node_modules` around the script, and
+ * `--config` doesn't change that, so the output folder gets a copy of the nearest `package.json` and
+ * a link to the nearest `node_modules`.
+ */
+export async function linkProjectPackages(directory: string, output: string): Promise<void> {
+  const manifest = nearest(directory, "package.json", "file");
+  if (manifest) await Deno.copyFile(manifest, join(output, "package.json"));
+  const packages = nearest(directory, "node_modules", "directory");
+  // A junction needs no privileges on Windows; other systems ignore the type.
+  if (packages) await Deno.symlink(packages, join(output, "node_modules"), { type: "junction" });
+}
+
+function nearest(directory: string, name: string, kind: "file" | "directory"): string | undefined {
+  for (let current = directory;; current = dirname(current)) {
+    const path = join(current, name);
+    try {
+      const info = Deno.statSync(path);
+      if (kind === "file" ? info.isFile : info.isDirectory) return path;
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
+    if (dirname(current) === current) return undefined;
+  }
+}
+
 type TerminationSignal = "SIGINT" | "SIGTERM" | "SIGHUP";
 
 /** Exit codes a shell reports for a process ended by each signal: 128 plus the signal number. */

@@ -1,18 +1,19 @@
 import { assertEquals } from "@std/assert";
-import { join } from "node:path";
-import {
-  pakmanStateDirectory,
-  workmanCache,
-  workmanConfigFile,
-  workmanState,
-} from "../src/user_paths.ts";
 
+// In a child process: environment variables are shared by every test file running in parallel, and
+// other files read these to find the user cache.
 Deno.test("WM uses XDG config, cache and state roots with an explicit pakman override", async () => {
   if (Deno.build.os === "windows") return;
-  const root = await Deno.makeTempDir();
-  const vars = ["XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "PAKMAN_STATE"];
-  const saved = vars.map((name) => Deno.env.get(name));
-  try {
+  const check = `
+    import { assertEquals } from "@std/assert";
+    import { join } from "node:path";
+    import {
+      pakmanStateDirectory,
+      workmanCache,
+      workmanConfigFile,
+      workmanState,
+    } from ${JSON.stringify(new URL("../src/user_paths.ts", import.meta.url).href)};
+    const root = "/wm-test-root";
     Deno.env.set("XDG_CONFIG_HOME", join(root, "config"));
     Deno.env.set("XDG_CACHE_HOME", join(root, "cache"));
     Deno.env.set("XDG_STATE_HOME", join(root, "state"));
@@ -23,10 +24,12 @@ Deno.test("WM uses XDG config, cache and state roots with an explicit pakman ove
     assertEquals(pakmanStateDirectory(), join(root, "state/workman/pakman"));
     Deno.env.set("PAKMAN_STATE", join(root, "explicit"));
     assertEquals(pakmanStateDirectory(), join(root, "explicit"));
-  } finally {
-    vars.forEach((name, i) =>
-      saved[i] === undefined ? Deno.env.delete(name) : Deno.env.set(name, saved[i]!)
-    );
-    await Deno.remove(root, { recursive: true });
-  }
+  `;
+  const child = await new Deno.Command(Deno.execPath(), {
+    args: ["eval", "--config", new URL("../deno.json", import.meta.url).pathname, check],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(new TextDecoder().decode(child.stderr), "");
+  assertEquals(child.code, 0);
 });

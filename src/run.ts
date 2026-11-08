@@ -2,7 +2,7 @@ import { compileFileArtifactsFromCore, type CompileOptions, coreFile } from "./c
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { createProgressReporter } from "./progress.ts";
-import { denoConfigArgs, relayTerminationSignals } from "./child_runtime.ts";
+import { denoConfigArgs, linkProjectPackages, relayTerminationSignals } from "./child_runtime.ts";
 import { createTemporaryDirectory, type TemporaryDirectory } from "./temporary_directory.ts";
 
 export type RunOptions = CompileOptions & {
@@ -42,6 +42,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     // once there is something to write.
     temporaryDirectory = await createTemporaryDirectory({ prefix: "wm-run-" });
     const dir = temporaryDirectory.path;
+    await linkProjectPackages(dirname(inputPath), dir);
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
