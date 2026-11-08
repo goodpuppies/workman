@@ -109,7 +109,7 @@ export type LoadingBar = {
   finish(): void;
 };
 
-/** Draws the bar on stdout, leaving the line clear for whatever is printed next. */
+/** Draws once progress begins, after the parser's dynamic import can clear the terminal. */
 export function createLoadingBar(): LoadingBar {
   const encoder = new TextEncoder();
   const write = (text: string) => {
@@ -123,7 +123,9 @@ export function createLoadingBar(): LoadingBar {
   let shown = 0;
   let lastYield = started;
   let done = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
   const draw = () => {
+    if (done) return;
     shown += (progress.ratio - shown) * 0.25; // Glide between the compiler's uneven steps.
     const frame = renderLoadingBar(
       shown,
@@ -134,13 +136,22 @@ export function createLoadingBar(): LoadingBar {
     );
     write(`\r\x1b[2K${frame}`);
   };
-  write("\x1b[?25l");
-  draw();
-  const timer = setInterval(draw, FRAME_MS);
+  const start = () => {
+    if (done || timer !== undefined || progress.ratio === 0) return;
+    write("\x1b[?25l");
+    draw();
+    timer = setInterval(draw, FRAME_MS);
+  };
   return {
     observer: {
-      onParsed: (parsed, total) => progress.parsed(parsed, total),
-      onTiming: () => progress.analyzed(),
+      onParsed: (parsed, total) => {
+        progress.parsed(parsed, total);
+        start();
+      },
+      onTiming: () => {
+        progress.analyzed();
+        start();
+      },
       // A timer turn per step would nearly double the load, so only yield once per frame.
       afterStep: () => {
         const now = performance.now();
@@ -153,12 +164,17 @@ export function createLoadingBar(): LoadingBar {
         );
       },
     },
-    stage: (name) => progress.stage(name),
+    stage: (name) => {
+      progress.stage(name);
+      start();
+    },
     finish() {
       if (done) return;
       done = true;
-      clearInterval(timer);
-      write("\r\x1b[2K\x1b[?25h");
+      if (timer !== undefined) {
+        clearInterval(timer);
+        write("\r\x1b[2K\x1b[?25h");
+      }
     },
   };
 }

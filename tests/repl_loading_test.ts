@@ -1,7 +1,43 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { LoadingProgress, renderLoadingBar } from "../src/repl_loading.ts";
+import { createLoadingBar, LoadingProgress, renderLoadingBar } from "../src/repl_loading.ts";
 
 const PLAIN = { color: "none" } as const;
+
+Deno.test("loading bar waits for progress and clears only a bar it displayed", () => {
+  const originalWrite = Deno.stdout.writeSync;
+  const originalSize = Deno.consoleSize;
+  const writes: string[] = [];
+  Deno.stdout.writeSync = (bytes) => {
+    writes.push(new TextDecoder().decode(bytes));
+    return bytes.length;
+  };
+  Deno.consoleSize = () => ({ columns: 80, rows: 24 });
+  let bar: ReturnType<typeof createLoadingBar> | undefined;
+  try {
+    bar = createLoadingBar();
+    bar.stage("load modules");
+    assertEquals(writes, []);
+    bar.finish();
+    assertEquals(writes, []);
+
+    bar = createLoadingBar();
+    bar.observer.onParsed?.(1, 10);
+    assertEquals(writes[0], "\x1b[?25l");
+    assertStringIncludes(writes[1], "Parsing standard library");
+    const frames = writes.length;
+    bar.observer.onParsed?.(2, 10);
+    assertEquals(writes.length, frames);
+    bar.finish();
+    assertEquals(writes.at(-1), "\r\x1b[2K\x1b[?25h");
+    bar.finish();
+    bar.observer.onParsed?.(3, 10);
+    assertEquals(writes.length, frames + 1);
+  } finally {
+    bar?.finish();
+    Deno.stdout.writeSync = originalWrite;
+    Deno.consoleSize = originalSize;
+  }
+});
 
 Deno.test("loading bar fills in proportion and shows its percentage and label", () => {
   assertEquals(
