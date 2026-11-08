@@ -296,7 +296,7 @@ export async function compileLibraryFile(
 }
 
 export async function checkFile(input: string): Promise<Map<string, InferResult>> {
-  const analysis = await analyzeFile(input);
+  const analysis = await checkProgram(input);
   return resultsBySourcePath(analysis.graph, analysis.results);
 }
 
@@ -508,6 +508,20 @@ async function analyzeCoreFile(
   const program = await analyzeStrict(input, options, (graph, results) => ({ graph, results }));
   const combined = await withStandardLibrary(program.graph, program.results);
   return buildCoreProgramAnalysis(combined.graph, combined.results);
+}
+
+/**
+ * Strict analysis of the program's own modules, rejecting what compilation would reject. The
+ * tooling snapshot is left out: only the language server reads it.
+ */
+export async function checkProgram(
+  input: string,
+  options: ModuleGraphOptions = {},
+): Promise<{ graph: ModuleGraph; results: ModuleMap<InferResult> }> {
+  const program = await analyzeStrict(input, options, (graph, results) => ({ graph, results }));
+  const combined = await withStandardLibrary(program.graph, program.results);
+  buildCoreProgramAnalysis(combined.graph, combined.results);
+  return program;
 }
 
 async function analyzeStrict<T>(

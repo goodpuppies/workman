@@ -88,7 +88,7 @@ export function inferModule(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleCore(module, imports, false, options, true).result;
+  return inferModuleCore(module, imports, false, options, false).result;
 }
 
 export function inferModulePartial(

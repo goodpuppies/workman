@@ -1,5 +1,5 @@
 import {
-  analyzeFile,
+  checkProgram,
   compileFile,
   compileFileArtifacts,
   compileLibraryFile,
@@ -231,7 +231,7 @@ async function checkCommand(args: string[]): Promise<number> {
   const [input] = args;
   if (!input) return missingInput("check");
   const analysis = await withCompilerProgress(
-    (options) => analyzeFile(input, options),
+    (options) => checkProgram(input, options),
     ["load modules", "analyze"],
   );
   for (const id of analysis.graph.order) {
