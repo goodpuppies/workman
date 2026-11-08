@@ -112,7 +112,7 @@ export type SurfaceRuleKind =
   | "trivia"
   | "boundary";
 
-const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = Object.freeze({
+export const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string[]>> = Object.freeze({
   node: Object.freeze([
     "Start",
     "TopPhrase",

@@ -4,9 +4,14 @@ import type {
 } from "../../../scripts/frontend_v2_grammar_ir.ts";
 import type { RequiredTokenRecovery } from "./contract.ts";
 import { emitFirstCheck, FirstSets, isGuardable } from "./first_sets.ts";
+import { Scanners } from "./scanners.ts";
+import { surfaceRuleGroups } from "./surface_schema.ts";
 
 /** FIRST sets of the grammar being emitted; set by `emitCompiledProbe`. */
 let firstSets: FirstSets | undefined;
+
+/** Lexical scanners of the grammar being emitted; set by `emitCompiledProbe`. */
+let scanners: Scanners | undefined;
 
 /**
  * Constant lists of the rules module being emitted, by WM source text. A list literal in a rule
@@ -36,6 +41,13 @@ export function emitCompiledProbe(
     isRecoverableLiteral: (rule, value) => recoveryIndex.has(recoveryKey(rule, value)),
     recoveryRepetitionRules,
   });
+  scanners = new Scanners(
+    grammar,
+    new Set(surfaceRuleGroups.trivia),
+    new Set(surfaceRuleGroups.token),
+    (rule, value) => recoveryIndex.has(recoveryKey(rule, value)),
+    (codes) => constant("literal", codes),
+  );
   const files = new Map<string, string>();
   files.set(
     "compiled_probe_types.wm",
@@ -70,21 +82,7 @@ function emitRules(
     `${index === 0 ? "let rec" : "and"} rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parser: CompiledParser): CompiledProbeMatch => {`,
     indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
     "}",
-    `and enter_${rule.name} = (parser: CompiledParser, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {`,
-    `  let slot = compiledRuleSlot(${index}, offset, diagnose, recover);`,
-    "  match(Table.getAt(parser.memo, slot)) {",
-    "    Some(cached) => { cached },",
-    "    None => {",
-    `      let result = wrapCompiledRule(${JSON.stringify(rule.name)}, offset, diagnose, if (recover) {`,
-    indent(emitRecoveringEntry(rule.name), 4),
-    "      } else {",
-    `        rule_${rule.name}(source, offset, false, diagnose, parser)`,
-    "      });",
-    "      Table.setAt(parser.memo, slot, result);",
-    "      result",
-    "    },",
-    "  }",
-    "}",
+    ...emitRuleEntry(rule.name, index),
   ]);
   const byName = [
     "and parseRuleByName = (parser: CompiledParser, name: String, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {",
@@ -96,11 +94,12 @@ function emitRules(
     "  }",
     "};",
   ];
+  const scanFunctions = scanners!.functions();
   const constants = [...moduleConstants].map(([value, name]) => `let ${name} = ${value};`);
   moduleConstants = undefined;
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
-    'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeMatched, CompiledProbeNoMatch, SequenceCompiledCapture, ChoiceCompiledCapture, bestFailure, failureWithBest, trackedFailure, unobservedFailure, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchSemanticPredicate, matchNamedMatchArms, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule };',
+    'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeMatched, CompiledProbeNoMatch, EmptyCompiledCapture, TokenCompiledCapture, RuleCompiledCapture, SequenceCompiledCapture, ChoiceCompiledCapture, bestFailure, failureWithBest, trackedFailure, unobservedFailure, codeAt, literalEnd, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchSemanticPredicate, matchNamedMatchArms, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule };',
     'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
     'from js.host("table") import * as Table;',
     "",
@@ -120,9 +119,45 @@ function emitRules(
     ...constants,
     "",
     ...group,
+    ...scanFunctions,
     ...byName,
     "",
   ].join("\n");
+}
+
+/** What a reference to a rule calls: its scanner when possible, otherwise the memoized parse. */
+function emitRuleEntry(name: string, index: number): string[] {
+  const memoized = [
+    `let slot = compiledRuleSlot(${index}, offset, diagnose, recover);`,
+    "match(Table.getAt(parser.memo, slot)) {",
+    "  Some(cached) => { cached },",
+    "  None => {",
+    `    let result = wrapCompiledRule(${JSON.stringify(name)}, offset, diagnose, if (recover) {`,
+    indent(emitRecoveringEntry(name), 3),
+    "    } else {",
+    `      rule_${name}(source, offset, false, diagnose, parser)`,
+    "    });",
+    "    Table.setAt(parser.memo, slot, result);",
+    "    result",
+    "  },",
+    "}",
+  ].join("\n");
+  const signature =
+    `and enter_${name} = (parser: CompiledParser, source: String, offset: Number, diagnose: Bool, recover: Bool): CompiledProbeMatch => {`;
+  if (!scanners!.scansWholeRule(name)) return [signature, indent(memoized, 1), "}"];
+  const inner = surfaceRuleGroups.trivia.includes(name)
+    ? "EmptyCompiledCapture"
+    : 'TokenCompiledCapture("text", offset, next)';
+  return [
+    signature,
+    "  if (diagnose) {",
+    indent(memoized, 2),
+    "  } else {",
+    `    let next = ${scanners!.ruleCall(name)};`,
+    `    if (next >= 0) { CompiledProbeMatched(next, RuleCompiledCapture(${JSON.stringify(name)}, ${inner}, offset, next), None) } else { unobservedFailure }`,
+    "  }",
+    "}",
+  ];
 }
 
 function emitDispatch(grammar: WorkmanGrammarIr, grammarHash: string): string {
@@ -266,22 +301,42 @@ function emitExpression(
         ? `matchNamedMatchArms(source, offset,\n${indent(labeled, 1)}\n, ${parseRuleCallback})`
         : labeled;
     }
-    case "text":
-      return [
+    case "text": {
+      const text = [
         "matchText(",
         indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
         ", offset)",
       ].join("\n");
+      if (!scanners!.canScan(expression.expression, ruleName)) return text;
+      const end = inlineName("end");
+      return [
+        "if (diagnose) {",
+        indent(text, 1),
+        "} else {",
+        `  let ${end} = ${scanners!.emit(expression.expression)};`,
+        `  if (${end} >= 0) { CompiledProbeMatched(${end}, TokenCompiledCapture("text", offset, ${end}), None) } else { unobservedFailure }`,
+        "}",
+      ].join("\n");
+    }
     case "group":
       return emitExpression(expression.expression, ruleName, recoveryMode, recoveries);
     case "action":
       return emitExpression(expression.expression, ruleName, recoveryMode, recoveries);
-    case "simpleNot":
-      return [
+    case "simpleNot": {
+      const lookahead = [
         "matchNegativeLookahead(",
         indent(emitExpression(expression.expression, ruleName, "false", recoveries), 1),
         ", offset)",
       ].join("\n");
+      if (!scanners!.canScan(expression.expression, ruleName)) return lookahead;
+      return [
+        "if (diagnose) {",
+        indent(lookahead, 1),
+        "} else {",
+        `  if (${scanners!.emit(expression.expression)} >= 0) { unobservedFailure } else { CompiledProbeMatched(offset, EmptyCompiledCapture, None) }`,
+        "}",
+      ].join("\n");
+    }
     case "optional":
       return [
         "matchOptional(",
