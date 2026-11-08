@@ -497,7 +497,8 @@ export function rememberProvenance(
     const source = sourceAtPath(targetSource, path);
     const origin = sourceAt(targetSource, path) ?? originAsConstraint(reason);
     provenance.set(variable.id, {
-      origins: dedupeOrigins([...current.origins, reason]),
+      // Readers dedupe (`provenanceForType`), which keeps the first of each just as this would.
+      origins: [...current.origins, reason],
       commitment: { type: target, origin, source },
     });
   };
@@ -516,7 +517,9 @@ export function provenanceForType(
   type: Ty,
   provenance: TypeProvenance,
 ): EvidenceOrigin[] {
-  return dedupeOrigins(collectProvenance(type, provenance));
+  const origins: EvidenceOrigin[] = [];
+  collectProvenance(type, provenance, new Set(), origins);
+  return dedupeOrigins(origins);
 }
 
 export function dedupeOrigins(
@@ -583,41 +586,31 @@ export function expressionTypeEvidence(
   return dedupeOrigins(evidence);
 }
 
+/** Appends the origins inside `type`, in order, repeats included. `provenanceForType` dedupes once. */
 function collectProvenance(
   type: Ty,
   provenance: TypeProvenance,
-  seen = new Set<number>(),
-): EvidenceOrigin[] {
+  seen: Set<number>,
+  out: EvidenceOrigin[],
+): void {
   if (type.tag === "view") {
-    return collectProvenance(type.value, provenance, seen);
-  }
-  if (type.tag === "var") {
-    if (seen.has(type.id)) return [];
+    collectProvenance(type.value, provenance, seen, out);
+  } else if (type.tag === "var") {
+    if (seen.has(type.id)) return;
     seen.add(type.id);
-    const local = provenance.get(type.id)?.origins ?? [];
-    return dedupeOrigins([
-      ...local,
-      ...(type.instance ? collectProvenance(type.instance, provenance, seen) : []),
-    ]);
+    const local = provenance.get(type.id)?.origins;
+    if (local) out.push(...local);
+    if (type.instance) collectProvenance(type.instance, provenance, seen, out);
+  } else if (type.tag === "fn") {
+    for (const param of type.params) collectProvenance(param, provenance, seen, out);
+    collectProvenance(type.result, provenance, seen, out);
+  } else if (type.tag === "tuple") {
+    for (const item of type.items) collectProvenance(item, provenance, seen, out);
+  } else if (type.tag === "struct") {
+    for (const field of type.fields) collectProvenance(field.type, provenance, seen, out);
+  } else if (type.tag === "named") {
+    for (const arg of type.args) collectProvenance(arg, provenance, seen, out);
   }
-  if (type.tag === "fn") {
-    return dedupeOrigins([
-      ...type.params.flatMap((param) => collectProvenance(param, provenance, seen)),
-      ...collectProvenance(type.result, provenance, seen),
-    ]);
-  }
-  if (type.tag === "tuple") {
-    return dedupeOrigins(type.items.flatMap((item) => collectProvenance(item, provenance, seen)));
-  }
-  if (type.tag === "struct") {
-    return dedupeOrigins(
-      type.fields.flatMap((field) => collectProvenance(field.type, provenance, seen)),
-    );
-  }
-  if (type.tag === "named") {
-    return dedupeOrigins(type.args.flatMap((arg) => collectProvenance(arg, provenance, seen)));
-  }
-  return [];
 }
 
 export function sourceForExpr(expr: Expr, message = "expression"): TypeSource {
