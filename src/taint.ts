@@ -92,25 +92,43 @@ export function isTainted(type: Ty): boolean {
   }
 }
 
+/** Open variables in the order found. Sequences can collect thousands, so membership is indexed. */
+type OpenList = { items: Ty[]; index?: Set<Ty>; seen?: Set<Ty> };
+
+const newOpenList = (): OpenList => ({ items: [] });
+
+function include(list: OpenList, t: Ty): void {
+  if (list.index) {
+    if (list.index.has(t)) return;
+    list.index.add(t);
+  } else {
+    if (list.items.includes(t)) return;
+    // Most lists stay short, and a scan beats building a set for them.
+    if (list.items.length >= 16) list.index = new Set([...list.items, t]);
+  }
+  list.items.push(t);
+}
+
 /**
  * Collect the open variables of a type as a flat list, so a sequence of sequences links directly to
  * the variables and never to an earlier sequence. Returns true once a contained `!` is known.
+ * Links walked for one member of a sequence aren't walked again for the next.
  */
-function open(t: Ty, out: Ty[], seen?: Set<Ty>): boolean {
+function open(t: Ty, list: OpenList): boolean {
   let c = t;
   while (true) {
     if (c.tainted) return true;
     if (c.tag !== "view" && c.tag !== "var" && c.tag !== "ffi") break;
     if (c.deps) {
-      seen ??= new Set();
-      if (seen.has(c)) return false;
-      seen.add(c);
-      for (const dep of c.deps) if (open(dep, out, seen)) return true;
+      list.seen ??= new Set();
+      if (list.seen.has(c)) return false;
+      list.seen.add(c);
+      for (const dep of c.deps) if (open(dep, list)) return true;
     }
     if (c.tag === "view") c = c.value;
     else if ((c.tag === "var" || c.tag === "ffi") && c.instance) {
       if (c.linked) {
-        if (!out.includes(c)) out.push(c);
+        include(list, c);
         return false;
       }
       c = c.instance;
@@ -118,24 +136,24 @@ function open(t: Ty, out: Ty[], seen?: Set<Ty>): boolean {
   }
   if (c.tag === "var" || c.tag === "ffi") {
     c.linked = true;
-    if (!out.includes(c)) out.push(c);
+    include(list, c);
   } else if (c.tag === "tuple") {
-    for (const item of c.items) if (open(item, out, seen)) return true;
+    for (const item of c.items) if (open(item, list)) return true;
   } else if (c.tag === "named") {
-    for (const arg of c.args) if (open(arg, out, seen)) return true;
+    for (const arg of c.args) if (open(arg, list)) return true;
   } else if (c.tag === "struct") {
     // A structural row can still gain fields, so the row itself stays open.
     if (carries(c)) return true;
-    if (!out.includes(c)) out.push(c);
+    include(list, c);
   }
   return false;
 }
 
 /** Links still open, or undefined if one has resolved to `!`. Clean ones are dropped here. */
 export function openDeps(deps: Ty[]): Ty[] | undefined {
-  const out: Ty[] = [];
-  for (const dep of deps) if (open(dep, out)) return undefined;
-  return out;
+  const list = newOpenList();
+  for (const dep of deps) if (open(dep, list)) return undefined;
+  return list.items;
 }
 
 export function taintedType(type: Ty, tainted = true): Ty {
@@ -154,15 +172,16 @@ export function taintedType(type: Ty, tainted = true): Ty {
 export function sequenceType(items: Ty[], result: Ty, settled?: Ty[]): Ty {
   if (settled) { for (const item of settled) if (carries(item)) return taintedType(result); }
   if (!items.length) return result;
-  let deps: Ty[] | undefined;
+  let list: OpenList | undefined;
   for (const item of items) {
     // Most members are clean concrete values: no list is needed to learn that.
     if (item.tag === "prim") {
       if (item.tainted) return taintedType(result);
       continue;
     }
-    if (open(item, deps ??= [])) return taintedType(result);
+    if (open(item, list ??= newOpenList())) return taintedType(result);
   }
+  const deps = list?.items;
   if (!deps?.length) return result;
   const own = position(result);
   const links = deps.includes(own) ? deps.filter((dep) => dep !== own) : deps;

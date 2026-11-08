@@ -1015,6 +1015,7 @@ function copyType(
     cells?: Set<number>;
   },
 ): Ty {
+  let openLinks: Map<Ty, Ty[] | undefined> | undefined;
   let linkedCopies: Map<Ty, Ty> | undefined;
   const copiedProjections = new Set<number>();
   const go = (input: Ty): Ty => {
@@ -1115,7 +1116,12 @@ function copyType(
   /** A position with links. Links that resolved clean disappear here instead of being copied. */
   const occurrence = (input: Ty, value: Ty): Ty => {
     if (input.tainted) return taintedType(go(value));
-    const deps = openDeps(input.deps ?? []);
+    // Nothing changes a link during a copy, and one position can occur many times in a type.
+    let deps = (openLinks ??= new Map()).get(input);
+    if (deps === undefined && !openLinks.has(input)) {
+      deps = openDeps(input.deps ?? []);
+      openLinks.set(input, deps);
+    }
     if (!deps) return taintedType(go(value));
     if (!deps.length) return go(value);
     const known = (linkedCopies ??= new Map()).get(input);
