@@ -57,6 +57,21 @@ equality specialization also failed to establish a further gain. Re-measure befo
 either in the generator. Frontend v3 and its planned SubsetML/MLton path remain the longer-term
 direction; keep interim v2 work small and independently justified.
 
+November 2026 status: the matcher work is done on `compiler-performance`, about 190 to 1,300–1,450
+KB/s. Results are in `markdown/bun-aot-ts-emit-2026-11-06.md`. What remains in the parser is the
+memo table, the `CompiledCapture` to `ParseValue` to Surface conversions, and the rule-name string
+matches in `buildRuleValue`, which run once per syntax node.
+
+## 2a. Binding environments are copied per scope
+
+Compiling the 23,000-line generated `compiled_probe_rules.wm` spends 13% of self time in
+`cloneBindingEnv` and `snapshotBindingEnv` (`src/binding_facts.ts`) and 9% in `inferBlock`
+(`src/infer/expr_flow.ts`), which starts with `new Map(env)`. Each copy is proportional to
+everything in scope, so the cost grows with blocks times bindings, and large modules pay most.
+
+A layered environment would remove the copies, but `env` is a plain `Map` throughout inference and
+generalization iterates it, so lookups through deep nesting and iteration both need measuring.
+
 ## 3. Inspect diagnostic snapshot cost
 
 The optimized wmthree CPU profile has roughly 183ms of `snapshotType` self time and additional

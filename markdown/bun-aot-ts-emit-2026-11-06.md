@@ -114,3 +114,43 @@ Findings:
   stops reporting unresolved imports inside imported TypeScript dependencies.
 - In the staged pipeline, any module that needs FFI staging makes every fresh module, library
   included, go through the partial passes again.
+
+## Parser work on frontend-v2
+
+Measured on Deno, warm median of `parseSurfaceProgram` over 329 tracked WM files (1.48 MB), except
+the first three rows, which used a 0.32 MB subset of the same files. Run-to-run noise is about ±8%.
+
+| Build | KB/s | Change |
+| --- | ---: | --- |
+| start of branch | 190 | flat constructor layout not counted |
+| FIRST-set guards | 370–400 | skip alternatives that can't match the next code unit |
+| inline sequences and choices | ~430 | no parser lists or combinator calls |
+| single module, direct rule calls | 500–585 | no rule-name dispatch |
+| no labeled/action captures, shared failure value | 944 | the two largest sources of unread allocation |
+| lexical scanners | 1,300–1,450 | trivia, tokens, `$(...)` and `!x` allocate nothing |
+
+Every step compared all four parser exports against the start-of-branch parser on the corpus and
+on three prefixes of each short file: 4,352 results, identical.
+
+Where the time went before the last two rows, per source byte: 8.6 match results, 4.8 failure
+objects, 2.3 rule executions. `IdentPart`, `Whitespace`, `_`, `Keyword` and the string character
+rules were about 40% of rule executions. Matching was 75% of parse time and building the syntax
+tree 25%, GC included in both, so `buildCompiledCapture`'s 14% self time understated the matcher.
+
+Whole compile, same input, parser from `0e87b13` against this work: atview `app/main.wm` 5.4 s to
+4.8 s, the old-layout `compiler_frontend.wm` 4.6 s to 3.5 s.
+
+Tried and dropped:
+
+- Memoizing fewer rules, by hit rate or by recursion: exponential on nesting, or slower.
+- Folding `-1` and using `===` against literals in the emitter removed 367 `__wm_op_sub` calls and
+  59 `__wm_eq` calls from the parser with no measurable change; V8 already inlines them.
+
+Costs and limits found:
+
+- One module holding every rule makes the parser's own build slower: compiling
+  `compiler_frontend.wm` takes 8.2 s against 3.5 s for the old layout. See the binding-environment
+  item in `markdown/issues/compiler-performance-follow-ups.md`.
+- An unclosed block comment is rescanned by each `_` that reaches it (166 to 458 ms on 560 KB,
+  still linear). Scanners are otherwise far faster on comments.
+- 300 nested parentheses overflow the JS stack, before and after this work.
