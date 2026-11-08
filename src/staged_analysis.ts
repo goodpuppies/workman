@@ -47,6 +47,8 @@ export type StagedAnalysisEvent = {
 };
 
 export type StagedAnalysisOptions = {
+  /** Only this module needs declaration snapshots for REPL result displays. */
+  captureStepsFor?: ModuleId;
   /** Inference options for every module. Defaults to the standard library's initial imports. */
   inferOptions?: InferModuleOptions;
   /** Results for import edges that leave the graph. Defaults to the library modules it reaches. */
@@ -128,10 +130,14 @@ export async function analyzeModuleGraph(
   const cache = options.inferOptions ? undefined : options.cache;
   const prelude = usesStandardLibrary(graph);
   const keys = cache ? moduleContentKeys(graph.nodes, graph.order) : new Map<ModuleId, string>();
-  const cacheKey = (id: ModuleId) => `${keys.get(id)}|${prelude ? "prelude" : "bare"}`;
+  const cacheKey = (id: ModuleId, captureSteps = id === options.captureStepsFor) =>
+    `${keys.get(id)}|${prelude ? "prelude" : "bare"}|${captureSteps ? "steps" : "no-steps"}`;
   const cached = new Map<ModuleId, CachedModuleAnalysis>();
   for (const id of graph.order) {
-    const analysis = cache?.get(cacheKey(id));
+    // An accepted REPL phrase retains its snapshots when it becomes a dependency. A result
+    // without snapshots cannot serve a later request that needs them.
+    const analysis = cache?.get(cacheKey(id)) ??
+      (id !== options.captureStepsFor ? cache?.get(cacheKey(id, true)) : undefined);
     if (!analysis) continue;
     cached.set(id, analysis);
     graph.nodes.get(id)!.module = analysis.module;
@@ -186,7 +192,11 @@ export async function analyzeModuleGraph(
         "final inference",
         node,
         undefined,
-        () => inferModule(node.module, importsFor(node, results), inferOptions),
+        () =>
+          inferModule(node.module, importsFor(node, results), {
+            ...inferOptions,
+            captureSteps: id === options.captureStepsFor,
+          }),
       );
       rememberExportedSourceDocument(result, node.path, node.source);
       registerModuleCarrier(result, node.path);
@@ -330,7 +340,11 @@ export async function analyzeModuleGraph(
       "final inference",
       node,
       undefined,
-      () => inferModule(node.module, importsFor(node, results), inferOptions),
+      () =>
+        inferModule(node.module, importsFor(node, results), {
+          ...inferOptions,
+          captureSteps: id === options.captureStepsFor,
+        }),
     );
     rememberExportedSourceDocument(result, node.path, node.source);
     registerModuleCarrier(result, node.path);

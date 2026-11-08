@@ -283,7 +283,9 @@ export async function compileReplFileArtifacts(
   input: string,
   options: CompileOptions = {},
 ): Promise<CompileArtifact[]> {
-  return await compileFileArtifactsFromCore(await coreFile(input, options), options, "repl");
+  return await compileFileArtifactsFromCore(
+    await coreFile(input, { ...options, captureEntrySteps: true }), options, "repl",
+  );
 }
 
 export async function compileLibraryFile(
@@ -539,6 +541,7 @@ async function analyzeStrict<T>(
     return build(
       graph,
       await analyzeModuleGraph(graph, {
+        captureStepsFor: options.captureEntrySteps ? graph.entry : undefined,
         cache: options.moduleAnalysisCache,
         onEvent: ({ phase, node }) => {
           if (!options.onAnalysisProgress) return;

@@ -59,6 +59,8 @@ export { describeEnv, type TypeSnapshot } from "./infer/snapshots.ts";
 export type InferStep = { declIndex: number; env: Map<string, TypeSnapshot> };
 
 export type InferModuleOptions = {
+  /** Capture declaration environments for REPL result displays. */
+  captureSteps?: boolean;
   initialImports?: InitialImport[];
   initialBasis?: InitialBasis;
   /**
@@ -88,7 +90,7 @@ export function inferModule(
   imports = new Map<string, InferResult>(),
   options: InferModuleOptions = {},
 ): InferResult {
-  return inferModuleCore(module, imports, false, options, false).result;
+  return inferModuleCore(module, imports, false, options, options.captureSteps ?? false).result;
 }
 
 export function inferModulePartial(

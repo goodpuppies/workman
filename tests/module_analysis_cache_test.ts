@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { compileReplFileArtifacts } from "../src/compiler.ts";
+import { compileReplFileArtifacts, coreFile } from "../src/compiler.ts";
 import { ModuleAnalysisCache } from "../src/module_analysis_cache.ts";
 import type { CachedModuleAnalysis } from "../src/module_analysis_cache.ts";
 
@@ -44,6 +44,29 @@ const modules = {
   "b.wm": 'export from "./a.wm" import *;\nlet b = a + 1;\n',
   "c.wm": 'from "./b.wm" import *;\nlet c = size(Box(b));\n',
 };
+
+Deno.test("REPL snapshots are captured only for the entry and cannot reuse a snapshot-free result", async () => {
+  await withModules(
+    {
+      "lib.wm": "let base = 40;",
+      "entry.wm": 'from "./lib.wm" import { base };\nlet it = base + 2;',
+    },
+    async (path) => {
+      const cache = new RecordingCache();
+      const options = { moduleAnalysisCache: cache };
+      const plain = await coreFile(path("entry.wm"), options);
+      assertEquals(plain.results.get(plain.graph.entry)?.steps, []);
+      cache.take();
+      const repl = await coreFile(path("entry.wm"), { ...options, captureEntrySteps: true });
+      assertEquals(cache.take(), ["entry.wm"]);
+      assertEquals(repl.results.get(repl.graph.entry)?.steps.at(-1)?.env.get("it")?.type, "Number");
+      const dependency = [...repl.results.entries()].find(([id]) => id !== repl.graph.entry);
+      assertEquals(dependency?.[1].steps, []);
+      await coreFile(path("entry.wm"), { ...options, captureEntrySteps: true });
+      assertEquals(cache.take(), []);
+    },
+  );
+});
 
 async function code(path: string, options = {}): Promise<string[]> {
   return (await compileReplFileArtifacts(path, options)).map((artifact) => artifact.code);

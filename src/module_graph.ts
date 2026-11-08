@@ -17,6 +17,8 @@ import { librarySources } from "./generated/assets.ts";
 export type VirtualFileSystem = Map<string, string>;
 
 export type ModuleGraphOptions = CompilerFrontendOptions & {
+  /** Retain declaration type snapshots for the entry module's REPL display. */
+  captureEntrySteps?: boolean;
   sourceOverrides?: Map<string, string>;
   /** Analyses kept from earlier compiles, so unchanged modules aren't analyzed again. */
   moduleAnalysisCache?: ModuleAnalysisCache;

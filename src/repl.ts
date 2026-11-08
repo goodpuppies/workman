@@ -292,7 +292,7 @@ class PhraseSession {
     const path = this.#path("type");
     // The newline keeps a trailing comment from swallowing the parenthesis.
     this.#sources.set(path, this.#module(`let it = (${expression}\n);`));
-    const { core } = await coreFile(path, options);
+    const { core } = await coreFile(path, { ...options, captureEntrySteps: true });
     const type = core.modules.get(core.entry)?.analysis.steps.at(-1)?.env.get("it")?.type;
     if (type === undefined) throw new Error(`cannot find the type of ${expression}`);
     return type;
