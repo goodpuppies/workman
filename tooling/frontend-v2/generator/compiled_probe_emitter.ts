@@ -75,7 +75,7 @@ function emitRules(
     "  match(Table.getAt(parser.memo, slot)) {",
     "    Some(cached) => { cached },",
     "    None => {",
-    `      let result = wrapCompiledRule(${JSON.stringify(rule.name)}, offset, if (recover) {`,
+    `      let result = wrapCompiledRule(${JSON.stringify(rule.name)}, offset, diagnose, if (recover) {`,
     indent(emitRecoveringEntry(rule.name), 4),
     "      } else {",
     `        rule_${rule.name}(source, offset, false, diagnose, parser)`,
@@ -100,7 +100,7 @@ function emitRules(
   moduleConstants = undefined;
   return [
     header(grammar, grammarHash, grammar.rules.map((rule) => rule.name)),
-    'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeMatched, CompiledProbeNoMatch, SequenceCompiledCapture, ChoiceCompiledCapture, bestFailure, failureWithBest, trackedFailure, skippedAlternative, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchLabeled, matchSyntaxAction, matchSemanticPredicate, matchNamedMatchArms, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule };',
+    'from "../compiled_probe_runtime.wm" import { CompiledProbeMatch, CompiledProbeMatched, CompiledProbeNoMatch, SequenceCompiledCapture, ChoiceCompiledCapture, bestFailure, failureWithBest, trackedFailure, unobservedFailure, codeAt, matchLiteral, matchRecoverableLiteral, matchRecoverableOpeningBrace, matchCharacterClass, matchAnyCharacter, matchSequence, matchChoice, matchOptional, matchRepeated, matchOneOrMore, matchNegativeLookahead, matchText, matchSemanticPredicate, matchNamedMatchArms, matchCommittedRule, commitsJsonPrimaryRecovery, commitsLambdaPrimaryRecovery, wrapCompiledRule };',
     'from "./compiled_probe_types.wm" import { SingleCode, CodeRange };',
     'from js.host("table") import * as Table;',
     "",
@@ -192,17 +192,17 @@ function emitExpression(
         if (expression.value === "{") {
           return `matchRecoverableOpeningBrace(${
             JSON.stringify(recoverySite(ruleName, expression.value))
-          }, ${recoveryMode}, source, offset)`;
+          }, ${recoveryMode}, diagnose, source, offset)`;
         }
         return `matchRecoverableLiteral(${constant("literal", numberList(codeUnits(expression.value)))}, ${
           JSON.stringify(expression.value)
         }, ${
           JSON.stringify(recoverySite(ruleName, expression.value))
-        }, ${recoveryMode}, source, offset)`;
+        }, ${recoveryMode}, diagnose, source, offset)`;
       }
       return `matchLiteral(${constant("literal", numberList(codeUnits(expression.value)))}, ${
         JSON.stringify(literalExpectation(expression.value))
-      }, ${JSON.stringify(ruleName)}, source, offset)`;
+      }, ${JSON.stringify(ruleName)}, diagnose, source, offset)`;
     case "class":
       if (expression.ignoreCase) {
         throw new Error("compiled probe does not support case-insensitive classes");
@@ -227,9 +227,9 @@ function emitExpression(
         JSON.stringify(
           expression.inverted ? "a character outside the class" : "a character in the class",
         )
-      }, ${JSON.stringify(ruleName)}, source, offset)`;
+      }, ${JSON.stringify(ruleName)}, diagnose, source, offset)`;
     case "any":
-      return `matchAnyCharacter(${JSON.stringify(ruleName)}, source, offset)`;
+      return `matchAnyCharacter(${JSON.stringify(ruleName)}, diagnose, source, offset)`;
     case "ruleRef":
       return `enter_${expression.name}(parser, source, offset, diagnose, ${recoveryMode})`;
     case "sequence":
@@ -259,11 +259,7 @@ function emitExpression(
         recoveries,
       );
     case "labeled": {
-      const labeled = [
-        `matchLabeled(${emitOptionalString(expression.label)},`,
-        indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
-        ")",
-      ].join("\n");
+      const labeled = emitExpression(expression.expression, ruleName, recoveryMode, recoveries);
       // This slot is reached only after the named parameter list and its arrow
       // have matched. Keep the diagnostic tied to that grammar decision.
       return ruleName === "MatchFn" && expression.label === "arms"
@@ -279,11 +275,7 @@ function emitExpression(
     case "group":
       return emitExpression(expression.expression, ruleName, recoveryMode, recoveries);
     case "action":
-      return [
-        `matchSyntaxAction(${JSON.stringify(expression.actionId)},`,
-        indent(emitExpression(expression.expression, ruleName, recoveryMode, recoveries), 1),
-        ")",
-      ].join("\n");
+      return emitExpression(expression.expression, ruleName, recoveryMode, recoveries);
     case "simpleNot":
       return [
         "matchNegativeLookahead(",
@@ -343,7 +335,7 @@ function emitParserList(
   const alternatives = bodies.map((body, index) =>
     guards[index] === undefined
       ? body
-      : [`if (diagnose || ${guards[index]}) {`, indent(body, 1), "} else { skippedAlternative }"]
+      : [`if (diagnose || ${guards[index]}) {`, indent(body, 1), "} else { unobservedFailure }"]
         .join("\n")
   );
   const choice = emitInlineChoice(alternatives);
@@ -382,7 +374,7 @@ function emitInlineSequence(elements: readonly string[]): string {
       indent(step(index + 1, next, nextBest, [...captures, capture]), 2),
       "  },",
       `  CompiledProbeNoMatch(${failedAt}, ${expected}, ${rule}) => {`,
-      `    failureWithBest(${best}, ${failedAt}, ${expected}, ${rule})`,
+      `    if (diagnose) { failureWithBest(${best}, ${failedAt}, ${expected}, ${rule}) } else { unobservedFailure }`,
       "  },",
       "}",
     ].join("\n");
@@ -397,7 +389,7 @@ function emitInlineSequence(elements: readonly string[]): string {
 function emitInlineChoice(alternatives: readonly string[]): string {
   const step = (index: number, best: string): string => {
     if (index === alternatives.length) {
-      return `failureWithBest(${best}, offset, "valid syntax", "<choice>")`;
+      return `if (diagnose) { failureWithBest(${best}, offset, "valid syntax", "<choice>") } else { unobservedFailure }`;
     }
     const [next, capture, latent, nextBest] = ["next", "capture", "latent", "best"].map(inlineName);
     const [failedAt, expected, rule] = ["failedAt", "expected", "rule"].map(inlineName);
@@ -409,7 +401,7 @@ function emitInlineChoice(alternatives: readonly string[]): string {
       `    CompiledProbeMatched(${next}, ChoiceCompiledCapture(${index}, ${capture}), if (diagnose) { bestFailure(${best}, ${latent}) } else { None })`,
       "  },",
       `  CompiledProbeNoMatch(${failedAt}, ${expected}, ${rule}) => {`,
-      `    let ${nextBest} = bestFailure(${best}, trackedFailure(diagnose, ${failedAt}, ${expected}, ${rule}));`,
+      `    let ${nextBest} = if (diagnose) { bestFailure(${best}, trackedFailure(diagnose, ${failedAt}, ${expected}, ${rule})) } else { None };`,
       indent(step(index + 1, nextBest), 2),
       "  },",
       "}",
@@ -512,8 +504,4 @@ function literalExpectation(value: string): string {
 
 function numberList(values: readonly number[]): string {
   return `[${values.join(", ")}]`;
-}
-
-function emitOptionalString(value: string | null): string {
-  return value === null ? "None" : `Some(${JSON.stringify(value)})`;
 }

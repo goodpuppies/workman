@@ -2,7 +2,7 @@ from "./compiled_probe_runtime.wm" import {
   CompiledCapture, EmptyCompiledCapture, TokenCompiledCapture,
   MissingCompiledCapture,
   SequenceCompiledCapture, ChoiceCompiledCapture, OptionalCompiledCapture,
-  RepeatedCompiledCapture, LabeledCompiledCapture, ActionCompiledCapture,
+  RepeatedCompiledCapture,
   RuleCompiledCapture, textLength, codeAt
 };
 from "./generated/compiled_probe_dispatch.wm" import {
@@ -152,12 +152,6 @@ and buildCompiledCapture = match(capture, source, state) => {
     );
     buildResult(RepeatedParseValue(values), nextState)
   },
-  (LabeledCompiledCapture(label, inner), Var(source), Var(state)) => {
-    buildCompiledCapture(inner, source, state)
-  },
-  (ActionCompiledCapture(actionId, inner), Var(source), Var(state)) => {
-    buildCompiledCapture(inner, source, state)
-  },
   (RuleCompiledCapture(name, inner, start, end), Var(source), Var(state)) => {
     let built = buildCompiledCapture(inner, source, state);
     buildResult(
@@ -221,12 +215,6 @@ and compiledFingerprint = match(capture, source, ignored) => {
   (OptionalCompiledCapture(None), Var(source), Var(ignored)) => { "" },
   (RepeatedCompiledCapture(captures), Var(source), Var(ignored)) => {
     compiledFingerprintList(captures, source, ignored, "")
-  },
-  (LabeledCompiledCapture(label, inner), Var(source), Var(ignored)) => {
-    compiledFingerprint(inner, source, ignored)
-  },
-  (ActionCompiledCapture(actionId, inner), Var(source), Var(ignored)) => {
-    compiledFingerprint(inner, source, ignored)
   },
   (RuleCompiledCapture(name, inner, start, end), Var(source), Var(ignored)) => {
     compiledFingerprint(inner, source, ignored || isFingerprintTrivia(name))

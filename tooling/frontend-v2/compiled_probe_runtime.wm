@@ -15,8 +15,6 @@ type CompiledCapture =
   | ChoiceCompiledCapture<Number, CompiledCapture>
   | OptionalCompiledCapture<Option<CompiledCapture>>
   | RepeatedCompiledCapture<List<CompiledCapture>>
-  | LabeledCompiledCapture<Option<String>, CompiledCapture>
-  | ActionCompiledCapture<String, CompiledCapture>
   | RuleCompiledCapture<String, CompiledCapture, Number, Number>;
 
 record CompiledParseFailure = {
@@ -142,10 +140,9 @@ let failureWithBest = (best, offset: Number, expected: String, rule: String) => 
   }
 };
 
--- What a choice alternative skipped by its first-character guard gives. Guards only skip while not
--- diagnosing, and a non-diagnosing choice discards its alternatives' failures, so the contents of
--- this value are never observed.
-let skippedAlternative = CompiledProbeNoMatch(0, "a different first character", "<choice>");
+-- Every failure while not diagnosing. Without diagnostics, failures only decide which alternative
+-- runs next and nothing reads their contents, so one value serves them all.
+let unobservedFailure = CompiledProbeNoMatch(0, "unobserved", "<unobserved>");
 
 let friendlyRuleExpectation = match(name) => {
   "Expr" => { Some("an expression") },
@@ -160,15 +157,15 @@ let friendlyRuleExpectation = match(name) => {
   _ => { None },
 };
 
-let rec matchCodes = match(source, codes, offset, expectedText, rule) => {
-  (Var(source), [], Var(offset), Var(expectedText), Var(rule)) => {
-    CompiledProbeMatched(offset, EmptyCompiledCapture, None)
-  },
-  (Var(source), [expected, ..rest], Var(offset), Var(expectedText), Var(rule)) => {
-    if (codeAt(source, offset) == expected) {
-      matchCodes(source, rest, offset + 1, expectedText, rule)
+-- Where the literal ends when it matches at `offset`; otherwise `-1 - failedAt`, which is negative.
+let rec literalEnd = match(source, codes, offset) => {
+  (Var(source), [], Var(offset)) => { offset },
+  (Var(source), [expected, ..rest], Var(offset)) => {
+    let code = codeAt(source, offset);
+    if (code >= expected && code <= expected) {
+      literalEnd(source, rest, offset + 1)
     } else {
-      CompiledProbeNoMatch(offset, expectedText, rule)
+      -1 - offset
     }
   },
 };
@@ -191,16 +188,15 @@ let matchLiteral = (
   codes: List<Number>,
   expectedText: String,
   rule: String,
+  diagnose: Bool,
   source: String,
   offset: Number,
 ) => {
-  match(matchCodes(source, codes, offset, expectedText, rule)) {
-    CompiledProbeMatched(next, ignored, latent) => {
-      CompiledProbeMatched(next, TokenCompiledCapture("literal", offset, next), latent)
-    },
-    CompiledProbeNoMatch(failedAt, expected, failedRule) => {
-      CompiledProbeNoMatch(failedAt, expected, failedRule)
-    },
+  let end = literalEnd(source, codes, offset);
+  if (end >= 0) {
+    CompiledProbeMatched(end, TokenCompiledCapture("literal", offset, end), None)
+  } else {
+    if (diagnose) { CompiledProbeNoMatch(-1 - end, expectedText, rule) } else { unobservedFailure }
   }
 };
 
@@ -209,14 +205,14 @@ let matchRecoverableLiteral = (
   expectedText: String,
   site: String,
   recover: Bool,
+  diagnose: Bool,
   source: String,
   offset: Number,
 ) => {
-  match(matchLiteral(codes, expectedText, site, source, offset)) {
-    CompiledProbeMatched(next, capture, latent) => {
-      CompiledProbeMatched(next, capture, latent)
-    },
-    CompiledProbeNoMatch(failedAt, expected, failedRule) => {
+  let result = matchLiteral(codes, expectedText, site, diagnose, source, offset);
+  match(result) {
+    CompiledProbeMatched(_, _, _) => { result },
+    CompiledProbeNoMatch(_, _, _) => {
       if (recover) {
         CompiledProbeMatched(
           offset,
@@ -224,7 +220,7 @@ let matchRecoverableLiteral = (
           None,
         )
       } else {
-        CompiledProbeNoMatch(failedAt, expected, failedRule)
+        result
       }
     },
   }
@@ -238,14 +234,14 @@ let arrowCodes = [61, 62];
 let matchRecoverableOpeningBrace = (
   site: String,
   recover: Bool,
+  diagnose: Bool,
   source: String,
   offset: Number,
 ) => {
-  match(matchLiteral(openBraceCodes, "{", site, source, offset)) {
-    CompiledProbeMatched(next, capture, latent) => {
-      CompiledProbeMatched(next, capture, latent)
-    },
-    CompiledProbeNoMatch(failedAt, expected, failedRule) => {
+  let result = matchLiteral(openBraceCodes, "{", site, diagnose, source, offset);
+  match(result) {
+    CompiledProbeMatched(_, _, _) => { result },
+    CompiledProbeNoMatch(_, _, _) => {
       let nextCode = codeAt(source, offset);
       if (
         recover && nextCode >= 0 &&
@@ -258,31 +254,19 @@ let matchRecoverableOpeningBrace = (
           None,
         )
       } else {
-        CompiledProbeNoMatch(failedAt, expected, failedRule)
+        result
       }
     },
   }
 };
 
+-- Recovery only runs without diagnostics, so which failure comes back doesn't matter.
 let matchCommittedRule = (parser, recover: Bool) => {
   if (recover) {
-    match(parser(false)) {
-      CompiledProbeMatched(next, capture, latent) => {
-        CompiledProbeMatched(next, capture, latent)
-      },
-      CompiledProbeNoMatch(strictAt, strictExpected, strictRule) => {
-        match(parser(true)) {
-          CompiledProbeMatched(next, capture, latent) => {
-            CompiledProbeMatched(next, capture, latent)
-          },
-          CompiledProbeNoMatch(recoveryAt, recoveryExpected, recoveryRule) => {
-            fartherFailure(
-              CompiledProbeNoMatch(strictAt, strictExpected, strictRule),
-              CompiledProbeNoMatch(recoveryAt, recoveryExpected, recoveryRule),
-            )
-          },
-        }
-      },
+    let strict = parser(false);
+    match(strict) {
+      CompiledProbeMatched(_, _, _) => { strict },
+      CompiledProbeNoMatch(_, _, _) => { parser(true) },
     }
   } else {
     parser(false)
@@ -300,12 +284,8 @@ let isIdentifierPartCode = (code: Number) => {
 -- `JSON` is also a legal constructor name, so a damaged `JSON { ... }`
 -- production needs this explicit keyword-boundary commitment annotation.
 let commitsJsonPrimaryRecovery = (source: String, offset: Number) => {
-  match(matchCodes(source, jsonCodes, offset, "JSON", "Primary")) {
-    CompiledProbeMatched(next, capture, latent) => {
-      !isIdentifierPartCode(codeAt(source, next))
-    },
-    CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { false },
-  }
+  let end = literalEnd(source, jsonCodes, offset);
+  end >= 0 && !isIdentifierPartCode(codeAt(source, end))
 };
 
 let skipOptionalRule = (name: String, source: String, offset: Number, parseRule) => {
@@ -324,10 +304,7 @@ let commitsLambdaPrimaryRecovery = (source: String, offset: Number, parseRule) =
       let afterAnnotation = skipOptionalRule("LambdaReturnAnnotation", source, afterParams, parseRule);
       let afterCapture = skipOptionalRule("CaptureClause", source, afterAnnotation, parseRule);
       let arrow = skipOptionalRule("_", source, afterCapture, parseRule);
-      match(matchCodes(source, arrowCodes, arrow, "=>", "Primary")) {
-        CompiledProbeMatched(ignoredNext, ignoredArrow, ignoredArrowLatent) => { true },
-        CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { false },
-      }
+      literalEnd(source, arrowCodes, arrow) >= 0
     },
     CompiledProbeNoMatch(ignoredAt, ignoredExpected, ignoredRule) => { false },
   }
@@ -338,34 +315,31 @@ let matchCharacterClass = (
   inverted: Bool,
   expectedText: String,
   rule: String,
+  diagnose: Bool,
   source: String,
   offset: Number,
 ) => {
   let code = codeAt(source, offset);
-  if (code < 0) {
-    CompiledProbeNoMatch(offset, expectedText, rule)
+  if (code >= 0 && classContains(parts, code) != inverted) {
+    CompiledProbeMatched(
+      offset + 1,
+      TokenCompiledCapture("class", offset, offset + 1),
+      None,
+    )
   } else {
-    if (classContains(parts, code) != inverted) {
-      CompiledProbeMatched(
-        offset + 1,
-        TokenCompiledCapture("class", offset, offset + 1),
-        None,
-      )
-    } else {
-      CompiledProbeNoMatch(offset, expectedText, rule)
-    }
+    if (diagnose) { CompiledProbeNoMatch(offset, expectedText, rule) } else { unobservedFailure }
   }
 };
 
-let matchAnyCharacter = (rule: String, source: String, offset: Number) => {
-  if (offset < textLength(source)) {
+let matchAnyCharacter = (rule: String, diagnose: Bool, source: String, offset: Number) => {
+  if (codeAt(source, offset) >= 0) {
     CompiledProbeMatched(
       offset + 1,
       TokenCompiledCapture("any", offset, offset + 1),
       None,
     )
   } else {
-    CompiledProbeNoMatch(offset, "a character", rule)
+    if (diagnose) { CompiledProbeNoMatch(offset, "a character", rule) } else { unobservedFailure }
   }
 };
 
@@ -426,7 +400,7 @@ let matchNamedMatchArms = (source: String, offset: Number, result: CompiledProbe
         let header = matchSequence([
           (source, offset) => { parseRule("Pattern", source, offset, false, false) },
           (source, offset) => { parseRule("_", source, offset, false, false) },
-          (source, offset) => { matchLiteral(arrowCodes, "=>", "MatchArm", source, offset) },
+          (source, offset) => { matchLiteral(arrowCodes, "=>", "MatchArm", false, source, offset) },
         ], false, source, offset);
         match(header) {
           CompiledProbeMatched(_, _, _) => { result },
@@ -528,7 +502,8 @@ let matchRepeated = (parser, diagnose: Bool, source: String, offset: Number) => 
 };
 
 let matchOneOrMore = (parser, diagnose: Bool, source: String, offset: Number) => {
-  match(parser(source, offset)) {
+  let first = parser(source, offset);
+  match(first) {
     CompiledProbeMatched(next, capture, latent) => {
       if (!ensureProgress(offset, next)) {
         CompiledProbeNoMatch(offset, "one or more repetitions", "<repetition>")
@@ -536,9 +511,7 @@ let matchOneOrMore = (parser, diagnose: Bool, source: String, offset: Number) =>
         matchRepeatedInto(parser, diagnose, source, next, [capture], latent)
       }
     },
-    CompiledProbeNoMatch(failedAt, expected, rule) => {
-      CompiledProbeNoMatch(failedAt, expected, rule)
-    },
+    CompiledProbeNoMatch(_, _, _) => { first },
   }
 };
 
@@ -558,40 +531,7 @@ let matchText = (result: CompiledProbeMatch, offset: Number) => {
     CompiledProbeMatched(next, capture, latent) => {
       CompiledProbeMatched(next, TokenCompiledCapture("text", offset, next), latent)
     },
-    CompiledProbeNoMatch(failedAt, expected, rule) => {
-      CompiledProbeNoMatch(failedAt, expected, rule)
-    },
-  }
-};
-
-let matchLabeled = (
-  label: Option<String>,
-  result: CompiledProbeMatch,
-) => {
-  match(result) {
-    CompiledProbeMatched(next, capture, latent) => {
-      CompiledProbeMatched(next, LabeledCompiledCapture(label, capture), latent)
-    },
-    CompiledProbeNoMatch(failedAt, expected, rule) => {
-      CompiledProbeNoMatch(failedAt, expected, rule)
-    },
-  }
-};
-
--- Peggy action JavaScript is deliberately not executed by generated syntax probes.
--- The stable action ID remains in the call so capture generation can bind a native
--- WM action later without changing the generated grammar structure.
-let matchSyntaxAction = (
-  actionId: String,
-  result: CompiledProbeMatch,
-) => {
-  match(result) {
-    CompiledProbeMatched(next, capture, latent) => {
-      CompiledProbeMatched(next, ActionCompiledCapture(actionId, capture), latent)
-    },
-    CompiledProbeNoMatch(failedAt, expected, rule) => {
-      CompiledProbeNoMatch(failedAt, expected, rule)
-    },
+    CompiledProbeNoMatch(_, _, _) => { result },
   }
 };
 
@@ -606,6 +546,7 @@ let matchSemanticPredicate = (actionId: String, rule: String, offset: Number) =>
 let wrapCompiledRule = (
   name: String,
   start: Number,
+  diagnose: Bool,
   result: CompiledProbeMatch,
 ) => {
   match(result) {
@@ -617,15 +558,15 @@ let wrapCompiledRule = (
       )
     },
     CompiledProbeNoMatch(failedAt, expected, rule) => {
-      match(friendlyRuleExpectation(name)) {
-        Some(friendly) => {
-          if (failedAt == start) {
-            CompiledProbeNoMatch(failedAt, friendly, name)
-          } else {
-            CompiledProbeNoMatch(failedAt, expected, rule)
-          }
-        },
-        None => { CompiledProbeNoMatch(failedAt, expected, rule) },
+      if (diagnose) {
+        match(friendlyRuleExpectation(name)) {
+          Some(friendly) => {
+            if (failedAt == start) { CompiledProbeNoMatch(failedAt, friendly, name) } else { result }
+          },
+          None => { result },
+        }
+      } else {
+        result
       }
     },
   }
