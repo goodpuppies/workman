@@ -1,5 +1,5 @@
 from "./generated/surface_types.wm" import {
-  Span, SurfaceToken, AuthoredValue, LongNameNode, NameExpressionNode,
+  Span, SurfaceToken, SurfaceNode, AuthoredValue, LongNameNode, NameExpressionNode,
   LiteralExpressionNode,
   ExplicitCallNode, SpaceCallNode, PostfixFieldNode, ArgumentPlaceholderNode,
   BinaryExpressionNode,
@@ -344,40 +344,132 @@ let buildJsonExpr = (value: ParseValue, span: Span) => {
   }
 };
 
-let rec foldBinaryItems = match(items, left, span) => {
-  ([], Var(left), Var(span)) => { Some(left) },
-  ([value, ..rest], Var(left), Var(span)) => {
-    let tokens = collectTokens(value);
-    match(firstNode(value)) {
-      Some(right) => {
-        match(tokens) {
-          [operator] => {
-            foldBinaryItems(
-              rest,
-              BinaryExpressionNode(left, operator, right, span),
-              span,
-            )
-          },
-          _ => { None },
-        }
-      },
-      None => { None },
-    }
-  },
+record BinaryOperand = { node: SurfaceNode, span: Span };
+record BinaryItem = { operator: SurfaceToken, operand: BinaryOperand };
+
+// How tightly an operator binds, loosest first. The grammar has already accepted the text.
+let binaryLevel = (operator: SurfaceToken) => {
+  match(operator.text) {
+    "||" => { 0 },
+    "&&" => { 1 },
+    "==" => { 2 },
+    "!=" => { 2 },
+    "++" => { 4 },
+    "+" => { 4 },
+    "-" => { 4 },
+    "*" => { 5 },
+    "/" => { 5 },
+    "%" => { 5 },
+    _ => { 3 },
+  }
 };
 
-let buildBinaryFold = (name: String, value: ParseValue, span: Span) => {
-  match(value) {
-    SequenceParseValue([
-      NodeParseValue(left),
-      RepeatedParseValue(items),
-    ]) => {
-      match(foldBinaryItems(items, left, span)) {
-        Some(node) => { NodeParseValue(node) },
-        None => { RuleParseValue(name, value, span) },
+// The items before the first operator at `level`, and the rest starting at that operator.
+let rec tighterBinaryItems = (level: Number, items: List<BinaryItem>, reversed: List<BinaryItem>) => {
+  match(items) {
+    [] => { (reverseInto(reversed, []), []) },
+    [item, ..rest] => {
+      if (binaryLevel(item.operator) == level) {
+        (reverseInto(reversed, []), items)
+      } else {
+        tighterBinaryItems(level, rest, [item, ..reversed])
       }
     },
-    _ => { RuleParseValue(name, value, span) },
+  }
+};
+
+let rec lastBinaryEnd = (items: List<BinaryItem>, end: Number) => {
+  match(items) {
+    [] => { end },
+    [item, ..rest] => { lastBinaryEnd(rest, item.operand.span.end) },
+  }
+};
+
+// Every node of one level's run gets the span of the whole run.
+let rec foldBinaryLevel = (level: Number, head: BinaryOperand, items: List<BinaryItem>) => {
+  match(items) {
+    [] => { head },
+    _ => {
+      let (inside, after) = tighterBinaryItems(level, items, []);
+      let left = foldBinaryLevel(level + 1, head, inside);
+      let span: Span = .{ start = head.span.start, end = lastBinaryEnd(items, head.span.end) };
+      foldBinaryRun(level, left, after, span)
+    },
+  }
+}
+and foldBinaryRun = (level: Number, left: BinaryOperand, items: List<BinaryItem>, span: Span) => {
+  match(items) {
+    [] => { left },
+    [item, ..rest] => {
+      let (inside, after) = tighterBinaryItems(level, rest, []);
+      let right = foldBinaryLevel(level + 1, item.operand, inside);
+      let node = BinaryExpressionNode(left.node, item.operator, right.node, span);
+      let folded: BinaryOperand = .{ node = node, span = span };
+      foldBinaryRun(level, folded, after, span)
+    },
+  }
+};
+
+let binaryOperand = (value: ParseValue) => {
+  match(value) {
+    RuleParseValue("BinaryOperand", NodeParseValue(node), span) => {
+      let operand: BinaryOperand = .{ node = node, span = span };
+      Some(operand)
+    },
+    _ => { None },
+  }
+};
+
+let rec binaryItemOperand = (values: List<ParseValue>) => {
+  match(values) {
+    [] => { None },
+    [value, ..rest] => {
+      match(binaryOperand(value)) {
+        Some(operand) => { Some(operand) },
+        None => { binaryItemOperand(rest) },
+      }
+    },
+  }
+};
+
+let binaryItem = (value: ParseValue) => {
+  match(value) {
+    SequenceParseValue(values) => {
+      match((collectTokens(value), binaryItemOperand(values))) {
+        ([operator], Some(operand)) => {
+          let item: BinaryItem = .{ operator = operator, operand = operand };
+          Some(item)
+        },
+        _ => { None },
+      }
+    },
+    _ => { None },
+  }
+};
+
+let rec binaryItems = (values: List<ParseValue>, reversed: List<BinaryItem>) => {
+  match(values) {
+    [] => { Some(reverseInto(reversed, [])) },
+    [value, ..rest] => {
+      match(binaryItem(value)) {
+        Some(item) => { binaryItems(rest, [item, ..reversed]) },
+        None => { None },
+      }
+    },
+  }
+};
+
+let buildBinary = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([left, RepeatedParseValue(values)]) => {
+      match((binaryOperand(left), binaryItems(values, []))) {
+        (Some(head), Some(items)) => {
+          NodeParseValue(foldBinaryLevel(0, head, items).node)
+        },
+        _ => { RuleParseValue("Binary", value, span) },
+      }
+    },
+    _ => { RuleParseValue("Binary", value, span) },
   }
 };
 

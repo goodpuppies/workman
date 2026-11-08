@@ -80,7 +80,7 @@ function emitRules(
   const ruleCount = grammar.rules.length;
   const group = grammar.rules.flatMap((rule, index) => [
     `${index === 0 ? "let rec" : "and"} rule_${rule.name} = (source: String, offset: Number, recover: Bool, diagnose: Bool, parser: CompiledParser): CompiledProbeMatch => {`,
-    indent(emitRuleExpression(rule.expression, rule.name, recoveryIndex), 1),
+    indent(emitGuardedRule(rule.name, emitRuleExpression(rule.expression, rule.name, recoveryIndex)), 1),
     "}",
     ...emitRuleEntry(rule.name, index),
   ]);
@@ -119,11 +119,40 @@ function emitRules(
     ...constants,
     "",
     ...group,
+    ...lambdaGuardFunctions,
     ...scanFunctions,
     ...byName,
     "",
   ].join("\n");
 }
+
+/**
+ * Most expressions start with an identifier, and `x` alone is a lambda parameter, so `Lambda` would
+ * parse a whole parameter before finding no arrow. The check runs only when not diagnosing, so
+ * reported failures still list what a lambda expected.
+ */
+function emitGuardedRule(name: string, body: string): string {
+  if (name !== "Lambda") return body;
+  return ["if (diagnose || lambdaCanStart(source, offset)) {", indent(body, 1), "} else { unobservedFailure }"]
+    .join("\n");
+}
+
+const lambdaGuardFunctions = [
+  "and identifierPartsEnd = (source: String, offset: Number): Number => {",
+  "  let code = codeAt(source, offset);",
+  "  if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (code >= 48 && code <= 57) || code == 95 || code == 39) {",
+  "    identifierPartsEnd(source, offset + 1)",
+  "  } else { offset }",
+  "}",
+  "and lambdaCanStart = (source: String, offset: Number): Bool => {",
+  "  let first = codeAt(source, offset);",
+  "  if ((first >= 97 && first <= 122) || first == 95) {",
+  "    let after = scan__(source, identifierPartsEnd(source, offset + 1));",
+  "    let code = codeAt(source, after);",
+  "    code == 58 || code == 124 || (code == 61 && codeAt(source, after + 1) == 62)",
+  "  } else { true }",
+  "}",
+];
 
 /** What a reference to a rule calls: its scanner when possible, otherwise the memoized parse. */
 function emitRuleEntry(name: string, index: number): string[] {

@@ -16,7 +16,7 @@ from "./surface_builders_expr.wm" import {
   buildPipeMember, buildPipe, buildCarrierLift, buildLiftTuple,
   buildJsonObjectField, buildJsonExpr, buildRecordExprField, buildRecordExpr,
   buildNamedRecordExpr, buildNestedRecordExpr,
-  buildBinaryFold, buildIf, buildPipeConditional,
+  buildBinary, buildIf, buildPipeConditional,
   buildTupleOrGroup, buildListExpr
 };
 from "./surface_builders_postfix.wm" import { buildPostfix };
@@ -163,23 +163,8 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "Unary" => {
               buildUnary(value, span)
             },
-            "Or" => {
-              buildBinaryFold(name, value, span)
-            },
-            "And" => {
-              buildBinaryFold(name, value, span)
-            },
-            "Equality" => {
-              buildBinaryFold(name, value, span)
-            },
-            "Compare" => {
-              buildBinaryFold(name, value, span)
-            },
-            "Add" => {
-              buildBinaryFold(name, value, span)
-            },
-            "Mul" => {
-              buildBinaryFold(name, value, span)
+            "Binary" => {
+              buildBinary(value, span)
             },
             "Pipe" => {
               buildPipe(value, span)

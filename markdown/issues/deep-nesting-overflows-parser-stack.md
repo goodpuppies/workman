@@ -15,7 +15,8 @@ The deepest parentheses that parse in a cold process:
 | --- | ---: |
 | start of the performance branch | 60 |
 | single module, direct rule calls | 62 |
-| with lexical scanners (current) | 108 |
+| with lexical scanners | 108 |
+| flat binary operators (current) | 124 |
 
 Each parenthesis descends the whole precedence chain (`Expr`, `Or`, `And`, ... `Postfix`,
 `Primary`), about 20 rules and several JS frames per rule, so the limit is much lower than the

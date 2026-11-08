@@ -32,29 +32,29 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 156);
+  assertEquals(inventory.ruleCount, 152);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 274,
+    unclassified: 265,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 273,
+    action: 264,
     any: 3,
-    choice: 70,
-    class: 42,
+    choice: 68,
+    class: 41,
     group: 26,
-    labeled: 379,
+    labeled: 360,
     literal: 370,
     oneOrMore: 10,
     optional: 101,
-    ruleRef: 826,
+    ruleRef: 807,
     semanticAnd: 1,
-    sequence: 271,
+    sequence: 261,
     simpleNot: 45,
     text: 8,
-    zeroOrMore: 57,
+    zeroOrMore: 52,
   });
 });
 
@@ -67,25 +67,20 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "f21ba7f25bb10c414336d394a95e7df03480af4864f15fccd8e7b8a819359f38",
+    "018b53a81221bb86ce79d2904dee01fae0513ee8103d953acaf0a9932751bc15",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 261);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 257);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [
       "Start:root.expression.elements.0",
       "TypeDeclBody:root",
       "MatchFn:root",
-      "Or:root",
-      "And:root",
-      "Equality:root",
-      "Compare:root",
-      "Add:root",
-      "Mul:root",
+      "Binary:root",
       "Pipe:root",
       "Postfix:root",
       "BlockSeqBody:root",

@@ -477,19 +477,24 @@ LambdaBlock
 Directive
   = "@" name:Identifier _ SemiToken { return at({ name }, location()); }
 
-Binary = Or
-Or = left:And rest:(_ op:("||") _ right:And { return { op, right }; })*
-  { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
-And = left:Equality rest:(_ op:("&&") _ right:Equality { return { op, right }; })*
-  { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
-Equality = left:Compare rest:(_ op:("==" / "!=") _ right:Compare { return { op, right }; })*
-  { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
-Compare = left:Add rest:(_ op:("<=" / ">=" / "<" / ">") _ right:Add { return { op, right }; })*
-  { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
-Add = left:Mul rest:(_ op:("++" / "+" / "-") _ right:Mul { return { op, right }; })*
-  { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
-Mul = left:Unary rest:(_ op:("*" / "/" / "%") _ right:Unary { return { op, right }; })*
-  { return rest.reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.right }, location()), left); }
+// One flat chain: operators get their precedence when the chain is folded, as Standard ML's infix
+// resolution does, so an operand doesn't descend a rule per precedence level.
+Binary = left:BinaryOperand rest:(_ op:("||" / "&&" / "==" / "!=" / "<=" / ">=" / "<" / ">" / "++" / "+" / "-" / "*" / "/" / "%") _ right:BinaryOperand { return { op, right }; })*
+  {
+    const levels = [["||"], ["&&"], ["==", "!="], ["<=", ">=", "<", ">"], ["++", "+", "-"], ["*", "/", "%"]];
+    const fold = (level, head, items) => {
+      if (level === levels.length) return head;
+      const segments = [{ op: undefined, head, items: [] }];
+      for (const item of items) {
+        if (levels[level].includes(item.op)) segments.push({ op: item.op, head: item.right, items: [] });
+        else segments.at(-1).items.push(item);
+      }
+      const folded = segments.map((segment) => ({ op: segment.op, value: fold(level + 1, segment.head, segment.items) }));
+      return folded.slice(1).reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.value }, location()), folded[0].value);
+    };
+    return fold(0, left, rest);
+  }
+BinaryOperand = operand:Unary { return operand; }
 
 Unary = op:("!" / "-") _ value:Unary { return at({ kind: "Unary", op, value }, location()); } / Pipe
 Pipe = left:Postfix rest:(_ ":>" _ right:(PipeConditional / PipeMember / Postfix) { return { right, loc: location() }; })*

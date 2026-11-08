@@ -95,6 +95,16 @@ above. The passes cost more (about 230 to 300 ms each), but they are needed whil
 types feed inference. Reusing a module between passes is unsafe unless its exports are closed,
 because downstream constraints settle imported monomorphic schemes.
 
+Parsing compared the same way: MLWorks parses infix expressions flat and resolves precedence
+afterwards, and its LR tables never backtrack. WM's expression grammar now does the first (a single
+`Binary` rule). It is still a backtracking PEG: on the standard library it runs about 3.5 rule bodies
+per token.
+
+Of inference on atview, `provenance.ts` is about 15% and has no MLWorks counterpart, because MLWorks
+reports the location of the failing unification and nothing else. What's left there is deliberate
+evidence for diagnostics; making it lazy changes which commitment a diagnostic reads, so it needs
+care. `new Map(env)` per scope is about 9% (see above).
+
 ## 3. Inspect diagnostic snapshot cost
 
 The optimized wmthree CPU profile has roughly 183ms of `snapshotType` self time and additional
