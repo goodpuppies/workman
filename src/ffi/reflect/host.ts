@@ -29,7 +29,10 @@ const directoryExistsCache = new Map<string, boolean>();
 const directoriesCache = new Map<string, string[]>();
 const realPathCache = new Map<string, string>();
 const moduleResolutionCaches = new Map<string, ts.ModuleResolutionCache>();
-let previousProgram: ts.Program | undefined;
+// The last program for each set of root files. TypeScript reuses a program whole only when the
+// root names match and the changed root imports the same modules, so probes share a root name
+// whenever they share a directory and imports (see `uniqueReflectionFileName`).
+const previousPrograms = new Map<string, ts.Program>();
 let activeReflectionBasePath: string | undefined;
 const preparedReflections = new Map<string, PreparedReflection>();
 let reflectionProfileSink: ((event: JsReflectionProfileEvent) => void) | undefined;
@@ -261,12 +264,9 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
       return resolved;
     });
   const programStarted = reflectionProfileSink ? performance.now() : 0;
-  const program = ts.createProgram(
-    [...roots.keys()],
-    compilerOptions,
-    host,
-    previousProgram,
-  );
+  const rootNames = [...roots.keys()];
+  const lineage = rootNames.join("\0");
+  const program = ts.createProgram(rootNames, compilerOptions, host, previousPrograms.get(lineage));
   const programMs = reflectionProfileSink ? performance.now() - programStarted : 0;
   const diagnosticsStarted = reflectionProfileSink ? performance.now() : 0;
   // TS2307 needs an import the resolver above couldn't place, in a file that is checked at all:
@@ -283,7 +283,7 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
       }`,
     );
   }
-  previousProgram = program;
+  previousPrograms.set(lineage, program);
   const checkerStarted = reflectionProfileSink ? performance.now() : 0;
   const checker = program.getTypeChecker();
   const checkerMs = reflectionProfileSink ? performance.now() - checkerStarted : 0;
@@ -365,7 +365,7 @@ function reflectionBatchRoots(requests: JsReflectionRequest[]): Map<string, Refl
           return request.source === sharedSource ? "{}" : `{${suffix}\n}`;
         }).join("\n")
       }\nexport {};\n`;
-    const fileName = uniqueReflectionFileName(first.label, first.source, roots);
+    const fileName = uniqueReflectionFileName(first.source, roots);
     roots.set(fileName, { source, requests: grouped });
   }
   return roots;
@@ -376,20 +376,33 @@ function reflectionRequestKey(label: string, source: string): string {
 }
 
 function uniqueReflectionFileName(
-  label: string,
   source: string,
   currentRoots: Map<string, ReflectionBatchRoot>,
 ): string {
   const reflected = reflectionFileName(source);
   const directory = reflected ? dirname(reflected) : runtime.cwd();
-  const stem = sanitize(label).slice(0, 120) || "target";
-  let fileName = normalize(reflected ?? join(directory, `__wm_js_reflect_${stem}.ts`));
+  const stem = `__wm_js_reflect_${importsFingerprint(source)}`;
+  let fileName = normalize(join(directory, `${stem}.ts`));
   let suffix = 2;
   while (currentRoots.has(fileName)) {
-    fileName = normalize(join(directory, `__wm_js_reflect_${stem}_${suffix}.ts`));
+    fileName = normalize(join(directory, `${stem}_${suffix}.ts`));
     suffix += 1;
   }
   return fileName;
+}
+
+/** Names what a source pulls in. Two sources with the same answer can reuse one program. */
+function importsFingerprint(source: string): string {
+  const { importedFiles, referencedFiles, typeReferenceDirectives, libReferenceDirectives } = ts
+    .preProcessFile(source, true, false);
+  const text = [importedFiles, referencedFiles, typeReferenceDirectives, libReferenceDirectives]
+    .map((references) => references.map((reference) => reference.fileName).join(","))
+    .join(";");
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function cacheHostFileSystem(host: ts.CompilerHost): void {
