@@ -1,5 +1,5 @@
 from js.global import { encodeURIComponent, fetch };
-from js.global("Deno") import { args: Js.Array<String> };
+from js.global("Deno") import unsafe { args: Js.Array<String> };
 
 let via = Monad.via;
 
@@ -16,7 +16,7 @@ let defaultUser = "denoland";
 let perPage = 5;
 let sort = "updated";
 let user = {
-  args :> Result.andThen((xs) => { xs :> .at(0) })
+  args :> .at(0)
     :> Result.map((x) => { x :> Option.getOr(defaultUser) })
     :> Result.getOr(defaultUser)
 };

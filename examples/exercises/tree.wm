@@ -3,7 +3,7 @@ from "./math.wm" import *;
 type Tree = EmptyT | Node<Number, Tree, Tree>;
 type NumOption = NNone | NSome<Number>;
 
-let rec findTree = (num, tree) => {
+let rec findTree = match(num, tree) => {
   (_, EmptyT) => {NNone},
   (_, Node(val,t1,t2)) => {
     match(compareN(num,val)) {

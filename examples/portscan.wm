@@ -8,13 +8,11 @@
 --   deno task wm run examples/portscan.wm -- scanme.nmap.org 1 100
 --   deno task wm run examples/portscan.wm -- 192.168.1.1 20 25
 
-from js.global("Deno") import {
+from js.global("Deno") import unsafe {
   args: Js.Array<String>,
-  connect,
 };
-from js.global import {
-  Number as toNumber: String -> Number,
-};
+from js.global("Deno") import { connect };
+from js.global import unsafe { Number as numberOf: String -> Number };
 
 type ScanResult = Open<Number> | Closed<Number>;
 
@@ -23,6 +21,8 @@ record ScanConfig = {
   startPort: Number,
   endPort: Number,
 };
+
+let toNumber = (text: String) => { Ok(numberOf(text)) };
 
 let knownService = match(port) => {
   21    => { "FTP" },
@@ -142,7 +142,7 @@ let main = () => {
     })
   };
 
-  let pipeline = args
+  let pipeline = Ok(args)
     :> Result.mapErr((e) => {
       let estr = match(e) {
         Js.Error(e) => {e},

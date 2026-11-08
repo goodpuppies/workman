@@ -273,9 +273,7 @@ Deno.test("frontend-v2 generated Surface semantics match the repository golden",
   }
   assertEquals(
     rejected.sort(),
-    [
-      "examples/exercises/tree.wm",
-    ],
+    [],
   );
   assertEquals(checked.sort(), Object.keys(frontendV2SemanticGolden.files).sort());
 });

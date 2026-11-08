@@ -9,6 +9,7 @@ import {
 import { prepareFfiElaboration } from "../src/ffi/elab.ts";
 import { inferModulePartial } from "../src/infer.ts";
 import { parseCompilerModule as parse } from "../src/compiler_frontend.ts";
+import { setJsReflectionProfileSink } from "../src/ffi/reflect/host.ts";
 import { runFile } from "../src/run.ts";
 import { expectBinding } from "./type_helpers.ts";
 
@@ -1110,4 +1111,24 @@ Deno.test("dotted JS calls preserve this and property getters retain safe errors
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("a namespace import shares one TypeScript program across its members", async () => {
+  const batches: string[][] = [];
+  setJsReflectionProfileSink((event) => {
+    if (event.kind === "batch") batches.push(event.labels);
+  });
+  try {
+    await checkSource(`
+      from js.module("./tests/fixtures/ffi_fixed_tuple.ts") import * as Fixture;
+      let main = () => { void };
+    `);
+  } finally {
+    setJsReflectionProfileSink(undefined);
+  }
+  const sameModule = batches.filter((labels) =>
+    labels.some((label) => label.includes("ffi_fixed_tuple"))
+  );
+  // None when an earlier test in this file already prepared the same source.
+  assertEquals(sameModule.length <= 1, true);
 });

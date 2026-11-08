@@ -13,22 +13,23 @@
 
 from js.global import {
   Date,
-  Number as toNumber: String -> Number,
   encodeURIComponent,
   fetch,
 };
+from js.global import unsafe { Number as numberOf: String -> Number };
 from js.global("Date") import { now as dateNow };
-from js.global("Deno") import {
+from js.global("Deno") import unsafe {
   args: Js.Array<String>,
+};
+from js.global("Deno") import {
   readTextFile,
   writeTextFile,
 };
-from js.global("JSON") import {
-  parse: String -> Js.Object,
-  stringify: Js.Value -> String,
-} as JSON;
+from js.global("JSON") import { parse, stringify } as JSON;
 from js.global("Math") import { max as mathMax };
 from js.host("dict") import * as Dict;
+
+let toNumber = (text: String) => { Ok(numberOf(text)) };
 
 let via = Monad.via;
 let cacheFile = ".weather-cache.json";
@@ -313,7 +314,7 @@ let main = () => {
   let isFlag = (text) => {
     text :> .startsWith("--") :> Result.getOr(false)
   };
-  let flags = args :> Result.andThen((xs) => {
+  let flags = Ok(args) :> Result.andThen((xs) => {
     xs :> .filter((a, index, array) => {
       isFlag(a)
     })
@@ -329,7 +330,7 @@ let main = () => {
   } else {
     Celsius
   };
-  let cities = args :> Result.andThen((xs) => {
+  let cities = Ok(args) :> Result.andThen((xs) => {
     xs :> .filter((a, index, array) => {
       !isFlag(a)
     })

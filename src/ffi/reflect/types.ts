@@ -440,8 +440,10 @@ export function jsGlobalMemberTypeRef(path: string, name: string): JsTypeRef {
 
 export function jsModuleTypeRef(specifier: string, name: string): JsTypeRef {
   const target = jsModuleSource(specifier);
+  // The label is part of the prepared-program key, so one per name would build a TypeScript program
+  // for every member of a namespace import from the same source.
   const generic = reflectSource(
-    `${target.key}:generic-type:${name}`,
+    target.key,
     target.source,
     (checker, sf) => {
       let imported: ts.ImportDeclaration | undefined;
