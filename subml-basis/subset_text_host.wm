@@ -15,11 +15,12 @@ from js.global("String") import unsafe {
   fromCharCode as codeUnit: I32 -> a,
   fromCharCode as codeString: I32 -> String
 };
+// `lastIndexOf("")` is the string's length. It is a call, so this import needs no reflection.
+from js.global("String.prototype.lastIndexOf") import unsafe {
+  call as lastIndexOf: (String, String) -> Number
+};
 let codes = (value: String) => {
-  let size = match(value :> .length) {
-    Ok(length) => { length },
-    Err(_) => { Panic("String length is not readable") }
-  };
+  let size = lastIndexOf(value, "");
   let rec go = (index, acc) => {
     if (index < 0) { acc } else { go(index - 1, [charCodeAt(value, index), ..acc]) }
   };

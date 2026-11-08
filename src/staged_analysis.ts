@@ -349,7 +349,7 @@ function moduleHasDelayedFfi(module: ModuleNode["module"]): boolean {
 /** Use the staged pipeline whenever preparation or receiver access leaves FFI work. */
 export function requiresFfiStaging(prepared: FfiElaboration): boolean {
   return prepared.bindings.size > 0 || prepared.foreignTypeRefs.size > 0 ||
-    (prepared.sourceJsImports?.length ?? 0) > 0 || moduleHasDelayedFfi(prepared.module);
+    moduleHasDelayedFfi(prepared.module);
 }
 
 export function isDelayedFfiPartialDiagnostic(message: string): boolean {
