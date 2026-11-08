@@ -82,6 +82,19 @@ everything in scope, so the cost grows with blocks times bindings, and large mod
 A layered environment would remove the copies, but `env` is a plain `Map` throughout inference and
 generalization iterates it, so lookups through deep nesting and iteration both need measuring.
 
+### Comparison with MLWorks (2026-11-08)
+
+MLWorks (`../mlworks/src/typechecker`) generalizes by comparing an integer level on each type
+variable (`levels_ok` in `_scheme.sml`), uses persistent maps for environments, and elaborates in
+one pass. WM scans the environment on every `let` (`ftvEnv`), copies a `Map` per scope, and infers a
+module with FFI up to three times.
+
+On an atview compile of 4.54 s the first two differences are small: `generalize` is 59 ms including
+`ftvEnv` at 17 ms. Levels and persistent maps only pay off on very large generated modules, as
+above. The passes cost more (about 230 to 300 ms each), but they are needed while reflected FFI
+types feed inference. Reusing a module between passes is unsafe unless its exports are closed,
+because downstream constraints settle imported monomorphic schemes.
+
 ## 3. Inspect diagnostic snapshot cost
 
 The optimized wmthree CPU profile has roughly 183ms of `snapshotType` self time and additional
