@@ -230,6 +230,7 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
     if (loaded && !shouldCreateNewSourceFile) sourceFileCache.set(cacheKey, loaded);
     return loaded;
   };
+  const unresolvedSourceImports = new Set<string>();
   host.resolveModuleNames = (moduleNames, containingFile) =>
     moduleNames.map((moduleName) => {
       const resolveModule = () => {
@@ -245,7 +246,10 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
             host,
             moduleResolutionCache(),
           ).resolvedModule ??
-          (deferDiscovery ? denoResolvedModule(denoGraphs, moduleName, containingFile) : undefined);
+          // Node builtins are ambient declarations; no Deno graph can add to them.
+          (deferDiscovery && !moduleName.startsWith("node:")
+            ? denoResolvedModule(denoGraphs, moduleName, containingFile)
+            : undefined);
       };
       const resolved = resolveModule();
       if (!resolved && isNpmGraphImport(denoGraphs, moduleName)) {
@@ -253,6 +257,7 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
           `cannot resolve npm package "${moduleName}" for JS import from Deno's cache`,
         );
       }
+      if (!resolved && !isDeclarationFile(containingFile)) unresolvedSourceImports.add(moduleName);
       return resolved;
     });
   const programStarted = reflectionProfileSink ? performance.now() : 0;
@@ -264,9 +269,12 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
   );
   const programMs = reflectionProfileSink ? performance.now() - programStarted : 0;
   const diagnosticsStarted = reflectionProfileSink ? performance.now() : 0;
-  const unresolvedImport = program.getSemanticDiagnostics().find((diagnostic) =>
-    diagnostic.code === 2307
-  );
+  // TS2307 needs an import the resolver above couldn't place, in a file that is checked at all:
+  // `skipLibCheck` leaves out declaration files. An ambient module such as @types/node's `node:fs`
+  // covers its name. Type-checking every file to look for what's left is by far the larger cost.
+  const unresolvedImport = hasUncoveredImport(program, unresolvedSourceImports)
+    ? program.getSemanticDiagnostics().find((diagnostic) => diagnostic.code === 2307)
+    : undefined;
   const diagnosticsMs = reflectionProfileSink ? performance.now() - diagnosticsStarted : 0;
   if (unresolvedImport) {
     throw new Error(
@@ -791,9 +799,23 @@ function resolveDenoSpecifier(
   return undefined;
 }
 
+function hasUncoveredImport(program: ts.Program, unresolved: ReadonlySet<string>): boolean {
+  if (unresolved.size === 0) return false;
+  const ambient = new Set(
+    program.getTypeChecker().getAmbientModules().map((module) => module.name.slice(1, -1)),
+  );
+  return [...unresolved].some((name) => !ambient.has(name));
+}
+
+function isDeclarationFile(fileName: string): boolean {
+  return /\.d\.[cm]?ts$/i.test(fileName);
+}
+
+/** A declaration file of an installed package: in `node_modules`, or in Deno's npm cache. */
 function isPackageDeclarationFile(fileName: string): boolean {
   const path = fileName.replaceAll("\\", "/");
-  return /\.d\.[cm]?ts$/i.test(path) && /(?:^|\/)node_modules\//.test(path);
+  return isDeclarationFile(path) &&
+    (/(?:^|\/)node_modules\//.test(path) || /\/npm\/[^/]+\/(?:@[^/]+\/)?[^/]+\/\d/.test(path));
 }
 
 function pathFromFileUrl(value: string): string | undefined {

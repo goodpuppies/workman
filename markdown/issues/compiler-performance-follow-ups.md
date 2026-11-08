@@ -21,6 +21,16 @@ with warm filesystem/package caches, not persistent LSP performance.
 
 ## 1. Reduce repeated TypeScript reflection setup
 
+November 2026 measurements (atview `app/main.wm`; bigger-fish `tests/playtest/snapshots.wm` and
+`src/scripts/play.wm` up to its current error). Batches after the first are not the cost: atview's
+125 have a median of 2.6 ms. What is left is the first program, which parses about 6 MB of
+declarations (`lib.dom.d.ts` is 2.3 MB), 0.7 s on atview. Moving that needs TS7 or another checker.
+
+Removed: type-checking every file only to look for TS2307, and a `deno info` per declaration file
+in Deno's npm cache. Reflection on atview went from 1.75 to 1.03 s and bigger-fish's `snapshots.wm`
+compile from 4.1 to 2.7 s, with byte-identical emitted JS on five programs.
+
+
 Even after fixing module resolution, wmthree still prepares 90 TypeScript programs: one initial
 batch and 89 single-query preparations. Unprofiled medians attribute about 1.27s to program
 creation and 0.87s to semantic diagnostics; actual reflection read callbacks total about 59ms.

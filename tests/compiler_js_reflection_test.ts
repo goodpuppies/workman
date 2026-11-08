@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
+import { checkFile, checkSource, checkVirtual, compile } from "../src/compiler.ts";
 import { FrontendDiagnosticError } from "../src/diagnostics.ts";
 import ts from "typescript-api";
 import {
@@ -1131,4 +1131,32 @@ Deno.test("a namespace import shares one TypeScript program across its members",
   );
   // None when an earlier test in this file already prepared the same source.
   assertEquals(sameModule.length <= 1, true);
+});
+
+// Reflection skips the type check unless the resolver couldn't place an import.
+Deno.test("reflection still reports an unresolved import in a TypeScript dependency", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      `${dir}/dep.ts`,
+      'import { gone } from "./missing.ts";\nexport const value: number = gone;\n',
+    );
+    await Deno.writeTextFile(
+      `${dir}/main.wm`,
+      'from js.module("./dep.ts") import { value };\nlet main = () => { void };\n',
+    );
+    const error = await assertRejects(() => checkFile(`${dir}/main.wm`), Error);
+    assertStringIncludes(error.message, "cannot resolve JS import for reflection");
+    assertStringIncludes(error.message, "missing.ts");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("reflection accepts Node builtins, which are ambient declarations", async () => {
+  const result = await checkSource(`
+    from js.module("node:path") import { basename };
+    let name = basename("/a/b.txt");
+  `);
+  expectBinding(result.env, "name", { type: "Result<String, Js.Error>!", vars: 0 });
 });

@@ -26,6 +26,13 @@ the whole result type is `undefined` and the import is reported as unknown.
 Related: `buffer-from-loses-concrete-backing-type.md` and
 `buffer-subarray-loses-concrete-backing-type.md`.
 
+## Also affects bigger-fish
+
+`src/scripts/play.wm` stops at `unknown JS import .../three_helpers.ts.buildLabSign`, a function
+returning a bare three.js `Mesh`, whose default arguments include `Material | Material[]`. Mapping
+unmappable arguments to `Js.Value` gets past that import and stops at
+`Object3D expects 0 type arguments`, so the arity of reflected generics needs fixing as well.
+
 ## To decide
 
 - What a bare `DataView` should reflect to: `DataView<Js.Value>`, or a backing type chosen another
