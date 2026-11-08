@@ -1,6 +1,6 @@
 # A reflected function returning a bare DataView reports "unknown JS import"
 
-Status: open. Found 2026-11-08; the same on 0.6.0. 28 entry points in wmthree stop here.
+Status: fixed 2026-11-08. Found the same day; the same on 0.6.0. It stopped bigger-fish's `play.wm` and 28 entry points in an older wmthree copy.
 
 ## Reproduction
 
@@ -26,15 +26,11 @@ the whole result type is `undefined` and the import is reported as unknown.
 Related: `buffer-from-loses-concrete-backing-type.md` and
 `buffer-subarray-loses-concrete-backing-type.md`.
 
-## Also affects bigger-fish
+## Fix
 
-`src/scripts/play.wm` stops at `unknown JS import .../three_helpers.ts.buildLabSign`, a function
-returning a bare three.js `Mesh`, whose default arguments include `Material | Material[]`. Mapping
-unmappable arguments to `Js.Value` gets past that import and stops at
-`Object3D expects 0 type arguments`, so the arity of reflected generics needs fixing as well.
+`2da3555` (2026-10-30) started preserving generic classes through FFI, which caused three problems:
 
-## To decide
-
-- What a bare `DataView` should reflect to: `DataView<Js.Value>`, or a backing type chosen another
-  way. Other generic globals with `ArrayBufferLike` defaults presumably behave the same.
-- The message should name the type it could not map rather than say the import is unknown.
+- A default argument with no WM type made the whole type unmappable. It now maps to `Js.Value`.
+- A parameter written without arguments no longer accepted subclasses, where a non-generic class
+  parameter does. A generic parameter using only its defaults is `Js.Value` again.
+- A generic named only by a parameter was declared with arity 0. Its arity is now declared.

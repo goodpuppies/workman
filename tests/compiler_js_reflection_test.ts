@@ -1160,3 +1160,54 @@ Deno.test("reflection accepts Node builtins, which are ambient declarations", as
   `);
   expectBinding(result.env, "name", { type: "Result<String, Js.Error>!", vars: 0 });
 });
+
+async function checkWithTypeScript(ts: string, wm: string) {
+  const dir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(`${dir}/lib.ts`, ts);
+    await Deno.writeTextFile(`${dir}/main.wm`, wm);
+    const path = await Deno.realPath(`${dir}/main.wm`);
+    const result = (await checkFile(path)).get(path);
+    if (!result) throw new Error("missing main result");
+    return result;
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+}
+
+Deno.test("a bare generic result reflects even when a default argument has no WM type", async () => {
+  const result = await checkWithTypeScript(
+    `export class A { a = 1; }
+     export class B { b = 1; }
+     export class Box<T = A | B> { value!: T; }
+     export declare function box(): Box;
+     export declare function view(): DataView;`,
+    `from js.module("./lib.ts") import { box, view };
+     let boxed = box();
+     let viewed = view();`,
+  );
+  expectBinding(result.env, "boxed", { type: "Result<Box<Js.Value>, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "viewed", { type: "Result<DataView<Js.Value>, Js.Error>!", vars: 0 });
+});
+
+Deno.test("a generic parameter written without arguments accepts a subclass", async () => {
+  const result = await checkWithTypeScript(
+    `export class Base<T = string> { value!: T; }
+     export class Derived extends Base<string> {}
+     export declare function make(): Derived;
+     export declare function take(base: Base): number;`,
+    `from js.module("./lib.ts") import { make, take };
+     let taken = make() :> Result.andThen((derived) => { take(derived) });`,
+  );
+  expectBinding(result.env, "taken", { type: "Result<Number, Js.Error>!", vars: 0 });
+});
+
+Deno.test("a generic named only by an instantiated parameter declares its arity", async () => {
+  const result = await checkWithTypeScript(
+    `export class Tagged<T> { value!: T; }
+     export declare function read(tagged: Tagged<number>): number;`,
+    `from js.module("./lib.ts") import { read };
+     let reader = read;`,
+  );
+  expectBinding(result.env, "reader", { type: "Tagged<Number> -> Result<Number, Js.Error>!", vars: 0 });
+});

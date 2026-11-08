@@ -45,6 +45,7 @@ export function jsMemberTypeFromTsType(
           returnTypeOfVariant(variant.type),
           checker,
           checker.getReturnTypeOfSignature(signature),
+          signature,
         ),
       }))
     ),
@@ -63,6 +64,7 @@ function resultRefWithType(
   type: TypeExpr,
   checker: ts.TypeChecker,
   foreign: ts.Type,
+  signature: ts.Signature,
 ): JsTypeRef | undefined {
   const generic = type.kind === "TName" && type.name === nominalObjectTypeName(checker, foreign)
     ? nominalGenericConstructor(checker, foreign)
@@ -72,7 +74,19 @@ function resultRefWithType(
       ...ref,
       generic,
       type,
-      nestedTypeRefs: nestedForeignTypeRefs(checker, foreign, ref.source),
+      // A generic named only by a parameter needs its arity declared too. Other parameter types
+      // keep the identity they get where they are imported.
+      nestedTypeRefs: [
+        ...nestedForeignTypeRefs(checker, foreign, ref.source),
+        ...signature.getParameters().flatMap((symbol) => {
+          const parameter = typeOfSymbol(checker, symbol);
+          return parameter
+            ? nestedForeignTypeRefs(checker, parameter, ref.source, true).filter((item) =>
+              item.generic
+            )
+            : [];
+        }),
+      ],
     }
     : undefined;
 }
@@ -180,11 +194,19 @@ export function typeExprFromTsType(
   if (nominal) {
     const generic = nominalGenericConstructor(checker, type);
     if (generic) {
+      // Written without arguments, a parameter names no instantiation to preserve. It accepts
+      // subclasses as a non-generic class parameter does, and the concrete call is checked by
+      // TypeScript when it is resolved.
+      if (position === "param" && usesOnlyDefaultTypeArguments(checker, type)) {
+        return name("Js.Value");
+      }
       // Uninstantiated declaration signatures are discovery seeds only. Concrete
       // calls are resolved again with HM arguments before these slots escape.
       const args = checker.getTypeArguments(type as ts.TypeReference).slice(0, generic.arity)
         .map((arg) =>
-          containsTypeParameter(arg) ? name("Js.Value") : typeExprFromTsType(checker, arg, position)
+          containsTypeParameter(arg)
+            ? name("Js.Value")
+            : typeExprFromTsType(checker, arg, position) ?? name("Js.Value")
         );
       if (args.length !== generic.arity || args.some((arg) => !arg)) return undefined;
       return { kind: "TName", name: nominal, args: args as TypeExpr[] };
@@ -303,6 +325,16 @@ export function nominalGenericConstructor(
   return { key: `generic-type:${expression}`, expression, arity, requiredArity };
 }
 
+function usesOnlyDefaultTypeArguments(checker: ts.TypeChecker, type: ts.Type): boolean {
+  const reference = type as ts.TypeReference;
+  const parameters = reference.target.typeParameters ?? [];
+  const args = checker.getTypeArguments(reference);
+  return parameters.length > 0 && parameters.every((parameter, index) => {
+    const declared = checker.getDefaultFromTypeParameter(parameter);
+    return declared !== undefined && args[index] === declared;
+  });
+}
+
 function containsTypeParameter(type: ts.Type): boolean {
   if (type.flags & ts.TypeFlags.TypeParameter) return true;
   if (type.isUnionOrIntersection()) return type.types.some(containsTypeParameter);
@@ -328,12 +360,15 @@ export function nestedForeignTypeRefs(
   checker: ts.TypeChecker,
   type: ts.Type,
   source: string,
+  includeType = false,
 ): JsTypeRef[] {
   const refs: JsTypeRef[] = [];
   const seen = new Set<ts.Type>();
   const visit = (current: ts.Type) => {
     if (seen.has(current)) return;
     seen.add(current);
+    // `Object3D | null`, as an optional parameter reads.
+    if (current.isUnion()) return current.types.forEach(visit);
     const nominal = nominalObjectTypeName(checker, current);
     const mapped = typeExprFromTsType(checker, current);
     if (nominal && mapped?.kind === "TName" && mapped.name === nominal) {
@@ -359,7 +394,9 @@ export function nestedForeignTypeRefs(
       checker.getTypeArguments(current as ts.TypeReference).forEach(visit);
     }
   };
-  if (
+  if (includeType) {
+    visit(type);
+  } else if (
     type.flags & ts.TypeFlags.Object &&
     (type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
   ) {
