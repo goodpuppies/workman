@@ -1,5 +1,4 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
-import { trackedWmFiles } from "../scripts/tracked_wm_files.ts";
 import {
   hashGrammarIr,
   inventoryGrammar,
@@ -20,7 +19,11 @@ import {
   recognizerSmokeFixtures,
 } from "../tooling/frontend-v2/generator/fixtures.ts";
 import { recognizeGrammar } from "../tooling/frontend-v2/generator/recognizer.ts";
-import { frontendV2SemanticGolden, repositoryWmPath } from "./frontend_v2_semantic_golden.ts";
+import {
+  frontendV2SemanticGolden,
+  repositoryWmPath,
+  semanticGoldenFiles,
+} from "./frontend_v2_semantic_golden.ts";
 
 const surfaceParser = await import("../src/generated/frontend_v2_parser.js") as {
   parseSurfaceProgram(source: string): unknown;
@@ -32,7 +35,7 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 152);
+  assertEquals(inventory.ruleCount, 171);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
@@ -41,20 +44,20 @@ Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () 
   });
   assertEquals(inventory.expressionKinds, {
     action: 265,
-    any: 3,
-    choice: 68,
-    class: 41,
-    group: 26,
+    any: 4,
+    choice: 80,
+    class: 58,
+    group: 34,
     labeled: 361,
-    literal: 373,
-    oneOrMore: 10,
-    optional: 101,
-    ruleRef: 811,
+    literal: 402,
+    oneOrMore: 13,
+    optional: 109,
+    ruleRef: 862,
     semanticAnd: 1,
-    sequence: 262,
-    simpleNot: 45,
+    sequence: 292,
+    simpleNot: 54,
     text: 8,
-    zeroOrMore: 52,
+    zeroOrMore: 62,
   });
 });
 
@@ -67,7 +70,7 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "309505f43da770bb6825e3e7f8ce9725fba39bae0b7dbf098b64d6a8cbc2b655",
+    "5240974a72b7c43a4d9509cca291645b98a0986fd19f31948211d7bf2270e49a",
   );
 });
 
@@ -351,5 +354,5 @@ Deno.test("frontend-v2 Phase 0 formatter fixtures declare stable mode outputs", 
 });
 
 async function* wmFiles(root: URL): AsyncGenerator<string> {
-  yield* await trackedWmFiles(root);
+  yield* await semanticGoldenFiles(root);
 }

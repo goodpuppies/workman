@@ -16,9 +16,12 @@ import { semanticDocumentContext } from "./semantic_context.ts";
 import type { SemanticService } from "./semantic_service.ts";
 import { renderSemanticType } from "./hover_type_display.ts";
 import { unannotatedHoverType } from "./unannotated_hover.ts";
+import { wonHoverAt } from "./won_hover.ts";
+import type { LspRange } from "./range.ts";
 
 export type LspHover = {
   contents: { kind: "markdown"; value: string };
+  range?: LspRange;
 };
 
 export async function hoverAt(
@@ -33,6 +36,8 @@ export async function hoverAt(
   if (!context) return null;
   const { project, moduleInterface, source } = context;
   const offset = lineColToOffset(position.line + 1, position.character, lineStarts(source));
+  const won = wonHoverAt(source, offset, moduleInterface.wonLiterals);
+  if (won !== undefined) return won;
   if (pipeOperatorAt(source, offset)) return null;
 
   const gpu = await gpuHoverContext(project, moduleInterface);

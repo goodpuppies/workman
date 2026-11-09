@@ -61,6 +61,13 @@ export async function parseCompilerModule(
     }
     const projected = surfaceProgramToModule(surface, source);
     if (projected.diagnostics.length) {
+      const located = projected.diagnostics.find((diagnostic) => diagnostic.span);
+      if (located?.span) {
+        throw new ParseError(located.message, source, {
+          ...located.span,
+          ...offsetToLineCol(source, located.span.start),
+        }, filePath);
+      }
       throw new Error(
         `frontend v2 cannot project source: ${
           projected.diagnostics.map((diagnostic) => diagnostic.message).join("; ")

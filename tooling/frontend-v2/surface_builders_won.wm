@@ -1,0 +1,69 @@
+from "./generated/surface_types.wm" import {
+  Span, WonLiteralNode, WonSequenceNode, WonFieldNode, WonTagNode, WonScalarNode
+};
+from "./surface_parse_value.wm" import {
+  ParseValue, TokenParseValue, NodeParseValue, RuleParseValue
+};
+from "./surface_builder_support.wm" import {
+  token, firstSyntax, firstNode, collectTokens, collectNodes
+};
+
+let buildWon = (name: String, value: ParseValue, span: Span, source: String) => {
+  match(name) {
+    "WonExpr" => {
+      match(firstNode(value)) {
+        Some(inner) => { NodeParseValue(WonLiteralNode(token(source, span.start, span.end, name), inner, span)) },
+        None => { RuleParseValue(name, value, span) },
+      }
+    },
+    "WonValue" => {
+      match(firstSyntax(value)) {
+        Some(TokenParseValue(atom)) => { NodeParseValue(WonScalarNode(atom, span)) },
+        Some(NodeParseValue(inner)) => { NodeParseValue(inner) },
+        _ => { RuleParseValue(name, value, span) },
+      }
+    },
+    "WonAtomic" => {
+      match(firstSyntax(value)) {
+        Some(TokenParseValue(atom)) => { NodeParseValue(WonScalarNode(atom, span)) },
+        Some(NodeParseValue(inner)) => { NodeParseValue(inner) },
+        _ => { RuleParseValue(name, value, span) },
+      }
+    },
+    "WonPayload" => {
+      match(firstNode(value)) {
+        Some(inner) => { NodeParseValue(inner) },
+        None => { RuleParseValue(name, value, span) },
+      }
+    },
+    "WonTag" => {
+      match(collectTokens(value), collectNodes(value)) {
+        ([tag], []) => { NodeParseValue(WonTagNode(tag, None, None, span)) },
+        ([tag], [WonSequenceNode(open, items, close, fieldsSpan), body]) => {
+          NodeParseValue(WonTagNode(tag, Some(WonSequenceNode(open, items, close, fieldsSpan)), Some(body), span))
+        },
+        ([tag], [WonSequenceNode(open, items, close, innerSpan)]) => {
+          if (open.text == "<") {
+            NodeParseValue(WonTagNode(tag, Some(WonSequenceNode(open, items, close, innerSpan)), None, span))
+          } else {
+            NodeParseValue(WonTagNode(tag, None, Some(WonSequenceNode(open, items, close, innerSpan)), span))
+          }
+        },
+        ([tag], [body]) => { NodeParseValue(WonTagNode(tag, None, Some(body), span)) },
+        _ => { RuleParseValue(name, value, span) },
+      }
+    },
+    "WonField" => {
+      match(collectTokens(value), firstNode(value)) {
+        ([key, equals], Some(inner)) => { NodeParseValue(WonFieldNode(key, equals, inner, span)) },
+        _ => { RuleParseValue(name, value, span) },
+      }
+    },
+    _ => {
+      match(collectTokens(value)) {
+        [open, close] => { NodeParseValue(WonSequenceNode(open, collectNodes(value), close, span)) },
+        _ => { RuleParseValue(name, value, span) },
+      }
+    },
+  }
+};

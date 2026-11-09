@@ -5,6 +5,7 @@ export function normalizeFrontendSemanticAst(value: unknown): unknown {
       Object.entries(value)
         .filter(([key, item]) =>
           key !== "node" &&
+          key !== "wonLiterals" &&
           key !== "pathNode" &&
           key !== "implicitTerminatorSpan" &&
           item !== null &&
@@ -29,7 +30,7 @@ export function normalizeFrontendSemanticAstWithSpans(value: unknown): unknown {
     }
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([, item]) => item !== null && item !== undefined)
+        .filter(([key, item]) => key !== "wonLiterals" && item !== null && item !== undefined)
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([key, item]) => [key, normalizeFrontendSemanticAstWithSpans(item)]),
     );

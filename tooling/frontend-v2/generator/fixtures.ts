@@ -11,6 +11,11 @@ export type FormatterFixture = Readonly<{
 }>;
 
 export const recognizerSmokeFixtures: readonly ParityFixture[] = Object.freeze([
+  { name: "native WON record", source: 'let settings = WON{step = 1 title = "Counter"};' },
+  {
+    name: "native WON list and attached tags",
+    source: 'let view = WON[Ready [1 2] button<onClick = Action("add")>("Add")];',
+  },
   { name: "workman import", source: 'from "./dep.wm" import { Thing as alias };' },
   { name: "javascript import", source: 'from js.module("./dep.mjs") import unsafe { value };' },
   {

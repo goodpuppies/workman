@@ -84,6 +84,7 @@ export type Module = Located<{
   prelude?: "none";
   /** Built-in types this module declares in source (`// @basis-type Result`). */
   basisTypes?: string[];
+  wonLiterals?: readonly import("./won_literal_info.ts").WonLiteralInfo[];
 }>;
 
 export type Decl =

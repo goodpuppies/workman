@@ -1,7 +1,7 @@
 {
   "tasks": {
     "wm": "deno run -A --config ../../../deno.json ../../../src/main.ts",
-    "build": "deno task wm compile main.wm dist/main.mjs && deno bundle --platform=browser dist/main.mjs -o dist/app.js",
+    "build": "deno task wm compile src/main.wm dist/main.mjs && deno bundle --platform=browser dist/main.mjs -o dist/app.js",
     "serve": "deno task wm run serve.wm",
     "test": "deno task wm test view.test.wm"
   },

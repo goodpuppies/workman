@@ -495,6 +495,7 @@ export type ModuleInterface = Readonly<{
   typeVariables: readonly SemanticTypeVariableRegion[];
   declarations: readonly SemanticTopLevelDeclaration[];
   typedNodes: readonly SemanticTypedNode[];
+  wonLiterals?: readonly import("./won_literal_info.ts").WonLiteralInfo[];
   carrierOperations: readonly SemanticCarrierOperation[];
   gpuFacts: SemanticGpuFacts;
   completionFacts: SemanticCompletionFacts;
@@ -713,6 +714,20 @@ export function buildProjectSnapshot(
         typeVariables,
         declarations,
         typedNodes,
+        ...(node.module.wonLiterals
+          ? {
+            wonLiterals: Object.freeze(node.module.wonLiterals.map((info) =>
+              Object.freeze({
+                ...info,
+                span: Object.freeze({ ...info.span }),
+                selections: Object.freeze(
+                  info.selections.map((span) => Object.freeze({ ...span })),
+                ),
+                ...(info.properties ? { properties: Object.freeze([...info.properties]) } : {}),
+              })
+            )),
+          }
+          : {}),
         carrierOperations,
         gpuFacts,
         completionFacts,

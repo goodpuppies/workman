@@ -1,14 +1,15 @@
 # Structural records, correct tuples, and native WON construction
 
-Status: implementation plan, revised 2026-11-09. Not yet implemented.
+Status: native data literal slice implemented, 2026-11-09. Structural products and
+interpolation remain deferred.
 
 ## Priority and scope
 
 First-class WON syntax in WM is already a useful deliverable. Function values in
 WON can wait. The React experiment in `../reactinwm` demonstrates that keeping
 functions in WM costs only small text/action dispatch functions. The minimal
-in-repository example is `examples/fullstack/react/`; it uses the existing portable
-parser until native syntax exists. Neither callback storage nor removing Action/Bind
+in-repository example is `examples/fullstack/react/`; it uses native WON data
+literals. Neither callback storage nor removing Action/Bind
 is a prerequisite for useful WON support.
 
 Separate two workstreams: native data construction and structural product cleanup.
@@ -22,47 +23,38 @@ Related constraints: [core design](./core-design.md),
 
 ## First milestone: native WON data syntax
 
-Parse WON directly in WM source, with ordinary WM expression holes for supported
-data values. Illustrative future syntax, not currently supported:
+Implemented: `WON{...}` and `WON[...]` embed existing WON data syntax directly in WM.
+The frontend retains dedicated WON syntax nodes and source locations; lowering emits
+ordinary portable `Value` constructors from `basis/won_value.wm`. There is no runtime
+source parser. Records stay WON records, and lists retain portable list semantics.
 
 ```wm
-WON[
+let settings = WON{ step = 1 };
+let template = WON[
   main[
-    p["Count: " ${count}]
+    p["Count: " Bind("count")]
     button<onClick = Action("increment")>("Add one")
   ]
-]
+];
 ```
 
-The renderer can continue resolving Action names through an ordinary WM function.
-No closure-valued property, unsafe callable extraction API, callback signature
-witness, UI builder, or generic codec derivation is required for this milestone.
-Bindings may likewise remain renderer conventions where convenient.
+The renderer continues resolving Action/Bind names through ordinary WM functions.
+Expression holes, spreads, and function-valued properties are deferred. Supporting
+inline WM expressions is not necessary for this milestone. Composition uses ordinary
+WM functions, module exports, and existing Value constructors.
 
-Specify the supported data-hole types and their conversion rules before coding.
-Reject unsupported holes explicitly, including functions; never stringify arbitrary
-WM values and reparse them. `${1 + true}` remains an ordinary WM type error.
-Expressions evaluate once, left to right, in authored order with normal lexical
-scope and source diagnostics. A direct effectful expression runs at construction.
-Defer spreads and implicit flattening.
+Validation covers native/portable value parity, exact number spelling, Unicode text
+and byte-string keys, blobs, comments, tag attachment, nested contents, duplicate-key
+locations, formatting preservation, rejected interpolation, and module composition.
+The React example now uses a native literal and no runtime template parser.
 
-Settle the initial result type and representation as a small explicit contract.
-Reusing the existing portable WON Value representation is a valid first step if
-it delivers native syntax without forcing the larger structural refactor. In that
-case, document its actual list semantics and conversion boundary. Do not claim
-that its brackets already construct numbered structural records. If the shared
-product representation is ready first, the dynamic outer Won type described below
-is the destination. Keep any later migration explicit in APIs and tests.
+Formatting preserves authored literal interiors. Source-aware editor hovers describe
+tags, properties, payloads, and scalar storage. More elaborate interior formatting
+and tag/property definition navigation can follow without changing data semantics.
 
-Acceptance for this milestone:
-
-- Literal tags, properties, nested contents, and supported expression holes compile
-  directly from source, without runtime source parsing or a string evaluator.
-- Scope, diagnostics, single evaluation, and evaluation order work inside holes.
-- A non-UI consumer and the minimal React example consume the result. Existing
-  Action/Bind dispatch is acceptable; callback values are not an acceptance gate.
-- Portable decoding/encoding and existing pakman formats remain compatible.
-- Formatter/LSP/parser generation and relevant compiler regressions pass.
+A future shared-product representation needs an explicit migration contract. Do not
+claim these portable Value literals already construct numbered structural records.
+The dynamic outer Won type below remains a later destination, not this slice's type.
 
 ## Structural product destination
 

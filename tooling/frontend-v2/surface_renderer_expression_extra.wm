@@ -1,5 +1,6 @@
 from "./generated/surface_types.wm" import {
   SurfaceToken, AuthoredValue, MarkedValue,
+  WonLiteralNode,
   AscribedExpressionNode, TypeAnnotationNode, TypedPatternNode, GroupedPatternNode,
   VariablePatternNode, ExplicitVariablePatternNode, WildcardPatternNode,
   LiteralPatternNode,
@@ -67,6 +68,7 @@ let rec renderExtraNodes = match(
 };
 
 let renderExpressionExtraNode = match(node, depth, materializeMarks, renderNode) => {
+  (WonLiteralNode(source, value, span), Var(depth), Var(materializeMarks), Var(renderNode)) => { Some(source.text) },
   (
     VariablePatternNode(name, span),
     Var(depth),

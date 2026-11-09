@@ -1,4 +1,12 @@
 import { integerToken } from "./numeric.ts";
+import { type WonLiteralInfo, wonLiteralInfo } from "./won_literal_info.ts";
+import {
+  lowerWonLiteral,
+  WON_LITERAL_CONS,
+  WON_LITERAL_NAMESPACE,
+  WON_LITERAL_NIL,
+  WonLiteralError,
+} from "./won_literal.ts";
 import {
   type Binding,
   type CtorDecl,
@@ -37,6 +45,7 @@ export type FrontendV2SemanticAdapterDiagnostic = {
   code: "frontend-v2.unsupported-decl" | "frontend-v2.recovered-decl";
   structuralId: number;
   message: string;
+  span?: SourceSpan;
 };
 
 export type FrontendV2SurfaceModuleProjection = Readonly<{
@@ -51,6 +60,8 @@ type Context = {
   nextAnonymousMatchId: number;
   nextPlaceholderId: number;
   nextTypeGroupId: number;
+  wonSpan?: SourceSpan;
+  wonLiterals?: WonLiteralInfo[];
 };
 
 /**
@@ -111,14 +122,40 @@ export function surfaceProgramToModule(
         code: "frontend-v2.unsupported-decl",
         structuralId: index,
         message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof WonLiteralError ? { span: error.span } : {}),
       });
     }
   });
 
+  if (context.wonSpan) {
+    // Capture the pervasive list constructors before any authored declarations.
+    // WON storage must not depend on local constructors also called Cons or Nil.
+    decls.unshift(...[[WON_LITERAL_NIL, "Nil"], [WON_LITERAL_CONS, "Cons"]].map(
+      ([name, original]): Decl => ({
+        kind: "LetDecl",
+        exported: false,
+        recursive: false,
+        bindings: [{
+          pattern: { kind: "PVar", name },
+          value: { kind: "Var", name: original },
+        }],
+      }),
+    ));
+    decls.unshift({
+      kind: "ImportDecl",
+      path: "basis/won_value.wm",
+      exported: false,
+      clause: {
+        kind: "Namespace",
+        alias: WON_LITERAL_NAMESPACE,
+      },
+    });
+  }
   return {
     module: {
       kind: "Module",
       decls,
+      ...(context.wonLiterals ? { wonLiterals: context.wonLiterals } : {}),
       ...(hasNoPreludeDirective(source) ? { prelude: "none" as const } : {}),
       ...(basisTypeDirectives(source).length > 0
         ? { basisTypes: basisTypeDirectives(source) }
@@ -817,6 +854,12 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         fields: list(itemsValue).map((item) => projectRecordItem(variant(item), context)),
         ...located,
       };
+    }
+    case "WonLiteralNode": {
+      context.wonSpan ??= spanOf(node);
+      const value = lowerWonLiteral(variant(fields(node)[1]), (span) => nodeFor(context, span));
+      (context.wonLiterals ??= []).push(...wonLiteralInfo(node, context.source));
+      return value;
     }
     case "JsonArrayExpressionNode": {
       const [, , itemsValue] = fields(node);

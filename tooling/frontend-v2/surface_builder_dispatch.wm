@@ -1,4 +1,5 @@
 from "./generated/surface_types.wm" import { Span };
+from "./surface_builders_won.wm" import { buildWon };
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
 from "./surface_builder_support.wm" import {
   token, collectNodes, firstNode, firstSyntax
@@ -108,6 +109,15 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "RecordFieldDecl" => { buildRecordFieldDecl(value, span) },
             "RecordDecl" => { buildRecordDecl(value, span) },
             "Primary" => { buildPrimary(value, span) },
+            "WonExpr" => { buildWon(name, value, span, source) },
+            "WonValue" => { buildWon(name, value, span, source) },
+            "WonAtomic" => { buildWon(name, value, span, source) },
+            "WonList" => { buildWon(name, value, span, source) },
+            "WonRecord" => { buildWon(name, value, span, source) },
+            "WonField" => { buildWon(name, value, span, source) },
+            "WonTag" => { buildWon(name, value, span, source) },
+            "WonAttributes" => { buildWon(name, value, span, source) },
+            "WonPayload" => { buildWon(name, value, span, source) },
             "LetPattern" => { buildLetPattern(value, span) },
             "LetCtorPattern" => { buildPatternAtom(name, value, span) },
             "ParamPattern" => { buildParamPattern(value, span) },

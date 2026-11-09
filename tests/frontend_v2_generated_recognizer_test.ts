@@ -1,5 +1,4 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { trackedWmFiles } from "../scripts/tracked_wm_files.ts";
 import { emitRecognizer } from "../scripts/generate_frontend_v2_recognizer.ts";
 import { topLevelPhraseEnd, topLevelPhraseRanges } from "../src/top_level_phrases.ts";
 import { recognizeGrammar } from "../tooling/frontend-v2/generator/recognizer.ts";
@@ -16,6 +15,7 @@ import {
   frontendV2SemanticGolden,
   hashFrontendSemanticWithSpans,
   repositoryWmPath,
+  semanticGoldenFiles,
 } from "./frontend_v2_semantic_golden.ts";
 
 const grammarPath = new URL("../src/grammar.peggy", import.meta.url);
@@ -92,7 +92,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 152,
+    classified: 171,
     missing: [],
     unknown: [],
     duplicates: [],
@@ -756,7 +756,7 @@ function recoveryMarkSummary(
 }
 
 async function* wmFiles(root: URL): AsyncGenerator<string> {
-  yield* await trackedWmFiles(root);
+  yield* await semanticGoldenFiles(root);
 }
 
 Deno.test("frontend-v2 backports nested block comments and CR line-comment boundaries", async () => {

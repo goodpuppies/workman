@@ -1,6 +1,8 @@
 import type { Module } from "../src/ast.ts";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { normalizeFrontendSemanticAstWithSpans } from "../src/frontend_v2_compare.ts";
+import { trackedWmFiles } from "../scripts/tracked_wm_files.ts";
 
 type FrontendV2SemanticGolden = Readonly<{
   schemaVersion: 1;
@@ -18,6 +20,16 @@ if (parsed.schemaVersion !== 1 || typeof parsed.files !== "object") {
 }
 
 export const frontendV2SemanticGolden = Object.freeze(parsed);
+
+/** Include explicitly baselined new modules even before they are staged in Git. */
+export async function semanticGoldenFiles(root: URL): Promise<string[]> {
+  const directory = fileURLToPath(root);
+  const baselined = Object.keys(frontendV2SemanticGolden.files)
+    .map((path) => fileURLToPath(new URL(`../${path}`, import.meta.url)))
+    .filter((path) => path.startsWith(directory));
+  return [...new Set([...await trackedWmFiles(root), ...baselined].map((path) => resolve(path)))]
+    .sort();
+}
 
 export function repositoryWmPath(path: string): string {
   const root = fileURLToPath(new URL("../", import.meta.url));

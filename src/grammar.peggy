@@ -540,7 +540,28 @@ SpaceArg = value:Primary { return value; }
 
 Primary
   = IfExpr / MatchExpr / Lambda
-  / Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / matched:(MatchFn / AnonymousMatchFn) !(!("(" / "-") SpaceArg) { return matched; } / v:LongName { return longNode("Var", v, {}, location()); }
+  / Float / Int / Character / InterpolatedString / String / Bool / Void / hole:"?" { return at({ kind: "Panic", hole: true, message: { kind: "String", value: "typed hole" } }, location()); } / PanicExpr / CarrierLiftTupleExpr / LiftTupleExpr / WonExpr / JsonExpr / NamedRecordExpr / RecordExpr / ListExpr / ParenSeq / TupleOrGroup / Block / matched:(MatchFn / AnonymousMatchFn) !(!("(" / "-") SpaceArg) { return matched; } / v:LongName { return longNode("Var", v, {}, location()); }
+
+// Native WON keeps the portable format's own trivia, tokens, and attachment rules.
+WonExpr = "WON" !IdentPart _ (WonList / WonRecord)
+WonValue = WonNull / WonAtomic / WonList / WonRecord
+WonAtomic = WonBoolean / WonNumber / WonText / WonBlob / WonTag
+WonList = "[" WonGap (WonValue (WonSeparator WonValue)*)? WonGap "]"
+WonRecord = "{" WonGap (WonField (WonSeparator WonField)*)? WonGap "}"
+WonField = (WonName / WonText) WonGap "=" WonGap WonValue
+WonTag = !("null" !IdentPart / "true" !IdentPart / "false" !IdentPart) WonName WonAttributes? WonPayload?
+WonAttributes = "<" WonGap WonField (WonSeparator WonField)* WonGap ">"
+WonPayload = "(" WonGap WonAtomic WonGap ")" / WonList / WonRecord
+WonNull = "null" !IdentPart
+WonBoolean = ("true" / "false") !IdentPart
+WonNumber = "-"? ("0" / [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ![A-Za-z0-9_.+-]
+WonName = [A-Za-z_][A-Za-z0-9_]*
+WonBlob = "x\"" ([0-9a-f][0-9a-f])* "\""
+WonText = "\"" ("\\" (["\\nrt] / "x" [0-9a-f][0-9a-f]) / [^"\\\x00-\x1f\x7f])* "\""
+WonGap = WonTrivia*
+WonSeparator = WonTrivia+
+WonTrivia = [ \t\r\n,] / "//" [^\r\n]* / WonComment
+WonComment = "/*" (WonComment / !"*/" .)* "*/"
 
 CarrierLiftTupleExpr = carrier:LongName _ "|" _ args:ArgList _ "|" { return carrierTupleLift(carrier, args, location()); }
 LiftTupleExpr = "|" _ args:ArgList _ "|" { return taskTupleLift(args, location()); }

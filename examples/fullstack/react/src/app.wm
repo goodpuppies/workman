@@ -2,13 +2,13 @@ from js.module("npm:react@19.2.0") import unsafe { useState };
 from "./won-view.wm" import * as View;
 
 -- Bind/Action are renderer conventions; functions stay in WM.
-let template = View.parse(`
-main[
-  h1("React in Workman")
-  p["Count: " Bind("count")]
-  button<onClick = Action("increment")>("Add one")
-]
-`);
+let template = WON[
+  main[
+    h1("React in Workman")
+    p["Count: " Bind("count")]
+    button<onClick = Action("increment")>("Add one")
+  ]
+];
 
 let app = () => {
   let (count, setCount) = useState(0);

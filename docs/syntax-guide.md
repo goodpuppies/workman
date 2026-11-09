@@ -1271,6 +1271,9 @@ See [JavaScript FFI](./jsffi.md) for the current JS interop surface.
 
 ## Quick Reference
 
+Native data literals include `WON{key = "value"}` and `WON[1 2]`.
+See [WON literals](./won-literals.md) for tags, nesting, and portable data semantics.
+
 | Feature               | Syntax                                |
 | --------------------- | ------------------------------------- |
 | Comment               | `-- text` or `// text`                |

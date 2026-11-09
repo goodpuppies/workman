@@ -171,8 +171,8 @@
     "json": {
       "patterns": [
         {
-          "name": "support.type.json.workman",
-          "match": "(?<![A-Za-z0-9_'])JSON(?![A-Za-z0-9_'])(?=\\s*[\\{\\[])"
+          "name": "support.type.data.workman",
+          "match": "(?<![A-Za-z0-9_'])(?:JSON|WON)(?![A-Za-z0-9_'])(?=\\s*[\\{\\[])"
         }
       ]
     },
@@ -207,8 +207,8 @@
           "match": "(?<![A-Za-z0-9_'])Var(?![A-Za-z0-9_'])(?=\\s*\\()"
         },
         {
-          "name": "support.type.json.workman",
-          "match": "(?<![A-Za-z0-9_'])JSON(?![A-Za-z0-9_'])"
+          "name": "support.type.data.workman",
+          "match": "(?<![A-Za-z0-9_'])(?:JSON|WON)(?![A-Za-z0-9_'])"
         }
       ]
     },

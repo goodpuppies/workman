@@ -1,4 +1,5 @@
 import { fileURLToPath, pathToFileURL as toFileUrl } from "node:url";
+import { resolve } from "node:path";
 import { trackedWmFiles } from "./tracked_wm_files.ts";
 import { normalizeFrontendSemanticAstWithSpans } from "../src/frontend_v2_compare.ts";
 import { decodeSurfaceProgram } from "../src/frontend_v2_surface_loader.ts";
@@ -19,6 +20,9 @@ const roots = [
 ] as const;
 
 const files: Record<string, string | null> = {};
+// Explicit extra paths let new modules enter the baseline before they are staged.
+// Untracked scratch files remain excluded by default.
+const extraPaths = Deno.args.map((path) => resolve(path));
 for (const [name, root] of roots) {
   for (const entry of await wmFiles(root, name)) {
     const source = await Deno.readTextFile(entry.url);
@@ -54,7 +58,12 @@ async function wmFiles(
   prefix: string,
 ): Promise<readonly Readonly<{ relative: string; url: URL }>[]> {
   const directory = fileURLToPath(root);
-  return (await trackedWmFiles(root))
+  return [
+    ...new Set([
+      ...await trackedWmFiles(root),
+      ...extraPaths.filter((path) => path.startsWith(directory) && path.endsWith(".wm")),
+    ].map((path) => resolve(path))),
+  ]
     .map((path) => ({
       relative: `${prefix}/${path.slice(directory.length).replaceAll("\\", "/")}`,
       url: toFileUrl(path),
