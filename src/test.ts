@@ -22,7 +22,9 @@ async function collect(path: string, found: string[]): Promise<void> {
   entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (entry.isDirectory && (skipped.has(entry.name) || entry.name.startsWith("."))) continue;
-    if (entry.isDirectory || entry.name.endsWith(".test.wm")) await collect(`${path}/${entry.name}`, found);
+    if (entry.isDirectory || entry.name.endsWith(".test.wm")) {
+      await collect(`${path}/${entry.name}`, found);
+    }
   }
 }
 
@@ -73,7 +75,7 @@ export async function testCommand(args: string[]): Promise<number> {
   try {
     const file = `${dir}/main.wm`;
     await Deno.writeTextFile(file, entry);
-    const result = await runFile(file, { args: passed });
+    const result = await runFile(file, { args: passed, projectDirectory: Deno.cwd() });
     return result.code;
   } finally {
     await Deno.remove(dir, { recursive: true });

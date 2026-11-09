@@ -11,6 +11,8 @@ import {
 import { createTemporaryDirectory, type TemporaryDirectory } from "./temporary_directory.ts";
 
 export type RunOptions = CompileOptions & {
+  /** Project context when an entry module is generated outside the source tree. */
+  projectDirectory?: string;
   args?: string[];
   stdout?: "inherit" | "piped";
   stderr?: "inherit" | "piped";
@@ -28,6 +30,7 @@ export type RunResult = {
 
 export async function runFile(input: string, options: RunOptions = {}): Promise<RunResult> {
   const inputPath = await Deno.realPath(resolve(input));
+  const projectDirectory = options.projectDirectory ?? dirname(inputPath);
   let temporaryDirectory: TemporaryDirectory | undefined;
   // Progress is drawn only while compiling; it is cleared before the program
   // takes over the terminal, so a TUI never inherits a partial line.
@@ -47,7 +50,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     // once there is something to write.
     temporaryDirectory = await createTemporaryDirectory({ prefix: "wm-run-" });
     const dir = temporaryDirectory.path;
-    await linkProjectPackages(dirname(inputPath), dir);
+    await linkProjectPackages(projectDirectory, dir);
     for (const artifact of artifacts) {
       await Deno.writeTextFile(`${dir}/${artifact.path}`, artifact.code);
     }
@@ -56,7 +59,7 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       args: [
         "run",
         "-A",
-        ...denoConfigArgs(dirname(inputPath)),
+        ...denoConfigArgs(projectDirectory),
         ...runtimeFlagsForJavaScript(entry.code),
         `${dir}/${entry.path}`,
         ...(options.args ?? []),

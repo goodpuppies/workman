@@ -55,7 +55,8 @@ wm test --filter rollback    # only tests whose name contains "rollback"
 ```
 
 Output has one line per test, then the failures and a summary. `wm test` exits 1 when a test failed
-or no test ran. A test that throws (a JavaScript exception, a failed pattern match) is reported as
+or no test ran, and exits 0 after successful suites even if a library retains event-loop handles.
+A test that throws (a JavaScript exception, a failed pattern match) is reported as
 crashed instead of stopping the run. Colors are off when stdout isn't a terminal or `NO_COLOR` is
 set.
 

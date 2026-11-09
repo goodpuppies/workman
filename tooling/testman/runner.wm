@@ -142,7 +142,9 @@ let runSuites = (suites: List<Suite>) => {
         exit(1)
       },
       _ => {
-        if (report(outcomes, nowMs() - start) > 0) { exit(1) } else { void }
+        -- Libraries may retain event-loop handles after every test has finished.
+        -- The CLI runner owns this process, so success must terminate it too.
+        exit(if (report(outcomes, nowMs() - start) > 0) { 1 } else { 0 })
       }
     }
   };
