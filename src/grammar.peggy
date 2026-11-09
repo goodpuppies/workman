@@ -733,8 +733,13 @@ FnTypeDomain
   = "(" _ first:TypeExpr _ "," _ rest:TypeList? _ ")" { return [first, ...(rest ?? [])]; }
   / t:TypeAtom { return [t]; }
 GroupedFunctionType = "(" _ t:FunctionType _ ")" { return t; }
+InlineRecordType
+  = name:Constructor params:TypeParams? _ "{" _ fields:RecordFieldDeclList? _ "}"
+    { return at({ kind: "TInlineRecord", name, params: params ?? [], fields: fields ?? [] }, location()); }
+
 TypeAtom
-  = "(" _ first:TypeExpr _ "," _ rest:TypeList? _ ")" { return at({ kind: "TTuple", items: [first, ...(rest ?? [])] }, location()); }
+  = InlineRecordType
+  / "(" _ first:TypeExpr _ "," _ rest:TypeList? _ ")" { return at({ kind: "TTuple", items: [first, ...(rest ?? [])] }, location()); }
   / GroupedFunctionType
   / name:LongConstructor args:("<" _ xs:TypeList _ ">" { return xs; })? { return longNode("TName", name, { args: args ?? [] }, location()); }
   / name:Identifier { return at({ kind: "TVar", name }, location()); }

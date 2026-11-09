@@ -25,6 +25,14 @@ export const recognizerSmokeFixtures: readonly ParityFixture[] = Object.freeze([
   },
   { name: "type variants", source: "type Option<T> = | None | Some<T>;" },
   { name: "record", source: "record Pair<A, B> = { first: A, second: B };" },
+  {
+    name: "inline nominal records",
+    source: "let add = (r: AddI{a:I32, b:I32}): AddRes{result:I32} => {.{result=r.a+r.b}};",
+  },
+  {
+    name: "nested and generic inline records",
+    source: "let read = (x: Box<t>{ value: t, nested: Inner{ flag: Bool } }) => { x.value };",
+  },
   { name: "block", source: "let main = () => { let value = 1; print(value); value };" },
   { name: "if", source: "let choose = (flag) => { if (flag) { yes } else { no } };" },
   {
@@ -43,6 +51,7 @@ export const negativeRecognizerSmokeFixtures: readonly ParityFixture[] = Object.
   { name: "missing let pattern", source: "let = 1;" },
   { name: "lowercase type name", source: "type option = None;" },
   { name: "missing record fields", source: "record Point =;" },
+  { name: "inline record missing field type", source: "let x: Bad{ value: } = .{ value = 1 };" },
   { name: "if without else", source: "let choose = if (flag) { yes };" },
   { name: "invalid import clause", source: 'from "./dep.wm" import Thing;' },
   { name: "unterminated string", source: 'let value = "open;' },

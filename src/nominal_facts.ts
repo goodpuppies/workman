@@ -136,6 +136,20 @@ function resolveNominalFacts(inputs: ModuleInput[], ids: CompilerIdAllocator): N
       if (!info) {
         throw new Error(`missing inference type declaration fact for ${declaration.name}`);
       }
+      // Repeated inline annotations refer to the original nominal declaration and fields.
+      const existingRecord = declaration.kind === "RecordDecl" && declaration.inline
+        ? records.find((record) => record.inferenceTypeId === info.id)
+        : undefined;
+      if (existingRecord && declaration.kind === "RecordDecl") {
+        typeDeclarations.set(declaration, existingRecord.typeNameId);
+        recordDeclarations.set(declaration, existingRecord.id);
+        const canonicalFields = fieldIds.get(info.id)!;
+        for (const field of declaration.fields) {
+          const fieldId = canonicalFields.get(field.name);
+          if (fieldId !== undefined) fieldDeclarations.set(field, fieldId);
+        }
+        return;
+      }
       const typeNameId = inferenceTypeIds.get(info.id) ?? ids.typeName();
       const exported = topLevel &&
         (declaration.kind === "ForeignTypeDecl" || declaration.exported);

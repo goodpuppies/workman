@@ -4411,6 +4411,28 @@ function semanticOccurrences(
       semanticOccurrenceType(typeArena, info?.recordFields?.[fact.declaredIndex]?.type),
     );
   }
+  // Fields in a repeated inline shape refer back to the original record schema.
+  for (const [declaration, info] of result.facts.typeDeclarations) {
+    if (declaration.kind !== "RecordDecl" || !declaration.inline) continue;
+    for (const field of declaration.fields) {
+      const id = nominalFacts.fieldDeclarations.get(field);
+      const canonical = nominalFacts.fields.find((candidate) => candidate.id === id);
+      if (id === undefined || !canonical || canonical.declaration === field) continue;
+      addSemanticOccurrence(
+        occurrences,
+        field.name,
+        "reference",
+        { kind: "field", id },
+        field.node,
+        source,
+        "first",
+        semanticOccurrenceType(
+          typeArena,
+          info.recordFields?.find((entry) => entry.name === field.name)?.type,
+        ),
+      );
+    }
+  }
   for (const [field, fieldFact] of result.facts.recordFields) {
     const id = nominalFacts.fieldIds.get(fieldFact.record.id)?.get(field.name);
     if (id === undefined) continue;

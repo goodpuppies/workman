@@ -62,6 +62,7 @@ type Context = {
   nextTypeGroupId: number;
   wonSpan?: SourceSpan;
   wonLiterals?: WonLiteralInfo[];
+  inlineRecords: Extract<Decl, { kind: "RecordDecl" }>[];
 };
 
 /**
@@ -82,6 +83,7 @@ export function surfaceProgramToModule(
     nextAnonymousMatchId: 0,
     nextPlaceholderId: 0,
     nextTypeGroupId: 0,
+    inlineRecords: [],
   };
   const diagnostics: FrontendV2SemanticAdapterDiagnostic[] = [];
   const decls: Decl[] = [];
@@ -90,6 +92,8 @@ export function surfaceProgramToModule(
 
   phrases.forEach((phraseValue, index) => {
     try {
+      const start = decls.length;
+      context.inlineRecords = [];
       const [item] = fields(phraseValue, "TopPhraseNode");
       const itemVariant = variant(item);
       if (itemVariant.name === "TypeDeclarationGroupNode") {
@@ -117,6 +121,7 @@ export function surfaceProgramToModule(
           node: nodeFor(context, span),
         });
       }
+      decls.splice(start, 0, ...context.inlineRecords);
     } catch (error) {
       diagnostics.push({
         code: "frontend-v2.unsupported-decl",
@@ -640,9 +645,55 @@ function projectTypeAnnotation(node: WmVariant, context: Context): TypeExpr {
   return projectType(variant(typeNode), context);
 }
 
+/** Inline definitions elaborate as ordinary declarations immediately before their phrase. */
+function collectInlineRecords<T>(context: Context, project: () => T) {
+  const outer = context.inlineRecords;
+  context.inlineRecords = [];
+  try {
+    const value = project();
+    return { value, records: context.inlineRecords };
+  } finally {
+    context.inlineRecords = outer;
+  }
+}
+
 function projectType(node: WmVariant, context: Context): TypeExpr {
   const located = { node: nodeFor(context, spanOf(node)) };
   switch (node.name) {
+    case "InlineRecordTypeNode": {
+      const [nameToken, parametersValue, , fieldsValue] = fields(node);
+      const parametersNode = option(parametersValue);
+      const name = tokenText(nameToken);
+      const params = parametersNode ? projectTypeParameters(variant(parametersNode)) : [];
+      const recordFields = list(fieldsValue).map((fieldValue) => {
+        const field = variant(fieldValue, "RecordFieldDeclarationNode");
+        const [fieldName, , fieldType] = fields(field);
+        return {
+          name: tokenText(fieldName),
+          type: projectType(variant(fieldType), context),
+          node: nodeFor(context, spanOf(field)),
+        };
+      });
+      context.inlineRecords.push({
+        kind: "RecordDecl",
+        inline: true,
+        exported: true,
+        name,
+        params,
+        fields: recordFields,
+        node: nodeFor(context, spanOf(node)),
+      });
+      return {
+        kind: "TName",
+        name,
+        args: params.map((parameter) => ({
+          kind: "TVar" as const,
+          name: parameter,
+          node: nodeFor(context, spanOf(node)),
+        })),
+        node: nodeFor(context, tokenSpan(nameToken)),
+      };
+    }
     case "NamedTypeNode": {
       const [nameNode, argumentsValue] = fields(node);
       const path = projectLongName(variant(nameNode, "LongNameNode"));
@@ -1353,21 +1404,26 @@ function projectBlockParts(
     firstItemSpan ??= spanOf(item);
     lastItemSpan = spanOf(item);
     const valueNode = variant(value);
-    if (valueNode.name === "TypeDeclarationGroupNode") {
-      items.push(...projectTypeDeclGroup(valueNode, context));
-    } else {
-      items.push(
-        isDeclNode(valueNode.name)
-          ? projectDecl(valueNode, context)
-          : projectExpr(valueNode, context),
-      );
-    }
+    const projected = collectInlineRecords(
+      context,
+      () =>
+        valueNode.name === "TypeDeclarationGroupNode" ? projectTypeDeclGroup(valueNode, context) : [
+          isDeclNode(valueNode.name)
+            ? projectDecl(valueNode, context)
+            : projectExpr(valueNode, context),
+        ],
+    );
+    items.push(...projected.records, ...projected.value);
     finalTerminator = surfaceTokenSpan(terminator, context);
   }
   const resultNode = option(resultValue);
   const implicitStatement = !resultNode && items.length > 0 && !isSemanticDecl(items.at(-1)!)
     ? items.at(-1) as Expr
     : undefined;
+  const projectedResult = resultNode
+    ? collectInlineRecords(context, () => projectExpr(variant(resultNode), context))
+    : undefined;
+  if (projectedResult) items.push(...projectedResult.records);
   const closeSpan = surfaceTokenSpan(closeValue, context);
   const implicitSpan = firstItemSpan && lastItemSpan
     ? {
@@ -1387,7 +1443,7 @@ function projectBlockParts(
     body: {
       kind: "Block",
       items,
-      result: resultNode ? projectExpr(variant(resultNode), context) : {
+      result: projectedResult ? projectedResult.value : {
         kind: "Void",
         ...(implicitStatement ? { implicitStatement } : {}),
         ...(implicitStatement && finalTerminator

@@ -286,7 +286,14 @@ function coreDeclFromSurface(
         alias: decl.alias,
         node: decl.node,
       };
-    case "RecordDecl":
+    case "RecordDecl": {
+      const recordId = context?.nominalFacts?.recordDeclarations.get(decl);
+      const canonical = decl.inline &&
+        context?.nominalFacts?.records.find((record) => record.id === recordId);
+      if (
+        canonical && canonical.declaration !== decl &&
+        (!context?.bindings || !context.bindings.recordConstructors.has(decl))
+      ) return undefined;
       return {
         kind: "CoreRecord",
         exported: decl.exported,
@@ -295,9 +302,12 @@ function coreDeclFromSurface(
         typeNameId: context?.nominalFacts?.typeDeclarations.get(decl),
         recordId: context?.nominalFacts?.recordDeclarations.get(decl),
         params: decl.params,
-        fields: decl.fields.map(coreRecordFieldDeclFromSurface),
+        fields: (canonical ? canonical.declaration.fields : decl.fields).map(
+          coreRecordFieldDeclFromSurface,
+        ),
         node: decl.node,
       };
+    }
   }
 }
 

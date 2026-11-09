@@ -8,6 +8,7 @@ import {
   fresh,
   freshTypeInfo,
   generalize,
+  instantiateRecordFields,
   named,
   prune,
   registerTypeInfo,
@@ -37,6 +38,7 @@ import { inferExpr } from "./expr.ts";
 import { addJsImport } from "./js_imports.ts";
 import { assertExportableRecord, assertExportableType } from "./module_exports.ts";
 import { rememberRecordDeclaration } from "./record_shape.ts";
+import { assertInlineRecordFields } from "./inline_records.ts";
 import { patternBinders, showPattern } from "./patterns.ts";
 import { constrainAt, rememberSchemeSource } from "./provenance.ts";
 import { callArg } from "./shared.ts";
@@ -53,6 +55,16 @@ import {
   recordTypeVariableFact,
   type TypeFacts,
 } from "./type_facts.ts";
+
+// Each module/block owns a TypeEnv; clones start a new declaration scope.
+const declaredTypeNames = new WeakMap<TypeEnv, Set<string>>();
+const declaredRecordNames = new WeakMap<TypeEnv, Set<string>>();
+
+function localTypeNames(typeEnv: TypeEnv): Set<string> {
+  let names = declaredTypeNames.get(typeEnv);
+  if (!names) declaredTypeNames.set(typeEnv, names = new Set());
+  return names;
+}
 
 export function inferDecl(
   decl: Decl,
@@ -86,6 +98,12 @@ export function inferDecl(
       exported,
     );
     return;
+  }
+  if (decl.kind === "TypeDecl") {
+    if (declaredRecordNames.get(typeEnv)?.has(decl.name)) {
+      throw new Error(`duplicate type declaration ${decl.name} in the same scope`);
+    }
+    localTypeNames(typeEnv).add(decl.name);
   }
   if (decl.kind === "TypeDecl" && context.basisTypes.has(decl.name)) {
     adoptBasisType(
@@ -225,20 +243,36 @@ function inferRecordDecl(
 ) {
   rejectDuplicates(decl.params, "type parameter");
   rejectDuplicates(decl.fields.map((field) => field.name), "record field");
-  const info = freshTypeInfo(decl.name, decl.params.length);
-  rememberRecordDeclaration(info, decl);
+  const existing = decl.inline ? typeEnv.get(decl.name) : undefined;
+  if (!decl.inline && localTypeNames(typeEnv).has(decl.name)) {
+    throw new Error(`duplicate record declaration ${decl.name} in the same scope`);
+  }
+  if (existing && !existing.recordFields) {
+    throw new Error(`inline record ${decl.name} refers to an existing non-record type`);
+  }
+  if (existing && existing.arity !== decl.params.length) {
+    throw new Error(`inline record ${decl.name} expects ${existing.arity} type parameters`);
+  }
+  const info = existing ?? freshTypeInfo(decl.name, decl.params.length);
+  if (!existing) {
+    localTypeNames(typeEnv).add(decl.name);
+    let records = declaredRecordNames.get(typeEnv);
+    if (!records) declaredRecordNames.set(typeEnv, records = new Set());
+    records.add(decl.name);
+    rememberRecordDeclaration(info, decl);
+  }
   recordTypeDeclarationFact(facts, decl, info);
   registerTypeInfo(typeEnv, info);
   const path = parseLongId(decl.name);
   const qualified = isQualified(path);
-  if (qualified) {
+  if (!existing && qualified) {
     // Dotted names (`Raylib.Vector2`) bind into the namespace structure so
     // the type and its constructor stay inaccessible unqualified.
     bindLongType(strEnv, path, info);
-  } else {
+  } else if (!existing) {
     bindType(staticEnv(strEnv, typeEnv, env), decl.name, info);
   }
-  if (exported && !qualified) typeExports.set(decl.name, info);
+  if (!existing && exported && !qualified) typeExports.set(decl.name, info);
   const vars = new Map(decl.params.map((p) => [p, fresh(p)] as const));
   decl.params.forEach((name, parameterIndex) =>
     recordTypeVariableDeclarationFact(
@@ -249,7 +283,7 @@ function inferRecordDecl(
       vars.get(name)!,
     )
   );
-  info.recordFields = decl.fields.map((field) => ({
+  const fields = decl.fields.map((field) => ({
     name: field.name,
     type: typeFromAst(field.type, typeEnv, vars, {
       parameter: true,
@@ -262,17 +296,32 @@ function inferRecordDecl(
         recordTypeVariableFact(facts, expression, type, decl.node),
     }),
   }));
-  info.recordParams = decl.params.map((p) => {
-    const v = prune(vars.get(p)!);
-    if (v.tag !== "var") throw new Error("invalid record type parameter");
-    return v.id;
-  });
+  if (existing) {
+    assertInlineRecordFields(
+      decl.name,
+      fields,
+      instantiateRecordFields(existing, decl.params.map((param) => vars.get(param)!)),
+    );
+    return;
+  } else {
+    info.recordFields = fields;
+    info.recordParams = decl.params.map((p) => {
+      const v = prune(vars.get(p)!);
+      if (v.tag !== "var") throw new Error("invalid record type parameter");
+      return v.id;
+    });
+  }
   if (exported) {
     exportableTypeIds.add(info.id);
     assertExportableRecord(info, exportableTypeIds);
   }
   const result = named(info, decl.params.map((param) => vars.get(param)!));
-  const constructorType = fn([callArg(info.recordFields.map((field) => field.type))], result);
+  const constructorType = fn([
+    callArg(
+      instantiateRecordFields(info, decl.params.map((param) => vars.get(param)!))
+        .map((field) => field.type),
+    ),
+  ], result);
   const constructor = {
     ...generalize(env, constructorType),
     status: "record-constructor" as const,

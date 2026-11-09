@@ -490,3 +490,35 @@ function positionOf(source: string, text: string) {
   const lines = before.split("\n");
   return { line: lines.length - 1, character: lines.at(-1)!.length };
 }
+
+Deno.test("lsp inline record references rename the original type and field identities", async () => {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/main.wm`;
+  const source = "let a:Point{x:I32}=.{x=1}; let b:Point{x:I32}=a; let n=b.x;";
+  try {
+    await Deno.writeTextFile(path, source);
+    const uri = pathToFileUri(path);
+    const field = await renameAt(uri, positionOf(source, "x;"), "value", new Map());
+    assertEquals(
+      field?.changes[uri].map((edit) => edit.range.start.character).sort((a, b) => a - b),
+      [
+        source.indexOf("x:I32"),
+        source.indexOf("x=1"),
+        source.lastIndexOf("x:I32"),
+        source.lastIndexOf("x;"),
+      ],
+    );
+    const type = await renameAt(uri, positionOf(source, "Point{x:I32}=a"), "Location", new Map());
+    assertEquals(
+      type?.changes[uri].map((edit) => edit.range.start.character).sort((a, b) => a - b),
+      [
+        source.indexOf("Point"),
+        source.lastIndexOf("Point"),
+      ],
+    );
+    const definition = await definitionAt(uri, positionOf(source, "x:I32}=a"), new Map());
+    assertEquals(definition?.range.start.character, source.indexOf("x:I32"));
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

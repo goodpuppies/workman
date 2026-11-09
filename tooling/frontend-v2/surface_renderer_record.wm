@@ -1,6 +1,6 @@
 from "./generated/surface_types.wm" import {
   SurfaceToken, AuthoredValue, MarkedValue,
-  RecordDeclarationNode, RecordFieldDeclarationNode,
+  InlineRecordTypeNode, RecordDeclarationNode, RecordFieldDeclarationNode,
   RecordPatternNode, RecordPatternFieldNode
 };
 
@@ -62,6 +62,24 @@ let renderRecordNode = match(node, depth, materializeMarks, renderNode) => {
           renderedParams ++ " " ++ renderRecordSurfaceValue(equalsToken, materializeMarks) ++
           " " ++ body
         )
+      },
+      _ => { None },
+    }
+  },
+  (InlineRecordTypeNode(name, params, open, fields, close, span), Var(depth), Var(materializeMarks), Var(renderNode)) => {
+    let paramsText = match(params) {
+      Some(node) => { renderNode(node, depth, materializeMarks) },
+      None => { Some("") },
+    };
+    match((paramsText, renderRecordNodes(fields, ", ", "", depth, materializeMarks, renderNode))) {
+      (Some(renderedParams), Some(renderedFields)) => {
+        let body = if (renderedFields == "") {
+          renderRecordSurfaceValue(open, materializeMarks) ++ renderRecordSurfaceValue(close, materializeMarks)
+        } else {
+          renderRecordSurfaceValue(open, materializeMarks) ++ " " ++ renderedFields ++ " " ++
+          renderRecordSurfaceValue(close, materializeMarks)
+        };
+        Some(renderRecordToken(name) ++ renderedParams ++ body)
       },
       _ => { None },
     }

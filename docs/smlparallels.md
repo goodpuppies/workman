@@ -577,7 +577,7 @@ SML has structural record types:
 { x = 1, y = 2 }
 ```
 
-Workman requires a record declaration:
+Workman uses a named record declaration:
 
 ```wm
 record Point = { x: Number, y: Number };
@@ -585,6 +585,31 @@ record Point = { x: Number, y: Number };
 let p = .{ x = 1, y = 2 };
 let x = p.x;
 ```
+
+A type annotation can declare its nominal record inline:
+
+```wm
+let add = (r: AddI{ a: I32, b: I32 }): AddRes{ result: I32 } => {
+  .{ result = r.a + r.b }
+};
+let sum: AddRes = add(AddI{ a = 2, b = 3 });
+```
+
+This is shorthand for declaring `record AddI = { a: I32, b: I32 };` and
+`record AddRes = { result: I32 };` immediately before `let add`. The names and
+constructors remain available to later statements in the containing module or block.
+New module-level definitions are exported just like ordinary record declarations;
+block-local definitions follow the usual restrictions on local types escaping their scope.
+An inline annotation creates a type only when its name is not already visible;
+repeated annotations reuse the visible nominal identity and verify its fields.
+Different names remain distinct even when their fields match. Explicit record
+redeclarations are errors in the same scope; nested explicit declarations may shadow
+outer types.
+
+Inline declarations also work in binding annotations, nested field types, aliases, and
+function types. Empty records use `Empty{}`. Generic records declare their parameters
+explicitly, for example `(box: Box<t>{ value: t }) => { box.value }`; later uses can
+refer to `Box<I32>` or `Box<String>`.
 
 The declaration also introduces an ordinary ordered constructor:
 

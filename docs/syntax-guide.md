@@ -402,9 +402,47 @@ record Pair<A, B> = { first: A, second: B };
 
 ---
 
+### Inline Record Types
+
+Declare a nominal record directly in a type annotation by writing its name followed by
+its fields:
+
+```wm
+let add = (r: AddI{ a: I32, b: I32 }): AddRes{ result: I32 } => {
+  .{ result = r.a + r.b }
+};
+let sum: AddRes = add(AddI{ a = 2, b = 3 });
+```
+
+This is shorthand for ordinary `record AddI = { a: I32, b: I32 };` and
+`record AddRes = { result: I32 };` declarations immediately before `let add`.
+The types and their ordered constructors are available throughout that statement and
+to later statements in the containing module or block. New module-level definitions are
+exported; block-local types follow the usual restrictions on escaping their scope.
+
+An inline annotation creates a nominal type only if its name is not already visible.
+Repeated `Point{x:I32}` annotations refer to the same `Point` and check that the field
+names and types match. Field order may differ in a repeated annotation; the ordered
+constructor retains the order established by the original declaration. Differently
+named records remain distinct even when their fields match.
+
+An explicit `record Point = ...` redeclaration in the same module or block is an error.
+An explicit declaration in a nested block may shadow an outer type; an inline annotation
+instead reuses any visible record of that name. Referencing an existing non-record type
+with inline record syntax is an error.
+
+Inline definitions also work in binding annotations, nested fields, aliases, and function
+types. Empty records use `Empty{}`. Explicit type parameters define generic records:
+
+```wm
+let unwrap = (box: Box<t>{ value: t }) => { box.value };
+let number: Box<I32> = Box(42);
+let text: Box<String> = Box("hello");
+```
+
 ## Records
 
-Records are **nominal** (not structural). You must declare a record type before using it.
+Records are **nominal** (not structural). Declare a record type separately or inline in a type annotation.
 
 ### Creating Records
 

@@ -1,6 +1,6 @@
 from "./generated/surface_types.wm" import {
   Span, SurfaceToken, AuthoredValue, LongNameNode, TypeParametersNode, TypeArgumentsNode,
-  NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
+  InlineRecordTypeNode, NamedTypeNode, TypeVariableNode, FunctionTypeNode, FunctionTypeDomainNode,
   GroupedTypeNode, TupleTypeNode, TypeAnnotationNode,
   TypeDeclarationBodyNode, TypeDeclarationGroupNode, TypeBindingNode,
   TypeDeclarationNode
@@ -228,5 +228,32 @@ let buildTypeDecl = (value: ParseValue, span: Span) => {
       )
     },
     _ => { RuleParseValue("TypeDecl", value, span) },
+  }
+};
+
+let buildInlineRecordType = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(name),
+      paramsValue,
+      EmptyParseValue,
+      TokenParseValue(open),
+      EmptyParseValue,
+      fieldsValue,
+      EmptyParseValue,
+      TokenParseValue(close),
+    ]) => {
+      NodeParseValue(
+        InlineRecordTypeNode(
+          name,
+          firstNode(paramsValue),
+          surfaceValue(open),
+          collectNodes(fieldsValue),
+          surfaceValue(close),
+          span,
+        )
+      )
+    },
+    _ => { RuleParseValue("InlineRecordType", value, span) },
   }
 };

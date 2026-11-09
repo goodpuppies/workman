@@ -382,6 +382,8 @@ function resolveDecl(
     return next;
   }
   if (decl.kind === "RecordDecl") {
+    // A repeated inline shape is a checked reference, not a new constructor binding.
+    if (decl.inline && env.types.has(decl.name)) return env;
     const id = ids.binding();
     facts.recordConstructors.set(decl, id);
     facts.local.add(id);

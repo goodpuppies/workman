@@ -114,6 +114,8 @@ export type Decl =
   | Located<{ kind: "LetDecl"; exported: boolean; recursive: boolean; bindings: Binding[] }>
   | Located<{
     kind: "RecordDecl";
+    /** An inline annotation defines the type only when its name is not already visible. */
+    inline?: boolean;
     exported: boolean;
     name: string;
     params: string[];

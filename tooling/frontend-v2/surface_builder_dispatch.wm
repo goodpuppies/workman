@@ -9,7 +9,7 @@ from "./generated/surface_rule_metadata.wm" import {
 };
 from "./surface_builders_type.wm" import {
   buildTypeAnn, buildFnType, buildFunctionType, buildFnTypeDomain, buildGroupedFunctionType,
-  buildLongName, buildTypeParams, buildTypeAtom,
+  buildLongName, buildTypeParams, buildTypeAtom, buildInlineRecordType,
   buildTypeDeclBody, buildTypeBinding, buildTypeDecl
 };
 from "./surface_builders_expr.wm" import {
@@ -101,6 +101,7 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "LongName" => { buildLongName(value, span) },
             "LongConstructor" => { buildLongName(value, span) },
             "TypeParams" => { buildTypeParams(value, span) },
+            "InlineRecordType" => { buildInlineRecordType(value, span) },
             "TypeAtom" => { buildTypeAtom(value, span) },
             "TypeDeclBody" => { buildTypeDeclBody(value, span) },
             "TypeDecl" => { buildTypeDecl(value, span) },
