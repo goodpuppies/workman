@@ -1,3 +1,6 @@
+from "std/task.wm" import * as Task;
+from "std/result.wm" import * as Result;
+from "std/list.wm" import * as List;
 -- The test runner. `wm test` generates a small entry module that imports every
 -- test file and calls `runSuites` with them; the output follows `deno test`.
 

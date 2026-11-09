@@ -2,16 +2,23 @@ import peggy from "peggy";
 
 /**
  * Library directories whose top-level `.wm` files are compiled into the default basis, and whose
- * `js/` subdirectory holds the JavaScript or TypeScript primitives those modules import. Every file is discovered,
+ * `js/` subdirectory holds the JavaScript or TypeScript primitives those modules import. Every non-test module is discovered,
  * so adding a library module or primitive file never requires editing this script.
  */
-const libraryDirectories = ["subml-basis", "std", "tooling/pakman/api", "host/js", "host/c"];
+const libraryDirectories = [
+  "subml-basis",
+  "std",
+  "tooling/pakman/api",
+  "tooling/testman",
+  "host/js",
+  "host/c",
+];
 
 const repositoryUrl = new URL("../", import.meta.url);
 const outputUrl = new URL("../src/generated/assets.ts", import.meta.url);
 const libraryPaths = (await Promise.all(
   libraryDirectories.map((directory) => filePaths(directory, ".wm")),
-)).flat().sort();
+)).flat().filter((path) => !path.endsWith(".test.wm")).sort();
 const libraryJsPaths = (await Promise.all(
   libraryDirectories.flatMap((directory) => [
     filePaths(`${directory}/js`, ".js"),

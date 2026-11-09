@@ -1,3 +1,5 @@
+from "std/result.wm" import * as Result;
+from "std/task.wm" import * as Task;
 -- testman: tests for Workman programs, run with `wm test`.
 --
 -- This is a proposal for the shape of a testing framework, not a settled

@@ -7,8 +7,6 @@ Deno.test("wm test preserves the invoking project's Deno import map for its temp
   const dir = await Deno.makeTempDir({ prefix: "wm-testman-project-" });
   const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
   const config = fileURLToPath(new URL("../deno.json", import.meta.url));
-  const test = relative(dir, fileURLToPath(new URL("../tooling/testman/test.wm", import.meta.url)))
-    .replaceAll("\\", "/");
   try {
     await Deno.writeTextFile(
       `${dir}/deno.json`,
@@ -21,7 +19,7 @@ Deno.test("wm test preserves the invoking project's Deno import map for its temp
     await Deno.writeTextFile(
       `${dir}/config.test.wm`,
       `
-      from ${JSON.stringify(test)} import * as T;
+      from "testman/test.wm" import * as T;
       from js.module("test-host") import unsafe { label };
       let tests = [T.test("uses project import map", () => { T.assertEqual(label(), "project config") })];
     `,

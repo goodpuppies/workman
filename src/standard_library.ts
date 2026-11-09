@@ -95,11 +95,12 @@ function isAutoOpened(path: string): boolean {
 }
 
 /**
- * Library modules inferred only for a program that imports one of them (`"pakman/…"`), so other
+ * Library modules inferred only for a program that imports one of them (`"pakman/…"`, `"testman/…"`), so other
  * programs don't pay for them at startup. They may import any other library module.
  */
 export function isLoadedOnDemand(path: string): boolean {
-  return path.startsWith("tooling/pakman/api/") || path.startsWith("host/c/");
+  return path.startsWith("tooling/pakman/api/") || path.startsWith("tooling/testman/") ||
+    path.startsWith("host/c/");
 }
 
 const onDemandModuleIds = new Set(

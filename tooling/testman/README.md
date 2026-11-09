@@ -6,13 +6,16 @@
 
 `wm test` runs the tests in `*.test.wm` files, in the style of `deno test`.
 
+Import assertions with `from "testman/test.wm" import * as T;` from any project.
+The compiler embeds testman alongside pakman; no checkout-relative path is needed.
+
 ## Writing tests
 
 A test file ends in `.test.wm` and exports `tests`, a list of named tests. A test is a function
 returning a `Task`; it passes when the Task succeeds. Plain and asynchronous tests look the same.
 
 ```wm
-from "../../testman/test.wm" import *;
+from "testman/test.wm" import *;
 from "./lock.wm" import { upsert, LockEntry };
 
 let tests = [

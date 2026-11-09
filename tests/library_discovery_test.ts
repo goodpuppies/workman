@@ -456,3 +456,17 @@ let main = () => {
   );
   assertEquals(unknown.stderr.includes(`unknown pakman module "pakman/store.wm"`), true);
 });
+
+Deno.test("testman public imports are embedded and loaded on demand", async () => {
+  assertEquals(libraryImport("testman/test.wm"), {
+    path: "tooling/testman/test.wm",
+    description: 'testman module "testman/test.wm"',
+  });
+  assertEquals(libraryImport("testman/runner.wm")?.path, "tooling/testman/runner.wm");
+  assertEquals(libraryImport("./testman/test.wm"), undefined);
+  const core = await loadStandardModules();
+  assertEquals(core.some((module) => module.path.startsWith("tooling/testman/")), false);
+  const all = await loadStandardModules(true);
+  assertEquals(all.some((module) => module.path === "tooling/testman/test.wm"), true);
+  assertEquals(all.some((module) => module.path === "tooling/testman/runner.wm"), true);
+});
