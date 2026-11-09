@@ -1,5 +1,5 @@
 import { sequenceType } from "../taint.ts";
-import type { LongId, Pattern } from "../ast.ts";
+import type { Expr, LongId, Pattern } from "../ast.ts";
 import { parseLongId } from "../ast.ts";
 import {
   BoolTy,
@@ -52,6 +52,8 @@ export function showPattern(pattern: Pattern): string {
       return "void";
     case "PPinned":
       return pattern.name;
+    case "PComputed":
+      return "=(expression)";
     case "PTuple":
       return `(${pattern.items.map(showPattern).join(", ")})`;
     case "PRecord":
@@ -78,9 +80,26 @@ export function inferPattern(
   facts?: TypeFacts,
   provenance?: TypeProvenance,
   expectedSource?: TypeSource,
+  inferComputed?: (expression: Expr) => Ty,
 ): Ty {
   if (facts) recordPatternType(facts, p, expected);
   switch (p.kind) {
+    case "PComputed": {
+      if (!inferComputed) {
+        throw new Error("computed equality patterns are supported in match arms only");
+      }
+      const computed = inferComputed(p.value);
+      constrainPattern(
+        expected,
+        computed,
+        p,
+        "InferPattern.Computed",
+        "computed value matches the pattern subject",
+        provenance,
+        expectedSource,
+      );
+      return expected;
+    }
     case "PWildcard":
       return expected;
     case "PVar":
@@ -201,6 +220,7 @@ export function inferPattern(
           facts,
           provenance,
           componentSource(expectedSource, items[i], expectedSource?.tupleItems?.[i]),
+          inferComputed,
         )
       );
       return expected;
@@ -233,6 +253,7 @@ export function inferPattern(
           facts,
           provenance,
           componentSource(expectedSource, expectedField.type),
+          inferComputed,
         );
       }
       return expected;
@@ -276,6 +297,7 @@ export function inferPattern(
             facts,
             provenance,
             componentSource(expectedSource, args[i]),
+            inferComputed,
           )
         );
       } else {
@@ -314,6 +336,7 @@ export function inferPattern(
         facts,
         provenance,
         expectedSource,
+        inferComputed,
       );
       return expected;
     }
@@ -332,6 +355,8 @@ export function inferBindingPattern(
 ) {
   if (facts) recordPatternType(facts, pattern, expected);
   switch (pattern.kind) {
+    case "PComputed":
+      throw new Error("computed equality patterns are supported in match arms only");
     case "PVar":
       if (binders.has(pattern.name)) throw new Error(`duplicate pattern binder ${pattern.name}`);
       binders.add(pattern.name);

@@ -296,6 +296,10 @@ function collectRequiredStandardModules(
     if (id !== undefined && standardIds.has(id)) required.add(id);
   };
   const visitPattern = (pattern: CorePattern): void => {
+    if (pattern.kind === "CorePComputed") {
+      visitExpr(pattern.value);
+      return;
+    }
     if (pattern.kind === "CorePPinned") {
       requireId(namespaceIds.get(pattern.name.split(".")[0]));
     } else if (pattern.kind === "CorePTuple") {
@@ -1259,6 +1263,10 @@ function collectCNamespaceMemberUsage(
       : undefined;
   };
   const visitPattern = (pattern: CorePattern): void => {
+    if (pattern.kind === "CorePComputed") {
+      visitExpr(pattern.value);
+      return;
+    }
     if (pattern.kind === "CorePPinned") {
       const parts = pattern.name.split(".");
       if (parts.length > 1 && markMember(pattern.rootBindingId, parts[1])) return;
@@ -2284,6 +2292,8 @@ function patternChecks(
       return [`${value} === undefined`];
     case "CorePPinned":
       return [`__wm_eq(${value}, ${pinnedPatternValueRef(pattern)})`];
+    case "CorePComputed":
+      return [`__wm_eq(${value}, ${emitExpr(pattern.value)})`];
     case "CorePTuple": {
       const items = pattern.items.flatMap((item, index) =>
         patternChecks(item, `${value}[${index}]`)

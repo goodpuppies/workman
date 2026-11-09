@@ -1,11 +1,13 @@
-
 import { type Decl, type Expr, parseLongId, pathOf, type TypeExpr } from "../../ast.ts";
+import { mapPatternExpressions } from "../../ast.ts";
+import { receiverCallFallible } from "../receiver_safety.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { fresh, namedRecordFields, prune, show, solveFfi, type Ty } from "../../types.ts";
 import { resolveFfiFact } from "../../infer/type_facts.ts";
 import {
+  contextualizeCallbackInputs,
   materializeBindingCall,
   materializeReceiverCall,
   materializeReceiverProperty,
@@ -41,6 +43,7 @@ import {
 } from "../shared.ts";
 import {
   type JsCallArgHint,
+  jsRefCall,
   jsRefCallMember,
   jsRefDeepCall,
   jsRefHasMemberPath,
@@ -99,6 +102,83 @@ function resolveDelayedExpr(
     case "FfiBindingCall":
       return resolveDelayedFfiBindingCall(expr, ffi, result, selected, options, valueRefs);
     case "Call":
+      const acquiredCallee = inferredType(result, expr.callee);
+      const acquiredType = acquiredCallee
+        ? receiverTypeThroughObligations(acquiredCallee)
+        : undefined;
+      const acquired = acquiredType
+        ? foreignReceiver(
+          acquiredType,
+          foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs),
+        )
+        : undefined;
+      if (acquired?.ref.key.startsWith("callable:")) {
+        if (acquired.type.kind === "TName") {
+          ffi.foreignTypeRefs.set(acquired.type.name, acquired.ref);
+        }
+        ffi.foreignTypeRefs.set(acquired.ref.key, acquired.ref);
+        const hints = () =>
+          expr.args.map((arg) => {
+            const literal = callArgHint(arg);
+            if (literal.kind === "number" || literal.kind === "string") return literal;
+            const argumentType = inferredType(result, arg);
+            const foreign = argumentType
+              ? foreignReceiver(
+                argumentType,
+                foreignTypeRefLookup(ffi.foreignTypeRefs, options.foreignTypeRefs),
+              )
+              : undefined;
+            if (foreign) return { kind: "ref" as const, ref: foreign.ref, type: foreign.type };
+            const hint = callArgHintForReflection(arg, result);
+            return hint.kind === "function" ? { ...hint, paramTypes: undefined } : hint;
+          });
+        const initialHints = hints();
+        if (initialHints.some((hint) => hint.kind === "unknown")) {
+          throw diagnosticError(
+            new Error(
+              "cannot determine the TypeScript argument type for an acquired JavaScript callable",
+            ),
+            expr.node,
+            "ffi.callable-argument-type",
+          );
+        }
+        const seed = jsRefCall(acquired.ref, initialHints);
+        contextualizeCallbackInputs(expr.args, seed?.variants?.[0].callbackParamRefs, result);
+        const member = jsRefCall(acquired.ref, hints());
+        if (!member) {
+          throw diagnosticError(
+            new Error(
+              "cannot resolve acquired JavaScript callable: TypeScript rejected the supplied arguments or the selected result has no Workman representation",
+            ),
+            expr.node,
+            "ffi.unsupported-callable-call",
+          );
+        }
+        const original = {
+          kind: "FfiCall" as const,
+          receiver: expr.callee,
+          path: [],
+          args: expr.args,
+          node: expr.node,
+        };
+        result.types.set(original, inferredType(result, expr)!);
+        return materializeReceiverCall(
+          original,
+          expr.callee,
+          [],
+          expr.args,
+          acquired.type,
+          member,
+          `__callable.${acquired.ref.key}(${callHintKey(expr.args)})`,
+          ffi,
+          result,
+          selected,
+          options,
+          valueRefs,
+          resolveDelayedExpr,
+          acquired.ref.callableFallible ?? true,
+        );
+      }
       if (expr.callee.kind === "Var") {
         rejectLegacyDeepDottedCall(expr, ffi, result);
         const deep = resolveDeepReflectedCall(expr, ffi, result, selected, valueRefs);
@@ -173,6 +253,10 @@ function resolveDelayedExpr(
         value: resolveDelayedExpr(expr.value, ffi, result, selected, options, valueRefs),
         arms: expr.arms.map((arm) => ({
           ...arm,
+          pattern: mapPatternExpressions(
+            arm.pattern,
+            (value) => resolveDelayedExpr(value, ffi, result, selected, options, valueRefs),
+          ),
           body: resolveDelayedExpr(arm.body, ffi, result, selected, options, new Map(valueRefs)),
         })),
       };
@@ -212,6 +296,18 @@ function resolveDelayedExpr(
         value: resolveDelayedExpr(expr.value, ffi, result, selected, options, valueRefs),
       };
     case "Pipe":
+      const pipeCallee = inferredType(result, expr.right);
+      const pipeTarget = pipeCallee ? prune(pipeCallee) : undefined;
+      if (pipeTarget?.tag === "named" && pipeTarget.foreignKey?.startsWith("callable:")) {
+        const invocation = {
+          kind: "Call" as const,
+          callee: expr.right,
+          args: [expr.left],
+          node: expr.node,
+        };
+        result.types.set(invocation, inferredType(result, expr)!);
+        return resolveDelayedExpr(invocation, ffi, result, selected, options, valueRefs);
+      }
       return {
         ...expr,
         left: resolveDelayedExpr(expr.left, ffi, result, selected, options, valueRefs),
@@ -255,9 +351,10 @@ function rememberGenericReceiver(
   foreign: { ref: JsTypeRef; type: TypeExpr },
   ffi: FfiElaboration,
 ) {
-  if (!foreign.ref.generic || foreign.type.kind !== "TName") return;
+  if (foreign.type.kind !== "TName") return;
   ffi.foreignTypeRefs.set(foreign.type.name, foreign.ref);
-  ffi.foreignTypeRefs.set(foreign.ref.generic.key, foreign.ref);
+  ffi.foreignTypeRefs.set(foreign.ref.key, foreign.ref);
+  if (foreign.ref.generic) ffi.foreignTypeRefs.set(foreign.ref.generic.key, foreign.ref);
 }
 
 function resolveDelayedFfiBindingCall(
@@ -308,11 +405,14 @@ function resolveDelayedFfiGet(
         expr.path,
         foreign.type,
         member,
-        `__receiver.${foreign.ref.key}.${expr.path.join(".")}`,
+        `__receiver.${receiverCallFallible(foreign.ref) ? "" : "unsafe."}${foreign.ref.key}.${
+          expr.path.join(".")
+        }`,
         ffi.bindings,
         ffi.foreignTypeRefs,
         result,
         selected,
+        receiverCallFallible(foreign.ref),
       );
     }
     throw diagnosticError(
@@ -485,15 +585,16 @@ function resolveDelayedFfiCall(
         expr.args,
         foreign.type,
         member,
-        `__receiver.${foreign.ref.key}.${expr.path.join(".")}${
-          callMember ? `(${callHintKey(expr.args)})` : ""
-        }`,
+        `__receiver.${receiverCallFallible(foreign.ref) ? "" : "unsafe."}${foreign.ref.key}.${
+          expr.path.join(".")
+        }${callMember ? `(${callHintKey(expr.args)})` : ""}`,
         ffi,
         result,
         selected,
         options,
         valueRefs,
         resolveDelayedExpr,
+        receiverCallFallible(foreign.ref),
       );
     }
     const memberExists = jsRefHasMemberPath(foreign.ref, expr.path);

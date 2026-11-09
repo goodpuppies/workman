@@ -76,6 +76,7 @@ export function inferMatch(
         facts,
         provenance,
         sourceForTypedExpr(expr.value, valueType, provenance, "match input"),
+        (expression) => inferExpr(expression, context),
       );
     } finally {
       setMatchArm(previousArm);
@@ -179,56 +180,82 @@ function isEmptyBlock(expr: Expr): expr is Extract<Expr, { kind: "Block" }> {
     expr.result.implicitStatement === undefined;
 }
 
-function snapshotType(type: Ty, variables = new Map<number, Ty>()): Ty {
+export function snapshotType(
+  type: Ty,
+  variables = new Map<number, Ty>(),
+  snapshots = new Map<Ty, Ty>(),
+): Ty {
   const resolved = prune(type);
-  switch (resolved.tag) {
-    case "var": {
-      const existing = variables.get(resolved.id);
-      if (existing) return existing;
-      const variable: Ty = { tag: "var", id: resolved.id, name: resolved.name };
-      variables.set(resolved.id, variable);
-      variable.projectionFields = resolved.projectionFields?.map((field) => ({
-        ...field,
-        type: snapshotType(field.type, variables),
-      }));
-      return variable;
+  // Deferred FFI constraints can point back to their result through an argument.
+  // Reserve each node before descending, preserving sharing and terminating cycles.
+  const previous = snapshots.get(resolved);
+  if (previous) return previous;
+  const snapshot = { tag: resolved.tag } as Ty;
+  snapshots.set(resolved, snapshot);
+  const copy = (): Ty => {
+    switch (resolved.tag) {
+      case "var": {
+        const existing = variables.get(resolved.id);
+        if (existing) return existing;
+        const variable: Ty = { tag: "var", id: resolved.id, name: resolved.name };
+        variables.set(resolved.id, variable);
+        variable.projectionFields = resolved.projectionFields?.map((field) => ({
+          ...field,
+          type: snapshotType(field.type, variables, snapshots),
+        }));
+        return variable;
+      }
+      case "prim":
+        return resolved;
+      case "ffi":
+        return {
+          ...resolved,
+          receiver: resolved.receiver
+            ? snapshotType(resolved.receiver, variables, snapshots)
+            : undefined,
+          args: resolved.args.map((arg) => snapshotType(arg, variables, snapshots)),
+          instance: resolved.instance
+            ? snapshotType(resolved.instance, variables, snapshots)
+            : undefined,
+          constraints: resolved.constraints?.map((item) =>
+            snapshotType(item, variables, snapshots)
+          ),
+        };
+      case "fn":
+        return {
+          tag: "fn",
+          params: resolved.params.map((param) => snapshotType(param, variables, snapshots)),
+          result: snapshotType(resolved.result, variables, snapshots),
+        };
+      case "tuple":
+        return {
+          tag: "tuple",
+          items: resolved.items.map((item) => snapshotType(item, variables, snapshots)),
+        };
+      case "struct":
+        return {
+          tag: "struct",
+          fields: resolved.fields.map((field) => ({
+            name: field.name,
+            type: snapshotType(field.type, variables, snapshots),
+          })),
+        };
+      case "named":
+        return {
+          ...resolved,
+          args: resolved.args.map((arg) => snapshotType(arg, variables, snapshots)),
+          ...(resolved.ffiPolicy
+            ? { ffiPolicy: snapshotType(resolved.ffiPolicy, variables, snapshots) }
+            : {}),
+          recordFields: resolved.recordFields?.map((field) => ({
+            name: field.name,
+            type: snapshotType(field.type, variables, snapshots),
+          })),
+        };
     }
-    case "prim":
-      return resolved;
-    case "ffi":
-      return {
-        ...resolved,
-        receiver: resolved.receiver ? snapshotType(resolved.receiver, variables) : undefined,
-        args: resolved.args.map((arg) => snapshotType(arg, variables)),
-        instance: resolved.instance ? snapshotType(resolved.instance, variables) : undefined,
-        constraints: resolved.constraints?.map((item) => snapshotType(item, variables)),
-      };
-    case "fn":
-      return {
-        tag: "fn",
-        params: resolved.params.map((param) => snapshotType(param, variables)),
-        result: snapshotType(resolved.result, variables),
-      };
-    case "tuple":
-      return { tag: "tuple", items: resolved.items.map((item) => snapshotType(item, variables)) };
-    case "struct":
-      return {
-        tag: "struct",
-        fields: resolved.fields.map((field) => ({
-          name: field.name,
-          type: snapshotType(field.type, variables),
-        })),
-      };
-    case "named":
-      return {
-        ...resolved,
-        args: resolved.args.map((arg) => snapshotType(arg, variables)),
-        recordFields: resolved.recordFields?.map((field) => ({
-          name: field.name,
-          type: snapshotType(field.type, variables),
-        })),
-      };
-  }
+  };
+  Object.assign(snapshot, copy());
+  return snapshot;
 }
 
 export function inferBlock(

@@ -1,4 +1,4 @@
-import type { Expr } from "../ast.ts";
+import { type Expr, mapPatternExpressions } from "../ast.ts";
 import {
   concreteFieldInputs,
   concreteFieldResults,
@@ -27,7 +27,14 @@ function inputs(expr: Expr): Expr[] | undefined {
       // Branch results are joined by unification. Only the condition ran before them.
       return [expr.cond];
     case "Match":
-      return [expr.value];
+      const computed: Expr[] = [];
+      expr.arms.forEach((arm) =>
+        mapPatternExpressions(arm.pattern, (value) => {
+          computed.push(value);
+          return value;
+        })
+      );
+      return [expr.value, ...computed];
     case "Panic":
       return [expr.message];
     case "Ascribed":

@@ -943,7 +943,7 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
       }
       return `(() => { try { return __wm_basis_Ok(${memberRef}); } catch (error) { return __wm_basis_Err(__wm_js_error(error)); } })()`;
     }
-    const converter = jsValueConverter(spec.type);
+    const converter = jsValueConverter(spec.type, false);
     return converter === "id"
       ? memberRef
       : `__wm_js_to_workman(${memberRef}, ${JSON.stringify(converter)})`;
@@ -965,6 +965,9 @@ function jsImportWrapper(memberRef: string, spec: JsImportSpec): string {
 }
 
 type JsConverter = "id" | "option" | {
+  kind: "task";
+  item: JsConverter;
+} | {
   kind: "fn";
   params: JsConverter[];
   result: JsConverter;
@@ -986,12 +989,16 @@ function jsResultConverter(type: TypeExpr | undefined, fallible: boolean): JsCon
   return resultType ? jsConverter(resultType) : "id";
 }
 
-function jsValueConverter(type: TypeExpr | undefined): JsConverter {
-  const valueType = type ? fallibleOkType(type) : undefined;
+function jsValueConverter(type: TypeExpr | undefined, fallible = true): JsConverter {
+  const valueType = type ? fallible ? fallibleOkType(type) : type : undefined;
   return valueType ? jsConverter(valueType) : "id";
 }
 
 function jsConverter(type: TypeExpr): JsConverter {
+  // Reflection owns this marker. A manually declared Task already carries Result.
+  if (type.kind === "TName" && type.name === "Task" && type.ffiPromise && type.args.length === 2) {
+    return { kind: "task", item: jsConverter(type.args[0]) };
+  }
   if (type.kind === "TName" && type.name === "Option") return "option";
   if (type.kind === "TName" && type.name === "Js.Array" && type.args.length === 1) {
     const item = jsConverter(type.args[0]);

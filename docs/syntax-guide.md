@@ -639,6 +639,7 @@ Current `wm` pattern behavior:
 
 - Wildcard `_`, literals, tuple patterns, and constructor patterns are supported.
 - Bare names in `match` patterns are pinned (matched against existing names).
+- `=(expression)` computes an equality value when a match-arm check is reached.
 - Use `Var(x)` to introduce a new binding where needed.
 - Match guards (`when`) and match bundles are currently out of scope.
 

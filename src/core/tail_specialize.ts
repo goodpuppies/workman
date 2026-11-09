@@ -401,7 +401,7 @@ function mapChildren(expr: CoreExpr, map: (expr: CoreExpr) => CoreExpr): CoreExp
 }
 
 function hasPinnedPattern(pattern: CorePattern): boolean {
-  if (pattern.kind === "CorePPinned") return true;
+  if (pattern.kind === "CorePPinned" || pattern.kind === "CorePComputed") return true;
   if (pattern.kind === "CorePTuple") return pattern.items.some(hasPinnedPattern);
   if (pattern.kind === "CorePRecord") {
     return pattern.fields.some((field) => hasPinnedPattern(field.pattern));

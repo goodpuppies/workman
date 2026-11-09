@@ -1,4 +1,5 @@
 import type { Decl, Expr, Module } from "./ast.ts";
+import { mapPatternExpressions } from "./ast.ts";
 import { offsetToLineCol, type SourceSpan } from "./source.ts";
 import { basisTypeDirectives, hasNoPreludeDirective } from "./module_directives.ts";
 
@@ -195,7 +196,13 @@ function visitExprDirectives(expr: Expr, source: string, filePath?: string): voi
       return;
     case "Match":
       visitExprDirectives(expr.value, source, filePath);
-      expr.arms.forEach((arm) => visitExprDirectives(arm.body, source, filePath));
+      expr.arms.forEach((arm) => {
+        mapPatternExpressions(arm.pattern, (value) => {
+          visitExprDirectives(value, source, filePath);
+          return value;
+        });
+        visitExprDirectives(arm.body, source, filePath);
+      });
       return;
     case "Panic":
       visitExprDirectives(expr.message, source, filePath);

@@ -1,5 +1,5 @@
 import type { Decl, Expr, Pattern, TypeExpr } from "../ast.ts";
-import { pathOf } from "../ast.ts";
+import { mapPatternExpressions, pathOf } from "../ast.ts";
 import { type FrontendDiagnostic, warningDiagnostic } from "../diagnostic_model.ts";
 import type { Ty, TypeDeclInfo, TypeEnv } from "../types.ts";
 import { isVectorExhaustive } from "./exhaustiveness.ts";
@@ -64,7 +64,15 @@ export function hasUnguardedRecursiveRef(
         hasUnguardedRecursiveRef(expr.thenExpr, names, guarded) ||
         hasUnguardedRecursiveRef(expr.elseExpr, names, guarded);
     case "Match":
+      let recursivePattern = false;
+      expr.arms.forEach((arm) =>
+        mapPatternExpressions(arm.pattern, (value) => {
+          recursivePattern ||= hasUnguardedRecursiveRef(value, names, guarded);
+          return value;
+        })
+      );
       return hasUnguardedRecursiveRef(expr.value, names, guarded) ||
+        recursivePattern ||
         expr.arms.some((arm) => hasUnguardedRecursiveRef(arm.body, names, guarded));
     case "Panic":
       return hasUnguardedRecursiveRef(expr.message, names, guarded);

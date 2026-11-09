@@ -191,7 +191,7 @@ function addForeignType(
 
 const foreignTypes = new Map<string, ReturnType<typeof freshTypeInfo>>();
 
-function foreignTypeInfo(name: string, key: string, arity: number, requiredArity?: number) {
+export function foreignTypeInfo(name: string, key: string, arity: number, requiredArity?: number) {
   const existing = foreignTypes.get(key);
   if (existing) {
     if (existing.arity !== arity) throw new Error(`inconsistent arity for foreign type ${name}`);

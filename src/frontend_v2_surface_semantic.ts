@@ -495,6 +495,10 @@ function projectPattern(
       const path = projectLongName(variant(nameNode, "LongNameNode"));
       return { kind: "PPinned", name: longIdSpelling(path), path, ...located };
     }
+    case "ComputedPatternNode": {
+      const [, , value] = fields(node);
+      return { kind: "PComputed", value: projectExpr(variant(value), context), ...located };
+    }
     case "WildcardPatternNode":
       return { kind: "PWildcard", ...located };
     case "LiteralPatternNode": {

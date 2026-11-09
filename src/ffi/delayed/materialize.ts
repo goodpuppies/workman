@@ -1,9 +1,12 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
+import { inheritCallableSafety } from "../callable_safety.ts";
+import { inheritReceiverSafety } from "../receiver_safety.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import type { InferResult } from "../../infer.ts";
 import { recordExprFact, resolveFfiFact } from "../../infer/type_facts.ts";
 import { constrainAt, sourceForFfiConstraint } from "../../infer/provenance.ts";
-import { freshTypeInfo, prune, solveFfi, type Ty, typeFromAst, unify } from "../../types.ts";
+import { prune, solveFfi, type Ty, typeFromAst, unify } from "../../types.ts";
+import { foreignTypeInfo } from "../../infer/decl.ts";
 import { TypeMismatchError } from "../../type_diff.ts";
 import type { ResolveOptions } from "./types.ts";
 import { rewriteExprCalls } from "../receiver/rewrite_expr.ts";
@@ -59,28 +62,35 @@ export function materializeReceiverProperty(
   foreignTypeRefs: Map<string, JsTypeRef>,
   result: InferResult,
   selected: Set<string>,
+  fallible = true,
 ): Expr {
-  const variants = memberVariants(member).map((variant) => ({
-    type: variant.type,
-    receiverType,
-    resultRef: variant.resultRef,
-    callbackParamRefs: variant.callbackParamRefs,
-  }));
+  const variants = memberVariants(member).map((variant) =>
+    inheritReceiverSafety({
+      type: variant.type,
+      receiverType,
+      resultRef: variant.resultRef,
+      callbackParamRefs: variant.callbackParamRefs,
+    }, fallible)
+  );
   rememberVariantForeignTypeRefs(variants, foreignTypeRefs);
   addVariants(
     bindings,
     surfaceName,
-    path.at(-1)!,
+    path.at(-1) ?? "call",
     { kind: "JsReceiver", path },
     variants,
-    true,
+    fallible,
     original.node,
   );
   const bindingVariants = bindings.get(surfaceName)?.variants ?? [];
   const expectedFunction = contextualFunctionType(original, result);
-  if (expectedFunction) {
-    const argTypes = expectedFunction.params.map(knownTyToTypeExpr);
-    const args = expectedFunction.params.map((_, index) => ({
+  const soleType = bindingVariants.length === 1 ? bindingVariants[0].type : undefined;
+  const methodParams = soleType?.kind === "TFn" ? soleType.params : undefined;
+  if (expectedFunction || methodParams) {
+    const argTypes = expectedFunction
+      ? expectedFunction.params.map(knownTyToTypeExpr)
+      : methodParams!;
+    const args = argTypes.map((_, index) => ({
       kind: "Var" as const,
       name: `__wm_js_arg_${index}`,
     }));
@@ -303,28 +313,34 @@ export function materializeReceiverCall(
   options: ResolveOptions,
   valueRefs: Map<string, JsTypeRef>,
   resolveExpr: ResolveExpr,
+  fallible = true,
 ): Expr {
   const argTypes = args.map((arg) => {
     const type = inferredType(result, arg);
     return type ? knownTyToTypeExpr(type) : undefined;
   });
-  const variants = memberVariants(member).map((variant) => ({
-    type: resolveTypeVarsFromArgs(
-      resolveArrayLikeParams(variant.type, argTypes),
-      argTypes,
-    ),
-    receiverType,
-    resultRef: variant.resultRef,
-    callbackParamRefs: variant.callbackParamRefs,
-  }));
+  const variants = memberVariants(member).map((variant) =>
+    inheritReceiverSafety(
+      inheritCallableSafety({
+        type: resolveTypeVarsFromArgs(
+          resolveArrayLikeParams(variant.type, argTypes),
+          argTypes,
+        ),
+        receiverType,
+        resultRef: variant.resultRef,
+        callbackParamRefs: variant.callbackParamRefs,
+      }, fallible),
+      fallible,
+    )
+  );
   rememberVariantForeignTypeRefs(variants, ffi.foreignTypeRefs);
   addVariants(
     ffi.bindings,
     surfaceName,
-    path.at(-1)!,
+    path.at(-1) ?? "call",
     { kind: "JsReceiver", path },
     variants,
-    true,
+    fallible,
     original.node,
   );
   const bindingVariants = ffi.bindings.get(surfaceName)?.variants ?? [];
@@ -597,8 +613,16 @@ export function contextualizeBindingCallInputs(
     true,
   );
   if (!variant) return;
-  for (const callback of variant.callbackParamRefs ?? []) {
-    const arg = original.args[callback.argIndex];
+  contextualizeCallbackInputs(original.args, variant.callbackParamRefs, result);
+}
+
+export function contextualizeCallbackInputs(
+  args: Expr[],
+  callbacks: FfiVariant["callbackParamRefs"],
+  result: InferResult,
+): void {
+  for (const callback of callbacks ?? []) {
+    const arg = args[callback.argIndex];
     if (arg?.kind !== "Lambda") continue;
     const inferred = inferredType(result, arg);
     const type = inferred ? prune(inferred) : undefined;
@@ -633,6 +657,7 @@ function specializeReflectedBindingCall(
     if (type.kind === "TFn") return type.params.some(usesGeneric) || usesGeneric(type.result);
     return false;
   };
+  const genericCall = variant.genericCall || usesGeneric(variant.type);
   // Do not commit a discovery signature while a native call/callback still
   // supplies evidence. The existing finite staging passes revisit the obligation.
   if (
@@ -665,19 +690,28 @@ function specializeReflectedBindingCall(
     return hint;
   });
   if (
-    !contextOnly && usesGeneric(variant.type) &&
+    !contextOnly && genericCall &&
     hints.some((hint) => hint.kind === "function" && !hint.resultType)
   ) return undefined;
   if (
     hints.length > 0 &&
     !hints.some((hint) =>
       hint.kind === "ref" ||
-      usesGeneric(variant.type) && (hint.kind === "string" || hint.kind === "number") ||
+      // A scalar can instantiate a TS generic even when the discovery type no
+      // longer contains a nominal generic constructor.
+      genericCall &&
+        (hint.kind === "string" || hint.kind === "number") ||
       hint.kind === "function" && hint.resultType
     )
   ) return variant;
   const reflected = jsRefCall(variant.callRef, hints);
-  const concrete = reflected ? memberVariants(reflected)[0] : undefined;
+  const reflectedVariant = reflected ? memberVariants(reflected)[0] : undefined;
+  const concrete = reflectedVariant
+    ? inheritReceiverSafety(
+      inheritCallableSafety(reflectedVariant, variant.fallible),
+      variant.fallible,
+    )
+    : undefined;
   if (!concrete) return variant;
   const type = concrete.type;
   const existing = findVariantByType(binding, variant.fallible ? fallibleTypeKey(type) : type);
@@ -703,11 +737,7 @@ function rememberMaterializedForeignTypes(ref: JsTypeRef | undefined, result: In
   for (const nested of ref?.nestedTypeRefs ?? []) {
     const type = nested.type;
     if (type?.kind !== "TName" || type.args.length !== 0 || result.typeEnv.has(type.name)) continue;
-    result.typeEnv.set(type.name, {
-      ...freshTypeInfo(type.name, 0),
-      foreign: true,
-      foreignKey: nested.key,
-    });
+    result.typeEnv.set(type.name, foreignTypeInfo(type.name, nested.key, 0));
   }
 }
 

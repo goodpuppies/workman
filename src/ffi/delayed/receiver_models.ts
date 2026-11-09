@@ -1,7 +1,7 @@
 import type { Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
-import { prune, type Ty } from "../../types.ts";
+import { prim, prune, type Ty, unify } from "../../types.ts";
 import type { FfiElaboration } from "../shared.ts";
 import { fn, memberVariants, name, nameArgs, tvar } from "../shared.ts";
 import { option } from "../type_expr.ts";
@@ -230,7 +230,10 @@ export function tyToTypeExpr(type: Ty): TypeExpr {
     case "struct":
       return name("Js.Value");
     case "named":
-      return nameArgs(target.name, target.args.map(tyToTypeExpr));
+      return {
+        ...nameArgs(target.name, target.args.map(tyToTypeExpr)),
+        ...receiverPolicyExpr(target),
+      };
     case "tuple":
       return { kind: "TTuple", items: target.items.map(tyToTypeExpr) };
     case "fn":
@@ -254,7 +257,9 @@ export function knownTyToTypeExpr(type: Ty): TypeExpr | undefined {
       return tvar(target.name ?? `t${target.id}`);
     case "named": {
       const args = target.args.map(knownTyToTypeExpr);
-      return args.every((arg): arg is TypeExpr => !!arg) ? nameArgs(target.name, args) : undefined;
+      return args.every((arg): arg is TypeExpr => !!arg)
+        ? { ...nameArgs(target.name, args), ...receiverPolicyExpr(target) }
+        : undefined;
     }
     case "tuple": {
       const items = target.items.map(knownTyToTypeExpr);
@@ -343,8 +348,16 @@ export function foreignReceiver(
   const ref = (target.foreignKey ? foreignTypeRefs.get(target.foreignKey) : undefined) ??
     foreignTypeRefs.get(target.name);
   if (!ref) return undefined;
+  if (target.ffiPolicy && prune(target.ffiPolicy).tag === "var") {
+    unify(target.ffiPolicy, prim("ffiSafe"));
+  }
   const reflected = knownTyToTypeExpr(target);
   if (!reflected) return undefined;
   const instance = instantiateJsTypeRef(ref, reflected, foreignTypeRefs);
-  return instance ? { ref: instance, type: reflected } : undefined;
+  return instance ? { ref: { ...instance, type: reflected }, type: reflected } : undefined;
+}
+
+function receiverPolicyExpr(type: Extract<Ty, { tag: "named" }>): { ffiFallible?: boolean } {
+  const policy = type.ffiPolicy ? prune(type.ffiPolicy) : undefined;
+  return policy?.tag === "prim" ? { ffiFallible: policy.name !== "ffiUnsafe" } : {};
 }

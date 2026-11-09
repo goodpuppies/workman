@@ -51,6 +51,7 @@ export function emitRuntimePrelude(): string[] {
   return globalThis.Array.isArray(value) ? __wm_js_array_mark(value) : value;
 };`,
     `const __wm_js_receiver_member = (path) => {
+  if (path.length === 0) return (receiver, ...args) => receiver(...args);
   // The path is fixed when the binding is created, so resolve it once here
   // instead of slicing and reducing on every call.
   const key = path[path.length - 1];
@@ -178,6 +179,12 @@ const __wm_c_struct_to_buffer = (name, value) => {
 };`,
     `const __wm_js_to_workman = (value, converter) => {
   if (converter === "option") return __wm_js_option_wrap(value);
+  if (typeof converter === "object" && converter.kind === "task") {
+    return Promise.resolve(value).then(
+      (result) => __wm_basis_Ok(__wm_js_to_workman(result, converter.item)),
+      (error) => __wm_basis_Err(__wm_js_error(error)),
+    );
+  }
   if (typeof converter === "object" && converter.kind === "tuple") {
     if (!globalThis.Array.isArray(value)) throw new TypeError("expected JavaScript tuple array");
     return converter.items.map((item, index) => __wm_js_to_workman(value[index], item));
@@ -199,6 +206,12 @@ const __wm_c_struct_to_buffer = (name, value) => {
 };`,
     `const __wm_js_to_js = (value, converter) => {
   if (converter === "option") return __wm_js_option_unwrap(value);
+  if (typeof converter === "object" && converter.kind === "task") {
+    return Promise.resolve(value).then((result) => {
+      if (result?.ctor === ${basisCtorId("Ok")}) return __wm_js_to_js(result.a0, converter.item);
+      throw result?.a0;
+    });
+  }
   if (typeof converter === "object" && converter.kind === "tuple") {
     if (!__wm_is_tuple(value)) throw new TypeError("expected Workman tuple");
     return converter.items.map((item, index) => __wm_js_to_js(value[index], item));
@@ -336,7 +349,9 @@ const __wm_c_struct_to_buffer = (name, value) => {
       .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else if (__wm_is_tuple(value)) {
     shown = "(" + value.map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + ")";
-  } else if (listSyntax && (value.ctor === ${basisCtorId("Cons")} || value.ctor === ${basisCtorId("Nil")})) {
+  } else if (listSyntax && (value.ctor === ${basisCtorId("Cons")} || value.ctor === ${
+      basisCtorId("Nil")
+    })) {
     shown = "[" + __wm_list_to_array(value)
       .map((item) => __wm_show(item, seen, quoteStrings, listSyntax)).join(", ") + "]";
   } else if ("ctor" in value) {

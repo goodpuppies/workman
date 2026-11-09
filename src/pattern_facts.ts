@@ -27,6 +27,7 @@ export type ResolvedPatternKind =
   | "bool"
   | "void"
   | "pinned"
+  | "computed"
   | "tuple"
   | "record"
   | "constructor";
@@ -330,6 +331,10 @@ class PatternFactState {
         fact = { ...base, kind: "pinned", pinnedBindingId, children: [] };
         break;
       }
+      case "PComputed":
+        this.visitExpr(pattern.value, input);
+        fact = { ...base, kind: "computed", children: [] };
+        break;
       case "PTuple":
         fact = {
           ...base,

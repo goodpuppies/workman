@@ -151,6 +151,11 @@ function sessionModuleName(name: string): string {
 }
 
 const REPL_PERVASIVES_FILE = sessionModuleName("pervasives");
+const REPL_TEXT_FILE = sessionModuleName("text");
+// Keep the polymorphic renderer alongside Basis Unicode text operations.
+const REPL_TEXT_SOURCE = `export from "basis/text.wm" import *;
+let of = Text.of;
+`;
 const REPL_PERVASIVES_SOURCE = `from js.global("Deno") import { exit as hostExit };
 // Never returns, so a call fits wherever a value of any type is expected.
 let quit = () => {
@@ -171,7 +176,7 @@ export const REPL_SESSION_HEADER = [
   `from "basis/io.wm" import * as Io;`,
   `from "basis/os.wm" import * as OS;`,
   `from "basis/string_cvt.wm" import * as StringCvt;`,
-  `from "basis/text.wm" import * as Text;`,
+  `from "./${REPL_TEXT_FILE}" import * as Text;`,
 ].join("\n");
 
 /**
@@ -244,6 +249,7 @@ class PhraseSession {
 
   start(): void {
     this.#sources.set(this.#path("pervasives"), REPL_PERVASIVES_SOURCE);
+    this.#sources.set(this.#path("text"), REPL_TEXT_SOURCE);
     // The header's imports are re-exported, so every phrase sees them, as SML's top level does.
     const header = REPL_SESSION_HEADER.split("\n").map((line) => `export ${line}`).join("\n");
     this.#sources.set(this.headerPath, `${header}\n`);

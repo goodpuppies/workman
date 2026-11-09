@@ -9,6 +9,8 @@ export type JsMemberType = {
 
 export type JsCallableVariant = {
   type: TypeExpr;
+  // Discovery types erase TS type parameters; retain the need to instantiate the call.
+  genericCall?: boolean;
   resultRef?: JsTypeRef;
   callbackParamRefs?: JsCallbackParamRefs[];
 };
@@ -18,6 +20,8 @@ export type JsTypeRef = {
   source: string;
   expr: string;
   type?: TypeExpr;
+  // Acquired callable policy. Undefined retains the safe reflected default.
+  callableFallible?: boolean;
   // A nominal TS type constructor. Its concrete arguments live in HM, rather
   // than being recovered from whichever producer last registered this ref.
   // `requiredArity` leaves out trailing parameters with a default, which TS lets a reference omit.

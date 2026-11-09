@@ -407,7 +407,7 @@ function resolveDecl(
     return recursive;
   }
   for (const binding of decl.bindings) {
-    resolvePatternReferences(binding.pattern, env, facts);
+    resolvePatternReferences(binding.pattern, env, facts, ids);
     resolveExpr(binding.value, env, facts, ids);
   }
   const next = cloneBindingEnv(env);
@@ -483,7 +483,7 @@ function resolveExpr(
       return;
     case "Lambda": {
       const local = cloneBindingEnv(env);
-      for (const param of expr.params) resolvePatternReferences(param.pattern, env, facts);
+      for (const param of expr.params) resolvePatternReferences(param.pattern, env, facts, ids);
       for (const param of expr.params) {
         addPatternBinders(param.pattern, local.values, facts, ids);
       }
@@ -502,7 +502,7 @@ function resolveExpr(
     case "Match":
       resolveExpr(expr.value, env, facts, ids);
       for (const arm of expr.arms) {
-        resolvePatternReferences(arm.pattern, env, facts);
+        resolvePatternReferences(arm.pattern, env, facts, ids);
         const local = cloneBindingEnv(env);
         addPatternBinders(arm.pattern, local.values, facts, ids);
         resolveExpr(arm.body, local, facts, ids);
@@ -541,8 +541,17 @@ function resolveExpr(
   }
 }
 
-function resolvePatternReferences(pattern: Pattern, env: BindingEnv, facts: BindingFacts): void {
+function resolvePatternReferences(
+  pattern: Pattern,
+  env: BindingEnv,
+  facts: BindingFacts,
+  ids: CompilerIdAllocator,
+): void {
   recordScope(facts, pattern.node, env);
+  if (pattern.kind === "PComputed") {
+    resolveExpr(pattern.value, env, facts, ids);
+    return;
+  }
   if (pattern.kind === "PPinned") {
     const structure = lookupStructure(env, pattern.name);
     if (structure !== undefined) facts.structureReferences.set(pattern, structure);
@@ -551,15 +560,15 @@ function resolvePatternReferences(pattern: Pattern, env: BindingEnv, facts: Bind
     return;
   }
   if (pattern.kind === "PTuple") {
-    pattern.items.forEach((item) => resolvePatternReferences(item, env, facts));
+    pattern.items.forEach((item) => resolvePatternReferences(item, env, facts, ids));
   } else if (pattern.kind === "PRecord") {
-    pattern.fields.forEach((field) => resolvePatternReferences(field.pattern, env, facts));
+    pattern.fields.forEach((field) => resolvePatternReferences(field.pattern, env, facts, ids));
   } else if (pattern.kind === "PCtor") {
     const structure = lookupStructure(env, pattern.name);
     if (structure !== undefined) facts.structureReferences.set(pattern, structure);
-    pattern.args.forEach((arg) => resolvePatternReferences(arg, env, facts));
+    pattern.args.forEach((arg) => resolvePatternReferences(arg, env, facts, ids));
   } else if (pattern.kind === "PAscribed") {
-    resolvePatternReferences(pattern.pattern, env, facts);
+    resolvePatternReferences(pattern.pattern, env, facts, ids);
   }
 }
 

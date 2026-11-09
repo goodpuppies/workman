@@ -1,4 +1,5 @@
 import type { Decl, Expr } from "../../ast.ts";
+import { mapPatternExpressions } from "../../ast.ts";
 import { diagnosticError } from "../../diagnostic_model.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 import { type FfiBinding, type FfiVariant, isDecl } from "../shared.ts";
@@ -58,7 +59,13 @@ export function rejectAnnotatedDynamicCallbacks(
         return;
       case "Match":
         visit(expr.value);
-        expr.arms.forEach((arm) => visit(arm.body));
+        expr.arms.forEach((arm) => {
+          mapPatternExpressions(arm.pattern, (value) => {
+            visit(value);
+            return value;
+          });
+          visit(arm.body);
+        });
         return;
       case "Panic":
         visit(expr.message);

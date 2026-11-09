@@ -161,6 +161,8 @@ function showPattern(pattern: CorePattern): string {
       return "void";
     case "CorePPinned":
       return `^${pattern.name}`;
+    case "CorePComputed":
+      return `=(${showExpr(pattern.value)})`;
     case "CorePTuple":
       return `(${pattern.items.map(showPattern).join(", ")})`;
     case "CorePRecord":

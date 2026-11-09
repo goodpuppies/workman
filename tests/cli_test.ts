@@ -1428,6 +1428,10 @@ Deno.test("repl session has SML's top-level structures without imports", async (
     'OS.Path.dir("a/b");',
     "StringCvt.padLeft(\"a\", 3, ' ');",
     "Text.size;",
+    "Text.of(10);",
+    "let number = 10;",
+    "Text.of(number);",
+    "10 :> .toString() :> Result.getOr(\"failed\");",
     // Session imports shadow the header's, as in any module.
     'from "basis/list.wm" import * as Text;',
     "Text.length;",
@@ -1455,6 +1459,8 @@ Deno.test("repl session has SML's top-level structures without imports", async (
     stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join(""),
     "it = true : Bool",
   );
+  const stdout = stdoutChunks.map((chunk) => new TextDecoder().decode(chunk)).join("");
+  assertEquals(stdout.split('it = "10" : String').length - 1, 3, stdout);
 });
 
 Deno.test("repl phrase end ignores quoted and commented semicolons", () => {

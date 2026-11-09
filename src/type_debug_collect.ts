@@ -188,6 +188,9 @@ export function collectPatterns(module: Module): Pattern[] {
       case "PVoid":
       case "PPinned":
         break;
+      case "PComputed":
+        visitExpr(pattern.value);
+        break;
     }
   };
   module.decls.forEach(visitDecl);

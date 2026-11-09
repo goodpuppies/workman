@@ -56,6 +56,12 @@ Promise-returning calls normalize both cases:
 
 Both become an `Err(Js.Error)` inside the Workman `Task`.
 
+Reflected unsafe promise-returning calls also use Task: fulfillment becomes Ok
+and rejection becomes Err. Unsafe skips catching a synchronous throw before the
+promise is returned. Promise-to-Task conversion is retained independently of that
+exception boundary. Trusted manual Task primitives already return a promise of
+Result and are not converted again.
+
 ## Normalization behavior
 
 When a safe JS boundary catches a thrown or rejected value, it converts it as

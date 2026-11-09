@@ -50,6 +50,7 @@ export type JsReflectionRequest = {
 };
 
 type PreparedReflection = {
+  program: ts.Program;
   checker: ts.TypeChecker;
   root: ts.Node;
 };
@@ -170,6 +171,7 @@ export function reflectSource<T>(
   read: (
     checker: ts.TypeChecker,
     sourceRoot: ts.Node,
+    program: ts.Program,
   ) => T,
 ): T {
   const key = reflectionRequestKey(label, source);
@@ -180,7 +182,7 @@ export function reflectSource<T>(
   const prepared = preparedReflections.get(key);
   if (!prepared) throw new Error(`cannot reflect JS target ${label}`);
   const readStarted = reflectionProfileSink ? performance.now() : 0;
-  const result = read(prepared.checker, prepared.root);
+  const result = read(prepared.checker, prepared.root, prepared.program);
   reflectionProfileSink?.({
     kind: "read",
     label,
@@ -300,7 +302,7 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
           ? sourceFile
           : blocks[index];
       if (!queryRoot) throw new Error(`cannot locate reflected JS target ${request.label}`);
-      preparedReflections.set(key, { checker, root: queryRoot });
+      preparedReflections.set(key, { checker, root: queryRoot, program });
     }
   }
   reflectionProfileSink?.({

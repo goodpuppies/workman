@@ -1,5 +1,17 @@
 # Numeric literals
 
+Convert a number to a native string with `Text.of`:
+
+```wm
+let number = 10;
+let text = Text.of(number); // "10"
+```
+
+This also works in `wm repl`, where `Text` includes the Basis Unicode text operations.
+JavaScript interop can call `10 :> .toString()`, which returns a `Result`; for example,
+`10 :> .toString() :> Result.getOr("failed")` produces `"10"`. The parentheses call the method.
+The portable Basis `Int` module currently provides parsing but has no `toString` export.
+
 An ordinary integer literal takes its numeric type from context. There is no separate word-literal
 prefix:
 

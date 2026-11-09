@@ -1,3 +1,4 @@
+import { mapPatternExpressions } from "../../ast.ts";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
 export { contextualizeDelayedCallbacks } from "./delayed_callbacks.ts";
@@ -268,7 +269,13 @@ function collectGeneratedValueRefsInExpr(expr: Expr, refs: Set<string>): void {
       return;
     case "Match":
       collectGeneratedValueRefsInExpr(expr.value, refs);
-      expr.arms.forEach((arm) => collectGeneratedValueRefsInExpr(arm.body, refs));
+      expr.arms.forEach((arm) => {
+        mapPatternExpressions(arm.pattern, (value) => {
+          collectGeneratedValueRefsInExpr(value, refs);
+          return value;
+        });
+        collectGeneratedValueRefsInExpr(arm.body, refs);
+      });
       return;
     case "Panic":
       collectGeneratedValueRefsInExpr(expr.message, refs);
@@ -373,7 +380,13 @@ function solveDelayedBindingTypesInExpr(
       return;
     case "Match":
       solveDelayedBindingTypesInExpr(expr.value, ffi, result);
-      expr.arms.forEach((arm) => solveDelayedBindingTypesInExpr(arm.body, ffi, result));
+      expr.arms.forEach((arm) => {
+        mapPatternExpressions(arm.pattern, (value) => {
+          solveDelayedBindingTypesInExpr(value, ffi, result);
+          return value;
+        });
+        solveDelayedBindingTypesInExpr(arm.body, ffi, result);
+      });
       return;
     case "Panic":
       solveDelayedBindingTypesInExpr(expr.message, ffi, result);

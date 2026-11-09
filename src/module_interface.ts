@@ -1,3 +1,4 @@
+import { mapPatternExpressions } from "./ast.ts";
 import type { Decl, Expr, ImportClause, JsImportSpec, Module, Pattern } from "./ast.ts";
 import { isFieldAccessReceiver, isQualified, parseLongId, pathOf } from "./ast.ts";
 import type { BindingFacts, BindingScopeSnapshot } from "./binding_facts.ts";
@@ -910,7 +911,13 @@ function semanticClosureCaptures(
         return;
       case "Match":
         visitExpr(expression.value);
-        expression.arms.forEach((arm) => visitExpr(arm.body));
+        expression.arms.forEach((arm) => {
+          mapPatternExpressions(arm.pattern, (value) => {
+            visitExpr(value);
+            return value;
+          });
+          visitExpr(arm.body);
+        });
         return;
       case "Panic":
         visitExpr(expression.message);
@@ -1504,7 +1511,13 @@ function semanticInferredTypeHints(
         return;
       case "Match":
         visitExpr(expression.value);
-        expression.arms.forEach((arm) => visitExpr(arm.body));
+        expression.arms.forEach((arm) => {
+          mapPatternExpressions(arm.pattern, (value) => {
+            visitExpr(value);
+            return value;
+          });
+          visitExpr(arm.body);
+        });
         return;
       case "Panic":
         visitExpr(expression.message);
@@ -1677,7 +1690,13 @@ function semanticCallableParameters(
           return;
         case "Match":
           visitExpr(expression.value);
-          expression.arms.forEach((arm) => visitExpr(arm.body));
+          expression.arms.forEach((arm) => {
+            mapPatternExpressions(arm.pattern, (value) => {
+              visitExpr(value);
+              return value;
+            });
+            visitExpr(arm.body);
+          });
           return;
         case "Panic":
           visitExpr(expression.message);
@@ -2040,7 +2059,13 @@ function semanticParameterTargets(
         return;
       case "Match":
         visitExpression(expression.value);
-        expression.arms.forEach((arm) => visitExpression(arm.body));
+        expression.arms.forEach((arm) => {
+          mapPatternExpressions(arm.pattern, (value) => {
+            visitExpression(value);
+            return value;
+          });
+          visitExpression(arm.body);
+        });
         return;
       case "Panic":
         visitExpression(expression.message);
@@ -3427,7 +3452,10 @@ function semanticTypeCompatibilityInner(
         : left.foreignKey !== undefined || other.foreignKey !== undefined
         ? left.foreignKey === other.foreignKey
         : left.inferenceTypeId === other.inferenceTypeId;
-      if (!sameIdentity || left.args.length !== other.args.length) return "incompatible";
+      if (
+        !sameIdentity || left.args.length !== other.args.length ||
+        left.ffiFallible !== other.ffiFallible
+      ) return "incompatible";
       return combineCompletionCompatibility(
         left.args.map((id, index) =>
           semanticTypeCompatibility(
@@ -4741,7 +4769,8 @@ function isPattern(value: Expr | Pattern): value is Pattern {
   return value.kind === "PWildcard" || value.kind === "PVar" || value.kind === "PInt" ||
     value.kind === "PChar" || value.kind === "PString" || value.kind === "PBool" ||
     value.kind === "PVoid" ||
-    value.kind === "PPinned" || value.kind === "PTuple" || value.kind === "PRecord" ||
+    value.kind === "PPinned" || value.kind === "PComputed" || value.kind === "PTuple" ||
+    value.kind === "PRecord" ||
     value.kind === "PCtor";
 }
 

@@ -66,7 +66,7 @@ export function analyzeClosureCaptures(
       case "Lambda": {
         const free = freeExpr(expr.body);
         for (const param of expr.params) {
-          mergeFree(free, freePatternReferences(param.pattern, facts));
+          mergeFree(free, freePatternReferences(param.pattern, facts, freeExpr));
           removePatternBinders(free, param.pattern, facts);
         }
         const lexical = [...free]
@@ -86,7 +86,7 @@ export function analyzeClosureCaptures(
         const free = freeExpr(expr.value);
         for (const arm of expr.arms) {
           const armFree = freeExpr(arm.body);
-          mergeFree(armFree, freePatternReferences(arm.pattern, facts));
+          mergeFree(armFree, freePatternReferences(arm.pattern, facts, freeExpr));
           removePatternBinders(armFree, arm.pattern, facts);
           mergeFree(free, armFree);
         }
@@ -131,7 +131,7 @@ function freeBlock(
     if (item.kind === "LetDecl") {
       const values = unionAll(item.bindings.map((binding) => freeExpr(binding.value)));
       item.bindings.forEach((binding) =>
-        mergeFree(values, freePatternReferences(binding.pattern, facts))
+        mergeFree(values, freePatternReferences(binding.pattern, facts, freeExpr))
       );
       for (const binding of item.bindings) removePatternBinders(free, binding.pattern, facts);
       if (item.recursive) {
@@ -160,8 +160,13 @@ function freeBlock(
   return free;
 }
 
-function freePatternReferences(pattern: Pattern, facts: BindingFacts): FreeBindings {
+function freePatternReferences(
+  pattern: Pattern,
+  facts: BindingFacts,
+  freeExpr: (expr: Expr) => FreeBindings,
+): FreeBindings {
   const free: FreeBindings = new Map();
+  if (pattern.kind === "PComputed") return freeExpr(pattern.value);
   const id = facts.references.get(pattern);
   if (id !== undefined && pattern.kind === "PPinned") {
     // A pinned pattern reads an enclosing value at match time.
@@ -173,17 +178,19 @@ function freePatternReferences(pattern: Pattern, facts: BindingFacts): FreeBindi
   }
   switch (pattern.kind) {
     case "PTuple":
-      pattern.items.forEach((item) => mergeFree(free, freePatternReferences(item, facts)));
+      pattern.items.forEach((item) =>
+        mergeFree(free, freePatternReferences(item, facts, freeExpr))
+      );
       break;
     case "PCtor":
-      pattern.args.forEach((item) => mergeFree(free, freePatternReferences(item, facts)));
+      pattern.args.forEach((item) => mergeFree(free, freePatternReferences(item, facts, freeExpr)));
       break;
     case "PAscribed":
-      mergeFree(free, freePatternReferences(pattern.pattern, facts));
+      mergeFree(free, freePatternReferences(pattern.pattern, facts, freeExpr));
       break;
     case "PRecord":
       pattern.fields.forEach((field) =>
-        mergeFree(free, freePatternReferences(field.pattern, facts))
+        mergeFree(free, freePatternReferences(field.pattern, facts, freeExpr))
       );
       break;
   }

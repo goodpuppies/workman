@@ -1,7 +1,11 @@
-# Defer computed patterns; use piped conditionals for explicit branching
+# Computed equality patterns and piped conditionals
 
-Status: computed patterns and guards deferred; piped conditionals implemented.
-Do not implement `=(expr)` or pattern guards as part of the current syntax changes.
+Status: computed equality patterns and piped conditionals implemented; guards deferred.
+
+The earlier deferral was revisited for the concrete React mood-expression use case.
+The accepted implementation uses explicit `=(expr)` syntax and enclosing-scope
+lookup only: computed expressions cannot read new binders from the same pattern.
+See `docs/computed-patterns.md` for current behavior.
 
 ## Computed equality patterns
 
@@ -15,16 +19,16 @@ match(value) {
 }
 ```
 
-The proposed `=(expr)` pattern would compute a comparison value when its arm is
-reached, for example `=(calculate())` or `=(limit - 1)`. This remains a possible
-future feature, not accepted syntax.
+The `=(expr)` pattern computes a comparison value when its arm is reached,
+for example `=(calculate())` or `=(limit - 1)`.
 
 Computed equality does not directly replace a guard: with a numeric subject,
 `=(x > 0)` would compare that number with a Boolean. A guard instead tests the
 Boolean condition after structural matching and continues to another arm if it
 is false.
 
-It could emulate guards by matching an additional Boolean slot:
+The previously considered same-pattern-binding extension could emulate guards by
+matching an additional Boolean slot (this extension remains unsupported):
 
 ```text
 match(Some(1), true) {
@@ -77,9 +81,9 @@ WM's current pipe precedence can otherwise send an operand into the next stage
 before a comparison is evaluated. See
 [pipe precedence relative to arithmetic and comparisons](forward-pipe-binds-tighter-than-arithmetic.md).
 
-## Decision for now
+## Current decision
 
-- Leave `=(expr)` unimplemented and preserve ordinary structural/pinned patterns.
+- Implement `=(expr)` in match arms using existing pinned equality and enclosing scope.
 - Do not add `when` or an implicit guard interpretation of expression patterns.
 - Use the piped `if` form for explicit branching in pipelines.
 - This is a project-local design issue, not a request to publish an external issue.

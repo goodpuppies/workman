@@ -9,6 +9,7 @@ import type {
   JsTypeRef,
 } from "./types.ts";
 import { fn, name, option } from "../type_expr.ts";
+import { foreignCallableIdentity } from "./callable_identity.ts";
 
 const maxReflectedRestArity = 8;
 
@@ -40,6 +41,7 @@ export function jsMemberTypeFromTsType(
           callbackParamRef?.(index, paramIndex, callbackParamIndex, callbackParamType, signature),
       ).map((variant) => ({
         ...variant,
+        genericCall: !!signature.typeParameters?.length,
         resultRef: resultRefWithType(
           resultRef?.(index, signature),
           returnTypeOfVariant(variant.type),
@@ -151,7 +153,6 @@ export function typeExprFromTsType(
         : undefined;
     }
     if (position === "param" && type.types.some(isStringLike)) return name("String");
-    if (type.types.some(isStringLike)) return name("String");
     const mapped = type.types.map((item) => typeExprFromTsType(checker, item, position));
     if (mapped.some((item) => !item)) return undefined;
     const first = mapped[0];
@@ -159,6 +160,8 @@ export function typeExprFromTsType(
     return undefined;
   }
   const signature = type.getCallSignatures()[0];
+  const callable = position === "result" ? foreignCallableIdentity(checker, type) : undefined;
+  if (callable) return name(callable.name);
   if (signature) return functionTypeFromSignature(checker, signature);
   if (type.flags & ts.TypeFlags.TypeParameter) {
     // Polymorphic `this` returns (for example Ora.start(): this) are represented by
@@ -180,7 +183,9 @@ export function typeExprFromTsType(
   if (type.flags & ts.TypeFlags.BooleanLiteral) return name("Bool");
   if (type.flags & (ts.TypeFlags.Void | ts.TypeFlags.Undefined)) return name("Void");
   const promised = promiseElementType(checker, type, position);
-  if (promised) return { kind: "TName", name: "Task", args: [promised, name("Js.Error")] };
+  if (promised) {
+    return { kind: "TName", name: "Task", args: [promised, name("Js.Error")], ffiPromise: true };
+  }
   if (position === "param" && isNumericTypedArray(checker, type)) {
     return { kind: "TName", name: "Js.Array", args: [name("Number")] };
   }
@@ -283,7 +288,7 @@ function promisedOrValueUnionType(
   if (!promisedValue || !directValue || typeKey(promisedValue) !== typeKey(directValue)) {
     return undefined;
   }
-  return { kind: "TName", name: "Task", args: [directValue, name("Js.Error")] };
+  return { kind: "TName", name: "Task", args: [directValue, name("Js.Error")], ffiPromise: true };
 }
 
 export function nominalObjectTypeName(checker: ts.TypeChecker, type: ts.Type): string | undefined {
@@ -361,14 +366,32 @@ export function nestedForeignTypeRefs(
   type: ts.Type,
   source: string,
   includeType = false,
+  rootExpression?: string,
 ): JsTypeRef[] {
   const refs: JsTypeRef[] = [];
   const seen = new Set<ts.Type>();
-  const visit = (current: ts.Type) => {
+  const visit = (current: ts.Type, expression?: string) => {
     if (seen.has(current)) return;
     seen.add(current);
     // `Object3D | null`, as an optional parameter reads.
-    if (current.isUnion()) return current.types.forEach(visit);
+    if (current.isUnion()) return current.types.forEach((item) => visit(item));
+    const callable = foreignCallableIdentity(checker, current);
+    if (callable) {
+      const expr = `__wm_nested_callable_${refs.length}`;
+      const actualType = expression ??
+        checker.typeToString(
+          current,
+          undefined,
+          ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType,
+        );
+      refs.push({
+        key: callable.key,
+        source: `${source}\ndeclare const ${expr}: ${actualType};`,
+        expr,
+        type: name(callable.name),
+      });
+      return;
+    }
     const nominal = nominalObjectTypeName(checker, current);
     const mapped = typeExprFromTsType(checker, current);
     if (nominal && mapped?.kind === "TName" && mapped.name === nominal) {
@@ -391,16 +414,24 @@ export function nestedForeignTypeRefs(
       current.flags & ts.TypeFlags.Object &&
       (current as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
     ) {
-      checker.getTypeArguments(current as ts.TypeReference).forEach(visit);
+      const tuple = checker.isTupleType(current);
+      checker.getTypeArguments(current as ts.TypeReference).forEach((item, index) =>
+        visit(item, expression && tuple ? `${expression}[${index}]` : undefined)
+      );
     }
   };
   if (includeType) {
-    visit(type);
+    visit(type, rootExpression);
   } else if (
     type.flags & ts.TypeFlags.Object &&
     (type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
   ) {
-    checker.getTypeArguments(type as ts.TypeReference).forEach(visit);
+    const tuple = checker.isTupleType(type);
+    checker.getTypeArguments(type as ts.TypeReference).forEach((item, index) =>
+      visit(item, rootExpression && tuple ? `${rootExpression}[${index}]` : undefined)
+    );
+  } else if (foreignCallableIdentity(checker, type)) {
+    visit(type, rootExpression);
   }
   return refs;
 }

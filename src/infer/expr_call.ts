@@ -5,6 +5,7 @@ import {
   addJsConstraint,
   fn,
   fresh,
+  freshFfi,
   instantiateRecordFields,
   JsBoundaryError,
   named,
@@ -32,7 +33,12 @@ import { callArg } from "./shared.ts";
 import { basisTypeIsHostOwned } from "../basis_manifest.ts";
 import type { InferContext } from "./context.ts";
 import { inferExpr } from "./expr.ts";
-import { recordConsumedFfiUse, recordExpectedExprType, recordExprFact } from "./type_facts.ts";
+import {
+  recordConsumedFfiUse,
+  recordExpectedExprType,
+  recordExprFact,
+  recordFfiFact,
+} from "./type_facts.ts";
 
 export function inferCall(
   expr: Extract<Expr, { kind: "Call" }>,
@@ -54,6 +60,28 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     ? (env.get(calleeExpr.name)?.provenance ?? [])
     : [];
   const calleeFn = prune(callee);
+  if (
+    awaitsForeignCallee(calleeFn, facts) ||
+    calleeFn.tag === "named" && calleeFn.foreignKey?.startsWith("callable:")
+  ) {
+    const argTypes = args.map((argument) => inferExpr(argument, context));
+    const placeholder = freshFfi("call", callee, [], argTypes, expr.node);
+    if (placeholder.tag === "ffi") {
+      recordFfiFact(facts, {
+        id: placeholder.id,
+        kind: "call",
+        receiver: callee,
+        path: [],
+        args: argTypes,
+        expr,
+        placeholder,
+        status: "unresolved",
+        instantiated: placeholder,
+        origin: { source: "synthetic" },
+      });
+    }
+    return placeholder;
+  }
   if (calleeFn.tag === "fn" && calleeFn.params.length === 1) {
     const expectedArg = prune(calleeFn.params[0]);
     if (args.length === 1) {
@@ -314,6 +342,28 @@ export function inferApplication(invocation: InvocationPlan, context: InferConte
     });
   }
   return result;
+}
+
+// A tuple/record destructure may constrain an unresolved FFI result before its
+// callable slot has a foreign type. Defer applications of those slots rather
+// than committing all uses to one native HM function signature.
+function awaitsForeignCallee(type: Ty, facts: InferContext["facts"]): boolean {
+  if (type.tag === "ffi") return true;
+  if (type.tag !== "var") return false;
+  const contains = (candidate: Ty, seen: Set<Ty>): boolean => {
+    const current = prune(candidate);
+    if (current === type) return true;
+    if (seen.has(current)) return false;
+    seen.add(current);
+    if (current.tag === "tuple") return current.items.some((item) => contains(item, seen));
+    if (current.tag === "named") return current.args.some((item) => contains(item, seen));
+    if (current.tag === "struct") return current.fields.some((field) => contains(field.type, seen));
+    return false;
+  };
+  return [...facts.ffi.values()].some((fact) =>
+    fact.status === "unresolved" &&
+    fact.placeholder?.constraints?.some((constraint) => contains(constraint, new Set()))
+  );
 }
 
 function contextualCallArguments(parameter: Ty, argumentCount: number): (Ty | undefined)[] {

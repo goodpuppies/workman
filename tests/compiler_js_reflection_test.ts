@@ -258,7 +258,8 @@ Deno.test("maps reflected JS nullish returns to basis Option", async () => {
     };
   `);
 
-  expectBinding(result.env, "found", { type: "Result<Option<Element>, Js.Error>!", vars: 0 });
+  // The concrete literal selects TypeScript's HTMLElementTagNameMap overload.
+  expectBinding(result.env, "found", { type: "Result<Option<HTMLElement>, Js.Error>!", vars: 0 });
   expectBinding(result.env, "isMissing", { type: "Bool!", vars: 0 });
 });
 
@@ -864,7 +865,7 @@ Deno.test("reflected constructors return imported nominal foreign types", async 
 
   expectBinding(result.env, "request", { type: "Request!", vars: 0 });
   expectBinding(result.env, "contentType", {
-    type: "Result<Option<String>, Js.Error>!",
+    type: "Option<String>!",
     vars: 0,
   });
 });
@@ -978,7 +979,7 @@ Deno.test("extra arguments do not inherit the final non-rest parameter type", as
 
 Deno.test("unannotated helper receivers keep delayed FFI obligations", async () => {
   const source = `
-    from js.global import unsafe { TextEncoder };
+    from js.global import { TextEncoder };
     from js.global import type { TextEncoder, Uint8Array };
 
     let try = (result) => {
@@ -993,7 +994,7 @@ Deno.test("unannotated helper receivers keep delayed FFI obligations", async () 
     };
 
     let makeBytes = () => {
-      let encoder = TextEncoder.new();
+      let encoder = TextEncoder.new() :> try;
       encodeText(encoder, "hello")
     };
   `;
@@ -1209,5 +1210,8 @@ Deno.test("a generic named only by an instantiated parameter declares its arity"
     `from js.module("./lib.ts") import { read };
      let reader = read;`,
   );
-  expectBinding(result.env, "reader", { type: "Tagged<Number> -> Result<Number, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "reader", {
+    type: "Tagged<Number> -> Result<Number, Js.Error>!",
+    vars: 0,
+  });
 });

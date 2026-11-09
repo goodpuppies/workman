@@ -617,7 +617,8 @@ Pattern
   = pattern:PatternCore annotation:(_ value:TypeAnn { return value; })?
     { return maybeAscribedPattern(pattern, annotation, location()); }
 PatternCore
-  = Wildcard { return at({ kind: "PWildcard" }, location()); }
+  = "=" _ "(" _ value:Expr _ ")" { return at({ kind: "PComputed", value }, location()); }
+  / Wildcard { return at({ kind: "PWildcard" }, location()); }
   / "void" { return at({ kind: "PVoid" }, location()); }
   / b:Bool { return at({ kind: "PBool", value: b.value }, location()); }
   / i:Int { return integerLiteral("PInt", i.value, i.exact, location()); }

@@ -1,3 +1,4 @@
+import { mapPatternExpressions } from "../../ast.ts";
 import type { Decl, Expr, TypeExpr } from "../../ast.ts";
 import type { InferResult } from "../../infer.ts";
 import { hostFfiDescendsInto } from "../../region_traversal.ts";
@@ -97,7 +98,13 @@ function collectNamedCallbackContexts(
         return;
       case "Match":
         visitExpr(expr.value);
-        expr.arms.forEach((arm) => visitExpr(arm.body));
+        expr.arms.forEach((arm) => {
+          mapPatternExpressions(arm.pattern, (value) => {
+            visitExpr(value);
+            return value;
+          });
+          visitExpr(arm.body);
+        });
         return;
       case "Panic":
         visitExpr(expr.message);
@@ -419,6 +426,10 @@ function contextualizeExpr(
         value: contextualizeExpr(expr.value, result, arities, localTypes, bindings),
         arms: expr.arms.map((arm) => ({
           ...arm,
+          pattern: mapPatternExpressions(
+            arm.pattern,
+            (value) => contextualizeExpr(value, result, arities, localTypes, bindings),
+          ),
           body: contextualizeExpr(arm.body, result, arities, new Map(localTypes), bindings),
         })),
       };

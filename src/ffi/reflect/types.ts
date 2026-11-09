@@ -531,9 +531,15 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
   const reflected = reflectSource(
     key,
     `${ref.source}\nconst __wm_member = ${access};`,
-    (checker, sourceFile) => {
+    (checker, sourceFile, program) => {
       const member = findVariable(sourceFile, "__wm_member")?.initializer;
       if (!member) return undefined;
+      if (
+        program.getSemanticDiagnostics(sourceFile as ts.SourceFile).some((diagnostic) =>
+          diagnostic.start !== undefined && diagnostic.start >= member.getStart() &&
+          diagnostic.start < member.end
+        )
+      ) return undefined;
       const propertyType = checker.getTypeAtLocation(member);
       const mapped = jsMemberTypeFromTsType(
         checker,
@@ -757,9 +763,16 @@ function jsRefCallTarget(
   const reflected = reflectSource(
     key,
     `${ref.source}\n${argSources}\n${argDecls}\nconst __wm_call_result = ${callExpr};`,
-    (checker, sourceFile) => {
+    (checker, sourceFile, program) => {
       const call = findCallInitializer(sourceFile, "__wm_call_result");
       if (!call) return undefined;
+      if (
+        ref.key.startsWith("callable:") &&
+        program.getSemanticDiagnostics(call.getSourceFile()).some((diagnostic) =>
+          diagnostic.start !== undefined && diagnostic.start >= call.getStart() &&
+          diagnostic.start < call.end
+        )
+      ) return undefined;
       const signature = checker.getResolvedSignature(call);
       if (!signature) return undefined;
       const type = functionTypeFromCall(checker, call, signature, args);
@@ -823,7 +836,13 @@ function callResultTypeRef(
     ...returnTypeRef(key, source, "typeof __wm_call_result"),
     generic,
     ...(generic ? { type: resultType } : {}),
-    nestedTypeRefs: nestedForeignTypeRefs(checker, actual, source),
+    nestedTypeRefs: nestedForeignTypeRefs(
+      checker,
+      actual,
+      source,
+      false,
+      "typeof __wm_call_result",
+    ),
   };
   if (
     resultType.kind !== "TName" || resultType.name !== "Js.Array" ||
@@ -1004,7 +1023,17 @@ function typeRefFromTsType(
       );
       return { ...ref, generic, type: typeExprFromTsType(checker, type, "param") };
     }
-    const ref = typeRefFromSource(`global-type:${nominal}`, source, nominal);
+    const expression = checker.typeToString(
+      type,
+      undefined,
+      ts.TypeFormatFlags.UseFullyQualifiedType,
+    );
+    const symbol = type.aliasSymbol ?? type.getSymbol();
+    const qualified = symbol && checker.getFullyQualifiedName(symbol).replace(/^global\./, "");
+    const nominalKey = qualified && !qualified.startsWith('"')
+      ? `global-type:${qualified}`
+      : `nominal-type:${expression}`;
+    const ref = typeRefFromSource(nominalKey, source, expression);
     return { ...ref, type: { kind: "TName", name: nominal, args: [] } };
   }
   const suffix = sanitize(key);

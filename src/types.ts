@@ -78,6 +78,8 @@ export type Ty =
       argLabels?: string[];
       foreign?: boolean;
       foreignKey?: string;
+      /** Wrapping policy of this incoming foreign value; absent in source annotations. */
+      ffiPolicy?: Ty;
       recordFields?: RecordFieldInfo[];
       recordParams?: number[];
       /** Canonical metadata remains available for caller-owned and recursive nominal records. */
@@ -380,6 +382,7 @@ export const named = (info: TypeInfo, args: Ty[] = []): Ty => ({
   argLabels: info.argLabels,
   foreign: info.foreign,
   foreignKey: info.foreignKey,
+  ...(info.foreign ? { ffiPolicy: fresh("ffiPolicy") } : {}),
   recordFields: info.recordFields,
   recordParams: info.recordParams,
   definition: info,
@@ -451,7 +454,9 @@ export function occurs(id: number, t: Ty): boolean {
   if (t.tag === "fn") return t.params.some((p) => occurs(id, p)) || occurs(id, t.result);
   if (t.tag === "tuple") return t.items.some((x) => occurs(id, x));
   if (t.tag === "struct") return t.fields.some((field) => occurs(id, field.type));
-  if (t.tag === "named") return t.args.some((x) => occurs(id, x));
+  if (t.tag === "named") {
+    return t.args.some((x) => occurs(id, x)) || !!t.ffiPolicy && occurs(id, t.ffiPolicy);
+  }
   return false;
 }
 
@@ -645,6 +650,19 @@ export function unify(
         },
       ], onDeferFfi);
       if (inner) (args ??= [...a.args])[i] = keepHeld(a.args[i], b.args[i], inner);
+    }
+    if (a.ffiPolicy && b.ffiPolicy) {
+      const leftPolicy = prune(a.ffiPolicy);
+      const rightPolicy = prune(b.ffiPolicy);
+      if (
+        leftPolicy.tag === "prim" && rightPolicy.tag === "prim" &&
+        leftPolicy.name !== rightPolicy.name
+      ) {
+        throw new Error(
+          "cannot combine safe and unsafe JavaScript receiver policies; this member adapter has already been resolved with a different wrapping policy",
+        );
+      }
+      unify(a.ffiPolicy, b.ffiPolicy, onBind, path, onDeferFfi);
     }
     if (args || outerDiffers) {
       joined = { ...a, args: args ?? a.args };
@@ -859,7 +877,10 @@ export function ftv(t: Ty, out = new Set<number>(), cells: Set<number> = out): S
     ftv(t.result, out, cells);
   } else if (t.tag === "tuple") t.items.forEach((x) => ftv(x, out, cells));
   else if (t.tag === "struct") t.fields.forEach((field) => ftv(field.type, out, cells));
-  else if (t.tag === "named") t.args.forEach((x) => ftv(x, out, cells));
+  else if (t.tag === "named") {
+    t.args.forEach((x) => ftv(x, out, cells));
+    if (t.ffiPolicy) ftv(t.ffiPolicy, out, cells);
+  }
   return out;
 }
 
@@ -886,9 +907,28 @@ export function generalize(env: Env, type: Ty): Scheme {
   const numeric = numericVarIds(type);
   const found = new Set<number>();
   const held = new Set<number>();
+  // Freshen hidden wrapping policies through the existing cell mechanism. They
+  // are compiler evidence, rather than user-visible quantified type arguments.
+  const policies = new Set<number>();
+  const visitPolicies = (input: Ty, seen = new Set<Ty>()) => {
+    const target = prune(input);
+    if (seen.has(target)) return;
+    seen.add(target);
+    if (target.tag === "named") {
+      if (target.ffiPolicy) ftv(target.ffiPolicy, policies);
+      target.args.forEach((item) => visitPolicies(item, seen));
+    } else if (target.tag === "fn") {
+      [...target.params, target.result].forEach((item) => visitPolicies(item, seen));
+    } else if (target.tag === "tuple") target.items.forEach((item) => visitPolicies(item, seen));
+    else if (target.tag === "struct") {
+      target.fields.forEach((field) => visitPolicies(field.type, seen));
+    }
+  };
+  visitPolicies(type);
   const vars = [...ftv(type, found, held)].filter((id) =>
-    !envVars.has(id) && !boundary.has(id) && !numeric.has(id)
+    !envVars.has(id) && !boundary.has(id) && !numeric.has(id) && !policies.has(id)
   );
+  for (const id of policies) if (!envVars.has(id)) held.add(id);
   linkedCells(type, held);
   // A numeric variable stays monomorphic until defaulted, but its `!` still belongs to each use.
   for (const id of numeric) if (!envVars.has(id)) held.add(id);
@@ -916,8 +956,10 @@ function linkedCells(type: Ty, cells: Set<number>, seen = new Set<Ty>()): void {
     type.params.forEach(visit);
     visit(type.result);
   } else if (type.tag === "tuple") type.items.forEach(visit);
-  else if (type.tag === "named") type.args.forEach(visit);
-  else if (type.tag === "struct") type.fields.forEach((field) => visit(field.type));
+  else if (type.tag === "named") {
+    type.args.forEach(visit);
+    if (type.ffiPolicy) visit(type.ffiPolicy);
+  } else if (type.tag === "struct") type.fields.forEach((field) => visit(field.type));
 }
 
 /** Numeric variables stay monomorphic until context or defaulting decides them. */
@@ -1021,7 +1063,13 @@ function copyType(
   const go = (input: Ty): Ty => {
     // Ordered by frequency. A concrete node's copy only differs from HM's by keeping its `!`.
     if (input.tag === "prim") return input;
-    if (input.tag === "named") return { ...input, args: input.args.map(go) };
+    if (input.tag === "named") {
+      return {
+        ...input,
+        args: input.args.map(go),
+        ...(input.ffiPolicy ? { ffiPolicy: go(input.ffiPolicy) } : {}),
+      };
+    }
     if (input.tag === "fn") {
       const result = fn(input.params.map(go), go(input.result));
       if (input.tainted) result.tainted = true;
@@ -1080,6 +1128,10 @@ function copyType(
     const bound = options.subst?.get(input.id);
     if (bound) return bound;
     let target = variables.get(input.id);
+    if (!target && input.name === "ffiPolicy" && options.cells?.has(input.id)) {
+      target = fresh("ffiPolicy");
+      variables.set(input.id, target);
+    }
     if (!target && options.freshen) {
       target = fresh(input.name);
       variables.set(input.id, target);
@@ -1257,7 +1309,11 @@ export function typeFromAst(
   }
   const args = expr.args.map((x) => typeFromAst(x, typeEnv, vars, options));
   while (args.length < info.arity) args.push(fresh());
-  return resolved(named(info, args));
+  const value = named(info, args);
+  if (value.tag === "named" && value.ffiPolicy && expr.ffiFallible !== undefined) {
+    unify(value.ffiPolicy, prim(expr.ffiFallible ? "ffiSafe" : "ffiUnsafe"));
+  }
+  return resolved(value);
 }
 
 export function show(t: Ty): string {

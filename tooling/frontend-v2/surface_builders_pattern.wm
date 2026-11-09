@@ -1,6 +1,7 @@
 from "./generated/surface_types.wm" import {
   Span, SurfaceToken, AuthoredValue, WildcardPatternNode, LiteralPatternNode,
   VariablePatternNode, ExplicitVariablePatternNode, PinnedPatternNode,
+  ComputedPatternNode,
   ConstructorPatternNode, LongNameNode, TypedPatternNode, GroupedPatternNode,
   TypeAnnotationNode,
   ParameterNode, ParametersNode, BareParametersNode, CaptureClauseNode, LambdaExpressionNode, TuplePatternNode,
@@ -15,7 +16,22 @@ from "./surface_builder_support.wm" import {
 };
 from "./surface_builders_expr.wm" import { splitLastNode };
 
-let buildPatternLike = (
+let rec buildPatternLike = (name, value, span, allowLiterals) => {
+  match(firstSyntax(value)) {
+    Some(TokenParseValue(token)) => {
+      if (token.text == "=") {
+        let tokens = collectTokens(value);
+        match((firstTokenWithText(tokens, "("), lastTokenWithText(tokens, ")", None), collectNodes(value))) {
+          (Some(open), Some(close), [expression]) => {
+            NodeParseValue(ComputedPatternNode(surfaceValue(token), surfaceValue(open), expression, surfaceValue(close), span))
+          },
+          _ => { RuleParseValue(name, value, span) },
+        }
+      } else { buildOrdinaryPatternLike(name, value, span, allowLiterals) }
+    },
+    _ => { buildOrdinaryPatternLike(name, value, span, allowLiterals) },
+  }
+} and buildOrdinaryPatternLike = (
   name: String,
   value: ParseValue,
   span: Span,

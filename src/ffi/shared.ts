@@ -1,5 +1,8 @@
 import type { Decl, Expr, JsImportSpec, JsTarget, Module, Param, TypeExpr } from "../ast.ts";
+import { inheritCallableSafety } from "./callable_safety.ts";
+import { inheritReceiverSafety } from "./receiver_safety.ts";
 import type {
+  JsCallableVariant,
   JsCallArgHint,
   JsCallbackParamRefs,
   JsMemberType,
@@ -27,6 +30,7 @@ export type FfiVariant = {
   memberName: string;
   target: JsTarget;
   type: TypeExpr;
+  genericCall?: boolean;
   receiverType?: TypeExpr;
   resultRef?: JsTypeRef;
   callRef?: JsTypeRef;
@@ -43,6 +47,7 @@ export function addVariants(
   target: JsTarget,
   variants: {
     type: TypeExpr;
+    genericCall?: boolean;
     receiverType?: TypeExpr;
     resultRef?: JsTypeRef;
     callRef?: JsTypeRef;
@@ -54,7 +59,8 @@ export function addVariants(
   allowTypeVariables = false,
 ) {
   const binding = bindings.get(surfaceName) ?? { surfaceName, variants: [] };
-  for (const variant of dedupeVariantSpecs(variants)) {
+  for (const rawVariant of dedupeVariantSpecs(variants)) {
+    const variant = inheritReceiverSafety(inheritCallableSafety(rawVariant, fallible), fallible);
     if (!allowTypeVariables) rejectFfiTypeVariables(variant.type, surfaceName);
     const index = binding.variants.length;
     binding.variants.push({
@@ -62,6 +68,7 @@ export function addVariants(
       memberName,
       target,
       type: fallible ? fallibleType(variant.type) : variant.type,
+      genericCall: variant.genericCall,
       receiverType: variant.receiverType,
       resultRef: variant.resultRef,
       callRef: variant.callRef,
@@ -195,7 +202,7 @@ function typeNames(type: TypeExpr | undefined): string[] {
 
 export function memberVariants(
   member: JsMemberType,
-): { type: TypeExpr; resultRef?: JsTypeRef; callbackParamRefs?: JsCallbackParamRefs[] }[] {
+): JsCallableVariant[] {
   if (member.variants) return member.variants;
   return [member.type, ...(member.overloads ?? [])].map((type) => ({ type }));
 }
@@ -500,7 +507,9 @@ function result(ok: TypeExpr): TypeExpr {
 function typeKey(type: TypeExpr): string {
   switch (type.kind) {
     case "TName":
-      return `${type.name}<${type.args.map(typeKey).join(",")}>`;
+      return `${type.name}${
+        type.ffiFallible === undefined ? "" : type.ffiFallible ? ":safe" : ":unsafe"
+      }<${type.args.map(typeKey).join(",")}>`;
     case "TVar":
       return `'${type.name}`;
     case "TTuple":

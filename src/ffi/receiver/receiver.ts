@@ -1,3 +1,4 @@
+import { receiverAdapterType, receiverCallFallible } from "../receiver_safety.ts";
 import type { Decl, Expr, Param, TypeExpr } from "../../ast.ts";
 import {
   type JsCallArgHint,
@@ -57,7 +58,9 @@ export function reflectedReceiverCallCandidate(
   const member = callMember ?? jsRefMember(ref, path);
   if (!member) return undefined;
   const suffix = callMember ? `(${callHintKey(args)})` : "";
-  const surfaceName = `__receiver.${ref.key}.${path.join(".")}${suffix}`;
+  const surfaceName = `__receiver.${receiverCallFallible(ref) ? "" : "unsafe."}${ref.key}.${
+    path.join(".")
+  }${suffix}`;
   const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref)) ??
     typeName("Js.Object");
   addVariants(
@@ -67,11 +70,11 @@ export function reflectedReceiverCallCandidate(
     { kind: "JsReceiver", path },
     memberVariants(member).map((variant) => ({
       type: variant.type,
-      receiverType: reflectedReceiverType,
+      receiverType: receiverAdapterType(reflectedReceiverType, ref),
       resultRef: variant.resultRef,
       callbackParamRefs: variant.callbackParamRefs,
     })),
-    true,
+    receiverCallFallible(ref),
     undefined,
   );
   const receiver = { kind: "Var" as const, name: baseName };
@@ -102,7 +105,9 @@ export function reflectedReceiverProperty(
   const path = parts.slice(1);
   const member = jsRefMember(ref, path);
   if (!member) return undefined;
-  const surfaceName = `__receiver.${ref.key}.${path.join(".")}`;
+  const surfaceName = `__receiver.${receiverCallFallible(ref) ? "" : "unsafe."}${ref.key}.${
+    path.join(".")
+  }`;
   const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref)) ??
     typeName("Js.Object");
   addVariants(
@@ -112,11 +117,11 @@ export function reflectedReceiverProperty(
     { kind: "JsReceiver", path },
     memberVariants(member).map((variant) => ({
       type: variant.type,
-      receiverType: reflectedReceiverType,
+      receiverType: receiverAdapterType(reflectedReceiverType, ref),
       resultRef: variant.resultRef,
       callbackParamRefs: variant.callbackParamRefs,
     })),
-    true,
+    receiverCallFallible(ref),
     undefined,
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], []);
@@ -149,7 +154,9 @@ export function reflectedReceiverFunctionValue(
   const variants = memberVariants(member);
   if (variants.length !== 1 || variants[0].type.kind !== "TFn") return undefined;
   const params = variants[0].type.params.map((_, index) => `__wm_js_arg_${index}`);
-  const surfaceName = `__receiver.${ref.key}.${path.join(".")}`;
+  const surfaceName = `__receiver.${receiverCallFallible(ref) ? "" : "unsafe."}${ref.key}.${
+    path.join(".")
+  }`;
   const reflectedReceiverType = receiverType ?? knownReceiverType(jsRefTypeExpr(ref)) ??
     typeName("Js.Object");
   addVariants(
@@ -159,11 +166,11 @@ export function reflectedReceiverFunctionValue(
     { kind: "JsReceiver", path },
     [{
       type: variants[0].type,
-      receiverType: reflectedReceiverType,
+      receiverType: receiverAdapterType(reflectedReceiverType, ref),
       resultRef: variants[0].resultRef,
       callbackParamRefs: variants[0].callbackParamRefs,
     }],
-    true,
+    receiverCallFallible(ref),
     undefined,
   );
   const variant = selectVariant(
@@ -332,11 +339,26 @@ export function reflectedFunctionCallCandidate(
   const ref = refs.get(name);
   if (!ref) return undefined;
   const hints = args.map((arg) => callArgHintWithRefs(arg, refs, objectAccess));
-  if (!hints.some((hint) => hint.kind === "ref" || hint.kind === "function")) return undefined;
+  const genericCall = bindings.get(name)?.variants.some((variant) => variant.genericCall);
+  // A bare callback has no inferred result yet. Let the existing post-HM pass
+  // instantiate generic calls once that evidence is available.
+  if (genericCall && hints.some((hint) => hint.kind === "function" && !hint.resultType)) {
+    return undefined;
+  }
+  // Declaration-level generic parameters may already be erased in the discovery
+  // type. Ask TS about literal arguments before committing that seed to HM.
+  if (
+    !hints.some((hint) =>
+      hint.kind === "ref" || hint.kind === "function" ||
+      genericCall && (hint.kind === "number" || hint.kind === "string")
+    )
+  ) return undefined;
   const member = jsRefCall(ref, hints);
   if (!member) return undefined;
   const original = bindings.get(name)?.variants[0];
-  const surfaceName = `__call.${ref.key}(${callHintKey(args)})`;
+  const surfaceName = `__call.${original?.fallible === false ? "unsafe." : ""}${ref.key}(${
+    callHintKey(args)
+  })`;
   addVariants(
     bindings,
     surfaceName,
@@ -444,7 +466,12 @@ export function rememberLetObjectAccess(
   if (decl.kind !== "LetDecl") return;
   for (const binding of decl.bindings) {
     if (binding.pattern.kind !== "PVar") continue;
-    const access = objectAccessForType(binding.annotation, importedTypeRefs) ??
+    const annotated = objectAccessForType(binding.annotation, importedTypeRefs);
+    // A binding annotation must not freeze the producer's wrapping policy.
+    const access = (annotated?.kind === "ref" &&
+        importedTypeRefs.has(binding.annotation?.kind === "TName" ? binding.annotation.name : "")
+      ? { kind: "unresolved" as const, foreign: true }
+      : annotated) ??
       objectAccessForExpr(binding.value, bindings, importedTypeRefs, objectAccess);
     if (access) objectAccess.set(binding.pattern.name, access);
     else if (!binding.annotation && binding.value.kind !== "Record") {

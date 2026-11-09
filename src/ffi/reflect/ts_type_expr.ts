@@ -18,7 +18,10 @@ export function tsTypeFromTypeExpr(type: TypeExpr): string {
 export function typeExprKey(type: TypeExpr): string {
   switch (type.kind) {
     case "TName":
-      return type.args.length ? `${type.name}<${type.args.map(typeExprKey).join(",")}>` : type.name;
+      const policy = type.ffiFallible === undefined ? "" : type.ffiFallible ? ":safe" : ":unsafe";
+      return (type.args.length
+        ? `${type.name}<${type.args.map(typeExprKey).join(",")}>`
+        : type.name) + policy;
     case "TVar":
       return `'${type.name}`;
     case "TTuple":

@@ -316,16 +316,18 @@ user :> Task.succeed
 
 ## JavaScript FFI
 
-Safe JavaScript imports that return promises become Tasks.
+Reflected JavaScript promises become Tasks for both safe and unsafe imports.
 
-For example, a reflected or manually typed promise-returning API maps to:
+For example, a reflected promise-returning API maps to:
 
 ```workman
 Task<a, Js.Error>
 ```
 
 JavaScript can reject promises or throw while starting work. Both cases become `Err(Js.Error)` in
-the Task result.
+the Task result for safe imports. Unsafe calls also convert promise fulfillment
+and rejection into the Task's Ok/Err representation, but a synchronous throw
+before the promise is returned propagates.
 
 Promise-returning APIs come through reflection. A manual type can't describe one: manual types
 need `unsafe` and describe the raw JavaScript value, and a plain JavaScript promise is not a Task

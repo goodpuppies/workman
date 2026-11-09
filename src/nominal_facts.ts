@@ -1,3 +1,4 @@
+import { mapPatternExpressions } from "./ast.ts";
 import type { CtorDecl, Decl, Expr, Module, Pattern, RecordFieldDecl, TypeExpr } from "./ast.ts";
 import { parseLongId } from "./ast.ts";
 import { basisCtorId } from "./basis.ts";
@@ -328,7 +329,13 @@ function visitExprDeclarations(
       return;
     case "Match":
       visitExprDeclarations(expression.value, visit);
-      expression.arms.forEach((arm) => visitExprDeclarations(arm.body, visit));
+      expression.arms.forEach((arm) => {
+        mapPatternExpressions(arm.pattern, (value) => {
+          visitExprDeclarations(value, visit);
+          return value;
+        });
+        visitExprDeclarations(arm.body, visit);
+      });
       return;
     case "Panic":
       visitExprDeclarations(expression.message, visit);

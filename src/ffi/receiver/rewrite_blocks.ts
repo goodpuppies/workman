@@ -1,4 +1,5 @@
 import type { Decl, Expr, Pattern } from "../../ast.ts";
+import { mapPatternExpressions } from "../../ast.ts";
 import type { JsTypeRef } from "../reflect/types.ts";
 import { type ObjectAccess, rememberLetObjectAccess } from "./receiver.ts";
 import { type FfiBinding, isDecl } from "../shared.ts";
@@ -89,6 +90,10 @@ export function rewriteMatchArms(
     }
     return {
       ...arm,
+      pattern: mapPatternExpressions(
+        arm.pattern,
+        (value) => rewriteExpr(value, bindings, selected, refs, objectAccess, importedTypeRefs),
+      ),
       body: rewriteExpr(
         arm.body,
         bindings,
@@ -120,6 +125,7 @@ function patternBinders(pattern: Pattern): string[] {
     case "PBool":
     case "PVoid":
     case "PPinned":
+    case "PComputed":
       return [];
   }
 }

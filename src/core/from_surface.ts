@@ -641,6 +641,12 @@ function corePatternFromSurface(
   context?: CoreLoweringContext,
 ): CorePattern {
   switch (pattern.kind) {
+    case "PComputed":
+      return {
+        kind: "CorePComputed",
+        value: coreExprFromSurface(pattern.value, context),
+        node: pattern.node,
+      };
     case "PWildcard":
       return { kind: "CorePWildcard", node: pattern.node };
     case "PVar":

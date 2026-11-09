@@ -3,7 +3,7 @@ from "./generated/surface_types.wm" import {
   AuthoredValue, MarkedValue,
   ProgramNode, TopPhraseNode,
   LetDeclarationNode, LetBindingNode,
-  PinnedPatternNode, ConstructorPatternNode,
+  PinnedPatternNode, ComputedPatternNode, ConstructorPatternNode,
   LambdaExpressionNode, ParametersNode, BareParametersNode, ParameterNode, CaptureClauseNode,
   BlockExpressionNode, BlockBodyNode, BlockItemNode,
   IfExpressionNode, PipeConditionalNode,
@@ -103,6 +103,12 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
   },
   (PinnedPatternNode(name, span), Var(depth), Var(materializeMarks)) => {
     renderSurfaceNodeAt(name, depth, materializeMarks)
+  },
+  (ComputedPatternNode(equalsToken, open, value, close, span), Var(depth), Var(materializeMarks)) => {
+    match(renderSurfaceNodeAt(value, depth, materializeMarks)) {
+      Some(text) => { Some("=(" ++ text ++ ")") },
+      None => { None },
+    }
   },
   (ConstructorPatternNode(name, arguments, span), Var(depth), Var(materializeMarks)) => {
     match((renderSurfaceNodeAt(name, depth, materializeMarks), renderOptionalNode(arguments, depth, materializeMarks))) {

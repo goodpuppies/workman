@@ -274,14 +274,47 @@ export type Pattern =
   | Located<{ kind: "PBool"; value: boolean }>
   | Located<{ kind: "PVoid" }>
   | Located<{ kind: "PPinned"; name: string; path?: LongId }>
+  | Located<{ kind: "PComputed"; value: Expr }>
   | Located<{ kind: "PTuple"; items: Pattern[] }>
   | Located<{ kind: "PRecord"; fields: RecordPatternField[] }>
   | Located<{ kind: "PCtor"; name: string; path?: LongId; args: Pattern[] }>
   | Located<{ kind: "PAscribed"; pattern: Pattern; annotation: TypeExpr }>;
 
 export type RecordPatternField = Located<{ name: string; pattern: Pattern }>;
+
+export function mapPatternExpressions(pattern: Pattern, map: (value: Expr) => Expr): Pattern {
+  switch (pattern.kind) {
+    case "PComputed":
+      return { ...pattern, value: map(pattern.value) };
+    case "PTuple":
+      return { ...pattern, items: pattern.items.map((item) => mapPatternExpressions(item, map)) };
+    case "PRecord":
+      return {
+        ...pattern,
+        fields: pattern.fields.map((field) => ({
+          ...field,
+          pattern: mapPatternExpressions(field.pattern, map),
+        })),
+      };
+    case "PCtor":
+      return { ...pattern, args: pattern.args.map((item) => mapPatternExpressions(item, map)) };
+    case "PAscribed":
+      return { ...pattern, pattern: mapPatternExpressions(pattern.pattern, map) };
+    default:
+      return pattern;
+  }
+}
 export type TypeExpr =
-  | Located<{ kind: "TName"; name: string; path?: LongId; args: TypeExpr[] }>
+  | Located<
+    {
+      kind: "TName";
+      name: string;
+      path?: LongId;
+      args: TypeExpr[];
+      ffiFallible?: boolean;
+      ffiPromise?: boolean;
+    }
+  >
   | Located<{ kind: "TVar"; name: string }>
   | Located<{ kind: "TTuple"; items: TypeExpr[] }>
   | Located<{ kind: "TFn"; params: TypeExpr[]; result: TypeExpr }>;

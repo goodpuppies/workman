@@ -212,6 +212,9 @@ function visitPattern(
     case "PVoid":
     case "PPinned":
       return;
+    case "PComputed":
+      visitExpr(pattern.value, warnings, diagnostics);
+      return;
   }
 }
 

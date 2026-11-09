@@ -153,6 +153,7 @@ export type CoreMatchArm = {
 };
 
 export type CorePattern =
+  | { kind: "CorePComputed"; value: CoreExpr; node?: AstNode }
   | { kind: "CorePWildcard"; node?: AstNode }
   | { kind: "CorePVar"; name: string; bindingId?: BindingId; node?: AstNode }
   | { kind: "CorePInt"; value: number; exact?: string; numericType?: string; node?: AstNode }

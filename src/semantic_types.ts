@@ -31,6 +31,7 @@ export type SemanticTypeShape =
     name: string;
     args: readonly SemanticTypeId[];
     foreignKey?: string;
+    ffiFallible?: boolean;
   }>;
 
 export type SemanticType = Readonly<{
@@ -146,6 +147,9 @@ function snapshotShape(
         name: type.name,
         args: Object.freeze(type.args.map(snapshot)),
         foreignKey: type.foreignKey,
+        ...(type.ffiPolicy && prune(type.ffiPolicy).tag === "prim"
+          ? { ffiFallible: (prune(type.ffiPolicy) as { name: string }).name !== "ffiUnsafe" }
+          : {}),
       });
   }
 }

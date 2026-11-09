@@ -84,7 +84,9 @@ function syntheticCallbackTypeFromArg(
   return fn(
     arg.parameters.map((param, index) =>
       hint.paramTypes?.[index] ??
-        typeExprFromTsType(checker, checker.getTypeAtLocation(param), "param") ??
+        // Callback inputs arrive from JS; retain their nominal receiver evidence.
+        // Outgoing parameter mapping deliberately erases some assignable shapes.
+        typeExprFromTsType(checker, checker.getTypeAtLocation(param), "result") ??
         name("Js.Value")
     ),
     hint.resultType ??
