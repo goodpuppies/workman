@@ -28,6 +28,28 @@ const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 const LEFT = "\x1b[D";
 
+Deno.test("Windows key events preserve Shift+Enter, modifiers, repeats, and AltGr", () => {
+  const decoder = new KeyDecoder();
+  assertEquals(decoder.decode("\x1b[16;42;0;1;16;1_\x1b[13;28;13;1;16"), []);
+  const enter: EditorKey = { kind: "key", name: "enter", shift: true, alt: false, ctrl: false };
+  assertEquals(decoder.decode(";1_\x1b[13;28;13;0;16;1_"), [enter]);
+  assertEquals(decoder.decode("\x1b[65;30;65;1;16;2_"), [
+    { kind: "text", text: "A" },
+    { kind: "text", text: "A" },
+  ]);
+  assertEquals(decoder.decode("\x1b[67;46;3;1;8;1_"), [
+    { kind: "key", name: "c", shift: false, alt: false, ctrl: true },
+  ]);
+  assertEquals(decoder.decode("\x1b[81;16;64;1;9;1_"), [{ kind: "text", text: "@" }]);
+  assertEquals(decoder.decode("\x1b[37;75;0;1;8;1_"), [
+    { kind: "key", name: "left", shift: false, alt: false, ctrl: true },
+  ]);
+  assertEquals(decoder.decode("\x1b[0;0;0;0;0;0_"), []);
+  const state = stateWith("1 + 2");
+  assertEquals(press(state, "\x1b[13;28;13;1;16;1_"), ["submit"]);
+  assertEquals(state.text, "1 + 2;");
+});
+
 Deno.test("decoder reads plain, cursor, kitty, modifyOtherKeys, and Alt keys", () => {
   const decode = (input: string) => new KeyDecoder().decode(input);
   assertEquals(decode("ab"), [{ kind: "text", text: "ab" }]);

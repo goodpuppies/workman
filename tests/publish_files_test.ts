@@ -38,13 +38,15 @@ const unpublishedResources = new Set(["tooling/wmslang/wmslang.generated.mjs"]);
 Deno.test("every resource the compiler reads at runtime is published", async () => {
   const missing: string[] = [];
   for await (const file of sourceFiles(join(root, "src"))) {
-    if (file.includes("/generated/") || file.includes("/vendor/")) continue;
+    const sourcePath = relative(root, file).replaceAll("\\", "/");
+    if (sourcePath.includes("/generated/") || sourcePath.includes("/vendor/")) continue;
     const source = await Deno.readTextFile(file);
     for (const match of source.matchAll(/new URL\("(\.\.?\/[^"]*)", import\.meta\.url\)/g)) {
-      const resource = relative(root, join(dirname(file), match[1])).replace(/\/$/, "");
+      const resource = relative(root, join(dirname(file), match[1])).replaceAll("\\", "/")
+        .replace(/\/$/, "");
       if (resource === "" || resource.startsWith("..")) continue;
       if (!published(resource) && !unpublishedResources.has(resource)) {
-        missing.push(`${relative(root, file)}: ${resource}`);
+        missing.push(`${sourcePath}: ${resource}`);
       }
     }
   }

@@ -7,6 +7,7 @@ import {
 } from "./repl_highlight.ts";
 import { lexicalContextAt, topLevelPhraseEnd } from "./top_level_phrases.ts";
 import type { ReplPromptSettings } from "./user_config.ts";
+import { holdTerminalInput } from "./repl_terminal.ts";
 
 /** A decoded keypress. `name` is a named key or a lowercase letter; `text` is literal input. */
 export type EditorKey =
@@ -97,6 +98,10 @@ function decodeEscape(rest: string, keys: EditorKey[]): number {
     }
     const match = CSI.exec(rest);
     if (!match) return INCOMPLETE_CSI.test(rest) ? 0 : 2;
+    if (match[2] === "_") {
+      keys.push(...win32Keys(match[1]));
+      return match[0].length;
+    }
     const key = csiKey(match[1], match[2]);
     if (key) keys.push(key);
     return match[0].length;
@@ -116,6 +121,41 @@ function decodeEscape(rest: string, keys: EditorKey[]): number {
   if (control?.kind === "key") keys.push({ ...control, alt: true });
   else if (!control) keys.push({ kind: "key", name: next.toLowerCase(), alt: true });
   return 2;
+}
+
+/** Windows Terminal's CSI Vk;Sc;Uc;Kd;Cs;Rc _ preserves Shift+Enter. */
+function win32Keys(parameters: string): EditorKey[] {
+  const fields = parameters.split(";");
+  const [vk, , char, down, state] = fields.map((field) => Number(field || 0));
+  if (down !== 1) return []; // Key releases and mode acknowledgements.
+  const mods = { shift: !!(state & 0x10), alt: !!(state & 0x03), ctrl: !!(state & 0x0c) };
+  const names: Record<number, string> = {
+    8: "backspace",
+    9: "tab",
+    13: "enter",
+    27: "escape",
+    33: "pageup",
+    34: "pagedown",
+    35: "end",
+    36: "home",
+    37: "left",
+    38: "up",
+    39: "right",
+    40: "down",
+    46: "delete",
+  };
+  let key: EditorKey | undefined;
+  if (names[vk]) key = { kind: "key", name: names[vk], ...mods };
+  // AltGr is reported as Right Alt + Left Ctrl; preserve the resulting character.
+  else if (char >= 32 && (!mods.ctrl && !mods.alt || (state & 0x09) === 0x09)) {
+    key = { kind: "text", text: String.fromCharCode(char) };
+  } else if (vk >= 65 && vk <= 90 && (mods.ctrl || mods.alt)) {
+    key = { kind: "key", name: String.fromCharCode(vk + 32), ...mods };
+  } else if (char) key = controlKey(String.fromCharCode(char));
+  const repeat = Number(fields[5] || 1);
+  return key && Number.isInteger(repeat) && repeat > 0 && repeat <= 65535
+    ? Array.from({ length: repeat }, () => key!)
+    : [];
 }
 
 function csiKey(rawParameters: string, final: string): EditorKey | undefined {
@@ -646,8 +686,10 @@ export type EditorResult =
   | { kind: "eof" }
   | { kind: "interrupt" };
 
-const ENTER_MODES = "\x1b[?2004h\x1b[>1u"; // Bracketed paste; kitty keyboard disambiguation.
-const LEAVE_MODES = "\x1b[<u\x1b[?2004l";
+const ENTER_MODES = "\x1b[?2004h\x1b[>1u" +
+  (Deno.build.os === "windows" ? "\x1b[?9001h" : "");
+const LEAVE_MODES = (Deno.build.os === "windows" ? "\x1b[?9001l" : "") +
+  "\x1b[<u\x1b[?2004l";
 
 /**
  * Draws the editor inline below existing output and reads keys in raw mode. After
@@ -705,13 +747,13 @@ export class TerminalEditor {
     } finally {
       if (resizeListening) Deno.removeSignalListener("SIGWINCH", redraw);
       this.#write(LEAVE_MODES);
-      Deno.stdin.setRaw(true, { cbreak: true });
+      this.holdInput();
     }
   }
 
-  /** Holds keys for the next read without echoing them; Ctrl-C still raises a signal. */
+  /** Holds input without echoing it, while keeping Ctrl-C signals enabled. */
   holdInput(): void {
-    Deno.stdin.setRaw(true, { cbreak: true });
+    holdTerminalInput();
   }
 
   /** Restores normal terminal behavior, for writing output or exiting. */

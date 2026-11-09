@@ -1,6 +1,7 @@
 import { join } from "node:path";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { watchRefreshDivider } from "../src/watch.ts";
+import { terminateChild } from "../src/child_runtime.ts";
 
 import { fileURLToPath } from "node:url";
 const cli = fileURLToPath(new URL("../src/main.ts", import.meta.url));
@@ -61,12 +62,7 @@ Deno.test("watch survives parse errors and refreshes its transitive module graph
   } finally {
     reader.releaseLock();
     errorReader.releaseLock();
-    try {
-      child.kill();
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) throw error;
-    }
-    await child.status;
+    await stopWatch(child);
     await Deno.remove(directory, { recursive: true });
   }
 });
@@ -105,12 +101,7 @@ Deno.test("watch executes until reaching a typed hole and resumes after replacem
   } finally {
     reader.releaseLock();
     errorReader.releaseLock();
-    try {
-      child.kill();
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) throw error;
-    }
-    await child.status;
+    await stopWatch(child);
     await Deno.remove(directory, { recursive: true });
   }
 });
@@ -139,15 +130,40 @@ Deno.test("watch exits on SIGINT while waiting after an error", async () => {
   } finally {
     errorReader.releaseLock();
     if (!exited) {
-      try {
-        child.kill();
-      } catch (error) {
-        if (!(error instanceof Deno.errors.NotFound) && !(error instanceof TypeError)) throw error;
-      }
+      await stopWatch(child);
     }
     await statusPromise;
     await Deno.remove(directory, { recursive: true });
   }
+});
+
+async function stopWatch(child: Pick<Deno.ChildProcess, "kill" | "status">): Promise<void> {
+  await statusWithTimeout(terminateChild(child), 5_000);
+}
+
+Deno.test("watch cleanup accepts Windows Access Denied only after the child exits", async () => {
+  if (Deno.build.os !== "windows") return;
+  await stopWatch({
+    kill() {
+      throw new Deno.errors.PermissionDenied("already exited");
+    },
+    status: Promise.resolve({ code: 0, success: true, signal: null }),
+  });
+});
+
+Deno.test("watch cleanup preserves Windows Access Denied when exit cannot be confirmed", async () => {
+  if (Deno.build.os !== "windows") return;
+  await assertRejects(
+    () =>
+      stopWatch({
+        kill() {
+          throw new Deno.errors.PermissionDenied("live child");
+        },
+        status: new Promise(() => {}),
+      }),
+    Deno.errors.PermissionDenied,
+    "live child",
+  );
 });
 
 async function readUntil(
@@ -162,7 +178,9 @@ async function readUntil(
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error(`timed out waiting for ${JSON.stringify(expected)}`);
     const result = await readWithTimeout(reader, remaining, expected);
-    if (result.done) throw new Error(`watch stdout ended before ${JSON.stringify(expected)}`);
+    if (result.done) {
+      throw new Error(`watch stream ended before ${JSON.stringify(expected)}; output:\n${output}`);
+    }
     output += decoder.decode(result.value, { stream: true });
   }
   return output;
@@ -189,10 +207,10 @@ async function readWithTimeout(
   }
 }
 
-async function statusWithTimeout(
-  status: Promise<Deno.CommandStatus>,
+async function statusWithTimeout<T>(
+  status: Promise<T>,
   timeout: number,
-): Promise<Deno.CommandStatus> {
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

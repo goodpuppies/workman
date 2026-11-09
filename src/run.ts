@@ -2,7 +2,12 @@ import { compileFileArtifactsFromCore, type CompileOptions, coreFile } from "./c
 import { dirname, resolve } from "node:path";
 import { runtimeFlagsForJavaScript } from "./runtime_flags.ts";
 import { createProgressReporter } from "./progress.ts";
-import { denoConfigArgs, linkProjectPackages, relayTerminationSignals } from "./child_runtime.ts";
+import {
+  denoConfigArgs,
+  linkProjectPackages,
+  relayTerminationSignals,
+  terminateChild,
+} from "./child_runtime.ts";
 import { createTemporaryDirectory, type TemporaryDirectory } from "./temporary_directory.ts";
 
 export type RunOptions = CompileOptions & {
@@ -61,13 +66,14 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
       // Keep recent diagnostics so leaving a TUI's alternate screen cannot erase them.
       stderr: "piped",
     }).spawn();
+    let rejectStop!: (error: unknown) => void;
+    const stopFailure = new Promise<never>((_, reject) => {
+      rejectStop = reject;
+    });
+    // Abort listeners cannot propagate async failures to their caller. Race failures
+    // against normal completion instead of throwing an uncaught event-handler error.
     const stop = () => {
-      try {
-        child.kill();
-      } catch (error) {
-        // The child may have exited between the abort and kill calls.
-        if (!(error instanceof Deno.errors.NotFound)) throw error;
-      }
+      void terminateChild(child).catch(rejectStop);
     };
     options.signal?.addEventListener("abort", stop, { once: true });
     if (options.signal?.aborted) stop();
@@ -77,12 +83,15 @@ export async function runFile(input: string, options: RunOptions = {}): Promise<
     const inheritedStderr = options.stderr !== "piped";
     const errorOutput = collectChildStderr(child.stderr, inheritedStderr);
     try {
-      const [status, stdout, stderr] = await Promise.all([
-        child.status,
-        options.stdout === "piped"
-          ? new Response(child.stdout).arrayBuffer().then((buffer) => new Uint8Array(buffer))
-          : Promise.resolve(new Uint8Array()),
-        errorOutput,
+      const [status, stdout, stderr] = await Promise.race([
+        Promise.all([
+          child.status,
+          options.stdout === "piped"
+            ? new Response(child.stdout).arrayBuffer().then((buffer) => new Uint8Array(buffer))
+            : Promise.resolve(new Uint8Array()),
+          errorOutput,
+        ]),
+        stopFailure,
       ]);
       const result = { ...status, stdout, stderr: inheritedStderr ? new Uint8Array() : stderr };
       completedCleanly = result.success;

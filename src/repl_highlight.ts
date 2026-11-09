@@ -40,7 +40,8 @@ export const BASIC_STYLES: HighlightStyles = {
 
 export function terminalHasTruecolor(): boolean {
   const colorTerm = Deno.env.get("COLORTERM");
-  return colorTerm === "truecolor" || colorTerm === "24bit";
+  // Windows Terminal supports RGB colors even when COLORTERM is unset.
+  return colorTerm === "truecolor" || colorTerm === "24bit" || !!Deno.env.get("WT_SESSION");
 }
 
 export function terminalHighlightStyles(): HighlightStyles {

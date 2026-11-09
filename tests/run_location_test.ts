@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { runFile } from "../src/run.ts";
 
 // `wm run` writes the emitted program to the OS temporary directory, never beside the source, and
@@ -70,7 +71,7 @@ Deno.test("repl imports npm packages of the project it started in", async () => 
   const project = await projectWithPackage();
   try {
     const child = new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", new URL("../src/main.ts", import.meta.url).pathname, "repl"],
+      args: ["run", "-A", fileURLToPath(new URL("../src/main.ts", import.meta.url)), "repl"],
       cwd: project,
       stdin: "piped",
       stdout: "piped",

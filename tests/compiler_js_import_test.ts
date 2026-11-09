@@ -1,4 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   checkFile,
   checkSource,
@@ -400,7 +402,7 @@ Deno.test("reflects npm subpath exports through import-mapped @types packages", 
   );
 
   const results = await checkFile(input);
-  const result = results.get(input);
+  const result = results.get(await Deno.realPath(input));
   if (!result) throw new Error("missing main result");
   expectBinding(result.env, "scene", { type: "Result<Scene<Js.Value>, Js.Error>!", vars: 0 });
 });
@@ -460,16 +462,20 @@ Deno.test("resolves import-map aliases during delayed reflection independent of 
 
   // In a child process: the working directory is shared by every test file running in parallel.
   const check = `
-    import { checkFile } from ${JSON.stringify(new URL("../src/compiler.ts", import.meta.url).href)};
-    import { expectBinding } from ${JSON.stringify(new URL("./type_helpers.ts", import.meta.url).href)};
+    import { checkFile } from ${
+    JSON.stringify(new URL("../src/compiler.ts", import.meta.url).href)
+  };
+    import { expectBinding } from ${
+    JSON.stringify(new URL("./type_helpers.ts", import.meta.url).href)
+  };
     const input = ${JSON.stringify(input)};
     const result = (await checkFile(input)).get(await Deno.realPath(input));
     if (!result) throw new Error("missing main result");
     expectBinding(result.env, "app", { type: "Task<Js.Object, Js.Error>!", vars: 0 });
   `;
   const child = await new Deno.Command(Deno.execPath(), {
-    args: ["eval", "--config", new URL("../deno.json", import.meta.url).pathname, check],
-    cwd: "/",
+    args: ["eval", "--config", fileURLToPath(new URL("../deno.json", import.meta.url)), check],
+    cwd: dirname(dir),
     stdout: "piped",
     stderr: "piped",
   }).output();

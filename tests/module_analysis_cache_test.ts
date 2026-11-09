@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
+import { basename } from "node:path";
 import { compileReplFileArtifacts, coreFile } from "../src/compiler.ts";
 import { ModuleAnalysisCache } from "../src/module_analysis_cache.ts";
 import type { CachedModuleAnalysis } from "../src/module_analysis_cache.ts";
@@ -8,7 +9,7 @@ class RecordingCache extends ModuleAnalysisCache {
   analyzed: string[] = [];
 
   override set(key: string, analysis: CachedModuleAnalysis): void {
-    this.analyzed.push(key.slice(key.lastIndexOf("/") + 1, key.indexOf("#")));
+    this.analyzed.push(basename(key.slice(0, key.indexOf("#"))));
     super.set(key, analysis);
   }
 

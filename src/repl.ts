@@ -233,7 +233,9 @@ class PhraseSession {
   }
 
   #path(name: string): string {
-    return `${this.#sourceDirectory}/${sessionModuleName(name)}`;
+    // Match the native paths produced when resolving imports against sourceOverrides.
+    // Mixing a Windows cwd's backslashes with a trailing slash loses the lookup.
+    return resolve(this.#sourceDirectory, sessionModuleName(name));
   }
 
   get headerPath(): string {

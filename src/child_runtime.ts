@@ -54,6 +54,32 @@ function nearest(directory: string, name: string, kind: "file" | "directory"): s
 
 type TerminationSignal = "SIGINT" | "SIGTERM" | "SIGHUP";
 
+/** Stop a child, tolerating the Windows race between process exit and TerminateProcess. */
+export async function terminateChild(
+  child: Pick<Deno.ChildProcess, "kill" | "status">,
+): Promise<void> {
+  try {
+    child.kill();
+  } catch (error) {
+    if (Deno.build.os === "windows" && error instanceof Deno.errors.PermissionDenied) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          child.status,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(error), 1_000);
+          }),
+        ]);
+        return;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if (!(error instanceof Deno.errors.NotFound) && !(error instanceof TypeError)) throw error;
+  }
+  await child.status;
+}
+
 /** Exit codes a shell reports for a process ended by each signal: 128 plus the signal number. */
 export const terminationExitCode: Record<TerminationSignal, number> = {
   SIGINT: 130,

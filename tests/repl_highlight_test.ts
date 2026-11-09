@@ -124,11 +124,15 @@ Deno.test("a frame colors a string split across a soft wrap on both rows", () =>
 
 Deno.test("the Workman colors need truecolor, and other terminals keep the 16-color palette", () => {
   const previous = Deno.env.get("COLORTERM");
+  const previousSession = Deno.env.get("WT_SESSION");
   const restore = () => {
     if (previous === undefined) Deno.env.delete("COLORTERM");
     else Deno.env.set("COLORTERM", previous);
+    if (previousSession === undefined) Deno.env.delete("WT_SESSION");
+    else Deno.env.set("WT_SESSION", previousSession);
   };
   try {
+    Deno.env.delete("WT_SESSION");
     for (const value of ["truecolor", "24bit"]) {
       Deno.env.set("COLORTERM", value);
       assertEquals(terminalHighlightStyles(), WORKMAN_STYLES);
@@ -136,6 +140,10 @@ Deno.test("the Workman colors need truecolor, and other terminals keep the 16-co
     Deno.env.set("COLORTERM", "yes");
     assertEquals(terminalHighlightStyles(), BASIC_STYLES);
     Deno.env.delete("COLORTERM");
+    assertEquals(terminalHighlightStyles(), BASIC_STYLES);
+    Deno.env.set("WT_SESSION", "test-windows-terminal-session");
+    assertEquals(terminalHighlightStyles(), WORKMAN_STYLES);
+    Deno.env.set("WT_SESSION", "");
     assertEquals(terminalHighlightStyles(), BASIC_STYLES);
   } finally {
     restore();

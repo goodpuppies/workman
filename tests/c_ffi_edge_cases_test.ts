@@ -197,12 +197,14 @@ Deno.test({
       let main = () => {
         print(Word16.toNumber(ntohs(htons(Word16.fromNumber(65535)))));
         print(Word32.toNumber(ntohl(htonl(Word32.fromNumber(4294967295)))));
+        print(Word16.toNumber(ntohs(htons(8080))));
       };
     `,
       ]]),
     );
-    assertEquals(output, "65535\n4294967295\n");
-    for (const argument of ["8080", "Word32.fromNumber(8080)"]) {
+    assertEquals(output, "65535\n4294967295\n8080\n");
+    // Literals select the C parameter's type; already-typed values cannot change width/type.
+    for (const argument of ["number", "Word32.fromNumber(8080)"]) {
       await assertRejects(() =>
         compileVirtual(
           "/test/main.wm",
@@ -210,6 +212,7 @@ Deno.test({
             "/test/main.wm",
             `
         from c.header("winsock2.h", lib: "ws2_32") import unsafe { htons };
+        let number: Number = 8080;
         let main = () => { print(htons(${argument})); };
       `,
           ]]),
@@ -247,10 +250,14 @@ Deno.test("explicit imports take precedence over C header wildcards", async () =
     new Map([[
       "/test/main.wm",
       `
-    from c.header("stdio.h") import unsafe { puts };
+    from c.header("stdio.h") import unsafe { puts, fflush };
     from c.header("stdio.h") import unsafe *;
     from "host/c/pointer.wm" import * as Pointer;
-    let main = () => { puts(Some(Pointer.fromString("explicit"))); };
+    let main = () => {
+      puts(Some(Pointer.fromString("explicit")));
+      // C stdout is buffered when captured; flush before the Deno process exits.
+      fflush(None);
+    };
   `,
     ]]),
   );

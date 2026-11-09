@@ -1,10 +1,14 @@
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
+import { fileURLToPath } from "node:url";
 import { checkSource, checkVirtual, compile } from "../src/compiler.ts";
 import { expectBinding } from "./type_helpers.ts";
 import { setActiveJsReflectionBasePath } from "../src/ffi/reflect/host.ts";
 import { type JsCallArgHint, jsModuleMemberValueRef, jsRefCall } from "../src/ffi/reflect/types.ts";
 
 const fixture = "./tests/fixtures/ffi_generic_box.ts";
+// Workman string literals and emitted JS imports both accept forward-slash native paths.
+const absoluteFixture = fileURLToPath(new URL("./fixtures/ffi_generic_box.ts", import.meta.url))
+  .replaceAll("\\", "/");
 const name = (name: string) => ({ kind: "TName" as const, name, args: [] });
 
 Deno.test("foreign generic instances keep their arguments regardless of import order", async () => {
@@ -52,7 +56,7 @@ Deno.test("generic foreign calls preserve scalar and tuple callback results", as
   expectBinding(result.env, "pair", { type: "(Number, String)!", vars: 0 });
   const runtimeSource = source.replaceAll(
     fixture,
-    new URL("./fixtures/ffi_generic_box.ts", import.meta.url).pathname,
+    absoluteFixture,
   );
   const js = await compile(runtimeSource);
   // Run the emitted program as a module: the inferred tuple must also survive
@@ -144,14 +148,13 @@ Deno.test("safe imports retain foreign generic arguments inside Result", async (
 });
 
 Deno.test("foreign generic arguments survive Workman module interfaces", async () => {
-  const absolute = new URL("./fixtures/ffi_generic_box.ts", import.meta.url).pathname;
   const results = await checkVirtual(
     "/test/main.wm",
     new Map([
       [
         "/test/boxes.wm",
         `
-      from js.module("${absolute}") import unsafe * as Box;
+      from js.module("${absoluteFixture}") import unsafe * as Box;
       let number = Box.succeed(20);
       let text = Box.succeed("hello");
     `,
@@ -173,7 +176,9 @@ Deno.test("foreign generic arguments survive Workman module interfaces", async (
 });
 
 Deno.test("concrete generic call refs retain distinct payload types in TS reflection", () => {
-  const previous = setActiveJsReflectionBasePath(new URL("../main.wm", import.meta.url).pathname);
+  const previous = setActiveJsReflectionBasePath(
+    fileURLToPath(new URL("../main.wm", import.meta.url)),
+  );
   try {
     const succeed = jsModuleMemberValueRef(fixture, "succeed");
     const run = jsModuleMemberValueRef(fixture, "run");
@@ -201,7 +206,9 @@ Deno.test("concrete generic call refs retain distinct payload types in TS reflec
 });
 
 Deno.test("concrete tuple callback results survive local generic TS reflection", () => {
-  const previous = setActiveJsReflectionBasePath(new URL("../main.wm", import.meta.url).pathname);
+  const previous = setActiveJsReflectionBasePath(
+    fileURLToPath(new URL("../main.wm", import.meta.url)),
+  );
   try {
     const succeed = jsModuleMemberValueRef(fixture, "succeed");
     const map = jsModuleMemberValueRef(fixture, "map");
