@@ -1,0 +1,11 @@
+from "../../../tooling/testman/test.wm" import * as T;
+from "./won-view.wm" import * as View;
+from js.module("npm:react-dom@19.2.0/server") import unsafe { renderToStaticMarkup };
+
+let tests = [T.test("WON renders nested elements and a text binding", () => {
+  let tree = View.render(.{
+    text = (_) => { "2 < 3" },
+    action = (_) => { void },
+  }, View.parse(`main[p[Bind("count")] button<onClick = Action("increment")>("Add one")]`));
+  T.assertEqual(renderToStaticMarkup(tree), "<main class=\"\"><p class=\"\"><span>2 &lt; 3</span></p><button class=\"\"><span>Add one</span></button></main>")
+})];

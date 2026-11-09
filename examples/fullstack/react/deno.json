@@ -1,0 +1,15 @@
+{
+  "tasks": {
+    "wm": "deno run -A --config ../../../deno.json ../../../src/main.ts",
+    "build": "deno task wm compile main.wm dist/main.mjs && deno bundle --platform=browser dist/main.mjs -o dist/app.js",
+    "serve": "deno task wm run serve.wm",
+    "test": "deno task wm test view.test.wm"
+  },
+  "imports": {
+    "react": "npm:react@19.2.0",
+    "react-dom/client": "npm:react-dom@19.2.0/client",
+    "react-dom/server": "npm:react-dom@19.2.0/server",
+    "@types/react": "npm:@types/react@19.2.5",
+    "@types/react-dom": "npm:@types/react-dom@19.2.3"
+  }
+}

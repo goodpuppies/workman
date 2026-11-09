@@ -1,0 +1,106 @@
+from "basis/won.wm" import * as Won;
+from "basis/won_value.wm" import * as W;
+from "basis/text.wm" import * as Utf8;
+from "basis/string.wm" import * as Bytes;
+from js.module("npm:react@19.2.0") import unsafe { createElement };
+from js.module("npm:react@19.2.0") import type { DOMElement };
+from js.global import type { Element };
+
+type View = DOMElement<Js.Value, Element>;
+
+record Bindings = { text: String -> String, action: String -> Void };
+record EventProps<child> = {
+  key: String,
+  className: String,
+  children: Js.Array<child>,
+  onClick: Js.Value -> Void,
+};
+
+-- WON accepts byte strings; WM literals are Unicode text. Convert explicitly.
+let parse = (source) => {
+  let wire = Utf8.toUtf8(source) :> Result.debug :> Bytes.toNative :> Result.debug;
+  Won.decode(wire) :> Result.debug
+};
+
+let string = match {
+  W.Text(bytes) => { Utf8.fromUtf8(bytes) :> Result.debug },
+  _ => { Panic("WON view: expected text") },
+};
+
+let attribute = (attributes, name) => {
+  List.find(attributes, (entry) => { let (key, _) = entry; key == name })
+};
+
+let className = (attributes) => {
+  match(attribute(attributes, "className")) {
+    Some(entry) => { let (_, value) = entry; string(value) },
+    None => { "" },
+  }
+};
+
+let click = (attributes) => {
+  match(attribute(attributes, "onClick")) {
+    Some(entry) => {
+      let (_, value) = entry;
+      match(value) {
+        W.Tag("Action", [], body) => { Some(string(body)) },
+        _ => { Panic("WON view: onClick must be Action(\"name\")") },
+      }
+    },
+    None => { None },
+  }
+};
+
+let validateAttributes = (attributes) => {
+  List.map(attributes, (entry) => {
+    let (key, _) = entry;
+    if (key == "className" || key == "onClick") { void }
+    else { Panic("WON view: unsupported property " ++ key) }
+  });
+  void
+};
+
+let textNode = (path, value) => {
+  let tag = "span";
+  createElement(tag, JSON{ key: path, children: value })
+};
+
+let rec indexed = (items, index) => {
+  match(items) {
+    [] => { [] },
+    [item, ..rest] => { [(index, item), ..indexed(rest, index + 1)] },
+  }
+};
+
+let rec renderAt = (bindings: Bindings, path: String, value: W.Value): View => {
+  match(value) {
+    W.Text(_) => { textNode(path, string(value)) },
+    W.Tag("Bind", [], body) => { textNode(path, bindings.text(string(body))) },
+    W.Tag(tag, attributes, body) => {
+      validateAttributes(attributes);
+      let children = match(body) {
+        W.List(items) => { List.map(indexed(items, 0), (entry) => { let (index, child) = entry; renderAt(bindings, path ++ "." ++ Text.of(index), child) }) },
+        W.Null => { [] },
+        _ => { [renderAt(bindings, path ++ ".0", body)] },
+      };
+      let classes = className(attributes);
+      let nodes = Js.Array.fromList(children);
+      match(click(attributes)) {
+        Some(action) => {
+          createElement(tag, .{
+            key = path,
+            className = classes,
+            children = nodes,
+            onClick = (_) => { bindings.action(action) },
+          })
+        },
+        None => {
+          createElement(tag, JSON{ key: path, className: classes, children: nodes })
+        },
+      }
+    },
+    _ => { Panic("WON view: expected an element tag, Bind, or text") },
+  }
+};
+
+let render = (bindings, template) => { renderAt(bindings, "view", template) };

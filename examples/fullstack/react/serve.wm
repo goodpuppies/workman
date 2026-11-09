@@ -1,0 +1,15 @@
+from js.global("Deno") import unsafe { serve, readTextFileSync };
+from js.global import unsafe { URL, Response };
+
+let main = () => {
+  let html = readTextFileSync("index.html");
+  let script = readTextFileSync("dist/app.js");
+  serve(JSON{ hostname: "127.0.0.1", port: 5173 }, (request, _) => {
+    let url = URL.new(request.url);
+    match(url.pathname) {
+      "/" => { Response.new(html, JSON{ headers: JSON{ "content-type": "text/html; charset=utf-8" } }) },
+      "/app.js" => { Response.new(script, JSON{ headers: JSON{ "content-type": "text/javascript; charset=utf-8" } }) },
+      _ => { Response.new("Not found", JSON{ status: 404 }) },
+    }
+  })
+};

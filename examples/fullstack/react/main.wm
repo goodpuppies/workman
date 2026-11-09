@@ -1,0 +1,18 @@
+from "./app.wm" import { app };
+from js.module("npm:react@19.2.0") import unsafe { createElement };
+from js.module("npm:react-dom@19.2.0/client") import unsafe { createRoot };
+from js.global("document") import unsafe { getElementById };
+
+let main = () => {
+  let container = getElementById("root");
+  match(container) {
+    Some(mount) => {
+      let root = createRoot(mount);
+      -- React passes props; app itself is a zero-argument WM function.
+      let component = (_) => { app() };
+      let tree = createElement(component, JSON{});
+      root.render(tree)
+    },
+    None => { Panic("Missing #root mount element") },
+  }
+};
