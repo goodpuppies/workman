@@ -555,6 +555,9 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
           ),
       );
       if (mapped) return { name: path.at(-1)!, ...mapped };
+      // A callable whose signatures cannot be represented is not a value getter.
+      // Otherwise a zero-argument method call can silently return the function itself.
+      if (propertyType.getCallSignatures().length > 0) return undefined;
       const type = typeExprFromTsType(checker, propertyType);
       if (!type) return undefined;
       return {
