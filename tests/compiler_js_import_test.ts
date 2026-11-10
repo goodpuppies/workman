@@ -72,7 +72,7 @@ Deno.test("imports lexical JavaScript module metadata directly", async () => {
   expectBinding(result.env, "filename", { type: "Option<String>!", vars: 0 });
   expectBinding(result.env, "dirname", { type: "Option<String>!", vars: 0 });
   expectBinding(result.env, "resolve", { type: "String -> String!", vars: 0 });
-  expectBinding(result.env, "assetPath", { type: "Result<String, Js.Error>!", vars: 0 });
+  expectBinding(result.env, "assetPath", { type: "String!", vars: 0 });
 
   const js = await compile(`
     from js.meta import { url };

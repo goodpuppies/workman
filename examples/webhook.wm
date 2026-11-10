@@ -1,5 +1,4 @@
 from js.global import unsafe {
-  AbortController,
   Array,
   fetch,
   Response,
@@ -8,6 +7,7 @@ from js.global import unsafe {
   URL,
   Uint8Array,
 };
+from js.global import { AbortController };
 from js.global("Array") import unsafe { from as arrayFrom };
 from js.global import type { AbortController, Request, TextEncoder, Uint8Array, URL };
 from js.global("crypto.subtle") import unsafe {
@@ -66,7 +66,7 @@ let hexFromBuffer = (buffer) => {
 };
 
 let encodeText = (encoder, text) => {
-  encoder :> .encode(text) :> try
+  encoder :> .encode(text)
 };
 
 let verifyGithubSignature = (signature, bodyText) => {
@@ -144,7 +144,7 @@ let handleRequest = (req, info) => {
   let method = req :> .method :> try;
   let urlText = req :> .url :> try;
   let url = URL.new(urlText);
-  let path = url :> .pathname :> try;
+  let path = url :> .pathname;
 
   if (path == "/mock-discord") {
     handleMockDiscord(req)
@@ -187,7 +187,7 @@ let handleRequest = (req, info) => {
 };
 
 let runSimulation = () => {
-  let ac = AbortController.new();
+  let ac = AbortController.new() :> try;
   let signal = ac :> .signal :> try;
   let server = serve(JSON{ port: 8080, signal: signal }, handleRequest);
   log("Server started on http://localhost:8080");

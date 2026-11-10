@@ -250,18 +250,13 @@ Deno.test("explicit imports take precedence over C header wildcards", async () =
     new Map([[
       "/test/main.wm",
       `
-    from c.header("stdio.h") import unsafe { puts, fflush };
-    from c.header("stdio.h") import unsafe *;
-    from "host/c/pointer.wm" import * as Pointer;
-    let main = () => {
-      puts(Some(Pointer.fromString("explicit")));
-      // C stdout is buffered when captured; flush before the Deno process exits.
-      fflush(None);
-    };
+    from c.header("stdlib.h") import unsafe { abs };
+    from c.header("stdlib.h") import unsafe *;
+    let main = () => { print(abs(-17)) };
   `,
     ]]),
   );
-  assertEquals(output, "explicit\n");
+  assertEquals(output, "17\n");
 });
 
 Deno.test("unqualified FFI wildcard imports require unsafe C header reflection", async () => {
@@ -748,7 +743,8 @@ Deno.test("primitive receiver calls and reflected globals need no application Ja
     from js.global("Number") import { isSafeInteger };
     let unwrap = match { Ok(value) => { value }, Err(_) => { Panic("host failure") } };
     let main = () => {
-      print("  hello  " :> .trim :> unwrap);
+      let trim = "  hello  " :> .trim;
+      print(trim() :> unwrap);
       print("  hello  " :> .trim() :> unwrap);
       print("hello" :> .indexOf("l", 0) :> unwrap);
       print("hello" :> .length :> unwrap);

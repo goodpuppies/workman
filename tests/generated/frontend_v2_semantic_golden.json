@@ -117,7 +117,7 @@
     "examples/use_math.wm": "16ca8529910e58581b85ef7ce4a279033fb35c09f9e59d5298b81cdfcb1eabdb",
     "examples/weather.wm": "ed6cc99ace978713f98e41a6ffe9b1bfe545de9cf9ed7248ac35850534f4963d",
     "examples/webgpu_compute.wm": "7e9c54c5ceaeb255a1817116c848c00e6d729c3d1214dd545d0208361deec7c4",
-    "examples/webhook.wm": "a89a0b15b21e31bf7462504d4159be2fbfb58dd70764c1a87f8024745aaba3ca",
+    "examples/webhook.wm": "c25b705890959485696b43e5eeb2a530a398ae92422af9a8d166a998f753306c",
     "examples/wmslang_catalytic_ocean/main.wm": "b79c9339075440b38f6b5b24fdf369601c0fdf21cb1eaed94a0530c060eecaad",
     "examples/wmslang_class4_loom/main.wm": "479c995244a2ed65941f98d59ac9d1afb37bbc95e1824aa8cbfea356d7fa1e9f",
     "examples/wmslang_feedback_window/main.wm": "ce0237f3da1d71ac533c0d4d1e51f4f43b2d7d3c23341d784939e3ad085c6631",

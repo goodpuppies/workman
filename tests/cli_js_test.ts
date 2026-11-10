@@ -206,7 +206,9 @@ Deno.test("cli run marshals None to null for nullable FFI parameters", async () 
   await Deno.writeTextFile(
     input,
     `
-      from js.module(${JSON.stringify(fixture)}) import unsafe { loadLocalShader as load: (Option<String>, Option<String>) -> Bool };
+      from js.module(${
+      JSON.stringify(fixture)
+    }) import unsafe { loadLocalShader as load: (Option<String>, Option<String>) -> Bool };
       from js.module(${JSON.stringify(fixture)}) import { wasNull, wasUndefined };
       let show = (result) => {
         match(result) {
@@ -407,9 +409,7 @@ Deno.test("cli run exposes literal lexical import.meta values", async () => {
       let main = () => {
         let assetPath = URL.new("./asset.txt", url) :> .pathname;
         print(url :> .endsWith("/main.mjs") :> Result.getOr(false));
-        print(assetPath :> Result.map((path) => {
-          path :> .endsWith("/asset.txt") :> Result.getOr(false)
-        }) :> Result.getOr(false));
+        print(assetPath :> .endsWith("/asset.txt") :> Result.getOr(false));
         print(isMain);
         print(resolve("./asset.txt") :> .endsWith("/asset.txt") :> Result.getOr(false))
       };

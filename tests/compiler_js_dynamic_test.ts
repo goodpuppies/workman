@@ -637,9 +637,9 @@ Deno.test("Response.json() result feeds a following then", async () => {
     let fetchJson = (url) => {
       let requestUrl = url ++ "";
       fetch(requestUrl) :> Task.andThen((res) => {
-        let ok = res :> .ok :> try;
+        let ok = res :> .ok;
         if (!ok) {
-          let status = res :> .status :> try;
+          let status = res :> .status;
           Panic("HTTP " ++ (status :> .toString() :> try) ++ " fetching " ++ requestUrl)
         } else {
           res :> .json()
