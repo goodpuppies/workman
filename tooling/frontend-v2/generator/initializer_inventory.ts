@@ -24,6 +24,7 @@ const stateBindings: Readonly<Record<string, string>> = Object.freeze({
   nextLiftId: "nextLiftId",
   nextAnonymousMatchId: "nextAnonymousMatchId",
   nextPlaceholderId: "nextPlaceholderId",
+  nextPipelineId: "nextPipelineId",
 });
 
 export function inventoryInitializer(grammar: WorkmanGrammarIr): InitializerInventory {

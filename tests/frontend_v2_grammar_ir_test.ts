@@ -35,29 +35,29 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 172);
+  assertEquals(inventory.ruleCount, 179);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 267,
+    unclassified: 277,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 266,
+    action: 276,
     any: 4,
-    choice: 80,
-    class: 58,
+    choice: 84,
+    class: 60,
     group: 34,
-    labeled: 364,
-    literal: 404,
-    oneOrMore: 13,
+    labeled: 378,
+    literal: 415,
+    oneOrMore: 14,
     optional: 111,
-    ruleRef: 869,
+    ruleRef: 892,
     semanticAnd: 1,
-    sequence: 293,
-    simpleNot: 54,
+    sequence: 299,
+    simpleNot: 56,
     text: 8,
-    zeroOrMore: 62,
+    zeroOrMore: 63,
   });
 });
 
@@ -70,19 +70,22 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "e5301f005c1624708607bfa78389cea4d80f196bd5d38d68484e7166aec6bce5",
+    "7bb7476d8f9e4934164c9a06f19f57d8b73c82198b672c2ecb7ee79938a28d18",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 259);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 266);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [
       "Start:root.expression.elements.0",
       "TypeDeclBody:root",
       "MatchFn:root",
+      "PipelineInput:root",
+      "PipelineExpression:root",
+      "PipelinePipe:root",
       "Binary:root",
       "Pipe:root",
       "Postfix:root",
@@ -99,8 +102,10 @@ Deno.test("frontend-v2 inventories every initializer helper as a named WM bounda
     { jsName: "nextLiftId", wmName: "nextLiftId", initialValue: 0 },
     { jsName: "nextAnonymousMatchId", wmName: "nextAnonymousMatchId", initialValue: 0 },
     { jsName: "nextPlaceholderId", wmName: "nextPlaceholderId", initialValue: 0 },
+    { jsName: "nextPipelineId", wmName: "nextPipelineId", initialValue: 0 },
   ]);
   assertEquals(initializer.helpers.map((helper) => helper.jsName), [
+    "pipelineLambdaParams",
     "decodeLiteralBody",
     "span",
     "node",
@@ -154,7 +159,7 @@ Deno.test("frontend-v2 generator contract enforces the exception cap and known r
     recoveries: frontendV2RecoveryAnnotations,
   } as const;
   validateGeneratorContract({ ...base, exceptions: [] });
-  assertEquals(frontendV2RecoveryAnnotations.length, 28);
+  assertEquals(frontendV2RecoveryAnnotations.length, 30);
   assertEquals(
     frontendV2RecoveryAnnotations.map(({ rule, token }) => `${rule}:${token}`),
     [
@@ -174,6 +179,8 @@ Deno.test("frontend-v2 generator contract enforces the exception cap and known r
       "AnonymousMatchFn:}",
       "LambdaBlock:{",
       "LambdaBlock:}",
+      "PipelineLambdaBlock:{",
+      "PipelineLambdaBlock:}",
       "JsonExpr:{",
       "JsonExpr:}",
       "RecordExpr:{",

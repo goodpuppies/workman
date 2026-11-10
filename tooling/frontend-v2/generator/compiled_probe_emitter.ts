@@ -542,6 +542,7 @@ function emitUnaryParser(
 const probeBeforeRecoveryRules = new Set([
   "Start",
   "LambdaBody",
+  "BareLambdaBody",
   "JsonExpr",
   "Primary",
 ]);

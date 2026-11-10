@@ -3,6 +3,21 @@
   let nextLiftId = 0;
   let nextAnonymousMatchId = 0;
   let nextPlaceholderId = 0;
+  let nextPipelineId = 0;
+  function pipelineLambdaParams(body) {
+    let input = body;
+    while (input) {
+      if (input.kind === "Block") input = input.items[0] ?? input.result;
+      else if (input.kind === "Pipe" || input.kind === "Binary") input = input.left;
+      else if (input.kind === "If") input = input.cond;
+      else if (input.kind === "FfiCall" || input.kind === "FfiGet") input = input.receiver;
+      else if (input.kind === "Ascribed") input = input.value;
+      else break;
+    }
+    return input?.kind === "Var" && input.name.startsWith("$wm_pipe_")
+      ? [{ pattern: { kind: "PVar", name: input.name, node: input.node }, node: input.node }]
+      : [];
+  }
   function decodeLiteralBody(body) {
     const simple = { a: "\x07", b: "\b", t: "\t", n: "\n", v: "\v", f: "\f", r: "\r",
       '"': '"', "'": "'", "\\": "\\", "`": "`", "$": "$" };
@@ -403,11 +418,11 @@ Lambda
         trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
       }, location());
     }
-  / returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
+  / returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:BareLambdaBody
     trailingReturnAnnotation:LambdaReturnAnnotation? {
       return at({
         kind: "Lambda",
-        params: [],
+        params: pipelineLambdaParams(parsed.body),
         directives: parsed.directives,
         body: parsed.body,
         captureClause: captureClause ?? undefined,
@@ -431,11 +446,11 @@ GroupedLambda
         trailingReturnAnnotation: trailingReturnAnnotation ?? undefined,
       }, location());
     }
-  / returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:LambdaBody
+  / returnAnnotation:LambdaReturnAnnotation? captureClause:CaptureClause? _ arrow:"=>" _ parsed:BareLambdaBody
     trailingReturnAnnotation:LambdaReturnAnnotation? {
       return at({
         kind: "Lambda",
-        params: [],
+        params: pipelineLambdaParams(parsed.body),
         directives: parsed.directives,
         body: parsed.body,
         captureClause: captureClause ?? undefined,
@@ -461,6 +476,50 @@ CaptureList
   = first:Identifier rest:(_ "," _ name:Identifier { return name; })* _ ","? {
       return [first, ...rest];
     }
+
+// Bare lambdas may start a pipeline without spelling its input parameter.
+BareLambdaBody = PipelineLambdaBlock / body:PipelineExpression { return { directives: [], body }; } / LambdaBody
+PipelineLambdaBlock = "{" _ seq:PipelineBlockSeqBody _ "}" {
+  return { directives: [], body: at({ kind: "Block", items: seq.items, result: seq.result }, location()) };
+}
+PipelineBlockSeqBody
+  = first:PipelineExpression _ semi:SemiToken _ tail:BlockSeqBody {
+      return { items: [first, ...tail.items], result: tail.result };
+    }
+  / result:PipelineExpression { return { items: [], result }; }
+PipelineInput = !(!":>") { return at({ kind: "Var", name: `$wm_pipe_${nextPipelineId++}` }, location()); }
+PipelineOperand = operand:PipelinePipe { return operand; }
+PipelineExpression = left:PipelineOperand rest:(_ op:("||" / "&&" / "==" / "!=" / "<=" / ">=" / "<" / ">" / "++" / "+" / "-" / "*" / "/" / "%") _ right:BinaryOperand { return { op, right }; })*
+  {
+    const levels = [["||"], ["&&"], ["==", "!="], ["<=", ">=", "<", ">"], ["++", "+", "-"], ["*", "/", "%"]];
+    const fold = (level, head, items) => {
+      if (level === levels.length) return head;
+      const segments = [{ op: undefined, head, items: [] }];
+      for (const item of items) {
+        if (levels[level].includes(item.op)) segments.push({ op: item.op, head: item.right, items: [] });
+        else segments.at(-1).items.push(item);
+      }
+      const folded = segments.map((segment) => ({ op: segment.op, value: fold(level + 1, segment.head, segment.items) }));
+      return folded.slice(1).reduce((left, r) => at({ kind: "Binary", op: r.op, left, right: r.value }, location()), folded[0].value);
+    };
+    return fold(0, left, rest);
+  }
+PipelinePipe = left:PipelineInput rest:(_ ":>" _ right:(PipeConditional / PipeMember / Postfix) { return { right, loc: location() }; })+
+  {
+    return rest.reduce((left, segment) => {
+      const right = segment.right;
+      const exprSpan = spanFromStartToLoc(left.node, segment.loc);
+      if (right.kind === "PipeConditional") {
+        return atSpan({ kind: "If", cond: left, thenExpr: right.thenExpr, elseExpr: right.elseExpr }, exprSpan);
+      }
+      if (right.kind === "PipeMember") {
+        return right.args === undefined
+          ? atSpan({ kind: "FfiGet", receiver: left, path: right.path }, exprSpan)
+          : atSpan({ kind: "FfiCall", receiver: left, path: right.path, args: right.args }, exprSpan);
+      }
+      return atSpan({ kind: "Pipe", left, right }, exprSpan);
+    }, left);
+  }
 
 LambdaBody
   = LambdaBlock

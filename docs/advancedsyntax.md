@@ -38,6 +38,38 @@ expression holes such as `f((_))` are not placeholder forms. Existing wildcard
 patterns and parameters, including `Some(_)` in a pattern and `_ => value`,
 retain their meanings.
 
+## Pipeline lambdas
+
+A bare `=>` whose body starts with `:>` introduces an implicit input parameter:
+
+```wm
+let increment = => :> add(1);
+-- equivalent to: value => value :> add(1)
+
+let transform = => { :> first() :> second() };
+-- equivalent to: value => { value :> first() :> second() }
+```
+
+Whitespace and comments may appear before the leading `:>`. The same pipe rules
+apply inside the body, including argument insertion, member stages, conditionals,
+and multiple stages. A braced body can continue with ordinary statements after
+its initial pipeline. The implicit parameter has a fresh internal name, so nested
+pipeline lambdas have independent inputs and do not capture authored names.
+
+This keeps a carrier continuation visually continuous:
+
+```wm
+fetch(spec, archivePath)
+  :> Monad.via Task => { :> unpack("vendor/library", 1) }
+  :> Task.recover(error => Panic(error))
+```
+
+As with other expression lambdas, a braceless body consumes the following pipe
+stages. Use braces to end the continuation before resuming the outer pipeline.
+A bare arrow with an ordinary body, such as `=> { nextTask }`, still takes `Void`.
+The shorthand supplies only the input to the first pipe; it does not implicitly
+bind inputs for later statements in the block.
+
 ## Piped conditionals
 
 A Boolean can flow directly into an `if` stage:

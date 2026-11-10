@@ -414,6 +414,22 @@ let buildBlockSeqBody = (value: ParseValue, span: Span) => {
   }
 };
 
+let buildPipelineBlockSeqBody = (value: ParseValue, span: Span) => {
+  match(value) {
+    ChoiceParseValue(0, SequenceParseValue([
+      NodeParseValue(first), EmptyParseValue, TokenParseValue(terminator), EmptyParseValue,
+      NodeParseValue(BlockBodyNode(items, result, tailSpan)),
+    ])) => {
+      let itemSpan: Span = .{ start = span.start, end = terminator.span.end };
+      NodeParseValue(BlockBodyNode([BlockItemNode(first, surfaceValue(terminator), itemSpan), ..items], result, span))
+    },
+    ChoiceParseValue(1, NodeParseValue(result)) => {
+      NodeParseValue(BlockBodyNode([], Some(result), span))
+    },
+    _ => { RuleParseValue("PipelineBlockSeqBody", value, span) },
+  }
+};
+
 let buildParenSeqItem = (value: ParseValue, span: Span) => {
   match(value) {
     SequenceParseValue([

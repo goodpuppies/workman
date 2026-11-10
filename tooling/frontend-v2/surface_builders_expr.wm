@@ -416,6 +416,10 @@ let binaryOperand = (value: ParseValue) => {
       let operand: BinaryOperand = .{ node = node, span = span };
       Some(operand)
     },
+    RuleParseValue("PipelineOperand", NodeParseValue(node), span) => {
+      let operand: BinaryOperand = .{ node = node, span = span };
+      Some(operand)
+    },
     _ => { None },
   }
 };

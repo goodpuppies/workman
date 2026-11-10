@@ -1,4 +1,4 @@
-from "./generated/surface_types.wm" import { Span };
+from "./generated/surface_types.wm" import { Span, PipelineInputNode };
 from "./surface_builders_won.wm" import { buildWon };
 from "./surface_parse_value.wm" import { ParseValue, EmptyParseValue, TokenParseValue, SequenceParseValue, ChoiceParseValue, OptionalParseValue, RepeatedParseValue, NodeParseValue, NodeListParseValue, TokenListParseValue, RuleParseValue };
 from "./surface_builder_support.wm" import {
@@ -23,7 +23,7 @@ from "./surface_builders_expr.wm" import {
 from "./surface_builders_postfix.wm" import { buildPostfix };
 from "./surface_builders_pattern.wm" import {
   buildLetPattern, buildParamPattern, buildParam, buildParamList, buildCaptureList, buildCaptureClause, buildLambda,
-  buildPattern, buildPatternAtom, buildListPattern, buildBlockSeqItem, buildBlockSeqBody,
+  buildPattern, buildPatternAtom, buildListPattern, buildBlockSeqItem, buildBlockSeqBody, buildPipelineBlockSeqBody,
   buildParenSeqItem, buildParenSeqBody, buildParenSeq, buildBlockLike
 };
 from "./surface_builders_record_pattern.wm" import {
@@ -160,6 +160,11 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "ParenSeq" => { buildParenSeq(value, span) },
             "Block" => { buildBlockLike(name, value, span) },
             "LambdaBlock" => { buildBlockLike(name, value, span) },
+            "PipelineLambdaBlock" => { buildBlockLike(name, value, span) },
+            "PipelineBlockSeqBody" => { buildPipelineBlockSeqBody(value, span) },
+            "PipelineInput" => { NodeParseValue(PipelineInputNode(span)) },
+            "PipelineExpression" => { buildBinary(value, span) },
+            "PipelinePipe" => { buildPipe(value, span) },
             "LetBinding" => { buildLetBinding(value, span) },
             "LetDecl" => { buildLetDecl(value, span) },
             "ExplicitCall" => { buildExplicitCall(value, span) },

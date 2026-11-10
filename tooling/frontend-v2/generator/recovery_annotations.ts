@@ -8,6 +8,7 @@ const braceDelimitedRules = [
   "MatchFn",
   "AnonymousMatchFn",
   "LambdaBlock",
+  "PipelineLambdaBlock",
   "JsonExpr",
   "RecordExpr",
   "Block",

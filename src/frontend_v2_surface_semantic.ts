@@ -59,6 +59,7 @@ type Context = {
   nextLiftId: number;
   nextAnonymousMatchId: number;
   nextPlaceholderId: number;
+  nextPipelineId: number;
   nextTypeGroupId: number;
   wonSpan?: SourceSpan;
   wonLiterals?: WonLiteralInfo[];
@@ -82,6 +83,7 @@ export function surfaceProgramToModule(
     nextLiftId: 0,
     nextAnonymousMatchId: 0,
     nextPlaceholderId: 0,
+    nextPipelineId: 0,
     nextTypeGroupId: 0,
     inlineRecords: [],
   };
@@ -838,6 +840,8 @@ function projectExpr(node: WmVariant, context: Context): Expr {
         ...located,
       };
     }
+    case "PipelineInputNode":
+      return { kind: "Var", name: `$wm_pipe_${context.nextPipelineId++}`, ...located };
     case "PipeExpressionNode": {
       const [leftNode, , rightNode] = fields(node);
       const left = projectExpr(variant(leftNode), context);
@@ -1303,6 +1307,24 @@ function projectListExpr(
   return result;
 }
 
+function pipelineLambdaParams(body: Expr): Param[] {
+  let input: Expr | undefined = body;
+  while (input) {
+    if (input.kind === "Block") {
+      const first: Decl | Expr | undefined = input.items[0] ?? input.result;
+      if (!first || isSemanticDecl(first)) return [];
+      input = first;
+    } else if (input.kind === "Pipe" || input.kind === "Binary") input = input.left;
+    else if (input.kind === "If") input = input.cond;
+    else if (input.kind === "FfiCall" || input.kind === "FfiGet") input = input.receiver;
+    else if (input.kind === "Ascribed") input = input.value;
+    else break;
+  }
+  return input?.kind === "Var" && input.name.startsWith("$wm_pipe_")
+    ? [{ pattern: { kind: "PVar", name: input.name, node: input.node }, node: input.node }]
+    : [];
+}
+
 function projectLambda(node: WmVariant, context: Context): Expr {
   const lambdaFields = fields(node, "LambdaExpressionNode");
   // Keep the checked-in stage-0 frontend able to compile the next self-hosted stage after the
@@ -1321,7 +1343,9 @@ function projectLambda(node: WmVariant, context: Context): Expr {
     : { body: projectExpr(bodyVariant, context), directives: [] };
   return {
     kind: "Lambda",
-    params: parametersNode ? projectParameters(variant(parametersNode), context) : [],
+    params: parametersNode
+      ? projectParameters(variant(parametersNode), context)
+      : pipelineLambdaParams(projectedBody.body),
     directives: projectedBody.directives,
     body: projectedBody.body,
     ...(captureNode ? { captureClause: projectCaptureClause(variant(captureNode), context) } : {}),
@@ -1639,6 +1663,7 @@ function surfaceTokenSpan(value: unknown, context: Context): SourceSpan {
 }
 
 function spanOf(node: WmVariant): SourceSpan {
+  if (node.name === "PipelineInputNode") return sourceSpan(payload(node));
   const nodeFields = fields(node);
   return sourceSpan(nodeFields.at(-1));
 }

@@ -15,7 +15,7 @@ from "./generated/surface_types.wm" import {
   GroupedTypeNode, TupleTypeNode,
   TypeArgumentsNode, LongNameNode, LiteralExpressionNode,
   InterpolatedStringExpressionNode, InterpolatedStringTextNode, StringInterpolationNode,
-  BinaryExpressionNode, UnaryExpressionNode, PipeExpressionNode, PipeMemberNode, ArgumentPlaceholderNode,
+  BinaryExpressionNode, UnaryExpressionNode, PipeExpressionNode, PipelineInputNode, PipeMemberNode, ArgumentPlaceholderNode,
   ApplyExpressionNode,
   ExplicitCallNode, SpaceCallNode, PostfixFieldNode, NameExpressionNode
 };
@@ -519,7 +519,7 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
   (BinaryExpressionNode(left, operator, right, span), Var(depth), Var(materializeMarks)) => {
     match((renderSurfaceNodeAt(left, depth, materializeMarks), renderSurfaceNodeAt(right, depth, materializeMarks))) {
       (Some(leftText), Some(rightText)) => {
-        Some(leftText ++ " " ++ renderToken(operator) ++ " " ++ rightText)
+        Some(leftText ++ (if (leftText == "") { "" } else { " " }) ++ renderToken(operator) ++ " " ++ rightText)
       },
       _ => { None },
     }
@@ -531,10 +531,11 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
     }
   },
   (ArgumentPlaceholderNode(token, span), Var(depth), Var(materializeMarks)) => { Some(renderToken(token)) },
+  (PipelineInputNode(span), Var(depth), Var(materializeMarks)) => { Some("") },
   (PipeExpressionNode(left, operator, right, span), Var(depth), Var(materializeMarks)) => {
     match((renderSurfaceNodeAt(left, depth, materializeMarks), renderSurfaceNodeAt(right, depth, materializeMarks))) {
       (Some(leftText), Some(rightText)) => {
-        Some(leftText ++ " " ++ renderToken(operator) ++ " " ++ rightText)
+        Some(leftText ++ (if (leftText == "") { "" } else { " " }) ++ renderToken(operator) ++ " " ++ rightText)
       },
       _ => { None },
     }
