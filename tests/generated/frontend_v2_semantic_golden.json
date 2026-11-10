@@ -90,6 +90,7 @@
     "examples/http.wm": "92b67be8cec9be014052e7a9ce572ab205fa9c5ed7a77135200c1415bebf0826",
     "examples/math.wm": "768396a20a9319c86c8138facff1af66a0f40f93fc685e0ea684f022bd1fe970",
     "examples/node-gotchi.wm": "c3c38843bcff2f025d45840456aae868f3afc446abf68784516b045f0805433f",
+    "examples/point_free.wm": "e8df7f49323c3eae55ea09a8b97658b9719070c8b4e7e0c3e9546605b0795448",
     "examples/portscan.wm": "c8a5c039faa52f3548f7b9f541895dceec2b2dea2bc5870a8db2d1ca9f957da1",
     "examples/raylib/colony/main3d.wm": "1e6ef1389118c5cdbea2b538aea51d86f6db2cefe10a6d3c110ec622cb0b512a",
     "examples/raylib/colony/sim.wm": "938fab3e8d75ca27d8cbac12e7c3c59790413abc6f6967118e1d5868b5c368eb",

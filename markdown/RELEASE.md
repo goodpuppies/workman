@@ -6,7 +6,8 @@
    in the release review.
 3. Run `deno task test` and resolve failures before proceeding.
    TODO: make this task also run `wm test`.
-4. Present the release changes, test results, release commit and proposed tag to
+4. Write release notes in `markdown/releases/<version>.md`, following the guidance below.
+5. Present the release changes, test results, release commit and proposed tag to
    the user. Commit only with authorization under `AGENTS.md`. After the user
    confirms, push the release commit, tag that exact pushed commit with the
    release version, and push the tag.
@@ -45,3 +46,16 @@ lockfile changes and include only those related to the release.
 Run `deno publish --dry-run` against the release contents before pushing a tag.
 It validates the actual JSR package without uploading it and catches packaging
 problems such as paths that differ only in letter case.
+
+## Release notes
+
+Versioned release notes describe changes in that release and any upgrade steps. Do not add a
+known-issues or known-limitations list, or carry unresolved issues forward between versions. An
+accurate inventory would be too long; a selective list would give a misleading picture.
+
+Create or update a proper issue in `markdown/issues/` instead, recording its status, reproduction,
+expected and actual behavior, and relevant evidence. Keep known issues and their ongoing discussion
+there, rather than in `markdown/releases/<version>.md`.
+
+Validation reports may record failed checks, skipped tests, and release blockers, linking to the
+corresponding issues. They are evidence for the release decision, not a general issue backlog.
