@@ -22,6 +22,8 @@ A repository's `pak.wm` can export named commands for `wm run dev`, `wm run buil
 and other project workflows. These commands use installed tools and the current
 WM compiler; they do not require a package/version recipe or install tools.
 See [Project commands](../../docs/project-commands.md) for the API and example.
+The experimental [file helpers](../../docs/file-helpers.md) provide verified
+downloads and archive extraction for ordinary setup code.
 
 ## Package-owned dependencies (initial implementation)
 

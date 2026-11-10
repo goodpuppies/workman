@@ -5,7 +5,8 @@
 // those. pakman's .wm code never reaches into Deno directly, which keeps the
 // boundary small for the later rewrite off the JS APIs.
 
-const userAgent = "pakman/0.1 (+https://github.com/goodpuppies)";
+import { extract } from "../api/js/files.ts";
+export { extract } from "../api/js/files.ts";
 import { libraryImport } from "../../../src/host_modules.ts";
 export { packageDirectories, addPackageDirectory } from "../../../src/user_config.ts";
 export { pakmanStateDirectory } from "../../../src/user_paths.ts";
@@ -104,32 +105,7 @@ export function quote(text: string): string {
 // ---------------------------------------------------------------------------
 // Network
 
-function headers(): HeadersInit {
-  const token = Deno.env.get("GITHUB_TOKEN");
-  return token
-    ? { "User-Agent": userAgent, "Authorization": `Bearer ${token}` }
-    : { "User-Agent": userAgent };
-}
-
-/** Downloads `url` to `dest` (via a temporary file, so `dest` never holds a partial download). */
-export async function download(url: string, dest: string): Promise<void> {
-  if (url.startsWith("file://")) {
-    const source = new URL(url);
-    if (source.hostname !== "" && source.hostname !== "localhost") throw new Error("local source must be on this machine");
-    await Deno.copyFile(source, `${dest}.part`);
-    await Deno.rename(`${dest}.part`, dest);
-    return;
-  }
-  const response = await fetch(url, { headers: headers() });
-  if (!response.ok || !response.body) {
-    await response.body?.cancel();
-    throw new Error(`GET ${url}: HTTP ${response.status}`);
-  }
-  const partial = `${dest}.part`;
-  const file = await Deno.open(partial, { write: true, create: true, truncate: true });
-  await response.body.pipeTo(file.writable);
-  await Deno.rename(partial, dest);
-}
+export { download } from "../api/js/files.ts";
 
 // ---------------------------------------------------------------------------
 // Hashing
@@ -452,50 +428,6 @@ export async function runCapture(cmd: string, args: string[]): Promise<string> {
     throw new Error(message === "" ? `${cmd} exited with ${code}` : message);
   }
   return decoder.decode(stdout);
-}
-
-async function bsdtar(args: string[], stdoutTo?: string): Promise<void> {
-  const result = await new Deno.Command("bsdtar", {
-    args,
-    stdout: stdoutTo ? "piped" : "null",
-    stderr: "piped",
-  }).output();
-  if (result.code !== 0) throw new Error(`bsdtar failed:\n${new TextDecoder().decode(result.stderr).trim()}`);
-  if (stdoutTo) await Deno.writeFile(stdoutTo, result.stdout);
-}
-
-/**
- * Unpacks an archive with bsdtar (tar of any compression, .deb, .zip, ...).
- * `chain` is the archive file followed by members to open in turn, for archives
- * inside archives; `members` selects paths in the innermost one ([] = all).
- */
-export async function extract(chain: string[], members: string[], dest: string, strip: number, payloadChoices?: string[]): Promise<void> {
-  if (!chain.length) throw new Error("archive chain is empty");
-  await Deno.mkdir(dest, { recursive: true });
-  const temps: string[] = [];
-  try {
-    let current = chain[0];
-    for (const member of chain.slice(1)) {
-      const temp = await Deno.makeTempFile({ prefix: "pakman-nested-" });
-      temps.push(temp);
-      await bsdtar(["-xOf", current, member], temp);
-      current = temp;
-    }
-    if (payloadChoices !== undefined) {
-      const listing = await runCapture("bsdtar", ["-tf", current]);
-      const matches = listing.split("\n").filter((name) => payloadChoices.includes(name));
-      if (matches.length !== 1) {
-        throw new Error(`expected exactly one payload member from [${payloadChoices.join(", ")}], found ${matches.length}`);
-      }
-      const temp = await Deno.makeTempFile({ prefix: "pakman-payload-" });
-      temps.push(temp);
-      await bsdtar(["-xOf", current, matches[0]], temp);
-      current = temp;
-    }
-    await bsdtar(["-xf", current, "-C", dest, `--strip-components=${strip}`, "--no-same-owner", ...members]);
-  } finally {
-    for (const temp of temps) await Deno.remove(temp).catch(() => {});
-  }
 }
 
 // ---------------------------------------------------------------------------

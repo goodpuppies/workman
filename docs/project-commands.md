@@ -78,3 +78,6 @@ revision and reloads the page after a successful restart, resetting browser stat
 
 This interface covers local commands. Managed development environments, build artifact graphs,
 incremental builds, and concurrent process supervision are separate future capabilities.
+
+For setup that downloads and extracts files into the project, use the ordinary
+[file helpers](file-helpers.md) from a runtime function in `pak.wm`.

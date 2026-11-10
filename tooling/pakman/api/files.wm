@@ -1,0 +1,18 @@
+-- Ordinary effectful helpers. Call inside main or another function, not during
+-- project command description evaluation.
+from js.module("./js/files.ts") import unsafe {
+  fetchFile as fetchRaw: (String, String, String, String -> result, String -> result) -> task,
+  unpackFile as unpackRaw: (String, String, Number, Void -> result, String -> result) -> task
+};
+
+record Download = { url: String, sha256: String };
+
+-- Fetch verified bytes to a normal file; reuse it when the hash already matches.
+let fetch: (Download, String) -> Task<String, String> = (download, dest) => {
+  fetchRaw(download.url, download.sha256, dest, (path) => { Ok(path) }, (error) => { Err(error) })
+};
+
+-- Extract into a normal directory. Existing archive members are overwritten.
+let unpack: (String, String, Number) -> Task<Void, String> = (archive, dest, strip) => {
+  unpackRaw(archive, dest, strip, (_) => { Ok(void) }, (error) => { Err(error) })
+};
