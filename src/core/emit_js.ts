@@ -983,9 +983,9 @@ function emitReplPhraseResult(
 }
 
 function emitReplBinding(item: CoreDynamicExport, type: string): string {
-  return `console.log(${JSON.stringify(`${item.name} = `)} + __wm_repl_show(${
-    emitExportRef(item)
-  }) + ${JSON.stringify(` : ${type}`)});`;
+  return `(globalThis.__wm_repl_report ?? console.log)(${
+    JSON.stringify(`${item.name} = `)
+  } + __wm_repl_show(${emitExportRef(item)}) + ${JSON.stringify(` : ${type}`)});`;
 }
 
 function emitReplTypeDecl(decl: Extract<CoreDecl, { kind: "CoreType" }>): string {
@@ -995,7 +995,9 @@ function emitReplTypeDecl(decl: Extract<CoreDecl, { kind: "CoreType" }>): string
     const args = ctor.payload.kind === "TTuple" ? ctor.payload.items : [ctor.payload];
     return `${ctor.name}<${args.map(showTypeExpr).join(", ")}>`;
   }).join(" | ");
-  return `console.log(${JSON.stringify(`type ${decl.name}${params} = ${body}`)});`;
+  return `(globalThis.__wm_repl_report ?? console.log)(${
+    JSON.stringify(`type ${decl.name}${params} = ${body}`)
+  });`;
 }
 
 function emitReplRecordDecl(decl: Extract<CoreDecl, { kind: "CoreRecord" }>): string {
@@ -1003,7 +1005,9 @@ function emitReplRecordDecl(decl: Extract<CoreDecl, { kind: "CoreRecord" }>): st
   const fields = decl.fields.map((field) => `${field.name}: ${showTypeExpr(field.type)}`).join(
     ", ",
   );
-  return `console.log(${JSON.stringify(`record ${decl.name}${params} = { ${fields} }`)});`;
+  return `(globalThis.__wm_repl_report ?? console.log)(${
+    JSON.stringify(`record ${decl.name}${params} = { ${fields} }`)
+  });`;
 }
 
 function showTypeExpr(type: TypeExpr): string {

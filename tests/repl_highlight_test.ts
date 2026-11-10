@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import {
   BASIC_STYLES,
+  highlightReplOutput,
   highlightSpans,
   paintRange,
   terminalHighlightStyles,
@@ -156,4 +157,51 @@ Deno.test("the Workman keyword color is the loading bar's orange", () => {
     paintRange(text, 0, 5, highlightSpans(text), WORKMAN_STYLES),
     "\x1b[38;2;255;106;21mlet\x1b[39m x",
   );
+});
+
+Deno.test("REPL declarations keep keyword and type colors without coloring fields", () => {
+  const text = "record User = { name: String }";
+  assertEquals(
+    highlightReplOutput(text).map(({ start, end, kind }) => `${kind}:${text.slice(start, end)}`),
+    [
+      "keyword:record",
+      "type:User",
+      "type:String",
+    ],
+  );
+});
+
+Deno.test("REPL bindings and function values stay plain with one color for the whole type", () => {
+  for (
+    const text of [
+      "printName = <function> : 'a -> Void! where 'a.name: 'b",
+      "it = <function> : User -> String",
+      "it = void : Void!",
+    ]
+  ) {
+    const start = text.indexOf(" : ") + 3;
+    assertEquals(highlightReplOutput(text), [{ start, end: text.length, kind: "type" }]);
+    assertEquals(
+      paintRange(text, 0, text.length, highlightReplOutput(text), WORKMAN_STYLES),
+      text.slice(0, start) + WORKMAN_STYLES.type + text.slice(start) + "\x1b[39m",
+    );
+  }
+  const type = "'a -> Void! where 'a.name: 'b";
+  assertEquals(highlightReplOutput(type), [{ start: 0, end: type.length, kind: "type" }]);
+});
+
+Deno.test("result type detection skips colons inside record values and strings", () => {
+  for (
+    const text of [
+      'user = { name = "Ellie: User" } : User',
+      'it = Some("type: String") : Option<String>',
+      "it = ':' : Char",
+    ]
+  ) {
+    const spans = highlightReplOutput(text);
+    const start = text.lastIndexOf(" : ") + 3;
+    assertEquals(spans.at(-1), { start, end: text.length, kind: "type" });
+    const painted = paintRange(text, 0, text.length, spans, WORKMAN_STYLES);
+    assertEquals(painted.replace(/\x1b\[[0-9;]*m/g, ""), text);
+  }
 });

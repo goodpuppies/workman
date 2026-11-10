@@ -65,7 +65,7 @@ const KEYWORDS = new Set([
   "else",
   "match",
 ]);
-const CONSTANTS = new Set(["true", "false", "void"]);
+const CONSTANTS = new Set(["true", "false"]);
 
 const COMMAND_NAME = /:[a-zA-Z][^\s;]*/y;
 const NUMBER = /0x[0-9a-fA-F]+|[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
@@ -92,6 +92,39 @@ export function highlightSpans(text: string): HighlightSpan[] {
     if (!replCommandNeedsSemicolon(text)) return spans;
   }
   highlightCode(text, index, spans);
+  return spans;
+}
+
+/** Results keep source colors, with the complete inferred type in one quiet color. */
+export function highlightReplOutput(text: string): HighlightSpan[] {
+  const spans: HighlightSpan[] = [];
+  if (/^(?:record|type)\b/.test(text)) {
+    highlightCode(text, 0, spans);
+    return spans;
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_']*\s*=/.test(text)) {
+    // `:type` prints just a type, including its constraints.
+    return text.trim() ? [{ start: 0, end: text.length, kind: "type" }] : [];
+  }
+  let depth = 0;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === '"' || char === "`") {
+      index = stringEnd(text, index) - 1;
+    } else if (char === "'" && matchAt(CHARACTER, text, index)) {
+      index += matchAt(CHARACTER, text, index)!.length - 1;
+    } else if ("({[".includes(char)) {
+      depth++;
+    } else if (")}]".includes(char)) {
+      depth--;
+    } else if (char === ":" && depth === 0) {
+      highlightCode(text.slice(0, index), 0, spans);
+      const start = index + 1 + /^\s*/.exec(text.slice(index + 1))![0].length;
+      if (start < text.length) spans.push({ start, end: text.length, kind: "type" });
+      return spans;
+    }
+  }
+  highlightCode(text, 0, spans);
   return spans;
 }
 

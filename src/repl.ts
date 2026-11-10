@@ -20,7 +20,7 @@ import {
   replHelpText,
 } from "./repl_commands.ts";
 import { editorPrompts, TerminalEditor } from "./repl_editor.ts";
-import { highlightSpans } from "./repl_highlight.ts";
+import { highlightReplOutput, highlightSpans, paintRange } from "./repl_highlight.ts";
 import { type ReplSettings, replSettings } from "./user_config.ts";
 import { createLoadingBar, type LoadingBar } from "./repl_loading.ts";
 import { observeLibraryLoad } from "./standard_library.ts";
@@ -226,15 +226,22 @@ class PhraseSession {
   /** Accepted `from js...` imports, which can't be re-exported, so every later phrase repeats them. */
   #jsImports: string[] = [];
   #host: ReplHost | undefined;
+  #formatOutput: (text: string) => string;
 
   /**
    * Phrase modules are entries of `sources`, the compile options' `sourceOverrides`, named as if
    * they were in `sourceDirectory`. Emitted code and the host go in `outputDirectory`.
    */
-  constructor(sourceDirectory: string, outputDirectory: string, sources: Map<string, string>) {
+  constructor(
+    sourceDirectory: string,
+    outputDirectory: string,
+    sources: Map<string, string>,
+    formatOutput: (text: string) => string,
+  ) {
     this.#sourceDirectory = sourceDirectory;
     this.#outputDirectory = outputDirectory;
     this.#sources = sources;
+    this.#formatOutput = formatOutput;
   }
 
   #path(name: string): string {
@@ -277,7 +284,11 @@ class PhraseSession {
     }
     const entry = artifacts.find((artifact) => artifact.kind === "entry") ?? artifacts[0];
     if (!entry) throw new Error("compiler produced no REPL artifact");
-    this.#host ??= await ReplHost.start(this.#outputDirectory, this.#sourceDirectory);
+    this.#host ??= await ReplHost.start(
+      this.#outputDirectory,
+      this.#sourceDirectory,
+      this.#formatOutput,
+    );
     const result = await this.#host.run(pathToFileURL(`${output}/${entry.path}`).href);
     if (result.kind === "exited") {
       this.#host = undefined;
@@ -325,6 +336,9 @@ for await (const chunk of Deno.stdin.readable) {
     const { url, marker } = JSON.parse(pending.slice(0, newline));
     pending = pending.slice(newline + 1);
     Deno.exitCode = 0;
+    globalThis.__wm_repl_report = (text) => {
+      console.log(marker + "report:" + JSON.stringify(text));
+    };
     try {
       await import(url);
     } catch (error) {
@@ -347,15 +361,23 @@ class ReplHost {
   #stdout: MarkedStream;
   #stderr: MarkedStream;
 
-  private constructor(child: Deno.ChildProcess) {
+  private constructor(child: Deno.ChildProcess, formatOutput: (text: string) => string) {
     this.#child = child;
     this.#writer = child.stdin.getWriter();
-    this.#stdout = new MarkedStream(child.stdout, (chunk) => Deno.stdout.write(chunk));
+    this.#stdout = new MarkedStream(
+      child.stdout,
+      (chunk) => Deno.stdout.write(chunk),
+      formatOutput,
+    );
     this.#stderr = new MarkedStream(child.stderr, (chunk) => Deno.stderr.write(chunk));
   }
 
   /** Starts a host in `directory` that runs with the configuration of the project at `project`. */
-  static async start(directory: string, project: string): Promise<ReplHost> {
+  static async start(
+    directory: string,
+    project: string,
+    formatOutput: (text: string) => string,
+  ): Promise<ReplHost> {
     const path = `${directory}/host.mjs`;
     await Deno.writeTextFile(path, REPL_HOST_SOURCE);
     await linkProjectPackages(project, directory);
@@ -366,7 +388,7 @@ class ReplHost {
       stdout: "piped",
       stderr: "piped",
     }).spawn();
-    return new ReplHost(child);
+    return new ReplHost(child, formatOutput);
   }
 
   async run(url: string): Promise<HostResult> {
@@ -394,17 +416,23 @@ class ReplHost {
 }
 
 /** Forwards a stream as it arrives and finds the status a marker reports. */
-class MarkedStream {
+export class MarkedStream {
   #reader: ReadableStreamDefaultReader<Uint8Array>;
   #forward: (chunk: Uint8Array) => Promise<unknown>;
   #decoder = new TextDecoder();
   #encoder = new TextEncoder();
   #text = "";
   #ended = false;
+  #formatReport: (text: string) => string;
 
-  constructor(stream: ReadableStream<Uint8Array>, forward: (chunk: Uint8Array) => Promise<unknown>) {
+  constructor(
+    stream: ReadableStream<Uint8Array>,
+    forward: (chunk: Uint8Array) => Promise<unknown>,
+    formatReport: (text: string) => string = (text) => text,
+  ) {
     this.#reader = stream.getReader();
     this.#forward = forward;
+    this.#formatReport = formatReport;
   }
 
   /** Forwards output up to the marker and returns its status, or undefined if the stream ended. */
@@ -414,9 +442,13 @@ class MarkedStream {
       const end = at < 0 ? -1 : this.#text.indexOf("\n", at);
       if (end >= 0) {
         await this.#emit(this.#text.slice(0, at));
-        const code = Number(this.#text.slice(at + marker.length, end));
+        const payload = this.#text.slice(at + marker.length, end);
         this.#text = this.#text.slice(end + 1);
-        return code;
+        if (payload.startsWith("report:")) {
+          await this.#emit(this.#formatReport(JSON.parse(payload.slice("report:".length))) + "\n");
+          continue;
+        }
+        return Number(payload);
       }
       // Keep a possible start of the marker back until the next chunk shows whether it is one.
       const keep = at >= 0 ? this.#text.length - at : Math.min(this.#text.length, marker.length);
@@ -483,7 +515,10 @@ export async function runInteractiveRepl(
   };
   // Only emitted code touches the disk, in the OS temporary directory.
   const temporaryDirectory = await createTemporaryDirectory({ prefix: "wm-repl-" });
-  const session = new PhraseSession(Deno.cwd(), temporaryDirectory.path, sources);
+  let highlightOutput = false;
+  const formatOutput = (text: string) =>
+    highlightOutput ? paintRange(text, 0, text.length, highlightReplOutput(text)) : text;
+  const session = new PhraseSession(Deno.cwd(), temporaryDirectory.path, sources, formatOutput);
   session.start();
   let editor: TerminalEditor | undefined;
   let loadingBar: LoadingBar | undefined;
@@ -532,11 +567,12 @@ export async function runInteractiveRepl(
       );
     }
   }
+  highlightOutput = isTerminal && settings.highlight !== false && !Deno.noColor;
   editor = isTerminal
     ? new TerminalEditor(
       history,
       editorPrompts(settings),
-      settings.highlight !== false && !Deno.noColor ? highlightSpans : undefined,
+      highlightOutput ? highlightSpans : undefined,
     )
     : undefined;
   const record = (entry: string) => {
@@ -588,7 +624,13 @@ export async function runInteractiveRepl(
       else {
         output = await session.typeOf(command.argument, compileOptions);
       }
-      await Deno.stdout.write(new TextEncoder().encode(`${output}\n`));
+      await Deno.stdout.write(
+        new TextEncoder().encode(
+          `${
+            command.kind !== "error" && command.name === "type" ? formatOutput(output) : output
+          }\n`,
+        ),
+      );
     };
     for await (const phrase of inputPhrases) {
       if (isReplCommand(phrase)) {
