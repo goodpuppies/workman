@@ -262,7 +262,13 @@ export function rewriteExprCalls(
         if (reflectedFunction) {
           return {
             ...expr,
-            callee: reflectedFunction.callee,
+            callee: {
+              ...reflectedFunction.callee,
+              ...(reflectedFunction.callee.kind === "Var"
+                ? { sourceName: expr.callee.sourceName ?? expr.callee.name }
+                : {}),
+              node: expr.callee.node,
+            },
             args: rewriteArgsWithVariant(
               reflectedFunction.args,
               reflectedFunction.variant,

@@ -580,8 +580,12 @@ function namedJsImportDecl(
   return {
     ...decl,
     sourceClause: decl.sourceClause ??
-      (!preserveAlias && decl.clause.kind === "Named" && decl.clause.alias
-        ? decl.clause
+      (!preserveAlias && decl.clause.kind === "Named" &&
+          (decl.clause.alias || specs.every((spec) => spec.sourceName !== undefined))
+        ? {
+          ...decl.clause,
+          specs: decl.clause.specs.filter((spec) => spec.sourceName === undefined),
+        }
         : undefined),
     clause: {
       kind: "Named",

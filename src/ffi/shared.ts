@@ -26,6 +26,8 @@ export type FfiBinding = {
 };
 
 export type FfiVariant = {
+  /** Authored import name retained when a reflected function call is specialized. */
+  sourceName?: string;
   internalName: string;
   memberName: string;
   target: JsTarget;
@@ -124,11 +126,26 @@ export function generatedReceiverJsImports(
   return variants.map((variant) => ({
     kind: "JsImportDecl" as const,
     target: variant.target,
+    ...(variant.sourceName
+      ? {
+        node: variant.node,
+        sourceClause: {
+          kind: "Named" as const,
+          specs: [{
+            name: variant.memberName,
+            ...(variant.sourceName !== variant.memberName ? { alias: variant.sourceName } : {}),
+            node: variant.node,
+          }],
+          unsafe: !variant.fallible,
+        },
+      }
+      : {}),
     clause: {
       kind: "Named" as const,
       specs: [{
         name: variant.memberName,
         alias: variant.internalName,
+        sourceName: variant.sourceName,
         type: generatedImportType(variant),
         fallible: variant.fallible,
         node: variant.node,

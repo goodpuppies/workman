@@ -18,3 +18,11 @@ The Helix query files belong under `runtime/queries/workman` in a Helix runtime.
 and `hx --grammar build`.
 
 Fresh and Helix launch the shared language server through `wm lsp`.
+
+Go to Definition (F12 in VS Code) follows reflected JavaScript imports to their
+TypeScript declarations, including named and aliased imports from modules,
+`js.global("Deno")`, and DOM globals. Deno's virtual declarations are saved on
+demand under Workman's cache (`workman/typescript/deno-<content hash>.d.ts`) so
+editors can open them as ordinary files. The text matches the Deno executable
+used for reflection. Overloaded functions navigate to their declaration;
+this does not require running the imported JavaScript.

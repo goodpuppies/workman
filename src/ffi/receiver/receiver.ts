@@ -356,7 +356,7 @@ export function reflectedFunctionCallCandidate(
   const member = jsRefCall(ref, hints);
   if (!member) return undefined;
   const original = bindings.get(name)?.variants[0];
-  const surfaceName = `__call.${original?.fallible === false ? "unsafe." : ""}${ref.key}(${
+  const surfaceName = `__call.${original?.fallible === false ? "unsafe." : ""}${ref.key}.${name}(${
     callHintKey(args)
   })`;
   addVariants(
@@ -366,10 +366,11 @@ export function reflectedFunctionCallCandidate(
     original?.target ?? { kind: "JsReceiver", path: [] },
     memberVariants(member),
     original?.fallible ?? true,
-    undefined,
+    original?.node,
   );
   const variant = selectVariant(bindings.get(surfaceName)?.variants ?? [], args);
   if (!variant) return undefined;
+  if (original?.node) variant.sourceName = name;
   selected.add(variant.internalName);
   return {
     callee: { kind: "Var", name: variant.internalName },

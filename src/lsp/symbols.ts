@@ -1,5 +1,11 @@
 import type { CompilerFrontendOptions } from "../compiler_frontend.ts";
-import { jsModuleMemberDefinition } from "../ffi/reflect/host.ts";
+import {
+  type JsDefinitionLocation,
+  jsGlobalMemberDefinition,
+  jsModuleMemberDefinition,
+} from "../ffi/reflect/host.ts";
+import { join } from "node:path";
+import { workmanCache } from "../user_paths.ts";
 import {
   type ModuleInterface,
   type ModuleSemanticOccurrence,
@@ -52,23 +58,57 @@ async function jsDefinitionLocation(
 ): Promise<LspLocation | null> {
   if (occurrence.target.kind !== "value") return null;
   for (const imported of moduleInterface.ffiFacts.imports) {
-    if (imported.target.kind !== "module") continue;
     const binding = imported.bindings.find(({ id }) => id === occurrence.target.id);
     if (!binding) continue;
-    const definition = jsModuleMemberDefinition(
-      imported.target.specifier,
-      binding.sourceName,
-      moduleInterface.path,
-    );
-    return definition
-      ? await location(
-        definition.path,
-        { line: 1, col: 0, start: definition.start, end: definition.end },
-        sourceOverrides,
-      )
-      : null;
+    try {
+      const target = imported.target;
+      const definition = target.kind === "module"
+        ? jsModuleMemberDefinition(target.specifier, binding.sourceName, moduleInterface.path)
+        : target.kind === "global" || target.kind === "global-root"
+        ? jsGlobalMemberDefinition(
+          target.kind === "global" ? target.path : "globalThis",
+          binding.sourceName,
+          moduleInterface.path,
+        )
+        : undefined;
+      return definition ? await jsLocation(definition, sourceOverrides) : null;
+    } catch {
+      // A missing external declaration or unwritable cache must not hide the local import site.
+      return null;
+    }
   }
   return null;
+}
+
+async function jsLocation(
+  definition: JsDefinitionLocation,
+  sourceOverrides: Map<string, string>,
+): Promise<LspLocation | null> {
+  let path = definition.path;
+  if (definition.source !== undefined) {
+    // Use the exact text the checker saw so offsets remain correct across Deno versions.
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(definition.source));
+    const key = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join(
+      "",
+    );
+    const directory = join(workmanCache(), "typescript");
+    path = join(directory, `deno-${key}.d.ts`);
+    let existing: string | undefined;
+    try {
+      existing = await Deno.readTextFile(path);
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
+    if (existing !== definition.source) {
+      await Deno.mkdir(directory, { recursive: true });
+      await Deno.writeTextFile(path, definition.source);
+    }
+  }
+  return await location(
+    path,
+    { line: 1, col: 0, start: definition.start, end: definition.end },
+    sourceOverrides,
+  );
 }
 
 export async function referencesAt(

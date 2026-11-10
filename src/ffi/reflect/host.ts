@@ -42,6 +42,8 @@ export type JsDefinitionLocation = {
   path: string;
   start: number;
   end: number;
+  /** Declaration text for compiler-owned virtual files that an editor cannot open directly. */
+  source?: string;
 };
 export type JsReflectionRequest = {
   label: string;
@@ -132,9 +134,26 @@ export function jsModuleMemberDefinition(
   memberName: string,
   basePath: string,
 ): JsDefinitionLocation | undefined {
+  return jsMemberDefinition(jsModuleSource, specifier, memberName, basePath);
+}
+
+export function jsGlobalMemberDefinition(
+  path: string,
+  memberName: string,
+  basePath: string,
+): JsDefinitionLocation | undefined {
+  return jsMemberDefinition(jsGlobalSource, path, memberName, basePath);
+}
+
+function jsMemberDefinition(
+  source: (target: string) => JsReflectionSource,
+  targetName: string,
+  memberName: string,
+  basePath: string,
+): JsDefinitionLocation | undefined {
   const previous = setActiveJsReflectionBasePath(basePath);
   try {
-    const target = jsModuleSource(specifier);
+    const target = source(targetName);
     return reflectSource(
       `${target.key}.${memberName}:definition`,
       `${target.source}\nconst __wm_member = __wm_target[${JSON.stringify(memberName)}];`,
@@ -157,6 +176,7 @@ export function jsModuleMemberDefinition(
           path,
           start: selection.getStart(sourceFile),
           end: selection.getEnd(),
+          ...(sourceFile.fileName === denoTypesFile ? { source: sourceFile.text } : {}),
         };
       },
     );
