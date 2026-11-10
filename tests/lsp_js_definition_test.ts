@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "node:path";
 import { definitionAt, type LspLocation } from "../src/lsp/symbols.ts";
+import { workmanCache } from "../src/user_paths.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 
 function position(source: string, needle: string, occurrence = "last") {
@@ -25,14 +26,9 @@ async function selected(location: LspLocation) {
 
 async function withProject(run: (directory: string) => Promise<void>) {
   const directory = await Deno.makeTempDir({ prefix: "wm-js-definition-" });
-  const key = Deno.build.os === "windows" ? "LOCALAPPDATA" : "XDG_CACHE_HOME";
-  const previous = Deno.env.get(key);
-  Deno.env.set(key, join(directory, "cache"));
   try {
     await run(directory);
   } finally {
-    if (previous === undefined) Deno.env.delete(key);
-    else Deno.env.set(key, previous);
     await Deno.remove(directory, { recursive: true });
   }
 }
@@ -48,7 +44,7 @@ Deno.test("F12 on Deno globals opens the reflected declaration from imports and 
     const called = await definitionAt(uri, position(source, "serve("), new Map());
     assert(imported && called);
     assertEquals(imported, called);
-    assertStringIncludes(fileUriToPath(called.uri), join("cache", "workman", "typescript"));
+    assertStringIncludes(fileUriToPath(called.uri), join(workmanCache(), "typescript"));
     assertEquals((await selected(called)).text, "serve");
     assertStringIncludes((await selected(called)).source, "declare namespace Deno");
     assert(!called.uri.includes("__wm_deno_types"));
