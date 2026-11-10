@@ -14,10 +14,10 @@ The only setting is `repl.highlight`, which turns highlighting on or off.
 
 ## Why themes
 
-`WORKMAN_STYLES` was chosen on a dark background and doesn't adapt to the terminal. Function names
-are pure white and strings and types are pale, so they will be hard or impossible to read on a light
-background. Today the only way around that is `repl.highlight: false`, or unsetting `COLORTERM`,
-which also drops the loading bar's colors.
+`WORKMAN_STYLES` was chosen on a dark background. Function names use the terminal's default
+foreground color, so they follow its light or dark theme, but strings and types still use fixed pale
+colors that can be hard to read on a light background. Today the only way around those colors is
+`repl.highlight: false`, or unsetting `COLORTERM`, which also drops the loading bar's colors.
 
 ## What it could look like
 

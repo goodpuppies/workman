@@ -22,7 +22,8 @@ export const WORKMAN_STYLES: HighlightStyles = {
   string: "\x1b[38;2;216;199;168m",
   comment: "\x1b[38;2;111;106;102m",
   type: "\x1b[38;2;255;201;163m",
-  function: "\x1b[38;2;255;255;255m",
+  // Follow the terminal theme so function names stay readable on light backgrounds too.
+  function: "\x1b[39m",
   command: "\x1b[38;2;255;106;21m",
 };
 
