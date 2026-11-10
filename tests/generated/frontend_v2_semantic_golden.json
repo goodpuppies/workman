@@ -207,6 +207,7 @@
     "tooling/pakman-subsetml/src/package.wm": "a05823057be482eed2d29f9ed039bfae528825f3dac6863ed848c45dbf28106d",
     "tooling/pakman-subsetml/src/plan.wm": "587bf4615418dd9ad815a4235e6cfb27ffb1d4b4b09343734240e6ea074dac24",
     "tooling/pakman-subsetml/src/store.wm": "50f63618396d77d33bcacdd124d8b1c0c522d0a82b006238eae36002aa2d6d76",
+    "tooling/pakman/api/files.wm": "e806f9957070077795c2866d82a753e001c2e7c74a25e73b6ec2f1ca9befdf73",
     "tooling/pakman/api/finders.wm": "1bf29358678e74459d96f2b03c17cd78c7c8597007febb600d915aa918c5ba54",
     "tooling/pakman/api/fun.wm": "5518af75d7c1ede6a3d19bca10939ee97cb1f786dc7f888db8f2858c0944a7b4",
     "tooling/pakman/api/io.wm": "05896f223acba12d711860a2e5b561363e962b17abf764ba69a3267904bfe087",
