@@ -185,3 +185,41 @@ Deno.test({
     assertEquals(module.present.a0, "bb");
   },
 });
+
+Deno.test("FFI callbacks expose their declared JavaScript arity to hosts", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    const host = `${directory}/arity.ts`;
+    await Deno.writeTextFile(
+      host,
+      `
+      export function inspect0(callback: () => string): string {
+        return callback.length + ":" + callback();
+      }
+      export function inspect1(callback: (value: string) => string): string {
+        return callback.length + ":" + Reflect.apply(callback, undefined, callback.length ? ["request"] : []);
+      }
+      export function inspect2(callback: (left: number, right: number) => number): string {
+        return callback.length + ":" + Reflect.apply(callback, undefined, callback.length === 2 ? [2,3] : []);
+      }
+    `,
+    );
+    const module = await execute(
+      new Map([[
+        "/test/main.wm",
+        `
+      from js.module(${
+          JSON.stringify(host.replaceAll("\\", "/"))
+        }) import unsafe { inspect0, inspect1, inspect2 };
+      let zero=inspect0(()=>"empty");
+      let one=inspect1((request)=>request);
+      let two=inspect2((a,b)=>a+b);
+    `,
+      ]]),
+      () => {},
+    );
+    assertEquals([module.zero, module.one, module.two], ["0:empty", "1:request", "2:5"]);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
