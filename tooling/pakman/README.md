@@ -16,6 +16,13 @@ to the intended distribution model.
 The [programming-model direction](docs/declarative-programs.md) describes normal WM
 programs returning declarative plans, composable library helpers, and future capabilities.
 
+## Local project commands
+
+A repository's `pak.wm` can export named commands for `wm run dev`, `wm run build`,
+and other project workflows. These commands use installed tools and the current
+WM compiler; they do not require a package/version recipe or install tools.
+See [Project commands](../../docs/project-commands.md) for the API and example.
+
 ## Package-owned dependencies (initial implementation)
 
 Recipes can request private package instances using exact stable versions or

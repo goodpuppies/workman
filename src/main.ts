@@ -22,7 +22,11 @@ import { ParseError } from "./parser.ts";
 import { moduleNodeForPath } from "./module_graph.ts";
 import { runFile } from "./run.ts";
 import { typeDebugFile } from "./type_debug.ts";
-import { exitIfTerminated, handleTerminationSignals, terminationExitCode } from "./child_runtime.ts";
+import {
+  exitIfTerminated,
+  handleTerminationSignals,
+  terminationExitCode,
+} from "./child_runtime.ts";
 import { evaluateReplFile, runInteractiveRepl, watchReplChanges } from "./repl.ts";
 import { FrontendV2ParseCache } from "./frontend_v2_parse_cache.ts";
 import { watchFile } from "./watch.ts";
@@ -279,6 +283,11 @@ async function runCommand(args: string[]): Promise<number> {
   const programArgs = separator === -1 ? [] : args.slice(separator + 1);
   const [input] = inputArgs;
   if (!input) return missingInput("run");
+  const { isRunFile, runProjectCommand } = await import("./project_commands.ts");
+  if (!isRunFile(input)) {
+    const forwarded = separator === -1 ? args.slice(1) : [...inputArgs.slice(1), ...programArgs];
+    return await runProjectCommand(input, forwarded);
+  }
   return (await runFile(input, { args: programArgs })).code;
 }
 
@@ -548,6 +557,7 @@ commands:
   repl [--v2] [file.wm]         interactive session, or watch and evaluate
                                 top-level bindings in <file.wm>
   run <file.wm> [-- args...]    compile and execute with Deno
+  run <name> [-- args...]       run a named command from the nearest pak.wm
   watch <file.wm> [-- args...]  run again when any module in its graph changes
   err <file.wm>                 print authored diagnostics, evidence, and compiler state
   fmt [--stdout] [--fix] <file.wm>

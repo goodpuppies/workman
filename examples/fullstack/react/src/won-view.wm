@@ -1,12 +1,75 @@
 from "basis/won_value.wm" import * as W;
 from "basis/text.wm" import * as Utf8;
-from js.module("npm:react@19.2.0") import unsafe { createElement };
-from js.module("npm:react@19.2.0") import type { DOMElement };
+from js.module("react") import unsafe {
+  createElement,
+  createElement as createComponent: ((Js.Value -> DOMElement<Js.Value, Element>), Js.Value) -> DOMElement<Js.Value, Element>,
+  cloneElement: (DOMElement<Js.Value, Element>, Js.Value) -> DOMElement<Js.Value, Element>
+};
+from js.module("react") import type { DOMElement };
+
 from js.global import type { Element };
 
 type View = DOMElement<Js.Value, Element>;
 
-record Bindings = { text: String -> String, action: String -> Void };
+-- Register components once (outside rendering). Cloning their element preserves
+-- React's component type across parent renders, including the FFI callback adapter.
+type Component = View;
+
+record Bindings = {
+  text: String -> String,
+  action: String -> Void,
+  component: String -> Component,
+};
+let emptyBindings = Bindings(
+  (name) => { Panic("WON view: unknown text binding " ++ name) },
+  (name) => { Panic("WON view: unknown action " ++ name) },
+  (name) => { Panic("WON view: unknown component " ++ name) }
+);
+-- Declarative named bindings. Later entries override earlier ones of the same kind/name.
+type Binding =
+  | TextBinding<String, Void -> String>
+  | ActionBinding<String, Void -> Void>
+  | ComponentBinding<String, Component>;
+let text = (name, read) => { TextBinding(name, read) };
+let action = (name, run) => { ActionBinding(name, run) };
+let namedComponent = (name, value) => { ComponentBinding(name, value) };
+
+let rec readText = (entries, name) => {
+  match(entries) {
+    [] => { emptyBindings.text(name) },
+    [TextBinding(key, read), ..rest] => {
+      if (key == name) { read() } else { readText(rest, name) }
+    },
+    [_, ..rest] => { readText(rest, name) },
+  }
+};
+let rec runAction = (entries, name) => {
+  match(entries) {
+    [] => { emptyBindings.action(name) },
+    [ActionBinding(key, run), ..rest] => {
+      if (key == name) { run() } else { runAction(rest, name) }
+    },
+    [_, ..rest] => { runAction(rest, name) },
+  }
+};
+let rec findComponent = (entries, name) => {
+  match(entries) {
+    [] => { emptyBindings.component(name) },
+    [ComponentBinding(key, value), ..rest] => {
+      if (key == name) { value } else { findComponent(rest, name) }
+    },
+    [_, ..rest] => { findComponent(rest, name) },
+  }
+};
+let bindings = (entries: List<Binding>) => {
+  let ordered = List.reverse(entries);
+  Bindings(
+    (name) => { readText(ordered, name) },
+    (name) => { runAction(ordered, name) },
+    (name) => { findComponent(ordered, name) }
+  )
+};
+
 record EventProps<child> = {
   key: String,
   className: String,
@@ -23,8 +86,8 @@ let attribute = (attributes, name) => {
   List.find(attributes, (entry) => { let (key, _) = entry; key == name })
 };
 
-let className = (attributes) => {
-  match(attribute(attributes, "className")) {
+let textAttribute = (attributes, name) => {
+  match(attribute(attributes, name)) {
     Some(entry) => { let (_, value) = entry; string(value) },
     None => { "" },
   }
@@ -46,7 +109,7 @@ let click = (attributes) => {
 let validateAttributes = (attributes) => {
   List.map(attributes, (entry) => {
     let (key, _) = entry;
-    if (key == "className" || key == "onClick") { void }
+    if (key == "className" || key == "onClick" || key == "href") { void }
     else { Panic("WON view: unsupported property " ++ key) }
   });
   void
@@ -68,6 +131,12 @@ let rec renderAt = (bindings: Bindings, path: String, value: W.Value): View => {
   match(value) {
     W.Text(_) => { textNode(path, string(value)) },
     W.Tag("Bind", [], body) => { textNode(path, bindings.text(string(body))) },
+    W.Tag("Component", attributes, body) => {
+      match(attributes) {
+        [] => { cloneElement(bindings.component(string(body)), JSON{ key: path }) },
+        _ => { Panic("WON view: Component does not accept attributes") },
+      }
+    },
     W.Tag(tag, attributes, body) => {
       validateAttributes(attributes);
       let children = match(body) {
@@ -75,9 +144,9 @@ let rec renderAt = (bindings: Bindings, path: String, value: W.Value): View => {
         W.Null => { [] },
         _ => { [renderAt(bindings, path ++ ".0", body)] },
       };
-      let classes = className(attributes);
+      let classes = textAttribute(attributes, "className");
       let nodes = Js.Array.fromList(children);
-      match(click(attributes)) {
+      let tree = match(click(attributes)) {
         Some(action) => {
           createElement(tag, .{
             key = path,
@@ -89,9 +158,13 @@ let rec renderAt = (bindings: Bindings, path: String, value: W.Value): View => {
         None => {
           createElement(tag, JSON{ key: path, className: classes, children: nodes })
         },
+      };
+      match(attribute(attributes, "href")) {
+        Some(entry) => { let (_, value) = entry; cloneElement(tree, JSON{ href: string(value) }) },
+        None => { tree },
       }
     },
-    _ => { Panic("WON view: expected an element tag, Bind, or text") },
+    _ => { Panic("WON view: expected an element tag, Component, Bind, or text") },
   }
 };
 
@@ -101,4 +174,17 @@ let render = (bindings, template) => {
     W.List(_) => { Panic("WON view: expected one root element") },
     _ => { renderAt(bindings, "view", template) },
   }
+};
+
+-- React supplies props; these helpers adapt zero-argument WM drawing functions.
+-- Register once outside rendering to preserve the component's React type.
+let componentWith = (draw: Void -> (Bindings, W.Value)): Component => {
+  let wrapped = (_) => {
+    let (bindings, template) = draw();
+    render(bindings, template)
+  };
+  createComponent(wrapped, JSON{})
+};
+let component = (draw: Void -> W.Value): Component => {
+  componentWith () => { (emptyBindings, draw()) }
 };

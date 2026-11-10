@@ -1,25 +1,38 @@
-from js.module("npm:react@19.2.0") import unsafe { useState };
+from js.module("react") import unsafe { useState };
 from "./won-view.wm" import * as View;
 
--- Bind/Action are renderer conventions; functions stay in WM.
-let template = WON[
-  main[
-    h1("React in Workman")
-    p["Count: " Bind("count")]
-    button<onClick = Action("increment")>("Add one")
+-- All three bindings are renderer conventions; functions stay in WM.
+let header = View.component () => {
+  WON[
+    header<className="header">(
+      nav(ul[li(a<href="/">("Home"))])
+    )
   ]
+};
+
+let counter = View.componentWith => {
+  let (count, setCount) = useState(0);
+  let bindings = View.bindings [
+    View.text("count", => Text.of(count)),
+    View.action("increment", => { setCount((previous) => { previous + 1 }) })
+  ];
+  (bindings, WON[
+    section[
+      h1("React in Workman")
+      p["Count: " Bind("count")]
+      button<onClick = Action("increment")>("Add one")
+    ]
+  ])
+};
+
+let sharedBindings = View.bindings [
+  View.namedComponent("header", header),
+  View.namedComponent("counter", counter)
 ];
 
-let app = () => {
-  let (count, setCount) = useState(0);
-  View.render(.{
-    text = match(name) => {
-      "count" => { Text.of(count) },
-      _ => { Panic("Unknown binding: " ++ name) },
-    },
-    action = match(name) => {
-      "increment" => { setCount((previous) => { previous + 1 }) },
-      _ => { Panic("Unknown action: " ++ name) },
-    },
-  }, template)
+let app = View.componentWith => {
+  (sharedBindings, WON[main[
+    Component("header")
+    Component("counter")
+  ]])
 };

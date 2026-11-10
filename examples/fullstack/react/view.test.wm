@@ -1,11 +1,67 @@
+from "./src/app.wm" import { app };
 from "testman/test.wm" import * as T;
 from "./src/won-view.wm" import * as View;
-from js.module("npm:react-dom@19.2.0/server") import unsafe { renderToStaticMarkup };
+from js.module("react") import unsafe { useState };
+from js.global("Reflect") import unsafe { get: (Js.Value, String) -> Js.Value };
+from js.global("Object") import unsafe { is: (Js.Value, Js.Value) -> Bool };
+from js.module("react-dom/server") import unsafe { renderToStaticMarkup };
+
+let counter = View.component () => {
+  let (count, _) = useState(7);
+  if (count == 7) { WON[section[p("7") a<href="/">("Home")]] }
+  else { Panic("Unexpected hook state") }
+};
+let bindings = View.bindings [View.namedComponent("counter", counter)];
+
+let labeled = View.componentWith () => {
+  let (count, _) = useState(9);
+  let localBindings = View.bindings [
+    View.namedComponent("counter", counter),
+    View.text("label", => "Custom binding " ++ Text.of(count))
+  ];
+  (localBindings, WON[aside[Bind("label") Component("counter")]])
+};
 
 let tests = [T.test("WON renders nested elements and a text binding", () => {
-  let tree = View.render(.{
-    text = (_) => { "2 < 3" },
-    action = (_) => { void },
-  }, WON[main[p[Bind("count")] button<onClick = Action("increment")>("Add one")]]);
+  let tree = View.render(View.bindings [
+    View.text("count", => "2 < 3"),
+    View.action("increment", => void)
+  ], WON[main[p[Bind("count")] button<onClick = Action("increment")>("Add one")]]);
   T.assertEqual(renderToStaticMarkup(tree), "<main class=\"\"><p class=\"\"><span>2 &lt; 3</span></p><button class=\"\"><span>Add one</span></button></main>")
+}), T.test("Component renders independently with hooks and link attributes", () => {
+  -- Rendering the WON tree itself happens outside React. Calling the component
+  -- directly here would be an invalid hook call.
+  let tree = View.render(bindings, WON[main[Component("counter") Component("counter")]]);
+  T.assertEqual(renderToStaticMarkup(tree), "<main class=\"\"><section class=\"\"><p class=\"\"><span>7</span></p><a class=\"\" href=\"/\"><span>Home</span></a></section><section class=\"\"><p class=\"\"><span>7</span></p><a class=\"\" href=\"/\"><span>Home</span></a></section></main>")
+}), T.test("Component keeps its registered React type across renders", () => {
+  let first = View.render(bindings, WON[Component("counter")]);
+  let second = View.render(bindings, WON[Component("counter")]);
+  T.checks([
+    T.assert(is(get(first, "type"), get(counter, "type")), "component type changed during registration"),
+    T.assert(is(get(first, "type"), get(second, "type")), "component type changed during rendering"),
+    T.assert(is(get(first, "key"), get(second, "key")), "component key changed during rendering")
+  ])
+}), T.test("componentWith captures hook state in bindings and renders nested components", () => {
+  T.assertEqual(renderToStaticMarkup(labeled), "<aside class=\"\"><span>Custom binding 9</span><section class=\"\"><p class=\"\"><span>7</span></p><a class=\"\" href=\"/\"><span>Home</span></a></section></aside>")
+}), T.test("app renders its header and hook-backed bindings", () => {
+  let html = renderToStaticMarkup(app);
+  T.checks([
+    T.assertContains(html, "href=\"/\""),
+    T.assertContains(html, "<span>Home</span>"),
+    T.assertContains(html, "<span>Count: </span><span>0</span>"),
+    T.assertContains(html, "<span>Add one</span>")
+  ])
+}), T.test("binding lists defer callbacks, separate kinds, and let later entries override", () => {
+  let named = View.bindings [
+    View.text("same", => "first"),
+    View.namedComponent("same", counter),
+    View.text("same", => "last"),
+    View.action("same", => void),
+    View.text("unused", => Panic("unused binding was evaluated"))
+  ];
+  named.action("same");
+  T.checks([
+    T.assertEqual(named.text("same"), "last"),
+    T.assert(is(named.component("same"), counter), "component binding was overwritten by another kind")
+  ])
 })];

@@ -140,8 +140,11 @@ repository. The manager asks for supported interfaces:
 | Development environment | Tools and environment configuration |
 | System or image | A composed system, root filesystem, or firmware result |
 
-Only the current package/version/build-callback protocol is implemented.
-The rest of this table describes room for future interfaces, not a commitment
+The package/version/build-callback protocol and local named project commands are
+implemented. Local commands use installed tools; they do not provision a development
+environment or describe a build artifact graph. See
+[Project commands](../../../docs/project-commands.md).
+The remaining capabilities describe room for future interfaces, not a commitment
 to implement all of them or to introduce a capability registry now.
 
 A tiny project can implement one interface. A larger repository can compose

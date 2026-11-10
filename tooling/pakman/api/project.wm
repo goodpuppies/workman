@@ -1,0 +1,30 @@
+from "std/list.wm" import * as List;
+-- Declarative local commands, independent of package installation and tool provisioning.
+from js.global("JSON") import unsafe { stringify };
+
+type Step = | Wm<List<String>> | Exec<String, List<String>>;
+record Variable = { name: String, value: String };
+record Command = { name: String, steps: List<Step>, env: List<Variable>, watchPaths: List<String> };
+
+let command = (name, steps) => { Command(name, steps, [], []) };
+let watch = (paths, cmd: Command) => { .{ ..cmd, watchPaths = paths } };
+let withEnv = (variables, cmd: Command) => { .{ ..cmd, env = variables } };
+
+-- The CLI evaluates this description without granting process, network, or filesystem permissions.
+let describe = (commands: List<Command>) => {
+  let step = match {
+    Wm(arguments) => { JSON{ kind: "wm", program: "", arguments: Js.Array.fromList(arguments) } },
+    Exec(program, arguments) => { JSON{ kind: "exec", program: program, arguments: Js.Array.fromList(arguments) } },
+  };
+  let entries = List.map(commands, (cmd: Command) => {
+    JSON{
+      name: cmd.name,
+      watchPaths: Js.Array.fromList(cmd.watchPaths),
+      steps: Js.Array.fromList(List.map(cmd.steps, step)),
+      env: Js.Array.fromList(List.map(cmd.env, (variable: Variable) => {
+        JSON{ name: variable.name, value: variable.value }
+      }))
+    }
+  });
+  print(stringify(JSON{ version: 1, commands: Js.Array.fromList(entries) }))
+};
