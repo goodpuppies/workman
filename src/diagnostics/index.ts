@@ -3,6 +3,7 @@ import { type EnhancedDiagnosticRenderOptions, renderHeaderLine } from "./render
 import { neutralTypeCollisionProfile } from "./neutral_type_collision.ts";
 import { type AuthoredDiagnosticProfile, profileMatches } from "./profile.ts";
 import { recursiveResultAgreementProfile } from "./recursive_result_agreement.ts";
+import { recordProjectionProfile } from "./record_projection.ts";
 import { recordShapeProfile } from "./record_shape.ts";
 import { type Document, line, span } from "../../tooling/tuiman/document.ts";
 
@@ -10,6 +11,7 @@ const authoredDiagnosticProfiles: AuthoredDiagnosticProfile[] = [
   neutralTypeCollisionProfile,
   recursiveResultAgreementProfile,
   recordShapeProfile,
+  recordProjectionProfile,
 ];
 
 export function formatAuthoredDiagnostic(

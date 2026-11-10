@@ -1,10 +1,12 @@
 import type { AuditableDiagnostic, SupportEntry } from "../diagnostic_writer.ts";
 import { lineStarts, sliceSource, type SourceSpan } from "../source.ts";
 import {
+  type CompactExcerpt,
   findConstraintForFrame,
   indent,
   isDirectPipeInputConflict,
   relativeDiagnosticPath as relativeFile,
+  renderCompactExcerpt,
   renderContextExcerpt,
   renderExplainDiagnostic,
   renderHeader,
@@ -1149,15 +1151,6 @@ function compactSectionHeader(label: string, columns: ColumnPair, availableWidth
   return `${prefix}${"-".repeat(Math.max(1, width - prefix.length))}`;
 }
 
-type CompactExcerpt = {
-  lines: string[];
-  /** Present when the file location did not fit beside the code and moved to its own line. */
-  location: Line | undefined;
-  source: Line;
-  underlinePrefix: string;
-  underline: string;
-};
-
 /**
  * Spans only render against the unit they were recorded in. A span that lands outside this source
  * belongs to another file, and excerpting it here would emit an empty line under a huge indent.
@@ -1171,91 +1164,6 @@ function spanWithinSource(source: string, sourceSpan: SourceSpan): boolean {
   const lineEnd = source.indexOf("\n", lineStart);
   return sourceSpan.start >= lineStart &&
     sourceSpan.start <= (lineEnd === -1 ? source.length : lineEnd);
-}
-
-function renderCompactExcerpt(
-  source: string,
-  sourceSpan: SourceSpan,
-  filePath: string | undefined,
-  availableWidth?: number,
-): CompactExcerpt {
-  const starts = lineStarts(source);
-  const lineIndex = Math.max(0, Math.min(sourceSpan.line - 1, starts.length - 1));
-  const lineStart = starts[lineIndex];
-  const lineEnd = source.indexOf("\n", lineStart);
-  const originalLine = lineEnd === -1 ? source.slice(lineStart) : source.slice(lineStart, lineEnd);
-  const tiny = availableWidth !== undefined && availableWidth <= TINY_TERMINAL_WIDTH;
-  const gutter = `${sourceSpan.line}|${tiny ? "" : " "}`;
-  const location = `${relativeFile(filePath)}:${sourceSpan.line}:${sourceSpan.col + 1}`;
-  const leading = tiny ? /^[ \t]*/.exec(originalLine)?.[0].length ?? 0 : 0;
-  const compacted = tiny
-    ? {
-      line: originalLine.slice(leading),
-      offset: Math.max(0, sourceSpan.start - lineStart - leading),
-    }
-    : compactLeadingIndent(originalLine, sourceSpan.start - lineStart);
-  let line = compacted.line;
-  let underlineOffset = compacted.offset;
-  let underlineWidth = Math.max(
-    1,
-    Math.min(
-      Math.max(sourceSpan.end, sourceSpan.start + 1),
-      lineEnd === -1 ? source.length : lineEnd,
-    ) - sourceSpan.start,
-  );
-  // A location wedged onto the code line is what wraps first on a narrow terminal, and a wrapped
-  // "draw.wm:264\n:3" reads as garbage. Once the pair no longer leaves room for a useful excerpt,
-  // the location takes its own line above the code instead.
-  const minimumCode = tiny ? 8 : 12;
-  const hoistLocation = availableWidth !== undefined &&
-    gutter.length + minimumCode + 2 + location.length > availableWidth;
-  const codeBudget = availableWidth === undefined ? undefined : Math.max(
-    minimumCode,
-    availableWidth - gutter.length - (hoistLocation ? 0 : location.length + 2),
-  );
-  if (codeBudget !== undefined && line.length > codeBudget) {
-    const context = tiny ? 0 : 3;
-    const marker = "..";
-    const start = Math.max(0, Math.min(underlineOffset - context, line.length - codeBudget));
-    const leadingMarker = start > 0 ? marker : "";
-    const roomAfterLeading = Math.max(1, codeBudget - leadingMarker.length);
-    const needsTrailingMarker = start + roomAfterLeading < line.length;
-    const sourceWidth = Math.max(1, roomAfterLeading - (needsTrailingMarker ? marker.length : 0));
-    const end = Math.min(line.length, start + sourceWidth);
-    const trailingMarker = end < line.length ? marker : "";
-    line = `${leadingMarker}${line.slice(start, end)}${trailingMarker}`;
-    underlineOffset = Math.max(
-      leadingMarker.length,
-      underlineOffset - start + leadingMarker.length,
-    );
-    underlineWidth = Math.min(underlineWidth, Math.max(1, line.length - underlineOffset));
-  }
-  const underlinePrefix = " ".repeat(gutter.length + underlineOffset);
-  const underline = "^".repeat(underlineWidth);
-  return {
-    lines: [
-      ...(hoistLocation ? [location] : []),
-      hoistLocation ? `${gutter}${line}` : `${gutter}${line}  ${location}`,
-      `${underlinePrefix}${underline}`,
-    ],
-    location: hoistLocation ? documentLine(span(location, "secondary")) : undefined,
-    source: hoistLocation
-      ? documentLine(span(gutter, "secondary"), span(line))
-      : documentLine(span(gutter, "secondary"), span(`${line}  ${location}`)),
-    underlinePrefix,
-    underline,
-  };
-}
-
-function compactLeadingIndent(line: string, offset: number): { line: string; offset: number } {
-  const leading = /^[ \t]*/.exec(line)?.[0].length ?? 0;
-  if (leading <= 8) return { line, offset: Math.max(0, offset) };
-  const compactIndent = "  ";
-  const removed = leading - compactIndent.length;
-  return {
-    line: compactIndent + line.slice(leading),
-    offset: Math.max(compactIndent.length, offset - removed),
-  };
 }
 
 function clip(text: string, width: number): string {

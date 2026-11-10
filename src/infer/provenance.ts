@@ -63,6 +63,11 @@ const expressionSources = new WeakMap<Expr, TypeSource>();
 const schemeSources = new WeakMap<Scheme, TypeSource>();
 const ffiConstraintSources = new WeakMap<Ty, Map<Ty, TypeSource>>();
 
+/** The value expression that established a binding's type, including hidden projection receivers. */
+export function sourceForScheme(scheme: Scheme): TypeSource | undefined {
+  return schemeSources.get(scheme);
+}
+
 export function sourceForFfiConstraint(placeholder: Ty, required: Ty): TypeSource | undefined {
   return ffiConstraintSources.get(placeholder)?.get(required);
 }

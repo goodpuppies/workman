@@ -18,7 +18,14 @@ import {
   type TypeInfo,
   typeInfoById,
 } from "../types.ts";
-import { constrainAt, sourceForTypedExpr, type TypeProvenance } from "./provenance.ts";
+import {
+  constrainAt,
+  sourceForScheme,
+  sourceForTypedExpr,
+  type TypeProvenance,
+  type TypeSource,
+} from "./provenance.ts";
+import { recordProjectionError } from "./record_projection.ts";
 import { resolveLongType, resolveLongValue, type StrEnv } from "./environment.ts";
 import { recordFieldSetError } from "./record_shape.ts";
 import {
@@ -55,6 +62,7 @@ export function inferDottedVar(
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
     provenance?: TypeProvenance;
+    receiverSource?: TypeSource;
   },
 ): Ty {
   const name = longIdSpelling(path);
@@ -65,7 +73,15 @@ export function inferDottedVar(
     const segments = path.qualifiers.length + 1;
     const firstFieldIndex = segments - structured.remaining.length;
     return structured.remaining.reduce((type, field, index) => {
-      const resolved = inferRecordField(type, field, typeEnv, occurrence);
+      const resolved = inferRecordField(
+        type,
+        field,
+        typeEnv,
+        occurrence && {
+          ...occurrence,
+          receiverSource: index === 0 ? sourceForScheme(structured.scheme) : undefined,
+        },
+      );
       if (resolved.record && occurrence) {
         recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
           name: field,
@@ -99,7 +115,12 @@ export function inferDottedVar(
       receiverType,
       field,
       typeEnv,
-      occurrence,
+      occurrence && {
+        ...occurrence,
+        receiverSource: env.get(longIdSpelling(receiver))
+          ? sourceForScheme(env.get(longIdSpelling(receiver))!)
+          : undefined,
+      },
     );
     if (resolved.record && occurrence) {
       recordRecordProjectionFact(occurrence.facts, occurrence.expression, {
@@ -267,9 +288,22 @@ function inferRecordField(
     warnings: string[];
     diagnostics: FrontendDiagnostic[];
     provenance?: TypeProvenance;
+    receiverSource?: TypeSource;
   },
 ): { type: Ty; record?: TypeInfo } {
   const target = prune(base);
+  const fail = (message: string): Error => {
+    if (occurrence) {
+      return recordProjectionError(
+        occurrence.expression,
+        field,
+        base,
+        message,
+        occurrence.receiverSource,
+      );
+    }
+    return new Error(message);
+  };
   if (target.tag === "named") {
     const info = typeInfoById(typeEnv, target.id) ?? target.definition ?? (target.recordFields
       ? {
@@ -287,11 +321,11 @@ function inferRecordField(
           `${target.name} is a JavaScript value; use ${receiver} :> .${field} for member access`,
         );
       }
-      throw new Error(`${target.name} is not a record type`);
+      throw fail(`${target.name} is not a record type`);
     }
     const fields = instantiateRecordFields(info, target.args);
     const found = fields.find((item) => item.name === field);
-    if (!found) throw new Error(`${target.name} has no field ${field}`);
+    if (!found) throw fail(`${target.name} has no field ${field}`);
     return { type: found.type, record: info };
   }
   if (target.tag === "var") {
@@ -376,12 +410,17 @@ function inferRecordField(
   }
   // A computed receiver, as in `"text".length`, can only take a record field.
   if (occurrence && isFieldAccessReceiver(pathOf(occurrence.expression).qualifiers[0] ?? "")) {
-    throw new Error(
+    if (target.tag === "prim" && target.name === "Void") {
+      throw fail(`type ${show(base)} has no field ${field}`);
+    }
+    throw fail(
       `type ${show(base)} has no field ${field}. ` +
-        `For JavaScript member access, use ${receiverSpelling(occurrence.expression, field)} :> .${field}`,
+        `For JavaScript member access, use ${
+          receiverSpelling(occurrence.expression, field)
+        } :> .${field}`,
     );
   }
-  throw new Error(`type ${show(base)} has no field ${field}`);
+  throw fail(`type ${show(base)} has no field ${field}`);
 }
 
 /**
