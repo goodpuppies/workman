@@ -205,7 +205,7 @@ const __wm_js_to_js = (value, converter) => {
     return value.map((item) => __wm_js_to_js(item, converter.item));
   }
   if (typeof converter === "object" && converter.kind === "fn") {
-    return (...args) => {
+    const callback = (...args) => {
       const converted = args.map((arg, index) => __wm_js_to_workman(arg, converter.params[index] ?? "id"));
       const expected = converter.params.length;
       const limited = converted.slice(0, expected);
@@ -215,6 +215,9 @@ const __wm_js_to_js = (value, converter) => {
         converter.result,
       );
     };
+    // Hosts such as Deno.serve inspect callback arity before deciding which arguments to pass.
+    Object.defineProperty(callback, "length", { value: converter.params.length });
+    return callback;
   }
   return value;
 };
