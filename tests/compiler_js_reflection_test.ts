@@ -41,11 +41,12 @@ Deno.test("reflects relative JS modules whose dependencies use a Deno import map
 });
 
 Deno.test("unresolved JS FFI property results cannot escape as generic values", async () => {
+  // Use a label absent from WM records: `.message` can project the basis Error record.
   await assertRejects(
     () =>
       checkSource(`
         let format = (item) => {
-          "message: " ++ (item :> .message)
+          "message: " ++ (item :> .undeclaredJsProperty)
         };
       `),
     Error,
@@ -56,7 +57,7 @@ Deno.test("unresolved JS FFI property results cannot escape as generic values", 
     () =>
       checkSource(`
         let format = (item) => {
-          let message = item :> .message;
+          let message = item :> .undeclaredJsProperty;
           "message: " ++ message
         };
       `),

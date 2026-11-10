@@ -92,6 +92,23 @@ Nested conditionals stay inside their branch blocks.
 Group a computed condition, as in `(value > 0) :> if { ... } else { ... }`, because
 the current pipe precedence is higher than arithmetic and comparison operators.
 
+## Record fields in pipelines
+
+A pipe member can read an ordinary Workman record field:
+
+```wm
+record Person = { name: String };
+let person = Person("Ellie");
+let name = person :> .name;
+```
+
+`person :> .name` has the same type and effects as `person.name`. The receiver
+can be any expression and is evaluated once. Nested fields can be read with
+`:> .outer.inner`, or with consecutive stages such as `:> .outer :> .inner`.
+A function stored in a record field can be called with `:> .callback(argument)`;
+the receiver is evaluated before the call arguments. JavaScript receivers keep
+their existing member access behavior.
+
 ## Filtering a Result
 
 `Result.filter(value, predicate, error)` keeps an `Ok` value when its predicate

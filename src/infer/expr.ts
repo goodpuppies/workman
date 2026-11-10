@@ -1,7 +1,8 @@
 import { taintExpression } from "./taint.ts";
 import { holdResult } from "../types.ts";
 import type { Expr } from "../ast.ts";
-import { pathOf } from "../ast.ts";
+import { fieldAccessReceiverName, longIdSpelling, pathOf } from "../ast.ts";
+import { sequenceType } from "../taint.ts";
 import { diagnosticError } from "../diagnostic_model.ts";
 import {
   BoolTy,
@@ -10,7 +11,9 @@ import {
   freshFfi,
   freshIntegerLiteral,
   freshNumeric,
+  ftv,
   instantiate,
+  knownTypeInfos,
   named,
   NumberTy,
   prune,
@@ -18,6 +21,7 @@ import {
   tuple,
   type Ty,
   type TypeEnv,
+  typeInfoById,
   typeInfoByName,
   VoidTy,
 } from "../types.ts";
@@ -183,6 +187,11 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
       break;
     case "FfiGet": {
       const receiver = inferExpr(expr.receiver, context);
+      const projection = inferRecordMember(expr, receiver, context);
+      if (projection) {
+        t = projection;
+        break;
+      }
       const value = jsArrayFfiGetValue(typeEnv, receiver, expr.path) ??
         jsPrimitiveFfiGetValue(receiver, expr.path);
       t = value
@@ -217,6 +226,11 @@ function inferExprInner(expr: Expr, context: InferContext, expected?: Ty): Ty {
     }
     case "FfiCall": {
       const receiver = inferExpr(expr.receiver, context);
+      const projection = inferRecordMember(expr, receiver, context);
+      if (projection) {
+        t = projection;
+        break;
+      }
       const args: Ty[] = new Array(expr.args.length);
       for (const [index, arg] of expr.args.entries()) {
         if (arg.kind === "Lambda") continue;
@@ -609,4 +623,64 @@ function ffiBindingCallType(
 
 function resultParts(type: Ty, typeEnv: TypeEnv): CarrierPeel | undefined {
   return peelCarrier(type, typeEnv);
+}
+
+// Pipe members share record projection semantics with `value.field`. Select this before
+// creating an FFI obligation, so pure fields and field constraints stay ordinary WM types.
+let nextRecordMember = 0;
+function inferRecordMember(
+  expr: Extract<Expr, { kind: "FfiGet" | "FfiCall" }>,
+  receiver: Ty,
+  context: InferContext,
+): Ty | undefined {
+  const target = prune(receiver);
+  const record = target.tag === "named"
+    ? typeInfoById(context.typeEnv, target.id) ?? target.definition ?? target
+    : undefined;
+  if (target.tag === "named" && (target.foreign || record?.foreign)) return undefined;
+  if (
+    target.tag !== "struct" && !record?.recordFields &&
+    !(target.tag === "var" &&
+      knownTypeInfos(context.typeEnv).some((info) =>
+        !info.foreign && info.recordFields?.some((field) => field.name === expr.path[0])
+      ))
+  ) return undefined;
+
+  // A pending foreign result can be constrained to Result<receiver, error> by
+  // an unwrap helper. Let reflection determine that receiver before choosing a
+  // nominal field solely because its label happens to be declared elsewhere.
+  if (target.tag === "var") {
+    for (const fact of context.facts.ffi.values()) {
+      if (fact.status !== "unresolved") continue;
+      if (fact.placeholder?.constraints?.some((type) => ftv(type).has(target.id))) {
+        return undefined;
+      }
+    }
+  }
+
+  // Bind the already inferred receiver monomorphically. Its evaluation remains in the
+  // emitted block, once and before any call arguments, without inferring it twice.
+  const name = `${fieldAccessReceiverName(expr.node?.id ?? nextRecordMember++)}_pipe`;
+  const env = new Map(context.env);
+  env.set(name, { vars: [], type: receiver });
+  const path = { qualifiers: [name, ...expr.path.slice(0, -1)], id: expr.path.at(-1)! };
+  const field: Expr = { kind: "Var", name: longIdSpelling(path), path, node: expr.node };
+  const result: Expr = expr.kind === "FfiCall"
+    ? { kind: "Call", callee: field, args: expr.args, node: expr.node }
+    : field;
+  const type = sequenceType([receiver], inferExpr(result, { ...context, env }));
+  const block: Expr = {
+    kind: "Block",
+    items: [{
+      kind: "LetDecl",
+      exported: true,
+      recursive: false,
+      bindings: [{ pattern: { kind: "PVar", name }, value: expr.receiver }],
+    }],
+    result,
+    node: expr.node,
+  };
+  for (const key of Object.keys(expr)) Reflect.deleteProperty(expr, key);
+  Object.assign(expr, block);
+  return type;
 }
