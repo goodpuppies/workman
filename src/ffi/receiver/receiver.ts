@@ -336,6 +336,9 @@ export function reflectedFunctionCallCandidate(
   refs: Map<string, JsTypeRef>,
   objectAccess: Map<string, ObjectAccess>,
 ): ReflectedReceiverCall | undefined {
+  // Deep imports specialize from complete literal arguments in the delayed pass.
+  // Ordinary argument hints erase nested JSON schemas (for example dlopen symbols).
+  if (bindings.get(name)?.variants.some((variant) => variant.deep)) return undefined;
   const ref = refs.get(name);
   if (!ref) return undefined;
   const hints = args.map((arg) => callArgHintWithRefs(arg, refs, objectAccess));
