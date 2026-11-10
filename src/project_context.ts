@@ -103,6 +103,10 @@ export class ReverseImportDiscoveryIndex {
   dependenciesOf(path: string): ReadonlySet<string> {
     return this.#dependencies.get(canonicalPath(path)) ?? new Set();
   }
+
+  dependentsOf(path: string): ReadonlySet<string> {
+    return this.#dependents.get(canonicalPath(path)) ?? new Set();
+  }
 }
 
 export type ProjectContextSelection = Readonly<{
@@ -292,19 +296,20 @@ export class ProjectContextRegistry {
   /** Drop every snapshot whose forward closure contains a changed source path. */
   invalidatePaths(paths: Iterable<string>): void {
     const changed = new Set([...paths].map(canonicalPath));
-    const affectedHeads = new Set(
-      [...changed].flatMap((path) => this.discovery.headsFor(path).map(canonicalPath)),
-    );
+    // Recovery can exclude a broken dependency from the certified snapshot. Use
+    // syntax-only reverse imports too, including roots such as tests with no main.
+    const affected = new Set(changed);
+    for (const path of affected) {
+      for (const dependent of this.discovery.dependentsOf(path)) affected.add(dependent);
+    }
     const invalidKeys = new Set<string>();
     for (const context of [...this.#active.values(), ...this.#detached.values()]) {
-      if ([...changed].some((path) => context.paths.has(path))) {
+      const descriptor = parseContextKey(context.key);
+      if (
+        (descriptor && affected.has(descriptor.path)) ||
+        [...changed].some((path) => context.paths.has(path))
+      ) {
         invalidKeys.add(context.key);
-      }
-    }
-    for (const [key] of this.#active) {
-      const descriptor = parseContextKey(key);
-      if (descriptor?.kind === "headed" && affectedHeads.has(descriptor.path)) {
-        invalidKeys.add(key);
       }
     }
     for (const [documentKey, contextKey] of this.#documents) {

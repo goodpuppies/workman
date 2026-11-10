@@ -271,7 +271,10 @@ Deno.test("a dependency that recovery can't handle leaves requests empty, with a
   const dir = await Deno.realPath(await Deno.makeTempDir());
   const main = join(dir, "main.wm");
   const lib = join(dir, "lib.wm");
-  await Deno.writeTextFile(main, 'from "./lib.wm" import * as Lib;\nlet main = () => { Lib.value };');
+  await Deno.writeTextFile(
+    main,
+    'from "./lib.wm" import * as Lib;\nlet main = () => { Lib.value };',
+  );
   await Deno.writeTextFile(
     lib,
     'from js.global("Math") import { floor: Number -> Number };\nlet value = floor(1);',
@@ -291,4 +294,63 @@ Deno.test("a dependency that recovery can't handle leaves requests empty, with a
   const byPath = new Map(results.map((result) => [fileUriToPath(result.uri), result.diagnostics]));
   assertEquals(byPath.get(main)?.map((diagnostic) => diagnostic.code), ["import.failed"]);
   assertEquals(byPath.get(lib)?.length, 1);
+});
+
+Deno.test("editing a failed dependency refreshes every importing context including tests without main", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const app = join(dir, "app.wm");
+    const main = join(dir, "main.wm");
+    const test = join(dir, "view.test.wm");
+    const missing = "let header = 1; let value = sharedBindings;";
+    const moved = "let sharedBindings = header; let header = 1; let value = sharedBindings;";
+    const fixed = "let header = 1; let sharedBindings = header; let value = sharedBindings;";
+    await Deno.writeTextFile(app, missing);
+    await Deno.writeTextFile(main, 'from "./app.wm" import { value }; let main = () => { value };');
+    await Deno.writeTextFile(test, 'from "./app.wm" import { value }; let tests = [value];');
+    const overrides = new Map([[app, missing]]);
+    const index = new ProjectIndex();
+    index.rememberWorkspaceRoots({ workspaceFolders: [{ uri: pathToFileUri(dir) }] });
+    await index.initialize(overrides);
+    const service = new SemanticService(index.discovery, {
+      sourceOverrides: () => overrides,
+      frontendOptions: () => ({}),
+    });
+    const paths = [main, test, app];
+    for (
+      const [source, expected] of [
+        [missing, "unknown name sharedBindings"],
+        [moved, "unknown name header"],
+        [fixed, undefined],
+      ] as const
+    ) {
+      overrides.set(app, source);
+      await service.invalidatePaths([app]);
+      await index.refreshFile(app, overrides);
+      for (const path of paths) await service.documentContext(pathToFileUri(path));
+      for (const path of paths) {
+        const results = await validateUri(pathToFileUri(path), overrides, {}, {
+          semanticService: service,
+        });
+        const errors = results.flatMap(({ diagnostics }) =>
+          diagnostics.filter((d) => d.severity === 1)
+        );
+        assertEquals(
+          expected === undefined
+            ? errors.length === 0
+            : errors.some((d) => d.message.includes(expected)),
+          true,
+          `${path}: ${errors.map((d) => d.message).join("\n")}`,
+        );
+        if (source !== missing) {
+          assertEquals(
+            errors.some((d) => d.message.includes("unknown name sharedBindings")),
+            false,
+          );
+        }
+      }
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
