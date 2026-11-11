@@ -1,3 +1,4 @@
+import { emitJsAbiRuntime, jsAbiShape, structureAbiShape } from "./js_abi.ts";
 import { integerSource } from "../numeric.ts";
 import type { CoreDecl, CoreExpr, CoreMatchArm, CorePattern } from "./ast.ts";
 import type { TypeExpr } from "../ast.ts";
@@ -43,6 +44,7 @@ export type CoreEmitTarget = "executable" | "library" | "repl";
 export type CoreEmitOptions = {
   target?: CoreEmitTarget;
   workerSpecifiers?: Map<string, string>;
+  libraryAbi?: "positional" | "tuple";
 };
 
 export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions = {}): string {
@@ -80,19 +82,24 @@ export function emitCoreProgram(program: CoreProgram, options: CoreEmitOptions =
     ...emitLibraryPervasives(program, requiredStandardIds),
     emitModuleRequest(entry),
     target === "library"
-      ? emitLibraryExports(entry)
+      ? emitLibraryExports(entry, options.libraryAbi ?? "positional")
       : target === "repl"
       ? ""
       : emitMainInvocation(entry),
   ];
+  const prelude = [
+    ...emitRuntimePrelude(),
+    ...emitFirstClassTupleRuntime(),
+    ...(needsJsAbiRuntime ? [emitJsAbiRuntime()] : []),
+  ];
   const emitted = target === "repl"
-    ? [...emitRuntimePrelude(), stackOverflowSites, "try {", ...body, emitReplRuntimeCatch()].join(
+    ? [...prelude, stackOverflowSites, "try {", ...body, emitReplRuntimeCatch()].join(
       "\n",
     )
     : target === "executable"
-    ? [...emitRuntimePrelude(), stackOverflowSites, "try {", ...body, emitExecutableRuntimeCatch()]
+    ? [...prelude, stackOverflowSites, "try {", ...body, emitExecutableRuntimeCatch()]
       .join("\n")
-    : [...emitRuntimePrelude(), ...body].join("\n");
+    : [...prelude, ...body].join("\n");
   return materializeRuntimeCallSites(emitted);
 }
 
@@ -1116,6 +1123,8 @@ function resetEmitterState(): void {
   tailValueTemp = 0;
   returnValueTemp = 0;
   scalarTupleTemp = 0;
+  firstClassTupleArities = new Set();
+  needsJsAbiRuntime = false;
   resetJsImportEmitter();
 }
 
@@ -1138,12 +1147,27 @@ function emitMainInvocation(entry: CoreModuleArtifact): string {
 }`;
 }
 
-function emitLibraryExports(entry: CoreModuleArtifact): string {
+let needsJsAbiRuntime = false;
+function emitLibraryExports(entry: CoreModuleArtifact, abi: "positional" | "tuple"): string {
   const publicExports = finalExports(entry.dynamicExports);
   if (publicExports.length === 0) return "export {};";
-  const bindings = publicExports.map((item, index) =>
-    `const __wm_library_export_${index} = ${id(entry.emitName)}[${JSON.stringify(item.name)}];`
-  );
+  const bindings = publicExports.map((item, index) => {
+    const environment = entry.analysis.exportedStructure;
+    const scheme = environment.valEnv.get(item.name);
+    const structure = environment.strEnv.get(item.name);
+    const shape = abi === "tuple"
+      ? null
+      : item.structureId !== undefined && structure
+      ? structureAbiShape(structure)
+      : scheme
+      ? jsAbiShape(scheme.type)
+      : null;
+    const value = `${id(entry.emitName)}[${JSON.stringify(item.name)}]`;
+    if (shape) needsJsAbiRuntime = true;
+    return `const __wm_library_export_${index} = ${
+      shape ? `__wm_abi_convert(${value}, ${JSON.stringify(shape)}, true)` : value
+    };`;
+  });
   const exports = publicExports.map((item, index) =>
     `  __wm_library_export_${index} as ${
       item.name.includes("'") ? JSON.stringify(item.name) : id(item.name)
@@ -1439,8 +1463,9 @@ function emitImportedValueAlias(
  * Workman is an SML: a function takes one tuple argument, so the tupled entry
  * point must stay for first-class and partial use. But a call to a statically
  * known function with a literal tuple of matching arity need not materialize
- * that tuple. Eligible functions get a second multi-parameter entry point, and
- * such call sites target it directly.
+ * that tuple. Eligible functions get a second multi-parameter entry point. Known
+ * calls target it directly; indirect tuple calls look it up on the function value,
+ * retaining the tupled fallback for polymorphic, foreign, and complex-pattern functions.
  *
  * This is collected across the whole program rather than per module. Binding
  * ids are program-global, and an imported value is aliased under the exporting
@@ -1463,17 +1488,8 @@ function arityRaiseCandidate(
 ): { bindingId: BindingId; direct: DirectFn } | undefined {
   const pattern = binding.pattern;
   if (pattern.kind !== "CorePVar" || pattern.bindingId === undefined) return undefined;
-  const value = binding.value;
-  if (value.kind !== "CoreFn" || value.arms.length !== 1) return undefined;
-  const arm = value.arms[0];
-  if (arm.pattern.kind !== "CorePTuple") return undefined;
-  const items = arm.pattern.items;
-  if (items.length < 2) return undefined;
-  // Only simple destructuring: anything else carries runtime checks the direct
-  // entry point would have to reproduce.
-  if (!items.every((item) => item.kind === "CorePVar" || item.kind === "CorePWildcard")) {
-    return undefined;
-  }
+  const items = tupleFunctionParameters(binding.value);
+  if (!items) return undefined;
   const suffix = `__wm_d${items.length}`;
   return {
     bindingId: pattern.bindingId,
@@ -1484,6 +1500,51 @@ function arityRaiseCandidate(
       exportKey: suffix,
     },
   };
+}
+
+/** Only patterns whose checks disappear under a known tuple arity can use a direct entry. */
+function tupleFunctionParameters(expr: CoreExpr): CorePattern[] | undefined {
+  if (expr.kind !== "CoreFn" || expr.arms.length !== 1) return;
+  const pattern = expr.arms[0].pattern;
+  if (pattern.kind !== "CorePTuple" || pattern.items.length < 2) return;
+  if (!pattern.items.every((item) => item.kind === "CorePVar" || item.kind === "CorePWildcard")) {
+    return;
+  }
+  return pattern.items;
+}
+
+// Metadata is attached once to the WM function value, so aliases, closures, records, and
+// separately compiled libraries keep the same fast entry without creating boundary adapters.
+// An arity-specific, versioned global symbol makes the protocol agree across library outputs.
+let firstClassTupleArities = new Set<number>();
+function tupleEntryKey(arity: number): string {
+  firstClassTupleArities.add(arity);
+  return `__wm_tuple_entry_${arity}`;
+}
+
+function emitFirstClassTupleRuntime(): string[] {
+  return [...firstClassTupleArities].sort((a, b) => a - b).flatMap((arity) => {
+    const parameters = Array.from({ length: arity }, (_, i) => `a${i}`);
+    const args = parameters.join(", ");
+    return [
+      `const __wm_tuple_entry_${arity} = Symbol.for("wm.tupleEntry.v1.${arity}");`,
+      // A fixed JS signature keeps the fast branch free of rest arrays or argument tuples.
+      `const __wm_tuple_call_${arity} = (fn, ${args}) => {
+  const direct = fn[__wm_tuple_entry_${arity}];
+  return direct === undefined ? fn([${args}]) : direct(${args});
+};`,
+      `const __wm_tuple_function_${arity} = (direct) => {
+  const tupled = (__arg) => {
+    if (__wm_is_tuple(__arg) && __arg.length === ${arity}) return direct(${
+        parameters.map((_, i) => `__arg[${i}]`).join(", ")
+      });
+    __wm_fail("Match", "pattern match failure in function");
+  };
+  Object.defineProperty(tupled, __wm_tuple_entry_${arity}, { value: direct });
+  return tupled;
+};`,
+    ];
+  });
 }
 
 function collectProgramDirectFns(program: CoreProgram): Map<BindingId | StructureId, DirectFn> {
@@ -1572,6 +1633,9 @@ function emitArityRaisedBinding(
     `const ${patternBindingName(binding.pattern)} = (__arg) => {\n` +
     `if (__wm_is_tuple(__arg) && __arg.length === ${direct.arity}) return ${direct.name}(${forwarded});\n` +
     `__wm_fail("Match", "pattern match failure in function");\n};`,
+    `Object.defineProperty(${patternBindingName(binding.pattern)}, ${
+      tupleEntryKey(direct.arity)
+    }, { value: ${direct.name} });`,
   ];
 }
 
@@ -1705,10 +1769,21 @@ function emitExpr(expr: CoreExpr): string {
       } }`;
     case "CoreJsonArray":
       return `[${expr.items.map(emitExpr).join(", ")}]`;
-    case "CoreFn":
+    case "CoreFn": {
+      const items = tupleFunctionParameters(expr);
+      if (items) {
+        tupleEntryKey(items.length);
+        const params = items.map((item, i) =>
+          item.kind === "CorePVar" ? patternBindingName(item) : `__wm_unused_${i}`
+        );
+        return `__wm_tuple_function_${items.length}((${params.join(", ")}) => {\n${
+          emitReturnExpr(expr.arms[0].body)
+        }\n})`;
+      }
       return `(__arg) => {\n${
         emitArmBody(expr.arms, "__arg", "pattern match failure in function")
       }\n}`;
+    }
     case "CoreApp": {
       const primitive = emitPrimitiveOperatorApp(expr);
       if (primitive) return primitive;
@@ -1726,6 +1801,14 @@ function emitExpr(expr: CoreExpr): string {
         }
       }
       const callee = emitExpr(expr.callee);
+      if (expr.arg.kind === "CoreTuple" && expr.arg.items.length >= 2) {
+        const arity = expr.arg.items.length;
+        tupleEntryKey(arity);
+        return markRuntimeCall(
+          expr,
+          `__wm_tuple_call_${arity}(${callee}, ${expr.arg.items.map(emitExpr).join(", ")})`,
+        );
+      }
       return markRuntimeCall(
         expr,
         `${expr.callee.kind === "CoreFn" ? `(${callee})` : callee}(${emitExpr(expr.arg)})`,
@@ -1879,6 +1962,9 @@ function emitArityRaisedRecursiveBinding(
     `const ${patternBindingName(binding.pattern)} = (__arg) => {\n` +
     `if (__wm_is_tuple(__arg) && __arg.length === ${direct.arity}) return ${direct.name}(${forwarded});\n` +
     `__wm_fail("Match", "pattern match failure in function");\n};`,
+    `Object.defineProperty(${patternBindingName(binding.pattern)}, ${
+      tupleEntryKey(direct.arity)
+    }, { value: ${direct.name} });`,
   ];
 }
 

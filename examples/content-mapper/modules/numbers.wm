@@ -1,0 +1,3 @@
+let double = (value: Number) => value + value;
+let identity = item => item;
+let privateToFacade = true;

@@ -11,6 +11,7 @@
       "README.md",
       "LICENSE",
       "deno.json",
+      "package.json",
       "src/",
       "std/",
       "subml-basis/",

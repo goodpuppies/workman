@@ -1,0 +1,11 @@
+{
+  "name": "workman-typescript-sync",
+  "version": "0.1.3",
+  "description": "Keep WM buffers live in Fresh's TypeScript content-mapper session",
+  "type": "plugin",
+  "license": "MIT",
+  "fresh": {
+    "min_version": "0.5.8",
+    "entry": "sync.ts"
+  }
+}

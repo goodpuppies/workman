@@ -113,6 +113,9 @@ build. See [library ownership and workflow](markdown/subsetml-basis.md).
 
 ## Documentation
 
+* [Experimental TypeScript content mapper](docs/content-mapper.md): typed WM imports, source navigation, and live module updates.
+* [Vite and Bun integration](docs/bundlers.md): direct WM imports and WM-backed TanStack server functions.
+
 * To get up to speed quickly, see [the syntax guide](https://github.com/goodpuppies/workman/blob/main/docs/syntax-guide.md). It is short and the best way to learn the language
 * see [the docs folder](https://github.com/goodpuppies/workman/tree/main/docs)
 * and [examples](https://github.com/goodpuppies/workman/tree/main/examples)

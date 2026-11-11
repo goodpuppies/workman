@@ -1,0 +1,32 @@
+{
+  "name": "@goodpuppies/workman",
+  "version": "0.6.5",
+  "private": true,
+  "type": "module",
+  "description": "Workman language tools and experimental TypeScript content mapper",
+  "license": "MIT",
+  "typescript": {
+    "contentMapper": {
+      "exec": [
+        "deno",
+        "run",
+        "-A",
+        "--config",
+        "./deno.json",
+        "./src/content_mapper/server.ts"
+      ],
+      "compilerOptions": [],
+      "dynamicConfig": true
+    }
+  },
+  "exports": {
+    "./vite": {
+      "types": "./src/integrations/vite.d.mts",
+      "import": "./src/integrations/vite.mjs"
+    },
+    "./bun": {
+      "types": "./src/integrations/bun.d.mts",
+      "import": "./src/integrations/bun.mjs"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "workman-content-mapper-example",
+  "private": true,
+  "scripts": {
+    "check": "tsc --runExternalCode",
+    "check:modules": "tsc --runExternalCode -p modules"
+  },
+  "devDependencies": {
+    "@goodpuppies/workman": "file:../..",
+    "typescript": "7.1.0-beta"
+  }
+}

@@ -1,0 +1,4 @@
+from "./numbers.wm" import { privateToFacade };
+export from "./numbers.wm" import { double as twice, identity };
+export from "./numbers.wm" import * as Numbers;
+let enabled = privateToFacade;

@@ -100,11 +100,11 @@ export async function loadPreview() {
       };
     };
     const render = (original: string, insertions: Insertion[], marked = false): Preview =>
-      decode(runtime.render([original, hints(insertions), marked]));
+      decode(runtime.render(original, hints(insertions), marked));
     return Object.assign(render, {
       compare(original: string, projected: string, marked = false, limit = 256): Difference {
         if (!isI32(limit)) throw new RangeError("Diff limit must be an integer from 0 to 4096");
-        const result = runtime.compare([original, projected, limit]) as Variant;
+        const result = runtime.compare(original, projected, limit) as Variant;
         if (result.name === "Err") {
           const error = result.a0 as Variant;
           throw new RangeError(
@@ -116,7 +116,7 @@ export async function loadPreview() {
         if (result.name !== "Ok") throw new Error("Invalid WM diff result");
         const difference = result.a0 as { edits: Variant };
         return {
-          ...decode(runtime.renderDifference([difference, marked])),
+          ...decode(runtime.renderDifference(difference, marked)),
           projected,
           edits: list<any>(difference.edits).map((edit) => ({
             kind: edit.kind.name,

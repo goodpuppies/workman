@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "contentMappers": [
+    {
+      "package": "@goodpuppies/workman",
+      "extensions": [".wm"],
+      "options": { "entryPoints": ["facade.wm"] }
+    }
+  ],
+  "files": ["consumer.ts"]
+}

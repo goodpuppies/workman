@@ -94,7 +94,10 @@ import {
   loadCachedWmslangCompiler,
 } from "./wmslang/compiler_cache.ts";
 
-export type CompileOptions = ModuleGraphOptions;
+export type CompileOptions = ModuleGraphOptions & {
+  /** The positional JS ABI is the public default; tuple is for older generated tool protocols. */
+  libraryAbi?: "positional" | "tuple";
+};
 export type CompileArtifact = {
   path: string;
   code: string;
@@ -284,7 +287,9 @@ export async function compileReplFileArtifacts(
   options: CompileOptions = {},
 ): Promise<CompileArtifact[]> {
   return await compileFileArtifactsFromCore(
-    await coreFile(input, { ...options, captureEntrySteps: true }), options, "repl",
+    await coreFile(input, { ...options, captureEntrySteps: true }),
+    options,
+    "repl",
   );
 }
 
@@ -294,7 +299,7 @@ export async function compileLibraryFile(
 ): Promise<string> {
   const compiled = await coreFile(input, options);
   options.onStage?.("emit javascript");
-  return emitCoreProgram(compiled.core, { target: "library" });
+  return emitCoreProgram(compiled.core, { target: "library", libraryAbi: options.libraryAbi });
 }
 
 export async function checkFile(input: string): Promise<Map<string, InferResult>> {
@@ -759,6 +764,7 @@ export async function compileLibraryVirtual(
 ): Promise<string> {
   return emitCoreProgram((await coreVirtual(entryPath, virtualFs, options)).core, {
     target: "library",
+    libraryAbi: options.libraryAbi,
   });
 }
 

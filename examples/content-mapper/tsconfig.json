@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": []
+  },
+  "contentMappers": [
+    {
+      "package": "@goodpuppies/workman",
+      "extensions": [".wm"]
+    }
+  ],
+  "files": ["consumer.ts"]
+}

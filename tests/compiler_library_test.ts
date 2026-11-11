@@ -47,7 +47,7 @@ Deno.test("compiled WM library is importable through stable plain-data exports",
   assertEquals(Object.keys(first).sort(), ["FixtureDescription", "describe", "double"]);
   assertEquals(first.double(6), 12);
   assertEquals(second.double(7), 14);
-  assertEquals(first.FixtureDescription(["frontend-v2-fixture", "zero"]), {
+  assertEquals(first.FixtureDescription("frontend-v2-fixture", "zero"), {
     kind: "frontend-v2-fixture",
     name: "zero",
   });

@@ -1,0 +1,4 @@
+let double = value => value + value;
+let identity = (value) => value;
+let sum = (left: Number, right: Number) => left + right;
+let curried = (left: Number) => (right: Number) => left + right;

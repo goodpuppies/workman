@@ -64,14 +64,14 @@ Deno.test("portable pakman helpers agree with Unicode ordering, checked parsing 
   ];
   for (const left of words) {
     for (const right of words) {
-      assertEquals(runtime.order([left, right]), left < right ? -1 : left > right ? 1 : 0);
+      assertEquals(runtime.order(left, right), left < right ? -1 : left > right ? 1 : 0);
     }
   }
-  assertEquals(runtime.order(["a\ud800", "b"]), 99);
-  assertEquals(runtime.order(["b", "a\udfff"]), 99);
-  assertEquals(runtime.pad(["🦊", 3]), "🦊  ");
-  assertEquals(runtime.pad(["abc", -2147483648]), "abc");
-  assertEquals(runtime.pad(["a\ud800", 0]), "FAILED");
+  assertEquals(runtime.order("a\ud800", "b"), 99);
+  assertEquals(runtime.order("b", "a\udfff"), 99);
+  assertEquals(runtime.pad("🦊", 3), "🦊  ");
+  assertEquals(runtime.pad("abc", -2147483648), "abc");
+  assertEquals(runtime.pad("a\ud800", 0), "FAILED");
   for (
     const [path, parent] of [["", ""], ["file", ""], ["/", "/"], ["/a", "/"], ["a//b", "a/"], [
       "/café/東京/🦊",
@@ -80,9 +80,9 @@ Deno.test("portable pakman helpers agree with Unicode ordering, checked parsing 
   ) {
     assertEquals(runtime.parent(path), parent);
   }
-  assertEquals(runtime.subsequence(["oscgoesbrrr", "ogb"]), true);
-  assertEquals(runtime.subsequence(["café/🦊/東京", "é🦊東"]), true);
-  assertEquals(runtime.subsequence(["abc", "ca"]), false);
-  assertEquals(runtime.subsequence(["abc", ""]), true);
-  assertEquals(runtime.subsequence(["a\ud800", ""]), false);
+  assertEquals(runtime.subsequence("oscgoesbrrr", "ogb"), true);
+  assertEquals(runtime.subsequence("café/🦊/東京", "é🦊東"), true);
+  assertEquals(runtime.subsequence("abc", "ca"), false);
+  assertEquals(runtime.subsequence("abc", ""), true);
+  assertEquals(runtime.subsequence("a\ud800", ""), false);
 });

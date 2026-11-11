@@ -1629,6 +1629,7 @@ function semanticCallableParameters(
   bindings: ModuleMap<BindingFacts>,
 ): ReadonlyMap<BindingId, SemanticCallableParameterStages> {
   const callables = new Map<BindingId, SemanticCallableParameterStages>();
+  const aliases = new Map<BindingId, BindingId>();
   for (const moduleId of graph.order) {
     const module = graph.nodes.get(moduleId)?.module;
     const moduleBindings = bindings.get(moduleId);
@@ -1655,8 +1656,7 @@ function semanticCallableParameters(
       for (const binding of declaration.bindings) {
         if (
           binding.pattern.kind === "PVar" &&
-          binding.pattern.node &&
-          binding.value.kind === "Lambda"
+          binding.pattern.node
         ) {
           const bindingName = binding.pattern.name;
           const id = [...moduleBindings.binders].find(([candidate]) =>
@@ -1665,8 +1665,15 @@ function semanticCallableParameters(
             candidate.node !== undefined &&
             sameSpan(candidate.node.span, binding.pattern.node!.span)
           )?.[1];
-          const stages = callableParameterStages(binding.value);
-          if (id !== undefined) callables.set(id, stages);
+          if (id !== undefined) {
+            let value = binding.value;
+            while (value.kind === "Ascribed") value = value.value;
+            if (value.kind === "Lambda") callables.set(id, callableParameterStages(value));
+            else if (value.kind === "Var") {
+              const referenced = moduleBindings.references.get(value);
+              if (referenced !== undefined) aliases.set(id, referenced);
+            }
+          }
         }
         visitExpr(binding.value);
       }
@@ -1745,6 +1752,20 @@ function semanticCallableParameters(
       }
     };
     module.decls.forEach(visitDecl);
+  }
+  // Follow resolved binding identities, including namespace members and re-export chains.
+  // A fixed point also handles alias chains in a simultaneous binding group without guessing
+  // from names or accidentally inheriting metadata from a shadowed declaration.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [alias, target] of aliases) {
+      const stages = callables.get(target);
+      if (stages && !callables.has(alias)) {
+        callables.set(alias, stages);
+        changed = true;
+      }
+    }
   }
   return callables;
 }

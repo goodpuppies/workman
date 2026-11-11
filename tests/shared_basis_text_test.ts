@@ -77,10 +77,10 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
     const unexpected = () => {
       throw new Error("callback on invalid text");
     };
-    assertEquals(runtime.textFieldsOkay([invalid, unexpected]), false);
-    assertEquals(runtime.textTokensOkay([invalid, unexpected]), false);
-    assertEquals(runtime.textMapOkay([invalid, unexpected]), false);
-    assertEquals(runtime.textTranslateOkay([invalid, unexpected]), false);
+    assertEquals(runtime.textFieldsOkay(invalid, unexpected), false);
+    assertEquals(runtime.textTokensOkay(invalid, unexpected), false);
+    assertEquals(runtime.textMapOkay(invalid, unexpected), false);
+    assertEquals(runtime.textTranslateOkay(invalid, unexpected), false);
     assertEquals(runtime.rejectsSlices(invalid), true);
   }
   for (const invalid of ["a東京", "🦊"]) {
@@ -88,19 +88,19 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
     const unexpected = () => {
       throw new Error("callback on non-byte input");
     };
-    assertEquals(runtime.byteFieldsOkay([invalid, unexpected]), false);
-    assertEquals(runtime.byteTokensOkay([invalid, unexpected]), false);
-    assertEquals(runtime.byteMapOkay([invalid, unexpected]), false);
-    assertEquals(runtime.byteTranslateOkay([invalid, unexpected]), false);
+    assertEquals(runtime.byteFieldsOkay(invalid, unexpected), false);
+    assertEquals(runtime.byteTokensOkay(invalid, unexpected), false);
+    assertEquals(runtime.byteMapOkay(invalid, unexpected), false);
+    assertEquals(runtime.byteTranslateOkay(invalid, unexpected), false);
     assertEquals(runtime.rejectsByteSlices(invalid), true);
   }
   for (const name of ["textFieldsOkay", "textTokensOkay"]) {
     const seen: number[] = [];
     assertEquals(
-      runtime[name](["a🦊/é", (scalar: number) => {
+      runtime[name]("a🦊/é", (scalar: number) => {
         seen.push(scalar);
         return scalar === 47;
-      }]),
+      }),
       true,
     );
     assertEquals(seen, [97, 129418, 47, 233]);
@@ -108,23 +108,23 @@ Deno.test("shared Basis text helpers preserve Unicode and validate before matchi
   for (const name of ["textMapOkay", "textTranslateOkay"]) {
     const seen: number[] = [];
     assertEquals(
-      runtime[name](["a🦊é", (scalar: number) => {
+      runtime[name]("a🦊é", (scalar: number) => {
         seen.push(scalar);
         return name === "textMapOkay" ? scalar : "";
-      }]),
+      }),
       true,
     );
     assertEquals(seen, [97, 129418, 233]);
   }
-  assertEquals(runtime.textMapOkay(["ab", () => 55296]), false);
-  assertEquals(runtime.byteMapOkay(["ab", () => "東京"]), false);
+  assertEquals(runtime.textMapOkay("ab", () => 55296), false);
+  assertEquals(runtime.byteMapOkay("ab", () => "東京"), false);
   for (const name of ["textTranslateOkay", "byteTranslateOkay"]) {
     let calls = 0;
     assertEquals(
-      runtime[name](["ab", () => {
+      runtime[name]("ab", () => {
         calls++;
         return "\ud800";
-      }]),
+      }),
       false,
     );
     assertEquals(calls, 1);

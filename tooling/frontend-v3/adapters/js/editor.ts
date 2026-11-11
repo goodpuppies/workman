@@ -41,7 +41,7 @@ export async function loadEditor() {
       throw new Error("Invalid WM option in editor transport");
     };
     return (source: string, marked = false): EditorResult => {
-      const result = runtime.inspect([source, marked]) as Variant;
+      const result = runtime.inspect(source, marked) as Variant;
       if (result.name === "Err") {
         throw new Error(`Editor view failed: ${JSON.stringify(result)}`);
       }
