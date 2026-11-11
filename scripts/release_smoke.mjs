@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -71,7 +71,11 @@ try {
   );
   await writeFile(join(directory, "math.mjs"), compiled.code);
   assert.equal((await import(pathToFileURL(join(directory, "math.mjs")).href)).add(20, 22), 42);
-  assert(compiled.dependencies.includes(join(directory, "math.wm")));
+  // Module graph paths are canonical: macOS resolves /var through /private/var,
+  // and Windows can change drive casing or path prefixes during resolution.
+  const expectedDependency = await realpath(join(directory, "math.wm"));
+  const dependencies = await Promise.all(compiled.dependencies.map((path) => realpath(path)));
+  assert(dependencies.includes(expectedDependency), JSON.stringify(dependencies));
   // Exercise installed Node integration code, not just the binary's direct CLI.
   await writeFile(
     join(directory, "integration.mjs"),
