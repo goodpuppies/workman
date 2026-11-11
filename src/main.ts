@@ -38,6 +38,8 @@ const commands = new Set([
   "check",
   "compile",
   "compile-library",
+  "compile-library-json",
+  "content-mapper",
   "run",
   "watch",
   "repl",
@@ -198,6 +200,18 @@ export async function main(args: string[]): Promise<number> {
       return await compileCommand(commandArgs);
     case "compile-library":
       return await compileLibraryCommand(commandArgs);
+    case "compile-library-json": {
+      if (commandArgs.length !== 1) throw new Error("compile-library-json requires one WM path");
+      const { compileIntegration } = await import("./integrations/compile.ts");
+      console.log(JSON.stringify(await compileIntegration(commandArgs[0])));
+      return 0;
+    }
+    case "content-mapper": {
+      if (commandArgs.length) throw new Error("content-mapper accepts no arguments");
+      const { runContentMapper } = await import("./content_mapper/server.ts");
+      await runContentMapper();
+      return 0;
+    }
     case "run":
       return await runCommand(commandArgs);
     case "watch":

@@ -1,6 +1,6 @@
 {
   "name": "@goodpuppies/workman",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Workman language tools and experimental TypeScript content mapper",
@@ -28,5 +28,9 @@
       "types": "./src/integrations/bun.d.mts",
       "import": "./src/integrations/bun.mjs"
     }
+  },
+  "scripts": {
+    "release:smoke": "node scripts/release_smoke.mjs",
+    "release:pack": "node scripts/release_pack.mjs"
   }
 }

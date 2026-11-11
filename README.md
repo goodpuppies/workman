@@ -122,6 +122,8 @@ build. See [library ownership and workflow](markdown/subsetml-basis.md).
 
 ## Development
 
+See [release preparation](docs/releases.md) for npm packages, compiled binaries, and the JSR release workflow.
+
 For local development, the repository installer remains available:
 
 ```sh

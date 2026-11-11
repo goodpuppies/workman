@@ -1,0 +1,63 @@
+name: Prepare experimental release artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.8
+      - run: deno task check
+      - run: deno check src/release_cli.ts scripts/release.ts scripts/release_version.ts
+      - run: deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir tests/release_test.ts tests/js_abi_test.ts tests/content_mapper_test.ts
+
+  binaries:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-15
+          - target: win32-x64
+            runner: windows-2025
+          - target: win32-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.8
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Build and stage native packages
+        run: deno task release:stage --target ${{ matrix.target }}
+      - name: Hide checkout sources before installation tests
+        run: node -e "const fs=require('node:fs'); fs.mkdirSync('_scratch/source-hidden',{recursive:true}); for (const name of ['src','std','subml-basis','tooling']) fs.renameSync(name,'_scratch/source-hidden/'+name);"
+      - name: Test packed install without external Deno
+        run: npm run release:smoke
+      - name: Pack npm packages and standalone archive
+        run: npm run release:pack
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workman-${{ matrix.target }}
+          path: _scratch/release/artifacts/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

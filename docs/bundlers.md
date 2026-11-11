@@ -1,9 +1,13 @@
 # Vite and Bun integration
 
 The experimental main `@goodpuppies/workman` package provides runtime compilation adapters in
-addition to its TypeScript content mapper. Install/link Workman as a development dependency. Deno
-must be available on PATH during compilation; the adapters launch the compiler using its own
-`deno.json`. `{ denoPath: "/absolute/path/to/deno" }` overrides the executable.
+addition to its TypeScript content mapper. Install/link Workman as a development dependency.
+
+From a source checkout, Deno must be available on PATH during compilation; the adapters launch the
+compiler using its own `deno.json`. `{ denoPath: "/absolute/path/to/deno" }` overrides that
+executable. The [staged npm release](releases.md) instead resolves its installed platform binary and
+accepts a `compilerPath` override. Pure-WM compilation through that binary does not need external
+Deno.
 
 ## Vite
 
@@ -54,9 +58,10 @@ import { workman } from "@goodpuppies/workman/bun";
 await Bun.build({ entrypoints: ["./server.ts"], target: "bun", plugins: [workman()] });
 ```
 
-Deno compiles the WM source; Bun executes/bundles the generated JS. Generated pure-WM JS does not
-need the compiler at runtime. Transitive dependency watching is implemented for Vite; Bun's
-standalone watch/hot reload behavior is not guaranteed by this adapter yet.
+The source-checkout adapter uses Deno to compile WM; the npm release adapter uses its platform
+binary. Bun executes/bundles the generated JS. Generated pure-WM JS does not need the compiler at
+runtime. Transitive dependency watching is implemented for Vite; Bun's standalone watch/hot reload
+behavior is not guaranteed by this adapter yet.
 
 ## Current bounds
 

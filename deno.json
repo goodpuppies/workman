@@ -1,7 +1,7 @@
 {
   "nodeModulesDir": "none",
   "name": "@goodpuppies/workman",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "license": "MIT",
   "exports": {
     ".": "./src/cli.ts"
@@ -26,6 +26,7 @@
     ]
   },
   "tasks": {
+    "release:stage": "deno run -A scripts/release.ts",
     "generate-assets": "deno run --allow-read --allow-write scripts/generate_assets.ts",
     "byte-type:build": "deno run -A scripts/build_byte_type.ts",
     "c-header:build": "deno run -A scripts/build_c_header_extractor.ts",
@@ -55,7 +56,8 @@
     "profile:frontend-v2:cpu": "deno run -A --cpu-prof --cpu-prof-flamegraph --cpu-prof-md --cpu-prof-dir=profiles --cpu-prof-name=frontend-v2.cpuprofile scripts/profile_frontend_v2.ts surface 1",
     "profile:lsp-typing": "deno run -A scripts/profile_lsp_typing.ts",
     "profile:lsp-typing:cpu": "deno run -A scripts/profile_lsp_typing.ts --cpu-profile",
-    "wm": "deno run -A src/main.ts"
+    "wm": "deno run -A src/main.ts",
+    "release:version": "deno run --allow-read --allow-write scripts/release_version.ts"
   },
   "imports": {
     "#problems-client": "./src/problems_client.ts",
