@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "types": ["deno", "node"],
+    "strict": true,
+    "noEmit": true,
+    "allowJs": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "paths": {
+      "#problems-client": ["./src/problems_client.ts"],
+      "byte_type": ["./src/vendor/byte_type/mod.ts"]
+    }
+  },
+  "contentMappers": [
+    {
+      "package": "@goodpuppies/workman",
+      "extensions": [".wm"]
+    }
+  ],
+  "include": ["src/**/*.ts", "tests/*.ts", "scripts/**/*.ts"]
+}

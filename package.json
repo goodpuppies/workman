@@ -36,5 +36,18 @@
   "scripts": {
     "release:smoke": "node scripts/release_smoke.mjs",
     "release:pack": "node scripts/release_pack.mjs"
+  },
+  "dependencies": {
+    "peggy": "^5.0.6",
+    "typescript-api": "npm:@typescript/typescript6@^6.0.2"
+  },
+  "devDependencies": {
+    "@goodpuppies/workman": "file:.",
+    "@std/assert": "npm:@jsr/std__assert@^1.0.19",
+    "@types/deno": "2.7.0",
+    "@types/node": "26.1.1",
+    "@webgpu/types": "0.1.64",
+    "esbuild": "0.25.12",
+    "typescript": "7.1.0-beta"
   }
 }

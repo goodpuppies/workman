@@ -276,11 +276,11 @@ Normal regression tests use wm's existing compiler dependency:
 deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir tests/content_mapper_test.ts
 ```
 
-Native TypeScript 7 integration tests are opt-in and skip when `WM_CONTENT_MAPPER_TSC` is unset:
+Native TypeScript 7 integration tests use the repository's TypeScript 7.1 devDependency after
+`deno install`, or the `tsc` named by `WM_CONTENT_MAPPER_TSC`, and skip when neither is present:
 
 ```sh
-WM_CONTENT_MAPPER_TSC="$PWD/examples/content-mapper/node_modules/.bin/tsc" \
-  deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir \
+deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir \
   tests/content_mapper_typescript7_test.ts
 ```
 

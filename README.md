@@ -124,6 +124,10 @@ build. See [library ownership and workflow](markdown/subsetml-basis.md).
 
 See [release preparation](docs/releases.md) for npm packages, compiled binaries, and the JSR release workflow.
 
+Install the dependencies once with `deno install`; Deno and TypeScript both resolve packages from the
+resulting `node_modules`. `deno task check` type-checks `src/`, `tests/`, and `scripts/` with
+TypeScript 7.1 and the Workman [content mapper](docs/content-mapper.md).
+
 For local development, the repository installer remains available:
 
 ```sh

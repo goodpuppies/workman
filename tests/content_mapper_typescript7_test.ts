@@ -3,10 +3,19 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { decodeMessages, encodeMessage, type RpcMessage } from "../src/lsp/rpc.ts";
 
-// Keep experimental tooling out of the compiler's dependency graph. Opt in with an absolute
-// path to a TypeScript 7.1 tsc executable (see docs/content-mapper.md).
-const tsc = Deno.env.get("WM_CONTENT_MAPPER_TSC");
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+// The TypeScript 7.1 tsc executable: WM_CONTENT_MAPPER_TSC, else the repository's
+// devDependency once `npm install` has run.
+const tsc = Deno.env.get("WM_CONTENT_MAPPER_TSC") ?? installedTsc();
+
+function installedTsc(): string | undefined {
+  const path = join(root, "node_modules/typescript/bin/tsc");
+  try {
+    return Deno.statSync(path).isFile ? path : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 async function fixture(): Promise<string> {
   const dir = await Deno.makeTempDir({ prefix: "wm-content-mapper-" });

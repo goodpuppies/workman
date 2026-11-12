@@ -14,6 +14,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: 2.9.8
+      - run: deno install --frozen
       - run: deno task check
       - run: deno check src/release_cli.ts scripts/release.ts scripts/release_version.ts
       - run: deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir tests/release_test.ts tests/js_abi_test.ts tests/content_mapper_test.ts
@@ -46,6 +47,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - run: deno install --frozen
       - name: Build and stage native packages
         run: deno task release:stage --target ${{ matrix.target }}
       - name: Hide checkout sources before installation tests

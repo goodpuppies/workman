@@ -1,5 +1,5 @@
 {
-  "nodeModulesDir": "none",
+  "nodeModulesDir": "manual",
   "name": "@goodpuppies/workman",
   "version": "0.7.0",
   "license": "MIT",
@@ -34,7 +34,7 @@
     "generate": "deno run -A scripts/generate.ts",
     "problems:build": "deno run -A scripts/build_problems_tui.ts",
     "tuiman:build": "deno run -A scripts/build_tuiman.ts",
-    "check": "deno check src/main.ts src/lsp/server.ts tests/*.ts",
+    "check": "deno run -A node_modules/typescript/bin/tsc -p . --runExternalCode",
     "test": "deno test --parallel --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir --allow-ffi --allow-net=127.0.0.1,github.com,release-assets.githubusercontent.com tests",
     "test:known-issues": "WM_KNOWN_ISSUES=1 deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir --allow-ffi --allow-net=127.0.0.1,github.com,release-assets.githubusercontent.com --filter \"known issue\" tests",
     "publish": "deno task generate && deno task publish:vscode",
@@ -61,14 +61,14 @@
   },
   "imports": {
     "#problems-client": "./src/problems_client.ts",
-    "@webgpu/types": "npm:@webgpu/types@0.1.64",
-    "@std/assert": "jsr:@std/assert@^1.0.17",
-    "byte_type": "./src/vendor/byte_type/mod.ts",
-    "peggy": "npm:peggy@^5.0.6",
-    "typescript-api": "npm:@typescript/typescript6@^6.0.2",
-    "@types/node": "npm:@types/node@26.1.1"
+    "byte_type": "./src/vendor/byte_type/mod.ts"
   },
   "fmt": {
     "lineWidth": 100
+  },
+  "compilerOptions": {
+    "lib": [
+      "deno.window"
+    ]
   }
 }

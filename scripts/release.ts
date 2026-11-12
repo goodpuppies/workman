@@ -118,6 +118,10 @@ export async function stageRelease(output: string, targets: readonly string[], b
           "compile",
           "-A",
           "--no-check",
+          // Embed only the npm packages the CLI reaches. With the repository's node_modules
+          // (manual mode), deno compile would embed all of it, dev tools and the package's
+          // self-link included.
+          "--node-modules-dir=none",
           "--exclude-unused-npm",
           "--target",
           target.triple,

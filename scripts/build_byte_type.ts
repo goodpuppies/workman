@@ -1,4 +1,4 @@
-import { build, stop } from "npm:esbuild@0.25.12";
+import { build, stop } from "esbuild";
 import { fileURLToPath } from "node:url";
 
 // Standalone emitted programs cannot depend on the compiler's installation path.
