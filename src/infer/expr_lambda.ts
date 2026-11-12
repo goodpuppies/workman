@@ -435,7 +435,11 @@ export function contextualLambdaParams(
     : [];
   return items.map((item) => {
     const type = prune(item);
-    return type.tag === "named" && typeInfoById(context.typeEnv, type.id)?.recordFields
+    const info = type.tag === "named" ? typeInfoById(context.typeEnv, type.id) : undefined;
+    // A reflected callback input is receiver evidence too. Preserve it before
+    // member inference can mistake a JS method for a Workman record field.
+    return type.tag === "ffi" ||
+        type.tag === "named" && (info?.recordFields || info?.foreign || type.foreign)
       ? item
       : undefined;
   });

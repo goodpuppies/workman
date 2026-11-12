@@ -55,6 +55,7 @@ import {
   recordExprFact,
   recordFfiFact,
   recordOperatorFact,
+  recordPatternType,
 } from "./type_facts.ts";
 import { gpuOperatorId } from "../gpu_operators.ts";
 import { elaborateConstraint } from "./constraints.ts";
@@ -642,7 +643,15 @@ function inferRecordMember(
     target.tag !== "struct" && !record?.recordFields &&
     !(target.tag === "var" &&
       knownTypeInfos(context.typeEnv).some((info) =>
-        !info.foreign && info.recordFields?.some((field) => field.name === expr.path[0])
+        !info.foreign && info.recordFields?.some((field) => {
+          if (field.name !== expr.path[0]) return false;
+          // A known data field cannot supply a method call on an unknown
+          // receiver. Leave that access for FFI reflection instead of imposing
+          // a record constraint just because an unrelated label exists.
+          const fieldType = prune(field.type);
+          return expr.kind !== "FfiCall" || expr.path.length > 1 ||
+            fieldType.tag === "fn" || fieldType.tag === "var";
+        })
       ))
   ) return undefined;
 
@@ -669,13 +678,17 @@ function inferRecordMember(
     ? { kind: "Call", callee: field, args: expr.args, node: expr.node }
     : field;
   const type = sequenceType([receiver], inferExpr(result, { ...context, env }));
+  // This binding bypasses inferLetDecl: retain the pattern evidence needed by
+  // tooling and core elaboration in this inference pass, including recovery.
+  const pattern = { kind: "PVar" as const, name };
+  recordPatternType(context.facts, pattern, receiver);
   const block: Expr = {
     kind: "Block",
     items: [{
       kind: "LetDecl",
       exported: true,
       recursive: false,
-      bindings: [{ pattern: { kind: "PVar", name }, value: expr.receiver }],
+      bindings: [{ pattern, value: expr.receiver }],
     }],
     result,
     node: expr.node,

@@ -6,6 +6,56 @@ import { ProjectIndex } from "../src/lsp/project_index.ts";
 import { fileUriToPath, pathToFileUri } from "../src/lsp/uri.ts";
 import { moduleId } from "../src/module_id.ts";
 import { validateUri } from "../src/lsp/validation.ts";
+import { semanticInlayHints } from "../src/lsp/type_inlays.ts";
+import { documentHighlightsAt } from "../src/lsp/symbols.ts";
+
+Deno.test("editor queries survive recovery with imported record pipe members", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = join(dir, "main.wm");
+    const uri = pathToFileUri(path);
+    const source = 'from "./draw.wm" import { read };\n' +
+      "let good = read();\nlet broken: String = 1;\nlet main = () => { good };";
+    const overrides = new Map([
+      [path, source],
+      [
+        join(dir, "draw.wm"),
+        "record Box = { value: Number }; let read = () => { Box(42) :> .value };",
+      ],
+    ]);
+    const index = new ProjectIndex();
+    await index.refreshFile(path, overrides);
+    const service = new SemanticService(index.discovery, {
+      sourceOverrides: () => overrides,
+      frontendOptions: () => ({}),
+    });
+    assertEquals((await service.documentContext(uri))?.recovered, true);
+    const hover = await hoverAt(uri, { line: 1, character: 4 }, overrides, {}, service);
+    assertEquals(hover?.contents.value, "```wm\ngood: Number\n```");
+    const hints = await semanticInlayHints(
+      uri,
+      {
+        start: { line: 0, character: 0 },
+        end: { line: 4, character: 0 },
+      },
+      overrides,
+      {},
+      {},
+      service,
+    );
+    assertEquals(hints.some((hint) => hint.label === ": Number"), true);
+    const highlights = await documentHighlightsAt(
+      uri,
+      { line: 1, character: 4 },
+      overrides,
+      {},
+      service,
+    );
+    assertEquals(highlights.length, 2);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
 
 Deno.test({
   name: "semantic service resolves encoded lowercase Windows drives to compiler interfaces",

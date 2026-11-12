@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { checkSource, checkVirtual, compileLibraryVirtual } from "../src/compiler.ts";
+import {
+  analyzeRecoveredVirtual,
+  checkSource,
+  checkVirtual,
+  compileLibraryVirtual,
+} from "../src/compiler.ts";
+import { moduleId } from "../src/module_id.ts";
 import { expectBinding } from "./type_helpers.ts";
 
 const records = `
@@ -7,6 +13,34 @@ const records = `
   record Outer<T> = { inner: Inner<T>, add: Number -> Number };
   let make = (value) => { Outer(Inner(value), (n) => { n + 1 }) };
 `;
+
+Deno.test("recovery retains imported record pipe projections and calls beside a type error", async () => {
+  const snapshot = await analyzeRecoveredVirtual(
+    "/test/main.wm",
+    new Map([
+      [
+        "/test/members.wm",
+        `${records}
+        let get = (item) => { item :> .inner :> .value };
+        let call = (item) => { item :> .add(41) };
+      `,
+      ],
+      [
+        "/test/main.wm",
+        `
+        from "./members.wm" import { make, get, call };
+        let text = get(make("hello"));
+        let broken: String = 1;
+        let answer = call(make(0));
+      `,
+      ],
+    ]),
+  );
+  const main = snapshot.interfaces.get(moduleId("/test/main.wm"))!;
+  assertEquals(main.diagnostics.some((diagnostic) => diagnostic.severity === "error"), true);
+  assertEquals(main.occurrences.some(({ name }) => name === "text"), true);
+  assertEquals(main.occurrences.some(({ name }) => name === "answer"), true);
+});
 
 Deno.test("pipe members project ordinary records without FFI effects", async () => {
   const result = await checkSource(`
@@ -68,6 +102,12 @@ Deno.test("pipe record members reject missing fields and invalid field calls", a
   );
   await assertRejects(() => checkSource(`${records} let bad = make(1) :> .add("wrong");`), Error);
   await assertRejects(() => checkSource(`${records} let bad = make(1) :> .inner(1);`), Error);
+  await assertRejects(() =>
+    checkSource(`
+      record Label = { text: String };
+      let call = (item) => { item :> .text() };
+      let bad = call(Label("not callable"));
+    `), Error);
 });
 
 Deno.test("pipe record field constraints survive imports and caller-owned records", async () => {
