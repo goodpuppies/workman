@@ -280,6 +280,7 @@ export type SemanticResolvedDefinition = Readonly<{
   span: SourceSpan;
   target: Readonly<{
     moduleId: ModuleId;
+    path: string;
     span: SourceSpan;
   }>;
 }>;
@@ -2678,14 +2679,13 @@ export function semanticDefinitionsAt(
       (left.span.end - left.span.start) - (right.span.end - right.span.start)
     )[0];
   if (!recovered) return [];
-  const target = project.interfaces.get(recovered.target.moduleId);
-  return target
-    ? [Object.freeze({
-      moduleId: recovered.target.moduleId,
-      path: target.path,
-      span: recovered.target.span,
-    })]
-    : [];
+  // Navigation is certified by lexical resolution, independently of whether
+  // the target declaration (or its module) survived type recovery.
+  return [Object.freeze({
+    moduleId: recovered.target.moduleId,
+    path: recovered.target.path,
+    span: recovered.target.span,
+  })];
 }
 
 /** Resolve the nominal declarations named by the selected occurrence's compiler-owned type. */

@@ -445,7 +445,7 @@ Deno.test("lsp definition retains a certified imported target inside a type-reje
   });
 });
 
-Deno.test("lsp definitions do not invent a fallback binding for failed phrases", async () => {
+Deno.test("lsp definitions retain lexical targets even when their phrases fail typing", async () => {
   const dir = await Deno.makeTempDir();
   const path = `${dir}/main.wm`;
   const source = "let broken = Missing; let use = broken;";
@@ -457,7 +457,76 @@ Deno.test("lsp definitions do not invent a fallback binding for failed phrases",
     new Map(),
   );
 
-  assertEquals(definition, null);
+  assertEquals(definition, {
+    uri: pathToFileUri(path),
+    range: {
+      start: positionOf(source, "broken ="),
+      end: { line: 0, character: source.indexOf("broken =") + "broken".length },
+    },
+  });
+});
+
+Deno.test("lsp definitions retain shadowed parameters and locals in a rejected function", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = `${dir}/main.wm`;
+    const source = "let value = 1; let broken = (value) => { let local = value; local + Missing };";
+    const overrides = new Map([[path, source]]);
+    for (
+      const [reference, declaration, name] of [
+        ["value;", "value)", "value"],
+        ["local +", "local =", "local"],
+      ]
+    ) {
+      assertEquals(
+        await definitionAt(pathToFileUri(path), positionOf(source, reference), overrides),
+        {
+          uri: pathToFileUri(path),
+          range: {
+            start: positionOf(source, declaration),
+            end: { line: 0, character: source.indexOf(declaration) + name.length },
+          },
+        },
+      );
+    }
+    assertEquals(
+      await definitionAt(pathToFileUri(path), positionOf(source, "Missing"), overrides),
+      null,
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("lsp definitions reach a type-rejected imported function from unsaved source", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const main = `${dir}/main.wm`;
+    const lib = `${dir}/kitty.wm`;
+    const library = "let loadEncoded = (value) => { value + Missing };";
+    for (
+      const [clause, call] of [
+        ["{ loadEncoded as run }", "run"],
+        ["* as Kitty", "Kitty.loadEncoded"],
+      ]
+    ) {
+      const source = `from "./kitty.wm" import ${clause}; let main = () => { ${call}(1) };`;
+      const overrides = new Map([[main, source], [lib, library]]);
+      const reference = call.split(".").at(-1)! + "(1)";
+      assertEquals(
+        await definitionAt(pathToFileUri(main), positionOf(source, reference), overrides),
+        {
+          uri: pathToFileUri(lib),
+          range: {
+            start: { line: 0, character: 4 },
+            end: { line: 0, character: 15 },
+          },
+        },
+      );
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 Deno.test("lsp document symbols include values, types, and constructors", async () => {
