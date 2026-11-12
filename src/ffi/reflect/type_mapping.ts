@@ -187,7 +187,11 @@ export function typeExprFromTsType(
     return { kind: "TName", name: "Task", args: [promised, name("Js.Error")], ffiPromise: true };
   }
   if (position === "param" && isNumericTypedArray(checker, type)) {
-    return { kind: "TName", name: "Js.Array", args: [name("Number")] };
+    // Typed arrays carry their own storage and host identity. Erasing one to
+    // Js.Array<Number> leaks that discovery type into ordinary WM helpers,
+    // which can no longer accept the actual view returned by another module.
+    const nominal = nominalObjectTypeName(checker, type);
+    if (nominal) return name(nominal);
   }
   const arrayElement = arrayElementType(checker, type, position);
   if (arrayElement) return { kind: "TName", name: "Js.Array", args: [arrayElement] };

@@ -161,6 +161,19 @@ export async function analyzeModuleGraph(
   const external = options.externalResults ?? await externalImportResults(graph);
   const importsFor = (node: ModuleNode, results: ModuleMap<InferResult>) =>
     importResults(node, results, external);
+  const assertPartial = (
+    node: ModuleNode,
+    result: InferResult,
+    results: ModuleMap<InferResult>,
+  ) => {
+    // A dependency stopped at a pending FFI boundary may not export its later
+    // declarations yet. Its importers must be retried after reflection rather
+    // than reporting those existing declarations as unknown names.
+    if (node.imports.some((edge) => results.get(edge.target)?.elaboration.complete === false)) {
+      return;
+    }
+    assertNoPartialDiagnostics(result);
+  };
 
   const ffi = new Map<ModuleId, FfiElaboration>();
   for (const node of freshNodes) {
@@ -219,7 +232,12 @@ export async function analyzeModuleGraph(
     registerModuleCarrier(result, node.path);
     firstResults.set(id, result);
     emit("initial partial inference", node, result);
-    await run("initial partial inference", node, result, () => assertNoPartialDiagnostics(result));
+    await run(
+      "initial partial inference",
+      node,
+      result,
+      () => assertPartial(node, result, firstResults),
+    );
   }
 
   const contextualizedIds = new Set<ModuleId>();
@@ -262,7 +280,7 @@ export async function analyzeModuleGraph(
       "contextual partial inference",
       node,
       result,
-      () => assertNoPartialDiagnostics(result),
+      () => assertPartial(node, result, contextualResults),
     );
   }
 
@@ -317,7 +335,7 @@ export async function analyzeModuleGraph(
       "post-resolution partial inference",
       node,
       result,
-      () => assertNoPartialDiagnostics(result),
+      () => assertPartial(node, result, postResolveResults),
     );
   }
 
@@ -331,6 +349,50 @@ export async function analyzeModuleGraph(
       ffi.set(id, resolved);
       node.module = resolved.module;
     });
+  }
+
+  // A rejected phrase leaves later expressions without receiver facts. Each
+  // resolution wave can expose another such phrase, so two fixed passes are
+  // insufficient for modules with several independent FFI helpers. Continue
+  // while the executable syntax changes; a stable unresolved boundary is
+  // reported by final inference below.
+  while (fresh.some((id) => moduleHasDelayedFfi(graph.nodes.get(id)!.module))) {
+    const before = JSON.stringify(fresh.map((id) => graph.nodes.get(id)!.module));
+    const waveResults: ModuleMap<InferResult> = cachedResults();
+    for (const id of fresh) {
+      const node = graph.nodes.get(id)!;
+      const result = await run(
+        "post-resolution partial inference",
+        node,
+        undefined,
+        () =>
+          inferModulePartial(node.module, importsFor(node, waveResults), {
+            ...inferOptions,
+            defaultPrimitiveReceivers: true,
+          }),
+      );
+      rememberExportedSourceDocument(result, node.path, node.source);
+      registerModuleCarrier(result, node.path);
+      waveResults.set(id, result);
+      emit("post-resolution partial inference", node, result);
+      await run(
+        "post-resolution partial inference",
+        node,
+        result,
+        () => assertPartial(node, result, waveResults),
+      );
+    }
+    for (const id of fresh) {
+      const node = graph.nodes.get(id)!;
+      const result = waveResults.get(id)!;
+      await run("resolve delayed FFI (second pass)", node, result, () => {
+        emit("resolve delayed FFI (second pass)", node, result);
+        const resolved = resolveDelayedFfiElaboration(ffi.get(id)!, result, { foreignTypeRefs });
+        ffi.set(id, resolved);
+        node.module = resolved.module;
+      });
+    }
+    if (JSON.stringify(fresh.map((id) => graph.nodes.get(id)!.module)) === before) break;
   }
 
   const results: ModuleMap<InferResult> = cachedResults();

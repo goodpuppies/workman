@@ -518,7 +518,7 @@ Deno.test("a global type argument keeps its identity across modules", async () =
 });
 
 Deno.test("distinct global type arguments stay distinct across modules", async () => {
-  await assertRejects(
+  const error = await assertRejects(
     () =>
       checkVirtual(
         "/test/main.wm",
@@ -535,8 +535,9 @@ Deno.test("distinct global type arguments stay distinct across modules", async (
         ]),
       ),
     Error,
-    "type mismatch",
   );
+  assertStringIncludes(error.message, "SharedArrayBuffer");
+  assertStringIncludes(error.message, "ArrayBuffer");
 });
 
 Deno.test("broad Js.Value JS parameters are instantiated by helper call sites", async () => {
