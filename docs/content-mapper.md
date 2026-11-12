@@ -164,7 +164,9 @@ The TypeScript call is `sum(left, right)`. Library emission and the mapper share
 argument-shape rule: the outer parameter tuple becomes positional JS arguments. Tuple components and
 return values keep their tuple representation. For example, a WM function taking
 `((Number, Number), Number)` is called as `fn([first, second], extra)`, and a tuple result remains
-an array. Curried stages stay separate: `curried(first)(second)`.
+an array. Tuples project as `readonly [...]`, like records: WM never mutates them, so TS
+`readonly` and `as const` tuples are accepted as arguments, and a tuple without converted
+components can cross without a copy, so a returned tuple must not be mutated. Curried stages stay separate: `curried(first)(second)`.
 
 This convention applies recursively to callbacks, function factories, and exported namespaces. A
 callback typed `(Number, Number) -> Number` is a JS `(left, right) => number` callback. A generic
@@ -184,9 +186,50 @@ from `sum([left, right])` to `sum(left, right)`. The compiler API accepts `{ lib
 for fixed legacy bootstrap transports; mapper declarations always describe the default positional
 ABI.
 
+## Task, Result, and Option at the JS boundary
+
+`@goodpuppies/workman/interop` holds the TS types and helpers for these basis types:
+
+```ts
+import { fromNullable, getOr, match, None, Some, toNullable } from "@goodpuppies/workman/interop";
+import type { Option, Result, Task } from "@goodpuppies/workman/interop";
+
+type Result<T, E> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E }
+type Task<T, E> = Promise<Result<T, E>>
+```
+
+`Option<T>` is opaque: WM Options cross unchanged, and TypeScript neither builds nor inspects
+them structurally. Construct one with `Some(value)`, `None`, or `fromNullable(value)`; read it
+with `isSome`, `isNone`, `getOr(option, fallback)`, `match(option, { some, none })`, or
+`toNullable(option)`. Nested Options and `Some(undefined)` stay distinct; only `toNullable`
+collapses them. The mapper projects WM `Option` as this interop type, so Options from different
+WM modules are interchangeable.
+
+```ts
+import { fromNullable } from "@goodpuppies/workman/interop";
+import { fadeAt } from "./geometry.wm"; // fadeAt: (Option<Fade>, Number) -> Number
+
+fadeAt(fromNullable(maybeFade), zoom);
+```
+
+`Result` and `Task` remain discriminated unions, since they narrow naturally in TypeScript. Library
+exports convert them in both directions, including nested containers and positional function
+payloads; `Ok` and `Err` in the interop module build Results. Constructor numbers are internal.
+Tasks remain eager and rejection is not converted into a typed error by this adapter; use ordinary
+safe WM FFI boundaries for that.
+
+Payloads use the positional JS ABI: an `Option<(Number, Number) -> Number>` holds a function
+called as `f(left, right)`. Nullary basis constructors such as `None` are shared through
+`globalThis`, so separately compiled WM libraries and the interop helpers agree on them.
+Constructors of ADTs defined in WM modules, including `Order` from `basis/order.wm`, are numbered
+per compilation and are not yet shared between separately compiled libraries.
+
+This extends the library ABI after 0.7.0 and is currently available through the local checkout.
+Rebuild libraries together when adopting it. Arbitrary user ADTs and Lists are not projected yet.
+
 ## Current limits
 
-- Nominal types, ADTs (including `Option`, `Result`, and `List`), exported type declarations,
+- User-defined nominal types, ADTs such as `List`, exported type declarations,
   foreign types, and constrained polymorphism produce explicit unsupported projection errors. The
   mapper omits the affected exports rather than giving them `any`.
 - Source mappings cover exported declarations. Internal wm expressions and references continue to

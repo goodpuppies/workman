@@ -1,4 +1,5 @@
 import type { StaticEnv } from "../infer/environment.ts";
+import { basisCtorId } from "../basis.ts";
 import { prune, type Ty } from "../types.ts";
 
 /** Only representation changes are retained. null means the WM/JS value is unchanged. */
@@ -6,6 +7,8 @@ export type JsAbiShape =
   | null
   | ["fn", number, JsAbiShape[], JsAbiShape]
   | ["tuple", JsAbiShape[]]
+  | ["result" | "task", JsAbiShape, JsAbiShape]
+  | ["option", JsAbiShape]
   | ["record", [string, JsAbiShape][]];
 
 /** The outer tuple is an argument list; tuple components and results remain tuple values. */
@@ -35,6 +38,19 @@ export function jsAbiShape(input: Ty, visiting = new Set<Ty>()): JsAbiShape {
     }
     case "struct":
       return recordShape(type.fields.map((field) => [field.name, shape(field.type)]));
+    case "named":
+      if (type.definition?.basis && type.name === "Option") {
+        const payload = shape(type.args[0]);
+        return payload === null ? null : ["option", payload];
+      }
+      if (type.definition?.basis && (type.name === "Result" || type.name === "Task")) {
+        return [type.name === "Task" ? "task" : "result", ...type.args.map(shape)] as [
+          "result" | "task",
+          JsAbiShape,
+          JsAbiShape,
+        ];
+      }
+      return null;
     default:
       return null;
   }
@@ -64,6 +80,30 @@ const __wm_abi_in = new WeakMap();
 const __wm_abi_convert = (value, shape, outward) => {
   if (shape === null) return value;
   const convert = (item, descriptor, direction = outward) => __wm_abi_convert(item, descriptor, direction);
+  if (shape[0] === "option") {
+    // Options cross as opaque WM values; only a payload with another representation changes.
+    // None is the shared singleton (see emit_prelude.ts), so identity matching holds on both sides.
+    if (value === __wm_basis_None) return value;
+    if (value?.ctor === ${basisCtorId("Some")}) return __wm_basis_Some(convert(value.a0, shape[1]));
+    throw new TypeError("Invalid Workman Option at the JavaScript boundary");
+  }
+  if (shape[0] === "task") {
+    return Promise.resolve(value).then(item => convert(item, ["result", shape[1], shape[2]]));
+  }
+  if (shape[0] === "result") {
+    if (outward) {
+      if (value.ctor === ${
+    basisCtorId("Ok")
+  }) return { ok: true, value: convert(value.a0, shape[1]) };
+      if (value.ctor === ${
+    basisCtorId("Err")
+  }) return { ok: false, error: convert(value.a0, shape[2]) };
+    } else {
+      if (value.ok === true) return __wm_basis_Ok(convert(value.value, shape[1]));
+      if (value.ok === false) return __wm_basis_Err(convert(value.error, shape[2]));
+    }
+    throw new TypeError("Invalid Workman Result at the JavaScript boundary");
+  }
   // Containers may be mutable on the JS side: refresh their contents on every crossing.
   // Cache only functions, whose adapters must preserve aliases and callback identity.
   if (shape[0] === "tuple") {

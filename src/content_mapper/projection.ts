@@ -259,12 +259,23 @@ function projectScheme(scheme: Scheme, parameterStages?: ParameterStages): strin
         }) => ${render(type.result, stages?.slice(1))}`;
       }
       case "tuple":
-        return `[${type.items.map((item) => render(item)).join(", ")}]`;
+        // WM tuples are immutable, and tuples of unchanged representation cross without a copy.
+        return `readonly [${type.items.map((item) => render(item)).join(", ")}]`;
       case "struct":
         return `{ ${
           type.fields.map((f) => `readonly ${JSON.stringify(f.name)}: ${render(f.type)}`).join("; ")
         } }`;
       case "named":
+        if (type.definition?.basis && type.name === "Option") {
+          // Opaque: TS constructs and reads Options through @goodpuppies/workman/interop.
+          return `import("@goodpuppies/workman/interop").Option<${render(type.args[0])}>`;
+        }
+        if (type.definition?.basis && (type.name === "Result" || type.name === "Task")) {
+          const result = `({ readonly ok: true; readonly value: ${
+            render(type.args[0])
+          } } | { readonly ok: false; readonly error: ${render(type.args[1])} })`;
+          return type.name === "Task" ? `Promise<${result}>` : result;
+        }
         throw new UnsupportedProjection(`nominal type ${type.name}`);
       case "ffi":
         throw new UnsupportedProjection("unresolved foreign type");

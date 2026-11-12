@@ -536,3 +536,11 @@ Option.collectList
 ```
 
 The shared idea is documented and can guide future APIs, but it is not a language feature.
+
+## Calling WM Tasks from TypeScript
+
+With the local content mapper and library emitter, exported `Task<T, E>` values cross as
+`Promise<{ ok: true; value: T } | { ok: false; error: E }>`. TypeScript can await the task and
+narrow the result using `ok`; `@goodpuppies/workman/interop` exports the `Task` and `Result`
+types. The adapter preserves the error as a value rather than rejecting
+for an ordinary WM `Err`. See [content mapper boundary types](content-mapper.md#task-result-and-option-at-the-js-boundary).

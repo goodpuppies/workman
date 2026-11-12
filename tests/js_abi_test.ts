@@ -1,5 +1,8 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import { compileLibraryVirtual } from "../src/compiler.ts";
+import { basisCtorId } from "../src/basis.ts";
+// @ts-types="../src/integrations/interop.d.mts"
+import * as interop from "../src/integrations/interop.mjs";
 
 async function library(source: string, files: Record<string, string> = {}) {
   const code = await compileLibraryVirtual(
@@ -132,4 +135,105 @@ Deno.test("JS ABI refreshes mutable tuple inputs and ignores host callback arity
   assertEquals(m.consume(pair, 2), 12);
   pair[1] = 40;
   assertEquals(m.consume(pair, 2), 42);
+});
+
+Deno.test("JS ABI projects Result and Task values and nested positional callbacks", async () => {
+  const m = await library(`
+    let good: Number -> Result<Number, String> = value => Ok(value + 1);
+    let bad: String -> Result<Number, String> = error => Err(error);
+    let later: Number -> Task<Number, String> = value => Task.succeed(value + 1);
+    let failed: String -> Task<Number, String> = error => Task.fail(error);
+    let consume = (result: Result<Number, String>) => match(result) { Ok(value) => value, Err(_) => 0 };
+    let consumeTask = (task: Task<Number, String>) => Task.map(task, value => value + 1);
+    let callback: Void -> Task<(Number, Number) -> Number, String> = () => Task.succeed((a, b) => a + b);
+    let useCallback = (result: Result<(Number, Number) -> Number, String>) => {
+      match(result) { Ok(f) => f(20, 22), Err(_) => 0 }
+    };
+  `);
+  assertEquals(m.good(41), { ok: true, value: 42 });
+  assertEquals(m.bad("no"), { ok: false, error: "no" });
+  assertEquals(await m.later(41), { ok: true, value: 42 });
+  assertEquals(await m.failed("no"), { ok: false, error: "no" });
+  assertEquals(m.consume({ ok: true, value: 42 }), 42);
+  assertEquals(m.consume({ ok: false, error: "no" }), 0);
+  assertEquals(await m.consumeTask(Promise.resolve({ ok: true, value: 41 })), {
+    ok: true,
+    value: 42,
+  });
+  const result = await m.callback();
+  assertEquals(result.ok, true);
+  assertEquals(result.value(20, 22), 42);
+  assertEquals(m.useCallback({ ok: true, value: (a: number, b: number) => a + b }), 42);
+});
+
+Deno.test("JS ABI passes Options as opaque values, keeping nesting and Some(undefined)", async () => {
+  const m = await library(`
+    let echo = (value: Option<Option<Number>>) => value;
+    let missing: Option<Void> = None;
+    let present: Option<Void> = Some(void);
+    let apply = (value: Option<(Number, Number) -> Number>) => {
+      match(value) { Some(f) => f(20, 22), None => 0 }
+    };
+    let depth = (value: Option<Option<Number>>) => {
+      match(value) { None => 0, Some(None) => 1, Some(Some(_)) => 2 }
+    };
+    let adder: Option<(Number, Number) -> Number> = Some((a, b) => a + b);
+  `);
+  assertEquals(interop.isNone(m.missing), true);
+  assertEquals(m.missing, interop.None);
+  assertEquals(interop.isSome(m.present), true);
+  assertEquals(interop.toNullable(m.present), undefined);
+  const nested = m.echo(interop.Some(interop.None));
+  assertEquals(interop.isSome(nested), true);
+  assertEquals(interop.getOr(nested, interop.Some(1)), interop.None);
+  // Nullary None matches by identity, so the interop None must be the runtime singleton.
+  assertEquals(m.depth(interop.None), 0);
+  assertEquals(m.depth(interop.Some(interop.None)), 1);
+  assertEquals(m.depth(interop.fromNullable(interop.fromNullable(5))), 2);
+  // Payloads still use the positional ABI in both directions.
+  assertEquals(m.apply(interop.Some((a: number, b: number) => a + b)), 42);
+  assertEquals(m.apply(interop.None), 0);
+  assertEquals(
+    interop.match(m.adder, {
+      some: (f: (a: number, b: number) => number) => f(20, 22),
+      none: () => 0,
+    }),
+    42,
+  );
+  assertThrows(() => m.apply({ some: true, value: () => 0 }), TypeError);
+});
+
+Deno.test("JS ABI shares nullary basis constructors across separately compiled libraries", async () => {
+  const producer = await library(`
+    let none: Void -> Option<Number> = () => None;
+    let nested: Option<Option<Number>> = Some(None);
+  `);
+  const consumer = await library(`
+    let read = (value: Option<Number>) => match(value) { None => -1, Some(n) => n };
+    let depth = (value: Option<Option<Number>>) => {
+      match(value) { None => 0, Some(None) => 1, Some(Some(_)) => 2 }
+    };
+  `);
+  assertEquals(consumer.read(producer.none()), -1);
+  assertEquals(consumer.depth(producer.nested), 1);
+});
+
+Deno.test("interop helpers use the basis constructor ids", () => {
+  assertEquals((interop.None as unknown as { ctor: number }).ctor, basisCtorId("None"));
+  assertEquals((interop.Some(1) as unknown as { ctor: number }).ctor, basisCtorId("Some"));
+  assertEquals(interop.Ok(1), { ok: true, value: 1 });
+  assertEquals(interop.Err("no"), { ok: false, error: "no" });
+});
+
+Deno.test("JS ABI does not treat user types named Option or Result as basis constructors", async () => {
+  const m = await library(`
+    type Option = | CustomOption<Number>;
+    type Result = | CustomResult<Number>;
+    let option = CustomOption(42);
+    let result = CustomResult(21);
+  `);
+  assertEquals(m.option.a0, 42);
+  assertEquals(m.result.a0, 21);
+  assertEquals(m.option.some, undefined);
+  assertEquals(m.result.ok, undefined);
 });

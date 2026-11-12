@@ -37,7 +37,7 @@ export async function stageRelease(output: string, targets: readonly string[], b
     await Deno.copyFile(join(root, "tooling/release/bin", name), join(main, "bin", name));
   }
   if (Deno.build.os !== "windows") await Deno.chmod(join(main, "bin/wm.cjs"), 0o755);
-  for (const name of ["vite.mjs", "vite.d.mts", "bun.mjs", "bun.d.mts"]) {
+  for (const name of ["vite.mjs", "vite.d.mts", "bun.mjs", "bun.d.mts", "interop.mjs", "interop.d.mts"]) {
     await Deno.copyFile(join(root, "src/integrations", name), join(main, "src/integrations", name));
     if (name.endsWith(".d.mts")) {
       const path = join(main, "src/integrations", name);

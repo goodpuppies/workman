@@ -24,7 +24,11 @@ export function ctorField(index: number): string {
 }
 
 /** An object literal for a value of this constructor, from JS expressions for its fields. */
-export function emitCtorValue(ctorId: number | string, name: string, fields: readonly string[]): string {
+export function emitCtorValue(
+  ctorId: number | string,
+  name: string,
+  fields: readonly string[],
+): string {
   const parts = [`ctor: ${JSON.stringify(ctorId)}`, `name: ${JSON.stringify(name)}`];
   fields.forEach((field, index) => parts.push(`${ctorField(index)}: ${field}`));
   return `{ ${parts.join(", ")} }`;
@@ -36,8 +40,14 @@ export function emitCtorBinding(
   ctorId: number | string,
   name: string,
   fieldCount: number,
+  sharedKey?: string,
 ): string {
-  if (fieldCount === 0) return `const ${jsName} = Object.freeze(${emitCtorValue(ctorId, name, [])});`;
+  if (fieldCount === 0) {
+    const value = `Object.freeze(${emitCtorValue(ctorId, name, [])})`;
+    return sharedKey === undefined
+      ? `const ${jsName} = ${value};`
+      : `const ${jsName} = (globalThis[Symbol.for(${JSON.stringify(sharedKey)})] ??= ${value});`;
+  }
   const fields = fieldCount === 1
     ? ["__payload"]
     : Array.from({ length: fieldCount }, (_, index) => `__payload[${index}]`);

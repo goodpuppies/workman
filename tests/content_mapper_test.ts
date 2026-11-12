@@ -7,12 +7,24 @@ import { decodeMessages, encodeMessage } from "../src/lsp/rpc.ts";
 import type { TransformResult } from "../src/content_mapper/protocol.ts";
 
 const path = "/test/content-mapper.wm";
+const interopTypes = Deno.readTextFileSync(
+  new URL("../src/integrations/interop.d.mts", import.meta.url),
+);
 
 function checkConsumer(result: TransformResult, consumer: string): readonly ts.Diagnostic[] {
   assertEquals(result.diagnostics, []);
   const files = new Map([
     ["/projection.ts", result.text],
     ["/consumer.ts", consumer],
+    // Projections reference the published interop types; serve the package's real declarations.
+    [
+      "/node_modules/@goodpuppies/workman/package.json",
+      JSON.stringify({
+        name: "@goodpuppies/workman",
+        exports: { "./interop": { types: "./interop.d.mts" } },
+      }),
+    ],
+    ["/node_modules/@goodpuppies/workman/interop.d.mts", interopTypes],
   ]);
   const options: ts.CompilerOptions = {
     strict: true,
@@ -27,6 +39,10 @@ function checkConsumer(result: TransformResult, consumer: string): readonly ts.D
   const fileExists = host.fileExists.bind(host);
   host.readFile = (name) => files.get(name) ?? readFile(name);
   host.fileExists = (name) => files.has(name) || fileExists(name);
+  const directoryExists = host.directoryExists?.bind(host);
+  host.directoryExists = (name) =>
+    [...files.keys()].some((file) => file.startsWith(`${name.replace(/\/$/, "")}/`)) ||
+    (directoryExists?.(name) ?? false);
   host.getSourceFile = (name, target) => {
     const text = host.readFile(name);
     return text === undefined ? undefined : ts.createSourceFile(name, text, target, true);
@@ -181,11 +197,15 @@ Deno.test("content mapper preserves valid declarations alongside WM syntax and t
 });
 
 Deno.test("content mapper rejects unsupported nominal and constrained types without any", async () => {
-  for (const source of ["let option = Some(1);", "let equal = (x, y) => x == y;"]) {
+  for (
+    const source of [
+      "type Custom = | Custom<Number>; let custom = Custom(1);",
+      "let equal = (x, y) => x == y;",
+    ]
+  ) {
     const result = await projectWorkman(path, source);
-    assertEquals(result.diagnostics.length, 1);
-    assertEquals(result.diagnostics[0].code, 1001);
-    assertEquals(result.diagnostics[0].start, 4);
+    assert(result.diagnostics.length > 0);
+    assert(result.diagnostics.every((d) => d.code === 1001));
     assert(!result.text.includes("any"));
     assert(!result.text.includes("declare const"));
   }
@@ -334,12 +354,84 @@ Deno.test("content mapper shares the positional ABI through callbacks, factories
     const a: number = invoke((left, right) => left + right, 20, 22);
     const b: number = make(10)(20, 12);
     const c: number = nested([20, 12], 10);
-    const d: [number, number] = totals(20, 12);
+    const d: readonly [number, number] = totals(20, 12);
+    const fixed = [20, 12] as const;
+    const f: number = nested(fixed, 10);
+    // @ts-expect-error WM tuples are immutable on the TS side
+    totals(20, 12)[0] = 1;
     const e: number = apply((pair: [number, number]) => pair[0] + pair[1], [20, 22]);
     // @ts-expect-error positional callbacks accept scalar arguments
     invoke((pair: [number, number]) => pair[0] + pair[1], 20, 22);
     // @ts-expect-error returned functions use the same positional convention
     make(10)([20, 12]);
+  `,
+    ).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n")),
+    [],
+  );
+});
+
+Deno.test("content mapper exposes typed Result and Task discriminated unions", async () => {
+  const result = await projectWorkman(
+    path,
+    `
+    let checkout: Number -> Task<Number, String> = quantity => {
+      if (quantity > 0) { Task.succeed(quantity * 2) } else { Task.fail("quantity") }
+    };
+    let validate: Number -> Result<Number, String> = quantity => {
+      if (quantity > 0) { Ok(quantity) } else { Err("quantity") }
+    };
+  `,
+  );
+  assertEquals(
+    checkConsumer(
+      result,
+      `
+    import { checkout, validate } from './projection';
+    async function use() {
+      const result = await checkout(2);
+      if (result.ok) { const n: number = result.value; }
+      else { const s: string = result.error; }
+      const valid = validate(2);
+      if (valid.ok) { const n: number = valid.value; }
+    }
+  `,
+    ).length,
+    0,
+  );
+  assert(
+    checkConsumer(
+      result,
+      `
+    import { checkout } from './projection';
+    async function use() {
+      const result = await checkout(2);
+      if (result.ok) { const wrong: string = result.value; }
+    }
+  `,
+    ).length > 0,
+  );
+});
+
+Deno.test("content mapper projects Option as the opaque interop type", async () => {
+  const result = await projectWorkman(
+    path,
+    `let optional = (value: Option<Option<Number>>) => value;`,
+  );
+  assertStringIncludes(result.text, `import("@goodpuppies/workman/interop").Option<`);
+  assertEquals(
+    checkConsumer(
+      result,
+      `
+    import { optional } from './projection';
+    import { None, Some, fromNullable, getOr, type Option } from '@goodpuppies/workman/interop';
+    const nested: Option<Option<number>> = optional(Some(None));
+    const inner: Option<number> = getOr(nested, None);
+    const value: number = getOr(inner, 0);
+    optional(fromNullable(fromNullable(1 as number | undefined)));
+    // @ts-expect-error Options are opaque, not structural
+    optional({ some: false });
+    // @ts-expect-error the payload type is retained
+    const wrong: Option<Option<string>> = optional(None);
   `,
     ).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n")),
     [],

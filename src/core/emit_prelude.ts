@@ -583,6 +583,9 @@ function emitBasisConstructors(): string[] {
           ctor.id,
           ctor.name,
           basisCtorFieldCount(ctor.args),
+          // Nullary values match by identity; share them across separately compiled libraries
+          // and @goodpuppies/workman/interop.
+          `workman.basis.ctor.${ctor.id}`,
         )
       )
     ),

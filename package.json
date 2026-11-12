@@ -24,6 +24,10 @@
       "types": "./src/integrations/vite.d.mts",
       "import": "./src/integrations/vite.mjs"
     },
+    "./interop": {
+      "types": "./src/integrations/interop.d.mts",
+      "import": "./src/integrations/interop.mjs"
+    },
     "./bun": {
       "types": "./src/integrations/bun.d.mts",
       "import": "./src/integrations/bun.mjs"
