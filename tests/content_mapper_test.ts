@@ -196,19 +196,60 @@ Deno.test("content mapper preserves valid declarations alongside WM syntax and t
   }
 });
 
-Deno.test("content mapper rejects unsupported nominal and constrained types without any", async () => {
-  for (
-    const source of [
-      "type Custom = | Custom<Number>; let custom = Custom(1);",
-      "let equal = (x, y) => x == y;",
-    ]
-  ) {
-    const result = await projectWorkman(path, source);
-    assert(result.diagnostics.length > 0);
-    assert(result.diagnostics.every((d) => d.code === 1001));
-    assert(!result.text.includes("any"));
-    assert(!result.text.includes("declare const"));
-  }
+Deno.test("content mapper rejects unsupported exported type declarations without any", async () => {
+  const result = await projectWorkman(path, "type Custom = | Custom<Number>;");
+  assert(result.diagnostics.length > 0);
+  assert(result.diagnostics.every((d) => d.code === 1001));
+  assert(!result.text.includes("any"));
+});
+
+Deno.test("content mapper keeps a module usable when some values have no TS form", async () => {
+  const result = await projectWorkman(
+    path,
+    `let equal = (x, y) => x == y;
+     let rec count = (items) => match(items) { [] => 0, [_, ..rest] => 1 + count(rest) };
+     let answer = 42;`,
+  );
+  assert(!result.text.includes("any"));
+  const usable = checkConsumer(
+    result,
+    `import { answer } from "./projection"; const n: number = answer;`,
+  );
+  assertEquals(usable.length, 0);
+  // Using a value without a TS form is an error at the use, naming the reason.
+  const used = checkConsumer(
+    result,
+    `import { equal, count } from "./projection"; equal(1, 1); count([]);`,
+  ).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+  assertEquals(used.length, 2);
+  assertStringIncludes(used[0], "Unprojectable<");
+  assertStringIncludes(used[0], "constrained type variable");
+  assertStringIncludes(used[1], "nominal type List");
+});
+
+Deno.test("content mapper marks only the record fields that have no TS form", async () => {
+  const result = await projectWorkman(
+    path,
+    "record Model = { items: List<Number>, selected: Number }; let start = Model([], 0);",
+  );
+  assertStringIncludes(result.text, 'readonly "items": import("@goodpuppies/workman/interop")');
+  const diagnostics = checkConsumer(
+    result,
+    `import { start, type Model } from "./projection";
+     const model: Model = start;
+     const selected: number = model.selected;`,
+  );
+  assertEquals(diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n")), []);
+});
+
+Deno.test("content mapper analyzes FFI across a module graph as checking does", async () => {
+  // The problems TUI's JS FFI settles through its tuiman dependencies' shared schemes, which
+  // per-module recovery alone could not resolve.
+  const app = new URL("../tooling/problems/app.wm", import.meta.url).pathname;
+  const result = await projectWorkman(app, await Deno.readTextFile(app));
+  assertEquals(result.diagnostics, []);
+  assertStringIncludes(result.text, "export declare const runProblems: () => undefined;");
+  assertStringIncludes(result.text, "export declare const awaitSnapshot: (revision: number) =>");
 });
 
 Deno.test("content mapper uses WM module visibility, namespaces, re-exports, and shadowing", async () => {

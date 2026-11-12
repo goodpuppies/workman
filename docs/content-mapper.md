@@ -256,9 +256,13 @@ types. A module with errors falls back to its independently valid declarations.
 
 ## Current limits
 
-- User-defined variant types, ADTs such as `List`, type aliases, and constrained polymorphism
-  produce explicit unsupported projection errors. The mapper omits the affected exports rather than
-  giving them `any`.
+- A value whose type involves user-defined variant types, ADTs such as `List`, or constrained
+  polymorphism has no TS form yet. It is never given `any`: it projects as
+  `Unprojectable<"reason">` from `@goodpuppies/workman/interop`, a type TS can do nothing with, so
+  TS reports the reason where the value is used, as in ``Type 'Unprojectable<"nominal type List">'
+  has no call signatures``. The module's other exports stay usable. A record field of such a type
+  is marked the same way, leaving the record's other fields usable. Exported type declarations other
+  than records, and type aliases, produce explicit unsupported projection errors.
 - Source mappings cover exported declarations. Internal wm expressions and references continue to
   use wm's language server. TS-generated rename, formatting, and code-action edits into wm are
   disabled. The effect-taint `!` metadata is not represented in TypeScript.

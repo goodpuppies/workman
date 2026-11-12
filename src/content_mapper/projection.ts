@@ -101,16 +101,11 @@ export function projectInterface(
         unsupported(`${prefix}.${name}`, "a value and structure share this export name");
         continue;
       }
-      try {
-        members.push(
-          `readonly ${JSON.stringify(name)}: ${
-            projectScheme(scheme, parameterNames.get(scheme.type), context)
-          }`,
-        );
-      } catch (error) {
-        if (!(error instanceof UnsupportedProjection)) throw error;
-        unsupported(`${prefix}.${name}`, error.message);
-      }
+      members.push(
+        `readonly ${JSON.stringify(name)}: ${
+          projectValue(scheme, parameterNames.get(scheme.type), context)
+        }`,
+      );
     }
     for (const [name, nested] of environment.strEnv) {
       if (environment.valEnv.has(name)) continue;
@@ -171,13 +166,11 @@ export function projectInterface(
       const callable = origin?.kind === "value"
         ? document.callableDefinitions.find((definition) => definition.target === origin.bindingId)
         : undefined;
-      const type = structure
-        ? structureType(structure, name)
-        : projectScheme(
-          scheme!,
-          callable?.parameterStages ?? parameterNames.get(scheme!.type),
-          context,
-        );
+      const type = structure ? structureType(structure, name) : projectValue(
+        scheme!,
+        callable?.parameterStages ?? parameterNames.get(scheme!.type),
+        context,
+      );
       const direct = isBindingName(name);
       const localName = direct ? name : fallbackName(name);
       output.text += direct ? "export declare const " : "declare const ";
@@ -227,6 +220,27 @@ export function projectInterface(
 
 const interop = `import("@goodpuppies/workman/interop")`;
 
+/**
+ * A value export's type, or for one with no TS form yet, a type naming the reason. TS then
+ * reports the reason only where the export is used, so the rest of the module stays usable.
+ */
+function projectValue(
+  scheme: Scheme,
+  parameterStages: ParameterStages | undefined,
+  context: ProjectionContext,
+): string {
+  try {
+    return projectScheme(scheme, parameterStages, context);
+  } catch (error) {
+    if (!(error instanceof UnsupportedProjection)) throw error;
+    return unprojectable(error);
+  }
+}
+
+function unprojectable(error: UnsupportedProjection): string {
+  return `${interop}.Unprojectable<${JSON.stringify(error.message)}>`;
+}
+
 /** Declarations this projection emits, which references use by name instead of inlining. */
 type ProjectionContext = { records: Map<number, string> };
 
@@ -255,7 +269,19 @@ function projectRecordDeclaration(info: TypeInfo, context: ProjectionContext): s
   const { render, variables } = typeRenderer(new Set(params), context);
   // Name parameters in declaration order, even those no field mentions.
   for (const id of params) render({ tag: "var", id } as Ty);
-  const body = render({ tag: "struct", fields: info.recordFields! } as Ty);
+  // A field with no TS form yet names its reason, like a value export, and leaves the record's
+  // other fields usable.
+  const field = (type: Ty) => {
+    try {
+      return render(type);
+    } catch (error) {
+      if (!(error instanceof UnsupportedProjection)) throw error;
+      return unprojectable(error);
+    }
+  };
+  const body = `{ ${
+    info.recordFields!.map((f) => `readonly ${JSON.stringify(f.name)}: ${field(f.type)}`).join("; ")
+  } }`;
   const names = params.map((id) => variables.get(id)!);
   return `${names.length ? `<${names.join(", ")}>` : ""} = ${body}`;
 }
@@ -350,7 +376,8 @@ function typeRenderer(quantified: Set<number>, context: ProjectionContext) {
         throw new UnsupportedProjection("unresolved foreign type");
     }
   };
-  const renderArgs = (args: Ty[]) => args.length ? `<${args.map((arg) => render(arg)).join(", ")}>` : "";
+  const renderArgs = (args: Ty[]) =>
+    args.length ? `<${args.map((arg) => render(arg)).join(", ")}>` : "";
   // Host containers hold raw JS values: their elements must need no ABI conversion.
   const unconverted = (item: Ty, container: string) => {
     if (jsAbiShape(item) !== null) {

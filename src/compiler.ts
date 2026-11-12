@@ -605,23 +605,51 @@ async function analyzeRecoveredSnapshot(
   const resolvedDefinitions = currentSourceResolvedDefinitions(graph);
   const inferOptions = await standardInferOptions(usesStandardLibrary(graph));
   const library = await externalImportResults(graph);
-  const results = new Map<ModuleId, InferResult>();
-  for (const id of graph.order) {
-    const node = graph.nodes.get(id)!;
-    const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
-    const imports = new Map<string, InferResult>();
-    for (const edge of node.imports) {
-      const imported = results.get(edge.target) ?? library.get(edge.target);
-      if (imported) imports.set(edge.specifier, imported);
+  // `resolveFfi` is false once the graph's modules have been resolved as checking does.
+  const recover = (resolveFfi: boolean) => {
+    const results = new Map<ModuleId, InferResult>();
+    let unresolved = false;
+    for (const id of graph.order) {
+      const node = graph.nodes.get(id)!;
+      const imports = new Map<string, InferResult>();
+      for (const edge of node.imports) {
+        const imported = results.get(edge.target) ?? library.get(edge.target);
+        if (imported) imports.set(edge.specifier, imported);
+      }
+      if (resolveFfi) {
+        // Resolve receiver member access as checking does; a module with errors keeps the
+        // prepared form, and recovery retains its independently valid declarations.
+        const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
+        const resolved = resolveFfiForRecovery(prepared, imports, inferOptions);
+        unresolved ||= resolved === undefined;
+        node.module = (resolved ?? prepared).module;
+      }
+      const recovered = inferModuleRecovered(node.module, imports, inferOptions);
+      node.module = recovered.module;
+      rememberExportedSourceDocument(recovered.result, node.path, node.source);
+      registerModuleCarrier(recovered.result, node.path);
+      results.set(id, recovered.result);
     }
-    // Resolve receiver member access as checking does; a module with errors keeps the prepared
-    // form, and recovery retains its independently valid declarations.
-    node.module = (resolveFfiForRecovery(prepared, imports, inferOptions) ?? prepared).module;
-    const recovered = inferModuleRecovered(node.module, imports, inferOptions);
-    node.module = recovered.module;
-    rememberExportedSourceDocument(recovered.result, node.path, node.source);
-    registerModuleCarrier(recovered.result, node.path);
-    results.set(id, recovered.result);
+    return { results, unresolved };
+  };
+  const modules = () => new Map([...graph.nodes].map(([id, node]) => [id, node.module]));
+  const restore = (saved: Map<ModuleId, Module>) => {
+    for (const [id, module] of saved) graph.nodes.get(id)!.module = module;
+  };
+  const original = modules();
+  let { results, unresolved } = recover(true);
+  if (unresolved) {
+    // Per-module resolution re-infers a consumer against its dependencies' final results, whose
+    // monomorphic schemes FFI resolution deliberately shares, so it can fail where checking the
+    // graph as one wave succeeds. Resolve the graph as checking does, then recover from that.
+    const recovered = modules();
+    restore(original);
+    try {
+      await analyzeModuleGraph(graph, { cache: options.moduleAnalysisCache });
+      results = recover(false).results;
+    } catch {
+      restore(recovered);
+    }
   }
   return buildPartialProjectSnapshot(
     graph,

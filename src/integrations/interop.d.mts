@@ -15,6 +15,16 @@ export interface JsError {
   readonly [jsErrorBrand]: true;
 }
 
+declare const unprojectableBrand: unique symbol;
+
+/**
+ * The type of a Workman export that has no TypeScript form yet; `Reason` says why. Nothing
+ * can be done with it, so TypeScript reports the reason where the export is used.
+ */
+export interface Unprojectable<Reason extends string> {
+  readonly [unprojectableBrand]: Reason;
+}
+
 /** A Workman `Result`, as a discriminated union. */
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }
