@@ -72,7 +72,10 @@ JavaScript assets under `src/generated/c_header_extractor/`. Each native directo
 contains its executable, resource headers, license notices and checksum manifest.
 Distribute that directory together if using a standalone override.
 
-`deno task generate` and the local-only `deno task publish` include this build.
+A platform whose checked-in asset already records the current `main.zig` and resource
+hashes is skipped, since Aro comes from the pinned Zig; pass `--force`
+(`deno task c-header:build --force`) to rebuild every target, for example to refresh
+`dist/`. `deno task generate` and the local-only `deno task publish` include this build.
 CI runs `c-header:check` to detect stale source, notices, resources or payloads
 without needing Zig. After extractor changes, regenerate and stage the assets too.
 
