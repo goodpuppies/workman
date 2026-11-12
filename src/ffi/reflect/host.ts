@@ -263,14 +263,31 @@ export function prepareReflectionSources(requests: JsReflectionRequest[]): void 
         // already-known Deno mappings authoritative, but don't discover a Deno
         // graph for each declaration file when TypeScript can resolve it.
         const deferDiscovery = isPackageDeclarationFile(containingFile);
-        return denoResolvedModule(denoGraphs, moduleName, containingFile, !deferDiscovery) ??
+        const typescript = () =>
           ts.resolveModuleName(
             moduleName,
             containingFile,
             compilerOptions,
             host,
             moduleResolutionCache(),
-          ).resolvedModule ??
+          ).resolvedModule;
+        // An installed package resolves as TypeScript resolves it, so a project's package.json
+        // does not redirect reflection into Deno's npm cache. An explicit import-map entry to
+        // something other than npm: remains authoritative.
+        if (isBarePackageSpecifier(moduleName)) {
+          const mapped = resolveDenoSpecifier(
+            denoGraphs,
+            moduleName,
+            containingFile,
+            !deferDiscovery,
+          );
+          if (!mapped || mapped.startsWith("npm:")) {
+            const installed = typescript();
+            if (installed?.isExternalLibraryImport) return installed;
+          }
+        }
+        return denoResolvedModule(denoGraphs, moduleName, containingFile, !deferDiscovery) ??
+          typescript() ??
           // Node builtins are ambient declarations; no Deno graph can add to them.
           (deferDiscovery && !moduleName.startsWith("node:")
             ? denoResolvedModule(denoGraphs, moduleName, containingFile)
@@ -621,6 +638,11 @@ function nodeTypesReferencePath(): string {
     nodeTypesPath = join(pkg.localPath, "index.d.ts");
   }
   return nodeTypesPath;
+}
+
+/** `react`, `@scope/pkg/sub`: not relative, absolute, or a scheme such as `npm:` or `node:`. */
+function isBarePackageSpecifier(specifier: string): boolean {
+  return !/^(?:\.|\/|[A-Za-z][\w+.-]*:)/.test(specifier);
 }
 
 function denoSourceForFileName(graphs: DenoModuleGraph[], fileName: string): string | undefined {

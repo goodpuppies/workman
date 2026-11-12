@@ -53,7 +53,9 @@ import {
   analyzeModuleGraph,
   assertNoPartialDiagnostics,
   externalImportResults,
+  moduleHasDelayedFfi,
   requiresFfiStaging,
+  resolveFfiForRecovery,
   StagedAnalysisError,
 } from "./staged_analysis.ts";
 import {
@@ -607,12 +609,14 @@ async function analyzeRecoveredSnapshot(
   for (const id of graph.order) {
     const node = graph.nodes.get(id)!;
     const prepared = prepareFfiElaboration(node.module, { filePath: node.path });
-    node.module = prepared.module;
     const imports = new Map<string, InferResult>();
     for (const edge of node.imports) {
       const imported = results.get(edge.target) ?? library.get(edge.target);
       if (imported) imports.set(edge.specifier, imported);
     }
+    // Resolve receiver member access as checking does; a module with errors keeps the prepared
+    // form, and recovery retains its independently valid declarations.
+    node.module = (resolveFfiForRecovery(prepared, imports, inferOptions) ?? prepared).module;
     const recovered = inferModuleRecovered(node.module, imports, inferOptions);
     node.module = recovered.module;
     rememberExportedSourceDocument(recovered.result, node.path, node.source);
@@ -663,15 +667,24 @@ async function checkPreparedModuleWithoutImports(
   } catch (error) {
     throw new FrontendDiagnosticBundleError(error, delayedFfiDiagnostics(contextualResult));
   }
-  const postResolveResult = assertNoPartialDiagnostics(
-    inferModulePartial(resolved.module, imports, {
-      ...inferOptions,
-      defaultPrimitiveReceivers: true,
-    }),
-  );
-  const finalResolved = resolveDelayedFfiElaboration(resolved, postResolveResult, {
-    foreignTypeRefs,
-  });
+  // Each wave can reveal receivers for the next (a value reached through a property of a
+  // property); continue while the syntax changes, as the module-graph pipeline does.
+  let finalResolved = resolved;
+  while (true) {
+    const before = JSON.stringify(finalResolved.module);
+    const postResolveResult = assertNoPartialDiagnostics(
+      inferModulePartial(finalResolved.module, imports, {
+        ...inferOptions,
+        defaultPrimitiveReceivers: true,
+      }),
+    );
+    finalResolved = resolveDelayedFfiElaboration(finalResolved, postResolveResult, {
+      foreignTypeRefs,
+    });
+    if (
+      !moduleHasDelayedFfi(finalResolved.module) || JSON.stringify(finalResolved.module) === before
+    ) break;
+  }
   return {
     module: finalResolved.module,
     result: inferModule(finalResolved.module, imports, inferOptions),

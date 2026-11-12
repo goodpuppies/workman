@@ -234,13 +234,13 @@ Deno.test("acquired callables retain scalar unions, optional arities, and rest p
   for (const name of ["c", "d", "e", "f"]) {
     expectBinding(result.env, name, { type: "Result<Number, Js.Error>!", vars: 0 });
   }
-  await assertRejects(() =>
-    checkSource(`
+  // A result TS declares as one of several Workman types is dynamic: it reads as Js.Value.
+  const ambiguous = await checkSource(`
     from js.module("${fixture}") import { ambiguousResult };
     let consume = ambiguousResult() :> Result.debug;
-    let unsupported = consume(1);
-  `)
-  );
+    let dynamic = consume(1);
+  `);
+  expectBinding(ambiguous.env, "dynamic", { type: "Result<Js.Value, Js.Error>!", vars: 0 });
 });
 
 Deno.test("returned overloads and generic functions specialize each call independently", async () => {

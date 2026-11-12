@@ -157,7 +157,9 @@ export function typeExprFromTsType(
     if (mapped.some((item) => !item)) return undefined;
     const first = mapped[0];
     if (first && mapped.every((item) => typeKey(item!) === typeKey(first))) return first;
-    return undefined;
+    // A value TS declares as one of several Workman types (number | string | boolean) is dynamic
+    // to Workman: read it as Js.Value and state the expected type with Json.assert.
+    return position === "result" ? name("Js.Value") : undefined;
   }
   const signature = type.getCallSignatures()[0];
   const callable = position === "result" ? foreignCallableIdentity(checker, type) : undefined;
@@ -198,6 +200,9 @@ export function typeExprFromTsType(
   /* if (/^(?:Deno\.)?DynamicLibrary<.+>$/.test(checker.typeToString(type))) {
     return name("Js.Object");
   } */
+  // Only values read from JS: a dictionary parameter accepts JSON{...} object literals.
+  const dictionary = position === "result" ? dictionaryTypeExpr(checker, type, position) : undefined;
+  if (dictionary) return dictionary;
   const nominal = nominalObjectTypeName(checker, type);
   if (nominal === "DynamicLibrary") return name("Js.Object");
   if (nominal) {
@@ -242,6 +247,25 @@ export function typeExprFromTsType(
     return name("Js.Object");
   }
   return position === "param" ? name("Js.Value") : undefined;
+}
+
+/**
+ * A pure string-keyed dictionary (`Record<string, V>`, `{ [key: string]: V }`) is a plain object,
+ * which is exactly Js.Dict's representation. Explicitly dynamic dictionaries keep their
+ * Js.Object/Js.Value treatment, and an unrepresentable value type leaves the access unresolved.
+ */
+function dictionaryTypeExpr(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  position: "param" | "result",
+): TypeExpr | undefined {
+  if (!isObjectLike(type) || isExplicitDynamicObject(checker, type)) return undefined;
+  if (type.getCallSignatures().length || type.getConstructSignatures().length) return undefined;
+  if (checker.getPropertiesOfType(type).length) return undefined;
+  const infos = checker.getIndexInfosOfType(type);
+  if (infos.length !== 1 || !(infos[0].keyType.flags & ts.TypeFlags.String)) return undefined;
+  const value = typeExprFromTsType(checker, infos[0].type, position);
+  return value ? { kind: "TName", name: "Js.Dict", args: [value] } : undefined;
 }
 
 function nominalTypeParameterObjectName(type: ts.Type): string | undefined {
@@ -357,6 +381,9 @@ function containsTypeParameter(type: ts.Type): boolean {
 
 /** A global type has one identity however it is reached, so it uses the key its import gets. */
 function nestedNominalKey(checker: ts.TypeChecker, type: ts.Type, expression: string): string {
+  // A module's type prints as `import("…").Name`; its symbol's qualified name may still be bare,
+  // as for a default-exported class, which must not be mistaken for a global.
+  if (expression.startsWith("import(")) return `nominal-type:${expression}`;
   const symbol = type.aliasSymbol ?? type.getSymbol();
   const qualified = symbol && checker.getFullyQualifiedName(symbol).replace(/^global\./, "");
   return qualified && !qualified.startsWith('"')
@@ -414,6 +441,11 @@ export function nestedForeignTypeRefs(
         type: mapped,
       });
     }
+    // Dictionary values (Record<string, Layer>) project to Js.Dict<Layer>.
+    if (dictionaryTypeExpr(checker, current, "result")) {
+      const value = checker.getIndexInfosOfType(current)[0].type;
+      visit(value, expression ? `${expression}[string]` : undefined);
+    }
     if (
       current.flags & ts.TypeFlags.Object &&
       (current as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference
@@ -436,6 +468,9 @@ export function nestedForeignTypeRefs(
     );
   } else if (foreignCallableIdentity(checker, type)) {
     visit(type, rootExpression);
+  } else if (dictionaryTypeExpr(checker, type, "result")) {
+    const value = checker.getIndexInfosOfType(type)[0].type;
+    visit(value, rootExpression ? `${rootExpression}[string]` : undefined);
   }
   return refs;
 }

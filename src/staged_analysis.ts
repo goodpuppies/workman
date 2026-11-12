@@ -416,10 +416,54 @@ export async function analyzeModuleGraph(
   return finish(results);
 }
 
-function moduleHasDelayedFfi(module: ModuleNode["module"]): boolean {
+export function moduleHasDelayedFfi(module: ModuleNode["module"]): boolean {
   return collectExprs(module).some((expr) =>
     expr.kind === "FfiGet" || expr.kind === "FfiCall" || expr.kind === "FfiBindingCall"
   );
+}
+
+/**
+ * Resolve a prepared module's delayed FFI for recovered (editor/mapper) analysis, following the
+ * staged pipeline: contextual callbacks, then resolution waves until the syntax is stable.
+ * Returns undefined when staging fails, so recovery can still retain the valid declarations.
+ */
+export function resolveFfiForRecovery(
+  prepared: FfiElaboration,
+  imports: Map<string, InferResult>,
+  inferOptions: InferModuleOptions,
+): FfiElaboration | undefined {
+  if (!requiresFfiStaging(prepared)) return prepared;
+  try {
+    const first = assertNoPartialDiagnostics(
+      inferModulePartial(prepared.module, imports, inferOptions),
+    );
+    const contextual = contextualizeDelayedCallbacks(prepared, first);
+    const contextualResult = assertNoPartialDiagnostics(
+      inferModulePartial(contextual.module, imports, inferOptions),
+    );
+    const foreignTypeRefs = new Map(
+      [...contextual.foreignTypeRefs.values()].map((ref) => [ref.key, ref]),
+    );
+    let resolved = resolveDelayedFfiElaboration(contextual, contextualResult, {
+      foreignTypeRefs,
+      dynamicFallback: false,
+    });
+    while (true) {
+      const before = JSON.stringify(resolved.module);
+      const wave = assertNoPartialDiagnostics(
+        inferModulePartial(resolved.module, imports, {
+          ...inferOptions,
+          defaultPrimitiveReceivers: true,
+        }),
+      );
+      resolved = resolveDelayedFfiElaboration(resolved, wave, { foreignTypeRefs });
+      if (!moduleHasDelayedFfi(resolved.module) || JSON.stringify(resolved.module) === before) {
+        return resolved;
+      }
+    }
+  } catch {
+    return undefined;
+  }
 }
 
 /** Use the staged pipeline whenever preparation or receiver access leaves FFI work. */

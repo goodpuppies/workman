@@ -88,7 +88,8 @@ Unrepresentable static arguments still need an explicit boundary. TypeScript's
 
 Writing `req: Request` on an otherwise unresolved callback does not itself give the FFI resolver a
 `Request` receiver. The annotation checks the inferred callback type; it does not create foreign
-evidence.
+evidence. A named function's own parameter is the exception; see
+[the one exception](#type-annotations-do-not-direct-ffi-reflection) below.
 
 Import a host helper module by name:
 
@@ -172,6 +173,30 @@ the result of a reflected call.
 
 If FFI code only works after adding a receiver or result annotation, that normally indicates lost
 reflection information or another compiler bug. The annotation must remain erasable.
+
+**The one exception: a parameter known only by its JS members.** A function whose parameter is
+used only as a JS receiver is polymorphic in that parameter. This holds for foreign objects and
+JS primitives alike:
+
+```wm
+let firstPoint = (feature) => feature.loadGeometry();   -- 'a with a .loadGeometry member
+let show = (x) => x :> .toString;                        -- Number? String? Bool? Date?
+```
+
+Like any polymorphic function, it has no single receiver type to reflect, even if every caller
+passes the same one. Workman does not guess one from the call sites or reflect a member over
+every possible JS type. Annotate the parameter with the type the function is about:
+
+```wm
+from js.module("@mapbox/vector-tile") import type { VectorTileFeature };
+let firstPoint = (feature: VectorTileFeature) => feature.loadGeometry();
+let show = (x: Number) => x :> .toString;
+```
+
+Here the annotation chooses which function you are writing rather than checking an inferred type;
+it is the only place an annotation supplies foreign evidence. A value that already comes from a
+reflected call or property, or a literal, needs no annotation, and neither does a lambda passed
+directly to a JS API that declares its parameter types.
 
 `Json.assert` is different: it explicitly checks a genuinely dynamic value against an expected
 Workman shape. An annotation may state that expected shape around the assertion, but annotations do
@@ -279,7 +304,9 @@ concepts stay in the shim instead of leaking into ordinary Workman programs or d
 the language.
 
 `Js.Object` and `Js.Value` are reserved for genuinely dynamic declarations or an explicitly chosen
-dynamic boundary. They are not fallback types for failed reflection. If TypeScript declares a static
+dynamic boundary. A value TypeScript declares as one of several different Workman types, such as
+`number | string | boolean`, counts as dynamic: it reads as `Js.Value`, and `Json.assert` states
+which type you expect. They are not fallback types for failed reflection. If TypeScript declares a static
 shape which Workman cannot map, the FFI access remains unresolved and must be made explicit or
 adapted with a shim. Replacing known structure with an opaque value would erase evidence that
 Workman's type inference cannot recover; use an assertion to turn an intentionally dynamic value
@@ -482,6 +509,39 @@ let proc = spawn("curl", JSON["-s", "https://example.com"], JSON{
   env: JSON{ "USER_AGENT": "Workman-FFI" },
 });
 ```
+
+## Dictionaries Become `Js.Dict`
+
+A value read from JS whose TypeScript type is a pure string-keyed dictionary
+(`Record<string, Layer>`, `{ [key: string]: number }`) reflects as `Js.Dict<T>`, read with the
+`dict` host module:
+
+```wm
+from js.host("dict") import * as Dict;
+
+let convos = tile.layers :> Result.map((layers) => Dict.get(layers, "convos"));
+-- Result<Option<VectorTileLayer>, Js.Error>; members of the layer resolve as usual
+```
+
+A dictionary of mixed values, such as `Record<string, number | string | boolean>`, reads as
+`Js.Dict<Js.Value>`; assert each value to the type you expect:
+
+```wm
+let number = (value: Js.Value) => {
+  let n: Result<Number, Js.Error> = value :> Json.assert;
+  n
+};
+let topic = Dict.get(properties, "topic") :> Option.map(number);   -- Option<Result<Number, Js.Error>>
+```
+
+`Json.assert` is currently an unchecked claim: its `Result` rejects only `null` and `undefined`,
+not a value of another type.
+Dictionaries whose values are not representable at all stay unresolved. Dictionary parameters keep
+accepting `JSON{...}` object literals.
+
+Bare package imports such as `js.module("@mapbox/vector-tile")` resolve from the project's
+`node_modules` as TypeScript resolves them, including the packages their declarations import. An
+explicit `deno.json` import-map entry still takes precedence.
 
 ## Nullish Values Become `Option`
 

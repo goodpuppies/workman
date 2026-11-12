@@ -1064,13 +1064,15 @@ function rememberVariantForeignTypeRefs(
   foreignTypeRefs: Map<string, JsTypeRef>,
 ) {
   for (const variant of variants) {
+    // Nested identities first: walking a containing type (Js.Dict<Layer>) without a ref must
+    // reuse them rather than guessing a global type of the same name.
+    for (const ref of variant.resultRef?.nestedTypeRefs ?? []) {
+      if (ref.type) rememberForeignTypeNames(ref.type, foreignTypeRefs, ref);
+    }
     rememberForeignTypeNames(variant.type, foreignTypeRefs);
     if (variant.receiverType) rememberForeignTypeNames(variant.receiverType, foreignTypeRefs);
     if (variant.resultRef?.type) {
       rememberForeignTypeNames(variant.resultRef.type, foreignTypeRefs, variant.resultRef);
-    }
-    for (const ref of variant.resultRef?.nestedTypeRefs ?? []) {
-      if (ref.type) rememberForeignTypeNames(ref.type, foreignTypeRefs, ref);
     }
     for (const callback of variant.callbackParamRefs ?? []) {
       for (const ref of callback.params) {
@@ -1088,7 +1090,12 @@ function rememberForeignTypeNames(
   switch (type.kind) {
     case "TName":
       if (isReflectedForeignTypeName(type.name)) {
-        const typeRef = ref ?? jsGlobalTypeRef(type.name);
+        const known = foreignTypeRefs.get(type.name);
+        // Reuse a nested identity registered under this name (Js.Dict<Layer>'s Layer); a
+        // reflection-site ref such as an array element is not a type identity.
+        const typeRef = ref ??
+          (known && /^(?:global|module|nominal)-type:/.test(known.key) ? known : undefined) ??
+          jsGlobalTypeRef(type.name);
         if (ref || !foreignTypeRefs.has(type.name)) foreignTypeRefs.set(type.name, typeRef);
         foreignTypeRefs.set(typeRef.key, typeRef);
         if (typeRef.generic) foreignTypeRefs.set(typeRef.generic.key, typeRef);

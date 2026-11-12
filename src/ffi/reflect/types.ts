@@ -560,12 +560,23 @@ export function jsRefMember(ref: JsTypeRef, path: string[]): JsMemberType | unde
       if (propertyType.getCallSignatures().length > 0) return undefined;
       const type = typeExprFromTsType(checker, propertyType);
       if (!type) return undefined;
+      // Like a call result, a property value keeps its reflected identity, so members of a
+      // nominal value reached through a property (or nested in its type) resolve in turn.
+      const resultRef = returnTypeRef(`${key}:property`, ref.source, `typeof ${access}`);
+      const generic = type.kind === "TName" && type.name === nominalObjectTypeName(checker, propertyType)
+        ? nominalGenericConstructor(checker, propertyType)
+        : undefined;
       return {
         name: path.at(-1)!,
         type,
         variants: [{
           type,
-          resultRef: returnTypeRef(`${key}:property`, ref.source, `typeof ${access}`),
+          resultRef: {
+            ...resultRef,
+            type,
+            generic,
+            nestedTypeRefs: nestedForeignTypeRefs(checker, propertyType, resultRef.source),
+          },
         }],
       };
     },
