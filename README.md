@@ -136,6 +136,23 @@ the arrow keys, Home/End, and Ctrl+Left/Right, and paste multi-line code freely.
 the accepted bindings unchanged. Imports resolve from the directory you started `wm repl` in, so
 `from "./lib.wm" import *;` imports `lib.wm` there.
 
+Pass code as one quoted argument to evaluate it, print its results, and exit:
+
+```sh
+wm repl 'let answer = 40; answer + 2;'
+```
+
+Use `preload` to evaluate code before opening the interactive prompt. Imports and bindings remain
+available in that session, and imports resolve from the working directory:
+
+```sh
+wm repl preload 'from "./repl.wm" import *;'
+```
+
+An argument ending in `.wm` retains file watch mode: `wm repl scratch.wm`. Both code forms also
+accept `--v2`. One-shot code exits with a nonzero status if a phrase fails; preload reports failures
+and continues to the prompt, retaining successful phrases.
+
 `wm run`, `wm watch` and `wm repl` write the compiled JavaScript to the OS temporary directory, never
 beside your sources, and remove it when they finish, including after Ctrl-C. The program still runs
 with the `deno.json` nearest to the source, so its import map and npm settings apply.

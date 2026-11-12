@@ -19,6 +19,15 @@ nearest `pak.wm`. It runs every step from that file's directory. The file export
 `commands: List<Command>`; it needs no `main` function. An existing package recipe can export
 commands alongside its package definition.
 
+To open a project REPL with its API already imported, add a preload step:
+
+```wm
+command("repl", [Wm(["repl", "preload", "from \"./repl.wm\" import *;"])])
+```
+
+`wm run repl` opens the prompt in the project root after evaluating the import. For a one-shot
+evaluation that prints results and exits, use `Wm(["repl", "1 + 1;"])` instead.
+
 `Wm(arguments)` invokes the same WM installation that is running the command.
 `Exec(program, arguments)` invokes an installed executable, using the inherited `PATH` when the
 program is a bare name. Tools are not installed or version-managed. Arguments are passed directly,

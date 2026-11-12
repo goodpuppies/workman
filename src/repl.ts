@@ -487,6 +487,10 @@ export type InteractiveReplOptions = CompileOptions & {
   input?: ReadableStream<Uint8Array>;
   /** Suppresses the primary/continuation prompts (non-interactive input). */
   quiet?: boolean;
+  /** Evaluate these phrases before reading interactive input, relative to the working directory. */
+  initialSource?: string;
+  /** Finish after initialSource without reading stdin or displaying the interactive banner. */
+  exitAfterInitial?: boolean;
 };
 
 /**
@@ -499,10 +503,10 @@ export type InteractiveReplOptions = CompileOptions & {
  */
 export async function runInteractiveRepl(
   options: InteractiveReplOptions = {},
-): Promise<void> {
+): Promise<number> {
   const onError = options.onError ??
     ((error) => console.error(error instanceof Error ? error.message : String(error)));
-  const { input: stdin, ...sessionOptions } = options;
+  const { input: stdin, initialSource, exitAfterInitial, ...sessionOptions } = options;
   const sources = new Map(sessionOptions.sourceOverrides ?? []);
   // Each phrase compiles its module and everything it imports, so the session keeps what it parsed.
   const compileOptions: CompileOptions = {
@@ -534,7 +538,7 @@ export async function runInteractiveRepl(
   const stopHandlingSignals = handleTerminationSignals((signal) => {
     endSession(terminationExitCode[signal]);
   });
-  const isTerminal = !stdin && !options.quiet && Deno.stdin.isTerminal() &&
+  const isTerminal = !exitAfterInitial && !stdin && !options.quiet && Deno.stdin.isTerminal() &&
     Deno.stdout.isTerminal();
   let historyFile: string | undefined;
   let history: string[] = [];
@@ -598,6 +602,7 @@ export async function runInteractiveRepl(
       yield entry.slice(0, topLevelPhraseEnd(entry));
     }
   }
+  let failed = false;
   try {
     if (editor) {
       // Keys pressed while loading become the start of the first input.
@@ -605,23 +610,36 @@ export async function runInteractiveRepl(
       loadingBar = createLoadingBar();
     }
     await warmSession(session.headerPath, compileOptions, loadingBar);
-    await Deno.stdout.write(
-      new TextEncoder().encode(
-        `🗿 Workman ${denoConfig.version}\n${
-          editor ? "Exit using ctrl+d, ctrl+c, or quit()" : "Press Ctrl-C or Ctrl-D to exit."
-        }\n`,
-      ),
-    );
-    const inputPhrases = editor
-      ? editedPhrases(editor)
-      : phrases(stdin ?? Deno.stdin.readable, options.quiet);
+    if (!exitAfterInitial) {
+      await Deno.stdout.write(
+        new TextEncoder().encode(
+          `🗿 Workman ${denoConfig.version}\n${
+            editor ? "Exit using ctrl+d, ctrl+c, or quit()" : "Press Ctrl-C or Ctrl-D to exit."
+          }\n`,
+        ),
+      );
+    }
+    async function* sessionPhrases(): AsyncGenerator<string> {
+      if (initialSource !== undefined) {
+        async function* initialInput() {
+          yield new TextEncoder().encode(initialSource + "\n");
+        }
+        yield* phrases(initialInput(), true);
+      }
+      if (exitAfterInitial) return;
+      yield* editor ? editedPhrases(editor) : phrases(stdin ?? Deno.stdin.readable, options.quiet);
+    }
     const runCommand = async (text: string) => {
       const command = parseReplCommand(text);
       let output: string;
-      if (command.kind === "error") output = command.message;
-      else if (command.name === "help") output = replHelpText(command.argument);
-      else if (!command.argument) output = "usage: :type <expression>;";
-      else {
+      if (command.kind === "error") {
+        failed = true;
+        output = command.message;
+      } else if (command.name === "help") output = replHelpText(command.argument);
+      else if (!command.argument) {
+        failed = true;
+        output = "usage: :type <expression>;";
+      } else {
         output = await session.typeOf(command.argument, compileOptions);
       }
       await Deno.stdout.write(
@@ -632,12 +650,13 @@ export async function runInteractiveRepl(
         ),
       );
     };
-    for await (const phrase of inputPhrases) {
+    for await (const phrase of sessionPhrases()) {
       if (isReplCommand(phrase)) {
         editor?.release();
         try {
           await runCommand(phrase);
         } catch (error) {
+          failed = true;
           onError(error);
         }
         continue;
@@ -645,8 +664,11 @@ export async function runInteractiveRepl(
       try {
         // Output streams while the phrase runs, so the editor gives the terminal back first.
         editor?.release();
-        if (await session.evaluate(phrase, compileOptions) === "quit") break;
+        const result = await session.evaluate(phrase, compileOptions);
+        if (result === "quit") break;
+        if (result === "raised") failed = true;
       } catch (error) {
+        failed = true;
         editor?.release();
         onError(error);
       }
@@ -657,6 +679,7 @@ export async function runInteractiveRepl(
     await session.close();
     if (!interruption) await temporaryDirectory.cleanup();
   }
+  return exitAfterInitial && failed ? 1 : 0;
 }
 
 /**

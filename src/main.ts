@@ -331,10 +331,14 @@ async function watchCommand(args: string[]): Promise<number> {
 }
 
 async function replCommand(args: string[]): Promise<number> {
-  const { input, options } = parseReplArguments(args);
-  if (!input) {
-    await runInteractiveRepl({ ...options, onError: reportReplError });
-    return 0;
+  const { input, mode, options } = parseReplArguments(args);
+  if (!input || mode) {
+    return await runInteractiveRepl({
+      ...options,
+      initialSource: input,
+      exitAfterInitial: mode === "eval",
+      onError: reportReplError,
+    });
   }
   // Each save recompiles the file, so the modules it imports are parsed once and reused.
   const watchOptions = { ...options, frontendV2ParseCache: new FrontendV2ParseCache() };
@@ -357,11 +361,24 @@ async function replCommand(args: string[]): Promise<number> {
 
 export function parseReplArguments(args: string[]): {
   input: string | undefined;
+  mode?: "eval" | "preload";
   options: { frontend?: "v2" };
 } {
   const v2 = args.includes("--v2");
+  const operands = args.filter((arg) => arg !== "--v2");
+  const preload = operands[0] === "preload";
+  const inputs = preload ? operands.slice(1) : operands;
+  if (inputs.length > 1 || preload && inputs.length !== 1) {
+    throw new Error('usage: wm repl [--v2] [file.wm | "code" | preload "code"]');
+  }
+  const input = inputs[0];
   return {
-    input: args.find((arg) => arg !== "--v2"),
+    input,
+    ...(preload
+      ? { mode: "preload" as const }
+      : input !== undefined && !input.endsWith(".wm")
+      ? { mode: "eval" as const }
+      : {}),
     options: v2 ? { frontend: "v2" } : {},
   };
 }
@@ -570,6 +587,8 @@ commands:
                                 emit an importable ES module without running main
   repl [--v2] [file.wm]         interactive session, or watch and evaluate
                                 top-level bindings in <file.wm>
+  repl [--v2] "code"           evaluate code, print results, and exit
+  repl [--v2] preload "code"   evaluate code, then open an interactive session
   run <file.wm> [-- args...]    compile and execute with Deno
   run <name> [-- args...]       run a named command from the nearest pak.wm
   watch <file.wm> [-- args...]  run again when any module in its graph changes
@@ -596,6 +615,8 @@ examples:
   wm watch examples/factorial.wm
   wm repl                       start an interactive session
   wm repl --v2 scratch.wm
+  wm repl "1 + 1;"
+  wm repl preload 'from "./repl.wm" import *;'
   wm compile-library tooling/frontend-v2/compiler_frontend.wm frontend-v2.mjs
   wm run app.wm -- arg1 arg2
   wm fmt scratch.wm
