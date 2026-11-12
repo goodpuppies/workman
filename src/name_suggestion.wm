@@ -1,0 +1,61 @@
+-- "Did you mean ...?" suggestions for names the compiler cannot resolve.
+--
+-- Imported directly from TypeScript through the content mapper; `deno task generate` builds the
+-- runtime artifact that deno.json maps this file to.
+
+from "basis/text.wm" import * as UnicodeText;
+
+let smaller = (a: Number, b: Number) => if (a < b) { a } else { b };
+
+-- Edit distance (insertions, deletions and substitutions) between two lists of characters,
+-- computed one row of the dynamic-programming table at a time.
+let editDistance = (source, target) => {
+  -- The rest of the row for `char` after the cell `left`, from the row above it.
+  let rec fill = (above, wanted, char, left) =>
+    match(above, wanted) {
+      ([diagonal, up, ..rest], [want, ..tail]) => {
+        let cost = if (want == char) { 0 } else { 1 };
+        let value = smaller(smaller(up + 1, left + 1), diagonal + cost);
+        [value, ..fill([up, ..rest], tail, char, value)]
+      },
+      _ => []
+    };
+  let rec rows = (above, chars, index) =>
+    match(chars) {
+      [] => above,
+      [char, ..more] => rows([index, ..fill(above, target, char, index)], more, index + 1)
+    };
+  let first = List.tabulate(List.length(target) + 1, (i) => i);
+  let rec last = (row) => match(row) { [only] => only, [_, ..more] => last(more), [] => 0 };
+  last(rows(first, source, 1))
+};
+
+-- The closest candidate to `name`: one that differs from it by at most a third of its length
+-- (counting short names as three characters long), preferring the first among equally close candidates.
+let suggestName = (name: String, candidates: Js.Array<String>) => {
+  match(UnicodeText.explode(name)) {
+    Err(_) => None,
+    Ok(wanted) => {
+      let limit = if (List.length(wanted) < 3) { 1 } else { List.length(wanted) / 3 };
+      let rec best = (items, found) =>
+        match(items) {
+          [] => found,
+          [candidate, ..more] => {
+            let distance = UnicodeText.explode(candidate)
+              :> Result.map((chars) => editDistance(wanted, chars))
+              :> Result.getOr(limit + 1);
+            let closer = match(found) {
+              Some((_, Var(nearest))) => distance < nearest,
+              None => true
+            };
+            if (distance > 0 && distance <= limit && closer) {
+              best(more, Some((candidate, distance)))
+            } else {
+              best(more, found)
+            }
+          }
+        };
+      best(Js.Array.toList(candidates), None) :> Option.map(match { (Var(chosen), _) => chosen })
+    }
+  }
+};

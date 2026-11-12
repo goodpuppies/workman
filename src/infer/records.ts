@@ -28,6 +28,8 @@ import {
 import { recordProjectionError } from "./record_projection.ts";
 import { resolveLongType, resolveLongValue, type StrEnv } from "./environment.ts";
 import { recordFieldSetError } from "./record_shape.ts";
+import { suggestName } from "../name_suggestion.wm";
+import { toNullable } from "../integrations/interop.mjs";
 import {
   recordDottedProjectionFact,
   recordRecordFieldFact,
@@ -95,7 +97,7 @@ export function inferDottedVar(
   }
   // No structure prefix resolved: the final segment is a record field of the
   // value denoted by the remaining prefix.
-  if (path.qualifiers.length === 0) throw new Error(`unknown name ${name}`);
+  if (path.qualifiers.length === 0) throw new Error(`unknown name ${name}${suggestion(name, env)}`);
   const receiver: LongId = {
     qualifiers: path.qualifiers.slice(0, -1),
     id: path.qualifiers.at(-1)!,
@@ -549,4 +551,11 @@ function rejectDuplicateFields(names: string[]) {
 
 function projectedType(field: Ty, receiver: Ty): Ty {
   return sequenceType([receiver], field);
+}
+
+// `; did you mean "x"?` naming the closest unqualified value in scope, or nothing.
+function suggestion(name: string, env: Env): string {
+  const candidates = [...env.keys()].filter((key) => !key.includes(".") && !key.startsWith("__"));
+  const closest = toNullable(suggestName(name, candidates));
+  return closest === undefined ? "" : `; did you mean "${closest}"?`;
 }

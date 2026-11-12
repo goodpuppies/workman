@@ -1,5 +1,9 @@
 import { assertEquals } from "@std/assert";
 
+// The compiler's own Workman modules load through deno.json's import map, so the core runs with
+// the repository config; it still needs no npm packages, TS reflection, or presentation modules.
+const config = new URL("../deno.json", import.meta.url).pathname;
+
 Deno.test("pure inference and lowering load without TS reflection or npm resolution", async () => {
   const inferUrl = new URL("../src/infer.ts", import.meta.url).href;
   const loweringUrl = new URL("../src/core/from_surface.ts", import.meta.url).href;
@@ -26,7 +30,7 @@ Deno.test("pure inference and lowering load without TS reflection or npm resolut
     console.log(core.decls.length);
   `;
   const result = await new Deno.Command(Deno.execPath(), {
-    args: ["eval", "--no-config", "--no-npm", source],
+    args: ["eval", "--config", config, "--no-npm", source],
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -37,7 +41,7 @@ Deno.test("pure inference and lowering load without TS reflection or npm resolut
   // alone cannot guard the separation between inference and presentation.
   for (const entry of [inferUrl, loweringUrl]) {
     const graph = await new Deno.Command(Deno.execPath(), {
-      args: ["info", "--json", "--no-config", "--no-npm", entry],
+      args: ["info", "--json", "--config", config, "--no-npm", entry],
       stdout: "piped",
       stderr: "piped",
     }).output();

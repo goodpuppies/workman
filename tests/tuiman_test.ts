@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { renderDocument } from "../src/generated/tuiman.js";
+import { renderDocument } from "../tooling/tuiman/diagnostic.wm";
 
 Deno.test("tuiman renders semantic diagnostic documents without guessing from text", () => {
   const document = {
@@ -10,8 +10,8 @@ Deno.test("tuiman renders semantic diagnostic documents without guessing from te
     ],
   };
 
-  assertEquals(renderDocument([document, false]), "  - Void\n- use wm err main.wm\nWarning:");
-  const colored = renderDocument([document, true]);
+  assertEquals(renderDocument(document, false), "  - Void\n- use wm err main.wm\nWarning:");
+  const colored = renderDocument(document, true);
   assertStringIncludes(colored, "\x1b[38;2;57;255;20m  - Void");
   assertStringIncludes(colored, "\x1b[2m- use wm err main.wm");
   assertStringIncludes(colored, "\x1b[38;2;255;211;67m\x1b[1mWarning:");

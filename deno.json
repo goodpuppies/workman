@@ -32,8 +32,7 @@
     "c-header:build": "deno run -A scripts/build_c_header_extractor.ts",
     "c-header:check": "deno run --allow-read scripts/check_c_header_extractor.ts",
     "generate": "deno run -A scripts/generate.ts",
-    "problems:build": "deno run -A scripts/build_problems_tui.ts",
-    "tuiman:build": "deno run -A scripts/build_tuiman.ts",
+    "src-wm:build": "deno run -A scripts/build_src_wm.ts",
     "check": "deno run -A node_modules/typescript/bin/tsc -p . --runExternalCode",
     "test": "deno test --parallel --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir --allow-ffi --allow-net=127.0.0.1,github.com,release-assets.githubusercontent.com tests",
     "test:known-issues": "WM_KNOWN_ISSUES=1 deno test --allow-read --allow-write --allow-run --allow-env --allow-sys=homedir --allow-ffi --allow-net=127.0.0.1,github.com,release-assets.githubusercontent.com --filter \"known issue\" tests",
@@ -61,7 +60,10 @@
   },
   "imports": {
     "#problems-client": "./src/problems_client.ts",
-    "byte_type": "./src/vendor/byte_type/mod.ts"
+    "byte_type": "./src/vendor/byte_type/mod.ts",
+    "./src/name_suggestion.wm": "./src/generated/wm/src/name_suggestion.wm.js",
+    "./tooling/problems/app.wm": "./src/generated/wm/tooling/problems/app.wm.js",
+    "./tooling/tuiman/diagnostic.wm": "./src/generated/wm/tooling/tuiman/diagnostic.wm.js"
   },
   "fmt": {
     "lineWidth": 100

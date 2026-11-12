@@ -1,6 +1,6 @@
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { runProblems } from "./generated/problems_tui.js";
+import { runProblems } from "../tooling/problems/app.wm";
 import type { ProjectStatusResult } from "./lsp/project_status.ts";
 import { decodeMessages, encodeMessage, type RpcMessage } from "./lsp/rpc.ts";
 import { pathToFileUri } from "./lsp/uri.ts";

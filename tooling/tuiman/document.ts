@@ -11,10 +11,9 @@ export type Span = { text: string; role: SemanticRole };
 export type Line = { spans: Span[] };
 export type Document = { lines: Line[] };
 
-type GeneratedRenderer = (argument: [Document, boolean]) => string;
-
-const generatedRenderer = await import("../../src/generated/tuiman.js")
-  .then((module) => module.renderDocument as GeneratedRenderer)
+// Loaded dynamically so that an artifact which cannot load still leaves plain-text errors.
+const renderStyled = await import("./diagnostic.wm")
+  .then((module) => module.renderDocument)
   .catch(() => undefined);
 
 export function span(text: string, role: SemanticRole = "plain"): Span {
@@ -137,9 +136,9 @@ export function wrapDocument(document: Document, width: number): Document {
 /** Render through the last successful Workman artifact, with a dependency-free fallback. */
 export function renderDocument(document: Document, colors: boolean): string {
   document = wrapDocument(document, terminalWidth());
-  if (generatedRenderer) {
+  if (renderStyled) {
     try {
-      return generatedRenderer([document, colors]);
+      return renderStyled(document, colors);
     } catch {
       // A stale or incompatible stage-0 artifact must never hide the compiler error.
     }

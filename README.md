@@ -128,6 +128,27 @@ Install the dependencies once with `deno install`; Deno and TypeScript both reso
 resulting `node_modules`. `deno task check` type-checks `src/`, `tests/`, and `scripts/` with
 TypeScript 7.1 and the Workman [content mapper](docs/content-mapper.md).
 
+### Workman modules in the compiler
+
+New compiler code can be written in Workman and imported from TypeScript directly:
+
+```ts
+import { suggestName } from "../name_suggestion.wm";
+```
+
+`deno task src-wm:build` compiles every `.wm` module under `src/`, and every `.wm` module that
+TypeScript in `src/`, `tests/`, `scripts/` or `tooling/` imports, to a tracked artifact in
+`src/generated/wm/`, and maps each module to its artifact in `deno.json`'s import map. Deno runs the
+artifact, while `deno task check` types the import from the Workman source through the content
+mapper. Build a new module before the compiler imports it: until the import map has its entry, Deno
+cannot load the compiler. Since the compiler may compile its own modules, `deno task generate`
+repeats the build until the artifacts stop changing. Read Workman `Option`s and other boundary types
+with the helpers in `src/integrations/interop.mjs`.
+
+The diagnostic renderer (`tooling/tuiman/diagnostic.wm`) and `wm problems`
+(`tooling/problems/app.wm`) are imported this way. frontend-v2 keeps its own stage-0 artifact,
+which the compiler loads by URL.
+
 For local development, the repository installer remains available:
 
 ```sh

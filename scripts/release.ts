@@ -101,7 +101,7 @@ export async function stageRelease(output: string, targets: readonly string[], b
     const binary = join(out, "binaries", target.name, file);
     await Deno.mkdir(dirname(binary), { recursive: true });
     if (build) {
-      const include = ["src/generated/frontend_v2_parser.js", "src/generated/tuiman.js"];
+      const include = ["src/generated/frontend_v2_parser.js"];
       const assets = [
         "std",
         "subml-basis",
