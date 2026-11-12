@@ -437,3 +437,51 @@ Deno.test("content mapper projects Option as the opaque interop type", async () 
     [],
   );
 });
+
+Deno.test("content mapper projects records as TS types and host JS types structurally", async () => {
+  const result = await projectWorkman(
+    path,
+    `
+    record Point = { x: Number, y: Number };
+    record Box<t> = { value: t, label: String };
+    let origin: Point = .{ x = 0, y = 0 };
+    let boxed = (value: Number) => Box(value, "n");
+    let shift = (point: Point, dx: Number) => .{ x = point.x + dx, y = point.y };
+    let points = (u: Void) => Js.Array.fromList([origin]);
+    let failure: Result<Number, Js.Error> = Err(Js.Error("no"));
+  `,
+  );
+  assertStringIncludes(result.text, `export type Point = {`);
+  assertStringIncludes(result.text, `export type Box<T> = {`);
+  assertEquals(
+    checkConsumer(
+      result,
+      `
+    import { boxed, failure, origin, points, shift, type Box, type Point } from "./projection";
+    import { jsErrorMessage } from "@goodpuppies/workman/interop";
+    const moved: Point = shift({ x: 1, y: 2 }, 3);
+    const n: number = moved.x + origin.y;
+    const box: Box<number> = boxed(1);
+    const list: Point[] = points();
+    if (!failure.ok) { const message: string | undefined = jsErrorMessage(failure.error); }
+    // @ts-expect-error record fields are readonly
+    moved.x = 1;
+    // @ts-expect-error records require every field
+    shift({ x: 1 }, 3);
+  `,
+    ).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n")),
+    [],
+  );
+});
+
+Deno.test("content mapper names foreign types and omits JS type imports from the projection", async () => {
+  const result = await projectWorkman(
+    path,
+    `
+    from js.global import type { Uint8Array };
+    let size = (bytes: Uint8Array) => 0;
+  `,
+  );
+  assertEquals(result.diagnostics, []);
+  assertStringIncludes(result.text, "(bytes: Uint8Array) => number");
+});

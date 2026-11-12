@@ -1,4 +1,4 @@
-import { functionArguments } from "../core/js_abi.ts";
+import { functionArguments, jsAbiShape } from "../core/js_abi.ts";
 import { analyzeRecoveredVirtual } from "../compiler.ts";
 import { renderDiagnosticSummary } from "../diagnostic_model.ts";
 import type { FrontendDiagnostic } from "../diagnostic_model.ts";
@@ -6,7 +6,7 @@ import type { ModuleInterface, SemanticCallableDefinition } from "../module_inte
 import type { StaticEnv } from "../infer/environment.ts";
 import type { ProjectSnapshot } from "../module_interface.ts";
 import { readOverlays } from "./project.ts";
-import { prune, type Scheme, type Ty } from "../types.ts";
+import { namedRecordFields, prune, type Scheme, type Ty, type TypeInfo } from "../types.ts";
 import type { MapperDiagnostic, SpanMapping, TransformResult } from "./protocol.ts";
 
 class UnsupportedProjection extends Error {}
@@ -92,7 +92,8 @@ export function projectInterface(
   }
   const structureType = (environment: StaticEnv, prefix: string): string => {
     const members: string[] = [];
-    for (const [name] of environment.tyEnv) {
+    for (const [name, info] of environment.tyEnv) {
+      if (info.foreign) continue;
       unsupported(`${prefix}.${name}`, "exported type declarations are not supported");
     }
     for (const [name, scheme] of environment.valEnv) {
@@ -103,7 +104,7 @@ export function projectInterface(
       try {
         members.push(
           `readonly ${JSON.stringify(name)}: ${
-            projectScheme(scheme, parameterNames.get(scheme.type))
+            projectScheme(scheme, parameterNames.get(scheme.type), context)
           }`,
         );
       } catch (error) {
@@ -119,8 +120,25 @@ export function projectInterface(
     }
     return `{ ${members.join("; ")} }`;
   };
-  for (const [name] of document.publicEnvironment.tyEnv) {
-    unsupported(name, "exported type declarations are not supported");
+  const context: ProjectionContext = { records: new Map() };
+  const records: [string, TypeInfo][] = [];
+  for (const [name, info] of document.publicEnvironment.tyEnv) {
+    // JS type imports name TS types directly; references project to those types.
+    if (info.foreign) continue;
+    if (info.recordFields && isBindingName(name)) {
+      context.records.set(info.id, name);
+      records.push([name, info]);
+      continue;
+    }
+    unsupported(name, "exported type declarations other than records are not supported");
+  }
+  for (const [name, info] of records) {
+    try {
+      output.text += `export type ${name}${projectRecordDeclaration(info, context)};\n`;
+    } catch (error) {
+      if (!(error instanceof UnsupportedProjection)) throw error;
+      unsupported(name, error.message);
+    }
   }
   const fallbackName = nameAllocator(
     [...document.publicEnvironment.valEnv.keys(), ...document.publicEnvironment.strEnv.keys()]
@@ -155,7 +173,11 @@ export function projectInterface(
         : undefined;
       const type = structure
         ? structureType(structure, name)
-        : projectScheme(scheme!, callable?.parameterStages ?? parameterNames.get(scheme!.type));
+        : projectScheme(
+          scheme!,
+          callable?.parameterStages ?? parameterNames.get(scheme!.type),
+          context,
+        );
       const direct = isBindingName(name);
       const localName = direct ? name : fallbackName(name);
       output.text += direct ? "export declare const " : "declare const ";
@@ -203,14 +225,61 @@ export function projectInterface(
   return output;
 }
 
+const interop = `import("@goodpuppies/workman/interop")`;
+
+/** Declarations this projection emits, which references use by name instead of inlining. */
+type ProjectionContext = { records: Map<number, string> };
+
 /** Translate a generalized HM scheme explicitly; never ask TS to re-infer the WM body. */
-function projectScheme(scheme: Scheme, parameterStages?: ParameterStages): string {
+function projectScheme(
+  scheme: Scheme,
+  parameterStages: ParameterStages | undefined,
+  context: ProjectionContext,
+): string {
   if (scheme.constraints?.length) {
     throw new UnsupportedProjection("constrained polymorphism is not supported");
   }
-  const quantified = new Set(scheme.vars);
+  const { render, variables } = typeRenderer(new Set(scheme.vars), context);
+  const result = render(scheme.type, parameterStages);
+  if (variables.size === 0) return result;
+  if (prune(scheme.type).tag !== "fn") {
+    throw new UnsupportedProjection("polymorphic non-function value");
+  }
+  const parameters = [...variables.values()];
+  return `<${parameters.join(", ")}>${result}`;
+}
+
+/** A WM record as a TS type alias: records are plain JS objects with these fields. */
+function projectRecordDeclaration(info: TypeInfo, context: ProjectionContext): string {
+  const params = info.recordParams ?? [];
+  const { render, variables } = typeRenderer(new Set(params), context);
+  // Name parameters in declaration order, even those no field mentions.
+  for (const id of params) render({ tag: "var", id } as Ty);
+  const body = render({ tag: "struct", fields: info.recordFields! } as Ty);
+  const names = params.map((id) => variables.get(id)!);
+  return `${names.length ? `<${names.join(", ")}>` : ""} = ${body}`;
+}
+
+function foreignTypeName(key: string): string | undefined {
+  if (key.startsWith("global-type:")) return key.slice("global-type:".length);
+  // A reflected nested type, already a TS type expression: `import("/…/node_modules/pkg/index").X`.
+  if (key.startsWith("nominal-type:import(")) {
+    return key.slice("nominal-type:".length).replace(
+      /^import\("[^"]*\/node_modules\/((?:@[^/"]+\/)?[^/"]+)\/index"\)/,
+      (_, name: string) => `import(${JSON.stringify(name)})`,
+    );
+  }
+  if (!key.startsWith("module-type:")) return undefined;
+  const reference = key.slice("module-type:".length);
+  const dot = reference.lastIndexOf(".");
+  if (dot <= 0) return undefined;
+  return `import(${JSON.stringify(reference.slice(0, dot))}).${reference.slice(dot + 1)}`;
+}
+
+function typeRenderer(quantified: Set<number>, context: ProjectionContext) {
   const variables = new Map<number, string>();
   const genericName = nameAllocator(["any", "unknown", "never", "number", "string", "boolean"]);
+  const inlining = new Set<number>();
   const render = (input: Ty, stages?: ParameterStages): string => {
     const type = prune(input);
     switch (type.tag) {
@@ -268,7 +337,7 @@ function projectScheme(scheme: Scheme, parameterStages?: ParameterStages): strin
       case "named":
         if (type.definition?.basis && type.name === "Option") {
           // Opaque: TS constructs and reads Options through @goodpuppies/workman/interop.
-          return `import("@goodpuppies/workman/interop").Option<${render(type.args[0])}>`;
+          return `${interop}.Option<${render(type.args[0])}>`;
         }
         if (type.definition?.basis && (type.name === "Result" || type.name === "Task")) {
           const result = `({ readonly ok: true; readonly value: ${
@@ -276,18 +345,54 @@ function projectScheme(scheme: Scheme, parameterStages?: ParameterStages): strin
           } } | { readonly ok: false; readonly error: ${render(type.args[1])} })`;
           return type.name === "Task" ? `Promise<${result}>` : result;
         }
-        throw new UnsupportedProjection(`nominal type ${type.name}`);
+        return renderNamed(type);
       case "ffi":
         throw new UnsupportedProjection("unresolved foreign type");
     }
   };
-  const result = render(scheme.type, parameterStages);
-  if (variables.size === 0) return result;
-  if (prune(scheme.type).tag !== "fn") {
-    throw new UnsupportedProjection("polymorphic non-function value");
-  }
-  const parameters = [...variables.values()];
-  return `<${parameters.join(", ")}>${result}`;
+  const renderArgs = (args: Ty[]) => args.length ? `<${args.map((arg) => render(arg)).join(", ")}>` : "";
+  // Host containers hold raw JS values: their elements must need no ABI conversion.
+  const unconverted = (item: Ty, container: string) => {
+    if (jsAbiShape(item) !== null) {
+      throw new UnsupportedProjection(`${container} elements that change representation`);
+    }
+    return render(item);
+  };
+  const renderNamed = (type: Extract<Ty, { tag: "named" }>): string => {
+    switch (type.name) {
+      case "Js.Value":
+        return "unknown";
+      case "Js.Object":
+        return "object";
+      case "Js.Array":
+        return `${unconverted(type.args[0], "Js.Array")}[]`;
+      case "Js.Dict":
+        return `Record<string, ${unconverted(type.args[0], "Js.Dict")}>`;
+      case "Js.Error":
+        return `${interop}.JsError`;
+    }
+    if (type.foreign) {
+      const name = type.foreignKey ? foreignTypeName(type.foreignKey) : undefined;
+      if (!name) throw new UnsupportedProjection(`foreign type ${type.name}`);
+      return `${name}${renderArgs(type.args)}`;
+    }
+    const local = context.records.get(type.id);
+    if (local) return `${local}${renderArgs(type.args)}`;
+    const fields = namedRecordFields(type);
+    if (fields) {
+      if (inlining.has(type.id)) {
+        throw new UnsupportedProjection(`recursive record ${type.name} from another module`);
+      }
+      inlining.add(type.id);
+      try {
+        return render({ tag: "struct", fields } as Ty);
+      } finally {
+        inlining.delete(type.id);
+      }
+    }
+    throw new UnsupportedProjection(`nominal type ${type.name}`);
+  };
+  return { render, variables };
 }
 
 function mapperDiagnostic(diagnostic: FrontendDiagnostic, sourceLength: number): MapperDiagnostic {

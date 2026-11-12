@@ -1,6 +1,6 @@
 import type { StaticEnv } from "../infer/environment.ts";
 import { basisCtorId } from "../basis.ts";
-import { prune, type Ty } from "../types.ts";
+import { namedRecordFields, prune, type Ty } from "../types.ts";
 
 /** Only representation changes are retained. null means the WM/JS value is unchanged. */
 export type JsAbiShape =
@@ -49,6 +49,11 @@ export function jsAbiShape(input: Ty, visiting = new Set<Ty>()): JsAbiShape {
           JsAbiShape,
           JsAbiShape,
         ];
+      }
+      {
+        // Nominal records are plain JS objects; adapt their fields like structural records.
+        const fields = namedRecordFields(type);
+        if (fields) return recordShape(fields.map((field) => [field.name, shape(field.type)]));
       }
       return null;
     default:

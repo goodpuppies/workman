@@ -8,6 +8,13 @@ export interface Option<out T> {
   readonly [optionBrand]: T;
 }
 
+declare const jsErrorBrand: unique symbol;
+
+/** A Workman `Js.Error`: a failure caught at a safe JS FFI boundary. Opaque. */
+export interface JsError {
+  readonly [jsErrorBrand]: true;
+}
+
 /** A Workman `Result`, as a discriminated union. */
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }
@@ -31,3 +38,5 @@ export function fromNullable<T>(value: T | null | undefined): Option<T>;
 export function toNullable<T>(option: Option<T>): T | undefined;
 export function Ok<T>(value: T): Result<T, never>;
 export function Err<E>(error: E): Result<never, E>;
+/** The message of a `Js.Error`, or `undefined` for `Js.Unknown` (a thrown non-Error value). */
+export function jsErrorMessage(error: JsError): string | undefined;

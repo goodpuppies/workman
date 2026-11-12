@@ -237,3 +237,14 @@ Deno.test("JS ABI does not treat user types named Option or Result as basis cons
   assertEquals(m.option.some, undefined);
   assertEquals(m.result.ok, undefined);
 });
+
+Deno.test("JS ABI adapts function fields of nominal records", async () => {
+  const m = await library(`
+    record Op = { name: String, apply: (Number, Number) -> Number };
+    let add: Op = .{ name = "add", apply = (a, b) => a + b };
+    let run = (op: Op) => op.apply(20, 22);
+  `);
+  assertEquals(m.add.name, "add");
+  assertEquals(m.add.apply(20, 22), 42);
+  assertEquals(m.run({ name: "sub", apply: (a: number, b: number) => a - b }), -2);
+});

@@ -52,3 +52,10 @@ export function Ok(value) {
 export function Err(error) {
   return { ok: false, error };
 }
+
+const JS_ERROR_ID = -7;
+
+/** The message of a WM Js.Error, or undefined for Js.Unknown (a thrown non-Error value). */
+export function jsErrorMessage(error) {
+  return error?.ctor === JS_ERROR_ID ? error.a0 : undefined;
+}

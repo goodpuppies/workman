@@ -227,11 +227,38 @@ per compilation and are not yet shared between separately compiled libraries.
 This extends the library ABI after 0.7.0 and is currently available through the local checkout.
 Rebuild libraries together when adopting it. Arbitrary user ADTs and Lists are not projected yet.
 
+## Records, JS types, and FFI modules
+
+WM records are plain JS objects, so the mapper exports each record as a TS type alias with
+readonly fields, alongside its ordered constructor function:
+
+```ts
+// record ConvPoint = { id: Number, u: Number, v: Number };
+export type ConvPoint = { readonly "id": number; readonly "u": number; readonly "v": number };
+export declare const ConvPoint: (id: number, u: number, v: number) => ConvPoint;
+```
+
+Generic records keep their parameters, and records from other WM modules are inlined
+structurally. Record fields use the positional ABI, so a function-valued field is called as
+`op.apply(left, right)` from TS.
+
+Types that came from JS keep their TS identity: a `js.global` type such as `Uint8Array` stays
+`Uint8Array`, a module type becomes `import("@mapbox/vector-tile").VectorTileFeature`, and a
+nested type found through reflection keeps the module it was declared in. `Js.Value` is `unknown`,
+`Js.Object` is `object`, `Js.Dict<T>` is `Record<string, T>`, `Js.Array<T>` is `T[]` (when `T`
+needs no conversion), and `Js.Error` is the opaque `JsError` from
+`@goodpuppies/workman/interop`, read with `jsErrorMessage`. JS type imports themselves are not
+exported to TS.
+
+The mapper analyzes recovered WM source with the same staged FFI resolution as `wm check`, so
+member access on foreign values (`tile.layers`, `layer.feature(i)`) projects with its reflected
+types. A module with errors falls back to its independently valid declarations.
+
 ## Current limits
 
-- User-defined nominal types, ADTs such as `List`, exported type declarations,
-  foreign types, and constrained polymorphism produce explicit unsupported projection errors. The
-  mapper omits the affected exports rather than giving them `any`.
+- User-defined variant types, ADTs such as `List`, type aliases, and constrained polymorphism
+  produce explicit unsupported projection errors. The mapper omits the affected exports rather than
+  giving them `any`.
 - Source mappings cover exported declarations. Internal wm expressions and references continue to
   use wm's language server. TS-generated rename, formatting, and code-action edits into wm are
   disabled. The effect-taint `!` metadata is not represented in TypeScript.
