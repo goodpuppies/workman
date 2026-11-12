@@ -209,6 +209,46 @@ export function rewriteExprCalls(
         });
       } else {
         assertDottedModuleNamespaceMember(expr.name, refs, expr.node);
+        // `Box.new` as a value names the imported constructor, as it does in call position, not
+        // a member called `new` on the class object. Eta-expand it into that call.
+        const constructor = expr.name.endsWith(".new") ? bindings.get(expr.name) : undefined;
+        if (constructor && constructor.variants.length > 0) {
+          const arities = new Set(
+            constructor.variants.map((variant) =>
+              variant.type.kind === "TFn" ? variant.type.params.length : -1
+            ),
+          );
+          const [arity] = arities;
+          if (arities.size === 1 && arity >= 0) {
+            const names = Array.from({ length: arity }, (_, index) => `__wm_new_arg_${index}`);
+            return rewrite({
+              kind: "Lambda",
+              params: names.map((name) => ({
+                pattern: { kind: "PVar", name, node: expr.node },
+                node: expr.node,
+              })),
+              directives: [],
+              body: {
+                kind: "Call",
+                callee: { kind: "Var", name: expr.name, node: expr.node },
+                args: names.map((name) => ({ kind: "Var", name, node: expr.node })),
+                node: expr.node,
+              },
+              node: expr.node,
+            });
+          }
+          // Optional or overloaded constructor parameters leave the arity open; the class object
+          // has no `new` member to fall back to.
+          throw diagnosticError(
+            new Error(
+              `cannot determine JS FFI constructor arity for ${expr.name} as a first-class ` +
+                `function; available arities: ${
+                  [...arities].sort().join(", ")
+                }. Call it in a lambda, as in (value) => ${expr.name}(value)`,
+            ),
+            expr.node,
+          );
+        }
         // The authored node lets tooling see the namespace receiver as a use of its import.
         const functionValue = reflectedReceiverFunctionValue(
           expr.name,
