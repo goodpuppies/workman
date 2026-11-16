@@ -2,7 +2,7 @@ from "./generated/surface_types.wm" import {
   SurfaceToken, SurfaceValue, SurfaceNode, SurfaceProgram,
   AuthoredValue, MarkedValue,
   ProgramNode, TopPhraseNode,
-  LetDeclarationNode, LetBindingNode,
+  LetDeclarationNode, LetBindingNode, PrivateDeclarationNode,
   PinnedPatternNode, ComputedPatternNode, ConstructorPatternNode,
   LambdaExpressionNode, ParametersNode, BareParametersNode, ParameterNode, CaptureClauseNode,
   BlockExpressionNode, BlockBodyNode, BlockItemNode,
@@ -67,6 +67,12 @@ and renderSurfaceNodeAt = match(node, depth, materializeMarks) => {
   (TopPhraseNode(item, terminator, span), Var(depth), Var(materializeMarks)) => {
     match(renderSurfaceNodeAt(item, depth, materializeMarks)) {
       Some(text) => { Some(text ++ renderSurfaceValue(terminator, materializeMarks)) },
+      None => { None },
+    }
+  },
+  (PrivateDeclarationNode(privateToken, declaration, span), Var(depth), Var(materializeMarks)) => {
+    match(renderSurfaceNodeAt(declaration, depth, materializeMarks)) {
+      Some(text) => { Some(renderToken(privateToken) ++ " " ++ text) },
       None => { None },
     }
   },

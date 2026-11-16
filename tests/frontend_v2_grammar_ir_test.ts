@@ -35,26 +35,26 @@ const grammar = parseWorkmanGrammar(grammarSource, "src/grammar.peggy");
 
 Deno.test("frontend-v2 grammar IR normalizes every current Peggy construct", () => {
   const inventory = inventoryGrammar(grammar);
-  assertEquals(inventory.ruleCount, 179);
+  assertEquals(inventory.ruleCount, 180);
   assertEquals(inventory.unresolvedRuleReferences, []);
   assertEquals(inventory.actionClassifications, {
     mechanical: 0,
     named: 0,
-    unclassified: 277,
+    unclassified: 278,
   });
   assertEquals(inventory.expressionKinds, {
-    action: 276,
+    action: 277,
     any: 4,
-    choice: 84,
+    choice: 85,
     class: 60,
     group: 34,
-    labeled: 379,
-    literal: 415,
+    labeled: 380,
+    literal: 416,
     oneOrMore: 14,
     optional: 113,
-    ruleRef: 894,
+    ruleRef: 899,
     semanticAnd: 1,
-    sequence: 299,
+    sequence: 300,
     simpleNot: 56,
     text: 8,
     zeroOrMore: 63,
@@ -70,13 +70,13 @@ Deno.test("frontend-v2 grammar IR and action identities are deterministic", () =
 Deno.test("frontend-v2 grammar IR has a reproducible structural golden", async () => {
   assertEquals(
     await hashGrammarIr(grammar),
-    "9236c5683208724d34f631827c506a58343e7bf3bdd93430aac36bb5ef9171b5",
+    "8916c2fbe570648148aa9897e206501e694fbf807945bbe22fac4bc350a853dc",
   );
 });
 
 Deno.test("frontend-v2 classifies every Peggy action without evaluating JavaScript", () => {
   const actions = classifyGrammarActions(grammar.actions);
-  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 266);
+  assertEquals(actions.filter((action) => action.kind === "mechanical").length, 267);
   assertEquals(
     actions.filter((action) => action.kind === "named").map((action) => action.actionId),
     [

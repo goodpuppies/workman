@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix="pakman-native-") as temporary:
                PAKMAN_BUILD_WM=str(stage / "scripts/build-wm.sh"),
                PAKMAN_RUN_IMAGE=str(stage / "scripts/run-image.sh"),
                PAKMAN_SUBSETML=str(subset / "bin/subsetml"))
-    root = base / "prefix ' with $ literal"
+    root = base / "prefix ' with $ literal 東京🦊"
     state = base / "state space"
     command = [stage / "bin/pakman"]
     def cli(*args, good=True, prefix=root):
@@ -148,6 +148,7 @@ with tempfile.TemporaryDirectory(prefix="pakman-native-") as temporary:
     host_mlb = base / "host.mlb"
     host_mlb.write_text('$(SML_LIB)/basis/basis.mlb\n' + "\n".join(
         '"' + str(p) + '"' for p in [stage / "generated/pakman/subset_option_value.sml",
+            stage / "generated/pakman/subset_result_value.sml",
             stage / "generated/pakman/subset_result.sml",
             subset / "lib/sml-basis/subset_host.sml", repo / "native/host.sml", repo / "tests/host.sml"]) + "\n")
     subprocess.run(["mlton", "-output", str(base / "host"), str(host_mlb)], check=True)

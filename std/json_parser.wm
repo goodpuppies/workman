@@ -8,22 +8,22 @@ from "basis/utf8.wm" import * as SubsetUtf8;
 from "basis/unicode.wm" import * as SubsetUnicode;
 
 from "basis/option_value.wm" import *;
-record Cursor = {jsonInput: List<Char>, jsonOffset: Int32.Int};
-let cursor = (input, offset) => { (.{ jsonInput = input, jsonOffset = offset }: Cursor) };
-let fail = (cur: Cursor, message) => { SubsetResult.Err(JsonValue.error(cur.jsonOffset, message)) };
-let advance = (cur: Cursor) => {
+private record Cursor = {jsonInput: List<Char>, jsonOffset: Int32.Int};
+private let cursor = (input, offset) => { (.{ jsonInput = input, jsonOffset = offset }: Cursor) };
+private let fail = (cur: Cursor, message) => { SubsetResult.Err(JsonValue.error(cur.jsonOffset, message)) };
+private let advance = (cur: Cursor) => {
   match(cur.jsonInput) {
     [] => { cur },
     [c, ..rest] => { cursor(rest, cur.jsonOffset + (1: Int32.Int)) }
   }
 };
-let peek = (cur: Cursor, wanted) => {
+private let peek = (cur: Cursor, wanted) => {
   match(cur.jsonInput) {
     [] => { false },
     [c, ..rest] => { c == wanted }
   }
 };
-let rec skip = (cur: Cursor) => {
+private let rec skip = (cur: Cursor) => {
   match(cur.jsonInput) {
     [c, ..rest] => {
       if (if (if (if (c == ' ') { true } else { c == '\t' }) { true } else { c == '\r' }) { true } else { c == '\n' }) { skip(advance(cur)) } else { cur }
@@ -31,12 +31,12 @@ let rec skip = (cur: Cursor) => {
     [] => { cur }
   }
 };
-let expect = (cur, wanted) => {
+private let expect = (cur, wanted) => {
   if (peek(cur, wanted)) { SubsetResult.Ok(advance(cur)) } else { fail(cur, "unexpected character") }
 };
-let native = (bytes) => { SubsetResult.getOr(SubsetString.toNative(bytes), "") };
-let via = SubsetResult.via;
-let rec take = (cur: Cursor, predicate, acc) => {
+private let native = (bytes) => { SubsetResult.getOr(SubsetString.toNative(bytes), "") };
+private let via = SubsetResult.via;
+private let rec take = (cur: Cursor, predicate, acc) => {
   match(cur.jsonInput) {
     [c, ..rest] => {
       if (predicate(c)) { take(advance(cur), predicate, [c, ..acc]) } else { (SubsetList.reverse(acc), cur) }
@@ -44,7 +44,7 @@ let rec take = (cur: Cursor, predicate, acc) => {
     [] => { (SubsetList.reverse(acc), cur) }
   }
 };
-let hex = (c) => {
+private let hex = (c) => {
   match(SubsetChar.toCode(c)) {
     SubsetResult.Err(error) => { None },
     SubsetResult.Ok(code) => {
@@ -56,7 +56,7 @@ let hex = (c) => {
     }
   }
 };
-let hex4 = (input) => {
+private let hex4 = (input) => {
   let rec go = (cur: Cursor, left, code) => {
     if (left <= (0: Int32.Int)) { SubsetResult.Ok(code, cur) } else {
       match(cur.jsonInput) {
@@ -73,7 +73,7 @@ let hex4 = (input) => {
   go(input, (4: Int32.Int), (0: Int32.Int))
 };
 
-let text = (input) => {
+private let text = (input) => {
   let rec go = (cur: Cursor, acc) => {
     match(cur.jsonInput) {
       [] => { fail(cur, "unterminated string") },
@@ -148,7 +148,7 @@ let text = (input) => {
   SubsetResult.andThen(expect(input, '"'), (start) => { go(start, []) })
 };
 
-let number = (input) => {
+private let number = (input) => {
   let start = if (peek(input, '-')) { advance(input) } else { input };
   let (whole, afterWhole) = take(start, SubsetChar.isDigit, []);
   let required = (cur) => {
@@ -188,7 +188,7 @@ let number = (input) => {
     SubsetResult.map(SubsetResult.andThen(fraction(afterWhole), exponent), spelling)
   } else { fail(input, "invalid number") }
 };
-let literal = (input, expected, result) => {
+private let literal = (input, expected, result) => {
   let rec go = (cur, chars) => {
     match(chars) {
       [] => { SubsetResult.Ok(result, cur) },
@@ -200,7 +200,7 @@ let literal = (input, expected, result) => {
   go(input, expected)
 };
 
-let rec value = (input, depth, limit) => {
+private let rec value = (input, depth, limit) => {
   let cur = skip(input);
   let array = (start) => {
     let rec go = (next, acc) => {

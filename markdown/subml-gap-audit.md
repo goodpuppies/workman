@@ -1,7 +1,7 @@
 # WM → SubsetML translation gap audit
 
-Status: 2026-11-16, input to [release080plan.md](release080plan.md) step 8. Nothing here is
-implemented yet.
+Status: 2026-11-16, input to [release080plan.md](release080plan.md) step 8. The tables record the
+original probes; implemented work and current blockers are recorded below.
 
 ## What was checked
 
@@ -122,6 +122,30 @@ memo table.
   the lowering plan treats checker defects as SubsetML bugs to fix against the Definition.
 - `tooling/pakman-subsetml` no longer translates: it uses `SubsetHost.success`, which SubsetML
   `7c92a71` removed.
+
+### Follow-up, 2026-11-16
+
+The pakman port now uses integer exit codes and the shared Basis's data-first List and byte-string
+APIs. Native strings are checked at conversion; invalid bytes trigger the selected panic runtime.
+The full native package lifecycle, refusal cases and host contract pass through SubsetML and
+MLton. Its Option-producing helper explicitly uses the Basis datatype.
+
+Postfix type annotations now translate in ordinary expressions and call arguments. This fixes
+the grouped-argument failure for `add (1: Int32.Int) one`; the pipe suite compares annotated
+curried/tuple calls against WM execution, and the translation suite passes.
+
+With `--basis`, SubsetML now supplies private opens of the source Option/Result datatypes for
+unqualified type and constructor uses. Basis-returned options match bare `Some`/`None`; authored
+datatypes and imports still shadow the defaults. The private leak rule distinguishes newly
+declared types from imported types. The bootstrap Option remains in the compatibility checker;
+its removal and the manifest changes are still release step 9.
+
+The frontend-v3 parser/projector/View closure now builds with MLton and passes eight WM/native
+cases (`scripts/check_frontend_v3_projector_native.py`). Its older generic error was a scoped
+type variable in a nested callback annotation, also rejected by MLton in a reduced SML case.
+Annotating the `items` helper's argument as `Ast.Items<a>` scopes that variable at the helper.
+The JavaScript editor/preview adapters now decode the library Result ABI; their three parser
+and preview tests pass. All ten direct projector tests pass too.
 
 ## Recommendation for 0.8.0
 

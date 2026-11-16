@@ -18,14 +18,24 @@ independent of editor modules.
 
 ## Current editor checkpoint
 
-The WM diff/additive/preview closure translates and MLton-typechecks. The new canonical
-projector/View closure does not yet translate: SubsetML reports `argument of expr:
-expected Writer * 'a, found Writer * Expr`. Explicit types on recursive `expr` and
-`statement` parameters did not resolve it. WM compilation and the direct projector
-tests pass. Record this as a deferred compatibility blocker; continue canonical parser
-assembly on WM without splitting implementations or restoring the rejected schema.
-Investigate generic higher-order `items` specialization/recursive nominal types in a
-focused reproduction when native work resumes; the exact root cause is not established.
+The canonical parser/projector/View closure translates, builds with MLton, and passes eight
+WM/native regression cases. Run `python3 scripts/check_frontend_v3_projector_native.py` from the
+repository root. It exercises missing expressions, lambdas, calls, blocks and damaged comments
+through the same authored parser and View implementation.
+
+Two blockers were resolved on 2026-11-16. Unqualified Option constructors now use the source
+Basis datatype with `--basis`; private imports no longer trigger the leak rule for types they
+only open. The older `Writer * 'a` versus `Writer * Expr` error came from an inner callback
+annotation introducing `a` inside a nested value declaration. MLton rejects the reduced SML
+case too because that type variable escapes its scope. Annotating the generic helper's
+`value: Ast.Items<a>` parameter puts `a` in scope for the helper and its callbacks; the recursive
+projector needs no specialization or duplicate implementation.
+
+This native test uses MLton's target Basis. The generated graph still fails the restricted
+`check-portable` profile on bootstrap `not`; see the
+[remaining pervasive lowering work](../../markdown/issues/wm-native-output-still-uses-bootstrap-pervasives.md).
+The ordinary WM test runner also has a separately tracked
+[Test identity/exit-status failure](../../markdown/issues/wm-test-runner-reports-distinct-test-identities.md).
 
 ## Existing agreements
 

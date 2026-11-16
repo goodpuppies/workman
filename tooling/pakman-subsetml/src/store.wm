@@ -1,4 +1,5 @@
 from "basis/result.wm" import * as R;
+from "basis/option_value.wm" import * as O;
 from "./model.wm" import * as M;
 from "./host.wm" import * as H;
 from "./io.wm" import * as I;
@@ -13,14 +14,14 @@ let cleanFailed = (path) => {
   } else { I.removeTree(path) }
 };
 let destination = match {
-  M.Install(_, path, _) => { Some(path) }, M.InstallTree(_, path, _) => { Some(path) }, M.Launcher(_, path) => { Some(path) }, _ => { None }
+  M.Install(_, path, _) => { O.Some(path) }, M.InstallTree(_, path, _) => { O.Some(path) }, M.Launcher(_, path) => { O.Some(path) }, _ => { O.None }
 };
-let destinations = (ops) => { List.mapPartial(destination)(ops) };
+let destinations = (ops) => { List.filterMap(ops, destination) };
 let rec unique = (items) => {
   match(items) { [] => { true }, [x, ..rest] => { !I.any(rest, (y) => { x == y }) && unique(rest) } }
 };
 let installPath = (path) => {
-  I.safeRelative(path) && !String.isPrefix(".pakman/")(path) && path != ".pakman"
+  I.safeRelative(path) && !I.isPrefix(path, ".pakman/") && path != ".pakman"
 };
 let argumentSafe = match { M.Literal(value) => { I.noNul(value) }, M.Input(p) => { I.safeRelative(p) }, M.Work(p) => { I.safeRelative(p) }, M.Out(p) => { I.safeRelative(p) } };
 let validate = (plan: M.Plan) => {
@@ -63,7 +64,7 @@ let rec expandTree = (source, path, mode) => {
   I.bind(I.verifyDir(source), (_) => {
     I.bind(H.listDir(source), (names) => {
       R.map(I.traverse(names, (name) => {
-        I.bind(I.ensure(I.safeRelative(name) && I.all(String.explode(name), (c) => { c != '/' }), "unsafe tree entry: " ++ name), (_) => {
+        I.bind(I.ensure(I.safeRelative(name) && I.all(I.explode(name), (c) => { c != '/' }), "unsafe tree entry: " ++ name), (_) => {
           let file = I.child(source, name);
           let dest = I.child(path, name);
           I.bind(H.kind(file), (kind) => {

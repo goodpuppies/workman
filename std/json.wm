@@ -18,7 +18,7 @@ type Value = JsonValue.Value;
 type Node = JsonValue.Node;
 type Error = JsonValue.Error;
 type Problem = JsonValue.Problem;
-let unicodeError = match {
+private let unicodeError = match {
   SubsetUnicode.Error(reason, offset) => { JsonValue.error(offset, "invalid Unicode text") }
 };
 let decodeBytes = JsonParser.decode;
@@ -43,7 +43,7 @@ let readBytes = (bytes) => {
   )
 };
 
-let hexDigit = (code) => {
+private let hexDigit = (code) => {
   SubsetResult.getOr(
     SubsetString.str(SubsetResult.getOr(
       SubsetList.at(
@@ -55,7 +55,7 @@ let hexDigit = (code) => {
     ""
   )
 };
-let quote = (bytes) => {
+private let quote = (bytes) => {
   match(SubsetUtf8.decode(bytes)) {
     SubsetResult.Err(error) => {
       SubsetResult.Err(JsonValue.error((0: Int32.Int), "invalid UTF-8 string"))
@@ -83,7 +83,7 @@ let quote = (bytes) => {
   }
 };
 
-let rec render = (value, depth, limit) => {
+private let rec render = (value, depth, limit) => {
   let fail = (message) => { SubsetResult.Err(JsonValue.error((0: Int32.Int), message)) };
   match(value) {
     JsonValue.Null => { SubsetResult.Ok("null") },
@@ -151,7 +151,7 @@ let encode = (value) => {
   )
 };
 
-let mismatch = (node: Node, kind) => { SubsetResult.Err(JsonValue.Mismatch(node.steps, kind)) };
+private let mismatch = (node: Node, kind) => { SubsetResult.Err(JsonValue.Mismatch(node.steps, kind)) };
 // Field names are host text, checked before comparing UTF-8 keys. Last duplicate wins.
 let get = (found, key) => {
   SubsetResult.andThen(

@@ -1,6 +1,6 @@
 {
   "source": "SubsetML",
-  "commit": "23799511f5ed3a325e355f0da18c9981f09e8c0f",
+  "commit": "d2bceabc0ec28852b953750e1613405a4f067ced",
   "modules": [
     "SubsetBool",
     "SubsetBytes",
@@ -17,6 +17,7 @@
     "SubsetPath",
     "SubsetProcess",
     "SubsetResult",
+    "SubsetResultValue",
     "SubsetSmlEscape",
     "SubsetSource",
     "SubsetString",
@@ -49,7 +50,8 @@
     "src/subset_os.sml": "47b87cd732ed9a63c06d23a5cf0ca521e47b075c6d67e64be926d365c405c95b",
     "src/subset_path.sml": "aafa31b9db28f7ad78900b0a1e64f6f8ba423d87040313f57c40d885d272c422",
     "src/subset_process.sml": "fda75a57011e9368e9f4d752f5424e56f128f503bc525fbf8b2aa6fa38433d7b",
-    "src/subset_result.sml": "b869099c48d5e8461df7bcaf7d2d20c0e30d00e290b34eb6cd97b7cb18b6b032",
+    "src/subset_result.sml": "abf8d6fe260efd4ad3e7744ff03ba0e929e01daa3fbf8a1505c8b672bddd2aa4",
+    "src/subset_result_value.sml": "08137dc799570725205eb36a32ca01ce977d9939ec71a966add19874118e9301",
     "src/subset_sml_escape.sml": "1cef4652d564c5a554d2586ce2a90c34479c1292505086bce3ceab0f383c6f89",
     "src/subset_source.sml": "4eb5737397fcb370073fdf5638ed9533e6cfbac64057e79703e01eba2e4fc02b",
     "src/subset_string.sml": "728a7fda7f6c2b3087549ea8145456754f7770af351bd2e1cb9191e743843b19",

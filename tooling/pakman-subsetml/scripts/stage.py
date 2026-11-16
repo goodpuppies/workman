@@ -83,6 +83,7 @@ def stage(name, entry, structure):
         old.unlink()
     subprocess.run([str(args.subsetml.resolve()), "sml-entry", str(directory),
                     "--basis", str(basis),
+                    "--panic-runtime", str(basis / "subset_process.wm"),
                     "--native-adapter", str(subset / "lib/mlworks/checker/subset_host.wm"),
                     str(subset / "lib/sml-basis/subset_host.sml"), "SubsetHost",
                     "--native-adapter", str(basis / "subset_text_host.wm"),

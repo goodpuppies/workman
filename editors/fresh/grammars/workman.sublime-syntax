@@ -33,7 +33,7 @@ contexts:
       scope: constant.numeric.float.workman
     - match: (?<!{{identifier_part}})-?(?:0x[0-9a-fA-F]+|[0-9]+)(?!{{identifier_part}})
       scope: constant.numeric.integer.workman
-    - match: (?<!{{identifier_part}})(from|import|export|as)(?!{{identifier_part}})
+    - match: (?<!{{identifier_part}})(from|import|export|as|private(?=\s+(?:let|type|record)(?!{{identifier_part}})))(?!{{identifier_part}})
       scope: keyword.control.import.workman
     - match: (?<!{{identifier_part}})(if|else|match|when)(?!{{identifier_part}})
       scope: keyword.control.conditional.workman

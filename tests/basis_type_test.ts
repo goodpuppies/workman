@@ -71,6 +71,39 @@ print(match(None) { O.Some(_) => { false }, O.None => { true } });
   );
 });
 
+Deno.test("Result helpers and the independent source datatype share WM and FFI identities", async () => {
+  assertEquals(
+    await run({
+      "/test/main.wm": `
+from "basis/result_value.wm" import * as Values;
+from "basis/result.wm" import * as Results;
+from js.global("JSON") import { parse };
+let typed = (value: Values.Result<Int32.Int, String>) => { Results.map(value, (n) => { n + 1 }) };
+print(typed(Ok(41)));
+print(match(Results.Ok(3)) { Values.Ok(n) => { n }, Values.Err(_) => { 0 } });
+print(match(Values.Err("bad")) { Ok(_) => { "ok" }, Err(error) => { error } });
+print(match(parse("1")) { Values.Ok(_) => { "parsed" }, Values.Err(_) => { "failed" } });
+print(Results.toOption(Values.Ok(7)));
+`,
+    }),
+    ["Ok(42)", "3", "bad", "parsed", "Some(7)"],
+  );
+});
+
+Deno.test("a source Basis contract accepts renamed type parameters", async () => {
+  assertEquals(
+    await run({
+      "/test/result.wm":
+        "// @basis-type Result\ntype Result<value, error> = Ok<value> | Err<error>;",
+      "/test/main.wm": `from "./result.wm" import * as R;
+let preserve = (value: R.Result<Int32.Int, String>) => { value };
+print(preserve(R.Ok(7)));
+print(preserve(Err("failure")));`,
+    }),
+    ["Ok(7)", "Err(failure)"],
+  );
+});
+
 Deno.test("a @basis-type declaration must match the built-in", async () => {
   for (
     const declaration of [
@@ -83,7 +116,7 @@ Deno.test("a @basis-type declaration must match the built-in", async () => {
   ) {
     assertStringIncludes(
       await typeError({ "/test/main.wm": `// @basis-type Result\n${declaration}\n` }),
-      "@basis-type Result: the declaration must be Result<T, E> = Ok<T> | Err<E>",
+      "@basis-type Result: the declaration must be Result<a, e> = Ok<a> | Err<e>",
       declaration,
     );
   }

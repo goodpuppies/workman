@@ -1,5 +1,5 @@
 from "./generated/surface_types.wm" import {
-  Span, SurfaceToken, AuthoredValue, LetBindingNode, LetDeclarationNode,
+  Span, SurfaceToken, AuthoredValue, LetBindingNode, LetDeclarationNode, PrivateDeclarationNode,
   RecordDeclarationNode, RecordFieldDeclarationNode,
   TopPhraseNode, ProgramNode
 };
@@ -53,6 +53,19 @@ let buildLetDecl = (value: ParseValue, span: Span) => {
       )
     },
     _ => { RuleParseValue("LetDecl", value, span) },
+  }
+};
+
+let buildPrivateDecl = (value: ParseValue, span: Span) => {
+  match(value) {
+    SequenceParseValue([
+      TokenParseValue(privateToken),
+      EmptyParseValue,
+      ChoiceParseValue(_, NodeParseValue(declaration)),
+    ]) => {
+      NodeParseValue(PrivateDeclarationNode(privateToken, declaration, span))
+    },
+    _ => { RuleParseValue("PrivateDecl", value, span) },
   }
 };
 

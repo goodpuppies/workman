@@ -1,4 +1,5 @@
 from "basis/result.wm" import * as R;
+from "basis/bytes.wm" import * as Bytes;
 from "./host.wm" import * as H;
 
 let bind = (value, f) => { R.andThen(value, f) };
@@ -12,38 +13,54 @@ let rec traverse = (xs, f) => {
 let rec each = (xs, f) => {
   match(xs) { [] => { R.Ok(void) }, [x, ..rest] => { bind(f(x), (_) => { each(rest, f) }) } }
 };
-let map = (xs, f) => { List.map(f)(xs) };
-let all = (xs, f) => { List.all(f)(xs) };
-let any = (xs, f) => { List.exists(f)(xs) };
-let fields = (separator, text) => { String.fields((c) => { c == separator })(text) };
+let map = (xs, f) => { List.map(xs, f) };
+let all = (xs, f) => { List.all(xs, f) };
+let any = (xs, f) => { List.exists(xs, f) };
+// Native Unix strings contain bytes. A conversion failure violates that host contract.
+let explode = (text) => {
+  match(String.fromNative(text)) {
+    R.Ok(bytes) => { bytes },
+    R.Err(_) => { Panic("pakman: non-byte native string") }
+  }
+};
+let implode = (bytes) => {
+  match(String.toNative(bytes)) {
+    R.Ok(text) => { text },
+    R.Err(_) => { Panic("pakman: non-byte character") }
+  }
+};
+let fields = (separator, text) => {
+  map(Bytes.fields(explode(text), (c) => { c == separator }), implode)
+};
+let isPrefix = (text, prefix) => { Bytes.isPrefix(explode(text), explode(prefix)) };
 let join = (items, separator) => {
   match(items) {
     [] => { "" },
     [first, ..rest] => { first ++ String.concat(map(rest, (part) => { separator ++ part })) }
   }
 };
-let noNul = (text) => { !any(String.explode(text), (c) => { c == '\u0000' }) };
+let noNul = (text) => { !any(explode(text), (c) => { c == '\u0000' }) };
 let safeRelative = (path) => {
   path != "" && noNul(path) && all(fields('/', path), (part) => {
     part != "" && part != "." && part != ".."
   })
 };
 let safeName = (name) => {
-  safeRelative(name) && all(String.explode(name), (c) => {
+  safeRelative(name) && all(explode(name), (c) => {
     Char.isAlphaNum(c) || c == '-' || c == '_' || c == '.'
   })
 };
 let absolute = (path) => {
-  match(String.explode(path)) {
+  match(explode(path)) {
     ['/'] => { true },
-    ['/', ..rest] => { safeRelative(String.implode(rest)) },
+    ['/', ..rest] => { safeRelative(implode(rest)) },
     _ => { false }
   }
 };
 let parent = (path) => {
-  match(List.rev(fields('/', path))) {
+  match(List.reverse(fields('/', path))) {
     [] => { "/" },
-    [_, ..rest] => { let value = join(List.rev(rest), "/"); if (value == "") { "/" } else { value } }
+    [_, ..rest] => { let value = join(List.reverse(rest), "/"); if (value == "") { "/" } else { value } }
   }
 };
 let child = (root, path) => { if (root == "/") { "/" ++ path } else { root ++ "/" ++ path } };
@@ -81,7 +98,9 @@ let requireFile = (path) => {
   })
 };
 let quote = (text) => {
-  "'" ++ String.translate((c) => { if (c == '\'') { "'\\''" } else { String.str(c) } })(text) ++ "'"
+  "'" ++ String.concat(map(explode(text), (c) => {
+    if (c == '\'') { "'\\''" } else { implode([c]) }
+  })) ++ "'"
 };
 let missing = (path) => {
   bind(H.kind(path), (kind) => { ensure(kind == "missing", "path already exists: " ++ path) })

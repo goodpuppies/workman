@@ -7,8 +7,6 @@ let writeFile = (data, name) => { SubsetHost.writeFile(data, name) };
 let writeStdout = (data) => { SubsetHost.writeStdout(data) };
 let writeStderr = (data) => { SubsetHost.writeStderr(data) };
 let arguments = () => { SubsetHost.arguments() };
-let success = SubsetHost.success;
-let failure = SubsetHost.failure;
 let exit = (status) => { SubsetHost.exit(status) };
 let canonicalPath = (name) => { SubsetHost.canonicalPath(name) };
 let makeDir = (name) => { SubsetHost.makeDir(name) };

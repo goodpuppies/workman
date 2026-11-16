@@ -247,7 +247,12 @@ TopPhrase
   = d:TopDecl _ ";" { return d; }
   / e:Expr _ ";" { return topExpression(e, location()); }
 
-TopDecl = JsImportDecl / ImportDecl / ExportImportDecl / RecordDecl / TypeDecl / LetDecl
+TopDecl = JsImportDecl / ImportDecl / ExportImportDecl / PrivateDecl / RecordDecl / TypeDecl / LetDecl
+
+// `private` is contextual: only a declaration keyword after it makes it a modifier.
+PrivateDecl
+  = "private" __ decl:(LetDecl / TypeDecl / RecordDecl)
+    { return { private: true, decl }; }
 
 ImportDecl
   = "from" __ path:String __ "import" __ clause:ImportClause

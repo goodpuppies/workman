@@ -8,7 +8,7 @@ from "./src/apply.wm" import * as Apply;
 record Options = { root: String, state: String, args: List<String> };
 let rec parse = (args, options: Options) => {
   match(args) {
-    [] => { R.Ok(Options { ..options, args = List.rev(options.args) }) },
+    [] => { R.Ok(Options { ..options, args = List.reverse(options.args) }) },
     ["--root", root, ..rest] => { parse(rest, Options { ..options, root }) },
     ["--state", state, ..rest] => { parse(rest, Options { ..options, state }) },
     ["--root"] => { R.Err("--root needs a directory") },
@@ -86,8 +86,8 @@ let run = (args) => {
 };
 let main = () => {
   match(I.bind(H.arguments(), run)) {
-    R.Ok(_) => { H.exit(H.success) },
-    R.Err(message) => { let _ = H.writeStderr("pakman: " ++ message ++ "\n"); H.exit(H.failure) }
+    R.Ok(_) => { H.exit(0) },
+    R.Err(message) => { let _ = H.writeStderr("pakman: " ++ message ++ "\n"); H.exit(1) }
   }
 };
 

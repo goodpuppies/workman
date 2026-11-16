@@ -10,6 +10,7 @@ const constructors: readonly string[] = Object.freeze([
   "TopPhraseNode<SurfaceNode, SurfaceValue<SurfaceToken>, Span>",
   "ImportDeclarationNode<SurfaceToken, SurfaceNode, SurfaceToken, SurfaceNode, Span>",
   "ExportImportDeclarationNode<SurfaceToken, SurfaceNode, Span>",
+  "PrivateDeclarationNode<SurfaceToken, SurfaceNode, Span>",
   "ImportNamespaceClauseNode<SurfaceToken, SurfaceToken, SurfaceToken, Span>",
   "ImportAllClauseNode<SurfaceToken, Span>",
   "ImportNamedClauseNode<SurfaceToken, List<SurfaceNode>, SurfaceValue<SurfaceToken>, Span>",
@@ -127,6 +128,7 @@ export const surfaceRuleGroups: Readonly<Record<SurfaceRuleKind, readonly string
       "TopPhrase",
       "ImportDecl",
       "ExportImportDecl",
+      "PrivateDecl",
       "ImportClause",
       "ImportSpec",
       "JsImportDecl",
@@ -329,6 +331,7 @@ export const surfaceBuilderPlan: Readonly<Record<string, readonly string[]>> = O
   TopPhrase: ["TopPhraseNode"],
   ImportDecl: ["ImportDeclarationNode"],
   ExportImportDecl: ["ExportImportDeclarationNode"],
+  PrivateDecl: ["PrivateDeclarationNode"],
   ImportClause: [
     "ImportNamespaceClauseNode",
     "ImportAllClauseNode",

@@ -111,7 +111,7 @@ let render = (program: Ast.Program) => {
       Ast.MissingPattern(_, mark) => {virtual(state, mark, [95], None)}
     }
   };
-  let items = (state, value, emit) => {
+  let items = (state, value: Ast.Items<a>, emit) => {
     match(value) {
       Ast.EmptyItems => {state},
       Ast.NonemptyItems(separated) => {

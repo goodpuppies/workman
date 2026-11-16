@@ -1,7 +1,7 @@
 # 0.8.0 release plan
 
 Status: 2026-11-16, in progress. Done: 1 (`viaErr`), 2 (collection names), 3 (missing counterparts), 4 (operator table), 5
-(SubsetML numbers), 6 (scope expansions: `local`, `op`, alias modules, sized numbers). Step 8 is under
+(SubsetML numbers), 6 (scope expansions: `local`, `op`, alias modules, sized numbers), 7 (private declarations). Step 8 is under
 way: the [gap audit](subml-gap-audit.md) records what porting frontend-v2 to SML added. Nothing
 is tagged or published.
 
@@ -161,6 +161,12 @@ SubsetML adds the leak rule as its own restriction: a type declared in a `local`
 occur in the type of a binding in its `dec2` that remains visible outside the `local`. The
 Definition allows the escape, so this only rejects phrases, as the conformance rule permits.
 
+Done 2026-11-16. WM parses, formats and checks private declarations; SubsetML translates them
+to and from `local`. Std List, Map and JSON helpers are private, with pinned public interfaces
+updated. The frontend-v2 grammar inventory and structural golden include `PrivateDecl`.
+The two pre-existing [JSON test failures](issues/json-test-library-boundary-failures.md) remain
+tracked separately.
+
 ## 8. Close WM → SubsetML translation gaps
 
 From the [translation gap audit](subml-gap-audit.md): cover groups A, B and C, so that ordinary WM
@@ -175,6 +181,17 @@ does not otherwise fix, and keep record label sets distinct (R2).
   `Monad`, with the `Carrier` record type and `SubsetResult.carrier` moved into the Basis.
 - C, environment: `Result`/`Ok`/`Err` and a default panic runtime.
 - The frontend-v3 View inference defect and the stale `SubsetHost.success` in pakman-subsetml.
+
+Progress 2026-11-16: pakman-subsetml uses integer exit codes and the current shared Basis APIs;
+its native lifecycle/refusal/host tests pass. Postfix type annotations fix grouped space-call
+arguments, with JS/native parity coverage. Bare Option/Result constructors now use the source
+Basis with `--basis`, and the private leak check permits imported types. The frontend-v3
+parser/projector/View closure builds with MLton and passes eight WM/native cases after scoping
+the generic helper's type parameter. See the gap audit's follow-up for details. Bootstrap Option
+removal and the compiler manifest refactor remain step 9.
+The native graph still needs [bootstrap pervasive lowerings](issues/wm-native-output-still-uses-bootstrap-pervasives.md)
+to pass `check-portable`; the [WM test runner identity/exit-status failure](issues/wm-test-runner-reports-distinct-test-identities.md)
+also remains open.
 
 ## 9. Chore: `Option` and `Result` are Basis types, defined once
 
@@ -202,6 +219,20 @@ SubsetML Basis source only, and today they are handled differently:
 Separate decision: the std APIs differ beyond what errors explain. `Result` has `succeed`,
 `carrier`, `map3`/`map4`, `all` and `debug`; `Option` has `forEach` and `join`. An `Option.carrier`
 would make `Monad.traverse(Option, …)` and `Option|a, b|` work.
+
+Progress 2026-11-16: the source layout is split. `SubsetResultValue` owns Result's datatype;
+`SubsetResult` re-exports its own type/constructors and keeps its Option open local. The WM sync
+marks `subset_result_value.wm` as the Result identity source, and the public interface snapshots
+exclude Option from Result. Portability, round trips and WM/FFI identity tests pass. The compiler's
+datatype descriptors now generate from source declarations via `generate-assets`. Lang-item
+entries retain identity, arity, source location and stable constructor ID allocation; source
+supplies parameter names, constructor names/payloads and runtime spellings. The adoption check
+uses this generated contract, including alpha-renamed parameters. Reproducibility and source-change
+tests cover generation. Removing the compatibility checker's bootstrap Option remains to be done;
+compatibility interfaces that mention host Option need to be handled as part of that removal.
+One wider regression check remains separately tracked: the pre-existing
+[Result.filter export identity assertion](issues/result-filter-export-identity-test-fails-at-js-boundary.md)
+compares distinct JS Result wrappers and also fails with the old manifest.
 
 ## 10. Chore: show lists as lists everywhere
 

@@ -1,5 +1,5 @@
 import { compileLibraryFile } from "../../../../src/compiler.ts";
-import { type Edit, type InlineHint, list } from "./preview.ts";
+import { type Edit, type InlineHint, type LibraryResult, list } from "./preview.ts";
 
 /** A WM datatype value; payload fields `a0`, `a1`, ... (see src/core/ctor_layout.ts). */
 type Variant = { name: string; [field: `a${number}`]: any };
@@ -41,12 +41,12 @@ export async function loadEditor() {
       throw new Error("Invalid WM option in editor transport");
     };
     return (source: string, marked = false): EditorResult => {
-      const result = runtime.inspect(source, marked) as Variant;
-      if (result.name === "Err") {
+      const result = runtime.inspect(source, marked) as LibraryResult<any>;
+      if (result.ok === false) {
         throw new Error(`Editor view failed: ${JSON.stringify(result)}`);
       }
-      if (result.name !== "Ok") throw new Error("Invalid WM editor result");
-      const view = result.a0;
+      if (result.ok !== true) throw new Error("Invalid WM editor result");
+      const view = result.value;
       return {
         source,
         projected: text(view.projection.text),

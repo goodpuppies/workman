@@ -2,6 +2,7 @@ import { compileLibraryFile } from "../../../../src/compiler.ts";
 
 /** A WM datatype value; payload fields `a0`, `a1`, ... (see src/core/ctor_layout.ts). */
 type Variant = { name: string; [field: string]: unknown };
+export type LibraryResult<T> = { ok: true; value: T } | { ok: false; error: Variant };
 export type Insertion = { id: number; anchor: number; text: string };
 export type Placement = {
   id: number;
@@ -68,14 +69,16 @@ export async function loadPreview() {
         }
         return { ...cons, a0: [item.id, item.anchor, item.text], a1: tail };
       }, nil);
-    const decode = (result: Variant): Preview => {
-      if (result.name === "Err") {
-        const error = result.a0 as Variant;
+    const decode = (
+      result: LibraryResult<{ rendered: unknown; placements: Variant }>,
+    ): Preview => {
+      if (result.ok === false) {
+        const error = result.error;
         const [id, anchor] = [error.a0 as number, error.a1 as number];
         throw new RangeError(`Invalid UTF-16 anchor ${anchor} for insertion ${id}`);
       }
-      if (result.name !== "Ok") throw new Error("Invalid WM preview result");
-      const value = result.a0 as { rendered: unknown; placements: Variant };
+      if (result.ok !== true) throw new Error("Invalid WM preview result");
+      const value = result.value;
       const units = list<number>(runtime.units(value.rendered));
       return {
         text: units.map((unit) => String.fromCharCode(unit)).join(""),
@@ -104,17 +107,19 @@ export async function loadPreview() {
     return Object.assign(render, {
       compare(original: string, projected: string, marked = false, limit = 256): Difference {
         if (!isI32(limit)) throw new RangeError("Diff limit must be an integer from 0 to 4096");
-        const result = runtime.compare(original, projected, limit) as Variant;
-        if (result.name === "Err") {
-          const error = result.a0 as Variant;
+        const result = runtime.compare(original, projected, limit) as LibraryResult<
+          { edits: Variant }
+        >;
+        if (result.ok === false) {
+          const error = result.error;
           throw new RangeError(
             error.name === "InvalidLimit"
               ? "Diff limit must be an integer from 0 to 4096"
               : `Projection diff exceeded edit-distance limit ${limit}`,
           );
         }
-        if (result.name !== "Ok") throw new Error("Invalid WM diff result");
-        const difference = result.a0 as { edits: Variant };
+        if (result.ok !== true) throw new Error("Invalid WM diff result");
+        const difference = result.value;
         return {
           ...decode(runtime.renderDifference(difference, marked)),
           projected,

@@ -40,13 +40,13 @@ try {
     const filename = module.source.replace(/^src\//, "").replace(/\.sml$/, ".wm");
     files.set(filename, synced(await Deno.readFile(join(temporary, filename))));
   }
-  // SubsetResult's datatype is WM's built-in Result, so FFI results, std's Result functions and
+  // SubsetResultValue's datatype shares WM's Result identity, so FFI results, std functions and
   // the Basis share one type and one Ok/Err.
   files.set(
-    "subset_result.wm",
+    "subset_result_value.wm",
     new TextEncoder().encode(
       "// @basis-type Result\n" +
-        new TextDecoder().decode(files.get("subset_result.wm")!),
+        new TextDecoder().decode(files.get("subset_result_value.wm")!),
     ),
   );
   // The source-owned option datatype shares WM's existing FFI/constructor identity.

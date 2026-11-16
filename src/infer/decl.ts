@@ -1,4 +1,4 @@
-import type { Decl } from "../ast.ts";
+import type { Decl, TypeExpr } from "../ast.ts";
 import { isQualified, parseLongId } from "../ast.ts";
 import { basisTypeDescriptor } from "../basis_manifest.ts";
 import { warningDiagnostic } from "../diagnostic_model.ts";
@@ -427,9 +427,8 @@ function inferTypeDecl(
 }
 
 /**
- * A `// @basis-type` declaration names the compiler's built-in type instead of a new one, so its
- * type and constructors are the built-in ones (the SubsetML Basis declares `Result` this way). The
- * declaration must match the built-in exactly: same parameters, constructors and payloads.
+ * A `// @basis-type` declaration adopts the lang item's identity. Its constructor contract is
+ * generated from the shared Basis source; another adopting declaration must match that source.
  */
 function adoptBasisType(
   decl: Extract<Decl, { kind: "TypeDecl" }>,
@@ -453,14 +452,11 @@ function adoptBasisType(
     decl.params.length === descriptor.arity &&
     decl.ctors.length === descriptor.constructors.length &&
     decl.ctors.every((ctor, index) => {
-      const builtIn = descriptor.constructors![index];
-      return ctor.name === builtIn.name && ctor.args.length === builtIn.args.length &&
-        ctor.args.every((arg, argIndex) => {
-          const expected = builtIn.args[argIndex];
-          const position = expected.kind === "TName" ? labels.indexOf(expected.name) : -1;
-          return position >= 0 && (arg.kind === "TVar" || arg.kind === "TName") &&
-            (arg.kind === "TVar" || arg.args.length === 0) && arg.name === decl.params[position];
-        });
+      const source = descriptor.constructors![index];
+      return ctor.name === source.name && ctor.args.length === source.args.length &&
+        ctor.args.every((arg, argIndex) =>
+          sameBasisPayload(arg, source.args[argIndex], decl.params, labels)
+        );
     });
   if (!sameShape) {
     const ctors = descriptor.constructors.map((ctor) =>
@@ -492,6 +488,35 @@ function adoptBasisType(
     });
     if (exported) exports.set(ctor.name, scheme);
   }
+}
+
+function sameBasisPayload(
+  actual: TypeExpr,
+  expected: TypeExpr,
+  parameters: readonly string[],
+  sourceParameters: readonly string[],
+): boolean {
+  if (expected.kind === "TVar" || expected.kind === "TName") {
+    const position = sourceParameters.indexOf(expected.name);
+    if (position >= 0 && (expected.kind === "TVar" || expected.args.length === 0)) {
+      return (actual.kind === "TVar" || actual.kind === "TName" && actual.args.length === 0) &&
+        actual.name === parameters[position];
+    }
+  }
+  const same = (a: TypeExpr, b: TypeExpr) => sameBasisPayload(a, b, parameters, sourceParameters);
+  const all = (a: TypeExpr[], b: TypeExpr[]) =>
+    a.length === b.length && a.every((type, index) => same(type, b[index]));
+  if (actual.kind === "TName" && expected.kind === "TName") {
+    return actual.name === expected.name &&
+      JSON.stringify(actual.path?.qualifiers ?? []) ===
+        JSON.stringify(expected.path?.qualifiers ?? []) &&
+      all(actual.args, expected.args);
+  }
+  if (actual.kind === "TTuple" && expected.kind === "TTuple") {
+    return all(actual.items, expected.items);
+  }
+  return actual.kind === "TFn" && expected.kind === "TFn" &&
+    all(actual.params, expected.params) && same(actual.result, expected.result);
 }
 
 function inferAliasDecl(

@@ -15,34 +15,34 @@ let numberCompare = (left, right) => {
   }
 };
 
-let height = match(tree) => {
+private let height = match(tree) => {
   MapEmpty => { 0 },
   MapNode(nodeHeight, _key, _value, _left, _right) => { nodeHeight }
 };
 
-let max = (left, right) => {
+private let max = (left, right) => {
   if (left > right) { left } else { right }
 };
 
-let node = (key, value, left, right) => {
+private let node = (key, value, left, right) => {
   MapNode(1 + max(height(left), height(right)), key, value, left, right)
 };
 
-let rotateLeft = match(tree) => {
+private let rotateLeft = match(tree) => {
   MapNode(_height, key, value, left, MapNode(_rightHeight, rightKey, rightValue, rightLeft, rightRight)) => {
     node(rightKey, rightValue, node(key, value, left, rightLeft), rightRight)
   },
   _ => { tree }
 };
 
-let rotateRight = match(tree) => {
+private let rotateRight = match(tree) => {
   MapNode(_height, key, value, MapNode(_leftHeight, leftKey, leftValue, leftLeft, leftRight), right) => {
     node(leftKey, leftValue, leftLeft, node(key, value, leftRight, right))
   },
   _ => { tree }
 };
 
-let balance = match(tree) => {
+private let balance = match(tree) => {
   MapEmpty => { MapEmpty },
   MapNode(_height, key, value, left, right) => {
     let difference = height(left) - height(right);
@@ -80,7 +80,7 @@ let empty = (compare) => {
   MapValue(compare, MapEmpty)
 };
 
-let rec getTree = match(tree, key, compare) => {
+private let rec getTree = match(tree, key, compare) => {
   (MapEmpty, _, _) => { None },
   (MapNode(_height, nodeKey, value, left, right), key, compare) => {
     match(compare(key, nodeKey)) {
@@ -102,7 +102,7 @@ let has = (map, key) => {
   }
 };
 
-let rec setTree = match(tree, key, value, compare) => {
+private let rec setTree = match(tree, key, value, compare) => {
   (MapEmpty, key, value, _) => { node(key, value, MapEmpty, MapEmpty) },
   (MapNode(_height, nodeKey, nodeValue, left, right), key, value, compare) => {
     match(compare(key, nodeKey)) {
@@ -123,7 +123,7 @@ let singleton = (compare, key, value) => {
   empty(compare) :> set(key, value)
 };
 
-let rec removeSmallest = match(tree) => {
+private let rec removeSmallest = match(tree) => {
   MapNode(_height, key, value, MapEmpty, right) => { (key, value, right) },
   MapNode(_height, key, value, left, right) => {
     let (smallestKey, smallestValue, remainingLeft) = removeSmallest(left);
@@ -132,7 +132,7 @@ let rec removeSmallest = match(tree) => {
   MapEmpty => { Panic("Map.removeSmallest called with an empty tree") }
 };
 
-let rec removeTree = match(tree, key, compare) => {
+private let rec removeTree = match(tree, key, compare) => {
   (MapEmpty, _, _) => { MapEmpty },
   (MapNode(_height, nodeKey, value, left, right), key, compare) => {
     match(compare(key, nodeKey)) {
@@ -167,7 +167,7 @@ let update = (map, key, transform) => {
 
 // Folds visit entries in key order (foldLeft) or reverse key order (foldRight). The callback
 // takes the entry first and the accumulator last, as the List folds do.
-let rec foldLeftTree = match(tree, initial, combine) => {
+private let rec foldLeftTree = match(tree, initial, combine) => {
   (MapEmpty, initial, _) => { initial },
   (MapNode(_height, key, value, left, right), initial, combine) => {
     let afterLeft = foldLeftTree(left, initial, combine);
@@ -175,7 +175,7 @@ let rec foldLeftTree = match(tree, initial, combine) => {
   }
 };
 
-let rec foldRightTree = match(tree, initial, combine) => {
+private let rec foldRightTree = match(tree, initial, combine) => {
   (MapEmpty, initial, _) => { initial },
   (MapNode(_height, key, value, left, right), initial, combine) => {
     let afterRight = foldRightTree(right, initial, combine);
@@ -191,7 +191,7 @@ let foldRight = match(map, initial, combine) => {
   (MapValue(_compare, tree), initial, combine) => { foldRightTree(tree, initial, combine) }
 };
 
-let rec toListTree = match(tree, tail) => {
+private let rec toListTree = match(tree, tail) => {
   (MapEmpty, tail) => { tail },
   (MapNode(_height, key, value, left, right), tail) => {
     toListTree(left, [(key, value), ..toListTree(right, tail)])
@@ -206,7 +206,7 @@ let debugHeight = match(map) => {
   MapValue(_compare, tree) => { height(tree) }
 };
 
-let rec fromListItems = match(map, items) => {
+private let rec fromListItems = match(map, items) => {
   (map, []) => { map },
   (map, [(Var(key), Var(value)), ..rest]) => { fromListItems(set(map, key, value), rest) }
 };

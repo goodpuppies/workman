@@ -9,6 +9,7 @@ import {
 } from "./basis_descriptor.ts";
 import { JS_HOST_TYPES, JS_HOST_VALUES } from "./host/js_manifest.ts";
 import { C_HOST_TYPES } from "./host/c_manifest.ts";
+import { SOURCE_BASIS_DATATYPES } from "./generated/source_basis_datatypes.ts";
 import {
   BASIS_INTRINSICS,
   GPU_INTRINSIC_ENTRIES,
@@ -19,8 +20,8 @@ export * from "./basis_descriptor.ts";
 export { BASIS_INTRINSICS, GPU_INTRINSIC_ENTRIES };
 
 /**
- * Layer-0 types: the Definition's initial basis plus Workman's compiler-owned additions (`Result`,
- * `Task`, and the host-owned layer-1 types whose equality and printing the compiler implements).
+ * Layer-0 types: the Definition's initial basis, source Basis lang items, Task, and host types
+ * whose equality and printing the compiler implements. Lang-item constructors come from source.
  */
 const LAYER0_TYPES = Object.freeze(
   [
@@ -30,30 +31,7 @@ const LAYER0_TYPES = Object.freeze(
     { name: "Void", typeNameId: -4, arity: 0, profiles, equality: "always" },
     { name: "Char", typeNameId: -34, arity: 0, profiles, equality: "always" },
     { name: "Int32.Int", typeNameId: -35, arity: 0, profiles, equality: "always" },
-    {
-      name: "Option",
-      typeNameId: -10,
-      arity: 1,
-      profiles: defaultOnly,
-      equality: "structural",
-      argLabels: ["T"],
-      constructors: [
-        ctor("None", -1, []),
-        ctor("Some", -2, [param("T")]),
-      ],
-    },
-    {
-      name: "Result",
-      typeNameId: -11,
-      arity: 2,
-      profiles: defaultOnly,
-      equality: "structural",
-      argLabels: ["T", "E"],
-      constructors: [
-        ctor("Ok", -3, [param("T")]),
-        ctor("Err", -4, [param("E")]),
-      ],
-    },
+    ...SOURCE_BASIS_DATATYPES,
     {
       name: "List",
       typeNameId: -12,
@@ -156,8 +134,8 @@ const LAYER0_TYPES = Object.freeze(
 
 /**
  * Compiler-owned basis type inventory: layer 0, the JS host layer and the wmslang target layer.
- * Static identity, profile membership, equality, constructor identity, and runtime constructor
- * names all originate in these descriptors.
+ * Source Basis descriptors are generated from their declarations; this combined inventory also
+ * includes compiler-owned and host types.
  */
 export const BASIS_TYPES: readonly BasisTypeDescriptor[] = Object.freeze([
   ...LAYER0_TYPES,

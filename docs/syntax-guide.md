@@ -1242,6 +1242,21 @@ type MyType = A | B<Real64>;
 
 ```
 
+Prefix a top-level `let`, `type` or `record` with `private` to keep it out of the module's
+public surface. It stays visible in the rest of its own module:
+
+```workman
+private let rotate = (tree) => { … };
+private let rec walk = (tree) => { … } and step = (tree) => { … };
+private type Tree = | Leaf | Node<Tree, Tree>;
+let balance = (tree) => { rotate(tree) };
+```
+
+`private` covers the whole declaration: every binding of a `let rec … and …` group, every type of
+a `type … and …` group, and a private type's constructors. A public binding whose type mentions a
+private type is an error, since importers couldn't name that type. `private` is only a keyword in
+front of a declaration, so it still works as an ordinary name.
+
 Imports are private. Prefix one with `export` to make what it imports part of this module too:
 
 ```workman

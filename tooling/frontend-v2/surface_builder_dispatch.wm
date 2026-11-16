@@ -34,7 +34,7 @@ from "./surface_builders_match.wm" import {
   buildAnonymousMatchFn
 };
 from "./surface_builders_decl.wm" import {
-  buildLetBinding, buildLetDecl, buildRecordFieldDecl, buildRecordDecl,
+  buildLetBinding, buildLetDecl, buildPrivateDecl, buildRecordFieldDecl, buildRecordDecl,
   buildTopPhrase, buildProgram
 };
 from "./surface_builders_import.wm" import {
@@ -167,6 +167,7 @@ let buildRuleValue = (name: String, value: ParseValue, span: Span, source: Strin
             "PipelinePipe" => { buildPipe(value, span) },
             "LetBinding" => { buildLetBinding(value, span) },
             "LetDecl" => { buildLetDecl(value, span) },
+            "PrivateDecl" => { buildPrivateDecl(value, span) },
             "ExplicitCall" => { buildExplicitCall(value, span) },
             "SpaceCall" => { buildSpaceCall(value, span) },
             "PostfixField" => { buildPostfixField(value, span) },

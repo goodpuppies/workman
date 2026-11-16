@@ -92,7 +92,7 @@ Deno.test("frontend-v2 generated WM recognizer files are reproducible and bounde
 
 Deno.test("frontend-v2 formatting Surface schema classifies the complete grammar", () => {
   assertEquals(surfaceRuleCoverage(grammar), {
-    classified: 179,
+    classified: 180,
     missing: [],
     unknown: [],
     duplicates: [],
@@ -114,6 +114,8 @@ Deno.test("frontend-v2 lowers supported semantics from the generated Surface tre
     "let head = match(items) { [x, ..xs] => { x }, [] => { 0 }, };",
     "type Pair<t> = (t, t);\ntype Option<t> = | None | Some<t>;",
     "record Point<t> = { x: t, y: t };",
+    "private let helper = 1;\nprivate let rec f = (x) => { g(x) } and g = (x) => { x };",
+    "private type Hidden = | Secret<Int32.Int> and Other = | OtherSecret;\nprivate record Point = { x: Int32.Int };",
     "let shader = () => { @gpu; 1 };",
     "let choose = match(left, right) => { (true, x) => { x }, (_, y) => { y }, };",
     "let choose = value :> match { true => { 1 }, false => { 0 }, } :> next;",

@@ -1,0 +1,32 @@
+from "../../tooling/frontend-v3/src/parser/program.wm" import * as Parser;
+from "../../tooling/frontend-v3/src/editor/view.wm" import * as View;
+from "basis/utf16_source.wm" import * as Text;
+from "basis/list.wm" import * as Lists;
+from "basis/result.wm" import * as R;
+
+let source = (text: String) => {
+  match(Text.fromNativeUnits(text)) {
+    R.Ok(value) => { value },
+    R.Err(_) => { Panic("invalid fixture source") }
+  }
+};
+let verify = (original, expected) => {
+  match(View.render(Parser.parse(source(original)), false, 256)) {
+    R.Err(_) => { false },
+    R.Ok(view) => { Text.toUnits(view.projection.text) == Text.toUnits(source(expected)) }
+  }
+};
+let passed = Lists.all([
+  verify("let id=x=>x", "let id = (x) => { x };\n"),
+  verify("let x=", "let x = ?;\n"),
+  verify("let x=\nlet y=1", "let x = ?;\nlet y = 1;\n"),
+  verify("f(g x)", "f(g(x));\n"),
+  verify("let f=()=>{let x=1;x}", "let f = () => {\n  let x = 1;\n  x\n};\n"),
+  verify("f(x,,y)", "f(x, ?, y);\n"),
+  verify("let f=(x:Int)=>x;", "let f = (x:Int)=>x;\n"),
+  verify("/*", "/*"),
+], (value) => { value });
+let main = () => {
+  if (passed) { print("frontend-v3 native projector: 8 cases passed") }
+  else { Panic("frontend-v3 projector regression") }
+};

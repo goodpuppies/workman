@@ -9,7 +9,7 @@ let collectWith = (empty, combine, items) => {
   SubsetList.foldRight(items, empty, combine)
 };
 
-let rec joinRaw = match(items) => {
+private let rec joinRaw = match(items) => {
   [] => { "" },
   ([head, ..[]]) => { `${head}` },
   ([head, ..rest]) => {

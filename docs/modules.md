@@ -43,8 +43,10 @@ serves basis installation, all import forms, `open`, and ordinary declarations.
 
 A `.wm` file elaborates against the initial basis plus its explicit imports, in declaration
 order; compilation order grants no ambient visibility. Its public environment contains its
-top-level declarations and what it imports with `export from`. Plain imports and basis bindings are
-working scope only (normatively: the local part of an SML `local … in … end`).
+top-level declarations not marked `private` and what it imports with `export from`. Plain imports,
+`private` declarations and basis bindings are working scope only (normatively: the local part of
+an SML `local … in … end` around the rest of the file). A public declaration whose type mentions a
+private type is rejected.
 
 ```wm
 from "./lib.wm" import * as Lib;   -- static structure alias in StrEnv
@@ -149,7 +151,7 @@ facts instead.
   file;
 - `export from` is the only forwarding syntax; aliasing a value is a new declaration;
 - acyclic file graph; cross-file recursion is rejected rather than given ESM temporal semantics;
-- no `local … in … end` phrase form (blocks provide local scope in expressions);
+- no `local … in … end` phrase form: `private` declarations and blocks provide local scope;
 - the duplicate-target restriction inside one simultaneous named-import clause.
 
 ## Workman extensions beyond SML
@@ -161,7 +163,7 @@ facts instead.
 - pinned patterns;
 - the JavaScript FFI and reflected foreign types;
 - GPU regions and their catalog-owned overload discipline;
-- public-by-default file declarations (`private` deferred).
+- public-by-default file declarations, with `private` as the opt-out modifier.
 
 ## Deferred
 

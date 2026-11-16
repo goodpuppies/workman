@@ -98,7 +98,15 @@ export function surfaceProgramToModule(
       context.inlineRecords = [];
       const [item] = fields(phraseValue, "TopPhraseNode");
       const itemVariant = variant(item);
-      if (itemVariant.name === "TypeDeclarationGroupNode") {
+      if (itemVariant.name === "PrivateDeclarationNode") {
+        // `private` hides the whole declaration, every binding of a group included.
+        const [, declaration] = fields(itemVariant, "PrivateDeclarationNode");
+        const inner = variant(declaration);
+        const projected = inner.name === "TypeDeclarationGroupNode"
+          ? projectTypeDeclGroup(inner, context)
+          : [projectDecl(inner, context)];
+        decls.push(...projected.map(privateDecl));
+      } else if (itemVariant.name === "TypeDeclarationGroupNode") {
         decls.push(...projectTypeDeclGroup(itemVariant, context));
       } else if (isDeclNode(itemVariant.name)) {
         decls.push(projectDecl(itemVariant, context));
@@ -1693,9 +1701,17 @@ function nodeFor(context: Context, span: SourceSpan): AstNode {
   };
 }
 
+function privateDecl(decl: Decl): Decl {
+  if (decl.kind === "LetDecl" || decl.kind === "TypeDecl" || decl.kind === "RecordDecl") {
+    return { ...decl, exported: false };
+  }
+  throw new Error("private applies to let, type and record declarations");
+}
+
 function isDeclNode(name: string): boolean {
   return name === "ImportDeclarationNode" ||
     name === "ExportImportDeclarationNode" ||
+    name === "PrivateDeclarationNode" ||
     name === "LetDeclarationNode" ||
     name === "RecordDeclarationNode" ||
     name === "TypeDeclarationNode" ||

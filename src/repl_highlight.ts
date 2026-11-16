@@ -166,6 +166,8 @@ function wordKind(word: string, text: string, end: number): HighlightKind | unde
   if (KEYWORDS.has(word)) return "keyword";
   // `export` is only a keyword in front of an import; elsewhere it's an ordinary name.
   if (word === "export" && /^\s+from\b/.test(text.slice(end, end + 80))) return "keyword";
+  // `private` likewise, in front of a declaration.
+  if (word === "private" && /^\s+(let|type|record)\b/.test(text.slice(end, end + 80))) return "keyword";
   if (CONSTANTS.has(word)) return "constant";
   if (/^[A-Z]/.test(word)) return "type";
   return /^\s*\(/.test(text.slice(end, end + 80)) ? "function" : undefined;
